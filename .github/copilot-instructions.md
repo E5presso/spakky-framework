@@ -367,7 +367,7 @@ def test_get_user(application: SpakkyApplication) -> None:
 uv sync --all-extras
 
 # Install pre-commit hooks (recommended for contributors)
-uv run pre-commit install
+uv run pre-commit install -t pre-commit -t commit-msg
 
 # Run all tests with coverage (from root)
 uv run pytest
