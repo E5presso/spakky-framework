@@ -1,0 +1,135 @@
+"""Post-processor for applying aspects to Pods via dynamic proxies.
+
+This module contains the logic for weaving aspects into Pod objects at runtime.
+"""
+
+import sys
+from logging import Logger
+from typing import Any, ClassVar, Sequence
+from weakref import WeakKeyDictionary
+
+from spakky.aop.advisor import Advisor, AsyncAdvisor
+from spakky.aop.aspect import Aspect, AsyncAspect
+from spakky.aop.interfaces.aspect import IAspect, IAsyncAspect
+from spakky.core.proxy import AbstractProxyHandler, ProxyFactory
+from spakky.core.types import AsyncFunc, Func
+from spakky.pod.annotations.order import Order
+from spakky.pod.annotations.pod import Pod
+from spakky.pod.interfaces.container import IContainer
+from spakky.pod.interfaces.post_processor import IPostProcessor
+
+
+class AspectProxyHandler(AbstractProxyHandler):
+    """Proxy handler that applies aspect advisors to method calls."""
+
+    __advisors_cache: WeakKeyDictionary[Func, Func | Advisor]
+    __async_advisors_cache: WeakKeyDictionary[AsyncFunc, AsyncFunc | AsyncAdvisor]
+    __aspects: Sequence[object]
+
+    def __init__(self, aspects: Sequence[object]) -> None:
+        """Initialize the aspect proxy handler.
+
+        Args:
+            aspects: Sequence of aspect instances to apply.
+        """
+        self.__advisors_cache = WeakKeyDictionary[Func, Func | Advisor]()
+        self.__async_advisors_cache = WeakKeyDictionary[
+            AsyncFunc, AsyncFunc | AsyncAdvisor
+        ]()
+        self.__aspects = aspects
+
+    def call(
+        self,
+        target: object,
+        method: Func,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        if method not in self.__advisors_cache:
+            runnable = method
+            candidates = [
+                x
+                for x in self.__aspects
+                if isinstance(x, IAspect) and Aspect.get(x).matches(method)
+            ]
+            for candidate in candidates:  # pragma: no cover
+                runnable = Advisor(candidate, runnable)
+            self.__advisors_cache[method] = runnable
+        return self.__advisors_cache[method](*args, **kwargs)
+
+    async def call_async(
+        self,
+        target: object,
+        method: AsyncFunc,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        if method not in self.__async_advisors_cache:
+            runnable = method
+            candidates = [
+                x
+                for x in self.__aspects
+                if isinstance(x, IAsyncAspect) and AsyncAspect.get(x).matches(method)
+            ]
+            for candidate in candidates:  # pragma: no cover
+                runnable = AsyncAdvisor(candidate, runnable)
+            self.__async_advisors_cache[method] = runnable
+        return await self.__async_advisors_cache[method](*args, **kwargs)
+
+
+@Pod()
+class AspectPostProcessor(IPostProcessor):
+    """Post-processor that wraps Pods with matching aspects in dynamic proxies."""
+
+    __DEFAULT_ORDER: ClassVar[Order] = Order(sys.maxsize)
+    __logger: Logger
+    __container: IContainer
+
+    def __init__(self, container: IContainer, logger: Logger) -> None:
+        """Initialize the aspect post-processor.
+
+        Args:
+            container: The Pod container to find aspects from.
+            logger: Logger for debugging aspect application.
+        """
+        super().__init__()
+        self.__container = container
+        self.__logger = logger
+
+    def post_process(self, pod: object) -> object:
+        """Process a Pod by wrapping it with matching aspects.
+
+        Args:
+            pod: The Pod object to post-process.
+
+        Returns:
+            object: A proxy wrapping the pod with aspects, or the original pod if no aspects match.
+        """
+
+        def selector(x: Pod) -> bool:
+            return (
+                Aspect.exists(x.target)
+                and Aspect.get(x.target).matches(pod)
+                or AsyncAspect.exists(x.target)
+                and AsyncAspect.get(x.target).matches(pod)
+            )
+
+        matched_aspects: list[object] = list(self.__container.find(selector))
+        if not any(matched_aspects):
+            # No matching aspects found, return the pod as is
+            return pod
+
+        matched_aspects.sort(
+            key=lambda x: Order.get_or_default(
+                obj=x,
+                default=self.__DEFAULT_ORDER,
+            ).order,
+            reverse=True,
+        )
+        self.__logger.debug(
+            f"[{type(self).__name__}] {[f'{type(x).__name__}' for x in matched_aspects]!r} -> {type(pod).__name__!r}"
+        )
+        return ProxyFactory(
+            target=pod,
+            handler=AspectProxyHandler(matched_aspects),
+        ).create()

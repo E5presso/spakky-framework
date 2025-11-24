@@ -1,0 +1,131 @@
+# Spakky Framework ⚡️
+
+<p align="center">
+  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="Core CI"></a>
+  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-fastapi.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-fastapi.yml/badge.svg" alt="FastAPI Plugin CI"></a>
+  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-rabbitmq.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-rabbitmq.yml/badge.svg" alt="RabbitMQ Plugin CI"></a>
+  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-security.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-security.yml/badge.svg" alt="Security Plugin CI"></a>
+  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-typer.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-typer.yml/badge.svg" alt="Typer Plugin CI"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
+  <img src="https://img.shields.io/badge/dependency%20manager-uv-purple" alt="uv">
+  <img src="https://img.shields.io/badge/code%20style-ruff-000000.svg" alt="Ruff">
+  <img src="https://img.shields.io/badge/type%20checker-pyrefly-green" alt="Pyrefly">
+</p>
+
+---
+
+**Spakky** is a modern, Spring-inspired dependency injection framework for Python, designed for building scalable, modular applications with ease. It brings the power of Inversion of Control (IoC) and Aspect-Oriented Programming (AOP) to the Python ecosystem, with first-class support for **FastAPI**, **RabbitMQ**, and **Typer**.
+
+## ✨ Features
+
+- **Dependency Injection (DI)**: Powerful IoC container with `@Pod` decorators, supporting Singleton, Prototype, and Context scopes.
+- **Aspect-Oriented Programming (AOP)**: Built-in support for `@Aspect`, `@Before`, `@After`, `@Around` to handle cross-cutting concerns like logging and transactions.
+- **Modular Plugin System**: Easily extensible architecture with plugins for popular libraries.
+- **Type-Safe**: Built with modern Python type hints in mind.
+- **Async First**: Native support for `asyncio` and asynchronous dependency injection.
+
+## 📦 Ecosystem
+
+Spakky is a monorepo containing the core framework and official plugins:
+
+| Package | Description |
+|---------|-------------|
+| **`spakky`** | Core framework (DI Container, AOP, Application Context) |
+| **`spakky-fastapi`** | Integration with [FastAPI](https://fastapi.tiangolo.com/) for building REST APIs |
+| **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
+| **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
+| **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
+
+## 🚀 Quick Start
+
+### Installation
+
+Install the core framework:
+
+```bash
+pip install spakky
+```
+
+Or install with plugins:
+
+```bash
+pip install "spakky[fastapi,rabbitmq]"
+```
+
+### Basic Usage
+
+Define your services with `@Pod`:
+
+```python
+from spakky.pod.annotations.pod import Pod
+
+@Pod()
+class UserRepository:
+    def get_user(self, id: int) -> str:
+        return "John Doe"
+
+@Pod()
+class UserService:
+    def __init__(self, repository: UserRepository) -> None:
+        self.repository = repository
+
+    def get_user_name(self, id: int) -> str:
+        return self.repository.get_user(id)
+```
+
+Bootstrap the application:
+
+```python
+from spakky.application.application import SpakkyApplication
+from spakky.application.application_context import ApplicationContext
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .scan("my_package")
+    .start()
+)
+
+user_service = app.container.get(UserService)
+print(user_service.get_user_name(1))
+```
+
+## 🛠 Development
+
+This project uses `uv` for dependency management and workspace handling.
+
+### Prerequisites
+
+- Python 3.11+
+- `uv` installed
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/sejong/spakky-framework.git
+cd spakky-framework
+
+# Sync dependencies
+uv sync --all-extras
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run tests for a specific package
+uv run pytest plugins/spakky-fastapi
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## 📄 License
+
+This project is licensed under the MIT License.

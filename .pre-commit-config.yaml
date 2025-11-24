@@ -1,0 +1,16 @@
+repos:
+  - repo: local
+    hooks:
+      - id: monorepo-pre-commit
+        name: Run pre-commit on changed sub-projects
+        entry: python scripts/run_subproject_precommit.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.1.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]

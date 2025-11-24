@@ -1,0 +1,13 @@
+"""Core constants for Spakky framework."""
+
+PLUGIN_PATH = "spakky.plugins"
+ANNOTATION_METADATA = "__spakky_annotation_metadata__"
+PATH = "__path__"
+ORIGIN_BASES = "__orig_bases__"
+PARAMETERS = "__parameters__"
+DYNAMIC_PROXY_CLASS_NAME_SUFFIX = "@DynamicProxy"
+SELF = "self"
+INIT = "__init__"
+PROTOCOL_INIT = "_no_init_or_replace_init"
+CONTEXT_SCOPE_CACHE = "__spakky_context_scope_cache__"
+CONTEXT_ID = "__spakky_context_id__"

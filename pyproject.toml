@@ -1,0 +1,52 @@
+[project]
+name = "spakky-framework"
+version = "0.1.0"
+description = "Spakky framework mono-repo"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "LGPL-2.1-or-later" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "commitizen>=4.1.0",
+  "pre-commit>=4.3.0",
+  "pyrefly>=0.39.4",
+  "pytest>=8.4.2",
+  "pytest-asyncio>=1.2.0",
+  "pytest-cov>=7.0.0",
+  "pytest-xdist>=3.8.0",
+  "ruff>=0.14.2",
+  "toml>=0.10.2",
+]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+version_files = [
+  "spakky/pyproject.toml:version",
+  "plugins/spakky-fastapi/pyproject.toml:version",
+  "plugins/spakky-rabbitmq/pyproject.toml:version",
+  "plugins/spakky-security/pyproject.toml:version",
+  "plugins/spakky-typer/pyproject.toml:version",
+]
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.uv.workspace]
+members = [
+  "spakky",
+  "plugins/spakky-fastapi",
+  "plugins/spakky-rabbitmq",
+  "plugins/spakky-security",
+  "plugins/spakky-typer",
+]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-fastapi = { workspace = true }
+spakky-rabbitmq = { workspace = true }
+spakky-typer = { workspace = true }
+spakky-security = { workspace = true }

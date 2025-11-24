@@ -1,0 +1,63 @@
+[project]
+name = "spakky"
+version = "0.1.0"
+description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "LGPL-2.1-or-later" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = []
+
+[project.optional-dependencies]
+fastapi = ["spakky-fastapi>=0.1.0"]
+rabbitmq = ["spakky-rabbitmq>=0.1.0"]
+security = ["spakky-security>=0.1.0"]
+typer = ["spakky-typer>=0.1.0"]
+
+[build-system]
+requires = ["uv_build>=0.9.2,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.pyrefly]
+python-version = "3.14"
+search_path = ["src"]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = "src/spakky"
+testpaths = "src/tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=loadfile
+    -p no:warnings
+    -n auto
+    -vv
+"""
+
+[tool.coverage.run]
+include = ["src/spakky/*"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+]
