@@ -18,7 +18,7 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/sejong/spakky-framework.git
+   git clone https://github.com/E5presso/spakky-framework.git
    cd spakky-framework
    ```
 

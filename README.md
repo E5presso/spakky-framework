@@ -1,11 +1,11 @@
 # Spakky Framework ⚡️
 
 <p align="center">
-  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="Core CI"></a>
-  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-fastapi.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-fastapi.yml/badge.svg" alt="FastAPI Plugin CI"></a>
-  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-rabbitmq.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-rabbitmq.yml/badge.svg" alt="RabbitMQ Plugin CI"></a>
-  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-security.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-security.yml/badge.svg" alt="Security Plugin CI"></a>
-  <a href="https://github.com/sejong/spakky-framework/actions/workflows/ci-typer.yml"><img src="https://github.com/sejong/spakky-framework/actions/workflows/ci-typer.yml/badge.svg" alt="Typer Plugin CI"></a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="Core CI"></a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml/badge.svg" alt="FastAPI Plugin CI"></a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml/badge.svg" alt="RabbitMQ Plugin CI"></a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml/badge.svg" alt="Security Plugin CI"></a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml/badge.svg" alt="Typer Plugin CI"></a>
 </p>
 
 <p align="center">
@@ -105,7 +105,7 @@ This project uses `uv` for dependency management and workspace handling.
 
 ```bash
 # Clone the repository
-git clone https://github.com/sejong/spakky-framework.git
+git clone https://github.com/E5presso/spakky-framework.git
 cd spakky-framework
 
 # Sync dependencies
