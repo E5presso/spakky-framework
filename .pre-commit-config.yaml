@@ -13,4 +13,3 @@ repos:
     rev: v4.1.0
     hooks:
       - id: commitizen
-        stages: [commit-msg]

@@ -1,4 +1,6 @@
-# Spakky Framework ⚡️
+<h1 align="center">
+Spakky Framework ⚡️
+</h1>
 
 <p align="center">
   <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="Core CI"></a>
@@ -10,9 +12,9 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
-  <img src="https://img.shields.io/badge/dependency%20manager-uv-purple" alt="uv">
-  <img src="https://img.shields.io/badge/code%20style-ruff-000000.svg" alt="Ruff">
-  <img src="https://img.shields.io/badge/type%20checker-pyrefly-green" alt="Pyrefly">
+  <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv">
+  <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff">
+  <img src="https://img.shields.io/endpoint?url=https://pyrefly.org/badge.json" alt="Pyrefly">
 </p>
 
 ---
