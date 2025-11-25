@@ -11,6 +11,9 @@
   <a href="#">
     <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
   </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
+  </a>
 </p>
 
 <h3 align="center">⚡️ Powered by</h3>
@@ -23,9 +26,6 @@
   </a>
   <a href="https://github.com/facebook/pyrefly">
     <img src="https://img.shields.io/endpoint?url=https://pyrefly.org/badge.json" alt="Pyrefly">
-  </a>
-  <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
   </a>
 </p>
 
