@@ -14,7 +14,7 @@ on:
           - spakky-security
           - spakky-typer
       dry_run:
-        description: 'Dry run (no actual changes)'
+        description: 'Dry run (show what would happen without making changes)'
         required: false
         type: boolean
         default: false
@@ -22,16 +22,6 @@ on:
 permissions:
   contents: write
   id-token: write
-
-env:
-  PACKAGE_PATHS: |
-    {
-      "spakky": "spakky",
-      "spakky-fastapi": "plugins/spakky-fastapi",
-      "spakky-rabbitmq": "plugins/spakky-rabbitmq",
-      "spakky-security": "plugins/spakky-security",
-      "spakky-typer": "plugins/spakky-typer"
-    }
 
 jobs:
   release:
@@ -59,11 +49,14 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Get package path
+      - name: Get package path from workspace
         id: pkg
         run: |
-          PATHS='${{ env.PACKAGE_PATHS }}'
-          PKG_PATH=$(echo "$PATHS" | jq -r '.["${{ inputs.package }}"]')
+          PKG_PATH=$(python3 scripts/get_package_path.py "${{ inputs.package }}")
+          if [ $? -ne 0 ]; then
+            echo "❌ Package '${{ inputs.package }}' not found in workspace"
+            exit 1
+          fi
           echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
           echo "📦 Package: ${{ inputs.package }}"
           echo "📁 Path: $PKG_PATH"
@@ -104,16 +97,11 @@ jobs:
         run: |
           uv build --package ${{ inputs.package }}
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (OIDC)
         if: ${{ !inputs.dry_run }}
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: |
-          if [ -n "$UV_PUBLISH_TOKEN" ]; then
-            uv publish --token "$UV_PUBLISH_TOKEN"
-          else
-            echo "⚠️ PYPI_API_TOKEN not set, skipping publish"
-          fi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
 
       - name: Create GitHub Release
         if: ${{ !inputs.dry_run }}
