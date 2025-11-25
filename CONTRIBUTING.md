@@ -51,15 +51,36 @@ uv run pytest --cov --cov-report=html
 
 We use **pre-commit** to enforce code quality checks.
 
-- **On commit**: Linting, formatting, type checking
-- **On push**: Unit tests (to avoid slow tests blocking every commit)
+- **On commit**: Linting, formatting, type checking (fast)
+- **On push**: Unit tests for changed packages only (slower, but necessary)
 
 ```bash
 # Install all hooks (pre-commit, commit-msg, and pre-push)
 uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 
-# Run all hooks manually
+# Run pre-commit hooks manually
 uv run pre-commit run --all-files
+
+# Run pre-push hooks manually
+uv run pre-commit run --all-files --hook-stage pre-push
+```
+
+#### Hook Workflow
+
+```
+git commit
+├── Root: monorepo-pre-commit
+│   └── For each changed sub-project:
+│       ├── trailing-whitespace
+│       ├── check-yaml, check-json
+│       ├── ruff (lint + format)
+│       └── pyrefly (type check)
+└── Root: commitizen (validate commit message)
+
+git push
+└── Root: monorepo-pre-push-tests
+    └── For each changed sub-project:
+        └── pytest (unit tests)
 ```
 
 Our pre-commit configuration includes:

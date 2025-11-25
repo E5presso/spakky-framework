@@ -366,8 +366,8 @@ def test_get_user(application: SpakkyApplication) -> None:
 # Install all dependencies (including dev dependencies)
 uv sync --all-extras
 
-# Install pre-commit hooks (recommended for contributors)
-uv run pre-commit install -t pre-commit -t commit-msg
+# Install all git hooks (pre-commit, commit-msg, pre-push)
+uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 
 # Run all tests with coverage (from root)
 uv run pytest
@@ -397,9 +397,26 @@ uv run ruff check --fix
 # Run pre-commit hooks manually
 uv run pre-commit run --all-files
 
+# Run pre-push hooks manually (tests)
+uv run pre-commit run --all-files --hook-stage pre-push
+
 # Type checking (if using pyrefly)
 uv run pyrefly check
 ```
+
+### Git Hook Workflow
+
+The monorepo uses a two-stage hook system:
+
+**On `git commit`:**
+- Root hook runs `scripts/run_subproject_precommit.py`
+- Only changed sub-projects are checked (lint, format, typecheck)
+- Commitizen validates commit message format
+
+**On `git push`:**
+- Root hook runs `scripts/run_subproject_tests.py`
+- Only changed sub-projects run pytest
+- Prevents slow tests from blocking every commit
 
 ## File Conventions
 
