@@ -115,77 +115,83 @@ def get_changed_projects(
     for member in workspace_members:
         if any(file.startswith(f"{member}/") for file in changed_files):
             changed_projects.append(member)
-            print(f"  ✓ {member}")
+            print(f"  ✓ {member}", flush=True)
 
     return changed_projects
 
 
 def run_tests_for_project(project_path: str) -> bool:
     """Run pytest for a specific project."""
-    print(f"\n{'=' * 60}")
-    print(f"🧪 Running tests for: {project_path}")
-    print(f"{'=' * 60}\n")
-    sys.stdout.flush()
+    print(f"\n{'=' * 60}", flush=True)
+    print(f"🧪 Running tests for: {project_path}", flush=True)
+    print(f"{'=' * 60}\n", flush=True)
 
     try:
-        result = subprocess.run(
+        # Use Popen to stream output in real-time
+        process = subprocess.Popen(
             ["uv", "run", "pytest"],
             cwd=project_path,
-            check=False,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
         )
+        process.wait()
 
-        if result.returncode != 0:
-            print(f"\n❌ Tests failed for: {project_path}")
+        if process.returncode != 0:
+            print(f"\n❌ Tests failed for: {project_path}", flush=True)
             return False
 
-        print(f"\n✅ Tests passed for: {project_path}")
+        print(f"\n✅ Tests passed for: {project_path}", flush=True)
         return True
 
     except Exception as e:
-        print(f"\n❌ Error running tests for {project_path}: {e}", file=sys.stderr)
+        print(
+            f"\n❌ Error running tests for {project_path}: {e}",
+            file=sys.stderr,
+            flush=True,
+        )
         return False
 
 
 def main() -> int:
     """Main entry point."""
-    print("\n🚀 Pre-push: Running tests for changed projects...\n")
+    print("\n🚀 Pre-push: Running tests for changed projects...\n", flush=True)
 
     workspace_members = get_workspace_members()
     if not workspace_members:
-        print("❌ No workspace members found. Exiting.")
+        print("❌ No workspace members found. Exiting.", flush=True)
         return 1
 
     changed_files = get_changed_files_for_push()
 
     if not changed_files:
-        print("ℹ️  No files to push. Skipping tests.")
+        print("ℹ️  No files to push. Skipping tests.", flush=True)
         return 0
 
-    print(f"📝 {len(changed_files)} files changed in commits to push")
-    print("\n📦 Affected projects:")
+    print(f"📝 {len(changed_files)} files changed in commits to push", flush=True)
+    print("\n📦 Affected projects:", flush=True)
 
     changed_projects = get_changed_projects(changed_files, workspace_members)
 
     if not changed_projects:
-        print("  (none)")
-        print("\nℹ️  No workspace projects affected. Skipping tests.")
+        print("  (none)", flush=True)
+        print("\nℹ️  No workspace projects affected. Skipping tests.", flush=True)
         return 0
 
-    print(f"\n🧪 Running tests for {len(changed_projects)} project(s)...")
+    print(f"\n🧪 Running tests for {len(changed_projects)} project(s)...", flush=True)
 
     all_passed = True
     for project in changed_projects:
         if not run_tests_for_project(project):
             all_passed = False
 
-    print(f"\n{'=' * 60}")
+    print(f"\n{'=' * 60}", flush=True)
     if all_passed:
-        print("✅ All tests passed! Push proceeding...")
-        print(f"{'=' * 60}\n")
+        print("✅ All tests passed! Push proceeding...", flush=True)
+        print(f"{'=' * 60}\n", flush=True)
         return 0
     else:
-        print("❌ Some tests failed! Push aborted.")
-        print(f"{'=' * 60}\n")
+        print("❌ Some tests failed! Push aborted.", flush=True)
+        print(f"{'=' * 60}\n", flush=True)
         return 1
 
 

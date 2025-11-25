@@ -71,78 +71,88 @@ def get_changed_projects(
 
             if pre_commit_config.exists():
                 changed_projects.append(member)
-                print(f"✓ Detected changes in: {member}")
+                print(f"✓ Detected changes in: {member}", flush=True)
             else:
-                print(f"⚠ Changes in {member} but no .pre-commit-config.yaml found")
+                print(
+                    f"⚠ Changes in {member} but no .pre-commit-config.yaml found",
+                    flush=True,
+                )
 
     return changed_projects
 
 
 def run_pre_commit_for_project(project_path: str) -> bool:
     """Run pre-commit for a specific project."""
-    print(f"\n{'=' * 60}")
-    print(f"Running pre-commit for: {project_path}")
-    print(f"{'=' * 60}\n")
-    sys.stdout.flush()  # Ensure header is printed before subprocess output
+    print(f"\n{'=' * 60}", flush=True)
+    print(f"Running pre-commit for: {project_path}", flush=True)
+    print(f"{'=' * 60}\n", flush=True)
 
     try:
-        # Run without capturing output - let it stream to terminal in real-time
-        result = subprocess.run(
+        # Use Popen to stream output in real-time
+        process = subprocess.Popen(
             ["uv", "run", "pre-commit", "run", "--all-files", "--color=always"],
             cwd=project_path,
-            check=False,  # Don't raise exception on non-zero exit
-            # stdout and stderr will inherit from parent process
+            stdout=sys.stdout,
+            stderr=sys.stderr,
         )
+        process.wait()
 
-        if result.returncode != 0:
-            print(f"\n❌ Pre-commit failed for: {project_path}")
+        if process.returncode != 0:
+            print(f"\n❌ Pre-commit failed for: {project_path}", flush=True)
             return False
 
-        print(f"\n✅ Pre-commit passed for: {project_path}")
+        print(f"\n✅ Pre-commit passed for: {project_path}", flush=True)
         return True
 
     except Exception as e:
-        print(f"\n❌ Error running pre-commit for {project_path}: {e}", file=sys.stderr)
+        print(
+            f"\n❌ Error running pre-commit for {project_path}: {e}",
+            file=sys.stderr,
+            flush=True,
+        )
         return False
 
 
 def main() -> int:
     """Main entry point."""
-    print("🔍 Checking for changed files in workspace members...")
+    print("🔍 Checking for changed files in workspace members...", flush=True)
 
     # Read workspace members from pyproject.toml
     workspace_members = get_workspace_members()
     if not workspace_members:
-        print("❌ No workspace members found. Exiting.")
+        print("❌ No workspace members found. Exiting.", flush=True)
         return 1
 
     changed_files = get_changed_files()
 
     if not changed_files:
-        print("ℹ️  No staged files detected. Skipping pre-commit checks.")
+        print("ℹ️  No staged files detected. Skipping pre-commit checks.", flush=True)
         return 0
 
     changed_projects = get_changed_projects(changed_files, workspace_members)
 
     if not changed_projects:
-        print("ℹ️  No changes in workspace members with pre-commit configs.")
+        print("ℹ️  No changes in workspace members with pre-commit configs.", flush=True)
         return 0
 
-    print(f"\n📦 Running pre-commit for {len(changed_projects)} project(s)...\n")
+    print(
+        f"\n📦 Running pre-commit for {len(changed_projects)} project(s)...\n",
+        flush=True,
+    )
 
     all_passed = True
     for project in changed_projects:
         if not run_pre_commit_for_project(project):
             all_passed = False
 
-    print(f"\n{'=' * 60}")
+    print(f"\n{'=' * 60}", flush=True)
     if all_passed:
-        print("✅ All pre-commit checks passed!")
-        print(f"{'=' * 60}\n")
+        print("✅ All pre-commit checks passed!", flush=True)
+        print(f"{'=' * 60}\n", flush=True)
         return 0
     else:
-        print("❌ Some pre-commit checks failed!")
-        print(f"{'=' * 60}\n")
+        print("❌ Some pre-commit checks failed!", flush=True)
+        print(f"{'=' * 60}\n", flush=True)
         return 1
 
 
