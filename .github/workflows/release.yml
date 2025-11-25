@@ -13,6 +13,11 @@ on:
           - spakky-rabbitmq
           - spakky-security
           - spakky-typer
+      first_release:
+        description: 'First release (skip version bump, use current version)'
+        required: false
+        type: boolean
+        default: false
       dry_run:
         description: 'Dry run (show what would happen without making changes)'
         required: false
@@ -62,26 +67,56 @@ jobs:
           echo "📁 Path: $PKG_PATH"
 
       - name: Bump version (dry-run)
-        if: ${{ inputs.dry_run }}
+        if: ${{ inputs.dry_run && !inputs.first_release }}
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
           echo "🔍 Dry run mode - showing what would happen:"
-          uv run cz bump --dry-run --yes || true
+          uv run cz bump --dry-run --yes || echo "ℹ️ No commits to bump"
 
       - name: Bump version
-        if: ${{ !inputs.dry_run }}
+        id: bump
+        if: ${{ !inputs.dry_run && !inputs.first_release }}
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
-          uv run cz bump --yes --changelog
+          if uv run cz bump --yes --changelog; then
+            echo "bumped=true" >> $GITHUB_OUTPUT
+          else
+            EXIT_CODE=$?
+            if [ $EXIT_CODE -eq 21 ]; then
+              echo "⚠️ No commits to bump - nothing to release"
+              echo "bumped=false" >> $GITHUB_OUTPUT
+            else
+              exit $EXIT_CODE
+            fi
+          fi
+
+      - name: Get current version (first release)
+        id: current_version
+        if: ${{ inputs.first_release }}
+        working-directory: ${{ steps.pkg.outputs.path }}
+        run: |
+          VERSION=$(uv run cz version --project)
+          TAG="${{ inputs.package }}-v${VERSION}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "📌 Current version: $VERSION"
+          echo "🏷️ Tag to create: $TAG"
+
+      - name: Create tag (first release)
+        if: ${{ inputs.first_release && !inputs.dry_run }}
+        run: |
+          TAG="${{ steps.current_version.outputs.tag }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          echo "🏷️ Created tag: $TAG"
 
       - name: Push changes and tags
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
         run: |
           git push origin HEAD
           git push origin --tags
 
       - name: Get new version
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && steps.bump.outputs.bumped == 'true' }}
         id: version
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
@@ -92,23 +127,35 @@ jobs:
           echo "📌 New version: $VERSION"
           echo "🏷️ Tag: $TAG"
 
-      - name: Build package
+      - name: Set release version
+        id: release_version
         if: ${{ !inputs.dry_run }}
+        run: |
+          if [ "${{ inputs.first_release }}" == "true" ]; then
+            echo "version=${{ steps.current_version.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag=${{ steps.current_version.outputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag=${{ steps.version.outputs.tag }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build package
+        if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
         run: |
           uv build --package ${{ inputs.package }}
 
       - name: Publish to PyPI (OIDC)
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           print-hash: true
 
       - name: Create GitHub Release
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="${{ steps.release_version.outputs.tag }}"
           CHANGELOG_PATH="${{ steps.pkg.outputs.path }}/CHANGELOG.md"
 
           # Extract release notes from changelog if exists
@@ -119,6 +166,16 @@ jobs:
           fi
 
           gh release create "$TAG" \
-            --title "${{ inputs.package }} ${{ steps.version.outputs.version }}" \
+            --title "${{ inputs.package }} ${{ steps.release_version.outputs.version }}" \
             --notes "$NOTES" \
             dist/* || echo "Release may already exist"
+
+      - name: Summary
+        run: |
+          if [ "${{ inputs.first_release }}" == "true" ]; then
+            echo "🎉 First release: ${{ inputs.package }} ${{ steps.release_version.outputs.version }}"
+          elif [ "${{ steps.bump.outputs.bumped }}" == "true" ]; then
+            echo "✅ Released ${{ inputs.package }} ${{ steps.release_version.outputs.version }}"
+          else
+            echo "ℹ️ No release needed - no eligible commits since last release"
+          fi
