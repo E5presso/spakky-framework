@@ -43,8 +43,9 @@ jobs:
         run: cd plugins/spakky-typer && uv run pytest --cov --cov-report=xml
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          file: ./plugins/spakky-typer/coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./plugins/spakky-typer/coverage.xml
           flags: typer
           fail_ci_if_error: false

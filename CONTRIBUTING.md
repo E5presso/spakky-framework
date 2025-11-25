@@ -144,6 +144,58 @@ Examples:
 - `fix(fastapi): resolve routing issue`
 - `docs: update contributing guide`
 
+## 🏷️ Versioning
+
+We use **Semantic Versioning** with **per-package commitizen** configuration.
+
+### Monorepo Structure
+
+Each package has its own version and tag format:
+
+| Package | Tag Format | Example |
+|---------|------------|---------|
+| `spakky` | `spakky-v{version}` | `spakky-v1.0.0` |
+| `spakky-fastapi` | `spakky-fastapi-v{version}` | `spakky-fastapi-v1.2.0` |
+| `spakky-rabbitmq` | `spakky-rabbitmq-v{version}` | `spakky-rabbitmq-v1.0.3` |
+| `spakky-security` | `spakky-security-v{version}` | `spakky-security-v1.1.0` |
+| `spakky-typer` | `spakky-typer-v{version}` | `spakky-typer-v1.0.0` |
+
+### Bump Type Rules
+
+| Commit Type | Bump | Version Change |
+|-------------|------|----------------|
+| `fix:` | Patch | `0.1.0` → `0.1.1` |
+| `feat:` | Minor | `0.1.0` → `0.2.0` |
+| `feat!:` or `BREAKING CHANGE:` | Major | `0.1.0` → `1.0.0` |
+
+### Local Version Bump
+
+```bash
+# Bump spakky core
+cd spakky
+uv run cz bump --changelog
+
+# Bump a plugin
+cd plugins/spakky-fastapi
+uv run cz bump --changelog
+
+# Dry run (see what would happen)
+uv run cz bump --dry-run
+```
+
+### Release Process (Maintainers)
+
+1. Merge PRs to `main` branch
+2. Go to **Actions** → **Release** workflow
+3. Click **Run workflow**
+4. Select the package to release
+5. The workflow will:
+   - Run `cz bump` to determine version from commits
+   - Update `pyproject.toml` and `CHANGELOG.md`
+   - Create a git tag (e.g., `spakky-fastapi-v1.2.0`)
+   - Build and publish to PyPI
+   - Create a GitHub Release
+
 ## 🚀 Pull Request Process
 
 1.  Fork the repo and create your branch from `main`.
