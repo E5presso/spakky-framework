@@ -5,7 +5,7 @@ description = "Security utilities plugin for Spakky framework"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
-license = { text = "LGPL-2.1-or-later" }
+license = { text = "MIT" }
 dependencies = [
     "argon2-cffi>=25.1.0",
     "bcrypt>=5.0.0",

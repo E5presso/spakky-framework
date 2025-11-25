@@ -4,7 +4,7 @@ version = "3.0.0"
 description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "LGPL-2.1-or-later" }
+license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = []
 

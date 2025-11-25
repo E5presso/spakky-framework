@@ -1,20 +1,50 @@
-<h1 align="center">
-Spakky Framework ⚡️
-</h1>
+<p align="center">
+  <img src="./assets/symbol.svg" width="80rem" alt="Spakky Logo">
+</p>
+<h1 align="center">Spakky Framework</h1>
 
 <p align="center">
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="Core CI"></a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml/badge.svg" alt="FastAPI Plugin CI"></a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml/badge.svg" alt="RabbitMQ Plugin CI"></a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml/badge.svg" alt="Security Plugin CI"></a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml"><img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml/badge.svg" alt="Typer Plugin CI"></a>
+  <a href="https://pypi.org/project/spakky/">
+    <img src="https://img.shields.io/pypi/v/spakky.svg" alt="PyPI Version">
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
+  </a>
 </p>
 
+<h3 align="center">⚡️ Powered by</h3>
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
-  <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv">
-  <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff">
-  <img src="https://img.shields.io/endpoint?url=https://pyrefly.org/badge.json" alt="Pyrefly">
+  <a href="https://github.com/astral-sh/uv">
+    <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv">
+  </a>
+  <a href="https://github.com/astral-sh/ruff">
+    <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff">
+  </a>
+  <a href="https://github.com/facebook/pyrefly">
+    <img src="https://img.shields.io/endpoint?url=https://pyrefly.org/badge.json" alt="Pyrefly">
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
+  </a>
+</p>
+
+<h3 align="center">✅ CI Status</h3>
+<p align="center">
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml">
+    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="Core CI">
+  </a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml">
+    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml/badge.svg" alt="FastAPI Plugin CI">
+  </a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml">
+    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml/badge.svg" alt="RabbitMQ Plugin CI">
+  </a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml">
+    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml/badge.svg" alt="Security Plugin CI">
+  </a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml">
+    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml/badge.svg" alt="Typer Plugin CI">
+  </a>
 </p>
 
 ---
