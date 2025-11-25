@@ -1,0 +1,72 @@
+name: ❓ Question
+description: Ask a question about Spakky Framework
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question about Spakky? We're here to help!
+
+        Before asking, please check:
+        - [Documentation](https://github.com/E5presso/spakky-framework)
+        - [Existing issues](https://github.com/E5presso/spakky-framework/issues)
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched the existing issues and discussions
+          required: true
+        - label: I have read the documentation
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Question Area
+      description: Which area does your question relate to?
+      options:
+        - Getting Started
+        - Dependency Injection
+        - Aspect-Oriented Programming
+        - FastAPI Integration
+        - RabbitMQ Integration
+        - Security Features
+        - CLI (Typer) Integration
+        - Testing
+        - Deployment
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: Please describe your question in detail
+      placeholder: "How do I...?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide any relevant code or context
+      render: python
+      placeholder: |
+        # Your current code or setup
+        from spakky.pod.annotations.pod import Pod
+
+        @Pod()
+        class MyService:
+            pass
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What I've Tried
+      description: Describe what you've already tried
+      placeholder: "I've tried..."
