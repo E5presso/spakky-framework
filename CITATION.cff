@@ -1,0 +1,66 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Spakky Framework
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: 세종
+    family-names: 백
+    email: sejong418@icloud.com
+identifiers:
+  - type: url
+    value: "https://github.com/E5presso/spakky-framework"
+repository-code: https://github.com/E5presso/spakky-framework
+abstract: Build scalable Python apps with the power of DI & AOP
+keywords:
+  - spakky
+  - spakky-framework
+license: MIT
+references:
+  - type: software
+    title: FastAPI
+    authors:
+      - given-names: Sebastián
+        family-names: Ramírez
+        email: tiangolo@gmail.com
+    repository-code: https://github.com/fastapi/fastapi
+    url: https://fastapi.tiangolo.com
+    abstract: >-
+      FastAPI framework, high performance, easy to learn, fast to code,
+      ready for production
+    license: MIT
+  - type: software
+    title: Typer
+    authors:
+      - given-names: Sebastián
+        family-names: Ramírez
+        email: tiangolo@gmail.com
+    repository-code: https://github.com/fastapi/typer
+    url: https://typer.tiangolo.com
+    abstract: >-
+      Typer, build great CLIs. Easy to code. Based on Python type hints.
+    license: MIT
+  - type: software
+    title: Pika
+    authors:
+      - name: Pika Contributors
+    repository-code: https://github.com/pika/pika
+    url: https://pika.readthedocs.io
+    abstract: >-
+      Pure Python RabbitMQ/AMQP 0-9-1 client library
+    license: BSD-3-Clause
+  - type: software
+    title: aio-pika
+    authors:
+      - given-names: Dmitry
+        family-names: Orlov
+        alias: mosquito
+    repository-code: https://github.com/mosquito/aio-pika
+    url: https://docs.aio-pika.com
+    abstract: >-
+      AMQP 0.9 client designed for asyncio and humans
+    license: Apache-2.0
