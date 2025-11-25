@@ -49,11 +49,14 @@ uv run pytest --cov --cov-report=html
 
 ### Pre-commit Hooks
 
-We use **pre-commit** to enforce code quality checks before each commit.
+We use **pre-commit** to enforce code quality checks.
+
+- **On commit**: Linting, formatting, type checking
+- **On push**: Unit tests (to avoid slow tests blocking every commit)
 
 ```bash
-# Install pre-commit hooks (including commit message validation)
-uv run pre-commit install -t pre-commit -t commit-msg
+# Install all hooks (pre-commit, commit-msg, and pre-push)
+uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 
 # Run all hooks manually
 uv run pre-commit run --all-files

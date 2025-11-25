@@ -9,6 +9,15 @@ repos:
         always_run: true
         verbose: true
 
+      - id: monorepo-pre-push-tests
+        name: Run tests on changed sub-projects
+        entry: python scripts/run_subproject_tests.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+        stages: [pre-push]
+
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.1.0
     hooks:
