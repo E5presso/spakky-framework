@@ -54,6 +54,21 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: Check if first release is valid
+        if: ${{ inputs.first_release }}
+        run: |
+          # Check if any tag for this package already exists
+          EXISTING_TAGS=$(git tag -l "${{ inputs.package }}-v*" | head -1)
+          if [ -n "$EXISTING_TAGS" ]; then
+            echo "❌ Error: Cannot use 'first_release' option."
+            echo "   Package '${{ inputs.package }}' already has releases:"
+            git tag -l "${{ inputs.package }}-v*" | head -5
+            echo ""
+            echo "💡 Tip: Uncheck 'first_release' and run again to create a normal release."
+            exit 1
+          fi
+          echo "✅ No existing releases found. First release is valid."
+
       - name: Get package path from workspace
         id: pkg
         run: |
