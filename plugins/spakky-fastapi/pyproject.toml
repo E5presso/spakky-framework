@@ -1,6 +1,6 @@
 [project]
 name = "spakky-fastapi"
-version = "3.1.3"
+version = "3.1.4"
 description = "FastAPI plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "fastapi[standard]>=0.120.1",
     "orjson>=3.11.4",
-    "spakky>=3.1.3",
+    "spakky>=3.1.4",
     "websockets>=15.0.1",
 ]
 
@@ -22,7 +22,7 @@ build-backend = "uv_build"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "3.1.3"
+version = "3.1.4"
 tag_format = "spakky-fastapi-v$version"
 version_files = ["pyproject.toml:version"]
 update_changelog_on_bump = true

@@ -1,6 +1,6 @@
 [project]
 name = "spakky"
-version = "3.1.3"
+version = "3.1.4"
 description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = []
 
 [project.optional-dependencies]
-fastapi = ["spakky-fastapi>=3.1.3"]
+fastapi = ["spakky-fastapi>=3.1.4"]
 rabbitmq = ["spakky-rabbitmq>=3.1.3"]
 security = ["spakky-security>=3.1.3"]
 typer = ["spakky-typer>=3.1.3"]
@@ -20,7 +20,7 @@ build-backend = "uv_build"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "3.1.3"
+version = "3.1.4"
 tag_format = "spakky-v$version"
 version_files = ["pyproject.toml:version"]
 update_changelog_on_bump = true
