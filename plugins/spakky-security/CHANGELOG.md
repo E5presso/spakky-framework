@@ -1,3 +1,17 @@
+## spakky-security-v3.1.2 (2025-11-26)
+
+### Fix
+
+- **typer**: remove test comment from __init__.py
+- **security**: remove test comment from __init__.py
+- **rabbitmq**: remove test comment from __init__.py
+- **fastapi**: remove test comment from __init__.py
+- **core**: remove test comment from __init__.py
+
+### Refactor
+
+- **ci**: extract release workflow shell scripts to Python modules
+
 ## spakky-security-v3.1.1 (2025-11-26)
 
 ### Fix
