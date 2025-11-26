@@ -9,5 +9,5 @@ def test_persistency_error_is_abstract() -> None:
 
     # Should be able to instantiate concrete subclass
     error = ConcretePersistencyError("Test persistency error")
-    assert str(error) == "Test persistency error"
+    assert error.message == "Test persistency error"
     assert isinstance(error, AbstractSpakkyPersistencyError)

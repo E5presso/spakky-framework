@@ -9,5 +9,5 @@ def test_event_error_is_abstract() -> None:
 
     # Should be able to instantiate concrete subclass
     error = ConcreteEventError("Test event error")
-    assert str(error) == "Test event error"
+    assert error.message == "Test event error"
     assert isinstance(error, AbstractSpakkyEventError)

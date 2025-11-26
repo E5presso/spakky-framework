@@ -9,5 +9,5 @@ def test_external_error_is_abstract() -> None:
 
     # Should be able to instantiate concrete subclass
     error = ConcreteExternalError("Test external error")
-    assert str(error) == "Test external error"
+    assert error.message == "Test external error"
     assert isinstance(error, AbstractSpakkyExternalError)

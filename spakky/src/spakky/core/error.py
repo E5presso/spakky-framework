@@ -7,6 +7,5 @@ class AbstractSpakkyFrameworkError(Exception, ABC):
     message: str
     """A human-readable message describing the error."""
 
-    def __str__(self) -> str:
-        """Return the error message."""
-        return self.message
+    def __init__(self, message: str) -> None:
+        self.message = message
