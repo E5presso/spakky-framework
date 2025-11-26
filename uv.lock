@@ -1873,7 +1873,7 @@ dev = [{ name = "testcontainers", specifier = ">=4.13.2" }]
 
 [[package]]
 name = "spakky-security"
-version = "3.1.1"
+version = "3.1.2"
 source = { editable = "plugins/spakky-security" }
 dependencies = [
     { name = "argon2-cffi" },
