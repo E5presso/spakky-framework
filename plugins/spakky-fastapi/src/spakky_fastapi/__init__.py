@@ -2,6 +2,8 @@
 
 This plugin provides FastAPI integration with automatic route registration,
 middleware support, and controller stereotypes for building REST APIs.
+
+Prepare for release.
 """
 
 from spakky.application.plugin import Plugin
