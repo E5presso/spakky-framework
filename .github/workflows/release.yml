@@ -105,6 +105,14 @@ jobs:
             fi
           fi
 
+      - name: Update lock file after version bump
+        if: ${{ !inputs.dry_run && steps.bump.outputs.bumped == 'true' }}
+        run: |
+          uv sync
+          git add uv.lock
+          git commit --amend --no-edit
+          echo "🔒 Updated uv.lock file"
+
       - name: Get current version (first release)
         id: current_version
         if: ${{ inputs.first_release }}
