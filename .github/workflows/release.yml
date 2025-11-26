@@ -18,8 +18,8 @@ jobs:
     name: Bump versions
     runs-on: ubuntu-latest
     outputs:
-      released: ${{ steps.release-info.outputs.released }}
-      released_packages: ${{ steps.release-info.outputs.released_packages }}
+      released: ${{ steps.bump.outputs.released }}
+      released_packages: ${{ steps.bump.outputs.released_packages }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,108 +43,26 @@ jobs:
         run: uv sync
 
       - name: Bump all packages
-        id: release-info
+        id: bump
         run: |
-          PACKAGES=("spakky" "spakky-fastapi" "spakky-rabbitmq" "spakky-security" "spakky-typer")
-          RELEASED_PACKAGES=()
-          RELEASED_INFO=""
-
-          for PACKAGE in "${PACKAGES[@]}"; do
-            echo ""
-            echo "========================================"
-            echo "📦 Processing: $PACKAGE"
-            echo "========================================"
-
-            PKG_PATH=$(python3 scripts/get_package_path.py "$PACKAGE")
-            if [ $? -ne 0 ]; then
-              echo "❌ Package '$PACKAGE' not found in workspace"
-              exit 1
-            fi
-            echo "📁 Path: $PKG_PATH"
-
-            # Auto-detect first release (no existing tags for this package)
-            EXISTING_TAGS=$(git tag -l "${PACKAGE}-v*" | head -1)
-            if [ -z "$EXISTING_TAGS" ]; then
-              IS_FIRST_RELEASE="true"
-              echo "🆕 First release detected (no existing tags)"
-            else
-              IS_FIRST_RELEASE="false"
-              echo "📋 Existing releases found"
-            fi
-
-            cd "$PKG_PATH"
-
-            if [ "${{ inputs.dry_run }}" == "true" ]; then
-              echo "🔍 Dry run mode:"
-              if [ "$IS_FIRST_RELEASE" == "true" ]; then
-                VERSION=$(uv run cz version --project)
-                echo "  Would create first release: ${PACKAGE}-v${VERSION}"
-              else
-                uv run cz bump --dry-run --yes || echo "  ℹ️ No commits to bump"
-              fi
-            else
-              if [ "$IS_FIRST_RELEASE" == "true" ]; then
-                VERSION=$(uv run cz version --project)
-                TAG="${PACKAGE}-v${VERSION}"
-                echo "📌 First release version: $VERSION"
-
-                cd "$GITHUB_WORKSPACE"
-                git tag -a "$TAG" -m "Release $TAG"
-                echo "🏷️ Created tag: $TAG"
-
-                RELEASED_PACKAGES+=("$PACKAGE")
-                RELEASED_INFO="${RELEASED_INFO}${PACKAGE}:${VERSION}:${TAG};"
-              else
-                if uv run cz bump --yes --changelog; then
-                  VERSION=$(uv run cz version --project)
-                  TAG="${PACKAGE}-v${VERSION}"
-                  echo "✅ Bumped to: $VERSION"
-
-                  RELEASED_PACKAGES+=("$PACKAGE")
-                  RELEASED_INFO="${RELEASED_INFO}${PACKAGE}:${VERSION}:${TAG};"
-                else
-                  EXIT_CODE=$?
-                  if [ $EXIT_CODE -eq 21 ]; then
-                    echo "⚠️ No commits to bump for $PACKAGE - skipping"
-                  else
-                    exit $EXIT_CODE
-                  fi
-                fi
-              fi
-            fi
-
-            cd "$GITHUB_WORKSPACE"
-          done
-
-          echo "released=$RELEASED_INFO" >> $GITHUB_OUTPUT
-
-          if [ ${#RELEASED_PACKAGES[@]} -gt 0 ]; then
-            echo ""
-            echo "========================================"
-            echo "📋 Released packages: ${RELEASED_PACKAGES[*]}"
-            echo "========================================"
-            JSON=$(printf '%s\n' "${RELEASED_PACKAGES[@]}" | jq -R . | jq -s -c .)
-            echo "released_packages=$JSON" >> $GITHUB_OUTPUT
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            python3 scripts/bump_packages.py --dry-run
           else
-            echo ""
-            echo "ℹ️ No packages were released"
-            echo "released_packages=[]" >> $GITHUB_OUTPUT
+            python3 scripts/bump_packages.py
           fi
 
       - name: Update lock file
-        if: ${{ !inputs.dry_run && steps.release-info.outputs.released != '' }}
+        if: ${{ !inputs.dry_run && steps.bump.outputs.released != '' }}
         run: |
           uv sync
           git add uv.lock
           git commit -m "chore: update uv.lock after version bump" || echo "No lock file changes"
-          echo "🔒 Updated uv.lock file"
 
       - name: Push all changes and tags
-        if: ${{ !inputs.dry_run && steps.release-info.outputs.released != '' }}
+        if: ${{ !inputs.dry_run && steps.bump.outputs.released != '' }}
         run: |
           git push origin HEAD
           git push origin --tags
-          echo "🚀 Pushed all commits and tags"
 
   publish:
     name: Publish ${{ matrix.package }}
@@ -165,18 +83,8 @@ jobs:
         run: git pull origin HEAD
 
       - name: Extract release info
-        id: check
-        run: |
-          RELEASED='${{ needs.bump.outputs.released }}'
-          PACKAGE='${{ matrix.package }}'
-
-          INFO=$(echo "$RELEASED" | tr ';' '\n' | grep "^${PACKAGE}:")
-          VERSION=$(echo "$INFO" | cut -d: -f2)
-          TAG=$(echo "$INFO" | cut -d: -f3)
-
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "📦 $PACKAGE v$VERSION will be published"
+        id: info
+        run: python3 scripts/extract_release_info.py "${{ matrix.package }}" "${{ needs.bump.outputs.released }}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -207,19 +115,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.check.outputs.tag }}"
-          CHANGELOG_PATH="${{ steps.pkg.outputs.path }}/CHANGELOG.md"
-
-          if [ -f "$CHANGELOG_PATH" ]; then
-            NOTES=$(cat "$CHANGELOG_PATH" | head -100)
-          else
-            NOTES="Release $TAG"
-          fi
-
-          gh release create "$TAG" \
-            --title "${{ matrix.package }} ${{ steps.check.outputs.version }}" \
-            --notes "$NOTES" \
-            dist/* || echo "Release may already exist"
+          python3 scripts/create_github_release.py \
+            "${{ matrix.package }}" \
+            "${{ steps.info.outputs.version }}" \
+            "${{ steps.info.outputs.tag }}" \
+            "${{ steps.pkg.outputs.path }}"
 
       - name: Summary
-        run: echo "✅ Published ${{ matrix.package }} ${{ steps.check.outputs.version }}"
+        run: echo "✅ Published ${{ matrix.package }} ${{ steps.info.outputs.version }}"
