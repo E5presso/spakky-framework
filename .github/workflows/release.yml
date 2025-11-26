@@ -131,9 +131,35 @@ jobs:
         run: |
           VERSION="${{ needs.bump.outputs.released_version }}"
           TAG="v${VERSION}"
+
+          # Extract changelog section for this version
+          # Uses sed to get content from "## vX.Y.Z" until (but not including) next "## v"
+          sed -n '/^## v'"${VERSION}"'/,/^## v[0-9]/p' CHANGELOG.md | sed '$d' > release_notes.md
+
+          # If this is the only version (no next ## v found), get everything from version header
+          if [ ! -s release_notes.md ]; then
+            sed -n '/^## v'"${VERSION}"'/,$p' CHANGELOG.md > release_notes.md
+          fi
+
+          # If still no content, add a minimal note
+          if [ ! -s release_notes.md ]; then
+            echo "## v${VERSION}" > release_notes.md
+            echo "" >> release_notes.md
+            echo "See the full changelog for details." >> release_notes.md
+          fi
+
+          # Append package list
+          echo "" >> release_notes.md
+          echo "---" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "**Packages Released:**" >> release_notes.md
+          for pkg in spakky spakky-fastapi spakky-rabbitmq spakky-security spakky-typer; do
+            echo "- \`${pkg}==${VERSION}\`" >> release_notes.md
+          done
+
           gh release create "$TAG" \
             --title "v${VERSION}" \
-            --generate-notes
+            --notes-file release_notes.md
 
   sync-develop:
     name: Sync develop branch
