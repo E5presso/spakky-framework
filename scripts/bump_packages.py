@@ -63,6 +63,46 @@ def get_existing_tags(package: str) -> list[str]:
     return [tag for tag in result.stdout.strip().split("\n") if tag]
 
 
+def get_latest_tag(package: str) -> str | None:
+    """Get the latest version tag for a package."""
+    result = run_command(
+        ["git", "tag", "-l", f"{package}-v*", "--sort=-version:refname"],
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    tags = [tag for tag in result.stdout.strip().split("\n") if tag]
+    return tags[0] if tags else None
+
+
+def has_changes_since_tag(pkg_path: str | Path, tag: str | None) -> bool:
+    """Check if there are commits affecting the package since the given tag.
+
+    Args:
+        pkg_path: Path to the package directory (relative to workspace root).
+        tag: The tag to compare against. If None, checks all commits.
+
+    Returns:
+        True if there are changes, False otherwise.
+    """
+    if tag is None:
+        # First release - always has changes
+        return True
+
+    # Get commits that changed files in the package directory since the tag
+    result = run_command(
+        ["git", "log", f"{tag}..HEAD", "--oneline", "--", str(pkg_path)],
+        check=False,
+    )
+
+    if result.returncode != 0:
+        return False
+
+    # Check if there are any commits
+    commits = [line for line in result.stdout.strip().split("\n") if line]
+    return len(commits) > 0
+
+
 def get_current_version(pkg_path: Path) -> str:
     """Get current version from pyproject.toml."""
     pyproject_path = pkg_path / "pyproject.toml"
@@ -287,8 +327,13 @@ def process_packages(
         pkg_path = workspace_root / relative_path
         print(f"\n📦 {package}")
 
-        existing_tags = get_existing_tags(package)
-        is_first_release = len(existing_tags) == 0
+        latest_tag = get_latest_tag(package)
+        is_first_release = latest_tag is None
+
+        # Check if there are actual changes in this package's directory
+        if not has_changes_since_tag(relative_path, latest_tag):
+            print("  ⏭️ No changes in package directory")
+            continue
 
         if is_first_release:
             version = get_current_version(pkg_path)
