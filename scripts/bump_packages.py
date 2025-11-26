@@ -22,10 +22,10 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-import toml
 from get_package_path import get_all_packages
 
 
@@ -66,8 +66,8 @@ def get_existing_tags(package: str) -> list[str]:
 def get_current_version(pkg_path: Path) -> str:
     """Get current version from pyproject.toml."""
     pyproject_path = pkg_path / "pyproject.toml"
-    with open(pyproject_path) as f:
-        data = toml.load(f)
+    with open(pyproject_path, "rb") as f:
+        data = tomllib.load(f)
     return data["project"]["version"]
 
 
@@ -146,8 +146,8 @@ def write_changelog(pkg_path: Path, version: str, entry: str) -> None:
 
     # Get package name for the header
     pyproject_path = pkg_path / "pyproject.toml"
-    with open(pyproject_path) as f:
-        data = toml.load(f)
+    with open(pyproject_path, "rb") as f:
+        data = tomllib.load(f)
     package_name = data["project"]["name"]
 
     content = f"""# Changelog
