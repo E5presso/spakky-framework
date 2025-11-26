@@ -2,7 +2,7 @@
   <img src="./assets/symbol.svg" width="80rem" alt="Spakky Logo">
 </p>
 <h1 align="center">Spakky Framework</h1>
-<p align="center"><i>Build scalable Python apps with the power of DI & AOP ⚡️</i></p>
+<p align="center"><i>Build scalable Python apps with the power of DI & AOP</i></p>
 
 <p align="center">
   <a href="https://pypi.org/project/spakky/">
