@@ -74,8 +74,8 @@ def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
         consumer.register(DuplicateTestEvent, handler2)
 
     assert exc_info.value.event_type == DuplicateTestEvent
-    assert "DuplicateTestEvent" in str(exc_info.value)
-    assert "already registered" in str(exc_info.value)
+    assert "DuplicateTestEvent" in exc_info.value.message
+    assert "already registered" in exc_info.value.message
 
 
 @pytest.mark.asyncio
@@ -97,5 +97,5 @@ async def test_duplicate_handler_registration_async(app: SpakkyApplication) -> N
         consumer.register(DuplicateTestEvent, handler2)
 
     assert exc_info.value.event_type == DuplicateTestEvent
-    assert "DuplicateTestEvent" in str(exc_info.value)
-    assert "already registered" in str(exc_info.value)
+    assert "DuplicateTestEvent" in exc_info.value.message
+    assert "already registered" in exc_info.value.message
