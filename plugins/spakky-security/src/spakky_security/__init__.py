@@ -8,3 +8,4 @@ from spakky.application.plugin import Plugin
 
 PLUGIN_NAME = Plugin(name="spakky-security")
 """Plugin identifier for the security utilities."""
+# Release test
