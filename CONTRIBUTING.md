@@ -114,6 +114,39 @@ Spakky is a strictly typed framework. All public APIs and dependency injection p
 - **Functions/Methods**: `snake_case` (e.g., `get_user`)
 - **Protocols (Interfaces)**: Must start with `I` (e.g., `IService`, `IContainer`).
 - **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`).
+- **Error Classes**: Must end with `Error` (e.g., `CannotDeterminePodTypeError`).
+
+### Error Class Guidelines
+
+All framework errors inherit from `AbstractSpakkyFrameworkError`. When creating custom errors:
+
+**For fixed messages** (no context needed):
+
+```python
+class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
+    """Raised when function Pod has Optional return type."""
+    message = "Cannot use optional return type in pod"
+```
+
+**For context-specific messages** (include details):
+
+```python
+class CannotDeterminePodTypeError(PodAnnotationFailedError):
+    """Raised when Pod type cannot be inferred."""
+
+    def __init__(self, target: PodType, param_name: str | type) -> None:
+        super().__init__(
+            f"Cannot determine pod type for '{target.__name__}' "
+            f"(parameter: {param_name})"
+        )
+        self.target = target
+        self.param_name = param_name
+```
+
+**Key rules**:
+- Always call `super().__init__(message)` for proper `str(error)` support
+- Store context as instance attributes for programmatic access
+- Use descriptive f-string messages with the problematic values
 
 ### Documentation
 
