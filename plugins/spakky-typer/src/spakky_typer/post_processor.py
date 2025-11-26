@@ -107,6 +107,8 @@ class TyperCLIPostProcessor(
                     container: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    # CLI invocations often share the same interpreter session,
+                    # so purge any context-scoped Pods to avoid cross-command leaks.
                     self.__application_context.clear_context()
                     controller_instance = container.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
