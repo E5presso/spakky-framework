@@ -128,6 +128,8 @@ class SpakkyApplication:
         modules: set[ModuleType]
         caller_module: ModuleType | None = None
         if path is None:  # pragma: no cover
+            # Derive the caller's module dynamically so scan() works without
+            # requiring every application to pass its root package explicitly.
             caller_frame = inspect.stack()[1]
             caller_module = inspect.getmodule(caller_frame[0])
             file_path = getattr(caller_module, "__file__", None)
