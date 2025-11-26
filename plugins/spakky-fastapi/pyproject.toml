@@ -1,6 +1,6 @@
 [project]
 name = "spakky-fastapi"
-version = "3.2.0"
+version = "3.3.0"
 description = "FastAPI plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "fastapi[standard]>=0.120.1",
     "orjson>=3.11.4",
-    "spakky>=3.2.0",
+    "spakky>=3.3.0",
     "websockets>=15.0.1",
 ]
 

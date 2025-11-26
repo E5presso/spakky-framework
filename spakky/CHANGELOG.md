@@ -1,12 +1,10 @@
 # Changelog
 
-All notable changes to spakky will be documented in this file.
+All notable changes to spakky are documented in this file.
 
-See [GitHub Releases](https://github.com/E5presso/spakky-framework/releases) for full release history.
+See the root CHANGELOG.md for a full summary of modifications affecting the
+entire workspace.
 
-## 3.1.6 (2025-11-26)
+## 3.3.0
 
-### Fix
-
-- **ci**: exclude metadata files from package change detection
-
+- Release 3.3.0
