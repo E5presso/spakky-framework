@@ -8,3 +8,4 @@ from spakky.application.plugin import Plugin
 
 PLUGIN_NAME = Plugin(name="spakky-rabbitmq")
 """Plugin identifier for the RabbitMQ integration."""
+# Release test
