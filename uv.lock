@@ -1788,7 +1788,7 @@ provides-extras = ["fastapi", "rabbitmq", "security", "typer"]
 
 [[package]]
 name = "spakky-fastapi"
-version = "3.1.5"
+version = "3.1.6"
 source = { editable = "plugins/spakky-fastapi" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
@@ -1892,7 +1892,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-typer"
-version = "3.1.4"
+version = "3.1.5"
 source = { editable = "plugins/spakky-typer" }
 dependencies = [
     { name = "spakky" },

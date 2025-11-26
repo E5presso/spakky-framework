@@ -9,10 +9,10 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = []
 
 [project.optional-dependencies]
-fastapi = ["spakky-fastapi>=3.1.5"]
+fastapi = ["spakky-fastapi>=3.1.6"]
 rabbitmq = ["spakky-rabbitmq>=3.1.4"]
 security = ["spakky-security>=3.1.4"]
-typer = ["spakky-typer>=3.1.4"]
+typer = ["spakky-typer>=3.1.5"]
 
 [build-system]
 requires = ["uv_build>=0.9.2,<0.10.0"]
