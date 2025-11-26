@@ -103,6 +103,8 @@ class RabbitMQPostProcessor(
                     context: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    # Each message is handled in isolation, so clear the
+                    # application context to avoid reusing dependency state.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
@@ -119,6 +121,8 @@ class RabbitMQPostProcessor(
                 context: IContainer = self.__container,
                 **kwargs: Any,
             ) -> Any:
+                # Synchronous consumers share threads, so drop any lingering
+                # scoped data before invoking the handler.
                 self.__application_context.clear_context()
                 controller_instance = context.get(controller_type)
                 method_to_call = getattr(controller_instance, method_name)
