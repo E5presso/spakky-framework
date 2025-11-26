@@ -476,6 +476,74 @@ The monorepo uses a two-stage hook system:
 - Use descriptive `PascalCase` names
 - Examples: `UserService`, `PostgresRepository`, `LoggingAspect`
 
+### Error Class Conventions
+
+All framework errors inherit from `AbstractSpakkyFrameworkError`, which provides a flexible message handling pattern:
+
+**Base Error Class**:
+```python
+class AbstractSpakkyFrameworkError(Exception, ABC):
+    """Base class for all Spakky framework errors."""
+
+    message: str = ""
+    """A human-readable message describing the error."""
+
+    def __init__(self, message: str | None = None, *args: object) -> None:
+        if message is not None:
+            self.message = message
+        super().__init__(self.message, *args)
+```
+
+**Message Definition Patterns**:
+
+1. **Class-level message** (for fixed error messages):
+   ```python
+   class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
+       """Raised when function Pod has Optional return type."""
+       message = "Cannot use optional return type in pod"
+   ```
+
+2. **Constructor-generated message** (for context-specific messages):
+   ```python
+   class CannotDeterminePodTypeError(PodAnnotationFailedError):
+       """Raised when Pod type cannot be inferred from annotations."""
+
+       def __init__(self, target: PodType, param_name: str | type) -> None:
+           super().__init__(
+               f"Cannot determine pod type for '{target.__name__}' "
+               f"(parameter: {param_name})"
+           )
+           self.target = target
+           self.param_name = param_name
+   ```
+
+**Key Points**:
+- Always call `super().__init__(message)` to ensure `str(error)` works correctly
+- Store relevant context as instance attributes for programmatic access
+- Use descriptive f-string messages that include the problematic values
+- If subclass has custom `__init__`, it must call parent's `__init__` with the message
+
+**Error Hierarchy**:
+```
+AbstractSpakkyFrameworkError (ABC)
+├── AbstractSpakkyDomainError
+│   └── (Domain-specific errors)
+├── AbstractSpakkyPodError
+│   ├── PodAnnotationFailedError
+│   │   ├── CannotDeterminePodTypeError
+│   │   ├── CannotUseVarArgsInPodError
+│   │   ├── CannotUsePositionalOnlyArgsInPodError
+│   │   └── CannotUseOptionalReturnTypeInPodError
+│   └── PodInstantiationFailedError
+│       ├── UnexpectedDependencyNameInjectedError
+│       └── UnexpectedDependencyTypeInjectedError
+├── AnnotationNotFoundError
+├── MultipleAnnotationFoundError
+└── (Plugin-specific errors)
+    ├── AbstractSpakkyFastAPIError
+    └── AbstractSpakkyRabbitMQError
+```
+
 ## Critical Integration Points
 
 ### Plugin Registration
@@ -582,6 +650,10 @@ assert Pod.exists(MyClass)
 - `"Circular dependency detected"`: Check constructor injection chain
 - `"No Pod found for type X"`: Class not decorated with `@Pod` or not scanned
 - `"Multiple Pods found for type X"`: Use qualifiers or `@Primary`
+- `"Cannot determine pod type for 'X' (parameter: Y)"`: Missing type annotation on parameter
+- `"Cannot use var args (*args or **kwargs) in pod 'X'"`: Pod constructors cannot use *args/**kwargs
+- `"Cannot use positional-only arguments in pod 'X'"`: Pod constructors cannot use positional-only params
+- `"Annotation 'X' not found in 'Y'"`: Expected annotation not present on target
 - `"Handler for event type 'X' is already registered"`: RabbitMQ plugin enforces 1:1 event-to-handler mapping
 - `"Invalid message received from RabbitMQ"`: Message missing required `consumer_tag` or `delivery_tag`
 
