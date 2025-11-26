@@ -1136,47 +1136,53 @@ pip install spakky-fastapi
 
 ### Version Management
 
+**Strategy**: Unified single version for all packages
+
+All packages in the monorepo share the same version number. When any package changes, all packages are released together with the same version.
+
 **Tool**: commitizen 4.10.0+ with Conventional Commits
+
+**Tag Format**: `v$version` (e.g., `v3.3.0`)
 
 **Commands**:
 ```bash
-# Bump version automatically
-uv run cz bump
+# Preview next version (dry-run)
+uv run python scripts/bump_packages.py --dry-run
 
-# Create version tag
-git push --tags  # Triggers GitHub Actions release workflow
+# Bump version, create commit and tag
+uv run python scripts/bump_packages.py
+
+# Push changes and tag to trigger release
+git push && git push --tags
 ```
 
-**Version Files**: Automatically updated by commitizen
+**Version Files**: Automatically updated by the bump script
+- `pyproject.toml` (workspace root)
 - `spakky/pyproject.toml`
 - `plugins/spakky-fastapi/pyproject.toml`
 - `plugins/spakky-rabbitmq/pyproject.toml`
 - `plugins/spakky-security/pyproject.toml`
 - `plugins/spakky-typer/pyproject.toml`
 
+**Inter-package Dependencies**: Also automatically synced (e.g., `spakky>=3.3.0`)
+
 ### Automated Deployment
 
 **GitHub Actions Workflow**: `.github/workflows/release.yml`
 
-**Trigger**: Git tag push (`git push --tags`)
+**Trigger**: Git tag push matching `v*` pattern (e.g., `v3.3.0`)
 
-**Change Detection Logic**:
-- `spakky/` changes → Deploy spakky only
-- `plugins/spakky-fastapi/` changes → Deploy spakky-fastapi only
-- `plugins/spakky-rabbitmq/` changes → Deploy spakky-rabbitmq only
-- `plugins/spakky-security/` changes → Deploy spakky-security only
-- `plugins/spakky-typer/` changes → Deploy spakky-typer only
-- First release (no previous tag) → Deploy all packages
+**Process**:
+1. Tag push triggers the workflow
+2. Build ALL packages (`uv build --package <name>` for each)
+3. Publish ALL packages to PyPI
+4. Create single GitHub Release with auto-generated notes
 
 **Requirements**:
 - GitHub Secret: `PYPI_API_TOKEN` (PyPI API token)
 - Permissions: `contents: write`, `id-token: write`
 
-**Process**:
-1. Detect changed packages (git diff vs previous tag)
-2. Build changed packages (`uv build --package <name>`)
-3. Publish to PyPI (`uv publish --token $UV_PUBLISH_TOKEN`)
-4. Create GitHub Release (auto-generated notes)
+**Note**: With unified versioning, all packages are always released together. There's no per-package change detection.
 
 ### Manual Deployment
 
@@ -1254,9 +1260,12 @@ BREAKING CHANGE: Pod.register() signature changed"
 
 **Release Process**:
 1. Commit changes with Conventional Commits format
-2. Run `uv run cz bump` to update versions and create tag
-3. Push tag: `git push --tags`
-4. GitHub Actions automatically deploys changed packages
+2. Run `uv run python scripts/bump_packages.py` to:
+   - Update all package versions
+   - Sync inter-package dependencies
+   - Create release commit and tag
+3. Push: `git push && git push --tags`
+4. GitHub Actions automatically deploys ALL packages
 5. Verify on PyPI and test installation
 
 **Post-Deployment Verification**:
@@ -1289,6 +1298,6 @@ python -c "from spakky.application.application import SpakkyApplication"
 
 - **DO NOT create separate MD files for documentation** - All information goes in this copilot-instructions.md
 - **Monorepo structure**: Multiple packages in one repository
-- **Independent versioning**: Each package maintains its own version
+- **Unified versioning**: All packages share the same version number
 - **Workspace dependencies**: Local dev uses `{ workspace = true }`, PyPI uses version constraints
 - **Entry points**: Plugins register via `[project.entry-points."spakky.plugins"]`

@@ -212,54 +212,50 @@ Examples:
 
 ## 🏷️ Versioning
 
-We use **Semantic Versioning** with **per-package commitizen** configuration.
+We use **Semantic Versioning** with **unified single version** across all packages.
 
-### Monorepo Structure
+### Unified Version Strategy
 
-Each package has its own version and tag format:
+All packages in the monorepo share the same version number. When any package changes, all packages are released together.
 
-| Package | Tag Format | Example |
-|---------|------------|---------|
-| `spakky` | `spakky-v{version}` | `spakky-v1.0.0` |
-| `spakky-fastapi` | `spakky-fastapi-v{version}` | `spakky-fastapi-v1.2.0` |
-| `spakky-rabbitmq` | `spakky-rabbitmq-v{version}` | `spakky-rabbitmq-v1.0.3` |
-| `spakky-security` | `spakky-security-v{version}` | `spakky-security-v1.1.0` |
-| `spakky-typer` | `spakky-typer-v{version}` | `spakky-typer-v1.0.0` |
+| Component | Format | Example |
+|-----------|--------|---------|
+| **Tag** | `v{version}` | `v3.3.0` |
+| **All packages** | Same version | `spakky==3.3.0`, `spakky-fastapi==3.3.0`, etc. |
 
 ### Bump Type Rules
 
 | Commit Type | Bump | Version Change |
 |-------------|------|----------------|
-| `fix:` | Patch | `0.1.0` → `0.1.1` |
-| `feat:` | Minor | `0.1.0` → `0.2.0` |
-| `feat!:` or `BREAKING CHANGE:` | Major | `0.1.0` → `1.0.0` |
+| `fix:` | Patch | `3.2.0` → `3.2.1` |
+| `feat:` | Minor | `3.2.0` → `3.3.0` |
+| `feat!:` or `BREAKING CHANGE:` | Major | `3.2.0` → `4.0.0` |
 
-### Local Version Bump
+### Version Bump Commands
 
 ```bash
-# Bump spakky core
-cd spakky
-uv run cz bump --changelog
+# Preview next version (dry-run)
+uv run python scripts/bump_packages.py --dry-run
 
-# Bump a plugin
-cd plugins/spakky-fastapi
-uv run cz bump --changelog
+# Bump version, create commit and tag
+uv run python scripts/bump_packages.py
 
-# Dry run (see what would happen)
-uv run cz bump --dry-run
+# Push changes and tag to trigger release
+git push && git push --tags
 ```
 
 ### Release Process (Maintainers)
 
 1. Merge PRs to `main` branch
-2. Go to **Actions** → **Release** workflow
-3. Click **Run workflow**
-4. Select the package to release
-5. The workflow will:
-   - Run `cz bump` to determine version from commits
-   - Update `pyproject.toml` and `CHANGELOG.md`
-   - Create a git tag (e.g., `spakky-fastapi-v1.2.0`)
-   - Build and publish to PyPI
+2. Run `uv run python scripts/bump_packages.py` to:
+   - Determine next version from conventional commits
+   - Update all `pyproject.toml` files
+   - Sync inter-package dependencies
+   - Create release commit and tag
+3. Push: `git push && git push --tags`
+4. GitHub Actions will automatically:
+   - Build all packages
+   - Publish to PyPI
    - Create a GitHub Release
 
 ## 🚀 Pull Request Process
