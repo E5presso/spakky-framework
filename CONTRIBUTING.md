@@ -27,8 +27,17 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
    This will install all dependencies for the core framework and all plugins, including development tools.
 
    ```bash
-   uv sync --all-extras
+   uv sync --all-packages --all-extras
    ```
+
+   > **💡 Understanding `uv sync` options:**
+   >
+   > | Command | When to use | Description |
+   > |---------|-------------|-------------|
+   > | `uv sync --all-packages --all-extras` | **Root directory** | Installs all workspace packages and their optional dependencies. Use this when developing across multiple packages. |
+   > | `uv sync --all-extras` | **Sub-package directory** | Installs only the current package and its optional dependencies. Use this when working on a single plugin (e.g., `cd plugins/spakky-fastapi`). |
+   >
+   > The `--all-packages` flag is only needed at the workspace root to include all monorepo packages. When you `cd` into a sub-package, that package becomes the context, so `--all-extras` alone is sufficient.
 
 ## 🧪 Running Tests
 

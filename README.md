@@ -141,9 +141,11 @@ This project uses `uv` for dependency management and workspace handling.
 git clone https://github.com/E5presso/spakky-framework.git
 cd spakky-framework
 
-# Sync dependencies
-uv sync --all-extras
+# Sync dependencies (from workspace root)
+uv sync --all-packages --all-extras
 ```
+
+> **💡 Note:** Use `--all-packages` only at the workspace root. When working inside a sub-package (e.g., `cd plugins/spakky-fastapi`), use `uv sync --all-extras` instead.
 
 ### Running Tests
 

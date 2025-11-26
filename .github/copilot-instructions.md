@@ -365,8 +365,26 @@ def test_get_user(application: SpakkyApplication) -> None:
 
 ## Build & Test Commands
 
+### Dependency Installation
+
+This monorepo uses `uv` workspaces. The correct `uv sync` command depends on your current directory:
+
+| Location | Command | Description |
+|----------|---------|-------------|
+| **Workspace root** (`/spakky-framework`) | `uv sync --all-packages --all-extras` | Installs all packages (core + plugins) with all optional dependencies |
+| **Sub-package** (e.g., `plugins/spakky-fastapi`) | `uv sync --all-extras` | Installs only the current package with its optional dependencies |
+
+**Why the difference?**
+- `--all-packages`: Tells `uv` to include all workspace members. Only meaningful at the root.
+- `--all-extras`: Installs optional dependencies (dev tools, test frameworks, etc.).
+- When you `cd` into a sub-package, that package becomes the resolution context, so `--all-packages` is unnecessary.
+
 ```bash
-# Install all dependencies (including dev dependencies)
+# From workspace root - install everything
+uv sync --all-packages --all-extras
+
+# From a sub-package directory - install only that package
+cd plugins/spakky-fastapi
 uv sync --all-extras
 
 # Install all git hooks (pre-commit, commit-msg, pre-push)
@@ -1254,7 +1272,7 @@ python -c "from spakky.application.application import SpakkyApplication"
 
 **Build fails**:
 - Clear cache: `uv cache clean`
-- Resync: `uv sync --all-extras`
+- Resync: `uv sync --all-packages --all-extras`
 - Check pyproject.toml syntax
 
 **PyPI upload fails**:
