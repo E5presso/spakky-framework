@@ -13,6 +13,10 @@ from spakky.domain.models.event import AbstractDomainEvent
 from spakky.domain.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
 from spakky.pod.annotations.order import Order
 from spakky.pod.annotations.pod import Pod
+from spakky.pod.interfaces.application_context import IApplicationContext
+from spakky.pod.interfaces.aware.application_context_aware import (
+    IApplicationContextAware,
+)
 from spakky.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.pod.interfaces.aware.logger_aware import ILoggerAware
 from spakky.pod.interfaces.container import IContainer
@@ -22,7 +26,9 @@ from spakky.stereotype.event_handler import EventHandler, EventRoute
 
 @Order(1)
 @Pod()
-class RabbitMQPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
+class RabbitMQPostProcessor(
+    IPostProcessor, ILoggerAware, IContainerAware, IApplicationContextAware
+):
     """Post-processor that registers event handlers with RabbitMQ consumers.
 
     Scans @EventHandler decorated classes for @event decorated methods and
@@ -32,6 +38,7 @@ class RabbitMQPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
 
     __logger: Logger
     __container: IContainer
+    __application_context: IApplicationContext
 
     def set_logger(self, logger: Logger) -> None:
         """Set the logger for event handler registration logging.
@@ -48,6 +55,14 @@ class RabbitMQPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
             container: The IoC container.
         """
         self.__container = container
+
+    def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Set the application context.
+
+        Args:
+            application_context: The application context instance.
+        """
+        self.__application_context = application_context
 
     def post_process(self, pod: object) -> object:
         """Register event handlers from event handler classes.
@@ -88,6 +103,7 @@ class RabbitMQPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
                     context: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
                     return await method_to_call(*args, **kwargs)
@@ -103,6 +119,7 @@ class RabbitMQPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
                 context: IContainer = self.__container,
                 **kwargs: Any,
             ) -> Any:
+                self.__application_context.clear_context()
                 controller_instance = context.get(controller_type)
                 method_to_call = getattr(controller_instance, method_name)
                 return method_to_call(*args, **kwargs)
