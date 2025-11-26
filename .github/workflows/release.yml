@@ -3,16 +3,31 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      package:
-        description: 'Package to release'
-        required: true
-        type: choice
-        options:
-          - spakky
-          - spakky-fastapi
-          - spakky-rabbitmq
-          - spakky-security
-          - spakky-typer
+      spakky:
+        description: 'Release spakky (core)'
+        required: false
+        type: boolean
+        default: false
+      spakky-fastapi:
+        description: 'Release spakky-fastapi'
+        required: false
+        type: boolean
+        default: false
+      spakky-rabbitmq:
+        description: 'Release spakky-rabbitmq'
+        required: false
+        type: boolean
+        default: false
+      spakky-security:
+        description: 'Release spakky-security'
+        required: false
+        type: boolean
+        default: false
+      spakky-typer:
+        description: 'Release spakky-typer'
+        required: false
+        type: boolean
+        default: false
       first_release:
         description: 'First release (skip version bump, use current version)'
         required: false
@@ -29,9 +44,54 @@ permissions:
   id-token: write
 
 jobs:
-  release:
-    name: Release ${{ inputs.package }}
+  prepare:
+    name: Prepare release matrix
     runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.set-matrix.outputs.packages }}
+      has_packages: ${{ steps.set-matrix.outputs.has_packages }}
+    steps:
+      - name: Build package matrix
+        id: set-matrix
+        run: |
+          PACKAGES=()
+          if [ "${{ inputs.spakky }}" == "true" ]; then
+            PACKAGES+=("spakky")
+          fi
+          if [ "${{ inputs.spakky-fastapi }}" == "true" ]; then
+            PACKAGES+=("spakky-fastapi")
+          fi
+          if [ "${{ inputs.spakky-rabbitmq }}" == "true" ]; then
+            PACKAGES+=("spakky-rabbitmq")
+          fi
+          if [ "${{ inputs.spakky-security }}" == "true" ]; then
+            PACKAGES+=("spakky-security")
+          fi
+          if [ "${{ inputs.spakky-typer }}" == "true" ]; then
+            PACKAGES+=("spakky-typer")
+          fi
+
+          if [ ${#PACKAGES[@]} -eq 0 ]; then
+            echo "❌ No packages selected for release"
+            echo "has_packages=false" >> $GITHUB_OUTPUT
+            echo "packages=[]" >> $GITHUB_OUTPUT
+          else
+            echo "📦 Selected packages: ${PACKAGES[*]}"
+            JSON=$(printf '%s\n' "${PACKAGES[@]}" | jq -R . | jq -s -c .)
+            echo "packages=$JSON" >> $GITHUB_OUTPUT
+            echo "has_packages=true" >> $GITHUB_OUTPUT
+          fi
+
+  release:
+    name: Release ${{ matrix.package }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.has_packages == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        package: ${{ fromJson(needs.prepare.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,11 +118,11 @@ jobs:
         if: ${{ inputs.first_release }}
         run: |
           # Check if any tag for this package already exists
-          EXISTING_TAGS=$(git tag -l "${{ inputs.package }}-v*" | head -1)
+          EXISTING_TAGS=$(git tag -l "${{ matrix.package }}-v*" | head -1)
           if [ -n "$EXISTING_TAGS" ]; then
             echo "❌ Error: Cannot use 'first_release' option."
-            echo "   Package '${{ inputs.package }}' already has releases:"
-            git tag -l "${{ inputs.package }}-v*" | head -5
+            echo "   Package '${{ matrix.package }}' already has releases:"
+            git tag -l "${{ matrix.package }}-v*" | head -5
             echo ""
             echo "💡 Tip: Uncheck 'first_release' and run again to create a normal release."
             exit 1
@@ -72,13 +132,13 @@ jobs:
       - name: Get package path from workspace
         id: pkg
         run: |
-          PKG_PATH=$(python3 scripts/get_package_path.py "${{ inputs.package }}")
+          PKG_PATH=$(python3 scripts/get_package_path.py "${{ matrix.package }}")
           if [ $? -ne 0 ]; then
-            echo "❌ Package '${{ inputs.package }}' not found in workspace"
+            echo "❌ Package '${{ matrix.package }}' not found in workspace"
             exit 1
           fi
           echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
-          echo "📦 Package: ${{ inputs.package }}"
+          echo "📦 Package: ${{ matrix.package }}"
           echo "📁 Path: $PKG_PATH"
 
       - name: Bump version (dry-run)
@@ -119,7 +179,7 @@ jobs:
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
           VERSION=$(uv run cz version --project)
-          TAG="${{ inputs.package }}-v${VERSION}"
+          TAG="${{ matrix.package }}-v${VERSION}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "📌 Current version: $VERSION"
@@ -131,6 +191,13 @@ jobs:
           TAG="${{ steps.current_version.outputs.tag }}"
           git tag -a "$TAG" -m "Release $TAG"
           echo "🏷️ Created tag: $TAG"
+
+      - name: Pull latest changes before push
+        if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
+        run: |
+          echo "🔄 Pulling latest changes to avoid conflicts..."
+          git pull --rebase origin HEAD
+          echo "✅ Rebased successfully"
 
       - name: Push changes and tags
         if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
@@ -144,7 +211,7 @@ jobs:
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
           VERSION=$(uv run cz version --project)
-          TAG="${{ inputs.package }}-v${VERSION}"
+          TAG="${{ matrix.package }}-v${VERSION}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "📌 New version: $VERSION"
@@ -165,7 +232,7 @@ jobs:
       - name: Build package
         if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
         run: |
-          uv build --package ${{ inputs.package }}
+          uv build --package ${{ matrix.package }}
 
       - name: Publish to PyPI (OIDC)
         if: ${{ !inputs.dry_run && (steps.bump.outputs.bumped == 'true' || inputs.first_release) }}
@@ -189,16 +256,16 @@ jobs:
           fi
 
           gh release create "$TAG" \
-            --title "${{ inputs.package }} ${{ steps.release_version.outputs.version }}" \
+            --title "${{ matrix.package }} ${{ steps.release_version.outputs.version }}" \
             --notes "$NOTES" \
             dist/* || echo "Release may already exist"
 
       - name: Summary
         run: |
           if [ "${{ inputs.first_release }}" == "true" ]; then
-            echo "🎉 First release: ${{ inputs.package }} ${{ steps.release_version.outputs.version }}"
+            echo "🎉 First release: ${{ matrix.package }} ${{ steps.release_version.outputs.version }}"
           elif [ "${{ steps.bump.outputs.bumped }}" == "true" ]; then
-            echo "✅ Released ${{ inputs.package }} ${{ steps.release_version.outputs.version }}"
+            echo "✅ Released ${{ matrix.package }} ${{ steps.release_version.outputs.version }}"
           else
             echo "ℹ️ No release needed - no eligible commits since last release"
           fi
