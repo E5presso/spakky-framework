@@ -1,3 +1,9 @@
+## v3.3.2 (2025-11-26)
+
+### Fix
+
+- **release**: create tag after uv.lock update to prevent detached tags
+
 ## v3.3.1 (2025-11-26)
 
 ### Fix

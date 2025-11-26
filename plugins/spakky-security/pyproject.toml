@@ -1,6 +1,6 @@
 [project]
 name = "spakky-security"
-version = "3.3.1"
+version = "3.3.2"
 description = "Security utilities plugin for Spakky framework"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
@@ -10,7 +10,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "bcrypt>=5.0.0",
     "pycryptodome>=3.23.0",
-    "spakky>=3.3.1",
+    "spakky>=3.3.2",
 ]
 
 [build-system]
