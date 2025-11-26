@@ -1,3 +1,13 @@
+## spakky-fastapi-v3.1.1 (2025-11-26)
+
+### Fix
+
+- **typer**: trigger release test
+- **security**: trigger release test
+- **rabbitmq**: trigger release test
+- **fastapi**: trigger release test
+- **core**: trigger release test
+
 ## spakky-fastapi-v3.1.0 (2025-11-26)
 
 ### Feat
