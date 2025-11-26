@@ -1,6 +1,6 @@
 [project]
 name = "spakky-rabbitmq"
-version = "3.1.1"
+version = "3.1.2"
 description = "RabbitMQ plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,7 +28,7 @@ build-backend = "uv_build"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "3.1.1"
+version = "3.1.2"
 tag_format = "spakky-rabbitmq-v$version"
 version_files = ["pyproject.toml:version"]
 update_changelog_on_bump = true
