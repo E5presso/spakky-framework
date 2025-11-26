@@ -15,10 +15,10 @@ permissions:
 
 jobs:
   bump:
-    name: Bump versions
+    name: Bump version
     runs-on: ubuntu-latest
     outputs:
-      released: ${{ steps.bump.outputs.released }}
+      released_version: ${{ steps.bump.outputs.released_version }}
       released_packages: ${{ steps.bump.outputs.released_packages }}
     steps:
       - uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Bump all packages (unified commit + individual tags)
+      - name: Bump workspace version
         id: bump
         run: |
           if [ "${{ inputs.dry_run }}" == "true" ]; then
@@ -53,14 +53,14 @@ jobs:
           fi
 
       - name: Update lock file
-        if: ${{ !inputs.dry_run && steps.bump.outputs.released != '' }}
+        if: ${{ !inputs.dry_run && steps.bump.outputs.released_version != '' }}
         run: |
           uv sync
           git add uv.lock
           git commit --amend --no-edit || echo "No lock file changes"
 
-      - name: Push changes and tags to main
-        if: ${{ !inputs.dry_run && steps.bump.outputs.released != '' }}
+      - name: Push changes and tag to main
+        if: ${{ !inputs.dry_run && steps.bump.outputs.released_version != '' }}
         run: |
           git push origin main
           git push origin --tags
@@ -68,7 +68,7 @@ jobs:
   publish:
     name: Publish ${{ matrix.package }}
     needs: bump
-    if: ${{ !inputs.dry_run && needs.bump.outputs.released != '' }}
+    if: ${{ !inputs.dry_run && needs.bump.outputs.released_version != '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -82,10 +82,6 @@ jobs:
 
       - name: Pull latest changes
         run: git pull origin main
-
-      - name: Extract release info
-        id: info
-        run: python3 scripts/extract_release_info.py "${{ matrix.package }}" "${{ needs.bump.outputs.released }}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -112,23 +108,37 @@ jobs:
         with:
           print-hash: true
 
+      - name: Summary
+        run: echo "✅ Published ${{ matrix.package }} v${{ needs.bump.outputs.released_version }}"
+
+  github-release:
+    name: Create GitHub Release
+    needs: [bump, publish]
+    if: ${{ !inputs.dry_run && needs.bump.outputs.released_version != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Pull latest changes
+        run: git pull origin main
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 scripts/create_github_release.py \
-            "${{ matrix.package }}" \
-            "${{ steps.info.outputs.version }}" \
-            "${{ steps.info.outputs.tag }}" \
-            "${{ steps.pkg.outputs.path }}"
-
-      - name: Summary
-        run: echo "✅ Published ${{ matrix.package }} ${{ steps.info.outputs.version }}"
+          VERSION="${{ needs.bump.outputs.released_version }}"
+          TAG="v${VERSION}"
+          gh release create "$TAG" \
+            --title "v${VERSION}" \
+            --generate-notes
 
   sync-develop:
     name: Sync develop branch
-    needs: [bump, publish]
-    if: ${{ !inputs.dry_run && needs.bump.outputs.released != '' }}
+    needs: [bump, publish, github-release]
+    if: ${{ !inputs.dry_run && needs.bump.outputs.released_version != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
