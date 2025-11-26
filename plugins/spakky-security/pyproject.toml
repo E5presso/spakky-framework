@@ -1,6 +1,6 @@
 [project]
 name = "spakky-security"
-version = "3.1.2"
+version = "3.1.3"
 description = "Security utilities plugin for Spakky framework"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
@@ -10,7 +10,7 @@ dependencies = [
     "argon2-cffi>=25.1.0",
     "bcrypt>=5.0.0",
     "pycryptodome>=3.23.0",
-    "spakky>=3.1.2",
+    "spakky>=3.1.3",
 ]
 
 [build-system]
@@ -19,7 +19,7 @@ build-backend = "uv_build"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "3.1.2"
+version = "3.1.3"
 tag_format = "spakky-security-v$version"
 version_files = ["pyproject.toml:version"]
 update_changelog_on_bump = true
