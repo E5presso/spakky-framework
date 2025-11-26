@@ -35,9 +35,10 @@ class AbstractSpakkyFastAPIError(AbstractSpakkyFrameworkError, ABC):
             message: Custom error message. If None, uses the class default.
             *args: Additional arguments passed to the base exception.
         """
-        super().__init__(*args)
         if message is not None:
-            self.message = message
+            super().__init__(message)
+        else:
+            super().__init__(self.message)
 
     def to_response(self, show_traceback: bool = False) -> JSONResponse:
         """Convert the error to a FastAPI JSON response.
