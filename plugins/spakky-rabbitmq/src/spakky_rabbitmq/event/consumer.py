@@ -27,7 +27,7 @@ from spakky.service.background import (
     AbstractBackgroundService,
 )
 
-from spakky_rabbitmq.error import DuplicateEventHandlerError
+from spakky_rabbitmq.error import DuplicateEventHandlerError, InvalidMessageError
 from spakky_rabbitmq.event.config import RabbitMQConnectionConfig
 
 
@@ -71,8 +71,8 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         _: BasicProperties,
         body: bytes,
     ) -> None:
-        assert method_frame.delivery_tag is not None
-        assert method_frame.consumer_tag is not None
+        if method_frame.consumer_tag is None or method_frame.delivery_tag is None:
+            raise InvalidMessageError("Missing consumer tag or delivery tag.")
         event_type = self.type_lookup[method_frame.consumer_tag]
         handler = self.handlers[event_type]
         event = loads(body.decode(), event_type)
@@ -174,8 +174,8 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self.handlers = {}
 
     async def _route_event_handler(self, message: AbstractIncomingMessage) -> None:
-        assert message.delivery_tag is not None
-        assert message.consumer_tag is not None
+        if message.consumer_tag is None or message.delivery_tag is None:
+            raise InvalidMessageError("Missing consumer tag or delivery tag.")
         event_type = self.type_lookup[message.consumer_tag]
         handler = self.handlers[event_type]
         event = loads(message.body.decode(), event_type)
