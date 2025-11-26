@@ -78,20 +78,36 @@ def get_latest_tag(package: str) -> str | None:
 def has_changes_since_tag(pkg_path: str | Path, tag: str | None) -> bool:
     """Check if there are commits affecting the package since the given tag.
 
+    Only considers changes to source code files, excluding:
+    - CHANGELOG.md (updated by release process)
+    - pyproject.toml (version updates)
+    - Other metadata files
+
     Args:
         pkg_path: Path to the package directory (relative to workspace root).
         tag: The tag to compare against. If None, checks all commits.
 
     Returns:
-        True if there are changes, False otherwise.
+        True if there are source code changes, False otherwise.
     """
     if tag is None:
         # First release - always has changes
         return True
 
     # Get commits that changed files in the package directory since the tag
+    # Exclude metadata files that are updated during release
     result = run_command(
-        ["git", "log", f"{tag}..HEAD", "--oneline", "--", str(pkg_path)],
+        [
+            "git",
+            "log",
+            f"{tag}..HEAD",
+            "--oneline",
+            "--",
+            str(pkg_path),
+            # Exclude files that change during release process
+            f":!{pkg_path}/CHANGELOG.md",
+            f":!{pkg_path}/pyproject.toml",
+        ],
         check=False,
     )
 
