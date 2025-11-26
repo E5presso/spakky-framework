@@ -8,4 +8,3 @@ from spakky.application.plugin import Plugin
 
 PLUGIN_NAME = Plugin(name="spakky-fastapi")
 """Plugin identifier for the FastAPI integration."""
-# Release test
