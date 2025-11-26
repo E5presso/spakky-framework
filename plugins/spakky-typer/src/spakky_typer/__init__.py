@@ -2,6 +2,8 @@
 
 This plugin provides Typer integration for building command-line interfaces
 with automatic command registration and async support.
+
+Prepare for release.
 """
 
 from spakky.application.plugin import Plugin
