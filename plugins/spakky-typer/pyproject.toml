@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=3.0.0", "typer>=0.20.0"]
+dependencies = ["spakky>=3.1.2", "typer>=0.20.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-typer = "spakky_typer.main:initialize"
