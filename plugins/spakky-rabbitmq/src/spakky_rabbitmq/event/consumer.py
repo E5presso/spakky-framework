@@ -22,6 +22,10 @@ from spakky.domain.ports.event.event_consumer import (
     IEventHandlerCallback,
 )
 from spakky.pod.annotations.pod import Pod
+from spakky.pod.interfaces.application_context import IApplicationContext
+from spakky.pod.interfaces.aware.application_context_aware import (
+    IApplicationContextAware,
+)
 from spakky.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
@@ -32,7 +36,9 @@ from spakky_rabbitmq.event.config import RabbitMQConnectionConfig
 
 
 @Pod()
-class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
+class RabbitMQEventConsumer(
+    IEventConsumer, AbstractBackgroundService, IApplicationContextAware
+):
     """Synchronous RabbitMQ event consumer.
 
     Runs as a background service that consumes domain events from RabbitMQ
@@ -47,6 +53,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         channel: Blocking channel for message consumption.
     """
 
+    __application_context: IApplicationContext
     connection_string: str
     type_lookup: dict[str, type[AbstractDomainEvent]]
     handlers: dict[type[AbstractDomainEvent], IEventHandlerCallback[Any]]
@@ -64,6 +71,14 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.type_lookup = {}
         self.handlers = {}
 
+    def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Inject application context.
+
+        Args:
+            application_context: The application context instance.
+        """
+        self.__application_context = application_context
+
     def _route_event_handler(
         self,
         channel: BlockingChannel,
@@ -71,6 +86,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         _: BasicProperties,
         body: bytes,
     ) -> None:
+        self.__application_context.clear_context()
         assert method_frame.delivery_tag is not None
         assert method_frame.consumer_tag is not None
         event_type = self.type_lookup[method_frame.consumer_tag]
@@ -144,7 +160,9 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
 
 
 @Pod()
-class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
+class AsyncRabbitMQEventConsumer(
+    IAsyncEventConsumer, AbstractAsyncBackgroundService, IApplicationContextAware
+):
     """Asynchronous RabbitMQ event consumer.
 
     Runs as an async background service that consumes domain events from
@@ -158,6 +176,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         connection: Robust RabbitMQ connection for async operations.
     """
 
+    __application_context: IApplicationContext
     connection_string: str
     type_lookup: dict[str, type[AbstractDomainEvent]]
     handlers: dict[type[AbstractDomainEvent], IAsyncEventHandlerCallback[Any]]
@@ -173,7 +192,16 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self.type_lookup = {}
         self.handlers = {}
 
+    def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Inject application context.
+
+        Args:
+            application_context: The application context instance.
+        """
+        self.__application_context = application_context
+
     async def _route_event_handler(self, message: AbstractIncomingMessage) -> None:
+        self.__application_context.clear_context()
         assert message.delivery_tag is not None
         assert message.consumer_tag is not None
         event_type = self.type_lookup[message.consumer_tag]

@@ -26,6 +26,7 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
     sleep(0.1)
     handler = app.container.get(DummyEventHandler)
     assert handler.count == 2
+    assert len(handler.context_ids) == 2
 
 
 @pytest.mark.asyncio
@@ -36,6 +37,7 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
     await asleep(0.1)
     handler = app.container.get(DummyEventHandler)
     assert handler.count == 2
+    assert len(handler.context_ids) == 2
 
 
 @pytest.mark.asyncio
