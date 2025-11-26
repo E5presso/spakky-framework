@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Single-version release helper for the Spakky workspace.
 
-This script coordinates version bumps across every package in the mono-repo.
+This script coordinates version bumps across every package in the monorepo.
 The workflow is now:
 
 1. Determine the next semantic version using commitizen at the workspace root.
