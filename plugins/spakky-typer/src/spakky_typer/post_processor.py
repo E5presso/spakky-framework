@@ -11,6 +11,10 @@ from typing import Any
 
 from spakky.pod.annotations.order import Order
 from spakky.pod.annotations.pod import Pod
+from spakky.pod.interfaces.application_context import IApplicationContext
+from spakky.pod.interfaces.aware.application_context_aware import (
+    IApplicationContextAware,
+)
 from spakky.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.pod.interfaces.aware.logger_aware import ILoggerAware
 from spakky.pod.interfaces.container import IContainer
@@ -23,7 +27,9 @@ from spakky_typer.utils.asyncio import run_async
 
 @Order(0)
 @Pod()
-class TyperCLIPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
+class TyperCLIPostProcessor(
+    IPostProcessor, ILoggerAware, IContainerAware, IApplicationContextAware
+):
     """Post-processor that registers CLI commands from CLI controllers.
 
     Scans @CliController decorated classes for @command decorated methods
@@ -34,6 +40,7 @@ class TyperCLIPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
     __app: Typer
     __logger: Logger
     __container: IContainer
+    __application_context: IApplicationContext
 
     def __init__(self, app: Typer) -> None:
         """Initialize the Typer CLI post-processor.
@@ -59,6 +66,14 @@ class TyperCLIPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
             container: The IoC container.
         """
         self.__container = container
+
+    def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Set the application context.
+
+        Args:
+            application_context: The application context instance.
+        """
+        self.__application_context = application_context
 
     def post_process(self, pod: object) -> object:
         """Register commands from CLI controllers.
@@ -92,6 +107,7 @@ class TyperCLIPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
                     container: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    self.__application_context.clear_context()
                     controller_instance = container.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
                     if iscoroutinefunction(method_to_call):
