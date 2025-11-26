@@ -269,11 +269,14 @@ class UserController:
 
 ### RabbitMQ Event Handlers
 
-Use `@EventHandler` stereotype with `@event` decorators.
+Use `@EventHandler` stereotype with `@on_event` decorators.
+
 **Important**: Spakky enforces a 1:1 mapping between an event type and a handler method within a single `@EventHandler` class. Defining multiple handlers for the same event type in the same class will raise a `DuplicateEventHandlerError`.
 
+**Message Validation**: If a message received from RabbitMQ is missing required metadata (`consumer_tag` or `delivery_tag`), an `InvalidMessageError` will be raised.
+
 ```python
-from spakky_rabbitmq.event.consumer import EventHandler, event
+from spakky.stereotype.event_handler import EventHandler, on_event
 from spakky.domain.models.event import AbstractDomainEvent
 
 class UserCreatedEvent(AbstractDomainEvent):
@@ -285,7 +288,7 @@ class UserEventHandler:
     def __init__(self, notification_service: NotificationService) -> None:
         self.notification_service = notification_service
 
-    @event(UserCreatedEvent)
+    @on_event(UserCreatedEvent)
     async def on_user_created(self, event: UserCreatedEvent) -> None:
         await self.notification_service.send_welcome_email(event.email)
 ```
@@ -493,6 +496,10 @@ The monorepo uses a two-stage hook system:
 
 - `ApplicationContext` manages Pod lifecycle
 - Context-scoped Pods use `ContextVar` for thread-safe request isolation
+- **Context clearing happens at endpoint/handler entry points**, not in middleware:
+  - **FastAPI**: `clear_context()` is called at the start of each route handler in `RegisterRoutesPostProcessor`
+  - **RabbitMQ**: `clear_context()` is called at the start of each event handler in `RabbitMQPostProcessor`
+  - **Typer**: `clear_context()` is called at the start of each CLI command in `TyperCLIPostProcessor`
 - Async tasks inherit context automatically
 - Clean up resources in `ApplicationContext` shutdown
 
@@ -575,6 +582,8 @@ assert Pod.exists(MyClass)
 - `"Circular dependency detected"`: Check constructor injection chain
 - `"No Pod found for type X"`: Class not decorated with `@Pod` or not scanned
 - `"Multiple Pods found for type X"`: Use qualifiers or `@Primary`
+- `"Handler for event type 'X' is already registered"`: RabbitMQ plugin enforces 1:1 event-to-handler mapping
+- `"Invalid message received from RabbitMQ"`: Message missing required `consumer_tag` or `delivery_tag`
 
 ## Testing Best Practices
 
