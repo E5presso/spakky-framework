@@ -122,6 +122,8 @@ class RegisterRoutesPostProcessor(
                     context: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    # Reset context so request-scoped Pods do not leak between
+                    # consecutive FastAPI requests processed on the same worker.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
@@ -146,6 +148,8 @@ class RegisterRoutesPostProcessor(
                     context: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    # WebSocket sessions reuse the same event loop task, so we
+                    # clear the context to guarantee per-connection isolation.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
