@@ -1,3 +1,9 @@
+## v3.3.1 (2025-11-26)
+
+### Fix
+
+- standardize 'monorepo' spelling across codebase
+
 ## v3.3.0 (2025-11-26)
 
 ### Feat
