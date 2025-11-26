@@ -165,20 +165,23 @@ class FunctionAnnotation(Annotation):
 
 
 class AnnotationNotFoundError(AbstractSpakkyFrameworkError):
-    """Exception raised when no annotation is found in an object.
+    """Exception raised when no annotation is found in an object."""
 
-    Args:
-        AbstractSpakkyCoreError (_type_): Base error class.
-    """
-
-    message = "Object has no specified annotation"
+    def __init__(self, annotation_type: type, obj: object) -> None:
+        super().__init__(
+            f"Annotation '{annotation_type.__name__}' not found in '{obj}'"
+        )
+        self.annotation_type = annotation_type
+        self.obj = obj
 
 
 class MultipleAnnotationFoundError(AbstractSpakkyFrameworkError):
-    """Exception raised when multiple annotations are found in an object.
+    """Exception raised when multiple annotations are found in an object."""
 
-    Args:
-        AbstractSpakkyCoreError (_type_): Base error class.
-    """
-
-    message = "Multiple annotation found in object"
+    def __init__(self, annotation_type: type, obj: object) -> None:
+        super().__init__(
+            f"Multiple annotations of type '{annotation_type.__name__}' "
+            f"found in '{obj}'"
+        )
+        self.annotation_type = annotation_type
+        self.obj = obj

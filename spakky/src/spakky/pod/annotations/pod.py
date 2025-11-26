@@ -51,19 +51,37 @@ PodT = TypeVar("PodT", bound=PodType)
 class CannotDeterminePodTypeError(PodAnnotationFailedError):
     """Raised when Pod type cannot be inferred from annotations."""
 
-    message = "Cannot determine pod type"
+    def __init__(self, target: PodType, param_name: str | type) -> None:
+        super().__init__(
+            f"Cannot determine pod type for '{target.__name__}' "
+            f"(parameter: {param_name})"
+        )
+        self.target = target
+        self.param_name = param_name
 
 
 class CannotUseVarArgsInPodError(PodAnnotationFailedError):
     """Raised when *args or **kwargs are used in Pod dependencies."""
 
-    message = "Cannot use var args (*args or **kwargs) in pod"
+    def __init__(self, target: PodType, param_name: str) -> None:
+        super().__init__(
+            f"Cannot use var args (*args or **kwargs) in pod '{target.__name__}' "
+            f"(parameter: {param_name})"
+        )
+        self.target = target
+        self.param_name = param_name
 
 
 class CannotUsePositionalOnlyArgsInPodError(PodAnnotationFailedError):
     """Raised when positional-only arguments are used in Pod."""
 
-    message = "Cannot use positional-only arguments in pod"
+    def __init__(self, target: PodType, param_name: str) -> None:
+        super().__init__(
+            f"Cannot use positional-only arguments in pod '{target.__name__}' "
+            f"(parameter: {param_name})"
+        )
+        self.target = target
+        self.param_name = param_name
 
 
 class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
@@ -75,13 +93,23 @@ class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
 class UnexpectedDependencyNameInjectedError(PodInstantiationFailedError):
     """Raised when an unexpected dependency name is injected."""
 
-    message = "Unexpected dependency name injected"
+    def __init__(self, type_: type, name: str) -> None:
+        super().__init__(
+            f"Unexpected dependency name '{name}' injected into '{type_.__name__}'"
+        )
+        self.type_ = type_
+        self.dependency_name = name
 
 
 class UnexpectedDependencyTypeInjectedError(PodInstantiationFailedError):
     """Raised when an injected dependency has wrong type."""
 
-    message = "Unexpected dependency type injected"
+    def __init__(self, type_: type, details: dict[str, object]) -> None:
+        super().__init__(
+            f"Unexpected dependency type injected into '{type_.__name__}': {details}"
+        )
+        self.type_ = type_
+        self.details = details
 
 
 @dataclass(eq=False)
