@@ -2,21 +2,25 @@
 """Single-version release helper for the Spakky workspace.
 
 This script coordinates version bumps across every package in the monorepo.
-The workflow is now:
+The workflow is:
 
 1. Determine the next semantic version using commitizen at the workspace root.
 2. Run ``cz bump`` with ``--files-only`` so no commit or tag is created yet.
 3. Align all intra-package dependency constraints (``spakky>=X.Y.Z``) with the
    freshly bumped version.
 4. Refresh each package's ``CHANGELOG.md`` with a short release note.
-5. Stage the results, create a unified release commit, and tag it ``vX.Y.Z``.
+5. Stage the results and create a unified release commit.
+6. Optionally create a tag (with ``--tag`` flag for local use).
+
+In CI, the release workflow creates the tag after updating ``uv.lock`` to ensure
+the tag points to the final commit.
 
 Outputs are written in the same shape used by the GitHub Actions workflow so the
 publish job can build every package in one go.
 
 Usage::
 
-    python scripts/bump_packages.py [--dry-run]
+    python scripts/bump_packages.py [--dry-run] [--tag]
 
 Environment::
 
@@ -199,6 +203,11 @@ def main() -> int:
         action="store_true",
         help="Preview the next version without modifying files",
     )
+    parser.add_argument(
+        "--tag",
+        action="store_true",
+        help="Create a git tag after the release commit (for local use)",
+    )
     args = parser.parse_args()
 
     next_version = get_next_version()
@@ -217,7 +226,11 @@ def main() -> int:
 
     stage_all_changes()
     create_release_commit(next_version)
-    create_release_tag(next_version)
+
+    # Create tag only if --tag flag is provided (for local use)
+    # In CI, the release workflow creates the tag after uv.lock update
+    if args.tag:
+        create_release_tag(next_version)
 
     packages = list(PACKAGE_PATHS.keys())
     write_github_output("released_version", next_version)

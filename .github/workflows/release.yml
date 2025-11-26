@@ -59,6 +59,13 @@ jobs:
           git add uv.lock
           git commit --amend --no-edit || echo "No lock file changes"
 
+      - name: Create release tag
+        if: ${{ !inputs.dry_run && steps.bump.outputs.released_version != '' }}
+        run: |
+          VERSION="${{ steps.bump.outputs.released_version }}"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          echo "🏷️ Created tag v${VERSION}"
+
       - name: Push changes and tag to main
         if: ${{ !inputs.dry_run && steps.bump.outputs.released_version != '' }}
         run: |
