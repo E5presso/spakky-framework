@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 def get_release_notes(pkg_path: Path, tag: str, max_lines: int = 100) -> str:
-    """Get release notes from CHANGELOG.md or generate default.
+    """Get release notes from CHANGELOG.md for the latest version only.
 
     Args:
         pkg_path: Path to the package directory.
@@ -30,14 +30,37 @@ def get_release_notes(pkg_path: Path, tag: str, max_lines: int = 100) -> str:
         max_lines: Maximum number of lines to include from changelog.
 
     Returns:
-        Release notes string.
+        Release notes string containing only the latest version section.
     """
     changelog_path = pkg_path / "CHANGELOG.md"
 
-    if changelog_path.exists():
-        with open(changelog_path) as f:
-            lines = f.readlines()[:max_lines]
-        return "".join(lines)
+    if not changelog_path.exists():
+        return f"Release {tag}"
+
+    with open(changelog_path) as f:
+        content = f.read()
+
+    # Find the first version section (## X.X.X or ## package-vX.X.X)
+    lines = content.split("\n")
+    in_latest_section = False
+    latest_section_lines: list[str] = []
+
+    for line in lines:
+        # Skip header lines before first version section
+        if not in_latest_section:
+            if line.startswith("## ") and not line.startswith("## Changelog"):
+                in_latest_section = True
+                latest_section_lines.append(line)
+            continue
+
+        # Stop at the next version section
+        if line.startswith("## ") and len(latest_section_lines) > 0:
+            break
+
+        latest_section_lines.append(line)
+
+    if latest_section_lines:
+        return "\n".join(latest_section_lines[:max_lines]).strip()
 
     return f"Release {tag}"
 

@@ -166,14 +166,42 @@ def update_version_in_pyproject(pkg_path: Path, new_version: str) -> None:
 
 
 def generate_changelog_entry(pkg_path: Path, version: str) -> str:
-    """Generate changelog entry for the version."""
+    """Generate changelog entry for the version.
+
+    Extracts only the latest version section from commitizen output.
+    """
     result = run_command(
         ["uv", "run", "cz", "changelog", "--dry-run", "--unreleased-version", version],
         cwd=pkg_path,
         check=False,
     )
-    if result.returncode == 0:
-        return result.stdout
+
+    if result.returncode != 0:
+        return f"## {version}\n\n- Release {version}\n"
+
+    # Parse output to get only the latest version section
+    output = result.stdout
+    lines = output.split("\n")
+    latest_section_lines: list[str] = []
+    in_latest_section = False
+
+    for line in lines:
+        # Start capturing at the first version header
+        if line.startswith("## ") and not in_latest_section:
+            in_latest_section = True
+            latest_section_lines.append(line)
+            continue
+
+        # Stop at the next version header
+        if line.startswith("## ") and in_latest_section:
+            break
+
+        if in_latest_section:
+            latest_section_lines.append(line)
+
+    if latest_section_lines:
+        return "\n".join(latest_section_lines).strip() + "\n"
+
     return f"## {version}\n\n- Release {version}\n"
 
 
