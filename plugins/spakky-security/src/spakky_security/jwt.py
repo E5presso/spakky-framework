@@ -173,6 +173,8 @@ class JWT:
         """
         for key, value in kwargs.items():
             self.__header[key] = value
+        # Mutating header claims invalidates the previous signature, so we
+        # immediately re-sign to keep the token cryptographically consistent.
         if self.__is_signed:
             self.__sign()
         return self
@@ -188,6 +190,8 @@ class JWT:
         """
         for key, value in kwargs.items():
             self.__payload[key] = value
+        # Payload updates must refresh the signature as well, otherwise
+        # consumers would observe stale token integrity data.
         if self.__is_signed:
             self.__sign()
         return self
@@ -202,6 +206,8 @@ class JWT:
             Self for method chaining.
         """
         self.__header["alg"] = hash_type
+        # Changing the algorithm affects the signing key usage, so rebuild the
+        # signature immediately when the token was already signed before.
         if self.__is_signed:
             self.__sign()
         return self
@@ -225,6 +231,8 @@ class JWT:
         exp: int = self.__convert_unixtime(iat + expire_after)
         self.__payload["exp"] = exp
         self.__payload["updated_at"] = self.__convert_unixtime(datetime.now())
+        # Expiration bumps happen on long-lived tokens; re-signing keeps the
+        # issued token aligned with the new expiry metadata.
         if self.__is_signed:
             self.__sign()
         return self
@@ -241,6 +249,8 @@ class JWT:
         current_time: datetime = datetime.now()
         self.__payload["exp"] = self.__convert_unixtime(current_time + expire_after)
         self.__payload["updated_at"] = self.__convert_unixtime(current_time)
+        # Refresh logic is invoked on already issued tokens, so always renew
+        # the signature alongside the refreshed timestamps.
         if self.__is_signed:
             self.__sign()
         return self
