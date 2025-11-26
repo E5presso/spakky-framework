@@ -1,6 +1,6 @@
 [project]
 name = "spakky-framework"
-version = "0.1.0"
+version = "3.2.0"
 description = "Spakky framework mono-repo"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,17 +23,17 @@ dev = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-# Monorepo versioning: Each package has its own commitizen config.
-# Use scope in commit messages to indicate which package:
-#   feat(core): ...     → spakky
-#   fix(fastapi): ...   → spakky-fastapi
-#   feat(rabbitmq): ... → spakky-rabbitmq
-#   fix(security): ...  → spakky-security
-#   feat(typer): ...    → spakky-typer
-#
-# To bump a specific package:
-#   cd spakky && uv run cz bump
-#   cd plugins/spakky-fastapi && uv run cz bump
+version = "3.2.0"
+tag_format = "v$version"
+version_files = [
+  "pyproject.toml:version",
+  "spakky/pyproject.toml:version",
+  "plugins/spakky-fastapi/pyproject.toml:version",
+  "plugins/spakky-rabbitmq/pyproject.toml:version",
+  "plugins/spakky-security/pyproject.toml:version",
+  "plugins/spakky-typer/pyproject.toml:version",
+]
+update_changelog_on_bump = true
 
 [tool.uv.workspace]
 members = [
