@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Bump versions for all packages in the workspace.
+"""Unified version bump for all packages in the workspace.
 
-This script handles version bumping for all packages, auto-detecting
-first releases (no existing tags) and using commitizen for version management.
+This script handles version bumping for all packages with:
+- Single commit containing all version changes
+- Individual tags per package
+- Changelog limited to latest release only
+- Automatic dependency version synchronization
 
 Usage:
     python scripts/bump_packages.py [--dry-run]
@@ -16,11 +19,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import toml
 from get_package_path import get_all_packages
 
 
@@ -31,6 +36,7 @@ class ReleaseInfo:
     package: str
     version: str
     tag: str
+    changelog_entry: str = ""
 
 
 def run_command(
@@ -58,37 +64,197 @@ def get_existing_tags(package: str) -> list[str]:
 
 
 def get_current_version(pkg_path: Path) -> str:
-    """Get current version from pyproject.toml using commitizen."""
-    result = run_command(["uv", "run", "cz", "version", "--project"], cwd=pkg_path)
-    return result.stdout.strip()
+    """Get current version from pyproject.toml."""
+    pyproject_path = pkg_path / "pyproject.toml"
+    with open(pyproject_path) as f:
+        data = toml.load(f)
+    return data["project"]["version"]
 
 
-def create_tag(tag: str, message: str) -> None:
-    """Create an annotated git tag."""
-    run_command(["git", "tag", "-a", tag, "-m", message])
-
-
-def bump_version(pkg_path: Path) -> tuple[bool, int]:
-    """Bump version using commitizen.
+def get_next_version(pkg_path: Path) -> tuple[str | None, str]:
+    """Get next version using commitizen dry-run.
 
     Returns:
-        Tuple of (success, exit_code)
+        Tuple of (next_version, changelog_entry). next_version is None if no bump needed.
     """
     result = run_command(
-        ["uv", "run", "cz", "bump", "--yes", "--changelog"],
-        cwd=pkg_path,
-        check=False,
-    )
-    return result.returncode == 0, result.returncode
-
-
-def bump_version_dry_run(pkg_path: Path) -> None:
-    """Show what version bump would happen."""
-    run_command(
         ["uv", "run", "cz", "bump", "--dry-run", "--yes"],
         cwd=pkg_path,
         check=False,
     )
+
+    # Exit code 21 means no commits to bump
+    if result.returncode == 21:
+        return None, ""
+
+    if result.returncode != 0:
+        return None, ""
+
+    # Parse the output to get the next version
+    output = result.stdout + result.stderr
+    version_match = re.search(r"bump: version [\d.]+ → ([\d.]+)", output)
+    if version_match:
+        return version_match.group(1), ""
+
+    return None, ""
+
+
+def update_version_in_pyproject(pkg_path: Path, new_version: str) -> None:
+    """Update version in pyproject.toml."""
+    pyproject_path = pkg_path / "pyproject.toml"
+    with open(pyproject_path) as f:
+        content = f.read()
+
+    # Update [project] version
+    content = re.sub(
+        r'(\[project\].*?version\s*=\s*")[^"]+(")',
+        rf"\g<1>{new_version}\g<2>",
+        content,
+        flags=re.DOTALL,
+    )
+
+    # Update [tool.commitizen] version
+    content = re.sub(
+        r'(\[tool\.commitizen\].*?version\s*=\s*")[^"]+(")',
+        rf"\g<1>{new_version}\g<2>",
+        content,
+        flags=re.DOTALL,
+    )
+
+    with open(pyproject_path, "w") as f:
+        f.write(content)
+
+
+def generate_changelog_entry(pkg_path: Path, version: str) -> str:
+    """Generate changelog entry for the version."""
+    result = run_command(
+        ["uv", "run", "cz", "changelog", "--dry-run", "--unreleased-version", version],
+        cwd=pkg_path,
+        check=False,
+    )
+    if result.returncode == 0:
+        return result.stdout
+    return f"## {version}\n\n- Release {version}\n"
+
+
+def write_changelog(pkg_path: Path, version: str, entry: str) -> None:
+    """Write changelog with only the latest release.
+
+    Previous releases are preserved in GitHub Releases.
+    """
+    changelog_path = pkg_path / "CHANGELOG.md"
+
+    # Get package name for the header
+    pyproject_path = pkg_path / "pyproject.toml"
+    with open(pyproject_path) as f:
+        data = toml.load(f)
+    package_name = data["project"]["name"]
+
+    content = f"""# Changelog
+
+All notable changes to {package_name} will be documented in this file.
+
+See [GitHub Releases](https://github.com/E5presso/spakky-framework/releases) for full release history.
+
+{entry}
+"""
+
+    with open(changelog_path, "w") as f:
+        f.write(content)
+
+
+def update_dependency_versions(
+    workspace_root: Path,
+    packages: dict[str, str],
+    new_versions: dict[str, str],
+) -> None:
+    """Update inter-package dependency versions.
+
+    When spakky is released at 3.1.2, update all plugins to require spakky>=3.1.2
+    """
+    core_version = new_versions.get("spakky")
+    if not core_version:
+        return
+
+    for package, relative_path in packages.items():
+        if package == "spakky":
+            continue
+
+        pkg_path = workspace_root / relative_path
+        pyproject_path = pkg_path / "pyproject.toml"
+
+        with open(pyproject_path) as f:
+            content = f.read()
+
+        # Update spakky dependency version
+        content = re.sub(
+            r'"spakky>=[\d.]+"',
+            f'"spakky>={core_version}"',
+            content,
+        )
+
+        with open(pyproject_path, "w") as f:
+            f.write(content)
+
+        print(f"  📦 Updated {package}: spakky>={core_version}")
+
+
+def update_optional_dependencies(
+    workspace_root: Path,
+    packages: dict[str, str],
+    new_versions: dict[str, str],
+) -> None:
+    """Update optional dependencies in core spakky package."""
+    core_path = workspace_root / packages.get("spakky", "spakky")
+    pyproject_path = core_path / "pyproject.toml"
+
+    with open(pyproject_path) as f:
+        content = f.read()
+
+    for package, version in new_versions.items():
+        if package == "spakky":
+            continue
+        # Update optional dependency version
+        content = re.sub(
+            rf'"{package}>=[\d.]+"',
+            f'"{package}>={version}"',
+            content,
+        )
+
+    with open(pyproject_path, "w") as f:
+        f.write(content)
+
+
+def create_tags(releases: list[ReleaseInfo]) -> None:
+    """Create annotated git tags for all releases."""
+    for release in releases:
+        run_command(
+            [
+                "git",
+                "tag",
+                "-a",
+                release.tag,
+                "-m",
+                f"Release {release.tag}",
+            ]
+        )
+        print(f"  🏷️ Created tag: {release.tag}")
+
+
+def commit_all_changes(releases: list[ReleaseInfo]) -> None:
+    """Create a single commit with all version changes."""
+    # Stage all changes
+    run_command(["git", "add", "-A"])
+
+    # Build commit message
+    package_list = ", ".join(f"{r.package} {r.version}" for r in releases)
+    commit_msg = f"chore(release): {package_list}\n\n"
+
+    for release in releases:
+        commit_msg += f"- {release.package}: v{release.version}\n"
+
+    run_command(["git", "commit", "-m", commit_msg])
+    print(f"  📝 Created unified commit for {len(releases)} packages")
 
 
 def write_github_output(key: str, value: str) -> None:
@@ -99,64 +265,101 @@ def write_github_output(key: str, value: str) -> None:
             f.write(f"{key}={value}\n")
 
 
-def process_package(
-    package: str,
-    pkg_path: Path,
+def process_packages(
+    workspace_root: Path,
+    packages: dict[str, str],
     dry_run: bool,
-) -> ReleaseInfo | None:
-    """Process a single package for release.
+) -> list[ReleaseInfo]:
+    """Process all packages for release.
 
     Returns:
-        ReleaseInfo if package was released, None otherwise.
+        List of ReleaseInfo for released packages.
     """
-    print()
-    print("=" * 40)
-    print(f"📦 Processing: {package}")
-    print("=" * 40)
-    print(f"📁 Path: {pkg_path}")
+    releases: list[ReleaseInfo] = []
+    new_versions: dict[str, str] = {}
 
-    # Auto-detect first release
-    existing_tags = get_existing_tags(package)
-    is_first_release = len(existing_tags) == 0
+    print("\n" + "=" * 50)
+    print("🔍 Analyzing packages for version bumps...")
+    print("=" * 50)
 
-    if is_first_release:
-        print("🆕 First release detected (no existing tags)")
-    else:
-        print("📋 Existing releases found")
+    # First pass: determine what needs to be released
+    for package, relative_path in packages.items():
+        pkg_path = workspace_root / relative_path
+        print(f"\n📦 {package}")
 
-    if dry_run:
-        print("🔍 Dry run mode:")
+        existing_tags = get_existing_tags(package)
+        is_first_release = len(existing_tags) == 0
+
         if is_first_release:
             version = get_current_version(pkg_path)
-            print(f"  Would create first release: {package}-v{version}")
+            print(f"  🆕 First release: v{version}")
+            new_versions[package] = version
+            releases.append(
+                ReleaseInfo(
+                    package=package,
+                    version=version,
+                    tag=f"{package}-v{version}",
+                )
+            )
         else:
-            bump_version_dry_run(pkg_path)
-        return None
+            next_version, _ = get_next_version(pkg_path)
+            if next_version:
+                print(f"  ⬆️ Will bump to: v{next_version}")
+                new_versions[package] = next_version
+                releases.append(
+                    ReleaseInfo(
+                        package=package,
+                        version=next_version,
+                        tag=f"{package}-v{next_version}",
+                    )
+                )
+            else:
+                print("  ⏭️ No changes to release")
 
-    # Actual release
-    if is_first_release:
-        version = get_current_version(pkg_path)
-        tag = f"{package}-v{version}"
-        print(f"📌 First release version: {version}")
+    if not releases:
+        print("\n⚠️ No packages to release")
+        return []
 
-        create_tag(tag, f"Release {tag}")
-        print(f"🏷️ Created tag: {tag}")
+    if dry_run:
+        print("\n" + "=" * 50)
+        print("🔍 DRY RUN - No changes made")
+        print("=" * 50)
+        print("\nWould release:")
+        for r in releases:
+            print(f"  - {r.package} v{r.version} ({r.tag})")
+        return []
 
-        return ReleaseInfo(package=package, version=version, tag=tag)
-    else:
-        success, exit_code = bump_version(pkg_path)
+    print("\n" + "=" * 50)
+    print("📝 Applying changes...")
+    print("=" * 50)
 
-        if success:
-            version = get_current_version(pkg_path)
-            tag = f"{package}-v{version}"
-            print(f"✅ Bumped to: {version}")
-            return ReleaseInfo(package=package, version=version, tag=tag)
-        elif exit_code == 21:
-            print(f"⚠️ No commits to bump for {package} - skipping")
-            return None
-        else:
-            print(f"❌ Failed to bump {package}")
-            sys.exit(exit_code)
+    # Second pass: apply version updates
+    for release in releases:
+        pkg_path = workspace_root / packages[release.package]
+
+        # Update version in pyproject.toml
+        update_version_in_pyproject(pkg_path, release.version)
+        print(f"  ✅ Updated {release.package} to v{release.version}")
+
+        # Generate and write changelog (latest only)
+        entry = generate_changelog_entry(pkg_path, release.version)
+        write_changelog(pkg_path, release.version, entry)
+        release.changelog_entry = entry
+
+    # Update inter-package dependencies
+    print("\n📦 Updating dependency versions...")
+    update_dependency_versions(workspace_root, packages, new_versions)
+    update_optional_dependencies(workspace_root, packages, new_versions)
+
+    # Create single commit
+    print("\n📝 Creating unified commit...")
+    commit_all_changes(releases)
+
+    # Create tags
+    print("\n🏷️ Creating tags...")
+    create_tags(releases)
+
+    return releases
 
 
 def main() -> int:
@@ -176,20 +379,15 @@ def main() -> int:
         print("❌ No packages found in workspace")
         return 1
 
-    released: list[ReleaseInfo] = []
-
-    for package, relative_path in packages.items():
-        pkg_path = workspace_root / relative_path
-        result = process_package(package, pkg_path, args.dry_run)
-        if result:
-            released.append(result)
+    released = process_packages(workspace_root, packages, args.dry_run)
 
     # Output results
     if released:
-        print()
-        print("=" * 40)
-        print(f"📋 Released packages: {', '.join(r.package for r in released)}")
-        print("=" * 40)
+        print("\n" + "=" * 50)
+        print(f"✅ Released {len(released)} packages")
+        print("=" * 50)
+        for r in released:
+            print(f"  - {r.package} v{r.version}")
 
         # Format for GitHub Actions
         released_info = ";".join(f"{r.package}:{r.version}:{r.tag}" for r in released)
@@ -198,15 +396,9 @@ def main() -> int:
         write_github_output("released", released_info)
         write_github_output("released_packages", released_packages)
 
-        # Also print for local debugging
-        print(f"\nreleased={released_info}")
-        print(f"released_packages={released_packages}")
-    else:
-        print()
-        print("ℹ️ No packages were released")
-        write_github_output("released", "")
-        write_github_output("released_packages", "[]")
+        return 0
 
+    print("\n✅ No packages needed release")
     return 0
 
 

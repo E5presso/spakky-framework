@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: main
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Configure Git
@@ -42,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Bump all packages
+      - name: Bump all packages (unified commit + individual tags)
         id: bump
         run: |
           if [ "${{ inputs.dry_run }}" == "true" ]; then
@@ -56,12 +57,12 @@ jobs:
         run: |
           uv sync
           git add uv.lock
-          git commit -m "chore: update uv.lock after version bump" || echo "No lock file changes"
+          git commit --amend --no-edit || echo "No lock file changes"
 
-      - name: Push all changes and tags
+      - name: Push changes and tags to main
         if: ${{ !inputs.dry_run && steps.bump.outputs.released != '' }}
         run: |
-          git push origin HEAD
+          git push origin main
           git push origin --tags
 
   publish:
@@ -77,10 +78,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.ref }}
+          ref: main
 
       - name: Pull latest changes
-        run: git pull origin HEAD
+        run: git pull origin main
 
       - name: Extract release info
         id: info
@@ -123,3 +124,32 @@ jobs:
 
       - name: Summary
         run: echo "✅ Published ${{ matrix.package }} ${{ steps.info.outputs.version }}"
+
+  sync-develop:
+    name: Sync develop branch
+    needs: [bump, publish]
+    if: ${{ !inputs.dry_run && needs.bump.outputs.released != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: develop
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Rebase develop onto main
+        run: |
+          git fetch origin main
+          git rebase origin/main
+
+      - name: Push updated develop
+        run: |
+          git push origin develop --force-with-lease
+
+      - name: Summary
+        run: echo "✅ develop branch rebased onto main"
