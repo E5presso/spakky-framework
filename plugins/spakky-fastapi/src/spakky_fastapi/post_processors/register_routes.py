@@ -15,6 +15,10 @@ from fastapi.exceptions import FastAPIError
 from fastapi.utils import create_model_field  # pyrefly: ignore
 from spakky.pod.annotations.order import Order
 from spakky.pod.annotations.pod import Pod
+from spakky.pod.interfaces.application_context import IApplicationContext
+from spakky.pod.interfaces.aware.application_context_aware import (
+    IApplicationContextAware,
+)
 from spakky.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.pod.interfaces.aware.logger_aware import ILoggerAware
 from spakky.pod.interfaces.container import IContainer
@@ -27,7 +31,9 @@ from spakky_fastapi.stereotypes.api_controller import ApiController
 
 @Order(0)
 @Pod()
-class RegisterRoutesPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
+class RegisterRoutesPostProcessor(
+    IPostProcessor, ILoggerAware, IContainerAware, IApplicationContextAware
+):
     """Post-processor that registers routes from API controllers.
 
     Scans @ApiController decorated classes for @route decorated methods and
@@ -37,6 +43,7 @@ class RegisterRoutesPostProcessor(IPostProcessor, ILoggerAware, IContainerAware)
 
     __logger: Logger
     __container: IContainer
+    __application_context: IApplicationContext
 
     def set_logger(self, logger: Logger) -> None:
         """Set the logger for route registration logging.
@@ -53,6 +60,14 @@ class RegisterRoutesPostProcessor(IPostProcessor, ILoggerAware, IContainerAware)
             container: The IoC container.
         """
         self.__container = container
+
+    def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Set the application context.
+
+        Args:
+            application_context: The application context.
+        """
+        self.__application_context = application_context
 
     def post_process(self, pod: object) -> object:
         """Register routes from API controllers.
@@ -107,6 +122,7 @@ class RegisterRoutesPostProcessor(IPostProcessor, ILoggerAware, IContainerAware)
                     context: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
                     return await method_to_call(*args, **kwargs)
@@ -130,6 +146,7 @@ class RegisterRoutesPostProcessor(IPostProcessor, ILoggerAware, IContainerAware)
                     context: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
+                    self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(controller_instance, method_name)
                     return await method_to_call(*args, **kwargs)

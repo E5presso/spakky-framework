@@ -16,7 +16,6 @@ from spakky.pod.interfaces.aware.application_context_aware import (
 from spakky.pod.interfaces.post_processor import IPostProcessor
 
 from spakky_fastapi.middlewares.error_handling import ErrorHandlingMiddleware
-from spakky_fastapi.middlewares.manage_context import ManageContextMiddleware
 
 
 @Order(0)
@@ -57,9 +56,5 @@ class AddBuiltInMiddlewaresPostProcessor(IPostProcessor, IApplicationContextAwar
             ErrorHandlingMiddleware,
             logger=self.__application_context.get(Logger),
             debug=pod.debug,
-        )
-        pod.add_middleware(
-            ManageContextMiddleware,
-            application_context=self.__application_context,
         )
         return pod
