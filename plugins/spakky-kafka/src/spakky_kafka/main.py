@@ -1,5 +1,7 @@
 from spakky.application.application import SpakkyApplication
 
+from spakky_kafka.common.config import KafkaConnectionConfig
+
 
 def initialize(app: SpakkyApplication) -> None:
-    return
+    app.add(KafkaConnectionConfig)

@@ -6,7 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=3.3.3"]
+dependencies = [
+    "kafka-python>=2.3.0",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
+    "spakky>=3.3.3",
+]
 
 [project.entry-points."spakky.plugins"]
 spakky-kafka = "spakky_kafka.main:initialize"
