@@ -61,7 +61,7 @@ def is_subpath_of(module: Module, patterns: set[Module]) -> bool:
 
     Supports:
     - Exact match: "package.module"
-    - Wildcard patterns: "package.\*", "package.sub.\*"
+    - Wildcard patterns: "package.\\*", "package.sub.\\*"
     - Prefix match: "package" matches "package.submodule"
 
     Args:

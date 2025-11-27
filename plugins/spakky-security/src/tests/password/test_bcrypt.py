@@ -6,7 +6,7 @@ from spakky_security.password.interface import IPasswordEncoder
 
 def test_bcrypt_expect_value_error() -> None:
     with pytest.raises(ValueError):
-        BcryptPasswordEncoder()  # pyrefly: ignore
+        BcryptPasswordEncoder()  # pyrefly: ignore  # type: ignore
 
 
 def test_bcrypt_not_equal() -> None:

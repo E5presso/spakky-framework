@@ -93,5 +93,5 @@ def remove_none(type_: Any) -> Any:
             return type(None)
         if len(non_none_args) == 1:
             return non_none_args[0]
-        return Union[non_none_args]  # pyrefly: ignore
+        return Union[non_none_args]  # pyrefly: ignore  # type: ignore
     return type_

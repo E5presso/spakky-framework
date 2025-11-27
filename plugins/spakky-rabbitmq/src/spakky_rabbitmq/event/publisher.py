@@ -4,8 +4,8 @@ Provides synchronous and asynchronous event publishers that publish domain
 events to RabbitMQ queues with optional exchange routing.
 """
 
-from aio_pika import Message, connect_robust  # pyrefly: ignore
-from jsons import dumps  # pyrefly: ignore
+from aio_pika import Message, connect_robust  # pyrefly: ignore  # type: ignore
+from jsons import dumps  # pyrefly: ignore  # type: ignore
 from pika import BlockingConnection, URLParameters
 from spakky.domain.models.event import AbstractDomainEvent
 from spakky.domain.ports.event.event_publisher import (

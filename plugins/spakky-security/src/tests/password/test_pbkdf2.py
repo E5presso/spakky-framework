@@ -8,7 +8,7 @@ from spakky_security.password.pbkdf2 import Pbkdf2PasswordEncoder
 
 def test_pbkdf2_expect_value_error() -> None:
     with pytest.raises(ValueError):
-        Pbkdf2PasswordEncoder()  # pyrefly: ignore
+        Pbkdf2PasswordEncoder()  # pyrefly: ignore  # type: ignore
 
 
 def test_pbkdf2_not_equal() -> None:

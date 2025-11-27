@@ -92,7 +92,7 @@ def test_when_managed_error_occurred(api: FastAPI) -> None:
             params={"email": "invalid"},
         )
         assert response.status_code == BadRequest.status_code
-        assert response.json()["message"] == "Invalid email"
+        assert "Invalid email" in response.json()["args"]
 
 
 def test_when_unexpected_error_with_debug_mode(api: FastAPI) -> None:

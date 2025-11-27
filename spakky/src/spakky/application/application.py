@@ -52,6 +52,15 @@ class SpakkyApplication:
         """
         return self._application_context
 
+    @property
+    def application_context(self) -> IApplicationContext:
+        """Get the application context.
+
+        Returns:
+            The application's context managing Pods and lifecycle.
+        """
+        return self._application_context
+
     def __init__(self, application_context: IApplicationContext) -> None:
         """Initialize the Spakky application.
 

@@ -1,4 +1,5 @@
 from abc import ABC
+from typing import ClassVar
 
 
 class AbstractSpakkyFrameworkError(Exception, ABC):
@@ -11,10 +12,5 @@ class AbstractSpakkyFrameworkError(Exception, ABC):
     If neither is provided, the message will be an empty string.
     """
 
-    message: str = ""
+    message: ClassVar[str]
     """A human-readable message describing the error."""
-
-    def __init__(self, message: str | None = None, *args: object) -> None:
-        if message is not None:
-            self.message = message
-        super().__init__(self.message, *args)

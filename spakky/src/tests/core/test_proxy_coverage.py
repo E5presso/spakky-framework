@@ -36,7 +36,7 @@ def test_proxy_set_attribute() -> None:
     proxy = ProxyFactory(target=target, handler=handler).create()
 
     # Set attribute through proxy
-    proxy.new_value = 100  # pyrefly: ignore
+    proxy.new_value = 100  # pyrefly: ignore  # type: ignore
 
     # Verify attribute is set on target
-    assert target.new_value == 100  # pyrefly: ignore
+    assert target.new_value == 100  # pyrefly: ignore  # type: ignore

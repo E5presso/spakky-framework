@@ -50,15 +50,15 @@ class Hash:
             case HashType.MD5:
                 self.__hash = MD5.new()
             case HashType.SHA1:
-                self.__hash = SHA1.new()  # pyrefly: ignore
+                self.__hash = SHA1.new()  # pyrefly: ignore  # type: ignore
             case HashType.SHA224:
-                self.__hash = SHA224.new()  # pyrefly: ignore
+                self.__hash = SHA224.new()  # pyrefly: ignore  # type: ignore
             case HashType.SHA256:
-                self.__hash = SHA256.new()  # pyrefly: ignore
+                self.__hash = SHA256.new()  # pyrefly: ignore  # type: ignore
             case HashType.SHA384:
-                self.__hash = SHA384.new()  # pyrefly: ignore
+                self.__hash = SHA384.new()  # pyrefly: ignore  # type: ignore
             case HashType.SHA512:  # pragma: no cover
-                self.__hash = SHA512.new()  # pyrefly: ignore
+                self.__hash = SHA512.new()  # pyrefly: ignore  # type: ignore
         if isinstance(data, str):
             self.__hash.update(data.encode("UTF-8"))
         if isinstance(data, BufferedReader):

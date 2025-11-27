@@ -388,7 +388,7 @@ class ApplicationContext(IApplicationContext):
 
         run_coroutine_threadsafe(stop_async_services(), self.__event_loop).result()
         self.__event_loop.call_soon_threadsafe(
-            self.__event_loop.stop  # pyrefly: ignore
+            self.__event_loop.stop  # pyrefly: ignore  # type: ignore
         )
         self.__event_thread.join()
         self.__event_loop = None

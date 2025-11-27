@@ -7,9 +7,9 @@ to registered handlers.
 
 from typing import Any
 
-from aio_pika import connect_robust  # pyrefly: ignore
+from aio_pika import connect_robust  # pyrefly: ignore  # type: ignore
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
-from jsons import loads  # pyrefly: ignore
+from jsons import loads  # pyrefly: ignore  # type: ignore
 from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.spec import Basic, BasicProperties

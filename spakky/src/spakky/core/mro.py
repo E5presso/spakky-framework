@@ -1,5 +1,4 @@
 # This module is based on proposal by https://github.com/python/typing/issues/777
-# pyrefly: ignore
 
 """Method Resolution Order (MRO) utilities for generic types.
 
@@ -13,7 +12,7 @@ from typing import (
     Generic,
     Protocol,
     TypeGuard,
-    _collect_parameters,
+    _collect_parameters,  # pyrefly: ignore
     get_args,
     get_origin,
 )

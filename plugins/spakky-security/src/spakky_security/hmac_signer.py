@@ -64,7 +64,7 @@ class HMAC:
             hmac.new(
                 key_bytes,
                 content.encode("UTF-8"),
-                hash_function,  # pyrefly: ignore
+                hash_function,  # pyrefly: ignore  # type: ignore
             ).digest(),
             url_safe,
         )
@@ -105,7 +105,7 @@ class HMAC:
                 hmac.new(
                     key_bytes,
                     content.encode("UTF-8"),
-                    hash_function,  # pyrefly: ignore
+                    hash_function,  # pyrefly: ignore  # type: ignore
                 ).digest(),
                 url_safe,
             )

@@ -6,7 +6,7 @@ import pytest
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
 from spakky.pod.annotations.pod import Pod
-from testcontainers.rabbitmq import RabbitMqContainer  # pyrefly: ignore
+from testcontainers.rabbitmq import RabbitMqContainer  # pyrefly: ignore  # type: ignore
 
 import spakky_rabbitmq
 from spakky_rabbitmq.event.config import RabbitMQConnectionConfig

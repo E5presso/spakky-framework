@@ -16,53 +16,19 @@ from spakky.pod.error import AbstractSpakkyPodError
 class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
     """Raised when circular dependency is detected during Pod instantiation."""
 
-    def __init__(self, dependency_chain: list[type]) -> None:
-        """Initialize with dependency chain for detailed error message.
-
-        Args:
-            dependency_chain: List of types showing the circular dependency path.
-        """
-        chain = " -> ".join(t.__name__ for t in dependency_chain)
-        super().__init__(f"Circular dependency detected: {chain}")
-        self.dependency_chain = dependency_chain
+    message = "Circular dependency graph detected"
 
 
 class NoSuchPodError(AbstractSpakkyPodError):
     """Raised when requested Pod cannot be found in container."""
 
-    def __init__(self, type_: type, name: str | None = None) -> None:
-        """Initialize with search criteria for detailed error message.
-
-        Args:
-            type_: The type that was searched for.
-            name: Optional name qualifier that was used.
-        """
-        message: str = f"No Pod found for type '{type_.__name__}'"
-        if name:
-            message += f" with name '{name}'"
-        super().__init__(message)
-        self.type_ = type_
-        self.name = name
+    message = "No such pod found in container"
 
 
 class NoUniquePodError(AbstractSpakkyPodError):
     """Raised when multiple Pods match criteria without clear qualification."""
 
-    def __init__(self, type_: type, candidates: list[str]) -> None:
-        """Initialize with conflicting candidates for detailed error message.
-
-        Args:
-            type_: The type that had multiple matches.
-            candidates: List of Pod names that matched.
-        """
-        pod_list = ", ".join(f"'{c}'" for c in candidates)
-        message: str = (
-            f"Multiple Pods found for type '{type_.__name__}': {pod_list}. "
-            f"Use @Primary or provide a name/qualifier to disambiguate."
-        )
-        super().__init__(message)
-        self.type_ = type_
-        self.candidates = candidates
+    message = "No unique pod found; multiple candidates exist"
 
 
 class CannotRegisterNonPodObjectError(AbstractSpakkyPodError):

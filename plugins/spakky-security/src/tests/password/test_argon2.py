@@ -7,7 +7,7 @@ from spakky_security.password.interface import IPasswordEncoder
 
 def test_argon2_expect_value_error() -> None:
     with pytest.raises(ValueError):
-        Argon2PasswordEncoder()  # pyrefly: ignore
+        Argon2PasswordEncoder()  # pyrefly: ignore  # type: ignore
 
 
 def test_argon2_not_equal() -> None:

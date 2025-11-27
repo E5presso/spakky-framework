@@ -53,7 +53,7 @@ class Aes(ICryptor):
         """
         plain_bytes: bytes = pad(message.encode(), AES.block_size)
         iv: Key = Key(size=16)
-        cryptor = AES.new(  # pyrefly: ignore
+        cryptor = AES.new(  # pyrefly: ignore  # type: ignore
             key=self.__key.binary,
             mode=AES.MODE_CBC,
             iv=iv.binary,
@@ -80,7 +80,7 @@ class Aes(ICryptor):
             [iv, cipher] = cipher.split(":")
             iv_bytes: bytes = Base64Encoder.get_bytes(iv, self.url_safe)
             cipher_bytes: bytes = Base64Encoder.get_bytes(cipher, self.url_safe)
-            cryptor = AES.new(  # pyrefly: ignore
+            cryptor = AES.new(  # pyrefly: ignore  # type: ignore
                 key=self.__key.binary,
                 mode=AES.MODE_CBC,
                 iv=iv_bytes,

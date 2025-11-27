@@ -42,7 +42,7 @@ def test_key_from_base64_url_safe() -> None:
 
 def test_key_expect_value_error() -> None:
     with pytest.raises(ValueError):
-        Key()  # pyrefly: ignore
+        Key()  # pyrefly: ignore  # type: ignore
 
 
 def test_key_equals() -> None:

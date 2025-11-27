@@ -136,6 +136,6 @@ class CliController(Pod):
         """
         if self.group_name is None:
             self.group_name = pascal_to_kebab(
-                obj.__name__  # pyrefly: ignore
+                obj.__name__  # pyrefly: ignore  # type: ignore
             )
         return super().__call__(obj)

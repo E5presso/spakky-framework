@@ -7,7 +7,7 @@ from spakky_security.password.scrypt import ScryptPasswordEncoder
 
 def test_scrypt_expect_value_error() -> None:
     with pytest.raises(ValueError):
-        ScryptPasswordEncoder()  # pyrefly: ignore
+        ScryptPasswordEncoder()  # pyrefly: ignore  # type: ignore
 
 
 def test_scrypt_not_equal() -> None:

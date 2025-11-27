@@ -49,7 +49,7 @@ class IAsyncCommandUseCase(Protocol[CommandT_contra, ResultT_co]):
     """Protocol for asynchronous command use cases."""
 
     @abstractmethod
-    async def execute(  # pyrefly: ignore
+    async def execute(  # pyrefly: ignore  # type: ignore
         self, command: CommandT_contra
     ) -> ResultT_co:
         """Execute command asynchronously and return result.

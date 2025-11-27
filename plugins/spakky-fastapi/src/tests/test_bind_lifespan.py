@@ -13,4 +13,4 @@ def test_application_stopped_after_fastapi_shutdown(
         assert response.status_code == HTTPStatus.OK
         assert response.text == "Hello World!"
 
-    assert app._application_context.is_started is False
+    assert app.application_context.is_started is False

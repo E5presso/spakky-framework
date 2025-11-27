@@ -13,7 +13,7 @@ def test_mutable_is_dataclass() -> None:
 
     MutableDataClass(name="John")
     with pytest.raises(TypeError):
-        MutableDataClass("John")  # pyrefly: ignore
+        MutableDataClass("John")  # pyrefly: ignore  # type: ignore
     with pytest.raises(AssertionError):
         assert MutableDataClass(name="John") == MutableDataClass(name="John")
 
@@ -39,11 +39,13 @@ def test_immutable_is_dataclass() -> None:
 
     ImmutableDataClass(name="John")
     with pytest.raises(TypeError):
-        ImmutableDataClass("John")  # pyrefly: ignore
+        ImmutableDataClass("John")  # pyrefly: ignore  # type: ignore
     with pytest.raises(AssertionError):
         assert ImmutableDataClass(name="John") == ImmutableDataClass(name="John")
     with pytest.raises(FrozenInstanceError):
-        ImmutableDataClass(name="John").name = "Sarah"  # pyrefly: ignore
+        ImmutableDataClass(
+            name="John"
+        ).name = "Sarah"  # pyrefly: ignore  # type: ignore
 
     @immutable
     class ImmutableDataClassWithEquatable(ImmutableDataClass, IEquatable):

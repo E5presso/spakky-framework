@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import FastAPIError
-from fastapi.utils import create_model_field  # pyrefly: ignore
+from fastapi.utils import create_model_field  # pyrefly: ignore  # type: ignore
 from spakky.pod.annotations.order import Order
 from spakky.pod.annotations.pod import Pod
 from spakky.pod.interfaces.application_context import IApplicationContext

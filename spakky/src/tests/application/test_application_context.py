@@ -1008,7 +1008,9 @@ def test_application_context_initialize_pods_missing_raises_error() -> None:
 
     @Pod(name="test_missing_pod")
     class TestPod:
-        def __init__(self, missing_dep: NonExistentPod) -> None:  # pyrefly: ignore
+        def __init__(
+            self, missing_dep: NonExistentPod
+        ) -> None:  # pyrefly: ignore  # type: ignore
             pass
 
     context = ApplicationContext()

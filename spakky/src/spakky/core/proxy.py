@@ -246,7 +246,7 @@ class ProxyFactory(Generic[ObjectT]):
             ObjectT: A proxy instance that wraps the target object.
         """
         return new_class(
-            name=self._type.__name__  # pyrefly: ignore
+            name=self._type.__name__  # pyrefly: ignore  # type: ignore
             + DYNAMIC_PROXY_CLASS_NAME_SUFFIX,
             bases=(self._type,),
             exec_body=lambda ns: ns.update(

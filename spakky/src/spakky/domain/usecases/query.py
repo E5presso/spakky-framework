@@ -49,7 +49,7 @@ class IAsyncQueryUseCase(Protocol[QueryT_contra, ResultT_co]):
     """Protocol for asynchronous query use cases."""
 
     @abstractmethod
-    async def execute(  # pyrefly: ignore
+    async def execute(  # pyrefly: ignore  # type: ignore
         self, query: QueryT_contra
     ) -> ResultT_co:
         """Execute query asynchronously and return result.

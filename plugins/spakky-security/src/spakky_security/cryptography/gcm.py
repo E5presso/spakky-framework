@@ -54,7 +54,7 @@ class Gcm(ICryptor):
         plain_bytes: bytes = pad(message.encode(), AES.block_size)
         aad: Key = Key(size=16)
         iv: Key = Key(size=12)
-        cryptor = AES.new(  # pyrefly: ignore
+        cryptor = AES.new(  # pyrefly: ignore  # type: ignore
             key=self.__key.binary,
             mode=AES.MODE_GCM,
             nonce=iv.binary,
@@ -86,7 +86,7 @@ class Gcm(ICryptor):
             tag_bytes: bytes = Base64Encoder.get_bytes(tag, self.url_safe)
             iv_bytes: bytes = Base64Encoder.get_bytes(iv, self.url_safe)
             cipher_bytes: bytes = Base64Encoder.get_bytes(cipher, self.url_safe)
-            cryptor = AES.new(  # pyrefly: ignore
+            cryptor = AES.new(  # pyrefly: ignore  # type: ignore
                 key=self.__key.binary,
                 mode=AES.MODE_GCM,
                 nonce=iv_bytes,

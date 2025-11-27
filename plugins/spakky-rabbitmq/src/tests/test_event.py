@@ -1,4 +1,4 @@
-from asyncio import sleep as asleep  # pyrefly: ignore
+from asyncio import sleep as asleep  # pyrefly: ignore  # type: ignore
 from time import sleep
 
 import pytest
@@ -73,9 +73,7 @@ def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
     with pytest.raises(DuplicateEventHandlerError) as exc_info:
         consumer.register(DuplicateTestEvent, handler2)
 
-    assert exc_info.value.event_type == DuplicateTestEvent
-    assert "DuplicateTestEvent" in exc_info.value.message
-    assert "already registered" in exc_info.value.message
+    assert DuplicateTestEvent in exc_info.value.args
 
 
 @pytest.mark.asyncio
@@ -96,6 +94,4 @@ async def test_duplicate_handler_registration_async(app: SpakkyApplication) -> N
     with pytest.raises(DuplicateEventHandlerError) as exc_info:
         consumer.register(DuplicateTestEvent, handler2)
 
-    assert exc_info.value.event_type == DuplicateTestEvent
-    assert "DuplicateTestEvent" in exc_info.value.message
-    assert "already registered" in exc_info.value.message
+    assert DuplicateTestEvent in exc_info.value.args
