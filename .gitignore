@@ -374,11 +374,6 @@ dist
 # Serverless directories
 .serverless
 
-# IDE / Editor
-.idea
-.vscode
-*.code-workspace
-
 # Service worker
 sw.*
 
