@@ -9,6 +9,8 @@ from typing import ClassVar
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.stereotype.configuration import Configuration
 
+from spakky_rabbitmq.constants import SPAKKY_RABBIT_MQ_CONFIG_ENV_PREFIX
+
 
 @Configuration()
 class RabbitMQConnectionConfig(BaseSettings):
@@ -26,7 +28,7 @@ class RabbitMQConnectionConfig(BaseSettings):
     """
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
-        env_prefix="RABBITMQ__",
+        env_prefix=SPAKKY_RABBIT_MQ_CONFIG_ENV_PREFIX,
         env_file_encoding="utf-8",
         env_nested_delimiter="__",
     )
