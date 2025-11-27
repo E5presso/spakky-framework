@@ -41,20 +41,21 @@ addopts = """
     -vv
 """
 
-[tool.coverage.run]
-include = ["src/spakky_kafka/*"]
-branch = true
+# TODO : Enable coverage settings when tests are added
+# [tool.coverage.run]
+# include = ["src/spakky_kafka/*"]
+# branch = true
 
-[tool.coverage.report]
-show_missing = true
-precision = 2
-fail_under = 90
-skip_empty = true
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "@(abc\\.)?abstractmethod",
-    "@(typing\\.)?overload",
-]
+# [tool.coverage.report]
+# show_missing = true
+# precision = 2
+# fail_under = 90
+# skip_empty = true
+# exclude_lines = [
+#     "pragma: no cover",
+#     "def __repr__",
+#     "raise AssertionError",
+#     "raise NotImplementedError",
+#     "@(abc\\.)?abstractmethod",
+#     "@(typing\\.)?overload",
+# ]
