@@ -6,7 +6,7 @@ event handler registration in RabbitMQ-enabled applications.
 
 from spakky.application.application import SpakkyApplication
 
-from spakky_rabbitmq.config import RabbitMQConnectionConfig
+from spakky_rabbitmq.common.config import RabbitMQConnectionConfig
 from spakky_rabbitmq.event.consumer import (
     AsyncRabbitMQEventConsumer,
     RabbitMQEventConsumer,
