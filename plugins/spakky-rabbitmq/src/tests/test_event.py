@@ -3,13 +3,13 @@ from time import sleep
 
 import pytest
 from spakky.application.application import SpakkyApplication
+from spakky.domain.ports.event.error import DuplicateEventHandlerError
 from spakky.domain.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
 from spakky.domain.ports.event.event_publisher import (
     IAsyncEventPublisher,
     IEventPublisher,
 )
 
-from spakky_rabbitmq.error import DuplicateEventHandlerError
 from tests.apps.dummy import (
     AsyncEventHandler,
     AsyncTestEvent,

@@ -14,6 +14,10 @@ from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.spec import Basic, BasicProperties
 from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.ports.event.error import (
+    DuplicateEventHandlerError,
+    InvalidMessageError,
+)
 from spakky.domain.ports.event.event_consumer import (
     DomainEventT,
     IAsyncEventConsumer,
@@ -27,7 +31,6 @@ from spakky.service.background import (
     AbstractBackgroundService,
 )
 
-from spakky_rabbitmq.error import DuplicateEventHandlerError, InvalidMessageError
 from spakky_rabbitmq.event.config import RabbitMQConnectionConfig
 
 
