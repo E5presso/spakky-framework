@@ -1,6 +1,6 @@
 [project]
 name = "spakky-framework"
-version = "3.3.2"
+version = "3.3.3"
 description = "Spakky framework monorepo"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,7 +23,7 @@ dev = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "3.3.2"
+version = "3.3.3"
 tag_format = "v$version"
 version_files = [
   "pyproject.toml:version",

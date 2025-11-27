@@ -1,3 +1,9 @@
+## v3.3.3 (2025-11-27)
+
+### Refactor
+
+- simplify error classes and clean up type annotations
+
 ## v3.3.2 (2025-11-26)
 
 ### Fix
