@@ -1874,6 +1874,9 @@ source = { editable = "spakky" }
 fastapi = [
     { name = "spakky-fastapi" },
 ]
+kafka = [
+    { name = "spakky-kafka" },
+]
 rabbitmq = [
     { name = "spakky-rabbitmq" },
 ]
@@ -1887,11 +1890,12 @@ typer = [
 [package.metadata]
 requires-dist = [
     { name = "spakky-fastapi", marker = "extra == 'fastapi'", editable = "plugins/spakky-fastapi" },
+    { name = "spakky-kafka", marker = "extra == 'kafka'", editable = "plugins/spakky-kafka" },
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
 ]
-provides-extras = ["fastapi", "rabbitmq", "security", "typer"]
+provides-extras = ["fastapi", "rabbitmq", "security", "typer", "kafka"]
 
 [[package]]
 name = "spakky-fastapi"

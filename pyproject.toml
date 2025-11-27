@@ -52,6 +52,7 @@ spakky-fastapi = { workspace = true }
 spakky-rabbitmq = { workspace = true }
 spakky-typer = { workspace = true }
 spakky-security = { workspace = true }
+spakky-kafka = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

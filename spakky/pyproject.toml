@@ -13,6 +13,7 @@ fastapi = ["spakky-fastapi>=3.3.3"]
 rabbitmq = ["spakky-rabbitmq>=3.3.3"]
 security = ["spakky-security>=3.3.3"]
 typer = ["spakky-typer>=3.3.3"]
+kafka = ["spakky-kafka>=3.3.3"]
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
