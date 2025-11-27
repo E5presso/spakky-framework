@@ -1,0 +1,60 @@
+[project]
+name = "spakky-kafka"
+version = "3.3.3"
+description = "Apache Kafka plugin for Spakky framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = ["spakky>=3.3.3"]
+
+[project.entry-points."spakky.plugins"]
+spakky-kafka = "spakky_kafka.main:initialize"
+
+[build-system]
+requires = ["uv_build>=0.9.13,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.pyrefly]
+python-version = "3.14"
+search_path = ["src"]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = "src/spakky_kafka"
+testpaths = "src/tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=loadfile
+    -p no:warnings
+    -n auto
+    -vv
+"""
+
+[tool.coverage.run]
+include = ["src/spakky_kafka/*"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+]

@@ -11,6 +11,7 @@ members = [
     "spakky",
     "spakky-fastapi",
     "spakky-framework",
+    "spakky-kafka",
     "spakky-rabbitmq",
     "spakky-security",
     "spakky-typer",
@@ -1943,6 +1944,17 @@ dev = [
     { name = "ruff", specifier = ">=0.14.6" },
     { name = "toml", specifier = ">=0.10.2" },
 ]
+
+[[package]]
+name = "spakky-kafka"
+version = "3.3.3"
+source = { editable = "plugins/spakky-kafka" }
+dependencies = [
+    { name = "spakky" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "spakky", editable = "spakky" }]
 
 [[package]]
 name = "spakky-rabbitmq"

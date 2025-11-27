@@ -32,6 +32,7 @@ version_files = [
   "plugins/spakky-rabbitmq/pyproject.toml:version",
   "plugins/spakky-security/pyproject.toml:version",
   "plugins/spakky-typer/pyproject.toml:version",
+  "plugins/spakky-kafka/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -42,6 +43,7 @@ members = [
   "plugins/spakky-rabbitmq",
   "plugins/spakky-security",
   "plugins/spakky-typer",
+  "plugins/spakky-kafka",
 ]
 
 [tool.uv.sources]
