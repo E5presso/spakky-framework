@@ -33,6 +33,9 @@ class RabbitMQConnectionConfig(BaseSettings):
         env_nested_delimiter="__",
     )
 
+    use_ssl: bool
+    """Flag indicating whether to use SSL for the connection."""
+
     host: str
     """RabbitMQ server hostname or IP address."""
 
@@ -49,13 +52,22 @@ class RabbitMQConnectionConfig(BaseSettings):
     """Optional exchange name for pub/sub message routing."""
 
     @property
+    def protocol(self) -> str:
+        """Determine protocol based on SSL usage.
+
+        Returns:
+            'amqps' if SSL is enabled, otherwise 'amqp'.
+        """
+        return "amqps" if self.use_ssl else "amqp"
+
+    @property
     def connection_string(self) -> str:
         """Generate AMQP connection string from configuration.
 
         Returns:
             Formatted AMQP connection string with credentials and host information.
         """
-        return f"amqp://{self.user}:{self.password}@{self.host}:{self.port}"
+        return f"{self.protocol}://{self.user}:{self.password}@{self.host}:{self.port}"
 
     def __init__(self) -> None:
         super().__init__()

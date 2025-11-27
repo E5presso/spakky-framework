@@ -22,6 +22,7 @@ from tests import apps
 def setup_environment_variables_fixture(
     request: pytest.FixtureRequest,
 ) -> Generator[None, Any, None]:
+    environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
     environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
     environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = str(25672)
     environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "test"
