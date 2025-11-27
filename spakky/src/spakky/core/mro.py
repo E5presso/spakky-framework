@@ -6,13 +6,13 @@ This module provides utilities for computing MRO (Method Resolution Order)
 for generic types, including parameterized generics like List[int] or Dict[str, Any].
 """
 
-from typing import *  # noqa: F403
+from typing import *  # type: ignore  # noqa: F403
 from typing import (
     Any,
     Generic,
     Protocol,
     TypeGuard,
-    _collect_parameters,  # pyrefly: ignore
+    _collect_parameters,  # pyrefly: ignore  # type: ignore
     get_args,
     get_origin,
 )
@@ -68,7 +68,7 @@ def generic_mro(tp: Any) -> list[type]:
         return tp.mro()
     # sentinel value to avoid to subscript Generic and Protocol
     result = {Generic: Generic, Protocol: Protocol}
-    _generic_mro(result, tp)
+    _generic_mro(result, tp)  # type: ignore
     cls = origin if origin is not None else tp
     return list(result.get(sub_cls, sub_cls) for sub_cls in cls.__mro__)
 
