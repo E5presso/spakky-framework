@@ -15,7 +15,7 @@ def test_pod_cannot_use_positional_only_args() -> None:
     with pytest.raises(CannotUsePositionalOnlyArgsInPodError):
 
         @Pod()
-        def bad_pod(x, /) -> int:  # Positional-only argument
+        def bad_pod(x, /) -> int:  # Positional-only argument  # type: ignore
             return x
 
 
@@ -45,5 +45,5 @@ def test_pod_cannot_determine_type_without_annotation() -> None:
 
         @Pod()
         class BadPod:
-            def __init__(self, x) -> None:  # No type annotation
+            def __init__(self, x) -> None:  # No type annotation  # type: ignore
                 pass

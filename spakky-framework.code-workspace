@@ -83,8 +83,7 @@
 			"reportUnknownMemberType": "none",
 			"reportUnknownParameterType": "none",
 			"reportUnknownVariableType": "none",
-			"reportMissingTypeStubs": "none",
-			"reportMissingParameterType": "none"
+			"reportMissingTypeStubs": "none"
 		},
 		"ruff.importStrategy": "fromEnvironment",
 	},
