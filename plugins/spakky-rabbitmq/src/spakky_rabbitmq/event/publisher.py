@@ -5,8 +5,8 @@ events to RabbitMQ queues with optional exchange routing.
 """
 
 from aio_pika import Message, connect_robust  # pyrefly: ignore  # type: ignore
-from jsons import dumps  # pyrefly: ignore  # type: ignore
 from pika import BlockingConnection, URLParameters
+from pydantic import TypeAdapter
 from spakky.domain.models.event import AbstractDomainEvent
 from spakky.domain.ports.event.event_publisher import (
     IAsyncEventPublisher,
@@ -31,6 +31,7 @@ class RabbitMQEventPublisher(IEventPublisher):
 
     connection_string: str
     exchange_name: str | None
+    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event publisher.
@@ -40,6 +41,7 @@ class RabbitMQEventPublisher(IEventPublisher):
         """
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
+        self.type_adapters = {}
 
     def publish(self, event: AbstractDomainEvent) -> None:
         """Publish a domain event to RabbitMQ.
@@ -56,10 +58,12 @@ class RabbitMQEventPublisher(IEventPublisher):
         if self.exchange_name is not None:
             channel.exchange_declare(self.exchange_name)
             channel.queue_bind(event.event_name, self.exchange_name, event.event_name)
+        if type(event) not in self.type_adapters:
+            self.type_adapters[type(event)] = TypeAdapter(type(event))
         channel.basic_publish(
             self.exchange_name if self.exchange_name is not None else "",
             event.event_name,
-            dumps(event).encode(),
+            self.type_adapters[type(event)].dump_json(event),
         )
         channel.close()
         connection.close()
@@ -79,6 +83,7 @@ class AsyncRabbitMQEventPublisher(IAsyncEventPublisher):
 
     connection_string: str
     exchange_name: str | None
+    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event publisher.
@@ -88,6 +93,7 @@ class AsyncRabbitMQEventPublisher(IAsyncEventPublisher):
         """
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
+        self.type_adapters = {}
 
     async def publish(self, event: AbstractDomainEvent) -> None:
         """Publish a domain event to RabbitMQ asynchronously.
@@ -108,8 +114,10 @@ class AsyncRabbitMQEventPublisher(IAsyncEventPublisher):
             queue = await channel.declare_queue(event.event_name)
             if self.exchange_name is not None:
                 await queue.bind(exchange, event.event_name)
+            if type(event) not in self.type_adapters:
+                self.type_adapters[type(event)] = TypeAdapter(type(event))
             await exchange.publish(
-                Message(body=dumps(event).encode()),
+                Message(body=self.type_adapters[type(event)].dump_json(event)),
                 routing_key=event.event_name,
             )
             await channel.close()

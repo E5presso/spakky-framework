@@ -9,10 +9,10 @@ from typing import Any
 
 from aio_pika import connect_robust  # pyrefly: ignore  # type: ignore
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
-from jsons import loads  # pyrefly: ignore  # type: ignore
 from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.spec import Basic, BasicProperties
+from pydantic import TypeAdapter
 from spakky.domain.models.event import AbstractDomainEvent
 from spakky.domain.ports.event.error import (
     DuplicateEventHandlerError,
@@ -52,6 +52,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
 
     connection_string: str
     type_lookup: dict[str, type[AbstractDomainEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
     handlers: dict[type[AbstractDomainEvent], IEventHandlerCallback[Any]]
     connection: BlockingConnection
     channel: BlockingChannel
@@ -65,6 +66,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         super().__init__()
         self.connection_string = config.connection_string
         self.type_lookup = {}
+        self.type_adapters = {}
         self.handlers = {}
 
     def _route_event_handler(
@@ -78,7 +80,8 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
         event_type = self.type_lookup[method_frame.consumer_tag]
         handler = self.handlers[event_type]
-        event = loads(body.decode(), event_type)
+        type_adapter = self.type_adapters[event_type]
+        event = type_adapter.validate_json(body)
         handler(event)
         channel.basic_ack(method_frame.delivery_tag)
 
@@ -107,6 +110,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
         self.handlers[event] = handler
+        self.type_adapters[event] = TypeAdapter(event)
 
     def initialize(self) -> None:
         """Initialize RabbitMQ connection and declare queues.
@@ -163,6 +167,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
 
     connection_string: str
     type_lookup: dict[str, type[AbstractDomainEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
     handlers: dict[type[AbstractDomainEvent], IAsyncEventHandlerCallback[Any]]
     connection: AbstractRobustConnection
 
@@ -174,6 +179,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         """
         self.connection_string = config.connection_string
         self.type_lookup = {}
+        self.type_adapters = {}
         self.handlers = {}
 
     async def _route_event_handler(self, message: AbstractIncomingMessage) -> None:
@@ -181,7 +187,8 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
         event_type = self.type_lookup[message.consumer_tag]
         handler = self.handlers[event_type]
-        event = loads(message.body.decode(), event_type)
+        type_adapter = self.type_adapters[event_type]
+        event = type_adapter.validate_json(message.body)
         await handler(event)
         await message.ack()
 
@@ -205,6 +212,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
         self.handlers[event] = handler
+        self.type_adapters[event] = TypeAdapter(event)
 
     async def initialize_async(self) -> None:
         """Initialize async RabbitMQ connection and declare queues.
