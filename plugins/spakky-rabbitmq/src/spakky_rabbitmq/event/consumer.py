@@ -31,7 +31,7 @@ from spakky.service.background import (
     AbstractBackgroundService,
 )
 
-from spakky_rabbitmq.event.config import RabbitMQConnectionConfig
+from spakky_rabbitmq.config import RabbitMQConnectionConfig
 
 
 @Pod()

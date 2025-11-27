@@ -14,7 +14,7 @@ from spakky.domain.ports.event.event_publisher import (
 )
 from spakky.pod.annotations.pod import Pod
 
-from spakky_rabbitmq.event.config import RabbitMQConnectionConfig
+from spakky_rabbitmq.config import RabbitMQConnectionConfig
 
 
 @Pod()

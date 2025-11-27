@@ -6,6 +6,7 @@ event handler registration in RabbitMQ-enabled applications.
 
 from spakky.application.application import SpakkyApplication
 
+from spakky_rabbitmq.config import RabbitMQConnectionConfig
 from spakky_rabbitmq.event.consumer import (
     AsyncRabbitMQEventConsumer,
     RabbitMQEventConsumer,
@@ -27,6 +28,8 @@ def initialize(app: SpakkyApplication) -> None:
     Args:
         app: The Spakky application instance.
     """
+    app.add(RabbitMQConnectionConfig)
+
     app.add(RabbitMQPostProcessor)
 
     app.add(RabbitMQEventConsumer)
