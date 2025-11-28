@@ -6,6 +6,7 @@ from typing import Any, Generator
 import pytest
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
+from spakky.aspects import AsyncLoggingAspect, LoggingAspect
 from testcontainers.rabbitmq import RabbitMqContainer  # pyrefly: ignore  # type: ignore
 
 import spakky_rabbitmq
@@ -61,8 +62,8 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky_rabbitmq.PLUGIN_NAME})
-        .enable_async_logging()
-        .enable_logging()
+        .add(AsyncLoggingAspect)
+        .add(LoggingAspect)
         .scan(apps)
     )
     app.start()

@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
+from spakky.aspects import AsyncLoggingAspect, LoggingAspect
 from spakky.pod.annotations.pod import Pod
 
 import spakky_fastapi
@@ -39,8 +40,8 @@ async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky_fastapi.PLUGIN_NAME})
-        .enable_async_logging()
-        .enable_logging()
+        .add(AsyncLoggingAspect)
+        .add(LoggingAspect)
         .scan(apps)
         .add(get_name)
         .add(get_api)

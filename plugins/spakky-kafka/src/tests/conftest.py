@@ -6,6 +6,7 @@ from typing import Any, Generator
 import pytest
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
+from spakky.aspects import AsyncLoggingAspect, LoggingAspect
 from testcontainers.kafka import KafkaContainer  # pyrefly: ignore  # type: ignore
 
 import spakky_kafka
@@ -59,8 +60,8 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky_kafka.PLUGIN_NAME})
-        .enable_async_logging()
-        .enable_logging()
+        .add(AsyncLoggingAspect)
+        .add(LoggingAspect)
         .scan(apps)
     )
     app.start()

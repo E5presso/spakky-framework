@@ -6,6 +6,7 @@ import pytest
 
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
+from spakky.aspects import LoggingAspect, TransactionalAspect
 from tests.application import apps
 
 
@@ -20,8 +21,8 @@ def application_fixture() -> Generator[SpakkyApplication, Any, None]:
 
     app: SpakkyApplication = (
         SpakkyApplication(ApplicationContext())
-        .enable_transactional()
-        .enable_logging()
+        .add(TransactionalAspect)
+        .add(LoggingAspect)
         .scan(apps)
         .load_plugins(include=set())
         .start()

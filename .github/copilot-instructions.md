@@ -202,12 +202,14 @@ The application lifecycle follows a builder pattern:
 ```python
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
+from spakky.aspects import AsyncLoggingAspect, LoggingAspect
 
 # Build and start application
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins()                    # Load all plugins from entry points
-    .enable_async_logging()            # Enable async logging aspects
+    .add(AsyncLoggingAspect)           # Register async logging aspect
+    .add(LoggingAspect)                # Register sync logging aspect
     .scan(my_package)                  # Scan package for @Pod annotated classes
     .add(CustomPod)                    # Manually register specific Pods
     .start()                           # Initialize container and aspects
@@ -221,8 +223,41 @@ user_service = app.container.get(UserService)
 
 - `load_plugins()`: Discovers and loads all plugins via entry points
 - `scan(module)`: Scans module for `@Pod`, `@Controller`, `@UseCase`, etc.
-- `add(pod_type)`: Manually registers a Pod type
+- `add(pod_type)`: Manually registers a Pod type (including aspects)
 - `start()`: Finalizes container setup and runs post-processors
+
+### Built-in Aspects
+
+Spakky provides built-in aspects in `spakky.aspects` module. Register them explicitly via `add()`:
+
+```python
+from spakky.aspects import (
+    # Annotations
+    Logging,                    # @Logging() decorator for methods
+    Transactional,              # @Transactional() decorator for methods
+    # Sync aspects
+    LoggingAspect,              # Handles @Logging on sync methods
+    TransactionalAspect,        # Handles @Transactional on sync methods
+    # Async aspects
+    AsyncLoggingAspect,         # Handles @Logging on async methods
+    AsyncTransactionalAspect,   # Handles @Transactional on async methods
+    # Convenience helpers
+    register_logging_aspects,       # Registers both Logging aspects
+    register_transactional_aspects, # Registers both Transactional aspects
+    register_all_aspects,           # Registers all built-in aspects
+)
+
+# Option 1: Register individual aspects
+app.add(AsyncLoggingAspect).add(LoggingAspect)
+
+# Option 2: Use convenience helpers
+from spakky.aspects import register_logging_aspects
+app = register_logging_aspects(app)
+
+# Option 3: Register all aspects at once
+from spakky.aspects import register_all_aspects
+app = register_all_aspects(app)
+```
 
 ### FastAPI Controllers
 

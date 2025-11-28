@@ -10,34 +10,34 @@ from spakky.aspects.transactional import (
 )
 
 
-def test_enable_logging() -> None:
-    """Test enable_logging method."""
+def test_add_logging_aspect() -> None:
+    """Test adding LoggingAspect via add() method."""
     app = SpakkyApplication(ApplicationContext())
-    app.enable_logging()
+    app.add(LoggingAspect)
     # Check that LoggingAspect is registered
     assert any(pod.type_ == LoggingAspect for pod in app.container.pods.values())
 
 
-def test_enable_async_logging() -> None:
-    """Test enable_async_logging method."""
+def test_add_async_logging_aspect() -> None:
+    """Test adding AsyncLoggingAspect via add() method."""
     app = SpakkyApplication(ApplicationContext())
-    app.enable_async_logging()
+    app.add(AsyncLoggingAspect)
     # Check that AsyncLoggingAspect is registered
     assert any(pod.type_ == AsyncLoggingAspect for pod in app.container.pods.values())
 
 
-def test_enable_transactional() -> None:
-    """Test enable_transactional method."""
+def test_add_transactional_aspect() -> None:
+    """Test adding TransactionalAspect via add() method."""
     app = SpakkyApplication(ApplicationContext())
-    app.enable_transactional()
+    app.add(TransactionalAspect)
     # Check that TransactionalAspect is registered
     assert any(pod.type_ == TransactionalAspect for pod in app.container.pods.values())
 
 
-def test_enable_async_transactional() -> None:
-    """Test enable_async_transactional method."""
+def test_add_async_transactional_aspect() -> None:
+    """Test adding AsyncTransactionalAspect via add() method."""
     app = SpakkyApplication(ApplicationContext())
-    app.enable_async_transactional()
+    app.add(AsyncTransactionalAspect)
     # Check that AsyncTransactionalAspect is registered
     assert any(
         pod.type_ == AsyncTransactionalAspect for pod in app.container.pods.values()

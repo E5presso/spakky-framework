@@ -5,6 +5,7 @@ from typing import Any, Generator
 import pytest
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
+from spakky.aspects import AsyncLoggingAspect, LoggingAspect
 from spakky.pod.annotations.pod import Pod
 from typer import Typer
 from typer.testing import CliRunner
@@ -39,8 +40,8 @@ def get_cli_fixture(name: str) -> Generator[Typer, Any, None]:
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky_typer.PLUGIN_NAME})
-        .enable_async_logging()
-        .enable_logging()
+        .add(AsyncLoggingAspect)
+        .add(LoggingAspect)
         .scan(apps)
         .add(get_name)
         .add(get_cli)

@@ -12,8 +12,6 @@ from typing import Callable, Self
 
 from spakky.application.error import AbstractSpakkyApplicationError
 from spakky.application.plugin import Plugin
-from spakky.aspects.logging import AsyncLoggingAspect, LoggingAspect
-from spakky.aspects.transactional import AsyncTransactionalAspect, TransactionalAspect
 from spakky.core.constants import PLUGIN_PATH
 from spakky.core.importing import (
     Module,
@@ -79,42 +77,6 @@ class SpakkyApplication:
             Self for method chaining.
         """
         self._application_context.add(obj)
-        return self
-
-    def enable_logging(self) -> Self:
-        """Enable synchronous logging aspect for all methods with @Logging decorator.
-
-        Returns:
-            Self for method chaining.
-        """
-        self.add(LoggingAspect)
-        return self
-
-    def enable_async_logging(self) -> Self:
-        """Enable asynchronous logging aspect for all async methods with @Logging decorator.
-
-        Returns:
-            Self for method chaining.
-        """
-        self.add(AsyncLoggingAspect)
-        return self
-
-    def enable_transactional(self) -> Self:
-        """Enable synchronous transactional aspect for methods with @Transactional decorator.
-
-        Returns:
-            Self for method chaining.
-        """
-        self.add(TransactionalAspect)
-        return self
-
-    def enable_async_transactional(self) -> Self:
-        """Enable asynchronous transactional aspect for async methods with @Transactional decorator.
-
-        Returns:
-            Self for method chaining.
-        """
-        self.add(AsyncTransactionalAspect)
         return self
 
     def scan(
