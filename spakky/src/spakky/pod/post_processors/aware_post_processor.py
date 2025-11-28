@@ -1,7 +1,7 @@
 """Post-processor for injecting framework services into aware Pods.
 
 This module provides ApplicationContextAwareProcessor which injects
-logger, container, and application context into Pods implementing aware interfaces.
+container and application context into Pods implementing aware interfaces.
 """
 
 from spakky.pod.interfaces.application_context import IApplicationContext
@@ -18,7 +18,6 @@ class ApplicationContextAwareProcessor(IPostProcessor):
     Checks if Pods implement aware interfaces and injects corresponding services:
     - IContainerAware: Injects IoC container
     - IApplicationContextAware: Injects application context
-    - ILoggerAware: Injects logger
     """
 
     __application_context: IApplicationContext
@@ -28,7 +27,6 @@ class ApplicationContextAwareProcessor(IPostProcessor):
 
         Args:
             application_context: The application context to inject.
-            logger: The logger to inject.
         """
         self.__application_context = application_context
 

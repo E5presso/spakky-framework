@@ -116,6 +116,26 @@ Spakky is a strictly typed framework. All public APIs and dependency injection p
 - Use `typing` module features (e.g., `Protocol`, `Any`, `cast`).
 - We use `pyrefly` (or compatible type checkers) for validation.
 
+### Logging Pattern
+
+Spakky uses **standard Python logging** instead of dependency injection for loggers.
+
+```python
+from logging import getLogger
+
+logger = getLogger(__name__)
+
+@Pod()
+class MyService:
+    def do_something(self) -> None:
+        logger.info("Doing something")
+```
+
+**Key points**:
+- Declare a module-level `logger` using `getLogger(__name__)`
+- Do NOT inject loggers via constructor or `ILoggerAware` (removed)
+- `ApplicationContext` no longer accepts a `logger` parameter
+
 ### Naming Conventions
 
 - **Packages**: `snake_case` (e.g., `spakky_fastapi`)

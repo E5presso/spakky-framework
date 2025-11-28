@@ -147,7 +147,8 @@ Plugins extend framework functionality through a formal plugin architecture:
 - **Post-processors**: Modify container behavior via `IPostProcessor` interface
   - Used for route registration, middleware injection, etc.
   - Implements `post_process(self, pod: object) -> object` method
-  - Can implement `ILoggerAware`, `IContainerAware` for framework services
+  - Can implement `IContainerAware`, `IApplicationContextAware` for framework services
+  - Uses standard Python `logging.getLogger(__name__)` for logging
 
 ```toml
 # In plugin's pyproject.toml
@@ -170,22 +171,23 @@ def initialize(app: SpakkyApplication) -> None:
 Post-processors allow plugins to modify Pods after creation:
 
 ```python
+from logging import getLogger
 from spakky.pod.interfaces.post_processor import IPostProcessor
 from spakky.pod.annotations.pod import Pod
 from spakky.pod.annotations.order import Order
 
+logger = getLogger(__name__)
+
 @Order(0)
 @Pod()
-class RegisterRoutesPostProcessor(IPostProcessor, ILoggerAware, IContainerAware):
-    def set_logger(self, logger: Logger) -> None:
-        self.__logger = logger
-
+class RegisterRoutesPostProcessor(IPostProcessor, IContainerAware):
     def set_container(self, container: IContainer) -> None:
         self.__container = container
 
     def post_process(self, pod: object) -> object:
         # Modify pod or register routes
         if ApiController.exists(pod):
+            logger.debug(f"Registering routes for {type(pod).__name__}")
             # Register routes from controller
             pass
         return pod
@@ -200,14 +202,10 @@ The application lifecycle follows a builder pattern:
 ```python
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
-import logging
-
-# Setup logger
-logger = logging.getLogger("app")
 
 # Build and start application
 app = (
-    SpakkyApplication(ApplicationContext(logger))
+    SpakkyApplication(ApplicationContext())
     .load_plugins()                    # Load all plugins from entry points
     .enable_async_logging()            # Enable async logging aspects
     .scan(my_package)                  # Scan package for @Pod annotated classes
@@ -542,6 +540,107 @@ The monorepo uses a two-stage hook system:
 - Only changed sub-projects run pytest
 - Prevents slow tests from blocking every commit
 
+## Logging Pattern
+
+Spakky Framework uses **standard Python logging** rather than dependency injection for loggers.
+
+### Module-Level Logger Declaration
+
+All modules that need logging should declare a module-level logger using `getLogger(__name__)`:
+
+```python
+from logging import getLogger
+
+logger = getLogger(__name__)
+
+@Pod()
+class MyService:
+    def do_something(self) -> None:
+        logger.info("Doing something")
+        logger.debug("Debug details")
+```
+
+### Why Not Dependency Injection for Loggers?
+
+1. **Simplicity**: Standard Python logging is well-understood and requires no framework integration
+2. **Flexibility**: Logging configuration is handled externally via `logging.config` or environment
+3. **Independence**: Each module manages its own logger without container dependencies
+4. **Testing**: No need to mock or inject loggers in tests
+
+### Logging in Different Contexts
+
+**In Post-Processors**:
+```python
+from logging import getLogger
+from spakky.pod.interfaces.post_processor import IPostProcessor
+
+logger = getLogger(__name__)
+
+@Pod()
+class MyPostProcessor(IPostProcessor, IContainerAware):
+    def set_container(self, container: IContainer) -> None:
+        self.__container = container
+
+    def post_process(self, pod: object) -> object:
+        logger.debug(f"Processing {type(pod).__name__}")
+        return pod
+```
+
+**In Aspects**:
+```python
+from logging import getLogger
+from spakky.aop.aspect import Aspect
+from spakky.aop.interfaces.aspect import IAspect
+
+logger = getLogger(__name__)
+
+@Aspect()
+class MyAspect(IAspect):
+    @Around(lambda x: SomeAnnotation.exists(x))
+    def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
+        logger.info(f"Before {joinpoint.__name__}")
+        result = joinpoint(*args, **kwargs)
+        logger.info(f"After {joinpoint.__name__}")
+        return result
+```
+
+**In Services and Pods**:
+```python
+from logging import getLogger
+
+logger = getLogger(__name__)
+
+@Pod()
+class UserService:
+    def __init__(self, repository: IUserRepository) -> None:
+        self.repository = repository
+
+    def create_user(self, email: str) -> User:
+        logger.info(f"Creating user with email: {email}")
+        user = self.repository.save(User(email=email))
+        logger.debug(f"User created with id: {user.id}")
+        return user
+```
+
+### ApplicationContext Initialization
+
+`ApplicationContext` no longer accepts a logger parameter:
+
+```python
+# Correct usage
+context = ApplicationContext()
+
+# Old pattern (no longer supported)
+# context = ApplicationContext(logger)  # ❌ Removed
+```
+
+### Aware Interfaces
+
+The framework provides two aware interfaces for dependency access (note: `ILoggerAware` has been removed):
+
+- **`IContainerAware`**: Injects IoC container via `set_container(container)`
+- **`IApplicationContextAware`**: Injects application context via `set_application_context(context)`
+
 ## File Conventions
 
 - **Source code**: `src/{package_name}/` directory in each package
@@ -682,7 +781,8 @@ AbstractSpakkyFrameworkError (ABC)
 - Post-processors modify Pods **after** instantiation but **before** use
 - Order controlled via `@Order(n)` (lower numbers execute first)
 - Common uses: Route registration, middleware injection, proxy wrapping
-- Post-processors can access container and logger via aware interfaces
+- Post-processors can access container and application context via aware interfaces (`IContainerAware`, `IApplicationContextAware`)
+- Logging uses standard Python `logging.getLogger(__name__)` pattern (not DI)
 
 ### Context Management
 
@@ -911,7 +1011,7 @@ def test_container_aware() -> None:
         def set_container(self, container: object) -> None:
             self.container = container
 
-    processor = ApplicationContextAwareProcessor(context, logger)
+    processor = ApplicationContextAwareProcessor(context)
     service = Service()
     processed = processor.post_process(service)
 
@@ -1414,3 +1514,21 @@ python -c "from spakky.application.application import SpakkyApplication"
 - **Unified versioning**: All packages share the same version number
 - **Workspace dependencies**: Local dev uses `{ workspace = true }`, PyPI uses version constraints
 - **Entry points**: Plugins register via `[project.entry-points."spakky.plugins"]`
+
+## Documentation Update Rules
+
+When the user requests documentation updates, **always update ALL of the following files together**:
+
+| File | Purpose |
+|------|---------|
+| `.github/copilot-instructions.md` | AI onboarding document (primary source of truth) |
+| `README.md` | Public-facing project documentation |
+| `CONTRIBUTING.md` | Contributor guidelines |
+
+**This rule applies automatically** - no separate instruction is needed from the user. If a change affects:
+- API usage examples → Update all three files
+- Configuration patterns → Update all three files
+- Development workflows → Update all three files
+- Coding conventions → Update all three files
+
+**Exception**: Changes that only affect internal AI instructions (e.g., tool usage tips, context management) only need to update `copilot-instructions.md`.
