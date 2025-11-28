@@ -35,17 +35,39 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import Iterable
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
-PACKAGE_PATHS: dict[str, Path] = {
-    "spakky": Path("spakky"),
-    "spakky-fastapi": Path("plugins/spakky-fastapi"),
-    "spakky-rabbitmq": Path("plugins/spakky-rabbitmq"),
-    "spakky-security": Path("plugins/spakky-security"),
-    "spakky-typer": Path("plugins/spakky-typer"),
-}
+
+
+def get_package_paths() -> dict[str, Path]:
+    """Read workspace members from root pyproject.toml and build package paths.
+
+    Returns:
+        A dictionary mapping package names to their relative paths.
+    """
+    pyproject_path = WORKSPACE_ROOT / "pyproject.toml"
+
+    with open(pyproject_path, "rb") as f:
+        pyproject = tomllib.load(f)
+
+    members = (
+        pyproject.get("tool", {}).get("uv", {}).get("workspace", {}).get("members", [])
+    )
+
+    package_paths: dict[str, Path] = {}
+    for member in members:
+        member_pyproject = WORKSPACE_ROOT / member / "pyproject.toml"
+        if member_pyproject.exists():
+            with open(member_pyproject, "rb") as f:
+                member_config = tomllib.load(f)
+            package_name = member_config.get("project", {}).get("name", "")
+            if package_name:
+                package_paths[package_name] = Path(member)
+
+    return package_paths
 
 
 class BumpError(RuntimeError):
@@ -120,32 +142,27 @@ def replace_pattern(path: Path, pattern: str, replacement: str) -> None:
 def sync_dependency_versions(new_version: str) -> None:
     """Align inter-package version constraints with the new release version."""
     print("🔄 Updating inter-package dependency constraints...")
+    package_paths = get_package_paths()
+    plugins = [name for name in package_paths if name != "spakky"]
+
+    # Update core's optional dependencies to plugins
     core_pyproject = WORKSPACE_ROOT / "spakky/pyproject.toml"
-    for plugin in (
-        "spakky-fastapi",
-        "spakky-rabbitmq",
-        "spakky-security",
-        "spakky-typer",
-    ):
+    for plugin in plugins:
         pattern = rf'"{plugin}>=([\d.]+)"'
         replacement = f'"{plugin}>={new_version}"'
         replace_pattern(core_pyproject, pattern, replacement)
 
-    for plugin in (
-        "spakky-fastapi",
-        "spakky-rabbitmq",
-        "spakky-security",
-        "spakky-typer",
-    ):
-        plugin_pyproject = WORKSPACE_ROOT / PACKAGE_PATHS[plugin] / "pyproject.toml"
+    # Update each plugin's dependency on spakky
+    for plugin in plugins:
+        plugin_pyproject = WORKSPACE_ROOT / package_paths[plugin] / "pyproject.toml"
         pattern = r'"spakky>=([\d.]+)"'
         replacement = f'"spakky>={new_version}"'
         replace_pattern(plugin_pyproject, pattern, replacement)
 
 
-def write_changelog(package: str, version: str) -> None:
+def write_changelog(package: str, version: str, package_paths: dict[str, Path]) -> None:
     """Write a minimal changelog entry for the given package."""
-    changelog_path = WORKSPACE_ROOT / PACKAGE_PATHS[package] / "CHANGELOG.md"
+    changelog_path = WORKSPACE_ROOT / package_paths[package] / "CHANGELOG.md"
     content = """# Changelog
 
 All notable changes to {pkg} are documented in this file.
@@ -163,8 +180,9 @@ entire workspace.
 def refresh_changelogs(version: str) -> None:
     """Regenerate changelog stubs for every package."""
     print("📝 Refreshing package changelog stubs...")
-    for package in PACKAGE_PATHS:
-        write_changelog(package, version)
+    package_paths = get_package_paths()
+    for package in package_paths:
+        write_changelog(package, version, package_paths)
 
 
 def stage_all_changes() -> None:
@@ -232,7 +250,7 @@ def main() -> int:
     if args.tag:
         create_release_tag(next_version)
 
-    packages = list(PACKAGE_PATHS.keys())
+    packages = list(get_package_paths().keys())
     write_github_output("released_version", next_version)
     write_github_output("released_packages", json.dumps(packages))
 
