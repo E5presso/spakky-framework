@@ -126,7 +126,8 @@ jobs:
           echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
 
       - name: Run tests
-        run: uv run pytest ${{ steps.pkg.outputs.path }} --cov --cov-report=xml:${{ steps.pkg.outputs.path }}/coverage.xml
+        working-directory: ${{ steps.pkg.outputs.path }}
+        run: uv run pytest --cov --cov-report=xml:coverage.xml
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
