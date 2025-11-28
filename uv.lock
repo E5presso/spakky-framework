@@ -1899,7 +1899,7 @@ wheels = [
 
 [[package]]
 name = "spakky"
-version = "3.3.3"
+version = "3.4.0"
 source = { editable = "spakky" }
 
 [package.optional-dependencies]
@@ -1931,7 +1931,7 @@ provides-extras = ["fastapi", "rabbitmq", "security", "typer", "kafka"]
 
 [[package]]
 name = "spakky-fastapi"
-version = "3.3.3"
+version = "3.4.0"
 source = { editable = "plugins/spakky-fastapi" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
@@ -1950,7 +1950,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-framework"
-version = "3.3.3"
+version = "3.4.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -1983,7 +1983,7 @@ dev = [
 
 [[package]]
 name = "spakky-kafka"
-version = "3.3.3"
+version = "3.4.0"
 source = { editable = "plugins/spakky-kafka" }
 dependencies = [
     { name = "confluent-kafka" },
@@ -2010,7 +2010,7 @@ dev = [{ name = "testcontainers", specifier = ">=4.13.3" }]
 
 [[package]]
 name = "spakky-rabbitmq"
-version = "3.3.3"
+version = "3.4.0"
 source = { editable = "plugins/spakky-rabbitmq" }
 dependencies = [
     { name = "aio-pika" },
@@ -2041,7 +2041,7 @@ dev = [{ name = "testcontainers", specifier = ">=4.13.3" }]
 
 [[package]]
 name = "spakky-security"
-version = "3.3.3"
+version = "3.4.0"
 source = { editable = "plugins/spakky-security" }
 dependencies = [
     { name = "argon2-cffi" },
@@ -2060,7 +2060,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-typer"
-version = "3.3.3"
+version = "3.4.0"
 source = { editable = "plugins/spakky-typer" }
 dependencies = [
     { name = "spakky" },

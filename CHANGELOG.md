@@ -1,3 +1,25 @@
+## v3.4.0 (2025-11-28)
+
+### Feat
+
+- kafka 플러그인 추가
+- RabbitMQ SSL 프로토콜 지원 추가
+- kafka 플러그인 프로젝트 추가
+- RabbitMQ 설정 환경변수 prefix를 상수로 관리
+- RabbitMQ 설정을 환경변수에 바로 로드할 수 있도록 수정
+
+### Fix
+
+- **kafka**: 잘못된 코드 제거
+- **kafka**: 누락된 커버리지 설정 복구
+- **kafka**: 누락된 Test 의존성 추가
+
+### Refactor
+
+- RabbitMQ 플러그인 패키지 구조 리팩터
+- **rabbitmq**: 내부 이벤트 ser/des을 pydantic의 TypeAdapter 기반 처리로 전환
+- 이벤트 관련 에러 정의 지점을 core 프레임워크로 이전
+
 ## v3.3.3 (2025-11-27)
 
 ### Refactor
