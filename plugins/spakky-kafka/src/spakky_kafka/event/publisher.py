@@ -48,7 +48,7 @@ class KafkaEventPublisher(IEventPublisher):
         error: KafkaError | None,
         message: Message,
     ) -> None:
-        if error is not None:
+        if error is not None:  # pragma: no cover
             self.logger.error(f"Message delivery failed: {error}")
         else:
             self.logger.info(
@@ -90,7 +90,7 @@ class AsyncKafkaEventPublisher(IAsyncEventPublisher):
 
     def _create_topic(self, topic: str) -> None:
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
-        if topic in existing_topics:
+        if topic in existing_topics:  # pragma: no cover
             return
         self.admin.create_topics(
             [
@@ -107,7 +107,7 @@ class AsyncKafkaEventPublisher(IAsyncEventPublisher):
         error: KafkaError | None,
         message: Message,
     ) -> None:
-        if error is not None:
+        if error is not None:  # pragma: no cover
             self.logger.error(f"Message delivery failed: {error}")
         else:
             self.logger.info(

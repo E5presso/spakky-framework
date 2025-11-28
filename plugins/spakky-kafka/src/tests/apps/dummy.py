@@ -57,7 +57,7 @@ class DummyEventHandler(IApplicationContextAware):
 
 
 @EventHandler()
-class AsyncEventHandler:
+class AsyncEventHandler(IApplicationContextAware):
     """Handler for testing async event consumption."""
 
     __application_context: IApplicationContext

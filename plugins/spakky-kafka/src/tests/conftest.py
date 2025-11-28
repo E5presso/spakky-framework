@@ -32,8 +32,7 @@ def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]
 
 @pytest.fixture(scope="package", autouse=True)
 def kafka_container(
-    port: int,
-    environment_variables: None,
+    port: int, environment_variables: None
 ) -> Generator[None, None, None]:
     bootstrap_servers = environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"]
 
