@@ -37,6 +37,9 @@
   <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml">
     <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml/badge.svg" alt="FastAPI Plugin CI">
   </a>
+  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-kafka.yml">
+    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-kafka.yml/badge.svg" alt="Kafka Plugin CI">
+  </a>
   <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml">
     <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml/badge.svg" alt="RabbitMQ Plugin CI">
   </a>
@@ -65,9 +68,10 @@
 Spakky is a monorepo containing the core framework and official plugins:
 
 | Package | Description |
-|---------|-------------|
+|---------|--------------|
 | **`spakky`** | Core framework (DI Container, AOP, Application Context) |
 | **`spakky-fastapi`** | Integration with [FastAPI](https://fastapi.tiangolo.com/) for building REST APIs |
+| **`spakky-kafka`** | Event-driven architecture support with [Apache Kafka](https://kafka.apache.org/) |
 | **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
 | **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
@@ -85,7 +89,7 @@ pip install spakky
 Or install with plugins:
 
 ```bash
-pip install "spakky[fastapi,rabbitmq]"
+pip install "spakky[fastapi,kafka]"
 ```
 
 ### Basic Usage

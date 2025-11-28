@@ -5,7 +5,7 @@
 Spakky is a Spring-inspired dependency injection framework for Python with AOP and plugin system:
 
 - **Core (`spakky/`)**: DI/IoC container, AOP aspects, stereotypes, and application context
-- **Plugins (`plugins/`)**: Framework extensions (FastAPI, RabbitMQ, Typer, Security)
+- **Plugins (`plugins/`)**: Framework extensions (FastAPI, RabbitMQ, Typer, Security, Kafka)
 - **Monorepo structure**: Uses `uv` workspace with shared tooling and cross-package dependencies
 - **Python version**: Requires Python 3.11+
 - **Build system**: Uses `uv` for dependency management and `uv_build` for packaging
@@ -38,6 +38,7 @@ spakky-framework/
     │
     ├── spakky-rabbitmq/      # RabbitMQ event system
     │   ├── src/spakky_rabbitmq/
+    │   │   ├── common/       # Configuration and constants
     │   │   └── event/        # Event publisher/consumer
     │   └── src/tests/
     │
@@ -47,10 +48,16 @@ spakky-framework/
     │   │   └── password/     # Password hashing
     │   └── src/tests/
     │
-    └── spakky-typer/         # CLI integration
-        ├── src/spakky_typer/
-        │   ├── stereotypes/  # CliController stereotype
-        │   └── utils/        # Asyncio utilities
+    ├── spakky-typer/         # CLI integration
+    │   ├── src/spakky_typer/
+    │   │   ├── stereotypes/  # CliController stereotype
+    │   │   └── utils/        # Asyncio utilities
+    │   └── src/tests/
+    │
+    └── spakky-kafka/         # Apache Kafka event system
+        ├── src/spakky_kafka/
+        │   ├── common/       # Configuration and constants
+        │   └── event/        # Event publisher/consumer
         └── src/tests/
 ```
 
@@ -269,7 +276,41 @@ class UserController:
 
 ### RabbitMQ Event Handlers
 
-Use `@EventHandler` stereotype with `@on_event` decorators.
+The RabbitMQ plugin provides event-driven architecture support using RabbitMQ as the message broker.
+
+**Configuration**: Set environment variables with the `SPAKKY_RABBITMQ__` prefix:
+
+```bash
+export SPAKKY_RABBITMQ__USE_SSL="false"
+export SPAKKY_RABBITMQ__HOST="localhost"
+export SPAKKY_RABBITMQ__PORT="5672"
+export SPAKKY_RABBITMQ__USER="guest"
+export SPAKKY_RABBITMQ__PASSWORD="guest"
+export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"  # Optional
+```
+
+**Event Publishing**:
+
+```python
+from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.ports.event.event_publisher import IEventPublisher, IAsyncEventPublisher
+
+class UserCreatedEvent(AbstractDomainEvent):
+    user_id: int
+    email: str
+
+@Pod()
+class UserService:
+    def __init__(self, publisher: IEventPublisher) -> None:
+        self.publisher = publisher
+
+    def create_user(self, email: str) -> User:
+        user = User(email=email)
+        self.publisher.publish(UserCreatedEvent(user_id=user.id, email=email))
+        return user
+```
+
+**Event Consuming**: Use `@EventHandler` stereotype with `@on_event` decorators.
 
 **Important**: Spakky enforces a 1:1 mapping between an event type and a handler method within a single `@EventHandler` class. Defining multiple handlers for the same event type in the same class will raise a `DuplicateEventHandlerError`.
 
@@ -292,6 +333,68 @@ class UserEventHandler:
     async def on_user_created(self, event: UserCreatedEvent) -> None:
         await self.notification_service.send_welcome_email(event.email)
 ```
+
+### Kafka Event Handlers
+
+The Kafka plugin provides a similar event-driven pattern to RabbitMQ, using Apache Kafka as the message broker.
+
+**Configuration**: Set environment variables with the `SPAKKY_KAFKA_` prefix:
+
+```bash
+export SPAKKY_KAFKA_GROUP_ID="my-consumer-group"
+export SPAKKY_KAFKA_CLIENT_ID="my-app"
+export SPAKKY_KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
+export SPAKKY_KAFKA_AUTO_OFFSET_RESET="earliest"  # earliest, latest, none
+# Optional SASL authentication
+export SPAKKY_KAFKA_SECURITY_PROTOCOL="SASL_SSL"
+export SPAKKY_KAFKA_SASL_MECHANISM="PLAIN"
+export SPAKKY_KAFKA_SASL_USERNAME="username"
+export SPAKKY_KAFKA_SASL_PASSWORD="password"
+```
+
+**Event Publishing**:
+
+```python
+from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.ports.event.event_publisher import IEventPublisher, IAsyncEventPublisher
+
+class UserCreatedEvent(AbstractDomainEvent):
+    user_id: int
+    email: str
+
+@Pod()
+class UserService:
+    def __init__(self, publisher: IEventPublisher) -> None:
+        self.publisher = publisher
+
+    def create_user(self, email: str) -> User:
+        user = User(email=email)
+        self.publisher.publish(UserCreatedEvent(user_id=user.id, email=email))
+        return user
+```
+
+**Event Consuming**: Uses the same `@EventHandler` stereotype as RabbitMQ:
+
+```python
+from spakky.stereotype.event_handler import EventHandler, on_event
+
+@EventHandler()
+class UserEventHandler:
+    def __init__(self, notification_service: NotificationService) -> None:
+        self.notification_service = notification_service
+
+    @on_event(UserCreatedEvent)
+    async def on_user_created(self, event: UserCreatedEvent) -> None:
+        await self.notification_service.send_welcome_email(event.email)
+```
+
+**Key Features**:
+
+- Automatic topic creation based on event type names
+- Sync (`KafkaEventPublisher`, `KafkaEventConsumer`) and async (`AsyncKafkaEventPublisher`, `AsyncKafkaEventConsumer`) variants
+- Background service pattern for consumer polling
+- Pydantic-based event serialization/deserialization
+- Confluent Kafka client integration
 
 ### Typer CLI Controllers
 
@@ -500,16 +603,20 @@ All framework errors inherit from `AbstractSpakkyFrameworkError`, which provides
 
 **Base Error Class**:
 ```python
+from typing import ClassVar
+
 class AbstractSpakkyFrameworkError(Exception, ABC):
-    """Base class for all Spakky framework errors."""
+    """Base class for all Spakky framework errors.
 
-    message: str = ""
+    The error message can be defined in two ways:
+    1. Class-level: Define `message` as a class attribute for a fixed message.
+    2. Instance-level: Pass `message` to the constructor to override the class default.
+
+    If neither is provided, the message will be an empty string.
+    """
+
+    message: ClassVar[str]
     """A human-readable message describing the error."""
-
-    def __init__(self, message: str | None = None, *args: object) -> None:
-        if message is not None:
-            self.message = message
-        super().__init__(self.message, *args)
 ```
 
 **Message Definition Patterns**:
@@ -558,8 +665,7 @@ AbstractSpakkyFrameworkError (ABC)
 ├── AnnotationNotFoundError
 ├── MultipleAnnotationFoundError
 └── (Plugin-specific errors)
-    ├── AbstractSpakkyFastAPIError
-    └── AbstractSpakkyRabbitMQError
+    └── AbstractSpakkyFastAPIError
 ```
 
 ## Critical Integration Points
@@ -1099,6 +1205,7 @@ The project uses GitHub Actions with a split workflow architecture for parallel 
 
 - **`ci.yml`**: Core framework tests and linting
 - **`ci-fastapi.yml`**: FastAPI plugin tests
+- **`ci-kafka.yml`**: Kafka plugin tests
 - **`ci-rabbitmq.yml`**: RabbitMQ plugin tests
 - **`ci-security.yml`**: Security plugin tests
 - **`ci-typer.yml`**: Typer plugin tests
@@ -1114,10 +1221,11 @@ Each workflow runs independently, ensuring that changes in one plugin do not blo
 - Users can install: `pip install spakky[fastapi,rabbitmq]`
 
 **Plugin Packages**: Independent PyPI packages
-- `spakky-fastapi`: FastAPI integration (depends on `spakky>=0.1.0`)
-- `spakky-rabbitmq`: RabbitMQ event system (depends on `spakky>=0.1.0`)
-- `spakky-security`: Security utilities (depends on `spakky>=0.1.0`)
-- `spakky-typer`: CLI integration (depends on `spakky>=0.1.0`)
+- `spakky-fastapi`: FastAPI integration (depends on `spakky>=3.3.3`)
+- `spakky-kafka`: Apache Kafka event system (depends on `spakky>=3.3.3`)
+- `spakky-rabbitmq`: RabbitMQ event system (depends on `spakky>=3.3.3`)
+- `spakky-security`: Security utilities (depends on `spakky>=3.3.3`)
+- `spakky-typer`: CLI integration (depends on `spakky>=3.3.3`)
 
 ### Installation Methods
 
@@ -1127,11 +1235,12 @@ pip install spakky
 
 # With specific plugins (via extras)
 pip install spakky[fastapi]
-pip install spakky[fastapi,rabbitmq]
+pip install spakky[fastapi,kafka]
 pip install spakky[all]
 
 # Standalone plugin installation
 pip install spakky-fastapi
+pip install spakky-kafka
 ```
 
 ### Version Management
@@ -1160,6 +1269,7 @@ git push && git push --tags
 - `pyproject.toml` (workspace root)
 - `spakky/pyproject.toml`
 - `plugins/spakky-fastapi/pyproject.toml`
+- `plugins/spakky-kafka/pyproject.toml`
 - `plugins/spakky-rabbitmq/pyproject.toml`
 - `plugins/spakky-security/pyproject.toml`
 - `plugins/spakky-typer/pyproject.toml`
@@ -1199,11 +1309,12 @@ uv publish --token $UV_PUBLISH_TOKEN
 ### Build Verification
 
 All packages successfully build and generate wheel + sdist:
-- spakky-0.1.0: 65KB wheel, 36KB tar.gz
-- spakky_fastapi-0.1.0: 23KB wheel, 8.7KB tar.gz
-- spakky_rabbitmq-0.1.0: 8.8KB wheel, 5.9KB tar.gz
-- spakky_security-0.1.0: 20KB wheel, 11KB tar.gz
-- spakky_typer-0.1.0: 7.3KB wheel, 4.7KB tar.gz
+- spakky-3.3.3
+- spakky_fastapi-3.3.3
+- spakky_kafka-3.3.3
+- spakky_rabbitmq-3.3.3
+- spakky_security-3.3.3
+- spakky_typer-3.3.3
 
 ### Package Metadata
 
@@ -1216,15 +1327,17 @@ All packages include:
 **Core extras configuration** (spakky/pyproject.toml):
 ```toml
 [project.optional-dependencies]
-fastapi = ["spakky-fastapi>=0.1.0"]
-rabbitmq = ["spakky-rabbitmq>=0.1.0"]
-security = ["spakky-security>=0.1.0"]
-typer = ["spakky-typer>=0.1.0"]
+fastapi = ["spakky-fastapi>=3.3.3"]
+kafka = ["spakky-kafka>=3.3.3"]
+rabbitmq = ["spakky-rabbitmq>=3.3.3"]
+security = ["spakky-security>=3.3.3"]
+typer = ["spakky-typer>=3.3.3"]
 all = [
-    "spakky-fastapi>=0.1.0",
-    "spakky-rabbitmq>=0.1.0",
-    "spakky-security>=0.1.0",
-    "spakky-typer>=0.1.0",
+    "spakky-fastapi>=3.3.3",
+    "spakky-kafka>=3.3.3",
+    "spakky-rabbitmq>=3.3.3",
+    "spakky-security>=3.3.3",
+    "spakky-typer>=3.3.3",
 ]
 ```
 
@@ -1238,7 +1351,7 @@ all = [
 - `feat!` or `BREAKING CHANGE:`: Breaking change (bumps MAJOR version)
 - `docs`, `style`, `refactor`, `test`, `chore`: No version bump
 
-**Scopes**: `core`, `fastapi`, `rabbitmq`, `security`, `typer`
+**Scopes**: `core`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
 
 **Examples**:
 ```bash

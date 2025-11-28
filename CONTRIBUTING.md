@@ -127,14 +127,16 @@ Spakky is a strictly typed framework. All public APIs and dependency injection p
 
 ### Error Class Guidelines
 
-All framework errors inherit from `AbstractSpakkyFrameworkError`. When creating custom errors:
+All framework errors inherit from `AbstractSpakkyFrameworkError`. The error message should be defined using `ClassVar[str]` for class-level messages:
 
 **For fixed messages** (no context needed):
 
 ```python
+from typing import ClassVar
+
 class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
     """Raised when function Pod has Optional return type."""
-    message = "Cannot use optional return type in pod"
+    message: ClassVar[str] = "Cannot use optional return type in pod"
 ```
 
 **For context-specific messages** (include details):
@@ -202,7 +204,7 @@ We use **Conventional Commits** to automate versioning and changelogs.
 Format: `<type>(<scope>): <subject>`
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **Scopes**: `core`, `fastapi`, `rabbitmq`, `security`, `typer`
+- **Scopes**: `core`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
 
 Examples:
 
