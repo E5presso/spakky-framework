@@ -1,95 +1,116 @@
 {
-	"folders": [
-		{
-			"name": "root",
-			"path": "."
-		},
-		{
-			"name": "core",
-			"path": "spakky"
-		},
-		{
-			"name": "plugins.fastapi",
-			"path": "plugins/spakky-fastapi"
-		},
-		{
-			"name": "plugins.rabbitmq",
-			"path": "plugins/spakky-rabbitmq"
-		},
-		{
-			"name": "plugins.security",
-			"path": "plugins/spakky-security"
-		},
-		{
-			"name": "plugins.typer",
-			"path": "plugins/spakky-typer"
-		},
-		{
-			"name": "plugins.kafka",
-			"path": "plugins/spakky-kafka"
-		}
-	],
-	"settings": {
-		"[python]": {
-			"editor.defaultFormatter": "charliermarsh.ruff",
-			"editor.formatOnSave": true,
-			"editor.tabSize": 4,
-			"editor.insertSpaces": true,
-			"editor.autoIndent": "advanced",
-			"editor.codeActionsOnSave": {
-				"source.organizeImports": "explicit",
-				"source.fixAll": "explicit"
-			}
-		},
-		"files.exclude": {
-			"**/.git": true,
-			"**/.svn": true,
-			"**/.hg": true,
-			"**/.DS_Store": true,
-			"**/Thumbs.db": true,
-			"**/__pycache__": true,
-			"**/*.pyc": true,
-			"**/.pytest_cache": true,
-			"**/*.egg-info": true,
-			"**/coverage.*": true,
-			"**/.coverage": true,
-			"**/.coverage.*": true,
-			"**/htmlcov": true,
-			"**/.tox/": true,
-			"**/.nox/": true,
-			"**/nosetests.xml": true,
-			"**/coverage.xml": true,
-			"**/*.cover": true,
-			"**/*.py,cover": true,
-			"**/.hypothesis/": true,
-			"**/.pytest_cache/": true,
-			"**/cover/": true
-		},
-		"python.defaultInterpreterPath": "${workspaceFolder:root}/.venv/bin/python",
-		"python.languageServer": "Pylance",
-		"python.analysis.diagnosticMode": "workspace",
-		"python.analysis.typeCheckingMode": "strict",
-		"python.analysis.diagnosticSeverityOverrides": {
-			"reportUnusedCallResult": "none",
-			"reportUnusedClass": "none",
-			"reportUnusedCoroutine": "none",
-			"reportUnusedExcept": "none",
-			"reportUnusedExpression": "none",
-			"reportUnusedFunction": "none",
-			"reportUnusedImport": "none",
-			"reportUnusedVariable": "none",
-			"reportUnknownArgumentType": "none",
-			"reportUnknownLambdaType": "none",
-			"reportUnknownMemberType": "none",
-			"reportUnknownParameterType": "none",
-			"reportUnknownVariableType": "none",
-			"reportMissingTypeStubs": "none"
-		},
-		"ruff.importStrategy": "fromEnvironment",
-	},
-	"extensions": {
-		"recommendations": [
-			"charliermarsh.ruff"
-		]
-	}
+  "folders": [
+    {
+      "name": "root",
+      "path": "."
+    },
+    {
+      "name": "core",
+      "path": "spakky"
+    },
+    {
+      "name": "plugins.fastapi",
+      "path": "plugins/spakky-fastapi"
+    },
+    {
+      "name": "plugins.rabbitmq",
+      "path": "plugins/spakky-rabbitmq"
+    },
+    {
+      "name": "plugins.security",
+      "path": "plugins/spakky-security"
+    },
+    {
+      "name": "plugins.typer",
+      "path": "plugins/spakky-typer"
+    },
+    {
+      "name": "plugins.kafka",
+      "path": "plugins/spakky-kafka"
+    }
+  ],
+  "settings": {
+    "[python]": {
+      "editor.defaultFormatter": "charliermarsh.ruff",
+      "editor.formatOnSave": true,
+      "editor.tabSize": 4,
+      "editor.insertSpaces": true,
+      "editor.autoIndent": "advanced",
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit",
+        "source.fixAll": "explicit"
+      }
+    },
+    "files.exclude": {
+      "**/.git": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/.DS_Store": true,
+      "**/Thumbs.db": true,
+      "**/__pycache__": true,
+      "**/*.pyc": true,
+      "**/.pytest_cache": true,
+      "**/*.egg-info": true,
+      "**/coverage.*": true,
+      "**/.coverage": true,
+      "**/.coverage.*": true,
+      "**/htmlcov": true,
+      "**/.tox/": true,
+      "**/.nox/": true,
+      "**/nosetests.xml": true,
+      "**/coverage.xml": true,
+      "**/*.cover": true,
+      "**/*.py,cover": true,
+      "**/.hypothesis/": true,
+      "**/.pytest_cache/": true,
+      "**/cover/": true
+    },
+    "python.defaultInterpreterPath": "${workspaceFolder:root}/.venv/bin/python",
+    "python.testing.pytestPath": "${workspaceFolder:root}/.venv/bin/pytest",
+    "python.languageServer": "Pylance",
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.typeCheckingMode": "strict",
+    "python.analysis.packageIndexDepths": [
+      {
+        "name": "*",
+        "depth": -1,
+        "includeAllSymbols": true
+      }
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+      "reportUnusedCallResult": "none",
+      "reportUnusedClass": "none",
+      "reportUnusedCoroutine": "none",
+      "reportUnusedExcept": "none",
+      "reportUnusedExpression": "none",
+      "reportUnusedFunction": "none",
+      "reportUnusedImport": "none",
+      "reportUnusedVariable": "none",
+      "reportUnknownArgumentType": "none",
+      "reportUnknownLambdaType": "none",
+      "reportUnknownMemberType": "none",
+      "reportUnknownParameterType": "none",
+      "reportUnknownVariableType": "none",
+      "reportMissingTypeStubs": "none",
+      "reportIncompatibleMethodOverride": "error",
+      "reportIncompatibleVariableOverride": "error"
+    },
+    "conventionalCommits.scopes": [
+      "core",
+      "fastapi",
+      "rabbitmq",
+      "security",
+      "typer",
+      "kafka"
+    ],
+    "github-actions.workflows.pinned.workflows": [
+      "root/.github/workflows/release.yml"
+    ],
+    "ruff.importStrategy": "fromEnvironment",
+  },
+  "extensions": {
+    "recommendations": [
+      "charliermarsh.ruff"
+    ]
+  }
 }
