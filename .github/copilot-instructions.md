@@ -1320,11 +1320,11 @@ This architecture ensures efficient resource usage by only testing what changed,
 - Users can install: `pip install spakky[fastapi,rabbitmq]`
 
 **Plugin Packages**: Independent PyPI packages
-- `spakky-fastapi`: FastAPI integration (depends on `spakky>=3.3.3`)
-- `spakky-kafka`: Apache Kafka event system (depends on `spakky>=3.3.3`)
-- `spakky-rabbitmq`: RabbitMQ event system (depends on `spakky>=3.3.3`)
-- `spakky-security`: Security utilities (depends on `spakky>=3.3.3`)
-- `spakky-typer`: CLI integration (depends on `spakky>=3.3.3`)
+- `spakky-fastapi`: FastAPI integration (depends on `spakky>=3.4.0`)
+- `spakky-kafka`: Apache Kafka event system (depends on `spakky>=3.4.0`)
+- `spakky-rabbitmq`: RabbitMQ event system (depends on `spakky>=3.4.0`)
+- `spakky-security`: Security utilities (depends on `spakky>=3.4.0`)
+- `spakky-typer`: CLI integration (depends on `spakky>=3.4.0`)
 
 ### Installation Methods
 
@@ -1408,12 +1408,12 @@ uv publish --token $UV_PUBLISH_TOKEN
 ### Build Verification
 
 All packages successfully build and generate wheel + sdist:
-- spakky-3.3.3
-- spakky_fastapi-3.3.3
-- spakky_kafka-3.3.3
-- spakky_rabbitmq-3.3.3
-- spakky_security-3.3.3
-- spakky_typer-3.3.3
+- spakky-3.4.0
+- spakky_fastapi-3.4.0
+- spakky_kafka-3.4.0
+- spakky_rabbitmq-3.4.0
+- spakky_security-3.4.0
+- spakky_typer-3.4.0
 
 ### Package Metadata
 
@@ -1426,17 +1426,17 @@ All packages include:
 **Core extras configuration** (spakky/pyproject.toml):
 ```toml
 [project.optional-dependencies]
-fastapi = ["spakky-fastapi>=3.3.3"]
-kafka = ["spakky-kafka>=3.3.3"]
-rabbitmq = ["spakky-rabbitmq>=3.3.3"]
-security = ["spakky-security>=3.3.3"]
-typer = ["spakky-typer>=3.3.3"]
+fastapi = ["spakky-fastapi>=3.4.0"]
+kafka = ["spakky-kafka>=3.4.0"]
+rabbitmq = ["spakky-rabbitmq>=3.4.0"]
+security = ["spakky-security>=3.4.0"]
+typer = ["spakky-typer>=3.4.0"]
 all = [
-    "spakky-fastapi>=3.3.3",
-    "spakky-kafka>=3.3.3",
-    "spakky-rabbitmq>=3.3.3",
-    "spakky-security>=3.3.3",
-    "spakky-typer>=3.3.3",
+    "spakky-fastapi>=3.4.0",
+    "spakky-kafka>=3.4.0",
+    "spakky-rabbitmq>=3.4.0",
+    "spakky-security>=3.4.0",
+    "spakky-typer>=3.4.0",
 ]
 ```
 
