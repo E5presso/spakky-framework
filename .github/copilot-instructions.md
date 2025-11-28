@@ -241,22 +241,9 @@ from spakky.aspects import (
     # Async aspects
     AsyncLoggingAspect,         # Handles @Logging on async methods
     AsyncTransactionalAspect,   # Handles @Transactional on async methods
-    # Convenience helpers
-    register_logging_aspects,       # Registers both Logging aspects
-    register_transactional_aspects, # Registers both Transactional aspects
-    register_all_aspects,           # Registers all built-in aspects
 )
 
-# Option 1: Register individual aspects
 app.add(AsyncLoggingAspect).add(LoggingAspect)
-
-# Option 2: Use convenience helpers
-from spakky.aspects import register_logging_aspects
-app = register_logging_aspects(app)
-
-# Option 3: Register all aspects at once
-from spakky.aspects import register_all_aspects
-app = register_all_aspects(app)
 ```
 
 ### FastAPI Controllers
