@@ -46,6 +46,11 @@ addopts = """
     -vv
 """
 
+[dependency-groups]
+dev = [
+    "testcontainers>=4.13.3",
+]
+
 # TODO : Enable coverage settings when tests are added
 # [tool.coverage.run]
 # include = ["src/spakky_kafka/*"]

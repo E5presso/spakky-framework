@@ -1992,6 +1992,11 @@ dependencies = [
     { name = "spakky" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "testcontainers" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "confluent-kafka", specifier = ">=2.12.2" },
@@ -1999,6 +2004,9 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "spakky", editable = "spakky" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "testcontainers", specifier = ">=4.13.3" }]
 
 [[package]]
 name = "spakky-rabbitmq"
