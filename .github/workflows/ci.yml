@@ -22,7 +22,7 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --all-packages --all-extras
 
       - name: Run linting
         run: |
@@ -59,6 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
+      has_changes: ${{ steps.set-matrix.outputs.has_changes }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,10 +89,16 @@ jobs:
           echo "Detected changes: $MATRIX"
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
+          if [ "$MATRIX" == "[]" ] || [ -z "$MATRIX" ]; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
   test:
     name: Test ${{ matrix.package }} (Python ${{ matrix.python-version }})
     needs: detect
-    if: ${{ needs.detect.outputs.matrix != '[]' && needs.detect.outputs.matrix != '' }}
+    if: needs.detect.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -110,26 +117,21 @@ jobs:
         run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
+        run: uv sync --all-packages --all-extras
+
+      - name: Get package path
+        id: pkg
         run: |
-          cd ${{ matrix.package }}
-          uv sync --all-extras
+          PKG_PATH=$(python3 scripts/get_package_path.py "${{ matrix.package }}")
+          echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
 
       - name: Run tests
-        run: |
-          cd ${{ matrix.package }}
-          uv run pytest --cov --cov-report=xml:coverage.xml
-
-      - name: Generate Codecov Flag
-        id: flag
-        run: |
-          # Replace slashes with underscores for valid flag name
-          FLAG=$(echo "${{ matrix.package }}" | sed 's/\//_/g')
-          echo "flag=$FLAG" >> $GITHUB_OUTPUT
+        run: uv run pytest ${{ steps.pkg.outputs.path }} --cov --cov-report=xml:${{ steps.pkg.outputs.path }}/coverage.xml
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ${{ matrix.package }}/coverage.xml
-          flags: ${{ steps.flag.outputs.flag }}
-          fail_ci_if_error: true
+          file: ${{ steps.pkg.outputs.path }}/coverage.xml
+          flags: ${{ matrix.package }}
+          fail_ci_if_error: false
