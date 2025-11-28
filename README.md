@@ -32,23 +32,12 @@
 <h3 align="center">✅ CI Status</h3>
 <p align="center">
   <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml">
-    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="Core CI">
+    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="CI Status">
   </a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml">
-    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-fastapi.yml/badge.svg" alt="FastAPI Plugin CI">
+  <a href="https://codecov.io/gh/E5presso/spakky-framework">
+    <img src="https://codecov.io/gh/E5presso/spakky-framework/branch/main/graph/badge.svg" alt="Codecov">
   </a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-kafka.yml">
-    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-kafka.yml/badge.svg" alt="Kafka Plugin CI">
-  </a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml">
-    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-rabbitmq.yml/badge.svg" alt="RabbitMQ Plugin CI">
-  </a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml">
-    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-security.yml/badge.svg" alt="Security Plugin CI">
-  </a>
-  <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml">
-    <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci-typer.yml/badge.svg" alt="Typer Plugin CI">
-  </a>
+</p>
 </p>
 
 ---

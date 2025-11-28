@@ -284,7 +284,7 @@ git push && git push --tags
 
 1.  Fork the repo and create your branch from `main`.
 2.  If you've added code that should be tested, add tests.
-3.  Ensure the test suite passes.
+3.  Ensure the test suite passes. The CI system will automatically detect changed packages and run tests only for them.
 4.  Make sure your code lints.
 5.  Issue that pull request!
 

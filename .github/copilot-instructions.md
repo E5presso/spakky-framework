@@ -1301,17 +1301,16 @@ def complex_function(
 
 ### CI/CD Architecture
 
-The project uses GitHub Actions with a split workflow architecture for parallel execution and faster feedback:
+The project uses GitHub Actions with a unified workflow architecture for optimized execution:
 
-- **`ci.yml`**: Core framework tests and linting
-- **`ci-fastapi.yml`**: FastAPI plugin tests
-- **`ci-kafka.yml`**: Kafka plugin tests
-- **`ci-rabbitmq.yml`**: RabbitMQ plugin tests
-- **`ci-security.yml`**: Security plugin tests
-- **`ci-typer.yml`**: Typer plugin tests
-- **`release.yml`**: Automated deployment to PyPI on tag push
+- **`ci.yml`**: Unified CI workflow that:
+  1. **Detects Changes**: Uses `scripts/detect_ci_changes.py` to identify changed packages.
+  2. **Matrix Testing**: Runs tests only for changed packages in parallel.
+  3. **Coverage**: Aggregates coverage reports and uploads to Codecov after all tests complete.
+  4. **Linting**: Runs linting and type checking on the entire codebase.
+- **`release.yml`**: Automated deployment to PyPI on tag push.
 
-Each workflow runs independently, ensuring that changes in one plugin do not block or fail the build for others.
+This architecture ensures efficient resource usage by only testing what changed, while maintaining full coverage reporting.
 
 ### PyPI Package Structure
 
