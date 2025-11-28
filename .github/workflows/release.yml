@@ -160,7 +160,8 @@ jobs:
           echo "---" >> release_notes.md
           echo "" >> release_notes.md
           echo "**Packages Released:**" >> release_notes.md
-          for pkg in spakky spakky-fastapi spakky-rabbitmq spakky-security spakky-typer; do
+          PACKAGES='${{ needs.bump.outputs.released_packages }}'
+          for pkg in $(echo "$PACKAGES" | jq -r '.[]'); do
             echo "- \`${pkg}==${VERSION}\`" >> release_notes.md
           done
 
