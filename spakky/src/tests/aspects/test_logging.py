@@ -4,6 +4,7 @@ from logging import Formatter, Logger, LogRecord
 import pytest
 
 from spakky.aop.aspect import Aspect, AsyncAspect
+from spakky.aspects import logging as logging_module
 from spakky.aspects.logging import AsyncLoggingAspect, Logging, LoggingAspect
 
 
@@ -21,7 +22,7 @@ def test_logging_with_masking() -> None:
     console = InMemoryHandler()
     console.setLevel(level=logging.DEBUG)
     console.setFormatter(Formatter("[%(levelname)s]: %(message)s"))
-    logger: Logger = logging.getLogger("debug")
+    logger: Logger = logging.getLogger(logging_module.__name__)
     logger.setLevel(logging.DEBUG)
     logger.addHandler(console)
 
@@ -36,7 +37,7 @@ def test_logging_with_masking() -> None:
         def none(self) -> None:
             pass
 
-    aspect = LoggingAspect(logger)
+    aspect = LoggingAspect()
     assert (
         aspect.around(
             joinpoint=Dummy().authenticate,
@@ -83,7 +84,7 @@ def test_logging_without_masking() -> None:
     console = InMemoryHandler()
     console.setLevel(level=logging.DEBUG)
     console.setFormatter(Formatter("[%(levelname)s]: %(message)s"))
-    logger: Logger = logging.getLogger("debug")
+    logger: Logger = logging.getLogger(logging_module.__name__)
     logger.setLevel(logging.DEBUG)
     logger.addHandler(console)
 
@@ -98,7 +99,7 @@ def test_logging_without_masking() -> None:
         def none(self) -> None:
             pass
 
-    aspect = LoggingAspect(logger)
+    aspect = LoggingAspect()
     assert (
         aspect.around(
             joinpoint=Dummy().authenticate,
@@ -146,7 +147,7 @@ async def test_async_logging_with_masking() -> None:
     console = InMemoryHandler()
     console.setLevel(level=logging.DEBUG)
     console.setFormatter(Formatter("[%(levelname)s]: %(message)s"))
-    logger: Logger = logging.getLogger("debug")
+    logger: Logger = logging.getLogger(logging_module.__name__)
     logger.setLevel(logging.DEBUG)
     logger.addHandler(console)
 
@@ -161,7 +162,7 @@ async def test_async_logging_with_masking() -> None:
         async def none(self) -> None:
             pass
 
-    aspect = AsyncLoggingAspect(logger)
+    aspect = AsyncLoggingAspect()
     assert (
         await aspect.around_async(
             joinpoint=Dummy().authenticate,
@@ -209,7 +210,7 @@ async def test_async_logging_without_masking() -> None:
     console = InMemoryHandler()
     console.setLevel(level=logging.DEBUG)
     console.setFormatter(Formatter("[%(levelname)s]: %(message)s"))
-    logger: Logger = logging.getLogger("debug")
+    logger: Logger = logging.getLogger(logging_module.__name__)
     logger.setLevel(logging.DEBUG)
     logger.addHandler(console)
 
@@ -224,7 +225,7 @@ async def test_async_logging_without_masking() -> None:
         async def none(self) -> None:
             pass
 
-    aspect = AsyncLoggingAspect(logger)
+    aspect = AsyncLoggingAspect()
     assert (
         await aspect.around_async(
             joinpoint=Dummy().authenticate,

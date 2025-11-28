@@ -37,7 +37,7 @@ def get_cli_fixture(name: str) -> Generator[Typer, Any, None]:
         return Typer()
 
     app = (
-        SpakkyApplication(ApplicationContext(logger))
+        SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky_typer.PLUGIN_NAME})
         .enable_async_logging()
         .enable_logging()

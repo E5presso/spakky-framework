@@ -1,4 +1,4 @@
-from logging import Logger
+from logging import getLogger
 
 from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
@@ -13,21 +13,21 @@ from spakky.pod.annotations.pod import Pod
 
 from spakky_kafka.common.config import KafkaConnectionConfig
 
+logger = getLogger(__name__)
+
 
 @Pod()
 class KafkaEventPublisher(IEventPublisher):
-    logger: Logger
     config: KafkaConnectionConfig
     type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
     admin: AdminClient
     producer: Producer
 
-    def __init__(self, logger: Logger, config: KafkaConnectionConfig) -> None:
-        self.logger = logger
+    def __init__(self, config: KafkaConnectionConfig) -> None:
         self.config = config
         self.type_adapters = {}
         self.admin = AdminClient(self.config.configuration_dict)
-        self.producer = Producer(self.config.configuration_dict, logger=self.logger)
+        self.producer = Producer(self.config.configuration_dict, logger=logger)
 
     def _create_topic(self, topic: str) -> None:
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
@@ -49,9 +49,9 @@ class KafkaEventPublisher(IEventPublisher):
         message: Message,
     ) -> None:
         if error is not None:  # pragma: no cover
-            self.logger.error(f"Message delivery failed: {error}")
+            logger.error(f"Message delivery failed: {error}")
         else:
-            self.logger.info(
+            logger.info(
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
@@ -76,14 +76,12 @@ class KafkaEventPublisher(IEventPublisher):
 
 @Pod()
 class AsyncKafkaEventPublisher(IAsyncEventPublisher):
-    logger: Logger
     config: KafkaConnectionConfig
     type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
     admin: AdminClient
     producer: AIOProducer
 
-    def __init__(self, logger: Logger, config: KafkaConnectionConfig) -> None:
-        self.logger = logger
+    def __init__(self, config: KafkaConnectionConfig) -> None:
         self.config = config
         self.type_adapters = {}
         self.admin = AdminClient(self.config.configuration_dict)
@@ -108,9 +106,9 @@ class AsyncKafkaEventPublisher(IAsyncEventPublisher):
         message: Message,
     ) -> None:
         if error is not None:  # pragma: no cover
-            self.logger.error(f"Message delivery failed: {error}")
+            logger.error(f"Message delivery failed: {error}")
         else:
-            self.logger.info(
+            logger.info(
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 

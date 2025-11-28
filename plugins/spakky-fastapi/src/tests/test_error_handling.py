@@ -1,5 +1,3 @@
-from logging import getLogger
-
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,7 +10,7 @@ def test_error_handling_middleware_debug_mode() -> None:
     api = FastAPI()
 
     # Add middleware with debug=True
-    middleware = ErrorHandlingMiddleware(api, logger=getLogger(__name__), debug=True)
+    middleware = ErrorHandlingMiddleware(api, debug=True)
     api.add_middleware(BaseHTTPMiddleware, dispatch=middleware.dispatch)
 
     @api.get("/error")
@@ -30,7 +28,7 @@ def test_error_handling_middleware_no_debug() -> None:
     api = FastAPI()
 
     # Add middleware with debug=False
-    middleware = ErrorHandlingMiddleware(api, logger=getLogger(__name__), debug=False)
+    middleware = ErrorHandlingMiddleware(api, debug=False)
     api.add_middleware(BaseHTTPMiddleware, dispatch=middleware.dispatch)
 
     @api.get("/error")

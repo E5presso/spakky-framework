@@ -3,11 +3,11 @@ from logging import Formatter, Logger, StreamHandler, getLogger
 from typing import Any, Generator
 
 import pytest
+
 from spakky.application.application_context import ApplicationContext
 from spakky.aspects.logging import AsyncLoggingAspect, LoggingAspect
 from spakky.core.importing import list_objects
 from spakky.pod.annotations.pod import Pod
-
 from tests.aop.apps import dummy
 
 
@@ -24,7 +24,7 @@ def get_application_context_fixture() -> Generator[ApplicationContext, Any, None
     def get_name() -> str:
         return "John"
 
-    context: ApplicationContext = ApplicationContext(logger=logger)
+    context: ApplicationContext = ApplicationContext()
     context.add(get_name)
     context.add(LoggingAspect)
     context.add(AsyncLoggingAspect)

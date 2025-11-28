@@ -37,7 +37,7 @@ async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
         return FastAPI(debug=True)
 
     app = (
-        SpakkyApplication(ApplicationContext(logger))
+        SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky_fastapi.PLUGIN_NAME})
         .enable_async_logging()
         .enable_logging()

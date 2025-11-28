@@ -59,7 +59,7 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
     logger.addHandler(console)
 
     app = (
-        SpakkyApplication(ApplicationContext(logger))
+        SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky_rabbitmq.PLUGIN_NAME})
         .enable_async_logging()
         .enable_logging()

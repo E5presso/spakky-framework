@@ -7,7 +7,7 @@ automatic logging of method calls with execution time and optional data masking.
 import re
 from dataclasses import dataclass, field
 from inspect import iscoroutinefunction
-from logging import Logger
+from logging import getLogger
 from time import perf_counter
 from typing import Any, ClassVar
 
@@ -17,6 +17,8 @@ from spakky.aop.pointcut import Around
 from spakky.core.annotation import FunctionAnnotation
 from spakky.core.types import AsyncFunc, Func
 from spakky.pod.annotations.order import Order
+
+logger = getLogger(__name__)
 
 
 @dataclass
@@ -56,17 +58,6 @@ class AsyncLoggingAspect(IAsyncAspect):
     )
     """Regex pattern for detecting sensitive key-value pairs."""
 
-    __logger: Logger
-
-    def __init__(self, logger: Logger) -> None:
-        """Initialize async logging aspect.
-
-        Args:
-            logger: Logger instance for outputting logs.
-        """
-        super().__init__()
-        self.__logger = logger
-
     @Around(lambda x: Logging.exists(x) and iscoroutinefunction(x))
     async def around_async(
         self, joinpoint: AsyncFunc, *args: Any, **kwargs: Any
@@ -101,7 +92,7 @@ class AsyncLoggingAspect(IAsyncAspect):
         except Exception as e:
             end: float = perf_counter()
             error: str = f"[{type(self).__name__}] {joinpoint.__qualname__}({_args}{_kwargs}) raised {type(e).__name__} ({end - start:.2f}s)"
-            self.__logger.error(
+            logger.error(
                 mask.sub(self.MASKING_TEXT, error)
                 if annotation.enable_masking
                 else error
@@ -109,7 +100,7 @@ class AsyncLoggingAspect(IAsyncAspect):
             raise
         end: float = perf_counter()
         after: str = f"[{type(self).__name__}] {joinpoint.__qualname__}({_args}{_kwargs}) -> {result!r} ({end - start:.2f}s)"
-        self.__logger.info(
+        logger.info(
             mask.sub(self.MASKING_TEXT, after) if annotation.enable_masking else after
         )
         return result
@@ -134,17 +125,6 @@ class LoggingAspect(IAspect):
         r"((['\"]?(?={keys})[^'\"]*['\"]?[:=]\s*)['\"][^'\"]*['\"])"
     )
     """Regex pattern for detecting sensitive key-value pairs."""
-
-    __logger: Logger
-
-    def __init__(self, logger: Logger) -> None:
-        """Initialize sync logging aspect.
-
-        Args:
-            logger: Logger instance for outputting logs.
-        """
-        super().__init__()
-        self.__logger = logger
 
     @Around(lambda x: Logging.exists(x) and not iscoroutinefunction(x))
     def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
@@ -178,7 +158,7 @@ class LoggingAspect(IAspect):
         except Exception as e:
             end: float = perf_counter()
             error: str = f"[{type(self).__name__}] {joinpoint.__qualname__}({_args}{_kwargs}) raised {type(e).__name__} ({end - start:.2f}s)"
-            self.__logger.error(
+            logger.error(
                 mask.sub(self.MASKING_TEXT, error)
                 if annotation.enable_masking
                 else error
@@ -186,7 +166,7 @@ class LoggingAspect(IAspect):
             raise
         end: float = perf_counter()
         after: str = f"[{type(self).__name__}] {joinpoint.__qualname__}({_args}{_kwargs}) -> {result!r} ({end - start:.2f}s)"
-        self.__logger.info(
+        logger.info(
             mask.sub(self.MASKING_TEXT, after) if annotation.enable_masking else after
         )
         return result

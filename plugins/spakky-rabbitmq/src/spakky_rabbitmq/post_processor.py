@@ -6,7 +6,7 @@ decorated classes, connecting them to RabbitMQ consumers with dependency injecti
 
 from functools import wraps
 from inspect import getmembers, iscoroutinefunction, ismethod
-from logging import Logger
+from logging import getLogger
 from typing import Any
 
 from spakky.domain.models.event import AbstractDomainEvent
@@ -18,17 +18,16 @@ from spakky.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.pod.interfaces.aware.container_aware import IContainerAware
-from spakky.pod.interfaces.aware.logger_aware import ILoggerAware
 from spakky.pod.interfaces.container import IContainer
 from spakky.pod.interfaces.post_processor import IPostProcessor
 from spakky.stereotype.event_handler import EventHandler, EventRoute
 
+logger = getLogger(__name__)
+
 
 @Order(1)
 @Pod()
-class RabbitMQPostProcessor(
-    IPostProcessor, ILoggerAware, IContainerAware, IApplicationContextAware
-):
+class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAware):
     """Post-processor that registers event handlers with RabbitMQ consumers.
 
     Scans @EventHandler decorated classes for @event decorated methods and
@@ -36,17 +35,8 @@ class RabbitMQPostProcessor(
     (sync or async) with proper dependency injection.
     """
 
-    __logger: Logger
     __container: IContainer
     __application_context: IApplicationContext
-
-    def set_logger(self, logger: Logger) -> None:
-        """Set the logger for event handler registration logging.
-
-        Args:
-            logger: The logger instance.
-        """
-        self.__logger = logger
 
     def set_container(self, container: IContainer) -> None:
         """Set the container for dependency injection.
@@ -89,7 +79,7 @@ class RabbitMQPostProcessor(
             if route is None:
                 continue
             # pylint: disable=line-too-long
-            self.__logger.info(
+            logger.info(
                 f"[{type(self).__name__}] {route.event_type.__name__} -> {method.__qualname__}"
             )
 

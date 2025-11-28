@@ -7,7 +7,7 @@ classes, creating FastAPI endpoints with proper dependency injection.
 from dataclasses import asdict
 from functools import wraps
 from inspect import getmembers, signature
-from logging import Logger
+from logging import getLogger
 from typing import Any
 
 from fastapi import APIRouter, FastAPI
@@ -20,7 +20,6 @@ from spakky.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.pod.interfaces.aware.container_aware import IContainerAware
-from spakky.pod.interfaces.aware.logger_aware import ILoggerAware
 from spakky.pod.interfaces.container import IContainer
 from spakky.pod.interfaces.post_processor import IPostProcessor
 
@@ -28,11 +27,13 @@ from spakky_fastapi.routes.route import Route
 from spakky_fastapi.routes.websocket import WebSocketRoute
 from spakky_fastapi.stereotypes.api_controller import ApiController
 
+logger = getLogger(__name__)
+
 
 @Order(0)
 @Pod()
 class RegisterRoutesPostProcessor(
-    IPostProcessor, ILoggerAware, IContainerAware, IApplicationContextAware
+    IPostProcessor, IContainerAware, IApplicationContextAware
 ):
     """Post-processor that registers routes from API controllers.
 
@@ -41,17 +42,8 @@ class RegisterRoutesPostProcessor(
     injection and response model inference.
     """
 
-    __logger: Logger
     __container: IContainer
     __application_context: IApplicationContext
-
-    def set_logger(self, logger: Logger) -> None:
-        """Set the logger for route registration logging.
-
-        Args:
-            logger: The logger instance.
-        """
-        self.__logger = logger
 
     def set_container(self, container: IContainer) -> None:
         """Set the container for dependency injection.
@@ -96,8 +88,8 @@ class RegisterRoutesPostProcessor(
 
             if route is not None:
                 # pylint: disable=line-too-long
-                self.__logger.debug(
-                    f"[{type(self).__name__}] {route.methods!r} {controller.prefix}{route.path} -> {method.__qualname__}"
+                logger.debug(
+                    f"{route.methods!r} {controller.prefix}{route.path} -> {method.__qualname__}"
                 )
                 if route.name is None:
                     route.name = " ".join([x.capitalize() for x in name.split("_")])
@@ -110,8 +102,8 @@ class RegisterRoutesPostProcessor(
                             create_model_field("", return_annotation)
                             route.response_model = return_annotation
                         except FastAPIError as e:
-                            self.__logger.debug(
-                                f"[{type(self).__name__}] Failed to infer response model for {method.__qualname__}: {type(e).__name__}"
+                            logger.debug(
+                                f"Failed to infer response model for {method.__qualname__}: {type(e).__name__}"
                             )
 
                 @wraps(method)
@@ -132,8 +124,8 @@ class RegisterRoutesPostProcessor(
                 router.add_api_route(endpoint=endpoint, **asdict(route))
             if websocket_route is not None:
                 # pylint: disable=line-too-long
-                self.__logger.debug(
-                    f"[{type(self).__name__}] [WebSocket] {controller.prefix}{websocket_route.path} -> {method.__qualname__}"
+                logger.debug(
+                    f"[WebSocket] {controller.prefix}{websocket_route.path} -> {method.__qualname__}"
                 )
                 if websocket_route.name is None:
                     websocket_route.name = " ".join(

@@ -1,7 +1,6 @@
 """Test application context error cases for complete coverage."""
 
 from asyncio import locks
-from logging import Logger
 from threading import Event
 
 import pytest
@@ -15,7 +14,7 @@ from spakky.application.application_context import (
 
 def test_application_context_start_twice_raises_error() -> None:
     """Test that starting context twice raises error."""
-    context = ApplicationContext(Logger("test"))
+    context = ApplicationContext()
     context.start()
 
     with pytest.raises(ApplicationContextAlreadyStartedError):
@@ -26,7 +25,7 @@ def test_application_context_start_twice_raises_error() -> None:
 
 def test_application_context_stop_twice_raises_error() -> None:
     """Test that stopping context twice raises error."""
-    context = ApplicationContext(Logger("test"))
+    context = ApplicationContext()
     context.start()
     context.stop()
 
@@ -63,7 +62,7 @@ def test_application_context_with_services() -> None:
         async def stop_async(self) -> None:
             self.stopped = True
 
-    context = ApplicationContext(Logger("test"))
+    context = ApplicationContext()
 
     sync_service = DummyService()
     async_service = DummyAsyncService()
@@ -84,7 +83,7 @@ def test_application_context_with_services() -> None:
 
 def test_event_loop_error_when_not_started() -> None:
     """Test that accessing event loop when not started raises error."""
-    context = ApplicationContext(Logger("test"))
+    context = ApplicationContext()
 
     # Try to stop without starting
     with pytest.raises(ApplicationContextAlreadyStoppedError):

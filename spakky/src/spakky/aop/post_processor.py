@@ -4,7 +4,7 @@ This module contains the logic for weaving aspects into Pod objects at runtime.
 """
 
 import sys
-from logging import Logger
+from logging import getLogger
 from typing import Any, ClassVar, Sequence
 from weakref import WeakKeyDictionary
 
@@ -17,6 +17,8 @@ from spakky.pod.annotations.order import Order
 from spakky.pod.annotations.pod import Pod
 from spakky.pod.interfaces.container import IContainer
 from spakky.pod.interfaces.post_processor import IPostProcessor
+
+logger = getLogger(__name__)
 
 
 class AspectProxyHandler(AbstractProxyHandler):
@@ -82,10 +84,9 @@ class AspectPostProcessor(IPostProcessor):
     """Post-processor that wraps Pods with matching aspects in dynamic proxies."""
 
     __DEFAULT_ORDER: ClassVar[Order] = Order(sys.maxsize)
-    __logger: Logger
     __container: IContainer
 
-    def __init__(self, container: IContainer, logger: Logger) -> None:
+    def __init__(self, container: IContainer) -> None:
         """Initialize the aspect post-processor.
 
         Args:
@@ -94,7 +95,6 @@ class AspectPostProcessor(IPostProcessor):
         """
         super().__init__()
         self.__container = container
-        self.__logger = logger
 
     def post_process(self, pod: object) -> object:
         """Process a Pod by wrapping it with matching aspects.
@@ -126,7 +126,7 @@ class AspectPostProcessor(IPostProcessor):
             ).order,
             reverse=True,
         )
-        self.__logger.debug(
+        logger.debug(
             f"[{type(self).__name__}] {[f'{type(x).__name__}' for x in matched_aspects]!r} -> {type(pod).__name__!r}"
         )
         return ProxyFactory(

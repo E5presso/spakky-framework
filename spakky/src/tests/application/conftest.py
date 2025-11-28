@@ -19,7 +19,7 @@ def application_fixture() -> Generator[SpakkyApplication, Any, None]:
     logger.addHandler(console)
 
     app: SpakkyApplication = (
-        SpakkyApplication(ApplicationContext(logger=logger))
+        SpakkyApplication(ApplicationContext())
         .enable_transactional()
         .enable_logging()
         .scan(apps)

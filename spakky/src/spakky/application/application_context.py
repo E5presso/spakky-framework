@@ -3,7 +3,6 @@ from asyncio import locks
 from asyncio.events import AbstractEventLoop, new_event_loop, set_event_loop
 from asyncio.tasks import run_coroutine_threadsafe
 from contextvars import ContextVar
-from logging import Logger, getLogger
 from threading import Thread
 from types import MappingProxyType
 from typing import Callable, cast, overload
@@ -11,7 +10,6 @@ from uuid import UUID, uuid4
 
 from spakky.aop.post_processor import AspectPostProcessor
 from spakky.core.constants import CONTEXT_ID, CONTEXT_SCOPE_CACHE
-from spakky.core.mro import is_family_with
 from spakky.core.types import ObjectT, is_optional, remove_none
 from spakky.pod.annotations.lazy import Lazy
 from spakky.pod.annotations.order import Order
@@ -56,9 +54,6 @@ class ApplicationContext(IApplicationContext):
     - Managing async event loop for async services
     """
 
-    __logger: Logger
-    """Logger for application events and errors."""
-
     __pods: dict[str, Pod]
     """Registry of all Pods by name."""
 
@@ -92,13 +87,12 @@ class ApplicationContext(IApplicationContext):
     __is_started: bool
     """Whether the context has been started."""
 
-    def __init__(self, logger: Logger | None = None) -> None:
+    def __init__(self) -> None:
         """Initialize application context.
 
         Args:
             logger: Optional logger instance. If None, uses root logger.
         """
-        self.__logger = logger or getLogger()
         self.__forward_type_map = {}
         self.__pods = {}
         self.__type_cache = {}
@@ -208,9 +202,9 @@ class ApplicationContext(IApplicationContext):
         3. ServicePostProcessor
         4. User-defined IPostProcessor Pods (sorted by @Order)
         """
-        self.__add_post_processor(ApplicationContextAwareProcessor(self, self.__logger))
-        self.__add_post_processor(AspectPostProcessor(self, self.__logger))
-        self.__add_post_processor(ServicePostProcessor(self, self.__logger))
+        self.__add_post_processor(ApplicationContextAwareProcessor(self))
+        self.__add_post_processor(AspectPostProcessor(self))
+        self.__add_post_processor(ServicePostProcessor(self))
 
         # Find and sort post-processors efficiently using list comprehension
         post_processors = sorted(
@@ -295,8 +289,6 @@ class ApplicationContext(IApplicationContext):
                 return None
             type_ = self.__forward_type_map[type_]  # pragma: no cover
 
-        if is_family_with(type_, Logger):
-            return cast(ObjectT, self.__logger)
         pod = self.__resolve_candidate(type_=type_, name=name, qualifiers=qualifiers)
         if pod is None:
             return None

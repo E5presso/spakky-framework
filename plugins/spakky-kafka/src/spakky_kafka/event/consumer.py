@@ -1,4 +1,4 @@
-from logging import Logger
+from logging import getLogger
 from typing import Any
 
 from confluent_kafka import Consumer, Message
@@ -24,10 +24,11 @@ from spakky.service.background import (
 
 from spakky_kafka.common.config import KafkaConnectionConfig
 
+logger = getLogger(__name__)
+
 
 @Pod()
 class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
-    logger: Logger
     config: KafkaConnectionConfig
     type_lookup: dict[str, type[AbstractDomainEvent]]
     type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
@@ -35,9 +36,8 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     admin: AdminClient
     consumer: Consumer
 
-    def __init__(self, logger: Logger, config: KafkaConnectionConfig) -> None:
+    def __init__(self, config: KafkaConnectionConfig) -> None:
         super().__init__()
-        self.logger = logger
         self.config = config
         self.type_lookup = {}
         self.type_adapters = {}
@@ -45,7 +45,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.admin = AdminClient(self.config.configuration_dict)
         self.consumer = Consumer(
             self.config.configuration_dict,
-            logger=self.logger,
+            logger=logger,
         )
 
     def _create_topics(self, topics: list[str]) -> None:
@@ -68,26 +68,26 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
 
     def _route_event_handler(self, message: Message) -> None:
         if message.error():  # pragma: no cover
-            self.logger.error(f"Consumer error: {message.error()}")
+            logger.error(f"Consumer error: {message.error()}")
             return
         topic: str | None = message.topic()
         if topic is None:  # pragma: no cover
-            self.logger.warning("Received message with no topic.")
+            logger.warning("Received message with no topic.")
             return
         event_type: type[AbstractDomainEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover
-            self.logger.warning(f"Received message for unknown event type: {topic}")
+            logger.warning(f"Received message for unknown event type: {topic}")
             return
         try:
             event_message: bytes | None = message.value()
             if event_message is None:  # pragma: no cover
-                self.logger.warning(f"Received empty message for event type: {topic}")
+                logger.warning(f"Received empty message for event type: {topic}")
                 return
             event_data = self.type_adapters[event_type].validate_json(event_message)
             handler = self.handlers[event_type]
             handler(event_data)
         except Exception as e:  # pragma: no cover
-            self.logger.error(f"Error processing message for event type {topic}: {e}")
+            logger.error(f"Error processing message for event type {topic}: {e}")
 
     def register(
         self,
@@ -118,7 +118,6 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
 
 @Pod()
 class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
-    logger: Logger
     config: KafkaConnectionConfig
     type_lookup: dict[str, type[AbstractDomainEvent]]
     type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
@@ -126,9 +125,8 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     admin: AdminClient
     consumer: AIOConsumer
 
-    def __init__(self, logger: Logger, config: KafkaConnectionConfig) -> None:
+    def __init__(self, config: KafkaConnectionConfig) -> None:
         super().__init__()
-        self.logger = logger
         self.config = config
         self.type_lookup = {}
         self.type_adapters = {}
@@ -155,26 +153,26 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
 
     async def _route_event_handler(self, message: Message) -> None:
         if message.error():  # pragma: no cover
-            self.logger.error(f"Consumer error: {message.error()}")
+            logger.error(f"Consumer error: {message.error()}")
             return
         topic: str | None = message.topic()
         if topic is None:  # pragma: no cover
-            self.logger.warning("Received message with no topic.")
+            logger.warning("Received message with no topic.")
             return
         event_type: type[AbstractDomainEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover
-            self.logger.warning(f"Received message for unknown event type: {topic}")
+            logger.warning(f"Received message for unknown event type: {topic}")
             return
         try:
             event_message: bytes | None = message.value()
             if event_message is None:  # pragma: no cover
-                self.logger.warning(f"Received empty message for event type: {topic}")
+                logger.warning(f"Received empty message for event type: {topic}")
                 return
             event_data = self.type_adapters[event_type].validate_json(event_message)
             handler = self.handlers[event_type]
             await handler(event_data)
         except Exception as e:  # pragma: no cover
-            self.logger.error(f"Error processing message for event type {topic}: {e}")
+            logger.error(f"Error processing message for event type {topic}: {e}")
 
     def register(
         self,

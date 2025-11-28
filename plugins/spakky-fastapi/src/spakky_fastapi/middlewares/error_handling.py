@@ -4,7 +4,7 @@ Provides global exception handling that converts Spakky FastAPI errors
 to appropriate JSON responses and handles unexpected exceptions gracefully.
 """
 
-from logging import Logger
+from logging import getLogger
 from typing import Awaitable, Callable, TypeAlias
 
 from fastapi import Request
@@ -14,6 +14,7 @@ from starlette.types import ASGIApp
 
 from spakky_fastapi.error import AbstractSpakkyFastAPIError, InternalServerError
 
+logger = getLogger(__name__)
 Next: TypeAlias = Callable[[Request], Awaitable[Response]]
 
 
@@ -25,12 +26,10 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
     """
 
     __debug: bool
-    __logger: Logger
 
     def __init__(
         self,
         app: ASGIApp,
-        logger: Logger,
         dispatch: DispatchFunction | None = None,
         debug: bool = False,
     ) -> None:
@@ -43,7 +42,6 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         """
         super().__init__(app, dispatch)
         self.__debug = debug
-        self.__logger = logger
 
     async def dispatch(self, request: Request, call_next: Next) -> Response:
         """Process the request with error handling.
@@ -64,7 +62,5 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         except AbstractSpakkyFastAPIError as e:
             return e.to_response()
         except Exception as e:
-            self.__logger.exception(
-                f"Unhandled exception during request processing: {e!r}"
-            )
+            logger.exception(f"Unhandled exception during request processing: {e!r}")
             return InternalServerError().to_response(self.__debug)

@@ -6,7 +6,7 @@ decorated classes, with support for both sync and async command handlers.
 
 from functools import wraps
 from inspect import getmembers, iscoroutinefunction
-from logging import Logger
+from logging import getLogger
 from typing import Any
 
 from spakky.pod.annotations.order import Order
@@ -16,7 +16,6 @@ from spakky.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.pod.interfaces.aware.container_aware import IContainerAware
-from spakky.pod.interfaces.aware.logger_aware import ILoggerAware
 from spakky.pod.interfaces.container import IContainer
 from spakky.pod.interfaces.post_processor import IPostProcessor
 from typer import Typer
@@ -24,12 +23,12 @@ from typer import Typer
 from spakky_typer.stereotypes.cli_controller import CliController, TyperCommand
 from spakky_typer.utils.asyncio import run_async
 
+logger = getLogger(__name__)
+
 
 @Order(0)
 @Pod()
-class TyperCLIPostProcessor(
-    IPostProcessor, ILoggerAware, IContainerAware, IApplicationContextAware
-):
+class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAware):
     """Post-processor that registers CLI commands from CLI controllers.
 
     Scans @CliController decorated classes for @command decorated methods
@@ -38,7 +37,6 @@ class TyperCLIPostProcessor(
     """
 
     __app: Typer
-    __logger: Logger
     __container: IContainer
     __application_context: IApplicationContext
 
@@ -50,14 +48,6 @@ class TyperCLIPostProcessor(
         """
         super().__init__()
         self.__app = app
-
-    def set_logger(self, logger: Logger) -> None:
-        """Set the logger for command registration logging.
-
-        Args:
-            logger: The logger instance.
-        """
-        self.__logger = logger
 
     def set_container(self, container: IContainer) -> None:
         """Set the container for dependency injection.
@@ -95,7 +85,7 @@ class TyperCLIPostProcessor(
             command: TyperCommand | None = TyperCommand.get_or_none(method)
             if command is not None:
                 # pylint: disable=line-too-long
-                self.__logger.info(
+                logger.info(
                     f"[{type(self).__name__}] {command.name!r} -> {'async' if iscoroutinefunction(method) else ''} {method.__qualname__}"
                 )
 

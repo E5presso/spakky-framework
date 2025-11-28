@@ -4,8 +4,6 @@ Automatically injects error handling and context management middleware
 into FastAPI instances registered in the container.
 """
 
-from logging import Logger
-
 from fastapi import FastAPI
 from spakky.pod.annotations.order import Order
 from spakky.pod.annotations.pod import Pod
@@ -54,7 +52,6 @@ class AddBuiltInMiddlewaresPostProcessor(IPostProcessor, IApplicationContextAwar
 
         pod.add_middleware(
             ErrorHandlingMiddleware,
-            logger=self.__application_context.get(Logger),
             debug=pod.debug,
         )
         return pod
