@@ -40,12 +40,4 @@ jobs:
         run: uv sync --all-extras
 
       - name: Run tests
-        run: cd plugins/spakky-security && uv run pytest --cov --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./plugins/spakky-security/coverage.xml
-          flags: security
-          fail_ci_if_error: false
+        run: cd plugins/spakky-security && uv run pytest --cov --cov-report=term-missing

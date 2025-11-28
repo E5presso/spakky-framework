@@ -64,15 +64,7 @@ jobs:
         run: uv sync
 
       - name: Run core tests
-        run: cd spakky && uv run pytest --cov --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./spakky/coverage.xml
-          flags: core
-          fail_ci_if_error: false
+        run: cd spakky && uv run pytest --cov --cov-report=term-missing
 
   commitlint:
     name: Lint Commits
