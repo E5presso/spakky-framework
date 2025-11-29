@@ -331,6 +331,33 @@ When performing actions in this repository, follow these guidelines:
     - Second: Use `uv run` prefixed terminal commands when no tool is available
     - Avoid: Direct terminal commands without `uv run` for Python operations
 
+4.  **NEVER Use Multiline Commands with Quotes**: The VS Code PTY shell will HANG and become unresponsive if you execute multiline commands using quotes (heredocs, multiline strings, etc.). This is a critical issue that breaks the terminal session.
+
+    ```bash
+    # ❌ FORBIDDEN - Will cause PTY shell to hang
+    cat << 'EOF'
+    some content
+    EOF
+
+    python -c "
+    import sys
+    print(sys.version)
+    "
+
+    # ✅ Correct - Use temporary files instead
+    # 1. Create a temp file using create_file tool
+    # 2. Execute: uv run python temp_script.py
+    # 3. Delete the temp file
+    ```
+
+5.  **Avoid `cat` for File Operations**: Use the `create_file` or `replace_string_in_file` tools directly instead of `cat` or `echo` with redirections. These tools are more reliable and don't risk terminal issues.
+
+6.  **Minimize Terminal Usage**: Terminal commands should be a last resort. Always prefer:
+    - File tools (`read_file`, `create_file`, `replace_string_in_file`) for file operations
+    - `runTests` for test execution
+    - `get_errors` for error checking
+    - Other integrated tools when available
+
 **Verification Checklist for Updates:**
 - [ ] Verified file paths and directory structure.
 - [ ] Verified class and function names (case-sensitive).
