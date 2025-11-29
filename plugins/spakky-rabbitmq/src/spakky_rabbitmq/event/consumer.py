@@ -34,7 +34,7 @@ from spakky.service.background import (
 from spakky_rabbitmq.common.config import RabbitMQConnectionConfig
 
 
-@Pod(scope=Pod.Scope.CONTEXT)
+@Pod()
 class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     """Synchronous RabbitMQ event consumer.
 
@@ -150,7 +150,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.channel.start_consuming()
 
 
-@Pod(scope=Pod.Scope.CONTEXT)
+@Pod()
 class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
     """Asynchronous RabbitMQ event consumer.
 
