@@ -37,7 +37,7 @@ addopts = """
     --cov-report=xml
     --no-cov-on-fail
     --strict-markers
-    --dist=loadfile
+    --dist=load
     -p no:warnings
     -n auto
     -vv

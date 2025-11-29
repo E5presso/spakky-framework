@@ -15,12 +15,12 @@ from spakky_kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 from tests import apps
 
 
-@pytest.fixture(name="port", scope="package")
+@pytest.fixture(name="port", scope="session")
 def port_fixture() -> int:
     return 9093
 
 
-@pytest.fixture(name="environment_variables", scope="package", autouse=True)
+@pytest.fixture(name="environment_variables", scope="session", autouse=True)
 def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]:
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test"
@@ -31,7 +31,7 @@ def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]
     yield
 
 
-@pytest.fixture(scope="package", autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def kafka_container(
     port: int, environment_variables: None
 ) -> Generator[None, None, None]:

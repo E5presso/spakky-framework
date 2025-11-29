@@ -1,5 +1,5 @@
 from asyncio import sleep as asleep  # pyrefly: ignore  # type: ignore
-from time import sleep
+from time import sleep, time
 
 import pytest
 from spakky.application.application import SpakkyApplication
@@ -18,26 +18,59 @@ from tests.apps.dummy import (
     SampleEvent,
 )
 
+POLL_INTERVAL = 0.05  # seconds between checks
+MAX_WAIT_TIME = 10  # maximum seconds to wait
+
+
+def wait_for_count(
+    handler: DummyEventHandler | AsyncEventHandler, expected: int
+) -> None:
+    """Poll until handler.count reaches expected value or timeout."""
+    start = time()
+    while handler.count < expected:
+        if time() - start > MAX_WAIT_TIME:
+            raise TimeoutError(
+                f"Timed out waiting for handler.count to reach {expected}. "
+                f"Current count: {handler.count}"
+            )
+        sleep(POLL_INTERVAL)
+
+
+async def async_wait_for_count(
+    handler: DummyEventHandler | AsyncEventHandler, expected: int
+) -> None:
+    """Async poll until handler.count reaches expected value or timeout."""
+    start = time()
+    while handler.count < expected:
+        if time() - start > MAX_WAIT_TIME:
+            raise TimeoutError(
+                f"Timed out waiting for handler.count to reach {expected}. "
+                f"Current count: {handler.count}"
+            )
+        await asleep(POLL_INTERVAL)
+
 
 def test_synchronous_event(app: SpakkyApplication) -> None:
     publisher = app.container.get(IEventPublisher)
+    handler = app.container.get(DummyEventHandler)
+    initial_count = handler.count
     publisher.publish(SampleEvent(message="Hello, World!"))
     publisher.publish(SampleEvent(message="Goodbye, World!"))
-    sleep(0.1)
-    handler = app.container.get(DummyEventHandler)
-    assert handler.count == 2
-    assert len(handler.context_ids) == 2
+    wait_for_count(handler, initial_count + 2)
+    assert handler.count == initial_count + 2
+    assert len(handler.context_ids) >= 2
 
 
 @pytest.mark.asyncio
 async def test_asynchronous_event(app: SpakkyApplication) -> None:
     publisher = app.container.get(IAsyncEventPublisher)
+    handler = app.container.get(DummyEventHandler)
+    initial_count = handler.count
     await publisher.publish(SampleEvent(message="Hello, World!"))
     await publisher.publish(SampleEvent(message="Goodbye, World!"))
-    await asleep(0.1)
-    handler = app.container.get(DummyEventHandler)
-    assert handler.count == 2
-    assert len(handler.context_ids) == 2
+    await async_wait_for_count(handler, initial_count + 2)
+    assert handler.count == initial_count + 2
+    assert len(handler.context_ids) >= 2
 
 
 @pytest.mark.asyncio
@@ -50,7 +83,7 @@ async def test_async_handler_execution(app: SpakkyApplication) -> None:
     await publisher.publish(AsyncTestEvent(message="Test1"))
     await publisher.publish(AsyncTestEvent(message="Test2"))
     await publisher.publish(AsyncTestEvent(message="Test3"))
-    await asleep(0.1)
+    await async_wait_for_count(handler, initial_count + 3)
 
     # All async events should be handled
     assert handler.count == initial_count + 3
