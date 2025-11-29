@@ -2,6 +2,7 @@ from uuid import UUID
 
 from spakky.core.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent
+from spakky.pod.annotations.pod import Pod
 from spakky.pod.interfaces.application_context import IApplicationContext
 from spakky.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
@@ -28,7 +29,7 @@ class AsyncTestEvent(AbstractDomainEvent):
     message: str
 
 
-@EventHandler()
+@EventHandler(scope=Pod.Scope.CONTEXT)
 class DummyEventHandler(IApplicationContextAware):
     __application_context: IApplicationContext
     __count: int
@@ -56,7 +57,7 @@ class DummyEventHandler(IApplicationContextAware):
         self.__context_ids.add(self.__application_context.get_context_id())
 
 
-@EventHandler()
+@EventHandler(scope=Pod.Scope.CONTEXT)
 class AsyncEventHandler:
     """Handler for testing async event consumption."""
 
