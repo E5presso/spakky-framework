@@ -28,12 +28,10 @@ pip install spakky[security]
 ### Password Hashing
 
 ```python
-from spakky_security.password import (
-    Argon2PasswordEncoder,
-    BcryptPasswordEncoder,
-    ScryptPasswordEncoder,
-    Pbkdf2PasswordEncoder,
-)
+from spakky_security.password.argon2 import Argon2PasswordEncoder
+from spakky_security.password.bcrypt import BcryptPasswordEncoder
+from spakky_security.password.scrypt import ScryptPasswordEncoder
+from spakky_security.password.pbkdf2 import Pbkdf2PasswordEncoder
 
 # Argon2 (recommended)
 encoder = Argon2PasswordEncoder(password="my_password")
@@ -59,7 +57,8 @@ hashed = pbkdf2_encoder.encode()
 ### Symmetric Encryption (AES)
 
 ```python
-from spakky_security.cryptography import Aes, Gcm
+from spakky_security.cryptography.aes import Aes
+from spakky_security.cryptography.gcm import Gcm
 from spakky_security.key import Key
 
 # Generate a 256-bit key
@@ -79,10 +78,11 @@ decrypted = gcm.decrypt(encrypted)  # "Hello, World!"
 ### Asymmetric Encryption (RSA)
 
 ```python
-from spakky_security.cryptography import Rsa
+from spakky_security.cryptography.rsa import Rsa, AsymmetricKey
 
-# Generate RSA key pair
-rsa = Rsa.generate(key_size=2048)
+# Generate RSA key pair (supports 1024, 2048, 4096, 8192 bits)
+asymmetric_key = AsymmetricKey(size=2048)
+rsa = Rsa(key=asymmetric_key)
 
 # Encrypt with public key
 encrypted = rsa.encrypt("Secret message")
@@ -91,11 +91,12 @@ encrypted = rsa.encrypt("Secret message")
 decrypted = rsa.decrypt(encrypted)  # "Secret message"
 
 # Export keys
-public_key_pem = rsa.public_key_pem
-private_key_pem = rsa.private_key_pem
+public_key = asymmetric_key.public_key
+private_key = asymmetric_key.private_key  # Returns Key or None
 
-# Import from PEM
-rsa_imported = Rsa(private_key_pem=private_key_pem)
+# Import from PEM (passphrase optional)
+imported_key = AsymmetricKey(key=private_key_pem, passphrase="optional")
+rsa_imported = Rsa(key=imported_key)
 ```
 
 ### JWT Tokens
@@ -108,12 +109,17 @@ from datetime import timedelta
 
 # Create a JWT
 jwt = JWT()
-jwt.set_payload({"user_id": 123, "role": "admin"})
+jwt.set_payload(user_id=123, role="admin")
 jwt.set_expiration(timedelta(hours=1))
 
-# Sign the token
+# Sign the token (default: HS256)
 key = Key(size=32)
-token_string = jwt.sign(key, HMACType.HS256)
+jwt.sign(key)
+token_string = str(jwt)
+
+# Use different hash algorithm
+jwt.set_hash_type(HMACType.HS512)
+jwt.sign(key)
 
 # Parse and verify a token
 parsed_jwt = JWT(token=token_string)
@@ -131,13 +137,15 @@ from spakky_security.hmac_signer import HMAC, HMACType
 from spakky_security.key import Key
 
 key = Key(size=32)
-hmac = HMAC(key, HMACType.HS256)
 
-# Sign a message
-signature = hmac.sign("message to sign")
+# Sign a message (static method)
+signature = HMAC.sign_text(key, HMACType.HS256, "message to sign")
 
-# Verify signature
-is_valid = hmac.verify("message to sign", signature)
+# URL-safe signature
+signature_safe = HMAC.sign_text(key, HMACType.HS256, "message", url_safe=True)
+
+# Verify signature (static method)
+is_valid = HMAC.verify(key, HMACType.HS256, "message to sign", signature)
 ```
 
 ### Key Generation

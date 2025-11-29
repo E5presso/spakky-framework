@@ -16,29 +16,29 @@ pip install spakky[kafka]
 
 ## Configuration
 
-Set environment variables with the `SPAKKY_KAFKA_` prefix:
+Set environment variables with the `SPAKKY_KAFKA__` prefix:
 
 ```bash
-export SPAKKY_KAFKA_GROUP_ID="my-consumer-group"
-export SPAKKY_KAFKA_CLIENT_ID="my-app"
-export SPAKKY_KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
-export SPAKKY_KAFKA_AUTO_OFFSET_RESET="earliest"  # earliest, latest, none
+export SPAKKY_KAFKA__GROUP_ID="my-consumer-group"
+export SPAKKY_KAFKA__CLIENT_ID="my-app"
+export SPAKKY_KAFKA__BOOTSTRAP_SERVERS="localhost:9092"
+export SPAKKY_KAFKA__AUTO_OFFSET_RESET="earliest"  # earliest, latest, none
 ```
 
 ### SASL Authentication (Optional)
 
 ```bash
-export SPAKKY_KAFKA_SECURITY_PROTOCOL="SASL_SSL"
-export SPAKKY_KAFKA_SASL_MECHANISM="PLAIN"
-export SPAKKY_KAFKA_SASL_USERNAME="username"
-export SPAKKY_KAFKA_SASL_PASSWORD="password"
+export SPAKKY_KAFKA__SECURITY_PROTOCOL="SASL_SSL"
+export SPAKKY_KAFKA__SASL_MECHANISM="PLAIN"
+export SPAKKY_KAFKA__SASL_USERNAME="username"
+export SPAKKY_KAFKA__SASL_PASSWORD="password"
 ```
 
 ### Topic Configuration (Optional)
 
 ```bash
-export SPAKKY_KAFKA_NUMBER_OF_PARTITIONS="3"
-export SPAKKY_KAFKA_REPLICATION_FACTOR="1"
+export SPAKKY_KAFKA__NUMBER_OF_PARTITIONS="3"
+export SPAKKY_KAFKA__REPLICATION_FACTOR="1"
 ```
 
 ## Usage
