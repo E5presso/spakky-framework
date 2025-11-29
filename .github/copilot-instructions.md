@@ -291,6 +291,24 @@ cd plugins/spakky-fastapi
 uv run pytest
 ```
 
+### Test Style Guidelines
+
+- **Function-based tests**: Use plain functions, not classes. Avoid wrapping tests in `class TestXxx:`.
+- **Naming convention**: Use `test_<function_name>_<scenario>_expect_<result>` pattern.
+- **Docstrings**: Each test function should have a docstring explaining what it tests.
+
+```python
+# ✅ Correct - Function-based test
+def test_ensure_importable_when_parent_in_sys_path() -> None:
+    """Test that nothing happens when parent is already in sys.path."""
+    ...
+
+# ❌ Wrong - Class-based test
+class TestEnsureImportable:
+    def test_when_parent_in_sys_path(self) -> None:
+        ...
+```
+
 ## AI Documentation Maintenance Rules
 
 **CRITICAL INSTRUCTION FOR AI AGENTS:**
