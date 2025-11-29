@@ -57,12 +57,15 @@ import my_app
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins()
-    .scan(my_app)
+    .scan(my_app)  # or .scan() to auto-detect caller's package
     .start()
 )
 
 # Get a service from the container
 user_service = app.container.get(UserService)
+```
+
+> **📘 Auto-scan**: When `scan()` is called without arguments, it automatically detects the caller's package and scans it. This also works in Docker environments where the application root may not be in `sys.path` - the framework automatically adds the necessary path.
 ```
 
 ## Pod Scopes

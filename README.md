@@ -110,13 +110,15 @@ from spakky.application.application_context import ApplicationContext
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .scan("my_package")
+    .scan()  # Auto-detects caller's package (works in Docker too!)
     .start()
 )
 
 user_service = app.container.get(UserService)
 print(user_service.get_user_name(1))
 ```
+
+> **📘 Note**: When `scan()` is called without arguments, it automatically detects and scans the caller's package. This also works in Docker environments where the application root may not be in `sys.path`.
 
 ## 🛠 Development
 
