@@ -4,6 +4,7 @@ Monorepo pre-push hook that runs tests only for projects with changes.
 This is separate from pre-commit to avoid slow tests blocking every commit.
 """
 
+import os
 import subprocess
 import sys
 import tomllib
@@ -127,12 +128,19 @@ def run_tests_for_project(project_path: str) -> bool:
     print(f"{'=' * 60}\n", flush=True)
 
     try:
+        # Set up environment for unbuffered output
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        env["FORCE_COLOR"] = "1"
+
         # Use Popen to stream output in real-time
         process = subprocess.Popen(
-            ["uv", "run", "pytest"],
+            ["uv", "run", "pytest", "--color=yes"],
             cwd=project_path,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
+            stdout=None,  # Inherit from parent (direct to terminal)
+            stderr=None,  # Inherit from parent (direct to terminal)
+            bufsize=0,
+            env=env,
         )
         process.wait()
 

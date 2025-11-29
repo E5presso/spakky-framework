@@ -4,6 +4,7 @@ Monorepo pre-commit hook that runs sub-project pre-commit configs
 only for projects with actual file changes.
 """
 
+import os
 import subprocess
 import sys
 import tomllib  # Python 3.11+ built-in
@@ -88,12 +89,19 @@ def run_pre_commit_for_project(project_path: str) -> bool:
     print(f"{'=' * 60}\n", flush=True)
 
     try:
+        # Set up environment for unbuffered output
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        env["FORCE_COLOR"] = "1"
+
         # Use Popen to stream output in real-time
         process = subprocess.Popen(
             ["uv", "run", "pre-commit", "run", "--all-files", "--color=always"],
             cwd=project_path,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
+            stdout=None,  # Inherit from parent (direct to terminal)
+            stderr=None,  # Inherit from parent (direct to terminal)
+            bufsize=0,
+            env=env,
         )
         process.wait()
 
