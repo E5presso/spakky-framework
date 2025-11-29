@@ -1,3 +1,17 @@
+## v4.0.0 (2025-11-29)
+
+### Feat
+
+- **core**: add ensure_importable function for sys.path management
+- built-in aspect enable 메서드 제거
+- Logger 의존성 주입 메커니즘 제거
+
+### Fix
+
+- **rabbitmq**: 관련 코드 원복 및 assertion 제거
+- **rabbitmq**: 이벤트 핸들러의 스코프 수정
+- **rabbitmq**: EventConsumer의 의존성 스코프를 Context로 변경
+
 ## v3.4.0 (2025-11-28)
 
 ### Feat
