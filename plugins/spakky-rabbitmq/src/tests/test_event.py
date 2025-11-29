@@ -54,11 +54,13 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
     publisher = app.container.get(IEventPublisher)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
+    initial_context_count = len(handler.context_ids)
     publisher.publish(SampleEvent(message="Hello, World!"))
     publisher.publish(SampleEvent(message="Goodbye, World!"))
     wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
-    assert len(handler.context_ids) >= 2
+    # Each event should be handled in a separate context
+    assert len(handler.context_ids) >= initial_context_count + 2
 
 
 @pytest.mark.asyncio
@@ -66,11 +68,13 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
     publisher = app.container.get(IAsyncEventPublisher)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
+    initial_context_count = len(handler.context_ids)
     await publisher.publish(SampleEvent(message="Hello, World!"))
     await publisher.publish(SampleEvent(message="Goodbye, World!"))
     await async_wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
-    assert len(handler.context_ids) >= 2
+    # Each event should be handled in a separate context
+    assert len(handler.context_ids) >= initial_context_count + 2
 
 
 @pytest.mark.asyncio
