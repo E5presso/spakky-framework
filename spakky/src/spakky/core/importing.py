@@ -3,12 +3,15 @@ import inspect
 import pkgutil
 import sys
 from fnmatch import fnmatch
+from logging import getLogger
 from pathlib import Path
 from types import FunctionType, ModuleType
 from typing import Any, Callable, TypeAlias
 
 from spakky.core.constants import PATH
 from spakky.core.error import AbstractSpakkyFrameworkError
+
+logger = getLogger(__name__)
 
 Module: TypeAlias = ModuleType | str
 
@@ -21,6 +24,32 @@ class CannotScanNonPackageModuleError(AbstractSpakkyFrameworkError):
     """
 
     message = "Module that you specified is not a package module."
+
+
+def ensure_importable(package_dir: Path) -> None:
+    """Ensure a package directory is importable by adding its parent to sys.path if needed.
+
+    This function checks if a package can be imported. If not, it adds the parent
+    directory to sys.path to enable import. This is useful in Docker environments
+    where the application root may not be in sys.path.
+
+    Args:
+        package_dir: Path to the package directory (must contain __init__.py).
+    """
+    package_name = package_dir.name
+    parent_dir = str(package_dir.parent)
+
+    if parent_dir in sys.path:
+        return
+
+    try:
+        importlib.import_module(package_name)
+    except ImportError:
+        sys.path.insert(0, parent_dir)
+        logger.info(
+            "Added '%s' to sys.path for package discovery",
+            parent_dir,
+        )
 
 
 def resolve_module(module: Module) -> ModuleType:

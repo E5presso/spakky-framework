@@ -15,6 +15,7 @@ from spakky.application.plugin import Plugin
 from spakky.core.constants import PLUGIN_PATH
 from spakky.core.importing import (
     Module,
+    ensure_importable,
     is_package,
     list_modules,
     list_objects,
@@ -86,6 +87,11 @@ class SpakkyApplication:
     ) -> Self:
         """Scan a module for Pod-annotated classes and functions.
 
+        When path is None, automatically detects the caller's package and scans it.
+        If the caller's package is not importable (e.g., in Docker environments where
+        the application root is not in sys.path), the parent directory is automatically
+        added to sys.path to enable package discovery.
+
         Args:
             path: Module or package to scan. If None, scans the caller's package.
             exclude: Set of modules to exclude from scanning.
@@ -99,17 +105,23 @@ class SpakkyApplication:
         modules: set[ModuleType]
         caller_module: ModuleType | None = None
         if path is None:  # pragma: no cover
-            # Derive the caller's module dynamically so scan() works without
-            # requiring every application to pass its root package explicitly.
             caller_frame = inspect.stack()[1]
-            caller_module = inspect.getmodule(caller_frame[0])
-            file_path = getattr(caller_module, "__file__", None)
-            caller_package = (
-                resolve_module(Path(file_path).parent.name) if file_path else None
-            )
-            if caller_package is None:
+            caller_file = caller_frame.filename
+            caller_dir = Path(caller_file).parent
+
+            # Check if caller is inside a package (has __init__.py)
+            if not (caller_dir / "__init__.py").exists():
                 raise CannotDetermineScanPathError
-            path = caller_package
+
+            # Ensure the package is importable (adds to sys.path if needed)
+            ensure_importable(caller_dir)
+
+            try:
+                path = resolve_module(caller_dir.name)
+            except ImportError as e:
+                raise CannotDetermineScanPathError from e
+
+            caller_module = inspect.getmodule(caller_frame[0])
 
         if exclude is None:
             exclude = {caller_module} if caller_module else set()
