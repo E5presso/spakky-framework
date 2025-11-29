@@ -13,7 +13,6 @@ Or install with plugins:
 ```bash
 pip install spakky[fastapi]
 pip install spakky[fastapi,kafka,security]
-pip install spakky[all]
 ```
 
 ## Features
