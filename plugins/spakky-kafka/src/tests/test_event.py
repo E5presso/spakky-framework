@@ -16,7 +16,7 @@ from tests.apps.dummy import (
     SampleEvent,
 )
 
-DELAY_AFTER_PUBLISH = 3  # seconds
+DELAY_AFTER_PUBLISH = 5  # seconds
 
 
 def test_synchronous_event(app: SpakkyApplication) -> None:
