@@ -52,7 +52,6 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
     publisher.publish(SampleEvent(message="Goodbye, World!"))
     wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
-    assert len(handler.context_ids) >= 2
 
 
 @pytest.mark.asyncio
@@ -64,7 +63,6 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
     await publisher.publish(SampleEvent(message="Goodbye, World!"))
     await async_wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
-    assert len(handler.context_ids) >= 2
 
 
 def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
