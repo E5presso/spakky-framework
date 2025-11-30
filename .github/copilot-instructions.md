@@ -25,7 +25,7 @@ spakky-framework/
 │   │   ├── service/          # Service layer components
 │   │   ├── stereotype/       # Stereotype annotations
 │   │   └── utils/            # Utility functions
-│   └── src/tests/            # Core framework tests
+│   └── tests/                # Core framework tests
 │
 └── plugins/
     ├── spakky-fastapi/       # FastAPI integration
@@ -34,31 +34,31 @@ spakky-framework/
     │   │   ├── post_processors/ # Route registration post-processors
     │   │   ├── routes/       # Route decorators (get, post, etc.)
     │   │   └── stereotypes/  # ApiController stereotype
-    │   └── src/tests/        # Plugin tests
+    │   └── tests/            # Plugin tests
     │
     ├── spakky-rabbitmq/      # RabbitMQ event system
     │   ├── src/spakky_rabbitmq/
     │   │   ├── common/       # Configuration and constants
     │   │   └── event/        # Event publisher/consumer
-    │   └── src/tests/
+    │   └── tests/
     │
     ├── spakky-security/      # Security utilities
     │   ├── src/spakky_security/
     │   │   ├── cryptography/ # Encryption/decryption
     │   │   └── password/     # Password hashing
-    │   └── src/tests/
+    │   └── tests/
     │
     ├── spakky-typer/         # CLI integration
     │   ├── src/spakky_typer/
     │   │   ├── stereotypes/  # CliController stereotype
     │   │   └── utils/        # Asyncio utilities
-    │   └── src/tests/
+    │   └── tests/
     │
     └── spakky-kafka/         # Apache Kafka event system
         ├── src/spakky_kafka/
         │   ├── common/       # Configuration and constants
         │   └── event/        # Event publisher/consumer
-        └── src/tests/
+        └── tests/
 ```
 
 ## Key Concepts

@@ -27,7 +27,7 @@ build-backend = "uv_build"
 
 [tool.pyrefly]
 python-version = "3.14"
-search_path = ["src"]
+search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
@@ -36,7 +36,7 @@ cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
 pythonpath = "src/spakky_rabbitmq"
-testpaths = "src/tests"
+testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 addopts = """

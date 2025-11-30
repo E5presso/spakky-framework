@@ -47,7 +47,7 @@ class DummyController:
         description="Get file by given name",
     )
     async def get_file(self, name: str) -> str:
-        return f"src/tests/apps/{name}"
+        return f"tests/apps/{name}"
 
     @Logging()
     @get(
@@ -55,7 +55,7 @@ class DummyController:
         description="Get file by given name",
     )
     async def get_file_without_response_class(self, name: str) -> FileResponse:
-        return FileResponse(f"src/tests/apps/{name}")
+        return FileResponse(f"tests/apps/{name}")
 
     @Logging()
     @post("")

@@ -25,7 +25,7 @@ def test_sha256() -> None:
 
 
 def test_sha256_via_file() -> None:
-    with open("src/tests/dummy_file.txt", "rb") as file:
+    with open("tests/dummy_file.txt", "rb") as file:
         result_hash: Hash = Hash(file, hash_type=HashType.SHA256)
         assert (
             result_hash.hex
