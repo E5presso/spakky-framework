@@ -28,7 +28,7 @@ Fixes #
 - [ ] I have read the [Contributing Guide](CONTRIBUTING.md)
 - [ ] My code follows the project's coding style
 - [ ] I have added tests that prove my fix/feature works
-- [ ] All new and existing tests pass locally (`uv run pytest`)
+- [ ] All new and existing tests pass locally (run `uv run pytest` from each package directory)
 - [ ] I have run the linter (`uv run ruff check`)
 - [ ] I have run the formatter (`uv run ruff format`)
 - [ ] I have run the type checker (`uv run pyrefly check`)

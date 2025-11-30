@@ -144,12 +144,20 @@ uv sync --all-packages --all-extras
 
 ### Running Tests
 
+> **⚠️ Important:** This monorepo does NOT support running tests from the root directory. Each package manages its own tests independently.
+
 ```bash
-# Run all tests
+# ❌ Wrong - This will FAIL with import errors
 uv run pytest
 
-# Run tests for a specific package
-uv run pytest plugins/spakky-fastapi
+# ✅ Correct - Run tests from each package directory
+cd spakky
+uv run pytest
+
+cd plugins/spakky-fastapi
+uv run pytest
+
+# etc. for each package
 ```
 
 ## 🤝 Contributing

@@ -284,14 +284,33 @@ uv sync --all-extras
 
 ### Running Tests
 
+**IMPORTANT**: This monorepo does NOT support running tests from the root directory. Each package manages its own tests independently.
+
 ```bash
-# Run all tests with coverage (from root)
+# ❌ Wrong - This will FAIL with import errors
+cd /path/to/spakky-framework
 uv run pytest
 
-# Run tests for specific plugin
+# ✅ Correct - Run tests from each package directory
+cd spakky
+uv run pytest
+
 cd plugins/spakky-fastapi
 uv run pytest
+
+cd plugins/spakky-rabbitmq
+uv run pytest
+
+# etc. for each package
 ```
+
+**Available packages for testing**:
+- `spakky/` - Core framework
+- `plugins/spakky-fastapi/` - FastAPI plugin
+- `plugins/spakky-rabbitmq/` - RabbitMQ plugin
+- `plugins/spakky-kafka/` - Kafka plugin
+- `plugins/spakky-security/` - Security plugin
+- `plugins/spakky-typer/` - Typer CLI plugin
 
 ### Test Style Guidelines
 
@@ -378,9 +397,19 @@ When performing actions in this repository, follow these guidelines:
     - `get_errors` for error checking
     - Other integrated tools when available
 
+7.  **Verify Commands Before Documentation**: Before documenting any terminal command, ALWAYS execute it first to confirm it works. Do not assume commands will work based on common patterns.
+
+    ```bash
+    # Before writing "uv run pytest" in docs:
+    # 1. Actually run it in the terminal
+    # 2. Check if it succeeds or fails
+    # 3. Document accordingly
+    ```
+
 **Verification Checklist for Updates:**
 - [ ] Verified file paths and directory structure.
 - [ ] Verified class and function names (case-sensitive).
 - [ ] Verified method signatures and arguments.
 - [ ] Verified configuration environment variable prefixes (e.g., `SPAKKY_RABBITMQ__`).
 - [ ] Verified import paths.
+- [ ] **Tested all terminal commands** by executing them before documenting.
