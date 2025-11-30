@@ -144,13 +144,7 @@ uv sync --all-packages --all-extras
 
 ### Running Tests
 
-> **⚠️ Important:** This monorepo does NOT support running tests from the root directory. Each package manages its own tests independently.
-
 ```bash
-# ❌ Wrong - This will FAIL with import errors
-uv run pytest
-
-# ✅ Correct - Run tests from each package directory
 cd spakky
 uv run pytest
 

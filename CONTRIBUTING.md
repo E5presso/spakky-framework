@@ -43,13 +43,7 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
 
 We use `pytest` for testing.
 
-> **⚠️ Important:** This monorepo does NOT support running tests from the root directory. Each package manages its own tests independently.
-
 ```bash
-# ❌ Wrong - This will FAIL with import errors
-uv run pytest
-
-# ✅ Correct - Run tests from each package directory
 cd spakky
 uv run pytest
 
@@ -259,36 +253,9 @@ All packages in the monorepo share the same version number. When any package cha
 | `feat:` | Minor | `3.2.0` → `3.3.0` |
 | `feat!:` or `BREAKING CHANGE:` | Major | `3.2.0` → `4.0.0` |
 
-### Version Bump Commands
-
-```bash
-# Preview next version (dry-run)
-uv run python scripts/bump_packages.py --dry-run
-
-# Bump version, create commit and tag
-uv run python scripts/bump_packages.py
-
-# Push changes and tag to trigger release
-git push && git push --tags
-```
-
-### Release Process (Maintainers)
-
-1. Merge PRs to `main` branch
-2. Run `uv run python scripts/bump_packages.py` to:
-   - Determine next version from conventional commits
-   - Update all `pyproject.toml` files
-   - Sync inter-package dependencies
-   - Create release commit and tag
-3. Push: `git push && git push --tags`
-4. GitHub Actions will automatically:
-   - Build all packages
-   - Publish to PyPI
-   - Create a GitHub Release
-
 ## 🚀 Pull Request Process
 
-1.  Fork the repo and create your branch from `main`.
+1.  Fork the repo and create your branch from `develop`.
 2.  If you've added code that should be tested, add tests.
 3.  Ensure the test suite passes. The CI system will automatically detect changed packages and run tests only for them.
 4.  Make sure your code lints.
