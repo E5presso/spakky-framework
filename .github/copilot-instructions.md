@@ -4,7 +4,7 @@
 
 Spakky is a Spring-inspired dependency injection framework for Python with AOP and plugin system:
 
-- **Core (`spakky/`)**: DI/IoC container, AOP aspects, stereotypes, and application context
+- **Core (`core/`)**: DI/IoC container, AOP aspects, DDD building blocks, event handling, and application context
 - **Plugins (`plugins/`)**: Framework extensions (FastAPI, RabbitMQ, Typer, Security, Kafka)
 - **Monorepo structure**: Uses `uv` workspace with shared tooling and cross-package dependencies
 - **Python version**: Requires Python 3.11+
@@ -14,50 +14,66 @@ Spakky is a Spring-inspired dependency injection framework for Python with AOP a
 
 ```
 spakky-framework/
-├── spakky/                    # Core framework package
-│   ├── src/spakky/           # Core implementation
-│   │   ├── aop/              # Aspect-Oriented Programming
-│   │   ├── application/      # Application context and lifecycle
-│   │   ├── aspects/          # Built-in aspects (Logging, Transactional)
-│   │   ├── core/             # Core utilities (proxy, annotation, types)
-│   │   ├── domain/           # Domain interfaces and abstractions
-│   │   ├── pod/              # Dependency injection container
-│   │   ├── service/          # Service layer components
-│   │   ├── stereotype/       # Stereotype annotations
-│   │   └── utils/            # Utility functions
-│   └── tests/                # Core framework tests
+├── core/
+│   ├── spakky/                    # Core DI/IoC framework
+│   │   ├── src/spakky/
+│   │   │   ├── aop/               # Aspect-Oriented Programming
+│   │   │   ├── application/       # Application context and lifecycle
+│   │   │   ├── aspects/           # Built-in aspects (Logging, Transactional)
+│   │   │   ├── core/              # Core utilities (proxy, annotation, types)
+│   │   │   ├── pod/               # Dependency injection container
+│   │   │   ├── service/           # Service layer components
+│   │   │   ├── stereotype/        # Base stereotypes (Controller, UseCase, etc.)
+│   │   │   └── utils/             # Utility functions
+│   │   └── tests/
+│   │
+│   ├── spakky-ddd/                # DDD building blocks
+│   │   ├── src/spakky_ddd/
+│   │   │   ├── application/       # Command and Query interfaces
+│   │   │   ├── models/            # Entity, AggregateRoot, ValueObject, Event
+│   │   │   └── ports/             # Repository and external service ports
+│   │   └── tests/
+│   │
+│   ├── spakky-event/              # Event handling
+│   │   ├── src/spakky_event/
+│   │   │   └── stereotype/        # @EventHandler stereotype
+│   │   └── tests/
+│   │
+│   └── spakky-data/               # Data access layer (WIP)
+│       ├── src/spakky_data/
+│       └── tests/
 │
 └── plugins/
-    ├── spakky-fastapi/       # FastAPI integration
+    ├── spakky-fastapi/            # FastAPI integration
     │   ├── src/spakky_fastapi/
-    │   │   ├── middlewares/  # FastAPI middleware
-    │   │   ├── post_processors/ # Route registration post-processors
-    │   │   ├── routes/       # Route decorators (get, post, etc.)
-    │   │   └── stereotypes/  # ApiController stereotype
-    │   └── tests/            # Plugin tests
+    │   │   ├── middlewares/       # FastAPI middleware
+    │   │   ├── post_processors/   # Route registration post-processors
+    │   │   ├── routes/            # Route decorators (get, post, etc.)
+    │   │   └── stereotypes/       # ApiController stereotype
+    │   └── tests/
     │
-    ├── spakky-rabbitmq/      # RabbitMQ event system
+    ├── spakky-rabbitmq/           # RabbitMQ event system
     │   ├── src/spakky_rabbitmq/
-    │   │   ├── common/       # Configuration and constants
-    │   │   └── event/        # Event publisher/consumer
+    │   │   ├── common/            # Configuration and constants
+    │   │   └── event/             # Event publisher/consumer
     │   └── tests/
     │
-    ├── spakky-security/      # Security utilities
+    ├── spakky-security/           # Security utilities
     │   ├── src/spakky_security/
-    │   │   ├── cryptography/ # Encryption/decryption
-    │   │   └── password/     # Password hashing
+    │   │   ├── cryptography/      # Encryption/decryption
+    │   │   └── password/          # Password hashing
     │   └── tests/
     │
-    ├── spakky-typer/         # CLI integration
+    ├── spakky-typer/              # CLI integration
     │   ├── src/spakky_typer/
-    │   │   ├── stereotypes/  # CliController stereotype
-    │   │   └── utils/        # Asyncio utilities
+    │   │   ├── stereotypes/       # CliController stereotype
+    │   │   └── utils/             # Asyncio utilities
     │   └── tests/
     │
-    └── spakky-kafka/         # Apache Kafka event system
+    └── spakky-kafka/              # Apache Kafka event system
         ├── src/spakky_kafka/
-        │   ├── common/       # Configuration and constants
-        │   └── event/        # Event publisher/consumer
+        │   ├── common/            # Configuration and constants
+        │   └── event/             # Event publisher/consumer
         └── tests/
 ```
 
@@ -92,7 +108,7 @@ Stereotypes extend `@Pod` with semantic meaning and additional behaviors:
 - **`@UseCase`**: Encapsulates business logic (from `spakky.stereotype.usecase`)
 - **`@ApiController(prefix)`**: FastAPI REST controllers with route registration (from `spakky_fastapi.stereotypes`)
 - **`@CliController(group_name)`**: Typer CLI controllers (from `spakky_typer.stereotypes`)
-- **`@EventHandler`**: Event handlers for RabbitMQ/Kafka (from `spakky.stereotype.event_handler`)
+- **`@EventHandler`**: Event handlers for RabbitMQ/Kafka (from `spakky_event.stereotype.event_handler`)
 
 All stereotypes are automatically registered as Pods and support dependency injection.
 
@@ -218,8 +234,8 @@ export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"
 **Event Consuming**: Use `@EventHandler` stereotype with `@on_event` decorators.
 
 ```python
-from spakky.stereotype.event_handler import EventHandler, on_event
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky_event.stereotype.event_handler import EventHandler, on_event
+from spakky_ddd.models.event import AbstractDomainEvent
 
 class UserCreatedEvent(AbstractDomainEvent):
     user_id: int
@@ -292,7 +308,7 @@ cd /path/to/spakky-framework
 uv run pytest
 
 # ✅ Correct - Run tests from each package directory
-cd spakky
+cd core/spakky
 uv run pytest
 
 cd plugins/spakky-fastapi
@@ -305,7 +321,10 @@ uv run pytest
 ```
 
 **Available packages for testing**:
-- `spakky/` - Core framework
+- `core/spakky/` - Core framework
+- `core/spakky-ddd/` - DDD building blocks
+- `core/spakky-event/` - Event handling
+- `core/spakky-data/` - Data access layer (WIP)
 - `plugins/spakky-fastapi/` - FastAPI plugin
 - `plugins/spakky-rabbitmq/` - RabbitMQ plugin
 - `plugins/spakky-kafka/` - Kafka plugin

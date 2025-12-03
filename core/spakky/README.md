@@ -226,9 +226,15 @@ def initialize(app: SpakkyApplication) -> None:
 | `spakky.application` | Application context and lifecycle |
 | `spakky.stereotype` | Semantic stereotype annotations |
 | `spakky.aspects` | Built-in aspects (Logging, Transactional) |
-| `spakky.domain` | Domain interfaces and abstractions |
 | `spakky.service` | Service layer components |
 | `spakky.core` | Core utilities (proxy, annotation, types) |
+
+## Related Packages
+
+| Package | Description |
+|---------|-------------|
+| [`spakky-ddd`](https://pypi.org/project/spakky-ddd/) | DDD building blocks (Entity, AggregateRoot, ValueObject, Event) |
+| [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling (`@EventHandler` stereotype) |
 
 ## License
 

@@ -56,9 +56,19 @@
 
 Spakky is a monorepo containing the core framework and official plugins:
 
+### Core Packages
+
 | Package | Description |
 |---------|--------------|
 | **`spakky`** | Core framework (DI Container, AOP, Application Context) |
+| **`spakky-ddd`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent) |
+| **`spakky-event`** | Event handling (@EventHandler stereotype) |
+| **`spakky-data`** | Data access layer (WIP) |
+
+### Plugins
+
+| Package | Description |
+|---------|--------------|
 | **`spakky-fastapi`** | Integration with [FastAPI](https://fastapi.tiangolo.com/) for building REST APIs |
 | **`spakky-kafka`** | Event-driven architecture support with [Apache Kafka](https://kafka.apache.org/) |
 | **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
@@ -145,7 +155,7 @@ uv sync --all-packages --all-extras
 ### Running Tests
 
 ```bash
-cd spakky
+cd core/spakky
 uv run pytest
 
 cd plugins/spakky-fastapi

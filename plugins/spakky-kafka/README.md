@@ -46,8 +46,8 @@ export SPAKKY_KAFKA__REPLICATION_FACTOR="1"
 ### Event Publishing
 
 ```python
-from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.event_publisher import IEventPublisher
+from spakky_ddd.models.event import AbstractDomainEvent
+from spakky_ddd.ports.event.event_publisher import IEventPublisher
 from spakky.pod.annotations.pod import Pod
 
 class UserCreatedEvent(AbstractDomainEvent):
@@ -68,7 +68,7 @@ class UserService:
 ### Event Consuming
 
 ```python
-from spakky.stereotype.event_handler import EventHandler, on_event
+from spakky_event.stereotype.event_handler import EventHandler, on_event
 
 @EventHandler()
 class UserEventHandler:
@@ -85,7 +85,7 @@ class UserEventHandler:
 For async applications, use `IAsyncEventPublisher`:
 
 ```python
-from spakky.domain.ports.event.event_publisher import IAsyncEventPublisher
+from spakky_ddd.ports.event.event_publisher import IAsyncEventPublisher
 
 @Pod()
 class AsyncUserService:

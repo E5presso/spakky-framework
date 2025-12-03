@@ -44,7 +44,7 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
 We use `pytest` for testing.
 
 ```bash
-cd spakky
+cd core/spakky
 uv run pytest
 
 cd plugins/spakky-fastapi
@@ -224,7 +224,7 @@ We use **Conventional Commits** to automate versioning and changelogs.
 Format: `<type>(<scope>): <subject>`
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **Scopes**: `core`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
+- **Scopes**: `core`, `ddd`, `event`, `data`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
 
 Examples:
 
