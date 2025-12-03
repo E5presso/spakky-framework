@@ -13,6 +13,10 @@
 			"path": "core/spakky-ddd"
 		},
 		{
+			"name": "core.data",
+			"path": "core/spakky-data"
+		},
+		{
 			"name": "core.event",
 			"path": "core/spakky-event"
 		},
@@ -106,6 +110,7 @@
 		"conventionalCommits.scopes": [
 			"core",
 			"core-ddd",
+			"core-data",
 			"core-event",
 			"plugin-fastapi",
 			"plugin-rabbitmq",

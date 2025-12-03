@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "spakky",
+    "spakky-data",
     "spakky-ddd",
     "spakky-event",
     "spakky-fastapi",
@@ -1920,6 +1921,17 @@ requires-dist = [
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
 ]
 provides-extras = ["fastapi", "rabbitmq", "security", "typer", "kafka"]
+
+[[package]]
+name = "spakky-data"
+version = "4.0.0"
+source = { editable = "core/spakky-data" }
+dependencies = [
+    { name = "spakky-ddd" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "spakky-ddd", editable = "core/spakky-ddd" }]
 
 [[package]]
 name = "spakky-ddd"

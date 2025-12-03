@@ -29,6 +29,7 @@ version_files = [
   "pyproject.toml:version",
   "core/spakky/pyproject.toml:version",
   "core/spakky-ddd/pyproject.toml:version",
+  "core/spakky-data/pyproject.toml:version",
   "core/spakky-event/pyproject.toml:version",
   "plugins/spakky-fastapi/pyproject.toml:version",
   "plugins/spakky-rabbitmq/pyproject.toml:version",
@@ -42,6 +43,7 @@ update_changelog_on_bump = true
 members = [
   "core/spakky",
   "core/spakky-ddd",
+  "core/spakky-data",
   "core/spakky-event",
   "plugins/spakky-fastapi",
   "plugins/spakky-rabbitmq",
