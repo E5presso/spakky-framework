@@ -105,11 +105,13 @@
 		},
 		"conventionalCommits.scopes": [
 			"core",
-			"fastapi",
-			"rabbitmq",
-			"security",
-			"typer",
-			"kafka"
+			"core-ddd",
+			"core-event",
+			"plugin-fastapi",
+			"plugin-rabbitmq",
+			"plugin-security",
+			"plugin-typer",
+			"plugin-kafka"
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml"
