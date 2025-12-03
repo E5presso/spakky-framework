@@ -1,7 +1,7 @@
 [project]
 name = "spakky-event"
 version = "4.0.0"
-description = "Add your description here"
+description = "Event handling stereotype for Spakky Framework (@EventHandler, @on_event)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"

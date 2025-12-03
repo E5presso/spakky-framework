@@ -1,7 +1,7 @@
 [project]
 name = "spakky-data"
 version = "4.0.0"
-description = "Add your description here"
+description = "Data access layer for Spakky Framework (Repository implementations, ORM integration)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
