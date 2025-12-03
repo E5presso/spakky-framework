@@ -1,0 +1,65 @@
+name: Publish Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Package to publish'
+        required: true
+        type: choice
+        options:
+          - spakky
+          - spakky-ddd
+          - spakky-event
+          - spakky-data
+          - spakky-fastapi
+          - spakky-rabbitmq
+          - spakky-security
+          - spakky-typer
+          - spakky-kafka
+      dry_run:
+        description: 'Dry run (build only, do not publish)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.package }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build package
+        run: uv build --package ${{ inputs.package }}
+
+      - name: Show build artifacts
+        run: ls -la dist/
+
+      - name: Publish to PyPI (OIDC)
+        if: ${{ !inputs.dry_run }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          print-hash: true
+
+      - name: Summary
+        run: |
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            echo "🧪 Dry run complete for ${{ inputs.package }} - package was built but not published"
+          else
+            echo "✅ Published ${{ inputs.package }} to PyPI"
+          fi
