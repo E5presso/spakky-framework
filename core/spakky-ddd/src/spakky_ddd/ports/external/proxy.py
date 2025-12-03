@@ -1,5 +1,5 @@
-from abc import abstractmethod
-from typing import Any, Generic, Protocol, Sequence, TypeVar
+from abc import ABC, abstractmethod
+from typing import Any, Generic, Sequence, TypeVar
 
 from spakky.core.interfaces.equatable import IEquatable
 from spakky.core.mutability import immutable
@@ -23,7 +23,7 @@ class ProxyModel(IEquatable, Generic[ProxyIdT_contra]):
 ProxyModelT_co = TypeVar("ProxyModelT_co", bound=ProxyModel[Any], covariant=True)
 
 
-class IGenericProxy(Protocol[ProxyModelT_co, ProxyIdT_contra]):
+class IGenericProxy(ABC, Generic[ProxyModelT_co, ProxyIdT_contra]):
     @abstractmethod
     def get(self, proxy_id: ProxyIdT_contra) -> ProxyModelT_co: ...
 
@@ -39,7 +39,7 @@ class IGenericProxy(Protocol[ProxyModelT_co, ProxyIdT_contra]):
     ) -> Sequence[ProxyModelT_co]: ...
 
 
-class IAsyncGenericProxy(Protocol[ProxyModelT_co, ProxyIdT_contra]):
+class IAsyncGenericProxy(ABC, Generic[ProxyModelT_co, ProxyIdT_contra]):
     @abstractmethod
     async def get(self, proxy_id: ProxyIdT_contra) -> ProxyModelT_co: ...
 

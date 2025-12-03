@@ -1,5 +1,5 @@
-from abc import abstractmethod
-from typing import Protocol, Sequence, TypeVar
+from abc import ABC, abstractmethod
+from typing import Generic, Sequence, TypeVar
 
 from spakky.core.interfaces.equatable import IEquatable
 
@@ -15,7 +15,7 @@ class EntityNotFoundError(AbstractSpakkyDomainError):
     message = "Entity not found by given id"
 
 
-class IGenericRepository(Protocol[AggregateRootT, AggregateIdT_contra]):
+class IGenericRepository(ABC, Generic[AggregateRootT, AggregateIdT_contra]):
     @abstractmethod
     def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT: ...
 
@@ -49,7 +49,7 @@ class IGenericRepository(Protocol[AggregateRootT, AggregateIdT_contra]):
     ) -> Sequence[AggregateRootT]: ...
 
 
-class IAsyncGenericRepository(Protocol[AggregateRootT, AggregateIdT_contra]):
+class IAsyncGenericRepository(ABC, Generic[AggregateRootT, AggregateIdT_contra]):
     @abstractmethod
     async def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT: ...
 
