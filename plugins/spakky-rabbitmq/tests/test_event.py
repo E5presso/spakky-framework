@@ -1,11 +1,11 @@
-from asyncio import sleep as asleep  # pyrefly: ignore  # type: ignore
+from asyncio import sleep as asleep  # type: ignore
 from time import sleep, time
 
 import pytest
 from spakky.application.application import SpakkyApplication
-from spakky.domain.ports.event.error import DuplicateEventHandlerError
-from spakky.domain.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
-from spakky.domain.ports.event.event_publisher import (
+from spakky_ddd.ports.event.error import DuplicateEventHandlerError
+from spakky_ddd.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
+from spakky_ddd.ports.event.event_publisher import (
     IAsyncEventPublisher,
     IEventPublisher,
 )

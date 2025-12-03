@@ -7,7 +7,7 @@ import pytest
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
 from spakky.aspects import AsyncLoggingAspect, LoggingAspect
-from testcontainers.kafka import KafkaContainer  # pyrefly: ignore  # type: ignore
+from testcontainers.kafka import KafkaContainer  # type: ignore
 
 import spakky_kafka
 from spakky_kafka.common.config import AutoOffsetResetType

@@ -1,0 +1,13 @@
+{
+  "python.testing.cwd": "${workspaceFolder}",
+  "python.testing.pytestArgs": [
+    "--no-cov"
+  ],
+  "python-envs.pythonProjects": [
+    {
+      "path": "",
+      "envManager": "ms-python.python:venv",
+      "packageManager": "ms-python.python:uv"
+    }
+  ]
+}

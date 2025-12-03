@@ -7,28 +7,28 @@ to registered handlers.
 
 from typing import Any
 
-from aio_pika import connect_robust  # pyrefly: ignore  # type: ignore
+from aio_pika import connect_robust  # type: ignore
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.spec import Basic, BasicProperties
 from pydantic import TypeAdapter
-from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.error import (
+from spakky.pod.annotations.pod import Pod
+from spakky.service.background import (
+    AbstractAsyncBackgroundService,
+    AbstractBackgroundService,
+)
+from spakky_ddd.models.event import AbstractDomainEvent
+from spakky_ddd.ports.event.error import (
     DuplicateEventHandlerError,
     InvalidMessageError,
 )
-from spakky.domain.ports.event.event_consumer import (
+from spakky_ddd.ports.event.event_consumer import (
     DomainEventT,
     IAsyncEventConsumer,
     IAsyncEventHandlerCallback,
     IEventConsumer,
     IEventHandlerCallback,
-)
-from spakky.pod.annotations.pod import Pod
-from spakky.service.background import (
-    AbstractAsyncBackgroundService,
-    AbstractBackgroundService,
 )
 
 from spakky_rabbitmq.common.config import RabbitMQConnectionConfig

@@ -5,21 +5,21 @@ from confluent_kafka import Consumer, Message
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.experimental.aio import AIOConsumer
 from pydantic import TypeAdapter
-from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.error import (
+from spakky.pod.annotations.pod import Pod
+from spakky.service.background import (
+    AbstractAsyncBackgroundService,
+    AbstractBackgroundService,
+)
+from spakky_ddd.models.event import AbstractDomainEvent
+from spakky_ddd.ports.event.error import (
     DuplicateEventHandlerError,
 )
-from spakky.domain.ports.event.event_consumer import (
+from spakky_ddd.ports.event.event_consumer import (
     DomainEventT,
     IAsyncEventConsumer,
     IAsyncEventHandlerCallback,
     IEventConsumer,
     IEventHandlerCallback,
-)
-from spakky.pod.annotations.pod import Pod
-from spakky.service.background import (
-    AbstractAsyncBackgroundService,
-    AbstractBackgroundService,
 )
 
 from spakky_kafka.common.config import KafkaConnectionConfig

@@ -7,7 +7,7 @@ import pytest
 from spakky.application.application import SpakkyApplication
 from spakky.application.application_context import ApplicationContext
 from spakky.aspects import AsyncLoggingAspect, LoggingAspect
-from testcontainers.rabbitmq import RabbitMqContainer  # pyrefly: ignore  # type: ignore
+from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore
 
 import spakky_rabbitmq
 from spakky_rabbitmq.common.constants import SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX

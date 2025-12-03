@@ -10,7 +10,7 @@ dependencies = [
     "confluent-kafka>=2.12.2",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
-    "spakky>=4.0.0",
+    "spakky-event>=4.0.0",
 ]
 
 [project.entry-points."spakky.plugins"]
@@ -68,3 +68,6 @@ exclude_lines = [
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
 ]
+
+[tool.uv.sources]
+spakky-event = { workspace = true }

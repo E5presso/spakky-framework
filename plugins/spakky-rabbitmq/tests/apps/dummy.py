@@ -1,12 +1,12 @@
 from uuid import UUID
 
 from spakky.core.mutability import immutable
-from spakky.domain.models.event import AbstractDomainEvent
 from spakky.pod.interfaces.application_context import IApplicationContext
 from spakky.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
-from spakky.stereotype.event_handler import EventHandler, on_event
+from spakky_ddd.models.event import AbstractDomainEvent
+from spakky_event.stereotype.event_handler import EventHandler, on_event
 
 
 @immutable

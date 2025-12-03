@@ -5,13 +5,11 @@ operations used by cryptographic implementations.
 """
 
 from abc import abstractmethod
-from typing import Protocol, runtime_checkable
 
 from spakky_security.hash import HashType
 
 
-@runtime_checkable
-class ICryptor(Protocol):
+class ICryptor:
     """Protocol for encryption and decryption operations."""
 
     url_safe: bool
@@ -23,8 +21,7 @@ class ICryptor(Protocol):
     def decrypt(self, cipher: str) -> str: ...
 
 
-@runtime_checkable
-class ISigner(Protocol):
+class ISigner:
     """Protocol for digital signature operations."""
 
     url_safe: bool

@@ -3,8 +3,6 @@ from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
 from typing import Any
 
-from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
 from spakky.pod.annotations.order import Order
 from spakky.pod.annotations.pod import Pod
 from spakky.pod.interfaces.application_context import IApplicationContext
@@ -14,7 +12,9 @@ from spakky.pod.interfaces.aware.application_context_aware import (
 from spakky.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.pod.interfaces.container import IContainer
 from spakky.pod.interfaces.post_processor import IPostProcessor
-from spakky.stereotype.event_handler import EventHandler, EventRoute
+from spakky_ddd.models.event import AbstractDomainEvent
+from spakky_ddd.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
+from spakky_event.stereotype.event_handler import EventHandler, EventRoute
 
 logger = getLogger(__name__)
 
