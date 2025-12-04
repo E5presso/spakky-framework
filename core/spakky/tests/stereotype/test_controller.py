@@ -1,4 +1,4 @@
-from spakky.stereotype.controller import Controller
+from spakky.core.stereotype.controller import Controller
 
 
 def test_controller() -> None:

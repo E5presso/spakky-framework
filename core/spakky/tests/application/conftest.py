@@ -4,9 +4,9 @@ from typing import Any, Generator
 
 import pytest
 
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
-from spakky.aspects import LoggingAspect
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.aspects import LoggingAspect
 from tests.application import apps
 
 

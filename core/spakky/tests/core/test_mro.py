@@ -2,7 +2,7 @@ from typing import Generic, Protocol, TypeVar
 
 import pytest
 
-from spakky.core.mro import generic_mro
+from spakky.core.common.mro import generic_mro
 
 
 def test_generic_mro_normal_inheritance() -> None:

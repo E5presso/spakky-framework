@@ -4,13 +4,13 @@ from os import environ
 from typing import Any, Generator
 
 import pytest
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
-from spakky.aspects import AsyncLoggingAspect, LoggingAspect
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
 from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore
 
-import spakky_rabbitmq
-from spakky_rabbitmq.common.constants import SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX
+import spakky.plugins.rabbitmq
+from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
 from tests import apps
 
 
@@ -23,21 +23,21 @@ from tests import apps
 def setup_environment_variables_fixture(
     request: pytest.FixtureRequest,
 ) -> Generator[None, Any, None]:
-    environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
-    environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
-    environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = str(25672)
-    environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "test"
-    environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "test"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = str(25672)
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "test"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "test"
     if request.param is not None:
-        environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME"] = request.param
+        environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME"] = request.param
     yield
 
 
 @pytest.fixture(scope="session", autouse=True)
 def rabbitmq_container(environment_variables: None) -> Generator[None, None, None]:
-    port = int(environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}PORT"])
-    username = environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}USER"]
-    password = environ[f"{SPAKKY_RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"]
+    port = int(environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"])
+    username = environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"]
+    password = environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"]
 
     container = RabbitMqContainer(
         port=port,
@@ -60,7 +60,7 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
 
     app = (
         SpakkyApplication(ApplicationContext())
-        .load_plugins(include={spakky_rabbitmq.PLUGIN_NAME})
+        .load_plugins(include={spakky.plugins.rabbitmq.PLUGIN_NAME})
         .add(AsyncLoggingAspect)
         .add(LoggingAspect)
         .scan(apps)

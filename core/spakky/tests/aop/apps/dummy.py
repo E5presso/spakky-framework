@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from typing import Any
 
-from spakky.aop.aspect import Aspect, AsyncAspect
-from spakky.aop.interfaces.aspect import IAspect, IAsyncAspect
-from spakky.aop.pointcut import Around
-from spakky.aspects.logging import Logging
-from spakky.core.annotation import FunctionAnnotation
-from spakky.core.types import AsyncFunc, Func
-from spakky.pod.annotations.order import Order
-from spakky.stereotype.usecase import UseCase
+from spakky.core.aop.aspect import Aspect, AsyncAspect
+from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
+from spakky.core.aop.pointcut import Around
+from spakky.core.aspects.logging import Logging
+from spakky.core.common.annotation import FunctionAnnotation
+from spakky.core.common.types import AsyncFunc, Func
+from spakky.core.pod.annotations.order import Order
+from spakky.core.stereotype.usecase import UseCase
 
 
 @dataclass

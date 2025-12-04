@@ -1,4 +1,4 @@
-from spakky.application.plugin import Plugin
+from spakky.core.application.plugin import Plugin
 
 
 def test_plugin_creation() -> None:

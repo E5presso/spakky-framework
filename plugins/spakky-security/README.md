@@ -28,10 +28,10 @@ pip install spakky[security]
 ### Password Hashing
 
 ```python
-from spakky_security.password.argon2 import Argon2PasswordEncoder
-from spakky_security.password.bcrypt import BcryptPasswordEncoder
-from spakky_security.password.scrypt import ScryptPasswordEncoder
-from spakky_security.password.pbkdf2 import Pbkdf2PasswordEncoder
+from spakky.plugins.security.password.argon2 import Argon2PasswordEncoder
+from spakky.plugins.security.password.bcrypt import BcryptPasswordEncoder
+from spakky.plugins.security.password.scrypt import ScryptPasswordEncoder
+from spakky.plugins.security.password.pbkdf2 import Pbkdf2PasswordEncoder
 
 # Argon2 (recommended)
 encoder = Argon2PasswordEncoder(password="my_password")
@@ -57,9 +57,9 @@ hashed = pbkdf2_encoder.encode()
 ### Symmetric Encryption (AES)
 
 ```python
-from spakky_security.cryptography.aes import Aes
-from spakky_security.cryptography.gcm import Gcm
-from spakky_security.key import Key
+from spakky.plugins.security.cryptography.aes import Aes
+from spakky.plugins.security.cryptography.gcm import Gcm
+from spakky.plugins.security.key import Key
 
 # Generate a 256-bit key
 key = Key(size=32)
@@ -78,7 +78,7 @@ decrypted = gcm.decrypt(encrypted)  # "Hello, World!"
 ### Asymmetric Encryption (RSA)
 
 ```python
-from spakky_security.cryptography.rsa import Rsa, AsymmetricKey
+from spakky.plugins.security.cryptography.rsa import Rsa, AsymmetricKey
 
 # Generate RSA key pair (supports 1024, 2048, 4096, 8192 bits)
 asymmetric_key = AsymmetricKey(size=2048)
@@ -102,9 +102,9 @@ rsa_imported = Rsa(key=imported_key)
 ### JWT Tokens
 
 ```python
-from spakky_security.jwt import JWT
-from spakky_security.hmac_signer import HMACType
-from spakky_security.key import Key
+from spakky.plugins.security.jwt import JWT
+from spakky.plugins.security.hmac_signer import HMACType
+from spakky.plugins.security.key import Key
 from datetime import timedelta
 
 # Create a JWT
@@ -133,8 +133,8 @@ is_expired = parsed_jwt.is_expired
 ### HMAC Signing
 
 ```python
-from spakky_security.hmac_signer import HMAC, HMACType
-from spakky_security.key import Key
+from spakky.plugins.security.hmac_signer import HMAC, HMACType
+from spakky.plugins.security.key import Key
 
 key = Key(size=32)
 
@@ -151,7 +151,7 @@ is_valid = HMAC.verify(key, HMACType.HS256, "message to sign", signature)
 ### Key Generation
 
 ```python
-from spakky_security.key import Key
+from spakky.plugins.security.key import Key
 
 # Generate random key
 key = Key(size=32)  # 256-bit key

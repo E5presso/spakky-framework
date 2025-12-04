@@ -1,5 +1,5 @@
-from spakky.core.annotation import ClassAnnotation
-from spakky.pod.annotations.pod import Pod
+from spakky.core.common.annotation import ClassAnnotation
+from spakky.core.pod.annotations.pod import Pod
 
 
 @ClassAnnotation()

@@ -1,4 +1,4 @@
-from spakky.core.interfaces.representable import IRepresentable
+from spakky.core.common.interfaces.representable import IRepresentable
 
 
 def test_representable_protocol() -> None:

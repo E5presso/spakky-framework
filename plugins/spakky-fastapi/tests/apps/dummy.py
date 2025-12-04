@@ -1,13 +1,10 @@
 from uuid import UUID
 
-from fastapi import WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
-from spakky.aspects.logging import Logging
-from spakky.stereotype.usecase import UseCase
-
-from spakky_fastapi.error import BadRequest
-from spakky_fastapi.routes import (
+from spakky.core.aspects.logging import Logging
+from spakky.plugins.fastapi.error import BadRequest
+from spakky.plugins.fastapi.routes import (
     delete,
     get,
     head,
@@ -17,7 +14,10 @@ from spakky_fastapi.routes import (
     put,
     websocket,
 )
-from spakky_fastapi.stereotypes.api_controller import ApiController
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+from spakky.core.stereotype.usecase import UseCase
+
+from fastapi import WebSocket
 
 
 class Dummy(BaseModel):

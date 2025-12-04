@@ -2,7 +2,7 @@
 
 import pytest
 
-from spakky.pod.annotations.pod import (
+from spakky.core.pod.annotations.pod import (
     CannotDeterminePodTypeError,
     CannotUsePositionalOnlyArgsInPodError,
     CannotUseVarArgsInPodError,

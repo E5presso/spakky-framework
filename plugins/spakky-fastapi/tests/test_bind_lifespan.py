@@ -1,7 +1,7 @@
 from http import HTTPStatus
 
 from fastapi.applications import FastAPI
-from spakky.application.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 from starlette.testclient import TestClient
 
 

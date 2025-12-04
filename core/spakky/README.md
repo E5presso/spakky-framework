@@ -30,7 +30,7 @@ pip install spakky[fastapi,kafka,security]
 ### Define Pods
 
 ```python
-from spakky.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.pod import Pod
 
 @Pod()
 class UserRepository:
@@ -50,8 +50,8 @@ class UserService:
 ### Bootstrap Application
 
 ```python
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 import my_app
 
 app = (
@@ -71,7 +71,7 @@ user_service = app.container.get(UserService)
 ## Pod Scopes
 
 ```python
-from spakky.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.pod import Pod
 
 # Singleton (default) - one instance per container
 @Pod(scope=Pod.Scope.SINGLETON)
@@ -92,8 +92,8 @@ class ContextScopedService:
 ## Qualifiers
 
 ```python
-from spakky.pod.annotations.pod import Pod
-from spakky.pod.annotations.primary import Primary
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.primary import Primary
 
 # Named qualifier
 @Pod(name="mysql")
@@ -114,8 +114,8 @@ class DefaultRepository(IRepository):
 ## Stereotypes
 
 ```python
-from spakky.stereotype.controller import Controller
-from spakky.stereotype.usecase import UseCase
+from spakky.core.stereotype.controller import Controller
+from spakky.core.stereotype.usecase import UseCase
 
 @Controller()
 class UserController:
@@ -131,11 +131,11 @@ class CreateUserUseCase:
 ## Aspect-Oriented Programming
 
 ```python
-from spakky.aop.aspect import Aspect, AsyncAspect
-from spakky.aop.interfaces.aspect import IAspect, IAsyncAspect
-from spakky.aop.pointcut import Before, After, Around
-from spakky.pod.annotations.order import Order
-from spakky.aspects.logging import Logging
+from spakky.core.aop.aspect import Aspect, AsyncAspect
+from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
+from spakky.core.aop.pointcut import Before, After, Around
+from spakky.core.pod.annotations.order import Order
+from spakky.core.aspects.logging import Logging
 
 # Create custom aspect
 @Order(0)
@@ -160,9 +160,9 @@ class MyService:
 ### Async Aspects
 
 ```python
-from spakky.aop.aspect import AsyncAspect
-from spakky.aop.interfaces.aspect import IAsyncAspect
-from spakky.aop.pointcut import Around
+from spakky.core.aop.aspect import AsyncAspect
+from spakky.core.aop.interfaces.aspect import IAsyncAspect
+from spakky.core.aop.pointcut import Around
 
 @Order(0)
 @AsyncAspect()
@@ -179,13 +179,11 @@ class TimingAspect(IAsyncAspect):
 ## Built-in Aspects
 
 ```python
-from spakky.aspects.logging import Logging
-from spakky.aspects.transactional import Transactional
+from spakky.core.aspects.logging import Logging
 
 @Pod()
 class OrderService:
     @Logging()  # Automatic logging
-    @Transactional()  # Transaction management
     async def create_order(self, order: Order) -> Order:
         return await self.repository.save(order)
 ```
@@ -200,7 +198,7 @@ Plugins extend framework functionality:
 my-plugin = "my_plugin.main:initialize"
 
 # In my_plugin/main.py
-from spakky.application.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 
 def initialize(app: SpakkyApplication) -> None:
     # Register plugin components
@@ -221,19 +219,20 @@ def initialize(app: SpakkyApplication) -> None:
 
 | Module | Description |
 |--------|-------------|
-| `spakky.pod` | Dependency injection container and annotations |
-| `spakky.aop` | Aspect-oriented programming framework |
-| `spakky.application` | Application context and lifecycle |
-| `spakky.stereotype` | Semantic stereotype annotations |
-| `spakky.aspects` | Built-in aspects (Logging, Transactional) |
-| `spakky.service` | Service layer components |
-| `spakky.core` | Core utilities (proxy, annotation, types) |
+| `spakky.core.pod` | Dependency injection container and annotations |
+| `spakky.core.aop` | Aspect-oriented programming framework |
+| `spakky.core.application` | Application context and lifecycle |
+| `spakky.core.stereotype` | Semantic stereotype annotations |
+| `spakky.core.aspects` | Built-in aspects (Logging) |
+| `spakky.core.service` | Service layer components |
+| `spakky.core.common` | Core utilities (annotation, types, metadata) |
+| `spakky.core.utils` | Utility functions |
 
 ## Related Packages
 
 | Package | Description |
 |---------|-------------|
-| [`spakky-ddd`](https://pypi.org/project/spakky-ddd/) | DDD building blocks (Entity, AggregateRoot, ValueObject, Event) |
+| [`spakky-domain`](https://pypi.org/project/spakky-domain/) | DDD building blocks (Entity, AggregateRoot, ValueObject, Event) |
 | [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling (`@EventHandler` stereotype) |
 
 ## License

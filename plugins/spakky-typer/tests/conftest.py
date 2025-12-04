@@ -3,14 +3,14 @@ from logging import Formatter, StreamHandler, getLogger
 from typing import Any, Generator
 
 import pytest
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
-from spakky.aspects import AsyncLoggingAspect, LoggingAspect
-from spakky.pod.annotations.pod import Pod
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
+from spakky.core.pod.annotations.pod import Pod
 from typer import Typer
 from typer.testing import CliRunner
 
-import spakky_typer
+import spakky.plugins.typer
 from tests import apps
 
 
@@ -39,7 +39,7 @@ def get_cli_fixture(name: str) -> Generator[Typer, Any, None]:
 
     app = (
         SpakkyApplication(ApplicationContext())
-        .load_plugins(include={spakky_typer.PLUGIN_NAME})
+        .load_plugins(include={spakky.plugins.typer.PLUGIN_NAME})
         .add(AsyncLoggingAspect)
         .add(LoggingAspect)
         .scan(apps)

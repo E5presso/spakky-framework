@@ -1,9 +1,9 @@
 """Test application methods for complete coverage."""
 
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
-from spakky.application.plugin import Plugin
-from spakky.aspects.logging import AsyncLoggingAspect, LoggingAspect
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
+from spakky.core.aspects.logging import AsyncLoggingAspect, LoggingAspect
 
 
 def test_add_logging_aspect() -> None:

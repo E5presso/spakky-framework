@@ -2,8 +2,8 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from spakky.core.interfaces.equatable import IEquatable
-from spakky.core.mutability import immutable, mutable
+from spakky.core.common.interfaces.equatable import IEquatable
+from spakky.core.common.mutability import immutable, mutable
 
 
 def test_mutable_is_dataclass() -> None:

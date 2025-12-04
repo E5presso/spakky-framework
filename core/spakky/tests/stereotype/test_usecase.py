@@ -1,4 +1,4 @@
-from spakky.stereotype.usecase import UseCase
+from spakky.core.stereotype.usecase import UseCase
 
 
 def test_usecase() -> None:

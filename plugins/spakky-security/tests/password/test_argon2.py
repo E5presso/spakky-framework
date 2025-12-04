@@ -1,8 +1,8 @@
 import pytest
 
-from spakky_security.key import Key
-from spakky_security.password.argon2 import Argon2PasswordEncoder
-from spakky_security.password.interface import IPasswordEncoder
+from spakky.plugins.security.key import Key
+from spakky.plugins.security.password.argon2 import Argon2PasswordEncoder
+from spakky.plugins.security.password.interface import IPasswordEncoder
 
 
 def test_argon2_expect_value_error() -> None:

@@ -2,16 +2,16 @@ import random
 
 import pytest
 
-from spakky_security.cryptography.interface import ICryptor, ISigner
-from spakky_security.cryptography.rsa import AsymmetricKey, Rsa
-from spakky_security.encoding import Base64Encoder
-from spakky_security.error import (
+from spakky.plugins.security.cryptography.interface import ICryptor, ISigner
+from spakky.plugins.security.cryptography.rsa import AsymmetricKey, Rsa
+from spakky.plugins.security.encoding import Base64Encoder
+from spakky.plugins.security.error import (
     CannotImportAsymmetricKeyError,
     DecryptionFailedError,
     KeySizeError,
     PrivateKeyRequiredError,
 )
-from spakky_security.hash import HashType
+from spakky.plugins.security.hash import HashType
 
 KEY_SIZES = [1024, 2048]
 

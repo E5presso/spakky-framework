@@ -1,8 +1,8 @@
 from abc import abstractmethod
 
-from spakky.application.application_context import ApplicationContext
-from spakky.pod.annotations.pod import Pod
-from spakky.pod.inject import inject
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.inject import inject
 
 
 def test_inject_to_function_by_type() -> None:

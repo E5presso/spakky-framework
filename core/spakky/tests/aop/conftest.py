@@ -4,10 +4,10 @@ from typing import Any, Generator
 
 import pytest
 
-from spakky.application.application_context import ApplicationContext
-from spakky.aspects.logging import AsyncLoggingAspect, LoggingAspect
-from spakky.core.importing import list_objects
-from spakky.pod.annotations.pod import Pod
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.aspects.logging import AsyncLoggingAspect, LoggingAspect
+from spakky.core.common.importing import list_objects
+from spakky.core.pod.annotations.pod import Pod
 from tests.aop.apps import dummy
 
 

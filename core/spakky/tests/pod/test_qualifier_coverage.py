@@ -2,8 +2,8 @@
 
 import pytest
 
-from spakky.pod.annotations.pod import Pod
-from spakky.pod.annotations.qualifier import Qualifier
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.qualifier import Qualifier
 
 
 def test_qualifier_with_selector() -> None:

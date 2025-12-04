@@ -16,36 +16,36 @@ Spakky is a Spring-inspired dependency injection framework for Python with AOP a
 spakky-framework/
 ├── core/
 │   ├── spakky/                    # Core DI/IoC framework
-│   │   ├── src/spakky/
+│   │   ├── src/spakky/core/
 │   │   │   ├── aop/               # Aspect-Oriented Programming
 │   │   │   ├── application/       # Application context and lifecycle
-│   │   │   ├── aspects/           # Built-in aspects (Logging, Transactional)
-│   │   │   ├── core/              # Core utilities (proxy, annotation, types)
+│   │   │   ├── aspects/           # Built-in aspects (Logging)
+│   │   │   ├── common/            # Common utilities (annotation, types, metadata)
 │   │   │   ├── pod/               # Dependency injection container
 │   │   │   ├── service/           # Service layer components
 │   │   │   ├── stereotype/        # Base stereotypes (Controller, UseCase, etc.)
 │   │   │   └── utils/             # Utility functions
 │   │   └── tests/
 │   │
-│   ├── spakky-ddd/                # DDD building blocks
-│   │   ├── src/spakky_ddd/
+│   ├── spakky-domain/             # DDD building blocks
+│   │   ├── src/spakky/domain/
 │   │   │   ├── application/       # Command and Query interfaces
 │   │   │   ├── models/            # Entity, AggregateRoot, ValueObject, Event
 │   │   │   └── ports/             # Repository and external service ports
 │   │   └── tests/
 │   │
 │   ├── spakky-event/              # Event handling
-│   │   ├── src/spakky_event/
+│   │   ├── src/spakky/event/
 │   │   │   └── stereotype/        # @EventHandler stereotype
 │   │   └── tests/
 │   │
 │   └── spakky-data/               # Data access layer (WIP)
-│       ├── src/spakky_data/
+│       ├── src/spakky/data/
 │       └── tests/
 │
 └── plugins/
     ├── spakky-fastapi/            # FastAPI integration
-    │   ├── src/spakky_fastapi/
+    │   ├── src/spakky/plugins/fastapi/
     │   │   ├── middlewares/       # FastAPI middleware
     │   │   ├── post_processors/   # Route registration post-processors
     │   │   ├── routes/            # Route decorators (get, post, etc.)
@@ -53,25 +53,25 @@ spakky-framework/
     │   └── tests/
     │
     ├── spakky-rabbitmq/           # RabbitMQ event system
-    │   ├── src/spakky_rabbitmq/
+    │   ├── src/spakky/plugins/rabbitmq/
     │   │   ├── common/            # Configuration and constants
     │   │   └── event/             # Event publisher/consumer
     │   └── tests/
     │
     ├── spakky-security/           # Security utilities
-    │   ├── src/spakky_security/
+    │   ├── src/spakky/plugins/security/
     │   │   ├── cryptography/      # Encryption/decryption
     │   │   └── password/          # Password hashing
     │   └── tests/
     │
     ├── spakky-typer/              # CLI integration
-    │   ├── src/spakky_typer/
+    │   ├── src/spakky/plugins/typer/
     │   │   ├── stereotypes/       # CliController stereotype
     │   │   └── utils/             # Asyncio utilities
     │   └── tests/
     │
     └── spakky-kafka/              # Apache Kafka event system
-        ├── src/spakky_kafka/
+        ├── src/spakky/plugins/kafka/
         │   ├── common/            # Configuration and constants
         │   └── event/             # Event publisher/consumer
         └── tests/
@@ -92,7 +92,7 @@ spakky-framework/
 - **Method injection**: Dependencies resolved automatically when methods are called
 
 ```python
-from spakky.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.pod import Pod
 
 @Pod(name="user_service", scope=Pod.Scope.SINGLETON)
 class UserService:
@@ -104,17 +104,17 @@ class UserService:
 
 Stereotypes extend `@Pod` with semantic meaning and additional behaviors:
 
-- **`@Controller`**: Base stereotype for grouping related handlers (from `spakky.stereotype.controller`)
-- **`@UseCase`**: Encapsulates business logic (from `spakky.stereotype.usecase`)
-- **`@ApiController(prefix)`**: FastAPI REST controllers with route registration (from `spakky_fastapi.stereotypes`)
-- **`@CliController(group_name)`**: Typer CLI controllers (from `spakky_typer.stereotypes`)
-- **`@EventHandler`**: Event handlers for RabbitMQ/Kafka (from `spakky_event.stereotype.event_handler`)
+- **`@Controller`**: Base stereotype for grouping related handlers (from `spakky.core.stereotype.controller`)
+- **`@UseCase`**: Encapsulates business logic (from `spakky.core.stereotype.usecase`)
+- **`@ApiController(prefix)`**: FastAPI REST controllers with route registration (from `spakky.plugins.fastapi.stereotypes.api_controller`)
+- **`@CliController(group_name)`**: Typer CLI controllers (from `spakky.plugins.typer.stereotypes.cli_controller`)
+- **`@EventHandler`**: Event handlers for RabbitMQ/Kafka (from `spakky.event.stereotype.event_handler`)
 
 All stereotypes are automatically registered as Pods and support dependency injection.
 
 ```python
-from spakky_fastapi.stereotypes.api_controller import ApiController
-from spakky_fastapi.routes import get, post
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+from spakky.plugins.fastapi.routes import get, post
 
 @ApiController("/users")
 class UserController:
@@ -137,21 +137,28 @@ class UserController:
   - `@AfterReturning(predicate)`: After successful return
   - `@AfterRaising(predicate)`: After exception raised
 - **Built-in aspects**:
-  - `@Logging()`: Automatic logging of method calls (from `spakky.aspects.logging`)
-  - `@Transactional()`: Database transaction management (from `spakky.aspects.transactional`)
+  - `@Logging()`: Automatic logging of method calls (from `spakky.core.aspects.logging`)
 - **Order control**: Use `@Order(n)` to control aspect execution order
 
 ```python
-from spakky.aop.aspect import AsyncAspect
-from spakky.aop.interfaces.aspect import IAsyncAspect
-from spakky.aop.pointcut import Around
-from spakky.pod.annotations.order import Order
+from inspect import iscoroutinefunction
+from logging import getLogger
+from typing import Any
+
+from spakky.core.aop.aspect import AsyncAspect
+from spakky.core.aop.interfaces.aspect import IAsyncAspect
+from spakky.core.aop.pointcut import Around
+from spakky.core.aspects.logging import Logging
+from spakky.core.common.types import AsyncFunc
+from spakky.core.pod.annotations.order import Order
+
+logger = getLogger(__name__)
 
 @Order(0)
 @AsyncAspect()
-class LoggingAspect(IAsyncAspect):
+class CustomLoggingAspect(IAsyncAspect):
     @Around(lambda x: Logging.exists(x) and iscoroutinefunction(x))
-    async def around_async(self, joinpoint: AsyncFunc, *args, **kwargs) -> Any:
+    async def around_async(self, joinpoint: AsyncFunc, *args: Any, **kwargs: Any) -> Any:
         logger.info(f"Calling {joinpoint.__name__}")
         result = await joinpoint(*args, **kwargs)
         logger.info(f"Finished {joinpoint.__name__}")
@@ -169,12 +176,12 @@ Plugins extend framework functionality through a formal plugin architecture:
 ```toml
 # In plugin's pyproject.toml
 [project.entry-points."spakky.plugins"]
-spakky-fastapi = "spakky_fastapi.main:initialize"
+spakky-fastapi = "spakky.plugins.fastapi.main:initialize"
 ```
 
 ```python
-# In spakky_fastapi/main.py
-from spakky.application.application import SpakkyApplication
+# In spakky.plugins.fastapi/main.py
+from spakky.core.application.application import SpakkyApplication
 
 def initialize(app: SpakkyApplication) -> None:
     """Plugin initialization function"""
@@ -189,9 +196,9 @@ def initialize(app: SpakkyApplication) -> None:
 The application lifecycle follows a builder pattern:
 
 ```python
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
-from spakky.aspects import AsyncLoggingAspect, LoggingAspect
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
 
 # Build and start application
 app = (
@@ -220,22 +227,22 @@ user_service = app.container.get(UserService)
 
 The RabbitMQ plugin provides event-driven architecture support.
 
-**Configuration**: Set environment variables with the `SPAKKY_RABBITMQ__` prefix (note the double underscore at the end):
+**Configuration**: Set environment variables with the `spakky.plugins.rabbitmq__` prefix (note the double underscore at the end):
 
 ```bash
-export SPAKKY_RABBITMQ__USE_SSL="false"
-export SPAKKY_RABBITMQ__HOST="localhost"
-export SPAKKY_RABBITMQ__PORT="5672"
-export SPAKKY_RABBITMQ__USER="guest"
-export SPAKKY_RABBITMQ__PASSWORD="guest"
-export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"
+export spakky.plugins.rabbitmq__USE_SSL="false"
+export spakky.plugins.rabbitmq__HOST="localhost"
+export spakky.plugins.rabbitmq__PORT="5672"
+export spakky.plugins.rabbitmq__USER="guest"
+export spakky.plugins.rabbitmq__PASSWORD="guest"
+export spakky.plugins.rabbitmq__EXCHANGE_NAME="my-exchange"
 ```
 
 **Event Consuming**: Use `@EventHandler` stereotype with `@on_event` decorators.
 
 ```python
-from spakky_event.stereotype.event_handler import EventHandler, on_event
-from spakky_ddd.models.event import AbstractDomainEvent
+from spakky.event.stereotype.event_handler import EventHandler, on_event
+from spakky.domain.models.event import AbstractDomainEvent
 
 class UserCreatedEvent(AbstractDomainEvent):
     user_id: int
@@ -269,7 +276,7 @@ export SPAKKY_KAFKA__AUTO_OFFSET_RESET="earliest"
 Use `@CliController(group_name)` with `@command` decorators:
 
 ```python
-from spakky_typer.stereotypes.cli_controller import CliController, command
+from spakky.plugins.typer.stereotypes.cli_controller import CliController, command
 
 @CliController("user")
 class UserCliController:
@@ -322,7 +329,7 @@ uv run pytest
 
 **Available packages for testing**:
 - `core/spakky/` - Core framework
-- `core/spakky-ddd/` - DDD building blocks
+- `core/spakky-domain/` - DDD building blocks
 - `core/spakky-event/` - Event handling
 - `core/spakky-data/` - Data access layer (WIP)
 - `plugins/spakky-fastapi/` - FastAPI plugin
@@ -361,6 +368,10 @@ When updating this documentation (`.github/copilot-instructions.md`), you MUST a
 4.  **Full Scope Scan**: You must explore the relevant package structure, module exports, and source code files (`.py`) to validate your findings.
 5.  **Mandatory Clause Preservation**: This section ("AI Documentation Maintenance Rules") must be preserved in all future versions of this document.
 6.  **Global Documentation Synchronization**: Any changes to the codebase (APIs, configuration, behavior) MUST be immediately reflected in all relevant Markdown files (README.md, CONTRIBUTING.md, etc.) across the repository. **Note**: CHANGELOG.md is auto-generated by `commitizen bump`, so do NOT manually update it.
+7.  **Sub-Package Documentation**: When updating documentation, you MUST also check and update README.md files in ALL sub-packages. This includes:
+    - **Core packages**: `core/spakky/README.md`, `core/spakky-domain/README.md`, `core/spakky-event/README.md`, `core/spakky-data/README.md`
+    - **Plugin packages**: `plugins/spakky-fastapi/README.md`, `plugins/spakky-rabbitmq/README.md`, `plugins/spakky-kafka/README.md`, `plugins/spakky-security/README.md`, `plugins/spakky-typer/README.md`
+    - Each sub-package README must have accurate import paths, API references, and usage examples that match the current codebase.
 
 ## AI Tool Usage Guidelines
 
@@ -429,6 +440,7 @@ When performing actions in this repository, follow these guidelines:
 - [ ] Verified file paths and directory structure.
 - [ ] Verified class and function names (case-sensitive).
 - [ ] Verified method signatures and arguments.
-- [ ] Verified configuration environment variable prefixes (e.g., `SPAKKY_RABBITMQ__`).
+- [ ] Verified configuration environment variable prefixes (e.g., `spakky.plugins.rabbitmq__`).
 - [ ] Verified import paths.
 - [ ] **Tested all terminal commands** by executing them before documenting.
+- [ ] **Updated all sub-package README.md files** with consistent information.

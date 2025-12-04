@@ -9,7 +9,7 @@ on:
         type: choice
         options:
           - spakky
-          - spakky-ddd
+          - spakky-domain
           - spakky-event
           - spakky-data
           - spakky-fastapi

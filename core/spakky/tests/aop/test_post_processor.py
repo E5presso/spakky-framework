@@ -1,5 +1,5 @@
 import pytest
-from spakky.application.application_context import ApplicationContext
+from spakky.core.application.application_context import ApplicationContext
 
 from tests.aop.apps.dummy import AsyncDummyUseCase, DummyUseCase
 

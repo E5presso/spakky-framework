@@ -4,14 +4,14 @@ from os import environ
 from typing import Any, Generator
 
 import pytest
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
-from spakky.aspects import AsyncLoggingAspect, LoggingAspect
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
 from testcontainers.kafka import KafkaContainer  # type: ignore
 
-import spakky_kafka
-from spakky_kafka.common.config import AutoOffsetResetType
-from spakky_kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
+import spakky.plugins.kafka
+from spakky.plugins.kafka.common.config import AutoOffsetResetType
+from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 from tests import apps
 
 
@@ -59,7 +59,7 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
 
     app = (
         SpakkyApplication(ApplicationContext())
-        .load_plugins(include={spakky_kafka.PLUGIN_NAME})
+        .load_plugins(include={spakky.plugins.kafka.PLUGIN_NAME})
         .add(AsyncLoggingAspect)
         .add(LoggingAspect)
         .scan(apps)

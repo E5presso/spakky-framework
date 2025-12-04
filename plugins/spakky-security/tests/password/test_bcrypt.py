@@ -1,7 +1,7 @@
 import pytest
 
-from spakky_security.password.bcrypt import BcryptPasswordEncoder
-from spakky_security.password.interface import IPasswordEncoder
+from spakky.plugins.security.password.bcrypt import BcryptPasswordEncoder
+from spakky.plugins.security.password.interface import IPasswordEncoder
 
 
 def test_bcrypt_expect_value_error() -> None:

@@ -1,14 +1,15 @@
 from datetime import timedelta
 
 import pytest
-from spakky_security.error import (
+
+from spakky.plugins.security.error import (
     InvalidJWTFormatError,
     JWTDecodingError,
     JWTProcessingError,
 )
-from spakky_security.hmac_signer import HMACType
-from spakky_security.jwt import JWT
-from spakky_security.key import Key
+from spakky.plugins.security.hmac_signer import HMACType
+from spakky.plugins.security.jwt import JWT
+from spakky.plugins.security.key import Key
 
 
 def test_jwt_create() -> None:

@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/pypi/v/spakky.svg" alt="PyPI Version">
   </a>
   <a href="#">
-    <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
+    <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue" alt="Python Versions">
   </a>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
@@ -61,7 +61,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | Package | Description |
 |---------|--------------|
 | **`spakky`** | Core framework (DI Container, AOP, Application Context) |
-| **`spakky-ddd`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent) |
+| **`spakky-domain`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent) |
 | **`spakky-event`** | Event handling (@EventHandler stereotype) |
 | **`spakky-data`** | Data access layer (WIP) |
 
@@ -96,7 +96,7 @@ pip install "spakky[fastapi,kafka]"
 Define your services with `@Pod`:
 
 ```python
-from spakky.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.pod import Pod
 
 @Pod()
 class UserRepository:
@@ -115,8 +115,8 @@ class UserService:
 Bootstrap the application:
 
 ```python
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
 app = (
     SpakkyApplication(ApplicationContext())

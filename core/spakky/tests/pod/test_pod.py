@@ -4,7 +4,7 @@ from typing import Annotated, Any, Protocol, TypeVar, cast
 
 import pytest
 
-from spakky.pod.annotations.pod import (
+from spakky.core.pod.annotations.pod import (
     CannotDeterminePodTypeError,
     CannotUseVarArgsInPodError,
     DependencyInfo,
@@ -12,7 +12,7 @@ from spakky.pod.annotations.pod import (
     is_class_pod,
     is_function_pod,
 )
-from spakky.pod.annotations.qualifier import Qualifier
+from spakky.core.pod.annotations.qualifier import Qualifier
 
 
 def test_pod_issubclass_of() -> None:

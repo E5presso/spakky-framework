@@ -3,9 +3,9 @@ from time import sleep
 
 import pytest
 
-from spakky.application.application_context import ApplicationContext
-from spakky.pod.annotations.pod import Pod
-from spakky.service.background import (
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )

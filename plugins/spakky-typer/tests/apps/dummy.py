@@ -1,6 +1,6 @@
-from spakky.stereotype.usecase import UseCase
+from spakky.core.stereotype.usecase import UseCase
 
-from spakky_typer.stereotypes.cli_controller import CliController, command
+from spakky.plugins.typer.stereotypes.cli_controller import CliController, command
 
 
 @UseCase()

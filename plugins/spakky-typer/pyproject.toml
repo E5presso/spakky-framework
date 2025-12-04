@@ -9,11 +9,15 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = ["spakky>=4.0.0", "typer>=0.20.0"]
 
 [project.entry-points."spakky.plugins"]
-spakky-typer = "spakky_typer.main:initialize"
+spakky-typer = "spakky.plugins.typer.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.typer"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -25,7 +29,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky_typer"
+pythonpath = "src/spakky/plugins/typer"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -42,7 +46,7 @@ addopts = """
 """
 
 [tool.coverage.run]
-include = ["src/spakky_typer/*"]
+include = ["src/spakky/plugins/typer/*"]
 branch = true
 
 [tool.coverage.report]

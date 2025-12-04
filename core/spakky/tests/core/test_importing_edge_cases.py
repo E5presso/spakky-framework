@@ -1,6 +1,6 @@
 """Test core importing edge cases for complete coverage."""
 
-from spakky.core.importing import is_root_package, is_subpath_of, list_modules
+from spakky.core.common.importing import is_root_package, is_subpath_of, list_modules
 
 
 def test_is_subpath_of_with_wildcard_pattern() -> None:

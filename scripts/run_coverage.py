@@ -66,7 +66,7 @@ def run_tests_with_coverage(member_path: str, package_name: str) -> bool:
 
     Args:
         member_path: Path to the package directory (e.g., "plugins/spakky-kafka").
-        package_name: Python package name for coverage (e.g., "spakky_kafka").
+        package_name: Python package name for coverage (e.g., "spakky.plugins.kafka").
 
     Returns:
         True if tests passed, False otherwise.

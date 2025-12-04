@@ -12,7 +12,7 @@ pip install spakky-data
 
 ## Planned Features
 
-- **Repository implementations**: Concrete implementations for `spakky-ddd` repository interfaces
+- **Repository implementations**: Concrete implementations for `spakky-domain` repository interfaces
 - **ORM integration**: SQLAlchemy, Tortoise ORM support
 - **Transaction management**: Declarative transaction handling
 - **Unit of Work**: Pattern implementation for complex operations

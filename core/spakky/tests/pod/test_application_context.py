@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from spakky.application.application_context import ApplicationContext
-from spakky.pod.annotations.pod import Pod
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
 
 
 def test_get_singleton_scoped_pod() -> None:

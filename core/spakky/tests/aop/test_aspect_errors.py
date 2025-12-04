@@ -1,7 +1,7 @@
 import pytest
 
-from spakky.aop.aspect import Aspect, AsyncAspect
-from spakky.aop.error import AspectInheritanceError
+from spakky.core.aop.aspect import Aspect, AsyncAspect
+from spakky.core.aop.error import AspectInheritanceError
 
 
 def test_aspect_inheritance_error_with_non_aspect_class() -> None:

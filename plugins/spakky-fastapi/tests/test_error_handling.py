@@ -1,8 +1,8 @@
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from spakky.plugins.fastapi.middlewares.error_handling import ErrorHandlingMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from spakky_fastapi.middlewares.error_handling import ErrorHandlingMiddleware
+from fastapi import FastAPI
 
 
 def test_error_handling_middleware_debug_mode() -> None:

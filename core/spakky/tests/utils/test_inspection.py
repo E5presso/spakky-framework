@@ -1,4 +1,4 @@
-from spakky.utils.inspection import has_default_constructor, is_instance_method
+from spakky.core.utils.inspection import has_default_constructor, is_instance_method
 
 
 def test_is_instance_method() -> None:

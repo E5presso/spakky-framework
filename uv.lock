@@ -10,7 +10,7 @@ resolution-markers = [
 members = [
     "spakky",
     "spakky-data",
-    "spakky-ddd",
+    "spakky-domain",
     "spakky-event",
     "spakky-fastapi",
     "spakky-framework",
@@ -1927,16 +1927,16 @@ name = "spakky-data"
 version = "4.0.0"
 source = { editable = "core/spakky-data" }
 dependencies = [
-    { name = "spakky-ddd" },
+    { name = "spakky-domain" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky-ddd", editable = "core/spakky-ddd" }]
+requires-dist = [{ name = "spakky-domain", editable = "core/spakky-domain" }]
 
 [[package]]
-name = "spakky-ddd"
+name = "spakky-domain"
 version = "4.0.0"
-source = { editable = "core/spakky-ddd" }
+source = { editable = "core/spakky-domain" }
 dependencies = [
     { name = "spakky" },
 ]
@@ -1949,11 +1949,11 @@ name = "spakky-event"
 version = "4.0.0"
 source = { editable = "core/spakky-event" }
 dependencies = [
-    { name = "spakky-ddd" },
+    { name = "spakky-domain" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky-ddd", editable = "core/spakky-ddd" }]
+requires-dist = [{ name = "spakky-domain", editable = "core/spakky-domain" }]
 
 [[package]]
 name = "spakky-fastapi"

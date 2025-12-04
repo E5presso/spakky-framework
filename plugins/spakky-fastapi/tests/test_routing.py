@@ -1,10 +1,10 @@
 from http import HTTPStatus
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from spakky.plugins.fastapi.error import BadRequest, InternalServerError
 
-from spakky_fastapi.error import BadRequest, InternalServerError
+from fastapi import FastAPI
 
 
 def test_get(api: FastAPI) -> None:

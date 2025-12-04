@@ -3,8 +3,8 @@ from typing import Any
 
 import pytest
 
-from spakky.core.proxy import AbstractProxyHandler, ProxyFactory
-from spakky.core.types import AsyncFunc, Func
+from spakky.core.common.proxy import AbstractProxyHandler, ProxyFactory
+from spakky.core.common.types import AsyncFunc, Func
 
 
 @pytest.mark.asyncio

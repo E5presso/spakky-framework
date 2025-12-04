@@ -9,8 +9,8 @@
 			"path": "core/spakky"
 		},
 		{
-			"name": "core.ddd",
-			"path": "core/spakky-ddd"
+			"name": "core.domain",
+			"path": "core/spakky-domain"
 		},
 		{
 			"name": "core.data",

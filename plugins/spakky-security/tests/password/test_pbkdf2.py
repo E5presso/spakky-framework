@@ -1,9 +1,9 @@
 import pytest
 
-from spakky_security.hash import HashType
-from spakky_security.key import Key
-from spakky_security.password.interface import IPasswordEncoder
-from spakky_security.password.pbkdf2 import Pbkdf2PasswordEncoder
+from spakky.plugins.security.hash import HashType
+from spakky.plugins.security.key import Key
+from spakky.plugins.security.password.interface import IPasswordEncoder
+from spakky.plugins.security.password.pbkdf2 import Pbkdf2PasswordEncoder
 
 
 def test_pbkdf2_expect_value_error() -> None:

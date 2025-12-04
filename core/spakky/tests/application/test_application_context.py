@@ -6,18 +6,18 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from spakky.application.application_context import (
+from spakky.core.application.application_context import (
     ApplicationContext,
     CircularDependencyGraphDetectedError,
     NoSuchPodError,
     NoUniquePodError,
 )
-from spakky.core.annotation import ClassAnnotation
-from spakky.pod.annotations.lazy import Lazy
-from spakky.pod.annotations.pod import Pod, PodInstantiationFailedError
-from spakky.pod.annotations.primary import Primary
-from spakky.pod.annotations.qualifier import Qualifier
-from spakky.pod.interfaces.container import CannotRegisterNonPodObjectError
+from spakky.core.common.annotation import ClassAnnotation
+from spakky.core.pod.annotations.lazy import Lazy
+from spakky.core.pod.annotations.pod import Pod, PodInstantiationFailedError
+from spakky.core.pod.annotations.primary import Primary
+from spakky.core.pod.annotations.qualifier import Qualifier
+from spakky.core.pod.interfaces.container import CannotRegisterNonPodObjectError
 
 
 def test_application_context_register_expect_success() -> None:
@@ -937,7 +937,7 @@ def test_application_context_lazy_pod_not_initialized() -> None:
 
 def test_application_context_initialize_pods_missing_raises_error() -> None:
     """Test that initializing missing pod raises error."""
-    from spakky.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
+    from spakky.core.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
 
     class NonExistentPod:  # noqa: F841
         """Dummy class for type annotation."""

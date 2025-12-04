@@ -2,7 +2,7 @@
 
 from typing import Union
 
-from spakky.core.types import remove_none
+from spakky.core.common.types import remove_none
 
 
 def test_remove_none_with_no_non_none_args() -> None:

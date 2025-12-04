@@ -1,7 +1,7 @@
 import pytest
 
-from spakky_security.encoding import Base64Encoder
-from spakky_security.key import Key
+from spakky.plugins.security.encoding import Base64Encoder
+from spakky.plugins.security.key import Key
 
 
 def test_key_generate() -> None:

@@ -14,11 +14,15 @@ dependencies = [
 ]
 
 [project.entry-points."spakky.plugins"]
-spakky-fastapi = "spakky_fastapi.main:initialize"
+spakky-fastapi = "spakky.plugins.fastapi.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.fastapi"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -30,7 +34,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky_fastapi"
+pythonpath = "src/spakky/plugins/fastapi"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -47,7 +51,7 @@ addopts = """
 """
 
 [tool.coverage.run]
-include = ["src/spakky_fastapi/*"]
+include = ["src/spakky/plugins/fastapi/*"]
 branch = true
 
 [tool.coverage.report]

@@ -1,6 +1,6 @@
 """Test proxy edge cases for complete coverage."""
 
-from spakky.core.proxy import AbstractProxyHandler, ProxyFactory
+from spakky.core.common.proxy import AbstractProxyHandler, ProxyFactory
 
 
 def test_proxy_delete_attribute() -> None:

@@ -5,11 +5,15 @@ description = "Event handling stereotype for Spakky Framework (@EventHandler, @o
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
-dependencies = ["spakky-ddd>=4.0.0"]
+dependencies = ["spakky-domain>=4.0.0"]
 
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.event"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -21,7 +25,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky_event"
+pythonpath = "src/spakky"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -38,7 +42,7 @@ addopts = """
 """
 
 [tool.coverage.run]
-include = ["src/spakky_event/*"]
+include = ["src/spakky/*"]
 branch = true
 
 [tool.coverage.report]
@@ -56,4 +60,4 @@ exclude_lines = [
 ]
 
 [tool.uv.sources]
-spakky-ddd = { workspace = true }
+spakky-domain = { workspace = true }

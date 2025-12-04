@@ -4,15 +4,15 @@ from typing import Any
 
 import pytest
 
-from spakky.aop.aspect import Aspect, AsyncAspect
-from spakky.aop.interfaces.aspect import IAspect, IAsyncAspect
-from spakky.aop.pointcut import Around
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
-from spakky.core.types import AsyncFunc, Func
-from spakky.pod.annotations.pod import Pod
-from spakky.pod.interfaces.container import IContainer
-from spakky.stereotype.usecase import UseCase
+from spakky.core.aop.aspect import Aspect, AsyncAspect
+from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
+from spakky.core.aop.pointcut import Around
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.common.types import AsyncFunc, Func
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.interfaces.container import IContainer
+from spakky.core.stereotype.usecase import UseCase
 
 
 @Aspect()

@@ -1,6 +1,6 @@
 from typing import Optional, Union
 
-from spakky.core.types import is_optional, remove_none
+from spakky.core.common.types import is_optional, remove_none
 
 
 def test_is_optional() -> None:

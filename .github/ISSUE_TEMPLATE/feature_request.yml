@@ -65,7 +65,7 @@ body:
       render: python
       placeholder: |
         # Example of how the feature would work
-        from spakky.new_feature import NewFeature
+        from spakky.core.new_feature import NewFeature
 
         @NewFeature()
         class MyService:

@@ -1,8 +1,8 @@
 import pytest
 
-from spakky_security.key import Key
-from spakky_security.password.interface import IPasswordEncoder
-from spakky_security.password.scrypt import ScryptPasswordEncoder
+from spakky.plugins.security.key import Key
+from spakky.plugins.security.password.interface import IPasswordEncoder
+from spakky.plugins.security.password.scrypt import ScryptPasswordEncoder
 
 
 def test_scrypt_expect_value_error() -> None:

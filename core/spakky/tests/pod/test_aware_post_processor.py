@@ -1,10 +1,10 @@
-from spakky.application.application_context import ApplicationContext
-from spakky.pod.annotations.pod import Pod
-from spakky.pod.interfaces.aware.application_context_aware import (
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
-from spakky.pod.interfaces.aware.container_aware import IContainerAware
-from spakky.pod.post_processors.aware_post_processor import (
+from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
+from spakky.core.pod.post_processors.aware_post_processor import (
     ApplicationContextAwareProcessor,
 )
 

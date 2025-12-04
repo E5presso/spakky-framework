@@ -28,7 +28,7 @@ tag_format = "v$version"
 version_files = [
   "pyproject.toml:version",
   "core/spakky/pyproject.toml:version",
-  "core/spakky-ddd/pyproject.toml:version",
+  "core/spakky-domain/pyproject.toml:version",
   "core/spakky-data/pyproject.toml:version",
   "core/spakky-event/pyproject.toml:version",
   "plugins/spakky-fastapi/pyproject.toml:version",
@@ -42,7 +42,7 @@ update_changelog_on_bump = true
 [tool.uv.workspace]
 members = [
   "core/spakky",
-  "core/spakky-ddd",
+  "core/spakky-domain",
   "core/spakky-data",
   "core/spakky-event",
   "plugins/spakky-fastapi",
@@ -55,7 +55,7 @@ members = [
 
 [tool.uv.sources]
 spakky = { workspace = true }
-spakky-ddd = { workspace = true }
+spakky-domain = { workspace = true }
 spakky-event = { workspace = true }
 spakky-fastapi = { workspace = true }
 spakky-rabbitmq = { workspace = true }

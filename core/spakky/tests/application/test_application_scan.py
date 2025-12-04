@@ -1,7 +1,7 @@
 """Test application scan edge cases for complete coverage."""
 
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
 
 def test_scan_without_path_in_exec_context() -> None:

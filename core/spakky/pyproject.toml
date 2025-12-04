@@ -19,6 +19,10 @@ kafka = ["spakky-kafka>=4.0.0"]
 requires = ["uv_build>=0.9.13,<0.10.0"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.core"
+
 [tool.pyrefly]
 python-version = "3.14"
 search_path = ["src", "."]

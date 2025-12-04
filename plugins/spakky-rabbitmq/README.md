@@ -16,15 +16,15 @@ pip install spakky[rabbitmq]
 
 ## Configuration
 
-Set environment variables with the `SPAKKY_RABBITMQ__` prefix:
+Set environment variables with the `spakky.plugins.rabbitmq__` prefix:
 
 ```bash
-export SPAKKY_RABBITMQ__USE_SSL="false"
-export SPAKKY_RABBITMQ__HOST="localhost"
-export SPAKKY_RABBITMQ__PORT="5672"
-export SPAKKY_RABBITMQ__USER="guest"
-export SPAKKY_RABBITMQ__PASSWORD="guest"
-export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"  # Optional
+export spakky.plugins.rabbitmq__USE_SSL="false"
+export spakky.plugins.rabbitmq__HOST="localhost"
+export spakky.plugins.rabbitmq__PORT="5672"
+export spakky.plugins.rabbitmq__USER="guest"
+export spakky.plugins.rabbitmq__PASSWORD="guest"
+export spakky.plugins.rabbitmq__EXCHANGE_NAME="my-exchange"  # Optional
 ```
 
 ## Usage
@@ -32,9 +32,9 @@ export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"  # Optional
 ### Event Publishing
 
 ```python
-from spakky_ddd.models.event import AbstractDomainEvent
-from spakky_ddd.ports.event.event_publisher import IEventPublisher
-from spakky.pod.annotations.pod import Pod
+from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.ports.event.event_publisher import IEventPublisher
+from spakky.core.pod.annotations.pod import Pod
 
 class UserCreatedEvent(AbstractDomainEvent):
     user_id: int
@@ -54,7 +54,7 @@ class UserService:
 ### Event Consuming
 
 ```python
-from spakky_event.stereotype.event_handler import EventHandler, on_event
+from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 @EventHandler()
 class UserEventHandler:
@@ -71,7 +71,7 @@ class UserEventHandler:
 For async applications, use `IAsyncEventPublisher`:
 
 ```python
-from spakky_ddd.ports.event.event_publisher import IAsyncEventPublisher
+from spakky.domain.ports.event.event_publisher import IAsyncEventPublisher
 
 @Pod()
 class AsyncUserService:

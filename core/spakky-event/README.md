@@ -19,12 +19,12 @@ pip install spakky-event
 
 ### Define Events
 
-Events should extend `AbstractDomainEvent` from `spakky-ddd`:
+Events should extend `AbstractDomainEvent` from `spakky-domain`:
 
 ```python
 from dataclasses import dataclass
 
-from spakky_ddd.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractDomainEvent
 
 
 @dataclass
@@ -43,7 +43,7 @@ class UserDeletedEvent(AbstractDomainEvent):
 Use `@EventHandler` stereotype with `@on_event` decorators:
 
 ```python
-from spakky_event.stereotype.event_handler import EventHandler, on_event
+from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 
 @EventHandler()
@@ -71,8 +71,8 @@ pip install spakky-rabbitmq
 ```
 
 ```python
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
 app = (
     SpakkyApplication(ApplicationContext())
@@ -89,8 +89,8 @@ pip install spakky-kafka
 ```
 
 ```python
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
 app = (
     SpakkyApplication(ApplicationContext())

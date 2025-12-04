@@ -2,7 +2,7 @@
 
 import pytest
 
-from spakky.core.importing import resolve_module
+from spakky.core.common.importing import resolve_module
 
 
 def test_resolve_module_with_invalid_string_raises_import_error() -> None:

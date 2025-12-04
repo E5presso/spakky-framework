@@ -17,6 +17,10 @@ dependencies = [
 requires = ["uv_build>=0.9.13,<0.10.0"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.security"
+
 [tool.pyrefly]
 python-version = "3.14"
 search_path = ["src", "."]
@@ -27,7 +31,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky_security"
+pythonpath = "src/spakky/plugins/security"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -44,7 +48,7 @@ addopts = """
 """
 
 [tool.coverage.run]
-include = ["src/spakky_security/*"]
+include = ["src/spakky/plugins/security/*"]
 branch = true
 
 [tool.coverage.report]

@@ -1,4 +1,4 @@
-from spakky_security.encoding import Base64Encoder
+from spakky.plugins.security.encoding import Base64Encoder
 
 MESSAGE: str = "Hello World! I'm Program!"
 

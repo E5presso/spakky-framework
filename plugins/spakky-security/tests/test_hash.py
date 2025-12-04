@@ -1,4 +1,4 @@
-from spakky_security.hash import Hash, HashType
+from spakky.plugins.security.hash import Hash, HashType
 
 
 def test_md5() -> None:

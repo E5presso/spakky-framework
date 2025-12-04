@@ -1,5 +1,5 @@
-from spakky_security.hmac_signer import HMAC, HMACType
-from spakky_security.key import Key
+from spakky.plugins.security.hmac_signer import HMAC, HMACType
+from spakky.plugins.security.key import Key
 
 MESSAGE: str = "Hello World! I'm Program!"
 

@@ -27,7 +27,7 @@ pip install spakky[typer]
 ### Basic CLI Controller
 
 ```python
-from spakky_typer.stereotypes.cli_controller import CliController, command
+from spakky.plugins.typer.stereotypes.cli_controller import CliController, command
 
 @CliController("user")
 class UserCliController:
@@ -70,7 +70,7 @@ python main.py user delete --user-id 123
 ### Command Options
 
 ```python
-from spakky_typer.stereotypes.cli_controller import CliController, command
+from spakky.plugins.typer.stereotypes.cli_controller import CliController, command
 
 @CliController("db")
 class DatabaseCliController:
@@ -105,7 +105,7 @@ class DatabaseCliController:
 
 ```python
 from typer import Typer
-from spakky.application.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 
 # After application.start()
 typer_app = application.container.get(Typer)
@@ -118,8 +118,8 @@ if __name__ == "__main__":
 ### Application Setup
 
 ```python
-from spakky.application.application import SpakkyApplication
-from spakky.application.application_context import ApplicationContext
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 from typer import Typer
 import my_cli_module
 

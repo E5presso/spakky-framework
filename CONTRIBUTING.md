@@ -138,7 +138,7 @@ class MyService:
 
 ### Naming Conventions
 
-- **Packages**: `snake_case` (e.g., `spakky_fastapi`)
+- **Packages**: `snake_case` (e.g., `spakky.plugins.fastapi`)
 - **Classes**: `PascalCase` (e.g., `UserController`)
 - **Functions/Methods**: `snake_case` (e.g., `get_user`)
 - **Protocols (Interfaces)**: Must start with `I` (e.g., `IService`, `IContainer`).
@@ -199,18 +199,18 @@ def fetch_user(user_id: int) -> User | None:
 
 Spakky uses a formal plugin architecture. If you are contributing a new plugin:
 
-1.  **Structure**: Create a new directory in `plugins/spakky-<name>`.
+1.  **Structure**: Create a new directory in `plugins/spakky-<name>` with `src/spakky/plugins/<name>/` package.
 2.  **Entry Point**: Define the entry point in `pyproject.toml`.
 
     ```toml
     [project.entry-points."spakky.plugins"]
-    spakky-name = "spakky_name.main:initialize"
+    spakky-name = "spakky.plugins.name.main:initialize"
     ```
 
-3.  **Initialization**: Implement the `initialize` function.
+3.  **Initialization**: Implement the `initialize` function in `main.py`.
 
     ```python
-    from spakky.application.application import SpakkyApplication
+    from spakky.core.application.application import SpakkyApplication
 
     def initialize(app: SpakkyApplication) -> None:
         """Register your Pods and Post-Processors here."""

@@ -14,11 +14,15 @@ dependencies = [
 ]
 
 [project.entry-points."spakky.plugins"]
-spakky-kafka = "spakky_kafka.main:initialize"
+spakky-kafka = "spakky.plugins.kafka.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.kafka"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -30,7 +34,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky_kafka"
+pythonpath = "src/spakky/plugins/kafka"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -52,7 +56,7 @@ dev = [
 ]
 
 [tool.coverage.run]
-include = ["src/spakky_kafka/*"]
+include = ["src/spakky/plugins/kafka/*"]
 branch = true
 
 [tool.coverage.report]

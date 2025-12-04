@@ -1,4 +1,4 @@
-from spakky.utils.casing import pascal_to_snake, snake_to_pascal
+from spakky.core.utils.casing import pascal_to_snake, snake_to_pascal
 
 
 def test_pascal_to_snake() -> None:

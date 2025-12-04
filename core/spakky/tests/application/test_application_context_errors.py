@@ -5,12 +5,12 @@ from threading import Event
 
 import pytest
 
-from spakky.application.application_context import (
+from spakky.core.application.application_context import (
     ApplicationContext,
     ApplicationContextAlreadyStartedError,
     ApplicationContextAlreadyStoppedError,
 )
-from spakky.service.background import IAsyncService, IService
+from spakky.core.service.background import IAsyncService, IService
 
 
 def test_application_context_start_twice_raises_error() -> None:

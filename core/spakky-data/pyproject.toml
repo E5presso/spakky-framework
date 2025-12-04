@@ -5,11 +5,15 @@ description = "Data access layer for Spakky Framework (Repository implementation
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
-dependencies = ["spakky-ddd>=4.0.0"]
+dependencies = ["spakky-domain>=4.0.0"]
 
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.data"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -56,4 +60,4 @@ exclude_lines = [
 ]
 
 [tool.uv.sources]
-spakky-ddd = { workspace = true }
+spakky-domain = { workspace = true }

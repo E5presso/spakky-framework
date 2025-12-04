@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from spakky.core.annotation import (
+from spakky.core.common.annotation import (
     Annotation,
     AnnotationNotFoundError,
     ClassAnnotation,

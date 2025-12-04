@@ -27,8 +27,8 @@ pip install spakky[fastapi]
 ### Basic Controller
 
 ```python
-from spakky_fastapi.stereotypes.api_controller import ApiController
-from spakky_fastapi.routes import get, post
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+from spakky.plugins.fastapi.routes import get, post
 
 @ApiController("/users", tags=["users"])
 class UserController:
@@ -47,7 +47,7 @@ class UserController:
 ### Available Route Decorators
 
 ```python
-from spakky_fastapi.routes import (
+from spakky.plugins.fastapi.routes import (
     get,
     post,
     put,
@@ -88,7 +88,7 @@ class MyController:
 
 ```python
 from fastapi import FastAPI
-from spakky.application.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 
 # After application.start()
 fast_api = application.container.get(FastAPI)

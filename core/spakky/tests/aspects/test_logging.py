@@ -3,9 +3,9 @@ from logging import Formatter, Logger, LogRecord
 
 import pytest
 
-from spakky.aop.aspect import Aspect, AsyncAspect
-from spakky.aspects import logging as logging_module
-from spakky.aspects.logging import AsyncLoggingAspect, Logging, LoggingAspect
+from spakky.core.aop.aspect import Aspect, AsyncAspect
+from spakky.core.aspects import logging as logging_module
+from spakky.core.aspects.logging import AsyncLoggingAspect, Logging, LoggingAspect
 
 
 def test_logging_with_masking() -> None:

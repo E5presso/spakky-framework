@@ -1,7 +1,11 @@
-from spakky.core.mutability import immutable
-from spakky_ddd.models.event import AbstractDomainEvent
+from spakky.core.common.mutability import immutable
+from spakky.domain.models.event import AbstractDomainEvent
 
-from spakky_event.stereotype.event_handler import EventHandler, EventRoute, on_event
+from spakky.event.stereotype.event_handler import (
+    EventHandler,
+    EventRoute,
+    on_event,
+)
 
 
 def test_event_handler() -> None:

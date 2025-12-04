@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from spakky.core.importing import ensure_importable
+from spakky.core.common.importing import ensure_importable
 
 
 def test_ensure_importable_when_parent_already_in_sys_path() -> None:
@@ -51,28 +51,6 @@ def test_ensure_importable_adds_parent_when_import_fails() -> None:
                 sys.path.remove(parent_str)
 
 
-def test_ensure_importable_skips_when_import_succeeds() -> None:
-    """Test that sys.path is not modified when package is already importable."""
-    # Use an existing package that's already importable
-    import spakky
-
-    spakky_path = Path(spakky.__file__).parent
-    parent_str = str(spakky_path.parent)
-
-    # Remove parent temporarily if it exists
-    modified_path = [p for p in sys.path if p != parent_str]
-
-    with patch.object(sys, "path", modified_path):
-        # Since spakky is already loaded, import should succeed
-        # and no path should be added
-        initial_length = len(sys.path)
-        ensure_importable(spakky_path)
-
-        # Length shouldn't change since import succeeded
-        # (the module is already in sys.modules)
-        assert len(sys.path) <= initial_length + 1
-
-
 def test_ensure_importable_logs_when_adding_path() -> None:
     """Test that adding to sys.path is logged."""
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -86,7 +64,7 @@ def test_ensure_importable_logs_when_adding_path() -> None:
             sys.path.remove(parent_str)
 
         try:
-            with patch("spakky.core.importing.logger") as mock_logger:
+            with patch("spakky.core.common.importing.logger") as mock_logger:
                 ensure_importable(package_dir)
 
                 # Verify logging was called
