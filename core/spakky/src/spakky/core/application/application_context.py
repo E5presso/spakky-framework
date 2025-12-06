@@ -98,6 +98,7 @@ class ApplicationContext(IApplicationContext):
         self.__type_cache = {}
         self.__singleton_cache = {}
         self.__singleton_lock = RLock()
+        self.__shutdown_lock = RLock()
         self.__context_cache = ContextVar(CONTEXT_SCOPE_CACHE)
         self.__post_processors = []
         self.__services = []
@@ -379,20 +380,22 @@ class ApplicationContext(IApplicationContext):
         if self.__event_thread is None:  # pragma: no cover
             raise EventLoopThreadNotStartedInApplicationContextError
 
+        # Store references to avoid race condition with concurrent stop() calls
+        event_loop = self.__event_loop
+        event_thread = self.__event_thread
+
         for service in self.__services:
             service.stop()
 
         async def stop_async_services() -> None:
-            if self.__event_loop is None:  # pragma: no cover
-                raise EventLoopThreadNotStartedInApplicationContextError
             for service in self.__async_services:
                 await service.stop_async()
 
-        run_coroutine_threadsafe(stop_async_services(), self.__event_loop).result()
-        self.__event_loop.call_soon_threadsafe(
-            self.__event_loop.stop  # type: ignore
-        )
-        self.__event_thread.join()
+        run_coroutine_threadsafe(stop_async_services(), event_loop).result()
+        event_loop.call_soon_threadsafe(event_loop.stop)  # type: ignore
+        event_thread.join()
+
+        # Clear references after thread has joined
         self.__event_loop = None
         self.__event_thread = None
 
@@ -491,14 +494,17 @@ class ApplicationContext(IApplicationContext):
     def stop(self) -> None:
         """Stop the application context and clean up resources.
 
+        Thread-safe: Multiple concurrent calls to stop() are serialized.
+
         Raises:
             ApplicationContextAlreadyStoppedError: If already stopped.
         """
-        if not self.__is_started:  # pragma: no cover
-            raise ApplicationContextAlreadyStoppedError()
-        self.__stop_services()
-        self.__clear_all()
-        self.__is_started = False
+        with self.__shutdown_lock:
+            if not self.__is_started:  # pragma: no cover
+                raise ApplicationContextAlreadyStoppedError()
+            self.__stop_services()
+            self.__clear_all()
+            self.__is_started = False
 
     @overload
     def get(self, type_: type[ObjectT]) -> ObjectT: ...
