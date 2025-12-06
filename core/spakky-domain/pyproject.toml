@@ -25,7 +25,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky"
+pythonpath = "src/spakky/domain"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -42,7 +42,7 @@ addopts = """
 """
 
 [tool.coverage.run]
-include = ["src/spakky/*"]
+include = ["src/spakky/domain/*"]
 branch = true
 
 [tool.coverage.report]

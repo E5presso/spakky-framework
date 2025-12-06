@@ -1,4 +1,4 @@
-from spakky.core.stereotype.repository import Repository
+from spakky.data.stereotype.repository import Repository
 
 
 def test_repository() -> None:
