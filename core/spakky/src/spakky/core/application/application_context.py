@@ -138,14 +138,20 @@ class ApplicationContext(IApplicationContext):
 
         # Use type index for O(1) lookup instead of O(n) iteration
         pods = self.__type_cache.get(type_, set()).copy()
-        if len(pods) < 1:
+        if not pods:
             return None
-        if len(pods) > 1:
-            pods = {pod for pod in pods if qualify_pod(pod)}
-            if len(pods) == 1:
-                return pods.pop()
-            raise NoUniquePodError(type_, [p.name for p in pods])
-        return pods.pop()
+
+        # Fast path: single candidate - no need to filter
+        if len(pods) == 1:
+            return next(iter(pods))
+
+        # Multiple candidates: filter by qualifier/name/primary
+        qualified = {pod for pod in pods if qualify_pod(pod)}
+        if len(qualified) == 1:
+            return qualified.pop()
+        if not qualified:
+            return None
+        raise NoUniquePodError(type_, [p.name for p in qualified])
 
     def __instantiate_pod(
         self, pod: Pod, dependency_hierarchy: tuple[type, ...]
