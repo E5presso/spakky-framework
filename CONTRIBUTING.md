@@ -249,7 +249,7 @@ We use **Conventional Commits** to automate versioning and changelogs.
 Format: `<type>(<scope>): <subject>`
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **Scopes**: `core`, `ddd`, `event`, `data`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
+- **Scopes**: `core`, `domain`, `data`, `event`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
 
 Examples:
 

@@ -1,4 +1,4 @@
-from spakky.domain.ports.external.proxy import (
+from spakky.data.external.proxy import (
     IAsyncGenericProxy,
     IGenericProxy,
     ProxyModel,

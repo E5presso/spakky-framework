@@ -1,4 +1,4 @@
-from spakky.domain.ports.event.event_consumer import (
+from spakky.event.event_consumer import (
     IAsyncEventConsumer,
     IEventConsumer,
 )

@@ -4,13 +4,14 @@ from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.experimental.aio import AIOProducer
 from pydantic import TypeAdapter
-from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.event_publisher import (
+from spakky.event.event_publisher import (
     IAsyncEventPublisher,
     IEventPublisher,
 )
+
+from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 
 logger = getLogger(__name__)
 

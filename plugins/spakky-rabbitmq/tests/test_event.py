@@ -3,9 +3,9 @@ from time import sleep, time
 
 import pytest
 from spakky.core.application.application import SpakkyApplication
-from spakky.domain.ports.event.error import DuplicateEventHandlerError
-from spakky.domain.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
-from spakky.domain.ports.event.event_publisher import (
+from spakky.event.error import DuplicateEventHandlerError
+from spakky.event.event_consumer import IAsyncEventConsumer, IEventConsumer
+from spakky.event.event_publisher import (
     IAsyncEventPublisher,
     IEventPublisher,
 )

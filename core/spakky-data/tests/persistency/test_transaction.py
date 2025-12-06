@@ -1,9 +1,9 @@
 from typing import Any
 
 import pytest
-
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from spakky.domain.ports.persistency.transaction import (
+
+from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
 )

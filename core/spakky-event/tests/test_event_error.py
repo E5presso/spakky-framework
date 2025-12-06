@@ -1,4 +1,4 @@
-from spakky.domain.ports.event.error import AbstractSpakkyEventError
+from spakky.event.error import AbstractSpakkyEventError
 
 
 def test_event_error_is_abstract() -> None:

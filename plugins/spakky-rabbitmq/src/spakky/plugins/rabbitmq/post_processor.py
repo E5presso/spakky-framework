@@ -19,7 +19,7 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.event_consumer import IAsyncEventConsumer, IEventConsumer
+from spakky.event.event_consumer import IAsyncEventConsumer, IEventConsumer
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 
 logger = getLogger(__name__)

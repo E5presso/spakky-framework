@@ -13,24 +13,25 @@ from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.spec import Basic, BasicProperties
 from pydantic import TypeAdapter
-from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
 from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.error import (
+from spakky.event.error import (
     DuplicateEventHandlerError,
     InvalidMessageError,
 )
-from spakky.domain.ports.event.event_consumer import (
+from spakky.event.event_consumer import (
     DomainEventT,
     IAsyncEventConsumer,
     IAsyncEventHandlerCallback,
     IEventConsumer,
     IEventHandlerCallback,
 )
+
+from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 
 
 @Pod()

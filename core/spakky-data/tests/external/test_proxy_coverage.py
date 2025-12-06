@@ -1,6 +1,6 @@
 """Test domain ports proxy for complete coverage."""
 
-from spakky.domain.ports.external.proxy import ProxyModel
+from spakky.data.external.proxy import ProxyModel
 
 
 def test_proxy_model_not_equal_different_type() -> None:

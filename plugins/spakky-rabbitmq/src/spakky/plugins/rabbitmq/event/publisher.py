@@ -7,13 +7,14 @@ events to RabbitMQ queues with optional exchange routing.
 from aio_pika import Message, connect_robust  # type: ignore
 from pika import BlockingConnection, URLParameters
 from pydantic import TypeAdapter
-from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.event_publisher import (
+from spakky.event.event_publisher import (
     IAsyncEventPublisher,
     IEventPublisher,
 )
+
+from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 
 
 @Pod()

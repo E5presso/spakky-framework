@@ -33,7 +33,7 @@ export spakky.plugins.rabbitmq__EXCHANGE_NAME="my-exchange"  # Optional
 
 ```python
 from spakky.domain.models.event import AbstractDomainEvent
-from spakky.domain.ports.event.event_publisher import IEventPublisher
+from spakky.event.event_publisher import IEventPublisher
 from spakky.core.pod.annotations.pod import Pod
 
 class UserCreatedEvent(AbstractDomainEvent):
@@ -71,7 +71,7 @@ class UserEventHandler:
 For async applications, use `IAsyncEventPublisher`:
 
 ```python
-from spakky.domain.ports.event.event_publisher import IAsyncEventPublisher
+from spakky.event.event_publisher import IAsyncEventPublisher
 
 @Pod()
 class AsyncUserService:

@@ -1,4 +1,4 @@
-from spakky.domain.ports.external.error import AbstractSpakkyExternalError
+from spakky.data.external.error import AbstractSpakkyExternalError
 
 
 def test_external_error_is_abstract() -> None:

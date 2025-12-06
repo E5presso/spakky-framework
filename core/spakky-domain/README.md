@@ -15,7 +15,6 @@ pip install spakky-domain
 - **Aggregate Roots**: Consistency boundaries with event management
 - **Domain Events**: Immutable events for event-driven architecture
 - **CQRS**: Command and Query use case abstractions
-- **Repository Ports**: Generic repository interfaces
 
 ## Quick Start
 
@@ -132,8 +131,8 @@ Separate read and write operations:
 
 ```python
 from dataclasses import dataclass
+from uuid import UUID
 
-from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.application.command import AbstractCommand, IAsyncCommandUseCase
 from spakky.domain.application.query import AbstractQuery, IAsyncQueryUseCase
 
@@ -145,15 +144,10 @@ class CreateUserCommand(AbstractCommand):
     email: str
 
 
-@Pod()
 class CreateUserUseCase(IAsyncCommandUseCase[CreateUserCommand, UUID]):
-    def __init__(self, repository: IUserRepository) -> None:
-        self.repository = repository
-
     async def execute(self, command: CreateUserCommand) -> UUID:
-        user = User.create(command.name, command.email)
-        await self.repository.save(user)
-        return user.uid
+        # Business logic here
+        ...
 
 
 # Query
@@ -162,28 +156,10 @@ class GetUserQuery(AbstractQuery):
     user_id: UUID
 
 
-@Pod()
 class GetUserUseCase(IAsyncQueryUseCase[GetUserQuery, User | None]):
-    def __init__(self, repository: IUserRepository) -> None:
-        self.repository = repository
-
     async def execute(self, query: GetUserQuery) -> User | None:
-        return await self.repository.get_or_none(query.user_id)
-```
-
-### Repository Pattern
-
-Define repository interfaces for your aggregates:
-
-```python
-from abc import abstractmethod
-
-from spakky.domain.ports.persistency.repository import IAsyncGenericRepository
-
-
-class IUserRepository(IAsyncGenericRepository[User, UUID]):
-    @abstractmethod
-    async def find_by_email(self, email: str) -> User | None: ...
+        # Business logic here
+        ...
 ```
 
 ## API Reference
@@ -209,12 +185,12 @@ class IUserRepository(IAsyncGenericRepository[User, UUID]):
 | `IQueryUseCase`        | Sync query use case interface    |
 | `IAsyncQueryUseCase`   | Async query use case interface   |
 
-### Ports
+## Related Packages
 
-| Class                     | Description                        |
-| ------------------------- | ---------------------------------- |
-| `IGenericRepository`      | Sync generic repository interface  |
-| `IAsyncGenericRepository` | Async generic repository interface |
+| Package | Description |
+|---------|-------------|
+| `spakky-data` | Repository and transaction abstractions |
+| `spakky-event` | Event publisher/consumer interfaces and `@EventHandler` stereotype |
 
 ## License
 

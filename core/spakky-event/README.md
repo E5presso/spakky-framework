@@ -109,6 +109,15 @@ app = (
 | `@EventHandler()` | Marks a class as an event handler (extends `@Pod`) |
 | `@on_event(EventType)` | Marks a method as handler for specific event type |
 
+### Interfaces
+
+| Class | Description |
+|-------|-------------|
+| `IEventPublisher` | Sync event publisher interface |
+| `IAsyncEventPublisher` | Async event publisher interface |
+| `IEventConsumer` | Sync event consumer interface |
+| `IAsyncEventConsumer` | Async event consumer interface |
+
 ### Types
 
 | Type | Description |
@@ -116,6 +125,22 @@ app = (
 | `EventRoute` | Annotation class for event routing metadata |
 | `DomainEventT` | Type variable bound to `AbstractDomainEvent` |
 | `IEventHandlerCallback` | Type alias for event handler callbacks |
+
+### Errors
+
+| Class | Description |
+|-------|-------------|
+| `AbstractSpakkyEventError` | Base error for event operations |
+| `DuplicateEventHandlerError` | Raised when duplicate handlers registered |
+| `InvalidMessageError` | Raised when message is malformed |
+
+## Related Packages
+
+| Package | Description |
+|---------|-------------|
+| `spakky-domain` | DDD building blocks including `AbstractDomainEvent` |
+| `spakky-rabbitmq` | RabbitMQ implementation of event publisher/consumer |
+| `spakky-kafka` | Kafka implementation of event publisher/consumer |
 
 ## License
 

@@ -61,9 +61,9 @@ Spakky is a monorepo containing the core framework and official plugins:
 | Package | Description |
 |---------|--------------|
 | **`spakky`** | Core framework (DI Container, AOP, Application Context) |
-| **`spakky-domain`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent) |
-| **`spakky-event`** | Event handling (@EventHandler stereotype) |
-| **`spakky-data`** | Data access layer (WIP) |
+| **`spakky-domain`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent, CQRS) |
+| **`spakky-data`** | Data access abstractions (Repository, Transaction, External Proxy) |
+| **`spakky-event`** | Event handling (IEventPublisher, IEventConsumer, @EventHandler) |
 
 ### Plugins
 

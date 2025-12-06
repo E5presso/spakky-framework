@@ -2,7 +2,7 @@
 
 import pytest
 
-from spakky.domain.ports.persistency.transaction import (
+from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
 )

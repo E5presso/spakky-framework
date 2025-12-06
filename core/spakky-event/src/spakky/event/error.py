@@ -1,9 +1,9 @@
 from abc import ABC
 
-from spakky.domain.ports.error import AbstractSpakkyInfrastructureError
+from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
-class AbstractSpakkyEventError(AbstractSpakkyInfrastructureError, ABC): ...
+class AbstractSpakkyEventError(AbstractSpakkyFrameworkError, ABC): ...
 
 
 class DuplicateEventHandlerError(AbstractSpakkyEventError):

@@ -1,4 +1,4 @@
-from spakky.domain.ports.event.event_publisher import (
+from spakky.event.event_publisher import (
     IAsyncEventPublisher,
     IEventPublisher,
 )

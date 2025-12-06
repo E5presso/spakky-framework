@@ -1,4 +1,4 @@
-from spakky.domain.ports.persistency.error import AbstractSpakkyPersistencyError
+from spakky.data.persistency.error import AbstractSpakkyPersistencyError
 
 
 def test_persistency_error_is_abstract() -> None:

@@ -29,18 +29,22 @@ spakky-framework/
 │   │
 │   ├── spakky-domain/             # DDD building blocks
 │   │   ├── src/spakky/domain/
-│   │   │   ├── application/       # Command and Query interfaces
-│   │   │   ├── models/            # Entity, AggregateRoot, ValueObject, Event
-│   │   │   └── ports/             # Repository and external service ports
+│   │   │   ├── application/       # Command and Query interfaces (CQRS)
+│   │   │   └── models/            # Entity, AggregateRoot, ValueObject, Event
 │   │   └── tests/
 │   │
-│   ├── spakky-event/              # Event handling
-│   │   ├── src/spakky/event/
-│   │   │   └── stereotype/        # @EventHandler stereotype
+│   ├── spakky-data/               # Data access abstractions
+│   │   ├── src/spakky/data/
+│   │   │   ├── persistency/       # Repository and Transaction
+│   │   │   └── external/          # External service proxy
 │   │   └── tests/
 │   │
-│   └── spakky-data/               # Data access layer (WIP)
-│       ├── src/spakky/data/
+│   └── spakky-event/              # Event handling
+│       ├── src/spakky/event/
+│       │   ├── stereotype/        # @EventHandler stereotype
+│       │   ├── event_publisher.py # IEventPublisher, IAsyncEventPublisher
+│       │   ├── event_consumer.py  # IEventConsumer, IAsyncEventConsumer
+│       │   └── error.py           # Event-related errors
 │       └── tests/
 │
 └── plugins/
