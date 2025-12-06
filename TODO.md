@@ -9,8 +9,6 @@
 - [ ] **Responsibility Separation**: Consider splitting `ApplicationContext` into smaller components (PodRegistry, DependencyResolver, ScopeManager, ServiceManager).
 
 ### Domain Package
-- [ ] **Module Exports**: Add explicit re-exports in `__init__.py` files for better API surface.
-- [x] **ValueObject Hash**: Fixed XOR-based hash to use `hash(astuple(self))` for proper order-preserving hashing. Added tests to verify order sensitivity and set operations.
 - [ ] **Entity updated_at**: Auto-update `updated_at` field on attribute changes.
 - [ ] **Repository**: Consider adding pagination and Specification pattern support.
 
@@ -23,6 +21,8 @@
 - [ ] Document thread safety guarantees explicitly.
 
 ## ✅ Completed
+- [x] **Module Exports**: Added explicit re-exports in `__init__.py` files for `spakky.domain`, `spakky.event`, and `spakky.data` packages. Users can now use `from spakky.domain import AbstractEntity, AbstractValueObject` instead of deep imports.
+- [x] **ValueObject Hash**: Fixed XOR-based hash to use `hash(astuple(self))` for proper order-preserving hashing. Added tests to verify order sensitivity and set operations.
 - [x] **Kafka Docstring**: Fixed docstring formatting in `KafkaPostProcessor.post_process()` - removed duplicate Args section and fixed ordering.
 - [x] **Concurrency Review**: Fixed race conditions in `ApplicationContext.stop()` by adding `__shutdown_lock` to serialize shutdown operations. Stored local references to `__event_loop` and `__event_thread` to prevent race conditions during cleanup. Added concurrency test to verify thread-safe shutdown.
 - [x] **Thread Safety**: Fixed locking for lazy singleton creation in `ApplicationContext`. Used `RLock` to allow double-checked locking without deadlock, ensuring thread safety. Verified with concurrency tests.
