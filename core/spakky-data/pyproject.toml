@@ -25,7 +25,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky_data"
+pythonpath = "src/spakky/data"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -42,13 +42,13 @@ addopts = """
 """
 
 [tool.coverage.run]
-include = ["src/spakky_data/*"]
+include = ["src/spakky/data/*"]
 branch = true
 
 [tool.coverage.report]
 show_missing = true
 precision = 2
-# fail_under = 90
+fail_under = 90
 skip_empty = true
 exclude_lines = [
   "pragma: no cover",
