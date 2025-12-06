@@ -4,12 +4,12 @@ Defines protocol interfaces for encryption/decryption and signing/verification
 operations used by cryptographic implementations.
 """
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from spakky.plugins.security.hash import HashType
 
 
-class ICryptor:
+class ICryptor(ABC):
     """Protocol for encryption and decryption operations."""
 
     url_safe: bool
@@ -21,7 +21,7 @@ class ICryptor:
     def decrypt(self, cipher: str) -> str: ...
 
 
-class ISigner:
+class ISigner(ABC):
     """Protocol for digital signature operations."""
 
     url_safe: bool

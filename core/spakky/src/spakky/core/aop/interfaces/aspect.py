@@ -7,9 +7,10 @@ method calls in the AOP system.
 from typing import Any, TypeVar
 
 from spakky.core.common.types import AsyncFunc, Func
+from abc import ABC
 
 
-class IAspect:
+class IAspect(ABC):
     """Protocol for synchronous aspect implementations."""
 
     def before(self, *args: Any, **kwargs: Any) -> None:
@@ -60,7 +61,7 @@ class IAspect:
         return joinpoint(*args, **kwargs)
 
 
-class IAsyncAspect:
+class IAsyncAspect(ABC):
     """Protocol for asynchronous aspect implementations."""
 
     async def before_async(self, *args: Any, **kwargs: Any) -> None:

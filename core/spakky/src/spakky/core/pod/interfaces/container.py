@@ -4,7 +4,7 @@ This module defines the IContainer protocol for managing Pod lifecycle
 and dependency injection.
 """
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Callable, overload
 from uuid import UUID
 
@@ -43,7 +43,7 @@ class PodNameAlreadyExistsError(AbstractSpakkyPodError):
     message = "Pod name already exists"
 
 
-class IContainer:
+class IContainer(ABC):
     """Protocol for IoC container managing Pod instances."""
 
     @property

@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, TypeAlias, TypeVar
 
 from spakky.domain.models.event import AbstractDomainEvent
@@ -8,7 +8,7 @@ IEventHandlerCallback: TypeAlias = Callable[[DomainEventT], None]
 IAsyncEventHandlerCallback: TypeAlias = Callable[[DomainEventT], Awaitable[None]]
 
 
-class IEventConsumer:
+class IEventConsumer(ABC):
     @abstractmethod
     def register(
         self,
@@ -17,7 +17,7 @@ class IEventConsumer:
     ) -> None: ...
 
 
-class IAsyncEventConsumer:
+class IAsyncEventConsumer(ABC):
     @abstractmethod
     def register(
         self,

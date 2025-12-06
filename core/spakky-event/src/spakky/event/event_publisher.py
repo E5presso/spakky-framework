@@ -1,13 +1,13 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 from spakky.domain.models.event import AbstractDomainEvent
 
 
-class IEventPublisher:
+class IEventPublisher(ABC):
     @abstractmethod
     def publish(self, event: AbstractDomainEvent) -> None: ...
 
 
-class IAsyncEventPublisher:
+class IAsyncEventPublisher(ABC):
     @abstractmethod
     async def publish(self, event: AbstractDomainEvent) -> None: ...

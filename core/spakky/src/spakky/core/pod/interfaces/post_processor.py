@@ -4,10 +4,10 @@ This module defines the IPostProcessor protocol for transforming
 Pod instances after creation but before use.
 """
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
 
-class IPostProcessor:
+class IPostProcessor(ABC):
     """Protocol for processing Pods after instantiation.
 
     Post-processors can wrap, modify, or enhance Pod instances.

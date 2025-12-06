@@ -16,7 +16,7 @@ from tests import apps
 
 @pytest.fixture(
     name="environment_variables",
-    scope="session",
+    scope="package",
     params=["test_exchange", None],
     autouse=True,
 )
@@ -33,7 +33,7 @@ def setup_environment_variables_fixture(
     yield
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="package", autouse=True)
 def rabbitmq_container(environment_variables: None) -> Generator[None, None, None]:
     port = int(environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"])
     username = environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"]

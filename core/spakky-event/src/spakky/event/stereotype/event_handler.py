@@ -14,7 +14,7 @@ from spakky.domain.models.event import AbstractDomainEvent
 DomainEventT = TypeVar("DomainEventT", bound=AbstractDomainEvent)
 """Type variable for domain event types."""
 
-IEventHandlerCallback: TypeAlias = Callable[[Any, DomainEventT], None | Awaitable[None]]
+IEventHandlerMethod: TypeAlias = Callable[[Any, DomainEventT], None | Awaitable[None]]
 """Type alias for event handler callback functions."""
 
 
@@ -29,8 +29,8 @@ class EventRoute(FunctionAnnotation, Generic[DomainEventT]):
     """The domain event type this handler processes."""
 
     def __call__(
-        self, obj: IEventHandlerCallback[DomainEventT]
-    ) -> IEventHandlerCallback[DomainEventT]:
+        self, obj: IEventHandlerMethod[DomainEventT]
+    ) -> IEventHandlerMethod[DomainEventT]:
         """Apply event route annotation to method.
 
         Args:
@@ -45,7 +45,8 @@ class EventRoute(FunctionAnnotation, Generic[DomainEventT]):
 def on_event(
     event_type: type[DomainEventT],
 ) -> Callable[
-    [IEventHandlerCallback[DomainEventT]], IEventHandlerCallback[DomainEventT]
+    [IEventHandlerMethod[DomainEventT]],
+    IEventHandlerMethod[DomainEventT],
 ]:
     """Decorator for marking methods as event handlers.
 
@@ -65,8 +66,8 @@ def on_event(
     """
 
     def wrapper(
-        method: IEventHandlerCallback[DomainEventT],
-    ) -> IEventHandlerCallback[DomainEventT]:
+        method: IEventHandlerMethod[DomainEventT],
+    ) -> IEventHandlerMethod[DomainEventT]:
         return EventRoute(event_type)(method)
 
     return wrapper
