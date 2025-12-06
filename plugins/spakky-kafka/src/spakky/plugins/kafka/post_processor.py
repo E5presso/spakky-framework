@@ -51,13 +51,13 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
     def post_process(self, pod: object) -> object:
         """Register event handlers from event handler classes.
 
-        Args:
-            pod: The Pod to process.
-        Scans the event handler for methods decorated with @event and registers
+        Scans the event handler for methods decorated with @on_event and registers
         them with the appropriate Kafka consumer (sync or async) based on
         whether the method is a coroutine function.
+
         Args:
             pod: The Pod to process.
+
         Returns:
             The Pod, with event handlers registered if it's an event handler.
         """

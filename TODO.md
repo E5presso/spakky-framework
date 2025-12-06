@@ -16,7 +16,6 @@
 
 ### Plugins
 - [ ] **RabbitMQ/Kafka Abstraction**: Extract common logic between RabbitMQ and Kafka plugins into shared base classes.
-- [ ] **Kafka Docstring**: Fix docstring formatting issues in `post_processor.py`.
 
 ### Documentation
 - [ ] Add a "Cookbook" section with common patterns (e.g., Caching, Validation).
@@ -24,6 +23,7 @@
 - [ ] Document thread safety guarantees explicitly.
 
 ## ✅ Completed
+- [x] **Kafka Docstring**: Fixed docstring formatting in `KafkaPostProcessor.post_process()` - removed duplicate Args section and fixed ordering.
 - [x] **Concurrency Review**: Fixed race conditions in `ApplicationContext.stop()` by adding `__shutdown_lock` to serialize shutdown operations. Stored local references to `__event_loop` and `__event_thread` to prevent race conditions during cleanup. Added concurrency test to verify thread-safe shutdown.
 - [x] **Thread Safety**: Fixed locking for lazy singleton creation in `ApplicationContext`. Used `RLock` to allow double-checked locking without deadlock, ensuring thread safety. Verified with concurrency tests.
 - [x] **Domain Event Hash**: Fixed XOR-based hash in `AbstractDomainEvent` to use `hash((event_id, timestamp))` for proper hashing. Added tests to verify hash uniqueness and set operations.
