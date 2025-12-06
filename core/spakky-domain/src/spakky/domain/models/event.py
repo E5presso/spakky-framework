@@ -65,9 +65,9 @@ class AbstractDomainEvent(IEquatable, IComparable, ICloneable, ABC):
         """Compute hash from event id and timestamp.
 
         Returns:
-            XOR of id and timestamp hashes.
+            Hash of tuple containing event id and timestamp.
         """
-        return hash(self.event_id) ^ hash(self.timestamp)
+        return hash((self.event_id, self.timestamp))
 
     def __lt__(self, __value: Self) -> bool:
         """Compare events by timestamp (less than).

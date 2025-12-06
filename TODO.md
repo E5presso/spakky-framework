@@ -27,6 +27,7 @@
 
 ## ✅ Completed
 - [x] **Thread Safety**: Fixed locking for lazy singleton creation in `ApplicationContext`. Used `RLock` to allow double-checked locking without deadlock, ensuring thread safety. Verified with concurrency tests.
+- [x] **Domain Event Hash**: Fixed XOR-based hash in `AbstractDomainEvent` to use `hash((event_id, timestamp))` for proper hashing. Added tests to verify hash uniqueness and set operations.
 - [x] **Environment Variable Prefix Unification**: Unified RabbitMQ and Kafka environment variable prefixes to use `SPAKKY_*__` format.
 - [x] **AspectPostProcessor @Pod Removal**: Removed meaningless `@Pod` decorator from `AspectPostProcessor`.
 - [x] **ABC Inheritance**: All major interface classes (`IContainer`, `IEventPublisher`, `IEventConsumer`, etc.) already inherit from `ABC`.

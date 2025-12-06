@@ -81,6 +81,59 @@ def test_domain_event_hash() -> None:
     assert hash(event1) == hash(event2)
 
 
+def test_domain_event_hash_different_values() -> None:
+    """Test that events with different id/timestamp have different hashes."""
+
+    @immutable
+    class SampleEvent(AbstractDomainEvent): ...
+
+    event1: SampleEvent = SampleEvent(
+        event_id=UUID("12345678-1234-5678-1234-567812345678"),
+        timestamp=datetime.fromisoformat("2024-01-26T11:32:00.000000+09:00"),
+    )
+    event2: SampleEvent = SampleEvent(
+        event_id=UUID("87654321-4321-8765-4321-876543218765"),
+        timestamp=datetime.fromisoformat("2024-01-26T11:32:00.000000+09:00"),
+    )
+    event3: SampleEvent = SampleEvent(
+        event_id=UUID("12345678-1234-5678-1234-567812345678"),
+        timestamp=datetime.fromisoformat("2024-01-26T11:33:00.000000+09:00"),
+    )
+
+    # Different event_id should produce different hash
+    assert hash(event1) != hash(event2)
+    # Different timestamp should produce different hash
+    assert hash(event1) != hash(event3)
+
+
+def test_domain_event_hash_in_set() -> None:
+    """Test that events work correctly as set elements."""
+
+    @immutable
+    class SampleEvent(AbstractDomainEvent): ...
+
+    event1: SampleEvent = SampleEvent(
+        event_id=UUID("12345678-1234-5678-1234-567812345678"),
+        timestamp=datetime.fromisoformat("2024-01-26T11:32:00.000000+09:00"),
+    )
+    event2: SampleEvent = SampleEvent(
+        event_id=UUID("12345678-1234-5678-1234-567812345678"),
+        timestamp=datetime.fromisoformat("2024-01-26T11:32:00.000000+09:00"),
+    )
+    event3: SampleEvent = SampleEvent(
+        event_id=UUID("87654321-4321-8765-4321-876543218765"),
+        timestamp=datetime.fromisoformat("2024-01-26T11:32:00.000000+09:00"),
+    )
+
+    events = {event1, event2, event3}
+
+    # event1 and event2 are equal, so set should contain only 2 elements
+    assert len(events) == 2
+    assert event1 in events
+    assert event2 in events
+    assert event3 in events
+
+
 def test_domain_event_compare() -> None:
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
