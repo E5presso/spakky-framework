@@ -146,7 +146,7 @@ def sync_dependency_versions(new_version: str) -> None:
     plugins = [name for name in package_paths if name != "spakky"]
 
     # Update core's optional dependencies to plugins
-    core_pyproject = WORKSPACE_ROOT / "spakky/pyproject.toml"
+    core_pyproject = WORKSPACE_ROOT / package_paths["spakky"] / "pyproject.toml"
     for plugin in plugins:
         pattern = rf'"{plugin}>=([\d.]+)"'
         replacement = f'"{plugin}>={new_version}"'
