@@ -398,6 +398,26 @@ When updating this documentation (`.github/copilot-instructions.md`), you MUST a
     - **Core packages**: `core/spakky/README.md`, `core/spakky-domain/README.md`, `core/spakky-event/README.md`, `core/spakky-data/README.md`
     - **Plugin packages**: `plugins/spakky-fastapi/README.md`, `plugins/spakky-rabbitmq/README.md`, `plugins/spakky-kafka/README.md`, `plugins/spakky-security/README.md`, `plugins/spakky-typer/README.md`
     - Each sub-package README must have accurate import paths, API references, and usage examples that match the current codebase.
+8.  **Cross-Document Verification**: Before editing code or documentation, ALWAYS verify consistency across these three documents:
+    - **CONTRIBUTING.md**: Coding standards, naming conventions, error handling patterns, commit message format
+    - **README.md**: High-level architecture, installation, quick start examples
+    - **This document** (`.github/copilot-instructions.md`): Detailed API usage, development patterns, testing guidelines
+    - If any discrepancy is found, flag it immediately and determine the source of truth by examining actual code implementation.
+9.  **Documentation Priority**: When rules conflict between documents:
+    - **Code implementation** is the ultimate source of truth
+    - **CONTRIBUTING.md** defines project-wide conventions and patterns
+    - **This document** provides AI-specific implementation guidance
+    - **README.md** provides user-facing documentation
+    - If documentation contradicts actual code, update documentation to match code, not vice versa.
+
+## Additional Coding Standards
+
+For detailed coding standards not covered in this document, refer to **CONTRIBUTING.md**, which includes:
+- Naming conventions (classes, functions, variables, files)
+- Error class guidelines and message patterns
+- Test naming conventions
+- Commit message format
+- Code style and formatting rules
 
 ## AI Tool Usage Guidelines
 

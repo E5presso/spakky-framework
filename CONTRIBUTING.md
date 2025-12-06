@@ -172,32 +172,23 @@ class MyService:
 
 ### Error Class Guidelines
 
-All framework errors inherit from `AbstractSpakkyFrameworkError`. The error message should be defined using `ClassVar[str]` for class-level messages:
-
-**For fixed messages** (no context needed):
+All framework errors inherit from `AbstractSpakkyFrameworkError`. Error messages are defined using the `message` class attribute:
 
 ```python
-from typing import ClassVar
-
 class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
     """Raised when function Pod has Optional return type."""
-    message: ClassVar[str] = "Cannot use optional return type in pod"
+    
+    message = "Cannot use optional return type in pod"
 ```
-
-**For context-specific messages** (include details):
 
 ```python
 class CannotDeterminePodTypeError(PodAnnotationFailedError):
-    """Raised when Pod type cannot be inferred."""
-
-    def __init__(self, target: PodType, param_name: str | type) -> None:
-        super().__init__(
-            f"Cannot determine pod type for '{target.__name__}' "
-            f"(parameter: {param_name})"
-        )
-        self.target = target
-        self.param_name = param_name
+    """Raised when Pod type cannot be inferred from annotations."""
+    
+    message = "Cannot determine pod type from annotations"
 ```
+
+**Important**: Do NOT override `__init__` or `__str__` methods in error classes. The base class handles message formatting automatically through the `message` class attribute.
 
 **Key rules**:
 - Always call `super().__init__(message)` for proper `str(error)` support
