@@ -104,3 +104,46 @@ def test_value_object_can_only_composed_by_hashable_objects_expect_error() -> No
 
             def validate(self) -> None:
                 return
+
+
+def test_value_object_hash_order_sensitive() -> None:
+    """Test that hash is sensitive to attribute order (not XOR-based)."""
+
+    @immutable
+    class Pair(AbstractValueObject):
+        first: int
+        second: int
+
+        def validate(self) -> None:
+            return
+
+    # Different order should produce different hashes
+    pair1 = Pair(first=1, second=2)
+    pair2 = Pair(first=2, second=1)
+
+    assert pair1 != pair2, "Value objects with different values should not be equal"
+    assert hash(pair1) != hash(pair2), "Hash should be order-sensitive"
+
+
+def test_value_object_hash_in_set() -> None:
+    """Test that value objects work correctly as set elements."""
+
+    @immutable
+    class Point(AbstractValueObject):
+        x: int
+        y: int
+
+        def validate(self) -> None:
+            return
+
+    point1 = Point(x=1, y=2)
+    point2 = Point(x=1, y=2)
+    point3 = Point(x=2, y=1)
+
+    points = {point1, point2, point3}
+
+    # point1 and point2 are equal, so set should contain only 2 elements
+    assert len(points) == 2
+    assert point1 in points
+    assert point2 in points
+    assert point3 in points

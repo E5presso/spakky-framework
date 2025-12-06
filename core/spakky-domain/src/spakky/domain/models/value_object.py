@@ -5,10 +5,8 @@ compared by their attributes rather than identity.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Hashable
 from copy import deepcopy
 from dataclasses import astuple
-from functools import reduce
 from typing import Self
 
 from spakky.core.common.interfaces.cloneable import ICloneable
@@ -58,13 +56,9 @@ class AbstractValueObject(IEquatable, ICloneable, ABC):
         """Compute hash from all hashable attributes.
 
         Returns:
-            XOR of all attribute hashes.
+            Hash of tuple containing all attributes (order-preserving).
         """
-        return reduce(
-            lambda x, y: x ^ y,
-            (hash(x) for x in astuple(self) if isinstance(x, Hashable)),
-            0,
-        )
+        return hash(astuple(self))
 
     def __post_init__(self) -> None:
         """Validate value object after initialization."""

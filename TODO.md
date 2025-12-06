@@ -11,7 +11,7 @@
 
 ### Domain Package
 - [ ] **Module Exports**: Add explicit re-exports in `__init__.py` files for better API surface.
-- [ ] **ValueObject Hash**: Fix XOR-based hash to use `hash(astuple(self))` for order-preserving hashing.
+- [x] **ValueObject Hash**: Fixed XOR-based hash to use `hash(astuple(self))` for proper order-preserving hashing. Added tests to verify order sensitivity and set operations.
 - [ ] **Entity updated_at**: Auto-update `updated_at` field on attribute changes.
 - [ ] **Repository**: Consider adding pagination and Specification pattern support.
 
