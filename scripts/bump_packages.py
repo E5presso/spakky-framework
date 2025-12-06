@@ -220,13 +220,30 @@ def sync_dependency_versions(new_version: str) -> None:
         replacement = f'"{plugin}>={new_version}"'
         replace_pattern(core_pyproject, pattern, replacement)
 
-    # Update all packages' dependency on spakky (core + plugins)
-    dependent_packages = core_packages + plugin_packages
-    for package in dependent_packages:
-        package_pyproject = WORKSPACE_ROOT / package_paths[package] / "pyproject.toml"
-        pattern = r'"spakky>=([\d.]+)"'
-        replacement = f'"spakky>={new_version}"'
-        replace_pattern(package_pyproject, pattern, replacement)
+    # Update each package's dependencies with proper version constraints
+    for package_name, package_path in package_paths.items():
+        if package_name == "spakky":
+            continue
+
+        package_pyproject = WORKSPACE_ROOT / package_path / "pyproject.toml"
+        deps = get_package_dependencies(package_path)
+        dependencies = deps["dependencies"]
+
+        if not isinstance(dependencies, list):
+            continue
+
+        # Update version for each workspace dependency
+        for dep in dependencies:
+            # Extract package name from dependency string (e.g., "spakky>=4.0.0" -> "spakky")
+            dep_name = (
+                dep.split(">=")[0].split("==")[0].split("[")[0].strip().strip('"')
+            )
+
+            # Only update workspace packages
+            if dep_name in package_paths:
+                pattern = rf'"{dep_name}>=([\d.]+)"'
+                replacement = f'"{dep_name}>={new_version}"'
+                replace_pattern(package_pyproject, pattern, replacement)
 
 
 def write_changelog(package: str, version: str, package_paths: dict[str, Path]) -> None:
