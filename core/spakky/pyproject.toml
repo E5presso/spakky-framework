@@ -1,6 +1,6 @@
 [project]
 name = "spakky"
-version = "5.0.0"
+version = "5.0.1"
 description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,11 +9,11 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = []
 
 [project.optional-dependencies]
-fastapi = ["spakky-fastapi>=5.0.0"]
-rabbitmq = ["spakky-rabbitmq>=5.0.0"]
-security = ["spakky-security>=5.0.0"]
-typer = ["spakky-typer>=5.0.0"]
-kafka = ["spakky-kafka>=5.0.0"]
+fastapi = ["spakky-fastapi>=5.0.1"]
+rabbitmq = ["spakky-rabbitmq>=5.0.1"]
+security = ["spakky-security>=5.0.1"]
+typer = ["spakky-typer>=5.0.1"]
+kafka = ["spakky-kafka>=5.0.1"]
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
