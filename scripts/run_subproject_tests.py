@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Monorepo pre-push hook that runs tests only for projects with changes.
-This is separate from pre-commit to avoid slow tests blocking every commit.
+Monorepo pre-push hook that runs pre-push stage hooks for projects with changes.
+
+This script delegates to each sub-project's own .pre-commit-config.yaml,
+running hooks registered in the 'pre-push' stage (including pytest).
+This ensures sub-projects work independently when opened standalone.
 """
 
 import os
@@ -122,9 +125,13 @@ def get_changed_projects(
 
 
 def run_tests_for_project(project_path: str) -> bool:
-    """Run pytest for a specific project."""
+    """Run pre-push hooks (including pytest) for a specific project.
+
+    This delegates to the project's own pre-commit configuration,
+    running hooks registered in the 'pre-push' stage.
+    """
     print(f"\n{'=' * 60}", flush=True)
-    print(f"🧪 Running tests for: {project_path}", flush=True)
+    print(f"🧪 Running pre-push hooks for: {project_path}", flush=True)
     print(f"{'=' * 60}\n", flush=True)
 
     try:
@@ -133,10 +140,21 @@ def run_tests_for_project(project_path: str) -> bool:
         env["PYTHONUNBUFFERED"] = "1"
         env["FORCE_COLOR"] = "1"
 
-        # Use Popen to stream output in real-time
+        # Run pre-commit with pre-push hook stage
+        # This uses each sub-project's .pre-commit-config.yaml
         process = subprocess.Popen(
-            ["uv", "run", "pytest", "--color=yes"],
-            cwd=project_path,
+            [
+                "uv",
+                "run",
+                "pre-commit",
+                "run",
+                "--hook-stage",
+                "pre-push",
+                "--all-files",
+                "-c",
+                f"{project_path}/.pre-commit-config.yaml",
+                "--color=always",
+            ],
             stdout=None,  # Inherit from parent (direct to terminal)
             stderr=None,  # Inherit from parent (direct to terminal)
             bufsize=0,
@@ -145,15 +163,15 @@ def run_tests_for_project(project_path: str) -> bool:
         process.wait()
 
         if process.returncode != 0:
-            print(f"\n❌ Tests failed for: {project_path}", flush=True)
+            print(f"\n❌ Pre-push hooks failed for: {project_path}", flush=True)
             return False
 
-        print(f"\n✅ Tests passed for: {project_path}", flush=True)
+        print(f"\n✅ Pre-push hooks passed for: {project_path}", flush=True)
         return True
 
     except Exception as e:
         print(
-            f"\n❌ Error running tests for {project_path}: {e}",
+            f"\n❌ Error running pre-push hooks for {project_path}: {e}",
             file=sys.stderr,
             flush=True,
         )
@@ -185,7 +203,10 @@ def main() -> int:
         print("\nℹ️  No workspace projects affected. Skipping tests.", flush=True)
         return 0
 
-    print(f"\n🧪 Running tests for {len(changed_projects)} project(s)...", flush=True)
+    print(
+        f"\n🧪 Running pre-push hooks for {len(changed_projects)} project(s)...",
+        flush=True,
+    )
 
     all_passed = True
     for project in changed_projects:
@@ -194,11 +215,11 @@ def main() -> int:
 
     print(f"\n{'=' * 60}", flush=True)
     if all_passed:
-        print("✅ All tests passed! Push proceeding...", flush=True)
+        print("✅ All pre-push hooks passed! Push proceeding...", flush=True)
         print(f"{'=' * 60}\n", flush=True)
         return 0
     else:
-        print("❌ Some tests failed! Push aborted.", flush=True)
+        print("❌ Some pre-push hooks failed! Push aborted.", flush=True)
         print(f"{'=' * 60}\n", flush=True)
         return 1
 

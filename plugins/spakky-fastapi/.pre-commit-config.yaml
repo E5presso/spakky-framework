@@ -17,8 +17,17 @@ repos:
     hooks:
       - id: pyrefly-typecheck
         name: Pyrefly (type checking)
-        entry: bash -c 'cd plugins/spakky-fastapi && uv run pyrefly check'
+        entry: bash -c 'if [ -d "plugins/spakky-fastapi" ]; then cd plugins/spakky-fastapi; fi && uv run pyrefly check'
         language: system
         types: [python]
         pass_filenames: false
         always_run: true
+
+      - id: pytest
+        name: Run pytest
+        entry: bash -c 'if [ -d "plugins/spakky-fastapi" ]; then cd plugins/spakky-fastapi; fi && uv run pytest'
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

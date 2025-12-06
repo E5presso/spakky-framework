@@ -108,15 +108,16 @@
 			"reportIncompatibleVariableOverride": "error"
 		},
 		"conventionalCommits.scopes": [
+			"all",
 			"core",
-			"core-ddd",
-			"core-data",
-			"core-event",
-			"plugin-fastapi",
-			"plugin-rabbitmq",
-			"plugin-security",
-			"plugin-typer",
-			"plugin-kafka"
+			"core.domain",
+			"core.data",
+			"core.event",
+			"plugin.fastapi",
+			"plugin.rabbitmq",
+			"plugin.security",
+			"plugin.typer",
+			"plugin.kafka"
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml"
