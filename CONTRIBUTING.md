@@ -258,6 +258,8 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
         pass
     ```
 
+4.  **Package Registration**: Plugin packages are automatically detected from `core/spakky/pyproject.toml`'s `optional-dependencies`. No manual registration needed in scripts.
+
 ## 📦 Commit Messages
 
 We use **Conventional Commits** to automate versioning and changelogs.

@@ -70,6 +70,72 @@ def get_package_paths() -> dict[str, Path]:
     return package_paths
 
 
+def get_package_dependencies(
+    package_path: Path,
+) -> dict[str, list[str] | dict[str, list[str]]]:
+    """Read dependencies and optional-dependencies from a package's pyproject.toml.
+
+    Returns:
+        Dictionary with 'dependencies' and 'optional-dependencies' keys.
+    """
+    pyproject_path = WORKSPACE_ROOT / package_path / "pyproject.toml"
+
+    with open(pyproject_path, "rb") as f:
+        config = tomllib.load(f)
+
+    project = config.get("project", {})
+    return {
+        "dependencies": project.get("dependencies", []),
+        "optional-dependencies": project.get("optional-dependencies", {}),
+    }
+
+
+def categorize_packages() -> tuple[list[str], list[str]]:
+    """Categorize packages into core and plugin packages.
+
+    Core packages: Depend on 'spakky' but are NOT in spakky's optional-dependencies
+    Plugin packages: Listed in spakky's optional-dependencies
+
+    Returns:
+        Tuple of (core_packages, plugin_packages)
+    """
+    package_paths = get_package_paths()
+
+    # Get spakky's optional dependencies
+    spakky_deps = get_package_dependencies(package_paths["spakky"])
+    optional_deps_dict = spakky_deps["optional-dependencies"]
+
+    # Extract plugin package names from optional-dependencies sections
+    plugin_packages: list[str] = []
+    if isinstance(optional_deps_dict, dict):
+        for deps_list in optional_deps_dict.values():
+            for dep in deps_list:
+                # Parse "spakky-fastapi>=4.0.0" -> "spakky-fastapi"
+                pkg_name = (
+                    dep.split(">=")[0].split("==")[0].split("[")[0].strip().strip('"')
+                )
+                if pkg_name not in plugin_packages:
+                    plugin_packages.append(pkg_name)
+
+    # Core packages are those that depend on spakky but are not plugins
+    core_packages = []
+    for package_name, package_path in package_paths.items():
+        if package_name == "spakky":
+            continue
+        if package_name in plugin_packages:
+            continue
+
+        # Check if this package depends on spakky
+        deps = get_package_dependencies(package_path)
+        dependencies = deps["dependencies"]
+        if isinstance(dependencies, list) and any(
+            "spakky" in dep for dep in dependencies
+        ):
+            core_packages.append(package_name)
+
+    return core_packages, plugin_packages
+
+
 class BumpError(RuntimeError):
     """Raised when the release process encounters an unrecoverable error."""
 
@@ -143,21 +209,24 @@ def sync_dependency_versions(new_version: str) -> None:
     """Align inter-package version constraints with the new release version."""
     print("🔄 Updating inter-package dependency constraints...")
     package_paths = get_package_paths()
-    plugins = [name for name in package_paths if name != "spakky"]
 
-    # Update core's optional dependencies to plugins
+    # Categorize packages dynamically from pyproject.toml
+    core_packages, plugin_packages = categorize_packages()
+
+    # Update spakky's optional dependencies to plugins
     core_pyproject = WORKSPACE_ROOT / package_paths["spakky"] / "pyproject.toml"
-    for plugin in plugins:
+    for plugin in plugin_packages:
         pattern = rf'"{plugin}>=([\d.]+)"'
         replacement = f'"{plugin}>={new_version}"'
         replace_pattern(core_pyproject, pattern, replacement)
 
-    # Update each plugin's dependency on spakky
-    for plugin in plugins:
-        plugin_pyproject = WORKSPACE_ROOT / package_paths[plugin] / "pyproject.toml"
+    # Update all packages' dependency on spakky (core + plugins)
+    dependent_packages = core_packages + plugin_packages
+    for package in dependent_packages:
+        package_pyproject = WORKSPACE_ROOT / package_paths[package] / "pyproject.toml"
         pattern = r'"spakky>=([\d.]+)"'
         replacement = f'"spakky>={new_version}"'
-        replace_pattern(plugin_pyproject, pattern, replacement)
+        replace_pattern(package_pyproject, pattern, replacement)
 
 
 def write_changelog(package: str, version: str, package_paths: dict[str, Path]) -> None:
