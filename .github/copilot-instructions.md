@@ -231,15 +231,15 @@ user_service = app.container.get(UserService)
 
 The RabbitMQ plugin provides event-driven architecture support.
 
-**Configuration**: Set environment variables with the `spakky.plugins.rabbitmq__` prefix (note the double underscore at the end):
+**Configuration**: Set environment variables with the `SPAKKY_RABBITMQ__` prefix (note the double underscore at the end):
 
 ```bash
-export spakky.plugins.rabbitmq__USE_SSL="false"
-export spakky.plugins.rabbitmq__HOST="localhost"
-export spakky.plugins.rabbitmq__PORT="5672"
-export spakky.plugins.rabbitmq__USER="guest"
-export spakky.plugins.rabbitmq__PASSWORD="guest"
-export spakky.plugins.rabbitmq__EXCHANGE_NAME="my-exchange"
+export SPAKKY_RABBITMQ__USE_SSL="false"
+export SPAKKY_RABBITMQ__HOST="localhost"
+export SPAKKY_RABBITMQ__PORT="5672"
+export SPAKKY_RABBITMQ__USER="guest"
+export SPAKKY_RABBITMQ__PASSWORD="guest"
+export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"
 ```
 
 **Event Consuming**: Use `@EventHandler` stereotype with `@on_event` decorators.
@@ -486,7 +486,7 @@ When performing actions in this repository, follow these guidelines:
 - [ ] Verified file paths and directory structure.
 - [ ] Verified class and function names (case-sensitive).
 - [ ] Verified method signatures and arguments.
-- [ ] Verified configuration environment variable prefixes (e.g., `spakky.plugins.rabbitmq__`).
+- [ ] Verified configuration environment variable prefixes (e.g., `SPAKKY_RABBITMQ__`).
 - [ ] Verified import paths.
 - [ ] **Tested all terminal commands** by executing them before documenting.
 - [ ] **Updated all sub-package README.md files** with consistent information.

@@ -16,15 +16,15 @@ pip install spakky[rabbitmq]
 
 ## Configuration
 
-Set environment variables with the `spakky.plugins.rabbitmq__` prefix:
+Set environment variables with the `SPAKKY_RABBITMQ__` prefix:
 
 ```bash
-export spakky.plugins.rabbitmq__USE_SSL="false"
-export spakky.plugins.rabbitmq__HOST="localhost"
-export spakky.plugins.rabbitmq__PORT="5672"
-export spakky.plugins.rabbitmq__USER="guest"
-export spakky.plugins.rabbitmq__PASSWORD="guest"
-export spakky.plugins.rabbitmq__EXCHANGE_NAME="my-exchange"  # Optional
+export SPAKKY_RABBITMQ__USE_SSL="false"
+export SPAKKY_RABBITMQ__HOST="localhost"
+export SPAKKY_RABBITMQ__PORT="5672"
+export SPAKKY_RABBITMQ__USER="guest"
+export SPAKKY_RABBITMQ__PASSWORD="guest"
+export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"  # Optional
 ```
 
 ## Usage
