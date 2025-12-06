@@ -1,3 +1,33 @@
+## v5.0.0 (2025-12-06)
+
+### Feat
+
+- **core**: 순환 참조 발생 시, 오류 표현 형식 개선
+- **core.domain**: Entity mutation 발생 시, updated_at & version 필드를 자동으로 업데이트
+- **core**: ApplicationContext.stop에 스레드 락 추가
+- **plugin.security**: 플러그인 구조 템플릿 셋업
+- ApplicationContext의 싱글톤 캐시 Thread lock 추가
+- **all**: :rotating_light: spakky-domain 내의 이벤트, 영속성 관련 코드를 별도 코어 패키지로 분리
+- 통합 네임스페이스 영역을 제공하도록 기존 패키지 구조 수정
+- **core**: 인터페이스 선언을 Protocol 기반에서 ABC로 변경
+- ddd와 event 패키지 분리
+
+### Fix
+
+- **all**: 잘못된 의존성 업데이트 수정
+- **all**: Release CI 오류 수정
+- **all**: import shortcut 경로 제공
+- **core.domain**: 해쉬 생성 로직 수정
+- ValueObject의 XOR 기반 해쉬 처리 수정
+- **all**: 타입, 환경변수 관련 오류 수정
+- **all**: 누락된 테스트 관련 설정 및 파일 이동 수정
+- **spakky-data**: 테스트 디스커버리 및 커버리지 관련 설정 수정
+
+### Refactor
+
+- **core**: Pod 탐색 로직 최적화
+- 테스트 코드 경로 수정
+
 ## v4.0.0 (2025-11-29)
 
 ### Feat
