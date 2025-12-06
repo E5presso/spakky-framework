@@ -9,7 +9,6 @@
 - [ ] **Responsibility Separation**: Consider splitting `ApplicationContext` into smaller components (PodRegistry, DependencyResolver, ScopeManager, ServiceManager).
 
 ### Domain Package
-- [ ] **Entity updated_at**: Auto-update `updated_at` field on attribute changes.
 - [ ] **Repository**: Consider adding pagination and Specification pattern support.
 
 ### Plugins
@@ -21,6 +20,7 @@
 - [ ] Document thread safety guarantees explicitly.
 
 ## ✅ Completed
+- [x] **Entity Auto-Update**: Implemented auto-update for `updated_at` and `version` fields in `AbstractEntity.__setattr__()`. When a business attribute changes after initialization, metadata is automatically updated (timestamp and version UUID). Metadata fields themselves don't trigger updates. Rollback logic ensures metadata consistency on validation failure. Added comprehensive tests covering normal updates, metadata field handling, and rollback scenarios.
 - [x] **Module Exports**: Added explicit re-exports in `__init__.py` files for `spakky.domain`, `spakky.event`, and `spakky.data` packages. Users can now use `from spakky.domain import AbstractEntity, AbstractValueObject` instead of deep imports.
 - [x] **ValueObject Hash**: Fixed XOR-based hash to use `hash(astuple(self))` for proper order-preserving hashing. Added tests to verify order sensitivity and set operations.
 - [x] **Kafka Docstring**: Fixed docstring formatting in `KafkaPostProcessor.post_process()` - removed duplicate Args section and fixed ordering.

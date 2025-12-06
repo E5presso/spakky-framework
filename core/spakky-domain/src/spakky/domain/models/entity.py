@@ -7,7 +7,7 @@ identity, validation, and immutability enforcement.
 from abc import ABC, abstractmethod
 from dataclasses import field
 from datetime import UTC, datetime
-from typing import Any, Generic
+from typing import Any, ClassVar, Generic
 from uuid import UUID, uuid4
 
 from spakky.core.common.interfaces.equatable import EquatableT, IEquatable
@@ -29,6 +29,15 @@ class AbstractEntity(IEquatable, Generic[EquatableT], ABC):
     Entities are objects with unique identity that maintain consistency
     through validation and prevent unauthorized modifications.
     """
+
+    # Fields excluded from auto-update (do not trigger updated_at/version changes)
+    _AUTO_UPDATE_EXCLUDE_FIELDS: ClassVar[set[str]] = {
+        "uid",
+        "version",
+        "created_at",
+        "updated_at",
+        "_AbstractEntity__initialized",
+    }
 
     __initialized: bool = field(init=False, repr=False, default=False)
 
@@ -92,6 +101,9 @@ class AbstractEntity(IEquatable, Generic[EquatableT], ABC):
     def __setattr__(self, __name: str, __value: Any) -> None:
         """Set attribute with validation and rollback on failure.
 
+        Automatically updates `updated_at` and `version` when any attribute
+        (except metadata fields) is modified after initialization.
+
         Args:
             __name: Attribute name.
             __value: New value.
@@ -106,6 +118,10 @@ class AbstractEntity(IEquatable, Generic[EquatableT], ABC):
         if self.__initialized:
             try:
                 self.validate()
+                # Auto-update metadata fields when business attributes change
+                if __name not in self._AUTO_UPDATE_EXCLUDE_FIELDS:
+                    super().__setattr__("updated_at", datetime.now(UTC))
+                    super().__setattr__("version", uuid4())
             except:
                 super().__setattr__(__name, __old)
                 raise
