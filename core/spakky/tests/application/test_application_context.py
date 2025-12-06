@@ -481,6 +481,53 @@ def test_application_raise_error_with_circular_dependency() -> None:
         context.start()
 
 
+def test_circular_dependency_error_message_format() -> None:
+    """Test that circular dependency error message shows visual dependency tree."""
+
+    class IA:
+        def a(self) -> str: ...
+
+    class IB:
+        def b(self) -> str: ...
+
+    @Pod()
+    class A(IA):
+        __b: IB
+
+        def __init__(self, b: IB) -> None:
+            self.__b = b
+
+        def a(self) -> str:
+            return self.__b.b()
+
+    @Pod()
+    class B(IB):
+        __a: IA
+
+        def __init__(self, a: IA) -> None:
+            self.__a = a
+
+        def b(self) -> str:
+            return self.__a.a()
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(A)
+    context.add(B)
+
+    with pytest.raises(CircularDependencyGraphDetectedError) as exc_info:
+        context.start()
+
+    error_msg = str(exc_info.value)
+    print(error_msg)
+    # Verify visual tree elements are present
+    assert "Circular dependency graph detected" in error_msg
+    assert "Dependency path:" in error_msg
+    assert "└─>" in error_msg
+    assert "CIRCULAR!" in error_msg
+    # Verify both classes are mentioned
+    assert "A" in error_msg or "B" in error_msg
+
+
 def test_application_context_with_multiple_children_list_not_exists() -> None:
     class IRepository:
         @abstractmethod

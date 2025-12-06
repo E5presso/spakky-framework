@@ -172,23 +172,48 @@ class MyService:
 
 ### Error Class Guidelines
 
-All framework errors inherit from `AbstractSpakkyFrameworkError`. Error messages are defined using the `message` class attribute:
+All framework errors inherit from `AbstractSpakkyFrameworkError`.
+
+**For simple errors** (no additional context needed):
 
 ```python
 class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
     """Raised when function Pod has Optional return type."""
-    
+
     message = "Cannot use optional return type in pod"
 ```
 
+**For errors with context or detailed information**:
+
+Override `__init__`, `__str__`, and optionally `__repr__` to provide rich error information:
+
 ```python
-class CannotDeterminePodTypeError(PodAnnotationFailedError):
-    """Raised when Pod type cannot be inferred from annotations."""
-    
-    message = "Cannot determine pod type from annotations"
+class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
+    """Raised when circular dependency is detected."""
+
+    message = "Circular dependency graph detected"
+
+    def __init__(self, dependency_chain: list[type]) -> None:
+        super().__init__()
+        self.dependency_chain = dependency_chain
+
+    def __str__(self) -> str:
+        """Format with visual dependency tree."""
+        lines = [self.message, "Dependency path:"]
+        for i, type_ in enumerate(self.dependency_chain):
+            type_name = type_.__name__
+            indent = "  " * i
+            arrow = "└─> " if i > 0 else ""
+            lines.append(f"{indent}{arrow}{type_name}")
+        return "\n".join(lines)
 ```
 
-**Important**: Do NOT override `__init__` or `__str__` methods in error classes. The base class handles message formatting automatically through the `message` class attribute.
+**Guidelines**:
+- Always call `super().__init__()` in custom `__init__`
+- Store context information as instance attributes
+- Use `__str__` for human-readable error messages
+- Use `__repr__` for debugging information (optional)
+- Keep `message` class attribute for basic error identification
 
 **Key rules**:
 - Always call `super().__init__(message)` for proper `str(error)` support
