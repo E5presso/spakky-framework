@@ -29,8 +29,12 @@ body:
         - AOP (Aspects)
         - Application Context
         - Plugin System
+        - spakky-domain
+        - spakky-event
+        - spakky-data
         - spakky-fastapi
         - spakky-rabbitmq
+        - spakky-kafka
         - spakky-security
         - spakky-typer
         - Documentation

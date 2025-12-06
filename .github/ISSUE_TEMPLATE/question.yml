@@ -31,8 +31,11 @@ body:
         - Getting Started
         - Dependency Injection
         - Aspect-Oriented Programming
+        - Domain-Driven Design
+        - Event Handling
         - FastAPI Integration
         - RabbitMQ Integration
+        - Kafka Integration
         - Security Features
         - CLI (Typer) Integration
         - Testing
