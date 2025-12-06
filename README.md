@@ -148,9 +148,16 @@ cd spakky-framework
 
 # Sync dependencies (from workspace root)
 uv sync --all-packages --all-extras
+
+# Install pre-commit hooks
+uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 ```
 
 > **💡 Note:** Use `--all-packages` only at the workspace root. When working inside a sub-package (e.g., `cd plugins/spakky-fastapi`), use `uv sync --all-extras` instead.
+
+### Opening Sub-Projects Independently
+
+Each sub-project can be opened independently in VS Code. The `.vscode/settings.json` in each sub-project points to the root's virtual environment, so Python IntelliSense works correctly.
 
 ### Running Tests
 

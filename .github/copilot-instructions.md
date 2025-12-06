@@ -305,6 +305,28 @@ cd plugins/spakky-fastapi
 uv sync --all-extras
 ```
 
+### Opening Sub-Projects Independently
+
+Each sub-project can be opened independently in VS Code while still using the root virtual environment:
+
+1. **VS Code Settings**: Each sub-project has `.vscode/settings.json` with `python.defaultInterpreterPath` pointing to the root's `.venv`:
+
+   ```json
+   {
+     "python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python"
+   }
+   ```
+
+2. **Pre-commit Hooks**: All hooks use conditional path handling to work both from monorepo root and standalone:
+
+   ```yaml
+   # Works from root: cd core/spakky && run
+   # Works standalone: run in current directory
+   entry: bash -c 'if [ -d "core/spakky" ]; then cd core/spakky; fi && uv run pyrefly check'
+   ```
+
+3. **Pre-push Hooks**: Each sub-project has a `pytest` hook registered in the `pre-push` stage.
+
 ### Running Tests
 
 **IMPORTANT**: This monorepo does NOT support running tests from the root directory. Each package manages its own tests independently.

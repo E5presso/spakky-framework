@@ -39,6 +39,22 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
    >
    > The `--all-packages` flag is only needed at the workspace root to include all monorepo packages. When you `cd` into a sub-package, that package becomes the context, so `--all-extras` alone is sufficient.
 
+### Opening Sub-Projects Independently
+
+Each sub-project can be opened independently in VS Code while still using the root virtual environment:
+
+1. **VS Code Settings**: Each sub-project has `.vscode/settings.json` with `python.defaultInterpreterPath` pointing to the root's `.venv`:
+
+   ```json
+   {
+     "python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python"
+   }
+   ```
+
+2. **Pre-commit Hooks**: All hooks use conditional path handling to work both from monorepo root and standalone.
+
+3. **Terminal**: When opening a sub-project standalone, use `uv run` which automatically finds the correct virtual environment.
+
 ## 🧪 Running Tests
 
 We use `pytest` for testing.
@@ -70,7 +86,7 @@ uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 # Run pre-commit hooks manually
 uv run pre-commit run --all-files
 
-# Run pre-push hooks manually
+# Run pre-push hooks manually (includes pytest)
 uv run pre-commit run --all-files --hook-stage pre-push
 ```
 
@@ -89,7 +105,16 @@ git commit
 git push
 └── Root: monorepo-pre-push-tests
     └── For each changed sub-project:
-        └── pytest (unit tests)
+        └── pre-commit --hook-stage pre-push
+            └── pytest (unit tests)
+```
+
+Each sub-project's `.pre-commit-config.yaml` uses **conditional path handling** to work both from monorepo root and standalone:
+
+```yaml
+# Works from root: cd core/spakky && run
+# Works standalone: run in current directory
+entry: bash -c 'if [ -d "core/spakky" ]; then cd core/spakky; fi && uv run pyrefly check'
 ```
 
 Our pre-commit configuration includes:
