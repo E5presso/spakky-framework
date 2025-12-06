@@ -4,7 +4,6 @@
 
 ### Core Framework
 - [ ] **Concurrency Review**: Audit `ApplicationContext` for potential race conditions between the sync `__event_thread` and the main thread, especially during shutdown (`stop()`).
-- [ ] **Thread Safety**: Add locking mechanism for lazy singleton creation to prevent race conditions.
 - [ ] **Performance**: Optimize `__resolve_candidate` for scenarios with many Pod candidates of the same type (currently O(N) filtering).
 - [ ] **Error Handling**: Improve error messages for circular dependencies to show the exact path more clearly (visual tree?).
 - [ ] **Startup Validation**: Add dependency graph analysis at `start()` time to detect circular dependencies early.
@@ -27,6 +26,7 @@
 - [ ] Document thread safety guarantees explicitly.
 
 ## ✅ Completed
+- [x] **Thread Safety**: Fixed locking for lazy singleton creation in `ApplicationContext`. Used `RLock` to allow double-checked locking without deadlock, ensuring thread safety. Verified with concurrency tests.
 - [x] **Environment Variable Prefix Unification**: Unified RabbitMQ and Kafka environment variable prefixes to use `SPAKKY_*__` format.
 - [x] **AspectPostProcessor @Pod Removal**: Removed meaningless `@Pod` decorator from `AspectPostProcessor`.
 - [x] **ABC Inheritance**: All major interface classes (`IContainer`, `IEventPublisher`, `IEventConsumer`, etc.) already inherit from `ABC`.

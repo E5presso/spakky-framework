@@ -3,7 +3,7 @@ from asyncio import locks
 from asyncio.events import AbstractEventLoop, new_event_loop, set_event_loop
 from asyncio.tasks import run_coroutine_threadsafe
 from contextvars import ContextVar
-from threading import Thread
+from threading import RLock, Thread
 from types import MappingProxyType
 from typing import Callable, cast, overload
 from uuid import UUID, uuid4
@@ -97,6 +97,7 @@ class ApplicationContext(IApplicationContext):
         self.__pods = {}
         self.__type_cache = {}
         self.__singleton_cache = {}
+        self.__singleton_lock = RLock()
         self.__context_cache = ContextVar(CONTEXT_SCOPE_CACHE)
         self.__post_processors = []
         self.__services = []
@@ -237,17 +238,20 @@ class ApplicationContext(IApplicationContext):
         self.__pods.clear()
         self.__type_cache.clear()
         self.__forward_type_map.clear()
-        self.__singleton_cache.clear()
+        with self.__singleton_lock:
+            self.__singleton_cache.clear()
         self.__post_processors.clear()
         self.__services.clear()
         self.__async_services.clear()
 
     def __set_singleton_cache(self, pod: Pod, instance: object) -> None:
         if pod.scope == Pod.Scope.SINGLETON:
-            self.__singleton_cache[pod.name] = instance
+            with self.__singleton_lock:
+                self.__singleton_cache[pod.name] = instance
 
     def __get_singleton_cache(self, pod: Pod) -> object | None:
-        return self.__singleton_cache.get(pod.name)
+        with self.__singleton_lock:
+            return self.__singleton_cache.get(pod.name)
 
     def __set_context_cache(self, pod: Pod, instance: object) -> None:
         cache = self.__context_cache.get({})
@@ -298,21 +302,27 @@ class ApplicationContext(IApplicationContext):
             case Pod.Scope.SINGLETON:
                 if (cached := self.__get_singleton_cache(pod)) is not None:
                     return cast(ObjectT, cached)
+                # Double-checked locking for thread-safe lazy singleton creation
+                with self.__singleton_lock:
+                    # Re-check cache after acquiring lock
+                    if (cached := self.__singleton_cache.get(pod.name)) is not None:
+                        return cast(ObjectT, cached)
+                    instance = self.__instantiate_pod(pod, dependency_hierarchy)
+                    self.__singleton_cache[pod.name] = instance
+                    return cast(ObjectT, instance)
             case Pod.Scope.CONTEXT:
                 if (cached := self.__get_context_cache(pod)) is not None:
                     return cast(ObjectT, cached)
             case Pod.Scope.PROTOTYPE:
                 pass
 
-        instance: object = self.__instantiate_pod(
+        instance = self.__instantiate_pod(
             pod,
             dependency_hierarchy,
         )
 
         # Cache the instance based on pod scope
         match pod.scope:
-            case Pod.Scope.SINGLETON:
-                self.__set_singleton_cache(pod, instance)
             case Pod.Scope.CONTEXT:
                 self.__set_context_cache(pod, instance)
             case Pod.Scope.PROTOTYPE:
