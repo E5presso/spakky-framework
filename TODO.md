@@ -3,7 +3,6 @@
 ## 🚀 Roadmap
 
 ### Core Framework
-- [ ] **Startup Validation**: Add dependency graph analysis at `start()` time to detect circular dependencies early.
 - [ ] **Responsibility Separation**: Consider splitting `ApplicationContext` into smaller components (PodRegistry, DependencyResolver, ScopeManager, ServiceManager).
 
 ### Domain Package
