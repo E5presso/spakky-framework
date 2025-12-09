@@ -14,7 +14,7 @@ from spakky.core.common.constants import DYNAMIC_PROXY_CLASS_NAME_SUFFIX
 from spakky.core.common.types import AsyncFunc, Func, ObjectT
 
 
-class IProxyHandler:
+class IProxyHandler(ABC):
     """Protocol for proxy handlers that intercept object operations."""
 
     @abstractmethod
@@ -245,8 +245,7 @@ class ProxyFactory(Generic[ObjectT]):
             ObjectT: A proxy instance that wraps the target object.
         """
         return new_class(
-            name=self._type.__name__  # type: ignore
-            + DYNAMIC_PROXY_CLASS_NAME_SUFFIX,
+            name=self._type.__name__ + DYNAMIC_PROXY_CLASS_NAME_SUFFIX,
             bases=(self._type,),
             exec_body=lambda ns: ns.update(
                 __getattribute__=self.__proxy_getattribute__,
