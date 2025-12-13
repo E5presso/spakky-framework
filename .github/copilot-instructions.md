@@ -171,20 +171,45 @@ class CustomLoggingAspect(IAsyncAspect):
 
 ### Plugin System
 
-Plugins extend framework functionality through a formal plugin architecture:
+Plugins extend framework functionality through a formal plugin architecture.
 
-- **Entry points**: Defined in `pyproject.toml` under `[project.entry-points."spakky.plugins"]`
-- **Initialization**: Each plugin exports an `initialize(app: SpakkyApplication)` function
-- **Post-processors**: Modify container behavior via `IPostProcessor` interface
+#### Creating a New Plugin
 
-```toml
-# In plugin's pyproject.toml
-[project.entry-points."spakky.plugins"]
-spakky-fastapi = "spakky.plugins.fastapi.main:initialize"
+1. **Create Package**: Use `uv init` to create a new plugin package:
+
+```bash
+# From workspace root
+cd plugins
+uv init --lib spakky-<name>
+cd spakky-<name>
+
+# Create proper package structure
+mkdir -p src/spakky/plugins/<name>
+touch src/spakky/plugins/<name>/__init__.py
+touch src/spakky/plugins/<name>/main.py
 ```
 
+2. **Register in Workspace**: Add to root `pyproject.toml`'s `[tool.uv.workspace]` members:
+
+```toml
+[tool.uv.workspace]
+members = [
+  # ... existing packages ...
+  "plugins/spakky-<name>",
+]
+```
+
+3. **Entry Point**: Define in plugin's `pyproject.toml`:
+
+```toml
+[project.entry-points."spakky.plugins"]
+spakky-<name> = "spakky.plugins.<name>.main:initialize"
+```
+
+4. **Initialization**: Implement the `initialize` function:
+
 ```python
-# In spakky.plugins.fastapi/main.py
+# In spakky.plugins.<name>/main.py
 from spakky.core.application.application import SpakkyApplication
 
 def initialize(app: SpakkyApplication) -> None:
@@ -192,6 +217,23 @@ def initialize(app: SpakkyApplication) -> None:
     # Register plugin-specific Pods, post-processors, etc.
     pass
 ```
+
+5. **Version Synchronization**: Add to root `pyproject.toml`'s version_files:
+
+```toml
+[tool.commitizen]
+version_files = [
+  # ... existing packages ...
+  "plugins/spakky-<name>/pyproject.toml:version",
+]
+```
+
+#### Plugin Architecture
+
+- **Entry points**: Defined in `pyproject.toml` under `[project.entry-points."spakky.plugins"]`
+- **Initialization**: Each plugin exports an `initialize(app: SpakkyApplication)` function
+- **Post-processors**: Modify container behavior via `IPostProcessor` interface
+- **Automatic detection**: All plugins are detected from root `pyproject.toml`'s workspace members
 
 ## Development Patterns
 

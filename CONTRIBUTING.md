@@ -216,7 +216,6 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
 - Keep `message` class attribute for basic error identification
 
 **Key rules**:
-- Always call `super().__init__(message)` for proper `str(error)` support
 - Store context as instance attributes for programmatic access
 - Use descriptive f-string messages with the problematic values
 
@@ -240,8 +239,38 @@ def fetch_user(user_id: int) -> User | None:
 
 Spakky uses a formal plugin architecture. If you are contributing a new plugin:
 
-1.  **Structure**: Create a new directory in `plugins/spakky-<name>` with `src/spakky/plugins/<name>/` package.
-2.  **Entry Point**: Define the entry point in `pyproject.toml`.
+1.  **Create Package**: Use `uv init` to create a new package in the workspace.
+
+    ```bash
+    # From workspace root
+    cd plugins
+    uv init --lib spakky-<name>
+    cd spakky-<name>
+
+    # Create proper package structure
+    mkdir -p src/spakky/plugins/<name>
+    touch src/spakky/plugins/<name>/__init__.py
+    touch src/spakky/plugins/<name>/main.py
+    ```
+
+2.  **Register in Workspace**: Add the new package to root `pyproject.toml`'s `[tool.uv.workspace]` members.
+
+    ```toml
+    [tool.uv.workspace]
+    members = [
+      # ... existing packages ...
+      "plugins/spakky-<name>",
+    ]
+    ```
+
+3.  **Entry Point**: Define the entry point in the plugin's `pyproject.toml`.
+
+    ```toml
+    [project.entry-points."spakky.plugins"]
+    spakky-<name> = "spakky.plugins.<name>.main:initialize"
+    ```
+
+4.  **Initialization**: Implement the `initialize` function in `main.py`.
 
     ```toml
     [project.entry-points."spakky.plugins"]
@@ -258,7 +287,17 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
         pass
     ```
 
-4.  **Package Registration**: Plugin packages are automatically detected from `core/spakky/pyproject.toml`'s `optional-dependencies`. No manual registration needed in scripts.
+5.  **Version Synchronization**: Add the new package to root `pyproject.toml`'s `[tool.commitizen]` version_files list.
+
+    ```toml
+    [tool.commitizen]
+    version_files = [
+      # ... existing packages ...
+      "plugins/spakky-<name>/pyproject.toml:version",
+    ]
+    ```
+
+6.  **Package Registration**: All workspace packages are automatically detected from root `pyproject.toml`'s `[tool.uv.workspace]` members. No manual registration needed in scripts.
 
 ## 📦 Commit Messages
 

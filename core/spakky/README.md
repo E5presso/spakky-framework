@@ -190,20 +190,31 @@ class OrderService:
 
 ## Plugin System
 
-Plugins extend framework functionality:
+Plugins extend framework functionality through entry points.
+
+### Creating a Plugin
+
+1. Create package with `uv init --lib spakky-<name>` in `plugins/` directory
+2. Register in root `pyproject.toml`'s `[tool.uv.workspace]` members
+3. Define entry point in plugin's `pyproject.toml`:
+
+```toml
+[project.entry-points."spakky.plugins"]
+spakky-<name> = "spakky.plugins.<name>.main:initialize"
+```
+
+4. Implement initialization function:
 
 ```python
-# In pyproject.toml
-[project.entry-points."spakky.plugins"]
-my-plugin = "my_plugin.main:initialize"
-
-# In my_plugin/main.py
+# In spakky.plugins.<name>/main.py
 from spakky.core.application.application import SpakkyApplication
 
 def initialize(app: SpakkyApplication) -> None:
     # Register plugin components
     pass
 ```
+
+See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed instructions.
 
 ## Available Plugins
 
