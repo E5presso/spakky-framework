@@ -9,28 +9,26 @@ from typing import Any, Awaitable, Callable, Generic, TypeAlias, TypeVar
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractEvent
 
-DomainEventT = TypeVar("DomainEventT", bound=AbstractDomainEvent)
+EventT = TypeVar("EventT", bound=AbstractEvent)
 """Type variable for domain event types."""
 
-IEventHandlerMethod: TypeAlias = Callable[[Any, DomainEventT], None | Awaitable[None]]
+EventHandlerMethod: TypeAlias = Callable[[Any, EventT], None | Awaitable[None]]
 """Type alias for event handler callback functions."""
 
 
 @dataclass
-class EventRoute(FunctionAnnotation, Generic[DomainEventT]):
+class EventRoute(FunctionAnnotation, Generic[EventT]):
     """Annotation for marking methods as event handlers.
 
     Associates a method with a specific domain event type.
     """
 
-    event_type: type[DomainEventT]
+    event_type: type[EventT]
     """The domain event type this handler processes."""
 
-    def __call__(
-        self, obj: IEventHandlerMethod[DomainEventT]
-    ) -> IEventHandlerMethod[DomainEventT]:
+    def __call__(self, obj: EventHandlerMethod[EventT]) -> EventHandlerMethod[EventT]:
         """Apply event route annotation to method.
 
         Args:
@@ -43,10 +41,10 @@ class EventRoute(FunctionAnnotation, Generic[DomainEventT]):
 
 
 def on_event(
-    event_type: type[DomainEventT],
+    event_type: type[EventT],
 ) -> Callable[
-    [IEventHandlerMethod[DomainEventT]],
-    IEventHandlerMethod[DomainEventT],
+    [EventHandlerMethod[EventT]],
+    EventHandlerMethod[EventT],
 ]:
     """Decorator for marking methods as event handlers.
 
@@ -66,8 +64,8 @@ def on_event(
     """
 
     def wrapper(
-        method: IEventHandlerMethod[DomainEventT],
-    ) -> IEventHandlerMethod[DomainEventT]:
+        method: EventHandlerMethod[EventT],
+    ) -> EventHandlerMethod[EventT]:
         return EventRoute(event_type)(method)
 
     return wrapper

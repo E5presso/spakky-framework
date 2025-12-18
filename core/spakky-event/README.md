@@ -19,22 +19,27 @@ pip install spakky-event
 
 ### Define Events
 
-Events should extend `AbstractDomainEvent` from `spakky-domain`:
+Events should extend one of the event base classes from `spakky-domain`:
+
+- Use `AbstractDomainEvent` for events within a bounded context (in-process domain events)
+- Use `AbstractIntegrationEvent` for cross-boundary events (message broker integration)
+
+When using message broker plugins (RabbitMQ / Kafka), define events as `AbstractIntegrationEvent`.
 
 ```python
 from dataclasses import dataclass
 
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractIntegrationEvent
 
 
 @dataclass
-class UserCreatedEvent(AbstractDomainEvent):
+class UserCreatedEvent(AbstractIntegrationEvent):
     user_id: str
     email: str
 
 
 @dataclass
-class UserDeletedEvent(AbstractDomainEvent):
+class UserDeletedEvent(AbstractIntegrationEvent):
     user_id: str
 ```
 
@@ -113,18 +118,28 @@ app = (
 
 | Class | Description |
 |-------|-------------|
-| `IEventPublisher` | Sync event publisher interface |
-| `IAsyncEventPublisher` | Async event publisher interface |
-| `IEventConsumer` | Sync event consumer interface |
-| `IAsyncEventConsumer` | Async event consumer interface |
+| `IDomainEventPublisher` | Sync domain event publisher interface |
+| `IAsyncDomainEventPublisher` | Async domain event publisher interface |
+| `IIntegrationEventPublisher` | Sync event publisher interface |
+| `IAsyncIntegrationEventPublisher` | Async event publisher interface |
+| `IDomainEventConsumer` | Sync domain event consumer interface |
+| `IAsyncDomainEventConsumer` | Async domain event consumer interface |
+| `IIntegrationEventConsumer` | Sync event consumer interface |
+| `IAsyncIntegrationEventConsumer` | Async event consumer interface |
 
 ### Types
 
 | Type | Description |
 |------|-------------|
 | `EventRoute` | Annotation class for event routing metadata |
+| `EventT` | Type variable bound to `AbstractEvent` |
+| `EventHandlerMethod` | Type alias for event handler methods |
 | `DomainEventT` | Type variable bound to `AbstractDomainEvent` |
-| `IEventHandlerCallback` | Type alias for event handler callbacks |
+| `IntegrationEventT` | Type variable bound to `AbstractIntegrationEvent` |
+| `DomainEventHandlerCallback` | Type alias for sync domain event callbacks |
+| `AsyncDomainEventHandlerCallback` | Type alias for async domain event callbacks |
+| `IntegrationEventHandlerCallback` | Type alias for sync integration event callbacks |
+| `AsyncIntegrationEventHandlerCallback` | Type alias for async integration event callbacks |
 
 ### Errors
 
@@ -138,9 +153,9 @@ app = (
 
 | Package | Description |
 |---------|-------------|
-| `spakky-domain` | DDD building blocks including `AbstractDomainEvent` |
-| `spakky-rabbitmq` | RabbitMQ implementation of event publisher/consumer |
-| `spakky-kafka` | Kafka implementation of event publisher/consumer |
+| `spakky-domain` | DDD building blocks including `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent` |
+| `spakky-rabbitmq` | RabbitMQ implementation (IntegrationEvent publisher/consumer) |
+| `spakky-kafka` | Kafka implementation (IntegrationEvent publisher/consumer) |
 
 ## License
 

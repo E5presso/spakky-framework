@@ -1,7 +1,7 @@
 """Apache Kafka plugin for Spakky framework.
 
 This plugin provides seamless Apache Kafka integration with:
-- Domain event publishing via IEventPublisher interface
+- Domain event publishing via IIntegrationEventPublisher interface
 - Automatic event handler registration via @EventHandler stereotype
 - Background consumer service for message processing
 - Configurable connection and queue settings

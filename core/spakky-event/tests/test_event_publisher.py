@@ -1,14 +1,14 @@
 from spakky.event.event_publisher import (
-    IAsyncEventPublisher,
-    IEventPublisher,
+    IAsyncIntegrationEventPublisher,
+    IIntegrationEventPublisher,
 )
 
 
 def test_event_publisher_protocol() -> None:
-    """Test that IEventPublisher protocol exists"""
-    assert hasattr(IEventPublisher, "publish")
+    """Test that IIntegrationEventPublisher protocol exists"""
+    assert hasattr(IIntegrationEventPublisher, "publish")
 
 
 def test_async_event_publisher_protocol() -> None:
-    """Test that IAsyncEventPublisher protocol exists"""
-    assert hasattr(IAsyncEventPublisher, "publish")
+    """Test that IAsyncIntegrationEventPublisher protocol exists"""
+    assert hasattr(IAsyncIntegrationEventPublisher, "publish")

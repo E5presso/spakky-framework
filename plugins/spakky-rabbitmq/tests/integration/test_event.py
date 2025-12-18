@@ -4,10 +4,13 @@ from time import sleep, time
 import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.event.error import DuplicateEventHandlerError
-from spakky.event.event_consumer import IAsyncEventConsumer, IEventConsumer
+from spakky.event.event_consumer import (
+    IAsyncIntegrationEventConsumer,
+    IIntegrationEventConsumer,
+)
 from spakky.event.event_publisher import (
-    IAsyncEventPublisher,
-    IEventPublisher,
+    IAsyncIntegrationEventPublisher,
+    IIntegrationEventPublisher,
 )
 
 from tests.apps.dummy import (
@@ -51,7 +54,7 @@ async def async_wait_for_count(
 
 
 def test_synchronous_event(app: SpakkyApplication) -> None:
-    publisher = app.container.get(IEventPublisher)
+    publisher = app.container.get(IIntegrationEventPublisher)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
     publisher.publish(SampleEvent(message="Hello, World!"))
@@ -62,7 +65,7 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
 
 @pytest.mark.asyncio
 async def test_asynchronous_event(app: SpakkyApplication) -> None:
-    publisher = app.container.get(IAsyncEventPublisher)
+    publisher = app.container.get(IAsyncIntegrationEventPublisher)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
     await publisher.publish(SampleEvent(message="Hello, World!"))
@@ -74,7 +77,7 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
 @pytest.mark.asyncio
 async def test_async_handler_execution(app: SpakkyApplication) -> None:
     """Test async event handler execution via async consumer."""
-    publisher = app.container.get(IAsyncEventPublisher)
+    publisher = app.container.get(IAsyncIntegrationEventPublisher)
     handler = app.container.get(AsyncEventHandler)
 
     initial_count = handler.count
@@ -89,7 +92,7 @@ async def test_async_handler_execution(app: SpakkyApplication) -> None:
 
 def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
     """Test that registering duplicate sync handler raises error."""
-    consumer = app.container.get(IEventConsumer)
+    consumer = app.container.get(IIntegrationEventConsumer)
 
     def handler1(event: DuplicateTestEvent) -> None:
         pass
@@ -110,7 +113,7 @@ def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
 @pytest.mark.asyncio
 async def test_duplicate_handler_registration_async(app: SpakkyApplication) -> None:
     """Test that registering duplicate async handler raises error."""
-    consumer = app.container.get(IAsyncEventConsumer)
+    consumer = app.container.get(IAsyncIntegrationEventConsumer)
 
     async def handler1(event: DuplicateTestEvent) -> None:
         pass

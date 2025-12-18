@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from spakky.core.common.mutability import immutable, mutable
 
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.domain.models.event import AbstractDomainEvent
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -21,7 +21,7 @@ def test_aggregate_root_add_event() -> None:
             return
 
         @immutable
-        class Created(AbstractIntegrationEvent):
+        class Created(AbstractDomainEvent):
             name: str
 
         @classmethod
@@ -48,7 +48,7 @@ def test_aggregate_root_remove_event() -> None:
             return
 
         @immutable
-        class Created(AbstractIntegrationEvent):
+        class Created(AbstractDomainEvent):
             name: str
 
         @classmethod
@@ -77,7 +77,7 @@ def test_aggregate_root_clear_events() -> None:
             return
 
         @immutable
-        class Created(AbstractIntegrationEvent):
+        class Created(AbstractDomainEvent):
             name: str
 
         @classmethod

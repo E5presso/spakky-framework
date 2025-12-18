@@ -32,17 +32,17 @@ export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"  # Optional
 ### Event Publishing
 
 ```python
-from spakky.domain.models.event import AbstractDomainEvent
-from spakky.event.event_publisher import IEventPublisher
+from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.event.event_publisher import IIntegrationEventPublisher
 from spakky.core.pod.annotations.pod import Pod
 
-class UserCreatedEvent(AbstractDomainEvent):
+class UserCreatedEvent(AbstractIntegrationEvent):
     user_id: int
     email: str
 
 @Pod()
 class UserService:
-    def __init__(self, publisher: IEventPublisher) -> None:
+    def __init__(self, publisher: IIntegrationEventPublisher) -> None:
         self.publisher = publisher
 
     def create_user(self, email: str) -> User:
@@ -68,14 +68,14 @@ class UserEventHandler:
 
 ### Async Variants
 
-For async applications, use `IAsyncEventPublisher`:
+For async applications, use `IAsyncIntegrationEventPublisher`:
 
 ```python
-from spakky.event.event_publisher import IAsyncEventPublisher
+from spakky.event.event_publisher import IAsyncIntegrationEventPublisher
 
 @Pod()
 class AsyncUserService:
-    def __init__(self, publisher: IAsyncEventPublisher) -> None:
+    def __init__(self, publisher: IAsyncIntegrationEventPublisher) -> None:
         self.publisher = publisher
 
     async def create_user(self, email: str) -> User:

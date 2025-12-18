@@ -43,6 +43,12 @@ for managing Pods, handling dependency injection, and coordinating services.
 """
 
 
+class CannotAssignSystemContextIDError(Exception):
+    """Raised when attempting to override the CONTEXT_ID value."""
+
+    message = f"Cannot override {CONTEXT_ID} value."
+
+
 class ApplicationContext(IApplicationContext):
     """Container managing Pod instances, dependencies, and application lifecycle.
 
@@ -572,6 +578,33 @@ class ApplicationContext(IApplicationContext):
             context[CONTEXT_ID] = uuid4()
             self.__context_cache.set(context)
         return cast(UUID, context[CONTEXT_ID])
+
+    def get_context_value(self, key: str) -> object | None:
+        """Get a value from the context-scoped cache.
+
+        Args:
+            key: The key to retrieve.
+
+        Returns:
+            The cached value, or None if not found.
+        """
+        if key == CONTEXT_ID:
+            return self.get_context_id()
+        context = self.__context_cache.get({})
+        return context.get(key)
+
+    def set_context_value(self, key: str, value: object) -> None:
+        """Set a value in the context-scoped cache.
+
+        Args:
+            key: The key to set.
+            value: The value to store.
+        """
+        if key == CONTEXT_ID:  # pragma: no cover
+            raise CannotAssignSystemContextIDError
+        context = self.__context_cache.get({})
+        context[key] = value
+        self.__context_cache.set(context)
 
     def clear_context(self) -> None:
         """Clear context-scoped cache for current context."""

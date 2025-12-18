@@ -18,12 +18,8 @@ from spakky.core.common.mutability import immutable
 
 
 @immutable
-class AbstractDomainEvent(IEquatable, IComparable, ICloneable, ABC):
-    """Base class for domain events.
-
-    Domain events represent state changes within the domain that other
-    parts of the system may be interested in.
-    """
+class AbstractEvent(IEquatable, IComparable, ICloneable, ABC):
+    """Base class for domain events."""
 
     event_id: UUID = field(default_factory=uuid4)
     """Unique identifier for this event."""
@@ -115,7 +111,18 @@ class AbstractDomainEvent(IEquatable, IComparable, ICloneable, ABC):
 
 
 @immutable
-class AbstractIntegrationEvent(AbstractDomainEvent, ABC):
+class AbstractDomainEvent(AbstractEvent, ABC):
+    """Base class for domain events.
+
+    Domain events represent state changes within the domain that other
+    parts of the system may be interested in.
+    """
+
+    ...
+
+
+@immutable
+class AbstractIntegrationEvent(AbstractEvent, ABC):
     """Base class for integration events.
 
     Integration events are published across bounded contexts or services

@@ -188,6 +188,28 @@ class OrderService:
         return await self.repository.save(order)
 ```
 
+## Context Management
+
+ApplicationContext provides context-scoped value storage:
+
+```python
+from spakky.core.application.application_context import ApplicationContext
+
+context = ApplicationContext()
+
+# Get unique context ID
+context_id = context.get_context_id()
+
+# Store and retrieve context values
+context.set_context_value("user_id", 123)
+user_id = context.get_context_value("user_id")  # Returns 123
+
+# Clear context (except system-managed keys)
+context.clear_context()
+```
+
+> **⚠️ Note**: System-managed keys like `"__spakky_context_id__"` cannot be overridden via `set_context_value()`.
+
 ## Plugin System
 
 Plugins extend framework functionality through entry points.

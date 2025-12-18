@@ -6,8 +6,8 @@ This package provides:
 - Event-related errors
 
 Usage:
-    from spakky.event import IEventPublisher, IAsyncEventPublisher
-    from spakky.event import IEventConsumer, IAsyncEventConsumer
+    from spakky.event import IIntegrationEventPublisher, IAsyncIntegrationEventPublisher
+    from spakky.event import IIntegrationEventConsumer, IAsyncIntegrationEventConsumer
 """
 
 from spakky.event.error import (
@@ -16,21 +16,29 @@ from spakky.event.error import (
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
-    IAsyncEventConsumer,
-    IEventConsumer,
+    IAsyncDomainEventConsumer,
+    IAsyncIntegrationEventConsumer,
+    IDomainEventConsumer,
+    IIntegrationEventConsumer,
 )
 from spakky.event.event_publisher import (
-    IAsyncEventPublisher,
-    IEventPublisher,
+    IAsyncDomainEventPublisher,
+    IAsyncIntegrationEventPublisher,
+    IDomainEventPublisher,
+    IIntegrationEventPublisher,
 )
 
 __all__ = [
     # Publishers
-    "IAsyncEventPublisher",
-    "IEventPublisher",
+    "IAsyncDomainEventPublisher",
+    "IDomainEventPublisher",
+    "IAsyncIntegrationEventPublisher",
+    "IIntegrationEventPublisher",
     # Consumers
-    "IAsyncEventConsumer",
-    "IEventConsumer",
+    "IAsyncDomainEventConsumer",
+    "IDomainEventConsumer",
+    "IAsyncIntegrationEventConsumer",
+    "IIntegrationEventConsumer",
     # Errors
     "AbstractSpakkyEventError",
     "DuplicateEventHandlerError",

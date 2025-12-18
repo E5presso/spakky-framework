@@ -13,6 +13,7 @@ from spakky.core.application.application_context import (
     NoUniquePodError,
 )
 from spakky.core.common.annotation import ClassAnnotation
+from spakky.core.common.constants import CONTEXT_ID
 from spakky.core.pod.annotations.lazy import Lazy
 from spakky.core.pod.annotations.pod import Pod, PodInstantiationFailedError
 from spakky.core.pod.annotations.primary import Primary
@@ -1172,3 +1173,84 @@ def test_context_cache_multiple_pods() -> None:
     assert pod_b1 is pod_b2
 
     context.stop()
+
+
+def test_application_context_set_and_get_context_value_expect_success() -> None:
+    """Test setting and getting context values works correctly."""
+    context = ApplicationContext()
+
+    # Set and get simple values
+    context.set_context_value("key1", "value1")
+    context.set_context_value("key2", 42)
+    context.set_context_value("key3", {"nested": "dict"})
+
+    assert context.get_context_value("key1") == "value1"
+    assert context.get_context_value("key2") == 42
+    assert context.get_context_value("key3") == {"nested": "dict"}
+
+
+def test_application_context_get_nonexistent_context_value_expect_none() -> None:
+    """Test getting non-existent context value returns None."""
+    context = ApplicationContext()
+
+    assert context.get_context_value("nonexistent") is None
+
+
+def test_application_context_overwrite_context_value_expect_success() -> None:
+    """Test overwriting existing context value works correctly."""
+    context = ApplicationContext()
+
+    context.set_context_value("key", "original")
+    assert context.get_context_value("key") == "original"
+
+    context.set_context_value("key", "updated")
+    assert context.get_context_value("key") == "updated"
+
+
+def test_application_context_context_id_preserved_expect_success() -> None:
+    """Test that CONTEXT_ID is automatically managed and retrievable."""
+    context = ApplicationContext()
+
+    # Context ID should be retrievable via get_context_value
+    context_id = context.get_context_value(CONTEXT_ID)
+    assert context_id is not None
+    assert isinstance(context_id, UUID)
+
+    # Context ID should be the same as get_context_id()
+    assert context_id == context.get_context_id()
+
+
+def test_application_context_cannot_set_context_id_expect_error() -> None:
+    """Test that attempting to set CONTEXT_ID raises error."""
+    from spakky.core.application.application_context import (
+        CannotAssignSystemContextIDError,
+    )
+
+    context = ApplicationContext()
+
+    with pytest.raises(CannotAssignSystemContextIDError):
+        context.set_context_value(CONTEXT_ID, uuid4())
+
+
+def test_application_context_clear_context_expect_success() -> None:
+    """Test clearing context removes all custom values but preserves CONTEXT_ID."""
+    context = ApplicationContext()
+
+    # Set some values
+    context.set_context_value("key1", "value1")
+    context.set_context_value("key2", "value2")
+
+    _ = context.get_context_id()
+
+    # Clear context
+    context.clear_context()
+
+    # Custom values should be gone
+    assert context.get_context_value("key1") is None
+    assert context.get_context_value("key2") is None
+
+    # But CONTEXT_ID should still be accessible (it's generated on-demand)
+    assert context.get_context_id() is not None
+    # Note: After clear, a new context ID is generated
+    new_context_id = context.get_context_id()
+    assert isinstance(new_context_id, UUID)

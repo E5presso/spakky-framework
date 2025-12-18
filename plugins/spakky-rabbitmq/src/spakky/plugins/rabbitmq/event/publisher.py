@@ -1,6 +1,6 @@
-"""RabbitMQ event publishers for domain events.
+"""RabbitMQ event publishers for integration events.
 
-Provides synchronous and asynchronous event publishers that publish domain
+Provides synchronous and asynchronous event publishers that publish integration
 events to RabbitMQ queues with optional exchange routing.
 """
 
@@ -8,20 +8,20 @@ from aio_pika import Message, connect_robust  # type: ignore
 from pika import BlockingConnection, URLParameters
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import (
-    IAsyncEventPublisher,
-    IEventPublisher,
+    IAsyncIntegrationEventPublisher,
+    IIntegrationEventPublisher,
 )
 
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 
 
 @Pod()
-class RabbitMQEventPublisher(IEventPublisher):
+class RabbitMQEventPublisher(IIntegrationEventPublisher):
     """Synchronous RabbitMQ event publisher.
 
-    Publishes domain events to RabbitMQ queues using blocking connections.
+    Publishes integration events to RabbitMQ queues using blocking connections.
     Optionally routes through an exchange for pub/sub patterns.
 
     Attributes:
@@ -31,7 +31,7 @@ class RabbitMQEventPublisher(IEventPublisher):
 
     connection_string: str
     exchange_name: str | None
-    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event publisher.
@@ -43,14 +43,14 @@ class RabbitMQEventPublisher(IEventPublisher):
         self.exchange_name = config.exchange_name
         self.type_adapters = {}
 
-    def publish(self, event: AbstractDomainEvent) -> None:
-        """Publish a domain event to RabbitMQ.
+    def publish(self, event: AbstractIntegrationEvent) -> None:
+        """Publish an integration event to RabbitMQ.
 
         Creates a new connection, publishes the event to the appropriate queue,
         and closes the connection.
 
         Args:
-            event: The domain event to publish.
+            event: The integration event to publish.
         """
         connection = BlockingConnection(URLParameters(self.connection_string))
         channel = connection.channel()
@@ -70,10 +70,10 @@ class RabbitMQEventPublisher(IEventPublisher):
 
 
 @Pod()
-class AsyncRabbitMQEventPublisher(IAsyncEventPublisher):
+class AsyncRabbitMQEventPublisher(IAsyncIntegrationEventPublisher):
     """Asynchronous RabbitMQ event publisher.
 
-    Publishes domain events to RabbitMQ queues using async connections.
+    Publishes integration events to RabbitMQ queues using async connections.
     Optionally routes through an exchange for pub/sub patterns.
 
     Attributes:
@@ -83,7 +83,7 @@ class AsyncRabbitMQEventPublisher(IAsyncEventPublisher):
 
     connection_string: str
     exchange_name: str | None
-    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event publisher.
@@ -95,14 +95,14 @@ class AsyncRabbitMQEventPublisher(IAsyncEventPublisher):
         self.exchange_name = config.exchange_name
         self.type_adapters = {}
 
-    async def publish(self, event: AbstractDomainEvent) -> None:
-        """Publish a domain event to RabbitMQ asynchronously.
+    async def publish(self, event: AbstractIntegrationEvent) -> None:
+        """Publish an integration event to RabbitMQ asynchronously.
 
         Creates a new robust connection, publishes the event to the appropriate
         queue, and closes the connection.
 
         Args:
-            event: The domain event to publish.
+            event: The integration event to publish.
         """
         async with await connect_robust(self.connection_string) as connection:
             channel = await connection.channel()

@@ -13,7 +13,7 @@ from spakky.core.common.interfaces.equatable import EquatableT
 from spakky.core.common.mutability import mutable
 
 from spakky.domain.models.entity import AbstractEntity
-from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.domain.models.event import AbstractDomainEvent
 
 
 @mutable
@@ -24,32 +24,34 @@ class AbstractAggregateRoot(AbstractEntity[EquatableT], Generic[EquatableT], ABC
     maintaining consistency boundaries and managing domain events.
     """
 
-    __events: list[AbstractIntegrationEvent] = field(
-        init=False, repr=False, default_factory=list[AbstractIntegrationEvent]
+    __events: list[AbstractDomainEvent] = field(
+        init=False,
+        repr=False,
+        default_factory=list[AbstractDomainEvent],
     )
 
     @property
-    def events(self) -> Sequence[AbstractIntegrationEvent]:
+    def events(self) -> Sequence[AbstractDomainEvent]:
         """Get copy of all domain events raised by this aggregate.
 
         Returns:
-            Sequence of integration events.
+            Sequence of domain events.
         """
         return deepcopy(self.__events)
 
-    def add_event(self, event: AbstractIntegrationEvent) -> None:
+    def add_event(self, event: AbstractDomainEvent) -> None:
         """Add a domain event to this aggregate.
 
         Args:
-            event: The integration event to add.
+            event: The domain event to add.
         """
         self.__events.append(event)
 
-    def remove_event(self, event: AbstractIntegrationEvent) -> None:
+    def remove_event(self, event: AbstractDomainEvent) -> None:
         """Remove a domain event from this aggregate.
 
         Args:
-            event: The integration event to remove.
+            event: The domain event to remove.
         """
         self.__events.remove(event)
 

@@ -42,8 +42,8 @@ spakky-framework/
 │   └── spakky-event/              # Event handling
 │       ├── src/spakky/event/
 │       │   ├── stereotype/        # @EventHandler stereotype
-│       │   ├── event_publisher.py # IEventPublisher, IAsyncEventPublisher
-│       │   ├── event_consumer.py  # IEventConsumer, IAsyncEventConsumer
+│       │   ├── event_publisher.py # IIntegrationEventPublisher, IAsyncIntegrationEventPublisher
+│       │   ├── event_consumer.py  # IIntegrationEventConsumer, IAsyncIntegrationEventConsumer
 │       │   └── error.py           # Event-related errors
 │       └── tests/
 │

@@ -72,11 +72,11 @@ from dataclasses import dataclass
 from uuid import UUID, uuid4
 
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.domain.models.event import AbstractDomainEvent
 
 
 @dataclass
-class OrderCreatedEvent(AbstractIntegrationEvent):
+class OrderCreatedEvent(AbstractDomainEvent):
     order_id: UUID
     customer_id: UUID
 
@@ -171,8 +171,9 @@ class GetUserUseCase(IAsyncQueryUseCase[GetUserQuery, User | None]):
 | `AbstractEntity[T]`        | Base class for entities with identity type `T` |
 | `AbstractAggregateRoot[T]` | Entity that manages domain events              |
 | `AbstractValueObject`      | Immutable value object                         |
-| `AbstractDomainEvent`      | Base class for domain events                   |
-| `AbstractIntegrationEvent` | Events for cross-boundary communication        |
+| `AbstractEvent`            | Base class for all events                      |
+| `AbstractDomainEvent`      | Domain events (within bounded context)         |
+| `AbstractIntegrationEvent` | Integration events (cross-boundary)            |
 
 ### Application
 

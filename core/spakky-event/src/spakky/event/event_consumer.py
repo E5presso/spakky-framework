@@ -1,26 +1,50 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, TypeAlias, TypeVar
 
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 
 DomainEventT = TypeVar("DomainEventT", bound=AbstractDomainEvent)
-IEventHandlerCallback: TypeAlias = Callable[[DomainEventT], None]
-IAsyncEventHandlerCallback: TypeAlias = Callable[[DomainEventT], Awaitable[None]]
+DomainEventHandlerCallback: TypeAlias = Callable[[DomainEventT], None]
+AsyncDomainEventHandlerCallback: TypeAlias = Callable[[DomainEventT], Awaitable[None]]
+
+IntegrationEventT = TypeVar("IntegrationEventT", bound=AbstractIntegrationEvent)
+IntegrationEventHandlerCallback: TypeAlias = Callable[[IntegrationEventT], None]
+AsyncIntegrationEventHandlerCallback: TypeAlias = Callable[
+    [IntegrationEventT], Awaitable[None]
+]
 
 
-class IEventConsumer(ABC):
+class IDomainEventConsumer(ABC):
     @abstractmethod
     def register(
         self,
         event: type[DomainEventT],
-        handler: IEventHandlerCallback[DomainEventT],
+        handler: DomainEventHandlerCallback[DomainEventT],
     ) -> None: ...
 
 
-class IAsyncEventConsumer(ABC):
+class IAsyncDomainEventConsumer(ABC):
     @abstractmethod
     def register(
         self,
         event: type[DomainEventT],
-        handler: IAsyncEventHandlerCallback[DomainEventT],
+        handler: AsyncDomainEventHandlerCallback[DomainEventT],
+    ) -> None: ...
+
+
+class IIntegrationEventConsumer(ABC):
+    @abstractmethod
+    def register(
+        self,
+        event: type[IntegrationEventT],
+        handler: IntegrationEventHandlerCallback[IntegrationEventT],
+    ) -> None: ...
+
+
+class IAsyncIntegrationEventConsumer(ABC):
+    @abstractmethod
+    def register(
+        self,
+        event: type[IntegrationEventT],
+        handler: AsyncIntegrationEventHandlerCallback[IntegrationEventT],
     ) -> None: ...

@@ -166,8 +166,8 @@ class MyService:
 - **Packages**: `snake_case` (e.g., `spakky.plugins.fastapi`)
 - **Classes**: `PascalCase` (e.g., `UserController`)
 - **Functions/Methods**: `snake_case` (e.g., `get_user`)
-- **Protocols (Interfaces)**: Must start with `I` (e.g., `IService`, `IContainer`).
-- **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`).
+- **Protocols (Interfaces)**: Must start with `I` (e.g., `IIntegrationEventPublisher`, `IContainer`).
+- **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`, `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent`).
 - **Error Classes**: Must end with `Error` (e.g., `CannotDeterminePodTypeError`).
 
 ### Error Class Guidelines

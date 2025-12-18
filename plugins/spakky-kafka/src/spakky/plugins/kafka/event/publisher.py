@@ -5,10 +5,10 @@ from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.experimental.aio import AIOProducer
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import (
-    IAsyncEventPublisher,
-    IEventPublisher,
+    IAsyncIntegrationEventPublisher,
+    IIntegrationEventPublisher,
 )
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
@@ -17,9 +17,11 @@ logger = getLogger(__name__)
 
 
 @Pod()
-class KafkaEventPublisher(IEventPublisher):
+class KafkaEventPublisher(IIntegrationEventPublisher):
     config: KafkaConnectionConfig
-    type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
+    type_adapters: dict[
+        type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
+    ]
     admin: AdminClient
     producer: Producer
 
@@ -55,11 +57,11 @@ class KafkaEventPublisher(IEventPublisher):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    def publish(self, event: AbstractDomainEvent) -> None:
-        """Publish a domain event to Kafka.
+    def publish(self, event: AbstractIntegrationEvent) -> None:
+        """Publish an integration event to Kafka.
 
         Args:
-            event: The domain event to publish.
+            event: The integration event to publish.
         """
         event_type = type(event)
         if event_type not in self.type_adapters:
@@ -75,9 +77,11 @@ class KafkaEventPublisher(IEventPublisher):
 
 
 @Pod()
-class AsyncKafkaEventPublisher(IAsyncEventPublisher):
+class AsyncKafkaEventPublisher(IAsyncIntegrationEventPublisher):
     config: KafkaConnectionConfig
-    type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
+    type_adapters: dict[
+        type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
+    ]
     admin: AdminClient
     producer: AIOProducer
 
@@ -112,11 +116,11 @@ class AsyncKafkaEventPublisher(IAsyncEventPublisher):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    async def publish(self, event: AbstractDomainEvent) -> None:
-        """Asynchronously publish a domain event to Kafka.
+    async def publish(self, event: AbstractIntegrationEvent) -> None:
+        """Asynchronously publish an integration event to Kafka.
 
         Args:
-            event: The domain event to publish.
+            event: The integration event to publish.
         """
         self.producer = AIOProducer(self.config.configuration_dict)
         event_type = type(event)
