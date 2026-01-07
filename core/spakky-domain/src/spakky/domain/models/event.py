@@ -5,7 +5,6 @@ in event-driven systems.
 """
 
 from abc import ABC
-from copy import deepcopy
 from dataclasses import field
 from datetime import datetime, timezone
 from typing import Self
@@ -37,12 +36,12 @@ class AbstractEvent(IEquatable, IComparable, ICloneable, ABC):
         return type(self).__name__
 
     def clone(self) -> Self:
-        """Create deep copy of this event.
+        """Create copy of this event.
 
         Returns:
             Cloned event instance.
         """
-        return deepcopy(self)
+        return self
 
     def __eq__(self, other: object) -> bool:
         """Compare events by id and timestamp.

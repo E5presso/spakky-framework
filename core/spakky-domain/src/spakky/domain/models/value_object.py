@@ -5,7 +5,6 @@ compared by their attributes rather than identity.
 """
 
 from abc import ABC, abstractmethod
-from copy import deepcopy
 from dataclasses import astuple
 from typing import Self
 
@@ -23,12 +22,12 @@ class AbstractValueObject(IEquatable, ICloneable, ABC):
     """
 
     def clone(self) -> Self:
-        """Create deep copy of this value object.
+        """Create copy of this value object.
 
         Returns:
             Cloned value object.
         """
-        return deepcopy(self)
+        return self
 
     @abstractmethod
     def validate(self) -> None:

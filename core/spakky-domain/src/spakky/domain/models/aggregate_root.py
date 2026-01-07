@@ -5,7 +5,6 @@ that manage domain events and maintain consistency boundaries.
 """
 
 from abc import ABC
-from copy import deepcopy
 from dataclasses import field
 from typing import Any, Generic, Sequence, TypeVar
 
@@ -37,7 +36,7 @@ class AbstractAggregateRoot(AbstractEntity[EquatableT], Generic[EquatableT], ABC
         Returns:
             Sequence of domain events.
         """
-        return deepcopy(self.__events)
+        return list(self.__events)
 
     def add_event(self, event: AbstractDomainEvent) -> None:
         """Add a domain event to this aggregate.
