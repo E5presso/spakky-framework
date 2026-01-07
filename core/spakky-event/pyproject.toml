@@ -5,7 +5,7 @@ description = "Event handling stereotype for Spakky Framework (@EventHandler, @o
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
-dependencies = ["spakky-domain>=5.0.1"]
+dependencies = ["spakky-domain>=5.0.1", "spakky-data>=5.0.1"]
 
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
@@ -61,3 +61,4 @@ exclude_lines = [
 
 [tool.uv.sources]
 spakky-domain = { workspace = true }
+spakky-data = { workspace = true }

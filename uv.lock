@@ -1949,11 +1949,15 @@ name = "spakky-event"
 version = "5.0.1"
 source = { editable = "core/spakky-event" }
 dependencies = [
+    { name = "spakky-data" },
     { name = "spakky-domain" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky-domain", editable = "core/spakky-domain" }]
+requires-dist = [
+    { name = "spakky-data", editable = "core/spakky-data" },
+    { name = "spakky-domain", editable = "core/spakky-domain" },
+]
 
 [[package]]
 name = "spakky-fastapi"
