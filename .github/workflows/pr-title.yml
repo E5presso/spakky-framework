@@ -28,4 +28,4 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           echo "Validating PR title: $PR_TITLE"
-          echo "$PR_TITLE" | uv run cz check --message-file /dev/stdin
+          uv run cz check -m "$PR_TITLE"
