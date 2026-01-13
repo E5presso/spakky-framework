@@ -19,7 +19,7 @@ from spakky.event.event_consumer import (
     IAsyncIntegrationEventConsumer,
     IIntegrationEventConsumer,
     IntegrationEventHandlerCallback,
-    IntegrationEventT,
+    IntegrationEventT_contra,
 )
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
@@ -93,8 +93,8 @@ class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
 
     def register(
         self,
-        event: type[IntegrationEventT],
-        handler: IntegrationEventHandlerCallback[IntegrationEventT],
+        event: type[IntegrationEventT_contra],
+        handler: IntegrationEventHandlerCallback[IntegrationEventT_contra],
     ) -> None:
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
@@ -184,8 +184,8 @@ class AsyncKafkaEventConsumer(
 
     def register(
         self,
-        event: type[IntegrationEventT],
-        handler: AsyncIntegrationEventHandlerCallback[IntegrationEventT],
+        event: type[IntegrationEventT_contra],
+        handler: AsyncIntegrationEventHandlerCallback[IntegrationEventT_contra],
     ) -> None:
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)

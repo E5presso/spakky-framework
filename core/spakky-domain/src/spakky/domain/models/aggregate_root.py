@@ -6,9 +6,9 @@ that manage domain events and maintain consistency boundaries.
 
 from abc import ABC
 from dataclasses import field
-from typing import Any, Generic, Sequence, TypeVar
+from typing import Generic, Sequence, TypeVar
 
-from spakky.core.common.interfaces.equatable import EquatableT
+from spakky.core.common.interfaces.equatable import EquatableT_co, IEquatable
 from spakky.core.common.mutability import mutable
 
 from spakky.domain.models.entity import AbstractEntity
@@ -16,7 +16,7 @@ from spakky.domain.models.event import AbstractDomainEvent
 
 
 @mutable
-class AbstractAggregateRoot(AbstractEntity[EquatableT], Generic[EquatableT], ABC):
+class AbstractAggregateRoot(AbstractEntity[EquatableT_co], Generic[EquatableT_co], ABC):
     """Base class for DDD aggregate roots.
 
     Aggregate roots are entities that serve as entry points to aggregates,
@@ -59,5 +59,15 @@ class AbstractAggregateRoot(AbstractEntity[EquatableT], Generic[EquatableT], ABC
         self.__events.clear()
 
 
-AggregateRootT = TypeVar("AggregateRootT", bound=AbstractAggregateRoot[Any])
-"""Type variable for aggregate root types."""
+AggregateRootT = TypeVar("AggregateRootT", bound=AbstractAggregateRoot[IEquatable])
+"""Type variable for aggregate root types (invariant for repositories)."""
+
+AggregateRootT_co = TypeVar(
+    "AggregateRootT_co", bound=AbstractAggregateRoot[IEquatable], covariant=True
+)
+"""Type variable for aggregate root types (covariant for read-only operations)."""
+
+AggregateRootT_contra = TypeVar(
+    "AggregateRootT_contra", bound=AbstractAggregateRoot[IEquatable], contravariant=True
+)
+"""Type variable for aggregate root types (contravariant for input parameters)."""

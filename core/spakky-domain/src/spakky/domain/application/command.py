@@ -20,11 +20,23 @@ class AbstractCommand(ABC):
     ...
 
 
+CommandT = TypeVar("CommandT", bound=AbstractCommand)
+"""Invariant type variable for command types."""
+
+CommandT_co = TypeVar("CommandT_co", bound=AbstractCommand, covariant=True)
+"""Covariant type variable for command types."""
+
 CommandT_contra = TypeVar("CommandT_contra", bound=AbstractCommand, contravariant=True)
 """Contravariant type variable for command types."""
 
+ResultT = TypeVar("ResultT", bound=Any)
+"""Invariant type variable for result types."""
+
 ResultT_co = TypeVar("ResultT_co", bound=Any, covariant=True)
 """Covariant type variable for result types."""
+
+ResultT_contra = TypeVar("ResultT_contra", bound=Any, contravariant=True)
+"""Contravariant type variable for result types."""
 
 
 class ICommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):

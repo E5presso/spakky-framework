@@ -20,11 +20,23 @@ class AbstractQuery(ABC):
     ...
 
 
+QueryT = TypeVar("QueryT", bound=AbstractQuery)
+"""Invariant type variable for query types."""
+
+QueryT_co = TypeVar("QueryT_co", bound=AbstractQuery, covariant=True)
+"""Covariant type variable for query types."""
+
 QueryT_contra = TypeVar("QueryT_contra", bound=AbstractQuery, contravariant=True)
 """Contravariant type variable for query types."""
 
+ResultT = TypeVar("ResultT", bound=Any)
+"""Invariant type variable for result types."""
+
 ResultT_co = TypeVar("ResultT_co", bound=Any, covariant=True)
 """Covariant type variable for result types."""
+
+ResultT_contra = TypeVar("ResultT_contra", bound=Any, contravariant=True)
+"""Contravariant type variable for result types."""
 
 
 class IQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):

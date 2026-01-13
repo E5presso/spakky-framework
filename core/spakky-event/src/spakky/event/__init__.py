@@ -4,12 +4,18 @@ This package provides:
 - Event publishers and consumers
 - Event handler stereotype
 - Event-related errors
+- Transactional event publishing aspects
 
 Usage:
     from spakky.event import IIntegrationEventPublisher, IAsyncIntegrationEventPublisher
     from spakky.event import IIntegrationEventConsumer, IAsyncIntegrationEventConsumer
+    from spakky.event import AsyncTransactionalEventPublishingAspect
 """
 
+from spakky.event.aspects import (
+    AsyncTransactionalEventPublishingAspect,
+    TransactionalEventPublishingAspect,
+)
 from spakky.event.error import (
     AbstractSpakkyEventError,
     DuplicateEventHandlerError,
@@ -39,6 +45,9 @@ __all__ = [
     "IDomainEventConsumer",
     "IAsyncIntegrationEventConsumer",
     "IIntegrationEventConsumer",
+    # Aspects
+    "AsyncTransactionalEventPublishingAspect",
+    "TransactionalEventPublishingAspect",
     # Errors
     "AbstractSpakkyEventError",
     "DuplicateEventHandlerError",
