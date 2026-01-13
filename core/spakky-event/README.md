@@ -120,12 +120,26 @@ app = (
 |-------|-------------|
 | `IDomainEventPublisher` | Sync domain event publisher interface |
 | `IAsyncDomainEventPublisher` | Async domain event publisher interface |
-| `IIntegrationEventPublisher` | Sync event publisher interface |
-| `IAsyncIntegrationEventPublisher` | Async event publisher interface |
 | `IDomainEventConsumer` | Sync domain event consumer interface |
 | `IAsyncDomainEventConsumer` | Async domain event consumer interface |
-| `IIntegrationEventConsumer` | Sync event consumer interface |
-| `IAsyncIntegrationEventConsumer` | Async event consumer interface |
+| `IDomainEventDispatcher` | Sync domain event dispatcher interface (ISP) |
+| `IAsyncDomainEventDispatcher` | Async domain event dispatcher interface (ISP) |
+| `IIntegrationEventPublisher` | Sync integration event publisher interface |
+| `IAsyncIntegrationEventPublisher` | Async integration event publisher interface |
+| `IIntegrationEventConsumer` | Sync integration event consumer interface |
+| `IAsyncIntegrationEventConsumer` | Async integration event consumer interface |
+| `IIntegrationEventDispatcher` | Sync integration event dispatcher interface |
+| `IAsyncIntegrationEventDispatcher` | Async integration event dispatcher interface |
+
+### Implementations
+
+| Class | Description |
+|-------|-------------|
+| `DomainEventMediator` | Sync mediator combining Consumer + Dispatcher |
+| `AsyncDomainEventMediator` | Async mediator combining Consumer + Dispatcher |
+| `DomainEventPublisher` | Sync publisher delegating to Dispatcher |
+| `AsyncDomainEventPublisher` | Async publisher delegating to Dispatcher |
+| `EventHandlerRegistrationPostProcessor` | Auto-registers `@EventHandler` methods |
 
 ### Types
 
@@ -156,6 +170,63 @@ app = (
 | `spakky-domain` | DDD building blocks including `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent` |
 | `spakky-rabbitmq` | RabbitMQ implementation (IntegrationEvent publisher/consumer) |
 | `spakky-kafka` | Kafka implementation (IntegrationEvent publisher/consumer) |
+
+## In-process Domain Event Publishing
+
+For events within a bounded context (DomainEvents), use the in-process publisher:
+
+```python
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.event import (
+    AsyncDomainEventMediator,
+    AsyncDomainEventPublisher,
+    EventHandlerRegistrationPostProcessor,
+    IAsyncDomainEventConsumer,
+    IAsyncDomainEventDispatcher,
+    IAsyncDomainEventPublisher,
+)
+
+# Bootstrap application with in-process event handling
+app = (
+    SpakkyApplication(ApplicationContext())
+    .add(AsyncDomainEventMediator)          # Combines Consumer + Dispatcher
+    .add(AsyncDomainEventPublisher)          # Publisher delegates to Dispatcher
+    .add(EventHandlerRegistrationPostProcessor)  # Auto-registers handlers
+    .scan()
+    .start()
+)
+
+# Get publisher from container
+publisher = app.container.get(IAsyncDomainEventPublisher)
+await publisher.publish(UserCreatedEvent(user_id="123", email="test@example.com"))
+```
+
+### Architecture (ISP Compliant)
+
+The in-process event system follows Interface Segregation Principle:
+
+- **Consumer**: Registers event handlers (`register()` method)
+- **Dispatcher**: Dispatches events to handlers (`dispatch()` method)
+- **Mediator**: Combines both interfaces in a single implementation
+- **Publisher**: Depends only on Dispatcher (not Consumer)
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   Publisher     │────▶│   Dispatcher    │
+└─────────────────┘     └────────┬────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │    Mediator     │
+                        │ (Consumer +     │
+                        │  Dispatcher)    │
+                        └────────┬────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │  EventHandler   │
+                        │  @on_event()    │
+                        └─────────────────┘
+```
 
 ## License
 

@@ -41,9 +41,14 @@ spakky-framework/
 │   │
 │   └── spakky-event/              # Event handling
 │       ├── src/spakky/event/
+│       │   ├── aspects/           # TransactionalEventPublishingAspect
+│       │   ├── mediator/          # DomainEventMediator (Consumer + Dispatcher)
+│       │   ├── publisher/         # DomainEventPublisher implementations
 │       │   ├── stereotype/        # @EventHandler stereotype
-│       │   ├── event_publisher.py # IIntegrationEventPublisher, IAsyncIntegrationEventPublisher
-│       │   ├── event_consumer.py  # IIntegrationEventConsumer, IAsyncIntegrationEventConsumer
+│       │   ├── event_publisher.py # Publisher interfaces
+│       │   ├── event_consumer.py  # Consumer interfaces
+│       │   ├── event_dispatcher.py # Dispatcher interfaces (ISP)
+│       │   ├── post_processor.py  # EventHandlerRegistrationPostProcessor
 │       │   └── error.py           # Event-related errors
 │       └── tests/
 │
