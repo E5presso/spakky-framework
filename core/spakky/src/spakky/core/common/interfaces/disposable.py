@@ -1,4 +1,3 @@
-from abc import abstractmethod
 from types import TracebackType
 from typing import Protocol, Self, TypeVar, runtime_checkable
 
@@ -7,16 +6,14 @@ from typing import Protocol, Self, TypeVar, runtime_checkable
 class IDisposable(Protocol):
     """Interface for disposable objects."""
 
-    @abstractmethod
     def __enter__(self) -> Self:
         """Enters the runtime context related to this object.
 
         Returns:
             Self: The object itself.
         """
-        raise NotImplementedError
+        ...
 
-    @abstractmethod
     def __exit__(
         self,
         __exc_type: type[BaseException] | None,
@@ -33,23 +30,21 @@ class IDisposable(Protocol):
         Returns:
             bool | None: True if the exception was handled, False otherwise.
         """
-        raise NotImplementedError
+        ...
 
 
 @runtime_checkable
 class IAsyncDisposable(Protocol):
     """Interface for asynchronously disposable objects."""
 
-    @abstractmethod
     async def __aenter__(self) -> Self:
         """Asynchronously enters the runtime context related to this object.
 
         Returns:
             Self: The object itself.
         """
-        raise NotImplementedError
+        ...
 
-    @abstractmethod
     async def __aexit__(
         self,
         __exc_type: type[BaseException] | None,
@@ -66,8 +61,19 @@ class IAsyncDisposable(Protocol):
         Returns:
             bool | None: True if the exception was handled, False otherwise.
         """
-        raise NotImplementedError
+        ...
 
 
 DisposableT = TypeVar("DisposableT", bound=IDisposable)
+DisposableT_co = TypeVar("DisposableT_co", bound=IDisposable, covariant=True)
+DisposableT_contra = TypeVar(
+    "DisposableT_contra", bound=IDisposable, contravariant=True
+)
+
 AsyncDisposableT = TypeVar("AsyncDisposableT", bound=IAsyncDisposable)
+AsyncDisposableT_co = TypeVar(
+    "AsyncDisposableT_co", bound=IAsyncDisposable, covariant=True
+)
+AsyncDisposableT_contra = TypeVar(
+    "AsyncDisposableT_contra", bound=IAsyncDisposable, contravariant=True
+)

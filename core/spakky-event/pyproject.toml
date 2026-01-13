@@ -7,6 +7,9 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
 dependencies = ["spakky-domain>=5.0.1", "spakky-data>=5.0.1"]
 
+[project.entry-points."spakky.plugins"]
+spakky-event = "spakky.event.main:initialize"
+
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
@@ -57,6 +60,8 @@ exclude_lines = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
+    "\\.\\.\\.\\.",
+    "pass",
 ]
 
 [tool.uv.sources]

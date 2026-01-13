@@ -12,23 +12,31 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractEvent
 
 EventT = TypeVar("EventT", bound=AbstractEvent)
-"""Type variable for domain event types."""
+"""Type variable for domain event types (invariant)."""
 
-EventHandlerMethod: TypeAlias = Callable[[Any, EventT], None | Awaitable[None]]
+EventT_co = TypeVar("EventT_co", bound=AbstractEvent, covariant=True)
+"""Type variable for domain event types (covariant for return types)."""
+
+EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
+"""Type variable for domain event types (contravariant for handler parameters)."""
+
+EventHandlerMethod: TypeAlias = Callable[[Any, EventT_contra], None | Awaitable[None]]
 """Type alias for event handler callback functions."""
 
 
 @dataclass
-class EventRoute(FunctionAnnotation, Generic[EventT]):
+class EventRoute(FunctionAnnotation, Generic[EventT_contra]):
     """Annotation for marking methods as event handlers.
 
     Associates a method with a specific domain event type.
     """
 
-    event_type: type[EventT]
+    event_type: type[EventT_contra]
     """The domain event type this handler processes."""
 
-    def __call__(self, obj: EventHandlerMethod[EventT]) -> EventHandlerMethod[EventT]:
+    def __call__(
+        self, obj: EventHandlerMethod[EventT_contra]
+    ) -> EventHandlerMethod[EventT_contra]:
         """Apply event route annotation to method.
 
         Args:
@@ -41,10 +49,10 @@ class EventRoute(FunctionAnnotation, Generic[EventT]):
 
 
 def on_event(
-    event_type: type[EventT],
+    event_type: type[EventT_contra],
 ) -> Callable[
-    [EventHandlerMethod[EventT]],
-    EventHandlerMethod[EventT],
+    [EventHandlerMethod[EventT_contra]],
+    EventHandlerMethod[EventT_contra],
 ]:
     """Decorator for marking methods as event handlers.
 
@@ -64,8 +72,8 @@ def on_event(
     """
 
     def wrapper(
-        method: EventHandlerMethod[EventT],
-    ) -> EventHandlerMethod[EventT]:
+        method: EventHandlerMethod[EventT_contra],
+    ) -> EventHandlerMethod[EventT_contra]:
         return EventRoute(event_type)(method)
 
     return wrapper

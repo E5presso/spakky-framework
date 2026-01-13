@@ -28,7 +28,7 @@ from spakky.event.event_consumer import (
     IAsyncIntegrationEventConsumer,
     IIntegrationEventConsumer,
     IntegrationEventHandlerCallback,
-    IntegrationEventT,
+    IntegrationEventT_contra,
 )
 
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
@@ -92,8 +92,8 @@ class RabbitMQEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService
 
     def register(
         self,
-        event: type[IntegrationEventT],
-        handler: IntegrationEventHandlerCallback[IntegrationEventT],
+        event: type[IntegrationEventT_contra],
+        handler: IntegrationEventHandlerCallback[IntegrationEventT_contra],
     ) -> None:
         """Register an event handler for a specific event type.
 
@@ -198,8 +198,8 @@ class AsyncRabbitMQEventConsumer(
 
     def register(
         self,
-        event: type[IntegrationEventT],
-        handler: AsyncIntegrationEventHandlerCallback[IntegrationEventT],
+        event: type[IntegrationEventT_contra],
+        handler: AsyncIntegrationEventHandlerCallback[IntegrationEventT_contra],
     ) -> None:
         """Register an async event handler for a specific event type.
 

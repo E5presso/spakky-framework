@@ -46,6 +46,8 @@ class DependencyInfo:
 DependencyMap: TypeAlias = dict[str, DependencyInfo]
 PodType: TypeAlias = Func | Class
 PodT = TypeVar("PodT", bound=PodType)
+PodT_co = TypeVar("PodT_co", bound=PodType, covariant=True)
+PodT_contra = TypeVar("PodT_contra", bound=PodType, contravariant=True)
 
 
 class CannotDeterminePodTypeError(PodAnnotationFailedError):
