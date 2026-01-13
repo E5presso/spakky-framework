@@ -53,3 +53,8 @@ __all__ = [
     "DuplicateEventHandlerError",
     "InvalidMessageError",
 ]
+
+from spakky.core.application.plugin import Plugin
+
+PLUGIN_NAME = Plugin(name="spakky-event")
+"""Plugin identifier for the Spakky Event package."""

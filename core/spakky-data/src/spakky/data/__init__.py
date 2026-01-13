@@ -38,3 +38,8 @@ __all__ = [
     "AbstractSpakkyExternalError",
     "AbstractSpakkyPersistencyError",
 ]
+
+from spakky.core.application.plugin import Plugin
+
+PLUGIN_NAME = Plugin(name="spakky-data")
+"""Plugin identifier for the Spakky Data package."""

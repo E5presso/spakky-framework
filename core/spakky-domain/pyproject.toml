@@ -7,6 +7,9 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
 dependencies = ["spakky>=5.0.1"]
 
+[project.entry-points."spakky.plugins"]
+spakky-domain = "spakky.domain.main:initialize"
+
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
