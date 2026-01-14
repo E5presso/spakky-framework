@@ -83,6 +83,8 @@
 		"python.languageServer": "Pylance",
 		"python.analysis.diagnosticMode": "workspace",
 		"python.analysis.typeCheckingMode": "strict",
+		"python.analysis.autoImportCompletions": true,
+		"python.analysis.enableTroubleshootMissingImports": true,
 		"python.analysis.packageIndexDepths": [
 			{
 				"name": "*",
