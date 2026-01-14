@@ -10,11 +10,11 @@ from typing import Self
 
 from spakky.core.common.interfaces.cloneable import ICloneable
 from spakky.core.common.interfaces.equatable import IEquatable
-from spakky.core.common.mutability import immutable
+from spakky.core.common.mutability import IDataclass, immutable
 
 
 @immutable
-class AbstractValueObject(IEquatable, ICloneable, ABC):
+class AbstractValueObject(IEquatable, ICloneable, IDataclass, ABC):
     """Base class for immutable value objects.
 
     Value objects represent domain concepts without identity, compared by

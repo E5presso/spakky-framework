@@ -1894,6 +1894,9 @@ wheels = [
 name = "spakky"
 version = "5.0.1"
 source = { editable = "core/spakky" }
+dependencies = [
+    { name = "uuid7" },
+]
 
 [package.optional-dependencies]
 fastapi = [
@@ -1919,6 +1922,7 @@ requires-dist = [
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
+    { name = "uuid7", specifier = ">=0.1.0" },
 ]
 provides-extras = ["fastapi", "rabbitmq", "security", "typer", "kafka"]
 
@@ -2251,6 +2255,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/1c/43/554c2569b62f49350597348fc3ac70f786e3c32e7f19d266e19817812dd3/urllib3-2.6.0.tar.gz", hash = "sha256:cb9bcef5a4b345d5da5d145dc3e30834f58e8018828cbc724d30b4cb7d4d49f1", size = 432585, upload-time = "2025-12-05T15:08:47.885Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/1a/9ffe814d317c5224166b23e7c47f606d6e473712a2fad0f704ea9b99f246/urllib3-2.6.0-py3-none-any.whl", hash = "sha256:c90f7a39f716c572c4e3e58509581ebd83f9b59cced005b7db7ad2d22b0db99f", size = 131083, upload-time = "2025-12-05T15:08:45.983Z" },
+]
+
+[[package]]
+name = "uuid7"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/19/7472bd526591e2192926247109dbf78692e709d3e56775792fec877a7720/uuid7-0.1.0.tar.gz", hash = "sha256:8c57aa32ee7456d3cc68c95c4530bc571646defac01895cfc73545449894a63c", size = 14052, upload-time = "2021-12-29T01:38:21.897Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b5/77/8852f89a91453956582a85024d80ad96f30a41fed4c2b3dce0c9f12ecc7e/uuid7-0.1.0-py2.py3-none-any.whl", hash = "sha256:5e259bb63c8cb4aded5927ff41b444a80d0c7124e8a0ced7cf44efa1f5cccf61", size = 7477, upload-time = "2021-12-29T01:38:20.418Z" },
 ]
 
 [[package]]

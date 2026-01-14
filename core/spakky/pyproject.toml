@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = []
+dependencies = [
+    "uuid7>=0.1.0",
+]
 
 [project.optional-dependencies]
 fastapi = ["spakky-fastapi>=5.0.1"]

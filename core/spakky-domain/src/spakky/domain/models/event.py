@@ -13,11 +13,11 @@ from uuid import UUID, uuid4
 from spakky.core.common.interfaces.cloneable import ICloneable
 from spakky.core.common.interfaces.comparable import IComparable
 from spakky.core.common.interfaces.equatable import IEquatable
-from spakky.core.common.mutability import immutable
+from spakky.core.common.mutability import IDataclass, immutable
 
 
 @immutable
-class AbstractEvent(IEquatable, IComparable, ICloneable, ABC):
+class AbstractEvent(IEquatable, IComparable, ICloneable, IDataclass, ABC):
     """Base class for domain events."""
 
     event_id: UUID = field(default_factory=uuid4)
