@@ -3,8 +3,9 @@
 from typing import Callable, overload
 
 from spakky.core.common.mutability import immutable
+from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod
-from spakky.core.pod.interfaces.container import IContainer, ObjectT
+from spakky.core.pod.interfaces.container import IContainer
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 
 from spakky.event.event_consumer import IAsyncDomainEventConsumer, IDomainEventConsumer
