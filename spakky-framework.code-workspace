@@ -39,6 +39,10 @@
 		{
 			"name": "plugins.kafka",
 			"path": "plugins/spakky-kafka"
+		},
+		{
+			"name": "plugins.sqlalchemy",
+			"path": "plugins/spakky-sqlalchemy"
 		}
 	],
 	"settings": {

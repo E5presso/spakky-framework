@@ -17,6 +17,7 @@ members = [
     "spakky-kafka",
     "spakky-rabbitmq",
     "spakky-security",
+    "spakky-sqlalchemy",
     "spakky-typer",
 ]
 
@@ -1911,6 +1912,9 @@ rabbitmq = [
 security = [
     { name = "spakky-security" },
 ]
+sqlalchemy = [
+    { name = "spakky-sqlalchemy" },
+]
 typer = [
     { name = "spakky-typer" },
 ]
@@ -1921,10 +1925,11 @@ requires-dist = [
     { name = "spakky-kafka", marker = "extra == 'kafka'", editable = "plugins/spakky-kafka" },
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
+    { name = "spakky-sqlalchemy", marker = "extra == 'sqlalchemy'", editable = "plugins/spakky-sqlalchemy" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["fastapi", "rabbitmq", "security", "typer", "kafka"]
+provides-extras = ["fastapi", "rabbitmq", "security", "typer", "kafka", "sqlalchemy"]
 
 [[package]]
 name = "spakky-data"
@@ -2091,6 +2096,25 @@ requires-dist = [
     { name = "pycryptodome", specifier = ">=3.23.0" },
     { name = "spakky", editable = "core/spakky" },
 ]
+
+[[package]]
+name = "spakky-sqlalchemy"
+version = "0.0.1"
+source = { editable = "plugins/spakky-sqlalchemy" }
+dependencies = [
+    { name = "spakky-data" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "testcontainers" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "spakky-data", editable = "core/spakky-data" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "testcontainers", specifier = ">=4.13.3" }]
 
 [[package]]
 name = "spakky-typer"

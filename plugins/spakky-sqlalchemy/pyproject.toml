@@ -1,22 +1,15 @@
 [project]
-name = "spakky"
-version = "5.0.1"
-description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
+name = "spakky-sqlalchemy"
+version = "0.0.1"
+description = "SQLAlchemy plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = [
-    "uuid7>=0.1.0",
-]
+dependencies = ["spakky-data>=5.0.1"]
 
-[project.optional-dependencies]
-fastapi = ["spakky-fastapi>=5.0.1"]
-rabbitmq = ["spakky-rabbitmq>=5.0.1"]
-security = ["spakky-security>=5.0.1"]
-typer = ["spakky-typer>=5.0.1"]
-kafka = ["spakky-kafka>=5.0.1"]
-sqlalchemy = ["spakky-sqlalchemy>=5.0.1"]
+[project.entry-points."spakky.plugins"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
@@ -24,7 +17,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "spakky.core"
+module-name = "spakky.plugins.sqlalchemy"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -36,7 +29,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky"
+pythonpath = "src/spakky/plugins/sqlalchemy"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -46,14 +39,17 @@ addopts = """
     --cov-report=xml
     --no-cov-on-fail
     --strict-markers
-    --dist=load
+    --dist=loadfile
     -p no:warnings
     -n auto
     -vv
 """
 
+[dependency-groups]
+dev = ["testcontainers>=4.13.3"]
+
 [tool.coverage.run]
-include = ["src/spakky/*"]
+include = ["src/spakky/plugins/sqlalchemy/*"]
 branch = true
 
 [tool.coverage.report]
@@ -68,6 +64,9 @@ exclude_lines = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
-    "\\.\\.\\.",
+    "\\.\\.\\.\\.",
     "pass",
 ]
+
+[tool.uv.sources]
+spakky-data = { workspace = true }
