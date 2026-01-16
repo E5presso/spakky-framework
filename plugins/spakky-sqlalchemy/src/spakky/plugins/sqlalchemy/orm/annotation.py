@@ -40,11 +40,11 @@ class Table(ClassAnnotation):
         >>> # Table name will be "user_accounts"
     """
 
-    name: str | None = None
+    name: str = ""
     """The custom table name to use for this entity.
     If None, auto-generated from class name in snake_case."""
 
     def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
-        if not self.name:
+        if not any(self.name):
             self.name = pascal_to_snake(obj.__name__)
         return super().__call__(obj)

@@ -111,6 +111,7 @@
 			"reportUnknownParameterType": "none",
 			"reportUnknownVariableType": "none",
 			"reportMissingTypeStubs": "none",
+			"reportUnnecessaryIsInstance": "warning",
 			"reportIncompatibleMethodOverride": "error",
 			"reportIncompatibleVariableOverride": "error"
 		},

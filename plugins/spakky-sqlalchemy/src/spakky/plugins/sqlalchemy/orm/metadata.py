@@ -198,3 +198,22 @@ class DateTimeField(Field):
 
     timezone: bool = False
     """Whether to store timezone information."""
+
+
+@dataclass
+class TimeField(Field):
+    """Metadata for time columns with timezone handling.
+
+    Example:
+        >>> from typing import Annotated
+        >>> from datetime import time
+        >>> from spakky.plugins.sqlalchemy.orm import Table, TimeField
+        >>>
+        >>> @Table()
+        >>> class Schedule:
+        >>>     start_time: Annotated[time, TimeField(timezone=True)]
+        >>>     end_time: Annotated[time | None, TimeField()]
+    """
+
+    timezone: bool = False
+    """Whether to store timezone information."""
