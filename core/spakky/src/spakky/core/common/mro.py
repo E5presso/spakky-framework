@@ -18,7 +18,7 @@ from typing import (
 )
 
 from spakky.core.common.constants import ORIGIN_BASES, PARAMETERS
-from spakky.core.common.types import ClassT
+from spakky.core.common.types import ObjectT
 
 
 def _generic_mro(result: dict[type, Any], tp: Any) -> None:
@@ -73,7 +73,7 @@ def generic_mro(tp: Any) -> list[type]:
     return list(result.get(sub_cls, sub_cls) for sub_cls in cls.__mro__)
 
 
-def is_family_with(tp: Any, target: ClassT) -> TypeGuard[ClassT]:
+def is_family_with(tp: Any, target: type[ObjectT]) -> TypeGuard[type[ObjectT]]:
     """Check if a type is related to a target type through its MRO.
 
     Args:
@@ -81,6 +81,6 @@ def is_family_with(tp: Any, target: ClassT) -> TypeGuard[ClassT]:
         target: The target type to look for in the MRO.
 
     Returns:
-        TypeGuard[ClassT]: True if target is in tp's MRO, False otherwise.
+        TypeGuard[type[ObjectT]]: True if target is in tp's MRO, False otherwise.
     """
     return target in generic_mro(tp)

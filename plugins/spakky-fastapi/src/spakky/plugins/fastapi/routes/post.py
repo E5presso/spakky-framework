@@ -6,18 +6,18 @@ endpoints with full FastAPI configuration support.
 
 from typing import Any, Callable, Sequence
 
-from spakky.core.common.types import FuncT
+from spakky.core.common.types import AnyT
+from starlette.routing import Route as StarletteRoute
+
+from fastapi import Response, params
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from spakky.plugins.fastapi.routes.route import (
     DictIntStrAny,
     HTTPMethod,
     SetIntStr,
     route,
 )
-from starlette.routing import Route as StarletteRoute
-
-from fastapi import Response, params
-from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
 
 
 def post(
@@ -44,7 +44,7 @@ def post(
     route_class_override: type[APIRoute] | None = None,
     callbacks: list[StarletteRoute] | None = None,
     openapi_extra: dict[str, Any] | None = None,
-) -> Callable[[FuncT], FuncT]:
+) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
     """Decorator to mark a controller method as an HTTP POST endpoint.
 
     Convenience wrapper around @route that automatically sets the HTTP method

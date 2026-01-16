@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Self, final
+from typing import Any, Callable, Self, final
 
 from spakky.core.common.constants import ANNOTATION_METADATA
 from spakky.core.common.error import AbstractSpakkyFrameworkError
-from spakky.core.common.types import AnyT, ClassT, FuncT
+from spakky.core.common.types import AnyT, ObjectT
 
 
 @dataclass
@@ -132,14 +132,14 @@ class ClassAnnotation(Annotation):
         Annotation (_type_): Base annotation class.
     """
 
-    def __call__(self, obj: ClassT) -> ClassT:
+    def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
         """Call method to annotate a class.
 
         Args:
-            obj (ClassT): The class to annotate.
+            obj (type[ObjectT]): The class to annotate.
 
         Returns:
-            ClassT: The annotated class.
+            type[ObjectT]: The annotated class.
         """
         return super().__call__(obj)
 
@@ -152,14 +152,14 @@ class FunctionAnnotation(Annotation):
         Annotation (_type_): Base annotation class.
     """
 
-    def __call__(self, obj: FuncT) -> FuncT:
+    def __call__(self, obj: Callable[..., AnyT]) -> Callable[..., AnyT]:
         """Call method to annotate a function.
 
         Args:
-            obj (FuncT): The function to annotate.
+            obj (Callable[..., AnyT]): The function to annotate.
 
         Returns:
-            FuncT: The annotated function.
+            Callable[..., AnyT]: The annotated function.
         """
         return super().__call__(obj)
 
