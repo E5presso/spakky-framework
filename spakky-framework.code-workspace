@@ -124,7 +124,8 @@
 			"plugin.rabbitmq",
 			"plugin.security",
 			"plugin.typer",
-			"plugin.kafka"
+			"plugin.kafka",
+			"plugin.sqlalchemy"
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml"
