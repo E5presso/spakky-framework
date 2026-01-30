@@ -92,8 +92,8 @@
 		"python.analysis.packageIndexDepths": [
 			{
 				"name": "*",
-				"depth": -1,
-				"includeAllSymbols": true
+				"depth": 10,
+				"includeAllSymbols": true,
 			}
 		],
 		"python.analysis.diagnosticSeverityOverrides": {
@@ -134,6 +134,9 @@
 		"ruff.importStrategy": "fromEnvironment"
 	},
 	"extensions": {
-		"recommendations": ["charliermarsh.ruff"]
+		"recommendations": [
+			"charliermarsh.ruff",
+			"vivaxy.vscode-conventional-commits",
+		],
 	}
 }
