@@ -1,11 +1,12 @@
 """Index metadata for SQLAlchemy ORM."""
 
-from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.common.mutability import mutable
+
+from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
 
 
 @mutable
-class Index(AbstractMetadata):
+class Index(AbstractConstraint):
     """Index metadata for database optimization.
 
     Use in Annotated type hints to create an index on a field.

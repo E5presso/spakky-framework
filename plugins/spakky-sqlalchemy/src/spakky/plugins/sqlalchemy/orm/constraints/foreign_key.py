@@ -1,9 +1,10 @@
 """Foreign key constraint metadata for SQLAlchemy ORM."""
 
-from enum import StrEnum, auto
+from enum import StrEnum
 
-from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.common.mutability import mutable
+
+from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
 
 
 class ReferentialAction(StrEnum):
@@ -13,21 +14,21 @@ class ReferentialAction(StrEnum):
     Maps directly to SQL standard referential actions.
     """
 
-    CASCADE = auto()
+    CASCADE = "CASCADE"
     """Automatically update/delete the dependent rows."""
 
-    SET_NULL = auto()
+    SET_NULL = "SET NULL"
     """Set the foreign key column to NULL."""
 
-    RESTRICT = auto()
+    RESTRICT = "RESTRICT"
     """Prevent the update/delete if dependent rows exist."""
 
-    NO_ACTION = auto()
+    NO_ACTION = "NO ACTION"
     """Similar to RESTRICT but deferred until end of transaction."""
 
 
 @mutable
-class ForeignKey(AbstractMetadata):
+class ForeignKey(AbstractConstraint):
     """Foreign key constraint metadata.
 
     Use in Annotated type hints to define a relationship to another table.

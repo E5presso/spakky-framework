@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 import pytest
+from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.sqlalchemy.orm.table import Table
 
@@ -17,19 +18,19 @@ def test_table_with_auto_generated_name_expect_snake_case() -> None:
         username: str
 
     annotation = Table.get(UserAccount)
-    assert annotation.name == "user_account"
+    assert annotation.table_name == "user_account"
 
 
 def test_table_with_custom_name_expect_custom_name_preserved() -> None:
-    """Table annotation에 name을 직접 지정하면 해당 이름이 그대로 사용되는지 검증한다."""
+    """Table annotation에 table_name을 직접 지정하면 해당 이름이 그대로 사용되는지 검증한다."""
 
-    @Table(name="custom_users")
+    @Table(table_name="custom_users")
     @dataclass
     class User:
         id: int
 
     annotation = Table.get(User)
-    assert annotation.name == "custom_users"
+    assert annotation.table_name == "custom_users"
 
 
 def test_table_with_single_word_class_expect_lowercase() -> None:
@@ -41,7 +42,7 @@ def test_table_with_single_word_class_expect_lowercase() -> None:
         id: int
 
     annotation = Table.get(Order)
-    assert annotation.name == "order"
+    assert annotation.table_name == "order"
 
 
 def test_table_applied_to_non_dataclass_expect_type_error() -> None:
@@ -86,19 +87,19 @@ def test_table_with_multi_word_class_expect_correct_snake_case() -> None:
         id: int
 
     annotation = Table.get(UserAccountSettings)
-    assert annotation.name == "user_account_settings"
+    assert annotation.table_name == "user_account_settings"
 
 
 def test_table_with_empty_name_string_expect_auto_generated() -> None:
-    """name을 빈 문자열로 명시해도 자동 생성되는지 검증한다."""
+    """table_name을 빈 문자열로 명시해도 자동 생성되는지 검증한다."""
 
-    @Table(name="")
+    @Table(table_name="")
     @dataclass
     class Employee:
         id: int
 
     annotation = Table.get(Employee)
-    assert annotation.name == "employee"
+    assert annotation.table_name == "employee"
 
 
 def test_table_get_annotation_expect_table_instance() -> None:
@@ -129,14 +130,14 @@ def test_table_all_annotations_expect_single_element_list() -> None:
 def test_table_get_or_none_on_annotated_expect_table() -> None:
     """Table.get_or_none()이 어노테이션이 있을 때 Table을 반환하는지 검증한다."""
 
-    @Table(name="items")
+    @Table(table_name="items")
     @dataclass
     class Item:
         id: int
 
     result = Table.get_or_none(Item)
     assert result is not None
-    assert result.name == "items"
+    assert result.table_name == "items"
 
 
 def test_table_get_or_none_on_plain_expect_none() -> None:
@@ -148,3 +149,40 @@ def test_table_get_or_none_on_plain_expect_none() -> None:
 
     result = Table.get_or_none(PlainItem)
     assert result is None
+
+
+def test_table_is_pod_annotation_expect_true() -> None:
+    """Table이 Pod를 상속하는지 검증한다."""
+
+    @Table()
+    @dataclass
+    class TestEntity:
+        id: int
+
+    assert Pod.exists(TestEntity) is True
+    assert Table.exists(TestEntity) is True
+
+
+def test_table_has_definition_scope_expect_true() -> None:
+    """Table annotation이 DEFINITION 스코프를 가지는지 검증한다."""
+
+    @Table()
+    @dataclass
+    class TestEntity:
+        id: int
+
+    annotation = Table.get(TestEntity)
+    assert annotation.scope == Pod.Scope.DEFINITION
+
+
+def test_table_pod_name_auto_generated_expect_snake_case() -> None:
+    """Table의 Pod name이 자동으로 snake_case로 생성되는지 검증한다."""
+
+    @Table()
+    @dataclass
+    class MyTestEntity:
+        id: int
+
+    annotation = Table.get(MyTestEntity)
+    # Pod.name is auto-generated from class name
+    assert annotation.name == "my_test_entity"

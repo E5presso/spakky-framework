@@ -1,18 +1,22 @@
 """Table annotation for SQLAlchemy ORM."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import cast
 
-from spakky.core.common.annotation import ClassAnnotation
-from spakky.core.common.types import ObjectT
+from spakky.core.pod.annotations.pod import Pod, PodT
 from spakky.core.utils.casing import pascal_to_snake
 
 
-@dataclass
-class Table(ClassAnnotation):
+@dataclass(eq=False)
+class Table(Pod):
     """Annotation representing a database table.
 
     Use as a decorator on dataclass types to mark them as database tables.
     Automatically generates table names from class names using snake_case.
+
+    This extends Pod with DEFINITION scope, meaning the table definition
+    is registered with the IoC container for discovery, but never instantiated.
+    Post-processors can discover Table-annotated classes during startup.
 
     Examples:
         >>> from spakky.plugins.sqlalchemy.orm.table import Table
@@ -23,21 +27,24 @@ class Table(ClassAnnotation):
         ...     id: int
         ...     username: str
         >>>
-        >>> @Table(name="users")  # custom table name
+        >>> @Table(table_name="users")  # custom table name
         >>> @dataclass
         >>> class User:
         ...     id: int
     """
 
-    name: str = ""
+    table_name: str = ""
     """The name of the database table.
 
     If empty, automatically generated from class name using snake_case.
     """
 
-    def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
+    scope: Pod.Scope = field(default=Pod.Scope.DEFINITION, kw_only=True)
+    """The scope is fixed to DEFINITION for table definitions."""
+
+    def __call__(self, obj: PodT) -> PodT:
         if not hasattr(obj, "__dataclass_fields__"):
             raise TypeError("Table annotation can only be applied to dataclass types.")
-        if not self.name:
-            self.name = pascal_to_snake(obj.__name__)
+        if not self.table_name:
+            self.table_name = pascal_to_snake(cast(type, obj).__name__)
         return super().__call__(obj)

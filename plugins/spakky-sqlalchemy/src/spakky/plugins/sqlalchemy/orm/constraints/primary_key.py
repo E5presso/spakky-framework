@@ -1,11 +1,12 @@
 """Primary key constraint metadata for SQLAlchemy ORM."""
 
-from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.common.mutability import mutable
+
+from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
 
 
 @mutable
-class PrimaryKey(AbstractMetadata):
+class PrimaryKey(AbstractConstraint):
     """Primary key constraint metadata.
 
     Marks a field as a primary key column in SQLAlchemy ORM.

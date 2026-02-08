@@ -1,11 +1,12 @@
 """Unique constraint metadata for SQLAlchemy ORM."""
 
-from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.common.mutability import mutable
+
+from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
 
 
 @mutable
-class Unique(AbstractMetadata):
+class Unique(AbstractConstraint):
     """Unique constraint metadata.
 
     Use in Annotated type hints to enforce unique values for a field.
