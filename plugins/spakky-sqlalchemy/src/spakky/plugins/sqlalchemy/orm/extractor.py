@@ -16,6 +16,7 @@ from typing import (
 
 from spakky.core.common.types import is_optional, remove_none
 from spakky.core.pod.annotations.pod import Pod
+from spakky.core.utils.naming import is_public_name
 
 from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkyORMError
@@ -82,10 +83,11 @@ class Extractor:
             f.name: f for f in fields(entity_cls)
         }
 
-        for name, field_type in type_hints.items():
-            if name not in dataclass_fields:
-                continue
-
+        for name, field_type in (
+            (n, t)
+            for n, t in type_hints.items()
+            if n in dataclass_fields and is_public_name(n)
+        ):
             dataclass_field: Field[Any] = dataclass_fields[name]
 
             final_type: type[Any | None] = field_type

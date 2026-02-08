@@ -498,3 +498,23 @@ def test_extract_skips_class_var_type_hints() -> None:
 
     assert "id" in result.columns
     assert "class_constant" not in result.columns
+
+
+def test_extract_skips_private_fields() -> None:
+    """private 필드(_로 시작)가 컬럼으로 추출되지 않는지 검증한다."""
+
+    @Table()
+    @dataclass
+    class EntityWithPrivateFields:
+        id: int
+        name: str
+        _internal: str = ""
+        _events: list[str] = field(default_factory=list)
+
+    extractor = Extractor()
+    result = extractor.extract(EntityWithPrivateFields)
+
+    assert "id" in result.columns
+    assert "name" in result.columns
+    assert "_internal" not in result.columns
+    assert "_events" not in result.columns
