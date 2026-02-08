@@ -1254,3 +1254,58 @@ def test_application_context_clear_context_expect_success() -> None:
     # Note: After clear, a new context ID is generated
     new_context_id = context.get_context_id()
     assert isinstance(new_context_id, UUID)
+
+
+def test_application_context_definition_scope_not_instantiated_on_start() -> None:
+    """DEFINITION 스코프 Pod은 start 시 인스턴스화되지 않음을 검증한다."""
+    instantiation_count = 0
+
+    @Pod(scope=Pod.Scope.DEFINITION)
+    class DefinitionOnlyPod:
+        def __init__(self) -> None:
+            nonlocal instantiation_count
+            instantiation_count += 1
+
+    context = ApplicationContext()
+    context.add(DefinitionOnlyPod)
+    context.start()
+
+    # DEFINITION scope pods should not be instantiated
+    assert instantiation_count == 0
+
+    context.stop()
+
+
+def test_application_context_definition_scope_get_raises_error() -> None:
+    """DEFINITION 스코프 Pod을 get하면 CannotInstantiateDefinitionScopePodError가 발생함을 검증한다."""
+    from spakky.core.pod.interfaces.container import (
+        CannotInstantiateDefinitionScopePodError,
+    )
+
+    @Pod(scope=Pod.Scope.DEFINITION)
+    class MetadataOnlyPod:
+        pass
+
+    context = ApplicationContext()
+    context.add(MetadataOnlyPod)
+    context.start()
+
+    with pytest.raises(CannotInstantiateDefinitionScopePodError):
+        context.get(MetadataOnlyPod)
+
+    context.stop()
+
+
+def test_application_context_definition_scope_registered_in_pods() -> None:
+    """DEFINITION 스코프 Pod이 pods에 등록되어 있음을 검증한다."""
+
+    @Pod(scope=Pod.Scope.DEFINITION)
+    class DiscoverablePod:
+        pass
+
+    context = ApplicationContext()
+    context.add(DiscoverablePod)
+
+    # Pod should be registered
+    assert context.contains(DiscoverablePod)
+    assert "discoverable_pod" in context.pods

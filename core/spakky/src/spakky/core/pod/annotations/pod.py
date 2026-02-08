@@ -104,6 +104,13 @@ class Pod(Annotation, IEquatable):
         CONTEXT = auto()
         """Instance scoped to request/context lifecycle."""
 
+        DEFINITION = auto()
+        """Metadata-only scope. Pod is registered but never instantiated.
+
+        Use for entity classes that need discovery during startup but
+        shouldn't be managed as runtime instances (e.g., ORM table definitions).
+        """
+
     id: UUID = field(init=False, default_factory=uuid4)
     """Unique identifier for this Pod instance."""
 
