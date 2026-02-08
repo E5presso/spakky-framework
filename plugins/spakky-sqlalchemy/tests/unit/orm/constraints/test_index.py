@@ -80,6 +80,6 @@ def test_index_mutability_expect_mutable() -> None:
     """Index 인스턴스가 mutable인지 검증한다."""
     idx = Index()
     idx.unique = True
-    assert idx.unique is True
+    assert idx.unique
     idx.name = "idx_updated"
     assert idx.name == "idx_updated"

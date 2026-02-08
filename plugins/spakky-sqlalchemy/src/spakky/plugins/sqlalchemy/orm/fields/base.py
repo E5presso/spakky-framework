@@ -3,11 +3,11 @@ from typing import Callable, Generic
 
 from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.common.mutability import mutable
-from spakky.core.common.types import AnyT
+from spakky.core.common.types import AnyT_co
 
 
 @mutable
-class AbstractField(AbstractMetadata, ABC, Generic[AnyT]):
+class AbstractField(AbstractMetadata, ABC, Generic[AnyT_co]):
     """Base class for ORM field metadata annotations.
 
     Provides common field attributes for SQLAlchemy Column mapping.
@@ -17,10 +17,10 @@ class AbstractField(AbstractMetadata, ABC, Generic[AnyT]):
     nullable: bool = True
     """Whether the field can be NULL."""
 
-    default: AnyT | None = None
+    default: AnyT_co | None = None
     """Default value for the field."""
 
-    default_factory: Callable[[], AnyT] | None = None
+    default_factory: Callable[[], AnyT_co] | None = None
     """Factory function to generate default value for the field."""
 
     name: str = ""

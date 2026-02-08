@@ -1,9 +1,11 @@
 """Type mapper for converting field metadata to SQLAlchemy types."""
 
-from typing import Any
+from enum import Enum as PyEnum
+from typing import Any, TypeVar, cast
 
 from spakky.core.pod.annotations.pod import Pod
 
+from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
 from spakky.plugins.sqlalchemy.orm.constraints.foreign_key import (
     ForeignKey,
     ReferentialAction,
@@ -71,6 +73,12 @@ from sqlalchemy import (
 from sqlalchemy import (
     ForeignKey as SAForeignKey,
 )
+from sqlalchemy.sql.type_api import TypeEngine
+
+_ConstraintT = TypeVar("_ConstraintT", bound=AbstractConstraint)
+
+DEFAULT_STRING_LENGTH: int = 255
+"""Default length for fallback String column type."""
 
 
 @Pod()
@@ -84,7 +92,11 @@ class TypeMapper:
     the ModelRegistry.
     """
 
-    def create_column(self, name: str, col_info: ColumnInfo) -> Column[Any]:
+    def create_column(
+        self, name: str, col_info: ColumnInfo
+    ) -> Column[
+        Any
+    ]:  # Any: SQLAlchemy Column is invariant, actual type varies at runtime
         """Create a SQLAlchemy Column from column info.
 
         Args:
@@ -95,25 +107,63 @@ class TypeMapper:
             SQLAlchemy Column object with appropriate type and constraints.
         """
         sa_type = self._map_type(col_info.field_metadata)
-        column_kwargs = self._build_column_kwargs(col_info)
+        column_name = col_info.field_metadata.name or name
+
+        # Extract constraint info
+        primary_key_constraint = self._get_constraint(col_info, PrimaryKey)
+        unique_constraint = self._get_constraint(col_info, Unique)
+        index_constraint = self._get_constraint(col_info, Index)
+
+        # Determine default value
+        default = (
+            col_info.default
+            if col_info.default is not None
+            else (
+                col_info.default_factory
+                if col_info.default_factory is not None
+                else None
+            )
+        )
 
         # Handle foreign key constraint
         foreign_key = self._get_foreign_key(col_info)
         if foreign_key is not None:
             return Column(
-                col_info.field_metadata.name or name,
+                column_name,
                 sa_type,
                 foreign_key,
-                **column_kwargs,
+                nullable=col_info.nullable,
+                primary_key=primary_key_constraint is not None,
+                autoincrement=(
+                    primary_key_constraint.autoincrement
+                    if primary_key_constraint is not None
+                    else "auto"
+                ),
+                unique=unique_constraint is not None or None,
+                index=index_constraint is not None or None,
+                default=default,
+                comment=col_info.field_metadata.comment,
             )
 
         return Column(
-            col_info.field_metadata.name or name,
+            column_name,
             sa_type,
-            **column_kwargs,
+            nullable=col_info.nullable,
+            primary_key=primary_key_constraint is not None,
+            autoincrement=(
+                primary_key_constraint.autoincrement
+                if primary_key_constraint is not None
+                else "auto"
+            ),
+            unique=unique_constraint is not None or None,
+            index=index_constraint is not None or None,
+            default=default,
+            comment=col_info.field_metadata.comment,
         )
 
-    def _map_type(self, field_meta: AbstractField[Any]) -> Any:
+    def _map_type(  # noqa: PLR0911
+        self, field_meta: AbstractField[object]
+    ) -> TypeEngine[Any]:  # Any: SQLAlchemy TypeEngine is invariant, actual type varies
         """Map field metadata to SQLAlchemy type.
 
         Args:
@@ -130,27 +180,25 @@ class TypeMapper:
             case SmallIntegerField():
                 return SmallInteger()
             case FloatField():
-                kwargs: dict[str, Any] = {}
-                if field_meta.precision is not None:
-                    kwargs["precision"] = field_meta.precision
-                if field_meta.decimal_return_scale is not None:
-                    kwargs["decimal_return_scale"] = field_meta.decimal_return_scale
-                return Float(**kwargs)
+                return Float(
+                    precision=field_meta.precision,
+                    asdecimal=field_meta.asdecimal,
+                    decimal_return_scale=field_meta.decimal_return_scale,
+                )
             case NumericField():
-                kwargs: dict[str, Any] = {}
-                if field_meta.precision is not None:
-                    kwargs["precision"] = field_meta.precision
-                if field_meta.scale is not None:
-                    kwargs["scale"] = field_meta.scale
-                kwargs["asdecimal"] = field_meta.asdecimal
-                return Numeric(**kwargs)
+                return Numeric(
+                    precision=field_meta.precision,
+                    scale=field_meta.scale,
+                    decimal_return_scale=field_meta.decimal_return_scale,
+                    asdecimal=field_meta.asdecimal,
+                )
             case StringField():
-                return String(length=field_meta.length)
+                return String(
+                    length=field_meta.length,
+                    collation=field_meta.collation,
+                )
             case TextField():
-                kwargs: dict[str, Any] = {}
-                if field_meta.collation is not None:
-                    kwargs["collation"] = field_meta.collation
-                return Text(**kwargs)
+                return Text(collation=field_meta.collation)
             case BooleanField():
                 return Boolean()
             case DateField():
@@ -160,69 +208,32 @@ class TypeMapper:
             case TimeField():
                 return Time(timezone=field_meta.timezone)
             case IntervalField():
-                return Interval()
+                return Interval(
+                    native=field_meta.native,
+                    second_precision=field_meta.second_precision,
+                    day_precision=field_meta.day_precision,
+                )
             case UuidField():
-                return Uuid(as_uuid=field_meta.as_uuid)
+                return Uuid(
+                    as_uuid=field_meta.as_uuid,
+                    native_uuid=field_meta.native_uuid,
+                )
             case JSONField():
-                return JSON()
+                return JSON(none_as_null=field_meta.none_as_null)
             case Binary():
-                kwargs: dict[str, Any] = {}
-                if field_meta.length is not None:
-                    kwargs["length"] = field_meta.length
-                return LargeBinary(**kwargs)
+                return LargeBinary(length=field_meta.length)
             case EnumField():
                 return SAEnum(
-                    field_meta.enum_class,
+                    cast(type[PyEnum], field_meta.enum_class),
                     native_enum=field_meta.native_enum,
                 )
             case _:
                 # Default fallback for unknown types
-                return String(length=255)
-
-    def _build_column_kwargs(self, col_info: ColumnInfo) -> dict[str, Any]:
-        """Build keyword arguments for Column constructor.
-
-        Args:
-            col_info: Extracted column information.
-
-        Returns:
-            Dictionary of keyword arguments for Column.
-        """
-        kwargs: dict[str, Any] = {
-            "nullable": col_info.nullable,
-        }
-
-        # Handle primary key
-        primary_key = self._get_constraint(col_info, PrimaryKey)
-        if primary_key is not None:
-            kwargs["primary_key"] = True
-            kwargs["autoincrement"] = primary_key.autoincrement
-
-        # Handle unique constraint
-        unique = self._get_constraint(col_info, Unique)
-        if unique is not None:
-            kwargs["unique"] = True
-
-        # Handle index
-        index = self._get_constraint(col_info, Index)
-        if index is not None:
-            kwargs["index"] = True
-
-        # Handle default value
-        if col_info.default is not None:
-            kwargs["default"] = col_info.default
-        elif col_info.default_factory is not None:
-            kwargs["default"] = col_info.default_factory
-
-        # Handle comment
-        if col_info.field_metadata.comment is not None:
-            kwargs["comment"] = col_info.field_metadata.comment
-
-        return kwargs
+                return String(length=DEFAULT_STRING_LENGTH)
 
     def _get_constraint(
-        self, col_info: ColumnInfo, constraint_type: type
-    ) -> Any | None:
+        self, col_info: ColumnInfo, constraint_type: type[_ConstraintT]
+    ) -> _ConstraintT | None:
         """Get a specific constraint from column info.
 
         Args:
@@ -250,15 +261,20 @@ class TypeMapper:
         if fk is None:
             return None
 
-        kwargs: dict[str, Any] = {}
-        if fk.name is not None:
-            kwargs["name"] = fk.name
-        if fk.on_delete is not None:
-            kwargs["ondelete"] = self._map_referential_action(fk.on_delete)
-        if fk.on_update is not None:
-            kwargs["onupdate"] = self._map_referential_action(fk.on_update)
-
-        return SAForeignKey(fk.column, **kwargs)
+        return SAForeignKey(
+            fk.column,
+            name=fk.name,
+            ondelete=(
+                self._map_referential_action(fk.on_delete)
+                if fk.on_delete is not None
+                else None
+            ),
+            onupdate=(
+                self._map_referential_action(fk.on_update)
+                if fk.on_update is not None
+                else None
+            ),
+        )
 
     def _map_referential_action(self, action: ReferentialAction) -> str:
         """Map ReferentialAction to SQL string.

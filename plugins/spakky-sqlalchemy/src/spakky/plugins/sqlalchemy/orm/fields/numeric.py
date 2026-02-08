@@ -49,6 +49,9 @@ class Float(AbstractField[float]):
     precision: int | None = None
     """Total number of digits."""
 
+    asdecimal: bool = False
+    """Return values as Decimal objects (True) or float (False)."""
+
     decimal_return_scale: int | None = None
     """Number of decimal places to return."""
 
@@ -74,6 +77,9 @@ class Numeric(AbstractField[Decimal]):
 
     scale: int | None = None
     """Number of decimal places."""
+
+    decimal_return_scale: int | None = None
+    """Number of decimal places to return."""
 
     asdecimal: bool = True
     """Return values as Decimal objects (True) or float (False)."""

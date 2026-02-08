@@ -20,8 +20,11 @@ class Uuid(AbstractField[UUID]):
         >>>
         >>> class User:
         ...     id: Annotated[UUID, Uuid()]
-        ...     external_id: Annotated[UUID, Uuid()]
+        ...     external_id: Annotated[UUID, Uuid(native_uuid=False)]
     """
 
     as_uuid: bool = True
     """Return values as UUID objects (True) or strings (False)."""
+
+    native_uuid: bool = True
+    """Use native UUID type if available (e.g., PostgreSQL)."""

@@ -75,4 +75,14 @@ class Interval(AbstractField[timedelta]):
         >>>
         >>> class Task:
         ...     duration: Annotated[timedelta, Interval()]
+        ...     processing_time: Annotated[timedelta, Interval(second_precision=6)]
     """
+
+    native: bool = True
+    """Use native INTERVAL type if available."""
+
+    second_precision: int | None = None
+    """Precision for seconds in the interval."""
+
+    day_precision: int | None = None
+    """Precision for days in the interval."""

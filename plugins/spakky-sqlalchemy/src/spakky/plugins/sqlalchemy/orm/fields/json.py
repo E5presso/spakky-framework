@@ -19,5 +19,8 @@ class JSON(AbstractField[dict[str, Any]]):
         >>>
         >>> class User:
         ...     settings: Annotated[dict[str, Any], JSON()]
-        ...     metadata: Annotated[dict[str, Any], JSON()]
+        ...     metadata: Annotated[dict[str, Any], JSON(none_as_null=True)]
     """
+
+    none_as_null: bool = False
+    """Persist Python None as SQL NULL rather than JSON 'null'."""

@@ -63,4 +63,4 @@ def test_primary_key_mutability_expect_mutable() -> None:
     """PrimaryKey 인스턴스가 mutable인지 검증한다."""
     pk = PrimaryKey()
     pk.autoincrement = True
-    assert pk.autoincrement is True
+    assert pk.autoincrement

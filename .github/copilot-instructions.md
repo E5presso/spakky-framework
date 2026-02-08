@@ -29,9 +29,18 @@ Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Us
 | `SpakkyApplication` | `spakky.core.application.application` | App builder (`.load_plugins()` → `.add()` → `.scan()` → `.start()`) |
 | `ApplicationContext` | `spakky.core.application.application_context` | IoC container context |
 
-**Pod Scopes**: `SINGLETON` (default), `PROTOTYPE`, `CONTEXT`
+**Pod Scopes**: `SINGLETON` (default), `PROTOTYPE`, `CONTEXT`, `DEFINITION` (metadata-only)
 
 **Logging**: Use `getLogger(__name__)` at module level. Do NOT inject loggers.
+
+**Type Safety (Absolute Rule)**: `Any` type is prohibited (99% rule). Use `TypeVar`, `Protocol`, `object`, or `Union` instead. See `CONTRIBUTING.md` for details.
+
+**Type Safety**:
+- Avoid `Any` type; use `TypeVar`, `Protocol`, `object`, or `Union` instead.
+- `Any` is allowed only for unavoidable cases (e.g., external library invariant generics) with inline comment.
+- `# type: ignore` comments are **prohibited**. Find a proper type-safe solution.
+
+**Magic Numbers**: Avoid magic numbers. Define named constants with docstrings. See `CONTRIBUTING.md` for details.
 
 ## Monorepo Rules
 

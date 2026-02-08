@@ -94,7 +94,7 @@ def test_abstract_field_mutability_expect_mutable() -> None:
     """AbstractField 서브클래스 인스턴스가 mutable인지 검증한다."""
     field = String(length=100)
     field.nullable = False
-    assert field.nullable is False
+    assert not field.nullable
     field.name = "updated"
     assert field.name == "updated"
 
