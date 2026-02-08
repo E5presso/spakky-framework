@@ -59,6 +59,12 @@ def test_foreign_key_on_delete_no_action_expect_no_action() -> None:
     assert fk.on_delete == ReferentialAction.NO_ACTION
 
 
+def test_foreign_key_on_delete_set_default_expect_set_default() -> None:
+    """ForeignKey의 on_delete를 SET_DEFAULT로 설정할 수 있는지 검증한다."""
+    fk = ForeignKey(column="user.id", on_delete=ReferentialAction.SET_DEFAULT)
+    assert fk.on_delete == ReferentialAction.SET_DEFAULT
+
+
 def test_foreign_key_on_update_cascade_expect_cascade() -> None:
     """ForeignKey의 on_update를 CASCADE로 설정할 수 있는지 검증한다."""
     fk = ForeignKey(column="user.id", on_update=ReferentialAction.CASCADE)
@@ -111,28 +117,34 @@ def test_foreign_key_not_exists_in_annotated_expect_false() -> None:
 
 def test_referential_action_cascade_value_expect_auto() -> None:
     """ReferentialAction.CASCADE의 값이 올바른지 검증한다."""
-    assert ReferentialAction.CASCADE == "cascade"
+    assert ReferentialAction.CASCADE == "CASCADE"
 
 
 def test_referential_action_set_null_value_expect_auto() -> None:
     """ReferentialAction.SET_NULL의 값이 올바른지 검증한다."""
-    assert ReferentialAction.SET_NULL == "set_null"
+    assert ReferentialAction.SET_NULL == "SET NULL"
+
+
+def test_referential_action_set_default_value_expect_auto() -> None:
+    """ReferentialAction.SET_DEFAULT의 값이 올바른지 검증한다."""
+    assert ReferentialAction.SET_DEFAULT == "SET DEFAULT"
 
 
 def test_referential_action_restrict_value_expect_auto() -> None:
     """ReferentialAction.RESTRICT의 값이 올바른지 검증한다."""
-    assert ReferentialAction.RESTRICT == "restrict"
+    assert ReferentialAction.RESTRICT == "RESTRICT"
 
 
 def test_referential_action_no_action_value_expect_auto() -> None:
     """ReferentialAction.NO_ACTION의 값이 올바른지 검증한다."""
-    assert ReferentialAction.NO_ACTION == "no_action"
+    assert ReferentialAction.NO_ACTION == "NO ACTION"
 
 
 def test_referential_action_is_str_enum() -> None:
     """ReferentialAction이 StrEnum인지 검증한다."""
     assert isinstance(ReferentialAction.CASCADE, str)
     assert isinstance(ReferentialAction.SET_NULL, str)
+    assert isinstance(ReferentialAction.SET_DEFAULT, str)
     assert isinstance(ReferentialAction.RESTRICT, str)
     assert isinstance(ReferentialAction.NO_ACTION, str)
 

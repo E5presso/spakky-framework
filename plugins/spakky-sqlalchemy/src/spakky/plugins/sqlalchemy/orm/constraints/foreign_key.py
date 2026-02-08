@@ -20,6 +20,9 @@ class ReferentialAction(StrEnum):
     SET_NULL = "SET NULL"
     """Set the foreign key column to NULL."""
 
+    SET_DEFAULT = "SET DEFAULT"
+    """Set the foreign key column to its default value."""
+
     RESTRICT = "RESTRICT"
     """Prevent the update/delete if dependent rows exist."""
 
