@@ -77,6 +77,14 @@ uv sync --all-extras                 # Sub-package: install only that package
 4. **Use file tools** (`create_file`, `replace_string_in_file`) instead of `cat`/`echo` redirections
 5. **Verify terminal commands** by executing them before documenting
 
+### MCP Write Operations
+
+**CRITICAL**: Before invoking any MCP tool that performs write operations (e.g., `mcp_github_create_pull_request`, `mcp_github_add_issue_comment`, `mcp_github_create_or_update_file`), you MUST:
+
+1. **Output the full content** in markdown format for user review
+2. **Wait for explicit approval** before executing the tool call
+3. This applies to: PR creation, issue creation/updates, file creation/updates, comments, reviews, etc.
+
 ### Documentation Maintenance Rules
 
 **This section MUST be preserved in all future versions.**
