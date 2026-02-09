@@ -59,7 +59,7 @@ uv sync --all-extras                 # Sub-package: install only that package
 
 ### Tool Usage
 
-1. **Prefer integrated tools** (`runTests`, `get_errors`, `read_file`, etc.) over terminal commands
+1. **Prefer integrated tools** (`execute/runTests`, `get_errors`, `read_file`, etc.) over terminal commands
 2. **Always prefix** Python commands with `uv run` (venv is NOT activated in PTY)
 3. **NEVER use multiline quoted commands** in terminal (heredocs, `python -c "..."`) — PTY will hang
 4. **Use file tools** (`create_file`, `replace_string_in_file`) instead of `cat`/`echo` redirections

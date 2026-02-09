@@ -28,7 +28,7 @@ def test_registry_register_entities_expect_all_registered(
 
 ## 테스트 실행
 
-- 에이전트는 **반드시 `runTests` 도구를 사용**해야 합니다.
+- 에이전트는 **반드시 `execute/runTests` 도구를 사용**해야 합니다.
 - 터미널에서 `pytest`, `uv run pytest`를 직접 실행하지 마세요.
 - 테스트 파일 경로를 명시하여 불필요한 전체 실행을 피하세요.
 

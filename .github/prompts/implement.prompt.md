@@ -44,7 +44,7 @@ tools:
 ## Step 4: 테스트
 
 1. 테스트 파일을 작성하세요 (함수 기반, `test_<function>_<scenario>_expect_<result>` 네이밍).
-2. **`runTests` 도구로 실행**하세요 (터미널 사용 금지).
+2. **`execute/runTests` 도구로 실행**하세요 (터미널 사용 금지).
 3. 모든 테스트가 통과할 때까지 반복하세요.
 
 ## Step 5: 검증
