@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any, Callable, Sequence, TypeAlias
 
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import FuncT
+from spakky.core.common.types import AnyT
 from starlette.routing import Route as StarletteRoute
 
 from fastapi import Response, params
@@ -122,7 +122,7 @@ def route(
     route_class_override: type[APIRoute] | None = None,
     callbacks: list[StarletteRoute] | None = None,
     openapi_extra: dict[str, Any] | None = None,
-) -> Callable[[FuncT], FuncT]:
+) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
     """Decorator to mark a controller method as an API route.
 
     Attaches route configuration to the method which will be registered by
@@ -158,7 +158,7 @@ def route(
         A decorator function that attaches the route configuration.
     """
 
-    def wrapper(method: FuncT) -> FuncT:
+    def wrapper(method: Callable[..., AnyT]) -> Callable[..., AnyT]:
         return Route(
             path=path,
             response_model=response_model,

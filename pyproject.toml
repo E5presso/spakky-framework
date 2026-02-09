@@ -50,6 +50,7 @@ members = [
   "plugins/spakky-security",
   "plugins/spakky-typer",
   "plugins/spakky-kafka",
+  "plugins/spakky-sqlalchemy",
 ]
 
 
@@ -62,6 +63,7 @@ spakky-rabbitmq = { workspace = true }
 spakky-security = { workspace = true }
 spakky-typer = { workspace = true }
 spakky-kafka = { workspace = true }
+spakky-sqlalchemy = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

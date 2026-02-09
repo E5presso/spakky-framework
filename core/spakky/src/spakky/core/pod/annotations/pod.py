@@ -14,7 +14,6 @@ from uuid import UUID, uuid4
 
 from spakky.core.common.annotation import Annotation
 from spakky.core.common.interfaces.equatable import IEquatable
-from spakky.core.common.metadata import get_metadata
 from spakky.core.common.mro import generic_mro
 from spakky.core.common.types import Class, Func, is_optional
 from spakky.core.pod.annotations.primary import Primary
@@ -105,6 +104,13 @@ class Pod(Annotation, IEquatable):
         CONTEXT = auto()
         """Instance scoped to request/context lifecycle."""
 
+        DEFINITION = auto()
+        """Metadata-only scope. Pod is registered but never instantiated.
+
+        Use for entity classes that need discovery during startup but
+        shouldn't be managed as runtime instances (e.g., ORM table definitions).
+        """
+
     id: UUID = field(init=False, default_factory=uuid4)
     """Unique identifier for this Pod instance."""
 
@@ -160,8 +166,8 @@ class Pod(Annotation, IEquatable):
             if parameter.annotation == Parameter.empty:
                 raise CannotDeterminePodTypeError(obj, parameter.name)
             if get_origin(parameter.annotation) is Annotated:
-                type_, metadata = get_metadata(parameter.annotation)
-                qualifiers = [data for data in metadata if isinstance(data, Qualifier)]
+                type_ = Qualifier.get_actual_type(parameter.annotation)
+                qualifiers = Qualifier.all(parameter.annotation)
                 dependencies[parameter.name] = DependencyInfo(
                     name=parameter.name,
                     type_=type_,

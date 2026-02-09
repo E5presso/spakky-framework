@@ -39,6 +39,10 @@
 		{
 			"name": "plugins.kafka",
 			"path": "plugins/spakky-kafka"
+		},
+		{
+			"name": "plugins.sqlalchemy",
+			"path": "plugins/spakky-sqlalchemy"
 		}
 	],
 	"settings": {
@@ -50,8 +54,8 @@
 			"editor.autoIndent": "advanced",
 			"editor.codeActionsOnSave": {
 				"source.organizeImports": "explicit",
-				"source.fixAll": "explicit"
-			}
+				"source.fixAll": "explicit",
+			},
 		},
 		"files.exclude": {
 			"**/.git": true,
@@ -76,11 +80,11 @@
 			"**/*.py,cover": true,
 			"**/.hypothesis/": true,
 			"**/.pytest_cache/": true,
-			"**/cover/": true
+			"**/cover/": true,
 		},
 		"python.defaultInterpreterPath": "${workspaceFolder:root}/.venv/bin/python",
 		"python.testing.pytestPath": "${workspaceFolder:root}/.venv/bin/pytest",
-		"python.languageServer": "Pylance",
+		"python.languageServer": "None",
 		"python.analysis.diagnosticMode": "workspace",
 		"python.analysis.typeCheckingMode": "strict",
 		"python.analysis.autoImportCompletions": true,
@@ -88,9 +92,9 @@
 		"python.analysis.packageIndexDepths": [
 			{
 				"name": "*",
-				"depth": -1,
-				"includeAllSymbols": true
-			}
+				"depth": 10,
+				"includeAllSymbols": true,
+			},
 		],
 		"python.analysis.diagnosticSeverityOverrides": {
 			"reportUnusedCallResult": "none",
@@ -107,9 +111,12 @@
 			"reportUnknownParameterType": "none",
 			"reportUnknownVariableType": "none",
 			"reportMissingTypeStubs": "none",
+			"reportUnnecessaryIsInstance": "warning",
 			"reportIncompatibleMethodOverride": "error",
-			"reportIncompatibleVariableOverride": "error"
+			"reportIncompatibleVariableOverride": "error",
 		},
+		"pyrefly.lspPath": "./.venv/bin/pyrefly",
+		"python.pyrefly.displayTypeErrors": "force-on",
 		"conventionalCommits.scopes": [
 			"all",
 			"core",
@@ -120,14 +127,19 @@
 			"plugin.rabbitmq",
 			"plugin.security",
 			"plugin.typer",
-			"plugin.kafka"
+			"plugin.kafka",
+			"plugin.sqlalchemy",
 		],
 		"github-actions.workflows.pinned.workflows": [
-			"root/.github/workflows/release.yml"
+			"root/.github/workflows/release.yml",
 		],
-		"ruff.importStrategy": "fromEnvironment"
+		"ruff.importStrategy": "fromEnvironment",
 	},
 	"extensions": {
-		"recommendations": ["charliermarsh.ruff"]
+		"recommendations": [
+			"charliermarsh.ruff",
+			"meta.pyrefly",
+			"vivaxy.vscode-conventional-commits",
+		],
 	}
 }

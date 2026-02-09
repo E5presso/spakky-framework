@@ -10,10 +10,11 @@ Usage:
     from spakky.data import IGenericProxy, IAsyncGenericProxy
 """
 
-# Persistency
 # External
 from spakky.data.external.error import AbstractSpakkyExternalError
 from spakky.data.external.proxy import IAsyncGenericProxy, IGenericProxy
+
+# Persistency
 from spakky.data.persistency.error import AbstractSpakkyPersistencyError
 from spakky.data.persistency.repository import (
     EntityNotFoundError,

@@ -17,7 +17,7 @@ from typing import (
     get_origin,
 )
 
-Class: TypeAlias = type[Any]
+Class: TypeAlias = type[object]
 Func: TypeAlias = Callable[..., Any]
 AsyncFunc: TypeAlias = Callable[..., Awaitable[Any]]
 Action: TypeAlias = Callable[..., None]

@@ -138,8 +138,47 @@ uv run ruff check --fix
 
 Spakky is a strictly typed framework. All public APIs and dependency injection points must have type hints.
 
-- Use `typing` module features (e.g., `Protocol`, `Any`, `cast`).
+- Use `typing` module features (e.g., `Protocol`, `TypeVar`, `cast`).
 - We use `pyrefly` (or compatible type checkers) for validation.
+
+#### `Any` Type Usage
+
+**The use of `Any` type should be avoided whenever possible.** Use alternatives first:
+
+- Use `TypeVar` for generic functions instead of `Any` return types.
+- Use `object` as an upper bound when the type is truly unknown.
+- Use `Protocol` to define structural typing contracts.
+- Use `Union` or `|` for multiple known types.
+
+**Allowed exceptions** (must be documented with an inline comment explaining why):
+
+- External library interfaces with invariant generics (e.g., SQLAlchemy `Column[Any]`, `TypeEngine[Any]`).
+- JSON parsing/serialization where the structure is truly dynamic.
+- Decorator implementations that must preserve arbitrary signatures.
+
+```python
+# BAD: Using Any without justification
+from typing import Any
+
+def get_constraint(constraint_type: type) -> Any | None:
+    ...
+
+# GOOD: Using TypeVar
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def get_constraint(constraint_type: type[_T]) -> _T | None:
+    ...
+
+# GOOD: Any with justification (external library invariant generic)
+def create_column() -> Column[Any]:  # Any: SQLAlchemy Column is invariant
+    ...
+```
+
+#### `type: ignore` Comments
+
+**The use of `# type: ignore` comments is prohibited.** Always find a proper type-safe solution or use `Any` with documentation if unavoidable.
 
 ### Logging Pattern
 
@@ -169,6 +208,26 @@ class MyService:
 - **Protocols (Interfaces)**: Must start with `I` (e.g., `IIntegrationEventPublisher`, `IContainer`).
 - **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`, `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent`).
 - **Error Classes**: Must end with `Error` (e.g., `CannotDeterminePodTypeError`).
+
+### Magic Numbers
+
+**Avoid magic numbers.** Use named constants with descriptive names and docstrings.
+
+```python
+# BAD: Magic number
+return String(length=255)
+
+# GOOD: Named constant with documentation
+DEFAULT_STRING_LENGTH: int = 255
+"""Default length for fallback String column type."""
+
+return String(length=DEFAULT_STRING_LENGTH)
+```
+
+**Allowed exceptions** (no constant needed):
+
+- `0`, `1`, `-1` in obvious contexts (e.g., `range(0, n)`, `index + 1`).
+- Common values like `100` for percentage calculations when context is clear.
 
 ### Error Class Guidelines
 

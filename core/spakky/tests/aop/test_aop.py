@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import pytest
 
@@ -9,7 +9,7 @@ from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import After, AfterRaising, AfterReturning, Around, Before
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import AsyncFunc, AsyncFuncT, Func
+from spakky.core.common.types import AnyT, AsyncFunc, Func
 from spakky.core.pod.annotations.pod import Pod
 
 
@@ -468,7 +468,9 @@ async def test_async_aop_with_no_implementations() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()
@@ -498,7 +500,9 @@ async def test_async_aop() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()
@@ -567,7 +571,9 @@ async def test_async_aop_with_another_pod() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()
@@ -632,7 +638,9 @@ async def test_async_aop_with_no_implementations_raise_error() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()
@@ -663,7 +671,9 @@ async def test_async_aop_with_implementations_raise_error() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()
@@ -699,7 +709,9 @@ async def test_async_aop_raise_error() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()
@@ -769,7 +781,9 @@ async def test_async_aop_that_does_not_have_any_aspects() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()
@@ -813,7 +827,9 @@ async def test_async_aop_with_no_method() -> None:
 
     @dataclass
     class AsyncLog(FunctionAnnotation):
-        def __call__(self, obj: AsyncFuncT) -> AsyncFuncT:
+        def __call__(
+            self, obj: Callable[..., Awaitable[AnyT]]
+        ) -> Callable[..., Awaitable[AnyT]]:
             return super().__call__(obj)
 
     @AsyncAspect()

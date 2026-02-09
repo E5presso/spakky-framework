@@ -23,6 +23,7 @@ from spakky.core.pod.interfaces.application_context import (
     IApplicationContext,
 )
 from spakky.core.pod.interfaces.container import (
+    CannotInstantiateDefinitionScopePodError,
     CannotRegisterNonPodObjectError,
     CircularDependencyGraphDetectedError,
     NoSuchPodError,
@@ -234,12 +235,17 @@ class ApplicationContext(IApplicationContext):
     def __initialize_pods(self) -> None:
         """Eagerly initialize all non-lazy Pods.
 
+        Skips DEFINITION scope Pods as they are metadata-only and should not be instantiated.
+
         Raises:
             NoSuchPodError: If a Pod cannot be instantiated.
         """
         # Eagerly initialize non-lazy pods using list comprehension for efficiency
+        # Skip DEFINITION scope pods as they are metadata-only
         non_lazy_pods = [
-            pod for pod in self.__pods.values() if not Lazy.exists(pod.target)
+            pod
+            for pod in self.__pods.values()
+            if not Lazy.exists(pod.target) and pod.scope != Pod.Scope.DEFINITION
         ]
         for pod in non_lazy_pods:
             if (
@@ -258,13 +264,10 @@ class ApplicationContext(IApplicationContext):
         self.__async_services.clear()
 
     def __set_singleton_cache(self, pod: Pod, instance: object) -> None:
-        if pod.scope == Pod.Scope.SINGLETON:
-            with self.__singleton_lock:
-                self.__singleton_cache[pod.name] = instance
+        self.__singleton_cache[pod.name] = instance
 
     def __get_singleton_cache(self, pod: Pod) -> object | None:
-        with self.__singleton_lock:
-            return self.__singleton_cache.get(pod.name)
+        return self.__singleton_cache.get(pod.name)
 
     def __set_context_cache(self, pod: Pod, instance: object) -> None:
         cache = self.__context_cache.get({})
@@ -310,6 +313,10 @@ class ApplicationContext(IApplicationContext):
         if pod is None:
             return None
 
+        # DEFINITION scope pods are metadata-only and cannot be instantiated
+        if pod.scope == Pod.Scope.DEFINITION:
+            raise CannotInstantiateDefinitionScopePodError(pod.type_)
+
         # Try to hit the cache by scope type of pod
         match pod.scope:
             case Pod.Scope.SINGLETON:
@@ -321,7 +328,7 @@ class ApplicationContext(IApplicationContext):
                     if (cached := self.__singleton_cache.get(pod.name)) is not None:
                         return cast(ObjectT, cached)
                     instance = self.__instantiate_pod(pod, dependency_hierarchy)
-                    self.__singleton_cache[pod.name] = instance
+                    self.__set_singleton_cache(pod, instance)
                     return cast(ObjectT, instance)
             case Pod.Scope.CONTEXT:
                 if (cached := self.__get_context_cache(pod)) is not None:
@@ -437,12 +444,16 @@ class ApplicationContext(IApplicationContext):
 
         Returns:
             Set of matching Pod instances.
+
+        Note:
+            DEFINITION scope Pods are excluded as they cannot be instantiated.
         """
         # Use set comprehension for optimal filtering and instantiation
+        # Skip DEFINITION scope pods as they are metadata-only
         return {
             self.__get_internal(type_=pod.type_, name=pod.name)
             for pod in self.__pods.values()
-            if selector(pod)
+            if selector(pod) and pod.scope != Pod.Scope.DEFINITION
         }
 
     def add(self, obj: PodType) -> None:

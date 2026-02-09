@@ -37,6 +37,7 @@ body:
         - spakky-kafka
         - spakky-security
         - spakky-typer
+        - spakky-sqlalchemy
         - Documentation
         - Testing
         - Other
