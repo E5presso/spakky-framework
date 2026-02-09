@@ -27,8 +27,6 @@ Environment::
     GITHUB_OUTPUT: Optional path for writing GitHub Actions step outputs.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
