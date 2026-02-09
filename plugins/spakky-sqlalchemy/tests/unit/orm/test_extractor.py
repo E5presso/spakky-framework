@@ -15,6 +15,7 @@ from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
 from spakky.plugins.sqlalchemy.orm.extractor import (
     ColumnInfo,
     Extractor,
+    MissingRelationshipAnnotationError,
     ModelInfo,
     TableDefinitionNotFoundError,
 )
@@ -26,6 +27,7 @@ from spakky.plugins.sqlalchemy.orm.fields.json import JSON
 from spakky.plugins.sqlalchemy.orm.fields.numeric import Float, Integer, Numeric
 from spakky.plugins.sqlalchemy.orm.fields.string import String
 from spakky.plugins.sqlalchemy.orm.fields.uuid import Uuid
+from spakky.plugins.sqlalchemy.orm.relationships.one_to_many import OneToMany
 from spakky.plugins.sqlalchemy.orm.table import Table
 
 
@@ -518,3 +520,163 @@ def test_extract_skips_private_fields() -> None:
     assert "name" in result.columns
     assert "_internal" not in result.columns
     assert "_events" not in result.columns
+
+
+def test_extract_list_of_table_entity_without_relationship_expect_error() -> None:
+    """@Table 엔티티의 list가 relationship 없이 사용되면 오류가 발생하는지 검증한다."""
+
+    @Table(table_name="items")
+    @dataclass
+    class Item:
+        id: int
+
+    @Table(table_name="containers")
+    @dataclass
+    class Container:
+        id: int
+        items: list[Item]  # OneToMany 없음 - 잠재적 실수
+
+    extractor = Extractor()
+    with pytest.raises(MissingRelationshipAnnotationError) as exc_info:
+        extractor.extract(Container)
+
+    assert exc_info.value.args == ("items", Item)
+
+
+def test_extract_set_of_table_entity_without_relationship_expect_error() -> None:
+    """@Table 엔티티의 set이 relationship 없이 사용되면 오류가 발생하는지 검증한다."""
+
+    @Table(table_name="tags")
+    @dataclass
+    class Tag:
+        id: int
+
+    @Table(table_name="posts")
+    @dataclass
+    class Post:
+        id: int
+        tags: set[Tag]  # OneToMany 없음 - 잠재적 실수
+
+    extractor = Extractor()
+    with pytest.raises(MissingRelationshipAnnotationError) as exc_info:
+        extractor.extract(Post)
+
+    assert exc_info.value.args == ("tags", Tag)
+
+
+def test_extract_list_of_non_table_class_expect_json() -> None:
+    """@Table이 아닌 클래스의 list는 JSON으로 매핑되는지 검증한다."""
+
+    @dataclass
+    class SimpleData:
+        value: int
+
+    @Table(table_name="entities")
+    @dataclass
+    class EntityWithDataList:
+        id: int
+        data: list[SimpleData]
+
+    extractor = Extractor()
+    result = extractor.extract(EntityWithDataList)
+
+    # SimpleData는 @Table이 아니므로 JSON으로 매핑
+    assert "data" in result.columns
+    assert isinstance(result.columns["data"].field_metadata, JSON)
+
+
+def test_extract_list_of_primitive_expect_json() -> None:
+    """기본 타입의 list는 JSON으로 매핑되는지 검증한다."""
+
+    @Table(table_name="entities")
+    @dataclass
+    class EntityWithPrimitiveList:
+        id: int
+        tags: list[str]
+
+    extractor = Extractor()
+    result = extractor.extract(EntityWithPrimitiveList)
+
+    assert "tags" in result.columns
+    assert isinstance(result.columns["tags"].field_metadata, JSON)
+
+
+def test_extract_annotated_list_with_explicit_json_expect_no_error() -> None:
+    """명시적 JSON 어노테이션이 있는 @Table 엔티티 list는 허용되는지 검증한다."""
+
+    @Table(table_name="items")
+    @dataclass
+    class Item:
+        id: int
+
+    @Table(table_name="containers")
+    @dataclass
+    class Container:
+        id: int
+        # 의도적으로 JSON으로 저장 (snapshot 등)
+        items_snapshot: Annotated[list[Item], JSON()]
+
+    extractor = Extractor()
+    result = extractor.extract(Container)
+
+    # 명시적 JSON 필드 메타데이터가 있으면 오류 없이 처리
+    assert "items_snapshot" in result.columns
+    assert isinstance(result.columns["items_snapshot"].field_metadata, JSON)
+
+
+def test_extract_one_to_many_on_non_collection_expect_skipped() -> None:
+    """OneToMany가 비컬렉션 타입에 붙은 경우 relation이 추출되지 않는지 검증한다."""
+
+    @Table(table_name="targets")
+    @dataclass
+    class Target:
+        id: int
+
+    @Table(table_name="sources")
+    @dataclass
+    class Source:
+        id: int
+        # OneToMany는 collection에만 해당하므로 단일 엔티티에는 무효
+        invalid_relation: Annotated[Target, OneToMany(back_populates="source")]
+
+    extractor = Extractor()
+    result = extractor.extract(Source)
+
+    # OneToMany가 단일 타입에 붙으면 relation으로 추출되지 않고 무시됨
+    assert len(result.relations) == 0
+    # column으로도 처리되지 않음 (relationship 필드는 continue로 스킵)
+    assert "invalid_relation" not in result.columns
+
+
+def test_extract_raw_list_without_generic_expect_json() -> None:
+    """제네릭 없는 순수 list 타입이 JSON으로 매핑되는지 검증한다."""
+
+    @Table(table_name="entities")
+    @dataclass
+    class EntityWithRawList:
+        id: int
+        items: list  # type: ignore[type-arg]  # Intentionally raw list for test
+
+    extractor = Extractor()
+    result = extractor.extract(EntityWithRawList)
+
+    assert "items" in result.columns
+    assert isinstance(result.columns["items"].field_metadata, JSON)
+
+
+def test_extract_one_to_many_on_raw_list_expect_skipped() -> None:
+    """OneToMany가 제네릭 없는 list에 붙은 경우 relation이 추출되지 않는지 검증한다."""
+    from collections.abc import Collection
+
+    @Table(table_name="sources")
+    @dataclass
+    class Source:
+        id: int
+        # Collection without type argument
+        items: Annotated[Collection, OneToMany()]  # type: ignore[type-arg]
+
+    extractor = Extractor()
+    result = extractor.extract(Source)
+
+    # OneToMany가 raw Collection에 붙으면 relation으로 추출되지 않음 (args 없음)
+    assert len(result.relations) == 0
