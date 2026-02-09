@@ -1,6 +1,6 @@
 """Type mapper for converting field metadata to SQLAlchemy types."""
 
-from enum import Enum as PyEnum
+from enum import Enum
 from typing import Any, TypeVar, cast
 
 from spakky.core.pod.annotations.pod import Pod
@@ -29,7 +29,7 @@ from spakky.plugins.sqlalchemy.orm.fields.datetime import (
 from spakky.plugins.sqlalchemy.orm.fields.datetime import (
     Time as TimeField,
 )
-from spakky.plugins.sqlalchemy.orm.fields.enum import Enum as EnumField
+from spakky.plugins.sqlalchemy.orm.fields.enum import EnumField
 from spakky.plugins.sqlalchemy.orm.fields.json import JSON as JSONField
 from spakky.plugins.sqlalchemy.orm.fields.numeric import (
     BigInteger as BigIntegerField,
@@ -221,7 +221,7 @@ class TypeMapper:
                 return LargeBinary(length=field_meta.length)
             case EnumField():
                 return SAEnum(
-                    cast(type[PyEnum], field_meta.enum_class),
+                    cast(type[Enum], field_meta.enum_class),
                     native_enum=field_meta.native_enum,
                 )
             case _:

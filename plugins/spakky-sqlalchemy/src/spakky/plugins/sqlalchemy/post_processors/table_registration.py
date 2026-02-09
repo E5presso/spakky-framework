@@ -8,6 +8,7 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
+from spakky.plugins.sqlalchemy.orm.error import InvalidTableScopeError
 from spakky.plugins.sqlalchemy.orm.registry import ModelRegistry
 from spakky.plugins.sqlalchemy.orm.table import Table
 
@@ -78,9 +79,9 @@ class TableRegistrationPostProcessor(IPostProcessor, IContainerAware):
             if not Table.exists(pod_meta.target):
                 continue
 
-            # Skip if not DEFINITION scope (safety check)
+            # Validate DEFINITION scope requirement
             if pod_meta.scope != Pod.Scope.DEFINITION:
-                continue
+                raise InvalidTableScopeError
 
             # Register the entity class with ModelRegistry
             entity_cls = pod_meta.type_

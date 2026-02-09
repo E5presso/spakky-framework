@@ -24,7 +24,7 @@ from spakky.plugins.sqlalchemy.orm.fields.base import AbstractField
 from spakky.plugins.sqlalchemy.orm.fields.binary import Binary
 from spakky.plugins.sqlalchemy.orm.fields.boolean import Boolean
 from spakky.plugins.sqlalchemy.orm.fields.datetime import Date, DateTime, Time
-from spakky.plugins.sqlalchemy.orm.fields.enum import Enum as EnumField
+from spakky.plugins.sqlalchemy.orm.fields.enum import EnumField
 from spakky.plugins.sqlalchemy.orm.fields.json import JSON
 from spakky.plugins.sqlalchemy.orm.fields.numeric import Float, Integer, Numeric
 from spakky.plugins.sqlalchemy.orm.fields.string import String

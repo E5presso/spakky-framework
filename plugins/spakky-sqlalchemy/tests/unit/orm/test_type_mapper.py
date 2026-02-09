@@ -2,7 +2,7 @@
 
 import datetime
 from decimal import Decimal
-from enum import Enum as PyEnum
+from enum import Enum
 from typing import Any
 from uuid import UUID
 
@@ -48,7 +48,7 @@ from spakky.plugins.sqlalchemy.orm.fields.datetime import (
 from spakky.plugins.sqlalchemy.orm.fields.datetime import (
     Time as TimeField,
 )
-from spakky.plugins.sqlalchemy.orm.fields.enum import Enum as EnumField
+from spakky.plugins.sqlalchemy.orm.fields.enum import EnumField
 from spakky.plugins.sqlalchemy.orm.fields.json import JSON as JSONField
 from spakky.plugins.sqlalchemy.orm.fields.numeric import (
     BigInteger as BigIntegerField,
@@ -71,7 +71,7 @@ from spakky.plugins.sqlalchemy.orm.fields.uuid import Uuid as UuidField
 from spakky.plugins.sqlalchemy.orm.type_mapper import TypeMapper
 
 
-class Status(PyEnum):
+class Status(Enum):
     """Sample enum for testing."""
 
     ACTIVE = "active"

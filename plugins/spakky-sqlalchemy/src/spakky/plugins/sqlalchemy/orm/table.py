@@ -6,6 +6,11 @@ from typing import cast
 from spakky.core.pod.annotations.pod import Pod, PodT
 from spakky.core.utils.casing import pascal_to_snake
 
+from spakky.plugins.sqlalchemy.orm.error import (
+    InvalidTableScopeError,
+    InvalidTableTargetError,
+)
+
 
 @dataclass(eq=False)
 class Table(Pod):
@@ -44,7 +49,9 @@ class Table(Pod):
 
     def __call__(self, obj: PodT) -> PodT:
         if not hasattr(obj, "__dataclass_fields__"):
-            raise TypeError("Table annotation can only be applied to dataclass types.")
+            raise InvalidTableTargetError
+        if self.scope != Pod.Scope.DEFINITION:
+            raise InvalidTableScopeError
         if not self.table_name:
             self.table_name = pascal_to_snake(cast(type, obj).__name__)
         return super().__call__(obj)
