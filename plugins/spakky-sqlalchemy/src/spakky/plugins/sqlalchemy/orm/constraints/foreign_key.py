@@ -1,10 +1,13 @@
 """Foreign key constraint metadata for SQLAlchemy ORM."""
 
 from enum import StrEnum
+from typing import Generic
 
 from spakky.core.common.mutability import mutable
+from spakky.core.common.types import ClassT
 
 from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
+from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
 
 
 class ReferentialAction(StrEnum):
@@ -31,7 +34,7 @@ class ReferentialAction(StrEnum):
 
 
 @mutable
-class ForeignKey(AbstractConstraint):
+class ForeignKey(AbstractConstraint, Generic[ClassT]):
     """Foreign key constraint metadata.
 
     Use in Annotated type hints to define a relationship to another table.
@@ -39,29 +42,40 @@ class ForeignKey(AbstractConstraint):
 
     Examples:
         >>> from typing import Annotated
-        >>> from spakky.plugins.sqlalchemy.orm.constraints.foreign_key import (
-        ...     ForeignKey, ReferentialAction
+        >>> from spakky.plugins.sqlalchemy.orm.constraints import (
+        ...     ColumnRef, ForeignKey, ReferentialAction
         ... )
         >>>
+        >>> class User:
+        ...     id: Annotated[int, PrimaryKey()]
+        >>>
         >>> class Post:
-        ...     # Basic foreign key
-        ...     user_id: Annotated[int, ForeignKey("user.id")]
+        ...     # Type-safe foreign key with lambda accessor (recommended)
+        ...     user_id: Annotated[int, ForeignKey(
+        ...         ColumnRef(User, lambda t: t.id)
+        ...     )]
         ...
-        ...     # Foreign key with cascade delete
+        ...     # Type-safe with string field name
         ...     author_id: Annotated[int, ForeignKey(
-        ...         "user.id",
+        ...         ColumnRef(User, "id"),
         ...         on_delete=ReferentialAction.CASCADE
         ...     )]
         ...
-        ...     # Foreign key with SET NULL on delete
+        ...     # String-based (backward compatible)
         ...     category_id: Annotated[int, ForeignKey(
         ...         "category.id",
         ...         on_delete=ReferentialAction.SET_NULL
         ...     )]
     """
 
-    column: str
-    """Referenced column in format 'table.column'."""
+    column: EntityRef[ClassT] | str
+    """Referenced column.
+
+    Can be specified as:
+    - `ColumnRef(Entity, lambda t: t.column)`: Type-safe with lambda accessor
+    - `ColumnRef(Entity, "column")`: Type-safe with string
+    - `str`: String format 'table.column' (backward compatible)
+    """
 
     on_delete: ReferentialAction | None = None
     """Action to take when referenced row is deleted."""

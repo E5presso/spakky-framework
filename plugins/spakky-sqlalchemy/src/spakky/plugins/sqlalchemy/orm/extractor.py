@@ -11,16 +11,18 @@ from typing import (
     Any,
     Callable,
     ClassVar,
+    Generic,
     get_args,
     get_origin,
     get_type_hints,
 )
 
-from spakky.core.common.types import is_optional, remove_none
+from spakky.core.common.types import ClassT, is_optional, remove_none
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.utils.naming import is_public_name
 
 from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
+from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkyORMError
 from spakky.plugins.sqlalchemy.orm.fields.base import AbstractField
 from spakky.plugins.sqlalchemy.orm.fields.binary import Binary
@@ -61,13 +63,13 @@ class ColumnInfo:
 
 
 @dataclass
-class RelationInfo:
+class RelationInfo(Generic[ClassT]):
     """Extracted relationship information."""
 
     name: str
     """Field name in the dataclass."""
 
-    relationship_metadata: AbstractRelationship
+    relationship_metadata: AbstractRelationship[ClassT]
     """The relationship annotation (OneToMany, ManyToOne)."""
 
     target_entity: type
@@ -79,6 +81,12 @@ class RelationInfo:
     nullable: bool
     """Whether the relationship is optional (ManyToOne only)."""
 
+    back_populates_entity: type | str | None = None
+    """The entity class or name containing the back_populates field (from EntityRef)."""
+
+    back_populates_field: str | None = None
+    """The field name for back_populates (resolved from EntityRef or string)."""
+
 
 @dataclass
 class ModelInfo:
@@ -86,7 +94,7 @@ class ModelInfo:
 
     table_name: str
     columns: dict[str, ColumnInfo]
-    relations: list[RelationInfo]
+    relations: list[RelationInfo[type[Any]]]
 
 
 class TableDefinitionNotFoundError(AbstractSpakkyORMError):
@@ -129,7 +137,7 @@ class Extractor:
             raise TableDefinitionNotFoundError()
 
         columns: dict[str, ColumnInfo] = {}
-        relations: list[RelationInfo] = []
+        relations: list[RelationInfo[type[Any]]] = []
         type_hints: dict[str, Any] = get_type_hints(entity_cls, include_extras=True)
         dataclass_fields: dict[str, Field[Any]] = {
             f.name: f for f in fields(entity_cls)
@@ -144,7 +152,7 @@ class Extractor:
 
             actual_type: type[Any | None] = field_type
             field_metadata: AbstractField[Any] | None = None
-            relationship_metadata: AbstractRelationship | None = None
+            relationship_metadata: AbstractRelationship[type[Any]] | None = None
             constraints: list[AbstractConstraint] = []
 
             if get_origin(field_type) is Annotated:
@@ -202,8 +210,8 @@ class Extractor:
         self,
         name: str,
         field_type: type,
-        relationship_metadata: AbstractRelationship,
-    ) -> RelationInfo | None:
+        relationship_metadata: AbstractRelationship[type[Any]],
+    ) -> RelationInfo[type[Any]] | None:
         """Extract relationship information from a field.
 
         Args:
@@ -214,6 +222,17 @@ class Extractor:
         Returns:
             RelationInfo if valid relationship, None otherwise.
         """
+        # Extract back_populates info from EntityRef or string
+        back_populates_entity: type | str | None = None
+        back_populates_field: str | None = None
+        back_populates = relationship_metadata.back_populates
+
+        if isinstance(back_populates, EntityRef):
+            back_populates_entity = back_populates.entity  # type or str
+            back_populates_field = back_populates.field_name
+        elif isinstance(back_populates, str):
+            back_populates_field = back_populates
+
         origin = get_origin(field_type)
 
         # OneToMany: Collection[Entity] pattern
@@ -231,6 +250,8 @@ class Extractor:
                         target_entity=target_entity,
                         collection_class=collection_class,
                         nullable=False,
+                        back_populates_entity=back_populates_entity,
+                        back_populates_field=back_populates_field,
                     )
             return None  # pragma: no cover
 
@@ -244,6 +265,8 @@ class Extractor:
                 target_entity=target_entity,
                 collection_class=None,
                 nullable=nullable,
+                back_populates_entity=back_populates_entity,
+                back_populates_field=back_populates_field,
             )
 
         # OneToOne: Entity or Entity | None pattern (same as ManyToOne but uselist=False)
@@ -256,6 +279,8 @@ class Extractor:
                 target_entity=target_entity,
                 collection_class=None,
                 nullable=nullable,
+                back_populates_entity=back_populates_entity,
+                back_populates_field=back_populates_field,
             )
 
         return None  # pragma: no cover

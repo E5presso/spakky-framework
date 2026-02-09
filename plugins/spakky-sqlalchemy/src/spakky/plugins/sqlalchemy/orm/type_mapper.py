@@ -13,6 +13,7 @@ from spakky.plugins.sqlalchemy.orm.constraints.foreign_key import (
 from spakky.plugins.sqlalchemy.orm.constraints.index import Index
 from spakky.plugins.sqlalchemy.orm.constraints.primary_key import PrimaryKey
 from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
+from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
 from spakky.plugins.sqlalchemy.orm.extractor import ColumnInfo
 from spakky.plugins.sqlalchemy.orm.fields.base import AbstractField
 from spakky.plugins.sqlalchemy.orm.fields.binary import Binary
@@ -273,8 +274,15 @@ class TypeMapper:
         if fk is None:
             return None
 
+        # Handle EntityRef for type-safe column references
+        column_str: str
+        if isinstance(fk.column, EntityRef):
+            column_str = fk.column.to_fk_string()
+        else:
+            column_str = fk.column
+
         return SAForeignKey(
-            fk.column,
+            column_str,
             name=fk.name,
             ondelete=(
                 self._map_referential_action(fk.on_delete)

@@ -2,9 +2,13 @@
 
 from abc import ABC
 from enum import Enum, auto
+from typing import Generic
 
 from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.common.mutability import mutable
+from spakky.core.common.types import ClassT
+
+from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
 
 
 class RelationType(Enum):
@@ -24,7 +28,7 @@ class RelationType(Enum):
 
 
 @mutable
-class AbstractRelationship(AbstractMetadata, ABC):
+class AbstractRelationship(AbstractMetadata, ABC, Generic[ClassT]):
     """Base class for ORM relationship metadata annotations.
 
     Provides common attributes for SQLAlchemy relationship mapping.
@@ -45,10 +49,22 @@ class AbstractRelationship(AbstractMetadata, ABC):
         ...     order: Annotated[Order, ManyToOne(back_populates="items")]
     """
 
-    back_populates: str | None = None
-    """Name of the reverse relationship field on the target entity.
+    back_populates: EntityRef[ClassT] | str | None = None
+    """Reference to the reverse relationship field on the target entity.
 
     Used for bidirectional relationships to keep both sides in sync.
+
+    Can be specified as:
+    - `FieldRef(TargetEntity, "field_name")`: Type-safe reference with explicit entity
+    - `"field_name"`: Simple string reference (backward compatible)
+    - `None`: No back-population (unidirectional relationship)
+
+    Examples:
+        >>> # Type-safe approach (recommended)
+        >>> OneToMany(back_populates=FieldRef(OrderItem, "order"))
+        >>>
+        >>> # String-based approach (backward compatible)
+        >>> OneToMany(back_populates="order")
     """
 
     lazy: str = "select"

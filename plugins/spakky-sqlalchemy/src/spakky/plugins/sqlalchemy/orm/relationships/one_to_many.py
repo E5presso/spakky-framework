@@ -1,15 +1,20 @@
 """OneToMany relationship metadata for SQLAlchemy ORM."""
 
-from spakky.core.common.mutability import mutable
+from typing import Generic
 
+from spakky.core.common.mutability import mutable
+from spakky.core.common.types import ClassT
+
+from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
 from spakky.plugins.sqlalchemy.orm.relationships.base import (
     AbstractRelationship,
     RelationType,
 )
+from spakky.plugins.sqlalchemy.orm.relationships.cascade import CascadeOption
 
 
 @mutable
-class OneToMany(AbstractRelationship):
+class OneToMany(AbstractRelationship[ClassT], Generic[ClassT]):
     """One-to-many relationship metadata.
 
     Use in Annotated type hints to define a one-to-many relationship
@@ -21,14 +26,22 @@ class OneToMany(AbstractRelationship):
     Examples:
         >>> from typing import Annotated
         >>> from dataclasses import dataclass
-        >>> from spakky.plugins.sqlalchemy.orm.relationships import OneToMany
+        >>> from spakky.plugins.sqlalchemy.orm.relationships import OneToMany, CascadeOption
+        >>> from spakky.plugins.sqlalchemy.orm.relationships.field_ref import FieldRef
         >>> from spakky.plugins.sqlalchemy.orm.table import Table
         >>>
         >>> @Table()
         >>> @dataclass
         >>> class Order:
-        ...     # Bidirectional: Order has many OrderItems
-        ...     items: Annotated[list[OrderItem], OneToMany(back_populates="order")]
+        ...     # Type-safe with FieldRef and CascadeOption
+        ...     items: Annotated[
+        ...         list[OrderItem],
+        ...         OneToMany(
+        ...             back_populates=FieldRef(OrderItem, lambda t: t.order),
+        ...             cascade=CascadeOption.ALL | CascadeOption.DELETE_ORPHAN,
+        ...             order_by=FieldRef(OrderItem, lambda t: t.created_at),
+        ...         )
+        ...     ]
         >>>
         >>> @Table()
         >>> @dataclass
@@ -43,20 +56,28 @@ class OneToMany(AbstractRelationship):
         ...     posts: Annotated[set[Post], OneToMany(back_populates="author", lazy="selectin")]
     """
 
-    cascade: str = "all, delete-orphan"
+    cascade: str | CascadeOption = CascadeOption.ALL_DELETE_ORPHAN
     """Cascade operations to apply to related objects.
 
+    Can be specified as:
+    - `CascadeOption` flags: Type-safe with `|` operator support
+    - `str`: String value for backward compatibility
+
     Common values:
-    - "all, delete-orphan": All operations including orphan deletion (default)
-    - "save-update, merge": Only persist and merge
-    - "delete": Delete related when parent deleted
-    - "none": No cascading
+    - `CascadeOption.ALL_DELETE_ORPHAN`: All operations including orphan deletion (default)
+    - `CascadeOption.SAVE_UPDATE | CascadeOption.MERGE`: Only persist and merge
+    - `CascadeOption.DELETE`: Delete related when parent deleted
+    - `CascadeOption.NONE`: No cascading
     """
 
-    order_by: str | None = None
-    """Column name or expression to order the collection by.
+    order_by: EntityRef[ClassT] | str | None = None
+    """Column to order the collection by.
 
-    Example: "created_at.desc()" or "name"
+    Can be specified as:
+    - `FieldRef(Entity, lambda t: t.field)`: Type-safe reference with lambda accessor
+    - `FieldRef(Entity, "field_name")`: Type-safe reference with string
+    - `str`: Column name or expression (e.g., "created_at.desc()")
+    - `None`: No ordering (default)
     """
 
     @property

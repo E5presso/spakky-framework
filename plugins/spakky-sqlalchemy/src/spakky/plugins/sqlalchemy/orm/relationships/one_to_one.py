@@ -1,6 +1,9 @@
 """OneToOne relationship metadata for SQLAlchemy ORM."""
 
+from typing import Generic
+
 from spakky.core.common.mutability import mutable
+from spakky.core.common.types import ClassT
 
 from spakky.plugins.sqlalchemy.orm.relationships.base import (
     AbstractRelationship,
@@ -9,7 +12,7 @@ from spakky.plugins.sqlalchemy.orm.relationships.base import (
 
 
 @mutable
-class OneToOne(AbstractRelationship):
+class OneToOne(AbstractRelationship[ClassT], Generic[ClassT]):
     """One-to-one relationship metadata.
 
     Use in Annotated type hints to define a one-to-one relationship

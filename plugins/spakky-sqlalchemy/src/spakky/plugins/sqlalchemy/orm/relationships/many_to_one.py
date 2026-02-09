@@ -1,15 +1,17 @@
 """ManyToOne relationship metadata for SQLAlchemy ORM."""
 
+from typing import Generic
 from spakky.core.common.mutability import mutable
 
 from spakky.plugins.sqlalchemy.orm.relationships.base import (
     AbstractRelationship,
     RelationType,
 )
+from spakky.core.common.types import ClassT
 
 
 @mutable
-class ManyToOne(AbstractRelationship):
+class ManyToOne(AbstractRelationship[ClassT], Generic[ClassT]):
     """Many-to-one relationship metadata.
 
     Use in Annotated type hints to define a many-to-one relationship

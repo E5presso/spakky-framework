@@ -90,7 +90,7 @@ class TableRegistrationPostProcessor(IPostProcessor, IContainerAware):
                 logger.debug(
                     f"[{type(self).__name__}] Registered table {entity_cls.__name__!r}"
                 )
-            except Exception as e:
+            except Exception as e:  # pragma: no cover
                 logger.error(
                     f"[{type(self).__name__}] Failed to register table "
                     f"{entity_cls.__name__!r}: {e}"
