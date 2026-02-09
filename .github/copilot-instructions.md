@@ -1,6 +1,21 @@
 # Spakky Framework - AI Coding Instructions
 
-> **References**: API usage examples → `README.md`, Coding standards & conventions → `CONTRIBUTING.md`, Event architecture → `ARCHITECTURE.md`
+> **필수 참조 문서** (세션 시작 시 반드시 읽을 것):
+> - [CONTRIBUTING.md](../CONTRIBUTING.md) — 코딩 표준, 에러 클래스 패턴, 네이밍 규칙
+> - [README.md](../README.md) — API 사용 예제
+> - [ARCHITECTURE.md](../ARCHITECTURE.md) — 이벤트 아키텍처, 시스템 구조
+
+## 커스터마이징 구조
+
+이 프로젝트는 3-Layer AI 커스터마이징을 사용합니다:
+
+| Layer | 위치 | 역할 |
+|-------|------|------|
+| Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 페르소나, 행동 규칙 |
+| File Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
+| Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 (`/implement`, `/test`, `/pr`) |
+
+**전용 에이전트 `spakky-dev`를 사용하면 도구 사용 규칙이 구조적으로 적용됩니다.**
 
 ## Overview
 
@@ -31,34 +46,7 @@ Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Us
 
 **Pod Scopes**: `SINGLETON` (default), `PROTOTYPE`, `CONTEXT`, `DEFINITION` (metadata-only)
 
-**Logging**: Use `getLogger(__name__)` at module level. Do NOT inject loggers.
-
-**Type Safety (Absolute Rule)**: `Any` type is prohibited (99% rule). Use `TypeVar`, `Protocol`, `object`, or `Union` instead. See `CONTRIBUTING.md` for details.
-
-**Type Safety**:
-- Avoid `Any` type; use `TypeVar`, `Protocol`, `object`, or `Union` instead.
-- `Any` is allowed only for unavoidable cases (e.g., external library invariant generics) with inline comment.
-- `# type: ignore` comments are **prohibited**. Find a proper type-safe solution.
-
-**Magic Numbers**: Avoid magic numbers. Define named constants with docstrings. See `CONTRIBUTING.md` for details.
-
 ## Monorepo Rules
-
-### Tests
-
-**CRITICAL**: Tests MUST be run from each package directory, NOT from root.
-
-```bash
-cd core/spakky && uv run pytest        # Core
-cd core/spakky-domain && uv run pytest  # Domain
-cd plugins/spakky-fastapi && uv run pytest  # etc.
-```
-
-### Test Style
-
-- **Function-based only** (no `class TestXxx`)
-- **Naming**: `test_<function>_<scenario>_expect_<result>`
-- **Docstrings**: Required for each test function
 
 ### Dependencies
 
