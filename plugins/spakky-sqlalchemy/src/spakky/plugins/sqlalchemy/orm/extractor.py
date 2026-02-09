@@ -74,7 +74,7 @@ class Extractor:
         """
         table_annotation = Table.get_or_none(entity_cls)
         if table_annotation is None:
-            raise TableDefinitionNotFoundError
+            raise TableDefinitionNotFoundError()
 
         columns: dict[str, ColumnInfo] = {}
         type_hints: dict[str, Any] = get_type_hints(entity_cls, include_extras=True)

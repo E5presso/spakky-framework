@@ -49,9 +49,9 @@ class Table(Pod):
 
     def __call__(self, obj: PodT) -> PodT:
         if not hasattr(obj, "__dataclass_fields__"):
-            raise InvalidTableTargetError
+            raise InvalidTableTargetError()
         if self.scope != Pod.Scope.DEFINITION:
-            raise InvalidTableScopeError
+            raise InvalidTableScopeError()
         if not self.table_name:
             self.table_name = pascal_to_snake(cast(type, obj).__name__)
         return super().__call__(obj)
