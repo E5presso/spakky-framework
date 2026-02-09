@@ -89,27 +89,27 @@ class Extractor:
         ):
             dataclass_field: Field[Any] = dataclass_fields[name]
 
-            field_type: type[Any | None] = field_type
+            actual_type: type[Any | None] = field_type
             field_metadata: AbstractField[Any] | None = None
             constraints: list[AbstractConstraint] = []
 
             if get_origin(field_type) is Annotated:
-                field_type = AbstractField.get_actual_type(field_type)
+                actual_type = AbstractField.get_actual_type(field_type)
                 field_metadata = AbstractField.get_or_none(field_type)
                 constraints = AbstractConstraint.all(field_type)
 
-            nullable: bool = is_optional(field_type)
+            nullable: bool = is_optional(actual_type)
             if nullable:
-                field_type = remove_none(field_type)
+                actual_type = remove_none(actual_type)
 
             if field_metadata is None:
-                field_metadata = self._infer_field_type(field_type)
+                field_metadata = self._infer_field_type(actual_type)
 
             columns[name] = ColumnInfo(
                 name=name,
                 field_metadata=field_metadata,
                 constraints=constraints,
-                python_type=field_type,
+                python_type=actual_type,
                 default=(
                     dataclass_field.default
                     if dataclass_field.default is not MISSING
