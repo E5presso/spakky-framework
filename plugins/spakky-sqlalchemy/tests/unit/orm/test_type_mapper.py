@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from spakky.core.common.mutability import mutable
 from sqlalchemy import (
     JSON,
     BigInteger,
@@ -34,6 +35,7 @@ from spakky.plugins.sqlalchemy.orm.constraints.index import Index
 from spakky.plugins.sqlalchemy.orm.constraints.primary_key import PrimaryKey
 from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
 from spakky.plugins.sqlalchemy.orm.extractor import ColumnInfo
+from spakky.plugins.sqlalchemy.orm.fields.base import AbstractField
 from spakky.plugins.sqlalchemy.orm.fields.binary import Binary
 from spakky.plugins.sqlalchemy.orm.fields.boolean import Boolean as BooleanField
 from spakky.plugins.sqlalchemy.orm.fields.datetime import (
@@ -498,3 +500,26 @@ def test_create_column_with_autoincrement_primary_key_expect_autoincrement(
     column = type_mapper.create_column("id", col_info)
 
     assert column.autoincrement is True
+
+
+def test_create_column_with_unknown_field_type_expect_string_fallback(
+    type_mapper: TypeMapper,
+) -> None:
+    """알 수 없는 필드 타입에 대해 String fallback이 적용되는지 검증한다."""
+
+    @mutable
+    class UnknownField(AbstractField[str]):
+        """Unknown field type for testing fallback."""
+
+    col_info = ColumnInfo(
+        name="custom",
+        field_metadata=UnknownField(),
+        constraints=[],
+        python_type=str,
+        nullable=False,
+    )
+
+    column = type_mapper.create_column("custom", col_info)
+
+    assert isinstance(column.type, String)
+    assert column.type.length == 255  # DEFAULT_STRING_LENGTH
