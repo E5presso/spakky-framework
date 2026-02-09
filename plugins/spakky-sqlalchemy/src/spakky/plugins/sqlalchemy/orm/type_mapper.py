@@ -92,11 +92,8 @@ class TypeMapper:
     the ModelRegistry.
     """
 
-    def create_column(
-        self, name: str, col_info: ColumnInfo
-    ) -> Column[
-        Any
-    ]:  # Any: SQLAlchemy Column is invariant, actual type varies at runtime
+    # Any: SQLAlchemy Column is invariant, actual type varies at runtime
+    def create_column(self, name: str, col_info: ColumnInfo) -> Column[Any]:
         """Create a SQLAlchemy Column from column info.
 
         Args:
