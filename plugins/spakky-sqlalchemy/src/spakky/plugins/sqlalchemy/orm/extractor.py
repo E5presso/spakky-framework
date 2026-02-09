@@ -76,7 +76,6 @@ class Extractor:
         if table_annotation is None:
             raise TableDefinitionNotFoundError
 
-        table_name = table_annotation.table_name
         columns: dict[str, ColumnInfo] = {}
         type_hints: dict[str, Any] = get_type_hints(entity_cls, include_extras=True)
         dataclass_fields: dict[str, Field[Any]] = {
@@ -90,27 +89,27 @@ class Extractor:
         ):
             dataclass_field: Field[Any] = dataclass_fields[name]
 
-            final_type: type[Any | None] = field_type
-            field_meta: AbstractField[Any] | None = None
+            field_type: type[Any | None] = field_type
+            field_metadata: AbstractField[Any] | None = None
             constraints: list[AbstractConstraint] = []
 
             if get_origin(field_type) is Annotated:
-                final_type = AbstractField.get_actual_type(field_type)
-                field_meta = AbstractField.get_or_none(field_type)
+                field_type = AbstractField.get_actual_type(field_type)
+                field_metadata = AbstractField.get_or_none(field_type)
                 constraints = AbstractConstraint.all(field_type)
 
-            nullable: bool = is_optional(final_type)
+            nullable: bool = is_optional(field_type)
             if nullable:
-                final_type = remove_none(final_type)
+                field_type = remove_none(field_type)
 
-            if field_meta is None:
-                field_meta = self._infer_field_type(final_type)
+            if field_metadata is None:
+                field_metadata = self._infer_field_type(field_type)
 
             columns[name] = ColumnInfo(
                 name=name,
-                field_metadata=field_meta,
+                field_metadata=field_metadata,
                 constraints=constraints,
-                python_type=final_type,
+                python_type=field_type,
                 default=(
                     dataclass_field.default
                     if dataclass_field.default is not MISSING
@@ -124,7 +123,7 @@ class Extractor:
                 nullable=nullable,
             )
 
-        return ModelInfo(table_name=table_name, columns=columns)
+        return ModelInfo(table_name=table_annotation.table_name, columns=columns)
 
     def _infer_field_type(self, type_hint: type[Any]) -> AbstractField[Any]:
         """Infer AbstractField from Python type."""
