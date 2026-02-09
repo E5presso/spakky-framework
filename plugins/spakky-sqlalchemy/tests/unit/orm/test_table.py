@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 from spakky.core.pod.annotations.pod import Pod
 
+from spakky.plugins.sqlalchemy.orm.error import InvalidTableTargetError
 from spakky.plugins.sqlalchemy.orm.table import Table
 
 
@@ -46,11 +47,9 @@ def test_table_with_single_word_class_expect_lowercase() -> None:
 
 
 def test_table_applied_to_non_dataclass_expect_type_error() -> None:
-    """Table annotation이 dataclass가 아닌 클래스에 적용되면 TypeError가 발생하는지 검증한다."""
+    """Table annotation이 dataclass가 아닌 클래스에 적용되면 InvalidTableTargetError가 발생하는지 검증한다."""
 
-    with pytest.raises(
-        TypeError, match="Table annotation can only be applied to dataclass types."
-    ):
+    with pytest.raises(InvalidTableTargetError):
 
         @Table()
         class NotADataclass:
