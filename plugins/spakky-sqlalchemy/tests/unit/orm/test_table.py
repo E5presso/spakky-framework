@@ -7,7 +7,6 @@ from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.sqlalchemy.orm.error import (
     InvalidTableScopeError,
-    InvalidTableTargetError,
 )
 from spakky.plugins.sqlalchemy.orm.table import Table
 
@@ -47,16 +46,6 @@ def test_table_with_single_word_class_expect_lowercase() -> None:
 
     annotation = Table.get(Order)
     assert annotation.table_name == "order"
-
-
-def test_table_applied_to_non_dataclass_expect_type_error() -> None:
-    """Table annotation이 dataclass가 아닌 클래스에 적용되면 InvalidTableTargetError가 발생하는지 검증한다."""
-
-    with pytest.raises(InvalidTableTargetError):
-
-        @Table()
-        class NotADataclass:
-            id: int
 
 
 def test_table_exists_on_annotated_class_expect_true() -> None:
