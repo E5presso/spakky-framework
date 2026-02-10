@@ -29,8 +29,8 @@ class UserStatus(Enum):
     SUSPENDED = "suspended"
 
 
-@Table(table_name="users")
 @dataclass
+@Table(table_name="users")
 class User:
     """Test user entity."""
 
@@ -44,8 +44,8 @@ class User:
         """Initialize entity."""
 
 
-@Table(table_name="posts")
 @dataclass
+@Table(table_name="posts")
 class Post:
     """Test post entity with foreign key."""
 
@@ -68,8 +68,8 @@ class Post:
         """Initialize entity."""
 
 
-@Table(table_name="comments")
 @dataclass
+@Table(table_name="comments")
 class Comment:
     """Test comment entity with multiple foreign keys."""
 

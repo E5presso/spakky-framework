@@ -21,8 +21,8 @@ from spakky.plugins.sqlalchemy.orm.relationships.one_to_one import OneToOne
 from spakky.plugins.sqlalchemy.orm.table import Table
 
 
-@Table(table_name="authors")
 @dataclass
+@Table(table_name="authors")
 class Author:
     """Author entity with OneToMany and OneToOne relationships."""
 
@@ -50,8 +50,8 @@ class Author:
         """Initialize entity."""
 
 
-@Table(table_name="articles")
 @dataclass
+@Table(table_name="articles")
 class Article:
     """Article entity with ManyToOne relationship."""
 
@@ -78,8 +78,8 @@ class Article:
         """Initialize entity."""
 
 
-@Table(table_name="profiles")
 @dataclass
+@Table(table_name="profiles")
 class Profile:
     """Profile entity with OneToOne back-reference."""
 

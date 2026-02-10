@@ -8,7 +8,6 @@ from spakky.core.utils.casing import pascal_to_snake
 
 from spakky.plugins.sqlalchemy.orm.error import (
     InvalidTableScopeError,
-    InvalidTableTargetError,
 )
 
 
@@ -48,8 +47,6 @@ class Table(Pod):
     """The scope is fixed to DEFINITION for table definitions."""
 
     def __call__(self, obj: PodT) -> PodT:
-        if not hasattr(obj, "__dataclass_fields__"):
-            raise InvalidTableTargetError()
         if self.scope != Pod.Scope.DEFINITION:
             raise InvalidTableScopeError()
         if not self.table_name:

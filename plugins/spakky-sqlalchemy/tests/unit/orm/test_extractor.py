@@ -12,6 +12,7 @@ import pytest
 from spakky.plugins.sqlalchemy.orm.constraints.index import Index
 from spakky.plugins.sqlalchemy.orm.constraints.primary_key import PrimaryKey
 from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
+from spakky.plugins.sqlalchemy.orm.error import InvalidTableTargetError
 from spakky.plugins.sqlalchemy.orm.extractor import (
     ColumnInfo,
     Extractor,
@@ -36,6 +37,18 @@ class UserRole(Enum):
 
     ADMIN = "admin"
     USER = "user"
+
+
+def test_extract_without_dataclass_expect_error() -> None:
+    """Dataclass가 아닌 클래스에서 추출 시 오류가 발생하는지 검증한다."""
+
+    @Table(table_name="not_a_dataclass")
+    class NotADataclass:
+        id: int
+
+    extractor = Extractor()
+    with pytest.raises(InvalidTableTargetError):
+        extractor.extract(NotADataclass)
 
 
 def test_extract_without_table_annotation_expect_error() -> None:

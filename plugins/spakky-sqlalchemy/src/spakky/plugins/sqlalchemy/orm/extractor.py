@@ -23,7 +23,10 @@ from spakky.core.utils.naming import is_public_name
 
 from spakky.plugins.sqlalchemy.orm.constraints.base import AbstractConstraint
 from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
-from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkyORMError
+from spakky.plugins.sqlalchemy.orm.error import (
+    AbstractSpakkyORMError,
+    InvalidTableTargetError,
+)
 from spakky.plugins.sqlalchemy.orm.fields.base import AbstractField
 from spakky.plugins.sqlalchemy.orm.fields.binary import Binary
 from spakky.plugins.sqlalchemy.orm.fields.boolean import Boolean
@@ -132,6 +135,9 @@ class Extractor:
         Returns:
             ModelInfo: The extracted model information.
         """
+
+        if hasattr(entity_cls, "__dataclass_fields__") is False:
+            raise InvalidTableTargetError()
         table_annotation = Table.get_or_none(entity_cls)
         if table_annotation is None:
             raise TableDefinitionNotFoundError()
