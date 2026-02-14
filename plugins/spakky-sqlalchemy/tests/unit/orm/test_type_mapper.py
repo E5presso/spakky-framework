@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from spakky.core.common.mutability import mutable
 from sqlalchemy import (
     JSON,
     BigInteger,
@@ -33,7 +34,9 @@ from spakky.plugins.sqlalchemy.orm.constraints.foreign_key import (
 from spakky.plugins.sqlalchemy.orm.constraints.index import Index
 from spakky.plugins.sqlalchemy.orm.constraints.primary_key import PrimaryKey
 from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
+from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
 from spakky.plugins.sqlalchemy.orm.extractor import ColumnInfo
+from spakky.plugins.sqlalchemy.orm.fields.base import AbstractField
 from spakky.plugins.sqlalchemy.orm.fields.binary import Binary
 from spakky.plugins.sqlalchemy.orm.fields.boolean import Boolean as BooleanField
 from spakky.plugins.sqlalchemy.orm.fields.datetime import (
@@ -498,3 +501,62 @@ def test_create_column_with_autoincrement_primary_key_expect_autoincrement(
     column = type_mapper.create_column("id", col_info)
 
     assert column.autoincrement is True
+
+
+def test_create_column_with_unknown_field_type_expect_string_fallback(
+    type_mapper: TypeMapper,
+) -> None:
+    """알 수 없는 필드 타입에 대해 String fallback이 적용되는지 검증한다."""
+
+    @mutable
+    class UnknownField(AbstractField[str]):
+        """Unknown field type for testing fallback."""
+
+    col_info = ColumnInfo(
+        name="custom",
+        field_metadata=UnknownField(),
+        constraints=[],
+        python_type=str,
+        nullable=False,
+    )
+
+    column = type_mapper.create_column("custom", col_info)
+
+    assert isinstance(column.type, String)
+    assert column.type.length == 255  # DEFAULT_STRING_LENGTH
+
+
+def test_create_column_with_foreign_key_string_column_expect_fk_created(
+    type_mapper: TypeMapper,
+) -> None:
+    """ForeignKey column이 문자열일 때 외래키가 올바르게 생성되는지 검증한다."""
+    col_info = ColumnInfo(
+        name="category_id",
+        field_metadata=IntegerField(),
+        constraints=[ForeignKey(column="categories.id")],  # 문자열 column
+        python_type=int,
+        nullable=False,
+    )
+
+    column = type_mapper.create_column("category_id", col_info)
+
+    fk = list(column.foreign_keys)[0]
+    assert "categories.id" in str(fk)
+
+
+def test_create_column_with_foreign_key_entity_ref_column_expect_fk_created(
+    type_mapper: TypeMapper,
+) -> None:
+    """ForeignKey column이 EntityRef일 때 외래키가 올바르게 생성되는지 검증한다."""
+    col_info = ColumnInfo(
+        name="author_id",
+        field_metadata=IntegerField(),
+        constraints=[ForeignKey(column=EntityRef("User", "id"))],  # EntityRef column
+        python_type=int,
+        nullable=False,
+    )
+
+    column = type_mapper.create_column("author_id", col_info)
+
+    fk = list(column.foreign_keys)[0]
+    assert "user.id" in str(fk)

@@ -217,3 +217,112 @@ def test_register_entity_with_primary_key_expect_primary_key_column(
 
     assert sa_table.columns["id"].primary_key is True
     assert sa_table.columns["name"].primary_key is False
+
+
+def test_register_entity_with_named_unique_expect_table_level_constraint(
+    model_registry: ModelRegistry,
+) -> None:
+    """Unique(name=...)가 테이블 레벨 UniqueConstraint로 생성되는지 검증한다."""
+    from sqlalchemy import UniqueConstraint
+
+    from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
+
+    @Table(table_name="users_named_unique")
+    @dataclass
+    class UserWithNamedUnique:
+        id: Annotated[int, IntegerField(), PrimaryKey()]
+        email: Annotated[str, StringField(length=255), Unique(name="uq_user_email")]
+
+    sa_table = model_registry.register(UserWithNamedUnique)
+
+    # Column-level unique should be None (handled at table level)
+    assert sa_table.columns["email"].unique is None
+
+    # Table-level constraint should exist
+    constraints = [c for c in sa_table.constraints if isinstance(c, UniqueConstraint)]
+    named_constraints = [c for c in constraints if c.name == "uq_user_email"]
+    assert len(named_constraints) == 1
+
+
+def test_register_entity_with_unnamed_unique_expect_column_level(
+    model_registry: ModelRegistry,
+) -> None:
+    """Unique(name 없음)가 컬럼 레벨 unique로 생성되는지 검증한다."""
+    from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
+
+    @Table(table_name="users_unnamed_unique")
+    @dataclass
+    class UserWithUnnamedUnique:
+        id: Annotated[int, IntegerField(), PrimaryKey()]
+        email: Annotated[str, StringField(length=255), Unique()]
+
+    sa_table = model_registry.register(UserWithUnnamedUnique)
+
+    # Column-level unique should be True
+    assert sa_table.columns["email"].unique is True
+
+
+def test_register_entity_with_named_index_expect_table_level_index(
+    model_registry: ModelRegistry,
+) -> None:
+    """Index(name=...)가 테이블 레벨 Index로 생성되는지 검증한다."""
+    from spakky.plugins.sqlalchemy.orm.constraints.index import Index
+
+    @Table(table_name="products_named_index")
+    @dataclass
+    class ProductWithNamedIndex:
+        id: Annotated[int, IntegerField(), PrimaryKey()]
+        sku: Annotated[str, StringField(length=50), Index(name="idx_product_sku")]
+
+    sa_table = model_registry.register(ProductWithNamedIndex)
+
+    # Column-level index should be None (handled at table level)
+    assert sa_table.columns["sku"].index is None
+
+    # Table-level index should exist
+    indexes = list(sa_table.indexes)
+    assert len(indexes) == 1
+    assert indexes[0].name == "idx_product_sku"
+
+
+def test_register_entity_with_unique_index_expect_table_level_unique_index(
+    model_registry: ModelRegistry,
+) -> None:
+    """Index(unique=True)가 테이블 레벨 unique Index로 생성되는지 검증한다."""
+    from spakky.plugins.sqlalchemy.orm.constraints.index import Index
+
+    @Table(table_name="products_unique_index")
+    @dataclass
+    class ProductWithUniqueIndex:
+        id: Annotated[int, IntegerField(), PrimaryKey()]
+        sku: Annotated[
+            str,
+            StringField(length=50),
+            Index(name="idx_product_sku_unique", unique=True),
+        ]
+
+    sa_table = model_registry.register(ProductWithUniqueIndex)
+
+    # Find the index and verify it's unique
+    indexes = list(sa_table.indexes)
+    assert len(indexes) == 1
+    assert indexes[0].unique is True
+    assert indexes[0].name == "idx_product_sku_unique"
+
+
+def test_register_entity_with_unnamed_index_expect_column_level(
+    model_registry: ModelRegistry,
+) -> None:
+    """Index(name 없음, unique=False)가 컬럼 레벨 index로 생성되는지 검증한다."""
+    from spakky.plugins.sqlalchemy.orm.constraints.index import Index
+
+    @Table(table_name="products_unnamed_index")
+    @dataclass
+    class ProductWithUnnamedIndex:
+        id: Annotated[int, IntegerField(), PrimaryKey()]
+        name: Annotated[str, StringField(length=100), Index()]
+
+    sa_table = model_registry.register(ProductWithUnnamedIndex)
+
+    # Column-level index should be True
+    assert sa_table.columns["name"].index is True

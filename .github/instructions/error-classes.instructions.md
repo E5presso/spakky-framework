@@ -28,9 +28,10 @@ class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
     message = "Cannot use optional return type in pod"
 ```
 
-## 복잡 에러 (컨텍스트 정보 필요)
+## 구조화된 에러 (컨텍스트 데이터 필요)
 
-`__init__`, `__str__`을 오버라이드하고, 컨텍스트를 인스턴스 속성으로 저장합니다.
+`__init__`을 오버라이드하여 구조화된 데이터를 저장합니다.
+**`__str__`을 오버라이드하지 마세요** — 상세 메시지는 로그에서 처리합니다.
 
 ```python
 class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
@@ -42,25 +43,26 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
         super().__init__()
         self.dependency_chain = dependency_chain
 
-    def __str__(self) -> str:
-        lines = [self.message, "Dependency path:"]
-        for i, type_ in enumerate(self.dependency_chain):
-            type_name = type_.__name__
-            indent = "  " * i
-            arrow = "└─> " if i > 0 else ""
-            lines.append(f"{indent}{arrow}{type_name}")
-        return "\n".join(lines)
+# 로깅 (상세 메시지는 여기서):
+except CircularDependencyGraphDetectedError as e:
+    logger.error(
+        "Circular dependency detected: %s",
+        " -> ".join(t.__name__ for t in e.dependency_chain),
+    )
 ```
 
 ## 핵심 규칙
 
 - `message`는 항상 **클래스 속성**으로 정의 (`ClassVar` 타입 힌트는 루트 클래스에만)
+- **에러는 구조화된 데이터, 서술적 텍스트가 아님** — 상세 내용은 로그에서 처리
+- **f-string으로 서술적 에러 메시지를 작성하지 마세요**
+- **`__str__`을 오버라이드하지 마세요** — 클래스 `message` 속성 사용
 - `__init__` 오버라이드 시 반드시 `super().__init__()` 호출
-- 컨텍스트 정보는 인스턴스 속성으로 저장 (프로그래밍적 접근 가능)
-- `__str__`은 사람이 읽을 수 있는 메시지, `__repr__`은 디버깅용 (선택)
 - 추상 베이스 클래스는 `ABC` 다중 상속, 본문은 `...` (Ellipsis)
 
 ## 금지 사항
 
 - `TypeError`, `ValueError` 등 빌트인 예외를 직접 raise하지 마세요. 커스텀 에러를 정의하세요.
 - `ClassVar[str]`은 루트 `AbstractSpakkyFrameworkError`에만 사용합니다. 하위 클래스에서는 단순히 `message = "..."`.
+- **`__str__`을 오버라이드하여 서술적 메시지를 작성하지 마세요.**
+- **f-string을 사용하여 에러 메시지를 descriptive하게 작성하지 마세요.**

@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import AsyncGenerator, Generator
-from contextlib import asynccontextmanager
 from logging import Formatter, StreamHandler, getLogger
 from typing import Any
 
@@ -55,21 +54,6 @@ def database_url_fixture(postgres_container: PostgresContainer) -> str:
     return sync_url.replace("postgresql://", "postgresql+psycopg://").replace(
         "postgresql+psycopg2://", "postgresql+psycopg://"
     )
-
-
-@pytest.fixture(name="sync_database_url", scope="package")
-def sync_database_url_fixture(postgres_container: PostgresContainer) -> str:
-    """Get the sync database URL from the container.
-
-    Args:
-        postgres_container: PostgreSQL container.
-
-    Returns:
-        Sync database URL for SQLAlchemy.
-    """
-    sync_url = postgres_container.get_connection_url()
-    # Use psycopg driver for sync
-    return sync_url.replace("postgresql://", "postgresql+psycopg://")
 
 
 @pytest.fixture(name="engine", scope="package")
@@ -134,16 +118,12 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
 
     yield app
 
-    # Dispose SQLAlchemy registry to clear mappers before next test
-    model_registry = app.container.get(ModelRegistry)
-    model_registry.sqlalchemy_registry.dispose()
-
     app.stop()
     logger.removeHandler(console)
 
 
 @pytest.fixture(name="registry", scope="function")
-def registry_fixture(app: SpakkyApplication) -> ModelRegistry:
+def registry_fixture(app: SpakkyApplication) -> Generator[ModelRegistry, Any, None]:
     """Get the ModelRegistry from the application container.
 
     Args:
@@ -152,7 +132,11 @@ def registry_fixture(app: SpakkyApplication) -> ModelRegistry:
     Returns:
         ModelRegistry instance.
     """
-    return app.container.get(ModelRegistry)
+    registry = app.container.get(ModelRegistry)
+
+    yield registry
+
+    registry.sqlalchemy_registry.dispose()
 
 
 @pytest.fixture(name="create_tables", scope="function")
@@ -202,24 +186,3 @@ async def session_fixture(
     async with session_factory() as session:
         yield session
         await session.rollback()
-
-
-@asynccontextmanager
-async def get_session(
-    session_factory: async_sessionmaker[AsyncSession],
-) -> AsyncGenerator[AsyncSession, None]:
-    """Context manager for getting a session.
-
-    Args:
-        session_factory: Async session factory.
-
-    Yields:
-        AsyncSession instance.
-    """
-    async with session_factory() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise

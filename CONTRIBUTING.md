@@ -32,10 +32,10 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
 
    > **💡 Understanding `uv sync` options:**
    >
-   > | Command | When to use | Description |
-   > |---------|-------------|-------------|
-   > | `uv sync --all-packages --all-extras` | **Root directory** | Installs all workspace packages and their optional dependencies. Use this when developing across multiple packages. |
-   > | `uv sync --all-extras` | **Sub-package directory** | Installs only the current package and its optional dependencies. Use this when working on a single plugin (e.g., `cd plugins/spakky-fastapi`). |
+   > | Command                               | When to use               | Description                                                                                                                                    |
+   > | ------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+   > | `uv sync --all-packages --all-extras` | **Root directory**        | Installs all workspace packages and their optional dependencies. Use this when developing across multiple packages.                            |
+   > | `uv sync --all-extras`                | **Sub-package directory** | Installs only the current package and its optional dependencies. Use this when working on a single plugin (e.g., `cd plugins/spakky-fastapi`). |
    >
    > The `--all-packages` flag is only needed at the workspace root to include all monorepo packages. When you `cd` into a sub-package, that package becomes the context, so `--all-extras` alone is sufficient.
 
@@ -47,7 +47,7 @@ Each sub-project can be opened independently in VS Code while still using the ro
 
    ```json
    {
-     "python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python"
+   	"python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python"
    }
    ```
 
@@ -196,6 +196,7 @@ class MyService:
 ```
 
 **Key points**:
+
 - Declare a module-level `logger` using `getLogger(__name__)`
 - Do NOT inject loggers via constructor or `ILoggerAware` (removed)
 - `ApplicationContext` no longer accepts a `logger` parameter
@@ -242,9 +243,9 @@ class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
     message = "Cannot use optional return type in pod"
 ```
 
-**For errors with context or detailed information**:
+**For structured errors** (context data needed for programmatic access):
 
-Override `__init__`, `__str__`, and optionally `__repr__` to provide rich error information:
+Override `__init__` to store structured data. **Do NOT override `__str__`** — detailed messages belong in logs, not errors:
 
 ```python
 class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
@@ -256,27 +257,26 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
         super().__init__()
         self.dependency_chain = dependency_chain
 
-    def __str__(self) -> str:
-        """Format with visual dependency tree."""
-        lines = [self.message, "Dependency path:"]
-        for i, type_ in enumerate(self.dependency_chain):
-            type_name = type_.__name__
-            indent = "  " * i
-            arrow = "└─> " if i > 0 else ""
-            lines.append(f"{indent}{arrow}{type_name}")
-        return "\n".join(lines)
+# Logging (where detailed messages belong):
+except CircularDependencyGraphDetectedError as e:
+    logger.error(
+        "Circular dependency detected: %s",
+        " -> ".join(t.__name__ for t in e.dependency_chain),
+    )
 ```
 
 **Guidelines**:
+
+- **Errors are structured data, not descriptive text** — logs handle details
+- **Do NOT use f-strings** to build descriptive error messages
+- **Do NOT override `__str__`** — use the class `message` attribute
 - Always call `super().__init__()` in custom `__init__`
-- Store context information as instance attributes
-- Use `__str__` for human-readable error messages
-- Use `__repr__` for debugging information (optional)
 - Keep `message` class attribute for basic error identification
 
 **Key rules**:
-- Store context as instance attributes for programmatic access
-- Use descriptive f-string messages with the problematic values
+
+- Simple errors: `message` class attribute only
+- Structured errors: `__init__` for data, no `__str__` override
 
 ### Documentation
 
@@ -336,7 +336,7 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
     spakky-name = "spakky.plugins.name.main:initialize"
     ```
 
-3.  **Initialization**: Implement the `initialize` function in `main.py`.
+5.  **Initialization**: Implement the `initialize` function in `main.py`.
 
     ```python
     from spakky.core.application.application import SpakkyApplication
@@ -346,7 +346,7 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
         pass
     ```
 
-5.  **Version Synchronization**: Add the new package to root `pyproject.toml`'s `[tool.commitizen]` version_files list.
+6.  **Version Synchronization**: Add the new package to root `pyproject.toml`'s `[tool.commitizen]` version_files list.
 
     ```toml
     [tool.commitizen]
@@ -356,7 +356,7 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
     ]
     ```
 
-6.  **Package Registration**: All workspace packages are automatically detected from root `pyproject.toml`'s `[tool.uv.workspace]` members. No manual registration needed in scripts.
+7.  **Package Registration**: All workspace packages are automatically detected from root `pyproject.toml`'s `[tool.uv.workspace]` members. No manual registration needed in scripts.
 
 ## 📦 Commit Messages
 
@@ -381,17 +381,17 @@ We use **Semantic Versioning** with **unified single version** across all packag
 
 All packages in the monorepo share the same version number. When any package changes, all packages are released together.
 
-| Component | Format | Example |
-|-----------|--------|---------|
-| **Tag** | `v{version}` | `v3.3.0` |
+| Component        | Format       | Example                                        |
+| ---------------- | ------------ | ---------------------------------------------- |
+| **Tag**          | `v{version}` | `v3.3.0`                                       |
 | **All packages** | Same version | `spakky==3.3.0`, `spakky-fastapi==3.3.0`, etc. |
 
 ### Bump Type Rules
 
-| Commit Type | Bump | Version Change |
-|-------------|------|----------------|
-| `fix:` | Patch | `3.2.0` → `3.2.1` |
-| `feat:` | Minor | `3.2.0` → `3.3.0` |
+| Commit Type                    | Bump  | Version Change    |
+| ------------------------------ | ----- | ----------------- |
+| `fix:`                         | Patch | `3.2.0` → `3.2.1` |
+| `feat:`                        | Minor | `3.2.0` → `3.3.0` |
 | `feat!:` or `BREAKING CHANGE:` | Major | `3.2.0` → `4.0.0` |
 
 ## 🚀 Pull Request Process

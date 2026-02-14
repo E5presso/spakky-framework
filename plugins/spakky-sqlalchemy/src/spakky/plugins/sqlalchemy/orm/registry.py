@@ -5,9 +5,12 @@ from typing import Any
 
 from spakky.core.pod.annotations.pod import Pod
 
-from spakky.plugins.sqlalchemy.orm.extractor import Extractor, ModelInfo
+from spakky.plugins.sqlalchemy.orm.constraints.index import Index
+from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
+from spakky.plugins.sqlalchemy.orm.extractor import ColumnInfo, Extractor, ModelInfo
 from spakky.plugins.sqlalchemy.orm.type_mapper import TypeMapper
-from sqlalchemy import MetaData
+from sqlalchemy import Index as SAIndex
+from sqlalchemy import MetaData, UniqueConstraint
 from sqlalchemy import Table as SATable
 from sqlalchemy.orm import registry
 
@@ -123,11 +126,13 @@ class ModelRegistry:
 
         model_info: ModelInfo = self.__extractor.extract(entity_cls)
         columns: list[Any] = self._build_columns(model_info)
+        table_constraints: list[Any] = self._build_table_constraints(model_info)
 
         sa_table = SATable(
             model_info.table_name,
             self.__registry.metadata,
             *columns,
+            *table_constraints,
         )
 
         self.__registry.map_imperatively(entity_cls, sa_table)
@@ -154,6 +159,59 @@ class ModelRegistry:
             column = self.__type_mapper.create_column(col_name, col_info)
             columns.append(column)
         return columns
+
+    def _build_table_constraints(
+        self, model_info: ModelInfo
+    ) -> list[UniqueConstraint | SAIndex]:
+        """Build table-level constraints from model info.
+
+        Named Unique constraints and named/unique Index constraints
+        are handled at the table level rather than column level.
+
+        Args:
+            model_info: Extracted model information.
+
+        Returns:
+            List of SQLAlchemy table-level constraint objects.
+        """
+        constraints: list[UniqueConstraint | SAIndex] = []
+
+        for col_name, col_info in model_info.columns.items():
+            column_name = col_info.field_metadata.name or col_name
+            constraints.extend(
+                self._collect_column_table_constraints(column_name, col_info)
+            )
+
+        return constraints
+
+    def _collect_column_table_constraints(
+        self, column_name: str, col_info: ColumnInfo
+    ) -> list[UniqueConstraint | SAIndex]:
+        """Collect table-level constraints for a single column.
+
+        Args:
+            column_name: The database column name.
+            col_info: Column information.
+
+        Returns:
+            List of table-level constraints for this column.
+        """
+        constraints: list[UniqueConstraint | SAIndex] = []
+
+        for constraint in col_info.constraints:
+            # Named Unique → Table-level UniqueConstraint
+            if isinstance(constraint, Unique) and constraint.name is not None:
+                constraints.append(UniqueConstraint(column_name, name=constraint.name))
+
+            # Named Index or unique Index → Table-level Index
+            if isinstance(constraint, Index) and (
+                constraint.name is not None or constraint.unique
+            ):
+                constraints.append(
+                    SAIndex(constraint.name, column_name, unique=constraint.unique)
+                )
+
+        return constraints
 
     def get_table(self, entity_cls: type) -> SATable | None:
         """Get the SQLAlchemy Table for a registered entity.

@@ -13,6 +13,7 @@ from spakky.plugins.sqlalchemy.orm.constraints.foreign_key import (
 from spakky.plugins.sqlalchemy.orm.constraints.index import Index
 from spakky.plugins.sqlalchemy.orm.constraints.primary_key import PrimaryKey
 from spakky.plugins.sqlalchemy.orm.constraints.unique import Unique
+from spakky.plugins.sqlalchemy.orm.entity_ref import EntityRef
 from spakky.plugins.sqlalchemy.orm.extractor import ColumnInfo
 from spakky.plugins.sqlalchemy.orm.fields.base import AbstractField
 from spakky.plugins.sqlalchemy.orm.fields.binary import Binary
@@ -122,6 +123,21 @@ class TypeMapper:
             )
         )
 
+        # Determine column-level unique/index
+        # Named constraints are handled at table level, not column level
+        column_unique = (
+            True
+            if unique_constraint is not None and unique_constraint.name is None
+            else None
+        )
+        column_index = (
+            True
+            if index_constraint is not None
+            and index_constraint.name is None
+            and not index_constraint.unique
+            else None
+        )
+
         # Handle foreign key constraint
         foreign_key = self._get_foreign_key(col_info)
         if foreign_key is not None:
@@ -136,8 +152,8 @@ class TypeMapper:
                     if primary_key_constraint is not None
                     else "auto"
                 ),
-                unique=unique_constraint is not None or None,
-                index=index_constraint is not None or None,
+                unique=column_unique,
+                index=column_index,
                 default=default,
                 comment=col_info.field_metadata.comment,
             )
@@ -152,8 +168,8 @@ class TypeMapper:
                 if primary_key_constraint is not None
                 else "auto"
             ),
-            unique=unique_constraint is not None or None,
-            index=index_constraint is not None or None,
+            unique=column_unique,
+            index=column_index,
             default=default,
             comment=col_info.field_metadata.comment,
         )
@@ -258,8 +274,15 @@ class TypeMapper:
         if fk is None:
             return None
 
+        # Handle EntityRef for type-safe column references
+        column_str: str
+        if isinstance(fk.column, EntityRef):
+            column_str = fk.column.to_fk_string()
+        else:
+            column_str = fk.column
+
         return SAForeignKey(
-            fk.column,
+            column_str,
             name=fk.name,
             ondelete=(
                 self._map_referential_action(fk.on_delete)
