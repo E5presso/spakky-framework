@@ -41,13 +41,19 @@ class Table(ClassAnnotation):
             raise CannotUseTableAnnotationError(obj)
 
         if self.target_domain is None:
-            for _type in generic_mro(obj):
-                if get_origin(_type) is AbstractTable:
-                    args = get_args(_type)
-                    if args:
-                        self.target_domain = args[0]
-                    break
-            if self.target_domain is None:
+            table = next(
+                (
+                    type_
+                    for type_ in generic_mro(obj)
+                    if get_origin(type_) is AbstractTable
+                ),
+                None,
+            )
+            if table is None:  # pragma: no cover
                 raise TargetDomainNotSpecifiedError(obj)
+            target_domain = next(iter(get_args(table)), None)
+            if target_domain is None:  # pragma: no cover
+                raise TargetDomainNotSpecifiedError(obj)
+            self.target_domain = target_domain
 
         return super().__call__(obj)

@@ -16,7 +16,7 @@ from spakky.plugins.sqlalchemy.orm.table import (
 )
 
 
-def test_table_annotation_with_non_table_class_expect_error() -> None:
+def test_table_annotation_with_non_table_classs() -> None:
     with pytest.raises(CannotUseTableAnnotationError):
 
         @Table()
