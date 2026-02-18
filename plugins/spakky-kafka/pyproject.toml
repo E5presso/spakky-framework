@@ -13,6 +13,11 @@ dependencies = [
     "spakky-event>=5.0.1",
 ]
 
+[dependency-groups]
+dev = [
+    "testcontainers>=4.13.3",
+]
+
 [project.entry-points."spakky.plugins"]
 spakky-kafka = "spakky.plugins.kafka.main:initialize"
 
@@ -49,11 +54,6 @@ addopts = """
     -n auto
     -vv
 """
-
-[dependency-groups]
-dev = [
-    "testcontainers>=4.13.3",
-]
 
 [tool.coverage.run]
 include = ["src/spakky/plugins/kafka/*"]

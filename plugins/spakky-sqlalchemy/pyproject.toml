@@ -11,6 +11,13 @@ dependencies = [
     "sqlalchemy>=2.0.45",
 ]
 
+[dependency-groups]
+dev = [
+    "testcontainers[postgres]>=4.13.3",
+    "psycopg[binary]>=3.2.6",
+    "greenlet>=3.1.0",
+]
+
 [project.entry-points."spakky.plugins"]
 spakky-sqlalchemy = "spakky.plugins.sqlalchemy.main:initialize"
 
@@ -46,13 +53,6 @@ addopts = """
     -p no:warnings
     -vv
 """
-
-[dependency-groups]
-dev = [
-    "testcontainers[postgres]>=4.13.3",
-    "psycopg[binary]>=3.2.6",
-    "greenlet>=3.1.0",
-]
 
 [tool.coverage.run]
 include = ["src/spakky/plugins/sqlalchemy/*"]
