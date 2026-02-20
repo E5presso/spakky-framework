@@ -4,8 +4,7 @@ This module provides a post-processor that automatically registers
 @EventHandler methods with the domain event consumer.
 """
 
-from asyncio import iscoroutinefunction
-from inspect import getmembers, ismethod
+from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
 
 from spakky.core.pod.annotations.pod import Pod
