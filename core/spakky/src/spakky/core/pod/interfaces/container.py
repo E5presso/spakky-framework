@@ -80,16 +80,6 @@ class PodNameAlreadyExistsError(AbstractSpakkyPodError):
     message = "Pod name already exists"
 
 
-class CannotInstantiateDefinitionScopePodError(AbstractSpakkyPodError):
-    """Raised when attempting to instantiate a DEFINITION scope Pod.
-
-    DEFINITION scope Pods are metadata-only and should not be instantiated.
-    They exist for discovery purposes (e.g., ORM table definitions).
-    """
-
-    message = "Cannot instantiate DEFINITION scope pod; it is metadata-only"
-
-
 class IContainer(ABC):
     """Protocol for IoC container managing Pod instances."""
 

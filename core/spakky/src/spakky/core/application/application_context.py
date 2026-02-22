@@ -23,7 +23,6 @@ from spakky.core.pod.interfaces.application_context import (
     IApplicationContext,
 )
 from spakky.core.pod.interfaces.container import (
-    CannotInstantiateDefinitionScopePodError,
     CannotRegisterNonPodObjectError,
     CircularDependencyGraphDetectedError,
     NoSuchPodError,
@@ -235,17 +234,12 @@ class ApplicationContext(IApplicationContext):
     def __initialize_pods(self) -> None:
         """Eagerly initialize all non-lazy Pods.
 
-        Skips DEFINITION scope Pods as they are metadata-only and should not be instantiated.
-
         Raises:
             NoSuchPodError: If a Pod cannot be instantiated.
         """
         # Eagerly initialize non-lazy pods using list comprehension for efficiency
-        # Skip DEFINITION scope pods as they are metadata-only
         non_lazy_pods = [
-            pod
-            for pod in self.__pods.values()
-            if not Lazy.exists(pod.target) and pod.scope != Pod.Scope.DEFINITION
+            pod for pod in self.__pods.values() if not Lazy.exists(pod.target)
         ]
         for pod in non_lazy_pods:
             if (
@@ -312,10 +306,6 @@ class ApplicationContext(IApplicationContext):
         pod = self.__resolve_candidate(type_=type_, name=name, qualifiers=qualifiers)
         if pod is None:
             return None
-
-        # DEFINITION scope pods are metadata-only and cannot be instantiated
-        if pod.scope == Pod.Scope.DEFINITION:
-            raise CannotInstantiateDefinitionScopePodError(pod.type_)
 
         # Try to hit the cache by scope type of pod
         match pod.scope:
@@ -444,16 +434,12 @@ class ApplicationContext(IApplicationContext):
 
         Returns:
             Set of matching Pod instances.
-
-        Note:
-            DEFINITION scope Pods are excluded as they cannot be instantiated.
         """
         # Use set comprehension for optimal filtering and instantiation
-        # Skip DEFINITION scope pods as they are metadata-only
         return {
             self.__get_internal(type_=pod.type_, name=pod.name)
             for pod in self.__pods.values()
-            if selector(pod) and pod.scope != Pod.Scope.DEFINITION
+            if selector(pod)
         }
 
     def add(self, obj: PodType) -> None:

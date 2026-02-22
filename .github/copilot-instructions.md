@@ -44,7 +44,7 @@ Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Us
 | `SpakkyApplication` | `spakky.core.application.application` | App builder (`.load_plugins()` → `.add()` → `.scan()` → `.start()`) |
 | `ApplicationContext` | `spakky.core.application.application_context` | IoC container context |
 
-**Pod Scopes**: `SINGLETON` (default), `PROTOTYPE`, `CONTEXT`, `DEFINITION` (metadata-only)
+**Pod Scopes**: `SINGLETON` (default), `PROTOTYPE`, `CONTEXT`
 
 ## Monorepo Rules
 
