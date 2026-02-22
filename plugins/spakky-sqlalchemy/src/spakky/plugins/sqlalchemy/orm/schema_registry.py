@@ -7,6 +7,7 @@ from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
 from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from sqlalchemy.orm import registry
 
 
 class NoSchemaFoundFromDomainError(AbstractSpakkySqlAlchemyORMError):
@@ -22,6 +23,10 @@ class SchemaRegistry(ITagRegistryAware):
     def __init__(self) -> None:
         self._domain_to_table_map = {}
         self._table_to_domain_map = {}
+
+    @property
+    def sqlalchemy_registry(self) -> registry:
+        return AbstractTable.registry
 
     def set_tag_registry(self, tag_registry: ITagRegistry) -> None:
         self._tag_registry = tag_registry
