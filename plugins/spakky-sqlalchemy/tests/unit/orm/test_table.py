@@ -39,7 +39,7 @@ def test_table_annotation_with_specified_target_domain() -> None:
 
     @Table(User)
     class UserTable(AbstractTable[User]):
-        __tablename__ = "users"
+        __tablename__ = "unit_test_users"
 
         uid: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
         version: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
@@ -83,7 +83,7 @@ def test_table_annotation_with_implicit_target_domain() -> None:
 
     @Table()
     class MemberTable(AbstractTable[Member]):
-        __tablename__ = "members"
+        __tablename__ = "unit_test_members"
 
         uid: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
         version: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
