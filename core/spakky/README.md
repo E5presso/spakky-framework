@@ -210,6 +210,65 @@ context.clear_context()
 
 > **⚠️ Note**: System-managed keys like `"__spakky_context_id__"` cannot be overridden via `set_context_value()`.
 
+## Tag Registry
+
+ApplicationContext implements `ITagRegistry` for managing custom metadata tags. Tags are dataclass-based annotations that can be registered and queried at runtime.
+
+### Defining Custom Tags
+
+```python
+from dataclasses import dataclass
+from spakky.core.pod.annotations.tag import Tag
+
+@dataclass(eq=False)
+class MyCustomTag(Tag):
+    """Custom tag for marking specific components."""
+    category: str = ""
+```
+
+### Registering and Querying Tags
+
+```python
+from spakky.core.application.application_context import ApplicationContext
+
+context = ApplicationContext()
+
+# Register tags
+tag = MyCustomTag(category="database")
+context.register_tag(tag)
+
+# Check if tag exists
+exists = context.contains_tag(tag)  # True
+
+# Get all tags
+all_tags = context.tags  # frozenset of all registered tags
+
+# Filter tags with selector
+db_tags = context.list_tags(lambda t: isinstance(t, MyCustomTag) and t.category == "database")
+```
+
+### Tag Registry Aware Pods
+
+Pods can receive the tag registry via `ITagRegistryAware`:
+
+```python
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.interfaces.aware.tag_registry_aware import ITagRegistryAware
+from spakky.core.pod.interfaces.tag_registry import ITagRegistry
+
+@Pod()
+class SchemaRegistry(ITagRegistryAware):
+    def __init__(self) -> None:
+        self._tag_registry: ITagRegistry | None = None
+
+    def set_tag_registry(self, tag_registry: ITagRegistry) -> None:
+        self._tag_registry = tag_registry
+        # Access registered tags
+        for tag in tag_registry.list_tags(MyCustomTag.exists):
+            # Process tags...
+            pass
+```
+
 ## Plugin System
 
 Plugins extend framework functionality through entry points.
