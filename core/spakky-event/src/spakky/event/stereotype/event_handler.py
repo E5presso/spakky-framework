@@ -11,12 +11,6 @@ from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractEvent
 
-EventT = TypeVar("EventT", bound=AbstractEvent)
-"""Type variable for domain event types (invariant)."""
-
-EventT_co = TypeVar("EventT_co", bound=AbstractEvent, covariant=True)
-"""Type variable for domain event types (covariant for return types)."""
-
 EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
 """Type variable for domain event types (contravariant for handler parameters)."""
 

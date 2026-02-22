@@ -3,8 +3,6 @@ from typing import Awaitable, Callable, TypeAlias, TypeVar
 
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 
-DomainEventT = TypeVar("DomainEventT", bound=AbstractDomainEvent)
-DomainEventT_co = TypeVar("DomainEventT_co", bound=AbstractDomainEvent, covariant=True)
 DomainEventT_contra = TypeVar(
     "DomainEventT_contra", bound=AbstractDomainEvent, contravariant=True
 )
@@ -13,10 +11,6 @@ AsyncDomainEventHandlerCallback: TypeAlias = Callable[
     [DomainEventT_contra], Awaitable[None]
 ]
 
-IntegrationEventT = TypeVar("IntegrationEventT", bound=AbstractIntegrationEvent)
-IntegrationEventT_co = TypeVar(
-    "IntegrationEventT_co", bound=AbstractIntegrationEvent, covariant=True
-)
 IntegrationEventT_contra = TypeVar(
     "IntegrationEventT_contra", bound=AbstractIntegrationEvent, contravariant=True
 )
