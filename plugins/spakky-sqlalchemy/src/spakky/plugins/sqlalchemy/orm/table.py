@@ -1,27 +1,25 @@
 from abc import abstractmethod
-from dataclasses import dataclass
-from typing import Any, Generic, Self, TypeVar, get_args, get_origin
+from dataclasses import dataclass, field
+from typing import ClassVar, Generic, Self, get_args, get_origin
 
-from spakky.core.common.annotation import ClassAnnotation
 from spakky.core.common.mro import generic_mro
 from spakky.core.common.types import ObjectT
+from spakky.core.pod.annotations.tag import Tag
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 
-DomainT = TypeVar("DomainT", bound=Any)
 
-
-class AbstractTable(DeclarativeBase, AsyncAttrs, Generic[DomainT]):
+class AbstractTable(DeclarativeBase, AsyncAttrs, Generic[ObjectT]):
     __abstract__ = True
 
     @classmethod
     @abstractmethod
-    def from_domain(cls, domain: DomainT) -> Self: ...
+    def from_domain(cls, domain: ObjectT) -> Self: ...
 
     @abstractmethod
-    def to_domain(self) -> DomainT: ...
+    def to_domain(self) -> ObjectT: ...
 
 
 class CannotUseTableAnnotationError(AbstractSpakkySqlAlchemyORMError):
@@ -32,15 +30,17 @@ class TargetDomainNotSpecifiedError(AbstractSpakkySqlAlchemyORMError):
     message = "The target domain for the @Table annotation is not specified."
 
 
-@dataclass
-class Table(ClassAnnotation):
-    target_domain: type[object] | None = None
+@dataclass(eq=False)
+class Table(Tag):
+    __target_domain_type_sentinel__: ClassVar[type[object]] = type[object]
+    domain: type[object] = field(default=__target_domain_type_sentinel__)
+    table: type[AbstractTable[object]] = field(init=False)
 
     def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
         if not issubclass(obj, AbstractTable):
             raise CannotUseTableAnnotationError(obj)
 
-        if self.target_domain is None:
+        if self.domain is self.__target_domain_type_sentinel__:
             table = next(
                 (
                     type_
@@ -51,9 +51,10 @@ class Table(ClassAnnotation):
             )
             if table is None:  # pragma: no cover
                 raise TargetDomainNotSpecifiedError(obj)
-            target_domain = next(iter(get_args(table)), None)
+            target_domain: type[object] | None = next(iter(get_args(table)), None)
             if target_domain is None:  # pragma: no cover
                 raise TargetDomainNotSpecifiedError(obj)
-            self.target_domain = target_domain
+            self.domain = target_domain
+        self.table = obj
 
         return super().__call__(obj)

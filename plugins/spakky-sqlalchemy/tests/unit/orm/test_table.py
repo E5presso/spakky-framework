@@ -63,7 +63,9 @@ def test_table_annotation_with_specified_target_domain() -> None:
                 password=self.password,
             )
 
-    assert Table.get(UserTable).target_domain == User
+    assert Table.get(UserTable).domain is User
+    assert Table.get(UserTable).table is UserTable
+    assert Table.get(UserTable) == Table.get(UserTable)
 
 
 def test_table_annotation_with_implicit_target_domain() -> None:
@@ -105,4 +107,6 @@ def test_table_annotation_with_implicit_target_domain() -> None:
                 password=self.password,
             )
 
-    assert Table.get(MemberTable).target_domain == Member
+    assert Table.get(MemberTable).domain is Member
+    assert Table.get(MemberTable).table is MemberTable
+    assert Table.get(MemberTable) == Table.get(MemberTable)
