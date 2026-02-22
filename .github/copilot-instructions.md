@@ -7,48 +7,22 @@
 
 ## 커스터마이징 구조
 
-이 프로젝트는 3-Layer AI 커스터마이징을 사용합니다:
-
 | Layer | 위치 | 역할 |
 |-------|------|------|
-| Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 페르소나, 행동 규칙 |
+| Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 행동 규칙 |
 | File Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
-| Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 (`/implement`, `/test`, `/pr`) |
-
-**전용 에이전트 `spakky-dev`를 사용하면 도구 사용 규칙이 구조적으로 적용됩니다.**
+| Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 |
 
 ## Overview
 
 Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Uses `uv` workspace monorepo.
 
-- **Core** (`core/`): `spakky` (DI/AOP), `spakky-domain` (DDD), `spakky-data` (Repository/Transaction), `spakky-event` (Event handling)
+- **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`
 - **Plugins** (`plugins/`): `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`
-- Each package: `src/spakky/...` (source), `tests/` (tests)
 
-## Key API Reference
-
-| Decorator / Class | Import Path | Purpose |
-|---|---|---|
-| `@Pod(name=, scope=)` | `spakky.core.pod.annotations.pod` | Register class/function as managed bean |
-| `@Primary` | `spakky.core.pod.annotations.primary` | Mark preferred implementation |
-| `@Order(n)` | `spakky.core.pod.annotations.order` | Control execution order |
-| `@Aspect()` / `@AsyncAspect()` | `spakky.core.aop.aspect` | Sync/Async aspect decorator |
-| `IAsyncAspect` / `IAspect` | `spakky.core.aop.interfaces.aspect` | Aspect interfaces |
-| `@Before` / `@After` / `@Around` / `@AfterReturning` / `@AfterRaising` | `spakky.core.aop.pointcut` | AOP pointcut decorators |
-| `@Logging()` | `spakky.core.aspects.logging` | Built-in logging annotation |
-| `@Controller` | `spakky.core.stereotype.controller` | Base controller stereotype |
-| `@UseCase` | `spakky.core.stereotype.usecase` | Business logic stereotype |
-| `@ApiController(prefix)` | `spakky.plugins.fastapi.stereotypes.api_controller` | FastAPI REST controller |
-| `@CliController(group)` | `spakky.plugins.typer.stereotypes.cli_controller` | Typer CLI controller |
-| `@EventHandler` / `@on_event` | `spakky.event.stereotype.event_handler` | Event handler stereotype |
-| `SpakkyApplication` | `spakky.core.application.application` | App builder (`.load_plugins()` → `.add()` → `.scan()` → `.start()`) |
-| `ApplicationContext` | `spakky.core.application.application_context` | IoC container context |
-
-**Pod Scopes**: `SINGLETON` (default), `PROTOTYPE`, `CONTEXT`
+**API Reference**: `.github/instructions/api-reference.instructions.md` (Python 파일 작성 시 자동 적용)
 
 ## Monorepo Rules
-
-### Dependencies
 
 ```bash
 uv sync --all-packages --all-extras  # Root: install all
