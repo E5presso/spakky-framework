@@ -11,7 +11,7 @@ from typing import Any, ClassVar, Generic
 from uuid import UUID
 
 from spakky.core.common.interfaces.equatable import EquatableT_co, IEquatable
-from spakky.core.common.mutability import IDataclass, mutable
+from spakky.core.common.mutability import mutable
 from spakky.core.utils.uuid import uuid7
 
 from spakky.domain.error import AbstractSpakkyDomainError
@@ -24,7 +24,7 @@ class CannotMonkeyPatchEntityError(AbstractSpakkyDomainError):
 
 
 @mutable
-class AbstractEntity(IEquatable, IDataclass, Generic[EquatableT_co], ABC):
+class AbstractEntity(IEquatable, Generic[EquatableT_co], ABC):
     """Base class for DDD entities with identity and validation.
 
     Entities are objects with unique identity that maintain consistency

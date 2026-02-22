@@ -11,6 +11,7 @@ from uuid import UUID
 
 from spakky.core.application.error import AbstractSpakkyApplicationError
 from spakky.core.pod.interfaces.container import IContainer
+from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 from spakky.core.service.interfaces.service import IAsyncService, IService
 
 
@@ -42,7 +43,7 @@ class EventLoopThreadAlreadyStartedInApplicationContextError(
     message = "Event loop thread already started in application context"
 
 
-class IApplicationContext(IContainer, ABC):
+class IApplicationContext(IContainer, ITagRegistry, ABC):
     """Protocol for application context managing Pod lifecycle and services.
 
     Extends IContainer with service management and lifecycle control.

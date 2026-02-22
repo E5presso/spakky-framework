@@ -15,6 +15,7 @@ from spakky.core.pod.annotations.lazy import Lazy
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.annotations.qualifier import Qualifier
+from spakky.core.pod.annotations.tag import Tag
 from spakky.core.pod.interfaces.application_context import (
     ApplicationContextAlreadyStartedError,
     ApplicationContextAlreadyStoppedError,
@@ -63,6 +64,9 @@ class ApplicationContext(IApplicationContext):
     __pods: dict[str, Pod]
     """Registry of all Pods by name."""
 
+    __tags: set[Tag]
+    """Registry of all Tags."""
+
     __type_cache: dict[type, set[Pod]]
     """Cache mapping types to Pods for O(1) lookup."""
 
@@ -101,6 +105,7 @@ class ApplicationContext(IApplicationContext):
         """
         self.__forward_type_map = {}
         self.__pods = {}
+        self.__tags = set()
         self.__type_cache = {}
         self.__singleton_cache = {}
         self.__singleton_lock = RLock()
@@ -418,6 +423,15 @@ class ApplicationContext(IApplicationContext):
         return MappingProxyType(self.__pods)  # type: ignore
 
     @property
+    def tags(self) -> frozenset[Tag]:
+        """Get read-only view of all registered Tags.
+
+        Returns:
+            Read-only frozenset of Tag registry (O(1) operation).
+        """
+        return frozenset(self.__tags)
+
+    @property
     def is_started(self) -> bool:
         """Check if context has been started.
 
@@ -563,6 +577,39 @@ class ApplicationContext(IApplicationContext):
             return name in self.__pods
         # Use type index for O(1) lookup
         return type_ in self.__type_cache and len(self.__type_cache[type_]) > 0
+
+    def register_tag(self, tag: Tag) -> None:
+        """Register a Tag instance.
+
+        Args:
+            tag: The Tag to register.
+        """
+        self.__tags.add(tag)
+
+    def contains_tag(self, tag: Tag) -> bool:
+        """Check if a Tag is registered.
+
+        Args:
+            tag: The Tag to check.
+
+        Returns:
+            True if Tag is registered.
+        """
+        return tag in self.__tags
+
+    def list_tags(
+        self, selector: Callable[[Tag], bool] | None = None
+    ) -> frozenset[Tag]:
+        """List registered Tags, optionally filtered by selector.
+
+        Args:
+            selector: Optional predicate to filter Tags.
+        Returns:
+            Set of matching Tags.
+        """
+        if selector is None:
+            return frozenset(self.__tags)
+        return frozenset(tag for tag in self.__tags if selector(tag))
 
     def get_context_id(self) -> UUID:
         """Get or create unique ID for current context.

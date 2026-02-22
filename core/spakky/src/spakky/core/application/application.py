@@ -22,6 +22,7 @@ from spakky.core.common.importing import (
     resolve_module,
 )
 from spakky.core.pod.annotations.pod import Pod, PodType
+from spakky.core.pod.annotations.tag import Tag
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 
@@ -130,9 +131,13 @@ class SpakkyApplication:
         else:  # pragma: no cover
             modules = {resolve_module(path)}
 
-        for module_item in modules:
-            for obj in list_objects(module_item, Pod.exists):
-                self._application_context.add(obj)
+        for item in modules:
+            for obj in list_objects(item, lambda x: Pod.exists(x) or Tag.exists(x)):
+                if Pod.exists(obj):
+                    self._application_context.add(obj)
+                if Tag.exists(obj):
+                    tag = Tag.get(obj)
+                    self._application_context.register_tag(tag)
 
         return self
 
