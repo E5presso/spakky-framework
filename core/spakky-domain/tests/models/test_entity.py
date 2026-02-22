@@ -1,4 +1,4 @@
-import sys
+from typing import Self
 from uuid import UUID, uuid4
 
 import pytest
@@ -9,11 +9,6 @@ from spakky.domain.models.entity import (
     AbstractEntity,
     CannotMonkeyPatchEntityError,
 )
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
 
 
 def test_entity_equals() -> None:
