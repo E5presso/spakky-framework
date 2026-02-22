@@ -37,7 +37,7 @@ def postgres_container_fixture() -> Generator[PostgresContainer, Any, None]:
         username="test",
         password="test",
         dbname="testdb",
-    )
+    ).with_bind_ports(5432, 5432)
 
     with container:
         yield container
@@ -144,7 +144,7 @@ async def setup_database_fixture(
         None after tables are created.
     """
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
-    metadata = schema_registry.sqlalchemy_registry.metadata
+    metadata = schema_registry.metadata
 
     async with engine.begin() as conn:
         await conn.run_sync(metadata.create_all)
