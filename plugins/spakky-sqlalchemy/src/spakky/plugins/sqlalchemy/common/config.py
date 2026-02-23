@@ -62,5 +62,10 @@ class SQLAlchemyConnectionConfig(BaseSettings):
     autocommit: bool = True
     """If True, transactions are automatically committed after with statements. If False, transactions must be manually committed or rolled back."""
 
+    # --- Async Mode ---
+    support_async_mode: bool = True
+    """If True, registers async Pods (AsyncSessionManager, AsyncTransaction).
+    Set to False when using database drivers that don't support async operations."""
+
     def __init__(self) -> None:
         super().__init__()
