@@ -26,26 +26,31 @@ class SQLAlchemyConnectionConfig(BaseSettings):
     echo_pool: bool = False
     """If True, the connection pool logs all checkout/checkin events."""
 
+    # --- Connection Pool (QueuePool) Defaults ---
+    DEFAULT_POOL_SIZE: ClassVar[int] = 5
+    """Default number of connections in the pool."""
+    DEFAULT_POOL_MAX_OVERFLOW: ClassVar[int] = 10
+    """Default maximum overflow connections."""
+    DEFAULT_POOL_TIMEOUT: ClassVar[float] = 30.0
+    """Default seconds to wait when pool is exhausted."""
+    DEFAULT_POOL_RECYCLE: ClassVar[int] = -1
+    """Default connection recycle time (-1 = disabled)."""
+    DEFAULT_POOL_PRE_PING: ClassVar[bool] = False
+    """Default pre-ping setting."""
+
     # --- Connection Pool (QueuePool) ---
-    # These settings are optional because some databases (e.g., SQLite) use
-    # different pool implementations that don't support these parameters.
-    pool_size: int | None = None
-    """Number of connections to maintain persistently in the pool.
-    None uses SQLAlchemy default (5). Not applicable for SQLite."""
-    pool_max_overflow: int | None = None
-    """Maximum number of connections that can be opened beyond pool_size.
-    None uses SQLAlchemy default (10). Not applicable for SQLite."""
-    pool_timeout: float | None = None
-    """Seconds to wait before raising an error when the pool is exhausted.
-    None uses SQLAlchemy default (30). Not applicable for SQLite."""
-    pool_recycle: int | None = None
+    pool_size: int = DEFAULT_POOL_SIZE
+    """Number of connections to maintain persistently in the pool."""
+    pool_max_overflow: int = DEFAULT_POOL_MAX_OVERFLOW
+    """Maximum number of connections that can be opened beyond pool_size."""
+    pool_timeout: float = DEFAULT_POOL_TIMEOUT
+    """Seconds to wait before raising an error when the pool is exhausted."""
+    pool_recycle: int = DEFAULT_POOL_RECYCLE
     """Recycle connections after this many seconds to prevent stale connections.
-    Recommended when connecting through a proxy or firewall with idle timeouts.
-    None uses SQLAlchemy default (-1, disabled)."""
-    pool_pre_ping: bool | None = None
+    Recommended when connecting through a proxy or firewall with idle timeouts."""
+    pool_pre_ping: bool = DEFAULT_POOL_PRE_PING
     """If True, tests each connection for liveness before returning it from the pool.
-    Prevents errors caused by connections dropped by the database server.
-    None uses SQLAlchemy default (False)."""
+    Prevents errors caused by connections dropped by the database server."""
 
     # --- Session ---
     session_autoflush: bool = True

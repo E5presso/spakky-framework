@@ -1,5 +1,3 @@
-from typing import TypeVar
-
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.aware.application_context_aware import (
@@ -16,8 +14,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
-
-T = TypeVar("T")
 
 
 @Pod()
@@ -53,7 +49,7 @@ class SessionManager(IApplicationContextAware):
             echo=config.echo,
             echo_pool=config.echo_pool,
             pool_size=config.pool_size,
-            pool_max_overflow=config.pool_max_overflow,
+            max_overflow=config.pool_max_overflow,
             pool_timeout=config.pool_timeout,
             pool_recycle=config.pool_recycle,
             pool_pre_ping=config.pool_pre_ping,
@@ -93,7 +89,7 @@ class AsyncSessionManager(IApplicationContextAware):
             echo=config.echo,
             echo_pool=config.echo_pool,
             pool_size=config.pool_size,
-            pool_max_overflow=config.pool_max_overflow,
+            max_overflow=config.pool_max_overflow,
             pool_timeout=config.pool_timeout,
             pool_recycle=config.pool_recycle,
             pool_pre_ping=config.pool_pre_ping,

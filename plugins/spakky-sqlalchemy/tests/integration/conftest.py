@@ -1,6 +1,7 @@
 """Integration test fixtures for spakky-sqlalchemy plugin."""
 
 import logging
+import os
 from logging import Formatter, StreamHandler, getLogger
 from typing import Any, AsyncGenerator, Generator
 
@@ -18,6 +19,14 @@ from testcontainers.postgres import PostgresContainer
 
 import spakky.plugins.sqlalchemy
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
+from spakky.plugins.sqlalchemy.persistency.session_manager import (
+    AsyncSessionManager,
+    SessionManager,
+)
+from spakky.plugins.sqlalchemy.persistency.transaction import (
+    AsyncTransaction,
+    Transaction,
+)
 from tests import apps
 from tests.apps.orm import CommentTable, PostTable, UserTable
 
@@ -62,6 +71,24 @@ def database_url_fixture(postgres_container: PostgresContainer) -> str:
     return async_url
 
 
+@pytest.fixture(name="setup_env_vars", scope="package")
+def setup_env_vars_fixture(database_url: str) -> str:
+    """Set environment variables for SQLAlchemyConnectionConfig.
+
+    Must run before app fixture to ensure config is properly loaded.
+
+    Args:
+        database_url: Async database connection URL.
+
+    Returns:
+        The database URL.
+    """
+    os.environ["SPAKKY_SQLALCHEMY__CONNECTION_STRING"] = database_url
+    os.environ["SPAKKY_SQLALCHEMY__ECHO"] = "false"
+    os.environ["SPAKKY_SQLALCHEMY__AUTOCOMMIT"] = "true"
+    return database_url
+
+
 @pytest.fixture(name="engine", scope="package")
 def engine_fixture(database_url: str) -> Generator[AsyncEngine, Any, None]:
     """Create async SQLAlchemy engine.
@@ -101,8 +128,11 @@ def session_factory_fixture(
 
 
 @pytest.fixture(name="app", scope="package")
-def app_fixture() -> Generator[SpakkyApplication, Any, None]:
+def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
     """Create SpakkyApplication with SQLAlchemy plugin.
+
+    Args:
+        setup_env_vars: Database URL (ensures env vars are set before app creation).
 
     Yields:
         Configured SpakkyApplication instance.
@@ -172,3 +202,63 @@ async def session_fixture(
     async with session_factory() as session:
         yield session
         await session.rollback()
+
+
+@pytest.fixture(name="async_session_manager", scope="function")
+def async_session_manager_fixture(
+    app: SpakkyApplication,
+) -> AsyncSessionManager:
+    """Get AsyncSessionManager from application container.
+
+    Args:
+        app: SpakkyApplication instance.
+
+    Returns:
+        AsyncSessionManager instance.
+    """
+    return app.container.get(type_=AsyncSessionManager)
+
+
+@pytest.fixture(name="async_transaction", scope="function")
+def async_transaction_fixture(
+    app: SpakkyApplication,
+) -> AsyncTransaction:
+    """Get AsyncTransaction from application container.
+
+    Args:
+        app: SpakkyApplication instance.
+
+    Returns:
+        AsyncTransaction instance.
+    """
+    return app.container.get(type_=AsyncTransaction)
+
+
+@pytest.fixture(name="session_manager", scope="function")
+def session_manager_fixture(
+    app: SpakkyApplication,
+) -> SessionManager:
+    """Get SessionManager from application container.
+
+    Args:
+        app: SpakkyApplication instance.
+
+    Returns:
+        SessionManager instance.
+    """
+    return app.container.get(type_=SessionManager)
+
+
+@pytest.fixture(name="transaction", scope="function")
+def transaction_fixture(
+    app: SpakkyApplication,
+) -> Transaction:
+    """Get Transaction from application container.
+
+    Args:
+        app: SpakkyApplication instance.
+
+    Returns:
+        Transaction instance.
+    """
+    return app.container.get(type_=Transaction)
