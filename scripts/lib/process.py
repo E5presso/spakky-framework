@@ -65,6 +65,9 @@ def run_streaming(
 ) -> int:
     """Execute a command with streaming output to terminal.
 
+    Writes directly to /dev/tty (Unix) or CON (Windows) to bypass
+    any stdout/stderr capturing by pre-commit hooks.
+
     Args:
         cmd: Command and arguments to run.
         cwd: Working directory for the command.
@@ -73,19 +76,56 @@ def run_streaming(
     Returns:
         Exit code of the command.
     """
+    import sys
+    import threading
+    from io import BufferedWriter
+
     process_env = os.environ.copy()
     process_env["PYTHONUNBUFFERED"] = "1"
     process_env["FORCE_COLOR"] = "1"
     if env:
         process_env.update(env)
 
+    # Try to open terminal directly to bypass pre-commit capturing
+    tty_file: BufferedWriter | None = None
+    try:
+        if sys.platform == "win32":
+            tty_file = open("CON", "wb")  # noqa: SIM115
+        else:
+            tty_file = open("/dev/tty", "wb")  # noqa: SIM115
+    except OSError:
+        # No TTY available (e.g., CI environment), fall back to stdout
+        tty_file = None
+
+    output_dest = tty_file if tty_file else sys.stdout.buffer
+
     process = subprocess.Popen(
         list(cmd),
         cwd=cwd or WORKSPACE_ROOT,
-        stdout=None,  # Inherit from parent
-        stderr=None,  # Inherit from parent
-        bufsize=0,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,  # Merge stderr into stdout
         env=process_env,
     )
+
+    def stream_reader() -> None:
+        """Read from process stdout and write to terminal in real-time."""
+        assert process.stdout is not None
+        while True:
+            chunk = process.stdout.read(1)
+            if not chunk:
+                break
+            output_dest.write(chunk)
+            output_dest.flush()
+
+    assert process.stdout is not None
+
+    reader_thread = threading.Thread(target=stream_reader)
+    reader_thread.start()
+
     process.wait()
+    reader_thread.join()
+
+    if tty_file:
+        tty_file.close()
+
     return process.returncode

@@ -3,13 +3,32 @@
 from __future__ import annotations
 
 import sys
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 
-console = Console()
+if TYPE_CHECKING:
+    from typing import TextIO
+
+
+def _get_tty_file() -> TextIO | None:
+    """Get TTY file for direct terminal output, bypassing pre-commit capturing."""
+    try:
+        if sys.platform == "win32":
+            return open("CON", "w")  # noqa: SIM115
+        return open("/dev/tty", "w")  # noqa: SIM115
+    except OSError:
+        return None
+
+
+_tty_file = _get_tty_file()
+
+console = Console(file=_tty_file, force_terminal=True) if _tty_file else Console()
 """Rich console instance for formatted output."""
 
-err_console = Console(stderr=True)
+err_console = (
+    Console(file=_tty_file, force_terminal=True) if _tty_file else Console(stderr=True)
+)
 """Rich console instance for error output."""
 
 

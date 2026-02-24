@@ -18,6 +18,8 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
+from rich.table import Table
+
 from common import (
     PackageNotFoundError,
     ScriptError,
@@ -26,7 +28,6 @@ from common import (
     get_package_by_name,
     print_error,
 )
-from rich.table import Table
 
 app = typer.Typer(
     help="Resolve package names to directory paths.",
@@ -79,7 +80,9 @@ def main(
 
         # Get path for specific package
         pkg = get_package_by_name(package_name)
-        console.print(str(pkg.path))
+        # Use print() instead of console.print() so output can be captured
+        # in CI: PKG_PATH=$(uv run python scripts/get_package_path.py ...)
+        print(str(pkg.path))
 
     except PackageNotFoundError as e:
         print_error(str(e))
