@@ -2,48 +2,52 @@
 	"folders": [
 		{
 			"name": "root",
-			"path": "."
+			"path": ".",
+		},
+		{
+			"name": "scripts",
+			"path": "scripts",
 		},
 		{
 			"name": "core",
-			"path": "core/spakky"
+			"path": "core/spakky",
 		},
 		{
 			"name": "core.domain",
-			"path": "core/spakky-domain"
+			"path": "core/spakky-domain",
 		},
 		{
 			"name": "core.data",
-			"path": "core/spakky-data"
+			"path": "core/spakky-data",
 		},
 		{
 			"name": "core.event",
-			"path": "core/spakky-event"
+			"path": "core/spakky-event",
 		},
 		{
 			"name": "plugins.fastapi",
-			"path": "plugins/spakky-fastapi"
+			"path": "plugins/spakky-fastapi",
 		},
 		{
 			"name": "plugins.rabbitmq",
-			"path": "plugins/spakky-rabbitmq"
+			"path": "plugins/spakky-rabbitmq",
 		},
 		{
 			"name": "plugins.security",
-			"path": "plugins/spakky-security"
+			"path": "plugins/spakky-security",
 		},
 		{
 			"name": "plugins.typer",
-			"path": "plugins/spakky-typer"
+			"path": "plugins/spakky-typer",
 		},
 		{
 			"name": "plugins.kafka",
-			"path": "plugins/spakky-kafka"
+			"path": "plugins/spakky-kafka",
 		},
 		{
 			"name": "plugins.sqlalchemy",
-			"path": "plugins/spakky-sqlalchemy"
-		}
+			"path": "plugins/spakky-sqlalchemy",
+		},
 	],
 	"settings": {
 		"[python]": {
@@ -117,6 +121,7 @@
 		},
 		"conventionalCommits.scopes": [
 			"all",
+			"scripts",
 			"core",
 			"domain",
 			"data",

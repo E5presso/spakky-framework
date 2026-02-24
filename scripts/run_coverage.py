@@ -5,183 +5,175 @@ This script discovers all workspace members and runs pytest with coverage
 for each package, generating XML reports for Codecov upload.
 
 Usage:
-    python scripts/run_coverage.py
+    uv run python scripts/run_coverage.py
+    uv run python scripts/run_coverage.py --package spakky-fastapi
 
 Output:
     Generates coverage XML files in each package directory:
-    - spakky/coverage.xml
+    - core/spakky/coverage.xml
     - plugins/spakky-fastapi/coverage.xml
     - etc.
 """
 
-import subprocess
-import sys
-import tomllib
-from pathlib import Path
+from __future__ import annotations
+
+from typing import Annotated
+
+import typer
+from rich.table import Table
+
+from common import (
+    PackageInfo,
+    ScriptError,
+    console,
+    get_all_packages,
+    get_package_by_name,
+    print_error,
+    print_header,
+    print_info,
+    print_success,
+    run_streaming,
+)
+
+app = typer.Typer(
+    help="Run tests with coverage for workspace packages.",
+    no_args_is_help=False,
+)
 
 
-def get_workspace_root() -> Path:
-    """Get the workspace root directory."""
-    return Path(__file__).parent.parent
-
-
-def get_workspace_members() -> list[str]:
-    """Read workspace members from root pyproject.toml."""
-    root_dir = get_workspace_root()
-    pyproject_path = root_dir / "pyproject.toml"
-
-    try:
-        with open(pyproject_path, "rb") as f:
-            pyproject = tomllib.load(f)
-
-        return (
-            pyproject.get("tool", {})
-            .get("uv", {})
-            .get("workspace", {})
-            .get("members", [])
-        )
-    except Exception as e:
-        print(f"❌ Error reading pyproject.toml: {e}", file=sys.stderr)
-        return []
-
-
-def get_package_name(member_path: str) -> str | None:
-    """Get the package name from a member's pyproject.toml."""
-    root_dir = get_workspace_root()
-    pyproject_path = root_dir / member_path / "pyproject.toml"
-
-    try:
-        with open(pyproject_path, "rb") as f:
-            pyproject = tomllib.load(f)
-
-        return pyproject.get("project", {}).get("name", "").replace("-", "_")
-    except Exception:
-        return None
-
-
-def run_tests_with_coverage(member_path: str, package_name: str) -> bool:
+def run_tests_with_coverage(pkg: PackageInfo) -> bool:
     """Run pytest with coverage for a specific package.
 
     Args:
-        member_path: Path to the package directory (e.g., "plugins/spakky-kafka").
-        package_name: Python package name for coverage (e.g., "spakky.plugins.kafka").
+        pkg: Package information.
 
     Returns:
         True if tests passed, False otherwise.
     """
-    root_dir = get_workspace_root()
-    full_path = root_dir / member_path
+    print_header(f"Testing: {pkg.name}")
 
-    print(f"\n{'=' * 60}", flush=True)
-    print(f"🧪 Running tests for: {member_path} ({package_name})", flush=True)
-    print(f"{'=' * 60}\n", flush=True)
-
-    # Build pytest command
     cmd = [
         "uv",
         "run",
         "pytest",
-        f"--cov={package_name}",
+        f"--cov={pkg.python_name}",
         "--cov-report=xml:coverage.xml",
         "--cov-report=term-missing",
     ]
 
     # Add -n 1 for kafka (port conflict prevention)
-    if "kafka" in member_path:
-        cmd.append("-n")
-        cmd.append("1")
+    if "kafka" in pkg.name:
+        cmd.extend(["-n", "1"])
 
-    try:
-        process = subprocess.Popen(
-            cmd,
-            cwd=full_path,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-        process.wait()
+    exit_code = run_streaming(cmd, cwd=pkg.full_path)
 
-        if process.returncode != 0:
-            print(f"\n❌ Tests failed for: {member_path}", flush=True)
-            return False
-
-        print(f"\n✅ Tests passed for: {member_path}", flush=True)
-        return True
-
-    except Exception as e:
-        print(
-            f"\n❌ Error running tests for {member_path}: {e}",
-            file=sys.stderr,
-            flush=True,
-        )
+    if exit_code != 0:
+        print_error(f"Tests failed for: {pkg.name}")
         return False
+
+    print_success(f"Tests passed for: {pkg.name}")
+    return True
 
 
 def collect_coverage_files() -> list[str]:
-    """Collect all coverage.xml file paths."""
-    root_dir = get_workspace_root()
-    members = get_workspace_members()
+    """Collect all coverage.xml file paths.
+
+    Returns:
+        List of relative paths to coverage.xml files.
+    """
     coverage_files: list[str] = []
 
-    for member in members:
-        coverage_path = root_dir / member / "coverage.xml"
+    for pkg in get_all_packages():
+        coverage_path = pkg.full_path / "coverage.xml"
         if coverage_path.exists():
-            # Return relative path from root
-            coverage_files.append(f"./{member}/coverage.xml")
+            coverage_files.append(f"./{pkg.path}/coverage.xml")
 
     return coverage_files
 
 
-def main() -> int:
-    """Main entry point."""
-    print("\n🚀 Running tests with coverage for all packages...\n", flush=True)
+@app.command()
+def main(
+    package: Annotated[
+        str | None,
+        typer.Option(
+            "--package",
+            "-p",
+            help="Run coverage for a specific package only.",
+        ),
+    ] = None,
+) -> None:
+    """Run tests with coverage for all (or specific) workspace packages."""
+    try:
+        print_header("Running tests with coverage")
 
-    workspace_members = get_workspace_members()
-    if not workspace_members:
-        print("❌ No workspace members found. Exiting.", flush=True)
-        return 1
+        if package:
+            try:
+                pkg = get_package_by_name(package)
+                packages = [pkg]
+                print_info(f"Running coverage for: {package}")
+            except ScriptError as e:
+                print_error(str(e))
+                raise typer.Exit(1) from e
+        else:
+            packages = get_all_packages()
+            if not packages:
+                print_error("No workspace packages found.")
+                raise typer.Exit(1)
 
-    print(f"📦 Found {len(workspace_members)} packages:", flush=True)
-    for member in workspace_members:
-        print(f"  • {member}", flush=True)
+            print_info(f"Found {len(packages)} packages")
 
-    all_passed = True
-    tested_packages = 0
+        console.print()
+        console.print("[bold]Packages to test:[/]")
+        for pkg in packages:
+            console.print(f"  • {pkg.name}")
+        console.print()
 
-    for member in workspace_members:
-        package_name = get_package_name(member)
-        if not package_name:
-            print(f"\n⚠️  Skipping {member}: Could not determine package name")
-            continue
+        all_passed = True
+        tested_count = 0
 
-        if not run_tests_with_coverage(member, package_name):
-            all_passed = False
-        tested_packages += 1
+        for pkg in packages:
+            if not run_tests_with_coverage(pkg):
+                all_passed = False
+            tested_count += 1
 
-    # Print summary
-    print(f"\n{'=' * 60}", flush=True)
-    print("📊 Coverage Summary", flush=True)
-    print(f"{'=' * 60}", flush=True)
+        # Print summary
+        print_header("Coverage Summary")
 
-    coverage_files = collect_coverage_files()
-    if coverage_files:
-        print("\nGenerated coverage files:", flush=True)
-        for f in coverage_files:
-            print(f"  • {f}", flush=True)
+        coverage_files = collect_coverage_files()
+        if coverage_files:
+            table = Table(title="Generated Coverage Files")
+            table.add_column("Package", style="cyan")
+            table.add_column("Coverage File", style="green")
 
-        # Output for CI consumption
-        print("\n📤 Coverage files for upload:", flush=True)
-        print(",".join(coverage_files), flush=True)
+            for f in coverage_files:
+                # Extract package name from path
+                parts = f.split("/")
+                if len(parts) >= 3:
+                    pkg_name = parts[-2]
+                else:
+                    pkg_name = f
+                table.add_row(pkg_name, f)
 
-    print(f"\n{'=' * 60}", flush=True)
-    if all_passed:
-        print(f"✅ All {tested_packages} packages passed!", flush=True)
-        print(f"{'=' * 60}\n", flush=True)
-        return 0
-    else:
-        print("❌ Some packages failed!", flush=True)
-        print(f"{'=' * 60}\n", flush=True)
-        return 1
+            console.print(table)
+
+            # Output for CI consumption
+            console.print()
+            print_info("Coverage files for upload:")
+            console.print(f"[dim]{','.join(coverage_files)}[/]")
+
+        console.print()
+        console.rule()
+        if all_passed:
+            print_success(f"All {tested_count} packages passed!")
+            raise typer.Exit(0)
+        else:
+            print_error("Some packages failed!")
+            raise typer.Exit(1)
+
+    except ScriptError as e:
+        print_error(str(e))
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()
