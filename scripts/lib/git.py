@@ -123,17 +123,26 @@ def get_changed_files_between(base_ref: str, head_ref: str) -> set[str]:
 def get_changed_packages(changed_files: set[str]) -> list[PackageInfo]:
     """Determine which packages have changes based on changed files.
 
+    If the core 'spakky' package is changed, all packages are returned
+    since all other packages depend on it.
+
     Args:
         changed_files: Set of changed file paths.
 
     Returns:
         List of PackageInfo for packages with changes.
     """
+    all_packages = get_all_packages()
     changed_packages: list[PackageInfo] = []
 
-    for pkg in get_all_packages():
+    for pkg in all_packages:
         path_prefix = str(pkg.path) + "/"
         if any(f.startswith(path_prefix) for f in changed_files):
             changed_packages.append(pkg)
+
+    # If core 'spakky' package changed, test all packages (cascade)
+    core_package_name = "spakky"
+    if any(pkg.name == core_package_name for pkg in changed_packages):
+        return all_packages
 
     return changed_packages
