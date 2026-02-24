@@ -22,7 +22,6 @@ import typer
 
 from common import (
     ScriptError,
-    console,
     err_console,
     get_all_packages,
     get_changed_files_between,
@@ -92,9 +91,10 @@ def main(
                 )
             changed_package_names = all_package_names
 
-        # Output JSON for GitHub Actions matrix
+        # Output JSON for GitHub Actions matrix (use print, not console.print
+        # to avoid Rich wrapping long lines which breaks GitHub Actions output)
         result = sorted(changed_package_names)
-        console.print(json.dumps(result))
+        print(json.dumps(result))
 
         if verbose:
             err_console.print(f"[dim]Output: {len(result)} packages[/]")
