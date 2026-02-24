@@ -885,3 +885,49 @@ async def test_async_aop_with_no_method() -> None:
     service: AsyncEchoService = context.get(type_=AsyncEchoService)
     assert service.message == "Hello World!"
     assert len(logs) == 0
+
+
+def test_aspect_skips_property_getters_during_introspection() -> None:
+    """Verify that property getters are not invoked during AOP introspection.
+
+    This prevents side effects (e.g., errors from uninitialized state) when
+    scanning pod members for aspect matching.
+    """
+
+    class PropertyAccessedError(Exception):
+        """Raised when property getter is unexpectedly invoked."""
+
+    @dataclass
+    class Log(FunctionAnnotation): ...
+
+    @Aspect()
+    class LogAdvisor(IAspect):
+        @Before(Log.exists)
+        def before(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+    @Pod()
+    class ServiceWithProperty:
+        initialized: bool = False
+
+        @property
+        def dangerous_property(self) -> str:
+            if not self.initialized:
+                raise PropertyAccessedError("Property accessed before initialization!")
+            return "value"
+
+        @Log()
+        def do_work(self) -> str:
+            return "done"
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(ServiceWithProperty)
+    context.add(LogAdvisor)
+
+    # This should NOT raise PropertyAccessedError
+    context.start()
+
+    service: ServiceWithProperty = context.get(type_=ServiceWithProperty)
+    service.initialized = True
+    assert service.do_work() == "done"
+    assert service.dangerous_property == "value"
