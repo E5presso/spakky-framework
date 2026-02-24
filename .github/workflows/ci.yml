@@ -115,6 +115,39 @@ jobs:
 
       - name: Run tests
         working-directory: ${{ steps.pkg.outputs.path }}
+        run: uv run pytest --no-cov
+
+  coverage:
+    name: Coverage ${{ matrix.package }}
+    needs: detect
+    if: needs.detect.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-packages --all-extras
+
+      - name: Get package path
+        id: pkg
+        run: |
+          PKG_PATH=$(uv run python scripts/get_package_path.py "${{ matrix.package }}")
+          echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
+
+      - name: Run tests with coverage
+        working-directory: ${{ steps.pkg.outputs.path }}
         run: uv run pytest --cov --cov-report=xml:coverage.xml
 
       - name: Upload to Codecov
