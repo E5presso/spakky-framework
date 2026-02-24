@@ -63,6 +63,7 @@ class SessionManager(IApplicationContextAware):
         if self._current_session is not None:
             self._current_session.close()
         self._scoped_session.remove()
+        self._current_session = None
 
 
 @Pod()
@@ -99,3 +100,4 @@ class AsyncSessionManager(IApplicationContextAware):
         if self._current_session is not None:
             await self._current_session.close()
         await self._scoped_session.remove()
+        self._current_session = None
