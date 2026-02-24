@@ -2119,6 +2119,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "toml" },
+    { name = "typer" },
 ]
 
 [package.metadata]
@@ -2134,6 +2135,7 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.14.6" },
     { name = "toml", specifier = ">=0.10.2" },
+    { name = "typer", specifier = ">=0.15.0" },
 ]
 
 [[package]]

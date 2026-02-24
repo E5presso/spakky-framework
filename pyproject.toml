@@ -19,6 +19,7 @@ dev = [
   "pytest-xdist>=3.8.0",
   "ruff>=0.14.6",
   "toml>=0.10.2",
+  "typer>=0.15.0",
 ]
 
 [tool.commitizen]
