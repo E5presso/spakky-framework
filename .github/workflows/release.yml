@@ -47,9 +47,9 @@ jobs:
         id: bump
         run: |
           if [ "${{ inputs.dry_run }}" == "true" ]; then
-            python3 scripts/bump_packages.py --dry-run
+            uv run python scripts/bump_packages.py --dry-run
           else
-            python3 scripts/bump_packages.py
+            uv run python scripts/bump_packages.py
           fi
 
       - name: Update lock file
@@ -104,7 +104,7 @@ jobs:
       - name: Get package path
         id: pkg
         run: |
-          PKG_PATH=$(python3 scripts/get_package_path.py "${{ matrix.package }}")
+          PKG_PATH=$(uv run python scripts/get_package_path.py "${{ matrix.package }}")
           echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
 
       - name: Build package

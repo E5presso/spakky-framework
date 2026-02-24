@@ -39,10 +39,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync
 
       - name: Detect changed packages
         id: set-matrix
@@ -59,7 +63,7 @@ jobs:
           fi
 
           echo "Comparing $BASE...$HEAD"
-          MATRIX=$(python3 scripts/detect_ci_changes.py "$BASE" "$HEAD")
+          MATRIX=$(uv run python scripts/detect_ci_changes.py --base "$BASE" --head "$HEAD")
           echo "Detected changes: $MATRIX"
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
@@ -96,7 +100,7 @@ jobs:
       - name: Get package path
         id: pkg
         run: |
-          PKG_PATH=$(python3 scripts/get_package_path.py "${{ matrix.package }}")
+          PKG_PATH=$(uv run python scripts/get_package_path.py "${{ matrix.package }}")
           echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
 
       - name: Run linting
