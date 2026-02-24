@@ -1,7 +1,5 @@
 """Spakky Data package - Data access abstractions.
 
-# CI test - verify partial package testing
-
 This package provides:
 - Repository pattern for aggregate persistence
 - Transaction management

@@ -8,6 +8,7 @@ repos:
         pass_filenames: false
         always_run: true
         verbose: true
+        stages: [pre-commit]
 
       - id: monorepo-pre-push-tests
         name: Run tests on changed sub-projects
