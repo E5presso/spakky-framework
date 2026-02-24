@@ -123,6 +123,7 @@ def get_changed_files_between(base_ref: str, head_ref: str) -> set[str]:
 def get_changed_packages(changed_files: set[str]) -> list[PackageInfo]:
     """Determine which packages have changes based on changed files.
 
+    Includes packages that depend on the changed packages (cascade testing).
     If the core 'spakky' package is changed, all packages are returned
     since all other packages depend on it.
 
@@ -130,19 +131,26 @@ def get_changed_packages(changed_files: set[str]) -> list[PackageInfo]:
         changed_files: Set of changed file paths.
 
     Returns:
-        List of PackageInfo for packages with changes.
+        List of PackageInfo for packages with changes and their dependents.
     """
+    from lib.workspace import build_reverse_dependency_graph, get_dependent_packages
+
     all_packages = get_all_packages()
-    changed_packages: list[PackageInfo] = []
+    directly_changed: set[str] = set()
 
     for pkg in all_packages:
         path_prefix = str(pkg.path) + "/"
         if any(f.startswith(path_prefix) for f in changed_files):
-            changed_packages.append(pkg)
+            directly_changed.add(pkg.name)
 
-    # If core 'spakky' package changed, test all packages (cascade)
+    # If core 'spakky' package changed, test all packages (shortcut)
     core_package_name = "spakky"
-    if any(pkg.name == core_package_name for pkg in changed_packages):
+    if core_package_name in directly_changed:
         return all_packages
 
-    return changed_packages
+    # Build reverse dependency graph and find all affected packages
+    reverse_deps = build_reverse_dependency_graph()
+    affected_packages = get_dependent_packages(directly_changed, reverse_deps)
+
+    # Return PackageInfo for all affected packages
+    return [pkg for pkg in all_packages if pkg.name in affected_packages]

@@ -123,3 +123,88 @@ def get_package_by_path(path: str) -> PackageInfo:
     if info is None:
         raise PackageNotFoundError(path)
     return info
+
+
+def get_package_dependencies(pkg: PackageInfo) -> set[str]:
+    """Get the workspace package dependencies for a package.
+
+    Args:
+        pkg: PackageInfo instance.
+
+    Returns:
+        Set of workspace package names that this package depends on.
+    """
+    import re
+
+    pyproject_path = WORKSPACE_ROOT / pkg.path / "pyproject.toml"
+
+    if not pyproject_path.exists():
+        return set()
+
+    with open(pyproject_path, "rb") as f:
+        config = tomllib.load(f)
+
+    deps = config.get("project", {}).get("dependencies", [])
+    all_packages = {p.name for p in get_all_packages()}
+    workspace_deps: set[str] = set()
+
+    for dep in deps:
+        # Parse dependency string: "spakky-data>=5.0.1" -> "spakky-data"
+        match = re.match(r"^([a-zA-Z0-9_-]+)", dep)
+        if match:
+            dep_name = match.group(1)
+            if dep_name in all_packages:
+                workspace_deps.add(dep_name)
+
+    return workspace_deps
+
+
+def build_reverse_dependency_graph() -> dict[str, set[str]]:
+    """Build a reverse dependency graph for the workspace.
+
+    Returns:
+        Dictionary mapping package name to set of packages that depend on it.
+        e.g., {"spakky-data": {"spakky-sqlalchemy"}} means spakky-sqlalchemy
+        depends on spakky-data.
+    """
+    packages = get_all_packages()
+    reverse_deps: dict[str, set[str]] = {pkg.name: set() for pkg in packages}
+
+    for pkg in packages:
+        deps = get_package_dependencies(pkg)
+        for dep in deps:
+            if dep in reverse_deps:
+                reverse_deps[dep].add(pkg.name)
+
+    return reverse_deps
+
+
+def get_dependent_packages(
+    package_names: set[str],
+    reverse_deps: dict[str, set[str]] | None = None,
+) -> set[str]:
+    """Get all packages that depend on the given packages (transitively).
+
+    Args:
+        package_names: Set of package names to find dependents for.
+        reverse_deps: Pre-computed reverse dependency graph (optional).
+
+    Returns:
+        Set of all package names that depend on any of the given packages,
+        including the original packages.
+    """
+    if reverse_deps is None:
+        reverse_deps = build_reverse_dependency_graph()
+
+    result = set(package_names)
+    to_process = list(package_names)
+
+    while to_process:
+        current = to_process.pop()
+        dependents = reverse_deps.get(current, set())
+        for dep in dependents:
+            if dep not in result:
+                result.add(dep)
+                to_process.append(dep)
+
+    return result
