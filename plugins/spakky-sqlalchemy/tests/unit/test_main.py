@@ -8,6 +8,10 @@ import pytest
 from spakky.plugins.sqlalchemy.common.config import SQLAlchemyConnectionConfig
 from spakky.plugins.sqlalchemy.main import initialize
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
+from spakky.plugins.sqlalchemy.persistency.connection_manager import (
+    AsyncConnectionManager,
+    ConnectionManager,
+)
 from spakky.plugins.sqlalchemy.persistency.session_manager import (
     AsyncSessionManager,
     SessionManager,
@@ -48,11 +52,13 @@ def test_initialize_with_async_support_expect_all_pods_registered(
     added_types = [call.args[0] for call in mock_app.add.call_args_list]
     assert SQLAlchemyConnectionConfig in added_types
     assert SchemaRegistry in added_types
+    assert ConnectionManager in added_types
     assert SessionManager in added_types
     assert Transaction in added_types
+    assert AsyncConnectionManager in added_types
     assert AsyncSessionManager in added_types
     assert AsyncTransaction in added_types
-    assert mock_app.add.call_count == 6
+    assert mock_app.add.call_count == 8
 
 
 def test_initialize_without_async_support_expect_sync_pods_only(
@@ -67,11 +73,13 @@ def test_initialize_without_async_support_expect_sync_pods_only(
     added_types = [call.args[0] for call in mock_app.add.call_args_list]
     assert SQLAlchemyConnectionConfig in added_types
     assert SchemaRegistry in added_types
+    assert ConnectionManager in added_types
     assert SessionManager in added_types
     assert Transaction in added_types
+    assert AsyncConnectionManager not in added_types
     assert AsyncSessionManager not in added_types
     assert AsyncTransaction not in added_types
-    assert mock_app.add.call_count == 4
+    assert mock_app.add.call_count == 5
 
 
 def test_initialize_default_async_mode_expect_async_pods_registered(
@@ -85,5 +93,6 @@ def test_initialize_default_async_mode_expect_async_pods_registered(
     initialize(mock_app)
 
     added_types = [call.args[0] for call in mock_app.add.call_args_list]
+    assert AsyncConnectionManager in added_types
     assert AsyncSessionManager in added_types
     assert AsyncTransaction in added_types
