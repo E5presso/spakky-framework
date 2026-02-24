@@ -4,93 +4,98 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 
-from spakky.plugins.sqlalchemy.common.config import SQLAlchemyConnectionConfig
-from sqlalchemy import Engine, create_engine
+from spakky.plugins.sqlalchemy.persistency.connection_manager import (
+    AsyncConnectionManager,
+    ConnectionManager,
+)
+from spakky.plugins.sqlalchemy.persistency.error import (
+    AbstractSpakkySqlAlchemyPersistencyError,
+)
+from sqlalchemy import Engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_scoped_session,
     async_sessionmaker,
-    create_async_engine,
 )
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 
+class SessionNotInitializedError(AbstractSpakkySqlAlchemyPersistencyError):
+    """Raised when trying to access a session that has not been initialized."""
+
+    message = (
+        "Session has not been initialized. Call 'open()' before accessing the session."
+    )
+
+
 @Pod()
 class SessionManager(IApplicationContextAware):
-    __application_context: IApplicationContext
-    __engine: Engine
-    __scoped_session: scoped_session[Session]
+    _application_context: IApplicationContext
+    _engine: Engine
+    _scoped_session: scoped_session[Session]
+    _current_session: Session | None
 
     def set_application_context(self, application_context: IApplicationContext) -> None:
-        self.__application_context = application_context
-        self.__scoped_session = scoped_session(
+        self._application_context = application_context
+        self._scoped_session = scoped_session(
             session_factory=sessionmaker(
-                bind=self.__engine,
+                bind=self._engine,
                 expire_on_commit=False,
             ),
-            scopefunc=self.__application_context.get_context_id,
+            scopefunc=self._application_context.get_context_id,
         )
+
+    def __init__(self, connection_manager: ConnectionManager) -> None:
+        self._engine = connection_manager.connection
+        self._current_session = None
 
     @property
     def session(self) -> Session:
-        return self.__scoped_session()
+        if self._current_session is None:
+            raise SessionNotInitializedError()
+        return self._current_session
 
     def open(self) -> None:
-        self.__scoped_session()
+        self._current_session = self._scoped_session()
 
     def close(self) -> None:
-        self.__scoped_session().close()
-        self.__scoped_session.remove()
-
-    def __init__(self, config: SQLAlchemyConnectionConfig) -> None:
-        self.__engine = create_engine(
-            url=config.connection_string,
-            echo=config.echo,
-            echo_pool=config.echo_pool,
-            pool_size=config.pool_size,
-            max_overflow=config.pool_max_overflow,
-            pool_timeout=config.pool_timeout,
-            pool_recycle=config.pool_recycle,
-            pool_pre_ping=config.pool_pre_ping,
-        )
+        if self._current_session is not None:
+            self._current_session.close()
+        self._scoped_session.remove()
 
 
 @Pod()
 class AsyncSessionManager(IApplicationContextAware):
-    __application_context: IApplicationContext
-    __engine: AsyncEngine
-    __scoped_session: async_scoped_session[AsyncSession]
+    _application_context: IApplicationContext
+    _engine: AsyncEngine
+    _scoped_session: async_scoped_session[AsyncSession]
+    _current_session: AsyncSession | None
 
     def set_application_context(self, application_context: IApplicationContext) -> None:
-        self.__application_context = application_context
-        self.__scoped_session = async_scoped_session(
+        self._application_context = application_context
+        self._scoped_session = async_scoped_session(
             session_factory=async_sessionmaker(
-                bind=self.__engine,
+                bind=self._engine,
                 expire_on_commit=False,
             ),
-            scopefunc=self.__application_context.get_context_id,
+            scopefunc=self._application_context.get_context_id,
         )
+
+    def __init__(self, connection_manager: AsyncConnectionManager) -> None:
+        self._engine = connection_manager.connection
+        self._current_session = None
 
     @property
     def session(self) -> AsyncSession:
-        return self.__scoped_session()
+        if self._current_session is None:
+            raise SessionNotInitializedError()
+        return self._current_session
 
     async def open(self) -> None:
-        self.__scoped_session()
+        self._current_session = self._scoped_session()
 
     async def close(self) -> None:
-        await self.__scoped_session().close()
-        await self.__scoped_session.remove()
-
-    def __init__(self, config: SQLAlchemyConnectionConfig) -> None:
-        self.__engine = create_async_engine(
-            url=config.connection_string,
-            echo=config.echo,
-            echo_pool=config.echo_pool,
-            pool_size=config.pool_size,
-            max_overflow=config.pool_max_overflow,
-            pool_timeout=config.pool_timeout,
-            pool_recycle=config.pool_recycle,
-            pool_pre_ping=config.pool_pre_ping,
-        )
+        if self._current_session is not None:
+            await self._current_session.close()
+        await self._scoped_session.remove()

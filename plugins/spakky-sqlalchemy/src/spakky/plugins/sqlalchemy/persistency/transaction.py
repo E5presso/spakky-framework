@@ -6,11 +6,17 @@ from spakky.plugins.sqlalchemy.persistency.session_manager import (
     AsyncSessionManager,
     SessionManager,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 
 @Pod()
 class Transaction(AbstractTransaction):
-    __session_manager: SessionManager
+    _session_manager: SessionManager
+
+    @property
+    def session(self) -> Session:
+        return self._session_manager.session
 
     def __init__(
         self,
@@ -18,24 +24,28 @@ class Transaction(AbstractTransaction):
         session_manager: SessionManager,
     ) -> None:
         super().__init__(autocommit=config.autocommit)
-        self.__session_manager = session_manager
+        self._session_manager = session_manager
 
     def initialize(self) -> None:
-        self.__session_manager.open()
+        self._session_manager.open()
 
     def dispose(self) -> None:
-        self.__session_manager.close()
+        self._session_manager.close()
 
     def commit(self) -> None:
-        self.__session_manager.session.commit()
+        self._session_manager.session.commit()
 
     def rollback(self) -> None:
-        self.__session_manager.session.rollback()
+        self._session_manager.session.rollback()
 
 
 @Pod()
 class AsyncTransaction(AbstractAsyncTransaction):
-    __session_manager: AsyncSessionManager
+    _session_manager: AsyncSessionManager
+
+    @property
+    def session(self) -> AsyncSession:
+        return self._session_manager.session
 
     def __init__(
         self,
@@ -43,16 +53,16 @@ class AsyncTransaction(AbstractAsyncTransaction):
         session_manager: AsyncSessionManager,
     ) -> None:
         super().__init__(autocommit=config.autocommit)
-        self.__session_manager = session_manager
+        self._session_manager = session_manager
 
     async def initialize(self) -> None:
-        await self.__session_manager.open()
+        await self._session_manager.open()
 
     async def dispose(self) -> None:
-        await self.__session_manager.close()
+        await self._session_manager.close()
 
     async def commit(self) -> None:
-        await self.__session_manager.session.commit()
+        await self._session_manager.session.commit()
 
     async def rollback(self) -> None:
-        await self.__session_manager.session.rollback()
+        await self._session_manager.session.rollback()
