@@ -51,6 +51,7 @@ addopts = """
     --strict-markers
     --dist=loadfile
     -p no:warnings
+    -n auto
     -vv
 """
 

@@ -20,7 +20,7 @@ from spakky.plugins.sqlalchemy.persistency.transaction import AsyncTransaction
 from tests import apps
 
 
-@pytest.fixture(name="postgres_container", scope="session")
+@pytest.fixture(name="postgres_container", scope="package")
 def postgres_container_fixture() -> Generator[PostgresContainer, Any, None]:
     """Start PostgreSQL container for integration tests.
 
@@ -39,7 +39,7 @@ def postgres_container_fixture() -> Generator[PostgresContainer, Any, None]:
         yield container
 
 
-@pytest.fixture(name="database_url", scope="session")
+@pytest.fixture(name="database_url", scope="package")
 def database_url_fixture(postgres_container: PostgresContainer) -> str:
     """Get async database URL from PostgreSQL container.
 
@@ -59,7 +59,7 @@ def database_url_fixture(postgres_container: PostgresContainer) -> str:
     return async_url
 
 
-@pytest.fixture(name="setup_env_vars", scope="session")
+@pytest.fixture(name="setup_env_vars", scope="package")
 def setup_env_vars_fixture(database_url: str) -> str:
     """Set environment variables for SQLAlchemyConnectionConfig.
 
@@ -78,7 +78,7 @@ def setup_env_vars_fixture(database_url: str) -> str:
     return database_url
 
 
-@pytest.fixture(name="app", scope="session")
+@pytest.fixture(name="app", scope="package")
 def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
     """Create SpakkyApplication with SQLAlchemy plugin.
 
@@ -111,7 +111,7 @@ def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
     logger.removeHandler(console)
 
 
-@pytest.fixture(name="schema_registry", scope="session")
+@pytest.fixture(name="schema_registry", scope="package")
 def schema_registry_fixture(app: SpakkyApplication) -> SchemaRegistry:
     """Get SchemaRegistry from application container.
 
@@ -125,7 +125,7 @@ def schema_registry_fixture(app: SpakkyApplication) -> SchemaRegistry:
     return app.container.get(type_=SchemaRegistry)
 
 
-@pytest.fixture(name="async_connection_manager", scope="session")
+@pytest.fixture(name="async_connection_manager", scope="package")
 def async_connection_manager_fixture(app: SpakkyApplication) -> AsyncConnectionManager:
     """Get AsyncConnectionManager from application container.
 
@@ -139,7 +139,7 @@ def async_connection_manager_fixture(app: SpakkyApplication) -> AsyncConnectionM
     return app.container.get(type_=AsyncConnectionManager)
 
 
-@pytest.fixture(name="setup_database", scope="session", autouse=True)
+@pytest.fixture(name="setup_database", scope="package", autouse=True)
 async def setup_database_fixture(
     schema_registry: SchemaRegistry,
     async_connection_manager: AsyncConnectionManager,
