@@ -52,6 +52,12 @@ class SchemaRegistry(ITagRegistryAware):
             self._domain_to_table_map[tag.domain] = tag.table
             self._table_to_domain_map[tag.table] = tag.domain
 
+    def get_type(self, domain_type: type[ObjectT]) -> type[AbstractTable[ObjectT]]:
+        table = self._domain_to_table_map.get(domain_type)
+        if table is None:
+            raise NoSchemaFoundFromDomainError(domain_type)
+        return cast(type[AbstractTable[ObjectT]], table)
+
     def from_domain(self, domain: ObjectT) -> AbstractTable[ObjectT]:
         table: type[AbstractTable[ObjectT]] | None = self._domain_to_table_map.get(
             type(domain)
