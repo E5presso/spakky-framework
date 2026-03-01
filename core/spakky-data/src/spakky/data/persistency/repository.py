@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import Generic, Sequence, TypeVar
 
 from spakky.core.common.interfaces.equatable import IEquatable
-
 from spakky.domain.error import AbstractSpakkyDomainError
 from spakky.domain.models.aggregate_root import AggregateRootT
 
@@ -13,6 +12,10 @@ AggregateIdT_contra = TypeVar(
 
 class EntityNotFoundError(AbstractSpakkyDomainError):
     message = "Entity not found by given id"
+
+
+class VersionConflictError(AbstractSpakkyDomainError):
+    message = "Version conflict detected during save operation"
 
 
 class IGenericRepository(ABC, Generic[AggregateRootT, AggregateIdT_contra]):
