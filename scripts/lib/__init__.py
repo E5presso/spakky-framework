@@ -50,7 +50,7 @@ from lib.git import (
 from lib.models import PackageInfo
 
 # Process execution
-from lib.process import run_command, run_streaming
+from lib.process import CapturedResult, run_captured, run_command, run_streaming
 
 # Workspace functions
 from lib.workspace import (
@@ -89,6 +89,8 @@ __all__ = [
     # Models
     "PackageInfo",
     # Process
+    "CapturedResult",
+    "run_captured",
     "run_command",
     "run_streaming",
     # Workspace

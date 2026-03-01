@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,19 @@ from lib.errors import CommandError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+
+@dataclass(frozen=True, slots=True)
+class CapturedResult:
+    """Result of a captured command execution.
+
+    Attributes:
+        exit_code: The exit code of the command.
+        output: Combined stdout and stderr output.
+    """
+
+    exit_code: int
+    output: str
 
 
 def run_command(
@@ -129,3 +143,48 @@ def run_streaming(
         tty_file.close()
 
     return process.returncode
+
+
+def run_captured(
+    cmd: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> CapturedResult:
+    """Execute a command and capture its output.
+
+    Designed for parallel execution where output needs to be collected
+    and displayed later to avoid interleaving.
+
+    Args:
+        cmd: Command and arguments to run.
+        cwd: Working directory for the command.
+        env: Additional environment variables.
+
+    Returns:
+        CapturedResult with exit_code and captured output.
+    """
+    process_env = os.environ.copy()
+    process_env["PYTHONUNBUFFERED"] = "1"
+    process_env["FORCE_COLOR"] = "1"
+    # Set terminal width to avoid line wrapping issues in captured output
+    process_env["COLUMNS"] = "200"
+    process_env["TERM"] = "xterm-256color"
+    if env:
+        process_env.update(env)
+
+    result = subprocess.run(
+        list(cmd),
+        cwd=cwd or WORKSPACE_ROOT,
+        text=True,
+        capture_output=True,
+        env=process_env,
+        check=False,
+    )
+
+    # Combine stdout and stderr (pre-commit outputs to both)
+    combined_output = result.stdout
+    if result.stderr:
+        combined_output += result.stderr
+
+    return CapturedResult(exit_code=result.returncode, output=combined_output)

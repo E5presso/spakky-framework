@@ -2,7 +2,8 @@
 """Monorepo pre-commit hook that runs sub-project pre-commit configs.
 
 This script runs pre-commit checks only for sub-projects that have
-actual file changes staged for commit.
+actual file changes staged for commit. Executes checks in parallel
+for faster feedback while maintaining stable console output.
 
 Usage:
     uv run python scripts/run_subproject_precommit.py
@@ -10,9 +11,22 @@ Usage:
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
 import typer
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.text import Text
 
 from common import (
+    CapturedResult,
     PackageInfo,
     ScriptError,
     console,
@@ -24,8 +38,11 @@ from common import (
     print_info,
     print_success,
     print_warning,
-    run_streaming,
+    run_captured,
 )
+
+if TYPE_CHECKING:
+    from concurrent.futures import Future
 
 app = typer.Typer(
     help="Run pre-commit hooks for changed workspace projects.",
@@ -33,20 +50,39 @@ app = typer.Typer(
 )
 
 
-def run_precommit_for_package(pkg: PackageInfo) -> bool:
-    """Run pre-commit for a specific package.
+@dataclass(frozen=True, slots=True)
+class PrecommitResult:
+    """Result of pre-commit execution for a package.
+
+    Attributes:
+        package: The package that was checked.
+        passed: Whether the checks passed.
+        output: Captured console output.
+        skipped: Whether the package was skipped (no config).
+    """
+
+    package: PackageInfo
+    passed: bool
+    output: str
+    skipped: bool = False
+
+
+def run_precommit_for_package(pkg: PackageInfo) -> PrecommitResult:
+    """Run pre-commit for a specific package (parallel-safe).
 
     Args:
         pkg: Package information.
 
     Returns:
-        True if checks passed, False otherwise.
+        PrecommitResult with captured output.
     """
-    print_header(f"Pre-commit: {pkg.name}")
-
     if not pkg.has_precommit_config:
-        print_warning(f"No .pre-commit-config.yaml found for {pkg.name}")
-        return True
+        return PrecommitResult(
+            package=pkg,
+            passed=True,
+            output="",
+            skipped=True,
+        )
 
     cmd = [
         "uv",
@@ -57,14 +93,119 @@ def run_precommit_for_package(pkg: PackageInfo) -> bool:
         "--color=always",
     ]
 
-    exit_code = run_streaming(cmd, cwd=pkg.full_path)
+    result: CapturedResult = run_captured(cmd, cwd=pkg.full_path)
 
-    if exit_code != 0:
-        print_error(f"Pre-commit failed for: {pkg.name}")
-        return False
+    return PrecommitResult(
+        package=pkg,
+        passed=result.exit_code == 0,
+        output=result.output,
+    )
 
-    print_success(f"Pre-commit passed for: {pkg.name}")
-    return True
+
+def run_parallel_precommit(packages: list[PackageInfo]) -> list[PrecommitResult]:
+    """Run pre-commit checks for multiple packages in parallel.
+
+    Args:
+        packages: List of packages to check.
+
+    Returns:
+        List of PrecommitResult in the same order as input packages.
+    """
+    results: dict[str, PrecommitResult] = {}
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task(
+            "[cyan]Running pre-commit checks...",
+            total=len(packages),
+        )
+
+        with ThreadPoolExecutor(max_workers=min(len(packages), 8)) as executor:
+            future_to_pkg: dict[Future[PrecommitResult], PackageInfo] = {
+                executor.submit(run_precommit_for_package, pkg): pkg for pkg in packages
+            }
+
+            for future in as_completed(future_to_pkg):
+                pkg = future_to_pkg[future]
+                result = future.result()
+                results[pkg.name] = result
+
+                # Update progress with status
+                status = "✓" if result.passed else "✗"
+                if result.skipped:
+                    status = "○"
+                progress.update(
+                    task,
+                    advance=1,
+                    description=f"[cyan]Completed: {pkg.name} [{status}]",
+                )
+
+    # Return results in original package order
+    return [results[pkg.name] for pkg in packages]
+
+
+def display_results(results: list[PrecommitResult]) -> bool:
+    """Display pre-commit results with stable output.
+
+    Args:
+        results: List of PrecommitResult from parallel execution.
+
+    Returns:
+        True if all checks passed, False otherwise.
+    """
+    all_passed = True
+    failed_packages: list[PrecommitResult] = []
+    passed_packages: list[PrecommitResult] = []
+    skipped_packages: list[PrecommitResult] = []
+
+    for result in results:
+        if result.skipped:
+            skipped_packages.append(result)
+        elif result.passed:
+            passed_packages.append(result)
+        else:
+            failed_packages.append(result)
+            all_passed = False
+
+    console.print()
+
+    # Show skipped packages briefly
+    if skipped_packages:
+        console.print("[dim]Skipped (no .pre-commit-config.yaml):[/]")
+        for result in skipped_packages:
+            console.print(f"  [dim]○ {result.package.name}[/]")
+        console.print()
+
+    # Show passed packages briefly
+    if passed_packages:
+        console.print("[green]Passed:[/]")
+        for result in passed_packages:
+            console.print(f"  [green]✓[/] {result.package.name}")
+        console.print()
+
+    # Show failed packages with full output
+    if failed_packages:
+        console.print("[red]Failed:[/]")
+        for result in failed_packages:
+            console.print(f"  [red]✗[/] {result.package.name}")
+        console.print()
+
+        # Display detailed output for failed packages
+        for result in failed_packages:
+            console.rule(f"[red bold]{result.package.name} - Output[/]")
+            # Parse ANSI codes properly for stable output
+            ansi_text = Text.from_ansi(result.output)
+            console.print(ansi_text)
+            console.print()
+
+    return all_passed
 
 
 @app.command()
@@ -74,6 +215,12 @@ def main(
         "--all",
         "-a",
         help="Run for all packages instead of only changed ones.",
+    ),
+    sequential: bool = typer.Option(
+        False,
+        "--sequential",
+        "-s",
+        help="Run checks sequentially (useful for debugging).",
     ),
 ) -> None:
     """Run pre-commit checks for workspace projects with staged changes."""
@@ -109,14 +256,48 @@ def main(
             console.print(f"  • {pkg.name}")
 
         console.print()
-        console.print(
-            f"[bold]Running pre-commit for {len(changed_packages)} project(s)...[/]"
-        )
 
-        all_passed = True
-        for pkg in changed_packages:
-            if not run_precommit_for_package(pkg):
-                all_passed = False
+        if sequential:
+            # Legacy sequential mode for debugging
+            from common import run_streaming
+
+            console.print(
+                f"[bold]Running pre-commit sequentially for "
+                f"{len(changed_packages)} project(s)...[/]"
+            )
+
+            all_passed = True
+            for pkg in changed_packages:
+                print_header(f"Pre-commit: {pkg.name}")
+                if not pkg.has_precommit_config:
+                    print_warning(f"No .pre-commit-config.yaml found for {pkg.name}")
+                    continue
+
+                cmd = [
+                    "uv",
+                    "run",
+                    "pre-commit",
+                    "run",
+                    "--all-files",
+                    "--color=always",
+                ]
+                exit_code = run_streaming(cmd, cwd=pkg.full_path)
+
+                if exit_code != 0:
+                    print_error(f"Pre-commit failed for: {pkg.name}")
+                    all_passed = False
+                else:
+                    print_success(f"Pre-commit passed for: {pkg.name}")
+        else:
+            # Parallel mode (default)
+            console.print(
+                f"[bold]Running pre-commit in parallel for "
+                f"{len(changed_packages)} project(s)...[/]"
+            )
+            console.print()
+
+            results = run_parallel_precommit(changed_packages)
+            all_passed = display_results(results)
 
         console.print()
         console.rule()

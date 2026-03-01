@@ -46,6 +46,8 @@ from lib import (
     print_success,
     print_warning,
     # Process
+    CapturedResult,
+    run_captured,
     run_command,
     run_streaming,
 )
@@ -76,8 +78,10 @@ __all__ = [
     "get_staged_files",
     "get_upstream_branch",
     # Models
+    "CapturedResult",
     "PackageInfo",
     # Process
+    "run_captured",
     "run_command",
     "run_streaming",
     # Workspace
