@@ -73,6 +73,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-kafka`** | Event-driven architecture support with [Apache Kafka](https://kafka.apache.org/) |
 | **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
 | **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
+| **`spakky-sqlalchemy`** | Database integration with [SQLAlchemy](https://www.sqlalchemy.org/) ORM |
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
 
 ## 🚀 Quick Start

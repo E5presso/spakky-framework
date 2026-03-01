@@ -239,3 +239,26 @@ def test_from_domain_unregistered_domain_expect_error(
 
     with pytest.raises(NoSchemaFoundFromDomainError):
         registry.from_domain(user)
+
+
+def test_get_type_registered_domain_expect_table_type(
+    tag_registry_with_user_table: InMemoryTagRegistry,
+) -> None:
+    """Test that get_type returns correct table type for registered domain."""
+    registry = SchemaRegistry()
+    registry.set_tag_registry(tag_registry_with_user_table)
+
+    result = registry.get_type(User)
+
+    assert result is UserTable
+
+
+def test_get_type_unregistered_domain_expect_error(
+    tag_registry: InMemoryTagRegistry,
+) -> None:
+    """Test that get_type raises NoSchemaFoundFromDomainError for unregistered domain."""
+    registry = SchemaRegistry()
+    registry.set_tag_registry(tag_registry)
+
+    with pytest.raises(NoSchemaFoundFromDomainError):
+        registry.get_type(User)
