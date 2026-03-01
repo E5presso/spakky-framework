@@ -16,7 +16,10 @@ from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
 )
-from spakky.plugins.sqlalchemy.persistency.transaction import AsyncTransaction
+from spakky.plugins.sqlalchemy.persistency.transaction import (
+    AsyncTransaction,
+    Transaction,
+)
 from tests import apps
 
 
@@ -181,3 +184,16 @@ def async_transaction_fixture(app: SpakkyApplication) -> AsyncTransaction:
         AsyncTransaction instance.
     """
     return app.container.get(type_=AsyncTransaction)
+
+
+@pytest.fixture(name="transaction", scope="function")
+def transaction_fixture(app: SpakkyApplication) -> Transaction:
+    """Get Transaction from application container.
+
+    Args:
+        app: SpakkyApplication instance.
+
+    Returns:
+        Transaction instance.
+    """
+    return app.container.get(type_=Transaction)

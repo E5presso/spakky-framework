@@ -5,11 +5,11 @@ from uuid import UUID
 
 from spakky.core.common.mutability import mutable
 from spakky.core.utils.uuid import uuid7
-from spakky.domain.models.entity import AbstractEntity
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 
 @mutable
-class Comment(AbstractEntity[UUID]):
+class Comment(AbstractAggregateRoot[UUID]):
     """Comment domain entity for testing purposes."""
 
     post_id: UUID
