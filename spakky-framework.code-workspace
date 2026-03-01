@@ -86,17 +86,18 @@
 			"**/.pytest_cache/": true,
 			"**/cover/": true,
 		},
+		"pyrefly.lspPath": "./.venv/bin/pyrefly",
 		"python.defaultInterpreterPath": "${workspaceFolder:root}/.venv/bin/python",
 		"python.testing.pytestPath": "${workspaceFolder:root}/.venv/bin/pytest",
-		"python.languageServer": "Pylance",
+		"python.languageServer": "None",
 		"python.analysis.diagnosticMode": "workspace",
 		"python.analysis.typeCheckingMode": "strict",
 		"python.analysis.autoImportCompletions": true,
 		"python.analysis.enableTroubleshootMissingImports": true,
 		"python.analysis.packageIndexDepths": [
 			{
-				"name": "*",
-				"depth": 10,
+				"name": "",
+				"depth": -1,
 				"includeAllSymbols": true,
 			},
 		],
@@ -139,6 +140,10 @@
 		"ruff.importStrategy": "fromEnvironment",
 	},
 	"extensions": {
-		"recommendations": ["charliermarsh.ruff", "vivaxy.vscode-conventional-commits"],
+		"recommendations": [
+			"charliermarsh.ruff",
+			"vivaxy.vscode-conventional-commits",
+			"meta.pyrefly",
+		],
 	}
 }
