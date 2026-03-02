@@ -14,12 +14,13 @@ from tests.apps.orm import CommentTable, PostTable, UserTable
 async def test_user_create_convert_save_and_query_expect_success(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
+    unique_id: str,
 ) -> None:
     """User 도메인 모델의 생성, ORM 변환, 저장, 조회를 검증한다."""
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
     user = User.create(
-        username="testuser",
-        email="test@example.com",
+        username=f"testuser_{unique_id}",
+        email=f"test_{unique_id}@example.com",
         password_hash="hashed_password_123",
     )
 
@@ -47,12 +48,13 @@ async def test_user_create_convert_save_and_query_expect_success(
 async def test_user_table_to_domain_conversion_expect_success(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
+    unique_id: str,
 ) -> None:
     """조회된 UserTable을 User 도메인으로 변환하는 것을 검증한다."""
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
     user = User.create(
-        username="domainuser",
-        email="domain@example.com",
+        username=f"domainuser_{unique_id}",
+        email=f"domain_{unique_id}@example.com",
         password_hash="domain_hash_456",
     )
 
@@ -78,13 +80,14 @@ async def test_user_table_to_domain_conversion_expect_success(
 async def test_post_create_convert_save_and_query_expect_success(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
+    unique_id: str,
 ) -> None:
     """Post 도메인 모델의 생성, ORM 변환, 저장, 조회를 검증한다."""
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
 
     author = User.create(
-        username="author",
-        email="author@example.com",
+        username=f"author_{unique_id}",
+        email=f"author_{unique_id}@example.com",
         password_hash="author_hash",
     )
     post = Post.create(
@@ -116,13 +119,14 @@ async def test_post_create_convert_save_and_query_expect_success(
 async def test_post_table_to_domain_conversion_expect_success(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
+    unique_id: str,
 ) -> None:
     """조회된 PostTable을 Post 도메인으로 변환하는 것을 검증한다."""
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
 
     author = User.create(
-        username="postauthor",
-        email="postauthor@example.com",
+        username=f"postauthor_{unique_id}",
+        email=f"postauthor_{unique_id}@example.com",
         password_hash="post_author_hash",
     )
     post = Post.create(
@@ -155,13 +159,14 @@ async def test_post_table_to_domain_conversion_expect_success(
 async def test_comment_create_convert_save_and_query_expect_success(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
+    unique_id: str,
 ) -> None:
     """Comment 도메인 모델의 생성, ORM 변환, 저장, 조회를 검증한다."""
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
 
     author = User.create(
-        username="commentauthor",
-        email="commentauthor@example.com",
+        username=f"commentauthor_{unique_id}",
+        email=f"commentauthor_{unique_id}@example.com",
         password_hash="comment_author_hash",
     )
     post = Post.create(
@@ -201,13 +206,14 @@ async def test_comment_create_convert_save_and_query_expect_success(
 async def test_comment_table_to_domain_conversion_expect_success(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
+    unique_id: str,
 ) -> None:
     """조회된 CommentTable을 Comment 도메인으로 변환하는 것을 검증한다."""
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
 
     author = User.create(
-        username="domaincommentauthor",
-        email="domaincommentauthor@example.com",
+        username=f"domaincommentauthor_{unique_id}",
+        email=f"domaincommentauthor_{unique_id}@example.com",
         password_hash="domain_comment_hash",
     )
     post = Post.create(
@@ -248,13 +254,14 @@ async def test_comment_table_to_domain_conversion_expect_success(
 async def test_multiple_entities_relationship_query_expect_success(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
+    unique_id: str,
 ) -> None:
     """User, Post, Comment 간의 관계 조회를 검증한다."""
     schema_registry: SchemaRegistry = app.container.get(type_=SchemaRegistry)
 
     author = User.create(
-        username="relauthor",
-        email="relauthor@example.com",
+        username=f"relauthor_{unique_id}",
+        email=f"relauthor_{unique_id}@example.com",
         password_hash="rel_author_hash",
     )
     post1 = Post.create(

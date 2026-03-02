@@ -4,6 +4,7 @@ import logging
 import os
 from logging import Formatter, StreamHandler, getLogger
 from typing import Any, AsyncGenerator, Generator
+from uuid import uuid4
 
 import pytest
 from spakky.core.application.application import SpakkyApplication
@@ -197,3 +198,13 @@ def transaction_fixture(app: SpakkyApplication) -> Transaction:
         Transaction instance.
     """
     return app.container.get(type_=Transaction)
+
+
+@pytest.fixture(name="unique_id", scope="function")
+def unique_id_fixture() -> str:
+    """Generate unique ID for test data isolation in parallel execution.
+
+    Returns:
+        8-character unique hex string.
+    """
+    return uuid4().hex[:8]

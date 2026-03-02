@@ -24,11 +24,12 @@ def user_repository_fixture(
 def test_user_save_expect_persisted(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """새 User를 save하면 데이터베이스에 영속화된다."""
     user = User.create(
-        username="sync_testuser",
-        email="sync_test@example.com",
+        username=f"sync_testuser_{unique_id}",
+        email=f"sync_test_{unique_id}@example.com",
         password_hash="hashed_password",
     )
 
@@ -36,19 +37,20 @@ def test_user_save_expect_persisted(
         saved_user = user_repository.save(user)
 
         assert saved_user.uid == user.uid
-        assert saved_user.username == "sync_testuser"
-        assert saved_user.email == "sync_test@example.com"
+        assert saved_user.username == user.username
+        assert saved_user.email == user.email
 
 
 def test_user_save_all_expect_all_persisted(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """여러 User를 save_all하면 모두 영속화된다."""
     users = [
         User.create(
-            username=f"sync_user_{i}",
-            email=f"sync_user_{i}@example.com",
+            username=f"sync_user_{unique_id}_{i}",
+            email=f"sync_user_{unique_id}_{i}@example.com",
             password_hash=f"hash_{i}",
         )
         for i in range(3)
@@ -65,11 +67,12 @@ def test_user_save_all_expect_all_persisted(
 def test_user_get_existing_expect_returned(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User를 get하면 해당 엔티티가 반환된다."""
     user = User.create(
-        username="sync_findme",
-        email="sync_findme@example.com",
+        username=f"sync_findme_{unique_id}",
+        email=f"sync_findme_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -78,8 +81,8 @@ def test_user_get_existing_expect_returned(
         retrieved_user = user_repository.get(user.uid)
 
         assert retrieved_user.uid == user.uid
-        assert retrieved_user.username == "sync_findme"
-        assert retrieved_user.email == "sync_findme@example.com"
+        assert retrieved_user.username == user.username
+        assert retrieved_user.email == user.email
 
 
 def test_user_get_nonexistent_expect_entity_not_found_error(
@@ -99,11 +102,12 @@ def test_user_get_nonexistent_expect_entity_not_found_error(
 def test_user_get_or_none_existing_expect_returned(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User를 get_or_none하면 해당 엔티티가 반환된다."""
     user = User.create(
-        username="sync_nullable_find",
-        email="sync_nullable@example.com",
+        username=f"sync_nullable_find_{unique_id}",
+        email=f"sync_nullable_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -131,11 +135,12 @@ def test_user_get_or_none_nonexistent_expect_none(
 def test_user_contains_existing_expect_true(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User ID로 contains하면 True가 반환된다."""
     user = User.create(
-        username="sync_exists_check",
-        email="sync_exists@example.com",
+        username=f"sync_exists_check_{unique_id}",
+        email=f"sync_exists_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -162,12 +167,13 @@ def test_user_contains_nonexistent_expect_false(
 def test_user_range_existing_expect_all_returned(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """여러 User ID로 range하면 해당 엔티티들이 반환된다."""
     users = [
         User.create(
-            username=f"sync_range_user_{i}",
-            email=f"sync_range_{i}@example.com",
+            username=f"sync_range_user_{unique_id}_{i}",
+            email=f"sync_range_{unique_id}_{i}@example.com",
             password_hash=f"hash_{i}",
         )
         for i in range(3)
@@ -186,11 +192,12 @@ def test_user_range_existing_expect_all_returned(
 def test_user_range_partial_existing_expect_only_existing_returned(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """일부만 존재하는 ID로 range하면 존재하는 것만 반환된다."""
     user = User.create(
-        username="sync_partial_range",
-        email="sync_partial@example.com",
+        username=f"sync_partial_range_{unique_id}",
+        email=f"sync_partial_{unique_id}@example.com",
         password_hash="hashed",
     )
     nonexistent_id = uuid4()
@@ -217,11 +224,12 @@ def test_user_range_empty_list_expect_empty_result(
 def test_user_delete_existing_expect_removed(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User를 delete하면 데이터베이스에서 제거된다."""
     user = User.create(
-        username="sync_to_delete",
-        email="sync_delete@example.com",
+        username=f"sync_to_delete_{unique_id}",
+        email=f"sync_delete_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -236,12 +244,13 @@ def test_user_delete_existing_expect_removed(
 def test_user_delete_all_expect_all_removed(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """여러 User를 delete_all하면 모두 제거된다."""
     users = [
         User.create(
-            username=f"sync_delete_all_{i}",
-            email=f"sync_delete_all_{i}@example.com",
+            username=f"sync_delete_all_{unique_id}_{i}",
+            email=f"sync_delete_all_{unique_id}_{i}@example.com",
             password_hash=f"hash_{i}",
         )
         for i in range(3)
@@ -259,20 +268,21 @@ def test_user_delete_all_expect_all_removed(
 def test_user_save_updated_expect_changes_persisted(
     transaction: Transaction,
     user_repository: IGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """기존 User를 수정 후 save하면 변경사항이 영속화된다."""
     user = User.create(
-        username="sync_original",
-        email="sync_original@example.com",
+        username=f"sync_original_{unique_id}",
+        email=f"sync_original_{unique_id}@example.com",
         password_hash="original_hash",
     )
 
     with transaction:
         user_repository.save(user)
-        user.username = "sync_updated"
-        user.email = "sync_updated@example.com"
+        user.username = f"sync_updated_{unique_id}"
+        user.email = f"sync_updated_{unique_id}@example.com"
         user_repository.save(user)
         retrieved_user = user_repository.get(user.uid)
 
-        assert retrieved_user.username == "sync_updated"
-        assert retrieved_user.email == "sync_updated@example.com"
+        assert retrieved_user.username == f"sync_updated_{unique_id}"
+        assert retrieved_user.email == f"sync_updated_{unique_id}@example.com"

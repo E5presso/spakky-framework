@@ -25,11 +25,12 @@ def user_repository_fixture(
 async def test_user_save_expect_persisted(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """새 User를 save하면 데이터베이스에 영속화된다."""
     user = User.create(
-        username="testuser",
-        email="test@example.com",
+        username=f"testuser_{unique_id}",
+        email=f"test_{unique_id}@example.com",
         password_hash="hashed_password",
     )
 
@@ -37,20 +38,21 @@ async def test_user_save_expect_persisted(
         saved_user = await user_repository.save(user)
 
         assert saved_user.uid == user.uid
-        assert saved_user.username == "testuser"
-        assert saved_user.email == "test@example.com"
+        assert saved_user.username == user.username
+        assert saved_user.email == user.email
 
 
 @pytest.mark.asyncio
 async def test_user_save_all_expect_all_persisted(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """여러 User를 save_all하면 모두 영속화된다."""
     users = [
         User.create(
-            username=f"user_{i}",
-            email=f"user_{i}@example.com",
+            username=f"user_{unique_id}_{i}",
+            email=f"user_{unique_id}_{i}@example.com",
             password_hash=f"hash_{i}",
         )
         for i in range(3)
@@ -68,11 +70,12 @@ async def test_user_save_all_expect_all_persisted(
 async def test_user_get_existing_expect_returned(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User를 get하면 해당 엔티티가 반환된다."""
     user = User.create(
-        username="findme",
-        email="findme@example.com",
+        username=f"findme_{unique_id}",
+        email=f"findme_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -81,8 +84,8 @@ async def test_user_get_existing_expect_returned(
         retrieved_user = await user_repository.get(user.uid)
 
         assert retrieved_user.uid == user.uid
-        assert retrieved_user.username == "findme"
-        assert retrieved_user.email == "findme@example.com"
+        assert retrieved_user.username == user.username
+        assert retrieved_user.email == user.email
 
 
 @pytest.mark.asyncio
@@ -104,11 +107,12 @@ async def test_user_get_nonexistent_expect_entity_not_found_error(
 async def test_user_get_or_none_existing_expect_returned(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User를 get_or_none하면 해당 엔티티가 반환된다."""
     user = User.create(
-        username="nullable_find",
-        email="nullable@example.com",
+        username=f"nullable_find_{unique_id}",
+        email=f"nullable_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -138,11 +142,12 @@ async def test_user_get_or_none_nonexistent_expect_none(
 async def test_user_contains_existing_expect_true(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User ID로 contains하면 True가 반환된다."""
     user = User.create(
-        username="exists_check",
-        email="exists@example.com",
+        username=f"exists_check_{unique_id}",
+        email=f"exists_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -171,12 +176,13 @@ async def test_user_contains_nonexistent_expect_false(
 async def test_user_range_existing_expect_all_returned(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """여러 User ID로 range하면 해당 엔티티들이 반환된다."""
     users = [
         User.create(
-            username=f"range_user_{i}",
-            email=f"range_{i}@example.com",
+            username=f"range_user_{unique_id}_{i}",
+            email=f"range_{unique_id}_{i}@example.com",
             password_hash=f"hash_{i}",
         )
         for i in range(3)
@@ -196,11 +202,12 @@ async def test_user_range_existing_expect_all_returned(
 async def test_user_range_partial_existing_expect_only_existing_returned(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """일부만 존재하는 ID로 range하면 존재하는 것만 반환된다."""
     user = User.create(
-        username="partial_range",
-        email="partial@example.com",
+        username=f"partial_range_{unique_id}",
+        email=f"partial_{unique_id}@example.com",
         password_hash="hashed",
     )
     nonexistent_id = uuid4()
@@ -229,11 +236,12 @@ async def test_user_range_empty_list_expect_empty_result(
 async def test_user_delete_existing_expect_removed(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """존재하는 User를 delete하면 데이터베이스에서 제거된다."""
     user = User.create(
-        username="to_delete",
-        email="delete@example.com",
+        username=f"to_delete_{unique_id}",
+        email=f"delete_{unique_id}@example.com",
         password_hash="hashed",
     )
 
@@ -249,12 +257,13 @@ async def test_user_delete_existing_expect_removed(
 async def test_user_delete_all_expect_all_removed(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """여러 User를 delete_all하면 모두 제거된다."""
     users = [
         User.create(
-            username=f"delete_all_{i}",
-            email=f"delete_all_{i}@example.com",
+            username=f"delete_all_{unique_id}_{i}",
+            email=f"delete_all_{unique_id}_{i}@example.com",
             password_hash=f"hash_{i}",
         )
         for i in range(3)
@@ -273,20 +282,21 @@ async def test_user_delete_all_expect_all_removed(
 async def test_user_save_updated_expect_changes_persisted(
     async_transaction: AsyncTransaction,
     user_repository: IAsyncGenericRepository[User, UUID],
+    unique_id: str,
 ) -> None:
     """기존 User를 수정 후 save하면 변경사항이 영속화된다."""
     user = User.create(
-        username="original",
-        email="original@example.com",
+        username=f"original_{unique_id}",
+        email=f"original_{unique_id}@example.com",
         password_hash="original_hash",
     )
 
     async with async_transaction:
         await user_repository.save(user)
-        user.username = "updated"
-        user.email = "updated@example.com"
+        user.username = f"updated_{unique_id}"
+        user.email = f"updated_{unique_id}@example.com"
         await user_repository.save(user)
         retrieved_user = await user_repository.get(user.uid)
 
-        assert retrieved_user.username == "updated"
-        assert retrieved_user.email == "updated@example.com"
+        assert retrieved_user.username == f"updated_{unique_id}"
+        assert retrieved_user.email == f"updated_{unique_id}@example.com"
