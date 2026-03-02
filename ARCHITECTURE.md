@@ -399,6 +399,37 @@ IQueryUseCase[QueryT_contra, ResultT_co].run(query) -> result
 IAsyncQueryUseCase[QueryT_contra, ResultT_co].run(query) -> result
 ```
 
+#### CQRS 조회 원칙
+
+**조회(Query)는 사용자의 직접 구현을 원칙으로 합니다.**
+
+- Repository에 다양한 조회 메서드(`find_by_xxx`, `search_xxx` 등)를 추가하지 않습니다.
+- Repository는 Aggregate의 **영속성 관리**(CRUD)만 담당합니다.
+- 복잡한 조회는 **QueryUseCase**에서 직접 ORM/SQL을 사용하여 구현합니다.
+
+**이유**: Repository에 조회 관점이 침투하면 도메인이 인프라에 의존하게 되고,
+결과적으로 **도메인 오염**의 위험이 높아집니다.
+
+```python
+# ❌ 잘못된 예: Repository에 조회 관점 추가
+class IUserRepository:
+    def find_by_email(self, email: str) -> User | None: ...  # 조회 관점!
+    def search_by_name(self, name: str) -> list[User]: ...   # 조회 관점!
+
+# ✅ 올바른 예: QueryUseCase에서 직접 구현
+@QueryUseCase()
+class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO]):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def run(self, query: FindUserByEmailQuery) -> UserDTO:
+        # 직접 ORM/SQL 사용
+        result = await self._session.execute(
+            select(UserTable).where(UserTable.email == query.email)
+        )
+        ...
+```
+
 ---
 
 ## 데이터 레이어 (spakky-data)
@@ -461,10 +492,20 @@ AbstractAsyncTransaction (async context manager)
 
 ### External Proxy 패턴
 
-외부 시스템에 대한 읽기 전용 프록시 인터페이스입니다.
+**외부 저장소 또는 서비스 호출**을 통한 데이터 접근을 추상화하는 읽기 전용 인터페이스입니다.
+
+> **주의**: External Proxy는 **데이터베이스 접근이 아닙니다**. 외부 REST API, gRPC 서비스, 레거시 시스템,
+> 메시지 큐 조회 등 **프로세스 외부의 서비스 호출**을 추상화합니다.
+> Repository는 도메인 Aggregate의 영속성을, Proxy는 외부 서비스 데이터 조회를 담당합니다.
 
 - `ProxyModel[ProxyIdT_contra]` — `@immutable`, identity equality
 - `IGenericProxy` / `IAsyncGenericProxy` — `get()`, `get_or_none()`, `contains()`, `range()`
+
+**사용 사례**:
+- 외부 마이크로서비스 API 호출
+- 서드파티 서비스 데이터 조회 (결제, 배송 등)
+- 레거시 시스템 연동
+- 외부 캐시 서버 조회
 
 ---
 

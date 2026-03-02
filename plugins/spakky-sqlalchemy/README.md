@@ -143,22 +143,42 @@ class AsyncCreateUserUseCase:
 
 ### Accessing Session Directly
 
-For complex queries, access the SQLAlchemy session directly:
+For complex queries, access the SQLAlchemy session directly in **QueryUseCase**.
+Following CQRS principles, queries should be implemented directly rather than
+adding query methods to repositories.
 
 ```python
+from spakky.core.common.mutability import immutable
+from spakky.core.stereotype.usecase import UseCase
+from spakky.domain.application.query import AbstractQuery, IAsyncQueryUseCase
 from spakky.plugins.sqlalchemy.persistency.session_manager import AsyncSessionManager
 
-@Repository()
-class UserQueryRepository:
+
+@immutable
+class FindUserByEmailQuery(AbstractQuery):
+    email: str
+
+
+@immutable
+class UserDTO:
+    id: UUID
+    name: str
+    email: str
+
+
+@UseCase()
+class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO | None]):
     def __init__(self, session_manager: AsyncSessionManager) -> None:
         self._session_manager = session_manager
 
-    async def find_by_email(self, email: str) -> User | None:
+    async def run(self, query: FindUserByEmailQuery) -> UserDTO | None:
         result = await self._session_manager.session.execute(
-            select(UserTable).where(UserTable.email == email)
+            select(UserTable).where(UserTable.email == query.email)
         )
         table = result.scalar_one_or_none()
-        return table.to_domain() if table else None
+        if table is None:
+            return None
+        return UserDTO(id=table.id, name=table.name, email=table.email)
 ```
 
 ### Schema Registry

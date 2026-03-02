@@ -125,7 +125,12 @@ class UserRegisteredIntegration(AbstractIntegrationEvent):
 
 ### CQRS Use Cases
 
-Separate read and write operations:
+Separate read and write operations.
+
+**Key Principles:**
+- **Commands**: Use Repository for domain aggregate persistence
+- **Queries**: Implement directly using ORM/SQL (do NOT add query methods to Repository)
+- This separation prevents domain pollution by keeping query concerns out of the domain layer
 
 ```python
 from uuid import UUID

@@ -12,7 +12,39 @@ pip install spakky-data
 
 - **Repository Pattern**: Generic repository interfaces for aggregate persistence
 - **Transaction Management**: Abstract transaction classes with autocommit support
-- **External Proxy**: Proxy pattern for external service data access
+- **External Proxy**: Proxy pattern for **external service/storage** data access (NOT for database)
+
+## Design Principles
+
+### Repository is for Persistence Only
+
+Repositories handle **CRUD operations for domain aggregates only**.
+Do NOT add query methods like `find_by_xxx`, `search_xxx` to repositories.
+
+Complex queries should be implemented directly in **QueryUseCase** using ORM/SQL.
+This prevents domain pollution by keeping query concerns out of the domain layer.
+
+```python
+# ❌ Wrong: Query concerns in repository
+class IUserRepository:
+    def find_by_email(self, email: str) -> User | None: ...
+
+# ✅ Correct: Direct implementation in QueryUseCase
+@QueryUseCase()
+class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO]):
+    async def run(self, query: FindUserByEmailQuery) -> UserDTO:
+        # Use ORM/SQL directly
+        ...
+```
+
+### External Proxy vs Repository
+
+| Aspect | Repository | External Proxy |
+|--------|-----------|----------------|
+| Purpose | Domain aggregate persistence | External service data access |
+| Target | Database (via ORM) | REST API, gRPC, legacy systems |
+| Operations | CRUD (save, delete, get) | Read-only (get, range) |
+| Domain | Internal bounded context | External services |
 
 ## Quick Start
 
@@ -33,9 +65,9 @@ class User(AbstractAggregateRoot[UUID]):
     email: str
 
 
+# Repository interface - CRUD only, no query methods
 class IUserRepository(IAsyncGenericRepository[User, UUID]):
-    @abstractmethod
-    async def find_by_email(self, email: str) -> User | None: ...
+    pass  # get, get_or_none, contains, range, save, save_all, delete, delete_all
 ```
 
 ### Transaction Management
@@ -77,19 +109,30 @@ async with transaction:
 
 ### External Proxy Pattern
 
-Access external service data with proxy interfaces:
+Access **external services** (NOT databases) with proxy interfaces.
+Use this for REST APIs, gRPC services, legacy systems, etc.
 
 ```python
 from spakky.data.external.proxy import ProxyModel, IAsyncGenericProxy
 
 
-class ExternalUser(ProxyModel[int]):
-    name: str
-    email: str
+# Data model from external payment service
+class PaymentInfo(ProxyModel[str]):
+    transaction_id: str
+    amount: int
+    status: str
 
 
-class IExternalUserProxy(IAsyncGenericProxy[ExternalUser, int]):
+# Proxy interface for external payment service
+class IPaymentProxy(IAsyncGenericProxy[PaymentInfo, str]):
     pass
+
+
+# Implementation calls external API
+class PaymentServiceProxy(IPaymentProxy):
+    async def get(self, proxy_id: str) -> PaymentInfo:
+        response = await self._http_client.get(f"/payments/{proxy_id}")
+        return PaymentInfo(...)
 ```
 
 ## API Reference
