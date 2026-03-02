@@ -1,6 +1,6 @@
 # Spakky
 
-Core module for [Spakky Framework](https://github.com/E5presso/spakky-framework) — a Spring-inspired dependency injection framework for Python.
+Core module for [Spakky Framework](https://github.com/E5presso/spakky-framework) - a Spring-inspired dependency injection framework for Python.
 
 ## Installation
 
