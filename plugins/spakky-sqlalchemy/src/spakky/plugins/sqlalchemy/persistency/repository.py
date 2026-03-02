@@ -2,6 +2,7 @@ from abc import ABC
 from typing import Any, Sequence, get_args, get_origin
 
 from spakky.core.common.mro import generic_mro
+from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.repository import (
     AggregateIdT_contra,
     EntityNotFoundError,
@@ -44,11 +45,13 @@ class AbstractGenericRepository(
     _aggregate_type: type[AggregateRootT]
     _session_manager: SessionManager
     _schema_registry: SchemaRegistry
+    _aggregate_collector: AggregateCollector
 
     def __init__(
         self,
         session_manager: SessionManager,
         schema_registry: SchemaRegistry,
+        aggregate_collector: AggregateCollector,
     ) -> None:
         parameterized_base = next(
             (
@@ -63,6 +66,7 @@ class AbstractGenericRepository(
         self._aggregate_type = next(iter(get_args(parameterized_base)))
         self._session_manager = session_manager
         self._schema_registry = schema_registry
+        self._aggregate_collector = aggregate_collector
 
     def _build_pk_condition(
         self,
@@ -157,6 +161,7 @@ class AbstractGenericRepository(
             table = self._schema_registry.from_domain(aggregate)
             merged = self._session_manager.session.merge(table)
             self._session_manager.session.flush()
+            self._aggregate_collector.collect(aggregate)
             return merged.to_domain()
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
@@ -173,6 +178,8 @@ class AbstractGenericRepository(
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
         self._session_manager.session.flush()
+        for aggregate in aggregates:
+            self._aggregate_collector.collect(aggregate)
         return [table.to_domain() for table in tables]
 
     def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
@@ -181,6 +188,7 @@ class AbstractGenericRepository(
             merged = self._session_manager.session.merge(table)
             self._session_manager.session.delete(merged)
             self._session_manager.session.flush()
+            self._aggregate_collector.collect(aggregate)
             return merged.to_domain()
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
@@ -198,6 +206,8 @@ class AbstractGenericRepository(
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
         self._session_manager.session.flush()
+        for aggregate in aggregates:
+            self._aggregate_collector.collect(aggregate)
         return [table.to_domain() for table in tables]
 
 
@@ -213,11 +223,13 @@ class AbstractAsyncGenericRepository(
     _aggregate_type: type[AggregateRootT]
     _session_manager: AsyncSessionManager
     _schema_registry: SchemaRegistry
+    _aggregate_collector: AggregateCollector
 
     def __init__(
         self,
         session_manager: AsyncSessionManager,
         schema_registry: SchemaRegistry,
+        aggregate_collector: AggregateCollector,
     ) -> None:
         parameterized_base = next(
             (
@@ -232,6 +244,7 @@ class AbstractAsyncGenericRepository(
         self._aggregate_type = next(iter(get_args(parameterized_base)))
         self._session_manager = session_manager
         self._schema_registry = schema_registry
+        self._aggregate_collector = aggregate_collector
 
     def _build_pk_condition(
         self,
@@ -338,6 +351,7 @@ class AbstractAsyncGenericRepository(
             table = self._schema_registry.from_domain(aggregate)
             merged = await self._session_manager.session.merge(table)
             await self._session_manager.session.flush()
+            self._aggregate_collector.collect(aggregate)
             return merged.to_domain()
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
@@ -354,6 +368,8 @@ class AbstractAsyncGenericRepository(
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
         await self._session_manager.session.flush()
+        for aggregate in aggregates:
+            self._aggregate_collector.collect(aggregate)
         return [table.to_domain() for table in tables]
 
     async def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
@@ -362,6 +378,7 @@ class AbstractAsyncGenericRepository(
             merged = await self._session_manager.session.merge(table)
             await self._session_manager.session.delete(merged)
             await self._session_manager.session.flush()
+            self._aggregate_collector.collect(aggregate)
             return merged.to_domain()
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
@@ -379,4 +396,6 @@ class AbstractAsyncGenericRepository(
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
         await self._session_manager.session.flush()
+        for aggregate in aggregates:
+            self._aggregate_collector.collect(aggregate)
         return [table.to_domain() for table in tables]

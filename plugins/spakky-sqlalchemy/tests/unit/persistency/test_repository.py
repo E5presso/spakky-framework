@@ -8,6 +8,7 @@ from uuid import UUID
 import pytest
 from spakky.core.common.mutability import mutable
 from spakky.core.utils.uuid import uuid7
+from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.repository import VersionConflictError
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 from sqlalchemy import DateTime, String, Uuid
@@ -90,9 +91,10 @@ def test_sync_repository_without_generic_params_expect_error() -> None:
     # Mock objects (None은 실제로 사용되지 않음 - __init__에서 에러 발생)
     session_manager = None
     schema_registry = None
+    aggregate_collector = None
 
     with pytest.raises(CannotDetermineAggregateTypeError):
-        InvalidSyncRepository(session_manager, schema_registry)  # type: ignore
+        InvalidSyncRepository(session_manager, schema_registry, aggregate_collector)  # type: ignore
 
 
 def test_async_repository_without_generic_params_expect_error() -> None:
@@ -100,9 +102,10 @@ def test_async_repository_without_generic_params_expect_error() -> None:
     # Mock objects (None은 실제로 사용되지 않음 - __init__에서 에러 발생)
     session_manager = None
     schema_registry = None
+    aggregate_collector = None
 
     with pytest.raises(CannotDetermineAggregateTypeError):
-        InvalidAsyncRepository(session_manager, schema_registry)  # type: ignore
+        InvalidAsyncRepository(session_manager, schema_registry, aggregate_collector)  # type: ignore
 
 
 # --- Valid repository for version conflict testing ---
@@ -127,13 +130,16 @@ def test_sync_repository_save_stale_data_expect_version_conflict_error() -> None
     """Sync save에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidSyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidSyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),
@@ -150,13 +156,16 @@ def test_sync_repository_save_all_stale_data_expect_version_conflict_error() -> 
     """Sync save_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidSyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidSyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),
@@ -173,13 +182,16 @@ def test_sync_repository_delete_stale_data_expect_version_conflict_error() -> No
     """Sync delete에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidSyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidSyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),
@@ -196,13 +208,16 @@ def test_sync_repository_delete_all_stale_data_expect_version_conflict_error() -
     """Sync delete_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidSyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidSyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),
@@ -223,13 +238,16 @@ async def test_async_repository_save_stale_data_expect_version_conflict_error() 
     """Async save에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidAsyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidAsyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),
@@ -249,13 +267,16 @@ async def test_async_repository_save_all_stale_data_expect_version_conflict_erro
     """Async save_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidAsyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidAsyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),
@@ -275,13 +296,16 @@ async def test_async_repository_delete_stale_data_expect_version_conflict_error(
     """Async delete에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidAsyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidAsyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),
@@ -301,13 +325,16 @@ async def test_async_repository_delete_all_stale_data_expect_version_conflict_er
     """Async delete_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
 
     # StaleDataError를 merge에서 발생시킴
     mock_session.merge.side_effect = StaleDataError("Version conflict")
 
-    repo = ValidAsyncRepository(mock_session_manager, mock_schema_registry)
+    repo = ValidAsyncRepository(
+        mock_session_manager, mock_schema_registry, mock_aggregate_collector
+    )
     entity = TestEntity(
         uid=uuid7(),
         version=uuid7(),

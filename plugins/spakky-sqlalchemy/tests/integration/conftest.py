@@ -7,6 +7,7 @@ from typing import Any, AsyncGenerator, Generator
 from uuid import uuid4
 
 import pytest
+import spakky.data
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
@@ -102,7 +103,12 @@ def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
 
     app = (
         SpakkyApplication(ApplicationContext())
-        .load_plugins(include={spakky.plugins.sqlalchemy.PLUGIN_NAME})
+        .load_plugins(
+            include={
+                spakky.plugins.sqlalchemy.PLUGIN_NAME,
+                spakky.data.PLUGIN_NAME,
+            }
+        )
         .add(AsyncLoggingAspect)
         .add(LoggingAspect)
         .scan(apps)
