@@ -70,8 +70,8 @@ class AbstractGenericRepository(
 
     def _build_pk_condition(
         self,
-        pk_columns: Sequence[Any],
-        aggregate_id: Any,
+        pk_columns: Sequence[Any],  # Any: SQLAlchemy inspect returns untyped PK
+        aggregate_id: Any,  # Any: Runtime type varies (UUID, int, tuple, etc.)
     ) -> ColumnElement[bool]:
         """Build a WHERE condition for primary key matching.
 
@@ -92,8 +92,10 @@ class AbstractGenericRepository(
 
     def _build_pk_in_condition(
         self,
-        pk_columns: Sequence[Any],
-        aggregate_ids: Sequence[Any],
+        pk_columns: Sequence[Any],  # Any: SQLAlchemy inspect returns untyped PK
+        aggregate_ids: Sequence[
+            Any
+        ],  # Any: Runtime type varies (UUID, int, tuple, etc.)
     ) -> ColumnElement[bool]:
         """Build a WHERE IN condition for multiple primary key values.
 
@@ -248,8 +250,8 @@ class AbstractAsyncGenericRepository(
 
     def _build_pk_condition(
         self,
-        pk_columns: Sequence[Any],
-        aggregate_id: Any,
+        pk_columns: Sequence[Any],  # Any: SQLAlchemy inspect returns untyped PK
+        aggregate_id: Any,  # Any: Runtime type varies (UUID, int, tuple, etc.)
     ) -> ColumnElement[bool]:
         """Build a WHERE condition for primary key matching.
 
@@ -270,8 +272,10 @@ class AbstractAsyncGenericRepository(
 
     def _build_pk_in_condition(
         self,
-        pk_columns: Sequence[Any],
-        aggregate_ids: Sequence[Any],
+        pk_columns: Sequence[Any],  # Any: SQLAlchemy inspect returns untyped PK
+        aggregate_ids: Sequence[
+            Any
+        ],  # Any: Runtime type varies (UUID, int, tuple, etc.)
     ) -> ColumnElement[bool]:
         """Build a WHERE IN condition for multiple primary key values.
 
