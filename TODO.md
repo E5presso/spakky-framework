@@ -1,36 +1,29 @@
-# Project TODOs & Technical Debt 📝
+# Project TODOs & Technical Notes 📝
 
 ## 🚀 Roadmap
 
-### Core Framework
-- [ ] **Responsibility Separation**: Consider splitting `ApplicationContext` into smaller components (PodRegistry, DependencyResolver, ScopeManager, ServiceManager).
-
-### Data Package
-- [ ] **Repository Features**: Add pagination, sorting, and Specification pattern support to `IGenericRepository`.
-
-### Plugins
-- [ ] **RabbitMQ/Kafka Abstraction**: Extract common logic (type lookup, handler registration, serialization) between RabbitMQ and Kafka plugins into shared base classes in `core/spakky-event`.
-
-### Eventing (Design Notes)
-- [ ] **Event Routing (Domain vs Integration)**: Users control only the policy of promoting some `AbstractDomainEvent` to `AbstractIntegrationEvent`, independent of broker choice (Kafka/RabbitMQ are both first-class via plugins).
-- [ ] **Domain→Integration Bridge**: Provide an extensible mapper/registry (`AbstractDomainEvent` → `AbstractIntegrationEvent | None`) so domain events are not exported as-is.
-- [ ] **Outbox (Plugin/Adapter)**: Core defines contracts (store/serializer/worker hooks); adapters implement DB-specific storage + leasing; worker publishes via `IIntegrationEventPublisher` resolved from installed plugin.
-- [ ] **Outbox Strategy**: Default adapter uses polling + leasing; optional advanced adapter uses CDC (e.g., Debezium) where applicable.
-- [ ] **Reliability**: Document at-least-once semantics, retry/backoff, dead-letter handling; consider optional Inbox interface for consumer idempotency.
-
 ### Documentation
-- [ ] **Cookbook**: Add a section with common patterns (e.g., Caching, Validation, Transaction management).
-- [ ] **Advanced AOP**: Document custom pointcuts and combining aspects.
-- [ ] **Thread Safety**: Explicitly document thread safety guarantees for `ApplicationContext` and other core components.
+- [ ] **Cookbook**: 공통 패턴 예제 추가 (Caching, Validation, Transaction 관리)
+- [ ] **Advanced AOP**: 커스텀 pointcut 및 aspect 조합 문서화
+- [ ] **Thread Safety**: `ApplicationContext` 및 코어 컴포넌트의 스레드 안전성 명시
+
+## 📋 설계 노트
+
+> 현재 구현에서 고려 중이지만 확정되지 않은 설계 방향입니다.
+
+### Event Reliability
+- **At-least-once 시맨틱**: 재시도/백오프, dead-letter 핸들링 문서화 필요
+- **Consumer Idempotency**: 선택적 Inbox 인터페이스 검토
 
 ## ✅ Completed
 
 ### Domain Package
-- [x] **Aggregate Root Events**: `AbstractAggregateRoot` supports `AbstractDomainEvent` for domain event management.
+- [x] `AbstractAggregateRoot`가 `AbstractDomainEvent` 지원
 
 ### Data Package
-- [x] **Async Repository**: `IAsyncGenericRepository` interface for asynchronous data access.
-- [x] **AggregateCollector Integration**: SQLAlchemy Repository implementations call `AggregateCollector.collect()` on save/delete operations.
+- [x] `IAsyncGenericRepository` 인터페이스 제공
+- [x] SQLAlchemy Repository에서 `AggregateCollector.collect()` 호출
 
-### Eventing
-- [x] **In-process Domain Dispatch**: `DomainEventPublisher` and `AsyncDomainEventPublisher` provide in-process domain event publishing via `IDomainEventDispatcher`.
+### Event Package
+- [x] `DomainEventPublisher` / `AsyncDomainEventPublisher` — 인프로세스 도메인 이벤트 발행
+- [x] `TransactionalEventPublishingAspect` — 트랜잭션 성공 후 이벤트 자동 발행
