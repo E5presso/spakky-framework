@@ -12,6 +12,61 @@ applyTo: "**/*.py"
 - `Any`가 허용되는 유일한 경우: 외부 라이브러리의 invariant generics로 불가피한 경우, 반드시 인라인 주석으로 사유를 명시.
 - `# type: ignore` 주석은 **절대 금지**. 올바른 type-safe 해법을 찾으세요.
 
+## Unreachable States (불가능한 상태 처리)
+
+**불가능한 상태는 조용히 넘어가지 말고 명시적으로 실패하라.**
+
+- Silent fallback 금지 (`_ => default`, `return None`, `pass`)
+- `typing.assert_never()` 또는 `raise AssertionError("explanation")` 사용
+- defensive programming으로 불가능한 케이스를 처리하지 마세요
+- **조용히 잘못된 결과를 내는 것보다 크래시가 낫다**
+
+```python
+from typing import assert_never
+
+# BAD: Silent fallback
+match event_type:
+    case EventType.DOMAIN:
+        handle_domain()
+    case _:
+        pass  # 무슨 타입이든 무시?
+
+# GOOD: Exhaustive match with assert_never
+match event_type:
+    case EventType.DOMAIN:
+        handle_domain()
+    case EventType.INTEGRATION:
+        handle_integration()
+    case _ as unreachable:
+        assert_never(unreachable)
+```
+
+## Import 규칙
+
+- **상단 import 사용**: 파일 최상단에 `import` / `from ... import ...` 작성
+- **Inline qualified path 금지**: `spakky.core.pod.Pod` 형태로 인라인 사용 금지
+- 이름 충돌 시에만 예외: `from sqlalchemy import Column as SAColumn`
+
+```python
+# BAD: inline qualified path
+def create_pod() -> spakky.core.pod.annotations.pod.Pod:
+    ...
+
+# GOOD: top-level import
+from spakky.core.pod.annotations.pod import Pod
+
+def create_pod() -> Pod:
+    ...
+```
+
+## 기존 헬퍼/유틸리티 확인
+
+새 헬퍼나 유틸리티를 작성하기 전에:
+
+1. 먼저 기존 코드베이스에서 유사한 기능이 있는지 검색
+2. 특히 `spakky.core` 패키지의 유틸리티 확인
+3. 중복 구현 방지 — DRY 원칙
+
 ## 네이밍 규칙
 
 - **패키지**: `snake_case` (예: `spakky.plugins.fastapi`)
