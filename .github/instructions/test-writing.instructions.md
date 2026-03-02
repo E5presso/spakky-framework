@@ -63,7 +63,7 @@ import pytest
 @pytest.mark.known_issue("설명: 왜 이 동작이 잘못되었는지")
 def test_feature_incorrect_behavior_expect_wrong_result() -> None:
     """현재 잘못된 동작을 문서화하는 테스트.
-    
+
     이 테스트는 '잘못된' 현재 동작을 검증합니다.
     버그가 수정되면 마커를 제거하고 기대값을 올바르게 변경하세요.
     """

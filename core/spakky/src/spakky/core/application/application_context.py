@@ -406,7 +406,7 @@ class ApplicationContext(IApplicationContext):
                 await service.stop_async()
 
         run_coroutine_threadsafe(stop_async_services(), event_loop).result()
-        event_loop.call_soon_threadsafe(event_loop.stop)  # type: ignore
+        event_loop.call_soon_threadsafe(event_loop.stop)  # type: ignore[arg-type]  # stop() is valid callback
         event_thread.join()
 
         # Clear references after thread has joined
@@ -420,7 +420,7 @@ class ApplicationContext(IApplicationContext):
         Returns:
             Read-only mapping proxy of Pod registry (O(1) operation).
         """
-        return MappingProxyType(self.__pods)  # type: ignore
+        return MappingProxyType(self.__pods)  # type: ignore[return-value]  # MappingProxyType is dict-compatible
 
     @property
     def tags(self) -> frozenset[Tag]:
