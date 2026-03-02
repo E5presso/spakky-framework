@@ -17,6 +17,7 @@ from spakky.plugins.sqlalchemy.orm.table import (
 
 
 def test_table_annotation_with_non_table_classs() -> None:
+    """AbstractTable을 상속하지 않은 클래스에 @Table 적용 시 에러 발생 검증."""
     with pytest.raises(CannotUseTableAnnotationError):
 
         @Table()
@@ -25,6 +26,8 @@ def test_table_annotation_with_non_table_classs() -> None:
 
 
 def test_table_annotation_with_specified_target_domain() -> None:
+    """@Table에 명시적 도메인 타입 지정 시 올바르게 매핑되는지 검증."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         username: str
@@ -69,6 +72,8 @@ def test_table_annotation_with_specified_target_domain() -> None:
 
 
 def test_table_annotation_with_implicit_target_domain() -> None:
+    """@Table에 도메인 타입 생략 시 제네릭 파라미터에서 자동 추론되는지 검증."""
+
     @mutable
     class Member(AbstractEntity[UUID]):
         username: str
