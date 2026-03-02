@@ -27,6 +27,9 @@ on:
 permissions:
   id-token: write
 
+env:
+  UV_PYTHON_PREFERENCE: only-system
+
 jobs:
   publish:
     name: Publish ${{ inputs.package }}
@@ -38,9 +41,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.11
 
       - name: Install dependencies
         run: uv sync
