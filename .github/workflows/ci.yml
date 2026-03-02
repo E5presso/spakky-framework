@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main, develop]
 
-env:
-  UV_PYTHON_PREFERENCE: only-system
-
 jobs:
   commitlint:
     name: Lint Commits

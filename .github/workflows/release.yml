@@ -13,9 +13,6 @@ permissions:
   contents: write
   id-token: write
 
-env:
-  UV_PYTHON_PREFERENCE: only-system
-
 jobs:
   bump:
     name: Bump version

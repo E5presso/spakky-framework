@@ -27,9 +27,6 @@ on:
 permissions:
   id-token: write
 
-env:
-  UV_PYTHON_PREFERENCE: only-system
-
 jobs:
   publish:
     name: Publish ${{ inputs.package }}
