@@ -38,6 +38,8 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.table import Table
+
 from common import (
     WORKSPACE_ROOT,
     CommandError,
@@ -51,7 +53,6 @@ from common import (
     print_success,
     run_command,
 )
-from rich.table import Table
 
 app = typer.Typer(
     help="Coordinate version bumps across the workspace.",

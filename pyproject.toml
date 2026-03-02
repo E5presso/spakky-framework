@@ -22,11 +22,6 @@ dev = [
   "typer>=0.15.0",
 ]
 
-[tool.scripts]
-# Configuration for workspace scripts
-# Template package settings for create_package.py
-template = { readme = true, tests = true, precommit = true }
-
 [tool.commitizen]
 name = "cz_conventional_commits"
 version = "5.0.1"

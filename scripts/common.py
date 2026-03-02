@@ -15,6 +15,8 @@ from __future__ import annotations
 from lib import (
     # Config
     WORKSPACE_ROOT,
+    # Process
+    CapturedResult,
     # Errors
     CommandError,
     GitError,
@@ -45,8 +47,6 @@ from lib import (
     print_info,
     print_success,
     print_warning,
-    # Process
-    CapturedResult,
     run_captured,
     run_command,
     run_streaming,

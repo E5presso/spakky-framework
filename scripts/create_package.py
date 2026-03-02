@@ -26,6 +26,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.panel import Panel
+from rich.tree import Tree
+
 from common import (
     WORKSPACE_ROOT,
     ScriptError,
@@ -38,8 +41,6 @@ from common import (
     print_warning,
     run_command,
 )
-from rich.panel import Panel
-from rich.tree import Tree
 
 app = typer.Typer(
     help="Create a new package in the Spakky workspace.",
