@@ -27,18 +27,17 @@ Events should extend one of the event base classes from `spakky-domain`:
 When using message broker plugins (RabbitMQ / Kafka), define events as `AbstractIntegrationEvent`.
 
 ```python
-from dataclasses import dataclass
-
+from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
 
 
-@dataclass
+@immutable
 class UserCreatedEvent(AbstractIntegrationEvent):
     user_id: str
     email: str
 
 
-@dataclass
+@immutable
 class UserDeletedEvent(AbstractIntegrationEvent):
     user_id: str
 ```

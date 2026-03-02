@@ -16,6 +16,7 @@ applyTo: "**/*.py"
 | `Tag` | `spakky.core.pod.annotations.tag` | Base class for custom metadata tags |
 | `ITagRegistry` | `spakky.core.pod.interfaces.tag_registry` | Tag registry interface (register, query tags) |
 | `ITagRegistryAware` | `spakky.core.pod.interfaces.aware.tag_registry_aware` | Aware interface for tag registry injection |
+| `IApplicationContext` | `spakky.core.pod.interfaces.application_context` | App context interface (IContainer + ITagRegistry) |
 | `@Aspect()` / `@AsyncAspect()` | `spakky.core.aop.aspect` | Sync/Async aspect decorator |
 | `IAsyncAspect` / `IAspect` | `spakky.core.aop.interfaces.aspect` | Aspect interfaces |
 | `@Before` / `@After` / `@Around` / `@AfterReturning` / `@AfterRaising` | `spakky.core.aop.pointcut` | AOP pointcut decorators |
@@ -23,7 +24,25 @@ applyTo: "**/*.py"
 | `@Controller` | `spakky.core.stereotype.controller` | Base controller stereotype |
 | `@UseCase` | `spakky.core.stereotype.usecase` | Business logic stereotype |
 | `SpakkyApplication` | `spakky.core.application.application` | App builder (`.load_plugins()` → `.add()` → `.scan()` → `.start()`) |
-| `ApplicationContext` | `spakky.core.application.application_context` | IoC container context (implements IContainer, ITagRegistry) |
+| `ApplicationContext` | `spakky.core.application.application_context` | IoC container context (implements IApplicationContext) |
+
+## Data API (spakky-data)
+
+| Decorator / Class | Import Path | Purpose |
+|---|---|---|
+| `@Repository` | `spakky.data.stereotype.repository` | Data access stereotype (extends Pod) |
+| `@Transactional()` | `spakky.data.aspects.transactional` | Transaction boundary annotation (sync & async) |
+| `AggregateCollector` | `spakky.data.persistency.aggregate_collector` | CONTEXT-scoped collector for saved aggregates |
+| `IAsyncGenericRepository` | `spakky.data.persistency.repository` | Async generic repository interface |
+| `AbstractAsyncTransaction` / `AbstractTransaction` | `spakky.data.persistency.transaction` | Transaction abstractions |
+
+## Event API (spakky-event)
+
+| Decorator / Class | Import Path | Purpose |
+|---|---|---|
+| `@EventHandler` / `@on_event` | `spakky.event.stereotype.event_handler` | Event handler stereotype and route |
+| `IDomainEventPublisher` / `IAsyncDomainEventPublisher` | `spakky.event.event_publisher` | Domain event publisher interfaces |
+| `IIntegrationEventPublisher` / `IAsyncIntegrationEventPublisher` | `spakky.event.event_publisher` | Integration event publisher interfaces |
 
 ## Plugin API
 

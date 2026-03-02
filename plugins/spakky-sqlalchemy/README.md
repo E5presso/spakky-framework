@@ -86,7 +86,7 @@ Extend `AbstractGenericRepository` or `AbstractAsyncGenericRepository`:
 
 ```python
 from uuid import UUID
-from spakky.core.stereotype.repository import Repository
+from spakky.data.stereotype.repository import Repository
 from spakky.plugins.sqlalchemy.persistency.repository import (
     AbstractGenericRepository,
     AbstractAsyncGenericRepository,
@@ -109,7 +109,7 @@ Use the `@Transactional` decorator from `spakky-data`:
 
 ```python
 from spakky.core.stereotype.usecase import UseCase
-from spakky.data.annotation.transactional import Transactional
+from spakky.data.aspects.transactional import Transactional
 
 @UseCase()
 class CreateUserUseCase:
@@ -124,15 +124,18 @@ class CreateUserUseCase:
 
 ### Async Transactions
 
+The same `@Transactional()` decorator works for both sync and async methods.
+The framework automatically selects the correct aspect based on whether the method is a coroutine.
+
 ```python
-from spakky.data.annotation.transactional import AsyncTransactional
+from spakky.data.aspects.transactional import Transactional
 
 @UseCase()
 class AsyncCreateUserUseCase:
     def __init__(self, user_repo: AsyncUserRepository) -> None:
         self._user_repo = user_repo
 
-    @AsyncTransactional()
+    @Transactional()
     async def execute(self, name: str, email: str) -> User:
         user = User.create(name, email)
         return await self._user_repo.save(user)

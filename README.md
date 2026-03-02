@@ -35,7 +35,7 @@
     <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="CI Status">
   </a>
   <a href="https://codecov.io/gh/E5presso/spakky-framework">
-    <img src="https://codecov.io/gh/E5presso/spakky-framework/branch/main/graph/badge.svg" alt="Codecov">
+    <img src="https://codecov.io/gh/E5presso/spakky-framework/branch/develop/graph/badge.svg" alt="Codecov">
   </a>
 </p>
 </p>

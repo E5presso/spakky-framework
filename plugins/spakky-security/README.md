@@ -115,7 +115,7 @@ jwt.set_expiration(timedelta(hours=1))
 # Sign the token (default: HS256)
 key = Key(size=32)
 jwt.sign(key)
-token_string = str(jwt)
+token_string = jwt.export()
 
 # Use different hash algorithm
 jwt.set_hash_type(HMACType.HS512)

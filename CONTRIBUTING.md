@@ -331,13 +331,6 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
 
 4.  **Initialization**: Implement the `initialize` function in `main.py`.
 
-    ```toml
-    [project.entry-points."spakky.plugins"]
-    spakky-name = "spakky.plugins.name.main:initialize"
-    ```
-
-5.  **Initialization**: Implement the `initialize` function in `main.py`.
-
     ```python
     from spakky.core.application.application import SpakkyApplication
 
@@ -346,7 +339,7 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
         pass
     ```
 
-6.  **Version Synchronization**: Add the new package to root `pyproject.toml`'s `[tool.commitizen]` version_files list.
+5.  **Version Synchronization**: Add the new package to root `pyproject.toml`'s `[tool.commitizen]` version_files list.
 
     ```toml
     [tool.commitizen]
@@ -356,7 +349,7 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
     ]
     ```
 
-7.  **Package Registration**: All workspace packages are automatically detected from root `pyproject.toml`'s `[tool.uv.workspace]` members. No manual registration needed in scripts.
+6.  **Package Registration**: All workspace packages are automatically detected from root `pyproject.toml`'s `[tool.uv.workspace]` members. No manual registration needed in scripts.
 
 ## 📦 Commit Messages
 
@@ -365,7 +358,7 @@ We use **Conventional Commits** to automate versioning and changelogs.
 Format: `<type>(<scope>): <subject>`
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **Scopes**: `core`, `domain`, `data`, `event`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
+- **Scopes**: `core`, `domain`, `data`, `event`, `fastapi`, `kafka`, `rabbitmq`, `security`, `sqlalchemy`, `typer`
 
 Examples:
 

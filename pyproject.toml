@@ -59,6 +59,7 @@ members = [
 [tool.uv.sources]
 spakky = { workspace = true }
 spakky-domain = { workspace = true }
+spakky-data = { workspace = true }
 spakky-event = { workspace = true }
 spakky-fastapi = { workspace = true }
 spakky-rabbitmq = { workspace = true }

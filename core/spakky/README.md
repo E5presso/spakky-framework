@@ -142,11 +142,11 @@ from spakky.core.aspects.logging import Logging
 @Aspect()
 class LoggingAspect(IAspect):
     @Before(lambda m: Logging.exists(m))
-    def before_log(self, *args, **kwargs) -> None:
+    def before(self, *args, **kwargs) -> None:
         print("Before method execution")
 
     @After(lambda m: Logging.exists(m))
-    def after_log(self, *args, **kwargs) -> None:
+    def after(self, *args, **kwargs) -> None:
         print("After method execution")
 
 # Apply to methods
@@ -168,7 +168,7 @@ from spakky.core.aop.pointcut import Around
 @AsyncAspect()
 class TimingAspect(IAsyncAspect):
     @Around(lambda m: hasattr(m, "__timed__"))
-    async def time_execution(self, joinpoint, *args, **kwargs):
+    async def around_async(self, joinpoint, *args, **kwargs):
         start = time.time()
         result = await joinpoint(*args, **kwargs)
         elapsed = time.time() - start

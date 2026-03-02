@@ -32,10 +32,12 @@ export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"  # Optional
 ### Event Publishing
 
 ```python
+from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import IIntegrationEventPublisher
 from spakky.core.pod.annotations.pod import Pod
 
+@immutable
 class UserCreatedEvent(AbstractIntegrationEvent):
     user_id: int
     email: str
