@@ -7,7 +7,9 @@ to registered handlers.
 
 from typing import Any
 
-from aio_pika import connect_robust  # type: ignore[import-untyped]  # aio_pika lacks type stubs
+from aio_pika import (
+    connect_robust,  # type: ignore[import-untyped]  # aio_pika lacks type stubs
+)
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection

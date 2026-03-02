@@ -4,7 +4,10 @@ Provides synchronous and asynchronous event publishers that publish integration
 events to RabbitMQ queues with optional exchange routing.
 """
 
-from aio_pika import Message, connect_robust  # type: ignore[import-untyped]  # aio_pika lacks type stubs
+from aio_pika import (  # type: ignore[import-untyped]  # aio_pika lacks type stubs
+    Message,
+    connect_robust,
+)
 from pika import BlockingConnection, URLParameters
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
