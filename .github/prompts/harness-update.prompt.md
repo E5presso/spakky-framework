@@ -41,13 +41,14 @@ tools:
 
 | 이벤트 | 동작 |
 |--------|------|
-| `sessionStart` | `uv sync --all-packages`, 개선 리포트 표시 |
-| `sessionEnd` | `harness-review.py` 실행 → 토큰/중복 분석 |
+| `sessionStart` | `uv sync --all-packages` 자동 실행 |
+| `sessionEnd` | `harness-review.py` 실행 → 토큰/중복/변경 파일 분석 |
 
 ### 스킬
 
 | 폴더 | 용도 |
 |------|------|
+| `harness-review/` | 세션 후 메타 리뷰 (정량+정성 평가) |
 | `improve-coverage/` | 커버리지 측정 → 100% 달성 |
 | `create-plugin/` | 플러그인 스캐폴딩 (9단계) |
 | `review-pr/` | PR 리뷰 댓글 처리 |

@@ -454,7 +454,7 @@ index 0000000..168f4ce
 +
 +
 +def collect_auto_signals(files: list[Path]) -> list[str]:
-... [1271 lines truncated]
+... [1272 lines truncated]
 ```
 
 ### Evaluation Prompt
