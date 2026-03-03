@@ -247,6 +247,7 @@ Then give an overall session compliance grade and a 1-sentence summary.
 - `.github/instructions/test-writing.instructions.md`
 - `.github/prompts/harness-update.prompt.md`
 - `.github/skills/create-plugin/SKILL.md`
+- `.github/skills/harness-review/SKILL.md`
 - `.github/skills/improve-coverage/SKILL.md`
 - `.github/skills/review-pr/SKILL.md`
 
@@ -254,7 +255,7 @@ Then give an overall session compliance grade and a 1-sentence summary.
 
 ```diff
 diff --git a/.github/copilot-instructions.md b/.github/copilot-instructions.md
-index 2c79e23..f275ccd 100644
+index 2c79e23..e96890d 100644
 --- a/.github/copilot-instructions.md
 +++ b/.github/copilot-instructions.md
 @@ -10,6 +10,8 @@
@@ -285,19 +286,6 @@ index 2c79e23..f275ccd 100644
  
  ## Monorepo Rules
  
-@@ -33,6 +45,12 @@ uv sync --all-extras                 # Sub-package: install only that package
- 
- ## AI Agent Rules
- 
-+### Session Completion Rule
-+
-+**매 세션 작업 완료 전 반드시 `harness-review` 스킬을 실행하세요.**
-+
-+이 스킬은 세션 중 변경한 코드와 하네스 파일의 규칙 이행률을 자체 평가하고, 위반 사항을 즉시 수정합니다.
-+
- ### Tool Usage
- 
- 1. **Prefer integrated tools** (`execute/runTests`, `get_errors`, `read_file`, etc.) over terminal commands
 diff --git a/.github/hooks/harness-review.py b/.github/hooks/harness-review.py
 new file mode 100644
 index 0000000..8442c46
@@ -453,7 +441,20 @@ index 0000000..8442c46
 +            if re.fullmatch(rx, str(f)) or re.fullmatch(rx, f.name)
 +        ]
 +        if applicable:
-... [1219 lines truncated]
++            mapping[f] = applicable
++    return mapping
++
++
++# ── automated signals: definitive regex-detectable violations ─────────────────
++
++_AUTO_SIGNALS: list[tuple[re.Pattern[str], str, str]] = [
++    (re.compile(r"#\s*type:\s*ignore"), "python-code §Type Safety", "`# type: ignore` is forbidden"),
++    (re.compile(r"^class\s+Test\w*[:(]", re.MULTILINE), "test-writing §Structure", "class-based test (use functions)"),
++]
++
++
++def collect_auto_signals(files: list[Path]) -> list[str]:
+... [1271 lines truncated]
 ```
 
 ### Evaluation Prompt

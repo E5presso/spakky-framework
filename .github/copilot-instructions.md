@@ -45,12 +45,6 @@ uv sync --all-extras                 # Sub-package: install only that package
 
 ## AI Agent Rules
 
-### Session Completion Rule
-
-**매 세션 작업 완료 전 반드시 `harness-review` 스킬을 실행하세요.**
-
-이 스킬은 세션 중 변경한 코드와 하네스 파일의 규칙 이행률을 자체 평가하고, 위반 사항을 즉시 수정합니다.
-
 ### Tool Usage
 
 1. **Prefer integrated tools** (`execute/runTests`, `get_errors`, `read_file`, etc.) over terminal commands

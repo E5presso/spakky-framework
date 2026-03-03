@@ -8,9 +8,9 @@ structural checks and prepares a rich evaluation scaffold for the AI agent.
 
 The AI-driven qualitative evaluation is performed by the agent itself via the
 `harness-review` skill, which the agent invokes as the FINAL step of every
-coding session (mandated by copilot-instructions.md). The skill reads this
-script's output and performs holistic qualitative assessment of all session
-changes against applicable harness rules.
+coding session (mandated by the agent spec). The skill reads this script's
+output and performs holistic qualitative assessment of all session changes
+against applicable harness rules.
 
 Responsibilities of this script (automated, deterministic):
 1. Token budget per harness file — flags files exceeding 900-token budget
