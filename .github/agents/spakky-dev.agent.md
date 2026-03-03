@@ -194,6 +194,21 @@ uv run pytest --cov=spakky.plugins.kafka.post_processor --cov-report=term-missin
 - Python 명령어는 반드시 `uv run` 접두사를 붙이세요.
 - 멀티라인 따옴표 명령(`python -c "..."`, heredoc)은 **절대 사용 금지**입니다.
 
+**파괴적 Git 명령어 금지:**
+- `git checkout -- .` — 모든 unstaged 변경 삭제
+- `git restore .` — 모든 unstaged 변경 삭제
+- `git reset --hard` — 커밋되지 않은 모든 변경 삭제
+- `git clean -fd` — untracked 파일 삭제
+
+특정 파일만 되돌려야 할 경우 **파일 경로를 명시**하세요:
+```bash
+# ✅ 올바른 예: 특정 파일만
+git checkout -- path/to/specific/file.py
+
+# ❌ 금지: 전체 작업 디렉토리
+git checkout -- .
+```
+
 ## MCP 쓰기 작업
 
 GitHub MCP 도구로 쓰기 작업(PR 생성, 이슈 코멘트, 파일 생성 등)을 수행하기 전에:
