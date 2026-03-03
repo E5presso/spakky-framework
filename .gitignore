@@ -1,6 +1,9 @@
 # test automation
 build/reports/**
 
+# harness meta-review generated report (runtime artifact — not for commit)
+.github/hooks/harness-review.md
+
 ### Node ###
 # Logs
 logs
