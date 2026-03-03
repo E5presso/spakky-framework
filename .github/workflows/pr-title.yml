@@ -18,4 +18,4 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           echo "Validating PR title: $PR_TITLE"
-          uvx cz check -m "$PR_TITLE"
+          uvx --from commitizen cz check -m "$PR_TITLE"

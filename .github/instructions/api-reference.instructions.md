@@ -4,8 +4,6 @@ applyTo: "**/*.py"
 
 # Spakky Framework API Reference
 
-이 문서는 Python 코드 작성 시 자동 적용됩니다.
-
 ## Core API
 
 | Decorator / Class | Import Path | Purpose |
@@ -14,7 +12,7 @@ applyTo: "**/*.py"
 | `@Primary` | `spakky.core.pod.annotations.primary` | Mark preferred implementation |
 | `@Order(n)` | `spakky.core.pod.annotations.order` | Control execution order |
 | `Tag` | `spakky.core.pod.annotations.tag` | Base class for custom metadata tags |
-| `ITagRegistry` | `spakky.core.pod.interfaces.tag_registry` | Tag registry interface (register, query tags) |
+| `ITagRegistry` | `spakky.core.pod.interfaces.tag_registry` | Tag registry interface |
 | `ITagRegistryAware` | `spakky.core.pod.interfaces.aware.tag_registry_aware` | Aware interface for tag registry injection |
 | `IApplicationContext` | `spakky.core.pod.interfaces.application_context` | App context interface (IContainer + ITagRegistry) |
 | `@Aspect()` / `@AsyncAspect()` | `spakky.core.aop.aspect` | Sync/Async aspect decorator |
@@ -24,14 +22,14 @@ applyTo: "**/*.py"
 | `@Controller` | `spakky.core.stereotype.controller` | Base controller stereotype |
 | `@UseCase` | `spakky.core.stereotype.usecase` | Business logic stereotype |
 | `SpakkyApplication` | `spakky.core.application.application` | App builder (`.load_plugins()` → `.add()` → `.scan()` → `.start()`) |
-| `ApplicationContext` | `spakky.core.application.application_context` | IoC container context (implements IApplicationContext) |
+| `ApplicationContext` | `spakky.core.application.application_context` | IoC container context |
 
 ## Data API (spakky-data)
 
 | Decorator / Class | Import Path | Purpose |
 |---|---|---|
-| `@Repository` | `spakky.data.stereotype.repository` | Data access stereotype (extends Pod) |
-| `@Transactional()` | `spakky.data.aspects.transactional` | Transaction boundary annotation (sync & async) |
+| `@Repository` | `spakky.data.stereotype.repository` | Data access stereotype |
+| `@Transactional()` | `spakky.data.aspects.transactional` | Transaction boundary annotation |
 | `AggregateCollector` | `spakky.data.persistency.aggregate_collector` | CONTEXT-scoped collector for saved aggregates |
 | `IAsyncGenericRepository` | `spakky.data.persistency.repository` | Async generic repository interface |
 | `AbstractAsyncTransaction` / `AbstractTransaction` | `spakky.data.persistency.transaction` | Transaction abstractions |
@@ -54,6 +52,7 @@ applyTo: "**/*.py"
 
 ## Pod Scopes
 
-- `SINGLETON` (default): 컨테이너당 하나의 인스턴스
-- `PROTOTYPE`: 요청마다 새 인스턴스
-- `CONTEXT`: 요청/컨텍스트 수명주기에 따른 인스턴스
+- `SINGLETON` (default): one instance per container
+- `PROTOTYPE`: new instance per request
+- `CONTEXT`: instance per request/context lifecycle
+

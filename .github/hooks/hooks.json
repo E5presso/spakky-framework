@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "uv sync --all-packages --all-extras --quiet 2>&1 | tail -3",
+        "cwd": ".",
+        "timeoutSec": 120
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "python .github/hooks/harness-review.py 2>&1 || true",
+        "cwd": ".",
+        "timeoutSec": 30
+      }
+    ]
+  }
+}
