@@ -15,7 +15,7 @@
 ```diff
 diff --git a/.github/hooks/harness-review.py b/.github/hooks/harness-review.py
 new file mode 100644
-index 0000000..8442c46
+index 0000000..168f4ce
 --- /dev/null
 +++ b/.github/hooks/harness-review.py
 @@ -0,0 +1,379 @@
@@ -29,9 +29,9 @@ index 0000000..8442c46
 +
 +The AI-driven qualitative evaluation is performed by the agent itself via the
 +`harness-review` skill, which the agent invokes as the FINAL step of every
-+coding session (mandated by copilot-instructions.md). The skill reads this
-+script's output and performs holistic qualitative assessment of all session
-+changes against applicable harness rules.
++coding session (mandated by the agent spec). The skill reads this script's
++output and performs holistic qualitative assessment of all session changes
++against applicable harness rules.
 +
 +Responsibilities of this script (automated, deterministic):
 +1. Token budget per harness file — flags files exceeding 900-token budget
@@ -288,7 +288,7 @@ index 2c79e23..e96890d 100644
  
 diff --git a/.github/hooks/harness-review.py b/.github/hooks/harness-review.py
 new file mode 100644
-index 0000000..8442c46
+index 0000000..168f4ce
 --- /dev/null
 +++ b/.github/hooks/harness-review.py
 @@ -0,0 +1,379 @@
@@ -302,9 +302,9 @@ index 0000000..8442c46
 +
 +The AI-driven qualitative evaluation is performed by the agent itself via the
 +`harness-review` skill, which the agent invokes as the FINAL step of every
-+coding session (mandated by copilot-instructions.md). The skill reads this
-+script's output and performs holistic qualitative assessment of all session
-+changes against applicable harness rules.
++coding session (mandated by the agent spec). The skill reads this script's
++output and performs holistic qualitative assessment of all session changes
++against applicable harness rules.
 +
 +Responsibilities of this script (automated, deterministic):
 +1. Token budget per harness file — flags files exceeding 900-token budget
