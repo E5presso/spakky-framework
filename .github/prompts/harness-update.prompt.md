@@ -47,7 +47,7 @@ tools:
 
 | 폴더 | 스킬 이름 | 용도 |
 |------|----------|------|
-| `coverage/` | `coverage` | 패키지 커버리지 측정 및 100% 달성 워크플로우 |
+| `improve-coverage/` | `improve-coverage` | 패키지 커버리지 측정 및 100% 달성 워크플로우 |
 | `create-plugin/` | `create-plugin` | 새 플러그인 패키지 스캐폴딩 (9단계) |
 | `review-pr/` | `review-pr` | PR 리뷰 댓글 분류 → 수정 → 검증 → 응답 |
 
