@@ -48,8 +48,8 @@ git checkout -- .
 
 1. **pre-commit hook**: 커밋 시 ruff 포맷이 자동 수행되어 커밋이 실패할 수 있음
 2. **실패 시 대응**: 당황하여 staged 변경사항을 날려먹지 말 것
-   - `git add -A && git commit` 재시도
-   - 절대로 `git checkout -- .`나 `git reset --hard` 사용 금지
+  - `git add -A && git commit` 재시도
+  - 절대로 `git checkout -- .`나 `git reset --hard` 사용 금지
 
 **변경사항 보호 전략:**
 - 단계마다 미리 커밋해두기 (권장)
