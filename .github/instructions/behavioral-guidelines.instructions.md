@@ -95,3 +95,19 @@ def get_scope(scope_name: str) -> Scope:
         case _:
             raise AssertionError(f"Unknown scope: {scope_name!r}")
 ```
+
+## 7. Verify Before Documenting (검증 후 문서화)
+
+**하네스 변경은 검증된 사실만 반영하라.**
+
+하네스(instructions, skills, prompts) 수정 시:
+1. **가설 수립** → 문제 원인 추측
+2. **검증** → 실제 테스트/실행으로 확인
+3. **문서화** → 검증된 경우에만 하네스 수정
+
+**금지 사항:**
+- 미검증 가설을 하네스에 추가
+- "아마도", "~일 수 있음" 형태의 불확실한 규칙
+- 다른 프로젝트/문서에서 복사한 검증 안 된 규칙
+
+> 잘못된 하네스는 잘못된 코드보다 나쁘다 — 반복적으로 잘못된 결과를 낳는다.

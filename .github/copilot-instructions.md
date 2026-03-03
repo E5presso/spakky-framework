@@ -10,7 +10,7 @@
 | Layer | 위치 | 역할 |
 |-------|------|------|
 | Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 행동 규칙 |
-| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`: uv sync / `sessionEnd`: 정량 평가) |
+| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`: uv sync / `sessionEnd`: harness-review 알림) |
 | Skills | `.github/skills/*/SKILL.md` | 재사용 가능한 에이전트 스킬 |
 | File Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
 | Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 |
@@ -28,7 +28,7 @@ Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Us
 
 | 파일 패턴 | 인스트럭션 | 내용 |
 |-----------|-----------|------|
-| `**/*` | `behavioral-guidelines` | 행동 원칙 6가지 |
+| `**/*` | `behavioral-guidelines` | 행동 원칙 7가지 |
 | `**/*` | `tool-usage` | 도구 사용 규칙, Git 안전 규칙 |
 | `**/*.py` | `api-reference`, `python-code` | API 레퍼런스, 타입/네이밍 표준 |
 | `**/tests/**/*.py` | `test-writing` | 테스트 구조, 네이밍, TDD |

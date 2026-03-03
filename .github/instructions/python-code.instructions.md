@@ -10,6 +10,18 @@ applyTo: "**/*.py"
 - `Any` 허용 예외: 외부 라이브러리 invariant generics — 인라인 주석으로 사유 명시.
 - `# type: ignore` **절대 금지**.
 
+### `# type: ignore` 허용 예외 (기존 코드)
+
+아래 경우에만 기존 `# type: ignore` 유지 허용:
+
+| 케이스 | 예시 |
+|--------|------|
+| 외부 라이브러리 타입 불완전 | `from aio_pika import ...  # type: ignore` |
+| 테스트에서 의도적 타입 위반 | `invalid_input: Any = "wrong"  # type: ignore - 에러 테스트` |
+| 런타임 동적 타입 | MRO 계산 등 타입 추론 불가능 코드 |
+
+**새 코드에서는 절대 추가 금지.** 대안: `cast()`, `TypeVar`, `Protocol`, `overload`.
+
 ## Unreachable States
 
 불가능한 상태는 명시적으로 실패 (silent fallback 금지):
