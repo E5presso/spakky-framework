@@ -276,3 +276,6 @@ def test_feature_incorrect_behavior_expect_wrong_result() -> None:
 - 코드 변경 → 관련 문서 모두 업데이트 (CHANGELOG.md 제외, 자동 생성)
 - 우선순위: Code > CONTRIBUTING.md > copilot-instructions.md > README.md
 - 파일 경로, 클래스명, 메서드 시그니처, import 경로 — 실제 코드로 검증 필수
+
+## 세션 완료 규칙
+매 코딩 세션의 마지막 단계로 반드시 `harness-review` 스킬을 실행하세요.
