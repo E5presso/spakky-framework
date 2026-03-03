@@ -161,7 +161,7 @@ class NonDomainEventHandler:
 
 
 def test_post_processor_registers_sync_handler_methods() -> None:
-    """Test that sync handler methods are registered with sync consumer."""
+    """sync 핸들러 메서드가 sync consumer에 등록됨을 검증한다."""
     sync_consumer = InMemorySyncConsumer()
     async_consumer = InMemoryAsyncConsumer()
     container = InMemoryContainer(sync_consumer, async_consumer)
@@ -178,7 +178,7 @@ def test_post_processor_registers_sync_handler_methods() -> None:
 
 
 def test_post_processor_ignore_non_decorated_methods() -> None:
-    """Test that non-decorated methods are ignored."""
+    """@on_event 데코레이터가 없는 메서드는 무시됨을 검증한다."""
     sync_consumer = InMemorySyncConsumer()
     async_consumer = InMemoryAsyncConsumer()
     container = InMemoryContainer(sync_consumer, async_consumer)
@@ -195,7 +195,7 @@ def test_post_processor_ignore_non_decorated_methods() -> None:
 
 
 def test_post_processor_registers_async_handler_methods() -> None:
-    """Test that async handler methods are registered with async consumer."""
+    """async 핸들러 메서드가 async consumer에 등록됨을 검증한다."""
     sync_consumer = InMemorySyncConsumer()
     async_consumer = InMemoryAsyncConsumer()
     container = InMemoryContainer(sync_consumer, async_consumer)
@@ -212,7 +212,7 @@ def test_post_processor_registers_async_handler_methods() -> None:
 
 
 def test_post_processor_registers_multiple_event_handlers() -> None:
-    """Test that handlers with multiple events register all of them."""
+    """여러 이벤트 핸들러가 있는 클래스에서 모든 핸들러가 등록됨을 검증한다."""
     sync_consumer = InMemorySyncConsumer()
     async_consumer = InMemoryAsyncConsumer()
     container = InMemoryContainer(sync_consumer, async_consumer)
@@ -230,7 +230,7 @@ def test_post_processor_registers_multiple_event_handlers() -> None:
 
 
 def test_post_processor_ignores_non_event_handler_objects() -> None:
-    """Test that non-EventHandler objects are ignored."""
+    """@EventHandler가 아닌 객체는 무시됨을 검증한다."""
     sync_consumer = InMemorySyncConsumer()
     async_consumer = InMemoryAsyncConsumer()
     container = InMemoryContainer(sync_consumer, async_consumer)
@@ -249,7 +249,7 @@ def test_post_processor_ignores_non_event_handler_objects() -> None:
 
 
 def test_post_processor_ignores_non_domain_event_handlers() -> None:
-    """Test that handlers with non-domain events are ignored."""
+    """DomainEvent가 아닌 이벤트를 처리하는 핸들러는 무시됨을 검증한다."""
     sync_consumer = InMemorySyncConsumer()
     async_consumer = InMemoryAsyncConsumer()
     container = InMemoryContainer(sync_consumer, async_consumer)

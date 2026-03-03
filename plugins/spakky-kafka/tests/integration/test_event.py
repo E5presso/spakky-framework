@@ -48,6 +48,7 @@ async def async_wait_for_count(handler: DummyEventHandler, expected: int) -> Non
 
 
 def test_synchronous_event(app: SpakkyApplication) -> None:
+    """동기 이벤트 발행 및 핸들링이 올바르게 동작하는지 검증한다."""
     publisher = app.container.get(IIntegrationEventPublisher)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
@@ -59,6 +60,7 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
 
 @pytest.mark.asyncio
 async def test_asynchronous_event(app: SpakkyApplication) -> None:
+    """비동기 이벤트 발행 및 핸들링이 올바르게 동작하는지 검증한다."""
     publisher = app.container.get(IAsyncIntegrationEventPublisher)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
@@ -69,7 +71,7 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
 
 
 def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
-    """Test that registering duplicate sync handler raises error."""
+    """중복된 동기 핸들러 등록 시 에러가 발생하는지 검증한다."""
     consumer = app.container.get(IIntegrationEventConsumer)
 
     def handler1(event: DuplicateTestEvent) -> None:
@@ -90,7 +92,7 @@ def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
 
 @pytest.mark.asyncio
 async def test_duplicate_handler_registration_async(app: SpakkyApplication) -> None:
-    """Test that registering duplicate async handler raises error."""
+    """중복된 비동기 핸들러 등록 시 에러가 발생하는지 검증한다."""
     consumer = app.container.get(IAsyncIntegrationEventConsumer)
 
     async def handler1(event: DuplicateTestEvent) -> None:

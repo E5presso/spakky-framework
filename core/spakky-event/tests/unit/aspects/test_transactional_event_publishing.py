@@ -60,7 +60,7 @@ class User(AbstractAggregateRoot[UUID]):
 
 
 def test_sync_aspect_publishes_events_on_success() -> None:
-    """Test that TransactionalEventPublishingAspect publishes events after successful execution."""
+    """TransactionalEventPublishingAspect가 성공적인 실행 후 이벤트를 발행함을 검증한다."""
 
     @Pod()
     class InMemoryTransaction(AbstractTransaction):
@@ -113,7 +113,7 @@ def test_sync_aspect_publishes_events_on_success() -> None:
 
 
 def test_sync_aspect_does_not_publish_on_error() -> None:
-    """Test that TransactionalEventPublishingAspect does not publish events when method fails."""
+    """TransactionalEventPublishingAspect가 메서드 실패 시 이벤트를 발행하지 않음을 검증한다."""
 
     @Pod()
     class InMemoryTransaction(AbstractTransaction):
@@ -164,7 +164,7 @@ def test_sync_aspect_does_not_publish_on_error() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aspect_publishes_events_on_success() -> None:
-    """Test that AsyncTransactionalEventPublishingAspect publishes events after successful execution."""
+    """AsyncTransactionalEventPublishingAspect가 성공적인 실행 후 이벤트를 발행함을 검증한다."""
 
     @Pod()
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
@@ -218,7 +218,7 @@ async def test_async_aspect_publishes_events_on_success() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aspect_does_not_publish_on_error() -> None:
-    """Test that AsyncTransactionalEventPublishingAspect does not publish events when method fails."""
+    """AsyncTransactionalEventPublishingAspect가 메서드 실패 시 이벤트를 발행하지 않음을 검증한다."""
 
     @Pod()
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
@@ -271,7 +271,7 @@ async def test_async_aspect_does_not_publish_on_error() -> None:
 async def test_async_aspect_publishes_multiple_events_from_multiple_aggregates() -> (
     None
 ):
-    """Test that aspect publishes all events from multiple aggregates."""
+    """여러 aggregate에서 발생한 모든 이벤트를 발행함을 검증한다."""
 
     @Pod()
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):

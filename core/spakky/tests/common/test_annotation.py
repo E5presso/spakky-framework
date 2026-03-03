@@ -14,6 +14,8 @@ from spakky.core.common.annotation import (
 
 
 def test_class_annotation_expect_success() -> None:
+    """클래스 어노테이션이 정상적으로 적용되고 조회될 수 있음을 검증한다."""
+
     @ClassAnnotation()
     class Dummy: ...
 
@@ -24,6 +26,8 @@ def test_class_annotation_expect_success() -> None:
 
 
 def test_class_annotation_expect_fail() -> None:
+    """어노테이션이 없는 클래스에서 조회 시 적절한 예외가 발생함을 검증한다."""
+
     class Dummy: ...
 
     with pytest.raises(AssertionError):
@@ -35,6 +39,8 @@ def test_class_annotation_expect_fail() -> None:
 
 
 def test_multiple_class_annotation_expect_success() -> None:
+    """여러 종류의 클래스 어노테이션을 동시에 적용할 수 있음을 검증한다."""
+
     @dataclass
     class DummyAnnotation(ClassAnnotation): ...
 
@@ -50,6 +56,8 @@ def test_multiple_class_annotation_expect_success() -> None:
 
 
 def test_same_class_annotation_multiple_times_expect_error() -> None:
+    """동일한 어노테이션을 여러 번 적용 시 MultipleAnnotationFoundError가 발생함을 검증한다."""
+
     @dataclass
     class DummyAnnotation(ClassAnnotation):
         age: int
@@ -72,6 +80,8 @@ def test_same_class_annotation_multiple_times_expect_error() -> None:
 
 
 def test_function_passing_type_hint() -> None:
+    """함수 어노테이션 적용 후에도 원본 함수의 시그니처가 유지됨을 검증한다."""
+
     @dataclass
     class CustomAnnotation(FunctionAnnotation): ...
 
@@ -87,6 +97,8 @@ def test_function_passing_type_hint() -> None:
 
 
 def test_function_annotation_expect_success() -> None:
+    """함수 어노테이션이 정상적으로 적용되고 조회될 수 있음을 검증한다."""
+
     @FunctionAnnotation()
     def function() -> None: ...
 
@@ -111,6 +123,8 @@ def test_function_annotation_expect_success() -> None:
 
 
 def test_function_annotation_expect_fail() -> None:
+    """어노테이션이 없는 함수에서 조회 시 적절한 예외가 발생함을 검증한다."""
+
     def function() -> None: ...
 
     with pytest.raises(AssertionError):
@@ -122,6 +136,8 @@ def test_function_annotation_expect_fail() -> None:
 
 
 def test_multiple_function_annotation_expect_success() -> None:
+    """여러 종류의 함수 어노테이션을 동시에 적용할 수 있음을 검증한다."""
+
     @dataclass
     class DummyAnnotation(FunctionAnnotation): ...
 
@@ -137,6 +153,8 @@ def test_multiple_function_annotation_expect_success() -> None:
 
 
 def test_same_function_annotation_multiple_times_expect_error() -> None:
+    """동일한 함수 어노테이션을 여러 번 적용 시 MultipleAnnotationFoundError가 발생함을 검증한다."""
+
     @dataclass
     class DummyAnnotation(FunctionAnnotation):
         name: str
@@ -157,6 +175,7 @@ def test_same_function_annotation_multiple_times_expect_error() -> None:
 
 
 def test_class_annotation_inheritance() -> None:
+    """어노테이션 상속 시 상위 어노테이션 타입으로도 조회 가능함을 검증한다."""
     uid: UUID = uuid4()
 
     @dataclass(kw_only=True)
@@ -185,6 +204,8 @@ def test_class_annotation_inheritance() -> None:
 
 
 def test_class_annotation_inheritance_expect_fail() -> None:
+    """상위 어노테이션만 적용된 경우 하위 어노테이션으로 조회가 실패함을 검증한다."""
+
     @dataclass(kw_only=True)
     class Foo(ClassAnnotation):
         uid: UUID

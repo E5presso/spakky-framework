@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 
 def test_error_handling_middleware_debug_mode() -> None:
-    """Test that ErrorHandlingMiddleware prints traceback in debug mode"""
+    """ErrorHandlingMiddleware가 debug 모드에서 traceback을 출력함을 검증한다."""
     api = FastAPI()
 
     # Add middleware with debug=True
@@ -24,7 +24,7 @@ def test_error_handling_middleware_debug_mode() -> None:
 
 
 def test_error_handling_middleware_no_debug() -> None:
-    """Test that ErrorHandlingMiddleware doesn't print traceback without debug mode"""
+    """ErrorHandlingMiddleware가 debug 모드가 아닐 때 traceback을 출력하지 않음을 검증한다."""
     api = FastAPI()
 
     # Add middleware with debug=False

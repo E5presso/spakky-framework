@@ -9,6 +9,8 @@ from spakky.event.stereotype.event_handler import (
 
 
 def test_event_handler() -> None:
+    """@EventHandler 데코레이터가 클래스에 적용되어 있는지 확인함을 검증한다."""
+
     @EventHandler()
     class SampleEventHandler: ...
 
@@ -19,6 +21,8 @@ def test_event_handler() -> None:
 
 
 def test_event_handler_with_callback() -> None:
+    """@EventHandler와 @on_event 데코레이터가 함께 적용됨을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 

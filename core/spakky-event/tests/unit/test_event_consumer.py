@@ -5,14 +5,12 @@ from spakky.event.event_consumer import (
 
 
 def test_event_consumer_protocol() -> None:
-    """Test that IIntegrationEventConsumer protocol is implemented correctly"""
-
+    """IIntegrationEventConsumer 프로토콜이 올바르게 정의되어 있음을 검증한다."""
     # Just verify the protocol exists and can be checked
     assert hasattr(IIntegrationEventConsumer, "register")
 
 
 def test_async_event_consumer_protocol() -> None:
-    """Test that IAsyncIntegrationEventConsumer protocol is implemented correctly"""
-
+    """IAsyncIntegrationEventConsumer 프로토콜이 올바르게 정의되어 있음을 검증한다."""
     # Just verify the protocol exists and can be checked
     assert hasattr(IAsyncIntegrationEventConsumer, "register")

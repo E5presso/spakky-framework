@@ -52,8 +52,9 @@ addopts = """
     --dist=loadfile
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
+spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
 include = ["src/spakky/plugins/kafka/*"]

@@ -30,7 +30,7 @@ class TestDomainEvent(AbstractDomainEvent):
 
 
 def test_rabbitmq_post_processor_registers_integration_event_expect_success() -> None:
-    """Test that RabbitMQ PostProcessor registers IntegrationEvent handlers."""
+    """RabbitMQ PostProcessor가 IntegrationEvent 핸들러를 올바르게 등록하는지 검증한다."""
 
     @EventHandler()
     class TestEventHandler:
@@ -70,7 +70,7 @@ def test_rabbitmq_post_processor_registers_integration_event_expect_success() ->
 def test_rabbitmq_post_processor_registers_async_integration_event_expect_success() -> (
     None
 ):
-    """Test that RabbitMQ PostProcessor registers async IntegrationEvent handlers."""
+    """RabbitMQ PostProcessor가 비동기 IntegrationEvent 핸들러를 올바르게 등록하는지 검증한다."""
 
     @EventHandler()
     class TestEventHandler:
@@ -108,10 +108,10 @@ def test_rabbitmq_post_processor_registers_async_integration_event_expect_succes
 
 
 def test_rabbitmq_post_processor_ignores_domain_event_expect_no_registration() -> None:
-    """Test that RabbitMQ PostProcessor does NOT register DomainEvent handlers.
+    """RabbitMQ PostProcessor가 DomainEvent 핸들러를 등록하지 않는지 검증한다.
 
-    This test verifies the type constraint in EventRoute[AbstractIntegrationEvent]
-    which ensures only IntegrationEvent types are processed by the PostProcessor.
+    EventRoute[AbstractIntegrationEvent] 타입 제약으로 인해
+    IntegrationEvent 타입만 PostProcessor에서 처리됨을 확인한다.
     """
 
     @EventHandler()
@@ -152,7 +152,7 @@ def test_rabbitmq_post_processor_ignores_domain_event_expect_no_registration() -
 def test_rabbitmq_post_processor_mixed_events_expect_only_integration_registered() -> (
     None
 ):
-    """Test that only IntegrationEvent handlers are registered when mixed with DomainEvents."""
+    """DomainEvent와 혼합된 경우 IntegrationEvent 핸들러만 등록되는지 검증한다."""
 
     @EventHandler()
     class TestEventHandler:

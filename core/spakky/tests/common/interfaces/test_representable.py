@@ -2,7 +2,7 @@ from spakky.core.common.interfaces.representable import IRepresentable
 
 
 def test_representable_protocol() -> None:
-    """Test that IRepresentable protocol exists and can be implemented"""
+    """IRepresentable 프로토콜이 존재하고 구현 가능함을 검증한다."""
 
     class TestRepresentable:
         def __init__(self, value: str) -> None:

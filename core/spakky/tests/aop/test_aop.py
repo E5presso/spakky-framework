@@ -14,6 +14,7 @@ from spakky.core.pod.annotations.pod import Pod
 
 
 def test_aop_with_no_implementations() -> None:
+    """Aspect 구현체가 없을 때 원래 메서드가 정상 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -48,6 +49,7 @@ def test_aop_with_no_implementations() -> None:
 
 
 def test_aop() -> None:
+    """AOP의 Before, AfterRaising, AfterReturning, After, Around advice가 올바른 순서로 실행됨을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -113,6 +115,7 @@ def test_aop() -> None:
 
 
 def test_aop_with_another_pod() -> None:
+    """Log 어노테이션이 없는 Pod에는 Aspect가 적용되지 않음을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -169,6 +172,7 @@ def test_aop_with_another_pod() -> None:
 
 
 def test_aop_with_no_implementations_raise_error() -> None:
+    """Aspect 구현체 없이 메서드에서 예외 발생 시 정상적으로 전파됨을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -197,6 +201,7 @@ def test_aop_with_no_implementations_raise_error() -> None:
 
 
 def test_aop_with_implementations_raise_error() -> None:
+    """메서드에서 예외 발생 시 AfterRaising advice가 호출됨을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -231,6 +236,7 @@ def test_aop_with_implementations_raise_error() -> None:
 
 
 def test_aop_raise_error() -> None:
+    """메서드 예외 발생 시 모든 advice(Before, Around, AfterRaising, After)가 올바른 순서로 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -298,6 +304,7 @@ def test_aop_raise_error() -> None:
 
 
 def test_aop_that_does_not_have_any_aspects() -> None:
+    """Aspect가 정의되지 않은 상태에서도 메서드가 정상 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -325,6 +332,7 @@ def test_aop_that_does_not_have_any_aspects() -> None:
 
 
 def test_aop_with_no_method() -> None:
+    """@Log 어노테이션이 적용된 메서드가 없는 Pod에서 속성 접근이 정상 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -386,6 +394,7 @@ def test_aop_with_no_method() -> None:
 
 
 def test_aop_with_dependencies() -> None:
+    """의존성 주입을 사용하는 Pod에 AOP가 정상 적용됨을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -464,6 +473,7 @@ def test_aop_with_dependencies() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop_with_no_implementations() -> None:
+    """AsyncAspect 구현체가 없을 때 비동기 메서드가 정상 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -496,6 +506,7 @@ async def test_async_aop_with_no_implementations() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop() -> None:
+    """비동기 AOP의 Before, AfterRaising, AfterReturning, After, Around advice가 올바른 순서로 실행됨을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -567,6 +578,7 @@ async def test_async_aop() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop_with_another_pod() -> None:
+    """AsyncLog 어노테이션이 없는 Pod에는 AsyncAspect가 적용되지 않음을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -634,6 +646,7 @@ async def test_async_aop_with_another_pod() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop_with_no_implementations_raise_error() -> None:
+    """AsyncAspect 구현체 없이 비동기 메서드에서 예외 발생 시 정상적으로 전파됨을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -667,6 +680,7 @@ async def test_async_aop_with_no_implementations_raise_error() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop_with_implementations_raise_error() -> None:
+    """비동기 메서드에서 예외 발생 시 AfterRaising advice가 호출됨을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -705,6 +719,7 @@ async def test_async_aop_with_implementations_raise_error() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop_raise_error() -> None:
+    """비동기 메서드 예외 발생 시 모든 advice가 올바른 순서로 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -777,6 +792,7 @@ async def test_async_aop_raise_error() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop_that_does_not_have_any_aspects() -> None:
+    """AsyncAspect가 정의되지 않은 상태에서도 비동기 메서드가 정상 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -823,6 +839,7 @@ async def test_async_aop_that_does_not_have_any_aspects() -> None:
 
 @pytest.mark.asyncio
 async def test_async_aop_with_no_method() -> None:
+    """@AsyncLog 어노테이션이 적용된 메서드가 없는 Pod에서 속성 접근이 정상 동작함을 검증한다."""
     logs: list[str] = []
 
     @dataclass
@@ -888,10 +905,10 @@ async def test_async_aop_with_no_method() -> None:
 
 
 def test_aspect_skips_property_getters_during_introspection() -> None:
-    """Verify that property getters are not invoked during AOP introspection.
+    """AOP 인트로스펙션 시 프로퍼티 게터가 호출되지 않음을 검증한다.
 
-    This prevents side effects (e.g., errors from uninitialized state) when
-    scanning pod members for aspect matching.
+    Pod 멤버를 스캔하여 Aspect 매칭을 활때 프로퍼티 게터가 실행되면
+    초기화되지 않은 상태에서 에러가 발생할 수 있는 부작용을 방지한다.
     """
 
     class PropertyAccessedError(Exception):

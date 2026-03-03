@@ -119,7 +119,7 @@ def tag_registry_with_user_table() -> InMemoryTagRegistry:
 def test_schema_registry_init_expect_no_registered_schemas(
     tag_registry: InMemoryTagRegistry,
 ) -> None:
-    """Test that SchemaRegistry initializes with no registered schemas."""
+    """SchemaRegistry 초기화 시 등록된 스키마가 없음을 검증한다."""
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry)
     user = User(
@@ -139,7 +139,7 @@ def test_schema_registry_init_expect_no_registered_schemas(
 def test_set_tag_registry_with_table_tags_expect_domain_convertible(
     tag_registry_with_user_table: InMemoryTagRegistry,
 ) -> None:
-    """Test that set_tag_registry enables domain-to-table conversion."""
+    """set_tag_registry로 Table 태그 등록 시 도메인-테이블 변환이 가능함을 검증한다."""
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry_with_user_table)
     user = User(
@@ -160,7 +160,7 @@ def test_set_tag_registry_with_table_tags_expect_domain_convertible(
 def test_set_tag_registry_with_empty_registry_expect_no_conversion(
     tag_registry: InMemoryTagRegistry,
 ) -> None:
-    """Test that set_tag_registry with empty registry cannot convert domains."""
+    """빈 tag registry로 set_tag_registry 호출 시 도메인 변환이 불가능함을 검증한다."""
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry)
     user = User(
@@ -179,7 +179,7 @@ def test_set_tag_registry_with_empty_registry_expect_no_conversion(
 def test_set_tag_registry_with_non_table_tags_expect_ignored(
     tag_registry: InMemoryTagRegistry,
 ) -> None:
-    """Test that non-Table tags are ignored during registration."""
+    """Table이 아닌 태그는 등록 과정에서 무시됨을 검증한다."""
     registry = SchemaRegistry()
     # Register a non-Table tag
     non_table_tag = Tag()
@@ -202,7 +202,7 @@ def test_set_tag_registry_with_non_table_tags_expect_ignored(
 def test_from_domain_registered_domain_expect_table_instance(
     tag_registry_with_user_table: InMemoryTagRegistry,
 ) -> None:
-    """Test that from_domain returns correct table instance for registered domain."""
+    """등록된 도메인에 대해 from_domain이 올바른 테이블 인스턴스를 반환함을 검증한다."""
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry_with_user_table)
     user = User(
@@ -225,7 +225,7 @@ def test_from_domain_registered_domain_expect_table_instance(
 def test_from_domain_unregistered_domain_expect_error(
     tag_registry: InMemoryTagRegistry,
 ) -> None:
-    """Test that from_domain raises NoSchemaFoundFromDomainError for unregistered domain."""
+    """등록되지 않은 도메인에 대해 from_domain이 NoSchemaFoundFromDomainError를 발생시킴을 검증한다."""
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry)
     user = User(
@@ -244,7 +244,7 @@ def test_from_domain_unregistered_domain_expect_error(
 def test_get_type_registered_domain_expect_table_type(
     tag_registry_with_user_table: InMemoryTagRegistry,
 ) -> None:
-    """Test that get_type returns correct table type for registered domain."""
+    """등록된 도메인에 대해 get_type이 올바른 테이블 타입을 반환함을 검증한다."""
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry_with_user_table)
 
@@ -256,7 +256,7 @@ def test_get_type_registered_domain_expect_table_type(
 def test_get_type_unregistered_domain_expect_error(
     tag_registry: InMemoryTagRegistry,
 ) -> None:
-    """Test that get_type raises NoSchemaFoundFromDomainError for unregistered domain."""
+    """등록되지 않은 도메인에 대해 get_type이 NoSchemaFoundFromDomainError를 발생시킴을 검증한다."""
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry)
 

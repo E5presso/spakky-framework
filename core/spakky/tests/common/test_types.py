@@ -4,6 +4,7 @@ from spakky.core.common.types import get_callable_methods, is_optional, remove_n
 
 
 def test_is_optional() -> None:
+    """타입이 Optional인지 여부를 정확히 판별함을 검증한다."""
     assert is_optional(str | None) is True
     assert is_optional(Optional[str]) is True
     assert is_optional(str) is False
@@ -14,7 +15,7 @@ def test_is_optional() -> None:
 
 
 def test_remove_none() -> None:
-    """Test remove_none function"""
+    """Union 타입에서 None을 제거한 타입을 올바르게 반환함을 검증한다."""
     # Remove None from Union types
     assert remove_none(str | None) is str
     assert remove_none(Optional[str]) is str
@@ -29,7 +30,7 @@ def test_remove_none() -> None:
 
 
 def test_get_callable_methods_includes_regular_methods() -> None:
-    """Regular methods should be included in the result."""
+    """일반 메서드가 get_callable_methods 결과에 포함됨을 검증한다."""
 
     class Sample:
         def method(self) -> str:
@@ -43,7 +44,7 @@ def test_get_callable_methods_includes_regular_methods() -> None:
 
 
 def test_get_callable_methods_excludes_properties() -> None:
-    """Properties should be excluded from the result."""
+    """프로퍼티가 get_callable_methods 결과에서 제외됨을 검증한다."""
 
     class Sample:
         @property
@@ -62,7 +63,7 @@ def test_get_callable_methods_excludes_properties() -> None:
 
 
 def test_get_callable_methods_skips_on_getattr_exception() -> None:
-    """Members that raise exceptions on getattr should be skipped."""
+    """getattr 시 예외를 발생시키는 멤버가 건너뛰어짐을 검증한다."""
 
     class ProblematicDescriptor:
         """Descriptor that raises an exception on access."""
@@ -85,7 +86,7 @@ def test_get_callable_methods_skips_on_getattr_exception() -> None:
 
 
 def test_get_callable_methods_excludes_non_callable_attributes() -> None:
-    """Non-callable attributes should be excluded from the result."""
+    """호출 불가능한 속성이 get_callable_methods 결과에서 제외됨을 검증한다."""
 
     class Sample:
         data: str = "not callable"
@@ -102,7 +103,7 @@ def test_get_callable_methods_excludes_non_callable_attributes() -> None:
 
 
 def test_get_callable_methods_returns_bound_methods() -> None:
-    """Returned methods should be bound to the object."""
+    """반환된 메서드가 객체에 바인딩되어 있음을 검증한다."""
 
     class Sample:
         def method(self) -> str:
@@ -117,14 +118,14 @@ def test_get_callable_methods_returns_bound_methods() -> None:
 
 
 def test_remove_none_with_no_non_none_args() -> None:
-    """Test remove_none with Union that only contains None."""
+    """None만 포함하는 Union에 대해 remove_none이 정상 동작함을 검증한다."""
     # This is a theoretical case - Union[None] or None itself
     result = remove_none(type(None))
     assert result is type(None)
 
 
 def test_remove_none_with_union_of_none() -> None:
-    """Test remove_none with various Union types."""
+    """다양한 Union 타입에서 remove_none이 정상 동작함을 검증한다."""
     # Test Union[int, str, None] -> Union[int, str]
     result = remove_none(Union[int, str, None])
     # Union comparison needs ==, not is

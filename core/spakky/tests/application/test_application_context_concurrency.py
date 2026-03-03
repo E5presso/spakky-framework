@@ -9,8 +9,8 @@ from spakky.core.pod.annotations.pod import Pod
 
 def test_singleton_thread_safety_expect_single_instance() -> None:
     """
-    Test that Singleton Pods are instantiated only once even when accessed concurrently
-    by multiple threads. This verifies the thread-safety of the lazy initialization logic.
+    싱글톤 Pod가 여러 스레드에서 동시에 접근해도 단 한 번만 인스턴스화됨을 검증한다.
+    지연 초기화 로직의 스레드 안전성을 확인한다.
     """
 
     init_count = 0
@@ -55,8 +55,8 @@ def test_singleton_thread_safety_expect_single_instance() -> None:
 
 def test_singleton_deadlock_prevention() -> None:
     """
-    Test specifically for the deadlock scenario where a lock might be re-acquired incorrectly.
-    This ensures the fix for the reentrant lock issue works.
+    락이 잘못 재획득될 수 있는 데드락 시나리오를 테스트한다.
+    재진입 락 문제에 대한 수정이 정상 동작함을 검증한다.
     """
 
     @Pod(scope=Pod.Scope.SINGLETON)
@@ -83,8 +83,8 @@ def test_singleton_deadlock_prevention() -> None:
 
 def test_concurrent_stop_calls_expect_safe() -> None:
     """
-    Test that multiple concurrent calls to stop() don't cause race conditions.
-    Only the first call should succeed, others should raise error.
+    여러 스레드에서 동시에 stop()을 호출해도 경합 조건이 발생하지 않음을 검증한다.
+    첫 번째 호출만 성공하고, 나머지는 에러를 발생시켜야 한다.
     """
     from spakky.core.application.application_context import (
         ApplicationContextAlreadyStoppedError,

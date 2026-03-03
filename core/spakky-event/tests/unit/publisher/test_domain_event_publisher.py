@@ -42,7 +42,7 @@ class InMemoryAsyncDispatcher(IAsyncDomainEventDispatcher):
 
 
 def test_sync_publisher_publishes_to_dispatcher() -> None:
-    """Test that sync publisher delegates to dispatcher."""
+    """sync publisher가 dispatcher에 이벤트를 위임함을 검증한다."""
     dispatcher = InMemorySyncDispatcher()
     publisher = DomainEventPublisher(dispatcher)
 
@@ -54,7 +54,7 @@ def test_sync_publisher_publishes_to_dispatcher() -> None:
 
 
 def test_sync_publisher_publishes_multiple_events() -> None:
-    """Test that sync publisher handles multiple publishes."""
+    """sync publisher가 여러 번의 publish를 처리함을 검증한다."""
     dispatcher = InMemorySyncDispatcher()
     publisher = DomainEventPublisher(dispatcher)
 
@@ -73,7 +73,7 @@ def test_sync_publisher_publishes_multiple_events() -> None:
 
 @pytest.mark.asyncio
 async def test_async_publisher_publishes_to_dispatcher() -> None:
-    """Test that async publisher delegates to dispatcher."""
+    """async publisher가 dispatcher에 이벤트를 위임함을 검증한다."""
     dispatcher = InMemoryAsyncDispatcher()
     publisher = AsyncDomainEventPublisher(dispatcher)
 
@@ -86,7 +86,7 @@ async def test_async_publisher_publishes_to_dispatcher() -> None:
 
 @pytest.mark.asyncio
 async def test_async_publisher_publishes_multiple_events() -> None:
-    """Test that async publisher handles multiple publishes."""
+    """async publisher가 여러 번의 publish를 처리함을 검증한다."""
     dispatcher = InMemoryAsyncDispatcher()
     publisher = AsyncDomainEventPublisher(dispatcher)
 

@@ -6,7 +6,7 @@ from spakky.core.common.types import remove_none
 
 
 def test_remove_none_returns_union() -> None:
-    """Test remove_none with multiple non-None types."""
+    """여러 개의 non-None 타입이 있을 때 remove_none이 Union을 반환함을 검증한다."""
     # Test with Union[int, str, float, None] -> Union[int, str, float]
     type_with_none = Union[int, str, float, None]
     result = remove_none(type_with_none)
@@ -17,7 +17,7 @@ def test_remove_none_returns_union() -> None:
 
 
 def test_remove_none_without_union() -> None:
-    """Test remove_none with non-Union type."""
+    """Union이 아닌 타입에 대해 remove_none이 원본 타입을 그대로 반환함을 검증한다."""
     # Test with plain type (not a Union)
     result = remove_none(int)
 

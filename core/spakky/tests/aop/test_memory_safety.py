@@ -80,6 +80,7 @@ def memory_test_app() -> SpakkyApplication:
 
 
 def test_singleton_cache_persists(memory_test_app: SpakkyApplication) -> None:
+    """Singleton 스코프 Pod의 메서드 캐시가 유지됨을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Get singleton instance
@@ -98,6 +99,7 @@ def test_singleton_cache_persists(memory_test_app: SpakkyApplication) -> None:
 def test_prototype_instances_are_independent(
     memory_test_app: SpakkyApplication,
 ) -> None:
+    """Prototype 스코프 Pod의 각 인스턴스가 독립적임을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Create multiple prototype instances
@@ -123,6 +125,7 @@ def test_prototype_instances_are_independent(
 def test_prototype_cache_releases_after_gc(
     memory_test_app: SpakkyApplication,
 ) -> None:
+    """GC 후 Prototype 인스턴스의 캐시가 해제되어 메모리 누수가 없음을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Get the AspectProxyHandler from a prototype instance
@@ -165,6 +168,7 @@ def test_prototype_cache_releases_after_gc(
 async def test_async_prototype_cache_releases_after_gc(
     memory_test_app: SpakkyApplication,
 ) -> None:
+    """GC 후 비동기 Prototype 인스턴스의 캐시가 해제되어 메모리 누수가 없음을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Get initial instance
@@ -201,6 +205,7 @@ async def test_async_prototype_cache_releases_after_gc(
 def test_aspect_applies_to_all_prototype_instances(
     memory_test_app: SpakkyApplication,
 ) -> None:
+    """Aspect가 모든 Prototype 인스턴스에 적용됨을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Reset counter
@@ -221,6 +226,7 @@ def test_aspect_applies_to_all_prototype_instances(
 async def test_async_aspect_applies_to_all_prototype_instances(
     memory_test_app: SpakkyApplication,
 ) -> None:
+    """AsyncAspect가 모든 비동기 Prototype 인스턴스에 적용됨을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Reset counter
@@ -240,6 +246,7 @@ async def test_async_aspect_applies_to_all_prototype_instances(
 def test_cache_behavior_with_explicit_deletion(
     memory_test_app: SpakkyApplication,
 ) -> None:
+    """명시적 인스턴스 삭제 후에도 다른 인스턴스가 정상 동작함을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Create instances
@@ -271,6 +278,7 @@ def test_cache_behavior_with_explicit_deletion(
 
 
 def test_memory_stability_under_load(memory_test_app: SpakkyApplication) -> None:
+    """고부하 상황에서 메모리가 안정적으로 관리됨을 검증한다."""
     container: IContainer = memory_test_app.container
 
     # Baseline memory check

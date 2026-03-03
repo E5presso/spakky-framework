@@ -18,6 +18,7 @@ KEY_SIZES = [1024, 2048]
 
 @pytest.mark.parametrize("size", KEY_SIZES)
 def test_rsa_encryption_with_generated_key(size: int) -> None:
+    """생성된 RSA 키로 암호화 후 복호화하면 원본 평문이 복원되고, 위변조된 데이터는 실패하는지 검증한다."""
     cryptor: ICryptor = Rsa(key=AsymmetricKey(size=size))
     cipher: str = cryptor.encrypt("Hello World!")
     plain: str = cryptor.decrypt(cipher)
@@ -29,6 +30,7 @@ def test_rsa_encryption_with_generated_key(size: int) -> None:
 
 @pytest.mark.parametrize("size", KEY_SIZES)
 def test_rsa_decrypt_without_private_key_expect_error(size: int) -> None:
+    """공개키만으로 RSA 복호화를 시도하면 PrivateKeyRequiredError가 발생하는지 검증한다."""
     cryptor: ICryptor = Rsa(
         key=AsymmetricKey(key=AsymmetricKey(size=size).public_key.binary)
     )
@@ -58,6 +60,7 @@ fMqQ9TP1ljw78GCUSiqoh+1kfCeHa7jGTOmgcy6u2dQ=
     ],
 )
 def test_rsa_encryption_with_existing_key(key: bytes) -> None:
+    """기존 PEM 키로 RSA 암호화 후 복호화하면 원본 평문이 복원되고, 위변조된 데이터는 실패하는지 검증한다."""
     cryptor: ICryptor = Rsa(key=AsymmetricKey(key=key))
     cipher: str = cryptor.encrypt("Hello World!")
     plain: str = cryptor.decrypt(cipher)
@@ -69,6 +72,7 @@ def test_rsa_encryption_with_existing_key(key: bytes) -> None:
 
 @pytest.mark.parametrize("size", KEY_SIZES)
 def test_rsa_signing_with_generated_key(size: int) -> None:
+    """생성된 RSA 키로 서명 후 검증하면 성공하고, 잘못된 공개키로는 검증 실패하는지 확인한다."""
     private_key: AsymmetricKey = AsymmetricKey(size=size)
     public_key: AsymmetricKey = AsymmetricKey(key=private_key.public_key.binary)
     wrong_public_key: AsymmetricKey = AsymmetricKey(
@@ -84,6 +88,7 @@ def test_rsa_signing_with_generated_key(size: int) -> None:
 
 @pytest.mark.parametrize("size", KEY_SIZES)
 def test_rsa_sign_without_private_key_expect_error(size: int) -> None:
+    """공개키만으로 RSA 서명을 시도하면 PrivateKeyRequiredError가 발생하는지 검증한다."""
     signer: ISigner = Rsa(
         key=AsymmetricKey(key=AsymmetricKey(size=size).public_key.binary)
     )
@@ -93,6 +98,7 @@ def test_rsa_sign_without_private_key_expect_error(size: int) -> None:
 
 @pytest.mark.parametrize("size", KEY_SIZES)
 def test_rsa_verify_forged_signature_expect_failure(size: int) -> None:
+    """위조된 서명을 RSA로 검증하면 실패하는지 검증한다."""
     signer: ISigner = Rsa(key=AsymmetricKey(size=size))
     signature: str = signer.sign("Hello World!")
     assert signer.verify("Hello World!", signature) is True
@@ -105,6 +111,7 @@ def test_rsa_verify_forged_signature_expect_failure(size: int) -> None:
 
 @pytest.mark.parametrize("size", KEY_SIZES)
 def test_rsa_verify_with_wrong_hash_expect_failure(size: int) -> None:
+    """잘못된 해시 알고리즘으로 RSA 서명을 검증하면 실패하는지 검증한다."""
     signer: ISigner = Rsa(key=AsymmetricKey(size=size))
     signature: str = signer.sign("Hello World!")
     assert signer.verify("Hello World!", signature) is True
@@ -132,6 +139,7 @@ fMqQ9TP1ljw78GCUSiqoh+1kfCeHa7jGTOmgcy6u2dQ=
     ],
 )
 def test_rsa_signing_with_existing_key(key: bytes) -> None:
+    """기존 PEM 키로 RSA 서명 후 검증하면 성공하는지 확인한다."""
     private_key: AsymmetricKey = AsymmetricKey(key=key)
     public_key: AsymmetricKey = AsymmetricKey(key=private_key.public_key.binary)
     signer: ISigner = Rsa(key=private_key)
@@ -141,6 +149,7 @@ def test_rsa_signing_with_existing_key(key: bytes) -> None:
 
 
 def test_asymmetric_key_expect_key_size_error() -> None:
+    """지원되지 않는 키 크기로 RSA를 생성하면 KeySizeError가 발생하는지 검증한다."""
     with pytest.raises(KeySizeError):
         Rsa(key=AsymmetricKey(size=512))
     with pytest.raises(KeySizeError):
@@ -160,12 +169,14 @@ JL53zbfJ0YSeewnfXuy2kBZb7nF27V/GX1FQjS7D
 
 
 def test_asymmetric_key_expect_invalid_key_error() -> None:
+    """잘못된 형식의 키로 RSA를 생성하면 CannotImportAsymmetricKeyError가 발생하는지 검증한다."""
     with pytest.raises(CannotImportAsymmetricKeyError):
         Rsa(key=AsymmetricKey(key=b"invalid key format"))
 
 
 @pytest.mark.parametrize("size", KEY_SIZES)
 def test_asymmetric_key_is_private_or_public(size: int) -> None:
+    """AsymmetricKey의 is_private 속성이 개인키와 공개키를 올바르게 구분하는지 검증한다."""
     private_key: AsymmetricKey = AsymmetricKey(size=size)
     public_key: AsymmetricKey = AsymmetricKey(key=private_key.public_key.binary)
 

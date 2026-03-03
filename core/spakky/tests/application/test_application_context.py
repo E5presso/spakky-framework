@@ -22,6 +22,8 @@ from spakky.core.pod.interfaces.container import CannotRegisterNonPodObjectError
 
 
 def test_application_context_register_expect_success() -> None:
+    """ApplicationContext에 Pod를 정상적으로 등록할 수 있음을 검증한다."""
+
     @Pod()
     class FirstSamplePod:
         id: UUID
@@ -42,6 +44,8 @@ def test_application_context_register_expect_success() -> None:
 
 
 def test_application_context_register_expect_error() -> None:
+    """Pod 데코레이터가 없는 클래스 등록 시 CannotRegisterNonPodObjectError가 발생함을 검증한다."""
+
     class NonPod:
         id: UUID
 
@@ -54,6 +58,8 @@ def test_application_context_register_expect_error() -> None:
 
 
 def test_application_context_get_by_type_singleton_expect_success() -> None:
+    """타입으로 Pod를 조회할 때 싱글톤 인스턴스가 반환됨을 검증한다."""
+
     @Pod()
     class FirstSamplePod:
         id: UUID
@@ -79,6 +85,8 @@ def test_application_context_get_by_type_singleton_expect_success() -> None:
 
 
 def test_application_context_get_by_type_expect_no_such_error() -> None:
+    """등록되지 않은 타입으로 Pod 조회 시 NoSuchPodError가 발생함을 검증한다."""
+
     @Pod()
     class FirstSamplePod:
         id: UUID
@@ -104,6 +112,8 @@ def test_application_context_get_by_type_expect_no_such_error() -> None:
 
 
 def test_application_context_get_by_name_expect_success() -> None:
+    """이름으로 Pod를 정상적으로 조회할 수 있음을 검증한다."""
+
     @Pod()
     class SamplePod:
         id: UUID
@@ -118,6 +128,8 @@ def test_application_context_get_by_name_expect_success() -> None:
 
 
 def test_application_context_get_by_name_expect_no_such_error() -> None:
+    """존재하지 않는 타입으로 Pod 조회 시 NoSuchPodError가 발생함을 검증한다."""
+
     @Pod()
     class SamplePod:
         id: UUID
@@ -135,6 +147,8 @@ def test_application_context_get_by_name_expect_no_such_error() -> None:
 
 
 def test_application_context_contains_by_type_expect_true() -> None:
+    """등록된 Pod 타입에 대해 contains가 True를 반환함을 검증한다."""
+
     @Pod()
     class SamplePod:
         id: UUID
@@ -149,6 +163,8 @@ def test_application_context_contains_by_type_expect_true() -> None:
 
 
 def test_application_context_contains_by_type_expect_false() -> None:
+    """등록되지 않은 Pod 타입에 대해 contains가 False를 반환함을 검증한다."""
+
     @Pod()
     class FirstSamplePod:
         id: UUID
@@ -171,6 +187,8 @@ def test_application_context_contains_by_type_expect_false() -> None:
 
 
 def test_application_context_contains_by_name_expect_false() -> None:
+    """등록되지 않은 타입에 대해 contains가 False를 반환함을 검증한다."""
+
     @Pod()
     class FirstSamplePod:
         id: UUID
@@ -188,6 +206,8 @@ def test_application_context_contains_by_name_expect_false() -> None:
 
 
 def test_application_context_get_primary_expect_success() -> None:
+    """Primary 어노테이션이 있는 Pod가 우선적으로 조회됨을 검증한다."""
+
     class ISamplePod:
         @abstractmethod
         def do(self) -> None: ...
@@ -211,6 +231,8 @@ def test_application_context_get_primary_expect_success() -> None:
 
 
 def test_application_context_get_qualified_expect_success() -> None:
+    """Qualifier를 사용하여 특정 조건의 Pod를 주입받을 수 있음을 검증한다."""
+
     class ISamplePod:
         @abstractmethod
         def do(self) -> str: ...
@@ -252,6 +274,8 @@ def test_application_context_get_qualified_expect_success() -> None:
 
 
 def test_application_context_get_primary_expect_no_unique_error() -> None:
+    """여러 개의 Primary Pod가 있을 때 NoUniquePodError가 발생함을 검증한다."""
+
     class ISamplePod:
         @abstractmethod
         def do(self) -> None: ...
@@ -277,6 +301,8 @@ def test_application_context_get_primary_expect_no_unique_error() -> None:
 
 
 def test_application_context_get_dependency_recursive_by_type() -> None:
+    """의존성이 있는 Pod가 재귀적으로 주입됨을 검증한다."""
+
     @Pod()
     class A:
         def a(self) -> str:
@@ -309,6 +335,8 @@ def test_application_context_get_dependency_recursive_by_type() -> None:
 
 
 def test_application_context_find() -> None:
+    """find 메서드를 사용하여 조건에 맞는 Pod들을 찾을 수 있음을 검증한다."""
+
     @dataclass
     class Customized(ClassAnnotation): ...
 
@@ -340,6 +368,8 @@ def test_application_context_find() -> None:
 
 
 def test_application_context_register_unmanaged_factory() -> None:
+    """함수 기반 팩토리 Pod를 등록하고 조회할 수 있음을 검증한다."""
+
     class A:
         def a(self) -> str:
             return "A"
@@ -358,6 +388,8 @@ def test_application_context_register_unmanaged_factory() -> None:
 
 
 def test_application_context_register_unmanaged_factory_expect_error() -> None:
+    """Pod 데코레이터가 없는 함수 등록 시 CannotRegisterNonPodObjectError가 발생함을 검증한다."""
+
     class A:
         def a(self) -> str:
             return "A"
@@ -371,6 +403,7 @@ def test_application_context_register_unmanaged_factory_expect_error() -> None:
 
 
 def test_application_lazy_loading() -> None:
+    """Lazy 어노테이션이 있는 Pod는 컷텍스트 시작 시 초기화되지 않음을 검증한다."""
     initialized: bool = False
 
     @Pod()
@@ -409,6 +442,7 @@ def test_application_lazy_loading() -> None:
 
 
 def test_application_factory_loading() -> None:
+    """PROTOTYPE 스코프 Pod는 조회할 때마다 새 인스턴스가 생성됨을 검증한다."""
     initialized_count: int = 0
 
     @Pod()
@@ -448,6 +482,8 @@ def test_application_factory_loading() -> None:
 
 
 def test_application_raise_error_with_circular_dependency() -> None:
+    """순환 의존성이 감지되면 CircularDependencyGraphDetectedError가 발생함을 검증한다."""
+
     class IA:
         def a(self) -> str: ...
 
@@ -483,7 +519,7 @@ def test_application_raise_error_with_circular_dependency() -> None:
 
 
 def test_circular_dependency_error_message_format() -> None:
-    """Test that circular dependency error message shows visual dependency tree."""
+    """순환 의존성 에러 메시지가 시각적 의존성 트리를 포함함을 검증한다."""
 
     class IA:
         def a(self) -> str: ...
@@ -530,6 +566,8 @@ def test_circular_dependency_error_message_format() -> None:
 
 
 def test_application_context_with_multiple_children_list_not_exists() -> None:
+    """list 타입 의존성에 해당하는 Pod가 없을 때 PodInstantiationFailedError가 발생함을 검증한다."""
+
     class IRepository:
         @abstractmethod
         def get(self, id: str) -> dict[str, Any]: ...
@@ -551,6 +589,8 @@ def test_application_context_with_multiple_children_list_not_exists() -> None:
 
 
 def test_application_context_with_multiple_children_set_not_exists() -> None:
+    """set 타입 의존성에 해당하는 Pod가 없을 때 PodInstantiationFailedError가 발생함을 검증한다."""
+
     class IRepository:
         @abstractmethod
         def get(self, id: str) -> dict[str, Any]: ...
@@ -572,6 +612,8 @@ def test_application_context_with_multiple_children_set_not_exists() -> None:
 
 
 def test_application_context_with_multiple_children_dict_not_exists() -> None:
+    """dict 타입 의존성에 해당하는 Pod가 없을 때 PodInstantiationFailedError가 발생함을 검증한다."""
+
     class IRepository:
         @abstractmethod
         def get(self, id: str) -> dict[str, Any]: ...
@@ -596,6 +638,8 @@ def test_application_context_with_multiple_children_dict_not_exists() -> None:
 
 
 def test_application_context_with_optional_dependency() -> None:
+    """Optional 타입 의존성이 없을 때 None이 주입됨을 검증한다."""
+
     class IDependency:
         @abstractmethod
         def do(self) -> str: ...
@@ -619,6 +663,8 @@ def test_application_context_with_optional_dependency() -> None:
 
 
 def test_application_context_with_multiple_qualifiers() -> None:
+    """여러 개의 Qualifier를 적용하여 교집합 조건으로 Pod를 주입받을 수 있음을 검증한다."""
+
     class IRepository:
         @abstractmethod
         def get(self, id: str) -> dict[str, Any]: ...
@@ -662,6 +708,7 @@ def test_application_context_with_multiple_qualifiers() -> None:
 
 @pytest.mark.asyncio
 async def test_application_context_get_context_id() -> None:
+    """비동기 태스크별로 독립적인 컷텍스트 ID가 생성됨을 검증한다."""
     context = ApplicationContext()
     context.start()
 
@@ -680,6 +727,7 @@ async def test_application_context_get_context_id() -> None:
 
 
 def test_type_index_cache_hit_for_single_implementation() -> None:
+    """단일 구현의 타입 인덱스 캐시 히트가 정상 동작함을 검증한다."""
     context = ApplicationContext()
 
     class IService:
@@ -706,6 +754,7 @@ def test_type_index_cache_hit_for_single_implementation() -> None:
 
 
 def test_type_index_cache_hit_for_base_type() -> None:
+    """비이스 타입으로 조회 시 타입 인덱스 캐시가 정상 동작함을 검증한다."""
     context = ApplicationContext()
 
     class BaseService:
@@ -730,6 +779,7 @@ def test_type_index_cache_hit_for_base_type() -> None:
 
 
 def test_type_index_with_multiple_inheritance_levels() -> None:
+    """여러 단계의 상속 계층에서 타입 인덱스가 정상 동작함을 검증한다."""
     context = ApplicationContext()
 
     class Level1:
@@ -764,6 +814,7 @@ def test_type_index_with_multiple_inheritance_levels() -> None:
 
 
 def test_type_index_with_multiple_pods_of_same_base_type() -> None:
+    """동일 베이스 타입의 여러 Pod를 이름으로 구분하여 조회할 수 있음을 검증한다."""
     context = ApplicationContext()
 
     class IRepository:
@@ -802,6 +853,7 @@ def test_type_index_with_multiple_pods_of_same_base_type() -> None:
 
 
 def test_type_index_cleared_on_context_stop() -> None:
+    """컷텍스트 중지 시 타입 인덱스가 초기화됨을 검증한다."""
     context = ApplicationContext()
 
     class IService:
@@ -824,6 +876,7 @@ def test_type_index_cleared_on_context_stop() -> None:
 
 
 def test_type_index_with_interface_and_concrete_types() -> None:
+    """인터페이스와 구체 타입 모두로 Pod를 조회할 수 있음을 검증한다."""
     context = ApplicationContext()
 
     class IUserRepository:
@@ -862,6 +915,7 @@ def test_type_index_with_interface_and_concrete_types() -> None:
 
 
 def test_type_index_with_prototype_scope() -> None:
+    """PROTOTYPE 스코프 Pod의 타입 인덱스가 정상 동작함을 검증한다."""
     context = ApplicationContext()
 
     class IService:
@@ -888,6 +942,7 @@ def test_type_index_with_prototype_scope() -> None:
 
 
 def test_type_index_find_with_selector() -> None:
+    """find 메서드로 타입 인덱스를 활용하여 Pod들을 조회할 수 있음을 검증한다."""
     context = ApplicationContext()
 
     class IService:
@@ -922,6 +977,7 @@ def test_type_index_find_with_selector() -> None:
 
 
 def test_type_index_with_complex_inheritance_hierarchy() -> None:
+    """복잡한 상속 계층에서 타입 인덱스가 정상 동작함을 검증한다."""
     context = ApplicationContext()
 
     class Animal:
@@ -963,7 +1019,7 @@ def test_type_index_with_complex_inheritance_hierarchy() -> None:
 
 
 def test_application_context_lazy_pod_not_initialized() -> None:
-    """Test that lazy pods are not initialized during start."""
+    """Lazy Pod이 시작 시 초기화되지 않음을 검증한다."""
 
     @Lazy()
     @Pod()
@@ -984,7 +1040,7 @@ def test_application_context_lazy_pod_not_initialized() -> None:
 
 
 def test_application_context_initialize_pods_missing_raises_error() -> None:
-    """Test that initializing missing pod raises error."""
+    """존재하지 않는 의존성으로 Pod 초기화 시 에러가 발생함을 검증한다."""
     from spakky.core.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
 
     class NonExistentPod:  # noqa: F841
@@ -1007,7 +1063,7 @@ def test_application_context_initialize_pods_missing_raises_error() -> None:
 
 
 def test_set_singleton_cache_with_non_singleton_pod() -> None:
-    """Test that __set_singleton_cache only caches SINGLETON scoped pods."""
+    """SINGLETON이 아닌 스코프의 Pod는 싱글톤 캐시에 저장되지 않음을 검증한다."""
 
     @Pod(scope=Pod.Scope.PROTOTYPE)
     class PrototypePod:
@@ -1037,7 +1093,7 @@ def test_set_singleton_cache_with_non_singleton_pod() -> None:
 
 
 def test_get_internal_with_context_cache_miss_then_hit() -> None:
-    """Test context cache behavior with cache miss and then hit."""
+    """컷텍스트 캐시 미스 후 히트가 정상 동작함을 검증한다."""
 
     @Pod(scope=Pod.Scope.CONTEXT)
     class ContextScopedPod:
@@ -1064,7 +1120,7 @@ def test_get_internal_with_context_cache_miss_then_hit() -> None:
 
 
 def test_get_internal_prototype_scope_branch() -> None:
-    """Test that prototype scope branch is executed (match case)."""
+    """PROTOTYPE 스코프 분기가 올바르게 실행됨을 검증한다."""
 
     @Pod(scope=Pod.Scope.PROTOTYPE)
     class PrototypePod:
@@ -1084,7 +1140,7 @@ def test_get_internal_prototype_scope_branch() -> None:
 
 
 def test_add_same_pod_twice_with_same_id() -> None:
-    """Test that adding the same pod twice (same ID) returns early."""
+    """동일한 Pod를 두 번 추가해도 한 번만 등록됨을 검증한다."""
 
     @Pod(name="unique_pod")
     class UniquePod:
@@ -1104,7 +1160,7 @@ def test_add_same_pod_twice_with_same_id() -> None:
 
 
 def test_get_context_id_existing_context() -> None:
-    """Test get_context_id when context already has an ID."""
+    """이미 존재하는 컷텍스트 ID를 조회할 수 있음을 검증한다."""
 
     @Pod()
     class SamplePod:
@@ -1131,7 +1187,7 @@ def test_get_context_id_existing_context() -> None:
 
 
 def test_contains_with_name_existing() -> None:
-    """Test contains method with name qualifier when pod exists."""
+    """이름으로 Pod의 존재 여부를 확인할 수 있음을 검증한다."""
 
     @Pod(name="test_pod")
     class TestPod:
@@ -1146,7 +1202,7 @@ def test_contains_with_name_existing() -> None:
 
 
 def test_context_cache_multiple_pods() -> None:
-    """Test context cache with multiple context-scoped pods."""
+    """여러 개의 CONTEXT 스코프 Pod가 컷텍스트 캐시에 정상적으로 저장됨을 검증한다."""
 
     @Pod(scope=Pod.Scope.CONTEXT, name="pod_a")
     class PodA:
@@ -1176,7 +1232,7 @@ def test_context_cache_multiple_pods() -> None:
 
 
 def test_application_context_set_and_get_context_value_expect_success() -> None:
-    """Test setting and getting context values works correctly."""
+    """컷텍스트 값을 설정하고 조회할 수 있음을 검증한다."""
     context = ApplicationContext()
 
     # Set and get simple values
@@ -1190,14 +1246,14 @@ def test_application_context_set_and_get_context_value_expect_success() -> None:
 
 
 def test_application_context_get_nonexistent_context_value_expect_none() -> None:
-    """Test getting non-existent context value returns None."""
+    """존재하지 않는 컷텍스트 값 조회 시 None이 반환됨을 검증한다."""
     context = ApplicationContext()
 
     assert context.get_context_value("nonexistent") is None
 
 
 def test_application_context_overwrite_context_value_expect_success() -> None:
-    """Test overwriting existing context value works correctly."""
+    """컷텍스트 값을 덮어쓸 수 있음을 검증한다."""
     context = ApplicationContext()
 
     context.set_context_value("key", "original")
@@ -1208,7 +1264,7 @@ def test_application_context_overwrite_context_value_expect_success() -> None:
 
 
 def test_application_context_context_id_preserved_expect_success() -> None:
-    """Test that CONTEXT_ID is automatically managed and retrievable."""
+    """CONTEXT_ID가 자동으로 관리되고 조회 가능함을 검증한다."""
     context = ApplicationContext()
 
     # Context ID should be retrievable via get_context_value
@@ -1221,7 +1277,7 @@ def test_application_context_context_id_preserved_expect_success() -> None:
 
 
 def test_application_context_cannot_set_context_id_expect_error() -> None:
-    """Test that attempting to set CONTEXT_ID raises error."""
+    """CONTEXT_ID를 직접 설정하려고 하면 에러가 발생함을 검증한다."""
     from spakky.core.application.application_context import (
         CannotAssignSystemContextIDError,
     )
@@ -1233,7 +1289,7 @@ def test_application_context_cannot_set_context_id_expect_error() -> None:
 
 
 def test_application_context_clear_context_expect_success() -> None:
-    """Test clearing context removes all custom values but preserves CONTEXT_ID."""
+    """컷텍스트 클리어 시 커스텀 값이 제거되고 CONTEXT_ID는 유지됨을 검증한다."""
     context = ApplicationContext()
 
     # Set some values

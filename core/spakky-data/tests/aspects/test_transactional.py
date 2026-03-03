@@ -20,7 +20,7 @@ from spakky.data.persistency.transaction import (
 
 
 def test_transactional_aspect_commits_on_success() -> None:
-    """Test that TransactionalAspect commits transaction on successful method execution."""
+    """TransactionalAspect가 메서드 실행 성공 시 트랜잭션을 커밋하는지 검증한다."""
 
     @Pod()
     class InMemoryTransaction(AbstractTransaction):
@@ -62,7 +62,7 @@ def test_transactional_aspect_commits_on_success() -> None:
 
 
 def test_transactional_aspect_rollbacks_on_error() -> None:
-    """Test that TransactionalAspect rolls back transaction when method raises exception."""
+    """TransactionalAspect가 메서드에서 예외 발생 시 트랜잭션을 롤백하는지 검증한다."""
 
     @Pod()
     class InMemoryTransaction(AbstractTransaction):
@@ -109,7 +109,7 @@ def test_transactional_aspect_rollbacks_on_error() -> None:
 
 @pytest.mark.asyncio
 async def test_async_transactional_aspect_commits_on_success() -> None:
-    """Test that AsyncTransactionalAspect commits transaction on successful method execution."""
+    """AsyncTransactionalAspect가 비동기 메서드 실행 성공 시 트랜잭션을 커밋하는지 검증한다."""
 
     @Pod()
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
@@ -156,7 +156,7 @@ async def test_async_transactional_aspect_commits_on_success() -> None:
 
 @pytest.mark.asyncio
 async def test_async_transactional_aspect_rollbacks_on_error() -> None:
-    """Test that AsyncTransactionalAspect rolls back transaction when method raises exception."""
+    """AsyncTransactionalAspect가 비동기 메서드에서 예외 발생 시 트랜잭션을 롤백하는지 검증한다."""
 
     @Pod()
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
@@ -202,7 +202,7 @@ async def test_async_transactional_aspect_rollbacks_on_error() -> None:
 
 
 def test_transactional_annotation_exists() -> None:
-    """Test that @Transactional annotation can be detected on methods."""
+    """@Transactional 어노테이션이 메서드에서 감지될 수 있는지 검증한다."""
 
     @UseCase()
     class TestUseCase:
@@ -214,7 +214,7 @@ def test_transactional_annotation_exists() -> None:
 
 
 def test_transactional_aspect_only_applies_to_annotated_methods() -> None:
-    """Test that TransactionalAspect only applies to methods with @Transactional annotation."""
+    """TransactionalAspect가 @Transactional 어노테이션이 있는 메서드에만 적용되는지 검증한다."""
 
     @Pod()
     class InMemoryTransaction(AbstractTransaction):

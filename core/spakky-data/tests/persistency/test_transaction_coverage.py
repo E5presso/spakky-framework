@@ -9,7 +9,7 @@ from spakky.data.persistency.transaction import (
 
 
 def test_transaction_exception_in_commit() -> None:
-    """Test transaction rollback when commit raises exception."""
+    """커밋 중 예외 발생 시 트랜잭션이 롤백되는지 검증한다."""
 
     class TestTransaction(AbstractTransaction):
         initialized = False
@@ -43,7 +43,7 @@ def test_transaction_exception_in_commit() -> None:
 
 
 async def test_async_transaction_exception_in_commit() -> None:
-    """Test async transaction rollback when commit raises exception."""
+    """비동기 커밋 중 예외 발생 시 트랜잭션이 롤백되는지 검증한다."""
 
     class TestAsyncTransaction(AbstractAsyncTransaction):
         initialized = False

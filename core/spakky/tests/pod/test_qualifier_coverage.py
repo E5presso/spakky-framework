@@ -7,7 +7,7 @@ from spakky.core.pod.annotations.qualifier import Qualifier
 
 
 def test_qualifier_with_selector() -> None:
-    """Test Qualifier with selector function."""
+    """Qualifier의 selector 함수가 올바르게 동작함을 검증한다."""
 
     @Pod()
     class TestPod:
@@ -28,7 +28,7 @@ def test_qualifier_with_selector() -> None:
 
 
 def test_qualifier_with_invalid_selector() -> None:
-    """Test Qualifier raises TypeError for non-callable selector."""
+    """Qualifier에 호출 불가능한 selector가 주어지면 TypeError가 발생함을 검증한다."""
     with pytest.raises(TypeError) as exc_info:
         Qualifier(selector="not_a_function")  # type: ignore
 

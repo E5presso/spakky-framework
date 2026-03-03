@@ -6,6 +6,8 @@ from spakky.core.common.mro import generic_mro
 
 
 def test_generic_mro_normal_inheritance() -> None:
+    """일반 클래스 상속 구조에서 MRO(Method Resolution Order)를 정확히 계산함을 검증한다."""
+
     class A: ...
 
     class B(A): ...
@@ -42,6 +44,7 @@ def test_generic_mro_normal_inheritance() -> None:
 
 
 def test_generic_mro_with_generic_inheritance() -> None:
+    """제네릭 타입을 포함한 상속 구조에서 MRO를 정확히 계산함을 검증한다."""
     T_co = TypeVar("T_co", covariant=True)
 
     class A: ...
@@ -119,6 +122,8 @@ def test_generic_mro_with_generic_inheritance() -> None:
 
 
 def test_generic_mro_with_non_class_object() -> None:
+    """클래스가 아닌 객체에 대해 generic_mro 호출 시 TypeError가 발생함을 검증한다."""
+
     def a(x: int) -> int:
         return x
 

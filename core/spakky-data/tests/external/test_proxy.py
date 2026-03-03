@@ -6,7 +6,7 @@ from spakky.data.external.proxy import (
 
 
 def test_proxy_model() -> None:
-    """Test ProxyModel creation and equality"""
+    """ProxyModel 생성 및 동등성 비교가 정상 동작하는지 검증한다."""
 
     class TestId:
         def __init__(self, value: int) -> None:
@@ -31,7 +31,7 @@ def test_proxy_model() -> None:
 
 
 def test_generic_proxy_protocol() -> None:
-    """Test that IGenericProxy protocol exists"""
+    """IGenericProxy 프로토콜이 필수 메서드들을 정의하고 있는지 검증한다."""
     assert hasattr(IGenericProxy, "get")
     assert hasattr(IGenericProxy, "get_or_none")
     assert hasattr(IGenericProxy, "contains")
@@ -39,7 +39,7 @@ def test_generic_proxy_protocol() -> None:
 
 
 def test_async_generic_proxy_protocol() -> None:
-    """Test that IAsyncGenericProxy protocol exists"""
+    """IAsyncGenericProxy 프로토콜이 필수 메서드들을 정의하고 있는지 검증한다."""
     assert hasattr(IAsyncGenericProxy, "get")
     assert hasattr(IAsyncGenericProxy, "get_or_none")
     assert hasattr(IAsyncGenericProxy, "contains")

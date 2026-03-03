@@ -8,6 +8,8 @@ from spakky.domain.models.event import AbstractDomainEvent
 
 
 def test_aggregate_root_add_event() -> None:
+    """AggregateRoot에 도메인 이벤트를 추가할 수 있음을 검증한다."""
+
     @mutable
     class User(AbstractAggregateRoot[UUID]):
         name: str
@@ -35,6 +37,8 @@ def test_aggregate_root_add_event() -> None:
 
 
 def test_aggregate_root_remove_event() -> None:
+    """AggregateRoot에서 도메인 이벤트를 제거할 수 있음을 검증한다."""
+
     @mutable
     class User(AbstractAggregateRoot[UUID]):
         name: str
@@ -64,6 +68,8 @@ def test_aggregate_root_remove_event() -> None:
 
 
 def test_aggregate_root_clear_events() -> None:
+    """AggregateRoot의 모든 도메인 이벤트를 초기화할 수 있음을 검증한다."""
+
     @mutable
     class User(AbstractAggregateRoot[UUID]):
         name: str

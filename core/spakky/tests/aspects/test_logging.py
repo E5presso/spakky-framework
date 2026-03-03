@@ -9,6 +9,8 @@ from spakky.core.aspects.logging import AsyncLoggingAspect, Logging, LoggingAspe
 
 
 def test_logging_with_masking() -> None:
+    """LoggingAspect가 password 파라미터를 마스킹 처리하여 로깅함을 검증한다."""
+
     class InMemoryHandler(logging.Handler):
         log_records: list[str]
 
@@ -71,6 +73,8 @@ def test_logging_with_masking() -> None:
 
 
 def test_logging_without_masking() -> None:
+    """LoggingAspect가 마스킹 비활성화 시 password를 그대로 로깅함을 검증한다."""
+
     class InMemoryHandler(logging.Handler):
         log_records: list[str]
 
@@ -134,6 +138,8 @@ def test_logging_without_masking() -> None:
 
 @pytest.mark.asyncio
 async def test_async_logging_with_masking() -> None:
+    """AsyncLoggingAspect가 password 파라미터를 마스킹 처리하여 로깅함을 검증한다."""
+
     class InMemoryHandler(logging.Handler):
         log_records: list[str]
 
@@ -197,6 +203,8 @@ async def test_async_logging_with_masking() -> None:
 
 @pytest.mark.asyncio
 async def test_async_logging_without_masking() -> None:
+    """AsyncLoggingAspect가 마스킹 비활성화 시 password를 그대로 로깅함을 검증한다."""
+
     class InMemoryHandler(logging.Handler):
         log_records: list[str]
 

@@ -10,7 +10,7 @@ from spakky.core.pod.annotations.pod import (
 
 
 def test_pod_instantiate_with_unexpected_dependency_name() -> None:
-    """Test pod instantiation with unexpected dependency name."""
+    """Pod 인스턴스화 시 예상치 못한 의존성 이름이 주어지면 예외가 발생함을 검증한다."""
 
     @Pod()
     class TestPod:
@@ -25,7 +25,7 @@ def test_pod_instantiate_with_unexpected_dependency_name() -> None:
 
 
 def test_pod_instantiate_with_wrong_dependency_type() -> None:
-    """Test pod instantiation with wrong dependency type (None when not optional)."""
+    """Pod 인스턴스화 시 필수 의존성에 None이 주어지면 예외가 발생함을 검증한다."""
 
     @Pod()
     class TestPod:
@@ -40,7 +40,7 @@ def test_pod_instantiate_with_wrong_dependency_type() -> None:
 
 
 def test_pod_instantiate_with_none_and_default_value() -> None:
-    """Test pod instantiation where None is provided but default exists."""
+    """Pod 인스턴스화 시 None이 주어지면 기본값을 사용함을 검증한다."""
 
     @Pod()
     class TestPod:

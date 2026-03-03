@@ -27,7 +27,7 @@ class OrderPlacedEvent(AbstractDomainEvent):
 
 
 def test_sync_mediator_register_and_dispatch_single_handler() -> None:
-    """Test that a single handler receives dispatched events."""
+    """단일 핸들러가 dispatch된 이벤트를 수신함을 검증한다."""
     received_events: list[UserCreatedEvent] = []
 
     def handler(event: UserCreatedEvent) -> None:
@@ -45,7 +45,7 @@ def test_sync_mediator_register_and_dispatch_single_handler() -> None:
 
 
 def test_sync_mediator_register_multiple_handlers_for_same_event() -> None:
-    """Test that multiple handlers all receive the same event."""
+    """여러 핸들러가 동일한 이벤트를 모두 수신함을 검증한다."""
     handler1_events: list[UserCreatedEvent] = []
     handler2_events: list[UserCreatedEvent] = []
 
@@ -69,7 +69,7 @@ def test_sync_mediator_register_multiple_handlers_for_same_event() -> None:
 
 
 def test_sync_mediator_dispatch_to_correct_event_type_only() -> None:
-    """Test that events are dispatched only to handlers of matching type."""
+    """이벤트가 일치하는 타입의 핸들러에게만 dispatch됨을 검증한다."""
     user_events: list[UserCreatedEvent] = []
     order_events: list[OrderPlacedEvent] = []
 
@@ -91,7 +91,7 @@ def test_sync_mediator_dispatch_to_correct_event_type_only() -> None:
 
 
 def test_sync_mediator_dispatch_without_handlers_does_not_error() -> None:
-    """Test that dispatching with no registered handlers doesn't raise."""
+    """등록된 핸들러가 없을 때 dispatch해도 예외가 발생하지 않음을 검증한다."""
     mediator = DomainEventMediator()
 
     event = UserCreatedEvent(user_id="999", username="dave")
@@ -100,7 +100,7 @@ def test_sync_mediator_dispatch_without_handlers_does_not_error() -> None:
 
 
 def test_sync_mediator_handler_error_does_not_stop_other_handlers() -> None:
-    """Test that one handler's error doesn't prevent other handlers from running."""
+    """하나의 핸들러가 예외를 발생시켜도 다른 핸들러들이 계속 실행됨을 검증한다."""
     handler1_called = False
     handler2_called = False
 
@@ -127,7 +127,7 @@ def test_sync_mediator_handler_error_does_not_stop_other_handlers() -> None:
 
 @pytest.mark.asyncio
 async def test_async_mediator_register_and_dispatch_single_handler() -> None:
-    """Test that an async handler receives dispatched events."""
+    """async 핸들러가 dispatch된 이벤트를 수신함을 검증한다."""
     received_events: list[UserCreatedEvent] = []
 
     async def handler(event: UserCreatedEvent) -> None:
@@ -145,7 +145,7 @@ async def test_async_mediator_register_and_dispatch_single_handler() -> None:
 
 @pytest.mark.asyncio
 async def test_async_mediator_register_multiple_handlers_for_same_event() -> None:
-    """Test that multiple async handlers all receive the same event."""
+    """여러 async 핸들러가 동일한 이벤트를 모두 수신함을 검증한다."""
     handler1_events: list[UserCreatedEvent] = []
     handler2_events: list[UserCreatedEvent] = []
 
@@ -168,7 +168,7 @@ async def test_async_mediator_register_multiple_handlers_for_same_event() -> Non
 
 @pytest.mark.asyncio
 async def test_async_mediator_dispatch_to_correct_event_type_only() -> None:
-    """Test that async events are dispatched only to handlers of matching type."""
+    """async 이벤트가 일치하는 타입의 핸들러에게만 dispatch됨을 검증한다."""
     user_events: list[UserCreatedEvent] = []
     order_events: list[OrderPlacedEvent] = []
 
@@ -191,7 +191,7 @@ async def test_async_mediator_dispatch_to_correct_event_type_only() -> None:
 
 @pytest.mark.asyncio
 async def test_async_mediator_dispatch_without_handlers_does_not_error() -> None:
-    """Test that async dispatching with no handlers doesn't raise."""
+    """등록된 핸들러가 없을 때 async dispatch해도 예외가 발생하지 않음을 검증한다."""
     mediator = AsyncDomainEventMediator()
 
     event = UserCreatedEvent(user_id="async-999", username="async-dave")
@@ -201,7 +201,7 @@ async def test_async_mediator_dispatch_without_handlers_does_not_error() -> None
 
 @pytest.mark.asyncio
 async def test_async_mediator_handler_error_does_not_stop_other_handlers() -> None:
-    """Test that one async handler's error doesn't prevent other handlers."""
+    """하나의 async 핸들러가 예외를 발생시켜도 다른 핸들러들이 계속 실행됨을 검증한다."""
     handler1_called = False
     handler2_called = False
 

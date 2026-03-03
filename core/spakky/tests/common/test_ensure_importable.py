@@ -9,7 +9,7 @@ from spakky.core.common.importing import ensure_importable
 
 
 def test_ensure_importable_when_parent_already_in_sys_path() -> None:
-    """Test that nothing happens when parent directory is already in sys.path."""
+    """부모 디렉토리가 이미 sys.path에 존재할 경우 아무 동작도 하지 않음을 검증한다."""
     # Use a directory that's already in sys.path
     existing_path = Path(sys.path[0])
     package_dir = existing_path / "some_package"
@@ -23,7 +23,7 @@ def test_ensure_importable_when_parent_already_in_sys_path() -> None:
 
 
 def test_ensure_importable_adds_parent_when_import_fails() -> None:
-    """Test that parent directory is added to sys.path when import fails."""
+    """임포트 실패 시 부모 디렉토리가 sys.path에 추가됨을 검증한다."""
     with tempfile.TemporaryDirectory() as temp_dir:
         # Create a fake package structure
         temp_path = Path(temp_dir)
@@ -52,7 +52,7 @@ def test_ensure_importable_adds_parent_when_import_fails() -> None:
 
 
 def test_ensure_importable_logs_when_adding_path() -> None:
-    """Test that adding to sys.path is logged."""
+    """sys.path에 경로 추가 시 로깅이 수행됨을 검증한다."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         package_dir = temp_path / "logging_test_package"

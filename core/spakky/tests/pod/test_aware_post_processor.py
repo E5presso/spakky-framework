@@ -12,7 +12,7 @@ from spakky.core.pod.post_processors.aware_post_processor import (
 
 
 def test_application_context_aware_processor_with_container_aware() -> None:
-    """Test that ApplicationContextAwareProcessor sets container for IContainerAware pods"""
+    """ApplicationContextAwareProcessor가 IContainerAware Pod에 container를 설정함을 검증한다."""
 
     @Pod()
     class ServiceWithContainerAware(IContainerAware):
@@ -34,7 +34,7 @@ def test_application_context_aware_processor_with_container_aware() -> None:
 
 
 def test_application_context_aware_processor_with_application_context_aware() -> None:
-    """Test that ApplicationContextAwareProcessor sets app context for IApplicationContextAware pods"""
+    """ApplicationContextAwareProcessor가 IApplicationContextAware Pod에 application context를 설정함을 검증한다."""
 
     @Pod()
     class ServiceWithAppContextAware(IApplicationContextAware):
@@ -56,7 +56,7 @@ def test_application_context_aware_processor_with_application_context_aware() ->
 
 
 def test_application_context_aware_processor_with_non_aware_pod() -> None:
-    """Test that ApplicationContextAwareProcessor returns pod unchanged if it's not aware"""
+    """ApplicationContextAwareProcessor가 Aware 인터페이스를 구현하지 않은 Pod을 변경 없이 반환함을 검증한다."""
 
     @Pod()
     class RegularService:
@@ -75,7 +75,7 @@ def test_application_context_aware_processor_with_non_aware_pod() -> None:
 
 
 def test_application_context_aware_processor_with_tag_registry_aware() -> None:
-    """Test that ApplicationContextAwareProcessor sets tag registry for ITagRegistryAware pods."""
+    """ApplicationContextAwareProcessor가 ITagRegistryAware Pod에 tag registry를 설정함을 검증한다."""
 
     @Pod()
     class ServiceWithTagRegistryAware(ITagRegistryAware):
@@ -97,7 +97,7 @@ def test_application_context_aware_processor_with_tag_registry_aware() -> None:
 
 
 def test_application_context_aware_processor_with_multiple_aware_interfaces() -> None:
-    """Test that ApplicationContextAwareProcessor handles pods with multiple aware interfaces."""
+    """ApplicationContextAwareProcessor가 여러 Aware 인터페이스를 구현한 Pod을 올바르게 처리함을 검증한다."""
 
     @Pod()
     class MultiAwareService(

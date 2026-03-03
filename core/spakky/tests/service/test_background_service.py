@@ -12,6 +12,7 @@ from spakky.core.service.background import (
 
 
 def test_multiple_background_services_graceful_shutdown() -> None:
+    """여러 동기 백그라운드 서비스가 graceful shutdown 시 정상적으로 종료되는지 검증한다."""
     ids: list[int] = []
 
     @Pod()
@@ -71,6 +72,7 @@ def test_multiple_background_services_graceful_shutdown() -> None:
 
 @pytest.mark.asyncio
 async def test_multiple_async_background_services_graceful_shutdown() -> None:
+    """여러 비동기 백그라운드 서비스가 graceful shutdown 시 정상적으로 종료되는지 검증한다."""
     ids: list[int] = []
 
     @Pod()

@@ -12,6 +12,8 @@ from spakky.domain.models.entity import (
 
 
 def test_entity_equals() -> None:
+    """동일한 uid를 가진 엔티티가 동등함을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -34,6 +36,8 @@ def test_entity_equals() -> None:
 
 
 def test_entity_not_equals_with_wrong_type() -> None:
+    """다른 타입의 엔티티가 동등하지 않음을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -71,6 +75,8 @@ def test_entity_not_equals_with_wrong_type() -> None:
 
 
 def test_entity_not_equals_transient() -> None:
+    """새로 생성된 엔티티들이 서로 다른 uid를 가지므로 동등하지 않음을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -93,6 +99,8 @@ def test_entity_not_equals_transient() -> None:
 
 
 def test_entity_not_equals() -> None:
+    """다른 uid를 가진 엔티티가 동등하지 않음을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -115,6 +123,8 @@ def test_entity_not_equals() -> None:
 
 
 def test_entity_hash() -> None:
+    """엔티티의 해시값이 uid의 해시값과 동일함을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -135,6 +145,8 @@ def test_entity_hash() -> None:
 
 
 def test_entity_prevent_monkey_patching() -> None:
+    """엔티티의 메서드를 외부에서 동적으로 변경할 수 없음을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -162,6 +174,8 @@ def test_entity_prevent_monkey_patching() -> None:
 
 
 def test_entity_validation_pass() -> None:
+    """엔티티 유효성 검사가 실패하면 AbstractDomainValidationError가 발생함을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -217,6 +231,8 @@ def test_entity_validation_pass() -> None:
 
 
 def test_entity_attribute_will_not_change_if_validation_error_raised() -> None:
+    """유효성 검사 실패 시 엔티티의 속성이 변경되지 않음을 검증한다."""
+
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
@@ -246,7 +262,7 @@ def test_entity_attribute_will_not_change_if_validation_error_raised() -> None:
 
 
 def test_entity_auto_updates_timestamp_and_version_on_change() -> None:
-    """Test that updated_at and version are automatically updated when entity changes."""
+    """엔티티 변경 시 updated_at과 version이 자동으로 업데이트됨을 검증한다."""
     import time
 
     @mutable
@@ -286,7 +302,7 @@ def test_entity_auto_updates_timestamp_and_version_on_change() -> None:
 
 
 def test_entity_metadata_fields_do_not_trigger_auto_update() -> None:
-    """Test that changing metadata fields doesn't trigger recursive updates."""
+    """메타데이터 필드 변경이 재귀적 업데이트를 트리거하지 않음을 검증한다."""
     from datetime import UTC, datetime
 
     @mutable
@@ -314,7 +330,7 @@ def test_entity_metadata_fields_do_not_trigger_auto_update() -> None:
 
 
 def test_entity_auto_update_rollback_on_validation_failure() -> None:
-    """Test that updated_at and version rollback if validation fails."""
+    """유효성 검사 실패 시 updated_at과 version이 롤백됨을 검증한다."""
 
     @mutable
     class User(AbstractEntity[UUID]):

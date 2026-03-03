@@ -9,6 +9,7 @@ from spakky.core.common.types import AsyncFunc, Func
 
 @pytest.mark.asyncio
 async def test_proxy() -> None:
+    """프록시가 동기/비동기 메서드 호출과 속성 접근을 올바르게 가로채음을 검증한다."""
     get_count: int = 0
     set_count: int = 0
     deleted: set[str] = set()
@@ -84,6 +85,7 @@ async def test_proxy() -> None:
 
 @pytest.mark.asyncio
 async def test_proxy_with_parameter() -> None:
+    """생성자 매개변수가 있는 객체의 프록시가 정상 동작함을 검증한다."""
     get_count: int = 0
     set_count: int = 0
     deleted: set[str] = set()

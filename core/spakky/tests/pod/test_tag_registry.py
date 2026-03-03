@@ -25,7 +25,7 @@ class AnotherTag(Tag):
 
 
 def test_tags_property_returns_empty_frozenset_initially_expect_empty() -> None:
-    """Test that tags property returns empty frozenset when no tags registered."""
+    """tags 프로퍼티가 태그가 등록되지 않았을 때 빈 frozenset을 반환함을 검증한다."""
     context = ApplicationContext()
 
     result = context.tags
@@ -35,7 +35,7 @@ def test_tags_property_returns_empty_frozenset_initially_expect_empty() -> None:
 
 
 def test_register_tag_single_tag_expect_tag_registered() -> None:
-    """Test that register_tag adds a single tag to the registry."""
+    """register_tag가 단일 태그를 레지스트리에 추가함을 검증한다."""
     context = ApplicationContext()
     tag = CustomTag(value="test")
 
@@ -46,7 +46,7 @@ def test_register_tag_single_tag_expect_tag_registered() -> None:
 
 
 def test_register_tag_multiple_tags_expect_all_registered() -> None:
-    """Test that register_tag can add multiple different tags."""
+    """register_tag가 여러 다른 태그를 모두 등록할 수 있음을 검증한다."""
     context = ApplicationContext()
     tag1 = CustomTag(value="first")
     tag2 = CustomTag(value="second")
@@ -63,7 +63,7 @@ def test_register_tag_multiple_tags_expect_all_registered() -> None:
 
 
 def test_register_tag_duplicate_tag_expect_no_duplicate() -> None:
-    """Test that registering the same tag twice doesn't create duplicates."""
+    """동일한 태그를 두 번 등록해도 중복이 생기지 않음을 검증한다."""
     context = ApplicationContext()
     tag1 = CustomTag(value="test")
     tag2 = CustomTag(value="test")  # Same values = equal tags
@@ -75,7 +75,7 @@ def test_register_tag_duplicate_tag_expect_no_duplicate() -> None:
 
 
 def test_contains_tag_registered_tag_expect_true() -> None:
-    """Test that contains_tag returns True for registered tags."""
+    """contains_tag가 등록된 태그에 대해 True를 반환함을 검증한다."""
     context = ApplicationContext()
     tag = CustomTag(value="test")
     context.register_tag(tag)
@@ -86,7 +86,7 @@ def test_contains_tag_registered_tag_expect_true() -> None:
 
 
 def test_contains_tag_equal_tag_expect_true() -> None:
-    """Test that contains_tag returns True for equal but different tag instance."""
+    """contains_tag가 동일한 값을 가진 다른 인스턴스에 대해서도 True를 반환함을 검증한다."""
     context = ApplicationContext()
     tag1 = CustomTag(value="test")
     tag2 = CustomTag(value="test")  # Different instance, same values
@@ -98,7 +98,7 @@ def test_contains_tag_equal_tag_expect_true() -> None:
 
 
 def test_contains_tag_unregistered_tag_expect_false() -> None:
-    """Test that contains_tag returns False for unregistered tags."""
+    """contains_tag가 등록되지 않은 태그에 대해 False를 반환함을 검증한다."""
     context = ApplicationContext()
     registered_tag = CustomTag(value="registered")
     unregistered_tag = CustomTag(value="unregistered")
@@ -110,7 +110,7 @@ def test_contains_tag_unregistered_tag_expect_false() -> None:
 
 
 def test_contains_tag_empty_registry_expect_false() -> None:
-    """Test that contains_tag returns False when registry is empty."""
+    """contains_tag가 레지스트리가 비어있을 때 False를 반환함을 검증한다."""
     context = ApplicationContext()
     tag = CustomTag(value="test")
 
@@ -120,7 +120,7 @@ def test_contains_tag_empty_registry_expect_false() -> None:
 
 
 def test_list_tags_no_selector_expect_all_tags() -> None:
-    """Test that list_tags without selector returns all registered tags."""
+    """list_tags가 selector 없이 호출될 때 모든 등록된 태그를 반환함을 검증한다."""
     context = ApplicationContext()
     tag1 = CustomTag(value="first")
     tag2 = CustomTag(value="second")
@@ -136,7 +136,7 @@ def test_list_tags_no_selector_expect_all_tags() -> None:
 
 
 def test_list_tags_with_selector_expect_filtered_tags() -> None:
-    """Test that list_tags with selector returns only matching tags."""
+    """list_tags가 selector를 사용하여 일치하는 태그만 반환함을 검증한다."""
     context = ApplicationContext()
     tag1 = CustomTag(value="apple")
     tag2 = CustomTag(value="banana")
@@ -156,7 +156,7 @@ def test_list_tags_with_selector_expect_filtered_tags() -> None:
 
 
 def test_list_tags_selector_by_type_expect_type_filtered() -> None:
-    """Test that list_tags can filter by tag type."""
+    """list_tags가 타입별로 태그를 필터링할 수 있음을 검증한다."""
     context = ApplicationContext()
     custom1 = CustomTag(value="custom1")
     custom2 = CustomTag(value="custom2")
@@ -174,7 +174,7 @@ def test_list_tags_selector_by_type_expect_type_filtered() -> None:
 
 
 def test_list_tags_selector_no_match_expect_empty() -> None:
-    """Test that list_tags with non-matching selector returns empty frozenset."""
+    """list_tags가 일치하는 태그가 없을 때 빈 frozenset을 반환함을 검증한다."""
     context = ApplicationContext()
     tag = CustomTag(value="test")
     context.register_tag(tag)
@@ -185,7 +185,7 @@ def test_list_tags_selector_no_match_expect_empty() -> None:
 
 
 def test_list_tags_empty_registry_expect_empty() -> None:
-    """Test that list_tags returns empty frozenset when registry is empty."""
+    """list_tags가 레지스트리가 비어있을 때 빈 frozenset을 반환함을 검증한다."""
     context = ApplicationContext()
 
     result = context.list_tags()
@@ -194,7 +194,7 @@ def test_list_tags_empty_registry_expect_empty() -> None:
 
 
 def test_tags_property_immutability_expect_frozenset() -> None:
-    """Test that tags property returns immutable frozenset."""
+    """tags 프로퍼티가 불변의 frozenset을 반환함을 검증한다."""
     context = ApplicationContext()
     tag = CustomTag(value="test")
     context.register_tag(tag)
@@ -211,7 +211,7 @@ def test_tags_property_immutability_expect_frozenset() -> None:
 
 
 def test_tag_eq_same_instance_expect_true() -> None:
-    """Test that Tag.__eq__ returns True for same instance."""
+    """Tag의 __eq__가 동일한 인스턴스에 대해 True를 반환함을 검증한다."""
     tag = CustomTag(value="test")
 
     result = tag == tag
@@ -220,7 +220,7 @@ def test_tag_eq_same_instance_expect_true() -> None:
 
 
 def test_tag_eq_non_tag_object_expect_false() -> None:
-    """Test that Tag.__eq__ returns False when comparing with non-Tag object."""
+    """Tag의 __eq__가 Tag가 아닌 객체와 비교 시 False를 반환함을 검증한다."""
     tag = CustomTag(value="test")
 
     result = tag == "not a tag"
@@ -229,7 +229,7 @@ def test_tag_eq_non_tag_object_expect_false() -> None:
 
 
 def test_tag_eq_none_expect_false() -> None:
-    """Test that Tag.__eq__ returns False when comparing with None."""
+    """Tag의 __eq__가 None과 비교 시 False를 반환함을 검증한다."""
     tag = CustomTag(value="test")
 
     result = tag == None  # noqa: E711
@@ -238,7 +238,7 @@ def test_tag_eq_none_expect_false() -> None:
 
 
 def test_tag_eq_different_values_expect_false() -> None:
-    """Test that Tag.__eq__ returns False for tags with different values."""
+    """Tag의 __eq__가 다른 값을 가진 태그에 대해 False를 반환함을 검증한다."""
     tag1 = CustomTag(value="first")
     tag2 = CustomTag(value="second")
 
@@ -248,7 +248,7 @@ def test_tag_eq_different_values_expect_false() -> None:
 
 
 def test_tag_hash_equal_tags_expect_same_hash() -> None:
-    """Test that equal tags have the same hash."""
+    """동일한 태그가 같은 해시값을 가짐을 검증한다."""
     tag1 = CustomTag(value="test")
     tag2 = CustomTag(value="test")
 
@@ -256,7 +256,7 @@ def test_tag_hash_equal_tags_expect_same_hash() -> None:
 
 
 def test_tag_hash_different_tags_expect_different_hash() -> None:
-    """Test that different tags have different hashes."""
+    """다른 태그가 다른 해시값을 가짐을 검증한다."""
     tag1 = CustomTag(value="first")
     tag2 = CustomTag(value="second")
 

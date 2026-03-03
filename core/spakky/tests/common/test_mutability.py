@@ -7,6 +7,8 @@ from spakky.core.common.mutability import immutable, mutable
 
 
 def test_mutable_is_dataclass() -> None:
+    """수정 가능(mutable) 데코레이터가 데이터클래스로 정상 동작함을 검증한다."""
+
     @mutable
     class MutableDataClass:
         name: str
@@ -33,6 +35,8 @@ def test_mutable_is_dataclass() -> None:
 
 
 def test_immutable_is_dataclass() -> None:
+    """불변(immutable) 데코레이터가 데이터클래스로 정상 동작하고 수정이 불가능함을 검증한다."""
+
     @immutable
     class ImmutableDataClass:
         name: str

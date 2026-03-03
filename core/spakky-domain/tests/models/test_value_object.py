@@ -5,6 +5,8 @@ from spakky.domain.models.value_object import AbstractValueObject
 
 
 def test_value_object_equals() -> None:
+    """동일한 속성을 가진 값 객체가 동등함을 검증한다."""
+
     @immutable
     class SampleValueObject(AbstractValueObject):
         name: str
@@ -19,6 +21,8 @@ def test_value_object_equals() -> None:
 
 
 def test_value_object_not_equals() -> None:
+    """다른 속성을 가진 값 객체가 동등하지 않음을 검증한다."""
+
     @immutable
     class SampleValueObject(AbstractValueObject):
         name: str
@@ -33,6 +37,8 @@ def test_value_object_not_equals() -> None:
 
 
 def test_value_object_not_equals_with_wrong_type() -> None:
+    """다른 타입의 값 객체가 동등하지 않음을 검증한다."""
+
     @immutable
     class SampleValueObject(AbstractValueObject):
         name: str
@@ -55,6 +61,8 @@ def test_value_object_not_equals_with_wrong_type() -> None:
 
 
 def test_value_object_clone() -> None:
+    """값 객체를 복제하면 동등한 객체가 생성됨을 검증한다."""
+
     @immutable
     class SampleValueObject(AbstractValueObject):
         name: str
@@ -69,6 +77,8 @@ def test_value_object_clone() -> None:
 
 
 def test_value_object_hash() -> None:
+    """동일한 값 객체가 동일한 해시값을 가짐을 검증한다."""
+
     @immutable
     class SampleValueObject(AbstractValueObject):
         name: str
@@ -83,6 +93,8 @@ def test_value_object_hash() -> None:
 
 
 def test_value_object_can_only_composed_by_hashable_objects_expect_success() -> None:
+    """해시 가능한 타입으로만 구성된 값 객체가 정상적으로 생성됨을 검증한다."""
+
     @immutable
     class _(AbstractValueObject):
         name: str
@@ -94,6 +106,7 @@ def test_value_object_can_only_composed_by_hashable_objects_expect_success() -> 
 
 
 def test_value_object_can_only_composed_by_hashable_objects_expect_error() -> None:
+    """해시 불가능한 타입을 포함한 값 객체 생성 시 TypeError가 발생함을 검증한다."""
     with pytest.raises(TypeError, match="type of 'jobs' is not hashable"):
 
         @immutable
@@ -107,7 +120,7 @@ def test_value_object_can_only_composed_by_hashable_objects_expect_error() -> No
 
 
 def test_value_object_hash_order_sensitive() -> None:
-    """Test that hash is sensitive to attribute order (not XOR-based)."""
+    """해시가 속성 순서에 민감함을 검증한다 (XOR 기반이 아님)."""
 
     @immutable
     class Pair(AbstractValueObject):
@@ -126,7 +139,7 @@ def test_value_object_hash_order_sensitive() -> None:
 
 
 def test_value_object_hash_in_set() -> None:
-    """Test that value objects work correctly as set elements."""
+    """값 객체가 set의 요소로 올바르게 동작함을 검증한다."""
 
     @immutable
     class Point(AbstractValueObject):

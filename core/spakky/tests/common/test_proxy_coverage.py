@@ -4,7 +4,7 @@ from spakky.core.common.proxy import AbstractProxyHandler, ProxyFactory
 
 
 def test_proxy_delete_attribute() -> None:
-    """Test proxy delete attribute functionality."""
+    """프록시를 통한 속성 삭제 기능이 정상 동작함을 검증한다."""
 
     class Target:
         def __init__(self) -> None:
@@ -25,7 +25,7 @@ def test_proxy_delete_attribute() -> None:
 
 
 def test_proxy_set_attribute() -> None:
-    """Test proxy set attribute functionality."""
+    """프록시를 통한 속성 설정 기능이 정상 동작함을 검증한다."""
 
     class Target:
         def __init__(self) -> None:

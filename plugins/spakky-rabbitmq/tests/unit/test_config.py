@@ -39,7 +39,7 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
 
 
 def test_rabbitmq_config_loads_from_environment_variables(clean_env: None) -> None:
-    """Test that RabbitMQConnectionConfig loads values from environment variables."""
+    """RabbitMQConnectionConfig가 환경 변수에서 값을 올바르게 로드하는지 검증한다."""
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "test-host"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
@@ -58,7 +58,7 @@ def test_rabbitmq_config_loads_from_environment_variables(clean_env: None) -> No
 
 
 def test_rabbitmq_config_with_ssl_enabled(clean_env: None) -> None:
-    """Test that RabbitMQConnectionConfig correctly handles SSL enabled."""
+    """RabbitMQConnectionConfig가 SSL 활성화 설정을 올바르게 처리하는지 검증한다."""
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "true"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "secure-host"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5671"
@@ -73,7 +73,7 @@ def test_rabbitmq_config_with_ssl_enabled(clean_env: None) -> None:
 
 
 def test_rabbitmq_config_protocol_without_ssl(clean_env: None) -> None:
-    """Test that protocol returns 'amqp' when SSL is disabled."""
+    """SSL이 비활성화된 경우 protocol이 'amqp'를 반환하는지 검증한다."""
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
@@ -87,7 +87,7 @@ def test_rabbitmq_config_protocol_without_ssl(clean_env: None) -> None:
 
 
 def test_rabbitmq_config_connection_string_without_ssl(clean_env: None) -> None:
-    """Test that connection_string is correctly generated without SSL."""
+    """SSL 없이 connection_string이 올바르게 생성되는지 검증한다."""
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
@@ -101,7 +101,7 @@ def test_rabbitmq_config_connection_string_without_ssl(clean_env: None) -> None:
 
 
 def test_rabbitmq_config_connection_string_with_ssl(clean_env: None) -> None:
-    """Test that connection_string is correctly generated with SSL."""
+    """SSL을 사용할 때 connection_string이 올바르게 생성되는지 검증한다."""
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "true"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "secure.rabbitmq.com"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5671"
@@ -117,7 +117,7 @@ def test_rabbitmq_config_connection_string_with_ssl(clean_env: None) -> None:
 
 
 def test_rabbitmq_config_exchange_name_is_required(clean_env: None) -> None:
-    """Test that RabbitMQConnectionConfig requires exchange_name field."""
+    """RabbitMQConnectionConfig에 exchange_name 필드가 필수임을 검증한다."""
     from pydantic import ValidationError
 
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
@@ -132,7 +132,7 @@ def test_rabbitmq_config_exchange_name_is_required(clean_env: None) -> None:
 
 
 def test_rabbitmq_config_env_prefix_is_correct() -> None:
-    """Test that the environment variable prefix follows the correct format."""
+    """환경 변수 접두사가 올바른 형식을 따르는지 검증한다."""
     assert RABBITMQ_CONFIG_ENV_PREFIX == "SPAKKY_RABBITMQ__"
     assert RABBITMQ_CONFIG_ENV_PREFIX.startswith("SPAKKY_")
     assert RABBITMQ_CONFIG_ENV_PREFIX.endswith("__")
