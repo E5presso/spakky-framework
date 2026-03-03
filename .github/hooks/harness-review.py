@@ -3,22 +3,27 @@
 
 Architecture
 ------------
-This script runs at sessionEnd (non-AI shell context) and does two things:
+This script runs at sessionEnd (non-AI shell context) and does three things:
 
 1. Automated structural checks — objective, deterministic:
    - Token budget per harness file
    - Duplicate prompt↔skill pairs
 
-2. AI compliance evaluation scaffold — generates rich context for the AI agent
-   that reads this report at sessionStart.  The script cannot holistically judge
-   whether the code followed all harness rules (naming conventions, framework
-   patterns, DDD shapes, AOP pairs, etc.) — only an AI can do that reliably.
-   So instead it:
-   - Maps each changed Python file to its applicable instruction files
+2. AI compliance evaluation scaffold for source code — for changed Python files:
+   - Maps each file to its applicable instruction files (via applyTo: globs)
    - Embeds a condensed git diff for those files
    - Lists quick automated signals (definitive rule violations detectable by regex)
    - Writes a structured evaluation prompt asking the AI to assess compliance
      against the FULL set of applicable harness rules
+
+3. AI evaluation scaffold for harness-file changes — for changed .github/ files:
+   - Lists which harness files changed this session
+   - Embeds their diffs for AI review
+   - Writes an evaluation prompt asking the AI to assess harness quality
+     (clarity, token efficiency, coverage completeness, structural soundness)
+
+All three sections are written to harness-review.md and surfaced at the next
+sessionStart for the AI agent to read and act on.
 """
 
 import re
@@ -39,13 +44,33 @@ def approx_tokens(p: Path) -> int:
     return len(p.read_text("utf-8")) // 4
 
 
+def _find_base_ref() -> str:
+    """Return the merge-base SHA for comparison, trying several candidates."""
+    candidates = ["origin/HEAD", "origin/develop", "origin/main", "origin/master"]
+    for ref in candidates:
+        result = subprocess.run(
+            ["git", "merge-base", "HEAD", ref],
+            capture_output=True, text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    # Last resort: first commit reachable from HEAD that is NOT in current branch
+    result = subprocess.run(
+        ["git", "log", "--oneline", "--first-parent", "HEAD"],
+        capture_output=True, text=True,
+    )
+    lines = result.stdout.strip().splitlines()
+    if len(lines) > 1:
+        return lines[-1].split()[0]  # oldest commit SHA
+    return ""
+
+
 def get_session_changed_files() -> list[Path]:
     """Files changed in this session vs the base branch (existing files only)."""
     try:
-        base = subprocess.run(
-            ["git", "merge-base", "HEAD", "origin/HEAD"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
+        base = _find_base_ref()
+        if not base:
+            return []
         out = subprocess.run(
             ["git", "diff", "--name-only", base],
             capture_output=True, text=True, check=True,
@@ -60,10 +85,9 @@ def get_session_diff(files: list[Path]) -> str:
     if not files:
         return ""
     try:
-        base = subprocess.run(
-            ["git", "merge-base", "HEAD", "origin/HEAD"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
+        base = _find_base_ref()
+        if not base:
+            return ""
         out = subprocess.run(
             ["git", "diff", base, "--", *[str(f) for f in files]],
             capture_output=True, text=True,
@@ -133,10 +157,16 @@ _AUTO_SIGNALS: list[tuple[re.Pattern[str], str, str]] = [
 
 
 def collect_auto_signals(files: list[Path]) -> list[str]:
-    """Return definitive violation strings for files that match automated rules."""
+    """Return definitive violation strings for files that match automated rules.
+
+    Excludes .github/ harness files — those are meta-tools, not application code.
+    """
     signals = []
     for py_file in files:
         if not py_file.suffix == ".py":
+            continue
+        # Skip harness scripts — they intentionally reference forbidden patterns
+        if py_file.is_relative_to(GITHUB):
             continue
         try:
             content = py_file.read_text("utf-8")
@@ -195,6 +225,7 @@ if PROMPT_DIR.exists() and SKILL_DIR.exists():
             )
 
 
+
 # ── 3. Build AI compliance evaluation scaffold ────────────────────────────────
 
 changed_files = get_session_changed_files()
@@ -209,12 +240,41 @@ diff_candidates = [f for f in py_files if f in file_rule_map]
 diff_text = get_session_diff(diff_candidates)
 
 
-# ── 4. Write report ───────────────────────────────────────────────────────────
+# ── 4. Harness-change evaluation scaffold ────────────────────────────────────
+
+# Harness files are .github/**/*.md and .github/hooks/*.py — but exclude the
+# generated report itself so it doesn't appear in its own evaluation.
+HARNESS_GLOBS = [
+    "instructions/*.instructions.md",
+    "prompts/*.prompt.md",
+    "skills/*/SKILL.md",
+    "hooks/*.py",
+    "hooks/*.json",
+    "copilot-instructions.md",
+]
+harness_changed: list[Path] = []
+for f in changed_files:
+    try:
+        rel = f.relative_to(GITHUB)
+    except ValueError:
+        continue
+    if str(rel) == "hooks/harness-review.md":
+        continue  # skip the generated report itself
+    for glob in HARNESS_GLOBS:
+        if rel.match(glob):
+            harness_changed.append(f)
+            break
+
+harness_diff = get_session_diff(harness_changed)
+
+
+# ── 5. Write report ───────────────────────────────────────────────────────────
 
 has_structural = bool(structural_issues)
 has_py_changes = bool(file_rule_map)
+has_harness_changes = bool(harness_changed)
 
-if has_structural or has_py_changes or auto_signals:
+if has_structural or has_py_changes or auto_signals or has_harness_changes:
     out: list[str] = ["# Harness Meta-Review Report\n\n"]
 
     # Structural issues (automated, deterministic)
@@ -223,9 +283,9 @@ if has_structural or has_py_changes or auto_signals:
         out += [f"- {i}\n" for i in structural_issues]
         out.append("\n_Resolve these to keep context-window usage efficient._\n\n")
 
-    # AI compliance evaluation scaffold
+    # AI compliance evaluation scaffold for source code
     if has_py_changes or auto_signals:
-        out.append("## AI Compliance Evaluation\n\n")
+        out.append("## Source Code Compliance\n\n")
         out.append(
             "> **Action required (AI agent at sessionStart):** Evaluate the changed files "
             "below against all applicable harness rules. Provide a holistic qualitative "
@@ -255,7 +315,6 @@ if has_structural or has_py_changes or auto_signals:
             out.append(diff_text + "\n")
             out.append("```\n\n")
 
-        # Evaluation prompt for the AI agent
         out.append("### Evaluation Prompt\n\n")
         out.append(
             "For each file in the table above, assess compliance with its listed instructions "
@@ -266,12 +325,46 @@ if has_structural or has_py_changes or auto_signals:
             "Then give an overall session compliance grade and a 1-sentence summary.\n"
         )
 
+    # AI evaluation scaffold for harness-file changes
+    if has_harness_changes:
+        out.append("## Harness Quality Evaluation\n\n")
+        out.append(
+            "> **Action required (AI agent at sessionStart):** The harness itself changed "
+            "this session. Evaluate the quality of those changes against these criteria:\n\n"
+            "> - **Clarity**: Are rules unambiguous and actionable?\n"
+            "> - **Token efficiency**: No redundancy, minimal prose, within 900-token budget?\n"
+            "> - **Coverage completeness**: Do the changed files cover the intended scope "
+            "without gaps or overlaps with other harness files?\n"
+            "> - **Structural soundness**: Correct frontmatter/format for file type "
+            "(instructions / skill / hook / prompt)?\n\n"
+        )
+        out.append("### Changed Harness Files\n\n")
+        out += [f"- `{f}`\n" for f in sorted(harness_changed)]
+        out.append("\n")
+
+        if harness_diff:
+            out.append("### Harness Diff (for AI review)\n\n")
+            out.append("```diff\n")
+            out.append(harness_diff + "\n")
+            out.append("```\n\n")
+
+        out.append("### Evaluation Prompt\n\n")
+        out.append(
+            "For each changed harness file, assess quality on the four criteria above. "
+            "For each file provide:\n\n"
+            "1. **Grade**: ✅ PASS | ⚠️ PARTIAL | ❌ FAIL\n"
+            "2. **Observations**: Key strengths and gaps (max 3 bullets)\n"
+            "3. **Suggestions**: Specific improvements if PARTIAL or FAIL\n\n"
+            "Then give an overall harness quality grade and a 1-sentence summary.\n"
+        )
+
     REPORT.write_text("".join(out), "utf-8")
     total = len(structural_issues) + len(auto_signals)
     file_count = len(file_rule_map)
     print(
         f"[harness-review] report written — {total} automated issue(s),"
-        f" {file_count} file(s) queued for AI evaluation — see {REPORT}"
+        f" {file_count} source file(s) + {len(harness_changed)} harness file(s)"
+        f" queued for AI evaluation — see {REPORT}"
     )
     for i in structural_issues:
         print(f"  [structural] {i}")
@@ -279,5 +372,5 @@ if has_structural or has_py_changes or auto_signals:
         print(f"  [auto-signal] {s}")
 else:
     REPORT.unlink(missing_ok=True)
-    print("[harness-review] No issues found. No Python files with applicable harness rules changed.")
+    print("[harness-review] No issues found. No files with applicable harness rules changed.")
 
