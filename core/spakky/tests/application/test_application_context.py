@@ -1310,3 +1310,48 @@ def test_application_context_clear_context_expect_success() -> None:
     # Note: After clear, a new context ID is generated
     new_context_id = context.get_context_id()
     assert isinstance(new_context_id, UUID)
+
+
+def test_application_context_get_qualified_multiple_candidates_none_match_expect_error() -> (
+    None
+):
+    """여러 후보 중 qualifier로 필터링했지만 매치되는 Pod가 없을 때 UnexpectedDependencyTypeInjectedError가 발생함을 검증한다."""
+    from spakky.core.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod()
+    class FirstSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "first"
+
+    @Pod()
+    class SecondSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "second"
+
+    @Pod()
+    class SampleService:
+        __pod: ISamplePod
+
+        def __init__(
+            self,
+            pod: Annotated[
+                ISamplePod,
+                Qualifier(lambda pod: pod.name.startswith("nonexistent")),
+            ],
+        ) -> None:
+            self.__pod = pod
+
+        def do(self) -> str:
+            return self.__pod.do()
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(FirstSamplePod)
+    context.add(SecondSamplePod)
+    context.add(SampleService)
+
+    with pytest.raises(UnexpectedDependencyTypeInjectedError):
+        context.start()

@@ -43,6 +43,65 @@ def test_registry_register_entities_expect_all_registered(
 - 테스트 간 상태 격리를 보장하세요 (특히 DB/Registry 관련).
 - `scope="function"`을 기본으로 사용하세요.
 
+## 커버리지 측정 워크플로우
+
+커버리지 개선 작업 시 **반드시** 아래 순서를 따르세요:
+
+### 1. 기존 테스트 구조 확인
+
+테스트 추가 전에 **반드시** 해당 패키지의 테스트 구조를 확인하세요:
+
+```bash
+ls -la tests/  # unit/, integration/ 디렉토리 존재 여부 확인
+```
+
+많은 패키지가 `unit/`과 `integration/` 디렉토리로 분리되어 있습니다.
+**기존 통합 테스트가 이미 해당 라인을 커버하고 있을 수 있습니다.**
+
+### 2. 커버리지 측정 (전체 테스트)
+
+커버리지는 **모든 테스트(unit + integration)**를 실행해서 측정해야 합니다:
+
+```bash
+# 올바른 방법: 패키지 전체 테스트
+cd <package-dir> && uv run pytest --cov=spakky --cov-report=term-missing --cov-fail-under=0
+
+# 잘못된 방법: unit 테스트만 실행
+cd <package-dir> && uv run pytest tests/unit/ --cov=spakky  # ❌
+```
+
+### 3. 미커버 라인 분석
+
+100% 미달성 시 **반드시** 분석하세요:
+
+1. `pragma: no cover` 표시 여부 확인
+2. 통합 테스트에서 이미 커버되는지 확인
+3. 단위 테스트로 커버 가능한지 판단
+4. 통합 테스트 필요 시 기존 통합 테스트 확장 고려
+
+**100% 미달성 이유 분류:**
+
+| 분류 | 예시 | 조치 |
+|------|------|------|
+| `pragma: no cover` | 에러 핸들링, TYPE_CHECKING | 의도적 제외, 추가 테스트 불필요 |
+| 통합 테스트 필요 | 외부 시스템 콜백, 런타임 전용 | 통합 테스트 추가 또는 확장 |
+| 테스트 누락 | 일반 분기, 조건문 | 단위 테스트 추가 |
+| 동기/비동기 분리 | Sync consumer vs Async consumer | 양쪽 모두 테스트 필요 |
+
+**주의:** 동기/비동기 버전이 별도로 존재하는 경우 (예: `KafkaEventConsumer` vs `AsyncKafkaEventConsumer`),
+**양쪽 모두** 테스트해야 합니다. 통합 테스트가 한쪽만 커버할 수 있습니다.
+
+### 4. 테스트 추가 후 즉시 검증
+
+테스트 추가 후 **해당 파일**의 커버리지를 즉시 확인:
+
+```bash
+# 특정 파일 커버리지 확인
+uv run pytest --cov=spakky.plugins.kafka.post_processor --cov-report=term-missing --cov-fail-under=0
+```
+
+**100% 달성 확인 후** 다음 파일로 이동하세요.
+
 ## Test-First Development (TDD)
 
 새 기능/버그 수정 시 권장 워크플로우:
