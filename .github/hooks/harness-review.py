@@ -3,28 +3,30 @@
 
 Architecture
 ------------
-This script runs at sessionStart (non-AI shell context) as the FIRST step, before
-the AI agent begins work. It does three things:
+This script runs at sessionEnd (non-AI shell context). It performs automated
+structural checks and prepares a rich evaluation scaffold for the AI agent.
 
-1. Automated structural checks — objective, deterministic:
-   - Token budget per harness file
-   - Duplicate prompt↔skill pairs
+The AI-driven qualitative evaluation is performed by the agent itself via the
+`harness-review` skill, which the agent invokes as the FINAL step of every
+coding session (mandated by copilot-instructions.md). The skill reads this
+script's output and performs holistic qualitative assessment of all session
+changes against applicable harness rules.
 
-2. AI compliance evaluation scaffold for source code — for changed Python files:
+Responsibilities of this script (automated, deterministic):
+1. Token budget per harness file — flags files exceeding 900-token budget
+2. Duplicate prompt↔skill pairs — same workflow defined in both directories
+3. AI compliance evaluation scaffold for source code — for changed Python files:
    - Maps each file to its applicable instruction files (via applyTo: globs)
    - Embeds a condensed git diff for those files
-   - Lists quick automated signals (definitive rule violations detectable by regex)
-   - Writes a structured evaluation prompt asking the AI to assess compliance
-     against the FULL set of applicable harness rules
-
-3. AI evaluation scaffold for harness-file changes — for changed .github/ files:
+   - Lists automated signals (definitive rule violations detectable by regex)
+   - Writes a structured evaluation prompt for the AI skill to assess compliance
+4. AI evaluation scaffold for harness-file changes:
    - Lists which harness files changed this session
    - Embeds their diffs for AI review
-   - Writes an evaluation prompt asking the AI to assess harness quality
-     (clarity, token efficiency, coverage completeness, structural soundness)
+   - Writes a quality evaluation prompt (clarity, token efficiency, coverage, structure)
 
-The report is written to harness-review.md and immediately displayed to the AI
-agent at sessionStart so it can evaluate and apply any fixes in the same session.
+All findings are written to harness-review.md and consumed by the
+`harness-review` skill when the agent invokes it.
 """
 
 import re

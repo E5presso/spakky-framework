@@ -15,37 +15,39 @@
 ```diff
 diff --git a/.github/hooks/harness-review.py b/.github/hooks/harness-review.py
 new file mode 100644
-index 0000000..e69f2c7
+index 0000000..8442c46
 --- /dev/null
 +++ b/.github/hooks/harness-review.py
-@@ -0,0 +1,377 @@
+@@ -0,0 +1,379 @@
 +#!/usr/bin/env python3
 +"""Harness meta-review: token budget, duplicate detection, and AI compliance scaffold.
 +
 +Architecture
 +------------
-+This script runs at sessionStart (non-AI shell context) as the FIRST step, before
-+the AI agent begins work. It does three things:
++This script runs at sessionEnd (non-AI shell context). It performs automated
++structural checks and prepares a rich evaluation scaffold for the AI agent.
 +
-+1. Automated structural checks — objective, deterministic:
-+   - Token budget per harness file
-+   - Duplicate prompt↔skill pairs
++The AI-driven qualitative evaluation is performed by the agent itself via the
++`harness-review` skill, which the agent invokes as the FINAL step of every
++coding session (mandated by copilot-instructions.md). The skill reads this
++script's output and performs holistic qualitative assessment of all session
++changes against applicable harness rules.
 +
-+2. AI compliance evaluation scaffold for source code — for changed Python files:
++Responsibilities of this script (automated, deterministic):
++1. Token budget per harness file — flags files exceeding 900-token budget
++2. Duplicate prompt↔skill pairs — same workflow defined in both directories
++3. AI compliance evaluation scaffold for source code — for changed Python files:
 +   - Maps each file to its applicable instruction files (via applyTo: globs)
 +   - Embeds a condensed git diff for those files
-+   - Lists quick automated signals (definitive rule violations detectable by regex)
-+   - Writes a structured evaluation prompt asking the AI to assess compliance
-+     against the FULL set of applicable harness rules
-+
-+3. AI evaluation scaffold for harness-file changes — for changed .github/ files:
++   - Lists automated signals (definitive rule violations detectable by regex)
++   - Writes a structured evaluation prompt for the AI skill to assess compliance
++4. AI evaluation scaffold for harness-file changes:
 +   - Lists which harness files changed this session
 +   - Embeds their diffs for AI review
-+   - Writes an evaluation prompt asking the AI to assess harness quality
-+     (clarity, token efficiency, coverage completeness, structural soundness)
++   - Writes a quality evaluation prompt (clarity, token efficiency, coverage, structure)
 +
-+The report is written to harness-review.md and immediately displayed to the AI
-+agent at sessionStart so it can evaluate and apply any fixes in the same session.
++All findings are written to harness-review.md and consumed by the
++`harness-review` skill when the agent invokes it.
 +"""
 +
 +import re
@@ -211,9 +213,7 @@ index 0000000..e69f2c7
 +    for f in sorted(GITHUB.glob(pattern)):
 +        t = approx_tokens(f)
 +        if t > TOKEN_BUDGET:
-+            rel = str(f.relative_to(GITHUB))
-+            structural_issues.append(
-... [183 lines truncated]
+... [185 lines truncated]
 ```
 
 ### Evaluation Prompt
@@ -254,14 +254,14 @@ Then give an overall session compliance grade and a 1-sentence summary.
 
 ```diff
 diff --git a/.github/copilot-instructions.md b/.github/copilot-instructions.md
-index 2c79e23..6b2eb14 100644
+index 2c79e23..f275ccd 100644
 --- a/.github/copilot-instructions.md
 +++ b/.github/copilot-instructions.md
 @@ -10,6 +10,8 @@
  | Layer | 위치 | 역할 |
  |-------|------|------|
  | Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 행동 규칙 |
-+| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`/`sessionEnd`) + 메타 리뷰 |
++| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`: uv sync / `sessionEnd`: 정량 평가) |
 +| Skills | `.github/skills/*/SKILL.md` | 재사용 가능한 에이전트 스킬 |
  | File Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
  | Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 |
@@ -285,39 +285,54 @@ index 2c79e23..6b2eb14 100644
  
  ## Monorepo Rules
  
+@@ -33,6 +45,12 @@ uv sync --all-extras                 # Sub-package: install only that package
+ 
+ ## AI Agent Rules
+ 
++### Session Completion Rule
++
++**매 세션 작업 완료 전 반드시 `harness-review` 스킬을 실행하세요.**
++
++이 스킬은 세션 중 변경한 코드와 하네스 파일의 규칙 이행률을 자체 평가하고, 위반 사항을 즉시 수정합니다.
++
+ ### Tool Usage
+ 
+ 1. **Prefer integrated tools** (`execute/runTests`, `get_errors`, `read_file`, etc.) over terminal commands
 diff --git a/.github/hooks/harness-review.py b/.github/hooks/harness-review.py
 new file mode 100644
-index 0000000..e69f2c7
+index 0000000..8442c46
 --- /dev/null
 +++ b/.github/hooks/harness-review.py
-@@ -0,0 +1,377 @@
+@@ -0,0 +1,379 @@
 +#!/usr/bin/env python3
 +"""Harness meta-review: token budget, duplicate detection, and AI compliance scaffold.
 +
 +Architecture
 +------------
-+This script runs at sessionStart (non-AI shell context) as the FIRST step, before
-+the AI agent begins work. It does three things:
++This script runs at sessionEnd (non-AI shell context). It performs automated
++structural checks and prepares a rich evaluation scaffold for the AI agent.
 +
-+1. Automated structural checks — objective, deterministic:
-+   - Token budget per harness file
-+   - Duplicate prompt↔skill pairs
++The AI-driven qualitative evaluation is performed by the agent itself via the
++`harness-review` skill, which the agent invokes as the FINAL step of every
++coding session (mandated by copilot-instructions.md). The skill reads this
++script's output and performs holistic qualitative assessment of all session
++changes against applicable harness rules.
 +
-+2. AI compliance evaluation scaffold for source code — for changed Python files:
++Responsibilities of this script (automated, deterministic):
++1. Token budget per harness file — flags files exceeding 900-token budget
++2. Duplicate prompt↔skill pairs — same workflow defined in both directories
++3. AI compliance evaluation scaffold for source code — for changed Python files:
 +   - Maps each file to its applicable instruction files (via applyTo: globs)
 +   - Embeds a condensed git diff for those files
-+   - Lists quick automated signals (definitive rule violations detectable by regex)
-+   - Writes a structured evaluation prompt asking the AI to assess compliance
-+     against the FULL set of applicable harness rules
-+
-+3. AI evaluation scaffold for harness-file changes — for changed .github/ files:
++   - Lists automated signals (definitive rule violations detectable by regex)
++   - Writes a structured evaluation prompt for the AI skill to assess compliance
++4. AI evaluation scaffold for harness-file changes:
 +   - Lists which harness files changed this session
 +   - Embeds their diffs for AI review
-+   - Writes an evaluation prompt asking the AI to assess harness quality
-+     (clarity, token efficiency, coverage completeness, structural soundness)
++   - Writes a quality evaluation prompt (clarity, token efficiency, coverage, structure)
 +
-+The report is written to harness-review.md and immediately displayed to the AI
-+agent at sessionStart so it can evaluate and apply any fixes in the same session.
++All findings are written to harness-review.md and consumed by the
++`harness-review` skill when the agent invokes it.
 +"""
 +
 +import re
@@ -438,22 +453,7 @@ index 0000000..e69f2c7
 +            if re.fullmatch(rx, str(f)) or re.fullmatch(rx, f.name)
 +        ]
 +        if applicable:
-+            mapping[f] = applicable
-+    return mapping
-+
-+
-+# ── automated signals: definitive regex-detectable violations ─────────────────
-+
-+_AUTO_SIGNALS: list[tuple[re.Pattern[str], str, str]] = [
-+    (re.compile(r"#\s*type:\s*ignore"), "python-code §Type Safety", "`# type: ignore` is forbidden"),
-+    (re.compile(r"^class\s+Test\w*[:(]", re.MULTILINE), "test-writing §Structure", "class-based test (use functions)"),
-+]
-+
-+
-+def collect_auto_signals(files: list[Path]) -> list[str]:
-+    """Return definitive violation strings for files that match automated rules.
-+
-... [1196 lines truncated]
+... [1219 lines truncated]
 ```
 
 ### Evaluation Prompt

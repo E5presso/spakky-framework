@@ -10,7 +10,7 @@
 | Layer | 위치 | 역할 |
 |-------|------|------|
 | Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 행동 규칙 |
-| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`/`sessionEnd`) + 메타 리뷰 |
+| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`: uv sync / `sessionEnd`: 정량 평가) |
 | Skills | `.github/skills/*/SKILL.md` | 재사용 가능한 에이전트 스킬 |
 | File Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
 | Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 |
@@ -44,6 +44,12 @@ uv sync --all-extras                 # Sub-package: install only that package
 ```
 
 ## AI Agent Rules
+
+### Session Completion Rule
+
+**매 세션 작업 완료 전 반드시 `harness-review` 스킬을 실행하세요.**
+
+이 스킬은 세션 중 변경한 코드와 하네스 파일의 규칙 이행률을 자체 평가하고, 위반 사항을 즉시 수정합니다.
 
 ### Tool Usage
 
