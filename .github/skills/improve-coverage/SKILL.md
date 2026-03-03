@@ -53,7 +53,7 @@ concurrency = ["thread"]  # background task/비동기 서비스 커버리지 추
 | 테스트 누락 | 일반 분기, 조건문 | 단위 테스트 추가 |
 | 동기/비동기 분리 | `KafkaEventConsumer` vs `AsyncKafkaEventConsumer` | **양쪽 모두** 테스트 필요 |
 
-## Step 4: 파일별 100% 달성
+## Step 5: 파일별 100% 달성
 
 각 파일마다:
 
@@ -61,24 +61,43 @@ concurrency = ["thread"]  # background task/비동기 서비스 커버리지 추
 2. 통합 테스트 필요 라인 → 기존 통합 테스트 확장 고려
 3. 커버 불가 라인 → `# pragma: no cover` 표시 (사유 명시)
 
-```bash
-# 특정 파일 커버리지 즉시 검증
-uv run pytest --cov=spakky.<module.path> --cov-report=term-missing --cov-fail-under=0
-```
-
 **100% 달성 확인 후** 다음 파일로 이동하세요.
 
-## Step 5: 테스트 스타일 규칙
+## Step 6: 테스트 스타일 규칙
 
 - **함수 기반만** 허용 (`class TestXxx` 금지)
 - 네이밍: `test_<대상함수>_<시나리오>_expect_<기대결과>`
 - 각 테스트 함수에 **docstring 필수**
 - `scope="function"` fixture 기본
 
-## Step 6: 최종 검증
+### Parametrized Fixture 주의사항
+
+`@pytest.fixture(params=[...])` 사용 시, `None` 파라미터가 포함되면 이전 값이 남아있을 수 있습니다:
+
+```python
+# ❌ 잘못된 예: 이전 파라미터 값이 환경변수에 남음
+@pytest.fixture(params=["value", None])
+def config_fixture(request):
+    if request.param is not None:
+        environ["KEY"] = request.param
+    yield
+    # None 케이스에서 이전 "value"가 여전히 남아있음
+
+# ✅ 올바른 예: 명시적으로 정리
+@pytest.fixture(params=["value", None])
+def config_fixture(request):
+    key = "KEY"
+    if request.param is not None:
+        environ[key] = request.param
+    else:
+        environ.pop(key, None)  # 명시적 제거
+    yield
+```
+
+## Step 7: 최종 검증
 
 ```bash
-cd <package-dir> && uv run pytest --cov=spakky --cov-report=term-missing
+cd <package-dir> && uv run pytest
 ```
 
 100% 미달성 이유를 명시적으로 보고하세요.
