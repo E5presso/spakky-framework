@@ -22,7 +22,17 @@ Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Us
 - **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`
 - **Plugins** (`plugins/`): `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`
 
-**API Reference**: `.github/instructions/api-reference.instructions.md` (Python 파일 작성 시 자동 적용)
+**자동 적용 인스트럭션 (파일 패턴별)**:
+
+| 파일 패턴 | 인스트럭션 | 내용 |
+|-----------|-----------|------|
+| `**/*.py` | `api-reference`, `python-code` | API 레퍼런스, 타입/네이밍 표준 |
+| `**/tests/**/*.py` | `test-writing` | 테스트 구조, 네이밍, TDD |
+| `**/error.py` | `error-classes` | 에러 클래스 계층 구조 |
+| `**/domain/**/*.py` | `domain` | DDD 빌딩 블록 패턴 |
+| `**/aspects/**/*.py` | `aspect` | AOP Aspect 구조 패턴 |
+| `plugins/**/*.py` | `plugin` | 플러그인 개발 규칙 |
+| `**/pyproject.toml` | `monorepo` | 모노레포 도구 실행 원칙 |
 
 ## Monorepo Rules
 

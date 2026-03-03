@@ -22,6 +22,32 @@ tools:
 | `.github/prompts/*.prompt.md` | 워크플로우 정의 | 프롬프트 호출 시 |
 | `.github/copilot-instructions.md` | 전역 AI 지침 | 항상 |
 
+### 인스트럭션 목록
+
+| 파일 | 적용 패턴 | 내용 |
+|------|-----------|------|
+| `api-reference.instructions.md` | `**/*.py` | Spakky API import 경로 |
+| `python-code.instructions.md` | `**/*.py` | 타입 안전, 네이밍, 로깅 |
+| `test-writing.instructions.md` | `**/tests/**/*.py` | 테스트 구조, TDD, 커버리지 |
+| `error-classes.instructions.md` | `**/error.py` | 에러 클래스 계층 구조 |
+| `domain.instructions.md` | `**/domain/**/*.py` | DDD 빌딩 블록 패턴 |
+| `aspect.instructions.md` | `**/aspects/**/*.py` | AOP Aspect 구조 패턴 |
+| `plugin.instructions.md` | `plugins/**/*.py` | 플러그인 개발 규칙 |
+| `monorepo.instructions.md` | `**/pyproject.toml` | 모노레포 도구 실행 원칙 |
+
+### 프롬프트 목록
+
+| 파일 | 용도 |
+|------|------|
+| `commit.prompt.md` | Conventional Commits 메시지 작성 |
+| `implement.prompt.md` | 기능 구현 워크플로우 |
+| `test.prompt.md` | 테스트 작성 워크플로우 |
+| `coverage.prompt.md` | 커버리지 개선 워크플로우 |
+| `plugin.prompt.md` | 플러그인 생성 워크플로우 |
+| `pr.prompt.md` | PR 생성 워크플로우 |
+| `review.prompt.md` | PR 리뷰 피드백 반영 워크플로우 |
+| `harness-update.prompt.md` | 하네스 변경 워크플로우 |
+
 ## 변경 원칙
 
 1. **최소 범위**: 가장 구체적인 위치에 규칙 추가
