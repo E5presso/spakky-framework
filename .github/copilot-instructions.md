@@ -10,7 +10,7 @@
 | Layer | 위치 | 역할 |
 |-------|------|------|
 | Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 행동 규칙 |
-| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (sessionStart 등) |
+| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`/`sessionEnd`) + 메타 리뷰 |
 | Skills | `.github/skills/*/SKILL.md` | 재사용 가능한 에이전트 스킬 |
 | File Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
 | Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 |

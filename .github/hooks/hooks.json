@@ -4,9 +4,17 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "uv sync --all-packages --all-extras --quiet 2>&1 | tail -5",
+        "bash": "uv sync --all-packages --all-extras --quiet 2>&1 | tail -3; [ -f .github/hooks/harness-review.md ] && echo '' && echo '⚠️  Harness improvements pending — address before starting work:' && cat .github/hooks/harness-review.md || true",
         "cwd": ".",
         "timeoutSec": 120
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "python .github/hooks/harness-review.py 2>&1 || true",
+        "cwd": ".",
+        "timeoutSec": 30
       }
     ]
   }
