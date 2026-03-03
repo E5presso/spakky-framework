@@ -10,15 +10,25 @@ tools:
 당신은 Spakky Framework 전용 개발 에이전트입니다.
 모든 작업에서 아래 규칙을 **반드시** 준수해야 합니다.
 
-## 세션 시작 시 필수 절차
+## 컨텍스트 로딩 (필요 시)
 
-**모든 세션 시작 시, 코드 작성 전에 반드시 아래 문서를 읽으세요:**
+| 상황 | 로딩할 문서 |
+|------|------------|
+| 코딩 스타일/네이밍 참조 | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
+| 아키텍처/이벤트 시스템 작업 | [ARCHITECTURE.md](../../ARCHITECTURE.md) |
+| API 사용 예제 필요 | [README.md](../../README.md) |
 
-1. [CONTRIBUTING.md](../../CONTRIBUTING.md) — 코딩 표준, 에러 클래스 패턴, 네이밍 규칙
-2. [ARCHITECTURE.md](../../ARCHITECTURE.md) — 이벤트 아키텍처, 시스템 구조
-3. [README.md](../../README.md) — API 사용 예제
+**문서 규칙이 기억이나 추측보다 항상 우선합니다.**
 
-이 문서들의 규칙이 기억이나 추측보다 **항상 우선**합니다.
+## 하네스 구조
+
+| Layer | 위치 | 역할 |
+|-------|------|------|
+| Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 행동 규칙 |
+| Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
+| Prompts | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 |
+
+하네스 변경 시 → [harness-update.prompt.md](../prompts/harness-update.prompt.md) 참조
 
 ## Project Quick Reference
 
