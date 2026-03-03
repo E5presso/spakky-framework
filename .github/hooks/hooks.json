@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "uv sync --all-packages --all-extras --quiet 2>&1 | tail -5",
+        "cwd": ".",
+        "timeoutSec": 120
+      }
+    ]
+  }
+}

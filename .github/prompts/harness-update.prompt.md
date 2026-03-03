@@ -18,6 +18,8 @@ tools:
 | 파일 | 역할 | 적용 시점 |
 |------|------|----------|
 | `.github/agents/spakky-dev.agent.md` | 에이전트 행동 규칙 | 에이전트 활성화 시 |
+| `.github/hooks/hooks.json` | 세션 수명주기 훅 (shell 명령) | 코딩 에이전트 이벤트 발생 시 자동 |
+| `.github/skills/<name>/SKILL.md` | 재사용 가능한 에이전트 스킬 | 에이전트가 관련 작업 감지 시 로드 |
 | `.github/instructions/*.instructions.md` | 파일 패턴별 규칙 | 해당 파일 작업 시 자동 |
 | `.github/prompts/*.prompt.md` | 워크플로우 정의 | 프롬프트 호출 시 |
 | `.github/copilot-instructions.md` | 전역 AI 지침 | 항상 |
@@ -35,6 +37,20 @@ tools:
 | `plugin.instructions.md` | `plugins/**/*.py` | 플러그인 개발 규칙 |
 | `monorepo.instructions.md` | `**/pyproject.toml` | 모노레포 도구 실행 원칙 |
 
+### 훅 목록 (`.github/hooks/`)
+
+| 파일 | 이벤트 | 동작 |
+|------|--------|------|
+| `hooks.json` | `sessionStart` | `uv sync --all-packages --all-extras` — 세션 시작 시 전체 패키지 의존성 동기화 |
+
+### 스킬 목록 (`.github/skills/`)
+
+| 폴더 | 스킬 이름 | 용도 |
+|------|----------|------|
+| `coverage/` | `coverage` | 패키지 커버리지 측정 및 100% 달성 워크플로우 |
+| `create-plugin/` | `create-plugin` | 새 플러그인 패키지 스캐폴딩 (9단계) |
+| `review-pr/` | `review-pr` | PR 리뷰 댓글 분류 → 수정 → 검증 → 응답 |
+
 ### 프롬프트 목록
 
 | 파일 | 용도 |
@@ -51,6 +67,8 @@ tools:
 ## 변경 원칙
 
 1. **최소 범위**: 가장 구체적인 위치에 규칙 추가
+   - 코딩 에이전트 세션 자동화 → `hooks/`
+   - 재사용 가능한 에이전트 스킬 → `skills/`
    - 특정 파일 패턴 → `instructions/`
    - 반복 워크플로우 → `prompts/`
    - 모든 작업 공통 → `agent.md`
