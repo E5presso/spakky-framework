@@ -2,7 +2,7 @@
 
 ## Source Code Compliance
 
-> **Action required (AI agent at sessionStart):** Evaluate the changed files below against all applicable harness rules. Provide a holistic qualitative assessment — consider naming, patterns, type safety, structure, DDD/AOP/plugin conventions, and anything else covered by the applicable instructions.
+> **Action required (AI agent):** Evaluate the changed files below against all applicable harness rules. Provide a holistic qualitative assessment — consider naming, patterns, type safety, structure, DDD/AOP/plugin conventions, and anything else covered by the applicable instructions.
 
 ### Changed Files & Applicable Rules
 
@@ -15,16 +15,17 @@
 ```diff
 diff --git a/.github/hooks/harness-review.py b/.github/hooks/harness-review.py
 new file mode 100644
-index 0000000..6a7ab3e
+index 0000000..e69f2c7
 --- /dev/null
 +++ b/.github/hooks/harness-review.py
-@@ -0,0 +1,376 @@
+@@ -0,0 +1,377 @@
 +#!/usr/bin/env python3
 +"""Harness meta-review: token budget, duplicate detection, and AI compliance scaffold.
 +
 +Architecture
 +------------
-+This script runs at sessionEnd (non-AI shell context) and does three things:
++This script runs at sessionStart (non-AI shell context) as the FIRST step, before
++the AI agent begins work. It does three things:
 +
 +1. Automated structural checks — objective, deterministic:
 +   - Token budget per harness file
@@ -43,8 +44,8 @@ index 0000000..6a7ab3e
 +   - Writes an evaluation prompt asking the AI to assess harness quality
 +     (clarity, token efficiency, coverage completeness, structural soundness)
 +
-+All three sections are written to harness-review.md and surfaced at the next
-+sessionStart for the AI agent to read and act on.
++The report is written to harness-review.md and immediately displayed to the AI
++agent at sessionStart so it can evaluate and apply any fixes in the same session.
 +"""
 +
 +import re
@@ -212,8 +213,7 @@ index 0000000..6a7ab3e
 +        if t > TOKEN_BUDGET:
 +            rel = str(f.relative_to(GITHUB))
 +            structural_issues.append(
-+                f"**{rel}**: ~{t} tokens (budget: {TOKEN_BUDGET}) — trim or split"
-... [182 lines truncated]
+... [183 lines truncated]
 ```
 
 ### Evaluation Prompt
@@ -227,7 +227,7 @@ For each file in the table above, assess compliance with its listed instructions
 Then give an overall session compliance grade and a 1-sentence summary.
 ## Harness Quality Evaluation
 
-> **Action required (AI agent at sessionStart):** The harness itself changed this session. Evaluate the quality of those changes against these criteria:
+> **Action required (AI agent):** The harness itself changed this session. Evaluate the quality of those changes against these criteria:
 
 > - **Clarity**: Are rules unambiguous and actionable?
 > - **Token efficiency**: No redundancy, minimal prose, within 900-token budget?
@@ -287,16 +287,17 @@ index 2c79e23..6b2eb14 100644
  
 diff --git a/.github/hooks/harness-review.py b/.github/hooks/harness-review.py
 new file mode 100644
-index 0000000..6a7ab3e
+index 0000000..e69f2c7
 --- /dev/null
 +++ b/.github/hooks/harness-review.py
-@@ -0,0 +1,376 @@
+@@ -0,0 +1,377 @@
 +#!/usr/bin/env python3
 +"""Harness meta-review: token budget, duplicate detection, and AI compliance scaffold.
 +
 +Architecture
 +------------
-+This script runs at sessionEnd (non-AI shell context) and does three things:
++This script runs at sessionStart (non-AI shell context) as the FIRST step, before
++the AI agent begins work. It does three things:
 +
 +1. Automated structural checks — objective, deterministic:
 +   - Token budget per harness file
@@ -315,8 +316,8 @@ index 0000000..6a7ab3e
 +   - Writes an evaluation prompt asking the AI to assess harness quality
 +     (clarity, token efficiency, coverage completeness, structural soundness)
 +
-+All three sections are written to harness-review.md and surfaced at the next
-+sessionStart for the AI agent to read and act on.
++The report is written to harness-review.md and immediately displayed to the AI
++agent at sessionStart so it can evaluate and apply any fixes in the same session.
 +"""
 +
 +import re
@@ -452,8 +453,7 @@ index 0000000..6a7ab3e
 +def collect_auto_signals(files: list[Path]) -> list[str]:
 +    """Return definitive violation strings for files that match automated rules.
 +
-+    Excludes .github/ harness files — those are meta-tools, not application code.
-... [1203 lines truncated]
+... [1196 lines truncated]
 ```
 
 ### Evaluation Prompt

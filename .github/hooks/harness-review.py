@@ -3,7 +3,8 @@
 
 Architecture
 ------------
-This script runs at sessionEnd (non-AI shell context) and does three things:
+This script runs at sessionStart (non-AI shell context) as the FIRST step, before
+the AI agent begins work. It does three things:
 
 1. Automated structural checks — objective, deterministic:
    - Token budget per harness file
@@ -22,8 +23,8 @@ This script runs at sessionEnd (non-AI shell context) and does three things:
    - Writes an evaluation prompt asking the AI to assess harness quality
      (clarity, token efficiency, coverage completeness, structural soundness)
 
-All three sections are written to harness-review.md and surfaced at the next
-sessionStart for the AI agent to read and act on.
+The report is written to harness-review.md and immediately displayed to the AI
+agent at sessionStart so it can evaluate and apply any fixes in the same session.
 """
 
 import re
@@ -287,7 +288,7 @@ if has_structural or has_py_changes or auto_signals or has_harness_changes:
     if has_py_changes or auto_signals:
         out.append("## Source Code Compliance\n\n")
         out.append(
-            "> **Action required (AI agent at sessionStart):** Evaluate the changed files "
+            "> **Action required (AI agent):** Evaluate the changed files "
             "below against all applicable harness rules. Provide a holistic qualitative "
             "assessment — consider naming, patterns, type safety, structure, DDD/AOP/plugin "
             "conventions, and anything else covered by the applicable instructions.\n\n"
@@ -329,7 +330,7 @@ if has_structural or has_py_changes or auto_signals or has_harness_changes:
     if has_harness_changes:
         out.append("## Harness Quality Evaluation\n\n")
         out.append(
-            "> **Action required (AI agent at sessionStart):** The harness itself changed "
+            "> **Action required (AI agent):** The harness itself changed "
             "this session. Evaluate the quality of those changes against these criteria:\n\n"
             "> - **Clarity**: Are rules unambiguous and actionable?\n"
             "> - **Token efficiency**: No redundancy, minimal prose, within 900-token budget?\n"
