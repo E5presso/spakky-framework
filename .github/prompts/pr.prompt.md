@@ -46,8 +46,8 @@ tools:
 | `kafka` | `plugins/spakky-kafka` |
 | `rabbitmq` | `plugins/spakky-rabbitmq` |
 | `security` | `plugins/spakky-security` |
+| `sqlalchemy` | `plugins/spakky-sqlalchemy` |
 | `typer` | `plugins/spakky-typer` |
-| `plugin.sqlalchemy` | `plugins/spakky-sqlalchemy` |
 
 ## Step 4: 사용자 승인
 
