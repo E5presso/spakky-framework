@@ -23,12 +23,26 @@ ls -la tests/
 
 ```bash
 # 올바른 방법: 패키지 전체 테스트
-cd <package-dir> && uv run pytest --cov=spakky --cov-report=term-missing --cov-fail-under=0
+cd <package-dir> && uv run pytest
 ```
 
 > ❌ **금지**: `tests/unit/` 또는 `tests/integration/`만 실행하는 것
+> pyproject.toml 설정에 의존하세요. 직접 `--cov` 옵션 지정 금지.
 
-## Step 3: 미커버 라인 분류
+## Step 3: pyproject.toml 설정 확인
+
+커버리지가 제대로 측정되지 않으면 아래 설정을 확인하세요:
+
+```toml
+[tool.coverage.run]
+parallel = true  # pytest-xdist (-n auto) 사용 시 필수
+concurrency = ["thread"]  # background task/비동기 서비스 커버리지 추적 시 필요
+```
+
+**`parallel = true`**: pytest-xdist가 여러 워커에서 실행한 커버리지 데이터를 병합합니다.
+**`concurrency = ["thread"]`**: asyncio background service(`run_async`)처럼 별도 스레드에서 실행되는 코드 추적.
+
+## Step 4: 미커버 라인 분류
 
 100% 미달성 시 각 라인을 아래 기준으로 분류합니다:
 
