@@ -40,6 +40,30 @@ cd <package-dir> && uv run pytest
 | 테스트 누락 | 일반 분기, 조건문 | 단위 테스트 추가 |
 | 동기/비동기 분리 | `KafkaEventConsumer` vs `AsyncKafkaEventConsumer` | **양쪽 모두** 테스트 필요 |
 
+### `pragma: no cover` 사용 기준
+
+**Mock 가득 찬 테스트보다 no cover가 낫습니다.** 아래 경우에만 `# pragma: no cover` 사용:
+
+| 케이스 | 사유 예시 |
+|--------|----------|
+| 외부 시스템 콜백 | Kafka 메시지 배달 콜백 — 실제 브로커 없이 테스트 불가 |
+| 비동기 런타임 루프 | `run_async` 메서드 — 통합 테스트에서 별도 스레드로 실행되어 커버리지 수집 불가 |
+| 방어적 분기 | `if topic is None` — 정상 흐름에서 발생 불가하지만 타입 안전성 위해 존재 |
+| 에러 로깅 | `except Exception` 블록 — 의도적으로 발생시키기 어려운 예외 |
+
+**사유 작성 규칙:**
+```python
+# ✅ 올바른 예: 구체적 사유 명시
+if message is None:  # pragma: no cover - Kafka 브로커가 null 메시지 반환 시 방어 코드
+    return
+
+# ❌ 금지: 사유 없음
+if message is None:  # pragma: no cover
+    return
+```
+
+> **원칙**: 테스트 코드가 프로덕션 코드보다 복잡하거나, mock이 실제 동작을 검증하지 못하면 → no cover 처리
+
 ## Step 4: 파일별 100% 달성
 
 각 파일마다:
