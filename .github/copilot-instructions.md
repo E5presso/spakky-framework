@@ -28,6 +28,8 @@ Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Us
 
 | 파일 패턴 | 인스트럭션 | 내용 |
 |-----------|-----------|------|
+| `**/*` | `behavioral-guidelines` | 행동 원칙 6가지 |
+| `**/*` | `tool-usage` | 도구 사용 규칙, Git 안전 규칙 |
 | `**/*.py` | `api-reference`, `python-code` | API 레퍼런스, 타입/네이밍 표준 |
 | `**/tests/**/*.py` | `test-writing` | 테스트 구조, 네이밍, TDD |
 | `**/error.py` | `error-classes` | 에러 클래스 계층 구조 |
