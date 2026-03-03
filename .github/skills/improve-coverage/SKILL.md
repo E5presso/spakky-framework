@@ -29,20 +29,7 @@ cd <package-dir> && uv run pytest
 > ❌ **금지**: `tests/unit/` 또는 `tests/integration/`만 실행하는 것
 > pyproject.toml 설정에 의존하세요. 직접 `--cov` 옵션 지정 금지.
 
-## Step 3: pyproject.toml 설정 확인
-
-커버리지가 제대로 측정되지 않으면 아래 설정을 확인하세요:
-
-```toml
-[tool.coverage.run]
-parallel = true  # pytest-xdist (-n auto) 사용 시 필수
-concurrency = ["thread"]  # background task/비동기 서비스 커버리지 추적 시 필요
-```
-
-**`parallel = true`**: pytest-xdist가 여러 워커에서 실행한 커버리지 데이터를 병합합니다.
-**`concurrency = ["thread"]`**: asyncio background service(`run_async`)처럼 별도 스레드에서 실행되는 코드 추적.
-
-## Step 4: 미커버 라인 분류
+## Step 3: 미커버 라인 분류
 
 100% 미달성 시 각 라인을 아래 기준으로 분류합니다:
 
@@ -53,7 +40,7 @@ concurrency = ["thread"]  # background task/비동기 서비스 커버리지 추
 | 테스트 누락 | 일반 분기, 조건문 | 단위 테스트 추가 |
 | 동기/비동기 분리 | `KafkaEventConsumer` vs `AsyncKafkaEventConsumer` | **양쪽 모두** 테스트 필요 |
 
-## Step 5: 파일별 100% 달성
+## Step 4: 파일별 100% 달성
 
 각 파일마다:
 
@@ -63,7 +50,7 @@ concurrency = ["thread"]  # background task/비동기 서비스 커버리지 추
 
 **100% 달성 확인 후** 다음 파일로 이동하세요.
 
-## Step 6: 테스트 스타일 규칙
+## Step 5: 테스트 스타일 규칙
 
 - **함수 기반만** 허용 (`class TestXxx` 금지)
 - 네이밍: `test_<대상함수>_<시나리오>_expect_<기대결과>`
@@ -94,7 +81,7 @@ def config_fixture(request):
     yield
 ```
 
-## Step 7: 최종 검증
+## Step 6: 최종 검증
 
 ```bash
 cd <package-dir> && uv run pytest
