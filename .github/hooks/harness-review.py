@@ -16,14 +16,14 @@ Responsibilities of this script (automated, deterministic):
 1. Token budget per harness file — flags files exceeding 900-token budget
 2. Duplicate prompt↔skill pairs — same workflow defined in both directories
 3. AI compliance evaluation scaffold for source code — for changed Python files:
-   - Maps each file to its applicable instruction files (via applyTo: globs)
-   - Embeds a condensed git diff for those files
-   - Lists automated signals (definitive rule violations detectable by regex)
-   - Writes a structured evaluation prompt for the AI skill to assess compliance
+    - Maps each file to its applicable instruction files (via applyTo: globs)
+    - Embeds a condensed git diff for those files
+    - Lists automated signals (definitive rule violations detectable by regex)
+    - Writes a structured evaluation prompt for the AI skill to assess compliance
 4. AI evaluation scaffold for harness-file changes:
-   - Lists which harness files changed this session
-   - Embeds their diffs for AI review
-   - Writes a quality evaluation prompt (clarity, token efficiency, coverage, structure)
+    - Lists which harness files changed this session
+    - Embeds their diffs for AI review
+    - Writes a quality evaluation prompt (clarity, token efficiency, coverage, structure)
 
 All findings are written to harness-review.md and consumed by the
 `harness-review` skill when the agent invokes it.
