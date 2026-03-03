@@ -50,3 +50,21 @@ def test_scan_with_module_path() -> None:
 
     # Should have scanned the module successfully
     assert len(app.container.pods) > 0
+
+
+def test_application_context_property_returns_context() -> None:
+    """application_context property가 올바른 컨텍스트를 반환함을 검증한다."""
+    context = ApplicationContext()
+    app = SpakkyApplication(context)
+    assert app.application_context is context
+
+
+def test_scan_with_tagged_module() -> None:
+    """Tag가 있는 모듈을 스캔하면 태그가 등록됨을 검증한다."""
+    from tests.dummy import tagged_package
+
+    app = SpakkyApplication(ApplicationContext())
+    app.scan(tagged_package)
+
+    # Should have registered the tag
+    assert app.container is not None

@@ -9,7 +9,9 @@ from spakky.core.application.application_context import (
     ApplicationContext,
     ApplicationContextAlreadyStartedError,
     ApplicationContextAlreadyStoppedError,
+    PodNameAlreadyExistsError,
 )
+from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import IAsyncService, IService
 
 
@@ -89,3 +91,21 @@ def test_event_loop_error_when_not_started() -> None:
     # Try to stop without starting
     with pytest.raises(ApplicationContextAlreadyStoppedError):
         context.stop()
+
+
+def test_add_pod_with_duplicate_name_raises_error() -> None:
+    """같은 이름의 다른 Pod을 등록하면 에러가 발생함을 검증한다."""
+
+    @Pod(name="duplicate")
+    class FirstPod:
+        pass
+
+    @Pod(name="duplicate")
+    class SecondPod:
+        pass
+
+    context = ApplicationContext()
+    context.add(FirstPod)
+
+    with pytest.raises(PodNameAlreadyExistsError):
+        context.add(SecondPod)

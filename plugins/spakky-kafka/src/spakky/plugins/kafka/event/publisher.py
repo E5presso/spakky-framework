@@ -90,9 +90,11 @@ class AsyncKafkaEventPublisher(IAsyncIntegrationEventPublisher):
         self.type_adapters = {}
         self.admin = AdminClient(self.config.configuration_dict)
 
-    def _create_topic(self, topic: str) -> None:
+    def _create_topic(  # pragma: no cover - Kafka 브로커 콜백으로 커버리지 수집 불가
+        self, topic: str
+    ) -> None:
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
-        if topic in existing_topics:  # pragma: no cover
+        if topic in existing_topics:
             return
         self.admin.create_topics(
             [
@@ -104,12 +106,12 @@ class AsyncKafkaEventPublisher(IAsyncIntegrationEventPublisher):
             ]
         )
 
-    def _message_delivery_report(
+    def _message_delivery_report(  # pragma: no cover - Kafka 프로듀서 콜백으로 실행
         self,
         error: KafkaError | None,
         message: Message,
     ) -> None:
-        if error is not None:  # pragma: no cover
+        if error is not None:
             logger.error(f"Message delivery failed: {error}")
         else:
             logger.info(

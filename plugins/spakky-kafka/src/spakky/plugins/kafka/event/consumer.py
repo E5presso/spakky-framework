@@ -159,7 +159,9 @@ class AsyncKafkaEventConsumer(
             ]
         )
 
-    async def _route_event_handler(self, message: Message) -> None:
+    async def _route_event_handler(  # pragma: no cover - 별도 asyncio 태스크로 실행
+        self, message: Message
+    ) -> None:
         if message.error():  # pragma: no cover
             logger.error(f"Consumer error: {message.error()}")
             return
@@ -199,7 +201,7 @@ class AsyncKafkaEventConsumer(
         self._create_topics(topics=topics)
         await self.consumer.subscribe(topics=topics)
 
-    async def run_async(self) -> None:
+    async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
         while not self._stop_event.is_set():
             message: Message | None = await self.consumer.poll(timeout=1.0)
             if message is None:

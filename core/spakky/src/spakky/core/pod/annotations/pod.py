@@ -242,8 +242,8 @@ class Pod(Annotation, IEquatable):
         """
         if self is value:  # pragma: no cover
             return True
-        if not isinstance(value, Pod):  # pragma: no cover
-            return False
+        if not isinstance(value, Pod):
+            return False  # pragma: no cover (Pod 메타데이터 비교에서 다른 타입과 비교되지 않음)
         return self.name == value.name
 
     @property

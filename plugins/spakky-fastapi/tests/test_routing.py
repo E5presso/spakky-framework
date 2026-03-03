@@ -1,10 +1,10 @@
 from http import HTTPStatus
 from uuid import UUID, uuid4
 
-from fastapi.testclient import TestClient
-from spakky.plugins.fastapi.error import BadRequest, InternalServerError
-
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from spakky.plugins.fastapi.error import BadRequest, InternalServerError
 
 
 def test_get(api: FastAPI) -> None:
@@ -13,6 +13,14 @@ def test_get(api: FastAPI) -> None:
         response = client.get("/dummy")
         assert response.status_code == HTTPStatus.OK
         assert response.text == "Hello World!"
+
+
+def test_get_named_endpoint_with_explicit_name_and_description(api: FastAPI) -> None:
+    """명시적 name과 description이 있는 엔드포인트가 정상 동작함을 검증한다."""
+    with TestClient(api) as client:
+        response = client.get("/dummy/named")
+        assert response.status_code == HTTPStatus.OK
+        assert response.text == "Named!"
 
 
 def test_post(api: FastAPI) -> None:

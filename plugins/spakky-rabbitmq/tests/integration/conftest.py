@@ -28,8 +28,11 @@ def setup_environment_variables_fixture(
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = str(25672)
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "test"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "test"
+    exchange_key = f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME"
     if request.param is not None:
-        environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME"] = request.param
+        environ[exchange_key] = request.param
+    else:
+        environ.pop(exchange_key, None)
     yield
 
 

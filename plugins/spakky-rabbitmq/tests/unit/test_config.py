@@ -116,19 +116,18 @@ def test_rabbitmq_config_connection_string_with_ssl(clean_env: None) -> None:
     )
 
 
-def test_rabbitmq_config_exchange_name_is_required(clean_env: None) -> None:
-    """RabbitMQConnectionConfig에 exchange_name 필드가 필수임을 검증한다."""
-    from pydantic import ValidationError
-
+def test_rabbitmq_config_exchange_name_is_optional(clean_env: None) -> None:
+    """RabbitMQConnectionConfig에 exchange_name 필드가 선택적임을 검증한다."""
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "guest"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "guest"
-    # EXCHANGE_NAME is not set - should raise ValidationError
+    # EXCHANGE_NAME is not set - should default to None
 
-    with pytest.raises(ValidationError):
-        RabbitMQConnectionConfig()
+    config = RabbitMQConnectionConfig()
+
+    assert config.exchange_name is None
 
 
 def test_rabbitmq_config_env_prefix_is_correct() -> None:

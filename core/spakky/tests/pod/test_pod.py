@@ -303,3 +303,34 @@ def test_pod_equality_with_different_type() -> None:
     assert pod != 123
     # Test equality with None
     assert pod != None  # noqa: E711
+
+
+def test_pod_equality_with_same_name_expect_true() -> None:
+    """같은 이름의 두 Pod이 동등함을 검증한다."""
+
+    @Pod(name="same_name")
+    class FirstClass: ...
+
+    @Pod(name="same_name")
+    class SecondClass: ...
+
+    first_pod = Pod.get(FirstClass)
+    second_pod = Pod.get(SecondClass)
+
+    # 같은 이름이면 동등 (line 247: return self.name == value.name)
+    assert first_pod == second_pod
+
+
+def test_pod_equality_with_different_name_expect_false() -> None:
+    """다른 이름의 두 Pod이 동등하지 않음을 검증한다."""
+
+    @Pod(name="first_name")
+    class FirstClass: ...
+
+    @Pod(name="second_name")
+    class SecondClass: ...
+
+    first_pod = Pod.get(FirstClass)
+    second_pod = Pod.get(SecondClass)
+
+    assert first_pod != second_pod

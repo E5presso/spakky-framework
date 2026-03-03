@@ -48,7 +48,7 @@ class RabbitMQConnectionConfig(BaseSettings):
     password: str
     """Password for RabbitMQ authentication."""
 
-    exchange_name: str | None
+    exchange_name: str | None = None
     """Optional exchange name for pub/sub message routing."""
 
     @property

@@ -34,14 +34,15 @@ import subprocess
 from pathlib import Path
 
 GITHUB = Path(".github")
-TOKEN_BUDGET = 900          # approx tokens (chars / 4) per harness file
-DIFF_LINE_BUDGET = 200      # max diff lines to embed (avoid token bloat)
+TOKEN_BUDGET = 900  # approx tokens (chars / 4) per harness file
+DIFF_LINE_BUDGET = 200  # max diff lines to embed (avoid token bloat)
 REPORT = GITHUB / "hooks" / "harness-review.md"
 
 structural_issues: list[str] = []
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
 
 def approx_tokens(p: Path) -> int:
     return len(p.read_text("utf-8")) // 4
@@ -53,14 +54,16 @@ def _find_base_ref() -> str:
     for ref in candidates:
         result = subprocess.run(
             ["git", "merge-base", "HEAD", ref],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     # Last resort: first commit reachable from HEAD that is NOT in current branch
     result = subprocess.run(
         ["git", "log", "--oneline", "--first-parent", "HEAD"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     lines = result.stdout.strip().splitlines()
     if len(lines) > 1:
@@ -76,7 +79,9 @@ def get_session_changed_files() -> list[Path]:
             return []
         out = subprocess.run(
             ["git", "diff", "--name-only", base],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout
         return [Path(f) for f in out.splitlines() if Path(f).exists()]
     except Exception:
@@ -93,11 +98,14 @@ def get_session_diff(files: list[Path]) -> str:
             return ""
         out = subprocess.run(
             ["git", "diff", base, "--", *[str(f) for f in files]],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         ).stdout
         lines = out.splitlines()
         if len(lines) > DIFF_LINE_BUDGET:
-            lines = lines[:DIFF_LINE_BUDGET] + [f"... [{len(lines) - DIFF_LINE_BUDGET} lines truncated]"]
+            lines = lines[:DIFF_LINE_BUDGET] + [
+                f"... [{len(lines) - DIFF_LINE_BUDGET} lines truncated]"
+            ]
         return "\n".join(lines)
     except Exception:
         return ""
@@ -143,7 +151,8 @@ def map_files_to_instructions(
     mapping: dict[Path, list[str]] = {}
     for f in files:
         applicable = [
-            name for glob, name, rx in compiled
+            name
+            for glob, name, rx in compiled
             if re.fullmatch(rx, str(f)) or re.fullmatch(rx, f.name)
         ]
         if applicable:
@@ -154,8 +163,16 @@ def map_files_to_instructions(
 # ── automated signals: definitive regex-detectable violations ─────────────────
 
 _AUTO_SIGNALS: list[tuple[re.Pattern[str], str, str]] = [
-    (re.compile(r"#\s*type:\s*ignore"), "python-code §Type Safety", "`# type: ignore` is forbidden"),
-    (re.compile(r"^class\s+Test\w*[:(]", re.MULTILINE), "test-writing §Structure", "class-based test (use functions)"),
+    (
+        re.compile(r"#\s*type:\s*ignore"),
+        "python-code §Type Safety",
+        "`# type: ignore` is forbidden",
+    ),
+    (
+        re.compile(r"^class\s+Test\w*[:(]", re.MULTILINE),
+        "test-writing §Structure",
+        "class-based test (use functions)",
+    ),
 ]
 
 
@@ -226,7 +243,6 @@ if PROMPT_DIR.exists() and SKILL_DIR.exists():
                 f"**prompts/{pname}.prompt.md** duplicates **skills/{pname}/SKILL.md**"
                 " — remove prompt, keep skill"
             )
-
 
 
 # ── 3. Build AI compliance evaluation scaffold ────────────────────────────────
@@ -309,7 +325,9 @@ if has_structural or has_py_changes or auto_signals or has_harness_changes:
         if auto_signals:
             out.append("### Automated Signals (definitive violations)\n\n")
             out += [f"- {s}\n" for s in auto_signals]
-            out.append("\n_These are certain violations — fix regardless of AI assessment._\n\n")
+            out.append(
+                "\n_These are certain violations — fix regardless of AI assessment._\n\n"
+            )
 
         # Embedded diff
         if diff_text:
@@ -375,5 +393,6 @@ if has_structural or has_py_changes or auto_signals or has_harness_changes:
         print(f"  [auto-signal] {s}")
 else:
     REPORT.unlink(missing_ok=True)
-    print("[harness-review] No issues found. No files with applicable harness rules changed.")
-
+    print(
+        "[harness-review] No issues found. No files with applicable harness rules changed."
+    )

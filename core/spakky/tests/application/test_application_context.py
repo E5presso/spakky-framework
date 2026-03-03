@@ -19,6 +19,7 @@ from spakky.core.pod.annotations.pod import Pod, PodInstantiationFailedError
 from spakky.core.pod.annotations.primary import Primary
 from spakky.core.pod.annotations.qualifier import Qualifier
 from spakky.core.pod.interfaces.container import CannotRegisterNonPodObjectError
+from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
 
 def test_application_context_register_expect_success() -> None:
@@ -1355,3 +1356,53 @@ def test_application_context_get_qualified_multiple_candidates_none_match_expect
 
     with pytest.raises(UnexpectedDependencyTypeInjectedError):
         context.start()
+
+
+def test_application_context_custom_post_processor_expect_applied() -> None:
+    """사용자 정의 IPostProcessor가 start() 시 등록되어 적용됨을 검증한다."""
+    processed_pods: list[object] = []
+
+    @Pod()
+    class CustomPostProcessor(IPostProcessor):
+        def post_process(self, pod: object) -> object:
+            processed_pods.append(pod)
+            return pod
+
+    @Pod()
+    class SamplePod:
+        pass
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(CustomPostProcessor)
+    context.add(SamplePod)
+    context.start()
+
+    # CustomPostProcessor가 SamplePod에 적용됨
+    assert any(isinstance(p, SamplePod) for p in processed_pods)
+
+
+def test_application_context_same_base_type_pods_expect_both_indexed() -> None:
+    """같은 base_type을 구현한 두 Pod이 모두 type_cache에 인덱싱됨을 검증한다."""
+    from abc import ABC
+
+    class ISharedInterface(ABC):
+        pass
+
+    @Pod()
+    class FirstImpl(ISharedInterface):
+        pass
+
+    @Pod()
+    class SecondImpl(ISharedInterface):
+        pass
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(FirstImpl)
+    context.add(
+        SecondImpl
+    )  # 두 번째 등록 시 type_cache에 타입이 이미 있음 (481->483 커버)
+    context.start()
+
+    # 두 Pod 모두 조회 가능
+    pods = list(context.find(lambda p: ISharedInterface in p.base_types))
+    assert len(pods) == 2

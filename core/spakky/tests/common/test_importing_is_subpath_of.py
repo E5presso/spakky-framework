@@ -57,3 +57,29 @@ def test_is_subpath_of_question_mark_wildcard_expect_true() -> None:
         )
         is True
     )
+
+
+def test_is_subpath_of_multiple_patterns_partial_match_expect_true() -> None:
+    """여러 패턴 중 하나만 매치되면 True를 반환함을 검증한다."""
+    assert (
+        is_subpath_of(
+            "tests.dummy.dummy_package.module_a", {"other.package", "tests.dummy"}
+        )
+        is True
+    )
+
+
+def test_is_subpath_of_similar_but_not_prefix_expect_false() -> None:
+    """유사하지만 prefix가 아닌 패턴에 대해 False를 반환함을 검증한다."""
+    assert (
+        is_subpath_of("tests.dummy.dummy_package.module_a", {"tests.dummy.other"})
+        is False
+    )
+
+
+def test_is_subpath_of_wildcard_no_match_no_prefix_match_expect_false() -> None:
+    """와일드카드 패턴이 fnmatch 실패하고 prefix match도 실패하면 False를 반환한다.
+
+    이 테스트는 fnmatch가 False를 반환하는 브랜치(113->116)를 확실히 커버한다.
+    """
+    assert is_subpath_of("bar.baz", {"foo.*"}) is False

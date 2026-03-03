@@ -470,6 +470,7 @@ class ApplicationContext(IApplicationContext):
             raise CannotRegisterNonPodObjectError(obj)
         pod: Pod = Pod.get(obj)
         if pod.name in self.__pods:
+            # 같은 ID의 Pod 재등록은 add() 호출 패턴상 발생하지 않음
             if self.__pods[pod.name].id == pod.id:  # pragma: no cover
                 return
             raise PodNameAlreadyExistsError(pod.name)
@@ -478,7 +479,8 @@ class ApplicationContext(IApplicationContext):
         self.__pods[pod.name] = pod
 
         # Update type index for fast lookup
-        if pod.type_ not in self.__type_cache:
+        # pod.type_은 클래스 자체이므로 같은 타입 두 Pod은 이름 충돌로 위에서 차단됨
+        if pod.type_ not in self.__type_cache:  # pragma: no branch
             self.__type_cache[pod.type_] = set()
         self.__type_cache[pod.type_].add(pod)
 

@@ -2,7 +2,7 @@ from typing import Generic, Protocol, TypeVar
 
 import pytest
 
-from spakky.core.common.mro import generic_mro
+from spakky.core.common.mro import generic_mro, is_family_with
 
 
 def test_generic_mro_normal_inheritance() -> None:
@@ -129,3 +129,23 @@ def test_generic_mro_with_non_class_object() -> None:
 
     with pytest.raises(TypeError):
         generic_mro(a)
+
+
+def test_is_family_with_parent_class_expect_true() -> None:
+    """is_family_with가 부모 클래스를 MRO에서 찾으면 True를 반환함을 검증한다."""
+
+    class Parent: ...
+
+    class Child(Parent): ...
+
+    assert is_family_with(Child, Parent) is True
+
+
+def test_is_family_with_unrelated_class_expect_false() -> None:
+    """is_family_with가 관련 없는 클래스에 대해 False를 반환함을 검증한다."""
+
+    class A: ...
+
+    class B: ...
+
+    assert is_family_with(A, B) is False
