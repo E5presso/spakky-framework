@@ -53,13 +53,15 @@ cd <package-dir> && uv run pytest
 
 **사유 작성 규칙:**
 ```python
-# ✅ 올바른 예: 구체적 사유 명시
-if message is None:  # pragma: no cover - Kafka 브로커가 null 메시지 반환 시 방어 코드
-    return
+# ✅ 올바른 예: def 라인 끝에 직접 pragma 추가
+async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
+    while not self._stop_event.is_set():
+        ...
 
-# ❌ 금지: 사유 없음
-if message is None:  # pragma: no cover
-    return
+# ❌ 금지: 주석 라인에 별도로 작성 (coverage.py가 인식 못함)
+# pragma: no cover - 사유
+async def run_async(self) -> None:
+    ...
 ```
 
 > **원칙**: 테스트 코드가 프로덕션 코드보다 복잡하거나, mock이 실제 동작을 검증하지 못하면 → no cover 처리
