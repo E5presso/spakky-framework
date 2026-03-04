@@ -1,21 +1,10 @@
 # Spakky Framework - AI Coding Instructions
 
 > **컨텍스트 로딩 (필요 시)**:
-> - 코딩 스타일/네이밍 참조 → [CONTRIBUTING.md](../CONTRIBUTING.md)
-> - 아키텍처/이벤트 시스템 작업 → [ARCHITECTURE.md](../ARCHITECTURE.md)
-> - API 사용 예제 필요 → [README.md](../README.md)
-
-## 커스터마이징 구조
-
-| Layer | 위치 | 역할 |
-|-------|------|------|
-| Custom Agent | `.github/agents/spakky-dev.agent.md` | 도구 제한, 행동 규칙 |
-| Hooks | `.github/hooks/hooks.json` | 세션 수명주기 자동 실행 (`sessionStart`: uv sync / `sessionEnd`: harness-review 알림) |
-| Skills | `.github/skills/*/SKILL.md` | 재사용 가능한 에이전트 스킬 |
-| File Instructions | `.github/instructions/*.instructions.md` | 파일 패턴별 자동 적용 규칙 |
-| Prompt Files | `.github/prompts/*.prompt.md` | 반복 작업 워크플로우 |
-
-하네스 변경 시 → [harness-update.prompt.md](./prompts/harness-update.prompt.md) 참조
+> - 코딩 스타일/네이밍 → [CONTRIBUTING.md](../CONTRIBUTING.md)
+> - 아키텍처/이벤트 시스템 → [ARCHITECTURE.md](../ARCHITECTURE.md)
+> - API 사용 예제 → [README.md](../README.md)
+> - 하네스 변경 → [harness-update.prompt.md](./prompts/harness-update.prompt.md)
 
 ## Overview
 
@@ -24,46 +13,7 @@ Spring-inspired DI/IoC framework for Python 3.11+ with AOP and plugin system. Us
 - **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`
 - **Plugins** (`plugins/`): `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`
 
-**자동 적용 인스트럭션 (파일 패턴별)**:
-
-| 파일 패턴 | 인스트럭션 | 내용 |
-|-----------|-----------|------|
-| `**/*` | `behavioral-guidelines` | 행동 원칙 7가지 |
-| `**/*` | `tool-usage` | 도구 사용 규칙, Git 안전 규칙 |
-| `**/*.py` | `api-reference`, `python-code` | API 레퍼런스, 타입/네이밍 표준 |
-| `**/tests/**/*.py` | `test-writing` | 테스트 구조, 네이밍, TDD |
-| `**/error.py` | `error-classes` | 에러 클래스 계층 구조 |
-| `**/domain/**/*.py` | `domain` | DDD 빌딩 블록 패턴 |
-| `**/aspects/**/*.py` | `aspect` | AOP Aspect 구조 패턴 |
-| `plugins/**/*.py` | `plugin` | 플러그인 개발 규칙 |
-| `**/pyproject.toml` | `monorepo` | 모노레포 도구 실행 원칙 |
-
-## Monorepo Rules
-
-```bash
-uv sync --all-packages --all-extras  # Root: install all
-uv sync --all-extras                 # Sub-package: install only that package
-```
-
-## AI Agent Rules
-
-### Tool Usage
-
-1. **Prefer integrated tools** (`execute/runTests`, `get_errors`, `read_file`, etc.) over terminal commands
-2. **Always prefix** Python commands with `uv run` (venv is NOT activated in PTY)
-3. **NEVER use multiline quoted commands** in terminal (heredocs, `python -c "..."`) — PTY will hang
-4. **Use file tools** (`create_file`, `replace_string_in_file`) instead of `cat`/`echo` redirections
-5. **Verify terminal commands** by executing them before documenting
-
-### MCP Write Operations
-
-**CRITICAL**: Before invoking any MCP tool that performs write operations (e.g., `mcp_github_create_pull_request`, `mcp_github_add_issue_comment`, `mcp_github_create_or_update_file`), you MUST:
-
-1. **Output the full content** in markdown format for user review
-2. **Wait for explicit approval** before executing the tool call
-3. This applies to: PR creation, issue creation/updates, file creation/updates, comments, reviews, etc.
-
-### Documentation Maintenance Rules
+## Documentation Maintenance Rules
 
 **This section MUST be preserved in all future versions.**
 

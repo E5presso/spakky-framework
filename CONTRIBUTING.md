@@ -209,6 +209,52 @@ class MyService:
 - **Protocols (Interfaces)**: Must start with `I` (e.g., `IIntegrationEventPublisher`, `IContainer`).
 - **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`, `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent`).
 - **Error Classes**: Must end with `Error` (e.g., `CannotDeterminePodTypeError`).
+- **Async Classes**: Must start with `Async` (e.g., `AsyncTransactionalAspect`, `AsyncRabbitMQEventPublisher`).
+
+#### Inherited Type Suffix
+
+Concrete classes must include the **inherited class/interface role as a suffix**.
+
+| Inherited Type | Suffix | Example |
+|---------------|--------|--------|
+| `IAsyncAspect` | `~Aspect` | `AsyncTransactionalAspect` |
+| `AbstractAsyncBackgroundService` | `~BackgroundService` | `AsyncOutboxRelayBackgroundService` |
+| `IPostProcessor` | `~PostProcessor` | `RegisterRoutesPostProcessor` |
+| `AbstractAsyncTransaction` | `~Transaction` | `AsyncTransaction` |
+
+**Exception — Domain Models**: Domain models are exempt from the suffix rule. Use ubiquitous language (domain terminology) as-is.
+
+```python
+# ✅ Domain models: no suffix, use domain terms
+class User(AbstractAggregateRoot[UUID]): ...
+class OrderPlaced(AbstractDomainEvent): ...  # past participle
+class Money(AbstractValueObject): ...
+
+# ✅ Infrastructure/Framework: suffix required
+class AsyncTransactionalAspect(IAsyncAspect): ...
+class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService): ...
+```
+
+#### Domain Event Naming
+
+- **DomainEvent**: Use **past participle only**. Do NOT append `DomainEvent` suffix.
+  - `OrderPlaced` ✅ / `OrderPlacedDomainEvent` ❌
+  - `UserCreated` ✅ / `UserCreatedEvent` ❌
+- **IntegrationEvent**: Append `IntegrationEvent` suffix.
+  - `OrderConfirmedIntegrationEvent` ✅
+
+#### Generic Type Narrowing
+
+When inheriting a Generic interface with concrete type parameters, **replace the Generic name with the narrowed type name**.
+
+```python
+# ✅ Generic narrowed → replace with type name
+class UserRepository(IAsyncGenericRepository[User, UUID]): ...
+class OrderRepository(IGenericRepository[Order, UUID]): ...
+
+# ❌ Keeping Generic name
+class UserGenericRepository(IAsyncGenericRepository[User, UUID]): ...
+```
 
 ### Magic Numbers
 
