@@ -1,8 +1,9 @@
 # test automation
 build/reports/**
 
-# harness meta-review generated report (runtime artifact — not for commit)
+# harness meta-review generated report and session marker (runtime artifacts — not for commit)
 .github/hooks/harness-review.md
+.github/hooks/.session-start
 
 ### Node ###
 # Logs
