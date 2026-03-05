@@ -18,7 +18,7 @@ from typing import Any
 
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
-from spakky.core.aop.pointcut import AfterRaising, AfterReturning
+from spakky.core.aop.pointcut import After, AfterReturning
 from spakky.core.pod.annotations.order import Order
 from spakky.data.aspects.transactional import Transactional
 from spakky.data.persistency.aggregate_collector import AggregateCollector
@@ -82,18 +82,15 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
             for event in aggregate.events:
                 await self._publisher.publish(event)
             aggregate.clear_events()
-        self._collector.clear()
 
-    @AfterRaising(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
-    async def after_raising_async(self, error: Exception) -> None:
-        """Clean up collector after UseCase failure.
+    @After(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
+    async def after_async(self) -> None:
+        """Clean up collector after async UseCase completion.
 
-        This method is called when a @Transactional method raises an exception.
-        It only clears the collector without publishing events, as the transaction
-        will be rolled back.
+        This method is called after a @Transactional async method completes, regardless of outcome.
+        It ensures the collector is cleared to prevent event leakage across transactions.
 
-        Args:
-            error: The exception that was raised.
+        Note: This runs after both successful and failed executions, ensuring cleanup in all cases.
         """
         self._collector.clear()
 
@@ -151,17 +148,14 @@ class TransactionalEventPublishingAspect(IAspect):
             for event in aggregate.events:
                 self._publisher.publish(event)
             aggregate.clear_events()
-        self._collector.clear()
 
-    @AfterRaising(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
-    def after_raising(self, error: Exception) -> None:
-        """Clean up collector after UseCase failure.
+    @After(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
+    def after(self) -> None:
+        """Clean up collector after UseCase completion.
 
-        This method is called when a @Transactional method raises an exception.
-        It only clears the collector without publishing events, as the transaction
-        will be rolled back.
+        This method is called after a @Transactional method completes, regardless of outcome.
+        It ensures the collector is cleared to prevent event leakage across transactions.
 
-        Args:
-            error: The exception that was raised.
+        Note: This runs after both successful and failed executions, ensuring cleanup in all cases.
         """
         self._collector.clear()
