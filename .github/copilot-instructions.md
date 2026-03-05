@@ -4,7 +4,6 @@
 > - 코딩 스타일/네이밍 → [CONTRIBUTING.md](../CONTRIBUTING.md)
 > - 아키텍처/이벤트 시스템 → [ARCHITECTURE.md](../ARCHITECTURE.md)
 > - API 사용 예제 → [README.md](../README.md)
-> - 하네스 변경 → [harness-update.prompt.md](./prompts/harness-update.prompt.md)
 
 ## Overview
 

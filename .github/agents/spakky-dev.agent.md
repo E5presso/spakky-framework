@@ -32,7 +32,7 @@ tools: [vscode/extensions, vscode/askQuestions, vscode/getProjectSetupInfo, vsco
 
 ## 자동 적용 인스트럭션
 
-파일 패턴에 따라 `.github/instructions/*.instructions.md`가 자동 적용됩니다. 상세는 [harness-update.prompt.md](../prompts/harness-update.prompt.md) 참조.
+파일 패턴에 따라 `.github/instructions/*.instructions.md`가 자동 적용됩니다.
 
 ## Known Issue Marker
 
