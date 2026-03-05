@@ -19,33 +19,21 @@ applyTo: "**/*"
 
 **문제를 해결하는 최소한의 코드. 추측성 코드 금지.**
 
-**KISS vs DRY 균형:**
-- **Concept Count를 줄여라** — 함수, 헬퍼, 추상화 레이어를 최소화
-- 헬퍼가 **단일 호출자만** 있으면 → 인라인하라
-- DRY를 위해 불가피하게 헬퍼를 만들어야 하면 → 그 복잡한 작업이 정말 필요한지 재고하라
-
-**금지 사항:**
-- 요청받지 않은 기능 금지
-- 일회용 코드에 추상화 금지
-- 요청받지 않은 "유연성"이나 "설정 가능성" 금지
-- 불가능한 시나리오에 대한 에러 핸들링 금지
+- **Concept Count를 줄여라** — 함수, 헬퍼, 추상화 레이어 최소화
+- 헬퍼가 **단일 호출자만** 있으면 → 인라인
+- 요청받지 않은 기능, 추상화, "유연성" 금지
 - 200줄을 50줄로 줄일 수 있으면 다시 작성
 
-> 자문: "시니어 엔지니어가 이게 과하게 복잡하다고 할까?" → 그렇다면 단순화
+> 자문: "시니어 엔지니어가 과하게 복잡하다고 할까?" → 단순화
 
 ## 3. Surgical Changes (외과적 변경)
 
 **필요한 것만 건드려라. 자신의 실수만 정리하라.**
 
-기존 코드 편집 시:
 - 인접 코드, 주석, 포맷팅을 "개선"하지 말라
 - 망가지지 않은 것을 리팩터링하지 말라
-- 기존 스타일에 맞춰라 (본인 스타일과 다르더라도)
-- 관련 없는 데드 코드를 발견하면 언급만 하고, 삭제하지 말라
-
-내 변경으로 인해 orphan이 생기면:
-- **내 변경으로** 미사용된 import/변수/함수는 제거
-- 기존에 있던 데드 코드는 요청받지 않으면 건드리지 말라
+- 기존 스타일에 맞춰라
+- **내 변경으로** 미사용된 import/변수는 제거, 기존 데드 코드는 건드리지 말라
 
 > 테스트: **모든 변경 라인은 사용자 요청에 직접 추적 가능해야 함**
 
@@ -78,23 +66,7 @@ applyTo: "**/*"
 - 타입 체커가 잡지 못하는 런타임 불변성은 `assert`로 검증
 - **조용히 잘못된 결과를 내는 것보다 크래시가 낫다**
 
-```python
-# BAD: Silent fallback
-def get_scope(scope_name: str) -> Scope:
-    if scope_name == "singleton":
-        return Scope.SINGLETON
-    return Scope.PROTOTYPE  # 알 수 없는 값에 기본값?
-
-# GOOD: Fail loudly
-def get_scope(scope_name: str) -> Scope:
-    match scope_name:
-        case "singleton":
-            return Scope.SINGLETON
-        case "prototype":
-            return Scope.PROTOTYPE
-        case _:
-            raise AssertionError(f"Unknown scope: {scope_name!r}")
-```
+> 예: `match`문에서 모든 케이스 처리 후 `case _: raise AssertionError(f"Unknown: {value!r}")`
 
 ## 7. Verify Before Documenting (검증 후 문서화)
 

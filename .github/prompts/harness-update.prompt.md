@@ -28,8 +28,10 @@ tools:
 
 | 파일 | 패턴 | 내용 |
 |------|------|------|
+| `behavioral-guidelines` | `**/*` | 행동 원칙 7가지 |
+| `tool-usage` | `**/*` | 도구 사용, Git 안전 규칙 |
 | `api-reference` | `**/*.py` | Spakky API import 경로 |
-| `python-code` | `**/*.py` | 타입 안전, 네이밍, 로깅 |
+| `python-code` | `**/*.py` | 타입 안전, 네이밍 |
 | `test-writing` | `**/tests/**/*.py` | 테스트 구조, TDD |
 | `error-classes` | `**/error.py` | 에러 클래스 계층 구조 |
 | `domain` | `**/domain/**/*.py` | DDD 빌딩 블록 |
@@ -41,8 +43,8 @@ tools:
 
 | 이벤트 | 동작 |
 |--------|------|
-| `sessionStart` | `uv sync --all-packages` 자동 실행 |
-| `sessionEnd` | `harness-review.py` 실행 → 토큰/중복/변경 파일 분석 |
+| `sessionStart` | `uv sync` + `harness-review.py start` (세션 마커 생성) |
+| `sessionEnd` | `harness-review.py --scope session` (세션 내 변경만 분석) |
 
 ### 스킬
 

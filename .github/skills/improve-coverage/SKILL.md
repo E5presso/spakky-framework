@@ -42,29 +42,15 @@ cd <package-dir> && uv run pytest
 
 ### `pragma: no cover` 사용 기준
 
-**Mock 가득 찬 테스트보다 no cover가 낫습니다.** 아래 경우에만 `# pragma: no cover` 사용:
+**Mock 가득 찬 테스트보다 no cover가 낫습니다.** 아래 경우에만 사용:
+- 외부 시스템 콜백 (Kafka/RabbitMQ)
+- 비동기 런타임 루프 (별도 스레드 실행)
+- 방어적 분기 (정상 흐름 불가)
+- 에러 로깅 (`except Exception`)
 
-| 케이스 | 사유 예시 |
-|--------|----------|
-| 외부 시스템 콜백 | Kafka 메시지 배달 콜백 — 실제 브로커 없이 테스트 불가 |
-| 비동기 런타임 루프 | `run_async` 메서드 — 통합 테스트에서 별도 스레드로 실행되어 커버리지 수집 불가 |
-| 방어적 분기 | `if topic is None` — 정상 흐름에서 발생 불가하지만 타입 안전성 위해 존재 |
-| 에러 로깅 | `except Exception` 블록 — 의도적으로 발생시키기 어려운 예외 |
+**사유 작성**: def 라인 끝에 `# pragma: no cover - 사유` 형태로 작성.
 
-**사유 작성 규칙:**
-```python
-# ✅ 올바른 예: def 라인 끝에 직접 pragma 추가
-async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
-    while not self._stop_event.is_set():
-        ...
-
-# ❌ 금지: 주석 라인에 별도로 작성 (coverage.py가 인식 못함)
-# pragma: no cover - 사유
-async def run_async(self) -> None:
-    ...
-```
-
-> **원칙**: 테스트 코드가 프로덕션 코드보다 복잡하거나, mock이 실제 동작을 검증하지 못하면 → no cover 처리
+> **원칙**: 테스트 코드가 프로덕션보다 복잡하거나 mock이 무의미하면 → no cover
 
 ## Step 4: 파일별 100% 달성
 
@@ -78,10 +64,7 @@ async def run_async(self) -> None:
 
 ## Step 5: 테스트 스타일 규칙
 
-- **함수 기반만** 허용 (`class TestXxx` 금지)
-- 네이밍: `test_<대상함수>_<시나리오>_expect_<기대결과>`
-- 각 테스트 함수에 **docstring 필수**
-- `scope="function"` fixture 기본
+테스트 규칙은 `test-writing.instructions.md`가 자동 적용됩니다 (함수 기반, 네이밍 규칙, docstring 등).
 
 ### Parametrized Fixture 주의사항
 

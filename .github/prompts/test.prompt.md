@@ -25,22 +25,8 @@ tools:
 
 ## Step 2: 테스트 작성
 
-### 절대 규칙
-
-- **함수 기반만** 허용. `class TestXxx` 절대 금지.
-- 네이밍: `test_<대상함수>_<시나리오>_expect_<기대결과>`
-- 각 테스트 함수에 **docstring 필수**.
-- 반환 타입은 `-> None`으로 명시.
-
-### 예시
-
-```python
-def test_registry_register_entities_expect_all_registered(
-    registry: ModelRegistry,
-) -> None:
-    """TableRegistrationPostProcessor가 @Table 어노테이션 클래스를 자동 등록하는지 검증한다."""
-    assert registry.is_registered(User)
-```
+테스트 규칙은 `test-writing.instructions.md`가 자동 적용됩니다.
+핵심: 함수 기반, `test_<함수>_<시나리오>_expect_<결과>` 네이밍, docstring 필수.
 
 ## Step 3: 실행
 

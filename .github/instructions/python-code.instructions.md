@@ -24,15 +24,7 @@ applyTo: "**/*.py"
 
 ## Unreachable States
 
-불가능한 상태는 명시적으로 실패 (silent fallback 금지):
-
-```python
-from typing import assert_never
-match event_type:
-    case EventType.DOMAIN: handle_domain()
-    case EventType.INTEGRATION: handle_integration()
-    case _ as unreachable: assert_never(unreachable)
-```
+불가능한 상태는 `assert_never()` 또는 `raise AssertionError()`로 명시적 실패 (silent fallback 금지).
 
 ## Import 규칙
 
@@ -58,18 +50,7 @@ match event_type:
 | `IPostProcessor` | `~PostProcessor` | `RegisterRoutesPostProcessor` |
 | `AbstractAsyncTransaction` | `~Transaction` | `AsyncTransaction` |
 
-**예외 — 도메인 모델**: 도메인 모델은 접미사 규칙을 적용받지 않습니다. 고유 도메인 용어(유비쿼터스 언어)를 그대로 사용합니다.
-
-```python
-# ✅ 도메인 모델: 접미사 없음, 고유 용어 사용
-class User(AbstractAggregateRoot[UUID]): ...
-class OrderPlaced(AbstractDomainEvent): ...  # 과거분사형
-class Money(AbstractValueObject): ...
-
-# ✅ 인프라/프레임워크: 접미사 표기
-class AsyncTransactionalAspect(IAsyncAspect): ...
-class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService): ...
-```
+**예외 — 도메인 모델**: 도메인 모델은 고유 용어(유비쿼터스 언어)를 사용. `User`, `OrderPlaced`, `Money` 등 접미사 없음.
 
 ### 도메인 이벤트 네이밍
 
@@ -81,16 +62,9 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService): ...
 
 ### Generic 타입 네로잉
 
-Generic 인터페이스를 상속할 때, 타입 파라미터가 구체화되면 Generic 이름을 **해당 타입 명으로 대체**합니다.
-
-```python
-# ✅ Generic이 구체화됨 → 타입명으로 대체
-class UserRepository(IAsyncGenericRepository[User, UUID]): ...
-class OrderRepository(IGenericRepository[Order, UUID]): ...
-
-# ❌ Generic 이름을 그대로 유지
-class UserGenericRepository(IAsyncGenericRepository[User, UUID]): ...
-```
+Generic 인터페이스 상속 시, 타입 파라미터가 구체화되면 해당 타입명으로 대체:
+- `UserRepository(IAsyncGenericRepository[User, UUID])` ✅
+- `UserGenericRepository(...)` ❌
 
 ## 매직 넘버 금지
 

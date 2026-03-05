@@ -36,18 +36,7 @@ tools:
 
 ### Scope 규칙
 
-| Scope | 패키지 |
-|-------|--------|
-| `core` | `core/spakky` |
-| `domain` | `core/spakky-domain` |
-| `data` | `core/spakky-data` |
-| `event` | `core/spakky-event` |
-| `fastapi` | `plugins/spakky-fastapi` |
-| `kafka` | `plugins/spakky-kafka` |
-| `rabbitmq` | `plugins/spakky-rabbitmq` |
-| `security` | `plugins/spakky-security` |
-| `sqlalchemy` | `plugins/spakky-sqlalchemy` |
-| `typer` | `plugins/spakky-typer` |
+Scope 테이블은 [commit.prompt.md](commit.prompt.md)를 참조하세요.
 
 ## Step 4: 사용자 승인
 
