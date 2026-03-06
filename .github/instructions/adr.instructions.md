@@ -4,6 +4,13 @@ applyTo: "docs/adr/**/*.md"
 
 # ADR 작성 규칙
 
+## 역할 분리
+
+- **ADR**: 의사결정의 맥락, 대안, 근거를 **기록**으로 보존합니다
+- **ARCHITECTURE.md**: 항상 **최신 목표 아키텍처**를 반영합니다
+- ADR이 Accepted되면 ARCHITECTURE.md를 해당 설계로 업데이트합니다
+- ADR이 Superseded되면 ARCHITECTURE.md를 새 ADR 기준으로 갱신합니다
+
 ## 구조
 
 모든 ADR은 `docs/adr/TEMPLATE.md`의 구조를 따릅니다.

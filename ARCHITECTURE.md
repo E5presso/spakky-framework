@@ -336,12 +336,12 @@ spakky-data = "spakky.data.main:initialize"
 |---------|-------------------|
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
-| `spakky-event` | Event Mediator/Publisher (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
+| `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor` |
 | `spakky-typer` | `TyperCLIPostProcessor` |
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
-| `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/Publisher (sync+async), `RabbitMQPostProcessor` |
-| `spakky-kafka` | `KafkaConnectionConfig`, Consumer/Publisher (sync+async), `KafkaPostProcessor` |
+| `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventBus` (sync+async), `RabbitMQPostProcessor` |
+| `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventBus` (sync+async), `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
 
 ---
@@ -512,27 +512,59 @@ AbstractAsyncTransaction (async context manager)
 
 ## 이벤트 레이어 (spakky-event)
 
-### ISP 기반 이벤트 아키텍처
+### 이벤트 인터페이스 구조
 
-인터페이스 분리 원칙(ISP)에 따라 역할이 분리되어 있습니다.
+> 설계 배경 및 대안 분석은 [ADR-0001](docs/adr/0001-event-system-redesign.md)을 참조하세요.
+
+3가지 축으로 구성됩니다:
 
 ```
-Consumer (등록)              Dispatcher (전달)           Publisher (발행 API)
-├─ IDomainEventConsumer     ├─ IDomainEventDispatcher   ├─ IDomainEventPublisher
-├─ IAsyncDomainEvent...     ├─ IAsyncDomainEvent...     ├─ IAsyncDomainEvent...
-├─ IIntegrationEvent...     ├─ IIntegrationEvent...     ├─ IIntegrationEvent...
-└─ IAsyncIntegration...     └─ IAsyncIntegration...     └─ IAsyncIntegration...
+Publisher (단일 진입점)         Dispatcher (인프로세스 전달)     EventBus (외부 전송)
+├─ IEventPublisher             ├─ IEventDispatcher             ├─ IEventBus
+└─ IAsyncEventPublisher        └─ IAsyncEventDispatcher        └─ IAsyncEventBus
+
+Consumer (핸들러 등록)
+├─ IEventConsumer
+└─ IAsyncEventConsumer
 ```
 
+- **Publisher** (`IEventPublisher`): `publish(event: AbstractEvent)` — 타입 기반 라우팅
+  - `AbstractDomainEvent` → `EventMediator` (인프로세스 dispatch)
+  - `AbstractIntegrationEvent` → `IEventBus` (외부 전송)
+- **EventBus** (`IEventBus`): `send(event: AbstractIntegrationEvent)` — 외부 메시지 브로커 전송
+- **Dispatcher**: `dispatch(event)` — 등록된 핸들러에 인프로세스 전달
 - **Consumer**: `register(event_type, handler)` — 이벤트 타입과 콜백 연결
-- **Dispatcher**: `dispatch(event)` — 등록된 핸들러에 이벤트 전달
-- **Publisher**: `publish(event)` — 외부에서 사용하는 발행 API
+
+### EventPublisher 타입 기반 라우팅
+
+`EventPublisher`는 이벤트 타입에 따라 경로를 결정하는 라우터입니다:
+
+```python
+@Pod()
+class AsyncEventPublisher(IAsyncEventPublisher):
+    _mediator: IAsyncEventDispatcher
+    _bus: IAsyncEventBus | None  # Transport plugin 미설치 시 None
+
+    async def publish(self, event: AbstractEvent) -> None:
+        match event:
+            case AbstractDomainEvent():
+                await self._mediator.dispatch(event)
+            case AbstractIntegrationEvent():
+                if self._bus is None:
+                    raise EventBusNotConfiguredError(...)
+                await self._bus.send(event)
+            case _:
+                raise AssertionError(f"Unknown event type: {type(event)!r}")
+```
+
+- **Transport 미설치 시**: `EventBusNotConfiguredError` — Fail Loudly 원칙, silent fallback 금지
+- **Transport 설치 시**: Kafka/RabbitMQ 플러그인이 `IAsyncEventBus`를 제공
 
 ### Mediator 패턴
 
-`DomainEventMediator`가 Consumer + Dispatcher를 통합합니다.
+`EventMediator`가 Consumer + Dispatcher를 통합합니다.
 
-- `_handlers: dict[type[Event], list[callback]]`
+- `_handlers: dict[type[AbstractEvent], list[callback]]`
 - **Resilient dispatch**: 핸들러 예외가 발생해도 나머지 핸들러는 계속 실행됩니다.
 
 ### `@EventHandler`와 `@on_event`
@@ -570,7 +602,7 @@ class UserEventHandler:
 │   │   ├─ @AfterReturning: 이벤트 발행
 │   │   │   ├─ collector.all() → Aggregate 목록
 │   │   │   ├─ aggregate.events → 이벤트 추출
-│   │   │   ├─ publisher.publish(event) → Handler 호출
+│   │   │   ├─ publisher.publish(event) → 타입 기반 라우팅
 │   │   │   └─ aggregate.clear_events()
 │   │   │
 │   │   └─ @AfterRaising: collector.clear() (정리만)
@@ -582,6 +614,52 @@ class UserEventHandler:
 
 **Handler 실패 = 전체 롤백 = 데이터 일관성 보장**
 
+### DomainEvent vs IntegrationEvent
+
+| 특성 | DomainEvent | IntegrationEvent |
+|------|------------|-----------------|
+| **범위** | BC 내부 | BC 외부 (마이크로서비스 간) |
+| **발생** | Aggregate에서 | EventHandler에서 명시적 생성 |
+| **전달** | `EventMediator` (인프로세스) | `IEventBus` → Message Broker |
+| **패키지** | `spakky-event` | `spakky-event` + 트랜스포트 플러그인 |
+| **Outbox** | 불필요 | `IEventBus` Decorator로 opt-in |
+
+### Domain → Integration Event 변환 흐름
+
+핸들러가 DomainEvent를 받아 IntegrationEvent를 **명시적으로** 생성합니다:
+
+```python
+@EventHandler()
+class OrderEventHandler:
+    _publisher: IAsyncEventPublisher  # DI 주입
+
+    @on_event(OrderCreatedEvent)
+    async def handle(self, event: OrderCreatedEvent) -> None:
+        # 인프로세스 처리
+        await self._notification_service.send(event.order_id)
+
+        # 외부 전송이 필요한 경우 → IntegrationEvent 생성
+        await self._publisher.publish(
+            OrderCreatedIntegrationEvent(order_id=event.order_id)
+        )
+        # → EventPublisher → IEventBus.send() → Kafka/RabbitMQ
+```
+
+### Outbox 패턴 (opt-in)
+
+`IEventBus`의 **Decorator 패턴**으로 Outbox를 삽입합니다:
+
+```
+[Outbox 미설치]  IEventBus = KafkaEventBus   → 직접 전송
+[Outbox 설치]    IEventBus = OutboxEventBus(delegate=KafkaEventBus) → Decorator
+                   └─ outbox_table.insert() (같은 트랜잭션)
+                   └─ OutboxRelay (background) → KafkaEventBus.send()
+```
+
+- **Outbox 미설치**: 기존과 동일한 직접 전송
+- **Outbox 설치**: 사용자 코드 변경 없이 인프라 설정만 교체
+- **비-RDB 지원**: `DynamoDBOutboxEventBus`, `MongoDBOutboxEventBus` 등 각 persistence별 구현 가능
+
 ### 시퀀스 다이어그램
 
 ```mermaid
@@ -592,8 +670,10 @@ sequenceDiagram
     participant R as Repository
     participant C as AggregateCollector<br/>(CONTEXT)
     participant A as Aggregate
-    participant P as DomainEventPublisher
+    participant P as EventPublisher<br/>(타입 라우터)
+    participant M as EventMediator
     participant H as EventHandler
+    participant B as EventBus<br/>(Kafka/RabbitMQ)
     participant DB as Database
 
     Note over S,DB: @Transactional 메서드 호출
@@ -621,10 +701,15 @@ sequenceDiagram
 
     loop for each aggregate
         EA->>A: aggregate.events
-        A-->>EA: [CreatedEvent]
+        A-->>EA: [DomainEvent]
         loop for each event
-            EA->>P: publish(event)
-            P->>H: on_event handler
+            EA->>P: publish(DomainEvent)
+            P->>M: dispatch(DomainEvent)
+            M->>H: @on_event handler
+            opt Handler creates IntegrationEvent
+                H->>P: publish(IntegrationEvent)
+                P->>B: send(IntegrationEvent)
+            end
         end
         EA->>A: clear_events()
     end
@@ -635,15 +720,6 @@ sequenceDiagram
     TA->>DB: COMMIT
     deactivate TA
 ```
-
-### DomainEvent vs IntegrationEvent
-
-| 특성 | DomainEvent | IntegrationEvent |
-|------|------------|-----------------|
-| **범위** | BC 내부 | BC 외부 (마이크로서비스 간) |
-| **발생** | Aggregate에서 | EventHandler에서 변환 |
-| **전달** | In-memory Publisher | Message Broker (Kafka, RabbitMQ) |
-| **패키지** | spakky-event | spakky-event + 트랜스포트 플러그인 |
 
 ---
 
@@ -662,8 +738,8 @@ sequenceDiagram
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-rabbitmq` | ConnectionConfig, Consumer, Publisher, PostProcessor | `aio-pika`, `pika`, `pydantic` |
-| `spakky-kafka` | ConnectionConfig, Consumer, Publisher, PostProcessor | `confluent-kafka`, `pydantic` |
+| `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventBus`, PostProcessor | `aio-pika`, `pika`, `pydantic` |
+| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventBus`, PostProcessor | `confluent-kafka`, `pydantic` |
 
 ### 인프라 플러그인
 
@@ -699,13 +775,19 @@ sequenceDiagram
 
 ### 이벤트 아키텍처
 
+> 상세 배경 및 대안 분석은 [ADR-0001](docs/adr/0001-event-system-redesign.md)을 참조하세요.
+
 | 결정 | 선택 | 이유 |
 |------|------|------|
 | UoW 패턴 | ❌ 불필요 | SQLAlchemy Session이 이미 UoW 역할 수행 |
 | 이벤트 수집 | `AggregateCollector` + Aspect | 자동화, 사용자 코드 무침투 |
 | Collector가 이벤트를 아나? | ❌ 모름 | Aggregate만 추적, SRP + 단방향 의존 |
 | Aspect 순서 | `@Order`로 제어 | Transaction(0) → Event(1) |
-| ISP 분리 | Consumer / Dispatcher / Publisher | 인터페이스 분리 원칙 준수 |
+| 발행 진입점 | `IEventPublisher` 단일 | 타입 기반 라우팅으로 Domain/Integration 통합 |
+| Domain Event 전달 | `EventMediator` 인프로세스 | Spring `@EventListener`, eShop `MediatR` 패턴 |
+| Integration Event 전송 | `IEventBus` 추상화 | eShop `IEventBus` 패턴, Transport 교체 용이 |
+| Outbox 패턴 | `IEventBus` Decorator, opt-in | Spring Modulith/eShop 패턴, 강제 아닌 선택 |
+| Transport 미설치 시 | `EventBusNotConfiguredError` | Fail Loudly — silent fallback 금지 |
 | Handler 실패 | 전체 롤백 | 트랜잭션 내 실행 → 데이터 일관성 보장 |
 
 ### 플러그인 시스템
