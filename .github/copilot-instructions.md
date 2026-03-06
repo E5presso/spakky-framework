@@ -3,6 +3,7 @@
 > **컨텍스트 로딩 (필요 시)**:
 > - 코딩 스타일/네이밍 → [CONTRIBUTING.md](../CONTRIBUTING.md)
 > - 아키텍처/이벤트 시스템 → [ARCHITECTURE.md](../ARCHITECTURE.md)
+> - 아키텍처 의사결정 → [docs/adr/](../docs/adr/README.md)
 > - API 사용 예제 → [README.md](../README.md)
 
 ## Overview

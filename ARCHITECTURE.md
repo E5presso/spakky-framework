@@ -17,6 +17,7 @@
 - [이벤트 레이어 (spakky-event)](#이벤트-레이어-spakky-event)
 - [플러그인 구현체](#플러그인-구현체)
 - [설계 결정](#설계-결정)
+- [Architecture Decision Records](#architecture-decision-records)
 - [참고 자료](#참고-자료)
 
 ---
@@ -713,6 +714,16 @@ sequenceDiagram
 |------|------|------|
 | 플러그인 발견 | `importlib.metadata.entry_points` | 표준 Python 패키징 메커니즘 활용 |
 | 초기화 규약 | `initialize(app: SpakkyApplication)` | 단순한 함수 호출 인터페이스 |
+
+---
+
+## Architecture Decision Records
+
+주요 아키텍처 의사결정은 [docs/adr/](docs/adr/README.md)에 ADR(Architecture Decision Record)로 관리합니다.
+
+| # | 제목 | 상태 | 날짜 |
+|---|------|------|------|
+| [ADR-0001](docs/adr/0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus, Outbox Seam | Proposed | 2026-03-06 |
 
 ---
 

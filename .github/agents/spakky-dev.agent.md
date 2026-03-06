@@ -14,6 +14,7 @@ tools: [vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vsco
 |------|------------|
 | 코딩 스타일/네이밍 | [CONTRIBUTING.md](../../CONTRIBUTING.md) |
 | 아키텍처/이벤트 | [ARCHITECTURE.md](../../ARCHITECTURE.md) |
+| 아키텍처 의사결정 | [docs/adr/](../../docs/adr/README.md) |
 | API 사용 예제 | [README.md](../../README.md) |
 
 **문서 규칙이 기억이나 추측보다 항상 우선합니다.**
