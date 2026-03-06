@@ -61,7 +61,6 @@ description: Harness update workflow. Auto-loads when agent modifies instruction
 | `aspect`                | `**/aspects/**/*.py` |
 | `plugin`                | `plugins/**/*.py`    |
 | `monorepo`              | `**/pyproject.toml`  |
-| `adr`                   | `docs/adr/**/*.md`   |
 
 ---
 
