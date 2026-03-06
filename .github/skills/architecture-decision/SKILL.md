@@ -32,13 +32,14 @@ description: 아키텍처 의사결정 시 기존 ADR을 참조하고 새 ADR을
 
 ## Step 4: ADR 작성
 
-의사결정이 확정되면 `docs/adr/TEMPLATE.md`를 기반으로 새 ADR을 작성합니다:
+의사결정이 확정되면:
 
-1. `docs/adr/README.md`에서 다음 번호 확인
-2. `docs/adr/NNNN-<slug>.md` 파일 생성 (TEMPLATE.md 구조 사용)
-3. `docs/adr/README.md`의 목록에 항목 추가
-4. `ARCHITECTURE.md`의 ADR 테이블에 항목 추가
-5. 기존 ADR을 대체하는 경우 이전 ADR 상태를 `Superseded`로 변경
+1. `docs/adr/TEMPLATE.md`를 읽어 ADR 구조를 확인합니다
+2. `docs/adr/README.md`에서 다음 번호 확인
+3. `docs/adr/NNNN-<slug>.md` 파일 생성 (TEMPLATE.md 구조 사용)
+4. `docs/adr/README.md`의 목록에 항목 추가
+5. `ARCHITECTURE.md`의 ADR 테이블에 항목 추가
+6. 기존 ADR을 대체하는 경우 이전 ADR 상태를 `Superseded`로 변경
 
 ### ADR 필수 섹션
 
