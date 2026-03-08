@@ -2,6 +2,7 @@ import importlib
 from asyncio import TimeoutError, wait_for
 from datetime import UTC, datetime
 from logging import getLogger
+from typing import cast
 
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
@@ -35,7 +36,7 @@ def _import_string(dotted_path: str) -> type[AbstractIntegrationEvent]:
     """
     module_path, _, class_name = dotted_path.rpartition(".")
     module = importlib.import_module(module_path)
-    return getattr(module, class_name)  # type: ignore[return-value]
+    return cast(type[AbstractIntegrationEvent], getattr(module, class_name))
 
 
 @Pod()

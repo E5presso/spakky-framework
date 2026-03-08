@@ -1,7 +1,7 @@
 """Unit tests for AsyncOutboxEventBus."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID
+from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID, uuid4
 
 import pytest
 from spakky.core.common.mutability import immutable
@@ -44,8 +44,6 @@ async def test_send_expect_outbox_message_added_to_session(
     mock_session: MagicMock,
 ) -> None:
     """send()가 OutboxMessageTable 행을 세션에 추가하는지 검증한다."""
-    from uuid import uuid4
-
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
 
     await bus.send(event)
@@ -60,8 +58,6 @@ async def test_send_expect_event_name_set_correctly(
     mock_session: MagicMock,
 ) -> None:
     """send()가 event_name 필드를 event.event_name으로 설정하는지 검증한다."""
-    from uuid import uuid4
-
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
 
     await bus.send(event)
@@ -75,8 +71,6 @@ async def test_send_expect_event_type_is_fqcn(
     mock_session: MagicMock,
 ) -> None:
     """send()가 event_type 필드를 완전한 클래스 경로(FQCN)로 설정하는지 검증한다."""
-    from uuid import uuid4
-
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
     expected_fqcn = (
         f"{OrderConfirmedIntegrationEvent.__module__}"
@@ -94,8 +88,6 @@ async def test_send_expect_payload_is_json_bytes(
     mock_session: MagicMock,
 ) -> None:
     """send()가 payload 필드를 JSON bytes로 직렬화하는지 검증한다."""
-    from uuid import uuid4
-
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
 
     await bus.send(event)
@@ -110,8 +102,6 @@ async def test_send_expect_session_flush_called(
     mock_session: MagicMock,
 ) -> None:
     """send()가 세션 flush를 호출하는지 검증한다."""
-    from uuid import uuid4
-
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
 
     await bus.send(event)

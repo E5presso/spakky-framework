@@ -1,8 +1,9 @@
 """Unit tests for OutboxRelay._import_string helper and relay batch logic."""
 
-from datetime import UTC, datetime
+import os
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from pydantic import TypeAdapter
@@ -80,9 +81,7 @@ def _make_outbox_message(
     return msg
 
 
-async def test_relay_batch_expect_published_at_set_on_success(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_relay_batch_expect_published_at_set_on_success() -> None:
     """_relay_batch()가 전송 성공 시 published_at을 현재 시간으로 설정하는지 검증한다."""
     transport = MagicMock()
     transport.send = AsyncMock()
@@ -110,9 +109,7 @@ async def test_relay_batch_expect_published_at_set_on_success(
     assert message.published_at is not None
 
 
-async def test_relay_batch_expect_retry_count_incremented_on_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_relay_batch_expect_retry_count_incremented_on_failure() -> None:
     """_relay_batch()가 전송 실패 시 retry_count를 1 증가시키는지 검증한다."""
     transport = MagicMock()
     transport.send = AsyncMock(side_effect=RuntimeError("broker down"))
@@ -141,9 +138,7 @@ async def test_relay_batch_expect_retry_count_incremented_on_failure(
     assert message.published_at is None
 
 
-async def test_relay_batch_expect_session_commit_always_called(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_relay_batch_expect_session_commit_always_called() -> None:
     """_relay_batch()가 전송 실패에도 session.commit()을 호출하는지 검증한다."""
     transport = MagicMock()
     transport.send = AsyncMock(side_effect=RuntimeError("broker down"))
@@ -170,9 +165,7 @@ async def test_relay_batch_expect_session_commit_always_called(
     mock_session.commit.assert_called_once()
 
 
-async def test_relay_initialize_async_expect_create_all_called(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_relay_initialize_async_expect_create_all_called() -> None:
     """auto_create_table=True일 때 initialize_async()가 테이블을 생성하는지 검증한다."""
     transport = MagicMock()
     relay = _make_relay(transport)
@@ -189,12 +182,8 @@ async def test_relay_initialize_async_expect_create_all_called(
     mock_conn.run_sync.assert_called_once()
 
 
-async def test_relay_initialize_async_expect_no_create_when_disabled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_relay_initialize_async_expect_no_create_when_disabled() -> None:
     """auto_create_table=False일 때 initialize_async()가 테이블을 생성하지 않는지 검증한다."""
-    import os
-
     os.environ["SPAKKY_OUTBOX__AUTO_CREATE_TABLE"] = "false"
     try:
         config = OutboxConfig()
