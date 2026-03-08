@@ -147,6 +147,10 @@
 				"approve": true,
 				"matchCommandLine": true,
 			},
+			"/^python \\.github/hooks/harness-review\\.py 2>&1$/": {
+				"approve": true,
+				"matchCommandLine": true,
+			},
 		},
 	},
 	"extensions": {
