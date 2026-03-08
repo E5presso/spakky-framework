@@ -340,8 +340,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor` |
 | `spakky-typer` | `TyperCLIPostProcessor` |
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
-| `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventBus` (sync+async), `RabbitMQPostProcessor` |
-| `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventBus` (sync+async), `KafkaPostProcessor` |
+| `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
+| `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
 
 ---

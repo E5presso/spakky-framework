@@ -219,6 +219,8 @@ class Order(AbstractAggregateRoot[UUID]):
 
 ## 이벤트 시스템 (spakky-event)
 
+> 설계 배경 및 대안 분석은 [ADR-0001](adr/0001-event-system-redesign.md)을 참조하세요.
+
 ### DomainEvent
 
 하나의 바운디드 컨텍스트 내에서 발생하는 도메인 상태 변경. `AbstractDomainEvent`를 상속합니다.
@@ -245,14 +247,60 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
     total_amount: Decimal
 ```
 
+### 동사 규칙 (Verb Convention)
+
+이벤트 시스템 전체에서 동사를 다음과 같이 구분합니다:
+
+| 동사 | 의미 | 사용 레이어 |
+|------|------|------------|
+| `publish` | 이벤트를 시스템에 발행 (호출자가 경로를 모름) | EventPublisher |
+| `send` | Integration Event를 외부로 전송 | EventBus, EventTransport |
+| `dispatch` | 등록된 핸들러에 인프로세스 전달 | Dispatcher, Mediator |
+| `register` | 이벤트 타입에 핸들러 콜백 등록 | Consumer |
+
+### 역할 이름 매핑
+
+ADR-0001 채택에 따라 이벤트 인터페이스가 재설계됩니다. 아래는 현재 코드와 ADR 이후의 매핑입니다:
+
+| 역할 | 현재 코드 | ADR-0001 이후 | 설명 |
+|------|-----------|--------------|------|
+| 단일 발행 진입점 | `IDomainEventPublisher` / `IIntegrationEventPublisher` (4벌) | `IEventPublisher` / `IAsyncEventPublisher` | 타입 기반 라우팅 |
+| 인프로세스 라우팅 | `IDomainEventDispatcher` (2벌) | `IEventDispatcher` / `IAsyncEventDispatcher` | 핸들러에 이벤트 전달 |
+| 핸들러 등록 | `IDomainEventConsumer` / `IIntegrationEventConsumer` (4벌) | `IEventConsumer` / `IAsyncEventConsumer` | 콜백 등록 |
+| 외부 전송 진입점 | `IIntegrationEventPublisher` (직접 구현) | `IEventBus` / `IAsyncEventBus` | Outbox seam |
+| 실제 메시지 전송 | (없음 — Publisher가 직접 전송) | `IEventTransport` / `IAsyncEventTransport` | Kafka/RabbitMQ |
+| Consumer+Dispatcher 통합 | `DomainEventMediator` | `EventMediator` | 인프로세스 구현체 |
+| Kafka 구현 | `KafkaEventPublisher` | `KafkaEventTransport` | Transport 구현체 |
+| RabbitMQ 구현 | `RabbitMQEventPublisher` | `RabbitMQEventTransport` | Transport 구현체 |
+| Bus→Transport 위임 | (없음) | `TransportEventBus` | 기본 EventBus |
+
+> **참고**: `IIntegrationEventDispatcher` / `IAsyncIntegrationEventDispatcher`는 현재 코드에 선언만 존재하고 구현체가 없습니다. ADR-0001 Phase 1에서 삭제 예정입니다.
+
+### Consumer vs EventHandler
+
+혼동하기 쉬운 두 개념을 구분합니다:
+
+- **Consumer** — 핸들러를 **등록**하는 인터페이스 (`register(event_type, callback)`)
+- **EventHandler** — 이벤트를 **처리**하는 클래스 스테레오타입 (`@EventHandler` + `@on_event`)
+
+`EventHandlerRegistrationPostProcessor`가 `@EventHandler` Pod를 스캔하여 `@on_event` 메서드를 Consumer에 자동 등록합니다.
+
 ### EventPublisher
 
-이벤트를 발행하는 인터페이스:
+이벤트를 발행하는 단일 진입점 인터페이스입니다 (ADR-0001 이후):
 
-- `IDomainEventPublisher` — 동기 도메인 이벤트 발행
-- `IAsyncDomainEventPublisher` — 비동기 도메인 이벤트 발행
-- `IIntegrationEventPublisher` — 동기 통합 이벤트 발행
-- `IAsyncIntegrationEventPublisher` — 비동기 통합 이벤트 발행
+- `IEventPublisher` / `IAsyncEventPublisher` — `publish(event: AbstractEvent)` → 타입 기반 라우팅
+  - `AbstractDomainEvent` → `EventMediator` (인프로세스 dispatch)
+  - `AbstractIntegrationEvent` → `IEventBus` (외부 전송)
+
+현재 코드의 4벌 인터페이스는 위 "역할 이름 매핑" 테이블을 참조하세요.
+
+### EventBus / EventTransport
+
+Integration Event 전송을 2단 인터페이스로 분리합니다 (ADR-0001 이후):
+
+- **EventBus** (`IEventBus`) — Integration Event 발행 진입점. Outbox seam 역할
+- **EventTransport** (`IEventTransport`) — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현)
 
 ---
 

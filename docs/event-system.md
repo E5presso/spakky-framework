@@ -207,48 +207,31 @@ class UserEventHandler:
 
 ---
 
-## 인터페이스 분리 (ISP)
+## 인터페이스 구조
 
-이벤트 시스템은 인터페이스 분리 원칙(ISP)을 따릅니다:
+> **ADR-0001 채택에 따라 이벤트 인터페이스가 재설계 예정입니다.**
+> 현재 코드 ↔ ADR 이후의 전체 매핑은 [glossary — 역할 이름 매핑](glossary.md#역할-이름-매핑)을 참조하세요.
+> 동사 사용 규칙은 [glossary — 동사 규칙](glossary.md#동사-규칙-verb-convention)을 참조하세요.
 
-### Publisher 인터페이스
+### 현재 코드 (ADR-0001 구현 전)
 
-```python
-# 동기
-class IDomainEventPublisher(ABC):
-    def publish(self, event: AbstractDomainEvent) -> None: ...
+| 인터페이스 | 동사 | 역할 |
+|-----------|------|------|
+| `IDomainEventPublisher` / `IAsyncDomainEventPublisher` | `publish` | 도메인 이벤트 발행 |
+| `IIntegrationEventPublisher` / `IAsyncIntegrationEventPublisher` | `publish` | 통합 이벤트 발행 |
+| `IDomainEventConsumer` / `IAsyncDomainEventConsumer` | `register` | 핸들러 콜백 등록 |
+| `IDomainEventDispatcher` / `IAsyncDomainEventDispatcher` | `dispatch` | 인프로세스 핸들러 전달 |
+| `IIntegrationEventDispatcher` / `IAsyncIntegrationEventDispatcher` | `dispatch` | 선언만 존재, 구현체 없음 (Phase 1에서 삭제 예정) |
 
-# 비동기
-class IAsyncDomainEventPublisher(ABC):
-    async def publish(self, event: AbstractDomainEvent) -> None: ...
+### ADR-0001 이후
 
-# 통합 이벤트
-class IIntegrationEventPublisher(ABC):
-    def publish(self, event: AbstractIntegrationEvent) -> None: ...
-
-class IAsyncIntegrationEventPublisher(ABC):
-    async def publish(self, event: AbstractIntegrationEvent) -> None: ...
-```
-
-### Consumer 인터페이스
-
-```python
-class IDomainEventConsumer(ABC):
-    def register(self, event: type[T], handler: Callable[[T], None]) -> None: ...
-
-class IAsyncDomainEventConsumer(ABC):
-    def register(self, event: type[T], handler: Callable[[T], Awaitable[None]]) -> None: ...
-```
-
-### Dispatcher 인터페이스
-
-```python
-class IDomainEventDispatcher(ABC):
-    def dispatch(self, event: AbstractDomainEvent) -> None: ...
-
-class IAsyncDomainEventDispatcher(ABC):
-    async def dispatch(self, event: AbstractDomainEvent) -> None: ...
-```
+| 인터페이스 | 동사 | 역할 |
+|-----------|------|------|
+| `IEventPublisher` / `IAsyncEventPublisher` | `publish` | 단일 발행 진입점 (타입 기반 라우팅) |
+| `IEventBus` / `IAsyncEventBus` | `send` | Integration Event 발행 진입점 (Outbox seam) |
+| `IEventTransport` / `IAsyncEventTransport` | `send` | 실제 메시지 브로커 전송 |
+| `IEventConsumer` / `IAsyncEventConsumer` | `register` | 핸들러 콜백 등록 (통합) |
+| `IEventDispatcher` / `IAsyncEventDispatcher` | `dispatch` | 인프로세스 핸들러 전달 (통합) |
 
 ---
 
@@ -264,13 +247,16 @@ class IAsyncDomainEventDispatcher(ABC):
 
 ### 패턴: DomainEvent → IntegrationEvent 변환
 
-내부 도메인 이벤트를 외부에 발행할 때 변환합니다:
+내부 도메인 이벤트를 외부에 발행할 때 변환합니다.
+핸들러가 `IAsyncEventPublisher`를 통해 IntegrationEvent를 **명시적으로** 생성합니다:
 
 ```python
 @EventHandler()
 class OrderEventBridge:
     """도메인 이벤트를 통합 이벤트로 변환"""
 
+    # ADR-0001 이후: IAsyncEventPublisher (단일 진입점)
+    # 현재 코드: IAsyncIntegrationEventPublisher
     def __init__(self, publisher: IAsyncIntegrationEventPublisher) -> None:
         self.publisher = publisher
 
@@ -329,9 +315,11 @@ async def place_order(self, command: PlaceOrderCommand) -> Order:
 
 ### RabbitMQ (spakky-rabbitmq)
 
-```python
-from spakky.plugins.rabbitmq import RabbitMQPublisher, RabbitMQConsumer
+> 현재 코드: `RabbitMQEventPublisher` / `RabbitMQEventConsumer`
+> ADR-0001 이후: `RabbitMQEventTransport` / `RabbitMQEventConsumer`
+> (용어 매핑은 [glossary](glossary.md#역할-이름-매핑)를 참조하세요)
 
+```python
 @Pod()
 class OrderService:
     def __init__(self, publisher: IAsyncIntegrationEventPublisher) -> None:
@@ -345,11 +333,9 @@ class OrderService:
 
 ### Kafka (spakky-kafka)
 
-```python
-from spakky.plugins.kafka import KafkaPublisher, KafkaConsumer
-
-# Kafka를 통한 이벤트 발행/구독
-```
+> 현재 코드: `KafkaEventPublisher` / `KafkaEventConsumer`
+> ADR-0001 이후: `KafkaEventTransport` / `KafkaEventConsumer`
+> (용어 매핑은 [glossary](glossary.md#역할-이름-매핑)를 참조하세요)
 
 ---
 

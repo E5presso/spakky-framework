@@ -138,7 +138,7 @@ Domain과 동일하게 `IntegrationEventMediator`를 core에 추가하고, 12개
 | `IDomainEventPublisher` / `IAsyncDomainEventPublisher`             | `IEventPublisher`                 |
 | `IIntegrationEventPublisher` / `IAsyncIntegrationEventPublisher`   | `IEventBus`                       |
 | `IDomainEventDispatcher` / `IAsyncDomainEventDispatcher`           | `IEventDispatcher`                |
-| `IIntegrationEventDispatcher` / `IAsyncIntegrationEventDispatcher` | 삭제 (core 구현체 없었음)         |
+| `IIntegrationEventDispatcher` / `IAsyncIntegrationEventDispatcher` | 삭제 (선언만 존재, 구현체 없음) |
 | `IDomainEventConsumer` / `IAsyncDomainEventConsumer`               | `IEventConsumer`                  |
 | `IIntegrationEventConsumer` / `IAsyncIntegrationEventConsumer`     | Transport PostProcessor 직접 관리 |
 
