@@ -14,13 +14,14 @@ against applicable harness rules.
 
 Responsibilities of this script (automated, deterministic):
 1. Token budget per harness file — flags files exceeding 900-token budget
-2. Duplicate prompt↔skill pairs — same workflow defined in both directories
-3. AI compliance evaluation scaffold for source code — for changed Python files:
+2. Token efficiency metrics — always-loaded total, per-file tok/rule density
+3. Duplicate prompt↔skill pairs — same workflow defined in both directories
+4. AI compliance evaluation scaffold for source code — for changed Python files:
     - Maps each file to its applicable instruction files (via applyTo: globs)
     - Embeds a condensed git diff for those files
     - Lists automated signals (definitive rule violations detectable by regex)
     - Writes a structured evaluation prompt for the AI skill to assess compliance
-4. AI evaluation scaffold for harness-file changes:
+5. AI evaluation scaffold for harness-file changes:
     - Lists which harness files changed this session
     - Embeds their diffs for AI review
     - Writes a quality evaluation prompt (clarity, token efficiency, coverage, structure)
@@ -310,6 +311,86 @@ def check_duplicate_prompts() -> None:
             )
 
 
+# ── 2b. Token efficiency metrics ──────────────────────────────────────────────
+
+# Patterns that are always loaded for most tasks (broad applyTo globs)
+_ALWAYS_LOADED_GLOBS = {"**/*", "**/*.py"}
+
+
+def _count_rules(path: Path) -> int:
+    """Count enforceable rules in a harness file (heuristic: list items with keywords)."""
+    text = path.read_text("utf-8")
+    # Count lines that look like rules: "- **...**", "| ... |", or bullet points with
+    # imperative verbs / forbidden patterns
+    rule_patterns = [
+        re.compile(r"^-\s+\*\*", re.MULTILINE),  # bold bullet items
+        re.compile(r"^\|\s*`[^`]+`\s*\|", re.MULTILINE),  # table rows with code
+        re.compile(
+            r"^-\s+(?:금지|반드시|사용|절대|forbidden)", re.MULTILINE | re.IGNORECASE
+        ),
+    ]
+    lines = set()
+    for pat in rule_patterns:
+        for m in pat.finditer(text):
+            lines.add(text[: m.start()].count("\n"))
+    return max(len(lines), 1)  # at least 1 to avoid division by zero
+
+
+def build_token_efficiency_section() -> str:
+    """Build the Token Efficiency section with per-file metrics."""
+    rows: list[str] = []
+    always_loaded_total = 0
+
+    instructions = parse_instruction_files()
+    _ = {name: (glob, path) for glob, name, path in instructions}
+
+    # Also include copilot-instructions.md (always loaded)
+    copilot_inst = GITHUB / "copilot-instructions.md"
+    all_files: list[tuple[str, str, Path]] = []
+    if copilot_inst.exists():
+        all_files.append(("**/*", "copilot-instructions", copilot_inst))
+    all_files.extend(instructions)
+
+    for glob, name, path in all_files:
+        tokens = approx_tokens(path)
+        rules = _count_rules(path)
+        density = tokens / rules
+        is_always = glob in _ALWAYS_LOADED_GLOBS
+        if is_always:
+            always_loaded_total += tokens
+
+        # Grade
+        if density <= 30:
+            grade = "✅"
+        elif density <= 60:
+            grade = "⚠️"
+        else:
+            grade = "❌"
+
+        load = "always" if is_always else "on-demand"
+        rows.append(
+            f"| `{name}` | {tokens} | {rules} | {density:.0f} | {grade} | {load} |"
+        )
+
+    # Always-loaded total grade
+    if always_loaded_total <= 3000:
+        total_grade = "✅"
+    elif always_loaded_total <= 5000:
+        total_grade = "⚠️"
+    else:
+        total_grade = "❌"
+
+    out: list[str] = ["## Token Efficiency\n\n"]
+    out.append("| File | Tokens | Rules | Tok/Rule | Grade | Load |\n")
+    out.append("|------|--------|-------|----------|-------|------|\n")
+    out.extend(f"{r}\n" for r in rows)
+    out.append(
+        f"\n**Always-loaded total**: ~{always_loaded_total} tokens {total_grade}\n"
+    )
+    out.append("(threshold: ≤3000 ✅, ≤5000 ⚠️, >5000 ❌)\n\n")
+    return "".join(out)
+
+
 # ── 3. Build AI compliance evaluation scaffold ────────────────────────────────
 
 
@@ -363,8 +444,15 @@ def run_review(scope: Scope) -> None:
     harness_diff = get_session_diff(harness_changed, scope)
 
     # 5. Write report
+    token_efficiency_section = build_token_efficiency_section()
     _write_report(
-        scope, file_rule_map, auto_signals, diff_text, harness_changed, harness_diff
+        scope,
+        file_rule_map,
+        auto_signals,
+        diff_text,
+        harness_changed,
+        harness_diff,
+        token_efficiency_section,
     )
 
 
@@ -375,6 +463,7 @@ def _write_report(
     diff_text: str,
     harness_changed: list[Path],
     harness_diff: str,
+    token_efficiency_section: str,
 ) -> None:
     """Write the harness review report."""
     has_structural = bool(structural_issues)
@@ -391,6 +480,9 @@ def _write_report(
             out.append("## Structural Issues\n\n")
             out += [f"- {i}\n" for i in structural_issues]
             out.append("\n_Resolve these to keep context-window usage efficient._\n\n")
+
+        # Token efficiency metrics (always included)
+        out.append(token_efficiency_section)
 
         # AI compliance evaluation scaffold for source code
         if has_py_changes or auto_signals:

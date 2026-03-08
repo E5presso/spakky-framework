@@ -63,11 +63,40 @@ python .github/hooks/harness-review.py --scope session
   - **Structural soundness**: 파일 유형별 포맷(instructions/skill/hook/prompt)이 올바른가?
 2. PARTIAL/FAIL 파일은 **즉시 개선** 적용
 
-## Step 4: 수정 사항 커밋
+## Step 4: 토큰 효율 평가
+
+리포트의 "Token Efficiency" 섹션을 확인하세요 (harness-review.py가 자동 생성).
+
+평가 기준:
+
+| 지표 | 기준 |
+|------|------|
+| 개별 파일 tok/rule 밀도 | ≤30 ✅, ≤60 ⚠️, >60 ❌ |
+| Always-loaded 총량 | ≤3000 ✅, ≤5000 ⚠️, >5000 ❌ |
+
+❌/⚠️ 파일은 압축·분리를 제안하세요.
+
+## Step 5: 하네스 원칙 준수 평가
+
+변경된 하네스 파일이 있다면, `harness-update` 스킬의 원칙과 대조합니다.
+
+**핵심 원칙:**
+- [ ] 지도를 줘라, 매뉴얼 말고 — 거대 단일 문서가 아닌 분산 cross-link 구조인가?
+- [ ] 단순화 = 성능 — 불필요한 규칙이 추가되지 않았는가?
+- [ ] 제약이 신뢰를 만든다 — 솔루션 공간 확장이 아닌 제약으로 품질 확보하는가?
+
+**컨텍스트 패턴:**
+- [ ] Context Rot 대비 — 최소 고신호 토큰만 로드, 나머지 on-demand인가?
+- [ ] Goldilocks Zone — 너무 구체적(깨지기 쉬움) ↔ 너무 추상적(추측 유발) 사이인가?
+- [ ] 중복 금지 — 동일 규칙이 두 곳 이상에 기록되지 않았는가?
+
+위반 항목은 즉시 수정하거나 개선안을 제시하세요.
+
+## Step 6: 수정 사항 커밋
 
 수정 사항이 있으면 `report_progress` 도구로 커밋하세요.
 
-## Step 5: 전체 등급 보고
+## Step 7: 전체 등급 보고
 
 ```
 ## 세션 하네스 메타 리뷰 결과
@@ -80,7 +109,7 @@ python .github/hooks/harness-review.py --scope session
 **조치 완료**: 수정된 항목 요약
 ```
 
-## Step 6: (선택) 세션 종료
+## Step 8: (선택) 세션 종료
 
 Step 0에서 세션 마커를 생성했다면, 세션 종료 시 정리하세요:
 

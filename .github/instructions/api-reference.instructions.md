@@ -39,8 +39,11 @@ applyTo: "**/*.py"
 | Decorator / Class | Import Path | Purpose |
 |---|---|---|
 | `@EventHandler` / `@on_event` | `spakky.event.stereotype.event_handler` | Event handler stereotype and route |
-| `IDomainEventPublisher` / `IAsyncDomainEventPublisher` | `spakky.event.event_publisher` | Domain event publisher interfaces |
-| `IIntegrationEventPublisher` / `IAsyncIntegrationEventPublisher` | `spakky.event.event_publisher` | Integration event publisher interfaces |
+| `IEventPublisher` / `IAsyncEventPublisher` | `spakky.event.event_publisher` | Event publish entry point (type-based routing) |
+| `IEventBus` / `IAsyncEventBus` | `spakky.event.event_publisher` | Integration event send entry point (Outbox seam) |
+| `IEventTransport` / `IAsyncEventTransport` | `spakky.event.event_publisher` | Actual message broker transport |
+| `IEventConsumer` / `IAsyncEventConsumer` | `spakky.event.event_consumer` | Handler callback registration |
+| `IEventDispatcher` / `IAsyncEventDispatcher` | `spakky.event.event_dispatcher` | In-process handler dispatch |
 
 ## Plugin API
 
