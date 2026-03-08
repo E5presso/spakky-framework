@@ -143,14 +143,10 @@
 		],
 		"ruff.importStrategy": "fromEnvironment",
 		"chat.tools.terminal.autoApprove": {
-			"/^python \\.github/hooks/harness-review\\.py --scope branch$/": {
+			"/^python \\.github\\/hooks\\/harness-review\\.py/": {
 				"approve": true,
 				"matchCommandLine": true,
-			},
-			"/^python \\.github/hooks/harness-review\\.py 2>&1$/": {
-				"approve": true,
-				"matchCommandLine": true,
-			},
+			}
 		},
 	},
 	"extensions": {
