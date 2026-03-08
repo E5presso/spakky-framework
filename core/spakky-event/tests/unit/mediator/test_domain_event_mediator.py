@@ -1,12 +1,12 @@
-"""Tests for domain event mediator implementations."""
+"""Tests for event mediator implementations."""
 
 import pytest
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent
 
 from spakky.event.mediator.domain_event_mediator import (
-    AsyncDomainEventMediator,
-    DomainEventMediator,
+    AsyncEventMediator,
+    EventMediator,
 )
 
 
@@ -33,7 +33,7 @@ def test_sync_mediator_register_and_dispatch_single_handler() -> None:
     def handler(event: UserCreatedEvent) -> None:
         received_events.append(event)
 
-    mediator = DomainEventMediator()
+    mediator = EventMediator()
     mediator.register(UserCreatedEvent, handler)
 
     event = UserCreatedEvent(user_id="123", username="alice")
@@ -55,7 +55,7 @@ def test_sync_mediator_register_multiple_handlers_for_same_event() -> None:
     def handler2(event: UserCreatedEvent) -> None:
         handler2_events.append(event)
 
-    mediator = DomainEventMediator()
+    mediator = EventMediator()
     mediator.register(UserCreatedEvent, handler1)
     mediator.register(UserCreatedEvent, handler2)
 
@@ -79,7 +79,7 @@ def test_sync_mediator_dispatch_to_correct_event_type_only() -> None:
     def order_handler(event: OrderPlacedEvent) -> None:
         order_events.append(event)
 
-    mediator = DomainEventMediator()
+    mediator = EventMediator()
     mediator.register(UserCreatedEvent, user_handler)
     mediator.register(OrderPlacedEvent, order_handler)
 
@@ -92,7 +92,7 @@ def test_sync_mediator_dispatch_to_correct_event_type_only() -> None:
 
 def test_sync_mediator_dispatch_without_handlers_does_not_error() -> None:
     """등록된 핸들러가 없을 때 dispatch해도 예외가 발생하지 않음을 검증한다."""
-    mediator = DomainEventMediator()
+    mediator = EventMediator()
 
     event = UserCreatedEvent(user_id="999", username="dave")
     # Should not raise
@@ -113,7 +113,7 @@ def test_sync_mediator_handler_error_does_not_stop_other_handlers() -> None:
         nonlocal handler2_called
         handler2_called = True
 
-    mediator = DomainEventMediator()
+    mediator = EventMediator()
     mediator.register(UserCreatedEvent, failing_handler)
     mediator.register(UserCreatedEvent, success_handler)
 
@@ -133,7 +133,7 @@ async def test_async_mediator_register_and_dispatch_single_handler() -> None:
     async def handler(event: UserCreatedEvent) -> None:
         received_events.append(event)
 
-    mediator = AsyncDomainEventMediator()
+    mediator = AsyncEventMediator()
     mediator.register(UserCreatedEvent, handler)
 
     event = UserCreatedEvent(user_id="async-123", username="async-alice")
@@ -155,7 +155,7 @@ async def test_async_mediator_register_multiple_handlers_for_same_event() -> Non
     async def handler2(event: UserCreatedEvent) -> None:
         handler2_events.append(event)
 
-    mediator = AsyncDomainEventMediator()
+    mediator = AsyncEventMediator()
     mediator.register(UserCreatedEvent, handler1)
     mediator.register(UserCreatedEvent, handler2)
 
@@ -178,7 +178,7 @@ async def test_async_mediator_dispatch_to_correct_event_type_only() -> None:
     async def order_handler(event: OrderPlacedEvent) -> None:
         order_events.append(event)
 
-    mediator = AsyncDomainEventMediator()
+    mediator = AsyncEventMediator()
     mediator.register(UserCreatedEvent, user_handler)
     mediator.register(OrderPlacedEvent, order_handler)
 
@@ -192,7 +192,7 @@ async def test_async_mediator_dispatch_to_correct_event_type_only() -> None:
 @pytest.mark.asyncio
 async def test_async_mediator_dispatch_without_handlers_does_not_error() -> None:
     """등록된 핸들러가 없을 때 async dispatch해도 예외가 발생하지 않음을 검증한다."""
-    mediator = AsyncDomainEventMediator()
+    mediator = AsyncEventMediator()
 
     event = UserCreatedEvent(user_id="async-999", username="async-dave")
     # Should not raise
@@ -214,7 +214,7 @@ async def test_async_mediator_handler_error_does_not_stop_other_handlers() -> No
         nonlocal handler2_called
         handler2_called = True
 
-    mediator = AsyncDomainEventMediator()
+    mediator = AsyncEventMediator()
     mediator.register(UserCreatedEvent, failing_handler)
     mediator.register(UserCreatedEvent, success_handler)
 

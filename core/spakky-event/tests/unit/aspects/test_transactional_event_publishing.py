@@ -17,15 +17,15 @@ from spakky.data.persistency.transaction import (
     AbstractTransaction,
 )
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractDomainEvent, AbstractEvent
 
 from spakky.event.aspects.transactional_event_publishing import (
     AsyncTransactionalEventPublishingAspect,
     TransactionalEventPublishingAspect,
 )
 from spakky.event.event_publisher import (
-    IAsyncDomainEventPublisher,
-    IDomainEventPublisher,
+    IAsyncEventPublisher,
+    IEventPublisher,
 )
 
 
@@ -70,10 +70,10 @@ def test_sync_aspect_publishes_events_on_success() -> None:
         def rollback(self) -> None: ...
 
     @Pod()
-    class InMemoryDomainEventPublisher(IDomainEventPublisher):
-        published_events: list[AbstractDomainEvent] = []
+    class InMemoryDomainEventPublisher(IEventPublisher):
+        published_events: list[AbstractEvent] = []
 
-        def publish(self, event: AbstractDomainEvent) -> None:
+        def publish(self, event: AbstractEvent) -> None:
             self.published_events.append(event)
 
     @UseCase()
@@ -123,10 +123,10 @@ def test_sync_aspect_does_not_publish_on_error() -> None:
         def rollback(self) -> None: ...
 
     @Pod()
-    class InMemoryDomainEventPublisher(IDomainEventPublisher):
-        published_events: list[AbstractDomainEvent] = []
+    class InMemoryDomainEventPublisher(IEventPublisher):
+        published_events: list[AbstractEvent] = []
 
-        def publish(self, event: AbstractDomainEvent) -> None:
+        def publish(self, event: AbstractEvent) -> None:
             self.published_events.append(event)
 
     @UseCase()
@@ -174,10 +174,10 @@ async def test_async_aspect_publishes_events_on_success() -> None:
         async def rollback(self) -> None: ...
 
     @Pod()
-    class AsyncInMemoryDomainEventPublisher(IAsyncDomainEventPublisher):
-        published_events: list[AbstractDomainEvent] = []
+    class AsyncInMemoryDomainEventPublisher(IAsyncEventPublisher):
+        published_events: list[AbstractEvent] = []
 
-        async def publish(self, event: AbstractDomainEvent) -> None:
+        async def publish(self, event: AbstractEvent) -> None:
             self.published_events.append(event)
 
     @UseCase()
@@ -228,10 +228,10 @@ async def test_async_aspect_does_not_publish_on_error() -> None:
         async def rollback(self) -> None: ...
 
     @Pod()
-    class AsyncInMemoryDomainEventPublisher(IAsyncDomainEventPublisher):
-        published_events: list[AbstractDomainEvent] = []
+    class AsyncInMemoryDomainEventPublisher(IAsyncEventPublisher):
+        published_events: list[AbstractEvent] = []
 
-        async def publish(self, event: AbstractDomainEvent) -> None:
+        async def publish(self, event: AbstractEvent) -> None:
             self.published_events.append(event)
 
     @UseCase()
@@ -281,10 +281,10 @@ async def test_async_aspect_publishes_multiple_events_from_multiple_aggregates()
         async def rollback(self) -> None: ...
 
     @Pod()
-    class AsyncInMemoryDomainEventPublisher(IAsyncDomainEventPublisher):
-        published_events: list[AbstractDomainEvent] = []
+    class AsyncInMemoryDomainEventPublisher(IAsyncEventPublisher):
+        published_events: list[AbstractEvent] = []
 
-        async def publish(self, event: AbstractDomainEvent) -> None:
+        async def publish(self, event: AbstractEvent) -> None:
             self.published_events.append(event)
 
     @UseCase()

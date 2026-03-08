@@ -20,8 +20,8 @@ from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.domain.models.event import AbstractEvent, AbstractIntegrationEvent
 from spakky.event.event_consumer import (
-    IAsyncIntegrationEventConsumer,
-    IIntegrationEventConsumer,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 
@@ -73,8 +73,8 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         if not EventHandler.exists(pod):
             return pod
         handler: EventHandler = EventHandler.get(pod)
-        consumer = self.__container.get(IIntegrationEventConsumer)
-        async_consumer = self.__container.get(IAsyncIntegrationEventConsumer)
+        consumer = self.__container.get(IEventConsumer)
+        async_consumer = self.__container.get(IAsyncEventConsumer)
         for name, method in getmembers(pod, ismethod):
             route: EventRoute[AbstractEvent] | None = EventRoute[
                 AbstractEvent

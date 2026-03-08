@@ -1,23 +1,33 @@
 from abc import ABC, abstractmethod
 
-from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
+from spakky.domain.models.event import AbstractEvent, AbstractIntegrationEvent
 
 
-class IDomainEventPublisher(ABC):
+class IEventPublisher(ABC):
     @abstractmethod
-    def publish(self, event: AbstractDomainEvent) -> None: ...
+    def publish(self, event: AbstractEvent) -> None: ...
 
 
-class IAsyncDomainEventPublisher(ABC):
+class IAsyncEventPublisher(ABC):
     @abstractmethod
-    async def publish(self, event: AbstractDomainEvent) -> None: ...
+    async def publish(self, event: AbstractEvent) -> None: ...
 
 
-class IIntegrationEventPublisher(ABC):
+class IEventBus(ABC):
     @abstractmethod
-    def publish(self, event: AbstractIntegrationEvent) -> None: ...
+    def send(self, event: AbstractIntegrationEvent) -> None: ...
 
 
-class IAsyncIntegrationEventPublisher(ABC):
+class IAsyncEventBus(ABC):
     @abstractmethod
-    async def publish(self, event: AbstractIntegrationEvent) -> None: ...
+    async def send(self, event: AbstractIntegrationEvent) -> None: ...
+
+
+class IEventTransport(ABC):
+    @abstractmethod
+    def send(self, event: AbstractIntegrationEvent) -> None: ...
+
+
+class IAsyncEventTransport(ABC):
+    @abstractmethod
+    async def send(self, event: AbstractIntegrationEvent) -> None: ...

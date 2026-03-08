@@ -5,11 +5,11 @@ interfaces for in-process event handling.
 """
 
 from spakky.event.mediator.domain_event_mediator import (
-    AsyncDomainEventMediator,
-    DomainEventMediator,
+    AsyncEventMediator,
+    EventMediator,
 )
 
 __all__ = [
-    "AsyncDomainEventMediator",
-    "DomainEventMediator",
+    "AsyncEventMediator",
+    "EventMediator",
 ]

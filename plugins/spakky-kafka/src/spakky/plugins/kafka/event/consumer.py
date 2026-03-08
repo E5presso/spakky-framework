@@ -10,16 +10,16 @@ from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
-from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.domain.models.event import AbstractEvent
 from spakky.event.error import (
     DuplicateEventHandlerError,
 )
 from spakky.event.event_consumer import (
-    AsyncIntegrationEventHandlerCallback,
-    IAsyncIntegrationEventConsumer,
-    IIntegrationEventConsumer,
-    IntegrationEventHandlerCallback,
-    IntegrationEventT_contra,
+    AsyncEventHandlerCallback,
+    EventHandlerCallback,
+    EventT_contra,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
@@ -28,13 +28,11 @@ logger = getLogger(__name__)
 
 
 @Pod()
-class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
+class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     config: KafkaConnectionConfig
-    type_lookup: dict[str, type[AbstractIntegrationEvent]]
-    type_adapters: dict[
-        type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
-    ]
-    handlers: dict[type[AbstractIntegrationEvent], IntegrationEventHandlerCallback[Any]]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], EventHandlerCallback[Any]]
     admin: AdminClient
     consumer: Consumer
 
@@ -76,7 +74,7 @@ class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
         if topic is None:  # pragma: no cover
             logger.warning("Received message with no topic.")
             return
-        event_type: type[AbstractIntegrationEvent] | None = self.type_lookup.get(topic)
+        event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
@@ -93,8 +91,8 @@ class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
 
     def register(
         self,
-        event: type[IntegrationEventT_contra],
-        handler: IntegrationEventHandlerCallback[IntegrationEventT_contra],
+        event: type[EventT_contra],
+        handler: EventHandlerCallback[EventT_contra],
     ) -> None:
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
@@ -119,17 +117,11 @@ class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
 
 
 @Pod()
-class AsyncKafkaEventConsumer(
-    IAsyncIntegrationEventConsumer, AbstractAsyncBackgroundService
-):
+class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
     config: KafkaConnectionConfig
-    type_lookup: dict[str, type[AbstractIntegrationEvent]]
-    type_adapters: dict[
-        type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
-    ]
-    handlers: dict[
-        type[AbstractIntegrationEvent], AsyncIntegrationEventHandlerCallback[Any]
-    ]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], AsyncEventHandlerCallback[Any]]
     admin: AdminClient
     consumer: AIOConsumer
 
@@ -169,7 +161,7 @@ class AsyncKafkaEventConsumer(
         if topic is None:  # pragma: no cover
             logger.warning("Received message with no topic.")
             return
-        event_type: type[AbstractIntegrationEvent] | None = self.type_lookup.get(topic)
+        event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
@@ -186,8 +178,8 @@ class AsyncKafkaEventConsumer(
 
     def register(
         self,
-        event: type[IntegrationEventT_contra],
-        handler: AsyncIntegrationEventHandlerCallback[IntegrationEventT_contra],
+        event: type[EventT_contra],
+        handler: AsyncEventHandlerCallback[EventT_contra],
     ) -> None:
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)

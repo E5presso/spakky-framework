@@ -9,8 +9,8 @@ from unittest.mock import Mock
 from spakky.core.application.application_context import ApplicationContext
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 from spakky.event.event_consumer import (
-    IAsyncIntegrationEventConsumer,
-    IIntegrationEventConsumer,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
@@ -39,14 +39,14 @@ def test_rabbitmq_post_processor_registers_integration_event_expect_success() ->
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -79,14 +79,14 @@ def test_rabbitmq_post_processor_registers_async_integration_event_expect_succes
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -122,14 +122,14 @@ def test_rabbitmq_post_processor_ignores_domain_event_expect_no_registration() -
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -165,14 +165,14 @@ def test_rabbitmq_post_processor_mixed_events_expect_only_integration_registered
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 

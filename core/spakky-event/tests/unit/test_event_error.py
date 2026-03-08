@@ -1,4 +1,6 @@
-from spakky.event.error import AbstractSpakkyEventError
+from spakky.event.error import (
+    AbstractSpakkyEventError,
+)
 
 
 def test_event_error_is_abstract() -> None:
@@ -7,7 +9,6 @@ def test_event_error_is_abstract() -> None:
     class ConcreteEventError(AbstractSpakkyEventError):
         message = "Test event error"
 
-    # Should be able to instantiate concrete subclass
     error = ConcreteEventError()
     assert error.message == "Test event error"
     assert isinstance(error, AbstractSpakkyEventError)

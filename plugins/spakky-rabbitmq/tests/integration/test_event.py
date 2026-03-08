@@ -5,12 +5,12 @@ import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.event.error import DuplicateEventHandlerError
 from spakky.event.event_consumer import (
-    IAsyncIntegrationEventConsumer,
-    IIntegrationEventConsumer,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
 from spakky.event.event_publisher import (
-    IAsyncIntegrationEventPublisher,
-    IIntegrationEventPublisher,
+    IAsyncEventTransport,
+    IEventTransport,
 )
 
 from tests.apps.dummy import (
@@ -55,11 +55,11 @@ async def async_wait_for_count(
 
 def test_synchronous_event(app: SpakkyApplication) -> None:
     """동기 이벤트 발행 및 핸들링이 올바르게 동작하는지 검증한다."""
-    publisher = app.container.get(IIntegrationEventPublisher)
+    transport = app.container.get(IEventTransport)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
-    publisher.publish(SampleEvent(message="Hello, World!"))
-    publisher.publish(SampleEvent(message="Goodbye, World!"))
+    transport.send(SampleEvent(message="Hello, World!"))
+    transport.send(SampleEvent(message="Goodbye, World!"))
     wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -67,11 +67,11 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
 @pytest.mark.asyncio
 async def test_asynchronous_event(app: SpakkyApplication) -> None:
     """비동기 이벤트 발행 및 핸들링이 올바르게 동작하는지 검증한다."""
-    publisher = app.container.get(IAsyncIntegrationEventPublisher)
+    transport = app.container.get(IAsyncEventTransport)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
-    await publisher.publish(SampleEvent(message="Hello, World!"))
-    await publisher.publish(SampleEvent(message="Goodbye, World!"))
+    await transport.send(SampleEvent(message="Hello, World!"))
+    await transport.send(SampleEvent(message="Goodbye, World!"))
     await async_wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -79,13 +79,13 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
 @pytest.mark.asyncio
 async def test_async_handler_execution(app: SpakkyApplication) -> None:
     """비동기 컨슈머를 통한 비동기 이벤트 핸들러 실행을 검증한다."""
-    publisher = app.container.get(IAsyncIntegrationEventPublisher)
+    transport = app.container.get(IAsyncEventTransport)
     handler = app.container.get(AsyncEventHandler)
 
     initial_count = handler.count
-    await publisher.publish(AsyncTestEvent(message="Test1"))
-    await publisher.publish(AsyncTestEvent(message="Test2"))
-    await publisher.publish(AsyncTestEvent(message="Test3"))
+    await transport.send(AsyncTestEvent(message="Test1"))
+    await transport.send(AsyncTestEvent(message="Test2"))
+    await transport.send(AsyncTestEvent(message="Test3"))
     await async_wait_for_count(handler, initial_count + 3)
 
     # All async events should be handled
@@ -94,7 +94,7 @@ async def test_async_handler_execution(app: SpakkyApplication) -> None:
 
 def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
     """중복된 동기 핸들러 등록 시 에러가 발생하는지 검증한다."""
-    consumer = app.container.get(IIntegrationEventConsumer)
+    consumer = app.container.get(IEventConsumer)
 
     def handler1(event: DuplicateTestEvent) -> None:
         pass
@@ -115,7 +115,7 @@ def test_duplicate_handler_registration_sync(app: SpakkyApplication) -> None:
 @pytest.mark.asyncio
 async def test_duplicate_handler_registration_async(app: SpakkyApplication) -> None:
     """중복된 비동기 핸들러 등록 시 에러가 발생하는지 검증한다."""
-    consumer = app.container.get(IAsyncIntegrationEventConsumer)
+    consumer = app.container.get(IAsyncEventConsumer)
 
     async def handler1(event: DuplicateTestEvent) -> None:
         pass

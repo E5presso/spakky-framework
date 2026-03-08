@@ -7,8 +7,8 @@ from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import (
-    IAsyncIntegrationEventPublisher,
-    IIntegrationEventPublisher,
+    IAsyncEventTransport,
+    IEventTransport,
 )
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
@@ -17,7 +17,7 @@ logger = getLogger(__name__)
 
 
 @Pod()
-class KafkaEventPublisher(IIntegrationEventPublisher):
+class KafkaEventTransport(IEventTransport):
     config: KafkaConnectionConfig
     type_adapters: dict[
         type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
@@ -57,11 +57,11 @@ class KafkaEventPublisher(IIntegrationEventPublisher):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    def publish(self, event: AbstractIntegrationEvent) -> None:
-        """Publish an integration event to Kafka.
+    def send(self, event: AbstractIntegrationEvent) -> None:
+        """Send an integration event to Kafka.
 
         Args:
-            event: The integration event to publish.
+            event: The integration event to send.
         """
         event_type = type(event)
         if event_type not in self.type_adapters:
@@ -77,7 +77,7 @@ class KafkaEventPublisher(IIntegrationEventPublisher):
 
 
 @Pod()
-class AsyncKafkaEventPublisher(IAsyncIntegrationEventPublisher):
+class AsyncKafkaEventTransport(IAsyncEventTransport):
     config: KafkaConnectionConfig
     type_adapters: dict[
         type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
@@ -118,11 +118,11 @@ class AsyncKafkaEventPublisher(IAsyncIntegrationEventPublisher):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    async def publish(self, event: AbstractIntegrationEvent) -> None:
-        """Asynchronously publish an integration event to Kafka.
+    async def send(self, event: AbstractIntegrationEvent) -> None:
+        """Asynchronously send an integration event to Kafka.
 
         Args:
-            event: The integration event to publish.
+            event: The integration event to send.
         """
         self.producer = AIOProducer(self.config.configuration_dict)
         event_type = type(event)

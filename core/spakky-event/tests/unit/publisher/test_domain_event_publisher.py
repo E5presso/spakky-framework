@@ -1,83 +1,108 @@
-"""Tests for domain event publisher implementations."""
+"""Tests for event publisher implementations (type-based router)."""
 
 import pytest
 from spakky.core.common.mutability import immutable
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import (
+    AbstractDomainEvent,
+    AbstractEvent,
+    AbstractIntegrationEvent,
+)
 
 from spakky.event.event_dispatcher import (
-    IAsyncDomainEventDispatcher,
-    IDomainEventDispatcher,
+    IAsyncEventDispatcher,
+    IEventDispatcher,
+)
+from spakky.event.event_publisher import (
+    IAsyncEventBus,
+    IEventBus,
 )
 from spakky.event.publisher.domain_event_publisher import (
-    AsyncDomainEventPublisher,
-    DomainEventPublisher,
+    AsyncEventPublisher,
+    EventPublisher,
 )
 
 
 @immutable
-class TestEvent(AbstractDomainEvent):
-    """Test event for publisher tests."""
+class TestDomainEvent(AbstractDomainEvent):
+    """Test domain event for publisher tests."""
 
     data: str
 
 
-class InMemorySyncDispatcher(IDomainEventDispatcher):
-    """In-memory synchronous dispatcher for testing."""
+@immutable
+class TestIntegrationEvent(AbstractIntegrationEvent):
+    """Test integration event for publisher tests."""
 
+    data: str
+
+
+class InMemorySyncDispatcher(IEventDispatcher):
     def __init__(self) -> None:
-        self.dispatched_events: list[AbstractDomainEvent] = []
+        self.dispatched_events: list[AbstractEvent] = []
 
-    def dispatch(self, event: AbstractDomainEvent) -> None:
+    def dispatch(self, event: AbstractEvent) -> None:
         self.dispatched_events.append(event)
 
 
-class InMemoryAsyncDispatcher(IAsyncDomainEventDispatcher):
-    """In-memory asynchronous dispatcher for testing."""
-
+class InMemoryAsyncDispatcher(IAsyncEventDispatcher):
     def __init__(self) -> None:
-        self.dispatched_events: list[AbstractDomainEvent] = []
+        self.dispatched_events: list[AbstractEvent] = []
 
-    async def dispatch(self, event: AbstractDomainEvent) -> None:
+    async def dispatch(self, event: AbstractEvent) -> None:
         self.dispatched_events.append(event)
 
 
-def test_sync_publisher_publishes_to_dispatcher() -> None:
-    """sync publisher가 dispatcher에 이벤트를 위임함을 검증한다."""
+class InMemorySyncBus(IEventBus):
+    def __init__(self) -> None:
+        self.sent_events: list[AbstractIntegrationEvent] = []
+
+    def send(self, event: AbstractIntegrationEvent) -> None:
+        self.sent_events.append(event)
+
+
+class InMemoryAsyncBus(IAsyncEventBus):
+    def __init__(self) -> None:
+        self.sent_events: list[AbstractIntegrationEvent] = []
+
+    async def send(self, event: AbstractIntegrationEvent) -> None:
+        self.sent_events.append(event)
+
+
+def test_sync_publisher_routes_domain_event_to_dispatcher() -> None:
+    """sync publisher가 domain event를 dispatcher에 위임함을 검증한다."""
     dispatcher = InMemorySyncDispatcher()
-    publisher = DomainEventPublisher(dispatcher)
+    bus = InMemorySyncBus()
+    publisher = EventPublisher(dispatcher, bus)
 
-    event = TestEvent(data="test-data")
+    event = TestDomainEvent(data="test-data")
     publisher.publish(event)
 
     assert len(dispatcher.dispatched_events) == 1
     assert dispatcher.dispatched_events[0] is event
 
 
-def test_sync_publisher_publishes_multiple_events() -> None:
-    """sync publisher가 여러 번의 publish를 처리함을 검증한다."""
+def test_sync_publisher_routes_integration_event_to_bus() -> None:
+    """sync publisher가 integration event를 bus에 위임함을 검증한다."""
     dispatcher = InMemorySyncDispatcher()
-    publisher = DomainEventPublisher(dispatcher)
+    bus = InMemorySyncBus()
+    publisher = EventPublisher(dispatcher, bus)
 
-    event1 = TestEvent(data="event-1")
-    event2 = TestEvent(data="event-2")
+    event = TestIntegrationEvent(data="integration-data")
+    publisher.publish(event)
 
-    publisher.publish(event1)
-    publisher.publish(event2)
-
-    assert len(dispatcher.dispatched_events) == 2
-    dispatched1 = dispatcher.dispatched_events[0]
-    dispatched2 = dispatcher.dispatched_events[1]
-    assert isinstance(dispatched1, TestEvent) and dispatched1.data == "event-1"
-    assert isinstance(dispatched2, TestEvent) and dispatched2.data == "event-2"
+    assert len(dispatcher.dispatched_events) == 0
+    assert len(bus.sent_events) == 1
+    assert bus.sent_events[0] is event
 
 
 @pytest.mark.asyncio
-async def test_async_publisher_publishes_to_dispatcher() -> None:
-    """async publisher가 dispatcher에 이벤트를 위임함을 검증한다."""
+async def test_async_publisher_routes_domain_event_to_dispatcher() -> None:
+    """async publisher가 domain event를 dispatcher에 위임함을 검증한다."""
     dispatcher = InMemoryAsyncDispatcher()
-    publisher = AsyncDomainEventPublisher(dispatcher)
+    bus = InMemoryAsyncBus()
+    publisher = AsyncEventPublisher(dispatcher, bus)
 
-    event = TestEvent(data="async-test-data")
+    event = TestDomainEvent(data="async-test-data")
     await publisher.publish(event)
 
     assert len(dispatcher.dispatched_events) == 1
@@ -85,19 +110,15 @@ async def test_async_publisher_publishes_to_dispatcher() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_publisher_publishes_multiple_events() -> None:
-    """async publisher가 여러 번의 publish를 처리함을 검증한다."""
+async def test_async_publisher_routes_integration_event_to_bus() -> None:
+    """async publisher가 integration event를 bus에 위임함을 검증한다."""
     dispatcher = InMemoryAsyncDispatcher()
-    publisher = AsyncDomainEventPublisher(dispatcher)
+    bus = InMemoryAsyncBus()
+    publisher = AsyncEventPublisher(dispatcher, bus)
 
-    event1 = TestEvent(data="async-event-1")
-    event2 = TestEvent(data="async-event-2")
+    event = TestIntegrationEvent(data="async-integration-data")
+    await publisher.publish(event)
 
-    await publisher.publish(event1)
-    await publisher.publish(event2)
-
-    assert len(dispatcher.dispatched_events) == 2
-    dispatched1 = dispatcher.dispatched_events[0]
-    dispatched2 = dispatcher.dispatched_events[1]
-    assert isinstance(dispatched1, TestEvent) and dispatched1.data == "async-event-1"
-    assert isinstance(dispatched2, TestEvent) and dispatched2.data == "async-event-2"
+    assert len(dispatcher.dispatched_events) == 0
+    assert len(bus.sent_events) == 1
+    assert bus.sent_events[0] is event

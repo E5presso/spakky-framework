@@ -6,9 +6,13 @@ from spakky.core.common.mutability import immutable
 from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.container import IContainer
-from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
+from spakky.domain.models.event import (
+    AbstractDomainEvent,
+    AbstractEvent,
+    AbstractIntegrationEvent,
+)
 
-from spakky.event.event_consumer import IAsyncDomainEventConsumer, IDomainEventConsumer
+from spakky.event.event_consumer import IAsyncEventConsumer, IEventConsumer
 from spakky.event.post_processor import EventHandlerRegistrationPostProcessor
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
@@ -34,23 +38,23 @@ class NonDomainEvent(AbstractIntegrationEvent):
     data: str
 
 
-class InMemorySyncConsumer(IDomainEventConsumer):
+class InMemorySyncConsumer(IEventConsumer):
     """In-memory synchronous consumer for testing."""
 
     def __init__(self) -> None:
-        self.registrations: list[tuple[type[AbstractDomainEvent], object]] = []
+        self.registrations: list[tuple[type[AbstractEvent], object]] = []
 
-    def register(self, event: type[AbstractDomainEvent], handler: object) -> None:
+    def register(self, event: type[AbstractEvent], handler: object) -> None:
         self.registrations.append((event, handler))
 
 
-class InMemoryAsyncConsumer(IAsyncDomainEventConsumer):
+class InMemoryAsyncConsumer(IAsyncEventConsumer):
     """In-memory asynchronous consumer for testing."""
 
     def __init__(self) -> None:
-        self.registrations: list[tuple[type[AbstractDomainEvent], object]] = []
+        self.registrations: list[tuple[type[AbstractEvent], object]] = []
 
-    def register(self, event: type[AbstractDomainEvent], handler: object) -> None:
+    def register(self, event: type[AbstractEvent], handler: object) -> None:
         self.registrations.append((event, handler))
 
 
@@ -59,8 +63,8 @@ class InMemoryContainer(IContainer):
 
     def __init__(
         self,
-        sync_consumer: IDomainEventConsumer,
-        async_consumer: IAsyncDomainEventConsumer,
+        sync_consumer: IEventConsumer,
+        async_consumer: IAsyncEventConsumer,
     ) -> None:
         self._sync_consumer = sync_consumer
         self._async_consumer = async_consumer
@@ -86,9 +90,9 @@ class InMemoryContainer(IContainer):
         name: str | None = None,
     ) -> ObjectT:
         """Get consumer based on type."""
-        if type_ is IDomainEventConsumer:
+        if type_ is IEventConsumer:
             return self._sync_consumer  # type: ignore[return-value]
-        if type_ is IAsyncDomainEventConsumer:
+        if type_ is IAsyncEventConsumer:
             return self._async_consumer  # type: ignore[return-value]
         raise ValueError(f"Unexpected type: {type_}")
 

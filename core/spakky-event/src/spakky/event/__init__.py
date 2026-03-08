@@ -1,24 +1,12 @@
-"""Spakky Event package - Event-driven architecture support.
-
-This package provides:
-- Event publishers and consumers
-- Event dispatchers (ISP-compliant)
-- Event mediators (combines consumer and dispatcher)
-- Event handler stereotype
-- Event-related errors
-- Transactional event publishing aspects
-
-Usage:
-    from spakky.event import IIntegrationEventPublisher, IAsyncIntegrationEventPublisher
-    from spakky.event import IIntegrationEventConsumer, IAsyncIntegrationEventConsumer
-    from spakky.event import AsyncTransactionalEventPublishingAspect
-    from spakky.event import DomainEventMediator, AsyncDomainEventMediator
-    from spakky.event import DomainEventPublisher, AsyncDomainEventPublisher
-"""
+"""Spakky Event package - Event-driven architecture support."""
 
 from spakky.event.aspects import (
     AsyncTransactionalEventPublishingAspect,
     TransactionalEventPublishingAspect,
+)
+from spakky.event.bus import (
+    AsyncDirectEventBus,
+    DirectEventBus,
 )
 from spakky.event.error import (
     AbstractSpakkyEventError,
@@ -26,55 +14,56 @@ from spakky.event.error import (
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
-    IAsyncDomainEventConsumer,
-    IAsyncIntegrationEventConsumer,
-    IDomainEventConsumer,
-    IIntegrationEventConsumer,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
 from spakky.event.event_dispatcher import (
-    IAsyncDomainEventDispatcher,
-    IAsyncIntegrationEventDispatcher,
-    IDomainEventDispatcher,
-    IIntegrationEventDispatcher,
+    IAsyncEventDispatcher,
+    IEventDispatcher,
 )
 from spakky.event.event_publisher import (
-    IAsyncDomainEventPublisher,
-    IAsyncIntegrationEventPublisher,
-    IDomainEventPublisher,
-    IIntegrationEventPublisher,
+    IAsyncEventBus,
+    IAsyncEventPublisher,
+    IAsyncEventTransport,
+    IEventBus,
+    IEventPublisher,
+    IEventTransport,
 )
 from spakky.event.mediator import (
-    AsyncDomainEventMediator,
-    DomainEventMediator,
+    AsyncEventMediator,
+    EventMediator,
 )
 from spakky.event.post_processor import EventHandlerRegistrationPostProcessor
 from spakky.event.publisher import (
-    AsyncDomainEventPublisher,
-    DomainEventPublisher,
+    AsyncEventPublisher,
+    EventPublisher,
 )
 
 __all__ = [
     # Publisher Interfaces
-    "IAsyncDomainEventPublisher",
-    "IDomainEventPublisher",
-    "IAsyncIntegrationEventPublisher",
-    "IIntegrationEventPublisher",
+    "IAsyncEventPublisher",
+    "IEventPublisher",
+    # Bus Interfaces
+    "IAsyncEventBus",
+    "IEventBus",
+    # Transport Interfaces
+    "IAsyncEventTransport",
+    "IEventTransport",
     # Consumer Interfaces
-    "IAsyncDomainEventConsumer",
-    "IDomainEventConsumer",
-    "IAsyncIntegrationEventConsumer",
-    "IIntegrationEventConsumer",
-    # Dispatcher Interfaces (ISP)
-    "IAsyncDomainEventDispatcher",
-    "IDomainEventDispatcher",
-    "IAsyncIntegrationEventDispatcher",
-    "IIntegrationEventDispatcher",
+    "IAsyncEventConsumer",
+    "IEventConsumer",
+    # Dispatcher Interfaces
+    "IAsyncEventDispatcher",
+    "IEventDispatcher",
     # Mediator Implementations
-    "AsyncDomainEventMediator",
-    "DomainEventMediator",
+    "AsyncEventMediator",
+    "EventMediator",
     # Publisher Implementations
-    "AsyncDomainEventPublisher",
-    "DomainEventPublisher",
+    "AsyncEventPublisher",
+    "EventPublisher",
+    # Bus Implementations
+    "AsyncDirectEventBus",
+    "DirectEventBus",
     # Post-Processors
     "EventHandlerRegistrationPostProcessor",
     # Aspects

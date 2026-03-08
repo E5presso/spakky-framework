@@ -11,8 +11,8 @@ from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 from spakky.event.event_consumer import (
-    IAsyncIntegrationEventConsumer,
-    IIntegrationEventConsumer,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
@@ -43,14 +43,14 @@ def test_kafka_post_processor_registers_integration_event_expect_success() -> No
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -83,14 +83,14 @@ def test_kafka_post_processor_registers_async_integration_event_expect_success()
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -126,14 +126,14 @@ def test_kafka_post_processor_ignores_domain_event_expect_no_registration() -> N
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -167,14 +167,14 @@ def test_kafka_post_processor_mixed_events_expect_only_integration_registered() 
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -212,16 +212,16 @@ def test_kafka_post_processor_sync_endpoint_invocation_expect_handler_called() -
             received_event = event
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
 
     handler_instance = TestEventHandler()
     mock_container = Mock()
 
     def get_mock(t: type) -> object:
-        if t == IIntegrationEventConsumer:
+        if t == IEventConsumer:
             return mock_consumer
-        if t == IAsyncIntegrationEventConsumer:
+        if t == IAsyncEventConsumer:
             return mock_async_consumer
         if t is type(handler_instance):
             return handler_instance
@@ -274,16 +274,16 @@ async def test_kafka_post_processor_async_endpoint_invocation_expect_handler_cal
             received_event = event
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
 
     handler_instance = TestAsyncEventHandler()
     mock_container = Mock()
 
     def get_mock(t: type) -> object:
-        if t == IIntegrationEventConsumer:
+        if t == IEventConsumer:
             return mock_consumer
-        if t == IAsyncIntegrationEventConsumer:
+        if t == IAsyncEventConsumer:
             return mock_async_consumer
         if t is type(handler_instance):
             return handler_instance
@@ -329,14 +329,14 @@ def test_kafka_post_processor_non_event_handler_class_expect_early_return() -> N
             pass
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 
@@ -371,14 +371,14 @@ def test_kafka_post_processor_handler_with_non_decorated_method_expect_skip() ->
             return "helper"
 
     # Set up mocks
-    mock_consumer = Mock(spec=IIntegrationEventConsumer)
-    mock_async_consumer = Mock(spec=IAsyncIntegrationEventConsumer)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IIntegrationEventConsumer
+        if t == IEventConsumer
         else mock_async_consumer
-        if t == IAsyncIntegrationEventConsumer
+        if t == IAsyncEventConsumer
         else None
     )
 

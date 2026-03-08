@@ -20,24 +20,24 @@ from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
-from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.domain.models.event import AbstractEvent
 from spakky.event.error import (
     DuplicateEventHandlerError,
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
-    AsyncIntegrationEventHandlerCallback,
-    IAsyncIntegrationEventConsumer,
-    IIntegrationEventConsumer,
-    IntegrationEventHandlerCallback,
-    IntegrationEventT_contra,
+    AsyncEventHandlerCallback,
+    EventHandlerCallback,
+    EventT_contra,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
 
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 
 
 @Pod()
-class RabbitMQEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
+class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     """Synchronous RabbitMQ event consumer.
 
     Runs as a background service that consumes integration events from RabbitMQ
@@ -53,9 +53,9 @@ class RabbitMQEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService
     """
 
     connection_string: str
-    type_lookup: dict[str, type[AbstractIntegrationEvent]]
-    type_adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
-    handlers: dict[type[AbstractIntegrationEvent], IntegrationEventHandlerCallback[Any]]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], EventHandlerCallback[Any]]
     connection: BlockingConnection
     channel: BlockingChannel
 
@@ -94,8 +94,8 @@ class RabbitMQEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService
 
     def register(
         self,
-        event: type[IntegrationEventT_contra],
-        handler: IntegrationEventHandlerCallback[IntegrationEventT_contra],
+        event: type[EventT_contra],
+        handler: EventHandlerCallback[EventT_contra],
     ) -> None:
         """Register an event handler for a specific event type.
 
@@ -153,9 +153,7 @@ class RabbitMQEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService
 
 
 @Pod()
-class AsyncRabbitMQEventConsumer(
-    IAsyncIntegrationEventConsumer, AbstractAsyncBackgroundService
-):
+class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
     """Asynchronous RabbitMQ event consumer.
 
     Runs as an async background service that consumes integration events from
@@ -170,11 +168,9 @@ class AsyncRabbitMQEventConsumer(
     """
 
     connection_string: str
-    type_lookup: dict[str, type[AbstractIntegrationEvent]]
-    type_adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
-    handlers: dict[
-        type[AbstractIntegrationEvent], AsyncIntegrationEventHandlerCallback[Any]
-    ]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], AsyncEventHandlerCallback[Any]]
     connection: AbstractRobustConnection
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
@@ -200,8 +196,8 @@ class AsyncRabbitMQEventConsumer(
 
     def register(
         self,
-        event: type[IntegrationEventT_contra],
-        handler: AsyncIntegrationEventHandlerCallback[IntegrationEventT_contra],
+        event: type[EventT_contra],
+        handler: AsyncEventHandlerCallback[EventT_contra],
     ) -> None:
         """Register an async event handler for a specific event type.
 

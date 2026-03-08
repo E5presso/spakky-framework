@@ -4,14 +4,14 @@ from spakky.plugins.kafka.event.consumer import (
     AsyncKafkaEventConsumer,
     KafkaEventConsumer,
 )
-from spakky.plugins.kafka.event.publisher import (
-    AsyncKafkaEventPublisher,
-    KafkaEventPublisher,
+from spakky.plugins.kafka.event.transport import (
+    AsyncKafkaEventTransport,
+    KafkaEventTransport,
 )
 
 __all__ = [
     "AsyncKafkaEventConsumer",
-    "AsyncKafkaEventPublisher",
+    "AsyncKafkaEventTransport",
     "KafkaEventConsumer",
-    "KafkaEventPublisher",
+    "KafkaEventTransport",
 ]

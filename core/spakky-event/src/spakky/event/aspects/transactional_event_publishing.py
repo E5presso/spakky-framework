@@ -1,17 +1,4 @@
-"""Transactional event publishing aspect for automatic domain event publishing.
-
-This module provides aspects that automatically publish domain events after
-successful transaction completion. The aspect collects aggregates from the
-AggregateCollector, extracts their domain events, and publishes them.
-
-Example:
-    @Order(100)  # Executes inside TransactionalAspect(@Order(0))
-    @AsyncAspect()
-    class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
-        async def after_returning_async(self, result: Any) -> None:
-            # Publish events from collected aggregates
-            ...
-"""
+"""Transactional event publishing aspect for automatic domain event publishing."""
 
 from inspect import iscoroutinefunction
 from typing import Any
@@ -24,60 +11,27 @@ from spakky.data.aspects.transactional import Transactional
 from spakky.data.persistency.aggregate_collector import AggregateCollector
 
 from spakky.event.event_publisher import (
-    IAsyncDomainEventPublisher,
-    IDomainEventPublisher,
+    IAsyncEventPublisher,
+    IEventPublisher,
 )
 
 
-@Order(1)  # Executes inside AsyncTransactionalAspect(@Order(0))
+@Order(1)
 @AsyncAspect()
 class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
-    """Aspect for automatic domain event publishing in async transactional methods.
-
-    This aspect intercepts async methods decorated with @Transactional and
-    automatically publishes domain events after successful transaction completion.
-    The aspect executes inside the TransactionalAspect (@Order(0)), ensuring
-    events are published within the same transaction.
-
-    Execution flow:
-        1. TransactionalAspect (@Order(0)) begins transaction
-        2. UseCase logic executes -> repository.save(aggregate) -> collector.collect()
-        3. AsyncTransactionalEventPublishingAspect (@Order(100)) publishes events
-        4. TransactionalAspect commits or rolls back
-
-    Args:
-        collector: Context-scoped collector tracking saved aggregates
-        publisher: Publisher for domain events
-    """
-
     _collector: AggregateCollector
-    _publisher: IAsyncDomainEventPublisher
+    _publisher: IAsyncEventPublisher
 
     def __init__(
         self,
         collector: AggregateCollector,
-        publisher: IAsyncDomainEventPublisher,
+        publisher: IAsyncEventPublisher,
     ) -> None:
-        """Initialize async transactional event publishing aspect.
-
-        Args:
-            collector: Aggregate collector for tracking saved aggregates.
-            publisher: Domain event publisher for publishing events.
-        """
         self._collector = collector
         self._publisher = publisher
 
     @AfterReturning(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
     async def after_returning_async(self, result: Any) -> None:
-        """Publish domain events after successful UseCase execution.
-
-        This method is called after a @Transactional method successfully completes.
-        It extracts all domain events from collected aggregates and publishes them.
-        After publishing, it clears the events from aggregates and clears the collector.
-
-        Args:
-            result: The return value of the method.
-        """
         for aggregate in self._collector.all():
             for event in aggregate.events:
                 await self._publisher.publish(event)
@@ -85,65 +39,25 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
 
     @After(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
     async def after_async(self) -> None:
-        """Clean up collector after async UseCase completion.
-
-        This method is called after a @Transactional async method completes, regardless of outcome.
-        It ensures the collector is cleared to prevent event leakage across transactions.
-
-        Note: This runs after both successful and failed executions, ensuring cleanup in all cases.
-        """
         self._collector.clear()
 
 
-@Order(1)  # Executes inside TransactionalAspect(@Order(0))
+@Order(1)
 @Aspect()
 class TransactionalEventPublishingAspect(IAspect):
-    """Aspect for automatic domain event publishing in sync transactional methods.
-
-    This aspect intercepts sync methods decorated with @Transactional and
-    automatically publishes domain events after successful transaction completion.
-    The aspect executes inside the TransactionalAspect (@Order(0)), ensuring
-    events are published within the same transaction.
-
-    Execution flow:
-        1. TransactionalAspect (@Order(0)) begins transaction
-        2. UseCase logic executes -> repository.save(aggregate) -> collector.collect()
-        3. TransactionalEventPublishingAspect (@Order(100)) publishes events
-        4. TransactionalAspect commits or rolls back
-
-    Args:
-        collector: Context-scoped collector tracking saved aggregates
-        publisher: Publisher for domain events
-    """
-
     _collector: AggregateCollector
-    _publisher: IDomainEventPublisher
+    _publisher: IEventPublisher
 
     def __init__(
         self,
         collector: AggregateCollector,
-        publisher: IDomainEventPublisher,
+        publisher: IEventPublisher,
     ) -> None:
-        """Initialize sync transactional event publishing aspect.
-
-        Args:
-            collector: Aggregate collector for tracking saved aggregates.
-            publisher: Domain event publisher for publishing events.
-        """
         self._collector = collector
         self._publisher = publisher
 
     @AfterReturning(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
     def after_returning(self, result: Any) -> None:
-        """Publish domain events after successful UseCase execution.
-
-        This method is called after a @Transactional method successfully completes.
-        It extracts all domain events from collected aggregates and publishes them.
-        After publishing, it clears the events from aggregates and clears the collector.
-
-        Args:
-            result: The return value of the method.
-        """
         for aggregate in self._collector.all():
             for event in aggregate.events:
                 self._publisher.publish(event)
@@ -151,11 +65,4 @@ class TransactionalEventPublishingAspect(IAspect):
 
     @After(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
     def after(self) -> None:
-        """Clean up collector after UseCase completion.
-
-        This method is called after a @Transactional method completes, regardless of outcome.
-        It ensures the collector is cleared to prevent event leakage across transactions.
-
-        Note: This runs after both successful and failed executions, ensuring cleanup in all cases.
-        """
         self._collector.clear()

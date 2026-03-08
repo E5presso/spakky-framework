@@ -16,14 +16,16 @@ from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
 )
+from spakky.domain.models.event import AbstractIntegrationEvent
 
 import spakky.event
 from spakky.event import (
-    AsyncDomainEventMediator,
-    DomainEventMediator,
-    IAsyncDomainEventConsumer,
-    IDomainEventConsumer,
+    AsyncEventMediator,
+    EventMediator,
+    IAsyncEventConsumer,
+    IEventConsumer,
 )
+from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
 from tests.integration import apps
 from tests.integration.apps.handlers.event_recorder import EventRecorder
 
@@ -70,6 +72,22 @@ class InMemoryAsyncTransaction(AbstractAsyncTransaction):
         pass
 
 
+@Pod()
+class InMemoryEventTransport(IEventTransport):
+    """In-memory synchronous event transport for testing."""
+
+    def send(self, event: AbstractIntegrationEvent) -> None:
+        pass
+
+
+@Pod()
+class InMemoryAsyncEventTransport(IAsyncEventTransport):
+    """In-memory asynchronous event transport for testing."""
+
+    async def send(self, event: AbstractIntegrationEvent) -> None:
+        pass
+
+
 @pytest.fixture(name="app", scope="module")
 def app_fixture() -> Generator[SpakkyApplication, Any, None]:
     """Create SpakkyApplication with full event publishing infrastructure.
@@ -77,8 +95,8 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
     This fixture sets up:
     - In-memory transactions (sync and async)
     - AggregateCollector (context-scoped)
-    - DomainEventMediator (sync and async)
-    - DomainEventPublisher (sync and async)
+    - EventMediator (sync and async)
+    - EventPublisher (sync and async)
     - TransactionalEventPublishingAspect (sync and async)
     - EventHandlerRegistrationPostProcessor
     - Test handlers and use cases
@@ -90,6 +108,8 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
         SpakkyApplication(ApplicationContext())
         .add(InMemoryTransaction)
         .add(InMemoryAsyncTransaction)
+        .add(InMemoryEventTransport)
+        .add(InMemoryAsyncEventTransport)
         .load_plugins(include={spakky.event.PLUGIN_NAME, spakky.data.PLUGIN_NAME})
         .scan(apps)
     )
@@ -141,52 +161,52 @@ def collector_fixture(
 
 
 @pytest.fixture(name="sync_mediator", scope="module")
-def sync_mediator_fixture(app: SpakkyApplication) -> DomainEventMediator:
-    """Get sync DomainEventMediator from application container.
+def sync_mediator_fixture(app: SpakkyApplication) -> EventMediator:
+    """Get sync EventMediator from application container.
 
     Args:
         app: SpakkyApplication instance.
 
     Returns:
-        DomainEventMediator instance.
+        EventMediator instance.
     """
-    return app.container.get(type_=DomainEventMediator)
+    return app.container.get(type_=EventMediator)
 
 
 @pytest.fixture(name="async_mediator", scope="module")
-def async_mediator_fixture(app: SpakkyApplication) -> AsyncDomainEventMediator:
-    """Get async DomainEventMediator from application container.
+def async_mediator_fixture(app: SpakkyApplication) -> AsyncEventMediator:
+    """Get async EventMediator from application container.
 
     Args:
         app: SpakkyApplication instance.
 
     Returns:
-        AsyncDomainEventMediator instance.
+        AsyncEventMediator instance.
     """
-    return app.container.get(type_=AsyncDomainEventMediator)
+    return app.container.get(type_=AsyncEventMediator)
 
 
 @pytest.fixture(name="sync_consumer", scope="module")
-def sync_consumer_fixture(app: SpakkyApplication) -> IDomainEventConsumer:
-    """Get sync IDomainEventConsumer from application container.
+def sync_consumer_fixture(app: SpakkyApplication) -> IEventConsumer:
+    """Get sync IEventConsumer from application container.
 
     Args:
         app: SpakkyApplication instance.
 
     Returns:
-        IDomainEventConsumer instance (DomainEventMediator).
+        IEventConsumer instance (EventMediator).
     """
-    return app.container.get(type_=IDomainEventConsumer)
+    return app.container.get(type_=IEventConsumer)
 
 
 @pytest.fixture(name="async_consumer", scope="module")
-def async_consumer_fixture(app: SpakkyApplication) -> IAsyncDomainEventConsumer:
-    """Get async IAsyncDomainEventConsumer from application container.
+def async_consumer_fixture(app: SpakkyApplication) -> IAsyncEventConsumer:
+    """Get async IAsyncEventConsumer from application container.
 
     Args:
         app: SpakkyApplication instance.
 
     Returns:
-        IAsyncDomainEventConsumer instance (AsyncDomainEventMediator).
+        IAsyncEventConsumer instance (AsyncEventMediator).
     """
-    return app.container.get(type_=IAsyncDomainEventConsumer)
+    return app.container.get(type_=IAsyncEventConsumer)

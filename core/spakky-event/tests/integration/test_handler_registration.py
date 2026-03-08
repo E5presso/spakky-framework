@@ -7,15 +7,15 @@ appropriate domain event consumers when the application starts.
 from spakky.core.application.application import SpakkyApplication
 
 from spakky.event import (
-    AsyncDomainEventMediator,
-    DomainEventMediator,
+    AsyncEventMediator,
+    EventMediator,
 )
 from tests.integration.apps.models.order import Order
 
 
 def test_sync_handler_registered_on_app_start(
     app: SpakkyApplication,
-    sync_mediator: DomainEventMediator,
+    sync_mediator: EventMediator,
 ) -> None:
     """SpakkyApplication.start() 시 sync @EventHandler의 @on_event 메서드가 자동 등록됨을 검증한다."""
     # Then - Check that handlers are registered in the sync mediator
@@ -29,7 +29,7 @@ def test_sync_handler_registered_on_app_start(
 
 def test_async_handler_registered_on_app_start(
     app: SpakkyApplication,
-    async_mediator: AsyncDomainEventMediator,
+    async_mediator: AsyncEventMediator,
 ) -> None:
     """SpakkyApplication.start() 시 async @EventHandler의 @on_event 메서드가 자동 등록됨을 검증한다."""
     # Then - Check that handlers are registered in the async mediator
@@ -45,7 +45,7 @@ def test_async_handler_registered_on_app_start(
 
 def test_multiple_event_types_registered_for_same_handler(
     app: SpakkyApplication,
-    async_mediator: AsyncDomainEventMediator,
+    async_mediator: AsyncEventMediator,
 ) -> None:
     """하나의 @EventHandler에서 여러 @on_event 메서드가 각각의 이벤트 타입에 등록됨을 검증한다."""
     # Then - AsyncOrderEventHandler handles multiple event types
@@ -74,8 +74,8 @@ def test_multiple_event_types_registered_for_same_handler(
 
 def test_sync_and_async_handlers_registered_separately(
     app: SpakkyApplication,
-    sync_mediator: DomainEventMediator,
-    async_mediator: AsyncDomainEventMediator,
+    sync_mediator: EventMediator,
+    async_mediator: AsyncEventMediator,
 ) -> None:
     """Sync 핸들러는 sync mediator에, async 핸들러는 async mediator에 등록됨을 검증한다."""
     # Then - Sync mediator should have sync handlers only

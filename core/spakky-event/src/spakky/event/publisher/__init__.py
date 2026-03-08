@@ -1,14 +1,14 @@
 """Spakky Event Publisher package.
 
-This package provides in-process domain event publisher implementations.
+This package provides event publisher implementations with type-based routing.
 """
 
 from spakky.event.publisher.domain_event_publisher import (
-    AsyncDomainEventPublisher,
-    DomainEventPublisher,
+    AsyncEventPublisher,
+    EventPublisher,
 )
 
 __all__ = [
-    "AsyncDomainEventPublisher",
-    "DomainEventPublisher",
+    "AsyncEventPublisher",
+    "EventPublisher",
 ]

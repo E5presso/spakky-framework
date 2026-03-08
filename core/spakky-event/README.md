@@ -115,29 +115,21 @@ app = (
 
 ### Interfaces
 
-| Class | Description |
-|-------|-------------|
-| `IDomainEventPublisher` | Sync domain event publisher interface |
-| `IAsyncDomainEventPublisher` | Async domain event publisher interface |
-| `IDomainEventConsumer` | Sync domain event consumer interface |
-| `IAsyncDomainEventConsumer` | Async domain event consumer interface |
-| `IDomainEventDispatcher` | Sync domain event dispatcher interface (ISP) |
-| `IAsyncDomainEventDispatcher` | Async domain event dispatcher interface (ISP) |
-| `IIntegrationEventPublisher` | Sync integration event publisher interface |
-| `IAsyncIntegrationEventPublisher` | Async integration event publisher interface |
-| `IIntegrationEventConsumer` | Sync integration event consumer interface |
-| `IAsyncIntegrationEventConsumer` | Async integration event consumer interface |
-| `IIntegrationEventDispatcher` | Sync integration event dispatcher interface |
-| `IAsyncIntegrationEventDispatcher` | Async integration event dispatcher interface |
+| Interface | Description |
+|-----------|-------------|
+| `IEventPublisher` / `IAsyncEventPublisher` | Event publish entry point (type-based routing) |
+| `IEventBus` / `IAsyncEventBus` | Integration event send entry point (Outbox seam) |
+| `IEventTransport` / `IAsyncEventTransport` | Actual message broker transport |
+| `IEventConsumer` / `IAsyncEventConsumer` | Handler callback registration |
+| `IEventDispatcher` / `IAsyncEventDispatcher` | In-process handler dispatch |
 
 ### Implementations
 
 | Class | Description |
 |-------|-------------|
-| `DomainEventMediator` | Sync mediator combining Consumer + Dispatcher |
-| `AsyncDomainEventMediator` | Async mediator combining Consumer + Dispatcher |
-| `DomainEventPublisher` | Sync publisher delegating to Dispatcher |
-| `AsyncDomainEventPublisher` | Async publisher delegating to Dispatcher |
+| `EventMediator` / `AsyncEventMediator` | Consumer + Dispatcher combined (in-process) |
+| `EventPublisher` / `AsyncEventPublisher` | Type-based router (DomainEvent→Mediator, IntegrationEvent→EventBus) |
+| `DirectEventBus` / `AsyncDirectEventBus` | Default EventBus → EventTransport delegation |
 | `EventHandlerRegistrationPostProcessor` | Auto-registers `@EventHandler` methods |
 
 ### Types
@@ -145,14 +137,9 @@ app = (
 | Type | Description |
 |------|-------------|
 | `EventRoute` | Annotation class for event routing metadata |
-| `EventT` | Type variable bound to `AbstractEvent` |
-| `EventHandlerMethod` | Type alias for event handler methods |
-| `DomainEventT` | Type variable bound to `AbstractDomainEvent` |
-| `IntegrationEventT` | Type variable bound to `AbstractIntegrationEvent` |
-| `DomainEventHandlerCallback` | Type alias for sync domain event callbacks |
-| `AsyncDomainEventHandlerCallback` | Type alias for async domain event callbacks |
-| `IntegrationEventHandlerCallback` | Type alias for sync integration event callbacks |
-| `AsyncIntegrationEventHandlerCallback` | Type alias for async integration event callbacks |
+| `EventT_contra` | TypeVar bound to `AbstractEvent` |
+| `EventHandlerCallback` | Type alias for sync event callbacks |
+| `AsyncEventHandlerCallback` | Type alias for async event callbacks |
 
 ### Errors
 
@@ -167,8 +154,8 @@ app = (
 | Package | Description |
 |---------|-------------|
 | `spakky-domain` | DDD building blocks including `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent` |
-| `spakky-rabbitmq` | RabbitMQ implementation (IntegrationEvent publisher/consumer) |
-| `spakky-kafka` | Kafka implementation (IntegrationEvent publisher/consumer) |
+| `spakky-rabbitmq` | RabbitMQ transport (`RabbitMQEventTransport`) |
+| `spakky-kafka` | Kafka transport (`KafkaEventTransport`) |
 
 ## In-process Domain Event Publishing
 
@@ -177,27 +164,18 @@ For events within a bounded context (DomainEvents), use the in-process publisher
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.event import (
-    AsyncDomainEventMediator,
-    AsyncDomainEventPublisher,
-    EventHandlerRegistrationPostProcessor,
-    IAsyncDomainEventConsumer,
-    IAsyncDomainEventDispatcher,
-    IAsyncDomainEventPublisher,
-)
+from spakky.event import IAsyncEventPublisher
 
-# Bootstrap application with in-process event handling
+# Bootstrap application (load_plugins auto-registers event components)
 app = (
     SpakkyApplication(ApplicationContext())
-    .add(AsyncDomainEventMediator)          # Combines Consumer + Dispatcher
-    .add(AsyncDomainEventPublisher)          # Publisher delegates to Dispatcher
-    .add(EventHandlerRegistrationPostProcessor)  # Auto-registers handlers
+    .load_plugins()
     .scan()
     .start()
 )
 
 # Get publisher from container
-publisher = app.container.get(IAsyncDomainEventPublisher)
+publisher = app.container.get(IAsyncEventPublisher)
 await publisher.publish(UserCreatedEvent(user_id="123", email="test@example.com"))
 ```
 

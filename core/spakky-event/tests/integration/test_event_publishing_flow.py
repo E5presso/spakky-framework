@@ -1,7 +1,7 @@
 """Integration tests for the full event publishing flow.
 
 Tests the complete flow:
-TransactionalEventPublishingAspect → DomainEventPublisher → DomainEventMediator → @EventHandler
+TransactionalEventPublishingAspect → EventPublisher → EventMediator → @EventHandler
 
 These tests verify that domain events raised by aggregates are automatically
 published and delivered to registered handlers after successful transaction completion.
