@@ -15,6 +15,12 @@ applyTo: "**/*"
 - **반드시 `create_file`, `replace_string_in_file` 도구를 사용**하세요.
 - 터미널에서 `cat`, `echo`, heredoc으로 파일을 생성/수정하지 마세요.
 
+## 심볼 리네임
+
+- 클래스, 함수, 변수 이름 변경 시 **반드시 `renameSymbol` 도구를 사용**하세요.
+- Language Server 기반으로 모든 참조(정의, import, 사용처)를 정확히 일괄 수정합니다.
+- 터미널에서 `sed`, `grep` + `replace_string_in_file` 반복으로 리네임하지 마세요.
+
 ## 에러 확인
 
 - **반드시 `get_errors` 도구를 사용**하세요. 터미널에서 linter를 실행하지 마세요.
