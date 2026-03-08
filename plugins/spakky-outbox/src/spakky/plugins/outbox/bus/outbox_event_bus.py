@@ -1,5 +1,6 @@
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.primary import Primary
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import IAsyncEventBus
 
@@ -7,14 +8,13 @@ from spakky.plugins.outbox.persistency.table import OutboxMessageTable
 from spakky.plugins.sqlalchemy.persistency.session_manager import AsyncSessionManager
 
 
+@Primary()
 @Pod()
 class AsyncOutboxEventBus(IAsyncEventBus):
     """IAsyncEventBus implementation that stores integration events in the Outbox table.
 
-    When the spakky-outbox plugin is used, this is the **only** ``IAsyncEventBus``
-    registered in the container.  ``AsyncDirectEventBus`` is intentionally omitted
-    from the plugin's ``initialize()`` so that all integration-event publishing is
-    transparently redirected to the ``spakky_event_outbox`` table.
+    Decorated with ``@Primary`` so that when ``spakky-outbox`` is loaded alongside
+    ``spakky-event``, this bus takes precedence over ``AsyncDirectEventBus``.
 
     Because this bus is invoked inside the TransactionalEventPublishingAspect (which
     runs inside the TransactionalAspect), the session is already open and the write

@@ -301,7 +301,44 @@ def test_application_context_get_primary_expect_no_unique_error() -> None:
         context.get(type_=ISamplePod)
 
 
-def test_application_context_get_dependency_recursive_by_type() -> None:
+def test_application_context_primary_fallback_when_name_unmatched_expect_primary_injected() -> None:
+    """의존성 파라미터명이 어떤 Pod명과도 일치하지 않을 때 @Primary Pod가 주입됨을 검증한다."""
+
+    class IBus:
+        @abstractmethod
+        def send(self) -> str: ...
+
+    @Primary()
+    @Pod()
+    class OutboxBus(IBus):
+        def send(self) -> str:
+            return "outbox"
+
+    @Pod()
+    class DirectBus(IBus):
+        def send(self) -> str:
+            return "direct"
+
+    @Pod()
+    class Publisher:
+        # Parameter name "bus" matches neither "outbox_bus" nor "direct_bus" — Primary fallback.
+        def __init__(self, bus: IBus) -> None:
+            self._bus = bus
+
+        def publish(self) -> str:
+            return self._bus.send()
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(OutboxBus)
+    context.add(DirectBus)
+    context.add(Publisher)
+    context.start()
+
+    publisher = context.get(type_=Publisher)
+    assert publisher.publish() == "outbox"
+
+
+
     """의존성이 있는 Pod가 재귀적으로 주입됨을 검증한다."""
 
     @Pod()

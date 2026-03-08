@@ -1,24 +1,28 @@
 from datetime import UTC, datetime
+from typing import Self
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Index, LargeBinary, String
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
+
+from spakky.plugins.sqlalchemy.orm.table import AbstractTable
 
 
-class OutboxBase(DeclarativeBase):
-    """DeclarativeBase dedicated to the Outbox infrastructure table.
-
-    Intentionally separate from the application SchemaRegistry so that the
-    outbox table metadata is never mixed with domain model metadata.
-    """
-
-
-class OutboxMessageTable(OutboxBase):
+class OutboxMessageTable(AbstractTable["OutboxMessageTable"]):
     """Persistent store for outgoing integration events.
+
+    Inherits from ``AbstractTable`` so that the ``spakky_event_outbox`` table is
+    part of the same SQLAlchemy metadata as the application's domain tables.
+    This allows Alembic ``autogenerate`` to discover and manage the outbox table
+    without any extra configuration.
 
     Each row represents one integration event that must be delivered to the
     message broker. The Relay background service polls this table, delivers
     pending messages via IAsyncEventTransport, and marks them as published.
+
+    Note:
+        The table is a pure infrastructure concern and has no corresponding domain
+        model; ``from_domain`` and ``to_domain`` are therefore not implemented.
     """
 
     __tablename__ = "spakky_event_outbox"
@@ -26,10 +30,10 @@ class OutboxMessageTable(OutboxBase):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     """Unique identifier for this outbox message."""
 
-    event_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_name: Mapped[str] = mapped_column(String, nullable=False)
     """Topic / routing key — equals AbstractIntegrationEvent.event_name."""
 
-    event_type: Mapped[str] = mapped_column(String(512), nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
     """Fully-qualified class name used by the Relay for deserialization."""
 
     payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
@@ -59,3 +63,10 @@ class OutboxMessageTable(OutboxBase):
             "created_at",
         ),
     )
+
+    @classmethod
+    def from_domain(cls, domain: "OutboxMessageTable") -> "OutboxMessageTable":
+        raise NotImplementedError  # pragma: no cover
+
+    def to_domain(self) -> "OutboxMessageTable":
+        raise NotImplementedError  # pragma: no cover

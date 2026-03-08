@@ -23,8 +23,5 @@ class OutboxConfig(BaseSettings):
     max_retry_count: int = 5
     """Maximum number of delivery attempts before a message is skipped."""
 
-    auto_create_table: bool = True
-    """If True, automatically create the outbox table on application startup."""
-
     def __init__(self) -> None:
         super().__init__()

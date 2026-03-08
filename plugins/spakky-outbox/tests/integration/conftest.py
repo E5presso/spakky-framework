@@ -5,19 +5,21 @@ from typing import Any, AsyncGenerator, Generator
 
 import pytest
 import spakky.data
+import spakky.event
+import spakky.plugins.sqlalchemy
+import spakky.plugins.outbox
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
 from testcontainers.postgres import PostgresContainer
 
-import spakky.plugins.sqlalchemy
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
 )
+from spakky.plugins.sqlalchemy.persistency.session_manager import AsyncSessionManager
 from spakky.plugins.sqlalchemy.persistency.transaction import AsyncTransaction
 
-import spakky.plugins.outbox
-from spakky.plugins.outbox.persistency.table import OutboxBase
+from spakky.plugins.outbox.persistency.table import OutboxMessageTable
 
 import tests.apps
 
@@ -69,13 +71,12 @@ def setup_env_vars_fixture(database_url: str) -> str:
     os.environ["SPAKKY_SQLALCHEMY__CONNECTION_STRING"] = database_url
     os.environ["SPAKKY_SQLALCHEMY__ECHO"] = "false"
     os.environ["SPAKKY_SQLALCHEMY__AUTOCOMMIT"] = "true"
-    os.environ["SPAKKY_OUTBOX__AUTO_CREATE_TABLE"] = "true"
     return database_url
 
 
 @pytest.fixture(name="app", scope="package")
 def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
-    """Create SpakkyApplication with SQLAlchemy + Outbox plugins.
+    """Create SpakkyApplication with SQLAlchemy + Event + Outbox plugins.
 
     Args:
         setup_env_vars: Database URL (ensures env vars are set before app creation).
@@ -94,11 +95,10 @@ def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
         SpakkyApplication(ApplicationContext())
         .load_plugins(
             include={
+                spakky.data.PLUGIN_NAME,
+                spakky.event.PLUGIN_NAME,
                 spakky.plugins.sqlalchemy.PLUGIN_NAME,
                 spakky.plugins.outbox.PLUGIN_NAME,
-                spakky.data.PLUGIN_NAME,
-                # NOTE: spakky.event.PLUGIN_NAME is intentionally omitted —
-                # spakky-outbox provides all event infrastructure including its own bus.
             }
         )
         .add(AsyncLoggingAspect)
@@ -130,23 +130,48 @@ def async_connection_manager_fixture(app: SpakkyApplication) -> AsyncConnectionM
 async def setup_database_fixture(
     async_connection_manager: AsyncConnectionManager,
 ) -> AsyncGenerator[None, Any]:
-    """Drop the outbox table after all tests complete.
+    """Create the outbox table before tests and drop it after.
 
-    The table is created by OutboxRelay.initialize_async() (auto_create_table=True)
-    when the application starts, so no explicit CREATE is needed here.
+    The table must be created explicitly here because the relay no longer
+    auto-creates it — table lifecycle is managed by database migrations (Alembic)
+    in production.
 
     Args:
         async_connection_manager: Async connection manager.
 
     Yields:
-        None after setup check is complete.
+        None after database setup is complete.
     """
+    async with async_connection_manager.connection.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: OutboxMessageTable.__table__.create(
+                sync_conn, checkfirst=True
+            )
+        )
+
     yield
 
     async with async_connection_manager.connection.begin() as conn:
-        await conn.run_sync(OutboxBase.metadata.drop_all)
+        await conn.run_sync(
+            lambda sync_conn: OutboxMessageTable.__table__.drop(
+                sync_conn, checkfirst=True
+            )
+        )
 
     await async_connection_manager.dispose()
+
+
+@pytest.fixture(name="async_session_manager", scope="package")
+def async_session_manager_fixture(app: SpakkyApplication) -> AsyncSessionManager:
+    """Get AsyncSessionManager from application container.
+
+    Args:
+        app: SpakkyApplication instance.
+
+    Returns:
+        AsyncSessionManager instance.
+    """
+    return app.container.get(type_=AsyncSessionManager)
 
 
 @pytest.fixture(name="async_transaction", scope="function")

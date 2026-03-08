@@ -16,7 +16,6 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}POLLING_INTERVAL_SECONDS",
         f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}BATCH_SIZE",
         f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}MAX_RETRY_COUNT",
-        f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}AUTO_CREATE_TABLE",
     ]
     saved: dict[str, str] = {}
     for key in keys:
@@ -41,7 +40,6 @@ def test_outbox_config_default_values_expect_defaults_returned(
     assert config.polling_interval_seconds == 1.0
     assert config.batch_size == 100
     assert config.max_retry_count == 5
-    assert config.auto_create_table is True
 
 
 def test_outbox_config_loads_from_environment_variables(clean_env: None) -> None:
@@ -49,14 +47,12 @@ def test_outbox_config_loads_from_environment_variables(clean_env: None) -> None
     os.environ[f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}POLLING_INTERVAL_SECONDS"] = "2.5"
     os.environ[f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}BATCH_SIZE"] = "50"
     os.environ[f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}MAX_RETRY_COUNT"] = "3"
-    os.environ[f"{SPAKKY_OUTBOX_CONFIG_ENV_PREFIX}AUTO_CREATE_TABLE"] = "false"
 
     config = OutboxConfig()
 
     assert config.polling_interval_seconds == 2.5
     assert config.batch_size == 50
     assert config.max_retry_count == 3
-    assert config.auto_create_table is False
 
 
 def test_outbox_config_env_prefix_is_correct() -> None:

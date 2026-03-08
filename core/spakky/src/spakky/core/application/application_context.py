@@ -161,6 +161,13 @@ class ApplicationContext(IApplicationContext):
         if len(qualified) == 1:
             return qualified.pop()
         if not qualified:
+            # When name-based lookup yields no match, fall back to @Primary.
+            # This mirrors Spring-style resolution: if no pod is named after the
+            # parameter, the @Primary candidate wins.
+            if name is not None and not any(qualifiers):
+                primary_pods = {pod for pod in pods if pod.is_primary}
+                if len(primary_pods) == 1:
+                    return primary_pods.pop()
             return None
         raise NoUniquePodError(type_, [p.name for p in qualified])
 

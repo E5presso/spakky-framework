@@ -18,6 +18,7 @@ from spakky.plugins.outbox.relay.relay import OutboxRelay
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
 )
+from spakky.plugins.sqlalchemy.persistency.session_manager import AsyncSessionManager
 from spakky.plugins.sqlalchemy.persistency.transaction import AsyncTransaction
 
 from tests.apps.events import OrderConfirmedIntegrationEvent
@@ -99,6 +100,7 @@ async def test_relay_delivers_pending_messages_to_transport(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
     async_connection_manager: AsyncConnectionManager,
+    async_session_manager: AsyncSessionManager,
 ) -> None:
     """OutboxRelay._relay_batch()가 pending 메시지를 transport로 전달하는지 검증한다."""
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
@@ -111,7 +113,7 @@ async def test_relay_delivers_pending_messages_to_transport(
     mock_transport.send = AsyncMock()
 
     relay = OutboxRelay(
-        connection_manager=app.container.get(AsyncConnectionManager),
+        session_manager=async_session_manager,
         transport=mock_transport,
         config=app.container.get(OutboxConfig),
     )
@@ -132,6 +134,7 @@ async def test_relay_marks_message_as_published(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
     async_connection_manager: AsyncConnectionManager,
+    async_session_manager: AsyncSessionManager,
 ) -> None:
     """OutboxRelay._relay_batch() 후 메시지 published_at이 설정되는지 검증한다."""
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
@@ -144,7 +147,7 @@ async def test_relay_marks_message_as_published(
     mock_transport.send = AsyncMock()
 
     relay = OutboxRelay(
-        connection_manager=app.container.get(AsyncConnectionManager),
+        session_manager=async_session_manager,
         transport=mock_transport,
         config=app.container.get(OutboxConfig),
     )
@@ -167,6 +170,7 @@ async def test_relay_increments_retry_count_on_transport_failure(
     app: SpakkyApplication,
     async_transaction: AsyncTransaction,
     async_connection_manager: AsyncConnectionManager,
+    async_session_manager: AsyncSessionManager,
 ) -> None:
     """전송 실패 시 OutboxRelay가 retry_count를 증가시키는지 검증한다."""
     event = OrderConfirmedIntegrationEvent(order_id=uuid4())
@@ -179,7 +183,7 @@ async def test_relay_increments_retry_count_on_transport_failure(
     mock_transport.send = AsyncMock(side_effect=RuntimeError("broker down"))
 
     relay = OutboxRelay(
-        connection_manager=app.container.get(AsyncConnectionManager),
+        session_manager=async_session_manager,
         transport=mock_transport,
         config=app.container.get(OutboxConfig),
     )

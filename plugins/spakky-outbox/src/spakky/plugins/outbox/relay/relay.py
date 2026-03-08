@@ -10,70 +10,51 @@ from spakky.core.service.background import AbstractAsyncBackgroundService
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import IAsyncEventTransport
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from spakky.plugins.outbox.common.config import OutboxConfig
 from spakky.plugins.outbox.persistency.table import OutboxMessageTable
-from spakky.plugins.sqlalchemy.persistency.connection_manager import (
-    AsyncConnectionManager,
-)
+from spakky.plugins.sqlalchemy.persistency.session_manager import AsyncSessionManager
 
 logger = getLogger(__name__)
-
-
-def _import_string(dotted_path: str) -> type[AbstractIntegrationEvent]:
-    """Import and return a class from its fully-qualified class name.
-
-    Args:
-        dotted_path: FQCN, e.g. ``my_app.events.OrderConfirmedIntegrationEvent``.
-
-    Returns:
-        The resolved class.
-
-    Raises:
-        ImportError: If the module cannot be imported.
-        AttributeError: If the class does not exist in the module.
-    """
-    module_path, _, class_name = dotted_path.rpartition(".")
-    module = importlib.import_module(module_path)
-    return cast(type[AbstractIntegrationEvent], getattr(module, class_name))
 
 
 @Pod()
 class OutboxRelay(AbstractAsyncBackgroundService):
     """Background service that polls the outbox table and forwards pending messages.
 
-    Uses an independent SQLAlchemy session (not the CONTEXT-scoped session used by
-    the business transaction) to avoid interfering with active requests.
+    Uses an independent session lifecycle (open/commit/close per batch) so that the
+    relay's database operations are completely separate from request-scoped business
+    transactions.
 
     Delivery guarantees:
     - At-least-once: messages are retried up to ``max_retry_count`` times.
     - ``WITH FOR UPDATE SKIP LOCKED`` prevents duplicate processing in multi-instance
       deployments.
+
+    Note:
+        The ``spakky_event_outbox`` table must be created by the application's
+        database migration tooling (e.g. Alembic) before the relay starts polling.
     """
 
-    _engine: AsyncEngine
+    _session_manager: AsyncSessionManager
     _transport: IAsyncEventTransport
     _config: OutboxConfig
 
     def __init__(
         self,
-        connection_manager: AsyncConnectionManager,
+        session_manager: AsyncSessionManager,
         transport: IAsyncEventTransport,
         config: OutboxConfig,
     ) -> None:
-        self._engine = connection_manager.connection
+        self._session_manager = session_manager
         self._transport = transport
         self._config = config
 
     async def initialize_async(self) -> None:
-        """Create the outbox table if auto_create_table is enabled."""
-        if self._config.auto_create_table:
-            async with self._engine.begin() as conn:
-                await conn.run_sync(OutboxMessageTable.metadata.create_all)
+        """No-op: the outbox table is managed by database migrations."""
 
     async def dispose_async(self) -> None:
-        """No-op: engine lifecycle is managed by AsyncConnectionManager."""
+        """No-op: session lifecycle is managed per batch in _relay_batch."""
 
     async def run_async(self) -> None:
         """Main polling loop. Runs until the stop event is set."""
@@ -90,8 +71,9 @@ class OutboxRelay(AbstractAsyncBackgroundService):
 
     async def _relay_batch(self) -> None:
         """Fetch and deliver a batch of pending outbox messages."""
-        async with AsyncSession(self._engine) as session:
-            result = await session.execute(
+        await self._session_manager.open()
+        try:
+            result = await self._session_manager.session.execute(
                 select(OutboxMessageTable)
                 .where(OutboxMessageTable.published_at.is_(None))
                 .where(OutboxMessageTable.retry_count < self._config.max_retry_count)
@@ -103,7 +85,11 @@ class OutboxRelay(AbstractAsyncBackgroundService):
 
             for message in messages:
                 try:
-                    event_class = _import_string(message.event_type)
+                    module_path, _, class_name = message.event_type.rpartition(".")
+                    module = importlib.import_module(module_path)
+                    event_class = cast(
+                        type[AbstractIntegrationEvent], getattr(module, class_name)
+                    )
                     adapter: TypeAdapter[AbstractIntegrationEvent] = TypeAdapter(
                         event_class
                     )
@@ -118,4 +104,6 @@ class OutboxRelay(AbstractAsyncBackgroundService):
                     )
                     message.retry_count += 1
 
-            await session.commit()
+            await self._session_manager.session.commit()
+        finally:
+            await self._session_manager.close()
