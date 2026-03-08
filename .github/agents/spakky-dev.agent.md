@@ -39,11 +39,6 @@ tools: [vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vsco
 
 알려진 버그를 테스트로 문서화할 때 `@pytest.mark.known_issue("설명")` 마커를 사용하세요.
 
-## 문서 유지 규칙
-
-- 코드 변경 → 관련 문서 모두 업데이트 (CHANGELOG.md 제외)
-- 우선순위: Code > CONTRIBUTING.md > copilot-instructions.md > README.md
-
 ## 세션 완료 규칙
 
 매 세션 종료 시 `harness-review` 스킬을 실행하세요.

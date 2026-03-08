@@ -52,13 +52,7 @@ applyTo: "**/*.py"
 
 **예외 — 도메인 모델**: 도메인 모델은 고유 용어(유비쿼터스 언어)를 사용. `User`, `OrderPlaced`, `Money` 등 접미사 없음.
 
-### 도메인 이벤트 네이밍
-
-- **DomainEvent**: **과거분사형**만 사용. `DomainEvent` 접미사 금지.
-  - `OrderPlaced` ✅ / `OrderPlacedDomainEvent` ❌
-  - `UserCreated` ✅ / `UserCreatedEvent` ❌
-- **IntegrationEvent**: `IntegrationEvent` 접미사 사용.
-  - `OrderConfirmedIntegrationEvent` ✅
+> 도메인/통합 이벤트 네이밍은 `domain.instructions` 참조.
 
 ### Generic 타입 네로잉
 

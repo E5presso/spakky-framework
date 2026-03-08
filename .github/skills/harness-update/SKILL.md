@@ -14,6 +14,7 @@ description: Harness update workflow. Auto-loads when agent modifies instruction
 | **단순화 = 성능 향상**       | 도구/규칙 제거할수록 에이전트가 빨라지고 안정됨                             |
 | **Bitter Lesson**            | 모델 업그레이드 시 불필요해진 harness 규칙 제거                             |
 | **제약이 신뢰를 만든다**     | 솔루션 공간 확장이 아니라 제약으로 품질 확보                                |
+| **토큰 = 비용**              | 모든 규칙은 토큰 비용 정당화 필요. 중복·저신호 규칙 제거 우선                |
 
 ## 컨텍스트 패턴
 
