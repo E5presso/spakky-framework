@@ -22,8 +22,8 @@ description: 커밋 전 체크리스트 수행
 # 2. 테스트 실행 (runTests 도구 사용)
 # 3. 타입 체크
 uv run pyrefly check
-# 4. 커밋
-git add -A && git commit -m "커밋 메시지"
+# 4. 커밋 (변경한 파일만 명시적 스테이지)
+git add path/to/changed/files && git commit -m "커밋 메시지"
 ```
 
 > CI가 전체 테스트를 돌리지만, 커밋 전 로컬 검증은 필수.

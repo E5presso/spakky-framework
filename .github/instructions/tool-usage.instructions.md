@@ -50,9 +50,10 @@ git checkout -- .
 
 ## 커밋 워크플로우
 
-1. **pre-commit hook**: ruff 포맷이 자동 수행되어 커밋이 실패할 수 있음
-2. **실패 시**: `git add -A && git commit` 재시도. 절대 `git checkout -- .`나 `git reset --hard` 사용 금지
-3. **보호**: 단계마다 커밋하거나 `git stash push -m "백업"` 사용
+- **반드시 변경한 파일만 명시적으로 스테이지**: `git add path/to/file1 path/to/file2`
+- **`git add -A`, `git add .` 금지** — 미관련 변경이 함께 커밋됨
+- **pre-commit hook 실패 시**: ruff 포맷이 자동 수정된 파일만 재스테이지 후 재커밋
+- **보호**: 단계마다 커밋하거나 `git stash push -m "백업"` 사용
 
 ## MCP 쓰기 작업
 

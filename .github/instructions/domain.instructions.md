@@ -58,7 +58,8 @@ class Email(AbstractValueObject):
 ## Event
 
 - `@immutable` (frozen dataclass) — 이벤트는 변경 불가
-- 이름은 과거형 동사: `OrderPlacedEvent`
+- **DomainEvent**: 과거분사형, 접미사 없음 (`OrderPlaced` ✅ / `OrderPlacedEvent` ❌)
+- **IntegrationEvent**: `IntegrationEvent` 접미사 사용
 
 ```python
 from dataclasses import dataclass
@@ -66,7 +67,7 @@ from uuid import UUID
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 
 @dataclass
-class OrderPlacedEvent(AbstractDomainEvent):
+class OrderPlaced(AbstractDomainEvent):
     order_id: UUID
 
 @dataclass
