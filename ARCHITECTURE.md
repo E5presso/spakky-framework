@@ -336,7 +336,7 @@ spakky-data = "spakky.data.main:initialize"
 |---------|-------------------|
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
-| `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
+| `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `TransportEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor` |
 | `spakky-typer` | `TyperCLIPostProcessor` |
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
@@ -519,19 +519,20 @@ AbstractAsyncTransaction (async context manager)
 3가지 축으로 구성됩니다:
 
 ```
-Publisher (단일 진입점)         Dispatcher (인프로세스 전달)     EventBus (외부 전송)
+Publisher (단일 진입점)         Dispatcher (인프로세스 전달)     EventBus (외부 전송 진입점)
 ├─ IEventPublisher             ├─ IEventDispatcher             ├─ IEventBus
 └─ IAsyncEventPublisher        └─ IAsyncEventDispatcher        └─ IAsyncEventBus
 
-Consumer (핸들러 등록)
-├─ IEventConsumer
-└─ IAsyncEventConsumer
+Consumer (핸들러 등록)           EventTransport (실제 메시지 전송)
+├─ IEventConsumer              ├─ IEventTransport
+└─ IAsyncEventConsumer         └─ IAsyncEventTransport
 ```
 
 - **Publisher** (`IEventPublisher`): `publish(event: AbstractEvent)` — 타입 기반 라우팅
   - `AbstractDomainEvent` → `EventMediator` (인프로세스 dispatch)
   - `AbstractIntegrationEvent` → `IEventBus` (외부 전송)
-- **EventBus** (`IEventBus`): `send(event: AbstractIntegrationEvent)` — 외부 메시지 브로커 전송
+- **EventBus** (`IEventBus`): `send(event: AbstractIntegrationEvent)` — Integration Event 발행 진입점, Outbox seam 역할
+- **EventTransport** (`IEventTransport`): `send(event: AbstractIntegrationEvent)` — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현)
 - **Dispatcher**: `dispatch(event)` — 등록된 핸들러에 인프로세스 전달
 - **Consumer**: `register(event_type, handler)` — 이벤트 타입과 콜백 연결
 
@@ -622,7 +623,7 @@ class UserEventHandler:
 | **발생** | Aggregate에서 | EventHandler에서 명시적 생성 |
 | **전달** | `EventMediator` (인프로세스) | `IEventBus` → Message Broker |
 | **패키지** | `spakky-event` | `spakky-event` + 트랜스포트 플러그인 |
-| **Outbox** | 불필요 | `IEventBus` Decorator로 opt-in |
+| **Outbox** | 불필요 | `IEventBus` `@Primary` 교체로 opt-in |
 
 ### Domain → Integration Event 변환 흐름
 
@@ -647,18 +648,19 @@ class OrderEventHandler:
 
 ### Outbox 패턴 (opt-in)
 
-`IEventBus`의 **Decorator 패턴**으로 Outbox를 삽입합니다:
+`IEventBus`와 `IEventTransport`의 **2단 인터페이스 분리**로 Outbox PnP를 달성합니다:
 
 ```
-[Outbox 미설치]  IEventBus = KafkaEventBus   → 직접 전송
-[Outbox 설치]    IEventBus = OutboxEventBus(delegate=KafkaEventBus) → Decorator
+[Outbox 미설치]  IEventBus = TransportEventBus → IEventTransport = KafkaEventTransport → Kafka
+[Outbox 설치]    IEventBus = OutboxEventBus (@Primary)
                    └─ outbox_table.insert() (같은 트랜잭션)
-                   └─ OutboxRelay (background) → KafkaEventBus.send()
+                   └─ OutboxRelay (background) → IEventTransport.send() → Kafka
 ```
 
-- **Outbox 미설치**: 기존과 동일한 직접 전송
-- **Outbox 설치**: 사용자 코드 변경 없이 인프라 설정만 교체
-- **비-RDB 지원**: `DynamoDBOutboxEventBus`, `MongoDBOutboxEventBus` 등 각 persistence별 구현 가능
+- **TransportEventBus**: 기본 `IEventBus` 구현. `IEventTransport`에 직접 위임
+- **OutboxEventBus**: Outbox 플러그인이 `@Primary`로 `IEventBus`를 교체
+- **OutboxRelay**: `IEventTransport`에 의존하여 실제 전송 (DI 경쟁 없음)
+- **핵심**: `IEventBus`와 `IEventTransport`가 다른 인터페이스이므로 컨테이너의 DI 경쟁 없이 `@Primary` 하나로 PnP 달성
 
 ### 시퀀스 다이어그램
 
@@ -738,8 +740,8 @@ sequenceDiagram
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventBus`, PostProcessor | `aio-pika`, `pika`, `pydantic` |
-| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventBus`, PostProcessor | `confluent-kafka`, `pydantic` |
+| `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventTransport`, PostProcessor | `aio-pika`, `pika`, `pydantic` |
+| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventTransport`, PostProcessor | `confluent-kafka`, `pydantic` |
 
 ### 인프라 플러그인
 
@@ -785,8 +787,8 @@ sequenceDiagram
 | Aspect 순서 | `@Order`로 제어 | Transaction(0) → Event(1) |
 | 발행 진입점 | `IEventPublisher` 단일 | 타입 기반 라우팅으로 Domain/Integration 통합 |
 | Domain Event 전달 | `EventMediator` 인프로세스 | Spring `@EventListener`, eShop `MediatR` 패턴 |
-| Integration Event 전송 | `IEventBus` 추상화 | eShop `IEventBus` 패턴, Transport 교체 용이 |
-| Outbox 패턴 | `IEventBus` Decorator, opt-in | Spring Modulith/eShop 패턴, 강제 아닌 선택 |
+| Integration Event 전송 | `IEventBus` → `IEventTransport` 2단 분리 | eShop `IEventBus` 패턴, Outbox seam 확보, DI 경쟁 제거 |
+| Outbox 패턴 | `IEventBus` `@Primary` 교체, opt-in | 2단 인터페이스 분리로 PnP 달성, 강제 아닌 선택 |
 | Transport 미설치 시 | `EventBusNotConfiguredError` | Fail Loudly — silent fallback 금지 |
 | Handler 실패 | 전체 롤백 | 트랜잭션 내 실행 → 데이터 일관성 보장 |
 
@@ -805,7 +807,7 @@ sequenceDiagram
 
 | # | 제목 | 상태 | 날짜 |
 |---|------|------|------|
-| [ADR-0001](docs/adr/0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus, Outbox Seam | Proposed | 2026-03-06 |
+| [ADR-0001](docs/adr/0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus/EventTransport 분리, Outbox Seam | Accepted | 2026-03-06 |
 
 ---
 

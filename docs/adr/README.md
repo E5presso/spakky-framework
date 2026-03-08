@@ -20,7 +20,7 @@ Architecture Decision Record는 소프트웨어 아키텍처에 영향을 미치
 
 | #                                         | 제목                                                      | 상태     | 날짜       |
 | ----------------------------------------- | --------------------------------------------------------- | -------- | ---------- |
-| [ADR-0001](0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus, Outbox Seam | Proposed | 2026-03-06 |
+| [ADR-0001](0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus/EventTransport 분리, Outbox Seam | Accepted | 2026-03-06 |
 
 ## 새 ADR 작성 가이드
 
