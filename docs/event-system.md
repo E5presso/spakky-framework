@@ -133,10 +133,10 @@ class Order(AbstractAggregateRoot[UUID]):
 Consumer(핸들러 등록)와 Dispatcher(이벤트 전달) 책임을 결합한 인프로세스 구현체입니다.
 
 ```python
-from spakky.event.mediator import AsyncDomainEventMediator
+from spakky.event.mediator import AsyncEventMediator
 
 # Mediator 생성 (보통 DI로 주입)
-mediator = AsyncDomainEventMediator()
+mediator = AsyncEventMediator()
 
 # 핸들러 등록
 mediator.register(UserCreatedEvent, handle_user_created)
@@ -151,12 +151,12 @@ await mediator.dispatch(UserCreatedEvent(user_id=uuid4(), email="user@example.co
 Dispatcher에 위임하여 이벤트를 발행합니다. 핸들러 등록 세부사항을 몰라도 됩니다.
 
 ```python
-from spakky.event.publisher import AsyncDomainEventPublisher
+from spakky.event.publisher import AsyncEventPublisher
 
 # UseCase에서 Publisher 사용
 @UseCase()
 class CreateUserUseCase:
-    def __init__(self, publisher: IAsyncDomainEventPublisher) -> None:
+    def __init__(self, publisher: IAsyncEventPublisher) -> None:
         self.publisher = publisher
 
     async def execute(self, command: CreateUserCommand) -> User:
@@ -209,21 +209,8 @@ class UserEventHandler:
 
 ## 인터페이스 구조
 
-> **ADR-0001 채택에 따라 이벤트 인터페이스가 재설계 예정입니다.**
-> 현재 코드 ↔ ADR 이후의 전체 매핑은 [glossary — 역할 이름 매핑](glossary.md#역할-이름-매핑)을 참조하세요.
-> 동사 사용 규칙은 [glossary — 동사 규칙](glossary.md#동사-규칙-verb-convention)을 참조하세요.
-
-### 현재 코드 (ADR-0001 구현 전)
-
-| 인터페이스 | 동사 | 역할 |
-|-----------|------|------|
-| `IDomainEventPublisher` / `IAsyncDomainEventPublisher` | `publish` | 도메인 이벤트 발행 |
-| `IIntegrationEventPublisher` / `IAsyncIntegrationEventPublisher` | `publish` | 통합 이벤트 발행 |
-| `IDomainEventConsumer` / `IAsyncDomainEventConsumer` | `register` | 핸들러 콜백 등록 |
-| `IDomainEventDispatcher` / `IAsyncDomainEventDispatcher` | `dispatch` | 인프로세스 핸들러 전달 |
-| `IIntegrationEventDispatcher` / `IAsyncIntegrationEventDispatcher` | `dispatch` | 선언만 존재, 구현체 없음 (Phase 1에서 삭제 예정) |
-
-### ADR-0001 이후
+> 설계 배경은 [ADR-0001](adr/0001-event-system-redesign.md) 참조.
+> 동사 규칙은 [glossary — 동사 규칙](glossary.md#동사-규칙-verb-convention) 참조.
 
 | 인터페이스 | 동사 | 역할 |
 |-----------|------|------|
@@ -255,9 +242,7 @@ class UserEventHandler:
 class OrderEventBridge:
     """도메인 이벤트를 통합 이벤트로 변환"""
 
-    # ADR-0001 이후: IAsyncEventPublisher (단일 진입점)
-    # 현재 코드: IAsyncIntegrationEventPublisher
-    def __init__(self, publisher: IAsyncIntegrationEventPublisher) -> None:
+    def __init__(self, publisher: IAsyncEventPublisher) -> None:
         self.publisher = publisher
 
     @on_event(OrderPlacedDomainEvent)
@@ -315,14 +300,12 @@ async def place_order(self, command: PlaceOrderCommand) -> Order:
 
 ### RabbitMQ (spakky-rabbitmq)
 
-> 현재 코드: `RabbitMQEventPublisher` / `RabbitMQEventConsumer`
-> ADR-0001 이후: `RabbitMQEventTransport` / `RabbitMQEventConsumer`
-> (용어 매핑은 [glossary](glossary.md#역할-이름-매핑)를 참조하세요)
+> `RabbitMQEventTransport` (implements `IEventTransport`) / `RabbitMQEventConsumer`
 
 ```python
 @Pod()
 class OrderService:
-    def __init__(self, publisher: IAsyncIntegrationEventPublisher) -> None:
+    def __init__(self, publisher: IAsyncEventPublisher) -> None:
         self.publisher = publisher
 
     async def place_order(self, command: PlaceOrderCommand) -> Order:
@@ -333,9 +316,7 @@ class OrderService:
 
 ### Kafka (spakky-kafka)
 
-> 현재 코드: `KafkaEventPublisher` / `KafkaEventConsumer`
-> ADR-0001 이후: `KafkaEventTransport` / `KafkaEventConsumer`
-> (용어 매핑은 [glossary](glossary.md#역할-이름-매핑)를 참조하세요)
+> `KafkaEventTransport` (implements `IEventTransport`) / `KafkaEventConsumer`
 
 ---
 
@@ -399,7 +380,7 @@ async def test_event_handler():
 ```python
 @pytest.mark.asyncio
 async def test_mediator_dispatches_to_handlers():
-    mediator = AsyncDomainEventMediator()
+    mediator = AsyncEventMediator()
     handler = AsyncMock()
 
     mediator.register(UserCreatedEvent, handler)

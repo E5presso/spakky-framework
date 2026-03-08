@@ -336,7 +336,7 @@ spakky-data = "spakky.data.main:initialize"
 |---------|-------------------|
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
-| `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `TransportEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
+| `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor` |
 | `spakky-typer` | `TyperCLIPostProcessor` |
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
@@ -543,23 +543,21 @@ Consumer (핸들러 등록)           EventTransport (실제 메시지 전송)
 ```python
 @Pod()
 class AsyncEventPublisher(IAsyncEventPublisher):
-    _mediator: IAsyncEventDispatcher
-    _bus: IAsyncEventBus | None  # Transport plugin 미설치 시 None
+    _dispatcher: IAsyncEventDispatcher
+    _bus: IAsyncEventBus
 
     async def publish(self, event: AbstractEvent) -> None:
         match event:
             case AbstractDomainEvent():
-                await self._mediator.dispatch(event)
+                await self._dispatcher.dispatch(event)
             case AbstractIntegrationEvent():
-                if self._bus is None:
-                    raise EventBusNotConfiguredError(...)
                 await self._bus.send(event)
             case _:
                 raise AssertionError(f"Unknown event type: {type(event)!r}")
 ```
 
-- **Transport 미설치 시**: `EventBusNotConfiguredError` — Fail Loudly 원칙, silent fallback 금지
-- **Transport 설치 시**: Kafka/RabbitMQ 플러그인이 `IAsyncEventBus`를 제공
+- **`IEventBus`는 필수 의존성**: `spakky-event` 플러그인이 `DirectEventBus`를 기본 등록하므로 항상 사용 가능
+- **Transport 플러그인 설치 시**: Kafka/RabbitMQ가 `IEventTransport`를 제공하여 `DirectEventBus`가 실제 메시지 브로커로 전송
 
 ### Mediator 패턴
 
@@ -651,13 +649,13 @@ class OrderEventHandler:
 `IEventBus`와 `IEventTransport`의 **2단 인터페이스 분리**로 Outbox PnP를 달성합니다:
 
 ```
-[Outbox 미설치]  IEventBus = TransportEventBus → IEventTransport = KafkaEventTransport → Kafka
+[Outbox 미설치]  IEventBus = DirectEventBus → IEventTransport = KafkaEventTransport → Kafka
 [Outbox 설치]    IEventBus = OutboxEventBus (@Primary)
                    └─ outbox_table.insert() (같은 트랜잭션)
                    └─ OutboxRelay (background) → IEventTransport.send() → Kafka
 ```
 
-- **TransportEventBus**: 기본 `IEventBus` 구현. `IEventTransport`에 직접 위임
+- **DirectEventBus**: 기본 `IEventBus` 구현. `IEventTransport`에 직접 위임
 - **OutboxEventBus**: Outbox 플러그인이 `@Primary`로 `IEventBus`를 교체
 - **OutboxRelay**: `IEventTransport`에 의존하여 실제 전송 (DI 경쟁 없음)
 - **핵심**: `IEventBus`와 `IEventTransport`가 다른 인터페이스이므로 컨테이너의 DI 경쟁 없이 `@Primary` 하나로 PnP 달성
@@ -789,7 +787,7 @@ sequenceDiagram
 | Domain Event 전달 | `EventMediator` 인프로세스 | Spring `@EventListener`, eShop `MediatR` 패턴 |
 | Integration Event 전송 | `IEventBus` → `IEventTransport` 2단 분리 | eShop `IEventBus` 패턴, Outbox seam 확보, DI 경쟁 제거 |
 | Outbox 패턴 | `IEventBus` `@Primary` 교체, opt-in | 2단 인터페이스 분리로 PnP 달성, 강제 아닌 선택 |
-| Transport 미설치 시 | `EventBusNotConfiguredError` | Fail Loudly — silent fallback 금지 |
+| Transport 미설치 시 | DI 해결 실패 (`IEventTransport` 미등록) | Fail Loudly — DI 시점에서 조기 실패 |
 | Handler 실패 | 전체 롤백 | 트랜잭션 내 실행 → 데이터 일관성 보장 |
 
 ### 플러그인 시스템
