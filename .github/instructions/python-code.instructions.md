@@ -26,6 +26,12 @@ applyTo: "**/*.py"
 
 불가능한 상태는 `assert_never()` 또는 `raise AssertionError()`로 명시적 실패 (silent fallback 금지).
 
+## 하위 호환성
+
+- **Breaking change 우선**: 사용자가 명시적으로 허가하지 않는 한, 하위 호환성은 유지하지 않는다.
+- **Alias 금지**: `OldName = NewName` 형태의 하위 호환 alias 금지. Deprecated 인터페이스가 필요하면 실제 ABC 클래스로 선언.
+- 리네이밍 시 모든 사용처를 **일괄 수정**. 단계적 마이그레이션 없이 한 번에 전환.
+
 ## Import 규칙
 
 - 파일 최상단 import 사용. 인라인 qualified path 금지 (`spakky.core.pod.Pod` 형태).
