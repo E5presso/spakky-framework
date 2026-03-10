@@ -1,12 +1,12 @@
 [project]
 name = "spakky-typer"
-version = "5.0.1"
+version = "6.0.0"
 description = "Typer CLI plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=5.0.1", "typer>=0.20.0"]
+dependencies = ["spakky>=6.0.0", "typer>=0.20.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-typer = "spakky.plugins.typer.main:initialize"

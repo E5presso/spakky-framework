@@ -1,13 +1,13 @@
 [project]
 name = "spakky-sqlalchemy"
-version = "5.0.1"
+version = "6.0.0"
 description = "SQLAlchemy plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
-    "spakky-data>=5.0.1",
+    "spakky-data>=6.0.0",
     "sqlalchemy>=2.0.45",
 ]
 
