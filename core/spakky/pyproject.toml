@@ -17,6 +17,8 @@ security = ["spakky-security>=5.0.1"]
 typer = ["spakky-typer>=5.0.1"]
 kafka = ["spakky-kafka>=5.0.1"]
 sqlalchemy = ["spakky-sqlalchemy>=5.0.1"]
+outbox = ["spakky-outbox>=5.0.1"]
+outbox-sqlalchemy = ["spakky-outbox-sqlalchemy>=5.0.1"]
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]

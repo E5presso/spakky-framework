@@ -19,15 +19,22 @@ ls -la tests/
 
 ## Step 2: 전체 테스트로 커버리지 측정
 
-커버리지는 **모든 테스트(unit + integration)**를 실행해서 측정해야 합니다:
+커버리지는 **run_coverage.py 스크립트**를 사용하여 측정합니다:
 
 ```bash
-# 올바른 방법: 패키지 전체 테스트
-cd <package-dir> && uv run pytest
+# 단일 패키지 커버리지 측정
+uv run python scripts/run_coverage.py --package <package-name>
+
+# 예시: spakky-sqlalchemy 패키지
+uv run python scripts/run_coverage.py --package spakky-sqlalchemy
+
+# 전체 패키지 커버리지 측정 (병렬 실행)
+uv run python scripts/run_coverage.py
 ```
 
-> ❌ **금지**: `tests/unit/` 또는 `tests/integration/`만 실행하는 것
-> pyproject.toml 설정에 의존하세요. 직접 `--cov` 옵션 지정 금지.
+> ❌ **금지**: `cd <dir> && uv run pytest` 직접 실행
+> ❌ **금지**: `--cov` 옵션 직접 지정
+> 스크립트가 pyproject.toml 설정과 커버리지 XML 생성을 자동 처리합니다.
 
 ## Step 3: 미커버 라인 분류
 
@@ -93,7 +100,11 @@ def config_fixture(request):
 ## Step 6: 최종 검증
 
 ```bash
-cd <package-dir> && uv run pytest
+# 단일 패키지
+uv run python scripts/run_coverage.py --package <package-name>
+
+# 전체 패키지
+uv run python scripts/run_coverage.py
 ```
 
 100% 미달성 이유를 명시적으로 보고하세요.
