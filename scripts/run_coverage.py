@@ -109,10 +109,8 @@ def _build_coverage_cmd(pkg: PackageInfo, *, is_parallel: bool = False) -> list[
         "--cov-report=term-missing",
     ]
     if is_parallel:
-        # Disable xdist when running packages in parallel to avoid nested parallelism
-        cmd.extend(["-p", "no:xdist"])
-    elif "kafka" in pkg.name:
-        cmd.extend(["-n", "1"])
+        # Disable xdist parallelism when running packages in parallel
+        cmd.extend(["-n", "0"])
     return cmd
 
 

@@ -65,7 +65,7 @@ class User(AbstractAggregateRoot[UUID]):
 
 # Table definition with domain mapping
 @Table()
-class UserTable(AbstractTable[User]):
+class UserTable(AbstractMappableTable[User]):
     __tablename__ = "users"
 
     id: Mapped[UUID] = mapped_column(primary_key=True)

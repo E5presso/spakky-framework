@@ -70,15 +70,22 @@ class SpakkyApplication:
         self._application_context = application_context
 
     def add(self, obj: PodType) -> Self:
-        """Register a Pod class or function in the container.
+        """Register a class or function in the application.
+
+        - If the object has a @Pod annotation, it is registered in the container.
+        - If the object has a @Tag annotation, the tag is registered in the tag registry.
 
         Args:
-            obj: The class or function to register as a Pod.
+            obj: The class or function to register.
 
         Returns:
             Self for method chaining.
         """
-        self._application_context.add(obj)
+        if Pod.exists(obj):
+            self._application_context.add(obj)
+        if Tag.exists(obj):
+            tag = Tag.get(obj)
+            self._application_context.register_tag(tag)
         return self
 
     def scan(

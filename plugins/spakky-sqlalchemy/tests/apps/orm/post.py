@@ -7,12 +7,12 @@ from uuid import UUID
 from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from tests.apps.models.post import Post
 
 
 @Table(Post)
-class PostTable(AbstractTable[Post]):
+class PostTable(AbstractMappableTable[Post]):
     """ORM table mapping for Post domain entity."""
 
     __tablename__ = "posts"

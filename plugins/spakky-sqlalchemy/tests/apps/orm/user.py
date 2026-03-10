@@ -7,12 +7,12 @@ from uuid import UUID
 from sqlalchemy import DateTime, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from tests.apps.models.user import User
 
 
 @Table(User)
-class UserTable(AbstractTable[User]):
+class UserTable(AbstractMappableTable[User]):
     """ORM table mapping for User domain entity."""
 
     __tablename__ = "users"

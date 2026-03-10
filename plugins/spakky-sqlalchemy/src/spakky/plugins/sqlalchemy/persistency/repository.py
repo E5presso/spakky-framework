@@ -13,7 +13,7 @@ from spakky.data.persistency.repository import (
 from spakky.domain.models.aggregate_root import AggregateRootT
 
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable
 from spakky.plugins.sqlalchemy.persistency.error import (
     AbstractSpakkySqlAlchemyPersistencyError,
 )
@@ -171,7 +171,7 @@ class AbstractGenericRepository(
     def save_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
-        tables: list[AbstractTable[AggregateRootT]] = []
+        tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
                 table = self._schema_registry.from_domain(aggregate)
@@ -198,7 +198,7 @@ class AbstractGenericRepository(
     def delete_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
-        tables: list[AbstractTable[AggregateRootT]] = []
+        tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
                 table = self._schema_registry.from_domain(aggregate)
@@ -363,7 +363,7 @@ class AbstractAsyncGenericRepository(
     async def save_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
-        tables: list[AbstractTable[AggregateRootT]] = []
+        tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
                 table = self._schema_registry.from_domain(aggregate)
@@ -390,7 +390,7 @@ class AbstractAsyncGenericRepository(
     async def delete_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
-        tables: list[AbstractTable[AggregateRootT]] = []
+        tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
                 table = self._schema_registry.from_domain(aggregate)

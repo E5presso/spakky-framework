@@ -8,14 +8,18 @@ from spakky.core.pod.annotations.tag import Tag
 from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 from spakky.core.utils.uuid import uuid7
 from spakky.domain.models import AbstractEntity
-from sqlalchemy import DateTime, String, Uuid
+from sqlalchemy import DateTime, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from spakky.plugins.sqlalchemy.orm.schema_registry import (
     NoSchemaFoundFromDomainError,
     SchemaRegistry,
 )
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import (
+    AbstractMappableTable,
+    AbstractTable,
+    Table,
+)
 
 # --- In-Memory ITagRegistry fixture implementation ---
 
@@ -65,7 +69,7 @@ class User(AbstractEntity[UUID]):
 
 
 @Table(User)
-class UserTable(AbstractTable[User]):
+class UserTable(AbstractMappableTable[User]):
     """Test table for User domain."""
 
     __tablename__ = "test_users"
@@ -260,5 +264,28 @@ def test_get_type_unregistered_domain_expect_error(
     registry = SchemaRegistry()
     registry.set_tag_registry(tag_registry)
 
+    with pytest.raises(NoSchemaFoundFromDomainError):
+        registry.get_type(User)
+
+
+def test_register_non_mappable_table_expect_metadata_only(
+    tag_registry: InMemoryTagRegistry,
+) -> None:
+    """Non-mappable 테이블은 metadata에만 등록되고 도메인 매핑에는 등록되지 않음을 검증한다."""
+
+    @Table()
+    class InfrastructureTable(AbstractTable):
+        __tablename__ = "test_infrastructure"
+
+        id: Mapped[int] = mapped_column(Integer(), primary_key=True)
+        data: Mapped[str] = mapped_column(String(), nullable=False)
+
+    tag_registry.register_tag(Table.get(InfrastructureTable))
+    registry = SchemaRegistry()
+    registry.set_tag_registry(tag_registry)
+
+    # Table should be in metadata
+    assert "test_infrastructure" in registry.metadata.tables
+    # But no domain-to-table mapping should exist
     with pytest.raises(NoSchemaFoundFromDomainError):
         registry.get_type(User)

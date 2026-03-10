@@ -11,7 +11,24 @@ from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase
 
 
-class AbstractTable(DeclarativeBase, AsyncAttrs, Generic[ObjectT]):
+class AbstractTable(DeclarativeBase, AsyncAttrs):
+    """Base table class for SQLAlchemy ORM integration with Spakky.
+
+    Use this class for infrastructure tables that don't map to domain models
+    (e.g., outbox tables, audit logs). For tables that map to domain entities,
+    use AbstractMappableTable instead.
+    """
+
+    __abstract__ = True
+
+
+class AbstractMappableTable(AbstractTable, Generic[ObjectT]):
+    """Table class with domain object mapping support.
+
+    Use this class for tables that map to domain entities. Subclasses must
+    implement from_domain() and to_domain() methods for bidirectional mapping.
+    """
+
     __abstract__ = True
 
     @classmethod
@@ -33,28 +50,34 @@ class TargetDomainNotSpecifiedError(AbstractSpakkySqlAlchemyORMError):
 @dataclass(eq=False)
 class Table(Tag):
     __target_domain_type_sentinel__: ClassVar[type[object]] = type[object]
-    domain: type[object] = field(default=__target_domain_type_sentinel__)
-    table: type[AbstractTable[object]] = field(init=False)
+    domain: type[object] | None = field(default=__target_domain_type_sentinel__)
+    table: type[AbstractTable] = field(init=False)
 
     def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
         if not issubclass(obj, AbstractTable):
             raise CannotUseTableAnnotationError(obj)
 
-        if self.domain is self.__target_domain_type_sentinel__:
-            table = next(
-                (
-                    type_
-                    for type_ in generic_mro(obj)
-                    if get_origin(type_) is AbstractTable
-                ),
-                None,
-            )
-            if table is None:  # pragma: no cover
-                raise TargetDomainNotSpecifiedError(obj)
-            target_domain: type[object] | None = next(iter(get_args(table)), None)
-            if target_domain is None:  # pragma: no cover
-                raise TargetDomainNotSpecifiedError(obj)
-            self.domain = target_domain
         self.table = obj
+
+        # For AbstractMappableTable subclasses, extract domain type
+        if issubclass(obj, AbstractMappableTable):
+            if self.domain is self.__target_domain_type_sentinel__:
+                table = next(
+                    (
+                        type_
+                        for type_ in generic_mro(obj)
+                        if get_origin(type_) is AbstractMappableTable
+                    ),
+                    None,
+                )
+                if table is None:  # pragma: no cover
+                    raise TargetDomainNotSpecifiedError(obj)
+                target_domain: type[object] | None = next(iter(get_args(table)), None)
+                if target_domain is None:  # pragma: no cover
+                    raise TargetDomainNotSpecifiedError(obj)
+                self.domain = target_domain
+        else:
+            # Non-mappable table
+            self.domain = None
 
         return super().__call__(obj)

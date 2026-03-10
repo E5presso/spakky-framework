@@ -7,12 +7,12 @@ from uuid import UUID
 from sqlalchemy import DateTime, ForeignKey, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from tests.apps.models.user_role import UserRole
 
 
 @Table(UserRole)
-class UserRoleTable(AbstractTable[UserRole]):
+class UserRoleTable(AbstractMappableTable[UserRole]):
     """ORM table mapping for UserRole domain entity with composite primary key."""
 
     __tablename__ = "user_roles"

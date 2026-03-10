@@ -8,6 +8,7 @@ import pytest
 import spakky.plugins.sqlalchemy
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
 )
@@ -22,7 +23,6 @@ from spakky.plugins.outbox_sqlalchemy.adapters.storage import (
     AsyncSqlAlchemyOutboxStorage,
     SqlAlchemyOutboxStorage,
 )
-from spakky.plugins.outbox_sqlalchemy.persistency.table import OutboxBase
 
 
 @pytest.fixture(name="postgres_container", scope="package")
@@ -80,18 +80,25 @@ def async_connection_manager_fixture(app: SpakkyApplication) -> AsyncConnectionM
     return app.container.get(type_=AsyncConnectionManager)
 
 
+@pytest.fixture(name="schema_registry", scope="package")
+def schema_registry_fixture(app: SpakkyApplication) -> SchemaRegistry:
+    """Get SchemaRegistry from application container."""
+    return app.container.get(type_=SchemaRegistry)
+
+
 @pytest.fixture(name="setup_database", scope="package", autouse=True)
 async def setup_database_fixture(
     async_connection_manager: AsyncConnectionManager,
+    schema_registry: SchemaRegistry,
 ) -> AsyncGenerator[None, Any]:
     """Set up database schema for integration tests."""
     async with async_connection_manager.connection.begin() as conn:
-        await conn.run_sync(OutboxBase.metadata.create_all)
+        await conn.run_sync(schema_registry.metadata.create_all)
 
     yield
 
     async with async_connection_manager.connection.begin() as conn:
-        await conn.run_sync(OutboxBase.metadata.drop_all)
+        await conn.run_sync(schema_registry.metadata.drop_all)
 
     await async_connection_manager.dispose()
 

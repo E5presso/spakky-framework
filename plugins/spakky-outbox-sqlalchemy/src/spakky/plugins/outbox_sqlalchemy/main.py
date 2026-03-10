@@ -6,6 +6,7 @@ from spakky.plugins.outbox_sqlalchemy.adapters.storage import (
     AsyncSqlAlchemyOutboxStorage,
     SqlAlchemyOutboxStorage,
 )
+from spakky.plugins.outbox_sqlalchemy.persistency.table import OutboxMessageTable
 
 
 def initialize(app: SpakkyApplication) -> None:
@@ -16,3 +17,4 @@ def initialize(app: SpakkyApplication) -> None:
     """
     app.add(SqlAlchemyOutboxStorage)
     app.add(AsyncSqlAlchemyOutboxStorage)
+    app.add(OutboxMessageTable)

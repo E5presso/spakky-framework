@@ -7,12 +7,12 @@ from uuid import UUID
 from sqlalchemy import DateTime, ForeignKey, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from tests.apps.models.comment import Comment
 
 
 @Table(Comment)
-class CommentTable(AbstractTable[Comment]):
+class CommentTable(AbstractMappableTable[Comment]):
     """ORM table mapping for Comment domain entity."""
 
     __tablename__ = "comments"

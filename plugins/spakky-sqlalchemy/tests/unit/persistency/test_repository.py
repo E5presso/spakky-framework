@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm.exc import StaleDataError
 
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from spakky.plugins.sqlalchemy.persistency.repository import (
     AbstractAsyncGenericRepository,
     AbstractGenericRepository,
@@ -43,7 +43,7 @@ class TestEntity(AbstractAggregateRoot[UUID]):
 
 
 @Table(TestEntity)
-class TestEntityTable(AbstractTable[TestEntity]):
+class TestEntityTable(AbstractMappableTable[TestEntity]):
     """Test table."""
 
     __tablename__ = "test_entities"

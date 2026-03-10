@@ -68,3 +68,33 @@ def test_scan_with_tagged_module() -> None:
 
     # Should have registered the tag
     assert app.container is not None
+
+
+def test_add_tag_only_class_expect_tag_registered() -> None:
+    """add()로 Tag만 있는 클래스를 추가하면 태그가 등록됨을 검증한다."""
+    from tests.dummy.tagged_package.tagged_module import CustomTag, TagOnlyClass
+
+    app = SpakkyApplication(ApplicationContext())
+    app.add(TagOnlyClass)
+
+    # Tag should be registered
+    tags = app.application_context.tags
+    assert any(
+        isinstance(tag, CustomTag) and tag.category == "tag-only" for tag in tags
+    )
+    # Pod should NOT be registered (no @Pod decorator)
+    assert not any(pod.type_ == TagOnlyClass for pod in app.container.pods.values())
+
+
+def test_add_tagged_pod_class_expect_both_registered() -> None:
+    """add()로 Tag와 Pod 둘 다 있는 클래스를 추가하면 둘 다 등록됨을 검증한다."""
+    from tests.dummy.tagged_package.tagged_module import CustomTag, TaggedPod
+
+    app = SpakkyApplication(ApplicationContext())
+    app.add(TaggedPod)
+
+    # Pod should be registered
+    assert any(pod.type_ == TaggedPod for pod in app.container.pods.values())
+    # Tag should also be registered
+    tags = app.application_context.tags
+    assert any(isinstance(tag, CustomTag) and tag.category == "test" for tag in tags)

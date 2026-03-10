@@ -6,7 +6,7 @@ from spakky.core.pod.interfaces.aware.tag_registry_aware import ITagRegistryAwar
 from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from sqlalchemy import MetaData
 from sqlalchemy import Table as SQLAlchemyTable
 
@@ -19,8 +19,8 @@ class NoSchemaFoundFromDomainError(AbstractSpakkySqlAlchemyORMError):
 class SchemaRegistry(ITagRegistryAware):
     _tag_registry: ITagRegistry
     _metadata: MetaData
-    _domain_to_table_map: dict[type[Any], type[AbstractTable[Any]]]
-    _table_to_domain_map: dict[type[AbstractTable[Any]], type[Any]]
+    _domain_to_table_map: dict[type[Any], type[AbstractMappableTable[Any]]]
+    _table_to_domain_map: dict[type[AbstractMappableTable[Any]], type[Any]]
 
     def __init__(self) -> None:
         self._metadata = MetaData()
@@ -47,20 +47,31 @@ class SchemaRegistry(ITagRegistryAware):
         for tag in self._tag_registry.tags:
             if not isinstance(tag, Table):
                 continue
+
             table: SQLAlchemyTable = cast(SQLAlchemyTable, tag.table.__table__)
             table.to_metadata(self._metadata)
-            self._domain_to_table_map[tag.domain] = tag.table
-            self._table_to_domain_map[tag.table] = tag.domain
 
-    def get_type(self, domain_type: type[ObjectT]) -> type[AbstractTable[ObjectT]]:
+            if not issubclass(tag.table, AbstractMappableTable) or tag.domain is None:
+                continue
+
+            self._domain_to_table_map[tag.domain] = cast(
+                type[AbstractMappableTable[Any]], tag.table
+            )
+            self._table_to_domain_map[
+                cast(type[AbstractMappableTable[Any]], tag.table)
+            ] = tag.domain
+
+    def get_type(
+        self, domain_type: type[ObjectT]
+    ) -> type[AbstractMappableTable[ObjectT]]:
         table = self._domain_to_table_map.get(domain_type)
         if table is None:
             raise NoSchemaFoundFromDomainError(domain_type)
-        return cast(type[AbstractTable[ObjectT]], table)
+        return cast(type[AbstractMappableTable[ObjectT]], table)
 
-    def from_domain(self, domain: ObjectT) -> AbstractTable[ObjectT]:
-        table: type[AbstractTable[ObjectT]] | None = self._domain_to_table_map.get(
-            type(domain)
+    def from_domain(self, domain: ObjectT) -> AbstractMappableTable[ObjectT]:
+        table: type[AbstractMappableTable[ObjectT]] | None = (
+            self._domain_to_table_map.get(type(domain))
         )
         if table is None:
             raise NoSchemaFoundFromDomainError(domain)

@@ -10,6 +10,7 @@ from sqlalchemy import DateTime, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from spakky.plugins.sqlalchemy.orm.table import (
+    AbstractMappableTable,
     AbstractTable,
     CannotUseTableAnnotationError,
     Table,
@@ -41,7 +42,7 @@ def test_table_annotation_with_specified_target_domain() -> None:
             return
 
     @Table(User)
-    class UserTable(AbstractTable[User]):
+    class UserTable(AbstractMappableTable[User]):
         __tablename__ = "unit_test_users"
 
         uid: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
@@ -87,7 +88,7 @@ def test_table_annotation_with_implicit_target_domain() -> None:
             return
 
     @Table()
-    class MemberTable(AbstractTable[Member]):
+    class MemberTable(AbstractMappableTable[Member]):
         __tablename__ = "unit_test_members"
 
         uid: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
@@ -115,3 +116,18 @@ def test_table_annotation_with_implicit_target_domain() -> None:
     assert Table.get(MemberTable).domain is Member
     assert Table.get(MemberTable).table is MemberTable
     assert Table.get(MemberTable) == Table.get(MemberTable)
+
+
+def test_table_annotation_with_non_mappable_table_expect_domain_none() -> None:
+    """AbstractTable을 상속한 non-mappable 테이블에 @Table 적용 시 domain이 None임을 검증."""
+
+    @Table()
+    class InfrastructureTable(AbstractTable):
+        __tablename__ = "unit_test_infrastructure"
+
+        id: Mapped[int] = mapped_column(primary_key=True)
+        data: Mapped[str] = mapped_column(String(), nullable=False)
+
+    table_tag = Table.get(InfrastructureTable)
+    assert table_tag.domain is None
+    assert table_tag.table is InfrastructureTable

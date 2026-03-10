@@ -3,16 +3,18 @@
 from datetime import datetime
 from uuid import UUID
 
+from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
 from sqlalchemy import DateTime, Index, LargeBinary, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 
-class OutboxBase(DeclarativeBase):
-    """Outbox-specific DeclarativeBase. Infrastructure table, not a domain model."""
+@Table()
+class OutboxMessageTable(AbstractTable):
+    """Outbox message table for transactional outbox pattern.
 
-
-class OutboxMessageTable(OutboxBase):
-    """Outbox message table for transactional outbox pattern."""
+    This is an infrastructure table that doesn't map to a domain model,
+    so it inherits from AbstractTable (not AbstractMappableTable).
+    """
 
     __tablename__ = "spakky_event_outbox"
 
