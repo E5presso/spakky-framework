@@ -35,6 +35,27 @@ def test_registry_register_entities_expect_all_registered(registry: ModelRegistr
 - 공통 fixture → `conftest.py`
 - `scope="function"` 기본 (테스트 간 상태 격리)
 
+## 통합 테스트 규칙
+
+- **실제 구현체 사용**: 테스트 래퍼 대신 실제 플러그인 구현체 사용.
+- **플러그인 의존성**: 필요 시 `dev-dependencies`에 타 플러그인 추가.
+- **컨테이너 사용**: `testcontainers`로 실제 인프라(DB, 메시지 브로커 등) 테스트.
+- **SpakkyApplication 패턴**: `SpakkyApplication(ApplicationContext()).load_plugins(include={...}).scan(apps)` 사용.
+
+예시 (spakky-kafka 참조):
+```python
+@pytest.fixture(name="app", scope="function")
+def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .load_plugins(include={spakky.plugins.kafka.PLUGIN_NAME})
+        .scan(apps)
+    )
+    app.start()
+    yield app
+    app.stop()
+```
+
 ## 커버리지
 
 커버리지 개선은 **`improve-coverage` 스킬** 사용. 미커버 라인 분류:
