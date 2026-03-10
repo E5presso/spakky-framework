@@ -15,6 +15,8 @@ members = [
     "spakky-fastapi",
     "spakky-framework",
     "spakky-kafka",
+    "spakky-outbox",
+    "spakky-outbox-sqlalchemy",
     "spakky-rabbitmq",
     "spakky-security",
     "spakky-sqlalchemy",
@@ -2177,6 +2179,52 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "testcontainers", specifier = ">=4.13.3" }]
+
+[[package]]
+name = "spakky-outbox"
+version = "5.0.1"
+source = { editable = "plugins/spakky-outbox" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "spakky-event" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "pydantic-settings", specifier = ">=2.12.0" },
+    { name = "spakky-event", editable = "core/spakky-event" },
+]
+
+[[package]]
+name = "spakky-outbox-sqlalchemy"
+version = "5.0.1"
+source = { editable = "plugins/spakky-outbox-sqlalchemy" }
+dependencies = [
+    { name = "spakky-outbox" },
+    { name = "spakky-sqlalchemy" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "greenlet" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "testcontainers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "spakky-outbox", editable = "plugins/spakky-outbox" },
+    { name = "spakky-sqlalchemy", editable = "plugins/spakky-sqlalchemy" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "greenlet", specifier = ">=3.0.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.0.0" },
+    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.0.0" },
+]
 
 [[package]]
 name = "spakky-rabbitmq"
