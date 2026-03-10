@@ -1,0 +1,1 @@
+"""Outbox bus module."""

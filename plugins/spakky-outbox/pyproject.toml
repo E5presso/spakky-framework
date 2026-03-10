@@ -1,0 +1,55 @@
+[project]
+name = "spakky-outbox"
+version = "5.0.1"
+description = "Transactional Outbox pattern plugin for Spakky Framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = [
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.12.0",
+    "spakky-event>=5.0.1",
+]
+
+[project.entry-points."spakky.plugins"]
+spakky-outbox = "spakky.plugins.outbox.main:initialize"
+
+[build-system]
+requires = ["uv_build>=0.9.13,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.outbox"
+
+[tool.pyrefly]
+python-version = "3.14"
+search_path = ["src", "."]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = "src/spakky/plugins/outbox"
+testpaths = "tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=load
+    -p no:warnings
+    -n auto
+    -vv
+"""
+markers = ["known_issue(reason): 알려진 버그"]
+
+[tool.coverage.run]
+include = ["src/spakky/plugins/outbox/*"]
+branch = true
