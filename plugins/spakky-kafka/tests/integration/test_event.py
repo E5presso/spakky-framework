@@ -2,6 +2,7 @@ from asyncio import sleep as asleep
 from time import sleep, time
 
 import pytest
+from pydantic import TypeAdapter
 from spakky.core.application.application import SpakkyApplication
 from spakky.event.error import DuplicateEventHandlerError
 from spakky.event.event_consumer import (
@@ -21,6 +22,8 @@ from tests.apps.dummy import (
 
 POLL_INTERVAL = 0.1  # seconds between checks
 MAX_WAIT_TIME = 30  # maximum seconds to wait
+
+_sample_event_type_adapter: TypeAdapter[SampleEvent] = TypeAdapter(SampleEvent)
 
 
 def wait_for_count(handler: DummyEventHandler, expected: int) -> None:
@@ -52,8 +55,10 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
     transport = app.container.get(IEventTransport)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
-    transport.send(SampleEvent(message="Hello, World!"))
-    transport.send(SampleEvent(message="Goodbye, World!"))
+    event1 = SampleEvent(message="Hello, World!")
+    event2 = SampleEvent(message="Goodbye, World!")
+    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1))
+    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2))
     wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -64,8 +69,10 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
     transport = app.container.get(IAsyncEventTransport)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
-    await transport.send(SampleEvent(message="Hello, World!"))
-    await transport.send(SampleEvent(message="Goodbye, World!"))
+    event1 = SampleEvent(message="Hello, World!")
+    event2 = SampleEvent(message="Goodbye, World!")
+    await transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1))
+    await transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2))
     await async_wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
