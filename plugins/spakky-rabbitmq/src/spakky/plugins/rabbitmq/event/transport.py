@@ -9,9 +9,7 @@ from aio_pika import (  # type: ignore[import-untyped]  # aio_pika lacks type st
     connect_robust,
 )
 from pika import BlockingConnection, URLParameters
-from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
-from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import (
     IAsyncEventTransport,
     IEventTransport,
@@ -24,7 +22,7 @@ from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 class RabbitMQEventTransport(IEventTransport):
     """Synchronous RabbitMQ event transport.
 
-    Sends integration events to RabbitMQ queues using blocking connections.
+    Sends pre-serialized event payloads to RabbitMQ queues using blocking connections.
     Optionally routes through an exchange for pub/sub patterns.
 
     Attributes:
@@ -34,7 +32,6 @@ class RabbitMQEventTransport(IEventTransport):
 
     connection_string: str
     exchange_name: str | None
-    type_adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event transport.
@@ -44,29 +41,27 @@ class RabbitMQEventTransport(IEventTransport):
         """
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
-        self.type_adapters = {}
 
-    def send(self, event: AbstractIntegrationEvent) -> None:
-        """Send an integration event to RabbitMQ.
+    def send(self, event_name: str, payload: bytes) -> None:
+        """Send a pre-serialized event payload to RabbitMQ.
 
-        Creates a new connection, sends the event to the appropriate queue,
+        Creates a new connection, sends the payload to the appropriate queue,
         and closes the connection.
 
         Args:
-            event: The integration event to send.
+            event_name: Routing key / queue name for the event.
+            payload: Pre-serialized JSON bytes.
         """
         connection = BlockingConnection(URLParameters(self.connection_string))
         channel = connection.channel()
-        channel.queue_declare(event.event_name)
+        channel.queue_declare(event_name)
         if self.exchange_name is not None:
             channel.exchange_declare(self.exchange_name)
-            channel.queue_bind(event.event_name, self.exchange_name, event.event_name)
-        if type(event) not in self.type_adapters:
-            self.type_adapters[type(event)] = TypeAdapter(type(event))
+            channel.queue_bind(event_name, self.exchange_name, event_name)
         channel.basic_publish(
             self.exchange_name if self.exchange_name is not None else "",
-            event.event_name,
-            self.type_adapters[type(event)].dump_json(event),
+            event_name,
+            payload,
         )
         channel.close()
         connection.close()
@@ -76,7 +71,7 @@ class RabbitMQEventTransport(IEventTransport):
 class AsyncRabbitMQEventTransport(IAsyncEventTransport):
     """Asynchronous RabbitMQ event transport.
 
-    Sends integration events to RabbitMQ queues using async connections.
+    Sends pre-serialized event payloads to RabbitMQ queues using async connections.
     Optionally routes through an exchange for pub/sub patterns.
 
     Attributes:
@@ -86,7 +81,6 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
 
     connection_string: str
     exchange_name: str | None
-    type_adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event transport.
@@ -96,16 +90,16 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
         """
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
-        self.type_adapters = {}
 
-    async def send(self, event: AbstractIntegrationEvent) -> None:
-        """Send an integration event to RabbitMQ asynchronously.
+    async def send(self, event_name: str, payload: bytes) -> None:
+        """Send a pre-serialized event payload to RabbitMQ asynchronously.
 
-        Creates a new robust connection, sends the event to the appropriate
+        Creates a new robust connection, sends the payload to the appropriate
         queue, and closes the connection.
 
         Args:
-            event: The integration event to send.
+            event_name: Routing key / queue name for the event.
+            payload: Pre-serialized JSON bytes.
         """
         async with await connect_robust(self.connection_string) as connection:
             channel = await connection.channel()
@@ -114,13 +108,11 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
                 if self.exchange_name is not None
                 else channel.default_exchange
             )
-            queue = await channel.declare_queue(event.event_name)
+            queue = await channel.declare_queue(event_name)
             if self.exchange_name is not None:
-                await queue.bind(exchange, event.event_name)
-            if type(event) not in self.type_adapters:
-                self.type_adapters[type(event)] = TypeAdapter(type(event))
+                await queue.bind(exchange, event_name)
             await exchange.publish(
-                Message(body=self.type_adapters[type(event)].dump_json(event)),
-                routing_key=event.event_name,
+                Message(body=payload),
+                routing_key=event_name,
             )
             await channel.close()

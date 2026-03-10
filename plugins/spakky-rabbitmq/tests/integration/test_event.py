@@ -2,6 +2,7 @@ from asyncio import sleep as asleep  # type: ignore
 from time import sleep, time
 
 import pytest
+from pydantic import TypeAdapter
 from spakky.core.application.application import SpakkyApplication
 from spakky.event.error import DuplicateEventHandlerError
 from spakky.event.event_consumer import (
@@ -23,6 +24,9 @@ from tests.apps.dummy import (
 
 POLL_INTERVAL = 0.05  # seconds between checks
 MAX_WAIT_TIME = 10  # maximum seconds to wait
+
+_sample_event_type_adapter: TypeAdapter[SampleEvent] = TypeAdapter(SampleEvent)
+_async_event_type_adapter: TypeAdapter[AsyncTestEvent] = TypeAdapter(AsyncTestEvent)
 
 
 def wait_for_count(
@@ -58,8 +62,10 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
     transport = app.container.get(IEventTransport)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
-    transport.send(SampleEvent(message="Hello, World!"))
-    transport.send(SampleEvent(message="Goodbye, World!"))
+    event1 = SampleEvent(message="Hello, World!")
+    event2 = SampleEvent(message="Goodbye, World!")
+    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1))
+    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2))
     wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -70,8 +76,10 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
     transport = app.container.get(IAsyncEventTransport)
     handler = app.container.get(DummyEventHandler)
     initial_count = handler.count
-    await transport.send(SampleEvent(message="Hello, World!"))
-    await transport.send(SampleEvent(message="Goodbye, World!"))
+    event1 = SampleEvent(message="Hello, World!")
+    event2 = SampleEvent(message="Goodbye, World!")
+    await transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1))
+    await transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2))
     await async_wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -83,9 +91,12 @@ async def test_async_handler_execution(app: SpakkyApplication) -> None:
     handler = app.container.get(AsyncEventHandler)
 
     initial_count = handler.count
-    await transport.send(AsyncTestEvent(message="Test1"))
-    await transport.send(AsyncTestEvent(message="Test2"))
-    await transport.send(AsyncTestEvent(message="Test3"))
+    event1 = AsyncTestEvent(message="Test1")
+    event2 = AsyncTestEvent(message="Test2")
+    event3 = AsyncTestEvent(message="Test3")
+    await transport.send("AsyncTestEvent", _async_event_type_adapter.dump_json(event1))
+    await transport.send("AsyncTestEvent", _async_event_type_adapter.dump_json(event2))
+    await transport.send("AsyncTestEvent", _async_event_type_adapter.dump_json(event3))
     await async_wait_for_count(handler, initial_count + 3)
 
     # All async events should be handled

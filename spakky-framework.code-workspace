@@ -52,6 +52,14 @@
 			"name": "plugins.sqlalchemy",
 			"path": "plugins/spakky-sqlalchemy",
 		},
+		{
+			"name": "plugins.outbox",
+			"path": "plugins/spakky-outbox",
+		},
+		{
+			"name": "plugins.outbox-sqlalchemy",
+			"path": "plugins/spakky-outbox-sqlalchemy",
+		},
 	],
 	"settings": {
 		"[python]": {
@@ -137,6 +145,8 @@
 			"typer",
 			"kafka",
 			"sqlalchemy",
+			"outbox",
+			"outbox-sqlalchemy",
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml",

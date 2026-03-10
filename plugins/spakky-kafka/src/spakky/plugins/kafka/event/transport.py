@@ -3,9 +3,7 @@ from logging import getLogger
 from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.experimental.aio import AIOProducer
-from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
-from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import (
     IAsyncEventTransport,
     IEventTransport,
@@ -19,15 +17,11 @@ logger = getLogger(__name__)
 @Pod()
 class KafkaEventTransport(IEventTransport):
     config: KafkaConnectionConfig
-    type_adapters: dict[
-        type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
-    ]
     admin: AdminClient
     producer: Producer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         self.config = config
-        self.type_adapters = {}
         self.admin = AdminClient(self.config.configuration_dict)
         self.producer = Producer(self.config.configuration_dict, logger=logger)
 
@@ -57,19 +51,17 @@ class KafkaEventTransport(IEventTransport):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    def send(self, event: AbstractIntegrationEvent) -> None:
-        """Send an integration event to Kafka.
+    def send(self, event_name: str, payload: bytes) -> None:
+        """Send a pre-serialized event payload to Kafka.
 
         Args:
-            event: The integration event to send.
+            event_name: Topic name (typically the event class name).
+            payload: Pre-serialized JSON bytes.
         """
-        event_type = type(event)
-        if event_type not in self.type_adapters:
-            self.type_adapters[event_type] = TypeAdapter(event_type)
-        self._create_topic(topic=event.event_name)
+        self._create_topic(topic=event_name)
         self.producer.produce(
-            topic=event.event_name,
-            value=self.type_adapters[event_type].dump_json(event),
+            topic=event_name,
+            value=payload,
             callback=self._message_delivery_report,
         )
         self.producer.poll(0)
@@ -79,15 +71,11 @@ class KafkaEventTransport(IEventTransport):
 @Pod()
 class AsyncKafkaEventTransport(IAsyncEventTransport):
     config: KafkaConnectionConfig
-    type_adapters: dict[
-        type[AbstractIntegrationEvent], TypeAdapter[AbstractIntegrationEvent]
-    ]
     admin: AdminClient
     producer: AIOProducer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         self.config = config
-        self.type_adapters = {}
         self.admin = AdminClient(self.config.configuration_dict)
 
     def _create_topic(  # pragma: no cover - Kafka 브로커 콜백으로 커버리지 수집 불가
@@ -118,20 +106,18 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    async def send(self, event: AbstractIntegrationEvent) -> None:
-        """Asynchronously send an integration event to Kafka.
+    async def send(self, event_name: str, payload: bytes) -> None:
+        """Asynchronously send a pre-serialized event payload to Kafka.
 
         Args:
-            event: The integration event to send.
+            event_name: Topic name (typically the event class name).
+            payload: Pre-serialized JSON bytes.
         """
         self.producer = AIOProducer(self.config.configuration_dict)
-        event_type = type(event)
-        if event_type not in self.type_adapters:
-            self.type_adapters[event_type] = TypeAdapter(event_type)
-        self._create_topic(topic=event.event_name)
+        self._create_topic(topic=event_name)
         await self.producer.produce(
-            topic=event.event_name,
-            value=self.type_adapters[event_type].dump_json(event),
+            topic=event_name,
+            value=payload,
             callback=self._message_delivery_report,
         )
         await self.producer.poll(0)
