@@ -1,9 +1,10 @@
 """SQLAlchemy implementation of IOutboxStorage / IAsyncOutboxStorage."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.outbox.common.config import OutboxConfig
 from spakky.plugins.outbox.common.message import OutboxMessage
 from spakky.plugins.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
@@ -14,11 +15,13 @@ from spakky.plugins.sqlalchemy.persistency.session_manager import (
     AsyncSessionManager,
     SessionManager,
 )
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import sessionmaker
 
 from spakky.plugins.outbox_sqlalchemy.persistency.table import OutboxMessageTable
+
+_DEFAULT_CLAIM_TIMEOUT_SECONDS: float = 300.0
 
 
 @Pod()
@@ -31,16 +34,21 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
 
     _session_manager: SessionManager
     _session_factory: sessionmaker
+    _claim_timeout_seconds: float
 
     def __init__(
         self,
         session_manager: SessionManager,
         connection_manager: ConnectionManager,
+        config: OutboxConfig | None = None,
     ) -> None:
         self._session_manager = session_manager
         self._session_factory = sessionmaker(
             bind=connection_manager.connection,
             expire_on_commit=False,
+        )
+        self._claim_timeout_seconds = (
+            config.claim_timeout_seconds if config else _DEFAULT_CLAIM_TIMEOUT_SECONDS
         )
 
     def save(self, message: OutboxMessage) -> None:
@@ -54,16 +62,37 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
         self._session_manager.session.flush()
 
     def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
+        now = datetime.now(UTC)
+        claim_cutoff = now - timedelta(seconds=self._claim_timeout_seconds)
+
         with self._session_factory() as session:
-            result = session.execute(
-                select(OutboxMessageTable)
+            # Subquery: select IDs with FOR UPDATE SKIP LOCKED
+            subq = (
+                select(OutboxMessageTable.id)
                 .where(OutboxMessageTable.published_at.is_(None))
                 .where(OutboxMessageTable.retry_count < max_retry)
+                .where(
+                    or_(
+                        OutboxMessageTable.claimed_at.is_(None),
+                        OutboxMessageTable.claimed_at < claim_cutoff,
+                    )
+                )
                 .order_by(OutboxMessageTable.created_at)
                 .limit(limit)
                 .with_for_update(skip_locked=True)
+            ).scalar_subquery()
+
+            # Atomic claim: UPDATE with RETURNING
+            stmt = (
+                update(OutboxMessageTable)
+                .where(OutboxMessageTable.id.in_(subq))
+                .values(claimed_at=now)
+                .returning(OutboxMessageTable)
             )
+            result = session.execute(stmt)
             rows = result.scalars().all()
+            session.commit()
+
             return [
                 OutboxMessage(
                     id=row.id,
@@ -72,6 +101,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
                     created_at=row.created_at,
                     published_at=row.published_at,
                     retry_count=row.retry_count,
+                    claimed_at=row.claimed_at,
                 )
                 for row in rows
             ]
@@ -105,16 +135,21 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
 
     _session_manager: AsyncSessionManager
     _session_factory: async_sessionmaker
+    _claim_timeout_seconds: float
 
     def __init__(
         self,
         session_manager: AsyncSessionManager,
         connection_manager: AsyncConnectionManager,
+        config: OutboxConfig | None = None,
     ) -> None:
         self._session_manager = session_manager
         self._session_factory = async_sessionmaker(
             bind=connection_manager.connection,
             expire_on_commit=False,
+        )
+        self._claim_timeout_seconds = (
+            config.claim_timeout_seconds if config else _DEFAULT_CLAIM_TIMEOUT_SECONDS
         )
 
     async def save(self, message: OutboxMessage) -> None:
@@ -128,16 +163,37 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
         await self._session_manager.session.flush()
 
     async def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
+        now = datetime.now(UTC)
+        claim_cutoff = now - timedelta(seconds=self._claim_timeout_seconds)
+
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(OutboxMessageTable)
+            # Subquery: select IDs with FOR UPDATE SKIP LOCKED
+            subq = (
+                select(OutboxMessageTable.id)
                 .where(OutboxMessageTable.published_at.is_(None))
                 .where(OutboxMessageTable.retry_count < max_retry)
+                .where(
+                    or_(
+                        OutboxMessageTable.claimed_at.is_(None),
+                        OutboxMessageTable.claimed_at < claim_cutoff,
+                    )
+                )
                 .order_by(OutboxMessageTable.created_at)
                 .limit(limit)
                 .with_for_update(skip_locked=True)
+            ).scalar_subquery()
+
+            # Atomic claim: UPDATE with RETURNING
+            stmt = (
+                update(OutboxMessageTable)
+                .where(OutboxMessageTable.id.in_(subq))
+                .values(claimed_at=now)
+                .returning(OutboxMessageTable)
             )
+            result = await session.execute(stmt)
             rows = result.scalars().all()
+            await session.commit()
+
             return [
                 OutboxMessage(
                     id=row.id,
@@ -146,6 +202,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
                     created_at=row.created_at,
                     published_at=row.published_at,
                     retry_count=row.retry_count,
+                    claimed_at=row.claimed_at,
                 )
                 for row in rows
             ]

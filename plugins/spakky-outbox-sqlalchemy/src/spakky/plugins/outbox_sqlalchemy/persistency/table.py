@@ -24,6 +24,9 @@ class OutboxMessageTable(OutboxBase):
         DateTime(timezone=True), nullable=True
     )
     retry_count: Mapped[int] = mapped_column(default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         Index("ix_spakky_event_outbox_pending", "published_at", "created_at"),

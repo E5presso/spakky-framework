@@ -93,9 +93,9 @@ plugins/
 │       ├── main.py                   # initialize(app)
 │       ├── common/
 │       │   ├── config.py             # OutboxConfig
-│       │   └── message.py            # OutboxMessage (Pydantic model)
+│       │   └── message.py            # OutboxMessage (dataclass)
 │       ├── ports/
-│       │   └── storage.py            # IOutboxStorage (추상 인터페이스)
+│       │   └── storage.py            # IOutboxStorage, IAsyncOutboxStorage
 │       ├── bus/
 │       │   └── outbox_event_bus.py   # AsyncOutboxEventBus (@Primary IAsyncEventBus)
 │       └── relay/
@@ -114,38 +114,46 @@ plugins/
 ### 핵심 인터페이스
 
 ```python
-# spakky-outbox: ports/storage.py
+# spakky-outbox: common/message.py
 
 @dataclass(frozen=True)
 class OutboxMessage:
     """영속화 무관한 Outbox 메시지 모델."""
     id: UUID
     event_name: str      # topic/queue 라우팅 키
-    event_type: str      # FQCN (역직렬화용)
     payload: bytes       # JSON 직렬화된 이벤트
     created_at: datetime
     published_at: datetime | None = None
     retry_count: int = 0
+    claimed_at: datetime | None = None  # atomic claim용
 
+
+# spakky-outbox: ports/storage.py
 
 class IOutboxStorage(ABC):
-    """Outbox 메시지 저장소 추상화."""
+    """동기 Outbox 메시지 저장소 추상화."""
 
     @abstractmethod
-    async def save(self, message: OutboxMessage) -> None:
-        """현재 트랜잭션 내에서 메시지 저장."""
+    def save(self, message: OutboxMessage) -> None: ...
+    @abstractmethod
+    def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]: ...
+    @abstractmethod
+    def mark_published(self, message_id: UUID) -> None: ...
+    @abstractmethod
+    def increment_retry(self, message_id: UUID) -> None: ...
+
+
+class IAsyncOutboxStorage(ABC):
+    """비동기 Outbox 메시지 저장소 추상화."""
 
     @abstractmethod
-    async def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
-        """미발행 메시지 조회 (락 포함)."""
-
+    async def save(self, message: OutboxMessage) -> None: ...
     @abstractmethod
-    async def mark_published(self, message_id: UUID) -> None:
-        """발행 완료 마킹."""
-
+    async def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]: ...
     @abstractmethod
-    async def increment_retry(self, message_id: UUID) -> None:
-        """재시도 카운트 증가."""
+    async def mark_published(self, message_id: UUID) -> None: ...
+    @abstractmethod
+    async def increment_retry(self, message_id: UUID) -> None: ...
 ```
 
 ### 의존성 그래프

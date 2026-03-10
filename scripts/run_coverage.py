@@ -93,8 +93,13 @@ class CoverageResult:
     output: str
 
 
-def _build_coverage_cmd(pkg: PackageInfo) -> list[str]:
-    """Build pytest coverage command for a package."""
+def _build_coverage_cmd(pkg: PackageInfo, *, is_parallel: bool = False) -> list[str]:
+    """Build pytest coverage command for a package.
+
+    Args:
+        pkg: Package information.
+        is_parallel: If True, disable xdist to avoid nested parallelism.
+    """
     cmd = [
         "uv",
         "run",
@@ -103,7 +108,10 @@ def _build_coverage_cmd(pkg: PackageInfo) -> list[str]:
         "--cov-report=xml:coverage.xml",
         "--cov-report=term-missing",
     ]
-    if "kafka" in pkg.name:
+    if is_parallel:
+        # Disable xdist when running packages in parallel to avoid nested parallelism
+        cmd.extend(["-p", "no:xdist"])
+    elif "kafka" in pkg.name:
         cmd.extend(["-n", "1"])
     return cmd
 
@@ -138,7 +146,9 @@ def run_tests_with_coverage_captured(pkg: PackageInfo) -> CoverageResult:
     Returns:
         CoverageResult with captured output.
     """
-    result: CapturedResult = run_captured(_build_coverage_cmd(pkg), cwd=pkg.full_path)
+    result: CapturedResult = run_captured(
+        _build_coverage_cmd(pkg, is_parallel=True), cwd=pkg.full_path
+    )
     return CoverageResult(
         package=pkg,
         passed=result.exit_code == 0,

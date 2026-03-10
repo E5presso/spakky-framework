@@ -21,6 +21,7 @@ class OutboxConfig(BaseSettings):
     polling_interval_seconds: float = 1.0
     batch_size: int = 100
     max_retry_count: int = 5
+    claim_timeout_seconds: float = 300.0  # 5 minutes
 
     def __init__(self) -> None:
         super().__init__()

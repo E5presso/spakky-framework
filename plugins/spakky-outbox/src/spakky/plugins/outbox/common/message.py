@@ -15,3 +15,4 @@ class OutboxMessage:
     created_at: datetime
     published_at: datetime | None = field(default=None)
     retry_count: int = field(default=0)
+    claimed_at: datetime | None = field(default=None)
