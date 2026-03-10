@@ -7,12 +7,12 @@ to appropriate JSON responses and handles unexpected exceptions gracefully.
 from logging import getLogger
 from typing import Awaitable, Callable, TypeAlias
 
-from spakky.plugins.fastapi.error import AbstractSpakkyFastAPIError, InternalServerError
 from starlette.middleware.base import BaseHTTPMiddleware, DispatchFunction
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from fastapi import Request
+from spakky.plugins.fastapi.error import AbstractSpakkyFastAPIError, InternalServerError
 
 logger = getLogger(__name__)
 Next: TypeAlias = Callable[[Request], Awaitable[Response]]

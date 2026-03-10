@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Sequence, TypeVar
+from typing import Generic, Sequence, TypeVar
 
 from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.core.common.mutability import immutable
@@ -20,7 +20,7 @@ class ProxyModel(IEquatable, Generic[ProxyIdT_contra]):
         return hash(self.id)
 
 
-ProxyModelT_co = TypeVar("ProxyModelT_co", bound=ProxyModel[Any], covariant=True)
+ProxyModelT_co = TypeVar("ProxyModelT_co", bound=ProxyModel[IEquatable], covariant=True)
 
 
 class IGenericProxy(ABC, Generic[ProxyModelT_co, ProxyIdT_contra]):

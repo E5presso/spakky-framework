@@ -5,7 +5,6 @@ method calls across the application.
 """
 
 from dataclasses import dataclass, field
-from inspect import getmembers
 
 from spakky.core.aop.error import AspectInheritanceError
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
@@ -17,7 +16,7 @@ from spakky.core.aop.pointcut import (
     Around,
     Before,
 )
-from spakky.core.common.types import AsyncFunc, Func
+from spakky.core.common.types import AsyncFunc, Func, get_callable_methods
 from spakky.core.pod.annotations.pod import Pod, PodType, is_class_pod
 
 
@@ -49,8 +48,8 @@ class Aspect(Pod):
                 if (advice := annotation.get_or_none(target_method)) is not None:
                     if advice.matches(pod):
                         return True
-        # Cache getmembers() result to avoid repeated calls (O(n) operation)
-        pod_methods = getmembers(pod, callable)
+        # Use get_callable_methods to avoid invoking property getters
+        pod_methods = get_callable_methods(pod)
         for annotation, target_method in self.pointcuts.items():
             if (advice := annotation.get_or_none(target_method)) is not None:
                 for _, method in pod_methods:
@@ -101,8 +100,8 @@ class AsyncAspect(Pod):
                 if (advice := annotation.get_or_none(target_method)) is not None:
                     if advice.matches(pod):
                         return True
-        # Cache getmembers() result to avoid repeated calls (O(n) operation)
-        pod_methods = getmembers(pod, callable)
+        # Use get_callable_methods to avoid invoking property getters
+        pod_methods = get_callable_methods(pod)
         for annotation, target_method in self.pointcuts.items():
             if (advice := annotation.get_or_none(target_method)) is not None:
                 for _, method in pod_methods:

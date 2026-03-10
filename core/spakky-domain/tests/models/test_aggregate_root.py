@@ -1,18 +1,15 @@
-import sys
+from typing import Self
 from uuid import UUID, uuid4
 
 from spakky.core.common.mutability import immutable, mutable
 
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from spakky.domain.models.event import AbstractIntegrationEvent
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-else:
-    from typing_extensions import Self
+from spakky.domain.models.event import AbstractDomainEvent
 
 
 def test_aggregate_root_add_event() -> None:
+    """AggregateRoot에 도메인 이벤트를 추가할 수 있음을 검증한다."""
+
     @mutable
     class User(AbstractAggregateRoot[UUID]):
         name: str
@@ -21,7 +18,7 @@ def test_aggregate_root_add_event() -> None:
             return
 
         @immutable
-        class Created(AbstractIntegrationEvent):
+        class Created(AbstractDomainEvent):
             name: str
 
         @classmethod
@@ -40,6 +37,8 @@ def test_aggregate_root_add_event() -> None:
 
 
 def test_aggregate_root_remove_event() -> None:
+    """AggregateRoot에서 도메인 이벤트를 제거할 수 있음을 검증한다."""
+
     @mutable
     class User(AbstractAggregateRoot[UUID]):
         name: str
@@ -48,7 +47,7 @@ def test_aggregate_root_remove_event() -> None:
             return
 
         @immutable
-        class Created(AbstractIntegrationEvent):
+        class Created(AbstractDomainEvent):
             name: str
 
         @classmethod
@@ -69,6 +68,8 @@ def test_aggregate_root_remove_event() -> None:
 
 
 def test_aggregate_root_clear_events() -> None:
+    """AggregateRoot의 모든 도메인 이벤트를 초기화할 수 있음을 검증한다."""
+
     @mutable
     class User(AbstractAggregateRoot[UUID]):
         name: str
@@ -77,7 +78,7 @@ def test_aggregate_root_clear_events() -> None:
             return
 
         @immutable
-        class Created(AbstractIntegrationEvent):
+        class Created(AbstractDomainEvent):
             name: str
 
         @classmethod

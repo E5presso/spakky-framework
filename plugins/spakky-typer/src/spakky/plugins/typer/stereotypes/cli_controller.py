@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import AnyT, FuncT
+from spakky.core.common.types import AnyT
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.typer.utils.casing import pascal_to_kebab
@@ -65,7 +65,7 @@ def command(
     hidden: bool = False,
     deprecated: bool = False,
     rich_help_panel: str | None = Default(None),
-) -> Callable[[FuncT], FuncT]:
+) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
     """Decorator to mark a controller method as a CLI command.
 
     Attaches Typer command configuration to the method which will be registered
@@ -89,7 +89,7 @@ def command(
         A decorator function that attaches the command configuration.
     """
 
-    def wrapper(method: FuncT) -> FuncT:
+    def wrapper(method: Callable[..., AnyT]) -> Callable[..., AnyT]:
         return TyperCommand(
             name=name,
             cls=cls,

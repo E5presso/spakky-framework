@@ -3,15 +3,16 @@ repos:
     hooks:
       - id: monorepo-pre-commit
         name: Run pre-commit on changed sub-projects
-        entry: python scripts/run_subproject_precommit.py
+        entry: uv run python scripts/run_subproject_precommit.py
         language: system
         pass_filenames: false
         always_run: true
         verbose: true
+        stages: [pre-commit]
 
       - id: monorepo-pre-push-tests
         name: Run tests on changed sub-projects
-        entry: python scripts/run_subproject_tests.py
+        entry: uv run python scripts/run_subproject_prepush.py
         language: system
         pass_filenames: false
         always_run: true

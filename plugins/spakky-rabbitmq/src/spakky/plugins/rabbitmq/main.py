@@ -1,6 +1,6 @@
 """Plugin initialization for RabbitMQ integration.
 
-Registers event consumers, publishers, and post-processors for automatic
+Registers event consumers, transports, and post-processors for automatic
 event handler registration in RabbitMQ-enabled applications.
 """
 
@@ -11,9 +11,9 @@ from spakky.plugins.rabbitmq.event.consumer import (
     AsyncRabbitMQEventConsumer,
     RabbitMQEventConsumer,
 )
-from spakky.plugins.rabbitmq.event.publisher import (
-    AsyncRabbitMQEventPublisher,
-    RabbitMQEventPublisher,
+from spakky.plugins.rabbitmq.event.transport import (
+    AsyncRabbitMQEventTransport,
+    RabbitMQEventTransport,
 )
 from spakky.plugins.rabbitmq.post_processor import RabbitMQPostProcessor
 
@@ -21,7 +21,7 @@ from spakky.plugins.rabbitmq.post_processor import RabbitMQPostProcessor
 def initialize(app: SpakkyApplication) -> None:
     """Initialize the RabbitMQ plugin.
 
-    Registers event consumers, publishers, and the post-processor for automatic
+    Registers event consumers, transports, and the post-processor for automatic
     event handler registration. This function is called automatically by the
     Spakky framework during plugin loading.
 
@@ -33,7 +33,7 @@ def initialize(app: SpakkyApplication) -> None:
     app.add(RabbitMQPostProcessor)
 
     app.add(RabbitMQEventConsumer)
-    app.add(RabbitMQEventPublisher)
+    app.add(RabbitMQEventTransport)
 
     app.add(AsyncRabbitMQEventConsumer)
-    app.add(AsyncRabbitMQEventPublisher)
+    app.add(AsyncRabbitMQEventTransport)

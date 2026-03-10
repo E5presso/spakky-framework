@@ -18,8 +18,11 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from spakky.domain.models.event import AbstractDomainEvent
-from spakky.event.event_consumer import IAsyncEventConsumer, IEventConsumer
+from spakky.domain.models.event import AbstractEvent, AbstractIntegrationEvent
+from spakky.event.event_consumer import (
+    IAsyncEventConsumer,
+    IEventConsumer,
+)
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 
 logger = getLogger(__name__)
@@ -73,11 +76,14 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         consumer = self.__container.get(IEventConsumer)
         async_consumer = self.__container.get(IAsyncEventConsumer)
         for name, method in getmembers(pod, ismethod):
-            route: EventRoute[AbstractDomainEvent] | None = EventRoute[
-                AbstractDomainEvent
+            route: EventRoute[AbstractEvent] | None = EventRoute[
+                AbstractEvent
             ].get_or_none(method)
             if route is None:
                 continue
+            if not issubclass(route.event_type, AbstractIntegrationEvent):
+                continue
+
             # pylint: disable=line-too-long
             logger.info(
                 f"[{type(self).__name__}] {route.event_type.__name__} -> {method.__qualname__}"

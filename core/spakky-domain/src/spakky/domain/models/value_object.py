@@ -5,17 +5,18 @@ compared by their attributes rather than identity.
 """
 
 from abc import ABC, abstractmethod
-from copy import deepcopy
 from dataclasses import astuple
 from typing import Self
 
 from spakky.core.common.interfaces.cloneable import ICloneable
 from spakky.core.common.interfaces.equatable import IEquatable
-from spakky.core.common.mutability import immutable
+from spakky.core.common.mutability import IDataclass, immutable
+
+from spakky.domain.models.base import AbstractDomainModel
 
 
 @immutable
-class AbstractValueObject(IEquatable, ICloneable, ABC):
+class AbstractValueObject(AbstractDomainModel, IEquatable, ICloneable, IDataclass, ABC):
     """Base class for immutable value objects.
 
     Value objects represent domain concepts without identity, compared by
@@ -23,12 +24,12 @@ class AbstractValueObject(IEquatable, ICloneable, ABC):
     """
 
     def clone(self) -> Self:
-        """Create deep copy of this value object.
+        """Create copy of this value object.
 
         Returns:
             Cloned value object.
         """
-        return deepcopy(self)
+        return self
 
     @abstractmethod
     def validate(self) -> None:

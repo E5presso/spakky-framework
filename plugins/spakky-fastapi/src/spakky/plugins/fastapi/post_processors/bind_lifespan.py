@@ -9,7 +9,6 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any, Mapping
 
-from fastapi import FastAPI
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -17,6 +16,8 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+
+from fastapi import FastAPI
 
 
 @Order(0)

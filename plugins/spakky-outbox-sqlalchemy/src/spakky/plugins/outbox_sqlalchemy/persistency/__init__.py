@@ -1,0 +1,1 @@
+"""Outbox SQLAlchemy persistency module."""

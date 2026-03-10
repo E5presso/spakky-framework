@@ -13,6 +13,11 @@ dependencies = [
     "spakky-event>=5.0.1",
 ]
 
+[dependency-groups]
+dev = [
+    "testcontainers>=4.13.3",
+]
+
 [project.entry-points."spakky.plugins"]
 spakky-kafka = "spakky.plugins.kafka.main:initialize"
 
@@ -47,13 +52,9 @@ addopts = """
     --dist=loadfile
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
-
-[dependency-groups]
-dev = [
-    "testcontainers>=4.13.3",
-]
+spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
 include = ["src/spakky/plugins/kafka/*"]
@@ -71,6 +72,8 @@ exclude_lines = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
+    "\\.\\.\\.\\.",
+    "pass",
 ]
 
 [tool.uv.sources]

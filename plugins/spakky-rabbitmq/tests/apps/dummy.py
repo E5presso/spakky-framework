@@ -5,24 +5,24 @@ from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 
 @immutable
-class SampleEvent(AbstractDomainEvent):
+class SampleEvent(AbstractIntegrationEvent):
     message: str
 
 
 @immutable
-class DuplicateTestEvent(AbstractDomainEvent):
+class DuplicateTestEvent(AbstractIntegrationEvent):
     """Event for duplicate handler registration tests."""
 
     data: str
 
 
 @immutable
-class AsyncTestEvent(AbstractDomainEvent):
+class AsyncTestEvent(AbstractIntegrationEvent):
     """Event for async handler tests."""
 
     message: str

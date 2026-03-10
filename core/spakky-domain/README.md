@@ -23,13 +23,13 @@ pip install spakky-domain
 Entities are objects with a unique identity that persists over time:
 
 ```python
-from dataclasses import dataclass
 from uuid import UUID, uuid4
 
+from spakky.core.common.mutability import mutable
 from spakky.domain.models.entity import AbstractEntity
 
 
-@dataclass
+@mutable
 class User(AbstractEntity[UUID]):
     name: str
     email: str
@@ -48,12 +48,11 @@ class User(AbstractEntity[UUID]):
 Value Objects are immutable and compared by their attributes:
 
 ```python
-from dataclasses import dataclass
-
+from spakky.core.common.mutability import immutable
 from spakky.domain.models.value_object import AbstractValueObject
 
 
-@dataclass(frozen=True)
+@immutable
 class Money(AbstractValueObject):
     amount: int
     currency: str
@@ -68,20 +67,20 @@ class Money(AbstractValueObject):
 Aggregate Roots are entities that manage domain events:
 
 ```python
-from dataclasses import dataclass
 from uuid import UUID, uuid4
 
+from spakky.core.common.mutability import mutable, immutable
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.domain.models.event import AbstractDomainEvent
 
 
-@dataclass
-class OrderCreatedEvent(AbstractIntegrationEvent):
+@immutable
+class OrderCreatedEvent(AbstractDomainEvent):
     order_id: UUID
     customer_id: UUID
 
 
-@dataclass
+@mutable
 class Order(AbstractAggregateRoot[UUID]):
     customer_id: UUID
     total: int
@@ -106,20 +105,19 @@ class Order(AbstractAggregateRoot[UUID]):
 Domain events represent state changes in the domain:
 
 ```python
-from dataclasses import dataclass
-
+from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 
 
 # Internal domain event
-@dataclass
+@immutable
 class UserRegistered(AbstractDomainEvent):
     user_id: str
     email: str
 
 
 # Cross-boundary integration event
-@dataclass
+@immutable
 class UserRegisteredIntegration(AbstractIntegrationEvent):
     user_id: str
     email: str
@@ -127,37 +125,42 @@ class UserRegisteredIntegration(AbstractIntegrationEvent):
 
 ### CQRS Use Cases
 
-Separate read and write operations:
+Separate read and write operations.
+
+**Key Principles:**
+- **Commands**: Use Repository for domain aggregate persistence
+- **Queries**: Implement directly using ORM/SQL (do NOT add query methods to Repository)
+- This separation prevents domain pollution by keeping query concerns out of the domain layer
 
 ```python
-from dataclasses import dataclass
 from uuid import UUID
 
+from spakky.core.common.mutability import immutable
 from spakky.domain.application.command import AbstractCommand, IAsyncCommandUseCase
 from spakky.domain.application.query import AbstractQuery, IAsyncQueryUseCase
 
 
 # Command
-@dataclass
+@immutable
 class CreateUserCommand(AbstractCommand):
     name: str
     email: str
 
 
 class CreateUserUseCase(IAsyncCommandUseCase[CreateUserCommand, UUID]):
-    async def execute(self, command: CreateUserCommand) -> UUID:
+    async def run(self, command: CreateUserCommand) -> UUID:
         # Business logic here
         ...
 
 
 # Query
-@dataclass
+@immutable
 class GetUserQuery(AbstractQuery):
     user_id: UUID
 
 
 class GetUserUseCase(IAsyncQueryUseCase[GetUserQuery, User | None]):
-    async def execute(self, query: GetUserQuery) -> User | None:
+    async def run(self, query: GetUserQuery) -> User | None:
         # Business logic here
         ...
 ```
@@ -171,8 +174,9 @@ class GetUserUseCase(IAsyncQueryUseCase[GetUserQuery, User | None]):
 | `AbstractEntity[T]`        | Base class for entities with identity type `T` |
 | `AbstractAggregateRoot[T]` | Entity that manages domain events              |
 | `AbstractValueObject`      | Immutable value object                         |
-| `AbstractDomainEvent`      | Base class for domain events                   |
-| `AbstractIntegrationEvent` | Events for cross-boundary communication        |
+| `AbstractEvent`            | Base class for all events                      |
+| `AbstractDomainEvent`      | Domain events (within bounded context)         |
+| `AbstractIntegrationEvent` | Integration events (cross-boundary)            |
 
 ### Application
 

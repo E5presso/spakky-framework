@@ -6,7 +6,6 @@ and dependency injection.
 
 from abc import ABC, abstractmethod
 from typing import Callable, overload
-from uuid import UUID
 
 from spakky.core.common.interfaces.representable import IRepresentable
 from spakky.core.common.types import ObjectT
@@ -163,18 +162,4 @@ class IContainer(ABC):
         Returns:
             Set of matching Pod instances.
         """
-        ...
-
-    @abstractmethod
-    def get_context_id(self) -> UUID:
-        """Get unique ID for current context.
-
-        Returns:
-            UUID for this context.
-        """
-        ...
-
-    @abstractmethod
-    def clear_context(self) -> None:
-        """Clear context-scoped cache for current context."""
         ...

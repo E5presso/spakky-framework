@@ -7,6 +7,9 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
 dependencies = ["spakky>=5.0.1"]
 
+[project.entry-points."spakky.plugins"]
+spakky-domain = "spakky.domain.main:initialize"
+
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
@@ -38,8 +41,9 @@ addopts = """
     --dist=load
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
+spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
 include = ["src/spakky/domain/*"]
@@ -57,4 +61,6 @@ exclude_lines = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
+    "\\.\\.\\.\\.",
+    "pass",
 ]

@@ -1,0 +1,77 @@
+"""Test ensure_importable function for sys.path management."""
+
+import sys
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+from spakky.core.common.importing import ensure_importable
+
+
+def test_ensure_importable_when_parent_already_in_sys_path() -> None:
+    """부모 디렉토리가 이미 sys.path에 존재할 경우 아무 동작도 하지 않음을 검증한다."""
+    # Use a directory that's already in sys.path
+    existing_path = Path(sys.path[0])
+    package_dir = existing_path / "some_package"
+
+    original_sys_path = sys.path.copy()
+
+    ensure_importable(package_dir)
+
+    # sys.path should remain unchanged
+    assert sys.path == original_sys_path
+
+
+def test_ensure_importable_adds_parent_when_import_fails() -> None:
+    """임포트 실패 시 부모 디렉토리가 sys.path에 추가됨을 검증한다."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create a fake package structure
+        temp_path = Path(temp_dir)
+        package_dir = temp_path / "fake_test_package"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("")
+
+        # Ensure parent is not in sys.path
+        parent_str = str(temp_path)
+        if parent_str in sys.path:
+            sys.path.remove(parent_str)
+
+        original_length = len(sys.path)
+
+        try:
+            ensure_importable(package_dir)
+
+            # Parent should now be in sys.path
+            assert parent_str in sys.path
+            assert sys.path[0] == parent_str  # Should be at the front
+            assert len(sys.path) == original_length + 1
+        finally:
+            # Cleanup: remove the added path
+            if parent_str in sys.path:
+                sys.path.remove(parent_str)
+
+
+def test_ensure_importable_logs_when_adding_path() -> None:
+    """sys.path에 경로 추가 시 로깅이 수행됨을 검증한다."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        package_dir = temp_path / "logging_test_package"
+        package_dir.mkdir()
+        (package_dir / "__init__.py").write_text("")
+
+        parent_str = str(temp_path)
+        if parent_str in sys.path:
+            sys.path.remove(parent_str)
+
+        try:
+            with patch("spakky.core.common.importing.logger") as mock_logger:
+                ensure_importable(package_dir)
+
+                # Verify logging was called
+                mock_logger.info.assert_called_once()
+                call_args = mock_logger.info.call_args
+                assert "sys.path" in call_args[0][0]
+                assert parent_str in call_args[0][1]
+        finally:
+            if parent_str in sys.path:
+                sys.path.remove(parent_str)

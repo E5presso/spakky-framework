@@ -6,7 +6,6 @@ with support for various HMAC algorithms and standard JWT claims.
 
 import json
 import sys
-from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any, Sequence, final
 from uuid import UUID, uuid4
@@ -54,12 +53,12 @@ class JWT:
     @property
     def header(self) -> dict[str, Any]:
         """Get a copy of the JWT header dictionary."""
-        return deepcopy(self.__header)
+        return self.__header.copy()
 
     @property
     def payload(self) -> dict[str, Any]:
         """Get a copy of the JWT payload dictionary."""
-        return deepcopy(self.__payload)
+        return self.__payload.copy()
 
     @property
     def signature(self) -> str | None:

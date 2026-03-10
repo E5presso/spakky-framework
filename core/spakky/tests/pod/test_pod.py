@@ -16,6 +16,8 @@ from spakky.core.pod.annotations.qualifier import Qualifier
 
 
 def test_pod_issubclass_of() -> None:
+    """Pod의 is_family_with 메서드가 부모 클래스와의 상속 관계를 올바르게 판단함을 검증한다."""
+
     class A: ...
 
     @Pod()
@@ -29,6 +31,7 @@ def test_pod_issubclass_of() -> None:
 
 
 def test_pod_issubclass_of_with_generic() -> None:
+    """Pod의 is_family_with 메서드가 제네릭 타입과의 상속 관계를 올바르게 판단함을 검증한다."""
     T_contra = TypeVar("T_contra", contravariant=True)
 
     class IA(Protocol[T_contra]):
@@ -52,6 +55,8 @@ def test_pod_issubclass_of_with_generic() -> None:
 
 
 def test_pod_instantiate() -> None:
+    """Pod의 instantiate 메서드가 의존성을 주입하여 인스턴스를 생성함을 검증한다."""
+
     @Pod()
     class A:
         def __init__(self, a: int) -> None:
@@ -62,6 +67,8 @@ def test_pod_instantiate() -> None:
 
 
 def test_pod_instantiate_with_default_value() -> None:
+    """Pod의 instantiate 메서드가 기본값을 가진 의존성을 올바르게 처리함을 검증한다."""
+
     @Pod()
     class A:
         def __init__(self, name: str, age: int = 30) -> None:
@@ -82,6 +89,8 @@ def test_pod_instantiate_with_default_value() -> None:
 
 
 def test_is_class_pod() -> None:
+    """is_class_pod 함수가 클래스와 함수를 올바르게 구분함을 검증한다."""
+
     class A: ...
 
     def a() -> None: ...
@@ -91,6 +100,8 @@ def test_is_class_pod() -> None:
 
 
 def test_is_function_pod() -> None:
+    """is_function_pod 함수가 함수와 클래스를 올바르게 구분함을 검증한다."""
+
     class A: ...
 
     def a() -> None: ...
@@ -100,6 +111,8 @@ def test_is_function_pod() -> None:
 
 
 def test_pod() -> None:
+    """@Pod 데코레이터가 클래스에 Pod 메타데이터를 올바르게 설정함을 검증한다."""
+
     @Pod()
     class SampleClass:
         name: str
@@ -120,6 +133,7 @@ def test_pod() -> None:
 
 
 def test_pod_with_var_args() -> None:
+    """@Pod 데코레이터가 *args, **kwargs를 사용한 클래스에 예외를 발생시킴을 검증한다."""
     with pytest.raises(CannotUseVarArgsInPodError):
 
         @Pod()
@@ -133,6 +147,7 @@ def test_pod_with_var_args() -> None:
 
 
 def test_pod_factory_with_var_args() -> None:
+    """@Pod 데코레이터가 *args, **kwargs를 사용한 팩토리 함수에 예외를 발생시킴을 검증한다."""
     with pytest.raises(CannotUseVarArgsInPodError):
 
         @Pod()
@@ -141,6 +156,8 @@ def test_pod_factory_with_var_args() -> None:
 
 
 def test_pod_factory_with_return_annotation() -> None:
+    """@Pod 데코레이터가 반환 타입 어노테이션이 있는 팩토리 함수를 올바르게 처리함을 검증한다."""
+
     class A: ...
 
     @Pod()
@@ -154,6 +171,8 @@ def test_pod_factory_with_return_annotation() -> None:
 
 
 def test_pod_factory_without_return_annotation() -> None:
+    """@Pod 데코레이터가 반환 타입 어노테이션이 없는 팩토리 함수에 예외를 발생시킴을 검증한다."""
+
     class A: ...
 
     with pytest.raises(CannotDeterminePodTypeError):
@@ -164,6 +183,8 @@ def test_pod_factory_without_return_annotation() -> None:
 
 
 def test_pod_with_scope() -> None:
+    """@Pod 데코레이터의 scope 파라미터가 올바르게 설정됨을 검증한다."""
+
     @Pod(scope=Pod.Scope.PROTOTYPE)
     class A: ...
 
@@ -173,6 +194,8 @@ def test_pod_with_scope() -> None:
 
 
 def test_pod_factory_with_scope() -> None:
+    """@Pod 데코레이터의 scope 파라미터가 팩토리 함수에도 올바르게 적용됨을 검증한다."""
+
     class A: ...
 
     @Pod(scope=Pod.Scope.PROTOTYPE)
@@ -187,6 +210,8 @@ def test_pod_factory_with_scope() -> None:
 
 
 def test_pod_with_name() -> None:
+    """@Pod 데코레이터의 name 파라미터가 올바르게 설정됨을 검증한다."""
+
     @Pod(name="asdf")
     class A: ...
 
@@ -196,6 +221,8 @@ def test_pod_with_name() -> None:
 
 
 def test_pod_factory_with_name() -> None:
+    """@Pod 데코레이터의 name 파라미터가 팩토리 함수에도 올바르게 적용됨을 검증한다."""
+
     class A: ...
 
     @Pod(name="a")
@@ -209,6 +236,8 @@ def test_pod_factory_with_name() -> None:
 
 
 def test_pod_with_qualifier() -> None:
+    """@Pod 데코레이터가 Qualifier 어노테이션을 올바르게 파싱함을 검증한다."""
+
     def is_dummy_pod(pod: Pod) -> bool:
         return pod.name == "dummy_pod"
 
@@ -262,7 +291,7 @@ def test_pod_with_qualifier() -> None:
 
 
 def test_pod_equality_with_different_type() -> None:
-    """Test Pod.__eq__ with non-Pod type."""
+    """Pod의 __eq__ 메서드가 Pod가 아닌 타입과 비교 시 False를 반환함을 검증한다."""
 
     @Pod(name="test_pod")
     class TestClass: ...
@@ -274,3 +303,34 @@ def test_pod_equality_with_different_type() -> None:
     assert pod != 123
     # Test equality with None
     assert pod != None  # noqa: E711
+
+
+def test_pod_equality_with_same_name_expect_true() -> None:
+    """같은 이름의 두 Pod이 동등함을 검증한다."""
+
+    @Pod(name="same_name")
+    class FirstClass: ...
+
+    @Pod(name="same_name")
+    class SecondClass: ...
+
+    first_pod = Pod.get(FirstClass)
+    second_pod = Pod.get(SecondClass)
+
+    # 같은 이름이면 동등 (line 247: return self.name == value.name)
+    assert first_pod == second_pod
+
+
+def test_pod_equality_with_different_name_expect_false() -> None:
+    """다른 이름의 두 Pod이 동등하지 않음을 검증한다."""
+
+    @Pod(name="first_name")
+    class FirstClass: ...
+
+    @Pod(name="second_name")
+    class SecondClass: ...
+
+    first_pod = Pod.get(FirstClass)
+    second_pod = Pod.get(SecondClass)
+
+    assert first_pod != second_pod

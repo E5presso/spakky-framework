@@ -10,10 +10,11 @@ Usage:
     from spakky.data import IGenericProxy, IAsyncGenericProxy
 """
 
-# Persistency
 # External
 from spakky.data.external.error import AbstractSpakkyExternalError
 from spakky.data.external.proxy import IAsyncGenericProxy, IGenericProxy
+
+# Persistency
 from spakky.data.persistency.error import AbstractSpakkyPersistencyError
 from spakky.data.persistency.repository import (
     EntityNotFoundError,
@@ -38,3 +39,8 @@ __all__ = [
     "AbstractSpakkyExternalError",
     "AbstractSpakkyPersistencyError",
 ]
+
+from spakky.core.application.plugin import Plugin
+
+PLUGIN_NAME = Plugin(name="spakky-data")
+"""Plugin identifier for the Spakky Data package."""

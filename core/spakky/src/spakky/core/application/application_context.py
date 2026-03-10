@@ -15,6 +15,7 @@ from spakky.core.pod.annotations.lazy import Lazy
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.annotations.qualifier import Qualifier
+from spakky.core.pod.annotations.tag import Tag
 from spakky.core.pod.interfaces.application_context import (
     ApplicationContextAlreadyStartedError,
     ApplicationContextAlreadyStoppedError,
@@ -43,6 +44,12 @@ for managing Pods, handling dependency injection, and coordinating services.
 """
 
 
+class CannotAssignSystemContextIDError(Exception):
+    """Raised when attempting to override the CONTEXT_ID value."""
+
+    message = f"Cannot override {CONTEXT_ID} value."
+
+
 class ApplicationContext(IApplicationContext):
     """Container managing Pod instances, dependencies, and application lifecycle.
 
@@ -56,6 +63,9 @@ class ApplicationContext(IApplicationContext):
 
     __pods: dict[str, Pod]
     """Registry of all Pods by name."""
+
+    __tags: set[Tag]
+    """Registry of all Tags."""
 
     __type_cache: dict[type, set[Pod]]
     """Cache mapping types to Pods for O(1) lookup."""
@@ -95,6 +105,7 @@ class ApplicationContext(IApplicationContext):
         """
         self.__forward_type_map = {}
         self.__pods = {}
+        self.__tags = set()
         self.__type_cache = {}
         self.__singleton_cache = {}
         self.__singleton_lock = RLock()
@@ -252,13 +263,10 @@ class ApplicationContext(IApplicationContext):
         self.__async_services.clear()
 
     def __set_singleton_cache(self, pod: Pod, instance: object) -> None:
-        if pod.scope == Pod.Scope.SINGLETON:
-            with self.__singleton_lock:
-                self.__singleton_cache[pod.name] = instance
+        self.__singleton_cache[pod.name] = instance
 
     def __get_singleton_cache(self, pod: Pod) -> object | None:
-        with self.__singleton_lock:
-            return self.__singleton_cache.get(pod.name)
+        return self.__singleton_cache.get(pod.name)
 
     def __set_context_cache(self, pod: Pod, instance: object) -> None:
         cache = self.__context_cache.get({})
@@ -315,7 +323,7 @@ class ApplicationContext(IApplicationContext):
                     if (cached := self.__singleton_cache.get(pod.name)) is not None:
                         return cast(ObjectT, cached)
                     instance = self.__instantiate_pod(pod, dependency_hierarchy)
-                    self.__singleton_cache[pod.name] = instance
+                    self.__set_singleton_cache(pod, instance)
                     return cast(ObjectT, instance)
             case Pod.Scope.CONTEXT:
                 if (cached := self.__get_context_cache(pod)) is not None:
@@ -398,7 +406,7 @@ class ApplicationContext(IApplicationContext):
                 await service.stop_async()
 
         run_coroutine_threadsafe(stop_async_services(), event_loop).result()
-        event_loop.call_soon_threadsafe(event_loop.stop)  # type: ignore
+        event_loop.call_soon_threadsafe(event_loop.stop)  # type: ignore[arg-type]  # stop() is valid callback
         event_thread.join()
 
         # Clear references after thread has joined
@@ -412,7 +420,16 @@ class ApplicationContext(IApplicationContext):
         Returns:
             Read-only mapping proxy of Pod registry (O(1) operation).
         """
-        return MappingProxyType(self.__pods)  # type: ignore
+        return MappingProxyType(self.__pods)  # type: ignore[return-value]  # MappingProxyType is dict-compatible
+
+    @property
+    def tags(self) -> frozenset[Tag]:
+        """Get read-only view of all registered Tags.
+
+        Returns:
+            Read-only frozenset of Tag registry (O(1) operation).
+        """
+        return frozenset(self.__tags)
 
     @property
     def is_started(self) -> bool:
@@ -453,6 +470,7 @@ class ApplicationContext(IApplicationContext):
             raise CannotRegisterNonPodObjectError(obj)
         pod: Pod = Pod.get(obj)
         if pod.name in self.__pods:
+            # 같은 ID의 Pod 재등록은 add() 호출 패턴상 발생하지 않음
             if self.__pods[pod.name].id == pod.id:  # pragma: no cover
                 return
             raise PodNameAlreadyExistsError(pod.name)
@@ -461,7 +479,8 @@ class ApplicationContext(IApplicationContext):
         self.__pods[pod.name] = pod
 
         # Update type index for fast lookup
-        if pod.type_ not in self.__type_cache:
+        # pod.type_은 클래스 자체이므로 같은 타입 두 Pod은 이름 충돌로 위에서 차단됨
+        if pod.type_ not in self.__type_cache:  # pragma: no branch
             self.__type_cache[pod.type_] = set()
         self.__type_cache[pod.type_].add(pod)
 
@@ -561,6 +580,39 @@ class ApplicationContext(IApplicationContext):
         # Use type index for O(1) lookup
         return type_ in self.__type_cache and len(self.__type_cache[type_]) > 0
 
+    def register_tag(self, tag: Tag) -> None:
+        """Register a Tag instance.
+
+        Args:
+            tag: The Tag to register.
+        """
+        self.__tags.add(tag)
+
+    def contains_tag(self, tag: Tag) -> bool:
+        """Check if a Tag is registered.
+
+        Args:
+            tag: The Tag to check.
+
+        Returns:
+            True if Tag is registered.
+        """
+        return tag in self.__tags
+
+    def list_tags(
+        self, selector: Callable[[Tag], bool] | None = None
+    ) -> frozenset[Tag]:
+        """List registered Tags, optionally filtered by selector.
+
+        Args:
+            selector: Optional predicate to filter Tags.
+        Returns:
+            Set of matching Tags.
+        """
+        if selector is None:
+            return frozenset(self.__tags)
+        return frozenset(tag for tag in self.__tags if selector(tag))
+
     def get_context_id(self) -> UUID:
         """Get or create unique ID for current context.
 
@@ -572,6 +624,33 @@ class ApplicationContext(IApplicationContext):
             context[CONTEXT_ID] = uuid4()
             self.__context_cache.set(context)
         return cast(UUID, context[CONTEXT_ID])
+
+    def get_context_value(self, key: str) -> object | None:
+        """Get a value from the context-scoped cache.
+
+        Args:
+            key: The key to retrieve.
+
+        Returns:
+            The cached value, or None if not found.
+        """
+        if key == CONTEXT_ID:
+            return self.get_context_id()
+        context = self.__context_cache.get({})
+        return context.get(key)
+
+    def set_context_value(self, key: str, value: object) -> None:
+        """Set a value in the context-scoped cache.
+
+        Args:
+            key: The key to set.
+            value: The value to store.
+        """
+        if key == CONTEXT_ID:  # pragma: no cover
+            raise CannotAssignSystemContextIDError
+        context = self.__context_cache.get({})
+        context[key] = value
+        self.__context_cache.set(context)
 
     def clear_context(self) -> None:
         """Clear context-scoped cache for current context."""

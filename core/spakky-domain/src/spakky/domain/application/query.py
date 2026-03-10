@@ -31,7 +31,7 @@ class IQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
     """Protocol for synchronous query use cases."""
 
     @abstractmethod
-    def execute(self, query: QueryT_contra) -> ResultT_co:
+    def run(self, query: QueryT_contra) -> ResultT_co:
         """Execute query and return result.
 
         Args:
@@ -47,9 +47,7 @@ class IAsyncQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
     """Protocol for asynchronous query use cases."""
 
     @abstractmethod
-    async def execute(  # type: ignore
-        self, query: QueryT_contra
-    ) -> ResultT_co:
+    async def run(self, query: QueryT_contra) -> ResultT_co:  # pyrefly: ignore
         """Execute query asynchronously and return result.
 
         Args:

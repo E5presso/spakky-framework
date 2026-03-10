@@ -7,7 +7,7 @@ from spakky.core.aspects.logging import AsyncLoggingAspect, LoggingAspect
 
 
 def test_add_logging_aspect() -> None:
-    """Test adding LoggingAspect via add() method."""
+    """add() 메서드로 LoggingAspect를 추가할 수 있음을 검증한다."""
     app = SpakkyApplication(ApplicationContext())
     app.add(LoggingAspect)
     # Check that LoggingAspect is registered
@@ -15,7 +15,7 @@ def test_add_logging_aspect() -> None:
 
 
 def test_add_async_logging_aspect() -> None:
-    """Test adding AsyncLoggingAspect via add() method."""
+    """add() 메서드로 AsyncLoggingAspect를 추가할 수 있음을 검증한다."""
     app = SpakkyApplication(ApplicationContext())
     app.add(AsyncLoggingAspect)
     # Check that AsyncLoggingAspect is registered
@@ -23,7 +23,7 @@ def test_add_async_logging_aspect() -> None:
 
 
 def test_load_plugins_with_include() -> None:
-    """Test load_plugins with include parameter."""
+    """include 파라미터를 사용하여 플러그인을 로드할 수 있음을 검증한다."""
     app = SpakkyApplication(ApplicationContext())
     # This should not raise an error even with non-existent plugins
     app.load_plugins(include={Plugin(name="non_existent_plugin")})
@@ -32,7 +32,7 @@ def test_load_plugins_with_include() -> None:
 
 
 def test_stop_application() -> None:
-    """Test stop method."""
+    """stop 메서드가 정상적으로 동작함을 검증한다."""
     app = SpakkyApplication(ApplicationContext())
     context = app.container
     assert isinstance(context, ApplicationContext)
@@ -42,7 +42,7 @@ def test_stop_application() -> None:
 
 
 def test_scan_with_module_path() -> None:
-    """Test scan with a specific module path."""
+    """특정 모듈 경로로 scan을 수행할 수 있음을 검증한다."""
     from tests.dummy import dummy_package
 
     app = SpakkyApplication(ApplicationContext())
@@ -50,3 +50,51 @@ def test_scan_with_module_path() -> None:
 
     # Should have scanned the module successfully
     assert len(app.container.pods) > 0
+
+
+def test_application_context_property_returns_context() -> None:
+    """application_context property가 올바른 컨텍스트를 반환함을 검증한다."""
+    context = ApplicationContext()
+    app = SpakkyApplication(context)
+    assert app.application_context is context
+
+
+def test_scan_with_tagged_module() -> None:
+    """Tag가 있는 모듈을 스캔하면 태그가 등록됨을 검증한다."""
+    from tests.dummy import tagged_package
+
+    app = SpakkyApplication(ApplicationContext())
+    app.scan(tagged_package)
+
+    # Should have registered the tag
+    assert app.container is not None
+
+
+def test_add_tag_only_class_expect_tag_registered() -> None:
+    """add()로 Tag만 있는 클래스를 추가하면 태그가 등록됨을 검증한다."""
+    from tests.dummy.tagged_package.tagged_module import CustomTag, TagOnlyClass
+
+    app = SpakkyApplication(ApplicationContext())
+    app.add(TagOnlyClass)
+
+    # Tag should be registered
+    tags = app.application_context.tags
+    assert any(
+        isinstance(tag, CustomTag) and tag.category == "tag-only" for tag in tags
+    )
+    # Pod should NOT be registered (no @Pod decorator)
+    assert not any(pod.type_ == TagOnlyClass for pod in app.container.pods.values())
+
+
+def test_add_tagged_pod_class_expect_both_registered() -> None:
+    """add()로 Tag와 Pod 둘 다 있는 클래스를 추가하면 둘 다 등록됨을 검증한다."""
+    from tests.dummy.tagged_package.tagged_module import CustomTag, TaggedPod
+
+    app = SpakkyApplication(ApplicationContext())
+    app.add(TaggedPod)
+
+    # Pod should be registered
+    assert any(pod.type_ == TaggedPod for pod in app.container.pods.values())
+    # Tag should also be registered
+    tags = app.application_context.tags
+    assert any(isinstance(tag, CustomTag) and tag.category == "test" for tag in tags)

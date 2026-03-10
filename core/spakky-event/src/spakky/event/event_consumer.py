@@ -1,19 +1,19 @@
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, TypeAlias, TypeVar
 
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractEvent
 
-DomainEventT = TypeVar("DomainEventT", bound=AbstractDomainEvent)
-IEventHandlerCallback: TypeAlias = Callable[[DomainEventT], None]
-IAsyncEventHandlerCallback: TypeAlias = Callable[[DomainEventT], Awaitable[None]]
+EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
+EventHandlerCallback: TypeAlias = Callable[[EventT_contra], None]
+AsyncEventHandlerCallback: TypeAlias = Callable[[EventT_contra], Awaitable[None]]
 
 
 class IEventConsumer(ABC):
     @abstractmethod
     def register(
         self,
-        event: type[DomainEventT],
-        handler: IEventHandlerCallback[DomainEventT],
+        event: type[EventT_contra],
+        handler: EventHandlerCallback[EventT_contra],
     ) -> None: ...
 
 
@@ -21,6 +21,6 @@ class IAsyncEventConsumer(ABC):
     @abstractmethod
     def register(
         self,
-        event: type[DomainEventT],
-        handler: IAsyncEventHandlerCallback[DomainEventT],
+        event: type[EventT_contra],
+        handler: AsyncEventHandlerCallback[EventT_contra],
     ) -> None: ...

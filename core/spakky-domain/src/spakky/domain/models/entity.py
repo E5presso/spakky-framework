@@ -8,12 +8,14 @@ from abc import ABC, abstractmethod
 from dataclasses import field
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Generic
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from spakky.core.common.interfaces.equatable import EquatableT, IEquatable
+from spakky.core.common.interfaces.equatable import EquatableT_co, IEquatable
 from spakky.core.common.mutability import mutable
+from spakky.core.utils.uuid import uuid7
 
 from spakky.domain.error import AbstractSpakkyDomainError
+from spakky.domain.models.base import AbstractDomainModel
 
 
 class CannotMonkeyPatchEntityError(AbstractSpakkyDomainError):
@@ -23,7 +25,7 @@ class CannotMonkeyPatchEntityError(AbstractSpakkyDomainError):
 
 
 @mutable
-class AbstractEntity(IEquatable, Generic[EquatableT], ABC):
+class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], ABC):
     """Base class for DDD entities with identity and validation.
 
     Entities are objects with unique identity that maintain consistency
@@ -41,10 +43,10 @@ class AbstractEntity(IEquatable, Generic[EquatableT], ABC):
 
     __initialized: bool = field(init=False, repr=False, default=False)
 
-    uid: EquatableT
+    uid: EquatableT_co
     """Unique identifier for this entity."""
 
-    version: UUID = field(default_factory=uuid4)
+    version: UUID = field(default_factory=uuid7)
     """Version identifier for optimistic locking."""
 
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -55,7 +57,7 @@ class AbstractEntity(IEquatable, Generic[EquatableT], ABC):
 
     @classmethod
     @abstractmethod
-    def next_id(cls) -> EquatableT:
+    def next_id(cls) -> EquatableT_co:
         """Generate next unique identifier for this entity type.
 
         Returns:
@@ -121,7 +123,7 @@ class AbstractEntity(IEquatable, Generic[EquatableT], ABC):
                 # Auto-update metadata fields when business attributes change
                 if __name not in self._AUTO_UPDATE_EXCLUDE_FIELDS:
                     super().__setattr__("updated_at", datetime.now(UTC))
-                    super().__setattr__("version", uuid4())
+                    super().__setattr__("version", uuid7())
             except:
                 super().__setattr__(__name, __old)
                 raise

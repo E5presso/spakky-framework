@@ -10,9 +10,6 @@ from inspect import getmembers, signature
 from logging import getLogger
 from typing import Any
 
-from spakky.plugins.fastapi.routes.route import Route
-from spakky.plugins.fastapi.routes.websocket import WebSocketRoute
-from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -26,6 +23,9 @@ from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import FastAPIError
 from fastapi.utils import create_model_field  # type: ignore
+from spakky.plugins.fastapi.routes.route import Route
+from spakky.plugins.fastapi.routes.websocket import WebSocketRoute
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 
 logger = getLogger(__name__)
 

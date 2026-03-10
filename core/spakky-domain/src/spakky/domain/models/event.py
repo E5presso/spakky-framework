@@ -5,7 +5,6 @@ in event-driven systems.
 """
 
 from abc import ABC
-from copy import deepcopy
 from dataclasses import field
 from datetime import datetime, timezone
 from typing import Self
@@ -16,14 +15,12 @@ from spakky.core.common.interfaces.comparable import IComparable
 from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.core.common.mutability import immutable
 
+from spakky.domain.models.base import AbstractDomainModel
+
 
 @immutable
-class AbstractDomainEvent(IEquatable, IComparable, ICloneable, ABC):
-    """Base class for domain events.
-
-    Domain events represent state changes within the domain that other
-    parts of the system may be interested in.
-    """
+class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, ABC):
+    """Base class for domain events."""
 
     event_id: UUID = field(default_factory=uuid4)
     """Unique identifier for this event."""
@@ -41,12 +38,12 @@ class AbstractDomainEvent(IEquatable, IComparable, ICloneable, ABC):
         return type(self).__name__
 
     def clone(self) -> Self:
-        """Create deep copy of this event.
+        """Create copy of this event.
 
         Returns:
             Cloned event instance.
         """
-        return deepcopy(self)
+        return self
 
     def __eq__(self, other: object) -> bool:
         """Compare events by id and timestamp.
@@ -115,7 +112,18 @@ class AbstractDomainEvent(IEquatable, IComparable, ICloneable, ABC):
 
 
 @immutable
-class AbstractIntegrationEvent(AbstractDomainEvent, ABC):
+class AbstractDomainEvent(AbstractEvent, ABC):
+    """Base class for domain events.
+
+    Domain events represent state changes within the domain that other
+    parts of the system may be interested in.
+    """
+
+    ...
+
+
+@immutable
+class AbstractIntegrationEvent(AbstractEvent, ABC):
     """Base class for integration events.
 
     Integration events are published across bounded contexts or services

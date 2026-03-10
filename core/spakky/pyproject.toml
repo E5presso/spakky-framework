@@ -6,7 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = []
+dependencies = [
+    "uuid7>=0.1.0",
+]
 
 [project.optional-dependencies]
 fastapi = ["spakky-fastapi>=5.0.1"]
@@ -14,6 +16,9 @@ rabbitmq = ["spakky-rabbitmq>=5.0.1"]
 security = ["spakky-security>=5.0.1"]
 typer = ["spakky-typer>=5.0.1"]
 kafka = ["spakky-kafka>=5.0.1"]
+sqlalchemy = ["spakky-sqlalchemy>=5.0.1"]
+outbox = ["spakky-outbox>=5.0.1"]
+outbox-sqlalchemy = ["spakky-outbox-sqlalchemy>=5.0.1"]
 
 [build-system]
 requires = ["uv_build>=0.9.13,<0.10.0"]
@@ -46,8 +51,9 @@ addopts = """
     --dist=load
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
+spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
 include = ["src/spakky/*"]
@@ -65,4 +71,6 @@ exclude_lines = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
+    "\\.\\.\\.",
+    "pass",
 ]

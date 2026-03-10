@@ -9,12 +9,14 @@ from spakky.core.application.application_context import (
     ApplicationContext,
     ApplicationContextAlreadyStartedError,
     ApplicationContextAlreadyStoppedError,
+    PodNameAlreadyExistsError,
 )
+from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import IAsyncService, IService
 
 
 def test_application_context_start_twice_raises_error() -> None:
-    """Test that starting context twice raises error."""
+    """컷텍스트를 두 번 시작하면 에러가 발생함을 검증한다."""
     context = ApplicationContext()
     context.start()
 
@@ -25,7 +27,7 @@ def test_application_context_start_twice_raises_error() -> None:
 
 
 def test_application_context_stop_twice_raises_error() -> None:
-    """Test that stopping context twice raises error."""
+    """컷텍스트를 두 번 중지하면 에러가 발생함을 검증한다."""
     context = ApplicationContext()
     context.start()
     context.stop()
@@ -35,7 +37,7 @@ def test_application_context_stop_twice_raises_error() -> None:
 
 
 def test_application_context_with_services() -> None:
-    """Test application context with sync and async services."""
+    """동기 및 비동기 서비스와 함께 컷텍스트가 정상 동작함을 검증한다."""
 
     class DummyService(IService):
         started = False
@@ -83,9 +85,27 @@ def test_application_context_with_services() -> None:
 
 
 def test_event_loop_error_when_not_started() -> None:
-    """Test that accessing event loop when not started raises error."""
+    """컷텍스트가 시작되지 않은 상태에서 stop 호출 시 에러가 발생함을 검증한다."""
     context = ApplicationContext()
 
     # Try to stop without starting
     with pytest.raises(ApplicationContextAlreadyStoppedError):
         context.stop()
+
+
+def test_add_pod_with_duplicate_name_raises_error() -> None:
+    """같은 이름의 다른 Pod을 등록하면 에러가 발생함을 검증한다."""
+
+    @Pod(name="duplicate")
+    class FirstPod:
+        pass
+
+    @Pod(name="duplicate")
+    class SecondPod:
+        pass
+
+    context = ApplicationContext()
+    context.add(FirstPod)
+
+    with pytest.raises(PodNameAlreadyExistsError):
+        context.add(SecondPod)

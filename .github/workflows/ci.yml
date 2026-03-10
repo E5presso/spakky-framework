@@ -7,27 +7,6 @@ on:
     branches: [main, develop]
 
 jobs:
-  commitlint:
-    name: Lint Commits
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python
-        run: uv python install 3.11
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Validate commit messages
-        run: uv run cz check --rev-range origin/${{ github.base_ref }}..${{ github.sha }}
-
   detect:
     name: Detect Changes
     runs-on: ubuntu-latest
@@ -39,10 +18,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync
 
       - name: Detect changed packages
         id: set-matrix
@@ -59,7 +39,7 @@ jobs:
           fi
 
           echo "Comparing $BASE...$HEAD"
-          MATRIX=$(python3 scripts/detect_ci_changes.py "$BASE" "$HEAD")
+          MATRIX=$(uv run python scripts/detect_ci_changes.py --base "$BASE" --head "$HEAD")
           echo "Detected changes: $MATRIX"
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
 
@@ -78,17 +58,19 @@ jobs:
       fail-fast: false
       matrix:
         package: ${{ fromJson(needs.detect.outputs.matrix) }}
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: uv sync --all-packages --all-extras
@@ -96,7 +78,7 @@ jobs:
       - name: Get package path
         id: pkg
         run: |
-          PKG_PATH=$(python3 scripts/get_package_path.py "${{ matrix.package }}")
+          PKG_PATH=$(uv run python scripts/get_package_path.py "${{ matrix.package }}")
           echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
 
       - name: Run linting
@@ -110,6 +92,36 @@ jobs:
         run: uv run pyrefly check
 
       - name: Run tests
+        working-directory: ${{ steps.pkg.outputs.path }}
+        run: uv run pytest --no-cov
+
+  coverage:
+    name: Coverage ${{ matrix.package }}
+    needs: detect
+    if: needs.detect.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-packages --all-extras
+
+      - name: Get package path
+        id: pkg
+        run: |
+          PKG_PATH=$(uv run python scripts/get_package_path.py "${{ matrix.package }}")
+          echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
+
+      - name: Run tests with coverage
         working-directory: ${{ steps.pkg.outputs.path }}
         run: uv run pytest --cov --cov-report=xml:coverage.xml
 

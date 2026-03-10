@@ -4,10 +4,10 @@ This module defines the protocols that aspect classes must implement to intercep
 method calls in the AOP system.
 """
 
+from abc import ABC
 from typing import Any, TypeVar
 
 from spakky.core.common.types import AsyncFunc, Func
-from abc import ABC
 
 
 class IAspect(ABC):
@@ -113,4 +113,11 @@ class IAsyncAspect(ABC):
 
 
 AspectT = TypeVar("AspectT", bound=type[IAspect])
+AspectT_co = TypeVar("AspectT_co", bound=type[IAspect], covariant=True)
+AspectT_contra = TypeVar("AspectT_contra", bound=type[IAspect], contravariant=True)
+
 AsyncAspectT = TypeVar("AsyncAspectT", bound=type[IAsyncAspect])
+AsyncAspectT_co = TypeVar("AsyncAspectT_co", bound=type[IAsyncAspect], covariant=True)
+AsyncAspectT_contra = TypeVar(
+    "AsyncAspectT_contra", bound=type[IAsyncAspect], contravariant=True
+)

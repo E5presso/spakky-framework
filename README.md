@@ -35,7 +35,7 @@
     <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="CI Status">
   </a>
   <a href="https://codecov.io/gh/E5presso/spakky-framework">
-    <img src="https://codecov.io/gh/E5presso/spakky-framework/branch/main/graph/badge.svg" alt="Codecov">
+    <img src="https://codecov.io/gh/E5presso/spakky-framework/branch/develop/graph/badge.svg" alt="Codecov">
   </a>
 </p>
 </p>
@@ -63,7 +63,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky`** | Core framework (DI Container, AOP, Application Context) |
 | **`spakky-domain`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent, CQRS) |
 | **`spakky-data`** | Data access abstractions (Repository, Transaction, External Proxy) |
-| **`spakky-event`** | Event handling (IEventPublisher, IEventConsumer, @EventHandler) |
+| **`spakky-event`** | Event handling (IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
 
 ### Plugins
 
@@ -73,7 +73,10 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-kafka`** | Event-driven architecture support with [Apache Kafka](https://kafka.apache.org/) |
 | **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
 | **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
+| **`spakky-sqlalchemy`** | Database integration with [SQLAlchemy](https://www.sqlalchemy.org/) ORM |
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
+| **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
+| **`spakky-outbox-sqlalchemy`** | SQLAlchemy storage implementation for spakky-outbox |
 
 ## 🚀 Quick Start
 

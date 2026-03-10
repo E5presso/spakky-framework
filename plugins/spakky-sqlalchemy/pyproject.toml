@@ -1,0 +1,80 @@
+[project]
+name = "spakky-sqlalchemy"
+version = "5.0.1"
+description = "SQLAlchemy plugin for Spakky framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = [
+    "spakky-data>=5.0.1",
+    "sqlalchemy>=2.0.45",
+]
+
+[dependency-groups]
+dev = [
+    "testcontainers[postgres]>=4.13.3",
+    "psycopg[binary]>=3.2.6",
+    "greenlet>=3.1.0",
+]
+
+[project.entry-points."spakky.plugins"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.main:initialize"
+
+[build-system]
+requires = ["uv_build>=0.9.13,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.sqlalchemy"
+
+[tool.pyrefly]
+python-version = "3.14"
+search_path = ["src", "."]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = "src/spakky/plugins/sqlalchemy"
+testpaths = "tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=loadfile
+    -p no:warnings
+    -n auto
+    --spec
+"""
+spec_test_format = "{result} {docstring_summary}"
+
+[tool.coverage.run]
+include = ["src/spakky/plugins/sqlalchemy/*"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+    "\\.\\.\\.\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky-data = { workspace = true }

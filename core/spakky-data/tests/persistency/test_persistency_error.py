@@ -2,7 +2,7 @@ from spakky.data.persistency.error import AbstractSpakkyPersistencyError
 
 
 def test_persistency_error_is_abstract() -> None:
-    """Test that AbstractSpakkyPersistencyError is an abstract class"""
+    """AbstractSpakkyPersistencyError가 추상 클래스임을 검증한다."""
 
     class ConcretePersistencyError(AbstractSpakkyPersistencyError):
         message = "Test persistency error"

@@ -1,13 +1,13 @@
 """RabbitMQ plugin for Spakky framework.
 
 This plugin provides seamless RabbitMQ integration with:
-- Domain event publishing via IEventPublisher interface
+- Event transport via IEventTransport interface
 - Automatic event handler registration via @EventHandler stereotype
 - Background consumer service for message processing
 - Configurable connection and queue settings
 
 Example:
-    >>> from spakky.plugins.rabbitmq.event import IEventPublisher
+    >>> from spakky.event.event_publisher import IAsyncEventPublisher
     >>> from spakky.event.stereotype.event_handler import EventHandler, on_event
     >>>
     >>> @EventHandler()

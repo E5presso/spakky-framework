@@ -142,11 +142,11 @@ from spakky.core.aspects.logging import Logging
 @Aspect()
 class LoggingAspect(IAspect):
     @Before(lambda m: Logging.exists(m))
-    def before_log(self, *args, **kwargs) -> None:
+    def before(self, *args, **kwargs) -> None:
         print("Before method execution")
 
     @After(lambda m: Logging.exists(m))
-    def after_log(self, *args, **kwargs) -> None:
+    def after(self, *args, **kwargs) -> None:
         print("After method execution")
 
 # Apply to methods
@@ -168,7 +168,7 @@ from spakky.core.aop.pointcut import Around
 @AsyncAspect()
 class TimingAspect(IAsyncAspect):
     @Around(lambda m: hasattr(m, "__timed__"))
-    async def time_execution(self, joinpoint, *args, **kwargs):
+    async def around_async(self, joinpoint, *args, **kwargs):
         start = time.time()
         result = await joinpoint(*args, **kwargs)
         elapsed = time.time() - start
@@ -186,6 +186,87 @@ class OrderService:
     @Logging()  # Automatic logging
     async def create_order(self, order: Order) -> Order:
         return await self.repository.save(order)
+```
+
+## Context Management
+
+ApplicationContext provides context-scoped value storage:
+
+```python
+from spakky.core.application.application_context import ApplicationContext
+
+context = ApplicationContext()
+
+# Get unique context ID
+context_id = context.get_context_id()
+
+# Store and retrieve context values
+context.set_context_value("user_id", 123)
+user_id = context.get_context_value("user_id")  # Returns 123
+
+# Clear context (except system-managed keys)
+context.clear_context()
+```
+
+> **⚠️ Note**: System-managed keys like `"__spakky_context_id__"` cannot be overridden via `set_context_value()`.
+
+## Tag Registry
+
+ApplicationContext implements `ITagRegistry` for managing custom metadata tags. Tags are dataclass-based annotations that can be registered and queried at runtime.
+
+### Defining Custom Tags
+
+```python
+from dataclasses import dataclass
+from spakky.core.pod.annotations.tag import Tag
+
+@dataclass(eq=False)
+class MyCustomTag(Tag):
+    """Custom tag for marking specific components."""
+    category: str = ""
+```
+
+### Registering and Querying Tags
+
+```python
+from spakky.core.application.application_context import ApplicationContext
+
+context = ApplicationContext()
+
+# Register tags
+tag = MyCustomTag(category="database")
+context.register_tag(tag)
+
+# Check if tag exists
+exists = context.contains_tag(tag)  # True
+
+# Get all tags
+all_tags = context.tags  # frozenset of all registered tags
+
+# Filter tags with selector
+db_tags = context.list_tags(lambda t: isinstance(t, MyCustomTag) and t.category == "database")
+```
+
+### Tag Registry Aware Pods
+
+Pods can receive the tag registry via `ITagRegistryAware`:
+
+```python
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.interfaces.aware.tag_registry_aware import ITagRegistryAware
+from spakky.core.pod.interfaces.tag_registry import ITagRegistry
+
+@Pod()
+class SchemaRegistry(ITagRegistryAware):
+    def __init__(self) -> None:
+        self._tag_registry: ITagRegistry | None = None
+
+    def set_tag_registry(self, tag_registry: ITagRegistry) -> None:
+        self._tag_registry = tag_registry
+        # Access registered tags
+        for tag in tag_registry.list_tags(MyCustomTag.exists):
+            # Process tags...
+            pass
 ```
 
 ## Plugin System

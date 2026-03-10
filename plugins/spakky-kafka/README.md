@@ -46,11 +46,13 @@ export SPAKKY_KAFKA__REPLICATION_FACTOR="1"
 ### Event Publishing
 
 ```python
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.core.common.mutability import immutable
+from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import IEventPublisher
 from spakky.core.pod.annotations.pod import Pod
 
-class UserCreatedEvent(AbstractDomainEvent):
+@immutable
+class UserCreatedEvent(AbstractIntegrationEvent):
     user_id: int
     email: str
 
@@ -110,8 +112,8 @@ class AsyncUserService:
 
 | Component | Description |
 |-----------|-------------|
-| `KafkaEventPublisher` | Synchronous event publisher |
-| `AsyncKafkaEventPublisher` | Asynchronous event publisher |
+| `KafkaEventTransport` | Synchronous event transport (`IEventTransport`) |
+| `AsyncKafkaEventTransport` | Asynchronous event transport (`IAsyncEventTransport`) |
 | `KafkaEventConsumer` | Synchronous event consumer (background service) |
 | `AsyncKafkaEventConsumer` | Asynchronous event consumer (background service) |
 | `KafkaConnectionConfig` | Configuration via environment variables |

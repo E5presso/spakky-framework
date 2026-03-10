@@ -47,3 +47,8 @@ __all__ = [
     "AbstractDomainValidationError",
     "AbstractSpakkyDomainError",
 ]
+
+from spakky.core.application.plugin import Plugin
+
+PLUGIN_NAME = Plugin(name="spakky-domain")
+"""Plugin identifier for the Spakky Domain package."""

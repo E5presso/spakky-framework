@@ -10,6 +10,8 @@ from spakky.data.persistency.transaction import (
 
 
 def test_tranasction_auto_commit() -> None:
+    """트랜잭션의 autocommit=True 설정 시 컨텍스트 종료 후 자동 커밋되는지 검증한다."""
+
     class InMemoryTransaction(AbstractTransaction):
         committed: bool = False
         rolled_back: bool = False
@@ -40,6 +42,8 @@ def test_tranasction_auto_commit() -> None:
 
 
 def test_tranasction_manual_commit() -> None:
+    """트랜잭션의 autocommit=False 설정 시 수동 커밋이 필요함을 검증한다."""
+
     class InMemoryTransaction(AbstractTransaction):
         committed: bool = False
         rolled_back: bool = False
@@ -77,6 +81,8 @@ def test_tranasction_manual_commit() -> None:
 
 
 def test_tranasction_rollback_when_raised() -> None:
+    """트랜잭션 내에서 예외 발생 시 자동 롤백되는지 검증한다."""
+
     class InMemoryTransaction(AbstractTransaction):
         committed: bool = False
         rolled_back: bool = False
@@ -109,6 +115,8 @@ def test_tranasction_rollback_when_raised() -> None:
 
 @pytest.mark.asyncio
 async def test_async_tranasction_auto_commit() -> None:
+    """비동기 트랜잭션의 autocommit=True 설정 시 컨텍스트 종료 후 자동 커밋되는지 검증한다."""
+
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
         committed: bool = False
         rolled_back: bool = False
@@ -140,6 +148,8 @@ async def test_async_tranasction_auto_commit() -> None:
 
 @pytest.mark.asyncio
 async def test_async_tranasction_manual_commit() -> None:
+    """비동기 트랜잭션의 autocommit=False 설정 시 수동 커밋이 필요함을 검증한다."""
+
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
         committed: bool = False
         rolled_back: bool = False
@@ -178,6 +188,8 @@ async def test_async_tranasction_manual_commit() -> None:
 
 @pytest.mark.asyncio
 async def test_async_tranasction_rollback_when_raised() -> None:
+    """비동기 트랜잭션 내에서 예외 발생 시 자동 롤백되는지 검증한다."""
+
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
         committed: bool = False
         rolled_back: bool = False

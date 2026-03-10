@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from typing import Any, Self, final
+from typing import Callable, Self, final
 
 from spakky.core.common.constants import ANNOTATION_METADATA
 from spakky.core.common.error import AbstractSpakkyFrameworkError
-from spakky.core.common.types import AnyT, ClassT, FuncT
+from spakky.core.common.types import AnyT, ObjectT
 
 
 @dataclass
@@ -25,17 +25,17 @@ class Annotation:
 
     @final
     @classmethod
-    def __get_metadata(cls, obj: Any) -> dict[type, list[Self]]:
+    def __get_metadata(cls, obj: object) -> dict[type, list[Self]]:
         metadata: dict[type, list[Self]] = getattr(obj, ANNOTATION_METADATA, {})
         return metadata
 
     @final
     @classmethod
-    def all(cls, obj: Any) -> list[Self]:
+    def all(cls, obj: object) -> list[Self]:
         """Get all list of annotations from the object.
 
         Args:
-            obj (Any): The object to get the annotations from.
+            obj: The object to get the annotations from.
 
         Returns:
             list[Self]: List of annotations.
@@ -46,12 +46,15 @@ class Annotation:
 
     @final
     @classmethod
-    def get(cls, obj: Any) -> Self:
+    def get(cls, obj: object) -> Self:
         """Get a single annotation from the object.
+
         Args:
-            obj (Any): The object to get the annotation from.
+            obj: The object to get the annotation from.
+
         Returns:
             Self: The annotation.
+
         Raises:
             AnnotationNotFoundError: If no annotation is found.
             MultipleAnnotationFoundError: If multiple annotations are found.
@@ -66,11 +69,11 @@ class Annotation:
 
     @final
     @classmethod
-    def get_or_none(cls, obj: Any) -> Self | None:
+    def get_or_none(cls, obj: object) -> Self | None:
         """Get a single annotation from the object or None if not found.
 
         Args:
-            obj (Any): The object to get the annotation from.
+            obj: The object to get the annotation from.
 
         Raises:
             MultipleAnnotationFoundError: If multiple annotations are found.
@@ -88,12 +91,12 @@ class Annotation:
 
     @final
     @classmethod
-    def get_or_default(cls, obj: Any, default: Self) -> Self:
+    def get_or_default(cls, obj: object, default: Self) -> Self:
         """Get a single annotation from the object or a default value if not found.
 
         Args:
-            obj (Any): The object to get the annotation from.
-            default (Self): The default value to return if not found.
+            obj: The object to get the annotation from.
+            default: The default value to return if not found.
 
         Raises:
             MultipleAnnotationFoundError: If multiple annotations are found.
@@ -111,11 +114,11 @@ class Annotation:
 
     @final
     @classmethod
-    def exists(cls, obj: Any) -> bool:
+    def exists(cls, obj: object) -> bool:
         """Check if the annotation exists in the object.
 
         Args:
-            obj (Any): The object to check.
+            obj: The object to check.
 
         Returns:
             bool: True if the annotation exists, False otherwise.
@@ -132,14 +135,14 @@ class ClassAnnotation(Annotation):
         Annotation (_type_): Base annotation class.
     """
 
-    def __call__(self, obj: ClassT) -> ClassT:
+    def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
         """Call method to annotate a class.
 
         Args:
-            obj (ClassT): The class to annotate.
+            obj (type[ObjectT]): The class to annotate.
 
         Returns:
-            ClassT: The annotated class.
+            type[ObjectT]: The annotated class.
         """
         return super().__call__(obj)
 
@@ -152,14 +155,14 @@ class FunctionAnnotation(Annotation):
         Annotation (_type_): Base annotation class.
     """
 
-    def __call__(self, obj: FuncT) -> FuncT:
+    def __call__(self, obj: Callable[..., AnyT]) -> Callable[..., AnyT]:
         """Call method to annotate a function.
 
         Args:
-            obj (FuncT): The function to annotate.
+            obj (Callable[..., AnyT]): The function to annotate.
 
         Returns:
-            FuncT: The annotated function.
+            Callable[..., AnyT]: The annotated function.
         """
         return super().__call__(obj)
 

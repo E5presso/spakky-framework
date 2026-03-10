@@ -32,10 +32,10 @@ This project uses [`uv`](https://github.com/astral-sh/uv) for dependency managem
 
    > **💡 Understanding `uv sync` options:**
    >
-   > | Command | When to use | Description |
-   > |---------|-------------|-------------|
-   > | `uv sync --all-packages --all-extras` | **Root directory** | Installs all workspace packages and their optional dependencies. Use this when developing across multiple packages. |
-   > | `uv sync --all-extras` | **Sub-package directory** | Installs only the current package and its optional dependencies. Use this when working on a single plugin (e.g., `cd plugins/spakky-fastapi`). |
+   > | Command                               | When to use               | Description                                                                                                                                    |
+   > | ------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+   > | `uv sync --all-packages --all-extras` | **Root directory**        | Installs all workspace packages and their optional dependencies. Use this when developing across multiple packages.                            |
+   > | `uv sync --all-extras`                | **Sub-package directory** | Installs only the current package and its optional dependencies. Use this when working on a single plugin (e.g., `cd plugins/spakky-fastapi`). |
    >
    > The `--all-packages` flag is only needed at the workspace root to include all monorepo packages. When you `cd` into a sub-package, that package becomes the context, so `--all-extras` alone is sufficient.
 
@@ -47,7 +47,7 @@ Each sub-project can be opened independently in VS Code while still using the ro
 
    ```json
    {
-     "python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python"
+   	"python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python"
    }
    ```
 
@@ -138,8 +138,47 @@ uv run ruff check --fix
 
 Spakky is a strictly typed framework. All public APIs and dependency injection points must have type hints.
 
-- Use `typing` module features (e.g., `Protocol`, `Any`, `cast`).
+- Use `typing` module features (e.g., `Protocol`, `TypeVar`, `cast`).
 - We use `pyrefly` (or compatible type checkers) for validation.
+
+#### `Any` Type Usage
+
+**The use of `Any` type should be avoided whenever possible.** Use alternatives first:
+
+- Use `TypeVar` for generic functions instead of `Any` return types.
+- Use `object` as an upper bound when the type is truly unknown.
+- Use `Protocol` to define structural typing contracts.
+- Use `Union` or `|` for multiple known types.
+
+**Allowed exceptions** (must be documented with an inline comment explaining why):
+
+- External library interfaces with invariant generics (e.g., SQLAlchemy `Column[Any]`, `TypeEngine[Any]`).
+- JSON parsing/serialization where the structure is truly dynamic.
+- Decorator implementations that must preserve arbitrary signatures.
+
+```python
+# BAD: Using Any without justification
+from typing import Any
+
+def get_constraint(constraint_type: type) -> Any | None:
+    ...
+
+# GOOD: Using TypeVar
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def get_constraint(constraint_type: type[_T]) -> _T | None:
+    ...
+
+# GOOD: Any with justification (external library invariant generic)
+def create_column() -> Column[Any]:  # Any: SQLAlchemy Column is invariant
+    ...
+```
+
+#### `type: ignore` Comments
+
+**The use of `# type: ignore` comments is prohibited.** Always find a proper type-safe solution or use `Any` with documentation if unavoidable.
 
 ### Logging Pattern
 
@@ -157,6 +196,7 @@ class MyService:
 ```
 
 **Key points**:
+
 - Declare a module-level `logger` using `getLogger(__name__)`
 - Do NOT inject loggers via constructor or `ILoggerAware` (removed)
 - `ApplicationContext` no longer accepts a `logger` parameter
@@ -166,9 +206,75 @@ class MyService:
 - **Packages**: `snake_case` (e.g., `spakky.plugins.fastapi`)
 - **Classes**: `PascalCase` (e.g., `UserController`)
 - **Functions/Methods**: `snake_case` (e.g., `get_user`)
-- **Protocols (Interfaces)**: Must start with `I` (e.g., `IService`, `IContainer`).
-- **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`).
+- **Protocols (Interfaces)**: Must start with `I` (e.g., `IEventPublisher`, `IContainer`).
+- **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`, `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent`).
 - **Error Classes**: Must end with `Error` (e.g., `CannotDeterminePodTypeError`).
+- **Async Classes**: Must start with `Async` (e.g., `AsyncTransactionalAspect`, `AsyncRabbitMQEventTransport`).
+
+#### Inherited Type Suffix
+
+Concrete classes must include the **inherited class/interface role as a suffix**.
+
+| Inherited Type | Suffix | Example |
+|---------------|--------|--------|
+| `IAsyncAspect` | `~Aspect` | `AsyncTransactionalAspect` |
+| `AbstractAsyncBackgroundService` | `~BackgroundService` | `AsyncOutboxRelayBackgroundService` |
+| `IPostProcessor` | `~PostProcessor` | `RegisterRoutesPostProcessor` |
+| `AbstractAsyncTransaction` | `~Transaction` | `AsyncTransaction` |
+
+**Exception — Domain Models**: Domain models are exempt from the suffix rule. Use ubiquitous language (domain terminology) as-is.
+
+```python
+# ✅ Domain models: no suffix, use domain terms
+class User(AbstractAggregateRoot[UUID]): ...
+class OrderPlaced(AbstractDomainEvent): ...  # past participle
+class Money(AbstractValueObject): ...
+
+# ✅ Infrastructure/Framework: suffix required
+class AsyncTransactionalAspect(IAsyncAspect): ...
+class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService): ...
+```
+
+#### Domain Event Naming
+
+- **DomainEvent**: Use **past participle only**. Do NOT append `DomainEvent` suffix.
+  - `OrderPlaced` ✅ / `OrderPlacedDomainEvent` ❌
+  - `UserCreated` ✅ / `UserCreatedEvent` ❌
+- **IntegrationEvent**: Append `IntegrationEvent` suffix.
+  - `OrderConfirmedIntegrationEvent` ✅
+
+#### Generic Type Narrowing
+
+When inheriting a Generic interface with concrete type parameters, **replace the Generic name with the narrowed type name**.
+
+```python
+# ✅ Generic narrowed → replace with type name
+class UserRepository(IAsyncGenericRepository[User, UUID]): ...
+class OrderRepository(IGenericRepository[Order, UUID]): ...
+
+# ❌ Keeping Generic name
+class UserGenericRepository(IAsyncGenericRepository[User, UUID]): ...
+```
+
+### Magic Numbers
+
+**Avoid magic numbers.** Use named constants with descriptive names and docstrings.
+
+```python
+# BAD: Magic number
+return String(length=255)
+
+# GOOD: Named constant with documentation
+DEFAULT_STRING_LENGTH: int = 255
+"""Default length for fallback String column type."""
+
+return String(length=DEFAULT_STRING_LENGTH)
+```
+
+**Allowed exceptions** (no constant needed):
+
+- `0`, `1`, `-1` in obvious contexts (e.g., `range(0, n)`, `index + 1`).
+- Common values like `100` for percentage calculations when context is clear.
 
 ### Error Class Guidelines
 
@@ -183,9 +289,9 @@ class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
     message = "Cannot use optional return type in pod"
 ```
 
-**For errors with context or detailed information**:
+**For structured errors** (context data needed for programmatic access):
 
-Override `__init__`, `__str__`, and optionally `__repr__` to provide rich error information:
+Override `__init__` to store structured data. **Do NOT override `__str__`** — detailed messages belong in logs, not errors:
 
 ```python
 class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
@@ -197,27 +303,26 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
         super().__init__()
         self.dependency_chain = dependency_chain
 
-    def __str__(self) -> str:
-        """Format with visual dependency tree."""
-        lines = [self.message, "Dependency path:"]
-        for i, type_ in enumerate(self.dependency_chain):
-            type_name = type_.__name__
-            indent = "  " * i
-            arrow = "└─> " if i > 0 else ""
-            lines.append(f"{indent}{arrow}{type_name}")
-        return "\n".join(lines)
+# Logging (where detailed messages belong):
+except CircularDependencyGraphDetectedError as e:
+    logger.error(
+        "Circular dependency detected: %s",
+        " -> ".join(t.__name__ for t in e.dependency_chain),
+    )
 ```
 
 **Guidelines**:
+
+- **Errors are structured data, not descriptive text** — logs handle details
+- **Do NOT use f-strings** to build descriptive error messages
+- **Do NOT override `__str__`** — use the class `message` attribute
 - Always call `super().__init__()` in custom `__init__`
-- Store context information as instance attributes
-- Use `__str__` for human-readable error messages
-- Use `__repr__` for debugging information (optional)
 - Keep `message` class attribute for basic error identification
 
 **Key rules**:
-- Store context as instance attributes for programmatic access
-- Use descriptive f-string messages with the problematic values
+
+- Simple errors: `message` class attribute only
+- Structured errors: `__init__` for data, no `__str__` override
 
 ### Documentation
 
@@ -272,13 +377,6 @@ Spakky uses a formal plugin architecture. If you are contributing a new plugin:
 
 4.  **Initialization**: Implement the `initialize` function in `main.py`.
 
-    ```toml
-    [project.entry-points."spakky.plugins"]
-    spakky-name = "spakky.plugins.name.main:initialize"
-    ```
-
-3.  **Initialization**: Implement the `initialize` function in `main.py`.
-
     ```python
     from spakky.core.application.application import SpakkyApplication
 
@@ -306,7 +404,7 @@ We use **Conventional Commits** to automate versioning and changelogs.
 Format: `<type>(<scope>): <subject>`
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **Scopes**: `core`, `domain`, `data`, `event`, `fastapi`, `kafka`, `rabbitmq`, `security`, `typer`
+- **Scopes**: `core`, `domain`, `data`, `event`, `fastapi`, `kafka`, `rabbitmq`, `security`, `sqlalchemy`, `typer`, `outbox`, `outbox-sqlalchemy`
 
 Examples:
 
@@ -322,17 +420,17 @@ We use **Semantic Versioning** with **unified single version** across all packag
 
 All packages in the monorepo share the same version number. When any package changes, all packages are released together.
 
-| Component | Format | Example |
-|-----------|--------|---------|
-| **Tag** | `v{version}` | `v3.3.0` |
+| Component        | Format       | Example                                        |
+| ---------------- | ------------ | ---------------------------------------------- |
+| **Tag**          | `v{version}` | `v3.3.0`                                       |
 | **All packages** | Same version | `spakky==3.3.0`, `spakky-fastapi==3.3.0`, etc. |
 
 ### Bump Type Rules
 
-| Commit Type | Bump | Version Change |
-|-------------|------|----------------|
-| `fix:` | Patch | `3.2.0` → `3.2.1` |
-| `feat:` | Minor | `3.2.0` → `3.3.0` |
+| Commit Type                    | Bump  | Version Change    |
+| ------------------------------ | ----- | ----------------- |
+| `fix:`                         | Patch | `3.2.0` → `3.2.1` |
+| `feat:`                        | Minor | `3.2.0` → `3.3.0` |
 | `feat!:` or `BREAKING CHANGE:` | Major | `3.2.0` → `4.0.0` |
 
 ## 🚀 Pull Request Process

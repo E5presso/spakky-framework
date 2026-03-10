@@ -1,168 +1,317 @@
 #!/usr/bin/env python3
+"""Monorepo pre-commit hook that runs sub-project pre-commit configs.
+
+This script runs pre-commit checks only for sub-projects that have
+actual file changes staged for commit. Executes checks in parallel
+for faster feedback while maintaining stable console output.
+
+Usage:
+    uv run python scripts/run_subproject_precommit.py
 """
-Monorepo pre-commit hook that runs sub-project pre-commit configs
-only for projects with actual file changes.
-"""
 
-import os
-import subprocess
-import sys
-import tomllib  # Python 3.11+ built-in
-from pathlib import Path
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+import typer
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+from rich.text import Text
+
+from common import (
+    CapturedResult,
+    PackageInfo,
+    ScriptError,
+    console,
+    get_all_packages,
+    get_changed_packages,
+    get_staged_files,
+    print_error,
+    print_header,
+    print_info,
+    print_success,
+    print_warning,
+    run_captured,
+)
+
+if TYPE_CHECKING:
+    from concurrent.futures import Future
+
+app = typer.Typer(
+    help="Run pre-commit hooks for changed workspace projects.",
+    no_args_is_help=False,
+)
 
 
-def get_workspace_members() -> list[str]:
-    """Read workspace members from root pyproject.toml."""
-    root_dir = Path(__file__).parent.parent
-    pyproject_path = root_dir / "pyproject.toml"
+@dataclass(frozen=True, slots=True)
+class PrecommitResult:
+    """Result of pre-commit execution for a package.
 
-    try:
-        with open(pyproject_path, "rb") as f:
-            pyproject = tomllib.load(f)
+    Attributes:
+        package: The package that was checked.
+        passed: Whether the checks passed.
+        output: Captured console output.
+        skipped: Whether the package was skipped (no config).
+    """
 
-        members = (
-            pyproject.get("tool", {})
-            .get("uv", {})
-            .get("workspace", {})
-            .get("members", [])
+    package: PackageInfo
+    passed: bool
+    output: str
+    skipped: bool = False
+
+
+def run_precommit_for_package(pkg: PackageInfo) -> PrecommitResult:
+    """Run pre-commit for a specific package (parallel-safe).
+
+    Args:
+        pkg: Package information.
+
+    Returns:
+        PrecommitResult with captured output.
+    """
+    if not pkg.has_precommit_config:
+        return PrecommitResult(
+            package=pkg,
+            passed=True,
+            output="",
+            skipped=True,
         )
 
-        if not members:
-            print("⚠ No workspace members found in pyproject.toml", file=sys.stderr)
-            return []
+    cmd = [
+        "uv",
+        "run",
+        "pre-commit",
+        "run",
+        "--all-files",
+        "--color=always",
+    ]
 
-        return members
+    result: CapturedResult = run_captured(cmd, cwd=pkg.full_path)
 
-    except FileNotFoundError:
-        print(f"❌ pyproject.toml not found at {pyproject_path}", file=sys.stderr)
-        return []
-    except Exception as e:
-        print(f"❌ Error reading pyproject.toml: {e}", file=sys.stderr)
-        return []
-
-
-def get_changed_files() -> set[str]:
-    """Get list of files that have been staged for commit."""
-    try:
-        result = subprocess.run(
-            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return (
-            set(result.stdout.strip().split("\n")) if result.stdout.strip() else set()
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting changed files: {e}", file=sys.stderr)
-        return set()
-
-
-def get_changed_projects(
-    changed_files: set[str], workspace_members: list[str]
-) -> list[str]:
-    """Determine which sub-projects have changes."""
-    changed_projects: list[str] = []
-
-    for member in workspace_members:
-        # Check if any changed file is within this project
-        if any(file.startswith(f"{member}/") for file in changed_files):
-            project_path = Path(member)
-            pre_commit_config = project_path / ".pre-commit-config.yaml"
-
-            if pre_commit_config.exists():
-                changed_projects.append(member)
-                print(f"✓ Detected changes in: {member}", flush=True)
-            else:
-                print(
-                    f"⚠ Changes in {member} but no .pre-commit-config.yaml found",
-                    flush=True,
-                )
-
-    return changed_projects
-
-
-def run_pre_commit_for_project(project_path: str) -> bool:
-    """Run pre-commit for a specific project."""
-    print(f"\n{'=' * 60}", flush=True)
-    print(f"Running pre-commit for: {project_path}", flush=True)
-    print(f"{'=' * 60}\n", flush=True)
-
-    try:
-        # Set up environment for unbuffered output
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env["FORCE_COLOR"] = "1"
-
-        # Use Popen to stream output in real-time
-        process = subprocess.Popen(
-            ["uv", "run", "pre-commit", "run", "--all-files", "--color=always"],
-            cwd=project_path,
-            stdout=None,  # Inherit from parent (direct to terminal)
-            stderr=None,  # Inherit from parent (direct to terminal)
-            bufsize=0,
-            env=env,
-        )
-        process.wait()
-
-        if process.returncode != 0:
-            print(f"\n❌ Pre-commit failed for: {project_path}", flush=True)
-            return False
-
-        print(f"\n✅ Pre-commit passed for: {project_path}", flush=True)
-        return True
-
-    except Exception as e:
-        print(
-            f"\n❌ Error running pre-commit for {project_path}: {e}",
-            file=sys.stderr,
-            flush=True,
-        )
-        return False
-
-
-def main() -> int:
-    """Main entry point."""
-    print("🔍 Checking for changed files in workspace members...", flush=True)
-
-    # Read workspace members from pyproject.toml
-    workspace_members = get_workspace_members()
-    if not workspace_members:
-        print("❌ No workspace members found. Exiting.", flush=True)
-        return 1
-
-    changed_files = get_changed_files()
-
-    if not changed_files:
-        print("ℹ️  No staged files detected. Skipping pre-commit checks.", flush=True)
-        return 0
-
-    changed_projects = get_changed_projects(changed_files, workspace_members)
-
-    if not changed_projects:
-        print("ℹ️  No changes in workspace members with pre-commit configs.", flush=True)
-        return 0
-
-    print(
-        f"\n📦 Running pre-commit for {len(changed_projects)} project(s)...\n",
-        flush=True,
+    return PrecommitResult(
+        package=pkg,
+        passed=result.exit_code == 0,
+        output=result.output,
     )
 
+
+def run_parallel_precommit(packages: list[PackageInfo]) -> list[PrecommitResult]:
+    """Run pre-commit checks for multiple packages in parallel.
+
+    Args:
+        packages: List of packages to check.
+
+    Returns:
+        List of PrecommitResult in the same order as input packages.
+    """
+    results: dict[str, PrecommitResult] = {}
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task(
+            "[cyan]Running pre-commit checks...",
+            total=len(packages),
+        )
+
+        with ThreadPoolExecutor(max_workers=min(len(packages), 8)) as executor:
+            future_to_pkg: dict[Future[PrecommitResult], PackageInfo] = {
+                executor.submit(run_precommit_for_package, pkg): pkg for pkg in packages
+            }
+
+            for future in as_completed(future_to_pkg):
+                pkg = future_to_pkg[future]
+                result = future.result()
+                results[pkg.name] = result
+
+                # Update progress with status
+                status = "✓" if result.passed else "✗"
+                if result.skipped:
+                    status = "○"
+                progress.update(
+                    task,
+                    advance=1,
+                    description=f"[cyan]Completed: {pkg.name} [{status}]",
+                )
+
+    # Return results in original package order
+    return [results[pkg.name] for pkg in packages]
+
+
+def display_results(results: list[PrecommitResult]) -> bool:
+    """Display pre-commit results with stable output.
+
+    Args:
+        results: List of PrecommitResult from parallel execution.
+
+    Returns:
+        True if all checks passed, False otherwise.
+    """
     all_passed = True
-    for project in changed_projects:
-        if not run_pre_commit_for_project(project):
+    failed_packages: list[PrecommitResult] = []
+    passed_packages: list[PrecommitResult] = []
+    skipped_packages: list[PrecommitResult] = []
+
+    for result in results:
+        if result.skipped:
+            skipped_packages.append(result)
+        elif result.passed:
+            passed_packages.append(result)
+        else:
+            failed_packages.append(result)
             all_passed = False
 
-    print(f"\n{'=' * 60}", flush=True)
-    if all_passed:
-        print("✅ All pre-commit checks passed!", flush=True)
-        print(f"{'=' * 60}\n", flush=True)
-        return 0
-    else:
-        print("❌ Some pre-commit checks failed!", flush=True)
-        print(f"{'=' * 60}\n", flush=True)
-        return 1
+    console.print()
+
+    # Show skipped packages briefly
+    if skipped_packages:
+        console.print("[dim]Skipped (no .pre-commit-config.yaml):[/]")
+        for result in skipped_packages:
+            console.print(f"  [dim]○ {result.package.name}[/]")
+        console.print()
+
+    # Show passed packages briefly
+    if passed_packages:
+        console.print("[green]Passed:[/]")
+        for result in passed_packages:
+            console.print(f"  [green]✓[/] {result.package.name}")
+        console.print()
+
+    # Show failed packages with full output
+    if failed_packages:
+        console.print("[red]Failed:[/]")
+        for result in failed_packages:
+            console.print(f"  [red]✗[/] {result.package.name}")
+        console.print()
+
+        # Display detailed output for failed packages
+        for result in failed_packages:
+            console.rule(f"[red bold]{result.package.name} - Output[/]")
+            # Parse ANSI codes properly for stable output
+            ansi_text = Text.from_ansi(result.output)
+            console.print(ansi_text)
+            console.print()
+
+    return all_passed
+
+
+@app.command()
+def main(
+    all_packages: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Run for all packages instead of only changed ones.",
+    ),
+    sequential: bool = typer.Option(
+        False,
+        "--sequential",
+        "-s",
+        help="Run checks sequentially (useful for debugging).",
+    ),
+) -> None:
+    """Run pre-commit checks for workspace projects with staged changes."""
+    try:
+        print_header("Checking for changes in workspace members")
+
+        packages = get_all_packages()
+        if not packages:
+            print_error("No workspace packages found.")
+            raise typer.Exit(1)
+
+        if all_packages:
+            changed_packages = [p for p in packages if p.has_precommit_config]
+            print_info(f"Running pre-commit for all {len(changed_packages)} packages")
+        else:
+            staged_files = get_staged_files()
+
+            if not staged_files:
+                print_info("No staged files detected. Skipping pre-commit checks.")
+                raise typer.Exit(0)
+
+            changed_packages = [
+                p for p in get_changed_packages(staged_files) if p.has_precommit_config
+            ]
+
+            if not changed_packages:
+                print_info("No changes in workspace members with pre-commit configs.")
+                raise typer.Exit(0)
+
+        console.print()
+        console.print("[bold]Affected projects:[/]")
+        for pkg in changed_packages:
+            console.print(f"  • {pkg.name}")
+
+        console.print()
+
+        if sequential:
+            # Legacy sequential mode for debugging
+            from common import run_streaming
+
+            console.print(
+                f"[bold]Running pre-commit sequentially for "
+                f"{len(changed_packages)} project(s)...[/]"
+            )
+
+            all_passed = True
+            for pkg in changed_packages:
+                print_header(f"Pre-commit: {pkg.name}")
+                if not pkg.has_precommit_config:
+                    print_warning(f"No .pre-commit-config.yaml found for {pkg.name}")
+                    continue
+
+                cmd = [
+                    "uv",
+                    "run",
+                    "pre-commit",
+                    "run",
+                    "--all-files",
+                    "--color=always",
+                ]
+                exit_code = run_streaming(cmd, cwd=pkg.full_path)
+
+                if exit_code != 0:
+                    print_error(f"Pre-commit failed for: {pkg.name}")
+                    all_passed = False
+                else:
+                    print_success(f"Pre-commit passed for: {pkg.name}")
+        else:
+            # Parallel mode (default)
+            console.print(
+                f"[bold]Running pre-commit in parallel for "
+                f"{len(changed_packages)} project(s)...[/]"
+            )
+            console.print()
+
+            results = run_parallel_precommit(changed_packages)
+            all_passed = display_results(results)
+
+        console.print()
+        console.rule()
+        if all_passed:
+            print_success("All pre-commit checks passed!")
+            raise typer.Exit(0)
+        else:
+            print_error("Some pre-commit checks failed!")
+            raise typer.Exit(1)
+
+    except ScriptError as e:
+        print_error(str(e))
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

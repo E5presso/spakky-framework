@@ -1,13 +1,15 @@
-"""RabbitMQ event consumers for domain events.
+"""RabbitMQ event consumers for integration events.
 
 Provides synchronous and asynchronous event consumers that run as background
-services, consuming domain events from RabbitMQ queues and dispatching them
+services, consuming integration events from RabbitMQ queues and dispatching them
 to registered handlers.
 """
 
 from typing import Any
 
-from aio_pika import connect_robust  # type: ignore
+from aio_pika import (
+    connect_robust,  # type: ignore[import-untyped]  # aio_pika lacks type stubs
+)
 from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
@@ -18,17 +20,17 @@ from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractEvent
 from spakky.event.error import (
     DuplicateEventHandlerError,
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
-    DomainEventT,
+    AsyncEventHandlerCallback,
+    EventHandlerCallback,
+    EventT_contra,
     IAsyncEventConsumer,
-    IAsyncEventHandlerCallback,
     IEventConsumer,
-    IEventHandlerCallback,
 )
 
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
@@ -38,7 +40,7 @@ from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     """Synchronous RabbitMQ event consumer.
 
-    Runs as a background service that consumes domain events from RabbitMQ
+    Runs as a background service that consumes integration events from RabbitMQ
     queues and dispatches them to registered synchronous event handlers.
     Uses blocking connection for synchronous event processing.
 
@@ -51,9 +53,9 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     """
 
     connection_string: str
-    type_lookup: dict[str, type[AbstractDomainEvent]]
-    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
-    handlers: dict[type[AbstractDomainEvent], IEventHandlerCallback[Any]]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], EventHandlerCallback[Any]]
     connection: BlockingConnection
     channel: BlockingChannel
 
@@ -92,8 +94,8 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
 
     def register(
         self,
-        event: type[DomainEventT],
-        handler: IEventHandlerCallback[DomainEventT],
+        event: type[EventT_contra],
+        handler: EventHandlerCallback[EventT_contra],
     ) -> None:
         """Register an event handler for a specific event type.
 
@@ -154,7 +156,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
 class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
     """Asynchronous RabbitMQ event consumer.
 
-    Runs as an async background service that consumes domain events from
+    Runs as an async background service that consumes integration events from
     RabbitMQ queues and dispatches them to registered asynchronous event
     handlers. Uses robust connection for automatic reconnection.
 
@@ -166,9 +168,9 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
     """
 
     connection_string: str
-    type_lookup: dict[str, type[AbstractDomainEvent]]
-    type_adapters: dict[type, TypeAdapter[AbstractDomainEvent]]
-    handlers: dict[type[AbstractDomainEvent], IAsyncEventHandlerCallback[Any]]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type, TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], AsyncEventHandlerCallback[Any]]
     connection: AbstractRobustConnection
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
@@ -194,8 +196,8 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
 
     def register(
         self,
-        event: type[DomainEventT],
-        handler: IAsyncEventHandlerCallback[DomainEventT],
+        event: type[EventT_contra],
+        handler: AsyncEventHandlerCallback[EventT_contra],
     ) -> None:
         """Register an async event handler for a specific event type.
 

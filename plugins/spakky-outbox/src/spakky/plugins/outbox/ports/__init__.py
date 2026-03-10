@@ -1,0 +1,1 @@
+"""Outbox ports module."""

@@ -1,6 +1,10 @@
 # test automation
 build/reports/**
 
+# harness meta-review generated report and session marker (runtime artifacts — not for commit)
+.github/hooks/harness-review.md
+.github/hooks/.session-start
+
 ### Node ###
 # Logs
 logs
@@ -161,6 +165,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!scripts/lib/
 lib64/
 parts/
 sdist/

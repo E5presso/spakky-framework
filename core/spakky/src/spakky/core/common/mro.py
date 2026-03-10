@@ -6,19 +6,19 @@ This module provides utilities for computing MRO (Method Resolution Order)
 for generic types, including parameterized generics like List[int] or Dict[str, Any].
 """
 
-from typing import *  # type: ignore  # noqa: F403
+from typing import *  # type: ignore[no-redef]  # noqa: F403  # Need full typing namespace for generic MRO
 from typing import (
     Any,
     Generic,
     Protocol,
     TypeGuard,
-    _collect_parameters,  # type: ignore
+    _collect_parameters,  # type: ignore[attr-defined]  # Private API for generic parameter collection
     get_args,
     get_origin,
 )
 
 from spakky.core.common.constants import ORIGIN_BASES, PARAMETERS
-from spakky.core.common.types import ClassT
+from spakky.core.common.types import ObjectT
 
 
 def _generic_mro(result: dict[type, Any], tp: Any) -> None:
@@ -68,12 +68,12 @@ def generic_mro(tp: Any) -> list[type]:
         return tp.mro()
     # sentinel value to avoid to subscript Generic and Protocol
     result = {Generic: Generic, Protocol: Protocol}
-    _generic_mro(result, tp)  # type: ignore
+    _generic_mro(result, tp)  # type: ignore[arg-type]  # tp is validated above
     cls = origin if origin is not None else tp
     return list(result.get(sub_cls, sub_cls) for sub_cls in cls.__mro__)
 
 
-def is_family_with(tp: Any, target: ClassT) -> TypeGuard[ClassT]:
+def is_family_with(tp: Any, target: type[ObjectT]) -> TypeGuard[type[ObjectT]]:
     """Check if a type is related to a target type through its MRO.
 
     Args:
@@ -81,6 +81,6 @@ def is_family_with(tp: Any, target: ClassT) -> TypeGuard[ClassT]:
         target: The target type to look for in the MRO.
 
     Returns:
-        TypeGuard[ClassT]: True if target is in tp's MRO, False otherwise.
+        TypeGuard[type[ObjectT]]: True if target is in tp's MRO, False otherwise.
     """
     return target in generic_mro(tp)

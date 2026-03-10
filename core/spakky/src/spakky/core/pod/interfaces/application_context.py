@@ -7,9 +7,11 @@ application lifecycle and service coordination.
 from abc import ABC, abstractmethod
 from asyncio import locks
 from threading import Event
+from uuid import UUID
 
 from spakky.core.application.error import AbstractSpakkyApplicationError
 from spakky.core.pod.interfaces.container import IContainer
+from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 from spakky.core.service.interfaces.service import IAsyncService, IService
 
 
@@ -41,7 +43,7 @@ class EventLoopThreadAlreadyStartedInApplicationContextError(
     message = "Event loop thread already started in application context"
 
 
-class IApplicationContext(IContainer, ABC):
+class IApplicationContext(IContainer, ITagRegistry, ABC):
     """Protocol for application context managing Pod lifecycle and services.
 
     Extends IContainer with service management and lifecycle control.
@@ -80,4 +82,40 @@ class IApplicationContext(IContainer, ABC):
     @abstractmethod
     def stop(self) -> None:
         """Stop the application context and clean up resources."""
+        ...
+
+    @abstractmethod
+    def get_context_id(self) -> UUID:
+        """Get unique ID for current context.
+
+        Returns:
+            UUID for this context.
+        """
+        ...
+
+    @abstractmethod
+    def get_context_value(self, key: str) -> object | None:
+        """Get a value from the context-scoped cache.
+
+        Args:
+            key: The key to retrieve.
+
+        Returns:
+            The cached value, or None if not found.
+        """
+        ...
+
+    @abstractmethod
+    def set_context_value(self, key: str, value: object) -> None:
+        """Set a value in the context-scoped cache.
+
+        Args:
+            key: The key to set.
+            value: The value to store.
+        """
+        ...
+
+    @abstractmethod
+    def clear_context(self) -> None:
+        """Clear context-scoped cache for current context."""
         ...

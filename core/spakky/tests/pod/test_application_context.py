@@ -7,6 +7,8 @@ from spakky.core.pod.annotations.pod import Pod
 
 
 def test_get_singleton_scoped_pod() -> None:
+    """SINGLETON 스코프 Pod이 동일한 인스턴스를 반환함을 검증한다."""
+
     @Pod(scope=Pod.Scope.SINGLETON)
     class A: ...
 
@@ -22,6 +24,8 @@ def test_get_singleton_scoped_pod() -> None:
 
 
 def test_get_prototype_scoped_pod() -> None:
+    """PROTOTYPE 스코프 Pod이 매번 새로운 인스턴스를 반환함을 검증한다."""
+
     @Pod(scope=Pod.Scope.PROTOTYPE)
     class A: ...
 
@@ -38,6 +42,8 @@ def test_get_prototype_scoped_pod() -> None:
 
 @pytest.mark.asyncio
 async def test_context_scoped_pod_creates_isolated_instances_per_async_flow() -> None:
+    """CONTEXT 스코프 Pod이 비동기 흐름별로 독립된 인스턴스를 생성함을 검증한다."""
+
     @Pod(scope=Pod.Scope.CONTEXT)
     class A: ...
 

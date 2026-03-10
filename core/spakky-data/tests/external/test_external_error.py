@@ -2,7 +2,7 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 
 
 def test_external_error_is_abstract() -> None:
-    """Test that AbstractSpakkyExternalError is an abstract class"""
+    """AbstractSpakkyExternalError가 추상 클래스임을 검증한다."""
 
     class ConcreteExternalError(AbstractSpakkyExternalError):
         message = "Test external error"

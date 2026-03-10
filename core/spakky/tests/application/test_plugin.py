@@ -2,13 +2,13 @@ from spakky.core.application.plugin import Plugin
 
 
 def test_plugin_creation() -> None:
-    """Test Plugin creation"""
+    """Plugin 생성이 정상적으로 동작함을 검증한다."""
     plugin = Plugin(name="test-plugin")
     assert plugin.name == "test-plugin"
 
 
 def test_plugin_equality() -> None:
-    """Test Plugin equality based on name"""
+    """이름 기반으로 Plugin 동등성이 판단됨을 검증한다."""
     plugin1 = Plugin(name="plugin-a")
     plugin2 = Plugin(name="plugin-a")
     plugin3 = Plugin(name="plugin-b")
@@ -19,7 +19,7 @@ def test_plugin_equality() -> None:
 
 
 def test_plugin_hash() -> None:
-    """Test Plugin hashing"""
+    """Plugin 해싱이 정상적으로 동작함을 검증한다."""
     plugin1 = Plugin(name="plugin-a")
     plugin2 = Plugin(name="plugin-a")
     plugin3 = Plugin(name="plugin-b")

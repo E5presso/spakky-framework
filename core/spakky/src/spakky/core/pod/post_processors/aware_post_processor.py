@@ -9,6 +9,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
+from spakky.core.pod.interfaces.aware.tag_registry_aware import ITagRegistryAware
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
 
@@ -41,6 +42,8 @@ class ApplicationContextAwareProcessor(IPostProcessor):
         """
         if isinstance(pod, IContainerAware):
             pod.set_container(self.__application_context)
+        if isinstance(pod, ITagRegistryAware):
+            pod.set_tag_registry(self.__application_context)
         if isinstance(pod, IApplicationContextAware):
             pod.set_application_context(self.__application_context)
         return pod

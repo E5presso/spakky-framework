@@ -10,16 +10,16 @@ from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractEvent
 from spakky.event.error import (
     DuplicateEventHandlerError,
 )
 from spakky.event.event_consumer import (
-    DomainEventT,
+    AsyncEventHandlerCallback,
+    EventHandlerCallback,
+    EventT_contra,
     IAsyncEventConsumer,
-    IAsyncEventHandlerCallback,
     IEventConsumer,
-    IEventHandlerCallback,
 )
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
@@ -30,9 +30,9 @@ logger = getLogger(__name__)
 @Pod()
 class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     config: KafkaConnectionConfig
-    type_lookup: dict[str, type[AbstractDomainEvent]]
-    type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
-    handlers: dict[type[AbstractDomainEvent], IEventHandlerCallback[Any]]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], EventHandlerCallback[Any]]
     admin: AdminClient
     consumer: Consumer
 
@@ -74,7 +74,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         if topic is None:  # pragma: no cover
             logger.warning("Received message with no topic.")
             return
-        event_type: type[AbstractDomainEvent] | None = self.type_lookup.get(topic)
+        event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
@@ -91,8 +91,8 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
 
     def register(
         self,
-        event: type[DomainEventT],
-        handler: IEventHandlerCallback[DomainEventT],
+        event: type[EventT_contra],
+        handler: EventHandlerCallback[EventT_contra],
     ) -> None:
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
@@ -119,9 +119,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
 @Pod()
 class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
     config: KafkaConnectionConfig
-    type_lookup: dict[str, type[AbstractDomainEvent]]
-    type_adapters: dict[type[AbstractDomainEvent], TypeAdapter[AbstractDomainEvent]]
-    handlers: dict[type[AbstractDomainEvent], IAsyncEventHandlerCallback[Any]]
+    type_lookup: dict[str, type[AbstractEvent]]
+    type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
+    handlers: dict[type[AbstractEvent], AsyncEventHandlerCallback[Any]]
     admin: AdminClient
     consumer: AIOConsumer
 
@@ -151,7 +151,9 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             ]
         )
 
-    async def _route_event_handler(self, message: Message) -> None:
+    async def _route_event_handler(  # pragma: no cover - 별도 asyncio 태스크로 실행
+        self, message: Message
+    ) -> None:
         if message.error():  # pragma: no cover
             logger.error(f"Consumer error: {message.error()}")
             return
@@ -159,7 +161,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         if topic is None:  # pragma: no cover
             logger.warning("Received message with no topic.")
             return
-        event_type: type[AbstractDomainEvent] | None = self.type_lookup.get(topic)
+        event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
@@ -176,8 +178,8 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
 
     def register(
         self,
-        event: type[DomainEventT],
-        handler: IAsyncEventHandlerCallback[DomainEventT],
+        event: type[EventT_contra],
+        handler: AsyncEventHandlerCallback[EventT_contra],
     ) -> None:
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
@@ -191,7 +193,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self._create_topics(topics=topics)
         await self.consumer.subscribe(topics=topics)
 
-    async def run_async(self) -> None:
+    async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
         while not self._stop_event.is_set():
             message: Message | None = await self.consumer.poll(timeout=1.0)
             if message is None:

@@ -6,110 +6,103 @@ that need to be tested. It handles workspace member detection and
 cascading changes (e.g., core changes trigger all package tests).
 
 Usage:
-    python scripts/detect_ci_changes.py [base_ref] [head_ref]
+    uv run python scripts/detect_ci_changes.py
+    uv run python scripts/detect_ci_changes.py --base origin/main --head HEAD
 
-Example:
-    python scripts/detect_ci_changes.py origin/main HEAD
-    # Output: ["spakky", "spakky-fastapi"]
+Output:
+    JSON array of package names: ["spakky", "spakky-fastapi"]
 """
 
+from __future__ import annotations
+
 import json
-import subprocess
-import sys
-import tomllib
-from pathlib import Path
+from typing import Annotated
+
+import typer
+
+from common import (
+    ScriptError,
+    err_console,
+    get_all_packages,
+    get_changed_files_between,
+    get_changed_packages,
+    print_error,
+)
+
+app = typer.Typer(
+    help="Detect changed packages for CI matrix generation.",
+    no_args_is_help=False,
+)
 
 
-def get_workspace_packages() -> dict[str, str]:
-    """Read workspace members and resolve to package names.
+CORE_PACKAGE_NAME = "spakky"
+"""Name of the core package that triggers full test runs when changed."""
 
-    Returns:
-        A dictionary mapping directory paths to package names.
-        Example: {"spakky": "spakky", "plugins/spakky-fastapi": "spakky-fastapi"}
-    """
-    root_dir = Path(__file__).parent.parent
-    pyproject_path = root_dir / "pyproject.toml"
+ROOT_FILES_TRIGGER_ALL = frozenset({"pyproject.toml", "uv.lock"})
+"""Root files that trigger full test runs when changed."""
 
+
+@app.command()
+def main(
+    base_ref: Annotated[
+        str,
+        typer.Option("--base", "-b", help="Base git reference for comparison."),
+    ] = "origin/main",
+    head_ref: Annotated[
+        str,
+        typer.Option("--head", "-h", help="Head git reference for comparison."),
+    ] = "HEAD",
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show detailed output to stderr."),
+    ] = False,
+) -> None:
+    """Detect changed packages and output JSON list for CI matrix."""
     try:
-        with open(pyproject_path, "rb") as f:
-            pyproject = tomllib.load(f)
+        packages = get_all_packages()
+        if not packages:
+            print_error("No workspace packages found.")
+            raise typer.Exit(1)
 
-        members = (
-            pyproject.get("tool", {})
-            .get("uv", {})
-            .get("workspace", {})
-            .get("members", [])
-        )
+        all_package_names = {pkg.name for pkg in packages}
+        changed_files = get_changed_files_between(base_ref, head_ref)
 
-        packages: dict[str, str] = {}
-        for member in members:
-            member_config = root_dir / member / "pyproject.toml"
-            try:
-                with open(member_config, "rb") as f:
-                    pkg_config = tomllib.load(f)
-                pkg_name = pkg_config.get("project", {}).get("name", "")
-                if pkg_name:
-                    packages[member] = pkg_name
-            except FileNotFoundError:
-                continue
+        if verbose:
+            err_console.print(f"[dim]Comparing {base_ref}...{head_ref}[/]")
+            err_console.print(f"[dim]Found {len(changed_files)} changed files[/]")
 
-        return packages
-    except Exception as e:
-        print(f"Error reading pyproject.toml: {e}", file=sys.stderr)
-        return {}
+        changed_packages = get_changed_packages(changed_files)
+        changed_package_names = {pkg.name for pkg in changed_packages}
 
+        # If core framework changes, test everything
+        if CORE_PACKAGE_NAME in changed_package_names:
+            if verbose:
+                err_console.print(
+                    f"[yellow]Core package '{CORE_PACKAGE_NAME}' changed, "
+                    "testing all packages[/]"
+                )
+            changed_package_names = all_package_names
 
-def get_changed_files(base_ref: str, head_ref: str) -> set[str]:
-    """Get changed files between base and head refs."""
-    try:
-        # Fetch if needed (in CI usually fetch-depth: 0 is recommended or fetch base)
-        # Assuming the refs are available
-        cmd = ["git", "diff", "--name-only", f"{base_ref}...{head_ref}"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        # If root config files change, test everything
+        if changed_files & ROOT_FILES_TRIGGER_ALL:
+            if verbose:
+                err_console.print(
+                    "[yellow]Root config files changed, testing all packages[/]"
+                )
+            changed_package_names = all_package_names
 
-        if result.returncode != 0:
-            # Try 2 dots if 3 dots fail (e.g. local branch)
-            cmd = ["git", "diff", "--name-only", f"{base_ref}..{head_ref}"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        # Output JSON for GitHub Actions matrix (use print, not console.print
+        # to avoid Rich wrapping long lines which breaks GitHub Actions output)
+        result = sorted(changed_package_names)
+        print(json.dumps(result))
 
-        if result.returncode != 0:
-            # Fallback to HEAD comparison if refs fail
-            cmd = ["git", "diff", "--name-only", "HEAD"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if verbose:
+            err_console.print(f"[dim]Output: {len(result)} packages[/]")
 
-        return (
-            set(result.stdout.strip().split("\n")) if result.stdout.strip() else set()
-        )
-    except Exception as e:
-        print(f"Error getting changed files: {e}", file=sys.stderr)
-        return set()
-
-
-def main():
-    base_ref = sys.argv[1] if len(sys.argv) > 1 else "origin/main"
-    head_ref = sys.argv[2] if len(sys.argv) > 2 else "HEAD"
-
-    packages = get_workspace_packages()  # {path: name}
-    changed_files = get_changed_files(base_ref, head_ref)
-
-    changed_packages: set[str] = set()
-
-    # Check for changes in each member directory
-    for path, name in packages.items():
-        if any(f.startswith(f"{path}/") for f in changed_files):
-            changed_packages.add(name)
-
-    # If core framework (spakky) changes, test everything
-    if "spakky" in changed_packages:
-        changed_packages = set(packages.values())
-
-    # If pyproject.toml or uv.lock changes, test everything
-    if "pyproject.toml" in changed_files or "uv.lock" in changed_files:
-        changed_packages = set(packages.values())
-
-    # Output JSON list for GitHub Actions matrix
-    print(json.dumps(sorted(changed_packages)))
+    except ScriptError as e:
+        print_error(str(e))
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":
-    main()
+    app()

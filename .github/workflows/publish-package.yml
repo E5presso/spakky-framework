@@ -17,6 +17,7 @@ on:
           - spakky-security
           - spakky-typer
           - spakky-kafka
+          - spakky-sqlalchemy
       dry_run:
         description: 'Dry run (build only, do not publish)'
         required: false
@@ -37,9 +38,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.11
 
       - name: Install dependencies
         run: uv sync

@@ -5,7 +5,7 @@ from spakky.core.aop.error import AspectInheritanceError
 
 
 def test_aspect_inheritance_error_with_non_aspect_class() -> None:
-    """Test that Aspect raises error when class doesn't inherit from IAspect"""
+    """IAspect를 상속하지 않은 클래스에 @Aspect 적용 시 AspectInheritanceError가 발생함을 검증한다."""
 
     with pytest.raises(AspectInheritanceError):
 
@@ -15,7 +15,7 @@ def test_aspect_inheritance_error_with_non_aspect_class() -> None:
 
 
 def test_async_aspect_inheritance_error_with_non_aspect_class() -> None:
-    """Test that AsyncAspect raises error when class doesn't inherit from IAsyncAspect"""
+    """IAsyncAspect를 상속하지 않은 클래스에 @AsyncAspect 적용 시 AspectInheritanceError가 발생함을 검증한다."""
 
     with pytest.raises(AspectInheritanceError):
 
@@ -25,7 +25,7 @@ def test_async_aspect_inheritance_error_with_non_aspect_class() -> None:
 
 
 def test_aspect_inheritance_error_with_function() -> None:
-    """Test that Aspect raises error when target is not a class"""
+    """클래스가 아닌 함수에 @Aspect 적용 시 AspectInheritanceError가 발생함을 검증한다."""
 
     class DummyAspect:
         pass
@@ -38,7 +38,7 @@ def test_aspect_inheritance_error_with_function() -> None:
 
 
 def test_async_aspect_inheritance_error_with_function() -> None:
-    """Test that AsyncAspect raises error when target is not a class"""
+    """클래스가 아닌 함수에 @AsyncAspect 적용 시 AspectInheritanceError가 발생함을 검증한다."""
 
     class DummyAsyncAspect:
         pass

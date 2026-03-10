@@ -4,6 +4,7 @@ This module provides common type aliases and utility functions for working with 
 particularly for Optional/Union type handling.
 """
 
+from inspect import getmembers_static
 from types import UnionType
 from typing import (
     Any,
@@ -17,7 +18,7 @@ from typing import (
     get_origin,
 )
 
-Class: TypeAlias = type[Any]
+Class: TypeAlias = type[object]
 Func: TypeAlias = Callable[..., Any]
 AsyncFunc: TypeAlias = Callable[..., Awaitable[Any]]
 Action: TypeAlias = Callable[..., None]
@@ -93,5 +94,34 @@ def remove_none(type_: Any) -> Any:
             return type(None)
         if len(non_none_args) == 1:
             return non_none_args[0]
-        return Union[non_none_args]  # type: ignore
+        return Union[non_none_args]  # type: ignore[valid-type]  # Dynamic Union construction
     return type_
+
+
+def get_callable_methods(obj: object) -> list[tuple[str, Callable[..., Any]]]:
+    """Get callable members excluding properties.
+
+    Uses inspect.getmembers_static() to avoid invoking descriptors during
+    introspection, then retrieves bound methods only for non-property callables.
+
+    Args:
+        obj: The object to inspect.
+
+    Returns:
+        List of (name, bound_method) tuples for callable non-property members.
+    """
+    result: list[tuple[str, Callable[..., object]]] = []
+
+    for name, value in getmembers_static(obj):
+        if isinstance(value, property):
+            continue
+
+        try:
+            actual = getattr(obj, name)
+        except Exception:  # noqa: BLE001
+            continue
+
+        if callable(actual):
+            result.append((name, actual))
+
+    return result

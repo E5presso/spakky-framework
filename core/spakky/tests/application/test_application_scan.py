@@ -5,7 +5,7 @@ from spakky.core.application.application_context import ApplicationContext
 
 
 def test_scan_without_path_in_exec_context() -> None:
-    """Test scan without path when caller context cannot be determined."""
+    """호출자 컷텍스트를 알 수 없는 경우 명시적 경로로 scan이 동작함을 검증한다."""
     # This tests the case where caller_package is None
     # which happens when __file__ is not available
 
@@ -21,7 +21,7 @@ def test_scan_without_path_in_exec_context() -> None:
 
 
 def test_scan_with_non_package_module() -> None:
-    """Test scan with a non-package module (single file)."""
+    """단일 파일 모듈(비패키지)로 scan을 수행할 수 있음을 검증한다."""
     from tests.dummy.dummy_package import module_a
 
     app = SpakkyApplication(ApplicationContext())
@@ -33,7 +33,7 @@ def test_scan_with_non_package_module() -> None:
 
 
 def test_scan_with_exclude_set() -> None:
-    """Test scan with exclude parameter."""
+    """exclude 파라미터를 사용하여 특정 모듈을 제외하고 scan할 수 있음을 검증한다."""
     from tests.dummy import dummy_package
     from tests.dummy.dummy_package import module_a
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence, TypeAlias
 
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import FuncT
+from spakky.core.common.types import AnyT
 
 from fastapi import params
 
@@ -37,7 +37,7 @@ def websocket(
     path: str,
     name: str | None = None,
     dependencies: Sequence[params.Depends] | None = None,
-) -> Callable[[FuncT], FuncT]:
+) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
     """Decorator to mark a controller method as a WebSocket endpoint.
 
     Attaches WebSocket route configuration to the method which will be

@@ -6,6 +6,8 @@ from spakky.core.pod.inject import inject
 
 
 def test_inject_to_function_by_type() -> None:
+    """inject 함수가 타입을 기반으로 함수에 의존성을 주입함을 검증한다."""
+
     class IA:
         @abstractmethod
         def a(self) -> str: ...
@@ -52,7 +54,7 @@ def test_inject_to_function_by_type() -> None:
 
 
 def test_inject_with_name() -> None:
-    """Test inject function with name parameter"""
+    """inject 함수가 name 파라미터를 사용하여 특정 이름의 Pod을 주입함을 검증한다."""
 
     class IService:
         @abstractmethod

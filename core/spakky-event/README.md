@@ -19,22 +19,26 @@ pip install spakky-event
 
 ### Define Events
 
-Events should extend `AbstractDomainEvent` from `spakky-domain`:
+Events should extend one of the event base classes from `spakky-domain`:
+
+- Use `AbstractDomainEvent` for events within a bounded context (in-process domain events)
+- Use `AbstractIntegrationEvent` for cross-boundary events (message broker integration)
+
+When using message broker plugins (RabbitMQ / Kafka), define events as `AbstractIntegrationEvent`.
 
 ```python
-from dataclasses import dataclass
+from spakky.core.common.mutability import immutable
+from spakky.domain.models.event import AbstractIntegrationEvent
 
-from spakky.domain.models.event import AbstractDomainEvent
 
-
-@dataclass
-class UserCreatedEvent(AbstractDomainEvent):
+@immutable
+class UserCreatedEvent(AbstractIntegrationEvent):
     user_id: str
     email: str
 
 
-@dataclass
-class UserDeletedEvent(AbstractDomainEvent):
+@immutable
+class UserDeletedEvent(AbstractIntegrationEvent):
     user_id: str
 ```
 
@@ -111,20 +115,31 @@ app = (
 
 ### Interfaces
 
+| Interface | Description |
+|-----------|-------------|
+| `IEventPublisher` / `IAsyncEventPublisher` | Event publish entry point (type-based routing) |
+| `IEventBus` / `IAsyncEventBus` | Integration event send entry point (Outbox seam) |
+| `IEventTransport` / `IAsyncEventTransport` | Actual message broker transport |
+| `IEventConsumer` / `IAsyncEventConsumer` | Handler callback registration |
+| `IEventDispatcher` / `IAsyncEventDispatcher` | In-process handler dispatch |
+
+### Implementations
+
 | Class | Description |
 |-------|-------------|
-| `IEventPublisher` | Sync event publisher interface |
-| `IAsyncEventPublisher` | Async event publisher interface |
-| `IEventConsumer` | Sync event consumer interface |
-| `IAsyncEventConsumer` | Async event consumer interface |
+| `EventMediator` / `AsyncEventMediator` | Consumer + Dispatcher combined (in-process) |
+| `EventPublisher` / `AsyncEventPublisher` | Type-based router (DomainEvent→Mediator, IntegrationEvent→EventBus) |
+| `DirectEventBus` / `AsyncDirectEventBus` | Default EventBus → EventTransport delegation |
+| `EventHandlerRegistrationPostProcessor` | Auto-registers `@EventHandler` methods |
 
 ### Types
 
 | Type | Description |
 |------|-------------|
 | `EventRoute` | Annotation class for event routing metadata |
-| `DomainEventT` | Type variable bound to `AbstractDomainEvent` |
-| `IEventHandlerCallback` | Type alias for event handler callbacks |
+| `EventT_contra` | TypeVar bound to `AbstractEvent` |
+| `EventHandlerCallback` | Type alias for sync event callbacks |
+| `AsyncEventHandlerCallback` | Type alias for async event callbacks |
 
 ### Errors
 
@@ -138,9 +153,57 @@ app = (
 
 | Package | Description |
 |---------|-------------|
-| `spakky-domain` | DDD building blocks including `AbstractDomainEvent` |
-| `spakky-rabbitmq` | RabbitMQ implementation of event publisher/consumer |
-| `spakky-kafka` | Kafka implementation of event publisher/consumer |
+| `spakky-domain` | DDD building blocks including `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent` |
+| `spakky-rabbitmq` | RabbitMQ transport (`RabbitMQEventTransport`) |
+| `spakky-kafka` | Kafka transport (`KafkaEventTransport`) |
+
+## In-process Domain Event Publishing
+
+For events within a bounded context (DomainEvents), use the in-process publisher:
+
+```python
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.event import IAsyncEventPublisher
+
+# Bootstrap application (load_plugins auto-registers event components)
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins()
+    .scan()
+    .start()
+)
+
+# Get publisher from container
+publisher = app.container.get(IAsyncEventPublisher)
+await publisher.publish(UserCreatedEvent(user_id="123", email="test@example.com"))
+```
+
+### Architecture (ISP Compliant)
+
+The in-process event system follows Interface Segregation Principle:
+
+- **Consumer**: Registers event handlers (`register()` method)
+- **Dispatcher**: Dispatches events to handlers (`dispatch()` method)
+- **Mediator**: Combines both interfaces in a single implementation
+- **Publisher**: Depends only on Dispatcher (not Consumer)
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   Publisher     │────▶│   Dispatcher    │
+└─────────────────┘     └────────┬────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │    Mediator     │
+                        │ (Consumer +     │
+                        │  Dispatcher)    │
+                        └────────┬────────┘
+                                 │
+                        ┌────────▼────────┐
+                        │  EventHandler   │
+                        │  @on_event()    │
+                        └─────────────────┘
+```
 
 ## License
 

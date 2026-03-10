@@ -4,21 +4,25 @@ MESSAGE: str = "Hello World! I'm Program!"
 
 
 def test_base64_from_utf8() -> None:
+    """UTF-8 문자열을 Base64로 인코딩하면 올바른 결과를 반환하는지 검증한다."""
     b64: str = Base64Encoder.encode(utf8=MESSAGE)
     assert b64 == "SGVsbG8gV29ybGQhIEknbSBQcm9ncmFtIQ=="
 
 
 def test_base64_from_utf8_url_safe() -> None:
+    """UTF-8 문자열을 URL-safe Base64로 인코딩하면 패딩 없는 결과를 반환하는지 검증한다."""
     b64: str = Base64Encoder.encode(utf8=MESSAGE, url_safe=True)
     assert b64 == "SGVsbG8gV29ybGQhIEknbSBQcm9ncmFtIQ"
 
 
 def test_utf8_from_base64() -> None:
+    """Base64 문자열을 UTF-8로 디코딩하면 원본 문자열을 반환하는지 검증한다."""
     utf8: str = Base64Encoder.decode(b64="SGVsbG8gV29ybGQhIEknbSBQcm9ncmFtIQ==")
     assert utf8 == MESSAGE
 
 
 def test_utf8_from_base64_url_safe() -> None:
+    """URL-safe Base64 문자열을 UTF-8로 디코딩하면 원본 문자열을 반환하는지 검증한다."""
     utf8: str = Base64Encoder.decode(
         b64="SGVsbG8gV29ybGQhIEknbSBQcm9ncmFtIQ",
         url_safe=True,
@@ -27,6 +31,7 @@ def test_utf8_from_base64_url_safe() -> None:
 
 
 def test_base64_from_bytes() -> None:
+    """바이트 배열을 Base64 문자열로 변환하면 올바른 결과를 반환하는지 검증한다."""
     b64: str = Base64Encoder.from_bytes(
         binary=bytes(
             [
@@ -53,6 +58,7 @@ def test_base64_from_bytes() -> None:
 
 
 def test_bytes_from_base64() -> None:
+    """Base64 문자열을 바이트 배열로 변환하면 원본 바이트를 반환하는지 검증한다."""
     b64: str = "AAECAwQFBgcICQoLDA0ODw=="
     assert Base64Encoder.get_bytes(b64=b64) == bytes(
         [
@@ -77,6 +83,7 @@ def test_bytes_from_base64() -> None:
 
 
 def test_base64_from_bytes_url_safe() -> None:
+    """바이트 배열을 URL-safe Base64 문자열로 변환하면 패딩 없는 결과를 반환하는지 검증한다."""
     b64: str = Base64Encoder.from_bytes(
         binary=bytes(
             [
@@ -104,6 +111,7 @@ def test_base64_from_bytes_url_safe() -> None:
 
 
 def test_bytes_from_base64_url_safe() -> None:
+    """URL-safe Base64 문자열을 바이트 배열로 변환하면 원본 바이트를 반환하는지 검증한다."""
     b64: str = "AAECAwQFBgcICQoLDA0ODw"
     assert Base64Encoder.get_bytes(b64=b64, url_safe=True) == bytes(
         [

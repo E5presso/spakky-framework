@@ -4,7 +4,6 @@ Automatically injects error handling and context management middleware
 into FastAPI instances registered in the container.
 """
 
-from spakky.plugins.fastapi.middlewares.error_handling import ErrorHandlingMiddleware
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -14,6 +13,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
 from fastapi import FastAPI
+from spakky.plugins.fastapi.middlewares.error_handling import ErrorHandlingMiddleware
 
 
 @Order(0)

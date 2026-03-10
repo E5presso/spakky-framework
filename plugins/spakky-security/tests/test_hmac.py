@@ -5,6 +5,7 @@ MESSAGE: str = "Hello World! I'm Program!"
 
 
 def test_hmac_hs224() -> None:
+    """HMAC HS224 알고리즘으로 서명 후 검증이 성공하는지 확인."""
     key: Key = Key(size=32)
     signature: str = HMAC.sign_text(
         key=key,
@@ -20,6 +21,7 @@ def test_hmac_hs224() -> None:
 
 
 def test_hmac_hs256() -> None:
+    """HMAC HS256 알고리즘으로 서명 후 검증이 성공하는지 확인."""
     key: Key = Key(size=32)
     signature: str = HMAC.sign_text(
         key=key,
@@ -35,6 +37,7 @@ def test_hmac_hs256() -> None:
 
 
 def test_hmac_hs384() -> None:
+    """HMAC HS384 알고리즘으로 서명 후 검증이 성공하는지 확인."""
     key: Key = Key(size=32)
     signature: str = HMAC.sign_text(
         key=key,
@@ -50,6 +53,7 @@ def test_hmac_hs384() -> None:
 
 
 def test_hmac_hs512() -> None:
+    """HMAC HS512 알고리즘으로 서명 후 검증이 성공하는지 확인."""
     key: Key = Key(size=32)
     signature: str = HMAC.sign_text(
         key=key,

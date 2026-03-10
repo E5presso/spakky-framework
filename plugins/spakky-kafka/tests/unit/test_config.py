@@ -46,7 +46,7 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
 
 
 def test_kafka_config_loads_from_environment_variables(clean_env: None) -> None:
-    """Test that KafkaConnectionConfig loads values from environment variables."""
+    """KafkaConnectionConfig가 환경 변수에서 값을 올바르게 로드하는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "my-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "my-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
@@ -61,7 +61,7 @@ def test_kafka_config_loads_from_environment_variables(clean_env: None) -> None:
 
 
 def test_kafka_config_with_sasl_authentication(clean_env: None) -> None:
-    """Test that KafkaConnectionConfig correctly handles SASL authentication."""
+    """KafkaConnectionConfig가 SASL 인증 설정을 올바르게 처리하는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "secure-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "secure-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = (
@@ -82,7 +82,7 @@ def test_kafka_config_with_sasl_authentication(clean_env: None) -> None:
 
 
 def test_kafka_config_default_values(clean_env: None) -> None:
-    """Test that KafkaConnectionConfig uses correct default values."""
+    """KafkaConnectionConfig가 올바른 기본값을 사용하는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
@@ -99,7 +99,7 @@ def test_kafka_config_default_values(clean_env: None) -> None:
 
 
 def test_kafka_config_configuration_dict_basic(clean_env: None) -> None:
-    """Test that configuration_dict returns correct basic configuration."""
+    """configuration_dict가 올바른 기본 설정 딕셔너리를 반환하는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "my-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "my-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
@@ -119,7 +119,7 @@ def test_kafka_config_configuration_dict_basic(clean_env: None) -> None:
 
 
 def test_kafka_config_configuration_dict_with_sasl(clean_env: None) -> None:
-    """Test that configuration_dict includes SASL settings when configured."""
+    """SASL 설정이 구성된 경우 configuration_dict에 SASL 설정이 포함되는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "secure-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "secure-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = (
@@ -141,7 +141,7 @@ def test_kafka_config_configuration_dict_with_sasl(clean_env: None) -> None:
 
 
 def test_kafka_config_auto_offset_reset_values(clean_env: None) -> None:
-    """Test that all AutoOffsetResetType values work correctly."""
+    """모든 AutoOffsetResetType 열거형 값이 올바르게 동작하는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
@@ -154,7 +154,7 @@ def test_kafka_config_auto_offset_reset_values(clean_env: None) -> None:
 
 
 def test_kafka_config_with_custom_partitions_and_replication(clean_env: None) -> None:
-    """Test that custom partitions and replication factor are correctly loaded."""
+    """사용자 지정 파티션 수와 복제 팩터가 올바르게 로드되는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
@@ -168,14 +168,14 @@ def test_kafka_config_with_custom_partitions_and_replication(clean_env: None) ->
 
 
 def test_kafka_config_env_prefix_is_correct() -> None:
-    """Test that the environment variable prefix follows the correct format."""
+    """환경 변수 접두사가 올바른 형식을 따르는지 검증한다."""
     assert SPAKKY_KAFKA_CONFIG_ENV_PREFIX == "SPAKKY_KAFKA__"
     assert SPAKKY_KAFKA_CONFIG_ENV_PREFIX.startswith("SPAKKY_")
     assert SPAKKY_KAFKA_CONFIG_ENV_PREFIX.endswith("__")
 
 
 def test_auto_offset_reset_enum_values() -> None:
-    """Test that AutoOffsetResetType enum has correct values."""
+    """AutoOffsetResetType 열거형이 올바른 값을 갖는지 검증한다."""
     assert AutoOffsetResetType.EARLIEST.value == "earliest"
     assert AutoOffsetResetType.LATEST.value == "latest"
     assert AutoOffsetResetType.NONE.value == "none"

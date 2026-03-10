@@ -1,8 +1,11 @@
 from uuid import UUID
 
+from fastapi import WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from spakky.core.aspects.logging import Logging
+from spakky.core.stereotype.usecase import UseCase
+
 from spakky.plugins.fastapi.error import BadRequest
 from spakky.plugins.fastapi.routes import (
     delete,
@@ -15,9 +18,6 @@ from spakky.plugins.fastapi.routes import (
     websocket,
 )
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
-from spakky.core.stereotype.usecase import UseCase
-
-from fastapi import WebSocket
 
 
 class Dummy(BaseModel):
@@ -39,6 +39,17 @@ class DummyController:
     @get("", response_class=PlainTextResponse)
     async def get_dummy(self) -> str:
         return "Hello World!"
+
+    @Logging()
+    @get(
+        "/named",
+        response_class=PlainTextResponse,
+        name="Named Endpoint",
+        description="Endpoint with explicit name",
+    )
+    async def get_named(self) -> str:
+        """This docstring should be ignored since description is provided."""
+        return "Named!"
 
     @Logging()
     @get(

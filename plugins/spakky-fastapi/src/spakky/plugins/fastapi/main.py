@@ -5,6 +5,7 @@ built-in middleware injection for FastAPI applications.
 """
 
 from spakky.core.application.application import SpakkyApplication
+
 from spakky.plugins.fastapi.post_processors.add_builtin_middlewares import (
     AddBuiltInMiddlewaresPostProcessor,
 )

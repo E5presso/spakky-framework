@@ -9,28 +9,28 @@ from typing import Any, Awaitable, Callable, Generic, TypeAlias, TypeVar
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
-from spakky.domain.models.event import AbstractDomainEvent
+from spakky.domain.models.event import AbstractEvent
 
-DomainEventT = TypeVar("DomainEventT", bound=AbstractDomainEvent)
-"""Type variable for domain event types."""
+EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
+"""Type variable for domain event types (contravariant for handler parameters)."""
 
-IEventHandlerMethod: TypeAlias = Callable[[Any, DomainEventT], None | Awaitable[None]]
+EventHandlerMethod: TypeAlias = Callable[[Any, EventT_contra], None | Awaitable[None]]
 """Type alias for event handler callback functions."""
 
 
 @dataclass
-class EventRoute(FunctionAnnotation, Generic[DomainEventT]):
+class EventRoute(FunctionAnnotation, Generic[EventT_contra]):
     """Annotation for marking methods as event handlers.
 
     Associates a method with a specific domain event type.
     """
 
-    event_type: type[DomainEventT]
+    event_type: type[EventT_contra]
     """The domain event type this handler processes."""
 
     def __call__(
-        self, obj: IEventHandlerMethod[DomainEventT]
-    ) -> IEventHandlerMethod[DomainEventT]:
+        self, obj: EventHandlerMethod[EventT_contra]
+    ) -> EventHandlerMethod[EventT_contra]:
         """Apply event route annotation to method.
 
         Args:
@@ -43,10 +43,10 @@ class EventRoute(FunctionAnnotation, Generic[DomainEventT]):
 
 
 def on_event(
-    event_type: type[DomainEventT],
+    event_type: type[EventT_contra],
 ) -> Callable[
-    [IEventHandlerMethod[DomainEventT]],
-    IEventHandlerMethod[DomainEventT],
+    [EventHandlerMethod[EventT_contra]],
+    EventHandlerMethod[EventT_contra],
 ]:
     """Decorator for marking methods as event handlers.
 
@@ -66,8 +66,8 @@ def on_event(
     """
 
     def wrapper(
-        method: IEventHandlerMethod[DomainEventT],
-    ) -> IEventHandlerMethod[DomainEventT]:
+        method: EventHandlerMethod[EventT_contra],
+    ) -> EventHandlerMethod[EventT_contra]:
         return EventRoute(event_type)(method)
 
     return wrapper

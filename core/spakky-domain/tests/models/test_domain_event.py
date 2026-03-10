@@ -7,6 +7,8 @@ from spakky.domain.models.event import AbstractDomainEvent
 
 
 def test_domain_event_equals() -> None:
+    """동일한 event_id와 timestamp를 가진 도메인 이벤트가 동등함을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 
@@ -22,6 +24,8 @@ def test_domain_event_equals() -> None:
 
 
 def test_domain_event_not_equals() -> None:
+    """다른 timestamp를 가진 도메인 이벤트가 동등하지 않음을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 
@@ -37,6 +41,8 @@ def test_domain_event_not_equals() -> None:
 
 
 def test_domain_event_not_equals_with_wrong_type() -> None:
+    """다른 타입의 도메인 이벤트가 동등하지 않음을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 
@@ -55,6 +61,8 @@ def test_domain_event_not_equals_with_wrong_type() -> None:
 
 
 def test_domain_event_clone() -> None:
+    """도메인 이벤트를 복제하면 동등한 객체가 생성됨을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 
@@ -67,6 +75,8 @@ def test_domain_event_clone() -> None:
 
 
 def test_domain_event_hash() -> None:
+    """동일한 도메인 이벤트가 동일한 해시값을 가짐을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 
@@ -82,7 +92,7 @@ def test_domain_event_hash() -> None:
 
 
 def test_domain_event_hash_different_values() -> None:
-    """Test that events with different id/timestamp have different hashes."""
+    """다른 event_id나 timestamp를 가진 이벤트가 다른 해시값을 가짐을 검증한다."""
 
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
@@ -107,7 +117,7 @@ def test_domain_event_hash_different_values() -> None:
 
 
 def test_domain_event_hash_in_set() -> None:
-    """Test that events work correctly as set elements."""
+    """도메인 이벤트가 set의 요소로 올바르게 동작함을 검증한다."""
 
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
@@ -135,6 +145,8 @@ def test_domain_event_hash_in_set() -> None:
 
 
 def test_domain_event_compare() -> None:
+    """도메인 이벤트가 timestamp 기준으로 정렬 가능함을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 
@@ -215,6 +227,8 @@ def test_domain_event_compare() -> None:
 
 
 def test_domain_event_name() -> None:
+    """도메인 이벤트의 event_name 속성이 클래스명을 반환함을 검증한다."""
+
     @immutable
     class SampleEvent(AbstractDomainEvent): ...
 

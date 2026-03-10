@@ -3,8 +3,8 @@
 This module provides decorators that create dataclasses with predefined mutability settings.
 """
 
-from dataclasses import dataclass, field
-from typing import dataclass_transform
+from dataclasses import Field, dataclass, field
+from typing import Any, ClassVar, Protocol, dataclass_transform, runtime_checkable
 
 from spakky.core.common.types import AnyT
 
@@ -43,3 +43,8 @@ def immutable(cls: type[AnyT]) -> type[AnyT]:
         type[AnyT]: An immutable dataclass with frozen=True, kw_only=True, eq=False.
     """
     return dataclass(frozen=True, kw_only=True, eq=False)(cls)
+
+
+@runtime_checkable
+class IDataclass(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Field[Any]]]

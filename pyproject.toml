@@ -16,9 +16,11 @@ dev = [
   "pytest>=9.0.1",
   "pytest-asyncio>=1.3.0",
   "pytest-cov>=7.0.0",
+  "pytest-spec>=6.0.0",
   "pytest-xdist>=3.8.0",
   "ruff>=0.14.6",
   "toml>=0.10.2",
+  "typer>=0.15.0",
 ]
 
 [tool.commitizen]
@@ -36,6 +38,9 @@ version_files = [
   "plugins/spakky-security/pyproject.toml:version",
   "plugins/spakky-typer/pyproject.toml:version",
   "plugins/spakky-kafka/pyproject.toml:version",
+  "plugins/spakky-sqlalchemy/pyproject.toml:version",
+  "plugins/spakky-outbox/pyproject.toml:version",
+  "plugins/spakky-outbox-sqlalchemy/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -50,18 +55,25 @@ members = [
   "plugins/spakky-security",
   "plugins/spakky-typer",
   "plugins/spakky-kafka",
+  "plugins/spakky-sqlalchemy",
+  "plugins/spakky-outbox",
+  "plugins/spakky-outbox-sqlalchemy",
 ]
 
 
 [tool.uv.sources]
 spakky = { workspace = true }
 spakky-domain = { workspace = true }
+spakky-data = { workspace = true }
 spakky-event = { workspace = true }
 spakky-fastapi = { workspace = true }
 spakky-rabbitmq = { workspace = true }
 spakky-security = { workspace = true }
 spakky-typer = { workspace = true }
 spakky-kafka = { workspace = true }
+spakky-sqlalchemy = { workspace = true }
+spakky-outbox = { workspace = true }
+spakky-outbox-sqlalchemy = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

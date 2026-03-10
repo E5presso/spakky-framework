@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Callable
 from spakky.core.common.metadata import AbstractMetadata
 
 if TYPE_CHECKING:
-    from spakky.core.pod.annotations.pod import Pod
+    from spakky.core.pod.annotations.pod import Pod  # pragma: no cover
 
 
 @dataclass

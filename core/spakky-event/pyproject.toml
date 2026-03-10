@@ -5,7 +5,14 @@ description = "Event handling stereotype for Spakky Framework (@EventHandler, @o
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
-dependencies = ["spakky-domain>=5.0.1"]
+dependencies = [
+    "spakky-domain>=5.0.1",
+    "spakky-data>=5.0.1",
+    "pydantic>=2.12.5",
+]
+
+[project.entry-points."spakky.plugins"]
+spakky-event = "spakky.event.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.9.5,<0.10.0"]
@@ -38,8 +45,9 @@ addopts = """
     --dist=load
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
+spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
 include = ["src/spakky/event/*"]
@@ -57,7 +65,10 @@ exclude_lines = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
+    "\\.\\.\\.\\.",
+    "pass",
 ]
 
 [tool.uv.sources]
 spakky-domain = { workspace = true }
+spakky-data = { workspace = true }
