@@ -22,38 +22,49 @@ pip install spakky-outbox spakky-outbox-sqlalchemy
 ### 1. Load plugins in your application
 
 ```python
-from spakky import Spakky
-from spakky.plugins.outbox import initialize as outbox_init
-from spakky.plugins.outbox_sqlalchemy import initialize as outbox_sqlalchemy_init
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
-app = Spakky(...)
-
-# Load outbox plugins (order matters)
-outbox_init(app)
-outbox_sqlalchemy_init(app)
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins()  # Loads outbox and outbox-sqlalchemy plugins automatically
+    .scan()
+    .start()
+)
 ```
 
 ### 2. Publish events from use cases
 
-```python
-from spakky.data.transaction import transaction
-from spakky.domain.models.event import AbstractIntegrationEvent
+Events published via `IAsyncEventPublisher` are automatically routed:
+- `AbstractDomainEvent` → in-process dispatch
+- `AbstractIntegrationEvent` → `IEventBus` (Outbox intercepts via `@Primary`)
 
+```python
+from spakky.core.common.mutability import immutable
+from spakky.core.stereotype.usecase import UseCase
+from spakky.data.aspects.transactional import Transactional
+from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.event.event_publisher import IAsyncEventPublisher
+
+
+@immutable
 class OrderCreatedEvent(AbstractIntegrationEvent):
     order_id: int
     customer_id: int
 
-class CreateOrderUseCase:
-    _event_publisher: AsyncEventPublisher
 
-    def __init__(self, event_publisher: AsyncEventPublisher) -> None:
+@UseCase()
+class CreateOrderUseCase:
+    def __init__(self, event_publisher: IAsyncEventPublisher) -> None:
         self._event_publisher = event_publisher
 
-    @transaction
+    @Transactional()
     async def execute(self, command: CreateOrderCommand) -> Order:
         order = Order.create(...)
         # Event is saved in the same transaction as the order
-        await self._event_publisher.publish(OrderCreatedEvent(order_id=order.id, ...))
+        await self._event_publisher.publish(
+            OrderCreatedEvent(order_id=order.id, customer_id=command.customer_id)
+        )
         return order
 ```
 
@@ -66,7 +77,17 @@ class CreateOrderUseCase:
 | `SPAKKY_OUTBOX__MAX_RETRY_COUNT` | `5` | Max retries before giving up |
 | `SPAKKY_OUTBOX__CLAIM_TIMEOUT_SECONDS` | `300.0` | Claim expiry for crash recovery |
 
-## Custom Storage Implementation
+## Components
+
+| Component | Description |
+|-----------|-------------|
+| `IOutboxStorage` / `IAsyncOutboxStorage` | Outbox message storage port |
+| `OutboxEventBus` / `AsyncOutboxEventBus` | Event bus seam for Outbox pattern (`@Primary` replaces `DirectEventBus`) |
+| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | Background relay service (polls & sends) |
+| `OutboxConfig` | Configuration via environment variables |
+| `OutboxMessage` | Outbox message model |
+
+### Custom Storage Implementation
 
 To implement a custom storage backend:
 

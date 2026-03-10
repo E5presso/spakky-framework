@@ -48,7 +48,7 @@ export SPAKKY_KAFKA__REPLICATION_FACTOR="1"
 ```python
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
-from spakky.event.event_publisher import IIntegrationEventPublisher
+from spakky.event.event_publisher import IEventPublisher
 from spakky.core.pod.annotations.pod import Pod
 
 @immutable
@@ -58,7 +58,7 @@ class UserCreatedEvent(AbstractIntegrationEvent):
 
 @Pod()
 class UserService:
-    def __init__(self, publisher: IIntegrationEventPublisher) -> None:
+    def __init__(self, publisher: IEventPublisher) -> None:
         self.publisher = publisher
 
     def create_user(self, email: str) -> User:
@@ -84,14 +84,14 @@ class UserEventHandler:
 
 ### Async Variants
 
-For async applications, use `IAsyncIntegrationEventPublisher`:
+For async applications, use `IAsyncEventPublisher`:
 
 ```python
-from spakky.event.event_publisher import IAsyncIntegrationEventPublisher
+from spakky.event.event_publisher import IAsyncEventPublisher
 
 @Pod()
 class AsyncUserService:
-    def __init__(self, publisher: IAsyncIntegrationEventPublisher) -> None:
+    def __init__(self, publisher: IAsyncEventPublisher) -> None:
         self.publisher = publisher
 
     async def create_user(self, email: str) -> User:
@@ -112,8 +112,8 @@ class AsyncUserService:
 
 | Component | Description |
 |-----------|-------------|
-| `KafkaEventPublisher` | Synchronous event publisher |
-| `AsyncKafkaEventPublisher` | Asynchronous event publisher |
+| `KafkaEventTransport` | Synchronous event transport (`IEventTransport`) |
+| `AsyncKafkaEventTransport` | Asynchronous event transport (`IAsyncEventTransport`) |
 | `KafkaEventConsumer` | Synchronous event consumer (background service) |
 | `AsyncKafkaEventConsumer` | Asynchronous event consumer (background service) |
 | `KafkaConnectionConfig` | Configuration via environment variables |

@@ -39,7 +39,7 @@ applyTo: "**/*.py"
 
 ## 네이밍
 
-- **Protocol**: `I` 접두사 (`IContainer`, `IIntegrationEventPublisher`)
+- **Protocol**: `I` 접두사 (`IContainer`, `IEventPublisher`)
 - **Abstract 클래스**: `Abstract` 접두사 (`AbstractEntity`, `AbstractEvent`)
 - **Error 클래스**: `Error` 접미사 (`CannotDeterminePodTypeError`)
 - **Async**: `Async` 접두사 (`AsyncTransactionalAspect`, `AsyncRabbitMQEventPublisher`)

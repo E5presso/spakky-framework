@@ -20,23 +20,21 @@ pip install spakky-outbox spakky-outbox-sqlalchemy
 Set the environment variable for your database:
 
 ```bash
-export SPAKKY_SQLALCHEMY__DATABASE_URL="postgresql+asyncpg://user:pass@localhost/mydb"
+export SPAKKY_SQLALCHEMY__CONNECTION_STRING="postgresql+asyncpg://user:pass@localhost/mydb"
 ```
 
 ### 2. Load plugins
 
 ```python
-from spakky import Spakky
-from spakky.plugins.sqlalchemy import initialize as sqlalchemy_init
-from spakky.plugins.outbox import initialize as outbox_init
-from spakky.plugins.outbox_sqlalchemy import initialize as outbox_sqlalchemy_init
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
-app = Spakky(...)
-
-# Load in order: sqlalchemy → outbox → outbox-sqlalchemy
-sqlalchemy_init(app)
-outbox_init(app)
-outbox_sqlalchemy_init(app)
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins()  # Loads sqlalchemy, outbox, outbox-sqlalchemy automatically
+    .scan()
+    .start()
+)
 ```
 
 ### 3. Create the outbox table

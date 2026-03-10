@@ -206,10 +206,10 @@ class MyService:
 - **Packages**: `snake_case` (e.g., `spakky.plugins.fastapi`)
 - **Classes**: `PascalCase` (e.g., `UserController`)
 - **Functions/Methods**: `snake_case` (e.g., `get_user`)
-- **Protocols (Interfaces)**: Must start with `I` (e.g., `IIntegrationEventPublisher`, `IContainer`).
+- **Protocols (Interfaces)**: Must start with `I` (e.g., `IEventPublisher`, `IContainer`).
 - **Abstract Classes**: Must start with `Abstract` (e.g., `AbstractEntity`, `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent`).
 - **Error Classes**: Must end with `Error` (e.g., `CannotDeterminePodTypeError`).
-- **Async Classes**: Must start with `Async` (e.g., `AsyncTransactionalAspect`, `AsyncRabbitMQEventPublisher`).
+- **Async Classes**: Must start with `Async` (e.g., `AsyncTransactionalAspect`, `AsyncRabbitMQEventTransport`).
 
 #### Inherited Type Suffix
 
@@ -404,7 +404,7 @@ We use **Conventional Commits** to automate versioning and changelogs.
 Format: `<type>(<scope>): <subject>`
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **Scopes**: `core`, `domain`, `data`, `event`, `fastapi`, `kafka`, `rabbitmq`, `security`, `sqlalchemy`, `typer`
+- **Scopes**: `core`, `domain`, `data`, `event`, `fastapi`, `kafka`, `rabbitmq`, `security`, `sqlalchemy`, `typer`, `outbox`, `outbox-sqlalchemy`
 
 Examples:
 

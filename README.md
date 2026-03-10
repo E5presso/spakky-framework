@@ -63,7 +63,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky`** | Core framework (DI Container, AOP, Application Context) |
 | **`spakky-domain`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent, CQRS) |
 | **`spakky-data`** | Data access abstractions (Repository, Transaction, External Proxy) |
-| **`spakky-event`** | Event handling (IIntegrationEventPublisher, IIntegrationEventConsumer, @EventHandler) |
+| **`spakky-event`** | Event handling (IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
 
 ### Plugins
 
@@ -75,6 +75,8 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
 | **`spakky-sqlalchemy`** | Database integration with [SQLAlchemy](https://www.sqlalchemy.org/) ORM |
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
+| **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
+| **`spakky-outbox-sqlalchemy`** | SQLAlchemy storage implementation for spakky-outbox |
 
 ## 🚀 Quick Start
 

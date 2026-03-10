@@ -67,6 +67,8 @@ app.load_plugins(include={
 | `spakky-kafka`      | Apache Kafka 이벤트 브로커 |
 | `spakky-sqlalchemy` | SQLAlchemy ORM 통합        |
 | `spakky-security`   | 암호화/해싱/JWT 유틸리티   |
+| `spakky-outbox`     | Transactional Outbox 패턴 |
+| `spakky-outbox-sqlalchemy` | SQLAlchemy 기반 Outbox 저장소 |
 
 ---
 

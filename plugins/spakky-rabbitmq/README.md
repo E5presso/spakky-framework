@@ -34,7 +34,7 @@ export SPAKKY_RABBITMQ__EXCHANGE_NAME="my-exchange"  # Optional
 ```python
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
-from spakky.event.event_publisher import IIntegrationEventPublisher
+from spakky.event.event_publisher import IEventPublisher
 from spakky.core.pod.annotations.pod import Pod
 
 @immutable
@@ -44,7 +44,7 @@ class UserCreatedEvent(AbstractIntegrationEvent):
 
 @Pod()
 class UserService:
-    def __init__(self, publisher: IIntegrationEventPublisher) -> None:
+    def __init__(self, publisher: IEventPublisher) -> None:
         self.publisher = publisher
 
     def create_user(self, email: str) -> User:
@@ -70,14 +70,14 @@ class UserEventHandler:
 
 ### Async Variants
 
-For async applications, use `IAsyncIntegrationEventPublisher`:
+For async applications, use `IAsyncEventPublisher`:
 
 ```python
-from spakky.event.event_publisher import IAsyncIntegrationEventPublisher
+from spakky.event.event_publisher import IAsyncEventPublisher
 
 @Pod()
 class AsyncUserService:
-    def __init__(self, publisher: IAsyncIntegrationEventPublisher) -> None:
+    def __init__(self, publisher: IAsyncEventPublisher) -> None:
         self.publisher = publisher
 
     async def create_user(self, email: str) -> User:
@@ -99,8 +99,8 @@ class AsyncUserService:
 
 | Component | Description |
 |-----------|-------------|
-| `RabbitMQEventPublisher` | Synchronous event publisher |
-| `AsyncRabbitMQEventPublisher` | Asynchronous event publisher |
+| `RabbitMQEventTransport` | Synchronous event transport (`IEventTransport`) |
+| `AsyncRabbitMQEventTransport` | Asynchronous event transport (`IAsyncEventTransport`) |
 | `RabbitMQEventConsumer` | Synchronous event consumer (background service) |
 | `AsyncRabbitMQEventConsumer` | Asynchronous event consumer (background service) |
 | `RabbitMQConnectionConfig` | Configuration via environment variables |

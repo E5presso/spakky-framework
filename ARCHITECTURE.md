@@ -38,6 +38,8 @@
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 |
+| **Plugin** | `spakky-outbox` | Transactional Outbox 패턴 (IEventBus 교체) |
+| **Plugin** | `spakky-outbox-sqlalchemy` | SQLAlchemy 기반 Outbox 저장소 구현 |
 
 ---
 
@@ -68,6 +70,8 @@ graph TB
 
     subgraph "Infrastructure Plugins"
         sqlalchemy[spakky-sqlalchemy]
+        outbox[spakky-outbox]
+        outbox_sa[spakky-outbox-sqlalchemy]
     end
 
     core --> domain
@@ -80,8 +84,11 @@ graph TB
 
     event --> rabbitmq
     event --> kafka
+    event --> outbox
 
     data --> sqlalchemy
+    outbox --> outbox_sa
+    sqlalchemy --> outbox_sa
 
     style core fill:#e1f5ff
     style domain fill:#fff4e1
@@ -93,6 +100,8 @@ graph TB
     style rabbitmq fill:#e0e0e0
     style kafka fill:#e0e0e0
     style sqlalchemy fill:#e0e0e0
+    style outbox fill:#e0e0e0
+    style outbox_sa fill:#e0e0e0
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
@@ -101,6 +110,8 @@ graph TB
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
+- **Outbox 플러그인** (outbox) → `spakky-event`까지 의존
+- **Outbox 인프라** (outbox-sqlalchemy) → `spakky-outbox` + `spakky-sqlalchemy`에 의존
 
 ---
 
@@ -343,6 +354,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
+| `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
+| `spakky-outbox-sqlalchemy` | `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
 
 ---
 

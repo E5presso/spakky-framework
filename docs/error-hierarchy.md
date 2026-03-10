@@ -16,8 +16,14 @@ Exception
     ├── AbstractSpakkyPodError
     ├── AbstractSpakkyDomainError
     │   └── AbstractDomainValidationError
+    ├── AbstractSpakkyPersistencyError
+    ├── AbstractSpakkyExternalError
     ├── AbstractSpakkyEventError
-    └── AbstractSpakkyFastAPIError (플러그인)
+    ├── AbstractSpakkyFastAPIError (플러그인)
+    ├── AbstractSpakkySqlAlchemyError (플러그인)
+    ├── AbstractSpakkyOutboxError (플러그인)
+    │   └── AbstractSpakkyOutboxSqlAlchemyError (플러그인)
+    └── ...
 ```
 
 ---
@@ -149,6 +155,25 @@ from spakky.event.error import (
 
 ---
 
+### spakky-data
+
+데이터 접근 관련 에러입니다.
+
+```python
+from spakky.data.persistency.error import AbstractSpakkyPersistencyError
+from spakky.data.persistency.repository import EntityNotFoundError, VersionConflictError
+from spakky.data.external.error import AbstractSpakkyExternalError
+```
+
+| 에러                            | 설명                           |
+| ------------------------------- | ------------------------------ |
+| `AbstractSpakkyPersistencyError` | 영속성 에러 기반 클래스        |
+| `EntityNotFoundError`           | 엔티티 조회 실패               |
+| `VersionConflictError`          | 낙관적 락 충돌                 |
+| `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   |
+
+---
+
 ## 플러그인 에러
 
 ### spakky-fastapi
@@ -198,6 +223,42 @@ except NotFound as e:
 	"traceback": null
 }
 ```
+
+### spakky-sqlalchemy
+
+SQLAlchemy 통합 관련 에러입니다.
+
+```python
+from spakky.plugins.sqlalchemy.error import AbstractSpakkySqlAlchemyError
+```
+
+| 에러                           | 설명                             |
+| ------------------------------ | -------------------------------- |
+| `AbstractSpakkySqlAlchemyError` | SQLAlchemy 에러 기반 클래스      |
+
+### spakky-outbox
+
+Transactional Outbox 관련 에러입니다.
+
+```python
+from spakky.plugins.outbox.error import AbstractSpakkyOutboxError
+```
+
+| 에러                        | 설명                        |
+| --------------------------- | --------------------------- |
+| `AbstractSpakkyOutboxError` | Outbox 에러 기반 클래스     |
+
+### spakky-outbox-sqlalchemy
+
+Outbox SQLAlchemy 구현 관련 에러입니다.
+
+```python
+from spakky.plugins.outbox_sqlalchemy.error import AbstractSpakkyOutboxSqlAlchemyError
+```
+
+| 에러                                   | 설명                                  |
+| -------------------------------------- | ------------------------------------- |
+| `AbstractSpakkyOutboxSqlAlchemyError`  | Outbox SQLAlchemy 에러 기반 클래스    |
 
 ---
 
