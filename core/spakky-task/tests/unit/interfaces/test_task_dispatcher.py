@@ -23,13 +23,13 @@ def test_async_task_dispatcher_is_abstract() -> None:
 def test_task_dispatcher_cannot_be_instantiated() -> None:
     """ITaskDispatcher를 직접 인스턴스화할 수 없는지 검증한다."""
     with pytest.raises(TypeError):
-        ITaskDispatcher()  # type: ignore[abstract]
+        ITaskDispatcher()  # type: ignore[abstract] - ABC 인스턴스화 불가 테스트
 
 
 def test_async_task_dispatcher_cannot_be_instantiated() -> None:
     """IAsyncTaskDispatcher를 직접 인스턴스화할 수 없는지 검증한다."""
     with pytest.raises(TypeError):
-        IAsyncTaskDispatcher()  # type: ignore[abstract]
+        IAsyncTaskDispatcher()  # type: ignore[abstract] - ABC 인스턴스화 불가 테스트
 
 
 def test_task_dispatcher_has_dispatch_method() -> None:
