@@ -29,6 +29,10 @@
 			"path": "core/spakky-event",
 		},
 		{
+			"name": "core.task",
+			"path": "core/spakky-task",
+		},
+		{
 			"name": "plugins.fastapi",
 			"path": "plugins/spakky-fastapi",
 		},
@@ -156,8 +160,10 @@
 			"/^python \\.github\\/hooks\\/harness-review\\.py/": {
 				"approve": true,
 				"matchCommandLine": true,
-			}
+			},
 		},
+		"python-envs.defaultEnvManager": "ms-python.python:venv",
+		"python-envs.defaultPackageManager": "ms-python.python:pip",
 	},
 	"extensions": {
 		"recommendations": [

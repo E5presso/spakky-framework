@@ -174,12 +174,32 @@ addopts = """
     --dist=load
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
+spec_test_format = "{{result}} {{docstring_summary}}"
 
 [tool.coverage.run]
 include = ["{pythonpath}/*"]
 branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\\\.)?abstractmethod",
+    "@(typing\\\\.)?overload",
+    "\\\\.\\\\.\\\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky = {{ workspace = true }}
 '''
 
 
@@ -200,13 +220,13 @@ def generate_precommit_config(name: str, pkg_type: PackageType) -> str:
 
     return f'''repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: check-yaml
       - id: check-json
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.15.5
     hooks:
       - id: ruff
         types_or: [python, pyi]
@@ -247,14 +267,7 @@ def generate_vscode_settings(pkg_type: PackageType) -> str:
     return """{
 \t"python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python",
 \t"python.testing.cwd": "${workspaceFolder}",
-\t"python.testing.pytestArgs": ["--no-cov"],
-\t"python-envs.pythonProjects": [
-\t\t{
-\t\t\t"path": "",
-\t\t\t"envManager": "ms-python.python:venv",
-\t\t\t"packageManager": "ms-python.python:uv"
-\t\t}
-\t]
+\t"python.testing.pytestArgs": ["--no-cov"]
 }
 """
 
@@ -326,19 +339,14 @@ def generate_main_py(name: str, pkg_type: PackageType) -> str:
     """
     return '''"""Plugin initialization entry point."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from spakky.application.interfaces.pluggable import IPluggable
+from spakky.core.application.application import SpakkyApplication
 
 
-def initialize(app: IPluggable) -> None:
+def initialize(app: SpakkyApplication) -> None:
     """Initialize the plugin.
 
     Args:
-        app: The pluggable application instance.
+        app: The SpakkyApplication instance.
     """
     # TODO: Implement plugin initialization
     pass
@@ -463,25 +471,18 @@ def create_package_structure(
     (base_dir / "tests").mkdir(exist_ok=True)
     (base_dir / ".vscode").mkdir(exist_ok=True)
 
-    # Create __init__.py files for namespace packages
+    # NOTE: Do NOT create __init__.py in namespace package directories
+    # (spakky/, spakky/plugins/) - PEP 420 implicit namespace packages
     init_content = generate_init_py()
-
-    # spakky/__init__.py (namespace package)
-    spakky_init = base_dir / "src" / "spakky" / "__init__.py"
-    if not spakky_init.exists():
-        spakky_init.write_text(init_content)
-
-    if pkg_type == PackageType.PLUGIN:
-        # spakky/plugins/__init__.py (namespace package)
-        plugins_init = base_dir / "src" / "spakky" / "plugins" / "__init__.py"
-        if not plugins_init.exists():
-            plugins_init.write_text(init_content)
 
     # Module __init__.py
     (src_path / "__init__.py").write_text(init_content)
 
     # Create main.py (plugin entry point)
     (src_path / "main.py").write_text(generate_main_py(name, pkg_type))
+
+    # Create py.typed marker file (PEP 561)
+    (src_path / "py.typed").write_text("")
 
     # Create tests/__init__.py
     (base_dir / "tests" / "__init__.py").write_text(generate_test_init_py())

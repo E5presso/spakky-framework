@@ -41,6 +41,7 @@ version_files = [
   "plugins/spakky-sqlalchemy/pyproject.toml:version",
   "plugins/spakky-outbox/pyproject.toml:version",
   "plugins/spakky-outbox-sqlalchemy/pyproject.toml:version",
+  "core/spakky-task/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -50,6 +51,7 @@ members = [
   "core/spakky-domain",
   "core/spakky-data",
   "core/spakky-event",
+  "core/spakky-task",
   "plugins/spakky-fastapi",
   "plugins/spakky-rabbitmq",
   "plugins/spakky-security",
@@ -74,6 +76,7 @@ spakky-kafka = { workspace = true }
 spakky-sqlalchemy = { workspace = true }
 spakky-outbox = { workspace = true }
 spakky-outbox-sqlalchemy = { workspace = true }
+spakky-task = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

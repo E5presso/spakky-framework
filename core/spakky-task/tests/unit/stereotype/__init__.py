@@ -1,0 +1,1 @@
+"""Stereotype unit tests module."""
