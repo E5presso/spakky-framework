@@ -29,6 +29,10 @@
 			"path": "core/spakky-event",
 		},
 		{
+			"name": "core.task",
+			"path": "core/spakky-task",
+		},
+		{
 			"name": "plugins.fastapi",
 			"path": "plugins/spakky-fastapi",
 		},
