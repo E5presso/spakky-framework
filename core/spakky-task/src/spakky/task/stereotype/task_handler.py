@@ -5,15 +5,13 @@ for organizing task-queue-driven architectures.
 """
 
 from dataclasses import dataclass
-from typing import Callable, ParamSpec, TypeVar
+from typing import Callable, ParamSpec, TypeVar, cast, overload
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
 
 P = ParamSpec("P")
-"""Type variable for task method parameters."""
 T = TypeVar("T")
-"""Type variable for task method return types."""
 
 
 @dataclass
@@ -23,27 +21,49 @@ class TaskRoute(FunctionAnnotation):
     Associates a method as a task that can be dispatched to a task queue.
     """
 
-    ...
+    background: bool = False
+    """If True, dispatch to the task queue. If False (default), execute immediately."""
 
 
-def task(obj: Callable[P, T]) -> Callable[P, T]:
+@overload
+def task(obj: Callable[P, T]) -> Callable[P, T]: ...
+
+
+@overload
+def task(*, background: bool = ...) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
+
+
+def task(
+    obj: Callable[P, T] | None = None,
+    *,
+    background: bool = False,
+) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
     """Decorator for marking methods as dispatchable tasks.
-
-    Args:
-        obj: The method to mark as a task.
-
-    Returns:
-        The annotated method.
 
     Example:
         @TaskHandler()
         class EmailTaskHandler:
             @task
             def send_email(self, to: str, subject: str, body: str) -> None:
-                # Task implementation
+                # Executed immediately (default)
                 pass
+
+            @task(background=True)
+            def send_bulk_emails(self, recipients: list[str]) -> None:
+                # Dispatched to task queue (background)
+                pass
+
+    Args:
+        obj: The method to mark as a task (when used without arguments).
+        background: If True, dispatch to queue. If False (default), execute immediately.
+
+    Returns:
+        The annotated method, or a decorator if called with arguments.
     """
-    return TaskRoute()(obj)
+    route = TaskRoute(background=background)
+    if obj is not None:
+        return cast(Callable[P, T], route(obj))
+    return route
 
 
 @dataclass(eq=False)

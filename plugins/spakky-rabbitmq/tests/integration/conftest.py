@@ -7,36 +7,27 @@ import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
-from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore
+from testcontainers.rabbitmq import (
+    RabbitMqContainer,  # type: ignore[import-untyped]  # testcontainers lacks type stubs
+)
 
 import spakky.plugins.rabbitmq
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
 from tests import apps
 
 
-@pytest.fixture(
-    name="environment_variables",
-    scope="package",
-    params=["test_exchange", None],
-    autouse=True,
-)
-def setup_environment_variables_fixture(
-    request: pytest.FixtureRequest,
-) -> Generator[None, Any, None]:
+@pytest.fixture(name="environment_variables", scope="module", autouse=True)
+def setup_environment_variables_fixture() -> Generator[None, Any, None]:
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = str(25672)
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "test"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "test"
-    exchange_key = f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME"
-    if request.param is not None:
-        environ[exchange_key] = request.param
-    else:
-        environ.pop(exchange_key, None)
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME"] = "test_exchange"
     yield
 
 
-@pytest.fixture(scope="package", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def rabbitmq_container(environment_variables: None) -> Generator[None, None, None]:
     port = int(environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"])
     username = environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"]
@@ -52,7 +43,7 @@ def rabbitmq_container(environment_variables: None) -> Generator[None, None, Non
         yield
 
 
-@pytest.fixture(name="app", scope="function")
+@pytest.fixture(name="app", scope="module")
 def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
     logger = getLogger("debug")
     logger.setLevel(logging.DEBUG)

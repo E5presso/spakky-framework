@@ -7,7 +7,9 @@ import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
-from testcontainers.kafka import KafkaContainer  # type: ignore
+from testcontainers.kafka import (
+    KafkaContainer,  # type: ignore[import-untyped]  # testcontainers lacks type stubs
+)
 
 import spakky.plugins.kafka
 from spakky.plugins.kafka.common.config import AutoOffsetResetType
@@ -15,12 +17,12 @@ from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 from tests import apps
 
 
-@pytest.fixture(name="port", scope="package")
+@pytest.fixture(name="port", scope="module")
 def port_fixture() -> int:
     return 9093
 
 
-@pytest.fixture(name="environment_variables", scope="package", autouse=True)
+@pytest.fixture(name="environment_variables", scope="module", autouse=True)
 def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]:
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test"
@@ -31,7 +33,7 @@ def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]
     yield
 
 
-@pytest.fixture(scope="package", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def kafka_container(
     port: int, environment_variables: None
 ) -> Generator[None, None, None]:
@@ -48,7 +50,7 @@ def kafka_container(
         yield
 
 
-@pytest.fixture(name="app", scope="function")
+@pytest.fixture(name="app", scope="module")
 def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
     logger = getLogger("debug")
     logger.setLevel(logging.DEBUG)

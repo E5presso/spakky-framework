@@ -7,10 +7,6 @@ from spakky.task.error import (
     DuplicateTaskError,
     TaskNotFoundError,
 )
-from spakky.task.interfaces.task_dispatcher import (
-    IAsyncTaskDispatcher,
-    ITaskDispatcher,
-)
 from spakky.task.post_processor import TaskRegistrationPostProcessor
 from spakky.task.stereotype.task_handler import (
     TaskHandler,
@@ -26,9 +22,6 @@ __all__ = [
     "TaskHandler",
     "TaskRoute",
     "task",
-    # Dispatcher Interfaces
-    "ITaskDispatcher",
-    "IAsyncTaskDispatcher",
     # Post-Processors
     "TaskRegistrationPostProcessor",
     # Errors

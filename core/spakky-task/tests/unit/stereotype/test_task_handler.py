@@ -100,3 +100,31 @@ def test_multiple_task_methods_in_handler() -> None:
     assert TaskRoute.exists(handler.task_one) is True
     assert TaskRoute.exists(handler.task_two) is True
     assert TaskRoute.exists(handler.not_a_task) is False
+
+
+def test_task_default_background_false() -> None:
+    """@task (옵션 없이) 사용 시 background가 False인지 검증한다."""
+
+    @TaskHandler()
+    class DefaultTaskHandler:
+        @task
+        def process(self) -> None:
+            pass
+
+    handler = DefaultTaskHandler()
+    route = TaskRoute.get(handler.process)
+    assert route.background is False
+
+
+def test_task_with_background_true() -> None:
+    """@task(background=True)가 TaskRoute에 저장되는지 검증한다."""
+
+    @TaskHandler()
+    class BackgroundTaskHandler:
+        @task(background=True)
+        def send_email(self) -> None:
+            pass
+
+    handler = BackgroundTaskHandler()
+    route = TaskRoute.get(handler.send_email)
+    assert route.background is True

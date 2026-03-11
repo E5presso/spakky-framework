@@ -64,6 +64,10 @@
 			"name": "plugins.outbox-sqlalchemy",
 			"path": "plugins/spakky-outbox-sqlalchemy",
 		},
+		{
+			"name": "plugins.celery",
+			"path": "plugins/spakky-celery",
+		},
 	],
 	"settings": {
 		"[python]": {
