@@ -174,12 +174,32 @@ addopts = """
     --dist=load
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
+spec_test_format = "{{result}} {{docstring_summary}}"
 
 [tool.coverage.run]
 include = ["{pythonpath}/*"]
 branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\\\.)?abstractmethod",
+    "@(typing\\\\.)?overload",
+    "\\\\.\\\\.\\\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky = {{ workspace = true }}
 '''
 
 
@@ -250,7 +270,7 @@ def generate_vscode_settings(pkg_type: PackageType) -> str:
 \t"python.testing.pytestArgs": ["--no-cov"],
 \t"python-envs.pythonProjects": [
 \t\t{
-\t\t\t"path": "",
+\t\t\t"path": ".",
 \t\t\t"envManager": "ms-python.python:venv",
 \t\t\t"packageManager": "ms-python.python:uv"
 \t\t}
@@ -463,25 +483,18 @@ def create_package_structure(
     (base_dir / "tests").mkdir(exist_ok=True)
     (base_dir / ".vscode").mkdir(exist_ok=True)
 
-    # Create __init__.py files for namespace packages
+    # NOTE: Do NOT create __init__.py in namespace package directories
+    # (spakky/, spakky/plugins/) - PEP 420 implicit namespace packages
     init_content = generate_init_py()
-
-    # spakky/__init__.py (namespace package)
-    spakky_init = base_dir / "src" / "spakky" / "__init__.py"
-    if not spakky_init.exists():
-        spakky_init.write_text(init_content)
-
-    if pkg_type == PackageType.PLUGIN:
-        # spakky/plugins/__init__.py (namespace package)
-        plugins_init = base_dir / "src" / "spakky" / "plugins" / "__init__.py"
-        if not plugins_init.exists():
-            plugins_init.write_text(init_content)
 
     # Module __init__.py
     (src_path / "__init__.py").write_text(init_content)
 
     # Create main.py (plugin entry point)
     (src_path / "main.py").write_text(generate_main_py(name, pkg_type))
+
+    # Create py.typed marker file (PEP 561)
+    (src_path / "py.typed").write_text("")
 
     # Create tests/__init__.py
     (base_dir / "tests" / "__init__.py").write_text(generate_test_init_py())
