@@ -346,19 +346,14 @@ def generate_main_py(name: str, pkg_type: PackageType) -> str:
     """
     return '''"""Plugin initialization entry point."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from spakky.application.interfaces.pluggable import IPluggable
+from spakky.core.application.application import SpakkyApplication
 
 
-def initialize(app: IPluggable) -> None:
+def initialize(app: SpakkyApplication) -> None:
     """Initialize the plugin.
 
     Args:
-        app: The pluggable application instance.
+        app: The SpakkyApplication instance.
     """
     # TODO: Implement plugin initialization
     pass
