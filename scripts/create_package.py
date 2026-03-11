@@ -272,7 +272,7 @@ def generate_vscode_settings(pkg_type: PackageType) -> str:
 \t\t{
 \t\t\t"path": ".",
 \t\t\t"envManager": "ms-python.python:venv",
-\t\t\t"packageManager": "ms-python.python:uv"
+\t\t\t"packageManager": "ms-python.python:pip"
 \t\t}
 \t]
 }
