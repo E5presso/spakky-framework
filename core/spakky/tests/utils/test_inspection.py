@@ -87,3 +87,16 @@ def test_get_fully_qualified_name_with_instance() -> None:
     instance = MyClass()
     fqcn = get_fully_qualified_name(instance)
     assert fqcn.endswith(MyClass.__qualname__)
+
+
+def test_get_fully_qualified_name_with_callable_instance() -> None:
+    """호출 가능한 인스턴스도 클래스 이름 기반 FQCN으로 반환하는지 검증한다."""
+
+    class CallableInstance:
+        def __call__(self) -> None:
+            pass
+
+    callable_instance = CallableInstance()
+    fqcn = get_fully_qualified_name(callable_instance)
+
+    assert fqcn.endswith(CallableInstance.__qualname__)

@@ -41,7 +41,7 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
         celery_app = self.__container.get(CeleryApp)
         pod_type = type(pod)
 
-        for name, method in getmembers(pod, callable):
+        for _, method in getmembers(pod, callable):
             route: TaskRoute | None = TaskRoute.get_or_none(method)
             if route is None:
                 continue

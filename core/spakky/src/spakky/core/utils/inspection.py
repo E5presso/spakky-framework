@@ -5,6 +5,7 @@ to determine their characteristics.
 """
 
 from inspect import FullArgSpec, getfullargspec, ismethod
+from types import BuiltinFunctionType, FunctionType, MethodType
 
 from spakky.core.common.constants import INIT, PROTOCOL_INIT, SELF
 from spakky.core.common.types import Action, Func
@@ -45,25 +46,23 @@ def has_default_constructor(cls: type[object]) -> bool:
 
 
 def get_fully_qualified_name(obj: object) -> str:
-    """Get the fully qualified name of an object.
+    """Return the fully qualified name (FQN) of an object.
 
-    Combines module path and qualified name to create a unique identifier.
-    Works with functions, methods, classes, and instances.
+    Resolution rules:
+        1. If ``obj`` is a class, return ``obj.__module__ + "." + obj.__qualname__``.
+        2. If ``obj`` is a function or method, return its own FQN.
+        3. Otherwise, treat ``obj`` as an instance and return the FQN of ``type(obj)``.
 
     Args:
-        obj: Any object with __module__ and __qualname__ attributes.
-             For instances, uses the class's qualified name.
+        obj: Class, function, method, or arbitrary instance.
 
     Returns:
-        Fully qualified name in format 'module.path.ClassName' or
-        'module.path.ClassName.method_name'.
-
-    Raises:
-        AttributeError: If the object lacks __module__ or __qualname__.
+        A dotted fully qualified name, for example:
+        ``module.path.ClassName`` or ``module.path.ClassName.method_name``.
 
     Example:
         >>> class Foo:
-        ...     def bar(self): pass
+        ...     def bar(self) -> None: pass
         >>> get_fully_qualified_name(Foo)
         '__main__.Foo'
         >>> get_fully_qualified_name(Foo.bar)
@@ -71,6 +70,12 @@ def get_fully_qualified_name(obj: object) -> str:
         >>> get_fully_qualified_name(Foo())
         '__main__.Foo'
     """
-    # For instances, use the class
-    target = obj if isinstance(obj, type) or callable(obj) else type(obj)
-    return f"{target.__module__}.{target.__qualname__}"
+
+    if isinstance(obj, type):
+        return f"{obj.__module__}.{obj.__qualname__}"
+
+    if isinstance(obj, (FunctionType, MethodType, BuiltinFunctionType)):
+        return f"{obj.__module__}.{obj.__qualname__}"
+
+    cls = type(obj)
+    return f"{cls.__module__}.{cls.__qualname__}"

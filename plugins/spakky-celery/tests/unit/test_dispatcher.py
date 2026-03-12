@@ -1,7 +1,8 @@
 """Tests for CeleryTaskDispatchAspect and AsyncCeleryTaskDispatchAspect."""
 
+from collections.abc import Awaitable, Callable
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from spakky.task.stereotype.task_handler import TaskRoute
@@ -39,13 +40,15 @@ def _create_joinpoint(
     *,
     background: bool = False,
     return_value: Any = None,  # noqa: ANN401
-) -> MagicMock:
+) -> Callable[..., Any]:
     """task name과 TaskRoute 어노테이션이 설정된 joinpoint mock을 생성한다."""
-    joinpoint = MagicMock()
+
+    def joinpoint(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        return return_value
+
     joinpoint.__name__ = name
     joinpoint.__module__ = TEST_MODULE
     joinpoint.__qualname__ = f"{TEST_HANDLER_CLASS}.{name}"
-    joinpoint.return_value = return_value
     TaskRoute(background=background)(joinpoint)
 
     task_name = _make_task_name(name)
@@ -139,9 +142,20 @@ def test_around_in_celery_task_context_calls_joinpoint() -> None:
     """CeleryTaskDispatchAspect.around이 Celery 태스크 컨텍스트 내에서 joinpoint를 직접 호출하는지 검증한다."""
     celery_app = _create_mock_celery_app()
     aspect = CeleryTaskDispatchAspect(celery_app)
-    joinpoint = _create_joinpoint(
-        "send_email", celery_app, background=False, return_value="direct"
-    )
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def joinpoint(*args: Any, **kwargs: Any) -> str:
+        calls.append((args, kwargs))
+        return "direct"
+
+    joinpoint.__name__ = "send_email"
+    joinpoint.__module__ = TEST_MODULE
+    joinpoint.__qualname__ = f"{TEST_HANDLER_CLASS}.send_email"
+    TaskRoute(background=False)(joinpoint)
+
+    task_name = _make_task_name("send_email")
+    mock_task = MagicMock()
+    celery_app.task_routes[task_name] = mock_task
 
     # Simulate being inside a Celery task (current_task is not None)
     with patch(
@@ -150,7 +164,7 @@ def test_around_in_celery_task_context_calls_joinpoint() -> None:
     ):
         result = aspect.around(joinpoint, to="test@example.com")
 
-    joinpoint.assert_called_once_with(to="test@example.com")
+    assert calls == [((), {"to": "test@example.com"})]
     celery_app.task_routes[_make_task_name("send_email")].apply.assert_not_called()
     assert result == "direct"
 
@@ -164,13 +178,15 @@ def _create_async_joinpoint(
     *,
     background: bool = False,
     return_value: Any = None,  # noqa: ANN401
-) -> AsyncMock:
+) -> Callable[..., Awaitable[Any]]:
     """task name과 TaskRoute 어노테이션이 설정된 async joinpoint mock을 생성한다."""
-    joinpoint = AsyncMock()
+
+    async def joinpoint(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+        return return_value
+
     joinpoint.__name__ = name
     joinpoint.__module__ = TEST_MODULE
     joinpoint.__qualname__ = f"{TEST_HANDLER_CLASS}.{name}"
-    joinpoint.return_value = return_value
     TaskRoute(background=background)(joinpoint)
 
     task_name = _make_task_name(name)
@@ -255,9 +271,20 @@ async def test_async_around_in_celery_task_context_calls_joinpoint() -> None:
     """AsyncCeleryTaskDispatchAspect.around_async이 Celery 태스크 컨텍스트 내에서 joinpoint를 직접 호출하는지 검증한다."""
     celery_app = _create_mock_celery_app()
     aspect = AsyncCeleryTaskDispatchAspect(celery_app)
-    joinpoint = _create_async_joinpoint(
-        "async_send_email", celery_app, background=False, return_value="direct"
-    )
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    async def joinpoint(*args: Any, **kwargs: Any) -> str:
+        calls.append((args, kwargs))
+        return "direct"
+
+    joinpoint.__name__ = "async_send_email"
+    joinpoint.__module__ = TEST_MODULE
+    joinpoint.__qualname__ = f"{TEST_HANDLER_CLASS}.async_send_email"
+    TaskRoute(background=False)(joinpoint)
+
+    task_name = _make_task_name("async_send_email")
+    mock_task = MagicMock()
+    celery_app.task_routes[task_name] = mock_task
 
     # Simulate being inside a Celery task (current_task is not None)
     with patch(
@@ -266,7 +293,7 @@ async def test_async_around_in_celery_task_context_calls_joinpoint() -> None:
     ):
         result = await aspect.around_async(joinpoint, to="test@example.com")
 
-    joinpoint.assert_called_once_with(to="test@example.com")
+    assert calls == [((), {"to": "test@example.com"})]
     celery_app.task_routes[
         _make_task_name("async_send_email")
     ].apply.assert_not_called()
