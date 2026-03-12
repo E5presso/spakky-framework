@@ -16,7 +16,7 @@ from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
 from tests import apps
 
 
-@pytest.fixture(name="environment_variables", scope="module", autouse=True)
+@pytest.fixture(name="environment_variables", scope="package", autouse=True)
 def setup_environment_variables_fixture() -> Generator[None, Any, None]:
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
@@ -27,7 +27,7 @@ def setup_environment_variables_fixture() -> Generator[None, Any, None]:
     yield
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="package", autouse=True)
 def rabbitmq_container(environment_variables: None) -> Generator[None, None, None]:
     port = int(environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"])
     username = environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"]
@@ -43,7 +43,7 @@ def rabbitmq_container(environment_variables: None) -> Generator[None, None, Non
         yield
 
 
-@pytest.fixture(name="app", scope="module")
+@pytest.fixture(name="app", scope="package")
 def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
     logger = getLogger("debug")
     logger.setLevel(logging.DEBUG)

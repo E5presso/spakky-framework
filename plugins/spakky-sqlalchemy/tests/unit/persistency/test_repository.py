@@ -29,7 +29,7 @@ from spakky.plugins.sqlalchemy.persistency.session_manager import (
 
 
 @mutable
-class TestEntity(AbstractAggregateRoot[UUID]):
+class SampleEntity(AbstractAggregateRoot[UUID]):
     """Test domain entity."""
 
     name: str
@@ -42,8 +42,8 @@ class TestEntity(AbstractAggregateRoot[UUID]):
         pass
 
 
-@Table(TestEntity)
-class TestEntityTable(AbstractMappableTable[TestEntity]):
+@Table(SampleEntity)
+class SampleEntityTable(AbstractMappableTable[SampleEntity]):
     """Test table."""
 
     __tablename__ = "test_entities"
@@ -55,7 +55,7 @@ class TestEntityTable(AbstractMappableTable[TestEntity]):
     name: Mapped[str] = mapped_column(String(), nullable=False)
 
     @classmethod
-    def from_domain(cls, domain: TestEntity) -> Self:
+    def from_domain(cls, domain: SampleEntity) -> Self:
         return cls(
             uid=domain.uid,
             version=domain.version,
@@ -64,8 +64,8 @@ class TestEntityTable(AbstractMappableTable[TestEntity]):
             name=domain.name,
         )
 
-    def to_domain(self) -> TestEntity:
-        return TestEntity(
+    def to_domain(self) -> SampleEntity:
+        return SampleEntity(
             uid=self.uid,
             version=self.version,
             created_at=self.created_at,
@@ -111,13 +111,13 @@ def test_async_repository_without_generic_params_expect_error() -> None:
 # --- Valid repository for version conflict testing ---
 
 
-class ValidSyncRepository(AbstractGenericRepository[TestEntity, UUID]):
+class ValidSyncRepository(AbstractGenericRepository[SampleEntity, UUID]):
     """Valid sync repository with proper generic parameters."""
 
     pass
 
 
-class ValidAsyncRepository(AbstractAsyncGenericRepository[TestEntity, UUID]):
+class ValidAsyncRepository(AbstractAsyncGenericRepository[SampleEntity, UUID]):
     """Valid async repository with proper generic parameters."""
 
     pass
@@ -140,7 +140,7 @@ def test_sync_repository_save_stale_data_expect_version_conflict_error() -> None
     repo = ValidSyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),
@@ -166,7 +166,7 @@ def test_sync_repository_save_all_stale_data_expect_version_conflict_error() -> 
     repo = ValidSyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),
@@ -192,7 +192,7 @@ def test_sync_repository_delete_stale_data_expect_version_conflict_error() -> No
     repo = ValidSyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),
@@ -218,7 +218,7 @@ def test_sync_repository_delete_all_stale_data_expect_version_conflict_error() -
     repo = ValidSyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),
@@ -248,7 +248,7 @@ async def test_async_repository_save_stale_data_expect_version_conflict_error() 
     repo = ValidAsyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),
@@ -277,7 +277,7 @@ async def test_async_repository_save_all_stale_data_expect_version_conflict_erro
     repo = ValidAsyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),
@@ -306,7 +306,7 @@ async def test_async_repository_delete_stale_data_expect_version_conflict_error(
     repo = ValidAsyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),
@@ -335,7 +335,7 @@ async def test_async_repository_delete_all_stale_data_expect_version_conflict_er
     repo = ValidAsyncRepository(
         mock_session_manager, mock_schema_registry, mock_aggregate_collector
     )
-    entity = TestEntity(
+    entity = SampleEntity(
         uid=uuid7(),
         version=uuid7(),
         created_at=datetime.now(),

@@ -13,7 +13,7 @@ import pytest
 from celery.contrib.testing.worker import start_worker
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore
+from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore[import-untyped]
 
 import spakky.plugins.celery
 from spakky.plugins.celery.app import CeleryApp
@@ -26,7 +26,7 @@ RABBITMQ_PASSWORD = "test"
 RABBITMQ_INTERNAL_PORT = 5672
 
 
-@pytest.fixture(name="rabbitmq_container", scope="module")
+@pytest.fixture(name="rabbitmq_container", scope="package")
 def rabbitmq_container_fixture() -> Generator[RabbitMqContainer, None, None]:
     """Start a RabbitMQ container for Celery broker."""
     container = RabbitMqContainer(

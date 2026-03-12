@@ -11,6 +11,16 @@ from spakky.plugins.celery.aspects.task_dispatch import (
     CeleryTaskDispatchAspect,
 )
 
+# Test constants for task naming
+TEST_MODULE = "test_module"
+TEST_HANDLER_CLASS = "TestHandler"
+
+
+def _make_task_name(method_name: str) -> str:
+    """Creates fully qualified task name for test assertions."""
+    return f"{TEST_MODULE}.{TEST_HANDLER_CLASS}.{method_name}"
+
+
 # ── Fixtures ──
 
 
@@ -33,16 +43,19 @@ def _create_joinpoint(
     """task name과 TaskRoute 어노테이션이 설정된 joinpoint mock을 생성한다."""
     joinpoint = MagicMock()
     joinpoint.__name__ = name
+    joinpoint.__module__ = TEST_MODULE
+    joinpoint.__qualname__ = f"{TEST_HANDLER_CLASS}.{name}"
     joinpoint.return_value = return_value
     TaskRoute(background=background)(joinpoint)
 
+    task_name = _make_task_name(name)
     # background=False일 때 apply()가 호출되므로 mock task 등록
     if not background:
         mock_task = MagicMock()
         mock_result = MagicMock()
         mock_result.get.return_value = return_value
         mock_task.apply.return_value = mock_result
-        celery_app.task_routes[name] = mock_task
+        celery_app.task_routes[task_name] = mock_task
 
     return joinpoint
 
@@ -59,7 +72,7 @@ def test_around_dispatches_task_via_send_task() -> None:
     aspect.around(joinpoint, to="test@example.com", subject="Hi")
 
     celery_app.celery.send_task.assert_called_once_with(
-        "send_email",
+        _make_task_name("send_email"),
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
     )
@@ -74,7 +87,7 @@ def test_around_dispatches_task_with_positional_args() -> None:
     aspect.around(joinpoint, "test@example.com", "Hi")
 
     celery_app.celery.send_task.assert_called_once_with(
-        "send_email",
+        _make_task_name("send_email"),
         args=("test@example.com", "Hi"),
         kwargs={},
     )
@@ -88,7 +101,7 @@ def test_around_background_false_calls_apply() -> None:
 
     aspect.around(joinpoint, to="test@example.com", subject="Hi")
 
-    celery_app.task_routes["send_email"].apply.assert_called_once_with(
+    celery_app.task_routes[_make_task_name("send_email")].apply.assert_called_once_with(
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
     )
@@ -113,7 +126,7 @@ def test_around_background_true_does_not_call_apply() -> None:
     celery_app = _create_mock_celery_app()
     # background=True일 때도 task_routes에 등록해서 apply가 호출되지 않음을 검증
     mock_task = MagicMock()
-    celery_app.task_routes["send_email"] = mock_task
+    celery_app.task_routes[_make_task_name("send_email")] = mock_task
     aspect = CeleryTaskDispatchAspect(celery_app)
     joinpoint = _create_joinpoint("send_email", celery_app, background=True)
 
@@ -138,7 +151,7 @@ def test_around_in_celery_task_context_calls_joinpoint() -> None:
         result = aspect.around(joinpoint, to="test@example.com")
 
     joinpoint.assert_called_once_with(to="test@example.com")
-    celery_app.task_routes["send_email"].apply.assert_not_called()
+    celery_app.task_routes[_make_task_name("send_email")].apply.assert_not_called()
     assert result == "direct"
 
 
@@ -155,16 +168,19 @@ def _create_async_joinpoint(
     """task name과 TaskRoute 어노테이션이 설정된 async joinpoint mock을 생성한다."""
     joinpoint = AsyncMock()
     joinpoint.__name__ = name
+    joinpoint.__module__ = TEST_MODULE
+    joinpoint.__qualname__ = f"{TEST_HANDLER_CLASS}.{name}"
     joinpoint.return_value = return_value
     TaskRoute(background=background)(joinpoint)
 
+    task_name = _make_task_name(name)
     # background=False일 때 apply()가 호출되므로 mock task 등록
     if not background:
         mock_task = MagicMock()
         mock_result = MagicMock()
         mock_result.get.return_value = return_value
         mock_task.apply.return_value = mock_result
-        celery_app.task_routes[name] = mock_task
+        celery_app.task_routes[task_name] = mock_task
 
     return joinpoint
 
@@ -179,7 +195,7 @@ async def test_async_around_dispatches_task_via_send_task() -> None:
     await aspect.around_async(joinpoint, to="test@example.com", subject="Hi")
 
     celery_app.celery.send_task.assert_called_once_with(
-        "async_send_email",
+        _make_task_name("async_send_email"),
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
     )
@@ -196,7 +212,9 @@ async def test_async_around_background_false_calls_apply() -> None:
 
     await aspect.around_async(joinpoint, to="test@example.com", subject="Hi")
 
-    celery_app.task_routes["async_send_email"].apply.assert_called_once_with(
+    celery_app.task_routes[
+        _make_task_name("async_send_email")
+    ].apply.assert_called_once_with(
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
     )
@@ -223,7 +241,7 @@ async def test_async_around_background_true_does_not_call_apply() -> None:
     celery_app = _create_mock_celery_app()
     # background=True일 때도 task_routes에 등록해서 apply가 호출되지 않음을 검증
     mock_task = MagicMock()
-    celery_app.task_routes["async_send_email"] = mock_task
+    celery_app.task_routes[_make_task_name("async_send_email")] = mock_task
     aspect = AsyncCeleryTaskDispatchAspect(celery_app)
     joinpoint = _create_async_joinpoint("async_send_email", celery_app, background=True)
 
@@ -249,5 +267,7 @@ async def test_async_around_in_celery_task_context_calls_joinpoint() -> None:
         result = await aspect.around_async(joinpoint, to="test@example.com")
 
     joinpoint.assert_called_once_with(to="test@example.com")
-    celery_app.task_routes["async_send_email"].apply.assert_not_called()
+    celery_app.task_routes[
+        _make_task_name("async_send_email")
+    ].apply.assert_not_called()
     assert result == "direct"

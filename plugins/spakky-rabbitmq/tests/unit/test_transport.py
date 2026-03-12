@@ -64,6 +64,7 @@ async def test_async_transport_send_without_exchange_name_expect_default_exchang
 
     with patch(
         "spakky.plugins.rabbitmq.event.transport.connect_robust",
+        new_callable=AsyncMock,
         return_value=mock_connection,
     ):
         await transport.send("test_event", b'{"key": "value"}')

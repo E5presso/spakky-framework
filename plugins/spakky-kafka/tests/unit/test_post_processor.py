@@ -20,14 +20,14 @@ from spakky.plugins.kafka.post_processor import KafkaPostProcessor
 
 
 @immutable
-class TestIntegrationEvent(AbstractIntegrationEvent):
+class SampleIntegrationEvent(AbstractIntegrationEvent):
     """Test integration event for testing."""
 
     message: str
 
 
 @immutable
-class TestDomainEvent(AbstractDomainEvent):
+class SampleDomainEvent(AbstractDomainEvent):
     """Test domain event for testing."""
 
     message: str
@@ -37,9 +37,9 @@ def test_kafka_post_processor_registers_integration_event_expect_success() -> No
     """Kafka PostProcessor가 IntegrationEvent 핸들러를 올바르게 등록하는지 검증한다."""
 
     @EventHandler()
-    class TestEventHandler:
-        @on_event(TestIntegrationEvent)
-        def handle_integration_event(self, event: TestIntegrationEvent) -> None:
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
             pass
 
     # Set up mocks
@@ -62,13 +62,13 @@ def test_kafka_post_processor_registers_integration_event_expect_success() -> No
     post_processor.set_application_context(mock_context)
 
     # Process event handler
-    handler_instance = TestEventHandler()
+    handler_instance = SampleEventHandler()
     post_processor.post_process(handler_instance)
 
     # Verify that register was called for IntegrationEvent
     mock_consumer.register.assert_called_once()
     call_args = mock_consumer.register.call_args
-    assert call_args[0][0] == TestIntegrationEvent
+    assert call_args[0][0] == SampleIntegrationEvent
 
 
 def test_kafka_post_processor_registers_async_integration_event_expect_success() -> (
@@ -77,9 +77,9 @@ def test_kafka_post_processor_registers_async_integration_event_expect_success()
     """Kafka PostProcessor가 비동기 IntegrationEvent 핸들러를 올바르게 등록하는지 검증한다."""
 
     @EventHandler()
-    class TestEventHandler:
-        @on_event(TestIntegrationEvent)
-        async def handle_integration_event(self, event: TestIntegrationEvent) -> None:
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        async def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
             pass
 
     # Set up mocks
@@ -102,13 +102,13 @@ def test_kafka_post_processor_registers_async_integration_event_expect_success()
     post_processor.set_application_context(mock_context)
 
     # Process event handler
-    handler_instance = TestEventHandler()
+    handler_instance = SampleEventHandler()
     post_processor.post_process(handler_instance)
 
     # Verify that register was called for IntegrationEvent on async consumer
     mock_async_consumer.register.assert_called_once()
     call_args = mock_async_consumer.register.call_args
-    assert call_args[0][0] == TestIntegrationEvent
+    assert call_args[0][0] == SampleIntegrationEvent
 
 
 def test_kafka_post_processor_ignores_domain_event_expect_no_registration() -> None:
@@ -119,10 +119,10 @@ def test_kafka_post_processor_ignores_domain_event_expect_no_registration() -> N
     """
 
     @EventHandler()
-    class TestEventHandler:
+    class SampleEventHandler:
         # This should NOT be registered because it's a DomainEvent
-        @on_event(TestDomainEvent)
-        def handle_domain_event(self, event: TestDomainEvent) -> None:
+        @on_event(SampleDomainEvent)
+        def handle_domain_event(self, event: SampleDomainEvent) -> None:
             pass
 
     # Set up mocks
@@ -145,7 +145,7 @@ def test_kafka_post_processor_ignores_domain_event_expect_no_registration() -> N
     post_processor.set_application_context(mock_context)
 
     # Process event handler
-    handler_instance = TestEventHandler()
+    handler_instance = SampleEventHandler()
     post_processor.post_process(handler_instance)
 
     # Verify that register was NOT called because DomainEvent is not IntegrationEvent
@@ -157,13 +157,13 @@ def test_kafka_post_processor_mixed_events_expect_only_integration_registered() 
     """DomainEvent와 혼합된 경우 IntegrationEvent 핸들러만 등록되는지 검증한다."""
 
     @EventHandler()
-    class TestEventHandler:
-        @on_event(TestIntegrationEvent)
-        def handle_integration_event(self, event: TestIntegrationEvent) -> None:
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
             pass
 
-        @on_event(TestDomainEvent)
-        def handle_domain_event(self, event: TestDomainEvent) -> None:
+        @on_event(SampleDomainEvent)
+        def handle_domain_event(self, event: SampleDomainEvent) -> None:
             pass
 
     # Set up mocks
@@ -186,13 +186,13 @@ def test_kafka_post_processor_mixed_events_expect_only_integration_registered() 
     post_processor.set_application_context(mock_context)
 
     # Process event handler
-    handler_instance = TestEventHandler()
+    handler_instance = SampleEventHandler()
     post_processor.post_process(handler_instance)
 
     # Verify that only IntegrationEvent was registered
     mock_consumer.register.assert_called_once()
     call_args = mock_consumer.register.call_args
-    assert call_args[0][0] == TestIntegrationEvent
+    assert call_args[0][0] == SampleIntegrationEvent
 
     # DomainEvent should not be registered
     mock_async_consumer.register.assert_not_called()
@@ -204,9 +204,9 @@ def test_kafka_post_processor_sync_endpoint_invocation_expect_handler_called() -
     received_event = None
 
     @EventHandler()
-    class TestEventHandler:
-        @on_event(TestIntegrationEvent)
-        def handle_integration_event(self, event: TestIntegrationEvent) -> None:
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
             nonlocal handler_called, received_event
             handler_called = True
             received_event = event
@@ -215,7 +215,7 @@ def test_kafka_post_processor_sync_endpoint_invocation_expect_handler_called() -
     mock_consumer = Mock(spec=IEventConsumer)
     mock_async_consumer = Mock(spec=IAsyncEventConsumer)
 
-    handler_instance = TestEventHandler()
+    handler_instance = SampleEventHandler()
     mock_container = Mock()
 
     def get_mock(t: type) -> object:
@@ -245,7 +245,7 @@ def test_kafka_post_processor_sync_endpoint_invocation_expect_handler_called() -
     registered_endpoint = call_args[0][1]
 
     # Create a test event
-    test_event = TestIntegrationEvent(message="test")
+    test_event = SampleIntegrationEvent(message="test")
 
     # Call the endpoint
     registered_endpoint(test_event)
@@ -266,9 +266,9 @@ async def test_kafka_post_processor_async_endpoint_invocation_expect_handler_cal
     received_event = None
 
     @EventHandler()
-    class TestAsyncEventHandler:
-        @on_event(TestIntegrationEvent)
-        async def handle_integration_event(self, event: TestIntegrationEvent) -> None:
+    class SampleAsyncEventHandler:
+        @on_event(SampleIntegrationEvent)
+        async def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
             nonlocal handler_called, received_event
             handler_called = True
             received_event = event
@@ -277,7 +277,7 @@ async def test_kafka_post_processor_async_endpoint_invocation_expect_handler_cal
     mock_consumer = Mock(spec=IEventConsumer)
     mock_async_consumer = Mock(spec=IAsyncEventConsumer)
 
-    handler_instance = TestAsyncEventHandler()
+    handler_instance = SampleAsyncEventHandler()
     mock_container = Mock()
 
     def get_mock(t: type) -> object:
@@ -307,7 +307,7 @@ async def test_kafka_post_processor_async_endpoint_invocation_expect_handler_cal
     registered_endpoint = call_args[0][1]
 
     # Create a test event
-    test_event = TestIntegrationEvent(message="test")
+    test_event = SampleIntegrationEvent(message="test")
 
     # Call the async endpoint
     await registered_endpoint(test_event)
@@ -361,9 +361,9 @@ def test_kafka_post_processor_handler_with_non_decorated_method_expect_skip() ->
     """@on_event 데코레이터가 없는 메서드는 건너뜀을 검증한다."""
 
     @EventHandler()
-    class TestEventHandler:
-        @on_event(TestIntegrationEvent)
-        def handle_event(self, event: TestIntegrationEvent) -> None:
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_event(self, event: SampleIntegrationEvent) -> None:
             pass
 
         def helper_method(self) -> str:
@@ -390,10 +390,10 @@ def test_kafka_post_processor_handler_with_non_decorated_method_expect_skip() ->
     post_processor.set_application_context(mock_context)
 
     # Process event handler
-    handler_instance = TestEventHandler()
+    handler_instance = SampleEventHandler()
     post_processor.post_process(handler_instance)
 
     # Only the decorated method should be registered
     mock_consumer.register.assert_called_once()
     call_args = mock_consumer.register.call_args
-    assert call_args[0][0] == TestIntegrationEvent
+    assert call_args[0][0] == SampleIntegrationEvent

@@ -12,6 +12,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
 
 from spakky.plugins.celery.app import CeleryApp
@@ -45,10 +46,11 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
             if route is None:
                 continue
 
-            celery_app.register_task(name, method)
+            task_name = get_fully_qualified_name(method)
+            celery_app.register_task(task_name, method)
             logger.debug(
                 "Registered task '%s' from handler '%s'",
-                name,
+                task_name,
                 pod_type.__name__,
             )
 

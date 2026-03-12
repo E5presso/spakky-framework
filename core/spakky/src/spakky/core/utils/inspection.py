@@ -42,3 +42,35 @@ def has_default_constructor(cls: type[object]) -> bool:
         # or a placeholder for the default constructor
         return True
     return False
+
+
+def get_fully_qualified_name(obj: object) -> str:
+    """Get the fully qualified name of an object.
+
+    Combines module path and qualified name to create a unique identifier.
+    Works with functions, methods, classes, and instances.
+
+    Args:
+        obj: Any object with __module__ and __qualname__ attributes.
+             For instances, uses the class's qualified name.
+
+    Returns:
+        Fully qualified name in format 'module.path.ClassName' or
+        'module.path.ClassName.method_name'.
+
+    Raises:
+        AttributeError: If the object lacks __module__ or __qualname__.
+
+    Example:
+        >>> class Foo:
+        ...     def bar(self): pass
+        >>> get_fully_qualified_name(Foo)
+        '__main__.Foo'
+        >>> get_fully_qualified_name(Foo.bar)
+        '__main__.Foo.bar'
+        >>> get_fully_qualified_name(Foo())
+        '__main__.Foo'
+    """
+    # For instances, use the class
+    target = obj if isinstance(obj, type) or callable(obj) else type(obj)
+    return f"{target.__module__}.{target.__qualname__}"

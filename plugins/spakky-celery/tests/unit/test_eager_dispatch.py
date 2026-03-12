@@ -27,16 +27,19 @@ def test_task_handlers_registered_on_app_start_expect_tasks_in_celery(
 
     # When: Application has started (via fixture)
 
-    # Then: All @task decorated methods are registered (both background=False and True)
+    # Then: All @task decorated methods are registered with fully qualified names
     registered_tasks = celery_app.task_routes
-    assert "send_email" in registered_tasks
-    assert "send_email_async" in registered_tasks
-    assert "send_bulk_emails" in registered_tasks
-    assert "send_bulk_emails_async" in registered_tasks
-    assert "generate_report" in registered_tasks
-    assert "generate_report_async" in registered_tasks
-    assert "export_report" in registered_tasks
-    assert "export_report_async" in registered_tasks
+    email_handler_prefix = "tests.apps.dummy.EmailTaskHandler"
+    report_handler_prefix = "tests.apps.dummy.ReportTaskHandler"
+
+    assert f"{email_handler_prefix}.send_email" in registered_tasks
+    assert f"{email_handler_prefix}.send_email_async" in registered_tasks
+    assert f"{email_handler_prefix}.send_bulk_emails" in registered_tasks
+    assert f"{email_handler_prefix}.send_bulk_emails_async" in registered_tasks
+    assert f"{report_handler_prefix}.generate_report" in registered_tasks
+    assert f"{report_handler_prefix}.generate_report_async" in registered_tasks
+    assert f"{report_handler_prefix}.export_report" in registered_tasks
+    assert f"{report_handler_prefix}.export_report_async" in registered_tasks
 
 
 # =============================================================================

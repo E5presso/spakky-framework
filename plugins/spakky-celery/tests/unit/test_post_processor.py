@@ -61,8 +61,14 @@ def test_celery_post_processor_registers_tasks_on_post_process() -> None:
     post_processor.post_process(handler)
 
     registered_tasks = list(celery_app.celery.tasks.keys())
-    send_email_tasks = [t for t in registered_tasks if "send_email" in t]
-    process_data_tasks = [t for t in registered_tasks if "process_data" in t]
+    # Use specific prefix to avoid matching tasks from other test modules
+    sample_handler_prefix = "tests.unit.test_post_processor._SampleTaskHandler"
+    send_email_tasks = [
+        t for t in registered_tasks if t == f"{sample_handler_prefix}.send_email"
+    ]
+    process_data_tasks = [
+        t for t in registered_tasks if t == f"{sample_handler_prefix}.process_data"
+    ]
 
     assert len(send_email_tasks) == 1
     assert len(process_data_tasks) == 1

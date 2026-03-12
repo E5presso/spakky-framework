@@ -67,4 +67,11 @@ class CeleryConfig(BaseSettings):
     """Use UTC for internal datetime handling."""
 
     def __init__(self) -> None:
+        """Initialize config from environment variables.
+
+        Note: This override is required for Spakky's @Configuration decorator
+        to work with Pydantic BaseSettings. The decorator analyzes __init__
+        parameters as dependencies, and BaseSettings' default __init__ has
+        a __pydantic_self__ parameter that Spakky cannot resolve.
+        """
         super().__init__()

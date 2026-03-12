@@ -108,8 +108,7 @@ The AOP aspect intercepts the calls and routes them to Celery automatically.
 ## Related Packages
 
 - **`spakky-task`**: Core task abstractions (`@TaskHandler`, `@task`, `TaskRoute`)
-- **`spakky-rabbitmq`**: RabbitMQ as Celery broker
-- **`spakky-kafka`**: Kafka as Celery broker
+- **`spakky-rabbitmq`**: RabbitMQ event transport (can also be used as Celery broker)
 
 ## License
 

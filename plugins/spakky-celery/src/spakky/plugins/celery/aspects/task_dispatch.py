@@ -9,6 +9,7 @@ from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import Around
 from spakky.core.common.types import AsyncFunc, Func
 from spakky.core.pod.annotations.order import Order
+from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.task_handler import TaskRoute
 
 from celery import current_task
@@ -40,7 +41,7 @@ class CeleryTaskDispatchAspect(IAspect):
             return joinpoint(*args, **kwargs)
 
         route: TaskRoute = TaskRoute.get(joinpoint)
-        task_name: str = joinpoint.__name__
+        task_name: str = get_fully_qualified_name(joinpoint)
 
         if not route.background:
             celery_task = self._celery_app.task_routes[task_name]
@@ -76,7 +77,7 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect):
             return await joinpoint(*args, **kwargs)
 
         route: TaskRoute = TaskRoute.get(joinpoint)
-        task_name: str = joinpoint.__name__
+        task_name: str = get_fully_qualified_name(joinpoint)
 
         if not route.background:
             celery_task = self._celery_app.task_routes[task_name]
