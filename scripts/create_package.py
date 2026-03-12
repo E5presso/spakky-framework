@@ -267,7 +267,14 @@ def generate_vscode_settings(pkg_type: PackageType) -> str:
     return """{
 \t"python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python",
 \t"python.testing.cwd": "${workspaceFolder}",
-\t"python.testing.pytestArgs": ["--no-cov"]
+\t"python.testing.pytestArgs": ["--no-cov"],
+\t"python-envs.pythonProjects": [
+\t\t{
+\t\t\t"path": ".",
+\t\t\t"envManager": "ms-python.python:venv",
+\t\t\t"packageManager": "ms-python.python:pip"
+\t\t}
+\t]
 }
 """
 
