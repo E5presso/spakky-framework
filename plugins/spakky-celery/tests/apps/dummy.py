@@ -5,6 +5,14 @@ from threading import Lock
 
 from spakky.task.stereotype.task_handler import TaskHandler, task
 
+__all__ = [
+    "TaskExecutionRecord",
+    "execution_record",
+    "EmailTaskHandler",
+    "ReportTaskHandler",
+    "AsyncNotificationHandler",
+]
+
 
 @dataclass
 class TaskExecutionRecord:
@@ -120,4 +128,27 @@ class ReportTaskHandler:
             "export_report_async",
             report_id=report_id,
             format=format,
+        )
+
+
+@TaskHandler()
+class AsyncNotificationHandler:
+    """Task handler with async methods for testing async task dispatch."""
+
+    @task
+    async def send_notification(self, user_id: str, message: str) -> None:
+        """Send a notification immediately (background=False, async)."""
+        execution_record.record(
+            "send_notification",
+            user_id=user_id,
+            message=message,
+        )
+
+    @task(background=True)
+    async def send_notification_async(self, user_id: str, message: str) -> None:
+        """Send a notification via broker (background=True, async)."""
+        execution_record.record(
+            "send_notification_async",
+            user_id=user_id,
+            message=message,
         )

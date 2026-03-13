@@ -18,6 +18,7 @@ spakky-celery = "spakky.plugins.celery.main:initialize"
 [dependency-groups]
 dev = [
     "celery-types>=0.25.0",
+    "pytest-asyncio>=0.26.0",
     "pytest-integration-mark>=0.2.0",
     "testcontainers[rabbitmq]>=4.13.3",
 ]

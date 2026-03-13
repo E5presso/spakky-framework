@@ -12,6 +12,7 @@ from time import sleep, time
 from spakky.core.application.application import SpakkyApplication
 
 from tests.apps.dummy import (
+    AsyncNotificationHandler,
     EmailTaskHandler,
     ReportTaskHandler,
     execution_record,
@@ -113,3 +114,51 @@ def test_call_immediate_task_expect_executed_without_broker(
     assert execution_record.count("send_email") == 1
     recorded = execution_record.executions[0]
     assert recorded["to"] == "immediate@example.com"
+
+
+# =============================================================================
+# Scenario: Async task handlers (coroutine methods)
+# =============================================================================
+
+
+async def test_call_async_background_task_through_broker_expect_worker_processes_it(
+    app_with_worker: SpakkyApplication,
+) -> None:
+    """async @task(background=True) 메서드 호출이 브로커를 통해 워커에서 처리된다."""
+    # Given: A running Celery worker connected to RabbitMQ broker
+    notification_handler = app_with_worker.container.get(AsyncNotificationHandler)
+
+    # When: Calling an async @task(background=True) method
+    # Note: Aspect intercepts and returns CeleryTaskResult, not the original coroutine
+    result = await notification_handler.send_notification_async(  # pyrefly: ignore[not-async]
+        user_id="user-123",
+        message="Async notification through broker",
+    )
+    # Verify we got a task result (dispatched to broker)
+    assert result is not None
+
+    # Then: Worker picks up and executes the async task
+    wait_for_execution("send_notification_async")
+    assert execution_record.count("send_notification_async") == 1
+    recorded = execution_record.executions[0]
+    assert recorded["user_id"] == "user-123"
+    assert recorded["message"] == "Async notification through broker"
+
+
+async def test_call_async_immediate_task_expect_executed_without_broker(
+    app_with_worker: SpakkyApplication,
+) -> None:
+    """async @task (background=False) 메서드는 브로커를 거치지 않고 즉시 실행된다."""
+    # Given: A running Celery worker connected to RabbitMQ broker
+    notification_handler = app_with_worker.container.get(AsyncNotificationHandler)
+
+    # When: Calling an async @task (background=False) method
+    await notification_handler.send_notification(
+        user_id="user-456",
+        message="Immediate async notification",
+    )
+
+    # Then: Task is executed immediately (no waiting needed)
+    assert execution_record.count("send_notification") == 1
+    recorded = execution_record.executions[0]
+    assert recorded["user_id"] == "user-456"

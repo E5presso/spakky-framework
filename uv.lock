@@ -2223,6 +2223,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "celery-types" },
+    { name = "pytest-asyncio" },
     { name = "pytest-integration-mark" },
     { name = "testcontainers", extra = ["rabbitmq"] },
 ]
@@ -2237,6 +2238,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "celery-types", specifier = ">=0.25.0" },
+    { name = "pytest-asyncio", specifier = ">=0.26.0" },
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
     { name = "testcontainers", extras = ["rabbitmq"], specifier = ">=4.13.3" },
 ]

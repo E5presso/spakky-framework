@@ -15,8 +15,18 @@ from spakky.task.stereotype.task_handler import TaskRoute
 from celery import current_task
 from spakky.plugins.celery.app import CeleryApp
 from spakky.plugins.celery.common.task_result import CeleryTaskResult
+from spakky.plugins.celery.post_processor import celery_task_context
 
 logger = getLogger(__name__)
+
+
+def _is_inside_celery_task() -> bool:
+    """Check if we're currently inside a Celery task execution context.
+
+    This checks both the Celery current_task proxy and the explicit context
+    variable set by post_processor (for async tasks running in ThreadPoolExecutor).
+    """
+    return bool(current_task) or celery_task_context.get()
 
 
 @Order(0)
@@ -37,8 +47,7 @@ class CeleryTaskDispatchAspect(IAspect):
     @Around(lambda x: TaskRoute.exists(x) and not iscoroutinefunction(x))
     def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
         # If we're inside a Celery task context, execute directly (no re-dispatch)
-        # current_task is a LocalProxy, so use boolean evaluation
-        if current_task:
+        if _is_inside_celery_task():
             return joinpoint(*args, **kwargs)
 
         route: TaskRoute = TaskRoute.get(joinpoint)
@@ -76,8 +85,7 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect):
         self, joinpoint: AsyncFunc, *args: Any, **kwargs: Any
     ) -> Any:
         # If we're inside a Celery task context, execute directly (no re-dispatch)
-        # current_task is a LocalProxy, so use boolean evaluation
-        if current_task:
+        if _is_inside_celery_task():
             return await joinpoint(*args, **kwargs)
 
         route: TaskRoute = TaskRoute.get(joinpoint)

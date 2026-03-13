@@ -1,10 +1,12 @@
 """Post-processor for registering TaskHandler methods as Celery tasks."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar
 from functools import wraps
 from inspect import getmembers, iscoroutinefunction, isfunction
 from logging import getLogger
-from typing import Any, Callable
+from typing import Any, Callable, Coroutine
 
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
@@ -21,6 +23,10 @@ from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
 from spakky.plugins.celery.app import CeleryApp
 
 logger = getLogger(__name__)
+
+# Context variable to track Celery task execution context.
+# Used by aspects to detect if we're inside a Celery task and avoid re-dispatch.
+celery_task_context: ContextVar[bool] = ContextVar("celery_task_context", default=False)
 
 
 @Order(0)
@@ -48,9 +54,13 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
         @wraps(method)
         def endpoint(*args: Any, **kwargs: Any) -> Any:
             self.__application_context.clear_context()
-            handler_instance = self.__container.get(handler_type)
-            method_to_call = getattr(handler_instance, method_name)
-            return method_to_call(*args, **kwargs)
+            token = celery_task_context.set(True)
+            try:
+                handler_instance = self.__container.get(handler_type)
+                method_to_call = getattr(handler_instance, method_name)
+                return method_to_call(*args, **kwargs)
+            finally:
+                celery_task_context.reset(token)
 
         return endpoint
 
@@ -60,14 +70,32 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
         handler_type: type[object],
         method: Callable[..., Any],
     ) -> Callable[..., Any]:
-        """Create an endpoint for async methods that runs in event loop."""
+        """Create an endpoint for async methods that runs in a separate thread.
+
+        Uses ThreadPoolExecutor to avoid event loop conflicts when called
+        from an existing event loop (e.g., pytest-asyncio).
+        """
+
+        def _run_coro(coro: Coroutine[Any, Any, Any]) -> Any:
+            """Run coroutine in a new thread with its own event loop."""
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(asyncio.run, coro)
+                return future.result()
+
+        async def _async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Async wrapper that sets context and invokes handler method."""
+            token = celery_task_context.set(True)
+            try:
+                self.__application_context.clear_context()
+                handler_instance = self.__container.get(handler_type)
+                method_to_call = getattr(handler_instance, method_name)
+                return await method_to_call(*args, **kwargs)
+            finally:
+                celery_task_context.reset(token)
 
         @wraps(method)
         def endpoint(*args: Any, **kwargs: Any) -> Any:
-            self.__application_context.clear_context()
-            handler_instance = self.__container.get(handler_type)
-            method_to_call = getattr(handler_instance, method_name)
-            return asyncio.run(method_to_call(*args, **kwargs))
+            return _run_coro(_async_wrapper(*args, **kwargs))
 
         return endpoint
 
