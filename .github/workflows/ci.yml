@@ -124,8 +124,11 @@ jobs:
       - name: Run integration tests
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
-          # Exit code 5 means no tests collected - acceptable for packages without integration tests
-          uv run pytest --with-integration -m integration --no-cov || test $? -eq 5
+          if [ -d "tests/integration" ]; then
+            uv run pytest --with-integration -m integration --no-cov
+          else
+            echo "No integration tests found, skipping."
+          fi
 
   coverage:
     name: Coverage ${{ matrix.package }}
