@@ -158,3 +158,52 @@ def test_celery_post_processor_registers_wrapper_with_context_isolation() -> Non
     assert container_mock.get.call_count >= 2
     assert tracking_handler.calls == ["payload"]
     assert result == "payload"
+
+
+def test_celery_post_processor_registers_async_tasks() -> None:
+    """CeleryPostProcessor가 async 메서드를 올바르게 등록하고 실행하는지 검증한다."""
+
+    @TaskHandler()
+    class AsyncTaskHandler:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        @task
+        async def async_task(self, value: str) -> str:
+            self.calls.append(value)
+            return f"async: {value}"
+
+    celery_app_mock = MagicMock()
+    application_context_mock = MagicMock()
+    async_handler = AsyncTaskHandler()
+
+    container_mock = MagicMock()
+
+    def get_from_container(type_: object) -> object:
+        if type_ is CeleryApp:
+            return celery_app_mock
+        if type_ is AsyncTaskHandler:
+            return async_handler
+        raise AssertionError(f"Unexpected dependency lookup: {type_}")
+
+    container_mock.get.side_effect = get_from_container
+
+    post_processor = CeleryPostProcessor()
+    post_processor.set_container(container_mock)
+    post_processor.set_application_context(application_context_mock)
+
+    post_processor.post_process(async_handler)
+
+    register_calls = celery_app_mock.register_task.call_args_list
+    endpoint = next(
+        handler
+        for task_name, handler in (call.args for call in register_calls)
+        if task_name.endswith(".async_task")
+    )
+
+    # async endpoint는 asyncio.run()으로 실행되어야 함
+    result = endpoint("async_payload")
+
+    application_context_mock.clear_context.assert_called_once()
+    assert async_handler.calls == ["async_payload"]
+    assert result == "async: async_payload"
