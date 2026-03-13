@@ -15,6 +15,7 @@ spakky-outbox-sqlalchemy = "spakky.plugins.outbox_sqlalchemy.main:initialize"
 dev = [
     "greenlet>=3.0.0",
     "psycopg[binary]>=3.0.0",
+    "pytest-integration-mark>=0.2.0",
     "testcontainers[postgres]>=4.0.0",
 ]
 
@@ -52,7 +53,13 @@ addopts = """
     --spec
 """
 spec_test_format = "{result} {docstring_summary}"
-markers = ["known_issue(reason): 알려진 버그"]
+markers = [
+    "known_issue(reason): 알려진 버그",
+    "integration: testcontainers 기반 통합 테스트 (느림)",
+]
+
+[tool.pytest-integration-mark]
+integration_path = "tests/integration"
 
 [tool.coverage.run]
 include = ["src/spakky/plugins/outbox_sqlalchemy/*"]

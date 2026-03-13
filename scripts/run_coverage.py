@@ -10,6 +10,7 @@ Usage:
     uv run python scripts/run_coverage.py
     uv run python scripts/run_coverage.py --package spakky-fastapi
     uv run python scripts/run_coverage.py --sequential
+    uv run python scripts/run_coverage.py --skip-integration  # Fast local runs
 
 Output:
     Generates coverage XML files in each package directory:
@@ -23,6 +24,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -93,12 +95,18 @@ class CoverageResult:
     output: str
 
 
-def _build_coverage_cmd(pkg: PackageInfo, *, is_parallel: bool = False) -> list[str]:
+def _build_coverage_cmd(
+    pkg: PackageInfo,
+    *,
+    is_parallel: bool = False,
+    skip_integration: bool = False,
+) -> list[str]:
     """Build pytest coverage command for a package.
 
     Args:
         pkg: Package information.
         is_parallel: If True, disable xdist to avoid nested parallelism.
+        skip_integration: If True, skip tests marked with 'integration' marker.
     """
     cmd = [
         "uv",
@@ -111,21 +119,31 @@ def _build_coverage_cmd(pkg: PackageInfo, *, is_parallel: bool = False) -> list[
     if is_parallel:
         # Disable xdist parallelism when running packages in parallel
         cmd.extend(["-n", "0"])
+    if skip_integration:
+        cmd.extend(["-m", "not integration"])
     return cmd
 
 
-def run_tests_with_coverage_streaming(pkg: PackageInfo) -> bool:
+def run_tests_with_coverage_streaming(
+    pkg: PackageInfo,
+    *,
+    skip_integration: bool = False,
+) -> bool:
     """Run pytest with coverage for a specific package (streaming output).
 
     Args:
         pkg: Package information.
+        skip_integration: If True, skip tests marked with 'integration' marker.
 
     Returns:
         True if tests passed, False otherwise.
     """
     print_header(f"Testing: {pkg.name}")
 
-    exit_code = run_streaming(_build_coverage_cmd(pkg), cwd=pkg.full_path)
+    exit_code = run_streaming(
+        _build_coverage_cmd(pkg, skip_integration=skip_integration),
+        cwd=pkg.full_path,
+    )
 
     if exit_code != 0:
         print_error(f"Tests failed for: {pkg.name}")
@@ -135,17 +153,23 @@ def run_tests_with_coverage_streaming(pkg: PackageInfo) -> bool:
     return True
 
 
-def run_tests_with_coverage_captured(pkg: PackageInfo) -> CoverageResult:
+def run_tests_with_coverage_captured(
+    pkg: PackageInfo,
+    *,
+    skip_integration: bool = False,
+) -> CoverageResult:
     """Run pytest with coverage for a specific package (parallel-safe).
 
     Args:
         pkg: Package information.
+        skip_integration: If True, skip tests marked with 'integration' marker.
 
     Returns:
         CoverageResult with captured output.
     """
     result: CapturedResult = run_captured(
-        _build_coverage_cmd(pkg, is_parallel=True), cwd=pkg.full_path
+        _build_coverage_cmd(pkg, is_parallel=True, skip_integration=skip_integration),
+        cwd=pkg.full_path,
     )
     return CoverageResult(
         package=pkg,
@@ -154,16 +178,25 @@ def run_tests_with_coverage_captured(pkg: PackageInfo) -> CoverageResult:
     )
 
 
-def run_parallel_coverage(packages: list[PackageInfo]) -> list[CoverageResult]:
+def run_parallel_coverage(
+    packages: list[PackageInfo],
+    *,
+    skip_integration: bool = False,
+) -> list[CoverageResult]:
     """Run coverage checks for multiple packages in parallel.
 
     Args:
         packages: List of packages to test.
+        skip_integration: If True, skip tests marked with 'integration' marker.
 
     Returns:
         List of CoverageResult in the same order as input packages.
     """
     results: dict[str, CoverageResult] = {}
+    run_captured_fn = partial(
+        run_tests_with_coverage_captured,
+        skip_integration=skip_integration,
+    )
 
     with Progress(
         SpinnerColumn(),
@@ -181,8 +214,7 @@ def run_parallel_coverage(packages: list[PackageInfo]) -> list[CoverageResult]:
 
         with ThreadPoolExecutor(max_workers=min(len(packages), 8)) as executor:
             future_to_pkg: dict[Future[CoverageResult], PackageInfo] = {
-                executor.submit(run_tests_with_coverage_captured, pkg): pkg
-                for pkg in packages
+                executor.submit(run_captured_fn, pkg): pkg for pkg in packages
             }
 
             for future in as_completed(future_to_pkg):
@@ -308,6 +340,12 @@ def main(
         "-s",
         help="Run checks sequentially (useful for debugging).",
     ),
+    skip_integration: bool = typer.Option(
+        False,
+        "--skip-integration",
+        "-S",
+        help="Skip tests marked with 'integration' marker (faster local runs).",
+    ),
 ) -> None:
     """Run tests with coverage for all (or specific) workspace packages."""
     try:
@@ -335,11 +373,21 @@ def main(
             console.print(f"  • {pkg.name}")
         console.print()
 
+        if skip_integration:
+            console.print(
+                "[yellow bold]Skipping integration tests "
+                "(testcontainers not started)[/]"
+            )
+            console.print()
+
         if sequential or len(packages) == 1:
             # Sequential mode: streaming output
             all_passed = True
             for pkg in packages:
-                if not run_tests_with_coverage_streaming(pkg):
+                if not run_tests_with_coverage_streaming(
+                    pkg,
+                    skip_integration=skip_integration,
+                ):
                     all_passed = False
             tested_count = len(packages)
         else:
@@ -350,7 +398,10 @@ def main(
             )
             console.print()
 
-            results = run_parallel_coverage(packages)
+            results = run_parallel_coverage(
+                packages,
+                skip_integration=skip_integration,
+            )
             all_passed = display_results(results)
             tested_count = len(results)
 

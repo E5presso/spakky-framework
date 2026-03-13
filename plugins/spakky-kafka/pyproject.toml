@@ -15,6 +15,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pytest-integration-mark>=0.2.0",
     "testcontainers>=4.13.3",
 ]
 
@@ -55,6 +56,10 @@ addopts = """
     --spec
 """
 spec_test_format = "{result} {docstring_summary}"
+markers = ["integration: testcontainers 기반 통합 테스트 (느림)"]
+
+[tool.pytest-integration-mark]
+integration_path = "tests/integration"
 
 [tool.coverage.run]
 include = ["src/spakky/plugins/kafka/*"]

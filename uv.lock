@@ -246,6 +246,18 @@ wheels = [
 ]
 
 [[package]]
+name = "celery-types"
+version = "0.25.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/a5/592bd4dcd5349e504fb3c354b74c934d204c08def22416fb9a70a765451d/celery_types-0.25.0.tar.gz", hash = "sha256:1752dc736e550f0fa6b4f706162c5460314ebf55314f93a476a87b43cd2e30cc", size = 105695, upload-time = "2026-03-11T13:37:07.674Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fc/ae/716b2d38c267bf5074fa2b20d17d37e70dd8c16c31ac2f6155365f0245f1/celery_types-0.25.0-py3-none-any.whl", hash = "sha256:dab1c1f126f4326db0a235781349d402b1c97fecca30bddae89aa58e0754671e", size = 210808, upload-time = "2026-03-11T13:37:05.954Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.11.12"
 source = { registry = "https://pypi.org/simple" }
@@ -1803,6 +1815,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest-integration-mark"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/43/1d/e091051123391bc3b7706c2e2d91f35e448b359fd697967ca93cc2fa99e5/pytest_integration_mark-0.2.0.tar.gz", hash = "sha256:2f3580fba9aa7fecc9ede2385ae5c0c1414c688cc4e8511ccb61f65025508a14", size = 6523, upload-time = "2023-05-22T09:54:49.427Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/25/29/d7c0776cce4466265fe355faa1b10ffbc14a4b9e7835389aace1ffcbe1f0/pytest_integration_mark-0.2.0-py3-none-any.whl", hash = "sha256:dfff273d47922c2d750923e06ac65bda20ff1c016adba187dee20840f0d5869b", size = 7667, upload-time = "2023-05-22T09:54:47.728Z" },
+]
+
+[[package]]
 name = "pytest-spec"
 version = "6.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2198,18 +2222,24 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "celery-types" },
+    { name = "pytest-integration-mark" },
     { name = "testcontainers", extra = ["rabbitmq"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "celery", specifier = ">=5.4.0" },
+    { name = "celery", specifier = ">=5.6.2" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "spakky-task", editable = "core/spakky-task" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "testcontainers", extras = ["rabbitmq"], specifier = ">=4.13.3" }]
+dev = [
+    { name = "celery-types", specifier = ">=0.25.0" },
+    { name = "pytest-integration-mark", specifier = ">=0.2.0" },
+    { name = "testcontainers", extras = ["rabbitmq"], specifier = ">=4.13.3" },
+]
 
 [[package]]
 name = "spakky-data"
@@ -2319,6 +2349,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pytest-integration-mark" },
     { name = "testcontainers" },
 ]
 
@@ -2331,7 +2362,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "testcontainers", specifier = ">=4.13.3" }]
+dev = [
+    { name = "pytest-integration-mark", specifier = ">=0.2.0" },
+    { name = "testcontainers", specifier = ">=4.13.3" },
+]
 
 [[package]]
 name = "spakky-outbox"
@@ -2363,6 +2397,7 @@ dependencies = [
 dev = [
     { name = "greenlet" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pytest-integration-mark" },
     { name = "testcontainers" },
 ]
 
@@ -2376,6 +2411,7 @@ requires-dist = [
 dev = [
     { name = "greenlet", specifier = ">=3.0.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.0.0" },
+    { name = "pytest-integration-mark", specifier = ">=0.2.0" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.0.0" },
 ]
 
@@ -2394,6 +2430,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pytest-integration-mark" },
     { name = "testcontainers" },
 ]
 
@@ -2408,7 +2445,10 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "testcontainers", specifier = ">=4.13.3" }]
+dev = [
+    { name = "pytest-integration-mark", specifier = ">=0.2.0" },
+    { name = "testcontainers", specifier = ">=4.13.3" },
+]
 
 [[package]]
 name = "spakky-security"
@@ -2442,6 +2482,7 @@ dependencies = [
 dev = [
     { name = "greenlet" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pytest-integration-mark" },
     { name = "testcontainers" },
 ]
 
@@ -2455,6 +2496,7 @@ requires-dist = [
 dev = [
     { name = "greenlet", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.6" },
+    { name = "pytest-integration-mark", specifier = ">=0.2.0" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.13.3" },
 ]
 
