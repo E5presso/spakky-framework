@@ -45,7 +45,6 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
 
     def _create_sync_endpoint(
         self,
-        method_name: str,
         handler_type: type[object],
         method: Callable[..., Any],
     ) -> Callable[..., Any]:
@@ -57,8 +56,8 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
             token = celery_task_context.set(True)
             try:
                 handler_instance = self.__container.get(handler_type)
-                method_to_call = getattr(handler_instance, method_name)
-                return method_to_call(*args, **kwargs)
+                bound_method = method.__get__(handler_instance, handler_type)
+                return bound_method(*args, **kwargs)
             finally:
                 celery_task_context.reset(token)
 
@@ -66,7 +65,6 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
 
     def _create_async_endpoint(
         self,
-        method_name: str,
         handler_type: type[object],
         method: Callable[..., Any],
     ) -> Callable[..., Any]:
@@ -88,8 +86,8 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
             try:
                 self.__application_context.clear_context()
                 handler_instance = self.__container.get(handler_type)
-                method_to_call = getattr(handler_instance, method_name)
-                return await method_to_call(*args, **kwargs)
+                bound_method = method.__get__(handler_instance, handler_type)
+                return await bound_method(*args, **kwargs)
             finally:
                 celery_task_context.reset(token)
 
@@ -106,15 +104,15 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
         celery_app = self.__container.get(CeleryApp)
         pod_type = TaskHandler.get(pod).type_
 
-        for name, method in getmembers(pod_type, isfunction):
+        for _, method in getmembers(pod_type, isfunction):
             route: TaskRoute | None = TaskRoute.get_or_none(method)
             if route is None:
                 continue
 
             if iscoroutinefunction(method):
-                endpoint = self._create_async_endpoint(name, pod_type, method)
+                endpoint = self._create_async_endpoint(pod_type, method)
             else:
-                endpoint = self._create_sync_endpoint(name, pod_type, method)
+                endpoint = self._create_sync_endpoint(pod_type, method)
 
             task_name = get_fully_qualified_name(method)
             celery_app.register_task(task_name, endpoint)
