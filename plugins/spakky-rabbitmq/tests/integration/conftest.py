@@ -18,13 +18,27 @@ from tests import apps
 
 @pytest.fixture(name="environment_variables", scope="package", autouse=True)
 def setup_environment_variables_fixture() -> Generator[None, Any, None]:
-    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
-    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
-    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = str(25672)
-    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "test"
-    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "test"
-    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME"] = "test_exchange"
-    yield
+    env_updates = {
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL": "false",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST": "localhost",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT": str(25672),
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}USER": "test",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD": "test",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME": "test_exchange",
+    }
+    previous_values = {key: environ.get(key) for key in env_updates}
+
+    for key, value in env_updates.items():
+        environ[key] = value
+
+    try:
+        yield
+    finally:
+        for key, previous_value in previous_values.items():
+            if previous_value is None:
+                environ.pop(key, None)
+            else:
+                environ[key] = previous_value
 
 
 @pytest.fixture(scope="package", autouse=True)

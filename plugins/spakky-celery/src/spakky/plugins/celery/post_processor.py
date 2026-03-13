@@ -1,7 +1,9 @@
 """Post-processor for registering TaskHandler methods as Celery tasks."""
 
-from inspect import getmembers
+from functools import wraps
+from inspect import getmembers, isfunction
 from logging import getLogger
+from typing import Any
 
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
@@ -39,15 +41,27 @@ class CeleryPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAw
             return pod
 
         celery_app = self.__container.get(CeleryApp)
-        pod_type = type(pod)
+        pod_type = TaskHandler.get(pod).type_
 
-        for _, method in getmembers(pod, callable):
+        for name, method in getmembers(pod_type, isfunction):
             route: TaskRoute | None = TaskRoute.get_or_none(method)
             if route is None:
                 continue
 
+            @wraps(method)
+            def endpoint(
+                *args: Any,
+                method_name: str = name,
+                handler_type: type[object] = pod_type,
+                **kwargs: Any,
+            ) -> Any:
+                self.__application_context.clear_context()
+                handler_instance = self.__container.get(handler_type)
+                method_to_call = getattr(handler_instance, method_name)
+                return method_to_call(*args, **kwargs)
+
             task_name = get_fully_qualified_name(method)
-            celery_app.register_task(task_name, method)
+            celery_app.register_task(task_name, endpoint)
             logger.debug(
                 "Registered task '%s' from handler '%s'",
                 task_name,

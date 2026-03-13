@@ -109,3 +109,52 @@ def test_celery_post_processor_returns_pod() -> None:
     result = post_processor.post_process(handler)
 
     assert result is handler
+
+
+def test_celery_post_processor_registers_wrapper_with_context_isolation() -> None:
+    """등록된 래퍼가 실행 시 컨텍스트를 비우고 컨테이너에서 핸들러를 다시 조회하는지 검증한다."""
+
+    @TaskHandler()
+    class TrackingTaskHandler:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        @task
+        def track(self, value: str) -> str:
+            self.calls.append(value)
+            return value
+
+    celery_app_mock = MagicMock()
+    application_context_mock = MagicMock()
+    tracking_handler = TrackingTaskHandler()
+
+    container_mock = MagicMock()
+
+    def get_from_container(type_: object) -> object:
+        if type_ is CeleryApp:
+            return celery_app_mock
+        if type_ is TrackingTaskHandler:
+            return tracking_handler
+        raise AssertionError(f"Unexpected dependency lookup: {type_}")
+
+    container_mock.get.side_effect = get_from_container
+
+    post_processor = CeleryPostProcessor()
+    post_processor.set_container(container_mock)
+    post_processor.set_application_context(application_context_mock)
+
+    post_processor.post_process(tracking_handler)
+
+    register_calls = celery_app_mock.register_task.call_args_list
+    endpoint = next(
+        handler
+        for task_name, handler in (call.args for call in register_calls)
+        if task_name.endswith(".track")
+    )
+
+    result = endpoint("payload")
+
+    application_context_mock.clear_context.assert_called_once()
+    assert container_mock.get.call_count >= 2
+    assert tracking_handler.calls == ["payload"]
+    assert result == "payload"

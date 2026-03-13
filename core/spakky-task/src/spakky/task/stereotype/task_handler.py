@@ -5,10 +5,12 @@ for organizing task-queue-driven architectures.
 """
 
 from dataclasses import dataclass
-from typing import Callable, ParamSpec, TypeVar, cast, overload
+from typing import Callable, Literal, ParamSpec, TypeVar, cast, overload
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
+
+from spakky.task.interfaces.task_result import AbstractTaskResult
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -30,14 +32,26 @@ def task(obj: Callable[P, T]) -> Callable[P, T]: ...
 
 
 @overload
-def task(*, background: bool = ...) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
+def task(
+    *, background: Literal[False] = ...
+) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
+
+
+@overload
+def task(
+    *, background: Literal[True]
+) -> Callable[[Callable[P, T]], Callable[P, AbstractTaskResult[T]]]: ...
 
 
 def task(
     obj: Callable[P, T] | None = None,
     *,
     background: bool = False,
-) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
+) -> (
+    Callable[P, T]
+    | Callable[[Callable[P, T]], Callable[P, T]]
+    | Callable[[Callable[P, T]], Callable[P, AbstractTaskResult[T]]]
+):
     """Decorator for marking methods as dispatchable tasks.
 
     Example:

@@ -14,6 +14,7 @@ from spakky.task.stereotype.task_handler import TaskRoute
 
 from celery import current_task
 from spakky.plugins.celery.app import CeleryApp
+from spakky.plugins.celery.common.task_result import CeleryTaskResult
 
 logger = getLogger(__name__)
 
@@ -25,7 +26,7 @@ class CeleryTaskDispatchAspect(IAspect):
 
     Behavior depends on TaskRoute.background:
     - background=False (default): execute via apply() with Celery's retry/error handling
-    - background=True: dispatch to broker via send_task()
+    - background=True: dispatch to broker via send_task() and return AsyncResult
     """
 
     _celery_app: CeleryApp
@@ -48,8 +49,11 @@ class CeleryTaskDispatchAspect(IAspect):
             result = celery_task.apply(args=args, kwargs=kwargs)
             return result.get()
 
-        self._celery_app.celery.send_task(task_name, args=args, kwargs=kwargs)
+        async_result = self._celery_app.celery.send_task(
+            task_name, args=args, kwargs=kwargs
+        )
         logger.debug("Dispatched task %s", task_name)
+        return CeleryTaskResult(async_result)
 
 
 @Order(0)
@@ -59,7 +63,7 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect):
 
     Behavior depends on TaskRoute.background:
     - background=False (default): execute via apply() with Celery's retry/error handling
-    - background=True: dispatch to broker via send_task()
+    - background=True: dispatch to broker via send_task() and return AsyncResult
     """
 
     _celery_app: CeleryApp
@@ -84,5 +88,8 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect):
             result = celery_task.apply(args=args, kwargs=kwargs)
             return result.get()
 
-        self._celery_app.celery.send_task(task_name, args=args, kwargs=kwargs)
+        async_result = self._celery_app.celery.send_task(
+            task_name, args=args, kwargs=kwargs
+        )
         logger.debug("Dispatched task %s (async)", task_name)
+        return CeleryTaskResult(async_result)

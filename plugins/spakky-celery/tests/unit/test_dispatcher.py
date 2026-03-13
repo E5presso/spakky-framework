@@ -11,6 +11,7 @@ from spakky.plugins.celery.aspects.task_dispatch import (
     AsyncCeleryTaskDispatchAspect,
     CeleryTaskDispatchAspect,
 )
+from spakky.plugins.celery.common.task_result import CeleryTaskResult
 
 # Test constants for task naming
 TEST_MODULE = "test_module"
@@ -72,13 +73,19 @@ def test_around_dispatches_task_via_send_task() -> None:
     aspect = CeleryTaskDispatchAspect(celery_app)
     joinpoint = _create_joinpoint("send_email", celery_app, background=True)
 
-    aspect.around(joinpoint, to="test@example.com", subject="Hi")
+    mock_async_result = MagicMock()
+    mock_async_result.id = "task-abc-123"
+    celery_app.celery.send_task.return_value = mock_async_result
+
+    result = aspect.around(joinpoint, to="test@example.com", subject="Hi")
 
     celery_app.celery.send_task.assert_called_once_with(
         _make_task_name("send_email"),
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
     )
+    assert isinstance(result, CeleryTaskResult)
+    assert result.task_id == "task-abc-123"
 
 
 def test_around_dispatches_task_with_positional_args() -> None:
@@ -208,13 +215,19 @@ async def test_async_around_dispatches_task_via_send_task() -> None:
     aspect = AsyncCeleryTaskDispatchAspect(celery_app)
     joinpoint = _create_async_joinpoint("async_send_email", celery_app, background=True)
 
-    await aspect.around_async(joinpoint, to="test@example.com", subject="Hi")
+    mock_async_result = MagicMock()
+    mock_async_result.id = "task-async-456"
+    celery_app.celery.send_task.return_value = mock_async_result
+
+    result = await aspect.around_async(joinpoint, to="test@example.com", subject="Hi")
 
     celery_app.celery.send_task.assert_called_once_with(
         _make_task_name("async_send_email"),
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
     )
+    assert isinstance(result, CeleryTaskResult)
+    assert result.task_id == "task-async-456"
 
 
 @pytest.mark.asyncio
