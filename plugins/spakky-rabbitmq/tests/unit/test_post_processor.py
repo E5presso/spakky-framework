@@ -6,7 +6,9 @@ and correctly ignores DomainEvent handlers.
 
 from unittest.mock import Mock
 
+import pytest
 from spakky.core.application.application_context import ApplicationContext
+from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 from spakky.event.event_consumer import (
     IAsyncEventConsumer,
@@ -17,12 +19,14 @@ from spakky.event.stereotype.event_handler import EventHandler, on_event
 from spakky.plugins.rabbitmq.post_processor import RabbitMQPostProcessor
 
 
+@immutable
 class SampleIntegrationEvent(AbstractIntegrationEvent):
     """Test integration event for testing."""
 
     message: str
 
 
+@immutable
 class SampleDomainEvent(AbstractDomainEvent):
     """Test domain event for testing."""
 
@@ -194,3 +198,161 @@ def test_rabbitmq_post_processor_mixed_events_expect_only_integration_registered
 
     # DomainEvent should not be registered
     mock_async_consumer.register.assert_not_called()
+
+
+def test_rabbitmq_post_processor_non_event_handler_expect_pod_returned() -> None:
+    """EventHandler가 아닌 일반 Pod는 그대로 반환됨을 검증한다."""
+
+    class RegularPod:
+        def some_method(self) -> None:
+            pass
+
+    post_processor = RabbitMQPostProcessor()
+    pod = RegularPod()
+
+    result = post_processor.post_process(pod)
+
+    assert result is pod
+
+
+def test_rabbitmq_post_processor_method_without_event_route_expect_skipped() -> None:
+    """@on_event 없는 메서드는 스킵됨을 검증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+        def regular_method(self) -> None:
+            """This method has no @on_event decorator."""
+            pass
+
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    post_processor.post_process(handler_instance)
+
+    # Only IntegrationEvent handler should be registered
+    mock_consumer.register.assert_called_once()
+
+
+def test_rabbitmq_post_processor_sync_endpoint_invocation_expect_handler_called() -> (
+    None
+):
+    """등록된 동기 endpoint가 호출되면 실제 핸들러가 실행됨을 검증한다."""
+    handler_called: dict[str, bool | str] = {"value": False, "result": ""}
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            handler_called["value"] = True
+            handler_called["result"] = f"handled: {event.message}"
+
+    captured_endpoint = {"fn": None}
+
+    def capture_register(event_type: type, endpoint: Mock) -> None:
+        captured_endpoint["fn"] = endpoint
+
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_consumer.register.side_effect = capture_register
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+
+    handler_instance = SampleEventHandler()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else handler_instance
+        if t == SampleEventHandler
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    post_processor.post_process(handler_instance)
+
+    # Invoke the captured endpoint
+    event = SampleIntegrationEvent(message="test")
+    assert captured_endpoint["fn"] is not None
+    captured_endpoint["fn"](event)
+
+    assert handler_called["value"] is True
+    assert handler_called["result"] == "handled: test"
+    mock_context.clear_context.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_rabbitmq_post_processor_async_endpoint_invocation_expect_handler_called() -> (
+    None
+):
+    """등록된 비동기 endpoint가 호출되면 실제 핸들러가 실행됨을 검증한다."""
+
+    handler_called: dict[str, bool | str] = {"value": False, "result": ""}
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        async def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            handler_called["value"] = True
+            handler_called["result"] = f"handled: {event.message}"
+
+    captured_endpoint = {"fn": None}
+
+    def capture_register(event_type: type, endpoint: Mock) -> None:
+        captured_endpoint["fn"] = endpoint
+
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+    mock_async_consumer.register.side_effect = capture_register
+
+    handler_instance = SampleEventHandler()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else handler_instance
+        if t == SampleEventHandler
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    post_processor.post_process(handler_instance)
+
+    # Invoke the captured async endpoint
+    event = SampleIntegrationEvent(message="test")
+    assert captured_endpoint["fn"] is not None
+    await captured_endpoint["fn"](event)
+
+    assert handler_called["value"] is True
+    assert handler_called["result"] == "handled: test"
+    mock_context.clear_context.assert_called_once()
