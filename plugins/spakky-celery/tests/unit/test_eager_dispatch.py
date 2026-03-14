@@ -1,16 +1,16 @@
-"""Unit tests for Celery task dispatch with background=False (default).
+"""Unit tests for Celery task dispatch via full SpakkyApplication.
 
-With background=False, the CeleryTaskDispatchAspect executes tasks immediately
-via joinpoint() instead of dispatching to the broker.
+Verifies that @task methods are intercepted by CeleryTaskDispatchAspect
+and dispatched to the broker via send_task().
 """
 
+from celery import Celery
 from spakky.core.application.application import SpakkyApplication
 
-from spakky.plugins.celery.app import CeleryApp
+from spakky.plugins.celery.common.task_result import CeleryTaskResult
 from tests.apps.dummy import (
     EmailTaskHandler,
     ReportTaskHandler,
-    execution_record,
 )
 
 # =============================================================================
@@ -23,80 +23,84 @@ def test_task_handlers_registered_on_app_start_expect_tasks_in_celery(
 ) -> None:
     """TaskHandler로 어노테이션된 Pod가 앱 시작 시 Celery 태스크로 등록된다."""
     # Given: SpakkyApplication with Celery plugin started
-    celery_app = app.container.get(CeleryApp)
+    celery = app.container.get(Celery)
 
     # When: Application has started (via fixture)
 
     # Then: All @task decorated methods are registered with fully qualified names
-    registered_tasks = celery_app.task_routes
+    registered_tasks = celery.tasks
     email_handler_prefix = "tests.apps.dummy.EmailTaskHandler"
     report_handler_prefix = "tests.apps.dummy.ReportTaskHandler"
 
     assert f"{email_handler_prefix}.send_email" in registered_tasks
-    assert f"{email_handler_prefix}.send_email_async" in registered_tasks
     assert f"{email_handler_prefix}.send_bulk_emails" in registered_tasks
-    assert f"{email_handler_prefix}.send_bulk_emails_async" in registered_tasks
     assert f"{report_handler_prefix}.generate_report" in registered_tasks
-    assert f"{report_handler_prefix}.generate_report_async" in registered_tasks
     assert f"{report_handler_prefix}.export_report" in registered_tasks
-    assert f"{report_handler_prefix}.export_report_async" in registered_tasks
 
 
-# =============================================================================
-# Scenario: Synchronous Task Dispatch via AOP
-# =============================================================================
-
-
-def test_call_email_task_expect_task_executed(
+def test_scheduled_tasks_registered_in_beat_schedule(
     app: SpakkyApplication,
 ) -> None:
-    """이메일 태스크 메서드 호출 시 Celery를 통해 태스크가 실행된다."""
+    """@schedule 메서드가 Celery beat_schedule에 등록된다."""
+    celery = app.container.get(Celery)
+    beat_schedule = celery.conf.beat_schedule
+    scheduled_prefix = "tests.apps.dummy.ScheduledTaskHandler"
+
+    assert f"{scheduled_prefix}.health_check" in beat_schedule
+    assert f"{scheduled_prefix}.daily_cleanup" in beat_schedule
+    assert f"{scheduled_prefix}.triweekly_report" in beat_schedule
+
+
+# =============================================================================
+# Scenario: Task Dispatch via AOP
+# =============================================================================
+
+
+def test_call_task_method_expect_dispatched_and_returns_task_result(
+    app: SpakkyApplication,
+) -> None:
+    """@task 메서드 호출 시 send_task()로 디스패치되고 CeleryTaskResult를 반환한다."""
     # Given: A registered email handler (proxied with CeleryTaskDispatchAspect)
     email_handler = app.container.get(EmailTaskHandler)
 
-    # When: Calling a @task method directly
-    email_handler.send_email(
+    # When: Calling a @task method
+    result = email_handler.send_email(
         to="user@example.com",
         subject="Welcome",
         body="Hello, welcome!",
     )
 
-    # Then: Task execution is recorded
-    assert execution_record.count("send_email") == 1
-    recorded = execution_record.executions[0]
-    assert recorded["to"] == "user@example.com"
-    assert recorded["subject"] == "Welcome"
-    assert recorded["body"] == "Hello, welcome!"
+    # Then: Returns CeleryTaskResult (task dispatched via send_task)
+    assert isinstance(result, CeleryTaskResult)
 
 
-def test_call_multiple_tasks_expect_all_executed(
+def test_call_multiple_tasks_expect_all_return_task_results(
     app: SpakkyApplication,
 ) -> None:
-    """여러 태스크 메서드 연속 호출 시 모두 실행된다."""
+    """여러 @task 메서드 호출 시 모두 CeleryTaskResult를 반환한다."""
     # Given: Task handlers
     email_handler = app.container.get(EmailTaskHandler)
     report_handler = app.container.get(ReportTaskHandler)
 
     # When: Calling multiple @task methods
-    email_handler.send_email(
+    result1 = email_handler.send_email(
         to="admin@example.com",
         subject="Alert",
         body="System alert",
     )
-    report_handler.generate_report(
+    result2 = report_handler.generate_report(
         report_type="sales",
         params={"month": "March"},
     )
-    email_handler.send_bulk_emails(
+    result3 = email_handler.send_bulk_emails(
         recipients=["a@test.com", "b@test.com", "c@test.com"],
         subject="Newsletter",
     )
 
-    # Then: All tasks are executed
-    assert execution_record.count("send_email") == 1
-    assert execution_record.count("generate_report") == 1
-    assert execution_record.count("send_bulk_emails") == 1
-    assert execution_record.count() == 3
+    # Then: All return CeleryTaskResult
+    assert isinstance(result1, CeleryTaskResult)
+    assert isinstance(result2, CeleryTaskResult)
+    assert isinstance(result3, CeleryTaskResult)
 
 
 # =============================================================================
@@ -116,35 +120,3 @@ def test_task_handlers_are_singletons_expect_same_instance(
 
     # Then: Same instance is returned
     assert handler1 is handler2
-
-
-def test_different_handlers_are_independent_expect_separate_executions(
-    app: SpakkyApplication,
-) -> None:
-    """서로 다른 TaskHandler의 태스크는 독립적으로 실행된다."""
-    # Given: Task handlers
-    email_handler = app.container.get(EmailTaskHandler)
-    report_handler = app.container.get(ReportTaskHandler)
-
-    # When: Calling tasks from different handlers
-    email_handler.send_email(
-        to="test@example.com",
-        subject="Test",
-        body="Test body",
-    )
-    report_handler.export_report(
-        report_id="report-123",
-        format="pdf",
-    )
-
-    # Then: Each handler's task is recorded separately
-    email_executions = [
-        e for e in execution_record.executions if e["task_name"] == "send_email"
-    ]
-    report_executions = [
-        e for e in execution_record.executions if e["task_name"] == "export_report"
-    ]
-    assert len(email_executions) == 1
-    assert len(report_executions) == 1
-    assert email_executions[0]["to"] == "test@example.com"
-    assert report_executions[0]["report_id"] == "report-123"

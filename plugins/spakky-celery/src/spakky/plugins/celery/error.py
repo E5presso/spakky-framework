@@ -9,3 +9,9 @@ class AbstractSpakkyCeleryError(AbstractSpakkyFrameworkError, ABC):
     """Base exception for Spakky Celery errors."""
 
     ...
+
+
+class InvalidScheduleRouteError(AbstractSpakkyCeleryError):
+    """Raised when a ScheduleRoute has no valid schedule specification."""
+
+    message = "ScheduleRoute has no schedule specification"

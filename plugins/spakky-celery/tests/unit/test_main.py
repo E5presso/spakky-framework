@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, call
 
-from spakky.plugins.celery.app import CeleryApp
 from spakky.plugins.celery.aspects.task_dispatch import (
     AsyncCeleryTaskDispatchAspect,
     CeleryTaskDispatchAspect,
@@ -20,10 +19,9 @@ def test_initialize_registers_all_components() -> None:
 
     expected_calls = [
         call(CeleryConfig),
-        call(CeleryApp),
         call(CeleryPostProcessor),
         call(CeleryTaskDispatchAspect),
         call(AsyncCeleryTaskDispatchAspect),
     ]
     app.add.assert_has_calls(expected_calls, any_order=False)
-    assert app.add.call_count == 5
+    assert app.add.call_count == 4

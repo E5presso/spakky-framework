@@ -10,14 +10,18 @@ from os import environ
 from typing import Any, Generator
 
 import pytest
+from celery import Celery
 from celery.contrib.testing.worker import start_worker
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
 from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore[import-untyped]
 
 import spakky.plugins.celery
-from spakky.plugins.celery.app import CeleryApp
-from spakky.plugins.celery.common.config import SPAKKY_CELERY_CONFIG_ENV_PREFIX
+from spakky.plugins.celery.common.config import (
+    SPAKKY_CELERY_CONFIG_ENV_PREFIX,
+    CeleryConfig,
+)
 from tests import apps
 from tests.apps.dummy import execution_record
 
@@ -54,6 +58,11 @@ def app_with_worker_fixture(
     rabbitmq_container: RabbitMqContainer,
 ) -> Generator[SpakkyApplication, Any, None]:
     """Create SpakkyApplication with Celery plugin and running worker."""
+
+    @Pod()
+    def get_celery(config: CeleryConfig) -> Celery:
+        return Celery(main=config.app_name, broker=config.broker_url)
+
     logger = getLogger("debug")
     logger.setLevel(logging.DEBUG)
     console = StreamHandler()
@@ -64,19 +73,20 @@ def app_with_worker_fixture(
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky.plugins.celery.PLUGIN_NAME})
+        .add(get_celery)
         .scan(apps)
     )
     app.start()
 
-    celery_app = app.container.get(CeleryApp).celery
+    celery_instance = app.container.get(Celery)
 
     # Start worker in a thread (perform_ping_check=False because we register tasks dynamically)
     with start_worker(
-        celery_app,
+        celery_instance,
         pool="solo",
         loglevel="INFO",
         perform_ping_check=False,
-        shutdown_timeout=10.0,
+        shutdown_timeout=30.0,
     ):
         yield app
 

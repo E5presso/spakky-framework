@@ -816,11 +816,6 @@ sequenceDiagram
 
 주요 아키텍처 의사결정은 [docs/adr/](docs/adr/README.md)에 ADR(Architecture Decision Record)로 관리합니다.
 
-| # | 제목 | 상태 | 날짜 |
-|---|------|------|------|
-| [ADR-0001](docs/adr/0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus/EventTransport 분리, Outbox Seam | Accepted | 2026-03-06 |
-| [ADR-0002](docs/adr/0002-outbox-plugin-architecture.md) | Outbox 플러그인 아키텍처 — 추상화와 구현체 분리 | Accepted | 2026-03-10 |
-
 ---
 
 ## 참고 자료

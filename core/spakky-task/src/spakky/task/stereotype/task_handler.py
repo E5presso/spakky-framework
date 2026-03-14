@@ -5,12 +5,10 @@ for organizing task-queue-driven architectures.
 """
 
 from dataclasses import dataclass
-from typing import Callable, Literal, ParamSpec, TypeVar, cast, overload
+from typing import Callable, ParamSpec, TypeVar, cast
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
-
-from spakky.task.interfaces.task_result import AbstractTaskResult
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -23,61 +21,27 @@ class TaskRoute(FunctionAnnotation):
     Associates a method as a task that can be dispatched to a task queue.
     """
 
-    background: bool = False
-    """If True, dispatch to the task queue. If False (default), execute immediately."""
 
-
-@overload
-def task(obj: Callable[P, T]) -> Callable[P, T]: ...
-
-
-@overload
-def task(
-    *, background: Literal[False] = ...
-) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
-
-
-@overload
-def task(
-    *, background: Literal[True]
-) -> Callable[[Callable[P, T]], Callable[P, AbstractTaskResult[T]]]: ...
-
-
-def task(
-    obj: Callable[P, T] | None = None,
-    *,
-    background: bool = False,
-) -> (
-    Callable[P, T]
-    | Callable[[Callable[P, T]], Callable[P, T]]
-    | Callable[[Callable[P, T]], Callable[P, AbstractTaskResult[T]]]
-):
+def task(obj: Callable[P, T]) -> Callable[P, T]:
     """Decorator for marking methods as dispatchable tasks.
+
+    All @task methods are dispatched to the task queue by the plugin aspect.
 
     Example:
         @TaskHandler()
         class EmailTaskHandler:
             @task
             def send_email(self, to: str, subject: str, body: str) -> None:
-                # Executed immediately (default)
-                pass
-
-            @task(background=True)
-            def send_bulk_emails(self, recipients: list[str]) -> None:
-                # Dispatched to task queue (background)
-                pass
+                ...
 
     Args:
-        obj: The method to mark as a task (when used without arguments).
-        background: If True, dispatch to queue. If False (default), execute immediately.
+        obj: The method to mark as a task.
 
     Returns:
-        The annotated method, or a decorator if called with arguments.
+        The annotated method.
     """
-    route = TaskRoute(background=background)
-    if obj is not None:
-        return cast(Callable[P, T], route(obj))
-    return route
+    route = TaskRoute()
+    return cast(Callable[P, T], route(obj))
 
 
 @dataclass(eq=False)

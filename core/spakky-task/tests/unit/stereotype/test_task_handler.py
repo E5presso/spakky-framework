@@ -102,29 +102,15 @@ def test_multiple_task_methods_in_handler() -> None:
     assert TaskRoute.exists(handler.not_a_task) is False
 
 
-def test_task_default_background_false() -> None:
-    """@task (옵션 없이) 사용 시 background가 False인지 검증한다."""
+def test_task_decorator_is_simple_callable() -> None:
+    """@task 데코레이터가 인자 없이 바로 메서드에 적용되는지 검증한다."""
 
     @TaskHandler()
-    class DefaultTaskHandler:
+    class SimpleTaskHandler:
         @task
         def process(self) -> None:
             pass
 
-    handler = DefaultTaskHandler()
+    handler = SimpleTaskHandler()
     route = TaskRoute.get(handler.process)
-    assert route.background is False
-
-
-def test_task_with_background_true() -> None:
-    """@task(background=True)가 TaskRoute에 저장되는지 검증한다."""
-
-    @TaskHandler()
-    class BackgroundTaskHandler:
-        @task(background=True)
-        def send_email(self) -> None:
-            pass
-
-    handler = BackgroundTaskHandler()
-    route = TaskRoute.get(handler.send_email)
-    assert route.background is True
+    assert isinstance(route, TaskRoute)

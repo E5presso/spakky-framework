@@ -1,12 +1,16 @@
 """Tests for CeleryPostProcessor."""
 
-import os
+from datetime import time, timedelta
 from unittest.mock import MagicMock
 
+from celery import Celery
+from celery.schedules import crontab as celery_crontab
+from celery.schedules import schedule as celery_schedule
+from spakky.core.utils.inspection import get_fully_qualified_name
+from spakky.task.stereotype.crontab import Crontab, Weekday
+from spakky.task.stereotype.schedule import schedule
 from spakky.task.stereotype.task_handler import TaskHandler, task
 
-from spakky.plugins.celery.app import CeleryApp
-from spakky.plugins.celery.common.config import CeleryConfig
 from spakky.plugins.celery.post_processor import CeleryPostProcessor
 
 
@@ -21,46 +25,30 @@ class _SampleTaskHandler:
         pass
 
 
-def _create_config(
-    *, broker_url: str = "amqp://test:test@localhost:5672//"
-) -> CeleryConfig:
-    """테스트용 CeleryConfig를 생성한다."""
-    os.environ["SPAKKY_CELERY__BROKER_URL"] = broker_url
-    try:
-        return CeleryConfig()
-    finally:
-        del os.environ["SPAKKY_CELERY__BROKER_URL"]
+def _create_celery() -> Celery:
+    """테스트용 Celery를 생성한다."""
+    return Celery(main="test", broker="memory://")
 
 
-def _create_celery_app(config: CeleryConfig | None = None) -> CeleryApp:
-    """테스트용 CeleryApp을 생성한다."""
-    if config is None:
-        config = _create_config()
-    return CeleryApp(config)
-
-
-def _create_post_processor(celery_app: CeleryApp) -> CeleryPostProcessor:
+def _create_post_processor(celery: Celery) -> CeleryPostProcessor:
     """CeleryPostProcessor를 생성하고 Aware 인터페이스를 설정한다."""
-    container_mock = MagicMock()
-    container_mock.get.return_value = celery_app
-
     context_mock = MagicMock()
+    context_mock.get.return_value = celery
 
     post_processor = CeleryPostProcessor()
-    post_processor.set_container(container_mock)
     post_processor.set_application_context(context_mock)
     return post_processor
 
 
 def test_celery_post_processor_registers_tasks_on_post_process() -> None:
     """CeleryPostProcessor가 post_process()에서 @task 메서드를 Celery 태스크로 등록하는지 검증한다."""
-    celery_app = _create_celery_app()
-    post_processor = _create_post_processor(celery_app)
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
     handler = _SampleTaskHandler()
 
     post_processor.post_process(handler)
 
-    registered_tasks = list(celery_app.celery.tasks.keys())
+    registered_tasks = list(celery.tasks.keys())
     # Use specific prefix to avoid matching tasks from other test modules
     sample_handler_prefix = "tests.unit.test_post_processor._SampleTaskHandler"
     send_email_tasks = [
@@ -75,20 +63,23 @@ def test_celery_post_processor_registers_tasks_on_post_process() -> None:
 
 
 def test_celery_post_processor_collects_task_routes() -> None:
-    """CeleryPostProcessor가 post_process()에서 task route를 수집하는지 검증한다."""
-    celery_app = _create_celery_app()
-    post_processor = _create_post_processor(celery_app)
+    """CeleryPostProcessor가 post_process()에서 태스크를 Celery에 등록하는지 검증한다."""
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
     handler = _SampleTaskHandler()
 
     post_processor.post_process(handler)
 
-    assert len(celery_app.task_routes) == 2
+    sample_handler_prefix = "tests.unit.test_post_processor._SampleTaskHandler"
+    assert f"{sample_handler_prefix}.send_email" in celery.tasks
+    assert f"{sample_handler_prefix}.process_data" in celery.tasks
 
 
 def test_celery_post_processor_ignores_non_task_handler_pods() -> None:
     """CeleryPostProcessor가 @TaskHandler가 아닌 Pod를 무시하는지 검증한다."""
-    celery_app = _create_celery_app()
-    post_processor = _create_post_processor(celery_app)
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
+    initial_task_count = len(celery.tasks)
 
     class NotATaskHandler:
         def some_method(self) -> None:
@@ -97,13 +88,13 @@ def test_celery_post_processor_ignores_non_task_handler_pods() -> None:
     result = post_processor.post_process(NotATaskHandler())
 
     assert isinstance(result, NotATaskHandler)
-    assert len(celery_app.task_routes) == 0
+    assert len(celery.tasks) == initial_task_count
 
 
 def test_celery_post_processor_returns_pod() -> None:
     """CeleryPostProcessor.post_process()가 pod를 반환하는지 검증한다."""
-    celery_app = _create_celery_app()
-    post_processor = _create_post_processor(celery_app)
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
     handler = _SampleTaskHandler()
 
     result = post_processor.post_process(handler)
@@ -124,38 +115,31 @@ def test_celery_post_processor_registers_wrapper_with_context_isolation() -> Non
             self.calls.append(value)
             return value
 
-    celery_app_mock = MagicMock()
+    celery_mock = MagicMock()
     application_context_mock = MagicMock()
     tracking_handler = TrackingTaskHandler()
 
-    container_mock = MagicMock()
-
-    def get_from_container(type_: object) -> object:
-        if type_ is CeleryApp:
-            return celery_app_mock
+    def get_from_context(type_: object) -> object:
+        if type_ is Celery:
+            return celery_mock
         if type_ is TrackingTaskHandler:
             return tracking_handler
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
-    container_mock.get.side_effect = get_from_container
+    application_context_mock.get.side_effect = get_from_context
 
     post_processor = CeleryPostProcessor()
-    post_processor.set_container(container_mock)
     post_processor.set_application_context(application_context_mock)
 
     post_processor.post_process(tracking_handler)
 
-    register_calls = celery_app_mock.register_task.call_args_list
-    endpoint = next(
-        handler
-        for task_name, handler in (call.args for call in register_calls)
-        if task_name.endswith(".track")
-    )
+    # celery.task(name=task_name) returns a decorator, which is called with endpoint
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
 
     result = endpoint("payload")
 
     application_context_mock.clear_context.assert_called_once()
-    assert container_mock.get.call_count >= 2
+    assert application_context_mock.get.call_count >= 2
     assert tracking_handler.calls == ["payload"]
     assert result == "payload"
 
@@ -173,33 +157,25 @@ def test_celery_post_processor_registers_async_tasks() -> None:
             self.calls.append(value)
             return f"async: {value}"
 
-    celery_app_mock = MagicMock()
+    celery_mock = MagicMock()
     application_context_mock = MagicMock()
     async_handler = AsyncTaskHandler()
 
-    container_mock = MagicMock()
-
-    def get_from_container(type_: object) -> object:
-        if type_ is CeleryApp:
-            return celery_app_mock
+    def get_from_context(type_: object) -> object:
+        if type_ is Celery:
+            return celery_mock
         if type_ is AsyncTaskHandler:
             return async_handler
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
-    container_mock.get.side_effect = get_from_container
+    application_context_mock.get.side_effect = get_from_context
 
     post_processor = CeleryPostProcessor()
-    post_processor.set_container(container_mock)
     post_processor.set_application_context(application_context_mock)
 
     post_processor.post_process(async_handler)
 
-    register_calls = celery_app_mock.register_task.call_args_list
-    endpoint = next(
-        handler
-        for task_name, handler in (call.args for call in register_calls)
-        if task_name.endswith(".async_task")
-    )
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
 
     # async endpoint는 asyncio.run()으로 실행되어야 함
     result = endpoint("async_payload")
@@ -207,3 +183,91 @@ def test_celery_post_processor_registers_async_tasks() -> None:
     application_context_mock.clear_context.assert_called_once()
     assert async_handler.calls == ["async_payload"]
     assert result == "async: async_payload"
+
+
+# =============================================================================
+# Scenario: Schedule registration
+# =============================================================================
+
+
+def test_celery_post_processor_registers_interval_schedule() -> None:
+    """CeleryPostProcessor가 @schedule(interval=...) 메서드를 beat_schedule에 등록하는지 검증한다."""
+
+    @TaskHandler()
+    class ScheduledHandler:
+        @schedule(interval=timedelta(minutes=30))
+        def health_check(self) -> None:
+            pass
+
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
+
+    post_processor.post_process(ScheduledHandler())
+
+    task_name = get_fully_qualified_name(ScheduledHandler.health_check)
+    assert task_name in celery.conf.beat_schedule
+    entry = celery.conf.beat_schedule[task_name]
+    assert entry["task"] == task_name
+    assert isinstance(entry["schedule"], celery_schedule)
+
+
+def test_celery_post_processor_registers_at_schedule() -> None:
+    """CeleryPostProcessor가 @schedule(at=...) 메서드를 beat_schedule에 crontab으로 등록하는지 검증한다."""
+
+    @TaskHandler()
+    class DailyHandler:
+        @schedule(at=time(3, 0))
+        def daily_cleanup(self) -> None:
+            pass
+
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
+
+    post_processor.post_process(DailyHandler())
+
+    task_name = get_fully_qualified_name(DailyHandler.daily_cleanup)
+    assert task_name in celery.conf.beat_schedule
+    entry = celery.conf.beat_schedule[task_name]
+    assert isinstance(entry["schedule"], celery_crontab)
+
+
+def test_celery_post_processor_registers_crontab_schedule() -> None:
+    """CeleryPostProcessor가 @schedule(crontab=...) 메서드를 beat_schedule에 등록하는지 검증한다."""
+
+    @TaskHandler()
+    class WeeklyHandler:
+        @schedule(
+            crontab=Crontab(
+                hour=9, weekday=(Weekday.MONDAY, Weekday.WEDNESDAY, Weekday.FRIDAY)
+            )
+        )
+        def triweekly_report(self) -> None:
+            pass
+
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
+
+    post_processor.post_process(WeeklyHandler())
+
+    task_name = get_fully_qualified_name(WeeklyHandler.triweekly_report)
+    assert task_name in celery.conf.beat_schedule
+    entry = celery.conf.beat_schedule[task_name]
+    assert isinstance(entry["schedule"], celery_crontab)
+
+
+def test_celery_post_processor_schedule_method_also_registered_as_celery_task() -> None:
+    """@schedule 메서드도 Celery task로 등록되는지 검증한다."""
+
+    @TaskHandler()
+    class ScheduledHandler:
+        @schedule(interval=timedelta(hours=1))
+        def periodic_job(self) -> None:
+            pass
+
+    celery = _create_celery()
+    post_processor = _create_post_processor(celery)
+
+    post_processor.post_process(ScheduledHandler())
+
+    task_name = get_fully_qualified_name(ScheduledHandler.periodic_job)
+    assert task_name in celery.tasks

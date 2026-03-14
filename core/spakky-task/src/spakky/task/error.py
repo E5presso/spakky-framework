@@ -21,3 +21,9 @@ class DuplicateTaskError(AbstractSpakkyTaskError):
     """Raised when attempting to register a task that already exists."""
 
     message = "Duplicate task registered"
+
+
+class InvalidScheduleSpecificationError(AbstractSpakkyTaskError):
+    """Raised when a ScheduleRoute has invalid schedule options."""
+
+    message = "Exactly one of 'interval', 'at', or 'crontab' must be provided"
