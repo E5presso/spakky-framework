@@ -2,8 +2,9 @@
 
 [Celery](https://docs.celeryq.dev/) integration plugin for [Spakky Framework](https://github.com/E5presso/spakky-framework).
 
-Provides AOP-based automatic task dispatch — methods decorated with `@task` are intercepted
-and routed to Celery without explicit dispatcher calls.
+Provides AOP-based automatic task dispatch and periodic schedule registration —
+methods decorated with `@task` or `@schedule` are intercepted and routed to Celery
+without explicit dispatcher calls.
 
 ## Installation
 
@@ -16,8 +17,9 @@ pip install spakky-celery
 ## Features
 
 - **AOP-based dispatch**: `@task` methods are intercepted by aspects — no manual `dispatch()` calls
-- **Two dispatch modes**: `@task` (immediate via `apply()`) and `@task(background=True)` (broker via `send_task()`)
-- **Worker-context detection**: Uses Celery's `current_task` to prevent re-dispatch inside workers
+- **Broker dispatch**: All `@task` calls are sent to the Celery broker via `send_task()`
+- **Schedule registration**: `@schedule` methods are registered to Celery Beat automatically
+- **Worker-context detection**: Uses a context key to prevent re-dispatch inside workers
 - **Auto-registration**: `@TaskHandler` pods are scanned and registered as Celery tasks automatically
 - **Full configuration**: Broker URL, serializer, timezone, and more via environment variables
 
@@ -41,21 +43,35 @@ Set environment variables with the `SPAKKY_CELERY__` prefix:
 ### 1. Define task handlers
 
 ```python
-from spakky.task import TaskHandler, task
+from datetime import time, timedelta
+
+from spakky.task import TaskHandler, Crontab, Weekday, task, schedule
 
 
 @TaskHandler()
 class EmailTaskHandler:
     @task
     def send_email(self, to: str, subject: str, body: str) -> None:
-        """Immediate execution — Celery apply() with retry/error handling."""
+        """Dispatched to Celery broker via send_task()."""
         send_smtp(to, subject, body)
 
-    @task(background=True)
-    def send_bulk_emails(self, recipients: list[str]) -> None:
-        """Broker dispatch — sent to Celery worker via send_task()."""
-        for recipient in recipients:
-            send_smtp(recipient, "Newsletter", "...")
+
+@TaskHandler()
+class MaintenanceHandler:
+    @schedule(interval=timedelta(minutes=30))
+    def health_check(self) -> None:
+        """Registered as Celery Beat periodic task — runs every 30 minutes."""
+        ...
+
+    @schedule(at=time(3, 0))
+    def daily_cleanup(self) -> None:
+        """Runs daily at 03:00."""
+        ...
+
+    @schedule(crontab=Crontab(weekday=Weekday.MONDAY, hour=9))
+    def weekly_report(self) -> None:
+        """Runs every Monday at 09:00."""
+        ...
 ```
 
 ### 2. Bootstrap the application
@@ -79,35 +95,37 @@ app = (
 ```python
 handler = app.container.get(EmailTaskHandler)
 
-# Immediate execution (background=False, default)
+# Dispatched to broker — AOP intercepts and calls send_task()
 handler.send_email("user@example.com", "Hello", "World")
-
-# Dispatched to broker (background=True)
-handler.send_bulk_emails(["a@example.com", "b@example.com"])
 ```
 
 The AOP aspect intercepts the calls and routes them to Celery automatically.
 
-### Dispatch Modes
+### Dispatch Behavior
 
-| Decorator | Behavior | Celery API |
-|-----------|----------|------------|
-| `@task` | Execute immediately, block for result | `Task.apply()` |
-| `@task(background=True)` | Dispatch to broker, return immediately | `Celery.send_task()` |
+| Decorator   | Behavior                        | Celery API      |
+|-------------|--------------------------------|-----------------|
+| `@task`     | Dispatch to broker on each call | `send_task()`   |
+| `@schedule` | Register in Celery Beat         | `beat_schedule` |
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
-| `CeleryApp` | Pod wrapping Celery instance and task route registry |
 | `CeleryConfig` | Configuration loaded from environment variables |
-| `CeleryPostProcessor` | Scans `@TaskHandler` pods and registers methods as Celery tasks |
+| `CeleryPostProcessor` | Scans `@TaskHandler` pods and registers methods as Celery tasks/schedules |
 | `CeleryTaskDispatchAspect` | AOP aspect intercepting sync `@task` calls |
 | `AsyncCeleryTaskDispatchAspect` | AOP aspect intercepting async `@task` calls |
 
+## Errors
+
+| Error | Description |
+|-------|-------------|
+| `InvalidScheduleRouteError` | `ScheduleRoute` has no valid schedule specification |
+
 ## Related Packages
 
-- **`spakky-task`**: Core task abstractions (`@TaskHandler`, `@task`, `TaskRoute`)
+- **`spakky-task`**: Core task abstractions (`@TaskHandler`, `@task`, `@schedule`, `Crontab`)
 - **`spakky-rabbitmq`**: RabbitMQ event transport (can also be used as Celery broker)
 
 ## License
