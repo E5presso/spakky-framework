@@ -1,5 +1,9 @@
 # Spakky Framework - Copilot Review Instructions
 
+## 언어
+
+리뷰 코멘트는 **한국어**로 작성하세요.
+
 ## Auto Approve
 
 리뷰 포인트 및 하네스 메타 리뷰에서 문제가 발견되지 않으면 PR을 승인하세요.
