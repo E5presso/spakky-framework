@@ -32,6 +32,7 @@
 | **Core** | `spakky-domain` | DDD 빌딩 블록 (Entity, AggregateRoot, ValueObject, Event, CQRS) |
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
+| **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
@@ -40,6 +41,7 @@
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 |
 | **Plugin** | `spakky-outbox` | Transactional Outbox 패턴 (IEventBus 교체) |
 | **Plugin** | `spakky-outbox-sqlalchemy` | SQLAlchemy 기반 Outbox 저장소 구현 |
+| **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 
 ---
 
@@ -74,9 +76,15 @@ graph TB
         outbox_sa[spakky-outbox-sqlalchemy]
     end
 
+    subgraph "Task Plugins"
+        task[spakky-task<br/>@task · @schedule · Crontab]
+        celery_plugin[spakky-celery]
+    end
+
     core --> domain
     domain --> data
     data --> event
+    event --> task
 
     core --> fastapi
     core --> typer
@@ -85,6 +93,8 @@ graph TB
     event --> rabbitmq
     event --> kafka
     event --> outbox
+
+    task --> celery_plugin
 
     data --> sqlalchemy
     outbox --> outbox_sa
@@ -102,6 +112,8 @@ graph TB
     style sqlalchemy fill:#e0e0e0
     style outbox fill:#e0e0e0
     style outbox_sa fill:#e0e0e0
+    style task fill:#fff4e1
+    style celery_plugin fill:#e0e0e0
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
@@ -112,6 +124,8 @@ graph TB
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
 - **Outbox 플러그인** (outbox) → `spakky-event`까지 의존
 - **Outbox 인프라** (outbox-sqlalchemy) → `spakky-outbox` + `spakky-sqlalchemy`에 의존
+- **태스크 코어** (spakky-task) → `spakky-event`까지 의존 (전체 코어 체인)
+- **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
 
 ---
 
@@ -198,6 +212,7 @@ class UserService:
 | `@Configuration` | `spakky.core.stereotype.configuration` | 설정 클래스 |
 | `@Repository` | `spakky.data.stereotype.repository` | 데이터 접근 |
 | `@EventHandler` | `spakky.event.stereotype.event_handler` | 이벤트 처리 |
+| `@TaskHandler` | `spakky.task.stereotype.task_handler` | 태스크 핸들러 |
 | `@Aspect` / `@AsyncAspect` | `spakky.core.aop.aspect` | AOP 관점 |
 
 ### 컨테이너 (`ApplicationContext`)
@@ -356,6 +371,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
 | `spakky-outbox-sqlalchemy` | `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
+| `spakky-task` | `TaskRegistrationPostProcessor` |
+| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
 
 ---
 
@@ -760,7 +777,19 @@ sequenceDiagram
 |---------|-------------|-----------|
 | `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction | `sqlalchemy` |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
+### 태스크 플러그인
 
+| 플러그인 | 등록 컴포넌트 | 외부 의존성 |
+|---------|-------------|----------|
+| `spakky-task` | `TaskRegistrationPostProcessor` | (없음 — 추상화만 제공) |
+| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) | `celery`, `pydantic-settings` |
+
+**태스크 시스템 아키텍처:**
+
+- **`@task`**: 온디맨드 디스패치용. AOP Aspect가 호출을 가로채 브로커로 전달
+- **`@schedule`**: 정기 실행용. PostProcessor가 Celery Beat에 스케줄 등록
+- **`Crontab`**: Python 네이티브 타입 기반 cron 명세 (문자열 대신 `Weekday`/`Month` IntEnum 사용)
+- **분리 배경**: [ADR-0003](docs/adr/0003-task-schedule-decorator-split.md) 참조
 ---
 
 ## 설계 결정
@@ -815,11 +844,6 @@ sequenceDiagram
 ## Architecture Decision Records
 
 주요 아키텍처 의사결정은 [docs/adr/](docs/adr/README.md)에 ADR(Architecture Decision Record)로 관리합니다.
-
-| # | 제목 | 상태 | 날짜 |
-|---|------|------|------|
-| [ADR-0001](docs/adr/0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus/EventTransport 분리, Outbox Seam | Accepted | 2026-03-06 |
-| [ADR-0002](docs/adr/0002-outbox-plugin-architecture.md) | Outbox 플러그인 아키텍처 — 추상화와 구현체 분리 | Accepted | 2026-03-10 |
 
 ---
 

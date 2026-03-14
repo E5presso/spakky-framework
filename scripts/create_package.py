@@ -267,7 +267,14 @@ def generate_vscode_settings(pkg_type: PackageType) -> str:
     return """{
 \t"python.defaultInterpreterPath": "${workspaceFolder}/../../.venv/bin/python",
 \t"python.testing.cwd": "${workspaceFolder}",
-\t"python.testing.pytestArgs": ["--no-cov"]
+\t"python.testing.pytestArgs": ["--no-cov"],
+\t"python-envs.pythonProjects": [
+\t\t{
+\t\t\t"path": ".",
+\t\t\t"envManager": "ms-python.python:venv",
+\t\t\t"packageManager": "ms-python.python:pip"
+\t\t}
+\t]
 }
 """
 
@@ -438,6 +445,76 @@ def update_workspace_members(package_path: str) -> None:
     pyproject_path.write_text(new_content)
 
 
+def update_version_files(package_path: str) -> None:
+    """Add the new package to commitizen version_files in root pyproject.toml.
+
+    Args:
+        package_path: Relative path to the new package (e.g., "plugins/spakky-celery").
+    """
+    pyproject_path = WORKSPACE_ROOT / "pyproject.toml"
+    content = pyproject_path.read_text()
+
+    version_entry = f"{package_path}/pyproject.toml:version"
+
+    # Find the version_files array and add the new entry
+    pattern = r"(version_files = \[)(.*?)(\])"
+
+    def add_version_file(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        entries = match.group(2)
+        suffix = match.group(3)
+
+        # Parse existing entries
+        existing = [
+            e.strip().strip('"').strip("'") for e in entries.split(",") if e.strip()
+        ]
+
+        # Add new entry if not exists
+        if version_entry not in existing:
+            existing.append(version_entry)
+
+        # Format entries
+        formatted = ",\n  ".join(f'"{e}"' for e in existing)
+        return f"{prefix}\n  {formatted},\n{suffix}"
+
+    new_content = re.sub(pattern, add_version_file, content, flags=re.DOTALL)
+    pyproject_path.write_text(new_content)
+
+
+def update_uv_sources(name: str) -> None:
+    """Add the new package to uv sources in root pyproject.toml.
+
+    Args:
+        name: Package name (e.g., "spakky-celery").
+    """
+    pyproject_path = WORKSPACE_ROOT / "pyproject.toml"
+    content = pyproject_path.read_text()
+
+    source_entry = f"{name} = {{ workspace = true }}"
+
+    # Find [tool.uv.sources] section and add entry before the next section or EOF
+    pattern = r"(\[tool\.uv\.sources\]\n)(.*?)(\n\[|\Z)"
+
+    def add_source(match: re.Match[str]) -> str:
+        header = match.group(1)
+        entries = match.group(2)
+        next_section = match.group(3)
+
+        # Parse existing entries as lines
+        lines = [line for line in entries.strip().split("\n") if line.strip()]
+
+        # Check if entry already exists
+        entry_key = f"{name} ="
+        if not any(line.strip().startswith(entry_key) for line in lines):
+            lines.append(source_entry)
+
+        formatted = "\n".join(lines)
+        return f"{header}{formatted}\n{next_section}"
+
+    new_content = re.sub(pattern, add_source, content, flags=re.DOTALL)
+    pyproject_path.write_text(new_content)
+
+
 def create_package_structure(
     name: str,
     pkg_type: PackageType,
@@ -595,12 +672,14 @@ def create(
         base_dir = create_package_structure(name, pkg_type, description)
 
         # Update workspace members
-        print_info("Updating workspace members...")
+        print_info("Updating workspace configuration...")
         if pkg_type == PackageType.CORE:
             package_path = f"core/{name}"
         else:
             package_path = f"plugins/{name}"
         update_workspace_members(package_path)
+        update_version_files(package_path)
+        update_uv_sources(name)
 
         # Show created structure
         console.print()

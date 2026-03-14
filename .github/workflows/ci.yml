@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, develop]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   detect:
     name: Detect Changes
@@ -49,8 +52,8 @@ jobs:
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
-  test:
-    name: Test ${{ matrix.package }} (Python ${{ matrix.python-version }})
+  test-unit:
+    name: Unit ${{ matrix.package }} (Python ${{ matrix.python-version }})
     needs: detect
     if: needs.detect.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
@@ -91,9 +94,44 @@ jobs:
         working-directory: ${{ steps.pkg.outputs.path }}
         run: uv run pyrefly check
 
-      - name: Run tests
+      - name: Run unit tests
         working-directory: ${{ steps.pkg.outputs.path }}
         run: uv run pytest --no-cov
+
+  test-integration:
+    name: Integration ${{ matrix.package }}
+    needs: detect
+    if: needs.detect.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.detect.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-packages --all-extras
+
+      - name: Get package path
+        id: pkg
+        run: |
+          PKG_PATH=$(uv run python scripts/get_package_path.py "${{ matrix.package }}")
+          echo "path=$PKG_PATH" >> $GITHUB_OUTPUT
+
+      - name: Run integration tests
+        working-directory: ${{ steps.pkg.outputs.path }}
+        run: |
+          if [ -d "tests/integration" ]; then
+            uv run pytest --with-integration -m integration --no-cov
+          else
+            echo "No integration tests found, skipping."
+          fi
 
   coverage:
     name: Coverage ${{ matrix.package }}
@@ -123,12 +161,20 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: ${{ steps.pkg.outputs.path }}
-        run: uv run pytest --cov --cov-report=xml:coverage.xml
+        run: uv run pytest --with-integration --cov --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy
 
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ${{ steps.pkg.outputs.path }}/coverage.xml
+          files: ${{ steps.pkg.outputs.path }}/coverage.xml
           flags: ${{ matrix.package }}
           fail_ci_if_error: false
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.pkg.outputs.path }}/junit.xml
+          flags: ${{ matrix.package }}

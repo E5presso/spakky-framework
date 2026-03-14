@@ -100,3 +100,17 @@ def test_multiple_task_methods_in_handler() -> None:
     assert TaskRoute.exists(handler.task_one) is True
     assert TaskRoute.exists(handler.task_two) is True
     assert TaskRoute.exists(handler.not_a_task) is False
+
+
+def test_task_decorator_is_simple_callable() -> None:
+    """@task 데코레이터가 인자 없이 바로 메서드에 적용되는지 검증한다."""
+
+    @TaskHandler()
+    class SimpleTaskHandler:
+        @task
+        def process(self) -> None:
+            pass
+
+    handler = SimpleTaskHandler()
+    route = TaskRoute.get(handler.process)
+    assert isinstance(route, TaskRoute)

@@ -24,7 +24,7 @@ repos:
         always_run: true
 
       - id: pytest
-        name: Run pytest
+        name: Run pytest (unit tests only)
         entry: bash -c 'if [ -d "plugins/spakky-kafka" ]; then cd plugins/spakky-kafka; fi && uv run pytest'
         language: system
         types: [python]

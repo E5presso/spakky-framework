@@ -7,17 +7,17 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
-    "fastapi[standard]>=0.122.0",
-    "orjson>=3.11.4",
+    "fastapi[standard]>=0.135.1",
+    "orjson>=3.11.7",
     "spakky>=6.0.0",
-    "websockets>=15.0.1",
+    "websockets>=16.0",
 ]
 
 [project.entry-points."spakky.plugins"]
 spakky-fastapi = "spakky.plugins.fastapi.main:initialize"
 
 [build-system]
-requires = ["uv_build>=0.9.13,<0.10.0"]
+requires = ["uv_build>=0.10.10,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -52,7 +52,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/fastapi/*"]
+include = ["src/spakky/plugins/fastapi/**/*.py"]
 branch = true
 
 [tool.coverage.report]

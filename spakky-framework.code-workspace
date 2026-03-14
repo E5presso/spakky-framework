@@ -64,6 +64,10 @@
 			"name": "plugins.outbox-sqlalchemy",
 			"path": "plugins/spakky-outbox-sqlalchemy",
 		},
+		{
+			"name": "plugins.celery",
+			"path": "plugins/spakky-celery",
+		},
 	],
 	"settings": {
 		"[python]": {
@@ -162,8 +166,6 @@
 				"matchCommandLine": true,
 			},
 		},
-		"python-envs.defaultEnvManager": "ms-python.python:venv",
-		"python-envs.defaultPackageManager": "ms-python.python:pip",
 	},
 	"extensions": {
 		"recommendations": [

@@ -67,6 +67,19 @@ The table schema (`spakky_event_outbox`):
 2. **Fetch**: Uses `UPDATE ... RETURNING` with `claimed_at` for atomic claim, preventing duplicate publishing
 3. **Publish**: Relay calls external transport (Kafka/RabbitMQ) and marks as published
 
+## Components
+
+| Component | Description |
+|-----------|-------------|
+| `SQLAlchemyOutboxStorage` | Sync storage implementation using SQLAlchemy sessions |
+| `AsyncSQLAlchemyOutboxStorage` | Async storage implementation using SQLAlchemy async sessions |
+| `OutboxBase` | SQLAlchemy declarative base for the outbox table |
+
+## Related Packages
+
+- **`spakky-outbox`**: Core outbox abstractions and relay
+- **`spakky-sqlalchemy`**: SQLAlchemy plugin (required for database sessions)
+
 ## License
 
 MIT License

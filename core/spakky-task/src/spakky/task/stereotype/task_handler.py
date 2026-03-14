@@ -5,13 +5,13 @@ for organizing task-queue-driven architectures.
 """
 
 from dataclasses import dataclass
-from typing import Callable, TypeVar
+from typing import Callable, ParamSpec, TypeVar, cast
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
 
+P = ParamSpec("P")
 T = TypeVar("T")
-"""Type variable for task method return types."""
 
 
 @dataclass
@@ -21,27 +21,27 @@ class TaskRoute(FunctionAnnotation):
     Associates a method as a task that can be dispatched to a task queue.
     """
 
-    ...
 
-
-def task(obj: Callable[..., T]) -> Callable[..., T]:
+def task(obj: Callable[P, T]) -> Callable[P, T]:
     """Decorator for marking methods as dispatchable tasks.
 
-    Args:
-        obj: The method to mark as a task.
-
-    Returns:
-        The annotated method.
+    All @task methods are dispatched to the task queue by the plugin aspect.
 
     Example:
         @TaskHandler()
         class EmailTaskHandler:
             @task
             def send_email(self, to: str, subject: str, body: str) -> None:
-                # Task implementation
-                pass
+                ...
+
+    Args:
+        obj: The method to mark as a task.
+
+    Returns:
+        The annotated method.
     """
-    return TaskRoute()(obj)
+    route = TaskRoute()
+    return cast(Callable[P, T], route(obj))
 
 
 @dataclass(eq=False)

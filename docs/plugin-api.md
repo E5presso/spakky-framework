@@ -51,6 +51,7 @@ app.load_plugins(include={
 | `spakky-domain` | DDD 빌딩 블록                  |
 | `spakky-data`   | Repository, Transaction 추상화 |
 | `spakky-event`  | 인프로세스 이벤트 시스템       |
+| `spakky-task`   | 태스크 큐 추상화 (@TaskHandler, @task, @schedule) |
 
 ### UI 플러그인
 
@@ -69,6 +70,7 @@ app.load_plugins(include={
 | `spakky-security`   | 암호화/해싱/JWT 유틸리티   |
 | `spakky-outbox`     | Transactional Outbox 패턴 |
 | `spakky-outbox-sqlalchemy` | SQLAlchemy 기반 Outbox 저장소 |
+| `spakky-celery`     | Celery 태스크 디스패치 및 스케줄 등록 |
 
 ---
 

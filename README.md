@@ -64,6 +64,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-domain`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent, CQRS) |
 | **`spakky-data`** | Data access abstractions (Repository, Transaction, External Proxy) |
 | **`spakky-event`** | Event handling (IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
+| **`spakky-task`** | Task queue abstractions (@TaskHandler, @task, @schedule, Crontab) |
 
 ### Plugins
 
@@ -77,6 +78,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
 | **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
 | **`spakky-outbox-sqlalchemy`** | SQLAlchemy storage implementation for spakky-outbox |
+| **`spakky-celery`** | Task dispatch and schedule registration with [Celery](https://docs.celeryq.dev/) via AOP |
 
 ## 🚀 Quick Start
 

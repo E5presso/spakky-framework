@@ -10,17 +10,17 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-  "commitizen>=4.10.0",
-  "pre-commit>=4.5.0",
-  "pyrefly>=0.43.1",
-  "pytest>=9.0.1",
+  "commitizen>=4.13.9",
+  "pre-commit>=4.5.1",
+  "pyrefly>=0.56.0",
+  "pytest>=9.0.2",
   "pytest-asyncio>=1.3.0",
   "pytest-cov>=7.0.0",
   "pytest-spec>=6.0.0",
   "pytest-xdist>=3.8.0",
-  "ruff>=0.14.6",
+  "ruff>=0.15.6",
   "toml>=0.10.2",
-  "typer>=0.15.0",
+  "typer>=0.24.1",
 ]
 
 [tool.commitizen]
@@ -42,6 +42,7 @@ version_files = [
   "plugins/spakky-outbox/pyproject.toml:version",
   "plugins/spakky-outbox-sqlalchemy/pyproject.toml:version",
   "core/spakky-task/pyproject.toml:version",
+  "plugins/spakky-celery/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -60,6 +61,7 @@ members = [
   "plugins/spakky-sqlalchemy",
   "plugins/spakky-outbox",
   "plugins/spakky-outbox-sqlalchemy",
+  "plugins/spakky-celery",
 ]
 
 
@@ -77,6 +79,7 @@ spakky-sqlalchemy = { workspace = true }
 spakky-outbox = { workspace = true }
 spakky-outbox-sqlalchemy = { workspace = true }
 spakky-task = { workspace = true }
+spakky-celery = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

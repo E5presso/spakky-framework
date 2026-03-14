@@ -7,7 +7,9 @@ import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
-from testcontainers.kafka import KafkaContainer  # type: ignore
+from testcontainers.kafka import (
+    KafkaContainer,  # type: ignore[import-untyped]  # testcontainers lacks type stubs
+)
 
 import spakky.plugins.kafka
 from spakky.plugins.kafka.common.config import AutoOffsetResetType
@@ -48,7 +50,7 @@ def kafka_container(
         yield
 
 
-@pytest.fixture(name="app", scope="function")
+@pytest.fixture(name="app", scope="package")
 def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
     logger = getLogger("debug")
     logger.setLevel(logging.DEBUG)

@@ -19,9 +19,10 @@ kafka = ["spakky-kafka>=6.0.0"]
 sqlalchemy = ["spakky-sqlalchemy>=6.0.0"]
 outbox = ["spakky-outbox>=6.0.0"]
 outbox-sqlalchemy = ["spakky-outbox-sqlalchemy>=6.0.0"]
+celery = ["spakky-celery>=6.0.0"]
 
 [build-system]
-requires = ["uv_build>=0.9.13,<0.10.0"]
+requires = ["uv_build>=0.10.10,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -56,7 +57,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/*"]
+include = ["src/spakky/**/*.py"]
 branch = true
 
 [tool.coverage.report]
