@@ -99,7 +99,6 @@ class CoverageResult:
 def _build_coverage_cmd(
     pkg: PackageInfo,
     *,
-    is_parallel: bool = False,
     skip_integration: bool = False,
     with_integration: bool = False,
 ) -> list[str]:
@@ -107,7 +106,6 @@ def _build_coverage_cmd(
 
     Args:
         pkg: Package information.
-        is_parallel: If True, disable xdist to avoid nested parallelism.
         skip_integration: If True, skip tests marked with 'integration' marker.
         with_integration: If True, include integration tests (pytest-integration-mark).
     """
@@ -119,9 +117,6 @@ def _build_coverage_cmd(
         "--cov-report=xml:coverage.xml",
         "--cov-report=term-missing",
     ]
-    if is_parallel:
-        # Disable xdist parallelism when running packages in parallel
-        cmd.extend(["-n", "0"])
     if skip_integration:
         cmd.extend(["-m", "not integration"])
     if with_integration:
@@ -183,7 +178,6 @@ def run_tests_with_coverage_captured(
     result: CapturedResult = run_captured(
         _build_coverage_cmd(
             pkg,
-            is_parallel=True,
             skip_integration=skip_integration,
             with_integration=with_integration,
         ),
