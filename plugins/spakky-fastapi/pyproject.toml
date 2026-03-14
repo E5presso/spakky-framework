@@ -52,7 +52,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/fastapi/*"]
+include = ["src/spakky/plugins/fastapi/**/*.py"]
 branch = true
 
 [tool.coverage.report]

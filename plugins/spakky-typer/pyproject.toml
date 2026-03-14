@@ -47,7 +47,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/typer/*"]
+include = ["src/spakky/plugins/typer/**/*.py"]
 branch = true
 
 [tool.coverage.report]

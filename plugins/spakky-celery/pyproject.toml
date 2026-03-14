@@ -66,7 +66,7 @@ markers = [
 integration_path = "tests/integration"
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/celery/*"]
+include = ["src/spakky/plugins/celery/**/*.py"]
 branch = true
 
 [tool.coverage.report]

@@ -10,7 +10,6 @@ Usage:
     uv run python scripts/run_coverage.py
     uv run python scripts/run_coverage.py --package spakky-fastapi
     uv run python scripts/run_coverage.py --sequential
-    uv run python scripts/run_coverage.py --skip-integration  # Fast local runs
     uv run python scripts/run_coverage.py --with-integration  # Include integration tests
 
 Output:
@@ -99,14 +98,12 @@ class CoverageResult:
 def _build_coverage_cmd(
     pkg: PackageInfo,
     *,
-    skip_integration: bool = False,
     with_integration: bool = False,
 ) -> list[str]:
     """Build pytest coverage command for a package.
 
     Args:
         pkg: Package information.
-        skip_integration: If True, skip tests marked with 'integration' marker.
         with_integration: If True, include integration tests (pytest-integration-mark).
     """
     cmd = [
@@ -117,8 +114,6 @@ def _build_coverage_cmd(
         "--cov-report=xml:coverage.xml",
         "--cov-report=term-missing",
     ]
-    if skip_integration:
-        cmd.extend(["-m", "not integration"])
     if with_integration:
         cmd.append("--with-integration")
     return cmd
@@ -127,14 +122,12 @@ def _build_coverage_cmd(
 def run_tests_with_coverage_streaming(
     pkg: PackageInfo,
     *,
-    skip_integration: bool = False,
     with_integration: bool = False,
 ) -> bool:
     """Run pytest with coverage for a specific package (streaming output).
 
     Args:
         pkg: Package information.
-        skip_integration: If True, skip tests marked with 'integration' marker.
         with_integration: If True, include integration tests (pytest-integration-mark).
 
     Returns:
@@ -145,7 +138,6 @@ def run_tests_with_coverage_streaming(
     exit_code = run_streaming(
         _build_coverage_cmd(
             pkg,
-            skip_integration=skip_integration,
             with_integration=with_integration,
         ),
         cwd=pkg.full_path,
@@ -162,14 +154,12 @@ def run_tests_with_coverage_streaming(
 def run_tests_with_coverage_captured(
     pkg: PackageInfo,
     *,
-    skip_integration: bool = False,
     with_integration: bool = False,
 ) -> CoverageResult:
     """Run pytest with coverage for a specific package (parallel-safe).
 
     Args:
         pkg: Package information.
-        skip_integration: If True, skip tests marked with 'integration' marker.
         with_integration: If True, include integration tests (pytest-integration-mark).
 
     Returns:
@@ -178,7 +168,6 @@ def run_tests_with_coverage_captured(
     result: CapturedResult = run_captured(
         _build_coverage_cmd(
             pkg,
-            skip_integration=skip_integration,
             with_integration=with_integration,
         ),
         cwd=pkg.full_path,
@@ -193,14 +182,12 @@ def run_tests_with_coverage_captured(
 def run_parallel_coverage(
     packages: list[PackageInfo],
     *,
-    skip_integration: bool = False,
     with_integration: bool = False,
 ) -> list[CoverageResult]:
     """Run coverage checks for multiple packages in parallel.
 
     Args:
         packages: List of packages to test.
-        skip_integration: If True, skip tests marked with 'integration' marker.
         with_integration: If True, include integration tests (pytest-integration-mark).
 
     Returns:
@@ -209,7 +196,6 @@ def run_parallel_coverage(
     results: dict[str, CoverageResult] = {}
     run_captured_fn = partial(
         run_tests_with_coverage_captured,
-        skip_integration=skip_integration,
         with_integration=with_integration,
     )
 
@@ -355,12 +341,6 @@ def main(
         "-s",
         help="Run checks sequentially (useful for debugging).",
     ),
-    skip_integration: bool = typer.Option(
-        False,
-        "--skip-integration",
-        "-S",
-        help="Skip tests marked with 'integration' marker (faster local runs).",
-    ),
     with_integration: bool = typer.Option(
         False,
         "--with-integration",
@@ -394,13 +374,6 @@ def main(
             console.print(f"  • {pkg.name}")
         console.print()
 
-        if skip_integration:
-            console.print(
-                "[yellow bold]Skipping integration tests "
-                "(testcontainers not started)[/]"
-            )
-            console.print()
-
         if with_integration:
             console.print(
                 "[green bold]Including integration tests (pytest-integration-mark)[/]"
@@ -413,7 +386,6 @@ def main(
             for pkg in packages:
                 if not run_tests_with_coverage_streaming(
                     pkg,
-                    skip_integration=skip_integration,
                     with_integration=with_integration,
                 ):
                     all_passed = False
@@ -428,7 +400,6 @@ def main(
 
             results = run_parallel_coverage(
                 packages,
-                skip_integration=skip_integration,
                 with_integration=with_integration,
             )
             all_passed = display_results(results)

@@ -46,7 +46,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/domain/*"]
+include = ["src/spakky/domain/**/*.py"]
 branch = true
 
 [tool.coverage.report]

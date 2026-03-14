@@ -64,7 +64,7 @@ markers = ["integration: testcontainers 기반 통합 테스트 (느림)"]
 integration_path = "tests/integration"
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/rabbitmq/*"]
+include = ["src/spakky/plugins/rabbitmq/**/*.py"]
 branch = true
 
 [tool.coverage.report]

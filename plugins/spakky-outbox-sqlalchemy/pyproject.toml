@@ -62,5 +62,5 @@ markers = [
 integration_path = "tests/integration"
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/outbox_sqlalchemy/*"]
+include = ["src/spakky/plugins/outbox_sqlalchemy/**/*.py"]
 branch = true
