@@ -69,7 +69,10 @@ def triweekly_report(self) -> None: ...
 
 ### 설계 규칙
 
-1. `@task`와 `@schedule`은 **상호 배타적**이다. 하나의 메서드에 둘 다 적용 불가.
+1. `@task`와 `@schedule`은 **조합 가능**하다. 하나의 메서드에 둘 다 적용하면:
+   - Celery 태스크로 등록되고
+   - `beat_schedule`에도 등록됨
+   - 스케줄에 따라 자동 실행 + 수동 호출도 가능한 유스케이스
 2. `@task` 메서드는 **호출 시점에 태스크 큐로 디스패치**된다 (aspect가 가로챔).
 3. `@schedule` 메서드는 **호출자 없이 스케줄러가 주기적으로 실행**한다.
 4. `ScheduleRoute`는 `interval`, `at`, `crontab` 중 정확히 하나만 가진다 (생성 시 검증).
@@ -92,6 +95,7 @@ def triweekly_report(self) -> None: ...
 ### 중립적
 
 - `TaskHandler` 스테레오타입은 `@task`와 `@schedule` 메서드를 모두 포함할 수 있음 — 핸들러 클래스 구조에 변화 없음
+- `@task`+`@schedule` 조합 시 스케줄로도 실행되고 수동 호출로도 디스패치됨 (예: 일일 리포트를 자동 생성하지만 긴급 시 수동 트리거 가능)
 
 ## 참고 자료
 

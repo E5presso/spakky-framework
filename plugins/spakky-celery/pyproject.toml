@@ -18,6 +18,7 @@ spakky-celery = "spakky.plugins.celery.main:initialize"
 [dependency-groups]
 dev = [
     "celery-types>=0.26.0",
+    "nest-asyncio>=1.6.0",
     "pytest-asyncio>=0.26.0",
     "pytest-integration-mark>=0.2.0",
     "testcontainers[rabbitmq]>=4.14.1",
@@ -45,6 +46,10 @@ pythonpath = "src/spakky/plugins/celery"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince211",
+]
 addopts = """
     --cov
     --cov-report=term

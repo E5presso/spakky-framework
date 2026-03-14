@@ -161,12 +161,20 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: ${{ steps.pkg.outputs.path }}
-        run: uv run pytest --with-integration --cov --cov-report=xml:coverage.xml
+        run: uv run pytest --with-integration --cov --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy
 
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ${{ steps.pkg.outputs.path }}/coverage.xml
+          files: ${{ steps.pkg.outputs.path }}/coverage.xml
           flags: ${{ matrix.package }}
           fail_ci_if_error: false
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.pkg.outputs.path }}/junit.xml
+          flags: ${{ matrix.package }}

@@ -15,6 +15,7 @@ __all__ = [
     "ReportTaskHandler",
     "AsyncNotificationHandler",
     "ScheduledTaskHandler",
+    "HybridTaskHandler",
 ]
 
 
@@ -133,3 +134,18 @@ class ScheduledTaskHandler:
     def triweekly_report(self) -> None:
         """Generate report on Mon/Wed/Fri at 09:00."""
         execution_record.record("triweekly_report")
+
+
+@TaskHandler()
+class HybridTaskHandler:
+    """Task handler with methods that have both @task and @schedule.
+
+    Use case: A task that runs on schedule (e.g., daily) but can also
+    be triggered manually on-demand.
+    """
+
+    @task
+    @schedule(interval=timedelta(hours=1))
+    def hourly_sync(self) -> None:
+        """Sync data every hour, can also be triggered manually."""
+        execution_record.record("hourly_sync")

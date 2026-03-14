@@ -11,11 +11,12 @@ from celery import Celery
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.utils.inspection import get_fully_qualified_name
 
-from tests.apps.dummy import ScheduledTaskHandler, execution_record
+from tests.apps.dummy import HybridTaskHandler, ScheduledTaskHandler, execution_record
 
 HEALTH_CHECK_TASK = get_fully_qualified_name(ScheduledTaskHandler.health_check)
 DAILY_CLEANUP_TASK = get_fully_qualified_name(ScheduledTaskHandler.daily_cleanup)
 TRIWEEKLY_REPORT_TASK = get_fully_qualified_name(ScheduledTaskHandler.triweekly_report)
+HOURLY_SYNC_TASK = get_fully_qualified_name(HybridTaskHandler.hourly_sync)
 
 POLL_INTERVAL = 0.05  # seconds between checks
 MAX_WAIT_TIME = 10  # maximum seconds to wait
@@ -91,3 +92,34 @@ def test_all_scheduled_tasks_dispatched_through_broker_expect_all_executed(
     wait_for_execution("daily_cleanup")
     wait_for_execution("triweekly_report")
     assert execution_record.count() == 3
+
+
+# =============================================================================
+# Scenario: Hybrid task (@task + @schedule) schedule registration
+# =============================================================================
+
+
+def test_hybrid_task_registered_in_beat_schedule(
+    app_with_worker: SpakkyApplication,
+) -> None:
+    """@task + @schedule 메서드가 beat_schedule에 등록된다."""
+    celery = app_with_worker.container.get(Celery)
+
+    # Then: Hybrid task is registered in beat_schedule
+    assert HOURLY_SYNC_TASK in celery.conf.beat_schedule
+    entry = celery.conf.beat_schedule[HOURLY_SYNC_TASK]
+    assert entry["task"] == HOURLY_SYNC_TASK
+
+
+def test_hybrid_task_dispatched_via_send_task_expect_worker_executes(
+    app_with_worker: SpakkyApplication,
+) -> None:
+    """@task + @schedule 메서드를 send_task로 디스패치하면 워커가 실행한다."""
+    celery = app_with_worker.container.get(Celery)
+
+    # When: Simulating what celery beat does — dispatch via send_task
+    celery.send_task(HOURLY_SYNC_TASK)
+
+    # Then: Worker picks up and executes the task
+    wait_for_execution("hourly_sync")
+    assert execution_record.count("hourly_sync") == 1

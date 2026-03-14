@@ -1,11 +1,10 @@
 """Post-processor for registering TaskHandler methods as Celery tasks."""
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from inspect import getmembers, iscoroutinefunction, isfunction
 from logging import getLogger
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable
 
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
@@ -60,17 +59,11 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         handler_type: type[object],
         method: Callable[..., Any],
     ) -> Callable[..., Any]:
-        """Create an endpoint for async methods that runs in a separate thread.
+        """Create an endpoint for async methods.
 
-        Uses ThreadPoolExecutor to avoid event loop conflicts when called
-        from an existing event loop (e.g., pytest-asyncio).
+        Wraps the async method to run via asyncio.run() in Celery worker process.
+        For tests with existing event loops, use nest_asyncio in conftest.py.
         """
-
-        def _run_coro(coro: Coroutine[Any, Any, Any]) -> Any:
-            """Run coroutine in a new thread with its own event loop."""
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(asyncio.run, coro)
-                return future.result()
 
         async def _async_wrapper(*args: Any, **kwargs: Any) -> Any:
             """Async wrapper that sets context and invokes handler method."""
@@ -82,7 +75,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
 
         @wraps(method)
         def endpoint(*args: Any, **kwargs: Any) -> Any:
-            return _run_coro(_async_wrapper(*args, **kwargs))
+            return asyncio.run(_async_wrapper(*args, **kwargs))
 
         return endpoint
 

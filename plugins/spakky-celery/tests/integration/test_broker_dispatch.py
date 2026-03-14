@@ -104,7 +104,7 @@ async def test_call_async_task_through_broker_expect_worker_processes_it(
     notification_handler = app_with_worker.container.get(AsyncNotificationHandler)
 
     # When: Calling an async @task method
-    result = await notification_handler.send_notification(  # pyrefly: ignore[not-async]
+    result = await notification_handler.send_notification(
         user_id="user-123",
         message="Async notification through broker",
     )
@@ -117,3 +117,25 @@ async def test_call_async_task_through_broker_expect_worker_processes_it(
     recorded = execution_record.executions[0]
     assert recorded["user_id"] == "user-123"
     assert recorded["message"] == "Async notification through broker"
+
+
+# =============================================================================
+# Scenario: Hybrid task (both @task and @schedule)
+# =============================================================================
+
+
+def test_hybrid_task_can_be_dispatched_manually_expect_worker_processes_it(
+    app_with_worker: SpakkyApplication,
+) -> None:
+    """@task + @schedule 메서드를 수동으로 호출하면 워커가 처리한다."""
+    # Given: A running Celery worker with hybrid task registered
+    from tests.apps.dummy import HybridTaskHandler
+
+    hybrid_handler = app_with_worker.container.get(HybridTaskHandler)
+
+    # When: Calling the hybrid method manually (via @task aspect dispatch)
+    hybrid_handler.hourly_sync()
+
+    # Then: Worker picks up and executes the task
+    wait_for_execution("hourly_sync")
+    assert execution_record.count("hourly_sync") == 1
