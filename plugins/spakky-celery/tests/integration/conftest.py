@@ -53,7 +53,7 @@ def rabbitmq_container_fixture() -> Generator[RabbitMqContainer, None, None]:
             del environ[key]
 
 
-@pytest.fixture(name="app_with_worker", scope="module")
+@pytest.fixture(name="app_with_worker", scope="package")
 def app_with_worker_fixture(
     rabbitmq_container: RabbitMqContainer,
 ) -> Generator[SpakkyApplication, Any, None]:
