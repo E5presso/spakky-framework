@@ -123,3 +123,24 @@ def test_hybrid_task_dispatched_via_send_task_expect_worker_executes(
     # Then: Worker picks up and executes the task
     wait_for_execution("hourly_sync")
     assert execution_record.count("hourly_sync") == 1
+
+
+# =============================================================================
+# Scenario: Direct invocation of schedule-only methods
+# =============================================================================
+
+
+def test_schedule_only_method_direct_call_executes_locally_not_via_worker(
+    app_with_worker: SpakkyApplication,
+) -> None:
+    """@schedule만 있는 메서드를 직접 호출하면 워커를 거치지 않고 로컬에서 즉시 실행된다."""
+    # Given: A running Celery worker with scheduled tasks
+    handler = app_with_worker.container.get(ScheduledTaskHandler)
+    initial_count = execution_record.count("health_check")
+
+    # When: Directly calling a @schedule-only method (no @task decorator)
+    handler.health_check()
+
+    # Then: Executes immediately and synchronously — no polling required
+    # If it went through worker, we'd need wait_for_execution()
+    assert execution_record.count("health_check") == initial_count + 1
