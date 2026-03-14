@@ -1,77 +1,93 @@
-"""Integration tests for schedule registration through real broker.
+"""Integration tests for scheduled task execution through real broker.
 
-These tests verify that @schedule methods (interval, at, crontab)
-are correctly registered in Celery's beat_schedule when using a
-real RabbitMQ broker.
+These tests verify that @schedule methods are dispatched through
+RabbitMQ broker and actually executed by the Celery worker,
+simulating what celery beat does via send_task().
 """
 
+from time import sleep, time
+
 from celery import Celery
-from celery.schedules import crontab as celery_crontab
-from celery.schedules import schedule as celery_schedule
 from spakky.core.application.application import SpakkyApplication
+from spakky.core.utils.inspection import get_fully_qualified_name
 
-SCHEDULED_PREFIX = "tests.apps.dummy.ScheduledTaskHandler"
+from tests.apps.dummy import ScheduledTaskHandler, execution_record
+
+HEALTH_CHECK_TASK = get_fully_qualified_name(ScheduledTaskHandler.health_check)
+DAILY_CLEANUP_TASK = get_fully_qualified_name(ScheduledTaskHandler.daily_cleanup)
+TRIWEEKLY_REPORT_TASK = get_fully_qualified_name(ScheduledTaskHandler.triweekly_report)
+
+POLL_INTERVAL = 0.05  # seconds between checks
+MAX_WAIT_TIME = 10  # maximum seconds to wait
 
 
-def test_interval_schedule_registered_in_beat_schedule(
+def wait_for_execution(task_name: str, expected_count: int = 1) -> None:
+    """Poll until execution_record has expected count or timeout."""
+    start = time()
+    while execution_record.count(task_name) < expected_count:
+        if time() - start > MAX_WAIT_TIME:
+            raise TimeoutError(
+                f"Timed out waiting for {task_name} to execute {expected_count} time(s). "
+                f"Current count: {execution_record.count(task_name)}"
+            )
+        sleep(POLL_INTERVAL)
+
+
+# =============================================================================
+# Scenario: Scheduled tasks dispatched through broker reach worker
+# =============================================================================
+
+
+def test_interval_schedule_task_dispatched_through_broker_expect_worker_executes(
     app_with_worker: SpakkyApplication,
 ) -> None:
-    """@schedule(interval=...) 메서드가 브로커 환경에서 beat_schedule에 등록되는지 검증한다."""
+    """@schedule(interval=...) 태스크를 send_task로 디스패치하면 워커가 실행한다."""
+    # Given: A running Celery worker with scheduled tasks registered
     celery = app_with_worker.container.get(Celery)
-    task_name = f"{SCHEDULED_PREFIX}.health_check"
 
-    assert task_name in celery.conf.beat_schedule
-    entry = celery.conf.beat_schedule[task_name]
-    assert entry["task"] == task_name
-    assert isinstance(entry["schedule"], celery_schedule)
+    # When: Simulating what celery beat does — dispatch via send_task
+    celery.send_task(HEALTH_CHECK_TASK)
+
+    # Then: Worker picks up and executes the scheduled task
+    wait_for_execution("health_check")
+    assert execution_record.count("health_check") == 1
 
 
-def test_at_schedule_registered_as_crontab_in_beat_schedule(
+def test_at_schedule_task_dispatched_through_broker_expect_worker_executes(
     app_with_worker: SpakkyApplication,
 ) -> None:
-    """@schedule(at=...) 메서드가 브로커 환경에서 celery crontab으로 beat_schedule에 등록되는지 검증한다."""
+    """@schedule(at=...) 태스크를 send_task로 디스패치하면 워커가 실행한다."""
     celery = app_with_worker.container.get(Celery)
-    task_name = f"{SCHEDULED_PREFIX}.daily_cleanup"
 
-    assert task_name in celery.conf.beat_schedule
-    entry = celery.conf.beat_schedule[task_name]
-    assert entry["task"] == task_name
-    assert isinstance(entry["schedule"], celery_crontab)
+    celery.send_task(DAILY_CLEANUP_TASK)
+
+    wait_for_execution("daily_cleanup")
+    assert execution_record.count("daily_cleanup") == 1
 
 
-def test_crontab_schedule_registered_in_beat_schedule(
+def test_crontab_schedule_task_dispatched_through_broker_expect_worker_executes(
     app_with_worker: SpakkyApplication,
 ) -> None:
-    """@schedule(crontab=...) 메서드가 브로커 환경에서 beat_schedule에 등록되는지 검증한다."""
+    """@schedule(crontab=...) 태스크를 send_task로 디스패치하면 워커가 실행한다."""
     celery = app_with_worker.container.get(Celery)
-    task_name = f"{SCHEDULED_PREFIX}.triweekly_report"
 
-    assert task_name in celery.conf.beat_schedule
-    entry = celery.conf.beat_schedule[task_name]
-    assert entry["task"] == task_name
-    assert isinstance(entry["schedule"], celery_crontab)
+    celery.send_task(TRIWEEKLY_REPORT_TASK)
+
+    wait_for_execution("triweekly_report")
+    assert execution_record.count("triweekly_report") == 1
 
 
-def test_crontab_schedule_has_correct_values(
+def test_all_scheduled_tasks_dispatched_through_broker_expect_all_executed(
     app_with_worker: SpakkyApplication,
 ) -> None:
-    """@schedule(crontab=...) 등록된 엔트리가 올바른 cron 값을 가지는지 검증한다."""
-    celery = app_with_worker.container.get(Celery)
-    task_name = f"{SCHEDULED_PREFIX}.triweekly_report"
-    entry = celery.conf.beat_schedule[task_name]
-    cron = entry["schedule"]
-
-    assert isinstance(cron, celery_crontab)
-    expected = celery_crontab(minute="0", hour="9", day_of_week="0,2,4")
-    assert cron == expected
-
-
-def test_all_scheduled_tasks_also_registered_as_celery_tasks(
-    app_with_worker: SpakkyApplication,
-) -> None:
-    """모든 @schedule 메서드가 Celery task로도 등록되는지 검증한다."""
+    """모든 @schedule 태스크를 동시에 디스패치하면 워커가 전부 실행한다."""
     celery = app_with_worker.container.get(Celery)
 
-    assert f"{SCHEDULED_PREFIX}.health_check" in celery.tasks
-    assert f"{SCHEDULED_PREFIX}.daily_cleanup" in celery.tasks
-    assert f"{SCHEDULED_PREFIX}.triweekly_report" in celery.tasks
+    celery.send_task(HEALTH_CHECK_TASK)
+    celery.send_task(DAILY_CLEANUP_TASK)
+    celery.send_task(TRIWEEKLY_REPORT_TASK)
+
+    wait_for_execution("health_check")
+    wait_for_execution("daily_cleanup")
+    wait_for_execution("triweekly_report")
+    assert execution_record.count() == 3
