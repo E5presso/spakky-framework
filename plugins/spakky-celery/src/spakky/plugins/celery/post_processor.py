@@ -15,7 +15,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 )
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.core.utils.inspection import get_fully_qualified_name
-from spakky.task.stereotype.crontab import Crontab
+from spakky.task.stereotype.crontab import Crontab, Month, Weekday
 from spakky.task.stereotype.schedule import ScheduleRoute
 from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
 
@@ -101,12 +101,13 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
     def _crontab_to_celery(cron: Crontab) -> celery_crontab:
         """Convert a Crontab value object to Celery crontab."""
 
-        def _to_str(value: int | tuple[int, ...] | None) -> str:
+        def _to_str(
+            value: int | Month | Weekday | tuple[int | Month | Weekday, ...] | None,
+        ) -> str:
             if value is None:
                 return "*"
-            if isinstance(value, int):
-                return str(value)
-            return ",".join(str(v) for v in value)
+            values = value if isinstance(value, tuple) else (value,)
+            return ",".join(str(int(v)) for v in values)
 
         return celery_crontab(
             month_of_year=_to_str(cron.month),

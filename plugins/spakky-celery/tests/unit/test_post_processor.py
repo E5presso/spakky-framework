@@ -271,3 +271,41 @@ def test_celery_post_processor_schedule_method_also_registered_as_celery_task() 
 
     task_name = get_fully_qualified_name(ScheduledHandler.periodic_job)
     assert task_name in celery.tasks
+
+
+def test_crontab_to_celery_converts_intenum_to_numeric_string() -> None:
+    """_crontab_to_celery가 IntEnum(Month, Weekday)을 숫자 문자열로 변환하는지 검증한다."""
+    from spakky.task.stereotype.crontab import Month
+
+    crontab = Crontab(
+        month=Month.JANUARY,
+        weekday=Weekday.MONDAY,
+        hour=9,
+        minute=30,
+    )
+
+    celery_cron = CeleryPostProcessor._crontab_to_celery(crontab)
+    cron_dict = vars(celery_cron)
+
+    # IntEnum이 "Month.JANUARY"가 아닌 "1"로 변환되어야 함
+    assert cron_dict["_orig_month_of_year"] == "1"  # Month.JANUARY = 1
+    assert cron_dict["_orig_day_of_week"] == "0"  # Weekday.MONDAY = 0
+
+
+def test_crontab_to_celery_converts_tuple_of_intenum_to_numeric_string() -> None:
+    """_crontab_to_celery가 IntEnum 튜플을 쉼표로 구분된 숫자 문자열로 변환하는지 검증한다."""
+    from spakky.task.stereotype.crontab import Month
+
+    crontab = Crontab(
+        month=(Month.JANUARY, Month.JULY),
+        weekday=(Weekday.MONDAY, Weekday.FRIDAY),
+        hour=12,
+    )
+
+    celery_cron = CeleryPostProcessor._crontab_to_celery(crontab)
+    cron_dict = vars(celery_cron)
+
+    # 튜플이 "1,7"로 변환되어야 함 (Month.JANUARY=1, Month.JULY=7)
+    assert cron_dict["_orig_month_of_year"] == "1,7"
+    # Weekday.MONDAY=0, Weekday.FRIDAY=4
+    assert cron_dict["_orig_day_of_week"] == "0,4"
