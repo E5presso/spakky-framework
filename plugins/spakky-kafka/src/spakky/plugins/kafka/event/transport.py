@@ -2,7 +2,7 @@ from logging import getLogger
 
 from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
-from confluent_kafka.experimental.aio import AIOProducer
+from confluent_kafka.aio import AIOProducer
 from spakky.core.pod.annotations.pod import Pod
 from spakky.event.event_publisher import (
     IAsyncEventTransport,

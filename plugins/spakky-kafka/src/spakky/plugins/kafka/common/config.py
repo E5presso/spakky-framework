@@ -63,8 +63,8 @@ class KafkaConnectionConfig(BaseSettings):
         super().__init__()
 
     @property
-    def configuration_dict(self) -> dict[str, str]:
-        config = {
+    def configuration_dict(self) -> dict[str, str | int | float | bool]:
+        config: dict[str, str | int | float | bool] = {
             "group.id": self.group_id,
             "client.id": self.client_id,
             "bootstrap.servers": self.bootstrap_servers,

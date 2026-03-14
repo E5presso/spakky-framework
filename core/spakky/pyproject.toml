@@ -22,7 +22,7 @@ outbox-sqlalchemy = ["spakky-outbox-sqlalchemy>=6.0.0"]
 celery = ["spakky-celery>=6.0.0"]
 
 [build-system]
-requires = ["uv_build>=0.9.13,<0.10.0"]
+requires = ["uv_build>=0.10.10,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

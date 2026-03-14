@@ -3,7 +3,7 @@ from typing import Any
 
 from confluent_kafka import Consumer, Message
 from confluent_kafka.admin import AdminClient, NewTopic
-from confluent_kafka.experimental.aio import AIOConsumer
+from confluent_kafka.aio import AIOConsumer
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import (
