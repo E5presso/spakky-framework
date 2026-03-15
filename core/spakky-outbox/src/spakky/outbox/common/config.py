@@ -24,4 +24,5 @@ class OutboxConfig(BaseSettings):
     claim_timeout_seconds: float = 300.0  # 5 minutes
 
     def __init__(self) -> None:
+        """Load outbox configuration from environment variables."""
         super().__init__()

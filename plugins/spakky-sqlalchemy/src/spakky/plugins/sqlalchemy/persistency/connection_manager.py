@@ -23,6 +23,7 @@ class ConnectionManager:
         return self._connection
 
     def __init__(self, config: SQLAlchemyConnectionConfig) -> None:
+        """Create a synchronous SQLAlchemy engine from configuration."""
         self._connection = create_engine(
             url=config.connection_string,
             echo=config.echo,
@@ -57,6 +58,7 @@ class AsyncConnectionManager:
         return self._connection
 
     def __init__(self, config: SQLAlchemyConnectionConfig) -> None:
+        """Create an asynchronous SQLAlchemy engine from configuration."""
         self._connection = create_async_engine(
             url=config.connection_string,
             echo=config.echo,

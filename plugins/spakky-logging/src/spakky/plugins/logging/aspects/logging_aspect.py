@@ -64,6 +64,11 @@ class AsyncLoggingAspect(IAsyncAspect):
     _config: LoggingConfig | None
 
     def __init__(self, config: LoggingConfig | None = None) -> None:
+        """Initialize the async logging aspect.
+
+        Args:
+            config: Optional logging configuration. Uses defaults if None.
+        """
         self._config = config
 
     MASKING_TEXT: ClassVar[str] = MASKING_REPLACEMENT
@@ -152,6 +157,11 @@ class LoggingAspect(IAspect):
     _config: LoggingConfig | None
 
     def __init__(self, config: LoggingConfig | None = None) -> None:
+        """Initialize the sync logging aspect.
+
+        Args:
+            config: Optional logging configuration. Uses defaults if None.
+        """
         self._config = config
 
     MASKING_TEXT: ClassVar[str] = MASKING_REPLACEMENT

@@ -15,6 +15,7 @@ class CeleryTaskResult(AbstractTaskResult[T], Generic[T]):
     _result: AsyncResult
 
     def __init__(self, result: AsyncResult) -> None:
+        """Wrap a Celery AsyncResult."""
         self._result = result
 
     @property

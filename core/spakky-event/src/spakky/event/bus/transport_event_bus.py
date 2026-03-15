@@ -14,14 +14,18 @@ from spakky.event.event_publisher import (
 
 @Pod()
 class DirectEventBus(IEventBus):
+    """Synchronous event bus that serializes and delegates to IEventTransport."""
+
     _transport: IEventTransport
     _adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(self, transport: IEventTransport) -> None:
+        """Initialize with the given transport."""
         self._transport = transport
         self._adapters = {}
 
     def send(self, event: AbstractIntegrationEvent) -> None:
+        """Serialize and send an integration event via transport."""
         event_type = type(event)
         if event_type not in self._adapters:
             self._adapters[event_type] = TypeAdapter(event_type)
@@ -31,14 +35,18 @@ class DirectEventBus(IEventBus):
 
 @Pod()
 class AsyncDirectEventBus(IAsyncEventBus):
+    """Asynchronous event bus that serializes and delegates to IAsyncEventTransport."""
+
     _transport: IAsyncEventTransport
     _adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(self, transport: IAsyncEventTransport) -> None:
+        """Initialize with the given async transport."""
         self._transport = transport
         self._adapters = {}
 
     async def send(self, event: AbstractIntegrationEvent) -> None:
+        """Serialize and send an integration event via async transport."""
         event_type = type(event)
         if event_type not in self._adapters:
             self._adapters[event_type] = TypeAdapter(event_type)

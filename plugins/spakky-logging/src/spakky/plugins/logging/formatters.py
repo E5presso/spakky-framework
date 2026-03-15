@@ -34,6 +34,11 @@ class SpakkyTextFormatter(logging.Formatter):
     SEPARATOR: ClassVar[str] = TEXT_SEPARATOR
 
     def __init__(self, datefmt: str = DEFAULT_DATE_FORMAT) -> None:
+        """Initialize the text formatter.
+
+        Args:
+            datefmt: Date format string for timestamps.
+        """
         super().__init__(datefmt=datefmt)
 
     def format(self, record: logging.LogRecord) -> str:
@@ -84,6 +89,11 @@ class SpakkyJsonFormatter(logging.Formatter):
     """
 
     def __init__(self, datefmt: str = DEFAULT_DATE_FORMAT) -> None:
+        """Initialize the JSON formatter.
+
+        Args:
+            datefmt: Date format string for timestamps.
+        """
         super().__init__(datefmt=datefmt)
 
     def format(self, record: logging.LogRecord) -> str:

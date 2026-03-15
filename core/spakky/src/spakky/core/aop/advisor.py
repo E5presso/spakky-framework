@@ -30,6 +30,7 @@ class Advisor:
         self.next = next
 
     def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to the next function in the chain."""
         return getattr(self.next, name)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -80,6 +81,7 @@ class AsyncAdvisor:
         self.next = next
 
     def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to the next async function in the chain."""
         return getattr(self.next, name)
 
     async def __call__(self, *args: Any, **kwargs: Any) -> Any:

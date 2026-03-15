@@ -16,11 +16,14 @@ logger = getLogger(__name__)
 
 @Pod()
 class KafkaEventTransport(IEventTransport):
+    """Synchronous Kafka event transport using confluent_kafka Producer."""
+
     config: KafkaConnectionConfig
     admin: AdminClient
     producer: Producer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
+        """Initialize the Kafka producer with connection config."""
         self.config = config
         self.admin = AdminClient(self.config.configuration_dict)
         self.producer = Producer(self.config.configuration_dict, logger=logger)
@@ -70,11 +73,14 @@ class KafkaEventTransport(IEventTransport):
 
 @Pod()
 class AsyncKafkaEventTransport(IAsyncEventTransport):
+    """Asynchronous Kafka event transport using confluent_kafka AIOProducer."""
+
     config: KafkaConnectionConfig
     admin: AdminClient
     producer: AIOProducer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
+        """Initialize the async Kafka transport with connection config."""
         self.config = config
         self.admin = AdminClient(self.config.configuration_dict)
 

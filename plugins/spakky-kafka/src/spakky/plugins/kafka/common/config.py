@@ -1,7 +1,7 @@
-"""Configuration for RabbitMQ connections.
+"""Configuration for Kafka connections.
 
-Provides configuration dataclass for RabbitMQ connection parameters including
-host, port, credentials, and exchange settings.
+Provides configuration dataclass for Kafka connection parameters including
+bootstrap servers, consumer group, and security settings.
 """
 
 from enum import Enum
@@ -23,6 +23,8 @@ class AutoOffsetResetType(str, Enum):
 
 @Configuration()
 class KafkaConnectionConfig(BaseSettings):
+    """Kafka connection configuration loaded from environment variables."""
+
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix=SPAKKY_KAFKA_CONFIG_ENV_PREFIX,
         env_file_encoding="utf-8",

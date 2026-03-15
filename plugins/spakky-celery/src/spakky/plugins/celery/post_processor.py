@@ -35,6 +35,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
     __application_context: IApplicationContext
 
     def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Store the application context for resolving handlers at runtime."""
         self.__application_context = application_context
 
     def _create_sync_endpoint(
@@ -127,6 +128,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         return task_name
 
     def post_process(self, pod: object) -> object:
+        """Register TaskHandler methods as Celery tasks and beat schedules."""
         if not TaskHandler.exists(pod):
             return pod
 

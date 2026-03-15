@@ -27,9 +27,12 @@ logger = getLogger(__name__)
 
 @Pod()
 class EventMediator(IEventConsumer, IEventDispatcher):
+    """In-process synchronous event mediator combining consumer and dispatcher roles."""
+
     _handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
 
     def __init__(self) -> None:
+        """Initialize an empty handler registry."""
         self._handlers = {}
 
     def register(
@@ -37,12 +40,14 @@ class EventMediator(IEventConsumer, IEventDispatcher):
         event: type[AbstractEvent],
         handler: EventHandlerCallback[Any],
     ) -> None:
+        """Register a handler callback for the given event type."""
         if event not in self._handlers:
             self._handlers[event] = []
         self._handlers[event].append(handler)
         logger.debug(f"Registered handler for {event.__name__}")
 
     def dispatch(self, event: AbstractEvent) -> None:
+        """Dispatch an event to all registered handlers."""
         event_type = type(event)
         handlers = self._handlers.get(event_type, [])
 
@@ -62,9 +67,12 @@ class EventMediator(IEventConsumer, IEventDispatcher):
 
 @Pod()
 class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
+    """In-process asynchronous event mediator combining consumer and dispatcher roles."""
+
     _handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
 
     def __init__(self) -> None:
+        """Initialize an empty async handler registry."""
         self._handlers = {}
 
     def register(
@@ -72,12 +80,14 @@ class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
         event: type[AbstractEvent],
         handler: AsyncEventHandlerCallback[Any],
     ) -> None:
+        """Register an async handler callback for the given event type."""
         if event not in self._handlers:
             self._handlers[event] = []
         self._handlers[event].append(handler)
         logger.debug(f"Registered async handler for {event.__name__}")
 
     async def dispatch(self, event: AbstractEvent) -> None:
+        """Dispatch an event to all registered async handlers."""
         event_type = type(event)
         handlers = self._handlers.get(event_type, [])
 

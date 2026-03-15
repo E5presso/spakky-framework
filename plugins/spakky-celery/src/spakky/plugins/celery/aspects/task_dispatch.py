@@ -36,9 +36,11 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
     _application_context: IApplicationContext
 
     def __init__(self, celery: Celery) -> None:
+        """Initialize with the Celery application instance."""
         self._celery = celery
 
     def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Store the application context for checking worker context."""
         self._application_context = application_context
 
     @Around(lambda x: TaskRoute.exists(x) and not iscoroutinefunction(x))
@@ -65,9 +67,11 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
     _application_context: IApplicationContext
 
     def __init__(self, celery: Celery) -> None:
+        """Initialize with the Celery application instance."""
         self._celery = celery
 
     def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Store the application context for checking worker context."""
         self._application_context = application_context
 
     @Around(lambda x: TaskRoute.exists(x) and iscoroutinefunction(x))

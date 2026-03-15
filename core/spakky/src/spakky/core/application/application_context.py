@@ -98,11 +98,7 @@ class ApplicationContext(IApplicationContext):
     """Whether the context has been started."""
 
     def __init__(self) -> None:
-        """Initialize application context.
-
-        Args:
-            logger: Optional logger instance. If None, uses root logger.
-        """
+        """Initialize application context."""
         self.__forward_type_map = {}
         self.__pods = {}
         self.__tags = set()

@@ -20,12 +20,16 @@ logger = getLogger(__name__)
 
 @Pod()
 class EventHandlerRegistrationPostProcessor(IPostProcessor, IContainerAware):
+    """Scans @EventHandler Pods and registers their @on_event methods with consumers."""
+
     __container: IContainer
 
     def set_container(self, container: IContainer) -> None:
+        """Receive the container reference via IContainerAware."""
         self.__container = container
 
     def post_process(self, pod: object) -> object:
+        """Register event handler methods with the appropriate consumer."""
         pod_type = type(pod)
 
         if not EventHandler.exists(pod_type):

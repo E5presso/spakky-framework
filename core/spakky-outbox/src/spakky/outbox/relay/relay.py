@@ -31,17 +31,21 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
         transport: IEventTransport,
         config: OutboxConfig,
     ) -> None:
+        """Initialize with storage, transport, and config dependencies."""
         self._storage = storage
         self._transport = transport
         self._config = config
 
     def initialize(self) -> None:
+        """No-op initialization for the relay service."""
         return
 
     def dispose(self) -> None:
+        """No-op disposal for the relay service."""
         return
 
     def run(self) -> None:
+        """Poll the outbox storage and relay pending messages until stopped."""
         while not self._stop_event.is_set():
             self._relay_batch()
             self._stop_event.wait(timeout=self._config.polling_interval_seconds)
@@ -77,17 +81,21 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
         transport: IAsyncEventTransport,
         config: OutboxConfig,
     ) -> None:
+        """Initialize with async storage, transport, and config dependencies."""
         self._storage = storage
         self._transport = transport
         self._config = config
 
     async def initialize_async(self) -> None:
+        """No-op async initialization for the relay service."""
         return
 
     async def dispose_async(self) -> None:
+        """No-op async disposal for the relay service."""
         return
 
     async def run_async(self) -> None:
+        """Poll the outbox storage and relay pending messages asynchronously."""
         while not self._stop_event.is_set():
             await self._relay_batch()
             try:

@@ -26,6 +26,8 @@ from spakky.event.event_publisher import (
 
 @Pod()
 class EventPublisher(IEventPublisher):
+    """Routes events by type: domain events to dispatcher, integration events to bus."""
+
     _dispatcher: IEventDispatcher
     _bus: IEventBus
 
@@ -34,10 +36,12 @@ class EventPublisher(IEventPublisher):
         dispatcher: IEventDispatcher,
         bus: IEventBus,
     ) -> None:
+        """Initialize with dispatcher and bus dependencies."""
         self._dispatcher = dispatcher
         self._bus = bus
 
     def publish(self, event: AbstractEvent) -> None:
+        """Route an event to the appropriate handler based on its type."""
         match event:
             case AbstractDomainEvent():
                 self._dispatcher.dispatch(event)
@@ -49,6 +53,8 @@ class EventPublisher(IEventPublisher):
 
 @Pod()
 class AsyncEventPublisher(IAsyncEventPublisher):
+    """Async counterpart that routes events by type."""
+
     _dispatcher: IAsyncEventDispatcher
     _bus: IAsyncEventBus
 
@@ -57,10 +63,12 @@ class AsyncEventPublisher(IAsyncEventPublisher):
         dispatcher: IAsyncEventDispatcher,
         bus: IAsyncEventBus,
     ) -> None:
+        """Initialize with async dispatcher and bus dependencies."""
         self._dispatcher = dispatcher
         self._bus = bus
 
     async def publish(self, event: AbstractEvent) -> None:
+        """Route an event to the appropriate async handler based on its type."""
         match event:
             case AbstractDomainEvent():
                 await self._dispatcher.dispatch(event)

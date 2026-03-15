@@ -3,7 +3,8 @@ from abc import ABC
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
-class AbstractSpakkyEventError(AbstractSpakkyFrameworkError, ABC): ...
+class AbstractSpakkyEventError(AbstractSpakkyFrameworkError, ABC):
+    """Base error for event system operations."""
 
 
 class DuplicateEventHandlerError(AbstractSpakkyEventError):

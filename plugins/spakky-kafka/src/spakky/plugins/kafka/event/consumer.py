@@ -29,6 +29,8 @@ logger = getLogger(__name__)
 
 @Pod()
 class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
+    """Synchronous Kafka event consumer that polls messages and dispatches to handlers."""
+
     config: KafkaConnectionConfig
     type_lookup: dict[str, type[AbstractEvent]]
     type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
@@ -37,6 +39,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     consumer: Consumer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
+        """Initialize the Kafka consumer with connection config."""
         super().__init__()
         self.config = config
         self.type_lookup = {}
@@ -94,6 +97,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         event: type[EventT_contra],
         handler: EventHandlerCallback[EventT_contra],
     ) -> None:
+        """Register a handler for the given event type."""
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
         self.handlers[event] = handler
@@ -101,11 +105,13 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.type_lookup[event.__name__] = event
 
     def initialize(self) -> None:
+        """Create Kafka topics and subscribe the consumer."""
         topics: list[str] = [event_type.__name__ for event_type in self.handlers.keys()]
         self._create_topics(topics=topics)
         self.consumer.subscribe(topics=topics)
 
     def run(self) -> None:
+        """Poll Kafka for messages and route them to registered handlers."""
         while not self._stop_event.is_set():
             message: Message | None = self.consumer.poll(
                 timeout=self.config.poll_timeout
@@ -115,11 +121,14 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             self._route_event_handler(message)
 
     def dispose(self) -> None:
+        """Close the Kafka consumer connection."""
         self.consumer.close()
 
 
 @Pod()
 class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
+    """Asynchronous Kafka event consumer that polls messages and dispatches to handlers."""
+
     config: KafkaConnectionConfig
     type_lookup: dict[str, type[AbstractEvent]]
     type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
@@ -128,6 +137,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     consumer: AIOConsumer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
+        """Initialize the async Kafka consumer with connection config."""
         super().__init__()
         self.config = config
         self.type_lookup = {}
@@ -183,6 +193,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         event: type[EventT_contra],
         handler: AsyncEventHandlerCallback[EventT_contra],
     ) -> None:
+        """Register an async handler for the given event type."""
         if event in self.handlers:
             raise DuplicateEventHandlerError(event)
         self.handlers[event] = handler
@@ -190,12 +201,14 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self.type_lookup[event.__name__] = event
 
     async def initialize_async(self) -> None:
+        """Create Kafka topics and subscribe the async consumer."""
         self.consumer = AIOConsumer(self.config.configuration_dict)
         topics: list[str] = [event_type.__name__ for event_type in self.handlers.keys()]
         self._create_topics(topics=topics)
         await self.consumer.subscribe(topics=topics)
 
     async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
+        """Poll Kafka asynchronously for messages and route them to handlers."""
         while not self._stop_event.is_set():
             message: Message | None = await self.consumer.poll(
                 timeout=self.config.poll_timeout
@@ -205,4 +218,5 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             await self._route_event_handler(message)
 
     async def dispose_async(self) -> None:
+        """Close the async Kafka consumer connection."""
         await self.consumer.close()
