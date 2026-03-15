@@ -34,7 +34,6 @@
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
 | **Core** | `spakky-outbox` | Transactional Outbox 패턴 추상화 (IEventBus 교체, Relay) |
-| **Core** | `spakky-tracing` | 분산 추적 추상화 (TraceContext, ITracePropagator, @Trace) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
@@ -43,7 +42,6 @@
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 (spakky-outbox 설치 시 Outbox 저장소 자동 등록) |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @Logging AOP Aspect |
-| **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지, 자동 계측 |
 
 ---
 
@@ -53,7 +51,6 @@
 graph TB
     subgraph "Core Chain"
         core[spakky<br/>DI · AOP · Plugin]
-        tracing_pkg[spakky-tracing<br/>TraceContext · @Trace]
         domain[spakky-domain<br/>Entity · Event · CQRS]
         data[spakky-data<br/>Repository · Transaction]
         event[spakky-event<br/>Publisher · Consumer · Aspect]
@@ -85,11 +82,9 @@ graph TB
 
     subgraph "Observability Plugins"
         logging_pkg[spakky-logging<br/>Structured Logging · Context]
-        opentelemetry[spakky-opentelemetry]
     end
 
     core --> logging_pkg
-    core --> tracing_pkg
     core --> domain
     domain --> data
     domain --> event
@@ -105,9 +100,6 @@ graph TB
     event --> kafka
 
     task_pkg --> celery_plugin
-
-    tracing_pkg --> opentelemetry
-    logging_pkg -.-> opentelemetry
 
     data --> sqlalchemy
     outbox -.-> sqlalchemy
@@ -125,9 +117,7 @@ graph TB
     style rabbitmq fill:#e0e0e0
     style kafka fill:#e0e0e0
     style sqlalchemy fill:#e0e0e0
-    style tracing_pkg fill:#e1f5ff
     style celery_plugin fill:#e0e0e0
-    style opentelemetry fill:#e0e0e0
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
@@ -140,8 +130,6 @@ graph TB
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
-- **추적 코어** (spakky-tracing) → `spakky` 코어에만 의존
-- **관측 플러그인** (spakky-opentelemetry) → `spakky-tracing`에 의존, `spakky-logging` 설치 시 trace_id↔LogContext 브릿지 역할
 
 ---
 

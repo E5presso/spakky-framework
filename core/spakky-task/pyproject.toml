@@ -66,5 +66,4 @@ exclude_lines = [
     "pass",
 ]
 
-[tool.uv.sources]
-spakky-event = { workspace = true }
+
