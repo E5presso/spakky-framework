@@ -1,0 +1,1 @@
+"""Outbox integration test suite."""

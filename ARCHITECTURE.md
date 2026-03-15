@@ -33,15 +33,14 @@
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
+| **Core** | `spakky-outbox` | Transactional Outbox 패턴 추상화 (IEventBus 교체, Relay) |
 | **Core** | `spakky-tracing` | 분산 추적 추상화 (TraceContext, ITracePropagator, @Trace) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
-| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 |
-| **Plugin** | `spakky-outbox` | Transactional Outbox 패턴 (IEventBus 교체) |
-| **Plugin** | `spakky-outbox-sqlalchemy` | SQLAlchemy 기반 Outbox 저장소 구현 |
+| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 (spakky-outbox 설치 시 Outbox 저장소 자동 등록) |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @Logging AOP Aspect |
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지, 자동 계측 |
@@ -58,6 +57,7 @@ graph TB
         domain[spakky-domain<br/>Entity · Event · CQRS]
         data[spakky-data<br/>Repository · Transaction]
         event[spakky-event<br/>Publisher · Consumer · Aspect]
+        outbox[spakky-outbox<br/>OutboxEventBus · Relay]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
     end
 
@@ -77,8 +77,6 @@ graph TB
 
     subgraph "Infrastructure Plugins"
         sqlalchemy[spakky-sqlalchemy]
-        outbox[spakky-outbox]
-        outbox_sa[spakky-outbox-sqlalchemy]
     end
 
     subgraph "Task Plugins"
@@ -96,6 +94,7 @@ graph TB
     domain --> data
     domain --> event
     data --> event
+    event --> outbox
     core --> task_pkg
 
     core --> fastapi
@@ -104,21 +103,21 @@ graph TB
 
     event --> rabbitmq
     event --> kafka
-    event --> outbox
 
     task_pkg --> celery_plugin
 
     tracing_pkg --> opentelemetry
+    logging_pkg -.-> opentelemetry
 
     data --> sqlalchemy
-    outbox --> outbox_sa
-    sqlalchemy --> outbox_sa
+    outbox -.-> sqlalchemy
 
     style core fill:#e1f5ff
     style logging_pkg fill:#e0e0e0
     style domain fill:#fff4e1
     style data fill:#e8f5e9
     style event fill:#f3e5f5
+    style outbox fill:#f3e5f5
     style task_pkg fill:#fce4ec
     style fastapi fill:#e0e0e0
     style typer fill:#e0e0e0
@@ -126,8 +125,6 @@ graph TB
     style rabbitmq fill:#e0e0e0
     style kafka fill:#e0e0e0
     style sqlalchemy fill:#e0e0e0
-    style outbox fill:#e0e0e0
-    style outbox_sa fill:#e0e0e0
     style tracing_pkg fill:#e1f5ff
     style celery_plugin fill:#e0e0e0
     style opentelemetry fill:#e0e0e0
@@ -137,10 +134,9 @@ graph TB
 
 - **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존
+- **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존, `spakky-outbox` 설치 시 Outbox 저장소 런타임 감지
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
-- **Outbox 플러그인** (outbox) → `spakky-event`까지 의존
-- **Outbox 인프라** (outbox-sqlalchemy) → `spakky-outbox` + `spakky-sqlalchemy`에 의존
+- **Outbox 코어** (spakky-outbox) → `spakky-event`까지 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
@@ -389,9 +385,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
-| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
+| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction. `spakky-outbox` 설치 시: `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
-| `spakky-outbox-sqlalchemy` | `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
 | `spakky-task` | `TaskRegistrationPostProcessor` |
 | `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
 

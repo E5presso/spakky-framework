@@ -77,7 +77,6 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-sqlalchemy`** | Database integration with [SQLAlchemy](https://www.sqlalchemy.org/) ORM |
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
 | **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
-| **`spakky-outbox-sqlalchemy`** | SQLAlchemy storage implementation for spakky-outbox |
 | **`spakky-celery`** | Task dispatch and schedule registration with [Celery](https://docs.celeryq.dev/) via AOP |
 
 ## 🚀 Quick Start

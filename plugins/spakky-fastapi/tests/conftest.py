@@ -3,7 +3,6 @@ from logging import Formatter, StreamHandler, getLogger
 from typing import Any, AsyncGenerator, Generator
 
 import pytest
-import spakky.plugins.logging
 from fastapi import FastAPI
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -42,7 +41,6 @@ async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
         .load_plugins(
             include={
                 spakky.plugins.fastapi.PLUGIN_NAME,
-                spakky.plugins.logging.PLUGIN_NAME,
             }
         )
         .scan(apps)

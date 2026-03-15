@@ -33,6 +33,10 @@
 			"path": "core/spakky-task",
 		},
 		{
+			"name": "core.outbox",
+			"path": "core/spakky-outbox",
+		},
+		{
 			"name": "plugins.logging",
 			"path": "plugins/spakky-logging",
 		},
@@ -59,14 +63,6 @@
 		{
 			"name": "plugins.sqlalchemy",
 			"path": "plugins/spakky-sqlalchemy",
-		},
-		{
-			"name": "plugins.outbox",
-			"path": "plugins/spakky-outbox",
-		},
-		{
-			"name": "plugins.outbox-sqlalchemy",
-			"path": "plugins/spakky-outbox-sqlalchemy",
 		},
 		{
 			"name": "plugins.celery",
@@ -158,7 +154,6 @@
 			"kafka",
 			"sqlalchemy",
 			"outbox",
-			"outbox-sqlalchemy",
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml",

@@ -24,6 +24,8 @@ Architecture Decision Record는 소프트웨어 아키텍처에 영향을 미치
 | [ADR-0002](0002-outbox-plugin-architecture.md) | Outbox 플러그인 아키텍처 — 추상화와 구현체 분리 | Accepted | 2026-03-10 |
 | [ADR-0003](0003-task-schedule-decorator-split.md) | @task / @schedule 데코레이터 분리 — 온디맨드 디스패치와 정기 실행 분리 | Accepted | 2026-03-15 |
 | [ADR-0004](0004-distributed-tracing-architecture.md) | 분산 트레이싱 아키텍처 — `spakky-tracing` 코어 + OTel 플러그인 분리 | Accepted | 2026-03-15 |
+| [ADR-0005](0005-merge-outbox-sqlalchemy-into-sqlalchemy.md) | Outbox SQLAlchemy 구현체를 spakky-sqlalchemy에 통합 | Accepted | 2026-03-15 |
+| [ADR-0006](0006-move-outbox-to-core.md) | spakky-outbox를 core 패키지로 승격 | Accepted | 2026-03-15 |
 
 ## 새 ADR 작성 가이드
 

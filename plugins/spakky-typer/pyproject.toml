@@ -8,11 +8,6 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = ["spakky>=6.0.0", "typer>=0.24.1"]
 
-[dependency-groups]
-dev = [
-    "spakky-logging>=6.0.0",
-]
-
 [project.entry-points."spakky.plugins"]
 spakky-typer = "spakky.plugins.typer.main:initialize"
 

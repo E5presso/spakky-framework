@@ -11,12 +11,16 @@ dependencies = [
     "sqlalchemy>=2.0.48",
 ]
 
+[project.optional-dependencies]
+outbox = ["spakky-outbox>=6.0.0"]
+
 [dependency-groups]
 dev = [
-    "spakky-logging>=6.0.0",
+    "spakky-outbox>=6.0.0",
     "testcontainers[postgres]>=4.14.1",
     "psycopg[binary]>=3.3.3",
     "greenlet>=3.3.2",
+    "pytest-asyncio>=1.3.0",
     "pytest-integration-mark>=0.2.0",
 ]
 

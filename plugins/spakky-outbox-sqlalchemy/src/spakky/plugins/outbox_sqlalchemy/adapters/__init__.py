@@ -1,1 +1,0 @@
-"""Outbox SQLAlchemy adapters module."""

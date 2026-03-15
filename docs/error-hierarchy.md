@@ -22,7 +22,6 @@ Exception
     ├── AbstractSpakkyFastAPIError (플러그인)
     ├── AbstractSpakkySqlAlchemyError (플러그인)
     ├── AbstractSpakkyOutboxError (플러그인)
-    │   └── AbstractSpakkyOutboxSqlAlchemyError (플러그인)
     └── ...
 ```
 
@@ -241,24 +240,12 @@ from spakky.plugins.sqlalchemy.error import AbstractSpakkySqlAlchemyError
 Transactional Outbox 관련 에러입니다.
 
 ```python
-from spakky.plugins.outbox.error import AbstractSpakkyOutboxError
+from spakky.outbox.error import AbstractSpakkyOutboxError
 ```
 
 | 에러                        | 설명                        |
 | --------------------------- | --------------------------- |
 | `AbstractSpakkyOutboxError` | Outbox 에러 기반 클래스     |
-
-### spakky-outbox-sqlalchemy
-
-Outbox SQLAlchemy 구현 관련 에러입니다.
-
-```python
-from spakky.plugins.outbox_sqlalchemy.error import AbstractSpakkyOutboxSqlAlchemyError
-```
-
-| 에러                                   | 설명                                  |
-| -------------------------------------- | ------------------------------------- |
-| `AbstractSpakkyOutboxSqlAlchemyError`  | Outbox SQLAlchemy 에러 기반 클래스    |
 
 ---
 

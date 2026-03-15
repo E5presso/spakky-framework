@@ -19,7 +19,6 @@ on:
           - spakky-kafka
           - spakky-sqlalchemy
           - spakky-outbox
-          - spakky-outbox-sqlalchemy
       dry_run:
         description: 'Dry run (build only, do not publish)'
         required: false

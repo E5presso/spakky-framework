@@ -8,6 +8,11 @@ import pytest
 from spakky.plugins.sqlalchemy.common.config import SQLAlchemyConnectionConfig
 from spakky.plugins.sqlalchemy.main import initialize
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
+from spakky.plugins.sqlalchemy.outbox.storage import (
+    AsyncSqlAlchemyOutboxStorage,
+    SqlAlchemyOutboxStorage,
+)
+from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
     ConnectionManager,
@@ -58,7 +63,10 @@ def test_initialize_with_async_support_expect_all_pods_registered(
     assert AsyncConnectionManager in added_types
     assert AsyncSessionManager in added_types
     assert AsyncTransaction in added_types
-    assert mock_app.add.call_count == 8
+    assert OutboxMessageTable in added_types
+    assert SqlAlchemyOutboxStorage in added_types
+    assert AsyncSqlAlchemyOutboxStorage in added_types
+    assert mock_app.add.call_count == 11
 
 
 def test_initialize_without_async_support_expect_sync_pods_only(
@@ -79,7 +87,10 @@ def test_initialize_without_async_support_expect_sync_pods_only(
     assert AsyncConnectionManager not in added_types
     assert AsyncSessionManager not in added_types
     assert AsyncTransaction not in added_types
-    assert mock_app.add.call_count == 5
+    assert OutboxMessageTable in added_types
+    assert SqlAlchemyOutboxStorage in added_types
+    assert AsyncSqlAlchemyOutboxStorage not in added_types
+    assert mock_app.add.call_count == 7
 
 
 def test_initialize_default_async_mode_expect_async_pods_registered(

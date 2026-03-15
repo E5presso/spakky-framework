@@ -19,6 +19,7 @@ Conventional Commits 형식: `<type>(<scope>): <subject>`
 | `data` | `core/spakky-data` |
 | `event` | `core/spakky-event` |
 | `task` | `core/spakky-task` |
+| `outbox` | `core/spakky-outbox` |
 | `logging` | `plugins/spakky-logging` |
 | `fastapi` | `plugins/spakky-fastapi` |
 | `kafka` | `plugins/spakky-kafka` |
@@ -26,8 +27,6 @@ Conventional Commits 형식: `<type>(<scope>): <subject>`
 | `security` | `plugins/spakky-security` |
 | `sqlalchemy` | `plugins/spakky-sqlalchemy` |
 | `typer` | `plugins/spakky-typer` |
-| `outbox` | `plugins/spakky-outbox` |
-| `outbox-sqlalchemy` | `plugins/spakky-outbox-sqlalchemy` |
 | `celery` | `plugins/spakky-celery` |
 
 여러 패키지 변경 시 핵심 변경의 scope 사용, 또는 scope 생략.

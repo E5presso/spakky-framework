@@ -34,6 +34,7 @@ version_files = [
   "core/spakky-data/pyproject.toml:version",
   "core/spakky-event/pyproject.toml:version",
   "core/spakky-task/pyproject.toml:version",
+  "core/spakky-outbox/pyproject.toml:version",
   "plugins/spakky-logging/pyproject.toml:version",
   "plugins/spakky-fastapi/pyproject.toml:version",
   "plugins/spakky-rabbitmq/pyproject.toml:version",
@@ -41,8 +42,6 @@ version_files = [
   "plugins/spakky-typer/pyproject.toml:version",
   "plugins/spakky-kafka/pyproject.toml:version",
   "plugins/spakky-sqlalchemy/pyproject.toml:version",
-  "plugins/spakky-outbox/pyproject.toml:version",
-  "plugins/spakky-outbox-sqlalchemy/pyproject.toml:version",
   "plugins/spakky-celery/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
@@ -54,6 +53,7 @@ members = [
   "core/spakky-data",
   "core/spakky-event",
   "core/spakky-task",
+  "core/spakky-outbox",
   "plugins/spakky-logging",
   "plugins/spakky-fastapi",
   "plugins/spakky-rabbitmq",
@@ -61,8 +61,6 @@ members = [
   "plugins/spakky-typer",
   "plugins/spakky-kafka",
   "plugins/spakky-sqlalchemy",
-  "plugins/spakky-outbox",
-  "plugins/spakky-outbox-sqlalchemy",
   "plugins/spakky-celery",
 ]
 
@@ -79,7 +77,6 @@ spakky-typer = { workspace = true }
 spakky-kafka = { workspace = true }
 spakky-sqlalchemy = { workspace = true }
 spakky-outbox = { workspace = true }
-spakky-outbox-sqlalchemy = { workspace = true }
 spakky-task = { workspace = true }
 spakky-celery = { workspace = true }
 spakky-logging = { workspace = true }
