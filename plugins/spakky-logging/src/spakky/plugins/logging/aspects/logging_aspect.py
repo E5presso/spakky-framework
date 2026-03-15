@@ -23,9 +23,9 @@ from spakky.core.aop.pointcut import Around
 from spakky.core.common.types import AsyncFunc, Func
 from spakky.core.pod.annotations.order import Order
 
-from spakky.logging.annotation import Logging
-from spakky.logging.config import LoggingConfig
-from spakky.logging.constants import (
+from spakky.plugins.logging.annotation import Logging
+from spakky.plugins.logging.config import LoggingConfig
+from spakky.plugins.logging.constants import (
     DEFAULT_MASK_KEYS,
     DEFAULT_MAX_RESULT_LENGTH,
     DEFAULT_SLOW_THRESHOLD_MS,

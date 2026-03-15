@@ -2,7 +2,7 @@
 
 import logging
 
-from spakky.logging.config import LogFormat, LoggingConfig
+from spakky.plugins.logging.config import LogFormat, LoggingConfig
 
 
 def test_logging_config_defaults_expect_sane_values() -> None:

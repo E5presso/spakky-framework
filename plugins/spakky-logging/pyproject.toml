@@ -9,7 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = ["spakky>=6.0.0", "pydantic-settings>=2.9.1"]
 
 [project.entry-points."spakky.plugins"]
-spakky-logging = "spakky.logging.main:initialize"
+spakky-logging = "spakky.plugins.logging.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
@@ -17,7 +17,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "spakky.logging"
+module-name = "spakky.plugins.logging"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -29,7 +29,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky/logging"
+pythonpath = "src/spakky/plugins/logging"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -48,7 +48,7 @@ spec_test_format = "{result} {docstring_summary}"
 markers = ["known_issue(reason): 알려진 버그"]
 
 [tool.coverage.run]
-include = ["src/spakky/logging/**/*.py"]
+include = ["src/spakky/plugins/logging/**/*.py"]
 branch = true
 
 [tool.coverage.report]

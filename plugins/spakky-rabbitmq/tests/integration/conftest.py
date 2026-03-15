@@ -4,7 +4,7 @@ from os import environ
 from typing import Any, Generator
 
 import pytest
-import spakky.logging
+import spakky.plugins.logging
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from testcontainers.rabbitmq import (
@@ -71,7 +71,7 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
         .load_plugins(
             include={
                 spakky.plugins.rabbitmq.PLUGIN_NAME,
-                spakky.logging.PLUGIN_NAME,
+                spakky.plugins.logging.PLUGIN_NAME,
             }
         )
         .scan(apps)

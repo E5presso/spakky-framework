@@ -28,7 +28,6 @@ tools: [vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vsco
 | `core/spakky-data/` | Repository, Transaction 추상화 |
 | `core/spakky-event/` | 인프로세스 이벤트 |
 | `core/spakky-task/` | 태스크 추상화 (스케줄링, 디스패치) |
-| `core/spakky-logging/` | 구조화 로깅 (AOP, 포맷터, 컨텍스트) |
 | `plugins/spakky-*/` | 플러그인 구현체 |
 
 **의존 방향:** `spakky` → `spakky-domain` → `spakky-data` → `spakky-event` → `spakky-task` (단방향)

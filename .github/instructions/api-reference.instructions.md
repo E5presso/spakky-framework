@@ -27,14 +27,14 @@ applyTo: "**/*.py"
 
 | Decorator / Class | Import Path | Purpose |
 |---|---|---|
-| `@Logging()` | `spakky.logging` | 메서드 로깅 어노테이션 (마스킹, slow 감지) |
-| `LoggingAspect` / `AsyncLoggingAspect` | `spakky.logging` | 동기/비동기 로깅 Aspect |
-| `LoggingConfig` | `spakky.logging` | 로깅 설정 (@Configuration) |
-| `LogFormat` | `spakky.logging` | 포맷 열거형 (TEXT, JSON, PRETTY) |
-| `LogContext` | `spakky.logging` | ContextVar 기반 컨텍스트 전파 |
-| `ContextInjectingFilter` | `spakky.logging` | LogRecord에 컨텍스트 주입 |
-| `SpakkyTextFormatter` / `SpakkyJsonFormatter` / `SpakkyPrettyFormatter` | `spakky.logging` | 포맷터 |
-| `LoggingSetupPostProcessor` | `spakky.logging` | 루트 로거 자동 구성 |
+| `@Logging()` | `spakky.plugins.logging` | 메서드 로깅 어노테이션 (마스킹, slow 감지) |
+| `LoggingAspect` / `AsyncLoggingAspect` | `spakky.plugins.logging` | 동기/비동기 로깅 Aspect |
+| `LoggingConfig` | `spakky.plugins.logging` | 로깅 설정 (@Configuration) |
+| `LogFormat` | `spakky.plugins.logging` | 포맷 열거형 (TEXT, JSON, PRETTY) |
+| `LogContext` | `spakky.plugins.logging` | ContextVar 기반 컨텍스트 전파 |
+| `ContextInjectingFilter` | `spakky.plugins.logging` | LogRecord에 컨텍스트 주입 |
+| `SpakkyTextFormatter` / `SpakkyJsonFormatter` / `SpakkyPrettyFormatter` | `spakky.plugins.logging` | 포맷터 |
+| `LoggingSetupPostProcessor` | `spakky.plugins.logging` | 루트 로거 자동 구성 |
 
 ## Data API (spakky-data)
 

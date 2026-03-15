@@ -2,8 +2,8 @@
 
 import logging
 
-from spakky.logging.context import LogContext
-from spakky.logging.filters import ContextInjectingFilter
+from spakky.plugins.logging.context import LogContext
+from spakky.plugins.logging.filters import ContextInjectingFilter
 
 
 def test_filter_injects_context_values_expect_attributes_on_record() -> None:

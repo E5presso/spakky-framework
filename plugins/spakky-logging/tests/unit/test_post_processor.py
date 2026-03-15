@@ -2,13 +2,16 @@
 
 import logging
 
-from spakky.logging.config import LogFormat, LoggingConfig
-from spakky.logging.formatters import (
+from spakky.plugins.logging.config import LogFormat, LoggingConfig
+from spakky.plugins.logging.formatters import (
     SpakkyJsonFormatter,
     SpakkyPrettyFormatter,
     SpakkyTextFormatter,
 )
-from spakky.logging.post_processor import HANDLER_NAME, LoggingSetupPostProcessor
+from spakky.plugins.logging.post_processor import (
+    HANDLER_NAME,
+    LoggingSetupPostProcessor,
+)
 
 
 def _make_config(**overrides: object) -> LoggingConfig:

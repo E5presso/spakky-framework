@@ -12,7 +12,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 
-from spakky.logging.constants import LOG_CONTEXT_VAR_NAME
+from spakky.plugins.logging.constants import LOG_CONTEXT_VAR_NAME
 
 _log_context: ContextVar[dict[str, str]] = ContextVar(
     LOG_CONTEXT_VAR_NAME,

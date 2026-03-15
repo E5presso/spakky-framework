@@ -17,10 +17,10 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
-from spakky.logging.config import LogFormat, LoggingConfig
-from spakky.logging.constants import HANDLER_NAME
-from spakky.logging.filters import ContextInjectingFilter
-from spakky.logging.formatters import (
+from spakky.plugins.logging.config import LogFormat, LoggingConfig
+from spakky.plugins.logging.constants import HANDLER_NAME
+from spakky.plugins.logging.filters import ContextInjectingFilter
+from spakky.plugins.logging.formatters import (
     SpakkyJsonFormatter,
     SpakkyPrettyFormatter,
     SpakkyTextFormatter,

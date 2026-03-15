@@ -13,7 +13,7 @@ from typing import ClassVar
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
 
-from spakky.logging.constants import (
+from spakky.plugins.logging.constants import (
     DEFAULT_DATE_FORMAT,
     DEFAULT_MASK_KEYS,
     DEFAULT_MASK_REPLACEMENT,

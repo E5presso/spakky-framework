@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 import spakky.data
-import spakky.logging
+import spakky.plugins.logging
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from testcontainers.postgres import PostgresContainer
@@ -107,7 +107,7 @@ def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
             include={
                 spakky.plugins.sqlalchemy.PLUGIN_NAME,
                 spakky.data.PLUGIN_NAME,
-                spakky.logging.PLUGIN_NAME,
+                spakky.plugins.logging.PLUGIN_NAME,
             }
         )
         .scan(apps)

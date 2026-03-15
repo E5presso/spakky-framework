@@ -1,9 +1,9 @@
-"""Tests for spakky.logging.__init__ — public API exports and plugin metadata."""
+"""Tests for spakky.plugins.logging.__init__ — public API exports and plugin metadata."""
 
 from spakky.core.application.plugin import Plugin
 
-import spakky.logging as logging_pkg
-from spakky.logging import (
+import spakky.plugins.logging as logging_pkg
+from spakky.plugins.logging import (
     AsyncLoggingAspect,
     ContextInjectingFilter,
     LogContext,

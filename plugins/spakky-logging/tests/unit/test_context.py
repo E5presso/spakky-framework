@@ -1,6 +1,6 @@
 """Tests for LogContext — contextvars-based log context management."""
 
-from spakky.logging.context import LogContext
+from spakky.plugins.logging.context import LogContext
 
 
 def test_bind_and_get_expect_values_present() -> None:

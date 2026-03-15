@@ -2,9 +2,12 @@
 
 from spakky.core.application.application import SpakkyApplication
 
-from spakky.logging.aspects.logging_aspect import AsyncLoggingAspect, LoggingAspect
-from spakky.logging.config import LoggingConfig
-from spakky.logging.post_processor import LoggingSetupPostProcessor
+from spakky.plugins.logging.aspects.logging_aspect import (
+    AsyncLoggingAspect,
+    LoggingAspect,
+)
+from spakky.plugins.logging.config import LoggingConfig
+from spakky.plugins.logging.post_processor import LoggingSetupPostProcessor
 
 
 def initialize(app: SpakkyApplication) -> None:

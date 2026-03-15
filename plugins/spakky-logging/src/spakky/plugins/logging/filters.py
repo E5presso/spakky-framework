@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from spakky.logging.context import LogContext
+from spakky.plugins.logging.context import LogContext
 
 
 class ContextInjectingFilter(logging.Filter):

@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import ClassVar
 
-from spakky.logging.constants import (
+from spakky.plugins.logging.constants import (
     ANSI_DIM,
     ANSI_RESET,
     DEFAULT_DATE_FORMAT,

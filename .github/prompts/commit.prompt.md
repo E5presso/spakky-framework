@@ -19,7 +19,7 @@ Conventional Commits 형식: `<type>(<scope>): <subject>`
 | `data` | `core/spakky-data` |
 | `event` | `core/spakky-event` |
 | `task` | `core/spakky-task` |
-| `logging` | `core/spakky-logging` |
+| `logging` | `plugins/spakky-logging` |
 | `fastapi` | `plugins/spakky-fastapi` |
 | `kafka` | `plugins/spakky-kafka` |
 | `rabbitmq` | `plugins/spakky-rabbitmq` |

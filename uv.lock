@@ -2252,7 +2252,7 @@ requires-dist = [
     { name = "spakky-celery", marker = "extra == 'celery'", editable = "plugins/spakky-celery" },
     { name = "spakky-fastapi", marker = "extra == 'fastapi'", editable = "plugins/spakky-fastapi" },
     { name = "spakky-kafka", marker = "extra == 'kafka'", editable = "plugins/spakky-kafka" },
-    { name = "spakky-logging", marker = "extra == 'logging'", editable = "core/spakky-logging" },
+    { name = "spakky-logging", marker = "extra == 'logging'", editable = "plugins/spakky-logging" },
     { name = "spakky-outbox-sqlalchemy", marker = "extra == 'outbox-sqlalchemy'", editable = "plugins/spakky-outbox-sqlalchemy" },
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
@@ -2361,7 +2361,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "spakky-logging", editable = "core/spakky-logging" }]
+dev = [{ name = "spakky-logging", editable = "plugins/spakky-logging" }]
 
 [[package]]
 name = "spakky-framework"
@@ -2429,14 +2429,14 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
-    { name = "spakky-logging", editable = "core/spakky-logging" },
+    { name = "spakky-logging", editable = "plugins/spakky-logging" },
     { name = "testcontainers", specifier = ">=4.14.1" },
 ]
 
 [[package]]
 name = "spakky-logging"
 version = "6.0.0"
-source = { editable = "core/spakky-logging" }
+source = { editable = "plugins/spakky-logging" }
 dependencies = [
     { name = "pydantic-settings" },
     { name = "spakky" },
@@ -2529,7 +2529,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
-    { name = "spakky-logging", editable = "core/spakky-logging" },
+    { name = "spakky-logging", editable = "plugins/spakky-logging" },
     { name = "testcontainers", specifier = ">=4.14.1" },
 ]
 
@@ -2581,7 +2581,7 @@ dev = [
     { name = "greenlet", specifier = ">=3.3.2" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
-    { name = "spakky-logging", editable = "core/spakky-logging" },
+    { name = "spakky-logging", editable = "plugins/spakky-logging" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.14.1" },
 ]
 
@@ -2617,7 +2617,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "spakky-logging", editable = "core/spakky-logging" }]
+dev = [{ name = "spakky-logging", editable = "plugins/spakky-logging" }]
 
 [[package]]
 name = "sqlalchemy"

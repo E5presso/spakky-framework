@@ -4,9 +4,9 @@ import json
 import logging
 import sys
 
-from spakky.logging.context import LogContext
-from spakky.logging.filters import ContextInjectingFilter
-from spakky.logging.formatters import (
+from spakky.plugins.logging.context import LogContext
+from spakky.plugins.logging.filters import ContextInjectingFilter
+from spakky.plugins.logging.formatters import (
     SpakkyJsonFormatter,
     SpakkyPrettyFormatter,
     SpakkyTextFormatter,

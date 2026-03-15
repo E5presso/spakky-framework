@@ -7,8 +7,11 @@ from logging import Formatter, Logger, LogRecord
 import pytest
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 
-from spakky.logging.annotation import Logging
-from spakky.logging.aspects.logging_aspect import AsyncLoggingAspect, LoggingAspect
+from spakky.plugins.logging.annotation import Logging
+from spakky.plugins.logging.aspects.logging_aspect import (
+    AsyncLoggingAspect,
+    LoggingAspect,
+)
 
 
 class InMemoryHandler(logging.Handler):
@@ -28,7 +31,7 @@ def _setup_logger() -> tuple[Logger, InMemoryHandler]:
     handler = InMemoryHandler()
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(Formatter("[%(levelname)s]: %(message)s"))
-    logger: Logger = logging.getLogger("spakky.logging.aspects.logging_aspect")
+    logger: Logger = logging.getLogger("spakky.plugins.logging.aspects.logging_aspect")
     logger.setLevel(logging.DEBUG)
     logger.addHandler(handler)
     return logger, handler

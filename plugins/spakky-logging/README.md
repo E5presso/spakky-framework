@@ -21,7 +21,7 @@ app = SpakkyApplication(ApplicationContext()).load_plugins().scan(my_app).start(
 ### 2. Annotate Methods with `@Logging`
 
 ```python
-from spakky.logging import Logging
+from spakky.plugins.logging import Logging
 
 class UserService:
     @Logging()
@@ -34,7 +34,7 @@ class UserService:
 Override defaults via `LoggingConfig`:
 
 ```python
-from spakky.logging import LoggingConfig, LogFormat
+from spakky.plugins.logging import LoggingConfig, LogFormat
 
 config = LoggingConfig(
     level="DEBUG",
@@ -49,7 +49,7 @@ config = LoggingConfig(
 Bind contextual key-value pairs that are automatically included in all log records:
 
 ```python
-from spakky.logging import LogContext
+from spakky.plugins.logging import LogContext
 
 LogContext.bind(request_id="req-123", user_id="u-456")
 

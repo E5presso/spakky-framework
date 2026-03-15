@@ -3,7 +3,7 @@ from logging import Formatter, StreamHandler, getLogger
 from typing import Any, Generator
 
 import pytest
-import spakky.logging
+import spakky.plugins.logging
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
@@ -42,7 +42,7 @@ def get_cli_fixture(name: str) -> Generator[Typer, Any, None]:
         .load_plugins(
             include={
                 spakky.plugins.typer.PLUGIN_NAME,
-                spakky.logging.PLUGIN_NAME,
+                spakky.plugins.logging.PLUGIN_NAME,
             }
         )
         .scan(apps)
