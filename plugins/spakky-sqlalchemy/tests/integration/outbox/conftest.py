@@ -17,6 +17,11 @@ from spakky.plugins.sqlalchemy.outbox.storage import (
 )
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
+    ConnectionManager,
+)
+from spakky.plugins.sqlalchemy.persistency.session_manager import (
+    AsyncSessionManager,
+    SessionManager,
 )
 from spakky.plugins.sqlalchemy.persistency.transaction import (
     AsyncTransaction,
@@ -129,3 +134,31 @@ def storage_fixture(app: SpakkyApplication) -> SqlAlchemyOutboxStorage:
 def unique_id_fixture() -> str:
     """Generate unique ID for test data isolation in parallel execution."""
     return uuid4().hex[:8]
+
+
+@pytest.fixture(name="short_timeout_async_storage", scope="function")
+def short_timeout_async_storage_fixture(
+    app: SpakkyApplication,
+) -> AsyncSqlAlchemyOutboxStorage:
+    """AsyncSqlAlchemyOutboxStorage with 0-second claim timeout for testing reclaim."""
+    from unittest.mock import MagicMock
+
+    session_manager = app.container.get(type_=AsyncSessionManager)
+    connection_manager = app.container.get(type_=AsyncConnectionManager)
+    config = MagicMock()
+    config.claim_timeout_seconds = 0.0
+    return AsyncSqlAlchemyOutboxStorage(session_manager, connection_manager, config)
+
+
+@pytest.fixture(name="short_timeout_storage", scope="function")
+def short_timeout_storage_fixture(
+    app: SpakkyApplication,
+) -> SqlAlchemyOutboxStorage:
+    """SqlAlchemyOutboxStorage with 0-second claim timeout for testing reclaim."""
+    from unittest.mock import MagicMock
+
+    session_manager = app.container.get(type_=SessionManager)
+    connection_manager = app.container.get(type_=ConnectionManager)
+    config = MagicMock()
+    config.claim_timeout_seconds = 0.0
+    return SqlAlchemyOutboxStorage(session_manager, connection_manager, config)

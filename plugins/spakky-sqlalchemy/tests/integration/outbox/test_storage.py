@@ -1,5 +1,6 @@
 """Integration tests for AsyncSqlAlchemyOutboxStorage with PostgreSQL."""
 
+import asyncio
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -143,3 +144,76 @@ async def test_increment_retry_increases_count(
     found = [r for r in result if r.id == message.id]
     assert len(found) == 1
     assert found[0].retry_count == 2
+
+
+@pytest.mark.asyncio
+async def test_rollback_does_not_persist_message(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """트랜잭션 롤백 시 outbox 메시지가 영속화되지 않는지 검증한다."""
+    message = _make_message(unique_id)
+
+    await async_transaction.initialize()
+    await async_storage.save(message)
+    await async_transaction.rollback()
+    await async_transaction.dispose()
+
+    result = await async_storage.fetch_pending(limit=100, max_retry=5)
+    result_ids = [r.id for r in result]
+    assert message.id not in result_ids
+
+
+@pytest.mark.asyncio
+async def test_fetch_pending_returns_empty_when_no_messages(
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+) -> None:
+    """pending 메시지가 없을 때 빈 리스트를 반환하는지 검증한다."""
+    result = await async_storage.fetch_pending(limit=100, max_retry=5)
+    assert isinstance(result, list)
+
+
+@pytest.mark.asyncio
+async def test_fetch_pending_skips_recently_claimed_messages(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """claimed 후 timeout 이내에 재조회 시 해당 메시지가 반환되지 않는지 검증한다."""
+    message = _make_message(unique_id)
+
+    async with async_transaction:
+        await async_storage.save(message)
+
+    first = await async_storage.fetch_pending(limit=100, max_retry=5)
+    first_ids = [r.id for r in first]
+    assert message.id in first_ids
+
+    second = await async_storage.fetch_pending(limit=100, max_retry=5)
+    second_ids = [r.id for r in second]
+    assert message.id not in second_ids
+
+
+@pytest.mark.asyncio
+async def test_fetch_pending_reclaims_timed_out_messages(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    short_timeout_async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """claim timeout이 만료된 메시지가 다시 조회되는지 검증한다."""
+    message = _make_message(unique_id)
+
+    async with async_transaction:
+        await async_storage.save(message)
+
+    first = await short_timeout_async_storage.fetch_pending(limit=100, max_retry=5)
+    first_ids = [r.id for r in first]
+    assert message.id in first_ids
+
+    await asyncio.sleep(0.05)
+
+    second = await short_timeout_async_storage.fetch_pending(limit=100, max_retry=5)
+    second_ids = [r.id for r in second]
+    assert message.id in second_ids

@@ -1,5 +1,6 @@
 """Integration tests for SqlAlchemyOutboxStorage with PostgreSQL."""
 
+import time
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -134,3 +135,72 @@ def test_increment_retry_increases_count(
     found = [r for r in result if r.id == message.id]
     assert len(found) == 1
     assert found[0].retry_count == 2
+
+
+def test_rollback_does_not_persist_message(
+    transaction: Transaction,
+    storage: SqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """트랜잭션 롤백 시 outbox 메시지가 영속화되지 않는지 검증한다."""
+    message = _make_message(unique_id)
+
+    transaction.initialize()
+    storage.save(message)
+    transaction.rollback()
+    transaction.dispose()
+
+    result = storage.fetch_pending(limit=100, max_retry=5)
+    result_ids = [r.id for r in result]
+    assert message.id not in result_ids
+
+
+def test_fetch_pending_returns_empty_when_no_messages(
+    storage: SqlAlchemyOutboxStorage,
+) -> None:
+    """pending 메시지가 없을 때 빈 리스트를 반환하는지 검증한다."""
+    result = storage.fetch_pending(limit=100, max_retry=5)
+    assert isinstance(result, list)
+
+
+def test_fetch_pending_skips_recently_claimed_messages(
+    transaction: Transaction,
+    storage: SqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """claimed 후 timeout 이내에 재조회 시 해당 메시지가 반환되지 않는지 검증한다."""
+    message = _make_message(unique_id)
+
+    with transaction:
+        storage.save(message)
+
+    first = storage.fetch_pending(limit=100, max_retry=5)
+    first_ids = [r.id for r in first]
+    assert message.id in first_ids
+
+    second = storage.fetch_pending(limit=100, max_retry=5)
+    second_ids = [r.id for r in second]
+    assert message.id not in second_ids
+
+
+def test_fetch_pending_reclaims_timed_out_messages(
+    transaction: Transaction,
+    storage: SqlAlchemyOutboxStorage,
+    short_timeout_storage: SqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """claim timeout이 만료된 메시지가 다시 조회되는지 검증한다."""
+    message = _make_message(unique_id)
+
+    with transaction:
+        storage.save(message)
+
+    first = short_timeout_storage.fetch_pending(limit=100, max_retry=5)
+    first_ids = [r.id for r in first]
+    assert message.id in first_ids
+
+    time.sleep(0.05)
+
+    second = short_timeout_storage.fetch_pending(limit=100, max_retry=5)
+    second_ids = [r.id for r in second]
+    assert message.id in second_ids

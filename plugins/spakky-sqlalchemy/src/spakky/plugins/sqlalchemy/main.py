@@ -23,7 +23,7 @@ try:
     from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
 
     _HAS_OUTBOX = True
-except ImportError:
+except ImportError:  # pragma: no cover - optional dependency (spakky-outbox)
     _HAS_OUTBOX = False
 
 
