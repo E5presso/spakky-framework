@@ -59,6 +59,9 @@ class KafkaConnectionConfig(BaseSettings):
     auto_offset_reset: AutoOffsetResetType = AutoOffsetResetType.EARLIEST
     """Consumer auto offset reset policy (earliest, latest, none)."""
 
+    poll_timeout: float = 1.0
+    """Consumer poll timeout in seconds."""
+
     def __init__(self) -> None:
         super().__init__()
 

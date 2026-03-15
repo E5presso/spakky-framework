@@ -107,7 +107,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
 
     def run(self) -> None:
         while not self._stop_event.is_set():
-            message: Message | None = self.consumer.poll(timeout=1.0)
+            message: Message | None = self.consumer.poll(
+                timeout=self.config.poll_timeout
+            )
             if message is None:
                 continue
             self._route_event_handler(message)
@@ -195,7 +197,9 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
 
     async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
         while not self._stop_event.is_set():
-            message: Message | None = await self.consumer.poll(timeout=1.0)
+            message: Message | None = await self.consumer.poll(
+                timeout=self.config.poll_timeout
+            )
             if message is None:
                 continue
             await self._route_event_handler(message)

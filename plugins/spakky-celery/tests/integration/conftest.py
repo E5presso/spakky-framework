@@ -86,7 +86,7 @@ def app_with_worker_fixture(
         pool="solo",
         loglevel="INFO",
         perform_ping_check=False,
-        shutdown_timeout=30.0,
+        shutdown_timeout=10.0,
     ):
         yield app
 

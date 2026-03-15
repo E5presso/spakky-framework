@@ -20,8 +20,8 @@ from tests.apps.dummy import (
     SampleEvent,
 )
 
-POLL_INTERVAL = 0.1  # seconds between checks
-MAX_WAIT_TIME = 30  # maximum seconds to wait
+POLL_INTERVAL = 0.05  # seconds between checks
+MAX_WAIT_TIME = 10  # maximum seconds to wait
 
 _sample_event_type_adapter: TypeAdapter[SampleEvent] = TypeAdapter(SampleEvent)
 

@@ -13,13 +13,10 @@ from spakky.plugins.security.error import (
 )
 from spakky.plugins.security.hash import HashType
 
-KEY_SIZES = [1024, 2048]
 
-
-@pytest.mark.parametrize("size", KEY_SIZES)
-def test_rsa_encryption_with_generated_key(size: int) -> None:
+def test_rsa_encryption_with_generated_key(rsa_key: AsymmetricKey) -> None:
     """생성된 RSA 키로 암호화 후 복호화하면 원본 평문이 복원되고, 위변조된 데이터는 실패하는지 검증한다."""
-    cryptor: ICryptor = Rsa(key=AsymmetricKey(size=size))
+    cryptor: ICryptor = Rsa(key=rsa_key)
     cipher: str = cryptor.encrypt("Hello World!")
     plain: str = cryptor.decrypt(cipher)
     assert plain == "Hello World!"
@@ -28,12 +25,9 @@ def test_rsa_encryption_with_generated_key(size: int) -> None:
         plain = cryptor.decrypt(tempered)
 
 
-@pytest.mark.parametrize("size", KEY_SIZES)
-def test_rsa_decrypt_without_private_key_expect_error(size: int) -> None:
+def test_rsa_decrypt_without_private_key_expect_error(rsa_key: AsymmetricKey) -> None:
     """공개키만으로 RSA 복호화를 시도하면 PrivateKeyRequiredError가 발생하는지 검증한다."""
-    cryptor: ICryptor = Rsa(
-        key=AsymmetricKey(key=AsymmetricKey(size=size).public_key.binary)
-    )
+    cryptor: ICryptor = Rsa(key=AsymmetricKey(key=rsa_key.public_key.binary))
     cipher: str = cryptor.encrypt("Hello World!")
     with pytest.raises(PrivateKeyRequiredError):
         cryptor.decrypt(cipher)
@@ -70,15 +64,17 @@ def test_rsa_encryption_with_existing_key(key: bytes) -> None:
         plain = cryptor.decrypt(tempered)
 
 
-@pytest.mark.parametrize("size", KEY_SIZES)
-def test_rsa_signing_with_generated_key(size: int) -> None:
+def test_rsa_signing_with_generated_key(
+    rsa_key: AsymmetricKey,
+    rsa_key_1024: AsymmetricKey,
+    rsa_key_2048: AsymmetricKey,
+) -> None:
     """생성된 RSA 키로 서명 후 검증하면 성공하고, 잘못된 공개키로는 검증 실패하는지 확인한다."""
-    private_key: AsymmetricKey = AsymmetricKey(size=size)
-    public_key: AsymmetricKey = AsymmetricKey(key=private_key.public_key.binary)
-    wrong_public_key: AsymmetricKey = AsymmetricKey(
-        key=AsymmetricKey(size=size).public_key.binary
-    )
-    signer: ISigner = Rsa(key=private_key)
+    public_key: AsymmetricKey = AsymmetricKey(key=rsa_key.public_key.binary)
+    # Use the other key size as wrong key
+    wrong_key = rsa_key_2048 if rsa_key is rsa_key_1024 else rsa_key_1024
+    wrong_public_key: AsymmetricKey = AsymmetricKey(key=wrong_key.public_key.binary)
+    signer: ISigner = Rsa(key=rsa_key)
     verifier: ISigner = Rsa(key=public_key)
     wrong_verifier: ISigner = Rsa(key=wrong_public_key)
     signature: str = signer.sign("Hello World!")
@@ -86,20 +82,16 @@ def test_rsa_signing_with_generated_key(size: int) -> None:
     assert wrong_verifier.verify("Hello World!", signature) is False
 
 
-@pytest.mark.parametrize("size", KEY_SIZES)
-def test_rsa_sign_without_private_key_expect_error(size: int) -> None:
+def test_rsa_sign_without_private_key_expect_error(rsa_key: AsymmetricKey) -> None:
     """공개키만으로 RSA 서명을 시도하면 PrivateKeyRequiredError가 발생하는지 검증한다."""
-    signer: ISigner = Rsa(
-        key=AsymmetricKey(key=AsymmetricKey(size=size).public_key.binary)
-    )
+    signer: ISigner = Rsa(key=AsymmetricKey(key=rsa_key.public_key.binary))
     with pytest.raises(PrivateKeyRequiredError):
         signer.sign("Hello World!")
 
 
-@pytest.mark.parametrize("size", KEY_SIZES)
-def test_rsa_verify_forged_signature_expect_failure(size: int) -> None:
+def test_rsa_verify_forged_signature_expect_failure(rsa_key: AsymmetricKey) -> None:
     """위조된 서명을 RSA로 검증하면 실패하는지 검증한다."""
-    signer: ISigner = Rsa(key=AsymmetricKey(size=size))
+    signer: ISigner = Rsa(key=rsa_key)
     signature: str = signer.sign("Hello World!")
     assert signer.verify("Hello World!", signature) is True
 
@@ -109,10 +101,9 @@ def test_rsa_verify_forged_signature_expect_failure(size: int) -> None:
     assert signer.verify("Hello World!", forged_siganture) is False
 
 
-@pytest.mark.parametrize("size", KEY_SIZES)
-def test_rsa_verify_with_wrong_hash_expect_failure(size: int) -> None:
+def test_rsa_verify_with_wrong_hash_expect_failure(rsa_key: AsymmetricKey) -> None:
     """잘못된 해시 알고리즘으로 RSA 서명을 검증하면 실패하는지 검증한다."""
-    signer: ISigner = Rsa(key=AsymmetricKey(size=size))
+    signer: ISigner = Rsa(key=rsa_key)
     signature: str = signer.sign("Hello World!")
     assert signer.verify("Hello World!", signature) is True
     assert signer.verify("Hello World!", signature, hash_type=HashType.SHA512) is False
@@ -174,11 +165,9 @@ def test_asymmetric_key_expect_invalid_key_error() -> None:
         Rsa(key=AsymmetricKey(key=b"invalid key format"))
 
 
-@pytest.mark.parametrize("size", KEY_SIZES)
-def test_asymmetric_key_is_private_or_public(size: int) -> None:
+def test_asymmetric_key_is_private_or_public(rsa_key: AsymmetricKey) -> None:
     """AsymmetricKey의 is_private 속성이 개인키와 공개키를 올바르게 구분하는지 검증한다."""
-    private_key: AsymmetricKey = AsymmetricKey(size=size)
-    public_key: AsymmetricKey = AsymmetricKey(key=private_key.public_key.binary)
+    public_key: AsymmetricKey = AsymmetricKey(key=rsa_key.public_key.binary)
 
-    assert private_key.is_private is True
+    assert rsa_key.is_private is True
     assert public_key.is_private is False

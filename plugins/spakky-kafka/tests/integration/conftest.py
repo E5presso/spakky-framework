@@ -29,6 +29,7 @@ def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}AUTO_OFFSET_RESET"] = (
         AutoOffsetResetType.EARLIEST.value
     )
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}POLL_TIMEOUT"] = "0.1"
     yield
 
 
