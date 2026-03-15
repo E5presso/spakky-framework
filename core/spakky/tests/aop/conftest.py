@@ -5,7 +5,6 @@ from typing import Any, Generator
 import pytest
 
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.aspects.logging import AsyncLoggingAspect, LoggingAspect
 from spakky.core.common.importing import list_objects
 from spakky.core.pod.annotations.pod import Pod
 from tests.aop.apps import dummy
@@ -26,8 +25,6 @@ def get_application_context_fixture() -> Generator[ApplicationContext, Any, None
 
     context: ApplicationContext = ApplicationContext()
     context.add(get_name)
-    context.add(LoggingAspect)
-    context.add(AsyncLoggingAspect)
     for obj in list_objects(dummy, Pod.exists):
         context.add(obj)
     context.start()

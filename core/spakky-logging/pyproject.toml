@@ -1,25 +1,15 @@
 [project]
-name = "spakky-fastapi"
+name = "spakky-logging"
 version = "6.0.0"
-description = "FastAPI plugin for Spakky framework"
+description = "Structured logging system for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = [
-    "fastapi[standard]>=0.135.1",
-    "orjson>=3.11.7",
-    "spakky>=6.0.0",
-    "websockets>=16.0",
-]
-
-[dependency-groups]
-dev = [
-    "spakky-logging>=6.0.0",
-]
+dependencies = ["spakky>=6.0.0", "pydantic-settings>=2.9.1"]
 
 [project.entry-points."spakky.plugins"]
-spakky-fastapi = "spakky.plugins.fastapi.main:initialize"
+spakky-logging = "spakky.logging.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
@@ -27,7 +17,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "spakky.plugins.fastapi"
+module-name = "spakky.logging"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -39,7 +29,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky/plugins/fastapi"
+pythonpath = "src/spakky/logging"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -55,9 +45,10 @@ addopts = """
     --spec
 """
 spec_test_format = "{result} {docstring_summary}"
+markers = ["known_issue(reason): 알려진 버그"]
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/fastapi/**/*.py"]
+include = ["src/spakky/logging/**/*.py"]
 branch = true
 
 [tool.coverage.report]
@@ -72,6 +63,9 @@ exclude_lines = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
     "@(typing\\.)?overload",
-    "\\.\\.\\.\\.",
+    "\\.\\.\\.",
     "pass",
 ]
+
+[tool.uv.sources]
+spakky = { workspace = true }

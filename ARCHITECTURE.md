@@ -29,6 +29,7 @@
 | 계층 | 패키지 | 역할 |
 |------|--------|------|
 | **Core** | `spakky` | DI Container, AOP, 애플리케이션 부트스트랩 |
+| **Core** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @Logging AOP Aspect |
 | **Core** | `spakky-domain` | DDD 빌딩 블록 (Entity, AggregateRoot, ValueObject, Event, CQRS) |
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
@@ -51,6 +52,7 @@
 graph TB
     subgraph "Core Chain"
         core[spakky<br/>DI · AOP · Plugin]
+        logging_pkg[spakky-logging<br/>Structured Logging · Context]
         domain[spakky-domain<br/>Entity · Event · CQRS]
         data[spakky-data<br/>Repository · Transaction]
         event[spakky-event<br/>Publisher · Consumer · Aspect]
@@ -77,14 +79,15 @@ graph TB
     end
 
     subgraph "Task Plugins"
-        task[spakky-task<br/>@task · @schedule · Crontab]
+        task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
         celery_plugin[spakky-celery]
     end
 
+    core --> logging_pkg
     core --> domain
     domain --> data
     data --> event
-    event --> task
+    event --> task_pkg
 
     core --> fastapi
     core --> typer
@@ -94,13 +97,14 @@ graph TB
     event --> kafka
     event --> outbox
 
-    task --> celery_plugin
+    task_pkg --> celery_plugin
 
     data --> sqlalchemy
     outbox --> outbox_sa
     sqlalchemy --> outbox_sa
 
     style core fill:#e1f5ff
+    style logging_pkg fill:#e1f5ff
     style domain fill:#fff4e1
     style data fill:#e8f5e9
     style event fill:#f3e5f5
@@ -112,7 +116,7 @@ graph TB
     style sqlalchemy fill:#e0e0e0
     style outbox fill:#e0e0e0
     style outbox_sa fill:#e0e0e0
-    style task fill:#fff4e1
+    style task_pkg fill:#fff4e1
     style celery_plugin fill:#e0e0e0
 ```
 
@@ -360,6 +364,7 @@ spakky-data = "spakky.data.main:initialize"
 
 | 플러그인 | 등록하는 컴포넌트 |
 |---------|-------------------|
+| `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` |
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |

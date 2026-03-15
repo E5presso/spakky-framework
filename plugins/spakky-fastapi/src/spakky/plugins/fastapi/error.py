@@ -12,7 +12,7 @@ from typing import ClassVar
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 from fastapi import status
-from fastapi.responses import JSONResponse, ORJSONResponse
+from fastapi.responses import JSONResponse
 
 
 class AbstractSpakkyFastAPIError(AbstractSpakkyFrameworkError, ABC):
@@ -38,7 +38,7 @@ class AbstractSpakkyFastAPIError(AbstractSpakkyFrameworkError, ABC):
         Returns:
             A JSON response containing the error message, args, and optional traceback.
         """
-        return ORJSONResponse(
+        return JSONResponse(
             content={
                 "message": self.message,
                 "args": [str(x) for x in self.args],

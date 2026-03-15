@@ -33,6 +33,10 @@
 			"path": "core/spakky-task",
 		},
 		{
+			"name": "core.logging",
+			"path": "core/spakky-logging",
+		},
+		{
 			"name": "plugins.fastapi",
 			"path": "plugins/spakky-fastapi",
 		},

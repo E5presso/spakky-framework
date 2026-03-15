@@ -13,6 +13,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "spakky-logging>=6.0.0",
     "testcontainers[postgres]>=4.14.1",
     "psycopg[binary]>=3.3.3",
     "greenlet>=3.3.2",

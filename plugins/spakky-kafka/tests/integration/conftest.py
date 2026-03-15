@@ -4,9 +4,9 @@ from os import environ
 from typing import Any, Generator
 
 import pytest
+import spakky.logging
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
 from testcontainers.kafka import (
     KafkaContainer,  # type: ignore[import-untyped]  # testcontainers lacks type stubs
 )
@@ -61,9 +61,12 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
 
     app = (
         SpakkyApplication(ApplicationContext())
-        .load_plugins(include={spakky.plugins.kafka.PLUGIN_NAME})
-        .add(AsyncLoggingAspect)
-        .add(LoggingAspect)
+        .load_plugins(
+            include={
+                spakky.plugins.kafka.PLUGIN_NAME,
+                spakky.logging.PLUGIN_NAME,
+            }
+        )
         .scan(apps)
     )
     app.start()

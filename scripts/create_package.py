@@ -144,7 +144,7 @@ dependencies = ["spakky>={version}"]
 {name} = "{module_name}.main:initialize"
 
 [build-system]
-requires = ["uv_build>=0.9.13,<0.10.0"]
+requires = ["uv_build>=0.10.10,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -179,7 +179,7 @@ addopts = """
 spec_test_format = "{{result}} {{docstring_summary}}"
 
 [tool.coverage.run]
-include = ["{pythonpath}/*"]
+include = ["{pythonpath}/**/*.py"]
 branch = true
 
 [tool.coverage.report]

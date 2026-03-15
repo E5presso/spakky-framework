@@ -17,6 +17,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "spakky-logging>=6.0.0",
     "pytest-integration-mark>=0.2.0",
     "testcontainers>=4.14.1",
 ]

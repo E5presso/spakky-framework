@@ -8,9 +8,9 @@ from uuid import uuid4
 
 import pytest
 import spakky.data
+import spakky.logging
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.aspects import AsyncLoggingAspect, LoggingAspect
 from testcontainers.postgres import PostgresContainer
 
 import spakky.plugins.sqlalchemy
@@ -107,10 +107,9 @@ def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
             include={
                 spakky.plugins.sqlalchemy.PLUGIN_NAME,
                 spakky.data.PLUGIN_NAME,
+                spakky.logging.PLUGIN_NAME,
             }
         )
-        .add(AsyncLoggingAspect)
-        .add(LoggingAspect)
         .scan(apps)
     )
     app.start()

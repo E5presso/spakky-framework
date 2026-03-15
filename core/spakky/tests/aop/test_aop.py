@@ -948,3 +948,77 @@ def test_aspect_skips_property_getters_during_introspection() -> None:
     service.initialized = True
     assert service.do_work() == "done"
     assert service.dangerous_property == "value"
+
+
+def test_aspect_matches_callable_class_expect_fallthrough_branches() -> None:
+    """Aspect.matches()에 callable 클래스를 전달할 때 모든 pointcut 분기를 검증한다."""
+
+    @dataclass
+    class Log(FunctionAnnotation): ...
+
+    @Aspect()
+    class LogAdvisor(IAspect):
+        @Around(Log.exists)
+        def around(
+            self,
+            joinpoint: Func,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Any:
+            return joinpoint(*args, **kwargs)
+
+    @Pod()
+    class Matched:
+        @Log()
+        def method(self) -> str:
+            return "ok"
+
+    @Pod()
+    class Unmatched:
+        def method(self) -> str:
+            return "ok"
+
+    aspect_meta = Aspect.get(LogAdvisor)
+
+    # callable(Matched) → True, Around advice matches → True (via get_callable_methods)
+    assert aspect_meta.matches(Matched) is True
+    # callable(Unmatched) → True, Around advice.matches(Unmatched) → False,
+    # for loop exhausted → falls through to get_callable_methods → still no match
+    assert aspect_meta.matches(Unmatched) is False
+
+
+@pytest.mark.asyncio
+async def test_async_aspect_matches_callable_class_expect_fallthrough_branches() -> (
+    None
+):
+    """AsyncAspect.matches()에 callable 클래스를 전달할 때 모든 pointcut 분기를 검증한다."""
+
+    @dataclass
+    class AsyncLog(FunctionAnnotation): ...
+
+    @AsyncAspect()
+    class AsyncLogAdvisor(IAsyncAspect):
+        @Around(AsyncLog.exists)
+        async def around_async(
+            self,
+            joinpoint: Callable[..., Awaitable[AnyT]],
+            *args: Any,
+            **kwargs: Any,
+        ) -> AnyT:
+            return await joinpoint(*args, **kwargs)
+
+    @Pod()
+    class Matched:
+        @AsyncLog()
+        async def method(self) -> str:
+            return "ok"
+
+    @Pod()
+    class Unmatched:
+        async def method(self) -> str:
+            return "ok"
+
+    aspect_meta = AsyncAspect.get(AsyncLogAdvisor)
+
+    assert aspect_meta.matches(Matched) is True
+    assert aspect_meta.matches(Unmatched) is False

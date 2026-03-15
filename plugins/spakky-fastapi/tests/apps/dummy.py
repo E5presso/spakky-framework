@@ -3,8 +3,8 @@ from uuid import UUID
 from fastapi import WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
-from spakky.core.aspects.logging import Logging
 from spakky.core.stereotype.usecase import UseCase
+from spakky.logging import Logging
 
 from spakky.plugins.fastapi.error import BadRequest
 from spakky.plugins.fastapi.routes import (
