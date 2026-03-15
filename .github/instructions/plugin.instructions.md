@@ -32,6 +32,7 @@ def initialize(app: SpakkyApplication) -> None:
 | UI (HTTP/CLI), 유틸리티 | `spakky` |
 | 인프라 (ORM) | `spakky-data` |
 | 트랜스포트 (MQ) | `spakky-event` |
+| 태스크 브로커 (Celery) | `spakky-task` |
 
 플러그인 → 다른 플러그인 직접 의존 **금지** (순환 의존 위험)
 

@@ -5,8 +5,8 @@
 ## Overview
 
 - **Framework**: Spring-inspired DI/IoC for Python 3.11+, AOP, plugin system (`uv` monorepo)
-- **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`
-- **Plugins** (`plugins/`): `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-outbox`, `spakky-outbox-sqlalchemy`
+- **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task`, `spakky-logging`
+- **Plugins** (`plugins/`): `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-outbox`, `spakky-outbox-sqlalchemy`, `spakky-celery`
 
 ## Documentation Maintenance Rules
 

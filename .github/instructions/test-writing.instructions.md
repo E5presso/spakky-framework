@@ -18,7 +18,6 @@ applyTo: "**/tests/**/*.py"
 - **함수 기반만**. `class TestXxx` 금지
 - **docstring 필수**
 - **네이밍**: `test_<대상>_<시나리오>_expect_<기대결과>`
-- **실행**: `runTests` 도구 사용 (터미널 pytest 금지)
 
 ## Fixture
 

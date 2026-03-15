@@ -26,7 +26,7 @@
 
 ## 하네스 변경 시
 
-`.github/instructions/`, `.github/skills/`, `.github/prompts/` 변경 시:
+`.github/instructions/`, `.github/skills/`, `.github/prompts/`, `.github/hooks/` 변경 시:
 
 - **토큰 = 비용**: 중복·저신호 규칙은 제거
 - **단순화 = 성능 향상**: 규칙 추가보다 제거 우선

@@ -28,7 +28,8 @@ applyTo: "**/pyproject.toml"
 ## 패키지 의존성 방향
 
 ```
-spakky → spakky-domain → spakky-data → spakky-event (단방향)
+spakky → spakky-domain → spakky-data → spakky-event → spakky-task (단방향)
+spakky-logging → spakky (코어 유틸리티)
 ```
 
 역방향 의존성을 추가하지 마세요.

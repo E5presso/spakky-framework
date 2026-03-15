@@ -57,7 +57,6 @@ description: Harness update workflow. Auto-loads when agent modifies instruction
 | `api-reference`         | `**/*.py`            |
 | `python-code`           | `**/*.py`            |
 | `test-writing`          | `**/tests/**/*.py`   |
-| `error-classes`         | `**/error.py`        |
 | `domain`                | `**/domain/**/*.py`  |
 | `aspect`                | `**/aspects/**/*.py` |
 | `plugin`                | `plugins/**/*.py`    |
