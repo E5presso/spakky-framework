@@ -34,6 +34,7 @@
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
+| **Core** | `spakky-tracing` | 분산 추적 추상화 (TraceContext, ITracePropagator, @Trace) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
@@ -43,6 +44,7 @@
 | **Plugin** | `spakky-outbox` | Transactional Outbox 패턴 (IEventBus 교체) |
 | **Plugin** | `spakky-outbox-sqlalchemy` | SQLAlchemy 기반 Outbox 저장소 구현 |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
+| **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지, 자동 계측 |
 
 ---
 
@@ -53,9 +55,11 @@ graph TB
     subgraph "Core Chain"
         core[spakky<br/>DI · AOP · Plugin]
         logging_pkg[spakky-logging<br/>Structured Logging · Context]
+        tracing_pkg[spakky-tracing<br/>TraceContext · @Trace]
         domain[spakky-domain<br/>Entity · Event · CQRS]
         data[spakky-data<br/>Repository · Transaction]
         event[spakky-event<br/>Publisher · Consumer · Aspect]
+        task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
     end
 
     subgraph "UI Plugins"
@@ -79,15 +83,20 @@ graph TB
     end
 
     subgraph "Task Plugins"
-        task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
         celery_plugin[spakky-celery]
     end
 
+    subgraph "Observability Plugins"
+        opentelemetry[spakky-opentelemetry]
+    end
+
     core --> logging_pkg
+    core --> tracing_pkg
     core --> domain
     domain --> data
+    domain --> event
     data --> event
-    event --> task_pkg
+    core --> task_pkg
 
     core --> fastapi
     core --> typer
@@ -99,6 +108,8 @@ graph TB
 
     task_pkg --> celery_plugin
 
+    tracing_pkg --> opentelemetry
+
     data --> sqlalchemy
     outbox --> outbox_sa
     sqlalchemy --> outbox_sa
@@ -108,6 +119,7 @@ graph TB
     style domain fill:#fff4e1
     style data fill:#e8f5e9
     style event fill:#f3e5f5
+    style task_pkg fill:#fce4ec
     style fastapi fill:#e0e0e0
     style typer fill:#e0e0e0
     style security fill:#e0e0e0
@@ -116,8 +128,9 @@ graph TB
     style sqlalchemy fill:#e0e0e0
     style outbox fill:#e0e0e0
     style outbox_sa fill:#e0e0e0
-    style task_pkg fill:#fff4e1
+    style tracing_pkg fill:#e1f5ff
     style celery_plugin fill:#e0e0e0
+    style opentelemetry fill:#e0e0e0
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
@@ -128,8 +141,10 @@ graph TB
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
 - **Outbox 플러그인** (outbox) → `spakky-event`까지 의존
 - **Outbox 인프라** (outbox-sqlalchemy) → `spakky-outbox` + `spakky-sqlalchemy`에 의존
-- **태스크 코어** (spakky-task) → `spakky-event`까지 의존 (전체 코어 체인)
+- **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
+- **추적 코어** (spakky-tracing) → `spakky` 코어에만 의존
+- **관측 플러그인** (spakky-opentelemetry) → `spakky-tracing`에 의존, `spakky-logging` 설치 시 trace_id↔LogContext 브릿지 역할
 
 ---
 

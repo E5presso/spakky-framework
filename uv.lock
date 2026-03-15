@@ -2260,7 +2260,7 @@ requires-dist = [
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "fastapi", "rabbitmq", "security", "typer", "kafka", "sqlalchemy", "outbox-sqlalchemy", "celery"]
+provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "outbox-sqlalchemy", "celery"]
 
 [[package]]
 name = "spakky-celery"
@@ -2590,11 +2590,11 @@ name = "spakky-task"
 version = "6.0.0"
 source = { editable = "core/spakky-task" }
 dependencies = [
-    { name = "spakky-event" },
+    { name = "spakky" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky-event", editable = "core/spakky-event" }]
+requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-typer"

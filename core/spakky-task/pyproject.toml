@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky-event>=6.0.0"]
+dependencies = ["spakky>=6.0.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-task = "spakky.task.main:initialize"
