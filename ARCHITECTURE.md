@@ -48,76 +48,70 @@
 ## 의존성 그래프
 
 ```mermaid
-graph TB
-    subgraph "Core Chain"
-        core[spakky<br/>DI · AOP · Plugin]
-        domain[spakky-domain<br/>Entity · Event · CQRS]
-        data[spakky-data<br/>Repository · Transaction]
-        event[spakky-event<br/>Publisher · Consumer · Aspect]
-        outbox[spakky-outbox<br/>OutboxEventBus · Relay]
-        task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
+graph TD
+    subgraph core_chain ["🔗 Core Chain"]
+        core[🧩 spakky<br/>DI · AOP · Plugin]
+
+        core --> domain[📦 spakky-domain<br/>Entity · Event · CQRS]
+        core --> task_pkg["⏱ spakky-task<br/>@task · @schedule · Crontab"]
+
+        domain --> data[💾 spakky-data<br/>Repository · Transaction]
+        data --> event[📡 spakky-event<br/>Publisher · Consumer · Aspect]
+        event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
     end
 
-    subgraph "UI Plugins"
-        fastapi[spakky-fastapi]
-        typer[spakky-typer]
+    subgraph plugins ["⚡ Plugins"]
+        subgraph persistence ["💾 Persistence"]
+            sqlalchemy[spakky-sqlalchemy]
+        end
+
+        subgraph transport ["🚀 Transport"]
+            rabbitmq[spakky-rabbitmq]
+            kafka[spakky-kafka]
+        end
+
+        subgraph task_plugins ["⏲ Task"]
+            celery_plugin[spakky-celery]
+        end
+
+        subgraph observability ["👁 Observability"]
+            logging_pkg[spakky-logging]
+        end
+
+        subgraph ui ["🖥 UI & Utility"]
+            fastapi[spakky-fastapi]
+            typer[spakky-typer]
+            security[spakky-security]
+        end
     end
 
-    subgraph "Utility Plugins"
-        security[spakky-security]
-    end
-
-    subgraph "Transport Plugins"
-        rabbitmq[spakky-rabbitmq]
-        kafka[spakky-kafka]
-    end
-
-    subgraph "Infrastructure Plugins"
-        sqlalchemy[spakky-sqlalchemy]
-    end
-
-    subgraph "Task Plugins"
-        celery_plugin[spakky-celery]
-    end
-
-    subgraph "Observability Plugins"
-        logging_pkg[spakky-logging<br/>Structured Logging · Context]
-    end
-
+    data --> sqlalchemy
+    outbox -.->|optional| sqlalchemy
+    event --> rabbitmq
+    event --> kafka
+    task_pkg --> celery_plugin
     core --> logging_pkg
-    core --> domain
-    domain --> data
-    domain --> event
-    data --> event
-    event --> outbox
-    core --> task_pkg
-
     core --> fastapi
     core --> typer
     core --> security
 
-    event --> rabbitmq
-    event --> kafka
+    %% Styling — Core
+    style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
+    style domain fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100
+    style data fill:#e8f5e9,stroke:#66bb6a,stroke-width:2px,color:#1b5e20
+    style event fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
+    style outbox fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
+    style task_pkg fill:#fce4ec,stroke:#ef5350,stroke-width:2px,color:#b71c1c
 
-    task_pkg --> celery_plugin
-
-    data --> sqlalchemy
-    outbox -.-> sqlalchemy
-
-    style core fill:#e1f5ff
-    style logging_pkg fill:#e0e0e0
-    style domain fill:#fff4e1
-    style data fill:#e8f5e9
-    style event fill:#f3e5f5
-    style outbox fill:#f3e5f5
-    style task_pkg fill:#fce4ec
-    style fastapi fill:#e0e0e0
-    style typer fill:#e0e0e0
-    style security fill:#e0e0e0
-    style rabbitmq fill:#e0e0e0
-    style kafka fill:#e0e0e0
-    style sqlalchemy fill:#e0e0e0
-    style celery_plugin fill:#e0e0e0
+    %% Styling — Plugins
+    style sqlalchemy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style rabbitmq fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style kafka fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style celery_plugin fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style logging_pkg fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style fastapi fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style typer fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style security fill:#f5f5f5,stroke:#9e9e9e,color:#424242
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
