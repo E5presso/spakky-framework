@@ -1,3 +1,9 @@
+## v6.1.2 (2026-03-16)
+
+### Fix
+
+- update site_url to the correct domain
+
 ## v6.1.1 (2026-03-16)
 
 ### Fix

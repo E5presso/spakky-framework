@@ -1,11 +1,11 @@
 [project]
 name = "spakky-data"
-version = "6.1.1"
+version = "6.1.2"
 description = "Data access layer for Spakky Framework (Repository implementations, ORM integration)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
-dependencies = ["spakky-domain>=6.1.1"]
+dependencies = ["spakky-domain>=6.1.2"]
 
 [project.entry-points."spakky.plugins"]
 spakky-data = "spakky.data.main:initialize"
