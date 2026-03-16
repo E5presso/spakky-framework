@@ -30,7 +30,12 @@ tools: [vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vsco
 | `core/spakky-task/` | 태스크 추상화 (스케줄링, 디스패치) |
 | `plugins/spakky-*/` | 플러그인 구현체 |
 
-**의존 방향:** `spakky` → `spakky-domain` → `spakky-data` → `spakky-event` → `spakky-task` (단방향)
+**의존 방향:**
+
+```
+spakky → spakky-domain → spakky-data → spakky-event → spakky-outbox
+spakky → spakky-task
+```
 
 ## 자동 적용 인스트럭션
 

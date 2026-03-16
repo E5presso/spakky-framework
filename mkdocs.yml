@@ -1,0 +1,142 @@
+site_name: Spakky Framework
+site_description: Spring-inspired DI/IoC Framework for Python 3.11+
+site_url: https://e5presso.github.io/spakky-framework/
+repo_url: https://github.com/E5presso/spakky-framework
+repo_name: E5presso/spakky-framework
+
+docs_dir: docs
+
+theme:
+  name: material
+  language: ko
+  logo: assets/symbol.svg
+  favicon: assets/symbol.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: 다크 모드로 전환
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: 라이트 모드로 전환
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+  - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths:
+            - core/spakky/src
+            - core/spakky-domain/src
+            - core/spakky-data/src
+            - core/spakky-event/src
+            - core/spakky-task/src
+            - core/spakky-outbox/src
+            - plugins/spakky-logging/src
+            - plugins/spakky-fastapi/src
+            - plugins/spakky-rabbitmq/src
+            - plugins/spakky-security/src
+            - plugins/spakky-typer/src
+            - plugins/spakky-kafka/src
+            - plugins/spakky-sqlalchemy/src
+            - plugins/spakky-celery/src
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            inherited_members: false
+            signature_crossrefs: true
+
+nav:
+  - Home: index.md
+  - 튜토리얼:
+      - DI & Pod: guides/dependency-injection.md
+      - AOP: guides/aop.md
+      - 도메인 모델링: guides/domain-modeling.md
+      - 이벤트 시스템: guides/events.md
+      - 태스크 & 스케줄링: guides/tasks.md
+      - FastAPI 통합: guides/fastapi.md
+      - 보안: guides/security.md
+      - CLI (Typer): guides/typer.md
+      - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
+      - Celery 태스크: guides/celery.md
+  - 심화 가이드:
+      - DI/IoC 컨테이너: di-container.md
+      - AOP 가이드: aop-guide.md
+      - 이벤트 시스템: event-system.md
+      - 플러그인 API: plugin-api.md
+  - 참조:
+      - 용어 사전: glossary.md
+      - 에러 계층 구조: error-hierarchy.md
+  - API Reference:
+      - 개요: api/index.md
+      - Core:
+          - spakky: api/core/spakky.md
+          - spakky-domain: api/core/spakky-domain.md
+          - spakky-data: api/core/spakky-data.md
+          - spakky-event: api/core/spakky-event.md
+          - spakky-task: api/core/spakky-task.md
+          - spakky-outbox: api/core/spakky-outbox.md
+      - Plugins:
+          - spakky-logging: api/plugins/spakky-logging.md
+          - spakky-fastapi: api/plugins/spakky-fastapi.md
+          - spakky-rabbitmq: api/plugins/spakky-rabbitmq.md
+          - spakky-security: api/plugins/spakky-security.md
+          - spakky-typer: api/plugins/spakky-typer.md
+          - spakky-kafka: api/plugins/spakky-kafka.md
+          - spakky-sqlalchemy: api/plugins/spakky-sqlalchemy.md
+          - spakky-celery: api/plugins/spakky-celery.md
+  - ADR:
+      - 개요: adr/README.md
+      - ADR-0001 이벤트 시스템 재설계: adr/0001-event-system-redesign.md
+      - ADR-0002 Outbox 플러그인 아키텍처: adr/0002-outbox-plugin-architecture.md
+      - ADR-0003 task/schedule 데코레이터 분리: adr/0003-task-schedule-decorator-split.md
+      - ADR-0004 분산 트레이싱 아키텍처: adr/0004-distributed-tracing-architecture.md
+      - ADR-0005 Outbox SQLAlchemy 통합: adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md
+      - ADR-0006 spakky-outbox 코어 승격: adr/0006-move-outbox-to-core.md

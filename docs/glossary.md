@@ -42,7 +42,7 @@ context.start()
 애플리케이션 부트스트랩 진입점. 컴포넌트 스캔, 플러그인 로딩, 컨테이너 설정을 위한 fluent API를 제공합니다.
 
 ```python
-from spakky.core.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 
 app = SpakkyApplication(ApplicationContext())
@@ -212,7 +212,7 @@ class Order(AbstractAggregateRoot[UUID]):
 
     def add_item(self, item: OrderItem) -> None:
         self.items.append(item)
-        self.add_event(ItemAddedEvent(order_id=self.id, item=item))
+        self.add_event(ItemAddedEvent(order_id=self.uid, item=item))
 ```
 
 ---
@@ -441,7 +441,7 @@ class CacheUserRepository(IUserRepository):
 
 @Pod()
 class UserService:
-    def __init__(self, repository: Annotated[IUserRepository, Qualifier("cache")]) -> None:
+    def __init__(self, repository: Annotated[IUserRepository, Qualifier(lambda p: p.name == "cache")]) -> None:
         ...
 ```
 

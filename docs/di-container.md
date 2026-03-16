@@ -181,7 +181,7 @@ class DatabaseUserRepository(IUserRepository):
 class UserService:
     def __init__(
         self,
-        repository: Annotated[IUserRepository, Qualifier("cache")],
+        repository: Annotated[IUserRepository, Qualifier(lambda p: p.name == "cache")],
     ) -> None:
         self.repository = repository
 ```
@@ -260,20 +260,10 @@ ServiceA
 service = context.get(UserService)
 ```
 
-### 안전한 조회 (None 반환)
-
-```python
-service = context.get_or_none(UserService)
-if service is not None:
-    service.do_something()
-```
-
 ### 이름으로 조회
 
 ```python
-from spakky.core.pod.annotations.qualifier import Qualifier
-
-repo = context.get(IUserRepository, qualifiers=[Qualifier("cache")])
+repo = context.get(IUserRepository, "cache")
 ```
 
 ---
@@ -335,7 +325,7 @@ class PhoneValidator:
     ...
 
 # 태그로 모든 validator 조회
-validators = context.get_all_by_tag(VALIDATOR_TAG)
+validators = context.find(lambda pod: VALIDATOR_TAG in pod.tags)
 ```
 
 ---
@@ -395,12 +385,4 @@ service = context.get(UserService)
 context.stop()
 ```
 
-### 컨텍스트 매니저
 
-```python
-with ApplicationContext() as context:
-    context.add(UserService)
-    context.start()
-    # 사용
-# 자동으로 stop() 호출
-```
