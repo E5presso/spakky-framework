@@ -9,7 +9,7 @@ from spakky.task.interfaces.task_result import AbstractTaskResult
 def test_task_result_cannot_be_instantiated() -> None:
     """TaskResult은 직접 인스턴스화할 수 없다."""
     with pytest.raises(TypeError):
-        AbstractTaskResult()  # type: ignore - intentional instantiation test
+        AbstractTaskResult()  # type: ignore[abstract] - intentional instantiation test
 
 
 def test_task_result_concrete_subclass_works() -> None:
