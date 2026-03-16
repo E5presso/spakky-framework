@@ -12,13 +12,16 @@ on:
           - spakky-domain
           - spakky-event
           - spakky-data
+          - spakky-task
+          - spakky-outbox
+          - spakky-logging
           - spakky-fastapi
           - spakky-rabbitmq
           - spakky-security
           - spakky-typer
           - spakky-kafka
           - spakky-sqlalchemy
-          - spakky-outbox
+          - spakky-celery
       dry_run:
         description: 'Dry run (build only, do not publish)'
         required: false
