@@ -1,3 +1,9 @@
+## v6.1.1 (2026-03-16)
+
+### Fix
+
+- resolve mkdocs strict mode warnings
+
 ## v6.1.0 (2026-03-16)
 
 ### Feat
