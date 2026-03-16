@@ -10,7 +10,6 @@ from spakky.event.bus import (
 )
 from spakky.event.error import (
     AbstractSpakkyEventError,
-    DuplicateEventHandlerError,
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
@@ -71,7 +70,6 @@ __all__ = [
     "TransactionalEventPublishingAspect",
     # Errors
     "AbstractSpakkyEventError",
-    "DuplicateEventHandlerError",
     "InvalidMessageError",
 ]
 

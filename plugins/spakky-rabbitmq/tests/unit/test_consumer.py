@@ -167,31 +167,61 @@ def test_sync_consumer_route_event_handler_success_expect_ack(
     channel.basic_ack.assert_called_once_with(123)
 
 
-def test_sync_consumer_register_duplicate_handler_expect_error(
+def test_sync_consumer_register_multiple_handlers_expect_all_called(
     config: RabbitMQConnectionConfig,
 ) -> None:
-    """동일 이벤트에 대해 중복 핸들러 등록 시 DuplicateEventHandlerError가 발생함을 검증한다."""
-    from spakky.event.error import DuplicateEventHandlerError
-
+    """동일 이벤트에 복수 핸들러 등록 시 모두 호출됨을 검증한다."""
     consumer = RabbitMQEventConsumer(config)
-    consumer.register(SampleIntegrationEvent, MagicMock())
+    handler1 = MagicMock()
+    handler2 = MagicMock()
+    consumer.register(SampleIntegrationEvent, handler1)
+    consumer.register(SampleIntegrationEvent, handler2)
 
-    with pytest.raises(DuplicateEventHandlerError):
-        consumer.register(SampleIntegrationEvent, MagicMock())
+    assert len(consumer.handlers[SampleIntegrationEvent]) == 2
+
+    # Set up the type_lookup to map consumer_tag to event type
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    body = b'{"data": "test"}'
+
+    consumer._route_event_handler(channel, method_frame, properties, body)
+
+    handler1.assert_called_once()
+    handler2.assert_called_once()
+    channel.basic_ack.assert_called_once_with(123)
 
 
 @pytest.mark.asyncio
-async def test_async_consumer_register_duplicate_handler_expect_error(
+async def test_async_consumer_register_multiple_handlers_expect_all_called(
     config: RabbitMQConnectionConfig,
 ) -> None:
-    """비동기 consumer에서 동일 이벤트에 대해 중복 핸들러 등록 시 에러가 발생함을 검증한다."""
-    from spakky.event.error import DuplicateEventHandlerError
-
+    """비동기 consumer에서 동일 이벤트에 복수 핸들러 등록 시 모두 호출됨을 검증한다."""
     consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.register(SampleIntegrationEvent, AsyncMock())
+    handler1 = AsyncMock()
+    handler2 = AsyncMock()
+    consumer.register(SampleIntegrationEvent, handler1)
+    consumer.register(SampleIntegrationEvent, handler2)
 
-    with pytest.raises(DuplicateEventHandlerError):
-        consumer.register(SampleIntegrationEvent, AsyncMock())
+    assert len(consumer.handlers[SampleIntegrationEvent]) == 2
+
+    # Set up the type_lookup to map consumer_tag to event type
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+
+    await consumer._route_event_handler(message)
+
+    handler1.assert_awaited_once()
+    handler2.assert_awaited_once()
+    message.ack.assert_awaited_once()
 
 
 def test_sync_consumer_check_if_event_set_when_set_expect_stop_consuming(

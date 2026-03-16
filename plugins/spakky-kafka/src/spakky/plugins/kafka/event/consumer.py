@@ -11,9 +11,6 @@ from spakky.core.service.background import (
     AbstractBackgroundService,
 )
 from spakky.domain.models.event import AbstractEvent
-from spakky.event.error import (
-    DuplicateEventHandlerError,
-)
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
@@ -34,7 +31,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     config: KafkaConnectionConfig
     type_lookup: dict[str, type[AbstractEvent]]
     type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
-    handlers: dict[type[AbstractEvent], EventHandlerCallback[Any]]
+    handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: Consumer
 
@@ -87,8 +84,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
                 logger.warning(f"Received empty message for event type: {topic}")
                 return
             event_data = self.type_adapters[event_type].validate_json(event_message)
-            handler = self.handlers[event_type]
-            handler(event_data)
+            handlers = self.handlers[event_type]
+            for handler in handlers:
+                handler(event_data)
         except Exception as e:  # pragma: no cover
             logger.error(f"Error processing message for event type {topic}: {e}")
 
@@ -98,11 +96,11 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         handler: EventHandlerCallback[EventT_contra],
     ) -> None:
         """Register a handler for the given event type."""
-        if event in self.handlers:
-            raise DuplicateEventHandlerError(event)
-        self.handlers[event] = handler
-        self.type_adapters[event] = TypeAdapter(event)
-        self.type_lookup[event.__name__] = event
+        if event not in self.handlers:
+            self.handlers[event] = []
+            self.type_adapters[event] = TypeAdapter(event)
+            self.type_lookup[event.__name__] = event
+        self.handlers[event].append(handler)
 
     def initialize(self) -> None:
         """Create Kafka topics and subscribe the consumer."""
@@ -132,7 +130,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     config: KafkaConnectionConfig
     type_lookup: dict[str, type[AbstractEvent]]
     type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
-    handlers: dict[type[AbstractEvent], AsyncEventHandlerCallback[Any]]
+    handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: AIOConsumer
 
@@ -183,8 +181,9 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
                 logger.warning(f"Received empty message for event type: {topic}")
                 return
             event_data = self.type_adapters[event_type].validate_json(event_message)
-            handler = self.handlers[event_type]
-            await handler(event_data)
+            handlers = self.handlers[event_type]
+            for handler in handlers:
+                await handler(event_data)
         except Exception as e:  # pragma: no cover
             logger.error(f"Error processing message for event type {topic}: {e}")
 
@@ -194,11 +193,11 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         handler: AsyncEventHandlerCallback[EventT_contra],
     ) -> None:
         """Register an async handler for the given event type."""
-        if event in self.handlers:
-            raise DuplicateEventHandlerError(event)
-        self.handlers[event] = handler
-        self.type_adapters[event] = TypeAdapter(event)
-        self.type_lookup[event.__name__] = event
+        if event not in self.handlers:
+            self.handlers[event] = []
+            self.type_adapters[event] = TypeAdapter(event)
+            self.type_lookup[event.__name__] = event
+        self.handlers[event].append(handler)
 
     async def initialize_async(self) -> None:
         """Create Kafka topics and subscribe the async consumer."""

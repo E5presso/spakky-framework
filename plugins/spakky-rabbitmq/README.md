@@ -107,7 +107,6 @@ class AsyncUserService:
 
 ## Error Handling
 
-- **`DuplicateEventHandlerError`**: Raised when multiple handlers are registered for the same event type
 - **`InvalidMessageError`**: Raised when a message is missing required metadata (`consumer_tag` or `delivery_tag`)
 
 ## License

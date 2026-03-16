@@ -7,12 +7,6 @@ class AbstractSpakkyEventError(AbstractSpakkyFrameworkError, ABC):
     """Base error for event system operations."""
 
 
-class DuplicateEventHandlerError(AbstractSpakkyEventError):
-    """Raised when attempting to register multiple handlers for the same event type."""
-
-    message = "Duplicate event handler registered for the same event type"
-
-
 class InvalidMessageError(AbstractSpakkyEventError):
     """Raised when a message received is invalid or malformed."""
 
