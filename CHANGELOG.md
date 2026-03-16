@@ -1,3 +1,9 @@
+## v6.1.3 (2026-03-16)
+
+### Fix
+
+- update flowchart in index.md and fix README exclusion in mkdocs.yml
+
 ## v6.1.2 (2026-03-16)
 
 ### Fix

@@ -5,6 +5,6 @@ All notable changes to spakky-kafka are documented in this file.
 See the root CHANGELOG.md for a full summary of modifications affecting the
 entire workspace.
 
-## 6.1.2
+## 6.1.3
 
-- Release 6.1.2
+- Release 6.1.3
