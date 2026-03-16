@@ -8,7 +8,7 @@ from spakky.plugins.logging import (
     ContextInjectingFilter,
     LogContext,
     LogFormat,
-    Logging,
+    Logged,
     LoggingAspect,
     LoggingConfig,
     LoggingSetupPostProcessor,
@@ -31,7 +31,7 @@ def test_all_public_exports_expect_importable() -> None:
 
 def test_public_api_classes_expect_correct_types() -> None:
     """공개 API 클래스들이 올바른 타입임을 검증한다."""
-    assert isinstance(Logging, type)
+    assert isinstance(Logged, type)
     assert isinstance(LoggingAspect, type)
     assert isinstance(AsyncLoggingAspect, type)
     assert isinstance(LoggingConfig, type)

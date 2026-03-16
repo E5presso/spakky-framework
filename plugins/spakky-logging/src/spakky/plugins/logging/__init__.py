@@ -13,7 +13,7 @@ Public API exports:
 
 from spakky.core.application.plugin import Plugin
 
-from spakky.plugins.logging.annotation import Logging
+from spakky.plugins.logging.annotation import Logged, logged
 from spakky.plugins.logging.aspects.logging_aspect import (
     AsyncLoggingAspect,
     LoggingAspect,
@@ -35,7 +35,8 @@ __all__ = [
     "ContextInjectingFilter",
     "LogContext",
     "LogFormat",
-    "Logging",
+    "Logged",
+    "logged",
     "LoggingAspect",
     "LoggingConfig",
     "LoggingSetupPostProcessor",

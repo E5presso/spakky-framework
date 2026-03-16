@@ -7,7 +7,7 @@ from logging import Formatter, Logger, LogRecord
 import pytest
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 
-from spakky.plugins.logging.annotation import Logging
+from spakky.plugins.logging.annotation import Logged, logged
 from spakky.plugins.logging.aspects.logging_aspect import (
     AsyncLoggingAspect,
     LoggingAspect,
@@ -44,11 +44,11 @@ def test_logging_annotation_exists_expect_true() -> None:
     """@Logging()으로 데코레이트된 함수에서 Logging.exists()가 True를 반환함을 검증한다."""
 
     class Dummy:
-        @Logging()
+        @logged()
         def method(self) -> None:
             pass
 
-    assert Logging.exists(Dummy.method) is True
+    assert Logged.exists(Dummy.method) is True
 
 
 def test_logging_annotation_not_exists_expect_false() -> None:
@@ -58,14 +58,14 @@ def test_logging_annotation_not_exists_expect_false() -> None:
         def method(self) -> None:
             pass
 
-    assert Logging.exists(Dummy.method) is False
+    assert Logged.exists(Dummy.method) is False
 
 
 def test_logging_annotation_custom_fields_expect_values_preserved() -> None:
     """@Logging() 커스텀 필드가 보존됨을 검증한다."""
 
     class Dummy:
-        @Logging(
+        @logged(
             enable_masking=False,
             masking_keys=["api_key"],
             slow_threshold_ms=500.0,
@@ -76,7 +76,7 @@ def test_logging_annotation_custom_fields_expect_values_preserved() -> None:
         def method(self) -> None:
             pass
 
-    annotation = Logging.get(Dummy.method)
+    annotation = Logged.get(Dummy.method)
     assert annotation.enable_masking is False
     assert annotation.masking_keys == ["api_key"]
     assert annotation.slow_threshold_ms == 500.0
@@ -93,7 +93,7 @@ def test_logging_aspect_with_masking_expect_password_masked() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging()
+        @logged()
         def authenticate(self, username: str, password: str) -> bool:
             return username == "John" and password == "1234"
 
@@ -117,7 +117,7 @@ def test_logging_aspect_without_masking_expect_password_visible() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging(enable_masking=False)
+        @logged(enable_masking=False)
         def authenticate(self, username: str, password: str) -> bool:
             return username == "John" and password == "1234"
 
@@ -138,7 +138,7 @@ def test_logging_aspect_exception_expect_error_logged() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging()
+        @logged()
         def fail(self) -> None:
             raise ValueError("boom")
 
@@ -158,7 +158,7 @@ def test_logging_aspect_log_args_false_expect_args_hidden() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging(log_args=False)
+        @logged(log_args=False)
         def method(self, value: str) -> str:
             return "ok"
 
@@ -176,7 +176,7 @@ def test_logging_aspect_log_result_false_expect_result_hidden() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging(log_result=False)
+        @logged(log_result=False)
         def method(self) -> str:
             return "sensitive_result"
 
@@ -193,7 +193,7 @@ def test_logging_aspect_matches_expect_true_for_annotated() -> None:
     """LoggingAspect가 @Logging 데코레이트된 클래스에 매칭됨을 검증한다."""
 
     class Dummy:
-        @Logging()
+        @logged()
         def method(self) -> None:
             pass
 
@@ -211,7 +211,7 @@ def test_logging_aspect_result_truncation_expect_truncated() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging(max_result_length=20)
+        @logged(max_result_length=20)
         def long_result(self) -> str:
             return "a" * 100
 
@@ -235,7 +235,7 @@ async def test_async_logging_aspect_with_masking_expect_password_masked() -> Non
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging()
+        @logged()
         async def authenticate(self, username: str, password: str) -> bool:
             return username == "John" and password == "1234"
 
@@ -258,7 +258,7 @@ async def test_async_logging_aspect_without_masking_expect_password_visible() ->
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging(enable_masking=False)
+        @logged(enable_masking=False)
         async def authenticate(self, username: str, password: str) -> bool:
             return username == "John" and password == "1234"
 
@@ -280,7 +280,7 @@ async def test_async_logging_aspect_exception_expect_error_logged() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging()
+        @logged()
         async def fail(self) -> None:
             raise ValueError("async boom")
 
@@ -299,7 +299,7 @@ async def test_async_logging_aspect_matches_expect_true_for_annotated() -> None:
     """AsyncLoggingAspect가 @Logging 데코레이트된 클래스에 매칭됨을 검증한다."""
 
     class Dummy:
-        @Logging()
+        @logged()
         async def method(self) -> None:
             pass
 
@@ -317,7 +317,7 @@ def test_logging_aspect_slow_call_expect_slow_warning() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging(slow_threshold_ms=1.0)
+        @logged(slow_threshold_ms=1.0)
         def slow_method(self) -> str:
             time.sleep(0.01)
             return "done"
@@ -339,7 +339,7 @@ async def test_async_logging_aspect_slow_call_expect_slow_warning() -> None:
     logger, handler = _setup_logger()
 
     class Dummy:
-        @Logging(slow_threshold_ms=1.0)
+        @logged(slow_threshold_ms=1.0)
         async def slow_method(self) -> str:
             await asyncio.sleep(0.01)
             return "done"

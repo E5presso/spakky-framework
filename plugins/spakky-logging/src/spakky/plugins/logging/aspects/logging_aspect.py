@@ -23,7 +23,7 @@ from spakky.core.aop.pointcut import Around
 from spakky.core.common.types import AsyncFunc, Func
 from spakky.core.pod.annotations.order import Order
 
-from spakky.plugins.logging.annotation import Logging
+from spakky.plugins.logging.annotation import Logged
 from spakky.plugins.logging.config import LoggingConfig
 from spakky.plugins.logging.constants import (
     DEFAULT_MASK_KEYS,
@@ -73,7 +73,7 @@ class AsyncLoggingAspect(IAsyncAspect):
 
     MASKING_TEXT: ClassVar[str] = MASKING_REPLACEMENT
 
-    @Around(lambda x: Logging.exists(x) and iscoroutinefunction(x))
+    @Around(lambda x: Logged.exists(x) and iscoroutinefunction(x))
     async def around_async(
         self,
         joinpoint: AsyncFunc,
@@ -93,7 +93,7 @@ class AsyncLoggingAspect(IAsyncAspect):
         Raises:
             Exception: Re-raises any exception after logging it.
         """
-        annotation: Logging = Logging.get(joinpoint)
+        annotation: Logged = Logged.get(joinpoint)
         mask_keys = annotation.masking_keys or (
             self._config.mask_keys if self._config else DEFAULT_MASK_KEYS
         )
@@ -166,7 +166,7 @@ class LoggingAspect(IAspect):
 
     MASKING_TEXT: ClassVar[str] = MASKING_REPLACEMENT
 
-    @Around(lambda x: Logging.exists(x) and not iscoroutinefunction(x))
+    @Around(lambda x: Logged.exists(x) and not iscoroutinefunction(x))
     def around(
         self,
         joinpoint: Func,
@@ -186,7 +186,7 @@ class LoggingAspect(IAspect):
         Raises:
             Exception: Re-raises any exception after logging it.
         """
-        annotation: Logging = Logging.get(joinpoint)
+        annotation: Logged = Logged.get(joinpoint)
         mask_keys = annotation.masking_keys or (
             self._config.mask_keys if self._config else DEFAULT_MASK_KEYS
         )
