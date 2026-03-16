@@ -9,8 +9,4 @@
 		}
 	],
 	"yaml.validate": true,
-	"yaml.customTags": [
-		"!ENV scalar",
-		"!!python/name scalar"
-	]
 }

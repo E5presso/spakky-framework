@@ -70,6 +70,13 @@
 		},
 	],
 	"settings": {
+		"yaml.customTags": [
+			"!ENV scalar",
+			"!!python/name scalar",
+			"tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format scalar",
+			"tag:yaml.org,2002:python/name:material.extensions.emoji.twemoji scalar",
+			"tag:yaml.org,2002:python/name:material.extensions.emoji.to_svg scalar"
+		],
 		"[python]": {
 			"editor.defaultFormatter": "charliermarsh.ruff",
 			"editor.formatOnSave": true,
