@@ -129,11 +129,7 @@ class Annotation:
 
 @dataclass
 class ClassAnnotation(Annotation):
-    """Annotation for classes.
-
-    Args:
-        Annotation (_type_): Base annotation class.
-    """
+    """Annotation for classes."""
 
     def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
         """Call method to annotate a class.
@@ -149,11 +145,7 @@ class ClassAnnotation(Annotation):
 
 @dataclass
 class FunctionAnnotation(Annotation):
-    """Annotation for functions.
-
-    Args:
-        Annotation (_type_): Base annotation class.
-    """
+    """Annotation for functions."""
 
     def __call__(self, obj: Callable[..., AnyT]) -> Callable[..., AnyT]:
         """Call method to annotate a function.

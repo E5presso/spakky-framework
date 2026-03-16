@@ -247,7 +247,7 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
     total_amount: Decimal
 ```
 
-### 동사 규칙 (Verb Convention)
+### 동사 규칙 (Verb Convention) { #동사-규칙-verb-convention }
 
 이벤트 시스템 전체에서 동사를 다음과 같이 구분합니다:
 

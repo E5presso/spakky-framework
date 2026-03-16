@@ -29,7 +29,6 @@ class ServicePostProcessor(IPostProcessor):
 
         Args:
             application_context: Application context for service registration.
-            logger: Logger for debugging.
         """
         super().__init__()
         self.__application_context = application_context
