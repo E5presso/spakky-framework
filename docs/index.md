@@ -234,7 +234,36 @@ app = (
 
 ### 의존 방향
 
-```
-spakky → spakky-domain → spakky-data → spakky-event → spakky-outbox
-spakky → spakky-task
+```mermaid
+flowchart LR
+  subgraph Plugins[Plugins]
+    direction TB
+    rabbitmq[spakky-rabbitmq]
+    kafka[spakky-kafka]
+    sqlalchemy[spakky-sqlalchemy]
+    fastapi[spakky-fastapi]
+    typer[spakky-typer]
+    logging[spakky-logging]
+    security[spakky-security]
+    celery[spakky-celery]
+  end
+
+  subgraph Core[Core]
+    direction TB
+    outbox[spakky-outbox] --> event[spakky-event]
+    event --> data[spakky-data]
+    data --> domain[spakky-domain]
+    domain --> core[spakky]
+    task[spakky-task] --> core
+  end
+
+  rabbitmq -. RabbitMQ .-> event
+  kafka -. Kafka .-> event
+  sqlalchemy -. ORM .-> data
+  sqlalchemy -. Outbox .-> outbox
+  fastapi -. FastAPI .-> core
+  typer -. Typer .-> core
+  logging -. 로깅 .-> core
+  security -. 인증 .-> core
+  celery -. Celery .-> task
 ```

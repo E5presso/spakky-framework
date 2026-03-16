@@ -7,7 +7,7 @@ repo_name: E5presso/spakky-framework
 docs_dir: docs
 
 exclude_docs: |
-  README.md
+  /README.md
 
 theme:
   name: material
