@@ -170,15 +170,15 @@ def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
 
 ## 내장 Aspect
 
-### @Logging
+### @Logged
 
 메서드 호출, 인자, 반환값, 실행 시간을 자동 로깅합니다. 민감 데이터 마스킹을 지원합니다.
 
 ```python
-from spakky.plugins.logging import Logging
+from spakky.plugins.logging import Logged
 
 class UserService:
-    @Logging(enable_masking=True, masking_keys=["password", "token"])
+    @Logged(enable_masking=True, masking_keys=["password", "token"])
     async def create_user(self, name: str, password: str) -> User:
         ...
 ```

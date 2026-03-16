@@ -11,6 +11,9 @@ dependencies = []
 [dependency-groups]
 dev = [
   "commitizen>=4.13.9",
+  "mkdocs>=1.6.1",
+  "mkdocs-material>=9.7.5",
+  "mkdocstrings[python]>=1.0.3",
   "pre-commit>=4.5.1",
   "pyrefly>=0.56.0",
   "pytest>=9.0.2",

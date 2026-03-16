@@ -15,7 +15,9 @@ Exception
     ├── AbstractSpakkyAOPError
     ├── AbstractSpakkyPodError
     ├── AbstractSpakkyDomainError
-    │   └── AbstractDomainValidationError
+    │   ├── AbstractDomainValidationError
+    │   ├── EntityNotFoundError
+    │   └── VersionConflictError
     ├── AbstractSpakkyPersistencyError
     ├── AbstractSpakkyExternalError
     ├── AbstractSpakkyEventError
@@ -142,15 +144,13 @@ from spakky.domain.error import (
 ```python
 from spakky.event.error import (
     AbstractSpakkyEventError,
-    DuplicateEventHandlerError,
     InvalidMessageError,
 )
 ```
 
-| 에러                         | 설명                           |
-| ---------------------------- | ------------------------------ |
-| `DuplicateEventHandlerError` | 동일 이벤트에 핸들러 중복 등록 |
-| `InvalidMessageError`        | 잘못된 메시지 형식             |
+| 에러                  | 설명               |
+| --------------------- | ------------------ |
+| `InvalidMessageError` | 잘못된 메시지 형식 |
 
 ---
 
@@ -164,12 +164,12 @@ from spakky.data.persistency.repository import EntityNotFoundError, VersionConfl
 from spakky.data.external.error import AbstractSpakkyExternalError
 ```
 
-| 에러                            | 설명                           |
-| ------------------------------- | ------------------------------ |
-| `AbstractSpakkyPersistencyError` | 영속성 에러 기반 클래스        |
-| `EntityNotFoundError`           | 엔티티 조회 실패               |
-| `VersionConflictError`          | 낙관적 락 충돌                 |
-| `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   |
+| 에러                            | 설명                           | 상속                          |
+| ------------------------------- | ------------------------------ | ----------------------------- |
+| `AbstractSpakkyPersistencyError` | 영속성 에러 기반 클래스        | `AbstractSpakkyFrameworkError` |
+| `EntityNotFoundError`           | 엔티티 조회 실패               | `AbstractSpakkyDomainError`   |
+| `VersionConflictError`          | 낙관적 락 충돌                 | `AbstractSpakkyDomainError`   |
+| `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   | `AbstractSpakkyFrameworkError` |
 
 ---
 

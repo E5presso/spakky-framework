@@ -19,7 +19,7 @@ Spakky 플러그인 시스템은 Python의 `entry_points` 메커니즘을 사용
 ### 모든 플러그인 로드
 
 ```python
-from spakky.core.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 
 app = SpakkyApplication(ApplicationContext())
@@ -324,7 +324,7 @@ spakky → spakky-domain → spakky-data → spakky-event
 
 ```python
 import pytest
-from spakky.core.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 import spakky.plugins.myfeature
 

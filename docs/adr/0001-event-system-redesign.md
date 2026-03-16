@@ -148,7 +148,7 @@ Domain과 동일하게 `IntegrationEventMediator`를 core에 추가하고, 12개
 | ------------------------ | -------------------------------------------------------------- |
 | `DomainEventMediator`    | `EventMediator` (AbstractEvent 전체 다룸)                    |
 | `DomainEventPublisher`   | `EventPublisher` (타입 기반 라우터)                          |
-| (신규)                    | `TransportEventBus` (implements `IEventBus`, `IEventTransport`에 위임) |
+| (신규)                    | `DirectEventBus` (implements `IEventBus`, `IEventTransport`에 위임) |
 | `KafkaEventPublisher`    | `KafkaEventTransport` (implements `IAsyncEventTransport`)      |
 | `RabbitMQEventPublisher` | `RabbitMQEventTransport` (implements `IAsyncEventTransport`)   |
 
@@ -172,11 +172,11 @@ class AsyncEventPublisher(IAsyncEventPublisher):
                 raise AssertionError(f"Unknown event type: {type(event)!r}")
 ```
 
-### TransportEventBus (기본 구현)
+### DirectEventBus (기본 구현)
 
 ```python
 @Pod()
-class AsyncTransportEventBus(IAsyncEventBus):
+class AsyncDirectEventBus(IAsyncEventBus):
     """IEventTransport에 직접 위임하는 기본 EventBus."""
     _transport: IAsyncEventTransport
 
@@ -184,7 +184,7 @@ class AsyncTransportEventBus(IAsyncEventBus):
         await self._transport.send(event)
 ```
 
-Outbox 플러그인이 없으면 `AsyncTransportEventBus`가 유일한 `IAsyncEventBus` 구현체로 주입된다.
+Outbox 플러그인이 없으면 `AsyncDirectEventBus`가 유일한 `IAsyncEventBus` 구현체로 주입된다.
 Outbox 플러그인이 있으면 `OutboxEventBus`가 `@Primary`로 `IAsyncEventBus`를 교체한다.
 
 ### End-to-End 흐름
