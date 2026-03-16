@@ -192,12 +192,13 @@ class UserService:
 ### @Transactional
 
 메서드를 트랜잭션 경계로 감쌉니다. 예외 발생 시 롤백, 정상 완료 시 커밋합니다.
+인자가 없는 어노테이션이므로 `@Transactional()`과 `@transactional` shorthand를 모두 사용할 수 있습니다.
 
 ```python
-from spakky.data.aspects.transactional import Transactional
+from spakky.data.aspects.transactional import transactional
 
 class OrderUseCase:
-    @Transactional()
+    @transactional
     async def place_order(self, command: PlaceOrderCommand) -> Order:
         # 이 메서드 내 모든 DB 작업이 하나의 트랜잭션으로 묶임
         order = Order.create(command)

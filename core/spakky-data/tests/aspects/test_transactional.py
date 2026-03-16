@@ -12,6 +12,7 @@ from spakky.data.aspects.transactional import (
     AsyncTransactionalAspect,
     Transactional,
     TransactionalAspect,
+    transactional,
 )
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
@@ -41,7 +42,7 @@ def test_transactional_aspect_commits_on_success() -> None:
 
     @UseCase()
     class TestUseCase:
-        @Transactional()
+        @transactional
         def execute(self) -> str:
             return "success"
 
@@ -213,6 +214,18 @@ def test_transactional_annotation_exists() -> None:
     assert Transactional.exists(TestUseCase.execute) is True
 
 
+def test_transactional_function_decorator_marks_method_as_transactional() -> None:
+    """@transactional shorthand가 @Transactional()과 동일하게 감지되는지 검증한다."""
+
+    @UseCase()
+    class TestUseCase:
+        @transactional
+        def execute(self) -> str:
+            return "success"
+
+    assert Transactional.exists(TestUseCase.execute) is True
+
+
 def test_transactional_aspect_only_applies_to_annotated_methods() -> None:
     """TransactionalAspect가 @Transactional 어노테이션이 있는 메서드에만 적용되는지 검증한다."""
 
@@ -264,5 +277,5 @@ def test_transactional_aspect_only_applies_to_annotated_methods() -> None:
     # Method with annotation should trigger transaction
     result2 = use_case.execute_with_annotation()
     assert result2 == "with transaction"
-    assert transaction.committed is True
-    assert transaction.rolled_back is False
+    assert transaction.committed
+    assert not transaction.rolled_back
