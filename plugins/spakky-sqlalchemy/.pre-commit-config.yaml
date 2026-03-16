@@ -1,12 +1,12 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: check-yaml
       - id: check-json
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.15.5
     hooks:
       - id: ruff
         types_or: [python, pyi]
@@ -24,7 +24,7 @@ repos:
         always_run: true
 
       - id: pytest
-        name: Run pytest
+        name: Run pytest (unit tests only)
         entry: bash -c 'if [ -d "plugins/spakky-sqlalchemy" ]; then cd plugins/spakky-sqlalchemy; fi && uv run pytest'
         language: system
         types: [python]

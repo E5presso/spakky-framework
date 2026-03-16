@@ -10,17 +10,20 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-  "commitizen>=4.10.0",
-  "pre-commit>=4.5.0",
-  "pyrefly>=0.43.1",
-  "pytest>=9.0.1",
+  "commitizen>=4.13.9",
+  "mkdocs>=1.6.1",
+  "mkdocs-material>=9.7.5",
+  "mkdocstrings[python]>=1.0.3",
+  "pre-commit>=4.5.1",
+  "pyrefly>=0.56.0",
+  "pytest>=9.0.2",
   "pytest-asyncio>=1.3.0",
   "pytest-cov>=7.0.0",
   "pytest-spec>=6.0.0",
   "pytest-xdist>=3.8.0",
-  "ruff>=0.14.6",
+  "ruff>=0.15.6",
   "toml>=0.10.2",
-  "typer>=0.15.0",
+  "typer>=0.24.1",
 ]
 
 [tool.commitizen]
@@ -33,14 +36,16 @@ version_files = [
   "core/spakky-domain/pyproject.toml:version",
   "core/spakky-data/pyproject.toml:version",
   "core/spakky-event/pyproject.toml:version",
+  "core/spakky-task/pyproject.toml:version",
+  "core/spakky-outbox/pyproject.toml:version",
+  "plugins/spakky-logging/pyproject.toml:version",
   "plugins/spakky-fastapi/pyproject.toml:version",
   "plugins/spakky-rabbitmq/pyproject.toml:version",
   "plugins/spakky-security/pyproject.toml:version",
   "plugins/spakky-typer/pyproject.toml:version",
   "plugins/spakky-kafka/pyproject.toml:version",
   "plugins/spakky-sqlalchemy/pyproject.toml:version",
-  "plugins/spakky-outbox/pyproject.toml:version",
-  "plugins/spakky-outbox-sqlalchemy/pyproject.toml:version",
+  "plugins/spakky-celery/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -50,14 +55,16 @@ members = [
   "core/spakky-domain",
   "core/spakky-data",
   "core/spakky-event",
+  "core/spakky-task",
+  "core/spakky-outbox",
+  "plugins/spakky-logging",
   "plugins/spakky-fastapi",
   "plugins/spakky-rabbitmq",
   "plugins/spakky-security",
   "plugins/spakky-typer",
   "plugins/spakky-kafka",
   "plugins/spakky-sqlalchemy",
-  "plugins/spakky-outbox",
-  "plugins/spakky-outbox-sqlalchemy",
+  "plugins/spakky-celery",
 ]
 
 
@@ -73,7 +80,9 @@ spakky-typer = { workspace = true }
 spakky-kafka = { workspace = true }
 spakky-sqlalchemy = { workspace = true }
 spakky-outbox = { workspace = true }
-spakky-outbox-sqlalchemy = { workspace = true }
+spakky-task = { workspace = true }
+spakky-celery = { workspace = true }
+spakky-logging = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

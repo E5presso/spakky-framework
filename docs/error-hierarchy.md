@@ -15,14 +15,15 @@ Exception
     ├── AbstractSpakkyAOPError
     ├── AbstractSpakkyPodError
     ├── AbstractSpakkyDomainError
-    │   └── AbstractDomainValidationError
+    │   ├── AbstractDomainValidationError
+    │   ├── EntityNotFoundError
+    │   └── VersionConflictError
     ├── AbstractSpakkyPersistencyError
     ├── AbstractSpakkyExternalError
     ├── AbstractSpakkyEventError
     ├── AbstractSpakkyFastAPIError (플러그인)
     ├── AbstractSpakkySqlAlchemyError (플러그인)
     ├── AbstractSpakkyOutboxError (플러그인)
-    │   └── AbstractSpakkyOutboxSqlAlchemyError (플러그인)
     └── ...
 ```
 
@@ -143,15 +144,13 @@ from spakky.domain.error import (
 ```python
 from spakky.event.error import (
     AbstractSpakkyEventError,
-    DuplicateEventHandlerError,
     InvalidMessageError,
 )
 ```
 
-| 에러                         | 설명                           |
-| ---------------------------- | ------------------------------ |
-| `DuplicateEventHandlerError` | 동일 이벤트에 핸들러 중복 등록 |
-| `InvalidMessageError`        | 잘못된 메시지 형식             |
+| 에러                  | 설명               |
+| --------------------- | ------------------ |
+| `InvalidMessageError` | 잘못된 메시지 형식 |
 
 ---
 
@@ -165,12 +164,12 @@ from spakky.data.persistency.repository import EntityNotFoundError, VersionConfl
 from spakky.data.external.error import AbstractSpakkyExternalError
 ```
 
-| 에러                            | 설명                           |
-| ------------------------------- | ------------------------------ |
-| `AbstractSpakkyPersistencyError` | 영속성 에러 기반 클래스        |
-| `EntityNotFoundError`           | 엔티티 조회 실패               |
-| `VersionConflictError`          | 낙관적 락 충돌                 |
-| `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   |
+| 에러                            | 설명                           | 상속                          |
+| ------------------------------- | ------------------------------ | ----------------------------- |
+| `AbstractSpakkyPersistencyError` | 영속성 에러 기반 클래스        | `AbstractSpakkyFrameworkError` |
+| `EntityNotFoundError`           | 엔티티 조회 실패               | `AbstractSpakkyDomainError`   |
+| `VersionConflictError`          | 낙관적 락 충돌                 | `AbstractSpakkyDomainError`   |
+| `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   | `AbstractSpakkyFrameworkError` |
 
 ---
 
@@ -241,24 +240,12 @@ from spakky.plugins.sqlalchemy.error import AbstractSpakkySqlAlchemyError
 Transactional Outbox 관련 에러입니다.
 
 ```python
-from spakky.plugins.outbox.error import AbstractSpakkyOutboxError
+from spakky.outbox.error import AbstractSpakkyOutboxError
 ```
 
 | 에러                        | 설명                        |
 | --------------------------- | --------------------------- |
 | `AbstractSpakkyOutboxError` | Outbox 에러 기반 클래스     |
-
-### spakky-outbox-sqlalchemy
-
-Outbox SQLAlchemy 구현 관련 에러입니다.
-
-```python
-from spakky.plugins.outbox_sqlalchemy.error import AbstractSpakkyOutboxSqlAlchemyError
-```
-
-| 에러                                   | 설명                                  |
-| -------------------------------------- | ------------------------------------- |
-| `AbstractSpakkyOutboxSqlAlchemyError`  | Outbox SQLAlchemy 에러 기반 클래스    |
 
 ---
 

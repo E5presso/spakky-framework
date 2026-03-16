@@ -24,6 +24,7 @@ class BcryptPasswordEncoder(IPasswordEncoder):
     __hash: str
     __url_safe: bool
     ALGORITHM_TYPE: ClassVar[str] = "bcrypt"
+    DEFAULT_ROUNDS: ClassVar[int] = 12
 
     def __str__(self) -> str:
         return self.encode()
@@ -43,13 +44,16 @@ class BcryptPasswordEncoder(IPasswordEncoder):
     def __init__(self, *, password_hash: str, url_safe: bool = False) -> None: ...
 
     @overload
-    def __init__(self, *, password: str, url_safe: bool = False) -> None: ...
+    def __init__(
+        self, *, password: str, url_safe: bool = False, rounds: int | None = None
+    ) -> None: ...
 
     def __init__(
         self,
         password_hash: str | None = None,
         password: str | None = None,
         url_safe: bool = False,
+        rounds: int | None = None,
     ) -> None:
         self.__url_safe = url_safe
         if password_hash is not None:
@@ -62,7 +66,8 @@ class BcryptPasswordEncoder(IPasswordEncoder):
         else:
             if password is None:
                 raise ValueError("parameter 'password' cannot be None")
-            self.__salt = Key(binary=bcrypt.gensalt())
+            effective_rounds = rounds if rounds is not None else self.DEFAULT_ROUNDS
+            self.__salt = Key(binary=bcrypt.gensalt(rounds=effective_rounds))
             self.__hash = Base64Encoder.from_bytes(
                 bcrypt.hashpw(
                     password.encode("UTF-8"),

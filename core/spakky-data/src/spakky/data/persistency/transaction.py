@@ -6,9 +6,16 @@ from spakky.core.common.interfaces.disposable import IAsyncDisposable, IDisposab
 
 
 class AbstractTransaction(IDisposable, ABC):
+    """Abstract base for synchronous transaction context managers."""
+
     autocommit_enabled: bool
 
     def __init__(self, autocommit: bool = True) -> None:
+        """Initialize the transaction.
+
+        Args:
+            autocommit: Whether to auto-commit on successful exit.
+        """
         self.autocommit_enabled = autocommit
 
     @final
@@ -37,22 +44,37 @@ class AbstractTransaction(IDisposable, ABC):
             self.dispose()
 
     @abstractmethod
-    def initialize(self) -> None: ...
+    def initialize(self) -> None:
+        """Initialize the transaction (e.g. open a session)."""
+        ...
 
     @abstractmethod
-    def dispose(self) -> None: ...
+    def dispose(self) -> None:
+        """Dispose the transaction resources (e.g. close a session)."""
+        ...
 
     @abstractmethod
-    def commit(self) -> None: ...
+    def commit(self) -> None:
+        """Commit the current transaction."""
+        ...
 
     @abstractmethod
-    def rollback(self) -> None: ...
+    def rollback(self) -> None:
+        """Roll back the current transaction."""
+        ...
 
 
 class AbstractAsyncTransaction(IAsyncDisposable, ABC):
+    """Abstract base for asynchronous transaction context managers."""
+
     autocommit_enabled: bool
 
     def __init__(self, autocommit: bool = True) -> None:
+        """Initialize the async transaction.
+
+        Args:
+            autocommit: Whether to auto-commit on successful exit.
+        """
         self.autocommit_enabled = autocommit
 
     @final
@@ -81,13 +103,21 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
             await self.dispose()
 
     @abstractmethod
-    async def initialize(self) -> None: ...
+    async def initialize(self) -> None:
+        """Initialize the async transaction (e.g. open a session)."""
+        ...
 
     @abstractmethod
-    async def dispose(self) -> None: ...
+    async def dispose(self) -> None:
+        """Dispose the async transaction resources."""
+        ...
 
     @abstractmethod
-    async def commit(self) -> None: ...
+    async def commit(self) -> None:
+        """Commit the current async transaction."""
+        ...
 
     @abstractmethod
-    async def rollback(self) -> None: ...
+    async def rollback(self) -> None:
+        """Roll back the current async transaction."""
+        ...

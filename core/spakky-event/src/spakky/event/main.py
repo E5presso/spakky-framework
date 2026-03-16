@@ -20,6 +20,10 @@ from spakky.event.publisher.domain_event_publisher import (
 
 
 def initialize(app: SpakkyApplication) -> None:
+    """Initialize the spakky-event plugin.
+
+    Registers event mediators, publishers, buses, and post-processors.
+    """
     app.add(AsyncTransactionalEventPublishingAspect)
     app.add(TransactionalEventPublishingAspect)
 

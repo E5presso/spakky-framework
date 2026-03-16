@@ -3,13 +3,8 @@ from abc import ABC
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
-class AbstractSpakkyEventError(AbstractSpakkyFrameworkError, ABC): ...
-
-
-class DuplicateEventHandlerError(AbstractSpakkyEventError):
-    """Raised when attempting to register multiple handlers for the same event type."""
-
-    message = "Duplicate event handler registered for the same event type"
+class AbstractSpakkyEventError(AbstractSpakkyFrameworkError, ABC):
+    """Base error for event system operations."""
 
 
 class InvalidMessageError(AbstractSpakkyEventError):

@@ -7,6 +7,8 @@ description: Improve test coverage for a Spakky Framework package. Use this skil
 
 아래 단계를 **반드시 순서대로** 수행하세요.
 
+> **관련 스킬**: 단순 커버리지 확인만 필요하면 → [check-coverage](../check-coverage/SKILL.md)
+
 ## Step 1: 기존 테스트 구조 확인
 
 ```bash

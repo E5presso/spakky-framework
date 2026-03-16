@@ -10,6 +10,7 @@ Usage:
     uv run python scripts/run_coverage.py
     uv run python scripts/run_coverage.py --package spakky-fastapi
     uv run python scripts/run_coverage.py --sequential
+    uv run python scripts/run_coverage.py --with-integration  # Include integration tests
 
 Output:
     Generates coverage XML files in each package directory:
@@ -23,6 +24,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -93,12 +95,16 @@ class CoverageResult:
     output: str
 
 
-def _build_coverage_cmd(pkg: PackageInfo, *, is_parallel: bool = False) -> list[str]:
+def _build_coverage_cmd(
+    pkg: PackageInfo,
+    *,
+    with_integration: bool = False,
+) -> list[str]:
     """Build pytest coverage command for a package.
 
     Args:
         pkg: Package information.
-        is_parallel: If True, disable xdist to avoid nested parallelism.
+        with_integration: If True, include integration tests (pytest-integration-mark).
     """
     cmd = [
         "uv",
@@ -108,24 +114,34 @@ def _build_coverage_cmd(pkg: PackageInfo, *, is_parallel: bool = False) -> list[
         "--cov-report=xml:coverage.xml",
         "--cov-report=term-missing",
     ]
-    if is_parallel:
-        # Disable xdist parallelism when running packages in parallel
-        cmd.extend(["-n", "0"])
+    if with_integration:
+        cmd.append("--with-integration")
     return cmd
 
 
-def run_tests_with_coverage_streaming(pkg: PackageInfo) -> bool:
+def run_tests_with_coverage_streaming(
+    pkg: PackageInfo,
+    *,
+    with_integration: bool = False,
+) -> bool:
     """Run pytest with coverage for a specific package (streaming output).
 
     Args:
         pkg: Package information.
+        with_integration: If True, include integration tests (pytest-integration-mark).
 
     Returns:
         True if tests passed, False otherwise.
     """
     print_header(f"Testing: {pkg.name}")
 
-    exit_code = run_streaming(_build_coverage_cmd(pkg), cwd=pkg.full_path)
+    exit_code = run_streaming(
+        _build_coverage_cmd(
+            pkg,
+            with_integration=with_integration,
+        ),
+        cwd=pkg.full_path,
+    )
 
     if exit_code != 0:
         print_error(f"Tests failed for: {pkg.name}")
@@ -135,17 +151,26 @@ def run_tests_with_coverage_streaming(pkg: PackageInfo) -> bool:
     return True
 
 
-def run_tests_with_coverage_captured(pkg: PackageInfo) -> CoverageResult:
+def run_tests_with_coverage_captured(
+    pkg: PackageInfo,
+    *,
+    with_integration: bool = False,
+) -> CoverageResult:
     """Run pytest with coverage for a specific package (parallel-safe).
 
     Args:
         pkg: Package information.
+        with_integration: If True, include integration tests (pytest-integration-mark).
 
     Returns:
         CoverageResult with captured output.
     """
     result: CapturedResult = run_captured(
-        _build_coverage_cmd(pkg, is_parallel=True), cwd=pkg.full_path
+        _build_coverage_cmd(
+            pkg,
+            with_integration=with_integration,
+        ),
+        cwd=pkg.full_path,
     )
     return CoverageResult(
         package=pkg,
@@ -154,16 +179,25 @@ def run_tests_with_coverage_captured(pkg: PackageInfo) -> CoverageResult:
     )
 
 
-def run_parallel_coverage(packages: list[PackageInfo]) -> list[CoverageResult]:
+def run_parallel_coverage(
+    packages: list[PackageInfo],
+    *,
+    with_integration: bool = False,
+) -> list[CoverageResult]:
     """Run coverage checks for multiple packages in parallel.
 
     Args:
         packages: List of packages to test.
+        with_integration: If True, include integration tests (pytest-integration-mark).
 
     Returns:
         List of CoverageResult in the same order as input packages.
     """
     results: dict[str, CoverageResult] = {}
+    run_captured_fn = partial(
+        run_tests_with_coverage_captured,
+        with_integration=with_integration,
+    )
 
     with Progress(
         SpinnerColumn(),
@@ -181,8 +215,7 @@ def run_parallel_coverage(packages: list[PackageInfo]) -> list[CoverageResult]:
 
         with ThreadPoolExecutor(max_workers=min(len(packages), 8)) as executor:
             future_to_pkg: dict[Future[CoverageResult], PackageInfo] = {
-                executor.submit(run_tests_with_coverage_captured, pkg): pkg
-                for pkg in packages
+                executor.submit(run_captured_fn, pkg): pkg for pkg in packages
             }
 
             for future in as_completed(future_to_pkg):
@@ -308,6 +341,12 @@ def main(
         "-s",
         help="Run checks sequentially (useful for debugging).",
     ),
+    with_integration: bool = typer.Option(
+        False,
+        "--with-integration",
+        "-I",
+        help="Include integration tests (pytest-integration-mark).",
+    ),
 ) -> None:
     """Run tests with coverage for all (or specific) workspace packages."""
     try:
@@ -335,11 +374,20 @@ def main(
             console.print(f"  • {pkg.name}")
         console.print()
 
+        if with_integration:
+            console.print(
+                "[green bold]Including integration tests (pytest-integration-mark)[/]"
+            )
+            console.print()
+
         if sequential or len(packages) == 1:
             # Sequential mode: streaming output
             all_passed = True
             for pkg in packages:
-                if not run_tests_with_coverage_streaming(pkg):
+                if not run_tests_with_coverage_streaming(
+                    pkg,
+                    with_integration=with_integration,
+                ):
                     all_passed = False
             tested_count = len(packages)
         else:
@@ -350,7 +398,10 @@ def main(
             )
             console.print()
 
-            results = run_parallel_coverage(packages)
+            results = run_parallel_coverage(
+                packages,
+                with_integration=with_integration,
+            )
             all_passed = display_results(results)
             tested_count = len(results)
 

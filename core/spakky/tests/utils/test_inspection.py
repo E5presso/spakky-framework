@@ -1,4 +1,8 @@
-from spakky.core.utils.inspection import has_default_constructor, is_instance_method
+from spakky.core.utils.inspection import (
+    get_fully_qualified_name,
+    has_default_constructor,
+    is_instance_method,
+)
 
 
 def test_is_instance_method() -> None:
@@ -41,3 +45,58 @@ def test_has_default_constructor_with_protocol() -> None:
 
     assert has_default_constructor(A) is False
     assert has_default_constructor(B) is True
+
+
+def test_get_fully_qualified_name_with_class() -> None:
+    """클래스의 FQCN을 올바르게 반환하는지 검증한다."""
+
+    class MyClass:
+        pass
+
+    fqcn = get_fully_qualified_name(MyClass)
+    assert fqcn.endswith(MyClass.__qualname__)
+
+
+def test_get_fully_qualified_name_with_method() -> None:
+    """메서드의 FQCN을 올바르게 반환하는지 검증한다."""
+
+    class MyClass:
+        def my_method(self) -> None:
+            pass
+
+    fqcn = get_fully_qualified_name(MyClass.my_method)
+    assert fqcn.endswith(MyClass.my_method.__qualname__)
+
+
+def test_get_fully_qualified_name_with_function() -> None:
+    """함수의 FQCN을 올바르게 반환하는지 검증한다."""
+
+    def my_function() -> None:
+        pass
+
+    fqcn = get_fully_qualified_name(my_function)
+    assert fqcn.endswith(my_function.__qualname__)
+
+
+def test_get_fully_qualified_name_with_instance() -> None:
+    """인스턴스의 FQCN을 클래스 이름으로 반환하는지 검증한다."""
+
+    class MyClass:
+        pass
+
+    instance = MyClass()
+    fqcn = get_fully_qualified_name(instance)
+    assert fqcn.endswith(MyClass.__qualname__)
+
+
+def test_get_fully_qualified_name_with_callable_instance() -> None:
+    """호출 가능한 인스턴스도 클래스 이름 기반 FQCN으로 반환하는지 검증한다."""
+
+    class CallableInstance:
+        def __call__(self) -> None:
+            pass
+
+    callable_instance = CallableInstance()
+    fqcn = get_fully_qualified_name(callable_instance)
+
+    assert fqcn.endswith(CallableInstance.__qualname__)

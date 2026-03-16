@@ -10,7 +10,7 @@
 			},
 			{
 				"type": "command",
-				"bash": "python .github/hooks/harness-review.py start 2>&1 || true",
+				"bash": "uv run python .github/hooks/harness-review.py start 2>&1 || true",
 				"cwd": ".",
 				"timeoutSec": 10
 			}
@@ -18,7 +18,7 @@
     "sessionEnd": [
       {
 				"type": "command",
-				"bash": "python .github/hooks/harness-review.py --scope session 2>&1 || true",
+				"bash": "uv run python .github/hooks/harness-review.py --scope session 2>&1 || true",
 				"cwd": ".",
 				"timeoutSec": 30
 			}

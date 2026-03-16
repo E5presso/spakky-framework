@@ -222,9 +222,9 @@ def map_files_to_instructions(
 
 _AUTO_SIGNALS: list[tuple[re.Pattern[str], str, str]] = [
     (
-        re.compile(r"#\s*type:\s*ignore"),
-        "python-code §Type Safety",
-        "`# type: ignore` is forbidden",
+        re.compile(r"#\s*type:\s*ignore(?!\[)"),
+        "python-code §옵트아웃 주석",
+        "`# type: ignore` without error code (require `# type: ignore[code] - reason`)",
     ),
     (
         re.compile(r"^class\s+Test\w*[:(]", re.MULTILINE),

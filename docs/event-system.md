@@ -280,18 +280,25 @@ async def place_order(self, command: PlaceOrderCommand) -> Order:
 2. 백그라운드 워커가 테이블을 폴링하여 브로커에 발행
 3. 발행 성공 시 테이블에서 제거
 
+Spakky에서는 `AsyncOutboxEventBus`가 `@Primary`로 `IAsyncEventBus`를 교체하므로, 별도 코드 변경 없이 기존 `IAsyncEventPublisher.publish()` 호출이 자동으로 Outbox를 통해 저장됩니다.
+
 ```python
-async def place_order(self, command: PlaceOrderCommand) -> Order:
-    async with transaction:
+# UseCase 코드는 동일 — Outbox 플러그인이 투명하게 동작
+@UseCase()
+class PlaceOrderUseCase:
+    def __init__(self, publisher: IAsyncEventPublisher) -> None:
+        self.publisher = publisher
+
+    @transactional
+    async def place_order(self, command: PlaceOrderCommand) -> Order:
         order = Order.create(command)
         await self.repository.save(order)
-
-        # 같은 트랜잭션에서 이벤트 저장
-        await self.outbox.store(OrderPlacedEvent(
-            order_id=order.id,
-            ...
+        # AsyncOutboxEventBus가 IAsyncEventBus를 교체하여
+        # 같은 트랜잭션에서 OutboxMessage로 자동 저장
+        await self.publisher.publish(OrderPlacedEvent(
+            order_id=order.uid,
         ))
-    return order
+        return order
 ```
 
 ---

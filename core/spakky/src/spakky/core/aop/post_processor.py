@@ -120,10 +120,12 @@ class AspectPostProcessor(IPostProcessor):
             return pod
 
         matched_aspects.sort(
-            key=lambda x: Order.get_or_default(
-                obj=x,
-                default=self.__DEFAULT_ORDER,
-            ).order,
+            key=lambda x: (
+                Order.get_or_default(
+                    obj=x,
+                    default=self.__DEFAULT_ORDER,
+                ).order
+            ),
             reverse=True,
         )
         logger.debug(

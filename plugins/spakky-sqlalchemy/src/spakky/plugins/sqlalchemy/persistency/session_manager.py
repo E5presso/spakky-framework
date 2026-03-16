@@ -31,6 +31,8 @@ class SessionNotInitializedError(AbstractSpakkySqlAlchemyPersistencyError):
 
 @Pod()
 class SessionManager(IApplicationContextAware):
+    """Manages scoped synchronous SQLAlchemy sessions."""
+
     _application_context: IApplicationContext
     _engine: Engine
     _scoped_session: scoped_session[Session]
@@ -47,6 +49,7 @@ class SessionManager(IApplicationContextAware):
         )
 
     def __init__(self, connection_manager: ConnectionManager) -> None:
+        """Initialize with engine from connection manager."""
         self._engine = connection_manager.connection
         self._current_session = None
 
@@ -57,9 +60,11 @@ class SessionManager(IApplicationContextAware):
         return self._current_session
 
     def open(self) -> None:
+        """Open a new scoped session."""
         self._current_session = self._scoped_session()
 
     def close(self) -> None:
+        """Close the current session and remove the scoped session."""
         if self._current_session is not None:
             self._current_session.close()
         self._scoped_session.remove()
@@ -68,6 +73,8 @@ class SessionManager(IApplicationContextAware):
 
 @Pod()
 class AsyncSessionManager(IApplicationContextAware):
+    """Manages scoped asynchronous SQLAlchemy sessions."""
+
     _application_context: IApplicationContext
     _engine: AsyncEngine
     _scoped_session: async_scoped_session[AsyncSession]
@@ -84,6 +91,7 @@ class AsyncSessionManager(IApplicationContextAware):
         )
 
     def __init__(self, connection_manager: AsyncConnectionManager) -> None:
+        """Initialize with engine from async connection manager."""
         self._engine = connection_manager.connection
         self._current_session = None
 
@@ -94,9 +102,11 @@ class AsyncSessionManager(IApplicationContextAware):
         return self._current_session
 
     async def open(self) -> None:
+        """Open a new scoped async session."""
         self._current_session = self._scoped_session()
 
     async def close(self) -> None:
+        """Close the current session and remove the scoped async session."""
         if self._current_session is not None:
             await self._current_session.close()
         await self._scoped_session.remove()

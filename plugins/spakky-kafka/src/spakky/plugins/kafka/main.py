@@ -13,6 +13,10 @@ from spakky.plugins.kafka.post_processor import KafkaPostProcessor
 
 
 def initialize(app: SpakkyApplication) -> None:
+    """Initialize the spakky-kafka plugin.
+
+    Registers Kafka consumers, transports, and post-processor.
+    """
     app.add(KafkaConnectionConfig)
 
     app.add(KafkaEventConsumer)

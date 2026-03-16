@@ -4,7 +4,6 @@ from typing import Any
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import Around
-from spakky.core.aspects.logging import Logging
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.common.types import AsyncFunc, Func
 from spakky.core.pod.annotations.order import Order
@@ -50,7 +49,6 @@ class DummyUseCase:
     def __init__(self, name: str) -> None:
         self.__name = name
 
-    @Logging()
     @Dummy()
     def execute(self) -> str:
         return "Hello, World!"
@@ -67,7 +65,6 @@ class AsyncDummyUseCase:
     def __init__(self, name: str) -> None:
         self.__name = name
 
-    @Logging()
     @AsyncDummy()
     async def execute(self) -> str:
         return "Hello, World!"

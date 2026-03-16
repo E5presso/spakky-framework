@@ -1,25 +1,32 @@
 """Test application methods for complete coverage."""
 
+from spakky.core.aop.aspect import Aspect, AsyncAspect
+from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.application.plugin import Plugin
-from spakky.core.aspects.logging import AsyncLoggingAspect, LoggingAspect
 
 
-def test_add_logging_aspect() -> None:
-    """add() 메서드로 LoggingAspect를 추가할 수 있음을 검증한다."""
+@Aspect()
+class StubAspect(IAspect): ...
+
+
+@AsyncAspect()
+class AsyncStubAspect(IAsyncAspect): ...
+
+
+def test_add_aspect_expect_registered() -> None:
+    """add() 메서드로 Aspect를 추가할 수 있음을 검증한다."""
     app = SpakkyApplication(ApplicationContext())
-    app.add(LoggingAspect)
-    # Check that LoggingAspect is registered
-    assert any(pod.type_ == LoggingAspect for pod in app.container.pods.values())
+    app.add(StubAspect)
+    assert any(pod.type_ == StubAspect for pod in app.container.pods.values())
 
 
-def test_add_async_logging_aspect() -> None:
-    """add() 메서드로 AsyncLoggingAspect를 추가할 수 있음을 검증한다."""
+def test_add_async_aspect_expect_registered() -> None:
+    """add() 메서드로 AsyncAspect를 추가할 수 있음을 검증한다."""
     app = SpakkyApplication(ApplicationContext())
-    app.add(AsyncLoggingAspect)
-    # Check that AsyncLoggingAspect is registered
-    assert any(pod.type_ == AsyncLoggingAspect for pod in app.container.pods.values())
+    app.add(AsyncStubAspect)
+    assert any(pod.type_ == AsyncStubAspect for pod in app.container.pods.values())
 
 
 def test_load_plugins_with_include() -> None:

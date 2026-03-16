@@ -4,7 +4,7 @@
 		{
 			"path": ".",
 			"envManager": "ms-python.python:venv",
-			"packageManager": "ms-python.python:uv"
+			"packageManager": "ms-python.python:pip"
 		}
 	]
 }

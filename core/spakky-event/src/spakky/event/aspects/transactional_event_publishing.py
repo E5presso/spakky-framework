@@ -32,6 +32,7 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
 
     @AfterReturning(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
     async def after_returning_async(self, result: Any) -> None:
+        """Publish domain events from collected aggregates after successful commit."""
         for aggregate in self._collector.all():
             for event in aggregate.events:
                 await self._publisher.publish(event)
@@ -39,6 +40,7 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
 
     @After(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
     async def after_async(self) -> None:
+        """Clear the aggregate collector after transaction completion."""
         self._collector.clear()
 
 
@@ -58,6 +60,7 @@ class TransactionalEventPublishingAspect(IAspect):
 
     @AfterReturning(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
     def after_returning(self, result: Any) -> None:
+        """Publish domain events from collected aggregates after successful commit."""
         for aggregate in self._collector.all():
             for event in aggregate.events:
                 self._publisher.publish(event)
@@ -65,4 +68,5 @@ class TransactionalEventPublishingAspect(IAspect):
 
     @After(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
     def after(self) -> None:
+        """Clear the aggregate collector after transaction completion."""
         self._collector.clear()

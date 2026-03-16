@@ -29,6 +29,18 @@
 			"path": "core/spakky-event",
 		},
 		{
+			"name": "core.task",
+			"path": "core/spakky-task",
+		},
+		{
+			"name": "core.outbox",
+			"path": "core/spakky-outbox",
+		},
+		{
+			"name": "plugins.logging",
+			"path": "plugins/spakky-logging",
+		},
+		{
 			"name": "plugins.fastapi",
 			"path": "plugins/spakky-fastapi",
 		},
@@ -53,12 +65,8 @@
 			"path": "plugins/spakky-sqlalchemy",
 		},
 		{
-			"name": "plugins.outbox",
-			"path": "plugins/spakky-outbox",
-		},
-		{
-			"name": "plugins.outbox-sqlalchemy",
-			"path": "plugins/spakky-outbox-sqlalchemy",
+			"name": "plugins.celery",
+			"path": "plugins/spakky-celery",
 		},
 	],
 	"settings": {
@@ -146,7 +154,6 @@
 			"kafka",
 			"sqlalchemy",
 			"outbox",
-			"outbox-sqlalchemy",
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml",
@@ -156,7 +163,7 @@
 			"/^python \\.github\\/hooks\\/harness-review\\.py/": {
 				"approve": true,
 				"matchCommandLine": true,
-			}
+			},
 		},
 	},
 	"extensions": {

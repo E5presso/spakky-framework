@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 @Pod()
 class Transaction(AbstractTransaction):
+    """SQLAlchemy synchronous transaction implementation."""
+
     _session_manager: SessionManager
 
     @property
@@ -23,24 +25,31 @@ class Transaction(AbstractTransaction):
         config: SQLAlchemyConnectionConfig,
         session_manager: SessionManager,
     ) -> None:
+        """Initialize with autocommit config and session manager."""
         super().__init__(autocommit=config.autocommit)
         self._session_manager = session_manager
 
     def initialize(self) -> None:
+        """Open a new session for this transaction scope."""
         self._session_manager.open()
 
     def dispose(self) -> None:
+        """Close the session after transaction completes."""
         self._session_manager.close()
 
     def commit(self) -> None:
+        """Commit the current session."""
         self._session_manager.session.commit()
 
     def rollback(self) -> None:
+        """Roll back the current session."""
         self._session_manager.session.rollback()
 
 
 @Pod()
 class AsyncTransaction(AbstractAsyncTransaction):
+    """SQLAlchemy asynchronous transaction implementation."""
+
     _session_manager: AsyncSessionManager
 
     @property
@@ -52,17 +61,22 @@ class AsyncTransaction(AbstractAsyncTransaction):
         config: SQLAlchemyConnectionConfig,
         session_manager: AsyncSessionManager,
     ) -> None:
+        """Initialize with autocommit config and async session manager."""
         super().__init__(autocommit=config.autocommit)
         self._session_manager = session_manager
 
     async def initialize(self) -> None:
+        """Open a new async session for this transaction scope."""
         await self._session_manager.open()
 
     async def dispose(self) -> None:
+        """Close the async session after transaction completes."""
         await self._session_manager.close()
 
     async def commit(self) -> None:
+        """Commit the current async session."""
         await self._session_manager.session.commit()
 
     async def rollback(self) -> None:
+        """Roll back the current async session."""
         await self._session_manager.session.rollback()

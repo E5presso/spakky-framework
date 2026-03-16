@@ -42,7 +42,7 @@ context.start()
 애플리케이션 부트스트랩 진입점. 컴포넌트 스캔, 플러그인 로딩, 컨테이너 설정을 위한 fluent API를 제공합니다.
 
 ```python
-from spakky.core.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 
 app = SpakkyApplication(ApplicationContext())
@@ -212,7 +212,7 @@ class Order(AbstractAggregateRoot[UUID]):
 
     def add_item(self, item: OrderItem) -> None:
         self.items.append(item)
-        self.add_event(ItemAddedEvent(order_id=self.id, item=item))
+        self.add_event(ItemAddedEvent(order_id=self.uid, item=item))
 ```
 
 ---
@@ -304,6 +304,59 @@ Integration Event 전송을 2단 인터페이스로 분리:
 
 ---
 
+## 태스크 시스템 (spakky-task)
+
+> 설계 배경은 [ADR-0003](adr/0003-task-schedule-decorator-split.md) 참조.
+
+### @TaskHandler
+
+태스크 핸들러 클래스를 마크하는 스테레오타입. `@task` 및 `@schedule` 메서드를 그룹화합니다.
+
+```python
+from spakky.task import TaskHandler, task, schedule
+from datetime import timedelta
+
+@TaskHandler()
+class EmailTaskHandler:
+    @task
+    def send_email(self, to: str) -> None: ...
+
+    @schedule(interval=timedelta(hours=1))
+    def cleanup(self) -> None: ...
+```
+
+### @task
+
+메서드를 온디맨드 디스패치 대상으로 마크하는 데코레이터. 플러그인의 AOP Aspect가 호출을 가로채 태스크 큐로 전달합니다.
+
+### @schedule
+
+메서드를 정기 실행 대상으로 마크하는 데코레이터. `interval`, `at`, `crontab` 중 정확히 하나를 지정해야 합니다.
+
+| 파라미터 | 타입 | 설명 |
+|-----------|------|------|
+| `interval` | `timedelta` | 고정 간격 실행 |
+| `at` | `time` | 매일 특정 시각 실행 |
+| `crontab` | `Crontab` | Cron 기반 스케줄 |
+
+### Crontab
+
+Python 네이티브 타입 기반 cron 명세 값 객체. 문자열 대신 `Weekday`/`Month` IntEnum을 사용합니다.
+
+```python
+from spakky.task import Crontab, Weekday, Month
+
+# 매주 월요일 09:00
+Crontab(weekday=Weekday.MONDAY, hour=9)
+
+# 매년 1월 1일 자정
+Crontab(month=Month.JANUARY, day=1)
+```
+
+필드 순서: `month` → `day` → `weekday` → `hour` → `minute` (내림차순 시간 척도)
+
+---
+
 ## 서비스 생명주기
 
 ### IService
@@ -388,7 +441,7 @@ class CacheUserRepository(IUserRepository):
 
 @Pod()
 class UserService:
-    def __init__(self, repository: Annotated[IUserRepository, Qualifier("cache")]) -> None:
+    def __init__(self, repository: Annotated[IUserRepository, Qualifier(lambda p: p.name == "cache")]) -> None:
         ...
 ```
 

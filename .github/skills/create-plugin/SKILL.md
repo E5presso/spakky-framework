@@ -5,11 +5,28 @@ description: Scaffold a new Spakky Framework plugin package from scratch. Use th
 
 # 플러그인 생성 워크플로우
 
-아래 단계를 **순서대로** 수행하세요.
+## Step 1: 스캐폴딩
 
-## Step 1: 의존성 체인 파악
+```bash
+uv run python scripts/create_package.py plugin spakky-<name> --description "<설명>"
+```
 
-플러그인이 의존해야 하는 코어 체인을 결정합니다:
+이 스크립트가 자동 처리하는 항목:
+- 디렉터리 구조 생성 (`src/`, `tests/`, `.vscode/`)
+- `pyproject.toml` (엔트리 포인트, 빌드, 린터, 테스트, 커버리지 설정)
+- 워크스페이스 멤버 등록 (루트 `pyproject.toml`)
+- commitizen `version_files` 등록
+- `uv.sources` 등록
+- `.pre-commit-config.yaml`
+- `README.md`, `CHANGELOG.md`
+- `main.py` (initialize 함수 스텁)
+- `uv sync --all-packages --all-extras`
+
+## Step 2: 구현
+
+스캐폴딩 후 실제 플러그인 로직을 구현합니다.
+
+### 의존성 체인
 
 | 플러그인 종류 | 의존 체인 |
 |------------|---------|
@@ -20,85 +37,8 @@ description: Scaffold a new Spakky Framework plugin package from scratch. Use th
 
 **핵심 의존 방향**: `spakky` → `spakky-domain` → `spakky-data` → `spakky-event` (단방향)
 
-## Step 2: 패키지 생성
+### 코어 패키지도 동일
 
 ```bash
-# 워크스페이스 루트에서 실행
-cd plugins
-uv init --lib spakky-<name>
-cd spakky-<name>
-
-# 올바른 패키지 구조 생성
-mkdir -p src/spakky/plugins/<name>
-touch src/spakky/plugins/<name>/__init__.py
-touch src/spakky/plugins/<name>/main.py
-```
-
-## Step 3: 워크스페이스 등록
-
-루트 `pyproject.toml`의 `[tool.uv.workspace]` members에 추가:
-
-```toml
-[tool.uv.workspace]
-members = [
-  # ... 기존 패키지 ...
-  "plugins/spakky-<name>",
-]
-```
-
-## Step 4: 플러그인 pyproject.toml 설정
-
-플러그인의 `pyproject.toml`에 엔트리 포인트 추가:
-
-```toml
-[project.entry-points."spakky.plugins"]
-spakky-<name> = "spakky.plugins.<name>.main:initialize"
-```
-
-## Step 5: initialize 함수 구현
-
-`main.py`에 초기화 함수를 구현합니다:
-
-```python
-from spakky.core.application.application import SpakkyApplication
-
-def initialize(app: SpakkyApplication) -> None:
-    """Register your Pods and Post-Processors here."""
-    pass
-```
-
-## Step 6: 버전 동기화 설정
-
-루트 `pyproject.toml`의 `[tool.commitizen]` version_files에 추가:
-
-```toml
-[tool.commitizen]
-version_files = [
-  # ... 기존 패키지 ...
-  "plugins/spakky-<name>/pyproject.toml:version",
-]
-```
-
-## Step 7: pre-commit 설정 복사
-
-기존 플러그인(예: `plugins/spakky-fastapi`)의 `.pre-commit-config.yaml`을 참고하여
-새 플러그인의 `.pre-commit-config.yaml`을 작성하세요.
-
-## Step 8: 테스트 구조 생성
-
-```bash
-mkdir -p tests/unit tests/integration
-touch tests/__init__.py tests/unit/__init__.py tests/integration/__init__.py
-```
-
-## Step 9: 의존성 설치 및 검증
-
-```bash
-# 루트에서 전체 동기화
-cd ../..
-uv sync --all-packages --all-extras
-
-# 플러그인에서 테스트 실행
-cd plugins/spakky-<name>
-uv run pytest
+uv run python scripts/create_package.py core spakky-<name> --description "<설명>"
 ```

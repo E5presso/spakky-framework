@@ -146,7 +146,6 @@ app = (
 | Class | Description |
 |-------|-------------|
 | `AbstractSpakkyEventError` | Base error for event operations |
-| `DuplicateEventHandlerError` | Raised when duplicate handlers registered |
 | `InvalidMessageError` | Raised when message is malformed |
 
 ## Related Packages

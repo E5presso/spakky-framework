@@ -22,7 +22,6 @@ from spakky.core.service.background import (
 )
 from spakky.domain.models.event import AbstractEvent
 from spakky.event.error import (
-    DuplicateEventHandlerError,
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
@@ -55,7 +54,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     connection_string: str
     type_lookup: dict[str, type[AbstractEvent]]
     type_adapters: dict[type, TypeAdapter[AbstractEvent]]
-    handlers: dict[type[AbstractEvent], EventHandlerCallback[Any]]
+    handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     connection: BlockingConnection
     channel: BlockingChannel
 
@@ -81,10 +80,11 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         if method_frame.consumer_tag is None or method_frame.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
         event_type = self.type_lookup[method_frame.consumer_tag]
-        handler = self.handlers[event_type]
+        handlers = self.handlers[event_type]
         type_adapter = self.type_adapters[event_type]
         event = type_adapter.validate_json(body)
-        handler(event)
+        for handler in handlers:
+            handler(event)
         channel.basic_ack(method_frame.delivery_tag)
 
     def _check_if_event_set(self) -> None:
@@ -99,20 +99,16 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     ) -> None:
         """Register an event handler for a specific event type.
 
-        Only one handler can be registered per event type. Attempting to
-        register multiple handlers for the same event will raise an error.
+        Multiple handlers can be registered for the same event type.
 
         Args:
             event: The event type to handle.
             handler: The callback function to handle the event.
-
-        Raises:
-            DuplicateEventHandlerError: If a handler is already registered for this event type.
         """
-        if event in self.handlers:
-            raise DuplicateEventHandlerError(event)
-        self.handlers[event] = handler
-        self.type_adapters[event] = TypeAdapter(event)
+        if event not in self.handlers:
+            self.handlers[event] = []
+            self.type_adapters[event] = TypeAdapter(event)
+        self.handlers[event].append(handler)
 
     def initialize(self) -> None:
         """Initialize RabbitMQ connection and declare queues.
@@ -170,7 +166,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
     connection_string: str
     type_lookup: dict[str, type[AbstractEvent]]
     type_adapters: dict[type, TypeAdapter[AbstractEvent]]
-    handlers: dict[type[AbstractEvent], AsyncEventHandlerCallback[Any]]
+    handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     connection: AbstractRobustConnection
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
@@ -188,10 +184,11 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         if message.consumer_tag is None or message.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
         event_type = self.type_lookup[message.consumer_tag]
-        handler = self.handlers[event_type]
+        handlers = self.handlers[event_type]
         type_adapter = self.type_adapters[event_type]
         event = type_adapter.validate_json(message.body)
-        await handler(event)
+        for handler in handlers:
+            await handler(event)
         await message.ack()
 
     def register(
@@ -201,20 +198,16 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
     ) -> None:
         """Register an async event handler for a specific event type.
 
-        Only one handler can be registered per event type. Attempting to
-        register multiple handlers for the same event will raise an error.
+        Multiple handlers can be registered for the same event type.
 
         Args:
             event: The event type to handle.
             handler: The async callback function to handle the event.
-
-        Raises:
-            DuplicateEventHandlerError: If a handler is already registered for this event type.
         """
-        if event in self.handlers:
-            raise DuplicateEventHandlerError(event)
-        self.handlers[event] = handler
-        self.type_adapters[event] = TypeAdapter(event)
+        if event not in self.handlers:
+            self.handlers[event] = []
+            self.type_adapters[event] = TypeAdapter(event)
+        self.handlers[event].append(handler)
 
     async def initialize_async(self) -> None:
         """Initialize async RabbitMQ connection and declare queues.

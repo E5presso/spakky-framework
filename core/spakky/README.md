@@ -131,28 +131,32 @@ class CreateUserUseCase:
 ## Aspect-Oriented Programming
 
 ```python
-from spakky.core.aop.aspect import Aspect, AsyncAspect
-from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
-from spakky.core.aop.pointcut import Before, After, Around
+from dataclasses import dataclass
+from spakky.core.aop.aspect import Aspect
+from spakky.core.aop.interfaces.aspect import IAspect
+from spakky.core.aop.pointcut import Before, After
+from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.order import Order
-from spakky.core.aspects.logging import Logging
+
+@dataclass
+class Traced(FunctionAnnotation): ...
 
 # Create custom aspect
 @Order(0)
 @Aspect()
-class LoggingAspect(IAspect):
-    @Before(lambda m: Logging.exists(m))
+class TracingAspect(IAspect):
+    @Before(lambda m: Traced.exists(m))
     def before(self, *args, **kwargs) -> None:
         print("Before method execution")
 
-    @After(lambda m: Logging.exists(m))
+    @After(lambda m: Traced.exists(m))
     def after(self, *args, **kwargs) -> None:
         print("After method execution")
 
 # Apply to methods
 @Pod()
 class MyService:
-    @Logging()
+    @Traced()
     def my_method(self) -> str:
         return "Hello"
 ```
@@ -174,18 +178,6 @@ class TimingAspect(IAsyncAspect):
         elapsed = time.time() - start
         print(f"Execution time: {elapsed:.2f}s")
         return result
-```
-
-## Built-in Aspects
-
-```python
-from spakky.core.aspects.logging import Logging
-
-@Pod()
-class OrderService:
-    @Logging()  # Automatic logging
-    async def create_order(self, order: Order) -> Order:
-        return await self.repository.save(order)
 ```
 
 ## Context Management
@@ -315,7 +307,7 @@ See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed
 | `spakky.core.aop` | Aspect-oriented programming framework |
 | `spakky.core.application` | Application context and lifecycle |
 | `spakky.core.stereotype` | Semantic stereotype annotations |
-| `spakky.core.aspects` | Built-in aspects (Logging) |
+| `spakky.core.aspects` | Built-in aspect stubs (see `spakky-logging`) |
 | `spakky.core.service` | Service layer components |
 | `spakky.core.common` | Core utilities (annotation, types, metadata) |
 | `spakky.core.utils` | Utility functions |
@@ -326,6 +318,7 @@ See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed
 |---------|-------------|
 | [`spakky-domain`](https://pypi.org/project/spakky-domain/) | DDD building blocks (Entity, AggregateRoot, ValueObject, Event) |
 | [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling (`@EventHandler` stereotype) |
+| [`spakky-logging`](https://pypi.org/project/spakky-logging/) | Structured logging aspects (`@Logging`, `LoggingAspect`) |
 
 ## License
 

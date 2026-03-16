@@ -17,6 +17,8 @@ class NoSchemaFoundFromDomainError(AbstractSpakkySqlAlchemyORMError):
 
 @Pod()
 class SchemaRegistry(ITagRegistryAware):
+    """Registry that maps domain types to SQLAlchemy table schemas."""
+
     _tag_registry: ITagRegistry
     _metadata: MetaData
     _domain_to_table_map: dict[type[Any], type[AbstractMappableTable[Any]]]
@@ -64,12 +66,14 @@ class SchemaRegistry(ITagRegistryAware):
     def get_type(
         self, domain_type: type[ObjectT]
     ) -> type[AbstractMappableTable[ObjectT]]:
+        """Look up the table class registered for the given domain type."""
         table = self._domain_to_table_map.get(domain_type)
         if table is None:
             raise NoSchemaFoundFromDomainError(domain_type)
         return cast(type[AbstractMappableTable[ObjectT]], table)
 
     def from_domain(self, domain: ObjectT) -> AbstractMappableTable[ObjectT]:
+        """Convert a domain object to its corresponding table instance."""
         table: type[AbstractMappableTable[ObjectT]] | None = (
             self._domain_to_table_map.get(type(domain))
         )

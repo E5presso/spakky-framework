@@ -144,7 +144,7 @@ dependencies = ["spakky>={version}"]
 {name} = "{module_name}.main:initialize"
 
 [build-system]
-requires = ["uv_build>=0.9.13,<0.10.0"]
+requires = ["uv_build>=0.10.10,<0.11.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -174,12 +174,32 @@ addopts = """
     --dist=load
     -p no:warnings
     -n auto
-    -vv
+    --spec
 """
+spec_test_format = "{{result}} {{docstring_summary}}"
 
 [tool.coverage.run]
-include = ["{pythonpath}/*"]
+include = ["{pythonpath}/**/*.py"]
 branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\\\.)?abstractmethod",
+    "@(typing\\\\.)?overload",
+    "\\\\.\\\\.\\\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky = {{ workspace = true }}
 '''
 
 
@@ -200,13 +220,13 @@ def generate_precommit_config(name: str, pkg_type: PackageType) -> str:
 
     return f'''repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: check-yaml
       - id: check-json
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.6
+    rev: v0.15.5
     hooks:
       - id: ruff
         types_or: [python, pyi]
@@ -250,9 +270,9 @@ def generate_vscode_settings(pkg_type: PackageType) -> str:
 \t"python.testing.pytestArgs": ["--no-cov"],
 \t"python-envs.pythonProjects": [
 \t\t{
-\t\t\t"path": "",
+\t\t\t"path": ".",
 \t\t\t"envManager": "ms-python.python:venv",
-\t\t\t"packageManager": "ms-python.python:uv"
+\t\t\t"packageManager": "ms-python.python:pip"
 \t\t}
 \t]
 }
@@ -326,19 +346,14 @@ def generate_main_py(name: str, pkg_type: PackageType) -> str:
     """
     return '''"""Plugin initialization entry point."""
 
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from spakky.application.interfaces.pluggable import IPluggable
+from spakky.core.application.application import SpakkyApplication
 
 
-def initialize(app: IPluggable) -> None:
+def initialize(app: SpakkyApplication) -> None:
     """Initialize the plugin.
 
     Args:
-        app: The pluggable application instance.
+        app: The SpakkyApplication instance.
     """
     # TODO: Implement plugin initialization
     pass
@@ -430,6 +445,76 @@ def update_workspace_members(package_path: str) -> None:
     pyproject_path.write_text(new_content)
 
 
+def update_version_files(package_path: str) -> None:
+    """Add the new package to commitizen version_files in root pyproject.toml.
+
+    Args:
+        package_path: Relative path to the new package (e.g., "plugins/spakky-celery").
+    """
+    pyproject_path = WORKSPACE_ROOT / "pyproject.toml"
+    content = pyproject_path.read_text()
+
+    version_entry = f"{package_path}/pyproject.toml:version"
+
+    # Find the version_files array and add the new entry
+    pattern = r"(version_files = \[)(.*?)(\])"
+
+    def add_version_file(match: re.Match[str]) -> str:
+        prefix = match.group(1)
+        entries = match.group(2)
+        suffix = match.group(3)
+
+        # Parse existing entries
+        existing = [
+            e.strip().strip('"').strip("'") for e in entries.split(",") if e.strip()
+        ]
+
+        # Add new entry if not exists
+        if version_entry not in existing:
+            existing.append(version_entry)
+
+        # Format entries
+        formatted = ",\n  ".join(f'"{e}"' for e in existing)
+        return f"{prefix}\n  {formatted},\n{suffix}"
+
+    new_content = re.sub(pattern, add_version_file, content, flags=re.DOTALL)
+    pyproject_path.write_text(new_content)
+
+
+def update_uv_sources(name: str) -> None:
+    """Add the new package to uv sources in root pyproject.toml.
+
+    Args:
+        name: Package name (e.g., "spakky-celery").
+    """
+    pyproject_path = WORKSPACE_ROOT / "pyproject.toml"
+    content = pyproject_path.read_text()
+
+    source_entry = f"{name} = {{ workspace = true }}"
+
+    # Find [tool.uv.sources] section and add entry before the next section or EOF
+    pattern = r"(\[tool\.uv\.sources\]\n)(.*?)(\n\[|\Z)"
+
+    def add_source(match: re.Match[str]) -> str:
+        header = match.group(1)
+        entries = match.group(2)
+        next_section = match.group(3)
+
+        # Parse existing entries as lines
+        lines = [line for line in entries.strip().split("\n") if line.strip()]
+
+        # Check if entry already exists
+        entry_key = f"{name} ="
+        if not any(line.strip().startswith(entry_key) for line in lines):
+            lines.append(source_entry)
+
+        formatted = "\n".join(lines)
+        return f"{header}{formatted}\n{next_section}"
+
+    new_content = re.sub(pattern, add_source, content, flags=re.DOTALL)
+    pyproject_path.write_text(new_content)
+
+
 def create_package_structure(
     name: str,
     pkg_type: PackageType,
@@ -463,25 +548,18 @@ def create_package_structure(
     (base_dir / "tests").mkdir(exist_ok=True)
     (base_dir / ".vscode").mkdir(exist_ok=True)
 
-    # Create __init__.py files for namespace packages
+    # NOTE: Do NOT create __init__.py in namespace package directories
+    # (spakky/, spakky/plugins/) - PEP 420 implicit namespace packages
     init_content = generate_init_py()
-
-    # spakky/__init__.py (namespace package)
-    spakky_init = base_dir / "src" / "spakky" / "__init__.py"
-    if not spakky_init.exists():
-        spakky_init.write_text(init_content)
-
-    if pkg_type == PackageType.PLUGIN:
-        # spakky/plugins/__init__.py (namespace package)
-        plugins_init = base_dir / "src" / "spakky" / "plugins" / "__init__.py"
-        if not plugins_init.exists():
-            plugins_init.write_text(init_content)
 
     # Module __init__.py
     (src_path / "__init__.py").write_text(init_content)
 
     # Create main.py (plugin entry point)
     (src_path / "main.py").write_text(generate_main_py(name, pkg_type))
+
+    # Create py.typed marker file (PEP 561)
+    (src_path / "py.typed").write_text("")
 
     # Create tests/__init__.py
     (base_dir / "tests" / "__init__.py").write_text(generate_test_init_py())
@@ -594,12 +672,14 @@ def create(
         base_dir = create_package_structure(name, pkg_type, description)
 
         # Update workspace members
-        print_info("Updating workspace members...")
+        print_info("Updating workspace configuration...")
         if pkg_type == PackageType.CORE:
             package_path = f"core/{name}"
         else:
             package_path = f"plugins/{name}"
         update_workspace_members(package_path)
+        update_version_files(package_path)
+        update_uv_sources(name)
 
         # Show created structure
         console.print()

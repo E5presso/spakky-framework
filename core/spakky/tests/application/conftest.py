@@ -4,10 +4,15 @@ from typing import Any, Generator
 
 import pytest
 
+from spakky.core.aop.aspect import Aspect
+from spakky.core.aop.interfaces.aspect import IAspect
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.aspects import LoggingAspect
 from tests.application import apps
+
+
+@Aspect()
+class DummyAspect(IAspect): ...
 
 
 @pytest.fixture(name="application", scope="function")
@@ -21,7 +26,7 @@ def application_fixture() -> Generator[SpakkyApplication, Any, None]:
 
     app: SpakkyApplication = (
         SpakkyApplication(ApplicationContext())
-        .add(LoggingAspect)
+        .add(DummyAspect)
         .scan(apps)
         .load_plugins(include=set())
         .start()

@@ -53,6 +53,7 @@ class AbstractGenericRepository(
         schema_registry: SchemaRegistry,
         aggregate_collector: AggregateCollector,
     ) -> None:
+        """Resolve aggregate type from generic parameters and store dependencies."""
         parameterized_base = next(
             (
                 type_
@@ -233,6 +234,7 @@ class AbstractAsyncGenericRepository(
         schema_registry: SchemaRegistry,
         aggregate_collector: AggregateCollector,
     ) -> None:
+        """Resolve aggregate type from generic parameters and store dependencies."""
         parameterized_base = next(
             (
                 type_

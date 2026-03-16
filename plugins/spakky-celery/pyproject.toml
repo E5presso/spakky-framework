@@ -1,0 +1,96 @@
+[project]
+name = "spakky-celery"
+version = "6.0.0"
+description = "Celery DI/AOP integration plugin for Spakky Framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = [
+    "celery>=5.6.2",
+    "pydantic-settings>=2.13.1",
+    "spakky-task>=6.0.0",
+]
+
+[project.entry-points."spakky.plugins"]
+spakky-celery = "spakky.plugins.celery.main:initialize"
+
+[dependency-groups]
+dev = [
+    "celery-types>=0.26.0",
+    "nest-asyncio>=1.6.0",
+    "pytest-asyncio>=0.26.0",
+    "pytest-integration-mark>=0.2.0",
+    "testcontainers[rabbitmq]>=4.14.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.10,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.celery"
+
+[tool.pyrefly]
+python-version = "3.14"
+search_path = ["src", "."]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = "src/spakky/plugins/celery"
+testpaths = "tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers",
+    "ignore::pydantic.warnings.PydanticDeprecatedSince211",
+]
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=loadfile
+    -p no:warnings
+    -n auto
+    --spec
+"""
+spec_test_format = "{result} {docstring_summary}"
+markers = [
+    "known_issue(reason): 알려진 버그",
+    "integration: testcontainers 기반 통합 테스트 (느림)",
+]
+
+[tool.pytest-integration-mark]
+integration_path = "tests/integration"
+
+[tool.coverage.run]
+include = ["src/spakky/plugins/celery/**/*.py"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+    "\\.\\.\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-task = { workspace = true }

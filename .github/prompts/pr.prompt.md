@@ -1,45 +1,17 @@
 ---
 name: pr
-description: Spakky Framework PR 생성 워크플로우
+description: Spakky Framework PR 생성
 agent: spakky-dev
 tools:
-  - read/readFile
-  - search
-  - search/listDirectory
   - search/changes
   - github/*
   - execute/runInTerminal
-  - execute/getTerminalOutput
-  - search/usages
-  - todo
-  - web/fetch
 ---
 
-# PR 생성 워크플로우
+# PR 생성
 
-## Step 1: 변경 사항 확인
-
-1. `git diff develop` 또는 `get_changed_files`로 변경 파일 목록을 확인하세요.
-2. 각 변경 파일의 목적을 정리하세요.
-
-## Step 2: PR 템플릿 확인
-
-[PULL_REQUEST_TEMPLATE.md](../../.github/PULL_REQUEST_TEMPLATE.md)를 읽고 형식을 따르세요.
-
-## Step 3: PR 내용 작성
-
-1. **Title**: Conventional Commits 형식 (`feat(<scope>): <subject>`)
-2. **Description**: 변경 사항의 목적과 구현 내용
-3. **Related Issue**: `Fixes #<number>` 또는 `Closes #<number>`
-4. **Type of Change**: 적절한 항목 체크
-5. **Checklist**: 모든 항목 확인
-
-### Scope 규칙
-
-Scope 테이블은 [commit.prompt.md](commit.prompt.md)를 참조하세요.
-
-## Step 4: 사용자 승인
-
-**PR 작성 내용을 마크다운으로 전체 출력하고, 사용자 승인을 받은 후에만 MCP 도구를 호출하세요.**
+1. `git diff develop`로 변경 파일 확인
+2. Conventional Commits 형식 타이틀 (scope는 commit 프롬프트 참조)
+3. PR 내용을 마크다운으로 출력 → **사용자 승인 후** GitHub MCP 호출
 
 PR 대상: ${input:description:PR에 대해 설명하세요}

@@ -32,86 +32,98 @@
 | **Core** | `spakky-domain` | DDD 빌딩 블록 (Entity, AggregateRoot, ValueObject, Event, CQRS) |
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
+| **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
+| **Core** | `spakky-outbox` | Transactional Outbox 패턴 추상화 (IEventBus 교체, Relay) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
-| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 |
-| **Plugin** | `spakky-outbox` | Transactional Outbox 패턴 (IEventBus 교체) |
-| **Plugin** | `spakky-outbox-sqlalchemy` | SQLAlchemy 기반 Outbox 저장소 구현 |
+| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 (spakky-outbox 설치 시 Outbox 저장소 자동 등록) |
+| **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
+| **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @Logging AOP Aspect |
 
 ---
 
 ## 의존성 그래프
 
 ```mermaid
-graph TB
-    subgraph "Core Chain"
-        core[spakky<br/>DI · AOP · Plugin]
-        domain[spakky-domain<br/>Entity · Event · CQRS]
-        data[spakky-data<br/>Repository · Transaction]
-        event[spakky-event<br/>Publisher · Consumer · Aspect]
+graph TD
+    subgraph core_chain ["🔗 Core Chain"]
+        core[🧩 spakky<br/>DI · AOP · Plugin]
+
+        core --> domain[📦 spakky-domain<br/>Entity · Event · CQRS]
+        core --> task_pkg["⏱ spakky-task<br/>@task · @schedule · Crontab"]
+
+        domain --> data[💾 spakky-data<br/>Repository · Transaction]
+        data --> event[📡 spakky-event<br/>Publisher · Consumer · Aspect]
+        event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
     end
 
-    subgraph "UI Plugins"
-        fastapi[spakky-fastapi]
-        typer[spakky-typer]
+    subgraph plugins ["⚡ Plugins"]
+        subgraph persistence ["💾 Persistence"]
+            sqlalchemy[spakky-sqlalchemy]
+        end
+
+        subgraph transport ["🚀 Transport"]
+            rabbitmq[spakky-rabbitmq]
+            kafka[spakky-kafka]
+        end
+
+        subgraph task_plugins ["⏲ Task"]
+            celery_plugin[spakky-celery]
+        end
+
+        subgraph observability ["👁 Observability"]
+            logging_pkg[spakky-logging]
+        end
+
+        subgraph ui ["🖥 UI & Utility"]
+            fastapi[spakky-fastapi]
+            typer[spakky-typer]
+            security[spakky-security]
+        end
     end
 
-    subgraph "Utility Plugins"
-        security[spakky-security]
-    end
-
-    subgraph "Transport Plugins"
-        rabbitmq[spakky-rabbitmq]
-        kafka[spakky-kafka]
-    end
-
-    subgraph "Infrastructure Plugins"
-        sqlalchemy[spakky-sqlalchemy]
-        outbox[spakky-outbox]
-        outbox_sa[spakky-outbox-sqlalchemy]
-    end
-
-    core --> domain
-    domain --> data
-    data --> event
-
+    data --> sqlalchemy
+    outbox -.->|optional| sqlalchemy
+    event --> rabbitmq
+    event --> kafka
+    task_pkg --> celery_plugin
+    core --> logging_pkg
     core --> fastapi
     core --> typer
     core --> security
 
-    event --> rabbitmq
-    event --> kafka
-    event --> outbox
+    %% Styling — Core
+    style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
+    style domain fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100
+    style data fill:#e8f5e9,stroke:#66bb6a,stroke-width:2px,color:#1b5e20
+    style event fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
+    style outbox fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
+    style task_pkg fill:#fce4ec,stroke:#ef5350,stroke-width:2px,color:#b71c1c
 
-    data --> sqlalchemy
-    outbox --> outbox_sa
-    sqlalchemy --> outbox_sa
-
-    style core fill:#e1f5ff
-    style domain fill:#fff4e1
-    style data fill:#e8f5e9
-    style event fill:#f3e5f5
-    style fastapi fill:#e0e0e0
-    style typer fill:#e0e0e0
-    style security fill:#e0e0e0
-    style rabbitmq fill:#e0e0e0
-    style kafka fill:#e0e0e0
-    style sqlalchemy fill:#e0e0e0
-    style outbox fill:#e0e0e0
-    style outbox_sa fill:#e0e0e0
+    %% Styling — Plugins
+    style sqlalchemy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style rabbitmq fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style kafka fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style celery_plugin fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style logging_pkg fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style fastapi fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style typer fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style security fill:#f5f5f5,stroke:#9e9e9e,color:#424242
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
 
 - **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존
+- **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존, `spakky-outbox` 설치 시 Outbox 저장소 런타임 감지
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
-- **Outbox 플러그인** (outbox) → `spakky-event`까지 의존
-- **Outbox 인프라** (outbox-sqlalchemy) → `spakky-outbox` + `spakky-sqlalchemy`에 의존
+- **Outbox 코어** (spakky-outbox) → `spakky-event`까지 의존 (추상화 + 오케스트레이션)
+- **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
+- **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
+- **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 
 ---
 
@@ -198,6 +210,7 @@ class UserService:
 | `@Configuration` | `spakky.core.stereotype.configuration` | 설정 클래스 |
 | `@Repository` | `spakky.data.stereotype.repository` | 데이터 접근 |
 | `@EventHandler` | `spakky.event.stereotype.event_handler` | 이벤트 처리 |
+| `@TaskHandler` | `spakky.task.stereotype.task_handler` | 태스크 핸들러 |
 | `@Aspect` / `@AsyncAspect` | `spakky.core.aop.aspect` | AOP 관점 |
 
 ### 컨테이너 (`ApplicationContext`)
@@ -345,6 +358,7 @@ spakky-data = "spakky.data.main:initialize"
 
 | 플러그인 | 등록하는 컴포넌트 |
 |---------|-------------------|
+| `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` |
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
@@ -353,9 +367,10 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
-| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
+| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction. `spakky-outbox` 설치 시: `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
-| `spakky-outbox-sqlalchemy` | `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
+| `spakky-task` | `TaskRegistrationPostProcessor` |
+| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
 
 ---
 
@@ -760,7 +775,19 @@ sequenceDiagram
 |---------|-------------|-----------|
 | `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction | `sqlalchemy` |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
+### 태스크 플러그인
 
+| 플러그인 | 등록 컴포넌트 | 외부 의존성 |
+|---------|-------------|----------|
+| `spakky-task` | `TaskRegistrationPostProcessor` | (없음 — 추상화만 제공) |
+| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) | `celery`, `pydantic-settings` |
+
+**태스크 시스템 아키텍처:**
+
+- **`@task`**: 온디맨드 디스패치용. AOP Aspect가 호출을 가로채 브로커로 전달
+- **`@schedule`**: 정기 실행용. PostProcessor가 Celery Beat에 스케줄 등록
+- **`Crontab`**: Python 네이티브 타입 기반 cron 명세 (문자열 대신 `Weekday`/`Month` IntEnum 사용)
+- **분리 배경**: [ADR-0003](docs/adr/0003-task-schedule-decorator-split.md) 참조
 ---
 
 ## 설계 결정
@@ -815,11 +842,6 @@ sequenceDiagram
 ## Architecture Decision Records
 
 주요 아키텍처 의사결정은 [docs/adr/](docs/adr/README.md)에 ADR(Architecture Decision Record)로 관리합니다.
-
-| # | 제목 | 상태 | 날짜 |
-|---|------|------|------|
-| [ADR-0001](docs/adr/0001-event-system-redesign.md) | 이벤트 시스템 재설계 — 단일 진입점, EventBus/EventTransport 분리, Outbox Seam | Accepted | 2026-03-06 |
-| [ADR-0002](docs/adr/0002-outbox-plugin-architecture.md) | Outbox 플러그인 아키텍처 — 추상화와 구현체 분리 | Accepted | 2026-03-10 |
 
 ---
 
