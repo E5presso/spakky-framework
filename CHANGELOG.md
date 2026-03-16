@@ -1,3 +1,29 @@
+## v6.1.0 (2026-03-16)
+
+### Feat
+
+- **workflow**: add additional package options for publishing
+- **yaml**: add custom YAML tags for enhanced validation in workspace settings
+- **logging**: rename Logging to Logged and introduce logged shoredhanded decorator for method logging
+- add transactional decorator and update documentation for shorthand usage
+- **logging**: extract spakky-logging into standalone core package
+- **celery**: add spakky-celery plugin with AOP-based task dispatch (#30)
+- **spakky-task**: add spakky-task core package (#29)
+
+### Fix
+
+- **settings**: remove unnecessary YAML validation setting from VS Code configuration
+- allow Python YAML tags in check-yaml hook and VS Code
+- **docs**: remove premature tracing/otel refs, fix outbox classification
+- **deps**: reorder optional dependencies for clarity
+- **deps**: add missing logging dependency
+
+### Refactor
+
+- **event**: remove DuplicateEventHandlerError and allow multiple handlers for the same event type
+- merge outbox-sqlalchemy into sqlalchemy, promote outbox to core
+- **logging**: move spakky-logging to plugins/, rename import path to spakky.plugins.logging
+
 ## v6.0.0 (2026-03-10)
 
 ### BREAKING CHANGE
