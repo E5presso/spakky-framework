@@ -45,6 +45,7 @@ def rabbitmq_container_fixture() -> Generator[RabbitMqContainer, None, None]:
         environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}BROKER_URL"] = broker_url
         environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}APP_NAME"] = "spakky-celery-test"
         environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}TIMEZONE"] = "UTC"
+        environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND"] = "rpc://"
 
         yield container
 
@@ -61,7 +62,11 @@ def app_with_worker_fixture(
 
     @Pod()
     def get_celery(config: CeleryConfig) -> Celery:
-        return Celery(main=config.app_name, broker=config.broker_url)
+        return Celery(
+            main=config.app_name,
+            broker=config.broker_url,
+            backend=config.result_backend,
+        )
 
     logger = getLogger("debug")
     logger.setLevel(logging.DEBUG)

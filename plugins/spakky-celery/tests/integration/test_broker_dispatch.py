@@ -10,9 +10,11 @@ running a real worker in a thread.
 from time import sleep, time
 
 from spakky.core.application.application import SpakkyApplication
+from spakky.task.interfaces.task_result import AbstractTaskResult
 
 from tests.apps.dummy import (
     AsyncNotificationHandler,
+    AsyncResultTaskHandler,
     EmailTaskHandler,
     ReportTaskHandler,
     execution_record,
@@ -139,3 +141,25 @@ def test_hybrid_task_can_be_dispatched_manually_expect_worker_processes_it(
     # Then: Worker picks up and executes the task
     wait_for_execution("hourly_sync")
     assert execution_record.count("hourly_sync") == 1
+
+
+# =============================================================================
+# Scenario: Async result retrieval via get_async()
+# =============================================================================
+
+
+async def test_get_async_retrieves_async_task_return_value_from_broker(
+    app_with_worker: SpakkyApplication,
+) -> None:
+    """get_async() returns the value from an async @task executed through the broker without blocking the event loop."""
+    # Given: A running Celery worker connected to RabbitMQ broker with result backend
+    handler = app_with_worker.container.get(AsyncResultTaskHandler)
+
+    # When: Dispatching an async @task that returns a value
+    result = await handler.compute(value=21)
+    assert isinstance(result, AbstractTaskResult)
+
+    # Then: get_async() returns the task's return value without blocking the event loop
+    value = await result.get_async()
+    assert value == 42
+    assert execution_record.count("compute") == 1
