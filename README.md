@@ -40,6 +40,10 @@
 </p>
 </p>
 
+<p align="center">
+  <strong>Documentation</strong>: <a href="https://framework.spakky.com">https://framework.spakky.com</a>
+</p>
+
 ---
 
 **Spakky** is a modern, Spring-inspired dependency injection framework for Python, designed for building scalable, modular applications with ease. It brings the power of Inversion of Control (IoC) and Aspect-Oriented Programming (AOP) to the Python ecosystem, with first-class support for **FastAPI**, **RabbitMQ**, and **Typer**.
