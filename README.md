@@ -38,6 +38,7 @@
     <img src="https://codecov.io/gh/E5presso/spakky-framework/branch/develop/graph/badge.svg" alt="Codecov">
   </a>
 </p>
+</p>
 
 ---
 
@@ -80,10 +81,6 @@ Spakky is a monorepo containing the core framework and official plugins:
 
 ## 🚀 Quick Start
 
-### Documentation
-
-The official documentation is available at [framework.spakky.com](https://framework.spakky.com).
-
 ### Installation
 
 Install the core framework:
@@ -97,3 +94,91 @@ Or install with plugins:
 ```bash
 pip install "spakky[fastapi,kafka]"
 ```
+
+### Basic Usage
+
+Define your services with `@Pod`:
+
+```python
+from spakky.core.pod.annotations.pod import Pod
+
+@Pod()
+class UserRepository:
+    def get_user(self, id: int) -> str:
+        return "John Doe"
+
+@Pod()
+class UserService:
+    def __init__(self, repository: UserRepository) -> None:
+        self.repository = repository
+
+    def get_user_name(self, id: int) -> str:
+        return self.repository.get_user(id)
+```
+
+Bootstrap the application:
+
+```python
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .scan()  # Auto-detects caller's package (works in Docker too!)
+    .start()
+)
+
+user_service = app.container.get(UserService)
+print(user_service.get_user_name(1))
+```
+
+> **📘 Note**: When `scan()` is called without arguments, it automatically detects and scans the caller's package. This also works in Docker environments where the application root may not be in `sys.path`.
+
+## 🛠 Development
+
+This project uses `uv` for dependency management and workspace handling.
+
+### Prerequisites
+
+- Python 3.11+
+- `uv` installed
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/E5presso/spakky-framework.git
+cd spakky-framework
+
+# Sync dependencies (from workspace root)
+uv sync --all-packages --all-extras
+
+# Install pre-commit hooks
+uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
+```
+
+> **💡 Note:** Use `--all-packages` only at the workspace root. When working inside a sub-package (e.g., `cd plugins/spakky-fastapi`), use `uv sync --all-extras` instead.
+
+### Opening Sub-Projects Independently
+
+Each sub-project can be opened independently in VS Code. The `.vscode/settings.json` in each sub-project points to the root's virtual environment, so Python IntelliSense works correctly.
+
+### Running Tests
+
+```bash
+cd core/spakky
+uv run pytest
+
+cd plugins/spakky-fastapi
+uv run pytest
+
+# etc. for each package
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## 📄 License
+
+This project is licensed under the MIT License.
