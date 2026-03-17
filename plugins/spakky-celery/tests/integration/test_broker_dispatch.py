@@ -151,12 +151,12 @@ def test_hybrid_task_can_be_dispatched_manually_expect_worker_processes_it(
 async def test_get_async_retrieves_async_task_return_value_from_broker(
     app_with_worker: SpakkyApplication,
 ) -> None:
-    """get_async() returns the value from a @task executed through the broker without blocking the event loop."""
+    """get_async() returns the value from an async @task executed through the broker without blocking the event loop."""
     # Given: A running Celery worker connected to RabbitMQ broker with result backend
     handler = app_with_worker.container.get(AsyncResultTaskHandler)
 
-    # When: Dispatching a @task that returns a value (dispatch is always synchronous)
-    result = handler.compute(value=21)
+    # When: Dispatching an async @task — await is required at call site (Python type-system convention)
+    result = await handler.compute(value=21)
     assert isinstance(result, AbstractTaskResult)
 
     # Then: get_async() retrieves the task's return value without blocking the event loop
