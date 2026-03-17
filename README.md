@@ -41,7 +41,7 @@
 </p>
 
 <p align="center">
-  <a href="https://framework.spakky.com">Documentation</a>
+  <strong>Documentation</strong>: <a href="https://framework.spakky.com">https://framework.spakky.com</a>
 </p>
 
 ---
