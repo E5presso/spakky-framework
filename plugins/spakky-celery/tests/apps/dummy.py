@@ -114,11 +114,11 @@ class AsyncNotificationHandler:
 
 @TaskHandler()
 class AsyncResultTaskHandler:
-    """Task handler with a sync @task that returns a value, for get_async() result-retrieval testing."""
+    """Task handler with an async @task that returns a value, for get_async() result-retrieval testing."""
 
     @task
-    def compute(self, value: int) -> int:
-        """Double the given value via task queue."""
+    async def compute(self, value: int) -> int:
+        """Double the given value via async task queue."""
         execution_record.record("compute", value=value)
         return value * 2
 
