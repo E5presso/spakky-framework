@@ -1,3 +1,9 @@
+## v6.2.0 (2026-03-17)
+
+### Feat
+
+- **task**: Add `get_async()` to `AbstractTaskResult` and `CeleryTaskResult` (#40) (#41)
+
 ## v6.1.3 (2026-03-16)
 
 ### Fix

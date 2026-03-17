@@ -1,12 +1,12 @@
 [project]
 name = "spakky-logging"
-version = "6.1.3"
+version = "6.2.0"
 description = "Structured logging system for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.1.3", "pydantic-settings>=2.9.1"]
+dependencies = ["spakky>=6.2.0", "pydantic-settings>=2.9.1"]
 
 [project.entry-points."spakky.plugins"]
 spakky-logging = "spakky.plugins.logging.main:initialize"
