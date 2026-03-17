@@ -46,7 +46,9 @@ async def test_celery_task_result_get_async_delegates_via_executor() -> None:
 
     result: CeleryTaskResult[str] = CeleryTaskResult(mock_async_result)
 
-    with patch("spakky.plugins.celery.common.task_result.asyncio.get_running_loop") as mock_get_loop:
+    with patch(
+        "spakky.plugins.celery.common.task_result.asyncio.get_running_loop"
+    ) as mock_get_loop:
         mock_loop = MagicMock()
         mock_loop.run_in_executor = AsyncMock(return_value="async-final-value")
         mock_get_loop.return_value = mock_loop
