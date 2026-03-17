@@ -41,7 +41,6 @@
 </p>
 
 <p align="center">
-  <a href="https://framework.spakky.com">Documentation</a> ·
   <a href="https://framework.spakky.com">https://framework.spakky.com</a>
 </p>
 
