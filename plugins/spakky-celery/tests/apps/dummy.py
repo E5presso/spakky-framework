@@ -14,6 +14,7 @@ __all__ = [
     "EmailTaskHandler",
     "ReportTaskHandler",
     "AsyncNotificationHandler",
+    "AsyncResultTaskHandler",
     "ScheduledTaskHandler",
     "HybridTaskHandler",
 ]
@@ -109,6 +110,17 @@ class AsyncNotificationHandler:
             user_id=user_id,
             message=message,
         )
+
+
+@TaskHandler()
+class AsyncResultTaskHandler:
+    """Task handler with an async @task that returns a value, for get_async() result-retrieval testing."""
+
+    @task
+    async def compute(self, value: int) -> int:
+        """Double the given value via async task queue."""
+        execution_record.record("compute", value=value)
+        return value * 2
 
 
 @TaskHandler()
