@@ -129,6 +129,29 @@ assert isinstance(result, AbstractTaskResult)
 
 ---
 
+## 비동기 결과 조회
+
+`result.get()`은 블로킹 호출이므로 asyncio 이벤트 루프를 차단합니다.
+FastAPI 등 asyncio 기반 환경에서는 `await result.get_async()`를 사용하세요.
+
+```python
+from spakky.task.interfaces.task_result import AbstractTaskResult
+
+handler = app.container.get(type_=EmailTaskHandler)
+
+result = handler.send_welcome_email(to="user@example.com", name="John")
+assert isinstance(result, AbstractTaskResult)
+print(result.task_id)              # 디스패치된 태스크 ID
+
+# asyncio 환경: 이벤트 루프를 차단하지 않고 결과 조회
+value = await result.get_async()   # run_in_executor로 블로킹 get()을 비동기 래핑
+
+# 동기 환경: 블로킹 방식으로 결과 조회 (이벤트 루프 없는 경우)
+value = result.get()
+```
+
+---
+
 ## 자동 등록 확인
 
 `CeleryPostProcessor`가 `@TaskHandler`를 감지하면 자동으로 Celery에 등록합니다.

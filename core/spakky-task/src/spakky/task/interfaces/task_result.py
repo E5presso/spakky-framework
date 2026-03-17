@@ -28,3 +28,14 @@ class AbstractTaskResult(ABC, Generic[T]):
             The return value of the executed task method.
         """
         ...
+
+    @abstractmethod
+    async def get_async(self) -> T:
+        """Await until the task completes and return its result.
+
+        Use this in asyncio contexts to avoid blocking the event loop.
+
+        Returns:
+            The return value of the executed task method.
+        """
+        ...

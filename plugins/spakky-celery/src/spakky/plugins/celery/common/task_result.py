@@ -1,5 +1,6 @@
 """Celery-backed implementation of TaskResult."""
 
+import asyncio
 from typing import Generic, TypeVar, cast
 
 from spakky.task.interfaces.task_result import AbstractTaskResult
@@ -24,3 +25,7 @@ class CeleryTaskResult(AbstractTaskResult[T], Generic[T]):
 
     def get(self) -> T:
         return cast(T, self._result.get())
+
+    async def get_async(self) -> T:
+        loop = asyncio.get_running_loop()
+        return cast(T, await loop.run_in_executor(None, self._result.get))
