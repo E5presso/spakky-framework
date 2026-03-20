@@ -5,9 +5,8 @@ is called when FastAPI shuts down, enabling graceful shutdown of
 background services like RabbitMQ consumers.
 """
 
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any, Mapping
+from typing import Any, AsyncGenerator, Mapping
 
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
@@ -58,7 +57,9 @@ class BindLifespanPostProcessor(IPostProcessor, IApplicationContextAware):
         application_context = self.__application_context
 
         @asynccontextmanager
-        async def wrapped_lifespan(app: FastAPI) -> AsyncIterator[Mapping[str, Any]]:
+        async def wrapped_lifespan(
+            app: FastAPI,
+        ) -> AsyncGenerator[Mapping[str, Any], None]:
             try:
                 async with original_lifespan(app) as state:
                     yield state if state is not None else {}
