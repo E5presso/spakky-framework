@@ -46,6 +46,7 @@ version_files = [
   "plugins/spakky-kafka/pyproject.toml:version",
   "plugins/spakky-sqlalchemy/pyproject.toml:version",
   "plugins/spakky-celery/pyproject.toml:version",
+  "core/spakky-tracing/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -65,6 +66,7 @@ members = [
   "plugins/spakky-kafka",
   "plugins/spakky-sqlalchemy",
   "plugins/spakky-celery",
+  "core/spakky-tracing",
 ]
 
 
@@ -83,6 +85,7 @@ spakky-outbox = { workspace = true }
 spakky-task = { workspace = true }
 spakky-celery = { workspace = true }
 spakky-logging = { workspace = true }
+spakky-tracing = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

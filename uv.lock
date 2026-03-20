@@ -23,6 +23,7 @@ members = [
     "spakky-security",
     "spakky-sqlalchemy",
     "spakky-task",
+    "spakky-tracing",
     "spakky-typer",
 ]
 
@@ -2783,6 +2784,17 @@ dev = [
 name = "spakky-task"
 version = "6.2.0"
 source = { editable = "core/spakky-task" }
+dependencies = [
+    { name = "spakky" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+
+[[package]]
+name = "spakky-tracing"
+version = "6.2.0"
+source = { editable = "core/spakky-tracing" }
 dependencies = [
     { name = "spakky" },
 ]

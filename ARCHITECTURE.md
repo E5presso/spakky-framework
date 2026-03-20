@@ -33,6 +33,7 @@
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
+| **Core** | `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, ITracePropagator, W3C Propagator) |
 | **Core** | `spakky-outbox` | Transactional Outbox 패턴 추상화 (IEventBus 교체, Relay) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
@@ -54,6 +55,7 @@ graph TD
 
         core --> domain[📦 spakky-domain<br/>Entity · Event · CQRS]
         core --> task_pkg["⏱ spakky-task<br/>@task · @schedule · Crontab"]
+        core --> tracing["🔍 spakky-tracing<br/>TraceContext · Propagator"]
 
         domain --> data[💾 spakky-data<br/>Repository · Transaction]
         data --> event[📡 spakky-event<br/>Publisher · Consumer · Aspect]
@@ -102,6 +104,7 @@ graph TD
     style event fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
     style outbox fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
     style task_pkg fill:#fce4ec,stroke:#ef5350,stroke-width:2px,color:#b71c1c
+    style tracing fill:#e0f2f1,stroke:#26a69a,stroke-width:2px,color:#004d40
 
     %% Styling — Plugins
     style sqlalchemy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
@@ -122,6 +125,7 @@ graph TD
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
 - **Outbox 코어** (spakky-outbox) → `spakky-event`까지 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
+- **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 
