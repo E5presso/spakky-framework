@@ -1,8 +1,8 @@
+import asyncio
 from logging import getLogger
 
 from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
-from confluent_kafka.aio import AIOProducer
 from spakky.core.pod.annotations.pod import Pod
 from spakky.event.event_publisher import (
     IAsyncEventTransport,
@@ -80,11 +80,10 @@ class KafkaEventTransport(IEventTransport):
 
 @Pod()
 class AsyncKafkaEventTransport(IAsyncEventTransport):
-    """Asynchronous Kafka event transport using confluent_kafka AIOProducer."""
+    """Asynchronous Kafka event transport using confluent_kafka Producer."""
 
     config: KafkaConnectionConfig
     admin: AdminClient
-    producer: AIOProducer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the async Kafka transport with connection config."""
@@ -119,6 +118,20 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
+    def _send_sync(
+        self, event_name: str, payload: bytes, headers: dict[str, str]
+    ) -> None:
+        producer = Producer(self.config.configuration_dict, logger=logger)
+        self._create_topic(topic=event_name)
+        producer.produce(
+            topic=event_name,
+            value=payload,
+            headers=dict(headers),
+            callback=self._message_delivery_report,
+        )
+        producer.poll(0)
+        producer.flush()
+
     async def send(
         self,
         event_name: str,
@@ -132,13 +145,5 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             payload: Pre-serialized JSON bytes.
             headers: Metadata headers for trace propagation.
         """
-        self.producer = AIOProducer(self.config.configuration_dict)
-        self._create_topic(topic=event_name)
-        await self.producer.produce(
-            topic=event_name,
-            value=payload,
-            headers=dict(headers),
-            callback=self._message_delivery_report,
-        )
-        await self.producer.poll(0)
-        await self.producer.flush()
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._send_sync, event_name, payload, headers)
