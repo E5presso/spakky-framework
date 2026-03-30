@@ -257,7 +257,9 @@ def collect_auto_signals(files: list[Path]) -> list[str]:
         if not py_file.suffix == ".py":
             continue
         # Skip harness scripts — they intentionally reference forbidden patterns
-        if py_file.is_relative_to(CLAUDE_DIR) or py_file.is_relative_to(Path(".github")):
+        if py_file.is_relative_to(CLAUDE_DIR) or py_file.is_relative_to(
+            Path(".github")
+        ):
             continue
         try:
             content = py_file.read_text("utf-8")

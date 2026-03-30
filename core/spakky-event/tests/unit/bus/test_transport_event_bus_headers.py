@@ -3,6 +3,7 @@
 import pytest
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
 from spakky.event.bus.transport_event_bus import AsyncDirectEventBus, DirectEventBus
@@ -54,8 +55,8 @@ class FakePropagator(ITracePropagator):
             "00-abcd1234abcd1234abcd1234abcd1234-1234abcd1234abcd-01"
         )
 
-    def extract(self, carrier: dict[str, str]) -> None:
-        return None  # type: ignore[return-value] - 테스트 스텁
+    def extract(self, carrier: dict[str, str]) -> TraceContext | None:
+        return None
 
     def fields(self) -> list[str]:
         return ["traceparent"]

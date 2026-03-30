@@ -57,6 +57,7 @@ def test_direct_event_bus_send_delegates_to_transport() -> None:
     assert event_name == "SampleIntegrationEvent"
     adapter: TypeAdapter[SampleIntegrationEvent] = TypeAdapter(SampleIntegrationEvent)
     assert payload == adapter.dump_json(event)
+    assert isinstance(headers, dict)
 
 
 @pytest.mark.asyncio
@@ -73,3 +74,4 @@ async def test_async_direct_event_bus_send_delegates_to_transport() -> None:
     assert event_name == "SampleIntegrationEvent"
     adapter: TypeAdapter[SampleIntegrationEvent] = TypeAdapter(SampleIntegrationEvent)
     assert payload == adapter.dump_json(event)
+    assert isinstance(headers, dict)
