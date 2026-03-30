@@ -18,6 +18,7 @@ from spakky.data.persistency.transaction import (
 )
 
 import spakky.event
+import spakky.tracing
 from spakky.event import (
     AsyncEventMediator,
     EventMediator,
@@ -119,7 +120,13 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
         .add(InMemoryAsyncTransaction)
         .add(InMemoryEventTransport)
         .add(InMemoryAsyncEventTransport)
-        .load_plugins(include={spakky.event.PLUGIN_NAME, spakky.data.PLUGIN_NAME})
+        .load_plugins(
+            include={
+                spakky.event.PLUGIN_NAME,
+                spakky.data.PLUGIN_NAME,
+                spakky.tracing.PLUGIN_NAME,
+            }
+        )
         .scan(apps)
     )
     app.start()

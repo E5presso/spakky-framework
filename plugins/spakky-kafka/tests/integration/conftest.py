@@ -11,6 +11,7 @@ from testcontainers.kafka import (
 )
 
 import spakky.plugins.kafka
+import spakky.tracing
 from spakky.plugins.kafka.common.config import AutoOffsetResetType
 from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 from tests import apps
@@ -64,6 +65,7 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
         .load_plugins(
             include={
                 spakky.plugins.kafka.PLUGIN_NAME,
+                spakky.tracing.PLUGIN_NAME,
             }
         )
         .scan(apps)
