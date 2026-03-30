@@ -4,6 +4,7 @@ from os import environ
 from typing import Any, Generator
 
 import pytest
+import spakky.tracing
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from testcontainers.kafka import (
@@ -11,7 +12,6 @@ from testcontainers.kafka import (
 )
 
 import spakky.plugins.kafka
-import spakky.tracing
 from spakky.plugins.kafka.common.config import AutoOffsetResetType
 from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 from tests import apps

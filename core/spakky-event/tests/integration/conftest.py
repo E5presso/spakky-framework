@@ -8,6 +8,7 @@ from typing import Any, Generator
 
 import pytest
 import spakky.data
+import spakky.tracing
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
@@ -18,7 +19,6 @@ from spakky.data.persistency.transaction import (
 )
 
 import spakky.event
-import spakky.tracing
 from spakky.event import (
     AsyncEventMediator,
     EventMediator,
