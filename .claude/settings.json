@@ -16,6 +16,15 @@
     ]
   },
   "enabledPlugins": {
-    "context7@claude-plugins-official": true
+    "context7@claude-plugins-official": true,
+    "pyrefly-lsp@local": true
+  },
+  "extraKnownMarketplaces": {
+    "local": {
+      "source": {
+        "source": "directory",
+        "path": ".claude/plugins/pyrefly-lsp"
+      }
+    }
   }
 }

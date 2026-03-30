@@ -1,0 +1,10 @@
+{
+  "name": "local",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "pyrefly-lsp",
+      "source": "./"
+    }
+  ]
+}
