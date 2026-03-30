@@ -70,6 +70,7 @@ def test_sync_storage_save_adds_and_flushes_message() -> None:
         id=uuid4(),
         event_name="test.event",
         payload=b"test payload",
+        headers={},
         created_at=datetime.now(UTC),
     )
 
@@ -96,6 +97,7 @@ def test_sync_storage_fetch_pending_returns_claimed_messages() -> None:
     mock_row.id = uuid4()
     mock_row.event_name = "test.event"
     mock_row.payload = b"payload"
+    mock_row.headers = {}
     mock_row.created_at = datetime.now(UTC)
     mock_row.published_at = None
     mock_row.retry_count = 0
@@ -215,6 +217,7 @@ async def test_async_storage_save_adds_and_flushes_message() -> None:
         id=uuid4(),
         event_name="test.event",
         payload=b"test payload",
+        headers={},
         created_at=datetime.now(UTC),
     )
 
@@ -242,6 +245,7 @@ async def test_async_storage_fetch_pending_returns_claimed_messages() -> None:
     mock_row.id = uuid4()
     mock_row.event_name = "test.event"
     mock_row.payload = b"payload"
+    mock_row.headers = {}
     mock_row.created_at = datetime.now(UTC)
     mock_row.published_at = None
     mock_row.retry_count = 0

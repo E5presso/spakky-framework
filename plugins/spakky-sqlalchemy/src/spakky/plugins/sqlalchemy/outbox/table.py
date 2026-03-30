@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
-from sqlalchemy import DateTime, Index, LargeBinary, Text
+from sqlalchemy import JSON, DateTime, Index, LargeBinary, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 
@@ -21,6 +21,7 @@ class OutboxMessageTable(AbstractTable):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     event_name: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    headers: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -56,6 +56,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
             id=message.id,
             event_name=message.event_name,
             payload=message.payload,
+            headers=message.headers,
             created_at=message.created_at,
         )
         self._session_manager.session.add(row)
@@ -98,6 +99,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
                     id=row.id,
                     event_name=row.event_name,
                     payload=row.payload,
+                    headers=row.headers,
                     created_at=row.created_at,
                     published_at=row.published_at,
                     retry_count=row.retry_count,
@@ -157,6 +159,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
             id=message.id,
             event_name=message.event_name,
             payload=message.payload,
+            headers=message.headers,
             created_at=message.created_at,
         )
         self._session_manager.session.add(row)
@@ -199,6 +202,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
                     id=row.id,
                     event_name=row.event_name,
                     payload=row.payload,
+                    headers=row.headers,
                     created_at=row.created_at,
                     published_at=row.published_at,
                     retry_count=row.retry_count,
