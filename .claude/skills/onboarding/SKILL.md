@@ -33,20 +33,9 @@ gh --version
 [RTK](https://github.com/rtk-ai/rtk)는 CLI 출력을 압축하여 토큰 소비를 60-90% 줄여주는 프록시입니다.
 
 ```bash
-# RTK 설치 확인
-rtk --version
-```
+# RTK 설치 확인 — 미설치 시 자동 설치
+rtk --version || brew install rtk
 
-**설치되어 있지 않다면:**
-
-```bash
-# macOS (Homebrew)
-brew install rtk
-```
-
-**Claude Code 글로벌 훅 설정:**
-
-```bash
 # RTK 글로벌 초기화 (Claude Code 훅 자동 설정)
 rtk init -g
 
