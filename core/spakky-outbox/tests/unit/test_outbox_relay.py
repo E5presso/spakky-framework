@@ -33,12 +33,22 @@ class SpySyncTransport(IEventTransport):
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes]] = []
 
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         self.sent.append((event_name, payload))
 
 
 class FailingSyncTransport(IEventTransport):
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         raise ConnectionError("Transport unavailable")
 
 
@@ -72,12 +82,22 @@ class SpyAsyncTransport(IAsyncEventTransport):
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes]] = []
 
-    async def send(self, event_name: str, payload: bytes) -> None:
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         self.sent.append((event_name, payload))
 
 
 class FailingAsyncTransport(IAsyncEventTransport):
-    async def send(self, event_name: str, payload: bytes) -> None:
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         raise ConnectionError("Transport unavailable")
 
 
@@ -113,6 +133,7 @@ def _make_message(event: AbstractIntegrationEvent) -> OutboxMessage:
         id=uuid4(),
         event_name=event.event_name,
         payload=adapter.dump_json(event),
+        headers={"traceparent": "00-abc123-def456-01"},
         created_at=datetime.now(UTC),
     )
 

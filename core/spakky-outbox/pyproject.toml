@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
     "spakky-event>=6.2.0",
+    "spakky-tracing>=6.2.0",
 ]
 
 [project.entry-points."spakky.plugins"]
@@ -69,3 +70,7 @@ exclude_lines = [
     "\\.\\.\\.",
     "pass",
 ]
+
+[tool.uv.sources]
+spakky-event = { workspace = true }
+spakky-tracing = { workspace = true }

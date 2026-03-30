@@ -75,7 +75,12 @@ class InMemoryAsyncTransaction(AbstractAsyncTransaction):
 class InMemoryEventTransport(IEventTransport):
     """In-memory synchronous event transport for testing."""
 
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         pass
 
 
@@ -83,7 +88,12 @@ class InMemoryEventTransport(IEventTransport):
 class InMemoryAsyncEventTransport(IAsyncEventTransport):
     """In-memory asynchronous event transport for testing."""
 
-    async def send(self, event_name: str, payload: bytes) -> None:
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         pass
 
 

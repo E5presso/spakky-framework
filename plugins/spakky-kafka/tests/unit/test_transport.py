@@ -127,11 +127,12 @@ def test_sync_transport_send_expect_produce_and_flush(
     mock_producer_cls.return_value = mock_producer
 
     transport = KafkaEventTransport(config)
-    transport.send("TestEvent", b'{"key": "value"}')
+    transport.send("TestEvent", b'{"key": "value"}', {})
 
     mock_producer.produce.assert_called_once_with(
         topic="TestEvent",
         value=b'{"key": "value"}',
+        headers={},
         callback=transport._message_delivery_report,
     )
     mock_producer.poll.assert_called_once_with(0)
@@ -167,7 +168,7 @@ async def test_async_transport_send_expect_produce_and_flush(
     mock_aio_producer_cls.return_value = mock_producer
 
     transport = AsyncKafkaEventTransport(config)
-    await transport.send("TestEvent", b'{"key": "value"}')
+    await transport.send("TestEvent", b'{"key": "value"}', {})
 
     mock_producer.produce.assert_awaited_once()
     mock_producer.poll.assert_awaited_once_with(0)

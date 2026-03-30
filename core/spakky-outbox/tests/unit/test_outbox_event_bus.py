@@ -3,6 +3,7 @@
 import pytest
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.tracing import W3CTracePropagator
 
 from spakky.outbox.bus.outbox_event_bus import (
     AsyncOutboxEventBus,
@@ -58,7 +59,7 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
 def test_send_stores_message_in_outbox_storage() -> None:
     """OutboxEventBus.send가 이벤트를 OutboxMessage로 변환하여 저장소에 저장하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage)
+    bus = OutboxEventBus(storage, W3CTracePropagator())
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-001", amount=5000)
     bus.send(event)
@@ -74,7 +75,7 @@ def test_send_stores_message_in_outbox_storage() -> None:
 def test_send_serializes_event_payload_as_json() -> None:
     """OutboxEventBus.send가 이벤트 payload를 JSON bytes로 직렬화하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage)
+    bus = OutboxEventBus(storage, W3CTracePropagator())
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-002", amount=3000)
     bus.send(event)
@@ -88,7 +89,7 @@ def test_send_serializes_event_payload_as_json() -> None:
 def test_send_generates_unique_message_ids() -> None:
     """OutboxEventBus.send가 각 메시지에 고유한 ID를 부여하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage)
+    bus = OutboxEventBus(storage, W3CTracePropagator())
 
     event1 = OrderConfirmedIntegrationEvent(order_id="ORD-A", amount=100)
     event2 = OrderConfirmedIntegrationEvent(order_id="ORD-B", amount=200)
@@ -106,7 +107,7 @@ def test_send_generates_unique_message_ids() -> None:
 async def test_async_send_stores_message_in_outbox_storage() -> None:
     """AsyncOutboxEventBus.send가 이벤트를 OutboxMessage로 변환하여 저장소에 저장하는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage)
+    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-001", amount=5000)
     await bus.send(event)
@@ -123,7 +124,7 @@ async def test_async_send_stores_message_in_outbox_storage() -> None:
 async def test_async_send_serializes_event_payload_as_json() -> None:
     """AsyncOutboxEventBus.send가 이벤트 payload를 JSON bytes로 직렬화하는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage)
+    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-002", amount=3000)
     await bus.send(event)
@@ -138,7 +139,7 @@ async def test_async_send_serializes_event_payload_as_json() -> None:
 async def test_async_send_generates_unique_message_ids() -> None:
     """AsyncOutboxEventBus.send가 각 메시지에 고유한 ID를 부여하는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage)
+    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
 
     event1 = OrderConfirmedIntegrationEvent(order_id="ORD-A", amount=100)
     event2 = OrderConfirmedIntegrationEvent(order_id="ORD-B", amount=200)

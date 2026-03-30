@@ -2551,6 +2551,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "spakky-data" },
     { name = "spakky-domain" },
+    { name = "spakky-tracing" },
 ]
 
 [package.metadata]
@@ -2558,6 +2559,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "spakky-data", editable = "core/spakky-data" },
     { name = "spakky-domain", editable = "core/spakky-domain" },
+    { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
 
 [[package]]
@@ -2676,6 +2678,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "spakky-event" },
+    { name = "spakky-tracing" },
 ]
 
 [package.metadata]
@@ -2683,6 +2686,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky-event", editable = "core/spakky-event" },
+    { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
 
 [[package]]

@@ -54,17 +54,24 @@ class KafkaEventTransport(IEventTransport):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         """Send a pre-serialized event payload to Kafka.
 
         Args:
             event_name: Topic name (typically the event class name).
             payload: Pre-serialized JSON bytes.
+            headers: Metadata headers for trace propagation.
         """
         self._create_topic(topic=event_name)
         self.producer.produce(
             topic=event_name,
             value=payload,
+            headers=dict(headers),
             callback=self._message_delivery_report,
         )
         self.producer.poll(0)
@@ -112,18 +119,25 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    async def send(self, event_name: str, payload: bytes) -> None:
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         """Asynchronously send a pre-serialized event payload to Kafka.
 
         Args:
             event_name: Topic name (typically the event class name).
             payload: Pre-serialized JSON bytes.
+            headers: Metadata headers for trace propagation.
         """
         self.producer = AIOProducer(self.config.configuration_dict)
         self._create_topic(topic=event_name)
         await self.producer.produce(
             topic=event_name,
             value=payload,
+            headers=dict(headers),
             callback=self._message_delivery_report,
         )
         await self.producer.poll(0)

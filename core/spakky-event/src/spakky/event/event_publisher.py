@@ -51,7 +51,12 @@ class IEventTransport(ABC):
     """Low-level synchronous transport for pre-serialized event payloads."""
 
     @abstractmethod
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         """Send a serialized event payload to the message broker."""
         ...
 
@@ -60,6 +65,11 @@ class IAsyncEventTransport(ABC):
     """Low-level asynchronous transport for pre-serialized event payloads."""
 
     @abstractmethod
-    async def send(self, event_name: str, payload: bytes) -> None:
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         """Send a serialized event payload to the message broker."""
         ...

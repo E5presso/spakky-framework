@@ -8,7 +8,7 @@ from aio_pika import (  # type: ignore[import-untyped]  # aio_pika lacks type st
     Message,
     connect_robust,
 )
-from pika import BlockingConnection, URLParameters
+from pika import BasicProperties, BlockingConnection, URLParameters
 from spakky.core.pod.annotations.pod import Pod
 from spakky.event.event_publisher import (
     IAsyncEventTransport,
@@ -42,7 +42,12 @@ class RabbitMQEventTransport(IEventTransport):
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
 
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         """Send a pre-serialized event payload to RabbitMQ.
 
         Creates a new connection, sends the payload to the appropriate queue,
@@ -51,6 +56,7 @@ class RabbitMQEventTransport(IEventTransport):
         Args:
             event_name: Routing key / queue name for the event.
             payload: Pre-serialized JSON bytes.
+            headers: Metadata headers for trace propagation.
         """
         connection = BlockingConnection(URLParameters(self.connection_string))
         channel = connection.channel()
@@ -62,6 +68,7 @@ class RabbitMQEventTransport(IEventTransport):
             self.exchange_name if self.exchange_name is not None else "",
             event_name,
             payload,
+            properties=BasicProperties(headers=headers),
         )
         channel.close()
         connection.close()
@@ -91,7 +98,12 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
 
-    async def send(self, event_name: str, payload: bytes) -> None:
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         """Send a pre-serialized event payload to RabbitMQ asynchronously.
 
         Creates a new robust connection, sends the payload to the appropriate
@@ -100,6 +112,7 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
         Args:
             event_name: Routing key / queue name for the event.
             payload: Pre-serialized JSON bytes.
+            headers: Metadata headers for trace propagation.
         """
         async with await connect_robust(self.connection_string) as connection:
             channel = await connection.channel()
@@ -112,7 +125,7 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
             if self.exchange_name is not None:
                 await queue.bind(exchange, event_name)
             await exchange.publish(
-                Message(body=payload),
+                Message(body=payload, headers=dict(headers)),
                 routing_key=event_name,
             )
             await channel.close()
