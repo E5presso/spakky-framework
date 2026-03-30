@@ -1,0 +1,9 @@
+{
+  "python": {
+    "command": "pyrefly",
+    "args": ["lsp"],
+    "extensionToLanguage": {
+      ".py": "python"
+    }
+  }
+}

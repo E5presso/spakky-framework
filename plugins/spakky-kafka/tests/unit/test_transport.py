@@ -127,11 +127,12 @@ def test_sync_transport_send_expect_produce_and_flush(
     mock_producer_cls.return_value = mock_producer
 
     transport = KafkaEventTransport(config)
-    transport.send("TestEvent", b'{"key": "value"}')
+    transport.send("TestEvent", b'{"key": "value"}', {})
 
     mock_producer.produce.assert_called_once_with(
         topic="TestEvent",
         value=b'{"key": "value"}',
+        headers={},
         callback=transport._message_delivery_report,
     )
     mock_producer.poll.assert_called_once_with(0)
@@ -151,14 +152,14 @@ def test_async_transport_init_expect_success(
 
 
 @pytest.mark.asyncio
-@patch("spakky.plugins.kafka.event.transport.AIOProducer")
+@patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
 @patch("spakky.plugins.kafka.event.transport.AdminClient")
 async def test_async_transport_send_expect_produce_and_flush(
     mock_admin_cls: MagicMock,
     mock_aio_producer_cls: MagicMock,
     config: KafkaConnectionConfig,
 ) -> None:
-    """비동기 transport의 send가 produce, poll, flush를 호출하는지 검증한다."""
+    """비동기 transport의 send가 AIOKafkaProducer를 통해 메시지를 전송하는지 검증한다."""
     mock_admin = MagicMock()
     mock_admin.list_topics.return_value.topics.keys.return_value = set()
     mock_admin_cls.return_value = mock_admin
@@ -167,8 +168,17 @@ async def test_async_transport_send_expect_produce_and_flush(
     mock_aio_producer_cls.return_value = mock_producer
 
     transport = AsyncKafkaEventTransport(config)
-    await transport.send("TestEvent", b'{"key": "value"}')
+    await transport.send(
+        "TestEvent", b'{"key": "value"}', {"traceparent": "00-abc-def-01"}
+    )
 
-    mock_producer.produce.assert_awaited_once()
-    mock_producer.poll.assert_awaited_once_with(0)
-    mock_producer.flush.assert_awaited_once()
+    mock_aio_producer_cls.assert_called_once_with(
+        bootstrap_servers=config.bootstrap_servers,
+    )
+    mock_producer.start.assert_awaited_once()
+    mock_producer.send_and_wait.assert_awaited_once_with(
+        topic="TestEvent",
+        value=b'{"key": "value"}',
+        headers=[("traceparent", b"00-abc-def-01")],
+    )
+    mock_producer.stop.assert_awaited_once()

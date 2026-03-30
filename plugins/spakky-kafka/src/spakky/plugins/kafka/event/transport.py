@@ -1,8 +1,8 @@
 from logging import getLogger
 
+from aiokafka import AIOKafkaProducer
 from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
-from confluent_kafka.aio import AIOProducer
 from spakky.core.pod.annotations.pod import Pod
 from spakky.event.event_publisher import (
     IAsyncEventTransport,
@@ -54,17 +54,24 @@ class KafkaEventTransport(IEventTransport):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         """Send a pre-serialized event payload to Kafka.
 
         Args:
             event_name: Topic name (typically the event class name).
             payload: Pre-serialized JSON bytes.
+            headers: Metadata headers for trace propagation.
         """
         self._create_topic(topic=event_name)
         self.producer.produce(
             topic=event_name,
             value=payload,
+            headers=dict(headers),
             callback=self._message_delivery_report,
         )
         self.producer.poll(0)
@@ -73,11 +80,10 @@ class KafkaEventTransport(IEventTransport):
 
 @Pod()
 class AsyncKafkaEventTransport(IAsyncEventTransport):
-    """Asynchronous Kafka event transport using confluent_kafka AIOProducer."""
+    """Asynchronous Kafka event transport using aiokafka AIOKafkaProducer."""
 
     config: KafkaConnectionConfig
     admin: AdminClient
-    producer: AIOProducer
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the async Kafka transport with connection config."""
@@ -100,31 +106,29 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             ]
         )
 
-    def _message_delivery_report(  # pragma: no cover - Kafka 프로듀서 콜백으로 실행
+    async def send(
         self,
-        error: KafkaError | None,
-        message: Message,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
     ) -> None:
-        if error is not None:
-            logger.error(f"Message delivery failed: {error}")
-        else:
-            logger.info(
-                f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
-            )
-
-    async def send(self, event_name: str, payload: bytes) -> None:
         """Asynchronously send a pre-serialized event payload to Kafka.
 
         Args:
             event_name: Topic name (typically the event class name).
             payload: Pre-serialized JSON bytes.
+            headers: Metadata headers for trace propagation.
         """
-        self.producer = AIOProducer(self.config.configuration_dict)
         self._create_topic(topic=event_name)
-        await self.producer.produce(
-            topic=event_name,
-            value=payload,
-            callback=self._message_delivery_report,
+        producer = AIOKafkaProducer(
+            bootstrap_servers=self.config.bootstrap_servers,
         )
-        await self.producer.poll(0)
-        await self.producer.flush()
+        await producer.start()
+        try:
+            await producer.send_and_wait(
+                topic=event_name,
+                value=payload,
+                headers=[(k, v.encode()) for k, v in headers.items()],
+            )
+        finally:
+            await producer.stop()

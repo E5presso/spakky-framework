@@ -67,8 +67,8 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
     initial_count = handler.count
     event1 = SampleEvent(message="Hello, World!")
     event2 = SampleEvent(message="Goodbye, World!")
-    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1))
-    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2))
+    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1), {})
+    transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2), {})
     wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -81,8 +81,12 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
     initial_count = handler.count
     event1 = SampleEvent(message="Hello, World!")
     event2 = SampleEvent(message="Goodbye, World!")
-    await transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1))
-    await transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2))
+    await transport.send(
+        "SampleEvent", _sample_event_type_adapter.dump_json(event1), {}
+    )
+    await transport.send(
+        "SampleEvent", _sample_event_type_adapter.dump_json(event2), {}
+    )
     await async_wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -97,9 +101,15 @@ async def test_async_handler_execution(app: SpakkyApplication) -> None:
     event1 = AsyncTestEvent(message="Test1")
     event2 = AsyncTestEvent(message="Test2")
     event3 = AsyncTestEvent(message="Test3")
-    await transport.send("AsyncTestEvent", _async_event_type_adapter.dump_json(event1))
-    await transport.send("AsyncTestEvent", _async_event_type_adapter.dump_json(event2))
-    await transport.send("AsyncTestEvent", _async_event_type_adapter.dump_json(event3))
+    await transport.send(
+        "AsyncTestEvent", _async_event_type_adapter.dump_json(event1), {}
+    )
+    await transport.send(
+        "AsyncTestEvent", _async_event_type_adapter.dump_json(event2), {}
+    )
+    await transport.send(
+        "AsyncTestEvent", _async_event_type_adapter.dump_json(event3), {}
+    )
     await async_wait_for_count(handler, initial_count + 3)
 
     # All async events should be handled

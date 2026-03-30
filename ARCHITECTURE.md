@@ -59,6 +59,7 @@ graph TD
 
         domain --> data[💾 spakky-data<br/>Repository · Transaction]
         data --> event[📡 spakky-event<br/>Publisher · Consumer · Aspect]
+        tracing --> event
         event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
     end
 
@@ -126,6 +127,7 @@ graph TD
 - **Outbox 코어** (spakky-outbox) → `spakky-event`까지 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
+- **이벤트 코어** (spakky-event) → `spakky-data` + `spakky-tracing`에 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 

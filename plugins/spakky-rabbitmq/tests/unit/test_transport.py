@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pika import BasicProperties
 
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 from spakky.plugins.rabbitmq.event.transport import (
@@ -27,7 +28,7 @@ def test_sync_transport_send_without_exchange_name_expect_default_exchange() -> 
         "spakky.plugins.rabbitmq.event.transport.BlockingConnection",
         return_value=mock_connection,
     ):
-        transport.send("test_event", b'{"key": "value"}')
+        transport.send("test_event", b'{"key": "value"}', {})
 
     mock_channel.queue_declare.assert_called_once_with("test_event")
     mock_channel.exchange_declare.assert_not_called()
@@ -36,6 +37,7 @@ def test_sync_transport_send_without_exchange_name_expect_default_exchange() -> 
         "",
         "test_event",
         b'{"key": "value"}',
+        properties=BasicProperties(headers={}),
     )
 
 
@@ -67,7 +69,7 @@ async def test_async_transport_send_without_exchange_name_expect_default_exchang
         new_callable=AsyncMock,
         return_value=mock_connection,
     ):
-        await transport.send("test_event", b'{"key": "value"}')
+        await transport.send("test_event", b'{"key": "value"}', {})
 
     mock_channel.declare_exchange.assert_not_called()
     mock_channel.declare_queue.assert_called_once_with("test_event")
@@ -90,7 +92,7 @@ def test_sync_transport_send_with_exchange_name_expect_exchange_declared() -> No
         "spakky.plugins.rabbitmq.event.transport.BlockingConnection",
         return_value=mock_connection,
     ):
-        transport.send("test_event", b'{"key": "value"}')
+        transport.send("test_event", b'{"key": "value"}', {})
 
     mock_channel.queue_declare.assert_called_once_with("test_event")
     mock_channel.exchange_declare.assert_called_once_with("test_exchange")
@@ -101,6 +103,7 @@ def test_sync_transport_send_with_exchange_name_expect_exchange_declared() -> No
         "test_exchange",
         "test_event",
         b'{"key": "value"}',
+        properties=BasicProperties(headers={}),
     )
 
 
@@ -133,7 +136,7 @@ async def test_async_transport_send_with_exchange_name_expect_exchange_declared(
         new_callable=AsyncMock,
         return_value=mock_connection,
     ):
-        await transport.send("test_event", b'{"key": "value"}')
+        await transport.send("test_event", b'{"key": "value"}', {})
 
     mock_channel.declare_exchange.assert_called_once_with("test_exchange")
     mock_channel.declare_queue.assert_called_once_with("test_event")

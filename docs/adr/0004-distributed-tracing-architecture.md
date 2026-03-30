@@ -98,7 +98,7 @@ A + C를 결합하되, 트레이싱을 별도 코어 패키지(`spakky-tracing`)
 ```
 spakky-tracing → spakky (코어 DI만 사용)
 spakky-logging → spakky (코어 DI만 사용, tracing과 독립)
-spakky-event → spakky-tracing (선택적 — 설치되어 있을 때만 propagator 사용)
+spakky-event → spakky-tracing (필수 의존성 — propagator를 통한 headers inject)
 각 플러그인 → spakky-tracing (설치되어 있을 때 ITracePropagator DI 주입)
 spakky-opentelemetry → spakky-tracing + opentelemetry-api + opentelemetry-sdk
 spakky-opentelemetry → spakky-logging (선택적 — 설치되어 있을 때 trace_id↔LogContext 브릿지)

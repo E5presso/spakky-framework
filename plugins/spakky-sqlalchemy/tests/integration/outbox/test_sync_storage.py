@@ -22,6 +22,7 @@ def _make_message(
         payload=b'{"data": "test"}',
         created_at=datetime.now(UTC),
         retry_count=retry_count,
+        headers={},
     )
 
 

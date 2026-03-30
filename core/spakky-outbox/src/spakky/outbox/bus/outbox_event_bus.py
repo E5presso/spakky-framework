@@ -8,6 +8,7 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.annotations.primary import Primary
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import IAsyncEventBus, IEventBus
+from spakky.tracing.propagator import ITracePropagator
 
 from spakky.outbox.common.message import OutboxMessage
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
@@ -23,16 +24,25 @@ class OutboxEventBus(IEventBus):
     """
 
     _storage: IOutboxStorage
+    _propagator: ITracePropagator
 
-    def __init__(self, storage: IOutboxStorage) -> None:
+    def __init__(
+        self,
+        storage: IOutboxStorage,
+        propagator: ITracePropagator,
+    ) -> None:
         self._storage = storage
+        self._propagator = propagator
 
     def send(self, event: AbstractIntegrationEvent) -> None:
         adapter: TypeAdapter[AbstractIntegrationEvent] = TypeAdapter(type(event))
+        headers: dict[str, str] = {}
+        self._propagator.inject(headers)
         message = OutboxMessage(
             id=uuid4(),
             event_name=event.event_name,
             payload=adapter.dump_json(event),
+            headers=headers,
             created_at=datetime.now(UTC),
         )
         self._storage.save(message)
@@ -48,16 +58,25 @@ class AsyncOutboxEventBus(IAsyncEventBus):
     """
 
     _storage: IAsyncOutboxStorage
+    _propagator: ITracePropagator
 
-    def __init__(self, storage: IAsyncOutboxStorage) -> None:
+    def __init__(
+        self,
+        storage: IAsyncOutboxStorage,
+        propagator: ITracePropagator,
+    ) -> None:
         self._storage = storage
+        self._propagator = propagator
 
     async def send(self, event: AbstractIntegrationEvent) -> None:
         adapter: TypeAdapter[AbstractIntegrationEvent] = TypeAdapter(type(event))
+        headers: dict[str, str] = {}
+        self._propagator.inject(headers)
         message = OutboxMessage(
             id=uuid4(),
             event_name=event.event_name,
             payload=adapter.dump_json(event),
+            headers=headers,
             created_at=datetime.now(UTC),
         )
         await self._storage.save(message)

@@ -2,8 +2,8 @@
 build/reports/**
 
 # harness meta-review generated report and session marker (runtime artifacts — not for commit)
-.github/hooks/harness-review.md
-.github/hooks/.session-start
+.claude/hooks/harness-review.md
+.claude/hooks/.session-start
 
 ### Node ###
 # Logs
@@ -381,6 +381,9 @@ dist
 
 # Service worker
 sw.*
+
+# Claude Code local settings
+.claude/settings.local.json
 
 # macOS
 .DS_Store

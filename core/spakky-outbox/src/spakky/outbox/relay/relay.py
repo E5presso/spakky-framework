@@ -57,7 +57,9 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
         )
         for message in messages:
             try:
-                self._transport.send(message.event_name, message.payload)
+                self._transport.send(
+                    message.event_name, message.payload, message.headers
+                )
                 self._storage.mark_published(message.id)
             except Exception:
                 logger.exception(
@@ -114,7 +116,9 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
         )
         for message in messages:
             try:
-                await self._transport.send(message.event_name, message.payload)
+                await self._transport.send(
+                    message.event_name, message.payload, message.headers
+                )
                 await self._storage.mark_published(message.id)
             except Exception:
                 logger.exception(

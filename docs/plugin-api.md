@@ -314,7 +314,8 @@ dependencies = [
 코어 플러그인 의존 체인:
 
 ```
-spakky → spakky-domain → spakky-data → spakky-event
+spakky → spakky-domain → spakky-data ──┐
+spakky → spakky-tracing ──────────────────┤→ spakky-event
 ```
 
 ---

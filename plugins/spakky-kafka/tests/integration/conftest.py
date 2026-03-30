@@ -4,6 +4,7 @@ from os import environ
 from typing import Any, Generator
 
 import pytest
+import spakky.tracing
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from testcontainers.kafka import (
@@ -64,6 +65,7 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
         .load_plugins(
             include={
                 spakky.plugins.kafka.PLUGIN_NAME,
+                spakky.tracing.PLUGIN_NAME,
             }
         )
         .scan(apps)

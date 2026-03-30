@@ -254,10 +254,11 @@ flowchart LR
     direction TB
     outbox[spakky-outbox] --> event[spakky-event]
     event --> data[spakky-data]
+    event --> tracing_dep[spakky-tracing]
     data --> domain[spakky-domain]
     domain --> core[spakky]
     task[spakky-task] --> core
-    tracing[spakky-tracing] --> core
+    tracing_dep --> core
   end
 
   rabbitmq -. RabbitMQ .-> event

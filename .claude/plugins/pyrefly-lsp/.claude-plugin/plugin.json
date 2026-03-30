@@ -1,0 +1,8 @@
+{
+  "name": "pyrefly-lsp",
+  "description": "Pyrefly Python type checker LSP integration for Spakky Framework",
+  "version": "1.0.0",
+  "author": {
+    "name": "Spakky Framework"
+  }
+}

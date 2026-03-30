@@ -8,6 +8,7 @@ requires-python = ">=3.11"
 dependencies = [
     "spakky-domain>=6.2.0",
     "spakky-data>=6.2.0",
+    "spakky-tracing>=6.2.0",
     "pydantic>=2.12.5",
 ]
 
@@ -72,3 +73,4 @@ exclude_lines = [
 [tool.uv.sources]
 spakky-domain = { workspace = true }
 spakky-data = { workspace = true }
+spakky-tracing = { workspace = true }

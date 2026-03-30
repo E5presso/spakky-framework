@@ -8,6 +8,7 @@ from typing import Any, Generator
 
 import pytest
 import spakky.data
+import spakky.tracing
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
@@ -75,7 +76,12 @@ class InMemoryAsyncTransaction(AbstractAsyncTransaction):
 class InMemoryEventTransport(IEventTransport):
     """In-memory synchronous event transport for testing."""
 
-    def send(self, event_name: str, payload: bytes) -> None:
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         pass
 
 
@@ -83,7 +89,12 @@ class InMemoryEventTransport(IEventTransport):
 class InMemoryAsyncEventTransport(IAsyncEventTransport):
     """In-memory asynchronous event transport for testing."""
 
-    async def send(self, event_name: str, payload: bytes) -> None:
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+    ) -> None:
         pass
 
 
@@ -109,7 +120,13 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
         .add(InMemoryAsyncTransaction)
         .add(InMemoryEventTransport)
         .add(InMemoryAsyncEventTransport)
-        .load_plugins(include={spakky.event.PLUGIN_NAME, spakky.data.PLUGIN_NAME})
+        .load_plugins(
+            include={
+                spakky.event.PLUGIN_NAME,
+                spakky.data.PLUGIN_NAME,
+                spakky.tracing.PLUGIN_NAME,
+            }
+        )
         .scan(apps)
     )
     app.start()
