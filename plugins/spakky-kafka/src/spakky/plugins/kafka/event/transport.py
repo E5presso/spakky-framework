@@ -1,6 +1,6 @@
-import asyncio
 from logging import getLogger
 
+from aiokafka import AIOKafkaProducer
 from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from spakky.core.pod.annotations.pod import Pod
@@ -80,7 +80,7 @@ class KafkaEventTransport(IEventTransport):
 
 @Pod()
 class AsyncKafkaEventTransport(IAsyncEventTransport):
-    """Asynchronous Kafka event transport using confluent_kafka Producer."""
+    """Asynchronous Kafka event transport using aiokafka AIOKafkaProducer."""
 
     config: KafkaConnectionConfig
     admin: AdminClient
@@ -106,32 +106,6 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             ]
         )
 
-    def _message_delivery_report(  # pragma: no cover - Kafka 프로듀서 콜백으로 실행
-        self,
-        error: KafkaError | None,
-        message: Message,
-    ) -> None:
-        if error is not None:
-            logger.error(f"Message delivery failed: {error}")
-        else:
-            logger.info(
-                f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
-            )
-
-    def _send_sync(
-        self, event_name: str, payload: bytes, headers: dict[str, str]
-    ) -> None:
-        producer = Producer(self.config.configuration_dict, logger=logger)
-        self._create_topic(topic=event_name)
-        producer.produce(
-            topic=event_name,
-            value=payload,
-            headers=dict(headers),
-            callback=self._message_delivery_report,
-        )
-        producer.poll(0)
-        producer.flush()
-
     async def send(
         self,
         event_name: str,
@@ -145,5 +119,16 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             payload: Pre-serialized JSON bytes.
             headers: Metadata headers for trace propagation.
         """
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._send_sync, event_name, payload, headers)
+        self._create_topic(topic=event_name)
+        producer = AIOKafkaProducer(
+            bootstrap_servers=self.config.bootstrap_servers,
+        )
+        await producer.start()
+        try:
+            await producer.send_and_wait(
+                topic=event_name,
+                value=payload,
+                headers=[(k, v.encode()) for k, v in headers.items()],
+            )
+        finally:
+            await producer.stop()
