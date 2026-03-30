@@ -51,21 +51,19 @@ def create_connection_pool() -> ConnectionPool:
 
 ### Configuration 패턴
 
-관련 팩토리 메서드를 `@Configuration` 클래스로 그룹화합니다.
+`@Configuration`은 `@Pod`의 특화 스테레오타입으로, 설정 값을 그룹화하는 클래스에 사용합니다.
 
 ```python
 from spakky.core.stereotype.configuration import Configuration
+from pydantic_settings import BaseSettings
 
 @Configuration()
-class DatabaseConfig:
-    @Pod()
-    def connection_pool(self) -> ConnectionPool:
-        return ConnectionPool(size=10)
-
-    @Pod()
-    def session_factory(self, pool: ConnectionPool) -> SessionFactory:
-        return SessionFactory(pool)
+class DatabaseConfig(BaseSettings):
+    pool_size: int = 10
+    connection_url: str = "postgresql://localhost/mydb"
 ```
+
+> **주의**: `@Configuration` 클래스 내부 메서드에 `@Pod()`를 붙여도 자동으로 Pod이 등록되지 않습니다. 팩토리 메서드는 모듈 수준 함수로 정의하세요.
 
 ---
 
@@ -287,56 +285,83 @@ class ExpensiveService:
 
 ## 순서 지정
 
-`@Order`로 Pod 처리 순서를 지정합니다 (숫자가 낮을수록 우선).
+`@Order`로 PostProcessor와 Aspect의 실행 순서를 지정합니다. 숫자가 낮을수록 먼저 실행됩니다. 기본값은 `sys.maxsize`(마지막)입니다.
 
 ```python
 from spakky.core.pod.annotations.order import Order
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
-@Pod()
 @Order(1)
-class FirstProcessor:
-    ...
-
 @Pod()
+class FirstPostProcessor(IPostProcessor):
+    def post_process(self, pod: object) -> object:
+        # 가장 먼저 실행됨
+        return pod
+
 @Order(2)
-class SecondProcessor:
-    ...
+@Pod()
+class SecondPostProcessor(IPostProcessor):
+    def post_process(self, pod: object) -> object:
+        # 그 다음 실행됨
+        return pod
 ```
+
+> **참고**: `@Order`는 PostProcessor, Aspect 등 프레임워크 확장 포인트의 실행 순서를 제어합니다. 일반 Pod의 초기화 순서를 지정하는 데는 사용되지 않습니다.
 
 ---
 
 ## Tag로 그룹화
 
-`@Tag`로 Pod를 그룹화하여 일괄 조회합니다.
+`Tag`를 서브클래싱하여 커스텀 메타데이터 태그를 정의합니다. 태그는 Pod와 독립적으로 등록할 수도 있습니다.
 
 ```python
+from dataclasses import dataclass
 from spakky.core.pod.annotations.tag import Tag
+from spakky.core.pod.annotations.pod import Pod
 
-VALIDATOR_TAG = Tag("validator")
+@dataclass(eq=False)
+class ValidatorTag(Tag):
+    """검증기 태그"""
+    category: str = ""
 
+@ValidatorTag(category="input")
 @Pod()
-@VALIDATOR_TAG
 class EmailValidator:
     ...
 
+@ValidatorTag(category="input")
 @Pod()
-@VALIDATOR_TAG
 class PhoneValidator:
     ...
+```
 
-# 태그로 모든 validator 조회
-validators = context.find(lambda pod: VALIDATOR_TAG in pod.tags)
+태그는 `ApplicationContext`의 태그 레지스트리에서 조회합니다:
+
+```python
+# 등록된 모든 태그 조회
+all_tags = context.list_tags()
+
+# 조건으로 필터링
+input_tags = context.list_tags(
+    lambda t: isinstance(t, ValidatorTag) and t.category == "input"
+)
+
+# 특정 태그 존재 여부 확인
+assert context.contains_tag(ValidatorTag(category="input"))
 ```
 
 ---
 
 ## PostProcessor
 
-Pod 인스턴스가 생성된 후 추가 처리를 수행하는 확장 포인트입니다.
+Pod 인스턴스가 생성된 후 추가 처리를 수행하는 확장 포인트입니다. PostProcessor도 `@Pod()`로 등록해야 합니다.
 
 ```python
+from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
+@Pod()
 class LoggingPostProcessor(IPostProcessor):
     def post_process(self, pod: object) -> object:
         print(f"Pod created: {type(pod).__name__}")

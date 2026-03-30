@@ -114,18 +114,37 @@ class Order(AbstractAggregateRoot[UUID]):
 
 ### 아키텍처
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Publisher  │────▶│  Dispatcher │────▶│  Handler    │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │
-                           │ (Consumer 역할)
-                           ▼
-                    ┌─────────────┐
-                    │  Mediator   │
-                    │ (Consumer + │
-                    │  Dispatcher)│
-                    └─────────────┘
+Publisher는 이벤트 타입에 따라 라우팅합니다:
+
+```mermaid
+graph LR
+    subgraph "📤 발행"
+        P["Publisher<br/>(IEventPublisher)"]
+    end
+
+    subgraph "🔀 라우팅"
+        M["Mediator<br/>(Consumer + Dispatcher)"]
+        B["EventBus<br/>(IEventBus)"]
+    end
+
+    subgraph "📥 처리"
+        H1["@EventHandler<br/>핸들러 A"]
+        H2["@EventHandler<br/>핸들러 B"]
+        T["EventTransport<br/>(IEventTransport)"]
+    end
+
+    P -->|"DomainEvent"| M
+    P -->|"IntegrationEvent"| B
+    M -->|"dispatch"| H1
+    M -->|"dispatch"| H2
+    B -->|"send"| T
+
+    style P fill:#4A90D9,stroke:#2C5F8A,color:#fff
+    style M fill:#7B68EE,stroke:#5A4FCF,color:#fff
+    style B fill:#7B68EE,stroke:#5A4FCF,color:#fff
+    style H1 fill:#50C878,stroke:#3A9D5C,color:#fff
+    style H2 fill:#50C878,stroke:#3A9D5C,color:#fff
+    style T fill:#FF8C42,stroke:#CC6F35,color:#fff
 ```
 
 ### Mediator
@@ -307,93 +326,33 @@ class PlaceOrderUseCase:
 
 ### RabbitMQ (spakky-rabbitmq)
 
-> `RabbitMQEventTransport` (implements `IEventTransport`) / `RabbitMQEventConsumer`
-
-```python
-@Pod()
-class OrderService:
-    def __init__(self, publisher: IAsyncEventPublisher) -> None:
-        self.publisher = publisher
-
-    async def place_order(self, command: PlaceOrderCommand) -> Order:
-        order = await self.create_order(command)
-        await self.publisher.publish(OrderPlacedEvent(...))
-        return order
-```
+> `RabbitMQEventTransport` / `AsyncRabbitMQEventTransport` (implements `IEventTransport` / `IAsyncEventTransport`)
+>
+> `RabbitMQEventConsumer` / `AsyncRabbitMQEventConsumer` (implements `IEventConsumer` / `IAsyncEventConsumer`)
 
 ### Kafka (spakky-kafka)
 
-> `KafkaEventTransport` (implements `IEventTransport`) / `KafkaEventConsumer`
+> `KafkaEventTransport` / `AsyncKafkaEventTransport` (implements `IEventTransport` / `IAsyncEventTransport`)
+>
+> `KafkaEventConsumer` / `AsyncKafkaEventConsumer` (implements `IEventConsumer` / `IAsyncEventConsumer`)
+
+Publisher 코드는 브로커에 의존하지 않습니다. `IAsyncEventPublisher.publish()`를 통해 IntegrationEvent를 발행하면, DI로 주입된 `IAsyncEventBus` → `IAsyncEventTransport` 경로로 브로커에 전송됩니다.
 
 ---
 
 ## 오류 처리
 
-### Mediator의 탄력적 디스패치
+### Mediator의 핸들러 격리
 
 인프로세스 Mediator는 핸들러 실패 시에도 나머지 핸들러를 계속 실행합니다:
 
 ```python
 # 핸들러 A 실행 → 성공
-# 핸들러 B 실행 → 실패 (로그 기록)
+# 핸들러 B 실행 → 실패 (로그 기록, 예외 전파하지 않음)
 # 핸들러 C 실행 → 계속 실행됨
 ```
 
 ### 재시도 전략
 
-분산 환경에서는 재시도 로직이 필요합니다:
+분산 환경에서의 재시도는 메시지 브로커 수준에서 처리됩니다. RabbitMQ의 nack/requeue, Kafka의 offset 관리 등 트랜스포트 구현체가 재시도 로직을 담당합니다. 개별 핸들러에 재시도 로직을 직접 구현할 필요는 없습니다.
 
-```python
-@EventHandler()
-class ResilientHandler:
-    @on_event(OrderPlacedEvent)
-    async def handle_with_retry(self, event: OrderPlacedEvent) -> None:
-        for attempt in range(3):
-            try:
-                await self.process(event)
-                return
-            except RetryableError:
-                if attempt == 2:
-                    raise
-                await asyncio.sleep(2 ** attempt)
-```
-
----
-
-## 테스트
-
-```python
-import pytest
-from unittest.mock import AsyncMock
-
-@pytest.mark.asyncio
-async def test_event_handler():
-    # 목 의존성
-    mailer = AsyncMock()
-
-    # 핸들러 생성
-    handler = UserEventHandler(mailer=mailer, analytics=AsyncMock())
-
-    # 이벤트 발생
-    event = UserCreatedEvent(user_id=uuid4(), email="test@example.com")
-    await handler.send_welcome_email(event)
-
-    # 검증
-    mailer.send_welcome.assert_called_once_with("test@example.com")
-```
-
-### Mediator 테스트
-
-```python
-@pytest.mark.asyncio
-async def test_mediator_dispatches_to_handlers():
-    mediator = AsyncEventMediator()
-    handler = AsyncMock()
-
-    mediator.register(UserCreatedEvent, handler)
-
-    event = UserCreatedEvent(user_id=uuid4(), email="test@example.com")
-    await mediator.dispatch(event)
-
-    handler.assert_called_once_with(event)
-```

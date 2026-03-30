@@ -31,12 +31,13 @@ app.start()
 ### 선택적 플러그인 로드
 
 ```python
-from spakky.core.application.plugin import Plugin
+import spakky.plugins.fastapi
+import spakky.plugins.sqlalchemy
 
-# 특정 플러그인만 로드
+# 각 플러그인의 PLUGIN_NAME을 사용하여 특정 플러그인만 로드
 app.load_plugins(include={
-    Plugin(name="spakky-fastapi"),
-    Plugin(name="spakky-sqlalchemy"),
+    spakky.plugins.fastapi.PLUGIN_NAME,
+    spakky.plugins.sqlalchemy.PLUGIN_NAME,
 })
 ```
 
@@ -44,7 +45,9 @@ app.load_plugins(include={
 
 ## 공식 플러그인
 
-### Core 플러그인 (자동 로드)
+### Core 플러그인
+
+Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의 `dependencies`로 선언되어, 구현체 플러그인 설치 시 함께 설치됩니다.
 
 | 플러그인        | 설명                           |
 | --------------- | ------------------------------ |
@@ -227,27 +230,25 @@ class MyFeatureHandler(Pod):
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
-from spakky.core.service.interfaces.service import IAsyncService
-import asyncio
+from spakky.core.service.background import AbstractBackgroundService
 
 @Pod()
-class MyFeatureBackgroundService(IAsyncService):
+class MyFeatureBackgroundService(AbstractBackgroundService):
     """백그라운드에서 실행되는 서비스"""
 
-    _stop_event: asyncio.Event
+    def initialize(self) -> None:
+        """서비스 초기화"""
+        ...
 
-    def set_stop_event(self, stop_event: asyncio.Event) -> None:
-        self._stop_event = stop_event
-
-    async def start_async(self) -> None:
-        """서비스 시작"""
+    def run(self) -> None:
+        """메인 루프 (백그라운드 스레드)"""
         while not self._stop_event.is_set():
-            await self.do_work()
-            await asyncio.sleep(1)
+            self.do_work()
+            self._stop_event.wait(timeout=1)
 
-    async def stop_async(self) -> None:
-        """서비스 정지"""
-        await self.cleanup()
+    def dispose(self) -> None:
+        """리소스 정리"""
+        ...
 ```
 
 ---
