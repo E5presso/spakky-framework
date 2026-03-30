@@ -11,6 +11,7 @@
 - [spakky-data](core/spakky-data.md) — Repository, Transaction 추상화
 - [spakky-event](core/spakky-event.md) — 인프로세스 이벤트
 - [spakky-task](core/spakky-task.md) — 태스크 추상화
+- [spakky-tracing](core/spakky-tracing.md) — 분산 트레이싱 추상화
 - [spakky-outbox](core/spakky-outbox.md) — Outbox 패턴
 
 ## Plugins

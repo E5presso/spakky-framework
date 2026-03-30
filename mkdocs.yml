@@ -109,6 +109,7 @@ nav:
       - CLI (Typer): guides/typer.md
       - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
       - Celery 태스크: guides/celery.md
+      - 분산 트레이싱: guides/tracing.md
   - 심화 가이드:
       - DI/IoC 컨테이너: di-container.md
       - AOP 가이드: aop-guide.md
@@ -125,6 +126,7 @@ nav:
           - spakky-data: api/core/spakky-data.md
           - spakky-event: api/core/spakky-event.md
           - spakky-task: api/core/spakky-task.md
+          - spakky-tracing: api/core/spakky-tracing.md
           - spakky-outbox: api/core/spakky-outbox.md
       - Plugins:
           - spakky-logging: api/plugins/spakky-logging.md

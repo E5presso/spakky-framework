@@ -69,6 +69,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-data`** | Data access abstractions (Repository, Transaction, External Proxy) |
 | **`spakky-event`** | Event handling (IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
 | **`spakky-task`** | Task queue abstractions (@TaskHandler, @task, @schedule, Crontab) |
+| **`spakky-tracing`** | Distributed tracing abstraction (TraceContext, ITracePropagator, W3C Propagator) |
 | **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
 
 ### Plugins

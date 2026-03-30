@@ -203,6 +203,7 @@ app = (
 | [CLI 애플리케이션](guides/typer.md)        | `@Controller`, Typer 명령어                            |
 | [데이터베이스](guides/sqlalchemy.md)       | Transaction, Repository, ORM                           |
 | [Celery 태스크](guides/celery.md)          | 태스크 디스패치, 비동기 실행                           |
+| [분산 트레이싱](guides/tracing.md)         | TraceContext, Propagator, W3C traceparent              |
 
 ---
 
@@ -217,6 +218,7 @@ app = (
 | [spakky-data](api/core/spakky-data.md)     | Repository, Transaction 추상화     |
 | [spakky-event](api/core/spakky-event.md)   | 인프로세스 이벤트                  |
 | [spakky-task](api/core/spakky-task.md)     | 태스크 추상화 (스케줄링, 디스패치) |
+| [spakky-tracing](api/core/spakky-tracing.md) | 분산 트레이싱 추상화              |
 | [spakky-outbox](api/core/spakky-outbox.md) | Outbox 패턴                        |
 
 ### Plugins
@@ -255,6 +257,7 @@ flowchart LR
     data --> domain[spakky-domain]
     domain --> core[spakky]
     task[spakky-task] --> core
+    tracing[spakky-tracing] --> core
   end
 
   rabbitmq -. RabbitMQ .-> event
