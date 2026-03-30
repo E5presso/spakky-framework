@@ -34,6 +34,7 @@ tools: [vscode/getProjectSetupInfo, vscode/installExtension, vscode/memory, vsco
 
 ```
 spakky → spakky-domain → spakky-data → spakky-event → spakky-outbox
+spakky → spakky-tracing → spakky-event
 spakky → spakky-task
 ```
 

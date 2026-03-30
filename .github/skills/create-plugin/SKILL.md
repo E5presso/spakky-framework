@@ -36,6 +36,7 @@ uv run python scripts/create_package.py plugin spakky-<name> --description "<설
 | 트랜스포트 (MQ/브로커) | `spakky-event`까지 |
 
 **핵심 의존 방향**: `spakky` → `spakky-domain` → `spakky-data` → `spakky-event` (단방향)
+`spakky` → `spakky-tracing` → `spakky-event` (트레이싱 경로)
 
 ### 코어 패키지도 동일
 
