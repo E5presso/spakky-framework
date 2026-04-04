@@ -13,6 +13,14 @@ dependencies = [
     "websockets>=16.0",
 ]
 
+[project.optional-dependencies]
+tracing = ["spakky-tracing>=6.2.0"]
+
+[dependency-groups]
+dev = [
+    "spakky-tracing>=6.2.0",
+]
+
 [project.entry-points."spakky.plugins"]
 spakky-fastapi = "spakky.plugins.fastapi.main:initialize"
 

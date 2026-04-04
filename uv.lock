@@ -2619,13 +2619,28 @@ dependencies = [
     { name = "websockets" },
 ]
 
+[package.optional-dependencies]
+tracing = [
+    { name = "spakky-tracing" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "spakky-tracing" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.135.1" },
     { name = "orjson", specifier = ">=3.11.7" },
     { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-tracing", marker = "extra == 'tracing'", editable = "core/spakky-tracing" },
     { name = "websockets", specifier = ">=16.0" },
 ]
+provides-extras = ["tracing"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "spakky-tracing", editable = "core/spakky-tracing" }]
 
 [[package]]
 name = "spakky-framework"
