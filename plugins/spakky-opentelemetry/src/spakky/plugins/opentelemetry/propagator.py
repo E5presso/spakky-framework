@@ -4,12 +4,10 @@ from opentelemetry import context, trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from spakky.core.pod.annotations.pod import Pod
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
 
-@Pod()
 class OTelTracePropagator(ITracePropagator):
     """Bridges Spakky's TraceContext with OpenTelemetry's context propagation.
 
