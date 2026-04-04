@@ -120,6 +120,25 @@ class ChatController:
 
 ---
 
+## 분산 트레이싱 (Optional)
+
+`spakky-tracing`이 설치되면 `TracingMiddleware`가 자동으로 등록되어 모든 HTTP 요청에 대해 W3C `TraceContext`를 전파합니다.
+
+```bash
+pip install spakky-fastapi[tracing]
+```
+
+`AddBuiltInMiddlewaresPostProcessor`가 컨테이너에 `ITracePropagator`가 존재하는지 확인하고, 있으면 `TracingMiddleware`를 FastAPI에 자동 추가합니다.
+
+- 수신 요청의 `traceparent` 헤더에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
+- 헤더가 없으면 새로운 루트 트레이스를 시작합니다
+- 응답 헤더에 `traceparent`를 자동 주입합니다
+- 요청 완료 후 `TraceContext`를 자동으로 정리합니다
+
+별도 설정이나 코드 변경 없이, 플러그인 로드만으로 동작합니다.
+
+---
+
 ## 라우트 옵션
 
 FastAPI의 라우트 옵션을 데코레이터에 전달할 수 있습니다.

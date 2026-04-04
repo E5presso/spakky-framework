@@ -67,7 +67,7 @@ class CreateOrderUseCase:
 | Kafka 레코드    | spakky-kafka    | 레코드 헤더에 자동 주입/추출     |
 | Celery 태스크   | spakky-celery   | 태스크 헤더에 자동 주입/추출     |
 
-> **참고**: 각 전송 계층의 자동 통합은 별도 플러그인 이슈에서 구현됩니다.
+> **참고**: 각 플러그인에서 `spakky-tracing`은 optional 의존성입니다. 설치하면 자동으로 활성화됩니다.
 
 ---
 

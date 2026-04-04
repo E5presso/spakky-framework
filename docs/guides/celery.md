@@ -152,6 +152,22 @@ value = result.get()
 
 ---
 
+## 분산 트레이싱 (Optional)
+
+`spakky-tracing`이 설치되면 태스크 디스패치 시 `TraceContext`가 자동으로 전파됩니다.
+
+```bash
+pip install spakky-celery[tracing]
+```
+
+- **디스패치 측**: `@task` 호출 시 현재 `TraceContext`를 Celery 메시지 헤더에 주입합니다
+- **워커 측**: 수신 태스크에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
+- 헤더가 없으면 새로운 루트 트레이스를 시작합니다
+
+별도 설정이나 코드 변경 없이, 플러그인 로드만으로 동작합니다.
+
+---
+
 ## 자동 등록 확인
 
 `CeleryPostProcessor`가 `@TaskHandler`를 감지하면 자동으로 Celery에 등록합니다.

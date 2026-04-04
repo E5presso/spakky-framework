@@ -26,6 +26,7 @@ Exception
     ├── AbstractSpakkyFastAPIError (플러그인)
     ├── AbstractSpakkySqlAlchemyError (플러그인)
     ├── AbstractSpakkyOutboxError (플러그인)
+    ├── AbstractSpakkyOpenTelemetryError (플러그인)
     └── ...
 ```
 
@@ -286,6 +287,22 @@ from spakky.outbox.error import AbstractSpakkyOutboxError
 | 에러                        | 설명                        |
 | --------------------------- | --------------------------- |
 | `AbstractSpakkyOutboxError` | Outbox 에러 기반 클래스     |
+
+### spakky-opentelemetry
+
+OpenTelemetry 통합 관련 에러입니다.
+
+```python
+from spakky.plugins.opentelemetry.error import (
+    AbstractSpakkyOpenTelemetryError,
+    UnsupportedExporterTypeError,
+)
+```
+
+| 에러                              | 설명                                    |
+| --------------------------------- | --------------------------------------- |
+| `AbstractSpakkyOpenTelemetryError` | OpenTelemetry 에러 기반 클래스          |
+| `UnsupportedExporterTypeError`    | 지원하지 않는 exporter 타입 설정 시 발생 |
 
 ---
 
