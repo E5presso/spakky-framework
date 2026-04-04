@@ -8,15 +8,12 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "spakky-data>=6.2.0",
+    "spakky-outbox>=6.0.0",
     "sqlalchemy>=2.0.48",
 ]
 
-[project.optional-dependencies]
-outbox = ["spakky-outbox>=6.0.0"]
-
 [dependency-groups]
 dev = [
-    "spakky-outbox>=6.0.0",
     "testcontainers[postgres]>=4.14.1",
     "psycopg[binary]>=3.3.3",
     "greenlet>=3.3.2",
@@ -88,3 +85,4 @@ exclude_lines = [
 
 [tool.uv.sources]
 spakky-data = { workspace = true }
+spakky-outbox = { workspace = true }

@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import spakky.plugins.sqlalchemy.main as main_module
 from spakky.plugins.sqlalchemy.common.config import SQLAlchemyConnectionConfig
 from spakky.plugins.sqlalchemy.main import initialize
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
@@ -118,22 +117,3 @@ def test_initialize_default_async_mode_expect_async_pods_registered(
     assert AsyncConnectionManager in added_types
     assert AsyncSessionManager in added_types
     assert AsyncTransaction in added_types
-
-
-def test_initialize_without_outbox_expect_no_outbox_pods(
-    mock_app: MagicMock,
-) -> None:
-    """spakky-outbox 미설치 환경에서 Outbox Pod이 등록되지 않는지 검증한다."""
-    os.environ["SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE"] = "true"
-    original = main_module._HAS_OUTBOX
-    main_module._HAS_OUTBOX = False
-    try:
-        initialize(mock_app)
-    finally:
-        main_module._HAS_OUTBOX = original
-
-    added_types = [call.args[0] for call in mock_app.add.call_args_list]
-    assert OutboxMessageTable not in added_types
-    assert SqlAlchemyOutboxStorage not in added_types
-    assert AsyncSqlAlchemyOutboxStorage not in added_types
-    assert mock_app.add.call_count == 8
