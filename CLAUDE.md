@@ -13,13 +13,49 @@
 | 경로 | 역할 |
 |------|------|
 | `core/spakky/` | DI Container, AOP, 부트스트랩 |
-| `core/spakky-domain/` | DDD 빌딩 블록 |
+| `core/spakky-domain/` | DDD 빌딩 블록 (Entity, AggregateRoot, ValueObject, Event) |
 | `core/spakky-data/` | Repository, Transaction 추상화 |
-| `core/spakky-event/` | 인프로세스 이벤트 |
+| `core/spakky-event/` | 인프로세스 이벤트 (Publisher, Consumer, EventHandler) |
 | `core/spakky-task/` | 태스크 추상화 (스케줄링, 디스패치) |
-| `plugins/spakky-*/` | 플러그인 구현체 |
+| `core/spakky-tracing/` | 분산 트레이싱 추상화 (TraceContext, Propagator) |
+| `core/spakky-outbox/` | Transactional Outbox 패턴 (OutboxEventBus, Relay) |
+| `plugins/spakky-fastapi/` | FastAPI REST 컨트롤러 통합 |
+| `plugins/spakky-typer/` | Typer CLI 컨트롤러 통합 |
+| `plugins/spakky-sqlalchemy/` | SQLAlchemy ORM 통합 |
+| `plugins/spakky-rabbitmq/` | RabbitMQ 이벤트 브로커 통합 |
+| `plugins/spakky-kafka/` | Kafka 이벤트 브로커 통합 |
+| `plugins/spakky-celery/` | Celery 태스크 디스패치 |
+| `plugins/spakky-security/` | 암호화/해싱/JWT 유틸리티 |
+| `plugins/spakky-logging/` | 구조화 로깅, @Logging AOP Aspect |
+| `plugins/spakky-opentelemetry/` | OpenTelemetry SDK 브릿지 |
 
 **의존 방향 (단방향):** `.claude/rules/monorepo.md` 참조
+
+## 스킬 & 워크플로우
+
+### 스킬 맵
+
+| 카테고리 | 사용자 호출 | 내부 전용 |
+|---------|-----------|----------|
+| **plan** | `/plan-issues`, `/decide-architecture`, `/adr`, `/impact-analysis` | — |
+| **build** | `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
+| **verify** | `/check`, `/check-coverage`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit` | — |
+| **ship** | — | `/create-pr`, `/review-pr`, `/monitor-pr`, `/update-project-status` |
+| **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs` | `/review-harness`, `/update-harness` |
+
+### 핵심 워크플로우
+
+```
+기획: /plan-issues → GitHub Issues 생성
+개발: /process-ticket <이슈번호> → 분석 → 계획 → 워크트리 → 구현 → 검증 → PR → 병합
+디버깅: /investigate <증상 또는 이슈번호> → 재현 → 원인 격리 → 수정 후보
+검증: /check [패키지] → format → lint → type → test (커버리지 100%)
+회고: /retro → 세션 자가 평가 (서브에이전트로 실행)
+```
+
+- **이슈 작업은 `/process-ticket`으로 시작한다.** 직접 코딩하지 않는다.
+- **버그 조사는 `/investigate`로 시작한다.** 가설 없이 코드를 수정하지 않는다.
+- **코드 변경 후 문서 동기화는 `/sync-docs`로 수행한다.**
 
 ## Documentation Maintenance Rules
 
@@ -39,6 +75,40 @@
 - 같은 파일을 동시에 수정하는 서브에이전트는 금지 (충돌)
 - `worktree` 격리 모드는 파일 수정이 필요한 독립 작업에 활용
 
+## 절대 금지 사항
+
+> 산재된 금지 규칙의 빠른 참조. 상세는 각 정본 파일 참조.
+
+### Git
+
+- `git checkout -- .`, `git restore .`, `git reset --hard`, `git clean -fd` 금지
+- `git add -A`, `git add .` 금지 — 변경한 파일만 명시적으로 스테이지
+- `git commit`, `git push` 자율 실행 금지 — 사용자가 명시적으로 요청할 때만
+- PR close/reopen 금지 — CI 실패 시 원인 조사 후 코드 수정하여 재push
+
+### 도구 실행
+
+- **루트에서 ruff/pyrefly/pytest 직접 실행 금지** — 반드시 패키지 디렉토리 내에서
+- Python 명령어는 `uv run` 접두사 필수
+
+### 코드
+
+- `src/` 내에서 빌트인 예외(`TypeError`, `ValueError`) 직접 `raise` 금지
+- `Any` 타입 사유 없이 사용 금지
+- `__str__` 오버라이드 금지 (에러 클래스)
+- `class TestXxx` 금지 — 함수 기반 테스트만
+- silent fallback (`pass`, `return None`) 금지
+- opt-out 주석(`type: ignore`, `pragma: no cover`) 사유 없이 사용 금지
+- 플러그인 → 다른 플러그인 직접 import 금지
+- 도메인 레이어에서 인프라 의존성 import 금지
+
+### 행동
+
+- 요청 범위를 넘는 변경 금지 (scope creep)
+- 기존 기술 교체/제거 시 사용자 확인 없이 진행 금지
+- 가설 없이 코드 수정 금지
+- 버그 수정에 리팩터링 혼합 금지
+
 ## 도구 사용 규칙
 
 ### 터미널
@@ -48,27 +118,30 @@
 
 ### Git 안전 규칙
 
-- **`git checkout -- .`, `git restore .`, `git reset --hard`, `git clean -fd` 금지**
-- **`git add -A`, `git add .` 금지** — 변경한 파일만 명시적으로 스테이지
 - **pre-commit hook 실패 시**: 자동 수정된 파일만 재스테이지 후 재커밋
-- **`git commit`, `git push` 자율 실행 금지** — 사용자가 명시적으로 요청할 때만 실행
 
 ## PR 리뷰 컨벤션
 
 - 리뷰 코멘트는 **한국어**로 작성
 - 문제 없으면 PR 승인
 
-### 프로젝트 컨벤션
+### 코딩 규칙 정본
+
+| 영역 | 정본 | 비고 |
+|------|------|------|
+| Python 코딩 표준 | `.claude/rules/python-code.md` | 타입, 에러, 네이밍, import |
+| 테스트 규칙 | `.claude/rules/test-writing.md` | 함수 기반, fixture, 네이밍 |
+| 도메인 레이어 | `.claude/rules/domain.md` | Entity, ValueObject, Event |
+| AOP Aspect | `.claude/rules/aspect.md` | 동기/비동기 쌍, pointcut |
+| 플러그인 개발 | `.claude/rules/plugin.md` | 구조, main.py, entry-point |
+| 모노레포 구조 | `.claude/rules/monorepo.md` | 패키지별 실행, 의존 방향 |
+| 행동 원칙 | `.claude/rules/behavioral-guidelines.md` | Karpathy 4원칙, 서브에이전트 |
+
+### 프로젝트 특수 컨벤션
+
+> rules 파일에 없는, 이 프로젝트 고유의 예외 패턴만 기록한다.
 
 | 패턴 | 사유 |
 |------|------|
 | `pythonpath = "src/spakky/..."` | 모노레포 패키지별 테스트 경로 |
-| `# type: ignore[xxx]  # reason` | 에러 코드 + 사유 명시 시 허용 |
-| Integration fixture `scope="package"` | 비용 절감 |
 | `BaseSettings.__init__(self)` 오버라이드 | `@Configuration` 데코레이터 호환 |
-
-### 리뷰 포인트
-
-- `# type: ignore` 사용 시 에러 코드와 사유 명시 권장
-- `Any` 타입 사용 시 사유 명시 권장
-- 명시적 에러 처리 권장 (`raise` 또는 `assert_never`)
