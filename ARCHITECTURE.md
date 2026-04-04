@@ -43,6 +43,7 @@
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 (spakky-outbox 설치 시 Outbox 저장소 자동 등록) |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @Logging AOP Aspect |
+| **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
 
 ---
 
@@ -79,6 +80,7 @@ graph TD
 
         subgraph observability ["👁 Observability"]
             logging_pkg[spakky-logging]
+            otel[spakky-opentelemetry]
         end
 
         subgraph ui ["🖥 UI & Utility"]
@@ -94,6 +96,8 @@ graph TD
     event --> kafka
     task_pkg --> celery_plugin
     core --> logging_pkg
+    tracing --> otel
+    logging_pkg -.->|optional| otel
     core --> fastapi
     core --> typer
     core --> security
@@ -113,6 +117,7 @@ graph TD
     style kafka fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style celery_plugin fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style logging_pkg fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style otel fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style fastapi fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style typer fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style security fill:#f5f5f5,stroke:#9e9e9e,color:#424242
