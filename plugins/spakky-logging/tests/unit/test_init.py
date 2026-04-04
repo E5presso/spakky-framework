@@ -7,6 +7,7 @@ from spakky.plugins.logging import (
     AsyncLoggingAspect,
     ContextInjectingFilter,
     LogContext,
+    LogContextBinder,
     LogFormat,
     Logged,
     LoggingAspect,
@@ -36,6 +37,7 @@ def test_public_api_classes_expect_correct_types() -> None:
     assert isinstance(AsyncLoggingAspect, type)
     assert isinstance(LoggingConfig, type)
     assert isinstance(LogContext, type)
+    assert isinstance(LogContextBinder, type)
     assert isinstance(ContextInjectingFilter, type)
     assert isinstance(SpakkyTextFormatter, type)
     assert isinstance(SpakkyJsonFormatter, type)

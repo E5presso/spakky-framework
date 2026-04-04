@@ -8,6 +8,7 @@ Public API exports:
 - :class:`LogContext` — ``contextvars``-based context propagation
 - :class:`ContextInjectingFilter` — stdlib filter for context injection
 - :class:`SpakkyTextFormatter` / :class:`SpakkyJsonFormatter` / :class:`SpakkyPrettyFormatter`
+- :class:`LogContextBinder` — ``ILogContextBinder`` Pod adapter
 - :class:`LoggingSetupPostProcessor` — auto-configures logging on app start
 """
 
@@ -20,6 +21,7 @@ from spakky.plugins.logging.aspects.logging_aspect import (
 )
 from spakky.plugins.logging.config import LogFormat, LoggingConfig
 from spakky.plugins.logging.context import LogContext
+from spakky.plugins.logging.log_context_binder import LogContextBinder
 from spakky.plugins.logging.filters import ContextInjectingFilter
 from spakky.plugins.logging.formatters import (
     SpakkyJsonFormatter,
@@ -34,6 +36,7 @@ __all__ = [
     "AsyncLoggingAspect",
     "ContextInjectingFilter",
     "LogContext",
+    "LogContextBinder",
     "LogFormat",
     "Logged",
     "logged",
