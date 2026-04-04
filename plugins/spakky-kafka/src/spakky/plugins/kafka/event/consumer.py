@@ -21,13 +21,8 @@ from spakky.event.event_consumer import (
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 
-try:
-    from spakky.tracing.context import TraceContext
-    from spakky.tracing.propagator import ITracePropagator
-
-    _HAS_TRACING = True
-except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
-    _HAS_TRACING = False
+from spakky.tracing.context import TraceContext
+from spakky.tracing.propagator import ITracePropagator
 
 logger = getLogger(__name__)
 
@@ -42,7 +37,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: Consumer
-    _propagator: object | None
+    _propagator: ITracePropagator | None
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the Kafka consumer with connection config."""
@@ -58,7 +53,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             logger=logger,
         )
 
-    def set_propagator(self, propagator: object) -> None:
+    def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
 
         Args:
@@ -125,10 +120,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
-        if _HAS_TRACING and self._propagator is not None:
-            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+        if self._propagator is not None:
             carrier = self._to_string_headers(message.headers())
-            parent = propagator.extract(carrier)
+            parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
         try:
@@ -143,7 +137,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         except Exception as e:  # pragma: no cover
             logger.error(f"Error processing message for event type {topic}: {e}")
         finally:
-            if _HAS_TRACING and self._propagator is not None:
+            if self._propagator is not None:
                 TraceContext.clear()
 
     def register(
@@ -189,7 +183,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: AIOConsumer
-    _propagator: object | None
+    _propagator: ITracePropagator | None
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the async Kafka consumer with connection config."""
@@ -201,7 +195,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self._propagator = None
         self.admin = AdminClient(self.config.configuration_dict)
 
-    def set_propagator(self, propagator: object) -> None:
+    def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
 
         Args:
@@ -270,10 +264,9 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
-        if _HAS_TRACING and self._propagator is not None:
-            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+        if self._propagator is not None:
             carrier = self._to_string_headers(message.headers())
-            parent = propagator.extract(carrier)
+            parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
         try:
@@ -288,7 +281,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         except Exception as e:  # pragma: no cover
             logger.error(f"Error processing message for event type {topic}: {e}")
         finally:
-            if _HAS_TRACING and self._propagator is not None:
+            if self._propagator is not None:
                 TraceContext.clear()
 
     def register(

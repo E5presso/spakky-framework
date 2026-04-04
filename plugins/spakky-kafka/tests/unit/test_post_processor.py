@@ -57,6 +57,7 @@ def test_kafka_post_processor_registers_integration_event_expect_success() -> No
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -97,6 +98,7 @@ def test_kafka_post_processor_registers_async_integration_event_expect_success()
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -140,6 +142,7 @@ def test_kafka_post_processor_ignores_domain_event_expect_no_registration() -> N
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -181,6 +184,7 @@ def test_kafka_post_processor_mixed_events_expect_only_integration_registered() 
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -232,6 +236,7 @@ def test_kafka_post_processor_sync_endpoint_invocation_expect_handler_called() -
     mock_container.get.side_effect = get_mock
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -294,6 +299,7 @@ async def test_kafka_post_processor_async_endpoint_invocation_expect_handler_cal
     mock_container.get.side_effect = get_mock
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -343,6 +349,7 @@ def test_kafka_post_processor_non_event_handler_class_expect_early_return() -> N
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -385,6 +392,7 @@ def test_kafka_post_processor_handler_with_non_decorated_method_expect_skip() ->
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
 
     # Create post-processor
     post_processor = KafkaPostProcessor()
@@ -430,8 +438,7 @@ def test_kafka_post_processor_with_tracing_available_expect_propagator_injected(
     )
 
     mock_context = Mock(spec=ApplicationContext)
-    mock_context.contains.return_value = True
-    mock_context.get.return_value = mock_propagator
+    mock_context.get_or_none.return_value = mock_propagator
 
     post_processor = KafkaPostProcessor()
     post_processor.set_container(mock_container)
@@ -465,7 +472,7 @@ def test_kafka_post_processor_without_tracing_expect_no_propagator_injected() ->
     )
 
     mock_context = Mock(spec=ApplicationContext)
-    mock_context.contains.return_value = False
+    mock_context.get_or_none.return_value = None
 
     post_processor = KafkaPostProcessor()
     post_processor.set_container(mock_container)
@@ -502,8 +509,7 @@ def test_kafka_post_processor_with_tracing_but_no_set_propagator_expect_skipped(
     )
 
     mock_context = Mock(spec=ApplicationContext)
-    mock_context.contains.return_value = True
-    mock_context.get.return_value = mock_propagator
+    mock_context.get_or_none.return_value = mock_propagator
 
     post_processor = KafkaPostProcessor()
     post_processor.set_container(mock_container)
