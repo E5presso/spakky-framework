@@ -1,5 +1,5 @@
 ---
-name: architecture-decision
+name: decide-architecture
 description: 아키텍처 의사결정 시 기존 ADR을 참조하고 새 ADR을 작성합니다
 argument-hint: "[주제]"
 user-invocable: true

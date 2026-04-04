@@ -39,8 +39,12 @@ gh issue view $ARGUMENTS --comments
 | 대상 | 조건 | 명령 |
 |------|------|------|
 | 마일스톤 description | 마일스톤이 연결된 경우 | `gh api repos/{owner}/{repo}/milestones/{N} --jq '.description'` |
-| 선행 이슈 목표 | "선행 이슈" 섹션이 있는 경우 | `gh issue view {선행번호} --json body -q .body` |
-| 참조 이슈 | 레퍼런스 구현 등이 언급된 경우 | `gh issue view {참조번호} --json body -q .body` |
+| 선행 이슈 | "선행 이슈" 섹션이 있는 경우 | `gh issue view {선행번호} --json body,state -q '.body,.state'` |
+| 참조 이슈 | 레퍼런스 구현 등이 언급된 경우 | `gh issue view {참조번호} --json body,state -q '.body,.state'` |
+
+**선행/참조 이슈 상태 검증:**
+- **closed**: 완료됨 — develop에 머지된 코드를 레퍼런스로 활용 가능
+- **open**: 아직 진행 중 — 참조할 구현체가 코드베이스에 없을 수 있음. Phase 2 계획에 이 사실을 반영한다 (코드 참조 대신 이슈 본문의 설계 명세에 의존)
 
 ### 1-3. 작업 명세 정리
 
@@ -120,13 +124,15 @@ gh issue view $ARGUMENTS --comments
 구현 완료 후 아래를 순차 실행한다:
 
 1. **`/check`** — 변경된 패키지별로 ruff + pyrefly + pytest + 레이어 의존 검증
-2. **`/self-review`** — 서브에이전트에서 실행 (self-confirmation bias 방지)
+2. **`/review-code`** — 서브에이전트에서 실행 (self-confirmation bias 방지)
+   - 서브에이전트에게 **이슈 맥락**(목표, 수용 기준, 제약 사항)을 함께 전달한다.
+   - self-review가 코드뿐 아니라 **이슈 의도와의 일치 여부**도 검증할 수 있도록 한다.
 
 ### 4-3. 교정
 
-- `/check` 또는 `/self-review`에서 발견된 문제를 수정한다.
+- `/check` 또는 `/review-code`에서 발견된 문제를 수정한다.
 - 수정 후 4-2로 돌아가 재검증한다.
-- **종료 조건**: `/check` 전체 통과 + `/self-review`에서 Critical/Warning 0건
+- **종료 조건**: `/check` 전체 통과 + `/review-code`에서 Critical/Warning 0건
 
 ## Phase 5: 커밋 & PR 생성
 

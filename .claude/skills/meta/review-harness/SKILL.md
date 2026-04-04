@@ -1,5 +1,5 @@
 ---
-name: harness-review
+name: review-harness
 description: 3-strike 위반 원인을 하네스에서 진단하여 개선 포인트를 식별합니다.
 argument-hint: "<VIOLATION_ID>"
 user-invocable: false
@@ -7,14 +7,14 @@ user-invocable: false
 
 # Harness Review — 하네스 진단
 
-3-strike로 누적된 위반의 **근본 원인을 하네스에서 찾는** 진단 스킬. `/retro`의 3-strike 감지 후 자동 호출되며, 진단 결과를 `/harness-update`에 전달한다.
+3-strike로 누적된 위반의 **근본 원인을 하네스에서 찾는** 진단 스킬. `/retro`의 3-strike 감지 후 자동 호출되며, 진단 결과를 `/update-harness`에 전달한다.
 
 ## 사용법
 
 `/retro`에서 자동 호출:
 
 ```
-/harness-review SCOPE_CREEP
+/review-harness SCOPE_CREEP
 ```
 
 인자: 3-strike 누적된 위반 ID (예: `SCOPE_CREEP`, `LAYER_VIOLATION`)
@@ -59,7 +59,7 @@ user-invocable: false
 2. **변경 내용**: 추가/수정/삭제할 규칙 또는 절차
 3. **기대 효과**: 이 변경으로 해당 위반이 방지되는 메커니즘
 
-## Phase 5: 결과 보고 & `/harness-update` 트리거
+## Phase 5: 결과 보고 & `/update-harness` 트리거
 
 진단 결과를 사용자에게 보고한다:
 
@@ -79,10 +79,10 @@ user-invocable: false
 {변경 대상 파일과 변경 내용}
 ```
 
-보고 후 `/harness-update`를 호출하여 개선안을 적용한다:
+보고 후 `/update-harness`를 호출하여 개선안을 적용한다:
 
 ```
-/harness-update {VIOLATION_ID} {진단 결과 요약}
+/update-harness {VIOLATION_ID} {진단 결과 요약}
 ```
 
 ---
@@ -92,6 +92,6 @@ user-invocable: false
 - 이 스킬은 `/retro`의 3-strike 감지 후 **자동 호출**된다 — 독립 실행하지 않는다.
 - 진단은 하네스 파일만 대상으로 한다 — 소스 코드 수정은 하지 않는다.
 - 개선안은 최소 범위로 제안한다 — 하나의 위반에 대해 하나의 변경.
-- `/harness-update` 호출 시 진단 결과를 인자로 전달하여 맥락을 유지한다.
+- `/update-harness` 호출 시 진단 결과를 인자로 전달하여 맥락을 유지한다.
 
 $ARGUMENTS

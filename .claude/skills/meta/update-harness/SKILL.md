@@ -1,5 +1,5 @@
 ---
-name: harness-update
+name: update-harness
 description: 하네스 진단 결과를 바탕으로 규칙/스킬/훅을 개선합니다.
 argument-hint: "<VIOLATION_ID> <진단 결과 요약>"
 user-invocable: false
@@ -7,14 +7,14 @@ user-invocable: false
 
 # Harness Update — 하네스 개선
 
-`/harness-review`의 진단 결과를 받아, 하네스 파일(규칙/스킬/훅/설정)을 실제로 수정한다.
+`/review-harness`의 진단 결과를 받아, 하네스 파일(규칙/스킬/훅/설정)을 실제로 수정한다.
 
 ## 사용법
 
-`/harness-review`에서 자동 호출:
+`/review-harness`에서 자동 호출:
 
 ```
-/harness-update SCOPE_CREEP "규칙 모호: behavioral-guidelines.md의 범위 체크 규칙이 서브에이전트 작업에 적용되는지 불명확"
+/update-harness SCOPE_CREEP "규칙 모호: behavioral-guidelines.md의 범위 체크 규칙이 서브에이전트 작업에 적용되는지 불명확"
 ```
 
 인자: `<VIOLATION_ID> <진단 결과 요약>`
@@ -34,7 +34,7 @@ user-invocable: false
 
 ## Phase 1: 진단 결과 파싱
 
-`/harness-review`에서 전달받은 인자를 파싱한다:
+`/review-harness`에서 전달받은 인자를 파싱한다:
 
 1. 위반 ID
 2. 근본 원인 유형 (규칙 부재 / 규칙 모호 / 규칙 미노출 / 검증 부재 / 스킬 누락)
@@ -122,7 +122,7 @@ options:
 
 ## 규칙
 
-- 이 스킬은 `/harness-review`에서 **자동 호출**된다 — 독립 실행하지 않는다.
+- 이 스킬은 `/review-harness`에서 **자동 호출**된다 — 독립 실행하지 않는다.
 - 하네스 변경 전 반드시 사용자 승인을 받는다.
 - 한 번에 하나의 위반에 대해서만 변경한다 — 범위를 넓히지 않는다.
 - 규칙 추가 시 중복을 확인한다 — 같은 내용이 이미 다른 파일에 있으면 통합한다.
