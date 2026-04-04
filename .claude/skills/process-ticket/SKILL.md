@@ -71,6 +71,7 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
    - 예: `feat/42-add-async-event-handler`
 2. `develop` 브랜치에서 새 워크트리를 생성한다.
 3. 워크트리에서 이후 모든 작업을 수행한다.
+4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Progress` 실행
 
 ## Phase 4: 구현 & 검증 루프
 
@@ -108,6 +109,7 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 3. `/pr` 스킬을 사용하여 PR을 생성한다.
    - PR 대상 브랜치: `develop`
    - Body에 `Closes #<issue-number>` 포함
+4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Review` 실행
 
 ## Phase 6: CI & 리뷰 모니터링
 
@@ -229,9 +231,10 @@ PR이 병합 가능 상태가 되면:
 
    - 병합한 커밋이 develop에 정상 반영되었는지 확인한다.
 
-4. **세션 회고**:
+4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER Done` 실행
+5. **세션 회고**:
    - `/retro` 스킬을 호출하여 세션 전체에 대한 자가 평가를 수행한다.
-5. 사용자에게 최종 완료를 보고한다:
+6. 사용자에게 최종 완료를 보고한다:
 
    ```
    ## 작업 완료
@@ -253,6 +256,9 @@ PR이 병합 가능 상태가 되면:
 - 커밋 scope는 변경된 패키지에 따라 동적 결정한다 (CONTRIBUTING.md 참조).
 - 워크트리는 `develop` 브랜치에서 생성한다.
 - 각 Phase 전환 시 사용자에게 현재 단계를 간결하게 알린다.
+- 서브 스킬 호출(`/check`, `/self-review`, `/update-project-status` 등)은 반드시 **서브에이전트**로 실행한다 — 메인 컨텍스트 소비를 최소화한다.
+  - Phase 진행을 차단하지 않는 스킬(예: `/update-project-status`)은 백그라운드 서브에이전트로 실행한다.
+  - Phase 진행에 결과가 필요한 스킬(예: `/check`, `/self-review`)은 포그라운드 서브에이전트로 실행한다.
 - `uv run` 접두사 필수 — Python 명령어 직접 실행 금지.
 
 $ARGUMENTS
