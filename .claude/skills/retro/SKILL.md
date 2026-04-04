@@ -6,7 +6,7 @@ user-invocable: true
 
 # Session-Retro — 세션 자가 평가
 
-세션 종료 전 수행하는 하네스 준수 자가 평가. 결과를 메모리 시스템에 기록하고, 동일 위반이 3회 누적되면 `/harness-update`를 트리거한다.
+세션 종료 전 수행하는 하네스 준수 자가 평가. **단일 rolling 파일**에 fail만 누적 기록하고, 동일 위반이 3회 누적되면 `/harness-update`를 트리거한다.
 
 ## 실행 절차
 
@@ -38,62 +38,61 @@ git diff --cached --name-only
 | `SCOPE_CREEP` | 범위 초과 | 요청 범위를 넘는 변경 |
 | `ROOT_TOOL_RUN` | 루트 실행 | 패키지 디렉토리가 아닌 루트에서 도구 실행 |
 
-### 3. 평가 결과를 메모리에 기록
+### 3. 기록 전략 — 단일 rolling 파일
 
-프로젝트 메모리 디렉토리에 세션 회고 파일을 작성한다.
+**all-pass이면 메모리에 기록하지 않는다.** 사용자에게 결과만 출력하고 종료.
 
-파일 경로: `~/.claude/projects/{project-path}/memory/retro_{YYYY-MM-DD}_{세션요약_3단어}.md`
+**fail이 1건 이상이면** 단일 파일 `retro_strikes.md`에 추가 기록한다.
+
+파일 경로: `~/.claude/projects/{project-path}/memory/retro_strikes.md`
+
+- 파일이 없으면 새로 생성한다.
+- 파일이 있으면 `## 기록` 섹션에 행을 **추가(append)**한다.
 
 ```markdown
 ---
-name: retro_{YYYY-MM-DD}_{세션요약}
-description: 세션 회고 - {세션 요약}
+name: retro_strikes
+description: 세션 회고 fail 누적 기록 — 3-strike 감지용
 type: project
 ---
 
-# {세션 요약 제목} — {날짜}
+# Retro Strikes
 
-## 세션 요약
-{이번 세션에서 수행한 작업 1-2줄 요약}
+## 기록
 
-## 평가 결과
-
-| ID | 결과 | 비고 |
-|----|------|------|
-| LAYER_VIOLATION | pass/fail | |
-| MISSING_OVERRIDE | pass/fail | entity.py:28 — 수정 완료 |
-| ... | ... | ... |
-
-## fails
-{fail 항목 리스트 — 3-strike 감지용}
-- MISSING_OVERRIDE
-- LEGACY_TYPING
-
-## 교훈
-{이번 세션에서 배운 점}
+| 날짜 | 세션 | ID | 비고 |
+|------|------|----|------|
+| 2026-04-04 | #35 TracingMiddleware | SCOPE_CREEP | pyrefly 워크트리 수정 15개 패키지 영향 |
 ```
 
 ### 4. 3-strike 누적 감지
 
-이전 retro 메모리 파일들에서 fails 섹션을 수집한다.
+`retro_strikes.md`의 기록 테이블에서 동일 ID의 출현 횟수를 센다.
 
 동일 카테고리가 **3회 이상 fail**이면:
 
-1. 사용자에게 보고한다: "`MISSING_OVERRIDE`가 3회 누적되었습니다. 하네스 튜닝을 트리거합니다."
+1. 사용자에게 보고한다: "`{ID}`가 3회 누적되었습니다. 하네스 튜닝을 트리거합니다."
 2. `/harness-update`를 실행하여 해당 위반을 방지하는 규칙 강화 또는 hook 추가를 제안한다.
+3. 하네스 반영 완료 후 해당 ID의 행을 테이블에서 **삭제**하여 카운트를 리셋한다.
 
-### 5. 결과 요약 출력
+### 5. 교훈 승격
+
+세션에서 발견한 교훈이 **향후 세션에 반복 적용될 가치가 있을 때만** 별도 feedback 메모리로 저장한다. 일회성 교훈은 사용자에게 출력만 하고 메모리에 저장하지 않는다.
+
+### 6. 결과 요약 출력
 
 ```
 ## Session-Retro 완료
 
-평가: 10개 카테고리 중 9개 pass, 1개 fail
-기록: {파일 경로}
-3-strike: 없음 (또는 MISSING_OVERRIDE 3/3 -> /harness-update 트리거)
+평가: 10개 카테고리 중 {N}개 pass, {M}개 fail
+기록: {all-pass이면 "기록 없음 (all-pass)", fail이면 "retro_strikes.md에 추가"}
+3-strike: 없음 (또는 {ID} 3/3 → /harness-update 트리거)
 ```
 
 ## 규칙
 
 - 변경된 파일이 없으면 평가를 생략한다.
+- **all-pass 세션은 메모리에 기록하지 않는다** — context rot 방지.
 - fail이지만 세션 중 교정되었으면 비고에 "수정 완료"로 기록한다 (카운트에는 포함).
 - 3-strike 트리거 시 사용자 확인 없이 `/harness-update`를 자동 실행한다.
+- 3-strike 소진 후 하네스 반영 완료 시 해당 행을 삭제하여 카운트를 리셋한다.
