@@ -675,3 +675,17 @@ def test_sync_consumer_to_string_headers_with_none_expect_empty() -> None:
     """headers가 None이면 빈 dict를 반환함을 검증한다."""
     result = RabbitMQEventConsumer._to_string_headers(None)
     assert result == {}
+
+
+def test_async_consumer_to_string_headers_with_bytes_expect_decoded() -> None:
+    """비동기 consumer에서 AMQP headers의 bytes 값이 str로 디코딩됨을 검증한다."""
+    result = AsyncRabbitMQEventConsumer._to_string_headers(
+        {"traceparent": b"00-abc-def-01", "key": "value", "num": 42}
+    )
+    assert result == {"traceparent": "00-abc-def-01", "key": "value"}
+
+
+def test_async_consumer_to_string_headers_with_none_expect_empty() -> None:
+    """비동기 consumer에서 headers가 None이면 빈 dict를 반환함을 검증한다."""
+    result = AsyncRabbitMQEventConsumer._to_string_headers(None)
+    assert result == {}
