@@ -53,9 +53,11 @@ git diff --cached --name-only
 
 코드와 이미 일치하는 카테고리는 건너뛴다.
 
-## Phase 2: 문서별 동기화
+## Phase 2: 문서별 동기화 (Write 에이전트)
 
 각 문서를 **병렬 서브에이전트**로 동기화한다. 같은 파일을 동시에 수정하지 않으므로 충돌 없음.
+
+> **중요**: Phase 2는 "Write 에이전트"가 담당한다. Phase 3 검증은 **별도의 "Verify 에이전트"**가 fresh context에서 수행하여 self-confirmation bias를 방지한다.
 
 ### 2-1. docs/guides/*.md (튜토리얼)
 
@@ -150,7 +152,14 @@ guides와 동일한 검증 항목을 적용한다. 변경된 패키지와 관련
 1. **nav 섹션**: 패키지 추가/삭제 시 네비게이션 항목이 일치하는가
 2. **mkdocstrings paths**: 패키지 추가/삭제 시 소스 경로가 포함되어 있는가
 
-## Phase 3: 편집증적 팩트체크
+## Phase 3: 편집증적 팩트체크 (Verify 에이전트 — 별도 서브에이전트)
+
+> **Phase 2와 Phase 3은 반드시 서로 다른 서브에이전트에서 실행한다.** Write 에이전트가 수정/생성한 문서를 같은 컨텍스트에서 검증하면 self-confirmation bias가 발생한다. Verify 에이전트는 fresh context에서 수정된 문서를 코드와 독립적으로 대조한다.
+
+Verify 에이전트에게 전달할 컨텍스트:
+- Phase 2에서 수정/생성된 문서 파일 경로 목록
+- 변경된 소스 코드 패키지 경로
+- 이 스킬의 Phase 3 체크리스트 (3-1 ~ 3-8)
 
 Phase 2에서 수정한 문서와 변경 영향권의 기존 문서를 **의심의 눈**으로 전수 검증한다. 체크리스트를 **전부** 순회하며 위반을 찾는다. 이슈를 발견하지 못했더라도 체크리스트를 전부 순회했음을 명시한다.
 
@@ -219,22 +228,43 @@ grep -rhoP "from [a-z_.]+ import" docs/ | sort -u
 - [ ] mkdocstrings `paths`에 모든 패키지 소스 경로가 포함되어 있는가?
 - [ ] 새로 추가된 패키지가 `nav`와 `paths`에 반영되었는가?
 
-## Phase 4: 결과 보고
+## Phase 4: 수렴 루프
 
-이슈를 심각도별로 분류하여 보고한다. 수정은 사용자 확인 후에만 진행한다.
+Phase 2(Write 에이전트) → Phase 3(Verify 에이전트)를 **이슈 0건이 될 때까지** 반복한다. 매 라운드마다 Write와 Verify가 fresh context의 **별도 서브에이전트**로 실행되므로 이전 라운드의 판단에 오염되지 않는다.
+
+```
+라운드 = 1
+반복:
+  1. Write 서브에이전트: Phase 2 실행 (동기화 — 수정 + 신규 생성)
+  2. Verify 서브에이전트 (fresh context): Phase 3 실행 (편집증적 팩트체크)
+  3. Verify 결과에서 Critical + Warning 이슈 수 집계 (Info, 미확인은 제외)
+  4. 이슈 0건이면 → 루프 종료, Phase 5로
+  5. 이슈 > 0건이면 → 이슈 목록을 다음 Write 에이전트에 전달, 다음 라운드
+  6. 라운드 += 1
+
+  최대 반복: 3회 (무한 루프 방지)
+  3회 후에도 미해결 이슈가 있으면 "미해결" 섹션으로 보고한다.
+```
+
+## Phase 5: 결과 보고
+
+이슈를 심각도별로 분류하여 보고한다.
 
 ```markdown
 ## 사용자 문서 동기화 결과
 
+### 수렴 정보
+
+- 수렴 라운드: {N}회
+- 라운드별 이슈 수: R1={A}건 → R2={B}건 → R3={C}건
+
 ### Critical (즉시 수정 — 사용자가 따라하면 실패하는 오류)
 
-- [docs/guides/events.md:14] `from spakky.event.handler import EventHandler` → 실제 경로: `spakky.event.stereotype.event_handler`
-- [docs/index.md:39] `app.container.get(type_=...)` → 실제 메서드명: `get(type_=...)`인지 `resolve(type_=...)`인지 확인 필요
+- [docs/guides/events.md:14] `from spakky.event.handler import EventHandler` → 실제 경로: `spakky.event.stereotype.event_handler` → **수정 완료**
 
 ### Warning (수정 권장 — 오해를 유발할 수 있는 부정확)
 
-- [docs/glossary.md:42] `CONTEXT` 스코프 설명이 현재 구현과 다름
-- [docs/api/core/spakky-event.md] `:::` 디렉티브에 삭제된 모듈 참조 잔존
+- [docs/glossary.md:42] `CONTEXT` 스코프 설명이 현재 구현과 다름 → **수정 완료**
 
 ### Info (참고 — 기능에 영향 없는 불일치)
 
@@ -243,6 +273,12 @@ grep -rhoP "from [a-z_.]+ import" docs/ | sort -u
 ### 미확인 (코드에서 확인할 수 없어 보류)
 
 - [docs/guides/security.md:55] JWT 토큰 만료 기본값 — 코드에서 해당 기본값을 특정하기 어려움
+
+### 미해결 (3회 반복 후에도 미해결 — 해당 시)
+
+| 문서 | 이슈 | 사유 |
+|------|------|------|
+| {경로} | {이슈 설명} | {미해결 이유} |
 
 ### 팩트체크 체크리스트 순회 결과
 
@@ -276,7 +312,7 @@ grep -rhoP "from [a-z_.]+ import" docs/ | sort -u
 ### 편집증적 검증
 
 - Phase 3 체크리스트를 **전부** 순회한다. 이슈가 없어도 순회했음을 명시한다.
-- 수정은 사용자 확인 후에만 진행한다.
+- Critical/Warning 이슈는 수렴 루프 내에서 **즉시 수정**하고, 최종 결과를 보고한다.
 - 이슈 심각도를 **Critical / Warning / Info / 미확인** 4단계로 분류한다.
 - **Critical**: 사용자가 문서대로 따라하면 실패하는 오류 (잘못된 import, 존재하지 않는 메서드, 틀린 시그니처)
 - **Warning**: 오해를 유발할 수 있는 부정확 (오래된 설명, 누락된 파라미터)
