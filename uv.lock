@@ -2908,17 +2908,12 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "spakky-event" },
-]
-
-[package.optional-dependencies]
-tracing = [
     { name = "spakky-tracing" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest-integration-mark" },
-    { name = "spakky-tracing" },
     { name = "testcontainers" },
 ]
 
@@ -2929,14 +2924,12 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky-event", editable = "core/spakky-event" },
-    { name = "spakky-tracing", marker = "extra == 'tracing'", editable = "core/spakky-tracing" },
+    { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
-provides-extras = ["tracing"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
-    { name = "spakky-tracing", editable = "core/spakky-tracing" },
     { name = "testcontainers", specifier = ">=4.14.1" },
 ]
 
