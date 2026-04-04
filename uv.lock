@@ -2705,6 +2705,9 @@ kafka = [
 logging = [
     { name = "spakky-logging" },
 ]
+opentelemetry = [
+    { name = "spakky-opentelemetry" },
+]
 rabbitmq = [
     { name = "spakky-rabbitmq" },
 ]
@@ -2712,9 +2715,6 @@ security = [
     { name = "spakky-security" },
 ]
 sqlalchemy = [
-    { name = "spakky-sqlalchemy" },
-]
-sqlalchemy-outbox = [
     { name = "spakky-sqlalchemy" },
 ]
 typer = [
@@ -2727,14 +2727,14 @@ requires-dist = [
     { name = "spakky-fastapi", marker = "extra == 'fastapi'", editable = "plugins/spakky-fastapi" },
     { name = "spakky-kafka", marker = "extra == 'kafka'", editable = "plugins/spakky-kafka" },
     { name = "spakky-logging", marker = "extra == 'logging'", editable = "plugins/spakky-logging" },
+    { name = "spakky-opentelemetry", marker = "extra == 'opentelemetry'", editable = "plugins/spakky-opentelemetry" },
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
     { name = "spakky-sqlalchemy", marker = "extra == 'sqlalchemy'", editable = "plugins/spakky-sqlalchemy" },
-    { name = "spakky-sqlalchemy", extras = ["outbox"], marker = "extra == 'sqlalchemy-outbox'", editable = "plugins/spakky-sqlalchemy" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "sqlalchemy-outbox", "celery"]
+provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry"]
 
 [[package]]
 name = "spakky-celery"
