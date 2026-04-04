@@ -32,8 +32,9 @@ Conventional Commits 형식: `<type>(<scope>): <subject>`
 
 ## 워크플로우
 
-1. `git diff --cached`로 스테이지된 변경 확인
-2. 변경 내용 분석 후 적절한 type, scope, subject 결정
-3. 커밋 메시지를 마크다운으로 출력 → **사용자 승인 후** 커밋 실행
+1. 변경된 패키지 디렉토리에서 `uv run ruff format .` 선행 (pre-commit hook 실패 방지)
+2. `git diff --cached`로 스테이지된 변경 확인
+3. 변경 내용 분석 후 적절한 type, scope, subject 결정
+4. 커밋 메시지를 결정하고 **자동 커밋** 실행 (사용자 승인 불필요)
 
 $ARGUMENTS

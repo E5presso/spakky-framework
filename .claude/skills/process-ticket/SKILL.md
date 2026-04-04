@@ -97,18 +97,24 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 
 ## Phase 5: 커밋 & PR 생성
 
-1. `/commit` 스킬을 사용하여 커밋한다.
+> **자동 진행**: 이 Phase는 사용자 확인 없이 전부 자동 실행한다.
+
+1. 변경된 패키지 디렉토리에서 **ruff format을 선행**한다 (pre-commit hook 실패 방지):
+   ```bash
+   cd <package-dir> && uv run ruff format .
+   ```
+2. `/commit` 스킬을 사용하여 커밋한다.
    - Conventional Commits 형식: `<type>(<scope>): <subject>`
    - scope는 변경된 패키지에 맞춰 동적 결정 (CONTRIBUTING.md 참조)
    - 여러 패키지 변경 시 핵심 변경의 scope 사용, 또는 scope 생략
-2. 리모트에 push한다.
+3. 리모트에 push한다.
    ```bash
    git push -u origin HEAD
    ```
-3. `/create-pr` 스킬을 사용하여 PR을 생성한다.
+4. `/create-pr` 스킬을 사용하여 PR을 생성한다.
    - PR 대상 브랜치: `develop`
    - Body에 `Closes #<issue-number>` 포함
-4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Review` 실행
+5. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Review` 실행
 
 ## Phase 6: CI & 리뷰 모니터링
 
@@ -247,17 +253,12 @@ PR이 병합 가능 상태가 되면:
 
 ## 규칙
 
-- Phase 2 계획 승인 없이 구현을 시작하지 않는다.
-- Phase 4 검증 루프는 생략하지 않는다. 단축키 없음.
-- Phase 6 모니터링은 메인 컨텍스트에서 직접 실행한다 — 사용자에게 즉시 상태를 보고할 수 있어야 한다.
-- Phase 6에서 리뷰 코멘트 처리 완료 후 해당 리뷰어에게 재리뷰를 요청한다.
-- Phase 7에서 사용자 승인 없이 병합하지 않는다.
-- 커밋 scope는 변경된 패키지에 따라 동적 결정한다 (CONTRIBUTING.md 참조).
-- 워크트리는 `develop` 브랜치에서 생성한다.
-- 각 Phase 전환 시 사용자에게 현재 단계를 간결하게 알린다.
-- 서브 스킬 호출(`/check`, `/self-review`, `/update-project-status` 등)은 반드시 **서브에이전트**로 실행한다 — 메인 컨텍스트 소비를 최소화한다.
-  - Phase 진행을 차단하지 않는 스킬(예: `/update-project-status`)은 백그라운드 서브에이전트로 실행한다.
-  - Phase 진행에 결과가 필요한 스킬(예: `/check`, `/self-review`)은 포그라운드 서브에이전트로 실행한다.
-- `uv run` 접두사 필수 — Python 명령어 직접 실행 금지.
+- **사용자 확인 구간은 Phase 2 (계획 승인)과 Phase 7 (PR 병합) 두 곳만.** 나머지는 전부 자동 진행.
+- 객관식 질문은 **반드시 `AskUserQuestion` UI** 사용. 텍스트로 질문하지 않는다.
+- 커밋 전에 변경된 패키지에서 `uv run ruff format .` 선행 (pre-commit hook 실패 방지).
+- Phase 4 검증 루프는 생략하지 않는다.
+- Phase 6 리뷰 코멘트 처리 후 해당 리뷰어에게 재리뷰를 요청한다.
+- 서브 스킬 호출은 **서브에이전트**로 실행 — 비차단 스킬은 백그라운드, 결과 필요 스킬은 포그라운드.
+- `uv run` 접두사 필수.
 
 $ARGUMENTS
