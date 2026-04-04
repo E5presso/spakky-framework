@@ -75,6 +75,7 @@ plugins:
             - core/spakky-data/src
             - core/spakky-event/src
             - core/spakky-task/src
+            - core/spakky-tracing/src
             - core/spakky-outbox/src
             - plugins/spakky-logging/src
             - plugins/spakky-fastapi/src

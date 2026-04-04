@@ -74,7 +74,7 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 | `spakky-sqlalchemy` | SQLAlchemy ORM 통합        |
 | `spakky-security`   | 암호화/해싱/JWT 유틸리티   |
 | `spakky-celery`        | Celery 태스크 디스패치 및 스케줄 등록 |
-| `spakky-logging`       | 구조화 로깅, @Logging AOP Aspect      |
+| `spakky-logging`       | 구조화 로깅, @logged AOP Aspect       |
 | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지              |
 
 ---

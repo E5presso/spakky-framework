@@ -2,7 +2,7 @@
 
 Public API exports:
 
-- :class:`Logging` — ``@Logging()`` method annotation
+- :class:`Logged` / :func:`logged` — ``@logged()`` method annotation
 - :class:`LoggingAspect` / :class:`AsyncLoggingAspect` — AOP aspects
 - :class:`LoggingConfig` — ``@Configuration`` Pod for logging settings
 - :class:`LogContext` — ``contextvars``-based context propagation

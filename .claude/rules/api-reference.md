@@ -33,7 +33,7 @@ paths:
 
 | Decorator / Class | Import Path | Purpose |
 |---|---|---|
-| `@Logging()` | `spakky.plugins.logging` | 메서드 로깅 어노테이션 |
+| `@logged()` | `spakky.plugins.logging` | 메서드 로깅 어노테이션 |
 | `LoggingConfig` | `spakky.plugins.logging` | 로깅 설정 (@Configuration) |
 | `LogFormat` | `spakky.plugins.logging` | 포맷 열거형 (TEXT, JSON, PRETTY) |
 | `LogContext` | `spakky.plugins.logging` | ContextVar 기반 컨텍스트 전파 |

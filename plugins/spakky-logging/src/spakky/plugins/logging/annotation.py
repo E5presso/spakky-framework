@@ -13,7 +13,7 @@ R = TypeVar("R")
 class Logged(FunctionAnnotation):
     """Annotation for enabling automatic method logging.
 
-    Methods decorated with ``@Logging()`` will have their calls, arguments,
+    Methods decorated with ``@logged()`` will have their calls, arguments,
     return values, and execution time automatically logged.
 
     Attributes:

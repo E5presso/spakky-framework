@@ -293,10 +293,14 @@ See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed
 | Plugin | Description |
 |--------|-------------|
 | [`spakky-fastapi`](https://pypi.org/project/spakky-fastapi/) | FastAPI integration |
+| [`spakky-typer`](https://pypi.org/project/spakky-typer/) | Typer CLI integration |
+| [`spakky-sqlalchemy`](https://pypi.org/project/spakky-sqlalchemy/) | SQLAlchemy ORM integration |
 | [`spakky-kafka`](https://pypi.org/project/spakky-kafka/) | Apache Kafka event system |
 | [`spakky-rabbitmq`](https://pypi.org/project/spakky-rabbitmq/) | RabbitMQ event system |
+| [`spakky-celery`](https://pypi.org/project/spakky-celery/) | Celery task dispatch |
+| [`spakky-logging`](https://pypi.org/project/spakky-logging/) | Structured logging with AOP |
+| [`spakky-opentelemetry`](https://pypi.org/project/spakky-opentelemetry/) | OpenTelemetry SDK bridge |
 | [`spakky-security`](https://pypi.org/project/spakky-security/) | Security utilities |
-| [`spakky-typer`](https://pypi.org/project/spakky-typer/) | Typer CLI integration |
 
 ## Core Modules
 
@@ -306,8 +310,7 @@ See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed
 | `spakky.core.aop` | Aspect-oriented programming framework |
 | `spakky.core.application` | Application context and lifecycle |
 | `spakky.core.stereotype` | Semantic stereotype annotations |
-| `spakky.core.aspects` | Built-in aspect stubs (see `spakky-logging`) |
-| `spakky.core.service` | Service layer components |
+| `spakky.core.service` | Service lifecycle interfaces |
 | `spakky.core.common` | Core utilities (annotation, types, metadata) |
 | `spakky.core.utils` | Utility functions |
 
@@ -317,7 +320,7 @@ See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed
 |---------|-------------|
 | [`spakky-domain`](https://pypi.org/project/spakky-domain/) | DDD building blocks (Entity, AggregateRoot, ValueObject, Event) |
 | [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling (`@EventHandler` stereotype) |
-| [`spakky-logging`](https://pypi.org/project/spakky-logging/) | Structured logging aspects (`@Logging`, `LoggingAspect`) |
+| [`spakky-logging`](https://pypi.org/project/spakky-logging/) | Structured logging aspects (`@logged`, `LoggingAspect`) |
 
 ## License
 
