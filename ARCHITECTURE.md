@@ -803,6 +803,20 @@ sequenceDiagram
 - **`@schedule`**: 정기 실행용. PostProcessor가 Celery Beat에 스케줄 등록
 - **`Crontab`**: Python 네이티브 타입 기반 cron 명세 (문자열 대신 `Weekday`/`Month` IntEnum 사용)
 - **분리 배경**: [ADR-0003](docs/adr/0003-task-schedule-decorator-split.md) 참조
+
+### Observability 플러그인
+
+| 플러그인 | 등록 컴포넌트 | 외부 의존성 |
+|---------|-------------|-----------|
+| `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` | `pydantic-settings` |
+| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` | `opentelemetry-api`, `opentelemetry-sdk`, `pydantic-settings` |
+
+**OTel Propagator 교체 메커니즘:**
+
+`spakky-tracing`은 기본 `W3CTracePropagator`를 등록합니다. `spakky-opentelemetry`가 설치되면 `OTelSetupPostProcessor`(`@Order(0)`)가 Pod 후처리 시 `W3CTracePropagator` 인스턴스를 감지하여 `OTelTracePropagator`로 교체합니다. 동시에 OTel `TracerProvider`(exporter, sampler, resource)를 초기화합니다.
+
+**LogContextBridge:** `spakky-logging`이 함께 설치되면 `LogContextBridge.sync()`로 현재 `TraceContext`의 trace_id/span_id를 `LogContext`에 바인딩할 수 있습니다. optional dependency이므로 `spakky-logging` 미설치 시 no-op으로 동작합니다.
+
 ---
 
 ## 설계 결정

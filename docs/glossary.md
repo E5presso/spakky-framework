@@ -453,6 +453,33 @@ TraceContext.clear()             # 컨텍스트 초기화
 
 `ITracePropagator`의 기본 구현체. `traceparent` 헤더를 사용합니다.
 
+### OTelTracePropagator
+
+`ITracePropagator`의 OpenTelemetry 구현체. `spakky-opentelemetry` 플러그인이 로드되면 `OTelSetupPostProcessor`가 기본 `W3CTracePropagator`를 이 구현체로 교체합니다. OpenTelemetry SDK의 `TraceContextTextMapPropagator`에 위임합니다.
+
+```python
+from spakky_opentelemetry.propagator import OTelTracePropagator
+```
+
+### OpenTelemetryConfig
+
+`spakky-opentelemetry` 플러그인의 설정 클래스. 환경변수 접두사 `SPAKKY_OTEL_`로 구성합니다.
+
+| 필드 | 환경변수 | 기본값 |
+|------|---------|--------|
+| `service_name` | `SPAKKY_OTEL_SERVICE_NAME` | `"spakky-service"` |
+| `exporter_type` | `SPAKKY_OTEL_EXPORTER_TYPE` | `ExporterType.OTLP` |
+| `exporter_endpoint` | `SPAKKY_OTEL_EXPORTER_ENDPOINT` | `"http://localhost:4317"` |
+| `sample_rate` | `SPAKKY_OTEL_SAMPLE_RATE` | `1.0` |
+
+### LogContextBridge
+
+`spakky-opentelemetry`의 로깅 통합 컴포넌트. `spakky-logging`이 설치된 경우 `TraceContext`의 trace/span ID를 `LogContext`에 동기화합니다. `spakky-logging` 미설치 시 no-op으로 동작합니다.
+
+```python
+from spakky_opentelemetry.bridge import LogContextBridge
+```
+
 ### traceparent
 
 W3C 표준 분산 트레이싱 헤더. 형식: `{version:2}-{trace_id:32}-{span_id:16}-{flags:2}`

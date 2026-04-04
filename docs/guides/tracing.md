@@ -163,3 +163,47 @@ async def handle_request_b():
 
 await asyncio.gather(handle_request_a(), handle_request_b())
 ```
+
+---
+
+## OpenTelemetry 백엔드 통합
+
+기본 `W3CTracePropagator`는 외부 의존성 없이 traceparent 헤더를 직접 직렬화/역직렬화합니다.
+프로덕션 환경에서 Jaeger, Tempo 등 외부 백엔드로 트레이스를 전송하려면 `spakky-opentelemetry` 플러그인을 추가합니다.
+
+### 전환 경로: W3CTracePropagator -> OTelTracePropagator
+
+1. `spakky-opentelemetry` 패키지를 설치합니다:
+
+    ```bash
+    uv add spakky-opentelemetry "spakky-opentelemetry[otlp]"
+    ```
+
+2. 플러그인을 활성화합니다:
+
+    ```python
+    import spakky.tracing
+    import spakky.plugins.opentelemetry
+
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .load_plugins(include={
+            spakky.tracing.PLUGIN_NAME,
+            spakky.plugins.opentelemetry.PLUGIN_NAME,
+        })
+        .scan(apps)
+        .start()
+    )
+    ```
+
+3. 환경변수로 exporter를 설정합니다:
+
+    ```bash
+    export SPAKKY_OTEL_SERVICE_NAME=order-service
+    export SPAKKY_OTEL_EXPORTER_TYPE=otlp
+    export SPAKKY_OTEL_EXPORTER_ENDPOINT=http://jaeger:4317
+    ```
+
+`spakky-opentelemetry`의 `OTelSetupPostProcessor`가 컨테이너 내의 `W3CTracePropagator`를 `OTelTracePropagator`로 자동 교체합니다. `ITracePropagator` 인터페이스를 통해 주입받는 기존 코드는 변경할 필요가 없습니다.
+
+> 설정 상세, ExporterType, LogContextBridge 등은 [OpenTelemetry 통합 가이드](opentelemetry.md)를 참고하세요.

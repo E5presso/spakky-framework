@@ -2,7 +2,17 @@
 
 OpenTelemetry SDK bridge for Spakky Framework.
 
-`spakky-tracing`의 `ITracePropagator` 인터페이스를 OpenTelemetry SDK의 propagation API로 구현하여, OTel 백엔드(Jaeger, Grafana Tempo 등)와 연동합니다.
+`spakky-tracing`이 제공하는 `ITracePropagator` 인터페이스의 OpenTelemetry 구현체입니다. 플러그인을 설치하면 `OTelSetupPostProcessor`가 컨테이너의 `W3CTracePropagator`를 `OTelTracePropagator`로 자동 교체하여, OTel 백엔드(Jaeger, Grafana Tempo 등)와 연동합니다.
+
+## spakky-tracing과의 관계
+
+`spakky-tracing`은 `TraceContext`와 `ITracePropagator` 추상화를 제공하고, 기본 구현체로 `W3CTracePropagator`를 등록합니다. `spakky-opentelemetry`는 이 기본 구현체를 **런타임에 교체**합니다:
+
+1. `OTelSetupPostProcessor`(`@Order(0)`)가 Pod 후처리 단계에서 `W3CTracePropagator` 인스턴스를 감지
+2. 해당 인스턴스를 `OTelTracePropagator`로 교체하여 반환
+3. 동시에 OTel `TracerProvider`를 설정 (exporter, sampler, resource)
+
+따라서 `spakky-tracing`만 설치하면 순수 W3C TraceContext 전파가 동작하고, `spakky-opentelemetry`를 추가하면 OTel SDK 기반 전파로 업그레이드됩니다.
 
 ## Installation
 
@@ -22,9 +32,19 @@ spakky-logging 브릿지 사용 시:
 pip install spakky-opentelemetry[logging]
 ```
 
+## Features
+
+| 컴포넌트 | 역할 |
+|---------|------|
+| `OpenTelemetryConfig` | `@Configuration` — 환경변수 기반 OTel SDK 설정 |
+| `OTelSetupPostProcessor` | `IPostProcessor` — TracerProvider 초기화 및 W3CTracePropagator 교체 |
+| `OTelTracePropagator` | `ITracePropagator` 구현 — OTel SDK의 `TraceContextTextMapPropagator` 브릿지 |
+| `LogContextBridge` | TraceContext의 trace_id/span_id를 `spakky-logging`의 `LogContext`에 동기화 (optional) |
+| `ExporterType` | `StrEnum` — 지원 exporter 타입 (`otlp`, `console`, `none`) |
+
 ## Configuration
 
-환경변수로 설정합니다:
+환경변수로 설정합니다 (`OpenTelemetryConfig`, env prefix: `SPAKKY_OTEL_`):
 
 | 환경변수 | 기본값 | 설명 |
 |---------|--------|------|
@@ -51,7 +71,7 @@ app = (
 
 ### LogContext 브릿지
 
-`spakky-logging`이 설치되어 있으면 `LogContextBridge.sync()`로 trace_id/span_id를 로그 컨텍스트에 바인딩할 수 있습니다:
+`spakky-logging`이 설치되어 있으면 `LogContextBridge.sync()`로 trace_id/span_id를 로그 컨텍스트에 바인딩할 수 있습니다. `spakky-logging`이 없으면 no-op으로 동작합니다:
 
 ```python
 from spakky.plugins.opentelemetry.bridge import LogContextBridge

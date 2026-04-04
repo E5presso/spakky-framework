@@ -112,6 +112,7 @@ nav:
       - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
       - Celery 태스크: guides/celery.md
       - 분산 트레이싱: guides/tracing.md
+      - OpenTelemetry 통합: guides/opentelemetry.md
   - 심화 가이드:
       - DI/IoC 컨테이너: di-container.md
       - AOP 가이드: aop-guide.md
