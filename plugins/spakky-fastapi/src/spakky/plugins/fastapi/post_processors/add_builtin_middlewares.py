@@ -1,8 +1,8 @@
 """Post-processor for adding built-in middleware to FastAPI applications.
 
 Automatically injects error handling and context management middleware
-into FastAPI instances registered in the container.  When ``spakky-tracing``
-is installed and its plugin is loaded, tracing middleware is also added.
+into FastAPI instances registered in the container.  When the tracing
+plugin is loaded, tracing middleware is also added.
 """
 
 from spakky.core.pod.annotations.order import Order
@@ -15,14 +15,8 @@ from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
 from fastapi import FastAPI
 from spakky.plugins.fastapi.middlewares.error_handling import ErrorHandlingMiddleware
-
-try:
-    from spakky.tracing.propagator import ITracePropagator
-    from spakky.plugins.fastapi.middlewares.tracing import TracingMiddleware
-
-    _HAS_TRACING = True
-except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
-    _HAS_TRACING = False
+from spakky.plugins.fastapi.middlewares.tracing import TracingMiddleware
+from spakky.tracing.propagator import ITracePropagator
 
 
 @Order(0)
@@ -31,9 +25,8 @@ class AddBuiltInMiddlewaresPostProcessor(IPostProcessor, IApplicationContextAwar
     """Post-processor that adds built-in middleware to FastAPI instances.
 
     Injects error handling and tracing middleware into any FastAPI instance
-    created as a Pod.  Tracing middleware is only added when ``spakky-tracing``
-    is installed and its plugin is loaded.  Runs early in the post-processor
-    chain (Order 0).
+    created as a Pod.  Tracing middleware is only added when the tracing
+    plugin is loaded.  Runs early in the post-processor chain (Order 0).
     """
 
     __application_context: IApplicationContext
@@ -72,8 +65,8 @@ class AddBuiltInMiddlewaresPostProcessor(IPostProcessor, IApplicationContextAwar
             debug=pod.debug,
         )
 
-        if _HAS_TRACING and self.__application_context.contains(ITracePropagator):
-            propagator = self.__application_context.get(type_=ITracePropagator)
+        propagator = self.__application_context.get_or_none(ITracePropagator)
+        if propagator is not None:
             pod.add_middleware(
                 TracingMiddleware,
                 propagator=propagator,

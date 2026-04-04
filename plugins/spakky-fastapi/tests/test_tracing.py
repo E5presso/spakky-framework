@@ -10,9 +10,6 @@ from spakky.tracing.context import TraceContext
 from spakky.tracing.w3c_propagator import W3CTracePropagator
 
 from spakky.plugins.fastapi.middlewares.tracing import TracingMiddleware
-from spakky.plugins.fastapi.post_processors import (
-    add_builtin_middlewares as middlewares_module,
-)
 
 TRACEPARENT_PATTERN = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
 SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
@@ -196,8 +193,8 @@ def test_post_processor_with_tracing_plugin_expect_traceparent_in_response() -> 
     assert TRACEPARENT_PATTERN.match(response_traceparent)
 
 
-def test_post_processor_without_tracing_flag_expect_no_traceparent() -> None:
-    """_HAS_TRACING이 False일 때 응답에 traceparent 헤더가 포함되지 않음을 검증한다."""
+def test_post_processor_without_tracing_plugin_expect_no_traceparent() -> None:
+    """트레이싱 플러그인 미로드 시 응답에 traceparent 헤더가 포함되지 않음을 검증한다."""
     from spakky.core.application.application import SpakkyApplication
     from spakky.core.application.application_context import ApplicationContext
     from spakky.core.pod.annotations.pod import Pod
@@ -205,38 +202,30 @@ def test_post_processor_without_tracing_flag_expect_no_traceparent() -> None:
     import spakky.plugins.fastapi
     from tests import apps
 
-    original = (
-        middlewares_module._HAS_TRACING
-    )  # pyrefly: ignore - conditional module variable from try/except ImportError
-    middlewares_module._HAS_TRACING = False  # pyrefly: ignore - conditional module variable from try/except ImportError
-    try:
+    @Pod(name="key")
+    def get_name() -> str:
+        return "test"
 
-        @Pod(name="key")
-        def get_name() -> str:
-            return "test"
+    @Pod(name="api")
+    def get_api() -> FastAPI:
+        return FastAPI(debug=True)
 
-        @Pod(name="api")
-        def get_api() -> FastAPI:
-            return FastAPI(debug=True)
-
-        app = (
-            SpakkyApplication(ApplicationContext())
-            .load_plugins(
-                include={
-                    spakky.plugins.fastapi.PLUGIN_NAME,
-                }
-            )
-            .scan(apps)
-            .add(get_name)
-            .add(get_api)
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .load_plugins(
+            include={
+                spakky.plugins.fastapi.PLUGIN_NAME,
+            }
         )
-        app.start()
+        .scan(apps)
+        .add(get_name)
+        .add(get_api)
+    )
+    app.start()
 
-        api = app.container.get(type_=FastAPI)
-        with TestClient(api) as client:
-            response = client.get("/dummy")
+    api = app.container.get(type_=FastAPI)
+    with TestClient(api) as client:
+        response = client.get("/dummy")
 
-        assert response.status_code == 200
-        assert "traceparent" not in response.headers
-    finally:
-        middlewares_module._HAS_TRACING = original  # pyrefly: ignore - conditional module variable from try/except ImportError
+    assert response.status_code == 200
+    assert "traceparent" not in response.headers
