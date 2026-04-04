@@ -10,10 +10,8 @@ dependencies = [
     "celery>=5.6.2",
     "pydantic-settings>=2.13.1",
     "spakky-task>=6.2.0",
+    "spakky-tracing>=6.2.0",
 ]
-
-[project.optional-dependencies]
-tracing = ["spakky-tracing>=6.2.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-celery = "spakky.plugins.celery.main:initialize"
@@ -24,7 +22,6 @@ dev = [
     "nest-asyncio>=1.6.0",
     "pytest-asyncio>=0.26.0",
     "pytest-integration-mark>=0.2.0",
-    "spakky-tracing>=6.2.0",
     "testcontainers[rabbitmq]>=4.14.1",
 ]
 
