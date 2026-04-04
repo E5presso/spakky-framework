@@ -57,27 +57,35 @@ git diff --cached --name-only
 | `docs/adr/**` | **dev만** — ADR은 개발 문서 범위 |
 | 도구/설정 파일만 변경 | **dev만** — CONTRIBUTING.md 검증 |
 
+### Step 2.5: 서브 스킬 SKILL.md Read
+
+라우팅 대상이 결정되면, 해당 서브 스킬의 SKILL.md를 Read하여 내용을 확보한다. Step 3에서 서브에이전트 프롬프트를 구성할 때 이 내용을 인라인으로 포함해야 하므로, 이 단계에서 미리 읽어둔다.
+
+- dev 대상 → `.claude/skills/sync-dev-docs/SKILL.md` Read
+- user 대상 → `.claude/skills/sync-user-docs/SKILL.md` Read
+- all → 양쪽 모두 Read
+
 ### Step 3: Write/Verify 오케스트레이션 (대상별)
 
 판단된 각 대상(dev/user)에 대해 **Write → Verify 수렴 루프**를 실행한다. dev와 user는 서로 다른 파일을 수정하므로 **백그라운드 병렬** 실행한다.
 
-> **핵심**: 서브 스킬의 SKILL.md는 서브에이전트에 자동 로드되지 않는다. 라우터가 해당 SKILL.md를 Read한 뒤, 필요한 Phase를 프롬프트에 직접 포함하여 전달해야 한다.
+> **핵심**: 서브 스킬의 SKILL.md는 서브에이전트에 자동 로드되지 않는다. 라우터가 Step 2에서 서브 스킬 SKILL.md를 Read한 상태이므로, 필요한 Phase 내용을 서브에이전트 프롬프트에 **인라인으로 직접 포함**하여 전달해야 한다.
 
 #### 3-1. Write 서브에이전트 프롬프트 구성
 
-서브에이전트 프롬프트에 다음 내용을 **SKILL.md에서 Read하여** 포함한다:
+서브에이전트 프롬프트에 다음 내용을 **인라인으로** 포함한다 (라우터가 이미 Read한 서브 스킬 SKILL.md에서 해당 섹션을 복사):
 
 **dev 대상:**
-- `sync-dev-docs/SKILL.md`의 Phase 1 (변경 감지 + 커버리지 매트릭스) 전문
-- `sync-dev-docs/SKILL.md`의 Phase 2 (문서별 동기화) 전문
-- `sync-dev-docs/SKILL.md`의 규칙 섹션
+- sync-dev-docs Phase 1 (변경 감지 + 커버리지 매트릭스) 전문
+- sync-dev-docs Phase 2 (문서별 동기화) 전문
+- sync-dev-docs 규칙 섹션
 - 패키지명 인자 (있는 경우)
 - 이전 라운드 Verify 이슈 목록 (라운드 2+ 인 경우)
 
 **user 대상:**
-- `sync-user-docs/SKILL.md`의 Phase 1 (변경 감지 + 커버리지 매트릭스) 전문
-- `sync-user-docs/SKILL.md`의 Phase 2 (문서별 동기화) 전문
-- `sync-user-docs/SKILL.md`의 규칙 섹션 (할루시네이션 제로 원칙 포함)
+- sync-user-docs Phase 1 (변경 감지 + 커버리지 매트릭스) 전문
+- sync-user-docs Phase 2 (문서별 동기화) 전문
+- sync-user-docs 규칙 섹션 (할루시네이션 제로 원칙 포함)
 - 패키지명 인자 (있는 경우)
 - 이전 라운드 Verify 이슈 목록 (라운드 2+ 인 경우)
 
@@ -96,13 +104,13 @@ git diff --cached --name-only
 Write 완료 후, **별도의 fresh context 서브에이전트**로 Verify를 실행한다. 같은 에이전트에서 Write와 Verify를 실행하면 self-confirmation bias가 발생하므로 반드시 분리한다.
 
 **dev 대상:**
-- `sync-dev-docs/SKILL.md`의 Phase 3 (검증) 전문
+- sync-dev-docs Phase 3 (검증) 전문
 - Write가 출력한 수정/생성 파일 경로 목록
 - Write가 출력한 커버리지 매트릭스
 - 변경된 소스 코드 패키지 경로
 
 **user 대상:**
-- `sync-user-docs/SKILL.md`의 Phase 3 (편집증적 팩트체크) 전문 (3-1 ~ 3-8 체크리스트 포함)
+- sync-user-docs Phase 3 (편집증적 팩트체크) 전문 (3-1 ~ 3-8 체크리스트 포함)
 - Write가 출력한 수정/생성 파일 경로 목록
 - Write가 출력한 커버리지 매트릭스
 - 변경된 소스 코드 패키지 경로
