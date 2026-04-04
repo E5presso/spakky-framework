@@ -15,6 +15,7 @@ from spakky.event.event_consumer import (
     IEventConsumer,
 )
 from spakky.event.stereotype.event_handler import EventHandler, on_event
+from spakky.tracing.propagator import ITracePropagator
 
 from spakky.plugins.rabbitmq.post_processor import RabbitMQPostProcessor
 
@@ -55,6 +56,7 @@ def test_rabbitmq_post_processor_registers_integration_event_expect_success() ->
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
 
     # Create post-processor
     post_processor = RabbitMQPostProcessor()
@@ -95,6 +97,7 @@ def test_rabbitmq_post_processor_registers_async_integration_event_expect_succes
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
 
     # Create post-processor
     post_processor = RabbitMQPostProcessor()
@@ -138,6 +141,7 @@ def test_rabbitmq_post_processor_ignores_domain_event_expect_no_registration() -
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
 
     # Create post-processor
     post_processor = RabbitMQPostProcessor()
@@ -181,6 +185,7 @@ def test_rabbitmq_post_processor_mixed_events_expect_only_integration_registered
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
 
     # Create post-processor
     post_processor = RabbitMQPostProcessor()
@@ -240,6 +245,7 @@ def test_rabbitmq_post_processor_method_without_event_route_expect_skipped() -> 
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
 
     post_processor = RabbitMQPostProcessor()
     post_processor.set_container(mock_container)
@@ -287,6 +293,7 @@ def test_rabbitmq_post_processor_sync_endpoint_invocation_expect_handler_called(
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
 
     post_processor = RabbitMQPostProcessor()
     post_processor.set_container(mock_container)
@@ -341,6 +348,7 @@ async def test_rabbitmq_post_processor_async_endpoint_invocation_expect_handler_
     )
 
     mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
 
     post_processor = RabbitMQPostProcessor()
     post_processor.set_container(mock_container)
@@ -356,3 +364,121 @@ async def test_rabbitmq_post_processor_async_endpoint_invocation_expect_handler_
     assert handler_called["value"] is True
     assert handler_called["result"] == "handled: test"
     mock_context.clear_context.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Propagator injection tests
+# ---------------------------------------------------------------------------
+
+
+def test_rabbitmq_post_processor_with_tracing_available_expect_propagator_injected() -> (
+    None
+):
+    """tracing이 가용하면 consumer에 propagator가 주입됨을 검증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_propagator = Mock(spec=ITracePropagator)
+    mock_consumer = Mock()
+    mock_async_consumer = Mock()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = True
+    mock_context.get.return_value = mock_propagator
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    post_processor.post_process(handler_instance)
+
+    mock_consumer.set_propagator.assert_called_once_with(mock_propagator)
+    mock_async_consumer.set_propagator.assert_called_once_with(mock_propagator)
+
+
+def test_rabbitmq_post_processor_without_tracing_expect_no_propagator_injected() -> (
+    None
+):
+    """tracing��� 미가용하면 set_propagator가 호출되지 않음을 ���증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_consumer = Mock()
+    mock_async_consumer = Mock()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    post_processor.post_process(handler_instance)
+
+    mock_consumer.set_propagator.assert_not_called()
+    mock_async_consumer.set_propagator.assert_not_called()
+
+
+def test_rabbitmq_post_processor_with_tracing_but_no_set_propagator_expect_skipped() -> (
+    None
+):
+    """consumer에 set_propagator가 없으면 주입을 건너뜀을 검증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_propagator = Mock(spec=ITracePropagator)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = True
+    mock_context.get.return_value = mock_propagator
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    # Should not raise even though consumer lacks set_propagator
+    post_processor.post_process(handler_instance)
+
+    assert not hasattr(mock_consumer, "set_propagator")
+    assert not hasattr(mock_async_consumer, "set_propagator")

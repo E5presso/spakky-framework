@@ -25,6 +25,13 @@ from spakky.event.event_consumer import (
 )
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 
+try:
+    from spakky.tracing.propagator import ITracePropagator
+
+    _HAS_TRACING = True
+except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
+    _HAS_TRACING = False
+
 logger = getLogger(__name__)
 
 
@@ -75,6 +82,12 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         handler: EventHandler = EventHandler.get(pod)
         consumer = self.__container.get(IEventConsumer)
         async_consumer = self.__container.get(IAsyncEventConsumer)
+        if _HAS_TRACING and self.__application_context.contains(ITracePropagator):
+            propagator = self.__application_context.get(type_=ITracePropagator)
+            if hasattr(consumer, "set_propagator"):
+                consumer.set_propagator(propagator)
+            if hasattr(async_consumer, "set_propagator"):
+                async_consumer.set_propagator(propagator)
         for name, method in getmembers(pod, ismethod):
             route: EventRoute[AbstractEvent] | None = EventRoute[
                 AbstractEvent

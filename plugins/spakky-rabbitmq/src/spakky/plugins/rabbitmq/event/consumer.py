@@ -5,6 +5,7 @@ services, consuming integration events from RabbitMQ queues and dispatching them
 to registered handlers.
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 from aio_pika import (
@@ -34,6 +35,14 @@ from spakky.event.event_consumer import (
 
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 
+try:
+    from spakky.tracing.context import TraceContext
+    from spakky.tracing.propagator import ITracePropagator
+
+    _HAS_TRACING = True
+except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
+    _HAS_TRACING = False
+
 
 @Pod()
 class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
@@ -57,6 +66,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     connection: BlockingConnection
     channel: BlockingChannel
+    _propagator: object | None
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event consumer.
@@ -69,23 +79,71 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.type_lookup = {}
         self.type_adapters = {}
         self.handlers = {}
+        self._propagator = None
+
+    def set_propagator(self, propagator: object) -> None:
+        """Set the trace propagator for extracting trace context from messages.
+
+        Args:
+            propagator: An ITracePropagator instance.
+        """
+        self._propagator = propagator
+
+    @staticmethod
+    def _to_string_headers(raw: Mapping[str, object] | None) -> dict[str, str]:
+        """Convert AMQP headers to a string-valued carrier dict.
+
+        AMQP headers may contain bytes values (RabbitMQ encodes strings as
+        bytes). This method decodes bytes and keeps str values, skipping
+        other types.
+
+        Args:
+            raw: Raw AMQP headers dict, or None.
+
+        Returns:
+            A dict with string keys and string values.
+        """
+        if raw is None:
+            return {}
+        result: dict[str, str] = {}
+        for key, value in raw.items():
+            if isinstance(value, str):
+                result[key] = value
+            elif isinstance(value, bytes):
+                result[key] = value.decode()
+        return result
 
     def _route_event_handler(
         self,
         channel: BlockingChannel,
         method_frame: Basic.Deliver,
-        _: BasicProperties,
+        properties: BasicProperties,
         body: bytes,
     ) -> None:
+        """Route an incoming AMQP message to registered event handlers.
+
+        Extracts trace context from message headers when a propagator is
+        configured, dispatches to all handlers, and acknowledges the message.
+        """
         if method_frame.consumer_tag is None or method_frame.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
-        event_type = self.type_lookup[method_frame.consumer_tag]
-        handlers = self.handlers[event_type]
-        type_adapter = self.type_adapters[event_type]
-        event = type_adapter.validate_json(body)
-        for handler in handlers:
-            handler(event)
-        channel.basic_ack(method_frame.delivery_tag)
+        if _HAS_TRACING and self._propagator is not None:
+            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+            carrier = self._to_string_headers(properties.headers)
+            parent = propagator.extract(carrier)
+            ctx = parent.child() if parent is not None else TraceContext.new_root()
+            TraceContext.set(ctx)
+        try:
+            event_type = self.type_lookup[method_frame.consumer_tag]
+            handlers = self.handlers[event_type]
+            type_adapter = self.type_adapters[event_type]
+            event = type_adapter.validate_json(body)
+            for handler in handlers:
+                handler(event)
+            channel.basic_ack(method_frame.delivery_tag)
+        finally:
+            if _HAS_TRACING and self._propagator is not None:
+                TraceContext.clear()
 
     def _check_if_event_set(self) -> None:
         if self._stop_event.is_set():
@@ -168,6 +226,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
     type_adapters: dict[type, TypeAdapter[AbstractEvent]]
     handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     connection: AbstractRobustConnection
+    _propagator: object | None
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event consumer.
@@ -179,17 +238,65 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self.type_lookup = {}
         self.type_adapters = {}
         self.handlers = {}
+        self._propagator = None
+
+    def set_propagator(self, propagator: object) -> None:
+        """Set the trace propagator for extracting trace context from messages.
+
+        Args:
+            propagator: An ITracePropagator instance.
+        """
+        self._propagator = propagator
+
+    @staticmethod
+    def _to_string_headers(raw: Mapping[str, object] | None) -> dict[str, str]:
+        """Convert AMQP headers to a string-valued carrier dict.
+
+        AMQP headers may contain bytes values (RabbitMQ encodes strings as
+        bytes). This method decodes bytes and keeps str values, skipping
+        other types.
+
+        Args:
+            raw: Raw AMQP headers dict, or None.
+
+        Returns:
+            A dict with string keys and string values.
+        """
+        if raw is None:
+            return {}
+        result: dict[str, str] = {}
+        for key, value in raw.items():
+            if isinstance(value, str):
+                result[key] = value
+            elif isinstance(value, bytes):
+                result[key] = value.decode()
+        return result
 
     async def _route_event_handler(self, message: AbstractIncomingMessage) -> None:
+        """Route an incoming AMQP message to registered async event handlers.
+
+        Extracts trace context from message headers when a propagator is
+        configured, dispatches to all handlers, and acknowledges the message.
+        """
         if message.consumer_tag is None or message.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
-        event_type = self.type_lookup[message.consumer_tag]
-        handlers = self.handlers[event_type]
-        type_adapter = self.type_adapters[event_type]
-        event = type_adapter.validate_json(message.body)
-        for handler in handlers:
-            await handler(event)
-        await message.ack()
+        if _HAS_TRACING and self._propagator is not None:
+            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+            carrier = self._to_string_headers(message.headers)
+            parent = propagator.extract(carrier)
+            ctx = parent.child() if parent is not None else TraceContext.new_root()
+            TraceContext.set(ctx)
+        try:
+            event_type = self.type_lookup[message.consumer_tag]
+            handlers = self.handlers[event_type]
+            type_adapter = self.type_adapters[event_type]
+            event = type_adapter.validate_json(message.body)
+            for handler in handlers:
+                await handler(event)
+            await message.ack()
+        finally:
+            if _HAS_TRACING and self._propagator is not None:
+                TraceContext.clear()
 
     def register(
         self,

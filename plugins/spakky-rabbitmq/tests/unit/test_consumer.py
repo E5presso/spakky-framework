@@ -18,6 +18,8 @@ from spakky.plugins.rabbitmq.event.consumer import (
     AsyncRabbitMQEventConsumer,
     RabbitMQEventConsumer,
 )
+from spakky.tracing.context import TraceContext
+from spakky.tracing.w3c_propagator import W3CTracePropagator
 
 
 class SampleIntegrationEvent(AbstractIntegrationEvent):
@@ -375,3 +377,315 @@ async def test_async_consumer_run_async_expect_wait_for_stop_event(
     await consumer.run_async()
 
     assert stop_event.is_set()
+
+
+# ---------------------------------------------------------------------------
+# Trace context extraction tests
+# ---------------------------------------------------------------------------
+
+SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+SAMPLE_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+SAMPLE_SPAN_ID = "b7ad6b7169203331"
+
+
+def test_sync_consumer_route_with_traceparent_expect_child_context_set(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """traceparent 헤더가 있으면 child TraceContext가 활성화됨을 검증한다."""
+    consumer = RabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    def capturing_handler(event: SampleIntegrationEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleIntegrationEvent, capturing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
+    body = b'{"data": "test"}'
+
+    consumer._route_event_handler(channel, method_frame, properties, body)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.trace_id == SAMPLE_TRACE_ID
+    assert ctx.parent_span_id == SAMPLE_SPAN_ID
+    assert ctx.span_id != SAMPLE_SPAN_ID
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_route_with_traceparent_expect_child_context_set(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer에서 traceparent 헤더가 있으면 child TraceContext가 활성화됨을 검증한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    async def capturing_handler(event: SampleIntegrationEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleIntegrationEvent, capturing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
+
+    await consumer._route_event_handler(message)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.trace_id == SAMPLE_TRACE_ID
+    assert ctx.parent_span_id == SAMPLE_SPAN_ID
+    assert ctx.span_id != SAMPLE_SPAN_ID
+
+
+def test_sync_consumer_route_without_propagator_expect_no_trace_context(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """propagator 미설정 시 TraceContext가 설정되지 않음을 검증한다."""
+    consumer = RabbitMQEventConsumer(config)
+
+    captured_ctx: list[TraceContext | None] = []
+
+    def capturing_handler(event: SampleIntegrationEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleIntegrationEvent, capturing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
+    body = b'{"data": "test"}'
+
+    TraceContext.clear()
+    consumer._route_event_handler(channel, method_frame, properties, body)
+
+    assert captured_ctx[0] is None
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_route_without_propagator_expect_no_trace_context(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer에서 propagator 미설정 시 TraceContext가 설정되지 않음을 검증한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+
+    captured_ctx: list[TraceContext | None] = []
+
+    async def capturing_handler(event: SampleIntegrationEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleIntegrationEvent, capturing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
+
+    TraceContext.clear()
+    await consumer._route_event_handler(message)
+
+    assert captured_ctx[0] is None
+
+
+def test_sync_consumer_route_without_traceparent_expect_new_root_trace(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """traceparent 헤더 없을 때 새 root trace가 생성됨을 검증한다."""
+    consumer = RabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    def capturing_handler(event: SampleIntegrationEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleIntegrationEvent, capturing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {}
+    body = b'{"data": "test"}'
+
+    consumer._route_event_handler(channel, method_frame, properties, body)
+
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.parent_span_id is None
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_route_without_traceparent_expect_new_root_trace(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer에서 traceparent 헤더 없을 때 새 root trace가 생성됨을 검증한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    async def capturing_handler(event: SampleIntegrationEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleIntegrationEvent, capturing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+    message.headers = {}
+
+    await consumer._route_event_handler(message)
+
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.parent_span_id is None
+
+
+def test_sync_consumer_route_trace_context_cleared_after_handler(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """핸들러 완료 후 TraceContext가 정리됨을 검증한다."""
+    consumer = RabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+    consumer.register(SampleIntegrationEvent, MagicMock())
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
+    body = b'{"data": "test"}'
+
+    consumer._route_event_handler(channel, method_frame, properties, body)
+
+    assert TraceContext.get() is None
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_route_trace_context_cleared_after_handler(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer에서 핸들러 완료 후 TraceContext가 정리됨을 검증한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+    consumer.register(SampleIntegrationEvent, AsyncMock())
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
+
+    await consumer._route_event_handler(message)
+
+    assert TraceContext.get() is None
+
+
+def test_sync_consumer_route_handler_exception_expect_trace_context_cleared(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """핸들러 예외 발생 시에도 TraceContext가 정리됨을 검증한다."""
+    consumer = RabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    def failing_handler(event: SampleIntegrationEvent) -> None:
+        raise RuntimeError("handler failed")
+
+    consumer.register(SampleIntegrationEvent, failing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
+    body = b'{"data": "test"}'
+
+    with pytest.raises(RuntimeError):
+        consumer._route_event_handler(channel, method_frame, properties, body)
+
+    assert TraceContext.get() is None
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_route_handler_exception_expect_trace_context_cleared(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer에서 핸들러 예외 발생 시에도 TraceContext가 정리됨을 검증한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    async def failing_handler(event: SampleIntegrationEvent) -> None:
+        raise RuntimeError("handler failed")
+
+    consumer.register(SampleIntegrationEvent, failing_handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
+
+    with pytest.raises(RuntimeError):
+        await consumer._route_event_handler(message)
+
+    assert TraceContext.get() is None
+
+
+def test_sync_consumer_to_string_headers_with_bytes_expect_decoded() -> None:
+    """AMQP headers의 bytes 값이 str로 디코딩됨을 검증한다."""
+    result = RabbitMQEventConsumer._to_string_headers(
+        {"traceparent": b"00-abc-def-01", "key": "value", "num": 42}
+    )
+    assert result == {"traceparent": "00-abc-def-01", "key": "value"}
+
+
+def test_sync_consumer_to_string_headers_with_none_expect_empty() -> None:
+    """headers가 None이면 빈 dict를 반환함을 검증한다."""
+    result = RabbitMQEventConsumer._to_string_headers(None)
+    assert result == {}
+
+
+def test_async_consumer_to_string_headers_with_bytes_expect_decoded() -> None:
+    """비동기 consumer에서 AMQP headers의 bytes 값이 str로 디코딩됨을 검증한다."""
+    result = AsyncRabbitMQEventConsumer._to_string_headers(
+        {"traceparent": b"00-abc-def-01", "key": "value", "num": 42}
+    )
+    assert result == {"traceparent": "00-abc-def-01", "key": "value"}
+
+
+def test_async_consumer_to_string_headers_with_none_expect_empty() -> None:
+    """비동기 consumer에서 headers가 None이면 빈 dict를 반환함을 검증한다."""
+    result = AsyncRabbitMQEventConsumer._to_string_headers(None)
+    assert result == {}
