@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.3.0", "pydantic-settings>=2.9.1"]
+dependencies = ["spakky>=6.3.0", "pydantic-settings>=2.13.1"]
 
 [project.entry-points."spakky.plugins"]
 spakky-logging = "spakky.plugins.logging.main:initialize"
