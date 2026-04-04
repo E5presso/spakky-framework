@@ -14,6 +14,12 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+## Post Processor
+
+::: spakky.plugins.opentelemetry.post_processor
+options:
+show_root_heading: false
+
 ## Configuration
 
 ::: spakky.plugins.opentelemetry.config

@@ -204,6 +204,7 @@ app = (
 | [데이터베이스](guides/sqlalchemy.md)       | Transaction, Repository, ORM                           |
 | [Celery 태스크](guides/celery.md)          | 태스크 디스패치, 비동기 실행                           |
 | [분산 트레이싱](guides/tracing.md)         | TraceContext, Propagator, W3C traceparent              |
+| [OpenTelemetry 통합](guides/opentelemetry.md) | OTel SDK 브릿지, OTLP exporter, Propagator 자동 교체 |
 
 ---
 
@@ -264,14 +265,18 @@ flowchart LR
   end
 
   rabbitmq -. RabbitMQ .-> event
+  rabbitmq -. tracing .-> tracing_dep
   kafka -. Kafka .-> event
+  kafka -. tracing .-> tracing_dep
   sqlalchemy -. ORM .-> data
   sqlalchemy -. Outbox .-> outbox
   fastapi -. FastAPI .-> core
+  fastapi -. tracing .-> tracing_dep
   typer -. Typer .-> core
   logging -. 로깅 .-> core
   security -. 인증 .-> core
   celery -. Celery .-> task
+  celery -. tracing .-> tracing_dep
   opentelemetry -. OTel .-> core
   opentelemetry -. OTel .-> tracing_dep
 ```

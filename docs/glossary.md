@@ -458,7 +458,7 @@ TraceContext.clear()             # 컨텍스트 초기화
 `ITracePropagator`의 OpenTelemetry 구현체. `spakky-opentelemetry` 플러그인이 로드되면 `OTelSetupPostProcessor`가 기본 `W3CTracePropagator`를 이 구현체로 교체합니다. OpenTelemetry SDK의 `TraceContextTextMapPropagator`에 위임합니다.
 
 ```python
-from spakky_opentelemetry.propagator import OTelTracePropagator
+from spakky.plugins.opentelemetry.propagator import OTelTracePropagator
 ```
 
 ### OpenTelemetryConfig
@@ -477,7 +477,7 @@ from spakky_opentelemetry.propagator import OTelTracePropagator
 `spakky-opentelemetry`의 로깅 통합 컴포넌트. `spakky-logging`이 설치된 경우 `TraceContext`의 trace/span ID를 `LogContext`에 동기화합니다. `spakky-logging` 미설치 시 no-op으로 동작합니다.
 
 ```python
-from spakky_opentelemetry.bridge import LogContextBridge
+from spakky.plugins.opentelemetry.bridge import LogContextBridge
 ```
 
 ### traceparent

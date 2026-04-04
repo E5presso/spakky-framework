@@ -98,6 +98,10 @@ graph TD
     task_pkg --> celery_plugin
     core --> logging_pkg
     tracing --> otel
+    tracing -.->|optional| fastapi
+    tracing -.->|optional| rabbitmq
+    tracing -.->|optional| kafka
+    tracing -.->|optional| celery_plugin
     otel -.->|optional| logging_pkg
     core --> fastapi
     core --> typer
@@ -126,15 +130,15 @@ graph TD
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
 
-- **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존
+- **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing` optional (트레이싱 미들웨어)
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존, `spakky-outbox` 설치 시 Outbox 저장소 런타임 감지
-- **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
+- **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing` optional (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
 - **이벤트 코어** (spakky-event) → `spakky-data` + `spakky-tracing`에 의존
-- **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
+- **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존. `spakky-tracing` optional (컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
 
@@ -774,15 +778,15 @@ sequenceDiagram
 |---------|---------------|------|
 | `spakky-fastapi` | `RegisterRoutesPostProcessor` | `@ApiController`의 라우트를 FastAPI에 등록 |
 | | `BindLifespanPostProcessor` | 앱 라이프사이클 바인딩 |
-| | `AddBuiltInMiddlewaresPostProcessor` | CONTEXT 스코프 미들웨어 등록 |
+| | `AddBuiltInMiddlewaresPostProcessor` | CONTEXT 스코프 미들웨어 등록. `spakky-tracing` 설치 시 `TracingMiddleware` 자동 추가 |
 | `spakky-typer` | `TyperCLIPostProcessor` | `@CliController`의 커맨드를 Typer에 등록 |
 
 ### 트랜스포트 플러그인
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventTransport`, PostProcessor | `aio-pika`, `pika`, `pydantic` |
-| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventTransport`, PostProcessor | `aiokafka`, `confluent-kafka`, `pydantic` |
+| `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventTransport`, PostProcessor | `aio-pika`, `pika`, `pydantic`. `spakky-tracing` optional (컨텍스트 전파) |
+| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventTransport`, PostProcessor | `aiokafka`, `confluent-kafka`, `pydantic`. `spakky-tracing` optional (컨텍스트 전파) |
 
 ### 인프라 플러그인
 
@@ -795,7 +799,7 @@ sequenceDiagram
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|----------|
 | `spakky-task` | `TaskRegistrationPostProcessor` | (없음 — 추상화만 제공) |
-| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) | `celery`, `pydantic-settings` |
+| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) | `celery`, `pydantic-settings`. `spakky-tracing` optional (컨텍스트 전파) |
 
 **태스크 시스템 아키텍처:**
 

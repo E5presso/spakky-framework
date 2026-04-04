@@ -100,6 +100,18 @@ class AsyncUserService:
         return user
 ```
 
+## Distributed Tracing (Optional)
+
+`spakky-tracing`이 설치되면 이벤트 발행/소비 시 `TraceContext`가 자동으로 전파됩니다.
+
+```bash
+pip install spakky-kafka[tracing]
+```
+
+- **발행 측**: `IEventTransport.send()` 시 현재 `TraceContext`를 Kafka 메시지 헤더에 주입합니다
+- **소비 측**: 수신 메시지에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
+- 헤더가 없으면 새로운 루트 트레이스를 시작합니다
+
 ## Features
 
 - **Automatic topic creation**: Topics are created based on event type names
@@ -107,6 +119,7 @@ class AsyncUserService:
 - **Background service pattern**: Consumer polling runs as a background service
 - **Pydantic serialization**: Events are serialized/deserialized using Pydantic
 - **Confluent Kafka client**: Built on the robust `confluent-kafka` library
+- **Distributed tracing**: Optional `spakky-tracing` integration for cross-service trace propagation
 
 ## Components
 
