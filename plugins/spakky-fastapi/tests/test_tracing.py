@@ -14,9 +14,7 @@ from spakky.plugins.fastapi.post_processors import (
     add_builtin_middlewares as middlewares_module,
 )
 
-TRACEPARENT_PATTERN = re.compile(
-    r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
-)
+TRACEPARENT_PATTERN = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$")
 SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
 SAMPLE_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
 SAMPLE_SPAN_ID = "b7ad6b7169203331"
@@ -97,7 +95,9 @@ def test_tracing_middleware_with_invalid_traceparent_expect_new_root() -> None:
     assert parts[1] != SAMPLE_TRACE_ID
 
 
-def test_tracing_middleware_handler_access_context_expect_trace_context_available() -> None:
+def test_tracing_middleware_handler_access_context_expect_trace_context_available() -> (
+    None
+):
     """핸들러 내부에서 TraceContext.get()으로 현재 trace context에 접근 가능함을 검증한다."""
     api = _create_app_with_tracing()
     captured_trace_id: str | None = None
@@ -205,9 +205,12 @@ def test_post_processor_without_tracing_flag_expect_no_traceparent() -> None:
     import spakky.plugins.fastapi
     from tests import apps
 
-    original = middlewares_module._HAS_TRACING  # pyrefly: ignore - conditional module variable from try/except ImportError
+    original = (
+        middlewares_module._HAS_TRACING
+    )  # pyrefly: ignore - conditional module variable from try/except ImportError
     middlewares_module._HAS_TRACING = False  # pyrefly: ignore - conditional module variable from try/except ImportError
     try:
+
         @Pod(name="key")
         def get_name() -> str:
             return "test"
