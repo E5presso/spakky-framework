@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from spakky.core.stereotype.configuration import Configuration
 
-OTEL_CONFIG_ENV_PREFIX = "OTEL_"
+OTEL_CONFIG_ENV_PREFIX = "SPAKKY_OTEL_"
 
 
 class ExporterType(StrEnum):

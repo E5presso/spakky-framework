@@ -28,10 +28,10 @@ pip install spakky-opentelemetry[logging]
 
 | 환경변수 | 기본값 | 설명 |
 |---------|--------|------|
-| `OTEL_SERVICE_NAME` | `spakky-service` | OTel 서비스 이름 |
-| `OTEL_EXPORTER_TYPE` | `otlp` | 스팬 exporter (`otlp`, `console`, `none`) |
-| `OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP collector 엔드포인트 |
-| `OTEL_SAMPLE_RATE` | `1.0` | 트레이스 샘플링 비율 (0.0~1.0) |
+| `SPAKKY_OTEL_SERVICE_NAME` | `spakky-service` | OTel 서비스 이름 |
+| `SPAKKY_OTEL_EXPORTER_TYPE` | `otlp` | 스팬 exporter (`otlp`, `console`, `none`) |
+| `SPAKKY_OTEL_EXPORTER_ENDPOINT` | `http://localhost:4317` | OTLP collector 엔드포인트 |
+| `SPAKKY_OTEL_SAMPLE_RATE` | `1.0` | 트레이스 샘플링 비율 (0.0~1.0) |
 
 ## Usage
 

@@ -17,32 +17,32 @@ def test_config_default_values() -> None:
 
 
 def test_config_env_override_service_name() -> None:
-    """OTEL_SERVICE_NAME 환경변수로 service_name을 오버라이드한다."""
-    with patch.dict(os.environ, {"OTEL_SERVICE_NAME": "my-service"}):
+    """SPAKKY_OTEL_SERVICE_NAME 환경변수로 service_name을 오버라이드한다."""
+    with patch.dict(os.environ, {"SPAKKY_OTEL_SERVICE_NAME": "my-service"}):
         config = OpenTelemetryConfig()
 
     assert config.service_name == "my-service"
 
 
 def test_config_env_override_exporter_type() -> None:
-    """OTEL_EXPORTER_TYPE 환경변수로 exporter_type을 오버라이드한다."""
-    with patch.dict(os.environ, {"OTEL_EXPORTER_TYPE": "console"}):
+    """SPAKKY_OTEL_EXPORTER_TYPE 환경변수로 exporter_type을 오버라이드한다."""
+    with patch.dict(os.environ, {"SPAKKY_OTEL_EXPORTER_TYPE": "console"}):
         config = OpenTelemetryConfig()
 
     assert config.exporter_type == ExporterType.CONSOLE
 
 
 def test_config_env_override_exporter_endpoint() -> None:
-    """OTEL_EXPORTER_ENDPOINT 환경변수로 endpoint를 오버라이드한다."""
-    with patch.dict(os.environ, {"OTEL_EXPORTER_ENDPOINT": "http://otel:4317"}):
+    """SPAKKY_OTEL_EXPORTER_ENDPOINT 환경변수로 endpoint를 오버라이드한다."""
+    with patch.dict(os.environ, {"SPAKKY_OTEL_EXPORTER_ENDPOINT": "http://otel:4317"}):
         config = OpenTelemetryConfig()
 
     assert config.exporter_endpoint == "http://otel:4317"
 
 
 def test_config_env_override_sample_rate() -> None:
-    """OTEL_SAMPLE_RATE 환경변수로 sample_rate를 오버라이드한다."""
-    with patch.dict(os.environ, {"OTEL_SAMPLE_RATE": "0.5"}):
+    """SPAKKY_OTEL_SAMPLE_RATE 환경변수로 sample_rate를 오버라이드한다."""
+    with patch.dict(os.environ, {"SPAKKY_OTEL_SAMPLE_RATE": "0.5"}):
         config = OpenTelemetryConfig()
 
     assert config.sample_rate == 0.5
