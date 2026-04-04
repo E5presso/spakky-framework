@@ -202,7 +202,11 @@ app = (
 | [보안](guides/security.md)                 | JWT, 암호화, 패스워드 해싱                             |
 | [CLI 애플리케이션](guides/typer.md)        | `@Controller`, Typer 명령어                            |
 | [데이터베이스](guides/sqlalchemy.md)       | Transaction, Repository, ORM                           |
+| [구조화 로깅](guides/logging.md)           | `@logged`, LogContext, 포맷 설정                       |
 | [Celery 태스크](guides/celery.md)          | 태스크 디스패치, 비동기 실행                           |
+| [RabbitMQ 통합](guides/rabbitmq.md)        | Integration Event 발행/수신, Exchange 라우팅            |
+| [Kafka 통합](guides/kafka.md)              | Integration Event 발행/수신, SASL 인증                  |
+| [Transactional Outbox](guides/outbox.md)   | at-least-once 전달, Relay, OutboxEventBus               |
 | [분산 트레이싱](guides/tracing.md)         | TraceContext, Propagator, W3C traceparent              |
 | [OpenTelemetry 통합](guides/opentelemetry.md) | OTel SDK 브릿지, OTLP exporter, Propagator 자동 교체 |
 

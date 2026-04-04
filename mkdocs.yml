@@ -110,7 +110,11 @@ nav:
       - 보안: guides/security.md
       - CLI (Typer): guides/typer.md
       - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
+      - 구조화 로깅: guides/logging.md
       - Celery 태스크: guides/celery.md
+      - RabbitMQ 통합: guides/rabbitmq.md
+      - Kafka 통합: guides/kafka.md
+      - Transactional Outbox: guides/outbox.md
       - 분산 트레이싱: guides/tracing.md
       - OpenTelemetry 통합: guides/opentelemetry.md
   - 심화 가이드:
