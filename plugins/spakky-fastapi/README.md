@@ -106,13 +106,9 @@ def test_get_user(application: SpakkyApplication) -> None:
     assert response.status_code == 200
 ```
 
-## Distributed Tracing (Optional)
+## Distributed Tracing
 
-`spakky-tracing`이 설치되면 `TracingMiddleware`가 자동으로 등록되어 모든 HTTP 요청에 대해 `TraceContext`를 전파합니다.
-
-```bash
-pip install spakky-fastapi[tracing]
-```
+`spakky-tracing`은 필수 의존성으로 자동 설치됩니다. `TracingMiddleware`가 자동으로 등록되어 모든 HTTP 요청에 대해 `TraceContext`를 전파합니다.
 
 - 수신 요청의 `traceparent` 헤더에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
 - 헤더가 없으면 새로운 루트 트레이스를 시작합니다
@@ -126,7 +122,7 @@ pip install spakky-fastapi[tracing]
 | `get`, `post`, `put`, etc. | Route decorators for HTTP methods |
 | `websocket` | WebSocket endpoint decorator |
 | `ErrorHandlingMiddleware` | Built-in exception handling middleware |
-| `TracingMiddleware` | Trace context propagation middleware (optional, requires `spakky-tracing`) |
+| `TracingMiddleware` | Trace context propagation middleware (`spakky-tracing` 필수 의존) |
 | `RegisterRoutesPostProcessor` | Automatic route registration post-processor |
 
 ## Configuration

@@ -120,12 +120,13 @@ export SPAKKY_KAFKA__SASL_PASSWORD=my-api-secret
 
 ---
 
-## 분산 트레이싱 (Optional)
+## 분산 트레이싱
 
-`spakky-tracing`이 설치되면 메시지 헤더를 통해 `TraceContext`가 자동 전파됩니다.
+`spakky-tracing`은 `spakky-kafka`의 필수 의존성입니다. 컨테이너에 `ITracePropagator`가 등록되어 있으면 메시지 헤더를 통해 `TraceContext`가 자동 전파됩니다.
 
 - **발행 측**: `OutboxEventBus` 또는 `DirectEventBus`가 현재 `TraceContext`를 메시지 헤더에 주입
 - **수신 측**: `KafkaEventConsumer`가 헤더에서 `TraceContext`를 추출하여 자식 span 생성
 - 헤더가 없으면 새로운 루트 트레이스를 시작
+- `ITracePropagator`가 컨테이너에 없으면 트레이싱은 비활성 상태로, 별도 에러 없이 동작합니다
 
-별도 설정 없이, `spakky-tracing` 의존성만 있으면 동작합니다.
+별도 설정이나 코드 변경 없이, 플러그인 로드만으로 동작합니다.

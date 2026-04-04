@@ -43,7 +43,7 @@
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
-| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 (spakky-outbox 설치 시 Outbox 저장소 자동 등록) |
+| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox 저장소 등록 |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @logged AOP Aspect |
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
@@ -96,17 +96,17 @@ graph TD
     end
 
     data --> sqlalchemy
-    outbox -.->|optional| sqlalchemy
+    outbox --> sqlalchemy
     event --> rabbitmq
     event --> kafka
     task_pkg --> celery_plugin
     core --> logging_pkg
     core --> otel
     tracing --> otel
-    tracing -.->|optional| fastapi
-    tracing -.->|optional| rabbitmq
-    tracing -.->|optional| kafka
-    tracing -.->|optional| celery_plugin
+    tracing --> fastapi
+    tracing --> rabbitmq
+    tracing --> kafka
+    tracing --> celery_plugin
     logging_pkg -.->|optional| otel
     core --> fastapi
     core --> typer
@@ -135,15 +135,15 @@ graph TD
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
 
-- **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing` optional (트레이싱 미들웨어)
+- **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing`에도 의존 (트레이싱 미들웨어)
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존, `spakky-outbox` 설치 시 Outbox 저장소 런타임 감지
-- **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing` optional (컨텍스트 전파)
+- **인프라 플러그인** (sqlalchemy) → `spakky-data` + `spakky-outbox`에 의존 (Outbox 저장소 등록)
+- **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
 - **이벤트 코어** (spakky-event) → `spakky-data` + `spakky-tracing`에 의존
-- **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존. `spakky-tracing` optional (컨텍스트 전파)
+- **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-tracing`에 의존 (컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
 
@@ -389,7 +389,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
-| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction. `spakky-outbox` 설치 시: `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
+| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction, `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
 | `spakky-task` | `TaskRegistrationPostProcessor` |
 | `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
@@ -906,28 +906,28 @@ Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Pr
 |---------|---------------|------|
 | `spakky-fastapi` | `RegisterRoutesPostProcessor` | `@ApiController`의 라우트를 FastAPI에 등록 |
 | | `BindLifespanPostProcessor` | 앱 라이프사이클 바인딩 |
-| | `AddBuiltInMiddlewaresPostProcessor` | CONTEXT 스코프 미들웨어 등록. `spakky-tracing` 설치 시 `TracingMiddleware` 자동 추가 |
+| | `AddBuiltInMiddlewaresPostProcessor` | CONTEXT 스코프 미들웨어 등록. `TracingMiddleware` 자동 추가 (`spakky-tracing` 필수 의존) |
 | `spakky-typer` | `TyperCLIPostProcessor` | `@CliController`의 커맨드를 Typer에 등록 |
 
 ### 트랜스포트 플러그인
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventTransport`, PostProcessor | `aio-pika`, `pika`, `pydantic`. `spakky-tracing` optional (컨텍스트 전파) |
-| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventTransport`, PostProcessor | `aiokafka`, `confluent-kafka`, `pydantic`. `spakky-tracing` optional (컨텍스트 전파) |
+| `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventTransport`, PostProcessor | `aio-pika`, `pika`, `pydantic`, `spakky-tracing` (컨텍스트 전파) |
+| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventTransport`, PostProcessor | `aiokafka`, `confluent-kafka`, `pydantic`, `spakky-tracing` (컨텍스트 전파) |
 
 ### 인프라 플러그인
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction | `sqlalchemy` |
+| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction, `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`, `spakky-outbox` |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
 ### 태스크 플러그인
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|----------|
 | `spakky-task` | `TaskRegistrationPostProcessor` | (없음 — 추상화만 제공) |
-| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) | `celery`, `pydantic-settings`. `spakky-tracing` optional (컨텍스트 전파) |
+| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) | `celery`, `pydantic-settings`, `spakky-tracing` (컨텍스트 전파) |
 
 **태스크 시스템 아키텍처:**
 

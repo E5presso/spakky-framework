@@ -37,6 +37,20 @@ context.add(UserService)
 context.start()
 ```
 
+### Optional DI (`get_or_none`)
+
+컨테이너에 등록되어 있지 않을 수 있는 Pod를 안전하게 조회하는 패턴입니다. `ApplicationContext.get_or_none(type_)`은 Pod가 등록되어 있으면 인스턴스를 반환하고, 없으면 `None`을 반환합니다. `get()`과 달리 `NoSuchPodError`를 발생시키지 않습니다.
+
+```python
+from spakky.core.pod.interfaces.container import IContainer
+
+propagator = container.get_or_none(ITracePropagator)
+if propagator is not None:
+    propagator.inject(carrier)
+```
+
+이 패턴은 플러그인 간 선택적 의존성에 사용됩니다. 예를 들어, `spakky-fastapi`의 `AddBuiltInMiddlewaresPostProcessor`는 `get_or_none(ITracePropagator)`로 propagator를 조회하고, 있으면 `TracingMiddleware`를 등록합니다.
+
 ### SpakkyApplication
 
 애플리케이션 부트스트랩 진입점. 컴포넌트 스캔, 플러그인 로딩, 컨테이너 설정을 위한 fluent API를 제공합니다.
@@ -537,7 +551,7 @@ from spakky.plugins.opentelemetry.propagator import OTelTracePropagator
 
 ### LogContextBridge
 
-`spakky-opentelemetry`의 로깅 통합 컴포넌트. `spakky-logging`이 설치된 경우 `TraceContext`의 trace/span ID를 `LogContext`에 동기화합니다. `spakky-logging` 미설치 시 no-op으로 동작합니다.
+`spakky-opentelemetry`의 로깅 통합 컴포넌트. 생성자에서 `ILogContextBinder | None`을 Optional DI로 주입받아, `spakky-logging`이 등록된 경우 `TraceContext`의 trace/span ID를 `LogContext`에 동기화합니다. `ILogContextBinder`가 컨테이너에 없으면 no-op으로 동작합니다.
 
 ```python
 from spakky.plugins.opentelemetry.bridge import LogContextBridge

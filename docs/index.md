@@ -271,19 +271,19 @@ flowchart LR
   end
 
   rabbitmq -. RabbitMQ .-> event
-  rabbitmq -. tracing .-> tracing_dep
+  rabbitmq -- tracing --> tracing_dep
   kafka -. Kafka .-> event
-  kafka -. tracing .-> tracing_dep
+  kafka -- tracing --> tracing_dep
   sqlalchemy -. ORM .-> data
-  sqlalchemy -. Outbox .-> outbox
+  sqlalchemy -- Outbox --> outbox
   fastapi -. FastAPI .-> core
-  fastapi -. tracing .-> tracing_dep
+  fastapi -- tracing --> tracing_dep
   typer -. Typer .-> core
   logging -. 로깅 .-> core
   security -. 인증 .-> core
   celery -. Celery .-> task
-  celery -. tracing .-> tracing_dep
+  celery -- tracing --> tracing_dep
   opentelemetry -. OTel .-> core
-  opentelemetry -. OTel .-> tracing_dep
+  opentelemetry -- OTel --> tracing_dep
   opentelemetry -. logging .-> logging
 ```

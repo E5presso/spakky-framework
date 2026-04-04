@@ -67,7 +67,7 @@ class CreateOrderUseCase:
 | Kafka 레코드    | spakky-kafka    | 레코드 헤더에 자동 주입/추출     |
 | Celery 태스크   | spakky-celery   | 태스크 헤더에 자동 주입/추출     |
 
-> **참고**: 각 플러그인에서 `spakky-tracing`은 optional 의존성입니다. 설치하면 자동으로 활성화됩니다.
+> **참고**: 각 플러그인에서 `spakky-tracing`은 필수 의존성입니다. 컨테이너에 `ITracePropagator`가 등록되어 있으면 자동으로 활성화되며, 없으면 트레이싱 없이 정상 동작합니다.
 
 ---
 

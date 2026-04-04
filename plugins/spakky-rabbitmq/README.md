@@ -86,13 +86,9 @@ class AsyncUserService:
         return user
 ```
 
-## Distributed Tracing (Optional)
+## Distributed Tracing
 
-`spakky-tracing`이 설치되면 이벤트 발행/소비 시 `TraceContext`가 자동으로 전파됩니다.
-
-```bash
-pip install spakky-rabbitmq[tracing]
-```
+`spakky-tracing`은 필수 의존성으로 자동 설치됩니다. `ITracePropagator`가 컨테이너에 등록되어 있으면 이벤트 발행/소비 시 `TraceContext`가 자동으로 전파됩니다.
 
 - **발행 측**: `IEventTransport.send()` 시 현재 `TraceContext`를 메시지 헤더에 주입합니다
 - **소비 측**: 수신 메시지에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
@@ -106,7 +102,7 @@ pip install spakky-rabbitmq[tracing]
 - **Pydantic serialization**: Events are serialized/deserialized using Pydantic
 - **Exchange routing**: Optional exchange for pub/sub message patterns
 - **SSL support**: Secure connections via AMQPS protocol
-- **Distributed tracing**: Optional `spakky-tracing` integration for cross-service trace propagation
+- **Distributed tracing**: `spakky-tracing` integration for cross-service trace propagation
 
 ## Components
 

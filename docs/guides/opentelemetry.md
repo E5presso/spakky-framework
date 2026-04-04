@@ -141,9 +141,11 @@ LogContextBridge.sync()
 
 ### 동작 조건
 
+`LogContextBridge`는 생성자에서 `ILogContextBinder | None`을 Optional DI로 주입받습니다. `spakky-logging`이 설치되어 `ILogContextBinder` 구현체가 컨테이너에 등록되어 있으면 자동으로 주입되고, 없으면 `None`이 주입됩니다.
+
 | 조건 | 동작 |
 |------|------|
-| `spakky-logging` 미설치 | `sync()`는 no-op (ImportError 방어) |
+| `ILogContextBinder`가 `None` (spakky-logging 미등록) | `sync()`는 no-op |
 | `TraceContext.get()`이 `None` | `LogContext.unbind("trace_id", "span_id")` 호출 |
 | `TraceContext`가 활성 상태 | `LogContext.bind(trace_id=..., span_id=...)` 호출 |
 

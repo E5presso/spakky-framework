@@ -12,7 +12,7 @@ without explicit dispatcher calls.
 pip install spakky-celery
 ```
 
-> **Requires**: `spakky-task` (installed automatically as a dependency)
+> **Requires**: `spakky-task`, `spakky-tracing` (installed automatically as dependencies)
 
 ## Features
 
@@ -123,13 +123,9 @@ The AOP aspect intercepts the calls and routes them to Celery automatically.
 |-------|-------------|
 | `InvalidScheduleRouteError` | `ScheduleRoute` has no valid schedule specification |
 
-## Distributed Tracing (Optional)
+## Distributed Tracing
 
-`spakky-tracing`이 설치되면 태스크 디스패치 시 `TraceContext`가 자동으로 전파됩니다.
-
-```bash
-pip install spakky-celery[tracing]
-```
+`spakky-tracing`은 필수 의존성으로 자동 설치됩니다. `ITracePropagator`가 컨테이너에 등록되어 있으면 태스크 디스패치 시 `TraceContext`가 자동으로 전파됩니다.
 
 - **디스패치 측**: `@task` 호출 시 현재 `TraceContext`를 Celery 메시지 헤더에 주입합니다
 - **워커 측**: 수신 태스크에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
@@ -139,7 +135,7 @@ pip install spakky-celery[tracing]
 
 - **`spakky-task`**: Core task abstractions (`@TaskHandler`, `@task`, `@schedule`, `Crontab`)
 - **`spakky-rabbitmq`**: RabbitMQ event transport (can also be used as Celery broker)
-- **`spakky-tracing`**: Distributed tracing abstraction (optional, enables context propagation)
+- **`spakky-tracing`**: Distributed tracing abstraction (required, enables context propagation)
 
 ## License
 
