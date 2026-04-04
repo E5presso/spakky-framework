@@ -556,6 +556,28 @@ class ApplicationContext(IApplicationContext):
         return instance
 
     @overload
+    def get_or_none(self, type_: type[ObjectT]) -> ObjectT | None: ...
+
+    @overload
+    def get_or_none(self, type_: type[ObjectT], name: str) -> ObjectT | None: ...
+
+    def get_or_none(
+        self,
+        type_: type[ObjectT],
+        name: str | None = None,
+    ) -> ObjectT | None:
+        """Get a Pod instance by type and optional name, or None if not found.
+
+        Args:
+            type_: The type to retrieve.
+            name: Optional name qualifier.
+
+        Returns:
+            The Pod instance, or None if no matching Pod found.
+        """
+        return self.__get_internal(type_=type_, name=name)
+
+    @overload
     def contains(self, type_: type) -> bool: ...
 
     @overload

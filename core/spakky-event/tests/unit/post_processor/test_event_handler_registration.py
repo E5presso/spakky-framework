@@ -96,6 +96,14 @@ class InMemoryContainer(IContainer):
             return self._async_consumer  # type: ignore[return-value]
         raise ValueError(f"Unexpected type: {type_}")
 
+    def get_or_none(
+        self,
+        type_: type[ObjectT],
+        name: str | None = None,
+    ) -> ObjectT | None:
+        """Not implemented for testing."""
+        return None
+
     def contains(self, type_: type, name: str | None = None) -> bool:
         """Not implemented for testing."""
         return False

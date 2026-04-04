@@ -1202,6 +1202,77 @@ def test_contains_with_name_existing() -> None:
     assert not context.contains(TestPod, name="nonexistent")
 
 
+def test_get_or_none_existing_pod_expect_instance() -> None:
+    """존재하는 Pod를 get_or_none으로 조회하면 인스턴스를 반환함을 검증한다."""
+
+    @Pod()
+    class SamplePod:
+        pass
+
+    context = ApplicationContext()
+    context.add(SamplePod)
+    context.start()
+
+    result = context.get_or_none(SamplePod)
+    assert result is not None
+    assert isinstance(result, SamplePod)
+
+    context.stop()
+
+
+def test_get_or_none_missing_pod_expect_none() -> None:
+    """존재하지 않는 Pod를 get_or_none으로 조회하면 None을 반환함을 검증한다."""
+
+    @Pod()
+    class RegisteredPod:
+        pass
+
+    class UnregisteredPod:
+        pass
+
+    context = ApplicationContext()
+    context.add(RegisteredPod)
+    context.start()
+
+    result = context.get_or_none(UnregisteredPod)
+    assert result is None
+
+    context.stop()
+
+
+def test_get_or_none_with_name_existing_expect_instance() -> None:
+    """이름으로 존재하는 Pod를 get_or_none으로 조회하면 인스턴스를 반환함을 검증한다."""
+
+    @Pod(name="named_pod")
+    class NamedPod:
+        pass
+
+    context = ApplicationContext()
+    context.add(NamedPod)
+    context.start()
+
+    result = context.get_or_none(NamedPod, name="named_pod")
+    assert result is not None
+    assert isinstance(result, NamedPod)
+
+    context.stop()
+
+
+def test_get_or_none_with_name_missing_expect_none() -> None:
+    """존재하지 않는 이름으로 get_or_none을 조회하면 None을 반환함을 검증한다."""
+
+    class UnregisteredPod:
+        pass
+
+    context = ApplicationContext()
+    context.start()
+
+    result = context.get_or_none(UnregisteredPod, name="nonexistent")
+    assert result is None
+
+    context.stop()
+
+
 def test_context_cache_multiple_pods() -> None:
     """여러 개의 CONTEXT 스코프 Pod가 컷텍스트 캐시에 정상적으로 저장됨을 검증한다."""
 

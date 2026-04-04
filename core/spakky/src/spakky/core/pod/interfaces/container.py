@@ -129,6 +129,31 @@ class IContainer(ABC):
 
     @overload
     @abstractmethod
+    def get_or_none(self, type_: type[ObjectT]) -> ObjectT | None: ...
+
+    @overload
+    @abstractmethod
+    def get_or_none(self, type_: type[ObjectT], name: str) -> ObjectT | None: ...
+
+    @abstractmethod
+    def get_or_none(
+        self,
+        type_: type[ObjectT],
+        name: str | None = None,
+    ) -> ObjectT | None:
+        """Get a Pod instance by type and optional name, or None if not found.
+
+        Args:
+            type_: The type to retrieve.
+            name: Optional name qualifier.
+
+        Returns:
+            The Pod instance, or None if no matching Pod found.
+        """
+        ...
+
+    @overload
+    @abstractmethod
     def contains(self, type_: type) -> bool: ...
 
     @overload
