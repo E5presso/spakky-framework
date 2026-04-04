@@ -7,7 +7,7 @@ user-invocable: false
 
 # Sync Dev Docs — 개발 문서 동기화
 
-코드 변경 사항을 감지하여 프레임워크 **개발자** 대상 문서를 **코드 기반으로** 동기화한다. 문서에 코드와 맞지 않는 내용이 있으면 수정하고, 새로 추가된 공개 인터페이스는 문서에 반영한다.
+코드 변경 사항을 감지하여 프레임워크 **개발자** 대상 문서를 **코드 기반으로** 동기화한다. 문서에 코드와 맞지 않는 내용이 있으면 수정하고, 새로 추가된 공개 인터페이스는 문서에 반영한다. **코드에는 존재하지만 문서에 없는 항목을 감지하여 신규 문서를 생성하거나 기존 문서에 섹션을 추가한다.**
 
 > **원칙**: Code > CONTRIBUTING.md > CLAUDE.md > README.md. 불일치 시 문서를 코드에 맞춘다.
 
@@ -45,8 +45,9 @@ git diff --cached --name-only
 | **데코레이터·스테레오타입 변경** | `@Component`, `@Bean` 등의 시그니처 변경 | 패키지 README (Quick Start, Features) |
 | **설정·환경 변경** | 개발 도구, 빌드 설정 변경 | CONTRIBUTING.md |
 | **ADR 추가** | `docs/adr/` 파일 추가 | ARCHITECTURE.md (ADR 테이블) |
+| **문서 누락 감지** | 코드에 존재하지만 문서에 없는 패키지·모듈·API | 해당 문서 신규 생성 또는 기존 문서에 섹션 추가 |
 
-변경이 없는 카테고리는 건너뛴다.
+코드와 이미 일치하는 카테고리는 건너뛴다.
 
 ## Phase 2: 문서별 동기화
 
@@ -72,6 +73,7 @@ git diff --cached --name-only
 - 코드에서 제거된 API는 README에서도 제거
 - 코드에서 추가된 공개 API는 README에 추가 (기존 섹션 스타일에 맞춰)
 - import 경로 변경은 README의 모든 코드 블록에서 일괄 수정
+- **README가 없는 패키지는 기존 패키지 README 스타일을 참고하여 신규 생성**
 - **CHANGELOG.md는 수정하지 않는다** (자동 생성)
 
 ### 2-2. ARCHITECTURE.md
@@ -96,6 +98,7 @@ grep -A 20 "\[project\]" core/*/pyproject.toml plugins/*/pyproject.toml | grep "
 - Mermaid 다이어그램은 `mermaid.md` 규칙을 따른다
 - 패키지 추가 시 테이블 행과 그래프 노드를 추가
 - 패키지 삭제 시 테이블 행과 그래프 노드·엣지를 제거
+- **코드에 존재하지만 ARCHITECTURE.md에 누락된 패키지·모듈·의존성은 신규 추가**
 
 ### 2-3. CONTRIBUTING.md
 
@@ -161,7 +164,7 @@ grep -oP "from \S+" <README.md> | sort -u
 - **CHANGELOG.md는 수정하지 않는다** — 자동 생성 대상.
 - 패키지별 문서 동기화는 **병렬 서브에이전트**로 실행한다.
 - 문서 스타일은 기존 문서의 톤과 구조를 따른다 — 새로운 형식을 도입하지 않는다.
-- 변경이 없는 문서는 건드리지 않는다.
+- 코드와 이미 일치하는 문서는 건드리지 않는다.
 - Mermaid 다이어그램 수정 시 `mermaid.md` 규칙을 준수한다.
 
 $ARGUMENTS
