@@ -54,7 +54,7 @@ class MyAnnotation(FunctionAnnotation):
 
 ## `@Order` 규칙
 
-낮은 값 = 외부 래퍼(먼저 실행). 기본값: `sys.maxsize`. `@Logging()` → `@Order(0)`.
+낮은 값 = 외부 래퍼(먼저 실행). 기본값: `sys.maxsize`. `@logged()` → `@Order(0)`.
 
 ## 금지 사항
 

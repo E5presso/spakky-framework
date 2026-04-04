@@ -2,6 +2,12 @@
 
 Repository, Transaction 추상화 — 데이터 접근 계층
 
+## Stereotypes
+
+::: spakky.data.stereotype.repository
+options:
+show_root_heading: false
+
 ## Persistency
 
 ::: spakky.data.persistency.repository
@@ -9,6 +15,10 @@ options:
 show_root_heading: false
 
 ::: spakky.data.persistency.transaction
+options:
+show_root_heading: false
+
+::: spakky.data.persistency.aggregate_collector
 options:
 show_root_heading: false
 
