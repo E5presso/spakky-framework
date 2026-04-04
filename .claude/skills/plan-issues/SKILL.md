@@ -324,16 +324,18 @@ gh api graphql -f query='mutation { addSubIssue(input: { issueId: "{PARENT_ID}",
 
 다음 메커니즘을 조합한다:
 
-1. **태스크 리스트 (Tracked by/Tracks)**: 이슈 본문에 `- [ ] #{N}` 형식으로 선행 이슈를 기재하면, GitHub이 자동으로 Relationships UI에 "Tracked by / Tracks" 관계를 표시한다.
-   ```markdown
-   ## 선행 이슈
+1. **Blocked by (Relationships UI)**: GraphQL `addBlockedBy` mutation으로 선행 이슈 관계를 설정한다. GitHub Relationships UI에 "Blocked by / Blocking" 관계가 표시된다.
+   ```bash
+   # 이슈 node ID 조회
+   gh api graphql -f query='{ repository(owner: "{owner}", name: "{repo}") { issue(number: {N}) { id } } }' --jq '.data.repository.issue.id'
 
-   - [ ] #33
-   - [ ] #34
+   # blocked by 관계 설정: {ISSUE}가 {BLOCKING_ISSUE}에 의해 블록됨
+   gh api graphql -f query='mutation { addBlockedBy(input: { issueId: "{ISSUE_ID}", blockingIssueId: "{BLOCKING_ISSUE_ID}" }) { issue { number } } }'
    ```
-2. **마일스톤**: 태스크 이슈를 에픽 마일스톤에 연결하여 진행률 추적
-3. **GitHub Sub-issues**: GraphQL `addSubIssue` mutation으로 부모-자식 위계 설정 (서브태스크가 있는 경우에만)
-4. **크리티컬 패스 & 병렬 그룹**: Phase 5 결과 보고에 명시
+2. **이슈 본문 메타데이터**: 이슈 본문에도 `## 선행 이슈` 섹션에 태스크 리스트(`- [ ] #N`)로 선행 이슈를 기재한다 (가독성 + `/process-ticket` 파싱용).
+3. **마일스톤**: 태스크 이슈를 에픽 마일스톤에 연결하여 진행률 추적
+4. **GitHub Sub-issues**: GraphQL `addSubIssue` mutation으로 부모-자식 위계 설정 (서브태스크가 있는 경우에만)
+5. **크리티컬 패스 & 병렬 그룹**: Phase 5 결과 보고에 명시
 
 ---
 
