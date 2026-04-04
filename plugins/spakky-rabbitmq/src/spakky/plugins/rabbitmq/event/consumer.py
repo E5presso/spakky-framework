@@ -34,14 +34,8 @@ from spakky.event.event_consumer import (
 )
 
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
-
-try:
-    from spakky.tracing.context import TraceContext
-    from spakky.tracing.propagator import ITracePropagator
-
-    _HAS_TRACING = True
-except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
-    _HAS_TRACING = False
+from spakky.tracing.context import TraceContext
+from spakky.tracing.propagator import ITracePropagator
 
 
 @Pod()
@@ -66,7 +60,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     connection: BlockingConnection
     channel: BlockingChannel
-    _propagator: object | None
+    _propagator: ITracePropagator | None
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event consumer.
@@ -81,11 +75,11 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.handlers = {}
         self._propagator = None
 
-    def set_propagator(self, propagator: object) -> None:
+    def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
 
         Args:
-            propagator: An ITracePropagator instance.
+            propagator: The trace propagator instance.
         """
         self._propagator = propagator
 
@@ -127,10 +121,9 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         """
         if method_frame.consumer_tag is None or method_frame.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
-        if _HAS_TRACING and self._propagator is not None:
-            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+        if self._propagator is not None:
             carrier = self._to_string_headers(properties.headers)
-            parent = propagator.extract(carrier)
+            parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
         try:
@@ -142,7 +135,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
                 handler(event)
             channel.basic_ack(method_frame.delivery_tag)
         finally:
-            if _HAS_TRACING and self._propagator is not None:
+            if self._propagator is not None:
                 TraceContext.clear()
 
     def _check_if_event_set(self) -> None:
@@ -226,7 +219,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
     type_adapters: dict[type, TypeAdapter[AbstractEvent]]
     handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     connection: AbstractRobustConnection
-    _propagator: object | None
+    _propagator: ITracePropagator | None
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event consumer.
@@ -240,11 +233,11 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self.handlers = {}
         self._propagator = None
 
-    def set_propagator(self, propagator: object) -> None:
+    def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
 
         Args:
-            propagator: An ITracePropagator instance.
+            propagator: The trace propagator instance.
         """
         self._propagator = propagator
 
@@ -280,10 +273,9 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         """
         if message.consumer_tag is None or message.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
-        if _HAS_TRACING and self._propagator is not None:
-            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+        if self._propagator is not None:
             carrier = self._to_string_headers(message.headers)
-            parent = propagator.extract(carrier)
+            parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
         try:
@@ -295,7 +287,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
                 await handler(event)
             await message.ack()
         finally:
-            if _HAS_TRACING and self._propagator is not None:
+            if self._propagator is not None:
                 TraceContext.clear()
 
     def register(

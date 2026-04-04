@@ -395,8 +395,7 @@ def test_rabbitmq_post_processor_with_tracing_available_expect_propagator_inject
     )
 
     mock_context = Mock(spec=ApplicationContext)
-    mock_context.contains.return_value = True
-    mock_context.get.return_value = mock_propagator
+    mock_context.get_or_none.return_value = mock_propagator
 
     post_processor = RabbitMQPostProcessor()
     post_processor.set_container(mock_container)
@@ -432,7 +431,7 @@ def test_rabbitmq_post_processor_without_tracing_expect_no_propagator_injected()
     )
 
     mock_context = Mock(spec=ApplicationContext)
-    mock_context.contains.return_value = False
+    mock_context.get_or_none.return_value = None
 
     post_processor = RabbitMQPostProcessor()
     post_processor.set_container(mock_container)
@@ -469,8 +468,7 @@ def test_rabbitmq_post_processor_with_tracing_but_no_set_propagator_expect_skipp
     )
 
     mock_context = Mock(spec=ApplicationContext)
-    mock_context.contains.return_value = True
-    mock_context.get.return_value = mock_propagator
+    mock_context.get_or_none.return_value = mock_propagator
 
     post_processor = RabbitMQPostProcessor()
     post_processor.set_container(mock_container)

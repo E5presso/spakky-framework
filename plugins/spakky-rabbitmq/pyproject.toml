@@ -13,10 +13,8 @@ dependencies = [
   "pydantic>=2.12.5",
   "pydantic-settings>=2.13.1",
   "spakky-event>=6.2.0",
+  "spakky-tracing>=6.2.0",
 ]
-
-[project.optional-dependencies]
-tracing = ["spakky-tracing>=6.2.0"]
 
 [dependency-groups]
 dev = [
