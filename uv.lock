@@ -2542,12 +2542,18 @@ dependencies = [
     { name = "spakky-task" },
 ]
 
+[package.optional-dependencies]
+tracing = [
+    { name = "spakky-tracing" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "celery-types" },
     { name = "nest-asyncio" },
     { name = "pytest-asyncio" },
     { name = "pytest-integration-mark" },
+    { name = "spakky-tracing" },
     { name = "testcontainers", extra = ["rabbitmq"] },
 ]
 
@@ -2556,7 +2562,9 @@ requires-dist = [
     { name = "celery", specifier = ">=5.6.2" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky-task", editable = "core/spakky-task" },
+    { name = "spakky-tracing", marker = "extra == 'tracing'", editable = "core/spakky-tracing" },
 ]
+provides-extras = ["tracing"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2564,6 +2572,7 @@ dev = [
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "pytest-asyncio", specifier = ">=0.26.0" },
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
+    { name = "spakky-tracing", editable = "core/spakky-tracing" },
     { name = "testcontainers", extras = ["rabbitmq"], specifier = ">=4.14.1" },
 ]
 

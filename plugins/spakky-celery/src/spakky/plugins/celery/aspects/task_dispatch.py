@@ -20,6 +20,13 @@ from celery import Celery
 from spakky.plugins.celery.common.constants import CELERY_TASK_CONTEXT_KEY
 from spakky.plugins.celery.common.task_result import CeleryTaskResult
 
+try:
+    from spakky.tracing.propagator import ITracePropagator
+
+    _HAS_TRACING = True
+except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
+    _HAS_TRACING = False
+
 logger = getLogger(__name__)
 
 
@@ -34,14 +41,20 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
 
     _celery: Celery
     _application_context: IApplicationContext
+    _propagator: object | None
 
     def __init__(self, celery: Celery) -> None:
         """Initialize with the Celery application instance."""
         self._celery = celery
+        self._propagator = None
 
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Store the application context for checking worker context."""
         self._application_context = application_context
+
+    def set_propagator(self, propagator: object) -> None:
+        """Set the trace propagator for injecting trace context into task headers."""
+        self._propagator = propagator
 
     @Around(lambda x: TaskRoute.exists(x) and not iscoroutinefunction(x))
     def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
@@ -49,7 +62,16 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
             return joinpoint(*args, **kwargs)
 
         task_name: str = get_fully_qualified_name(joinpoint)
-        async_result = self._celery.send_task(task_name, args=args, kwargs=kwargs)
+        task_headers: dict[str, str] = {}
+        if _HAS_TRACING and self._propagator is not None:
+            propagator: ITracePropagator = self._propagator  # type: ignore[assignment] - guarded by _HAS_TRACING
+            propagator.inject(task_headers)
+        async_result = self._celery.send_task(
+            task_name,
+            args=args,
+            kwargs=kwargs,
+            headers=task_headers,
+        )
         logger.debug("Dispatched task %s", task_name)
         return CeleryTaskResult(async_result)
 
@@ -65,14 +87,20 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
 
     _celery: Celery
     _application_context: IApplicationContext
+    _propagator: object | None
 
     def __init__(self, celery: Celery) -> None:
         """Initialize with the Celery application instance."""
         self._celery = celery
+        self._propagator = None
 
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Store the application context for checking worker context."""
         self._application_context = application_context
+
+    def set_propagator(self, propagator: object) -> None:
+        """Set the trace propagator for injecting trace context into task headers."""
+        self._propagator = propagator
 
     @Around(lambda x: TaskRoute.exists(x) and iscoroutinefunction(x))
     async def around_async(
@@ -82,6 +110,15 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
             return await joinpoint(*args, **kwargs)
 
         task_name: str = get_fully_qualified_name(joinpoint)
-        async_result = self._celery.send_task(task_name, args=args, kwargs=kwargs)
+        task_headers: dict[str, str] = {}
+        if _HAS_TRACING and self._propagator is not None:
+            propagator: ITracePropagator = self._propagator  # type: ignore[assignment] - guarded by _HAS_TRACING
+            propagator.inject(task_headers)
+        async_result = self._celery.send_task(
+            task_name,
+            args=args,
+            kwargs=kwargs,
+            headers=task_headers,
+        )
         logger.debug("Dispatched task %s (async)", task_name)
         return CeleryTaskResult(async_result)

@@ -6,6 +6,8 @@ from unittest.mock import MagicMock
 
 import pytest
 from spakky.task.stereotype.task_handler import TaskRoute
+from spakky.tracing.context import TraceContext
+from spakky.tracing.w3c_propagator import W3CTracePropagator
 
 from spakky.plugins.celery.aspects.task_dispatch import (
     CELERY_TASK_CONTEXT_KEY,
@@ -17,6 +19,10 @@ from spakky.plugins.celery.common.task_result import CeleryTaskResult
 # Test constants for task naming
 TEST_MODULE = "test_module"
 TEST_HANDLER_CLASS = "TestHandler"
+
+SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+SAMPLE_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+SAMPLE_SPAN_ID = "b7ad6b7169203331"
 
 
 def _make_task_name(method_name: str) -> str:
@@ -78,6 +84,7 @@ def test_around_dispatches_task_via_send_task() -> None:
         _make_task_name("send_email"),
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
+        headers={},
     )
     assert isinstance(result, CeleryTaskResult)
     assert result.task_id == "task-abc-123"
@@ -96,6 +103,7 @@ def test_around_dispatches_task_with_positional_args() -> None:
         _make_task_name("send_email"),
         args=("test@example.com", "Hi"),
         kwargs={},
+        headers={},
     )
 
 
@@ -122,6 +130,42 @@ def test_around_in_celery_task_context_calls_joinpoint() -> None:
     assert calls == [((), {"to": "test@example.com"})]
     celery.send_task.assert_not_called()
     assert result == "direct"
+
+
+def test_around_injects_traceparent_expect_headers_contain_traceparent() -> None:
+    """propagator가 설정된 경우 send_task()에 traceparent 헤더가 포함되는지 검증한다."""
+    celery = _create_mock_celery()
+    aspect = CeleryTaskDispatchAspect(celery)
+    aspect.set_application_context(_create_mock_application_context())
+    aspect.set_propagator(W3CTracePropagator())
+    joinpoint = _create_joinpoint("send_email")
+
+    ctx = TraceContext.from_traceparent(SAMPLE_TRACEPARENT)
+    TraceContext.set(ctx)
+    try:
+        aspect.around(joinpoint)
+    finally:
+        TraceContext.clear()
+
+    call_kwargs = celery.send_task.call_args
+    headers = call_kwargs.kwargs["headers"]
+    assert "traceparent" in headers
+    assert headers["traceparent"] == SAMPLE_TRACEPARENT
+
+
+def test_around_sends_empty_headers_when_propagator_none_expect_no_traceparent() -> (
+    None
+):
+    """propagator가 None인 경우 send_task()에 빈 headers가 전달되는지 검증한다."""
+    celery = _create_mock_celery()
+    aspect = CeleryTaskDispatchAspect(celery)
+    aspect.set_application_context(_create_mock_application_context())
+    joinpoint = _create_joinpoint("send_email")
+
+    aspect.around(joinpoint)
+
+    call_kwargs = celery.send_task.call_args
+    assert call_kwargs.kwargs["headers"] == {}
 
 
 # ── Async AsyncCeleryTaskDispatchAspect ──
@@ -162,6 +206,7 @@ async def test_async_around_dispatches_task_via_send_task() -> None:
         _make_task_name("async_send_email"),
         args=(),
         kwargs={"to": "test@example.com", "subject": "Hi"},
+        headers={},
     )
     assert isinstance(result, CeleryTaskResult)
     assert result.task_id == "task-async-456"
@@ -191,3 +236,43 @@ async def test_async_around_in_celery_task_context_calls_joinpoint() -> None:
     assert calls == [((), {"to": "test@example.com"})]
     celery.send_task.assert_not_called()
     assert result == "direct"
+
+
+@pytest.mark.asyncio
+async def test_async_around_injects_traceparent_expect_headers_contain_traceparent() -> (
+    None
+):
+    """async propagator가 설정된 경우 send_task()에 traceparent 헤더가 포함되는지 검증한다."""
+    celery = _create_mock_celery()
+    aspect = AsyncCeleryTaskDispatchAspect(celery)
+    aspect.set_application_context(_create_mock_application_context())
+    aspect.set_propagator(W3CTracePropagator())
+    joinpoint = _create_async_joinpoint("async_send_email")
+
+    ctx = TraceContext.from_traceparent(SAMPLE_TRACEPARENT)
+    TraceContext.set(ctx)
+    try:
+        await aspect.around_async(joinpoint)
+    finally:
+        TraceContext.clear()
+
+    call_kwargs = celery.send_task.call_args
+    headers = call_kwargs.kwargs["headers"]
+    assert "traceparent" in headers
+    assert headers["traceparent"] == SAMPLE_TRACEPARENT
+
+
+@pytest.mark.asyncio
+async def test_async_around_sends_empty_headers_when_propagator_none_expect_no_traceparent() -> (
+    None
+):
+    """async propagator가 None인 경우 send_task()에 빈 headers가 전달되는지 검증한다."""
+    celery = _create_mock_celery()
+    aspect = AsyncCeleryTaskDispatchAspect(celery)
+    aspect.set_application_context(_create_mock_application_context())
+    joinpoint = _create_async_joinpoint("async_send_email")
+
+    await aspect.around_async(joinpoint)
+
+    call_kwargs = celery.send_task.call_args
+    assert call_kwargs.kwargs["headers"] == {}

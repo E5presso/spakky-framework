@@ -12,6 +12,9 @@ dependencies = [
     "spakky-task>=6.2.0",
 ]
 
+[project.optional-dependencies]
+tracing = ["spakky-tracing>=6.2.0"]
+
 [project.entry-points."spakky.plugins"]
 spakky-celery = "spakky.plugins.celery.main:initialize"
 
@@ -21,6 +24,7 @@ dev = [
     "nest-asyncio>=1.6.0",
     "pytest-asyncio>=0.26.0",
     "pytest-integration-mark>=0.2.0",
+    "spakky-tracing>=6.2.0",
     "testcontainers[rabbitmq]>=4.14.1",
 ]
 
@@ -94,3 +98,4 @@ exclude_lines = [
 [tool.uv.sources]
 spakky = { workspace = true }
 spakky-task = { workspace = true }
+spakky-tracing = { workspace = true }
