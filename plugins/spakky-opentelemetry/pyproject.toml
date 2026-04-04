@@ -1,0 +1,89 @@
+[project]
+name = "spakky-opentelemetry"
+version = "6.2.0"
+description = "OpenTelemetry SDK bridge for Spakky Framework"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = [
+    "spakky>=6.2.0",
+    "spakky-tracing>=6.2.0",
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "pydantic-settings>=2.13.1",
+]
+
+[project.optional-dependencies]
+otlp = ["opentelemetry-exporter-otlp>=1.20.0"]
+logging = ["spakky-logging>=6.2.0"]
+
+[project.entry-points."spakky.plugins"]
+spakky-opentelemetry = "spakky.plugins.opentelemetry.main:initialize"
+
+[dependency-groups]
+dev = [
+    "spakky-logging>=6.2.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.10,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.opentelemetry"
+
+[tool.pyrefly]
+python-version = "3.14"
+search_path = ["src", "."]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = "src/spakky/plugins/opentelemetry"
+testpaths = "tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=load
+    -p no:warnings
+    -n auto
+    --spec
+"""
+spec_test_format = "{result} {docstring_summary}"
+markers = ["known_issue(reason): 알려진 버그"]
+
+[tool.coverage.run]
+include = ["src/spakky/plugins/opentelemetry/**/*.py"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 90
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+    "\\.\\.\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-tracing = { workspace = true }
+spakky-logging = { workspace = true }
