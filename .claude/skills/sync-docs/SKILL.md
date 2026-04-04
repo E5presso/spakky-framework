@@ -11,10 +11,10 @@ user-invocable: true
 
 ## 대상 구분
 
-| 서브 스킬 | 대상 독자 | 동기화 문서 |
-|----------|----------|-----------|
-| `sync-dev-docs` | 프레임워크 **개발자** | ARCHITECTURE.md, 패키지 README.md, CONTRIBUTING.md, docs/adr/README.md |
-| `sync-user-docs` | 프레임워크 **사용자** | docs/guides/, docs/api/, docs/index.md, docs/glossary.md, mkdocs.yml 등 |
+| 스킬 | 대상 독자 | 동기화 문서 |
+|------|----------|-----------|
+| `/sync-dev-docs` | 프레임워크 **개발자** | ARCHITECTURE.md, 패키지 README.md, CONTRIBUTING.md, docs/adr/README.md |
+| `/sync-user-docs` | 프레임워크 **사용자** | docs/guides/, docs/api/, docs/index.md, docs/glossary.md, mkdocs.yml 등 |
 
 ## 사용법
 
@@ -57,15 +57,15 @@ git diff --cached --name-only
 | `docs/adr/**` | **dev만** — ADR은 개발 문서 범위 |
 | 도구/설정 파일만 변경 | **dev만** — CONTRIBUTING.md 검증 |
 
-### Step 3: 서브 스킬 실행
+### Step 3: 스킬 실행
 
-판단된 대상에 따라 서브 스킬을 **서브에이전트**로 호출한다.
+판단된 대상에 따라 독립 스킬을 **서브에이전트**로 호출한다.
 
-- **dev만**: `sync-dev-docs` 서브에이전트 1개 실행
-- **user만**: `sync-user-docs` 서브에이전트 1개 실행
-- **양쪽 모두**: `sync-dev-docs`와 `sync-user-docs` 서브에이전트를 **병렬** 실행
+- **dev만**: `/sync-dev-docs` 서브에이전트 1개 실행
+- **user만**: `/sync-user-docs` 서브에이전트 1개 실행
+- **양쪽 모두**: `/sync-dev-docs`와 `/sync-user-docs` 서브에이전트를 **병렬** 실행
 
-패키지명 인자가 있으면 서브 스킬에 전달한다.
+패키지명 인자가 있으면 스킬에 전달한다.
 
 ### Step 4: 결과 통합
 
@@ -89,7 +89,7 @@ git diff --cached --name-only
 
 - **Code-first**: 모든 문서는 실제 코드 기반으로 검증한다.
 - **CHANGELOG.md는 수정하지 않는다** — 자동 생성 대상.
-- 서브 스킬 실행은 **서브에이전트**로 수행하여 컨텍스트를 분리한다.
-- 양쪽 서브 스킬이 같은 파일을 수정할 일은 없으므로 병렬 실행 안전.
+- 스킬 실행은 **서브에이전트**로 수행하여 컨텍스트를 분리한다.
+- 양쪽 스킬이 같은 파일을 수정할 일은 없으므로 병렬 실행 안전.
 
 $ARGUMENTS
