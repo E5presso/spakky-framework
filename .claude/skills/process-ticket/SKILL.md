@@ -114,7 +114,6 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 4. `/create-pr` 스킬을 사용하여 PR을 생성한다.
    - PR 대상 브랜치: `develop`
    - Body에 `Closes #<issue-number>` 포함
-5. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Review` 실행
 
 ## Phase 6: CI & 리뷰 모니터링
 
@@ -236,8 +235,7 @@ PR이 병합 가능 상태가 되면:
 
    - 병합한 커밋이 develop에 정상 반영되었는지 확인한다.
 
-4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER Done` 실행
-5. **세션 회고**:
+4. **세션 회고**:
    - `/retro` 스킬을 호출하여 세션 전체에 대한 자가 평가를 수행한다.
 6. 사용자에게 최종 완료를 보고한다:
 

@@ -767,6 +767,27 @@ def test_sync_consumer_to_string_headers_with_bytes_expect_decoded(
 
 @patch("spakky.plugins.kafka.event.consumer.Consumer")
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_to_string_headers_with_mixed_values_expect_str_and_bytes_kept(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """_to_string_headers가 str, bytes, None 혼합 값을 올바르게 처리하는지 검증한다."""
+    consumer = KafkaEventConsumer(config)
+
+    result = consumer._to_string_headers(
+        [
+            ("str-header", "already-string"),
+            ("bytes-header", b"needs-decode"),
+            ("none-header", None),
+        ]
+    )
+
+    assert result == {"str-header": "already-string", "bytes-header": "needs-decode"}
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
 def test_sync_consumer_to_string_headers_with_none_expect_empty(
     mock_admin_cls: MagicMock,
     mock_consumer_cls: MagicMock,
@@ -796,6 +817,25 @@ def test_async_consumer_to_string_headers_with_bytes_expect_decoded(
     )
 
     assert result == {"traceparent": "00-abc-def-01", "custom": "value"}
+
+
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_async_consumer_to_string_headers_with_mixed_values_expect_str_and_bytes_kept(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer의 _to_string_headers가 str, bytes, None 혼합 값을 올바르게 처리하는지 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+
+    result = consumer._to_string_headers(
+        [
+            ("str-header", "already-string"),
+            ("bytes-header", b"needs-decode"),
+            ("none-header", None),
+        ]
+    )
+
+    assert result == {"str-header": "already-string", "bytes-header": "needs-decode"}
 
 
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")
