@@ -13,9 +13,12 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 
 ```
 /process-ticket 42
+/process-ticket 42 --skip-approval
 ```
 
-인자: GitHub Issue 번호 (예: `42`, `#42`)
+인자:
+- **필수**: GitHub Issue 번호 (예: `42`, `#42`)
+- **옵션**: `--skip-approval` — 구현 계획에 대한 사용자 승인(Phase 2-3)을 건너뛰고 즉시 구현을 시작한다. PR 병합 승인(Phase 7)은 여전히 필요하다.
 
 ---
 
@@ -82,6 +85,8 @@ gh issue view $ARGUMENTS --comments
 
 ### 2-3. 사용자 승인
 
+> `--skip-approval` 플래그가 지정된 경우 이 단계를 건너뛰고 Phase 3으로 즉시 진행한다.
+
 구현 계획을 사용자에게 제시하고 `AskUserQuestion`으로 **승인을 받는다**.
 - 승인 없이 다음 단계로 진행하지 않는다.
 - `AskUserQuestion` 사용:
@@ -101,12 +106,17 @@ gh issue view $ARGUMENTS --comments
 
 ## Phase 3: 워크트리 생성
 
-사용자가 계획을 승인하면:
+> **⚠️ 절대 규칙: 워크트리 없이 구현을 시작하지 않는다.**
+> Phase 4 이후의 모든 파일 수정은 반드시 워크트리 내에서 수행해야 한다.
+> 루트 리포지토리에서 직접 코드를 수정하면 develop 브랜치가 오염된다.
+> **워크트리 생성을 건너뛰는 것은 어떤 상황에서도 허용되지 않는다.**
+
+사용자가 계획을 승인하면 (또는 `--skip-approval` 시 Phase 2 완료 후 즉시):
 
 1. 이슈 내용에 따라 접두어(prefix)를 결정한다: `feat`, `fix`, `refactor`, `docs`, `hotfix`, `release` 등
 2. `/create-worktree {prefix} {issue-number}` 서브스킬을 실행한다.
    - 서브스킬이 source 브랜치 최신화, 워크트리 생성, 브랜치명 설정을 처리한다.
-3. 워크트리에서 이후 모든 작업을 수행한다.
+3. **`EnterWorktree`가 완료되었음을 확인한 후에만** Phase 4로 진행한다. 워크트리 진입에 실패하면 즉시 중단하고 사용자에게 보고한다.
 4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Progress` 실행
 
 ## Phase 4: 구현 & 검증 루프
@@ -153,6 +163,7 @@ gh issue view $ARGUMENTS --comments
 4. `/create-pr` 스킬을 사용하여 PR을 생성한다.
    - PR 대상 브랜치: `develop`
    - Body에 `Closes #<issue-number>` 포함
+5. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Review` 실행
 
 ## Phase 6: CI & 리뷰 모니터링
 
@@ -216,12 +227,13 @@ PR이 병합 가능 상태가 되면:
 
 ## 규칙
 
-- **사용자 확인 구간은 Phase 2 (계획 승인)과 Phase 7 (PR 병합) 두 곳만.** 나머지는 전부 자동 진행.
+- **사용자 확인 구간은 Phase 2 (계획 승인)과 Phase 7 (PR 병합) 두 곳만.** `--skip-approval` 시 Phase 7 (PR 병합)만. 나머지는 전부 자동 진행.
 - 객관식 질문은 **반드시 `AskUserQuestion` UI** 사용. 텍스트로 질문하지 않는다.
 - 커밋 전에 변경된 패키지에서 `uv run ruff format .` 선행 (pre-commit hook 실패 방지).
 - Phase 4 검증 루프는 생략하지 않는다.
 - Phase 6 리뷰 코멘트 처리 후 해당 리뷰어에게 재리뷰를 요청한다.
 - 서브 스킬 호출은 **서브에이전트**로 실행 — 비차단 스킬은 백그라운드, 결과 필요 스킬은 포그라운드.
 - `uv run` 접두사 필수.
+- **워크트리 필수**: Phase 4~5의 모든 파일 수정은 반드시 워크트리 내에서 수행한다. 루트 리포지토리에서 직접 코드를 수정하는 것은 절대 금지. 워크트리 생성 실패 시 구현을 시작하지 않고 즉시 중단한다.
 
 $ARGUMENTS
