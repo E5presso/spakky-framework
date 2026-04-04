@@ -2,6 +2,7 @@
 build/reports/**
 
 # harness meta-review generated report and session marker (runtime artifacts — not for commit)
+.claude/worktrees
 .claude/hooks/harness-review.md
 .claude/hooks/.session-start
 
