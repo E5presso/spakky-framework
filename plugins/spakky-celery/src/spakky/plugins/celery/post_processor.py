@@ -28,13 +28,8 @@ from spakky.plugins.celery.aspects.task_dispatch import (
 from spakky.plugins.celery.common.constants import CELERY_TASK_CONTEXT_KEY
 from spakky.plugins.celery.error import InvalidScheduleRouteError
 
-try:
-    from spakky.tracing.context import TraceContext
-    from spakky.tracing.propagator import ITracePropagator
-
-    _HAS_TRACING = True
-except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
-    _HAS_TRACING = False
+from spakky.tracing.context import TraceContext
+from spakky.tracing.propagator import ITracePropagator
 
 logger = getLogger(__name__)
 
@@ -54,7 +49,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         self,
         handler_type: type[object],
         method: Callable[..., Any],
-        propagator: object | None,
+        propagator: ITracePropagator | None,
     ) -> Callable[..., Any]:
         """Create a sync endpoint that resolves handler from container."""
 
@@ -62,15 +57,14 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         def endpoint(*args: Any, **kwargs: Any) -> Any:
             self.__application_context.clear_context()
             self.__application_context.set_context_value(CELERY_TASK_CONTEXT_KEY, True)
-            if _HAS_TRACING and propagator is not None:
-                typed_propagator: ITracePropagator = propagator  # type: ignore[assignment] - guarded by _HAS_TRACING
+            if propagator is not None:
                 raw_headers: dict[str, object] = (
                     current_task.request.get("headers") or {}
                 )
                 carrier: dict[str, str] = {
                     k: v for k, v in raw_headers.items() if isinstance(v, str)
                 }
-                parent = typed_propagator.extract(carrier)
+                parent = propagator.extract(carrier)
                 ctx = parent.child() if parent is not None else TraceContext.new_root()
                 TraceContext.set(ctx)
             try:
@@ -78,7 +72,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
                 bound_method = method.__get__(handler_instance, handler_type)
                 return bound_method(*args, **kwargs)
             finally:
-                if _HAS_TRACING and propagator is not None:
+                if propagator is not None:
                     TraceContext.clear()
 
         return endpoint
@@ -87,7 +81,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         self,
         handler_type: type[object],
         method: Callable[..., Any],
-        propagator: object | None,
+        propagator: ITracePropagator | None,
     ) -> Callable[..., Any]:
         """Create an endpoint for async methods.
 
@@ -99,15 +93,14 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
             """Async wrapper that sets context and invokes handler method."""
             self.__application_context.clear_context()
             self.__application_context.set_context_value(CELERY_TASK_CONTEXT_KEY, True)
-            if _HAS_TRACING and propagator is not None:
-                typed_propagator: ITracePropagator = propagator  # type: ignore[assignment] - guarded by _HAS_TRACING
+            if propagator is not None:
                 raw_headers: dict[str, object] = (
                     current_task.request.get("headers") or {}
                 )
                 carrier: dict[str, str] = {
                     k: v for k, v in raw_headers.items() if isinstance(v, str)
                 }
-                parent = typed_propagator.extract(carrier)
+                parent = propagator.extract(carrier)
                 ctx = parent.child() if parent is not None else TraceContext.new_root()
                 TraceContext.set(ctx)
             try:
@@ -115,7 +108,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
                 bound_method = method.__get__(handler_instance, handler_type)
                 return await bound_method(*args, **kwargs)
             finally:
-                if _HAS_TRACING and propagator is not None:
+                if propagator is not None:
                     TraceContext.clear()
 
         @wraps(method)
@@ -160,7 +153,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         celery: Celery,
         pod_type: type[object],
         method: Callable[..., Any],
-        propagator: object | None,
+        propagator: ITracePropagator | None,
     ) -> str:
         """Register a single method as a Celery task. Returns the task name."""
         if iscoroutinefunction(method):
@@ -180,9 +173,8 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         celery: Celery = self.__application_context.get(Celery)
         pod_type = TaskHandler.get(pod).type_
 
-        propagator: object | None = None
-        if _HAS_TRACING and self.__application_context.contains(ITracePropagator):
-            propagator = self.__application_context.get(type_=ITracePropagator)
+        propagator = self.__application_context.get_or_none(type_=ITracePropagator)
+        if propagator is not None:
             for aspect_type in (
                 CeleryTaskDispatchAspect,
                 AsyncCeleryTaskDispatchAspect,

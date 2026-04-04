@@ -42,7 +42,7 @@ def _create_post_processor(celery: Celery) -> CeleryPostProcessor:
     """CeleryPostProcessor를 생성하고 Aware 인터페이스를 설정한다."""
     context_mock = MagicMock()
     context_mock.get.return_value = celery
-    context_mock.contains.return_value = False
+    context_mock.get_or_none.return_value = None
 
     post_processor = CeleryPostProcessor()
     post_processor.set_application_context(context_mock)
@@ -136,7 +136,7 @@ def test_celery_post_processor_registers_wrapper_with_context_isolation() -> Non
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
     application_context_mock.get.side_effect = get_from_context
-    application_context_mock.contains.return_value = False
+    application_context_mock.get_or_none.return_value = None
 
     post_processor = CeleryPostProcessor()
     post_processor.set_application_context(application_context_mock)
@@ -179,7 +179,7 @@ def test_celery_post_processor_registers_async_tasks() -> None:
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
     application_context_mock.get.side_effect = get_from_context
-    application_context_mock.contains.return_value = False
+    application_context_mock.get_or_none.return_value = None
 
     post_processor = CeleryPostProcessor()
     post_processor.set_application_context(application_context_mock)
@@ -360,6 +360,9 @@ def _create_tracing_post_processor(
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
     application_context_mock.get.side_effect = get_from_context
+    application_context_mock.get_or_none.return_value = (
+        propagator if with_propagator else None
+    )
     application_context_mock.contains.return_value = with_propagator
 
     post_processor = CeleryPostProcessor()
@@ -584,6 +587,7 @@ def test_post_processor_injects_propagator_into_dispatch_aspects_expect_set() ->
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
     application_context_mock.get.side_effect = get_from_context
+    application_context_mock.get_or_none.return_value = propagator
     application_context_mock.contains.return_value = True
 
     post_processor = CeleryPostProcessor()
@@ -651,13 +655,8 @@ def test_post_processor_skips_aspect_injection_when_aspects_not_in_container() -
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
     application_context_mock.get.side_effect = get_from_context
-
-    def contains_side_effect(type_: type[object]) -> bool:
-        if type_ is ITracePropagator:
-            return True
-        return False
-
-    application_context_mock.contains.side_effect = contains_side_effect
+    application_context_mock.get_or_none.return_value = propagator
+    application_context_mock.contains.return_value = False
 
     post_processor = CeleryPostProcessor()
     post_processor.set_application_context(application_context_mock)
