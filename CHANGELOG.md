@@ -1,3 +1,58 @@
+## v6.3.0 (2026-04-04)
+
+### Feat
+
+- add opentelemetry to optional dependencies in pyproject.toml
+- add spakky-tracing and spakky-opentelemetry to package options
+- 스킬 Phase 전환 시 현재 Phase의 산출물이 존재하는지 확인하는 항목 추가
+- **celery**: remove _HAS_TRACING pattern, use get_or_none() Optional DI (#75)
+- SKILL.md에 --skip-approval 옵션 추가 및 관련 단계 설명 보강
+- ILogContextBinder ABC 정의 및 LogContext 구현 연결 (#72)
+- **core**: add get_or_none() method to IContainer and ApplicationContext (#71)
+- sync-dev-docs 및 sync-user-docs 스킬 추가 및 문서 동기화 로직 구현
+- add sync-docs skill for synchronizing documentation with code changes
+- sync-dev-docs 및 sync-user-docs 서브 스킬 추가 및 문서 동기화 로직 개선
+- add new skills for architecture decision records, impact analysis, dependency audit, investigation, and property testing
+- SKILL.md에서 태스크 및 서브태스크의 맥락 전파 원칙과 작업 명세 정리 절차 추가
+- .gitignore에서 claude worktrees 경로 수정 및 create_package.py에서 pyrefly 체크 명령어 수정, workspace에 opentelemetry 플러그인 추가
+- SKILL.md 파일에 user-invocable 속성 추가
+- add spakky-opentelemetry plugin — OTel SDK bridge (#53)
+- **celery**: add trace context propagation to task dispatch and worker (#38) (#52)
+- **kafka**: add trace context extraction to consumers (#37) (#51)
+- 커밋 및 PR 생성 단계 자동화 및 포맷팅 선행 추가
+- Update Python code rules and skills for Spakky Framework
+- **rabbitmq**: add trace context extraction to consumers (#50)
+- .gitignore에 .claude/worktrees 추가 - 메타 리뷰 관련 파일 무시
+- 세션 자가 평가 기록 전략 개선 - 단일 rolling 파일로 fail 기록 및 3-strike 감지 로직 추가
+- **fastapi**: add TracingMiddleware for W3C Trace Context propagation (#49)
+- 프로젝트 상태 자동 갱신 스킬 추가 - GitHub Issue에 연결된 프로젝트의 Status 필드 갱신 기능
+- 브랜치명 생성 규칙 간소화 - 간결한 설명 제거
+- 프로젝트 상태 갱신 단계 추가 - 각 Phase에 상태 업데이트 명령어 포함
+- 새로운 SKILL 추가 - 코드 변경 후 품질 검증 및 자가 평가 기능
+- **event,outbox,tracing**: add headers to IEventTransport for trace propagation (#47)
+- **tracing**: add spakky-tracing core package (#44)
+
+### Fix
+
+- 수정된 @Logging AOP Aspect를 @logged AOP Aspect로 변경
+- SKILL.md에서 선행 이슈 관계 설정 방법을 개선하고, 이슈 본문 메타데이터 추가
+- SKILL.md에서 에픽 용어를 마일스톤으로 수정하고, 작업 분해 및 이슈 생성 규칙을 명확히 함
+- PR 상태 모니터링 로직 개선 및 리뷰 코멘트 감지 추가
+- 서브에이전트를 활용한 세션 회고 및 평가 절차 개선
+- 워크트리 생성 절차에서 source 브랜치 최신화 방법 수정 및 develop 기준으로 리셋 추가
+- 수정된 .gitignore 파일에서 불필요한 항목 제거 및 주석 정리
+- restore README.md to original content
+
+### Refactor
+
+- **kafka**: remove _HAS_TRACING pattern, use Optional DI with get_or_none() (#77)
+- **opentelemetry**: replace _HAS_LOGGING with ILogContextBinder Optional DI (#68) (#78)
+- **kafka**: remove _HAS_TRACING pattern, use Optional DI with get_or_none() (#77)
+- **rabbitmq**: replace _HAS_TRACING with static import and get_or_none() (#66) (#76)
+- **fastapi**: replace _HAS_TRACING with get_or_none() Optional DI (#67) (#74)
+- **sqlalchemy**: remove _HAS_OUTBOX pattern and make spakky-outbox a required dependency (#69) (#73)
+- 스킬 이름 변경 및 폴더 구조 정리
+
 ## v6.2.0 (2026-03-17)
 
 ### Feat

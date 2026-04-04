@@ -1,6 +1,6 @@
 [project]
 name = "spakky-kafka"
-version = "6.2.0"
+version = "6.3.0"
 description = "Apache Kafka plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,8 +11,8 @@ dependencies = [
     "confluent-kafka>=2.13.2",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
-    "spakky-event>=6.2.0",
-    "spakky-tracing>=6.2.0",
+    "spakky-event>=6.3.0",
+    "spakky-tracing>=6.3.0",
 ]
 
 [dependency-groups]

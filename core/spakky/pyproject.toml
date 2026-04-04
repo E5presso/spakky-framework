@@ -1,6 +1,6 @@
 [project]
 name = "spakky"
-version = "6.2.0"
+version = "6.3.0"
 description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,15 +11,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-logging = ["spakky-logging>=6.2.0"]
-security = ["spakky-security>=6.2.0"]
-fastapi = ["spakky-fastapi>=6.2.0"]
-typer = ["spakky-typer>=6.2.0"]
-rabbitmq = ["spakky-rabbitmq>=6.2.0"]
-kafka = ["spakky-kafka>=6.2.0"]
-sqlalchemy = ["spakky-sqlalchemy>=6.2.0"]
-celery = ["spakky-celery>=6.2.0"]
-opentelemetry = ["spakky-opentelemetry>=6.2.0"]
+logging = ["spakky-logging>=6.3.0"]
+security = ["spakky-security>=6.3.0"]
+fastapi = ["spakky-fastapi>=6.3.0"]
+typer = ["spakky-typer>=6.3.0"]
+rabbitmq = ["spakky-rabbitmq>=6.3.0"]
+kafka = ["spakky-kafka>=6.3.0"]
+sqlalchemy = ["spakky-sqlalchemy>=6.3.0"]
+celery = ["spakky-celery>=6.3.0"]
+opentelemetry = ["spakky-opentelemetry>=6.3.0"]
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]

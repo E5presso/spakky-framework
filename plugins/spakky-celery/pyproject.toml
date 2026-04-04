@@ -1,6 +1,6 @@
 [project]
 name = "spakky-celery"
-version = "6.2.0"
+version = "6.3.0"
 description = "Celery DI/AOP integration plugin for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,8 +9,8 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "celery>=5.6.2",
     "pydantic-settings>=2.13.1",
-    "spakky-task>=6.2.0",
-    "spakky-tracing>=6.2.0",
+    "spakky-task>=6.3.0",
+    "spakky-tracing>=6.3.0",
 ]
 
 [project.entry-points."spakky.plugins"]

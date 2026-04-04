@@ -5,6 +5,6 @@ All notable changes to spakky-opentelemetry are documented in this file.
 See the root CHANGELOG.md for a full summary of modifications affecting the
 entire workspace.
 
-## 6.2.0
+## 6.3.0
 
-- Initial release
+- Release 6.3.0
