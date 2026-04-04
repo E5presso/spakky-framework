@@ -41,7 +41,7 @@
 | **build** | `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
 | **verify** | `/check`, `/check-coverage`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit` | — |
 | **ship** | — | `/create-pr`, `/review-pr`, `/monitor-pr`, `/update-project-status` |
-| **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs` | `/review-harness`, `/update-harness` |
+| **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs` | `/review-harness`, `/update-harness`, `/sync-dev-docs`, `/sync-user-docs` |
 
 ### 핵심 워크플로우
 

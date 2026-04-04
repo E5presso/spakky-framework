@@ -1,31 +1,43 @@
 ---
 name: sync-docs
-description: 코드 변경 후 관련 문서(ARCHITECTURE.md, 패키지 README.md, CONTRIBUTING.md)를 코드 기반으로 동기화합니다.
-argument-hint: "[패키지명]"
+description: 코드 변경 후 관련 문서를 코드 기반으로 동기화합니다. 대상에 따라 개발 문서(sync-dev-docs) 또는 사용자 문서(sync-user-docs)로 라우팅합니다.
+argument-hint: "[dev|user|all] [패키지명]"
 user-invocable: true
 ---
 
-# Sync Docs — 문서 동기화
+# Sync Docs — 문서 동기화 라우터
 
-코드 변경 사항을 감지하여 관련 문서를 **코드 기반으로** 동기화한다. 문서에 코드와 맞지 않는 내용이 있으면 수정하고, 새로 추가된 공개 인터페이스는 문서에 반영한다.
+코드 변경 사항을 감지하여 관련 문서를 **코드 기반으로** 동기화한다. 변경 범위에 따라 적절한 서브 스킬을 호출한다.
 
-> **원칙**: Code > CONTRIBUTING.md > CLAUDE.md > README.md. 불일치 시 문서를 코드에 맞춘다.
+## 대상 구분
+
+| 서브 스킬 | 대상 독자 | 동기화 문서 |
+|----------|----------|-----------|
+| `sync-dev-docs` | 프레임워크 **개발자** | ARCHITECTURE.md, 패키지 README.md, CONTRIBUTING.md, docs/adr/README.md |
+| `sync-user-docs` | 프레임워크 **사용자** | docs/guides/, docs/api/, docs/index.md, docs/glossary.md, mkdocs.yml 등 |
 
 ## 사용법
 
 ```
-/sync-docs
-/sync-docs spakky-event
+/sync-docs                    # 변경 범위에서 자동 판단하여 해당 서브 스킬 실행
+/sync-docs dev                # 개발 문서만 동기화
+/sync-docs user               # 사용자 문서만 동기화
+/sync-docs all                # 양쪽 모두 동기화
+/sync-docs dev spakky-event   # 개발 문서 중 특정 패키지만
+/sync-docs user spakky-event  # 사용자 문서 중 특정 패키지만
 ```
-
-- 인자 없음: `git diff --name-only`에서 변경된 패키지의 문서를 동기화
-- 패키지명: 해당 패키지의 문서만 동기화
 
 ---
 
-## Phase 1: 변경 감지
+## 라우팅 로직
 
-### 1-1. 변경 범위 결정
+### Step 1: 인자 파싱
+
+- 첫 번째 인자가 `dev`, `user`, `all` 중 하나면 → 해당 대상으로 고정
+- 첫 번째 인자가 패키지명이면 → Step 2로 진행 (자동 판단)
+- 인자 없으면 → Step 2로 진행 (자동 판단)
+
+### Step 2: 변경 범위에서 자동 판단
 
 ```bash
 git diff --name-only HEAD~1..HEAD
@@ -34,137 +46,50 @@ git diff --name-only
 git diff --cached --name-only
 ```
 
-변경된 파일에서 영향받는 패키지를 추출한다.
+변경된 파일 경로를 분석하여 라우팅:
 
-### 1-2. 변경 유형 분류
+| 변경 파일 패턴 | 라우팅 대상 |
+|--------------|-----------|
+| `core/*/src/**`, `plugins/*/src/**` (소스 코드) | **양쪽 모두** — 개발 문서와 사용자 문서 모두 영향 |
+| `core/*/pyproject.toml`, `plugins/*/pyproject.toml` | **양쪽 모두** — 의존성·패키지 구조 변경 |
+| `docs/guides/**`, `docs/api/**`, `docs/index.md`, `docs/glossary.md`, `mkdocs.yml` | **user만** — 사용자 문서 자체 수정 |
+| `ARCHITECTURE.md`, `CONTRIBUTING.md`, `core/*/README.md`, `plugins/*/README.md` | **dev만** — 개발 문서 자체 수정 |
+| `docs/adr/**` | **dev만** — ADR은 개발 문서 범위 |
+| 도구/설정 파일만 변경 | **dev만** — CONTRIBUTING.md 검증 |
 
-변경된 파일을 아래 카테고리로 분류한다:
+### Step 3: 서브 스킬 실행
 
-| 카테고리 | 패턴 | 동기화 대상 |
-|---------|------|-----------|
-| **공개 인터페이스 변경** | ABC/Protocol 추가·수정·삭제, `__all__` 변경 | 패키지 README, ARCHITECTURE.md |
-| **패키지 추가·삭제** | `pyproject.toml` 신규, 패키지 디렉토리 추가·삭제 | ARCHITECTURE.md (패키지 구조 테이블, 의존성 그래프) |
-| **의존성 변경** | `pyproject.toml`의 dependencies 변경 | ARCHITECTURE.md (의존성 그래프) |
-| **데코레이터·스테레오타입 변경** | `@Component`, `@Bean` 등의 시그니처 변경 | 패키지 README (Quick Start, Features) |
-| **설정·환경 변경** | 개발 도구, 빌드 설정 변경 | CONTRIBUTING.md |
-| **ADR 추가** | `docs/adr/` 파일 추가 | ARCHITECTURE.md (ADR 테이블) |
+판단된 대상에 따라 서브 스킬을 **서브에이전트**로 호출한다.
 
-변경이 없는 카테고리는 건너뛴다.
+- **dev만**: `sync-dev-docs` 서브에이전트 1개 실행
+- **user만**: `sync-user-docs` 서브에이전트 1개 실행
+- **양쪽 모두**: `sync-dev-docs`와 `sync-user-docs` 서브에이전트를 **병렬** 실행
 
-## Phase 2: 문서별 동기화
+패키지명 인자가 있으면 서브 스킬에 전달한다.
 
-각 문서를 **병렬 서브에이전트**로 동기화한다. 같은 파일을 동시에 수정하지 않으므로 충돌 없음.
+### Step 4: 결과 통합
 
-### 2-1. 패키지 README.md
-
-**대상**: 변경된 패키지의 `core/*/README.md` 또는 `plugins/*/README.md`
-
-서브에이전트에게 전달할 컨텍스트:
-- 변경된 파일 목록과 diff
-- 현재 README.md 내용
-- 패키지의 `src/` 디렉토리에서 공개 인터페이스 목록
-
-**검증 항목**:
-
-1. **Features 섹션**: 공개 클래스/데코레이터 목록이 코드와 일치하는가
-2. **Quick Start 섹션**: 코드 예시의 import 경로가 유효한가
-3. **Installation 섹션**: 패키지명이 `pyproject.toml`의 `[project] name`과 일치하는가
-4. **API 설명**: 클래스/함수 시그니처가 코드와 일치하는가
-
-**동기화 규칙**:
-- 코드에서 제거된 API는 README에서도 제거
-- 코드에서 추가된 공개 API는 README에 추가 (기존 섹션 스타일에 맞춰)
-- import 경로 변경은 README의 모든 코드 블록에서 일괄 수정
-- **CHANGELOG.md는 수정하지 않는다** (자동 생성)
-
-### 2-2. ARCHITECTURE.md
-
-**검증 항목**:
-
-1. **패키지 구조 테이블**: 패키지 목록과 역할 설명이 코드와 일치하는가
-2. **의존성 그래프 (Mermaid)**: 노드와 엣지가 실제 `pyproject.toml` 의존성과 일치하는가
-3. **각 섹션 설명**: 코어/플러그인 설명이 현재 코드의 구조와 일치하는가
-4. **ADR 테이블**: `docs/adr/` 디렉토리의 ADR 파일 목록과 일치하는가
-
-**의존성 그래프 검증 방법**:
-
-```bash
-# 실제 패키지 간 의존성 추출
-grep -A 20 "\[project\]" core/*/pyproject.toml plugins/*/pyproject.toml | grep "spakky"
-```
-
-그래프의 엣지를 실제 의존성과 교차 대조하여 누락/잉여 엣지를 찾는다.
-
-**동기화 규칙**:
-- Mermaid 다이어그램은 `mermaid.md` 규칙을 따른다
-- 패키지 추가 시 테이블 행과 그래프 노드를 추가
-- 패키지 삭제 시 테이블 행과 그래프 노드·엣지를 제거
-
-### 2-3. CONTRIBUTING.md
-
-**검증 항목**:
-
-1. **Development Setup**: 설치 명령어가 현재 환경과 일치하는가
-2. **Running Tests**: 테스트 실행 명령어가 유효한가
-3. **패키지 구조 설명**: 디렉토리 구조가 현재와 일치하는가
-
-변경된 카테고리가 "설정·환경 변경"일 때만 검증한다.
-
-### 2-4. docs/adr/README.md
-
-ADR 파일이 추가·변경된 경우에만:
-
-1. ADR 목록 테이블이 `docs/adr/` 디렉토리의 파일과 일치하는가
-2. ADR 상태(Accepted, Superseded 등)가 파일 내용과 일치하는가
-
-## Phase 3: 검증
-
-### 3-1. 링크 검증
-
-수정된 문서 내의 내부 링크(파일 경로, 앵커)가 유효한지 확인한다:
-
-- 파일 참조: `[text](path/to/file)` → 파일 존재 여부
-- 앵커 참조: `[text](#section)` → 섹션 존재 여부
-
-### 3-2. 코드 블록 검증
-
-README의 코드 블록에 포함된 import 경로가 실제로 존재하는지 확인한다:
-
-```bash
-# README에서 import 문 추출 후 실제 모듈 존재 확인
-grep -oP "from \S+" <README.md> | sort -u
-```
-
-## Phase 4: 결과 보고
+각 서브에이전트의 결과를 통합하여 보고한다.
 
 ```
 ## 문서 동기화 결과
 
-### 변경된 문서
+### 개발 문서 (sync-dev-docs)
 
-| 문서 | 변경 내용 | 카테고리 |
-|------|----------|---------|
-| {경로} | {변경 요약} | {인터페이스/의존성/설정/ADR} |
+{sync-dev-docs 결과}
 
-### 검증
+### 사용자 문서 (sync-user-docs)
 
-- 내부 링크: {N}개 확인, {M}개 수정
-- 코드 블록 import: {N}개 확인, {M}개 수정
-
-### 변경 없음 (해당 시)
-
-동기화가 필요한 불일치가 없습니다.
+{sync-user-docs 결과}
 ```
 
 ---
 
 ## 규칙
 
-- **Code-first**: 문서의 모든 기술 내용은 실제 코드로 검증한다. 코드에 없는 내용을 문서에 추가하지 않는다.
+- **Code-first**: 모든 문서는 실제 코드 기반으로 검증한다.
 - **CHANGELOG.md는 수정하지 않는다** — 자동 생성 대상.
-- 패키지별 문서 동기화는 **병렬 서브에이전트**로 실행한다.
-- 문서 스타일은 기존 문서의 톤과 구조를 따른다 — 새로운 형식을 도입하지 않는다.
-- 변경이 없는 문서는 건드리지 않는다.
-- Mermaid 다이어그램 수정 시 `mermaid.md` 규칙을 준수한다.
+- 서브 스킬 실행은 **서브에이전트**로 수행하여 컨텍스트를 분리한다.
+- 양쪽 서브 스킬이 같은 파일을 수정할 일은 없으므로 병렬 실행 안전.
 
 $ARGUMENTS
