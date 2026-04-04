@@ -1,8 +1,7 @@
 ---
-name: create-plugin
+name: create-package
 description: 새 Spakky Framework 플러그인 패키지를 스캐폴딩하고 구현합니다
-argument-hint: "[plugin-name] [description]"
-disable-model-invocation: true
+argument-hint: "[package-name] [description]"
 ---
 
 # 플러그인 생성 워크플로우
@@ -10,7 +9,7 @@ disable-model-invocation: true
 ## Step 1: 스캐폴딩
 
 ```bash
-uv run python scripts/create_package.py plugin spakky-<name> --description "<설명>"
+uv run python scripts/create_package.py package spakky-<name> --description "<설명>"
 ```
 
 이 스크립트가 자동 처리하는 항목:
@@ -35,7 +34,7 @@ uv run python scripts/create_package.py plugin spakky-<name> --description "<설
 | 인프라 (DB/ORM) | `spakky-data`까지 |
 | 트랜스포트 (MQ/브로커) | `spakky-event`까지 |
 
-**핵심 의존 방향**: `spakky` → `spakky-domain` → `spakky-data` → `spakky-event` (단방향)
+**핵심 의존 방향**: monorepo.md 참조 (단방향)
 
 ### 코어 패키지도 동일
 

@@ -43,7 +43,7 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 3. 계획 수립 시 준수 사항:
    - CLAUDE.md의 모든 규칙
    - `.claude/rules/` 내 모든 규칙 파일
-   - 레이어 의존 방향 (단방향만 허용): `spakky → spakky-domain → spakky-data → spakky-event → spakky-outbox`
+   - 레이어 의존 방향 (단방향만 허용, monorepo.md 참조)
    - 모노레포 패키지별 독립 실행 원칙
 4. 구현 계획을 사용자에게 제시하고 `AskUserQuestion`으로 **승인을 받는다**.
    - 승인 없이 다음 단계로 진행하지 않는다.
@@ -66,10 +66,9 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 
 사용자가 계획을 승인하면:
 
-1. 이슈 번호 기반으로 브랜치명을 생성한다: `{type}/{issue-number}`
-   - type은 이슈 내용에 따라 결정: `feat`, `fix`, `refactor`, `docs` 등
-   - 예: `feat/42`
-2. `develop` 브랜치에서 새 워크트리를 생성한다.
+1. 이슈 내용에 따라 접두어(prefix)를 결정한다: `feat`, `fix`, `refactor`, `docs`, `hotfix`, `release` 등
+2. `/create-worktree {prefix} {issue-number}` 서브스킬을 실행한다.
+   - 서브스킬이 source 브랜치 최신화, 워크트리 생성, 브랜치명 설정을 처리한다.
 3. 워크트리에서 이후 모든 작업을 수행한다.
 4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Progress` 실행
 
@@ -106,7 +105,7 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
    ```bash
    git push -u origin HEAD
    ```
-3. `/pr` 스킬을 사용하여 PR을 생성한다.
+3. `/create-pr` 스킬을 사용하여 PR을 생성한다.
    - PR 대상 브랜치: `develop`
    - Body에 `Closes #<issue-number>` 포함
 4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Review` 실행

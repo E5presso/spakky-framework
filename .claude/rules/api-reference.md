@@ -1,6 +1,6 @@
 ---
 paths:
-  - "**/*.py"
+  - "**/src/**/*.py"
 ---
 
 # Spakky Framework API Reference

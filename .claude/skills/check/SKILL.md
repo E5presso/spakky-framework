@@ -24,13 +24,7 @@ user-invocable: true
 
 ## 1. 레이어 의존 방향 검증
 
-CLAUDE.md에 정의된 의존 방향을 검증한다:
-
-```
-spakky → spakky-domain → spakky-data ──┐
-spakky → spakky-tracing ───────────────┤→ spakky-event → spakky-outbox (단방향)
-spakky → spakky-task
-```
+CLAUDE.md에 정의된 의존 방향(monorepo.md 참조)을 검증한다.
 
 역방향 의존이 발생하는 패턴을 grep으로 검사한다:
 

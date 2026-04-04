@@ -32,7 +32,7 @@ paths:
 | 주석 | 올바른 예시 |
 |------|------------|
 | `# type: ignore` | `# type: ignore[arg-type] - aio_pika 타입 스텁 불완전` |
-| `# prefly: ignore` | `# prefly: ignore - false positive on dynamic attr` |
+| `# pyrefly: ignore` | `# pyrefly: ignore - false positive on dynamic attr` |
 | `# pragma: no cover` | `# pragma: no cover - exhaustive StrEnum` |
 | `# pragma: no branch` | `# pragma: no branch - AbstractMethod only` |
 

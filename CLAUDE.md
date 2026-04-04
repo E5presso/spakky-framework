@@ -19,13 +19,7 @@
 | `core/spakky-task/` | 태스크 추상화 (스케줄링, 디스패치) |
 | `plugins/spakky-*/` | 플러그인 구현체 |
 
-**의존 방향 (단방향):**
-
-```
-spakky → spakky-domain → spakky-data → spakky-event → spakky-outbox
-spakky → spakky-tracing → spakky-event
-spakky → spakky-task
-```
+**의존 방향 (단방향):** `.claude/rules/monorepo.md` 참조
 
 ## Documentation Maintenance Rules
 
@@ -36,40 +30,13 @@ spakky → spakky-task
 - **Priority**: Code > `CONTRIBUTING.md` > this file > `README.md`. 불일치 시 문서 수정
 - **Verification**: 파일 경로, 클래스/함수명, 시그니처, import 경로, 환경변수 — 실제 코드로 검증
 
-## 서브에이전트 활용 전략
+## 서브에이전트 활용
 
-모노레포 특성상 독립적인 패키지를 병렬로 작업할 기회가 많습니다. **적극적으로 서브에이전트를 활용**하세요.
-
-### 반드시 서브에이전트를 사용하는 상황
-
-| 상황 | 서브에이전트 활용 |
-|------|-----------------|
-| **다중 패키지 테스트** | 각 패키지를 별도 서브에이전트로 병렬 실행 |
-| **다중 패키지 린트/타입체크** | 패키지별 병렬 검증 |
-| **코드 탐색 (3+ 쿼리)** | `Explore` 에이전트로 넓은 범위 탐색 |
-| **구현 계획 수립** | `Plan` 에이전트로 설계 → 승인 → 구현 |
-| **커버리지 개선** | 파일별 테스트 작성을 병렬 서브에이전트로 분배 |
-| **의존성 업데이트 검증** | 패키지별 테스트를 병렬 실행 |
-| **리팩터링 영향 분석** | 변경 대상의 사용처를 `Explore`로 탐색 |
-
-### 병렬화 패턴 예시
-
-```
-# 여러 패키지 테스트 시
-서브에이전트 1: cd core/spakky && uv run pytest
-서브에이전트 2: cd core/spakky-data && uv run pytest
-서브에이전트 3: cd plugins/spakky-kafka && uv run pytest
-
-# 코드 변경 후 검증 시
-서브에이전트 1: 린트 + 타입체크 (해당 패키지)
-서브에이전트 2: 유닛 테스트 (해당 패키지)
-서브에이전트 3: 영향받는 하위 패키지 테스트
-```
+서브에이전트 바이어스 원칙은 `behavioral-guidelines.md` §5 참조. 모노레포 특성상 패키지별 병렬 작업에 특히 유효합니다.
 
 ### 주의사항
 
 - 같은 파일을 동시에 수정하는 서브에이전트는 금지 (충돌)
-- 서브에이전트에게 **완전한 컨텍스트** 제공 (패키지 경로, 실행 명령어, 기대 결과)
 - `worktree` 격리 모드는 파일 수정이 필요한 독립 작업에 활용
 
 ## 도구 사용 규칙

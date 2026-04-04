@@ -1,6 +1,6 @@
 ---
 name: retro
-description: 세션 종료 시 자가 평가를 수행하고 메모리에 기록합니다. 3-strike 누적 시 하네스 튜닝을 트리거합니다.
+description: 세션 종료 시 자가 평가를 수행하고 메모리에 기록합니다. 3-strike 누적 시 /harness-review → /harness-update 체인으로 하네스를 개선합니다.
 user-invocable: true
 ---
 
@@ -71,9 +71,12 @@ type: project
 
 동일 카테고리가 **3회 이상 fail**이면:
 
-1. 사용자에게 보고한다: "`{ID}`가 3회 누적되었습니다. 하네스 튜닝을 트리거합니다."
-2. `/harness-update`를 실행하여 해당 위반을 방지하는 규칙 강화 또는 hook 추가를 제안한다.
-3. 하네스 반영 완료 후 해당 ID의 행을 테이블에서 **삭제**하여 카운트를 리셋한다.
+1. 사용자에게 보고한다: "`{ID}`가 3회 누적되었습니다. 하네스 진단을 시작합니다."
+2. `/harness-review {ID}`를 실행하여 위반의 근본 원인을 하네스에서 진단한다.
+3. `/harness-review`가 진단 완료 후 자동으로 `/harness-update`를 호출하여 개선안을 적용한다.
+4. 하네스 반영 완료 후 해당 ID의 행을 테이블에서 **삭제**하여 카운트를 리셋한다.
+
+**체인**: `/retro` → `/harness-review` (진단) → `/harness-update` (개선)
 
 ### 5. 교훈 승격
 
@@ -94,5 +97,5 @@ type: project
 - 변경된 파일이 없으면 평가를 생략한다.
 - **all-pass 세션은 메모리에 기록하지 않는다** — context rot 방지.
 - fail이지만 세션 중 교정되었으면 비고에 "수정 완료"로 기록한다 (카운트에는 포함).
-- 3-strike 트리거 시 사용자 확인 없이 `/harness-update`를 자동 실행한다.
+- 3-strike 트리거 시 사용자 확인 없이 `/harness-review` → `/harness-update` 체인을 자동 실행한다.
 - 3-strike 소진 후 하네스 반영 완료 시 해당 행을 삭제하여 카운트를 리셋한다.

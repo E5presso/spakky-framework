@@ -2,7 +2,6 @@
 name: commit
 description: Spakky Framework 커밋 메시지를 Conventional Commits 형식으로 작성합니다
 argument-hint: "[추가 설명]"
-disable-model-invocation: true
 ---
 
 # 커밋 메시지 작성
