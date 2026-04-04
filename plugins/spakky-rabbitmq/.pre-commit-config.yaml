@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: pyrefly-typecheck
         name: Pyrefly (type checking)
-        entry: bash -c 'if [ -d "plugins/spakky-rabbitmq" ]; then cd plugins/spakky-rabbitmq; fi && uv run pyrefly check'
+        entry: bash -c 'if [ -d "plugins/spakky-rabbitmq" ]; then cd plugins/spakky-rabbitmq; fi && uv run pyrefly check --disable-project-excludes-heuristics'
         language: system
         types: [python]
         pass_filenames: false
