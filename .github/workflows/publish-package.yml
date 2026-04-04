@@ -14,6 +14,7 @@ on:
           - spakky-data
           - spakky-task
           - spakky-outbox
+          - spakky-tracing
           - spakky-logging
           - spakky-fastapi
           - spakky-rabbitmq
@@ -22,6 +23,7 @@ on:
           - spakky-kafka
           - spakky-sqlalchemy
           - spakky-celery
+          - spakky-opentelemetry
       dry_run:
         description: 'Dry run (build only, do not publish)'
         required: false
