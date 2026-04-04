@@ -29,13 +29,19 @@ user-invocable: false
 
 2. **source 브랜치 최신화**:
    ```bash
-   git checkout develop && git pull origin develop
+   git fetch origin develop
    ```
 
 3. **워크트리 생성**:
    - `EnterWorktree`의 `name` 파라미터에 워크트리명(`feat-42`)을 전달한다.
 
-4. **브랜치명 변경**:
+4. **develop 기준으로 리셋**:
+   - `EnterWorktree`는 세션의 원래 HEAD에서 워크트리를 만든다. 워크트리 진입 후 develop으로 맞춘다:
+     ```bash
+     git reset --hard origin/develop
+     ```
+
+5. **브랜치명 변경**:
    - 워크트리 생성 후 브랜치명을 `{prefix}/{issue-number}`로 변경한다:
      ```bash
      git branch -m {prefix}/{issue-number}
