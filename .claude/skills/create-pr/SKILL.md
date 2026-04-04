@@ -2,6 +2,7 @@
 name: create-pr
 description: Spakky Framework PR을 생성합니다
 argument-hint: "[PR 설명]"
+user-invocable: false
 ---
 
 # PR 생성

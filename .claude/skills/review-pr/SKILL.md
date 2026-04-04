@@ -2,6 +2,7 @@
 name: review-pr
 description: PR 리뷰 코멘트를 트리아지하여 수용/반론을 판단하고, 수정 적용 후 스레드에 근거를 남깁니다
 argument-hint: "[PR 번호]"
+user-invocable: false
 ---
 
 # PR 리뷰 코멘트 트리아지 & 반영

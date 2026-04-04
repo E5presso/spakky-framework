@@ -2,6 +2,7 @@
 name: check-coverage
 description: Spakky Framework 패키지의 테스트 커버리지를 측정합니다
 argument-hint: "[package-name]"
+user-invocable: true
 ---
 
 # 커버리지 확인 워크플로우

@@ -1,6 +1,7 @@
 ---
 name: update-dependencies
 description: 모노레포 전체의 외부 의존성을 최신 버전으로 업데이트합니다
+user-invocable: true
 ---
 
 # 의존성 최신화 워크플로우

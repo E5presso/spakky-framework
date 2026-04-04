@@ -1,6 +1,7 @@
 ---
 name: onboarding
 description: 새 개발자의 Spakky Framework 개발 환경을 설정합니다. RTK 설치, 의존성 동기화, 도구 검증을 수행합니다.
+user-invocable: true
 ---
 
 # 온보딩 워크플로우

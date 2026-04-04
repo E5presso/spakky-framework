@@ -2,6 +2,7 @@
 name: improve-coverage
 description: Spakky Framework 패키지의 테스트 커버리지를 개선합니다
 argument-hint: "[package-name]"
+user-invocable: true
 ---
 
 # 커버리지 개선 워크플로우

@@ -117,96 +117,9 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 
 ## Phase 6: CI & 리뷰 모니터링
 
-PR 생성 후 **백그라운드 Bash**로 polling하고, 상태 변화 시 사용자에게 알린다.
+`/monitor-pr {PR_NUMBER}` 서브스킬을 실행한다. polling 스크립트, 이벤트 분기, CI 실패/리뷰 코멘트 처리는 서브스킬이 정의한다.
 
-### 모니터링 루프
-
-1. **백그라운드 polling 시작** (`run_in_background: true`, 고정 10초 간격):
-
-   ```bash
-   OWNER_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner')
-   PR_NUMBER={PR_NUMBER}
-   LAST_COMMENT_COUNT=$(gh pr view $PR_NUMBER --json comments --jq '.comments | length' 2>/dev/null || echo 0)
-   LAST_REVIEW_COMMENT_COUNT=$(gh api "repos/$OWNER_REPO/pulls/$PR_NUMBER/comments" --jq 'length' 2>/dev/null || echo 0)
-   LAST_REVIEW_DECISION=$(gh pr view $PR_NUMBER --json reviewDecision --jq '.reviewDecision' 2>/dev/null || echo "")
-   while true; do
-      mergeState=$(gh pr view $PR_NUMBER --json mergeStateStatus --jq '.mergeStateStatus' 2>/dev/null || echo "")
-      reviewDecision=$(gh pr view $PR_NUMBER --json reviewDecision --jq '.reviewDecision' 2>/dev/null || echo "")
-      commentCount=$(gh pr view $PR_NUMBER --json comments --jq '.comments | length' 2>/dev/null || echo 0)
-      reviewCommentCount=$(gh api "repos/$OWNER_REPO/pulls/$PR_NUMBER/comments" --jq 'length' 2>/dev/null || echo 0)
-      failedChecks=$(gh pr view $PR_NUMBER --json statusCheckRollup --jq '[.statusCheckRollup[] | select(.conclusion == "FAILURE" or .state == "FAILURE")] | length' 2>/dev/null || echo 0)
-
-      # 1. 새 일반 코멘트 감지 (코멘트가 merge 상태보다 우선)
-      if [ "$commentCount" -gt "$LAST_COMMENT_COUNT" ]; then
-         echo "NEW_COMMENT_DETECTED count=$commentCount"
-         LAST_COMMENT_COUNT=$commentCount
-         break
-      fi
-
-      # 2. 새 인라인 리뷰 코멘트 감지
-      if [ "$reviewCommentCount" -gt "$LAST_REVIEW_COMMENT_COUNT" ]; then
-         echo "NEW_REVIEW_COMMENT_DETECTED count=$reviewCommentCount"
-         LAST_REVIEW_COMMENT_COUNT=$reviewCommentCount
-         break
-      fi
-
-      # 3. CI 실패 감지
-      if [ "$failedChecks" -gt "0" ]; then
-         echo "CI_FAILURE_DETECTED"
-         gh pr view $PR_NUMBER --json statusCheckRollup --jq '[.statusCheckRollup[] | select(.conclusion == "FAILURE" or .state == "FAILURE")]'
-         break
-      fi
-
-      # 4. 리뷰 상태 변경 감지
-      if [ "$reviewDecision" != "$LAST_REVIEW_DECISION" ] && [ -n "$LAST_REVIEW_DECISION" ]; then
-         echo "REVIEW_STATE_CHANGED from=$LAST_REVIEW_DECISION to=$reviewDecision"
-         break
-      fi
-      LAST_REVIEW_DECISION=$reviewDecision
-
-      # 5. Merge 가능 상태 (코멘트/CI보다 후순위)
-      if [ "$mergeState" = "CLEAN" ] || [ "$mergeState" = "UNSTABLE" ]; then
-         echo "MERGEABLE_DETECTED mergeState=$mergeState reviewDecision=$reviewDecision"
-         break
-      fi
-
-      sleep 10
-   done
-   ```
-
-   **이벤트 분기 처리**: 백그라운드 완료 알림을 받으면 출력을 읽고 이벤트 타입에 따라 분기한다:
-   - `MERGEABLE_DETECTED` → Phase 7로 전환.
-   - `NEW_COMMENT_DETECTED` → 아래 "리뷰 코멘트 감지 시" 절차를 실행한 뒤, polling을 재시작한다.
-   - `NEW_REVIEW_COMMENT_DETECTED` → 아래 "리뷰 코멘트 감지 시" 절차를 실행한 뒤, polling을 재시작한다.
-   - `REVIEW_STATE_CHANGED` → 사용자에게 알리고, 상태에 따라 Phase 7 또는 polling 재시작.
-   - `CI_FAILURE_DETECTED` → 아래 "CI 실패 감지 시" 절차를 실행한 뒤, polling을 재시작한다.
-
-   **polling 재시작**: 이벤트 처리 후 다시 동일한 polling 루프를 백그라운드로 실행한다. 이때 `LAST_COMMENT_COUNT`와 `LAST_REVIEW_DECISION`은 현재 값으로 초기화하여 중복 감지를 방지한다.
-
-2. **CI 실패 감지 시**:
-   - GitHub Actions 실패를 감지하면, 로컬에서 해당 패키지의 검증을 재현한다:
-     ```bash
-     # 변경된 패키지 디렉토리에서
-     cd <package-dir>
-     uv run ruff check .
-     uv run pyrefly check
-     uv run pytest
-     ```
-   - 로컬 검증이 통과하면 사용자에게 "로컬 검증 통과, CI 인프라 문제 가능성"을 보고하고 사용자 판단을 요청한다.
-   - 로컬 검증이 실패하면 원인을 수정하고 커밋 & push 후 polling을 재시작한다.
-
-3. **리뷰 코멘트 감지 시**:
-   - 사용자에게 새 리뷰 코멘트가 달렸음을 알린다.
-   - `/review-pr` 스킬을 실행한다.
-   - 수용 → 코드 수정 + 커밋 & push + 스레드에 응답 → 사용자에게 수정 내용 보고
-   - 반론 → 스레드에 근거 남김 → 사용자에게 반론 내용 보고
-   - 보류 → 사용자에게 처리 방향을 확인
-   - 트리아지 완료 후, 코멘트를 남긴 리뷰어에게 **재리뷰를 요청**한다:
-     ```bash
-     gh pr edit {PR_NUMBER} --add-reviewer {REVIEWER_LOGIN}
-     ```
-
-4. **종료 조건**: PR의 merge button이 활성화된 상태 (mergeable + checks pass + review approved)
+**종료 조건**: PR의 merge button이 활성화된 상태 (mergeable + checks pass + review approved)
 
 ## Phase 7: 병합 준비 완료
 
