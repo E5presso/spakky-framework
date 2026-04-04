@@ -170,6 +170,9 @@ class ProxyFactory(Generic[ObjectT]):
     _handler: IProxyHandler
     """The handler that implements interception logic."""
 
+    _wrapper_cache: dict[str, Func | AsyncFunc]
+    """Cache for method wrappers to avoid re-creation on each access."""
+
     def __init__(
         self,
         target: ObjectT,
@@ -184,8 +187,11 @@ class ProxyFactory(Generic[ObjectT]):
         self._type = type(target)
         self._target = target
         self._handler = handler
+        self._wrapper_cache = {}
 
     def __proxy_getattribute__(self, name: str) -> Any:
+        if name in self._wrapper_cache:
+            return self._wrapper_cache[name]
         value: Any = object.__getattribute__(self._target, name)
         if ismethod(value):
             if iscoroutinefunction(value):
@@ -194,12 +200,14 @@ class ProxyFactory(Generic[ObjectT]):
                 async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                     return await self.__proxy_call_async__(value, *args, **kwargs)
 
+                self._wrapper_cache[name] = async_wrapper
                 return async_wrapper
 
             @wraps(value)
             def wrapper(*args: Any, **kwargs: Any) -> Any:
                 return self.__proxy_call__(value, *args, **kwargs)
 
+            self._wrapper_cache[name] = wrapper
             return wrapper
         if name in self.ATTRIBUTES_TO_IGNORE:
             return value
