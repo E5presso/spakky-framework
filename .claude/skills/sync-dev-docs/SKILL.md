@@ -20,7 +20,7 @@ user-invocable: false
 
 ---
 
-## Phase 1: 변경 감지
+## Phase 1: 변경 감지 + 커버리지 매트릭스
 
 ### 1-1. 변경 범위 결정
 
@@ -33,7 +33,33 @@ git diff --cached --name-only
 
 변경된 파일에서 영향받는 패키지를 추출한다.
 
-### 1-2. 변경 유형 분류
+### 1-2. 커버리지 매트릭스 (필수)
+
+변경 유형 분류 **전에**, 전체 패키지 대비 개발 문서 커버리지를 점검한다. 이 단계는 "변경된 패키지"뿐 아니라 **기존에 누락된 문서**도 감지하기 위한 것이다.
+
+```bash
+# 1. 전체 패키지 목록 수집
+ls -d core/*/src plugins/*/src | sed 's|/src||' | sort
+
+# 2. 개발 문서 커버리지 대조 — 각 패키지에 대해 아래 존재 여부 확인
+#    - {core|plugins}/{패키지명}/README.md (패키지 README)
+#    - ARCHITECTURE.md 패키지 구조 테이블에 해당 패키지 행 존재
+#    - ARCHITECTURE.md 의존성 그래프에 해당 패키지 노드 존재
+#    - ARCHITECTURE.md 관련 섹션에 해당 패키지 컴포넌트 설명 존재
+#    - CONTRIBUTING.md commit scope에 해당 패키지 존재
+```
+
+**커버리지 매트릭스 출력 형식:**
+
+| 패키지 | README | ARCH 테이블 | ARCH 그래프 | ARCH 섹션 | CONTRIB scope |
+|--------|--------|-----------|-----------|----------|--------------|
+| spakky | O | O | O | O | O |
+| spakky-opentelemetry | O | O | O | **X** | O |
+| ... | ... | ... | ... | ... | ... |
+
+**X 표시된 항목은 Phase 2에서 반드시 동기화 대상에 포함한다.** 변경된 패키지가 아니더라도, 커버리지 매트릭스에서 누락이 발견되면 동기화 대상이다.
+
+### 1-3. 변경 유형 분류
 
 변경된 파일을 아래 카테고리로 분류한다:
 
@@ -45,7 +71,7 @@ git diff --cached --name-only
 | **데코레이터·스테레오타입 변경** | `@Component`, `@Bean` 등의 시그니처 변경 | 패키지 README (Quick Start, Features) |
 | **설정·환경 변경** | 개발 도구, 빌드 설정 변경 | CONTRIBUTING.md |
 | **ADR 추가** | `docs/adr/` 파일 추가 | ARCHITECTURE.md (ADR 테이블) |
-| **문서 누락 감지** | 코드에 존재하지만 문서에 없는 패키지·모듈·API | 해당 문서 신규 생성 또는 기존 문서에 섹션 추가 |
+| **문서 커버리지 누락** | 1-2 매트릭스에서 X로 표시된 항목 | 해당 문서 신규 생성 또는 기존 문서에 섹션 추가 |
 
 코드와 이미 일치하는 카테고리는 건너뛴다.
 
@@ -143,15 +169,23 @@ README의 코드 블록에 포함된 import 경로가 실제로 존재하는지 
 grep -oP "from \S+" <README.md> | sort -u
 ```
 
-## Phase 4: 수렴 루프
+## Phase 4: 수렴 루프 (Write → Verify 분리 실행)
 
-Phase 2(Write 에이전트) → Phase 3(Verify 에이전트)를 **이슈 0건이 될 때까지** 반복한다. 매 라운드마다 Write와 Verify가 fresh context의 **별도 서브에이전트**로 실행되므로 이전 라운드의 판단에 오염되지 않는다.
+Phase 2(Write)와 Phase 3(Verify)는 **반드시 별도의 서브에이전트 호출**로 분리한다. 같은 에이전트 안에서 Write 후 Verify를 실행하면 self-confirmation bias가 발생하므로, **호출자(이 스킬을 실행하는 에이전트)가 루프를 오케스트레이션**한다.
 
 ```
 라운드 = 1
 반복:
-  1. Write 서브에이전트: Phase 2 실행 (동기화)
-  2. Verify 서브에이전트 (fresh context): Phase 3 실행 (검증)
+  1. Write 서브에이전트 호출 (Agent tool):
+     - 입력: Phase 1 결과 (커버리지 매트릭스 + 변경 유형) + 이전 라운드 이슈 목록
+     - 작업: Phase 2 실행 (동기화 — 수정 + 신규 생성)
+     - 출력: 수정/생성한 파일 경로 목록과 변경 요약
+  
+  2. Write 완료 대기 후, Verify 서브에이전트 호출 (별도 Agent tool — fresh context):
+     - 입력: Write가 수정/생성한 파일 경로 목록 + Phase 3 체크리스트 전문
+     - 작업: Phase 3 실행 (검증)
+     - 출력: 이슈 목록 (심각도별 분류)
+  
   3. Verify 결과에서 이슈 수 집계
   4. 이슈 0건이면 → 루프 종료, Phase 5로
   5. 이슈 > 0건이면 → 이슈 목록을 다음 Write 에이전트에 전달, 다음 라운드
@@ -160,6 +194,8 @@ Phase 2(Write 에이전트) → Phase 3(Verify 에이전트)를 **이슈 0건이
   최대 반복: 3회 (무한 루프 방지)
   3회 후에도 미해결 이슈가 있으면 "미해결" 섹션으로 보고한다.
 ```
+
+**핵심**: 호출자가 `Agent` 도구를 2번 순차 호출한다 — Write 1회, Verify 1회. 이것이 1라운드이다. Verify에서 이슈가 나오면 다시 Write → Verify로 2라운드를 시작한다.
 
 ## Phase 5: 결과 보고
 
