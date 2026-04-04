@@ -1,3 +1,9 @@
+## v6.3.1 (2026-04-04)
+
+### Fix
+
+- **core**: cache method wrappers in ProxyFactory to avoid re-creation on each access
+
 ## v6.3.0 (2026-04-04)
 
 ### Feat

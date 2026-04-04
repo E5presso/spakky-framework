@@ -1,6 +1,6 @@
 [project]
 name = "spakky-fastapi"
-version = "6.3.0"
+version = "6.3.1"
 description = "FastAPI plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,8 +9,8 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "fastapi[standard]>=0.135.3",
     "orjson>=3.11.8",
-    "spakky>=6.3.0",
-    "spakky-tracing>=6.3.0",
+    "spakky>=6.3.1",
+    "spakky-tracing>=6.3.1",
     "websockets>=16.0",
 ]
 

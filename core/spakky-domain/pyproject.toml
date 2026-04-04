@@ -1,11 +1,11 @@
 [project]
 name = "spakky-domain"
-version = "6.3.0"
+version = "6.3.1"
 description = "DDD building blocks for Spakky Framework (Entity, AggregateRoot, ValueObject, DomainEvent, CQRS)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
-dependencies = ["spakky>=6.3.0"]
+dependencies = ["spakky>=6.3.1"]
 
 [project.entry-points."spakky.plugins"]
 spakky-domain = "spakky.domain.main:initialize"

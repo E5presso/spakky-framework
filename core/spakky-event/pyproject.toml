@@ -1,14 +1,14 @@
 [project]
 name = "spakky-event"
-version = "6.3.0"
+version = "6.3.1"
 description = "Event handling stereotype for Spakky Framework (@EventHandler, @on_event)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "spakky-domain>=6.3.0",
-    "spakky-data>=6.3.0",
-    "spakky-tracing>=6.3.0",
+    "spakky-domain>=6.3.1",
+    "spakky-data>=6.3.1",
+    "spakky-tracing>=6.3.1",
     "pydantic>=2.12.5",
 ]
 

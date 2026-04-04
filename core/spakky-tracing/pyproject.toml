@@ -1,12 +1,12 @@
 [project]
 name = "spakky-tracing"
-version = "6.3.0"
+version = "6.3.1"
 description = "Distributed tracing abstraction for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.3.0"]
+dependencies = ["spakky>=6.3.1"]
 
 [project.entry-points."spakky.plugins"]
 spakky-tracing = "spakky.tracing.main:initialize"
