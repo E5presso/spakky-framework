@@ -26,7 +26,7 @@
 | `plugins/spakky-kafka/` | Kafka 이벤트 브로커 통합 |
 | `plugins/spakky-celery/` | Celery 태스크 디스패치 |
 | `plugins/spakky-security/` | 암호화/해싱/JWT 유틸리티 |
-| `plugins/spakky-logging/` | 구조화 로깅, @Logging AOP Aspect |
+| `plugins/spakky-logging/` | 구조화 로깅, @logged AOP Aspect |
 | `plugins/spakky-opentelemetry/` | OpenTelemetry SDK 브릿지 |
 
 **의존 방향 (단방향):** `.claude/rules/monorepo.md` 참조
