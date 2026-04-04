@@ -66,9 +66,9 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 
 사용자가 계획을 승인하면:
 
-1. 이슈 번호 기반으로 브랜치명을 생성한다: `{type}/{issue-number}-{간결한-설명}`
+1. 이슈 번호 기반으로 브랜치명을 생성한다: `{type}/{issue-number}`
    - type은 이슈 내용에 따라 결정: `feat`, `fix`, `refactor`, `docs` 등
-   - 예: `feat/42-add-async-event-handler`
+   - 예: `feat/42`
 2. `develop` 브랜치에서 새 워크트리를 생성한다.
 3. 워크트리에서 이후 모든 작업을 수행한다.
 4. **프로젝트 상태 갱신** — 서브에이전트(백그라운드)로 `/update-project-status $ISSUE_NUMBER In Progress` 실행
