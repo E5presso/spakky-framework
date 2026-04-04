@@ -42,7 +42,7 @@
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 (spakky-outbox 설치 시 Outbox 저장소 자동 등록) |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
-| **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @Logging AOP Aspect |
+| **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @logged AOP Aspect |
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
 
 ---
@@ -62,6 +62,7 @@ graph TD
         data --> event[📡 spakky-event<br/>Publisher · Consumer · Aspect]
         tracing --> event
         event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
+        tracing --> outbox
     end
 
     subgraph plugins ["⚡ Plugins"]
@@ -97,7 +98,7 @@ graph TD
     task_pkg --> celery_plugin
     core --> logging_pkg
     tracing --> otel
-    logging_pkg -.->|optional| otel
+    otel -.->|optional| logging_pkg
     core --> fastapi
     core --> typer
     core --> security
@@ -129,12 +130,13 @@ graph TD
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`까지 의존, `spakky-outbox` 설치 시 Outbox 저장소 런타임 감지
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인)
-- **Outbox 코어** (spakky-outbox) → `spakky-event`까지 의존 (추상화 + 오케스트레이션)
+- **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
 - **이벤트 코어** (spakky-event) → `spakky-data` + `spakky-tracing`에 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task`에 의존
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
+- **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
 
 ---
 
@@ -382,6 +384,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
 | `spakky-task` | `TaskRegistrationPostProcessor` |
 | `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
+| `spakky-tracing` | `W3CTracePropagator` |
+| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` |
 
 ---
 
@@ -457,7 +461,7 @@ class IUserRepository:
     def search_by_name(self, name: str) -> list[User]: ...   # 조회 관점!
 
 # ✅ 올바른 예: QueryUseCase에서 직접 구현
-@QueryUseCase()
+@UseCase()
 class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO]):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -778,7 +782,7 @@ sequenceDiagram
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
 | `spakky-rabbitmq` | ConnectionConfig, Consumer, `RabbitMQEventTransport`, PostProcessor | `aio-pika`, `pika`, `pydantic` |
-| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventTransport`, PostProcessor | `confluent-kafka`, `pydantic` |
+| `spakky-kafka` | ConnectionConfig, Consumer, `KafkaEventTransport`, PostProcessor | `aiokafka`, `confluent-kafka`, `pydantic` |
 
 ### 인프라 플러그인
 

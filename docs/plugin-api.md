@@ -54,7 +54,9 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 | `spakky-domain` | DDD 빌딩 블록                  |
 | `spakky-data`   | Repository, Transaction 추상화 |
 | `spakky-event`  | 인프로세스 이벤트 시스템       |
-| `spakky-task`   | 태스크 큐 추상화 (@TaskHandler, @task, @schedule) |
+| `spakky-task`    | 태스크 큐 추상화 (@TaskHandler, @task, @schedule) |
+| `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, Propagator)    |
+| `spakky-outbox`  | Transactional Outbox 패턴                          |
 
 ### UI 플러그인
 
@@ -71,7 +73,9 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 | `spakky-kafka`      | Apache Kafka 이벤트 브로커 |
 | `spakky-sqlalchemy` | SQLAlchemy ORM 통합        |
 | `spakky-security`   | 암호화/해싱/JWT 유틸리티   |
-| `spakky-celery`     | Celery 태스크 디스패치 및 스케줄 등록 |
+| `spakky-celery`        | Celery 태스크 디스패치 및 스케줄 등록 |
+| `spakky-logging`       | 구조화 로깅, @Logging AOP Aspect      |
+| `spakky-opentelemetry` | OpenTelemetry SDK 브릿지              |
 
 ---
 

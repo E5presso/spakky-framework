@@ -66,7 +66,6 @@ user_service = app.container.get(UserService)
 ```
 
 > **📘 Auto-scan**: When `scan()` is called without arguments, it automatically detects the caller's package and scans it. This also works in Docker environments where the application root may not be in `sys.path` - the framework automatically adds the necessary path.
-```
 
 ## Pod Scopes
 

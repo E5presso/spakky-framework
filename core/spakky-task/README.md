@@ -1,6 +1,6 @@
 # spakky-task
 
-Task queue abstraction layer for [Spakky Framework](https://github.com/E5resso/spakky-framework).
+Task queue abstraction layer for [Spakky Framework](https://github.com/E5presso/spakky-framework).
 
 ## Installation
 

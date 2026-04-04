@@ -39,11 +39,12 @@ pip install spakky-opentelemetry[logging]
 
 ```python
 from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
 app = (
-    SpakkyApplication()
-    .scan(my_module)
+    SpakkyApplication(ApplicationContext())
     .load_plugins()  # spakky-opentelemetry 자동 로드
+    .scan(my_module)
     .start()
 )
 ```

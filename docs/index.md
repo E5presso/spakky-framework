@@ -233,6 +233,7 @@ app = (
 | [spakky-kafka](api/plugins/spakky-kafka.md)           | Kafka 통합       |
 | [spakky-sqlalchemy](api/plugins/spakky-sqlalchemy.md) | SQLAlchemy 통합  |
 | [spakky-celery](api/plugins/spakky-celery.md)         | Celery 통합      |
+| [spakky-opentelemetry](api/plugins/spakky-opentelemetry.md) | OpenTelemetry 브릿지 |
 
 ### 의존 방향
 
@@ -248,6 +249,7 @@ flowchart LR
     logging[spakky-logging]
     security[spakky-security]
     celery[spakky-celery]
+    opentelemetry[spakky-opentelemetry]
   end
 
   subgraph Core[Core]
@@ -270,4 +272,6 @@ flowchart LR
   logging -. 로깅 .-> core
   security -. 인증 .-> core
   celery -. Celery .-> task
+  opentelemetry -. OTel .-> core
+  opentelemetry -. OTel .-> tracing_dep
 ```

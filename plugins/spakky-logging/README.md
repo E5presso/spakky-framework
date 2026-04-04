@@ -18,13 +18,13 @@ pip install spakky-logging
 app = SpakkyApplication(ApplicationContext()).load_plugins().scan(my_app).start()
 ```
 
-### 2. Annotate Methods with `@Logging`
+### 2. Annotate Methods with `@logged`
 
 ```python
-from spakky.plugins.logging import Logging
+from spakky.plugins.logging import logged
 
 class UserService:
-    @Logging()
+    @logged()
     async def create_user(self, name: str, password: str) -> User:
         ...
 ```
@@ -62,7 +62,7 @@ with LogContext.scope(trace_id="t-789"):
 
 | Feature                     | Description                                                |
 | --------------------------- | ---------------------------------------------------------- |
-| `@Logging()` annotation     | AOP-based automatic method call/result/error logging       |
+| `@logged()` annotation      | AOP-based automatic method call/result/error logging       |
 | `LogContext`                | Contextvars-based structured context propagation           |
 | `ContextInjectingFilter`    | Injects LogContext values into every `LogRecord`           |
 | `SpakkyTextFormatter`       | Pipe-separated text format                                 |

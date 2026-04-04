@@ -24,6 +24,7 @@ spakky-opentelemetry = "spakky.plugins.opentelemetry.main:initialize"
 [dependency-groups]
 dev = [
     "spakky-logging>=6.2.0",
+    "opentelemetry-exporter-otlp>=1.20.0",
 ]
 
 [build-system]

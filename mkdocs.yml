@@ -84,6 +84,7 @@ plugins:
             - plugins/spakky-kafka/src
             - plugins/spakky-sqlalchemy/src
             - plugins/spakky-celery/src
+            - plugins/spakky-opentelemetry/src
           options:
             docstring_style: google
             show_source: true
@@ -137,6 +138,7 @@ nav:
           - spakky-kafka: api/plugins/spakky-kafka.md
           - spakky-sqlalchemy: api/plugins/spakky-sqlalchemy.md
           - spakky-celery: api/plugins/spakky-celery.md
+          - spakky-opentelemetry: api/plugins/spakky-opentelemetry.md
   - ADR:
       - 개요: adr/README.md
       - ADR-0001 이벤트 시스템 재설계: adr/0001-event-system-redesign.md

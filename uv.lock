@@ -2977,6 +2977,7 @@ otlp = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "opentelemetry-exporter-otlp" },
     { name = "spakky-logging" },
 ]
 
@@ -2993,7 +2994,10 @@ requires-dist = [
 provides-extras = ["otlp", "logging"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "spakky-logging", editable = "plugins/spakky-logging" }]
+dev = [
+    { name = "opentelemetry-exporter-otlp", specifier = ">=1.20.0" },
+    { name = "spakky-logging", editable = "plugins/spakky-logging" },
+]
 
 [[package]]
 name = "spakky-outbox"

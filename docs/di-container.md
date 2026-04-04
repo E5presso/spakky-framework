@@ -10,7 +10,7 @@ Spakky의 IoC 컨테이너는 `ApplicationContext`입니다. Pod의 생명주기
 
 ```python
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 
 # 직접 사용
 context = ApplicationContext()
@@ -381,7 +381,7 @@ class LoggingPostProcessor(IPostProcessor):
 `SpakkyApplication.scan()`으로 패키지 내 Pod를 자동 탐색합니다.
 
 ```python
-from spakky.core.application import SpakkyApplication
+from spakky.core.application.application import SpakkyApplication
 
 app = SpakkyApplication(ApplicationContext())
 app.scan()  # 호출자의 패키지 스캔

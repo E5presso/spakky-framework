@@ -24,3 +24,4 @@
 - [spakky-kafka](plugins/spakky-kafka.md) — Kafka 통합
 - [spakky-sqlalchemy](plugins/spakky-sqlalchemy.md) — SQLAlchemy 통합
 - [spakky-celery](plugins/spakky-celery.md) — Celery 통합
+- [spakky-opentelemetry](plugins/spakky-opentelemetry.md) — OpenTelemetry 브릿지

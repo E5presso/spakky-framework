@@ -30,7 +30,7 @@ class IUserRepository:
     def find_by_email(self, email: str) -> User | None: ...
 
 # ✅ Correct: Direct implementation in QueryUseCase
-@QueryUseCase()
+@UseCase()
 class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO]):
     async def run(self, query: FindUserByEmailQuery) -> UserDTO:
         # Use ORM/SQL directly

@@ -21,6 +21,8 @@ Exception
     ├── AbstractSpakkyPersistencyError
     ├── AbstractSpakkyExternalError
     ├── AbstractSpakkyEventError
+    ├── AbstractSpakkyTaskError
+    ├── AbstractSpakkyTracingError
     ├── AbstractSpakkyFastAPIError (플러그인)
     ├── AbstractSpakkySqlAlchemyError (플러그인)
     ├── AbstractSpakkyOutboxError (플러그인)
@@ -170,6 +172,44 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 | `EntityNotFoundError`           | 엔티티 조회 실패               | `AbstractSpakkyDomainError`   |
 | `VersionConflictError`          | 낙관적 락 충돌                 | `AbstractSpakkyDomainError`   |
 | `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   | `AbstractSpakkyFrameworkError` |
+
+---
+
+### spakky-task
+
+태스크 시스템 관련 에러입니다.
+
+```python
+from spakky.task.error import (
+    AbstractSpakkyTaskError,
+    TaskNotFoundError,
+    DuplicateTaskError,
+    InvalidScheduleSpecificationError,
+)
+```
+
+| 에러                                | 설명                                                    |
+| ----------------------------------- | ------------------------------------------------------- |
+| `TaskNotFoundError`                 | 레지스트리에서 태스크를 찾을 수 없음                    |
+| `DuplicateTaskError`               | 중복 태스크 등록 시도                                   |
+| `InvalidScheduleSpecificationError` | `@schedule`에 `interval`/`at`/`crontab` 중 하나만 필요 |
+
+---
+
+### spakky-tracing
+
+분산 트레이싱 관련 에러입니다.
+
+```python
+from spakky.tracing.error import (
+    AbstractSpakkyTracingError,
+    InvalidTraceparentError,
+)
+```
+
+| 에러                      | 설명                               |
+| ------------------------- | ---------------------------------- |
+| `InvalidTraceparentError` | `traceparent` 헤더 형식이 유효하지 않음 |
 
 ---
 

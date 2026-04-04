@@ -364,9 +364,11 @@ Crontab(month=Month.JANUARY, day=1)
 시작/종료 생명주기를 가진 동기 서비스 인터페이스.
 
 ```python
+import threading
 from spakky.core.service.interfaces.service import IService
 
 class BackgroundWorker(IService):
+    def set_stop_event(self, stop_event: threading.Event) -> None: ...
     def start(self) -> None: ...
     def stop(self) -> None: ...
 ```
@@ -376,9 +378,11 @@ class BackgroundWorker(IService):
 시작/종료 생명주기를 가진 비동기 서비스 인터페이스.
 
 ```python
+from asyncio import locks
 from spakky.core.service.interfaces.service import IAsyncService
 
 class AsyncWorker(IAsyncService):
+    def set_stop_event(self, stop_event: locks.Event) -> None: ...
     async def start_async(self) -> None: ...
     async def stop_async(self) -> None: ...
 ```
