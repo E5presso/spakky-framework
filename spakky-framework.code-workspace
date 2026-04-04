@@ -68,6 +68,10 @@
 			"name": "plugins.celery",
 			"path": "plugins/spakky-celery",
 		},
+		{
+			"name": "plugins.opentelemetry",
+			"path": "plugins/spakky-opentelemetry",
+		},
 	],
 	"settings": {
 		"yaml.customTags": [

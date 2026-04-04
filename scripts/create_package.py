@@ -237,7 +237,7 @@ def generate_precommit_config(name: str, pkg_type: PackageType) -> str:
     hooks:
       - id: pyrefly-typecheck
         name: Pyrefly (type checking)
-        entry: bash -c 'if [ -d "{package_dir}" ]; then cd {package_dir}; fi && uv run pyrefly check'
+        entry: bash -c 'if [ -d "{package_dir}" ]; then cd {package_dir}; fi && uv run pyrefly check --disable-project-excludes-heuristics'
         language: system
         types: [python]
         pass_filenames: false
