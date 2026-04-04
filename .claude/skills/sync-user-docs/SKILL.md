@@ -81,9 +81,9 @@ ls -d core/*/src plugins/*/src | sed 's|/src||' | sort
 
 ## Phase 2: 문서별 동기화 (Write 에이전트)
 
-각 문서를 **병렬 서브에이전트**로 동기화한다. 같은 파일을 동시에 수정하지 않으므로 충돌 없음.
+각 문서를 순차적으로 동기화한다.
 
-> **중요**: Phase 2는 "Write 에이전트"가 담당한다. Phase 3 검증은 **별도의 "Verify 에이전트"**가 fresh context에서 수행하여 self-confirmation bias를 방지한다.
+> **중요**: 이 Phase는 sync-docs 라우터의 Write 서브에이전트 프롬프트에 포함되어 실행된다.
 
 ### 2-1. docs/guides/*.md (튜토리얼)
 
@@ -178,15 +178,9 @@ guides와 동일한 검증 항목을 적용한다. 변경된 패키지와 관련
 1. **nav 섹션**: 패키지 추가/삭제 시 네비게이션 항목이 일치하는가
 2. **mkdocstrings paths**: 패키지 추가/삭제 시 소스 경로가 포함되어 있는가
 
-## Phase 3: 편집증적 팩트체크 (Verify 에이전트 — 별도 서브에이전트)
+## Phase 3: 편집증적 팩트체크 (Verify 에이전트)
 
-> **Phase 2와 Phase 3은 반드시 서로 다른 서브에이전트에서 실행한다.** Write 에이전트가 수정/생성한 문서를 같은 컨텍스트에서 검증하면 self-confirmation bias가 발생한다. Verify 에이전트는 fresh context에서 수정된 문서를 코드와 독립적으로 대조한다.
-
-Verify 에이전트에게 전달할 컨텍스트:
-- Phase 2에서 수정/생성된 문서 파일 경로 목록
-- 변경된 소스 코드 패키지 경로
-- **Phase 1 커버리지 매트릭스 전문** (Verify가 매트릭스 누락 항목도 검증하도록)
-- 이 스킬의 Phase 3 체크리스트 (3-1 ~ 3-8)
+> **중요**: 이 Phase는 sync-docs 라우터의 Verify 서브에이전트 프롬프트에 포함되어 실행된다. Write와 별도의 fresh context에서 실행되므로 self-confirmation bias를 방지한다.
 
 ### 검증 범위: 수정된 문서만이 아닌 전체 대상 문서
 
@@ -265,35 +259,7 @@ grep -rhoP "from [a-z_.]+ import" docs/ | sort -u
 - [ ] mkdocstrings `paths`에 모든 패키지 소스 경로가 포함되어 있는가?
 - [ ] 새로 추가된 패키지가 `nav`와 `paths`에 반영되었는가?
 
-## Phase 4: 수렴 루프 (Write → Verify 분리 실행)
-
-Phase 2(Write)와 Phase 3(Verify)는 **반드시 별도의 서브에이전트 호출**로 분리한다. 같은 에이전트 안에서 Write 후 Verify를 실행하면 self-confirmation bias가 발생하므로, **호출자(이 스킬을 실행하는 에이전트)가 루프를 오케스트레이션**한다.
-
-```
-라운드 = 1
-반복:
-  1. Write 서브에이전트 호출 (Agent tool):
-     - 입력: Phase 1 결과 (커버리지 매트릭스 + 변경 유형) + 이전 라운드 이슈 목록
-     - 작업: Phase 2 실행 (동기화 — 수정 + 신규 생성)
-     - 출력: 수정/생성한 파일 경로 목록과 변경 요약
-
-  2. Write 완료 대기 후, Verify 서브에이전트 호출 (별도 Agent tool — fresh context):
-     - 입력: Write가 수정/생성한 파일 경로 목록 + **Phase 1 커버리지 매트릭스** + Phase 3 체크리스트 전문
-     - 작업: Phase 3 실행 (편집증적 팩트체크) — **수정된 문서뿐 아니라 전체 대상 문서를 검증**
-     - 출력: 이슈 목록 (심각도별 분류)
-
-  3. Verify 결과에서 Critical + Warning 이슈 수 집계 (Info, 미확인은 제외)
-  4. 이슈 0건이면 → 루프 종료, Phase 5로
-  5. 이슈 > 0건이면 → 이슈 목록을 다음 Write 에이전트에 전달, 다음 라운드
-  6. 라운드 += 1
-
-  최대 반복: 3회 (무한 루프 방지)
-  3회 후에도 미해결 이슈가 있으면 "미해결" 섹션으로 보고한다.
-```
-
-**핵심**: 호출자가 `Agent` 도구를 2번 순차 호출한다 — Write 1회, Verify 1회. 이것이 1라운드이다. Verify에서 이슈가 나오면 다시 Write → Verify로 2라운드를 시작한다.
-
-## Phase 5: 결과 보고
+## Phase 4: 결과 보고
 
 이슈를 심각도별로 분류하여 보고한다.
 
