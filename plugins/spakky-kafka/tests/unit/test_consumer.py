@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.tracing.context import TraceContext
+from spakky.tracing.w3c_propagator import W3CTracePropagator
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 from spakky.plugins.kafka.event.consumer import (
@@ -368,3 +370,442 @@ async def test_async_consumer_dispose_async_expect_close(
     await consumer.dispose_async()
 
     mock_aio_consumer.close.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Trace context extraction tests
+# ---------------------------------------------------------------------------
+
+SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+SAMPLE_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+SAMPLE_SPAN_ID = "b7ad6b7169203331"
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_route_with_traceparent_expect_child_context_set(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """traceparent 헤더가 있으면 child TraceContext가 활성화됨을 검증한다."""
+    consumer = KafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    consumer._route_event_handler(mock_message)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.trace_id == SAMPLE_TRACE_ID
+    assert ctx.parent_span_id == SAMPLE_SPAN_ID
+    assert ctx.span_id != SAMPLE_SPAN_ID
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_route_with_traceparent_expect_child_context_set(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer에서 traceparent 헤더가 있으면 child TraceContext가 활성화됨을 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    async def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    await consumer._route_event_handler(mock_message)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.trace_id == SAMPLE_TRACE_ID
+    assert ctx.parent_span_id == SAMPLE_SPAN_ID
+    assert ctx.span_id != SAMPLE_SPAN_ID
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_route_without_propagator_expect_no_trace_context(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """propagator 미설정 시 TraceContext가 설정되지 않음을 검증한다."""
+    consumer = KafkaEventConsumer(config)
+
+    captured_ctx: list[TraceContext | None] = []
+
+    def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    TraceContext.clear()
+    consumer._route_event_handler(mock_message)
+
+    assert captured_ctx[0] is None
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_route_without_propagator_expect_no_trace_context(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer에서 propagator 미설정 시 TraceContext가 설정되지 않음을 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+
+    captured_ctx: list[TraceContext | None] = []
+
+    async def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    TraceContext.clear()
+    await consumer._route_event_handler(mock_message)
+
+    assert captured_ctx[0] is None
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_route_with_none_headers_expect_new_root_trace(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """headers가 None이면 new root TraceContext가 생성됨을 검증한다."""
+    consumer = KafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = None
+
+    consumer._route_event_handler(mock_message)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.parent_span_id is None
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_route_with_none_headers_expect_new_root_trace(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer에서 headers가 None이면 new root TraceContext가 생성됨을 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    async def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = None
+
+    await consumer._route_event_handler(mock_message)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.parent_span_id is None
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_route_with_empty_headers_expect_new_root_trace(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """headers가 빈 리스트이면 new root TraceContext가 생성됨을 검증한다."""
+    consumer = KafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = []
+
+    consumer._route_event_handler(mock_message)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.parent_span_id is None
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_route_with_empty_headers_expect_new_root_trace(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer에서 headers가 빈 리스트이면 new root TraceContext가 생성됨을 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    captured_ctx: list[TraceContext | None] = []
+
+    async def capturing_handler(event: SampleEvent) -> None:
+        captured_ctx.append(TraceContext.get())
+
+    consumer.register(SampleEvent, capturing_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = []
+
+    await consumer._route_event_handler(mock_message)
+
+    assert len(captured_ctx) == 1
+    ctx = captured_ctx[0]
+    assert ctx is not None
+    assert ctx.parent_span_id is None
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_route_trace_context_cleared_after_handler(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """핸들러 완료 후 TraceContext가 정리됨을 검증한다."""
+    consumer = KafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+    consumer.register(SampleEvent, MagicMock())
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    consumer._route_event_handler(mock_message)
+
+    assert TraceContext.get() is None
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_route_trace_context_cleared_after_handler(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer에서 핸들러 완료 후 TraceContext가 정리됨을 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+    consumer.register(SampleEvent, AsyncMock())
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    await consumer._route_event_handler(mock_message)
+
+    assert TraceContext.get() is None
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_route_handler_exception_expect_trace_context_cleared(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """핸들러 예외 시에도 TraceContext가 정리됨을 검증한다."""
+    consumer = KafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    def raising_handler(event: SampleEvent) -> None:
+        raise RuntimeError("handler error")
+
+    consumer.register(SampleEvent, raising_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    consumer._route_event_handler(mock_message)
+
+    assert TraceContext.get() is None
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_route_handler_exception_expect_trace_context_cleared(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer에서 핸들러 예외 시에도 TraceContext가 정리됨을 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.set_propagator(W3CTracePropagator())
+
+    async def raising_handler(event: SampleEvent) -> None:
+        raise RuntimeError("handler error")
+
+    consumer.register(SampleEvent, raising_handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "test"}'
+    mock_message.headers.return_value = [
+        ("traceparent", SAMPLE_TRACEPARENT.encode()),
+    ]
+
+    await consumer._route_event_handler(mock_message)
+
+    assert TraceContext.get() is None
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_to_string_headers_with_bytes_expect_decoded(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """_to_string_headers가 bytes 값을 문자열로 디코딩하는지 검증한다."""
+    consumer = KafkaEventConsumer(config)
+
+    result = consumer._to_string_headers(
+        [
+            ("traceparent", b"00-abc-def-01"),
+            ("custom", b"value"),
+        ]
+    )
+
+    assert result == {"traceparent": "00-abc-def-01", "custom": "value"}
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_to_string_headers_with_none_expect_empty(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """_to_string_headers가 None 입력에 빈 dict를 반환하는지 검증한다."""
+    consumer = KafkaEventConsumer(config)
+
+    result = consumer._to_string_headers(None)
+
+    assert result == {}
+
+
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_async_consumer_to_string_headers_with_bytes_expect_decoded(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer의 _to_string_headers가 bytes 값을 문자열로 디코딩하는지 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+
+    result = consumer._to_string_headers(
+        [
+            ("traceparent", b"00-abc-def-01"),
+            ("custom", b"value"),
+        ]
+    )
+
+    assert result == {"traceparent": "00-abc-def-01", "custom": "value"}
+
+
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_async_consumer_to_string_headers_with_none_expect_empty(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 consumer의 _to_string_headers가 None 입력에 빈 dict를 반환하는지 검증한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+
+    result = consumer._to_string_headers(None)
+
+    assert result == {}

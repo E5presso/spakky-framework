@@ -6,6 +6,8 @@ and correctly ignores DomainEvent handlers.
 
 from unittest.mock import Mock
 
+from spakky.tracing.propagator import ITracePropagator
+
 import pytest
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.mutability import immutable
@@ -397,3 +399,118 @@ def test_kafka_post_processor_handler_with_non_decorated_method_expect_skip() ->
     mock_consumer.register.assert_called_once()
     call_args = mock_consumer.register.call_args
     assert call_args[0][0] == SampleIntegrationEvent
+
+
+# ---------------------------------------------------------------------------
+# Propagator injection tests
+# ---------------------------------------------------------------------------
+
+
+def test_kafka_post_processor_with_tracing_available_expect_propagator_injected() -> (
+    None
+):
+    """tracing이 가용하면 consumer에 propagator가 주입됨을 검증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_propagator = Mock(spec=ITracePropagator)
+    mock_consumer = Mock()
+    mock_async_consumer = Mock()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = True
+    mock_context.get.return_value = mock_propagator
+
+    post_processor = KafkaPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    post_processor.post_process(handler_instance)
+
+    mock_consumer.set_propagator.assert_called_once_with(mock_propagator)
+    mock_async_consumer.set_propagator.assert_called_once_with(mock_propagator)
+
+
+def test_kafka_post_processor_without_tracing_expect_no_propagator_injected() -> None:
+    """tracing이 미가용하면 set_propagator가 호출되지 않음을 검증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_consumer = Mock()
+    mock_async_consumer = Mock()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = False
+
+    post_processor = KafkaPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    post_processor.post_process(handler_instance)
+
+    mock_consumer.set_propagator.assert_not_called()
+    mock_async_consumer.set_propagator.assert_not_called()
+
+
+def test_kafka_post_processor_with_tracing_but_no_set_propagator_expect_skipped() -> (
+    None
+):
+    """consumer에 set_propagator가 없으면 주입을 건너뜀을 검증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_propagator = Mock(spec=ITracePropagator)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = True
+    mock_context.get.return_value = mock_propagator
+
+    post_processor = KafkaPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    post_processor.post_process(handler_instance)
+
+    assert not hasattr(mock_consumer, "set_propagator")
+    assert not hasattr(mock_async_consumer, "set_propagator")

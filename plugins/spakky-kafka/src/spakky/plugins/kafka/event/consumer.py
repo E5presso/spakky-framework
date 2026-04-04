@@ -21,6 +21,14 @@ from spakky.event.event_consumer import (
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 
+try:
+    from spakky.tracing.context import TraceContext
+    from spakky.tracing.propagator import ITracePropagator
+
+    _HAS_TRACING = True
+except ImportError:  # pragma: no cover - optional dependency (spakky-tracing)
+    _HAS_TRACING = False
+
 logger = getLogger(__name__)
 
 
@@ -34,6 +42,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: Consumer
+    _propagator: object | None
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the Kafka consumer with connection config."""
@@ -42,11 +51,49 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.type_lookup = {}
         self.type_adapters = {}
         self.handlers = {}
+        self._propagator = None
         self.admin = AdminClient(self.config.configuration_dict)
         self.consumer = Consumer(
             self.config.configuration_dict,
             logger=logger,
         )
+
+    def set_propagator(self, propagator: object) -> None:
+        """Set the trace propagator for extracting trace context from messages.
+
+        Args:
+            propagator: An ITracePropagator instance.
+        """
+        self._propagator = propagator
+
+    @staticmethod
+    def _to_string_headers(
+        raw: dict[str, bytes | str | None]
+        | list[tuple[str, bytes | str | None]]
+        | None,
+    ) -> dict[str, str]:
+        """Convert Kafka message headers to a string-valued carrier dict.
+
+        Kafka headers may be a list of (key, value) tuples or a dict.
+        Values can be bytes, str, or None. This method decodes bytes and
+        keeps str values, skipping None.
+
+        Args:
+            raw: Raw Kafka headers, or None.
+
+        Returns:
+            A dict with string keys and string values.
+        """
+        if raw is None:
+            return {}
+        items = raw.items() if isinstance(raw, dict) else raw
+        result: dict[str, str] = {}
+        for key, value in items:
+            if isinstance(value, str):
+                result[key] = value
+            elif isinstance(value, bytes):
+                result[key] = value.decode()
+        return result
 
     def _create_topics(self, topics: list[str]) -> None:
         if not topics:  # pragma: no cover
@@ -78,6 +125,12 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
+        if _HAS_TRACING and self._propagator is not None:
+            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+            carrier = self._to_string_headers(message.headers())
+            parent = propagator.extract(carrier)
+            ctx = parent.child() if parent is not None else TraceContext.new_root()
+            TraceContext.set(ctx)
         try:
             event_message: bytes | None = message.value()
             if event_message is None:  # pragma: no cover
@@ -89,6 +142,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
                 handler(event_data)
         except Exception as e:  # pragma: no cover
             logger.error(f"Error processing message for event type {topic}: {e}")
+        finally:
+            if _HAS_TRACING and self._propagator is not None:
+                TraceContext.clear()
 
     def register(
         self,
@@ -133,6 +189,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: AIOConsumer
+    _propagator: object | None
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the async Kafka consumer with connection config."""
@@ -141,7 +198,45 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self.type_lookup = {}
         self.type_adapters = {}
         self.handlers = {}
+        self._propagator = None
         self.admin = AdminClient(self.config.configuration_dict)
+
+    def set_propagator(self, propagator: object) -> None:
+        """Set the trace propagator for extracting trace context from messages.
+
+        Args:
+            propagator: An ITracePropagator instance.
+        """
+        self._propagator = propagator
+
+    @staticmethod
+    def _to_string_headers(
+        raw: dict[str, bytes | str | None]
+        | list[tuple[str, bytes | str | None]]
+        | None,
+    ) -> dict[str, str]:
+        """Convert Kafka message headers to a string-valued carrier dict.
+
+        Kafka headers may be a list of (key, value) tuples or a dict.
+        Values can be bytes, str, or None. This method decodes bytes and
+        keeps str values, skipping None.
+
+        Args:
+            raw: Raw Kafka headers, or None.
+
+        Returns:
+            A dict with string keys and string values.
+        """
+        if raw is None:
+            return {}
+        items = raw.items() if isinstance(raw, dict) else raw
+        result: dict[str, str] = {}
+        for key, value in items:
+            if isinstance(value, str):
+                result[key] = value
+            elif isinstance(value, bytes):
+                result[key] = value.decode()
+        return result
 
     def _create_topics(self, topics: list[str]) -> None:
         if not topics:  # pragma: no cover
@@ -175,6 +270,12 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         if event_type is None:  # pragma: no cover
             logger.warning(f"Received message for unknown event type: {topic}")
             return
+        if _HAS_TRACING and self._propagator is not None:
+            propagator: ITracePropagator = self._propagator  # type: ignore[assignment]  # guarded by _HAS_TRACING
+            carrier = self._to_string_headers(message.headers())
+            parent = propagator.extract(carrier)
+            ctx = parent.child() if parent is not None else TraceContext.new_root()
+            TraceContext.set(ctx)
         try:
             event_message: bytes | None = message.value()
             if event_message is None:  # pragma: no cover
@@ -186,6 +287,9 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
                 await handler(event_data)
         except Exception as e:  # pragma: no cover
             logger.error(f"Error processing message for event type {topic}: {e}")
+        finally:
+            if _HAS_TRACING and self._propagator is not None:
+                TraceContext.clear()
 
     def register(
         self,
