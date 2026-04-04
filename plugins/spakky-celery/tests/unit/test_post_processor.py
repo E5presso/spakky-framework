@@ -1,8 +1,9 @@
 """Tests for CeleryPostProcessor."""
 
 from datetime import time, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
 from celery import Celery
 from celery.schedules import crontab as celery_crontab
 from celery.schedules import schedule as celery_schedule
@@ -10,7 +11,14 @@ from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.crontab import Crontab, Weekday
 from spakky.task.stereotype.schedule import schedule
 from spakky.task.stereotype.task_handler import TaskHandler, task
+from spakky.tracing.context import TraceContext
+from spakky.tracing.propagator import ITracePropagator
+from spakky.tracing.w3c_propagator import W3CTracePropagator
 
+from spakky.plugins.celery.aspects.task_dispatch import (
+    AsyncCeleryTaskDispatchAspect,
+    CeleryTaskDispatchAspect,
+)
 from spakky.plugins.celery.post_processor import CeleryPostProcessor
 
 
@@ -34,6 +42,7 @@ def _create_post_processor(celery: Celery) -> CeleryPostProcessor:
     """CeleryPostProcessor를 생성하고 Aware 인터페이스를 설정한다."""
     context_mock = MagicMock()
     context_mock.get.return_value = celery
+    context_mock.contains.return_value = False
 
     post_processor = CeleryPostProcessor()
     post_processor.set_application_context(context_mock)
@@ -127,6 +136,7 @@ def test_celery_post_processor_registers_wrapper_with_context_isolation() -> Non
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
     application_context_mock.get.side_effect = get_from_context
+    application_context_mock.contains.return_value = False
 
     post_processor = CeleryPostProcessor()
     post_processor.set_application_context(application_context_mock)
@@ -169,6 +179,7 @@ def test_celery_post_processor_registers_async_tasks() -> None:
         raise AssertionError(f"Unexpected dependency lookup: {type_}")
 
     application_context_mock.get.side_effect = get_from_context
+    application_context_mock.contains.return_value = False
 
     post_processor = CeleryPostProcessor()
     post_processor.set_application_context(application_context_mock)
@@ -309,3 +320,347 @@ def test_crontab_to_celery_converts_tuple_of_intenum_to_numeric_string() -> None
     assert cron_dict["_orig_month_of_year"] == "1,7"
     # Weekday.MONDAY=0, Weekday.FRIDAY=4
     assert cron_dict["_orig_day_of_week"] == "0,4"
+
+
+# =============================================================================
+# Scenario: Trace context propagation
+# =============================================================================
+
+SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+SAMPLE_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+SAMPLE_SPAN_ID = "b7ad6b7169203331"
+
+
+def _create_tracing_post_processor(
+    celery_mock: MagicMock,
+    handler_type: type[object],
+    handler_instance: object,
+    *,
+    with_propagator: bool = True,
+) -> CeleryPostProcessor:
+    """트레이싱 테스트용 CeleryPostProcessor를 생성한다."""
+
+    propagator = W3CTracePropagator()
+    sync_aspect = CeleryTaskDispatchAspect(celery_mock)
+    async_aspect = AsyncCeleryTaskDispatchAspect(celery_mock)
+
+    application_context_mock = MagicMock()
+
+    def get_from_context(type_: type[object]) -> object:
+        if type_ is Celery:
+            return celery_mock
+        if type_ is handler_type:
+            return handler_instance
+        if type_ is ITracePropagator:
+            return propagator
+        if type_ is CeleryTaskDispatchAspect:
+            return sync_aspect
+        if type_ is AsyncCeleryTaskDispatchAspect:
+            return async_aspect
+        raise AssertionError(f"Unexpected dependency lookup: {type_}")
+
+    application_context_mock.get.side_effect = get_from_context
+    application_context_mock.contains.return_value = with_propagator
+
+    post_processor = CeleryPostProcessor()
+    post_processor.set_application_context(application_context_mock)
+    return post_processor
+
+
+def test_sync_endpoint_extracts_trace_context_expect_child_span() -> None:
+    """sync 엔드포인트가 traceparent 헤더에서 trace context를 추출하여 child span을 생성하는지 검증한다."""
+
+    @TaskHandler()
+    class TracingHandler:
+        def __init__(self) -> None:
+            self.captured_ctx: TraceContext | None = None
+
+        @task
+        def traced_task(self) -> None:
+            self.captured_ctx = TraceContext.get()
+
+    handler = TracingHandler()
+    celery_mock = MagicMock()
+    post_processor = _create_tracing_post_processor(
+        celery_mock, TracingHandler, handler
+    )
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+
+    mock_request = MagicMock()
+    mock_request.get.return_value = {"traceparent": SAMPLE_TRACEPARENT}
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        endpoint()
+
+    assert handler.captured_ctx is not None
+    assert handler.captured_ctx.trace_id == SAMPLE_TRACE_ID
+    assert handler.captured_ctx.parent_span_id == SAMPLE_SPAN_ID
+    assert handler.captured_ctx.span_id != SAMPLE_SPAN_ID
+    assert TraceContext.get() is None
+
+
+def test_sync_endpoint_creates_root_when_no_traceparent_expect_new_root() -> None:
+    """sync 엔드포인트에서 traceparent 헤더가 없을 때 새 root trace를 생성하는지 검증한다."""
+
+    @TaskHandler()
+    class RootTraceHandler:
+        def __init__(self) -> None:
+            self.captured_ctx: TraceContext | None = None
+
+        @task
+        def traced_task(self) -> None:
+            self.captured_ctx = TraceContext.get()
+
+    handler = RootTraceHandler()
+    celery_mock = MagicMock()
+    post_processor = _create_tracing_post_processor(
+        celery_mock, RootTraceHandler, handler
+    )
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+
+    mock_request = MagicMock()
+    mock_request.get.return_value = {}
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        endpoint()
+
+    assert handler.captured_ctx is not None
+    assert handler.captured_ctx.parent_span_id is None
+    assert TraceContext.get() is None
+
+
+def test_sync_endpoint_clears_trace_context_on_exception_expect_none() -> None:
+    """sync 엔드포인트에서 핸들러가 예외를 발생시켜도 TraceContext가 정리되는지 검증한다."""
+
+    @TaskHandler()
+    class FailingHandler:
+        @task
+        def failing_task(self) -> None:
+            raise RuntimeError("boom")
+
+    handler = FailingHandler()
+    celery_mock = MagicMock()
+    post_processor = _create_tracing_post_processor(
+        celery_mock, FailingHandler, handler
+    )
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+
+    mock_request = MagicMock()
+    mock_request.get.return_value = {"traceparent": SAMPLE_TRACEPARENT}
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        with pytest.raises(RuntimeError, match="boom"):
+            endpoint()
+
+    assert TraceContext.get() is None
+
+
+def test_sync_endpoint_no_trace_when_propagator_none_expect_context_unset() -> None:
+    """propagator가 없을 때 sync 엔드포인트에서 TraceContext가 설정되지 않는지 검증한다."""
+
+    @TaskHandler()
+    class NoTraceHandler:
+        def __init__(self) -> None:
+            self.captured_ctx: TraceContext | None = None
+
+        @task
+        def simple_task(self) -> None:
+            self.captured_ctx = TraceContext.get()
+
+    handler = NoTraceHandler()
+    celery_mock = MagicMock()
+    post_processor = _create_tracing_post_processor(
+        celery_mock, NoTraceHandler, handler, with_propagator=False
+    )
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+    endpoint()
+
+    assert handler.captured_ctx is None
+
+
+def test_async_endpoint_extracts_trace_context_expect_child_span() -> None:
+    """async 엔드포인트가 traceparent 헤더에서 trace context를 추출하여 child span을 생성하는지 검증한다."""
+
+    @TaskHandler()
+    class AsyncTracingHandler:
+        def __init__(self) -> None:
+            self.captured_ctx: TraceContext | None = None
+
+        @task
+        async def async_traced_task(self) -> None:
+            self.captured_ctx = TraceContext.get()
+
+    handler = AsyncTracingHandler()
+    celery_mock = MagicMock()
+    post_processor = _create_tracing_post_processor(
+        celery_mock, AsyncTracingHandler, handler
+    )
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+
+    mock_request = MagicMock()
+    mock_request.get.return_value = {"traceparent": SAMPLE_TRACEPARENT}
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        endpoint()
+
+    assert handler.captured_ctx is not None
+    assert handler.captured_ctx.trace_id == SAMPLE_TRACE_ID
+    assert handler.captured_ctx.parent_span_id == SAMPLE_SPAN_ID
+    assert handler.captured_ctx.span_id != SAMPLE_SPAN_ID
+    assert TraceContext.get() is None
+
+
+def test_async_endpoint_clears_trace_context_on_exception_expect_none() -> None:
+    """async 엔드포인트에서 핸들러가 예외를 발생시켜도 TraceContext가 정리되는지 검증한다."""
+
+    @TaskHandler()
+    class AsyncFailingHandler:
+        @task
+        async def async_failing_task(self) -> None:
+            raise RuntimeError("async boom")
+
+    handler = AsyncFailingHandler()
+    celery_mock = MagicMock()
+    post_processor = _create_tracing_post_processor(
+        celery_mock, AsyncFailingHandler, handler
+    )
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+
+    mock_request = MagicMock()
+    mock_request.get.return_value = {"traceparent": SAMPLE_TRACEPARENT}
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        with pytest.raises(RuntimeError, match="async boom"):
+            endpoint()
+
+    assert TraceContext.get() is None
+
+
+def test_post_processor_injects_propagator_into_dispatch_aspects_expect_set() -> None:
+    """post_process()가 dispatch aspect에 propagator를 주입하는지 검증한다."""
+
+    celery_mock = MagicMock()
+    propagator = W3CTracePropagator()
+    sync_aspect = CeleryTaskDispatchAspect(celery_mock)
+    async_aspect = AsyncCeleryTaskDispatchAspect(celery_mock)
+
+    application_context_mock = MagicMock()
+
+    def get_from_context(type_: type[object]) -> object:
+        if type_ is Celery:
+            return celery_mock
+        if type_ is ITracePropagator:
+            return propagator
+        if type_ is CeleryTaskDispatchAspect:
+            return sync_aspect
+        if type_ is AsyncCeleryTaskDispatchAspect:
+            return async_aspect
+        if type_ is _SampleTaskHandler:
+            return _SampleTaskHandler()
+        raise AssertionError(f"Unexpected dependency lookup: {type_}")
+
+    application_context_mock.get.side_effect = get_from_context
+    application_context_mock.contains.return_value = True
+
+    post_processor = CeleryPostProcessor()
+    post_processor.set_application_context(application_context_mock)
+    post_processor.post_process(_SampleTaskHandler())
+
+    assert sync_aspect._propagator is propagator
+    assert async_aspect._propagator is propagator
+
+
+def test_sync_endpoint_filters_non_string_headers_expect_only_strings() -> None:
+    """sync 엔드포인트가 non-string 헤더 값을 필터링하는지 검증한다."""
+
+    @TaskHandler()
+    class MixedHeaderHandler:
+        def __init__(self) -> None:
+            self.captured_ctx: TraceContext | None = None
+
+        @task
+        def traced_task(self) -> None:
+            self.captured_ctx = TraceContext.get()
+
+    handler = MixedHeaderHandler()
+    celery_mock = MagicMock()
+    post_processor = _create_tracing_post_processor(
+        celery_mock, MixedHeaderHandler, handler
+    )
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+
+    mock_request = MagicMock()
+    # non-string 값(int, bytes 등)은 필터링되어야 함
+    mock_request.get.return_value = {
+        "traceparent": SAMPLE_TRACEPARENT,
+        "x-numeric": 42,
+        "x-bytes": b"raw",
+    }
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        endpoint()
+
+    assert handler.captured_ctx is not None
+    assert handler.captured_ctx.trace_id == SAMPLE_TRACE_ID
+    assert TraceContext.get() is None
+
+
+def test_post_processor_skips_aspect_injection_when_aspects_not_in_container() -> None:
+    """dispatch aspect가 컨테이너에 없을 때 propagator 주입을 건너뛰는지 검증한다."""
+
+    celery_mock = MagicMock()
+    propagator = W3CTracePropagator()
+
+    application_context_mock = MagicMock()
+
+    def get_from_context(type_: type[object]) -> object:
+        if type_ is Celery:
+            return celery_mock
+        if type_ is ITracePropagator:
+            return propagator
+        if type_ is _SampleTaskHandler:
+            return _SampleTaskHandler()
+        raise AssertionError(f"Unexpected dependency lookup: {type_}")
+
+    application_context_mock.get.side_effect = get_from_context
+
+    def contains_side_effect(type_: type[object]) -> bool:
+        if type_ is ITracePropagator:
+            return True
+        return False
+
+    application_context_mock.contains.side_effect = contains_side_effect
+
+    post_processor = CeleryPostProcessor()
+    post_processor.set_application_context(application_context_mock)
+
+    # aspect가 컨테이너에 없어도 예외 없이 정상 처리되어야 함
+    post_processor.post_process(_SampleTaskHandler())
