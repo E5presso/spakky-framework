@@ -260,9 +260,11 @@ flowchart LR
   subgraph Core[Core]
     direction TB
     outbox[spakky-outbox] --> event[spakky-event]
+    outbox --> tracing_dep[spakky-tracing]
     event --> data[spakky-data]
-    event --> tracing_dep[spakky-tracing]
-    data --> domain[spakky-domain]
+    event --> tracing_dep
+    event --> domain[spakky-domain]
+    data --> domain
     domain --> core[spakky]
     task[spakky-task] --> core
     tracing_dep --> core
@@ -283,4 +285,5 @@ flowchart LR
   celery -. tracing .-> tracing_dep
   opentelemetry -. OTel .-> core
   opentelemetry -. OTel .-> tracing_dep
+  opentelemetry -. logging .-> logging
 ```

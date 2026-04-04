@@ -87,7 +87,7 @@ class Order(AbstractAggregateRoot[UUID]):
         self.status = OrderStatus.PLACED
         # 도메인 이벤트 추가
         self.add_event(OrderPlacedEvent(
-            order_id=self.id,
+            order_id=self.uid,
             customer_id=self.customer_id,
             total_amount=self.total_amount,
         ))
@@ -96,7 +96,7 @@ class Order(AbstractAggregateRoot[UUID]):
         """주문 취소"""
         self.status = OrderStatus.CANCELLED
         self.add_event(OrderCancelledEvent(
-            order_id=self.id,
+            order_id=self.uid,
             reason=reason,
         ))
 ```
@@ -181,7 +181,7 @@ class CreateUserUseCase:
     async def execute(self, command: CreateUserCommand) -> User:
         user = User.create(command)
         await self.publisher.publish(UserCreatedEvent(
-            user_id=user.id,
+            user_id=user.uid,
             email=user.email,
         ))
         return user

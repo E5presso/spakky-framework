@@ -48,13 +48,13 @@ export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
 
 ### Defining Tables with Domain Mapping
 
-Use `@Table` decorator and inherit from `AbstractTable` to define ORM tables with domain model mapping:
+Use `@Table` decorator and inherit from `AbstractMappableTable` to define ORM tables with domain model mapping:
 
 ```python
 from uuid import UUID
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
-from spakky.plugins.sqlalchemy.orm.table import AbstractTable, Table
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 # Domain model
@@ -211,7 +211,8 @@ class MigrationService:
 | Component | Description |
 |-----------|-------------|
 | `@Table` | Decorator for registering ORM tables with domain mapping |
-| `AbstractTable` | Base class for ORM tables with `from_domain`/`to_domain` |
+| `AbstractTable` | Base class for ORM tables (infrastructure tables without domain mapping) |
+| `AbstractMappableTable` | Generic table with `from_domain`/`to_domain` domain mapping |
 | `AbstractGenericRepository` | Sync repository with CRUD operations |
 | `AbstractAsyncGenericRepository` | Async repository with CRUD operations |
 | `SchemaRegistry` | Central registry for table-domain mappings |

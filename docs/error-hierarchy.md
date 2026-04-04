@@ -23,11 +23,20 @@ Exception
     ├── AbstractSpakkyEventError
     ├── AbstractSpakkyTaskError
     ├── AbstractSpakkyTracingError
+    ├── AbstractSpakkyOutboxError
     ├── AbstractSpakkyFastAPIError (플러그인)
     ├── AbstractSpakkySqlAlchemyError (플러그인)
-    ├── AbstractSpakkyOutboxError (플러그인)
+    │   ├── AbstractSpakkySqlAlchemyORMError
+    │   └── AbstractSpakkySqlAlchemyPersistencyError
+    ├── AbstractSpakkyCeleryError (플러그인)
     ├── AbstractSpakkyOpenTelemetryError (플러그인)
-    └── ...
+    ├── DecryptionFailedError (spakky-security)
+    ├── KeySizeError (spakky-security)
+    ├── PrivateKeyRequiredError (spakky-security)
+    ├── CannotImportAsymmetricKeyError (spakky-security)
+    ├── InvalidJWTFormatError (spakky-security)
+    ├── JWTDecodingError (spakky-security)
+    └── JWTProcessingError (spakky-security)
 ```
 
 ---
@@ -66,9 +75,13 @@ class AbstractSpakkyFrameworkError(Exception, ABC):
 from spakky.core.application.error import AbstractSpakkyApplicationError
 ```
 
-| 에러                           | 설명                            |
-| ------------------------------ | ------------------------------- |
-| `CannotDetermineScanPathError` | 스캔 경로를 자동 결정할 수 없음 |
+| 에러                                                    | 설명                                  |
+| ------------------------------------------------------- | ------------------------------------- |
+| `CannotDetermineScanPathError`                          | 스캔 경로를 자동 결정할 수 없음       |
+| `ApplicationContextAlreadyStartedError`                 | 이미 시작된 컨텍스트를 재시작 시도    |
+| `ApplicationContextAlreadyStoppedError`                 | 이미 중지된 컨텍스트를 재중지 시도    |
+| `EventLoopThreadNotStartedInApplicationContextError`    | 이벤트 루프 스레드 미시작 상태에서 접근 |
+| `EventLoopThreadAlreadyStartedInApplicationContextError`| 이벤트 루프 스레드 중복 시작 시도     |
 
 #### AbstractSpakkyPodError
 
@@ -78,14 +91,16 @@ Pod 등록 및 인스턴스화 관련 에러입니다.
 from spakky.core.pod.error import AbstractSpakkyPodError
 ```
 
-| 에러                                    | 설명                               |
-| --------------------------------------- | ---------------------------------- |
-| `PodAnnotationFailedError`              | Pod 어노테이션 처리 실패           |
-| `PodInstantiationFailedError`           | Pod 인스턴스 생성 실패             |
-| `CannotDeterminePodTypeError`           | Pod 타입 추론 불가                 |
-| `CannotUseVarArgsInPodError`            | \*args/\*\*kwargs 사용 금지        |
-| `CannotUsePositionalOnlyArgsInPodError` | 위치 전용 인자 사용 금지           |
-| `CannotUseOptionalReturnTypeInPodError` | Optional 반환 타입 금지 (함수 Pod) |
+| 에러                                      | 설명                               |
+| ----------------------------------------- | ---------------------------------- |
+| `PodAnnotationFailedError`                | Pod 어노테이션 처리 실패           |
+| `PodInstantiationFailedError`             | Pod 인스턴스 생성 실패             |
+| `CannotDeterminePodTypeError`             | Pod 타입 추론 불가                 |
+| `CannotUseVarArgsInPodError`              | \*args/\*\*kwargs 사용 금지        |
+| `CannotUsePositionalOnlyArgsInPodError`   | 위치 전용 인자 사용 금지           |
+| `CannotUseOptionalReturnTypeInPodError`   | Optional 반환 타입 금지 (함수 Pod) |
+| `UnexpectedDependencyNameInjectedError`   | 예상치 못한 이름의 의존성 주입     |
+| `UnexpectedDependencyTypeInjectedError`   | 예상치 못한 타입의 의존성 주입     |
 
 #### 컨테이너 에러
 
@@ -270,11 +285,62 @@ SQLAlchemy 통합 관련 에러입니다.
 
 ```python
 from spakky.plugins.sqlalchemy.error import AbstractSpakkySqlAlchemyError
+from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
+from spakky.plugins.sqlalchemy.persistency.error import AbstractSpakkySqlAlchemyPersistencyError
 ```
 
-| 에러                           | 설명                             |
-| ------------------------------ | -------------------------------- |
-| `AbstractSpakkySqlAlchemyError` | SQLAlchemy 에러 기반 클래스      |
+| 에러                                      | 설명                             | 상속                           |
+| ----------------------------------------- | -------------------------------- | ------------------------------ |
+| `AbstractSpakkySqlAlchemyError`           | SQLAlchemy 에러 기반 클래스      | `AbstractSpakkyFrameworkError` |
+| `AbstractSpakkySqlAlchemyORMError`        | ORM 에러 기반 클래스             | `AbstractSpakkySqlAlchemyError` |
+| `AbstractSpakkySqlAlchemyPersistencyError`| 영속성 에러 기반 클래스          | `AbstractSpakkySqlAlchemyError` |
+| `CannotUseTableAnnotationError`           | @Table 데코레이터 사용 오류      | `AbstractSpakkySqlAlchemyORMError` |
+| `TargetDomainNotSpecifiedError`           | @Table에 도메인 타입 미지정      | `AbstractSpakkySqlAlchemyORMError` |
+| `NoSchemaFoundFromDomainError`            | 도메인 타입에 대한 스키마 없음   | `AbstractSpakkySqlAlchemyORMError` |
+| `CannotDetermineAggregateTypeError`       | Aggregate 타입 추론 불가         | `AbstractSpakkySqlAlchemyPersistencyError` |
+| `SessionNotInitializedError`              | 세션 미초기화 상태에서 접근      | `AbstractSpakkySqlAlchemyPersistencyError` |
+
+### spakky-celery
+
+Celery 통합 관련 에러입니다.
+
+```python
+from spakky.plugins.celery.error import (
+    AbstractSpakkyCeleryError,
+    InvalidScheduleRouteError,
+)
+```
+
+| 에러                          | 설명                                          |
+| ----------------------------- | --------------------------------------------- |
+| `AbstractSpakkyCeleryError`   | Celery 에러 기반 클래스                        |
+| `InvalidScheduleRouteError`   | ScheduleRoute에 유효한 스케줄 명세가 없음      |
+
+### spakky-security
+
+보안 관련 에러입니다. `spakky-security` 에러들은 패키지별 기반 클래스 없이 `AbstractSpakkyFrameworkError`를 직접 상속합니다.
+
+```python
+from spakky.plugins.security.error import (
+    DecryptionFailedError,
+    KeySizeError,
+    PrivateKeyRequiredError,
+    CannotImportAsymmetricKeyError,
+    InvalidJWTFormatError,
+    JWTDecodingError,
+    JWTProcessingError,
+)
+```
+
+| 에러                              | 설명                              |
+| --------------------------------- | --------------------------------- |
+| `DecryptionFailedError`          | 복호화 실패 (키 오류 또는 데이터 손상) |
+| `KeySizeError`                   | 유효하지 않은 암호화 키 크기       |
+| `PrivateKeyRequiredError`        | 비대칭 키 연산 시 개인키 미제공    |
+| `CannotImportAsymmetricKeyError` | 비대칭 키 임포트 실패              |
+| `InvalidJWTFormatError`          | JWT 토큰 형식 오류                 |
+| `JWTDecodingError`               | JWT 토큰 디코딩 실패              |
+| `JWTProcessingError`             | JWT 토큰 처리 중 오류             |
 
 ### spakky-outbox
 

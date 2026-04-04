@@ -15,6 +15,9 @@
 - [도메인 레이어 (spakky-domain)](#도메인-레이어-spakky-domain)
 - [데이터 레이어 (spakky-data)](#데이터-레이어-spakky-data)
 - [이벤트 레이어 (spakky-event)](#이벤트-레이어-spakky-event)
+- [태스크 레이어 (spakky-task)](#태스크-레이어-spakky-task)
+- [트레이싱 레이어 (spakky-tracing)](#트레이싱-레이어-spakky-tracing)
+- [아웃박스 레이어 (spakky-outbox)](#아웃박스-레이어-spakky-outbox)
 - [플러그인 구현체](#플러그인-구현체)
 - [설계 결정](#설계-결정)
 - [Architecture Decision Records](#architecture-decision-records)
@@ -60,6 +63,7 @@ graph TD
 
         domain --> data[💾 spakky-data<br/>Repository · Transaction]
         data --> event[📡 spakky-event<br/>Publisher · Consumer · Aspect]
+        domain --> event
         tracing --> event
         event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
         tracing --> outbox
@@ -97,12 +101,13 @@ graph TD
     event --> kafka
     task_pkg --> celery_plugin
     core --> logging_pkg
+    core --> otel
     tracing --> otel
     tracing -.->|optional| fastapi
     tracing -.->|optional| rabbitmq
     tracing -.->|optional| kafka
     tracing -.->|optional| celery_plugin
-    otel -.->|optional| logging_pkg
+    logging_pkg -.->|optional| otel
     core --> fastapi
     core --> typer
     core --> security
@@ -767,6 +772,129 @@ sequenceDiagram
     TA->>DB: COMMIT
     deactivate TA
 ```
+
+---
+
+## 태스크 레이어 (spakky-task)
+
+태스크 큐 추상화를 제공합니다. 구현체(Celery 등)와 독립된 선언적 인터페이스로, 비즈니스 로직에서 태스크 큐 세부사항을 분리합니다.
+
+### `@TaskHandler`와 `@task`
+
+```python
+from spakky.task import TaskHandler, task
+
+@TaskHandler()
+class EmailTaskHandler:
+    @task
+    def send_email(self, to: str, subject: str, body: str) -> None:
+        """AOP Aspect가 호출을 가로채 브로커로 디스패치합니다."""
+        ...
+```
+
+- **`@TaskHandler`**: `Pod`의 서브클래스. 태스크 메서드를 포함하는 클래스를 마킹합니다.
+- **`@task`**: 메서드에 `TaskRoute` 어노테이션을 부착. 플러그인 Aspect가 호출을 가로채 브로커로 디스패치합니다.
+- **`@schedule`**: 정기 실행용. PostProcessor가 브로커 스케줄러에 등록합니다. `interval`, `at`, `crontab` 중 하나를 지정합니다.
+
+### `Crontab`
+
+Python 네이티브 타입 기반 cron 명세입니다. 문자열 대신 `Weekday`/`Month` IntEnum을 사용합니다.
+
+| 필드 | 타입 | 기본값 |
+|------|------|--------|
+| `month` | `Month \| tuple[Month, ...] \| None` | `None` (매월) |
+| `day` | `int \| tuple[int, ...] \| None` | `None` (매일) |
+| `weekday` | `Weekday \| tuple[Weekday, ...] \| None` | `None` (매일) |
+| `hour` | `int` | `0` |
+| `minute` | `int` | `0` |
+
+### `TaskRegistrationPostProcessor`
+
+`@TaskHandler` Pod를 스캔하여 `@task` 메서드의 `TaskRoute`를 수집합니다. 플러그인(예: `spakky-celery`)은 이 PostProcessor에서 수집된 라우트를 가져와 브로커에 등록합니다.
+
+### `AbstractTaskResult`
+
+디스패치된 태스크의 결과 핸들입니다. 구현체(예: `CeleryTaskResult`)가 브로커별로 제공합니다.
+
+- `task_id` — 디스패치된 태스크의 고유 식별자
+- `get()` / `get_async()` — 태스크 완료까지 대기 후 결과 반환
+
+> **분리 배경**: `@task`(온디맨드)와 `@schedule`(정기)의 분리 근거는 [ADR-0003](docs/adr/0003-task-schedule-decorator-split.md) 참조.
+
+---
+
+## 트레이싱 레이어 (spakky-tracing)
+
+분산 트레이싱 추상화를 제공합니다. W3C Trace Context Level 2와 호환되는 `TraceContext`와 `ITracePropagator` 인터페이스를 정의하며, 순수 Python 구현체(`W3CTracePropagator`)를 기본 등록합니다.
+
+### `TraceContext`
+
+`@immutable` 데이터클래스로, `contextvars` 기반의 ambient trace context를 관리합니다.
+
+| 필드 | 설명 |
+|------|------|
+| `trace_id` | 128-bit hex (32자) |
+| `span_id` | 64-bit hex (16자) |
+| `parent_span_id` | 부모 span ID (루트는 `None`) |
+| `trace_flags` | 트레이스 플래그 (0x01 = sampled) |
+
+**주요 메서드:**
+
+- `new_root()` → 새 루트 트레이스 생성
+- `child()` → 현재 컨텍스트의 자식 스팬 생성
+- `to_traceparent()` / `from_traceparent()` → W3C traceparent 직렬화/역직렬화
+- `get()` / `set()` / `clear()` → `contextvars` 기반 ambient context 접근
+
+### `ITracePropagator`
+
+서비스 경계를 넘는 트레이스 컨텍스트 전파 인터페이스입니다. OpenTelemetry `TextMapPropagator` 규약을 따릅니다.
+
+| 메서드 | 설명 |
+|--------|------|
+| `inject(carrier)` | 현재 `TraceContext`를 캐리어(헤더 딕셔너리)에 기록 |
+| `extract(carrier)` | 캐리어에서 `TraceContext`를 복원 |
+| `fields()` | 사용하는 헤더 필드명 반환 |
+
+### `W3CTracePropagator`
+
+기본 `ITracePropagator` 구현체입니다. `traceparent` 헤더를 사용합니다. 외부 의존성 없이 순수 Python으로 구현되어 있습니다.
+
+### OTel 교체 메커니즘
+
+`spakky-opentelemetry`가 설치되면 `OTelSetupPostProcessor`가 `W3CTracePropagator`를 `OTelTracePropagator`로 런타임 교체합니다. 자세한 내용은 [ADR-0004](docs/adr/0004-distributed-tracing-architecture.md) 참조.
+
+---
+
+## 아웃박스 레이어 (spakky-outbox)
+
+Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Primary`로 교체하여 이벤트를 트랜잭션 내에서 아웃박스에 저장하고, 백그라운드 릴레이가 외부 트랜스포트로 전송합니다.
+
+### PnP 아키텍처
+
+```
+[Outbox 미설치]  IEventBus = DirectEventBus → IEventTransport → Kafka/RabbitMQ
+[Outbox 설치]    IEventBus = OutboxEventBus (@Primary)
+                   └─ outbox_table.insert() (같은 트랜잭션)
+                   └─ OutboxRelay (background) → IEventTransport.send() → Kafka/RabbitMQ
+```
+
+`IEventBus`와 `IEventTransport`가 다른 인터페이스이므로 DI 경쟁 없이 `@Primary` 교체로 PnP를 달성합니다.
+
+### 컴포넌트
+
+| 컴포넌트 | 설명 |
+|---------|------|
+| `IOutboxStorage` / `IAsyncOutboxStorage` | 아웃박스 메시지 저장소 포트 |
+| `OutboxEventBus` / `AsyncOutboxEventBus` | `@Primary`로 `DirectEventBus`를 교체하는 EventBus seam |
+| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (polling → `IEventTransport.send()`) |
+| `OutboxConfig` | 환경변수 기반 설정 (polling interval, batch size, retry 등) |
+| `OutboxMessage` | 아웃박스 메시지 모델 |
+
+### 저장소 구현
+
+`spakky-sqlalchemy`가 `spakky-outbox`를 감지하면 `SqlAlchemyOutboxStorage`를 자동 등록합니다. 커스텀 저장소는 `IAsyncOutboxStorage`를 구현합니다.
+
+> **설계 배경**: [ADR-0002](docs/adr/0002-outbox-plugin-architecture.md), [ADR-0005](docs/adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md), [ADR-0006](docs/adr/0006-move-outbox-to-core.md) 참조.
 
 ---
 

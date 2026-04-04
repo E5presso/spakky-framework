@@ -319,8 +319,11 @@ See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed
 | Package | Description |
 |---------|-------------|
 | [`spakky-domain`](https://pypi.org/project/spakky-domain/) | DDD building blocks (Entity, AggregateRoot, ValueObject, Event) |
+| [`spakky-data`](https://pypi.org/project/spakky-data/) | Repository and transaction abstractions |
 | [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling (`@EventHandler` stereotype) |
-| [`spakky-logging`](https://pypi.org/project/spakky-logging/) | Structured logging aspects (`@logged`, `LoggingAspect`) |
+| [`spakky-task`](https://pypi.org/project/spakky-task/) | Task queue abstraction (`@TaskHandler`, `@task`, `@schedule`) |
+| [`spakky-tracing`](https://pypi.org/project/spakky-tracing/) | Distributed tracing abstraction (TraceContext, Propagator) |
+| [`spakky-outbox`](https://pypi.org/project/spakky-outbox/) | Transactional Outbox pattern (OutboxEventBus, Relay) |
 
 ## License
 

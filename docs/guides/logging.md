@@ -79,7 +79,7 @@ class UserService:
 | 파라미터 | 타입 | 기본값 | 설명 |
 |---------|------|--------|------|
 | `enable_masking` | `bool` | `True` | 민감 데이터 마스킹 활성화 |
-| `masking_keys` | `list[str]` | `[]` | 마스킹 대상 키 (비어있으면 글로벌 설정 사용) |
+| `masking_keys` | `list[str] \| None` | `None` | 마스킹 대상 키 (None이면 글로벌 설정 사용) |
 | `slow_threshold_ms` | `float \| None` | `None` | 느린 호출 경고 임계값 (None이면 글로벌 설정 사용) |
 | `max_result_length` | `int \| None` | `None` | 반환값 repr 최대 길이 (None이면 글로벌 설정 사용) |
 | `log_args` | `bool` | `True` | 인자를 로그에 포함할지 여부 |
