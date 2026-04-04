@@ -443,3 +443,42 @@ def test_rabbitmq_post_processor_without_tracing_expect_no_propagator_injected()
 
     mock_consumer.set_propagator.assert_not_called()
     mock_async_consumer.set_propagator.assert_not_called()
+
+
+def test_rabbitmq_post_processor_with_tracing_but_no_set_propagator_expect_skipped() -> (
+    None
+):
+    """consumer에 set_propagator가 없으면 주입을 건너뜀을 검증한다."""
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_propagator = Mock(spec=ITracePropagator)
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else None
+    )
+
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.contains.return_value = True
+    mock_context.get.return_value = mock_propagator
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    handler_instance = SampleEventHandler()
+    # Should not raise even though consumer lacks set_propagator
+    post_processor.post_process(handler_instance)
+
+    assert not hasattr(mock_consumer, "set_propagator")
+    assert not hasattr(mock_async_consumer, "set_propagator")
