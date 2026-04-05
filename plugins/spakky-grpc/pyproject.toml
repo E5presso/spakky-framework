@@ -6,7 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["grpcio>=1.68.0", "spakky>=6.3.1", "spakky-tracing>=6.3.1"]
+dependencies = [
+    "grpcio>=1.68.0",
+    "protobuf>=6.33.6",
+    "spakky>=6.3.1",
+    "spakky-tracing>=6.3.1",
+]
 
 [project.entry-points."spakky.plugins"]
 spakky-grpc = "spakky.plugins.grpc.main:initialize"
@@ -64,6 +69,15 @@ exclude_lines = [
     "@(typing\\.)?overload",
     "\\.\\.\\.",
     "pass",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.1.0",
+    "pytest-spec>=6.0.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.uv.sources]
