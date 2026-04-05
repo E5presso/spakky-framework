@@ -78,6 +78,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-spec>=6.0.0",
     "pytest-xdist>=3.8.0",
+    "ruff>=0.15.9",
 ]
 
 [tool.uv.sources]
