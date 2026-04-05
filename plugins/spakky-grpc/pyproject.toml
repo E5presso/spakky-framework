@@ -1,26 +1,15 @@
 [project]
-name = "spakky"
+name = "spakky-grpc"
 version = "6.3.1"
-description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
+description = "gRPC plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = [
-    "uuid7>=0.1.0",
-]
+dependencies = ["grpcio>=1.68.0", "spakky>=6.3.1", "spakky-tracing>=6.3.1"]
 
-[project.optional-dependencies]
-logging = ["spakky-logging>=6.3.1"]
-security = ["spakky-security>=6.3.1"]
-fastapi = ["spakky-fastapi>=6.3.1"]
-typer = ["spakky-typer>=6.3.1"]
-rabbitmq = ["spakky-rabbitmq>=6.3.1"]
-kafka = ["spakky-kafka>=6.3.1"]
-sqlalchemy = ["spakky-sqlalchemy>=6.3.1"]
-celery = ["spakky-celery>=6.3.1"]
-opentelemetry = ["spakky-opentelemetry>=6.3.1"]
-grpc = ["spakky-grpc>=6.3.1"]
+[project.entry-points."spakky.plugins"]
+spakky-grpc = "spakky.plugins.grpc.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
@@ -28,7 +17,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "spakky.core"
+module-name = "spakky.plugins.grpc"
 
 [tool.pyrefly]
 python-version = "3.14"
@@ -40,7 +29,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky"
+pythonpath = "src/spakky/plugins/grpc"
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -58,7 +47,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/**/*.py"]
+include = ["src/spakky/plugins/grpc/**/*.py"]
 branch = true
 
 [tool.coverage.report]
@@ -76,3 +65,7 @@ exclude_lines = [
     "\\.\\.\\.",
     "pass",
 ]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-tracing = { workspace = true }

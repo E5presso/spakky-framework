@@ -16,6 +16,7 @@ members = [
     "spakky-event",
     "spakky-fastapi",
     "spakky-framework",
+    "spakky-grpc",
     "spakky-kafka",
     "spakky-logging",
     "spakky-opentelemetry",
@@ -2722,6 +2723,9 @@ celery = [
 fastapi = [
     { name = "spakky-fastapi" },
 ]
+grpc = [
+    { name = "spakky-grpc" },
+]
 kafka = [
     { name = "spakky-kafka" },
 ]
@@ -2748,6 +2752,7 @@ typer = [
 requires-dist = [
     { name = "spakky-celery", marker = "extra == 'celery'", editable = "plugins/spakky-celery" },
     { name = "spakky-fastapi", marker = "extra == 'fastapi'", editable = "plugins/spakky-fastapi" },
+    { name = "spakky-grpc", marker = "extra == 'grpc'", editable = "plugins/spakky-grpc" },
     { name = "spakky-kafka", marker = "extra == 'kafka'", editable = "plugins/spakky-kafka" },
     { name = "spakky-logging", marker = "extra == 'logging'", editable = "plugins/spakky-logging" },
     { name = "spakky-opentelemetry", marker = "extra == 'opentelemetry'", editable = "plugins/spakky-opentelemetry" },
@@ -2757,7 +2762,7 @@ requires-dist = [
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry"]
+provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc"]
 
 [[package]]
 name = "spakky-celery"
@@ -2899,6 +2904,23 @@ dev = [
     { name = "ruff", specifier = ">=0.15.9" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "typer", specifier = ">=0.24.1" },
+]
+
+[[package]]
+name = "spakky-grpc"
+version = "6.3.1"
+source = { editable = "plugins/spakky-grpc" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "spakky" },
+    { name = "spakky-tracing" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.68.0" },
+    { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
 
 [[package]]
