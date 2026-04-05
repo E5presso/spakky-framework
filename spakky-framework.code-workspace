@@ -76,6 +76,10 @@
 			"name": "plugins.opentelemetry",
 			"path": "plugins/spakky-opentelemetry",
 		},
+		{
+			"name": "plugins.grpc",
+			"path": "plugins/spakky-grpc",
+		},
 	],
 	"settings": {
 		"yaml.customTags": [
