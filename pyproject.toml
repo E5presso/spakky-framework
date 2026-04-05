@@ -49,6 +49,7 @@ version_files = [
   "core/spakky-tracing/pyproject.toml:version",
   "plugins/spakky-opentelemetry/pyproject.toml:version",
   "plugins/spakky-grpc/pyproject.toml:version",
+  "core/spakky-saga/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -71,6 +72,7 @@ members = [
   "core/spakky-tracing",
   "plugins/spakky-opentelemetry",
   "plugins/spakky-grpc",
+  "core/spakky-saga",
 ]
 
 
@@ -92,6 +94,7 @@ spakky-logging = { workspace = true }
 spakky-tracing = { workspace = true }
 spakky-opentelemetry = { workspace = true }
 spakky-grpc = { workspace = true }
+spakky-saga = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.14"

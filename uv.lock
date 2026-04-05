@@ -22,6 +22,7 @@ members = [
     "spakky-opentelemetry",
     "spakky-outbox",
     "spakky-rabbitmq",
+    "spakky-saga",
     "spakky-security",
     "spakky-sqlalchemy",
     "spakky-task",
@@ -2738,6 +2739,9 @@ opentelemetry = [
 rabbitmq = [
     { name = "spakky-rabbitmq" },
 ]
+saga = [
+    { name = "spakky-saga" },
+]
 security = [
     { name = "spakky-security" },
 ]
@@ -2757,12 +2761,13 @@ requires-dist = [
     { name = "spakky-logging", marker = "extra == 'logging'", editable = "plugins/spakky-logging" },
     { name = "spakky-opentelemetry", marker = "extra == 'opentelemetry'", editable = "plugins/spakky-opentelemetry" },
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
+    { name = "spakky-saga", marker = "extra == 'saga'", editable = "core/spakky-saga" },
     { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
     { name = "spakky-sqlalchemy", marker = "extra == 'sqlalchemy'", editable = "plugins/spakky-sqlalchemy" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc"]
+provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "saga"]
 
 [[package]]
 name = "spakky-celery"
@@ -3073,6 +3078,21 @@ dev = [
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
     { name = "testcontainers", specifier = ">=4.14.2" },
+]
+
+[[package]]
+name = "spakky-saga"
+version = "6.3.1"
+source = { editable = "core/spakky-saga" }
+dependencies = [
+    { name = "spakky" },
+    { name = "spakky-domain" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-domain", editable = "core/spakky-domain" },
 ]
 
 [[package]]

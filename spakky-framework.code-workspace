@@ -37,6 +37,10 @@
 			"path": "core/spakky-outbox",
 		},
 		{
+			"name": "core.saga",
+			"path": "core/spakky-saga",
+		},
+		{
 			"name": "plugins.logging",
 			"path": "plugins/spakky-logging",
 		},

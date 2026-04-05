@@ -224,6 +224,7 @@ def generate_precommit_config(name: str, pkg_type: PackageType) -> str:
     hooks:
       - id: trailing-whitespace
       - id: check-yaml
+        args: ['--unsafe']
       - id: check-json
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.5
