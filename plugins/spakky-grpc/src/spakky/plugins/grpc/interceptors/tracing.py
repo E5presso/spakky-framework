@@ -12,6 +12,8 @@ import grpc.aio
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
+from spakky.plugins.grpc.interceptors.utils import wrap_rpc_behavior
+
 
 def _metadata_to_dict(
     metadata: tuple[tuple[str, bytes | str], ...] | None,
@@ -27,47 +29,6 @@ def _metadata_to_dict(
     if metadata is None:
         return {}
     return {str(key): str(value) for key, value in metadata}
-
-
-def _wrap_rpc_behavior(
-    handler: grpc.RpcMethodHandler,
-    fn: Callable[..., Any],
-) -> grpc.RpcMethodHandler:
-    """Wrap the active handler behavior with a new function.
-
-    Args:
-        handler: The original RPC method handler.
-        fn: A wrapper function that takes the original behavior and
-            returns a new behavior.
-
-    Returns:
-        A new RpcMethodHandler with the wrapped behavior.
-    """
-    if handler.unary_unary is not None:
-        return grpc.unary_unary_rpc_method_handler(
-            fn(handler.unary_unary),
-            request_deserializer=handler.request_deserializer,
-            response_serializer=handler.response_serializer,
-        )
-    if handler.unary_stream is not None:
-        return grpc.unary_stream_rpc_method_handler(
-            fn(handler.unary_stream),
-            request_deserializer=handler.request_deserializer,
-            response_serializer=handler.response_serializer,
-        )
-    if handler.stream_unary is not None:
-        return grpc.stream_unary_rpc_method_handler(
-            fn(handler.stream_unary),
-            request_deserializer=handler.request_deserializer,
-            response_serializer=handler.response_serializer,
-        )
-    if handler.stream_stream is not None:
-        return grpc.stream_stream_rpc_method_handler(
-            fn(handler.stream_stream),
-            request_deserializer=handler.request_deserializer,
-            response_serializer=handler.response_serializer,
-        )
-    return handler
 
 
 class TracingInterceptor(grpc.aio.ServerInterceptor):
@@ -127,4 +88,4 @@ class TracingInterceptor(grpc.aio.ServerInterceptor):
 
             return wrapper
 
-        return _wrap_rpc_behavior(handler, _tracing_wrapper)
+        return wrap_rpc_behavior(handler, _tracing_wrapper)
