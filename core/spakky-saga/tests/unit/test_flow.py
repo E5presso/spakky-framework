@@ -85,6 +85,55 @@ def test_saga_step_rshift_preserves_on_error_expect_strategy_in_transaction() ->
     assert isinstance(txn.on_error, Retry)
 
 
+def test_saga_step_default_timeout_expect_none() -> None:
+    """SagaStep 생성 시 기본 timeout이 None인지 검증한다."""
+    step = SagaStep(action=_action)
+    assert step.timeout is None
+
+
+def test_saga_step_with_timeout_expect_preserved() -> None:
+    """SagaStep에 timeout을 설정하면 값이 보존되는지 검증한다."""
+    step = SagaStep(action=_action, timeout=timedelta(seconds=30))
+    assert step.timeout == timedelta(seconds=30)
+
+
+def test_saga_step_rshift_preserves_timeout_expect_timeout_in_transaction() -> None:
+    """SagaStep의 timeout이 >> 연산 시 Transaction에 전달되는지 검증한다."""
+    step = SagaStep(action=_action, timeout=timedelta(seconds=10))
+    txn = step >> _compensate
+    assert txn.timeout == timedelta(seconds=10)
+
+
+def test_saga_step_or_preserves_timeout_expect_timeout_kept() -> None:
+    """SagaStep | strategy가 timeout을 보존하는지 검증한다."""
+    step = SagaStep(action=_action, timeout=timedelta(seconds=5))
+    step_with_skip = step | Skip()
+    assert step_with_skip.timeout == timedelta(seconds=5)
+
+
+def test_transaction_default_timeout_expect_none() -> None:
+    """Transaction 생성 시 기본 timeout이 None인지 검증한다."""
+    txn = Transaction(action=_action, compensate=_compensate)
+    assert txn.timeout is None
+
+
+def test_transaction_with_timeout_expect_preserved() -> None:
+    """Transaction에 timeout을 설정하면 값이 보존되는지 검증한다."""
+    txn = Transaction(
+        action=_action, compensate=_compensate, timeout=timedelta(seconds=15)
+    )
+    assert txn.timeout == timedelta(seconds=15)
+
+
+def test_transaction_or_preserves_timeout_expect_timeout_kept() -> None:
+    """Transaction | strategy가 timeout을 보존하는지 검증한다."""
+    txn = Transaction(
+        action=_action, compensate=_compensate, timeout=timedelta(seconds=20)
+    )
+    txn_with_retry = txn | Retry(max_attempts=2)
+    assert txn_with_retry.timeout == timedelta(seconds=20)
+
+
 # --- Transaction ---
 
 
