@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Annotated, get_type_hints
 
 import pytest
-
 from spakky.plugins.grpc.annotations.field import ProtoField
 
 
