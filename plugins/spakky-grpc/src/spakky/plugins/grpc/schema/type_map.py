@@ -6,6 +6,7 @@ nested dataclasses, ``list[T]`` (repeated), and ``Optional[T]``.
 """
 
 import dataclasses
+from types import NoneType
 from typing import Union, get_args, get_origin
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
@@ -34,7 +35,7 @@ def is_optional(python_type: type) -> bool:
     origin = get_origin(python_type)
     if origin is Union:
         args = get_args(python_type)
-        return len(args) == 2 and type(None) in args
+        return len(args) == 2 and NoneType in args
     return False
 
 
@@ -48,7 +49,7 @@ def unwrap_optional(python_type: type) -> type:
         The inner type T.
     """
     args = get_args(python_type)
-    return next(arg for arg in args if arg is not type(None))
+    return next(arg for arg in args if arg is not NoneType)
 
 
 def is_repeated(python_type: type) -> bool:
