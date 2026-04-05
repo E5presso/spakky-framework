@@ -1,13 +1,16 @@
 """Spakky Saga package - Distributed transaction saga orchestration."""
 
 from spakky.core.application.plugin import Plugin
+from spakky.saga.base import AbstractSaga
 from spakky.saga.data import AbstractSagaData
 from spakky.saga.error import (
     AbstractSpakkySagaError,
     SagaCompensationFailedError,
+    SagaEngineNotConnectedError,
     SagaFlowDefinitionError,
     SagaParallelMergeConflictError,
 )
+from spakky.saga.stereotype import Saga
 from spakky.saga.flow import (
     ActionFn,
     CompensateFn,
@@ -32,6 +35,10 @@ PLUGIN_NAME = Plugin(name="spakky-saga")
 """Plugin identifier for the Spakky Saga package."""
 
 __all__ = [
+    # Stereotype
+    "Saga",
+    # Base
+    "AbstractSaga",
     # Data
     "AbstractSagaData",
     # Status
@@ -59,6 +66,7 @@ __all__ = [
     "SagaFlowDefinitionError",
     "SagaCompensationFailedError",
     "SagaParallelMergeConflictError",
+    "SagaEngineNotConnectedError",
     # Plugin
     "PLUGIN_NAME",
 ]

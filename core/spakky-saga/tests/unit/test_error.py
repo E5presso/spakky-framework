@@ -6,6 +6,7 @@ from spakky.core.common.error import AbstractSpakkyFrameworkError
 from spakky.saga.error import (
     AbstractSpakkySagaError,
     SagaCompensationFailedError,
+    SagaEngineNotConnectedError,
     SagaFlowDefinitionError,
     SagaParallelMergeConflictError,
 )
@@ -52,3 +53,13 @@ def test_saga_parallel_merge_conflict_error_message_expect_correct_text() -> Non
         SagaParallelMergeConflictError.message
         == "Parallel steps modified the same field"
     )
+
+
+def test_saga_engine_not_connected_error_inheritance_expect_saga_error() -> None:
+    """SagaEngineNotConnectedError가 AbstractSpakkySagaError의 서브클래스인지 검증한다."""
+    assert issubclass(SagaEngineNotConnectedError, AbstractSpakkySagaError)
+
+
+def test_saga_engine_not_connected_error_message_expect_correct_text() -> None:
+    """SagaEngineNotConnectedError가 올바른 message 속성을 가지는지 검증한다."""
+    assert SagaEngineNotConnectedError.message == "Saga engine is not connected"
