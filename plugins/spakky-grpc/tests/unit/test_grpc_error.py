@@ -5,7 +5,8 @@ import pytest
 
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 from spakky.plugins.grpc.error import (
-    AbstractSpakkyGRPCError,
+    AbstractGrpcStatusError,
+    AbstractSpakkyGrpcError,
     AlreadyExists,
     FailedPrecondition,
     InternalError,
@@ -18,13 +19,18 @@ from spakky.plugins.grpc.error import (
 
 
 def test_abstract_spakky_grpc_error_inherits_from_framework_error() -> None:
-    """AbstractSpakkyGRPCError should be a subclass of AbstractSpakkyFrameworkError."""
-    assert issubclass(AbstractSpakkyGRPCError, AbstractSpakkyFrameworkError)
+    """AbstractSpakkyGrpcError should be a subclass of AbstractSpakkyFrameworkError."""
+    assert issubclass(AbstractSpakkyGrpcError, AbstractSpakkyFrameworkError)
 
 
 def test_abstract_spakky_grpc_error_is_abstract() -> None:
-    """AbstractSpakkyGRPCError should be marked as ABC."""
-    assert AbstractSpakkyGRPCError.__abstractmethods__ is not None
+    """AbstractSpakkyGrpcError should be marked as ABC."""
+    assert AbstractSpakkyGrpcError.__abstractmethods__ is not None
+
+
+def test_abstract_grpc_status_error_inherits_from_grpc_error() -> None:
+    """AbstractGrpcStatusError should be a subclass of AbstractSpakkyGrpcError."""
+    assert issubclass(AbstractGrpcStatusError, AbstractSpakkyGrpcError)
 
 
 @pytest.mark.parametrize(
@@ -45,7 +51,7 @@ def test_abstract_spakky_grpc_error_is_abstract() -> None:
     ],
 )
 def test_concrete_error_has_correct_status_code_and_message(
-    error_class: type[AbstractSpakkyGRPCError],
+    error_class: type[AbstractGrpcStatusError],
     expected_status: grpc.StatusCode,
     expected_message: str,
 ) -> None:
@@ -68,10 +74,10 @@ def test_concrete_error_has_correct_status_code_and_message(
     ],
 )
 def test_concrete_error_is_subclass_of_abstract_grpc_error(
-    error_class: type[AbstractSpakkyGRPCError],
+    error_class: type[AbstractGrpcStatusError],
 ) -> None:
-    """Each concrete error should be a subclass of AbstractSpakkyGRPCError."""
-    assert issubclass(error_class, AbstractSpakkyGRPCError)
+    """Each concrete error should be a subclass of AbstractGrpcStatusError."""
+    assert issubclass(error_class, AbstractGrpcStatusError)
 
 
 @pytest.mark.parametrize(
@@ -88,7 +94,7 @@ def test_concrete_error_is_subclass_of_abstract_grpc_error(
     ],
 )
 def test_concrete_error_is_raisable(
-    error_class: type[AbstractSpakkyGRPCError],
+    error_class: type[AbstractGrpcStatusError],
 ) -> None:
     """Each concrete error should be raisable and catchable."""
     with pytest.raises(error_class):
@@ -96,8 +102,8 @@ def test_concrete_error_is_raisable(
 
 
 def test_concrete_error_caught_as_abstract_grpc_error() -> None:
-    """A concrete error should be catchable as AbstractSpakkyGRPCError."""
-    with pytest.raises(AbstractSpakkyGRPCError):
+    """A concrete error should be catchable as AbstractGrpcStatusError."""
+    with pytest.raises(AbstractGrpcStatusError):
         raise NotFound()
 
 

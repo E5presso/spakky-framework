@@ -81,7 +81,7 @@ async def test_unary_handler_catches_grpc_error_expect_abort_with_status(
     interceptor: ErrorHandlingInterceptor,
     context: AsyncMock,
 ) -> None:
-    """AbstractSpakkyGRPCError should be converted to the declared gRPC status."""
+    """AbstractGrpcStatusError should be converted to the declared gRPC status."""
     behavior = AsyncMock(side_effect=NotFound())
     handler = _make_handler(unary_unary=behavior)
     continuation = AsyncMock(return_value=handler)
@@ -208,7 +208,7 @@ async def test_stream_handler_catches_grpc_error_expect_abort(
     interceptor: ErrorHandlingInterceptor,
     context: AsyncMock,
 ) -> None:
-    """AbstractSpakkyGRPCError in a streaming handler should trigger abort."""
+    """AbstractGrpcStatusError in a streaming handler should trigger abort."""
 
     async def stream_behavior(
         request: object, ctx: grpc.aio.ServicerContext

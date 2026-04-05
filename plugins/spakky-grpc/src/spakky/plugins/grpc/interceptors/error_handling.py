@@ -12,7 +12,7 @@ from typing import Any
 import grpc
 import grpc.aio
 
-from spakky.plugins.grpc.error import AbstractSpakkyGRPCError, InternalError
+from spakky.plugins.grpc.error import AbstractGrpcStatusError, InternalError
 
 logger = getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = getLogger(__name__)
 class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
     """Interceptor that converts exceptions to gRPC status codes.
 
-    ``AbstractSpakkyGRPCError`` subclasses are mapped to their declared
+    ``AbstractGrpcStatusError`` subclasses are mapped to their declared
     ``status_code``.  All other exceptions become ``INTERNAL``.
 
     Attributes:
@@ -49,7 +49,7 @@ class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
         ) -> object:
             try:
                 return await behavior(request_or_iterator, context)
-            except AbstractSpakkyGRPCError as error:
+            except AbstractGrpcStatusError as error:
                 await context.abort(error.status_code, error.message)
             except Exception as error:
                 if isinstance(error, grpc.aio.BaseError):
@@ -77,7 +77,7 @@ class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
             try:
                 async for response in behavior(request_or_iterator, context):
                     yield response
-            except AbstractSpakkyGRPCError as error:
+            except AbstractGrpcStatusError as error:
                 await context.abort(error.status_code, error.message)
             except Exception as error:
                 if isinstance(error, grpc.aio.BaseError):
