@@ -1,83 +1,113 @@
-"""gRPC error classes for Spakky framework.
+"""gRPC plugin error hierarchy.
 
-Provides base error classes and common gRPC error responses that map
-domain exceptions to appropriate gRPC status codes.
+Provides base error classes, gRPC status-mapped errors, and schema errors.
 """
 
 from abc import ABC
 from typing import ClassVar
 
 import grpc
-
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
-class AbstractSpakkyGRPCError(AbstractSpakkyFrameworkError, ABC):
-    """Base error class for gRPC-related exceptions.
+class AbstractSpakkyGrpcError(AbstractSpakkyFrameworkError, ABC):
+    """Base exception for all Spakky gRPC errors."""
+
+    ...
+
+
+class AbstractGrpcStatusError(AbstractSpakkyGrpcError, ABC):
+    """Base for gRPC errors that map to a specific status code.
 
     Subclasses must define ``status_code`` to specify which gRPC status
     code the error maps to.
-
-    Attributes:
-        status_code: gRPC status code for this error type.
-        message: Human-readable error message.
     """
 
     status_code: ClassVar[grpc.StatusCode]
-    """gRPC status code returned for this error type."""
 
 
-class InvalidArgument(AbstractSpakkyGRPCError):
+class InvalidArgument(AbstractGrpcStatusError):
     """gRPC INVALID_ARGUMENT error."""
 
     message = "Invalid Argument"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.INVALID_ARGUMENT
 
 
-class NotFound(AbstractSpakkyGRPCError):
+class NotFound(AbstractGrpcStatusError):
     """gRPC NOT_FOUND error."""
 
     message = "Not Found"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.NOT_FOUND
 
 
-class AlreadyExists(AbstractSpakkyGRPCError):
+class AlreadyExists(AbstractGrpcStatusError):
     """gRPC ALREADY_EXISTS error."""
 
     message = "Already Exists"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.ALREADY_EXISTS
 
 
-class PermissionDenied(AbstractSpakkyGRPCError):
+class PermissionDenied(AbstractGrpcStatusError):
     """gRPC PERMISSION_DENIED error."""
 
     message = "Permission Denied"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.PERMISSION_DENIED
 
 
-class Unauthenticated(AbstractSpakkyGRPCError):
+class Unauthenticated(AbstractGrpcStatusError):
     """gRPC UNAUTHENTICATED error."""
 
     message = "Unauthenticated"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.UNAUTHENTICATED
 
 
-class FailedPrecondition(AbstractSpakkyGRPCError):
+class FailedPrecondition(AbstractGrpcStatusError):
     """gRPC FAILED_PRECONDITION error."""
 
     message = "Failed Precondition"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.FAILED_PRECONDITION
 
 
-class Unavailable(AbstractSpakkyGRPCError):
+class Unavailable(AbstractGrpcStatusError):
     """gRPC UNAVAILABLE error."""
 
     message = "Unavailable"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.UNAVAILABLE
 
 
-class InternalError(AbstractSpakkyGRPCError):
+class InternalError(AbstractGrpcStatusError):
     """gRPC INTERNAL error."""
 
     message = "Internal Server Error"
     status_code: ClassVar[grpc.StatusCode] = grpc.StatusCode.INTERNAL
+
+
+class UnsupportedFieldTypeError(AbstractSpakkyGrpcError):
+    """Raised when a Python type cannot be mapped to a protobuf type."""
+
+    message = "Unsupported field type for protobuf mapping"
+
+    def __init__(self, field_type: type) -> None:
+        super().__init__()
+        self.field_type = field_type
+
+
+class MissingProtoFieldAnnotationError(AbstractSpakkyGrpcError):
+    """Raised when a dataclass field lacks a ProtoField annotation."""
+
+    message = "Missing ProtoField annotation on dataclass field"
+
+    def __init__(self, dataclass_type: type, field_name: str) -> None:
+        super().__init__()
+        self.dataclass_type = dataclass_type
+        self.field_name = field_name
+
+
+class DescriptorAlreadyRegisteredError(AbstractSpakkyGrpcError):
+    """Raised when a FileDescriptorProto is registered more than once."""
+
+    message = "Descriptor already registered in pool"
+
+    def __init__(self, file_name: str) -> None:
+        super().__init__()
+        self.file_name = file_name
