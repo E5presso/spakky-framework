@@ -3,7 +3,6 @@
 from abc import ABC
 
 from spakky.core.common.error import AbstractSpakkyFrameworkError
-
 from spakky.plugins.grpc.error import (
     AbstractSpakkyGrpcError,
     DescriptorAlreadyRegisteredError,

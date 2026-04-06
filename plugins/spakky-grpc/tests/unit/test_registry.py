@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import pytest
-
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.error import DescriptorAlreadyRegisteredError

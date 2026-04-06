@@ -5,7 +5,6 @@ from typing import Annotated, Optional
 
 import pytest
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
-
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.error import (
     MissingProtoFieldAnnotationError,

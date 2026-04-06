@@ -11,9 +11,8 @@ from google.protobuf.descriptor import (
 )
 from google.protobuf.descriptor_pb2 import FileDescriptorProto
 from google.protobuf.descriptor_pool import DescriptorPool
-from google.protobuf.message_factory import GetMessageClass
 from google.protobuf.message import Message
-
+from google.protobuf.message_factory import GetMessageClass
 from spakky.plugins.grpc.error import DescriptorAlreadyRegisteredError
 
 

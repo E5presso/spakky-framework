@@ -9,7 +9,6 @@ from types import UnionType
 from typing import Annotated, Union, get_args, get_origin
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
-
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.error import (
     MissingProtoFieldAnnotationError,

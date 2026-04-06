@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
-
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.schema.descriptor_builder import (
