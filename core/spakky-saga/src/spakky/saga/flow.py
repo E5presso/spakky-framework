@@ -1,4 +1,4 @@
-"""Saga flow composition types and type aliases."""
+"""Saga flow composition types, type aliases, and builder functions."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Awaitable, Callable, Generic, TypeAlias, TypeVar
 
 from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData
+from spakky.saga.error import SagaFlowDefinitionError
 from spakky.saga.strategy import Compensate, ErrorStrategy
 
 SagaDataT = TypeVar("SagaDataT", bound=AbstractSagaData)
@@ -26,6 +27,7 @@ class SagaStep(Generic[SagaDataT]):
 
     action: Callable[[SagaDataT], Awaitable[SagaDataT | None]]
     on_error: ErrorStrategy = field(default_factory=Compensate)
+    timeout: timedelta | None = None
 
     def __rshift__(
         self,
@@ -35,6 +37,7 @@ class SagaStep(Generic[SagaDataT]):
             action=self.action,
             compensate=compensate,
             on_error=self.on_error,
+            timeout=self.timeout,
         )
 
     def __and__(
@@ -56,6 +59,7 @@ class Transaction(Generic[SagaDataT]):
     action: Callable[[SagaDataT], Awaitable[SagaDataT | None]]
     compensate: Callable[[SagaDataT], Awaitable[None]]
     on_error: ErrorStrategy = field(default_factory=Compensate)
+    timeout: timedelta | None = None
 
     def __and__(
         self,
@@ -120,3 +124,104 @@ class SagaFlow(Generic[SagaDataT]):
     ) -> SagaFlow[SagaDataT]:
         """보상 실패 시 에스컬레이션 핸들러를 설정한다."""
         return replace(self, compensation_failure_handler=handler)
+
+
+_MIN_PARALLEL_ITEMS = 2
+"""parallel()에 필요한 최소 아이템 수."""
+
+
+def step(
+    action: Callable[[SagaDataT], Awaitable[SagaDataT | None]],
+    *,
+    compensate: Callable[[SagaDataT], Awaitable[None]] | None = None,
+    on_error: ErrorStrategy | None = None,
+    timeout: timedelta | None = None,
+) -> SagaStep[SagaDataT] | Transaction[SagaDataT]:
+    """commit-compensate 바인딩을 생성한다.
+
+    Args:
+        action: commit 액션 함수.
+        compensate: 보상 함수. 지정 시 Transaction을 반환한다.
+        on_error: 에러 전략. 미지정 시 Compensate.
+        timeout: step 타임아웃.
+
+    Returns:
+        compensate 미지정 시 SagaStep, 지정 시 Transaction.
+    """
+    resolved_on_error: ErrorStrategy = (
+        on_error if on_error is not None else Compensate()
+    )
+    if compensate is not None:
+        return Transaction(
+            action=action,
+            compensate=compensate,
+            on_error=resolved_on_error,
+            timeout=timeout,
+        )
+    return SagaStep(
+        action=action,
+        on_error=resolved_on_error,
+        timeout=timeout,
+    )
+
+
+def parallel(
+    *items: SagaStep[SagaDataT]
+    | Transaction[SagaDataT]
+    | Parallel[SagaDataT]
+    | Callable[[SagaDataT], Awaitable[SagaDataT | None]],
+) -> Parallel[SagaDataT]:
+    """동시 실행 그룹을 구성한다.
+
+    Callable은 SagaStep으로 자동 승격된다.
+
+    Args:
+        *items: 병렬 실행할 FlowItem들. 최소 2개 필요.
+
+    Raises:
+        SagaFlowDefinitionError: 아이템이 2개 미만일 때.
+    """
+    if len(items) < _MIN_PARALLEL_ITEMS:
+        raise SagaFlowDefinitionError
+    promoted: list[SagaStep[SagaDataT] | Transaction[SagaDataT]] = []
+    for item in items:
+        if isinstance(item, (SagaStep, Transaction)):
+            promoted.append(item)
+        elif isinstance(item, Parallel):
+            promoted.extend(item.items)
+        elif callable(item):
+            promoted.append(SagaStep(action=item))
+        else:
+            raise SagaFlowDefinitionError
+    return Parallel(items=tuple(promoted))
+
+
+def saga_flow(
+    *items: SagaStep[SagaDataT]
+    | Transaction[SagaDataT]
+    | Parallel[SagaDataT]
+    | Callable[[SagaDataT], Awaitable[SagaDataT | None]],
+) -> SagaFlow[SagaDataT]:
+    """사가 흐름을 정의한다.
+
+    Callable은 SagaStep으로 자동 승격된다.
+
+    Args:
+        *items: 순차 실행할 FlowItem들. 최소 1개 필요.
+
+    Raises:
+        SagaFlowDefinitionError: 아이템이 비어있을 때.
+    """
+    if len(items) == 0:
+        raise SagaFlowDefinitionError
+    promoted: list[
+        SagaStep[SagaDataT] | Transaction[SagaDataT] | Parallel[SagaDataT]
+    ] = []
+    for item in items:
+        if isinstance(item, (SagaStep, Transaction, Parallel)):
+            promoted.append(item)
+        elif callable(item):
+            promoted.append(SagaStep(action=item))
+        else:
+            raise SagaFlowDefinitionError
+    return SagaFlow(items=tuple(promoted))
