@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from inspect import iscoroutinefunction
 from typing import Generic
 
-from spakky.saga.error import SagaEngineNotConnectedError
+from spakky.saga.engine import run_saga_flow
 from spakky.saga.flow import SagaDataT, SagaFlow, SagaStep
 from spakky.saga.result import SagaResult
 
@@ -81,7 +81,10 @@ class AbstractSaga(ABC, Generic[SagaDataT]):
         ...  # pragma: no branch - AbstractMethod only
 
     async def execute(self, data: SagaDataT) -> SagaResult[SagaDataT]:
-        """사가를 실행한다. 엔진 연결 전에는 SagaEngineNotConnectedError를 발생시킨다.
+        """사가를 실행한다.
+
+        SagaFlow에 정의된 step들을 순차 실행하고, 실패 시
+        compensate가 있는 step만 역순으로 보상을 실행한다.
 
         Args:
             data: 사가 비즈니스 데이터.
@@ -90,6 +93,7 @@ class AbstractSaga(ABC, Generic[SagaDataT]):
             SagaResult[SagaDataT]: 사가 실행 결과.
 
         Raises:
-            SagaEngineNotConnectedError: 엔진이 아직 연결되지 않은 경우.
+            SagaCompensationFailedError: 보상 실행 중 에러 발생
+                (on_compensation_failure 미설정 시).
         """
-        raise SagaEngineNotConnectedError()
+        return await run_saga_flow(self.flow(), data)

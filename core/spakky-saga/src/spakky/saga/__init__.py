@@ -24,7 +24,8 @@ from spakky.saga.flow import (
     saga_flow,
     step,
 )
-from spakky.saga.result import SagaResult, StepRecord
+from spakky.saga.engine import run_saga_flow
+from spakky.saga.result import SagaResult, StepRecord, StepStatus
 from spakky.saga.status import SagaStatus
 from spakky.saga.strategy import (
     Compensate,
@@ -49,6 +50,7 @@ __all__ = [
     # Result
     "SagaResult",
     "StepRecord",
+    "StepStatus",
     # Strategy
     "Compensate",
     "Skip",
@@ -64,6 +66,8 @@ __all__ = [
     "ActionFn",
     "CompensateFn",
     "FlowItem",
+    # Engine
+    "run_saga_flow",
     # Builder
     "step",
     "parallel",

@@ -9,8 +9,9 @@ import pytest
 from spakky.core.common.mutability import immutable
 from spakky.saga.base import AbstractSaga, _SagaStepDescriptor
 from spakky.saga.data import AbstractSagaData
-from spakky.saga.error import SagaEngineNotConnectedError
 from spakky.saga.flow import SagaFlow, SagaStep, Transaction
+from spakky.saga.result import StepStatus
+from spakky.saga.status import SagaStatus
 from spakky.saga.strategy import Compensate, Retry, Skip
 
 
@@ -174,13 +175,15 @@ def test_flow_returns_saga_flow_expect_correct_type() -> None:
     assert len(result.items) == 1
 
 
-# --- execute() 스텁 ---
+# --- execute() 엔진 연동 ---
 
 
 @pytest.mark.anyio
-async def test_execute_stub_expect_engine_not_connected_error() -> None:
-    """execute() 호출 시 SagaEngineNotConnectedError가 발생하는지 검증한다."""
+async def test_execute_runs_engine_expect_completed_result() -> None:
+    """execute()가 엔진을 호출하여 SagaResult를 반환하는지 검증한다."""
     saga = _ConcreteSaga()
     data = _OrderSagaData()
-    with pytest.raises(SagaEngineNotConnectedError):
-        await saga.execute(data)
+    result = await saga.execute(data)
+    assert result.status is SagaStatus.COMPLETED
+    assert len(result.history) == 1
+    assert result.history[0].status is StepStatus.COMMITTED
