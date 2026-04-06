@@ -27,3 +27,9 @@ class SagaParallelMergeConflictError(AbstractSpakkySagaError):
     """Raised when parallel steps modify the same field during data merge."""
 
     message = "Parallel steps modified the same field"
+
+
+class SagaEngineNotConnectedError(AbstractSpakkySagaError):
+    """Raised when execute() is called before the saga engine is connected."""
+
+    message = "Saga engine is not connected"
