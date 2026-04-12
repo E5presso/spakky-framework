@@ -23,6 +23,12 @@ class SagaCompensationFailedError(AbstractSpakkySagaError):
     message = "Saga compensation failed"
 
 
+class SagaStepTimeoutError(AbstractSpakkySagaError):
+    """Raised internally when a step exceeds its timeout (routed through on_error)."""
+
+    message = "Saga step timed out"
+
+
 class SagaParallelMergeConflictError(AbstractSpakkySagaError):
     """Raised when parallel steps modify the same field during data merge."""
 

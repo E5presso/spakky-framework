@@ -9,6 +9,7 @@ from spakky.saga.error import (
     SagaEngineNotConnectedError,
     SagaFlowDefinitionError,
     SagaParallelMergeConflictError,
+    SagaStepTimeoutError,
 )
 from spakky.saga.stereotype import Saga
 from spakky.saga.flow import (
@@ -78,6 +79,7 @@ __all__ = [
     "SagaCompensationFailedError",
     "SagaParallelMergeConflictError",
     "SagaEngineNotConnectedError",
+    "SagaStepTimeoutError",
     # Plugin
     "PLUGIN_NAME",
 ]

@@ -22,6 +22,17 @@ class ExponentialBackoff:
 
     base: float = 1.0
 
+    def delay_for(self, attempt: int) -> float:
+        """attempt(1-indexed) 직전에 대기할 초 단위 지연을 반환한다.
+
+        Args:
+            attempt: 시도 번호 (1-indexed). attempt=1 → base, attempt=2 → base*2, ...
+
+        Returns:
+            float: base * 2^(attempt-1).
+        """
+        return self.base * (2 ** (attempt - 1))
+
 
 @immutable
 class Retry:

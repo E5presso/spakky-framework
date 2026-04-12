@@ -115,7 +115,13 @@ class SagaFlow(Generic[SagaDataT]):
     compensation_failure_handler: Callable[[SagaDataT], Awaitable[None]] | None = None
 
     def timeout(self, duration: timedelta) -> SagaFlow[SagaDataT]:
-        """사가 전체 타임아웃을 설정한다."""
+        """사가 전체 타임아웃을 설정한다.
+
+        v1 제약: 타임아웃이 `parallel()` 그룹 실행 도중 만료되면, 그 그룹 내에서
+        이미 성공했으나 compensable 리스트에 등록되기 전(gather 반환 전) 상태였던
+        side-effect는 보상되지 않는다. 순차 step이나 이미 완료된 parallel 그룹의
+        commit된 step은 정상 보상된다.
+        """
         return replace(self, saga_timeout=duration)
 
     def on_compensation_failure(

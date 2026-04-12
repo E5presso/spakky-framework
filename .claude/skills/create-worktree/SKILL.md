@@ -46,5 +46,19 @@ user-invocable: false
      ```bash
      git branch -m {prefix}/{issue-number}
      ```
+   - 이전 작업으로 같은 이름의 브랜치가 남아 실패하면, `git log origin/develop..{prefix}/{issue-number}`로 미병합 커밋 유무를 확인한 후 없을 때만 `git branch -D`로 삭제하고 재시도한다.
+
+## ⚠️ 워크트리 진입 후 필수 확인 (루트 오염 방지)
+
+`EnterWorktree`가 세션의 CWD를 워크트리로 바꾸더라도, **Read/Edit/Write 도구에 전달하는 절대 경로는 바뀌지 않는다.** 도구 호출에서 무심코 `/Users/.../spakky-framework/core/...` (루트 리포 경로)를 쓰면 **develop 브랜치가 오염된다.**
+
+Phase 4~5의 첫 파일 수정 직전에 반드시 다음을 수행한다:
+
+1. **워크트리 절대 경로 확보**: `pwd` → `.claude/worktrees/{prefix}-{issue-number}`로 끝나야 함.
+2. **파일 수정 시 상대 경로 우선**. CWD가 워크트리이므로 상대 경로(`core/spakky-saga/src/...`)는 자동으로 올바른 위치를 가리킨다.
+   - ✗ `/Users/.../spakky-framework/core/...` (루트 — 금지)
+   - ✓ `core/spakky-saga/src/...` (상대 — 권장)
+   - ✓ `/Users/.../spakky-framework/.claude/worktrees/{name}/core/...` (워크트리 절대)
+3. **첫 Edit 직후 `git status`로 검증**한다. 워크트리의 `git status`가 변경을 보이지 않으면 루트에 쓴 것이다 — 즉시 루트 변경을 되돌리고 올바른 경로로 다시 쓴다.
 
 $ARGUMENTS
