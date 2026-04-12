@@ -15,7 +15,6 @@ from spakky.saga.result import SagaResult, StepRecord, StepStatus
 from spakky.saga.status import SagaStatus
 from spakky.saga.strategy import Retry, Skip
 
-
 _CompensableEntry = tuple[str, Callable[[SagaDataT], Awaitable[None]]]
 
 
@@ -125,9 +124,16 @@ async def _run_compensation(
                     elapsed=timedelta(seconds=monotonic() - comp_start),
                 )
             )
+            compensation_error = SagaCompensationFailedError()
             if handler is not None:
-                await handler(data)
-            raise SagaCompensationFailedError() from comp_error
+                try:
+                    await handler(data)
+                except Exception as handler_error:  # noqa: BLE001 - keep original compensation failure
+                    compensation_error.add_note(
+                        "Compensation failure handler raised "
+                        f"{type(handler_error).__name__}: {handler_error}"
+                    )
+            raise compensation_error from comp_error
 
 
 async def _execute_flow_item(
@@ -167,16 +173,20 @@ async def _execute_parallel_item(
     handler: Callable[[SagaDataT], Awaitable[None]] | None,
 ) -> _ItemExecutionResult[SagaDataT]:
     """Parallel 그룹을 동시 실행한다."""
-    tasks = [
-        _execute_step_item(
-            item=child,
-            data=data,
-            saga_start=saga_start,
-            saga_timeout=saga_timeout,
-            allow_data_update=False,
+    tasks = []
+    for child in item.items:
+        promoted_child = _promote_flow_item(child)
+        if isinstance(promoted_child, Parallel):
+            raise SagaFlowDefinitionError
+        tasks.append(
+            _execute_step_item(
+                item=promoted_child,
+                data=data,
+                saga_start=saga_start,
+                saga_timeout=saga_timeout,
+                allow_data_update=False,
+            )
         )
-        for child in item.items
-    ]
     results = await asyncio.gather(*tasks)
 
     history: list[StepRecord] = []

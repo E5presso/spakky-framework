@@ -1,16 +1,15 @@
 """Unit tests for saga execution engine."""
 
 import asyncio
-
 from dataclasses import replace
 from datetime import timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
-
+import spakky.saga.engine as saga_engine
 from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData
-import spakky.saga.engine as saga_engine
 from spakky.saga.engine import run_saga_flow
 from spakky.saga.error import SagaCompensationFailedError, SagaFlowDefinitionError
 from spakky.saga.flow import (
@@ -24,7 +23,6 @@ from spakky.saga.flow import (
 from spakky.saga.result import StepStatus
 from spakky.saga.status import SagaStatus
 from spakky.saga.strategy import ExponentialBackoff, Retry, Skip
-
 
 _SHORT_DELAY_SECONDS = 0.05
 _TIMEOUT_DELAY_SECONDS = 0.2
@@ -220,6 +218,30 @@ async def test_first_step_fails_expect_no_compensation() -> None:
     assert result.history[0].status is StepStatus.FAILED
 
 
+@pytest.mark.anyio
+async def test_compensation_handler_failure_expect_original_error_preserved() -> None:
+    """보상 핸들러가 실패해도 원래 보상 실패가 SagaCompensationFailedError로 유지되는지 검증한다."""
+
+    async def fail_compensate(data: _OrderData) -> None:
+        raise RuntimeError("compensation failed")
+
+    async def fail_handler(data: _OrderData) -> None:
+        raise ValueError("handler failed")
+
+    flow = saga_flow(
+        step(_succeed, compensate=fail_compensate),
+        step(_fail),
+    ).on_compensation_failure(fail_handler)
+
+    with pytest.raises(SagaCompensationFailedError) as exc_info:
+        await run_saga_flow(flow, _OrderData(order_id=uuid4()))
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
+    assert exc_info.value.__notes__ == [
+        "Compensation failure handler raised ValueError: handler failed"
+    ]
+
+
 # --- Transaction (>> 연산자) ---
 
 
@@ -394,6 +416,26 @@ def test_promote_flow_item_invalid_expect_definition_error() -> None:
     """런타임 promotion에 유효하지 않은 item이 들어오면 정의 에러가 발생하는지 검증한다."""
     with pytest.raises(SagaFlowDefinitionError):
         saga_engine._promote_flow_item(object())  # type: ignore[arg-type] - runtime invalid item path is intentional in this test
+
+
+@pytest.mark.anyio
+async def test_parallel_nested_parallel_expect_definition_error() -> None:
+    """직접 구성된 중첩 Parallel은 런타임에서 정의 에러로 거부되는지 검증한다."""
+    nested_parallel = Parallel(
+        items=cast(
+            tuple[SagaStep[_OrderData] | Transaction[_OrderData], ...],
+            (
+                Parallel(items=(step(_succeed), step(_succeed))),
+                step(_succeed),
+            ),
+        )
+    )
+
+    with pytest.raises(SagaFlowDefinitionError):
+        await run_saga_flow(
+            SagaFlow(items=(nested_parallel,)),  # type: ignore[arg-type] - runtime invalid nested parallel path is intentional in this test
+            _OrderData(order_id=uuid4()),
+        )
 
 
 def test_resolve_timeout_seconds_with_step_and_saga_expect_minimum() -> None:
