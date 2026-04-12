@@ -7,8 +7,6 @@ that has ``ErrorHandlingInterceptor`` and (optionally)
 
 from logging import getLogger
 
-import grpc
-import grpc.aio
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -18,10 +16,12 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-
 from spakky.plugins.grpc.interceptors.error_handling import ErrorHandlingInterceptor
 from spakky.plugins.grpc.interceptors.tracing import TracingInterceptor
 from spakky.tracing.propagator import ITracePropagator
+
+import grpc
+import grpc.aio
 
 logger = getLogger(__name__)
 

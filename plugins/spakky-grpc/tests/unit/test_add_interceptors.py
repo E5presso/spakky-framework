@@ -6,7 +6,6 @@ import grpc.aio
 import pytest
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
-
 from spakky.plugins.grpc.interceptors.error_handling import ErrorHandlingInterceptor
 from spakky.plugins.grpc.interceptors.tracing import TracingInterceptor
 from spakky.plugins.grpc.post_processors.add_interceptors import (

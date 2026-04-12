@@ -6,7 +6,6 @@ at runtime, and registers generic RPC handlers on the ``grpc.aio.Server``.
 
 from logging import getLogger
 
-import grpc.aio
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -16,11 +15,12 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-
 from spakky.plugins.grpc.handler import GrpcServiceHandler
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
+
+import grpc.aio
 
 logger = getLogger(__name__)
 

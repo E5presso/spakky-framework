@@ -5,7 +5,6 @@ interceptor injection, and server lifecycle management.
 """
 
 from spakky.core.application.application import SpakkyApplication
-
 from spakky.plugins.grpc.post_processors.add_interceptors import (
     AddInterceptorsPostProcessor,
 )

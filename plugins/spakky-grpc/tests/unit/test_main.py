@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, call
 
 from spakky.core.application.application import SpakkyApplication
-
 from spakky.plugins.grpc.main import initialize
 from spakky.plugins.grpc.post_processors.add_interceptors import (
     AddInterceptorsPostProcessor,

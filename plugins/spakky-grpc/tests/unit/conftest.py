@@ -8,7 +8,6 @@ import grpc.aio
 import pytest
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
-
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
