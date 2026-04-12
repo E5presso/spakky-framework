@@ -8,7 +8,7 @@ from abc import ABC
 from dataclasses import field
 from typing import Generic, Sequence, TypeVar
 
-from spakky.core.common.interfaces.equatable import EquatableT_co, IEquatable
+from spakky.core.common.interfaces.equatable import EquatableT, IEquatable
 from spakky.core.common.mutability import mutable
 
 from spakky.domain.models.entity import AbstractEntity
@@ -16,7 +16,7 @@ from spakky.domain.models.event import AbstractDomainEvent
 
 
 @mutable
-class AbstractAggregateRoot(AbstractEntity[EquatableT_co], Generic[EquatableT_co], ABC):
+class AbstractAggregateRoot(AbstractEntity[EquatableT], Generic[EquatableT], ABC):
     """Base class for DDD aggregate roots.
 
     Aggregate roots are entities that serve as entry points to aggregates,

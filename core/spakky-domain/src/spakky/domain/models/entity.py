@@ -16,7 +16,7 @@ if sys.version_info >= (3, 12):
 else:
     from typing_extensions import override
 
-from spakky.core.common.interfaces.equatable import EquatableT_co, IEquatable
+from spakky.core.common.interfaces.equatable import EquatableT, IEquatable
 from spakky.core.common.mutability import mutable
 from spakky.core.utils.uuid import uuid7
 
@@ -31,7 +31,7 @@ class CannotMonkeyPatchEntityError(AbstractSpakkyDomainError):
 
 
 @mutable
-class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], ABC):
+class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT], ABC):
     """Base class for DDD entities with identity and validation.
 
     Entities are objects with unique identity that maintain consistency
@@ -49,7 +49,7 @@ class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], AB
 
     __initialized: bool = field(init=False, repr=False, default=False)
 
-    uid: EquatableT_co
+    uid: EquatableT
     """Unique identifier for this entity."""
 
     version: UUID = field(default_factory=uuid7)
@@ -63,7 +63,7 @@ class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], AB
 
     @classmethod
     @abstractmethod
-    def next_id(cls) -> EquatableT_co:
+    def next_id(cls) -> EquatableT:
         """Generate next unique identifier for this entity type.
 
         Returns:

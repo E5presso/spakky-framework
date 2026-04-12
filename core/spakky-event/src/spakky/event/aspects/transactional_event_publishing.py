@@ -3,14 +3,13 @@
 from inspect import iscoroutinefunction
 from typing import Any
 
-from typing_extensions import override
-
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import After, AfterReturning
 from spakky.core.pod.annotations.order import Order
 from spakky.data.aspects.transactional import Transactional
 from spakky.data.persistency.aggregate_collector import AggregateCollector
+from typing_extensions import override
 
 from spakky.event.event_publisher import (
     IAsyncEventPublisher,

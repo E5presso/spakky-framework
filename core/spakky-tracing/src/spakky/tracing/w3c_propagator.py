@@ -3,7 +3,6 @@
 from spakky.core.pod.annotations.pod import Pod
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
-
 from typing_extensions import override
 
 TRACEPARENT_HEADER = "traceparent"

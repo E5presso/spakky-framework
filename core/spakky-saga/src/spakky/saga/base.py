@@ -10,7 +10,6 @@ from spakky.saga.engine import run_saga_flow
 from spakky.saga.flow import SagaDataT, SagaFlow, SagaStep
 from spakky.saga.result import SagaResult
 
-
 _FRAMEWORK_METHODS: frozenset[str] = frozenset({"flow", "execute"})
 
 
