@@ -9,7 +9,10 @@ from abc import ABC, abstractmethod
 from dataclasses import astuple
 from typing import Self
 
-if sys.version_info >= (3, 12):
+if sys.version_info >= (
+    3,
+    12,
+):  # pragma: no cover - Python 3.12+ import path, tests run on 3.11
     from typing import override
 else:
     from typing_extensions import override

@@ -112,7 +112,7 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
                     self._stop_event.wait(),
                     timeout=self._config.polling_interval_seconds,
                 )
-                break  # pragma: no cover - graceful shutdown path, timing-sensitive
+                break
             except AsyncTimeoutError:
                 continue
 
