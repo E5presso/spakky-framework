@@ -76,6 +76,15 @@ def test_retry_frozen_expect_frozen_instance_error() -> None:
         retry.max_attempts = 10  # type: ignore[misc]
 
 
+def test_exponential_backoff_delay_for_expect_doubling() -> None:
+    """ExponentialBackoff.delay_for가 base * 2^(attempt-1)을 반환한다."""
+    backoff = ExponentialBackoff(base=0.5)
+    assert backoff.delay_for(1) == 0.5
+    assert backoff.delay_for(2) == 1.0
+    assert backoff.delay_for(3) == 2.0
+    assert backoff.delay_for(4) == 4.0
+
+
 def test_error_strategy_types_expect_union_members() -> None:
     """ErrorStrategy 유니온에 Compensate, Skip, Retry가 포함되는지 검증한다."""
     compensate: ErrorStrategy = Compensate()
