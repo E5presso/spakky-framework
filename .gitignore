@@ -4,6 +4,9 @@ build/reports/**
 # claude worktrees
 .claude/worktrees/
 
+# monitor-pr 런타임 state (처리 완료한 코멘트/리뷰 ID 캐시)
+.claude/monitor-pr-seen/
+
 ### Node ###
 # Logs
 logs
