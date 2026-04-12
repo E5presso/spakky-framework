@@ -17,23 +17,45 @@
 ## 설정
 
 ```bash
-pip install spakky-grpc
+pip install spakky-grpc spakky-tracing
 ```
 
 `spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`에 의존합니다.
 
 ```python
+import grpc.aio
 import spakky.plugins.grpc
+import spakky.tracing
+
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+
+
+@Pod()
+def get_descriptor_registry() -> DescriptorRegistry:
+    return DescriptorRegistry()
+
+
+@Pod()
+def get_grpc_server() -> grpc.aio.Server:
+    server = grpc.aio.server()
+    server.add_insecure_port("127.0.0.1:50051")
+    return server
 
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={
         spakky.plugins.grpc.PLUGIN_NAME,
+        spakky.tracing.PLUGIN_NAME,
     })
     .scan(apps)
+    .add(get_descriptor_registry)
+    .add(get_grpc_server)
     .start()
 )
 ```
+
+`DescriptorRegistry`는 런타임 protobuf descriptor와 message class를 캐싱하며, `grpc.aio.Server` Pod는 실제 포트 바인딩과 서버 옵션의 소유권을 가집니다.
 
 ---
 

@@ -352,21 +352,29 @@ class ApplicationContext(IApplicationContext):
         loop.run_forever()
         loop.close()
 
+    def __prepare_event_loop(self) -> AbstractEventLoop:
+        """Create the event loop early for loop-bound async Pod instances."""
+        if self.__event_loop is not None:  # pragma: no cover
+            raise EventLoopThreadAlreadyStartedInApplicationContextError
+        event_loop = new_event_loop()
+        self.__event_loop = event_loop
+        set_event_loop(event_loop)
+        return event_loop
+
     def __start_services(self) -> None:
         """Start all registered sync and async services.
 
         Raises:
             EventLoopThreadAlreadyStartedInApplicationContextError: If already started.
         """
-        if self.__event_loop is not None:  # pragma: no cover
-            raise EventLoopThreadAlreadyStartedInApplicationContextError
+        event_loop = self.__event_loop
+        if event_loop is None:
+            event_loop = self.__prepare_event_loop()
         if self.__event_thread is not None:  # pragma: no cover
             raise EventLoopThreadAlreadyStartedInApplicationContextError
-
-        self.__event_loop = new_event_loop()
         self.__event_thread = Thread(
             target=self.__run_event_loop,
-            args=(self.__event_loop,),
+            args=(event_loop,),
             daemon=True,
         )
         self.__event_thread.start()
@@ -380,7 +388,7 @@ class ApplicationContext(IApplicationContext):
             for service in self.__async_services:
                 await service.start_async()
 
-        run_coroutine_threadsafe(start_async_services(), self.__event_loop).result()
+        run_coroutine_threadsafe(start_async_services(), event_loop).result()
 
     def __stop_services(self) -> None:
         """Stop all services and shutdown event loop.
@@ -411,6 +419,7 @@ class ApplicationContext(IApplicationContext):
         # Clear references after thread has joined
         self.__event_loop = None
         self.__event_thread = None
+        set_event_loop(None)
 
     @property
     @override
@@ -518,6 +527,7 @@ class ApplicationContext(IApplicationContext):
         if self.__is_started:  # pragma: no cover
             raise ApplicationContextAlreadyStartedError()
         self.__is_started = True
+        self.__prepare_event_loop()
         self.__register_post_processors()
         self.__initialize_pods()
         self.__start_services()
