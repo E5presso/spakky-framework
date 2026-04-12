@@ -235,7 +235,7 @@ class CreateOrderSaga(AbstractSaga[CreateOrderSagaData]):
 | `x \| E` | `step(..., on_error=E)` | 에러 전략 지정 | 3 (낮음) |
 | `,` | — | 순차 실행 | N/A |
 
-**연산자 래핑 메커니즘**: `AbstractSaga.__init_subclass__()`에서 `flow()`에 사용될 메서드를 `SagaStep` 디스크립터로 교체한다. 이를 통해 bound method에서 `__rshift__`, `__and__`, `__or__` 연산자를 사용할 수 있다.
+**연산자 래핑 메커니즘**: 사가 step 역할의 async 메서드에 `@saga_step` 데코레이터를 명시적으로 적용한다. 데코레이터가 `_SagaStepDescriptor[SagaDataT]`를 반환하여, 인스턴스 접근 시 overload된 `__get__`이 `SagaStep[SagaDataT]`을 돌려준다. 이 설계는 타입체커가 연산자 `>>`, `&`, `|`를 정적으로 추적할 수 있게 하며 `# type: ignore` 주석이 필요 없다.
 
 연산자와 함수를 자유롭게 혼합 가능:
 
@@ -542,7 +542,7 @@ Transaction.__or__(strategy)     → Transaction   # | (on_error 설정)
 ### 부정적
 
 - 연산자 syntax sugar(`>>`, `&`, `|`)가 Python 기본 문법이 아니므로 학습 비용 발생
-- `__init_subclass__`를 통한 메서드 래핑이 프레임워크 마법을 추가
+- `@saga_step` 데코레이터를 모든 step 메서드에 명시적으로 붙여야 한다 (대신 타입 안전성을 얻는다)
 - v1에서 병렬 step이 side-effect only로 제한되어, 일부 패턴에서 추가 조회 step 필요
 
 ### 중립적

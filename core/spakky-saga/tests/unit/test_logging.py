@@ -49,7 +49,7 @@ def _records(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [r.getMessage() for r in caplog.records if r.name == _SAGA_LOGGER]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_emits_started_and_completed_logs_expect_structured_format(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -64,7 +64,7 @@ async def test_run_saga_flow_emits_started_and_completed_logs_expect_structured_
     )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_emits_step_started_and_completed_expect_structured_format(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -82,7 +82,7 @@ async def test_run_saga_flow_emits_step_started_and_completed_expect_structured_
     )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_emits_failure_and_compensating_logs_expect_error_classname(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -103,7 +103,7 @@ async def test_run_saga_flow_emits_failure_and_compensating_logs_expect_error_cl
     assert any(m.startswith("[saga=OrderSaga status=FAILED elapsed=") for m in messages)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_without_saga_name_expect_anonymous_placeholder(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -115,7 +115,7 @@ async def test_run_saga_flow_without_saga_name_expect_anonymous_placeholder(
     assert "[saga=<anonymous> status=started]" in messages
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_parallel_group_emits_per_step_logs_expect_both_started(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -138,7 +138,7 @@ async def test_run_saga_flow_parallel_group_emits_per_step_logs_expect_both_star
     )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_retry_emits_retry_attempt_log_expect_attempt_number(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -164,7 +164,7 @@ async def test_run_saga_flow_retry_emits_retry_attempt_log_expect_attempt_number
     assert "[saga=OrderSaga step=_flaky status=retry attempt=2]" in messages
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_saga_timeout_emits_timed_out_final_log_expect_status(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -182,7 +182,7 @@ async def test_run_saga_flow_saga_timeout_emits_timed_out_final_log_expect_statu
     )
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_abstract_saga_execute_uses_class_name_as_saga_name_expect_log_tag(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -203,7 +203,7 @@ async def test_abstract_saga_execute_uses_class_name_as_saga_name_expect_log_tag
     assert "[saga=ShippingSaga status=started]" in messages
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_run_saga_flow_failed_step_emits_warning_level_log_expect_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
