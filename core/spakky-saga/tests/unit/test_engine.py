@@ -1,5 +1,7 @@
 """Unit tests for saga execution engine."""
 
+import asyncio
+
 from dataclasses import replace
 from datetime import timedelta
 from uuid import UUID, uuid4
@@ -8,6 +10,7 @@ import pytest
 
 from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData
+import spakky.saga.engine as saga_engine
 from spakky.saga.engine import run_saga_flow
 from spakky.saga.error import SagaCompensationFailedError
 from spakky.saga.flow import (
@@ -20,6 +23,13 @@ from spakky.saga.flow import (
 )
 from spakky.saga.result import StepStatus
 from spakky.saga.status import SagaStatus
+from spakky.saga.strategy import ExponentialBackoff, Retry, Skip
+
+
+_SHORT_DELAY_SECONDS = 0.02
+_WAIT_TIMEOUT_SECONDS = 1.0
+_STEP_TIMEOUT = timedelta(milliseconds=5)
+_SAGA_TIMEOUT = timedelta(milliseconds=5)
 
 
 @immutable
@@ -60,6 +70,11 @@ async def _compensate_logged(data: _OrderData) -> None:
 async def _compensate_fail(data: _OrderData) -> None:
     """항상 실패하는 보상."""
     raise RuntimeError("compensation failed")
+
+
+async def _slow_succeed(data: _OrderData) -> None:
+    """짧게 대기 후 성공하는 액션."""
+    await asyncio.sleep(_SHORT_DELAY_SECONDS)
 
 
 @pytest.fixture(autouse=True)
@@ -232,24 +247,360 @@ async def test_transaction_failure_expect_compensated() -> None:
     assert len(_compensation_log) == 1
 
 
-# --- Parallel (순차 실행 폴백) ---
+# --- Retry / Skip ---
 
 
 @pytest.mark.anyio
-async def test_parallel_items_execute_sequentially_expect_completed() -> None:
-    """Parallel 아이템이 순차적으로 실행되어 COMPLETED를 반환하는지 검증한다."""
+async def test_retry_eventually_succeeds_expect_completed() -> None:
+    """Retry가 재시도 끝에 성공하면 COMPLETED를 반환하는지 검증한다."""
+    attempts = 0
+
+    async def flaky_step(data: _OrderData) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise RuntimeError("transient failure")
+
+    flow = saga_flow(
+        step(
+            flaky_step,
+            on_error=Retry(
+                max_attempts=3,
+                backoff=ExponentialBackoff(base=0),
+            ),
+        )
+    )
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.COMPLETED
+    assert attempts == 3
+    assert len(result.history) == 1
+    assert result.history[0].status is StepStatus.COMMITTED
+
+
+@pytest.mark.anyio
+async def test_retry_then_skip_expect_next_step_continues() -> None:
+    """Retry 소진 후 Skip이면 다음 step으로 진행하는지 검증한다."""
+    attempts = 0
+
+    async def flaky_step(data: _OrderData) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("non-critical failure")
+
+    flow = saga_flow(
+        step(
+            flaky_step,
+            on_error=Retry(
+                max_attempts=2,
+                backoff=ExponentialBackoff(base=0),
+                then=Skip(),
+            ),
+        ),
+        step(_succeed),
+    )
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.COMPLETED
+    assert attempts == 2
+    assert len(result.history) == 2
+    assert result.history[0].status is StepStatus.FAILED
+    assert result.history[1].status is StepStatus.COMMITTED
+    assert result.failed_step is None
+
+
+@pytest.mark.anyio
+async def test_retry_then_compensate_expect_failed_and_previous_steps_rolled_back() -> None:
+    """Retry 기본 then 전략은 보상을 시작하고 FAILED를 반환하는지 검증한다."""
+    attempts = 0
+
+    async def flaky_step(data: _OrderData) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("persistent failure")
+
+    flow = saga_flow(
+        step(_succeed, compensate=_compensate_logged),
+        step(
+            flaky_step,
+            on_error=Retry(
+                max_attempts=2,
+                backoff=ExponentialBackoff(base=0),
+            ),
+        ),
+    )
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.FAILED
+    assert attempts == 2
+    assert len(_compensation_log) == 1
+    assert len(result.history) == 3
+    assert result.history[0].status is StepStatus.COMMITTED
+    assert result.history[1].status is StepStatus.FAILED
+    assert result.history[2].status is StepStatus.COMPENSATED
+
+
+@pytest.mark.anyio
+async def test_retry_positive_backoff_expect_sleep_called(monkeypatch: pytest.MonkeyPatch) -> None:
+    """양수 backoff가 설정되면 retry 사이에 sleep이 호출되는지 검증한다."""
+    attempts = 0
+    recorded_delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        recorded_delays.append(delay)
+
+    async def flaky_step(data: _OrderData) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("transient failure")
+
+    monkeypatch.setattr(saga_engine.asyncio, "sleep", fake_sleep)
+
+    flow = saga_flow(
+        step(
+            flaky_step,
+            on_error=Retry(
+                max_attempts=2,
+                backoff=ExponentialBackoff(base=0.01),
+            ),
+        )
+    )
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.COMPLETED
+    assert attempts == 2
+    assert recorded_delays == [0.01]
+
+
+# --- Parallel ---
+
+
+@pytest.mark.anyio
+async def test_parallel_items_execute_concurrently_expect_completed() -> None:
+    """Parallel 아이템이 함께 시작되고 side-effect only로 처리되는지 검증한다."""
+    both_started = asyncio.Event()
+    release = asyncio.Event()
+    started_steps: list[str] = []
+
+    async def parallel_a(data: _OrderData) -> _OrderData:
+        started_steps.append("a")
+        if len(started_steps) == 2:
+            both_started.set()
+        await release.wait()
+        return replace(data, ticket_id=uuid4())
+
+    async def parallel_b(data: _OrderData) -> None:
+        started_steps.append("b")
+        if len(started_steps) == 2:
+            both_started.set()
+        await release.wait()
+
     par = Parallel(
         items=(
-            SagaStep(action=_succeed),
-            SagaStep(action=_succeed),
+            SagaStep(action=parallel_a),
+            SagaStep(action=parallel_b),
         ),
     )
     flow = SagaFlow(items=(par,))
+    data = _OrderData(order_id=uuid4())
+
+    task = asyncio.create_task(run_saga_flow(flow, data))
+    await asyncio.wait_for(both_started.wait(), timeout=_WAIT_TIMEOUT_SECONDS)
+    release.set()
+    result = await task
+
+    assert result.status is SagaStatus.COMPLETED
+    assert len(result.history) == 2
+    assert sorted(started_steps) == ["a", "b"]
+    assert result.data is data
+    assert result.data.ticket_id is None
+
+
+@pytest.mark.anyio
+async def test_parallel_failure_expect_successful_siblings_and_previous_steps_compensated() -> (
+    None
+):
+    """Parallel 실패 시 성공한 sibling과 이전 step이 보상되는지 검증한다."""
+    compensation_order: list[str] = []
+
+    async def compensate_previous(data: _OrderData) -> None:
+        compensation_order.append("previous")
+
+    async def compensate_parallel(data: _OrderData) -> None:
+        compensation_order.append("parallel")
+
+    par = Parallel(
+        items=(
+            Transaction(action=_succeed, compensate=compensate_parallel),
+            SagaStep(action=_fail),
+        )
+    )
+    flow = saga_flow(
+        step(_succeed, compensate=compensate_previous),
+        par,
+    )
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.FAILED
+    assert compensation_order == ["parallel", "previous"]
+    assert len(result.history) == 5
+    assert result.history[1].status is StepStatus.COMMITTED
+    assert result.history[2].status is StepStatus.FAILED
+    assert result.history[3].status is StepStatus.COMPENSATED
+    assert result.history[4].status is StepStatus.COMPENSATED
+
+
+@pytest.mark.anyio
+async def test_parallel_compensation_order_expect_reverse_completion_order() -> None:
+    """Parallel 보상 순서는 선언 순서가 아니라 실제 완료 역순인지 검증한다."""
+    compensation_order: list[str] = []
+
+    async def slow_success(data: _OrderData) -> None:
+        await asyncio.sleep(_SHORT_DELAY_SECONDS * 2)
+
+    async def fast_success(data: _OrderData) -> None:
+        await asyncio.sleep(_SHORT_DELAY_SECONDS)
+
+    async def fail_after_successes(data: _OrderData) -> None:
+        await asyncio.sleep(_SHORT_DELAY_SECONDS * 3)
+        raise RuntimeError("parallel failed")
+
+    async def compensate_slow(data: _OrderData) -> None:
+        compensation_order.append("slow")
+
+    async def compensate_fast(data: _OrderData) -> None:
+        compensation_order.append("fast")
+
+    par = Parallel(
+        items=(
+            Transaction(action=slow_success, compensate=compensate_slow),
+            Transaction(action=fast_success, compensate=compensate_fast),
+            SagaStep(action=fail_after_successes),
+        )
+    )
+    flow = saga_flow(par)
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.FAILED
+    assert compensation_order == ["slow", "fast"]
+
+
+@pytest.mark.anyio
+async def test_parallel_timeout_and_failure_expect_timed_out() -> None:
+    """Parallel에서 failure와 saga timeout이 함께 발생하면 TIMED_OUT을 우선 반환하는지 검증한다."""
+    par = Parallel(
+        items=(
+            SagaStep(action=_fail),
+            SagaStep(action=_slow_succeed),
+        )
+    )
+    flow = saga_flow(par).timeout(_SAGA_TIMEOUT)
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.TIMED_OUT
+    assert result.failed_step == "_slow_succeed"
+    assert isinstance(result.error, TimeoutError)
+
+
+@pytest.mark.anyio
+async def test_parallel_compensation_uses_original_data_expect_side_effect_only() -> None:
+    """Parallel transaction 보상은 action 반환 데이터가 아닌 원본 data를 받는지 검증한다."""
+    observed_ticket_ids: list[UUID | None] = []
+
+    async def compensate_parallel(data: _OrderData) -> None:
+        observed_ticket_ids.append(data.ticket_id)
+
+    par = Parallel(
+        items=(
+            Transaction(action=_succeed_with_data, compensate=compensate_parallel),
+            SagaStep(action=_fail),
+        )
+    )
+    flow = saga_flow(par)
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.FAILED
+    assert observed_ticket_ids == [None]
+    assert result.data is data
+
+
+# --- Timeout ---
+
+
+@pytest.mark.anyio
+async def test_step_timeout_with_skip_expect_next_step_continues() -> None:
+    """step timeout과 Skip 조합이면 다음 step으로 진행하는지 검증한다."""
+    flow = saga_flow(
+        step(_slow_succeed, timeout=_STEP_TIMEOUT, on_error=Skip()),
+        step(_succeed),
+    )
     data = _OrderData(order_id=uuid4())
     result = await run_saga_flow(flow, data)
 
     assert result.status is SagaStatus.COMPLETED
     assert len(result.history) == 2
+    assert result.history[0].status is StepStatus.FAILED
+    assert result.history[1].status is StepStatus.COMMITTED
+
+
+@pytest.mark.anyio
+async def test_saga_timeout_before_step_start_expect_timed_out_without_action() -> None:
+    """saga budget이 step 시작 전 이미 소진되면 action을 실행하지 않고 TIMED_OUT을 반환하는지 검증한다."""
+    action_called: list[bool] = []
+
+    async def never_started(data: _OrderData) -> None:
+        action_called.append(True)
+
+    flow = saga_flow(step(never_started)).timeout(timedelta())
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.TIMED_OUT
+    assert action_called == []
+    assert result.failed_step == "never_started"
+
+
+@pytest.mark.anyio
+async def test_step_and_saga_timeout_expect_smaller_saga_budget_wins() -> None:
+    """step timeout과 saga timeout이 함께 있으면 더 작은 saga budget이 우선 적용되는지 검증한다."""
+    flow = saga_flow(
+        step(_slow_succeed, timeout=timedelta(seconds=1)),
+    ).timeout(_SAGA_TIMEOUT)
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.TIMED_OUT
+    assert result.failed_step == "_slow_succeed"
+    assert isinstance(result.error, TimeoutError)
+
+
+@pytest.mark.anyio
+async def test_saga_timeout_expect_timed_out_and_compensated() -> None:
+    """saga timeout 소진 시 이미 커밋된 step을 보상하고 TIMED_OUT을 반환하는지 검증한다."""
+    flow = saga_flow(
+        step(_succeed, compensate=_compensate_logged),
+        step(_slow_succeed),
+    ).timeout(_SAGA_TIMEOUT)
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.TIMED_OUT
+    assert result.failed_step == "_slow_succeed"
+    assert isinstance(result.error, TimeoutError)
+    assert len(_compensation_log) == 1
+    assert len(result.history) == 3
+    assert result.history[0].status is StepStatus.COMMITTED
+    assert result.history[1].status is StepStatus.FAILED
+    assert result.history[2].status is StepStatus.COMPENSATED
 
 
 # --- history 기록 ---
