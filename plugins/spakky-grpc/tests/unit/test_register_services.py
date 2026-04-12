@@ -3,7 +3,6 @@
 from types import new_class
 from unittest.mock import MagicMock
 
-import grpc.aio
 import pytest
 from spakky.core.common.constants import DYNAMIC_PROXY_CLASS_NAME_SUFFIX
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -12,6 +11,7 @@ from spakky.plugins.grpc.post_processors.register_services import (
     RegisterServicesPostProcessor,
 )
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+from spakky.plugins.grpc.server_spec import GrpcServerSpec
 
 from tests.unit.conftest import GreeterController
 
@@ -24,14 +24,13 @@ def processor() -> RegisterServicesPostProcessor:
     container = MagicMock(spec=IContainer)
     application_context = MagicMock(spec=IApplicationContext)
     registry = DescriptorRegistry()
-    server = MagicMock(spec=grpc.aio.Server)
-    server.add_generic_rpc_handlers = MagicMock()
+    spec = GrpcServerSpec()
 
     def get_side_effect(type_: type, name: str | None = None) -> object:
         if type_ is DescriptorRegistry:
             return registry
-        if type_ is grpc.aio.Server:
-            return server
+        if type_ is GrpcServerSpec:
+            return spec
         return MagicMock()
 
     container.get = MagicMock(side_effect=get_side_effect)
@@ -53,7 +52,7 @@ def test_register_services_skips_non_controller(
 def test_register_services_processes_grpc_controller(
     processor: RegisterServicesPostProcessor,
 ) -> None:
-    """@GrpcController Pod should trigger service registration."""
+    """@GrpcController Pod should append a handler to the shared spec."""
     controller_instance = GreeterController()
     result = processor.post_process(controller_instance)
 
@@ -61,8 +60,8 @@ def test_register_services_processes_grpc_controller(
     container = (
         processor._RegisterServicesPostProcessor__container  # pyrefly: ignore - name-mangled private attr access
     )
-    server = container.get(grpc.aio.Server)
-    server.add_generic_rpc_handlers.assert_called_once()
+    spec = container.get(GrpcServerSpec)
+    assert len(spec.handlers) == 1
 
 
 def test_register_services_registers_descriptor_in_registry(
@@ -107,8 +106,8 @@ def test_register_services_unwraps_aop_proxy_type(
     container = (
         processor._RegisterServicesPostProcessor__container  # pyrefly: ignore - name-mangled private attr access
     )
-    server = container.get(grpc.aio.Server)
-    server.add_generic_rpc_handlers.assert_called_once()
+    spec = container.get(GrpcServerSpec)
+    assert len(spec.handlers) == 1
 
 
 def test_unwrap_proxy_type_returns_original_class() -> None:
