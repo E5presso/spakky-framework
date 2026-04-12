@@ -1,5 +1,6 @@
 """DI 통합 테스트: @Saga() 클래스가 컨테이너에서 해석되어 복합 흐름을 실행하는지 검증한다."""
 
+from typing import Any, Generator
 from uuid import uuid4
 
 import pytest
@@ -18,7 +19,7 @@ from tests.integration.apps.order_saga import (
 
 
 @pytest.fixture(name="app", scope="module")
-def app_fixture() -> SpakkyApplication:
+def app_fixture() -> Generator[SpakkyApplication, Any, None]:
     """DI 컨테이너와 saga 플러그인을 구성한 SpakkyApplication을 제공한다."""
     app = (
         SpakkyApplication(ApplicationContext())
@@ -26,7 +27,8 @@ def app_fixture() -> SpakkyApplication:
         .scan(apps)
     )
     app.start()
-    return app
+    yield app
+    app.stop()
 
 
 def test_saga_pod_resolves_from_container_expect_saga_instance(

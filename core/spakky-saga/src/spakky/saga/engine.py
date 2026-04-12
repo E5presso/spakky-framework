@@ -99,19 +99,29 @@ class SagaExecutor(Generic[SagaDataT]):
         """사가를 실행하고 결과를 반환한다."""
         self._saga_start = monotonic()
         logger.info("[saga=%s status=started]", self._saga_name)
-        normalized = self._normalize(self._flow.items)
-        saga_timeout = self._flow.saga_timeout
-        if saga_timeout is None:
-            result = await self._run_items(normalized)
-        else:
-            result = await self._run_with_saga_timeout(normalized, saga_timeout)
-        logger.info(
-            "[saga=%s status=%s elapsed=%s]",
-            self._saga_name,
-            result.status.value,
-            _format_ms(result.elapsed),
-        )
-        return result
+        try:
+            normalized = self._normalize(self._flow.items)
+            saga_timeout = self._flow.saga_timeout
+            if saga_timeout is None:
+                result = await self._run_items(normalized)
+            else:
+                result = await self._run_with_saga_timeout(normalized, saga_timeout)
+            logger.info(
+                "[saga=%s status=%s elapsed=%s]",
+                self._saga_name,
+                result.status.value,
+                _format_ms(result.elapsed),
+            )
+            return result
+        except BaseException as error:
+            elapsed = timedelta(seconds=monotonic() - self._saga_start)
+            logger.warning(
+                "[saga=%s status=aborted error=%s elapsed=%s]",
+                self._saga_name,
+                type(error).__name__,
+                _format_ms(elapsed),
+            )
+            raise
 
     async def _run_with_saga_timeout(
         self,

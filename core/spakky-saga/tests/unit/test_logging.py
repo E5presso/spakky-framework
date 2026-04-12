@@ -204,6 +204,33 @@ async def test_abstract_saga_execute_uses_class_name_as_saga_name_expect_log_tag
 
 
 @pytest.mark.asyncio
+async def test_run_saga_flow_compensation_failure_emits_aborted_final_log_expect_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """보상 실패로 예외가 전파될 때도 saga 단위 종료 로그가 `status=aborted`로 남는지 검증한다."""
+
+    async def _compensate_fail(data: _OrderData) -> None:
+        raise RuntimeError("compensation failed")
+
+    flow: SagaFlow[_OrderData] = saga_flow(
+        step(_succeed_with_data, compensate=_compensate_fail),
+        _fail,
+    )
+    with caplog.at_level(INFO, logger=_SAGA_LOGGER):
+        with pytest.raises(Exception):
+            await run_saga_flow(
+                flow, _OrderData(order_id=uuid4()), saga_name="OrderSaga"
+            )
+    messages = _records(caplog)
+    assert any(
+        m.startswith(
+            "[saga=OrderSaga status=aborted error=SagaCompensationFailedError elapsed="
+        )
+        for m in messages
+    )
+
+
+@pytest.mark.asyncio
 async def test_run_saga_flow_failed_step_emits_warning_level_log_expect_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
