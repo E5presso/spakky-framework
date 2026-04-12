@@ -7,6 +7,7 @@ from asyncio import sleep as _sleep
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
+from logging import getLogger
 from time import monotonic
 from typing import Awaitable, Callable, Generic
 
@@ -27,6 +28,15 @@ from spakky.saga.flow import (
 from spakky.saga.result import SagaResult, StepRecord, StepStatus
 from spakky.saga.status import SagaStatus
 from spakky.saga.strategy import Compensate, ErrorStrategy, Retry, Skip
+
+logger = getLogger(__name__)
+
+_ANONYMOUS_SAGA_NAME = "<anonymous>"
+
+
+def _format_ms(elapsed: timedelta) -> str:
+    """timedelta를 밀리초 정수 문자열로 포맷한다 (구조화 로그용)."""
+    return f"{int(elapsed.total_seconds() * 1000)}ms"
 
 
 @dataclass(frozen=True)
@@ -72,9 +82,15 @@ class SagaExecutor(Generic[SagaDataT]):
     래퍼로 노출된다.
     """
 
-    def __init__(self, flow: SagaFlow[SagaDataT], data: SagaDataT) -> None:
+    def __init__(
+        self,
+        flow: SagaFlow[SagaDataT],
+        data: SagaDataT,
+        saga_name: str = _ANONYMOUS_SAGA_NAME,
+    ) -> None:
         self._flow = flow
         self._data: SagaDataT = data
+        self._saga_name = saga_name
         self._compensable: list[tuple[str, CompensateFn[SagaDataT]]] = []
         self._history: list[StepRecord] = []
         self._saga_start: float = 0.0
@@ -82,11 +98,20 @@ class SagaExecutor(Generic[SagaDataT]):
     async def run(self) -> SagaResult[SagaDataT]:
         """사가를 실행하고 결과를 반환한다."""
         self._saga_start = monotonic()
+        logger.info("[saga=%s status=started]", self._saga_name)
         normalized = self._normalize(self._flow.items)
         saga_timeout = self._flow.saga_timeout
         if saga_timeout is None:
-            return await self._run_items(normalized)
-        return await self._run_with_saga_timeout(normalized, saga_timeout)
+            result = await self._run_items(normalized)
+        else:
+            result = await self._run_with_saga_timeout(normalized, saga_timeout)
+        logger.info(
+            "[saga=%s status=%s elapsed=%s]",
+            self._saga_name,
+            result.status.value,
+            _format_ms(result.elapsed),
+        )
+        return result
 
     async def _run_with_saga_timeout(
         self,
@@ -144,17 +169,18 @@ class SagaExecutor(Generic[SagaDataT]):
             실패로 saga를 종료해야 하면 (step_name, error), 아니면 None.
         """
         step_start = monotonic()
+        logger.info("[saga=%s step=%s status=started]", self._saga_name, step_item.name)
         try:
             result = await self._invoke_action(step_item.action, step_item.step_timeout)
         except Exception as error:  # noqa: BLE001 - saga engine catches all step errors
-            self._record(step_item.name, StepStatus.FAILED, step_start)
+            self._record_step_failure(step_item.name, step_start, error)
             strategy_result = await self._apply_strategy(step_item, error)
             if strategy_result.outcome is _StrategyOutcome.CONTINUE:
                 return None
             return (step_item.name, strategy_result.last_error)
         if isinstance(result, AbstractSagaData):
             self._data = result  # type: ignore[assignment] - runtime SagaData subtype check
-        self._record(step_item.name, StepStatus.COMMITTED, step_start)
+        self._record_step_committed(step_item.name, step_start)
         if step_item.compensate is not None:
             self._compensable.append((step_item.name, step_item.compensate))
         return None
@@ -171,6 +197,10 @@ class SagaExecutor(Generic[SagaDataT]):
           전체 saga의 역순 보상 시 동일한 LIFO 규칙을 따른다.
         - Return value는 v1에서 무시된다(self._data 변경 없음).
         """
+        for step_item in group.steps:
+            logger.info(
+                "[saga=%s step=%s status=started]", self._saga_name, step_item.name
+            )
         step_starts = [monotonic() for _ in group.steps]
         results = await asyncio.gather(
             *(
@@ -186,15 +216,15 @@ class SagaExecutor(Generic[SagaDataT]):
             if isinstance(result, asyncio.CancelledError):
                 # gather(return_exceptions=True)는 CancelledError를 반환값으로 노출한다.
                 # 이를 성공으로 오인하지 않도록 별도 분기로 취소 의미를 보존한다.
-                self._record(step_item.name, StepStatus.FAILED, started)
+                self._record_step_failure(step_item.name, started, result)
                 if cancellation is None:
                     cancellation = result
             elif isinstance(result, Exception):
-                self._record(step_item.name, StepStatus.FAILED, started)
+                self._record_step_failure(step_item.name, started, result)
                 if first_failure is None:
                     first_failure = (step_item.name, result)
             else:
-                self._record(step_item.name, StepStatus.COMMITTED, started)
+                self._record_step_committed(step_item.name, started)
                 if step_item.compensate is not None:
                     self._compensable.append((step_item.name, step_item.compensate))
         if cancellation is not None:
@@ -255,17 +285,23 @@ class SagaExecutor(Generic[SagaDataT]):
         for attempt in range(2, retry.max_attempts + 1):
             await _sleep(retry.backoff.delay_for(attempt - 1))
             step_start = monotonic()
+            logger.info(
+                "[saga=%s step=%s status=retry attempt=%d]",
+                self._saga_name,
+                step_item.name,
+                attempt,
+            )
             try:
                 result = await self._invoke_action(
                     step_item.action, step_item.step_timeout
                 )
             except Exception as error:  # noqa: BLE001 - saga engine catches all step errors
                 last_error = error
-                self._record(step_item.name, StepStatus.FAILED, step_start)
+                self._record_step_failure(step_item.name, step_start, error)
                 continue
             if isinstance(result, AbstractSagaData):
                 self._data = result  # type: ignore[assignment] - runtime SagaData subtype check
-            self._record(step_item.name, StepStatus.COMMITTED, step_start)
+            self._record_step_committed(step_item.name, step_start)
             if step_item.compensate is not None:
                 self._compensable.append((step_item.name, step_item.compensate))
             return _StrategyResult(
@@ -293,23 +329,62 @@ class SagaExecutor(Generic[SagaDataT]):
         """
         for comp_name, comp_fn in reversed(self._compensable):
             comp_start = monotonic()
+            logger.info(
+                "[saga=%s step=%s status=compensating]",
+                self._saga_name,
+                comp_name,
+            )
             try:
                 await comp_fn(self._data)
-                self._record(comp_name, StepStatus.COMPENSATED, comp_start)
+                self._record_step_compensated(comp_name, comp_start)
             except Exception as comp_error:  # noqa: BLE001 - compensation failure handling
-                self._record(comp_name, StepStatus.FAILED, comp_start)
+                self._record_step_failure(comp_name, comp_start, comp_error)
                 if self._flow.compensation_failure_handler is not None:
                     await self._flow.compensation_failure_handler(self._data)
                 raise SagaCompensationFailedError from comp_error
 
-    def _record(self, name: str, status: StepStatus, start: float) -> None:
-        """실행 기록 1건을 추가한다."""
+    def _record(self, name: str, status: StepStatus, start: float) -> timedelta:
+        """실행 기록 1건을 추가하고 경과 시간을 반환한다."""
+        elapsed = timedelta(seconds=monotonic() - start)
         self._history.append(
             StepRecord(
                 name=name,
                 status=status,
-                elapsed=timedelta(seconds=monotonic() - start),
+                elapsed=elapsed,
             )
+        )
+        return elapsed
+
+    def _record_step_committed(self, name: str, start: float) -> None:
+        """step commit 기록 및 구조화 로그를 출력한다."""
+        elapsed = self._record(name, StepStatus.COMMITTED, start)
+        logger.info(
+            "[saga=%s step=%s status=completed elapsed=%s]",
+            self._saga_name,
+            name,
+            _format_ms(elapsed),
+        )
+
+    def _record_step_failure(
+        self, name: str, start: float, error: BaseException
+    ) -> None:
+        """step 실패 기록 및 구조화 로그를 출력한다."""
+        self._record(name, StepStatus.FAILED, start)
+        logger.warning(
+            "[saga=%s step=%s status=failed error=%s]",
+            self._saga_name,
+            name,
+            type(error).__name__,
+        )
+
+    def _record_step_compensated(self, name: str, start: float) -> None:
+        """step 보상 성공 기록 및 구조화 로그를 출력한다."""
+        elapsed = self._record(name, StepStatus.COMPENSATED, start)
+        logger.info(
+            "[saga=%s step=%s status=compensated elapsed=%s]",
+            self._saga_name,
+            name,
+            _format_ms(elapsed),
         )
 
     def _normalize(
@@ -383,12 +458,15 @@ class SagaExecutor(Generic[SagaDataT]):
 async def run_saga_flow(
     flow: SagaFlow[SagaDataT],
     data: SagaDataT,
+    *,
+    saga_name: str = _ANONYMOUS_SAGA_NAME,
 ) -> SagaResult[SagaDataT]:
     """SagaFlow를 실행하고 결과를 반환한다.
 
     Args:
         flow: 사가 흐름 정의.
         data: 초기 사가 비즈니스 데이터.
+        saga_name: 구조화 로그에 포함될 사가 이름. 기본값은 익명 표기.
 
     Returns:
         SagaResult[SagaDataT]: 사가 실행 결과. 예외를 발생시키지 않는다
@@ -398,4 +476,4 @@ async def run_saga_flow(
         SagaCompensationFailedError: 보상 실행 중 에러 발생
             (on_compensation_failure 미설정 시).
     """
-    return await SagaExecutor(flow, data).run()
+    return await SagaExecutor(flow, data, saga_name=saga_name).run()

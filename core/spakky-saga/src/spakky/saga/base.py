@@ -96,4 +96,4 @@ class AbstractSaga(ABC, Generic[SagaDataT]):
             SagaCompensationFailedError: 보상 실행 중 에러 발생
                 (on_compensation_failure 미설정 시).
         """
-        return await run_saga_flow(self.flow(), data)
+        return await run_saga_flow(self.flow(), data, saga_name=type(self).__name__)
