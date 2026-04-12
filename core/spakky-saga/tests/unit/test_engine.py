@@ -12,7 +12,7 @@ from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData
 import spakky.saga.engine as saga_engine
 from spakky.saga.engine import run_saga_flow
-from spakky.saga.error import SagaCompensationFailedError
+from spakky.saga.error import SagaCompensationFailedError, SagaFlowDefinitionError
 from spakky.saga.flow import (
     Parallel,
     SagaFlow,
@@ -379,6 +379,75 @@ async def test_retry_positive_backoff_expect_sleep_called(
     assert result.status is SagaStatus.COMPLETED
     assert attempts == 2
     assert recorded_delays == [0.01]
+
+
+def test_promote_flow_item_callable_expect_saga_step() -> None:
+    """런타임 promotion이 plain callable을 SagaStep으로 승격하는지 검증한다."""
+    promoted = saga_engine._promote_flow_item(_succeed)
+
+    assert isinstance(promoted, SagaStep)
+    assert promoted.action is _succeed
+
+
+def test_promote_flow_item_invalid_expect_definition_error() -> None:
+    """런타임 promotion에 유효하지 않은 item이 들어오면 정의 에러가 발생하는지 검증한다."""
+    with pytest.raises(SagaFlowDefinitionError):
+        saga_engine._promote_flow_item(object())  # type: ignore[arg-type] - runtime invalid item path is intentional in this test
+
+
+def test_resolve_timeout_seconds_with_step_and_saga_expect_minimum() -> None:
+    """step timeout과 saga 잔여 budget이 함께 있으면 더 작은 값을 선택하는지 검증한다."""
+    resolved = saga_engine._resolve_timeout_seconds(
+        step_timeout=timedelta(seconds=1),
+        remaining_saga=0.25,
+    )
+
+    assert resolved == 0.25
+
+
+@pytest.mark.anyio
+async def test_sleep_backoff_with_exhausted_saga_expect_no_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """재시도 전 saga budget이 이미 소진됐으면 backoff sleep을 건너뛰는지 검증한다."""
+    recorded_delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        recorded_delays.append(delay)
+
+    monkeypatch.setattr(saga_engine.asyncio, "sleep", fake_sleep)
+
+    await saga_engine._sleep_backoff(
+        retry=Retry(backoff=ExponentialBackoff(base=0.1)),
+        attempts=1,
+        saga_timeout=timedelta(),
+        saga_start=saga_engine.monotonic(),
+    )
+
+    assert recorded_delays == []
+
+
+@pytest.mark.anyio
+async def test_sleep_backoff_with_remaining_saga_budget_expect_clamped_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """재시도 backoff는 남은 saga budget을 넘지 않도록 절삭되는지 검증한다."""
+    recorded_delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        recorded_delays.append(delay)
+
+    monkeypatch.setattr(saga_engine.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(saga_engine, "_remaining_saga_seconds", lambda **_: 0.03)
+
+    await saga_engine._sleep_backoff(
+        retry=Retry(backoff=ExponentialBackoff(base=0.1)),
+        attempts=1,
+        saga_timeout=timedelta(seconds=1),
+        saga_start=0,
+    )
+
+    assert recorded_delays == [0.03]
 
 
 # --- Parallel ---
