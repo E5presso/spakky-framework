@@ -6,7 +6,7 @@ controller methods into protobuf FileDescriptorProto instances.
 
 from dataclasses import fields
 from inspect import getmembers, isfunction
-from typing import get_type_hints
+from typing import cast, get_type_hints
 
 from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
@@ -62,7 +62,7 @@ def build_message_descriptor(
         field_desc = FieldDescriptorProto(
             name=field.name,
             number=proto_field.number,
-            type=resolved.proto_type,  # pyrefly: ignore - protobuf stubs use ValueType but runtime accepts int
+            type=cast(FieldDescriptorProto.Type.ValueType, resolved.proto_type),
         )
 
         if resolved.is_repeated:

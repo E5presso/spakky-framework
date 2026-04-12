@@ -10,6 +10,11 @@ paths:
 - `Any` **금지**. `TypeVar`, `Protocol`, `object`, `Union` 사용.
 - `Any` 허용 예외: 외부 라이브러리 invariant generics — 인라인 주석으로 사유 명시.
 - `Protocol`에 의한 Goose Typing 금지. 인터페이스는 `ABC` 기반의 명시적 상속으로 정의.
+- **`cast()` 사용 최소화**. 타입 체커 에러를 `cast`로 치환하는 것은 야매 해결책이며 원인을 숨긴다.
+  - 근본 해결 우선: 변수/필드/반환값의 **타입 선언 자체를 정확하게** 바꾼다 (예: `int` → `FieldDescriptorProto.Type.ValueType`).
+  - `cast` 허용 예외: 외부 스텁의 invariant 한계로 인한 국소 좁힘 1회 + 사유 주석 필수.
+  - 여러 위치에서 같은 `cast`가 반복되면 **타입 선언이 잘못됐다는 신호** — 선언을 고쳐라.
+- **`# pyrefly: ignore` / `# type: ignore`를 회피 수단으로 사용 금지.** 타입 시스템이 정확하지 않다면 시스템을 고치고, 테스트가 내부 상태에 의존한다면 테스트를 고친다. 우회 헬퍼, 테스트용 property 노출, 전역 `cast` 남용은 야매 해결책으로 간주.
 
 ## 에러
 
