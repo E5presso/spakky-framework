@@ -5,7 +5,7 @@ from uuid import UUID
 
 from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData
-from spakky.saga.result import SagaResult, StepRecord
+from spakky.saga.result import SagaResult, StepRecord, StepStatus
 from spakky.saga.status import SagaStatus
 
 
@@ -15,9 +15,14 @@ class _TestSagaData(AbstractSagaData):
 
 
 def test_step_record_fields_expect_accessible() -> None:
-    """StepRecord의 name과 elapsed 필드에 접근 가능한지 검증한다."""
-    record = StepRecord(name="validate", elapsed=timedelta(milliseconds=12))
+    """StepRecord의 name, status, elapsed 필드에 접근 가능한지 검증한다."""
+    record = StepRecord(
+        name="validate",
+        status=StepStatus.COMMITTED,
+        elapsed=timedelta(milliseconds=12),
+    )
     assert record.name == "validate"
+    assert record.status is StepStatus.COMMITTED
     assert record.elapsed == timedelta(milliseconds=12)
 
 
@@ -26,8 +31,16 @@ def test_saga_result_completed_expect_correct_fields() -> None:
     order_id = UUID("12345678-1234-5678-1234-567812345678")
     data = _TestSagaData(order_id=order_id)
     history = (
-        StepRecord(name="step1", elapsed=timedelta(milliseconds=10)),
-        StepRecord(name="step2", elapsed=timedelta(milliseconds=20)),
+        StepRecord(
+            name="step1",
+            status=StepStatus.COMMITTED,
+            elapsed=timedelta(milliseconds=10),
+        ),
+        StepRecord(
+            name="step2",
+            status=StepStatus.COMMITTED,
+            elapsed=timedelta(milliseconds=20),
+        ),
     )
     result: SagaResult[_TestSagaData] = SagaResult(
         status=SagaStatus.COMPLETED,

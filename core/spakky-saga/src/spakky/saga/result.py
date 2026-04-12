@@ -2,6 +2,7 @@
 
 from dataclasses import field
 from datetime import timedelta
+from enum import Enum
 from typing import Generic, TypeVar
 
 from spakky.core.common.mutability import immutable
@@ -11,11 +12,20 @@ from spakky.saga.status import SagaStatus
 SagaDataT_co = TypeVar("SagaDataT_co", bound=AbstractSagaData, covariant=True)
 
 
+class StepStatus(Enum):
+    """개별 step의 실행 상태."""
+
+    COMMITTED = "COMMITTED"
+    FAILED = "FAILED"
+    COMPENSATED = "COMPENSATED"
+
+
 @immutable
 class StepRecord:
     """단일 step의 실행 기록."""
 
     name: str
+    status: StepStatus
     elapsed: timedelta
 
 
