@@ -511,6 +511,22 @@ async def test_step_timeout_expect_failed_and_compensated() -> None:
 
 
 @pytest.mark.anyio
+async def test_action_raising_timeout_error_not_treated_as_timeout() -> None:
+    """action이 직접 TimeoutError를 raise하면 SagaStepTimeoutError로 변환하지 않는다."""
+
+    async def raises_timeout(data: _OrderData) -> None:
+        raise TimeoutError("action's own timeout")
+
+    flow = saga_flow(step(raises_timeout, timeout=timedelta(seconds=1)))
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.FAILED
+    assert isinstance(result.error, TimeoutError)
+    assert not isinstance(result.error, SagaStepTimeoutError)
+
+
+@pytest.mark.anyio
 async def test_step_timeout_with_retry_expect_retried(
     fake_sleep: list[float],
 ) -> None:
@@ -674,6 +690,34 @@ async def test_parallel_with_non_default_on_error_expect_definition_error() -> N
     data = _OrderData(order_id=uuid4())
 
     with pytest.raises(SagaFlowDefinitionError):
+        await run_saga_flow(flow, data)
+
+
+@pytest.mark.anyio
+async def test_parallel_cancellation_propagates_expect_cancelled_error() -> None:
+    """병렬 step 중 CancelledError는 성공으로 취급되지 않고 취소가 전파된다."""
+
+    async def cancelled_action(data: _OrderData) -> None:
+        raise asyncio.CancelledError
+
+    flow = saga_flow(parallel(cancelled_action, _succeed))
+    data = _OrderData(order_id=uuid4())
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_saga_flow(flow, data)
+
+
+@pytest.mark.anyio
+async def test_parallel_multiple_cancellations_expect_first_propagated() -> None:
+    """병렬 step 중 여러 CancelledError가 발생해도 첫 번째가 전파된다."""
+
+    async def cancelled_action(data: _OrderData) -> None:
+        raise asyncio.CancelledError
+
+    flow = saga_flow(parallel(cancelled_action, cancelled_action))
+    data = _OrderData(order_id=uuid4())
+
+    with pytest.raises(asyncio.CancelledError):
         await run_saga_flow(flow, data)
 
 

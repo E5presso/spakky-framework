@@ -181,8 +181,15 @@ class SagaExecutor(Generic[SagaDataT]):
         )
 
         first_failure: tuple[str, Exception] | None = None
+        cancellation: asyncio.CancelledError | None = None
         for step_item, started, result in zip(group.steps, step_starts, results):
-            if isinstance(result, Exception):
+            if isinstance(result, asyncio.CancelledError):
+                # gather(return_exceptions=True)는 CancelledError를 반환값으로 노출한다.
+                # 이를 성공으로 오인하지 않도록 별도 분기로 취소 의미를 보존한다.
+                self._record(step_item.name, StepStatus.FAILED, started)
+                if cancellation is None:
+                    cancellation = result
+            elif isinstance(result, Exception):
                 self._record(step_item.name, StepStatus.FAILED, started)
                 if first_failure is None:
                     first_failure = (step_item.name, result)
@@ -190,6 +197,8 @@ class SagaExecutor(Generic[SagaDataT]):
                 self._record(step_item.name, StepStatus.COMMITTED, started)
                 if step_item.compensate is not None:
                     self._compensable.append((step_item.name, step_item.compensate))
+        if cancellation is not None:
+            raise cancellation
         return first_failure
 
     async def _invoke_action(
@@ -197,14 +206,21 @@ class SagaExecutor(Generic[SagaDataT]):
         action: Callable[[SagaDataT], Awaitable[SagaDataT | None]],
         step_timeout: timedelta | None,
     ) -> SagaDataT | None:
-        """step action을 실행한다. timeout 초과 시 SagaStepTimeoutError로 변환한다."""
+        """step action을 실행한다. timeout 초과 시 SagaStepTimeoutError로 변환한다.
+
+        `asyncio.timeout()` context manager의 `.expired()`로 실제 타임아웃 만료와
+        action이 직접 `TimeoutError`를 raise한 경우를 구분한다.
+        """
         if step_timeout is None:
             return await action(self._data)
+        cm = asyncio.timeout(step_timeout.total_seconds())
         try:
-            async with asyncio.timeout(step_timeout.total_seconds()):
+            async with cm:
                 return await action(self._data)
-        except TimeoutError as error:
-            raise SagaStepTimeoutError from error
+        except TimeoutError:
+            if cm.expired():
+                raise SagaStepTimeoutError from None
+            raise
 
     async def _apply_strategy(
         self,

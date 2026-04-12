@@ -16,8 +16,8 @@ while true; do
   state=$(echo "$snap" | jq -r '.state // "UNKNOWN"')
   mergeState=$(echo "$snap" | jq -r '.mergeStateStatus // "UNKNOWN"')
   reviewDecision=$(echo "$snap" | jq -r '.reviewDecision // ""')
-  ciFailed=$(echo "$snap" | jq '[(.statusCheckRollup // [])[] | select((.conclusion // "") | IN("FAILURE","ERROR","TIMED_OUT","CANCELLED"))] | length')
-  ciPending=$(echo "$snap" | jq '[(.statusCheckRollup // [])[] | select((.status // "") | IN("IN_PROGRESS","QUEUED","PENDING","WAITING"))] | length')
+  ciFailed=$(echo "$snap" | jq '[(.statusCheckRollup // [])[] | select((.conclusion // .state // "") | IN("FAILURE","ERROR","TIMED_OUT","CANCELLED"))] | length')
+  ciPending=$(echo "$snap" | jq '[(.statusCheckRollup // [])[] | select((.status // .state // "") | IN("IN_PROGRESS","QUEUED","PENDING","WAITING"))] | length')
   unresolvedThreads=$(GH_PAGER=cat gh api graphql -f query="$THREAD_QUERY" \
     --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null || echo 0)
   commentCount=$(GH_PAGER=cat gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" --jq 'length' 2>/dev/null || echo 0)
@@ -30,7 +30,7 @@ while true; do
   if [ "$mergeState" = "DIRTY" ]; then echo "EVENT:CONFLICT"; stop=1; fi
   if [ "$mergeState" = "BEHIND" ]; then echo "EVENT:BEHIND"; stop=1; fi
   if [ "$ciFailed" -gt 0 ]; then
-    names=$(echo "$snap" | jq -r '[(.statusCheckRollup // [])[] | select((.conclusion // "") | IN("FAILURE","ERROR","TIMED_OUT","CANCELLED")) | .name] | join(",")')
+    names=$(echo "$snap" | jq -r '[(.statusCheckRollup // [])[] | select((.conclusion // .state // "") | IN("FAILURE","ERROR","TIMED_OUT","CANCELLED")) | .name] | join(",")')
     echo "EVENT:CI_FAILURE count=$ciFailed names=$names"; stop=1
   fi
   if [ "$unresolvedThreads" -gt 0 ]; then echo "EVENT:UNRESOLVED_THREAD count=$unresolvedThreads"; stop=1; fi
