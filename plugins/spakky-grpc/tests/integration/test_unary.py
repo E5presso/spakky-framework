@@ -17,4 +17,4 @@ async def test_say_hello_when_unary_request_expect_greeting_response(
         name="Spakky",
     )
 
-    assert response.message == "Hello, Spakky!"  # pyrefly: ignore - runtime protobuf attr
+    assert getattr(response, "message") == "Hello, Spakky!"

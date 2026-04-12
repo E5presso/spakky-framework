@@ -17,7 +17,7 @@ async def test_stream_hello_when_server_streaming_request_expect_two_messages(
         name="Spakky",
     )
 
-    assert [item.message for item in responses] == [  # pyrefly: ignore - runtime protobuf attr
+    assert [getattr(item, "message") for item in responses] == [
         "Hello, Spakky!",
         "Goodbye, Spakky!",
     ]
@@ -35,7 +35,7 @@ async def test_collect_names_when_client_streaming_requests_expect_aggregated_re
         request_values=[{"name": "alpha"}, {"name": "beta"}, {"name": "gamma"}],
     )
 
-    assert response.summary == "alpha,beta,gamma"  # pyrefly: ignore - runtime protobuf attr
+    assert getattr(response, "summary") == "alpha,beta,gamma"
 
 
 @pytest.mark.asyncio
@@ -50,4 +50,7 @@ async def test_echo_names_when_bidirectional_streaming_requests_expect_echoed_me
         request_values=[{"name": "first"}, {"name": "second"}],
     )
 
-    assert [item.message for item in responses] == ["FIRST", "SECOND"]  # pyrefly: ignore - runtime protobuf attr
+    assert [getattr(item, "message") for item in responses] == [
+        "FIRST",
+        "SECOND",
+    ]

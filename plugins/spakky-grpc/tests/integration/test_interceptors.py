@@ -38,9 +38,9 @@ async def test_capture_trace_when_traceparent_provided_expect_child_context_and_
         name="trace",
     )
 
-    assert response.trace_id == parent_context.trace_id  # pyrefly: ignore - runtime protobuf attr
-    assert response.parent_span_id == parent_context.span_id  # pyrefly: ignore - runtime protobuf attr
-    assert response.span_id != parent_context.span_id  # pyrefly: ignore - runtime protobuf attr
+    assert getattr(response, "trace_id") == parent_context.trace_id
+    assert getattr(response, "parent_span_id") == parent_context.span_id
+    assert getattr(response, "span_id") != parent_context.span_id
 
     trailing_metadata = dict(await call.trailing_metadata())
     assert "traceparent" in trailing_metadata

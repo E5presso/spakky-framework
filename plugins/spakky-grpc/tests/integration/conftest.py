@@ -85,7 +85,9 @@ class GrpcIntegrationClient:
         message_class = self.registry.get_message_class(full_name)
         message = message_class()
         for key, value in values.items():
-            setattr(message, key, value)  # pyrefly: ignore - runtime protobuf field assignment
+            setattr(
+                message, key, value
+            )  # pyrefly: ignore - runtime protobuf field assignment
         return message
 
     async def unary_unary(
