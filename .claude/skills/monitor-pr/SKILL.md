@@ -11,10 +11,10 @@ user-invocable: false
 
 ## 원칙
 
-- **스냅샷 기반**: 매 tick마다 PR의 전체 상태를 평가. 이전 대비 diff 추적 없음 (타이밍 이슈로 놓치기 쉬움).
+- **스냅샷 + 본 것 추적**: 매 tick마다 PR의 전체 상태를 평가하되, 이미 처리한 코멘트/리뷰 ID는 `.claude/monitor-pr-seen/<PR>.json`에 기록하여 재감지하지 않는다. Codecov 등 bot의 반복 코멘트로 인한 무한 루프를 방지.
 - **60초 간격**: rate limit 회피, 단순성.
 - **모든 허들 식별**: 병합 가로막는 요소를 누락 없이 감지.
-- **모든 코멘트 감지**: bot/사람 구분 없이 모든 코멘트·리뷰를 허들로 간주.
+- **Bot 자동 코멘트 제외**: `codecov`, `github-actions`, `dependabot`, `renovate` 계열 봇의 일반 코멘트는 허들에서 제외 (대소문자 무관, 부분 일치). 리뷰 본문(review body)은 copilot 등 봇도 실제 피드백이므로 포함.
 
 ## 실행
 
@@ -36,10 +36,10 @@ bash .claude/skills/monitor-pr/monitor.sh <PR_NUMBER>
 | CI 실패 | 체크 `conclusion in {FAILURE, ERROR, TIMED_OUT, CANCELLED}` | `CI_FAILURE` |
 | CI 진행 중 | 체크 `status in {IN_PROGRESS, QUEUED, PENDING, WAITING}` | `CI_PENDING` (대기) |
 | 미해결 review thread | `reviewThreads` 중 `isResolved == false` 존재 | `UNRESOLVED_THREAD` |
-| 코멘트 존재 | issues API `length > 0` (bot 포함 전부) | `OPEN_COMMENT` |
-| 리뷰 본문 존재 | reviews API `body != ""` (bot 포함 전부) | `OPEN_REVIEW` |
+| 신규 코멘트 | issues API 중 state에 없고 bot 패턴 매치 안 하는 것 | `OPEN_COMMENT` |
+| 신규 리뷰 본문 | reviews API 중 state에 없는 것 (bot 포함) | `OPEN_REVIEW` |
 | 리뷰 미승인 | `reviewDecision != "APPROVED"` (공란 제외) | `REVIEW_PENDING` (대기) |
-| 병합 가능 | `mergeStateStatus in {CLEAN, UNSTABLE}` + `reviewDecision in {APPROVED, ""}` | `MERGEABLE` |
+| 병합 가능 | `ciPending=0` + `ciFailed=0` + `mergeState in {CLEAN, UNSTABLE}` + `reviewDecision in {APPROVED, ""}` | `MERGEABLE` |
 
 `CI_PENDING` / `REVIEW_PENDING`은 대기 상태 알림(루프 계속). 나머지 이벤트는 루프를 종료한다.
 

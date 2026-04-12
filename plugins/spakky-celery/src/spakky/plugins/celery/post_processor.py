@@ -196,7 +196,9 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
             task_name = self._register_method(celery, pod_type, method, propagator)
 
             if has_schedule:
-                if schedule_route is None:
+                if (
+                    schedule_route is None
+                ):  # pragma: no cover - type-narrowing guard; has_schedule implies schedule_route is not None
                     raise InvalidScheduleRouteError
                 celery.conf.beat_schedule[task_name] = {
                     "task": task_name,

@@ -306,6 +306,62 @@ async def test_async_relay_dispose_async_returns_none() -> None:
     assert await relay.dispose_async() is None
 
 
+def test_relay_run_polls_batch_then_exits_when_stop_set_during_batch() -> None:
+    """run 루프가 최소 한 번 _relay_batch를 실행한 뒤 stop_event에 반응해 종료한다."""
+
+    class StopOnFetchStorage(InMemorySyncOutboxStorage):
+        def __init__(self, stop_event: threading.Event) -> None:
+            super().__init__()
+            self._stop_event = stop_event
+            self.fetch_calls = 0
+
+        def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
+            self.fetch_calls += 1
+            self._stop_event.set()
+            return []
+
+    stop_event = threading.Event()
+    storage = StopOnFetchStorage(stop_event)
+    transport = SpySyncTransport()
+    config = _make_config()
+
+    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay.set_stop_event(stop_event)
+    relay.run()
+
+    assert storage.fetch_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_async_relay_run_async_breaks_when_stop_event_set_during_batch() -> None:
+    """run_async가 _relay_batch 도중 stop_event가 set되면 wait_for에서 break로 종료한다."""
+
+    class StopOnFetchAsyncStorage(InMemoryAsyncOutboxStorage):
+        def __init__(self, stop_event: asyncio.Event) -> None:
+            super().__init__()
+            self._stop_event = stop_event
+            self.fetch_calls = 0
+
+        async def fetch_pending(
+            self, limit: int, max_retry: int
+        ) -> list[OutboxMessage]:
+            self.fetch_calls += 1
+            self._stop_event.set()
+            return []
+
+    stop_event = asyncio.Event()
+    storage = StopOnFetchAsyncStorage(stop_event)
+    transport = SpyAsyncTransport()
+    config = _make_config()
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay.set_stop_event(stop_event)
+
+    await relay.run_async()
+
+    assert storage.fetch_calls == 1
+
+
 @pytest.mark.asyncio
 async def test_async_relay_run_async_exits_immediately_when_already_stopped() -> None:
     """stop_event가 이미 set되어 있으면 run_async가 즉시 반환하는지 검증한다."""

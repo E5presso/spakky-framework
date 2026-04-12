@@ -278,7 +278,7 @@ class SagaExecutor(Generic[SagaDataT]):
                 )
             case Retry() as retry:
                 return await self._apply_retry(step_item, retry, first_error)
-            case Compensate():
+            case Compensate():  # pragma: no branch - exhaustive union 마지막 케이스
                 return _StrategyResult(
                     outcome=_StrategyOutcome.COMPENSATE_AND_FAIL,
                     last_error=first_error,
@@ -324,7 +324,7 @@ class SagaExecutor(Generic[SagaDataT]):
                     outcome=_StrategyOutcome.CONTINUE,
                     last_error=last_error,
                 )
-            case Compensate():
+            case Compensate():  # pragma: no branch - exhaustive union 마지막 케이스
                 return _StrategyResult(
                     outcome=_StrategyOutcome.COMPENSATE_AND_FAIL,
                     last_error=last_error,
