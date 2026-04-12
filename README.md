@@ -71,18 +71,22 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-task`** | Task queue abstractions (@TaskHandler, @task, @schedule, Crontab) |
 | **`spakky-tracing`** | Distributed tracing abstraction (TraceContext, ITracePropagator, W3C Propagator) |
 | **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
+| **`spakky-saga`** | Distributed transaction saga orchestration (SagaFlow, SagaStep, compensation) |
 
 ### Plugins
 
 | Package | Description |
 |---------|--------------|
 | **`spakky-fastapi`** | Integration with [FastAPI](https://fastapi.tiangolo.com/) for building REST APIs |
+| **`spakky-grpc`** | Integration with [gRPC](https://grpc.io/) for building RPC services |
 | **`spakky-kafka`** | Event-driven architecture support with [Apache Kafka](https://kafka.apache.org/) |
 | **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
 | **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
 | **`spakky-sqlalchemy`** | Database integration with [SQLAlchemy](https://www.sqlalchemy.org/) ORM |
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
 | **`spakky-celery`** | Task dispatch and schedule registration with [Celery](https://docs.celeryq.dev/) via AOP |
+| **`spakky-logging`** | Structured logging system with `@logged` AOP aspect |
+| **`spakky-opentelemetry`** | OpenTelemetry SDK bridge for distributed tracing |
 
 ## 🚀 Quick Start
 
