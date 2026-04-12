@@ -5,7 +5,7 @@ command use cases in CQRS architecture.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Generic, TypeVar
+from typing import Any, Awaitable, Generic, TypeVar
 
 from spakky.core.common.mutability import immutable
 
@@ -47,13 +47,19 @@ class IAsyncCommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
     """Protocol for asynchronous command use cases."""
 
     @abstractmethod
-    async def run(self, command: CommandT_contra) -> ResultT_co:  # pyrefly: ignore - async abstractmethod covariance
+    def run(self, command: CommandT_contra) -> Awaitable[ResultT_co]:
         """Execute command asynchronously and return result.
+
+        The declaration uses ``Awaitable[ResultT_co]`` instead of
+        ``async def`` so that the covariant ``ResultT_co`` remains sound
+        under pyrefly's variance analysis. Concrete implementations may
+        still use ``async def run`` because ``Coroutine`` is a subtype of
+        ``Awaitable``.
 
         Args:
             command: The command to execute.
 
         Returns:
-            Result of command execution.
+            Awaitable resolving to the result of command execution.
         """
         ...
