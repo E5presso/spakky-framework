@@ -26,10 +26,11 @@ from spakky.saga.status import SagaStatus
 from spakky.saga.strategy import ExponentialBackoff, Retry, Skip
 
 
-_SHORT_DELAY_SECONDS = 0.02
+_SHORT_DELAY_SECONDS = 0.05
+_TIMEOUT_DELAY_SECONDS = 0.2
 _WAIT_TIMEOUT_SECONDS = 1.0
-_STEP_TIMEOUT = timedelta(milliseconds=5)
-_SAGA_TIMEOUT = timedelta(milliseconds=5)
+_STEP_TIMEOUT = timedelta(milliseconds=100)
+_SAGA_TIMEOUT = timedelta(milliseconds=150)
 
 
 @immutable
@@ -74,7 +75,7 @@ async def _compensate_fail(data: _OrderData) -> None:
 
 async def _slow_succeed(data: _OrderData) -> None:
     """짧게 대기 후 성공하는 액션."""
-    await asyncio.sleep(_SHORT_DELAY_SECONDS)
+    await asyncio.sleep(_TIMEOUT_DELAY_SECONDS)
 
 
 @pytest.fixture(autouse=True)
@@ -533,15 +534,18 @@ async def test_parallel_failure_expect_successful_siblings_and_previous_steps_co
 async def test_parallel_compensation_order_expect_reverse_completion_order() -> None:
     """Parallel 보상 순서는 선언 순서가 아니라 실제 완료 역순인지 검증한다."""
     compensation_order: list[str] = []
+    fast_done = asyncio.Event()
+    slow_done = asyncio.Event()
 
     async def slow_success(data: _OrderData) -> None:
-        await asyncio.sleep(_SHORT_DELAY_SECONDS * 2)
+        await fast_done.wait()
+        slow_done.set()
 
     async def fast_success(data: _OrderData) -> None:
-        await asyncio.sleep(_SHORT_DELAY_SECONDS)
+        fast_done.set()
 
     async def fail_after_successes(data: _OrderData) -> None:
-        await asyncio.sleep(_SHORT_DELAY_SECONDS * 3)
+        await slow_done.wait()
         raise RuntimeError("parallel failed")
 
     async def compensate_slow(data: _OrderData) -> None:
@@ -581,6 +585,7 @@ async def test_parallel_timeout_and_failure_expect_timed_out() -> None:
     assert result.status is SagaStatus.TIMED_OUT
     assert result.failed_step == "_slow_succeed"
     assert isinstance(result.error, TimeoutError)
+    assert isinstance(result.error.__cause__, TimeoutError)
 
 
 @pytest.mark.anyio

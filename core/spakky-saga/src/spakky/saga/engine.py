@@ -275,11 +275,15 @@ async def _execute_step_item(
             )
         except Exception as error:  # noqa: BLE001 - saga engine catches all step errors
             if _is_saga_timeout(saga_timeout=saga_timeout, saga_start=saga_start):
+                timeout_error = TimeoutError(
+                    f"Saga timed out while executing step '{step_name}'."
+                )
+                timeout_error.__cause__ = error
                 return _terminal_timeout_result(
                     step_name=step_name,
                     data=data,
                     step_start=step_start,
-                    error=error,
+                    error=timeout_error,
                 )
 
             retry = item.on_error if isinstance(item.on_error, Retry) else None
