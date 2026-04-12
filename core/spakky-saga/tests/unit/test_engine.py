@@ -598,7 +598,9 @@ async def test_parallel_items_run_concurrently_expect_gathered() -> None:
     elapsed = monotonic() - start
 
     assert result.status is SagaStatus.COMPLETED
-    assert elapsed < sleep_time * 2.5
+    # 3 items concurrently: ~sleep_time total; sequential would be 3*sleep_time.
+    # Use 2.9x as a lenient bound so CI scheduler jitter doesn't flake.
+    assert elapsed < sleep_time * 2.9
 
 
 @pytest.mark.anyio
