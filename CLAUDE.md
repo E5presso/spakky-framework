@@ -96,7 +96,11 @@
 - `src/` 내에서 빌트인 예외(`TypeError`, `ValueError`) 직접 `raise` 금지
 - `Any` 타입 사유 없이 사용 금지
 - `__str__` 오버라이드 금지 (에러 클래스)
+- `src/` 내에서 `assert` 문 금지 — 커스텀 에러로 처리
+- 부모 메서드 재정의 시 `@override` 데코레이터 누락 금지
+- `getattr()`/`hasattr()`/`setattr()` 사유 없이 사용 금지
 - `class TestXxx` 금지 — 함수 기반 테스트만
+- Flaky 테스트 금지 — 시간/순서/네트워크 의존 금지
 - silent fallback (`pass`, `return None`) 금지
 - opt-out 주석(`type: ignore`, `pragma: no cover`) 사유 없이 사용 금지
 - 플러그인 → 다른 플러그인 직접 import 금지
@@ -136,6 +140,7 @@
 | 플러그인 개발 | `.claude/rules/plugin.md` | 구조, main.py, entry-point |
 | 모노레포 구조 | `.claude/rules/monorepo.md` | 패키지별 실행, 의존 방향 |
 | 행동 원칙 | `.claude/rules/behavioral-guidelines.md` | Karpathy 4원칙, 서브에이전트 |
+| 의존성 관리 | `.claude/rules/dependencies.md` | PyPI 버전 조회, 내부 의존성 |
 
 ### 프로젝트 특수 컨벤션
 

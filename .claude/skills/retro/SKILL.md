@@ -34,7 +34,11 @@ git diff --cached --name-only
 | `SILENT_FALLBACK` | Silent fallback | 빈 pass, return None |
 | `MISSING_OPT_OUT_REASON` | 사유 누락 | type: ignore, pragma: no cover 등에 사유 미기재 |
 | `NAMING_VIOLATION` | 네이밍 위반 | I접두사, Abstract접두사, Error접미사, Async접두사 누락 |
+| `MISSING_OVERRIDE` | @override 누락 | 부모 메서드 재정의 시 @override 데코레이터 누락 |
+| `ASSERT_IN_SRC` | assert 문 사용 | src/ 내에서 assert 문 사용 |
+| `DYNAMIC_ATTR` | 동적 속성 접근 | getattr/hasattr/setattr 사유 없이 사용 |
 | `CLASS_BASED_TEST` | 클래스 기반 테스트 | class TestXxx 사용 |
+| `FLAKY_TEST` | Flaky 테스트 | 시간/순서/네트워크 의존 테스트 |
 | `SCOPE_CREEP` | 범위 초과 | 요청 범위를 넘는 변경 |
 | `ROOT_TOOL_RUN` | 루트 실행 | 패키지 디렉토리가 아닌 루트에서 도구 실행 |
 

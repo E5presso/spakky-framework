@@ -26,6 +26,9 @@ user-invocable: true
 
 - [ ] `Any` 타입이 사유 없이 사용되었는가?
 - [ ] opt-out 주석(`# type: ignore`, `# pyrefly: ignore`, `# pragma: no cover`)에 사유가 누락되었는가?
+- [ ] 부모 메서드 재정의에 `@override` 데코레이터가 누락되었는가?
+- [ ] `src/` 내에서 `assert` 문이 사용되었는가?
+- [ ] `getattr()`, `hasattr()`, `setattr()`가 사유 없이 사용되었는가?
 
 ### 에러 처리 (.claude/rules/python-code.md)
 
@@ -47,6 +50,7 @@ user-invocable: true
 - [ ] `class TestXxx` 패턴이 사용되었는가? (함수 기반만 허용)
 - [ ] 테스트 함수에 docstring이 누락되었는가?
 - [ ] 테스트 네이밍이 `test_<대상>_<시나리오>_expect_<기대결과>` 패턴을 따르지 않는가?
+- [ ] Flaky 테스트 요소가 있는가? (`time.sleep`, `datetime.now()` 직접 의존, 실행 순서 의존, 외부 네트워크 호출)
 
 ### 이슈 의도 일치 (호출자가 이슈 맥락을 전달한 경우)
 

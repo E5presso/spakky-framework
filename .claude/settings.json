@@ -15,6 +15,19 @@
       "Bash(rtk *)"
     ]
   },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd $(git rev-parse --show-toplevel 2>/dev/null || echo .) && echo '$FILEPATH' | grep -q '\\.py$' && uv run ruff format '$FILEPATH' 2>/dev/null && uv run ruff check --fix '$FILEPATH' 2>/dev/null; true"
+          }
+        ]
+      }
+    ]
+  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "pyrefly-lsp@local": true
