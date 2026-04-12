@@ -2932,6 +2932,7 @@ source = { editable = "plugins/spakky-grpc" }
 dependencies = [
     { name = "grpcio" },
     { name = "protobuf" },
+    { name = "pydantic" },
     { name = "spakky" },
     { name = "spakky-tracing" },
 ]
@@ -2946,6 +2947,7 @@ dev = [
 requires-dist = [
     { name = "grpcio", specifier = ">=1.68.0" },
     { name = "protobuf", specifier = ">=6.33.0" },
+    { name = "pydantic", specifier = ">=2.4" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]

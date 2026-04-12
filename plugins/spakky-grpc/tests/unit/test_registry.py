@@ -1,9 +1,10 @@
 """Unit tests for registry module."""
 
-from dataclasses import dataclass
 from typing import Annotated
 
 import pytest
+from google.protobuf import json_format
+from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.error import DescriptorAlreadyRegisteredError
@@ -12,15 +13,13 @@ from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
-@dataclass
-class PingRequest:
+class PingRequest(BaseModel):
     """Test request message for registry tests."""
 
     payload: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class PingResponse:
+class PingResponse(BaseModel):
     """Test response message for registry tests."""
 
     result: Annotated[str, ProtoField(number=1)]
@@ -83,8 +82,10 @@ def test_get_message_class() -> None:
     file_proto = build_file_descriptor(PingService)
     registry.register(file_proto)
     msg_class = registry.get_message_class("registry.test.PingRequest")
-    instance = msg_class(payload="hello")
-    assert instance.payload == "hello"  # type: ignore[attr-defined] - dynamic protobuf message
+    instance = json_format.Parse('{"payload":"hello"}', msg_class())
+    payload = json_format.MessageToJson(instance, preserving_proto_field_name=True)
+    restored = PingRequest.model_validate_json(payload)
+    assert restored.payload == "hello"
 
 
 def test_find_service_descriptor() -> None:

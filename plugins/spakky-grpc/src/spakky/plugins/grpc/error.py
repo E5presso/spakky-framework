@@ -93,14 +93,30 @@ class UnsupportedFieldTypeError(AbstractSpakkyGrpcError):
 
 
 class MissingProtoFieldAnnotationError(AbstractSpakkyGrpcError):
-    """Raised when a dataclass field lacks a ProtoField annotation."""
+    """Raised when a BaseModel field lacks a ProtoField annotation."""
 
-    message = "Missing ProtoField annotation on dataclass field"
+    message = "Missing ProtoField annotation on BaseModel field"
 
-    def __init__(self, dataclass_type: type, field_name: str) -> None:
+    def __init__(self, model_type: type, field_name: str) -> None:
         super().__init__()
-        self.dataclass_type = dataclass_type
+        self.model_type = model_type
         self.field_name = field_name
+
+
+class UnsupportedResponseTypeError(AbstractSpakkyGrpcError):
+    """Raised when a serializer receives an object it cannot encode.
+
+    The gRPC response serializer accepts either a protobuf ``Message``
+    (passed through verbatim) or a pydantic ``BaseModel`` (encoded via
+    the ``json_format`` bridge). Any other type signals a controller
+    returned an unsupported value.
+    """
+
+    message = "Unsupported response type for gRPC serializer"
+
+    def __init__(self, value_type: type[object]) -> None:
+        super().__init__()
+        self.value_type = value_type
 
 
 class DescriptorAlreadyRegisteredError(AbstractSpakkyGrpcError):

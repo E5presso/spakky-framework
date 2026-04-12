@@ -1,10 +1,10 @@
 """Unit tests for type_map module."""
 
-from dataclasses import dataclass
 from typing import Annotated, Optional
 
 import pytest
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
+from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.error import (
     MissingProtoFieldAnnotationError,
@@ -14,7 +14,6 @@ from spakky.plugins.grpc.schema.type_map import (
     PYTHON_TO_PROTO_TYPE,
     ResolvedFieldType,
     extract_proto_field,
-    get_inner_type,
     resolve_type,
 )
 
@@ -52,11 +51,10 @@ def test_bytes_maps_to_type_bytes() -> None:
     assert result.proto_type == FieldDescriptorProto.TYPE_BYTES
 
 
-def test_nested_dataclass_maps_to_type_message() -> None:
-    """중첩 dataclass가 TYPE_MESSAGE로 매핑되는지 검증한다."""
+def test_nested_basemodel_maps_to_type_message() -> None:
+    """중첩 BaseModel이 TYPE_MESSAGE로 매핑되는지 검증한다."""
 
-    @dataclass
-    class Inner:
+    class Inner(BaseModel):
         value: Annotated[str, ProtoField(number=1)]
 
     result = resolve_type(Inner)
@@ -73,11 +71,10 @@ def test_list_str_maps_to_repeated_string() -> None:
     assert not result.is_message
 
 
-def test_list_dataclass_maps_to_repeated_message() -> None:
-    """list[Dataclass]가 repeated TYPE_MESSAGE로 매핑되는지 검증한다."""
+def test_list_basemodel_maps_to_repeated_message() -> None:
+    """list[BaseModel]이 repeated TYPE_MESSAGE로 매핑되는지 검증한다."""
 
-    @dataclass
-    class Item:
+    class Item(BaseModel):
         name: Annotated[str, ProtoField(number=1)]
 
     result = resolve_type(list[Item])
@@ -111,8 +108,7 @@ def test_unsupported_type_raises_error() -> None:
 def test_extract_proto_field_from_annotated() -> None:
     """Annotated 타입에서 ProtoField를 추출하는지 검증한다."""
 
-    @dataclass
-    class Msg:
+    class Msg(BaseModel):
         name: Annotated[str, ProtoField(number=3)]
 
     result = extract_proto_field(Msg, "name")
@@ -120,27 +116,14 @@ def test_extract_proto_field_from_annotated() -> None:
 
 
 def test_extract_proto_field_missing_raises_error() -> None:
-    """ProtoField이 없는 필드에서 MissingProtoFieldAnnotationError를 발생시키는지 검증한다."""
+    """존재하지 않는 필드에서 MissingProtoFieldAnnotationError를 발생시키는지 검증한다."""
 
-    @dataclass
-    class Msg:
+    class Msg(BaseModel):
         name: str
 
     with pytest.raises(MissingProtoFieldAnnotationError) as exc_info:
         extract_proto_field(Msg, "name")
     assert exc_info.value.field_name == "name"
-
-
-def test_get_inner_type_from_annotated() -> None:
-    """Annotated[str, ProtoField(1)]에서 str을 추출하는지 검증한다."""
-    result = get_inner_type(Annotated[str, ProtoField(number=1)])
-    assert result is str
-
-
-def test_get_inner_type_from_plain_type() -> None:
-    """일반 타입이 그대로 반환되는지 검증한다."""
-    result = get_inner_type(int)
-    assert result is int
 
 
 def test_python_to_proto_type_has_all_basic_types() -> None:
@@ -175,11 +158,10 @@ def test_multi_type_union_raises_error() -> None:
         resolve_type(Union[str, int])
 
 
-def test_extract_proto_field_multi_field_dataclass() -> None:
-    """멀티 필드 dataclass에서 두 번째 필드의 ProtoField를 추출하는지 검증한다."""
+def test_extract_proto_field_multi_field_basemodel() -> None:
+    """멀티 필드 BaseModel에서 두 번째 필드의 ProtoField를 추출하는지 검증한다."""
 
-    @dataclass
-    class Multi:
+    class Multi(BaseModel):
         first: Annotated[str, ProtoField(number=1)]
         second: Annotated[int, ProtoField(number=2)]
 
@@ -187,11 +169,10 @@ def test_extract_proto_field_multi_field_dataclass() -> None:
     assert result.number == 2
 
 
-def test_optional_dataclass_maps_to_optional_message() -> None:
-    """Optional[Dataclass]가 optional TYPE_MESSAGE로 매핑되는지 검증한다."""
+def test_optional_basemodel_maps_to_optional_message() -> None:
+    """Optional[BaseModel]이 optional TYPE_MESSAGE로 매핑되는지 검증한다."""
 
-    @dataclass
-    class Inner:
+    class Inner(BaseModel):
         value: Annotated[str, ProtoField(number=1)]
 
     result = resolve_type(Optional[Inner])
@@ -204,8 +185,7 @@ def test_optional_dataclass_maps_to_optional_message() -> None:
 def test_extract_proto_field_nonexistent_field_raises_error() -> None:
     """존재하지 않는 필드명을 요청하면 MissingProtoFieldAnnotationError를 발생시키는지 검증한다."""
 
-    @dataclass
-    class Msg:
+    class Msg(BaseModel):
         name: Annotated[str, ProtoField(number=1)]
 
     with pytest.raises(MissingProtoFieldAnnotationError) as exc_info:
@@ -216,8 +196,7 @@ def test_extract_proto_field_nonexistent_field_raises_error() -> None:
 def test_extract_proto_field_annotated_without_proto_field_raises_error() -> None:
     """Annotated이지만 ProtoField가 없는 필드에서 MissingProtoFieldAnnotationError를 발생시키는지 검증한다."""
 
-    @dataclass
-    class Msg:
+    class Msg(BaseModel):
         name: Annotated[str, "not a proto field"]
 
     with pytest.raises(MissingProtoFieldAnnotationError) as exc_info:

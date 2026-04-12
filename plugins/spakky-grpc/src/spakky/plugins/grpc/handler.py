@@ -1,19 +1,19 @@
 """Generic RPC handler for code-first gRPC service dispatch.
 
 Routes incoming gRPC calls to ``@GrpcController`` methods by matching
-the fully-qualified method name, performing protobuf ↔ dataclass
-conversion transparently.
+the fully-qualified method name, performing protobuf ↔ pydantic
+``BaseModel`` conversion via the ``google.protobuf.json_format``
+bridge.
 """
 
-import types
-from collections.abc import AsyncIterator, Sequence
-from dataclasses import fields, is_dataclass
+from collections.abc import AsyncIterator
 from inspect import getmembers, isfunction
 from logging import getLogger
-from typing import Annotated, Callable, Union, get_args, get_origin
+from typing import Callable, TypeVar
 
+from google.protobuf import json_format
 from google.protobuf.message import Message
-from google.protobuf.message_factory import GetMessageClass
+from pydantic import BaseModel
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 from typing_extensions import override
@@ -21,17 +21,20 @@ from typing_extensions import override
 import grpc
 import grpc.aio
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
+from spakky.plugins.grpc.error import UnsupportedResponseTypeError
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 
 logger = getLogger(__name__)
+
+BaseModelT = TypeVar("BaseModelT", bound=BaseModel)
 
 
 class GrpcServiceHandler(grpc.GenericRpcHandler):
     """Generic handler dispatching gRPC calls to ``@GrpcController`` methods.
 
     For each ``@rpc``-decorated method, builds a ``grpc.RpcMethodHandler``
-    with serialiser/deserialiser that convert between protobuf wire format
-    and Python dataclasses.
+    with serialiser/deserialiser that convert between protobuf wire
+    format and pydantic ``BaseModel`` instances.
 
     Attributes:
         _full_service_name: Fully-qualified ``<package>.<service>`` name.
@@ -129,17 +132,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         request_deserializer: Callable[[bytes], object] | None,
         response_serializer: Callable[[object], bytes] | None,
     ) -> grpc.RpcMethodHandler:
-        """Create a ``grpc.RpcMethodHandler`` for a single ``@rpc`` method.
-
-        Args:
-            method_name: Controller method name.
-            rpc_annotation: The ``@rpc`` annotation.
-            request_deserializer: Bytes → domain object.
-            response_serializer: Domain object → bytes.
-
-        Returns:
-            A configured ``grpc.RpcMethodHandler``.
-        """
+        """Create a ``grpc.RpcMethodHandler`` for a single ``@rpc`` method."""
         method_type = rpc_annotation.method_type
 
         if method_type is RpcMethodType.UNARY:
@@ -181,6 +174,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request: object,
             context: grpc.aio.ServicerContext,
         ) -> object:
+            del context
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
@@ -188,7 +182,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             if request_type is None:
                 return await handler_method()
             domain_request = (
-                _protobuf_to_dataclass(request, request_type)
+                _protobuf_to_basemodel(request, request_type)
                 if isinstance(request, Message)
                 else request
             )
@@ -208,6 +202,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request: object,
             context: grpc.aio.ServicerContext,
         ) -> AsyncIterator[object]:
+            del context
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
@@ -217,7 +212,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
                     yield item
                 return
             domain_request = (
-                _protobuf_to_dataclass(request, request_type)
+                _protobuf_to_basemodel(request, request_type)
                 if isinstance(request, Message)
                 else request
             )
@@ -238,6 +233,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request_iterator: AsyncIterator[object],
             context: grpc.aio.ServicerContext,
         ) -> object:
+            del context
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
@@ -246,7 +242,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:
                     if request_type is not None and isinstance(request, Message):
-                        yield _protobuf_to_dataclass(request, request_type)
+                        yield _protobuf_to_basemodel(request, request_type)
                     else:
                         yield request
 
@@ -266,6 +262,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request_iterator: AsyncIterator[object],
             context: grpc.aio.ServicerContext,
         ) -> AsyncIterator[object]:
+            del context
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
@@ -274,7 +271,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:
                     if request_type is not None and isinstance(request, Message):
-                        yield _protobuf_to_dataclass(request, request_type)
+                        yield _protobuf_to_basemodel(request, request_type)
                     else:
                         yield request
 
@@ -287,17 +284,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_deserializer(
         self,
-        request_type: type | None,
+        request_type: type[BaseModel] | None,
     ) -> Callable[[bytes], object] | None:
-        """Build a bytes → protobuf Message deserializer.
-
-        Args:
-            request_type: The Python dataclass type for the request.
-
-        Returns:
-            A callable that parses raw bytes into a protobuf Message,
-            or ``None`` when there is no request type.
-        """
+        """Build a bytes → protobuf Message deserializer."""
         if request_type is None:
             return None
 
@@ -315,17 +304,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_serializer(
         self,
-        response_type: type | None,
+        response_type: type[BaseModel] | None,
     ) -> Callable[[object], bytes] | None:
-        """Build a domain object → bytes serializer.
-
-        Args:
-            response_type: The Python dataclass type for the response.
-
-        Returns:
-            A callable that serialises domain objects to protobuf bytes,
-            or ``None`` when there is no response type.
-        """
+        """Build a ``BaseModel``/``Message`` → bytes serializer."""
         if response_type is None:
             return None
 
@@ -337,8 +318,10 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         def _serialize(obj: object) -> bytes:
             if isinstance(obj, Message):
                 return obj.SerializeToString()
-            msg = _dataclass_to_protobuf(obj, message_class)
-            return msg.SerializeToString()
+            if isinstance(obj, BaseModel):
+                msg = _basemodel_to_protobuf(obj, message_class)
+                return msg.SerializeToString()
+            raise UnsupportedResponseTypeError(type(obj))
 
         return _serialize
 
@@ -348,126 +331,50 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 # ------------------------------------------------------------------
 
 
-def _is_optional(tp: object) -> bool:
-    """Return ``True`` if *tp* is ``Optional[T]`` (i.e. ``T | None``)."""
-    origin = get_origin(tp)
-    if origin is Union or isinstance(tp, types.UnionType):
-        return type(None) in get_args(tp)
-    return False
+def _basemodel_to_protobuf(obj: BaseModel, message_class: type[Message]) -> Message:
+    """Convert a pydantic ``BaseModel`` instance into a protobuf ``Message``.
 
-
-def _protobuf_to_dataclass(message: Message, dataclass_type: type) -> object:
-    """Convert a protobuf ``Message`` to a Python dataclass instance.
-
-    Handles nested messages, repeated fields and optional (None) values.
-    For proto3 optional fields, uses ``HasField`` to distinguish between
-    an unset field (mapped to ``None``) and a field set to the default value.
+    Uses the ``google.protobuf.json_format`` bridge: the model is
+    serialised to JSON via pydantic's v2 ``model_dump_json`` API and
+    then parsed into a protobuf ``Message`` by
+    ``json_format.Parse``. ``None`` values from optional fields are
+    emitted as JSON ``null`` which ``json_format`` treats as "field
+    unset" for proto3 optional fields.
 
     Args:
-        message: The protobuf message.
-        dataclass_type: The target dataclass type.
-
-    Returns:
-        An instance of *dataclass_type* populated from *message*.
-    """
-    kwargs: dict[str, object] = {}
-    # reason: protobuf Message 필드는 런타임 동적 속성 — 정적 타입으로 접근 불가
-    for field in fields(dataclass_type):
-        resolved_type = _unwrap_annotated(field.type)
-        if _is_optional(resolved_type) and message.HasField(field.name):
-            raw = getattr(message, field.name)
-            inner_type = next(a for a in get_args(resolved_type) if a is not type(None))
-            kwargs[field.name] = _convert_proto_value(raw, inner_type)
-        elif _is_optional(resolved_type):
-            kwargs[field.name] = None
-        else:
-            raw = getattr(message, field.name)
-            kwargs[field.name] = _convert_proto_value(raw, resolved_type)
-    return dataclass_type(**kwargs)
-
-
-def _unwrap_annotated(tp: object) -> object:
-    """Unwrap ``Annotated[T, ...]`` to its inner type ``T``."""
-    if get_origin(tp) is Annotated:
-        return get_args(tp)[0]
-    return tp
-
-
-def _convert_proto_value(value: object, target_type: object) -> object:
-    """Recursively convert a protobuf field value to its Python equivalent.
-
-    Args:
-        value: The raw protobuf field value.
-        target_type: The expected Python type annotation.
-
-    Returns:
-        The converted value.
-    """
-    if isinstance(value, Message):
-        if is_dataclass(target_type) and isinstance(target_type, type):
-            return _protobuf_to_dataclass(value, target_type)
-    origin = get_origin(target_type)
-    if (
-        origin is list
-        and isinstance(value, Sequence)
-        and not isinstance(value, (str, bytes))
-    ):
-        inner_args = get_args(target_type)
-        if (
-            inner_args
-            and is_dataclass(inner_args[0])
-            and isinstance(inner_args[0], type)
-        ):
-            return [
-                _protobuf_to_dataclass(v, inner_args[0])
-                if isinstance(v, Message)
-                else v
-                for v in value
-            ]
-        return list(value)
-    return value
-
-
-def _dataclass_to_protobuf(obj: object, message_class: type[Message]) -> Message:
-    """Convert a Python dataclass to a protobuf ``Message``.
-
-    Handles nested dataclasses and repeated fields.
-
-    Args:
-        obj: The dataclass instance.
+        obj: The pydantic ``BaseModel`` instance to convert.
         message_class: The target protobuf message class.
 
     Returns:
         A populated protobuf ``Message``.
     """
-    msg = message_class()
-    descriptor = msg.DESCRIPTOR
-    # reason: protobuf Message 필드와 dataclass 필드 모두 런타임 동적 속성 접근 필요
-    for field_desc in descriptor.fields:
-        value = getattr(obj, field_desc.name, None)
-        if value is None:
-            continue
-        if (
-            field_desc.label == field_desc.LABEL_REPEATED
-            and field_desc.message_type is not None
-            and isinstance(value, Sequence)
-            and not isinstance(value, (str, bytes))
-        ):
-            nested_class = msg.DESCRIPTOR.fields_by_name[field_desc.name].message_type
-            nested_msg_class = GetMessageClass(nested_class)
-            for item in value:
-                if is_dataclass(type(item)):
-                    nested_msg = _dataclass_to_protobuf(item, nested_msg_class)
-                    getattr(msg, field_desc.name).append(nested_msg)
-                else:
-                    getattr(msg, field_desc.name).append(item)
-        elif field_desc.message_type is not None and is_dataclass(type(value)):
-            nested_class = msg.DESCRIPTOR.fields_by_name[field_desc.name].message_type
-            nested_msg_class = GetMessageClass(nested_class)
-            nested_msg = _dataclass_to_protobuf(value, nested_msg_class)
-            getattr(msg, field_desc.name).CopyFrom(nested_msg)
-        elif field_desc.label == field_desc.LABEL_REPEATED:
-            getattr(msg, field_desc.name).extend(value)  # type: ignore[arg-type] — protobuf repeated field .extend() accepts iterables
-        else:
-            setattr(msg, field_desc.name, value)
-    return msg
+    payload = obj.model_dump_json()
+    return json_format.Parse(
+        payload,
+        message_class(),
+        ignore_unknown_fields=False,
+    )
+
+
+def _protobuf_to_basemodel(
+    message: Message, model_type: type[BaseModelT]
+) -> BaseModelT:
+    """Convert a protobuf ``Message`` into a pydantic ``BaseModel`` instance.
+
+    Uses the ``google.protobuf.json_format`` bridge: the message is
+    serialised to JSON with ``preserving_proto_field_name=True`` so
+    field names round-trip unchanged into ``model_validate_json``.
+
+    Args:
+        message: The protobuf message.
+        model_type: The target ``BaseModel`` subclass.
+
+    Returns:
+        An instance of ``model_type`` populated from ``message``.
+    """
+    payload = json_format.MessageToJson(
+        message,
+        preserving_proto_field_name=True,
+        always_print_fields_with_no_presence=True,
+    )
+    return model_type.model_validate_json(payload)

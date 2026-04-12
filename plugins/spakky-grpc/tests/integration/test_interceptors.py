@@ -9,11 +9,12 @@ from spakky.core.application.application import SpakkyApplication
 
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.server_spec import GrpcServerSpec
-from tests.integration._client import (
-    build_message,
-    deserializer_for,
-    field,
-    serializer_for,
+from tests.integration._client import deserializer_for, serializer_for
+from tests.integration.apps.echo import (
+    EchoReply,
+    EchoRequest,
+    ErrorRequest,
+    TraceReply,
 )
 
 PACKAGE = "test.echo"
@@ -50,12 +51,13 @@ async def test_raise_error_with_mapped_status_expect_matching_grpc_code(
     call = channel.unary_unary(
         RAISE_METHOD,
         request_serializer=serializer_for(registry, f"{PACKAGE}.ErrorRequest"),
-        response_deserializer=deserializer_for(registry, f"{PACKAGE}.EchoReply"),
+        response_deserializer=deserializer_for(
+            registry, f"{PACKAGE}.EchoReply", EchoReply
+        ),
     )
-    request = build_message(registry, f"{PACKAGE}.ErrorRequest", code=code)
 
     with pytest.raises(grpc.aio.AioRpcError) as excinfo:
-        await call(request)
+        await call(ErrorRequest(code=code))
 
     assert excinfo.value.code() == expected_status
 
@@ -68,12 +70,13 @@ async def test_raise_error_with_unexpected_exception_expect_internal_status(
     call = channel.unary_unary(
         RAISE_METHOD,
         request_serializer=serializer_for(registry, f"{PACKAGE}.ErrorRequest"),
-        response_deserializer=deserializer_for(registry, f"{PACKAGE}.EchoReply"),
+        response_deserializer=deserializer_for(
+            registry, f"{PACKAGE}.EchoReply", EchoReply
+        ),
     )
-    request = build_message(registry, f"{PACKAGE}.ErrorRequest", code="__unknown__")
 
     with pytest.raises(grpc.aio.AioRpcError) as excinfo:
-        await call(request)
+        await call(ErrorRequest(code="__unknown__"))
 
     assert excinfo.value.code() == grpc.StatusCode.INTERNAL
 
@@ -86,15 +89,19 @@ async def test_capture_trace_with_traceparent_expect_child_span_on_server(
     call = channel.unary_unary(
         TRACE_METHOD,
         request_serializer=serializer_for(registry, f"{PACKAGE}.EchoRequest"),
-        response_deserializer=deserializer_for(registry, f"{PACKAGE}.TraceReply"),
+        response_deserializer=deserializer_for(
+            registry, f"{PACKAGE}.TraceReply", TraceReply
+        ),
     )
-    request = build_message(registry, f"{PACKAGE}.EchoRequest", text="ignored")
 
-    rpc_call = call(request, metadata=(("traceparent", SAMPLE_TRACEPARENT),))
+    rpc_call = call(
+        EchoRequest(text="ignored"), metadata=(("traceparent", SAMPLE_TRACEPARENT),)
+    )
     reply = await rpc_call
 
-    assert field(reply, "trace_id") == SAMPLE_TRACE_ID
-    assert field(reply, "parent_span_id") == SAMPLE_SPAN_ID
+    assert isinstance(reply, TraceReply)
+    assert reply.trace_id == SAMPLE_TRACE_ID
+    assert reply.parent_span_id == SAMPLE_SPAN_ID
 
     trailing = await rpc_call.trailing_metadata()
     headers = {key: value for key, value in trailing}
@@ -112,15 +119,17 @@ async def test_capture_trace_without_traceparent_expect_new_root_trace(
     call = channel.unary_unary(
         TRACE_METHOD,
         request_serializer=serializer_for(registry, f"{PACKAGE}.EchoRequest"),
-        response_deserializer=deserializer_for(registry, f"{PACKAGE}.TraceReply"),
+        response_deserializer=deserializer_for(
+            registry, f"{PACKAGE}.TraceReply", TraceReply
+        ),
     )
-    request = build_message(registry, f"{PACKAGE}.EchoRequest", text="ignored")
 
-    rpc_call = call(request)
+    rpc_call = call(EchoRequest(text="ignored"))
     reply = await rpc_call
 
-    assert field(reply, "trace_id") != TRACE_MISSING
-    assert field(reply, "parent_span_id") == ""
+    assert isinstance(reply, TraceReply)
+    assert reply.trace_id != TRACE_MISSING
+    assert reply.parent_span_id == ""
 
     trailing = await rpc_call.trailing_metadata()
     headers = {key: value for key, value in trailing}
@@ -141,14 +150,16 @@ async def test_capture_trace_without_tracing_plugin_expect_no_context(
         call = channel.unary_unary(
             TRACE_METHOD,
             request_serializer=serializer_for(registry, f"{PACKAGE}.EchoRequest"),
-            response_deserializer=deserializer_for(registry, f"{PACKAGE}.TraceReply"),
+            response_deserializer=deserializer_for(
+                registry, f"{PACKAGE}.TraceReply", TraceReply
+            ),
         )
-        request = build_message(registry, f"{PACKAGE}.EchoRequest", text="ignored")
 
-        rpc_call = call(request)
+        rpc_call = call(EchoRequest(text="ignored"))
         reply = await rpc_call
 
-        assert field(reply, "trace_id") == TRACE_MISSING
+        assert isinstance(reply, TraceReply)
+        assert reply.trace_id == TRACE_MISSING
         trailing = await rpc_call.trailing_metadata()
         headers = {key: value for key, value in (trailing or ())}
         assert "traceparent" not in headers

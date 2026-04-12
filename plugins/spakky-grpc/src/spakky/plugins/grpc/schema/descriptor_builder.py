@@ -1,12 +1,12 @@
-"""Dataclass to protobuf FileDescriptorProto builder.
+"""Pydantic BaseModel to protobuf FileDescriptorProto builder.
 
-Converts Python dataclasses with ProtoField annotations and @rpc-decorated
-controller methods into protobuf FileDescriptorProto instances.
+Converts pydantic ``BaseModel`` subclasses with ``ProtoField`` metadata
+and ``@rpc``-decorated controller methods into protobuf
+``FileDescriptorProto`` instances.
 """
 
-from dataclasses import fields
 from inspect import getmembers, isfunction
-from typing import cast, get_type_hints
+from typing import cast
 
 from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
@@ -16,51 +16,49 @@ from google.protobuf.descriptor_pb2 import (
     OneofDescriptorProto,
     ServiceDescriptorProto,
 )
+from pydantic import BaseModel
 from spakky.plugins.grpc.decorators.rpc import Rpc
 from spakky.plugins.grpc.schema.type_map import (
     extract_proto_field,
-    get_inner_type,
     resolve_type,
 )
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
 def build_message_descriptor(
-    dataclass_type: type,
+    model_type: type[BaseModel],
     collected: dict[str, DescriptorProto] | None = None,
 ) -> tuple[DescriptorProto, dict[str, DescriptorProto]]:
-    """Build a DescriptorProto from a dataclass.
+    """Build a ``DescriptorProto`` from a pydantic ``BaseModel`` subclass.
 
-    Recursively processes nested dataclass fields into nested message
+    Recursively processes nested ``BaseModel`` fields into nested message
     descriptors.
 
     Args:
-        dataclass_type: The dataclass to convert.
+        model_type: The ``BaseModel`` subclass to convert.
         collected: Accumulator for all message descriptors encountered
             during recursive processing. Used internally.
 
     Returns:
-        A tuple of (root DescriptorProto, dict of all collected descriptors).
+        A tuple of (root ``DescriptorProto``, dict of all collected
+        descriptors).
     """
     if collected is None:
         collected = {}
 
-    name = dataclass_type.__name__
+    name = model_type.__name__
     if name in collected:
         return collected[name], collected
 
     descriptor = DescriptorProto(name=name)
     collected[name] = descriptor
 
-    hints = get_type_hints(dataclass_type, include_extras=True)
-    for field in fields(dataclass_type):
-        annotated_type = hints[field.name]
-        inner_type = get_inner_type(annotated_type)
-        resolved = resolve_type(inner_type)
-        proto_field = extract_proto_field(dataclass_type, field.name)
+    for field_name, field_info in model_type.model_fields.items():
+        resolved = resolve_type(field_info.annotation)
+        proto_field = extract_proto_field(model_type, field_name)
 
         field_desc = FieldDescriptorProto(
-            name=field.name,
+            name=field_name,
             number=proto_field.number,
             type=cast(FieldDescriptorProto.Type.ValueType, resolved.proto_type),
         )
@@ -71,7 +69,7 @@ def build_message_descriptor(
             field_desc.label = FieldDescriptorProto.LABEL_OPTIONAL
             field_desc.proto3_optional = True
             oneof_index = len(descriptor.oneof_decl)
-            descriptor.oneof_decl.append(OneofDescriptorProto(name=f"__{field.name}"))
+            descriptor.oneof_decl.append(OneofDescriptorProto(name=f"__{field_name}"))
             field_desc.oneof_index = oneof_index
         else:
             field_desc.label = FieldDescriptorProto.LABEL_OPTIONAL
@@ -91,9 +89,9 @@ def build_service_descriptor(
     service_name: str,
     collected: dict[str, DescriptorProto],
 ) -> ServiceDescriptorProto:
-    """Build a ServiceDescriptorProto from an @GrpcController class.
+    """Build a ``ServiceDescriptorProto`` from an ``@GrpcController`` class.
 
-    Inspects all @rpc-decorated methods on the controller and generates
+    Inspects all ``@rpc``-decorated methods on the controller and generates
     method descriptors with fully-qualified type names.
 
     Args:
@@ -104,7 +102,7 @@ def build_service_descriptor(
             signatures.
 
     Returns:
-        A ServiceDescriptorProto for the controller.
+        A ``ServiceDescriptorProto`` for the controller.
     """
     service = ServiceDescriptorProto(name=service_name)
 
@@ -140,16 +138,16 @@ def build_service_descriptor(
 
 
 def build_file_descriptor(controller_type: type) -> FileDescriptorProto:
-    """Build a complete FileDescriptorProto from a @GrpcController class.
+    """Build a complete ``FileDescriptorProto`` from an ``@GrpcController`` class.
 
-    Generates all message descriptors referenced by @rpc methods and
-    the service descriptor, packaged into a single FileDescriptorProto.
+    Generates all message descriptors referenced by ``@rpc`` methods and
+    the service descriptor, packaged into a single ``FileDescriptorProto``.
 
     Args:
-        controller_type: The @GrpcController-decorated class.
+        controller_type: The ``@GrpcController``-decorated class.
 
     Returns:
-        A FileDescriptorProto ready for descriptor_pool registration.
+        A ``FileDescriptorProto`` ready for ``descriptor_pool`` registration.
     """
     annotation = GrpcController.get(controller_type)
     package = annotation.package

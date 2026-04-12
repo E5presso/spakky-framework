@@ -9,6 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "grpcio>=1.68.0",
     "protobuf>=6.33.0",
+    "pydantic>=2.4",
     "spakky>=6.3.1",
     "spakky-tracing>=6.3.1",
 ]

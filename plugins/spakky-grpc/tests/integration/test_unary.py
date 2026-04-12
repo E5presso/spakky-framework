@@ -4,12 +4,8 @@ import grpc.aio
 import pytest
 
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
-from tests.integration._client import (
-    build_message,
-    deserializer_for,
-    field,
-    serializer_for,
-)
+from tests.integration._client import deserializer_for, serializer_for
+from tests.integration.apps.echo import EchoReply, EchoRequest
 
 PACKAGE = "test.echo"
 SERVICE_METHOD = "/test.echo.EchoController/unary_echo"
@@ -23,13 +19,14 @@ async def test_unary_echo_with_text_expect_same_text(
     call = channel.unary_unary(
         SERVICE_METHOD,
         request_serializer=serializer_for(registry, f"{PACKAGE}.EchoRequest"),
-        response_deserializer=deserializer_for(registry, f"{PACKAGE}.EchoReply"),
+        response_deserializer=deserializer_for(
+            registry, f"{PACKAGE}.EchoReply", EchoReply
+        ),
     )
-    request = build_message(registry, f"{PACKAGE}.EchoRequest", text="hello")
+    reply = await call(EchoRequest(text="hello"))
 
-    reply = await call(request)
-
-    assert field(reply, "text") == "hello"
+    assert isinstance(reply, EchoReply)
+    assert reply.text == "hello"
 
 
 @pytest.mark.asyncio
@@ -40,10 +37,11 @@ async def test_unary_echo_with_empty_text_expect_empty_reply(
     call = channel.unary_unary(
         SERVICE_METHOD,
         request_serializer=serializer_for(registry, f"{PACKAGE}.EchoRequest"),
-        response_deserializer=deserializer_for(registry, f"{PACKAGE}.EchoReply"),
+        response_deserializer=deserializer_for(
+            registry, f"{PACKAGE}.EchoReply", EchoReply
+        ),
     )
-    request = build_message(registry, f"{PACKAGE}.EchoRequest", text="")
+    reply = await call(EchoRequest(text=""))
 
-    reply = await call(request)
-
-    assert field(reply, "text") == ""
+    assert isinstance(reply, EchoReply)
+    assert reply.text == ""

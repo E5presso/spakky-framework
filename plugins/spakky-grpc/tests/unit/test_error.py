@@ -38,13 +38,13 @@ def test_missing_proto_field_annotation_error_is_grpc_error() -> None:
 
 
 def test_missing_proto_field_annotation_error_stores_context() -> None:
-    """MissingProtoFieldAnnotationError가 dataclass_type과 field_name을 저장하는지 검증한다."""
+    """MissingProtoFieldAnnotationError가 model_type과 field_name을 저장하는지 검증한다."""
 
     class Dummy:
         pass
 
     error = MissingProtoFieldAnnotationError(Dummy, "name")
-    assert error.dataclass_type is Dummy
+    assert error.model_type is Dummy
     assert error.field_name == "name"
 
 
