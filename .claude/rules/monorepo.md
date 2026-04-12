@@ -22,8 +22,10 @@ cd core/spakky && uv run pytest
 ```
 spakky → spakky-domain → spakky-data ──┐
 spakky → spakky-tracing ───────────────┤→ spakky-event → spakky-outbox (단방향)
-spakky → spakky-task
+spakky → spakky-task                   │
+spakky → spakky-saga ─────────────────-┘
 spakky-logging → spakky (코어 유틸리티)
 ```
 
-역방향 의존성을 추가하지 마세요.
+- 역방향 의존성 추가 금지.
+- 플러그인 → 다른 플러그인 직접 import 금지.

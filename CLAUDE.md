@@ -5,8 +5,8 @@
 ## Overview
 
 - **Framework**: Spring-inspired DI/IoC for Python 3.11+, AOP, plugin system (`uv` monorepo)
-- **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task`, `spakky-tracing`, `spakky-outbox`
-- **Plugins** (`plugins/`): `spakky-logging`, `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-celery`
+- **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task`, `spakky-tracing`, `spakky-outbox`, `spakky-saga`
+- **Plugins** (`plugins/`): `spakky-logging`, `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-celery`, `spakky-opentelemetry`, `spakky-grpc`
 
 ## Project Quick Reference
 
@@ -19,6 +19,7 @@
 | `core/spakky-task/` | 태스크 추상화 (스케줄링, 디스패치) |
 | `core/spakky-tracing/` | 분산 트레이싱 추상화 (TraceContext, Propagator) |
 | `core/spakky-outbox/` | Transactional Outbox 패턴 (OutboxEventBus, Relay) |
+| `core/spakky-saga/` | Saga 오케스트레이션 (SagaFlow, SagaStep) |
 | `plugins/spakky-fastapi/` | FastAPI REST 컨트롤러 통합 |
 | `plugins/spakky-typer/` | Typer CLI 컨트롤러 통합 |
 | `plugins/spakky-sqlalchemy/` | SQLAlchemy ORM 통합 |
@@ -39,7 +40,7 @@
 |---------|-----------|----------|
 | **plan** | `/plan-issues`, `/decide-architecture`, `/adr`, `/impact-analysis` | — |
 | **build** | `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
-| **verify** | `/check`, `/check-coverage`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit` | — |
+| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit` | — |
 | **ship** | — | `/create-pr`, `/review-pr`, `/monitor-pr`, `/update-project-status` |
 | **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs` | `/review-harness`, `/update-harness`, `/sync-dev-docs`, `/sync-user-docs` |
 

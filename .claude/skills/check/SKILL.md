@@ -65,6 +65,24 @@ cd <package-dir> && uv run pytest
 - 실패 시 → 원인 분석 후 수정하고 재실행.
 - **커버리지 100% 필수** — 변경된 코드의 커버리지가 100%여야 한다. 미달 시 테스트를 추가한다.
 
+### 커버리지 측정
+
+**반드시 `scripts/run_coverage.py`를 사용한다.**
+
+```bash
+# 단일 패키지
+uv run python scripts/run_coverage.py --package <package-name>
+# 전체 (병렬)
+uv run python scripts/run_coverage.py
+```
+
+| 금지 | 이유 |
+|------|------|
+| `cd <dir> && uv run pytest --cov` | pyproject.toml 설정 무시 |
+| `pytest --cov` 직접 실행 | 경로 설정 오류 가능 |
+
+> 커버리지 **개선**이 필요하면 → `/improve-coverage`
+
 ## 규칙
 
 - 다섯 단계 모두 통과해야 완료 (포맷팅 + 레이어 + 린트 + 타입 + 테스트/커버리지).
