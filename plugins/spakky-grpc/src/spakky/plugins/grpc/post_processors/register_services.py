@@ -6,6 +6,7 @@ at runtime, and registers generic RPC handlers on the ``grpc.aio.Server``.
 
 from logging import getLogger
 
+from spakky.core.common.constants import DYNAMIC_PROXY_CLASS_NAME_SUFFIX
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -62,6 +63,25 @@ class RegisterServicesPostProcessor(
         """
         self.__application_context = application_context
 
+    @staticmethod
+    def _unwrap_proxy_type(pod_type: type) -> type:
+        """Return the original class if *pod_type* is an AOP dynamic proxy.
+
+        ``AspectPostProcessor`` runs before user-defined post-processors and
+        may replace a Pod with a dynamic subclass whose name ends with
+        ``@DynamicProxy``.  The proxy inherits from the original class, so
+        ``__bases__[0]`` recovers the registered controller type.
+
+        Args:
+            pod_type: The runtime type of the Pod instance.
+
+        Returns:
+            The original (non-proxy) controller class.
+        """
+        if pod_type.__name__.endswith(DYNAMIC_PROXY_CLASS_NAME_SUFFIX):
+            return pod_type.__bases__[0]
+        return pod_type
+
     def post_process(self, pod: object) -> object:
         """Register a gRPC service if *pod* is a ``@GrpcController``.
 
@@ -76,7 +96,7 @@ class RegisterServicesPostProcessor(
         if not GrpcController.exists(type(pod)):
             return pod
 
-        controller_type = type(pod)
+        controller_type = self._unwrap_proxy_type(type(pod))
         annotation = GrpcController.get(controller_type)
         package = annotation.package
         service_name = annotation.service_name or controller_type.__name__

@@ -1,9 +1,11 @@
 """Unit tests for RegisterServicesPostProcessor."""
 
+from types import new_class
 from unittest.mock import MagicMock
 
 import grpc.aio
 import pytest
+from spakky.core.common.constants import DYNAMIC_PROXY_CLASS_NAME_SUFFIX
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.plugins.grpc.post_processors.register_services import (
@@ -87,3 +89,39 @@ def test_register_services_skips_already_registered_descriptor(
     controller_instance_2 = GreeterController()
     result = processor.post_process(controller_instance_2)
     assert result is controller_instance_2
+
+
+def test_register_services_unwraps_aop_proxy_type(
+    processor: RegisterServicesPostProcessor,
+) -> None:
+    """AOP proxy Pod should be unwrapped to the original controller type."""
+    proxy_class = new_class(
+        GreeterController.__name__ + DYNAMIC_PROXY_CLASS_NAME_SUFFIX,
+        bases=(GreeterController,),
+    )
+    proxy_instance = object.__new__(proxy_class)
+
+    result = processor.post_process(proxy_instance)
+    assert result is proxy_instance
+
+    container = (
+        processor._RegisterServicesPostProcessor__container  # pyrefly: ignore - name-mangled private attr access
+    )
+    server = container.get(grpc.aio.Server)
+    server.add_generic_rpc_handlers.assert_called_once()
+
+
+def test_unwrap_proxy_type_returns_original_class() -> None:
+    """_unwrap_proxy_type should strip the @DynamicProxy suffix."""
+    proxy_class = new_class(
+        GreeterController.__name__ + DYNAMIC_PROXY_CLASS_NAME_SUFFIX,
+        bases=(GreeterController,),
+    )
+    result = RegisterServicesPostProcessor._unwrap_proxy_type(proxy_class)
+    assert result is GreeterController
+
+
+def test_unwrap_proxy_type_returns_non_proxy_unchanged() -> None:
+    """_unwrap_proxy_type should return non-proxy types unchanged."""
+    result = RegisterServicesPostProcessor._unwrap_proxy_type(GreeterController)
+    assert result is GreeterController
