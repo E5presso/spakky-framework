@@ -19,17 +19,22 @@ class GrpcServerSpec:
         handlers: Generic RPC handlers to register on the server.
         interceptors: Server interceptors to apply at creation time.
         bind_addresses: ``host:port`` strings to pass to ``add_insecure_port``.
+        bound_ports: Ports returned by ``add_insecure_port`` for each bind
+            address, populated when :meth:`build` runs. Useful when binding
+            to ``:0`` and needing to discover the OS-assigned port.
     """
 
     handlers: list[grpc.GenericRpcHandler]
     interceptors: list[grpc.aio.ServerInterceptor]
     bind_addresses: list[str]
+    bound_ports: list[int]
 
     def __init__(self) -> None:
         """Initialise an empty spec."""
         self.handlers = []
         self.interceptors = []
         self.bind_addresses = []
+        self.bound_ports = []
 
     def add_handler(self, handler: grpc.GenericRpcHandler) -> None:
         """Register a generic RPC handler.
@@ -66,6 +71,7 @@ class GrpcServerSpec:
         """
         server = grpc.aio.server(interceptors=list(self.interceptors))
         server.add_generic_rpc_handlers(tuple(self.handlers))
-        for address in self.bind_addresses:
-            server.add_insecure_port(address)
+        self.bound_ports = [
+            server.add_insecure_port(address) for address in self.bind_addresses
+        ]
         return server

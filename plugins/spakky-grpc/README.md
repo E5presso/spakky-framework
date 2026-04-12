@@ -29,6 +29,8 @@ from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.server_spec import GrpcServerSpec
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
+import apps  # `@GrpcController`-decorated classes live in your own package
+
 
 @dataclass
 class HelloRequest:
@@ -62,7 +64,7 @@ def get_registry() -> DescriptorRegistry:
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={spakky.plugins.grpc.PLUGIN_NAME})
-    .scan(apps)  # HelloController 포함 패키지
+    .scan(apps)  # your package containing HelloController above
     .add(get_spec)
     .add(get_registry)
 )

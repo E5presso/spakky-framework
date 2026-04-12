@@ -11,6 +11,12 @@ dependencies = ["grpcio>=1.68.0", "spakky>=6.3.1", "spakky-tracing>=6.3.1"]
 [project.entry-points."spakky.plugins"]
 spakky-grpc = "spakky.plugins.grpc.main:initialize"
 
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.3.0",
+    "pytest-integration-mark>=0.2.0",
+]
+
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
 build-backend = "uv_build"

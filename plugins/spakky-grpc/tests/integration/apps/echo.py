@@ -68,6 +68,7 @@ class TraceReply:
     parent_span_id: Annotated[str, ProtoField(number=2)]
 
 
+# Maps client-provided codes to the gRPC status errors to raise.
 ERROR_CODE_MAP: dict[str, type[Exception]] = {
     "invalid_argument": InvalidArgument,
     "not_found": NotFound,
@@ -78,7 +79,6 @@ ERROR_CODE_MAP: dict[str, type[Exception]] = {
     "unavailable": Unavailable,
     "internal": InternalError,
 }
-"""Maps client-provided codes to the gRPC status errors to raise."""
 
 
 class UnexpectedTestError(Exception):

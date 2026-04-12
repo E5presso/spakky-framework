@@ -26,14 +26,20 @@ pip install spakky-grpc
 
 ```python
 import spakky.plugins.grpc
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.grpc.server_spec import GrpcServerSpec
+
+import apps  # `@GrpcController`가 정의된 사용자 패키지
+
 
 @Pod()
 def get_spec() -> GrpcServerSpec:
     spec = GrpcServerSpec()
     spec.add_insecure_port("127.0.0.1:50051")
     return spec
+
 
 app = (
     SpakkyApplication(ApplicationContext())

@@ -8,6 +8,7 @@ import pytest
 from spakky.core.application.application import SpakkyApplication
 
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+from spakky.plugins.grpc.server_spec import GrpcServerSpec
 from tests.integration._client import (
     build_message,
     deserializer_for,
@@ -130,10 +131,10 @@ async def test_capture_trace_without_traceparent_expect_new_root_trace(
 @pytest.mark.asyncio
 async def test_capture_trace_without_tracing_plugin_expect_no_context(
     app_without_tracing: SpakkyApplication,
-    port: int,
 ) -> None:
     """With the tracing plugin disabled no ``TraceContext`` should be active."""
     registry = app_without_tracing.container.get(DescriptorRegistry)
+    port = app_without_tracing.container.get(GrpcServerSpec).bound_ports[0]
 
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{port}")
     try:
