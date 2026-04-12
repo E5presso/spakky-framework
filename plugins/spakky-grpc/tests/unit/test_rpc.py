@@ -1,18 +1,20 @@
 """Unit tests for @rpc decorator."""
 
-from dataclasses import dataclass
 from typing import AsyncIterator
 
+from pydantic import BaseModel
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType, rpc
 
 
-@dataclass
-class HelloRequest:
+class HelloRequest(BaseModel):
+    """Test request."""
+
     name: str
 
 
-@dataclass
-class HelloResponse:
+class HelloResponse(BaseModel):
+    """Test response."""
+
     message: str
 
 

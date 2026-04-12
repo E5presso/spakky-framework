@@ -5,9 +5,9 @@ used to exercise ``ErrorHandlingInterceptor`` mappings.
 """
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from typing import Annotated, ClassVar
 
+from pydantic import BaseModel
 from spakky.tracing.context import TraceContext
 
 from spakky.plugins.grpc.annotations.field import ProtoField
@@ -25,43 +25,37 @@ from spakky.plugins.grpc.error import (
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
-@dataclass
-class EchoRequest:
+class EchoRequest(BaseModel):
     """Single-field request used by unary and streaming echo methods."""
 
     text: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class EchoReply:
+class EchoReply(BaseModel):
     """Single-field reply mirroring the request text."""
 
     text: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class CountRequest:
+class CountRequest(BaseModel):
     """Controls how many messages the server should emit/aggregate."""
 
     count: Annotated[int, ProtoField(number=1)]
 
 
-@dataclass
-class CountReply:
+class CountReply(BaseModel):
     """Aggregated count reply for client-streaming tests."""
 
     total: Annotated[int, ProtoField(number=1)]
 
 
-@dataclass
-class ErrorRequest:
+class ErrorRequest(BaseModel):
     """Identifies which error the controller should raise."""
 
     code: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class TraceReply:
+class TraceReply(BaseModel):
     """Returns the captured server-side trace context."""
 
     trace_id: Annotated[str, ProtoField(number=1)]

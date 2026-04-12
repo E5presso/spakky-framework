@@ -1,40 +1,36 @@
-"""Unit tests for GrpcServiceHandler."""
+"""Unit tests for GrpcServiceHandler and its json_format bridge helpers."""
 
 from collections.abc import AsyncGenerator, AsyncIterator
-from dataclasses import dataclass
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc
 import grpc.aio
 import pytest
-from google.protobuf.message_factory import GetMessageClass
+from google.protobuf import json_format
+from pydantic import BaseModel
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
+from spakky.plugins.grpc.error import UnsupportedResponseTypeError
 from spakky.plugins.grpc.handler import (
     GrpcServiceHandler,
-    _convert_proto_value,
-    _dataclass_to_protobuf,
-    _is_optional,
-    _protobuf_to_dataclass,
-    _unwrap_annotated,
+    _basemodel_to_protobuf,
+    _protobuf_to_basemodel,
 )
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
-@dataclass
-class PingRequest:
+class PingRequest(BaseModel):
     """Test request."""
 
     value: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class PingReply:
+class PingReply(BaseModel):
     """Test response."""
 
     value: Annotated[str, ProtoField(number=1)]
@@ -64,7 +60,7 @@ class MultiRpcController:
         self, request: PingRequest
     ) -> AsyncGenerator[PingReply, None]:
         """Server streaming RPC."""
-        yield PingReply(value=request.value)  # type: ignore[misc] — async generator for test
+        yield PingReply(value=request.value)
 
     def not_an_rpc(self) -> None:
         """Regular method, not decorated with @rpc."""
@@ -182,34 +178,30 @@ async def test_handler_unary_behavior_calls_controller(
     details = _make_call_details("/handler.v1.PingController/ping")
     handler = ping_handler.service(details)
     assert handler is not None
+    assert handler.request_deserializer is not None
+    assert handler.unary_unary is not None
 
     request_class = ping_handler._registry.get_message_class("handler.v1.PingRequest")
-    request_msg = request_class()
-    request_msg.value = "pong"  # pyrefly: ignore - dynamic protobuf attr
+    request_msg = json_format.Parse('{"value":"pong"}', request_class())
     raw_bytes = request_msg.SerializeToString()
 
-    deserialized = handler.request_deserializer(  # pyrefly: ignore - callable at runtime after service() lookup
-        raw_bytes
-    )
+    deserialized = handler.request_deserializer(raw_bytes)
     context = AsyncMock(spec=grpc.aio.ServicerContext)
-    result = await handler.unary_unary(  # pyrefly: ignore - callable at runtime after service() lookup
-        deserialized, context
-    )
-    assert result is not None
+    result = await handler.unary_unary(deserialized, context)
+    assert result is reply
 
 
 async def test_handler_serializer_produces_bytes(
     ping_handler: GrpcServiceHandler,
 ) -> None:
-    """Response serializer should produce bytes from a dataclass."""
+    """Response serializer should produce bytes from a BaseModel."""
     details = _make_call_details("/handler.v1.PingController/ping")
     handler = ping_handler.service(details)
     assert handler is not None
+    assert handler.response_serializer is not None
 
     reply = PingReply(value="hello")
-    serialized = handler.response_serializer(  # pyrefly: ignore - callable at runtime after service() lookup
-        reply
-    )
+    serialized = handler.response_serializer(reply)
     assert isinstance(serialized, bytes)
     assert len(serialized) > 0
 
@@ -221,21 +213,26 @@ async def test_handler_deserializer_produces_message(
     details = _make_call_details("/handler.v1.PingController/ping")
     handler = ping_handler.service(details)
     assert handler is not None
+    assert handler.request_deserializer is not None
 
     request_class = ping_handler._registry.get_message_class("handler.v1.PingRequest")
-    msg = request_class()
-    msg.value = "test"  # pyrefly: ignore - dynamic protobuf attr
+    msg = json_format.Parse('{"value":"test"}', request_class())
     raw = msg.SerializeToString()
 
-    result = handler.request_deserializer(  # pyrefly: ignore - callable at runtime after service() lookup
-        raw
+    result = handler.request_deserializer(raw)
+    # Round-trip via json_format to verify the serialized message carries
+    # the same logical field value as the deserializer output.
+    payload = json_format.MessageToJson(
+        result,
+        preserving_proto_field_name=True,
+        always_print_fields_with_no_presence=True,
     )
-    assert hasattr(result, "value")
-    assert result.value == "test"
+    restored = PingRequest.model_validate_json(payload)
+    assert restored.value == "test"
 
 
 # ------------------------------------------------------------------
-# Streaming handler tests (cover CLIENT_STREAMING and BIDI_STREAMING)
+# Streaming handler tests
 # ------------------------------------------------------------------
 
 
@@ -316,14 +313,27 @@ async def test_serializer_handles_protobuf_message_directly(
     details = _make_call_details("/handler.v1.PingController/ping")
     handler = ping_handler.service(details)
     assert handler is not None
+    assert handler.response_serializer is not None
 
     msg_class = ping_handler._registry.get_message_class("handler.v1.PingReply")
-    proto_msg = msg_class()
-    proto_msg.value = "direct"  # pyrefly: ignore - dynamic protobuf attr
-    serialized = handler.response_serializer(  # pyrefly: ignore - callable at runtime after service() lookup
-        proto_msg
-    )
+    proto_msg = json_format.Parse('{"value":"direct"}', msg_class())
+    serialized = handler.response_serializer(proto_msg)
     assert isinstance(serialized, bytes)
+    assert serialized == proto_msg.SerializeToString()
+
+
+async def test_serializer_rejects_unsupported_type(
+    ping_handler: GrpcServiceHandler,
+) -> None:
+    """Serializer should raise when given a non-Message, non-BaseModel object."""
+    details = _make_call_details("/handler.v1.PingController/ping")
+    handler = ping_handler.service(details)
+    assert handler is not None
+    assert handler.response_serializer is not None
+
+    with pytest.raises(UnsupportedResponseTypeError) as excinfo:
+        handler.response_serializer("not a valid response")
+    assert excinfo.value.value_type is str
 
 
 def test_make_deserializer_returns_none_when_no_request_type() -> None:
@@ -361,20 +371,18 @@ def test_make_serializer_returns_none_when_no_response_type() -> None:
 
 
 # ------------------------------------------------------------------
-# Conversion helpers: _dataclass_to_protobuf / _protobuf_to_dataclass
+# Conversion helpers: _basemodel_to_protobuf / _protobuf_to_basemodel
 # ------------------------------------------------------------------
 
 
-@dataclass
-class InnerMsg:
+class InnerMsg(BaseModel):
     """Nested message type."""
 
     text: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class OuterMsg:
-    """Message with a nested dataclass and a repeated field."""
+class OuterMsg(BaseModel):
+    """Message with a nested BaseModel and a repeated field."""
 
     inner: Annotated[InnerMsg, ProtoField(number=1)]
     tags: Annotated[list[str], ProtoField(number=2)]
@@ -390,147 +398,62 @@ class NestedController:
         return request
 
 
-def test_dataclass_to_protobuf_with_nested_and_repeated() -> None:
-    """_dataclass_to_protobuf should handle nested dataclass and repeated fields."""
+def test_basemodel_to_protobuf_with_nested_and_repeated() -> None:
+    """_basemodel_to_protobuf should handle nested BaseModel and repeated fields."""
     registry = _build_registry_for(NestedController)
     msg_class = registry.get_message_class("nested.v1.OuterMsg")
 
     src = OuterMsg(inner=InnerMsg(text="hi"), tags=["a", "b"])
-    proto = _dataclass_to_protobuf(src, msg_class)
+    proto = _basemodel_to_protobuf(src, msg_class)
 
-    assert proto.inner.text == "hi"  # pyrefly: ignore - dynamic protobuf attr
-    assert list(proto.tags) == ["a", "b"]  # pyrefly: ignore - dynamic protobuf attr
+    payload = json_format.MessageToJson(proto, preserving_proto_field_name=True)
+    restored = OuterMsg.model_validate_json(payload)
+    assert restored.inner.text == "hi"
+    assert restored.tags == ["a", "b"]
 
 
-def test_protobuf_to_dataclass_with_nested() -> None:
-    """_protobuf_to_dataclass should convert nested messages back to dataclasses."""
+def test_protobuf_to_basemodel_with_nested() -> None:
+    """_protobuf_to_basemodel should convert nested messages back to BaseModels."""
     registry = _build_registry_for(NestedController)
     msg_class = registry.get_message_class("nested.v1.OuterMsg")
 
-    proto = msg_class()
-    proto.inner.text = "world"  # pyrefly: ignore - dynamic protobuf attr
-    proto.tags.append("x")  # pyrefly: ignore - dynamic protobuf attr
+    proto = json_format.Parse(
+        '{"inner":{"text":"world"},"tags":["x"]}',
+        msg_class(),
+    )
 
-    result = _protobuf_to_dataclass(proto, OuterMsg)
+    result = _protobuf_to_basemodel(proto, OuterMsg)
     assert isinstance(result, OuterMsg)
+    assert result.inner.text == "world"
+    assert result.tags == ["x"]
 
 
-def test_dataclass_to_protobuf_roundtrip_simple() -> None:
-    """Round-trip: dataclass → protobuf → bytes → protobuf → dataclass."""
+def test_basemodel_to_protobuf_roundtrip_simple() -> None:
+    """Round-trip: BaseModel → protobuf → bytes → protobuf → BaseModel."""
     registry = _build_registry_for(PingController)
     msg_class = registry.get_message_class("handler.v1.PingReply")
 
     original = PingReply(value="roundtrip")
-    proto = _dataclass_to_protobuf(original, msg_class)
+    proto = _basemodel_to_protobuf(original, msg_class)
     raw = proto.SerializeToString()
 
     restored_proto = msg_class()
     restored_proto.ParseFromString(raw)
-    result = _protobuf_to_dataclass(restored_proto, PingReply)
+    result = _protobuf_to_basemodel(restored_proto, PingReply)
     assert isinstance(result, PingReply)
     assert result.value == "roundtrip"
 
 
 # ------------------------------------------------------------------
-# Edge case: _convert_proto_value with nested Message + dataclass type
+# Optional field (proto3 optional) round-trip
 # ------------------------------------------------------------------
 
 
-def test_convert_proto_value_nested_message_to_dataclass() -> None:
-    """_convert_proto_value should convert nested Message to dataclass."""
-    registry = _build_registry_for(NestedController)
-    outer_class = registry.get_message_class("nested.v1.OuterMsg")
-
-    proto = outer_class()
-    proto.inner.text = "nested"  # pyrefly: ignore - dynamic protobuf attr
-
-    inner_message = proto.inner  # pyrefly: ignore - dynamic protobuf attr
-    result = _convert_proto_value(inner_message, InnerMsg)
-    assert isinstance(result, InnerMsg)
-    assert result.text == "nested"
-
-
-# ------------------------------------------------------------------
-# Edge case: _dataclass_to_protobuf with None fields
-# ------------------------------------------------------------------
-
-
-def test_dataclass_to_protobuf_skips_none_fields() -> None:
-    """_dataclass_to_protobuf should skip fields when getattr returns None."""
-    registry = _build_registry_for(PingController)
-    msg_class = registry.get_message_class("handler.v1.PingReply")
-
-    # Create an object whose 'value' field returns None
-    mock_obj = MagicMock()
-    mock_obj.value = None
-
-    proto = _dataclass_to_protobuf(mock_obj, msg_class)
-    # Default proto3 value for string is ""
-    assert proto.value == ""  # pyrefly: ignore - dynamic protobuf attr
-
-
-# ------------------------------------------------------------------
-# Annotated type unwrapping
-# ------------------------------------------------------------------
-
-
-def test_unwrap_annotated_extracts_inner_type() -> None:
-    """_unwrap_annotated should extract T from Annotated[T, ...]."""
-    annotated_type = Annotated[str, ProtoField(number=1)]
-    assert _unwrap_annotated(annotated_type) is str
-
-
-def test_unwrap_annotated_returns_plain_type_unchanged() -> None:
-    """_unwrap_annotated should return non-Annotated types as-is."""
-    assert _unwrap_annotated(int) is int
-
-
-# ------------------------------------------------------------------
-# _convert_proto_value: list branch
-# ------------------------------------------------------------------
-
-
-def test_convert_proto_value_converts_list_of_messages() -> None:
-    """_convert_proto_value should convert list[Message] to list[dataclass]."""
-    registry = _build_registry_for(PingController)
-    msg_class = registry.get_message_class("handler.v1.PingRequest")
-    msg = msg_class()
-    msg.value = "item"  # pyrefly: ignore - dynamic protobuf attr
-
-    result = _convert_proto_value([msg], list[PingRequest])
-    assert isinstance(result, list)
-    assert len(result) == 1
-    assert isinstance(result[0], PingRequest)
-    assert result[0].value == "item"
-
-
-# ------------------------------------------------------------------
-# _is_optional detection
-# ------------------------------------------------------------------
-
-
-def test_is_optional_detects_optional_type() -> None:
-    """_is_optional should return True for Optional[T] and T | None."""
-    from typing import Optional
-
-    assert _is_optional(Optional[str]) is True
-    assert _is_optional(str | None) is True
-    assert _is_optional(str) is False
-    assert _is_optional(int) is False
-    assert _is_optional(list[str]) is False
-
-
-# ------------------------------------------------------------------
-# _protobuf_to_dataclass: Optional field with HasField
-# ------------------------------------------------------------------
-
-
-@dataclass
-class OptionalMsg:
+class OptionalMsg(BaseModel):
     """Message with optional fields for HasField testing."""
 
     name: Annotated[str, ProtoField(number=1)]
-    nickname: Annotated[str | None, ProtoField(number=2)]
+    nickname: Annotated[str | None, ProtoField(number=2)] = None
 
 
 @GrpcController(package="optional.v1", service_name="OptionalSvc")
@@ -543,87 +466,71 @@ class OptionalController:
         return request
 
 
-def test_protobuf_to_dataclass_optional_field_unset_expect_none() -> None:
-    """_protobuf_to_dataclass should map unset proto3 optional fields to None."""
+def test_protobuf_to_basemodel_optional_field_unset_expect_none() -> None:
+    """_protobuf_to_basemodel should map unset proto3 optional fields to None."""
     registry = _build_registry_for(OptionalController)
     msg_class = registry.get_message_class("optional.v1.OptionalMsg")
 
-    proto = msg_class()
-    proto.name = "test"  # pyrefly: ignore - dynamic protobuf attr
-    # nickname is NOT set — should decode as None
+    # nickname is NOT set — json_format omits it; pydantic defaults to None.
+    proto = json_format.Parse('{"name":"test"}', msg_class())
 
-    result = _protobuf_to_dataclass(proto, OptionalMsg)
+    result = _protobuf_to_basemodel(proto, OptionalMsg)
     assert isinstance(result, OptionalMsg)
     assert result.name == "test"
     assert result.nickname is None
 
 
-def test_protobuf_to_dataclass_optional_field_set_expect_value() -> None:
-    """_protobuf_to_dataclass should decode set proto3 optional fields."""
+def test_protobuf_to_basemodel_optional_field_set_expect_value() -> None:
+    """_protobuf_to_basemodel should decode set proto3 optional fields."""
     registry = _build_registry_for(OptionalController)
     msg_class = registry.get_message_class("optional.v1.OptionalMsg")
 
-    proto = msg_class()
-    proto.name = "test"  # pyrefly: ignore - dynamic protobuf attr
-    proto.nickname = "nick"  # pyrefly: ignore - dynamic protobuf attr
+    proto = json_format.Parse('{"name":"test","nickname":"nick"}', msg_class())
 
-    result = _protobuf_to_dataclass(proto, OptionalMsg)
+    result = _protobuf_to_basemodel(proto, OptionalMsg)
     assert isinstance(result, OptionalMsg)
     assert result.name == "test"
     assert result.nickname == "nick"
 
 
-def test_protobuf_to_dataclass_optional_field_set_to_default_expect_default() -> None:
-    """_protobuf_to_dataclass should preserve explicitly set default values."""
+def test_protobuf_to_basemodel_optional_field_set_to_default_expect_default() -> None:
+    """_protobuf_to_basemodel should preserve explicitly set default values."""
     registry = _build_registry_for(OptionalController)
     msg_class = registry.get_message_class("optional.v1.OptionalMsg")
 
-    proto = msg_class()
-    proto.name = "test"  # pyrefly: ignore - dynamic protobuf attr
-    proto.nickname = ""  # pyrefly: ignore - explicitly set to empty string
+    proto = json_format.Parse('{"name":"test","nickname":""}', msg_class())
 
-    result = _protobuf_to_dataclass(proto, OptionalMsg)
+    result = _protobuf_to_basemodel(proto, OptionalMsg)
     assert isinstance(result, OptionalMsg)
     assert result.nickname == ""
 
 
-# ------------------------------------------------------------------
-# _convert_proto_value: repeated field from protobuf container
-# ------------------------------------------------------------------
+def test_basemodel_to_protobuf_optional_none_roundtrip() -> None:
+    """None-valued optional BaseModel fields should round-trip as unset proto fields."""
+    registry = _build_registry_for(OptionalController)
+    msg_class = registry.get_message_class("optional.v1.OptionalMsg")
 
+    original = OptionalMsg(name="alice", nickname=None)
+    proto = _basemodel_to_protobuf(original, msg_class)
+    assert proto.HasField("nickname") is False
 
-def test_convert_proto_value_repeated_scalar_from_protobuf_expect_list() -> None:
-    """_convert_proto_value should convert repeated protobuf container to list."""
-    registry = _build_registry_for(NestedController)
-    msg_class = registry.get_message_class("nested.v1.OuterMsg")
-
-    proto = msg_class()
-    proto.tags.append("a")  # pyrefly: ignore - dynamic protobuf attr
-    proto.tags.append("b")  # pyrefly: ignore - dynamic protobuf attr
-
-    # proto.tags is a RepeatedScalarFieldContainer, not list
-    result = _convert_proto_value(
-        proto.tags,  # pyrefly: ignore - dynamic protobuf attr
-        list[str],
-    )
-    assert isinstance(result, list)
-    assert result == ["a", "b"]
+    restored = _protobuf_to_basemodel(proto, OptionalMsg)
+    assert restored.name == "alice"
+    assert restored.nickname is None
 
 
 # ------------------------------------------------------------------
-# _dataclass_to_protobuf: repeated message fields (list[dataclass])
+# Repeated message fields (list[BaseModel])
 # ------------------------------------------------------------------
 
 
-@dataclass
-class ItemMsg:
+class ItemMsg(BaseModel):
     """Repeated element message."""
 
     label: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class ContainerMsg:
+class ContainerMsg(BaseModel):
     """Message with a repeated message field."""
 
     items: Annotated[list[ItemMsg], ProtoField(number=1)]
@@ -639,90 +546,33 @@ class RepeatedMsgController:
         return request
 
 
-def test_dataclass_to_protobuf_repeated_message_expect_converted() -> None:
-    """_dataclass_to_protobuf should convert list[dataclass] to repeated message."""
+def test_basemodel_to_protobuf_repeated_message_expect_converted() -> None:
+    """_basemodel_to_protobuf should convert list[BaseModel] to repeated message."""
     registry = _build_registry_for(RepeatedMsgController)
     msg_class = registry.get_message_class("repeated.v1.ContainerMsg")
 
     src = ContainerMsg(items=[ItemMsg(label="a"), ItemMsg(label="b")])
-    proto = _dataclass_to_protobuf(src, msg_class)
+    proto = _basemodel_to_protobuf(src, msg_class)
 
-    assert len(proto.items) == 2  # pyrefly: ignore - dynamic protobuf attr
-    assert proto.items[0].label == "a"  # pyrefly: ignore - dynamic protobuf attr
-    assert proto.items[1].label == "b"  # pyrefly: ignore - dynamic protobuf attr
-
-
-def test_protobuf_to_dataclass_repeated_message_expect_converted() -> None:
-    """_protobuf_to_dataclass should convert repeated message to list[dataclass]."""
-    registry = _build_registry_for(RepeatedMsgController)
-    msg_class = registry.get_message_class("repeated.v1.ContainerMsg")
-
-    proto = msg_class()
-    item1 = proto.items.add()  # pyrefly: ignore - dynamic protobuf attr
-    item1.label = "x"  # pyrefly: ignore - dynamic protobuf attr
-    item2 = proto.items.add()  # pyrefly: ignore - dynamic protobuf attr
-    item2.label = "y"  # pyrefly: ignore - dynamic protobuf attr
-
-    result = _protobuf_to_dataclass(proto, ContainerMsg)
-    assert isinstance(result, ContainerMsg)
-    assert len(result.items) == 2
-    assert result.items[0].label == "x"
-    assert result.items[1].label == "y"
+    restored = _protobuf_to_basemodel(proto, ContainerMsg)
+    assert len(restored.items) == 2
+    assert restored.items[0].label == "a"
+    assert restored.items[1].label == "b"
 
 
 def test_roundtrip_repeated_message_field() -> None:
-    """Round-trip: list[dataclass] → protobuf repeated message → list[dataclass]."""
+    """Round-trip: list[BaseModel] → protobuf repeated message → list[BaseModel]."""
     registry = _build_registry_for(RepeatedMsgController)
     msg_class = registry.get_message_class("repeated.v1.ContainerMsg")
 
     original = ContainerMsg(items=[ItemMsg(label="one"), ItemMsg(label="two")])
-    proto = _dataclass_to_protobuf(original, msg_class)
+    proto = _basemodel_to_protobuf(original, msg_class)
     raw = proto.SerializeToString()
 
     restored_proto = msg_class()
     restored_proto.ParseFromString(raw)
-    result = _protobuf_to_dataclass(restored_proto, ContainerMsg)
+    result = _protobuf_to_basemodel(restored_proto, ContainerMsg)
     assert isinstance(result, ContainerMsg)
     assert len(result.items) == 2
     assert result.items[0].label == "one"
     assert result.items[1].label == "two"
-
-
-def test_convert_proto_value_list_type_non_sequence_value_expect_passthrough() -> None:
-    """_convert_proto_value should return non-Sequence value unchanged even if target is list."""
-    result = _convert_proto_value(42, list[int])
-    assert result == 42
-
-
-def test_convert_proto_value_list_type_string_value_expect_passthrough() -> None:
-    """_convert_proto_value should return string unchanged even when target is list[str]."""
-    result = _convert_proto_value("hello", list[str])
-    assert result == "hello"
-
-
-def test_convert_proto_value_message_non_dataclass_target_expect_passthrough() -> None:
-    """_convert_proto_value should return Message unchanged when target is not a dataclass."""
-    registry = _build_registry_for(RepeatedMsgController)
-    msg_class = registry.get_message_class("repeated.v1.ItemMsg")
-    proto = msg_class()
-    proto.label = "test"  # pyrefly: ignore - dynamic protobuf attr
-
-    result = _convert_proto_value(proto, str)
-    assert result is proto
-
-
-def test_dataclass_to_protobuf_repeated_message_non_dataclass_expect_appended() -> None:
-    """_dataclass_to_protobuf should append non-dataclass items to repeated message field."""
-    registry = _build_registry_for(RepeatedMsgController)
-    msg_class = registry.get_message_class("repeated.v1.ContainerMsg")
-    nested_class = msg_class.DESCRIPTOR.fields_by_name["items"].message_type
-    nested_msg_class = GetMessageClass(nested_class)
-
-    raw_msg = nested_msg_class()
-    raw_msg.label = "raw"  # pyrefly: ignore - dynamic protobuf attr
-
-    src = ContainerMsg(items=[raw_msg])  # type: ignore[list-item] - intentional: testing non-dataclass Message in repeated field
-    proto = _dataclass_to_protobuf(src, msg_class)
-
-    assert len(proto.items) == 1  # pyrefly: ignore - dynamic protobuf attr
-    assert proto.items[0].label == "raw"  # pyrefly: ignore - dynamic protobuf attr

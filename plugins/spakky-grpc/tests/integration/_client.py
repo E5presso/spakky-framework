@@ -1,60 +1,56 @@
-"""Helpers that build gRPC callables against the code-first descriptor pool."""
+"""Helpers that build gRPC callables against the code-first descriptor pool.
+
+All helpers route through the ``google.protobuf.json_format`` bridge so
+that client-side serialisation mirrors the server-side pydantic
+``BaseModel`` ↔ protobuf translation. This keeps integration tests free
+of dynamic protobuf attribute access.
+"""
 
 from collections.abc import Callable
+from typing import TypeVar
 
-from google.protobuf.message import Message
+from google.protobuf import json_format
+from pydantic import BaseModel
 
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 
-
-def _serialize(message: Message) -> bytes:
-    """Serialise a protobuf message to its wire format."""
-    return message.SerializeToString()
+BaseModelT = TypeVar("BaseModelT", bound=BaseModel)
 
 
 def serializer_for(
     registry: DescriptorRegistry, full_name: str
-) -> Callable[[Message], bytes]:
-    """Return a ``Message → bytes`` serialiser for the registered type.
+) -> Callable[[BaseModel], bytes]:
+    """Return a ``BaseModel → bytes`` serialiser for the registered type.
 
-    Accepts ``registry`` and ``full_name`` for API symmetry with
-    :func:`deserializer_for`; the registry is not consulted because every
-    protobuf ``Message`` knows its own descriptor.
+    The returned callable converts the ``BaseModel`` to a protobuf
+    ``Message`` via ``json_format.Parse`` (using the registered message
+    class) and then serialises it to the wire format.
     """
-    del registry, full_name
+    message_class = registry.get_message_class(full_name)
+
+    def _serialize(model: BaseModel) -> bytes:
+        msg = json_format.Parse(model.model_dump_json(), message_class())
+        return msg.SerializeToString()
+
     return _serialize
 
 
 def deserializer_for(
-    registry: DescriptorRegistry, full_name: str
-) -> Callable[[bytes], Message]:
-    """Return a ``bytes → Message`` deserialiser for the registered type."""
+    registry: DescriptorRegistry,
+    full_name: str,
+    model_type: type[BaseModelT],
+) -> Callable[[bytes], BaseModelT]:
+    """Return a ``bytes → BaseModel`` deserialiser for the registered type."""
     message_class = registry.get_message_class(full_name)
 
-    def _deserialize(data: bytes) -> Message:
+    def _deserialize(data: bytes) -> BaseModelT:
         instance = message_class()
         instance.ParseFromString(data)
-        return instance
+        payload = json_format.MessageToJson(
+            instance,
+            preserving_proto_field_name=True,
+            always_print_fields_with_no_presence=True,
+        )
+        return model_type.model_validate_json(payload)
 
     return _deserialize
-
-
-def build_message(
-    registry: DescriptorRegistry, full_name: str, **fields: object
-) -> Message:
-    """Instantiate a registered protobuf message with the given field values."""
-    message_class = registry.get_message_class(full_name)
-    instance = message_class()
-    for name, value in fields.items():
-        setattr(instance, name, value)  # framework 내부: protobuf 메시지 필드 동적 설정
-    return instance
-
-
-def field(message: Message, name: str) -> object:
-    """Read *name* off a dynamic protobuf message with a single justification point.
-
-    Protobuf message classes expose fields dynamically at runtime, so a
-    direct attribute access cannot be statically type-checked.
-    """
-    # pyrefly: ignore - dynamic protobuf field access
-    return getattr(message, name)

@@ -1,6 +1,6 @@
 # gRPC 통합
 
-`spakky-grpc`는 code-first 방식의 gRPC 서비스 통합을 제공합니다. Python 타입에서 protobuf descriptor를 자동 생성하며, `@GrpcController`와 `@rpc` 데코레이터로 선언적으로 gRPC 서비스를 정의합니다.
+`spakky-grpc`는 code-first 방식의 gRPC 서비스 통합을 제공합니다. pydantic `BaseModel`에서 protobuf descriptor를 자동 생성하며, `@GrpcController`와 `@rpc` 데코레이터로 선언적으로 gRPC 서비스를 정의합니다. protobuf ↔ `BaseModel` 변환은 `google.protobuf.json_format` 브릿지(JSON 중간 표현)로 수행되므로 런타임 동적 속성 접근 없이 타입-안전하게 유지됩니다.
 
 ---
 
@@ -20,7 +20,7 @@
 pip install spakky-grpc
 ```
 
-`spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`, `protobuf`에 의존합니다.
+`spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`, `protobuf`, `pydantic>=2.4`에 의존합니다.
 
 `GrpcServerSpec`과 `DescriptorRegistry` Pod를 **둘 다** 등록해야 합니다. PostProcessor가 인터셉터와 서비스 핸들러를 spec에 누적하고, `RegisterServicesPostProcessor`가 컨테이너에서 `DescriptorRegistry`를 조회(`container.get(DescriptorRegistry)`)하여 생성된 protobuf descriptor를 등록하므로 `DescriptorRegistry` Pod는 **필수**입니다. `start()` 호출 시 ApplicationContext의 이벤트 루프에서 실제 `grpc.aio.Server`가 생성·구동됩니다.
 
@@ -108,19 +108,17 @@ class UserServiceController:
 
 ### ProtoField
 
-dataclass 필드에 protobuf 필드 번호를 부착합니다. `.proto` 파일 없이 Python 타입만으로 protobuf descriptor를 생성합니다. `DescriptorBuilder`가 `dataclasses.fields()`로 필드를 순회하므로 메시지 타입은 **반드시 dataclass**여야 합니다 (`@dataclass` 또는 이를 래핑한 `@immutable` 모두 가능하지만, 플러그인 README·통합 테스트는 표준 `@dataclass`를 사용합니다).
+pydantic `BaseModel` 필드에 protobuf 필드 번호를 부착합니다. `.proto` 파일 없이 Python 타입만으로 protobuf descriptor를 생성합니다. `DescriptorBuilder`가 `BaseModel.model_fields[name].metadata`에서 `ProtoField` 인스턴스를 읽어오므로 메시지 타입은 **반드시 `pydantic.BaseModel` 서브클래스**여야 합니다.
 
 ```python
-from dataclasses import dataclass
 from typing import Annotated
+from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
 
-@dataclass
-class GetUserRequest:
+class GetUserRequest(BaseModel):
     user_id: Annotated[str, ProtoField(number=1)]
 
-@dataclass
-class GetUserResponse:
+class GetUserResponse(BaseModel):
     user_id: Annotated[str, ProtoField(number=1)]
     name: Annotated[str, ProtoField(number=2)]
     email: Annotated[str, ProtoField(number=3)]
@@ -139,7 +137,7 @@ class GetUserResponse:
 | `bytes` | `bytes` |
 | `list[T]` | `repeated T` |
 | `T \| None` | `optional T` (proto3 optional) |
-| 중첩 dataclass | `message` (재귀적으로 중첩 descriptor 생성) |
+| 중첩 `BaseModel` | `message` (재귀적으로 중첩 descriptor 생성) |
 
 지원되지 않는 타입은 `UnsupportedFieldTypeError`를 던집니다.
 
@@ -208,21 +206,19 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 
 ```python
 # apps/echo.py
-from dataclasses import dataclass
 from typing import Annotated
 
+from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
-@dataclass
-class EchoRequest:
+class EchoRequest(BaseModel):
     text: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class EchoReply:
+class EchoReply(BaseModel):
     text: Annotated[str, ProtoField(number=1)]
 
 
@@ -328,8 +324,8 @@ asyncio.run(main(app.container.get(DescriptorRegistry)))
 | 항목 | 설명 |
 |------|------|
 | `GrpcServerSpec` + `DescriptorRegistry` Pod 필수 | FastAPI는 `FastAPI()` 인스턴스를 플러그인이 제공하지만, gRPC는 바인드 주소를 보유한 `GrpcServerSpec`과 protobuf descriptor 저장소인 `DescriptorRegistry`를 사용자가 Pod로 등록해야 함 |
-| 메서드 시그니처 제약 | `@rpc` 메서드는 **요청 dataclass 1개**만 파라미터로 받음. FastAPI처럼 path/query 파라미터를 분리하지 않음 (path·query 개념이 gRPC에 없음) |
-| 메시지는 dataclass + `ProtoField` | Pydantic `BaseModel` 대신 `@dataclass` + `Annotated[T, ProtoField(number=N)]`로 선언. 필드 번호는 사용자가 명시 |
+| 메서드 시그니처 제약 | `@rpc` 메서드는 **요청 `BaseModel` 1개**만 파라미터로 받음. FastAPI처럼 path/query 파라미터를 분리하지 않음 (path·query 개념이 gRPC에 없음) |
+| 메시지는 pydantic `BaseModel` + `ProtoField` | `pydantic.BaseModel` 서브클래스 + `Annotated[T, ProtoField(number=N)]`로 선언. 필드 번호는 사용자가 명시. protobuf ↔ BaseModel 변환은 `google.protobuf.json_format` 브릿지로 수행 |
 | 스트리밍 | `AsyncIterator[T]`를 요청/응답 타입으로 사용하여 4가지 스트리밍 패턴 지원 (FastAPI는 `StreamingResponse`로 단방향만) |
 | 에러 → 상태 코드 매핑 | HTTP 상태 코드 대신 gRPC `StatusCode`. `AbstractGrpcStatusError` 서브클래스를 `ErrorHandlingInterceptor`가 매핑 |
 

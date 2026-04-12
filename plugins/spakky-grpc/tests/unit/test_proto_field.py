@@ -1,9 +1,9 @@
 """Unit tests for ProtoField annotation."""
 
-from dataclasses import dataclass
-from typing import Annotated, get_type_hints
+from typing import Annotated
 
 import pytest
+from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
 
 
@@ -26,20 +26,18 @@ def test_proto_field_equality() -> None:
     assert ProtoField(number=1) != ProtoField(number=2)
 
 
-def test_proto_field_in_annotated_type() -> None:
-    """ProtoField should be extractable from Annotated type hints."""
+def test_proto_field_in_basemodel_metadata() -> None:
+    """ProtoField should be readable from pydantic model_fields[name].metadata."""
 
-    @dataclass
-    class HelloRequest:
+    class HelloRequest(BaseModel):
         name: Annotated[str, ProtoField(number=1)]
         greeting_count: Annotated[int, ProtoField(number=2)]
 
-    hints = get_type_hints(HelloRequest, include_extras=True)
-    name_metadata = hints["name"].__metadata__
-    count_metadata = hints["greeting_count"].__metadata__
+    name_metadata = HelloRequest.model_fields["name"].metadata
+    count_metadata = HelloRequest.model_fields["greeting_count"].metadata
 
-    assert name_metadata[0] == ProtoField(number=1)
-    assert count_metadata[0] == ProtoField(number=2)
+    assert ProtoField(number=1) in name_metadata
+    assert ProtoField(number=2) in count_metadata
 
 
 def test_proto_field_hash() -> None:

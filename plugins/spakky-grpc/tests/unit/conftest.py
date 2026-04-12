@@ -1,11 +1,11 @@
 """Shared fixtures for gRPC PostProcessor and handler tests."""
 
-from dataclasses import dataclass
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc.aio
 import pytest
+from pydantic import BaseModel
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.plugins.grpc.annotations.field import ProtoField
@@ -14,15 +14,13 @@ from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
-@dataclass
-class HelloRequest:
+class HelloRequest(BaseModel):
     """Test request message."""
 
     name: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class HelloReply:
+class HelloReply(BaseModel):
     """Test response message."""
 
     message: Annotated[str, ProtoField(number=1)]

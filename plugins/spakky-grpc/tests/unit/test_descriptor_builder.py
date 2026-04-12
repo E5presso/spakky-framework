@@ -1,9 +1,9 @@
 """Unit tests for descriptor_builder module."""
 
-from dataclasses import dataclass
 from typing import Annotated
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
+from pydantic import BaseModel
 
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
@@ -15,39 +15,34 @@ from spakky.plugins.grpc.schema.descriptor_builder import (
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
-@dataclass
-class HelloRequest:
+class HelloRequest(BaseModel):
     """Test request message."""
 
     name: Annotated[str, ProtoField(number=1)]
     count: Annotated[int, ProtoField(number=2)]
 
 
-@dataclass
-class HelloResponse:
+class HelloResponse(BaseModel):
     """Test response message."""
 
     greeting: Annotated[str, ProtoField(number=1)]
 
 
-@dataclass
-class Address:
+class Address(BaseModel):
     """Nested message for testing."""
 
     street: Annotated[str, ProtoField(number=1)]
     city: Annotated[str, ProtoField(number=2)]
 
 
-@dataclass
-class Person:
-    """Message with nested dataclass."""
+class Person(BaseModel):
+    """Message with nested BaseModel."""
 
     name: Annotated[str, ProtoField(number=1)]
     address: Annotated[Address, ProtoField(number=2)]
 
 
-@dataclass
-class TeamRequest:
+class TeamRequest(BaseModel):
     """Message with repeated field."""
 
     members: Annotated[list[str], ProtoField(number=1)]
@@ -55,7 +50,7 @@ class TeamRequest:
 
 def test_build_message_descriptor_basic_types() -> None:
     """기본 타입 필드가 올바르게 변환되는지 검증한다."""
-    descriptor, collected = build_message_descriptor(HelloRequest)
+    descriptor, _collected = build_message_descriptor(HelloRequest)
     assert descriptor.name == "HelloRequest"
     assert len(descriptor.field) == 2
 
@@ -70,8 +65,8 @@ def test_build_message_descriptor_basic_types() -> None:
     assert count_field.type == FieldDescriptorProto.TYPE_INT64
 
 
-def test_build_message_descriptor_nested_dataclass() -> None:
-    """중첩 dataclass가 재귀적으로 처리되는지 검증한다."""
+def test_build_message_descriptor_nested_basemodel() -> None:
+    """중첩 BaseModel이 재귀적으로 처리되는지 검증한다."""
     descriptor, collected = build_message_descriptor(Person)
     assert descriptor.name == "Person"
 
@@ -160,11 +155,10 @@ def test_build_file_descriptor_uses_explicit_service_name() -> None:
 def test_build_message_descriptor_optional_field() -> None:
     """Optional 필드가 proto3_optional로 변환되는지 검증한다."""
 
-    @dataclass
-    class OptionalMsg:
+    class OptionalMsg(BaseModel):
         """Message with optional field."""
 
-        nickname: Annotated[str | None, ProtoField(number=1)]
+        nickname: Annotated[str | None, ProtoField(number=1)] = None
 
     descriptor, _ = build_message_descriptor(OptionalMsg)
     field = descriptor.field[0]

@@ -1,15 +1,14 @@
-"""Protobuf field annotation for dataclass-based message definitions.
+"""Protobuf field annotation for pydantic-based message definitions.
 
 Provides the ProtoField annotation for specifying protobuf field numbers
-on dataclass fields using the Annotated type hint pattern.
+on pydantic ``BaseModel`` fields using the ``Annotated`` type hint pattern.
 
 Example::
 
-    from dataclasses import dataclass
+    from pydantic import BaseModel
     from typing import Annotated
 
-    @dataclass
-    class HelloRequest:
+    class HelloRequest(BaseModel):
         name: Annotated[str, ProtoField(number=1)]
         greeting_count: Annotated[int, ProtoField(number=2)]
 """
@@ -19,10 +18,12 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ProtoField:
-    """Protobuf field number annotation for dataclass fields.
+    """Protobuf field number annotation for pydantic model fields.
 
     Used with ``typing.Annotated`` to specify the protobuf field number
-    for a dataclass field, enabling code-first protobuf message definition.
+    for a pydantic ``BaseModel`` field, enabling code-first protobuf
+    message definition. The annotation is read at runtime from the
+    model's ``model_fields[name].metadata`` tuple.
 
     Attributes:
         number: The protobuf field number. Must be a positive integer.

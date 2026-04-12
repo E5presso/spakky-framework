@@ -1,14 +1,17 @@
 """Python type to protobuf type mapping.
 
-Maps Python built-in types and composite types (list, Optional, nested
-dataclass) to their protobuf FieldDescriptorProto equivalents.
+Maps Python built-in types and composite types (``list``, ``Optional``,
+nested ``BaseModel``) to their protobuf ``FieldDescriptorProto``
+equivalents. Field-number metadata is extracted from pydantic
+``BaseModel.model_fields[name].metadata`` entries carrying a
+:class:`ProtoField` instance.
 """
 
-from dataclasses import fields, is_dataclass
 from types import UnionType
-from typing import Annotated, Union, get_args, get_origin
+from typing import Union, get_args, get_origin
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
+from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.error import (
     MissingProtoFieldAnnotationError,
@@ -29,11 +32,11 @@ class ResolvedFieldType:
     """Result of resolving a Python type annotation to protobuf metadata.
 
     Attributes:
-        proto_type: Protobuf field type constant from FieldDescriptorProto.
+        proto_type: Protobuf field type constant from ``FieldDescriptorProto``.
         is_repeated: Whether the field is a repeated (list) field.
         is_optional: Whether the field is optional.
         is_message: Whether the field references a nested message type.
-        message_type: The Python dataclass type for nested messages.
+        message_type: The nested ``BaseModel`` type for message fields.
     """
 
     def __init__(
@@ -43,7 +46,7 @@ class ResolvedFieldType:
         is_repeated: bool = False,
         is_optional: bool = False,
         is_message: bool = False,
-        message_type: type | None = None,
+        message_type: type[BaseModel] | None = None,
     ) -> None:
         self.proto_type = proto_type
         self.is_repeated = is_repeated
@@ -59,7 +62,7 @@ def resolve_type(annotation: object) -> ResolvedFieldType:
     - Primitive types (str, int, float, bool, bytes)
     - ``list[T]`` → repeated field
     - ``Optional[T]`` (``T | None``) → optional field
-    - Nested dataclass → message type
+    - Nested ``BaseModel`` → message type
 
     Args:
         annotation: The Python type annotation to resolve.
@@ -100,53 +103,34 @@ def resolve_type(annotation: object) -> ResolvedFieldType:
     return _resolve_scalar(annotation)
 
 
-def extract_proto_field(dataclass_type: type, field_name: str) -> ProtoField:
-    """Extract the ProtoField annotation from a dataclass field.
+def extract_proto_field(model_type: type[BaseModel], field_name: str) -> ProtoField:
+    """Extract the ``ProtoField`` metadata from a pydantic model field.
 
     Args:
-        dataclass_type: The dataclass type to inspect.
+        model_type: The ``BaseModel`` subclass to inspect.
         field_name: The name of the field.
 
     Returns:
-        The ProtoField annotation.
+        The ``ProtoField`` metadata attached to the field.
 
     Raises:
-        MissingProtoFieldAnnotationError: If no ProtoField is found.
+        MissingProtoFieldAnnotationError: If the field is absent or
+            carries no ``ProtoField`` metadata.
     """
-    for field in fields(dataclass_type):
-        if field.name != field_name:
-            continue
-        origin = get_origin(field.type)
-        if origin is Annotated:
-            for arg in get_args(field.type):
-                if isinstance(arg, ProtoField):
-                    return arg
-        break
-    raise MissingProtoFieldAnnotationError(dataclass_type, field_name)
-
-
-def get_inner_type(annotation: object) -> type:
-    """Extract the inner type from an Annotated type hint.
-
-    For ``Annotated[str, ProtoField(1)]``, returns ``str``.
-
-    Args:
-        annotation: The Annotated type hint.
-
-    Returns:
-        The inner (unwrapped) type.
-    """
-    origin = get_origin(annotation)
-    if origin is Annotated:
-        return get_args(annotation)[0]  # type: ignore[return-value] - first arg is the actual type
-    return annotation  # type: ignore[return-value] - already a plain type
+    field_info = model_type.model_fields.get(field_name)
+    if field_info is None:
+        raise MissingProtoFieldAnnotationError(model_type, field_name)
+    for meta in field_info.metadata:
+        if isinstance(meta, ProtoField):
+            return meta
+    raise MissingProtoFieldAnnotationError(model_type, field_name)
 
 
 def _resolve_scalar(annotation: object) -> ResolvedFieldType:
     """Resolve a non-composite type to protobuf metadata.
 
     Args:
-        annotation: A primitive type or dataclass.
+        annotation: A primitive type or nested ``BaseModel`` subclass.
 
     Returns:
         A ResolvedFieldType for the scalar.
@@ -156,7 +140,7 @@ def _resolve_scalar(annotation: object) -> ResolvedFieldType:
     """
     if isinstance(annotation, type) and annotation in PYTHON_TO_PROTO_TYPE:
         return ResolvedFieldType(proto_type=PYTHON_TO_PROTO_TYPE[annotation])
-    if isinstance(annotation, type) and is_dataclass(annotation):
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return ResolvedFieldType(
             proto_type=FieldDescriptorProto.TYPE_MESSAGE,
             is_message=True,
@@ -170,12 +154,12 @@ def _is_union(
     origin: object,
     args: tuple[object, ...],
 ) -> bool:
-    """Check if a type annotation represents a union (Optional[T] or T | None).
+    """Check if a type annotation represents a union (``Optional[T]`` or ``T | None``).
 
     Handles both ``typing.Union`` and PEP 604 ``T | None`` syntax.
 
     Args:
-        annotation: The original annotation (may be UnionType).
+        annotation: The original annotation (may be ``UnionType``).
         origin: The origin of the type annotation.
         args: The type arguments.
 
