@@ -3,7 +3,6 @@
 import asyncio
 from dataclasses import replace
 from datetime import timedelta
-from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -421,19 +420,19 @@ def test_promote_flow_item_invalid_expect_definition_error() -> None:
 @pytest.mark.anyio
 async def test_parallel_nested_parallel_expect_definition_error() -> None:
     """직접 구성된 중첩 Parallel은 런타임에서 정의 에러로 거부되는지 검증한다."""
-    nested_parallel = Parallel(
-        items=cast(
-            tuple[SagaStep[_OrderData] | Transaction[_OrderData], ...],
-            (
-                Parallel(items=(step(_succeed), step(_succeed))),
-                step(_succeed),
-            ),
-        )
+    nested_parallel = object.__new__(Parallel)
+    object.__setattr__(
+        nested_parallel,
+        "items",
+        (
+            Parallel(items=(step(_succeed), step(_succeed))),
+            step(_succeed),
+        ),
     )
 
     with pytest.raises(SagaFlowDefinitionError):
         await run_saga_flow(
-            SagaFlow(items=(nested_parallel,)),  # type: ignore[arg-type] - runtime invalid nested parallel path is intentional in this test
+            SagaFlow(items=(nested_parallel,)),
             _OrderData(order_id=uuid4()),
         )
 
