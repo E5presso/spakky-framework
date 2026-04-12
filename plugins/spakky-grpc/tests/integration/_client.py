@@ -51,7 +51,10 @@ def build_message(
 
 
 def field(message: Message, name: str) -> object:
-    """Read *name* off a dynamic protobuf message with a single justification point."""
-    return getattr(
-        message, name
-    )  # pyrefly: ignore - protobuf messages expose dataclass fields only at runtime
+    """Read *name* off a dynamic protobuf message with a single justification point.
+
+    Protobuf message classes expose fields dynamically at runtime, so a
+    direct attribute access cannot be statically type-checked.
+    """
+    # pyrefly: ignore - dynamic protobuf field access
+    return getattr(message, name)
