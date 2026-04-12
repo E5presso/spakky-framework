@@ -77,7 +77,7 @@ def _clear_log() -> None:
 # --- 정상 실행 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_all_steps_succeed_expect_completed() -> None:
     """모든 step이 성공하면 COMPLETED 상태를 반환하는지 검증한다."""
     flow = saga_flow(
@@ -96,7 +96,7 @@ async def test_all_steps_succeed_expect_completed() -> None:
     assert result.elapsed > timedelta()
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_data_replacement_expect_updated_data() -> None:
     """SagaData 서브타입을 반환하면 data가 교체되는지 검증한다."""
     flow = saga_flow(step(_succeed_with_data))
@@ -109,7 +109,7 @@ async def test_data_replacement_expect_updated_data() -> None:
     assert result.data.order_id == data.order_id
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_non_saga_data_return_expect_data_preserved() -> None:
     """SagaData가 아닌 값을 반환하면 기존 data가 유지되는지 검증한다."""
 
@@ -124,7 +124,7 @@ async def test_non_saga_data_return_expect_data_preserved() -> None:
     assert result.data is data
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_none_return_expect_data_preserved() -> None:
     """None을 반환하면 기존 data가 유지되는지 검증한다."""
     flow = saga_flow(step(_succeed))
@@ -138,7 +138,7 @@ async def test_none_return_expect_data_preserved() -> None:
 # --- 실패 & 보상 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_step_failure_expect_failed_and_compensated() -> None:
     """step 실패 시 이전 compensate를 역순 실행하고 FAILED를 반환하는지 검증한다."""
     flow = saga_flow(
@@ -158,7 +158,7 @@ async def test_step_failure_expect_failed_and_compensated() -> None:
     assert result.history[2].status is StepStatus.COMPENSATED
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_failure_skips_steps_without_compensate_expect_only_compensable() -> None:
     """compensate가 없는 step은 보상에서 건너뛰는지 검증한다."""
     flow = saga_flow(
@@ -176,7 +176,7 @@ async def test_failure_skips_steps_without_compensate_expect_only_compensable() 
     assert result.history[3].status is StepStatus.COMPENSATED
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_reverse_compensation_order_expect_lifo() -> None:
     """보상이 역순(LIFO)으로 실행되는지 검증한다."""
     order_log: list[str] = []
@@ -198,7 +198,7 @@ async def test_reverse_compensation_order_expect_lifo() -> None:
     assert order_log == ["b", "a"]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_first_step_fails_expect_no_compensation() -> None:
     """첫 번째 step이 실패하면 보상할 step이 없어 바로 FAILED를 반환하는지 검증한다."""
     flow = saga_flow(step(_fail))
@@ -214,7 +214,7 @@ async def test_first_step_fails_expect_no_compensation() -> None:
 # --- Transaction (>> 연산자) ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_transaction_success_expect_completed() -> None:
     """Transaction(>> 연산자)이 성공하면 COMPLETED를 반환하는지 검증한다."""
     txn = Transaction(action=_succeed, compensate=_compensate_noop)
@@ -225,7 +225,7 @@ async def test_transaction_success_expect_completed() -> None:
     assert result.status is SagaStatus.COMPLETED
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_transaction_failure_expect_compensated() -> None:
     """Transaction 이후 step 실패 시 Transaction의 compensate가 호출되는지 검증한다."""
     flow = saga_flow(
@@ -242,7 +242,7 @@ async def test_transaction_failure_expect_compensated() -> None:
 # --- Parallel (순차 실행 폴백) ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_items_execute_sequentially_expect_completed() -> None:
     """Parallel 아이템이 순차적으로 실행되어 COMPLETED를 반환하는지 검증한다."""
     par = Parallel(
@@ -262,7 +262,7 @@ async def test_parallel_items_execute_sequentially_expect_completed() -> None:
 # --- history 기록 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_history_records_step_names_expect_function_names() -> None:
     """history에 함수 이름이 기록되는지 검증한다."""
     flow = saga_flow(step(_succeed), step(_succeed_with_data))
@@ -273,7 +273,7 @@ async def test_history_records_step_names_expect_function_names() -> None:
     assert result.history[1].name == "_succeed_with_data"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_history_records_elapsed_expect_positive_durations() -> None:
     """history에 양수 소요 시간이 기록되는지 검증한다."""
     flow = saga_flow(step(_succeed))
@@ -283,7 +283,7 @@ async def test_history_records_elapsed_expect_positive_durations() -> None:
     assert result.history[0].elapsed >= timedelta()
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_saga_elapsed_expect_positive() -> None:
     """사가 전체 소요 시간이 양수인지 검증한다."""
     flow = saga_flow(step(_succeed))
@@ -296,7 +296,7 @@ async def test_saga_elapsed_expect_positive() -> None:
 # --- 보상 실패 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_compensation_failure_no_handler_expect_error() -> None:
     """보상 실패 시 핸들러 없으면 SagaCompensationFailedError가 발생하는지 검증한다."""
     flow = saga_flow(
@@ -309,7 +309,7 @@ async def test_compensation_failure_no_handler_expect_error() -> None:
         await run_saga_flow(flow, data)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_compensation_failure_with_handler_expect_handler_called() -> None:
     """보상 실패 시 핸들러가 호출된 후 SagaCompensationFailedError가 발생하는지 검증한다."""
     handler_called: list[bool] = []
@@ -332,7 +332,7 @@ async def test_compensation_failure_with_handler_expect_handler_called() -> None
 # --- 람다 자동 처리 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_lambda_returning_saga_data_expect_data_replaced() -> None:
     """람다가 SagaData를 반환하면 data가 교체되는지 검증한다."""
     new_ticket = uuid4()
@@ -367,7 +367,7 @@ def fake_sleep(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     return calls
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_succeeds_on_second_attempt_expect_committed(
     fake_sleep: list[float],
 ) -> None:
@@ -392,7 +392,7 @@ async def test_retry_succeeds_on_second_attempt_expect_committed(
     ]  # one sleep between attempts 1→2 (base=1.0, delay_for(1))
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_exhausts_then_compensate_expect_failed_and_compensated(
     fake_sleep: list[float],
 ) -> None:
@@ -412,7 +412,7 @@ async def test_retry_exhausts_then_compensate_expect_failed_and_compensated(
     assert len(fake_sleep) == 2  # sleeps between attempts 1→2, 2→3
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_exhausts_then_skip_expect_continues_to_next_step(
     fake_sleep: list[float],
 ) -> None:
@@ -431,7 +431,7 @@ async def test_retry_exhausts_then_skip_expect_continues_to_next_step(
     assert len(committed_records) == 1
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_backoff_delays_expect_exponential_schedule(
     fake_sleep: list[float],
 ) -> None:
@@ -456,7 +456,7 @@ async def test_retry_backoff_delays_expect_exponential_schedule(
 # --- Skip 전략 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_skip_strategy_expect_continues_past_failure() -> None:
     """Skip 전략 시 실패를 무시하고 다음 step을 실행한다."""
     flow = saga_flow(
@@ -471,7 +471,7 @@ async def test_skip_strategy_expect_continues_past_failure() -> None:
     assert result.history[1].status is StepStatus.COMMITTED
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_skip_strategy_does_not_trigger_compensation_expect_no_calls() -> None:
     """Skip 전략 시 이전 compensate들이 실행되지 않는다."""
     flow = saga_flow(
@@ -494,7 +494,7 @@ async def _slow_action(data: _OrderData) -> None:
     await asyncio.sleep(0.2)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_step_timeout_expect_failed_and_compensated() -> None:
     """step timeout 초과 시 실패 처리되고 이전 compensate가 실행된다."""
     flow = saga_flow(
@@ -510,7 +510,7 @@ async def test_step_timeout_expect_failed_and_compensated() -> None:
     assert len(_compensation_log) == 1
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_action_raising_timeout_error_not_treated_as_timeout() -> None:
     """action이 직접 TimeoutError를 raise하면 SagaStepTimeoutError로 변환하지 않는다."""
 
@@ -526,7 +526,7 @@ async def test_action_raising_timeout_error_not_treated_as_timeout() -> None:
     assert not isinstance(result.error, SagaStepTimeoutError)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_step_timeout_with_retry_expect_retried(
     fake_sleep: list[float],
 ) -> None:
@@ -555,7 +555,7 @@ async def test_step_timeout_with_retry_expect_retried(
 # --- Saga 타임아웃 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_saga_timeout_expect_status_timed_out() -> None:
     """saga 전체 timeout 초과 시 TIMED_OUT 상태를 반환한다."""
     flow = saga_flow(step(_slow_action)).timeout(timedelta(milliseconds=20))
@@ -567,7 +567,7 @@ async def test_saga_timeout_expect_status_timed_out() -> None:
     assert result.error is None
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_saga_timeout_compensates_committed_steps_expect_compensated() -> None:
     """saga timeout 초과 시 이미 commit된 step들이 보상된다."""
 
@@ -585,7 +585,7 @@ async def test_saga_timeout_compensates_committed_steps_expect_compensated() -> 
     assert len(_compensation_log) == 1
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_saga_without_timeout_completes_normally() -> None:
     """saga timeout 없으면 정상 완료된다."""
     flow = saga_flow(step(_succeed))
@@ -598,7 +598,7 @@ async def test_saga_without_timeout_completes_normally() -> None:
 # --- Parallel 실행 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_items_run_concurrently_expect_gathered() -> None:
     """병렬 아이템들이 동시 실행되어 모두 같은 barrier에 동시 진입한다."""
     barrier_count = 3
@@ -623,7 +623,7 @@ async def test_parallel_items_run_concurrently_expect_gathered() -> None:
     assert in_flight == barrier_count
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_all_succeed_expect_completed() -> None:
     """모든 병렬 아이템 성공 시 COMPLETED를 반환한다."""
     flow = saga_flow(parallel(_succeed, _succeed))
@@ -635,7 +635,7 @@ async def test_parallel_all_succeed_expect_completed() -> None:
     assert all(r.status is StepStatus.COMMITTED for r in result.history)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_one_failure_expect_all_compensated() -> None:
     """병렬 그룹에서 하나 실패 시 성공한 것들도 보상된다."""
     flow = saga_flow(
@@ -652,7 +652,7 @@ async def test_parallel_one_failure_expect_all_compensated() -> None:
     assert len(_compensation_log) == 1
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_waits_for_all_on_failure_expect_both_finish() -> None:
     """병렬에서 하나 실패해도 다른 아이템은 완료를 기다린 후 보상된다."""
     slow_finished = {"ok": False}
@@ -678,7 +678,7 @@ async def test_parallel_waits_for_all_on_failure_expect_both_finish() -> None:
     assert _compensation_log == ["slow"]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_with_non_default_on_error_expect_definition_error() -> None:
     """v1 parallel은 기본 Compensate 외 on_error를 허용하지 않는다."""
     flow = saga_flow(
@@ -693,7 +693,7 @@ async def test_parallel_with_non_default_on_error_expect_definition_error() -> N
         await run_saga_flow(flow, data)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_cancellation_propagates_expect_cancelled_error() -> None:
     """병렬 step 중 CancelledError는 성공으로 취급되지 않고 취소가 전파된다."""
 
@@ -707,7 +707,7 @@ async def test_parallel_cancellation_propagates_expect_cancelled_error() -> None
         await run_saga_flow(flow, data)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_multiple_cancellations_expect_first_propagated() -> None:
     """병렬 step 중 여러 CancelledError가 발생해도 첫 번째가 전파된다."""
 
@@ -721,7 +721,7 @@ async def test_parallel_multiple_cancellations_expect_first_propagated() -> None
         await run_saga_flow(flow, data)
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_return_values_ignored_expect_data_unchanged() -> None:
     """v1 parallel 아이템의 리턴값은 무시되어 data가 변경되지 않는다."""
     new_ticket = uuid4()
@@ -737,7 +737,7 @@ async def test_parallel_return_values_ignored_expect_data_unchanged() -> None:
     assert result.data.ticket_id is None
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_default_compensate_accepted_expect_ok() -> None:
     """Compensate()를 명시한 parallel 아이템은 허용된다 (v1 제약 내)."""
     flow = saga_flow(
@@ -755,7 +755,7 @@ async def test_parallel_default_compensate_accepted_expect_ok() -> None:
 # --- Retry + Compensation failure ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_then_compensate_with_compensation_failure_expect_handler(
     fake_sleep: list[float],
 ) -> None:
@@ -780,7 +780,7 @@ async def test_retry_then_compensate_with_compensation_failure_expect_handler(
 # --- Unknown flow item ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_unknown_flow_item_expect_definition_error() -> None:
     """SagaFlow에 인식 불가능한 item이 있으면 SagaFlowDefinitionError를 발생시킨다."""
     flow = SagaFlow(items=(42,))  # type: ignore[arg-type] - intentional invalid item for test
@@ -793,7 +793,7 @@ async def test_unknown_flow_item_expect_definition_error() -> None:
 # --- 추가 커버리지: Retry 성공 시 data 교체 및 compensate 등록 ---
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_success_replaces_data_expect_updated(
     fake_sleep: list[float],
 ) -> None:
@@ -815,7 +815,7 @@ async def test_retry_success_replaces_data_expect_updated(
     assert result.data.ticket_id == new_ticket
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_success_registers_compensate_expect_rollback_on_later_failure(
     fake_sleep: list[float],
 ) -> None:
@@ -838,7 +838,7 @@ async def test_retry_success_registers_compensate_expect_rollback_on_later_failu
     assert len(_compensation_log) == 1
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_retry_exhaust_with_then_compensate_no_prior_committed_expect_failed(
     fake_sleep: list[float],
 ) -> None:
@@ -850,7 +850,7 @@ async def test_retry_exhaust_with_then_compensate_no_prior_committed_expect_fail
     assert result.status is SagaStatus.FAILED
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_parallel_multiple_failures_expect_first_reported() -> None:
     """병렬 그룹에서 여러 아이템이 실패해도 첫 번째 실패만 failed_step으로 보고된다."""
 

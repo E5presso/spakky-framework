@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import field, replace
 from datetime import timedelta
-from typing import Awaitable, Callable, Generic, TypeAlias, TypeVar
+from typing import Awaitable, Callable, Generic, TypeAlias, TypeVar, cast
 
 from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData
@@ -31,11 +31,16 @@ class SagaStep(Generic[SagaDataT]):
 
     def __rshift__(
         self,
-        compensate: Callable[[SagaDataT], Awaitable[None]],
+        compensate: Callable[[SagaDataT], Awaitable[None]] | SagaStep[SagaDataT],
     ) -> Transaction[SagaDataT]:
+        compensate_fn: Callable[[SagaDataT], Awaitable[None]] = (
+            cast(Callable[[SagaDataT], Awaitable[None]], compensate.action)
+            if isinstance(compensate, SagaStep)
+            else compensate
+        )
         return Transaction(
             action=self.action,
-            compensate=compensate,
+            compensate=compensate_fn,
             on_error=self.on_error,
             timeout=self.timeout,
         )
