@@ -11,6 +11,7 @@ from spakky.data.persistency.repository import (
     VersionConflictError,
 )
 from spakky.domain.models.aggregate_root import AggregateRootT
+from typing_extensions import override
 
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
 from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable
@@ -114,6 +115,7 @@ class AbstractGenericRepository(
             return pk_columns[0].in_(aggregate_ids)
         return tuple_(*pk_columns).in_(aggregate_ids)
 
+    @override
     def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
         try:
             table = self._schema_registry.get_type(self._aggregate_type)
@@ -125,6 +127,7 @@ class AbstractGenericRepository(
         except NoResultFound:
             raise EntityNotFoundError(aggregate_id)
 
+    @override
     def get_or_none(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT | None:
         table = self._schema_registry.get_type(self._aggregate_type)
         pk_columns = inspect(table).primary_key
@@ -133,6 +136,7 @@ class AbstractGenericRepository(
         ).scalar_one_or_none()
         return result.to_domain() if result is not None else None
 
+    @override
     def contains(self, aggregate_id: AggregateIdT_contra) -> bool:
         table = self._schema_registry.get_type(self._aggregate_type)
         pk_columns = inspect(table).primary_key
@@ -143,6 +147,7 @@ class AbstractGenericRepository(
         ).scalar_one_or_none()
         return result is not None
 
+    @override
     def range(
         self, aggregate_ids: Sequence[AggregateIdT_contra]
     ) -> Sequence[AggregateRootT]:
@@ -159,6 +164,7 @@ class AbstractGenericRepository(
         )
         return [result.to_domain() for result in results]
 
+    @override
     def save(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
             table = self._schema_registry.from_domain(aggregate)
@@ -169,6 +175,7 @@ class AbstractGenericRepository(
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
 
+    @override
     def save_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
@@ -185,6 +192,7 @@ class AbstractGenericRepository(
             self._aggregate_collector.collect(aggregate)
         return [table.to_domain() for table in tables]
 
+    @override
     def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
             table = self._schema_registry.from_domain(aggregate)
@@ -196,6 +204,7 @@ class AbstractGenericRepository(
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
 
+    @override
     def delete_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
@@ -295,6 +304,7 @@ class AbstractAsyncGenericRepository(
             return pk_columns[0].in_(aggregate_ids)
         return tuple_(*pk_columns).in_(aggregate_ids)
 
+    @override
     async def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
         try:
             table = self._schema_registry.get_type(self._aggregate_type)
@@ -310,6 +320,7 @@ class AbstractAsyncGenericRepository(
         except NoResultFound:
             raise EntityNotFoundError(aggregate_id)
 
+    @override
     async def get_or_none(
         self, aggregate_id: AggregateIdT_contra
     ) -> AggregateRootT | None:
@@ -322,6 +333,7 @@ class AbstractAsyncGenericRepository(
         ).scalar_one_or_none()
         return result.to_domain() if result is not None else None
 
+    @override
     async def contains(self, aggregate_id: AggregateIdT_contra) -> bool:
         table = self._schema_registry.get_type(self._aggregate_type)
         pk_columns = inspect(table).primary_key
@@ -334,6 +346,7 @@ class AbstractAsyncGenericRepository(
         ).scalar_one_or_none()
         return result is not None
 
+    @override
     async def range(
         self, aggregate_ids: Sequence[AggregateIdT_contra]
     ) -> Sequence[AggregateRootT]:
@@ -352,6 +365,7 @@ class AbstractAsyncGenericRepository(
         )
         return [result.to_domain() for result in results]
 
+    @override
     async def save(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
             table = self._schema_registry.from_domain(aggregate)
@@ -362,6 +376,7 @@ class AbstractAsyncGenericRepository(
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
 
+    @override
     async def save_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
@@ -378,6 +393,7 @@ class AbstractAsyncGenericRepository(
             self._aggregate_collector.collect(aggregate)
         return [table.to_domain() for table in tables]
 
+    @override
     async def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
             table = self._schema_registry.from_domain(aggregate)
@@ -389,6 +405,7 @@ class AbstractAsyncGenericRepository(
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
 
+    @override
     async def delete_all(
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:

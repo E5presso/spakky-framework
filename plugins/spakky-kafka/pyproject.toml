@@ -33,7 +33,7 @@ module-root = "src"
 module-name = "spakky.plugins.kafka"
 
 [tool.pyrefly]
-python-version = "3.14"
+python-version = "3.11"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

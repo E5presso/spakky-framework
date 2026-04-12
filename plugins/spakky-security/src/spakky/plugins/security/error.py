@@ -66,6 +66,13 @@ class InvalidKeyConstructorCallError(AbstractSpakkyFrameworkError):
 
 
 @final
+class IncompatibleKeyTypeError(AbstractSpakkyFrameworkError):
+    """Raised when comparing a Key with an incompatible type."""
+
+    message = "Cannot compare Key with an incompatible type."
+
+
+@final
 class PasswordRequiredError(AbstractSpakkyFrameworkError):
     """Raised when password parameter is required but not provided."""
 

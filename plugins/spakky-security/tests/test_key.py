@@ -1,5 +1,7 @@
 import pytest
 
+from spakky.plugins.security.error import IncompatibleKeyTypeError
+
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import InvalidKeyConstructorCallError
 from spakky.plugins.security.key import Key
@@ -73,8 +75,8 @@ def test_key_not_equals() -> None:
 
 
 def test_key_equals_expect_type_error() -> None:
-    """Key를 다른 타입과 비교하면 TypeError가 발생하는지 검증한다."""
-    with pytest.raises(TypeError):
+    """Key를 다른 타입과 비교하면 IncompatibleKeyTypeError가 발생하는지 검증한다."""
+    with pytest.raises(IncompatibleKeyTypeError):
         assert Key(size=32) == 0
 
 

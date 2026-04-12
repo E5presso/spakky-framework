@@ -8,11 +8,12 @@ metadata.
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
-import grpc
-import grpc.aio
-
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
+
+import grpc
+import grpc.aio
 
 
 class TracingInterceptor(grpc.aio.ServerInterceptor):
@@ -93,6 +94,7 @@ class TracingInterceptor(grpc.aio.ServerInterceptor):
 
         return wrapper
 
+    @override
     async def intercept_service(
         self,
         continuation: Callable[

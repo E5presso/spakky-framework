@@ -42,17 +42,38 @@ user-invocable: true
 
 ---
 
-## Phase 2: 위반 감사 (병렬 서브에이전트)
+## Phase 2: 위반 감사
+
+### 2-1. pyrefly 실제 실행 (필수, 서브에이전트보다 먼저)
+
+**정적 분석은 눈으로 읽는 것보다 실제 실행이 우선이다.** 서브에이전트 감사 전에 먼저 pyrefly를 직접 실행하여 타입 오류 목록을 확보한다.
+
+```bash
+# 패키지별로 실행
+cd <package-dir> && uv run pyrefly check
+```
+
+> **주의**: `uv run pyrefly check`가 `0 errors (N suppressed)`를 반환해도
+> VS Code 익스텐션이 오류를 표시할 수 있다.
+> pyrefly 프로젝트 모드는 다른 패키지의 `src/` 디렉토리를 `project_excludes`로 자동 제외하므로
+> cross-package TypeVar 추론 오류가 suppressed 처리된다.
+> VS Code 익스텐션은 single-file 모드라 이 heuristics가 없어 오류가 표시된다.
+> 두 결과를 모두 수집한다 — CLI용은 `0 errors` 확인, VS Code 오류는 별도 수집.
+
+pyrefly 오류로 확인된 항목은 Phase 2-2 감사 결과에 PYREFLY_ERROR 유형으로 추가한다.
+
+### 2-2. 하네스 정적 감사 (병렬 서브에이전트)
 
 패키지별로 **Explore 서브에이전트**를 병렬 실행하여 위반을 감사한다.
 
-### 서브에이전트 프롬프트 구성
+#### 서브에이전트 프롬프트 구성
 
 각 서브에이전트에게 다음을 전달한다:
 
 1. **패키지 경로** (예: `core/spakky-event`)
 2. **체크리스트** (Phase 1에서 로드한 규칙)
-3. **출력 형식**:
+3. **pyrefly 오류 목록** (Phase 2-1에서 수집한 것)
+4. **출력 형식**:
 
 ```markdown
 ## [패키지명] 감사 결과
@@ -64,9 +85,9 @@ user-invocable: true
 위반 없음
 ```
 
-### 감사 체크리스트
+#### 감사 체크리스트
 
-#### src/ 코드
+##### src/ 코드
 
 - [ ] `@override` 데코레이터 누락 (부모 메서드 재정의)
 - [ ] 빌트인 예외 직접 raise (`TypeError`, `ValueError`, `RuntimeError` 등)
@@ -80,18 +101,18 @@ user-invocable: true
 - [ ] 네이밍 규칙 위반 (`I` 접두사, `Abstract` 접두사, `Error` 접미사)
 - [ ] 레이어 역방향 의존
 
-#### tests/ 코드
+##### tests/ 코드
 
 - [ ] `class TestXxx` 패턴 사용
 - [ ] docstring 누락
 - [ ] 네이밍 패턴 미준수 (`test_<대상>_<시나리오>_expect_<기대결과>`)
 - [ ] Flaky 테스트 요소 (`time.sleep`, `datetime.now()` 직접 의존)
 
-#### Python 호환성
+##### Python 호환성
 
 - [ ] `from typing import override` (Python 3.12+ 전용) → `from typing_extensions import override`
 
-### 서브에이전트 병렬 전략
+#### 서브에이전트 병렬 전략
 
 - **4개 이하 패키지**: 패키지별 1개 서브에이전트
 - **5개 이상**: 연관 패키지를 2~4개씩 묶어 서브에이전트당 배치

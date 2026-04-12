@@ -16,11 +16,12 @@ from google.protobuf.message import Message
 from google.protobuf.message_factory import GetMessageClass
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
-from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
-from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+from typing_extensions import override
 
 import grpc
 import grpc.aio
+from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
+from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 
 logger = getLogger(__name__)
 
@@ -77,6 +78,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         self._handlers = {}
         self._build_handlers()
 
+    @override
     def service(
         self,
         handler_call_details: grpc.HandlerCallDetails,

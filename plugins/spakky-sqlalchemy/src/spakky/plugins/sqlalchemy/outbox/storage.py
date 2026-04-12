@@ -6,6 +6,8 @@ from uuid import UUID
 from spakky.core.pod.annotations.pod import Pod
 from spakky.outbox.common.config import OutboxConfig
 from spakky.outbox.common.message import OutboxMessage
+from typing_extensions import override
+
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
 
 from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
@@ -51,6 +53,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
             config.claim_timeout_seconds if config else _DEFAULT_CLAIM_TIMEOUT_SECONDS
         )
 
+    @override
     def save(self, message: OutboxMessage) -> None:
         row = OutboxMessageTable(
             id=message.id,
@@ -62,6 +65,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
         self._session_manager.session.add(row)
         self._session_manager.session.flush()
 
+    @override
     def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
         now = datetime.now(UTC)
         claim_cutoff = now - timedelta(seconds=self._claim_timeout_seconds)
@@ -108,6 +112,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
                 for row in rows
             ]
 
+    @override
     def mark_published(self, message_id: UUID) -> None:
         with self._session_factory() as session:
             session.execute(
@@ -117,6 +122,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
             )
             session.commit()
 
+    @override
     def increment_retry(self, message_id: UUID) -> None:
         with self._session_factory() as session:
             session.execute(
@@ -154,6 +160,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
             config.claim_timeout_seconds if config else _DEFAULT_CLAIM_TIMEOUT_SECONDS
         )
 
+    @override
     async def save(self, message: OutboxMessage) -> None:
         row = OutboxMessageTable(
             id=message.id,
@@ -165,6 +172,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
         self._session_manager.session.add(row)
         await self._session_manager.session.flush()
 
+    @override
     async def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
         now = datetime.now(UTC)
         claim_cutoff = now - timedelta(seconds=self._claim_timeout_seconds)
@@ -211,6 +219,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
                 for row in rows
             ]
 
+    @override
     async def mark_published(self, message_id: UUID) -> None:
         async with self._session_factory() as session:
             await session.execute(
@@ -220,6 +229,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
             )
             await session.commit()
 
+    @override
     async def increment_retry(self, message_id: UUID) -> None:
         async with self._session_factory() as session:
             await session.execute(

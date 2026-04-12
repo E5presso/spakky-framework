@@ -8,7 +8,10 @@ import secrets
 from typing import Any, final, overload
 
 from spakky.plugins.security.encoding import Base64Encoder
-from spakky.plugins.security.error import InvalidKeyConstructorCallError
+from spakky.plugins.security.error import (
+    IncompatibleKeyTypeError,
+    InvalidKeyConstructorCallError,
+)
 
 
 @final
@@ -86,7 +89,7 @@ class Key:
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Key):
-            raise TypeError
+            raise IncompatibleKeyTypeError
         return self.binary == other.binary
 
     def __ne__(self, other: Any) -> bool:

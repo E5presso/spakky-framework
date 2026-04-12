@@ -9,9 +9,10 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from logging import getLogger
 from typing import Any
 
+from typing_extensions import override
+
 import grpc
 import grpc.aio
-
 from spakky.plugins.grpc.error import AbstractGrpcStatusError, InternalError
 
 logger = getLogger(__name__)
@@ -92,6 +93,7 @@ class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
 
         return wrapper
 
+    @override
     async def intercept_service(
         self,
         continuation: Callable[
