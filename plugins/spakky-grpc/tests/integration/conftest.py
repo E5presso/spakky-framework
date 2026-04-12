@@ -52,7 +52,6 @@ class GrpcServerPortBinder(IService):
     """Bind an ephemeral localhost port before the async server starts."""
 
     _server: grpc.aio.Server
-    _stop_event: threading.Event
     address: str
     port: int
 
@@ -62,7 +61,7 @@ class GrpcServerPortBinder(IService):
         self.port = 0
 
     def set_stop_event(self, stop_event: threading.Event) -> None:
-        _ = stop_event
+        pass
 
     def start(self) -> None:
         self.port = self._server.add_insecure_port("127.0.0.1:0")

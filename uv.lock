@@ -2935,12 +2935,20 @@ dependencies = [
     { name = "spakky-tracing" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest-integration-mark" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "grpcio", specifier = ">=1.68.0" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest-integration-mark", specifier = ">=0.2.0" }]
 
 [[package]]
 name = "spakky-kafka"

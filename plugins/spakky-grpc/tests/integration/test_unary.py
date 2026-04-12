@@ -3,8 +3,9 @@ from tests.integration.conftest import GrpcIntegrationClient
 
 SERVICE_PATH = "/integration.v1.IntegrationService"
 
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-@pytest.mark.asyncio
+
 async def test_say_hello_when_unary_request_expect_greeting_response(
     grpc_client: GrpcIntegrationClient,
 ) -> None:

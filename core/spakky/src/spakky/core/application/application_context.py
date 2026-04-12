@@ -1,5 +1,5 @@
 import threading
-from asyncio import locks
+from asyncio import get_event_loop, locks
 from asyncio.events import AbstractEventLoop, new_event_loop, set_event_loop
 from asyncio.tasks import run_coroutine_threadsafe
 from contextvars import ContextVar
@@ -93,6 +93,9 @@ class ApplicationContext(IApplicationContext):
     __event_loop: AbstractEventLoop | None
     """Event loop for running async services."""
 
+    __previous_event_loop: AbstractEventLoop | None
+    """Default event loop that existed before start()."""
+
     __event_thread: Thread | None
     """Thread running the event loop."""
 
@@ -113,6 +116,7 @@ class ApplicationContext(IApplicationContext):
         self.__services = []
         self.__async_services = []
         self.__event_loop = None
+        self.__previous_event_loop = None
         self.__event_thread = None
         self.__is_started = False
         self.task_stop_event = locks.Event()
@@ -355,6 +359,10 @@ class ApplicationContext(IApplicationContext):
         """Create the event loop early for loop-bound async Pod instances."""
         if self.__event_loop is not None:  # pragma: no cover
             raise EventLoopThreadAlreadyStartedInApplicationContextError
+        try:
+            self.__previous_event_loop = get_event_loop()
+        except RuntimeError:
+            self.__previous_event_loop = None
         event_loop = new_event_loop()
         self.__event_loop = event_loop
         set_event_loop(event_loop)
@@ -418,7 +426,8 @@ class ApplicationContext(IApplicationContext):
         # Clear references after thread has joined
         self.__event_loop = None
         self.__event_thread = None
-        set_event_loop(None)
+        set_event_loop(self.__previous_event_loop)
+        self.__previous_event_loop = None
 
     @property
     @override

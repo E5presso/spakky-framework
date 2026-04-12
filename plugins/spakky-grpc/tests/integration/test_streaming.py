@@ -3,8 +3,9 @@ from tests.integration.conftest import GrpcIntegrationClient
 
 SERVICE_PATH = "/integration.v1.IntegrationService"
 
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-@pytest.mark.asyncio
+
 async def test_stream_hello_when_server_streaming_request_expect_two_messages(
     grpc_client: GrpcIntegrationClient,
 ) -> None:
@@ -22,7 +23,6 @@ async def test_stream_hello_when_server_streaming_request_expect_two_messages(
     ]
 
 
-@pytest.mark.asyncio
 async def test_collect_names_when_client_streaming_requests_expect_aggregated_response(
     grpc_client: GrpcIntegrationClient,
 ) -> None:
@@ -37,7 +37,6 @@ async def test_collect_names_when_client_streaming_requests_expect_aggregated_re
     assert getattr(response, "summary") == "alpha,beta,gamma"
 
 
-@pytest.mark.asyncio
 async def test_echo_names_when_bidirectional_streaming_requests_expect_echoed_messages(
     grpc_client: GrpcIntegrationClient,
 ) -> None:

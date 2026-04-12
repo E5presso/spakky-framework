@@ -27,6 +27,10 @@ import grpc.aio
 import spakky.plugins.grpc
 import spakky.tracing
 
+from your_project import apps
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
 from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 
@@ -51,8 +55,8 @@ app = (
     .scan(apps)
     .add(get_descriptor_registry)
     .add(get_grpc_server)
-    .start()
 )
+app.start()
 ```
 
 `DescriptorRegistry`는 런타임 protobuf descriptor와 message class를 캐싱하며, `grpc.aio.Server` Pod는 실제 포트 바인딩과 서버 옵션의 소유권을 가집니다.

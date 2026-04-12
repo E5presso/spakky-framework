@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import grpc.aio
+import spakky.plugins.grpc
+import spakky.tracing
+from your_project import apps
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
@@ -24,25 +27,22 @@ from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
-import spakky.plugins.grpc
-import spakky.tracing
-
 
 @dataclass
 class HelloRequest:
-	name: Annotated[str, ProtoField(number=1)]
+    name: Annotated[str, ProtoField(number=1)]
 
 
 @dataclass
 class HelloReply:
-	message: Annotated[str, ProtoField(number=1)]
+    message: Annotated[str, ProtoField(number=1)]
 
 
 @GrpcController(package="example.v1", service_name="GreeterService")
 class GreeterController:
-	@rpc()
-	async def say_hello(self, request: HelloRequest) -> HelloReply:
-		return HelloReply(message=f"Hello, {request.name}!")
+    @rpc(method_type=RpcMethodType.UNARY)
+    async def say_hello(self, request: HelloRequest) -> HelloReply:
+        return HelloReply(message=f"Hello, {request.name}!")
 
 
 @Pod()
@@ -58,16 +58,16 @@ def get_grpc_server() -> grpc.aio.Server:
 
 
 app = (
-	SpakkyApplication(ApplicationContext())
-	.load_plugins(
-		include={
-			spakky.plugins.grpc.PLUGIN_NAME,
-			spakky.tracing.PLUGIN_NAME,
-		}
-	)
-	.scan()
-	.add(get_descriptor_registry)
-	.add(get_grpc_server)
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.plugins.grpc.PLUGIN_NAME,
+            spakky.tracing.PLUGIN_NAME,
+        }
+    )
+    .scan(apps)
+    .add(get_descriptor_registry)
+    .add(get_grpc_server)
 )
 app.start()
 ```

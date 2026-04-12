@@ -5,8 +5,9 @@ from tests.integration.conftest import GrpcIntegrationClient
 
 SERVICE_PATH = "/integration.v1.IntegrationService"
 
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
-@pytest.mark.asyncio
+
 async def test_fail_invalid_argument_when_managed_error_raised_expect_grpc_status_code(
     grpc_client: GrpcIntegrationClient,
 ) -> None:
@@ -23,7 +24,6 @@ async def test_fail_invalid_argument_when_managed_error_raised_expect_grpc_statu
     assert exc_info.value.details() == "Invalid Argument"
 
 
-@pytest.mark.asyncio
 async def test_capture_trace_when_traceparent_provided_expect_child_context_and_trailing_metadata(
     grpc_client: GrpcIntegrationClient,
 ) -> None:

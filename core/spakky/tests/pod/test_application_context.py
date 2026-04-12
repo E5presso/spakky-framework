@@ -63,3 +63,21 @@ async def test_context_scoped_pod_creates_isolated_instances_per_async_flow() ->
 
     await asyncio.gather(*(task_logic() for _ in range(5)))
     assert len(set(map(id, results))) == 5
+
+
+def test_start_stop_restores_previous_default_event_loop() -> None:
+    """start()/stop()가 기존 default event loop를 보존하고 복원함을 검증한다."""
+
+    previous_event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(previous_event_loop)
+
+    context = ApplicationContext()
+
+    try:
+        context.start()
+        context.stop()
+
+        assert asyncio.get_event_loop() is previous_event_loop
+    finally:
+        asyncio.set_event_loop(None)
+        previous_event_loop.close()
