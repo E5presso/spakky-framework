@@ -15,7 +15,7 @@ from spakky.plugins.grpc.error import (
     UnsupportedFieldTypeError,
 )
 
-PYTHON_TO_PROTO_TYPE: dict[type, int] = {
+PYTHON_TO_PROTO_TYPE: dict[type, FieldDescriptorProto.Type.ValueType] = {
     str: FieldDescriptorProto.TYPE_STRING,
     int: FieldDescriptorProto.TYPE_INT64,
     float: FieldDescriptorProto.TYPE_DOUBLE,
@@ -38,7 +38,7 @@ class ResolvedFieldType:
 
     def __init__(
         self,
-        proto_type: int,
+        proto_type: FieldDescriptorProto.Type.ValueType,
         *,
         is_repeated: bool = False,
         is_optional: bool = False,
@@ -76,7 +76,7 @@ def resolve_type(annotation: object) -> ResolvedFieldType:
     if origin is list:
         inner = args[0] if args else None
         if inner is None:  # pragma: no cover - defensive guard, list[T] always has args
-            raise UnsupportedFieldTypeError(list)  # pyrefly: ignore - list is a type
+            raise UnsupportedFieldTypeError(list)
         inner_resolved = _resolve_scalar(inner)
         return ResolvedFieldType(
             proto_type=inner_resolved.proto_type,

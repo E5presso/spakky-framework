@@ -87,7 +87,7 @@ class UnsupportedFieldTypeError(AbstractSpakkyGrpcError):
 
     message = "Unsupported field type for protobuf mapping"
 
-    def __init__(self, field_type: type) -> None:
+    def __init__(self, field_type: type[object]) -> None:
         super().__init__()
         self.field_type = field_type
 
