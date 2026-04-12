@@ -1,12 +1,12 @@
 """Unit tests for BindServerPostProcessor."""
 
+from asyncio import Event as AsyncEvent
 from unittest.mock import MagicMock
 
 import grpc.aio
 import pytest
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
-
 from spakky.plugins.grpc.post_processors.bind_server import (
     BindServerPostProcessor,
     GrpcServerService,
@@ -19,6 +19,7 @@ def processor() -> BindServerPostProcessor:
     proc = BindServerPostProcessor.__new__(BindServerPostProcessor)
     container = MagicMock(spec=IContainer)
     application_context = MagicMock(spec=IApplicationContext)
+    application_context.task_stop_event = AsyncEvent()
     proc.set_container(container)
     proc.set_application_context(application_context)
     return proc

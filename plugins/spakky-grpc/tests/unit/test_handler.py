@@ -10,7 +10,6 @@ import grpc.aio
 import pytest
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
-
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
 from spakky.plugins.grpc.handler import (
@@ -18,6 +17,7 @@ from spakky.plugins.grpc.handler import (
     _convert_proto_value,
     _dataclass_to_protobuf,
     _protobuf_to_dataclass,
+    _unwrap_annotated,
 )
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
@@ -465,3 +465,38 @@ def test_dataclass_to_protobuf_skips_none_fields() -> None:
     proto = _dataclass_to_protobuf(mock_obj, msg_class)
     # Default proto3 value for string is ""
     assert proto.value == ""  # pyrefly: ignore - dynamic protobuf attr
+
+
+# ------------------------------------------------------------------
+# Annotated type unwrapping
+# ------------------------------------------------------------------
+
+
+def test_unwrap_annotated_extracts_inner_type() -> None:
+    """_unwrap_annotated should extract T from Annotated[T, ...]."""
+    annotated_type = Annotated[str, ProtoField(number=1)]
+    assert _unwrap_annotated(annotated_type) is str
+
+
+def test_unwrap_annotated_returns_plain_type_unchanged() -> None:
+    """_unwrap_annotated should return non-Annotated types as-is."""
+    assert _unwrap_annotated(int) is int
+
+
+# ------------------------------------------------------------------
+# _convert_proto_value: list branch
+# ------------------------------------------------------------------
+
+
+def test_convert_proto_value_converts_list_of_messages() -> None:
+    """_convert_proto_value should convert list[Message] to list[dataclass]."""
+    registry = _build_registry_for(PingController)
+    msg_class = registry.get_message_class("handler.v1.PingRequest")
+    msg = msg_class()
+    msg.value = "item"  # pyrefly: ignore - dynamic protobuf attr
+
+    result = _convert_proto_value([msg], list[PingRequest])
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], PingRequest)
+    assert result[0].value == "item"

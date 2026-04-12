@@ -9,17 +9,17 @@ from collections.abc import AsyncIterator
 from dataclasses import fields, is_dataclass
 from inspect import getmembers, isfunction
 from logging import getLogger
-from typing import Callable
+from typing import Annotated, Callable, get_args, get_origin
 
-import grpc
-import grpc.aio
 from google.protobuf.message import Message
 from google.protobuf.message_factory import GetMessageClass
-
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+
+import grpc
+import grpc.aio
 
 logger = getLogger(__name__)
 
@@ -181,9 +181,11 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             handler_method = getattr(instance, method_name)
+            if request_type is None:
+                return await handler_method()
             domain_request = (
                 _protobuf_to_dataclass(request, request_type)
-                if request_type is not None and isinstance(request, Message)
+                if isinstance(request, Message)
                 else request
             )
             return await handler_method(domain_request)
@@ -205,9 +207,13 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             handler_method = getattr(instance, method_name)
+            if request_type is None:
+                async for item in handler_method():
+                    yield item
+                return
             domain_request = (
                 _protobuf_to_dataclass(request, request_type)
-                if request_type is not None and isinstance(request, Message)
+                if isinstance(request, Message)
                 else request
             )
             async for item in handler_method(domain_request):
@@ -350,8 +356,16 @@ def _protobuf_to_dataclass(message: Message, dataclass_type: type) -> object:
     kwargs: dict[str, object] = {}
     for field in fields(dataclass_type):
         raw = getattr(message, field.name)
-        kwargs[field.name] = _convert_proto_value(raw, field.type)
+        resolved_type = _unwrap_annotated(field.type)
+        kwargs[field.name] = _convert_proto_value(raw, resolved_type)
     return dataclass_type(**kwargs)
+
+
+def _unwrap_annotated(tp: object) -> object:
+    """Unwrap ``Annotated[T, ...]`` to its inner type ``T``."""
+    if get_origin(tp) is Annotated:
+        return get_args(tp)[0]
+    return tp
 
 
 def _convert_proto_value(value: object, target_type: object) -> object:
@@ -367,6 +381,20 @@ def _convert_proto_value(value: object, target_type: object) -> object:
     if isinstance(value, Message):
         if is_dataclass(target_type) and isinstance(target_type, type):
             return _protobuf_to_dataclass(value, target_type)
+    origin = get_origin(target_type)
+    if origin is list and isinstance(value, (list, tuple)):
+        inner_args = get_args(target_type)
+        if (
+            inner_args
+            and is_dataclass(inner_args[0])
+            and isinstance(inner_args[0], type)
+        ):
+            return [
+                _protobuf_to_dataclass(v, inner_args[0])
+                if isinstance(v, Message)
+                else v
+                for v in value
+            ]
     return value
 
 

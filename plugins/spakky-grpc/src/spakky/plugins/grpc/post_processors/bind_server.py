@@ -7,7 +7,6 @@ together with the Spakky ``ApplicationContext``.
 from asyncio import locks
 from logging import getLogger
 
-import grpc.aio
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -18,6 +17,8 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.core.service.interfaces.service import IAsyncService
+
+import grpc.aio
 
 logger = getLogger(__name__)
 
@@ -114,6 +115,7 @@ class BindServerPostProcessor(
             return pod
 
         service = GrpcServerService(pod)
+        service.set_stop_event(self.__application_context.task_stop_event)
         self.__application_context.add_service(service)
         logger.info("Bound gRPC server lifecycle to ApplicationContext")
         return pod
