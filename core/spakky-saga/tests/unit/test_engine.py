@@ -312,7 +312,9 @@ async def test_retry_then_skip_expect_next_step_continues() -> None:
 
 
 @pytest.mark.anyio
-async def test_retry_then_compensate_expect_failed_and_previous_steps_rolled_back() -> None:
+async def test_retry_then_compensate_expect_failed_and_previous_steps_rolled_back() -> (
+    None
+):
     """Retry 기본 then 전략은 보상을 시작하고 FAILED를 반환하는지 검증한다."""
     attempts = 0
 
@@ -344,7 +346,9 @@ async def test_retry_then_compensate_expect_failed_and_previous_steps_rolled_bac
 
 
 @pytest.mark.anyio
-async def test_retry_positive_backoff_expect_sleep_called(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_retry_positive_backoff_expect_sleep_called(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """양수 backoff가 설정되면 retry 사이에 sleep이 호출되는지 검증한다."""
     attempts = 0
     recorded_delays: list[float] = []
@@ -511,7 +515,9 @@ async def test_parallel_timeout_and_failure_expect_timed_out() -> None:
 
 
 @pytest.mark.anyio
-async def test_parallel_compensation_uses_original_data_expect_side_effect_only() -> None:
+async def test_parallel_compensation_uses_original_data_expect_side_effect_only() -> (
+    None
+):
     """Parallel transaction 보상은 action 반환 데이터가 아닌 원본 data를 받는지 검증한다."""
     observed_ticket_ids: list[UUID | None] = []
 
