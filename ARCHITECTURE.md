@@ -70,7 +70,8 @@ graph TD
         tracing --> event
         event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
         tracing --> outbox
-        domain --> saga[📋 spakky-saga<br/>SagaFlow · SagaStep · Compensation]
+        core --> saga[📋 spakky-saga<br/>SagaFlow · SagaStep · Compensation]
+        domain --> saga
     end
 
     subgraph plugins ["⚡ Plugins"]
@@ -408,6 +409,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
 | `spakky-tracing` | `W3CTracePropagator` |
 | `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` |
+| `spakky-saga` | (없음 — 현재 stub) |
+| `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
 
 ---
 
@@ -928,68 +931,82 @@ class OrderSaga(AbstractSaga[OrderSagaData]):
     ...
 ```
 
-### `AbstractSaga`와 `SagaStep`
+### `AbstractSaga`와 `SagaStep` 디스크립터
 
-`AbstractSaga[SagaDataT]`는 사가의 기본 클래스입니다. `SagaStep` 디스크립터를 통해 각 단계를 선언합니다.
+`AbstractSaga[SagaDataT]`는 사가의 기본 클래스입니다. 서브클래스에서 공개 비동기 메서드를 선언하면 `__init_subclass__()`가 자동으로 `_SagaStepDescriptor`로 래핑하여, 인스턴스 접근 시 `SagaStep` 객체를 반환합니다. 이를 통해 연산자(`>>`, `&`, `|`) 사용이 가능합니다.
 
 ```python
-from spakky.saga.base import AbstractSaga, SagaStep
+from spakky.saga.base import AbstractSaga
+from spakky.saga.flow import SagaFlow
 
 @Saga()
 class OrderSaga(AbstractSaga[OrderSagaData]):
-    create_order = SagaStep[OrderSagaData]()
-    reserve_stock = SagaStep[OrderSagaData]()
-    process_payment = SagaStep[OrderSagaData]()
-```
+    async def create_order(self, data: OrderSagaData) -> OrderSagaData:
+        ...
 
-각 `SagaStep`은 `action(fn)`과 `compensation(fn)` 메서드로 실행/보상 핸들러를 등록합니다.
+    async def cancel_order(self, data: OrderSagaData) -> None:
+        ...
+
+    async def reserve_stock(self, data: OrderSagaData) -> OrderSagaData:
+        ...
+
+    def flow(self) -> SagaFlow[OrderSagaData]:
+        return SagaFlow(items=(
+            self.create_order >> self.cancel_order,  # Transaction
+            self.reserve_stock,                      # SagaStep (보상 없음)
+        ))
+```
 
 ### `SagaFlow`와 흐름 연산자
 
-`SagaFlow`는 `>>` (순차), `&` (병렬), `|` (에러 전략) 연산자를 사용하여 DSL 기반으로 흐름을 조합합니다.
+`SagaFlow`는 `>>` (보상 결합), `&` (병렬), `|` (에러 전략) 연산자를 사용하여 DSL 기반으로 흐름을 조합합니다. 빌더 함수 `step()`, `parallel()`, `saga_flow()`도 제공됩니다.
 
 ```python
-from spakky.saga.models.flow import SagaFlow, step, parallel, saga_flow
-from spakky.saga.models.error_strategy import Compensate, Skip, Retry
+from spakky.saga.flow import SagaFlow, step, parallel, saga_flow
+from spakky.saga.strategy import Compensate, Skip, Retry
 
+# 연산자 방식 (AbstractSaga.flow() 내부)
+flow = SagaFlow(items=(
+    self.create_order >> self.cancel_order,           # Transaction
+    self.reserve_stock | Retry(max_attempts=3),       # SagaStep + ErrorStrategy
+))
+
+# 빌더 함수 방식
 flow = saga_flow(
-    step(saga.create_order)
-    >> parallel(
-        step(saga.reserve_stock),
-        step(saga.process_payment) | Retry(max_retries=3),
-    )
+    step(create_order_fn, compensate=cancel_order_fn),
+    parallel(reserve_stock_fn, process_payment_fn),
 )
 ```
 
 | 연산자 | 의미 | 생성 타입 |
 |--------|------|----------|
-| `>>` | 순차 실행 | `Transaction[T]` |
+| `>>` | 보상 함수 결합 (action + compensate) | `Transaction[T]` |
 | `&` | 병렬 실행 | `Parallel[T]` |
-| `\|` | 에러 전략 연결 | `SagaStep` + `ErrorStrategy` |
+| `\|` | 에러 전략 연결 | 동일 타입 (`SagaStep` 또는 `Transaction`) + `ErrorStrategy` |
 
 ### `ErrorStrategy`
 
-| 전략 | 설명 |
-|------|------|
-| `Compensate` | 보상 함수를 실행하여 롤백 (기본값) |
-| `Skip` | 실패를 무시하고 다음 단계로 진행 |
-| `Retry(max_retries)` | 지정 횟수만큼 재시도 |
-| `ExponentialBackoff(max_retries, base_delay, max_delay)` | 지수 백오프 재시도 |
+| 전략 | 시그니처 | 설명 |
+|------|---------|------|
+| `Compensate` | `Compensate()` | 역순 보상을 트리거 (기본값) |
+| `Skip` | `Skip()` | 실패를 무시하고 다음 단계로 진행 |
+| `Retry` | `Retry(max_attempts=3, backoff=ExponentialBackoff(), then=Compensate())` | 지정 횟수만큼 재시도 후 `then` 전략 적용 |
+| `ExponentialBackoff` | `ExponentialBackoff(base=1.0)` | `Retry`의 `backoff` 파라미터로 사용되는 지수 백오프 전략 |
 
 ### `SagaResult`와 실행 엔진
 
 `run_saga_flow(flow, data)` 함수가 `SagaFlow`를 실행하고 `SagaResult`를 반환합니다.
 
-| 컴포넌트 | 설명 |
-|---------|------|
-| `SagaResult[T]` | 사가 실행 결과 (status, data, records) |
-| `StepRecord` | 각 단계의 실행 기록 (step_name, status, error) |
-| `StepStatus` | 단계 상태 (`COMPLETED`, `FAILED`, `COMPENSATED`, `SKIPPED`) |
-| `SagaStatus` | 사가 전체 상태 (6가지: `PENDING`, `RUNNING`, `COMPLETED`, `COMPENSATING`, `COMPENSATED`, `FAILED`) |
+| 컴포넌트 | 필드 | 설명 |
+|---------|------|------|
+| `SagaResult[T]` | `status`, `data`, `failed_step`, `error`, `history`, `elapsed` | 사가 실행 결과. 예외를 발생시키지 않고 결과를 전달 |
+| `StepRecord` | `name`, `status`, `elapsed` | 단일 step의 실행 기록 |
+| `StepStatus` | `COMMITTED`, `FAILED`, `COMPENSATED` | 개별 step의 실행 상태 |
+| `SagaStatus` | `STARTED`, `RUNNING`, `COMPENSATING`, `COMPLETED`, `FAILED`, `TIMED_OUT` | 사가 전체 상태 (6가지) |
 
 ### `AbstractSagaData`
 
-`@immutable` + `AbstractDomainModel`을 확장한 사가 데이터 모델입니다. 각 단계에서 읽기 전용으로 전달됩니다.
+`@immutable` + `AbstractDomainModel`을 확장한 사가 데이터 모델입니다. `saga_id: UUID` 필드를 기본 제공하며, 각 단계에서 읽기 전용으로 전달됩니다.
 
 ### 에러 계층
 
@@ -1013,7 +1030,7 @@ AbstractSpakkySagaError (ABC)
 | | `BindLifespanPostProcessor` | 앱 라이프사이클 바인딩 |
 | | `AddBuiltInMiddlewaresPostProcessor` | CONTEXT 스코프 미들웨어 등록. `TracingMiddleware` 자동 추가 (`spakky-tracing` 필수 의존) |
 | `spakky-typer` | `TyperCLIPostProcessor` | `@CliController`의 커맨드를 Typer에 등록 |
-| `spakky-grpc` | `RegisterRpcServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
+| `spakky-grpc` | `RegisterServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
 | | `AddInterceptorsPostProcessor` | `TracingInterceptor`, `ErrorHandlingInterceptor` 자동 추가 |
 | | `BindServerPostProcessor` | gRPC 서버 바인딩 및 라이프사이클 관리 |
 

@@ -46,7 +46,7 @@ gRPC 서비스 컨트롤러를 선언합니다. `@Controller`의 서브클래스
 ```python
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
-@GrpcController(service_name="UserService")
+@GrpcController(package="example.user", service_name="UserService")
 class UserServiceController:
     def __init__(self, user_service: UserService) -> None:
         self._user_service = user_service
@@ -61,7 +61,7 @@ class UserServiceController:
 ```python
 from spakky.plugins.grpc.decorators.rpc import rpc, RpcMethodType
 
-@GrpcController(service_name="UserService")
+@GrpcController(package="example.user", service_name="UserService")
 class UserServiceController:
     @rpc(method_type=RpcMethodType.UNARY)
     async def get_user(self, request: GetUserRequest) -> GetUserResponse:
@@ -136,7 +136,7 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 
 | PostProcessor | 역할 |
 |--------------|------|
-| `RegisterRpcServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
+| `RegisterServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
 | `AddInterceptorsPostProcessor` | `TracingInterceptor`, `ErrorHandlingInterceptor` 자동 추가 |
 | `BindServerPostProcessor` | gRPC 서버 바인딩 및 라이프사이클 관리 |
 

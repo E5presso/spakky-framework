@@ -519,29 +519,32 @@ class OrderSaga(AbstractSaga[OrderSagaData]):
 
 ### SagaStep
 
-사가의 개별 실행 단계를 나타내는 디스크립터. `action(fn)`과 `compensation(fn)` 메서드로 실행/보상 핸들러를 등록합니다.
+사가의 개별 실행 단계를 나타내는 타입. `AbstractSaga`의 공개 비동기 메서드가 `__init_subclass__`에 의해 자동으로 `SagaStep` 디스크립터로 래핑됩니다.
 
 ```python
-from spakky.saga.base import SagaStep
+from spakky.saga.base import AbstractSaga
 
 class OrderSaga(AbstractSaga[OrderSagaData]):
-    create_order = SagaStep[OrderSagaData]()
-    reserve_stock = SagaStep[OrderSagaData]()
+    # 공개 비동기 메서드가 SagaStep으로 자동 변환
+    async def create_order(self, data: OrderSagaData) -> OrderSagaData:
+        ...
+    async def cancel_order(self, data: OrderSagaData) -> None:
+        ...
 ```
 
 ### SagaFlow
 
-`SagaStep`들을 조합하여 실행 흐름을 정의하는 컨테이너. `>>` (순차), `&` (병렬), `|` (에러 전략) 연산자를 지원합니다.
+`SagaStep`들을 조합하여 실행 흐름을 정의하는 컨테이너. `>>` (action + compensate 쌍), `&` (병렬), `|` (에러 전략) 연산자를 지원합니다.
 
 ```python
-from spakky.saga.models.flow import saga_flow, step, parallel
+from spakky.saga.flow import saga_flow, step, parallel
 
 flow = saga_flow(
-    step(saga.create_order)
-    >> parallel(
-        step(saga.reserve_stock),
-        step(saga.process_payment),
-    )
+    step(saga.create_order, compensate=saga.cancel_order),
+    parallel(
+        step(saga.reserve_stock, compensate=saga.release_stock),
+        step(saga.process_payment, compensate=saga.refund_payment),
+    ),
 )
 ```
 
@@ -553,16 +556,15 @@ flow = saga_flow(
 |------|------|
 | `Compensate` | 보상 함수를 실행하여 롤백 (기본값) |
 | `Skip` | 실패를 무시하고 다음 단계로 진행 |
-| `Retry(max_retries)` | 지정 횟수만큼 재시도 |
-| `ExponentialBackoff(max_retries, base_delay, max_delay)` | 지수 백오프 재시도 |
+| `Retry(max_attempts, backoff, then)` | 지정 횟수만큼 재시도 후 then 전략 적용 |
 
 ### SagaResult
 
-사가 실행 결과를 담는 모델. `status` (`SagaStatus`), `data`, `records` (`list[StepRecord]`) 필드를 가집니다.
+사가 실행 결과를 담는 모델. `status` (`SagaStatus`), `data`, `failed_step`, `error`, `history` (`tuple[StepRecord, ...]`), `elapsed` 필드를 가집니다.
 
 ### SagaStatus
 
-사가의 전체 상태를 나타내는 열거형: `PENDING`, `RUNNING`, `COMPLETED`, `COMPENSATING`, `COMPENSATED`, `FAILED`.
+사가의 전체 상태를 나타내는 열거형: `STARTED`, `RUNNING`, `COMPENSATING`, `COMPLETED`, `FAILED`, `TIMED_OUT`.
 
 ### AbstractSagaData
 
@@ -579,7 +581,7 @@ gRPC 서비스 컨트롤러 클래스를 마크하는 스테레오타입. `@Cont
 ```python
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
-@GrpcController(service_name="UserService")
+@GrpcController(package="example.user", service_name="UserService")
 class UserServiceController:
     ...
 ```

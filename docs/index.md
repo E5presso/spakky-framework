@@ -273,7 +273,8 @@ flowchart LR
     domain --> core[spakky]
     task[spakky-task] --> core
     tracing_dep --> core
-    domain --> saga[spakky-saga]
+    saga[spakky-saga] --> domain
+    saga --> core
   end
 
   rabbitmq -. RabbitMQ .-> event

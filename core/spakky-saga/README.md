@@ -23,6 +23,7 @@ pip install spakky-saga
 | `SagaFlowDefinitionError` | Invalid saga flow definition (static validation) |
 | `SagaCompensationFailedError` | Compensation fails during saga rollback |
 | `SagaParallelMergeConflictError` | Parallel steps modify the same field during data merge |
+| `SagaEngineNotConnectedError` | Saga engine is not connected when execute() is called |
 
 ## Related
 

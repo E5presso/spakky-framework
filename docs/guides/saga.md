@@ -32,13 +32,35 @@ pip install spakky-saga
 
 ```python
 from spakky.saga.stereotype import Saga
-from spakky.saga.base import AbstractSaga, SagaStep
+from spakky.saga.base import AbstractSaga
+from spakky.saga.flow import SagaFlow
 
 @Saga()
 class OrderSaga(AbstractSaga[OrderSagaData]):
-    create_order = SagaStep[OrderSagaData]()
-    reserve_stock = SagaStep[OrderSagaData]()
-    process_payment = SagaStep[OrderSagaData]()
+    async def create_order(self, data: OrderSagaData) -> OrderSagaData:
+        ...
+
+    async def cancel_order(self, data: OrderSagaData) -> None:
+        ...
+
+    async def reserve_stock(self, data: OrderSagaData) -> OrderSagaData:
+        ...
+
+    async def release_stock(self, data: OrderSagaData) -> None:
+        ...
+
+    async def process_payment(self, data: OrderSagaData) -> OrderSagaData:
+        ...
+
+    async def refund_payment(self, data: OrderSagaData) -> None:
+        ...
+
+    def flow(self) -> SagaFlow[OrderSagaData]:
+        return SagaFlow(items=(
+            self.create_order >> self.cancel_order,
+            self.reserve_stock >> self.release_stock,
+            self.process_payment >> self.refund_payment,
+        ))
 ```
 
 ### AbstractSagaData
@@ -46,7 +68,7 @@ class OrderSaga(AbstractSaga[OrderSagaData]):
 사가 데이터 모델은 `AbstractSagaData`를 상속합니다. `@immutable` + `AbstractDomainModel` 기반이므로 각 단계에서 읽기 전용으로 전달됩니다.
 
 ```python
-from spakky.saga.models.saga_data import AbstractSagaData
+from spakky.saga.data import AbstractSagaData
 from spakky.core.common.mutability import immutable
 
 @immutable
@@ -64,39 +86,46 @@ class OrderSagaData(AbstractSagaData):
 
 | 연산자 | 의미 | 생성 타입 |
 |--------|------|----------|
-| `>>` | 순차 실행 | `Transaction[T]` |
+| `>>` | action + compensate 쌍 | `Transaction[T]` |
 | `&` | 병렬 실행 | `Parallel[T]` |
 | `\|` | 에러 전략 연결 | `SagaStep` + `ErrorStrategy` |
 
 ### 흐름 조합 예시
 
 ```python
-from spakky.saga.models.flow import saga_flow, step, parallel
-from spakky.saga.models.error_strategy import Compensate, Skip, Retry, ExponentialBackoff
+from spakky.saga.flow import saga_flow, step, parallel
+from spakky.saga.strategy import Compensate, Skip, Retry
 
-# 순차 실행
+# 순차 실행 (각 step을 saga_flow에 개별 인자로 전달)
 flow = saga_flow(
-    step(saga.create_order)
-    >> step(saga.reserve_stock)
-    >> step(saga.process_payment)
+    step(saga.create_order),
+    step(saga.reserve_stock),
+    step(saga.process_payment),
+)
+
+# 보상 함수 지정
+flow = saga_flow(
+    step(saga.create_order, compensate=saga.cancel_order),
+    step(saga.reserve_stock, compensate=saga.release_stock),
+    step(saga.process_payment, compensate=saga.refund_payment),
 )
 
 # 병렬 실행
 flow = saga_flow(
-    step(saga.create_order)
-    >> parallel(
-        step(saga.reserve_stock),
-        step(saga.process_payment),
-    )
+    step(saga.create_order, compensate=saga.cancel_order),
+    parallel(
+        step(saga.reserve_stock, compensate=saga.release_stock),
+        step(saga.process_payment, compensate=saga.refund_payment),
+    ),
 )
 
 # 에러 전략 적용
 flow = saga_flow(
-    step(saga.create_order)
-    >> parallel(
+    step(saga.create_order, compensate=saga.cancel_order),
+    parallel(
         step(saga.reserve_stock) | Skip(),
-        step(saga.process_payment) | Retry(max_retries=3),
-    )
+        step(saga.process_payment) | Retry(max_attempts=3),
+    ),
 )
 ```
 
@@ -110,11 +139,10 @@ flow = saga_flow(
 |------|------|
 | `Compensate` | 보상 함수를 실행하여 롤백 (기본값) |
 | `Skip` | 실패를 무시하고 다음 단계로 진행 |
-| `Retry(max_retries)` | 지정 횟수만큼 재시도 |
-| `ExponentialBackoff(max_retries, base_delay, max_delay)` | 지수 백오프 재시도 |
+| `Retry(max_attempts, backoff, then)` | 지정 횟수만큼 재시도 후 then 전략 적용 |
 
 ```python
-from spakky.saga.models.error_strategy import (
+from spakky.saga.strategy import (
     Compensate,
     Skip,
     Retry,
@@ -122,17 +150,19 @@ from spakky.saga.models.error_strategy import (
 )
 
 # 기본 보상
-step(saga.reserve_stock) | Compensate()
+step(saga.reserve_stock, compensate=saga.release_stock) | Compensate()
 
-# 3회 재시도
-step(saga.process_payment) | Retry(max_retries=3)
+# 3회 재시도 (실패 시 기본 Compensate)
+step(saga.process_payment) | Retry(max_attempts=3)
 
-# 지수 백오프 (최대 5회, 1초~30초)
-step(saga.send_notification) | ExponentialBackoff(
-    max_retries=5,
-    base_delay=1.0,
-    max_delay=30.0,
+# 지수 백오프 재시도 (기본 base=1.0초)
+step(saga.send_notification) | Retry(
+    max_attempts=5,
+    backoff=ExponentialBackoff(base=2.0),
 )
+
+# 재시도 후 실패 무시
+step(saga.log_analytics) | Retry(max_attempts=3, then=Skip())
 
 # 실패 무시
 step(saga.log_analytics) | Skip()
@@ -160,18 +190,21 @@ result = await run_saga_flow(flow, saga_data)
 |------|------|------|
 | `status` | `SagaStatus` | 사가 전체 상태 |
 | `data` | `T` | 최종 사가 데이터 |
-| `records` | `list[StepRecord]` | 각 단계의 실행 기록 |
+| `failed_step` | `str \| None` | 실패한 단계 이름 |
+| `error` | `Exception \| None` | 발생한 예외 |
+| `history` | `tuple[StepRecord, ...]` | 각 단계의 실행 기록 |
+| `elapsed` | `timedelta` | 총 실행 시간 |
 
 ### SagaStatus
 
 | 상태 | 설명 |
 |------|------|
-| `PENDING` | 실행 대기 |
+| `STARTED` | 사가 시작됨 |
 | `RUNNING` | 실행 중 |
-| `COMPLETED` | 모든 단계 성공 |
 | `COMPENSATING` | 보상 실행 중 |
-| `COMPENSATED` | 보상 완료 |
+| `COMPLETED` | 모든 단계 성공 |
 | `FAILED` | 실패 (보상도 실패) |
+| `TIMED_OUT` | 타임아웃 초과 |
 
 ### StepRecord
 
@@ -179,9 +212,9 @@ result = await run_saga_flow(flow, saga_data)
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| `step_name` | `str` | 단계 이름 |
-| `status` | `StepStatus` | 단계 상태 (`COMPLETED`, `FAILED`, `COMPENSATED`, `SKIPPED`) |
-| `error` | `Exception \| None` | 발생한 예외 (있는 경우) |
+| `name` | `str` | 단계 이름 |
+| `status` | `StepStatus` | 단계 상태 (`COMMITTED`, `FAILED`, `COMPENSATED`) |
+| `elapsed` | `timedelta` | 단계 실행 시간 |
 
 ---
 

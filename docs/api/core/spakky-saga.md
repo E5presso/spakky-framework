@@ -14,35 +14,33 @@
     options:
       show_root_heading: false
 
-## Models
+## Data
 
-### SagaData
-
-::: spakky.saga.models.saga_data
+::: spakky.saga.data
     options:
       show_root_heading: false
 
-### Flow
+## Flow
 
-::: spakky.saga.models.flow
+::: spakky.saga.flow
     options:
       show_root_heading: false
 
-### Error Strategy
+## Error Strategy
 
-::: spakky.saga.models.error_strategy
+::: spakky.saga.strategy
     options:
       show_root_heading: false
 
-### Saga Result
+## Result
 
-::: spakky.saga.models.saga_result
+::: spakky.saga.result
     options:
       show_root_heading: false
 
-### Saga Status
+## Status
 
-::: spakky.saga.models.saga_status
+::: spakky.saga.status
     options:
       show_root_heading: false
 
