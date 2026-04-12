@@ -13,6 +13,7 @@ from google.protobuf.descriptor_pb2 import (
     FieldDescriptorProto,
     FileDescriptorProto,
     MethodDescriptorProto,
+    OneofDescriptorProto,
     ServiceDescriptorProto,
 )
 from spakky.plugins.grpc.decorators.rpc import Rpc
@@ -69,6 +70,9 @@ def build_message_descriptor(
         elif resolved.is_optional:
             field_desc.label = FieldDescriptorProto.LABEL_OPTIONAL
             field_desc.proto3_optional = True
+            oneof_index = len(descriptor.oneof_decl)
+            descriptor.oneof_decl.append(OneofDescriptorProto(name=f"__{field.name}"))
+            field_desc.oneof_index = oneof_index
         else:
             field_desc.label = FieldDescriptorProto.LABEL_OPTIONAL
 
