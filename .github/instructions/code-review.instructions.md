@@ -19,9 +19,10 @@ Spakky Framework는 Spring‑inspired DI/IoC Python 프레임워크(3.11+)입니
 ## 패키지 의존 방향 (단방향)
 
 ```
-spakky → spakky-domain → spakky-data → spakky-event → spakky-outbox
-spakky → spakky-tracing → spakky-event
+spakky → spakky-domain → spakky-data ──┐
+spakky → spakky-tracing ───────────────┤→ spakky-event → spakky-outbox (단방향)
 spakky → spakky-task
+spakky-logging → spakky (코어 유틸리티)
 ```
 
 - **역방향 의존 금지**: 하위 패키지가 상위 패키지를 import하면 지적합니다.
@@ -34,7 +35,7 @@ spakky → spakky-task
 
 - **`Any` 사용 금지**. `TypeVar`, `Protocol`, `object`, `Union`을 사용합니다.
   - 허용 예외: 외부 라이브러리 invariant generics — 반드시 인라인 주석으로 사유를 명시해야 합니다.
-- **`# type: ignore` 금지**. 타입 안전한 해결책을 찾아야 합니다.
+- **`# type: ignore`는 원칙적으로 금지**하되, 불가피한 경우에만 **사유를 포함한 제한적 사용**을 허용합니다. 가능한 한 타입 안전한 해결책을 우선합니다.
 
 ---
 
