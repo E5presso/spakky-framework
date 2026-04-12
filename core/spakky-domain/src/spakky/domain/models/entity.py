@@ -4,11 +4,17 @@ This module provides AbstractEntity base class for DDD entities with
 identity, validation, and immutability enforcement.
 """
 
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import field
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Generic
 from uuid import UUID
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
 
 from spakky.core.common.interfaces.equatable import EquatableT_co, IEquatable
 from spakky.core.common.mutability import mutable
@@ -74,6 +80,7 @@ class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], AB
         """
         ...
 
+    @override
     def __eq__(self, other: object) -> bool:
         """Compare entities by identity.
 
@@ -87,6 +94,7 @@ class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], AB
             return False
         return self.uid == other.uid
 
+    @override
     def __hash__(self) -> int:
         """Compute hash based on entity identity.
 
@@ -95,6 +103,7 @@ class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], AB
         """
         return hash(self.uid)
 
+    @override
     def __post_init__(self) -> None:
         """Validate entity after initialization."""
         self.validate()
@@ -115,7 +124,9 @@ class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT_co], AB
         """
         if __name not in self.__dataclass_fields__:
             raise CannotMonkeyPatchEntityError
-        __old: Any | None = getattr(self, __name, None)
+        __old: Any | None = getattr(
+            self, __name, None
+        )  # 프레임워크 내부: 도메인 모델 변경 추적
         super().__setattr__(__name, __value)
         if self.__initialized:
             try:

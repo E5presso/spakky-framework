@@ -9,6 +9,8 @@ from abc import ABC, abstractmethod
 from asyncio import locks, tasks
 from threading import Thread
 
+from typing_extensions import override
+
 from spakky.core.service.interfaces.service import IAsyncService, IService
 
 
@@ -21,6 +23,7 @@ class AbstractBackgroundService(IService, ABC):
     _thread: Thread | None
     _stop_event: threading.Event
 
+    @override
     def set_stop_event(self, stop_event: threading.Event) -> None:
         """Set stop event for shutdown signaling.
 
@@ -29,6 +32,7 @@ class AbstractBackgroundService(IService, ABC):
         """
         self._stop_event = stop_event
 
+    @override
     def start(self) -> None:
         """Start service in background thread."""
         self._stop_event.clear()
@@ -36,6 +40,7 @@ class AbstractBackgroundService(IService, ABC):
         self._thread = Thread(target=self.run, daemon=True, name=type(self).__name__)
         self._thread.start()
 
+    @override
     def stop(self) -> None:
         """Stop service and wait for thread to finish."""
         self._stop_event.set()
@@ -78,6 +83,7 @@ class AbstractAsyncBackgroundService(IAsyncService, ABC):
     _task: tasks.Task[None] | None
     _stop_event: locks.Event
 
+    @override
     def set_stop_event(self, stop_event: locks.Event) -> None:
         """Set stop event for shutdown signaling.
 
@@ -86,12 +92,14 @@ class AbstractAsyncBackgroundService(IAsyncService, ABC):
         """
         self._stop_event = stop_event
 
+    @override
     async def start_async(self) -> None:
         """Start service as background task."""
         self._stop_event.clear()
         await self.initialize_async()
         self._task = tasks.create_task(coro=self.run_async(), name=type(self).__name__)
 
+    @override
     async def stop_async(self) -> None:
         """Stop service and wait for task to finish."""
         self._stop_event.set()

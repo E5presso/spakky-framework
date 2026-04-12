@@ -25,9 +25,9 @@ def test_filter_injects_context_values_expect_attributes_on_record() -> None:
     result = f.filter(record)
 
     assert result is True
-    assert record.request_id == "req-abc"  # type: ignore[attr-defined]
-    assert record.user_id == "u-123"  # type: ignore[attr-defined]
-    assert record.context == {"request_id": "req-abc", "user_id": "u-123"}  # type: ignore[attr-defined]
+    assert record.request_id == "req-abc"  # type: ignore[attr-defined] - LogRecord 커스텀 속성 테스트
+    assert record.user_id == "u-123"  # type: ignore[attr-defined] - LogRecord 커스텀 속성 테스트
+    assert record.context == {"request_id": "req-abc", "user_id": "u-123"}  # type: ignore[attr-defined] - LogRecord 커스텀 속성 테스트
     LogContext.clear()
 
 
@@ -48,7 +48,7 @@ def test_filter_empty_context_expect_empty_context_attribute() -> None:
     f = ContextInjectingFilter()
     f.filter(record)
 
-    assert record.context == {}  # type: ignore[attr-defined]
+    assert record.context == {}  # type: ignore[attr-defined] - LogRecord 커스텀 속성 테스트
 
 
 def test_filter_does_not_overwrite_existing_attribute() -> None:
@@ -72,7 +72,7 @@ def test_filter_does_not_overwrite_existing_attribute() -> None:
     # record.name은 이미 "test.logger"이므로 덮어쓰지 않아야 함
     assert record.name == "test.logger"
     # context dict에는 포함
-    assert record.context["name"] == "from_context"  # type: ignore[attr-defined]
+    assert record.context["name"] == "from_context"  # type: ignore[attr-defined] - LogRecord 커스텀 속성 테스트
     LogContext.clear()
 
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
 from spakky.core.common.metadata import AbstractMetadata
+from spakky.core.pod.error import QualifierSelectorNotCallableError
 
 if TYPE_CHECKING:
     from spakky.core.pod.annotations.pod import Pod  # pragma: no cover
@@ -40,7 +41,4 @@ class Qualifier(AbstractMetadata):
             TypeError: If selector is not callable.
         """
         if not callable(self.selector):
-            raise TypeError(
-                f"Qualifier selector must be callable, "
-                f"got {type(self.selector).__name__}"
-            )
+            raise QualifierSelectorNotCallableError

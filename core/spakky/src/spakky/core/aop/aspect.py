@@ -6,6 +6,8 @@ method calls across the application.
 
 from dataclasses import dataclass, field
 
+from typing_extensions import override
+
 from spakky.core.aop.error import AspectInheritanceError
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import (
@@ -57,6 +59,7 @@ class Aspect(Pod):
                         return True
         return False
 
+    @override
     def _initialize(self, obj: PodType) -> None:
         super()._initialize(obj)
         if not is_class_pod(self.target):
@@ -109,6 +112,7 @@ class AsyncAspect(Pod):
                         return True
         return False
 
+    @override
     def _initialize(self, obj: PodType) -> None:
         super()._initialize(obj)
         if not is_class_pod(self.target):

@@ -5,6 +5,13 @@ This module provides event publishers that route events by type:
 - AbstractIntegrationEvent → IEventBus (external transport)
 """
 
+import sys
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
+
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import (
     AbstractDomainEvent,
@@ -12,6 +19,7 @@ from spakky.domain.models.event import (
     AbstractIntegrationEvent,
 )
 
+from spakky.event.error import UnknownEventTypeError
 from spakky.event.event_dispatcher import (
     IAsyncEventDispatcher,
     IEventDispatcher,
@@ -40,6 +48,7 @@ class EventPublisher(IEventPublisher):
         self._dispatcher = dispatcher
         self._bus = bus
 
+    @override
     def publish(self, event: AbstractEvent) -> None:
         """Route an event to the appropriate handler based on its type."""
         match event:
@@ -48,7 +57,7 @@ class EventPublisher(IEventPublisher):
             case AbstractIntegrationEvent():
                 self._bus.send(event)
             case _:  # pragma: no cover - 방어적 분기 (정상 흐름 불가)
-                raise AssertionError(f"Unknown event type: {type(event)!r}")
+                raise UnknownEventTypeError(type(event))
 
 
 @Pod()
@@ -67,6 +76,7 @@ class AsyncEventPublisher(IAsyncEventPublisher):
         self._dispatcher = dispatcher
         self._bus = bus
 
+    @override
     async def publish(self, event: AbstractEvent) -> None:
         """Route an event to the appropriate async handler based on its type."""
         match event:
@@ -75,4 +85,4 @@ class AsyncEventPublisher(IAsyncEventPublisher):
             case AbstractIntegrationEvent():
                 await self._bus.send(event)
             case _:  # pragma: no cover - 방어적 분기 (정상 흐름 불가)
-                raise AssertionError(f"Unknown event type: {type(event)!r}")
+                raise UnknownEventTypeError(type(event))

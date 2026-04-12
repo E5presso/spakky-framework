@@ -263,7 +263,13 @@ def test_entity_attribute_will_not_change_if_validation_error_raised() -> None:
 
 def test_entity_auto_updates_timestamp_and_version_on_change() -> None:
     """엔티티 변경 시 updated_at과 version이 자동으로 업데이트됨을 검증한다."""
-    import time
+    from datetime import UTC, datetime
+
+    from freezegun import freeze_time
+
+    t1 = datetime(2025, 1, 1, tzinfo=UTC)
+    t2 = datetime(2025, 1, 2, tzinfo=UTC)
+    t3 = datetime(2025, 1, 3, tzinfo=UTC)
 
     @mutable
     class User(AbstractEntity[UUID]):
@@ -277,15 +283,14 @@ def test_entity_auto_updates_timestamp_and_version_on_change() -> None:
         def next_id(cls) -> UUID:
             return uuid4()
 
-    user = User(uid=uuid4(), name="John", email="john@example.com")
-    original_updated_at = user.updated_at
-    original_version = user.version
-
-    # Small delay to ensure timestamp difference
-    time.sleep(0.01)
+    with freeze_time(t1):
+        user = User(uid=uuid4(), name="John", email="john@example.com")
+        original_updated_at = user.updated_at
+        original_version = user.version
 
     # Change name - should auto-update metadata
-    user.name = "Jane"
+    with freeze_time(t2):
+        user.name = "Jane"
 
     assert user.updated_at > original_updated_at, "updated_at should be newer"
     assert user.version != original_version, "version should change"
@@ -293,9 +298,9 @@ def test_entity_auto_updates_timestamp_and_version_on_change() -> None:
     # Change email - should update again
     new_updated_at = user.updated_at
     new_version = user.version
-    time.sleep(0.01)
 
-    user.email = "jane@example.com"
+    with freeze_time(t3):
+        user.email = "jane@example.com"
 
     assert user.updated_at > new_updated_at, "updated_at should be newer again"
     assert user.version != new_version, "version should change again"

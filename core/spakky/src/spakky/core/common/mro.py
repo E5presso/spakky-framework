@@ -18,6 +18,7 @@ from typing import (
 )
 
 from spakky.core.common.constants import ORIGIN_BASES, PARAMETERS
+from spakky.core.common.error import GenericMROTypeError
 from spakky.core.common.types import ObjectT
 
 
@@ -64,7 +65,7 @@ def generic_mro(tp: Any) -> list[type]:
     origin = get_origin(tp)
     if origin is None and not hasattr(tp, ORIGIN_BASES):
         if not isinstance(tp, type):
-            raise TypeError(f"{tp!r} is not a type or a generic alias")
+            raise GenericMROTypeError
         return tp.mro()
     # sentinel value to avoid to subscript Generic and Protocol
     result = {Generic: Generic, Protocol: Protocol}

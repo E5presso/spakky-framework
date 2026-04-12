@@ -5,8 +5,14 @@ and Dispatcher interfaces. Mediators manage handler registration and event
 dispatching within the same bounded context.
 """
 
+import sys
 from logging import getLogger
 from typing import Any
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractEvent
@@ -35,6 +41,7 @@ class EventMediator(IEventConsumer, IEventDispatcher):
         """Initialize an empty handler registry."""
         self._handlers = {}
 
+    @override
     def register(
         self,
         event: type[AbstractEvent],
@@ -46,6 +53,7 @@ class EventMediator(IEventConsumer, IEventDispatcher):
         self._handlers[event].append(handler)
         logger.debug(f"Registered handler for {event.__name__}")
 
+    @override
     def dispatch(self, event: AbstractEvent) -> None:
         """Dispatch an event to all registered handlers."""
         event_type = type(event)
@@ -75,6 +83,7 @@ class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
         """Initialize an empty async handler registry."""
         self._handlers = {}
 
+    @override
     def register(
         self,
         event: type[AbstractEvent],
@@ -86,6 +95,7 @@ class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
         self._handlers[event].append(handler)
         logger.debug(f"Registered async handler for {event.__name__}")
 
+    @override
     async def dispatch(self, event: AbstractEvent) -> None:
         """Dispatch an event to all registered async handlers."""
         event_type = type(event)

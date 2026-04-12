@@ -6,6 +6,8 @@ service Pods with the application context for lifecycle management.
 
 from logging import getLogger
 
+from typing_extensions import override
+
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
@@ -33,6 +35,7 @@ class ServicePostProcessor(IPostProcessor):
         super().__init__()
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Register service Pods with application context.
 

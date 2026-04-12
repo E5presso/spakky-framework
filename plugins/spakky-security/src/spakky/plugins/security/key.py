@@ -8,6 +8,7 @@ import secrets
 from typing import Any, final, overload
 
 from spakky.plugins.security.encoding import Base64Encoder
+from spakky.plugins.security.error import InvalidKeyConstructorCallError
 
 
 @final
@@ -56,7 +57,7 @@ class Key:
         if base64 is not None:
             self.__binary = Base64Encoder.get_bytes(base64, url_safe=url_safe)
             return
-        raise ValueError("Invalid call of constructor Key().")
+        raise InvalidKeyConstructorCallError
 
     @property
     def binary(self) -> bytes:

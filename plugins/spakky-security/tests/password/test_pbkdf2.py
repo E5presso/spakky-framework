@@ -1,5 +1,6 @@
 import pytest
 
+from spakky.plugins.security.error import PasswordRequiredError
 from spakky.plugins.security.hash import HashType
 from spakky.plugins.security.key import Key
 from spakky.plugins.security.password.interface import IPasswordEncoder
@@ -7,9 +8,9 @@ from spakky.plugins.security.password.pbkdf2 import Pbkdf2PasswordEncoder
 
 
 def test_pbkdf2_expect_value_error() -> None:
-    """인자 없이 Pbkdf2PasswordEncoder를 생성하면 ValueError가 발생하는지 검증한다."""
-    with pytest.raises(ValueError):
-        Pbkdf2PasswordEncoder()  # type: ignore
+    """인자 없이 Pbkdf2PasswordEncoder를 생성하면 PasswordRequiredError가 발생하는지 검증한다."""
+    with pytest.raises(PasswordRequiredError):
+        Pbkdf2PasswordEncoder()  # type: ignore[call-arg] - 기본값 테스트
 
 
 def test_pbkdf2_not_equal() -> None:

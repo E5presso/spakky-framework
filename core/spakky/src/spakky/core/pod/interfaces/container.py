@@ -29,31 +29,23 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError, IRepresentabl
         Args:
             dependency_chain: List of types in dependency order, ending with the duplicate type.
         """
-        super().__init__()
         self.dependency_chain = dependency_chain
-
-    def __str__(self) -> str:
-        """Format error message with visual dependency path.
-
-        Returns:
-            Formatted string showing the circular dependency path with tree visualization.
-        """
-        if not self.dependency_chain:
-            return self.message
+        if not dependency_chain:
+            super().__init__(self.message)
+            return
 
         lines = [self.message, "Dependency path:"]
-        for i, type_ in enumerate(self.dependency_chain):
+        for i, type_ in enumerate(dependency_chain):
             type_name = type_.__name__ if hasattr(type_, "__name__") else str(type_)
             indent = "  " * i
             arrow = "└─> " if i > 0 else ""
 
-            # Mark the last element as CIRCULAR
-            if i == len(self.dependency_chain) - 1:
+            if i == len(dependency_chain) - 1:
                 lines.append(f"{indent}{arrow}{type_name} (CIRCULAR!)")
             else:
                 lines.append(f"{indent}{arrow}{type_name}")
 
-        return "\n".join(lines)
+        super().__init__("\n".join(lines))
 
 
 class NoSuchPodError(AbstractSpakkyPodError):

@@ -13,6 +13,8 @@ import logging
 from datetime import datetime, timezone
 from typing import ClassVar
 
+from typing_extensions import override
+
 from spakky.plugins.logging.constants import (
     ANSI_DIM,
     ANSI_RESET,
@@ -41,6 +43,7 @@ class SpakkyTextFormatter(logging.Formatter):
         """
         super().__init__(datefmt=datefmt)
 
+    @override
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as a pipe-separated text line.
 
@@ -96,6 +99,7 @@ class SpakkyJsonFormatter(logging.Formatter):
         """
         super().__init__(datefmt=datefmt)
 
+    @override
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as a JSON string.
 
@@ -118,7 +122,9 @@ class SpakkyJsonFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        context: dict[str, str] = getattr(record, "context", {})
+        context: dict[str, str] = getattr(
+            record, "context", {}
+        )  # logging 프레임워크: LogRecord 커스텀 필드 조회
         if context:
             entry.update(context)
 
@@ -143,6 +149,7 @@ class SpakkyPrettyFormatter(logging.Formatter):
     RESET: ClassVar[str] = ANSI_RESET
     DIM: ClassVar[str] = ANSI_DIM
 
+    @override
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record with colours and alignment.
 
@@ -162,7 +169,9 @@ class SpakkyPrettyFormatter(logging.Formatter):
         reset = self.RESET
         dim = self.DIM
 
-        context: dict[str, str] = getattr(record, "context", {})
+        context: dict[str, str] = getattr(
+            record, "context", {}
+        )  # logging 프레임워크: LogRecord 커스텀 필드 조회
         ctx_str = " ".join(f"{k}={v}" for k, v in context.items()) if context else ""
 
         header = (

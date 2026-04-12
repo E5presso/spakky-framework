@@ -143,9 +143,9 @@ class JWT:
         )
         data_to_sign: str = f"{header}.{payload}"
         sign_algorithm: HMACType | None = self.__header.get("alg")
-        if self.__key is None:  # pragma: no cover
+        if self.__key is None:  # pragma: no cover - 방어적 분기
             raise JWTProcessingError("sign key cannot be None")
-        if sign_algorithm is None:  # pragma: no cover
+        if sign_algorithm is None:  # pragma: no cover - 방어적 분기
             raise JWTProcessingError("field named 'alg' does not exists in header")
         self.__signature = HMAC.sign_text(
             self.__key,

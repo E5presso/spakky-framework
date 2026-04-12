@@ -47,7 +47,9 @@ class IAsyncCommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
     """Protocol for asynchronous command use cases."""
 
     @abstractmethod
-    async def run(self, command: CommandT_contra) -> ResultT_co:  # pyrefly: ignore
+    async def run(
+        self, command: CommandT_contra
+    ) -> ResultT_co:  # pyrefly: ignore - async abstractmethod covariance
         """Execute command asynchronously and return result.
 
         Args:

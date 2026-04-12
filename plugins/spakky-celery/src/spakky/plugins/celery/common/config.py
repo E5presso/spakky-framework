@@ -8,6 +8,8 @@ from pydantic import AfterValidator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
 
+from spakky.plugins.celery.error import InvalidTimezoneError
+
 SPAKKY_CELERY_CONFIG_ENV_PREFIX: str = "SPAKKY_CELERY__"
 
 
@@ -16,7 +18,7 @@ def _validate_timezone(value: str) -> str:
     try:
         ZoneInfo(value)
     except ZoneInfoNotFoundError as e:
-        raise ValueError(f"Invalid timezone: {value}") from e
+        raise InvalidTimezoneError from e
     return value
 
 

@@ -9,7 +9,7 @@ from spakky.data.persistency.transaction import (
 )
 
 
-def test_tranasction_auto_commit() -> None:
+def test_transaction_auto_commit() -> None:
     """트랜잭션의 autocommit=True 설정 시 컨텍스트 종료 후 자동 커밋되는지 검증한다."""
 
     class InMemoryTransaction(AbstractTransaction):
@@ -37,11 +37,11 @@ def test_tranasction_auto_commit() -> None:
     with transaction:
         print("do_something")
 
-    assert transaction.committed is True
-    assert transaction.rolled_back is False
+    assert transaction.committed
+    assert not transaction.rolled_back
 
 
-def test_tranasction_manual_commit() -> None:
+def test_transaction_manual_commit() -> None:
     """트랜잭션의 autocommit=False 설정 시 수동 커밋이 필요함을 검증한다."""
 
     class InMemoryTransaction(AbstractTransaction):
@@ -69,18 +69,18 @@ def test_tranasction_manual_commit() -> None:
     with transaction:
         print("do_something")
 
-    assert transaction.committed is False
-    assert transaction.rolled_back is False
+    assert not transaction.committed
+    assert not transaction.rolled_back
 
     with transaction as tx:
         print("do_something")
         tx.commit()
 
-    assert transaction.committed is True
-    assert transaction.rolled_back is False
+    assert transaction.committed
+    assert not transaction.rolled_back
 
 
-def test_tranasction_rollback_when_raised() -> None:
+def test_transaction_rollback_when_raised() -> None:
     """트랜잭션 내에서 예외 발생 시 자동 롤백되는지 검증한다."""
 
     class InMemoryTransaction(AbstractTransaction):
@@ -109,12 +109,12 @@ def test_tranasction_rollback_when_raised() -> None:
         with transaction:
             raise RuntimeError
 
-    assert transaction.committed is False
-    assert transaction.rolled_back is True
+    assert not transaction.committed
+    assert transaction.rolled_back
 
 
 @pytest.mark.asyncio
-async def test_async_tranasction_auto_commit() -> None:
+async def test_async_transaction_auto_commit() -> None:
     """비동기 트랜잭션의 autocommit=True 설정 시 컨텍스트 종료 후 자동 커밋되는지 검증한다."""
 
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
@@ -142,12 +142,12 @@ async def test_async_tranasction_auto_commit() -> None:
     async with transaction:
         print("do_something")
 
-    assert transaction.committed is True
-    assert transaction.rolled_back is False
+    assert transaction.committed
+    assert not transaction.rolled_back
 
 
 @pytest.mark.asyncio
-async def test_async_tranasction_manual_commit() -> None:
+async def test_async_transaction_manual_commit() -> None:
     """비동기 트랜잭션의 autocommit=False 설정 시 수동 커밋이 필요함을 검증한다."""
 
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
@@ -175,19 +175,19 @@ async def test_async_tranasction_manual_commit() -> None:
     async with transaction:
         print("do_something")
 
-    assert transaction.committed is False
-    assert transaction.rolled_back is False
+    assert not transaction.committed
+    assert not transaction.rolled_back
 
     async with transaction as tx:
         print("do_something")
         await tx.commit()
 
-    assert transaction.committed is True
-    assert transaction.rolled_back is False
+    assert transaction.committed
+    assert not transaction.rolled_back
 
 
 @pytest.mark.asyncio
-async def test_async_tranasction_rollback_when_raised() -> None:
+async def test_async_transaction_rollback_when_raised() -> None:
     """비동기 트랜잭션 내에서 예외 발생 시 자동 롤백되는지 검증한다."""
 
     class AsyncInMemoryTransaction(AbstractAsyncTransaction):
@@ -216,5 +216,5 @@ async def test_async_tranasction_rollback_when_raised() -> None:
         async with transaction:
             raise RuntimeError
 
-    assert transaction.committed is False
-    assert transaction.rolled_back is True
+    assert not transaction.committed
+    assert transaction.rolled_back

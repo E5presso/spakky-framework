@@ -1,14 +1,15 @@
 import pytest
 
+from spakky.plugins.security.error import PasswordRequiredError
 from spakky.plugins.security.key import Key
 from spakky.plugins.security.password.interface import IPasswordEncoder
 from spakky.plugins.security.password.scrypt import ScryptPasswordEncoder
 
 
 def test_scrypt_expect_value_error() -> None:
-    """인자 없이 ScryptPasswordEncoder를 생성하면 ValueError가 발생하는지 검증한다."""
-    with pytest.raises(ValueError):
-        ScryptPasswordEncoder()  # type: ignore
+    """인자 없이 ScryptPasswordEncoder를 생성하면 PasswordRequiredError가 발생하는지 검증한다."""
+    with pytest.raises(PasswordRequiredError):
+        ScryptPasswordEncoder()  # type: ignore[call-arg] - 기본값 테스트
 
 
 def test_scrypt_not_equal() -> None:

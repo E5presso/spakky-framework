@@ -1,6 +1,7 @@
 import pytest
 
 from spakky.plugins.security.encoding import Base64Encoder
+from spakky.plugins.security.error import InvalidKeyConstructorCallError
 from spakky.plugins.security.key import Key
 
 
@@ -46,9 +47,9 @@ def test_key_from_base64_url_safe() -> None:
 
 
 def test_key_expect_value_error() -> None:
-    """인자 없이 Key를 생성하면 ValueError가 발생하는지 검증한다."""
-    with pytest.raises(ValueError):
-        Key()  # type: ignore
+    """인자 없이 Key를 생성하면 InvalidKeyConstructorCallError가 발생하는지 검증한다."""
+    with pytest.raises(InvalidKeyConstructorCallError):
+        Key()  # type: ignore[call-arg] - 의도적 인자 누락 테스트
 
 
 def test_key_equals() -> None:

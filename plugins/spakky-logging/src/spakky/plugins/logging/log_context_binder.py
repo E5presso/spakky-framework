@@ -2,6 +2,8 @@
 
 from spakky.core.logging.interfaces.log_context_binder import ILogContextBinder
 from spakky.core.pod.annotations.pod import Pod
+from typing_extensions import override
+
 from spakky.plugins.logging.context import LogContext
 
 
@@ -14,6 +16,7 @@ class LogContextBinder(ILogContextBinder):
     ``LogContext`` directly.
     """
 
+    @override
     def bind(self, **kwargs: str) -> None:
         """Add key-value pairs to the current log context.
 
@@ -22,6 +25,7 @@ class LogContextBinder(ILogContextBinder):
         """
         LogContext.bind(**kwargs)
 
+    @override
     def unbind(self, *keys: str) -> None:
         """Remove keys from the current log context.
 

@@ -17,6 +17,7 @@ from tests import apps
 
 @pytest.fixture(name="environment_variables", scope="package", autouse=True)
 def setup_environment_variables_fixture() -> Generator[None, Any, None]:
+    """RabbitMQ 테스트를 위한 환경 변수 설정 및 정리."""
     env_updates = {
         f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL": "false",
         f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST": "localhost",
@@ -42,6 +43,7 @@ def setup_environment_variables_fixture() -> Generator[None, Any, None]:
 
 @pytest.fixture(scope="package", autouse=True)
 def rabbitmq_container(environment_variables: None) -> Generator[None, None, None]:
+    """RabbitMQ 테스트 컨테이너 실행 및 정리."""
     port = int(environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"])
     username = environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"]
     password = environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"]
@@ -58,6 +60,7 @@ def rabbitmq_container(environment_variables: None) -> Generator[None, None, Non
 
 @pytest.fixture(name="app", scope="package")
 def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
+    """RabbitMQ 플러그인이 로드된 Spakky 애플리케이션 생성."""
     logger = getLogger("debug")
     logger.setLevel(logging.DEBUG)
     console = StreamHandler()

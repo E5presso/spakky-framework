@@ -10,6 +10,7 @@ from spakky.core.service.background import (
     AbstractBackgroundService,
 )
 from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
+from typing_extensions import override
 
 from spakky.outbox.common.config import OutboxConfig
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
@@ -36,14 +37,17 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
         self._transport = transport
         self._config = config
 
+    @override
     def initialize(self) -> None:
         """No-op initialization for the relay service."""
         return
 
+    @override
     def dispose(self) -> None:
         """No-op disposal for the relay service."""
         return
 
+    @override
     def run(self) -> None:
         """Poll the outbox storage and relay pending messages until stopped."""
         while not self._stop_event.is_set():
@@ -88,14 +92,17 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
         self._transport = transport
         self._config = config
 
+    @override
     async def initialize_async(self) -> None:
         """No-op async initialization for the relay service."""
         return
 
+    @override
     async def dispose_async(self) -> None:
         """No-op async disposal for the relay service."""
         return
 
+    @override
     async def run_async(self) -> None:
         """Poll the outbox storage and relay pending messages asynchronously."""
         while not self._stop_event.is_set():

@@ -3,6 +3,7 @@ from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
+from typing_extensions import override
 
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
@@ -38,6 +39,7 @@ class SessionManager(IApplicationContextAware):
     _scoped_session: scoped_session[Session]
     _current_session: Session | None
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         self._application_context = application_context
         self._scoped_session = scoped_session(
@@ -80,6 +82,7 @@ class AsyncSessionManager(IApplicationContextAware):
     _scoped_session: async_scoped_session[AsyncSession]
     _current_session: AsyncSession | None
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         self._application_context = application_context
         self._scoped_session = async_scoped_session(

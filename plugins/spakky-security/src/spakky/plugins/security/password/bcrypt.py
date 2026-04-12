@@ -9,6 +9,7 @@ from typing import ClassVar, overload
 import bcrypt
 
 from spakky.plugins.security.encoding import Base64Encoder
+from spakky.plugins.security.error import PasswordRequiredError
 from spakky.plugins.security.key import Key
 from spakky.plugins.security.password.interface import IPasswordEncoder
 
@@ -65,7 +66,7 @@ class BcryptPasswordEncoder(IPasswordEncoder):
             self.__hash = parts[1]
         else:
             if password is None:
-                raise ValueError("parameter 'password' cannot be None")
+                raise PasswordRequiredError
             effective_rounds = rounds if rounds is not None else self.DEFAULT_ROUNDS
             self.__salt = Key(binary=bcrypt.gensalt(rounds=effective_rounds))
             self.__hash = Base64Encoder.from_bytes(

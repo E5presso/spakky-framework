@@ -136,6 +136,6 @@ class CliController(Pod):
         """
         if self.group_name is None:
             self.group_name = pascal_to_kebab(
-                obj.__name__  # type: ignore
+                obj.__name__  # type: ignore[attr-defined] - 동적 타입 매개변수의 __name__ 접근
             )
         return super().__call__(obj)

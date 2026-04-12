@@ -12,11 +12,12 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
 
 from fastapi import FastAPI
 from spakky.plugins.fastapi.middlewares.error_handling import ErrorHandlingMiddleware
 from spakky.plugins.fastapi.middlewares.tracing import TracingMiddleware
-from spakky.tracing.propagator import ITracePropagator
 
 
 @Order(0)
@@ -31,6 +32,7 @@ class AddBuiltInMiddlewaresPostProcessor(IPostProcessor, IApplicationContextAwar
 
     __application_context: IApplicationContext
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Set the application context for middleware injection.
 
@@ -39,6 +41,7 @@ class AddBuiltInMiddlewaresPostProcessor(IPostProcessor, IApplicationContextAwar
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Add built-in middleware to FastAPI instances.
 

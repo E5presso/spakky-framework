@@ -16,12 +16,13 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from typing_extensions import override
+
+import grpc.aio
 from spakky.plugins.grpc.handler import GrpcServiceHandler
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
-
-import grpc.aio
 
 logger = getLogger(__name__)
 
@@ -47,6 +48,7 @@ class RegisterServicesPostProcessor(
     __container: IContainer
     __application_context: IApplicationContext
 
+    @override
     def set_container(self, container: IContainer) -> None:
         """Inject the IoC container.
 
@@ -55,6 +57,7 @@ class RegisterServicesPostProcessor(
         """
         self.__container = container
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Inject the application context.
 
@@ -82,6 +85,7 @@ class RegisterServicesPostProcessor(
             return pod_type.__bases__[0]
         return pod_type
 
+    @override
     def post_process(self, pod: object) -> object:
         """Register a gRPC service if *pod* is a ``@GrpcController``.
 

@@ -8,6 +8,7 @@ import sys
 from dataclasses import dataclass, field
 
 from spakky.core.common.annotation import ClassAnnotation
+from spakky.core.pod.error import NegativeOrderValueError
 
 
 @dataclass
@@ -28,4 +29,4 @@ class Order(ClassAnnotation):
             ValueError: If order is negative.
         """
         if self.order < 0:
-            raise ValueError("Order cannot be negative")
+            raise NegativeOrderValueError

@@ -9,6 +9,7 @@ from typing import Callable, cast, overload
 from uuid import UUID, uuid4
 
 from spakky.core.aop.post_processor import AspectPostProcessor
+from spakky.core.application.error import AbstractSpakkyApplicationError
 from spakky.core.common.constants import CONTEXT_ID, CONTEXT_SCOPE_CACHE
 from spakky.core.common.types import ObjectT, is_optional, remove_none
 from spakky.core.pod.annotations.lazy import Lazy
@@ -44,7 +45,7 @@ for managing Pods, handling dependency injection, and coordinating services.
 """
 
 
-class CannotAssignSystemContextIDError(Exception):
+class CannotAssignSystemContextIDError(AbstractSpakkyApplicationError):
     """Raised when attempting to override the CONTEXT_ID value."""
 
     message = f"Cannot override {CONTEXT_ID} value."

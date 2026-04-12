@@ -17,6 +17,9 @@ from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.crontab import Crontab, Month, Weekday
 from spakky.task.stereotype.schedule import ScheduleRoute
 from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
+from spakky.tracing.context import TraceContext
+from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
 
 from celery import Celery, current_task
 from celery.schedules import crontab as celery_crontab
@@ -28,9 +31,6 @@ from spakky.plugins.celery.aspects.task_dispatch import (
 from spakky.plugins.celery.common.constants import CELERY_TASK_CONTEXT_KEY
 from spakky.plugins.celery.error import InvalidScheduleRouteError
 
-from spakky.tracing.context import TraceContext
-from spakky.tracing.propagator import ITracePropagator
-
 logger = getLogger(__name__)
 
 
@@ -41,6 +41,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
 
     __application_context: IApplicationContext
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Store the application context for resolving handlers at runtime."""
         self.__application_context = application_context
@@ -165,6 +166,7 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         celery.task(name=task_name)(endpoint)
         return task_name
 
+    @override
     def post_process(self, pod: object) -> object:
         """Register TaskHandler methods as Celery tasks and beat schedules."""
         if not TaskHandler.exists(pod):
@@ -194,7 +196,8 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
             task_name = self._register_method(celery, pod_type, method, propagator)
 
             if has_schedule:
-                assert schedule_route is not None
+                if schedule_route is None:
+                    raise InvalidScheduleRouteError
                 celery.conf.beat_schedule[task_name] = {
                     "task": task_name,
                     "schedule": self._to_celery_schedule(schedule_route),

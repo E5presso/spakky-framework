@@ -14,6 +14,7 @@ from Crypto.Signature import PKCS1_v1_5
 from spakky.plugins.security.cryptography.interface import ICryptor, ISigner
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import (
+    AsymmetricKeyRequiredError,
     CannotImportAsymmetricKeyError,
     DecryptionFailedError,
     KeySizeError,
@@ -68,7 +69,7 @@ class AsymmetricKey:
         passphrase: str | None = None,
     ) -> None:
         if key is None and size is None:  # pragma: no cover
-            raise ValueError("'key' or 'size' must be specified")
+            raise AsymmetricKeyRequiredError
         if key is not None:
             try:
                 imported_key = RSA.import_key(key, passphrase)

@@ -25,6 +25,7 @@ from spakky.event.event_consumer import (
 )
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
 
 logger = getLogger(__name__)
 
@@ -42,6 +43,7 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
     __container: IContainer
     __application_context: IApplicationContext
 
+    @override
     def set_container(self, container: IContainer) -> None:
         """Set the container for dependency injection.
 
@@ -50,6 +52,7 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         """
         self.__container = container
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Set the application context.
 
@@ -58,6 +61,7 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Register event handlers from event handler classes.
 
@@ -78,8 +82,10 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         async_consumer = self.__container.get(IAsyncEventConsumer)
         propagator = self.__application_context.get_or_none(ITracePropagator)
         if propagator is not None:
+            # 프레임워크 내부: consumer 인터페이스가 선택적 propagator를 지원하는지 확인
             if hasattr(consumer, "set_propagator"):
                 consumer.set_propagator(propagator)
+            # 프레임워크 내부: consumer 인터페이스가 선택적 propagator를 지원하는지 확인
             if hasattr(async_consumer, "set_propagator"):
                 async_consumer.set_propagator(propagator)
         for name, method in getmembers(pod, ismethod):
@@ -110,6 +116,7 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     # application context to avoid reusing dependency state.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
+                    # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                     method_to_call = getattr(controller_instance, method_name)
                     return await method_to_call(*args, **kwargs)
 
@@ -128,6 +135,7 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                 # scoped data before invoking the handler.
                 self.__application_context.clear_context()
                 controller_instance = context.get(controller_type)
+                # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                 method_to_call = getattr(controller_instance, method_name)
                 return method_to_call(*args, **kwargs)
 

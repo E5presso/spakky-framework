@@ -17,6 +17,7 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.core.service.interfaces.service import IAsyncService
+from typing_extensions import override
 
 import grpc.aio
 
@@ -56,11 +57,13 @@ class GrpcServerService(IAsyncService):
         """
         self._stop_event = stop_event
 
+    @override
     async def start_async(self) -> None:
         """Start the gRPC server."""
         await self._server.start()
         logger.info("gRPC server started")
 
+    @override
     async def stop_async(self) -> None:
         """Gracefully stop the gRPC server."""
         await self._server.stop(grace=GRACEFUL_SHUTDOWN_SECONDS)
@@ -84,6 +87,7 @@ class BindServerPostProcessor(
     __container: IContainer
     __application_context: IApplicationContext
 
+    @override
     def set_container(self, container: IContainer) -> None:
         """Inject the IoC container.
 
@@ -92,6 +96,7 @@ class BindServerPostProcessor(
         """
         self.__container = container
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Inject the application context.
 
@@ -100,6 +105,7 @@ class BindServerPostProcessor(
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Bind server lifecycle if *pod* is a ``grpc.aio.Server``.
 

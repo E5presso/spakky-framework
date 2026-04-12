@@ -14,3 +14,9 @@ class AbstractSpakkyFrameworkError(Exception, ABC):
 
     message: ClassVar[str]
     """A human-readable message describing the error."""
+
+
+class GenericMROTypeError(AbstractSpakkyFrameworkError):
+    """Raised when a non-type, non-generic-alias is passed to generic_mro."""
+
+    message = "Value is not a type or a generic alias"

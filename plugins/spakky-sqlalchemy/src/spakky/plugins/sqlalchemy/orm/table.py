@@ -70,10 +70,14 @@ class Table(Tag):
                     ),
                     None,
                 )
-                if table is None:  # pragma: no cover
+                if (
+                    table is None
+                ):  # pragma: no cover - 방어적 분기, 정상 경로에서 도달 불가
                     raise TargetDomainNotSpecifiedError(obj)
                 target_domain: type[object] | None = next(iter(get_args(table)), None)
-                if target_domain is None:  # pragma: no cover
+                if (
+                    target_domain is None
+                ):  # pragma: no cover - 방어적 분기, 정상 경로에서 도달 불가
                     raise TargetDomainNotSpecifiedError(obj)
                 self.domain = target_domain
         else:

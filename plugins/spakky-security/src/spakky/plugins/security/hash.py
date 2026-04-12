@@ -50,15 +50,15 @@ class Hash:
             case HashType.MD5:
                 self.__hash = MD5.new()
             case HashType.SHA1:
-                self.__hash = SHA1.new()  # type: ignore
+                self.__hash = SHA1.new()  # type: ignore[no-untyped-call] - PyCryptodome 타입 스텁 미제공
             case HashType.SHA224:
-                self.__hash = SHA224.new()  # type: ignore
+                self.__hash = SHA224.new()  # type: ignore[no-untyped-call] - PyCryptodome 타입 스텁 미제공
             case HashType.SHA256:
-                self.__hash = SHA256.new()  # type: ignore
+                self.__hash = SHA256.new()  # type: ignore[no-untyped-call] - PyCryptodome 타입 스텁 미제공
             case HashType.SHA384:
-                self.__hash = SHA384.new()  # type: ignore
-            case HashType.SHA512:  # pragma: no cover
-                self.__hash = SHA512.new()  # type: ignore
+                self.__hash = SHA384.new()  # type: ignore[no-untyped-call] - PyCryptodome 타입 스텁 미제공
+            case HashType.SHA512:  # pragma: no cover - exhaustive StrEnum
+                self.__hash = SHA512.new()  # type: ignore[no-untyped-call] - PyCryptodome 타입 스텁 미제공
         if isinstance(data, str):
             self.__hash.update(data.encode("UTF-8"))
         if isinstance(data, BufferedReader):

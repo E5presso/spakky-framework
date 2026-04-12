@@ -8,6 +8,8 @@ from logging import getLogger
 from typing import Any, ClassVar, Sequence
 from weakref import WeakKeyDictionary
 
+from typing_extensions import override
+
 from spakky.core.aop.advisor import Advisor, AsyncAdvisor
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
@@ -40,6 +42,7 @@ class AspectProxyHandler(AbstractProxyHandler):
         ]()
         self.__aspects = aspects
 
+    @override
     def call(
         self,
         target: object,
@@ -59,6 +62,7 @@ class AspectProxyHandler(AbstractProxyHandler):
             self.__advisors_cache[method] = runnable
         return self.__advisors_cache[method](*args, **kwargs)
 
+    @override
     async def call_async(
         self,
         target: object,
@@ -96,6 +100,7 @@ class AspectPostProcessor(IPostProcessor):
         super().__init__()
         self.__container = container
 
+    @override
     def post_process(self, pod: object) -> object:
         """Process a Pod by wrapping it with matching aspects.
 

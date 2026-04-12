@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from spakky.plugins.celery.common.config import CeleryConfig
+from spakky.plugins.celery.error import InvalidTimezoneError
 
 
 def test_celery_config_requires_broker_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -60,9 +61,8 @@ def test_celery_config_rejects_invalid_timezone() -> None:
     os.environ["SPAKKY_CELERY__BROKER_URL"] = "amqp://test:test@localhost:5672//"
     os.environ["SPAKKY_CELERY__TIMEZONE"] = "Invalid/Timezone"
     try:
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(InvalidTimezoneError):
             CeleryConfig()
-        assert "Invalid timezone" in str(exc_info.value)
     finally:
         del os.environ["SPAKKY_CELERY__BROKER_URL"]
         del os.environ["SPAKKY_CELERY__TIMEZONE"]

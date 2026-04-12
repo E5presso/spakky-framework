@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
+
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.schema.descriptor_builder import (
@@ -98,7 +99,7 @@ def test_build_message_descriptor_deduplicates() -> None:
 
 
 @GrpcController(package="test.v1")
-class TestGreeterService:
+class SampleGreeterService:
     """Test gRPC service controller."""
 
     @rpc()
@@ -111,9 +112,9 @@ def test_build_service_descriptor_unary() -> None:
     """unary @rpc 메서드에서 서비스 descriptor가 생성되는지 검증한다."""
     collected: dict = {}
     service = build_service_descriptor(
-        TestGreeterService, "test.v1", "TestGreeterService", collected
+        SampleGreeterService, "test.v1", "SampleGreeterService", collected
     )
-    assert service.name == "TestGreeterService"
+    assert service.name == "SampleGreeterService"
     assert len(service.method) == 1
 
     method = service.method[0]
@@ -127,8 +128,8 @@ def test_build_service_descriptor_unary() -> None:
 
 def test_build_file_descriptor_complete() -> None:
     """build_file_descriptor가 완전한 FileDescriptorProto를 생성하는지 검증한다."""
-    file_desc = build_file_descriptor(TestGreeterService)
-    assert file_desc.name == "test/v1/TestGreeterService.proto"
+    file_desc = build_file_descriptor(SampleGreeterService)
+    assert file_desc.name == "test/v1/SampleGreeterService.proto"
     assert file_desc.package == "test.v1"
     assert file_desc.syntax == "proto3"
     assert len(file_desc.service) == 1

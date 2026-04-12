@@ -1,7 +1,13 @@
 """Event handler registration post-processor."""
 
+import sys
 from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
@@ -24,10 +30,12 @@ class EventHandlerRegistrationPostProcessor(IPostProcessor, IContainerAware):
 
     __container: IContainer
 
+    @override
     def set_container(self, container: IContainer) -> None:
         """Receive the container reference via IContainerAware."""
         self.__container = container
 
+    @override
     def post_process(self, pod: object) -> object:
         """Register event handler methods with the appropriate consumer."""
         pod_type = type(pod)

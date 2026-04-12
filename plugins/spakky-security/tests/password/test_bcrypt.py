@@ -1,5 +1,6 @@
 import pytest
 
+from spakky.plugins.security.error import PasswordRequiredError
 from spakky.plugins.security.password.bcrypt import BcryptPasswordEncoder
 from spakky.plugins.security.password.interface import IPasswordEncoder
 
@@ -8,8 +9,8 @@ TEST_ROUNDS = 4
 
 
 def test_bcrypt_expect_value_error() -> None:
-    """인자 없이 BcryptPasswordEncoder를 생성하면 ValueError가 발생하는지 검증한다."""
-    with pytest.raises(ValueError):
+    """인자 없이 BcryptPasswordEncoder를 생성하면 PasswordRequiredError가 발생하는지 검증한다."""
+    with pytest.raises(PasswordRequiredError):
         BcryptPasswordEncoder()  # type: ignore[call-overload] - intentional invalid call for test
 
 

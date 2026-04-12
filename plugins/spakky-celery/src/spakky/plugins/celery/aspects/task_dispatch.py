@@ -15,12 +15,12 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 )
 from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.task_handler import TaskRoute
+from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
 
 from celery import Celery
 from spakky.plugins.celery.common.constants import CELERY_TASK_CONTEXT_KEY
 from spakky.plugins.celery.common.task_result import CeleryTaskResult
-
-from spakky.tracing.propagator import ITracePropagator
 
 logger = getLogger(__name__)
 
@@ -43,6 +43,7 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
         self._celery = celery
         self._propagator = None
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Store the application context for checking worker context."""
         self._application_context = application_context
@@ -52,6 +53,7 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
         self._propagator = propagator
 
     @Around(lambda x: TaskRoute.exists(x) and not iscoroutinefunction(x))
+    @override
     def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
         if self._application_context.get_context_value(CELERY_TASK_CONTEXT_KEY):
             return joinpoint(*args, **kwargs)
@@ -88,6 +90,7 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
         self._celery = celery
         self._propagator = None
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Store the application context for checking worker context."""
         self._application_context = application_context
@@ -97,6 +100,7 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
         self._propagator = propagator
 
     @Around(lambda x: TaskRoute.exists(x) and iscoroutinefunction(x))
+    @override
     async def around_async(
         self, joinpoint: AsyncFunc, *args: Any, **kwargs: Any
     ) -> Any:

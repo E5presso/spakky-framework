@@ -16,9 +16,11 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from typing_extensions import override
 
 from spakky.plugins.logging.config import LogFormat, LoggingConfig
 from spakky.plugins.logging.constants import HANDLER_NAME
+from spakky.plugins.logging.error import UnknownLogFormatError
 from spakky.plugins.logging.filters import ContextInjectingFilter
 from spakky.plugins.logging.formatters import (
     SpakkyJsonFormatter,
@@ -43,9 +45,11 @@ class LoggingSetupPostProcessor(IPostProcessor, IContainerAware):
         super().__init__()
         self.__configured = False
 
+    @override
     def set_container(self, container: IContainer) -> None:
         self.__container = container
 
+    @override
     def post_process(self, pod: object) -> object:
         """Configure logging on first invocation, then pass through.
 
@@ -67,7 +71,9 @@ class LoggingSetupPostProcessor(IPostProcessor, IContainerAware):
 
         # Remove any previously installed Spakky handler
         for h in list(root.handlers):
-            if getattr(h, "name", None) == HANDLER_NAME:
+            if (
+                getattr(h, "name", None) == HANDLER_NAME
+            ):  # logging 프레임워크: 핸들러 이름 동적 조회
                 root.removeHandler(h)
 
         # Set root level
@@ -86,7 +92,7 @@ class LoggingSetupPostProcessor(IPostProcessor, IContainerAware):
             case LogFormat.TEXT:
                 formatter = SpakkyTextFormatter(datefmt=config.date_format)
             case _:  # pragma: no cover - exhaustive StrEnum
-                raise AssertionError(f"Unknown log format: {config.format}")
+                raise UnknownLogFormatError(f"Unknown log format: {config.format}")
 
         handler.setFormatter(formatter)
 

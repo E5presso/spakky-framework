@@ -1,5 +1,13 @@
 """Post-processor that configures OpenTelemetry SDK and replaces W3CTracePropagator."""
 
+from spakky.core.pod.annotations.order import Order
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
+from spakky.core.pod.interfaces.container import IContainer
+from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from spakky.tracing.w3c_propagator import W3CTracePropagator
+from typing_extensions import override
+
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -9,14 +17,6 @@ from opentelemetry.sdk.trace.export import (
     SpanExporter,
 )
 from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
-
-from spakky.core.pod.annotations.order import Order
-from spakky.core.pod.annotations.pod import Pod
-from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
-from spakky.core.pod.interfaces.container import IContainer
-from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from spakky.tracing.w3c_propagator import W3CTracePropagator
-
 from spakky.plugins.opentelemetry.config import ExporterType, OpenTelemetryConfig
 from spakky.plugins.opentelemetry.error import UnsupportedExporterTypeError
 from spakky.plugins.opentelemetry.propagator import OTelTracePropagator
@@ -39,9 +39,11 @@ class OTelSetupPostProcessor(IPostProcessor, IContainerAware):
         super().__init__()
         self.__configured = False
 
+    @override
     def set_container(self, container: IContainer) -> None:
         self.__container = container
 
+    @override
     def post_process(self, pod: object) -> object:
         """Configure TracerProvider on first call; replace W3CTracePropagator.
 

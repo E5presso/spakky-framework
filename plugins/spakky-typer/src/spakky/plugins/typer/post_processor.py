@@ -18,6 +18,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from typing_extensions import override
 
 from spakky.plugins.typer.stereotypes.cli_controller import CliController, TyperCommand
 from spakky.plugins.typer.utils.asyncio import run_async
@@ -49,6 +50,7 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         super().__init__()
         self.__app = app
 
+    @override
     def set_container(self, container: IContainer) -> None:
         """Set the container for dependency injection.
 
@@ -57,6 +59,7 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         """
         self.__container = container
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Set the application context.
 
@@ -65,6 +68,7 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Register commands from CLI controllers.
 
@@ -101,6 +105,7 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     # so purge any context-scoped Pods to avoid cross-command leaks.
                     self.__application_context.clear_context()
                     controller_instance = container.get(controller_type)
+                    # 프레임워크 내부: CLI 커맨드 메서드 동적 디스패치
                     method_to_call = getattr(controller_instance, method_name)
                     if iscoroutinefunction(method_to_call):
                         method_to_call = run_async(method_to_call)

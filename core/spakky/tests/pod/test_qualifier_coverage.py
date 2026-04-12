@@ -4,6 +4,7 @@ import pytest
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.annotations.qualifier import Qualifier
+from spakky.core.pod.error import QualifierSelectorNotCallableError
 
 
 def test_qualifier_with_selector() -> None:
@@ -28,16 +29,13 @@ def test_qualifier_with_selector() -> None:
 
 
 def test_qualifier_with_invalid_selector() -> None:
-    """Qualifier에 호출 불가능한 selector가 주어지면 TypeError가 발생함을 검증한다."""
-    with pytest.raises(TypeError) as exc_info:
+    """Qualifier에 호출 불가능한 selector가 주어지면 QualifierSelectorNotCallableError가 발생함을 검증한다."""
+    with pytest.raises(QualifierSelectorNotCallableError):
         Qualifier(selector="not_a_function")  # type: ignore
 
-    assert "Qualifier selector must be callable" in str(exc_info.value)
-    assert "got str" in str(exc_info.value)
-
     # Test with other non-callable types
-    with pytest.raises(TypeError):
+    with pytest.raises(QualifierSelectorNotCallableError):
         Qualifier(selector=123)  # type: ignore
 
-    with pytest.raises(TypeError):
+    with pytest.raises(QualifierSelectorNotCallableError):
         Qualifier(selector=[])  # type: ignore

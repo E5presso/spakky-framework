@@ -4,11 +4,17 @@ This module provides base classes for domain and integration events
 in event-driven systems.
 """
 
+import sys
 from abc import ABC
 from dataclasses import field
 from datetime import datetime, timezone
 from typing import Self
 from uuid import UUID, uuid4
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
 
 from spakky.core.common.interfaces.cloneable import ICloneable
 from spakky.core.common.interfaces.comparable import IComparable
@@ -45,6 +51,7 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
         """
         return self
 
+    @override
     def __eq__(self, other: object) -> bool:
         """Compare events by id and timestamp.
 
@@ -58,6 +65,7 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
             return False
         return self.event_id == other.event_id and self.timestamp == other.timestamp
 
+    @override
     def __hash__(self) -> int:
         """Compute hash from event id and timestamp.
 
@@ -66,6 +74,7 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
         """
         return hash((self.event_id, self.timestamp))
 
+    @override
     def __lt__(self, __value: Self) -> bool:
         """Compare events by timestamp (less than).
 
@@ -77,6 +86,7 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
         """
         return self.timestamp < __value.timestamp
 
+    @override
     def __le__(self, __value: Self) -> bool:
         """Compare events by timestamp (less than or equal).
 
@@ -88,6 +98,7 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
         """
         return self.timestamp <= __value.timestamp
 
+    @override
     def __gt__(self, __value: Self) -> bool:
         """Compare events by timestamp (greater than).
 
@@ -99,6 +110,7 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
         """
         return self.timestamp > __value.timestamp
 
+    @override
     def __ge__(self, __value: Self) -> bool:
         """Compare events by timestamp (greater than or equal).
 

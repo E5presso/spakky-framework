@@ -1,11 +1,12 @@
 """OTelTracePropagator — OpenTelemetry SDK bridge for ITracePropagator."""
 
+from spakky.tracing.context import TraceContext
+from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
+
 from opentelemetry import context, trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
-
-from spakky.tracing.context import TraceContext
-from spakky.tracing.propagator import ITracePropagator
 
 
 class OTelTracePropagator(ITracePropagator):
@@ -33,6 +34,7 @@ class OTelTracePropagator(ITracePropagator):
         span = NonRecordingSpan(span_context)
         return trace.set_span_in_context(span)
 
+    @override
     def inject(self, carrier: dict[str, str]) -> None:
         """Read the ambient TraceContext and write it into the carrier.
 
@@ -48,6 +50,7 @@ class OTelTracePropagator(ITracePropagator):
         otel_ctx = self._to_otel_context(ctx)
         self._propagator.inject(carrier, context=otel_ctx)
 
+    @override
     def extract(self, carrier: dict[str, str]) -> TraceContext | None:
         """Reconstruct a TraceContext from the carrier.
 
@@ -71,6 +74,7 @@ class OTelTracePropagator(ITracePropagator):
             trace_flags=span_context.trace_flags,
         )
 
+    @override
     def fields(self) -> list[str]:
         """Return the header field names used by this propagator.
 

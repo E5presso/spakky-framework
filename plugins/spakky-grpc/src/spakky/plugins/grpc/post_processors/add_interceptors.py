@@ -16,12 +16,13 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from spakky.plugins.grpc.interceptors.error_handling import ErrorHandlingInterceptor
-from spakky.plugins.grpc.interceptors.tracing import TracingInterceptor
 from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
 
 import grpc
 import grpc.aio
+from spakky.plugins.grpc.interceptors.error_handling import ErrorHandlingInterceptor
+from spakky.plugins.grpc.interceptors.tracing import TracingInterceptor
 
 logger = getLogger(__name__)
 
@@ -49,6 +50,7 @@ class AddInterceptorsPostProcessor(
     __container: IContainer
     __application_context: IApplicationContext
 
+    @override
     def set_container(self, container: IContainer) -> None:
         """Inject the IoC container.
 
@@ -57,6 +59,7 @@ class AddInterceptorsPostProcessor(
         """
         self.__container = container
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Inject the application context.
 
@@ -65,6 +68,7 @@ class AddInterceptorsPostProcessor(
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Replace a bare ``grpc.aio.Server`` with an interceptor-equipped one.
 

@@ -6,6 +6,7 @@ from logging import getLogger
 from spakky.core.common.types import Func
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from typing_extensions import override
 
 from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
 
@@ -25,6 +26,7 @@ class TaskRegistrationPostProcessor(IPostProcessor):
     def __init__(self) -> None:
         self._task_routes = {}
 
+    @override
     def post_process(self, pod: object) -> object:
         """Scan pod for @task methods and register their routes.
 

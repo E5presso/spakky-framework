@@ -1,7 +1,10 @@
 import pytest
 from spakky.core.common.mutability import immutable
 
-from spakky.domain.models.value_object import AbstractValueObject
+from spakky.domain.models.value_object import (
+    AbstractValueObject,
+    UnhashableFieldTypeError,
+)
 
 
 def test_value_object_equals() -> None:
@@ -106,8 +109,10 @@ def test_value_object_can_only_composed_by_hashable_objects_expect_success() -> 
 
 
 def test_value_object_can_only_composed_by_hashable_objects_expect_error() -> None:
-    """해시 불가능한 타입을 포함한 값 객체 생성 시 TypeError가 발생함을 검증한다."""
-    with pytest.raises(TypeError, match="type of 'jobs' is not hashable"):
+    """해시 불가능한 타입을 포함한 값 객체 생성 시 UnhashableFieldTypeError가 발생함을 검증한다."""
+    with pytest.raises(
+        UnhashableFieldTypeError, match="type of 'jobs' is not hashable"
+    ):
 
         @immutable
         class _(AbstractValueObject):

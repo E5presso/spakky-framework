@@ -19,10 +19,13 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from typing_extensions import override
 
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import FastAPIError
-from fastapi.utils import create_model_field  # type: ignore
+from fastapi.utils import (
+    create_model_field,  # type: ignore[import-untyped] - fastapi.utils 내부 모듈, 타입 스텁 미제공
+)
 from spakky.plugins.fastapi.routes.route import Route
 from spakky.plugins.fastapi.routes.websocket import WebSocketRoute
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
@@ -45,6 +48,7 @@ class RegisterRoutesPostProcessor(
     __container: IContainer
     __application_context: IApplicationContext
 
+    @override
     def set_container(self, container: IContainer) -> None:
         """Set the container for dependency injection.
 
@@ -53,6 +57,7 @@ class RegisterRoutesPostProcessor(
         """
         self.__container = container
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Set the application context.
 
@@ -61,6 +66,7 @@ class RegisterRoutesPostProcessor(
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Register routes from API controllers.
 
@@ -118,7 +124,9 @@ class RegisterRoutesPostProcessor(
                     # consecutive FastAPI requests processed on the same worker.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
-                    method_to_call = getattr(controller_instance, method_name)
+                    method_to_call = getattr(
+                        controller_instance, method_name
+                    )  # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                     return await method_to_call(*args, **kwargs)
 
                 router.add_api_route(endpoint=endpoint, **asdict(route))
@@ -144,7 +152,9 @@ class RegisterRoutesPostProcessor(
                     # clear the context to guarantee per-connection isolation.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
-                    method_to_call = getattr(controller_instance, method_name)
+                    method_to_call = getattr(
+                        controller_instance, method_name
+                    )  # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                     return await method_to_call(*args, **kwargs)
 
                 router.add_api_websocket_route(

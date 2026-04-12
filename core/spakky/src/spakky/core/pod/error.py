@@ -24,3 +24,15 @@ class PodInstantiationFailedError(AbstractSpakkyPodError):
     """Raised when Pod instantiation fails."""
 
     message = "Pod instantiation failed"
+
+
+class NegativeOrderValueError(AbstractSpakkyPodError):
+    """Raised when Order annotation receives a negative value."""
+
+    message = "Order cannot be negative"
+
+
+class QualifierSelectorNotCallableError(AbstractSpakkyPodError):
+    """Raised when Qualifier selector is not callable."""
+
+    message = "Qualifier selector must be callable"

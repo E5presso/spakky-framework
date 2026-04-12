@@ -18,11 +18,10 @@ from spakky.event.event_consumer import (
     IAsyncEventConsumer,
     IEventConsumer,
 )
-
-from spakky.plugins.kafka.common.config import KafkaConnectionConfig
-
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
+
+from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 
 logger = getLogger(__name__)
 
@@ -91,11 +90,11 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         return result
 
     def _create_topics(self, topics: list[str]) -> None:
-        if not topics:  # pragma: no cover
+        if not topics:  # pragma: no cover - 등록된 핸들러 없을 때 조기 반환
             return
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
         topics_to_create: set[str] = set(topics) - existing_topics
-        if not topics_to_create:  # pragma: no cover
+        if not topics_to_create:  # pragma: no cover - 모든 토픽이 이미 존재
             return
         self.admin.create_topics(
             [
@@ -109,15 +108,15 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         )
 
     def _route_event_handler(self, message: Message) -> None:
-        if message.error():  # pragma: no cover
+        if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
             logger.error(f"Consumer error: {message.error()}")
             return
         topic: str | None = message.topic()
-        if topic is None:  # pragma: no cover
+        if topic is None:  # pragma: no cover - Kafka 메시지 비정상 상태
             logger.warning("Received message with no topic.")
             return
         event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
-        if event_type is None:  # pragma: no cover
+        if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
             logger.warning(f"Received message for unknown event type: {topic}")
             return
         if self._propagator is not None:
@@ -127,14 +126,14 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             TraceContext.set(ctx)
         try:
             event_message: bytes | None = message.value()
-            if event_message is None:  # pragma: no cover
+            if event_message is None:  # pragma: no cover - Kafka 메시지 본문 누락 방어
                 logger.warning(f"Received empty message for event type: {topic}")
                 return
             event_data = self.type_adapters[event_type].validate_json(event_message)
             handlers = self.handlers[event_type]
             for handler in handlers:
                 handler(event_data)
-        except Exception as e:  # pragma: no cover
+        except Exception as e:  # pragma: no cover - 핸들러 예외 방어
             logger.error(f"Error processing message for event type {topic}: {e}")
         finally:
             if self._propagator is not None:
@@ -233,11 +232,11 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         return result
 
     def _create_topics(self, topics: list[str]) -> None:
-        if not topics:  # pragma: no cover
+        if not topics:  # pragma: no cover - 등록된 핸들러 없을 때 조기 반환
             return
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
         topics_to_create: set[str] = set(topics) - existing_topics
-        if not topics_to_create:  # pragma: no cover
+        if not topics_to_create:  # pragma: no cover - 모든 토픽이 이미 존재
             return
         self.admin.create_topics(
             [
@@ -253,15 +252,15 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     async def _route_event_handler(  # pragma: no cover - 별도 asyncio 태스크로 실행
         self, message: Message
     ) -> None:
-        if message.error():  # pragma: no cover
+        if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
             logger.error(f"Consumer error: {message.error()}")
             return
         topic: str | None = message.topic()
-        if topic is None:  # pragma: no cover
+        if topic is None:  # pragma: no cover - Kafka 메시지 비정상 상태
             logger.warning("Received message with no topic.")
             return
         event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
-        if event_type is None:  # pragma: no cover
+        if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
             logger.warning(f"Received message for unknown event type: {topic}")
             return
         if self._propagator is not None:
@@ -271,14 +270,14 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             TraceContext.set(ctx)
         try:
             event_message: bytes | None = message.value()
-            if event_message is None:  # pragma: no cover
+            if event_message is None:  # pragma: no cover - Kafka 메시지 본문 누락 방어
                 logger.warning(f"Received empty message for event type: {topic}")
                 return
             event_data = self.type_adapters[event_type].validate_json(event_message)
             handlers = self.handlers[event_type]
             for handler in handlers:
                 await handler(event_data)
-        except Exception as e:  # pragma: no cover
+        except Exception as e:  # pragma: no cover - 핸들러 예외 방어
             logger.error(f"Error processing message for event type {topic}: {e}")
         finally:
             if self._propagator is not None:

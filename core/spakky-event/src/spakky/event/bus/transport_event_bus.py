@@ -1,5 +1,12 @@
 """Default EventBus implementations that delegate to EventTransport."""
 
+import sys
+
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
+
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractIntegrationEvent
@@ -31,6 +38,7 @@ class DirectEventBus(IEventBus):
         self._propagator = propagator
         self._adapters = {}
 
+    @override
     def send(self, event: AbstractIntegrationEvent) -> None:
         """Serialize and send an integration event via transport."""
         event_type = type(event)
@@ -64,6 +72,7 @@ class AsyncDirectEventBus(IAsyncEventBus):
         self._propagator = propagator
         self._adapters = {}
 
+    @override
     async def send(self, event: AbstractIntegrationEvent) -> None:
         """Serialize and send an integration event via async transport."""
         event_type = type(event)

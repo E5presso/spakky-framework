@@ -44,7 +44,7 @@ def _cleanup_spakky_handlers() -> None:
 def _make_post_processor(container: _FakeContainer) -> LoggingSetupPostProcessor:
     """Create a LoggingSetupPostProcessor with container injected via IContainerAware."""
     pp = LoggingSetupPostProcessor()
-    pp.set_container(container)  # type: ignore[arg-type]
+    pp.set_container(container)  # type: ignore[arg-type] - Mock 객체를 타입 인자로 전달
     return pp
 
 

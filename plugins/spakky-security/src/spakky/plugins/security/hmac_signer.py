@@ -64,7 +64,7 @@ class HMAC:
             hmac.new(
                 key_bytes,
                 content.encode("UTF-8"),
-                hash_function,  # type: ignore
+                hash_function,  # type: ignore[no-untyped-call] - PyCryptodome 타입 스텁 미제공
             ).digest(),
             url_safe,
         )
@@ -105,7 +105,7 @@ class HMAC:
                 hmac.new(
                     key_bytes,
                     content.encode("UTF-8"),
-                    hash_function,  # type: ignore
+                    hash_function,  # type: ignore[no-untyped-call] - PyCryptodome 타입 스텁 미제공
                 ).digest(),
                 url_safe,
             )

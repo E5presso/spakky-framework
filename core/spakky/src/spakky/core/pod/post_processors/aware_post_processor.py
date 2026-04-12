@@ -4,6 +4,8 @@ This module provides ApplicationContextAwareProcessor which injects
 container and application context into Pods implementing aware interfaces.
 """
 
+from typing_extensions import override
+
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
@@ -31,6 +33,7 @@ class ApplicationContextAwareProcessor(IPostProcessor):
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Inject framework services into aware Pods.
 

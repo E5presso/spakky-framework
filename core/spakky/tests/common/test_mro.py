@@ -2,6 +2,7 @@ from typing import Generic, Protocol, TypeVar
 
 import pytest
 
+from spakky.core.common.error import GenericMROTypeError
 from spakky.core.common.mro import generic_mro, is_family_with
 
 
@@ -122,12 +123,12 @@ def test_generic_mro_with_generic_inheritance() -> None:
 
 
 def test_generic_mro_with_non_class_object() -> None:
-    """클래스가 아닌 객체에 대해 generic_mro 호출 시 TypeError가 발생함을 검증한다."""
+    """클래스가 아닌 객체에 대해 generic_mro 호출 시 GenericMROTypeError가 발생함을 검증한다."""
 
     def a(x: int) -> int:
         return x
 
-    with pytest.raises(TypeError):
+    with pytest.raises(GenericMROTypeError):
         generic_mro(a)
 
 

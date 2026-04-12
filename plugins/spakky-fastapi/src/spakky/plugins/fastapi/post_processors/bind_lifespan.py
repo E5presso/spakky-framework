@@ -15,6 +15,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from typing_extensions import override
 
 from fastapi import FastAPI
 
@@ -33,6 +34,7 @@ class BindLifespanPostProcessor(IPostProcessor, IApplicationContextAware):
 
     __application_context: IApplicationContext
 
+    @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         """Set the application context for lifecycle binding.
 
@@ -41,6 +43,7 @@ class BindLifespanPostProcessor(IPostProcessor, IApplicationContextAware):
         """
         self.__application_context = application_context
 
+    @override
     def post_process(self, pod: object) -> object:
         """Wrap FastAPI lifespan to bind ApplicationContext lifecycle.
 

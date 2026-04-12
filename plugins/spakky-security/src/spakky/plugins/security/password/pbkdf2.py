@@ -8,6 +8,7 @@ import hashlib
 from typing import ClassVar, overload
 
 from spakky.plugins.security.encoding import Base64Encoder
+from spakky.plugins.security.error import PasswordRequiredError
 from spakky.plugins.security.hash import HashType
 from spakky.plugins.security.key import Key
 from spakky.plugins.security.password.interface import IPasswordEncoder
@@ -69,7 +70,7 @@ class Pbkdf2PasswordEncoder(IPasswordEncoder):
             self.__hash = parts[3]
         else:
             if password is None:
-                raise ValueError("parameter 'password' cannot be None")
+                raise PasswordRequiredError
             if salt is None:
                 salt = Key(size=self.SALT_SIZE)
             self.__salt = salt

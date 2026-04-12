@@ -56,3 +56,24 @@ class JWTProcessingError(AbstractSpakkyFrameworkError):
     """Raised when JWT token processing encounters an error."""
 
     message = "Something went wrong to process JWT token"
+
+
+@final
+class InvalidKeyConstructorCallError(AbstractSpakkyFrameworkError):
+    """Raised when Key constructor is called without valid arguments."""
+
+    message = "Invalid call of constructor Key()."
+
+
+@final
+class PasswordRequiredError(AbstractSpakkyFrameworkError):
+    """Raised when password parameter is required but not provided."""
+
+    message = "parameter 'password' cannot be None"
+
+
+@final
+class AsymmetricKeyRequiredError(AbstractSpakkyFrameworkError):
+    """Raised when key or size parameter is required but not provided."""
+
+    message = "'key' or 'size' must be specified"
