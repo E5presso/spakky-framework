@@ -1,14 +1,16 @@
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
-from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.tag_registry_aware import ITagRegistryAware
 from spakky.core.pod.interfaces.tag_registry import ITagRegistry
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
 from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from sqlalchemy import MetaData
 from sqlalchemy import Table as SQLAlchemyTable
+
+AggregateRootT = TypeVar("AggregateRootT", bound=AbstractAggregateRoot[Any])
 
 
 class NoSchemaFoundFromDomainError(AbstractSpakkySqlAlchemyORMError):
@@ -64,19 +66,21 @@ class SchemaRegistry(ITagRegistryAware):
             ] = tag.domain
 
     def get_type(
-        self, domain_type: type[ObjectT]
-    ) -> type[AbstractMappableTable[ObjectT]]:
+        self, domain_type: type[AggregateRootT]
+    ) -> type[AbstractMappableTable[AggregateRootT]]:
         """Look up the table class registered for the given domain type."""
         table = self._domain_to_table_map.get(domain_type)
         if table is None:
             raise NoSchemaFoundFromDomainError(domain_type)
-        return cast(type[AbstractMappableTable[ObjectT]], table)
+        return cast(type[AbstractMappableTable[AggregateRootT]], table)
 
-    def from_domain(self, domain: ObjectT) -> AbstractMappableTable[ObjectT]:
+    def from_domain(
+        self, aggregate: AggregateRootT
+    ) -> AbstractMappableTable[AggregateRootT]:
         """Convert a domain object to its corresponding table instance."""
-        table: type[AbstractMappableTable[ObjectT]] | None = (
-            self._domain_to_table_map.get(type(domain))
+        table: type[AbstractMappableTable[AggregateRootT]] | None = (
+            self._domain_to_table_map.get(type(aggregate))
         )
         if table is None:
-            raise NoSchemaFoundFromDomainError(domain)
-        return table.from_domain(domain)
+            raise NoSchemaFoundFromDomainError(aggregate)
+        return table.from_domain(aggregate)

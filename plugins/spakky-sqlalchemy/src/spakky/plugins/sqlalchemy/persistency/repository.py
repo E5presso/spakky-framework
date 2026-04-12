@@ -118,16 +118,12 @@ class AbstractGenericRepository(
     def _get_table_type(
         self,
     ) -> type[AbstractMappableTable[AggregateRootT]]:
-        return self._schema_registry.get_type(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
-            self._aggregate_type
-        )
+        return self._schema_registry.get_type(self._aggregate_type)
 
     def _table_from_domain(
         self, aggregate: AggregateRootT
     ) -> AbstractMappableTable[AggregateRootT]:
-        return self._schema_registry.from_domain(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
-            aggregate
-        )
+        return self._schema_registry.from_domain(aggregate)
 
     @override
     def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
@@ -321,16 +317,12 @@ class AbstractAsyncGenericRepository(
     def _get_table_type(
         self,
     ) -> type[AbstractMappableTable[AggregateRootT]]:
-        return self._schema_registry.get_type(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
-            self._aggregate_type
-        )
+        return self._schema_registry.get_type(self._aggregate_type)
 
     def _table_from_domain(
         self, aggregate: AggregateRootT
     ) -> AbstractMappableTable[AggregateRootT]:
-        return self._schema_registry.from_domain(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
-            aggregate
-        )
+        return self._schema_registry.from_domain(aggregate)
 
     @override
     async def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
