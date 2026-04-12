@@ -7,7 +7,7 @@ from spakky.core.common.mutability import mutable
 from spakky.core.pod.annotations.tag import Tag
 from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 from spakky.core.utils.uuid import uuid7
-from spakky.domain.models import AbstractEntity
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 from sqlalchemy import DateTime, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,7 +54,7 @@ class InMemoryTagRegistry(ITagRegistry):
 
 
 @mutable
-class User(AbstractEntity[UUID]):
+class User(AbstractAggregateRoot[UUID]):
     """Test domain entity."""
 
     username: str
