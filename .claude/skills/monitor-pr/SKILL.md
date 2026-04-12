@@ -9,6 +9,25 @@ user-invocable: false
 
 인자: PR 번호. 상위 스킬에서 호출.
 
+## 상태 머신
+
+```
+INIT (미처리 코멘트 확인 — MUST)
+  ├─ [코멘트 있음] → TRIAGE → INIT
+  └─ [코멘트 없음] → POLLING
+
+POLLING (백그라운드, 5초 간격)
+  ├─ PR_CLOSED → 사용자 알림 → CLEANUP
+  ├─ CONFLICT → 해결 → push → INIT
+  ├─ CI_FAILURE → 로컬 재현 → 수정 → push → INIT
+  ├─ NEW_COMMENT / NEW_REVIEW_COMMENT → 수집 → TRIAGE → INIT
+  ├─ REVIEW_STATE_CHANGED → 사용자 알림 → INIT
+  └─ MERGEABLE (단독) → CLEANUP → Phase 7 전환
+
+CLEANUP (종료)
+  └─ 백그라운드 터미널 종료 확인
+```
+
 ## 초기화
 
 ```bash
@@ -22,10 +41,29 @@ MY_LOGIN=$(GH_PAGER=cat gh api user --jq '.login')
 
 **polling 시작 전과 재시작 전** 반드시 실행. 건너뛰기 금지.
 
+### 1. 상태 확인 (CI / Conflict)
+
+polling에 진입하기 전에 현재 PR 상태를 한 번 확인한다:
+
+```bash
+mergeState=$(GH_PAGER=cat gh pr view $PR_NUMBER --repo $REPO_FULL --json mergeStateStatus --jq '.mergeStateStatus' 2>/dev/null || echo "")
+failedCount=$(GH_PAGER=cat gh pr view $PR_NUMBER --repo $REPO_FULL --json statusCheckRollup --jq '[(.statusCheckRollup // [])[] | select(.conclusion == "FAILURE" or .state == "FAILURE" or .conclusion == "ERROR" or .state == "ERROR")] | length' 2>/dev/null || echo 0)
+```
+
+- `mergeState == DIRTY` → conflict 해결 후 push → 다시 sweep
+- `failedCount > 0` → 로컬 재현 → 수정 → push → 다시 sweep
+- 둘 다 clean → 코멘트 수집으로 진행
+
+### 2. 코멘트 수집
+
 3채널(인라인 스레드, 일반 코멘트, 리뷰 본문)에서 미처리 코멘트를 수집한다. 수집 방법은 "코멘트 수집" 절 참조.
 
-- 미처리 있으면 → 트리아지 후 polling 시작
+- 미처리 있으면 → `/review-pr` 트리아지 후 polling 시작
 - 없으면 → 바로 polling 시작
+
+### 트리아지 게이트
+
+**금지**: 에이전트가 코멘트 내용을 보고 "처리 불필요"로 판단하는 것. 미처리 코멘트가 1건이라도 있으면 반드시 `/review-pr`을 실행한다.
 
 ## Polling 스크립트
 
@@ -82,7 +120,9 @@ done
 
 ## 이벤트 처리
 
-출력에서 `EVENT:` 라인을 모두 추출, `STATE:` 라인에서 baseline을 기록한 후, 아래 우선순위로 순차 처리한다.
+**MUST**: polling 터미널의 출력을 읽은 후 `EVENT:` 라인을 **모두** 추출한다. 이벤트를 읽지 않고 넘어가면 충돌/CI 실패를 놓친다.
+
+`STATE:` 라인에서 baseline을 기록한 후, **모든 이벤트를 아래 우선순위로 순차 처리**한다. 코멘트 이벤트만 처리하고 CI_FAILURE/CONFLICT를 건너뛰는 것은 금지.
 
 | 우선순위 | 이벤트 | 처리 |
 |---------|--------|------|
@@ -92,6 +132,8 @@ done
 | 3 | `NEW_COMMENT` / `NEW_REVIEW_COMMENT` | 코멘트 수집 → `/review-pr` → 재리뷰 요청 |
 | 4 | `REVIEW_STATE_CHANGED` | 사용자에 알림 |
 | 5 | `MERGEABLE` | **단독일 때만** Phase 7 전환 (다른 이벤트 동시 시 무시, 재평가) |
+
+**복수 이벤트 동시 발생 시**: 우선순위 0→5 순서로 **모두** 처리한다. 하나를 처리한 뒤 나머지를 버리지 않는다.
 
 ## 코멘트 수집
 
@@ -134,6 +176,13 @@ GH_PAGER=cat gh api repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews \
 2. 이전 출력 `STATE:` 값으로 `B_*` baseline 복원 (에이전트가 코멘트/리뷰를 추가했으면 API 재캡처)
 3. polling 루프 재시작
 
-**종료**: `MERGEABLE` 단독 → Phase 7 / `PR_CLOSED` → 종료 / 사용자 요청 시 종료
+**종료**: `MERGEABLE` 단독 → CLEANUP → Phase 7 / `PR_CLOSED` → CLEANUP → 종료 / 사용자 요청 시 CLEANUP → 종료
+
+## CLEANUP
+
+모니터링 종료 시 반드시 실행:
+
+1. 백그라운드 polling 터미널이 실행 중이면 종료를 확인한다.
+2. baseline 상태 값을 더 이상 참조하지 않는다.
 
 $ARGUMENTS
