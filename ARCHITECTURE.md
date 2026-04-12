@@ -157,7 +157,7 @@ graph TD
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
 - **사가 코어** (spakky-saga) → `spakky` + `spakky-domain`에 의존
-- **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-tracing`에 의존 + `grpcio` 외부 의존성
+- **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-tracing`에 의존 + `grpcio`, `protobuf` 외부 의존성
 
 ---
 
@@ -409,7 +409,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
 | `spakky-tracing` | `W3CTracePropagator` |
 | `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` |
-| `spakky-saga` | (없음 — 현재 stub) |
+| `spakky-saga` | (없음 — `@Saga`가 `@Pod` 기반이므로 Pod 스캔만으로 DI 컨테이너가 관리) |
 | `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
 
 ---
@@ -931,22 +931,26 @@ class OrderSaga(AbstractSaga[OrderSagaData]):
     ...
 ```
 
-### `AbstractSaga`와 `SagaStep` 디스크립터
+### `AbstractSaga`와 `@saga_step` 디스크립터
 
-`AbstractSaga[SagaDataT]`는 사가의 기본 클래스입니다. 서브클래스에서 공개 비동기 메서드를 선언하면 `__init_subclass__()`가 자동으로 `_SagaStepDescriptor`로 래핑하여, 인스턴스 접근 시 `SagaStep` 객체를 반환합니다. 이를 통해 연산자(`>>`, `&`, `|`) 사용이 가능합니다.
+`AbstractSaga[SagaDataT]`는 사가의 기본 클래스로, 추상 메서드 `flow()`와 실행 진입점 `execute(data)`를 제공합니다. `execute()`는 내부적으로 `run_saga_flow(self.flow(), data, saga_name=type(self).__name__)`를 호출합니다.
+
+사가 step 역할을 하는 async 메서드에는 `@saga_step` 데코레이터를 **명시적으로** 붙여야 합니다. 데코레이터는 `_SagaStepDescriptor`를 반환하여 인스턴스 접근 시 `SagaStep`을 돌려주고, 이를 통해 `>>`, `&`, `|` 연산자가 타입 안전하게 동작합니다.
 
 ```python
-from spakky.saga.base import AbstractSaga
-from spakky.saga.flow import SagaFlow
+from spakky.saga import AbstractSaga, Saga, SagaFlow, saga_step
 
 @Saga()
 class OrderSaga(AbstractSaga[OrderSagaData]):
+    @saga_step
     async def create_order(self, data: OrderSagaData) -> OrderSagaData:
         ...
 
+    @saga_step
     async def cancel_order(self, data: OrderSagaData) -> None:
         ...
 
+    @saga_step
     async def reserve_stock(self, data: OrderSagaData) -> OrderSagaData:
         ...
 
@@ -995,7 +999,7 @@ flow = saga_flow(
 
 ### `SagaResult`와 실행 엔진
 
-`run_saga_flow(flow, data)` 함수가 `SagaFlow`를 실행하고 `SagaResult`를 반환합니다.
+`run_saga_flow(flow, data, *, saga_name=...)` 함수가 `SagaFlow`를 실행하고 `SagaResult`를 반환합니다. `AbstractSaga.execute()`는 이 함수의 얇은 래퍼입니다. 실행은 순차 step → 병렬 그룹 → 실패 시 역순 보상 순서로 진행되며, 각 단계는 `[saga=... step=... status=... elapsed=...ms]` 형식의 구조화 로그를 남깁니다.
 
 | 컴포넌트 | 필드 | 설명 |
 |---------|------|------|
@@ -1014,6 +1018,7 @@ flow = saga_flow(
 AbstractSpakkySagaError (ABC)
 ├── SagaFlowDefinitionError
 ├── SagaCompensationFailedError
+├── SagaStepTimeoutError
 ├── SagaParallelMergeConflictError
 └── SagaEngineNotConnectedError
 ```

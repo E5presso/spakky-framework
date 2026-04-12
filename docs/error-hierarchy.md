@@ -25,6 +25,11 @@ Exception
     ├── AbstractSpakkyTracingError
     ├── AbstractSpakkyOutboxError
     ├── AbstractSpakkySagaError
+    │   ├── SagaFlowDefinitionError
+    │   ├── SagaCompensationFailedError
+    │   ├── SagaStepTimeoutError
+    │   ├── SagaParallelMergeConflictError
+    │   └── SagaEngineNotConnectedError
     ├── AbstractSpakkyFastAPIError (플러그인)
     ├── AbstractSpakkySqlAlchemyError (플러그인)
     │   ├── AbstractSpakkySqlAlchemyORMError
@@ -393,6 +398,7 @@ from spakky.saga.error import (
     AbstractSpakkySagaError,
     SagaFlowDefinitionError,
     SagaCompensationFailedError,
+    SagaStepTimeoutError,
     SagaParallelMergeConflictError,
     SagaEngineNotConnectedError,
 )
@@ -403,6 +409,7 @@ from spakky.saga.error import (
 | `AbstractSpakkySagaError`           | 사가 에러 기반 클래스                       |
 | `SagaFlowDefinitionError`          | SagaFlow 정의 오류 (잘못된 흐름 구성)        |
 | `SagaCompensationFailedError`       | 보상 로직 실행 중 예외 발생                |
+| `SagaStepTimeoutError`              | step 타임아웃 초과 (엔진 내부, `on_error` 전략으로 라우팅) |
 | `SagaParallelMergeConflictError`    | 병렬 단계 결과 병합 시 충돌                 |
 | `SagaEngineNotConnectedError`       | 사가 엔진이 초기화되지 않은 상태에서 실행 시도 |
 

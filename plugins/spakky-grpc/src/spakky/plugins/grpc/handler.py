@@ -371,6 +371,7 @@ def _protobuf_to_dataclass(message: Message, dataclass_type: type) -> object:
         An instance of *dataclass_type* populated from *message*.
     """
     kwargs: dict[str, object] = {}
+    # reason: protobuf Message 필드는 런타임 동적 속성 — 정적 타입으로 접근 불가
     for field in fields(dataclass_type):
         resolved_type = _unwrap_annotated(field.type)
         if _is_optional(resolved_type) and message.HasField(field.name):
@@ -441,6 +442,7 @@ def _dataclass_to_protobuf(obj: object, message_class: type[Message]) -> Message
     """
     msg = message_class()
     descriptor = msg.DESCRIPTOR
+    # reason: protobuf Message 필드와 dataclass 필드 모두 런타임 동적 속성 접근 필요
     for field_desc in descriptor.fields:
         value = getattr(obj, field_desc.name, None)
         if value is None:

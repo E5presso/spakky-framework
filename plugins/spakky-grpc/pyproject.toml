@@ -6,7 +6,12 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["grpcio>=1.68.0", "spakky>=6.3.1", "spakky-tracing>=6.3.1"]
+dependencies = [
+    "grpcio>=1.68.0",
+    "protobuf>=6.33.0",
+    "spakky>=6.3.1",
+    "spakky-tracing>=6.3.1",
+]
 
 [project.entry-points."spakky.plugins"]
 spakky-grpc = "spakky.plugins.grpc.main:initialize"

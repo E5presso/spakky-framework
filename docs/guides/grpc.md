@@ -20,7 +20,7 @@
 pip install spakky-grpc
 ```
 
-`spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`에 의존합니다.
+`spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`, `protobuf`에 의존합니다.
 
 `GrpcServerSpec` Pod를 등록하여 바인드 주소를 지정합니다. PostProcessor가 인터셉터와 서비스 핸들러를 spec에 누적하고, `start()` 호출 시 ApplicationContext의 이벤트 루프에서 실제 `grpc.aio.Server`를 생성·구동합니다.
 

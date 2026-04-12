@@ -159,3 +159,4 @@ nav:
       - ADR-0004 분산 트레이싱 아키텍처: adr/0004-distributed-tracing-architecture.md
       - ADR-0005 Outbox SQLAlchemy 통합: adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md
       - ADR-0006 spakky-outbox 코어 승격: adr/0006-move-outbox-to-core.md
+      - ADR-0007 spakky-saga 분산 트랜잭션 오케스트레이션: adr/0007-spakky-saga-plan.md

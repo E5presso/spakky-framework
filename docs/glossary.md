@@ -502,42 +502,53 @@ LogContext.bind(request_id="abc-123")
 
 ### @Saga
 
-사가 오케스트레이터 클래스를 마크하는 스테레오타입. `@Pod`의 서브클래스입니다.
+사가 오케스트레이터 클래스를 마크하는 스테레오타입. `@Pod`의 서브클래스이므로 패키지 스캔만으로 DI 컨테이너에 자동 등록됩니다.
 
 ```python
-from spakky.saga.stereotype import Saga
-from spakky.saga.base import AbstractSaga
+from spakky.saga import AbstractSaga, Saga, SagaFlow, saga_flow, saga_step
 
 @Saga()
 class OrderSaga(AbstractSaga[OrderSagaData]):
-    ...
+    @saga_step
+    async def create_order(self, data: OrderSagaData) -> OrderSagaData: ...
+
+    def flow(self) -> SagaFlow[OrderSagaData]:
+        return saga_flow(self.create_order)
 ```
 
 ### AbstractSaga
 
-사가의 기본 추상 클래스. `SagaStep` 디스크립터를 통해 각 단계를 선언합니다.
+사가의 기본 추상 클래스. `flow()`를 구현하여 사가 흐름을 선언하고, `execute(data)`로 실행합니다. 내부적으로 `run_saga_flow`에 클래스명을 `saga_name`으로 전달하여 구조화 로그에 포함합니다.
 
-### SagaStep
+### @saga_step
 
-사가의 개별 실행 단계를 나타내는 타입. `AbstractSaga`의 공개 비동기 메서드가 `__init_subclass__`에 의해 자동으로 `SagaStep` 디스크립터로 래핑됩니다.
+사가 step 메서드를 `_SagaStepDescriptor`로 감싸는 데코레이터. 인스턴스 접근 시 bound 메서드가 `SagaStep`으로 승격되어 `>>`, `&`, `|` 연산자가 타입 안전하게 동작합니다.
 
 ```python
-from spakky.saga.base import AbstractSaga
+from spakky.saga import saga_step
 
-class OrderSaga(AbstractSaga[OrderSagaData]):
-    # 공개 비동기 메서드가 SagaStep으로 자동 변환
-    async def create_order(self, data: OrderSagaData) -> OrderSagaData:
-        ...
-    async def cancel_order(self, data: OrderSagaData) -> None:
-        ...
+@saga_step
+async def create_order(self, data: OrderSagaData) -> OrderSagaData: ...
 ```
+
+### SagaStep / Transaction / Parallel
+
+DSL의 기본 빌딩 블록.
+
+| 타입 | 역할 | 생성 방법 |
+|------|------|---------|
+| `SagaStep[T]` | 단일 action (compensate 없음) | `step(action)`, `@saga_step` 메서드 |
+| `Transaction[T]` | action + compensate 쌍 | `step(action, compensate=...)`, `action >> compensate` |
+| `Parallel[T]` | 동시 실행 그룹 (최소 2개) | `parallel(...)`, `a & b` |
 
 ### SagaFlow
 
-`SagaStep`들을 조합하여 실행 흐름을 정의하는 컨테이너. `>>` (action + compensate 쌍), `&` (병렬), `|` (에러 전략) 연산자를 지원합니다.
+최상위 흐름 정의. `saga_flow(*items)`로 생성하며, `.timeout(duration)`·`.on_compensation_failure(handler)`로 실행 옵션을 덧붙입니다. `>>` (action + compensate 쌍), `&` (병렬), `|` (에러 전략) 연산자를 지원합니다.
 
 ```python
-from spakky.saga.flow import saga_flow, step, parallel
+from datetime import timedelta
+
+from spakky.saga import parallel, saga_flow, step
 
 flow = saga_flow(
     step(saga.create_order, compensate=saga.cancel_order),
@@ -545,30 +556,54 @@ flow = saga_flow(
         step(saga.reserve_stock, compensate=saga.release_stock),
         step(saga.process_payment, compensate=saga.refund_payment),
     ),
-)
+).timeout(timedelta(seconds=30))
 ```
 
 ### ErrorStrategy
 
-사가 단계 실패 시 적용할 전략:
+사가 step 실패 시 적용할 전략:
 
 | 전략 | 설명 |
 |------|------|
-| `Compensate` | 보상 함수를 실행하여 롤백 (기본값) |
-| `Skip` | 실패를 무시하고 다음 단계로 진행 |
-| `Retry(max_attempts, backoff, then)` | 지정 횟수만큼 재시도 후 then 전략 적용 |
+| `Compensate()` | 역순 보상 후 FAILED 반환 (기본값) |
+| `Skip()` | 실패를 무시하고 다음 step으로 진행 |
+| `Retry(max_attempts, backoff, then)` | 재시도 후 `then` 전략 적용 |
+| `ExponentialBackoff(base=1.0)` | `Retry.backoff`용 지수 백오프 (`base * 2^(attempt-1)`) |
+
+`parallel()` 그룹 내부의 step은 v1에서 기본 `Compensate` 외 `on_error`를 지정할 수 없습니다.
+
+### 타임아웃
+
+| 수준 | 지정 방법 | 동작 |
+|------|---------|------|
+| step | `step(..., timeout=timedelta(...))` | 초과 시 `SagaStepTimeoutError`가 `on_error` 전략을 거침 |
+| saga | `SagaFlow.timeout(duration)` | 초과 시 `SagaStatus.TIMED_OUT`으로 종료하고 commit된 step을 역순 보상 |
+
+### run_saga_flow
+
+`SagaFlow`를 실행하는 얇은 엔트리. `AbstractSaga.execute`가 내부적으로 호출합니다.
+
+```python
+from spakky.saga import run_saga_flow
+
+result = await run_saga_flow(flow, data, saga_name="OrderSaga")
+```
 
 ### SagaResult
 
-사가 실행 결과를 담는 모델. `status` (`SagaStatus`), `data`, `failed_step`, `error`, `history` (`tuple[StepRecord, ...]`), `elapsed` 필드를 가집니다.
+사가 실행 결과. `status` (`SagaStatus`), `data`, `failed_step`, `error`, `history` (`tuple[StepRecord, ...]`), `elapsed` 필드를 가집니다. 예외는 발생시키지 않습니다 (보상 실패 시 `SagaCompensationFailedError`는 예외).
+
+### StepRecord / StepStatus
+
+각 step의 실행 기록. `status`는 `COMMITTED` / `FAILED` / `COMPENSATED` 중 하나입니다.
 
 ### SagaStatus
 
-사가의 전체 상태를 나타내는 열거형: `STARTED`, `RUNNING`, `COMPENSATING`, `COMPLETED`, `FAILED`, `TIMED_OUT`.
+사가 전체 상태 열거형: `STARTED`, `RUNNING`, `COMPENSATING`, `COMPLETED`, `FAILED`, `TIMED_OUT`.
 
 ### AbstractSagaData
 
-사가 데이터 모델의 기본 클래스. `@immutable` + `AbstractDomainModel`을 확장합니다. 각 단계에서 읽기 전용으로 전달됩니다.
+사가 비즈니스 데이터 모델의 기본 클래스. `@immutable` + `AbstractDomainModel`을 확장하며, `saga_id: UUID` 필드가 기본 제공됩니다. 엔진 상태는 포함하지 않습니다.
 
 ---
 
