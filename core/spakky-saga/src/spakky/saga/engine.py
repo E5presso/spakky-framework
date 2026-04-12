@@ -138,9 +138,9 @@ def _normalize_items(
     items: tuple[  # pyrefly: ignore - SagaFlow.items union includes Callable but saga_flow() promotes it
         SagaStep[SagaDataT] | Transaction[SagaDataT] | Parallel[SagaDataT], ...
     ],
-) -> list[_NormalizedStep[SagaDataT]]:
+) -> list[_NormalizedStep]:
     """flow items를 (name, action, compensate) 튜플 리스트로 정규화한다."""
-    result: list[_NormalizedStep[SagaDataT]] = []
+    result: list[_NormalizedStep] = []
     for item in items:
         if isinstance(item, Transaction):
             name = getattr(item.action, "__name__", "<unknown>")
