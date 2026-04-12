@@ -183,6 +183,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         ) -> object:
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
+            # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)
             if request_type is None:
                 return await handler_method()
@@ -209,6 +210,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         ) -> AsyncIterator[object]:
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
+            # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)
             if request_type is None:
                 async for item in handler_method():
@@ -238,6 +240,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         ) -> object:
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
+            # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)
 
             async def _convert_stream() -> AsyncIterator[object]:
@@ -265,6 +268,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         ) -> AsyncIterator[object]:
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
+            # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)
 
             async def _convert_stream() -> AsyncIterator[object]:

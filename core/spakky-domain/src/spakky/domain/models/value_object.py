@@ -26,6 +26,11 @@ class UnhashableFieldTypeError(AbstractSpakkyDomainError):
     """Raised when a value object field type is not hashable."""
 
     message = "Value object field type is not hashable."
+    field_name: str
+
+    def __init__(self, field_name: str) -> None:
+        self.field_name = field_name
+        super().__init__(self.message)
 
 
 @immutable
@@ -91,5 +96,6 @@ class AbstractValueObject(AbstractDomainModel, IEquatable, ICloneable, IDataclas
         """
         super().__init_subclass__()
         for name, type in cls.__annotations__.items():
+            # typing 별칭/제네릭 타입은 __hash__ 속성이 없을 수 있어 안전 조회
             if getattr(type, "__hash__", None) is None:
-                raise UnhashableFieldTypeError(f"type of '{name}' is not hashable")
+                raise UnhashableFieldTypeError(name)

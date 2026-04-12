@@ -65,6 +65,7 @@ class SpakkyTextFormatter(logging.Formatter):
             record.name,
         ]
 
+        # logging 프레임워크: LogRecord 커스텀 필드 조회
         context: dict[str, str] = getattr(record, "context", {})
         if context:
             ctx_str = " ".join(f"{k}={v}" for k, v in context.items())

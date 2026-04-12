@@ -43,5 +43,5 @@ class GrpcController(Controller):
             The decorated class registered as a Pod.
         """
         if self.service_name is None:
-            self.service_name = obj.__name__  # type: ignore[union-attr] - obj is always a class here
+            self.service_name = obj.__name__  # type: ignore[union-attr] - 제네릭 AnyT가 클래스 타입으로 좁혀지지 않아 __name__ 접근 오탐
         return super().__call__(obj)

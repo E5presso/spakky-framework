@@ -5,7 +5,7 @@ in various formats including binary, Base64, and hexadecimal.
 """
 
 import secrets
-from typing import Any, final, overload
+from typing import final, overload
 
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import (
@@ -87,10 +87,10 @@ class Key:
         """Get the key as uppercase hexadecimal string."""
         return self.__binary.hex().upper()
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, Key):
             raise IncompatibleKeyTypeError
         return self.binary == other.binary
 
-    def __ne__(self, other: Any) -> bool:
+    def __ne__(self, other: object) -> bool:
         return not self == other

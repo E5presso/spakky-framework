@@ -18,6 +18,7 @@ def _make_config(**overrides: object) -> LoggingConfig:
     """Create LoggingConfig with optional attribute overrides."""
     config = LoggingConfig()
     for key, value in overrides.items():
+        # 테스트 헬퍼: 설정 오버라이드 키를 동적으로 주입
         setattr(config, key, value)
     return config
 

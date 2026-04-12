@@ -18,5 +18,8 @@ class UnknownEventTypeError(AbstractSpakkyEventError):
 
     message = "Unknown event type"
 
+    event_type: type
+
     def __init__(self, event_type: type) -> None:
-        super().__init__(f"{self.message}: {event_type!r}")
+        self.event_type = event_type
+        super().__init__()

@@ -111,17 +111,19 @@ def test_value_object_can_only_composed_by_hashable_objects_expect_success() -> 
 def test_value_object_can_only_composed_by_hashable_objects_expect_error() -> None:
     """해시 불가능한 타입을 포함한 값 객체 생성 시 UnhashableFieldTypeError가 발생함을 검증한다."""
     with pytest.raises(
-        UnhashableFieldTypeError, match="type of 'jobs' is not hashable"
-    ):
+        UnhashableFieldTypeError, match="Value object field type is not hashable."
+    ) as exc_info:
 
         @immutable
         class _(AbstractValueObject):
             name: str
             age: int
-            jobs: list[str]
+            jobs: list
 
             def validate(self) -> None:
                 return
+
+    assert exc_info.value.field_name == "jobs"
 
 
 def test_value_object_hash_order_sensitive() -> None:

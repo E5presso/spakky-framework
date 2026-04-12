@@ -7,7 +7,7 @@ hash algorithms (SHA-224, SHA-256, SHA-384, SHA-512).
 import hashlib
 import hmac
 from enum import Enum
-from typing import Any, Callable, final
+from typing import Callable, final
 
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.key import Key
@@ -50,7 +50,7 @@ class HMAC:
             The HMAC signature as a Base64-encoded string.
         """
         key_bytes: bytes = key.binary
-        hash_function: Callable[..., Any]
+        hash_function: Callable[..., object]
         match hmac_type:
             case HMACType.HS224:
                 hash_function = hashlib.sha224
@@ -90,7 +90,7 @@ class HMAC:
             True if the signature is valid, False otherwise.
         """
         key_bytes: bytes = key.binary
-        hash_function: Callable[..., Any]
+        hash_function: Callable[..., object]
         match hmac_type:
             case HMACType.HS224:
                 hash_function = hashlib.sha224
