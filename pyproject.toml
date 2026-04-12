@@ -39,6 +39,8 @@ version_files = [
   "core/spakky-event/pyproject.toml:version",
   "core/spakky-task/pyproject.toml:version",
   "core/spakky-outbox/pyproject.toml:version",
+  "core/spakky-tracing/pyproject.toml:version",
+  "core/spakky-saga/pyproject.toml:version",
   "plugins/spakky-logging/pyproject.toml:version",
   "plugins/spakky-fastapi/pyproject.toml:version",
   "plugins/spakky-rabbitmq/pyproject.toml:version",
@@ -47,10 +49,8 @@ version_files = [
   "plugins/spakky-kafka/pyproject.toml:version",
   "plugins/spakky-sqlalchemy/pyproject.toml:version",
   "plugins/spakky-celery/pyproject.toml:version",
-  "core/spakky-tracing/pyproject.toml:version",
   "plugins/spakky-opentelemetry/pyproject.toml:version",
   "plugins/spakky-grpc/pyproject.toml:version",
-  "core/spakky-saga/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -62,6 +62,8 @@ members = [
   "core/spakky-event",
   "core/spakky-task",
   "core/spakky-outbox",
+  "core/spakky-tracing",
+  "core/spakky-saga",
   "plugins/spakky-logging",
   "plugins/spakky-fastapi",
   "plugins/spakky-rabbitmq",
@@ -70,10 +72,8 @@ members = [
   "plugins/spakky-kafka",
   "plugins/spakky-sqlalchemy",
   "plugins/spakky-celery",
-  "core/spakky-tracing",
   "plugins/spakky-opentelemetry",
   "plugins/spakky-grpc",
-  "core/spakky-saga",
 ]
 
 
@@ -98,6 +98,6 @@ spakky-grpc = { workspace = true }
 spakky-saga = { workspace = true }
 
 [tool.pyrefly]
-python-version = "3.14"
+python-version = "3.11"
 search_path = ["scripts"]
 project_excludes = ["**/__pycache__", "**/*.pyc"]

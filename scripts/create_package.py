@@ -152,7 +152,7 @@ module-root = "src"
 module-name = "{module_name}"
 
 [tool.pyrefly]
-python-version = "3.14"
+python-version = "3.11"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 
