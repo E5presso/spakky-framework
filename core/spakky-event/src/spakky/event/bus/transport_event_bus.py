@@ -2,10 +2,13 @@
 
 import sys
 
-if sys.version_info >= (
-    3,
-    12,
-):  # pragma: no cover - Python 3.12+ import path, tests run on 3.11
+if (
+    sys.version_info
+    >= (
+        3,
+        12,
+    )
+):  # pragma: no cover - Python 3.12+ import path; coverage may run on a single interpreter
     from typing import override
 else:
     from typing_extensions import override
