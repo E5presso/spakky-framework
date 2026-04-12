@@ -14,6 +14,60 @@
 
 ---
 
+## Saga의 아키텍처 위치
+
+`@Saga()`는 `@UseCase()`와 **동급**의 application layer 스테레오타입입니다. 두 스테레오타입 모두 `Pod`을 상속하므로 DI 컨테이너가 동일한 방식으로 관리하며, Controller가 둘 중 어느 것이든 직접 주입받아 호출할 수 있습니다.
+
+```
+Controller
+  ├── UseCase      ← 단일 Aggregate, 로컬 @Transactional
+  └── Saga         ← 복수 서비스/프로세스, 분산 트랜잭션 오케스트레이션
+        │
+        ├── UseCase 호출    (내부 서비스 위임)
+        └── Command 발행    (외부 서비스)
+                │
+                └── Repository / AggregateRoot  (← UseCase 내부에서만)
+```
+
+Saga는 **흐름 제어기(flow orchestrator)** 역할만 담당합니다. Repository 접근·Aggregate 조작·트랜잭션 경계·비즈니스 규칙 판단은 **호출되는 UseCase**에서 수행합니다. 이 경계는 다음 절의 "역할 제한"으로 강제됩니다.
+
+> ADR-0007 §아키텍처 위치 참조.
+
+---
+
+## UseCase vs Saga
+
+구현하려는 오퍼레이션이 아래 중 어느 쪽에 가까운지를 기준으로 선택합니다.
+
+| 기준 | `@UseCase()` + `@Transactional` | `@Saga()` |
+|------|--------------------------------|-----------|
+| 트랜잭션 범위 | 단일 DB / 단일 Aggregate | 복수 서비스·프로세스 경계 |
+| 일관성 모델 | 강한 일관성 (ACID) | 최종 일관성 (최종적 all-or-nothing) |
+| 실패 복구 | DB rollback | 역순 보상(compensation) |
+| 중간 상태 | 외부에 노출되지 않음 | **외부에 노출됨** (Isolation 갭) |
+| 대표 예시 | `AddItemToCartUseCase`, `ChangeUserEmailUseCase` | `CreateOrderSaga`, `BookTravelSaga` |
+
+단일 Aggregate 내부 변경이면 `@UseCase()` + `@Transactional`로 충분합니다. 복수 서비스를 가로지르며 보상이 필요한 순간에만 `@Saga()`로 승격합니다.
+
+---
+
+## Saga의 역할 제한 (순수 흐름 제어기)
+
+Saga는 "흐름을 짠다"는 하나의 관심사만 책임집니다. 아래 범주를 넘어가면 Saga가 아니라 UseCase/Aggregate로 옮겨야 합니다.
+
+| Saga가 하는 것 | Saga가 하지 않는 것 |
+|----------------|--------------------|
+| UseCase를 호출한다 | Repository에 직접 접근하지 않는다 |
+| 외부 Command를 발행한다 | AggregateRoot를 직접 조작하지 않는다 |
+| 실패 시 보상 step을 역순 실행한다 | 비즈니스 규칙을 판단하지 않는다 |
+| step 간 `SagaData`를 전달한다 | `@Transactional` 경계를 관리하지 않는다 |
+
+각 step의 실체는 **"UseCase 호출 1줄 + data 리턴 1줄"** 원칙을 따릅니다. 이 규칙을 지키면 비즈니스 로직이 UseCase에 몰리고, Saga는 흐름 변경에만 집중됩니다.
+
+> ADR-0007 §Saga의 역할 제한 참조.
+
+---
+
 ## 설정
 
 `spakky-saga`는 `spakky`와 `spakky-domain`에 의존합니다.
@@ -53,10 +107,14 @@ from spakky.saga import AbstractSagaData
 
 @immutable
 class OrderSagaData(AbstractSagaData):
-    order_id: str
     customer_id: str
     total_amount: float
+    order_id: str | None = None
+    reservation_id: str | None = None
+    payment_id: str | None = None
 ```
+
+Saga가 식별자(`order_id`, `reservation_id`, `payment_id`)를 **흐름 진행 중에 발급**하기 때문에 이들 필드는 `None` 기본값을 가진 optional로 선언합니다. 각 step은 `dataclasses.replace(data, ...)`로 새 인스턴스를 반환하여 이후 step에 전달합니다.
 
 ### @Saga + AbstractSaga + @saga_step
 
@@ -64,35 +122,60 @@ class OrderSagaData(AbstractSagaData):
 
 step으로 쓸 async 메서드에는 `@saga_step` 데코레이터를 붙여야 `>>`, `&`, `|` 연산자를 타입 안전하게 사용할 수 있습니다.
 
+Saga는 **UseCase들을 DI로 받아** step 메서드에서 호출합니다. step 본문은 "UseCase 호출 + (필요 시) data 교체"로 끝나며, 비즈니스 판단과 영속화는 UseCase 쪽에 있습니다.
+
 ```python
+from dataclasses import replace
+
 from spakky.saga import AbstractSaga, Saga, SagaFlow, saga_flow, saga_step
 
 
 @Saga()
 class OrderSaga(AbstractSaga[OrderSagaData]):
+    def __init__(
+        self,
+        create_order: CreateOrderUseCase,
+        cancel_order: CancelOrderUseCase,
+        reserve_stock: ReserveStockUseCase,
+        release_stock: ReleaseStockUseCase,
+        process_payment: ProcessPaymentUseCase,
+        refund_payment: RefundPaymentUseCase,
+    ) -> None:
+        self._create_order = create_order
+        self._cancel_order = cancel_order
+        self._reserve_stock = reserve_stock
+        self._release_stock = release_stock
+        self._process_payment = process_payment
+        self._refund_payment = refund_payment
+
     @saga_step
     async def create_order(self, data: OrderSagaData) -> OrderSagaData:
-        ...
+        order_id = await self._create_order.execute(data.customer_id)
+        return replace(data, order_id=order_id)
 
     @saga_step
     async def cancel_order(self, data: OrderSagaData) -> None:
-        ...
+        await self._cancel_order.execute(data.order_id)
 
     @saga_step
     async def reserve_stock(self, data: OrderSagaData) -> OrderSagaData:
-        ...
+        reservation_id = await self._reserve_stock.execute(data.order_id)
+        return replace(data, reservation_id=reservation_id)
 
     @saga_step
     async def release_stock(self, data: OrderSagaData) -> None:
-        ...
+        await self._release_stock.execute(data.reservation_id)
 
     @saga_step
     async def process_payment(self, data: OrderSagaData) -> OrderSagaData:
-        ...
+        payment_id = await self._process_payment.execute(
+            data.order_id, data.total_amount
+        )
+        return replace(data, payment_id=payment_id)
 
     @saga_step
     async def refund_payment(self, data: OrderSagaData) -> None:
-        ...
+        await self._refund_payment.execute(data.payment_id)
 
     def flow(self) -> SagaFlow[OrderSagaData]:
         return saga_flow(
@@ -101,6 +184,13 @@ class OrderSaga(AbstractSaga[OrderSagaData]):
             self.process_payment >> self.refund_payment,
         )
 ```
+
+### UseCase 주입 패턴
+
+- `__init__`에서 필요한 UseCase를 **타입 기반 DI**로 주입받습니다. Saga도 `Pod`이므로 컨테이너가 자동으로 해결합니다.
+- 각 step은 주입받은 UseCase의 `execute()`를 **한 줄**로 호출합니다.
+- `@Transactional`은 UseCase 쪽에 붙입니다. Saga 자체는 트랜잭션 경계를 관리하지 않습니다.
+- Repository/Aggregate를 Saga에 직접 주입하지 않습니다. 직접 주입이 필요하다고 느껴지면 그 로직은 UseCase로 승격되어야 한다는 신호입니다.
 
 ### step 시그니처 규약
 
@@ -130,8 +220,37 @@ from spakky.saga import parallel, saga_flow, step
 ```
 
 - `step(action, *, compensate=None, on_error=None, timeout=None)` — `SagaStep` 또는 `Transaction` 생성
-- `parallel(*items)` — 동시 실행 그룹 (`Parallel`, 최소 2개). Callable은 자동으로 `SagaStep`으로 승격
+- `parallel(*items)` — 동시 실행 그룹 (`Parallel`, 최소 2개). Callable은 자동으로 `SagaStep`으로 승격. **최소 2개 검증은 전달된 최상위 인자 개수 기준**이므로, 중첩된 `parallel(...)` 하나만 넘기면 `SagaFlowDefinitionError`가 발생합니다.
 - `saga_flow(*items)` — 최상위 흐름 (`SagaFlow`, 최소 1개)
+
+### 메서드 vs lambda: step 표현 방식
+
+한 step을 `@saga_step` 메서드로 뽑을지, `flow()` 안에 lambda로 inline할지는 **data 변환 여부**로 판단합니다.
+
+| 기준 | 선택 | 이유 |
+|------|------|------|
+| UseCase 결과로 `SagaData`를 교체해야 함 | `@saga_step` 메서드 | `replace(data, ...)` 변환이 들어가므로 이름을 갖는 메서드가 가독성에 유리 |
+| side-effect만 일으킴 (리턴 `None`) | lambda 또는 `step(callable)` | 1줄로 충분하며, lambda는 리턴값이 `SagaData`가 아니면 엔진이 기존 data를 그대로 통과시킴 |
+| 동일 메서드를 다른 연산자와 조합(`>>`, `&`, `\|`)해야 함 | `@saga_step` 메서드 | 연산자는 `SagaStep`을 반환하는 descriptor에만 정의되므로 lambda로는 불가 |
+| 흐름 내에서 한 번만 쓰이고 의미가 자명 | lambda | `flow()` 한 곳에서 전체 흐름을 읽기 쉬움 |
+
+> **중요**: lambda 본문은 반드시 **coroutine을 반환**해야 합니다. 즉 lambda가 호출하는 대상 메서드(`self._audit.record`, `self._notify.sent`, `self._notify.revoke` 등)는 `async def`로 선언되어 있어야 합니다. lambda 자체는 `async def`가 될 수 없지만, async 메서드를 호출하면 `Awaitable`을 반환하므로 엔진이 이를 `await`할 수 있습니다.
+
+```python
+def flow(self) -> SagaFlow[OrderSagaData]:
+    return saga_flow(
+        # data 변환 → 메서드
+        self.create_order >> self.cancel_order,
+        # side-effect only → lambda (self._audit.record는 async 메서드)
+        lambda d: self._audit.record(d.order_id),
+        # 보상이 필요한 side-effect → step(..., compensate=...)
+        # self._notify.sent / self._notify.revoke 모두 async 메서드
+        step(
+            lambda d: self._notify.sent(d.order_id),
+            compensate=lambda d: self._notify.revoke(d.order_id),
+        ),
+    )
+```
 
 ### 흐름 조합 예시
 
@@ -312,6 +431,97 @@ result = await run_saga_flow(flow, data, saga_name="OrderSaga")
 | `name` | `str` | step 이름 (함수 `__name__`) |
 | `status` | `StepStatus` | `COMMITTED` / `FAILED` / `COMPENSATED` |
 | `elapsed` | `timedelta` | step 실행 시간 |
+
+---
+
+## Controller에서 Saga 호출
+
+Controller는 Saga를 다른 Pod와 동일하게 DI로 주입받아 `execute()`를 호출하고, `SagaResult.status`로 응답을 분기합니다. 예외는 발생하지 않으므로 `try/except`가 아니라 **상태 분기**로 제어 흐름을 짭니다.
+
+`spakky-fastapi`를 사용하는 예시입니다 (`@ApiController(prefix)` + `@post(path)`).
+
+```python
+from fastapi import HTTPException
+
+from spakky.plugins.fastapi.routes import post
+from spakky.plugins.fastapi.stereotypes import ApiController
+from spakky.saga import SagaStatus
+
+
+@ApiController("/orders")
+class OrderController:
+    def __init__(self, order_saga: OrderSaga) -> None:
+        self._order_saga = order_saga
+
+    @post("")
+    async def create_order(self, request: CreateOrderRequest) -> CreateOrderResponse:
+        data = OrderSagaData(
+            customer_id=request.customer_id,
+            total_amount=request.total_amount,
+        )
+        result = await self._order_saga.execute(data)
+
+        match result.status:
+            case SagaStatus.COMPLETED:
+                return CreateOrderResponse.from_data(result.data)
+            case SagaStatus.FAILED:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "failed_step": result.failed_step,
+                        "error": type(result.error).__name__ if result.error else None,
+                    },
+                )
+            case SagaStatus.TIMED_OUT:
+                raise HTTPException(status_code=504, detail="Saga timed out")
+            case _:
+                # STARTED / RUNNING / COMPENSATING은 execute 반환 시점엔 나타나지 않음
+                raise HTTPException(status_code=500, detail="Unexpected saga status")
+```
+
+> **Tip**: `SagaStatus`는 `STARTED`/`RUNNING`/`COMPENSATING`도 포함하지만 이들은 엔진 내부 전이용이며 `execute()` 반환 값에서는 관찰되지 않습니다. 그래도 타입 안전성을 위해 `match` 기본 분기를 두는 것을 권장합니다.
+
+Controller가 없는 환경(워커, CLI 등)에서도 패턴은 동일합니다. 주입받은 Saga 인스턴스에 `execute(data)`를 호출하고 `SagaStatus`로 분기하면 됩니다.
+
+---
+
+## Isolation 갭과 Semantic Lock
+
+사가는 RDB 트랜잭션과 달리 **Isolation이 약합니다.** 중간 step이 commit되면 그 효과는 보상 전까지 외부에 관찰될 수 있습니다. 예를 들어 `OrderSaga`가 `create_order`까지 commit하고 `process_payment`에서 실패하여 `cancel_order`로 보상하는 동안, 다른 트랜잭션은 `PLACED` 상태의 order를 잠시 볼 수 있습니다.
+
+| 성질 | RDB Transaction | Saga |
+|------|-----------------|------|
+| Atomicity | 즉시 all-or-nothing | 최종적 all-or-nothing |
+| Isolation | ✅ 중간 상태 비노출 | ❌ **중간 상태 노출** |
+| Consistency | 강한 일관성 | 최종 일관성 |
+
+### Semantic Lock 패턴 (권장)
+
+Aggregate에 **중간 상태**를 명시적으로 모델링하여, 사가가 완주하기 전까지는 외부 사용자가 해당 엔터티를 "잠정적으로만" 볼 수 있도록 합니다. 대표 패턴: `PENDING → CONFIRMED`.
+
+1. **초기 commit step**에서 Aggregate를 `PENDING` 상태로 생성합니다.
+2. 모든 step이 성공하면 **마지막 pivot step**에서 `CONFIRMED`로 전이합니다.
+3. 보상 step은 `PENDING` Aggregate를 `CANCELLED`/삭제로 돌립니다.
+4. **읽기 쿼리 / 다른 UseCase**는 `CONFIRMED`만 조회하도록 필터링합니다. `PENDING`은 사가 진행 중인 자원으로 취급합니다.
+
+```python
+def flow(self) -> SagaFlow[OrderSagaData]:
+    return saga_flow(
+        # 1. PENDING으로 생성
+        self.create_order >> self.cancel_order,
+        # 2. 외부 부수효과
+        self.reserve_stock >> self.release_stock,
+        self.process_payment >> self.refund_payment,
+        # 3. 모두 성공해야 CONFIRMED로 승격 (pivot step)
+        self.confirm_order,
+    )
+```
+
+- Aggregate 쪽에 `confirm()` / `cancel()` 같은 **상태 전이 메서드**를 두고, 각 상태에서 허용되는 오퍼레이션을 강제합니다.
+- 조회 UseCase/Repository는 `status = CONFIRMED` 조건을 기본 필터로 둡니다.
+- 이 패턴으로 "보상 전에 노출되는 중간 상태"가 다른 트랜잭션/사용자에게 유효한 자원으로 오인되는 문제를 막습니다.
+
+> ADR-0007 §맥락(Isolation 갭) 참조.
 
 ---
 

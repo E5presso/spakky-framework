@@ -22,13 +22,14 @@ pip install spakky-grpc
 
 `spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`, `protobuf`에 의존합니다.
 
-`GrpcServerSpec` Pod를 등록하여 바인드 주소를 지정합니다. PostProcessor가 인터셉터와 서비스 핸들러를 spec에 누적하고, `start()` 호출 시 ApplicationContext의 이벤트 루프에서 실제 `grpc.aio.Server`를 생성·구동합니다.
+`GrpcServerSpec`과 `DescriptorRegistry` Pod를 **둘 다** 등록해야 합니다. PostProcessor가 인터셉터와 서비스 핸들러를 spec에 누적하고, `RegisterServicesPostProcessor`가 컨테이너에서 `DescriptorRegistry`를 조회(`container.get(DescriptorRegistry)`)하여 생성된 protobuf descriptor를 등록하므로 `DescriptorRegistry` Pod는 **필수**입니다. `start()` 호출 시 ApplicationContext의 이벤트 루프에서 실제 `grpc.aio.Server`가 생성·구동됩니다.
 
 ```python
 import spakky.plugins.grpc
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.server_spec import GrpcServerSpec
 
 import apps  # `@GrpcController`가 정의된 사용자 패키지
@@ -41,6 +42,11 @@ def get_spec() -> GrpcServerSpec:
     return spec
 
 
+@Pod()
+def get_registry() -> DescriptorRegistry:
+    return DescriptorRegistry()
+
+
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={
@@ -48,6 +54,7 @@ app = (
     })
     .scan(apps)
     .add(get_spec)
+    .add(get_registry)
     .start()
 )
 ```
@@ -101,18 +108,18 @@ class UserServiceController:
 
 ### ProtoField
 
-dataclass 필드에 protobuf 필드 번호를 부착합니다. `.proto` 파일 없이 Python 타입만으로 protobuf descriptor를 생성합니다.
+dataclass 필드에 protobuf 필드 번호를 부착합니다. `.proto` 파일 없이 Python 타입만으로 protobuf descriptor를 생성합니다. `DescriptorBuilder`가 `dataclasses.fields()`로 필드를 순회하므로 메시지 타입은 **반드시 dataclass**여야 합니다 (`@dataclass` 또는 이를 래핑한 `@immutable` 모두 가능하지만, 플러그인 README·통합 테스트는 표준 `@dataclass`를 사용합니다).
 
 ```python
+from dataclasses import dataclass
 from typing import Annotated
-from spakky.core.common.mutability import immutable
 from spakky.plugins.grpc.annotations.field import ProtoField
 
-@immutable
+@dataclass
 class GetUserRequest:
     user_id: Annotated[str, ProtoField(number=1)]
 
-@immutable
+@dataclass
 class GetUserResponse:
     user_id: Annotated[str, ProtoField(number=1)]
     name: Annotated[str, ProtoField(number=2)]
@@ -130,6 +137,11 @@ class GetUserResponse:
 | `float` | `double` |
 | `bool` | `bool` |
 | `bytes` | `bytes` |
+| `list[T]` | `repeated T` |
+| `T \| None` | `optional T` (proto3 optional) |
+| 중첩 dataclass | `message` (재귀적으로 중첩 descriptor 생성) |
+
+지원되지 않는 타입은 `UnsupportedFieldTypeError`를 던집니다.
 
 ### DescriptorRegistry
 
@@ -297,6 +309,29 @@ asyncio.run(main(app.container.get(DescriptorRegistry)))
 ```
 
 통합 테스트 전체 예제는 `plugins/spakky-grpc/tests/integration/`를 참고하세요. 유닛·에러·트레이싱 시나리오를 실제 `grpc.aio.Server`로 검증합니다.
+
+## FastAPI `@ApiController`와의 비교
+
+`@GrpcController`는 FastAPI 플러그인의 `@ApiController`와 동일한 설계 철학을 따릅니다. REST에서 gRPC로 이동할 때 참고하세요.
+
+### 개념적으로 동일한 점
+
+| 항목 | 설명 |
+|------|------|
+| 스테레오타입 데코레이터 | 둘 다 `@Controller`의 서브클래스. DI 컨테이너가 자동 인식 |
+| 스캔 기반 자동 등록 | `SpakkyApplication.scan(...)`으로 컨트롤러 Pod를 탐색해 핸들러에 등록 |
+| DI 주입 | 생성자 인자로 `@UseCase`·`@Repository` 등 다른 Pod를 주입받음 |
+| AOP 적용 | `@Transactional`, `@logged` 등 AOP Aspect가 동일하게 동작 |
+
+### gRPC 고유 차이점
+
+| 항목 | 설명 |
+|------|------|
+| `GrpcServerSpec` + `DescriptorRegistry` Pod 필수 | FastAPI는 `FastAPI()` 인스턴스를 플러그인이 제공하지만, gRPC는 바인드 주소를 보유한 `GrpcServerSpec`과 protobuf descriptor 저장소인 `DescriptorRegistry`를 사용자가 Pod로 등록해야 함 |
+| 메서드 시그니처 제약 | `@rpc` 메서드는 **요청 dataclass 1개**만 파라미터로 받음. FastAPI처럼 path/query 파라미터를 분리하지 않음 (path·query 개념이 gRPC에 없음) |
+| 메시지는 dataclass + `ProtoField` | Pydantic `BaseModel` 대신 `@dataclass` + `Annotated[T, ProtoField(number=N)]`로 선언. 필드 번호는 사용자가 명시 |
+| 스트리밍 | `AsyncIterator[T]`를 요청/응답 타입으로 사용하여 4가지 스트리밍 패턴 지원 (FastAPI는 `StreamingResponse`로 단방향만) |
+| 에러 → 상태 코드 매핑 | HTTP 상태 코드 대신 gRPC `StatusCode`. `AbstractGrpcStatusError` 서브클래스를 `ErrorHandlingInterceptor`가 매핑 |
 
 ## 다음 단계
 

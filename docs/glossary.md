@@ -649,16 +649,17 @@ gRPC 메서드 유형을 나타내는 열거형:
 dataclass 필드에 protobuf 메타데이터를 부착하는 어노테이션. code-first protobuf descriptor 생성에 사용됩니다.
 
 ```python
+from dataclasses import dataclass
 from spakky.plugins.grpc.annotations.field import ProtoField
 
-@immutable
+@dataclass
 class GetUserRequest:
     user_id: Annotated[str, ProtoField(number=1)]
 ```
 
 ### DescriptorRegistry
 
-protobuf descriptor를 캐싱하고 관리하는 레지스트리. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다.
+protobuf descriptor를 캐싱하고 관리하는 레지스트리. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다. `RegisterServicesPostProcessor`가 `container.get(DescriptorRegistry)`로 조회하므로 사용자가 `@Pod()`으로 반드시 등록해야 합니다.
 
 ---
 
