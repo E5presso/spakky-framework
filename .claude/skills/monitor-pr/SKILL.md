@@ -1,4 +1,5 @@
 ---
+name: monitor-pr
 description: PR의 CI/리뷰 상태를 백그라운드로 polling하여 이벤트 발생 시 분기 처리합니다.
 argument-hint: "<pr-number>"
 user-invocable: false
