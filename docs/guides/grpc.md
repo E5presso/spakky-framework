@@ -22,8 +22,18 @@ pip install spakky-grpc
 
 `spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`에 의존합니다.
 
+`GrpcServerSpec` Pod를 등록하여 바인드 주소를 지정합니다. PostProcessor가 인터셉터와 서비스 핸들러를 spec에 누적하고, `start()` 호출 시 ApplicationContext의 이벤트 루프에서 실제 `grpc.aio.Server`를 생성·구동합니다.
+
 ```python
 import spakky.plugins.grpc
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.grpc.server_spec import GrpcServerSpec
+
+@Pod()
+def get_spec() -> GrpcServerSpec:
+    spec = GrpcServerSpec()
+    spec.add_insecure_port("127.0.0.1:50051")
+    return spec
 
 app = (
     SpakkyApplication(ApplicationContext())
@@ -31,6 +41,7 @@ app = (
         spakky.plugins.grpc.PLUGIN_NAME,
     })
     .scan(apps)
+    .add(get_spec)
     .start()
 )
 ```
@@ -134,11 +145,13 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 
 ## PostProcessor
 
-| PostProcessor | 역할 |
-|--------------|------|
-| `RegisterServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
-| `AddInterceptorsPostProcessor` | `TracingInterceptor`, `ErrorHandlingInterceptor` 자동 추가 |
-| `BindServerPostProcessor` | gRPC 서버 바인딩 및 라이프사이클 관리 |
+`GrpcServerSpec` Pod를 등록하면 아래 세 PostProcessor가 순서대로 spec에 구성을 누적합니다. 실제 `grpc.aio.Server` 인스턴스는 `start()` 시점에 ApplicationContext의 이벤트 루프에서 `GrpcServerSpec.build()`로 생성됩니다.
+
+| PostProcessor | Order | 역할 |
+|--------------|-------|------|
+| `RegisterServicesPostProcessor` | 0 | `@GrpcController`의 `@rpc` 메서드를 generic handler로 빌드하여 spec에 추가 |
+| `AddInterceptorsPostProcessor` | 1 | `ErrorHandlingInterceptor`, `TracingInterceptor`를 spec에 추가 |
+| `BindServerPostProcessor` | 2 | `GrpcServerService`를 ApplicationContext에 등록하여 spec 기반으로 서버를 생성·시작·종료 |
 
 ---
 
@@ -168,6 +181,116 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 | `DescriptorAlreadyRegisteredError` | 이미 등록된 descriptor 재등록 시도 |
 
 ---
+
+## End-to-End 예제
+
+단일 서비스를 부트스트랩하고 `grpc.aio.insecure_channel`로 호출하는 완성 예제입니다.
+
+### 서버 정의
+
+```python
+# apps/echo.py
+from dataclasses import dataclass
+from typing import Annotated
+
+from spakky.plugins.grpc.annotations.field import ProtoField
+from spakky.plugins.grpc.decorators.rpc import rpc
+from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
+
+
+@dataclass
+class EchoRequest:
+    text: Annotated[str, ProtoField(number=1)]
+
+
+@dataclass
+class EchoReply:
+    text: Annotated[str, ProtoField(number=1)]
+
+
+@GrpcController(package="example.echo")
+class EchoController:
+    @rpc()
+    async def echo(self, request: EchoRequest) -> EchoReply:
+        return EchoReply(text=request.text)
+```
+
+### 부트스트랩
+
+```python
+# main.py
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+
+import spakky.plugins.grpc
+import spakky.tracing
+from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+from spakky.plugins.grpc.server_spec import GrpcServerSpec
+
+import apps
+
+
+@Pod()
+def get_spec() -> GrpcServerSpec:
+    spec = GrpcServerSpec()
+    spec.add_insecure_port("127.0.0.1:50051")
+    return spec
+
+
+@Pod()
+def get_registry() -> DescriptorRegistry:
+    return DescriptorRegistry()
+
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(include={
+        spakky.plugins.grpc.PLUGIN_NAME,
+        spakky.tracing.PLUGIN_NAME,
+    })
+    .scan(apps)
+    .add(get_spec)
+    .add(get_registry)
+)
+app.start()
+```
+
+`app.start()` 호출 시 PostProcessor 체인이 실행되어 `EchoController`의 핸들러와 인터셉터가 spec에 누적되고, `GrpcServerService`가 ApplicationContext의 이벤트 루프 스레드에서 `spec.build()`로 실제 서버를 생성한 뒤 `127.0.0.1:50051`에서 리슨합니다.
+
+### 클라이언트 호출
+
+클라이언트는 `DescriptorRegistry`에서 컴파일된 protobuf 메시지 클래스를 얻어 요청을 직렬화합니다.
+
+```python
+# client.py
+import asyncio
+
+import grpc.aio
+
+from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+
+
+async def main(registry: DescriptorRegistry) -> None:
+    request_cls = registry.get_message_class("example.echo.EchoRequest")
+    reply_cls = registry.get_message_class("example.echo.EchoReply")
+
+    async with grpc.aio.insecure_channel("127.0.0.1:50051") as channel:
+        call = channel.unary_unary(
+            "/example.echo.EchoController/echo",
+            request_serializer=lambda msg: msg.SerializeToString(),
+            response_deserializer=lambda data: reply_cls.FromString(data),
+        )
+        request = request_cls()
+        request.text = "hello"
+        reply = await call(request)
+        print(reply.text)  # "hello"
+
+
+asyncio.run(main(app.container.get(DescriptorRegistry)))
+```
+
+통합 테스트 전체 예제는 `plugins/spakky-grpc/tests/integration/`를 참고하세요. 유닛·에러·트레이싱 시나리오를 실제 `grpc.aio.Server`로 검증합니다.
 
 ## 다음 단계
 

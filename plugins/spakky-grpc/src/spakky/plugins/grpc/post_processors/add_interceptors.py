@@ -1,8 +1,9 @@
-"""Post-processor for injecting interceptors into the gRPC server.
+"""Post-processor for recording interceptors on the gRPC server spec.
 
-Replaces a bare ``grpc.aio.Server`` Pod with a new server instance
-that has ``ErrorHandlingInterceptor`` and (optionally)
-``TracingInterceptor`` configured.
+Adds ``ErrorHandlingInterceptor`` and (when the tracing plugin is loaded)
+``TracingInterceptor`` to the shared :class:`GrpcServerSpec`.  The actual
+``grpc.aio.Server`` is instantiated later, on the event loop that will
+run it (see :mod:`spakky.plugins.grpc.server_spec`).
 """
 
 from logging import getLogger
@@ -19,10 +20,9 @@ from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.tracing.propagator import ITracePropagator
 from typing_extensions import override
 
-import grpc
-import grpc.aio
 from spakky.plugins.grpc.interceptors.error_handling import ErrorHandlingInterceptor
 from spakky.plugins.grpc.interceptors.tracing import TracingInterceptor
+from spakky.plugins.grpc.server_spec import GrpcServerSpec
 
 logger = getLogger(__name__)
 
@@ -32,11 +32,7 @@ logger = getLogger(__name__)
 class AddInterceptorsPostProcessor(
     IPostProcessor, IContainerAware, IApplicationContextAware
 ):
-    """Post-processor that injects interceptors into the gRPC server.
-
-    Because ``grpc.aio.Server`` requires interceptors at creation time,
-    this processor creates a **new** server with the appropriate
-    interceptors and returns it as a replacement for the original Pod.
+    """Post-processor that records interceptors on the shared server spec.
 
     Interceptors added (in order):
 
@@ -70,28 +66,25 @@ class AddInterceptorsPostProcessor(
 
     @override
     def post_process(self, pod: object) -> object:
-        """Replace a bare ``grpc.aio.Server`` with an interceptor-equipped one.
+        """Record interceptors on the server spec once per spec instance.
 
-        Non-server Pods are returned unchanged.
+        The spec is resolved lazily so that interceptor registration runs
+        exactly once: the first time a ``GrpcServerSpec`` Pod is seen.
 
         Args:
             pod: The Pod instance to process.
 
         Returns:
-            A new ``grpc.aio.Server`` with interceptors if *pod* is a
-            server, otherwise the original *pod*.
+            The pod unchanged.
         """
-        if not isinstance(pod, grpc.aio.Server):
+        if not isinstance(pod, GrpcServerSpec):
             return pod
 
-        interceptors: list[grpc.aio.ServerInterceptor] = []
-        interceptors.append(ErrorHandlingInterceptor())
+        pod.add_interceptor(ErrorHandlingInterceptor())
 
         propagator = self.__application_context.get_or_none(ITracePropagator)
         if propagator is not None:
-            interceptors.append(TracingInterceptor(propagator=propagator))
+            pod.add_interceptor(TracingInterceptor(propagator=propagator))
 
-        new_server = grpc.aio.server(interceptors=interceptors)
-
-        logger.info(f"Injected {len(interceptors)} interceptor(s) into gRPC server")
-        return new_server
+        logger.info(f"Registered {len(pod.interceptors)} interceptor(s) on gRPC spec")
+        return pod

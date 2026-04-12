@@ -1,7 +1,8 @@
 """Unit tests for BindServerPostProcessor."""
 
+import asyncio
 from asyncio import Event as AsyncEvent
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import grpc.aio
 import pytest
@@ -11,6 +12,7 @@ from spakky.plugins.grpc.post_processors.bind_server import (
     BindServerPostProcessor,
     GrpcServerService,
 )
+from spakky.plugins.grpc.server_spec import GrpcServerSpec
 
 
 @pytest.fixture
@@ -25,24 +27,24 @@ def processor() -> BindServerPostProcessor:
     return proc
 
 
-def test_bind_server_skips_non_server(
+def test_bind_server_with_non_spec_pod_expect_unchanged(
     processor: BindServerPostProcessor,
 ) -> None:
-    """Non-server Pods should be returned unchanged."""
+    """Non-spec Pods should be returned unchanged."""
     plain_pod = object()
     result = processor.post_process(plain_pod)
     assert result is plain_pod
 
 
-def test_bind_server_registers_service_for_server_pod(
+def test_bind_server_with_spec_pod_expect_service_registered(
     processor: BindServerPostProcessor,
 ) -> None:
-    """Server Pod should be registered as a service in the application context."""
-    server = MagicMock(spec=grpc.aio.Server)
+    """Spec Pod should be registered as a service in the application context."""
+    spec = GrpcServerSpec()
 
-    result = processor.post_process(server)
+    result = processor.post_process(spec)
 
-    assert result is server
+    assert result is spec
     app_ctx = (
         processor._BindServerPostProcessor__application_context  # pyrefly: ignore - name-mangled private attr access
     )
@@ -51,41 +53,53 @@ def test_bind_server_registers_service_for_server_pod(
     assert isinstance(service_arg, GrpcServerService)
 
 
-async def test_grpc_server_service_start_calls_server_start() -> None:
-    """GrpcServerService.start_async() should start the underlying server."""
-    server = MagicMock(spec=grpc.aio.Server)
-    server.start = MagicMock(return_value=_coro(None))
-    service = GrpcServerService(server)
+async def test_grpc_server_service_start_async_expect_build_and_start() -> None:
+    """GrpcServerService.start_async() should build and start the server."""
+    spec = MagicMock(spec=GrpcServerSpec)
+    built_server = MagicMock(spec=grpc.aio.Server)
+    built_server.start = AsyncMock()
+    spec.build = MagicMock(return_value=built_server)
+    service = GrpcServerService(spec)
 
     await service.start_async()
 
-    server.start.assert_called_once()
+    spec.build.assert_called_once()
+    built_server.start.assert_awaited_once()
 
 
-async def test_grpc_server_service_stop_calls_server_stop() -> None:
-    """GrpcServerService.stop_async() should stop the underlying server with grace."""
-    server = MagicMock(spec=grpc.aio.Server)
-    server.stop = MagicMock(return_value=_coro(None))
-    service = GrpcServerService(server)
+async def test_grpc_server_service_stop_async_without_start_expect_noop() -> None:
+    """stop_async() should be a no-op when start_async() never ran."""
+    spec = MagicMock(spec=GrpcServerSpec)
+    service = GrpcServerService(spec)
 
     await service.stop_async()
 
-    server.stop.assert_called_once_with(grace=5.0)
+    spec.build.assert_not_called()
 
 
-def test_grpc_server_service_set_stop_event() -> None:
+async def test_grpc_server_service_stop_async_after_start_expect_graceful_stop() -> (
+    None
+):
+    """stop_async() should stop the underlying server with grace."""
+    spec = MagicMock(spec=GrpcServerSpec)
+    built_server = MagicMock(spec=grpc.aio.Server)
+    built_server.start = AsyncMock()
+    built_server.stop = AsyncMock()
+    spec.build = MagicMock(return_value=built_server)
+    service = GrpcServerService(spec)
+    await service.start_async()
+
+    await service.stop_async()
+
+    built_server.stop.assert_awaited_once_with(grace=5.0)
+
+
+def test_grpc_server_service_set_stop_event_expect_stored() -> None:
     """GrpcServerService should accept a stop event."""
-    import asyncio
-
-    server = MagicMock(spec=grpc.aio.Server)
-    service = GrpcServerService(server)
+    spec = MagicMock(spec=GrpcServerSpec)
+    service = GrpcServerService(spec)
     event = asyncio.Event()
 
     service.set_stop_event(event)
 
     assert service._stop_event is event
-
-
-async def _coro(value: object) -> object:
-    """Helper to create a simple coroutine returning a value."""
-    return value

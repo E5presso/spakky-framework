@@ -1,7 +1,8 @@
 """Post-processor for registering gRPC services from controllers.
 
 Scans ``@GrpcController``-decorated Pods, builds protobuf descriptors
-at runtime, and registers generic RPC handlers on the ``grpc.aio.Server``.
+at runtime, and appends generic RPC handlers to the shared
+:class:`GrpcServerSpec`.
 """
 
 from logging import getLogger
@@ -18,10 +19,10 @@ from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from typing_extensions import override
 
-import grpc.aio
 from spakky.plugins.grpc.handler import GrpcServiceHandler
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+from spakky.plugins.grpc.server_spec import GrpcServerSpec
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 logger = getLogger(__name__)
@@ -39,8 +40,8 @@ class RegisterServicesPostProcessor(
     1. Builds a ``FileDescriptorProto`` from the controller's ``@rpc``
        methods and dataclass message types.
     2. Registers the descriptor in the shared ``DescriptorRegistry``.
-    3. Creates a ``GrpcServiceHandler`` (generic handler) and adds it
-       to the ``grpc.aio.Server``.
+    3. Creates a ``GrpcServiceHandler`` (generic handler) and appends it
+       to the shared :class:`GrpcServerSpec`.
 
     Runs at ``@Order(0)`` — first in the gRPC post-processor chain.
     """
@@ -120,8 +121,8 @@ class RegisterServicesPostProcessor(
             registry=registry,
         )
 
-        server = self.__container.get(grpc.aio.Server)
-        server.add_generic_rpc_handlers([handler])
+        spec = self.__container.get(GrpcServerSpec)
+        spec.add_handler(handler)
 
         logger.info(
             f"Registered gRPC service {package}.{service_name} "

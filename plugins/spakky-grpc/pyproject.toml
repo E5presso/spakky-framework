@@ -43,6 +43,7 @@ addopts = """
     -p no:warnings
     -n auto
     --spec
+    --with-integration
 """
 spec_test_format = "{result} {docstring_summary}"
 
