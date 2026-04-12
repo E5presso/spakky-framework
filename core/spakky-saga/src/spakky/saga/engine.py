@@ -143,14 +143,17 @@ def _normalize_items(
     result: list[_NormalizedStep] = []
     for item in items:
         if isinstance(item, Transaction):
+            # dynamic __name__ access: runtime function name for logging/debugging
             name = getattr(item.action, "__name__", "<unknown>")
             result.append((name, item.action, item.compensate))
         elif isinstance(item, SagaStep):
+            # dynamic __name__ access: runtime function name for logging/debugging
             name = getattr(item.action, "__name__", "<unknown>")
             result.append((name, item.action, None))
         elif isinstance(item, Parallel):
             result.extend(_normalize_items(item.items))
         elif callable(item):
+            # dynamic __name__ access: runtime function name for logging/debugging
             name = getattr(item, "__name__", "<unknown>")
             result.append((name, item, None))
         else:

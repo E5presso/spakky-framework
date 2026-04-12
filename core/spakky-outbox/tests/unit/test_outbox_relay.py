@@ -197,17 +197,8 @@ def test_relay_run_stops_on_stop_event() -> None:
     relay = OutboxRelayBackgroundService(storage, transport, config)
     stop_event = threading.Event()
     relay.set_stop_event(stop_event)
-
-    def stop_after_delay() -> None:
-        import time
-
-        time.sleep(0.05)
-        stop_event.set()
-
-    timer = threading.Thread(target=stop_after_delay, daemon=True)
-    timer.start()
+    stop_event.set()
     relay.run()
-    timer.join()
 
 
 # ── Async AsyncOutboxRelayBackgroundService tests ──

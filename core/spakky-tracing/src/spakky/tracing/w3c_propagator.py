@@ -4,6 +4,8 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
+from typing_extensions import override
+
 TRACEPARENT_HEADER = "traceparent"
 
 
@@ -15,6 +17,7 @@ class W3CTracePropagator(ITracePropagator):
     traceparent format: ``{version:2}-{trace_id:32}-{span_id:16}-{trace_flags:2}``
     """
 
+    @override
     def inject(self, carrier: dict[str, str]) -> None:
         """Write the current TraceContext as a traceparent header into the carrier.
 
@@ -25,6 +28,7 @@ class W3CTracePropagator(ITracePropagator):
         if ctx is not None:
             carrier[TRACEPARENT_HEADER] = ctx.to_traceparent()
 
+    @override
     def extract(self, carrier: dict[str, str]) -> TraceContext | None:
         """Restore a TraceContext from the traceparent header in the carrier.
 
@@ -42,6 +46,7 @@ class W3CTracePropagator(ITracePropagator):
         except Exception:  # pragma: no branch - InvalidTraceparentError 외 방어
             return None
 
+    @override
     def fields(self) -> list[str]:
         """Return the header field names used by this propagator.
 

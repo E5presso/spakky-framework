@@ -69,6 +69,7 @@ class AbstractSaga(ABC, Generic[SagaDataT]):
                 continue
             value = vars(cls)[name]
             if callable(value) and iscoroutinefunction(value):
+                # metaclass pattern: wrap async coroutines as SagaStep descriptors during __init_subclass__
                 setattr(cls, name, _SagaStepDescriptor(value))
 
     @abstractmethod

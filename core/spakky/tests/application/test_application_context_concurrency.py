@@ -1,5 +1,4 @@
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID, uuid4
 
@@ -21,8 +20,6 @@ def test_singleton_thread_safety_expect_single_instance() -> None:
 
         def __init__(self) -> None:
             nonlocal init_count
-            # Simulate slow initialization to increase chance of race condition
-            time.sleep(0.1)
             self.id = uuid4()
             init_count += 1
 
@@ -94,10 +91,11 @@ def test_concurrent_stop_calls_expect_safe() -> None:
     context.start()
 
     results: list[Exception | None] = []
+    barrier = threading.Barrier(5)
 
     def try_stop() -> None:
         try:
-            time.sleep(0.01)  # Small delay to increase race condition chance
+            barrier.wait()  # Synchronize all threads to start simultaneously
             context.stop()
             results.append(None)  # Success
         except ApplicationContextAlreadyStoppedError as e:

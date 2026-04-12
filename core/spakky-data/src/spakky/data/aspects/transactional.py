@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from inspect import iscoroutinefunction
 from typing import Any, Callable, ParamSpec, TypeVar
 
+from typing_extensions import override
+
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import Around
@@ -55,6 +57,7 @@ class AsyncTransactionalAspect(IAsyncAspect):
         self._transaction = transaction
 
     @Around(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
+    @override
     async def around_async(
         self, joinpoint: AsyncFunc, *args: Any, **kwargs: Any
     ) -> Any:
@@ -77,6 +80,7 @@ class TransactionalAspect(IAspect):
         self._transaction = transaction
 
     @Around(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
+    @override
     def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
         with self._transaction:
             return joinpoint(*args, **kwargs)

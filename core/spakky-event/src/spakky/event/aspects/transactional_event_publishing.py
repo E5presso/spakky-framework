@@ -3,6 +3,8 @@
 from inspect import iscoroutinefunction
 from typing import Any
 
+from typing_extensions import override
+
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import After, AfterReturning
@@ -31,6 +33,7 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
         self._publisher = publisher
 
     @AfterReturning(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
+    @override
     async def after_returning_async(self, result: Any) -> None:
         """Publish domain events from collected aggregates after successful commit."""
         for aggregate in self._collector.all():
@@ -39,6 +42,7 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
             aggregate.clear_events()
 
     @After(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
+    @override
     async def after_async(self) -> None:
         """Clear the aggregate collector after transaction completion."""
         self._collector.clear()
@@ -59,6 +63,7 @@ class TransactionalEventPublishingAspect(IAspect):
         self._publisher = publisher
 
     @AfterReturning(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
+    @override
     def after_returning(self, result: Any) -> None:
         """Publish domain events from collected aggregates after successful commit."""
         for aggregate in self._collector.all():
@@ -67,6 +72,7 @@ class TransactionalEventPublishingAspect(IAspect):
             aggregate.clear_events()
 
     @After(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
+    @override
     def after(self) -> None:
         """Clear the aggregate collector after transaction completion."""
         self._collector.clear()
