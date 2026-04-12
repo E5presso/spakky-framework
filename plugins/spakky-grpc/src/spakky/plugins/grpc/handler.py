@@ -5,11 +5,12 @@ the fully-qualified method name, performing protobuf ↔ dataclass
 conversion transparently.
 """
 
-from collections.abc import AsyncIterator
+import types
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import fields, is_dataclass
 from inspect import getmembers, isfunction
 from logging import getLogger
-from typing import Annotated, Callable, get_args, get_origin
+from typing import Annotated, Callable, Union, get_args, get_origin
 
 from google.protobuf.message import Message
 from google.protobuf.message_factory import GetMessageClass
@@ -341,10 +342,20 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 # ------------------------------------------------------------------
 
 
+def _is_optional(tp: object) -> bool:
+    """Return ``True`` if *tp* is ``Optional[T]`` (i.e. ``T | None``)."""
+    origin = get_origin(tp)
+    if origin is Union or isinstance(tp, types.UnionType):
+        return type(None) in get_args(tp)
+    return False
+
+
 def _protobuf_to_dataclass(message: Message, dataclass_type: type) -> object:
     """Convert a protobuf ``Message`` to a Python dataclass instance.
 
     Handles nested messages, repeated fields and optional (None) values.
+    For proto3 optional fields, uses ``HasField`` to distinguish between
+    an unset field (mapped to ``None``) and a field set to the default value.
 
     Args:
         message: The protobuf message.
@@ -355,9 +366,16 @@ def _protobuf_to_dataclass(message: Message, dataclass_type: type) -> object:
     """
     kwargs: dict[str, object] = {}
     for field in fields(dataclass_type):
-        raw = getattr(message, field.name)
         resolved_type = _unwrap_annotated(field.type)
-        kwargs[field.name] = _convert_proto_value(raw, resolved_type)
+        if _is_optional(resolved_type) and message.HasField(field.name):
+            raw = getattr(message, field.name)
+            inner_type = next(a for a in get_args(resolved_type) if a is not type(None))
+            kwargs[field.name] = _convert_proto_value(raw, inner_type)
+        elif _is_optional(resolved_type):
+            kwargs[field.name] = None
+        else:
+            raw = getattr(message, field.name)
+            kwargs[field.name] = _convert_proto_value(raw, resolved_type)
     return dataclass_type(**kwargs)
 
 
@@ -382,7 +400,11 @@ def _convert_proto_value(value: object, target_type: object) -> object:
         if is_dataclass(target_type) and isinstance(target_type, type):
             return _protobuf_to_dataclass(value, target_type)
     origin = get_origin(target_type)
-    if origin is list and isinstance(value, (list, tuple)):
+    if (
+        origin is list
+        and isinstance(value, Sequence)
+        and not isinstance(value, (str, bytes))
+    ):
         inner_args = get_args(target_type)
         if (
             inner_args
@@ -395,6 +417,7 @@ def _convert_proto_value(value: object, target_type: object) -> object:
                 else v
                 for v in value
             ]
+        return list(value)
     return value
 
 
@@ -416,7 +439,21 @@ def _dataclass_to_protobuf(obj: object, message_class: type[Message]) -> Message
         value = getattr(obj, field_desc.name, None)
         if value is None:
             continue
-        if field_desc.message_type is not None and is_dataclass(type(value)):
+        if (
+            field_desc.label == field_desc.LABEL_REPEATED
+            and field_desc.message_type is not None
+            and isinstance(value, Sequence)
+            and not isinstance(value, (str, bytes))
+        ):
+            nested_class = msg.DESCRIPTOR.fields_by_name[field_desc.name].message_type
+            nested_msg_class = GetMessageClass(nested_class)
+            for item in value:
+                if is_dataclass(type(item)):
+                    nested_msg = _dataclass_to_protobuf(item, nested_msg_class)
+                    getattr(msg, field_desc.name).append(nested_msg)
+                else:
+                    getattr(msg, field_desc.name).append(item)
+        elif field_desc.message_type is not None and is_dataclass(type(value)):
             nested_class = msg.DESCRIPTOR.fields_by_name[field_desc.name].message_type
             nested_msg_class = GetMessageClass(nested_class)
             nested_msg = _dataclass_to_protobuf(value, nested_msg_class)
