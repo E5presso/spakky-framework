@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import grpc
 import grpc.aio
 import pytest
+from google.protobuf.message_factory import GetMessageClass
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.plugins.grpc.annotations.field import ProtoField
@@ -685,3 +686,43 @@ def test_roundtrip_repeated_message_field() -> None:
     assert len(result.items) == 2
     assert result.items[0].label == "one"
     assert result.items[1].label == "two"
+
+
+def test_convert_proto_value_list_type_non_sequence_value_expect_passthrough() -> None:
+    """_convert_proto_value should return non-Sequence value unchanged even if target is list."""
+    result = _convert_proto_value(42, list[int])
+    assert result == 42
+
+
+def test_convert_proto_value_list_type_string_value_expect_passthrough() -> None:
+    """_convert_proto_value should return string unchanged even when target is list[str]."""
+    result = _convert_proto_value("hello", list[str])
+    assert result == "hello"
+
+
+def test_convert_proto_value_message_non_dataclass_target_expect_passthrough() -> None:
+    """_convert_proto_value should return Message unchanged when target is not a dataclass."""
+    registry = _build_registry_for(RepeatedMsgController)
+    msg_class = registry.get_message_class("repeated.v1.ItemMsg")
+    proto = msg_class()
+    proto.label = "test"  # pyrefly: ignore - dynamic protobuf attr
+
+    result = _convert_proto_value(proto, str)
+    assert result is proto
+
+
+def test_dataclass_to_protobuf_repeated_message_non_dataclass_expect_appended() -> None:
+    """_dataclass_to_protobuf should append non-dataclass items to repeated message field."""
+    registry = _build_registry_for(RepeatedMsgController)
+    msg_class = registry.get_message_class("repeated.v1.ContainerMsg")
+    nested_class = msg_class.DESCRIPTOR.fields_by_name["items"].message_type
+    nested_msg_class = GetMessageClass(nested_class)
+
+    raw_msg = nested_msg_class()
+    raw_msg.label = "raw"  # pyrefly: ignore - dynamic protobuf attr
+
+    src = ContainerMsg(items=[raw_msg])  # type: ignore[list-item] - intentional: testing non-dataclass Message in repeated field
+    proto = _dataclass_to_protobuf(src, msg_class)
+
+    assert len(proto.items) == 1  # pyrefly: ignore - dynamic protobuf attr
+    assert proto.items[0].label == "raw"  # pyrefly: ignore - dynamic protobuf attr
