@@ -7,7 +7,7 @@ from time import monotonic
 from typing import Awaitable, Callable
 
 from spakky.saga.data import AbstractSagaData
-from spakky.saga.error import SagaCompensationFailedError
+from spakky.saga.error import SagaCompensationFailedError, SagaFlowDefinitionError
 from spakky.saga.flow import Parallel, SagaDataT, SagaFlow, SagaStep, Transaction
 from spakky.saga.result import SagaResult, StepRecord, StepStatus
 from spakky.saga.status import SagaStatus
@@ -114,6 +114,13 @@ async def _run_compensation(
                 )
             )
         except Exception as comp_error:  # noqa: BLE001 - compensation failure handling
+            history.append(
+                StepRecord(
+                    name=comp_name,
+                    status=StepStatus.FAILED,
+                    elapsed=timedelta(seconds=monotonic() - comp_start),
+                )
+            )
             if handler is not None:
                 await handler(data)
             raise SagaCompensationFailedError() from comp_error
@@ -143,4 +150,9 @@ def _normalize_items(
             result.append((name, item.action, None))
         elif isinstance(item, Parallel):
             result.extend(_normalize_items(item.items))
+        elif callable(item):
+            name = getattr(item, "__name__", "<unknown>")
+            result.append((name, item, None))
+        else:
+            raise SagaFlowDefinitionError
     return result
