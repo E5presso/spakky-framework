@@ -115,10 +115,24 @@ class AbstractGenericRepository(
             return pk_columns[0].in_(aggregate_ids)
         return tuple_(*pk_columns).in_(aggregate_ids)
 
+    def _get_table_type(
+        self,
+    ) -> type[AbstractMappableTable[AggregateRootT]]:
+        return self._schema_registry.get_type(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
+            self._aggregate_type
+        )
+
+    def _table_from_domain(
+        self, aggregate: AggregateRootT
+    ) -> AbstractMappableTable[AggregateRootT]:
+        return self._schema_registry.from_domain(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
+            aggregate
+        )
+
     @override
     def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
         try:
-            table = self._schema_registry.get_type(self._aggregate_type)
+            table = self._get_table_type()
             pk_columns = inspect(table).primary_key
             result = self._session_manager.session.execute(
                 select(table).where(self._build_pk_condition(pk_columns, aggregate_id))
@@ -129,7 +143,7 @@ class AbstractGenericRepository(
 
     @override
     def get_or_none(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT | None:
-        table = self._schema_registry.get_type(self._aggregate_type)
+        table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = self._session_manager.session.execute(
             select(table).where(self._build_pk_condition(pk_columns, aggregate_id))
@@ -138,7 +152,7 @@ class AbstractGenericRepository(
 
     @override
     def contains(self, aggregate_id: AggregateIdT_contra) -> bool:
-        table = self._schema_registry.get_type(self._aggregate_type)
+        table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = self._session_manager.session.execute(
             select(pk_columns[0]).where(
@@ -151,7 +165,7 @@ class AbstractGenericRepository(
     def range(
         self, aggregate_ids: Sequence[AggregateIdT_contra]
     ) -> Sequence[AggregateRootT]:
-        table = self._schema_registry.get_type(self._aggregate_type)
+        table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         results = (
             self._session_manager.session.execute(
@@ -167,7 +181,7 @@ class AbstractGenericRepository(
     @override
     def save(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
-            table = self._schema_registry.from_domain(aggregate)
+            table = self._table_from_domain(aggregate)
             merged = self._session_manager.session.merge(table)
             self._session_manager.session.flush()
             self._aggregate_collector.collect(aggregate)
@@ -182,7 +196,7 @@ class AbstractGenericRepository(
         tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
-                table = self._schema_registry.from_domain(aggregate)
+                table = self._table_from_domain(aggregate)
                 merged = self._session_manager.session.merge(table)
                 tables.append(merged)
             except StaleDataError:
@@ -195,7 +209,7 @@ class AbstractGenericRepository(
     @override
     def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
-            table = self._schema_registry.from_domain(aggregate)
+            table = self._table_from_domain(aggregate)
             merged = self._session_manager.session.merge(table)
             self._session_manager.session.delete(merged)
             self._session_manager.session.flush()
@@ -211,7 +225,7 @@ class AbstractGenericRepository(
         tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
-                table = self._schema_registry.from_domain(aggregate)
+                table = self._table_from_domain(aggregate)
                 merged = self._session_manager.session.merge(table)
                 self._session_manager.session.delete(merged)
                 tables.append(merged)
@@ -304,10 +318,24 @@ class AbstractAsyncGenericRepository(
             return pk_columns[0].in_(aggregate_ids)
         return tuple_(*pk_columns).in_(aggregate_ids)
 
+    def _get_table_type(
+        self,
+    ) -> type[AbstractMappableTable[AggregateRootT]]:
+        return self._schema_registry.get_type(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
+            self._aggregate_type
+        )
+
+    def _table_from_domain(
+        self, aggregate: AggregateRootT
+    ) -> AbstractMappableTable[AggregateRootT]:
+        return self._schema_registry.from_domain(  # pyrefly: ignore - cross-package TypeVar narrowing: ObjectT is bound to AggregateRootT at runtime
+            aggregate
+        )
+
     @override
     async def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
         try:
-            table = self._schema_registry.get_type(self._aggregate_type)
+            table = self._get_table_type()
             pk_columns = inspect(table).primary_key
             result = (
                 await self._session_manager.session.execute(
@@ -324,7 +352,7 @@ class AbstractAsyncGenericRepository(
     async def get_or_none(
         self, aggregate_id: AggregateIdT_contra
     ) -> AggregateRootT | None:
-        table = self._schema_registry.get_type(self._aggregate_type)
+        table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = (
             await self._session_manager.session.execute(
@@ -335,7 +363,7 @@ class AbstractAsyncGenericRepository(
 
     @override
     async def contains(self, aggregate_id: AggregateIdT_contra) -> bool:
-        table = self._schema_registry.get_type(self._aggregate_type)
+        table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = (
             await self._session_manager.session.execute(
@@ -350,7 +378,7 @@ class AbstractAsyncGenericRepository(
     async def range(
         self, aggregate_ids: Sequence[AggregateIdT_contra]
     ) -> Sequence[AggregateRootT]:
-        table = self._schema_registry.get_type(self._aggregate_type)
+        table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         results = (
             (
@@ -368,7 +396,7 @@ class AbstractAsyncGenericRepository(
     @override
     async def save(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
-            table = self._schema_registry.from_domain(aggregate)
+            table = self._table_from_domain(aggregate)
             merged = await self._session_manager.session.merge(table)
             await self._session_manager.session.flush()
             self._aggregate_collector.collect(aggregate)
@@ -383,7 +411,7 @@ class AbstractAsyncGenericRepository(
         tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
-                table = self._schema_registry.from_domain(aggregate)
+                table = self._table_from_domain(aggregate)
                 merged = await self._session_manager.session.merge(table)
                 tables.append(merged)
             except StaleDataError:
@@ -396,7 +424,7 @@ class AbstractAsyncGenericRepository(
     @override
     async def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
         try:
-            table = self._schema_registry.from_domain(aggregate)
+            table = self._table_from_domain(aggregate)
             merged = await self._session_manager.session.merge(table)
             await self._session_manager.session.delete(merged)
             await self._session_manager.session.flush()
@@ -412,7 +440,7 @@ class AbstractAsyncGenericRepository(
         tables: list[AbstractMappableTable[AggregateRootT]] = []
         for aggregate in aggregates:
             try:
-                table = self._schema_registry.from_domain(aggregate)
+                table = self._table_from_domain(aggregate)
                 merged = await self._session_manager.session.merge(table)
                 await self._session_manager.session.delete(merged)
                 tables.append(merged)
