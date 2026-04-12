@@ -4,26 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: 'Package to publish'
+        description: 'Package to publish (workspace member name, e.g. spakky-saga)'
         required: true
-        type: choice
-        options:
-          - spakky
-          - spakky-domain
-          - spakky-event
-          - spakky-data
-          - spakky-task
-          - spakky-outbox
-          - spakky-tracing
-          - spakky-logging
-          - spakky-fastapi
-          - spakky-rabbitmq
-          - spakky-security
-          - spakky-typer
-          - spakky-kafka
-          - spakky-sqlalchemy
-          - spakky-celery
-          - spakky-opentelemetry
+        type: string
       dry_run:
         description: 'Dry run (build only, do not publish)'
         required: false
@@ -47,6 +30,30 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
+      - name: Validate package against workspace members
+        run: |
+          uv run python - <<'EOF'
+          import os
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          pkg = os.environ["INPUT_PACKAGE"]
+          with open("pyproject.toml", "rb") as f:
+              data = tomllib.load(f)
+          members = data["tool"]["uv"]["workspace"]["members"]
+          names = sorted(Path(m).name for m in members)
+          if pkg not in names:
+              print(f"::error::'{pkg}' is not a workspace member.")
+              print("Available packages:")
+              for n in names:
+                  print(f"  - {n}")
+              sys.exit(1)
+          print(f"OK: '{pkg}' is a valid workspace member.")
+          EOF
+        env:
+          INPUT_PACKAGE: ${{ inputs.package }}
 
       - name: Install dependencies
         run: uv sync
