@@ -3,7 +3,6 @@
 import asyncio
 from dataclasses import replace
 from datetime import timedelta
-from time import monotonic
 from uuid import UUID, uuid4
 
 import pytest
@@ -585,22 +584,27 @@ async def test_saga_without_timeout_completes_normally() -> None:
 
 @pytest.mark.anyio
 async def test_parallel_items_run_concurrently_expect_gathered() -> None:
-    """병렬 아이템들이 동시 실행되어 총 시간이 순차 합보다 짧다."""
-    sleep_time = 0.05
+    """병렬 아이템들이 동시 실행되어 모두 같은 barrier에 동시 진입한다."""
+    barrier_count = 3
+    entered = asyncio.Event()
+    in_flight = 0
+    lock = asyncio.Lock()
 
-    async def sleeper(data: _OrderData) -> None:
-        await asyncio.sleep(sleep_time)
+    async def observer(data: _OrderData) -> None:
+        nonlocal in_flight
+        async with lock:
+            in_flight += 1
+            if in_flight == barrier_count:
+                entered.set()
+        await entered.wait()
 
-    flow = saga_flow(parallel(sleeper, sleeper, sleeper))
+    flow = saga_flow(parallel(observer, observer, observer))
     data = _OrderData(order_id=uuid4())
-    start = monotonic()
     result = await run_saga_flow(flow, data)
-    elapsed = monotonic() - start
 
     assert result.status is SagaStatus.COMPLETED
-    # 3 items concurrently: ~sleep_time total; sequential would be 3*sleep_time.
-    # Use 2.9x as a lenient bound so CI scheduler jitter doesn't flake.
-    assert elapsed < sleep_time * 2.9
+    assert entered.is_set()
+    assert in_flight == barrier_count
 
 
 @pytest.mark.anyio
