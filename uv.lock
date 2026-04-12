@@ -2931,6 +2931,7 @@ version = "6.3.1"
 source = { editable = "plugins/spakky-grpc" }
 dependencies = [
     { name = "grpcio" },
+    { name = "protobuf" },
     { name = "spakky" },
     { name = "spakky-tracing" },
 ]
@@ -2938,6 +2939,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "grpcio", specifier = ">=1.68.0" },
+    { name = "protobuf", specifier = ">=5.0.0" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
