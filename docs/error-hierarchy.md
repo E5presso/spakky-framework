@@ -24,12 +24,26 @@ Exception
     ├── AbstractSpakkyTaskError
     ├── AbstractSpakkyTracingError
     ├── AbstractSpakkyOutboxError
+    ├── AbstractSpakkySagaError
     ├── AbstractSpakkyFastAPIError (플러그인)
     ├── AbstractSpakkySqlAlchemyError (플러그인)
     │   ├── AbstractSpakkySqlAlchemyORMError
     │   └── AbstractSpakkySqlAlchemyPersistencyError
     ├── AbstractSpakkyCeleryError (플러그인)
     ├── AbstractSpakkyOpenTelemetryError (플러그인)
+    ├── AbstractSpakkyGrpcError (플러그인)
+    │   ├── AbstractGrpcStatusError
+    │   │   ├── InvalidArgument
+    │   │   ├── NotFound
+    │   │   ├── AlreadyExists
+    │   │   ├── PermissionDenied
+    │   │   ├── Unauthenticated
+    │   │   ├── FailedPrecondition
+    │   │   ├── Unavailable
+    │   │   └── InternalError
+    │   ├── UnsupportedFieldTypeError
+    │   ├── MissingProtoFieldAnnotationError
+    │   └── DescriptorAlreadyRegisteredError
     ├── DecryptionFailedError (spakky-security)
     ├── KeySizeError (spakky-security)
     ├── PrivateKeyRequiredError (spakky-security)
@@ -369,6 +383,71 @@ from spakky.plugins.opentelemetry.error import (
 | --------------------------------- | --------------------------------------- |
 | `AbstractSpakkyOpenTelemetryError` | OpenTelemetry 에러 기반 클래스          |
 | `UnsupportedExporterTypeError`    | 지원하지 않는 exporter 타입 설정 시 발생 |
+
+### spakky-saga
+
+사가 오케스트레이션 관련 에러입니다.
+
+```python
+from spakky.saga.error import (
+    AbstractSpakkySagaError,
+    SagaFlowDefinitionError,
+    SagaCompensationFailedError,
+    SagaParallelMergeConflictError,
+    SagaEngineNotConnectedError,
+)
+```
+
+| 에러                                | 설명                                          |
+| ----------------------------------- | --------------------------------------------- |
+| `AbstractSpakkySagaError`           | 사가 에러 기반 클래스                       |
+| `SagaFlowDefinitionError`          | SagaFlow 정의 오류 (잘못된 흐름 구성)        |
+| `SagaCompensationFailedError`       | 보상 로직 실행 중 예외 발생                |
+| `SagaParallelMergeConflictError`    | 병렬 단계 결과 병합 시 충돌                 |
+| `SagaEngineNotConnectedError`       | 사가 엔진이 초기화되지 않은 상태에서 실행 시도 |
+
+### spakky-grpc
+
+gRPC 통합 관련 에러입니다. gRPC 상태 코드 매핑 에러와 스키마 에러로 나늉니다.
+
+```python
+from spakky.plugins.grpc.error import (
+    AbstractSpakkyGrpcError,
+    AbstractGrpcStatusError,
+    InvalidArgument,
+    NotFound,
+    AlreadyExists,
+    PermissionDenied,
+    Unauthenticated,
+    FailedPrecondition,
+    Unavailable,
+    InternalError,
+    UnsupportedFieldTypeError,
+    MissingProtoFieldAnnotationError,
+    DescriptorAlreadyRegisteredError,
+)
+```
+
+**gRPC 상태 코드 에러:**
+
+| 에러                  | gRPC 상태 코드        | 설명                |
+| --------------------- | ---------------------- | ------------------- |
+| `InvalidArgument`     | `INVALID_ARGUMENT`     | 잘못된 요청 인자       |
+| `NotFound`            | `NOT_FOUND`            | 리소스 없음           |
+| `AlreadyExists`       | `ALREADY_EXISTS`       | 리소스 이미 존재       |
+| `PermissionDenied`    | `PERMISSION_DENIED`    | 권한 없음              |
+| `Unauthenticated`     | `UNAUTHENTICATED`      | 인증 필요              |
+| `FailedPrecondition`  | `FAILED_PRECONDITION`  | 사전 조건 미충족       |
+| `Unavailable`         | `UNAVAILABLE`          | 서비스 이용 불가        |
+| `InternalError`       | `INTERNAL`             | 내부 서버 에러          |
+
+**스키마 에러:**
+
+| 에러                                  | 설명                                       |
+| ------------------------------------- | ------------------------------------------ |
+| `UnsupportedFieldTypeError`           | 지원하지 않는 protobuf 필드 타입          |
+| `MissingProtoFieldAnnotationError`    | `ProtoField` 어노테이션 누락              |
+| `DescriptorAlreadyRegisteredError`    | 이미 등록된 descriptor 재등록 시도     |
 
 ---
 

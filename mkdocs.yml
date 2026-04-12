@@ -77,6 +77,7 @@ plugins:
             - core/spakky-task/src
             - core/spakky-tracing/src
             - core/spakky-outbox/src
+            - core/spakky-saga/src
             - plugins/spakky-logging/src
             - plugins/spakky-fastapi/src
             - plugins/spakky-rabbitmq/src
@@ -86,6 +87,7 @@ plugins:
             - plugins/spakky-sqlalchemy/src
             - plugins/spakky-celery/src
             - plugins/spakky-opentelemetry/src
+            - plugins/spakky-grpc/src
           options:
             docstring_style: google
             show_source: true
@@ -117,6 +119,8 @@ nav:
       - Transactional Outbox: guides/outbox.md
       - 분산 트레이싱: guides/tracing.md
       - OpenTelemetry 통합: guides/opentelemetry.md
+      - 사가 오케스트레이션: guides/saga.md
+      - gRPC 통합: guides/grpc.md
   - 심화 가이드:
       - DI/IoC 컨테이너: di-container.md
       - AOP 가이드: aop-guide.md
@@ -135,6 +139,7 @@ nav:
           - spakky-task: api/core/spakky-task.md
           - spakky-tracing: api/core/spakky-tracing.md
           - spakky-outbox: api/core/spakky-outbox.md
+          - spakky-saga: api/core/spakky-saga.md
       - Plugins:
           - spakky-logging: api/plugins/spakky-logging.md
           - spakky-fastapi: api/plugins/spakky-fastapi.md
@@ -145,6 +150,7 @@ nav:
           - spakky-sqlalchemy: api/plugins/spakky-sqlalchemy.md
           - spakky-celery: api/plugins/spakky-celery.md
           - spakky-opentelemetry: api/plugins/spakky-opentelemetry.md
+          - spakky-grpc: api/plugins/spakky-grpc.md
   - ADR:
       - 개요: adr/README.md
       - ADR-0001 이벤트 시스템 재설계: adr/0001-event-system-redesign.md

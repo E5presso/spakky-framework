@@ -209,6 +209,8 @@ app = (
 | [Transactional Outbox](guides/outbox.md)   | at-least-once 전달, Relay, OutboxEventBus               |
 | [분산 트레이싱](guides/tracing.md)         | TraceContext, Propagator, W3C traceparent              |
 | [OpenTelemetry 통합](guides/opentelemetry.md) | OTel SDK 브릿지, OTLP exporter, Propagator 자동 교체 |
+| [사가 오케스트레이션](guides/saga.md) | SagaFlow, SagaStep, 보상 기반 롤백, ErrorStrategy |
+| [gRPC 통합](guides/grpc.md) | `@GrpcController`, `@rpc`, code-first 프로토콜 생성 |
 
 ---
 
@@ -225,6 +227,7 @@ app = (
 | [spakky-task](api/core/spakky-task.md)     | 태스크 추상화 (스케줄링, 디스패치) |
 | [spakky-tracing](api/core/spakky-tracing.md) | 분산 트레이싱 추상화              |
 | [spakky-outbox](api/core/spakky-outbox.md) | Outbox 패턴                        |
+| [spakky-saga](api/core/spakky-saga.md)     | 사가 오케스트레이션                |
 
 ### Plugins
 
@@ -239,6 +242,7 @@ app = (
 | [spakky-sqlalchemy](api/plugins/spakky-sqlalchemy.md) | SQLAlchemy 통합  |
 | [spakky-celery](api/plugins/spakky-celery.md)         | Celery 통합      |
 | [spakky-opentelemetry](api/plugins/spakky-opentelemetry.md) | OpenTelemetry 브릿지 |
+| [spakky-grpc](api/plugins/spakky-grpc.md)                   | gRPC 통합           |
 
 ### 의존 방향
 
@@ -255,6 +259,7 @@ flowchart LR
     security[spakky-security]
     celery[spakky-celery]
     opentelemetry[spakky-opentelemetry]
+    grpc[spakky-grpc]
   end
 
   subgraph Core[Core]
@@ -268,6 +273,7 @@ flowchart LR
     domain --> core[spakky]
     task[spakky-task] --> core
     tracing_dep --> core
+    domain --> saga[spakky-saga]
   end
 
   rabbitmq -. RabbitMQ .-> event
@@ -286,4 +292,6 @@ flowchart LR
   opentelemetry -. OTel .-> core
   opentelemetry -- OTel --> tracing_dep
   opentelemetry -. logging .-> logging
+  grpc -. gRPC .-> core
+  grpc -- tracing --> tracing_dep
 ```

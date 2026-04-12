@@ -404,7 +404,7 @@ We use **Conventional Commits** to automate versioning and changelogs.
 Format: `<type>(<scope>): <subject>`
 
 - **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **Scopes**: `core`, `domain`, `data`, `event`, `task`, `tracing`, `outbox`, `fastapi`, `kafka`, `rabbitmq`, `security`, `sqlalchemy`, `typer`, `celery`, `logging`, `opentelemetry`
+- **Scopes**: `core`, `domain`, `data`, `event`, `task`, `tracing`, `outbox`, `saga`, `fastapi`, `kafka`, `rabbitmq`, `security`, `sqlalchemy`, `typer`, `celery`, `logging`, `opentelemetry`, `grpc`
 
 Examples:
 

@@ -13,6 +13,7 @@
 - [spakky-task](core/spakky-task.md) — 태스크 추상화
 - [spakky-tracing](core/spakky-tracing.md) — 분산 트레이싱 추상화
 - [spakky-outbox](core/spakky-outbox.md) — Outbox 패턴
+- [spakky-saga](core/spakky-saga.md) — 사가 오케스트레이션
 
 ## Plugins
 
@@ -25,3 +26,4 @@
 - [spakky-sqlalchemy](plugins/spakky-sqlalchemy.md) — SQLAlchemy 통합
 - [spakky-celery](plugins/spakky-celery.md) — Celery 통합
 - [spakky-opentelemetry](plugins/spakky-opentelemetry.md) — OpenTelemetry 브릿지
+- [spakky-grpc](plugins/spakky-grpc.md) — gRPC 통합

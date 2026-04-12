@@ -57,6 +57,7 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 | `spakky-task`    | 태스크 큐 추상화 (@TaskHandler, @task, @schedule) |
 | `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, Propagator)    |
 | `spakky-outbox`  | Transactional Outbox 패턴                          |
+| `spakky-saga`    | 사가 오케스트레이션 (SagaFlow, SagaStep, 보상 기반 롤백)  |
 
 ### UI 플러그인
 
@@ -64,6 +65,7 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 | ---------------- | -------------------------- |
 | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | `spakky-typer`   | Typer CLI 컨트롤러 통합    |
+| `spakky-grpc`    | gRPC 서비스 컨트롤러 통합  |
 
 ### 인프라 플러그인
 

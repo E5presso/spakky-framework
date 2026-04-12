@@ -498,6 +498,133 @@ LogContext.bind(request_id="abc-123")
 
 ---
 
+## 사가 시스템 (spakky-saga)
+
+### @Saga
+
+사가 오케스트레이터 클래스를 마크하는 스테레오타입. `@Pod`의 서브클래스입니다.
+
+```python
+from spakky.saga.stereotype import Saga
+from spakky.saga.base import AbstractSaga
+
+@Saga()
+class OrderSaga(AbstractSaga[OrderSagaData]):
+    ...
+```
+
+### AbstractSaga
+
+사가의 기본 추상 클래스. `SagaStep` 디스크립터를 통해 각 단계를 선언합니다.
+
+### SagaStep
+
+사가의 개별 실행 단계를 나타내는 디스크립터. `action(fn)`과 `compensation(fn)` 메서드로 실행/보상 핸들러를 등록합니다.
+
+```python
+from spakky.saga.base import SagaStep
+
+class OrderSaga(AbstractSaga[OrderSagaData]):
+    create_order = SagaStep[OrderSagaData]()
+    reserve_stock = SagaStep[OrderSagaData]()
+```
+
+### SagaFlow
+
+`SagaStep`들을 조합하여 실행 흐름을 정의하는 컨테이너. `>>` (순차), `&` (병렬), `|` (에러 전략) 연산자를 지원합니다.
+
+```python
+from spakky.saga.models.flow import saga_flow, step, parallel
+
+flow = saga_flow(
+    step(saga.create_order)
+    >> parallel(
+        step(saga.reserve_stock),
+        step(saga.process_payment),
+    )
+)
+```
+
+### ErrorStrategy
+
+사가 단계 실패 시 적용할 전략:
+
+| 전략 | 설명 |
+|------|------|
+| `Compensate` | 보상 함수를 실행하여 롤백 (기본값) |
+| `Skip` | 실패를 무시하고 다음 단계로 진행 |
+| `Retry(max_retries)` | 지정 횟수만큼 재시도 |
+| `ExponentialBackoff(max_retries, base_delay, max_delay)` | 지수 백오프 재시도 |
+
+### SagaResult
+
+사가 실행 결과를 담는 모델. `status` (`SagaStatus`), `data`, `records` (`list[StepRecord]`) 필드를 가집니다.
+
+### SagaStatus
+
+사가의 전체 상태를 나타내는 열거형: `PENDING`, `RUNNING`, `COMPLETED`, `COMPENSATING`, `COMPENSATED`, `FAILED`.
+
+### AbstractSagaData
+
+사가 데이터 모델의 기본 클래스. `@immutable` + `AbstractDomainModel`을 확장합니다. 각 단계에서 읽기 전용으로 전달됩니다.
+
+---
+
+## gRPC 시스템 (spakky-grpc)
+
+### @GrpcController
+
+gRPC 서비스 컨트롤러 클래스를 마크하는 스테레오타입. `@Controller`의 서브클래스입니다.
+
+```python
+from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
+
+@GrpcController(service_name="UserService")
+class UserServiceController:
+    ...
+```
+
+### @rpc
+
+메서드를 gRPC RPC 엔드포인트로 마크하는 데코레이터. `RpcMethodType`을 지정하여 스트리밍 모드를 선택할 수 있습니다.
+
+```python
+from spakky.plugins.grpc.decorators.rpc import rpc, RpcMethodType
+
+@rpc(method_type=RpcMethodType.UNARY)
+async def get_user(self, request: GetUserRequest) -> GetUserResponse:
+    ...
+```
+
+### RpcMethodType
+
+gRPC 메서드 유형을 나타내는 열거형:
+
+| 값 | 설명 |
+|----|------|
+| `UNARY` | 단일 요청, 단일 응답 |
+| `SERVER_STREAMING` | 단일 요청, 스트림 응답 |
+| `CLIENT_STREAMING` | 스트림 요청, 단일 응답 |
+| `BIDI_STREAMING` | 양방향 스트리밍 |
+
+### ProtoField
+
+dataclass 필드에 protobuf 메타데이터를 부착하는 어노테이션. code-first protobuf descriptor 생성에 사용됩니다.
+
+```python
+from spakky.plugins.grpc.annotations.field import ProtoField
+
+@immutable
+class GetUserRequest:
+    user_id: Annotated[str, ProtoField(number=1)]
+```
+
+### DescriptorRegistry
+
+protobuf descriptor를 캐싱하고 관리하는 레지스트리. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다.
+
+---
+
 ## 분산 트레이싱 (spakky-tracing)
 
 > 설계 배경은 [ADR-0004](adr/0004-distributed-tracing-architecture.md) 참조.

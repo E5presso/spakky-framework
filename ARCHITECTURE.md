@@ -18,6 +18,7 @@
 - [태스크 레이어 (spakky-task)](#태스크-레이어-spakky-task)
 - [트레이싱 레이어 (spakky-tracing)](#트레이싱-레이어-spakky-tracing)
 - [아웃박스 레이어 (spakky-outbox)](#아웃박스-레이어-spakky-outbox)
+- [사가 레이어 (spakky-saga)](#사가-레이어-spakky-saga)
 - [플러그인 구현체](#플러그인-구현체)
 - [설계 결정](#설계-결정)
 - [Architecture Decision Records](#architecture-decision-records)
@@ -38,6 +39,7 @@
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
 | **Core** | `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, ITracePropagator, W3C Propagator) |
 | **Core** | `spakky-outbox` | Transactional Outbox 패턴 추상화 (IEventBus 교체, Relay) |
+| **Core** | `spakky-saga` | 사가 오케스트레이션 (SagaFlow, SagaStep, ErrorStrategy, 보상 기반 롤백) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
@@ -47,6 +49,7 @@
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @logged AOP Aspect |
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
+| **Plugin** | `spakky-grpc` | gRPC 서비스 컨트롤러 통합 (code-first, 타입 안전 프로토콜 생성) |
 
 ---
 
@@ -67,6 +70,7 @@ graph TD
         tracing --> event
         event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
         tracing --> outbox
+        domain --> saga[📋 spakky-saga<br/>SagaFlow · SagaStep · Compensation]
     end
 
     subgraph plugins ["⚡ Plugins"]
@@ -92,6 +96,7 @@ graph TD
             fastapi[spakky-fastapi]
             typer[spakky-typer]
             security[spakky-security]
+            grpc[spakky-grpc]
         end
     end
 
@@ -111,6 +116,8 @@ graph TD
     core --> fastapi
     core --> typer
     core --> security
+    core --> grpc
+    tracing --> grpc
 
     %% Styling — Core
     style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
@@ -120,6 +127,7 @@ graph TD
     style outbox fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
     style task_pkg fill:#fce4ec,stroke:#ef5350,stroke-width:2px,color:#b71c1c
     style tracing fill:#e0f2f1,stroke:#26a69a,stroke-width:2px,color:#004d40
+    style saga fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#e65100
 
     %% Styling — Plugins
     style sqlalchemy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
@@ -131,6 +139,7 @@ graph TD
     style fastapi fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style typer fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style security fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style grpc fill:#f5f5f5,stroke:#9e9e9e,color:#424242
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
@@ -146,6 +155,8 @@ graph TD
 - **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-tracing`에 의존 (컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
+- **사가 코어** (spakky-saga) → `spakky` + `spakky-domain`에 의존
+- **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-tracing`에 의존 + `grpcio` 외부 의존성
 
 ---
 
@@ -233,6 +244,8 @@ class UserService:
 | `@Repository` | `spakky.data.stereotype.repository` | 데이터 접근 |
 | `@EventHandler` | `spakky.event.stereotype.event_handler` | 이벤트 처리 |
 | `@TaskHandler` | `spakky.task.stereotype.task_handler` | 태스크 핸들러 |
+| `@Saga` | `spakky.saga.stereotype` | 사가 오케스트레이터 |
+| `@GrpcController` | `spakky.plugins.grpc.stereotypes.grpc_controller` | gRPC 서비스 컨트롤러 |
 | `@Aspect` / `@AsyncAspect` | `spakky.core.aop.aspect` | AOP 관점 |
 
 ### 컨테이너 (`ApplicationContext`)
@@ -898,6 +911,98 @@ Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Pr
 
 ---
 
+## 사가 레이어 (spakky-saga)
+
+분산 트랜잭션의 보상(compensation) 기반 롤백을 오케스트레이션합니다. `SagaFlow`와 `SagaStep`을 조합하여 비즈니스 프로세스를 선언적으로 모델링합니다.
+
+### `@Saga` 스테레오타입
+
+`@Saga`는 `@Pod`의 서브클래스입니다. 사가 오케스트레이터 클래스를 마킹합니다.
+
+```python
+from spakky.saga.stereotype import Saga
+from spakky.saga.base import AbstractSaga
+
+@Saga()
+class OrderSaga(AbstractSaga[OrderSagaData]):
+    ...
+```
+
+### `AbstractSaga`와 `SagaStep`
+
+`AbstractSaga[SagaDataT]`는 사가의 기본 클래스입니다. `SagaStep` 디스크립터를 통해 각 단계를 선언합니다.
+
+```python
+from spakky.saga.base import AbstractSaga, SagaStep
+
+@Saga()
+class OrderSaga(AbstractSaga[OrderSagaData]):
+    create_order = SagaStep[OrderSagaData]()
+    reserve_stock = SagaStep[OrderSagaData]()
+    process_payment = SagaStep[OrderSagaData]()
+```
+
+각 `SagaStep`은 `action(fn)`과 `compensation(fn)` 메서드로 실행/보상 핸들러를 등록합니다.
+
+### `SagaFlow`와 흐름 연산자
+
+`SagaFlow`는 `>>` (순차), `&` (병렬), `|` (에러 전략) 연산자를 사용하여 DSL 기반으로 흐름을 조합합니다.
+
+```python
+from spakky.saga.models.flow import SagaFlow, step, parallel, saga_flow
+from spakky.saga.models.error_strategy import Compensate, Skip, Retry
+
+flow = saga_flow(
+    step(saga.create_order)
+    >> parallel(
+        step(saga.reserve_stock),
+        step(saga.process_payment) | Retry(max_retries=3),
+    )
+)
+```
+
+| 연산자 | 의미 | 생성 타입 |
+|--------|------|----------|
+| `>>` | 순차 실행 | `Transaction[T]` |
+| `&` | 병렬 실행 | `Parallel[T]` |
+| `\|` | 에러 전략 연결 | `SagaStep` + `ErrorStrategy` |
+
+### `ErrorStrategy`
+
+| 전략 | 설명 |
+|------|------|
+| `Compensate` | 보상 함수를 실행하여 롤백 (기본값) |
+| `Skip` | 실패를 무시하고 다음 단계로 진행 |
+| `Retry(max_retries)` | 지정 횟수만큼 재시도 |
+| `ExponentialBackoff(max_retries, base_delay, max_delay)` | 지수 백오프 재시도 |
+
+### `SagaResult`와 실행 엔진
+
+`run_saga_flow(flow, data)` 함수가 `SagaFlow`를 실행하고 `SagaResult`를 반환합니다.
+
+| 컴포넌트 | 설명 |
+|---------|------|
+| `SagaResult[T]` | 사가 실행 결과 (status, data, records) |
+| `StepRecord` | 각 단계의 실행 기록 (step_name, status, error) |
+| `StepStatus` | 단계 상태 (`COMPLETED`, `FAILED`, `COMPENSATED`, `SKIPPED`) |
+| `SagaStatus` | 사가 전체 상태 (6가지: `PENDING`, `RUNNING`, `COMPLETED`, `COMPENSATING`, `COMPENSATED`, `FAILED`) |
+
+### `AbstractSagaData`
+
+`@immutable` + `AbstractDomainModel`을 확장한 사가 데이터 모델입니다. 각 단계에서 읽기 전용으로 전달됩니다.
+
+### 에러 계층
+
+```
+AbstractSpakkySagaError (ABC)
+├── SagaFlowDefinitionError
+├── SagaCompensationFailedError
+├── SagaParallelMergeConflictError
+└── SagaEngineNotConnectedError
+```
+
+---
+
 ## 플러그인 구현체
 
 ### UI 플러그인
@@ -908,6 +1013,9 @@ Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Pr
 | | `BindLifespanPostProcessor` | 앱 라이프사이클 바인딩 |
 | | `AddBuiltInMiddlewaresPostProcessor` | CONTEXT 스코프 미들웨어 등록. `TracingMiddleware` 자동 추가 (`spakky-tracing` 필수 의존) |
 | `spakky-typer` | `TyperCLIPostProcessor` | `@CliController`의 커맨드를 Typer에 등록 |
+| `spakky-grpc` | `RegisterRpcServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
+| | `AddInterceptorsPostProcessor` | `TracingInterceptor`, `ErrorHandlingInterceptor` 자동 추가 |
+| | `BindServerPostProcessor` | gRPC 서버 바인딩 및 라이프사이클 관리 |
 
 ### 트랜스포트 플러그인
 
