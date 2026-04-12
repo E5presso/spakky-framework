@@ -1,9 +1,10 @@
 import pytest
 
-from spakky.plugins.security.error import IncompatibleKeyTypeError
-
 from spakky.plugins.security.encoding import Base64Encoder
-from spakky.plugins.security.error import InvalidKeyConstructorCallError
+from spakky.plugins.security.error import (
+    IncompatibleKeyTypeError,
+    InvalidKeyConstructorCallError,
+)
 from spakky.plugins.security.key import Key
 
 

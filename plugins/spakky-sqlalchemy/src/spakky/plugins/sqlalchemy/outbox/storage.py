@@ -6,9 +6,8 @@ from uuid import UUID
 from spakky.core.pod.annotations.pod import Pod
 from spakky.outbox.common.config import OutboxConfig
 from spakky.outbox.common.message import OutboxMessage
-from typing_extensions import override
-
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
+from typing_extensions import override
 
 from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (

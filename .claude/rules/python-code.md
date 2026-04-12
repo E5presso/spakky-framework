@@ -9,6 +9,7 @@ paths:
 
 - `Any` **금지**. `TypeVar`, `Protocol`, `object`, `Union` 사용.
 - `Any` 허용 예외: 외부 라이브러리 invariant generics — 인라인 주석으로 사유 명시.
+- `Protocol`에 의한 Goose Typing 금지. 인터페이스는 `ABC` 기반의 명시적 상속으로 정의.
 
 ## 에러
 
