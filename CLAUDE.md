@@ -40,7 +40,7 @@
 |---------|-----------|----------|
 | **plan** | `/plan-issues`, `/decide-architecture`, `/adr`, `/impact-analysis` | — |
 | **build** | `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
-| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code` | — |
+| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code`, `/audit-codebase` | — |
 | **ship** | — | `/create-pr`, `/review-pr`, `/monitor-pr`, `/update-project-status` |
 | **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs` | `/review-harness`, `/update-harness`, `/sync-dev-docs`, `/sync-user-docs` |
 
