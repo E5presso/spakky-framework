@@ -1,5 +1,4 @@
 import pytest
-
 from tests.integration.conftest import GrpcIntegrationClient
 
 SERVICE_PATH = "/integration.v1.IntegrationService"

@@ -1,13 +1,14 @@
-import threading
 import importlib
+import sys
+import threading
 from collections.abc import AsyncGenerator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-import sys
 from typing import Callable, Generator
 
 import grpc.aio
 import pytest
+import spakky.plugins.grpc
 from google.protobuf.message import Message
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -15,7 +16,6 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.interfaces.service import IService
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.tracing import PLUGIN_NAME as SPAKKY_TRACING_PLUGIN_NAME
-import spakky.plugins.grpc
 
 TESTS_ROOT = Path(__file__).resolve().parents[2]
 if str(TESTS_ROOT) not in sys.path:

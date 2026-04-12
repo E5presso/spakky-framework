@@ -8,8 +8,6 @@ from types import MappingProxyType
 from typing import Callable, cast, overload
 from uuid import UUID, uuid4
 
-from typing_extensions import override
-
 from spakky.core.aop.post_processor import AspectPostProcessor
 from spakky.core.application.error import AbstractSpakkyApplicationError
 from spakky.core.common.constants import CONTEXT_ID, CONTEXT_SCOPE_CACHE
@@ -39,6 +37,7 @@ from spakky.core.pod.post_processors.aware_post_processor import (
 )
 from spakky.core.service.interfaces.service import IAsyncService, IService
 from spakky.core.service.post_processor import ServicePostProcessor
+from typing_extensions import override
 
 """Application context managing Pod lifecycle and dependency injection.
 

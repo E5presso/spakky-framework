@@ -1,6 +1,5 @@
 import grpc
 import pytest
-
 from spakky.tracing.context import TraceContext
 from tests.integration.conftest import GrpcIntegrationClient
 
