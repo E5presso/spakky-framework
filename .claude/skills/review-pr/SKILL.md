@@ -84,13 +84,33 @@ gh issue view {이슈번호} --json body -q .body
 
 1. 코드를 수정하지 **않는다**.
 
-### PR 스레드 응답
+### PR 스레드 응답 + resolve
 
-수용/반론 모두 `gh api`로 해당 코멘트 스레드에 답변한다.
+수용/반론 모두 해당 코멘트 스레드에 답변한다. 응답은 GraphQL `addPullRequestReviewThreadReply` mutation 사용:
+
+```bash
+gh api graphql -f query='mutation { addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: "<THREAD_ID>", body: "<응답>" }) { comment { id } } }'
+```
 
 - **수용**: "수용합니다. [한 줄 이유]"
 - **반론**: "검토 결과 현행 유지로 판단했습니다. 근거: [판단 루프 #N 결과]" + 대안 제시
 - 감정적 표현 금지. 근거와 사실만 기술한다.
+
+### 스레드 resolve 권한 분리
+
+응답을 단 직후, **스레드의 첫 코멘트 작성자(`author.__typename`)를 확인**하여 resolve 여부를 결정한다:
+
+| 첫 코멘트 작성자 | 처리 |
+|---|---|
+| `Bot` (Copilot, Claude, Gemini 등) | `resolveReviewThread` mutation 으로 resolve. 봇은 재판정 프로세스가 없으므로 수정/응답 후 에이전트 resolve 로 충분 |
+| `User` (사람 리뷰어) | **resolve 하지 않는다.** 응답만 달고 리뷰어 본인에게 판단 권한을 양도. 에이전트가 강제 resolve 하면 사회적 계약을 깬다 |
+
+```bash
+# Bot 스레드만 resolve
+gh api graphql -f query='mutation { resolveReviewThread(input: { threadId: "<THREAD_ID>" }) { thread { isResolved } } }'
+```
+
+혼합 스레드(첫 코멘트 Bot, 이후 User 답변 존재 등)에서도 **첫 코멘트 작성자 기준**으로만 판단한다.
 
 ## 규칙
 

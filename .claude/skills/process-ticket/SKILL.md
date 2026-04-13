@@ -177,8 +177,8 @@ gh issue view $ARGUMENTS --comments
 | `CONFLICT` | develop 병합 시도 → conflict resolve → push → monitor 재시작 |
 | `BEHIND` | develop 병합 → push → monitor 재시작 |
 | `CI_FAILURE` | 실패한 체크의 로그 확인 → 로컬 재현 → 수정 → push → monitor 재시작 |
-| `OPEN_COMMENT` / `OPEN_REVIEW` / `UNRESOLVED_THREAD` | **`/review-pr {PR_NUMBER}` 서브스킬을 반드시 호출**하여 코멘트별로 수용/반론 판단 + 필요 시 수정 + 스레드 resolve. 그 후 monitor 재시작 |
-| `BLOCKED` | `mergeStateStatus == BLOCKED` 원인 분류: <br> • **미해결 review thread** 또는 **리뷰 코멘트 미반영** → `/review-pr {PR_NUMBER}` 호출 후 재시작 <br> • **승인 부족** (Copilot `COMMENTED` 만 있고 `APPROVED` 없음) / **CODEOWNERS 미충족** → Phase 7 로 전환하여 사용자 개입 요청 |
+| `OPEN_COMMENT` / `OPEN_REVIEW` / `UNRESOLVED_THREAD` | **`/review-pr {PR_NUMBER}` 서브스킬을 반드시 호출**하여 코멘트별로 수용/반론 판단 + 필요 시 수정. 스레드 resolve 는 **스레드 첫 코멘트 작성자가 Bot 인 경우에만** 수행. User 스레드는 응답만 달고 resolve 는 리뷰어 본인에게 맡김 (상세는 `monitor-pr` SKILL 의 "리뷰 스레드 resolve 권한 분리" 원칙). 그 후 monitor 재시작 |
+| `BLOCKED` | `mergeStateStatus == BLOCKED` 원인 분류: <br> • **미해결 Bot 스레드** 또는 **리뷰 코멘트 미반영** → `/review-pr {PR_NUMBER}` 호출 후 재시작 <br> • **미해결 User 스레드** (사람 리뷰어가 직접 닫아야 함) → Phase 7 로 전환하여 사용자 개입 요청 <br> • **승인 부족** (Copilot `COMMENTED` 만 있고 `APPROVED` 없음) / **CODEOWNERS 미충족** → Phase 7 로 전환하여 사용자 개입 요청 |
 | `CI_PENDING` / `REVIEW_PENDING` | polling 계속 (monitor 가 자동으로 유지) |
 | `MERGEABLE` | Phase 7 로 전환 |
 
