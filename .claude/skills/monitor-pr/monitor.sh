@@ -18,7 +18,7 @@ mkdir -p "$STATE_DIR"
 [ -f "$STATE_FILE" ] || echo '{"comments":[],"reviews":[]}' > "$STATE_FILE"
 
 THREAD_QUERY='{ repository(owner: "'"$OWNER"'", name: "'"$REPO"'") { pullRequest(number: '"$PR_NUMBER"') { reviewThreads(first: 100) { nodes { isResolved } } } } }'
-REVIEW_REQUESTS_QUERY='{ repository(owner: "'"$OWNER"'", name: "'"$REPO"'") { pullRequest(number: '"$PR_NUMBER"') { reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on Bot { login } ... on User { login } } } } } } }'
+REVIEW_REQUESTS_QUERY='{ repository(owner: "'"$OWNER"'", name: "'"$REPO"'") { pullRequest(number: '"$PR_NUMBER"') { reviewRequests(first: 100) { totalCount nodes { requestedReviewer { __typename ... on Bot { login } ... on User { login } } } } } } }'
 
 # bot 코멘트 허들 제외 대상 (대문자 구분 없음, 부분 일치). review body는 copilot 등 봇도 실제 피드백이므로 포함.
 BOT_COMMENT_PATTERN='codecov|github-actions|dependabot|renovate'
@@ -35,8 +35,16 @@ while true; do
     --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null || echo 0)
 
   # pending 자동화 봇 리뷰어만 카운트 (사람 리뷰어는 Phase 7 수동 판단에 맡김).
-  pendingBotReviewers=$(GH_PAGER=cat gh api graphql -f query="$REVIEW_REQUESTS_QUERY" \
-    --jq '[.data.repository.pullRequest.reviewRequests.nodes[].requestedReviewer | select(.__typename == "Bot")] | length' 2>/dev/null || echo 0)
+  # totalCount > 페치된 노드 수 이면 페이지네이션 필요 — 그 경우 정확도를 보장할 수 없으므로
+  # 안전측으로 1 이상 반환하여 MERGEABLE 전환을 막는다.
+  reviewRequests=$(GH_PAGER=cat gh api graphql -f query="$REVIEW_REQUESTS_QUERY" 2>/dev/null || echo '{}')
+  pendingBotReviewers=$(echo "$reviewRequests" | jq '
+    .data.repository.pullRequest.reviewRequests as $rr
+    | if ($rr.totalCount // 0) > ($rr.nodes | length)
+      then ($rr.totalCount // 1)
+      else [$rr.nodes[].requestedReviewer | select(.__typename == "Bot")] | length
+      end
+  ' 2>/dev/null || echo 0)
 
   # 새로 도착한 사람 코멘트만 카운트 (bot 제외 + 이전 tick에 본 적 없는 것만).
   allComments=$(GH_PAGER=cat gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" 2>/dev/null || echo '[]')
@@ -56,6 +64,7 @@ while true; do
   if [ "$state" = "CLOSED" ] || [ "$state" = "MERGED" ]; then echo "EVENT:PR_CLOSED state=$state"; stop=1; fi
   if [ "$mergeState" = "DIRTY" ]; then echo "EVENT:CONFLICT"; stop=1; fi
   if [ "$mergeState" = "BEHIND" ]; then echo "EVENT:BEHIND"; stop=1; fi
+  if [ "$mergeState" = "BLOCKED" ]; then echo "EVENT:BLOCKED"; stop=1; fi
   if [ "$ciFailed" -gt 0 ]; then
     names=$(echo "$snap" | jq -r '[(.statusCheckRollup // [])[] | select((.conclusion // .state // "") | IN("FAILURE","ERROR","TIMED_OUT","CANCELLED")) | .name] | join(",")')
     echo "EVENT:CI_FAILURE count=$ciFailed names=$names"; stop=1
