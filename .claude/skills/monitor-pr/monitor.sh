@@ -18,6 +18,7 @@ mkdir -p "$STATE_DIR"
 [ -f "$STATE_FILE" ] || echo '{"comments":[],"reviews":[]}' > "$STATE_FILE"
 
 THREAD_QUERY='{ repository(owner: "'"$OWNER"'", name: "'"$REPO"'") { pullRequest(number: '"$PR_NUMBER"') { reviewThreads(first: 100) { nodes { isResolved } } } } }'
+REVIEW_REQUESTS_QUERY='{ repository(owner: "'"$OWNER"'", name: "'"$REPO"'") { pullRequest(number: '"$PR_NUMBER"') { reviewRequests(first: 20) { nodes { requestedReviewer { __typename ... on Bot { login } ... on User { login } } } } } } }'
 
 # bot 코멘트 허들 제외 대상 (대문자 구분 없음, 부분 일치). review body는 copilot 등 봇도 실제 피드백이므로 포함.
 BOT_COMMENT_PATTERN='codecov|github-actions|dependabot|renovate'
@@ -33,6 +34,10 @@ while true; do
   unresolvedThreads=$(GH_PAGER=cat gh api graphql -f query="$THREAD_QUERY" \
     --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' 2>/dev/null || echo 0)
 
+  # pending 자동화 봇 리뷰어만 카운트 (사람 리뷰어는 Phase 7 수동 판단에 맡김).
+  pendingBotReviewers=$(GH_PAGER=cat gh api graphql -f query="$REVIEW_REQUESTS_QUERY" \
+    --jq '[.data.repository.pullRequest.reviewRequests.nodes[].requestedReviewer | select(.__typename == "Bot")] | length' 2>/dev/null || echo 0)
+
   # 새로 도착한 사람 코멘트만 카운트 (bot 제외 + 이전 tick에 본 적 없는 것만).
   allComments=$(GH_PAGER=cat gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" 2>/dev/null || echo '[]')
   newComments=$(echo "$allComments" | jq --arg pat "$BOT_COMMENT_PATTERN" --slurpfile state "$STATE_FILE" \
@@ -45,7 +50,7 @@ while true; do
     '[.[] | select(.body != "") | select(.id as $i | ($state[0].reviews | index($i)) | not)]')
   newReviewCount=$(echo "$newReviews" | jq 'length')
 
-  echo "SNAPSHOT state=$state mergeState=$mergeState reviewDecision=$reviewDecision ciFailed=$ciFailed ciPending=$ciPending unresolvedThreads=$unresolvedThreads newComments=$newCommentCount newReviews=$newReviewCount"
+  echo "SNAPSHOT state=$state mergeState=$mergeState reviewDecision=$reviewDecision ciFailed=$ciFailed ciPending=$ciPending unresolvedThreads=$unresolvedThreads pendingBotReviewers=$pendingBotReviewers newComments=$newCommentCount newReviews=$newReviewCount"
 
   stop=0
   if [ "$state" = "CLOSED" ] || [ "$state" = "MERGED" ]; then echo "EVENT:PR_CLOSED state=$state"; stop=1; fi
@@ -59,11 +64,12 @@ while true; do
   if [ "$newCommentCount" -gt 0 ]; then echo "EVENT:OPEN_COMMENT count=$newCommentCount"; stop=1; fi
   if [ "$newReviewCount" -gt 0 ]; then echo "EVENT:OPEN_REVIEW count=$newReviewCount"; stop=1; fi
 
-  # MERGEABLE: CI 미진행 + 실패 없음 + mergeState CLEAN/UNSTABLE + 리뷰 통과(APPROVED 또는 승인 요구 없음).
+  # MERGEABLE: CI 미진행 + 실패 없음 + mergeState CLEAN/UNSTABLE + 리뷰 통과(APPROVED 또는 승인 요구 없음) + pending 자동화 봇 리뷰어 없음.
   if [ "$stop" -eq 0 ]; then
     if [ "$ciPending" -eq 0 ] && [ "$ciFailed" -eq 0 ] \
        && { [ "$mergeState" = "CLEAN" ] || [ "$mergeState" = "UNSTABLE" ]; } \
-       && { [ "$reviewDecision" = "APPROVED" ] || [ -z "$reviewDecision" ]; }; then
+       && { [ "$reviewDecision" = "APPROVED" ] || [ -z "$reviewDecision" ]; } \
+       && [ "$pendingBotReviewers" -eq 0 ]; then
       echo "EVENT:MERGEABLE mergeState=$mergeState reviewDecision=$reviewDecision"
       stop=1
     fi
@@ -81,6 +87,7 @@ while true; do
 
   [ "$ciPending" -gt 0 ] && echo "EVENT:CI_PENDING count=$ciPending"
   [ -n "$reviewDecision" ] && [ "$reviewDecision" != "APPROVED" ] && echo "EVENT:REVIEW_PENDING decision=$reviewDecision"
+  [ "$pendingBotReviewers" -gt 0 ] && echo "EVENT:REVIEW_PENDING pendingBotReviewers=$pendingBotReviewers"
 
   sleep 60
 done

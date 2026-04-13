@@ -15,6 +15,7 @@ user-invocable: false
 - **60초 간격**: rate limit 회피, 단순성.
 - **모든 허들 식별**: 병합 가로막는 요소를 누락 없이 감지.
 - **Bot 자동 코멘트 제외**: `codecov`, `github-actions`, `dependabot`, `renovate` 계열 봇의 일반 코멘트는 허들에서 제외 (대소문자 무관, 부분 일치). 리뷰 본문(review body)은 copilot 등 봇도 실제 피드백이므로 포함.
+- **자동화 봇 리뷰어만 submit까지 대기**: `reviewRequests`에 `__typename == "Bot"` 인 리뷰어(Copilot, Claude, Gemini 등)가 등록돼 있으면 submit(`COMMENTED`/`APPROVED`/`CHANGES_REQUESTED` 어느 것이든)할 때까지 `REVIEW_PENDING`으로 대기한다. 사람 리뷰어(`__typename == "User"`)는 응답 시간이 예측 불가능하므로 대기 대상에서 제외 — 사람 리뷰 확인은 Phase 7(PR 병합 승인) 단계에서 사용자가 직접 판단한다.
 
 ## 실행
 
@@ -39,7 +40,8 @@ bash .claude/skills/monitor-pr/monitor.sh <PR_NUMBER>
 | 신규 코멘트 | issues API 중 state에 없고 bot 패턴 매치 안 하는 것 | `OPEN_COMMENT` |
 | 신규 리뷰 본문 | reviews API 중 state에 없는 것 (bot 포함) | `OPEN_REVIEW` |
 | 리뷰 미승인 | `reviewDecision != "APPROVED"` (공란 제외) | `REVIEW_PENDING` (대기) |
-| 병합 가능 | `ciPending=0` + `ciFailed=0` + `mergeState in {CLEAN, UNSTABLE}` + `reviewDecision in {APPROVED, ""}` | `MERGEABLE` |
+| 자동화 봇 리뷰 대기 | `reviewRequests` 중 `requestedReviewer.__typename == "Bot"` 이 존재 (submit 전) | `REVIEW_PENDING` (대기) |
+| 병합 가능 | `ciPending=0` + `ciFailed=0` + `mergeState in {CLEAN, UNSTABLE}` + `reviewDecision in {APPROVED, ""}` + `pendingBotReviewers=0` | `MERGEABLE` |
 
 `CI_PENDING` / `REVIEW_PENDING`은 대기 상태 알림(루프 계속). 나머지 이벤트는 루프를 종료한다.
 
