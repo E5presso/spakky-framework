@@ -18,6 +18,10 @@ user-invocable: false
 - **자동화 봇 리뷰어만 submit까지 대기**: `reviewRequests`에 `__typename == "Bot"` 인 리뷰어(Copilot, Claude, Gemini 등)가 등록돼 있으면 submit(`COMMENTED`/`APPROVED`/`CHANGES_REQUESTED` 어느 것이든)할 때까지 `REVIEW_PENDING`으로 대기한다. 사람 리뷰어(`__typename == "User"`)는 응답 시간이 예측 불가능하므로 대기 대상에서 제외 — 사람 리뷰 확인은 Phase 7(PR 병합 승인) 단계에서 사용자가 직접 판단한다.
 - **BLOCKED는 조용히 지나치지 않는다**: `mergeStateStatus == BLOCKED` 는 GitHub 정책상 병합 불가 상태(미해결 review thread, 승인 부족, CODEOWNERS 미충족 등). 모니터는 이를 별도 이벤트(`BLOCKED`)로 상위 스킬에 전달하며, 상위 스킬은 반드시 원인을 분류하여 대응한다. BLOCKED 를 단순 대기 상태로 취급하면 무한 polling 에 빠진다.
 - **GraphQL 페이지네이션 안전장치**: `reviewRequests(first: 100)` 로 페치하고 `totalCount` 와 비교한다. `totalCount > nodes.length` 이면 페치 누락 가능성 있으므로 `pendingBotReviewers` 를 `totalCount` 로 반환하여 MERGEABLE 전환을 막는다(안전측 대기). `reviewThreads` 도 같은 원리로 `first: 100`.
+- **리뷰 스레드 resolve 권한 분리**: 스레드의 **첫 코멘트 작성자(`author.__typename`)를 기준**으로 처리를 구분한다.
+  - **Bot 스레드** (`__typename == "Bot"`, 예: `copilot-pull-request-reviewer`): 에이전트가 지적을 수용(코드 수정)하거나 반론(답변만) 후 `resolveReviewThread` mutation 으로 resolve 한다. 봇은 재판정 프로세스가 없으므로 에이전트 resolve 로 충분.
+  - **User 스레드** (`__typename == "User"`): 에이전트는 응답 코멘트(`addPullRequestReviewThreadReply`)만 달고 **resolve 하지 않는다**. 리뷰 적절성 판단은 리뷰어 본인의 권한. 에이전트가 강제 resolve 하면 사회적 계약을 깬다 — 리뷰어가 직접 닫을 때까지 `UNRESOLVED_THREAD` 는 유지된다.
+  - 혼합 스레드(첫 코멘트는 Bot, 이후 User 답변 존재 등)에서도 **첫 코멘트 작성자 기준**으로만 판단한다.
 
 ## 실행
 
