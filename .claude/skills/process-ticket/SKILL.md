@@ -167,9 +167,28 @@ gh issue view $ARGUMENTS --comments
 
 ## Phase 6: CI & 리뷰 모니터링
 
-`/monitor-pr {PR_NUMBER}` 서브스킬을 실행한다. polling 스크립트, 이벤트 분기, CI 실패/리뷰 코멘트 처리는 서브스킬이 정의한다.
+`/monitor-pr {PR_NUMBER}` 서브스킬을 실행하여 이벤트를 수집한 뒤, 아래 분기에 따라 **반드시 대응한다**. 이벤트를 보고도 처리하지 않고 polling 만 반복하는 것은 금지.
 
-**종료 조건**: PR의 merge button이 활성화된 상태 (mergeable + checks pass + review approved)
+### 이벤트별 대응 (monitor-pr 출력의 `EVENT:` 라인)
+
+| 이벤트 | 대응 |
+|--------|------|
+| `PR_CLOSED` | 작업 종료, 사용자에게 상태 보고 |
+| `CONFLICT` | develop 병합 시도 → conflict resolve → push → monitor 재시작 |
+| `BEHIND` | develop 병합 → push → monitor 재시작 |
+| `CI_FAILURE` | 실패한 체크의 로그 확인 → 로컬 재현 → 수정 → push → monitor 재시작 |
+| `OPEN_COMMENT` / `OPEN_REVIEW` / `UNRESOLVED_THREAD` | **`/review-pr {PR_NUMBER}` 서브스킬을 반드시 호출**하여 코멘트별로 수용/반론 판단 + 필요 시 수정 + 스레드 resolve. 그 후 monitor 재시작 |
+| `BLOCKED` | `mergeStateStatus == BLOCKED` 원인 분류: <br> • **미해결 review thread** 또는 **리뷰 코멘트 미반영** → `/review-pr {PR_NUMBER}` 호출 후 재시작 <br> • **승인 부족** (Copilot `COMMENTED` 만 있고 `APPROVED` 없음) / **CODEOWNERS 미충족** → Phase 7 로 전환하여 사용자 개입 요청 |
+| `CI_PENDING` / `REVIEW_PENDING` | polling 계속 (monitor 가 자동으로 유지) |
+| `MERGEABLE` | Phase 7 로 전환 |
+
+### 절대 규칙
+
+- `BLOCKED` 이벤트를 "대기 상태"로 해석하여 polling 만 반복하는 것은 금지. 반드시 원인을 조사한다.
+- `OPEN_*` / `UNRESOLVED_THREAD` 이벤트 발생 시 `/review-pr` 호출을 건너뛰고 merge 를 시도하는 것은 금지.
+- `/process-ticket` 을 자율 에이전트로 실행하는 경우, **자율 에이전트의 프롬프트에 위 이벤트 분기 처리를 그대로 전달**한다. 단순히 "monitor 돌리고 MERGEABLE 이면 merge" 로는 부족하다.
+
+**종료 조건**: `MERGEABLE` 이벤트 처리 또는 `BLOCKED` 로 Phase 7 수동 개입 전환.
 
 ## Phase 7: 병합 준비 완료
 
