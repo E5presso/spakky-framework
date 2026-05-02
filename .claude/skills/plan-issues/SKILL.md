@@ -121,7 +121,74 @@ options:
 
 - "수정 요청" 선택 시 사용자의 notes를 반영하여 분해를 갱신한 뒤 다시 승인을 요청한다.
 - "재분해" 선택 시 Phase 2를 처음부터 재실행한다.
-- **승인 없이 Phase 4로 진행하지 않는다.**
+- **승인 없이 Phase 3.5로 진행하지 않는다.**
+
+## Phase 3.5: 스펙 시뮬레이션 (Cold Session Probe)
+
+> **외부 게이트 (Soft Block)**: 작성한 분해를 별도 서브에이전트가 **새 세션처럼** 읽고 모호함·silent assumption·산출물 중복을 보고한다. 사용자 승인 직후, Phase 4 이슈 생성 직전.
+
+### 3.5-1. T1 Spec Probe (티켓별 병렬)
+
+각 태스크/서브태스크마다 `general-purpose` 서브에이전트 1개를 spawn한다 (병렬). 각 서브에이전트에게 **부모 마일스톤 description + 해당 티켓 본문 + blocker 본문만** 전달하고 다음을 답하게 한다:
+
+```
+당신은 새 세션의 process-ticket입니다.
+위 마일스톤/부모/blocker/타겟 티켓만으로 구현을 시작합니다.
+
+답변:
+- AMBIGUITIES: 부족한 정보 목록
+- ASSUMPTIONS: 구현 중 결정해야 할 silent assumption 목록
+- WHAT_I_WILL_BUILD: 1-2 문장 ("내가 만들 것" 진술)
+- EXISTING_ASSET_HITS: 코드베이스에 이미 있는 산출물 (이름, 경로)
+- CONFIDENCE: HIGH | MEDIUM | LOW
+```
+
+### 3.5-2. T2 DAG Coherence (전체 1회)
+
+전체 DAG를 별도 서브에이전트 1개에 전달:
+
+```
+다음을 점검하라:
+- 후행 티켓이 선행 티켓이 명시적으로 약속하지 않은 산출물을 가정하는가?
+- 대표 태스크가 실제로 후행 의존 산출물을 생성하는가?
+- 본문상 자명하지만 blockedBy로 선언되지 않은 implicit blocker가 있는가?
+```
+
+### 3.5-3. T3 Value Drift (에픽 단위 1회)
+
+```
+각 SC(Success Criteria)에 매핑된 태스크 산출물의 합으로 SC가 도달 가능한가?
+SC 매핑이 표면적이지 않은가?
+```
+
+### 3.5-4. 결과 통합 & 사용자 검토 후보 리스트
+
+T1·T2·T3 결과를 메인이 통합하여 **사용자 검토 후보 리스트**로 제시:
+
+```
+## Phase 3.5 시뮬레이션 결과
+
+### Critical (Phase 4 차단)
+- T1 #5 EXISTING_ASSET_HITS: `XxxPort` 이미 존재 — 신설 vs 재사용 결정 필요
+- T2 implicit blocker: #7 → #4 의존 누락
+
+### Warning (검토 권장)
+- T1 #3 CONFIDENCE: LOW — AMBIGUITIES 4건
+- T3 SC-2가 산출물 합으로 도달 불가능
+
+### 통과
+- 12건 (생략)
+```
+
+`AskUserQuestion`으로 일괄 처리 분기:
+
+| 옵션 | 의미 |
+|------|------|
+| 분해 수정 후 재시뮬레이션 | Phase 2 또는 3 복귀 |
+| 결과 무시하고 진행 | Phase 4 진입 (사용자 책임) |
+| 부분 수정 | notes에 적용할 항목 명시 후 재시뮬레이션 |
+
+**Critical 1개 이상 시 "결과 무시" 선택은 강한 경고를 동반한다 (Soft Block).** 사용자 의지로 진행 가능하나 1줄 경고 노출.
 
 ## Phase 4: 이슈 생성
 

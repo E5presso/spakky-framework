@@ -8,10 +8,24 @@ user-invocable: true
 
 변경된 코드를 의심의 눈으로 검토한다. **반드시 서브에이전트에서 실행**하여 self-confirmation bias를 방지한다.
 
+## 페르소나 인덱스
+
+리뷰는 **단일 서브에이전트가 5개 페르소나 시그널을 순회**한다. 각 페르소나는 카테고리 시그널 인덱스이며, **실제 규칙 SSOT는 `.claude/rules/*.md`**다. 페르소나가 SSOT와 충돌하면 SSOT 우선.
+
+| 페르소나 | 인덱스 | 카테고리 |
+|---------|-------|---------|
+| Architecture | [personas/architecture.md](personas/architecture.md) | 레이어, Aggregate, Aspect 비대칭 |
+| Type | [personas/type.md](personas/type.md) | 타입 규율, override, Optional 의미 |
+| Simplicity | [personas/simplicity.md](personas/simplicity.md) | YAGNI, 단일 사용 헬퍼, defensive 과다 |
+| Naming | [personas/naming.md](personas/naming.md) | 접두/접미사, 일관성 |
+| Test & Coverage | [personas/test-coverage.md](personas/test-coverage.md) | 커버리지, flaky, mock 남용 |
+
+또한 `.claude/rules/review-heuristics.md`가 14개 카테고리 ↔ SSOT 매핑 인덱스다.
+
 ## 실행 방법
 
 1. `git diff` (또는 `git diff --cached`)로 변경 사항을 확인한다.
-2. 아래 체크리스트를 **모두** 순회하며 위반을 찾는다.
+2. 페르소나 5개와 아래 체크리스트를 **모두** 순회하며 위반을 찾는다.
 3. 발견된 이슈를 심각도별로 분류하여 보고한다.
 4. 사용자 승인 후 수정한다.
 
