@@ -94,7 +94,7 @@ paths:
 
 - **신규 심볼 도입 전 의도를 사용자에게 설명하고 합의.** 기존 패턴 답습도 "논의 없는 결정"으로 간주.
 - **통상 개발 용어 무단 채택 금지**: `payload`, `schema`, `edge`, `match`, `link`, `pair`, `sample`, `inference`, `overrides`, `member`, `Converter` 등을 설명 없이 도입 금지.
-- **도메인 사전 미등록 용어는 코드에 넣기 전 사전 등록 논의** (CLAUDE.md "프로젝트 특수 컨벤션" 또는 ARCHITECTURE.md 도메인 사전 참조).
+- **도메인 사전 미등록 용어는 코드에 넣기 전 사전 등록 논의** (AGENTS.md "프로젝트 특수 컨벤션" 또는 ARCHITECTURE.md 도메인 사전 참조).
 - **팀 확정 용어는 대체어로 바꾸지 않는다.** 변경이 필요하면 사전 갱신부터.
 - **축약어는 풀이 병기 의무.** 모든 축약어는 등장 시 직후 괄호로 풀이를 병기한다. 형식: `축약어 (풀어 쓴 용어)`. 예: `FP (False Positive)`, `DAG (Directed Acyclic Graph)`, `VO (Value Object)`, `FR (Functional Requirement)`. 도메인 사전 등재 여부와 무관하게 적용 — 외부 독자가 의미를 추적할 수 있어야 한다. 같은 단락 안에서 같은 축약어가 직전에 풀이된 경우 동일 단락 내 반복은 축약어만 사용 가능.
 

@@ -12,7 +12,7 @@ paths:
 
 - **Code-first**: 모든 문서 사실은 실제 코드로 검증한다. 환각 금지.
 - **변경과 동시 반영**: 코드 변경을 포함한 PR에 문서 갱신을 함께 포함한다. "문서는 나중에"는 금지.
-- **Priority**: Code > `CONTRIBUTING.md` > `CLAUDE.md` > 패키지 `README.md` > `docs/`. 불일치 시 상위 우선순위에 맞춰 하위를 수정한다.
+- **Priority**: Code > `CONTRIBUTING.md` > `AGENTS.md` > 패키지 `README.md` > `docs/`. 불일치 시 상위 우선순위에 맞춰 하위를 수정한다.
 
 ## 실행 방법
 
@@ -29,7 +29,7 @@ paths:
 | `*/pyproject.toml` | dev+user | 패키지 `README.md`, `docs/plugin-api.md` |
 | 공개 API·인터페이스 시그니처 | dev+user | 관련 가이드·API 레퍼런스 |
 | 레이어·의존 방향·빌딩 블록 | dev | `ARCHITECTURE.md`, `docs/adr/` |
-| 워크플로·도구 설정 | dev | `CONTRIBUTING.md`, `CLAUDE.md` |
+| 워크플로·도구 설정 | dev | `CONTRIBUTING.md`, `AGENTS.md` |
 | `docs/**`, `mkdocs.yml` 단독 수정 | user | 변경된 파일 자체 |
 
 정확한 라우팅 규칙은 `sync-docs` 스킬이 결정한다. 라우팅을 수동으로 덮어쓰지 않는다.

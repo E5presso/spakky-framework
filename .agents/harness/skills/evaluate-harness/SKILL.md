@@ -36,7 +36,7 @@ user-invocable: true
 
 스코프에 따라 대상 파일을 수집한다:
 
-- `rules`: `.agents/harness/rules/*.md` 전체 + `CLAUDE.md` + `AGENTS.md` + `RTK.md`
+- `rules`: `.agents/harness/rules/*.md` 전체 + `AGENTS.md` + `CLAUDE.md`
 - `skills`: `.agents/harness/skills/*/SKILL.md` 전체 + 하위 phase·script
 - `all`: 위 둘 + `.claude/settings.json` + `.codex/` 어댑터
 

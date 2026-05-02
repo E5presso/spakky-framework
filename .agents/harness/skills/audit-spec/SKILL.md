@@ -74,7 +74,7 @@ REST API · 이벤트 스키마 · DB 스키마 · 인덱스 · Audit Log 필드
 
 ### 축 4 — 도메인 사전 미등재 신규 어휘
 
-`ARCHITECTURE.md` / `CLAUDE.md` 미등재 어휘가 자식 코드 PR로 도입되면 behavioral.md "네이밍" 위반. 사전 등재 시점이 코드 PR 이후라면 prospective 등재 마이크로 이슈 또는 게이트 보강 필요.
+`ARCHITECTURE.md` / `AGENTS.md` 미등재 어휘가 자식 코드 PR로 도입되면 behavioral.md "네이밍" 위반. 사전 등재 시점이 코드 PR 이후라면 prospective 등재 마이크로 이슈 또는 게이트 보강 필요.
 
 ### 축 5 — Blocker / 의존 chain 모순
 
@@ -212,7 +212,7 @@ Phase 4 정정 위임이 완료되면 GitHub Issue 본문이 갱신된 상태에
 - **코드 변경 없음** — 본 스킬은 GitHub Issue 본문만 다룬다. 코드 정합 검증 결과로 코드 변경이 필요하면 후속 이슈를 `/plan-issues`로 생성.
 - **마일스톤 description 갱신은 신중히** — 본문이 매우 길고 markdown 표·mermaid 다이어그램 포함. 부분 치환 시 다른 절 절단 검증 필수.
 - **"이왕 하는 김에" 금지** (behavioral.md §3): 감사 결과 외 인접 본문 개선 금지.
-- **하네스 수정 동반 시** — 본 스킬 사용 결과로 하네스 (rules / 다른 스킬) 보강이 필요하면 같은 세션의 워크트리 PR에 포함 (`CLAUDE.md` "하네스 교정" 정합).
+- **하네스 수정 동반 시** — 본 스킬 사용 결과로 하네스 (rules / 다른 스킬) 보강이 필요하면 같은 세션의 워크트리 PR에 포함 (`AGENTS.md` "하네스 교정" 정합).
 
 ## 참고 컨텍스트
 

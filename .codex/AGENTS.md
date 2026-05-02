@@ -1,1 +1,1 @@
-@../RTK.md
+@../AGENTS.md

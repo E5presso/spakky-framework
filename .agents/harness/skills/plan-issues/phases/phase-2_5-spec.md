@@ -79,7 +79,7 @@
 
 **규칙**:
 - 한 FR (Functional Requirement) = 한 명제. AND/OR로 묶지 말 것.
-- 도메인 어휘(`CLAUDE.md` "프로젝트 특수 컨벤션", `ARCHITECTURE.md` 도메인 모델)만 사용. 기술 용어는 §5.도메인 계약에서.
+- 도메인 어휘(`AGENTS.md` "프로젝트 특수 컨벤션", `ARCHITECTURE.md` 도메인 모델)만 사용. 기술 용어는 §5.도메인 계약에서.
 - 측정 불가능하거나 검증 불가능하면 SC (Success Criteria)로 옮기거나 재작성.
 - 모호한 지점은 추론으로 메우지 말고 `[NEEDS CLARIFICATION: ...]`로 표시.
 
@@ -151,7 +151,7 @@
 - [ ] 모든 US (User Story)가 Given/When/Then으로 검증 가능한 시나리오를 가지는가
 - [ ] 모든 US가 단독으로 테스트 가능한 Independent Test를 가지는가
 - [ ] 모든 FR (Functional Requirement)이 단일 명제이며 검증 가능한가
-- [ ] 도메인 어휘가 도메인 사전(`CLAUDE.md` "프로젝트 특수 컨벤션", `ARCHITECTURE.md` 도메인 모델 섹션)과 일치하는가 (신규 어휘는 사전 등록 절차 거쳤는가)
+- [ ] 도메인 어휘가 도메인 사전(`AGENTS.md` "프로젝트 특수 컨벤션", `ARCHITECTURE.md` 도메인 모델 섹션)과 일치하는가 (신규 어휘는 사전 등록 절차 거쳤는가)
 - [ ] **요청 어휘 4축 정합 (charter §4-A)** — 본문에 등장한 모든 핵심 어휘가 (a) 사용자 입력 본문, (b) 도메인 사전, (c) 패키지 `README.md`/`docs/`, (d) 코드베이스 — 4축에서 등가로 사용되는가. 한 축이라도 어긋나면 `[NEEDS CLARIFICATION: 어휘 X — 출처별 의미 차이 확인]` 마커.
 - [ ] §5 도메인 계약에 사전·사후조건·불변식이 명시되었는가
 - [ ] §9 범위 밖이 의도적 비목표로 명시되었는가 (`해당 없음`이 실제 부재인지 검토 부재인지 구분)

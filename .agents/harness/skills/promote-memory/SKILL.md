@@ -65,7 +65,7 @@ user-invocable: true
 | 코딩 표준 | `rules/python-code.md`·`rules/type-discipline.md` 등 |
 | 행동 원칙 | `rules/behavioral-guidelines.md` |
 | 워크플로 변경 | 해당 `skills/*/SKILL.md` |
-| 외부 참조 | `CLAUDE.md` 또는 해당 영역 README |
+| 외부 참조 | `AGENTS.md` 또는 해당 영역 README |
 
 위치 결정 후 **외부 서브에이전트**(general-purpose)에게 통합 작업 위임.
 
