@@ -42,7 +42,7 @@ paths:
 - **import와 사용 코드를 한 번에 추가.** import만 먼저 넣으면 ruff가 즉시 제거하여 루프 발생.
 - **"이왕 하는 김에" 금지.** 버그 수정에 리팩터링 끼우지 않음. 별도 커밋/PR로 분리.
 - **변경된 모든 라인이 사용자 요청에 직접 연결되는가?** 연결 안 되면 되돌린다. 인접 코드/주석/포매팅 "개선" 금지.
-- **기존 기술 교체/제거 전 사용자 확인.** "X를 활용해줘"는 "Y를 제거해줘"가 아님.
+- **공유 인프라/프레임워크 코어 기술(DI 컨테이너, AOP, 레이어 의존, 빌드 시스템) 교체·제거 전 사용자 확인.** 그 외 라이브러리 마이너 교체·내부 구현 리팩터링은 자율 진행. "X를 활용해줘"는 "Y를 제거해줘"가 아님.
 - **장애물은 우회 말고 근본 원인 추적.** 안 되면 사용자에게 보고.
 - **`git push` 후 remote 반영을 반드시 검증.** push 명령 한 번의 "ok/exit 0"만으로 반영되었다고 판단하지 않는다. 매 push 직후 `git rev-parse HEAD` 와 `git rev-parse @{u}` (또는 `git log origin/<branch> -1`) 를 비교하여 local HEAD가 remote에 실제로 도달했는지 확인한다. 불일치 시 `git push origin <branch>` 로 명시적 재시도. 사용자가 "PR에 파일이 안 보인다"라고 지적하기 전에 detect해야 한다.
 - **push 출력을 `tail -N` 등으로 자르지 않는다.** git이 upstream 미설정·non-fast-forward·reject 등 중요한 경고를 전체 stderr 중간에 뱉을 수 있으므로 full 출력을 읽는다.
@@ -104,7 +104,7 @@ paths:
 
 - **스펙 오류 감지 시 작업 도중이라도 보고.** 외부 스펙(GitHub Issue, API spec, 데이터 모델)이 현재 코드/도메인과 어긋나면 조용히 따라가지 않는다.
 - **감지된 스펙 이슈는 `/plan-issues`로 후속 티켓 + 같은 세션의 서브에이전트로 즉시 분해 개시.** 현재 작업 범위에 끼워넣지는 않지만(=Surgical), 다음 세션으로 미루지도 않는다(=능동 실행).
-- **후속 티켓 자동 실행 default = 즉시 분해 (이벤트 트리거 기반).** 본 세션 내 백그라운드 서브에이전트로 `/process-ticket {신규-TICKET-ID}` 즉시 실행. 후속이 현재 PR 산출물에 의존하면 `blockedBy`에 현재 티켓 등록 → Phase 1.5 polling이 머지 직후 자동 진입. 즉시 분해가 컨텍스트상 무의미한 경우(예: 동일 파일 머지 충돌 예상)에만 `/schedule` 스킬의 **durable remote routine** 사용 허용. **휘발성 스케줄러(`CronCreate` session-only·`ScheduleWakeup` 현 세션 wake-up·로컬 cron·sleep 루프) 절대 금지** — 세션 종료 시 사라져 약속 유기와 동등. 상세는 `/review-pr` SKILL.md "후속 티켓 생성" 참조.
+- **후속 티켓 자동 실행 default = 즉시 분해 (이벤트 트리거 기반).** 본 세션 내 백그라운드 서브에이전트로 `/process-ticket {신규-TICKET-ID}` 즉시 실행. 후속이 현재 PR 산출물에 의존하면 `blockedBy`에 현재 티켓 등록 → Phase 1.5 polling이 머지 직후 자동 진입. 즉시 분해가 컨텍스트상 무의미한 경우(예: 동일 파일 머지 충돌 예상)에만 `/schedule` 스킬의 **durable remote routine** 사용 허용. **휘발성 스케줄러(`CronCreate` session-only·`ScheduleWakeup` 현 세션 wake-up·로컬 cron·sleep 루프) 절대 금지** — 세션 종료 시 사라져 약속 유기와 동등. 상세는 `/triage-comments` SKILL.md "후속 티켓 생성" 참조.
 - **후속 티켓 생성 시 의존 관계(`blockedBy`) 필수 설정.** "이슈만 만들고 끝"은 실패.
   - **현재 티켓을 자동으로 blocker로 삼지 않는다.** 현재 티켓은 같은 문제의 파일럿/형제일 가능성이 높아 잘못된 선후관계를 만든다.
   - **단**, 후속 티켓이 **현재 PR이 만드는 산출물에 직접 의존**하면 현재 티켓을 blocker로 등록한다 — 이 경우 `/process-ticket` Phase 1.5 blocker polling이 머지 직후 자동 진입하므로 wall-clock scheduling이 불필요.

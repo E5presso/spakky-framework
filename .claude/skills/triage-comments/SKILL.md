@@ -1,10 +1,10 @@
 ---
-name: review-pr
+name: triage-comments
 description: PR 리뷰 코멘트를 트리아지하여 수용/반론을 판단하고, 수정 적용 후 스레드에 근거를 남깁니다
 user-invocable: false
 ---
 
-# Review PR — PR 리뷰 코멘트 트리아지
+# Triage Comments — PR 리뷰 코멘트 트리아지
 
 PR에 달린 리뷰 코멘트를 하나씩 검토하여, 수용할지 반론할지 판단한다.
 맹목적 수용도, 맹목적 무시도 하지 않는다.

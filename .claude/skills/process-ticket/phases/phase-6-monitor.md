@@ -31,7 +31,7 @@
 너는 다음 4단계를 자기 turn 안에서 순서대로 수행한다. 각 단계 사이에 turn을 종료하지 않는다. DONE이 관찰될 때까지 1↔4 루프를 반복한다.
 
 1. **INIT**: `monitor-pr`의 코멘트 수집 단계를 실행하여 미처리 코멘트를 확인한다.
-   - `TOTAL > 0`이면 **반드시 `/review-pr {PR_NUMBER}`를 호출**한다. default/overnight 모드 공통 규칙이며 예외가 없다.
+   - `TOTAL > 0`이면 **반드시 `/triage-comments {PR_NUMBER}`를 호출**한다. default/overnight 모드 공통 규칙이며 예외가 없다.
 2. **LISTENING**: `monitor-pr`의 watch 단계를 포그라운드 Bash로 1회 호출한다. baseline 캐시 파일은 워크트리 루트의 `.monitor-pr-state.json`에 유지하여 호출 간 `(id, updatedAt)` 페어를 보존한다. **이 호출은 `run_in_background: true` / `&` / `nohup` 어떤 형태도 사용하지 않는다 — 포그라운드 단일 점유가 본 phase의 차단력 그 자체다.**
    ```bash
    REPO=$(gh repo view --json owner,name --jq '.owner.login + "/" + .name') \
@@ -45,10 +45,10 @@
 
 ## 리뷰 코멘트 처리 (MUST)
 
-코멘트가 1건이라도 감지되면 **반드시 `/review-pr`**을 거쳐야 한다. 메인 에이전트/구현 에이전트가 코멘트를 보고 직접 코드를 수정하는 "무지성 반영"은 금지한다. 판단(수용/반론/보류)은 review-pr 스킬에서만 이루어지며, 수용으로 판단된 항목만 코드 수정에 반영한다.
+코멘트가 1건이라도 감지되면 **반드시 `/triage-comments`**을 거쳐야 한다. 메인 에이전트/구현 에이전트가 코멘트를 보고 직접 코드를 수정하는 "무지성 반영"은 금지한다. 판단(수용/반론)은 triage-comments 스킬에서만 이루어지며 ("보류" 카테고리 없음 — 결정 불가 시 default=수용), 수용으로 판단된 항목만 코드 수정에 반영한다.
 
 **`--overnight` 모드 분기**:
-- **본인(PR 작성자) 코멘트**: `/review-pr`로 자동 처리 (수용 시 수정→재push, 반론 시 스레드 답글). 사용자 승인 없이 진행.
+- **본인(PR 작성자) 코멘트**: `/triage-comments`로 자동 처리 (수용 시 수정→재push, 반론 시 스레드 답글). 사용자 승인 없이 진행.
 - **타인 코멘트**: 처리하지 않고 "사용자 수동 응답 대기" 큐에 쌓는다. 이 큐가 비어있지 않으면 Phase 7에 도달해도 "리뷰 대기" 상태로 반환한다.
 
 ## 종료 조건
