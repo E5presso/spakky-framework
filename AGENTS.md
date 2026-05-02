@@ -2,7 +2,7 @@
 
 > 코딩 스타일 → [CONTRIBUTING.md](CONTRIBUTING.md) | 아키텍처 → [ARCHITECTURE.md](ARCHITECTURE.md) | ADR → [docs/adr/](docs/adr/README.md) | 예제 → [README.md](README.md)
 
-공용 에이전트 하네스의 SSOT는 이 파일과 `.agents/harness/`입니다. Claude Code는 `CLAUDE.md` → `AGENTS.md`, Codex는 루트 `AGENTS.md`를 통해 같은 하네스를 참조합니다.
+공용 에이전트 하네스의 SSOT는 이 파일과 `.agents/harness/`입니다. Claude Code는 `CLAUDE.md`와 `.claude/` 래퍼로, Codex는 루트 `AGENTS.md`와 `.agents/skills/` 래퍼로 같은 공용 하네스를 참조합니다.
 
 ## Overview
 

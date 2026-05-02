@@ -61,8 +61,8 @@ git diff --cached --name-only
 
 라우팅 대상이 결정되면, 해당 서브 스킬의 SKILL.md를 Read하여 내용을 확보한다. Step 3에서 서브에이전트 프롬프트를 구성할 때 이 내용을 인라인으로 포함해야 하므로, 이 단계에서 미리 읽어둔다.
 
-- dev 대상 → `.agents/harness/skills/sync-dev-docs/SKILL.md` Read
-- user 대상 → `.agents/harness/skills/sync-user-docs/SKILL.md` Read
+- dev 대상 → `.agents/skills/sync-dev-docs/SKILL.md` Read
+- user 대상 → `.agents/skills/sync-user-docs/SKILL.md` Read
 - all → 양쪽 모두 Read
 
 ### Step 3: Write → Review 수렴 루프 (대상별)

@@ -1,0 +1,12 @@
+---
+name: commit
+description: Spakky Framework 커밋 메시지를 Conventional Commits 형식으로 작성합니다
+argument-hint: "[추가 설명]"
+user-invocable: true
+---
+
+# Codex Wrapper
+
+이 파일은 Codex 네이티브 발견을 위한 래퍼입니다. 정본은 공용 하네스에 있습니다.
+
+@../../harness/skills/commit/SKILL.md

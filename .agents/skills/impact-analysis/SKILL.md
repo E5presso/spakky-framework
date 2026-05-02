@@ -1,0 +1,12 @@
+---
+name: impact-analysis
+description: 모노레포에서 특정 패키지/모듈 변경이 다른 패키지에 미치는 영향을 의존성 그래프 기반으로 분석합니다.
+argument-hint: "<패키지명 또는 변경 설명>"
+user-invocable: true
+---
+
+# Codex Wrapper
+
+이 파일은 Codex 네이티브 발견을 위한 래퍼입니다. 정본은 공용 하네스에 있습니다.
+
+@../../harness/skills/impact-analysis/SKILL.md

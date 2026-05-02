@@ -27,7 +27,7 @@ REPO=E5presso/spakky-framework PR_NUMBER={N} bash {MONITOR_PR_SKILL_DIR}/scripts
 ```
 
 > `{MONITOR_PR_SKILL_DIR}`은 `monitor-pr` 스킬 디렉토리 경로.
-> 동일 `.agents/harness/skills/` 하위이므로 상대 경로로 `$(dirname {SKILL_DIR})/monitor-pr`로 접근.
+> 동일 `.agents/skills/` 하위이므로 상대 경로로 `$(dirname {SKILL_DIR})/monitor-pr`로 접근.
 
 ### 2채널 구조
 

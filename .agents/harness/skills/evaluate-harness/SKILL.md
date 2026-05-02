@@ -37,7 +37,7 @@ user-invocable: true
 스코프에 따라 대상 파일을 수집한다:
 
 - `rules`: `.agents/harness/rules/*.md` 전체 + `AGENTS.md` + `CLAUDE.md`
-- `skills`: `.agents/harness/skills/*/SKILL.md` 전체 + 하위 phase·script
+- `skills`: `.agents/harness/skills/*/SKILL.md` 전체 + `.agents/skills/`·`.claude/skills/` 래퍼
 - `all`: 위 둘 + `.claude/settings.json` + `.codex/` 어댑터
 
 각 파일의 **차단 선언**(금지 표현, 필수 표현, 게이트 표현)을 추출하여 평가 항목 목록을 만든다.
@@ -146,7 +146,7 @@ user-invocable: true
 - 서브에이전트는 `Explore` 또는 `general-purpose`만 사용. 코드 수정 권한 없는 에이전트로 한정.
 - 평가 결과는 **차단 선언과 실제 차단의 갭**만 보고한다. 신규 규칙 제안은 본 스킬 본분 밖.
 - Phase 2 병렬 spawn은 동일 메시지에서 다중 Agent 호출로 수행한다.
-- **Phase 4 직접 보강 금지**: 본 스킬 세션에서 `Edit`/`Write` 도구로 `pyproject.toml`·`settings.json`·`.agents/harness/rules/*`·`.agents/harness/skills/*` 본문을 수정하지 않는다. 위임만 한다.
+- **Phase 4 직접 보강 금지**: 본 스킬 세션에서 `Edit`/`Write` 도구로 `pyproject.toml`·`settings.json`·`.agents/harness/rules/*`·`.agents/skills/*` 본문을 수정하지 않는다. 위임만 한다.
 - Phase 4의 `evaluations/` 보고서 보존은 예외 (보고는 본분 안).
 
 $ARGUMENTS

@@ -1,6 +1,8 @@
 ---
 paths:
   - "**/.agents/harness/skills/**"
+  - "**/.agents/skills/**"
+  - "**/.claude/skills/**"
 ---
 
 # Claude Wrapper

@@ -1,11 +1,11 @@
 ---
 paths:
   - ".agents/harness/**/*.md"
+  - ".agents/skills/**/*.md"
   - ".claude/**/*.md"
   - ".codex/**/*.md"
   - "CLAUDE.md"
   - "AGENTS.md"
-  - "RTK.md"
 ---
 
 # Claude Wrapper

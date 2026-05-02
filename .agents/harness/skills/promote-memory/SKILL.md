@@ -7,7 +7,7 @@ user-invocable: true
 
 # Promote Memory — 메모리 → 하네스 승격
 
-`~/.claude/projects/.../memory/` 자동 메모리는 **로컬 학습**이다. 보편 원리로 검증된 메모리는 공유 하네스(`.agents/harness/rules/`·`.agents/harness/skills/`)로 승격되어야 한다. 그렇지 않으면 새 세션·다른 머신·다른 사용자가 같은 학습을 반복하게 된다.
+`~/.claude/projects/.../memory/` 자동 메모리는 **로컬 학습**이다. 보편 원리로 검증된 메모리는 공유 하네스(`.agents/harness/rules/`·`.agents/skills/`)로 승격되어야 한다. 그렇지 않으면 새 세션·다른 머신·다른 사용자가 같은 학습을 반복하게 된다.
 
 ## 사용법
 

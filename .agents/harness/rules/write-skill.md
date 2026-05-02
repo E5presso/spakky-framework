@@ -1,15 +1,17 @@
 ---
 paths:
   - "**/.agents/harness/skills/**"
+  - "**/.agents/skills/**"
+  - "**/.claude/skills/**"
 ---
 
 # 스킬 작성 규칙
 
 ## 하네스 수정의 스코프 원칙
 
-이슈 처리 세션 중 발견된 **스킬/규칙/훅(하네스) 결함의 수정은 해당 이슈를 처리하는 워크트리에서 이뤄지며, 그 세션의 PR에 포함된다.** 루트 리포의 `develop` 브랜치에 직접 쓰지 않는다. 이 원칙은 이 규칙 파일 자체를 포함한 모든 하네스 파일(`.agents/harness/skills/**`, `.agents/harness/rules/**`, `.claude/settings*.json`)에 적용된다.
+이슈 처리 세션 중 발견된 **스킬/규칙/훅(하네스) 결함의 수정은 해당 이슈를 처리하는 워크트리에서 이뤄지며, 그 세션의 PR에 포함된다.** 루트 리포의 `develop` 브랜치에 직접 쓰지 않는다. 이 원칙은 이 규칙 파일 자체를 포함한 모든 하네스 파일(`.agents/harness/skills/**`, `.agents/skills/**`, `.agents/harness/rules/**`, `.claude/settings*.json`)에 적용된다.
 
-워크트리에서 하네스 파일을 수정할 때는 상대 경로(`.agents/harness/skills/{name}/SKILL.md`)를 사용해 루트 오염을 방지한다 — 상세는 `.agents/harness/skills/create-worktree/SKILL.md` 참조.
+워크트리에서 스킬 본문을 수정할 때는 정본 경로(`.agents/harness/skills/{name}/SKILL.md`)를 사용하고, `.agents/skills/`·`.claude/skills/`는 네이티브 발견용 래퍼로만 유지한다 — 상세는 `.agents/harness/skills/create-worktree/SKILL.md` 참조.
 
 ## 스크립트 코드 테스트 의무
 

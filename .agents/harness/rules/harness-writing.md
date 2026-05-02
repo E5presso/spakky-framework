@@ -1,6 +1,7 @@
 ---
 paths:
   - ".agents/harness/**/*.md"
+  - ".agents/skills/**/*.md"
   - ".claude/**/*.md"
   - ".codex/**/*.md"
   - "CLAUDE.md"
@@ -9,7 +10,7 @@ paths:
 
 # 하네스 작성 규칙
 
-`.agents/harness/`·`.claude/`·`.codex/`·`AGENTS.md`·`CLAUDE.md` 등 **하네스 자체에 추가·수정되는 모든 텍스트**에 적용된다.
+`.agents/harness/`·`.agents/skills/`·`.claude/`·`.codex/`·`AGENTS.md`·`CLAUDE.md` 등 **하네스 자체에 추가·수정되는 모든 텍스트**에 적용된다.
 
 ## 1. 보편 원리만 작성
 
