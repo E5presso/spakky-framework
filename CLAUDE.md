@@ -41,7 +41,7 @@
 | **plan** | `/plan-issues`, `/audit-spec`, `/impact-analysis` | — |
 | **build** | `/autopilot`, `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
 | **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code` | — |
-| **ship** | — | `/create-pr`, `/review-pr`, `/monitor-pr`, `/update-project-status` |
+| **ship** | — | `/create-pr`, `/triage-comments`, `/monitor-pr`, `/update-project-status` |
 | **meta** | `/onboarding`, `/update-dependencies`, `/sync-docs`, `/evaluate-harness`, `/optimize-harness`, `/promote-memory` | `/sync-dev-docs`, `/sync-user-docs` |
 
 ### 핵심 워크플로우

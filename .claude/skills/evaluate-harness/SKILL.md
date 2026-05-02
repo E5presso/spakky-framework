@@ -110,13 +110,19 @@ user-invocable: true
 
 ### 위임 매트릭스
 
-| 분류 조합 | 위임 경로 | 사유 |
-|----------|----------|------|
-| `regression:none / scope:harness-only` | `/optimize-harness` (1줄 정정 묶음) | 회귀 위험 0의 포인터·라벨 정정만 자동 묶음 처리 |
-| `regression:low / scope:config-only` | `/plan-issues` → `/process-ticket` | 단일 이슈 단위 빌드 설정 변경, 패키지 단위 검증 필요 |
-| `regression:medium / scope:code-and-policy` | `/plan-issues` (ADR 동반) → `/autopilot` | 정책 결정 동반, 마일스톤 단위 분해 |
-| `regression:high / scope:framework-core` | **사용자 직접 결정 필요** | 프레임워크 동작 변경, 자동 위임 금지 |
-| `severity:info / scope:harness-only` | `/optimize-harness` | 문서·라벨 정리 |
+각 행은 (severity, regression-risk, scope) 3축을 모두 명시한다. 매칭 우선순위: 위에서 아래로 첫 일치 행을 채택. 한 항목이 여러 행에 부합하면 위(더 보수적인) 행을 적용.
+
+| severity | regression-risk | scope | 위임 경로 | 사유 |
+|----------|-----------------|-------|----------|------|
+| `*` | `high` | `framework-core` | **사용자 직접 결정 필요** | 프레임워크 동작 변경, 자동 위임 금지 (severity 무관) |
+| `critical \| warning` | `medium` | `code-and-policy` | `/plan-issues` (ADR 동반) → `/autopilot` | 정책 결정 동반, 마일스톤 단위 분해 |
+| `critical \| warning` | `low` | `config-only` | `/plan-issues` → `/process-ticket` | 단일 이슈 단위 빌드 설정 변경, 패키지 단위 검증 필요 |
+| `critical \| warning` | `none` | `harness-only` | `/optimize-harness` (1줄 정정 묶음) | 회귀 위험 0의 포인터·라벨 정정 자동 묶음 처리 |
+| `info` | `none` | `harness-only` | `/optimize-harness` | 문서·라벨 정리 |
+
+**정규화 규칙**:
+- 위 매트릭스에 매칭되지 않는 조합은 한 단계 더 보수적인 가까운 행으로 라우팅 (예: `critical / medium / framework-core`는 1행 적용 → 사용자 결정 필요).
+- `severity:info / regression:>none` 조합은 발생하지 않음 — info는 정의상 동작 변경 없음. 발생 시 분류 오류이므로 재분류한다.
 
 ### 사용자 응답에 따른 분기
 
@@ -124,7 +130,7 @@ user-invocable: true
 
 - **"위임"**: 분류별로 적합한 SSOT 스킬을 호출 (한 세션에 여러 SSOT 병렬 호출 가능, 단 본 스킬은 즉시 종료)
 - **"이슈만 등록"**: GitHub 이슈로 등록 후 종료. `/plan-issues` 또는 `gh issue create` 사용
-- **"무시"**: 보고만 남기고 종료. 보고서를 `.claude/evaluations/{date}.md`로 보존 (선택)
+- **"무시"**: 보고만 남기고 종료. 보고서를 `.claude/evaluations/{date}.md`로 보존 (선택). 디렉토리가 없으면 `mkdir -p .claude/evaluations`로 생성한 후 작성
 
 사용자가 "전부 자동으로", "알아서 해" 등으로 응답해도 본 스킬은 **위임 매트릭스 적용**까지만 자동 진행하며, **`framework-core` 또는 `regression:high` 항목은 명시적 사용자 결정 없이 위임하지 않는다**. 이는 charter §4-A·§1의 직접 적용이다.
 

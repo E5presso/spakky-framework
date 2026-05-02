@@ -104,7 +104,7 @@ paths:
 
 - **스펙 오류 감지 시 작업 도중이라도 보고.** 외부 스펙(GitHub Issue, API spec, 데이터 모델)이 현재 코드/도메인과 어긋나면 조용히 따라가지 않는다.
 - **감지된 스펙 이슈는 `/plan-issues`로 후속 티켓 + 같은 세션의 서브에이전트로 즉시 분해 개시.** 현재 작업 범위에 끼워넣지는 않지만(=Surgical), 다음 세션으로 미루지도 않는다(=능동 실행).
-- **후속 티켓 자동 실행 default = 즉시 분해 (이벤트 트리거 기반).** 본 세션 내 백그라운드 서브에이전트로 `/process-ticket {신규-TICKET-ID}` 즉시 실행. 후속이 현재 PR 산출물에 의존하면 `blockedBy`에 현재 티켓 등록 → Phase 1.5 polling이 머지 직후 자동 진입. 즉시 분해가 컨텍스트상 무의미한 경우(예: 동일 파일 머지 충돌 예상)에만 `/schedule` 스킬의 **durable remote routine** 사용 허용. **휘발성 스케줄러(`CronCreate` session-only·`ScheduleWakeup` 현 세션 wake-up·로컬 cron·sleep 루프) 절대 금지** — 세션 종료 시 사라져 약속 유기와 동등. 상세는 `/review-pr` SKILL.md "후속 티켓 생성" 참조.
+- **후속 티켓 자동 실행 default = 즉시 분해 (이벤트 트리거 기반).** 본 세션 내 백그라운드 서브에이전트로 `/process-ticket {신규-TICKET-ID}` 즉시 실행. 후속이 현재 PR 산출물에 의존하면 `blockedBy`에 현재 티켓 등록 → Phase 1.5 polling이 머지 직후 자동 진입. 즉시 분해가 컨텍스트상 무의미한 경우(예: 동일 파일 머지 충돌 예상)에만 `/schedule` 스킬의 **durable remote routine** 사용 허용. **휘발성 스케줄러(`CronCreate` session-only·`ScheduleWakeup` 현 세션 wake-up·로컬 cron·sleep 루프) 절대 금지** — 세션 종료 시 사라져 약속 유기와 동등. 상세는 `/triage-comments` SKILL.md "후속 티켓 생성" 참조.
 - **후속 티켓 생성 시 의존 관계(`blockedBy`) 필수 설정.** "이슈만 만들고 끝"은 실패.
   - **현재 티켓을 자동으로 blocker로 삼지 않는다.** 현재 티켓은 같은 문제의 파일럿/형제일 가능성이 높아 잘못된 선후관계를 만든다.
   - **단**, 후속 티켓이 **현재 PR이 만드는 산출물에 직접 의존**하면 현재 티켓을 blocker로 등록한다 — 이 경우 `/process-ticket` Phase 1.5 blocker polling이 머지 직후 자동 진입하므로 wall-clock scheduling이 불필요.
