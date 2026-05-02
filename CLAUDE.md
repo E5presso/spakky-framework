@@ -86,8 +86,8 @@
 
 ### Git
 
-- `git checkout -- .`, `git restore .`, `git reset --hard`, `git clean -fd` 금지
-- `git add -A`, `git add .` 금지 — 변경한 파일만 명시적으로 스테이지
+- `git checkout -- .`, `git restore .`, `git reset --hard`, `git clean -fd` 금지 — 미커밋 변경 파괴
+- `git add -A`, `git add .`는 사용 가능. 단 `.gitignore`되지 않은 임시 파일·민감 정보(`.env`, 비밀키)가 섞일 위험이 있으면 변경한 파일만 명시 스테이지
 - PR close/reopen 금지 — CI 실패 시 원인 조사 후 코드 수정하여 재push
 
 ### 도구 실행
@@ -113,7 +113,7 @@
 ### 행동
 
 - 요청 범위를 넘는 변경 금지 (scope creep)
-- 기존 기술 교체/제거 시 사용자 확인 없이 진행 금지
+- 공유 인프라/프레임워크 코어 기술(DI 컨테이너, AOP, 레이어 의존, 빌드 시스템) 교체·제거 시 사용자 확인 필수. 그 외 라이브러리 마이너 교체·내부 구현 리팩터링은 자율 진행
 - 가설 없이 코드 수정 금지
 - 버그 수정에 리팩터링 혼합 금지
 
