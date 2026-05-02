@@ -16,13 +16,45 @@
     ]
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git rev-parse --git-dir | grep -q worktrees && git fetch origin master -q && git rebase --autostash origin/master -q || true",
+            "timeout": 30,
+            "statusMessage": "Rebasing worktree onto origin/master..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/rtk-rewrite.sh"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "cd $(git rev-parse --show-toplevel 2>/dev/null || echo .) && echo '$FILEPATH' | grep -q '\\.py$' && uv run ruff format '$FILEPATH' 2>/dev/null && uv run ruff check --fix '$FILEPATH' 2>/dev/null; true"
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && MISE_EXPERIMENTAL=true mise run //apps/knowledge_refinery:fmt \"$f\"; } 2>/dev/null || true",
+            "timeout": 15,
+            "statusMessage": "Formatting with ruff..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && result=$(MISE_EXPERIMENTAL=true mise run //apps/knowledge_refinery:ty-file \"$f\" 2>&1) && exit 0 || echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"ty type check errors in $f:\\n$result\\\"}}\"; } 2>/dev/null || true",
+            "timeout": 15,
+            "statusMessage": "Type checking with ty..."
           }
         ]
       }
@@ -39,5 +71,9 @@
         "path": ".claude/plugins/pyrefly-lsp"
       }
     }
+  },
+  "env": {
+    "BASH_MAX_OUTPUT_LENGTH": "30000",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   }
 }
