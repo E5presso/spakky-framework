@@ -61,7 +61,7 @@ git add <변경된 파일들>
 git commit -m "wip: {설명}"
 ```
 
-**주의**: `git add -A`, `git add .` 금지 — 변경한 파일만 명시적으로 스테이지한다.
+**주의**: `git add -A`, `git add .`는 사용 가능하지만 `.gitignore`되지 않은 임시 파일·민감 정보(`.env`, 비밀키)가 섞일 위험이 있으면 변경한 파일만 명시 스테이지한다.
 
 ### 5. 태그 생성
 
@@ -122,6 +122,6 @@ git tag -l "checkpoint/*" | xargs git tag -d
 - 체크포인트는 최종 커밋/PR에서 squash되므로 커밋 히스토리를 오염시키지 않는다.
 - 변경 사항이 없으면 체크포인트를 생성하지 않는다.
 - `uv run` 접두사 필수.
-- `git add -A`, `git add .` 금지.
+- `git add -A`/`git add .` 사용 시 민감 정보·임시 파일 혼입 위험 검토 후 변경 파일만 명시 스테이지로 전환.
 
 $ARGUMENTS
