@@ -120,10 +120,31 @@ while True:
         mark_as_unresolved(review_result)
         break  # 고착 탈출
 
+    # ── 분쟁 판정 (3회 이상 반복되는 이슈) ──
+    disputes = find_recurring_issues(review_history, review_result, threshold=2)
+    for dispute in disputes:
+        verdict = orchestrator_arbitrate(dispute)  # 메인이 코드 직접 Read
+        review_result.apply_verdict(dispute, verdict)
+
     # ── 피드백 축적 ──
     review_history.append(review_result)
     round += 1
 ```
+
+#### 3-1-bis. 분쟁 판정 (Orchestrator)
+
+같은 이슈가 2라운드 이상 반복되면 Writer/Verifier 간 인식 차이가 좁혀지지 않는 상태다. 메인 오케스트레이터가 **코드를 직접 Read하여 판정**한다. Writer/Verifier 어느 쪽 견해도 자동 채택하지 않는다.
+
+판정 절차:
+
+1. 분쟁 대상 코드 파일을 Read (해당 라인 ±20)
+2. 관련 규칙 파일(`rules/*.md`, ARCHITECTURE.md) 인용
+3. 판정 결과 3가지 중 하나:
+   - **Writer 채택**: Verifier 지적이 잘못됨 → 다음 라운드에 Writer 결과 보호
+   - **Verifier 채택**: Writer 결과 수정 필요 → Writer에 강한 지시 전달
+   - **양쪽 부분 정확**: Orchestrator가 정확한 수정 방향을 명시하여 Writer에 전달
+
+판정 근거(코드 인용 + 규칙 인용)는 다음 라운드 Writer 프롬프트에 포함한다.
 
 **종료 조건** (우선순위 순):
 

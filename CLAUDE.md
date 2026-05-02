@@ -39,24 +39,28 @@
 | 카테고리 | 사용자 호출 | 내부 전용 |
 |---------|-----------|----------|
 | **plan** | `/plan-issues`, `/decide-architecture`, `/adr`, `/impact-analysis` | — |
-| **build** | `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
+| **build** | `/autopilot`, `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
 | **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code`, `/audit-codebase` | — |
 | **ship** | — | `/create-pr`, `/review-pr`, `/monitor-pr`, `/update-project-status` |
-| **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs` | `/review-harness`, `/update-harness`, `/sync-dev-docs`, `/sync-user-docs` |
+| **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs`, `/evaluate-harness`, `/optimize-harness`, `/promote-memory` | `/review-harness`, `/update-harness`, `/sync-dev-docs`, `/sync-user-docs` |
 
 ### 핵심 워크플로우
 
 ```
-기획: /plan-issues → GitHub Issues 생성
-개발: /process-ticket <이슈번호> → 분석 → 계획 → 워크트리 → 구현 → 검증 → PR → 병합
+기획: /plan-issues → 11섹션 spec + Phase 3.5 cold-session 시뮬레이션 → GitHub Issues 생성
+개발: /process-ticket <이슈번호> → 분석 → 계획 → 워크트리 → 구현 → 검증 → 4.5 acceptance-grep → PR → 병합
+대량 개발: /autopilot <마일스톤번호> → DAG wave-loop 병렬 처리 → meta-detection
 디버깅: /investigate <증상 또는 이슈번호> → 재현 → 원인 격리 → 수정 후보
 검증: /check [패키지] → format → lint → type → test (커버리지 100%)
 회고: /retro → 세션 자가 평가 (서브에이전트로 실행)
+하네스 진화: /evaluate-harness (선언-실행 단절 감지) → /optimize-harness (5-test) → /promote-memory (메모리 승격)
 ```
 
 - **이슈 작업은 `/process-ticket`으로 시작한다.** 직접 코딩하지 않는다.
+- **마일스톤 단위 작업은 `/autopilot`으로 시작한다.** 단일 티켓은 `/process-ticket`.
 - **버그 조사는 `/investigate`로 시작한다.** 가설 없이 코드를 수정하지 않는다.
 - **코드 변경 후 문서 동기화는 `/sync-docs`로 수행한다.**
+- **하네스 변경 후 `/evaluate-harness`로 회귀 검증.** 5-test 게이트는 `/optimize-harness`.
 
 ## Documentation Maintenance Rules
 
@@ -134,14 +138,19 @@
 
 | 영역 | 정본 | 비고 |
 |------|------|------|
+| **에이전트 헌장** | `.claude/rules/charter.md` | 정책→비즈니스→코드 위계, 3-축 정렬, 7차원 품질 바, 외부 게이트 |
 | Python 코딩 표준 | `.claude/rules/python-code.md` | 타입, 에러, 네이밍, import |
+| 타입 규율 | `.claude/rules/type-discipline.md` | 의미의 부호화, BaseModel 우선, Optional 의미 |
 | 테스트 규칙 | `.claude/rules/test-writing.md` | 함수 기반, fixture, 네이밍 |
 | 도메인 레이어 | `.claude/rules/domain.md` | Entity, ValueObject, Event |
 | AOP Aspect | `.claude/rules/aspect.md` | 동기/비동기 쌍, pointcut |
 | 플러그인 개발 | `.claude/rules/plugin.md` | 구조, main.py, entry-point |
 | 모노레포 구조 | `.claude/rules/monorepo.md` | 패키지별 실행, 의존 방향 |
-| 행동 원칙 | `.claude/rules/behavioral-guidelines.md` | Karpathy 4원칙, 서브에이전트 |
+| 행동 원칙 | `.claude/rules/behavioral-guidelines.md` | Karpathy 4원칙, Simplicity 시그널, 자가 질의 검사 |
 | 의존성 관리 | `.claude/rules/dependencies.md` | PyPI 버전 조회, 내부 의존성 |
+| 리뷰 휴리스틱 | `.claude/rules/review-heuristics.md` | 14개 카테고리 ↔ 심각도 ↔ SSOT 매핑 |
+| 하네스 작성 | `.claude/rules/harness-writing.md` | 5-Test 게이트, 토큰=비용, 역사 박제 금지 |
+| 스킬 작성 | `.claude/rules/write-skill.md` | 워크트리 격리, 스크립트 테스트 의무 |
 
 ### 프로젝트 특수 컨벤션
 
