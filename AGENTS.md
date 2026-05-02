@@ -2,7 +2,7 @@
 
 > 코딩 스타일 → [CONTRIBUTING.md](CONTRIBUTING.md) | 아키텍처 → [ARCHITECTURE.md](ARCHITECTURE.md) | ADR → [docs/adr/](docs/adr/README.md) | 예제 → [README.md](README.md)
 
-공용 에이전트 하네스의 SSOT는 이 파일과 `.agents/harness/`입니다. Claude Code는 `CLAUDE.md`와 `.claude/` 래퍼로, Codex는 루트 `AGENTS.md`와 `.agents/skills/` 래퍼로 같은 공용 하네스를 참조합니다.
+Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `.agents/skills/`입니다. Claude Code는 `CLAUDE.md`와 `.claude/` 래퍼로 같은 정본을 참조합니다.
 
 ## Overview
 
@@ -32,7 +32,7 @@
 | `plugins/spakky-logging/` | 구조화 로깅, @logged AOP Aspect |
 | `plugins/spakky-opentelemetry/` | OpenTelemetry SDK 브릿지 |
 
-**의존 방향 (단방향):** `.agents/harness/rules/monorepo.md` 참조
+**의존 방향 (단방향):** `.agents/rules/monorepo.md` 참조
 
 ## 스킬 & 워크플로우
 
@@ -139,19 +139,19 @@
 
 | 영역 | 정본 | 비고 |
 |------|------|------|
-| **에이전트 헌장** | `.agents/harness/rules/charter.md` | 정책→비즈니스→코드 위계, 3-축 정렬, 7차원 품질 바, 외부 게이트 |
-| Python 코딩 표준 | `.agents/harness/rules/python-code.md` | 타입, 에러, 네이밍, import |
-| 타입 규율 | `.agents/harness/rules/type-discipline.md` | 의미의 부호화, BaseModel 우선, Optional 의미 |
-| 테스트 규칙 | `.agents/harness/rules/test-writing.md` | 함수 기반, fixture, 네이밍 |
-| 도메인 레이어 | `.agents/harness/rules/domain.md` | Entity, ValueObject, Event |
-| AOP Aspect | `.agents/harness/rules/aspect.md` | 동기/비동기 쌍, pointcut |
-| 플러그인 개발 | `.agents/harness/rules/plugin.md` | 구조, main.py, entry-point |
-| 모노레포 구조 | `.agents/harness/rules/monorepo.md` | 패키지별 실행, 의존 방향 |
-| 행동 원칙 | `.agents/harness/rules/behavioral-guidelines.md` | Karpathy 4원칙, Simplicity 시그널, 자가 질의 검사 |
-| 의존성 관리 | `.agents/harness/rules/dependencies.md` | PyPI 버전 조회, 내부 의존성 |
-| 리뷰 휴리스틱 | `.agents/harness/rules/review-heuristics.md` | 14개 카테고리 ↔ 심각도 ↔ SSOT 매핑 |
-| 하네스 작성 | `.agents/harness/rules/harness-writing.md` | 5-Test 게이트, 토큰=비용, 역사 박제 금지 |
-| 스킬 작성 | `.agents/harness/rules/write-skill.md` | 워크트리 격리, 스크립트 테스트 의무 |
+| **에이전트 헌장** | `.agents/rules/charter.md` | 정책→비즈니스→코드 위계, 3-축 정렬, 7차원 품질 바, 외부 게이트 |
+| Python 코딩 표준 | `.agents/rules/python-code.md` | 타입, 에러, 네이밍, import |
+| 타입 규율 | `.agents/rules/type-discipline.md` | 의미의 부호화, BaseModel 우선, Optional 의미 |
+| 테스트 규칙 | `.agents/rules/test-writing.md` | 함수 기반, fixture, 네이밍 |
+| 도메인 레이어 | `.agents/rules/domain.md` | Entity, ValueObject, Event |
+| AOP Aspect | `.agents/rules/aspect.md` | 동기/비동기 쌍, pointcut |
+| 플러그인 개발 | `.agents/rules/plugin.md` | 구조, main.py, entry-point |
+| 모노레포 구조 | `.agents/rules/monorepo.md` | 패키지별 실행, 의존 방향 |
+| 행동 원칙 | `.agents/rules/behavioral-guidelines.md` | Karpathy 4원칙, Simplicity 시그널, 자가 질의 검사 |
+| 의존성 관리 | `.agents/rules/dependencies.md` | PyPI 버전 조회, 내부 의존성 |
+| 리뷰 휴리스틱 | `.agents/rules/review-heuristics.md` | 14개 카테고리 ↔ 심각도 ↔ SSOT 매핑 |
+| 하네스 작성 | `.agents/rules/harness-writing.md` | 5-Test 게이트, 토큰=비용, 역사 박제 금지 |
+| 스킬 작성 | `.agents/rules/write-skill.md` | 워크트리 격리, 스크립트 테스트 의무 |
 
 ### 프로젝트 특수 컨벤션
 
