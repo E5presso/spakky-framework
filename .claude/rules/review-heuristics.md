@@ -3,37 +3,71 @@ paths:
   - "**/*.py"
 ---
 
-# 리뷰 휴리스틱 (시그널 인덱스)
+# 리뷰 휴리스틱 / YAGNI 역설
 
-`/review-code`·`/audit-codebase`가 코드 리뷰 시 탐지하는 **시그널 인덱스**다. 실제 규칙은 `python-code.md`, `type-discipline.md`, `domain.md`, `aspect.md`, `test-writing.md`, `monorepo.md`, `behavioral-guidelines.md`에 SSOT가 있다. 이 파일은 리뷰 카테고리와 시그널만 매핑한다.
+리뷰 에이전트가 **구체적 탐지 시그널**을 기반으로 의문점을 생성하는 원천. 시그널이 매치될 때만 의문을 꺼낸다 — 개방형 "왜?" 질문 금지.
 
-## 카테고리 ↔ 심각도 ↔ SSOT
+## 원칙 1 — 이질성 (Heterogeneity)
 
-| # | 카테고리 | 심각도 | SSOT | 대표 시그널 |
-|---|---------|--------|------|-----------|
-| 1 | 레이어 의존 위반 | Critical | `monorepo.md`, `domain.md` | 도메인 → 인프라 import, 플러그인 ↔ 플러그인 import |
-| 2 | 집계 경계 위반 | Critical | `domain.md` | 1 트랜잭션 내 복수 AggregateRoot 변경, Repository 간 직접 호출 |
-| 3 | Aspect 비대칭 | Critical | `aspect.md` | 동기 Aspect만 작성하고 비동기 짝 누락 |
-| 4 | 타입 규율 위반 | Warning | `type-discipline.md` | `dict[str, Any]` public 시그니처, 사유 없는 `Any`, 누락 `@override` |
-| 5 | 빌트인 예외 raise | Critical | `python-code.md` | `src/`에서 `raise ValueError(...)`, `raise TypeError(...)` |
-| 6 | assert 사용 (src) | Critical | `python-code.md` | `src/` 내 `assert` 문 |
-| 7 | silent fallback | Critical | `python-code.md` | 빈 `except: pass`, 사유 없는 `return None` |
-| 8 | YAGNI 역설 | Warning | `behavioral-guidelines.md` | 단일 사용 헬퍼, 호출자 0개 함수, "유연성" 추상화 |
-| 9 | 테스트 누락 | Critical | `test-writing.md` | 신규 분기/조건에 테스트 부재, 변경 코드 커버리지 < 100% |
-| 10 | 테스트 형식 | Warning | `test-writing.md` | `class TestXxx`, flaky 의존(시간/순서/네트워크) |
-| 11 | Mock 남용 | Warning | `test-writing.md` | Integration 테스트에서 외부 시스템 mock |
-| 12 | 네이밍 위반 | Warning | `python-code.md` | snake_case/PascalCase 위반, 모호한 식별자 |
-| 13 | Defensive 과다 | Warning | `behavioral-guidelines.md` | 발생 불가 시나리오에 검증 추가, 내부 코드에 `isinstance` 체크 |
-| 14 | Scope creep | Critical | `behavioral-guidelines.md` | 요청 범위 외 리팩터링·기능 추가, 버그 수정에 리팩터링 혼합 |
+레포 다른 곳에 없는 패턴은 의문. `Grep`으로 선례 확인 후 같은 패턴 따른다 — **단, 무엇에 대한 선례인지 구분**한다.
 
-## 사용 원칙
+### 1-A. 기능적·아키텍처적 결정 → 코드베이스가 SSOT
 
-- **Critical**은 머지 차단 사유. 0개 달성까지 반복 수정.
-- **Warning**은 반박 가능. 정당한 사유가 있으면 유지·후속 티켓.
-- 시그널 인덱스 자체는 **검증 도구**일 뿐, 권위는 SSOT 규칙에 있다. 시그널과 SSOT가 충돌하면 SSOT 우선, 인덱스 갱신.
+도메인 모델 형태, 레이어 의존 방향, 외부 시스템 통합 패턴, ABC (Abstract Base Class) vs class 기반, async vs sync 경계, Pydantic vs dataclass 같이 **시스템이 어떻게 동작하는가**에 대한 결정은 레포 선례가 정당성을 가진다 — 새 코드는 기존 선례를 따라야 정합성이 유지된다.
 
-## 운영 규칙
+시그널: 기존 class 기반 도메인에 closure 데코레이터, 기존 Pydantic 모델에 dataclass, 기존 `async` 호출 경로에 동기 함수, 외부 시스템 통합에 새 라이브러리 도입.
 
-- 새 카테고리 추가 시 SSOT 파일을 먼저 갱신하고 인덱스 동기화.
-- 카테고리 1개당 시그널은 2-4개로 제한. 너무 많으면 카테고리 분리 검토.
-- 페르소나 파일(`skills/review-code/personas/*.md`)이 있다면 이 인덱스를 카테고리별로 참조.
+### 1-B. 코딩 스타일 → 코드베이스는 SSOT 아님 (레거시는 개선 대상)
+
+타입 표기(`List[T]` vs `list[T]`), generic syntax(`Generic[T]` vs PEP 695 `[T]`), `from __future__ import annotations` 사용, `Optional[T]` vs `T | None`, 식별자 명명 일관성, 주석 정책 같은 **어떻게 표기하는가**에 대한 결정은 레포 선례가 정당성을 주지 않는다.
+
+> 모든 코드베이스는 저마다의 레거시를 갖고 있으며, 이를 꾸준히 개선하는 것은 개발자의 책무다. 이미 그런 스타일의 코드가 있었다고 해서 새 코드도 그렇게 써도 된다는 의미는 아니다.
+
+새 코드는 charter §2 / `python-code.md` "최신 문법" / `type-discipline.md` 같은 **대원칙 SSOT**를 따른다. 같은 파일·도메인 안에 신구 스타일이 혼재하면 새 코드는 신스타일로 통일하고, 레거시 정리가 필요하면 후속 티켓 분기(`/plan-issues`)로 처리.
+
+시그널: 새 코드에 `List[T]`/`Dict[K,V]`/`Optional[T]` 답습, `from __future__ import annotations` 답습, `TypeVar` 명시 선언 (PEP 695로 풀릴 케이스), 구식 isinstance 체인 (match/case로 풀릴 케이스).
+
+## 원칙 2 — 동적성 (Dynamism)
+
+정적 분석이 닿지 않는 코드는 의문. 타입 체커가 추론 포기하는 지점은 리팩터링 비용이 큼.
+
+시그널: `pydantic.create_model` 런타임 스키마 합성, `getattr`/`hasattr`/`setattr`, 메타클래스 트릭(`__init_subclass__`), `exec`/`eval`.
+
+대안: 정적 `BaseModel`, Generic 타입 파라미터, 수기 JSON Schema.
+
+## 원칙 3 — 은폐 (Opacity)
+
+내부 상태가 숨겨지면 의문. 테스트·디버깅의 주입·관찰 지점을 가리는 구조.
+
+시그널: closure 스코프 상태 캡처, context manager 없는 수동 clean-up, 전역 변수 상태, 은닉 singleton, closure 데코레이터 미들웨어(→ class-based 미들웨어 선호).
+
+## 원칙 4 — 강제 부재 (Unenforced Contract)
+
+계약이 런타임 검증에만 의존하면 의문. 타입·인터페이스로 계약을 강제할 수 있는 구간은 강제한다.
+
+시그널: 타입 힌트 없는 dict 반환, post-hoc `model_validate`만으로 외부 입력 보장, 선택 필드가 도메인 불변식을 깨는 케이스.
+
+## 원칙 5 — YAGNI 역설 (Premature Generalization / Domain Incompleteness)
+
+"You Aren't Gonna Need It"이 기본이지만, **도메인 완전성**·**구조적 일관성**을 해치는 YAGNI (You Aren't Gonna Need It)는 안티패턴.
+
+**과소 일반화 의문:**
+- 복수 호출자가 도메인상 자명한데 일반화되지 않은 구조 (`BaseContextExtractor`가 한 종류에만 바인딩).
+- 같은 필드 묶음이 여러 시그니처에 반복(통합 DTO (Data Transfer Object) 부재).
+- 세마포어·concurrency 제한·backoff 같은 인프라 유틸이 특정 usecase에 귀속 — 처음부터 공통 위치에 일반화.
+
+**과잉 추상화 의문:** 하나의 서브클래스만 가진 `BaseXxx`, 구현체 1개인 인터페이스, 구체 타입 1개에만 쓰는 제네릭 파라미터.
+
+**도메인 완전성 > YAGNI (You Aren't Gonna Need It):**
+- 기본 상태 필드(예: AggregateRoot 기본 상태, lineage summary)는 "현재 호출자가 안 쓴다"는 이유로 응답에서 빼지 않음.
+- 스펙 자체가 누락된 케이스 발견 시 지금 수정 제안(→ `behavioral-guidelines.md` "스펙 검증").
+
+**판단 기준:** 일반화는 (1) 기존 호출자를 깨지 않고 (2) 복수 미래 호출자가 도메인상 자명할 때만. 불확실하면 하지 않음.
+
+**helper 추출과 DTO (Data Transfer Object) 통합은 다른 규율**: helper 추출은 로직 재사용(단일 사용 금지), DTO 통합은 데이터 구조 응집(중복 반복 시 통합).
+
+## 원칙 6 — 중복 구조 (Redundant Structure)
+
+같은 데이터 묶음이 여러 시그니처에 반복되면 의문. 통합 DTO (Data Transfer Object) 부재 신호.
+
+시그널: 두 함수의 인자 3개가 동일, Request DTO (Data Transfer Object)와 Command DTO 필드 대부분 중첩, 여러 엔드포인트가 같은 pagination 파라미터 세트를 개별 정의.

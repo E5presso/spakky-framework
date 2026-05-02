@@ -38,21 +38,21 @@
 
 | 카테고리 | 사용자 호출 | 내부 전용 |
 |---------|-----------|----------|
-| **plan** | `/plan-issues`, `/decide-architecture`, `/adr`, `/impact-analysis` | — |
+| **plan** | `/plan-issues`, `/audit-spec`, `/impact-analysis` | — |
 | **build** | `/autopilot`, `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
-| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code`, `/audit-codebase` | — |
+| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code` | — |
 | **ship** | — | `/create-pr`, `/review-pr`, `/monitor-pr`, `/update-project-status` |
-| **meta** | `/retro`, `/onboarding`, `/update-dependencies`, `/sync-docs`, `/evaluate-harness`, `/optimize-harness`, `/promote-memory` | `/review-harness`, `/update-harness`, `/sync-dev-docs`, `/sync-user-docs` |
+| **meta** | `/onboarding`, `/update-dependencies`, `/sync-docs`, `/evaluate-harness`, `/optimize-harness`, `/promote-memory` | `/sync-dev-docs`, `/sync-user-docs` |
 
 ### 핵심 워크플로우
 
 ```
-기획: /plan-issues → 11섹션 spec + Phase 3.5 cold-session 시뮬레이션 → GitHub Issues 생성
+기획: /plan-issues → 11섹션 SDD spec + Phase 3.5 cold-session 시뮬레이션 → GitHub Issues 생성
+스펙 감사: /audit-spec → fresh-slate 8축 재감사 (수렴 3회 상한)
 개발: /process-ticket <이슈번호> → 분석 → 계획 → 워크트리 → 구현 → 검증 → 4.5 acceptance-grep → PR → 병합
-대량 개발: /autopilot <마일스톤번호> → DAG wave-loop 병렬 처리 → meta-detection
+대량 개발: /autopilot <마일스톤번호> → DAG wave-loop 병렬 처리 → meta-detection (S1-S6)
 디버깅: /investigate <증상 또는 이슈번호> → 재현 → 원인 격리 → 수정 후보
 검증: /check [패키지] → format → lint → type → test (커버리지 100%)
-회고: /retro → 세션 자가 평가 (서브에이전트로 실행)
 하네스 진화: /evaluate-harness (선언-실행 단절 감지) → /optimize-harness (5-test) → /promote-memory (메모리 승격)
 ```
 

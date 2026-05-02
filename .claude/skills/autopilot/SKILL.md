@@ -1,7 +1,7 @@
 ---
 name: autopilot
 description: GitHub 마일스톤 또는 부모 이슈를 받아 자식 티켓들을 DAG wave-loop로 병렬 처리합니다. 후속 티켓 즉시 spawn, 자기 운영 결함 자동 감지(meta-detection), 마일스톤 단일 세션 완성을 보증합니다.
-argument-hint: "<milestone-number | parent-issue-number | issue-numbers>"
+argument-hint: "<milestone-number | parent-issue-number>"
 user-invocable: true
 ---
 
