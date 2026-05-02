@@ -10,9 +10,34 @@
       "Bash(git diff*)",
       "Bash(git log*)",
       "Bash(git branch*)",
+      "Bash(git rev-parse*)",
+      "Bash(git show*)",
+      "Bash(git fetch*)",
+      "Bash(git rebase*)",
+      "Bash(git stash*)",
+      "Bash(git worktree*)",
+      "Bash(git checkout*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git merge*)",
       "Bash(gh pr *)",
       "Bash(gh issue *)",
-      "Bash(rtk *)"
+      "Bash(gh api*)",
+      "Bash(gh run *)",
+      "Bash(gh label *)",
+      "Bash(gh workflow view*)",
+      "Bash(gh workflow list*)",
+      "Bash(rtk *)",
+      "EnterWorktree",
+      "ExitWorktree",
+      "SendMessage",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskList",
+      "TaskRead",
+      "WebSearch",
+      "WebFetch"
     ]
   },
   "hooks": {
@@ -22,20 +47,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "git rev-parse --git-dir | grep -q worktrees && git fetch origin master -q && git rebase --autostash origin/master -q || true",
+            "command": "git rev-parse --git-dir | grep -q worktrees && git fetch origin develop -q && git rebase --autostash origin/develop -q || true",
             "timeout": 30,
-            "statusMessage": "Rebasing worktree onto origin/master..."
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/rtk-rewrite.sh"
+            "statusMessage": "Rebasing worktree onto origin/develop..."
           }
         ]
       }
@@ -46,15 +60,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && MISE_EXPERIMENTAL=true mise run //apps/knowledge_refinery:fmt \"$f\"; } 2>/dev/null || true",
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && uv run ruff format \"$f\" && uv run ruff check --fix \"$f\"; } 2>/dev/null || true",
             "timeout": 15,
             "statusMessage": "Formatting with ruff..."
           },
           {
             "type": "command",
-            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && result=$(MISE_EXPERIMENTAL=true mise run //apps/knowledge_refinery:ty-file \"$f\" 2>&1) && exit 0 || echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"ty type check errors in $f:\\n$result\\\"}}\"; } 2>/dev/null || true",
-            "timeout": 15,
-            "statusMessage": "Type checking with ty..."
+            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && result=$(uv run pyrefly check \"$f\" 2>&1) && exit 0 || echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"pyrefly type check errors in $f:\\n$result\\\"}}\"; } 2>/dev/null || true",
+            "timeout": 30,
+            "statusMessage": "Type checking with pyrefly..."
           }
         ]
       }
