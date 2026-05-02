@@ -4,7 +4,7 @@
 
 > **Phase 진입 ping** (sub-agent 한정): `/create-pr` 성공 직후 1회 SendMessage(to: "team-lead", message: `phase: Phase 5 commit-pr | issue: <N> | PR #<N> opened`). SKILL.md "Phase 전환 progress ping" SSOT.
 
-1. 커밋 전 `ruff format`을 선행하여 hook 실패를 예방한다 (메모리 `feedback_preformat_before_commit.md`).
+1. 커밋 전 `ruff format`을 선행하여 hook 실패를 예방한다.
 2. `/commit` 서브스킬을 실행하여 Conventional Commits 형식으로 커밋한다.
 3. **체크포인트 갱신** — `.process-state.json`에 `commit_done` 기록 (SKILL.md "상태 핸드오프" 참조):
    ```bash
@@ -21,7 +21,7 @@
    wt=$(pwd) && ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && ref=$(git symbolic-ref HEAD)
    jq --arg r "$ref" --arg t "$ts" '.push_done = $r | .updated_at = $t' "$wt/.process-state.json" > "$wt/.process-state.json.tmp" && mv "$wt/.process-state.json.tmp" "$wt/.process-state.json"
    ```
-6. `/create-pr {ISSUE-NUMBER}` 서브스킬을 실행하여 PR을 생성한다. PR 타이틀에 `(#<ISSUE-NUMBER>)` 포함 필수 (메모리 `feedback_pr_title_issue_number.md`). 한글 타이틀은 `--title` 단일 인자로 전달 (메모리 `feedback_pr_title_korean_encoding.md`).
+6. `/create-pr {ISSUE-NUMBER}` 서브스킬을 실행하여 PR을 생성한다. PR 타이틀에 `(#<ISSUE-NUMBER>)` 포함 필수. 한글 타이틀은 heredoc 이스케이프 버그 회피를 위해 `--title` 단일 인자로 전달한다.
 7. **체크포인트 갱신** — `.process-state.json`에 `pr_opened` 기록 (PR 번호와 URL):
    ```bash
    wt=$(pwd) && ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
