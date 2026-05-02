@@ -88,7 +88,6 @@
 
 - `git checkout -- .`, `git restore .`, `git reset --hard`, `git clean -fd` 금지
 - `git add -A`, `git add .` 금지 — 변경한 파일만 명시적으로 스테이지
-- `git commit`, `git push` 자율 실행 금지 — 사용자가 명시적으로 요청할 때만
 - PR close/reopen 금지 — CI 실패 시 원인 조사 후 코드 수정하여 재push
 
 ### 도구 실행
