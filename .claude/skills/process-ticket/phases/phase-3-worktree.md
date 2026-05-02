@@ -10,7 +10,7 @@
 사용자가 계획을 승인하면 (또는 기본값인 승인 생략 시 Phase 2-2 완료 후 즉시):
 
 1. 이슈 내용에 따라 접두어(prefix)를 결정한다: `feat`, `fix`, `refactor`, `docs`, `hotfix`, `chore` 등
-2. `/create-worktree {prefix} {ISSUE-NUMBER}` 서브스킬을 실행한다. 워크트리 디렉터리는 `feat-<N>` 형식, 브랜치는 `feat/<N>` 형식 (메모리 `feedback_worktree_naming.md`).
+2. `/create-worktree {prefix} {ISSUE-NUMBER}` 서브스킬을 실행한다. 워크트리 디렉터리는 `feat-<N>` 형식, 브랜치는 `feat/<N>` 형식.
 3. **`EnterWorktree`가 완료되었음을 확인한 후에만** Phase 4로 진행한다. 워크트리 진입에 실패하면 즉시 중단하고 사용자에게 보고한다.
 4. **체크포인트 초기화** — 워크트리 루트(`<worktree>/.process-state.json`)에 메타 필드를 채운다 (SKILL.md "상태 핸드오프" 참조):
    ```bash
