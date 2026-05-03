@@ -147,26 +147,8 @@ jobs:
         run: |
           if [ -d "tests/integration" ]; then
             if [ "${{ matrix.package }}" = "spakky-celery" ]; then
-              docker run -d \
-                --name spakky-celery-rabbitmq \
-                --hostname spakky-celery-rabbitmq \
-                --tmpfs /var/lib/rabbitmq:uid=999,gid=999,mode=700 \
-                -e RABBITMQ_DEFAULT_USER=test \
-                -e RABBITMQ_DEFAULT_PASS=test \
-                -e RABBITMQ_ERLANG_COOKIE=spakkycelerycookie \
-                -p 5672:5672 \
-                rabbitmq:latest
-              for attempt in {1..30}; do
-                if docker exec spakky-celery-rabbitmq rabbitmq-diagnostics -q ping; then
-                  break
-                fi
-                if [ "$attempt" = "30" ]; then
-                  docker logs spakky-celery-rabbitmq
-                  exit 1
-                fi
-                sleep 2
-              done
-              export SPAKKY_CELERY__BROKER_URL="amqp://test:test@127.0.0.1:5672//"
+              export SPAKKY_CELERY__BROKER_URL="memory://"
+              export SPAKKY_CELERY__RESULT_BACKEND="cache+memory://"
               uv run pytest --with-integration -m integration --no-cov -n 0
             else
               uv run pytest --with-integration -m integration --no-cov

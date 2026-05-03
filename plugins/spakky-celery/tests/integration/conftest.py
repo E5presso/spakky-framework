@@ -38,10 +38,13 @@ def _set_celery_test_environment(broker_url: str) -> dict[str, str | None]:
         f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND",
     ]
     previous_values = {key: environ.get(key) for key in keys}
+    result_backend = (
+        environ.get(f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND") or "rpc://"
+    )
     environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}BROKER_URL"] = broker_url
     environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}APP_NAME"] = "spakky-celery-test"
     environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}TIMEZONE"] = "UTC"
-    environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND"] = "rpc://"
+    environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND"] = result_backend
     return previous_values
 
 
