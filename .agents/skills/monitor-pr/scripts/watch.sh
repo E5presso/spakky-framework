@@ -59,7 +59,7 @@
 #   봇 재평가 트리거가 부재하므로 polling 누적이 무의미하다 — DONE 으로 종료하여 호출자(서브에이전트)가
 #   status=awaiting-review 로 보고 후 turn 종료.
 #   bot_evaluated_head 의 두 경로 (OR): (1) latest_bot_ch2_date > head_commit_date (CH2 issue comment),
-#   (2) latest_bot_review_oid == head_oid AND latest_bot_review_state == "COMMENTED" (CH3 reviews API).
+#   (2) latest_bot_review_oid == head_oid (CH3 reviews API).
 #   AND 조건: (a) pending_checks == 0, (b) failed_checks == 0, (c) mergeState in {BLOCKED, BEHIND}
 #   (DIRTY 제외 — DIRTY 는 EVENT 로 별도 분기), (d) reviewDecision != APPROVED, (e) bot_evaluated_head == 1.
 #   분기 위치: 모든 EVENT 분기 이후 (변화 있으면 EVENT 우선) + heartbeat 직전 (변화 없음 path 에서 즉시 종료).
@@ -85,6 +85,7 @@ fi
 REPO="${REPO:-E5presso/spakky-framework}"
 : "${PR_NUMBER:?PR_NUMBER env required}"
 REVIEW_BOT_LOGINS="${REVIEW_BOT_LOGINS:-claude[bot],codex[bot]}"
+REQUIRE_REVIEW_BOT_HEAD_EVAL="${REQUIRE_REVIEW_BOT_HEAD_EVAL:-1}"
 
 prev_state_file="${PREV_STATE_FILE:-}"
 prev_review_decision="${PREV_REVIEW_DECISION:-}"
@@ -171,8 +172,6 @@ while true; do
   # latest external review bot review의 commit.oid / state (없으면 빈 문자열)
   latest_bot_review_oid=$(echo "$ch3_raw" \
     | jq -r --arg bots "$REVIEW_BOT_LOGINS" '[.[] | select(.user.login as $login | ($bots | split(",") | index($login)) != null)] | sort_by(.submitted_at) | last | .commit_id // ""' 2>/dev/null || echo "")
-  latest_bot_review_state=$(echo "$ch3_raw" \
-    | jq -r --arg bots "$REVIEW_BOT_LOGINS" '[.[] | select(.user.login as $login | ($bots | split(",") | index($login)) != null)] | sort_by(.submitted_at) | last | .state // ""' 2>/dev/null || echo "")
 
   # HEAD commit의 committedDate (없으면 빈 문자열) — 외부 리뷰 봇 평가 시점 비교용
   head_commit_date=$(gh api "repos/$REPO/commits/$head_oid" \
@@ -183,6 +182,21 @@ while true; do
   # 이 코멘트가 HEAD 이후에 작성되었다면 봇은 현재 HEAD를 평가한 것으로 간주.
   latest_bot_ch2_date=$(echo "$ch2_raw" \
     | jq -r --arg bots "$REVIEW_BOT_LOGINS" '[.[] | select(.user.login as $login | ($bots | split(",") | index($login)) != null)] | sort_by(.created_at) | last | .created_at // ""' 2>/dev/null || echo "")
+
+  # bot_evaluated_head: 외부 리뷰 봇이 현재 HEAD를 평가했다는 최소 증거.
+  # (1) HEAD commit 이후 CH2 issue comment를 남겼거나,
+  # (2) CH3 review가 HEAD commit에 anchor 되어 있으면 true.
+  # 상태가 COMMENTED/APPROVED/CHANGES_REQUESTED 어느 쪽이든 "평가 완료"로 간주하고,
+  # 실제 지적 처리는 EVENT reason=comments-changed → collect_comments.sh → triage-comments가 담당한다.
+  bot_evaluated_head=0
+  if [ -n "$latest_bot_ch2_date" ] && [ -n "$head_commit_date" ] \
+     && [ "$latest_bot_ch2_date" \> "$head_commit_date" ]; then
+    bot_evaluated_head=1
+  fi
+  if [ -n "$latest_bot_review_oid" ] \
+     && [ "$latest_bot_review_oid" = "$head_oid" ]; then
+    bot_evaluated_head=1
+  fi
 
   # Build current (id -> updated_at) map per channel.
   # CH1 (인라인 리뷰 코멘트), CH2 (일반 PR 코멘트): updated_at 필드 사용.
@@ -223,11 +237,13 @@ while true; do
   fi
 
   # 종료 조건 2: GitHub가 병합 가능(CLEAN/UNSTABLE)으로 계산했고 CI가 green.
-  # GitHub Copilot code review는 formal Approve를 남기지 않으므로 reviewDecision=APPROVED를
-  # 요구하지 않는다. 실제 branch protection상 승인이 필수라면 GitHub가 mergeState=BLOCKED로 노출한다.
+  # Codex/Copilot code review는 formal Approve를 남기지 않으므로 reviewDecision=APPROVED를
+  # 요구하지 않는다. 대신 REQUIRE_REVIEW_BOT_HEAD_EVAL=1이면 외부 리뷰 봇이 HEAD를 평가한 뒤에만
+  # mergeable-clean을 emit한다. 실제 branch protection상 승인이 필수라면 GitHub가 mergeState=BLOCKED로 노출한다.
   if { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
      && [ "$pending_checks" = "0" ] \
-     && [ "$failed_checks" = "0" ]; then
+     && [ "$failed_checks" = "0" ] \
+     && { [ "$REQUIRE_REVIEW_BOT_HEAD_EVAL" != "1" ] || [ "$bot_evaluated_head" = "1" ]; }; then
     persist_state
     snapshot_and_emit "DONE" "mergeable-clean"
     exit 0
@@ -280,19 +296,9 @@ while true; do
   #
   # bot_evaluated_head 의 의의: 리뷰 봇은 자동 승인 비적격 판정 시 두 경로로 의견을 남길 수 있다 —
   # (1) CH2 issue comment 로 "팀원 리뷰 필요" 의견 (HEAD commit 이후 created_at),
-  # (2) CH3 reviews API 로 state=COMMENTED 리뷰 (commit_id == HEAD, APPROVED 아님).
+  # (2) CH3 reviews API 로 현재 HEAD에 anchor된 리뷰.
   # 둘 중 어느 경로든 봇은 현재 HEAD 를 평가했지만 의도적으로 승인하지 않은 것이므로 stuck 이 아니다 —
   # 빈 커밋 retrigger 는 동일 판정을 재발행할 뿐이며 폴링/크레딧만 소진한다.
-  bot_evaluated_head=0
-  if [ -n "$latest_bot_ch2_date" ] && [ -n "$head_commit_date" ] \
-     && [ "$latest_bot_ch2_date" \> "$head_commit_date" ]; then
-    bot_evaluated_head=1
-  fi
-  if [ -n "$latest_bot_review_oid" ] \
-     && [ "$latest_bot_review_oid" = "$head_oid" ] \
-     && [ "$latest_bot_review_state" = "COMMENTED" ]; then
-    bot_evaluated_head=1
-  fi
   if [ "$pending_checks" = "0" ] \
      && [ "$merge_state" != "CLEAN" ] \
      && [ "$review_decision" != "APPROVED" ] \

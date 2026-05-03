@@ -4,7 +4,7 @@
 
 > **`--overnight` 모드**: PR 상태(번호, URL, CI 결과, 대기 중인 타인 코멘트 목록)를 요약하여 **즉시 반환**한다. `AskUserQuestion`을 호출하지 않고, `gh pr merge`도 실행하지 않으며, Phase 8을 건너뛴다. 사용자는 아침에 autopilot 리포트를 보고 수동으로 머지한다.
 
-> **`--auto-merge` 모드**: 사용자가 사전 승인한 것으로 간주. `AskUserQuestion`을 호출하지 않고 PR 상태(번호, URL, CI 결과)만 간단히 알린 뒤 즉시 Phase 8로 진행하여 squash merge를 수행한다. `--overnight`와 동시 지정 시 `--auto-merge`가 우선한다.
+> **`--auto-merge` 모드**: 사용자가 사전 승인한 것으로 간주. `AskUserQuestion`을 호출하지 않고 PR 상태(번호, URL, CI 결과, review bot HEAD 평가 완료)를 간단히 알린 뒤 즉시 Phase 8로 진행하여 squash merge를 수행한다. `--overnight`와 동시 지정 시 `--auto-merge`가 우선한다.
 
 PR이 병합 가능 상태가 되면:
 

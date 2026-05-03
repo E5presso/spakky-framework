@@ -53,6 +53,6 @@
 
 ## 종료 조건
 
-PR의 merge button이 활성화된 상태 (`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0`). GitHub Copilot code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다. overnight 모드에서는 타인 코멘트 큐가 비어있을 때만 Phase 7로 진행.
+PR의 merge button이 활성화된 상태 (`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0`)이며, 외부 리뷰 봇(`REVIEW_BOT_LOGINS`, 기본 `claude[bot],codex[bot]`)이 현재 HEAD를 평가했다. GitHub Copilot/Codex code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다. overnight 모드에서는 타인 코멘트 큐가 비어있을 때만 Phase 7로 진행.
 
-> **MUST**: GitHub Actions / 모든 required check가 pass할 때까지 Phase 7로 넘어가지 않는다. `BLOCKED` 상태에서 Phase 7로 전환하면 병합이 불가능하다. 자동화 봇 리뷰어가 pending이면 MERGEABLE 판정 보류 (메모리 `bc25934` 회귀).
+> **MUST**: GitHub Actions / 모든 required check가 pass하고 review bot HEAD 평가가 끝날 때까지 Phase 7로 넘어가지 않는다. `BLOCKED` 상태에서 Phase 7로 전환하면 병합이 불가능하다. 자동화 봇 리뷰어가 pending이면 MERGEABLE 판정 보류 (메모리 `bc25934` 회귀).
