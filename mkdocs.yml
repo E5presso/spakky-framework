@@ -124,6 +124,7 @@ nav:
       - OpenTelemetry 통합: guides/opentelemetry.md
       - Actuator 상태 확인: guides/actuator.md
       - 사가 오케스트레이션: guides/saga.md
+      - 애플리케이션 데이터 캐시: guides/cache.md
       - gRPC 통합: guides/grpc.md
   - 심화 가이드:
       - DI/IoC 컨테이너: di-container.md

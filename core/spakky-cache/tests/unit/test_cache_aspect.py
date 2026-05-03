@@ -24,6 +24,10 @@ class CacheBackendUnavailableError(AbstractSpakkyCacheError):
     message = "Cache backend unavailable"
 
 
+class ServiceExecutionError(Exception):
+    """Raised by the test service before eviction."""
+
+
 class FailingCache(AbstractCache[object]):
     def get(self, key: str) -> CacheResult[object]:
         raise CacheBackendUnavailableError()
@@ -59,6 +63,11 @@ class CounterService:
         self.calls += 1
         return f"sync:{value}:{self.calls}"
 
+    @cacheable()
+    def compute_with_kwargs(self, *, prefix: str, value: int) -> str:
+        self.calls += 1
+        return f"{prefix}:{value}:{self.calls}"
+
     @cacheable(key="manual:{0}", ttl=timedelta(seconds=5))
     def compute_with_manual_key(self, value: int) -> str:
         self.calls += 1
@@ -68,6 +77,11 @@ class CounterService:
     def evict_manual_key(self, value: int) -> str:
         self.calls += 1
         return f"evict:{value}:{self.calls}"
+
+    @cache_evict(key="manual:{0}")
+    def fail_before_evicting_manual_key(self, value: int) -> str:
+        self.calls += 1
+        raise ServiceExecutionError
 
     @cacheable(key="{missing}")
     def bad_key(self) -> str:
@@ -97,6 +111,19 @@ def test_cacheable_sync_method_expect_second_call_uses_cached_value() -> None:
     assert first == second == "sync:7:1"
     assert service.calls == 1
     assert Aspect.get(aspect).matches(service.compute) is True
+
+
+def test_cacheable_default_key_expect_keyword_order_is_deterministic() -> None:
+    """default key generation이 kwargs 순서와 무관하게 deterministic한지 검증한다."""
+    cache = InMemoryCache[object]()
+    aspect = CacheAspect(cache)
+    service = CounterService()
+
+    first = aspect.around(service.compute_with_kwargs, prefix="user", value=7)
+    second = aspect.around(service.compute_with_kwargs, value=7, prefix="user")
+
+    assert first == second == "user:7:1"
+    assert service.calls == 1
 
 
 async def test_cacheable_async_method_expect_second_call_uses_cached_value() -> None:
@@ -129,6 +156,23 @@ def test_cache_evict_method_expect_matching_entry_removed_after_success() -> Non
     assert isinstance(cache.get("manual:3"), CacheMiss)
 
 
+def test_cache_evict_method_failure_expect_matching_entry_preserved() -> None:
+    """eviction annotation이 method 실패 시 matching cache entry를 보존하는지 검증한다."""
+    cache = InMemoryCache[object]()
+    aspect = CacheAspect(cache)
+    service = CounterService()
+
+    cached = aspect.around(service.compute_with_manual_key, 3)
+    assert cached == "manual:3:1"
+
+    with pytest.raises(ServiceExecutionError):
+        aspect.around(service.fail_before_evicting_manual_key, 3)
+
+    result = cache.get("manual:3")
+    assert isinstance(result, CacheHit)
+    assert result.value == "manual:3:1"
+
+
 async def test_cache_evict_async_method_expect_matching_entry_removed_after_success() -> (
     None
 ):
@@ -155,6 +199,15 @@ def test_backend_failure_expect_cache_error_fails_loudly() -> None:
 
     with pytest.raises(CacheBackendUnavailableError):
         aspect.around(service.compute, 1)
+
+
+async def test_async_backend_failure_expect_cache_error_fails_loudly() -> None:
+    """async backend failure가 cache aspect에서 숨겨지지 않고 전파되는지 검증한다."""
+    aspect = AsyncCacheAspect(FailingCache())
+    service = CounterService()
+
+    with pytest.raises(CacheBackendUnavailableError):
+        await aspect.around_async(service.compute_async, 1)
 
 
 def test_bad_key_template_expect_cache_key_generation_error() -> None:

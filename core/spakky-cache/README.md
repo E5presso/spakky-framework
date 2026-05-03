@@ -60,6 +60,8 @@ class ProfileService:
 
 The default key is derived from the method module, qualified name, positional arguments, and sorted keyword arguments. Explicit `key` values are Python format strings evaluated against method call arguments. Backend failures are not swallowed; cache errors propagate loudly.
 
+`@cache_evict()` deletes the matching entry only after the annotated method succeeds. Failed method calls leave existing entries untouched so a failed refresh does not erase the last known cached value.
+
 ## Async Usage
 
 ```python
@@ -80,6 +82,10 @@ if isinstance(result, CacheHit):
 The in-memory backend deletes expired entries when they are observed. It is deterministic for one process and does not provide distributed invalidation, stampede protection, or tag-based eviction.
 
 Cache eviction annotations remove a single matching entry only after the annotated method succeeds.
+
+## Scope
+
+`spakky-cache` is an application data cache abstraction. It is separate from `ApplicationContext` internal type, singleton, and context caches. Distributed locks, cache stampede protection, tag invalidation, write-through/write-behind policies, and metrics exporters are outside the current contract.
 
 ## License
 

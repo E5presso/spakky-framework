@@ -130,6 +130,19 @@ def test_missing_and_ttl_expiry_expect_typed_miss() -> None:
     assert isinstance(cache.get("short"), CacheMiss)
 
 
+def test_ttl_float_expect_redis_millisecond_expiry() -> None:
+    """float TTL이 Redis millisecond expiry로 변환되는지 검증한다."""
+    server = fakeredis.FakeServer()
+    cache = _cache(server)
+    raw_client = fakeredis.FakeRedis(server=server)
+
+    cache.set("short", "value", ttl=1.25)
+
+    ttl_ms = raw_client.pttl("spakky:cache:short")
+    assert isinstance(ttl_ms, int)
+    assert 0 < ttl_ms <= 1250
+
+
 def test_delete_and_clear_expect_only_configured_prefix_removed() -> None:
     """delete와 clear가 configured prefix 범위만 삭제하는지 검증한다."""
     server = fakeredis.FakeServer()
@@ -172,6 +185,25 @@ async def test_async_contract_expect_shared_value_and_async_clear() -> None:
     assert isinstance(await cache.get_async("session"), CacheMiss)
 
     await cache.clear_async()
+
+
+async def test_async_clear_expect_only_configured_prefix_removed() -> None:
+    """async clear가 configured prefix 범위만 삭제하는지 검증한다."""
+    server = fakeredis.FakeServer()
+    cache = _cache(server, prefix="app:")
+    other = _cache(server, prefix="other:")
+
+    await cache.set_async("a", "1")
+    await cache.set_async("b", "2")
+    await other.set_async("a", "keep")
+
+    await cache.clear_async()
+
+    assert isinstance(await cache.get_async("a"), CacheMiss)
+    assert isinstance(await cache.get_async("b"), CacheMiss)
+    other_result = await other.get_async("a")
+    assert isinstance(other_result, CacheHit)
+    assert other_result.value == "keep"
 
 
 def test_invalid_ttl_expect_core_cache_error() -> None:
