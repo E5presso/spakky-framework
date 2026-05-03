@@ -79,6 +79,7 @@ plugins:
             - core/spakky-outbox/src
             - core/spakky-saga/src
             - core/spakky-actuator/src
+            - core/spakky-cache/src
             - plugins/spakky-logging/src
             - plugins/spakky-fastapi/src
             - plugins/spakky-rabbitmq/src
@@ -143,6 +144,7 @@ nav:
           - spakky-outbox: api/core/spakky-outbox.md
           - spakky-saga: api/core/spakky-saga.md
           - spakky-actuator: api/core/spakky-actuator.md
+          - spakky-cache: api/core/spakky-cache.md
       - Plugins:
           - spakky-logging: api/plugins/spakky-logging.md
           - spakky-fastapi: api/plugins/spakky-fastapi.md

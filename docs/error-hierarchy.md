@@ -21,6 +21,7 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyExternalError
   AbstractSpakkyFrameworkError --> AbstractSpakkyEventError
   AbstractSpakkyFrameworkError --> AbstractSpakkyTaskError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyCacheError
   AbstractSpakkyFrameworkError --> AbstractSpakkyTracingError
   AbstractSpakkyFrameworkError --> AbstractSpakkyOutboxError
   AbstractSpakkyFrameworkError --> AbstractSpakkySagaError
@@ -44,6 +45,8 @@ flowchart TD
   AbstractSpakkySagaError --> SagaStepTimeoutError
   AbstractSpakkySagaError --> SagaParallelMergeConflictError
   AbstractSpakkySagaError --> SagaEngineNotConnectedError
+
+  AbstractSpakkyCacheError --> InvalidCacheTTLError
 
   AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyORMError
   AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyPersistencyError
@@ -244,6 +247,23 @@ from spakky.task.error import (
 | `TaskNotFoundError`                 | 레지스트리에서 태스크를 찾을 수 없음                    |
 | `DuplicateTaskError`               | 중복 태스크 등록 시도                                   |
 | `InvalidScheduleSpecificationError` | `@schedule`에 `interval`/`at`/`crontab` 중 하나만 필요 |
+
+---
+
+### spakky-cache
+
+애플리케이션 데이터 캐시 관련 에러입니다.
+
+```python
+from spakky.cache.error import (
+    AbstractSpakkyCacheError,
+    InvalidCacheTTLError,
+)
+```
+
+| 에러                   | 설명                     |
+| ---------------------- | ------------------------ |
+| `InvalidCacheTTLError` | 0 이하 TTL 값 지정 시도 |
 
 ---
 
