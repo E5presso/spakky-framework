@@ -71,7 +71,10 @@
 # ScheduleWakeup·CronCreate가 아니다. 호출자의 turn은 본 스크립트가 종료할 때까지 차단된다.
 set -euo pipefail
 
-export PATH="/opt/homebrew/bin:$PATH"
+case ":$PATH:" in
+  *:/opt/homebrew/bin:*) ;;
+  *) export PATH="$PATH:/opt/homebrew/bin" ;;
+esac
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "FATAL: gh CLI not found in PATH ($PATH)" >&2
@@ -207,10 +210,13 @@ while true; do
     --argjson ch1 "$ch1_raw" \
     --argjson ch2 "$ch2_raw" \
     --argjson ch3 "$ch3_raw" '
+    def tracked_comment:
+      (.user.login != "linear[bot]")
+      and (((.user.login == "codecov[bot]") and ((.body // "") | test("^## \\[Codecov\\]"; "i"))) | not);
     {
-      ch1: ($ch1 | map({(.id|tostring): (.updated_at // .created_at)}) | add // {}),
-      ch2: ($ch2 | map({(.id|tostring): (.updated_at // .created_at)}) | add // {}),
-      ch3: ($ch3 | map({(.id|tostring): (.submitted_at // "")}) | add // {})
+      ch1: ($ch1 | map(select(tracked_comment) | {(.id|tostring): (.updated_at // .created_at)}) | add // {}),
+      ch2: ($ch2 | map(select(tracked_comment) | {(.id|tostring): (.updated_at // .created_at)}) | add // {}),
+      ch3: ($ch3 | map(select(tracked_comment) | {(.id|tostring): (.submitted_at // "")}) | add // {})
     }
   ')
 

@@ -23,7 +23,10 @@
 set -euo pipefail
 
 # Claude Code Bash tool spawns non-login shells that miss /opt/homebrew/bin.
-export PATH="/opt/homebrew/bin:$PATH"
+case ":$PATH:" in
+  *:/opt/homebrew/bin:*) ;;
+  *) export PATH="$PATH:/opt/homebrew/bin" ;;
+esac
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "FATAL: gh CLI not found in PATH ($PATH)" >&2
@@ -36,6 +39,7 @@ REPO="${REPO:-E5presso/spakky-framework}"
 # REVIEW_NOISE_FILTER: APPROVED는 ceremonial. 본문 비어있는 COMMENTED/REQUESTED_CHANGES는
 # 개별 인라인 코멘트의 container 역할만 하므로 CH1에서 이미 집계됨 — CH3에서 중복 제외.
 REVIEW_NOISE_FILTER='select(.state != "APPROVED") | select((.body // "") | length > 0)'
+COMMENT_NOISE_FILTER='select(.user.login != "linear[bot]") | select(((.user.login == "codecov[bot]") and ((.body // "") | test("^## \\[Codecov\\]"; "i"))) | not)'
 
 # ── RAW fetch ──
 # silent-failure 금지: gh 오류는 `set -e`로 스크립트를 중단시켜 표면화한다.
@@ -72,7 +76,7 @@ fi
 if [ -n "${SINCE_TS:-}" ]; then
   CH1=$(echo "$CH1_RAW" | jq --argjson handled "$HANDLED_JSON" --arg since "$SINCE_TS" '
     [ .[]
-      | select(.user.login != "linear[bot]")
+      | '"$COMMENT_NOISE_FILTER"'
       | select((.body // "") | contains("<!-- claude-agent-reply") | not)
       | select(.id as $id | ($handled | index($id)) == null)
       | select(.created_at > $since)
@@ -82,7 +86,7 @@ if [ -n "${SINCE_TS:-}" ]; then
 elif [ -n "${LAST_SEEN_CH1:-}" ]; then
   CH1=$(echo "$CH1_RAW" | jq --argjson handled "$HANDLED_JSON" --argjson last "$LAST_SEEN_CH1" '
     [ .[]
-      | select(.user.login != "linear[bot]")
+      | '"$COMMENT_NOISE_FILTER"'
       | select((.body // "") | contains("<!-- claude-agent-reply") | not)
       | select(.id as $id | ($handled | index($id)) == null)
       | select(.id > $last)
@@ -92,7 +96,7 @@ elif [ -n "${LAST_SEEN_CH1:-}" ]; then
 else
   CH1=$(echo "$CH1_RAW" | jq --argjson handled "$HANDLED_JSON" '
     [ .[]
-      | select(.user.login != "linear[bot]")
+      | '"$COMMENT_NOISE_FILTER"'
       | select((.body // "") | contains("<!-- claude-agent-reply") | not)
       | select(.id as $id | ($handled | index($id)) == null)
       | {id: .id, author: .user.login, body: .body, path: .path, line: .original_line, created: .created_at}
@@ -104,7 +108,7 @@ fi
 if [ -n "${SINCE_TS:-}" ]; then
   CH2=$(echo "$CH2_RAW" | jq --argjson handled "$HANDLED_JSON" --arg since "$SINCE_TS" '
     [ .[]
-      | select(.user.login != "linear[bot]")
+      | '"$COMMENT_NOISE_FILTER"'
       | select((.body // "") | contains("<!-- claude-agent-reply") | not)
       | select(.id as $id | ($handled | index($id)) == null)
       | select(.created_at > $since)
@@ -114,7 +118,7 @@ if [ -n "${SINCE_TS:-}" ]; then
 elif [ -n "${LAST_SEEN_CH2:-}" ]; then
   CH2=$(echo "$CH2_RAW" | jq --argjson handled "$HANDLED_JSON" --argjson last "$LAST_SEEN_CH2" '
     [ .[]
-      | select(.user.login != "linear[bot]")
+      | '"$COMMENT_NOISE_FILTER"'
       | select((.body // "") | contains("<!-- claude-agent-reply") | not)
       | select(.id as $id | ($handled | index($id)) == null)
       | select(.id > $last)
@@ -124,7 +128,7 @@ elif [ -n "${LAST_SEEN_CH2:-}" ]; then
 else
   CH2=$(echo "$CH2_RAW" | jq --argjson handled "$HANDLED_JSON" '
     [ .[]
-      | select(.user.login != "linear[bot]")
+      | '"$COMMENT_NOISE_FILTER"'
       | select((.body // "") | contains("<!-- claude-agent-reply") | not)
       | select(.id as $id | ($handled | index($id)) == null)
       | {id: .id, author: .user.login, body: .body, created: .created_at}
@@ -137,7 +141,7 @@ fi
 # 리뷰 본문도 .id가 HANDLED_JSON에 포함되면 응답된 것으로 간주.
 if [ -n "${SINCE_TS:-}" ]; then
   CH3=$(echo "$CH3_RAW" | jq --argjson handled "$HANDLED_JSON" --arg since "$SINCE_TS" "
-    [ .[] | select(.user.login != \"linear[bot]\") | ${REVIEW_NOISE_FILTER}
+    [ .[] | ${COMMENT_NOISE_FILTER} | ${REVIEW_NOISE_FILTER}
       | select(.id as \$id | (\$handled | index(\$id)) == null)
       | select(.submitted_at > \$since)
       | {id: .id, author: .user.login, body: .body, state: .state, created: .submitted_at}
@@ -145,7 +149,7 @@ if [ -n "${SINCE_TS:-}" ]; then
   " 2>/dev/null || echo "[]")
 elif [ -n "${LAST_SEEN_CH3:-}" ]; then
   CH3=$(echo "$CH3_RAW" | jq --argjson handled "$HANDLED_JSON" --argjson last "$LAST_SEEN_CH3" "
-    [ .[] | select(.user.login != \"linear[bot]\") | ${REVIEW_NOISE_FILTER}
+    [ .[] | ${COMMENT_NOISE_FILTER} | ${REVIEW_NOISE_FILTER}
       | select(.id as \$id | (\$handled | index(\$id)) == null)
       | select(.id > \$last)
       | {id: .id, author: .user.login, body: .body, state: .state, created: .submitted_at}
@@ -153,7 +157,7 @@ elif [ -n "${LAST_SEEN_CH3:-}" ]; then
   " 2>/dev/null || echo "[]")
 else
   CH3=$(echo "$CH3_RAW" | jq --argjson handled "$HANDLED_JSON" "
-    [ .[] | select(.user.login != \"linear[bot]\") | ${REVIEW_NOISE_FILTER}
+    [ .[] | ${COMMENT_NOISE_FILTER} | ${REVIEW_NOISE_FILTER}
       | select(.id as \$id | (\$handled | index(\$id)) == null)
       | {id: .id, author: .user.login, body: .body, state: .state, created: .submitted_at}
     ]
