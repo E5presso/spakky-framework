@@ -281,7 +281,9 @@ def test_sync_consumer_initialize_expect_connection_and_channel_created(
     ):
         consumer.initialize()
 
-    mock_channel.queue_declare.assert_called_once_with("SampleIntegrationEvent")
+    mock_channel.queue_declare.assert_called_once_with(
+        "SampleIntegrationEvent", durable=True
+    )
     mock_channel.basic_consume.assert_called_once()
     assert consumer.type_lookup["consumer_tag_1"] == SampleIntegrationEvent
 
@@ -338,7 +340,9 @@ async def test_async_consumer_initialize_async_expect_connection_and_channel_cre
     ):
         await consumer.initialize_async()
 
-    mock_channel.declare_queue.assert_called_once_with("SampleIntegrationEvent")
+    mock_channel.declare_queue.assert_called_once_with(
+        "SampleIntegrationEvent", durable=True
+    )
     mock_queue.consume.assert_called_once()
     assert consumer.type_lookup["consumer_tag_1"] == SampleIntegrationEvent
 

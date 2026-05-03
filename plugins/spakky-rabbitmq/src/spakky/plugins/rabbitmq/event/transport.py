@@ -60,7 +60,7 @@ class RabbitMQEventTransport(IEventTransport):
         """
         connection = BlockingConnection(URLParameters(self.connection_string))
         channel = connection.channel()
-        channel.queue_declare(event_name)
+        channel.queue_declare(event_name, durable=True)
         if self.exchange_name is not None:
             channel.exchange_declare(self.exchange_name)
             channel.queue_bind(event_name, self.exchange_name, event_name)
@@ -121,7 +121,7 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
                 if self.exchange_name is not None
                 else channel.default_exchange
             )
-            queue = await channel.declare_queue(event_name)
+            queue = await channel.declare_queue(event_name, durable=True)
             if self.exchange_name is not None:
                 await queue.bind(exchange, event_name)
             await exchange.publish(

@@ -30,7 +30,7 @@ def test_sync_transport_send_without_exchange_name_expect_default_exchange() -> 
     ):
         transport.send("test_event", b'{"key": "value"}', {})
 
-    mock_channel.queue_declare.assert_called_once_with("test_event")
+    mock_channel.queue_declare.assert_called_once_with("test_event", durable=True)
     mock_channel.exchange_declare.assert_not_called()
     mock_channel.queue_bind.assert_not_called()
     mock_channel.basic_publish.assert_called_once_with(
@@ -72,7 +72,7 @@ async def test_async_transport_send_without_exchange_name_expect_default_exchang
         await transport.send("test_event", b'{"key": "value"}', {})
 
     mock_channel.declare_exchange.assert_not_called()
-    mock_channel.declare_queue.assert_called_once_with("test_event")
+    mock_channel.declare_queue.assert_called_once_with("test_event", durable=True)
     mock_default_exchange.publish.assert_called_once()
 
 
@@ -94,7 +94,7 @@ def test_sync_transport_send_with_exchange_name_expect_exchange_declared() -> No
     ):
         transport.send("test_event", b'{"key": "value"}', {})
 
-    mock_channel.queue_declare.assert_called_once_with("test_event")
+    mock_channel.queue_declare.assert_called_once_with("test_event", durable=True)
     mock_channel.exchange_declare.assert_called_once_with("test_exchange")
     mock_channel.queue_bind.assert_called_once_with(
         "test_event", "test_exchange", "test_event"
@@ -139,6 +139,6 @@ async def test_async_transport_send_with_exchange_name_expect_exchange_declared(
         await transport.send("test_event", b'{"key": "value"}', {})
 
     mock_channel.declare_exchange.assert_called_once_with("test_exchange")
-    mock_channel.declare_queue.assert_called_once_with("test_event")
+    mock_channel.declare_queue.assert_called_once_with("test_event", durable=True)
     mock_queue.bind.assert_called_once_with(mock_exchange, "test_event")
     mock_exchange.publish.assert_called_once()

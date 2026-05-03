@@ -131,7 +131,7 @@ sequenceDiagram
 | 항목 | 규칙 |
 |------|------|
 | 이벤트 이름 | `AbstractIntegrationEvent.event_name` 값, 기본은 클래스명 |
-| 큐 이름 | 수신 핸들러가 등록한 이벤트 클래스명 |
+| 큐 이름 | 수신 핸들러가 등록한 이벤트 클래스명, durable queue로 선언 |
 | payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
 | headers | `ITracePropagator.inject()`가 넣은 trace header |
 | exchange 없음 | 기본 exchange에 큐 이름 routing key로 발행 |

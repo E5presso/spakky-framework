@@ -96,7 +96,7 @@ class AsyncUserService:
 
 ## Features
 
-- **Automatic queue declaration**: Queues are created based on event type names
+- **Automatic queue declaration**: Durable queues are created based on event type names
 - **Sync and Async support**: Both synchronous and asynchronous publishers/consumers
 - **Background service pattern**: Consumer polling runs as a background service
 - **Pydantic serialization**: Events are serialized/deserialized using Pydantic

@@ -173,7 +173,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.channel = self.connection.channel()
 
         for event_type in self.handlers:
-            self.channel.queue_declare(event_type.__name__)
+            self.channel.queue_declare(event_type.__name__, durable=True)
             consumer_tag = self.channel.basic_consume(
                 event_type.__name__,
                 self._route_event_handler,
@@ -318,7 +318,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self.channel = await self.connection.channel()
 
         for event_type in self.handlers:
-            queue = await self.channel.declare_queue(event_type.__name__)
+            queue = await self.channel.declare_queue(event_type.__name__, durable=True)
             consumer_tag = await queue.consume(self._route_event_handler)
             self.type_lookup[consumer_tag] = event_type
 
