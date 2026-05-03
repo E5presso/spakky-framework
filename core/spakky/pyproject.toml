@@ -21,6 +21,7 @@ sqlalchemy = ["spakky-sqlalchemy>=6.3.1"]
 celery = ["spakky-celery>=6.3.1"]
 opentelemetry = ["spakky-opentelemetry>=6.3.1"]
 grpc = ["spakky-grpc>=6.3.1"]
+redis = ["spakky-redis>=6.3.1"]
 saga = ["spakky-saga>=6.3.1"]
 
 [build-system]

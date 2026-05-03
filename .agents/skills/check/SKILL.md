@@ -45,6 +45,7 @@ cd <package-dir> && uv run python ../../.agents/skills/check/scripts/validate_py
 - 플러그인에서 다른 플러그인 직접 import
 - 도메인 레이어에서 인프라 패키지 import
 - 에러 파일의 `__str__` 오버라이드
+- `plugins/spakky-*` 패키지가 `spakky` core extras에 누락되거나 잘못 매핑된 패키징 메타데이터
 
 위반이 있으면 타입 체크 실행 전에 수정한다.
 

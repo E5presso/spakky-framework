@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 import sys
+import tomllib
 
 BUILTIN_EXCEPTIONS = {
     "TypeError",
@@ -249,6 +250,7 @@ def iter_python_files(root: Path) -> list[Path]:
 def validate(paths: list[Path]) -> list[HarnessViolation]:
     violations: list[HarnessViolation] = []
     workspace_root = find_workspace_root(Path.cwd().resolve())
+    violations.extend(validate_packaging_metadata(workspace_root))
     for root in paths:
         for path in iter_python_files(root):
             resolved_path = path.resolve()
@@ -281,6 +283,94 @@ def validate(paths: list[Path]) -> list[HarnessViolation]:
             visitor.visit(ast.parse(source, filename=str(resolved_path)))
             violations.extend(visitor.violations)
     return violations
+
+
+def validate_packaging_metadata(workspace_root: Path) -> list[HarnessViolation]:
+    core_pyproject = workspace_root / "core" / "spakky" / "pyproject.toml"
+    plugins_root = workspace_root / "plugins"
+    if not core_pyproject.exists() or not plugins_root.exists():
+        return []
+
+    core_metadata = load_toml(core_pyproject)
+    project_metadata = table(core_metadata.get("project"))
+    optional_dependencies = dependency_table(
+        project_metadata.get("optional-dependencies")
+    )
+    plugin_packages = sorted(
+        path.name
+        for path in plugins_root.iterdir()
+        if path.is_dir() and path.name.startswith("spakky-")
+    )
+    violations: list[HarnessViolation] = []
+
+    for package_name in plugin_packages:
+        extra_name = package_name.removeprefix("spakky-")
+        dependencies = optional_dependencies.get(extra_name)
+        if dependencies is None:
+            violations.append(
+                HarnessViolation(
+                    core_pyproject,
+                    1,
+                    f"spakky core extras must expose plugin '{extra_name}'",
+                )
+            )
+            continue
+        if package_name not in {requirement_name(item) for item in dependencies}:
+            violations.append(
+                HarnessViolation(
+                    core_pyproject,
+                    1,
+                    f"spakky core extra '{extra_name}' must depend on {package_name}",
+                )
+            )
+
+    plugin_package_set = set(plugin_packages)
+    for extra_name, dependencies in optional_dependencies.items():
+        for dependency in dependencies:
+            package_name = requirement_name(dependency)
+            if package_name in plugin_package_set:
+                expected_extra = package_name.removeprefix("spakky-")
+                if extra_name != expected_extra:
+                    violations.append(
+                        HarnessViolation(
+                            core_pyproject,
+                            1,
+                            f"spakky core extra '{extra_name}' points to plugin {package_name}; use extra '{expected_extra}'",
+                        )
+                    )
+
+    return violations
+
+
+def load_toml(path: Path) -> dict[str, object]:
+    return tomllib.loads(path.read_text())
+
+
+def table(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, object] = {}
+    for key, item in value.items():
+        if isinstance(key, str):
+            result[key] = item
+    return result
+
+
+def dependency_table(value: object) -> dict[str, list[object]]:
+    raw_table = table(value)
+    result: dict[str, list[object]] = {}
+    for key, item in raw_table.items():
+        if isinstance(item, list):
+            result[key] = item
+    return result
+
+
+def requirement_name(requirement: object) -> str:
+    if not isinstance(requirement, str):
+        return ""
+    for separator in ("[", "<", ">", "=", "!", "~", ";"):
+        requirement = requirement.split(separator, 1)[0]
+    return requirement.strip()
 
 
 def find_workspace_root(start: Path) -> Path:
