@@ -10,7 +10,7 @@ from spakky.plugins.security.hash import HashType
 
 
 class ICryptor(ABC):
-    """Protocol for encryption and decryption operations."""
+    """Interface for encryption and decryption operations."""
 
     url_safe: bool
 
@@ -22,7 +22,7 @@ class ICryptor(ABC):
 
 
 class ISigner(ABC):
-    """Protocol for digital signature operations."""
+    """Interface for digital signature operations."""
 
     url_safe: bool
 

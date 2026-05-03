@@ -5,8 +5,8 @@ from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from typing_extensions import override
 
 from spakky.actuator.interfaces.contributor import (
-    AbstractAsyncInfoContributor,
-    AbstractInfoContributor,
+    IAsyncInfoContributor,
+    IInfoContributor,
 )
 from spakky.actuator.interfaces.probe import (
     AbstractAsyncHealthProbe,
@@ -32,8 +32,8 @@ class ActuatorExtensionPostProcessor(IPostProcessor):
             self._registry.register_health_probe(pod)
         if isinstance(pod, AbstractAsyncHealthProbe):
             self._registry.register_async_health_probe(pod)
-        if isinstance(pod, AbstractInfoContributor):
+        if isinstance(pod, IInfoContributor):
             self._registry.register_info_contributor(pod)
-        if isinstance(pod, AbstractAsyncInfoContributor):
+        if isinstance(pod, IAsyncInfoContributor):
             self._registry.register_async_info_contributor(pod)
         return pod

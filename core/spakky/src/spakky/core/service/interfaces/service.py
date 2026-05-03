@@ -1,6 +1,6 @@
-"""Protocols for application services with lifecycle management.
+"""Interfaces for application services with lifecycle management.
 
-This module defines protocols for services that run during application lifecycle
+This module defines interfaces for services that run during application lifecycle
 with start and stop capabilities.
 """
 
@@ -10,7 +10,7 @@ from asyncio import locks
 
 
 class IService(ABC):
-    """Protocol for synchronous services with lifecycle management."""
+    """Interface for synchronous services with lifecycle management."""
 
     @abstractmethod
     def set_stop_event(self, stop_event: threading.Event) -> None:
@@ -33,7 +33,7 @@ class IService(ABC):
 
 
 class IAsyncService(ABC):
-    """Protocol for asynchronous services with lifecycle management."""
+    """Interface for asynchronous services with lifecycle management."""
 
     @abstractmethod
     def set_stop_event(self, stop_event: locks.Event) -> None:

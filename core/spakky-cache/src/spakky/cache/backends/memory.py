@@ -8,7 +8,7 @@ from typing import Generic, TypeVar
 from typing_extensions import override
 
 from spakky.cache.error import InvalidCacheTTLError
-from spakky.cache.interfaces.cache import AbstractCache, CacheTTL
+from spakky.cache.interfaces.cache import ICache, CacheTTL
 from spakky.cache.result import CacheHit, CacheMiss, CacheResult
 from spakky.core.common.mutability import immutable
 from spakky.core.pod.annotations.pod import Pod
@@ -23,7 +23,7 @@ class _CacheEntry(Generic[T]):
 
 
 @Pod()
-class InMemoryCache(AbstractCache[T]):
+class InMemoryCache(ICache[T]):
     """Deterministic in-memory cache backend for one process."""
 
     def __init__(self, *, clock: Callable[[], float] = monotonic) -> None:

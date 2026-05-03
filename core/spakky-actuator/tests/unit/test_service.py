@@ -6,8 +6,8 @@ import pytest
 from spakky.actuator.config import ActuatorConfig
 from spakky.actuator.error import CannotEvaluateAsyncExtensionSynchronouslyError
 from spakky.actuator.interfaces.contributor import (
-    AbstractAsyncInfoContributor,
-    AbstractInfoContributor,
+    IAsyncInfoContributor,
+    IInfoContributor,
 )
 from spakky.actuator.interfaces.probe import (
     AbstractAsyncHealthProbe,
@@ -83,7 +83,7 @@ class _AsyncProbe(AbstractAsyncHealthProbe):
         return ComponentHealthResult.healthy(self.name)
 
 
-class _Contributor(AbstractInfoContributor):
+class _Contributor(IInfoContributor):
     _name: str
     _payload: Mapping[str, object]
 
@@ -99,7 +99,7 @@ class _Contributor(AbstractInfoContributor):
         return self._payload
 
 
-class _AsyncContributor(AbstractAsyncInfoContributor):
+class _AsyncContributor(IAsyncInfoContributor):
     @property
     def name(self) -> str:
         return "async"

@@ -10,7 +10,6 @@ from typing import *  # type: ignore[no-redef]  # noqa: F403  # Need full typing
 from typing import (
     Any,
     Generic,
-    Protocol,
     TypeGuard,
     _collect_parameters,  # type: ignore[attr-defined]  # Private API for generic parameter collection
     get_args,
@@ -48,7 +47,7 @@ def _generic_mro(result: dict[type, Any], tp: Any) -> None:
             _generic_mro(result, base)
 
 
-def generic_mro(tp: Any) -> list[type]:
+def generic_mro(tp: Any) -> list[Any]:
     """Compute the Method Resolution Order for a generic type.
 
     Supports both regular classes and parameterized generic types (e.g., List[int]).
@@ -67,8 +66,8 @@ def generic_mro(tp: Any) -> list[type]:
         if not isinstance(tp, type):
             raise GenericMROTypeError
         return tp.mro()
-    # sentinel value to avoid to subscript Generic and Protocol
-    result = {Generic: Generic, Protocol: Protocol}
+    # Sentinel value to avoid subscripting Generic while resolving generic bases.
+    result = {Generic: Generic}
     _generic_mro(result, tp)  # type: ignore[arg-type]  # tp is validated above
     cls = origin if origin is not None else tp
     return list(result.get(sub_cls, sub_cls) for sub_cls in cls.__mro__)

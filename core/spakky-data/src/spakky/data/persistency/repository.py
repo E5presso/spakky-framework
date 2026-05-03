@@ -1,13 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Generic, Sequence, TypeVar
 
-from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.domain.error import AbstractSpakkyDomainError
 from spakky.domain.models.aggregate_root import AggregateRootT
 
-AggregateIdT_contra = TypeVar(
-    "AggregateIdT_contra", bound=IEquatable, contravariant=True
-)
+AggregateIdT_contra = TypeVar("AggregateIdT_contra", contravariant=True)
 
 
 class EntityNotFoundError(AbstractSpakkyDomainError):

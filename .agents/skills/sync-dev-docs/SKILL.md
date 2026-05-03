@@ -65,7 +65,7 @@ ls -d core/*/src plugins/*/src | sed 's|/src||' | sort
 
 | 카테고리 | 패턴 | 동기화 대상 |
 |---------|------|-----------|
-| **공개 인터페이스 변경** | ABC/Protocol 추가·수정·삭제, `__all__` 변경 | 패키지 README, ARCHITECTURE.md |
+| **공개 인터페이스 변경** | ABC 기반 인터페이스 추가·수정·삭제, `__all__` 변경 | 패키지 README, ARCHITECTURE.md |
 | **패키지 추가·삭제** | `pyproject.toml` 신규, 패키지 디렉토리 추가·삭제 | ARCHITECTURE.md (패키지 구조 테이블, 의존성 그래프) |
 | **의존성 변경** | `pyproject.toml`의 dependencies 변경 | ARCHITECTURE.md (의존성 그래프) |
 | **데코레이터·스테레오타입 변경** | `@Component`, `@Bean` 등의 시그니처 변경 | 패키지 README (Quick Start, Features) |

@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 
 from spakky.cache import (
-    AbstractCache,
+    ICache,
     AbstractSpakkyCacheError,
     CacheHit,
     CacheKeyGenerationError,
@@ -28,7 +28,7 @@ class ServiceExecutionError(Exception):
     """Raised by the test service before eviction."""
 
 
-class FailingCache(AbstractCache[object]):
+class FailingCache(ICache[object]):
     def get(self, key: str) -> CacheResult[object]:
         raise CacheBackendUnavailableError()
 

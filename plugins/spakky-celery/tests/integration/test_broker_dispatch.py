@@ -11,7 +11,7 @@ import asyncio
 from time import sleep, time
 
 from spakky.core.application.application import SpakkyApplication
-from spakky.task.interfaces.task_result import AbstractTaskResult
+from spakky.task.interfaces.task_result import ITaskResult
 
 from tests.apps.dummy import (
     AsyncNotificationHandler,
@@ -158,7 +158,7 @@ async def test_get_async_retrieves_async_task_return_value_from_broker(
 
     # When: Dispatching an async @task — await is required at call site (Python type-system convention)
     result = await handler.compute(value=21)
-    assert isinstance(result, AbstractTaskResult)
+    assert isinstance(result, ITaskResult)
 
     # Then: get_async() retrieves the task's return value without blocking the event loop
     value = await asyncio.wait_for(result.get_async(), timeout=MAX_WAIT_TIME)

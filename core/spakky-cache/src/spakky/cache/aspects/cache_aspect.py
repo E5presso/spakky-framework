@@ -10,7 +10,7 @@ from spakky.core.pod.annotations.order import Order
 
 from spakky.cache.annotation import CacheEvict, Cacheable
 from spakky.cache.error import CacheKeyGenerationError
-from spakky.cache.interfaces.cache import AbstractCache
+from spakky.cache.interfaces.cache import ICache
 from spakky.cache.result import CacheHit
 
 
@@ -49,9 +49,9 @@ def _key_from_call(
 class CacheAspect(IAspect):
     """Aspect that applies cacheable and cache eviction annotations."""
 
-    _cache: AbstractCache[object]
+    _cache: ICache[object]
 
-    def __init__(self, cache: AbstractCache[object]) -> None:
+    def __init__(self, cache: ICache[object]) -> None:
         self._cache = cache
 
     @Around(_matches_sync)
@@ -83,9 +83,9 @@ class CacheAspect(IAspect):
 class AsyncCacheAspect(IAsyncAspect):
     """Async aspect that applies cacheable and cache eviction annotations."""
 
-    _cache: AbstractCache[object]
+    _cache: ICache[object]
 
-    def __init__(self, cache: AbstractCache[object]) -> None:
+    def __init__(self, cache: ICache[object]) -> None:
         self._cache = cache
 
     @Around(_matches_async)

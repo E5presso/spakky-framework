@@ -1,4 +1,4 @@
-"""Protocol and errors for Pod container interface.
+"""Interface and errors for Pod container interface.
 
 This module defines the IContainer protocol for managing Pod lifecycle
 and dependency injection.
@@ -81,7 +81,7 @@ class PodNameAlreadyExistsError(AbstractSpakkyPodError):
 
 
 class IContainer(ABC):
-    """Protocol for IoC container managing Pod instances."""
+    """Interface for IoC container managing Pod instances."""
 
     @property
     @abstractmethod

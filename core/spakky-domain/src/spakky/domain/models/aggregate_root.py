@@ -8,7 +8,7 @@ from abc import ABC
 from dataclasses import field
 from typing import Generic, Sequence, TypeVar
 
-from spakky.core.common.interfaces.equatable import EquatableT, IEquatable
+from spakky.core.common.interfaces.equatable import EquatableT
 from spakky.core.common.mutability import mutable
 
 from spakky.domain.models.entity import AbstractEntity
@@ -59,15 +59,15 @@ class AbstractAggregateRoot(AbstractEntity[EquatableT], Generic[EquatableT], ABC
         self.__events.clear()
 
 
-AggregateRootT = TypeVar("AggregateRootT", bound=AbstractAggregateRoot[IEquatable])
+AggregateRootT = TypeVar("AggregateRootT", bound=AbstractAggregateRoot)
 """Type variable for aggregate root types (invariant for repositories)."""
 
 AggregateRootT_co = TypeVar(
-    "AggregateRootT_co", bound=AbstractAggregateRoot[IEquatable], covariant=True
+    "AggregateRootT_co", bound=AbstractAggregateRoot, covariant=True
 )
 """Type variable for aggregate root types (covariant for read-only operations)."""
 
 AggregateRootT_contra = TypeVar(
-    "AggregateRootT_contra", bound=AbstractAggregateRoot[IEquatable], contravariant=True
+    "AggregateRootT_contra", bound=AbstractAggregateRoot, contravariant=True
 )
 """Type variable for aggregate root types (contravariant for input parameters)."""

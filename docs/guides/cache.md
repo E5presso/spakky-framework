@@ -6,7 +6,7 @@ Use `spakky-cache` when application code needs a consistent hit/miss contract fo
 
 ## Core Contract
 
-`AbstractCache[T]` provides sync and async paths for `get`, `set`, `delete`, and `clear`. A missing key returns `CacheMiss`; it is not a framework error. A stored value returns `CacheHit[T]`.
+`ICache[T]` provides sync and async paths for `get`, `set`, `delete`, and `clear`. A missing key returns `CacheMiss`; it is not a framework error. A stored value returns `CacheHit[T]`.
 
 ```python
 from datetime import timedelta
@@ -51,7 +51,7 @@ The default key is deterministic for the method module, qualified name, position
 
 ## Redis Backend
 
-`spakky-redis` provides `RedisCache[T]`, a `spakky-cache` backend that stores pickled values in Redis. Business code can depend on `AbstractCache[T]` and switch from `InMemoryCache` to `RedisCache` without changing hit/miss handling.
+`spakky-redis` provides `RedisCache[T]`, a `spakky-cache` backend that stores pickled values in Redis. Business code can depend on `ICache[T]` and switch from `InMemoryCache` to `RedisCache` without changing hit/miss handling.
 
 ```python
 from datetime import timedelta

@@ -1,4 +1,5 @@
-from typing import Generic, Protocol, TypeVar
+from abc import ABC
+from typing import Generic, TypeVar
 
 import pytest
 
@@ -52,7 +53,7 @@ def test_generic_mro_with_generic_inheritance() -> None:
 
     class B(A): ...
 
-    class IC(Protocol, Generic[T_co]): ...
+    class IC(ABC, Generic[T_co]): ...
 
     class D: ...
 
@@ -88,7 +89,7 @@ def test_generic_mro_with_generic_inheritance() -> None:
         A,
         F[int],
         IC[int],
-        Protocol,
+        ABC,
         Generic,
         object,
     ]
@@ -103,7 +104,7 @@ def test_generic_mro_with_generic_inheritance() -> None:
         A,
         F[int],
         IC[int],
-        Protocol,
+        ABC,
         Generic,
         object,
     ]
@@ -116,7 +117,7 @@ def test_generic_mro_with_generic_inheritance() -> None:
         A,
         F[str],
         IC[str],
-        Protocol,
+        ABC,
         Generic,
         object,
     ]

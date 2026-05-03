@@ -11,7 +11,7 @@ from spakky.core.common.interfaces.representable import IRepresentable
 
 
 class IPasswordEncoder(IEquatable, IRepresentable, ABC):
-    """Protocol for password hashing and verification operations."""
+    """Interface for password hashing and verification operations."""
 
     @abstractmethod
     def encode(self) -> str: ...

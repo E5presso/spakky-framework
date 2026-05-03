@@ -28,7 +28,7 @@ ResultT_co = TypeVar("ResultT_co", covariant=True)
 
 
 class IQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
-    """Protocol for synchronous query use cases."""
+    """Interface for synchronous query use cases."""
 
     @abstractmethod
     def run(self, query: QueryT_contra) -> ResultT_co:
@@ -44,7 +44,7 @@ class IQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
 
 
 class IAsyncQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
-    """Protocol for asynchronous query use cases."""
+    """Interface for asynchronous query use cases."""
 
     @abstractmethod
     def run(self, query: QueryT_contra) -> Awaitable[ResultT_co]:

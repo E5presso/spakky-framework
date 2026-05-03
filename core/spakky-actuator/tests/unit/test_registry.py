@@ -3,8 +3,8 @@
 from collections.abc import Mapping
 
 from spakky.actuator.interfaces.contributor import (
-    AbstractAsyncInfoContributor,
-    AbstractInfoContributor,
+    IAsyncInfoContributor,
+    IInfoContributor,
 )
 from spakky.actuator.interfaces.probe import (
     AbstractAsyncHealthProbe,
@@ -42,7 +42,7 @@ class _AsyncProbe(AbstractAsyncHealthProbe):
         return ComponentHealthResult.healthy(self.name)
 
 
-class _Contributor(AbstractInfoContributor):
+class _Contributor(IInfoContributor):
     _name: str
 
     def __init__(self, name: str) -> None:
@@ -56,7 +56,7 @@ class _Contributor(AbstractInfoContributor):
         return {"name": self.name}
 
 
-class _AsyncContributor(AbstractAsyncInfoContributor):
+class _AsyncContributor(IAsyncInfoContributor):
     _name: str
 
     def __init__(self, name: str) -> None:

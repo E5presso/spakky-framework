@@ -33,8 +33,8 @@ def test_has_default_constructor() -> None:
     assert has_default_constructor(B) is True
 
 
-def test_has_default_constructor_with_protocol() -> None:
-    """프로토콜 클래스에서도 기본 생성자 판단이 올바르게 동작하는지 검증한다."""
+def test_has_default_constructor_with_interface() -> None:
+    """인터페이스 클래스에서도 기본 생성자 판단이 올바르게 동작하는지 검증한다."""
 
     class A:
         def __init__(self) -> None:

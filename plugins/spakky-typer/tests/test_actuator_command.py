@@ -8,7 +8,7 @@ from click.testing import Result
 from pytest import MonkeyPatch
 from collections.abc import Mapping
 
-from spakky.actuator.interfaces.contributor import AbstractInfoContributor
+from spakky.actuator.interfaces.contributor import IInfoContributor
 from spakky.actuator.interfaces.probe import AbstractHealthProbe
 from spakky.actuator.result import ComponentHealthResult
 from spakky.core.application.application import SpakkyApplication
@@ -35,7 +35,7 @@ class _CliProbe(AbstractHealthProbe):
 
 
 @Pod()
-class _CliInfoContributor(AbstractInfoContributor):
+class _CliInfoContributor(IInfoContributor):
     @property
     def name(self) -> str:
         return "cli-info"

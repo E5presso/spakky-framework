@@ -1,5 +1,5 @@
 """Cache interface contracts."""
 
-from spakky.cache.interfaces.cache import AbstractCache
+from spakky.cache.interfaces.cache import ICache
 
-__all__ = ["AbstractCache"]
+__all__ = ["ICache"]

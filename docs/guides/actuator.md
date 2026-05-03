@@ -69,12 +69,12 @@ liveness = service.evaluate_liveness()
 ```python
 from collections.abc import Mapping
 
-from spakky.actuator import AbstractInfoContributor
+from spakky.actuator import IInfoContributor
 from spakky.core.pod.annotations.pod import Pod
 
 
 @Pod()
-class BuildInfo(AbstractInfoContributor):
+class BuildInfo(IInfoContributor):
     @property
     def name(self) -> str:
         return "build"

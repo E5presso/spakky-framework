@@ -3,12 +3,10 @@
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 
-from spakky.core.common.interfaces.equatable import IEquatable
-
 T = TypeVar("T")
 
 
-class AbstractTaskResult(ABC, Generic[T]):
+class ITaskResult(ABC, Generic[T]):
     """Abstract handle for the result of a dispatched background task.
 
     Concrete adapters (e.g. CeleryTaskResult) implement this for each broker.
@@ -16,7 +14,7 @@ class AbstractTaskResult(ABC, Generic[T]):
 
     @property
     @abstractmethod
-    def task_id(self) -> IEquatable:
+    def task_id(self) -> object:
         """Unique identifier for the dispatched task."""
         ...
 

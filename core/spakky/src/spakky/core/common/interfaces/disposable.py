@@ -1,19 +1,20 @@
+from abc import ABC, abstractmethod
 from types import TracebackType
-from typing import Protocol, Self, TypeVar, runtime_checkable
+from typing import Self, TypeVar
 
 
-@runtime_checkable
-class IDisposable(Protocol):
+class IDisposable(ABC):
     """Interface for disposable objects."""
 
+    @abstractmethod
     def __enter__(self) -> Self:
         """Enters the runtime context related to this object.
 
         Returns:
             Self: The object itself.
         """
-        ...
 
+    @abstractmethod
     def __exit__(
         self,
         __exc_type: type[BaseException] | None,
@@ -30,21 +31,20 @@ class IDisposable(Protocol):
         Returns:
             bool | None: True if the exception was handled, False otherwise.
         """
-        ...
 
 
-@runtime_checkable
-class IAsyncDisposable(Protocol):
+class IAsyncDisposable(ABC):
     """Interface for asynchronously disposable objects."""
 
+    @abstractmethod
     async def __aenter__(self) -> Self:
         """Asynchronously enters the runtime context related to this object.
 
         Returns:
             Self: The object itself.
         """
-        ...
 
+    @abstractmethod
     async def __aexit__(
         self,
         __exc_type: type[BaseException] | None,
@@ -61,7 +61,6 @@ class IAsyncDisposable(Protocol):
         Returns:
             bool | None: True if the exception was handled, False otherwise.
         """
-        ...
 
 
 DisposableT = TypeVar("DisposableT", bound=IDisposable)

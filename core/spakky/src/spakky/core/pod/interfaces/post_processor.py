@@ -1,4 +1,4 @@
-"""Protocol for Pod post-processors.
+"""Interface for Pod post-processors.
 
 This module defines the IPostProcessor protocol for transforming
 Pod instances after creation but before use.
@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 
 
 class IPostProcessor(ABC):
-    """Protocol for processing Pods after instantiation.
+    """Interface for processing Pods after instantiation.
 
     Post-processors can wrap, modify, or enhance Pod instances.
     Common uses include AOP proxy creation, dependency injection,

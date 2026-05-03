@@ -11,7 +11,7 @@ pip install spakky-redis
 ## Features
 
 - **Shared cache backend**: `RedisCache[T]` stores values in Redis so multiple process instances can observe the same entries.
-- **Core contract compatibility**: Implements `spakky-cache` sync and async `AbstractCache[T]` paths.
+- **Core contract compatibility**: Implements `spakky-cache` sync and async `ICache[T]` paths.
 - **TTL semantics**: Positive TTL values are translated into Redis millisecond expiry; missing and expired keys return `CacheMiss`.
 - **Loud failures**: Redis connection/configuration failures and serialization failures are raised as Spakky cache errors.
 - **Scoped clear**: `clear` removes keys under the configured prefix instead of flushing the Redis database.
@@ -63,7 +63,7 @@ if isinstance(result, CacheHit):
 
 ## Contract Notes
 
-`RedisCache` is a backend implementation of the `spakky-cache` application data cache contract. Business code should depend on `AbstractCache[T]` and can switch between `InMemoryCache` and `RedisCache` without changing cache hit/miss handling.
+`RedisCache` is a backend implementation of the `spakky-cache` application data cache contract. Business code should depend on `ICache[T]` and can switch between `InMemoryCache` and `RedisCache` without changing cache hit/miss handling.
 
 Values are serialized with pickle and stored under `SPAKKY_REDIS__KEY_PREFIX`. `clear()` and `clear_async()` delete only keys under that prefix. Redis failures, unexpected response types, and serialization failures are raised as Spakky cache errors instead of being treated as cache misses.
 

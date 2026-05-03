@@ -2,8 +2,8 @@
 
 from spakky.actuator.config import ActuatorConfig
 from spakky.actuator.interfaces.contributor import (
-    AbstractAsyncInfoContributor,
-    AbstractInfoContributor,
+    IAsyncInfoContributor,
+    IInfoContributor,
 )
 from spakky.actuator.interfaces.probe import (
     AbstractAsyncHealthProbe,
@@ -21,9 +21,9 @@ from spakky.actuator.service import ActuatorAggregationService
 
 __all__ = [
     "AbstractAsyncHealthProbe",
-    "AbstractAsyncInfoContributor",
+    "IAsyncInfoContributor",
     "AbstractHealthProbe",
-    "AbstractInfoContributor",
+    "IInfoContributor",
     "ActuatorAggregationService",
     "ActuatorConfig",
     "ActuatorEndpoint",

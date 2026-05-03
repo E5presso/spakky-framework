@@ -69,7 +69,7 @@ ls -d core/*/src plugins/*/src | sed 's|/src||' | sort
 
 | 카테고리 | 패턴 | 동기화 대상 |
 |---------|------|-----------|
-| **공개 인터페이스 변경** | ABC/Protocol/데코레이터 추가·수정·삭제, `__all__` 변경 | guides, glossary, index.md |
+| **공개 인터페이스 변경** | ABC 기반 인터페이스/데코레이터 추가·수정·삭제, `__all__` 변경 | guides, glossary, index.md |
 | **모듈 경로 변경** | 파일 이동·이름 변경, 패키지 구조 변경 | api docs (`:::` 디렉티브), guides (import 경로) |
 | **패키지 추가·삭제** | `pyproject.toml` 신규, 패키지 디렉토리 추가·삭제 | api/index.md, index.md (패키지 테이블), mkdocs.yml (nav, paths) |
 | **데코레이터 시그니처 변경** | `@Pod`, `@Aspect`, `@EventHandler` 등 파라미터 변경 | guides (코드 예시), glossary (용어 정의) |

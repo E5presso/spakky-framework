@@ -28,7 +28,7 @@ ResultT_co = TypeVar("ResultT_co", covariant=True)
 
 
 class ICommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
-    """Protocol for synchronous command use cases."""
+    """Interface for synchronous command use cases."""
 
     @abstractmethod
     def run(self, command: CommandT_contra) -> ResultT_co:
@@ -44,7 +44,7 @@ class ICommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
 
 
 class IAsyncCommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
-    """Protocol for asynchronous command use cases."""
+    """Interface for asynchronous command use cases."""
 
     @abstractmethod
     def run(self, command: CommandT_contra) -> Awaitable[ResultT_co]:

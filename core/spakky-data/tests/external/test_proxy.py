@@ -1,3 +1,6 @@
+from typing_extensions import override
+
+from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.data.external.proxy import (
     IAsyncGenericProxy,
     IGenericProxy,
@@ -8,13 +11,15 @@ from spakky.data.external.proxy import (
 def test_proxy_model() -> None:
     """ProxyModel 생성 및 동등성 비교가 정상 동작하는지 검증한다."""
 
-    class SampleId:
+    class SampleId(IEquatable):
         def __init__(self, value: int) -> None:
             self.value = value
 
+        @override
         def __eq__(self, other: object) -> bool:
             return isinstance(other, SampleId) and self.value == other.value
 
+        @override
         def __hash__(self) -> int:
             return hash(self.value)
 
@@ -29,16 +34,16 @@ def test_proxy_model() -> None:
     assert hash(model1) == hash(model2)
 
 
-def test_generic_proxy_protocol() -> None:
-    """IGenericProxy 프로토콜이 필수 메서드들을 정의하고 있는지 검증한다."""
+def test_generic_proxy_interface() -> None:
+    """IGenericProxy 인터페이스가 필수 메서드들을 정의하고 있는지 검증한다."""
     assert hasattr(IGenericProxy, "get")
     assert hasattr(IGenericProxy, "get_or_none")
     assert hasattr(IGenericProxy, "contains")
     assert hasattr(IGenericProxy, "range")
 
 
-def test_async_generic_proxy_protocol() -> None:
-    """IAsyncGenericProxy 프로토콜이 필수 메서드들을 정의하고 있는지 검증한다."""
+def test_async_generic_proxy_interface() -> None:
+    """IAsyncGenericProxy 인터페이스가 필수 메서드들을 정의하고 있는지 검증한다."""
     assert hasattr(IAsyncGenericProxy, "get")
     assert hasattr(IAsyncGenericProxy, "get_or_none")
     assert hasattr(IAsyncGenericProxy, "contains")

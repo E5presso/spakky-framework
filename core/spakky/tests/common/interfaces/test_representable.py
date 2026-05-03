@@ -1,16 +1,20 @@
+from typing_extensions import override
+
 from spakky.core.common.interfaces.representable import IRepresentable
 
 
-def test_representable_protocol() -> None:
-    """IRepresentable 프로토콜이 존재하고 구현 가능함을 검증한다."""
+def test_representable_interface() -> None:
+    """IRepresentable 인터페이스가 명시 상속으로 구현 가능함을 검증한다."""
 
-    class SampleRepresentable:
+    class SampleRepresentable(IRepresentable):
         def __init__(self, value: str) -> None:
             self.value = value
 
+        @override
         def __str__(self) -> str:
             return f"SampleRepresentable({self.value})"
 
+        @override
         def __repr__(self) -> str:
             return f"<SampleRepresentable: {self.value}>"
 

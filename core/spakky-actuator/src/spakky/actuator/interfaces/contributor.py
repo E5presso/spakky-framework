@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 
 
-class AbstractInfoContributor(ABC):
+class IInfoContributor(ABC):
     """Synchronous contributor for actuator info output."""
 
     @property
@@ -19,7 +19,7 @@ class AbstractInfoContributor(ABC):
         ...
 
 
-class AbstractAsyncInfoContributor(ABC):
+class IAsyncInfoContributor(ABC):
     """Asynchronous contributor for actuator info output."""
 
     @property

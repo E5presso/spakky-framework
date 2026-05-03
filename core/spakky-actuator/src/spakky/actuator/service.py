@@ -7,8 +7,8 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.actuator.config import ActuatorConfig
 from spakky.actuator.error import CannotEvaluateAsyncExtensionSynchronouslyError
 from spakky.actuator.interfaces.contributor import (
-    AbstractAsyncInfoContributor,
-    AbstractInfoContributor,
+    IAsyncInfoContributor,
+    IInfoContributor,
 )
 from spakky.actuator.interfaces.probe import (
     AbstractAsyncHealthProbe,
@@ -120,7 +120,7 @@ class ActuatorAggregationService:
 
     def _matching_async_info_contributors(
         self,
-    ) -> tuple[AbstractAsyncInfoContributor, ...]:
+    ) -> tuple[IAsyncInfoContributor, ...]:
         return self._registry.async_info_contributors()
 
     def _check_sync_probe(self, probe: AbstractHealthProbe) -> ComponentHealthResult:
@@ -163,7 +163,7 @@ class ActuatorAggregationService:
         return ComponentHealthResult.unhealthy(result.name, required=result.required)
 
     def _merge_info(
-        self, contributors: tuple[AbstractInfoContributor, ...]
+        self, contributors: tuple[IInfoContributor, ...]
     ) -> dict[str, object]:
         info: dict[str, object] = {}
         for contributor in contributors:

@@ -1,4 +1,4 @@
-"""Protocol for container injection.
+"""Interface for container injection.
 
 This module defines IContainerAware for Pods that need access to the IoC container.
 """
@@ -10,7 +10,7 @@ from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 
 
 class ITagRegistryAware(IAware, ABC):
-    """Protocol for Pods requiring tag registry injection.
+    """Interface for Pods requiring tag registry injection.
 
     Pods implementing this protocol will have set_tag_registry() called
     during post-processing with the tag registry instance.

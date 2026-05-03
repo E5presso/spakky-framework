@@ -10,14 +10,14 @@ from spakky.cache.error import (
     CacheKeyGenerationError,
     InvalidCacheTTLError,
 )
-from spakky.cache.interfaces.cache import AbstractCache, CacheTTL
+from spakky.cache.interfaces.cache import ICache, CacheTTL
 from spakky.cache.result import CacheHit, CacheMiss, CacheResult
 
 PLUGIN_NAME = Plugin(name="spakky-cache")
 """Plugin identifier for the Spakky Cache package."""
 
 __all__ = [
-    "AbstractCache",
+    "ICache",
     "AbstractSpakkyCacheError",
     "AsyncCacheAspect",
     "CacheEvict",

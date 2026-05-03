@@ -1,23 +1,22 @@
 """Tests for TaskResult abstract interface."""
 
 import pytest
-from spakky.core.common.interfaces.equatable import IEquatable
 
-from spakky.task.interfaces.task_result import AbstractTaskResult
+from spakky.task.interfaces.task_result import ITaskResult
 
 
 def test_task_result_cannot_be_instantiated() -> None:
     """TaskResult은 직접 인스턴스화할 수 없다."""
     with pytest.raises(TypeError):
-        AbstractTaskResult()  # type: ignore[abstract] - intentional instantiation test
+        ITaskResult()  # type: ignore[abstract] - intentional instantiation test
 
 
 def test_task_result_concrete_subclass_works() -> None:
     """TaskResult 구체 구현체가 task_id와 get()을 올바르게 노출하는지 검증한다."""
 
-    class ConcreteResult(AbstractTaskResult[str]):
+    class ConcreteResult(ITaskResult[str]):
         @property
-        def task_id(self) -> IEquatable:
+        def task_id(self) -> object:
             return "test-id"
 
         def get(self) -> str:
@@ -34,9 +33,9 @@ def test_task_result_concrete_subclass_works() -> None:
 async def test_task_result_get_async_works() -> None:
     """TaskResult 구체 구현체의 get_async()가 올바르게 동작하는지 검증한다."""
 
-    class ConcreteResult(AbstractTaskResult[str]):
+    class ConcreteResult(ITaskResult[str]):
         @property
-        def task_id(self) -> IEquatable:
+        def task_id(self) -> object:
             return "test-id"
 
         def get(self) -> str:

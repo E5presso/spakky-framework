@@ -1,4 +1,4 @@
-"""Protocol and errors for application context interface.
+"""Interface and errors for application context interface.
 
 This module defines the IApplicationContext protocol for managing
 application lifecycle and service coordination.
@@ -45,7 +45,7 @@ class EventLoopThreadAlreadyStartedInApplicationContextError(
 
 
 class IApplicationContext(IContainer, ITagRegistry, ABC):
-    """Protocol for application context managing Pod lifecycle and services.
+    """Interface for application context managing Pod lifecycle and services.
 
     Extends IContainer with service management and lifecycle control.
     """

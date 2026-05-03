@@ -1,33 +1,19 @@
 from collections.abc import Sequence
-from typing import Protocol
 
-from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.core.pod.annotations.pod import Pod
-from spakky.domain.models.event import AbstractDomainEvent
-
-
-class ICollectableAggregate(Protocol):
-    """Structural type for aggregates tracked by collector."""
-
-    @property
-    def uid(self) -> IEquatable: ...
-
-    @property
-    def events(self) -> Sequence[AbstractDomainEvent]: ...
-
-    def clear_events(self) -> None: ...
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 
 @Pod(scope=Pod.Scope.CONTEXT)
 class AggregateCollector:
     """Context-scoped collector for tracking aggregates saved in a transaction."""
 
-    _aggregates: list[ICollectableAggregate]
+    _aggregates: list[AbstractAggregateRoot]
 
     def __init__(self) -> None:
         self._aggregates = []
 
-    def collect(self, aggregate: ICollectableAggregate) -> None:
+    def collect(self, aggregate: AbstractAggregateRoot) -> None:
         """Track an aggregate that was saved during the transaction.
 
         This method is called by Repository implementations after saving
@@ -44,7 +30,7 @@ class AggregateCollector:
         """
         self._aggregates.append(aggregate)
 
-    def all(self) -> Sequence[ICollectableAggregate]:
+    def all(self) -> Sequence[AbstractAggregateRoot]:
         """Get all tracked aggregates.
 
         Returns a sequence of all aggregates collected during the current

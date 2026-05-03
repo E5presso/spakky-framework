@@ -5,7 +5,7 @@ from http import HTTPStatus
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from spakky.actuator.interfaces.contributor import AbstractInfoContributor
+from spakky.actuator.interfaces.contributor import IInfoContributor
 from spakky.actuator.interfaces.probe import AbstractHealthProbe
 from spakky.actuator.result import ActuatorEndpoint, ComponentHealthResult
 from spakky.actuator.service import ActuatorAggregationService
@@ -90,7 +90,7 @@ def test_actuator_endpoints_output_core_public_result_shape() -> None:
             )
 
     @Pod()
-    class HttpInfoContributor(AbstractInfoContributor):
+    class HttpInfoContributor(IInfoContributor):
         @property
         @override
         def name(self) -> str:

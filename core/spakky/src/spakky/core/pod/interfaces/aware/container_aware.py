@@ -1,4 +1,4 @@
-"""Protocol for container injection.
+"""Interface for container injection.
 
 This module defines IContainerAware for Pods that need access to the IoC container.
 """
@@ -10,7 +10,7 @@ from spakky.core.pod.interfaces.container import IContainer
 
 
 class IContainerAware(IAware, ABC):
-    """Protocol for Pods requiring container injection.
+    """Interface for Pods requiring container injection.
 
     Pods implementing this protocol will have set_container() called
     during post-processing with the IoC container instance.

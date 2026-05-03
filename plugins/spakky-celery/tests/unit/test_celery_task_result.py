@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from spakky.task.interfaces.task_result import AbstractTaskResult
+from spakky.task.interfaces.task_result import ITaskResult
 
 from spakky.plugins.celery.common.task_result import CeleryTaskResult
 
@@ -13,9 +13,9 @@ def test_celery_task_result_is_task_result() -> None:
     mock_async_result.id = "abc-123"
     mock_async_result.get.return_value = "some-value"
 
-    result: AbstractTaskResult[str] = CeleryTaskResult(mock_async_result)
+    result: ITaskResult[str] = CeleryTaskResult(mock_async_result)
 
-    assert isinstance(result, AbstractTaskResult)
+    assert isinstance(result, ITaskResult)
 
 
 def test_celery_task_result_task_id_returns_async_result_id() -> None:

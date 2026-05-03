@@ -86,16 +86,16 @@ class EmailTaskHandler:
 ### 일반 호출 → Celery로 디스패치
 
 `@task` 메서드를 호출하면 Aspect가 가로채서 `send_task()`로 디스패치합니다.
-반환값은 `spakky-task`의 추상 타입인 `AbstractTaskResult`입니다.
+반환값은 `spakky-task`의 추상 타입인 `ITaskResult`입니다.
 
 ```python
-from spakky.task.interfaces.task_result import AbstractTaskResult
+from spakky.task.interfaces.task_result import ITaskResult
 
 handler = app.container.get(type_=EmailTaskHandler)
 
 # @task가 Aspect에 의해 celery.send_task()로 변환됨
 result = handler.send_welcome_email(to="user@example.com", name="John")
-assert isinstance(result, AbstractTaskResult)
+assert isinstance(result, ITaskResult)
 print(result.task_id)  # 디스패치된 태스크 ID
 print(result.get())    # 완료까지 블로킹 후 결과 반환
 ```
@@ -124,7 +124,7 @@ class AsyncEmailHandler:
 
 # 비동기 호출 → send_task()로 자동 디스패치
 result = await handler.send_async_email(to="user@example.com")
-assert isinstance(result, AbstractTaskResult)
+assert isinstance(result, ITaskResult)
 ```
 
 ---
@@ -135,12 +135,12 @@ assert isinstance(result, AbstractTaskResult)
 FastAPI 등 asyncio 기반 환경에서는 `await result.get_async()`를 사용하세요.
 
 ```python
-from spakky.task.interfaces.task_result import AbstractTaskResult
+from spakky.task.interfaces.task_result import ITaskResult
 
 handler = app.container.get(type_=EmailTaskHandler)
 
 result = handler.send_welcome_email(to="user@example.com", name="John")
-assert isinstance(result, AbstractTaskResult)
+assert isinstance(result, ITaskResult)
 print(result.task_id)              # 디스패치된 태스크 ID
 
 # asyncio 환경: 이벤트 루프를 차단하지 않고 결과 조회

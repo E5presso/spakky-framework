@@ -1,6 +1,6 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Annotated, Any, Protocol, TypeVar, cast
+from typing import Annotated, Any, Generic, TypeVar, cast
 
 import pytest
 
@@ -34,7 +34,7 @@ def test_pod_issubclass_of_with_generic() -> None:
     """Pod의 is_family_with 메서드가 제네릭 타입과의 상속 관계를 올바르게 판단함을 검증한다."""
     T_contra = TypeVar("T_contra", contravariant=True)
 
-    class IA(Protocol[T_contra]):
+    class IA(ABC, Generic[T_contra]):
         @abstractmethod
         def do(self, t: T_contra) -> None: ...
 

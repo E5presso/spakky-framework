@@ -1,4 +1,4 @@
-"""Protocol for application context injection.
+"""Interface for application context injection.
 
 This module defines IApplicationContextAware for Pods that need access
 to the application context.
@@ -11,7 +11,7 @@ from spakky.core.pod.interfaces.aware.aware import IAware
 
 
 class IApplicationContextAware(IAware, ABC):
-    """Protocol for Pods requiring application context injection.
+    """Interface for Pods requiring application context injection.
 
     Pods implementing this protocol will have set_application_context()
     called during post-processing with the current application context.

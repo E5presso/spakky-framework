@@ -7,9 +7,9 @@ paths:
 
 ## 타입 안전
 
-- `Any` **금지**. `TypeVar`, `Protocol`, `object`, `Union` 사용.
+- `Any` **금지**. `TypeVar`, `ABC` 기반 인터페이스, `object`, `Union` 사용.
 - `Any` 허용 예외: 외부 라이브러리 invariant generics — 인라인 주석으로 사유 명시.
-- `Protocol`에 의한 Goose Typing 금지. 인터페이스는 `ABC` 기반의 명시적 상속으로 정의.
+- `Protocol`/`runtime_checkable`에 의한 Goose Typing 금지. 인터페이스는 `ABC` 기반의 명시적 상속으로 정의.
 - **`cast()` 사용 최소화**. 타입 체커 에러를 `cast`로 치환하는 것은 야매 해결책이며 원인을 숨긴다.
   - 근본 해결 우선: 변수/필드/반환값의 **타입 선언 자체를 정확하게** 바꾼다 (예: `int` → `FieldDescriptorProto.Type.ValueType`).
   - `cast` 허용 예외: 외부 스텁의 invariant 한계로 인한 국소 좁힘 1회 + 사유 주석 필수.

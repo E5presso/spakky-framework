@@ -1,16 +1,17 @@
 """Redis implementation of the spakky-cache contract."""
 
-from collections.abc import AsyncIterator, Awaitable, Iterator
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Iterator
 from datetime import timedelta
 import pickle
-from typing import Generic, Protocol, TypeVar
+from typing import Generic, TypeVar
 
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from redis.exceptions import RedisError
 from typing_extensions import override
 
-from spakky.cache import AbstractCache, CacheHit, CacheMiss, CacheResult, CacheTTL
+from spakky.cache import ICache, CacheHit, CacheMiss, CacheResult, CacheTTL
 from spakky.cache.error import InvalidCacheTTLError
 from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.redis.common.config import RedisCacheConfig
@@ -23,72 +24,142 @@ T = TypeVar("T")
 RedisKey = str | bytes
 
 
-class SyncRedisClient(Protocol):
-    """Sync Redis operations used by RedisCache."""
+class ISyncRedisClient(ABC):
+    """Explicit sync Redis boundary used by RedisCache."""
 
-    def ping(self) -> object: ...
+    @abstractmethod
+    def ping(self) -> None: ...
 
+    @abstractmethod
     def get(self, name: str) -> bytes | None: ...
 
-    def set(self, name: str, value: bytes, *, px: int | None = None) -> object: ...
+    @abstractmethod
+    def set(self, name: str, value: bytes, *, px: int | None = None) -> None: ...
 
+    @abstractmethod
     def delete(self, *names: RedisKey) -> int: ...
 
+    @abstractmethod
     def scan_iter(self, match: str) -> Iterator[RedisKey]: ...
 
 
-class AsyncRedisClient(Protocol):
-    """Async Redis operations used by RedisCache."""
+class IAsyncRedisClient(ABC):
+    """Explicit async Redis boundary used by RedisCache."""
 
+    @abstractmethod
     async def get(self, name: str) -> bytes | None: ...
 
+    @abstractmethod
+    async def set(self, name: str, value: bytes, *, px: int | None = None) -> None: ...
+
+    @abstractmethod
+    async def delete(self, *names: RedisKey) -> int: ...
+
+    @abstractmethod
+    def scan_iter(self, match: str) -> AsyncIterator[RedisKey]: ...
+
+
+class IRawSyncRedisClient(ABC):
+    """Explicit raw sync Redis boundary before response narrowing."""
+
+    @abstractmethod
+    def ping(self) -> object: ...
+
+    @abstractmethod
+    def get(self, name: str) -> object: ...
+
+    @abstractmethod
+    def set(self, name: str, value: bytes, *, px: int | None = None) -> object: ...
+
+    @abstractmethod
+    def delete(self, *names: RedisKey) -> object: ...
+
+    @abstractmethod
+    def scan_iter(self, match: str) -> Iterator[RedisKey]: ...
+
+
+class IRawAsyncRedisClient(ABC):
+    """Explicit raw async Redis boundary before response narrowing."""
+
+    @abstractmethod
+    async def get(self, name: str) -> object: ...
+
+    @abstractmethod
     async def set(
         self, name: str, value: bytes, *, px: int | None = None
     ) -> object: ...
 
-    async def delete(self, *names: RedisKey) -> int: ...
+    @abstractmethod
+    async def delete(self, *names: RedisKey) -> object: ...
 
+    @abstractmethod
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]: ...
 
 
-class RawSyncRedisClient(Protocol):
-    """Redis-compatible sync client before response narrowing."""
+class RedisRawSyncClient(IRawSyncRedisClient):
+    """Raw sync Redis client wrapper for redis-py."""
 
-    def ping(self) -> object: ...
-
-    def get(self, name: str) -> object: ...
-
-    def set(self, name: str, value: bytes, *, px: int | None = None) -> object: ...
-
-    def delete(self, *names: RedisKey) -> object: ...
-
-    def scan_iter(self, match: str) -> Iterator[RedisKey]: ...
-
-
-class RawAsyncRedisClient(Protocol):
-    """Redis-compatible async client before response narrowing."""
-
-    def get(self, name: str) -> object: ...
-
-    def set(self, name: str, value: bytes, *, px: int | None = None) -> object: ...
-
-    def delete(self, *names: RedisKey) -> object: ...
-
-    def scan_iter(self, match: str) -> AsyncIterator[RedisKey]: ...
-
-
-class SyncRedisAdapter:
-    """Typed boundary over the redis-py sync client."""
-
-    def __init__(self, raw: RawSyncRedisClient) -> None:
+    def __init__(self, raw: Redis) -> None:
         self._raw = raw
 
+    @override
     def ping(self) -> object:
+        return self._raw.ping()
+
+    @override
+    def get(self, name: str) -> object:
+        return self._raw.get(name)
+
+    @override
+    def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
+        return self._raw.set(name, value, px=px)
+
+    @override
+    def delete(self, *names: RedisKey) -> object:
+        return self._raw.delete(*names)
+
+    @override
+    def scan_iter(self, match: str) -> Iterator[RedisKey]:
+        return self._raw.scan_iter(match=match)
+
+
+class RedisRawAsyncClient(IRawAsyncRedisClient):
+    """Raw async Redis client wrapper for redis-py."""
+
+    def __init__(self, raw: AsyncRedis) -> None:
+        self._raw = raw
+
+    @override
+    async def get(self, name: str) -> object:
+        return await self._raw.get(name)
+
+    @override
+    async def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
+        return await self._raw.set(name, value, px=px)
+
+    @override
+    async def delete(self, *names: RedisKey) -> object:
+        return await self._raw.delete(*names)
+
+    @override
+    def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
+        return self._raw.scan_iter(match=match)
+
+
+class SyncRedisAdapter(ISyncRedisClient):
+    """Typed boundary over the redis-py sync client."""
+
+    def __init__(self, raw: IRawSyncRedisClient) -> None:
+        self._raw = raw
+
+    @override
+    def ping(self) -> None:
         try:
-            return self._raw.ping()
+            self._raw.ping()
         except RedisError as e:
             raise RedisCacheOperationError from e
 
+    @override
     def get(self, name: str) -> bytes | None:
         try:
             payload = self._raw.get(name)
@@ -100,12 +171,14 @@ class SyncRedisAdapter:
             return payload
         raise RedisCacheOperationError
 
-    def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
+    @override
+    def set(self, name: str, value: bytes, *, px: int | None = None) -> None:
         try:
-            return self._raw.set(name, value, px=px)
+            self._raw.set(name, value, px=px)
         except RedisError as e:
             raise RedisCacheOperationError from e
 
+    @override
     def delete(self, *names: RedisKey) -> int:
         try:
             deleted = self._raw.delete(*names)
@@ -115,6 +188,7 @@ class SyncRedisAdapter:
             return deleted
         raise RedisCacheOperationError
 
+    @override
     def scan_iter(self, match: str) -> Iterator[RedisKey]:
         try:
             return self._raw.scan_iter(match=match)
@@ -122,15 +196,16 @@ class SyncRedisAdapter:
             raise RedisCacheOperationError from e
 
 
-class AsyncRedisAdapter:
+class AsyncRedisAdapter(IAsyncRedisClient):
     """Typed boundary over the redis-py async client."""
 
-    def __init__(self, raw: RawAsyncRedisClient) -> None:
+    def __init__(self, raw: IRawAsyncRedisClient) -> None:
         self._raw = raw
 
+    @override
     async def get(self, name: str) -> bytes | None:
         try:
-            payload = await self._resolve(self._raw.get(name))
+            payload = await self._raw.get(name)
         except RedisError as e:
             raise RedisCacheOperationError from e
         if payload is None:
@@ -139,46 +214,45 @@ class AsyncRedisAdapter:
             return payload
         raise RedisCacheOperationError
 
-    async def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
+    @override
+    async def set(self, name: str, value: bytes, *, px: int | None = None) -> None:
         try:
-            return await self._resolve(self._raw.set(name, value, px=px))
+            await self._raw.set(name, value, px=px)
         except RedisError as e:
             raise RedisCacheOperationError from e
 
+    @override
     async def delete(self, *names: RedisKey) -> int:
         try:
-            deleted = await self._resolve(self._raw.delete(*names))
+            deleted = await self._raw.delete(*names)
         except RedisError as e:
             raise RedisCacheOperationError from e
         if isinstance(deleted, int):
             return deleted
         raise RedisCacheOperationError
 
+    @override
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
-        return self._raw.scan_iter(match=match)
-
-    async def _resolve(self, response: object) -> object:
-        if isinstance(response, Awaitable):
-            return await response
-        return response
+        try:
+            return self._raw.scan_iter(match=match)
+        except RedisError as e:
+            raise RedisCacheOperationError from e
 
 
 @Pod()
-class RedisCache(AbstractCache[T], Generic[T]):
+class RedisCache(ICache[T], Generic[T]):
     """Redis-backed cache that stores pickled values under a configured prefix."""
 
     def __init__(
         self,
         config: RedisCacheConfig | None = None,
         *,
-        client: RawSyncRedisClient | None = None,
-        async_client: RawAsyncRedisClient | None = None,
+        client: ISyncRedisClient | None = None,
+        async_client: IAsyncRedisClient | None = None,
     ) -> None:
         self._config = config or RedisCacheConfig()
-        self._client = SyncRedisAdapter(client or self._create_client())
-        self._async_client = AsyncRedisAdapter(
-            async_client or self._create_async_client()
-        )
+        self._client = client or self._create_client()
+        self._async_client = async_client or self._create_async_client()
         self._ping()
 
     @override
@@ -232,20 +306,28 @@ class RedisCache(AbstractCache[T], Generic[T]):
         if keys:
             await self._async_client.delete(*keys)
 
-    def _create_client(self) -> RawSyncRedisClient:
-        return Redis.from_url(
-            self._config.connection_url,
-            username=self._config.username,
-            password=self._config.password,
-            socket_timeout=self._config.socket_timeout,
+    def _create_client(self) -> ISyncRedisClient:
+        return SyncRedisAdapter(
+            RedisRawSyncClient(
+                Redis.from_url(
+                    self._config.connection_url,
+                    username=self._config.username,
+                    password=self._config.password,
+                    socket_timeout=self._config.socket_timeout,
+                )
+            )
         )
 
-    def _create_async_client(self) -> RawAsyncRedisClient:
-        return AsyncRedis.from_url(
-            self._config.connection_url,
-            username=self._config.username,
-            password=self._config.password,
-            socket_timeout=self._config.socket_timeout,
+    def _create_async_client(self) -> IAsyncRedisClient:
+        return AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                AsyncRedis.from_url(
+                    self._config.connection_url,
+                    username=self._config.username,
+                    password=self._config.password,
+                    socket_timeout=self._config.socket_timeout,
+                )
+            )
         )
 
     def _ping(self) -> None:

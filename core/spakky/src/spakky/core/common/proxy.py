@@ -15,7 +15,7 @@ from spakky.core.common.types import AsyncFunc, Func, ObjectT
 
 
 class IProxyHandler(ABC):
-    """Protocol for proxy handlers that intercept object operations."""
+    """Interface for proxy handlers that intercept object operations."""
 
     @abstractmethod
     def call(

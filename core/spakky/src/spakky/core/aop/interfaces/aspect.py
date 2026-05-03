@@ -1,4 +1,4 @@
-"""Protocol interfaces for aspect implementations.
+"""Interface definitions for aspect implementations.
 
 This module defines the protocols that aspect classes must implement to intercept
 method calls in the AOP system.
@@ -11,7 +11,7 @@ from spakky.core.common.types import AsyncFunc, Func
 
 
 class IAspect(ABC):
-    """Protocol for synchronous aspect implementations."""
+    """Interface for synchronous aspect implementations."""
 
     def before(self, *args: Any, **kwargs: Any) -> None:
         """Execute before the target method is called.
@@ -62,7 +62,7 @@ class IAspect(ABC):
 
 
 class IAsyncAspect(ABC):
-    """Protocol for asynchronous aspect implementations."""
+    """Interface for asynchronous aspect implementations."""
 
     async def before_async(self, *args: Any, **kwargs: Any) -> None:
         """Execute before the target async method is called.

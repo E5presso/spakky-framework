@@ -12,7 +12,7 @@ CacheTTL: TypeAlias = float | int | timedelta | None
 T = TypeVar("T")
 
 
-class AbstractCache(ABC, Generic[T]):
+class ICache(ABC, Generic[T]):
     """Backend-neutral application data cache contract."""
 
     @abstractmethod

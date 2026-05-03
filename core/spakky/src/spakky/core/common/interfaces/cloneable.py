@@ -1,17 +1,17 @@
-from typing import Protocol, Self, TypeVar, runtime_checkable
+from abc import ABC, abstractmethod
+from typing import Self, TypeVar
 
 
-@runtime_checkable
-class ICloneable(Protocol):
+class ICloneable(ABC):
     """Interface for cloneable objects."""
 
+    @abstractmethod
     def clone(self) -> Self:
         """Creates a clone of the current object.
 
         Returns:
             Self: A new instance that is a clone of the current object.
         """
-        ...
 
 
 CloneableT = TypeVar("CloneableT", bound=ICloneable)

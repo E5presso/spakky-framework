@@ -3,8 +3,8 @@
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.actuator.interfaces.contributor import (
-    AbstractAsyncInfoContributor,
-    AbstractInfoContributor,
+    IAsyncInfoContributor,
+    IInfoContributor,
 )
 from spakky.actuator.interfaces.probe import (
     AbstractAsyncHealthProbe,
@@ -18,8 +18,8 @@ class ActuatorExtensionRegistry:
 
     _health_probes: list[AbstractHealthProbe]
     _async_health_probes: list[AbstractAsyncHealthProbe]
-    _info_contributors: list[AbstractInfoContributor]
-    _async_info_contributors: list[AbstractAsyncInfoContributor]
+    _info_contributors: list[IInfoContributor]
+    _async_info_contributors: list[IAsyncInfoContributor]
 
     def __init__(self) -> None:
         """Initialize an empty actuator extension registry."""
@@ -36,12 +36,12 @@ class ActuatorExtensionRegistry:
         """Register an asynchronous health probe."""
         self._async_health_probes.append(probe)
 
-    def register_info_contributor(self, contributor: AbstractInfoContributor) -> None:
+    def register_info_contributor(self, contributor: IInfoContributor) -> None:
         """Register a synchronous info contributor."""
         self._info_contributors.append(contributor)
 
     def register_async_info_contributor(
-        self, contributor: AbstractAsyncInfoContributor
+        self, contributor: IAsyncInfoContributor
     ) -> None:
         """Register an asynchronous info contributor."""
         self._async_info_contributors.append(contributor)
@@ -54,13 +54,13 @@ class ActuatorExtensionRegistry:
         """Return registered asynchronous health probes sorted by name."""
         return tuple(sorted(self._async_health_probes, key=lambda probe: probe.name))
 
-    def info_contributors(self) -> tuple[AbstractInfoContributor, ...]:
+    def info_contributors(self) -> tuple[IInfoContributor, ...]:
         """Return registered synchronous info contributors sorted by name."""
         return tuple(
             sorted(self._info_contributors, key=lambda contributor: contributor.name)
         )
 
-    def async_info_contributors(self) -> tuple[AbstractAsyncInfoContributor, ...]:
+    def async_info_contributors(self) -> tuple[IAsyncInfoContributor, ...]:
         """Return registered asynchronous info contributors sorted by name."""
         return tuple(
             sorted(

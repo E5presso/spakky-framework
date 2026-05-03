@@ -11,7 +11,7 @@ pip install spakky-cache
 ## Features
 
 - **Typed cache results**: `CacheHit[T]` and `CacheMiss` represent hit and miss outcomes without backend-specific exceptions.
-- **Sync and async contracts**: `AbstractCache[T]` defines `get`, `set`, `delete`, `clear` and async equivalents.
+- **Sync and async contracts**: `ICache[T]` defines `get`, `set`, `delete`, `clear` and async equivalents.
 - **TTL semantics**: Positive TTL values expire entries deterministically; missing and expired entries are misses.
 - **In-memory backend**: `InMemoryCache[T]` is suitable for local development, tests, and single-process usage.
 - **AOP method caching**: `@cacheable()` and `@cache_evict()` apply cache hit/miss and eviction behavior without manual plumbing.

@@ -59,13 +59,13 @@ readiness = service.evaluate_readiness()
 ## Extension Points
 
 Register `AbstractHealthProbe` or `AbstractAsyncHealthProbe` Pods to contribute component health.
-Register `AbstractInfoContributor` or `AbstractAsyncInfoContributor` Pods to contribute metadata to `info`.
+Register `IInfoContributor` or `IAsyncInfoContributor` Pods to contribute metadata to `info`.
 The actuator plugin adds `ActuatorExtensionPostProcessor`, which discovers those Pods and stores them in `ActuatorExtensionRegistry`.
 
 ```python
 from spakky.actuator import (
     AbstractHealthProbe,
-    AbstractInfoContributor,
+    IInfoContributor,
     ActuatorEndpoint,
     ComponentHealthResult,
 )
@@ -84,7 +84,7 @@ class ProcessProbe(AbstractHealthProbe):
         return ComponentHealthResult.healthy(self.name)
 
 
-class BuildInfo(AbstractInfoContributor):
+class BuildInfo(IInfoContributor):
     @property
     def name(self) -> str:
         return "build"

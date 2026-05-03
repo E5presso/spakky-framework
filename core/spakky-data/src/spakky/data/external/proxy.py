@@ -1,14 +1,13 @@
 from abc import ABC, abstractmethod
 from typing import Generic, Sequence, TypeVar
 
-from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.core.common.mutability import immutable
 
-ProxyIdT_contra = TypeVar("ProxyIdT_contra", bound=IEquatable, contravariant=True)
+ProxyIdT_contra = TypeVar("ProxyIdT_contra", contravariant=True)
 
 
 @immutable
-class ProxyModel(IEquatable, Generic[ProxyIdT_contra]):
+class ProxyModel(Generic[ProxyIdT_contra]):
     """Immutable read-only projection model identified by an equatable ID."""
 
     id: ProxyIdT_contra
@@ -24,7 +23,7 @@ class ProxyModel(IEquatable, Generic[ProxyIdT_contra]):
         return hash(self.id)
 
 
-ProxyModelT_co = TypeVar("ProxyModelT_co", bound=ProxyModel[IEquatable], covariant=True)
+ProxyModelT_co = TypeVar("ProxyModelT_co", bound=ProxyModel[object], covariant=True)
 
 
 class IGenericProxy(ABC, Generic[ProxyModelT_co, ProxyIdT_contra]):

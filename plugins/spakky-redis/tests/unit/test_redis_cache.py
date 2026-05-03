@@ -5,7 +5,8 @@ from datetime import timedelta
 
 import fakeredis
 import pytest
-from redis.exceptions import ConnectionError
+from redis.exceptions import RedisError
+from typing_extensions import override
 
 from spakky.cache import CacheHit, CacheMiss, InvalidCacheTTLError
 from spakky.plugins.redis import (
@@ -13,6 +14,16 @@ from spakky.plugins.redis import (
     RedisCacheConfig,
     RedisCacheOperationError,
     RedisCacheSerializationError,
+)
+from spakky.plugins.redis.cache import (
+    IRawAsyncRedisClient,
+    IRawSyncRedisClient,
+    IAsyncRedisClient,
+    ISyncRedisClient,
+    AsyncRedisAdapter,
+    RedisRawAsyncClient,
+    RedisRawSyncClient,
+    SyncRedisAdapter,
 )
 
 RedisKey = str | bytes
@@ -23,66 +34,124 @@ async def _empty_async_keys() -> AsyncIterator[RedisKey]:
         yield "never"
 
 
-class FailingSyncClient:
-    def ping(self) -> bool:
-        return True
+class FailingSyncClient(ISyncRedisClient):
+    @override
+    def ping(self) -> None:
+        return None
 
-    def get(self, name: str) -> object:
-        raise ConnectionError("get failed")
+    @override
+    def get(self, name: str) -> bytes | None:
+        raise RedisCacheOperationError
 
-    def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
-        raise ConnectionError("set failed")
+    @override
+    def set(self, name: str, value: bytes, *, px: int | None = None) -> None:
+        raise RedisCacheOperationError
 
-    def delete(self, *names: RedisKey) -> object:
-        raise ConnectionError("delete failed")
+    @override
+    def delete(self, *names: RedisKey) -> int:
+        raise RedisCacheOperationError
 
+    @override
     def scan_iter(self, match: str) -> Iterator[RedisKey]:
-        raise ConnectionError("scan failed")
+        raise RedisCacheOperationError
 
 
-class BadTypeSyncClient:
-    def ping(self) -> bool:
+class BadTypeSyncClient(IRawSyncRedisClient):
+    @override
+    def ping(self) -> object:
         return True
 
+    @override
     def get(self, name: str) -> object:
         return "not-bytes"
 
+    @override
     def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
         return True
 
+    @override
     def delete(self, *names: RedisKey) -> object:
         return "not-int"
 
+    @override
     def scan_iter(self, match: str) -> Iterator[RedisKey]:
         return iter(())
 
 
-class FailingAsyncClient:
-    def get(self, name: str) -> object:
-        raise ConnectionError("async get failed")
+class FailingAsyncClient(IAsyncRedisClient):
+    @override
+    async def get(self, name: str) -> bytes | None:
+        raise RedisCacheOperationError
 
-    def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
-        raise ConnectionError("async set failed")
+    @override
+    async def set(self, name: str, value: bytes, *, px: int | None = None) -> None:
+        raise RedisCacheOperationError
 
-    def delete(self, *names: RedisKey) -> object:
-        raise ConnectionError("async delete failed")
+    @override
+    async def delete(self, *names: RedisKey) -> int:
+        raise RedisCacheOperationError
 
+    @override
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
         return _empty_async_keys()
 
 
-class BadTypeAsyncClient:
-    def get(self, name: str) -> object:
+class BadTypeAsyncClient(IRawAsyncRedisClient):
+    @override
+    async def get(self, name: str) -> object:
         return "not-bytes"
 
-    def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
+    @override
+    async def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
         return True
 
-    def delete(self, *names: RedisKey) -> object:
+    @override
+    async def delete(self, *names: RedisKey) -> object:
         return "not-int"
 
+    @override
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
         return _empty_async_keys()
+
+
+class RedisErrorSyncClient(IRawSyncRedisClient):
+    @override
+    def ping(self) -> object:
+        return True
+
+    @override
+    def get(self, name: str) -> object:
+        raise RedisError
+
+    @override
+    def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
+        raise RedisError
+
+    @override
+    def delete(self, *names: RedisKey) -> object:
+        raise RedisError
+
+    @override
+    def scan_iter(self, match: str) -> Iterator[RedisKey]:
+        raise RedisError
+
+
+class RedisErrorAsyncClient(IRawAsyncRedisClient):
+    @override
+    async def get(self, name: str) -> object:
+        raise RedisError
+
+    @override
+    async def set(self, name: str, value: bytes, *, px: int | None = None) -> object:
+        raise RedisError
+
+    @override
+    async def delete(self, *names: RedisKey) -> object:
+        raise RedisError
+
+    @override
+    def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
+        raise RedisError
 
 
 def _cache(
@@ -100,7 +169,11 @@ def _cache(
     )
     sync_client = fakeredis.FakeRedis(server=server)
     async_client = fakeredis.aioredis.FakeRedis(server=server)
-    return RedisCache[str](config=config, client=sync_client, async_client=async_client)
+    return RedisCache[str](
+        config=config,
+        client=SyncRedisAdapter(RedisRawSyncClient(sync_client)),
+        async_client=AsyncRedisAdapter(RedisRawAsyncClient(async_client)),
+    )
 
 
 def test_shared_redis_server_expect_second_cache_reads_first_cache_value() -> None:
@@ -221,7 +294,12 @@ def test_connection_failure_expect_framework_cache_error() -> None:
     server.connected = False
 
     with pytest.raises(RedisCacheOperationError):
-        RedisCache[str](config=config, client=fakeredis.FakeRedis(server=server))
+        RedisCache[str](
+            config=config,
+            client=SyncRedisAdapter(
+                RedisRawSyncClient(fakeredis.FakeRedis(server=server))
+            ),
+        )
 
 
 def test_sync_operation_failure_expect_framework_cache_error() -> None:
@@ -229,7 +307,33 @@ def test_sync_operation_failure_expect_framework_cache_error() -> None:
     cache = RedisCache[str](
         config=RedisCacheConfig(),
         client=FailingSyncClient(),
-        async_client=fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer()),
+        async_client=AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer())
+            )
+        ),
+    )
+
+    with pytest.raises(RedisCacheOperationError):
+        cache.get("broken")
+    with pytest.raises(RedisCacheOperationError):
+        cache.set("broken", "value")
+    with pytest.raises(RedisCacheOperationError):
+        cache.delete("broken")
+    with pytest.raises(RedisCacheOperationError):
+        cache.clear()
+
+
+def test_sync_redis_error_expect_framework_cache_error() -> None:
+    """Raw RedisError가 sync adapter에서 framework cache error로 변환되는지 검증한다."""
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=SyncRedisAdapter(RedisErrorSyncClient()),
+        async_client=AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer())
+            )
+        ),
     )
 
     with pytest.raises(RedisCacheOperationError):
@@ -246,8 +350,12 @@ def test_sync_unexpected_response_type_expect_framework_cache_error() -> None:
     """Redis sync response type이 contract와 다르면 framework cache error로 실패한다."""
     cache = RedisCache[str](
         config=RedisCacheConfig(),
-        client=BadTypeSyncClient(),
-        async_client=fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer()),
+        client=SyncRedisAdapter(BadTypeSyncClient()),
+        async_client=AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer())
+            )
+        ),
     )
 
     with pytest.raises(RedisCacheOperationError):
@@ -260,7 +368,9 @@ async def test_async_operation_failure_expect_framework_cache_error() -> None:
     """Redis async operation failure가 framework cache error로 변환되는지 검증한다."""
     cache = RedisCache[str](
         config=RedisCacheConfig(),
-        client=fakeredis.FakeRedis(server=fakeredis.FakeServer()),
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
         async_client=FailingAsyncClient(),
     )
 
@@ -272,12 +382,34 @@ async def test_async_operation_failure_expect_framework_cache_error() -> None:
         await cache.delete_async("broken")
 
 
+async def test_async_redis_error_expect_framework_cache_error() -> None:
+    """Raw RedisError가 async adapter에서 framework cache error로 변환되는지 검증한다."""
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
+        async_client=AsyncRedisAdapter(RedisErrorAsyncClient()),
+    )
+
+    with pytest.raises(RedisCacheOperationError):
+        await cache.get_async("broken")
+    with pytest.raises(RedisCacheOperationError):
+        await cache.set_async("broken", "value")
+    with pytest.raises(RedisCacheOperationError):
+        await cache.delete_async("broken")
+    with pytest.raises(RedisCacheOperationError):
+        await cache.clear_async()
+
+
 async def test_async_unexpected_response_type_expect_framework_cache_error() -> None:
     """Redis async response type이 contract와 다르면 framework cache error로 실패한다."""
     cache = RedisCache[str](
         config=RedisCacheConfig(),
-        client=fakeredis.FakeRedis(server=fakeredis.FakeServer()),
-        async_client=BadTypeAsyncClient(),
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
+        async_client=AsyncRedisAdapter(BadTypeAsyncClient()),
     )
 
     with pytest.raises(RedisCacheOperationError):
@@ -290,7 +422,9 @@ def test_serialization_failure_expect_framework_cache_error() -> None:
     """직렬화 불가능한 값이 framework cache error로 변환되는지 검증한다."""
     cache: RedisCache[object] = RedisCache(
         config=RedisCacheConfig(),
-        client=fakeredis.FakeRedis(server=fakeredis.FakeServer()),
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
     )
 
     with pytest.raises(RedisCacheSerializationError):
