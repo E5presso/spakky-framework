@@ -97,6 +97,10 @@ count, success/failure status, and an optional structured failure summary.
 Failure summaries keep the exception type name, message, and diagnostic
 details without retaining the raw exception object.
 
+DI dependency failures preserve their existing exception types while attaching
+structured dependency diagnostics from `Pod.dependencies`, including the failed
+Pod, dependency parameter, requested type, and dependency path.
+
 ## Pod Scopes
 
 ```python

@@ -16,6 +16,7 @@ from spakky.core.common.annotation import Annotation
 from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.core.common.mro import generic_mro
 from spakky.core.common.types import Class, Func, is_optional
+from spakky.core.pod.diagnostics import PodDependencyResolutionDiagnostic
 from spakky.core.pod.annotations.primary import Primary
 from spakky.core.pod.annotations.qualifier import Qualifier
 from spakky.core.pod.error import PodAnnotationFailedError, PodInstantiationFailedError
@@ -83,6 +84,16 @@ class UnexpectedDependencyTypeInjectedError(PodInstantiationFailedError):
     """Raised when an injected dependency has wrong type."""
 
     message = "Unexpected dependency type injected into pod"
+    dependency_diagnostic: PodDependencyResolutionDiagnostic | None
+
+    def __init__(
+        self,
+        *args: object,
+        dependency_diagnostic: PodDependencyResolutionDiagnostic | None = None,
+    ) -> None:
+        """Initialize with optional dependency graph diagnostics."""
+        self.dependency_diagnostic = dependency_diagnostic
+        super().__init__(*args)
 
 
 @dataclass(eq=False)

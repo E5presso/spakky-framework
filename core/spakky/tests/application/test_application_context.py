@@ -566,6 +566,55 @@ def test_circular_dependency_error_message_format() -> None:
     assert "A" in error_msg or "B" in error_msg
 
 
+def test_circular_dependency_error_expect_structured_diagnostic_path() -> None:
+    """순환 의존성 실패가 기존 의미와 구조화된 graph path를 함께 보존함을 검증한다."""
+
+    class IA:
+        def a(self) -> str: ...
+
+    class IB:
+        def b(self) -> str: ...
+
+    @Pod()
+    class A(IA):
+        def __init__(self, b: IB) -> None:
+            self.b = b
+
+        def a(self) -> str:
+            return self.b.b()
+
+    @Pod()
+    class B(IB):
+        def __init__(self, a: IA) -> None:
+            self.a = a
+
+        def b(self) -> str:
+            return self.a.a()
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(A)
+    context.add(B)
+
+    with pytest.raises(CircularDependencyGraphDetectedError) as exc_info:
+        context.start()
+
+    assert "Circular dependency graph detected" in str(exc_info.value)
+    diagnostic = exc_info.value.dependency_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.failed_pod_type_name == "A"
+    assert diagnostic.dependency_parameter_name == "a"
+    assert diagnostic.requested_type_name == "IA"
+    assert len(diagnostic.path) == 3
+    assert diagnostic.path[0].pod_type_name == "A"
+    assert diagnostic.path[0].dependency_parameter_name == "b"
+    assert diagnostic.path[0].requested_type_name == "IB"
+    assert diagnostic.path[1].pod_type_name == "B"
+    assert diagnostic.path[1].dependency_parameter_name == "a"
+    assert diagnostic.path[1].requested_type_name == "IA"
+    assert diagnostic.path[2].pod_type_name == "A"
+    assert diagnostic.path[2].dependency_parameter_name is None
+
+
 def test_application_context_with_multiple_children_list_not_exists() -> None:
     """list 타입 의존성에 해당하는 Pod가 없을 때 PodInstantiationFailedError가 발생함을 검증한다."""
 
@@ -1061,6 +1110,39 @@ def test_application_context_initialize_pods_missing_raises_error() -> None:
     # since the missing_dep cannot be resolved and is not optional
     with pytest.raises(UnexpectedDependencyTypeInjectedError):
         context.start()
+
+
+def test_application_context_missing_dependency_expect_structured_diagnostic() -> None:
+    """누락된 Pod 의존성 실패가 Pod.dependencies 기반 경로 진단을 포함함을 검증한다."""
+    from spakky.core.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
+
+    class MissingDependency:
+        """Unregistered dependency type."""
+
+    @Pod(name="sample_pod")
+    class SamplePod:
+        def __init__(self, missing_dep: MissingDependency) -> None:
+            self.missing_dep = missing_dep
+
+    context = ApplicationContext()
+    context.add(SamplePod)
+
+    with pytest.raises(UnexpectedDependencyTypeInjectedError) as exc_info:
+        context.start()
+
+    diagnostic = exc_info.value.dependency_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.failed_pod_name == "sample_pod"
+    assert diagnostic.failed_pod_type_name == "SamplePod"
+    assert diagnostic.dependency_parameter_name == "missing_dep"
+    assert diagnostic.requested_type_name == "MissingDependency"
+    assert len(diagnostic.path) == 1
+    path_node = diagnostic.path[0]
+    assert path_node.pod_name == "sample_pod"
+    assert path_node.pod_type_name == "SamplePod"
+    assert path_node.dependency_parameter_name == "missing_dep"
+    assert path_node.requested_type_name == "MissingDependency"
+    assert ("dependency_parameter", "missing_dep") in diagnostic.as_detail_pairs()
 
 
 def test_set_singleton_cache_with_non_singleton_pod() -> None:
