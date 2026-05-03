@@ -1,6 +1,7 @@
 # FastAPI 통합
 
-`spakky-fastapi`는 FastAPI 엔드포인트를 `@ApiController` 클래스로 구조화합니다.
+> `spakky-fastapi`는 FastAPI 엔드포인트를 `@ApiController` 클래스로 구조화합니다.
+> Controller Pod를 스캔하면 route decorator가 붙은 메서드를 FastAPI 라우터에 자동 등록합니다.
 
 ---
 
@@ -27,6 +28,41 @@ app = (
 
 api: FastAPI = app.container.get(type_=FastAPI)
 ```
+
+`app.start()` 시점에 `RegisterRoutesPostProcessor`가 `@ApiController` Pod를 찾아 `FastAPI.include_router()`로 라우트를 등록합니다. FastAPI 서버는 Spakky가 직접 실행하지 않으므로, ASGI 서버가 import할 수 있는 모듈 전역에 `api` 객체를 노출합니다.
+
+```python
+# main.py
+from fastapi import FastAPI
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+
+import apps
+import spakky.plugins.fastapi
+
+
+@Pod()
+def get_api() -> FastAPI:
+    return FastAPI(title="Orders API")
+
+
+spakky_app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(include={spakky.plugins.fastapi.PLUGIN_NAME})
+    .scan(apps)
+    .add(get_api)
+    .start()
+)
+
+api: FastAPI = spakky_app.container.get(FastAPI)
+```
+
+```bash
+uvicorn main:api --reload
+```
+
+FastAPI lifespan은 `BindLifespanPostProcessor`가 감싸므로, ASGI 서버가 종료될 때 `ApplicationContext.stop()`이 호출되어 `IService`/`IAsyncService` 리소스가 정리됩니다.
 
 ---
 
@@ -103,6 +139,58 @@ class UserController:
         """OPTIONS /users"""
         return "GET, POST, PUT, PATCH, DELETE"
 ```
+
+### UseCase와 에러 매핑
+
+Controller에는 Repository를 직접 주입하지 말고 `@UseCase()` Pod를 주입합니다. 예상 가능한 HTTP 실패는 `spakky.plugins.fastapi.error`의 에러 클래스로 변환하면 `ErrorHandlingMiddleware`가 JSON 응답으로 바꿉니다.
+
+```python
+from pydantic import BaseModel
+
+from spakky.plugins.fastapi.error import Conflict, NotFound
+from spakky.plugins.fastapi.routes import get, post
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+
+
+class CreateOrderRequest(BaseModel):
+    customer_id: str
+    total_amount: float
+
+
+class OrderResponse(BaseModel):
+    order_id: str
+    status: str
+
+
+@ApiController("/orders")
+class OrderController:
+    def __init__(
+        self,
+        create_order: CreateOrderUseCase,
+        get_order: GetOrderUseCase,
+    ) -> None:
+        self._create_order = create_order
+        self._get_order = get_order
+
+    @post("", status_code=201)
+    async def create_order(self, request: CreateOrderRequest) -> OrderResponse:
+        result = await self._create_order.execute(
+            request.customer_id,
+            request.total_amount,
+        )
+        if result.conflicted:
+            raise Conflict()
+        return OrderResponse(order_id=str(result.order_id), status=result.status)
+
+    @get("/{order_id}")
+    async def get_order(self, order_id: str) -> OrderResponse:
+        order = await self._get_order.execute(order_id)
+        if order is None:
+            raise NotFound()
+        return OrderResponse(order_id=str(order.uid), status=order.status.value)
+```
+
+`@post(..., status_code=201)`처럼 route decorator에 전달한 옵션은 내부 `Route` annotation에 저장되고 그대로 `FastAPI.add_api_route()`에 전달됩니다. 반환 타입이 Pydantic 모델이면 `RegisterRoutesPostProcessor`가 `response_model`을 자동 추론합니다.
 
 ### WebSocket
 

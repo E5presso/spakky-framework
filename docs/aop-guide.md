@@ -228,12 +228,18 @@ class LoggingAspect(IAsyncAspect):
 
 실행 순서 (Around의 경우):
 
-```
-TransactionAspect.around_async 시작
-  └─ LoggingAspect.around_async 시작
-       └─ 실제 메서드 실행
-     LoggingAspect.around_async 종료
-TransactionAspect.around_async 종료
+```mermaid
+sequenceDiagram
+  participant Client
+  participant TransactionAspect
+  participant LoggingAspect
+  participant Target
+  Client->>TransactionAspect: around_async 시작
+  TransactionAspect->>LoggingAspect: around_async 시작
+  LoggingAspect->>Target: 실제 메서드 실행
+  Target-->>LoggingAspect: 반환
+  LoggingAspect-->>TransactionAspect: around_async 종료
+  TransactionAspect-->>Client: around_async 종료
 ```
 
 ---
@@ -242,24 +248,34 @@ TransactionAspect.around_async 종료
 
 ### 정상 실행
 
-```
-Before
-  └─ Around (joinpoint 호출 전)
-       └─ 대상 메서드 실행
-     Around (joinpoint 호출 후)
-AfterReturning
-After
+```mermaid
+sequenceDiagram
+  participant AOP
+  participant Around
+  participant Target
+  AOP->>AOP: Before
+  AOP->>Around: joinpoint 호출 전
+  Around->>Target: 대상 메서드 실행
+  Target-->>Around: 반환
+  Around-->>AOP: joinpoint 호출 후
+  AOP->>AOP: AfterReturning
+  AOP->>AOP: After
 ```
 
 ### 예외 발생
 
-```
-Before
-  └─ Around (joinpoint 호출 전)
-       └─ 대상 메서드에서 예외 발생 ❌
-AfterRaising
-After
-(예외 전파)
+```mermaid
+sequenceDiagram
+  participant AOP
+  participant Around
+  participant Target
+  AOP->>AOP: Before
+  AOP->>Around: joinpoint 호출 전
+  Around->>Target: 대상 메서드 실행
+  Target--xAround: 예외 발생
+  Around--xAOP: 예외 전파
+  AOP->>AOP: AfterRaising
+  AOP->>AOP: After
 ```
 
 ---

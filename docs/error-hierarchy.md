@@ -1,6 +1,7 @@
 # 에러 계층 구조
 
-이 문서는 Spakky Framework의 에러 클래스 계층 구조와 사용법을 설명합니다.
+> Spakky Framework의 에러 클래스 계층 구조와 사용법을 설명합니다.
+> 모든 항목은 현재 `core/*/src` 및 `plugins/*/src`의 실제 에러 클래스를 기준으로 합니다.
 
 ---
 
@@ -8,54 +9,45 @@
 
 Spakky는 구조화된 에러 계층을 제공합니다. 모든 프레임워크 에러는 `AbstractSpakkyFrameworkError`를 상속하며, 각 패키지별로 전용 기반 에러 클래스가 있습니다.
 
-```
-Exception
-└── AbstractSpakkyFrameworkError
-    ├── AbstractSpakkyApplicationError
-    ├── AbstractSpakkyAOPError
-    ├── AbstractSpakkyPodError
-    ├── AbstractSpakkyDomainError
-    │   ├── AbstractDomainValidationError
-    │   ├── EntityNotFoundError
-    │   └── VersionConflictError
-    ├── AbstractSpakkyPersistencyError
-    ├── AbstractSpakkyExternalError
-    ├── AbstractSpakkyEventError
-    ├── AbstractSpakkyTaskError
-    ├── AbstractSpakkyTracingError
-    ├── AbstractSpakkyOutboxError
-    ├── AbstractSpakkySagaError
-    │   ├── SagaFlowDefinitionError
-    │   ├── SagaCompensationFailedError
-    │   ├── SagaStepTimeoutError
-    │   ├── SagaParallelMergeConflictError
-    │   └── SagaEngineNotConnectedError
-    ├── AbstractSpakkyFastAPIError (플러그인)
-    ├── AbstractSpakkySqlAlchemyError (플러그인)
-    │   ├── AbstractSpakkySqlAlchemyORMError
-    │   └── AbstractSpakkySqlAlchemyPersistencyError
-    ├── AbstractSpakkyCeleryError (플러그인)
-    ├── AbstractSpakkyOpenTelemetryError (플러그인)
-    ├── AbstractSpakkyGrpcError (플러그인)
-    │   ├── AbstractGrpcStatusError
-    │   │   ├── InvalidArgument
-    │   │   ├── NotFound
-    │   │   ├── AlreadyExists
-    │   │   ├── PermissionDenied
-    │   │   ├── Unauthenticated
-    │   │   ├── FailedPrecondition
-    │   │   ├── Unavailable
-    │   │   └── InternalError
-    │   ├── UnsupportedFieldTypeError
-    │   ├── MissingProtoFieldAnnotationError
-    │   └── DescriptorAlreadyRegisteredError
-    ├── DecryptionFailedError (spakky-security)
-    ├── KeySizeError (spakky-security)
-    ├── PrivateKeyRequiredError (spakky-security)
-    ├── CannotImportAsymmetricKeyError (spakky-security)
-    ├── InvalidJWTFormatError (spakky-security)
-    ├── JWTDecodingError (spakky-security)
-    └── JWTProcessingError (spakky-security)
+```mermaid
+flowchart TD
+  Exception --> AbstractSpakkyFrameworkError
+
+  AbstractSpakkyFrameworkError --> AbstractSpakkyApplicationError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyAOPError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyPodError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyDomainError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyPersistencyError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyExternalError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyEventError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyTaskError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyTracingError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyOutboxError
+  AbstractSpakkyFrameworkError --> AbstractSpakkySagaError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyFastAPIError
+  AbstractSpakkyFrameworkError --> AbstractSpakkySqlAlchemyError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyCeleryError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyOpenTelemetryError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyGrpcError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyLoggingError
+  AbstractSpakkyFrameworkError --> SecurityErrors[spakky-security concrete errors]
+  AbstractSpakkyFrameworkError --> CommonErrors[common concrete errors]
+
+  AbstractSpakkyDomainError --> AbstractDomainValidationError
+  AbstractSpakkyDomainError --> EntityNotFoundError
+  AbstractSpakkyDomainError --> VersionConflictError
+  AbstractSpakkyDomainError --> CannotMonkeyPatchEntityError
+  AbstractSpakkyDomainError --> UnhashableFieldTypeError
+
+  AbstractSpakkySagaError --> SagaFlowDefinitionError
+  AbstractSpakkySagaError --> SagaCompensationFailedError
+  AbstractSpakkySagaError --> SagaStepTimeoutError
+  AbstractSpakkySagaError --> SagaParallelMergeConflictError
+  AbstractSpakkySagaError --> SagaEngineNotConnectedError
+
+  AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyORMError
+  AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyPersistencyError
+  AbstractSpakkyGrpcError --> AbstractGrpcStatusError
 ```
 
 ---
@@ -97,6 +89,7 @@ from spakky.core.application.error import AbstractSpakkyApplicationError
 | 에러                                                    | 설명                                  |
 | ------------------------------------------------------- | ------------------------------------- |
 | `CannotDetermineScanPathError`                          | 스캔 경로를 자동 결정할 수 없음       |
+| `CannotAssignSystemContextIDError`                      | 시스템 컨텍스트 ID 덮어쓰기 시도      |
 | `ApplicationContextAlreadyStartedError`                 | 이미 시작된 컨텍스트를 재시작 시도    |
 | `ApplicationContextAlreadyStoppedError`                 | 이미 중지된 컨텍스트를 재중지 시도    |
 | `EventLoopThreadNotStartedInApplicationContextError`    | 이벤트 루프 스레드 미시작 상태에서 접근 |
@@ -114,6 +107,8 @@ from spakky.core.pod.error import AbstractSpakkyPodError
 | ----------------------------------------- | ---------------------------------- |
 | `PodAnnotationFailedError`                | Pod 어노테이션 처리 실패           |
 | `PodInstantiationFailedError`             | Pod 인스턴스 생성 실패             |
+| `NegativeOrderValueError`                 | 음수 `@Order` 값 지정              |
+| `QualifierSelectorNotCallableError`       | `@Qualifier` selector가 호출 불가  |
 | `CannotDeterminePodTypeError`             | Pod 타입 추론 불가                 |
 | `CannotUseVarArgsInPodError`              | \*args/\*\*kwargs 사용 금지        |
 | `CannotUsePositionalOnlyArgsInPodError`   | 위치 전용 인자 사용 금지           |
@@ -140,6 +135,24 @@ from spakky.core.pod.interfaces.container import (
 | `NoUniquePodError`                     | 여러 후보 Pod 중 선택 불가 |
 | `CannotRegisterNonPodObjectError`      | @Pod 없는 객체 등록 시도   |
 | `PodNameAlreadyExistsError`            | Pod 이름 중복              |
+
+#### 공통 유틸리티 에러
+
+```python
+from spakky.core.common.annotation import AnnotationNotFoundError, MultipleAnnotationFoundError
+from spakky.core.common.error import GenericMROTypeError
+from spakky.core.common.importing import CannotScanNonPackageModuleError
+from spakky.core.common.metadata import InvalidAnnotatedTypeError, MetadataNotFoundError
+```
+
+| 에러                           | 설명                                  |
+| ------------------------------ | ------------------------------------- |
+| `GenericMROTypeError`          | `generic_mro()`에 타입이 아닌 값 전달 |
+| `CannotScanNonPackageModuleError` | 패키지가 아닌 모듈을 스캔 대상으로 지정 |
+| `AnnotationNotFoundError`      | 요청한 어노테이션 메타데이터 없음     |
+| `MultipleAnnotationFoundError` | 동일 어노테이션이 여러 개 발견됨      |
+| `MetadataNotFoundError`        | `Annotated` 타입에서 기대 메타데이터 없음 |
+| `InvalidAnnotatedTypeError`    | 유효하지 않은 `Annotated` 타입 전달   |
 
 #### AbstractSpakkyAOPError
 
@@ -171,6 +184,7 @@ from spakky.domain.error import (
 | `AbstractSpakkyDomainError`     | 도메인 에러 기반 클래스      |
 | `AbstractDomainValidationError` | 도메인 검증 에러 기반 클래스 |
 | `CannotMonkeyPatchEntityError`  | Entity 속성 직접 변경 시도   |
+| `UnhashableFieldTypeError`      | ValueObject 필드 타입이 해시 불가 |
 
 ---
 
@@ -182,12 +196,14 @@ from spakky.domain.error import (
 from spakky.event.error import (
     AbstractSpakkyEventError,
     InvalidMessageError,
+    UnknownEventTypeError,
 )
 ```
 
-| 에러                  | 설명               |
-| --------------------- | ------------------ |
-| `InvalidMessageError` | 잘못된 메시지 형식 |
+| 에러                    | 설명                                      |
+| ----------------------- | ----------------------------------------- |
+| `InvalidMessageError`   | 잘못된 메시지 형식                        |
+| `UnknownEventTypeError` | Domain/Integration Event가 아닌 타입 발행 |
 
 ---
 
@@ -326,6 +342,7 @@ Celery 통합 관련 에러입니다.
 ```python
 from spakky.plugins.celery.error import (
     AbstractSpakkyCeleryError,
+    InvalidTimezoneError,
     InvalidScheduleRouteError,
 )
 ```
@@ -333,6 +350,7 @@ from spakky.plugins.celery.error import (
 | 에러                          | 설명                                          |
 | ----------------------------- | --------------------------------------------- |
 | `AbstractSpakkyCeleryError`   | Celery 에러 기반 클래스                        |
+| `InvalidTimezoneError`        | 유효하지 않은 IANA timezone 문자열             |
 | `InvalidScheduleRouteError`   | ScheduleRoute에 유효한 스케줄 명세가 없음      |
 
 ### spakky-security
@@ -348,6 +366,10 @@ from spakky.plugins.security.error import (
     InvalidJWTFormatError,
     JWTDecodingError,
     JWTProcessingError,
+    InvalidKeyConstructorCallError,
+    IncompatibleKeyTypeError,
+    PasswordRequiredError,
+    AsymmetricKeyRequiredError,
 )
 ```
 
@@ -360,6 +382,10 @@ from spakky.plugins.security.error import (
 | `InvalidJWTFormatError`          | JWT 토큰 형식 오류                 |
 | `JWTDecodingError`               | JWT 토큰 디코딩 실패              |
 | `JWTProcessingError`             | JWT 토큰 처리 중 오류             |
+| `InvalidKeyConstructorCallError` | `Key()` 생성자 호출 인자 오류      |
+| `IncompatibleKeyTypeError`       | 호환되지 않는 키 타입 비교         |
+| `PasswordRequiredError`          | 필수 password 파라미터 누락        |
+| `AsymmetricKeyRequiredError`     | 비대칭 키 또는 크기 파라미터 누락  |
 
 ### spakky-outbox
 
@@ -389,6 +415,22 @@ from spakky.plugins.opentelemetry.error import (
 | `AbstractSpakkyOpenTelemetryError` | OpenTelemetry 에러 기반 클래스          |
 | `UnsupportedExporterTypeError`    | 지원하지 않는 exporter 타입 설정 시 발생 |
 
+### spakky-logging
+
+구조화 로깅 관련 에러입니다.
+
+```python
+from spakky.plugins.logging.error import (
+    AbstractSpakkyLoggingError,
+    UnknownLogFormatError,
+)
+```
+
+| 에러                         | 설명                         |
+| ---------------------------- | ---------------------------- |
+| `AbstractSpakkyLoggingError` | 로깅 에러 기반 클래스        |
+| `UnknownLogFormatError`      | 인식할 수 없는 로그 포맷     |
+
 ### spakky-saga
 
 사가 오케스트레이션 관련 에러입니다.
@@ -415,7 +457,7 @@ from spakky.saga.error import (
 
 ### spakky-grpc
 
-gRPC 통합 관련 에러입니다. gRPC 상태 코드 매핑 에러와 스키마 에러로 나늉니다.
+gRPC 통합 관련 에러입니다. gRPC 상태 코드 매핑 에러와 스키마 에러로 나뉩니다.
 
 ```python
 from spakky.plugins.grpc.error import (
@@ -431,6 +473,7 @@ from spakky.plugins.grpc.error import (
     InternalError,
     UnsupportedFieldTypeError,
     MissingProtoFieldAnnotationError,
+    UnsupportedResponseTypeError,
     DescriptorAlreadyRegisteredError,
 )
 ```
@@ -454,6 +497,7 @@ from spakky.plugins.grpc.error import (
 | ------------------------------------- | ------------------------------------------ |
 | `UnsupportedFieldTypeError`           | 지원하지 않는 protobuf 필드 타입          |
 | `MissingProtoFieldAnnotationError`    | `ProtoField` 어노테이션 누락              |
+| `UnsupportedResponseTypeError`        | protobuf `Message`나 Pydantic `BaseModel`이 아닌 응답 |
 | `DescriptorAlreadyRegisteredError`    | 이미 등록된 descriptor 재등록 시도     |
 
 ---

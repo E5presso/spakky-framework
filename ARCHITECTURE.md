@@ -1,28 +1,7 @@
 # Spakky Framework Architecture
 
-이 문서는 Spakky Framework의 전체 아키텍처를 기술합니다.
-코드와 문서가 불일치할 경우, **코드가 진실**입니다.
-
----
-
-## 목차
-
-- [패키지 구조](#패키지-구조)
-- [의존성 그래프](#의존성-그래프)
-- [코어: DI/IoC 컨테이너](#코어-diioc-컨테이너)
-- [코어: AOP 시스템](#코어-aop-시스템)
-- [코어: 플러그인 시스템](#코어-플러그인-시스템)
-- [도메인 레이어 (spakky-domain)](#도메인-레이어-spakky-domain)
-- [데이터 레이어 (spakky-data)](#데이터-레이어-spakky-data)
-- [이벤트 레이어 (spakky-event)](#이벤트-레이어-spakky-event)
-- [태스크 레이어 (spakky-task)](#태스크-레이어-spakky-task)
-- [트레이싱 레이어 (spakky-tracing)](#트레이싱-레이어-spakky-tracing)
-- [아웃박스 레이어 (spakky-outbox)](#아웃박스-레이어-spakky-outbox)
-- [사가 레이어 (spakky-saga)](#사가-레이어-spakky-saga)
-- [플러그인 구현체](#플러그인-구현체)
-- [설계 결정](#설계-결정)
-- [Architecture Decision Records](#architecture-decision-records)
-- [참고 자료](#참고-자료)
+> Spakky Framework의 전체 아키텍처를 기술합니다.
+> 코드와 문서가 불일치할 경우, **코드가 진실**입니다.
 
 ---
 
@@ -57,43 +36,37 @@
 
 ```mermaid
 graph TD
-    subgraph core_chain ["🔗 Core Chain"]
-        core[🧩 spakky<br/>DI · AOP · Plugin]
-
-        core --> domain[📦 spakky-domain<br/>Entity · Event · CQRS]
-        core --> task_pkg["⏱ spakky-task<br/>@task · @schedule · Crontab"]
-        core --> tracing["🔍 spakky-tracing<br/>TraceContext · Propagator"]
-
-        domain --> data[💾 spakky-data<br/>Repository · Transaction]
-        data --> event[📡 spakky-event<br/>Publisher · Consumer · Aspect]
-        domain --> event
-        tracing --> event
-        event --> outbox[📤 spakky-outbox<br/>OutboxEventBus · Relay]
-        tracing --> outbox
-        core --> saga[📋 spakky-saga<br/>SagaFlow · SagaStep · Compensation]
-        domain --> saga
+    subgraph core_packages ["Core Packages"]
+        core[spakky<br/>DI · AOP · Plugin]
+        domain[spakky-domain<br/>Entity · Event · CQRS]
+        data[spakky-data<br/>Repository · Transaction]
+        event[spakky-event<br/>Publisher · Consumer · Aspect]
+        task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
+        tracing["spakky-tracing<br/>TraceContext · Propagator"]
+        outbox[spakky-outbox<br/>OutboxEventBus · Relay]
+        saga[spakky-saga<br/>SagaFlow · SagaStep · Compensation]
     end
 
-    subgraph plugins ["⚡ Plugins"]
-        subgraph persistence ["💾 Persistence"]
+    subgraph plugins ["Plugins"]
+        subgraph persistence ["Persistence"]
             sqlalchemy[spakky-sqlalchemy]
         end
 
-        subgraph transport ["🚀 Transport"]
+        subgraph transport ["Transport"]
             rabbitmq[spakky-rabbitmq]
             kafka[spakky-kafka]
         end
 
-        subgraph task_plugins ["⏲ Task"]
+        subgraph task_plugins ["Task"]
             celery_plugin[spakky-celery]
         end
 
-        subgraph observability ["👁 Observability"]
+        subgraph observability ["Observability"]
             logging_pkg[spakky-logging]
             otel[spakky-opentelemetry]
         end
 
-        subgraph ui ["🖥 UI & Utility"]
+        subgraph ui ["UI & Utility"]
             fastapi[spakky-fastapi]
             typer[spakky-typer]
             security[spakky-security]
@@ -101,26 +74,37 @@ graph TD
         end
     end
 
-    data --> sqlalchemy
-    outbox --> sqlalchemy
-    event --> rabbitmq
-    event --> kafka
-    task_pkg --> celery_plugin
-    core --> logging_pkg
-    core --> otel
-    tracing --> otel
-    tracing --> fastapi
-    tracing --> rabbitmq
-    tracing --> kafka
-    tracing --> celery_plugin
-    logging_pkg -.->|optional| otel
-    core --> fastapi
-    core --> typer
-    core --> security
-    core --> grpc
-    tracing --> grpc
+    domain --> core
+    data --> domain
+    event --> domain
+    event --> data
+    event --> tracing
+    task_pkg --> core
+    tracing --> core
+    outbox --> event
+    outbox --> tracing
+    saga --> core
+    saga --> domain
 
-    %% Styling — Core
+    sqlalchemy --> data
+    sqlalchemy --> outbox
+    rabbitmq --> event
+    rabbitmq --> tracing
+    kafka --> event
+    kafka --> tracing
+    celery_plugin --> task_pkg
+    celery_plugin --> tracing
+    logging_pkg --> core
+    otel --> core
+    otel --> tracing
+    otel -.->|optional| logging_pkg
+    fastapi --> core
+    fastapi --> tracing
+    typer --> core
+    security --> core
+    grpc --> core
+    grpc --> tracing
+
     style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
     style domain fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100
     style data fill:#e8f5e9,stroke:#66bb6a,stroke-width:2px,color:#1b5e20
@@ -130,7 +114,6 @@ graph TD
     style tracing fill:#e0f2f1,stroke:#26a69a,stroke-width:2px,color:#004d40
     style saga fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#e65100
 
-    %% Styling — Plugins
     style sqlalchemy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style rabbitmq fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style kafka fill:#f5f5f5,stroke:#9e9e9e,color:#424242
@@ -152,7 +135,7 @@ graph TD
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
-- **이벤트 코어** (spakky-event) → `spakky-data` + `spakky-tracing`에 의존
+- **이벤트 코어** (spakky-event) → `spakky-domain` + `spakky-data` + `spakky-tracing`에 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-tracing`에 의존 (컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
@@ -167,10 +150,22 @@ graph TD
 
 프레임워크의 기반입니다. 모든 메타데이터는 `__spakky_annotation_metadata__` 속성에 저장됩니다.
 
-```
-Annotation                      ← 기본 메타데이터 저장
-├── ClassAnnotation             ← 클래스 대상 (type[T] → type[T])
-└── FunctionAnnotation          ← 함수 대상 (Callable → Callable)
+```mermaid
+classDiagram
+    Annotation <|-- ClassAnnotation
+    Annotation <|-- FunctionAnnotation
+
+    class Annotation {
+        기본 메타데이터 저장
+    }
+    class ClassAnnotation {
+        클래스 대상
+        class decorator
+    }
+    class FunctionAnnotation {
+        함수 대상
+        function decorator
+    }
 ```
 
 **MRO 기반 인덱싱**: 어노테이션 설정 시 `type(self).mro()` 전체를 인덱싱합니다.
@@ -279,19 +274,18 @@ class UserService:
 
 Pod 생성 후 순차적으로 적용되는 후처리기입니다.
 
-```
-Pod 생성
-  │
-  ├─ 1. ApplicationContextAwareProcessor
-  │     └─ IContainerAware, ITagRegistryAware, IApplicationContextAware 주입
-  │
-  ├─ 2. AspectPostProcessor
-  │     └─ 매칭되는 Aspect의 Dynamic Proxy 래핑
-  │
-  ├─ 3. ServicePostProcessor
-  │     └─ IService / IAsyncService 라이프사이클 등록
-  │
-  └─ 4. 사용자 정의 IPostProcessor (@Order 순서)
+```mermaid
+flowchart TD
+    pod[Pod 생성]
+    aware[ApplicationContextAwareProcessor]
+    inject[IContainerAware<br/>ITagRegistryAware<br/>IApplicationContextAware 주입]
+    aspect[AspectPostProcessor]
+    proxy[매칭되는 Aspect의 Dynamic Proxy 래핑]
+    service[ServicePostProcessor]
+    lifecycle[IService / IAsyncService 라이프사이클 등록]
+    custom[사용자 정의 IPostProcessor<br/>@Order 순서]
+
+    pod --> aware --> inject --> aspect --> proxy --> service --> lifecycle --> custom
 ```
 
 ### 애플리케이션 부트스트랩
@@ -340,18 +334,23 @@ app = (
 
 ### Dynamic Proxy 메커니즘
 
-```
-AspectPostProcessor
-  │
-  ├─ 매칭되는 Aspect 수집 → @Order 정렬
-  │
-  ├─ ProxyFactory로 런타임 서브클래스 생성
-  │     └─ types.new_class("{TypeName}@DynamicProxy", ...)
-  │
-  └─ AspectProxyHandler → Advisor 체인 구성
-        │
-        └─ Advisor.__call__:
-              before → around(joinpoint) → after_returning / after_raising → after
+```mermaid
+flowchart TD
+    processor[AspectPostProcessor]
+    collect[매칭되는 Aspect 수집]
+    order[@Order 정렬]
+    factory[ProxyFactory]
+    subclass["types.new_class('{TypeName}@DynamicProxy', ...)"]
+    handler[AspectProxyHandler]
+    chain[Advisor 체인 구성]
+    call[Advisor.__call__]
+    before[before]
+    around[around(joinpoint)]
+    result[after_returning / after_raising]
+    after[after]
+
+    processor --> collect --> order --> factory --> subclass --> handler --> chain --> call
+    call --> before --> around --> result --> after
 ```
 
 - **런타임 서브클래스**: `types.new_class()`로 프록시 클래스를 생성하여 `isinstance()` 투명성을 유지합니다.
@@ -418,14 +417,40 @@ spakky-data = "spakky.data.main:initialize"
 
 ### 모델 계층
 
-```
-AbstractDomainModel (ABC)
-├── AbstractEntity[EquatableT_co]         @mutable (frozen=False, kw_only=True)
-│   └── AbstractAggregateRoot[EquatableT_co]  이벤트 보유
-├── AbstractValueObject                   @immutable (frozen=True, kw_only=True)
-└── AbstractEvent                         @immutable
-    ├── AbstractDomainEvent               Bounded Context 내부 이벤트
-    └── AbstractIntegrationEvent          Bounded Context 간 이벤트
+```mermaid
+classDiagram
+    AbstractDomainModel <|-- AbstractEntity
+    AbstractEntity <|-- AbstractAggregateRoot
+    AbstractDomainModel <|-- AbstractValueObject
+    AbstractDomainModel <|-- AbstractEvent
+    AbstractEvent <|-- AbstractDomainEvent
+    AbstractEvent <|-- AbstractIntegrationEvent
+
+    class AbstractDomainModel {
+        ABC
+    }
+    class AbstractEntity {
+        @mutable
+        frozen=False
+        kw_only=True
+    }
+    class AbstractAggregateRoot {
+        이벤트 보유
+    }
+    class AbstractValueObject {
+        @immutable
+        frozen=True
+        kw_only=True
+    }
+    class AbstractEvent {
+        @immutable
+    }
+    class AbstractDomainEvent {
+        Bounded Context 내부 이벤트
+    }
+    class AbstractIntegrationEvent {
+        Bounded Context 간 이벤트
+    }
 ```
 
 > **`@mutable` / `@immutable`**: `spakky.core.common.mutability`에서 제공하는 데코레이터입니다.
@@ -549,14 +574,25 @@ class AggregateCollector:
 
 ### Transaction 추상화
 
-```
-AbstractTransaction (context manager)
-├── __enter__() → initialize()
-└── __exit__()  → commit() / rollback() / dispose()
-    └── autocommit_enabled 플래그로 제어
+```mermaid
+flowchart TD
+    tx[AbstractTransaction<br/>context manager]
+    enter["__enter__()"]
+    init[initialize()]
+    exit["__exit__()"]
+    commit[commit()]
+    rollback[rollback()]
+    dispose[dispose()]
+    flag[autocommit_enabled 플래그]
+    async_tx[AbstractAsyncTransaction<br/>async context manager]
 
-AbstractAsyncTransaction (async context manager)
-└── 동일 구조
+    tx --> enter --> init
+    tx --> exit
+    exit --> commit
+    exit --> rollback
+    exit --> dispose
+    flag --> exit
+    async_tx --> tx
 ```
 
 ### External Proxy 패턴
@@ -584,16 +620,43 @@ AbstractAsyncTransaction (async context manager)
 
 > 설계 배경 및 대안 분석은 [ADR-0001](docs/adr/0001-event-system-redesign.md)을 참조하세요.
 
-3가지 축으로 구성됩니다:
+5가지 역할 축으로 구성됩니다:
 
-```
-Publisher (단일 진입점)         Dispatcher (인프로세스 전달)     EventBus (외부 전송 진입점)
-├─ IEventPublisher             ├─ IEventDispatcher             ├─ IEventBus
-└─ IAsyncEventPublisher        └─ IAsyncEventDispatcher        └─ IAsyncEventBus
+```mermaid
+flowchart TD
+    subgraph publisher_group ["Publisher: 단일 진입점"]
+        publisher[IEventPublisher]
+        async_publisher[IAsyncEventPublisher]
+    end
 
-Consumer (핸들러 등록)           EventTransport (실제 메시지 전송)
-├─ IEventConsumer              ├─ IEventTransport
-└─ IAsyncEventConsumer         └─ IAsyncEventTransport
+    subgraph dispatcher_group ["Dispatcher: 인프로세스 전달"]
+        dispatcher[IEventDispatcher]
+        async_dispatcher[IAsyncEventDispatcher]
+    end
+
+    subgraph bus_group ["EventBus: 외부 전송 진입점"]
+        bus[IEventBus]
+        async_bus[IAsyncEventBus]
+    end
+
+    subgraph consumer_group ["Consumer: 핸들러 등록"]
+        consumer[IEventConsumer]
+        async_consumer[IAsyncEventConsumer]
+    end
+
+    subgraph transport_group ["EventTransport: 실제 메시지 전송"]
+        transport[IEventTransport]
+        async_transport[IAsyncEventTransport]
+    end
+
+    publisher --> dispatcher
+    async_publisher --> async_dispatcher
+    publisher --> bus
+    async_publisher --> async_bus
+    consumer --> dispatcher
+    async_consumer --> async_dispatcher
+    bus --> transport
+    async_bus --> async_transport
 ```
 
 - **Publisher** (`IEventPublisher`): `publish(event: AbstractEvent)` — 타입 기반 라우팅
@@ -652,31 +715,34 @@ class UserEventHandler:
 
 `TransactionalEventPublishingAspect`가 `@Transactional` 메서드의 성공 후 이벤트를 자동 발행합니다.
 
-```
-@Transactional 메서드 시작
-│
-├─ [TransactionalAspect @Order(0)]
-│   └─ BEGIN TRANSACTION
-│
-│   ├─ [TransactionalEventPublishingAspect @Order(1)]
-│   │   │
-│   │   ├─ UseCase 로직 실행
-│   │   │   ├─ aggregate = User.create(...)
-│   │   │   ├─ aggregate.add_event(UserCreatedEvent)
-│   │   │   └─ repository.save(aggregate)
-│   │   │       └─ collector.collect(aggregate)  ← 등록!
-│   │   │
-│   │   ├─ @AfterReturning: 이벤트 발행
-│   │   │   ├─ collector.all() → Aggregate 목록
-│   │   │   ├─ aggregate.events → 이벤트 추출
-│   │   │   ├─ publisher.publish(event) → 타입 기반 라우팅
-│   │   │   └─ aggregate.clear_events()
-│   │   │
-│   │   └─ @AfterRaising: collector.clear() (정리만)
-│   │
-│   └─ COMMIT (모두 성공) 또는 ROLLBACK (실패)
-│
-└─ 끝
+```mermaid
+sequenceDiagram
+    participant U as @Transactional method
+    participant TA as TransactionalAspect<br/>@Order(0)
+    participant EA as TransactionalEventPublishingAspect<br/>@Order(1)
+    participant R as Repository
+    participant C as AggregateCollector
+    participant P as EventPublisher
+    participant DB as Transaction
+
+    U->>TA: start
+    TA->>DB: BEGIN
+    TA->>EA: around
+    EA->>U: UseCase 로직 실행
+    U->>U: aggregate.add_event(...)
+    U->>R: repository.save(aggregate)
+    R->>C: collector.collect(aggregate)
+
+    alt 정상 반환
+        EA->>C: all()
+        C-->>EA: Aggregate 목록
+        EA->>P: publish(event)
+        EA->>U: aggregate.clear_events()
+        TA->>DB: COMMIT
+    else 예외 발생
+        EA->>C: clear()
+        TA->>DB: ROLLBACK
+    end
 ```
 
 **Handler 실패 = 전체 롤백 = 데이터 일관성 보장**
@@ -716,11 +782,18 @@ class OrderEventHandler:
 
 `IEventBus`와 `IEventTransport`의 **2단 인터페이스 분리**로 Outbox PnP를 달성합니다:
 
-```
-[Outbox 미설치]  IEventBus = DirectEventBus → IEventTransport = KafkaEventTransport → Kafka
-[Outbox 설치]    IEventBus = OutboxEventBus (@Primary)
-                   └─ outbox_table.insert() (같은 트랜잭션)
-                   └─ OutboxRelay (background) → IEventTransport.send() → Kafka
+```mermaid
+flowchart TD
+    event_bus[IEventBus]
+    direct[DirectEventBus]
+    outbox_bus[OutboxEventBus<br/>@Primary]
+    table[outbox_table.insert()<br/>같은 트랜잭션]
+    relay[OutboxRelay<br/>background]
+    transport[IEventTransport.send()]
+    broker[Kafka / RabbitMQ]
+
+    event_bus --> direct --> transport --> broker
+    event_bus --> outbox_bus --> table --> relay --> transport
 ```
 
 - **DirectEventBus**: 기본 `IEventBus` 구현. `IEventTransport`에 직접 위임
@@ -887,11 +960,18 @@ Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Pr
 
 ### PnP 아키텍처
 
-```
-[Outbox 미설치]  IEventBus = DirectEventBus → IEventTransport → Kafka/RabbitMQ
-[Outbox 설치]    IEventBus = OutboxEventBus (@Primary)
-                   └─ outbox_table.insert() (같은 트랜잭션)
-                   └─ OutboxRelay (background) → IEventTransport.send() → Kafka/RabbitMQ
+```mermaid
+flowchart TD
+    event_bus[IEventBus]
+    direct[DirectEventBus]
+    outbox_bus[OutboxEventBus<br/>@Primary]
+    table[outbox_table.insert()<br/>같은 트랜잭션]
+    relay[OutboxRelay<br/>background]
+    transport[IEventTransport]
+    broker[Kafka / RabbitMQ]
+
+    event_bus --> direct --> transport --> broker
+    event_bus --> outbox_bus --> table --> relay --> transport
 ```
 
 `IEventBus`와 `IEventTransport`가 다른 인터페이스이므로 DI 경쟁 없이 `@Primary` 교체로 PnP를 달성합니다.
@@ -1014,13 +1094,20 @@ flow = saga_flow(
 
 ### 에러 계층
 
-```
-AbstractSpakkySagaError (ABC)
-├── SagaFlowDefinitionError
-├── SagaCompensationFailedError
-├── SagaStepTimeoutError
-├── SagaParallelMergeConflictError
-└── SagaEngineNotConnectedError
+```mermaid
+flowchart TD
+    base[AbstractSpakkySagaError<br/>ABC]
+    flow[SagaFlowDefinitionError]
+    compensation[SagaCompensationFailedError]
+    timeout[SagaStepTimeoutError]
+    merge[SagaParallelMergeConflictError]
+    engine[SagaEngineNotConnectedError]
+
+    base --> flow
+    base --> compensation
+    base --> timeout
+    base --> merge
+    base --> engine
 ```
 
 ---

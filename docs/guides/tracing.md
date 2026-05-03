@@ -36,14 +36,16 @@ class CreateOrderUseCase:
 
 분산 트레이싱에서 하나의 요청은 **Trace**로, 각 처리 단계는 **Span**으로 표현됩니다.
 
-```
-[HTTP 요청] trace_id=abc, span_id=001
-  │
-  ├─→ [Event A] trace_id=abc, span_id=002, parent=001
-  │     │
-  │     └─→ [Celery Task] trace_id=abc, span_id=003, parent=002
-  │
-  └─→ [gRPC Call] trace_id=abc, span_id=004, parent=001
+```mermaid
+flowchart TD
+  Http[HTTP 요청<br/>trace_id=abc<br/>span_id=001]
+  EventA[Event A<br/>trace_id=abc<br/>span_id=002<br/>parent=001]
+  CeleryTask[Celery Task<br/>trace_id=abc<br/>span_id=003<br/>parent=002]
+  GrpcCall[gRPC Call<br/>trace_id=abc<br/>span_id=004<br/>parent=001]
+
+  Http --> EventA
+  EventA --> CeleryTask
+  Http --> GrpcCall
 ```
 
 - **trace_id**: 전체 요청 체인에서 동일하게 유지되는 128-bit 식별자

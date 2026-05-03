@@ -1,6 +1,7 @@
 # RabbitMQ 통합
 
-`spakky-rabbitmq`는 `IEventTransport` 인터페이스를 통해 Integration Event를 RabbitMQ로 전송하고, 백그라운드 Consumer로 수신합니다.
+> `spakky-rabbitmq`는 `IEventTransport` 인터페이스를 통해 Integration Event를 RabbitMQ로 전송하고, 백그라운드 Consumer로 수신합니다.
+> 이벤트 클래스 이름을 큐/라우팅 키로 사용하므로 발행자와 소비자가 같은 이벤트 타입 계약을 공유해야 합니다.
 
 ---
 
@@ -100,6 +101,43 @@ class OrderEventHandler:
 ```
 
 큐 이름은 이벤트 클래스의 `__name__`(예: `OrderPlacedEvent`)으로 자동 결정됩니다.
+
+---
+
+## 운영 흐름
+
+발행 경로는 `IAsyncEventPublisher`에서 시작하지만, RabbitMQ transport가 직접 도메인 객체를 직렬화하지는 않습니다. `AsyncDirectEventBus`가 `TypeAdapter(type(event)).dump_json(event)`로 JSON bytes payload를 만들고, `AsyncRabbitMQEventTransport`가 이벤트 이름과 payload를 RabbitMQ에 씁니다. 동기 경로에서는 같은 역할을 `DirectEventBus`와 `RabbitMQEventTransport`가 수행합니다.
+
+```mermaid
+sequenceDiagram
+    participant UseCase
+    participant Publisher as IAsyncEventPublisher
+    participant Bus as AsyncDirectEventBus
+    participant Transport as AsyncRabbitMQEventTransport
+    participant Broker as RabbitMQ
+    participant Consumer as AsyncRabbitMQEventConsumer
+    participant Handler as @EventHandler
+
+    UseCase->>Publisher: publish(OrderPlacedEvent)
+    Publisher->>Bus: send(integration_event)
+    Bus->>Transport: send(event_name, json_payload, trace_headers)
+    Transport->>Broker: publish routing_key=OrderPlacedEvent
+    Consumer->>Broker: consume queue=OrderPlacedEvent
+    Consumer->>Handler: on_order_placed(event)
+```
+
+실무에서는 아래 규칙을 맞춥니다.
+
+| 항목 | 규칙 |
+|------|------|
+| 이벤트 이름 | `AbstractIntegrationEvent.event_name` 값, 기본은 클래스명 |
+| 큐 이름 | 수신 핸들러가 등록한 이벤트 클래스명 |
+| payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
+| headers | `ITracePropagator.inject()`가 넣은 trace header |
+| exchange 없음 | 기본 exchange에 큐 이름 routing key로 발행 |
+| exchange 있음 | configured exchange에 이벤트 이름 routing key로 발행하고 큐를 bind |
+
+`spakky-outbox`를 함께 로드하면 `OutboxEventBus` / `AsyncOutboxEventBus`가 `@Primary`로 기본 bus를 대체합니다. 이 경우 UseCase 안의 `publish()` 호출은 RabbitMQ에 즉시 전송되지 않고 Outbox 테이블에 저장되며, Relay가 나중에 RabbitMQ transport의 `send()`를 호출합니다. 비즈니스 데이터와 메시지 저장을 같은 DB 트랜잭션에 묶어야 하면 Outbox를 사용하세요.
 
 ---
 

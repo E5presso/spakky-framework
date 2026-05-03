@@ -1,8 +1,9 @@
 # Contributing to Spakky Framework
 
-First off, thanks for taking the time to contribute! 🎉
+> Contribution guidance for Spakky Framework and its plugins.
+> Package-level tools run from the package directory because each package owns its own `pyrefly`, `ruff`, and `pytest` configuration.
 
-The following is a set of guidelines for contributing to Spakky Framework and its plugins. These are mostly guidelines, not rules. Use your best judgment, and feel free to propose changes to this document in a pull request.
+First off, thanks for taking the time to contribute! 🎉
 
 ## 🛠 Development Setup
 
@@ -70,6 +71,8 @@ uv run pytest
 uv run pytest --cov --cov-report=html
 ```
 
+Run tests from the target package directory. Do not invoke `uv run pytest` directly from the repository root.
+
 ## 🎨 Coding Standards
 
 ### Pre-commit Hooks
@@ -92,21 +95,21 @@ uv run pre-commit run --all-files --hook-stage pre-push
 
 #### Hook Workflow
 
-```
-git commit
-├── Root: monorepo-pre-commit
-│   └── For each changed sub-project:
-│       ├── trailing-whitespace
-│       ├── check-yaml, check-json
-│       ├── ruff (lint + format)
-│       └── pyrefly (type check)
-└── Root: commitizen (validate commit message)
+```mermaid
+flowchart TD
+    commit[git commit]
+    commit --> precommit[monorepo-pre-commit]
+    commit --> commitizen[commitizen message validation]
+    precommit --> changed[Each changed sub-project]
+    changed --> whitespace[trailing-whitespace]
+    changed --> syntax[check-yaml / check-json]
+    changed --> ruff[ruff lint and format]
+    changed --> pyrefly[pyrefly type check]
 
-git push
-└── Root: monorepo-pre-push-tests
-    └── For each changed sub-project:
-        └── pre-commit --hook-stage pre-push
-            └── pytest (unit tests)
+    push[git push]
+    push --> prepush[monorepo-pre-push-tests]
+    prepush --> subproject[Each changed sub-project]
+    subproject --> pytest[pre-commit --hook-stage pre-push / pytest]
 ```
 
 Each sub-project's `.pre-commit-config.yaml` uses **conditional path handling** to work both from monorepo root and standalone:
@@ -127,12 +130,16 @@ Our pre-commit configuration includes:
 We use **Ruff** for linting and formatting.
 
 ```bash
+cd core/spakky
+
 # Format code
 uv run ruff format
 
 # Lint code
 uv run ruff check --fix
 ```
+
+Run Ruff and pyrefly from the package directory that owns the changed code. The root workspace is for dependency synchronization and orchestration, not direct package checks.
 
 ### Type Hinting
 

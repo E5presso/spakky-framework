@@ -85,20 +85,17 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 
 플러그인 패키지의 표준 구조:
 
-```
-plugins/spakky-example/
-├── pyproject.toml
-├── README.md
-├── CHANGELOG.md
-└── src/
-    └── spakky/
-        └── plugins/
-            └── example/
-                ├── __init__.py
-                ├── main.py              # initialize() 진입점
-                ├── error.py             # 에러 클래스
-                ├── post_processors/     # PostProcessor 구현
-                └── ...
+```mermaid
+flowchart TD
+  Package[plugins/spakky-example] --> Pyproject[pyproject.toml]
+  Package --> Readme[README.md]
+  Package --> Changelog[CHANGELOG.md]
+  Package --> Src[src]
+  Src --> Namespace[spakky/plugins/example]
+  Namespace --> Init[__init__.py]
+  Namespace --> Main[main.py<br/>initialize 진입점]
+  Namespace --> Error[error.py<br/>에러 클래스]
+  Namespace --> PostProcessors[post_processors<br/>PostProcessor 구현]
 ```
 
 ---
@@ -107,16 +104,14 @@ plugins/spakky-example/
 
 ### 1. 패키지 구조 생성
 
-```
-plugins/spakky-myfeature/
-├── pyproject.toml
-├── README.md
-└── src/
-    └── spakky/
-        └── plugins/
-            └── myfeature/
-                ├── __init__.py
-                └── main.py
+```mermaid
+flowchart TD
+  Package[plugins/spakky-myfeature] --> Pyproject[pyproject.toml]
+  Package --> Readme[README.md]
+  Package --> Src[src]
+  Src --> Namespace[spakky/plugins/myfeature]
+  Namespace --> Init[__init__.py]
+  Namespace --> Main[main.py]
 ```
 
 ### 2. pyproject.toml 설정
@@ -319,9 +314,13 @@ dependencies = [
 
 코어 플러그인 의존 체인:
 
-```
-spakky → spakky-domain → spakky-data ──┐
-spakky → spakky-tracing ──────────────────┤→ spakky-event
+```mermaid
+flowchart LR
+  spakky --> domain[spakky-domain]
+  domain --> data[spakky-data]
+  data --> event[spakky-event]
+  spakky --> tracing[spakky-tracing]
+  tracing --> event
 ```
 
 ---
@@ -334,12 +333,12 @@ spakky → spakky-tracing ──────────────────
 import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-import spakky.plugins.myfeature
+import spakky.plugins.celery
 
 @pytest.fixture
 def app():
     app = SpakkyApplication(ApplicationContext())
-    app.load_plugins(include={spakky.plugins.myfeature.PLUGIN_NAME})
+    app.load_plugins(include={spakky.plugins.celery.PLUGIN_NAME})
     app.scan(path="tests.apps")
     app.start()
     yield app

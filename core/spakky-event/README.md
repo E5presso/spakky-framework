@@ -1,6 +1,6 @@
 # Spakky Event
 
-Event handling stereotype for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+> Event handling stereotype for [Spakky Framework](https://github.com/E5presso/spakky-framework).
 
 ## Installation
 
@@ -187,21 +187,16 @@ The in-process event system follows Interface Segregation Principle:
 - **Mediator**: Combines both interfaces in a single implementation
 - **Publisher**: Depends only on Dispatcher (not Consumer)
 
-```
-┌─────────────────┐     ┌─────────────────┐
-│   Publisher     │────▶│   Dispatcher    │
-└─────────────────┘     └────────┬────────┘
-                                 │
-                        ┌────────▼────────┐
-                        │    Mediator     │
-                        │ (Consumer +     │
-                        │  Dispatcher)    │
-                        └────────┬────────┘
-                                 │
-                        ┌────────▼────────┐
-                        │  EventHandler   │
-                        │  @on_event()    │
-                        └─────────────────┘
+```mermaid
+flowchart TD
+    publisher[Publisher]
+    dispatcher[Dispatcher]
+    mediator[Mediator<br/>Consumer + Dispatcher]
+    handler[EventHandler<br/>@on_event]
+
+    publisher --> dispatcher
+    dispatcher --> mediator
+    mediator --> handler
 ```
 
 ## License

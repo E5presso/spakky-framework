@@ -1,6 +1,7 @@
 # Kafka 통합
 
-`spakky-kafka`는 `IEventTransport` 인터페이스를 통해 Integration Event를 Apache Kafka로 전송하고, 백그라운드 Consumer로 수신합니다.
+> `spakky-kafka`는 `IEventTransport` 인터페이스를 통해 Integration Event를 Apache Kafka로 전송하고, 백그라운드 Consumer로 수신합니다.
+> 이벤트 클래스 이름을 Kafka topic으로 사용하므로 발행자와 소비자가 같은 이벤트 타입 계약을 공유해야 합니다.
 
 ---
 
@@ -104,6 +105,43 @@ class OrderEventHandler:
 ```
 
 토픽 이름은 이벤트 클래스의 `__name__`(예: `OrderPlacedEvent`)으로 자동 결정됩니다. 토픽이 존재하지 않으면 `number_of_partitions`와 `replication_factor` 설정값으로 자동 생성합니다.
+
+---
+
+## 운영 흐름
+
+`IAsyncEventPublisher.publish()`는 Integration Event를 `IAsyncEventBus`로 넘기고, `AsyncDirectEventBus`가 이벤트를 JSON bytes로 직렬화한 뒤 `AsyncKafkaEventTransport`에 전달합니다. Kafka transport는 이벤트 이름을 topic으로 사용하고 trace header를 Kafka headers로 보냅니다.
+
+```mermaid
+sequenceDiagram
+    participant UseCase
+    participant Publisher as IAsyncEventPublisher
+    participant Bus as AsyncDirectEventBus
+    participant Transport as AsyncKafkaEventTransport
+    participant Broker as Kafka
+    participant Consumer as AsyncKafkaEventConsumer
+    participant Handler as @EventHandler
+
+    UseCase->>Publisher: publish(OrderPlacedEvent)
+    Publisher->>Bus: send(integration_event)
+    Bus->>Transport: send(event_name, json_payload, trace_headers)
+    Transport->>Broker: produce topic=OrderPlacedEvent
+    Consumer->>Broker: poll topic=OrderPlacedEvent
+    Consumer->>Handler: on_order_placed(event)
+```
+
+운영 시에는 아래 항목을 명시적으로 정합니다.
+
+| 항목 | 규칙 |
+|------|------|
+| topic | `AbstractIntegrationEvent.event_name` 값, 기본은 클래스명 |
+| payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
+| headers | `ITracePropagator.inject()`가 넣은 trace header |
+| consumer group | `SPAKKY_KAFKA__GROUP_ID` |
+| topic 생성 | 없으면 `number_of_partitions`, `replication_factor`로 생성 |
+| offset reset | `SPAKKY_KAFKA__AUTO_OFFSET_RESET` (`earliest`/`latest`/`none`) |
+
+`spakky-outbox`를 함께 로드하면 `OutboxEventBus` / `AsyncOutboxEventBus`가 기본 bus를 대체하므로 이벤트는 Kafka에 즉시 produce되지 않고 Outbox 테이블에 저장됩니다. Relay가 재시도 가능한 방식으로 Kafka transport를 호출하므로, 주문 생성 같은 DB 변경과 Kafka 발행을 원자적으로 묶어야 할 때 기본 선택은 Outbox 조합입니다.
 
 ---
 

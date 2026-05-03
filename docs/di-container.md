@@ -234,12 +234,10 @@ class ServiceB:
 
 순환 참조 발생 시 `CircularDependencyGraphDetectedError`가 발생하며, 의존성 경로를 표시합니다:
 
-```
-Circular dependency graph detected
-Dependency path:
-ServiceA
-  └─> ServiceB
-    └─> ServiceA (CIRCULAR!)
+```mermaid
+flowchart TD
+  ServiceA --> ServiceB
+  ServiceB --> ServiceAAgain[ServiceA<br/>CIRCULAR]
 ```
 
 ### 해결 방법
@@ -409,5 +407,4 @@ service = context.get(UserService)
 # 종료 - 서비스 정지, 리소스 정리
 context.stop()
 ```
-
 

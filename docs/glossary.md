@@ -498,6 +498,115 @@ LogContext.bind(request_id="abc-123")
 
 ---
 
+## 보안 유틸리티 (spakky-security)
+
+### JWT
+
+JSON Web Token 생성, 파싱, HMAC 서명 검증을 담당하는 유틸리티 객체. 기본 헤더는 `typ=JWT`, `alg=HS256`이며 `set_payload()`, `set_expiration()`, `sign()`, `verify()`, `export()`로 클레임, 만료, 서명, 검증 생명주기를 다룹니다.
+
+```python
+from datetime import timedelta
+
+from spakky.plugins.security.jwt import JWT
+from spakky.plugins.security.key import Key
+
+token = JWT().set_payload(user_id="user-123").set_expiration(timedelta(hours=1))
+token.sign(Key(size=32))
+token_string = token.export()
+```
+
+### HMAC
+
+공유 `Key`로 문자열을 서명하고 검증하는 유틸리티. `HMACType`은 `HS224`, `HS256`, `HS384`, `HS512` 알고리즘을 표현합니다.
+
+```python
+from spakky.plugins.security.hmac_signer import HMAC, HMACType
+from spakky.plugins.security.key import Key
+
+key = Key(size=32)
+signature = HMAC.sign_text(key, HMACType.HS256, "message")
+is_valid = HMAC.verify(key, HMACType.HS256, "message", signature)
+```
+
+### Password Encoder
+
+패스워드 해시를 생성하고 입력 패스워드를 검증하는 인코더 계열. `Argon2PasswordEncoder`, `BcryptPasswordEncoder`, `ScryptPasswordEncoder`, `Pbkdf2PasswordEncoder`가 `encode()`와 `challenge(password)` 계약을 제공합니다.
+
+```python
+from spakky.plugins.security.password.argon2 import Argon2PasswordEncoder
+
+hashed = Argon2PasswordEncoder(password="secret").encode()
+is_valid = Argon2PasswordEncoder(password_hash=hashed).challenge("secret")
+```
+
+---
+
+## CLI 통합 (spakky-typer)
+
+### @CliController
+
+Typer 하위 명령 그룹으로 등록되는 CLI 컨트롤러 스테레오타입. `group_name`을 생략하면 클래스명을 kebab-case로 변환한 그룹명이 사용됩니다.
+
+```python
+from spakky.plugins.typer.stereotypes.cli_controller import CliController
+
+@CliController("users")
+class UserCliController:
+    ...
+```
+
+### @command
+
+`@CliController` 메서드를 Typer 명령으로 표시하는 데코레이터. `name`, `help`, `short_help`, `hidden`, `deprecated` 등 Typer 명령 옵션을 보존하고 `TyperCLIPostProcessor`가 컨테이너 초기화 중 등록합니다.
+
+```python
+from spakky.plugins.typer.stereotypes.cli_controller import command
+
+@command("create")
+def create_user(self, name: str, email: str) -> None:
+    ...
+```
+
+### TyperCLIPostProcessor
+
+`@CliController` Pod에서 `@command` 메서드를 스캔해 `Typer` 앱에 하위 명령 그룹을 추가하는 후처리기. 명령 실행 시 컨텍스트 스코프를 비우고 컨테이너에서 컨트롤러 인스턴스를 다시 조회합니다.
+
+---
+
+## Celery 통합 (spakky-celery)
+
+### Celery Task Dispatch
+
+`@task` 메서드 호출을 AOP로 가로채 Celery `send_task()` 호출로 변환하는 디스패치 패턴. 워커 컨텍스트 내부에서는 재디스패치하지 않고 원래 메서드를 직접 실행합니다.
+
+```python
+from spakky.task.stereotype.task_handler import TaskHandler, task
+
+@TaskHandler()
+class EmailTaskHandler:
+    @task
+    def send_email(self, to: str) -> None: ...
+```
+
+### CeleryTaskResult
+
+Celery의 `AsyncResult`를 `spakky-task`의 태스크 결과 계약에 맞게 감싸는 결과 객체. 디스패치된 태스크의 `task_id`, 블로킹 `get()`, 비동기 `get_async()` 조회를 제공합니다.
+
+### Celery Beat Schedule
+
+`@schedule` 메서드를 Celery Beat `beat_schedule` 항목으로 등록하는 스케줄 통합. `interval`, `at`, `Crontab` 라우트를 Celery schedule 또는 crontab 객체로 변환합니다.
+
+```python
+from datetime import timedelta
+
+from spakky.task.stereotype.schedule import schedule
+
+@schedule(interval=timedelta(minutes=30))
+def health_check(self) -> None: ...
+```
+
+---
+
 ## 사가 시스템 (spakky-saga)
 
 ### @Saga

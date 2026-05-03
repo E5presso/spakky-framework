@@ -1,6 +1,7 @@
 # gRPC 통합
 
-`spakky-grpc`는 code-first 방식의 gRPC 서비스 통합을 제공합니다. pydantic `BaseModel`에서 protobuf descriptor를 자동 생성하며, `@GrpcController`와 `@rpc` 데코레이터로 선언적으로 gRPC 서비스를 정의합니다. protobuf ↔ `BaseModel` 변환은 `google.protobuf.json_format` 브릿지(JSON 중간 표현)로 수행되므로 런타임 동적 속성 접근 없이 타입-안전하게 유지됩니다.
+> `spakky-grpc`는 code-first 방식의 gRPC 서비스 통합을 제공합니다.
+> pydantic `BaseModel`에서 protobuf descriptor를 자동 생성하며, `@GrpcController`와 `@rpc` 데코레이터로 선언적으로 gRPC 서비스를 정의합니다.
 
 ---
 
@@ -195,6 +196,111 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 | `UnsupportedFieldTypeError` | 지원하지 않는 protobuf 필드 타입 |
 | `MissingProtoFieldAnnotationError` | `ProtoField` 어노테이션 누락 |
 | `DescriptorAlreadyRegisteredError` | 이미 등록된 descriptor 재등록 시도 |
+
+---
+
+## gRPC Controller에서 Saga 호출
+
+gRPC Controller도 다른 Controller와 동일하게 Saga Pod를 생성자 주입으로 받습니다. `AbstractSaga.execute(data)`는 `SagaResult[T]`를 반환하므로, RPC 메서드에서는 `SagaStatus`를 보고 응답 메시지 또는 `AbstractGrpcStatusError` 서브클래스로 분기합니다. `ErrorHandlingInterceptor`가 이 에러를 잡아 선언된 gRPC `StatusCode`로 변환합니다.
+
+```python
+from typing import Annotated
+from uuid import UUID
+
+from pydantic import BaseModel
+from spakky.core.common.error import AbstractSpakkyFrameworkError
+from spakky.plugins.grpc.annotations.field import ProtoField
+from spakky.plugins.grpc.decorators.rpc import rpc
+from spakky.plugins.grpc.error import (
+    AbstractGrpcStatusError,
+    FailedPrecondition,
+    InternalError,
+    InvalidArgument,
+    Unavailable,
+)
+from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
+from spakky.saga import SagaStatus
+
+
+class CreateOrderRequest(BaseModel):
+    customer_id: Annotated[str, ProtoField(number=1)]
+    total_amount: Annotated[float, ProtoField(number=2)]
+
+
+class CreateOrderReply(BaseModel):
+    order_id: Annotated[str, ProtoField(number=1)]
+    status: Annotated[str, ProtoField(number=2)]
+
+
+class OrderBusinessRuleViolation(AbstractSpakkyFrameworkError):
+    """Application error raised by an expected order-domain rule."""
+
+    message = "Order cannot be created in the current state"
+
+
+class OrderDependencyUnavailable(AbstractSpakkyFrameworkError):
+    """Application error raised when inventory/payment dependencies fail."""
+
+    message = "Order dependency is unavailable"
+
+
+def map_saga_failure(error: Exception | None) -> AbstractGrpcStatusError:
+    if isinstance(error, OrderBusinessRuleViolation):
+        return FailedPrecondition()
+    if isinstance(error, OrderDependencyUnavailable):
+        return Unavailable()
+    return InternalError()
+
+
+def require_created_order_id(data: OrderSagaData) -> UUID:
+    if data.order_id is None:
+        raise InternalError()
+    return data.order_id
+
+
+@GrpcController(package="example.order", service_name="OrderService")
+class OrderGrpcController:
+    def __init__(self, order_saga: OrderSaga) -> None:
+        self._order_saga = order_saga
+
+    @rpc()
+    async def create_order(self, request: CreateOrderRequest) -> CreateOrderReply:
+        try:
+            customer_id = UUID(request.customer_id)
+        except ValueError as error:
+            raise InvalidArgument() from error
+
+        result = await self._order_saga.execute(
+            OrderSagaData(
+                customer_id=customer_id,
+                total_amount=request.total_amount,
+            )
+        )
+
+        match result.status:
+            case SagaStatus.COMPLETED:
+                return CreateOrderReply(
+                    order_id=str(require_created_order_id(result.data)),
+                    status=result.status.value,
+                )
+            case SagaStatus.FAILED:
+                raise map_saga_failure(result.error)
+            case SagaStatus.TIMED_OUT:
+                raise Unavailable()
+            case _:
+                raise InternalError()
+```
+
+상태 매핑은 서비스 계약에 맞게 고정합니다.
+
+| `SagaStatus` | gRPC 에러 | 의미 |
+|--------------|-----------|------|
+| `COMPLETED` | 정상 응답 | 모든 step이 성공했고 최종 `SagaData`로 응답 생성 |
+| `FAILED` | 분류 후 매핑 | `result.error`가 기대된 도메인 실패이면 `FailedPrecondition`, 외부 의존성 장애이면 `Unavailable`, 그 외는 `InternalError` |
+| `TIMED_OUT` | `Unavailable` | 외부 결제·재고 등 일시 장애로 재시도 가능한 실패 |
+| 그 외 | `InternalError` | `execute()` 반환 시점에 관찰되면 안 되는 내부 상태 |
+
+`SagaStatus.FAILED`는 step에서 발생한 임의의 예외를 `result.error`에 담을 수 있으므로, 모든 실패를 `FailedPrecondition`으로 취급하지 않습니다. `InvalidArgument`, `NotFound`, `AlreadyExists` 같은 더 구체적인 에러를 쓰려면 Saga step 내부의 UseCase가 반환하거나 발생시킨 애플리케이션 에러를 Controller 경계에서 분류한 뒤 해당 `AbstractGrpcStatusError` 서브클래스를 raise합니다. 이 에러 클래스들은 `plugins/spakky-grpc/src/spakky/plugins/grpc/error.py`에 정의되어 있으며, 인터셉터는 `error.message`를 gRPC detail로 사용합니다.
 
 ---
 
