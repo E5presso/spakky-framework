@@ -1,6 +1,7 @@
 """Tests for cache plugin initialization."""
 
 from spakky.cache.backends.memory import InMemoryCache
+from spakky.cache.aspects.cache_aspect import AsyncCacheAspect, CacheAspect
 from spakky.cache.main import initialize
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -14,3 +15,5 @@ def test_initialize_expect_registers_cache_backend() -> None:
 
     pod_types = {pod.type_ for pod in app.container.pods.values()}
     assert InMemoryCache in pod_types
+    assert CacheAspect in pod_types
+    assert AsyncCacheAspect in pod_types
