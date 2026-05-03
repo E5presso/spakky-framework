@@ -6,9 +6,12 @@
 
 > **`--auto-merge` 모드**: 사용자가 사전 승인한 것으로 간주. `AskUserQuestion`을 호출하지 않고 PR 상태(번호, URL, CI 결과, review bot HEAD 평가 완료)를 간단히 알린 뒤 즉시 Phase 8로 진행하여 squash merge를 수행한다. `--overnight`와 동시 지정 시 `--auto-merge`가 우선한다.
 
+> **autopilot 하위 실행**: `/autopilot` 호출 자체가 clean PR squash merge 사전 승인이다. `--auto-merge`가 명시되지 않았더라도 `AskUserQuestion`/`ask-delegate`를 호출하지 않고 즉시 Phase 8로 진행한다. `.process-state.json`의 `phase7_ready`에서 재개한 경우도 동일하다.
+
 PR이 병합 가능 상태가 되면:
 
-1. **포그라운드 채팅**으로 PR 상태를 알리고 병합 승인을 받는다 — sub-agent로 실행 중이면 SKILL.md "사용자 질의 위임" 절의 `ask-delegate`로 메인에 위임 (`phase: Phase 7`, `trigger: merge-approval`), 사용자 직접 호출이면 아래 `AskUserQuestion` 직접:
+1. `--auto-merge` 또는 autopilot 하위 실행이면 Phase 8로 즉시 진행한다. 병합 승인 질의를 생성하지 않는다.
+2. 기본 직접 호출이면 **포그라운드 채팅**으로 PR 상태를 알리고 병합 승인을 받는다 — sub-agent로 실행 중이면 SKILL.md "사용자 질의 위임" 절의 `ask-delegate`로 메인에 위임 (`phase: Phase 7`, `trigger: merge-approval`), 사용자 직접 호출이면 아래 `AskUserQuestion` 직접:
    ```yaml
    question: "PR #{PR_NUMBER} 병합 준비 완료 (CI 통과 + GitHub mergeable). 어떻게 할까요?"
    header: "병합"
@@ -20,5 +23,5 @@ PR이 병합 가능 상태가 되면:
      - label: "모니터링 계속"
        description: "Phase 6 모니터링 루프로 복귀합니다"
    ```
-2. "보류" 선택 시 Phase 8을 건너뛰고 작업을 종료한다.
-3. "모니터링 계속" 선택 시 Phase 6 모니터링 루프로 복귀한다.
+3. "보류" 선택 시 Phase 8을 건너뛰고 작업을 종료한다.
+4. "모니터링 계속" 선택 시 Phase 6 모니터링 루프로 복귀한다.

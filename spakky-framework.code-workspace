@@ -41,6 +41,14 @@
 			"path": "core/spakky-saga",
 		},
 		{
+			"name": "core.actuator",
+			"path": "core/spakky-actuator",
+		},
+		{
+			"name": "core.cache",
+			"path": "core/spakky-cache",
+		},
+		{
 			"name": "plugins.logging",
 			"path": "plugins/spakky-logging",
 		},

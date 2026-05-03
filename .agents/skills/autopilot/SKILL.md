@@ -9,6 +9,15 @@ user-invocable: true
 
 `/process-ticket`을 단일 티켓 단위로 호출하는 대신, **마일스톤 또는 부모 이슈의 자식 티켓 전체**를 DAG wave-loop로 병렬 자동 처리한다. 후속 티켓이 발생하면 즉시 spawn, 자기 운영 결함은 자동 감지하여 별도 fix wave로 처리.
 
+## 자동 병합 권한
+
+`/autopilot` 호출 자체는 해당 마일스톤/부모/명시 티켓 집합의 clean PR에 대한 **사전 squash merge 승인**이다. Autopilot 메인은 티켓별 Phase 7 병합 승인 질문을 사용자에게 띄우지 않는다.
+
+- wave spawn은 항상 `/process-ticket {T} --auto-merge`로 진입한다.
+- PR이 `mergeStateStatus in (CLEAN, UNSTABLE)`이고 required checks/review bot HEAD 평가가 완료되면 process-ticket은 Phase 8로 즉시 진행한다.
+- sub-agent가 실수로 `phase7_ready` 또는 `status: blocked`/`merge approval required` 형태로 반환하면 autopilot은 사용자에게 묻지 않고 resume sub-agent를 `--auto-merge`로 재기동한다. 같은 이슈에서 2회 반복되면 S1/S2 메타-감지로 하네스 fix 티켓을 생성한다.
+- 사용자 질의는 스펙-코드 충돌, 외부 destructive action, 사람 리뷰 코멘트에 대한 제품 결정처럼 charter 질의 트리거가 있는 경우에만 가능하다. clean PR 병합 자체는 autopilot에서 질의 트리거가 아니다.
+
 ## 사용법
 
 ```bash
@@ -59,7 +68,7 @@ for wave_idx, wave in enumerate(waves):
     skip = read_skip_set()  # 실패 전파로 skip된 티켓
     spawn_targets = [t for t in wave if t not in skip]
 
-    # 3-2. 병렬 spawn (단일 메시지의 다중 Agent tool_use)
+    # 3-2. 병렬 spawn (단일 메시지의 다중 Agent tool_use, /process-ticket --auto-merge)
     results = spawn_parallel(spawn_targets, run_in_background=True)
 
     # 3-3. 반환 대기 + 즉시 spawn (recursively)
@@ -82,6 +91,7 @@ for wave_idx, wave in enumerate(waves):
 | 시그널 | 모순 정의 |
 |-------|---------|
 | monitor-stuck | PR mergeable + CI green인데 process-ticket이 Phase 7 진입 안 함 |
+| merge-gate-stuck | autopilot 하위 process-ticket이 clean PR에서 병합 승인을 사용자에게 요청하거나 `phase7_ready` 상태로 반환 |
 | state 부재 | 워크트리에 `.process-state.json` 없음 |
 | state 역행 | phase 키 역행 (Phase 6 → Phase 4) |
 | 동일 파일 mutation | 다른 워크트리들이 같은 파일을 동시 수정 |
@@ -117,6 +127,7 @@ while M != ∅:
 | S4 state 부재/역행 | (3-3-bis 항목) |
 | S5 consumer 미감지 | EVENT 발생인데 phase 전이 부재 |
 | S6 외부 봇 위반 누적 | 같은 카테고리 위반 3회+ ledger |
+| S7 merge-gate-stuck | autopilot 하위 clean PR이 사용자 병합 승인 대기로 반환 |
 
 매치 시 **자동 harness fix 티켓 생성** (`gh issue create`) → `meta_queue` 별도 wave로 처리.
 
@@ -150,6 +161,7 @@ meta_queue 처리: {M}개
 
 - **단일 티켓은 `/process-ticket` 사용.** Autopilot은 마일스톤·부모 단위만.
 - **wave 내 spawn은 단일 메시지의 다중 Agent tool_use.** 순차 spawn 금지 (메인 turn 점유 방지).
+- **autopilot은 병합 승인 질문 금지.** `/autopilot` 호출이 clean PR squash merge 사전 승인이다. 하위 티켓은 `/process-ticket --auto-merge`로만 처리한다.
 - **wall-clock timeout 절대 금지.** Stuck 감지는 논리적 모순 기반만.
 - **후속 티켓 즉시 spawn 의무.** Phase 3-3-quinque 건너뛰기 금지.
 - **Phase 3.6 meta-detection 시그널 매치 시 자동 harness fix 티켓 생성.** 사용자 보고 + meta_queue 처리.
