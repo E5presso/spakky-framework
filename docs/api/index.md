@@ -15,7 +15,7 @@
 - [spakky-outbox](core/spakky-outbox.md) — Outbox 패턴
 - [spakky-saga](core/spakky-saga.md) — 사가 오케스트레이션
 - [spakky-actuator](core/spakky-actuator.md) — Actuator 상태/정보 계약
-- [spakky-cache](core/spakky-cache.md) — 애플리케이션 데이터 캐시 계약
+- [spakky-cache](core/spakky-cache.md) — 애플리케이션 데이터 캐시 계약과 AOP annotation
 
 ## Plugins
 

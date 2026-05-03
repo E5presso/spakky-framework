@@ -15,3 +15,9 @@ class InvalidCacheTTLError(AbstractSpakkyCacheError):
     """Raised when a cache entry is written with an invalid TTL."""
 
     message = "Cache TTL must be positive"
+
+
+class CacheKeyGenerationError(AbstractSpakkyCacheError):
+    """Raised when a cache annotation cannot produce a deterministic key."""
+
+    message = "Cache key generation failed"

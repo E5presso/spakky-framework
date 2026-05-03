@@ -2,6 +2,18 @@
 
 Application data cache contract and in-memory backend.
 
+## Annotations
+
+::: spakky.cache.annotation
+    options:
+      show_root_heading: false
+
+## AOP Aspects
+
+::: spakky.cache.aspects.cache_aspect
+    options:
+      show_root_heading: false
+
 ## Result Contracts
 
 ::: spakky.cache.result
