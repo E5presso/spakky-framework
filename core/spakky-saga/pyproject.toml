@@ -1,12 +1,12 @@
 [project]
 name = "spakky-saga"
-version = "6.3.1"
+version = "6.4.0"
 description = "Distributed transaction saga orchestration for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.3.1", "spakky-domain>=6.3.1"]
+dependencies = ["spakky>=6.4.0", "spakky-domain>=6.4.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-saga = "spakky.saga.main:initialize"

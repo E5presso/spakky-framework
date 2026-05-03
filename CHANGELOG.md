@@ -1,3 +1,70 @@
+## v6.4.0 (2026-05-03)
+
+### Feat
+
+- **plugins**: add Redis plugin to workspace configuration
+- **autopilot**: add auto-merge functionality and enhance user query handling
+- **redis**: add Redis cache backend plugin (#170)
+- **cache**: add cache annotation aspects (#169)
+- **cache**: add in-memory cache core (#153) (#168)
+- **fastapi**: add actuator HTTP endpoints (#149)
+- **typer**: add actuator CLI commands (#152)
+- **actuator**: add core aggregation contracts (#156)
+- add portable agent harness plugin with templates and installer
+- **monitor-pr**: 외부 리뷰 봇 평가 완료 조건 추가 및 문서 수정
+- **core**: add discovery manifest scan reuse (#145) (#160)
+- 외부 리뷰 봇 지원 및 리뷰 가이드라인 추가
+- **core**: instrument startup diagnostics pipeline (#159)
+- **core**: add DI dependency diagnostics (#146) (#158)
+- **spakky**: add startup diagnostics contract
+- Make RabbitMQ queues durable in event consumers and transports
+- Update skills and documentation structure
+- add /audit-codebase skill for multi-expert parallel codebase audit
+- README.md에 spakky-saga, spakky-grpc, spakky-logging, spakky-opentelemetry 패키지 추가
+- **saga**: DI 통합, 구조화 로그, 최종 내보내기 (#94) (#114)
+- **grpc**: 통합 테스트 + 버그 수정 + 사용자 문서 (#87) (#113)
+- **saga**: retry, skip, parallel, and timeout (#93) (#112)
+- add refactor-code skill for automated harness violation audit
+- **grpc**: implement PostProcessors for dynamic service registration (#86) (#107)
+- **saga**: implement saga execution engine with sequential execution & compensation (#92) (#106)
+- **saga**: implement flow builder API (saga_flow, step, parallel) (#102)
+- **saga**: add @Saga() stereotype & AbstractSaga base class (#103)
+- **grpc**: add type mapping engine (#85) (#105)
+- **grpc**: add error hierarchy and gRPC interceptors (#84) (#104)
+- **saga**: define type system and domain models (#101)
+- **grpc**: scaffold spakky-grpc package with @GrpcController, @rpc and ProtoField (#83) (#97)
+- **saga**: scaffold spakky-saga package with error hierarchy (#96)
+- add ADR-0007 for spakky-saga — 분산 트랜잭션 사가 오케스트레이션 코어 패키지
+
+### Fix
+
+- validate plugin extras metadata
+- enforce harness rules in pre-commit
+- enforce explicit ABC interfaces
+- **harness**: ignore informational Codecov monitor comments (#163)
+- update monitoring and merging logic in process-ticket and related scripts
+- python-version을 3.14에서 3.11로 변경 및 pyproject.toml에 새로운 패키지 추가
+- **sqlalchemy**: add typed wrapper helpers to resolve cross-package TypeVar bad-return errors
+- add missing name field to monitor-pr skill definition
+
+### Refactor
+
+- enforce harness rules across packages
+- Update SKILL.md files to reference Codex standard locations
+- Refactor documentation references from CLAUDE.md to AGENTS.md across multiple skills and phases
+- Refactor skills to use Claude Wrapper and update documentation
+- **harness**: evaluate-harness 본분 명시 + git 자율 실행 제약 제거 (#142)
+- **settings**: enhance hooks for session management and tool usage
+- **grpc**: migrate DTO layer to pydantic BaseModel + json_format bridge (#133)
+- **grpc**: rewrite PostProcessor unit tests as behavior-based (#132)
+- **domain**: IAsync*UseCase.run을 Awaitable 반환 시그니처로 정정 (#131)
+- **sqlalchemy**: SchemaRegistry 메서드 TypeVar를 AggregateRootT bound로 정교화 (#130)
+- enforce harness rules in domain/event/plugins
+- enforce harness rules across plugins
+- make aggregate id typing invariant
+- enforce harness rules across core packages
+- enforce harness rules across all packages
+
 ## v6.3.1 (2026-04-04)
 
 ### Fix

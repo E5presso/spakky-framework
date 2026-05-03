@@ -1,12 +1,12 @@
 [project]
 name = "spakky-cache"
-version = "6.3.1"
+version = "6.4.0"
 description = "Backend-neutral cache contracts and in-memory backend for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.3.1", "typing-extensions>=4.15.0"]
+dependencies = ["spakky>=6.4.0", "typing-extensions>=4.15.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-cache = "spakky.cache.main:initialize"

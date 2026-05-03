@@ -1,6 +1,6 @@
 [project]
 name = "spakky-redis"
-version = "6.3.1"
+version = "6.4.0"
 description = "Redis cache backend plugin for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "pydantic-settings>=2.13.1",
     "redis>=7.1.0",
-    "spakky-cache>=6.3.1",
+    "spakky-cache>=6.4.0",
 ]
 
 [project.entry-points."spakky.plugins"]
