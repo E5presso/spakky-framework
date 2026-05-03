@@ -21,6 +21,7 @@ pip install spakky[fastapi]
 - **OpenAPI integration**: Tags and documentation automatically configured
 - **Error handling middleware**: Built-in exception handling with debug mode
 - **Context management**: Request-scoped dependency injection support
+- **Actuator endpoints**: Optional `/actuator/*` HTTP endpoints when `spakky-actuator` is loaded
 
 ## Usage
 
@@ -114,6 +115,32 @@ def test_get_user(application: SpakkyApplication) -> None:
 - 헤더가 없으면 새로운 루트 트레이스를 시작합니다
 - 요청 완료 후 `TraceContext`를 자동으로 정리합니다
 
+## Actuator Endpoints
+
+`spakky-actuator` 플러그인을 함께 로드하면 FastAPI 앱에 표준 actuator route가 등록됩니다.
+
+| Endpoint | Success | Unhealthy |
+|----------|---------|-----------|
+| `GET /actuator/health` | `200 OK` | `503 Service Unavailable` |
+| `GET /actuator/readiness` | `200 OK` | `503 Service Unavailable` |
+| `GET /actuator/liveness` | `200 OK` | `503 Service Unavailable` |
+| `GET /actuator/info` | `200 OK` | N/A |
+
+Endpoint exposure and base path are configured with `FastAPIActuatorConfig`.
+Component detail exposure is controlled by `spakky.actuator.ActuatorConfig`.
+
+```python
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
+
+@Pod()
+def fastapi_actuator_config() -> FastAPIActuatorConfig:
+    return FastAPIActuatorConfig(
+        base_path="/internal/actuator",
+        readiness_enabled=False,
+    )
+```
+
 ## Components
 
 | Component | Description |
@@ -123,6 +150,8 @@ def test_get_user(application: SpakkyApplication) -> None:
 | `websocket` | WebSocket endpoint decorator |
 | `ErrorHandlingMiddleware` | Built-in exception handling middleware |
 | `TracingMiddleware` | Trace context propagation middleware (`spakky-tracing` 필수 의존) |
+| `FastAPIActuatorConfig` | FastAPI actuator endpoint exposure configuration |
+| `RegisterActuatorPostProcessor` | Automatic actuator endpoint registration post-processor |
 | `RegisterRoutesPostProcessor` | Automatic route registration post-processor |
 
 ## Configuration
