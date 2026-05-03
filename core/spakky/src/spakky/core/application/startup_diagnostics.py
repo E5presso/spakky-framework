@@ -116,6 +116,9 @@ class StartupPhaseRecord:
     failure_summary: StartupFailureSummary | None = None
     """Failure summary when status is failure; absent for success records."""
 
+    diagnostic_details: StartupDiagnosticDetails = ()
+    """Structured diagnostic details attached to the phase record."""
+
     def __post_init__(self) -> None:
         """Validate phase record numeric invariants."""
         if self.elapsed_seconds < 0:
@@ -173,6 +176,7 @@ class IStartupPhaseRecorder(ABC):
         phase_name: StartupPhaseName,
         elapsed_seconds: StartupElapsedSeconds,
         processed_count: StartupProcessedCount = 0,
+        diagnostic_details: StartupDiagnosticDetails = (),
     ) -> StartupPhaseRecord:
         """Record a successful startup phase."""
         ...
@@ -255,6 +259,7 @@ class StartupPhaseRecording:
                 phase_name=self._phase_name,
                 elapsed_seconds=elapsed_seconds,
                 processed_count=self._processed_count,
+                diagnostic_details=self._diagnostic_details,
             )
         else:
             self._recorder.record_failure(
@@ -275,6 +280,17 @@ class StartupPhaseRecording:
         if processed_count < 0:
             raise StartupProcessedCountCannotBeNegativeError()
         self._processed_count = processed_count
+
+    def set_diagnostic_details(
+        self,
+        diagnostic_details: StartupDiagnosticDetails,
+    ) -> None:
+        """Set structured diagnostic details before the phase exits.
+
+        Args:
+            diagnostic_details: Structured diagnostic details to attach.
+        """
+        self._diagnostic_details = diagnostic_details
 
 
 class ActiveStartupPhaseRecorder(IStartupPhaseRecorder):
@@ -303,6 +319,7 @@ class ActiveStartupPhaseRecorder(IStartupPhaseRecorder):
         phase_name: StartupPhaseName,
         elapsed_seconds: StartupElapsedSeconds,
         processed_count: StartupProcessedCount = 0,
+        diagnostic_details: StartupDiagnosticDetails = (),
     ) -> StartupPhaseRecord:
         """Record a successful startup phase."""
         record = StartupPhaseRecord(
@@ -310,6 +327,7 @@ class ActiveStartupPhaseRecorder(IStartupPhaseRecorder):
             elapsed_seconds=elapsed_seconds,
             processed_count=processed_count,
             status=StartupPhaseStatus.SUCCESS,
+            diagnostic_details=diagnostic_details,
         )
         self._report.add_record(record)
         return record
@@ -333,6 +351,7 @@ class ActiveStartupPhaseRecorder(IStartupPhaseRecorder):
                 exception,
                 diagnostic_details,
             ),
+            diagnostic_details=diagnostic_details,
         )
         self._report.add_record(record)
         return record
@@ -359,6 +378,7 @@ class NoOpStartupPhaseRecorder(IStartupPhaseRecorder):
         phase_name: StartupPhaseName,
         elapsed_seconds: StartupElapsedSeconds,
         processed_count: StartupProcessedCount = 0,
+        diagnostic_details: StartupDiagnosticDetails = (),
     ) -> StartupPhaseRecord:
         """Create a success record without mutating the report."""
         return StartupPhaseRecord(
@@ -366,6 +386,7 @@ class NoOpStartupPhaseRecorder(IStartupPhaseRecorder):
             elapsed_seconds=elapsed_seconds,
             processed_count=processed_count,
             status=StartupPhaseStatus.SUCCESS,
+            diagnostic_details=diagnostic_details,
         )
 
     @override
@@ -387,4 +408,5 @@ class NoOpStartupPhaseRecorder(IStartupPhaseRecorder):
                 exception,
                 diagnostic_details,
             ),
+            diagnostic_details=diagnostic_details,
         )

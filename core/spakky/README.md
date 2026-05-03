@@ -67,6 +67,34 @@ user_service = app.container.get(UserService)
 
 > **📘 Auto-scan**: When `scan()` is called without arguments, it automatically detects the caller's package and scans it. This also works in Docker environments where the application root may not be in `sys.path` - the framework automatically adds the necessary path.
 
+### Discovery Manifest
+
+Scan discovery manifest reuse is opt-in and does not replace container caches.
+Enable it before `scan()` to persist discovered Pod/Tag candidates and reuse
+them when the scan target, exclude patterns, Python version, schema version, and
+source file mtimes/sizes are unchanged:
+
+```python
+from pathlib import Path
+
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .enable_startup_diagnostics()
+    .enable_discovery_manifest(Path(".spakky/cache/discovery-manifest.json"))
+    .scan(my_app)
+)
+
+scan_record = app.startup_report.records[0]
+decision = scan_record.diagnostic_details[0].value  # miss, hit, stale_schema, stale_input
+```
+
+If no path is provided, Spakky uses the deterministic project-local cache path
+`.spakky/cache/discovery-manifest.json`. Missing, stale, or malformed manifests
+fall back to fresh discovery and record the decision in startup diagnostics.
+
 ### Startup Diagnostics
 
 Startup diagnostics are opt-in. The default recorder is no-op, so existing
@@ -93,9 +121,9 @@ first_phase = report.records[0]
 ```
 
 `StartupReport` stores each startup phase name, elapsed seconds, processed
-count, success/failure status, and an optional structured failure summary.
-Failure summaries keep the exception type name, message, and diagnostic
-details without retaining the raw exception object.
+count, success/failure status, optional diagnostic details, and an optional
+structured failure summary. Failure summaries keep the exception type name,
+message, and diagnostic details without retaining the raw exception object.
 
 DI dependency failures preserve their existing exception types while attaching
 structured dependency diagnostics from `Pod.dependencies`, including the failed

@@ -6,7 +6,7 @@ from fnmatch import fnmatch
 from logging import getLogger
 from pathlib import Path
 from types import FunctionType, ModuleType
-from typing import Any, Callable, TypeAlias
+from typing import Callable, TypeAlias
 
 from spakky.core.common.constants import PATH
 from spakky.core.common.error import AbstractSpakkyFrameworkError
@@ -216,8 +216,8 @@ def list_functions(
 
 
 def list_objects(
-    module: ModuleType, selector: Callable[[Any], bool] | None = None
-) -> set[FunctionType]:
+    module: ModuleType, selector: Callable[[object], bool] | None = None
+) -> set[type | FunctionType]:
     """List all classes and functions in a module, optionally filtered by a selector.
 
     Args:

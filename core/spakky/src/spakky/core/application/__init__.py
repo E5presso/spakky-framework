@@ -1,3 +1,16 @@
+from spakky.core.application.discovery_manifest import (
+    DISCOVERY_MANIFEST_DETAIL_KEY,
+    DISCOVERY_MANIFEST_SCHEMA_VERSION,
+    DEFAULT_DISCOVERY_MANIFEST_PATH,
+    DiscoveryManifest,
+    DiscoveryManifestCandidate,
+    DiscoveryManifestDecision,
+    DiscoveryManifestFingerprint,
+    DiscoveryManifestLoadResult,
+    DiscoveryManifestSourceFingerprint,
+    DiscoveryManifestStore,
+    default_discovery_manifest_path,
+)
 from spakky.core.application.startup_diagnostics import (
     ActiveStartupPhaseRecorder,
     IStartupPhaseRecorder,
@@ -15,7 +28,17 @@ from spakky.core.application.startup_diagnostics import (
 )
 
 __all__ = [
+    "DEFAULT_DISCOVERY_MANIFEST_PATH",
+    "DISCOVERY_MANIFEST_DETAIL_KEY",
+    "DISCOVERY_MANIFEST_SCHEMA_VERSION",
     "ActiveStartupPhaseRecorder",
+    "DiscoveryManifest",
+    "DiscoveryManifestCandidate",
+    "DiscoveryManifestDecision",
+    "DiscoveryManifestFingerprint",
+    "DiscoveryManifestLoadResult",
+    "DiscoveryManifestSourceFingerprint",
+    "DiscoveryManifestStore",
     "IStartupPhaseRecorder",
     "NoOpStartupPhaseRecorder",
     "StartupDiagnosticDetail",
@@ -28,4 +51,5 @@ __all__ = [
     "StartupPhaseStatus",
     "StartupProcessedCountCannotBeNegativeError",
     "StartupReport",
+    "default_discovery_manifest_path",
 ]
