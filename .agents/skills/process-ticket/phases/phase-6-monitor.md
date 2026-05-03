@@ -2,9 +2,9 @@
 
 > **Phase 진입 ping** (sub-agent 한정): monitor 첫 호출 직전 1회 SendMessage(to: "team-lead", message: `phase: Phase 6 monitor | issue: <N> | monitor armed`). SKILL.md "Phase 전환 progress ping" SSOT. 본 ping은 §"절대 명령"의 "백그라운드 후 turn 종료" 안티패턴과 별개 — ping 송신은 단방향이며 즉시 monitor 포그라운드 호출로 진입한다.
 
-> **절대 명령 (서브에이전트 본인 책무).** 너는(이 phase를 실행하는 서브에이전트) 자기 turn 안에서 직접 `monitor-pr` 스킬(또는 그 안의 watch 스크립트)을 포그라운드 Bash로 호출한다. monitor watch는 단일 Bash 호출 안에서 60초 sleep + 스냅샷 cycle을 무한 반복하며 EVENT 또는 DONE이 관찰될 때까지 블록한다 — 너의 turn은 스크립트가 종료할 때까지 그 호출이 점유한다. EVENT가 stdout으로 1회 emit되면 §"실행 루프"의 case 분기를 자기 turn 안에서 그대로 실행한 뒤 즉시 INIT으로 복귀하여 watch를 다시 호출한다. **DONE(`reason in {merged, approved-clean, closed-without-merge, awaiting-human-review}`)이 나올 때까지 너는 turn을 종료하지 않는다.**
+> **절대 명령 (서브에이전트 본인 책무).** 너는(이 phase를 실행하는 서브에이전트) 자기 turn 안에서 직접 `monitor-pr` 스킬(또는 그 안의 watch 스크립트)을 포그라운드 Bash로 호출한다. monitor watch는 단일 Bash 호출 안에서 60초 sleep + 스냅샷 cycle을 무한 반복하며 EVENT 또는 DONE이 관찰될 때까지 블록한다 — 너의 turn은 스크립트가 종료할 때까지 그 호출이 점유한다. EVENT가 stdout으로 1회 emit되면 §"실행 루프"의 case 분기를 자기 turn 안에서 그대로 실행한 뒤 즉시 INIT으로 복귀하여 watch를 다시 호출한다. **DONE(`reason in {merged, mergeable-clean, closed-without-merge, awaiting-human-review}`)이 나올 때까지 너는 turn을 종료하지 않는다.**
 >
-> **DONE 즉시 정지 (terminal stop).** `reason in {merged, approved-clean, closed-without-merge, awaiting-human-review}`이 관찰되는 순간 본 phase는 종료다. **그 시점에 추가 watch / poll / `gh pr view` 호출을 금지한다** — `reason=merged`는 Phase 8 cleanup 1회 실행 후, `approved-clean`은 Phase 7 머지 게이트로, `closed-without-merge`는 결과 보고 후, `awaiting-human-review`는 `status: awaiting-review` + `pending_human_comments: <bot CH2 코멘트 URL>` 보고 후 즉시 turn 종료한다. "한 번 더 확인해서 안전하게" / "mergeStateStatus 재검증" / "다음 cycle에 변화가 있는지" 류 추가 호출은 머지 후 dead time을 누적시키는 안티패턴이며 본 절이 명시적으로 차단한다.
+> **DONE 즉시 정지 (terminal stop).** `reason in {merged, mergeable-clean, closed-without-merge, awaiting-human-review}`이 관찰되는 순간 본 phase는 종료다. **그 시점에 추가 watch / poll / `gh pr view` 호출을 금지한다** — `reason=merged`는 Phase 8 cleanup 1회 실행 후, `mergeable-clean`은 Phase 7 머지 게이트로, `closed-without-merge`는 결과 보고 후, `awaiting-human-review`는 `status: awaiting-review` + `pending_human_comments: <bot CH2 코멘트 URL>` 보고 후 즉시 turn 종료한다. "한 번 더 확인해서 안전하게" / "mergeStateStatus 재검증" / "다음 cycle에 변화가 있는지" 류 추가 호출은 머지 후 dead time을 누적시키는 안티패턴이며 본 절이 명시적으로 차단한다.
 >
 > 다음 4가지 안티패턴은 본 phase에서 명시적으로 금지된다 (`monitor-pr` SKILL §"절대 명령" SSOT):
 >
@@ -53,6 +53,6 @@
 
 ## 종료 조건
 
-PR의 merge button이 활성화된 상태 (`mergeState in (CLEAN, UNSTABLE)` + `reviewDecision=APPROVED` + `failedChecks=0`). overnight 모드에서는 타인 코멘트 큐가 비어있을 때만 Phase 7로 진행.
+PR의 merge button이 활성화된 상태 (`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0`). GitHub Copilot code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다. overnight 모드에서는 타인 코멘트 큐가 비어있을 때만 Phase 7로 진행.
 
 > **MUST**: GitHub Actions / 모든 required check가 pass할 때까지 Phase 7로 넘어가지 않는다. `BLOCKED` 상태에서 Phase 7로 전환하면 병합이 불가능하다. 자동화 봇 리뷰어가 pending이면 MERGEABLE 판정 보류 (메모리 `bc25934` 회귀).

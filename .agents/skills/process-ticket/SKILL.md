@@ -42,7 +42,7 @@ GitHub Issue 번호 하나를 받아 이슈 분석부터 PR 병합까지 전체 
 - **필수**: GitHub Issue 번호 (예: `42`, `#42`)
 - **옵션**: `--require-approval` — 구현 계획에 대한 사용자 승인(Phase 2)을 요구한다. 기본값은 승인 없이 즉시 구현을 시작한다. PR 병합 승인(Phase 7)은 항상 필요하다.
 - **옵션**: `--overnight` — 무인 실행 모드. Phase 2 계획 승인을 항상 생략하고, Phase 6 리뷰 코멘트 처리 시 **본인(PR 작성자) 코멘트만** `/triage-comments`로 자동 처리한다. 타인 코멘트는 큐에 쌓아 대기하고 Phase 7에서 보고한다. Phase 7 병합 승인은 여전히 수동이며, overnight 모드에서는 "병합 대기" 상태로 **즉시 반환**(병합하지 않음 → Phase 8 생략). `--require-approval`과 동시 지정 시 `--overnight`가 우선한다.
-- **옵션**: `--auto-merge` — 사용자가 사전에 병합을 승인한 자명한 이슈에 사용. Phase 7의 `AskUserQuestion` 병합 승인 단계를 생략하고 PR이 mergeable 상태가 되면 즉시 squash merge 후 Phase 8을 진행한다. CI/리뷰 게이트는 정상 적용되며, mergeable이 아니면 일반 모드와 동일하게 Phase 6으로 복귀한다. `--overnight`와 동시 지정 시 `--auto-merge`가 우선한다(병합 수행).
+- **옵션**: `--auto-merge` — 사용자가 사전에 병합을 승인한 자명한 이슈에 사용. Phase 7의 `AskUserQuestion` 병합 승인 단계를 생략하고 PR이 mergeable 상태가 되면 즉시 squash merge 후 Phase 8을 진행한다. CI와 GitHub mergeability 게이트는 정상 적용되며, mergeable이 아니면 일반 모드와 동일하게 Phase 6으로 복귀한다. `--overnight`와 동시 지정 시 `--auto-merge`가 우선한다(병합 수행).
 
 ---
 

@@ -26,14 +26,16 @@
 #       reviewDecision=<Y>
 #       commentCount=<N>
 #       reviewCommentCount=<N>
+#       pendingChecks=0
 #       failedChecks=0
-#       reason=<merged|approved-clean|closed-without-merge|awaiting-human-review>
+#       reason=<merged|mergeable-clean|closed-without-merge|awaiting-human-review>
 #   - 이벤트 발생 (호출자가 분기 처리 후 재호출 필요):
 #       EVENT
 #       mergeState=<X>
 #       reviewDecision=<Y>
 #       commentCount=<N>
 #       reviewCommentCount=<N>
+#       pendingChecks=<N>
 #       failedChecks=<N>
 #       reason=<comments-changed|review-decision-changed|ci-failed|merge-dirty|bot-stuck|heartbeat>
 #       staleHandledIds=<id1,id2,...>   # reason=comments-changed 일 때만, in-place 갱신된 id 목록 (없으면 빈 값)
@@ -110,6 +112,7 @@ snapshot_and_emit() {
   echo "reviewDecision=$review_decision"
   echo "commentCount=$comment_count"
   echo "reviewCommentCount=$review_comment_count"
+  echo "pendingChecks=$pending_checks"
   echo "failedChecks=$failed_checks"
   echo "reason=$reason"
   if [ "$reason" = "comments-changed" ]; then
@@ -218,12 +221,14 @@ while true; do
     exit 0
   fi
 
-  # 종료 조건 2: CLEAN/UNSTABLE + APPROVED + CI green
-  if [ "$review_decision" = "APPROVED" ] \
-     && { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
+  # 종료 조건 2: GitHub가 병합 가능(CLEAN/UNSTABLE)으로 계산했고 CI가 green.
+  # GitHub Copilot code review는 formal Approve를 남기지 않으므로 reviewDecision=APPROVED를
+  # 요구하지 않는다. 실제 branch protection상 승인이 필수라면 GitHub가 mergeState=BLOCKED로 노출한다.
+  if { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
+     && [ "$pending_checks" = "0" ] \
      && [ "$failed_checks" = "0" ]; then
     persist_state
-    snapshot_and_emit "DONE" "approved-clean"
+    snapshot_and_emit "DONE" "mergeable-clean"
     exit 0
   fi
 

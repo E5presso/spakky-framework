@@ -10,7 +10,7 @@ PR이 병합 가능 상태가 되면:
 
 1. **포그라운드 채팅**으로 PR 상태를 알리고 병합 승인을 받는다 — sub-agent로 실행 중이면 SKILL.md "사용자 질의 위임" 절의 `ask-delegate`로 메인에 위임 (`phase: Phase 7`, `trigger: merge-approval`), 사용자 직접 호출이면 아래 `AskUserQuestion` 직접:
    ```yaml
-   question: "PR #{PR_NUMBER} 병합 준비 완료 (CI 통과 + 리뷰 승인). 어떻게 할까요?"
+   question: "PR #{PR_NUMBER} 병합 준비 완료 (CI 통과 + GitHub mergeable). 어떻게 할까요?"
    header: "병합"
    options:
      - label: "Squash merge (Recommended)"
