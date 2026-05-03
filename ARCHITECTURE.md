@@ -83,6 +83,7 @@ graph TD
     event --> tracing
     task_pkg --> core
     tracing --> core
+    actuator --> core
     outbox --> event
     outbox --> tracing
     saga --> core
@@ -102,7 +103,9 @@ graph TD
     otel -.->|optional| logging_pkg
     fastapi --> core
     fastapi --> tracing
+    fastapi -. actuator endpoints .-> actuator
     typer --> core
+    typer -. actuator commands .-> actuator
     security --> core
     grpc --> core
     grpc --> tracing
@@ -405,8 +408,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
-| `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor` |
-| `spakky-typer` | `TyperCLIPostProcessor` |
+| `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor`, `RegisterActuatorPostProcessor` |
+| `spakky-typer` | `TyperCLIPostProcessor`, `ActuatorTyperCommandPostProcessor` |
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
