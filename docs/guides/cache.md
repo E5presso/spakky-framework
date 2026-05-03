@@ -45,7 +45,7 @@ class ProfileService:
         ...
 ```
 
-The default key is deterministic for the method module, qualified name, positional arguments, and sorted keyword arguments. Explicit `key` values are Python format strings evaluated against call arguments.
+The default key is deterministic for the method module, qualified name, positional arguments, and sorted keyword arguments. Explicit `key` values are Python format strings evaluated against call arguments. Invalid key formatting raises `CacheKeyGenerationError`.
 
 `@cacheable()` reads the cache before invoking the method and stores the result on a miss. `@cache_evict()` deletes the matching entry only after the annotated method succeeds. Backend failures propagate as Spakky cache errors and are not silently converted to misses.
 
@@ -62,7 +62,7 @@ cache = RedisCache[str]()
 cache.set("profile:42", "Ada", ttl=timedelta(minutes=5))
 ```
 
-`RedisCacheConfig` reads `SPAKKY_REDIS__HOST`, `SPAKKY_REDIS__PORT`, `SPAKKY_REDIS__DB`, `SPAKKY_REDIS__USERNAME`, `SPAKKY_REDIS__PASSWORD`, `SPAKKY_REDIS__USE_SSL`, and `SPAKKY_REDIS__KEY_PREFIX`. `clear()` and `clear_async()` delete only keys under the configured prefix.
+`RedisCacheConfig` reads `SPAKKY_REDIS__HOST`, `SPAKKY_REDIS__PORT`, `SPAKKY_REDIS__DB`, `SPAKKY_REDIS__USERNAME`, `SPAKKY_REDIS__PASSWORD`, `SPAKKY_REDIS__USE_SSL`, `SPAKKY_REDIS__KEY_PREFIX`, and `SPAKKY_REDIS__SOCKET_TIMEOUT`. `clear()` and `clear_async()` delete only keys under the configured prefix.
 
 ## Non-goals
 

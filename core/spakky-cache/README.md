@@ -58,7 +58,7 @@ class ProfileService:
         ...
 ```
 
-The default key is derived from the method module, qualified name, positional arguments, and sorted keyword arguments. Explicit `key` values are Python format strings evaluated against method call arguments. Backend failures are not swallowed; cache errors propagate loudly.
+The default key is derived from the method module, qualified name, positional arguments, and sorted keyword arguments. Explicit `key` values are Python format strings evaluated against method call arguments. Invalid key formatting raises `CacheKeyGenerationError`. Backend failures are not swallowed; cache errors propagate loudly.
 
 `@cache_evict()` deletes the matching entry only after the annotated method succeeds. Failed method calls leave existing entries untouched so a failed refresh does not erase the last known cached value.
 

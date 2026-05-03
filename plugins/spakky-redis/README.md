@@ -45,6 +45,7 @@ if isinstance(result, CacheHit):
 | `SPAKKY_REDIS__PASSWORD` | unset |
 | `SPAKKY_REDIS__USE_SSL` | `false` |
 | `SPAKKY_REDIS__KEY_PREFIX` | `spakky:cache:` |
+| `SPAKKY_REDIS__SOCKET_TIMEOUT` | `5.0` |
 
 ## Async Usage
 
