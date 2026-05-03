@@ -246,6 +246,7 @@ app = (
 | [spakky-celery](api/plugins/spakky-celery.md)         | Celery 통합      |
 | [spakky-opentelemetry](api/plugins/spakky-opentelemetry.md) | OpenTelemetry 브릿지 |
 | [spakky-grpc](api/plugins/spakky-grpc.md)                   | gRPC 통합           |
+| [spakky-redis](api/plugins/spakky-redis.md)                 | Redis 캐시 backend |
 
 ### 의존 방향
 
@@ -263,6 +264,7 @@ flowchart LR
     celery[spakky-celery]
     opentelemetry[spakky-opentelemetry]
     grpc[spakky-grpc]
+    redis[spakky-redis]
   end
 
   subgraph Core[Core]

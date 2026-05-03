@@ -29,3 +29,4 @@
 - [spakky-celery](plugins/spakky-celery.md) — Celery 통합
 - [spakky-opentelemetry](plugins/spakky-opentelemetry.md) — OpenTelemetry 브릿지
 - [spakky-grpc](plugins/spakky-grpc.md) — gRPC 통합
+- [spakky-redis](plugins/spakky-redis.md) — Redis 캐시 backend
