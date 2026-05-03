@@ -47,6 +47,10 @@ flowchart TD
   AbstractSpakkySagaError --> SagaEngineNotConnectedError
 
   AbstractSpakkyCacheError --> InvalidCacheTTLError
+  AbstractSpakkyCacheError --> CacheKeyGenerationError
+  AbstractSpakkyCacheError --> AbstractSpakkyRedisError
+  AbstractSpakkyRedisError --> RedisCacheOperationError
+  AbstractSpakkyRedisError --> RedisCacheSerializationError
 
   AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyORMError
   AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyPersistencyError
@@ -257,13 +261,15 @@ from spakky.task.error import (
 ```python
 from spakky.cache.error import (
     AbstractSpakkyCacheError,
+    CacheKeyGenerationError,
     InvalidCacheTTLError,
 )
 ```
 
-| 에러                   | 설명                     |
-| ---------------------- | ------------------------ |
-| `InvalidCacheTTLError` | 0 이하 TTL 값 지정 시도 |
+| 에러                      | 설명                           |
+| ------------------------- | ------------------------------ |
+| `InvalidCacheTTLError`    | 0 이하 TTL 값 지정 시도        |
+| `CacheKeyGenerationError` | cache annotation key 생성 실패 |
 
 ---
 
@@ -450,6 +456,24 @@ from spakky.plugins.logging.error import (
 | ---------------------------- | ---------------------------- |
 | `AbstractSpakkyLoggingError` | 로깅 에러 기반 클래스        |
 | `UnknownLogFormatError`      | 인식할 수 없는 로그 포맷     |
+
+### spakky-redis
+
+Redis cache backend 관련 에러입니다.
+
+```python
+from spakky.plugins.redis.error import (
+    AbstractSpakkyRedisError,
+    RedisCacheOperationError,
+    RedisCacheSerializationError,
+)
+```
+
+| 에러                           | 설명                                 |
+| ------------------------------ | ------------------------------------ |
+| `AbstractSpakkyRedisError`     | Redis cache backend 에러 기반 클래스 |
+| `RedisCacheOperationError`     | Redis 명령 실행 또는 응답 변환 실패  |
+| `RedisCacheSerializationError` | cache 값 직렬화 또는 역직렬화 실패   |
 
 ### spakky-saga
 

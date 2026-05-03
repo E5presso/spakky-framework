@@ -114,6 +114,7 @@ graph TD
     security --> core
     grpc --> core
     grpc --> tracing
+    redis --> cache
 
     style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
     style domain fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100

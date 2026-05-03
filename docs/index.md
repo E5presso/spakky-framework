@@ -279,6 +279,7 @@ flowchart LR
     domain --> core[spakky]
     task[spakky-task] --> core
     tracing_dep --> core
+    cache[spakky-cache] --> core
     saga[spakky-saga] --> domain
     saga --> core
   end
@@ -301,4 +302,5 @@ flowchart LR
   opentelemetry -. logging .-> logging
   grpc -. gRPC .-> core
   grpc -- tracing --> tracing_dep
+  redis -. Redis .-> cache
 ```
