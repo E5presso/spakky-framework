@@ -1,0 +1,37 @@
+{
+  "name": "portable-agent-harness",
+  "version": "0.1.0",
+  "description": "Portable Codex-standard agent harness templates and installer for new projects.",
+  "author": {
+    "name": "Spakky",
+    "email": "",
+    "url": ""
+  },
+  "homepage": "",
+  "repository": "",
+  "license": "UNLICENSED",
+  "keywords": [
+    "codex",
+    "agents",
+    "harness",
+    "skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Portable Agent Harness",
+    "shortDescription": "Install reusable Codex harness rules and skills into a project.",
+    "longDescription": "Portable Agent Harness packages project-agnostic Codex-standard rules, meta skills, and wrapper generation so a new repository can start with one .agents source of truth plus thin tool adapters.",
+    "developerName": "Spakky",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Install the portable agent harness into this repo.",
+      "Add Python harness rules to this project.",
+      "Create Claude wrappers for the installed harness."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

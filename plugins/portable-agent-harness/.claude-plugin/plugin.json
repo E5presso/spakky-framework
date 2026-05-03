@@ -1,0 +1,20 @@
+{
+  "name": "portable-agent-harness",
+  "version": "0.1.0",
+  "description": "Portable agent harness templates and installer for new projects.",
+  "author": {
+    "name": "Spakky"
+  },
+  "homepage": "",
+  "repository": "",
+  "license": "UNLICENSED",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "agents",
+    "harness",
+    "skills"
+  ],
+  "skills": "./skills/",
+  "strict": true
+}

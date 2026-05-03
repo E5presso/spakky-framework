@@ -1,0 +1,20 @@
+{
+  "name": "spakky-local",
+  "interface": {
+    "displayName": "Spakky Local"
+  },
+  "plugins": [
+    {
+      "name": "portable-agent-harness",
+      "source": {
+        "source": "local",
+        "path": "./plugins/portable-agent-harness"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
