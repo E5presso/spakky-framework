@@ -6,8 +6,19 @@ import pytest
 from typing_extensions import override
 
 import spakky.core.application.application_context as application_context_module
-from spakky.core.application.application import SpakkyApplication
-from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.application import (
+    STARTUP_PHASE_LOAD_PLUGINS,
+    STARTUP_PHASE_REGISTRATION,
+    STARTUP_PHASE_SCAN,
+    SpakkyApplication,
+)
+from spakky.core.application.application_context import (
+    STARTUP_PHASE_INSTANTIATION,
+    STARTUP_PHASE_POST_PROCESSING,
+    STARTUP_PHASE_POST_PROCESSOR_REGISTRATION,
+    STARTUP_PHASE_SERVICE_START,
+    ApplicationContext,
+)
 from spakky.core.application.startup_diagnostics import (
     ActiveStartupPhaseRecorder,
     NoOpStartupPhaseRecorder,
@@ -227,6 +238,47 @@ def test_spakky_application_startup_pipeline_diagnostics_expect_phase_records() 
             record.status is StartupPhaseStatus.SUCCESS
             for record in app.startup_report.records
         )
+    finally:
+        app.stop()
+
+
+def test_spakky_application_startup_diagnostics_regression_gate_expect_report_shape() -> (
+    None
+):
+    """startup diagnostics report가 phase 순서, count, status 의미를 구조적으로 고정한다."""
+    from tests.dummy import dummy_package
+
+    expected_phase_order = (
+        STARTUP_PHASE_LOAD_PLUGINS,
+        STARTUP_PHASE_SCAN,
+        STARTUP_PHASE_REGISTRATION,
+        STARTUP_PHASE_POST_PROCESSOR_REGISTRATION,
+        STARTUP_PHASE_INSTANTIATION,
+        STARTUP_PHASE_POST_PROCESSING,
+        STARTUP_PHASE_SERVICE_START,
+    )
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.load_plugins(include=set()).scan(dummy_package).start()
+
+    try:
+        records = app.startup_report.records
+        records_by_phase = {record.phase_name: record for record in records}
+
+        assert tuple(record.phase_name for record in records) == expected_phase_order
+        assert all(record.elapsed_seconds >= 0.0 for record in records)
+        assert all(record.status is StartupPhaseStatus.SUCCESS for record in records)
+        assert all(record.failure_summary is None for record in records)
+        assert records_by_phase[STARTUP_PHASE_LOAD_PLUGINS].processed_count == 0
+        assert records_by_phase[STARTUP_PHASE_SCAN].processed_count == 3
+        assert records_by_phase[STARTUP_PHASE_REGISTRATION].processed_count == 4
+        assert (
+            records_by_phase[STARTUP_PHASE_POST_PROCESSOR_REGISTRATION].processed_count
+            == 3
+        )
+        assert records_by_phase[STARTUP_PHASE_INSTANTIATION].processed_count == 4
+        assert records_by_phase[STARTUP_PHASE_POST_PROCESSING].processed_count == 12
+        assert records_by_phase[STARTUP_PHASE_SERVICE_START].processed_count == 0
     finally:
         app.stop()
 

@@ -93,7 +93,10 @@ decision = scan_record.diagnostic_details[0].value  # miss, hit, stale_schema, s
 
 If no path is provided, Spakky uses the deterministic project-local cache path
 `.spakky/cache/discovery-manifest.json`. Missing, stale, or malformed manifests
-fall back to fresh discovery and record the decision in startup diagnostics.
+fall back to fresh discovery and record the decision in startup diagnostics. The
+decision values are `miss`, `hit`, `stale_schema`, and `stale_input`; `hit`
+replays stored candidates through the normal registration path, while every
+other decision performs fresh discovery.
 
 ### Startup Diagnostics
 
@@ -124,6 +127,9 @@ first_phase = report.records[0]
 count, success/failure status, optional diagnostic details, and an optional
 structured failure summary. Failure summaries keep the exception type name,
 message, and diagnostic details without retaining the raw exception object.
+The application startup pipeline records phases in execution order:
+`load_plugins`, `scan`, `registration`, `post_processor_registration`,
+`instantiation`, `post_processing`, and `service_start`.
 
 DI dependency failures preserve their existing exception types while attaching
 structured dependency diagnostics from `Pod.dependencies`, including the failed

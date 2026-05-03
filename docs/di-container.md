@@ -223,7 +223,9 @@ class UserService:
 누락되거나 순환된 의존성은 기존 예외 의미를 유지하면서 구조화된
 dependency diagnostic을 함께 제공합니다. 이 진단은 별도 graph cache가
 아니라 등록된 `Pod.dependencies` 메타데이터에서 실패 Pod, 파라미터,
-요청 타입, 의존성 경로를 구성합니다.
+요청 타입, 의존성 경로를 구성합니다. Adapter는
+`dependency_diagnostic.as_detail_pairs()`로 안정적인 key/value 형태를 얻을
+수 있습니다.
 
 컨테이너는 의존성 체인에서 순환 참조를 감지합니다.
 
@@ -414,6 +416,34 @@ manifest_decision = scan_record.diagnostic_details[0].value
 ```
 
 `manifest_decision`은 `miss`, `hit`, `stale_schema`, `stale_input` 중 하나입니다.
+`hit`은 저장된 후보를 기존 등록 경로로 재생하고, `miss`와 stale decision은
+fresh discovery를 수행합니다. 이 기능은 actuator endpoint, exporter, 또는
+플러그인별 튜닝을 자동으로 제공하지 않습니다.
+
+### Startup diagnostics
+
+Startup diagnostics는 기본적으로 비활성화되어 있으며
+`enable_startup_diagnostics()`로 명시적으로 켭니다. 활성화된 앱은 하나의
+startup attempt에 대한 `StartupReport`를 노출합니다.
+
+```python
+app = (
+    SpakkyApplication(ApplicationContext())
+    .enable_startup_diagnostics()
+    .load_plugins(include=set())
+    .scan(apps)
+    .start()
+)
+
+for record in app.startup_report.records:
+    print(record.phase_name, record.processed_count, record.status)
+```
+
+기록되는 phase는 실행 순서대로 `load_plugins`, `scan`, `registration`,
+`post_processor_registration`, `instantiation`, `post_processing`,
+`service_start`입니다. 각 record는 elapsed seconds, processed count,
+success/failure status, diagnostic details, failure summary를 담습니다. 실패한
+phase도 report에 남긴 뒤 기존 예외를 그대로 전파합니다.
 
 ---
 

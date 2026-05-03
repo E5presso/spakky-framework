@@ -613,6 +613,13 @@ def test_circular_dependency_error_expect_structured_diagnostic_path() -> None:
     assert diagnostic.path[1].requested_type_name == "IA"
     assert diagnostic.path[2].pod_type_name == "A"
     assert diagnostic.path[2].dependency_parameter_name is None
+    assert diagnostic.as_detail_pairs() == (
+        ("failed_pod", "a"),
+        ("failed_pod_type", "A"),
+        ("dependency_path", "A.b:IB -> B.a:IA -> A"),
+        ("dependency_parameter", "a"),
+        ("requested_type", "IA"),
+    )
 
 
 def test_application_context_with_multiple_children_list_not_exists() -> None:
@@ -1142,7 +1149,13 @@ def test_application_context_missing_dependency_expect_structured_diagnostic() -
     assert path_node.pod_type_name == "SamplePod"
     assert path_node.dependency_parameter_name == "missing_dep"
     assert path_node.requested_type_name == "MissingDependency"
-    assert ("dependency_parameter", "missing_dep") in diagnostic.as_detail_pairs()
+    assert diagnostic.as_detail_pairs() == (
+        ("failed_pod", "sample_pod"),
+        ("failed_pod_type", "SamplePod"),
+        ("dependency_path", "SamplePod.missing_dep:MissingDependency"),
+        ("dependency_parameter", "missing_dep"),
+        ("requested_type", "MissingDependency"),
+    )
 
 
 def test_set_singleton_cache_with_non_singleton_pod() -> None:

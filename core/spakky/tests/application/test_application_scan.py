@@ -177,6 +177,34 @@ def test_scan_discovery_manifest_stale_exclude_expect_fresh_discovery(
     assert len(app.container.pods) > 0
 
 
+def test_scan_discovery_manifest_stale_source_expect_fresh_discovery(
+    tmp_path: Path,
+) -> None:
+    """source fingerprint가 바뀌면 stale_input으로 기록하고 fresh discovery를 수행한다."""
+    from tests.dummy import dummy_package
+
+    manifest_path = tmp_path / "discovery-manifest.json"
+    SpakkyApplication(ApplicationContext()).enable_discovery_manifest(
+        manifest_path
+    ).scan(dummy_package)
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    first_source = payload["fingerprint"]["sources"][0]
+    first_source["size"] += 1
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .enable_startup_diagnostics()
+        .enable_discovery_manifest(manifest_path)
+    )
+
+    app.scan(dummy_package)
+
+    assert (
+        _manifest_decision(_scan_record(app)) == DiscoveryManifestDecision.STALE_INPUT
+    )
+    assert len(app.container.pods) > 0
+
+
 def test_scan_discovery_manifest_invalid_json_expect_miss_recorded(
     tmp_path: Path,
 ) -> None:
