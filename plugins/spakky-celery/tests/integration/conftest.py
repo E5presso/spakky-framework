@@ -55,7 +55,7 @@ def _restore_celery_test_environment(previous_values: dict[str, str | None]) -> 
 
 @pytest.fixture(name="rabbitmq_container", scope="package")
 def rabbitmq_container_fixture() -> Generator[None, None, None]:
-    """Start a RabbitMQ container for Celery broker."""
+    """Start or reuse a RabbitMQ broker for Celery integration tests."""
     existing_broker_url = environ.get(f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}BROKER_URL")
     if existing_broker_url is not None:
         previous_values = _set_celery_test_environment(existing_broker_url)
