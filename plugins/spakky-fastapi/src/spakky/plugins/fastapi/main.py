@@ -12,6 +12,9 @@ from spakky.plugins.fastapi.post_processors.add_builtin_middlewares import (
 from spakky.plugins.fastapi.post_processors.bind_lifespan import (
     BindLifespanPostProcessor,
 )
+from spakky.plugins.fastapi.post_processors.register_actuator import (
+    RegisterActuatorPostProcessor,
+)
 from spakky.plugins.fastapi.post_processors.register_routes import (
     RegisterRoutesPostProcessor,
 )
@@ -29,4 +32,5 @@ def initialize(app: SpakkyApplication) -> None:
     """
     app.add(BindLifespanPostProcessor)
     app.add(AddBuiltInMiddlewaresPostProcessor)
+    app.add(RegisterActuatorPostProcessor)
     app.add(RegisterRoutesPostProcessor)
