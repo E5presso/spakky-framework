@@ -9,7 +9,9 @@ from spakky.core.application.startup_diagnostics import (
     NoOpStartupPhaseRecorder,
     StartupDiagnosticDetail,
     StartupElapsedTimeCannotBeNegativeError,
+    StartupFailureSummaryNotAllowedError,
     StartupFailureSummary,
+    StartupFailureSummaryRequiredError,
     StartupPhaseRecord,
     StartupPhaseStatus,
     StartupProcessedCountCannotBeNegativeError,
@@ -183,3 +185,45 @@ def test_startup_phase_record_negative_processed_count_expect_error() -> None:
             processed_count=-1,
             status=StartupPhaseStatus.SUCCESS,
         )
+
+
+def test_startup_phase_record_success_with_failure_summary_expect_error() -> None:
+    """성공 status와 failure summary가 함께 있는 phase record 생성을 차단함을 검증한다."""
+    summary = StartupFailureSummary.from_exception(RuntimeError("unexpected"))
+
+    with pytest.raises(StartupFailureSummaryNotAllowedError):
+        StartupPhaseRecord(
+            phase_name="scan",
+            elapsed_seconds=0.1,
+            processed_count=1,
+            status=StartupPhaseStatus.SUCCESS,
+            failure_summary=summary,
+        )
+
+
+def test_startup_phase_record_failure_without_failure_summary_expect_error() -> None:
+    """실패 status에 failure summary가 없는 phase record 생성을 차단함을 검증한다."""
+    with pytest.raises(StartupFailureSummaryRequiredError):
+        StartupPhaseRecord(
+            phase_name="scan",
+            elapsed_seconds=0.1,
+            processed_count=1,
+            status=StartupPhaseStatus.FAILURE,
+        )
+
+
+def test_startup_phase_recording_negative_count_on_enter_expect_error() -> None:
+    """record_phase 시작 시 음수 processed count를 즉시 차단함을 검증한다."""
+    recorder = ActiveStartupPhaseRecorder()
+
+    with pytest.raises(StartupProcessedCountCannotBeNegativeError):
+        recorder.record_phase(phase_name="start", processed_count=-1)
+
+
+def test_startup_phase_recording_negative_count_setter_expect_error() -> None:
+    """record_phase 내부에서 음수 processed count 설정을 즉시 차단함을 검증한다."""
+    recorder = ActiveStartupPhaseRecorder()
+
+    with pytest.raises(StartupProcessedCountCannotBeNegativeError):
+        with recorder.record_phase(phase_name="start") as phase:
+            phase.set_processed_count(-1)

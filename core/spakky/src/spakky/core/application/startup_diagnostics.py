@@ -32,6 +32,18 @@ class StartupProcessedCountCannotBeNegativeError(AbstractSpakkyApplicationError)
     message = "Startup phase processed count cannot be negative."
 
 
+class StartupFailureSummaryRequiredError(AbstractSpakkyApplicationError):
+    """Raised when a failure record has no failure summary."""
+
+    message = "Startup failure records require a failure summary."
+
+
+class StartupFailureSummaryNotAllowedError(AbstractSpakkyApplicationError):
+    """Raised when a success record has a failure summary."""
+
+    message = "Startup success records cannot include a failure summary."
+
+
 class StartupPhaseStatus(StrEnum):
     """Result status for a startup phase record."""
 
@@ -110,6 +122,13 @@ class StartupPhaseRecord:
             raise StartupElapsedTimeCannotBeNegativeError()
         if self.processed_count < 0:
             raise StartupProcessedCountCannotBeNegativeError()
+        if (
+            self.status is StartupPhaseStatus.SUCCESS
+            and self.failure_summary is not None
+        ):
+            raise StartupFailureSummaryNotAllowedError()
+        if self.status is StartupPhaseStatus.FAILURE and self.failure_summary is None:
+            raise StartupFailureSummaryRequiredError()
 
 
 class StartupReport:
@@ -211,6 +230,8 @@ class StartupPhaseRecording:
         diagnostic_details: StartupDiagnosticDetails,
     ) -> None:
         """Initialize a startup phase recording context."""
+        if processed_count < 0:
+            raise StartupProcessedCountCannotBeNegativeError()
         self._recorder = recorder
         self._phase_name = phase_name
         self._processed_count = processed_count
@@ -251,6 +272,8 @@ class StartupPhaseRecording:
         Args:
             processed_count: Final processed count for the measured phase.
         """
+        if processed_count < 0:
+            raise StartupProcessedCountCannotBeNegativeError()
         self._processed_count = processed_count
 
 
