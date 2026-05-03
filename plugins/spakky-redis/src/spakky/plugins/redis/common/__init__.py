@@ -1,0 +1,1 @@
+"""Common Redis plugin configuration."""

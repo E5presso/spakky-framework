@@ -83,6 +83,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-grpc`** | Integration with [gRPC](https://grpc.io/) for building RPC services |
 | **`spakky-kafka`** | Event-driven architecture support with [Apache Kafka](https://kafka.apache.org/) |
 | **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
+| **`spakky-redis`** | Redis-backed cache backend for shared application data cache |
 | **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
 | **`spakky-sqlalchemy`** | Database integration with [SQLAlchemy](https://www.sqlalchemy.org/) ORM |
 | **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |

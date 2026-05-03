@@ -31,6 +31,7 @@
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @logged AOP Aspect |
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
 | **Plugin** | `spakky-grpc` | gRPC 서비스 컨트롤러 통합 (code-first, 타입 안전 프로토콜 생성) |
+| **Plugin** | `spakky-redis` | Redis 기반 애플리케이션 데이터 캐시 backend |
 
 ---
 
@@ -75,6 +76,7 @@ graph TD
             typer[spakky-typer]
             security[spakky-security]
             grpc[spakky-grpc]
+            redis[spakky-redis]
         end
     end
 
@@ -151,6 +153,7 @@ graph TD
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
 - **사가 코어** (spakky-saga) → `spakky` + `spakky-domain`에 의존
 - **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-tracing`에 의존 + `grpcio`, `protobuf` 외부 의존성
+- **Redis 캐시 플러그인** (spakky-redis) → `spakky-cache`에 의존 + `redis`, `pydantic-settings` 외부 의존성
 
 ---
 
@@ -427,6 +430,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` |
 | `spakky-saga` | (없음 — `@Saga`가 `@Pod` 기반이므로 Pod 스캔만으로 DI 컨테이너가 관리) |
 | `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
+| `spakky-redis` | `RedisCacheConfig`, `RedisCache` |
 
 ---
 
@@ -1156,6 +1160,7 @@ flowchart TD
 |---------|-------------|-----------|
 | `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction, `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`, `spakky-outbox` |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
+| `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
 ### 태스크 플러그인
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
