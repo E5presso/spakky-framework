@@ -19,6 +19,12 @@ Example:
 """
 
 from spakky.core.application.plugin import Plugin
+from spakky.plugins.typer.actuator import ActuatorTyperConfig
 
 PLUGIN_NAME = Plugin(name="spakky-typer")
 """Plugin identifier for the Typer CLI integration."""
+
+__all__ = [
+    "ActuatorTyperConfig",
+    "PLUGIN_NAME",
+]
