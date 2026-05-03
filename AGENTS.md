@@ -135,6 +135,21 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 - 리뷰 코멘트는 **한국어**로 작성
 - 문제 없으면 PR 승인
 
+## Review guidelines
+
+Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소한 스타일보다 실제 운영 결함과 회귀 위험에 집중한다.
+
+- 리뷰 코멘트는 **한국어**로 작성한다.
+- P0/P1로 올릴 만한 결함만 남긴다: 런타임 오류, 데이터 손실, 보안 취약점, 레이어 의존 위반, 공개 API 호환성 파괴, 테스트로 잡히지 않는 의미 변경.
+- `.agents/rules/review-heuristics.md`의 14개 카테고리를 결함 분류 기준으로 삼고, 지적에는 가능하면 해당 SSOT를 언급한다.
+- Python `src/` 변경에서는 빌트인 예외 직접 `raise`, 사유 없는 `Any`, `assert`, `type: ignore`, `getattr()`/`hasattr()`/`setattr()` 사용을 P1 후보로 검토한다.
+- 테스트 변경에서는 `class TestXxx`, flaky 시간/순서/네트워크 의존, 커버리지 회피 주석, 실제 회귀를 검증하지 않는 스냅샷성 테스트를 P1 후보로 검토한다.
+- 모노레포 의존 방향을 확인한다. 플러그인 간 직접 import, 도메인 레이어의 인프라 import, core와 plugin의 역방향 의존은 P1 후보로 검토한다.
+- 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
+- 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
+- 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
+- 리뷰가 통과 가능하더라도 GitHub formal Approve를 자동 승인 게이트로 가정하지 않는다. 사람 승인 또는 branch protection은 별도 정책으로 남긴다.
+
 ### 코딩 규칙 정본
 
 | 영역 | 정본 | 비고 |

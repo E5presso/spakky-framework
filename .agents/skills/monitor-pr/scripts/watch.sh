@@ -49,13 +49,13 @@
 # 호출자(에이전트)는 이 값을 `collect_comments.sh`의 `STALE_HANDLED_IDS` 환경변수로 그대로 전달하여
 # 해당 id의 기존 reply 마커를 무효화하고 변경된 본문을 재수집·재triage한다.
 #
-# bot-stuck: claude bot이 마지막 리뷰 이후 신규 커밋이 없어 재리뷰를 트리거하지 않는 정체 상태.
+# bot-stuck: 외부 리뷰 봇이 마지막 리뷰 이후 신규 커밋이 없어 재리뷰를 트리거하지 않는 정체 상태.
 #   AND 조건: (a) 모든 CI check가 COMPLETED (PENDING/IN_PROGRESS 0건), (b) mergeState != CLEAN,
-#   (c) reviewDecision != APPROVED, (d) latest claude[bot] review.commit.oid != HEAD oid (또는 review 부재).
+#   (c) reviewDecision != APPROVED, (d) latest review bot review.commit.oid != HEAD oid (또는 review 부재).
 #   호출자는 빈 커밋 push로 새 commit hash를 만들어 봇 재리뷰 + CI 재실행을 유도한다 (SKILL.md 참조).
 #   상한 3회는 호출자가 .process-state.json으로 누적·검사한다 (스크립트는 무상태).
 #
-# awaiting-human-review (terminal DONE): claude bot 이 HEAD 를 평가했고 의도적으로 승인하지 않은 상태.
+# awaiting-human-review (terminal DONE): 외부 리뷰 봇이 HEAD 를 평가했고 의도적으로 승인하지 않은 상태.
 #   봇 재평가 트리거가 부재하므로 polling 누적이 무의미하다 — DONE 으로 종료하여 호출자(서브에이전트)가
 #   status=awaiting-review 로 보고 후 turn 종료.
 #   bot_evaluated_head 의 두 경로 (OR): (1) latest_bot_ch2_date > head_commit_date (CH2 issue comment),
@@ -84,6 +84,7 @@ fi
 
 REPO="${REPO:-E5presso/spakky-framework}"
 : "${PR_NUMBER:?PR_NUMBER env required}"
+REVIEW_BOT_LOGINS="${REVIEW_BOT_LOGINS:-claude[bot],codex[bot]}"
 
 prev_state_file="${PREV_STATE_FILE:-}"
 prev_review_decision="${PREV_REVIEW_DECISION:-}"
@@ -164,30 +165,30 @@ while true; do
   head_oid=$(echo "$snapshot" | jq -r '.headRefOid // ""')
   comment_count=$(echo "$snapshot" | jq '.comments | length')
   review_comment_count=$(echo "$ch1_raw" | jq 'length')
-  failed_checks=$(echo "$snapshot" | jq '[.statusCheckRollup // [] | .[] | select((.conclusion == "FAILURE" or .conclusion == "ERROR") and (.workflowName != "Claude Auto PR Code Review"))] | length')
+  failed_checks=$(echo "$snapshot" | jq '[.statusCheckRollup // [] | .[] | select((.conclusion == "FAILURE" or .conclusion == "ERROR") and (.workflowName as $name | ["Claude Auto PR Code Review", "Claude Code Review", "Codex Code Review"] | index($name) | not))] | length')
   pending_checks=$(echo "$snapshot" | jq '[.statusCheckRollup // [] | .[] | select(.status != "COMPLETED" and .status != null)] | length')
 
-  # latest claude[bot] review의 commit.oid / state (없으면 빈 문자열)
+  # latest external review bot review의 commit.oid / state (없으면 빈 문자열)
   latest_bot_review_oid=$(echo "$ch3_raw" \
-    | jq -r '[.[] | select(.user.login == "claude[bot]")] | sort_by(.submitted_at) | last | .commit_id // ""' 2>/dev/null || echo "")
+    | jq -r --arg bots "$REVIEW_BOT_LOGINS" '[.[] | select(.user.login as $login | ($bots | split(",") | index($login)) != null)] | sort_by(.submitted_at) | last | .commit_id // ""' 2>/dev/null || echo "")
   latest_bot_review_state=$(echo "$ch3_raw" \
-    | jq -r '[.[] | select(.user.login == "claude[bot]")] | sort_by(.submitted_at) | last | .state // ""' 2>/dev/null || echo "")
+    | jq -r --arg bots "$REVIEW_BOT_LOGINS" '[.[] | select(.user.login as $login | ($bots | split(",") | index($login)) != null)] | sort_by(.submitted_at) | last | .state // ""' 2>/dev/null || echo "")
 
-  # HEAD commit의 committedDate (없으면 빈 문자열) — claude[bot] 평가 시점 비교용
+  # HEAD commit의 committedDate (없으면 빈 문자열) — 외부 리뷰 봇 평가 시점 비교용
   head_commit_date=$(gh api "repos/$REPO/commits/$head_oid" \
     --jq '.commit.committer.date // ""' 2>/dev/null || echo "")
 
-  # latest claude[bot] CH2 issue comment의 created_at (없으면 빈 문자열).
-  # claude[bot]이 자동 승인 비적격 판정 시 formal review 대신 issue comment 로 의견을 남기는 경로 —
+  # latest external review bot CH2 issue comment의 created_at (없으면 빈 문자열).
+  # 리뷰 봇이 자동 승인 비적격 판정 시 formal review 대신 issue comment 로 의견을 남기는 경로 —
   # 이 코멘트가 HEAD 이후에 작성되었다면 봇은 현재 HEAD를 평가한 것으로 간주.
   latest_bot_ch2_date=$(echo "$ch2_raw" \
-    | jq -r '[.[] | select(.user.login == "claude[bot]")] | sort_by(.created_at) | last | .created_at // ""' 2>/dev/null || echo "")
+    | jq -r --arg bots "$REVIEW_BOT_LOGINS" '[.[] | select(.user.login as $login | ($bots | split(",") | index($login)) != null)] | sort_by(.created_at) | last | .created_at // ""' 2>/dev/null || echo "")
 
   # Build current (id -> updated_at) map per channel.
   # CH1 (인라인 리뷰 코멘트), CH2 (일반 PR 코멘트): updated_at 필드 사용.
   # CH3 (리뷰): GitHub Reviews API는 updated_at을 노출하지 않으므로 submitted_at을 baseline으로 쓴다.
   #   리뷰 본문 in-place 갱신은 GraphQL 또는 reactions 변화로만 관찰 가능 — 본 스킬 범위 밖.
-  #   in-place 갱신은 주로 CH1/CH2에서 발생 (claude bot 코멘트/인라인 코멘트).
+  #   in-place 갱신은 주로 CH1/CH2에서 발생 (리뷰 봇 코멘트/인라인 코멘트).
   curr_state=$(jq -n \
     --argjson ch1 "$ch1_raw" \
     --argjson ch2 "$ch2_raw" \
@@ -272,12 +273,12 @@ while true; do
     exit 0
   fi
 
-  # 이벤트 5: bot-stuck — claude bot이 신규 커밋을 인식하지 않아 재리뷰 트리거가 누락된 정체 상태.
+  # 이벤트 5: bot-stuck — 외부 리뷰 봇이 신규 커밋을 인식하지 않아 재리뷰 트리거가 누락된 정체 상태.
   # (a) CI 전부 COMPLETED, (b) mergeState != CLEAN, (c) reviewDecision != APPROVED,
-  # (d) latest claude[bot] review.commit_id != HEAD oid (또는 review 부재),
+  # (d) latest review bot review.commit_id != HEAD oid (또는 review 부재),
   # (e) 동시에 봇이 HEAD 를 평가하지 않았다 (bot_evaluated_head=0).
   #
-  # bot_evaluated_head 의 의의: claude bot 은 자동 승인 비적격 판정 시 두 경로로 의견을 남길 수 있다 —
+  # bot_evaluated_head 의 의의: 리뷰 봇은 자동 승인 비적격 판정 시 두 경로로 의견을 남길 수 있다 —
   # (1) CH2 issue comment 로 "팀원 리뷰 필요" 의견 (HEAD commit 이후 created_at),
   # (2) CH3 reviews API 로 state=COMMENTED 리뷰 (commit_id == HEAD, APPROVED 아님).
   # 둘 중 어느 경로든 봇은 현재 HEAD 를 평가했지만 의도적으로 승인하지 않은 것이므로 stuck 이 아니다 —
