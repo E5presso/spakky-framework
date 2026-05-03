@@ -152,7 +152,7 @@ jobs:
                 --hostname spakky-celery-rabbitmq \
                 -e RABBITMQ_DEFAULT_USER=test \
                 -e RABBITMQ_DEFAULT_PASS=test \
-                -e RABBITMQ_ERLANG_COOKIE=spakky-celery-cookie \
+                -e RABBITMQ_ERLANG_COOKIE=spakkycelerycookie \
                 -p 5672:5672 \
                 rabbitmq:3.13-management
               for attempt in {1..30}; do
