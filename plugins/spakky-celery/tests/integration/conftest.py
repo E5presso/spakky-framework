@@ -30,7 +30,7 @@ RABBITMQ_PASSWORD = "test"
 RABBITMQ_INTERNAL_PORT = 5672
 
 
-@pytest.fixture(name="rabbitmq_container", scope="session")
+@pytest.fixture(name="rabbitmq_container", scope="package")
 def rabbitmq_container_fixture() -> Generator[RabbitMqContainer, None, None]:
     """Start a RabbitMQ container for Celery broker."""
     container = RabbitMqContainer(
@@ -54,7 +54,7 @@ def rabbitmq_container_fixture() -> Generator[RabbitMqContainer, None, None]:
             del environ[key]
 
 
-@pytest.fixture(name="app_with_worker", scope="session")
+@pytest.fixture(name="app_with_worker", scope="package")
 def app_with_worker_fixture(
     rabbitmq_container: RabbitMqContainer,
 ) -> Generator[SpakkyApplication, Any, None]:

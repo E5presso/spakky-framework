@@ -146,7 +146,11 @@ jobs:
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
           if [ -d "tests/integration" ]; then
-            uv run pytest --with-integration -m integration --no-cov
+            PYTEST_ARGS="--with-integration -m integration --no-cov"
+            if [ "${{ matrix.package }}" = "spakky-celery" ]; then
+              PYTEST_ARGS="$PYTEST_ARGS -n 0"
+            fi
+            uv run pytest $PYTEST_ARGS
           else
             echo "No integration tests found, skipping."
           fi
@@ -180,7 +184,12 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: ${{ steps.pkg.outputs.path }}
-        run: uv run pytest --with-integration --cov --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy
+        run: |
+          PYTEST_ARGS="--with-integration --cov --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy"
+          if [ "${{ matrix.package }}" = "spakky-celery" ]; then
+            PYTEST_ARGS="$PYTEST_ARGS -n 0"
+          fi
+          uv run pytest $PYTEST_ARGS
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
