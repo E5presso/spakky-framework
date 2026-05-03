@@ -119,6 +119,34 @@ app = (
 )
 ```
 
+### Startup diagnostics와 manifest 재사용
+
+Startup diagnostics는 opt-in입니다. 활성화하면 `load_plugins`, `scan`,
+`registration`, `post_processor_registration`, `instantiation`,
+`post_processing`, `service_start` phase의 처리 개수와 성공/실패 상태를
+`StartupReport`에서 읽을 수 있습니다.
+
+```python
+from pathlib import Path
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .enable_startup_diagnostics()
+    .enable_discovery_manifest(Path(".spakky/cache/discovery-manifest.json"))
+    .load_plugins(include=set())
+    .scan(apps)
+    .start()
+)
+
+scan_record = app.startup_report.records[1]
+manifest_decision = scan_record.diagnostic_details[0].value
+```
+
+DiscoveryManifest decision은 `miss`, `hit`, `stale_schema`, `stale_input` 중
+하나입니다. `hit`은 저장된 scan 후보를 기존 등록 경로로 재사용하고, stale
+또는 miss는 fresh discovery로 돌아갑니다. 이 기능은 container cache가 아니며
+actuator endpoint나 exporter 연동을 자동으로 만들지 않습니다.
+
 ---
 
 ## 싱글톤
