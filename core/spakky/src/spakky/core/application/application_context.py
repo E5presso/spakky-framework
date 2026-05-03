@@ -1,9 +1,11 @@
 import threading
+from dataclasses import dataclass
 from asyncio import locks
 from asyncio.events import AbstractEventLoop, new_event_loop, set_event_loop
 from asyncio.tasks import run_coroutine_threadsafe
 from contextvars import ContextVar
 from threading import RLock, Thread
+from time import perf_counter
 from types import MappingProxyType, NoneType
 from typing import Callable, cast, overload
 from uuid import UUID, uuid4
@@ -12,6 +14,10 @@ from typing_extensions import override
 
 from spakky.core.aop.post_processor import AspectPostProcessor
 from spakky.core.application.error import AbstractSpakkyApplicationError
+from spakky.core.application.startup_diagnostics import (
+    IStartupPhaseRecorder,
+    NoOpStartupPhaseRecorder,
+)
 from spakky.core.common.constants import CONTEXT_ID, CONTEXT_SCOPE_CACHE
 from spakky.core.common.types import ObjectT, is_optional, remove_none
 from spakky.core.pod.annotations.lazy import Lazy
@@ -61,6 +67,21 @@ class CannotAssignSystemContextIDError(AbstractSpakkyApplicationError):
     message = f"Cannot override {CONTEXT_ID} value."
 
 
+STARTUP_PHASE_POST_PROCESSOR_REGISTRATION = "post_processor_registration"
+STARTUP_PHASE_INSTANTIATION = "instantiation"
+STARTUP_PHASE_POST_PROCESSING = "post_processing"
+STARTUP_PHASE_SERVICE_START = "service_start"
+
+
+@dataclass
+class _ApplicationContextStartupMetrics:
+    instantiation_attempt_count: int = 0
+    instantiation_elapsed_seconds: float = 0
+    post_processing_application_count: int = 0
+    post_processing_elapsed_seconds: float = 0
+    post_processing_exception: BaseException | None = None
+
+
 class ApplicationContext(IApplicationContext):
     """Container managing Pod instances, dependencies, and application lifecycle.
 
@@ -108,6 +129,9 @@ class ApplicationContext(IApplicationContext):
     __is_started: bool
     """Whether the context has been started."""
 
+    __startup_metrics: _ApplicationContextStartupMetrics | None
+    """Startup lifecycle metrics for the active start attempt."""
+
     def __init__(self) -> None:
         """Initialize application context."""
         self.__forward_type_map = {}
@@ -124,6 +148,7 @@ class ApplicationContext(IApplicationContext):
         self.__event_loop = None
         self.__event_thread = None
         self.__is_started = False
+        self.__startup_metrics = None
         self.task_stop_event = locks.Event()
         self.thread_stop_event = threading.Event()
 
@@ -291,9 +316,20 @@ class ApplicationContext(IApplicationContext):
                     ),
                 )
             dependencies[name] = resolved_dependency
-        instance: object = pod.instantiate(dependencies=dependencies)
+        started_at = perf_counter()
+        try:
+            instance: object = pod.instantiate(dependencies=dependencies)
+        except BaseException:
+            self.__record_instantiation_attempt(perf_counter() - started_at)
+            raise
+        self.__record_instantiation_attempt(perf_counter() - started_at)
         post_processed: object = self.__post_process_pod(instance)
         return post_processed
+
+    def __record_instantiation_attempt(self, elapsed_seconds: float) -> None:
+        if self.__startup_metrics is None:
+            return
+        self.__startup_metrics.instantiation_elapsed_seconds += elapsed_seconds
 
     def __post_process_pod(self, pod: object) -> object:
         """Apply all registered post-processors to a Pod instance.
@@ -305,8 +341,26 @@ class ApplicationContext(IApplicationContext):
             The post-processed Pod instance.
         """
         for post_processor in self.__post_processors:
-            pod = post_processor.post_process(pod)
+            started_at = perf_counter()
+            try:
+                pod = post_processor.post_process(pod)
+            except BaseException as e:
+                self.__record_post_processing_attempt(perf_counter() - started_at, e)
+                raise
+            self.__record_post_processing_attempt(perf_counter() - started_at)
         return pod
+
+    def __record_post_processing_attempt(
+        self,
+        elapsed_seconds: float,
+        exception: BaseException | None = None,
+    ) -> None:
+        if self.__startup_metrics is None:
+            return
+        self.__startup_metrics.post_processing_application_count += 1
+        self.__startup_metrics.post_processing_elapsed_seconds += elapsed_seconds
+        if exception is not None:
+            self.__startup_metrics.post_processing_exception = exception
 
     def __register_post_processors(self) -> None:
         """Register built-in and user-defined post-processors.
@@ -343,6 +397,8 @@ class ApplicationContext(IApplicationContext):
             pod for pod in self.__pods.values() if not Lazy.exists(pod.target)
         ]
         for pod in non_lazy_pods:
+            if self.__startup_metrics is not None:
+                self.__startup_metrics.instantiation_attempt_count += 1
             if (
                 self.__get_internal(type_=pod.type_, name=pod.name) is None
             ):  # pragma: no cover
@@ -608,7 +664,10 @@ class ApplicationContext(IApplicationContext):
             self.__async_services.append(service)
 
     @override
-    def start(self) -> None:
+    def start(
+        self,
+        startup_phase_recorder: IStartupPhaseRecorder | None = None,
+    ) -> None:
         """Start the application context.
 
         Registers post-processors, initializes Pods, and starts services.
@@ -618,10 +677,64 @@ class ApplicationContext(IApplicationContext):
         """
         if self.__is_started:  # pragma: no cover
             raise ApplicationContextAlreadyStartedError()
+        recorder = (
+            startup_phase_recorder
+            if startup_phase_recorder is not None
+            else NoOpStartupPhaseRecorder()
+        )
         self.__is_started = True
-        self.__register_post_processors()
-        self.__initialize_pods()
-        self.__start_services()
+        try:
+            with recorder.record_phase(
+                phase_name=STARTUP_PHASE_POST_PROCESSOR_REGISTRATION
+            ) as phase:
+                self.__register_post_processors()
+                phase.set_processed_count(len(self.__post_processors))
+
+            startup_metrics = _ApplicationContextStartupMetrics()
+            self.__startup_metrics = startup_metrics
+            try:
+                self.__initialize_pods()
+            except BaseException as e:
+                if startup_metrics.post_processing_exception is None:
+                    recorder.record_failure(
+                        phase_name=STARTUP_PHASE_INSTANTIATION,
+                        elapsed_seconds=startup_metrics.instantiation_elapsed_seconds,
+                        exception=e,
+                        processed_count=startup_metrics.instantiation_attempt_count,
+                    )
+                else:
+                    recorder.record_success(
+                        phase_name=STARTUP_PHASE_INSTANTIATION,
+                        elapsed_seconds=startup_metrics.instantiation_elapsed_seconds,
+                        processed_count=startup_metrics.instantiation_attempt_count,
+                    )
+                    recorder.record_failure(
+                        phase_name=STARTUP_PHASE_POST_PROCESSING,
+                        elapsed_seconds=startup_metrics.post_processing_elapsed_seconds,
+                        exception=startup_metrics.post_processing_exception,
+                        processed_count=startup_metrics.post_processing_application_count,
+                    )
+                raise
+
+            recorder.record_success(
+                phase_name=STARTUP_PHASE_INSTANTIATION,
+                elapsed_seconds=startup_metrics.instantiation_elapsed_seconds,
+                processed_count=startup_metrics.instantiation_attempt_count,
+            )
+            recorder.record_success(
+                phase_name=STARTUP_PHASE_POST_PROCESSING,
+                elapsed_seconds=startup_metrics.post_processing_elapsed_seconds,
+                processed_count=startup_metrics.post_processing_application_count,
+            )
+
+            service_start_count = len(self.__services) + len(self.__async_services)
+            with recorder.record_phase(
+                phase_name=STARTUP_PHASE_SERVICE_START,
+                processed_count=service_start_count,
+            ):
+                self.__start_services()
+        finally:
+            self.__startup_metrics = None
 
     @override
     def stop(self) -> None:

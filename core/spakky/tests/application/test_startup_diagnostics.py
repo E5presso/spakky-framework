@@ -1,7 +1,11 @@
 """Tests for startup diagnostics contracts."""
 
-import pytest
+import threading
 
+import pytest
+from typing_extensions import override
+
+import spakky.core.application.application_context as application_context_module
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.application.startup_diagnostics import (
@@ -16,6 +20,51 @@ from spakky.core.application.startup_diagnostics import (
     StartupPhaseStatus,
     StartupProcessedCountCannotBeNegativeError,
 )
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from spakky.core.service.interfaces.service import IService
+
+
+class FailingStartupService(IService):
+    """Synchronous service that fails during startup."""
+
+    _stop_event: threading.Event | None
+    _stopped: bool
+
+    def __init__(self) -> None:
+        self._stop_event = None
+        self._stopped = False
+
+    @override
+    def set_stop_event(self, stop_event: threading.Event) -> None:
+        self._stop_event = stop_event
+
+    @override
+    def start(self) -> None:
+        raise RuntimeError("service failed")
+
+    @override
+    def stop(self) -> None:
+        self._stopped = True
+
+
+@Pod()
+class FailingPostProcessor(IPostProcessor):
+    """Post-processor that fails during startup pod processing."""
+
+    @override
+    def post_process(self, pod: object) -> object:
+        raise RuntimeError("post processing failed")
+
+
+@Pod()
+class PostProcessingTarget:
+    """Pod used to trigger user post-processing during startup."""
+
+
+@Pod()
+class TimedInstantiationTarget:
+    """Pod used to verify separate instantiation and post-processing timings."""
 
 
 def test_active_startup_phase_recorder_success_expect_report_contains_phase() -> None:
@@ -152,6 +201,141 @@ def test_spakky_application_enable_startup_diagnostics_expect_active_report() ->
     assert result is app
     assert isinstance(app.startup_phase_recorder, ActiveStartupPhaseRecorder)
     assert len(app.startup_report.records) == 1
+
+
+def test_spakky_application_startup_pipeline_diagnostics_expect_phase_records() -> None:
+    """diagnostics 활성화 시 startup pipeline phase들이 report에 기록됨을 검증한다."""
+    from tests.dummy import dummy_package
+
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.load_plugins(include=set()).scan(dummy_package).start()
+
+    try:
+        records_by_phase = {
+            record.phase_name: record for record in app.startup_report.records
+        }
+
+        assert records_by_phase["load_plugins"].processed_count == 0
+        assert records_by_phase["scan"].processed_count > 0
+        assert records_by_phase["registration"].processed_count > 0
+        assert records_by_phase["post_processor_registration"].processed_count > 0
+        assert records_by_phase["instantiation"].processed_count > 0
+        assert records_by_phase["post_processing"].processed_count > 0
+        assert records_by_phase["service_start"].processed_count == 0
+        assert all(
+            record.status is StartupPhaseStatus.SUCCESS
+            for record in app.startup_report.records
+        )
+    finally:
+        app.stop()
+
+
+def test_spakky_application_startup_diagnostics_expect_instantiation_time_excludes_post_processing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """instantiation phase 시간이 post_processing phase 시간과 중복되지 않음을 검증한다."""
+    perf_counter_values = iter((10.0, 12.0, 13.0, 15.0, 17.0, 20.0, 23.0, 30.0))
+    monkeypatch.setattr(
+        application_context_module,
+        "perf_counter",
+        lambda: next(perf_counter_values),
+    )
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .add(TimedInstantiationTarget)
+        .enable_startup_diagnostics()
+    )
+
+    app.start()
+
+    try:
+        records_by_phase = {
+            record.phase_name: record for record in app.startup_report.records
+        }
+
+        assert records_by_phase["post_processing"].elapsed_seconds == 12.0
+        assert records_by_phase["instantiation"].elapsed_seconds == 2.0
+    finally:
+        app.stop()
+
+
+def test_spakky_application_disabled_diagnostics_expect_existing_behavior() -> None:
+    """diagnostics 비활성화 시 기존 startup behavior와 빈 report가 보존됨을 검증한다."""
+    from tests.dummy import dummy_package
+
+    app = SpakkyApplication(ApplicationContext())
+
+    app.load_plugins(include=set()).scan(dummy_package).start()
+
+    try:
+        assert app.startup_report.records == ()
+    finally:
+        app.stop()
+
+
+def test_spakky_application_start_without_pods_expect_zero_post_processing() -> None:
+    """post-processor 적용 대상이 0개여도 post_processing phase가 실패하지 않음을 검증한다."""
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.start()
+
+    try:
+        records_by_phase = {
+            record.phase_name: record for record in app.startup_report.records
+        }
+
+        assert records_by_phase["post_processing"].processed_count == 0
+        assert records_by_phase["post_processing"].status is StartupPhaseStatus.SUCCESS
+    finally:
+        app.stop()
+
+
+def test_spakky_application_start_failure_expect_recorded_and_propagated() -> None:
+    """startup phase 실패 시 실패 record를 남기고 기존 예외를 그대로 전파함을 검증한다."""
+    context = ApplicationContext()
+    context.add_service(FailingStartupService())
+    app = SpakkyApplication(context).enable_startup_diagnostics()
+
+    try:
+        with pytest.raises(RuntimeError, match="service failed"):
+            app.start()
+
+        failure = app.startup_report.records[-1]
+        assert failure.phase_name == "service_start"
+        assert failure.status is StartupPhaseStatus.FAILURE
+        assert failure.failure_summary is not None
+        assert failure.failure_summary.exception_type_name == "RuntimeError"
+        assert failure.failure_summary.message == "service failed"
+    finally:
+        if context.is_started:
+            app.stop()
+
+
+def test_spakky_application_post_processing_failure_expect_phase_failure() -> None:
+    """post-processing 실패 시 해당 phase 실패 record를 남기고 기존 예외를 전파함을 검증한다."""
+    context = ApplicationContext()
+    app = (
+        SpakkyApplication(context)
+        .add(FailingPostProcessor)
+        .add(PostProcessingTarget)
+        .enable_startup_diagnostics()
+    )
+
+    with pytest.raises(RuntimeError, match="post processing failed"):
+        app.start()
+
+    records_by_phase = {
+        record.phase_name: record for record in app.startup_report.records
+    }
+    instantiation = records_by_phase["instantiation"]
+    post_processing = records_by_phase["post_processing"]
+
+    assert instantiation.status is StartupPhaseStatus.SUCCESS
+    assert post_processing.status is StartupPhaseStatus.FAILURE
+    assert post_processing.failure_summary is not None
+    assert post_processing.failure_summary.exception_type_name == "RuntimeError"
+    assert post_processing.failure_summary.message == "post processing failed"
 
 
 def test_startup_failure_summary_from_exception_expect_no_raw_exception() -> None:

@@ -32,6 +32,10 @@ from spakky.core.pod.annotations.tag import Tag
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
 
+STARTUP_PHASE_LOAD_PLUGINS = "load_plugins"
+STARTUP_PHASE_SCAN = "scan"
+STARTUP_PHASE_REGISTRATION = "registration"
+
 
 class CannotDetermineScanPathError(AbstractSpakkyApplicationError):
     """Raised when the scan path cannot be automatically determined."""
@@ -149,39 +153,50 @@ class SpakkyApplication:
         """
         modules: set[ModuleType]
         caller_module: ModuleType | None = None
-        if path is None:  # pragma: no cover
-            caller_frame = inspect.stack()[1]
-            caller_file = caller_frame.filename
-            caller_dir = Path(caller_file).parent
+        with self._startup_phase_recorder.record_phase(
+            phase_name=STARTUP_PHASE_SCAN
+        ) as scan_phase:
+            if path is None:  # pragma: no cover
+                caller_frame = inspect.stack()[1]
+                caller_file = caller_frame.filename
+                caller_dir = Path(caller_file).parent
 
-            # Check if caller is inside a package (has __init__.py)
-            if not (caller_dir / "__init__.py").exists():
-                raise CannotDetermineScanPathError
+                # Check if caller is inside a package (has __init__.py)
+                if not (caller_dir / "__init__.py").exists():
+                    raise CannotDetermineScanPathError
 
-            # Ensure the package is importable (adds to sys.path if needed)
-            ensure_importable(caller_dir)
+                # Ensure the package is importable (adds to sys.path if needed)
+                ensure_importable(caller_dir)
 
-            try:
-                path = resolve_module(caller_dir.name)
-            except ImportError as e:
-                raise CannotDetermineScanPathError from e
+                try:
+                    path = resolve_module(caller_dir.name)
+                except ImportError as e:
+                    raise CannotDetermineScanPathError from e
 
-            caller_module = inspect.getmodule(caller_frame[0])
+                caller_module = inspect.getmodule(caller_frame[0])
 
-        if exclude is None:
-            exclude = {caller_module} if caller_module else set()
-        if is_package(path):
-            modules = list_modules(path, exclude)
-        else:  # pragma: no cover
-            modules = {resolve_module(path)}
+            if exclude is None:
+                exclude = {caller_module} if caller_module else set()
+            if is_package(path):
+                modules = list_modules(path, exclude)
+            else:  # pragma: no cover
+                modules = {resolve_module(path)}
+            scan_phase.set_processed_count(len(modules))
 
-        for item in modules:
-            for obj in list_objects(item, lambda x: Pod.exists(x) or Tag.exists(x)):
-                if Pod.exists(obj):
-                    self._application_context.add(obj)
-                if Tag.exists(obj):
-                    tag = Tag.get(obj)
-                    self._application_context.register_tag(tag)
+        registration_count = 0
+        with self._startup_phase_recorder.record_phase(
+            phase_name=STARTUP_PHASE_REGISTRATION
+        ) as registration_phase:
+            for item in modules:
+                for obj in list_objects(item, lambda x: Pod.exists(x) or Tag.exists(x)):
+                    if Pod.exists(obj):
+                        self._application_context.add(obj)
+                        registration_count += 1
+                    if Tag.exists(obj):
+                        tag = Tag.get(obj)
+                        self._application_context.register_tag(tag)
+                        registration_count += 1
+            registration_phase.set_processed_count(registration_count)
 
         return self
 
@@ -197,14 +212,20 @@ class SpakkyApplication:
         Returns:
             Self for method chaining.
         """
-        for entry_point in entry_points(group=PLUGIN_PATH):  # pragma: no cover
-            if include is not None:  # pragma: no cover
-                if Plugin(name=entry_point.name) not in include:  # pragma: no cover
-                    continue  # pragma: no cover
-            entry_point_function: Callable[[SpakkyApplication], None] = (
-                entry_point.load()
-            )  # pragma: no cover
-            entry_point_function(self)  # pragma: no cover
+        loaded_count = 0
+        with self._startup_phase_recorder.record_phase(
+            phase_name=STARTUP_PHASE_LOAD_PLUGINS
+        ) as plugin_phase:
+            for entry_point in entry_points(group=PLUGIN_PATH):  # pragma: no cover
+                if include is not None:  # pragma: no cover
+                    if Plugin(name=entry_point.name) not in include:  # pragma: no cover
+                        continue  # pragma: no cover
+                entry_point_function: Callable[[SpakkyApplication], None] = (
+                    entry_point.load()
+                )
+                loaded_count += 1
+                plugin_phase.set_processed_count(loaded_count)
+                entry_point_function(self)  # pragma: no cover
         return self
 
     def start(self) -> Self:
@@ -213,7 +234,9 @@ class SpakkyApplication:
         Returns:
             Self for method chaining.
         """
-        self._application_context.start()
+        self._application_context.start(
+            startup_phase_recorder=self._startup_phase_recorder
+        )
         return self
 
     def stop(self) -> Self:
