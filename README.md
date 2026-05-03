@@ -70,6 +70,7 @@ Spakky is a monorepo containing the core framework and official plugins:
 | **`spakky-event`** | Event handling (IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
 | **`spakky-task`** | Task queue abstractions (@TaskHandler, @task, @schedule, Crontab) |
 | **`spakky-actuator`** | Transport-neutral health, readiness, liveness, and info contracts |
+| **`spakky-cache`** | Backend-neutral application data cache contracts and in-memory backend |
 | **`spakky-tracing`** | Distributed tracing abstraction (TraceContext, ITracePropagator, W3C Propagator) |
 | **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
 | **`spakky-saga`** | Distributed transaction saga orchestration (SagaFlow, SagaStep, compensation) |

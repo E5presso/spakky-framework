@@ -39,6 +39,7 @@ version_files = [
   "core/spakky-event/pyproject.toml:version",
   "core/spakky-task/pyproject.toml:version",
   "core/spakky-actuator/pyproject.toml:version",
+  "core/spakky-cache/pyproject.toml:version",
   "core/spakky-outbox/pyproject.toml:version",
   "core/spakky-tracing/pyproject.toml:version",
   "core/spakky-saga/pyproject.toml:version",
@@ -63,6 +64,7 @@ members = [
   "core/spakky-event",
   "core/spakky-task",
   "core/spakky-actuator",
+  "core/spakky-cache",
   "core/spakky-outbox",
   "core/spakky-tracing",
   "core/spakky-saga",
@@ -93,6 +95,7 @@ spakky-sqlalchemy = { workspace = true }
 spakky-outbox = { workspace = true }
 spakky-task = { workspace = true }
 spakky-actuator = { workspace = true }
+spakky-cache = { workspace = true }
 spakky-celery = { workspace = true }
 spakky-logging = { workspace = true }
 spakky-tracing = { workspace = true }

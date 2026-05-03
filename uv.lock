@@ -11,6 +11,7 @@ resolution-markers = [
 members = [
     "spakky",
     "spakky-actuator",
+    "spakky-cache",
     "spakky-celery",
     "spakky-data",
     "spakky-domain",
@@ -2792,6 +2793,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+
+[[package]]
+name = "spakky-cache"
+version = "6.3.1"
+source = { editable = "core/spakky-cache" }
+dependencies = [
+    { name = "spakky" },
+    { name = "typing-extensions" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "spakky", editable = "core/spakky" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
+]
 
 [[package]]
 name = "spakky-celery"
