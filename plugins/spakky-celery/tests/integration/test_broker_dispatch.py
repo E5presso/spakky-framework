@@ -7,6 +7,7 @@ Uses testcontainers for RabbitMQ and celery.contrib.testing.worker for
 running a real worker in a thread.
 """
 
+import asyncio
 from time import sleep, time
 
 from spakky.core.application.application import SpakkyApplication
@@ -160,6 +161,6 @@ async def test_get_async_retrieves_async_task_return_value_from_broker(
     assert isinstance(result, AbstractTaskResult)
 
     # Then: get_async() retrieves the task's return value without blocking the event loop
-    value = await result.get_async()
+    value = await asyncio.wait_for(result.get_async(), timeout=MAX_WAIT_TIME)
     assert value == 42
     assert execution_record.count("compute") == 1
