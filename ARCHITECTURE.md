@@ -432,6 +432,12 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` |
 
+### 애플리케이션 데이터 캐시
+
+`spakky-cache`는 서비스·유스케이스 코드가 backend에 묶이지 않고 `CacheHit`/`CacheMiss`와 sync/async `AbstractCache` 계약으로 애플리케이션 데이터를 캐시하기 위한 코어 패키지입니다. 이 캐시는 `ApplicationContext`의 type/singleton/context 내부 캐시와 별개이며 DI 컨테이너 lookup 동작을 변경하지 않습니다.
+
+`spakky-cache` 플러그인은 기본 `InMemoryCache`를 등록하고, `@cacheable`/`@cache_evict` 메서드를 `CacheAspect`와 `AsyncCacheAspect`로 처리합니다. `spakky-redis`는 같은 계약을 Redis에 연결하는 backend plugin이며, configured key prefix 하위 항목만 clear합니다. distributed lock, cache stampede protection, tag invalidation, write-through/write-behind, metrics/exporter integration은 현재 범위 밖입니다.
+
 ---
 
 ## 도메인 레이어 (spakky-domain)

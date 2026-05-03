@@ -211,6 +211,7 @@ app = (
 | [OpenTelemetry 통합](guides/opentelemetry.md) | OTel SDK 브릿지, OTLP exporter, Propagator 자동 교체 |
 | [Actuator 상태 확인](guides/actuator.md) | Health, Readiness, Liveness, Info, probe 확장 |
 | [사가 오케스트레이션](guides/saga.md) | SagaFlow, SagaStep, 보상 기반 롤백, ErrorStrategy |
+| [애플리케이션 데이터 캐시](guides/cache.md) | `CacheHit`, `CacheMiss`, `@cacheable`, Redis backend |
 | [gRPC 통합](guides/grpc.md) | `@GrpcController`, `@rpc`, code-first 프로토콜 생성 |
 
 ---

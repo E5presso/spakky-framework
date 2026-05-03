@@ -60,6 +60,14 @@ if isinstance(result, CacheHit):
     assert result.value == 42
 ```
 
+## Contract Notes
+
+`RedisCache` is a backend implementation of the `spakky-cache` application data cache contract. Business code should depend on `AbstractCache[T]` and can switch between `InMemoryCache` and `RedisCache` without changing cache hit/miss handling.
+
+Values are serialized with pickle and stored under `SPAKKY_REDIS__KEY_PREFIX`. `clear()` and `clear_async()` delete only keys under that prefix. Redis failures, unexpected response types, and serialization failures are raised as Spakky cache errors instead of being treated as cache misses.
+
+This plugin does not add distributed locks, cache stampede protection, tag invalidation, write-through/write-behind policies, or metrics exporters.
+
 ## License
 
 MIT License

@@ -30,7 +30,7 @@ module-name = "spakky.plugins.redis"
 
 [tool.pyrefly]
 python-version = "3.11"
-search_path = ["src", "."]
+search_path = ["src", ".", "../../core/spakky/src", "../../core/spakky-cache/src"]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
@@ -38,7 +38,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky/plugins/redis"
+pythonpath = ["src", "../../core/spakky/src", "../../core/spakky-cache/src"]
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
