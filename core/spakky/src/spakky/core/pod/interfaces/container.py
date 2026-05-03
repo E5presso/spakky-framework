@@ -44,7 +44,11 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError, IRepresentabl
 
         lines = [self.message, "Dependency path:"]
         for i, type_ in enumerate(dependency_chain):
-            type_name = type_.__name__ if hasattr(type_, "__name__") else str(type_)
+            type_name = (
+                type_.__name__
+                if hasattr(type_, "__name__")  # diagnostic fallback for typing aliases
+                else str(type_)
+            )
             indent = "  " * i
             arrow = "└─> " if i > 0 else ""
 

@@ -103,5 +103,5 @@ class AbstractValueObject(AbstractDomainModel, IEquatable, ICloneable, IDataclas
         super().__init_subclass__()
         for name, type in cls.__annotations__.items():
             # typing 별칭/제네릭 타입은 __hash__ 속성이 없을 수 있어 안전 조회
-            if getattr(type, "__hash__", None) is None:
+            if getattr(type, "__hash__", None) is None:  # hashability protocol check
                 raise UnhashableFieldTypeError(name)

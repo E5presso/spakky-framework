@@ -211,9 +211,9 @@ class Pod(Annotation, IEquatable):
         if isclass(obj):
             # If obj is a class, then the pod type is the class itself
             type_ = obj
-        if type_ is None:  # pragma: no cover
+        if type_ is None:  # pragma: no cover - coverage boundary
             raise CannotDeterminePodTypeError
-        if is_optional(type_):  # pragma: no cover
+        if is_optional(type_):  # pragma: no cover - coverage boundary
             raise CannotUseOptionalReturnTypeInPodError
         if not self.name:
             self.name = pascal_to_snake(obj.__name__)
@@ -251,10 +251,10 @@ class Pod(Annotation, IEquatable):
         Returns:
             True if both Pods have the same name.
         """
-        if self is value:  # pragma: no cover
+        if self is value:  # pragma: no cover - coverage boundary
             return True
         if not isinstance(value, Pod):
-            return False  # pragma: no cover (Pod 메타데이터 비교에서 다른 타입과 비교되지 않음)
+            return False  # pragma: no cover - coverage boundary (Pod 메타데이터 비교에서 다른 타입과 비교되지 않음)
         return self.name == value.name
 
     @property
@@ -267,7 +267,9 @@ class Pod(Annotation, IEquatable):
         return Primary.exists(self.target)
 
     @property
-    def dependency_qualifiers(self) -> dict[str, list[Qualifier]]:  # pragma: no cover
+    def dependency_qualifiers(
+        self,
+    ) -> dict[str, list[Qualifier]]:  # pragma: no cover - coverage boundary
         """Get qualifiers for all dependencies.
 
         Returns:
@@ -304,7 +306,7 @@ class Pod(Annotation, IEquatable):
         """
         final_dependencies: dict[str, object] = {}
         for name, dependency in dependencies.items():
-            if name not in self.dependencies:  # pragma: no cover
+            if name not in self.dependencies:  # pragma: no cover - coverage boundary
                 raise UnexpectedDependencyNameInjectedError(self.type_, name)
             dependency_info: DependencyInfo = self.dependencies[name]
             if dependency is None:
@@ -313,7 +315,9 @@ class Pod(Annotation, IEquatable):
                     # do not include it in the final dependencies
                     # so, the default value will be used
                     continue
-                if not dependency_info.is_optional:  # pragma: no cover
+                if (
+                    not dependency_info.is_optional
+                ):  # pragma: no cover - coverage boundary
                     raise UnexpectedDependencyTypeInjectedError(
                         self.type_,
                         {

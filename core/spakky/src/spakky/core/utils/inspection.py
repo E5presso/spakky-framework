@@ -37,7 +37,7 @@ def has_default_constructor(cls: type[object]) -> bool:
     Returns:
         True if the class uses the default object.__init__ or protocol placeholder.
     """
-    constructor: Action = getattr(cls, INIT)
+    constructor: Action = getattr(cls, INIT)  # constructor introspection by magic name
     if constructor is object.__init__ or constructor.__name__ == PROTOCOL_INIT:
         # If the constructor is the default constructor
         # or a placeholder for the default constructor

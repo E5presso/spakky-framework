@@ -82,7 +82,7 @@ def is_package(module: Module) -> bool:
         bool: True if the module is a package, False otherwise.
     """
     module = resolve_module(module)
-    return hasattr(module, PATH)
+    return hasattr(module, PATH)  # module inspection requires dynamic path probing
 
 
 def is_subpath_of(module: Module, patterns: set[Module]) -> bool:
@@ -128,12 +128,14 @@ def is_root_package(module: ModuleType) -> bool:
     Returns:
         bool: True if the module is a root package, False otherwise.
     """
-    if not hasattr(module, "__path__"):
+    if not hasattr(
+        module, "__path__"
+    ):  # module inspection requires dynamic path probing
         return False
     for path in map(Path, module.__path__):
         for sys_entry in map(Path, sys.path):
             # sys.path에 직접 포함된 경로 아래면 루트
-            if path == sys_entry:  # pragma: no cover
+            if path == sys_entry:  # pragma: no cover - coverage boundary
                 return True
     return False
 
@@ -165,7 +167,7 @@ def list_modules(
             continue
         try:
             module = importlib.import_module(name)
-        except ImportError:  # pragma: no cover
+        except ImportError:  # pragma: no cover - coverage boundary
             continue
         modules.add(module)
     return modules

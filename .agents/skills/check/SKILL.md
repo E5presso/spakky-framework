@@ -18,7 +18,7 @@ user-invocable: true
 ## 실행 순서
 
 1. **포맷팅** — `uv run ruff format .` (패키지 디렉토리 내에서, 커밋 전 hook 실패 방지)
-2. **Python 하네스 규칙 검증** — `uv run python ../../.agents/skills/check/scripts/validate_python_harness.py .` (패키지 디렉토리 내에서)
+2. **Python 하네스 규칙 검증** — `uv run python ../../.agents/skills/check/scripts/validate_python_harness.py .` (패키지 디렉토리 내에서, root pre-commit도 전체 실행)
 3. **레이어 의존 방향 검증** — 패키지 간 역방향 import가 없는지 확인.
 4. **Lint** — `uv run ruff check .` (패키지 디렉토리 내에서)
 5. **타입 체크** — `uv run pyrefly check` (패키지 디렉토리 내에서)
@@ -37,8 +37,18 @@ cd <package-dir> && uv run python ../../.agents/skills/check/scripts/validate_py
 - `typing.Protocol` / `typing_extensions.Protocol` import
 - `Protocol` 상속 및 `@runtime_checkable` 구조 타이핑
 - 순수 인터페이스 역할의 `Abstract*` 네이밍 (`I*` 접두사로 수정)
+- `src/` 내 `TypeError` / `ValueError` 직접 `raise`
+- `src/` 내 `assert`
+- `tests/` 내 `class Test*` 클래스 기반 테스트
+- `src/` 내 `getattr()` / `hasattr()` / `setattr()` 사유 없는 동적 attribute 접근
+- `type: ignore` / `pyrefly: ignore` / `pragma: no cover` / `pragma: no branch` 사유 없는 opt-out 주석
+- 플러그인에서 다른 플러그인 직접 import
+- 도메인 레이어에서 인프라 패키지 import
+- 에러 파일의 `__str__` 오버라이드
 
 위반이 있으면 타입 체크 실행 전에 수정한다.
+
+루트 pre-commit은 패키지별 hook이 없는 신규 패키지까지 잡기 위해 같은 검사를 전체 범위로 항상 실행한다.
 
 ## 2. 레이어 의존 방향 검증
 

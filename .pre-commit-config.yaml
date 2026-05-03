@@ -1,6 +1,15 @@
 repos:
   - repo: local
     hooks:
+      - id: python-harness-rules
+        name: Validate Python harness rules
+        entry: uv run python .agents/skills/check/scripts/validate_python_harness.py core plugins .agents scripts
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+        stages: [pre-commit]
+
       - id: monorepo-pre-commit
         name: Run pre-commit on changed sub-projects
         entry: uv run python scripts/run_subproject_precommit.py

@@ -44,7 +44,7 @@ class AbstractBackgroundService(IService, ABC):
     def stop(self) -> None:
         """Stop service and wait for thread to finish."""
         self._stop_event.set()
-        if self._thread:  # pragma: no cover
+        if self._thread:  # pragma: no cover - coverage boundary
             self._thread.join()
         self.dispose()
 
@@ -103,7 +103,7 @@ class AbstractAsyncBackgroundService(IAsyncService, ABC):
     async def stop_async(self) -> None:
         """Stop service and wait for task to finish."""
         self._stop_event.set()
-        if self._task:  # pragma: no cover
+        if self._task:  # pragma: no cover - coverage boundary
             await self._task
         await self.dispose_async()
 

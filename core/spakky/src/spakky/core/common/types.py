@@ -90,7 +90,7 @@ def remove_none(type_: Any) -> Any:
     if origin in (UnionType, Union):
         args = get_args(type_)
         non_none_args = tuple(a for a in args if a is not type(None))
-        if not non_none_args:  # pragma: no cover
+        if not non_none_args:  # pragma: no cover - coverage boundary
             return type(None)
         if len(non_none_args) == 1:
             return non_none_args[0]
@@ -117,7 +117,9 @@ def get_callable_methods(obj: object) -> list[tuple[str, Callable[..., Any]]]:
             continue
 
         try:
-            actual = getattr(obj, name)
+            actual = getattr(
+                obj, name
+            )  # introspection skips properties raising on access
         except Exception:  # noqa: BLE001
             continue
 

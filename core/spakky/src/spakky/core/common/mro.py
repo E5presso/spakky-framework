@@ -35,13 +35,17 @@ def _generic_mro(result: dict[type, Any], tp: Any) -> None:
     if origin is None:
         origin = tp
     result[origin] = tp
-    if hasattr(origin, ORIGIN_BASES):
-        parameters = _collect_parameters(getattr(origin, ORIGIN_BASES))
+    if hasattr(
+        origin, ORIGIN_BASES
+    ):  # typing internals expose generic bases dynamically
+        parameters = _collect_parameters(
+            getattr(origin, ORIGIN_BASES)  # typing internals generic base lookup
+        )
         substitution = dict(zip(parameters, get_args(tp)))
         for base in origin.__orig_bases__:
             if get_origin(base) in result:
                 continue
-            base_parameters = getattr(base, PARAMETERS, ())
+            base_parameters = getattr(base, PARAMETERS, ())  # typing internals lookup
             if base_parameters:
                 base = base[tuple(substitution.get(p, p) for p in base_parameters)]
             _generic_mro(result, base)
@@ -62,7 +66,10 @@ def generic_mro(tp: Any) -> list[Any]:
         TypeError: If tp is not a type or generic alias.
     """
     origin = get_origin(tp)
-    if origin is None and not hasattr(tp, ORIGIN_BASES):
+    if (
+        origin is None
+        and not hasattr(tp, ORIGIN_BASES)  # typing internals generic alias check
+    ):
         if not isinstance(tp, type):
             raise GenericMROTypeError
         return tp.mro()

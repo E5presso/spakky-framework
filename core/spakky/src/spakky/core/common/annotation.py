@@ -20,13 +20,15 @@ class Annotation:
             if base_type not in metadata:
                 metadata[base_type] = []
             metadata[base_type].append(self)
-        setattr(obj, ANNOTATION_METADATA, metadata)
+        setattr(obj, ANNOTATION_METADATA, metadata)  # framework metadata attachment
         return obj
 
     @final
     @classmethod
     def __get_metadata(cls, obj: object) -> dict[type, list[Self]]:
-        metadata: dict[type, list[Self]] = getattr(obj, ANNOTATION_METADATA, {})
+        metadata: dict[type, list[Self]] = getattr(  # framework metadata lookup
+            obj, ANNOTATION_METADATA, {}
+        )
         return metadata
 
     @final

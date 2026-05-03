@@ -31,7 +31,9 @@ class Advisor:
 
     def __getattr__(self, name: str) -> Any:
         """Delegate attribute access to the next function in the chain."""
-        return getattr(self.next, name)
+        return getattr(
+            self.next, name
+        )  # framework proxy delegates wrapped callable attrs
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the advised method with aspect logic.
@@ -82,7 +84,9 @@ class AsyncAdvisor:
 
     def __getattr__(self, name: str) -> Any:
         """Delegate attribute access to the next async function in the chain."""
-        return getattr(self.next, name)
+        return getattr(
+            self.next, name
+        )  # framework proxy delegates wrapped callable attrs
 
     async def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Execute the advised async method with aspect logic.

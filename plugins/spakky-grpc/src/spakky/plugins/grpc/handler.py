@@ -178,7 +178,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
-            handler_method = getattr(instance, method_name)
+            handler_method = getattr(instance, method_name)  # RPC handler method lookup
             if request_type is None:
                 return await handler_method()
             domain_request = (
@@ -206,7 +206,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
-            handler_method = getattr(instance, method_name)
+            handler_method = getattr(instance, method_name)  # RPC handler method lookup
             if request_type is None:
                 async for item in handler_method():
                     yield item
@@ -237,7 +237,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
-            handler_method = getattr(instance, method_name)
+            handler_method = getattr(instance, method_name)  # RPC handler method lookup
 
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:
@@ -266,7 +266,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             self._application_context.clear_context()
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
-            handler_method = getattr(instance, method_name)
+            handler_method = getattr(instance, method_name)  # RPC handler method lookup
 
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:

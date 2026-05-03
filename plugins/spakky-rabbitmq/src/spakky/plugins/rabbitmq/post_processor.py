@@ -83,10 +83,12 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         propagator = self.__application_context.get_or_none(ITracePropagator)
         if propagator is not None:
             # 프레임워크 내부: consumer 인터페이스가 선택적 propagator를 지원하는지 확인
-            if hasattr(consumer, "set_propagator"):
+            if hasattr(consumer, "set_propagator"):  # optional tracing bridge injection
                 consumer.set_propagator(propagator)
             # 프레임워크 내부: consumer 인터페이스가 선택적 propagator를 지원하는지 확인
-            if hasattr(async_consumer, "set_propagator"):
+            if hasattr(  # optional tracing bridge injection
+                async_consumer, "set_propagator"
+            ):
                 async_consumer.set_propagator(propagator)
         for name, method in getmembers(pod, ismethod):
             route: EventRoute[AbstractEvent] | None = EventRoute[
@@ -117,7 +119,9 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
                     # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
-                    method_to_call = getattr(controller_instance, method_name)
+                    method_to_call = getattr(  # event handler method lookup
+                        controller_instance, method_name
+                    )
                     return await method_to_call(*args, **kwargs)
 
                 async_consumer.register(route.event_type, async_endpoint)
@@ -136,7 +140,9 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                 self.__application_context.clear_context()
                 controller_instance = context.get(controller_type)
                 # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
-                method_to_call = getattr(controller_instance, method_name)
+                method_to_call = getattr(  # async event handler method lookup
+                    controller_instance, method_name
+                )
                 return method_to_call(*args, **kwargs)
 
             consumer.register(route.event_type, endpoint)

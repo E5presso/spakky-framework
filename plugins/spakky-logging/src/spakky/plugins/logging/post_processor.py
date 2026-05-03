@@ -72,7 +72,7 @@ class LoggingSetupPostProcessor(IPostProcessor, IContainerAware):
         # Remove any previously installed Spakky handler
         for h in list(root.handlers):
             if (
-                getattr(h, "name", None) == HANDLER_NAME
+                getattr(h, "name", None) == HANDLER_NAME  # logging handler name lookup
             ):  # logging 프레임워크: 핸들러 이름 동적 조회
                 root.removeHandler(h)
 

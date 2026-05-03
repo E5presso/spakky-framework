@@ -76,11 +76,11 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
         async_consumer = self.__container.get(IAsyncEventConsumer)
         propagator = self.__application_context.get_or_none(ITracePropagator)
         if propagator is not None:
-            if hasattr(
+            if hasattr(  # optional tracing bridge injection
                 consumer, "set_propagator"
             ):  # 프레임워크 내부: consumer가 선택적 propagator를 지원하는지 확인
                 consumer.set_propagator(propagator)
-            if hasattr(
+            if hasattr(  # optional tracing bridge injection
                 async_consumer, "set_propagator"
             ):  # 프레임워크 내부: consumer가 선택적 propagator를 지원하는지 확인
                 async_consumer.set_propagator(propagator)
@@ -112,7 +112,7 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                     # application context to avoid reusing dependency state.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
-                    method_to_call = getattr(
+                    method_to_call = getattr(  # event handler method lookup
                         controller_instance, method_name
                     )  # 프레임워크 내부: 이벤트 핸들러 메서드 동적 디스패치
                     return await method_to_call(*args, **kwargs)
@@ -132,7 +132,7 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                 # scoped data before invoking the handler.
                 self.__application_context.clear_context()
                 controller_instance = context.get(controller_type)
-                method_to_call = getattr(
+                method_to_call = getattr(  # async event handler method lookup
                     controller_instance, method_name
                 )  # 프레임워크 내부: 이벤트 핸들러 메서드 동적 디스패치
                 return method_to_call(*args, **kwargs)

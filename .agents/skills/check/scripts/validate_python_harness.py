@@ -6,6 +6,27 @@ import ast
 from pathlib import Path
 import sys
 
+BUILTIN_EXCEPTIONS = {
+    "TypeError",
+    "ValueError",
+}
+
+INFRASTRUCTURE_IMPORT_ROOTS = {
+    "spakky.data",
+    "spakky.event",
+    "spakky.outbox",
+    "spakky.plugins",
+    "spakky.task",
+    "spakky.tracing",
+}
+
+OPT_OUT_MARKERS = (
+    "# type: ignore",
+    "# pyrefly: ignore",
+    "# pragma: no cover",
+    "# pragma: no branch",
+)
+
 
 class HarnessViolation:
     def __init__(self, path: Path, line: int, message: str) -> None:
@@ -18,11 +39,13 @@ class HarnessViolation:
 
 
 class PythonHarnessVisitor(ast.NodeVisitor):
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, workspace_root: Path) -> None:
         self.path = path
+        self.workspace_root = workspace_root
         self.violations: list[HarnessViolation] = []
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self._check_import(node.module, node.lineno)
         if node.module in {"typing", "typing_extensions"}:
             for alias in node.names:
                 if alias.name == "Protocol":
@@ -37,7 +60,16 @@ class PythonHarnessVisitor(ast.NodeVisitor):
                     )
         self.generic_visit(node)
 
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            self._check_import(alias.name, node.lineno)
+        self.generic_visit(node)
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        if self._is_test_file() and node.name.startswith("Test"):
+            self._add(
+                node.lineno, "class-based tests are forbidden; use function tests"
+            )
         if self._inherits_protocol(node):
             self._add(
                 node.lineno,
@@ -52,6 +84,48 @@ class PythonHarnessVisitor(ast.NodeVisitor):
             )
         self.generic_visit(node)
 
+    def visit_Raise(self, node: ast.Raise) -> None:
+        if self._is_src_file() and self._raises_builtin_exception(node):
+            self._add(
+                node.lineno,
+                "raising built-in exceptions in src is forbidden; use framework errors",
+            )
+        self.generic_visit(node)
+
+    def visit_Assert(self, node: ast.Assert) -> None:
+        if self._is_src_file():
+            self._add(node.lineno, "assert statements in src are forbidden")
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        if self._is_src_file() and node.name == "__str__" and self._is_error_file():
+            self._add(node.lineno, "__str__ overrides in src are forbidden")
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if self._is_src_file() and self._is_dynamic_attr_call(node):
+            if not self._node_has_reason(node):
+                self._add(
+                    node.lineno,
+                    "dynamic attribute access requires an inline reason comment",
+                )
+        self.generic_visit(node)
+
+    def _check_import(self, module: str | None, line: int) -> None:
+        if module is None:
+            return
+        if self._is_plugin_src_file() and module.startswith("spakky.plugins."):
+            own_plugin = self._own_plugin_module()
+            if own_plugin is not None and not module.startswith(own_plugin):
+                self._add(line, "plugins must not directly import other plugins")
+        if self._is_domain_src_file():
+            for root in INFRASTRUCTURE_IMPORT_ROOTS:
+                if module == root or module.startswith(f"{root}."):
+                    self._add(
+                        line,
+                        "domain layer must not import infrastructure packages",
+                    )
+
     def _inherits_protocol(self, node: ast.ClassDef) -> bool:
         for base in node.bases:
             if isinstance(base, ast.Name) and base.id == "Protocol":
@@ -59,6 +133,62 @@ class PythonHarnessVisitor(ast.NodeVisitor):
             if isinstance(base, ast.Attribute) and base.attr == "Protocol":
                 return True
         return False
+
+    def _raises_builtin_exception(self, node: ast.Raise) -> bool:
+        exc = node.exc
+        if exc is None:
+            return False
+        if isinstance(exc, ast.Name):
+            return exc.id in BUILTIN_EXCEPTIONS
+        if isinstance(exc, ast.Call):
+            func = exc.func
+            return isinstance(func, ast.Name) and func.id in BUILTIN_EXCEPTIONS
+        return False
+
+    def _is_dynamic_attr_call(self, node: ast.Call) -> bool:
+        return isinstance(node.func, ast.Name) and node.func.id in {
+            "getattr",
+            "hasattr",
+            "setattr",
+        }
+
+    def _node_has_reason(self, node: ast.Call) -> bool:
+        end_line = node.end_lineno or node.lineno
+        for line in range(node.lineno, end_line + 1):
+            text = self._line(line)
+            if "#" in text and text.split("#", 1)[1].strip():
+                return True
+        return False
+
+    def _line(self, line: int) -> str:
+        return self.path.read_text().splitlines()[line - 1]
+
+    def _is_src_file(self) -> bool:
+        return "src" in self._relative_parts()
+
+    def _is_test_file(self) -> bool:
+        return "tests" in self._relative_parts()
+
+    def _is_error_file(self) -> bool:
+        return self.path.name == "error.py"
+
+    def _is_domain_src_file(self) -> bool:
+        parts = self._relative_parts()
+        return parts[:3] == ("core", "spakky-domain", "src")
+
+    def _is_plugin_src_file(self) -> bool:
+        parts = self._relative_parts()
+        return len(parts) >= 3 and parts[0] == "plugins" and parts[2] == "src"
+
+    def _own_plugin_module(self) -> str | None:
+        parts = self._relative_parts()
+        if len(parts) < 2 or parts[0] != "plugins":
+            return None
+        plugin_name = parts[1].removeprefix("spakky-").replace("-", "_")
+        return f"spakky.plugins.{plugin_name}"
+
+    def _relative_parts(self) -> tuple[str, ...]:
+        return self.path.relative_to(self.workspace_root).parts
 
     def _uses_runtime_checkable(self, node: ast.ClassDef) -> bool:
         for decorator in node.decorator_list:
@@ -118,12 +248,48 @@ def iter_python_files(root: Path) -> list[Path]:
 
 def validate(paths: list[Path]) -> list[HarnessViolation]:
     violations: list[HarnessViolation] = []
+    workspace_root = find_workspace_root(Path.cwd().resolve())
     for root in paths:
         for path in iter_python_files(root):
-            visitor = PythonHarnessVisitor(path)
-            visitor.visit(ast.parse(path.read_text(), filename=str(path)))
+            resolved_path = path.resolve()
+            visitor = PythonHarnessVisitor(resolved_path, workspace_root)
+            source = resolved_path.read_text()
+            if resolved_path.name != "validate_python_harness.py":
+                for line_number, line in enumerate(source.splitlines(), start=1):
+                    marker = next(
+                        (item for item in OPT_OUT_MARKERS if item in line),
+                        None,
+                    )
+                    if marker is None:
+                        continue
+                    suffix = line.split(marker, 1)[1].strip()
+                    if suffix.startswith("["):
+                        suffix = suffix.split("]", 1)[1].strip()
+                    has_reason = (
+                        suffix.startswith("- ")
+                        or suffix.startswith("— ")
+                        or suffix.startswith("# ")
+                    )
+                    if not has_reason:
+                        violations.append(
+                            HarnessViolation(
+                                resolved_path,
+                                line_number,
+                                "opt-out comments require an inline reason after ' - '",
+                            )
+                        )
+            visitor.visit(ast.parse(source, filename=str(resolved_path)))
             violations.extend(visitor.violations)
     return violations
+
+
+def find_workspace_root(start: Path) -> Path:
+    for candidate in (start, *start.parents):
+        if (candidate / "pyproject.toml").exists() and (
+            candidate / ".agents" / "skills"
+        ).exists():
+            return candidate
+    return start
 
 
 def main() -> int:

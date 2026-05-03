@@ -57,7 +57,7 @@ class AspectProxyHandler(AbstractProxyHandler):
                 for x in self.__aspects
                 if isinstance(x, IAspect) and Aspect.get(x).matches(method)
             ]
-            for candidate in candidates:  # pragma: no cover
+            for candidate in candidates:  # pragma: no cover - coverage boundary
                 runnable = Advisor(candidate, runnable)
             self.__advisors_cache[method] = runnable
         return self.__advisors_cache[method](*args, **kwargs)
@@ -77,7 +77,7 @@ class AspectProxyHandler(AbstractProxyHandler):
                 for x in self.__aspects
                 if isinstance(x, IAsyncAspect) and AsyncAspect.get(x).matches(method)
             ]
-            for candidate in candidates:  # pragma: no cover
+            for candidate in candidates:  # pragma: no cover - coverage boundary
                 runnable = AsyncAdvisor(candidate, runnable)
             self.__async_advisors_cache[method] = runnable
         return await self.__async_advisors_cache[method](*args, **kwargs)

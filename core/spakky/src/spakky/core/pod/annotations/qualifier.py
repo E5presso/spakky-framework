@@ -11,7 +11,9 @@ from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.pod.error import QualifierSelectorNotCallableError
 
 if TYPE_CHECKING:
-    from spakky.core.pod.annotations.pod import Pod  # pragma: no cover
+    from spakky.core.pod.annotations.pod import (
+        Pod,
+    )  # pragma: no cover - coverage boundary
 
 
 @dataclass

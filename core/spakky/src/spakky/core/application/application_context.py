@@ -401,7 +401,7 @@ class ApplicationContext(IApplicationContext):
                 self.__startup_metrics.instantiation_attempt_count += 1
             if (
                 self.__get_internal(type_=pod.type_, name=pod.name) is None
-            ):  # pragma: no cover
+            ):  # pragma: no cover - coverage boundary
                 raise NoSuchPodError(pod.type_, pod.name)
 
     def __clear_all(self) -> None:
@@ -458,10 +458,16 @@ class ApplicationContext(IApplicationContext):
         if qualifiers is None:
             # If qualifiers is None, it means that no qualifier is specified
             qualifiers = []
-        if isinstance(type_, str):  # To support forward references  # pragma: no cover
-            if type_ not in self.__forward_type_map:  # pragma: no cover
+        if isinstance(
+            type_, str
+        ):  # To support forward references  # pragma: no cover - coverage boundary
+            if (
+                type_ not in self.__forward_type_map
+            ):  # pragma: no cover - coverage boundary
                 return None
-            type_ = self.__forward_type_map[type_]  # pragma: no cover
+            type_ = self.__forward_type_map[
+                type_
+            ]  # pragma: no cover - coverage boundary
 
         pod = self.__resolve_candidate(type_=type_, name=name, qualifiers=qualifiers)
         if pod is None:
@@ -515,9 +521,9 @@ class ApplicationContext(IApplicationContext):
         Raises:
             EventLoopThreadAlreadyStartedInApplicationContextError: If already started.
         """
-        if self.__event_loop is not None:  # pragma: no cover
+        if self.__event_loop is not None:  # pragma: no cover - coverage boundary
             raise EventLoopThreadAlreadyStartedInApplicationContextError
-        if self.__event_thread is not None:  # pragma: no cover
+        if self.__event_thread is not None:  # pragma: no cover - coverage boundary
             raise EventLoopThreadAlreadyStartedInApplicationContextError
 
         self.__event_loop = new_event_loop()
@@ -532,7 +538,7 @@ class ApplicationContext(IApplicationContext):
             service.start()
 
         async def start_async_services() -> None:
-            if self.__event_loop is None:  # pragma: no cover
+            if self.__event_loop is None:  # pragma: no cover - coverage boundary
                 raise EventLoopThreadNotStartedInApplicationContextError
             for service in self.__async_services:
                 await service.start_async()
@@ -545,9 +551,9 @@ class ApplicationContext(IApplicationContext):
         Raises:
             EventLoopThreadNotStartedInApplicationContextError: If not started.
         """
-        if self.__event_loop is None:  # pragma: no cover
+        if self.__event_loop is None:  # pragma: no cover - coverage boundary
             raise EventLoopThreadNotStartedInApplicationContextError
-        if self.__event_thread is None:  # pragma: no cover
+        if self.__event_thread is None:  # pragma: no cover - coverage boundary
             raise EventLoopThreadNotStartedInApplicationContextError
 
         # Store references to avoid race condition with concurrent stop() calls
@@ -627,12 +633,14 @@ class ApplicationContext(IApplicationContext):
             CannotRegisterNonPodObjectError: If obj is not annotated with @Pod.
             PodNameAlreadyExistsError: If Pod name already registered with different ID.
         """
-        if not Pod.exists(obj):  # pragma: no cover
+        if not Pod.exists(obj):  # pragma: no cover - coverage boundary
             raise CannotRegisterNonPodObjectError(obj)
         pod: Pod = Pod.get(obj)
         if pod.name in self.__pods:
             # 같은 ID의 Pod 재등록은 add() 호출 패턴상 발생하지 않음
-            if self.__pods[pod.name].id == pod.id:  # pragma: no cover
+            if (
+                self.__pods[pod.name].id == pod.id
+            ):  # pragma: no cover - coverage boundary
                 return
             raise PodNameAlreadyExistsError(pod.name)
         for base_type in pod.base_types:
@@ -641,7 +649,9 @@ class ApplicationContext(IApplicationContext):
 
         # Update type index for fast lookup
         # pod.type_은 클래스 자체이므로 같은 타입 두 Pod은 이름 충돌로 위에서 차단됨
-        if pod.type_ not in self.__type_cache:  # pragma: no branch
+        if (
+            pod.type_ not in self.__type_cache
+        ):  # pragma: no branch - same-type pod names are rejected above
             self.__type_cache[pod.type_] = set()
         self.__type_cache[pod.type_].add(pod)
 
@@ -675,7 +685,7 @@ class ApplicationContext(IApplicationContext):
         Raises:
             ApplicationContextAlreadyStartedError: If already started.
         """
-        if self.__is_started:  # pragma: no cover
+        if self.__is_started:  # pragma: no cover - coverage boundary
             raise ApplicationContextAlreadyStartedError()
         recorder = (
             startup_phase_recorder
@@ -746,7 +756,7 @@ class ApplicationContext(IApplicationContext):
             ApplicationContextAlreadyStoppedError: If already stopped.
         """
         with self.__shutdown_lock:
-            if not self.__is_started:  # pragma: no cover
+            if not self.__is_started:  # pragma: no cover - coverage boundary
                 raise ApplicationContextAlreadyStoppedError()
             self.__stop_services()
             self.__clear_all()
@@ -777,7 +787,7 @@ class ApplicationContext(IApplicationContext):
             NoSuchPodError: If no matching Pod found.
         """
         instance = self.__get_internal(type_=type_, name=name)
-        if instance is None:  # pragma: no cover
+        if instance is None:  # pragma: no cover - coverage boundary
             raise NoSuchPodError(type_, name)
         return instance
 
@@ -870,7 +880,7 @@ class ApplicationContext(IApplicationContext):
             UUID for this context.
         """
         context = self.__context_cache.get({})
-        if CONTEXT_ID not in context:  # pragma: no cover
+        if CONTEXT_ID not in context:  # pragma: no cover - coverage boundary
             context[CONTEXT_ID] = uuid4()
             self.__context_cache.set(context)
         return cast(UUID, context[CONTEXT_ID])
@@ -898,7 +908,7 @@ class ApplicationContext(IApplicationContext):
             key: The key to set.
             value: The value to store.
         """
-        if key == CONTEXT_ID:  # pragma: no cover
+        if key == CONTEXT_ID:  # pragma: no cover - coverage boundary
             raise CannotAssignSystemContextIDError
         context = self.__context_cache.get({})
         context[key] = value

@@ -106,7 +106,9 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     self.__application_context.clear_context()
                     controller_instance = container.get(controller_type)
                     # 프레임워크 내부: CLI 커맨드 메서드 동적 디스패치
-                    method_to_call = getattr(controller_instance, method_name)
+                    method_to_call = getattr(  # command decorator method lookup
+                        controller_instance, method_name
+                    )
                     if iscoroutinefunction(method_to_call):
                         method_to_call = run_async(method_to_call)
                     return method_to_call(*args, **kwargs)

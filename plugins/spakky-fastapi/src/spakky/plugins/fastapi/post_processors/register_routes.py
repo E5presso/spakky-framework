@@ -124,7 +124,7 @@ class RegisterRoutesPostProcessor(
                     # consecutive FastAPI requests processed on the same worker.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
-                    method_to_call = getattr(
+                    method_to_call = getattr(  # route decorator method lookup
                         controller_instance, method_name
                     )  # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                     return await method_to_call(*args, **kwargs)
@@ -152,7 +152,7 @@ class RegisterRoutesPostProcessor(
                     # clear the context to guarantee per-connection isolation.
                     self.__application_context.clear_context()
                     controller_instance = context.get(controller_type)
-                    method_to_call = getattr(
+                    method_to_call = getattr(  # websocket decorator method lookup
                         controller_instance, method_name
                     )  # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                     return await method_to_call(*args, **kwargs)

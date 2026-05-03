@@ -421,7 +421,7 @@ class SagaExecutor(Generic[SagaDataT]):
                 result.append(self._normalize_step(item))
             elif callable(item):
                 # dynamic __name__ access: runtime function name for logging/debugging
-                name = getattr(item, "__name__", "<unknown>")
+                name = getattr(item, "__name__", "<unknown>")  # callable diagnostics
                 result.append(
                     _NormalizedStep(
                         name=name,
@@ -441,7 +441,7 @@ class SagaExecutor(Generic[SagaDataT]):
     ) -> _NormalizedStep[SagaDataT]:
         """SagaStep/Transaction을 _NormalizedStep으로 변환한다."""
         # dynamic __name__ access: runtime function name for logging/debugging
-        name = getattr(item.action, "__name__", "<unknown>")
+        name = getattr(item.action, "__name__", "<unknown>")  # callable diagnostics
         compensate = item.compensate if isinstance(item, Transaction) else None
         return _NormalizedStep(
             name=name,

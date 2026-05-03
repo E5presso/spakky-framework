@@ -209,7 +209,7 @@ class SpakkyApplication:
         with self._startup_phase_recorder.record_phase(
             phase_name=STARTUP_PHASE_SCAN
         ) as scan_phase:
-            if path is None:  # pragma: no cover
+            if path is None:  # pragma: no cover - coverage boundary
                 caller_frame = inspect.stack()[1]
                 caller_file = caller_frame.filename
                 caller_dir = Path(caller_file).parent
@@ -363,16 +363,20 @@ class SpakkyApplication:
         with self._startup_phase_recorder.record_phase(
             phase_name=STARTUP_PHASE_LOAD_PLUGINS
         ) as plugin_phase:
-            for entry_point in entry_points(group=PLUGIN_PATH):  # pragma: no cover
-                if include is not None:  # pragma: no cover
-                    if Plugin(name=entry_point.name) not in include:  # pragma: no cover
-                        continue  # pragma: no cover
+            for entry_point in entry_points(
+                group=PLUGIN_PATH
+            ):  # pragma: no cover - coverage boundary
+                if include is not None:  # pragma: no cover - coverage boundary
+                    if (
+                        Plugin(name=entry_point.name) not in include
+                    ):  # pragma: no cover - coverage boundary
+                        continue  # pragma: no cover - coverage boundary
                 entry_point_function: Callable[[SpakkyApplication], None] = (
                     entry_point.load()
                 )
                 loaded_count += 1
                 plugin_phase.set_processed_count(loaded_count)
-                entry_point_function(self)  # pragma: no cover
+                entry_point_function(self)  # pragma: no cover - coverage boundary
         return self
 
     def start(self) -> Self:

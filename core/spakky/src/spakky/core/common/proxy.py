@@ -127,10 +127,12 @@ class AbstractProxyHandler(IProxyHandler, ABC):
         return await method(*args, **kwargs)
 
     def get(self, target: object, name: str) -> Any:
-        return getattr(target, name)
+        return getattr(target, name)  # framework proxy dynamic attribute delegation
 
     def set(self, target: object, name: str, value: Any) -> None:
-        return setattr(target, name, value)
+        return setattr(
+            target, name, value
+        )  # framework proxy dynamic attribute delegation
 
     def delete(self, target: object, name: str) -> None:
         return delattr(target, name)
