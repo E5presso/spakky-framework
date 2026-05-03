@@ -10,6 +10,7 @@ from threading import Event
 from uuid import UUID
 
 from spakky.core.application.error import AbstractSpakkyApplicationError
+from spakky.core.application.startup_diagnostics import IStartupPhaseRecorder
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.tag_registry import ITagRegistry
 from spakky.core.service.interfaces.service import IAsyncService, IService
@@ -75,7 +76,10 @@ class IApplicationContext(IContainer, ITagRegistry, ABC):
         ...
 
     @abstractmethod
-    def start(self) -> None:
+    def start(
+        self,
+        startup_phase_recorder: IStartupPhaseRecorder | None = None,
+    ) -> None:
         """Start the application context and all services."""
         ...
 
