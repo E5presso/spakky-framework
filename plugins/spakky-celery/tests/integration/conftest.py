@@ -30,9 +30,39 @@ RABBITMQ_PASSWORD = "test"
 RABBITMQ_INTERNAL_PORT = 5672
 
 
+def _set_celery_test_environment(broker_url: str) -> dict[str, str | None]:
+    keys = [
+        f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}BROKER_URL",
+        f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}APP_NAME",
+        f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}TIMEZONE",
+        f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND",
+    ]
+    previous_values = {key: environ.get(key) for key in keys}
+    environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}BROKER_URL"] = broker_url
+    environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}APP_NAME"] = "spakky-celery-test"
+    environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}TIMEZONE"] = "UTC"
+    environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND"] = "rpc://"
+    return previous_values
+
+
+def _restore_celery_test_environment(previous_values: dict[str, str | None]) -> None:
+    for key, value in previous_values.items():
+        if value is None:
+            environ.pop(key, None)
+        else:
+            environ[key] = value
+
+
 @pytest.fixture(name="rabbitmq_container", scope="package")
-def rabbitmq_container_fixture() -> Generator[RabbitMqContainer, None, None]:
+def rabbitmq_container_fixture() -> Generator[None, None, None]:
     """Start a RabbitMQ container for Celery broker."""
+    existing_broker_url = environ.get(f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}BROKER_URL")
+    if existing_broker_url is not None:
+        previous_values = _set_celery_test_environment(existing_broker_url)
+        yield
+        _restore_celery_test_environment(previous_values)
+        return
+
     container = RabbitMqContainer(
         username=RABBITMQ_USER,
         password=RABBITMQ_PASSWORD,
@@ -42,21 +72,15 @@ def rabbitmq_container_fixture() -> Generator[RabbitMqContainer, None, None]:
         host = container.get_container_host_ip()
         port = container.get_exposed_port(RABBITMQ_INTERNAL_PORT)
         broker_url = f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{host}:{port}//"
-        environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}BROKER_URL"] = broker_url
-        environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}APP_NAME"] = "spakky-celery-test"
-        environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}TIMEZONE"] = "UTC"
-        environ[f"{SPAKKY_CELERY_CONFIG_ENV_PREFIX}RESULT_BACKEND"] = "rpc://"
+        previous_values = _set_celery_test_environment(broker_url)
+        yield
 
-        yield container
-
-    for key in list(environ.keys()):
-        if key.startswith(SPAKKY_CELERY_CONFIG_ENV_PREFIX):
-            del environ[key]
+    _restore_celery_test_environment(previous_values)
 
 
 @pytest.fixture(name="app_with_worker", scope="package")
 def app_with_worker_fixture(
-    rabbitmq_container: RabbitMqContainer,
+    rabbitmq_container: None,
 ) -> Generator[SpakkyApplication, Any, None]:
     """Create SpakkyApplication with Celery plugin and running worker."""
 

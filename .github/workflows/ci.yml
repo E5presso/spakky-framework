@@ -146,11 +146,28 @@ jobs:
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
           if [ -d "tests/integration" ]; then
-            PYTEST_ARGS="--with-integration -m integration --no-cov"
             if [ "${{ matrix.package }}" = "spakky-celery" ]; then
-              PYTEST_ARGS="$PYTEST_ARGS -n 0"
+              docker run -d \
+                --name spakky-celery-rabbitmq \
+                -e RABBITMQ_DEFAULT_USER=test \
+                -e RABBITMQ_DEFAULT_PASS=test \
+                -p 5672:5672 \
+                rabbitmq:3-management
+              for attempt in {1..30}; do
+                if docker exec spakky-celery-rabbitmq rabbitmq-diagnostics -q ping; then
+                  break
+                fi
+                if [ "$attempt" = "30" ]; then
+                  docker logs spakky-celery-rabbitmq
+                  exit 1
+                fi
+                sleep 2
+              done
+              export SPAKKY_CELERY__BROKER_URL="amqp://test:test@127.0.0.1:5672//"
+              uv run pytest --with-integration -m integration --no-cov -n 0
+            else
+              uv run pytest --with-integration -m integration --no-cov
             fi
-            uv run pytest $PYTEST_ARGS
           else
             echo "No integration tests found, skipping."
           fi
@@ -185,11 +202,11 @@ jobs:
       - name: Run tests with coverage
         working-directory: ${{ steps.pkg.outputs.path }}
         run: |
-          PYTEST_ARGS="--with-integration --cov --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy"
           if [ "${{ matrix.package }}" = "spakky-celery" ]; then
-            PYTEST_ARGS="$PYTEST_ARGS -n 0"
+            uv run pytest -m "not integration" --cov --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy -n 0
+          else
+            uv run pytest --with-integration --cov --cov-report=xml:coverage.xml --junitxml=junit.xml -o junit_family=legacy
           fi
-          uv run pytest $PYTEST_ARGS
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
