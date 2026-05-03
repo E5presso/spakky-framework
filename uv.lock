@@ -3219,12 +3219,14 @@ version = "6.3.1"
 source = { editable = "plugins/spakky-typer" }
 dependencies = [
     { name = "spakky" },
+    { name = "spakky-actuator" },
     { name = "typer" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-actuator", editable = "core/spakky-actuator" },
     { name = "typer", specifier = ">=0.24.1" },
 ]
 

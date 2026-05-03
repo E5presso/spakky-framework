@@ -21,6 +21,7 @@ pip install spakky[typer]
 - **Command grouping**: Organize commands into logical groups
 - **Dependency injection**: Services are automatically injected into controllers
 - **Rich integration**: Leverages Typer's rich console output
+- **Actuator command**: Registers `actuator` status commands when `spakky-actuator` is loaded
 
 ## Usage
 
@@ -113,6 +114,31 @@ typer_app = application.container.get(Typer)
 # Run the CLI
 if __name__ == "__main__":
     typer_app()
+```
+
+### Actuator Commands
+
+When both `spakky-typer` and `spakky-actuator` are loaded, the plugin registers an `actuator` command group:
+
+```bash
+python main.py actuator health
+python main.py actuator readiness
+python main.py actuator liveness
+python main.py actuator info
+```
+
+Each command prints deterministic JSON from the transport-neutral actuator core result model.
+
+Disable command registration with:
+
+```bash
+export SPAKKY_TYPER_ACTUATOR_COMMAND_ENABLED=false
+```
+
+Customize the command group name with:
+
+```bash
+export SPAKKY_TYPER_ACTUATOR_COMMAND_NAME=status
 ```
 
 ### Application Setup

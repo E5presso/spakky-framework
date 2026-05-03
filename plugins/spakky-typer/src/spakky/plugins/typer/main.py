@@ -6,6 +6,10 @@ Registers post-processor for automatic CLI command registration from
 
 from spakky.core.application.application import SpakkyApplication
 
+from spakky.plugins.typer.actuator import (
+    ActuatorTyperCommandPostProcessor,
+    ActuatorTyperConfig,
+)
 from spakky.plugins.typer.post_processor import TyperCLIPostProcessor
 
 
@@ -19,4 +23,6 @@ def initialize(app: SpakkyApplication) -> None:
     Args:
         app: The Spakky application instance.
     """
+    app.add(ActuatorTyperConfig)
+    app.add(ActuatorTyperCommandPostProcessor)
     app.add(TyperCLIPostProcessor)
