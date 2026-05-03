@@ -78,6 +78,7 @@ plugins:
             - core/spakky-tracing/src
             - core/spakky-outbox/src
             - core/spakky-saga/src
+            - core/spakky-actuator/src
             - plugins/spakky-logging/src
             - plugins/spakky-fastapi/src
             - plugins/spakky-rabbitmq/src
@@ -119,6 +120,7 @@ nav:
       - Transactional Outbox: guides/outbox.md
       - 분산 트레이싱: guides/tracing.md
       - OpenTelemetry 통합: guides/opentelemetry.md
+      - Actuator 상태 확인: guides/actuator.md
       - 사가 오케스트레이션: guides/saga.md
       - gRPC 통합: guides/grpc.md
   - 심화 가이드:
@@ -140,6 +142,7 @@ nav:
           - spakky-tracing: api/core/spakky-tracing.md
           - spakky-outbox: api/core/spakky-outbox.md
           - spakky-saga: api/core/spakky-saga.md
+          - spakky-actuator: api/core/spakky-actuator.md
       - Plugins:
           - spakky-logging: api/plugins/spakky-logging.md
           - spakky-fastapi: api/plugins/spakky-fastapi.md

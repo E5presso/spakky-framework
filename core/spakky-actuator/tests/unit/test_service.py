@@ -140,6 +140,42 @@ def test_required_unhealthy_probe_expect_health_and_readiness_unhealthy() -> Non
     assert readiness.components[0].name == "db"
 
 
+def test_health_result_public_shape_expect_sorted_components_and_optional_status() -> (
+    None
+):
+    """health result 공개 shape와 optional component 집계 규칙을 고정한다."""
+    registry = ActuatorExtensionRegistry()
+    registry.register_health_probe(
+        _Probe(
+            "database",
+            ComponentHealthResult.healthy("database", details={"z": 2, "a": 1}),
+        )
+    )
+    registry.register_health_probe(
+        _Probe(
+            "cache",
+            ComponentHealthResult.unhealthy(
+                "cache",
+                required=False,
+                details={"reason": "warming"},
+            ),
+        )
+    )
+    service = ActuatorAggregationService(registry)
+
+    result = service.evaluate_health()
+
+    assert result.endpoint is ActuatorEndpoint.HEALTH
+    assert result.status is HealthStatus.HEALTHY
+    assert tuple(component.name for component in result.components) == (
+        "cache",
+        "database",
+    )
+    assert result.components[0].required is False
+    assert result.components[0].details == {"reason": "warming"}
+    assert result.components[1].details == {"a": 1, "z": 2}
+
+
 def test_liveness_uses_only_liveness_probes_expect_readiness_isolated() -> None:
     """liveness가 readiness 전용 probe 실패와 분리되는지 검증한다."""
     registry = ActuatorExtensionRegistry()

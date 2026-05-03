@@ -128,6 +128,7 @@ python main.py actuator info
 ```
 
 Each command prints deterministic JSON from the transport-neutral actuator core result model.
+`readiness` reports whether the app is ready to accept work; `liveness` should remain a process-local check and should not fail just because an external dependency is unavailable.
 
 Disable command registration with:
 
@@ -140,6 +141,9 @@ Customize the command group name with:
 ```bash
 export SPAKKY_TYPER_ACTUATOR_COMMAND_NAME=status
 ```
+
+Plugin-specific deep checks are not registered automatically by the Typer adapter.
+Register `spakky.actuator.AbstractHealthProbe` Pods in the application when database, broker, or worker readiness should affect command output.
 
 ### Application Setup
 

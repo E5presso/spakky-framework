@@ -70,6 +70,16 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+::: spakky.plugins.fastapi.post_processors.register_actuator
+options:
+show_root_heading: false
+
+## Actuator
+
+::: spakky.plugins.fastapi.actuator
+options:
+show_root_heading: false
+
 ## Errors
 
 ::: spakky.plugins.fastapi.error

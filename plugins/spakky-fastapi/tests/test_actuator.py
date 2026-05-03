@@ -1,9 +1,11 @@
 """Actuator endpoint registration tests."""
 
+from collections.abc import Mapping
 from http import HTTPStatus
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from spakky.actuator.interfaces.contributor import AbstractInfoContributor
 from spakky.actuator.interfaces.probe import AbstractHealthProbe
 from spakky.actuator.result import ActuatorEndpoint, ComponentHealthResult
 from spakky.actuator.service import ActuatorAggregationService
@@ -68,6 +70,72 @@ def test_actuator_routes_registered_when_plugins_loaded() -> None:
     assert info.status_code == HTTPStatus.OK
     assert health.json()["status"] == "healthy"
     assert info.json() == {"info": {}}
+
+
+def test_actuator_endpoints_output_core_public_result_shape() -> None:
+    """FastAPI actuator endpoint가 core result shape를 HTTP payload로 노출한다."""
+
+    @Pod()
+    class HttpProbe(AbstractHealthProbe):
+        @property
+        @override
+        def name(self) -> str:
+            return "http"
+
+        @override
+        def check(self) -> ComponentHealthResult:
+            return ComponentHealthResult.healthy(
+                self.name,
+                details={"a": 1, "z": 2},
+            )
+
+    @Pod()
+    class HttpInfoContributor(AbstractInfoContributor):
+        @property
+        @override
+        def name(self) -> str:
+            return "http-info"
+
+        @override
+        def contribute_info(self) -> Mapping[str, object]:
+            return {"app": "fastapi", "version": "test"}
+
+    @Pod(name="api")
+    def get_api() -> FastAPI:
+        return FastAPI(debug=True)
+
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .load_plugins(
+            include={
+                ACTUATOR_PLUGIN_NAME,
+                spakky.plugins.fastapi.PLUGIN_NAME,
+            }
+        )
+        .add(get_api)
+        .add(HttpProbe)
+        .add(HttpInfoContributor)
+    )
+    app.start()
+    api = app.container.get(type_=FastAPI)
+
+    with TestClient(api) as client:
+        health = client.get("/actuator/health")
+        info = client.get("/actuator/info")
+
+    assert health.json() == {
+        "endpoint": "health",
+        "status": "healthy",
+        "components": [
+            {
+                "name": "http",
+                "status": "healthy",
+                "required": True,
+                "details": {"a": 1, "z": 2},
+            }
+        ],
+    }
+    assert info.json() == {"info": {"app": "fastapi", "version": "test"}}
 
 
 def test_disabled_actuator_endpoint_is_not_registered() -> None:

@@ -209,6 +209,7 @@ app = (
 | [Transactional Outbox](guides/outbox.md)   | at-least-once 전달, Relay, OutboxEventBus               |
 | [분산 트레이싱](guides/tracing.md)         | TraceContext, Propagator, W3C traceparent              |
 | [OpenTelemetry 통합](guides/opentelemetry.md) | OTel SDK 브릿지, OTLP exporter, Propagator 자동 교체 |
+| [Actuator 상태 확인](guides/actuator.md) | Health, Readiness, Liveness, Info, probe 확장 |
 | [사가 오케스트레이션](guides/saga.md) | SagaFlow, SagaStep, 보상 기반 롤백, ErrorStrategy |
 | [gRPC 통합](guides/grpc.md) | `@GrpcController`, `@rpc`, code-first 프로토콜 생성 |
 
@@ -228,6 +229,7 @@ app = (
 | [spakky-tracing](api/core/spakky-tracing.md) | 분산 트레이싱 추상화              |
 | [spakky-outbox](api/core/spakky-outbox.md) | Outbox 패턴                        |
 | [spakky-saga](api/core/spakky-saga.md)     | 사가 오케스트레이션                |
+| [spakky-actuator](api/core/spakky-actuator.md) | Actuator 상태/정보 계약        |
 
 ### Plugins
 

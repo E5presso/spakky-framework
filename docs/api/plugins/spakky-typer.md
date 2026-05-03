@@ -20,6 +20,10 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+::: spakky.plugins.typer.actuator
+options:
+show_root_heading: false
+
 ## Utilities
 
 ::: spakky.plugins.typer.utils.asyncio

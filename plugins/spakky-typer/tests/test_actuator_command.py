@@ -112,6 +112,18 @@ def test_actuator_command_absent_when_config_disabled(
     assert "actuator" not in group_names
 
 
+def test_actuator_command_uses_configured_group_name(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """config로 지정한 actuator command group 이름을 사용한다."""
+    monkeypatch.setenv("SPAKKY_TYPER_ACTUATOR_COMMAND_NAME", "status")
+    with _actuator_cli() as cli:
+        result = CliRunner().invoke(cli, ["status", "health"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["endpoint"] == "health"
+
+
 @contextmanager
 def _actuator_cli() -> Generator[Typer, None, None]:
     app = (

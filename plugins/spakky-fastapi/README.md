@@ -118,6 +118,7 @@ def test_get_user(application: SpakkyApplication) -> None:
 ## Actuator Endpoints
 
 `spakky-actuator` 플러그인을 함께 로드하면 FastAPI 앱에 표준 actuator route가 등록됩니다.
+HTTP payload는 transport-neutral core result shape를 그대로 반영합니다.
 
 | Endpoint | Success | Unhealthy |
 |----------|---------|-----------|
@@ -128,6 +129,7 @@ def test_get_user(application: SpakkyApplication) -> None:
 
 Endpoint exposure and base path are configured with `FastAPIActuatorConfig`.
 Component detail exposure is controlled by `spakky.actuator.ActuatorConfig`.
+`readiness` is for traffic/work readiness, while `liveness` should stay process-local and independent from external dependency failures.
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
@@ -140,6 +142,9 @@ def fastapi_actuator_config() -> FastAPIActuatorConfig:
         readiness_enabled=False,
     )
 ```
+
+Plugin-specific deep checks are not registered automatically by the FastAPI adapter.
+Register `spakky.actuator.AbstractHealthProbe` Pods in the application when database, broker, or worker readiness should affect actuator output.
 
 ## Components
 
