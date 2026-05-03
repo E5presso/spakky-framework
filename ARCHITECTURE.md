@@ -269,6 +269,7 @@ class UserService:
 
 - 불변 튜플 `dependency_hierarchy`로 재귀 경로를 추적
 - 이미 방문한 타입 발견 시 `CircularDependencyGraphDetectedError` (체인 정보 포함)
+- 누락·순환 의존성 진단은 `Pod.dependencies` 메타데이터에서 실패 Pod, 파라미터, 요청 타입, 경로를 구성합니다.
 
 ### Post-Processor 파이프라인
 

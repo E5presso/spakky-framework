@@ -220,6 +220,11 @@ class UserService:
 
 ## 순환 참조 감지
 
+누락되거나 순환된 의존성은 기존 예외 의미를 유지하면서 구조화된
+dependency diagnostic을 함께 제공합니다. 이 진단은 별도 graph cache가
+아니라 등록된 `Pod.dependencies` 메타데이터에서 실패 Pod, 파라미터,
+요청 타입, 의존성 경로를 구성합니다.
+
 컨테이너는 의존성 체인에서 순환 참조를 감지합니다.
 
 ```python
@@ -407,4 +412,3 @@ service = context.get(UserService)
 # 종료 - 서비스 정지, 리소스 정리
 context.stop()
 ```
-

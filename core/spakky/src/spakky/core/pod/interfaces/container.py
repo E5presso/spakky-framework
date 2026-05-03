@@ -10,6 +10,7 @@ from typing import Callable, overload
 from spakky.core.common.interfaces.representable import IRepresentable
 from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod, PodType
+from spakky.core.pod.diagnostics import PodDependencyResolutionDiagnostic
 from spakky.core.pod.error import AbstractSpakkyPodError
 
 
@@ -22,14 +23,21 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError, IRepresentabl
 
     message = "Circular dependency graph detected"
     dependency_chain: list[type]
+    dependency_diagnostic: PodDependencyResolutionDiagnostic | None
 
-    def __init__(self, dependency_chain: list[type]) -> None:
+    def __init__(
+        self,
+        dependency_chain: list[type],
+        dependency_diagnostic: PodDependencyResolutionDiagnostic | None = None,
+    ) -> None:
         """Initialize with dependency chain information.
 
         Args:
             dependency_chain: List of types in dependency order, ending with the duplicate type.
+            dependency_diagnostic: Optional structured dependency path details.
         """
         self.dependency_chain = dependency_chain
+        self.dependency_diagnostic = dependency_diagnostic
         if not dependency_chain:
             super().__init__(self.message)
             return

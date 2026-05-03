@@ -4,7 +4,7 @@ from asyncio.events import AbstractEventLoop, new_event_loop, set_event_loop
 from asyncio.tasks import run_coroutine_threadsafe
 from contextvars import ContextVar
 from threading import RLock, Thread
-from types import MappingProxyType
+from types import MappingProxyType, NoneType
 from typing import Callable, cast, overload
 from uuid import UUID, uuid4
 
@@ -16,9 +16,17 @@ from spakky.core.common.constants import CONTEXT_ID, CONTEXT_SCOPE_CACHE
 from spakky.core.common.types import ObjectT, is_optional, remove_none
 from spakky.core.pod.annotations.lazy import Lazy
 from spakky.core.pod.annotations.order import Order
-from spakky.core.pod.annotations.pod import Pod, PodType
+from spakky.core.pod.annotations.pod import (
+    Pod,
+    PodType,
+    UnexpectedDependencyTypeInjectedError,
+)
 from spakky.core.pod.annotations.qualifier import Qualifier
 from spakky.core.pod.annotations.tag import Tag
+from spakky.core.pod.diagnostics import (
+    PodDependencyPathNode,
+    PodDependencyResolutionDiagnostic,
+)
 from spakky.core.pod.interfaces.application_context import (
     ApplicationContextAlreadyStartedError,
     ApplicationContextAlreadyStoppedError,
@@ -119,6 +127,48 @@ class ApplicationContext(IApplicationContext):
         self.task_stop_event = locks.Event()
         self.thread_stop_event = threading.Event()
 
+    def __type_name(self, type_: object) -> str:
+        """Return a stable diagnostic name for a dependency type."""
+        if isinstance(type_, type):
+            return type_.__name__
+        return str(type_)
+
+    def __dependency_path_node(
+        self,
+        pod: Pod,
+        dependency_parameter_name: str | None = None,
+        requested_type: object | None = None,
+    ) -> PodDependencyPathNode:
+        """Create one dependency path node from registered Pod metadata."""
+        requested_type_name = (
+            None if requested_type is None else self.__type_name(requested_type)
+        )
+        return PodDependencyPathNode(
+            pod_name=pod.name,
+            pod_type_name=self.__type_name(pod.type_),
+            dependency_parameter_name=dependency_parameter_name,
+            requested_type_name=requested_type_name,
+        )
+
+    def __dependency_diagnostic(
+        self,
+        pod: Pod,
+        dependency_parameter_name: str | None,
+        requested_type: object | None,
+        dependency_path: tuple[PodDependencyPathNode, ...],
+    ) -> PodDependencyResolutionDiagnostic:
+        """Build structured diagnostics from the active Pod dependency path."""
+        requested_type_name = (
+            None if requested_type is None else self.__type_name(requested_type)
+        )
+        return PodDependencyResolutionDiagnostic(
+            failed_pod_name=pod.name,
+            failed_pod_type_name=self.__type_name(pod.type_),
+            dependency_parameter_name=dependency_parameter_name,
+            requested_type_name=requested_type_name,
+            path=dependency_path,
+        )
+
     def __resolve_candidate(
         self,
         type_: type,
@@ -164,7 +214,10 @@ class ApplicationContext(IApplicationContext):
         raise NoUniquePodError(type_, [p.name for p in qualified])
 
     def __instantiate_pod(
-        self, pod: Pod, dependency_hierarchy: tuple[type, ...]
+        self,
+        pod: Pod,
+        dependency_hierarchy: tuple[type, ...],
+        dependency_path: tuple[PodDependencyPathNode, ...],
     ) -> object:
         """Instantiate a Pod with its dependencies recursively resolved.
 
@@ -179,21 +232,65 @@ class ApplicationContext(IApplicationContext):
             CircularDependencyGraphDetectedError: If circular dependency detected.
         """
         if pod.type_ in dependency_hierarchy:
+            circular_path = dependency_path + (self.__dependency_path_node(pod),)
+            last_node = dependency_path[-1] if dependency_path else None
             raise CircularDependencyGraphDetectedError(
-                list(dependency_hierarchy) + [pod.type_]
+                list(dependency_hierarchy) + [pod.type_],
+                dependency_diagnostic=self.__dependency_diagnostic(
+                    pod=pod,
+                    dependency_parameter_name=None
+                    if last_node is None
+                    else last_node.dependency_parameter_name,
+                    requested_type=None
+                    if last_node is None
+                    else last_node.requested_type_name,
+                    dependency_path=circular_path,
+                ),
             )
         new_hierarchy = dependency_hierarchy + (pod.type_,)
-        dependencies = {
-            name: self.__get_internal(
+        dependencies: dict[str, object | None] = {}
+        for name, dependency in pod.dependencies.items():
+            requested_type = (
+                remove_none(dependency.type_)
+                if is_optional(dependency.type_)
+                else dependency.type_
+            )
+            current_path = dependency_path + (
+                self.__dependency_path_node(
+                    pod=pod,
+                    dependency_parameter_name=name,
+                    requested_type=requested_type,
+                ),
+            )
+            resolved_dependency = self.__get_internal(
                 type_=remove_none(dependency.type_)
                 if is_optional(dependency.type_)
                 else dependency.type_,
                 name=name,
                 dependency_hierarchy=new_hierarchy,
+                dependency_path=current_path,
                 qualifiers=dependency.qualifiers,
             )
-            for name, dependency in pod.dependencies.items()
-        }
+            if (
+                resolved_dependency is None
+                and not dependency.has_default
+                and not dependency.is_optional
+            ):
+                raise UnexpectedDependencyTypeInjectedError(
+                    pod.type_,
+                    {
+                        "name": name,
+                        "expected": dependency.type_,
+                        "actual": NoneType,
+                    },
+                    dependency_diagnostic=self.__dependency_diagnostic(
+                        pod=pod,
+                        dependency_parameter_name=name,
+                        requested_type=requested_type,
+                        dependency_path=current_path,
+                    ),
+                )
+            dependencies[name] = resolved_dependency
         instance: object = pod.instantiate(dependencies=dependencies)
         post_processed: object = self.__post_process_pod(instance)
         return post_processed
@@ -282,6 +379,7 @@ class ApplicationContext(IApplicationContext):
         type_: type[ObjectT],
         name: str | None,
         dependency_hierarchy: tuple[type, ...] | None = None,
+        dependency_path: tuple[PodDependencyPathNode, ...] | None = None,
         qualifiers: list[Qualifier] | None = None,
     ) -> ObjectT | None:
         """Internal method to get or create a Pod instance.
@@ -299,6 +397,8 @@ class ApplicationContext(IApplicationContext):
             # If dependency_hierarchy is None
             # it means that this is the first call on recursive cycle
             dependency_hierarchy = ()
+        if dependency_path is None:
+            dependency_path = ()
         if qualifiers is None:
             # If qualifiers is None, it means that no qualifier is specified
             qualifiers = []
@@ -321,7 +421,11 @@ class ApplicationContext(IApplicationContext):
                     # Re-check cache after acquiring lock
                     if (cached := self.__singleton_cache.get(pod.name)) is not None:
                         return cast(ObjectT, cached)
-                    instance = self.__instantiate_pod(pod, dependency_hierarchy)
+                    instance = self.__instantiate_pod(
+                        pod,
+                        dependency_hierarchy,
+                        dependency_path,
+                    )
                     self.__set_singleton_cache(pod, instance)
                     return cast(ObjectT, instance)
             case Pod.Scope.CONTEXT:
@@ -331,6 +435,7 @@ class ApplicationContext(IApplicationContext):
         instance = self.__instantiate_pod(
             pod,
             dependency_hierarchy,
+            dependency_path,
         )
 
         # Cache the instance based on pod scope
