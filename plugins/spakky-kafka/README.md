@@ -1,22 +1,22 @@
 # Spakky Kafka
 
-Apache Kafka plugin for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Apache Kafka 플러그인입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-kafka
 ```
 
-Or install via Spakky extras:
+또는 Spakky extra로 설치합니다:
 
 ```bash
 pip install spakky[kafka]
 ```
 
-## Configuration
+## 설정
 
-Set environment variables with the `SPAKKY_KAFKA__` prefix:
+`SPAKKY_KAFKA__` prefix를 가진 환경변수를 설정합니다:
 
 ```bash
 export SPAKKY_KAFKA__GROUP_ID="my-consumer-group"
@@ -25,7 +25,7 @@ export SPAKKY_KAFKA__BOOTSTRAP_SERVERS="localhost:9092"
 export SPAKKY_KAFKA__AUTO_OFFSET_RESET="earliest"  # earliest, latest, none
 ```
 
-### SASL Authentication (Optional)
+### SASL 인증 (선택)
 
 ```bash
 export SPAKKY_KAFKA__SECURITY_PROTOCOL="SASL_SSL"
@@ -34,16 +34,16 @@ export SPAKKY_KAFKA__SASL_USERNAME="username"
 export SPAKKY_KAFKA__SASL_PASSWORD="password"
 ```
 
-### Topic Configuration (Optional)
+### Topic 설정 (선택)
 
 ```bash
 export SPAKKY_KAFKA__NUMBER_OF_PARTITIONS="3"
 export SPAKKY_KAFKA__REPLICATION_FACTOR="1"
 ```
 
-## Usage
+## 사용법
 
-### Event Publishing
+### 이벤트 발행
 
 ```python
 from spakky.core.common.mutability import immutable
@@ -67,7 +67,7 @@ class UserService:
         return user
 ```
 
-### Event Consuming
+### 이벤트 수신
 
 ```python
 from spakky.event.stereotype.event_handler import EventHandler, on_event
@@ -82,9 +82,9 @@ class UserEventHandler:
         await self.notification_service.send_welcome_email(event.email)
 ```
 
-### Async Variants
+### 비동기 변형
 
-For async applications, use `IAsyncEventPublisher`:
+비동기 애플리케이션에서는 `IAsyncEventPublisher`를 사용합니다:
 
 ```python
 from spakky.event.event_publisher import IAsyncEventPublisher
@@ -100,7 +100,7 @@ class AsyncUserService:
         return user
 ```
 
-## Distributed Tracing
+## 분산 트레이싱
 
 `spakky-tracing`은 필수 의존성으로 자동 설치됩니다. `ITracePropagator`가 컨테이너에 등록되어 있으면 이벤트 발행/소비 시 `TraceContext`가 자동으로 전파됩니다.
 
@@ -108,25 +108,25 @@ class AsyncUserService:
 - **소비 측**: 수신 메시지에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
 - 헤더가 없으면 새로운 루트 트레이스를 시작합니다
 
-## Features
+## 주요 기능
 
-- **Automatic topic creation**: Topics are created based on event type names
-- **Sync and Async support**: Both synchronous and asynchronous publishers/consumers
-- **Background service pattern**: Consumer polling runs as a background service
-- **Pydantic serialization**: Events are serialized/deserialized using Pydantic
-- **Confluent Kafka client**: Built on the robust `confluent-kafka` library
-- **Distributed tracing**: `spakky-tracing` integration for cross-service trace propagation
+- **자동 topic 생성**: 이벤트 타입 이름을 기준으로 topic 생성
+- **동기/비동기 지원**: 동기 및 비동기 publisher/consumer 모두 지원
+- **Background service 패턴**: consumer polling을 background service로 실행
+- **Pydantic 직렬화**: 이벤트를 Pydantic으로 직렬화/역직렬화
+- **Confluent Kafka client**: 안정적인 `confluent-kafka` library 기반
+- **분산 트레이싱**: 서비스 간 trace 전파를 위한 `spakky-tracing` 통합
 
-## Components
+## 구성 요소
 
-| Component | Description |
+| 컴포넌트 | 설명 |
 |-----------|-------------|
-| `KafkaEventTransport` | Synchronous event transport (`IEventTransport`) |
-| `AsyncKafkaEventTransport` | Asynchronous event transport (`IAsyncEventTransport`) |
-| `KafkaEventConsumer` | Synchronous event consumer (background service) |
-| `AsyncKafkaEventConsumer` | Asynchronous event consumer (background service) |
-| `KafkaConnectionConfig` | Configuration via environment variables |
+| `KafkaEventTransport` | 동기 event transport(`IEventTransport`) |
+| `AsyncKafkaEventTransport` | 비동기 event transport(`IAsyncEventTransport`) |
+| `KafkaEventConsumer` | 동기 event consumer(background service) |
+| `AsyncKafkaEventConsumer` | 비동기 event consumer(background service) |
+| `KafkaConnectionConfig` | 환경변수 기반 설정 |
 
-## License
+## 라이선스
 
 MIT License

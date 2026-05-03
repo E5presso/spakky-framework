@@ -143,7 +143,7 @@ order.clear_events()  # 처리 후 초기화
 
 ---
 
-## Domain Event vs Integration Event
+## Domain Event와 Integration Event
 
 | 구분        | Domain Event                | Integration Event             |
 | ----------- | --------------------------- | ----------------------------- |

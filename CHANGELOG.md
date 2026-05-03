@@ -1,6 +1,6 @@
 ## v6.4.0 (2026-05-03)
 
-### Feat
+### 기능 추가
 
 - **plugins**: add Redis plugin to workspace configuration
 - **autopilot**: add auto-merge functionality and enhance user query handling
@@ -36,18 +36,18 @@
 - **saga**: scaffold spakky-saga package with error hierarchy (#96)
 - add ADR-0007 for spakky-saga — 분산 트랜잭션 사가 오케스트레이션 코어 패키지
 
-### Fix
+### 수정
 
-- validate plugin extras metadata
-- enforce harness rules in pre-commit
-- enforce explicit ABC interfaces
+- plugin extras metadata 검증
+- pre-commit에서 harness rule 강제
+- explicit ABC interface 강제
 - **harness**: ignore informational Codecov monitor comments (#163)
 - update monitoring and merging logic in process-ticket and related scripts
 - python-version을 3.14에서 3.11로 변경 및 pyproject.toml에 새로운 패키지 추가
 - **sqlalchemy**: add typed wrapper helpers to resolve cross-package TypeVar bad-return errors
 - add missing name field to monitor-pr skill definition
 
-### Refactor
+### 리팩터링
 
 - enforce harness rules across packages
 - Update SKILL.md files to reference Codex standard locations
@@ -67,13 +67,13 @@
 
 ## v6.3.1 (2026-04-04)
 
-### Fix
+### 수정
 
 - **core**: cache method wrappers in ProxyFactory to avoid re-creation on each access
 
 ## v6.3.0 (2026-04-04)
 
-### Feat
+### 기능 추가
 
 - add opentelemetry to optional dependencies in pyproject.toml
 - add spakky-tracing and spakky-opentelemetry to package options
@@ -105,7 +105,7 @@
 - **event,outbox,tracing**: add headers to IEventTransport for trace propagation (#47)
 - **tracing**: add spakky-tracing core package (#44)
 
-### Fix
+### 수정
 
 - 수정된 @Logging AOP Aspect를 @logged AOP Aspect로 변경
 - SKILL.md에서 선행 이슈 관계 설정 방법을 개선하고, 이슈 본문 메타데이터 추가
@@ -114,9 +114,9 @@
 - 서브에이전트를 활용한 세션 회고 및 평가 절차 개선
 - 워크트리 생성 절차에서 source 브랜치 최신화 방법 수정 및 develop 기준으로 리셋 추가
 - 수정된 .gitignore 파일에서 불필요한 항목 제거 및 주석 정리
-- restore README.md to original content
+- README.md를 원래 내용으로 복원
 
-### Refactor
+### 리팩터링
 
 - **kafka**: remove _HAS_TRACING pattern, use Optional DI with get_or_none() (#77)
 - **opentelemetry**: replace _HAS_LOGGING with ILogContextBinder Optional DI (#68) (#78)
@@ -128,31 +128,31 @@
 
 ## v6.2.0 (2026-03-17)
 
-### Feat
+### 기능 추가
 
 - **task**: Add `get_async()` to `AbstractTaskResult` and `CeleryTaskResult` (#40) (#41)
 
 ## v6.1.3 (2026-03-16)
 
-### Fix
+### 수정
 
-- update flowchart in index.md and fix README exclusion in mkdocs.yml
+- index.md flowchart 업데이트 및 mkdocs.yml README 제외 수정
 
 ## v6.1.2 (2026-03-16)
 
-### Fix
+### 수정
 
-- update site_url to the correct domain
+- site_url을 올바른 domain으로 수정
 
 ## v6.1.1 (2026-03-16)
 
-### Fix
+### 수정
 
-- resolve mkdocs strict mode warnings
+- mkdocs strict mode warning 해결
 
 ## v6.1.0 (2026-03-16)
 
-### Feat
+### 기능 추가
 
 - **workflow**: add additional package options for publishing
 - **yaml**: add custom YAML tags for enhanced validation in workspace settings
@@ -162,7 +162,7 @@
 - **celery**: add spakky-celery plugin with AOP-based task dispatch (#30)
 - **spakky-task**: add spakky-task core package (#29)
 
-### Fix
+### 수정
 
 - **settings**: remove unnecessary YAML validation setting from VS Code configuration
 - allow Python YAML tags in check-yaml hook and VS Code
@@ -170,7 +170,7 @@
 - **deps**: reorder optional dependencies for clarity
 - **deps**: add missing logging dependency
 
-### Refactor
+### 리팩터링
 
 - **event**: remove DuplicateEventHandlerError and allow multiple handlers for the same event type
 - merge outbox-sqlalchemy into sqlalchemy, promote outbox to core
@@ -178,7 +178,7 @@
 
 ## v6.0.0 (2026-03-10)
 
-### BREAKING CHANGE
+### 호환성 파괴 변경
 
 - AbstractTable no longer requires from_domain/to_domain methods.
 Use AbstractMappableTable for tables that map to domain entities.
@@ -186,7 +186,7 @@ Use AbstractMappableTable for tables that map to domain entities.
 (event_name: str, payload: bytes) instead of (event: AbstractIntegrationEvent).
 - all Domain/Integration-specific event interfaces removed.
 
-### Feat
+### 기능 추가
 
 - Transactional Outbox plugin (spakky-outbox + spakky-outbox-sqlalchemy) (#24)
 - 토큰 효율성 평가 섹션 추가 및 관련 문서 업데이트
@@ -220,7 +220,7 @@ Use AbstractMappableTable for tables that map to domain entities.
 - AggregateCollector Pod 정의
 - 도메인 이벤트와 통합 이벤트 분리, ApplicationContext에 Context 정보 제어 인터페이스 추가
 
-### Fix
+### 수정
 
 - update python project paths to current directory in VSCode settings
 - **harness**: git add -A 금지 규칙 적용 및 이벤트 네이밍 불일치 수정
@@ -239,7 +239,7 @@ Use AbstractMappableTable for tables that map to domain entities.
 - 잘못된 참조 경로 수정
 - **core**: 누락된 ABC 상속 추가
 
-### Refactor
+### 리팩터링
 
 - **sqlalchemy**: split AbstractTable into base and mappable classes
 - **harness**: compress behavioral-guidelines and tool-usage instructions for token efficiency (#22)
@@ -264,13 +264,13 @@ Use AbstractMappableTable for tables that map to domain entities.
 
 ## v5.0.1 (2025-12-06)
 
-### Fix
+### 수정
 
 - **plugin.rabbitmq**: 잘못된 환경변수 문서 수정
 
 ## v5.0.0 (2025-12-06)
 
-### Feat
+### 기능 추가
 
 - **core**: 순환 참조 발생 시, 오류 표현 형식 개선
 - **core.domain**: Entity mutation 발생 시, updated_at & version 필드를 자동으로 업데이트
@@ -282,7 +282,7 @@ Use AbstractMappableTable for tables that map to domain entities.
 - **core**: 인터페이스 선언을 Protocol 기반에서 ABC로 변경
 - ddd와 event 패키지 분리
 
-### Fix
+### 수정
 
 - **all**: 잘못된 의존성 업데이트 수정
 - **all**: Release CI 오류 수정
@@ -293,20 +293,20 @@ Use AbstractMappableTable for tables that map to domain entities.
 - **all**: 누락된 테스트 관련 설정 및 파일 이동 수정
 - **spakky-data**: 테스트 디스커버리 및 커버리지 관련 설정 수정
 
-### Refactor
+### 리팩터링
 
 - **core**: Pod 탐색 로직 최적화
 - 테스트 코드 경로 수정
 
 ## v4.0.0 (2025-11-29)
 
-### Feat
+### 기능 추가
 
 - **core**: add ensure_importable function for sys.path management
 - built-in aspect enable 메서드 제거
 - Logger 의존성 주입 메커니즘 제거
 
-### Fix
+### 수정
 
 - **rabbitmq**: 관련 코드 원복 및 assertion 제거
 - **rabbitmq**: 이벤트 핸들러의 스코프 수정
@@ -314,7 +314,7 @@ Use AbstractMappableTable for tables that map to domain entities.
 
 ## v3.4.0 (2025-11-28)
 
-### Feat
+### 기능 추가
 
 - kafka 플러그인 추가
 - RabbitMQ SSL 프로토콜 지원 추가
@@ -322,13 +322,13 @@ Use AbstractMappableTable for tables that map to domain entities.
 - RabbitMQ 설정 환경변수 prefix를 상수로 관리
 - RabbitMQ 설정을 환경변수에 바로 로드할 수 있도록 수정
 
-### Fix
+### 수정
 
 - **kafka**: 잘못된 코드 제거
 - **kafka**: 누락된 커버리지 설정 복구
 - **kafka**: 누락된 Test 의존성 추가
 
-### Refactor
+### 리팩터링
 
 - RabbitMQ 플러그인 패키지 구조 리팩터
 - **rabbitmq**: 내부 이벤트 ser/des을 pydantic의 TypeAdapter 기반 처리로 전환
@@ -336,25 +336,25 @@ Use AbstractMappableTable for tables that map to domain entities.
 
 ## v3.3.3 (2025-11-27)
 
-### Refactor
+### 리팩터링
 
 - simplify error classes and clean up type annotations
 
 ## v3.3.2 (2025-11-26)
 
-### Fix
+### 수정
 
 - **release**: create tag after uv.lock update to prevent detached tags
 
 ## v3.3.1 (2025-11-26)
 
-### Fix
+### 수정
 
 - standardize 'monorepo' spelling across codebase
 
 ## v3.3.0 (2025-11-26)
 
-### Feat
+### 기능 추가
 
 - **typer**: reset context before executing cli endpoints
 - **security**: document signature refresh after claim mutation
@@ -367,7 +367,7 @@ Use AbstractMappableTable for tables that map to domain entities.
 - **fastapi**: Context 스코프 제어 지점을 미들웨어에서 endpoint 개시 시점으로 변경
 - **fastapi**: FastAPI lifespan에 Application stop 로직 주입
 
-### Fix
+### 수정
 
 - **ci**: exclude metadata files from package change detection
 - **ci**: extract only latest version section for changelog and release notes
@@ -395,7 +395,7 @@ Use AbstractMappableTable for tables that map to domain entities.
 - **core**: trigger release test
 - **rabbitmq**: Context 초기화 지점을 Consumer Pod에서 PostProcessor로 이동
 
-### Refactor
+### 리팩터링
 
 - **ci**: improve release workflow with unified commits
 - **ci**: extract release workflow shell scripts to Python modules

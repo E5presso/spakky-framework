@@ -1,23 +1,23 @@
 # Spakky Cache
 
-Backend-neutral application data cache contracts for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 백엔드 중립 애플리케이션 데이터 캐시 계약입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-cache
 ```
 
-## Features
+## 주요 기능
 
-- **Typed cache results**: `CacheHit[T]` and `CacheMiss` represent hit and miss outcomes without backend-specific exceptions.
-- **Sync and async contracts**: `ICache[T]` defines `get`, `set`, `delete`, `clear` and async equivalents.
-- **TTL semantics**: Positive TTL values expire entries deterministically; missing and expired entries are misses.
-- **In-memory backend**: `InMemoryCache[T]` is suitable for local development, tests, and single-process usage.
-- **AOP method caching**: `@cacheable()` and `@cache_evict()` apply cache hit/miss and eviction behavior without manual plumbing.
-- **Application data scope**: This package does not expose or mutate `ApplicationContext` internal caches.
+- **타입화된 캐시 결과**: `CacheHit[T]`와 `CacheMiss`는 백엔드별 예외 없이 hit/miss 결과를 표현합니다.
+- **동기/비동기 계약**: `ICache[T]`는 `get`, `set`, `delete`, `clear`와 비동기 대응 메서드를 정의합니다.
+- **TTL 의미론**: 양수 TTL 값은 항목을 결정적으로 만료시키며, 없는 항목과 만료된 항목은 miss입니다.
+- **인메모리 백엔드**: `InMemoryCache[T]`는 로컬 개발, 테스트, 단일 프로세스 사용에 적합합니다.
+- **AOP 메서드 캐싱**: `@cacheable()`과 `@cache_evict()`은 수동 배선 없이 cache hit/miss와 evict 동작을 적용합니다.
+- **애플리케이션 데이터 범위**: 이 패키지는 `ApplicationContext` 내부 캐시를 노출하거나 변경하지 않습니다.
 
-## Quick Start
+## 빠른 시작
 
 ```python
 from datetime import timedelta
@@ -32,9 +32,9 @@ if isinstance(result, CacheHit):
     print(result.value)
 ```
 
-## Annotation Usage
+## 어노테이션 사용
 
-Load the `spakky-cache` plugin, then annotate service methods. The plugin registers `InMemoryCache`, `CacheAspect`, and `AsyncCacheAspect` so sync and async methods are handled through Spakky AOP.
+`spakky-cache` 플러그인을 로드한 뒤 서비스 메서드에 어노테이션을 붙입니다. 이 플러그인은 `InMemoryCache`, `CacheAspect`, `AsyncCacheAspect`를 등록하므로 동기/비동기 메서드가 Spakky AOP를 통해 처리됩니다.
 
 ```python
 from datetime import timedelta
@@ -58,11 +58,11 @@ class ProfileService:
         ...
 ```
 
-The default key is derived from the method module, qualified name, positional arguments, and sorted keyword arguments. Explicit `key` values are Python format strings evaluated against method call arguments. Invalid key formatting raises `CacheKeyGenerationError`. Backend failures are not swallowed; cache errors propagate loudly.
+기본 키는 메서드 모듈, 정규화된 이름, 위치 인자, 정렬된 키워드 인자에서 파생됩니다. 명시적 `key` 값은 메서드 호출 인자에 대해 평가되는 Python format 문자열입니다. 키 포맷이 유효하지 않으면 `CacheKeyGenerationError`가 발생합니다. 백엔드 실패는 삼키지 않고 캐시 에러로 전파합니다.
 
-`@cache_evict()` deletes the matching entry only after the annotated method succeeds. Failed method calls leave existing entries untouched so a failed refresh does not erase the last known cached value.
+`@cache_evict()`은 어노테이션이 붙은 메서드가 성공한 뒤에만 일치하는 항목을 삭제합니다. 실패한 메서드 호출은 기존 항목을 건드리지 않으므로, refresh 실패가 마지막으로 알려진 캐시 값을 지우지 않습니다.
 
-## Async Usage
+## 비동기 사용
 
 ```python
 from spakky.cache import CacheHit, InMemoryCache
@@ -75,18 +75,18 @@ if isinstance(result, CacheHit):
     assert result.value == 42
 ```
 
-## TTL Rules
+## TTL 규칙
 
-`ttl=None` stores an entry until explicit deletion or clear. Positive `float`, `int`, or `datetime.timedelta` values expire entries after that duration. Zero or negative TTL values raise `InvalidCacheTTLError`.
+`ttl=None`은 명시적 삭제 또는 전체 삭제 전까지 항목을 저장합니다. 양수 `float`, `int`, `datetime.timedelta` 값은 해당 시간이 지난 뒤 항목을 만료시킵니다. 0 이하 TTL 값은 `InvalidCacheTTLError`를 발생시킵니다.
 
-The in-memory backend deletes expired entries when they are observed. It is deterministic for one process and does not provide distributed invalidation, stampede protection, or tag-based eviction.
+인메모리 백엔드는 만료된 항목이 관찰될 때 삭제합니다. 단일 프로세스에서는 결정적으로 동작하지만, 분산 무효화, stampede 보호, tag 기반 evict는 제공하지 않습니다.
 
-Cache eviction annotations remove a single matching entry only after the annotated method succeeds.
+캐시 evict 어노테이션은 어노테이션이 붙은 메서드가 성공한 뒤에만 일치하는 항목 하나를 제거합니다.
 
-## Scope
+## 범위
 
-`spakky-cache` is an application data cache abstraction. It is separate from `ApplicationContext` internal type, singleton, and context caches. Distributed locks, cache stampede protection, tag invalidation, write-through/write-behind policies, and metrics exporters are outside the current contract.
+`spakky-cache`는 애플리케이션 데이터 캐시 추상화입니다. `ApplicationContext` 내부의 타입 캐시, 싱글톤 캐시, 컨텍스트 캐시와는 별개입니다. 분산 lock, cache stampede 보호, tag 무효화, write-through/write-behind 정책, metrics exporter는 현재 계약 범위 밖입니다.
 
-## License
+## 라이선스
 
 MIT License

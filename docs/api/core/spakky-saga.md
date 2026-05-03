@@ -2,55 +2,55 @@
 
 사가 오케스트레이션 — SagaFlow, SagaStep, 보상 기반 롤백
 
-## Stereotype
+## 스테레오타입
 
 ::: spakky.saga.stereotype
     options:
       show_root_heading: false
 
-## Base
+## 기반 클래스
 
 ::: spakky.saga.base
     options:
       show_root_heading: false
 
-## Data
+## 데이터
 
 ::: spakky.saga.data
     options:
       show_root_heading: false
 
-## Flow
+## 흐름
 
 ::: spakky.saga.flow
     options:
       show_root_heading: false
 
-## Error Strategy
+## 에러 전략
 
 ::: spakky.saga.strategy
     options:
       show_root_heading: false
 
-## Result
+## 결과
 
 ::: spakky.saga.result
     options:
       show_root_heading: false
 
-## Status
+## 상태
 
 ::: spakky.saga.status
     options:
       show_root_heading: false
 
-## Engine
+## 엔진
 
 ::: spakky.saga.engine
     options:
       show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.saga.error
     options:

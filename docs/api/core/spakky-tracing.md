@@ -2,13 +2,13 @@
 
 분산 트레이싱 추상화 — TraceContext, ITracePropagator, W3C Propagator
 
-## Context
+## 컨텍스트
 
 ::: spakky.tracing.context
 options:
 show_root_heading: false
 
-## Propagator Interface
+## Propagator 인터페이스
 
 ::: spakky.tracing.propagator
 options:
@@ -20,7 +20,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.tracing.error
 options:

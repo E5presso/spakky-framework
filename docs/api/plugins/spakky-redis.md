@@ -1,26 +1,26 @@
 # spakky-redis
 
-Redis cache backend plugin.
+Redis 캐시 백엔드 플러그인입니다.
 
-## Redis Cache
+## Redis 캐시
 
 ::: spakky.plugins.redis.cache
     options:
       show_root_heading: false
 
-## Configuration
+## 설정
 
 ::: spakky.plugins.redis.common.config
     options:
       show_root_heading: false
 
-## Plugin Entry Point
+## 플러그인 진입점
 
 ::: spakky.plugins.redis.main
     options:
       show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.plugins.redis.error
     options:

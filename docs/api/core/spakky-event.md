@@ -2,25 +2,25 @@
 
 인프로세스 이벤트 시스템 — EventBus, EventTransport, EventMediator
 
-## Publisher Interfaces
+## Publisher 인터페이스
 
 ::: spakky.event.event_publisher
 options:
 show_root_heading: false
 
-## Consumer Interfaces
+## Consumer 인터페이스
 
 ::: spakky.event.event_consumer
 options:
 show_root_heading: false
 
-## Dispatcher Interfaces
+## Dispatcher 인터페이스
 
 ::: spakky.event.event_dispatcher
 options:
 show_root_heading: false
 
-## Event Bus
+## EventBus
 
 ::: spakky.event.bus.transport_event_bus
 options:
@@ -38,25 +38,25 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Aspects
+## Aspect
 
 ::: spakky.event.aspects.transactional_event_publishing
 options:
 show_root_heading: false
 
-## Stereotype
+## 스테레오타입
 
 ::: spakky.event.stereotype.event_handler
 options:
 show_root_heading: false
 
-## Post Processor
+## 후처리기
 
 ::: spakky.event.post_processor
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.event.error
 options:

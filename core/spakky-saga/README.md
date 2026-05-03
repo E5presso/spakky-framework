@@ -1,29 +1,29 @@
 # spakky-saga
 
-Distributed transaction saga orchestration for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 분산 트랜잭션 사가 오케스트레이션입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-saga
 ```
 
-## Features
+## 주요 기능
 
-- **`@Saga` stereotype**: Marks saga orchestrator classes (extends `@Pod`)
-- **`AbstractSaga[SagaDataT]`**: Generic base class with `flow()` abstract method and `execute()` entry point
-- **`@saga_step` decorator**: Typed descriptor that enables `>>`, `&`, `|` operators on instance methods
-- **Flow DSL**: Declarative composition via operators or builder functions (`saga_flow`, `step`, `parallel`)
-- **Error strategies**: `Compensate` (default), `Skip`, `Retry(max_attempts, backoff, then)` with `ExponentialBackoff`
-- **Timeouts**: Per-step (`timeout=`) and per-saga (`SagaFlow.timeout()`)
-- **Parallel execution**: `asyncio.gather` based groups (`&` operator / `parallel()`)
-- **Compensation**: Automatic reverse-order rollback of committed steps on failure
-- **`SagaResult[T]`**: Non-throwing result with `status`, `data`, `failed_step`, `error`, `history`, `elapsed`
-- **Structured logging**: `[saga=... step=... status=... elapsed=...ms]` format
+- **`@Saga` stereotype**: saga orchestrator class를 표시합니다(`@Pod` 확장).
+- **`AbstractSaga[SagaDataT]`**: `flow()` 추상 메서드와 `execute()` entry point를 가진 generic base class입니다.
+- **`@saga_step` decorator**: instance method에서 `>>`, `&`, `|` 연산자를 활성화하는 typed descriptor입니다.
+- **Flow DSL**: 연산자 또는 builder 함수(`saga_flow`, `step`, `parallel`)로 선언적 구성
+- **Error strategy**: `Compensate`(기본값), `Skip`, `ExponentialBackoff`을 포함한 `Retry(max_attempts, backoff, then)`을 제공합니다.
+- **Timeout**: step별 `timeout=`과 saga별 `SagaFlow.timeout()` 지원
+- **병렬 실행**: `asyncio.gather` 기반 group(`&` operator / `parallel()`)
+- **보상**: 실패 시 commit된 step을 역순으로 자동 rollback
+- **`SagaResult[T]`**: `status`, `data`, `failed_step`, `error`, `history`, `elapsed`를 담는 non-throwing result
+- **구조화 로깅**: `[saga=... step=... status=... elapsed=...ms]` format
 
-## Quick Start
+## 빠른 시작
 
-### Define Saga Data
+### SagaData 정의
 
 ```python
 from spakky.saga import AbstractSagaData
@@ -35,7 +35,7 @@ class OrderSagaData(AbstractSagaData):
     ticket_id: int | None = None
 ```
 
-### Define a Saga
+### Saga 정의
 
 ```python
 from spakky.saga import AbstractSaga, Saga, SagaFlow, saga_step
@@ -64,7 +64,7 @@ class CreateOrderSaga(AbstractSaga[OrderSagaData]):
         )
 ```
 
-### Execute
+### 실행
 
 ```python
 result = await saga.execute(OrderSagaData(order_id=1, customer_id=42))
@@ -72,7 +72,7 @@ if result.status is SagaStatus.COMPLETED:
     ...
 ```
 
-### Builder Function Alternative
+### Builder 함수 대안
 
 ```python
 from spakky.saga import Retry, parallel, saga_flow, step
@@ -85,86 +85,86 @@ flow = saga_flow(
 )
 ```
 
-## Flow Operators
+## Flow 연산자
 
-| Operator | Meaning | Result Type |
+| 연산자 | 의미 | 결과 타입 |
 |----------|---------|-------------|
-| `>>` | Bind compensate function | `Transaction[T]` |
-| `&` | Parallel execution | `Parallel[T]` |
-| `\|` | Attach error strategy | Same as LHS + `on_error` |
+| `>>` | compensate 함수 바인딩 | `Transaction[T]` |
+| `&` | 병렬 실행 | `Parallel[T]` |
+| `\|` | 에러 전략 부착 | 좌변과 동일한 타입 + `on_error` |
 
-## Error Strategies
+## Error Strategy
 
-| Strategy | Signature | Description |
+| Strategy | Signature | 설명 |
 |----------|-----------|-------------|
-| `Compensate()` | (default) | Trigger reverse-order compensation |
-| `Skip()` | — | Ignore failure and continue |
-| `Retry(max_attempts, backoff, then)` | `Retry(3, ExponentialBackoff(1.0), Compensate())` | Retry N times, then apply `then` strategy |
-| `ExponentialBackoff(base=1.0)` | — | `base * 2^(attempt-1)` delay between retries |
+| `Compensate()` | (기본값) | 역순 compensation 실행 |
+| `Skip()` | — | 실패를 무시하고 계속 진행 |
+| `Retry(max_attempts, backoff, then)` | `Retry(3, ExponentialBackoff(1.0), Compensate())` | N회 재시도 후 `then` 전략 적용 |
+| `ExponentialBackoff(base=1.0)` | — | retry 사이에 `base * 2^(attempt-1)` delay 적용 |
 
-## API Reference
+## API 레퍼런스
 
 ### Stereotype / Base
 
-| Symbol | Description |
+| 기호 | 설명 |
 |--------|-------------|
-| `@Saga()` | Stereotype for saga orchestrator classes (extends `@Pod`) |
-| `AbstractSaga[SagaDataT]` | ABC base with `flow()` abstract method and `execute()` |
-| `@saga_step` | Descriptor decorator enabling `>>`, `&`, `\|` operators |
-| `AbstractSagaData` | Base data model (`@immutable` + `AbstractDomainModel`, auto-generates `saga_id: UUID`) |
+| `@Saga()` | saga orchestrator class용 stereotype(`@Pod` 확장) |
+| `AbstractSaga[SagaDataT]` | `flow()` 추상 메서드와 `execute()`를 가진 ABC 기반 클래스 |
+| `@saga_step` | `>>`, `&`, `|` 연산자를 활성화하는 descriptor decorator |
+| `AbstractSagaData` | base data model(`@immutable` + `AbstractDomainModel`, `saga_id: UUID` 자동 생성) |
 
-### Flow Types
+### Flow 타입
 
-| Symbol | Description |
+| 기호 | 설명 |
 |--------|-------------|
-| `SagaFlow[T]` | Top-level flow definition (`items`, `saga_timeout`, `compensation_failure_handler`) |
-| `SagaStep[T]` | Single action without compensation |
-| `Transaction[T]` | Action + compensate pair |
-| `Parallel[T]` | Concurrent group of steps/transactions |
-| `FlowItem[T]` | Union of flow-composable items |
-| `ActionFn[T]` / `CompensateFn[T]` | Type aliases for action / compensate callables |
-| `SagaDataT` | TypeVar bound to `AbstractSagaData` |
+| `SagaFlow[T]` | 최상위 flow 정의(`items`, `saga_timeout`, `compensation_failure_handler`) |
+| `SagaStep[T]` | compensation 없는 단일 action |
+| `Transaction[T]` | action + compensate 쌍 |
+| `Parallel[T]` | step/transaction 동시 실행 그룹 |
+| `FlowItem[T]` | flow 구성 가능 item의 union |
+| `ActionFn[T]` / `CompensateFn[T]` | action / compensate callable용 type alias |
+| `SagaDataT` | `AbstractSagaData`에 bound된 TypeVar |
 
-### Builders
+### Builder
 
-| Function | Description |
+| 함수 | 설명 |
 |----------|-------------|
-| `saga_flow(*items)` | Construct a `SagaFlow` from sequential items |
-| `step(action, *, compensate=, on_error=, timeout=)` | Build `SagaStep` or `Transaction` |
-| `parallel(*items)` | Build a `Parallel` group (requires ≥ 2 items) |
+| `saga_flow(*items)` | 순차 item으로 `SagaFlow` 생성 |
+| `step(action, *, compensate=, on_error=, timeout=)` | `SagaStep` 또는 `Transaction` 생성 |
+| `parallel(*items)` | `Parallel` group 생성(최소 2개 item 필요) |
 
-### Execution
+### 실행
 
-| Symbol | Description |
+| 기호 | 설명 |
 |--------|-------------|
-| `run_saga_flow(flow, data, *, saga_name=)` | Execute a flow; returns `SagaResult` |
-| `AbstractSaga.execute(data)` | Thin wrapper over `run_saga_flow` using `type(self).__name__` |
+| `run_saga_flow(flow, data, *, saga_name=)` | flow 실행 후 `SagaResult` 반환 |
+| `AbstractSaga.execute(data)` | `type(self).__name__`을 사용하는 `run_saga_flow` 얇은 wrapper |
 
-### Result Types
+### Result 타입
 
-| Symbol | Description |
+| 기호 | 설명 |
 |--------|-------------|
 | `SagaResult[T]` | `status`, `data`, `failed_step`, `error`, `history`, `elapsed` |
 | `StepRecord` | `name`, `status`, `elapsed` — per-step execution record |
 | `StepStatus` | `COMMITTED`, `FAILED`, `COMPENSATED` |
 | `SagaStatus` | `STARTED`, `RUNNING`, `COMPENSATING`, `COMPLETED`, `FAILED`, `TIMED_OUT` |
 
-### Errors
+### 에러
 
-| Error | Description |
+| 에러 | 설명 |
 |-------|-------------|
-| `AbstractSpakkySagaError` | ABC base for all saga errors |
-| `SagaFlowDefinitionError` | Invalid saga flow definition (static validation) |
-| `SagaCompensationFailedError` | Compensation failed during rollback |
-| `SagaStepTimeoutError` | Raised internally when a step exceeds its timeout (routed through `on_error`) |
-| `SagaParallelMergeConflictError` | Parallel steps modified the same field during data merge |
-| `SagaEngineNotConnectedError` | `execute()` called before the saga engine is connected |
+| `AbstractSpakkySagaError` | 모든 saga error의 ABC 기반 클래스 |
+| `SagaFlowDefinitionError` | 유효하지 않은 saga flow 정의(정적 검증) |
+| `SagaCompensationFailedError` | rollback 중 compensation 실패 |
+| `SagaStepTimeoutError` | step timeout 초과 시 내부에서 발생(`on_error`로 라우팅) |
+| `SagaParallelMergeConflictError` | 병렬 step이 data merge 중 같은 필드 변경 |
+| `SagaEngineNotConnectedError` | saga engine 연결 전에 `execute()`가 호출됨 |
 
-## Related
+## 관련 문서
 
-- [ADR-0007](../../docs/adr/0007-spakky-saga-plan.md) — Architecture decision record
-- `spakky-domain` — provides `AbstractDomainModel` (parent of `AbstractSagaData`)
+- [ADR-0007](../../docs/adr/0007-spakky-saga-plan.md) — architecture decision record
+- `spakky-domain` — `AbstractSagaData`의 부모인 `AbstractDomainModel` 제공
 
-## License
+## 라이선스
 
 MIT License

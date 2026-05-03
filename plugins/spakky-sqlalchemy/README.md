@@ -1,54 +1,54 @@
 # Spakky SQLAlchemy
 
-SQLAlchemy integration plugin for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 SQLAlchemy 통합 플러그인입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-sqlalchemy
 ```
 
-Or install via Spakky extras:
+Spakky extras로도 설치할 수 있습니다.
 
 ```bash
 pip install spakky[sqlalchemy]
 ```
 
-## Configuration
+## 설정
 
-Set environment variables with the `SPAKKY_SQLALCHEMY__` prefix:
+`SPAKKY_SQLALCHEMY__` 접두사로 환경변수를 설정합니다.
 
 ```bash
-# Required
+# 필수
 export SPAKKY_SQLALCHEMY__CONNECTION_STRING="postgresql+psycopg://user:pass@localhost/db"
 
-# Engine options (optional)
+# Engine option(선택)
 export SPAKKY_SQLALCHEMY__ECHO="false"
 export SPAKKY_SQLALCHEMY__ECHO_POOL="false"
 
-# Connection pool options (optional)
+# Connection pool option(선택)
 export SPAKKY_SQLALCHEMY__POOL_SIZE="5"
 export SPAKKY_SQLALCHEMY__POOL_MAX_OVERFLOW="10"
 export SPAKKY_SQLALCHEMY__POOL_TIMEOUT="30.0"
 export SPAKKY_SQLALCHEMY__POOL_RECYCLE="-1"
 export SPAKKY_SQLALCHEMY__POOL_PRE_PING="false"
 
-# Session options (optional)
+# Session option(선택)
 export SPAKKY_SQLALCHEMY__SESSION_AUTOFLUSH="true"
 export SPAKKY_SQLALCHEMY__SESSION_EXPIRE_ON_COMMIT="true"
 
-# Transaction options (optional)
+# Transaction option(선택)
 export SPAKKY_SQLALCHEMY__AUTOCOMMIT="true"
 
-# Async support (optional)
+# 비동기 지원(선택)
 export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
 ```
 
-## Usage
+## 사용법
 
-### Defining Tables with Domain Mapping
+### 도메인 매핑 테이블 정의
 
-Use `@Table` decorator and inherit from `AbstractMappableTable` to define ORM tables with domain model mapping:
+`@Table` decorator와 `AbstractMappableTable` 상속으로 domain model mapping이 있는 ORM table을 정의합니다.
 
 ```python
 from uuid import UUID
@@ -63,7 +63,7 @@ class User(AbstractAggregateRoot[UUID]):
     name: str
     email: str
 
-# Table definition with domain mapping
+# domain mapping을 가진 table 정의
 @Table()
 class UserTable(AbstractMappableTable[User]):
     __tablename__ = "users"
@@ -80,9 +80,9 @@ class UserTable(AbstractMappableTable[User]):
         return User(id=self.id, name=self.name, email=self.email)
 ```
 
-### Repository Implementation
+### Repository 구현
 
-Extend `AbstractGenericRepository` or `AbstractAsyncGenericRepository`:
+`AbstractGenericRepository` 또는 `AbstractAsyncGenericRepository`를 확장합니다:
 
 ```python
 from uuid import UUID
@@ -92,20 +92,20 @@ from spakky.plugins.sqlalchemy.persistency.repository import (
     AbstractAsyncGenericRepository,
 )
 
-# Synchronous repository
+# 동기 repository
 @Repository()
 class UserRepository(AbstractGenericRepository[User, UUID]):
-    pass  # CRUD methods inherited
+    pass  # CRUD method 상속
 
-# Asynchronous repository
+# 비동기 repository
 @Repository()
 class AsyncUserRepository(AbstractAsyncGenericRepository[User, UUID]):
-    pass  # Async CRUD methods inherited
+    pass  # 비동기 CRUD method 상속
 ```
 
-### Using Transactions
+### 트랜잭션 사용
 
-Use the `@Transactional` decorator from `spakky-data`:
+`spakky-data`의 `@Transactional` decorator를 사용합니다.
 
 ```python
 from spakky.core.stereotype.usecase import UseCase
@@ -122,10 +122,10 @@ class CreateUserUseCase:
         return self._user_repo.save(user)
 ```
 
-### Async Transactions
+### 비동기 트랜잭션
 
-The same `@Transactional()` decorator works for both sync and async methods.
-The framework automatically selects the correct aspect based on whether the method is a coroutine.
+같은 `@Transactional()` decorator가 동기와 비동기 메서드 모두에서 동작합니다.
+프레임워크는 메서드가 coroutine인지에 따라 올바른 aspect를 자동 선택합니다.
 
 ```python
 from spakky.data.aspects.transactional import Transactional
@@ -141,11 +141,10 @@ class AsyncCreateUserUseCase:
         return await self._user_repo.save(user)
 ```
 
-### Accessing Session Directly
+### Session 직접 접근
 
-For complex queries, access the SQLAlchemy session directly in **QueryUseCase**.
-Following CQRS principles, queries should be implemented directly rather than
-adding query methods to repositories.
+복잡한 query는 **QueryUseCase**에서 SQLAlchemy session에 직접 접근합니다.
+CQRS 원칙에 따라 query는 repository에 query 메서드를 추가하지 않고 직접 구현해야 합니다.
 
 ```python
 from spakky.core.common.mutability import immutable
@@ -183,7 +182,7 @@ class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO | 
 
 ### Schema Registry
 
-Access `SchemaRegistry` to get table metadata for migrations:
+migration용 table metadata를 얻으려면 `SchemaRegistry`에 접근합니다:
 
 ```python
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
@@ -197,48 +196,48 @@ class MigrationService:
         return self._schema_registry.metadata
 ```
 
-## Features
+## 주요 기능
 
-- **Domain-Table mapping**: Bidirectional conversion between domain models and ORM tables
-- **Generic repositories**: Pre-built CRUD operations with composite PK support
-- **Sync and Async support**: Full support for both synchronous and asynchronous operations
-- **Scoped sessions**: Thread/context-safe session management
-- **Optimistic locking**: Built-in `VersionConflictError` for concurrent updates
-- **Schema registry**: Centralized table metadata management
+- **Domain-Table mapping**: domain model과 ORM table 간 양방향 변환
+- **Generic repository**: composite PK를 지원하는 사전 구성 CRUD operation
+- **동기/비동기 지원**: 동기 및 비동기 operation 모두 지원
+- **Scoped session**: thread/context-safe session 관리
+- **낙관적 lock**: 동시 update를 위한 내장 `VersionConflictError`
+- **Schema registry**: 중앙화된 table metadata 관리
 
-## Components
+## 구성 요소
 
-| Component | Description |
+| 컴포넌트 | 설명 |
 |-----------|-------------|
-| `@Table` | Decorator for registering ORM tables with domain mapping |
-| `AbstractTable` | Base class for ORM tables (infrastructure tables without domain mapping) |
-| `AbstractMappableTable` | Generic table with `from_domain`/`to_domain` domain mapping |
-| `AbstractGenericRepository` | Sync repository with CRUD operations |
-| `AbstractAsyncGenericRepository` | Async repository with CRUD operations |
-| `SchemaRegistry` | Central registry for table-domain mappings |
-| `SessionManager` | Sync scoped session management |
-| `AsyncSessionManager` | Async scoped session management |
-| `Transaction` | Sync transaction implementation |
-| `AsyncTransaction` | Async transaction implementation |
-| `ConnectionManager` | Sync SQLAlchemy engine lifecycle |
-| `AsyncConnectionManager` | Async SQLAlchemy engine lifecycle |
-| `SQLAlchemyConnectionConfig` | Configuration via environment variables |
+| `@Table` | domain mapping이 있는 ORM table 등록 decorator |
+| `AbstractTable` | ORM table 기반 클래스(domain mapping 없는 infrastructure table) |
+| `AbstractMappableTable` | `from_domain`/`to_domain` domain mapping을 가진 generic table |
+| `AbstractGenericRepository` | CRUD operation을 가진 동기 repository |
+| `AbstractAsyncGenericRepository` | CRUD operation을 가진 비동기 repository |
+| `SchemaRegistry` | table-domain mapping 중앙 registry |
+| `SessionManager` | 동기 scoped session 관리 |
+| `AsyncSessionManager` | 비동기 scoped session 관리 |
+| `Transaction` | 동기 transaction 구현 |
+| `AsyncTransaction` | 비동기 transaction 구현 |
+| `ConnectionManager` | 동기 SQLAlchemy engine lifecycle |
+| `AsyncConnectionManager` | 비동기 SQLAlchemy engine lifecycle |
+| `SQLAlchemyConnectionConfig` | 환경변수 기반 설정 |
 
-## Repository Methods
+## Repository 메서드
 
-Both sync and async repositories provide:
+동기/비동기 repository는 모두 다음을 제공합니다:
 
-| Method | Description |
+| 메서드 | 설명 |
 |--------|-------------|
-| `get(id)` | Get aggregate by ID, raises `EntityNotFoundError` if not found |
-| `get_or_none(id)` | Get aggregate by ID, returns `None` if not found |
-| `contains(id)` | Check if aggregate exists |
-| `range(ids)` | Get multiple aggregates by ID list |
-| `save(aggregate)` | Save (insert or update) an aggregate |
-| `save_all(aggregates)` | Save multiple aggregates |
-| `delete(aggregate)` | Delete an aggregate |
-| `delete_all(aggregates)` | Delete multiple aggregates |
+| `get(id)` | ID로 aggregate 조회, 없으면 `EntityNotFoundError` 발생 |
+| `get_or_none(id)` | ID로 aggregate 조회, 없으면 `None` 반환 |
+| `contains(id)` | aggregate 존재 여부 확인 |
+| `range(ids)` | ID 목록으로 여러 aggregate 조회 |
+| `save(aggregate)` | aggregate 저장(insert 또는 update) |
+| `save_all(aggregates)` | 여러 aggregate 저장 |
+| `delete(aggregate)` | aggregate 삭제 |
+| `delete_all(aggregates)` | 여러 aggregate 삭제 |
 
-## License
+## 라이선스
 
 MIT License

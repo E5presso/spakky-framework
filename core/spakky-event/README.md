@@ -1,30 +1,30 @@
 # Spakky Event
 
-> Event handling stereotype for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 이벤트 처리 stereotype입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-event
 ```
 
-## Features
+## 주요 기능
 
-- **`@EventHandler`**: Stereotype for event handler classes
-- **`@on_event`**: Decorator for marking methods as event handlers
-- **Type-safe**: Full type hint support for event types
-- **Async support**: Native async/await for event processing
+- **`@EventHandler`**: 이벤트 handler 클래스용 stereotype
+- **`@on_event`**: 메서드를 이벤트 handler로 표시하는 decorator
+- **타입 안전성**: 이벤트 타입에 대한 타입 힌트 지원
+- **비동기 지원**: 이벤트 처리에 async/await 네이티브 지원
 
-## Quick Start
+## 빠른 시작
 
-### Define Events
+### 이벤트 정의
 
-Events should extend one of the event base classes from `spakky-domain`:
+이벤트는 `spakky-domain`의 이벤트 기반 클래스 중 하나를 상속해야 합니다.
 
-- Use `AbstractDomainEvent` for events within a bounded context (in-process domain events)
-- Use `AbstractIntegrationEvent` for cross-boundary events (message broker integration)
+- bounded context 내부 이벤트(in-process domain event)에는 `AbstractDomainEvent`를 사용합니다.
+- 경계를 넘는 이벤트(message broker integration)에는 `AbstractIntegrationEvent`를 사용합니다.
 
-When using message broker plugins (RabbitMQ / Kafka), define events as `AbstractIntegrationEvent`.
+메시지 브로커 플러그인(RabbitMQ/Kafka)을 사용할 때는 이벤트를 `AbstractIntegrationEvent`로 정의하세요.
 
 ```python
 from spakky.core.common.mutability import immutable
@@ -42,9 +42,9 @@ class UserDeletedEvent(AbstractIntegrationEvent):
     user_id: str
 ```
 
-### Create Event Handler
+### EventHandler 생성
 
-Use `@EventHandler` stereotype with `@on_event` decorators:
+`@EventHandler` stereotype과 `@on_event` decorator를 함께 사용합니다.
 
 ```python
 from spakky.event.stereotype.event_handler import EventHandler, on_event
@@ -64,9 +64,9 @@ class UserEventHandler:
         await self.notification_service.send_goodbye_email(event.user_id)
 ```
 
-### Integration with Message Brokers
+### 메시지 브로커 통합
 
-The `@EventHandler` stereotype works with Spakky's message broker plugins:
+`@EventHandler` stereotype은 Spakky의 message broker 플러그인과 함께 동작합니다.
 
 #### RabbitMQ
 
@@ -104,68 +104,68 @@ app = (
 )
 ```
 
-## API Reference
+## API 레퍼런스
 
-### Stereotypes
+### 스테레오타입
 
-| Decorator | Description |
+| 데코레이터 | 설명 |
 |-----------|-------------|
-| `@EventHandler()` | Marks a class as an event handler (extends `@Pod`) |
-| `@on_event(EventType)` | Marks a method as handler for specific event type |
+| `@EventHandler()` | 클래스를 event handler로 표시(`@Pod` 확장) |
+| `@on_event(EventType)` | 메서드를 특정 event type의 handler로 표시 |
 
-### Interfaces
+### 인터페이스
 
-| Interface | Description |
+| 인터페이스 | 설명 |
 |-----------|-------------|
-| `IEventPublisher` / `IAsyncEventPublisher` | Event publish entry point (type-based routing) |
-| `IEventBus` / `IAsyncEventBus` | Integration event send entry point (Outbox seam) |
-| `IEventTransport` / `IAsyncEventTransport` | Actual message broker transport |
-| `IEventConsumer` / `IAsyncEventConsumer` | Handler callback registration |
+| `IEventPublisher` / `IAsyncEventPublisher` | Event publish 진입점(type-based routing) |
+| `IEventBus` / `IAsyncEventBus` | Integration event send 진입점(Outbox 경계) |
+| `IEventTransport` / `IAsyncEventTransport` | 실제 message broker transport |
+| `IEventConsumer` / `IAsyncEventConsumer` | Handler callback 등록 |
 | `IEventDispatcher` / `IAsyncEventDispatcher` | In-process handler dispatch |
 
-### Implementations
+### 구현체
 
-| Class | Description |
+| 클래스 | 설명 |
 |-------|-------------|
-| `EventMediator` / `AsyncEventMediator` | Consumer + Dispatcher combined (in-process) |
-| `EventPublisher` / `AsyncEventPublisher` | Type-based router (DomainEvent→Mediator, IntegrationEvent→EventBus) |
-| `DirectEventBus` / `AsyncDirectEventBus` | Default EventBus → EventTransport delegation |
-| `EventHandlerRegistrationPostProcessor` | Auto-registers `@EventHandler` methods |
+| `EventMediator` / `AsyncEventMediator` | Consumer와 Dispatcher를 결합한 in-process 구현체 |
+| `EventPublisher` / `AsyncEventPublisher` | Type-based router(DomainEvent→Mediator, IntegrationEvent→EventBus) |
+| `DirectEventBus` / `AsyncDirectEventBus` | 기본 EventBus → EventTransport 위임 구현 |
+| `EventHandlerRegistrationPostProcessor` | `@EventHandler` 메서드를 자동 등록 |
 
-### Types
+### 타입
 
-| Type | Description |
+| 타입 | 설명 |
 |------|-------------|
-| `EventRoute` | Annotation class for event routing metadata |
-| `EventT_contra` | TypeVar bound to `AbstractEvent` |
-| `EventHandlerCallback` | Type alias for sync event callbacks |
-| `AsyncEventHandlerCallback` | Type alias for async event callbacks |
+| `EventRoute` | event routing metadata용 annotation 클래스 |
+| `EventT_contra` | `AbstractEvent`에 bound된 TypeVar |
+| `EventHandlerCallback` | 동기 event callback용 type alias |
+| `AsyncEventHandlerCallback` | 비동기 event callback용 type alias |
 
-### Errors
+### 에러
 
-| Class | Description |
+| 클래스 | 설명 |
 |-------|-------------|
-| `AbstractSpakkyEventError` | Base error for event operations |
-| `InvalidMessageError` | Raised when message is malformed |
+| `AbstractSpakkyEventError` | event operation 기반 error |
+| `InvalidMessageError` | message가 malformed일 때 발생 |
 
-## Related Packages
+## 관련 패키지
 
-| Package | Description |
+| 패키지 | 설명 |
 |---------|-------------|
-| `spakky-domain` | DDD building blocks including `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent` |
-| `spakky-rabbitmq` | RabbitMQ transport (`RabbitMQEventTransport`) |
-| `spakky-kafka` | Kafka transport (`KafkaEventTransport`) |
+| `spakky-domain` | DDD building block 포함 `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent` |
+| `spakky-rabbitmq` | RabbitMQ transport(`RabbitMQEventTransport`) |
+| `spakky-kafka` | Kafka transport(`KafkaEventTransport`) |
 
-## In-process Domain Event Publishing
+## In-process 도메인 이벤트 발행
 
-For events within a bounded context (DomainEvents), use the in-process publisher:
+bounded context 내부 이벤트(DomainEvents)에는 in-process publisher를 사용합니다.
 
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.event import IAsyncEventPublisher
 
-# Bootstrap application (load_plugins auto-registers event components)
+# 애플리케이션 부트스트랩(load_plugins가 event component를 자동 등록)
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins()
@@ -173,19 +173,19 @@ app = (
     .start()
 )
 
-# Get publisher from container
+# 컨테이너에서 publisher 조회
 publisher = app.container.get(IAsyncEventPublisher)
 await publisher.publish(UserCreatedEvent(user_id="123", email="test@example.com"))
 ```
 
-### Architecture (ISP Compliant)
+### 아키텍처(ISP 준수)
 
-The in-process event system follows Interface Segregation Principle:
+in-process event system은 Interface Segregation Principle을 따릅니다.
 
-- **Consumer**: Registers event handlers (`register()` method)
-- **Dispatcher**: Dispatches events to handlers (`dispatch()` method)
-- **Mediator**: Combines both interfaces in a single implementation
-- **Publisher**: Depends only on Dispatcher (not Consumer)
+- **Consumer**: event handler 등록(`register()` 메서드)
+- **Dispatcher**: event를 handler로 dispatch(`dispatch()` 메서드)
+- **Mediator**: 두 인터페이스를 단일 구현체로 결합
+- **Publisher**: Consumer가 아니라 Dispatcher에만 의존
 
 ```mermaid
 flowchart TD
@@ -199,6 +199,6 @@ flowchart TD
     mediator --> handler
 ```
 
-## License
+## 라이선스
 
 MIT License

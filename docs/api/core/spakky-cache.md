@@ -1,44 +1,44 @@
 # spakky-cache
 
-Application data cache contract and in-memory backend.
+애플리케이션 데이터 캐시 계약과 인메모리 백엔드입니다.
 
-## Annotations
+## 어노테이션
 
 ::: spakky.cache.annotation
     options:
       show_root_heading: false
 
-## AOP Aspects
+## AOP Aspect
 
 ::: spakky.cache.aspects.cache_aspect
     options:
       show_root_heading: false
 
-## Result Contracts
+## 결과 계약
 
 ::: spakky.cache.result
     options:
       show_root_heading: false
 
-## Cache Interface
+## 캐시 인터페이스
 
 ::: spakky.cache.interfaces.cache
     options:
       show_root_heading: false
 
-## In-Memory Backend
+## 인메모리 백엔드
 
 ::: spakky.cache.backends.memory
     options:
       show_root_heading: false
 
-## Plugin Entry Point
+## 플러그인 진입점
 
 ::: spakky.cache.main
     options:
       show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.cache.error
     options:

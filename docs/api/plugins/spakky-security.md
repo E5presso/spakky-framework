@@ -8,13 +8,13 @@
 options:
 show_root_heading: false
 
-## Key Management
+## 키 관리
 
 ::: spakky.plugins.security.key
 options:
 show_root_heading: false
 
-## Encoding
+## 인코딩
 
 ::: spakky.plugins.security.encoding
 options:
@@ -26,13 +26,13 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## HMAC Signer
+## HMAC 서명기
 
 ::: spakky.plugins.security.hmac_signer
 options:
 show_root_heading: false
 
-## Cryptography
+## 암호화
 
 ::: spakky.plugins.security.cryptography.interface
 options:
@@ -50,7 +50,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Password Hashing
+## 패스워드 해싱
 
 ::: spakky.plugins.security.password.interface
 options:
@@ -72,13 +72,13 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.plugins.security.error
 options:
 show_root_heading: false
 
-## Main
+## 메인
 
 ::: spakky.plugins.security.main
 options:

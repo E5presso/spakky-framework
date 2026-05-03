@@ -1,33 +1,33 @@
 # Spakky
 
-Core module for [Spakky Framework](https://github.com/E5presso/spakky-framework) - a Spring-inspired dependency injection framework for Python.
+[Spakky Framework](https://github.com/E5presso/spakky-framework)의 코어 모듈입니다. Python을 위한 Spring-inspired 의존성 주입 프레임워크를 제공합니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky
 ```
 
-Or install with plugins:
+플러그인을 함께 설치할 수도 있습니다.
 
 ```bash
 pip install spakky[fastapi]
 pip install spakky[fastapi,kafka,security]
 ```
 
-## Features
+## 주요 기능
 
-- **Dependency Injection**: Powerful IoC container with constructor injection
-- **Aspect-Oriented Programming**: Cross-cutting concerns with `@Aspect`
-- **Plugin System**: Extensible architecture via entry points
-- **Stereotypes**: Semantic annotations (`@Controller`, `@UseCase`, etc.)
-- **Scopes**: Singleton, Prototype, and Context-scoped beans
-- **Type-Safe**: Built with Python type hints
-- **Async First**: Native async/await support
+- **의존성 주입**: 생성자 주입 기반의 강력한 IoC 컨테이너
+- **관점 지향 프로그래밍**: `@Aspect`로 횡단 관심사를 처리합니다.
+- **플러그인 시스템**: entry point 기반 확장 아키텍처
+- **스테레오타입**: 의미를 드러내는 어노테이션 (`@Controller`, `@UseCase`, etc.)
+- **스코프**: Singleton, Prototype, Context scope bean
+- **타입 안전성**: Python 타입 힌트 기반 설계
+- **비동기 우선**: async/await 네이티브 지원
 
-## Quick Start
+## 빠른 시작
 
-### Define Pods
+### Pod 정의
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
@@ -47,7 +47,7 @@ class UserService:
         return self.repository.find_by_id(user_id)
 ```
 
-### Bootstrap Application
+### 애플리케이션 부트스트랩
 
 ```python
 from spakky.core.application.application import SpakkyApplication
@@ -57,22 +57,20 @@ import my_app
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins()
-    .scan(my_app)  # or .scan() to auto-detect caller's package
+    .scan(my_app)  # 또는 .scan()으로 호출자 패키지 자동 감지
     .start()
 )
 
-# Get a service from the container
+# 컨테이너에서 서비스 조회
 user_service = app.container.get(UserService)
 ```
 
-> **📘 Auto-scan**: When `scan()` is called without arguments, it automatically detects the caller's package and scans it. This also works in Docker environments where the application root may not be in `sys.path` - the framework automatically adds the necessary path.
+> **📘 자동 스캔**: `scan()`을 인자 없이 호출하면 호출자의 패키지를 자동 감지해 스캔합니다. 애플리케이션 루트가 `sys.path`에 없을 수 있는 Docker 환경에서도 프레임워크가 필요한 경로를 자동으로 추가합니다.
 
 ### Discovery Manifest
 
-Scan discovery manifest reuse is opt-in and does not replace container caches.
-Enable it before `scan()` to persist discovered Pod/Tag candidates and reuse
-them when the scan target, exclude patterns, Python version, schema version, and
-source file mtimes/sizes are unchanged:
+Scan discovery manifest 재사용은 선택 기능이며 컨테이너 캐시를 대체하지 않습니다.
+`scan()` 전에 활성화하면 발견된 Pod/Tag 후보를 저장하고, scan 대상, exclude pattern, Python 버전, schema 버전, source file mtime/size가 그대로일 때 재사용합니다.
 
 ```python
 from pathlib import Path
@@ -91,17 +89,11 @@ scan_record = app.startup_report.records[0]
 decision = scan_record.diagnostic_details[0].value  # miss, hit, stale_schema, stale_input
 ```
 
-If no path is provided, Spakky uses the deterministic project-local cache path
-`.spakky/cache/discovery-manifest.json`. Missing, stale, or malformed manifests
-fall back to fresh discovery and record the decision in startup diagnostics. The
-decision values are `miss`, `hit`, `stale_schema`, and `stale_input`; `hit`
-replays stored candidates through the normal registration path, while every
-other decision performs fresh discovery.
+경로를 지정하지 않으면 Spakky는 결정적인 project-local cache path인 `.spakky/cache/discovery-manifest.json`을 사용합니다. manifest가 없거나 오래되었거나 형식이 잘못되면 새 discovery로 fallback하고 그 결정을 startup diagnostics에 기록합니다. decision 값은 `miss`, `hit`, `stale_schema`, `stale_input`입니다. `hit`은 저장된 후보를 일반 등록 경로로 재생하고, 나머지 decision은 새 discovery를 수행합니다.
 
-### Startup Diagnostics
+### 시작 진단
 
-Startup diagnostics are opt-in. The default recorder is no-op, so existing
-startup behavior is unchanged until diagnostics are explicitly enabled:
+Startup diagnostics는 opt-in 기능입니다. 기본 recorder는 no-op이므로 명시적으로 diagnostics를 활성화하기 전까지 기존 startup 동작은 바뀌지 않습니다.
 
 ```python
 from spakky.core.application.application import SpakkyApplication
@@ -123,46 +115,40 @@ report = app.startup_report
 first_phase = report.records[0]
 ```
 
-`StartupReport` stores each startup phase name, elapsed seconds, processed
-count, success/failure status, optional diagnostic details, and an optional
-structured failure summary. Failure summaries keep the exception type name,
-message, and diagnostic details without retaining the raw exception object.
-The application startup pipeline records phases in execution order:
+`StartupReport`는 각 startup phase 이름, 경과 시간(초), 처리 count, 성공/실패 상태, 선택적 diagnostic detail, 선택적 구조화 failure summary를 저장합니다. Failure summary는 원본 exception 객체를 보관하지 않고 exception type name, message, diagnostic detail만 유지합니다. 애플리케이션 startup pipeline은 실행 순서대로 phase를 기록합니다.
 `load_plugins`, `scan`, `registration`, `post_processor_registration`,
 `instantiation`, `post_processing`, and `service_start`.
 
-DI dependency failures preserve their existing exception types while attaching
-structured dependency diagnostics from `Pod.dependencies`, including the failed
-Pod, dependency parameter, requested type, and dependency path.
+DI dependency 실패는 기존 exception type을 유지하면서 `Pod.dependencies`에서 얻은 구조화된 dependency diagnostics를 붙입니다. 실패한 Pod, 의존성 파라미터, 요청 타입, 의존성 경로를 함께 보여줍니다.
 
-## Pod Scopes
+## Pod 스코프
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
 
-# Singleton (default) - one instance per container
+# Singleton(기본값): 컨테이너당 인스턴스 하나
 @Pod(scope=Pod.Scope.SINGLETON)
 class SingletonService:
     pass
 
-# Prototype - new instance on each request
+# Prototype: 요청마다 새 인스턴스
 @Pod(scope=Pod.Scope.PROTOTYPE)
 class PrototypeService:
     pass
 
-# Context - scoped to request/context lifecycle
+# Context: request/context lifecycle에 묶인 인스턴스
 @Pod(scope=Pod.Scope.CONTEXT)
 class ContextScopedService:
     pass
 ```
 
-## Qualifiers
+## Qualifier
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.annotations.primary import Primary
 
-# Named qualifier
+# 이름 기반 qualifier
 @Pod(name="mysql")
 class MySQLRepository(IRepository):
     pass
@@ -171,14 +157,14 @@ class MySQLRepository(IRepository):
 class PostgresRepository(IRepository):
     pass
 
-# Primary - preferred when multiple implementations exist
+# Primary: 구현체가 여러 개일 때 우선 선택
 @Primary()
 @Pod()
 class DefaultRepository(IRepository):
     pass
 ```
 
-## Stereotypes
+## Stereotype
 
 ```python
 from spakky.core.stereotype.controller import Controller
@@ -186,16 +172,16 @@ from spakky.core.stereotype.usecase import UseCase
 
 @Controller()
 class UserController:
-    """Groups related handlers together."""
+    """관련 handler를 묶습니다."""
     pass
 
 @UseCase()
 class CreateUserUseCase:
-    """Encapsulates business logic."""
+    """비즈니스 로직을 캡슐화합니다."""
     pass
 ```
 
-## Aspect-Oriented Programming
+## 관점 지향 프로그래밍
 
 ```python
 from dataclasses import dataclass
@@ -208,7 +194,7 @@ from spakky.core.pod.annotations.order import Order
 @dataclass
 class Traced(FunctionAnnotation): ...
 
-# Create custom aspect
+# custom aspect 생성
 @Order(0)
 @Aspect()
 class TracingAspect(IAspect):
@@ -220,7 +206,7 @@ class TracingAspect(IAspect):
     def after(self, *args, **kwargs) -> None:
         print("After method execution")
 
-# Apply to methods
+# 메서드에 적용
 @Pod()
 class MyService:
     @Traced()
@@ -228,7 +214,7 @@ class MyService:
         return "Hello"
 ```
 
-### Async Aspects
+### 비동기 Aspect
 
 ```python
 from spakky.core.aop.aspect import AsyncAspect
@@ -247,33 +233,33 @@ class TimingAspect(IAsyncAspect):
         return result
 ```
 
-## Context Management
+## Context 관리
 
-ApplicationContext provides context-scoped value storage:
+ApplicationContext는 context-scoped value storage를 제공합니다.
 
 ```python
 from spakky.core.application.application_context import ApplicationContext
 
 context = ApplicationContext()
 
-# Get unique context ID
+# 고유 context ID 조회
 context_id = context.get_context_id()
 
-# Store and retrieve context values
+# context value 저장 및 조회
 context.set_context_value("user_id", 123)
 user_id = context.get_context_value("user_id")  # Returns 123
 
-# Clear context (except system-managed keys)
+# context 정리(system-managed key 제외)
 context.clear_context()
 ```
 
-> **⚠️ Note**: System-managed keys like `"__spakky_context_id__"` cannot be overridden via `set_context_value()`.
+> **⚠️ 참고**: `"__spakky_context_id__"` 같은 system-managed key는 `set_context_value()`로 덮어쓸 수 없습니다.
 
 ## Tag Registry
 
-ApplicationContext implements `ITagRegistry` for managing custom metadata tags. Tags are dataclass-based annotations that can be registered and queried at runtime.
+ApplicationContext는 커스텀 metadata tag 관리를 위해 `ITagRegistry`를 구현합니다. Tag는 런타임에 등록하고 조회할 수 있는 dataclass 기반 어노테이션입니다.
 
-### Defining Custom Tags
+### 커스텀 Tag 정의
 
 ```python
 from dataclasses import dataclass
@@ -281,34 +267,34 @@ from spakky.core.pod.annotations.tag import Tag
 
 @dataclass(eq=False)
 class MyCustomTag(Tag):
-    """Custom tag for marking specific components."""
+    """특정 component를 표시하는 custom tag입니다."""
     category: str = ""
 ```
 
-### Registering and Querying Tags
+### Tag 등록과 조회
 
 ```python
 from spakky.core.application.application_context import ApplicationContext
 
 context = ApplicationContext()
 
-# Register tags
+# tag 등록
 tag = MyCustomTag(category="database")
 context.register_tag(tag)
 
-# Check if tag exists
+# tag 존재 여부 확인
 exists = context.contains_tag(tag)  # True
 
-# Get all tags
+# 모든 tag 조회
 all_tags = context.tags  # frozenset of all registered tags
 
-# Filter tags with selector
+# selector로 tag 필터링
 db_tags = context.list_tags(lambda t: isinstance(t, MyCustomTag) and t.category == "database")
 ```
 
-### Tag Registry Aware Pods
+### Tag Registry 인식 Pod
 
-Pods can receive the tag registry via `ITagRegistryAware`:
+Pod는 `ITagRegistryAware`를 통해 tag registry를 받을 수 있습니다.
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
@@ -322,77 +308,77 @@ class SchemaRegistry(ITagRegistryAware):
 
     def set_tag_registry(self, tag_registry: ITagRegistry) -> None:
         self._tag_registry = tag_registry
-        # Access registered tags
+        # 등록된 tag 접근
         for tag in tag_registry.list_tags(MyCustomTag.exists):
-            # Process tags...
+            # tag 처리...
             pass
 ```
 
-## Plugin System
+## 플러그인 시스템
 
-Plugins extend framework functionality through entry points.
+플러그인은 entry point를 통해 프레임워크 기능을 확장합니다.
 
-### Creating a Plugin
+### 플러그인 생성
 
-1. Create package with `uv init --lib spakky-<name>` in `plugins/` directory
-2. Register in root `pyproject.toml`'s `[tool.uv.workspace]` members
-3. Define entry point in plugin's `pyproject.toml`:
+1. `plugins/` 디렉토리에서 `uv init --lib spakky-<name>`으로 패키지를 생성합니다.
+2. 루트 `pyproject.toml`의 `[tool.uv.workspace]` members에 등록합니다.
+3. 플러그인의 `pyproject.toml`에 entry point를 정의합니다.
 
 ```toml
 [project.entry-points."spakky.plugins"]
 spakky-<name> = "spakky.plugins.<name>.main:initialize"
 ```
 
-4. Implement initialization function:
+4. 초기화 함수를 구현합니다.
 
 ```python
-# In spakky.plugins.<name>/main.py
+# spakky.plugins.<name>/main.py 내부
 from spakky.core.application.application import SpakkyApplication
 
 def initialize(app: SpakkyApplication) -> None:
-    # Register plugin components
+    # plugin component 등록
     pass
 ```
 
-See [Contributing Guide](../../CONTRIBUTING.md#-plugin-development) for detailed instructions.
+자세한 내용은 [기여 가이드](../../CONTRIBUTING.md#-plugin-development)를 참고하세요.
 
-## Available Plugins
+## 사용 가능한 플러그인
 
-| Plugin | Description |
+| 플러그인 | 설명 |
 |--------|-------------|
-| [`spakky-fastapi`](https://pypi.org/project/spakky-fastapi/) | FastAPI integration |
-| [`spakky-typer`](https://pypi.org/project/spakky-typer/) | Typer CLI integration |
-| [`spakky-sqlalchemy`](https://pypi.org/project/spakky-sqlalchemy/) | SQLAlchemy ORM integration |
+| [`spakky-fastapi`](https://pypi.org/project/spakky-fastapi/) | FastAPI 통합 |
+| [`spakky-typer`](https://pypi.org/project/spakky-typer/) | Typer CLI 통합 |
+| [`spakky-sqlalchemy`](https://pypi.org/project/spakky-sqlalchemy/) | SQLAlchemy ORM 통합 |
 | [`spakky-kafka`](https://pypi.org/project/spakky-kafka/) | Apache Kafka event system |
 | [`spakky-rabbitmq`](https://pypi.org/project/spakky-rabbitmq/) | RabbitMQ event system |
 | [`spakky-celery`](https://pypi.org/project/spakky-celery/) | Celery task dispatch |
-| [`spakky-logging`](https://pypi.org/project/spakky-logging/) | Structured logging with AOP |
+| [`spakky-logging`](https://pypi.org/project/spakky-logging/) | AOP 기반 구조화 로깅 |
 | [`spakky-opentelemetry`](https://pypi.org/project/spakky-opentelemetry/) | OpenTelemetry SDK bridge |
-| [`spakky-security`](https://pypi.org/project/spakky-security/) | Security utilities |
+| [`spakky-security`](https://pypi.org/project/spakky-security/) | 보안 유틸리티 |
 
-## Core Modules
+## 코어 모듈
 
-| Module | Description |
+| 모듈 | 설명 |
 |--------|-------------|
-| `spakky.core.pod` | Dependency injection container and annotations |
-| `spakky.core.aop` | Aspect-oriented programming framework |
-| `spakky.core.application` | Application context and lifecycle |
-| `spakky.core.stereotype` | Semantic stereotype annotations |
-| `spakky.core.service` | Service lifecycle interfaces |
-| `spakky.core.common` | Core utilities (annotation, types, metadata) |
-| `spakky.core.utils` | Utility functions |
+| `spakky.core.pod` | 의존성 주입 컨테이너와 어노테이션 |
+| `spakky.core.aop` | 관점 지향 프로그래밍 프레임워크 |
+| `spakky.core.application` | 애플리케이션 컨텍스트와 생명주기 |
+| `spakky.core.stereotype` | 의미 기반 stereotype 어노테이션 |
+| `spakky.core.service` | 서비스 생명주기 인터페이스 |
+| `spakky.core.common` | 코어 유틸리티(annotation, types, metadata) |
+| `spakky.core.utils` | 유틸리티 함수 |
 
-## Related Packages
+## 관련 패키지
 
-| Package | Description |
+| 패키지 | 설명 |
 |---------|-------------|
-| [`spakky-domain`](https://pypi.org/project/spakky-domain/) | DDD building blocks (Entity, AggregateRoot, ValueObject, Event) |
-| [`spakky-data`](https://pypi.org/project/spakky-data/) | Repository and transaction abstractions |
-| [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling (`@EventHandler` stereotype) |
-| [`spakky-task`](https://pypi.org/project/spakky-task/) | Task queue abstraction (`@TaskHandler`, `@task`, `@schedule`) |
-| [`spakky-tracing`](https://pypi.org/project/spakky-tracing/) | Distributed tracing abstraction (TraceContext, Propagator) |
-| [`spakky-outbox`](https://pypi.org/project/spakky-outbox/) | Transactional Outbox pattern (OutboxEventBus, Relay) |
+| [`spakky-domain`](https://pypi.org/project/spakky-domain/) | DDD 빌딩 블록(Entity, AggregateRoot, ValueObject, Event) |
+| [`spakky-data`](https://pypi.org/project/spakky-data/) | Repository와 transaction 추상화 |
+| [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling(`@EventHandler` stereotype) |
+| [`spakky-task`](https://pypi.org/project/spakky-task/) | Task queue 추상화(`@TaskHandler`, `@task`, `@schedule`) |
+| [`spakky-tracing`](https://pypi.org/project/spakky-tracing/) | 분산 트레이싱 추상화(TraceContext, Propagator) |
+| [`spakky-outbox`](https://pypi.org/project/spakky-outbox/) | Transactional Outbox 패턴(OutboxEventBus, Relay) |
 
-## License
+## 라이선스
 
 MIT

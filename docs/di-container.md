@@ -417,14 +417,14 @@ manifest_decision = scan_record.diagnostic_details[0].value
 
 `manifest_decision`은 `miss`, `hit`, `stale_schema`, `stale_input` 중 하나입니다.
 `hit`은 저장된 후보를 기존 등록 경로로 재생하고, `miss`와 stale decision은
-fresh discovery를 수행합니다. 이 기능은 actuator endpoint, exporter, 또는
+새 discovery를 수행합니다. 이 기능은 actuator 엔드포인트, exporter, 또는
 플러그인별 튜닝을 자동으로 제공하지 않습니다.
 
-### Startup diagnostics
+### 시작 진단
 
-Startup diagnostics는 기본적으로 비활성화되어 있으며
+시작 진단은 기본적으로 비활성화되어 있으며
 `enable_startup_diagnostics()`로 명시적으로 켭니다. 활성화된 앱은 하나의
-startup attempt에 대한 `StartupReport`를 노출합니다.
+시작 시도에 대한 `StartupReport`를 노출합니다.
 
 ```python
 app = (
@@ -441,9 +441,7 @@ for record in app.startup_report.records:
 
 기록되는 phase는 실행 순서대로 `load_plugins`, `scan`, `registration`,
 `post_processor_registration`, `instantiation`, `post_processing`,
-`service_start`입니다. 각 record는 elapsed seconds, processed count,
-success/failure status, diagnostic details, failure summary를 담습니다. 실패한
-phase도 report에 남긴 뒤 기존 예외를 그대로 전파합니다.
+`service_start`입니다. 각 record는 경과 시간, 처리 개수, 성공/실패 상태, 진단 상세, 실패 요약을 담습니다. 실패한 phase도 report에 남긴 뒤 기존 예외를 그대로 전파합니다.
 
 ---
 

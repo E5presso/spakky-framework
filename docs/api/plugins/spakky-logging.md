@@ -2,25 +2,25 @@
 
 구조화된 로깅 — Aspect 기반 자동 로깅, 컨텍스트 주입
 
-## Aspects
+## Aspect
 
 ::: spakky.plugins.logging.aspects.logging_aspect
 options:
 show_root_heading: false
 
-## Annotations
+## 어노테이션
 
 ::: spakky.plugins.logging.annotation
 options:
 show_root_heading: false
 
-## Configuration
+## 설정
 
 ::: spakky.plugins.logging.config
 options:
 show_root_heading: false
 
-## Context
+## 컨텍스트
 
 ::: spakky.plugins.logging.context
 options:
@@ -38,7 +38,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Post Processor
+## 후처리기
 
 ::: spakky.plugins.logging.post_processor
 options:

@@ -2,13 +2,13 @@
 
 FastAPI 통합 — 라우트 데코레이터, 자동 엔드포인트 등록
 
-## Stereotypes
+## 스테레오타입
 
 ::: spakky.plugins.fastapi.stereotypes.api_controller
 options:
 show_root_heading: false
 
-## Routes
+## 라우트
 
 ::: spakky.plugins.fastapi.routes.route
 options:
@@ -46,7 +46,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Middlewares
+## 미들웨어
 
 ::: spakky.plugins.fastapi.middlewares.error_handling
 options:
@@ -56,7 +56,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Post Processors
+## 후처리기s
 
 ::: spakky.plugins.fastapi.post_processors.bind_lifespan
 options:
@@ -80,13 +80,13 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.plugins.fastapi.error
 options:
 show_root_heading: false
 
-## Plugin Entry Point
+## 플러그인 진입점
 
 ::: spakky.plugins.fastapi.main
 options:

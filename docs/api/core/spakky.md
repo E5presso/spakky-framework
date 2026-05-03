@@ -1,6 +1,6 @@
 # spakky
 
-DI Container, AOP, 부트스트랩 — Spakky Framework의 핵심 패키지
+DI 컨테이너, AOP, 부트스트랩 — Spakky Framework의 핵심 패키지
 
 ## Application
 
@@ -90,7 +90,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Stereotype
+## 스테레오타입
 
 ::: spakky.core.stereotype.configuration
 options:
@@ -104,7 +104,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Common
+## 공통
 
 ::: spakky.core.common.annotation
 options:
@@ -126,7 +126,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Utilities
+## 유틸리티
 
 ::: spakky.core.utils.casing
 options:

@@ -1,24 +1,24 @@
 # spakky-logging
 
-Structured logging system for Spakky Framework. Provides contextvars-based log context propagation, configurable formatters (Text, JSON, Pretty), automatic method call logging with masking and timing via AOP, and auto-configuration via PostProcessor.
+Spakky Framework를 위한 구조화 로깅 시스템입니다. contextvars 기반 로그 컨텍스트 전파, 설정 가능한 formatter(Text, JSON, Pretty), AOP 기반 메서드 호출 로깅, PostProcessor 기반 자동 설정을 제공합니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-logging
 ```
 
-## Quick Start
+## 빠른 시작
 
-### 1. Plugin Auto-Registration
+### 1. 플러그인 자동 등록
 
-`spakky-logging` is automatically loaded via `load_plugins()`:
+`spakky-logging`은 `load_plugins()`를 통해 자동으로 로드됩니다.
 
 ```python
 app = SpakkyApplication(ApplicationContext()).load_plugins().scan(my_app).start()
 ```
 
-### 2. Annotate Methods with `@logged`
+### 2. `@logged`로 메서드 표시
 
 ```python
 from spakky.plugins.logging import logged
@@ -29,9 +29,9 @@ class UserService:
         ...
 ```
 
-### 3. Configure (Optional)
+### 3. 설정(선택)
 
-Override defaults via `LoggingConfig`:
+`LoggingConfig`로 기본값을 override합니다.
 
 ```python
 from spakky.plugins.logging import LoggingConfig, LogFormat
@@ -44,9 +44,9 @@ config = LoggingConfig(
 )
 ```
 
-### 4. Log Context Propagation
+### 4. LogContext 전파
 
-Bind contextual key-value pairs that are automatically included in all log records:
+모든 log record에 자동 포함될 contextual key-value pair를 바인딩합니다.
 
 ```python
 from spakky.plugins.logging import LogContext
@@ -54,26 +54,26 @@ from spakky.plugins.logging import LogContext
 LogContext.bind(request_id="req-123", user_id="u-456")
 
 with LogContext.scope(trace_id="t-789"):
-    # All logs within this block include trace_id
+    # 이 block 안의 모든 log는 trace_id를 포함
     ...
 ```
 
-## Features
+## 주요 기능
 
-| Feature                     | Description                                                |
+| 기능                     | 설명                                                |
 | --------------------------- | ---------------------------------------------------------- |
-| `@logged()` annotation      | AOP-based automatic method call/result/error logging       |
-| `LogContext`                | Contextvars-based structured context propagation           |
-| `ContextInjectingFilter`    | Injects LogContext values into every `LogRecord`           |
-| `SpakkyTextFormatter`       | Pipe-separated text format                                 |
-| `SpakkyJsonFormatter`       | One JSON object per line                                   |
-| `SpakkyPrettyFormatter`     | ANSI-colored multi-column format for development           |
-| `LoggingConfig`             | `@Configuration` pod for centralized logging configuration |
-| `LoggingSetupPostProcessor` | Auto-configures root logger on application start           |
-| Sensitive data masking      | Masks `password`, `token`, `secret` etc. in log output     |
-| Slow call detection         | Warns when method execution exceeds threshold              |
-| Result truncation           | Truncates long return values in log output                 |
+| `@logged()` annotation      | AOP 기반 method call/result/error 자동 logging       |
+| `LogContext`                | contextvars 기반 structured context propagation           |
+| `ContextInjectingFilter`    | 모든 `LogRecord`에 LogContext value 주입           |
+| `SpakkyTextFormatter`       | pipe-separated text format                                 |
+| `SpakkyJsonFormatter`       | line당 JSON object 하나                                   |
+| `SpakkyPrettyFormatter`     | 개발용 ANSI-colored multi-column format           |
+| `LoggingConfig`             | 중앙 logging configuration용 `@Configuration` pod |
+| `LoggingSetupPostProcessor` | application start 시 root logger 자동 설정           |
+| 민감 데이터 masking      | log output에서 `password`, `token`, `secret` 등을 masking |
+| 느린 호출 감지         | method execution이 threshold를 넘으면 warning 출력 |
+| 결과 truncation           | 긴 return value를 log output에서 truncate |
 
-## License
+## 라이선스
 
 MIT License

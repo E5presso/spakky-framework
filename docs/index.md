@@ -1,6 +1,6 @@
 # Spakky Framework
 
-**Spring-inspired DI/IoC Framework for Python 3.11+**
+**Python 3.11+를 위한 Spring-inspired DI/IoC 프레임워크**
 
 <p style="font-size: 1.2em; color: var(--md-default-fg-color--light);">
 타입 안전한 의존성 주입, AOP, 이벤트 기반 아키텍처를 Python답게.
@@ -193,7 +193,7 @@ app = (
 
 | 가이드                                     | 배울 내용                                              |
 | ------------------------------------------ | ------------------------------------------------------ |
-| [DI & Pod](guides/dependency-injection.md) | `@Pod`, 생성자 주입, `@Qualifier`, `@Primary`, `@Lazy` |
+| [DI와 Pod](guides/dependency-injection.md) | `@Pod`, 생성자 주입, `@Qualifier`, `@Primary`, `@Lazy` |
 | [AOP](guides/aop.md)                       | `@Aspect`, Before/After/Around, 커스텀 어노테이션      |
 | [도메인 모델링](guides/domain-modeling.md) | Entity, Value Object, Aggregate Root, Domain Event     |
 | [이벤트 시스템](guides/events.md)          | `@EventHandler`, `@on_event`, EventBus, 이벤트 발행    |
@@ -211,18 +211,18 @@ app = (
 | [OpenTelemetry 통합](guides/opentelemetry.md) | OTel SDK 브릿지, OTLP exporter, Propagator 자동 교체 |
 | [Actuator 상태 확인](guides/actuator.md) | Health, Readiness, Liveness, Info, probe 확장 |
 | [사가 오케스트레이션](guides/saga.md) | SagaFlow, SagaStep, 보상 기반 롤백, ErrorStrategy |
-| [애플리케이션 데이터 캐시](guides/cache.md) | `CacheHit`, `CacheMiss`, `@cacheable`, Redis backend |
+| [애플리케이션 데이터 캐시](guides/cache.md) | `CacheHit`, `CacheMiss`, `@cacheable`, Redis 백엔드 |
 | [gRPC 통합](guides/grpc.md) | `@GrpcController`, `@rpc`, code-first 프로토콜 생성 |
 
 ---
 
 ## 패키지 구조
 
-### Core
+### 코어
 
 | 패키지                                     | 설명                               |
 | ------------------------------------------ | ---------------------------------- |
-| [spakky](api/core/spakky.md)               | DI Container, AOP, 부트스트랩      |
+| [spakky](api/core/spakky.md)               | DI 컨테이너, AOP, 부트스트랩      |
 | [spakky-domain](api/core/spakky-domain.md) | DDD 빌딩 블록                      |
 | [spakky-data](api/core/spakky-data.md)     | Repository, Transaction 추상화     |
 | [spakky-event](api/core/spakky-event.md)   | 인프로세스 이벤트                  |
@@ -233,7 +233,7 @@ app = (
 | [spakky-actuator](api/core/spakky-actuator.md) | Actuator 상태/정보 계약        |
 | [spakky-cache](api/core/spakky-cache.md)   | 애플리케이션 데이터 캐시 계약      |
 
-### Plugins
+### 플러그인
 
 | 패키지                                                | 설명             |
 | ----------------------------------------------------- | ---------------- |
@@ -247,7 +247,7 @@ app = (
 | [spakky-celery](api/plugins/spakky-celery.md)         | Celery 통합      |
 | [spakky-opentelemetry](api/plugins/spakky-opentelemetry.md) | OpenTelemetry 브릿지 |
 | [spakky-grpc](api/plugins/spakky-grpc.md)                   | gRPC 통합           |
-| [spakky-redis](api/plugins/spakky-redis.md)                 | Redis 캐시 backend |
+| [spakky-redis](api/plugins/spakky-redis.md)                 | Redis 캐시 백엔드 |
 
 ### 의존 방향
 

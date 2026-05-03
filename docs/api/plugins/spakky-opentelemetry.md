@@ -2,7 +2,7 @@
 
 OpenTelemetry SDK 브릿지 — Spakky 트레이싱을 OpenTelemetry로 연결
 
-## Bridge
+## 브릿지
 
 ::: spakky.plugins.opentelemetry.bridge
 options:
@@ -14,19 +14,19 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Post Processor
+## 후처리기
 
 ::: spakky.plugins.opentelemetry.post_processor
 options:
 show_root_heading: false
 
-## Configuration
+## 설정
 
 ::: spakky.plugins.opentelemetry.config
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.plugins.opentelemetry.error
 options:

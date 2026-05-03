@@ -2,13 +2,13 @@
 
 Outbox 패턴 — 이벤트 발행 보장
 
-## Event Bus
+## EventBus
 
 ::: spakky.outbox.bus.outbox_event_bus
 options:
 show_root_heading: false
 
-## Ports
+## 포트
 
 ::: spakky.outbox.ports.storage
 options:
@@ -20,7 +20,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Common
+## 공통
 
 ::: spakky.outbox.common.config
 options:
@@ -30,7 +30,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.outbox.error
 options:

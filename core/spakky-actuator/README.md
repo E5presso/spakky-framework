@@ -1,34 +1,34 @@
 # Spakky Actuator
 
-Transport-neutral actuator contracts for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 transport 중립 actuator 계약입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-actuator
 ```
 
-## Features
+## 주요 기능
 
-- **Health, readiness, liveness results**: Shared result contracts for HTTP, CLI, or other adapters
-- **Probe extension points**: Sync and async health probes registered through Spakky DI
-- **Info contributors**: Deterministic merge of sync and async info contributors
-- **Exception handling**: Probe exceptions become unhealthy component results with structured error details
-- **Transport-neutral core**: No FastAPI, Typer, or plugin adapter dependency
+- **Health/readiness/liveness 결과**: HTTP, CLI 등 adapter가 공유하는 result 계약
+- **Probe 확장 지점**: Spakky DI로 등록되는 동기/비동기 health probe
+- **Info contributor**: 동기/비동기 info contributor의 결정적 병합
+- **예외 처리**: Probe 예외를 구조화된 에러 상세가 포함된 비정상 component result로 변환
+- **Transport 중립 core**: FastAPI, Typer, plugin adapter 의존성 없음
 
 ## Endpoint Semantics
 
 | Surface | Meaning | Default behavior |
 |---------|---------|------------------|
-| `health` | Aggregate application health for operator-facing status checks | Evaluates probes whose `endpoints` include `ActuatorEndpoint.HEALTH` |
-| `readiness` | Whether the app is ready to serve traffic or work | Evaluates readiness probes; required unhealthy probes make the result unhealthy |
-| `liveness` | Whether the process/framework is alive | Separate from external dependency readiness; no custom liveness probes returns a healthy baseline |
-| `info` | Deterministic application metadata | Merges registered info contributors by contributor name |
+| `health` | operator-facing status check용 aggregate application health | `ActuatorEndpoint.HEALTH`를 `endpoints`에 포함하는 probe 평가 |
+| `readiness` | app이 traffic 또는 work를 받을 준비가 되었는지 | readiness probe 평가; 필수 unhealthy probe가 있으면 결과 unhealthy |
+| `liveness` | process/framework 생존 여부 | 외부 dependency readiness와 분리; custom liveness probe가 없으면 healthy baseline 반환 |
+| `info` | 결정적 application metadata | 등록된 info contributor를 contributor 이름 기준으로 병합 |
 
-By default, health probes participate in `health` and `readiness`, not `liveness`.
-Use `ActuatorEndpoint.LIVENESS` only for process-local checks that should not fail because an external dependency is unavailable.
+기본적으로 health probe는 `liveness`가 아니라 `health`와 `readiness`에 참여합니다.
+외부 의존성을 사용할 수 없다는 이유로 실패하면 안 되는 프로세스 내부 check에만 `ActuatorEndpoint.LIVENESS`를 사용하세요.
 
-## Quick Start
+## 빠른 시작
 
 ```python
 from spakky.actuator import (
@@ -58,9 +58,9 @@ readiness = service.evaluate_readiness()
 
 ## Extension Points
 
-Register `AbstractHealthProbe` or `AbstractAsyncHealthProbe` Pods to contribute component health.
-Register `IInfoContributor` or `IAsyncInfoContributor` Pods to contribute metadata to `info`.
-The actuator plugin adds `ActuatorExtensionPostProcessor`, which discovers those Pods and stores them in `ActuatorExtensionRegistry`.
+Component health를 제공하려면 `AbstractHealthProbe` 또는 `AbstractAsyncHealthProbe` Pod를 등록하세요.
+`info`에 metadata를 제공하려면 `IInfoContributor` 또는 `IAsyncInfoContributor` Pod를 등록하세요.
+Actuator 플러그인은 `ActuatorExtensionPostProcessor`를 추가하여 해당 Pod를 발견하고 `ActuatorExtensionRegistry`에 저장합니다.
 
 ```python
 from spakky.actuator import (
@@ -93,9 +93,9 @@ class BuildInfo(IInfoContributor):
         return {"version": "1.0.0"}
 ```
 
-Plugin-specific deep checks for SQLAlchemy, Kafka, RabbitMQ, Celery, or other integrations are intentionally not included in this milestone.
-Applications can add those checks as first-party probes without changing the transport adapters.
+SQLAlchemy, Kafka, RabbitMQ, Celery 등 통합별 상세 check는 이 마일스톤에 의도적으로 포함하지 않습니다.
+애플리케이션은 transport adapter를 바꾸지 않고 해당 check를 first-party probe로 추가할 수 있습니다.
 
-## License
+## 라이선스
 
 MIT License

@@ -26,13 +26,13 @@
 
 | 문서                      | 설명                          |
 | ------------------------- | ----------------------------- |
-| [ADR 목록](adr/README.md) | Architecture Decision Records |
+| [ADR 목록](adr/README.md) | 아키텍처 의사결정 기록 |
 
 ---
 
 ## 관련 문서
 
-- **[README.md](../README.md)** — 프레임워크 소개 및 Quick Start
+- **[README.md](../README.md)** — 프레임워크 소개 및 빠른 시작
 - **[ARCHITECTURE.md](../ARCHITECTURE.md)** — 전체 아키텍처 개요
 - **[CONTRIBUTING.md](../CONTRIBUTING.md)** — 기여 가이드 및 코딩 스타일
 

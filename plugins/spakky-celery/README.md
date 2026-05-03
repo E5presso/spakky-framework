@@ -1,46 +1,45 @@
 # spakky-celery
 
-[Celery](https://docs.celeryq.dev/) integration plugin for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 [Celery](https://docs.celeryq.dev/) 통합 플러그인입니다.
 
-Provides AOP-based automatic task dispatch and periodic schedule registration —
-methods decorated with `@task` or `@schedule` are intercepted and routed to Celery
-without explicit dispatcher calls.
+AOP 기반 자동 task dispatch와 주기 schedule 등록을 제공합니다.
+`@task` 또는 `@schedule`로 장식된 메서드는 명시적인 dispatcher 호출 없이 가로채져 Celery로 라우팅됩니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-celery
 ```
 
-> **Requires**: `spakky-task`, `spakky-tracing` (installed automatically as dependencies)
+> **필수 의존성**: `spakky-task`, `spakky-tracing`(의존성으로 자동 설치)
 
-## Features
+## 주요 기능
 
-- **AOP-based dispatch**: `@task` methods are intercepted by aspects — no manual `dispatch()` calls
-- **Broker dispatch**: All `@task` calls are sent to the Celery broker via `send_task()`
-- **Schedule registration**: `@schedule` methods are registered to Celery Beat automatically
-- **Worker-context detection**: Uses a context key to prevent re-dispatch inside workers
-- **Auto-registration**: `@TaskHandler` pods are scanned and registered as Celery tasks automatically
-- **Full configuration**: Broker URL, serializer, timezone, and more via environment variables
+- **AOP 기반 dispatch**: `@task` 메서드는 aspect가 가로채며 수동 `dispatch()` 호출이 필요 없습니다.
+- **Broker dispatch**: 모든 `@task` 호출은 `send_task()`를 통해 Celery broker로 전송됩니다.
+- **Schedule 등록**: `@schedule` 메서드는 Celery Beat에 자동 등록됩니다.
+- **Worker context 감지**: context key로 worker 내부 재dispatch 방지
+- **자동 등록**: `@TaskHandler` pod를 스캔해 Celery task로 자동 등록합니다.
+- **전체 설정**: broker URL, serializer, timezone 등을 환경변수로 설정
 
-## Configuration
+## 설정
 
-Set environment variables with the `SPAKKY_CELERY__` prefix:
+`SPAKKY_CELERY__` 접두사로 환경변수를 설정합니다.
 
-| Variable | Default | Description |
+| 변수 | 기본값 | 설명 |
 |----------|---------|-------------|
-| `SPAKKY_CELERY__BROKER_URL` | *(required)* | Celery broker URL (e.g., `amqp://user:pass@host:5672//`) |
-| `SPAKKY_CELERY__RESULT_BACKEND` | `None` | Result backend URL. `None` disables result storage |
-| `SPAKKY_CELERY__APP_NAME` | `spakky-celery` | Celery application name |
-| `SPAKKY_CELERY__TASK_SERIALIZER` | `json` | Task message serializer (`json`, `pickle`, `yaml`, `msgpack`) |
-| `SPAKKY_CELERY__RESULT_SERIALIZER` | `json` | Result serializer |
-| `SPAKKY_CELERY__ACCEPT_CONTENT` | `["json"]` | Accepted content types |
-| `SPAKKY_CELERY__TIMEZONE` | `UTC` | IANA timezone (e.g., `Asia/Seoul`) |
-| `SPAKKY_CELERY__ENABLE_UTC` | `true` | Use UTC for internal datetime handling |
+| `SPAKKY_CELERY__BROKER_URL` | *(필수)* | Celery broker URL(예: `amqp://user:pass@host:5672//`) |
+| `SPAKKY_CELERY__RESULT_BACKEND` | `None` | result backend URL. `None`이면 result storage 비활성 |
+| `SPAKKY_CELERY__APP_NAME` | `spakky-celery` | Celery application 이름 |
+| `SPAKKY_CELERY__TASK_SERIALIZER` | `json` | task message serializer (`json`, `pickle`, `yaml`, `msgpack`) |
+| `SPAKKY_CELERY__RESULT_SERIALIZER` | `json` | result serializer |
+| `SPAKKY_CELERY__ACCEPT_CONTENT` | `["json"]` | 허용 content type |
+| `SPAKKY_CELERY__TIMEZONE` | `UTC` | IANA timezone(예: `Asia/Seoul`) |
+| `SPAKKY_CELERY__ENABLE_UTC` | `true` | 내부 datetime 처리에 UTC 사용 |
 
-## Usage
+## 사용법
 
-### 1. Define task handlers
+### 1. Task handler 정의
 
 ```python
 from datetime import time, timedelta
@@ -74,7 +73,7 @@ class MaintenanceHandler:
         ...
 ```
 
-### 2. Bootstrap the application
+### 2. 애플리케이션 부트스트랩
 
 ```python
 from spakky.core.application.application import SpakkyApplication
@@ -90,40 +89,40 @@ app = (
 )
 ```
 
-### 3. Call task methods normally
+### 3. Task 메서드 일반 호출
 
 ```python
 handler = app.container.get(EmailTaskHandler)
 
-# Dispatched to broker — AOP intercepts and calls send_task()
+# broker로 dispatch됨: AOP가 가로채 send_task() 호출
 handler.send_email("user@example.com", "Hello", "World")
 ```
 
-The AOP aspect intercepts the calls and routes them to Celery automatically.
+AOP aspect가 호출을 가로채 Celery로 자동 라우팅합니다.
 
-### Dispatch Behavior
+### Dispatch 동작
 
-| Decorator   | Behavior                        | Celery API      |
+| 데코레이터   | 동작                        | Celery API      |
 |-------------|--------------------------------|-----------------|
-| `@task`     | Dispatch to broker on each call | `send_task()`   |
-| `@schedule` | Register in Celery Beat         | `beat_schedule` |
+| `@task`     | 호출마다 broker로 dispatch | `send_task()`   |
+| `@schedule` | Celery Beat에 등록         | `beat_schedule` |
 
-## Components
+## 구성 요소
 
-| Component | Description |
+| 구성 요소 | 설명 |
 |-----------|-------------|
-| `CeleryConfig` | Configuration loaded from environment variables |
-| `CeleryPostProcessor` | Scans `@TaskHandler` pods and registers methods as Celery tasks/schedules |
-| `CeleryTaskDispatchAspect` | AOP aspect intercepting sync `@task` calls |
-| `AsyncCeleryTaskDispatchAspect` | AOP aspect intercepting async `@task` calls |
+| `CeleryConfig` | 환경변수에서 로드되는 설정 |
+| `CeleryPostProcessor` | `@TaskHandler` pod를 스캔하고 메서드를 Celery task/schedule로 등록 |
+| `CeleryTaskDispatchAspect` | 동기 `@task` 호출을 가로채는 AOP aspect |
+| `AsyncCeleryTaskDispatchAspect` | 비동기 `@task` 호출을 가로채는 AOP aspect |
 
-## Errors
+## 에러
 
-| Error | Description |
+| 에러 | 설명 |
 |-------|-------------|
 | `InvalidScheduleRouteError` | `ScheduleRoute` has no valid schedule specification |
 
-## Distributed Tracing
+## 분산 트레이싱
 
 `spakky-tracing`은 필수 의존성으로 자동 설치됩니다. `ITracePropagator`가 컨테이너에 등록되어 있으면 태스크 디스패치 시 `TraceContext`가 자동으로 전파됩니다.
 
@@ -131,12 +130,12 @@ The AOP aspect intercepts the calls and routes them to Celery automatically.
 - **워커 측**: 수신 태스크에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
 - 헤더가 없으면 새로운 루트 트레이스를 시작합니다
 
-## Related Packages
+## 관련 패키지
 
-- **`spakky-task`**: Core task abstractions (`@TaskHandler`, `@task`, `@schedule`, `Crontab`)
-- **`spakky-rabbitmq`**: RabbitMQ event transport (can also be used as Celery broker)
-- **`spakky-tracing`**: Distributed tracing abstraction (required, enables context propagation)
+- **`spakky-task`**: core task 추상화(`@TaskHandler`, `@task`, `@schedule`, `Crontab`)
+- **`spakky-rabbitmq`**: RabbitMQ event transport(Celery broker로도 사용 가능)
+- **`spakky-tracing`**: 분산 트레이싱 추상화(필수, context propagation 활성화)
 
-## License
+## 라이선스
 
 MIT License

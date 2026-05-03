@@ -2,31 +2,31 @@
 
 Kafka 통합 — 이벤트 전송/수신
 
-## Main
+## 메인
 
 ::: spakky.plugins.kafka.main
 options:
 show_root_heading: false
 
-## Event Transport
+## 이벤트 Transport
 
 ::: spakky.plugins.kafka.event.transport
 options:
 show_root_heading: false
 
-## Event Consumer
+## 이벤트 Consumer
 
 ::: spakky.plugins.kafka.event.consumer
 options:
 show_root_heading: false
 
-## Configuration
+## 설정
 
 ::: spakky.plugins.kafka.common.config
 options:
 show_root_heading: false
 
-## Post Processor
+## 후처리기
 
 ::: spakky.plugins.kafka.post_processor
 options:

@@ -2,7 +2,7 @@
   <img src="./assets/symbol.svg" width="80rem" alt="Spakky Logo">
 </p>
 <h1 align="center">Spakky Framework</h1>
-<p align="center"><i>Build scalable Python apps with the power of DI & AOP</i></p>
+<p align="center"><i>DI와 AOP의 힘으로 확장 가능한 Python 애플리케이션을 만듭니다</i></p>
 
 <p align="center">
   <a href="https://pypi.org/project/spakky/">
@@ -16,7 +16,7 @@
   </a>
 </p>
 
-<h3 align="center">⚡️ Powered by</h3>
+<h3 align="center">⚡️ 기반 도구</h3>
 <p align="center">
   <a href="https://github.com/astral-sh/uv">
     <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json" alt="uv">
@@ -29,7 +29,7 @@
   </a>
 </p>
 
-<h3 align="center">✅ CI Status</h3>
+<h3 align="center">✅ CI 상태</h3>
 <p align="center">
   <a href="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml">
     <img src="https://github.com/E5presso/spakky-framework/actions/workflows/ci.yml/badge.svg" alt="CI Status">
@@ -41,75 +41,75 @@
 </p>
 
 <p align="center">
-  <strong>Documentation</strong>: <a href="https://framework.spakky.com">https://framework.spakky.com</a>
+  <strong>문서</strong>: <a href="https://framework.spakky.com">https://framework.spakky.com</a>
 </p>
 
 ---
 
-**Spakky** is a modern, Spring-inspired dependency injection framework for Python, designed for building scalable, modular applications with ease. It brings the power of Inversion of Control (IoC) and Aspect-Oriented Programming (AOP) to the Python ecosystem, with first-class support for **FastAPI**, **RabbitMQ**, and **Typer**.
+**Spakky**는 확장 가능하고 모듈화된 애플리케이션을 쉽게 만들 수 있도록 설계된 현대적인 Spring-inspired Python 의존성 주입 프레임워크입니다. Inversion of Control(IoC)과 Aspect-Oriented Programming(AOP)을 Python 생태계에 맞게 제공하며 **FastAPI**, **RabbitMQ**, **Typer**를 일급으로 지원합니다.
 
-## ✨ Features
+## ✨ 주요 기능
 
-- **Dependency Injection (DI)**: Powerful IoC container with `@Pod` decorators, supporting Singleton, Prototype, and Context scopes.
-- **Aspect-Oriented Programming (AOP)**: Built-in support for `@Aspect`, `@Before`, `@After`, `@Around` to handle cross-cutting concerns like logging and transactions.
-- **Modular Plugin System**: Easily extensible architecture with plugins for popular libraries.
-- **Type-Safe**: Built with modern Python type hints in mind.
-- **Async First**: Native support for `asyncio` and asynchronous dependency injection.
+- **의존성 주입(DI)**: `@Pod` 데코레이터를 사용하는 강력한 IoC 컨테이너이며 Singleton, Prototype, Context 스코프를 지원합니다.
+- **관점 지향 프로그래밍(AOP)**: `@Aspect`, `@Before`, `@After`, `@Around`를 기본 제공하여 로깅과 트랜잭션 같은 횡단 관심사를 처리합니다.
+- **모듈형 플러그인 시스템**: 주요 라이브러리를 플러그인으로 쉽게 확장할 수 있는 아키텍처.
+- **타입 안전성**: 현대적인 Python 타입 힌트를 기준으로 설계되었습니다.
+- **비동기 우선**: `asyncio`와 비동기 의존성 주입을 네이티브로 지원합니다.
 
-## 📦 Ecosystem
+## 📦 생태계
 
-Spakky is a monorepo containing the core framework and official plugins:
+Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노레포입니다.
 
-### Core Packages
+### 코어 패키지
 
-| Package | Description |
+| 패키지 | 설명 |
 |---------|--------------|
-| **`spakky`** | Core framework (DI Container, AOP, Application Context) |
-| **`spakky-domain`** | DDD building blocks (Entity, AggregateRoot, ValueObject, DomainEvent, CQRS) |
-| **`spakky-data`** | Data access abstractions (Repository, Transaction, External Proxy) |
-| **`spakky-event`** | Event handling (IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
-| **`spakky-task`** | Task queue abstractions (@TaskHandler, @task, @schedule, Crontab) |
-| **`spakky-actuator`** | Transport-neutral health, readiness, liveness, and info contracts |
-| **`spakky-cache`** | Backend-neutral application data cache contracts and in-memory backend |
-| **`spakky-tracing`** | Distributed tracing abstraction (TraceContext, ITracePropagator, W3C Propagator) |
-| **`spakky-outbox`** | Transactional Outbox pattern for reliable event delivery |
-| **`spakky-saga`** | Distributed transaction saga orchestration (SagaFlow, SagaStep, compensation) |
+| **`spakky`** | 코어 프레임워크(DI Container, AOP, Application Context) |
+| **`spakky-domain`** | DDD 빌딩 블록(Entity, AggregateRoot, ValueObject, DomainEvent, CQRS) |
+| **`spakky-data`** | 데이터 접근 추상화(Repository, Transaction, External Proxy) |
+| **`spakky-event`** | 이벤트 처리(IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
+| **`spakky-task`** | 태스크 큐 추상화(@TaskHandler, @task, @schedule, Crontab) |
+| **`spakky-actuator`** | 전송 계층 중립 health, readiness, liveness, info 계약 |
+| **`spakky-cache`** | 백엔드 중립 애플리케이션 데이터 캐시 계약과 in-memory 백엔드 |
+| **`spakky-tracing`** | 분산 트레이싱 추상화(TraceContext, ITracePropagator, W3C Propagator) |
+| **`spakky-outbox`** | 신뢰할 수 있는 이벤트 전달을 위한 Transactional Outbox 패턴 |
+| **`spakky-saga`** | 분산 트랜잭션 Saga 오케스트레이션(SagaFlow, SagaStep, 보상 처리) |
 
-### Plugins
+### 플러그인
 
-| Package | Description |
+| 패키지 | 설명 |
 |---------|--------------|
-| **`spakky-fastapi`** | Integration with [FastAPI](https://fastapi.tiangolo.com/) for building REST APIs |
-| **`spakky-grpc`** | Integration with [gRPC](https://grpc.io/) for building RPC services |
-| **`spakky-kafka`** | Event-driven architecture support with [Apache Kafka](https://kafka.apache.org/) |
-| **`spakky-rabbitmq`** | Event-driven architecture support with [RabbitMQ](https://www.rabbitmq.com/) |
-| **`spakky-redis`** | Redis-backed cache backend for shared application data cache |
-| **`spakky-security`** | Security utilities (Cryptography, Password Hashing, JWT) |
-| **`spakky-sqlalchemy`** | Database integration with [SQLAlchemy](https://www.sqlalchemy.org/) ORM |
-| **`spakky-typer`** | CLI application support with [Typer](https://typer.tiangolo.com/) |
-| **`spakky-celery`** | Task dispatch and schedule registration with [Celery](https://docs.celeryq.dev/) via AOP |
-| **`spakky-logging`** | Structured logging system with `@logged` AOP aspect |
-| **`spakky-opentelemetry`** | OpenTelemetry SDK bridge for distributed tracing |
+| **`spakky-fastapi`** | REST API 구성을 위한 [FastAPI](https://fastapi.tiangolo.com/) 통합 |
+| **`spakky-grpc`** | RPC 서비스 구성을 위한 [gRPC](https://grpc.io/) 통합 |
+| **`spakky-kafka`** | [Apache Kafka](https://kafka.apache.org/) 기반 이벤트 주도 아키텍처 지원 |
+| **`spakky-rabbitmq`** | [RabbitMQ](https://www.rabbitmq.com/) 기반 이벤트 주도 아키텍처 지원 |
+| **`spakky-redis`** | 공유 애플리케이션 데이터 캐시를 위한 Redis 백엔드 |
+| **`spakky-security`** | 보안 유틸리티(Cryptography, Password Hashing, JWT) |
+| **`spakky-sqlalchemy`** | [SQLAlchemy](https://www.sqlalchemy.org/) ORM 데이터베이스 통합 |
+| **`spakky-typer`** | [Typer](https://typer.tiangolo.com/) 기반 CLI 애플리케이션 지원 |
+| **`spakky-celery`** | AOP를 통한 [Celery](https://docs.celeryq.dev/) 태스크 디스패치와 스케줄 등록 |
+| **`spakky-logging`** | `@logged` AOP aspect를 포함한 구조화 로깅 시스템 |
+| **`spakky-opentelemetry`** | 분산 트레이싱을 위한 OpenTelemetry SDK 브릿지 |
 
-## 🚀 Quick Start
+## 🚀 빠른 시작
 
-### Installation
+### 설치
 
-Install the core framework:
+코어 프레임워크를 설치합니다.
 
 ```bash
 pip install spakky
 ```
 
-Or install with plugins:
+플러그인을 함께 설치할 수도 있습니다.
 
 ```bash
 pip install "spakky[fastapi,kafka]"
 ```
 
-### Basic Usage
+### 기본 사용법
 
-Define your services with `@Pod`:
+`@Pod`로 서비스를 정의합니다.
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
@@ -128,7 +128,7 @@ class UserService:
         return self.repository.get_user(id)
 ```
 
-Bootstrap the application:
+애플리케이션을 부트스트랩합니다.
 
 ```python
 from spakky.core.application.application import SpakkyApplication
@@ -144,38 +144,38 @@ user_service = app.container.get(UserService)
 print(user_service.get_user_name(1))
 ```
 
-> **📘 Note**: When `scan()` is called without arguments, it automatically detects and scans the caller's package. This also works in Docker environments where the application root may not be in `sys.path`.
+> **📘 참고**: `scan()`을 인자 없이 호출하면 호출자의 패키지를 자동 감지해 스캔합니다. 애플리케이션 루트가 `sys.path`에 없을 수 있는 Docker 환경에서도 동작합니다.
 
-## 🛠 Development
+## 🛠 개발
 
-This project uses `uv` for dependency management and workspace handling.
+이 프로젝트는 의존성 관리와 workspace 처리를 위해 `uv`를 사용합니다.
 
-### Prerequisites
+### 사전 준비
 
 - Python 3.11+
-- `uv` installed
+- `uv` 설치
 
-### Setup
+### 설정
 
 ```bash
-# Clone the repository
+# 저장소 복제
 git clone https://github.com/E5presso/spakky-framework.git
 cd spakky-framework
 
-# Sync dependencies (from workspace root)
+# 의존성 동기화(workspace root에서 실행)
 uv sync --all-packages --all-extras
 
-# Install pre-commit hooks
+# pre-commit hook 설치
 uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 ```
 
-> **💡 Note:** Use `--all-packages` only at the workspace root. When working inside a sub-package (e.g., `cd plugins/spakky-fastapi`), use `uv sync --all-extras` instead.
+> **💡 참고:** `--all-packages`는 workspace root에서만 사용하세요. 하위 패키지 내부에서 작업할 때는(예: `cd plugins/spakky-fastapi`) 대신 `uv sync --all-extras`를 사용합니다.
 
-### Opening Sub-Projects Independently
+### 하위 프로젝트 독립 열기
 
-Each sub-project can be opened independently in VS Code. The `.vscode/settings.json` in each sub-project points to the root's virtual environment, so Python IntelliSense works correctly.
+각 하위 프로젝트는 VS Code에서 독립적으로 열 수 있습니다. 각 하위 프로젝트의 `.vscode/settings.json`는 루트 가상환경을 가리키므로 Python IntelliSense가 정상 동작합니다.
 
-### Running Tests
+### 테스트 실행
 
 ```bash
 cd core/spakky
@@ -184,13 +184,13 @@ uv run pytest
 cd plugins/spakky-fastapi
 uv run pytest
 
-# etc. for each package
+# 각 패키지에서 같은 방식으로 실행
 ```
 
-## 🤝 Contributing
+## 🤝 기여
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
+기여를 환영합니다. 자세한 내용은 [기여 가이드](CONTRIBUTING.md)를 참고하세요.
 
-## 📄 License
+## 📄 라이선스
 
-This project is licensed under the MIT License.
+이 프로젝트는 MIT License로 배포됩니다.

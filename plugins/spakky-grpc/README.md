@@ -1,10 +1,10 @@
 # spakky-grpc
 
-Code-first gRPC plugin for the [Spakky Framework](https://framework.spakky.com).
+[Spakky Framework](https://framework.spakky.com)를 위한 code-first gRPC 플러그인입니다.
 
 pydantic `BaseModel`로 메시지를 선언하고 `@GrpcController` + `@rpc` 데코레이터로 서비스를 정의하면, 런타임에 protobuf descriptor를 자동 생성하여 `grpc.aio.Server`에 등록합니다. `.proto` 파일이나 codegen 단계가 필요 없습니다. protobuf ↔ BaseModel 변환은 `google.protobuf.json_format` 브릿지(JSON 중간 표현)로 수행됩니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-grpc
@@ -12,7 +12,7 @@ pip install spakky-grpc
 
 의존성: `grpcio`, `protobuf`, `pydantic>=2.4`, `spakky`, `spakky-tracing`.
 
-## Quick Start
+## 빠른 시작
 
 ```python
 from typing import Annotated
@@ -71,7 +71,7 @@ app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 
 `GrpcServerSpec`는 핸들러·인터셉터·바인드 주소를 누적합니다. 실제 `grpc.aio.Server`는 `ApplicationContext`의 이벤트 루프 스레드에서 `spec.build()`로 생성되므로 `grpc.aio` 내부 Future가 올바른 루프에 바인딩됩니다.
 
-## Type Mapping
+## 타입 매핑
 
 `ProtoField` 어노테이션이 부착된 pydantic `BaseModel` 필드(`Annotated[T, ProtoField(number=N)]`)를 protobuf 필드로 매핑합니다. 필드 번호는 `BaseModel.model_fields[name].metadata`에서 읽어옵니다.
 
@@ -88,7 +88,7 @@ app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 
 지원되지 않는 타입은 `UnsupportedFieldTypeError`를 던집니다.
 
-## Streaming
+## 스트리밍
 
 `@rpc(method_type=...)`로 네 가지 gRPC 스트리밍 패턴을 모두 지원합니다.
 
@@ -99,7 +99,7 @@ app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 | `CLIENT_STREAMING` | `async def m(self, reqs: AsyncIterator[Req]) -> Resp` |
 | `BIDI_STREAMING` | `async def m(self, reqs: AsyncIterator[Req]) -> AsyncIterator[Resp]` |
 
-## Interceptors
+## 인터셉터
 
 플러그인이 자동으로 다음 인터셉터를 설치합니다.
 
@@ -108,7 +108,7 @@ app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 | `ErrorHandlingInterceptor` | 항상 | 예외 → gRPC status 매핑 |
 | `TracingInterceptor` | `spakky-tracing` 로드 시 | W3C Trace Context 전파 |
 
-### Error Mapping
+### 에러 매핑
 
 `AbstractGrpcStatusError` 서브클래스의 `status_code`가 그대로 gRPC status로 전달됩니다.
 
@@ -125,7 +125,7 @@ app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 
 예상되지 않은 예외는 `INTERNAL`로 정규화됩니다.
 
-### Tracing
+### 트레이싱
 
 `spakky-tracing` 플러그인을 함께 로드하면 W3C `traceparent` 메타데이터를 추출하여 `TraceContext.get()`으로 핸들러 내부에서 사용할 수 있고, 응답 trailing metadata에 자동 주입합니다.
 
@@ -144,6 +144,6 @@ app.load_plugins(include={
 | 1 | `AddInterceptorsPostProcessor` | 에러/트레이싱 인터셉터를 `GrpcServerSpec`에 추가 |
 | 2 | `BindServerPostProcessor` | `GrpcServerService`를 `ApplicationContext`에 등록 (start_async에서 `spec.build()`) |
 
-## License
+## 라이선스
 
-MIT License. See the [Spakky Framework repository](https://github.com/E5presso/spakky-framework).
+MIT License입니다. [Spakky Framework repository](https://github.com/E5presso/spakky-framework)를 참고하세요.

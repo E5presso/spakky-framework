@@ -1,31 +1,31 @@
 # Spakky FastAPI
 
-FastAPI integration plugin for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 FastAPI 통합 플러그인입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-fastapi
 ```
 
-Or install via Spakky extras:
+Spakky extras로도 설치할 수 있습니다.
 
 ```bash
 pip install spakky[fastapi]
 ```
 
-## Features
+## 주요 기능
 
-- **Automatic route registration**: Routes are registered from `@ApiController` classes
-- **All HTTP methods**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, WebSocket
-- **OpenAPI integration**: Tags and documentation automatically configured
-- **Error handling middleware**: Built-in exception handling with debug mode
-- **Context management**: Request-scoped dependency injection support
-- **Actuator endpoints**: Optional `/actuator/*` HTTP endpoints when `spakky-actuator` is loaded
+- **자동 route 등록**: `@ApiController` 클래스에서 route를 등록합니다.
+- **모든 HTTP 메서드**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, WebSocket
+- **OpenAPI 통합**: tag와 documentation 자동 설정
+- **에러 처리 middleware**: debug mode를 포함한 built-in exception handling
+- **Context 관리**: request-scoped 의존성 주입 지원
+- **Actuator endpoint**: `spakky-actuator` 로드 시 선택적 `/actuator/*` HTTP endpoint 제공
 
-## Usage
+## 사용법
 
-### Basic Controller
+### 기본 Controller
 
 ```python
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
@@ -45,7 +45,7 @@ class UserController:
         return await self.user_service.create(request)
 ```
 
-### Available Route Decorators
+### 사용 가능한 route decorator
 
 ```python
 from spakky.plugins.fastapi.routes import (
@@ -85,17 +85,17 @@ class MyController:
             await websocket.send_text(f"Echo: {data}")
 ```
 
-### Accessing FastAPI Instance
+### FastAPI 인스턴스 접근
 
 ```python
 from fastapi import FastAPI
 from spakky.core.application.application import SpakkyApplication
 
-# After application.start()
+# application.start() 이후
 fast_api = application.container.get(FastAPI)
 ```
 
-### Testing with TestClient
+### TestClient 테스트
 
 ```python
 from fastapi.testclient import TestClient
@@ -107,7 +107,7 @@ def test_get_user(application: SpakkyApplication) -> None:
     assert response.status_code == 200
 ```
 
-## Distributed Tracing
+## 분산 트레이싱
 
 `spakky-tracing`은 필수 의존성으로 자동 설치됩니다. `TracingMiddleware`가 자동으로 등록되어 모든 HTTP 요청에 대해 `TraceContext`를 전파합니다.
 
@@ -115,21 +115,21 @@ def test_get_user(application: SpakkyApplication) -> None:
 - 헤더가 없으면 새로운 루트 트레이스를 시작합니다
 - 요청 완료 후 `TraceContext`를 자동으로 정리합니다
 
-## Actuator Endpoints
+## Actuator endpoint
 
 `spakky-actuator` 플러그인을 함께 로드하면 FastAPI 앱에 표준 actuator route가 등록됩니다.
 HTTP payload는 transport-neutral core result shape를 그대로 반영합니다.
 
-| Endpoint | Success | Unhealthy |
+| Endpoint | 정상 | 비정상 |
 |----------|---------|-----------|
 | `GET /actuator/health` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/readiness` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/liveness` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/info` | `200 OK` | N/A |
 
-Endpoint exposure and base path are configured with `FastAPIActuatorConfig`.
-Component detail exposure is controlled by `spakky.actuator.ActuatorConfig`.
-`readiness` is for traffic/work readiness, while `liveness` should stay process-local and independent from external dependency failures.
+Endpoint 노출과 base path는 `FastAPIActuatorConfig`로 설정합니다.
+Component detail 노출은 `spakky.actuator.ActuatorConfig`로 제어합니다.
+`readiness`는 traffic/work readiness용이며, `liveness`는 process-local check로 남아 외부 의존성 실패와 독립적이어야 합니다.
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
@@ -143,25 +143,25 @@ def fastapi_actuator_config() -> FastAPIActuatorConfig:
     )
 ```
 
-Plugin-specific deep checks are not registered automatically by the FastAPI adapter.
-Register `spakky.actuator.AbstractHealthProbe` Pods in the application when database, broker, or worker readiness should affect actuator output.
+FastAPI adapter는 플러그인별 상세 check를 자동 등록하지 않습니다.
+데이터베이스, broker, worker readiness가 actuator 출력에 영향을 줘야 한다면 애플리케이션에 `spakky.actuator.AbstractHealthProbe` Pod를 등록하세요.
 
-## Components
+## 구성 요소
 
-| Component | Description |
+| 컴포넌트 | 설명 |
 |-----------|-------------|
-| `ApiController` | Stereotype for REST API controllers with prefix and tags |
-| `get`, `post`, `put`, etc. | Route decorators for HTTP methods |
+| `ApiController` | prefix와 tag를 가진 REST API controller용 stereotype |
+| `get`, `post`, `put`, etc. | HTTP method용 route decorator |
 | `websocket` | WebSocket endpoint decorator |
-| `ErrorHandlingMiddleware` | Built-in exception handling middleware |
-| `TracingMiddleware` | Trace context propagation middleware (`spakky-tracing` 필수 의존) |
-| `FastAPIActuatorConfig` | FastAPI actuator endpoint exposure configuration |
-| `RegisterActuatorPostProcessor` | Automatic actuator endpoint registration post-processor |
-| `RegisterRoutesPostProcessor` | Automatic route registration post-processor |
+| `ErrorHandlingMiddleware` | built-in exception handling middleware |
+| `TracingMiddleware` | trace context propagation middleware (`spakky-tracing` 필수 의존) |
+| `FastAPIActuatorConfig` | FastAPI actuator endpoint 노출 설정 |
+| `RegisterActuatorPostProcessor` | 자동 actuator endpoint 등록 post-processor |
+| `RegisterRoutesPostProcessor` | 자동 route 등록 post-processor |
 
-## Configuration
+## 설정
 
-The plugin automatically registers a `FastAPI` instance as a Pod. You can customize it by registering your own FastAPI instance before loading the plugin:
+플러그인은 `FastAPI` 인스턴스를 Pod로 자동 등록합니다. 플러그인을 로드하기 전에 직접 만든 FastAPI 인스턴스를 등록하면 커스터마이즈할 수 있습니다:
 
 ```python
 from fastapi import FastAPI
@@ -175,6 +175,6 @@ def custom_fastapi() -> FastAPI:
     )
 ```
 
-## License
+## 라이선스
 
 MIT

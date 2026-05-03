@@ -2,13 +2,13 @@
 
 Repository, Transaction 추상화 — 데이터 접근 계층
 
-## Stereotypes
+## 스테레오타입
 
 ::: spakky.data.stereotype.repository
 options:
 show_root_heading: false
 
-## Persistency
+## 영속성
 
 ::: spakky.data.persistency.repository
 options:
@@ -26,7 +26,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## External Proxy
+## 외부 Proxy
 
 ::: spakky.data.external.proxy
 options:
@@ -36,7 +36,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Aspects
+## Aspect
 
 ::: spakky.data.aspects.transactional
 options:

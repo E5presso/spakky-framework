@@ -1,28 +1,27 @@
 # spakky-task
 
-Task queue abstraction layer for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 태스크 큐 추상화 레이어입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-task
 ```
 
-## Features
+## 주요 기능
 
-- **`@TaskHandler` stereotype**: Marks classes as task handler pods
-- **`@task` decorator**: Marks methods as on-demand dispatchable tasks
-- **`@schedule` decorator**: Marks methods for periodic execution (interval, daily, crontab)
-- **`Crontab` value object**: Python-native cron specification with `Weekday`/`Month` enums
-- **Post-processor**: Automatically scans and registers task routes from `@TaskHandler` pods
-- **Implementation-agnostic**: Works with any task queue backend (Celery, etc.) via plugins
+- **`@TaskHandler` stereotype**: 클래스를 task handler pod로 표시합니다.
+- **`@task` decorator**: 메서드를 on-demand dispatch 가능한 task로 표시합니다.
+- **`@schedule` decorator**: 메서드를 주기 실행 대상(interval, daily, crontab)으로 표시합니다.
+- **`Crontab` value object**: `Weekday`/`Month` enum을 사용하는 Python-native cron 명세
+- **Post-processor**: `@TaskHandler` pod에서 task route를 자동 스캔하고 등록합니다.
+- **구현체 중립**: 플러그인을 통해 Celery 등 임의의 태스크 큐 백엔드와 동작
 
-## Usage
+## 사용법
 
-### On-Demand Tasks
+### On-demand 태스크
 
-`@task` marks methods for on-demand dispatch. The backend plugin (e.g., `spakky-celery`)
-intercepts calls via AOP and routes them to the task queue.
+`@task`는 메서드를 on-demand dispatch 대상으로 표시합니다. 백엔드 플러그인(예: `spakky-celery`)은 AOP로 호출을 가로채 task queue로 라우팅합니다.
 
 ```python
 from spakky.task import TaskHandler, task
@@ -36,10 +35,9 @@ class EmailTaskHandler:
         ...
 ```
 
-### Scheduled Tasks
+### 예약 태스크
 
-`@schedule` marks methods for periodic execution. Exactly one of `interval`, `at`, or `crontab`
-must be specified.
+`@schedule`는 메서드를 주기 실행 대상으로 표시합니다. `interval`, `at`, `crontab` 중 정확히 하나를 지정해야 합니다.
 
 ```python
 from datetime import time, timedelta
@@ -65,9 +63,9 @@ class MaintenanceHandler:
         ...
 ```
 
-### Crontab Specification
+### Crontab 명세
 
-`Crontab` uses Python-native types instead of cron strings. `None` means "every" (wildcard).
+`Crontab`은 cron 문자열 대신 Python-native 타입을 사용합니다. `None`은 "every"(wildcard)를 의미합니다.
 
 ```python
 from spakky.task import Crontab, Weekday, Month
@@ -85,17 +83,17 @@ Crontab(day=(1, 15))
 Crontab(month=Month.JANUARY, day=1)
 ```
 
-**Field order** (descending temporal granularity):
+**필드 순서**(시간 단위가 큰 것부터):
 
-| Field     | Type                              | Default |
+| 필드     | 타입                              | 기본값 |
 |-----------|-----------------------------------|---------|
-| `month`   | `Month \| tuple[Month, ...] \| None` | `None` (every) |
-| `day`     | `int \| tuple[int, ...] \| None`    | `None` (every) |
-| `weekday` | `Weekday \| tuple[Weekday, ...] \| None` | `None` (every) |
+| `month`   | `Month \| tuple[Month, ...] \| None` | `None`(every) |
+| `day`     | `int \| tuple[int, ...] \| None`    | `None`(every) |
+| `weekday` | `Weekday \| tuple[Weekday, ...] \| None` | `None`(every) |
 | `hour`    | `int`                             | `0`     |
 | `minute`  | `int`                             | `0`     |
 
-### Accessing Task Routes
+### Task route 접근
 
 ```python
 from spakky.task import TaskRegistrationPostProcessor
@@ -105,32 +103,32 @@ routes = post_processor.get_task_routes()
 # {<bound method send_email>: TaskRoute(), ...}
 ```
 
-## Components
+## 구성 요소
 
-| Component | Description |
+| 구성 요소 | 설명 |
 |-----------|-------------|
-| `TaskHandler` | Stereotype decorator for task handler classes |
-| `@task` | Method decorator for on-demand task dispatch |
-| `@schedule` | Method decorator for periodic execution (`interval`, `at`, `crontab`) |
-| `TaskRoute` | Annotation for `@task` methods |
-| `ScheduleRoute` | Annotation for `@schedule` methods |
-| `Crontab` | Frozen dataclass for cron-like schedule specification |
-| `Weekday` | `IntEnum` for day of the week (Monday=0 ... Sunday=6) |
-| `Month` | `IntEnum` for month of the year (January=1 ... December=12) |
-| `TaskRegistrationPostProcessor` | Scans `@TaskHandler` pods and collects `@task` methods |
+| `TaskHandler` | 태스크 핸들러 클래스용 stereotype decorator |
+| `@task` | on-demand 태스크 dispatch용 메서드 decorator |
+| `@schedule` | 주기 실행용 메서드 decorator(`interval`, `at`, `crontab`) |
+| `TaskRoute` | `@task` 메서드용 annotation |
+| `ScheduleRoute` | `@schedule` 메서드용 annotation |
+| `Crontab` | cron 유사 schedule 명세용 frozen dataclass |
+| `Weekday` | 요일용 `IntEnum`(Monday=0 ... Sunday=6) |
+| `Month` | 월용 `IntEnum`(January=1 ... December=12) |
+| `TaskRegistrationPostProcessor` | `@TaskHandler` pod를 스캔하고 `@task` 메서드를 수집 |
 
-## Errors
+## 에러
 
-| Error | Description |
+| 에러 | 설명 |
 |-------|-------------|
-| `TaskNotFoundError` | Task reference not found in the registry |
-| `DuplicateTaskError` | Attempting to register an already-registered task |
+| `TaskNotFoundError` | registry에서 task reference를 찾을 수 없음 |
+| `DuplicateTaskError` | 이미 등록된 task를 다시 등록하려는 경우 |
 | `InvalidScheduleSpecificationError` | `@schedule` called with zero or multiple schedule options |
 
-## Related Packages
+## 관련 패키지
 
-- **`spakky-celery`**: Celery backend for task dispatch and schedule registration via AOP
+- **`spakky-celery`**: AOP 기반 task dispatch와 schedule 등록을 위한 Celery backend
 
-## License
+## 라이선스
 
 MIT License

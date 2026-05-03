@@ -269,7 +269,7 @@ from spakky.cache.error import (
 | 에러                      | 설명                           |
 | ------------------------- | ------------------------------ |
 | `InvalidCacheTTLError`    | 0 이하 TTL 값 지정 시도        |
-| `CacheKeyGenerationError` | cache annotation key 생성 실패 |
+| `CacheKeyGenerationError` | cache 어노테이션 key 생성 실패 |
 
 ---
 
@@ -459,7 +459,7 @@ from spakky.plugins.logging.error import (
 
 ### spakky-redis
 
-Redis cache backend 관련 에러입니다.
+Redis 캐시 백엔드 관련 에러입니다.
 
 ```python
 from spakky.plugins.redis.error import (
@@ -471,7 +471,7 @@ from spakky.plugins.redis.error import (
 
 | 에러                           | 설명                                 |
 | ------------------------------ | ------------------------------------ |
-| `AbstractSpakkyRedisError`     | Redis cache backend 에러 기반 클래스 |
+| `AbstractSpakkyRedisError`     | Redis 캐시 백엔드 에러 기반 클래스 |
 | `RedisCacheOperationError`     | Redis 명령 실행 또는 응답 변환 실패  |
 | `RedisCacheSerializationError` | cache 값 직렬화 또는 역직렬화 실패   |
 

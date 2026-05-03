@@ -1,21 +1,21 @@
 # Actuator 상태 확인
 
 `spakky-actuator`는 애플리케이션 상태를 transport-neutral 모델로 집계합니다.
-FastAPI와 Typer 플러그인은 같은 core result를 HTTP endpoint나 CLI command로 노출합니다.
+FastAPI와 Typer 플러그인은 같은 core result를 HTTP 엔드포인트나 CLI 명령으로 노출합니다.
 
 ## 의미 구분
 
-| Surface | 용도 | 실패 기준 |
+| 표면 | 용도 | 실패 기준 |
 |---------|------|-----------|
-| `health` | 운영자가 보는 전체 상태 | required probe 중 하나라도 unhealthy이면 unhealthy |
+| `health` | 운영자가 보는 전체 상태 | 필수 probe 중 하나라도 비정상이면 비정상 |
 | `readiness` | 트래픽이나 작업을 받을 준비 여부 | 외부 의존성 등 준비 상태 probe 실패를 반영 |
-| `liveness` | 프로세스와 프레임워크 기본 생존 여부 | readiness와 분리되며 기본 probe가 없으면 healthy baseline |
-| `info` | 앱 버전, 빌드, 런타임 metadata | 등록된 contributor payload를 deterministic merge |
+| `liveness` | 프로세스와 프레임워크 기본 생존 여부 | readiness와 분리되며 기본 probe가 없으면 정상 baseline |
+| `info` | 앱 버전, 빌드, 런타임 metadata | 등록된 contributor payload를 결정적으로 병합 |
 
 기본 health probe는 `health`와 `readiness`에만 참여합니다.
-`liveness`는 데이터베이스, 브로커, 외부 API 같은 dependency readiness와 분리해야 합니다.
+`liveness`는 데이터베이스, 브로커, 외부 API 같은 의존성 readiness와 분리해야 합니다.
 
-## Core 사용
+## 코어 사용
 
 ```python
 from spakky.actuator import (
@@ -83,14 +83,14 @@ class BuildInfo(IInfoContributor):
         return {"version": "1.0.0"}
 ```
 
-Async probe와 async info contributor도 지원합니다.
-동기 평가 메서드에서 async extension이 발견되면 명시적 actuator error가 발생하므로, async transport에서는 `evaluate_*_async()`를 사용하세요.
+비동기 probe와 비동기 info contributor도 지원합니다.
+동기 평가 메서드에서 비동기 extension이 발견되면 명시적 actuator 에러가 발생하므로, 비동기 transport에서는 `evaluate_*_async()`를 사용하세요.
 
 ## FastAPI 노출
 
 `spakky-actuator`와 `spakky-fastapi`를 함께 로드하면 다음 route가 등록됩니다.
 
-| Route | Healthy | Unhealthy |
+| Route | 정상 | 비정상 |
 |-------|---------|-----------|
 | `GET /actuator/health` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/readiness` | `200 OK` | `503 Service Unavailable` |
@@ -114,7 +114,7 @@ def fastapi_actuator_config() -> FastAPIActuatorConfig:
 
 ## Typer 노출
 
-`spakky-actuator`와 `spakky-typer`를 함께 로드하면 `actuator` command group이 등록됩니다.
+`spakky-actuator`와 `spakky-typer`를 함께 로드하면 `actuator` 명령 그룹이 등록됩니다.
 
 ```bash
 python main.py actuator health
@@ -123,7 +123,7 @@ python main.py actuator liveness
 python main.py actuator info
 ```
 
-다음 환경변수로 command 노출을 제어합니다.
+다음 환경변수로 명령 노출을 제어합니다.
 
 ```bash
 export SPAKKY_TYPER_ACTUATOR_COMMAND_ENABLED=false
@@ -132,6 +132,6 @@ export SPAKKY_TYPER_ACTUATOR_COMMAND_NAME=status
 
 ## 범위 밖
 
-이번 actuator MVP는 plugin-specific deep health checks를 제공하지 않습니다.
+이번 actuator MVP는 플러그인별 상세 health check를 제공하지 않습니다.
 SQLAlchemy 연결, Kafka/RabbitMQ broker, Celery worker 같은 깊은 통합 상태는 각 앱이 `AbstractHealthProbe`로 추가합니다.
-Metrics exporter나 Prometheus/OpenTelemetry exporter 약속도 이 milestone 범위가 아닙니다.
+Metrics exporter나 Prometheus/OpenTelemetry exporter 제공도 이 마일스톤 범위가 아닙니다.

@@ -2,7 +2,7 @@
 
 Actuator 상태/정보 계약 — Health, Readiness, Liveness, Info
 
-## Result Contracts
+## 결과 계약
 
 ::: spakky.actuator.result
     options:
@@ -20,7 +20,7 @@ Actuator 상태/정보 계약 — Health, Readiness, Liveness, Info
     options:
       show_root_heading: false
 
-## Extension Interfaces
+## 확장 인터페이스
 
 ::: spakky.actuator.interfaces.probe
     options:
@@ -30,25 +30,25 @@ Actuator 상태/정보 계약 — Health, Readiness, Liveness, Info
     options:
       show_root_heading: false
 
-## Configuration
+## 설정
 
 ::: spakky.actuator.config
     options:
       show_root_heading: false
 
-## Post Processor
+## 후처리기
 
 ::: spakky.actuator.post_processor
     options:
       show_root_heading: false
 
-## Plugin Entry Point
+## 플러그인 진입점
 
 ::: spakky.actuator.main
     options:
       show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.actuator.error
     options:

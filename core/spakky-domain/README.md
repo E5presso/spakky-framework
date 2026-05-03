@@ -1,26 +1,26 @@
 # Spakky DDD
 
-Domain-Driven Design building blocks for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Domain-Driven Design 빌딩 블록입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-domain
 ```
 
-## Features
+## 주요 기능
 
-- **Entities**: Objects with unique identity and lifecycle
-- **Value Objects**: Immutable objects compared by attributes
-- **Aggregate Roots**: Consistency boundaries with event management
-- **Domain Events**: Immutable events for event-driven architecture
-- **CQRS**: Command and Query use case abstractions
+- **Entity**: 고유 identity와 생명주기를 가진 객체
+- **Value Object**: 속성 값으로 비교되는 불변 객체
+- **Aggregate Root**: 이벤트 관리를 포함하는 일관성 경계
+- **Domain Event**: 이벤트 기반 아키텍처를 위한 불변 이벤트
+- **CQRS**: Command와 Query 유스케이스 추상화
 
-## Quick Start
+## 빠른 시작
 
-### Entity
+### 엔티티
 
-Entities are objects with a unique identity that persists over time:
+엔티티는 시간이 지나도 유지되는 고유 identity를 가진 객체입니다.
 
 ```python
 from uuid import UUID, uuid4
@@ -43,9 +43,9 @@ class User(AbstractEntity[UUID]):
             raise ValueError("Email is required")
 ```
 
-### Value Object
+### 값 객체
 
-Value Objects are immutable and compared by their attributes:
+값 객체는 불변이며 속성 값으로 비교됩니다.
 
 ```python
 from spakky.core.common.mutability import immutable
@@ -62,9 +62,9 @@ class Money(AbstractValueObject):
             raise ValueError("Amount cannot be negative")
 ```
 
-### Aggregate Root
+### 애그리거트 루트
 
-Aggregate Roots are entities that manage domain events:
+애그리거트 루트는 도메인 이벤트를 관리하는 엔티티입니다.
 
 ```python
 from uuid import UUID, uuid4
@@ -100,9 +100,9 @@ class Order(AbstractAggregateRoot[UUID]):
         return order
 ```
 
-### Domain Events
+### 도메인 이벤트
 
-Domain events represent state changes in the domain:
+도메인 이벤트는 도메인 내부의 상태 변화를 표현합니다.
 
 ```python
 from spakky.core.common.mutability import immutable
@@ -123,14 +123,14 @@ class UserRegisteredIntegration(AbstractIntegrationEvent):
     email: str
 ```
 
-### CQRS Use Cases
+### CQRS 유스케이스
 
-Separate read and write operations.
+읽기와 쓰기 작업을 분리합니다.
 
-**Key Principles:**
-- **Commands**: Use Repository for domain aggregate persistence
-- **Queries**: Implement directly using ORM/SQL (do NOT add query methods to Repository)
-- This separation prevents domain pollution by keeping query concerns out of the domain layer
+**핵심 원칙:**
+- **Command**: 도메인 Aggregate 영속화에 Repository 사용
+- **Query**: ORM/SQL로 직접 구현(Repository에 query 메서드 추가 금지)
+- Query 관심사를 도메인 레이어 밖에 두어 도메인 오염을 방지합니다.
 
 ```python
 from uuid import UUID
@@ -165,37 +165,37 @@ class GetUserUseCase(IAsyncQueryUseCase[GetUserQuery, User | None]):
         ...
 ```
 
-## API Reference
+## API 레퍼런스
 
-### Models
+### 모델
 
-| Class                      | Description                                    |
+| 클래스                      | 설명                                    |
 | -------------------------- | ---------------------------------------------- |
-| `AbstractEntity[T]`        | Base class for entities with identity type `T` |
-| `AbstractAggregateRoot[T]` | Entity that manages domain events              |
-| `AbstractValueObject`      | Immutable value object                         |
-| `AbstractEvent`            | Base class for all events                      |
-| `AbstractDomainEvent`      | Domain events (within bounded context)         |
-| `AbstractIntegrationEvent` | Integration events (cross-boundary)            |
+| `AbstractEntity[T]`        | identity type `T`를 가진 엔티티의 기반 클래스 |
+| `AbstractAggregateRoot[T]` | 도메인 이벤트를 관리하는 Entity              |
+| `AbstractValueObject`      | 불변 value object                         |
+| `AbstractEvent`            | 모든 이벤트의 기반 클래스                      |
+| `AbstractDomainEvent`      | 도메인 이벤트(bounded context 내부)         |
+| `AbstractIntegrationEvent` | 통합 이벤트(경계 간 통신)            |
 
-### Application
+### 애플리케이션
 
-| Class                  | Description                      |
+| 클래스                  | 설명                      |
 | ---------------------- | -------------------------------- |
-| `AbstractCommand`      | Base class for command DTOs      |
-| `AbstractQuery`        | Base class for query DTOs        |
-| `ICommandUseCase`      | Sync command use case interface  |
-| `IAsyncCommandUseCase` | Async command use case interface |
-| `IQueryUseCase`        | Sync query use case interface    |
-| `IAsyncQueryUseCase`   | Async query use case interface   |
+| `AbstractCommand`      | command DTO의 기반 클래스      |
+| `AbstractQuery`        | query DTO의 기반 클래스        |
+| `ICommandUseCase`      | 동기 command use case interface  |
+| `IAsyncCommandUseCase` | 비동기 command use case interface |
+| `IQueryUseCase`        | 동기 query use case interface    |
+| `IAsyncQueryUseCase`   | 비동기 query use case interface   |
 
-## Related Packages
+## 관련 패키지
 
-| Package | Description |
+| 패키지 | 설명 |
 |---------|-------------|
-| `spakky-data` | Repository and transaction abstractions |
-| `spakky-event` | Event publisher/consumer interfaces and `@EventHandler` stereotype |
+| `spakky-data` | Repository와 transaction 추상화 |
+| `spakky-event` | Event publisher/consumer interface와 `@EventHandler` stereotype |
 
-## License
+## 라이선스
 
 MIT License

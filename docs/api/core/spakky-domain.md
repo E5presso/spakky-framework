@@ -2,7 +2,7 @@
 
 DDD 빌딩 블록 — Aggregate Root, Entity, Value Object, Domain Event, CQRS
 
-## Models
+## 모델
 
 ::: spakky.domain.models.aggregate_root
 options:
@@ -20,7 +20,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Application (CQRS)
+## 애플리케이션 (CQRS)
 
 ::: spakky.domain.application.command
 options:
@@ -30,7 +30,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.domain.error
 options:

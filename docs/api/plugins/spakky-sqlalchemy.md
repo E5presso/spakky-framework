@@ -2,13 +2,13 @@
 
 SQLAlchemy 통합 — ORM, Repository, Transaction, Outbox Storage
 
-## Main
+## 메인
 
 ::: spakky.plugins.sqlalchemy.main
 options:
 show_root_heading: false
 
-## Configuration
+## 설정
 
 ::: spakky.plugins.sqlalchemy.common.config
 options:
@@ -28,7 +28,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Persistency
+## 영속성
 
 ::: spakky.plugins.sqlalchemy.persistency.repository
 options:
@@ -60,7 +60,7 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.plugins.sqlalchemy.error
 options:

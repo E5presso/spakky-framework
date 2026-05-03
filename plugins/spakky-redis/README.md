@@ -1,22 +1,22 @@
 # Spakky Redis
 
-Redis cache backend plugin for [Spakky Framework](https://github.com/E5presso/spakky-framework).
+[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Redis 캐시 백엔드 플러그인입니다.
 
-## Installation
+## 설치
 
 ```bash
 pip install spakky-redis
 ```
 
-## Features
+## 주요 기능
 
-- **Shared cache backend**: `RedisCache[T]` stores values in Redis so multiple process instances can observe the same entries.
-- **Core contract compatibility**: Implements `spakky-cache` sync and async `ICache[T]` paths.
-- **TTL semantics**: Positive TTL values are translated into Redis millisecond expiry; missing and expired keys return `CacheMiss`.
-- **Loud failures**: Redis connection/configuration failures and serialization failures are raised as Spakky cache errors.
-- **Scoped clear**: `clear` removes keys under the configured prefix instead of flushing the Redis database.
+- **공유 캐시 백엔드**: `RedisCache[T]`는 값을 Redis에 저장하므로 여러 프로세스 인스턴스가 같은 항목을 볼 수 있습니다.
+- **코어 계약 호환성**: `spakky-cache`의 동기/비동기 `ICache[T]` 경로를 구현합니다.
+- **TTL 의미론**: 양수 TTL 값은 Redis millisecond expiry로 변환되며, 없는 키와 만료된 키는 `CacheMiss`를 반환합니다.
+- **명시적 실패**: Redis 연결/설정 실패와 직렬화 실패는 Spakky 캐시 에러로 발생합니다.
+- **범위 제한 clear**: `clear`는 Redis 데이터베이스 전체를 비우지 않고 설정된 prefix 아래의 키만 제거합니다.
 
-## Quick Start
+## 빠른 시작
 
 ```python
 from datetime import timedelta
@@ -32,11 +32,11 @@ if isinstance(result, CacheHit):
     print(result.value)
 ```
 
-## Configuration
+## 설정
 
-`RedisCacheConfig` follows the standard Spakky `@Configuration` pattern and reads environment variables with the `SPAKKY_REDIS__` prefix.
+`RedisCacheConfig`는 표준 Spakky `@Configuration` 패턴을 따르며 `SPAKKY_REDIS__` prefix를 가진 환경변수를 읽습니다.
 
-| Environment variable | Default |
+| 환경변수 | 기본값 |
 |----------------------|---------|
 | `SPAKKY_REDIS__HOST` | `localhost` |
 | `SPAKKY_REDIS__PORT` | `6379` |
@@ -47,7 +47,7 @@ if isinstance(result, CacheHit):
 | `SPAKKY_REDIS__KEY_PREFIX` | `spakky:cache:` |
 | `SPAKKY_REDIS__SOCKET_TIMEOUT` | `5.0` |
 
-## Async Usage
+## 비동기 사용
 
 ```python
 from spakky.cache import CacheHit
@@ -61,14 +61,14 @@ if isinstance(result, CacheHit):
     assert result.value == 42
 ```
 
-## Contract Notes
+## 계약 참고
 
-`RedisCache` is a backend implementation of the `spakky-cache` application data cache contract. Business code should depend on `ICache[T]` and can switch between `InMemoryCache` and `RedisCache` without changing cache hit/miss handling.
+`RedisCache`는 `spakky-cache` 애플리케이션 데이터 캐시 계약의 백엔드 구현입니다. 비즈니스 코드는 `ICache[T]`에 의존해야 하며, cache hit/miss 처리를 바꾸지 않고 `InMemoryCache`와 `RedisCache` 사이를 전환할 수 있습니다.
 
-Values are serialized with pickle and stored under `SPAKKY_REDIS__KEY_PREFIX`. `clear()` and `clear_async()` delete only keys under that prefix. Redis failures, unexpected response types, and serialization failures are raised as Spakky cache errors instead of being treated as cache misses.
+값은 pickle로 직렬화되어 `SPAKKY_REDIS__KEY_PREFIX` 아래에 저장됩니다. `clear()`와 `clear_async()`는 해당 prefix 아래의 키만 삭제합니다. Redis 실패, 예상하지 못한 응답 타입, 직렬화 실패는 cache miss로 취급하지 않고 Spakky 캐시 에러로 발생합니다.
 
-This plugin does not add distributed locks, cache stampede protection, tag invalidation, write-through/write-behind policies, or metrics exporters.
+이 플러그인은 분산 lock, cache stampede 보호, tag 무효화, write-through/write-behind 정책, metrics exporter를 추가하지 않습니다.
 
-## License
+## 라이선스
 
 MIT License

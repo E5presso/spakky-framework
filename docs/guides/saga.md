@@ -698,7 +698,7 @@ Controller가 없는 환경(워커, CLI 등)에서도 패턴은 동일합니다.
 
 ---
 
-## Isolation 갭과 Semantic Lock
+## 격리성 갭과 Semantic Lock 패턴
 
 사가는 RDB 트랜잭션과 달리 **Isolation이 약합니다.** 중간 step이 commit되면 그 효과는 보상 전까지 외부에 관찰될 수 있습니다. 예를 들어 `OrderSaga`가 `create_order`까지 commit하고 `process_payment`에서 실패하여 `cancel_order`로 보상하는 동안, 다른 트랜잭션은 `PLACED` 상태의 order를 잠시 볼 수 있습니다.
 

@@ -119,9 +119,9 @@ app = (
 )
 ```
 
-### Startup diagnostics와 manifest 재사용
+### 시작 진단와 manifest 재사용
 
-Startup diagnostics는 opt-in입니다. 활성화하면 `load_plugins`, `scan`,
+시작 진단은 opt-in입니다. 활성화하면 `load_plugins`, `scan`,
 `registration`, `post_processor_registration`, `instantiation`,
 `post_processing`, `service_start` phase의 처리 개수와 성공/실패 상태를
 `StartupReport`에서 읽을 수 있습니다.
