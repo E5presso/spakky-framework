@@ -88,6 +88,10 @@
 			"name": "plugins.grpc",
 			"path": "plugins/spakky-grpc",
 		},
+		{
+			"name": "plugins.redis",
+			"path": "plugins/spakky-redis",
+		},
 	],
 	"settings": {
 		"yaml.customTags": [
