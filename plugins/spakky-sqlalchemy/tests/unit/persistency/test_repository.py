@@ -94,7 +94,7 @@ def test_sync_repository_without_generic_params_expect_error() -> None:
     aggregate_collector = None
 
     with pytest.raises(CannotDetermineAggregateTypeError):
-        InvalidSyncRepository(session_manager, schema_registry, aggregate_collector)  # type: ignore
+        InvalidSyncRepository(session_manager, schema_registry, aggregate_collector)  # type: ignore[abstract] - invalid repository construction test
 
 
 def test_async_repository_without_generic_params_expect_error() -> None:
@@ -105,7 +105,7 @@ def test_async_repository_without_generic_params_expect_error() -> None:
     aggregate_collector = None
 
     with pytest.raises(CannotDetermineAggregateTypeError):
-        InvalidAsyncRepository(session_manager, schema_registry, aggregate_collector)  # type: ignore
+        InvalidAsyncRepository(session_manager, schema_registry, aggregate_collector)  # type: ignore[abstract] - invalid repository construction test
 
 
 # --- Valid repository for version conflict testing ---

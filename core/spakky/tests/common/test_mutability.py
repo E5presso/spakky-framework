@@ -15,7 +15,7 @@ def test_mutable_is_dataclass() -> None:
 
     MutableDataClass(name="John")
     with pytest.raises(TypeError):
-        MutableDataClass("John")  # type: ignore
+        MutableDataClass("John")  # type: ignore[call-arg] - keyword-only dataclass test
     with pytest.raises(AssertionError):
         assert MutableDataClass(name="John") == MutableDataClass(name="John")
 
@@ -43,11 +43,11 @@ def test_immutable_is_dataclass() -> None:
 
     ImmutableDataClass(name="John")
     with pytest.raises(TypeError):
-        ImmutableDataClass("John")  # type: ignore
+        ImmutableDataClass("John")  # type: ignore[call-arg] - keyword-only dataclass test
     with pytest.raises(AssertionError):
         assert ImmutableDataClass(name="John") == ImmutableDataClass(name="John")
     with pytest.raises(FrozenInstanceError):
-        ImmutableDataClass(name="John").name = "Sarah"  # type: ignore
+        ImmutableDataClass(name="John").name = "Sarah"  # type: ignore[misc] - frozen dataclass mutation test
 
     @immutable
     class ImmutableDataClassWithEquatable(ImmutableDataClass, IEquatable):

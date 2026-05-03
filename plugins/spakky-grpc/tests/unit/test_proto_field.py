@@ -17,7 +17,7 @@ def test_proto_field_is_frozen() -> None:
     """ProtoField should be immutable."""
     field = ProtoField(number=1)
     with pytest.raises(AttributeError):
-        field.number = 2  # type: ignore[misc]
+        field.number = 2  # type: ignore[misc] - frozen dataclass mutation test
 
 
 def test_proto_field_equality() -> None:

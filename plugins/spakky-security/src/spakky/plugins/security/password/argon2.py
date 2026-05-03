@@ -7,6 +7,7 @@ parameters for time cost, memory cost, parallelism, and hash length.
 from typing import ClassVar, overload
 
 from argon2 import PasswordHasher
+from typing_extensions import override
 
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import PasswordRequiredError
@@ -110,6 +111,7 @@ class Argon2PasswordEncoder(IPasswordEncoder):
                 url_safe=self.__url_safe,
             )
 
+    @override
     def encode(self) -> str:
         """Encode password hash as a string.
 
@@ -126,6 +128,7 @@ class Argon2PasswordEncoder(IPasswordEncoder):
             hash=self.__hash,
         )
 
+    @override
     def challenge(self, password: str) -> bool:
         """Verify a password against the stored hash.
 

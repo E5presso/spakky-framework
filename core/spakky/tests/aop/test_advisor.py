@@ -43,10 +43,10 @@ def test_advisor_getattr_delegates_to_next_function() -> None:
     def sample() -> None:
         """sample docstring"""
 
-    sample.custom_attr = "hello"  # type: ignore[attr-defined]
+    sample.custom_attr = "hello"  # type: ignore[attr-defined] - proxy dynamic attribute test
 
     advisor = Advisor(instance=_StubAspect(), next=sample)
-    assert advisor.custom_attr == "hello"  # type: ignore[attr-defined]
+    assert advisor.custom_attr == "hello"  # type: ignore[attr-defined] - proxy dynamic attribute test
     assert advisor.__qualname__ == sample.__qualname__
 
 
@@ -57,8 +57,8 @@ async def test_async_advisor_getattr_delegates_to_next_function() -> None:
     async def async_sample() -> None:
         """async sample docstring"""
 
-    async_sample.custom_attr = "world"  # type: ignore[attr-defined]
+    async_sample.custom_attr = "world"  # type: ignore[attr-defined] - proxy dynamic attribute test
 
     advisor = AsyncAdvisor(instance=_StubAsyncAspect(), next=async_sample)
-    assert advisor.custom_attr == "world"  # type: ignore[attr-defined]
+    assert advisor.custom_attr == "world"  # type: ignore[attr-defined] - proxy dynamic attribute test
     assert advisor.__qualname__ == async_sample.__qualname__

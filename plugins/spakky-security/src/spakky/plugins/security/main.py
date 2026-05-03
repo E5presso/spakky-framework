@@ -19,4 +19,4 @@ def initialize(app: SpakkyApplication) -> None:
     """
     # Security plugin provides utility functions only
     # No pods or post-processors to register
-    pass
+    return

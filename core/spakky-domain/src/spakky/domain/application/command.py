@@ -5,7 +5,7 @@ command use cases in CQRS architecture.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Awaitable, Generic, TypeVar
+from typing import Awaitable, Generic, TypeVar
 
 from spakky.core.common.mutability import immutable
 
@@ -23,7 +23,7 @@ class AbstractCommand(ABC):
 CommandT_contra = TypeVar("CommandT_contra", bound=AbstractCommand, contravariant=True)
 """Contravariant type variable for command types."""
 
-ResultT_co = TypeVar("ResultT_co", bound=Any, covariant=True)
+ResultT_co = TypeVar("ResultT_co", covariant=True)
 """Covariant type variable for result types."""
 
 

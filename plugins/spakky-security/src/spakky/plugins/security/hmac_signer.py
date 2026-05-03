@@ -59,7 +59,9 @@ class HMAC:
             case HMACType.HS384:
                 hash_function = hashlib.sha384
             case HMACType.HS512:
-                hash_function = hashlib.sha512  # pragma: no cover
+                hash_function = (
+                    hashlib.sha512
+                )  # pragma: no cover - exhaustive HMACType match
         return Base64Encoder.from_bytes(
             hmac.new(
                 key_bytes,
@@ -99,7 +101,9 @@ class HMAC:
             case HMACType.HS384:
                 hash_function = hashlib.sha384
             case HMACType.HS512:
-                hash_function = hashlib.sha512  # pragma: no cover
+                hash_function = (
+                    hashlib.sha512
+                )  # pragma: no cover - exhaustive HMACType match
         return (
             Base64Encoder.from_bytes(
                 hmac.new(

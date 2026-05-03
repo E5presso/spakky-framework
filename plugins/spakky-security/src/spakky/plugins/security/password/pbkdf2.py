@@ -7,6 +7,8 @@ configurable hash algorithm, iteration count, and salt.
 import hashlib
 from typing import ClassVar, overload
 
+from typing_extensions import override
+
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import PasswordRequiredError
 from spakky.plugins.security.hash import HashType
@@ -100,6 +102,7 @@ class Pbkdf2PasswordEncoder(IPasswordEncoder):
     def __hash__(self) -> int:
         return hash(self.encode())
 
+    @override
     def encode(self) -> str:
         """Encode password hash as a string.
 
@@ -114,6 +117,7 @@ class Pbkdf2PasswordEncoder(IPasswordEncoder):
             hash=self.__hash,
         )
 
+    @override
     def challenge(self, password: str) -> bool:
         """Verify a password against the stored hash.
 

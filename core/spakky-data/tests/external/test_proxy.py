@@ -8,22 +8,21 @@ from spakky.data.external.proxy import (
 def test_proxy_model() -> None:
     """ProxyModel 생성 및 동등성 비교가 정상 동작하는지 검증한다."""
 
-    class TestId:
+    class SampleId:
         def __init__(self, value: int) -> None:
             self.value = value
 
         def __eq__(self, other: object) -> bool:
-            return isinstance(other, TestId) and self.value == other.value
+            return isinstance(other, SampleId) and self.value == other.value
 
         def __hash__(self) -> int:
             return hash(self.value)
 
-    class TestProxyModel(ProxyModel[TestId]):
-        pass
+    class SampleProxyModel(ProxyModel[SampleId]): ...
 
-    model1 = TestProxyModel(id=TestId(1))
-    model2 = TestProxyModel(id=TestId(1))
-    model3 = TestProxyModel(id=TestId(2))
+    model1 = SampleProxyModel(id=SampleId(1))
+    model2 = SampleProxyModel(id=SampleId(1))
+    model3 = SampleProxyModel(id=SampleId(2))
 
     assert model1 == model2
     assert model1 != model3

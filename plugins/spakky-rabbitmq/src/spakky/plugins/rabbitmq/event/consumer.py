@@ -8,6 +8,8 @@ to registered handlers.
 from collections.abc import Mapping
 from typing import Any
 
+from typing_extensions import override
+
 from aio_pika import (
     connect_robust,  # type: ignore[import-untyped]  # aio_pika lacks type stubs
 )
@@ -143,6 +145,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
             self.channel.stop_consuming()
         self.connection.add_callback_threadsafe(self._check_if_event_set)
 
+    @override
     def register(
         self,
         event: type[EventT_contra],
@@ -161,6 +164,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
             self.type_adapters[event] = TypeAdapter(event)
         self.handlers[event].append(handler)
 
+    @override
     def initialize(self) -> None:
         """Initialize RabbitMQ connection and declare queues.
 
@@ -180,6 +184,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
             )
             self.type_lookup[consumer_tag] = event_type
 
+    @override
     def dispose(self) -> None:
         """Clean up RabbitMQ resources.
 
@@ -189,6 +194,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.connection.close()
         return
 
+    @override
     def run(self) -> None:
         """Run the event consumer loop.
 
@@ -290,6 +296,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
             if self._propagator is not None:
                 TraceContext.clear()
 
+    @override
     def register(
         self,
         event: type[EventT_contra],
@@ -308,6 +315,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
             self.type_adapters[event] = TypeAdapter(event)
         self.handlers[event].append(handler)
 
+    @override
     async def initialize_async(self) -> None:
         """Initialize async RabbitMQ connection and declare queues.
 
@@ -322,6 +330,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
             consumer_tag = await queue.consume(self._route_event_handler)
             self.type_lookup[consumer_tag] = event_type
 
+    @override
     async def dispose_async(self) -> None:
         """Clean up async RabbitMQ resources.
 
@@ -331,6 +340,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         await self.connection.close()
         return
 
+    @override
     async def run_async(self) -> None:
         """Run the async event consumer loop.
 

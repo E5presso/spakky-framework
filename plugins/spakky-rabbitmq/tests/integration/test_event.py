@@ -1,4 +1,4 @@
-from asyncio import sleep as asleep  # type: ignore
+from asyncio import sleep as asleep  # type: ignore[attr-defined] - compatibility alias used by integration test
 from time import sleep, time
 
 import pytest

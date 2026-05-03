@@ -15,7 +15,7 @@ from celery.contrib.testing.worker import start_worker
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
-from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore[import-untyped]
+from testcontainers.rabbitmq import RabbitMqContainer  # type: ignore[import-untyped] - testcontainers lacks type stubs
 
 import spakky.plugins.celery
 from spakky.plugins.celery.common.config import (

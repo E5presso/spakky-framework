@@ -10,6 +10,7 @@ from Crypto.Cipher import PKCS1_OAEP
 from Crypto.PublicKey import RSA
 from Crypto.PublicKey.RSA import RsaKey
 from Crypto.Signature import PKCS1_v1_5
+from typing_extensions import override
 
 from spakky.plugins.security.cryptography.interface import ICryptor, ISigner
 from spakky.plugins.security.encoding import Base64Encoder
@@ -68,7 +69,9 @@ class AsymmetricKey:
         size: int | None = None,
         passphrase: str | None = None,
     ) -> None:
-        if key is None and size is None:  # pragma: no cover
+        if (
+            key is None and size is None
+        ):  # pragma: no cover - overloads prevent this at type-check time
             raise AsymmetricKeyRequiredError
         if key is not None:
             try:
@@ -111,6 +114,7 @@ class Rsa(ICryptor, ISigner):
         self.url_safe = url_safe
         self.__key = key
 
+    @override
     def encrypt(self, message: str) -> str:
         """Encrypt a message using RSA public key.
 
@@ -124,6 +128,7 @@ class Rsa(ICryptor, ISigner):
         cipher_bytes: bytes = cryptor.encrypt(message.encode())
         return Base64Encoder.from_bytes(cipher_bytes, self.url_safe)
 
+    @override
     def decrypt(self, cipher: str) -> str:
         """Decrypt a cipher text using RSA private key.
 
@@ -146,6 +151,7 @@ class Rsa(ICryptor, ISigner):
         except Exception as e:
             raise DecryptionFailedError from e
 
+    @override
     def sign(self, message: str, hash_type: HashType = HashType.SHA256) -> str:
         """Sign a message using RSA private key.
 
@@ -165,6 +171,7 @@ class Rsa(ICryptor, ISigner):
         signature_bytes: bytes = signer.sign(Hash(message, hash_type))
         return Base64Encoder.from_bytes(signature_bytes, self.url_safe)
 
+    @override
     def verify(
         self, message: str, signature: str, hash_type: HashType = HashType.SHA256
     ) -> bool:

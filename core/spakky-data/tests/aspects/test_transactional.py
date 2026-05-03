@@ -41,18 +41,18 @@ def test_transactional_aspect_commits_on_success() -> None:
             self.rolled_back = True
 
     @UseCase()
-    class TestUseCase:
+    class SampleUseCase:
         @transactional
         def execute(self) -> str:
             return "success"
 
     context = ApplicationContext()
     context.add(InMemoryTransaction)
-    context.add(TestUseCase)
+    context.add(SampleUseCase)
     context.add(TransactionalAspect)
     context.start()
 
-    use_case: TestUseCase = context.get(type_=TestUseCase)
+    use_case: SampleUseCase = context.get(type_=SampleUseCase)
     transaction: InMemoryTransaction = context.get(type_=InMemoryTransaction)
 
     result = use_case.execute()
@@ -87,18 +87,18 @@ def test_transactional_aspect_rollbacks_on_error() -> None:
         def delete(self, aggregate: AbstractAggregateRoot[Any]) -> None: ...
 
     @UseCase()
-    class TestUseCase:
+    class SampleUseCase:
         @Transactional()
         def execute(self) -> str:
             raise RuntimeError("Something went wrong")
 
     context = ApplicationContext()
     context.add(InMemoryTransaction)
-    context.add(TestUseCase)
+    context.add(SampleUseCase)
     context.add(TransactionalAspect)
     context.start()
 
-    use_case: TestUseCase = context.get(type_=TestUseCase)
+    use_case: SampleUseCase = context.get(type_=SampleUseCase)
     transaction: InMemoryTransaction = context.get(type_=InMemoryTransaction)
 
     with pytest.raises(RuntimeError, match="Something went wrong"):
@@ -134,18 +134,18 @@ async def test_async_transactional_aspect_commits_on_success() -> None:
         async def delete(self, aggregate: AbstractAggregateRoot[Any]) -> None: ...
 
     @UseCase()
-    class TestUseCase:
+    class SampleUseCase:
         @Transactional()
         async def execute(self) -> str:
             return "success"
 
     context = ApplicationContext()
     context.add(AsyncInMemoryTransaction)
-    context.add(TestUseCase)
+    context.add(SampleUseCase)
     context.add(AsyncTransactionalAspect)
     context.start()
 
-    use_case: TestUseCase = context.get(type_=TestUseCase)
+    use_case: SampleUseCase = context.get(type_=SampleUseCase)
     transaction: AsyncInMemoryTransaction = context.get(type_=AsyncInMemoryTransaction)
 
     result = await use_case.execute()
@@ -181,18 +181,18 @@ async def test_async_transactional_aspect_rollbacks_on_error() -> None:
         async def delete(self, aggregate: AbstractAggregateRoot[Any]) -> None: ...
 
     @UseCase()
-    class TestUseCase:
+    class SampleUseCase:
         @Transactional()
         async def execute(self) -> str:
             raise RuntimeError("Something went wrong")
 
     context = ApplicationContext()
     context.add(AsyncInMemoryTransaction)
-    context.add(TestUseCase)
+    context.add(SampleUseCase)
     context.add(AsyncTransactionalAspect)
     context.start()
 
-    use_case: TestUseCase = context.get(type_=TestUseCase)
+    use_case: SampleUseCase = context.get(type_=SampleUseCase)
     transaction: AsyncInMemoryTransaction = context.get(type_=AsyncInMemoryTransaction)
 
     with pytest.raises(RuntimeError, match="Something went wrong"):
@@ -206,24 +206,24 @@ def test_transactional_annotation_exists() -> None:
     """@Transactional 어노테이션이 메서드에서 감지될 수 있는지 검증한다."""
 
     @UseCase()
-    class TestUseCase:
+    class SampleUseCase:
         @Transactional()
         def execute(self) -> str:
             return "success"
 
-    assert Transactional.exists(TestUseCase.execute) is True
+    assert Transactional.exists(SampleUseCase.execute) is True
 
 
 def test_transactional_function_decorator_marks_method_as_transactional() -> None:
     """@transactional shorthand가 @Transactional()과 동일하게 감지되는지 검증한다."""
 
     @UseCase()
-    class TestUseCase:
+    class SampleUseCase:
         @transactional
         def execute(self) -> str:
             return "success"
 
-    assert Transactional.exists(TestUseCase.execute) is True
+    assert Transactional.exists(SampleUseCase.execute) is True
 
 
 def test_transactional_aspect_only_applies_to_annotated_methods() -> None:
@@ -251,7 +251,7 @@ def test_transactional_aspect_only_applies_to_annotated_methods() -> None:
         def delete(self, aggregate: AbstractAggregateRoot[Any]) -> None: ...
 
     @UseCase()
-    class TestUseCase:
+    class SampleUseCase:
         def execute_without_annotation(self) -> str:
             return "no transaction"
 
@@ -261,11 +261,11 @@ def test_transactional_aspect_only_applies_to_annotated_methods() -> None:
 
     context = ApplicationContext()
     context.add(InMemoryTransaction)
-    context.add(TestUseCase)
+    context.add(SampleUseCase)
     context.add(TransactionalAspect)
     context.start()
 
-    use_case: TestUseCase = context.get(type_=TestUseCase)
+    use_case: SampleUseCase = context.get(type_=SampleUseCase)
     transaction: InMemoryTransaction = context.get(type_=InMemoryTransaction)
 
     # Method without annotation should not trigger transaction

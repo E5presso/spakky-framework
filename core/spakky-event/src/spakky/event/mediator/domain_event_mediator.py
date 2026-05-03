@@ -41,7 +41,12 @@ logger = getLogger(__name__)
 class EventMediator(IEventConsumer, IEventDispatcher):
     """In-process synchronous event mediator combining consumer and dispatcher roles."""
 
-    _handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
+    _handlers: dict[
+        type[AbstractEvent],
+        list[
+            EventHandlerCallback[Any]
+        ],  # Any: callback generic is erased by event-keyed registry
+    ]
 
     def __init__(self) -> None:
         """Initialize an empty handler registry."""
@@ -51,7 +56,9 @@ class EventMediator(IEventConsumer, IEventDispatcher):
     def register(
         self,
         event: type[AbstractEvent],
-        handler: EventHandlerCallback[Any],
+        handler: EventHandlerCallback[
+            Any
+        ],  # Any: callback generic is erased by event-keyed registry
     ) -> None:
         """Register a handler callback for the given event type."""
         if event not in self._handlers:
@@ -83,7 +90,12 @@ class EventMediator(IEventConsumer, IEventDispatcher):
 class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
     """In-process asynchronous event mediator combining consumer and dispatcher roles."""
 
-    _handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
+    _handlers: dict[
+        type[AbstractEvent],
+        list[
+            AsyncEventHandlerCallback[Any]
+        ],  # Any: callback generic is erased by event-keyed registry
+    ]
 
     def __init__(self) -> None:
         """Initialize an empty async handler registry."""
@@ -93,7 +105,9 @@ class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
     def register(
         self,
         event: type[AbstractEvent],
-        handler: AsyncEventHandlerCallback[Any],
+        handler: AsyncEventHandlerCallback[
+            Any
+        ],  # Any: callback generic is erased by event-keyed registry
     ) -> None:
         """Register an async handler callback for the given event type."""
         if event not in self._handlers:

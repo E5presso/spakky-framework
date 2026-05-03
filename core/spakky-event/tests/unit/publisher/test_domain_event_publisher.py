@@ -23,14 +23,14 @@ from spakky.event.publisher.domain_event_publisher import (
 
 
 @immutable
-class TestDomainEvent(AbstractDomainEvent):
+class SampleDomainEvent(AbstractDomainEvent):
     """Test domain event for publisher tests."""
 
     data: str
 
 
 @immutable
-class TestIntegrationEvent(AbstractIntegrationEvent):
+class SampleIntegrationEvent(AbstractIntegrationEvent):
     """Test integration event for publisher tests."""
 
     data: str
@@ -74,7 +74,7 @@ def test_sync_publisher_routes_domain_event_to_dispatcher() -> None:
     bus = InMemorySyncBus()
     publisher = EventPublisher(dispatcher, bus)
 
-    event = TestDomainEvent(data="test-data")
+    event = SampleDomainEvent(data="test-data")
     publisher.publish(event)
 
     assert len(dispatcher.dispatched_events) == 1
@@ -87,7 +87,7 @@ def test_sync_publisher_routes_integration_event_to_bus() -> None:
     bus = InMemorySyncBus()
     publisher = EventPublisher(dispatcher, bus)
 
-    event = TestIntegrationEvent(data="integration-data")
+    event = SampleIntegrationEvent(data="integration-data")
     publisher.publish(event)
 
     assert len(dispatcher.dispatched_events) == 0
@@ -102,7 +102,7 @@ async def test_async_publisher_routes_domain_event_to_dispatcher() -> None:
     bus = InMemoryAsyncBus()
     publisher = AsyncEventPublisher(dispatcher, bus)
 
-    event = TestDomainEvent(data="async-test-data")
+    event = SampleDomainEvent(data="async-test-data")
     await publisher.publish(event)
 
     assert len(dispatcher.dispatched_events) == 1
@@ -116,7 +116,7 @@ async def test_async_publisher_routes_integration_event_to_bus() -> None:
     bus = InMemoryAsyncBus()
     publisher = AsyncEventPublisher(dispatcher, bus)
 
-    event = TestIntegrationEvent(data="async-integration-data")
+    event = SampleIntegrationEvent(data="async-integration-data")
     await publisher.publish(event)
 
     assert len(dispatcher.dispatched_events) == 0

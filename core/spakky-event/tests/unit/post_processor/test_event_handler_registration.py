@@ -18,7 +18,7 @@ from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 
 @immutable
-class TestDomainEvent(AbstractDomainEvent):
+class SampleDomainEvent(AbstractDomainEvent):
     """Test domain event."""
 
     message: str
@@ -91,9 +91,9 @@ class InMemoryContainer(IContainer):
     ) -> ObjectT:
         """Get consumer based on type."""
         if type_ is IEventConsumer:
-            return self._sync_consumer  # type: ignore[return-value]
+            return self._sync_consumer  # type: ignore[return-value] - fake container returns requested interface
         if type_ is IAsyncEventConsumer:
-            return self._async_consumer  # type: ignore[return-value]
+            return self._async_consumer  # type: ignore[return-value] - fake container returns requested interface
         raise ValueError(f"Unexpected type: {type_}")
 
     def get_or_none(
@@ -123,12 +123,12 @@ class InMemoryContainer(IContainer):
 class SyncTestEventHandler:
     """Test sync event handler."""
 
-    @on_event(TestDomainEvent)
-    def handle_test(self, event: TestDomainEvent) -> None:
+    @on_event(SampleDomainEvent)
+    def handle_test(self, event: SampleDomainEvent) -> None:
         """Handle test domain event."""
         ...
 
-    def non_decorated(self, event: TestDomainEvent) -> None:
+    def non_decorated(self, event: SampleDomainEvent) -> None:
         """Non-decorated method (should be ignored)."""
         ...
 
@@ -137,8 +137,8 @@ class SyncTestEventHandler:
 class AsyncTestEventHandler:
     """Test async event handler."""
 
-    @on_event(TestDomainEvent)
-    async def handle_test(self, event: TestDomainEvent) -> None:
+    @on_event(SampleDomainEvent)
+    async def handle_test(self, event: SampleDomainEvent) -> None:
         """Handle test domain event asynchronously."""
         ...
 
@@ -147,8 +147,8 @@ class AsyncTestEventHandler:
 class MultiEventHandler:
     """Event handler with multiple event handlers."""
 
-    @on_event(TestDomainEvent)
-    async def handle_test(self, event: TestDomainEvent) -> None:
+    @on_event(SampleDomainEvent)
+    async def handle_test(self, event: SampleDomainEvent) -> None:
         """Handle test domain event."""
         ...
 
@@ -185,7 +185,7 @@ def test_post_processor_registers_sync_handler_methods() -> None:
     post_processor.post_process(handler_instance)
 
     assert len(sync_consumer.registrations) == 1
-    assert sync_consumer.registrations[0][0] is TestDomainEvent
+    assert sync_consumer.registrations[0][0] is SampleDomainEvent
     assert len(async_consumer.registrations) == 0
 
 
@@ -203,7 +203,7 @@ def test_post_processor_ignore_non_decorated_methods() -> None:
 
     # Only one decorated method should be registered
     assert len(sync_consumer.registrations) == 1
-    assert sync_consumer.registrations[0][0] is TestDomainEvent
+    assert sync_consumer.registrations[0][0] is SampleDomainEvent
 
 
 def test_post_processor_registers_async_handler_methods() -> None:
@@ -219,7 +219,7 @@ def test_post_processor_registers_async_handler_methods() -> None:
     post_processor.post_process(handler_instance)
 
     assert len(async_consumer.registrations) == 1
-    assert async_consumer.registrations[0][0] is TestDomainEvent
+    assert async_consumer.registrations[0][0] is SampleDomainEvent
     assert len(sync_consumer.registrations) == 0
 
 
@@ -237,7 +237,7 @@ def test_post_processor_registers_multiple_event_handlers() -> None:
 
     assert len(async_consumer.registrations) == 2
     event_types = {reg[0] for reg in async_consumer.registrations}
-    assert TestDomainEvent in event_types
+    assert SampleDomainEvent in event_types
     assert AnotherDomainEvent in event_types
 
 

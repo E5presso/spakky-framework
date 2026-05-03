@@ -7,6 +7,7 @@ salt generation and configurable work factor.
 from typing import ClassVar, overload
 
 import bcrypt
+from typing_extensions import override
 
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import PasswordRequiredError
@@ -77,6 +78,7 @@ class BcryptPasswordEncoder(IPasswordEncoder):
                 url_safe=self.__url_safe,
             )
 
+    @override
     def encode(self) -> str:
         """Encode password hash as a string.
 
@@ -89,6 +91,7 @@ class BcryptPasswordEncoder(IPasswordEncoder):
             hash=self.__hash,
         )
 
+    @override
     def challenge(self, password: str) -> bool:
         """Verify a password against the stored hash.
 

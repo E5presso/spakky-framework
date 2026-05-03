@@ -11,14 +11,13 @@ def test_qualifier_with_selector() -> None:
     """Qualifier의 selector 함수가 올바르게 동작함을 검증한다."""
 
     @Pod()
-    class TestPod:
-        pass
+    class SamplePod: ...
 
     # Create a qualifier with a selector
-    qualifier = Qualifier(selector=lambda pod: pod.name == "test_pod")
+    qualifier = Qualifier(selector=lambda pod: pod.name == "sample_pod")
 
     # Get the pod
-    pod = Pod.get(TestPod)
+    pod = Pod.get(SamplePod)
 
     # Test the selector
     assert qualifier.selector(pod) is True
@@ -31,11 +30,11 @@ def test_qualifier_with_selector() -> None:
 def test_qualifier_with_invalid_selector() -> None:
     """Qualifier에 호출 불가능한 selector가 주어지면 QualifierSelectorNotCallableError가 발생함을 검증한다."""
     with pytest.raises(QualifierSelectorNotCallableError):
-        Qualifier(selector="not_a_function")  # type: ignore
+        Qualifier(selector="not_a_function")  # type: ignore[arg-type] - invalid selector test
 
     # Test with other non-callable types
     with pytest.raises(QualifierSelectorNotCallableError):
-        Qualifier(selector=123)  # type: ignore
+        Qualifier(selector=123)  # type: ignore[arg-type] - invalid selector test
 
     with pytest.raises(QualifierSelectorNotCallableError):
-        Qualifier(selector=[])  # type: ignore
+        Qualifier(selector=[])  # type: ignore[arg-type] - invalid selector test

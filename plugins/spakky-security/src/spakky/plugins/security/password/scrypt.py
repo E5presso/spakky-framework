@@ -8,6 +8,8 @@ brute-force attacks.
 from hashlib import scrypt
 from typing import ClassVar, overload
 
+from typing_extensions import override
+
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import PasswordRequiredError
 from spakky.plugins.security.key import Key
@@ -114,6 +116,7 @@ class ScryptPasswordEncoder(IPasswordEncoder):
                 url_safe=self.__url_safe,
             )
 
+    @override
     def encode(self) -> str:
         """Encode password hash as a string.
 
@@ -131,6 +134,7 @@ class ScryptPasswordEncoder(IPasswordEncoder):
             hash=self.__hash,
         )
 
+    @override
     def challenge(self, password: str) -> bool:
         """Verify a password against the stored hash.
 

@@ -294,9 +294,9 @@ def test_pod_equality_with_different_type() -> None:
     """Pod의 __eq__ 메서드가 Pod가 아닌 타입과 비교 시 False를 반환함을 검증한다."""
 
     @Pod(name="test_pod")
-    class TestClass: ...
+    class SampleClass: ...
 
-    pod = Pod.get(TestClass)
+    pod = Pod.get(SampleClass)
     # Test equality with string
     assert pod != "test_pod"
     # Test equality with int

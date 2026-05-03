@@ -20,9 +20,9 @@ from spakky.plugins.security.hmac_signer import HMAC, HMACType
 from spakky.plugins.security.key import Key
 
 if sys.version_info >= (3, 11):
-    from typing import Self  # pragma: no cover
+    from typing import Self  # pragma: no cover - Python 3.11+ import path
 else:
-    from typing_extensions import Self  # pragma: no cover
+    from typing_extensions import Self  # pragma: no cover - Python <3.11 import path
 
 
 @final
@@ -290,7 +290,7 @@ class JWT:
         sign_algorithm: HMACType | None = self.__header.get("alg")
         if self.__signature is None:
             raise JWTProcessingError("signature cannot be None")
-        if sign_algorithm is None:  # pragma: no cover
+        if sign_algorithm is None:  # pragma: no cover - signed tokens always carry alg
             raise JWTProcessingError("field named 'alg' does not exists in header")
         verification_result: bool = HMAC.verify(
             key=self.__key,

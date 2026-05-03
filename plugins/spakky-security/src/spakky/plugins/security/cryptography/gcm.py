@@ -8,6 +8,7 @@ from typing import ClassVar, final
 
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
+from typing_extensions import override
 
 from spakky.plugins.security.cryptography.interface import ICryptor
 from spakky.plugins.security.encoding import Base64Encoder
@@ -42,6 +43,7 @@ class Gcm(ICryptor):
         self.url_safe = url_safe
         self.__key = key
 
+    @override
     def encrypt(self, message: str) -> str:
         """Encrypt a message using AES-GCM.
 
@@ -68,6 +70,7 @@ class Gcm(ICryptor):
             cipher=Base64Encoder.from_bytes(cipher_bytes, self.url_safe),
         )
 
+    @override
     def decrypt(self, cipher: str) -> str:
         """Decrypt a cipher text using AES-GCM.
 

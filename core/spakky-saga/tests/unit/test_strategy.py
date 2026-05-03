@@ -40,7 +40,7 @@ def test_exponential_backoff_frozen_expect_frozen_instance_error() -> None:
     """ExponentialBackoff가 frozen인지 검증한다."""
     backoff = ExponentialBackoff()
     with pytest.raises(FrozenInstanceError):
-        backoff.base = 2.0  # type: ignore[misc]
+        backoff.base = 2.0  # type: ignore[misc] - frozen dataclass mutation test
 
 
 def test_retry_defaults_expect_correct_values() -> None:
@@ -73,7 +73,7 @@ def test_retry_frozen_expect_frozen_instance_error() -> None:
     """Retry가 frozen인지 검증한다."""
     retry = Retry()
     with pytest.raises(FrozenInstanceError):
-        retry.max_attempts = 10  # type: ignore[misc]
+        retry.max_attempts = 10  # type: ignore[misc] - frozen dataclass mutation test
 
 
 def test_exponential_backoff_delay_for_expect_doubling() -> None:

@@ -27,7 +27,7 @@ class Transactional(FunctionAnnotation):
     context, ensuring atomicity of operations.
     """
 
-    pass
+    ...
 
 
 def transactional(func: Callable[P, R]) -> Callable[P, R]:

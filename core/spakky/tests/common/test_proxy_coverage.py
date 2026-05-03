@@ -36,7 +36,7 @@ def test_proxy_set_attribute() -> None:
     proxy = ProxyFactory(target=target, handler=handler).create()
 
     # Set attribute through proxy
-    proxy.new_value = 100  # type: ignore
+    proxy.new_value = 100  # type: ignore[attr-defined] - proxy dynamic set test
 
     # Verify attribute is set on target
-    assert target.new_value == 100  # type: ignore
+    assert target.new_value == 100  # type: ignore[attr-defined] - proxy dynamic set test

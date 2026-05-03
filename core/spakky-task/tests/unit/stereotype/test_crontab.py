@@ -54,7 +54,7 @@ def test_crontab_is_frozen() -> None:
     """Crontab이 불변(frozen)인지 검증한다."""
     crontab = Crontab(hour=3)
     with pytest.raises(AttributeError):
-        crontab.hour = 5  # type: ignore[misc]
+        crontab.hour = 5  # type: ignore[misc] - frozen dataclass mutation test
 
 
 def test_crontab_equality() -> None:

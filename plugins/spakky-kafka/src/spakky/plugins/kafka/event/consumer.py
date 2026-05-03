@@ -20,6 +20,7 @@ from spakky.event.event_consumer import (
 )
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
+from typing_extensions import override
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 
@@ -139,6 +140,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             if self._propagator is not None:
                 TraceContext.clear()
 
+    @override
     def register(
         self,
         event: type[EventT_contra],
@@ -151,12 +153,14 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             self.type_lookup[event.__name__] = event
         self.handlers[event].append(handler)
 
+    @override
     def initialize(self) -> None:
         """Create Kafka topics and subscribe the consumer."""
         topics: list[str] = [event_type.__name__ for event_type in self.handlers.keys()]
         self._create_topics(topics=topics)
         self.consumer.subscribe(topics=topics)
 
+    @override
     def run(self) -> None:
         """Poll Kafka for messages and route them to registered handlers."""
         while not self._stop_event.is_set():
@@ -167,6 +171,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
                 continue
             self._route_event_handler(message)
 
+    @override
     def dispose(self) -> None:
         """Close the Kafka consumer connection."""
         self.consumer.close()
@@ -283,6 +288,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             if self._propagator is not None:
                 TraceContext.clear()
 
+    @override
     def register(
         self,
         event: type[EventT_contra],
@@ -295,6 +301,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             self.type_lookup[event.__name__] = event
         self.handlers[event].append(handler)
 
+    @override
     async def initialize_async(self) -> None:
         """Create Kafka topics and subscribe the async consumer."""
         self.consumer = AIOConsumer(self.config.configuration_dict)
@@ -302,6 +309,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self._create_topics(topics=topics)
         await self.consumer.subscribe(topics=topics)
 
+    @override
     async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
         """Poll Kafka asynchronously for messages and route them to handlers."""
         while not self._stop_event.is_set():
@@ -312,6 +320,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
                 continue
             await self._route_event_handler(message)
 
+    @override
     async def dispose_async(self) -> None:
         """Close the async Kafka consumer connection."""
         await self.consumer.close()

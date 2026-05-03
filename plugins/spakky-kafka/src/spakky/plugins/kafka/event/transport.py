@@ -3,6 +3,8 @@ from logging import getLogger
 from aiokafka import AIOKafkaProducer
 from confluent_kafka import KafkaError, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
+from typing_extensions import override
+
 from spakky.core.pod.annotations.pod import Pod
 from spakky.event.event_publisher import (
     IAsyncEventTransport,
@@ -56,6 +58,7 @@ class KafkaEventTransport(IEventTransport):
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
             )
 
+    @override
     def send(
         self,
         event_name: str,
@@ -108,6 +111,7 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             ]
         )
 
+    @override
     async def send(
         self,
         event_name: str,

@@ -3,6 +3,8 @@
 import asyncio
 from typing import Generic, TypeVar, cast
 
+from typing_extensions import override
+
 from spakky.task.interfaces.task_result import AbstractTaskResult
 
 from celery.result import AsyncResult
@@ -20,12 +22,15 @@ class CeleryTaskResult(AbstractTaskResult[T], Generic[T]):
         self._result = result
 
     @property
+    @override
     def task_id(self) -> str:
         return self._result.id
 
+    @override
     def get(self) -> T:
         return cast(T, self._result.get())
 
+    @override
     async def get_async(self) -> T:
         loop = asyncio.get_running_loop()
         return cast(T, await loop.run_in_executor(None, self._result.get))

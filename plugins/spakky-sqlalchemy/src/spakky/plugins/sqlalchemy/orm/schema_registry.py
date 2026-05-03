@@ -1,5 +1,7 @@
 from typing import Any, TypeVar, cast
 
+from typing_extensions import override
+
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.tag_registry_aware import ITagRegistryAware
 from spakky.core.pod.interfaces.tag_registry import ITagRegistry
@@ -10,7 +12,12 @@ from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from sqlalchemy import MetaData
 from sqlalchemy import Table as SQLAlchemyTable
 
-AggregateRootT = TypeVar("AggregateRootT", bound=AbstractAggregateRoot[Any])
+AggregateRootT = TypeVar(
+    "AggregateRootT",
+    bound=AbstractAggregateRoot[
+        Any
+    ],  # Any: aggregate ID type is irrelevant to schema lookup
+)
 
 
 class NoSchemaFoundFromDomainError(AbstractSpakkySqlAlchemyORMError):
@@ -23,8 +30,18 @@ class SchemaRegistry(ITagRegistryAware):
 
     _tag_registry: ITagRegistry
     _metadata: MetaData
-    _domain_to_table_map: dict[type[Any], type[AbstractMappableTable[Any]]]
-    _table_to_domain_map: dict[type[AbstractMappableTable[Any]], type[Any]]
+    _domain_to_table_map: dict[
+        type[Any],  # Any: runtime domain classes have heterogeneous aggregate ID types
+        type[
+            AbstractMappableTable[Any]
+        ],  # Any: table registry stores heterogeneous domains
+    ]
+    _table_to_domain_map: dict[
+        type[
+            AbstractMappableTable[Any]
+        ],  # Any: table registry stores heterogeneous domains
+        type[Any],  # Any: runtime domain classes have heterogeneous aggregate ID types
+    ]
 
     def __init__(self) -> None:
         self._metadata = MetaData()
@@ -43,6 +60,7 @@ class SchemaRegistry(ITagRegistryAware):
         """
         return self._metadata
 
+    @override
     def set_tag_registry(self, tag_registry: ITagRegistry) -> None:
         self._tag_registry = tag_registry
         self._register_table()
@@ -59,10 +77,18 @@ class SchemaRegistry(ITagRegistryAware):
                 continue
 
             self._domain_to_table_map[tag.domain] = cast(
-                type[AbstractMappableTable[Any]], tag.table
+                type[
+                    AbstractMappableTable[Any]
+                ],  # Any: narrowed after runtime issubclass guard
+                tag.table,
             )
             self._table_to_domain_map[
-                cast(type[AbstractMappableTable[Any]], tag.table)
+                cast(
+                    type[
+                        AbstractMappableTable[Any]
+                    ],  # Any: narrowed after runtime issubclass guard
+                    tag.table,
+                )
             ] = tag.domain
 
     def get_type(

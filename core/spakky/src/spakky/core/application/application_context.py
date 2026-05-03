@@ -327,8 +327,6 @@ class ApplicationContext(IApplicationContext):
             case Pod.Scope.CONTEXT:
                 if (cached := self.__get_context_cache(pod)) is not None:
                     return cast(ObjectT, cached)
-            case Pod.Scope.PROTOTYPE:
-                pass
 
         instance = self.__instantiate_pod(
             pod,
@@ -339,8 +337,6 @@ class ApplicationContext(IApplicationContext):
         match pod.scope:
             case Pod.Scope.CONTEXT:
                 self.__set_context_cache(pod, instance)
-            case Pod.Scope.PROTOTYPE:
-                pass
 
         return cast(ObjectT, instance)
 

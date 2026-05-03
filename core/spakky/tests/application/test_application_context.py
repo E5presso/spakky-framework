@@ -749,7 +749,7 @@ def test_type_index_cache_hit_for_single_implementation() -> None:
     service2 = context.get(IService)
 
     assert service1 is service2
-    assert service1.value == "test"  # type: ignore
+    assert service1.value == "test"  # type: ignore[attr-defined] - generic container lookup narrows at runtime
 
     context.stop()
 
@@ -908,8 +908,8 @@ def test_type_index_with_interface_and_concrete_types() -> None:
     user_repo = context.get(IUserRepository)
     admin_repo = context.get(IAdminRepository)
 
-    assert user_repo.name == "user_repo"  # type: ignore
-    assert admin_repo.name == "admin_repo"  # type: ignore
+    assert user_repo.name == "user_repo"  # type: ignore[attr-defined] - qualified repository narrowing test
+    assert admin_repo.name == "admin_repo"  # type: ignore[attr-defined] - qualified repository narrowing test
     assert user_repo is not admin_repo
 
     context.stop()
@@ -1050,12 +1050,12 @@ def test_application_context_initialize_pods_missing_raises_error() -> None:
         pass
 
     @Pod(name="test_missing_pod")
-    class TestPod:
-        def __init__(self, missing_dep: NonExistentPod) -> None:  # type: ignore
+    class SamplePod:
+        def __init__(self, missing_dep: NonExistentPod) -> None:  # type: ignore[valid-type] - unresolved dependency test
             pass
 
     context = ApplicationContext()
-    context.add(TestPod)
+    context.add(SamplePod)
 
     # This should raise UnexpectedDependencyTypeInjectedError during initialization
     # since the missing_dep cannot be resolved and is not optional
@@ -1191,15 +1191,14 @@ def test_contains_with_name_existing() -> None:
     """이름으로 Pod의 존재 여부를 확인할 수 있음을 검증한다."""
 
     @Pod(name="test_pod")
-    class TestPod:
-        pass
+    class SamplePod: ...
 
     context = ApplicationContext()
-    context.add(TestPod)
+    context.add(SamplePod)
 
     # Test with name - should use "name in self.__pods" branch
-    assert context.contains(TestPod, name="test_pod")
-    assert not context.contains(TestPod, name="nonexistent")
+    assert context.contains(SamplePod, name="test_pod")
+    assert not context.contains(SamplePod, name="nonexistent")
 
 
 def test_get_or_none_existing_pod_expect_instance() -> None:

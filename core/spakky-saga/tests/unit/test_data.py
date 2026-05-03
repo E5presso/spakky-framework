@@ -45,7 +45,7 @@ def test_concrete_saga_data_frozen_expect_frozen_instance_error() -> None:
     order_id = UUID("12345678-1234-5678-1234-567812345678")
     data = _ConcreteSagaData(order_id=order_id)
     with pytest.raises(FrozenInstanceError):
-        data.saga_id = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")  # type: ignore[misc]
+        data.saga_id = UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")  # type: ignore[misc] - frozen dataclass mutation test
 
 
 def test_concrete_saga_data_custom_fields_expect_accessible() -> None:

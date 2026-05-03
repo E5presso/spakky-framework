@@ -11,7 +11,7 @@ from spakky.data.persistency.transaction import (
 def test_transaction_exception_in_commit() -> None:
     """커밋 중 예외 발생 시 트랜잭션이 롤백되는지 검증한다."""
 
-    class TestTransaction(AbstractTransaction):
+    class SampleTransaction(AbstractTransaction):
         initialized = False
         disposed = False
         committed = False
@@ -30,7 +30,7 @@ def test_transaction_exception_in_commit() -> None:
         def rollback(self) -> None:
             self.rolled_back = True
 
-    transaction = TestTransaction(autocommit=True)
+    transaction = SampleTransaction(autocommit=True)
 
     with pytest.raises(RuntimeError):
         with transaction:
@@ -45,7 +45,7 @@ def test_transaction_exception_in_commit() -> None:
 async def test_async_transaction_exception_in_commit() -> None:
     """비동기 커밋 중 예외 발생 시 트랜잭션이 롤백되는지 검증한다."""
 
-    class TestAsyncTransaction(AbstractAsyncTransaction):
+    class SampleAsyncTransaction(AbstractAsyncTransaction):
         initialized = False
         disposed = False
         committed = False
@@ -64,7 +64,7 @@ async def test_async_transaction_exception_in_commit() -> None:
         async def rollback(self) -> None:
             self.rolled_back = True
 
-    transaction = TestAsyncTransaction(autocommit=True)
+    transaction = SampleAsyncTransaction(autocommit=True)
 
     with pytest.raises(RuntimeError):
         async with transaction:
