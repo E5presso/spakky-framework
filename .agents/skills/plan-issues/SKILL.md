@@ -21,6 +21,46 @@ user-invocable: true
 
 `charter.md` §1·§2를 모든 Phase 전체에 선행 적용한다. Phase 2(위계 판정) 진입 전, charter §2 3-축 정렬(마일스톤 의도 / 티켓 위치 / 도메인 사전 정합)을 목적 어휘로 스스로 답하고 사용자에게 2-3줄로 요약 공유한다. 하나라도 막히면 Phase 2 진입 금지.
 
+## Grill-me 심문 커널
+
+본 스킬은 `grill-me`류 계획 검증 스킬의 핵심 철학을 Phase 0~3.5에 내장한다. 목적은 사용자를 피곤하게 만드는 것이 아니라, **구현 전에 의사결정 트리의 빈 가지를 찾아 한 번에 하나씩 닫는 것**이다.
+
+### 원칙
+
+1. **한 번에 한 질문**: 목표 / 범위 / 제약을 한꺼번에 묻지 않는다. 현재 가장 큰 차단 가지 1개만 질문한다. 단, 사용자가 일괄 답변을 명시적으로 원하면 2-3개까지 묶을 수 있다.
+2. **질문마다 추천 답안 포함**: 질문은 항상 "권장 답안"을 같이 제시한다. 권장 답안은 코드베이스·기존 문서·마일스톤 맥락에서 가장 보수적인 선택이며, 사용자가 빠르게 승인/수정할 수 있어야 한다.
+3. **코드로 답할 수 있으면 묻지 않는다**: 기존 패턴, 공개 인터페이스, 네이밍, 패키지 경계, 이전 티켓 존재 여부는 사용자에게 묻기 전에 코드베이스·문서·GitHub 이슈를 탐색한다.
+4. **의사결정 트리 지도 유지**: architecture / domain model / API contract / data flow / UX-CLI surface / error policy / compatibility / rollout / tests-docs 각 가지를 `OPEN`, `RESOLVED`, `BLOCKED`로 추적한다.
+5. **가정에는 반박한다**: 모호하거나 위험하거나 서로 모순되는 진술은 그대로 받아쓰지 않는다. "그렇다면 X도 성립해야 하는데 맞습니까?" 형식으로 종속 결정을 드러낸다.
+6. **진행 지도 공유**: 사용자와 논의할 때는 남은 open branch 수와 지금 질문이 어떤 downstream 결정을 막는지 1줄로 표시한다.
+
+### 질문 포맷
+
+```
+질문: {지금 막힌 결정 1개}
+왜 묻는가: {이 답이 막고 있는 downstream 결정}
+권장 답안: {코드/문서 근거 기반 기본 선택}
+대안: {있다면 1-2개, 비용 또는 위험 1줄}
+```
+
+### Decision Branch Ledger
+
+Phase 0부터 Phase 3 승인 전까지 내부 ledger를 유지한다. Phase 2.5 self-review와 Phase 3.5 시뮬레이션 입력에는 요약본을 포함한다.
+
+| Branch | Status | Decision / Open Question | Blocks |
+|--------|--------|--------------------------|--------|
+| architecture | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| domain model | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| API contract | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| data flow | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| UX-CLI surface | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| error policy | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| compatibility | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| rollout | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+| tests-docs | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
+
+Phase 2.5 진입 조건: `OPEN` 또는 `BLOCKED` branch가 있으면 해당 branch를 `[NEEDS CLARIFICATION]` 또는 명시적 non-goal/assumption으로 전환해야 한다. 단순히 ledger에서 삭제하지 않는다.
+
 ## 핵심 설계 — Spec-Driven Development (SDD) 워크플로
 
 본 스킬은 GitHub Spec Kit / Kiro / Tessl 같은 SDD (Spec-Driven Development) 도구의 핵심 패턴을 차용하되, GitHub Issues 티켓 + `/process-ticket` 소비 형태로 적응한다.
@@ -38,7 +78,7 @@ user-invocable: true
 
 1. **Phase 2.5** — 11섹션 구조의 **executable specification artifact**를 캡처한다 (비즈니스 의도·가정·US (User Story)·FR (Functional Requirement)·도메인 계약·도메인 규칙·경계·상호작용·범위 밖·SC (Success Criteria)·self-review).
 2. **Phase 3** — 스펙을 만족하는 태스크 분해 + 쓰기 충돌 매트릭스 + 레이어 선후 + **FR/SC 커버리지 매핑** + 부모 의존 상속.
-3. **Phase 3.5** — 서브에이전트 시뮬레이션 게이트 (T1 티켓별 cold reading + T2 DAG (Directed Acyclic Graph) 모순 + T3 SC value drift). Soft block으로 검토 후보 사용자 일괄 결정.
+3. **Phase 3.5** — 서브에이전트 시뮬레이션 게이트 (T1 티켓별 cold reading + T2 DAG (Directed Acyclic Graph) 모순 + T3 SC value drift + T4 Grill-me interview replay). Soft block으로 검토 후보 사용자 일괄 결정.
 4. **Phase 4** — 확정된 artifact를 템플릿 슬롯에 **기계적으로 주입**. self-check 11항목 (마커 0개 / FR-SC 역참조 / US 본문 인용 / Constitution 등) + Phase 3.5 게이트 통과 확인 후 이슈 생성.
 
 이 구조는 "논의 내용과 본문 불일치" / "스펙 부실 → `/process-ticket` 할루시네이션" / "의존관계 오류" / "사용자 의도 손실"을 구조적으로 방지한다.
@@ -75,8 +115,11 @@ user-invocable: true
 ## Phase 0: 입력 수집
 
 1. `$ARGUMENTS`에서 기능 방향성을 수집한다.
-2. 입력이 모호하거나 불충분하면 `AskUserQuestion`으로 보강한다 (목표 / 범위 / 제약 3축).
-3. 입력이 충분히 명확하면 Phase 1로 진행한다.
+2. Decision Branch Ledger를 초기화하고, 입력 문장에서 이미 닫힌 branch와 open branch를 구분한다.
+3. 코드베이스·문서·기존 이슈로 답할 수 있는 open branch는 먼저 탐색하여 닫는다.
+4. 입력이 모호하거나 불충분하면 `AskUserQuestion`으로 보강한다. 질문은 Grill-me 포맷을 사용하며 **한 번에 가장 큰 차단 질문 1개**만 묻는다. 목표 / 범위 / 제약을 한 번에 묻지 않는다.
+5. 질문에는 항상 권장 답안을 포함한다. 권장 답안이 코드/문서 근거 없이 추측이면 권장 답안 대신 `[NEEDS CLARIFICATION]`으로 표시한다.
+6. 입력이 충분히 명확하면 Phase 1로 진행한다.
 
 ## Phase 1: 코드베이스 & 기존 마일스톤 분석
 
@@ -95,6 +138,8 @@ user-invocable: true
 ## Phase 2: 위계 판정 & 논의
 
 작업 규모에 따라 에픽/그룹/단일 구조 선택 → 스펙 방향 논의.
+
+Phase 2 논의는 Grill-me 심문 커널을 따른다. 위계 판정 중 open branch가 발견되면 가장 upstream 결정부터 하나씩 닫는다. 예를 들어 API contract가 domain model 결정을 전제하면 domain model을 먼저 질문하고, 질문마다 권장 답안과 downstream 차단 대상을 함께 제시한다.
 
 ### 위계 정의
 
@@ -124,6 +169,8 @@ user-invocable: true
 ## Phase 2.5: SDD 스펙 artifact 캡처
 
 11섹션(비즈니스 의도·가정·US (User Story)/Given-When-Then·FR (Functional Requirement)·도메인 계약·도메인 규칙·경계·상호작용·범위 밖·SC (Success Criteria)·self-review) 구조화. `[NEEDS CLARIFICATION]` 마커 0개 + Constitution Check 통과 후 사용자 승인 (자명한 티켓은 생략).
+
+Decision Branch Ledger의 `RESOLVED` 항목은 §2 가정, §5 도메인 계약, §7 경계 조건, §9 범위 밖 중 하나에 반영한다. `OPEN`/`BLOCKED` 항목은 `[NEEDS CLARIFICATION]` 마커로 남기고 Phase 3 진입을 차단한다.
 
 **상세**: `phases/phase-2_5-spec.md`
 

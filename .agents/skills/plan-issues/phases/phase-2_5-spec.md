@@ -10,6 +10,37 @@
 2. **모호함은 마커로 가시화 (`[NEEDS CLARIFICATION]`)** — 추론으로 채우지 않고 마커로 표시한다. 마커 1개라도 남으면 Phase 3 진입 차단.
 3. **검증 가능성 (Given/When/Then + 측정 가능 SC (Success Criteria))** — 모든 acceptance scenario는 Given/When/Then으로, 모든 success criterion은 관찰 시점·관찰 대상·기대값을 포함한다.
 
+## Grill-me Branch Sweep
+
+Phase 0~2에서 유지한 Decision Branch Ledger를 스펙화 직전에 한 번 더 훑는다. 이 단계는 "사용자가 말한 요구를 정리"하는 단계가 아니라, 아직 결정되지 않은 설계 가지를 찾아 **한 번에 하나씩 닫는** 단계다.
+
+### Branch별 처리 규칙
+
+| Branch | 스펙 반영 위치 | 닫히지 않았을 때 |
+|--------|----------------|------------------|
+| architecture | §5 도메인 계약 / §8 상호작용 | `[NEEDS CLARIFICATION: 아키텍처 경계 ...]` |
+| domain model | §4 FR / §5 도메인 계약 / §6 도메인 규칙 | `[NEEDS CLARIFICATION: 도메인 개념 ...]` |
+| API contract | §5 도메인 계약 / §8 상호작용 | `[NEEDS CLARIFICATION: 계약 ...]` |
+| data flow | §5 도메인 계약 / §7 경계 조건 / §8 상호작용 | `[NEEDS CLARIFICATION: 데이터 흐름 ...]` |
+| UX-CLI surface | §3 사용자 시나리오 / §10 성공 기준 | `[NEEDS CLARIFICATION: 사용자 관찰면 ...]` |
+| error policy | §7 경계 조건 / §10 성공 기준 | `[NEEDS CLARIFICATION: 오류 정책 ...]` |
+| compatibility | §2 가정 / §9 범위 밖 | `[NEEDS CLARIFICATION: 호환성 ...]` |
+| rollout | §2 가정 / §9 범위 밖 / §10 성공 기준 | `[NEEDS CLARIFICATION: 배포·마이그레이션 ...]` |
+| tests-docs | §10 성공 기준 / §11 검증 체크리스트 | `[NEEDS CLARIFICATION: 검증·문서 ...]` |
+
+### 사용자 질문 규칙
+
+ledger에 open branch가 있으면 사용자에게 질문하기 전에 코드·문서·기존 이슈로 답할 수 있는지 먼저 확인한다. 그래도 남는 질문은 아래 형식으로 하나씩 제시한다.
+
+```
+질문: {현재 가장 upstream인 미해결 결정}
+왜 묻는가: {막고 있는 FR/SC/태스크}
+권장 답안: {코드베이스 근거 기반 선택}
+대안: {있다면 1-2개와 비용}
+```
+
+사용자 답변은 ledger와 스펙 양쪽에 반영한다. ledger만 닫고 스펙 본문에 반영하지 않으면 Phase 3 진입 금지.
+
 ## 규모별 분기 (Phase 2 판정 결과에 따라)
 
 ### 에픽 규모 (새 마일스톤)
@@ -40,6 +71,8 @@
 - **범위 가정**: tenancy, locale, 권한 등에 대한 가정
 
 각 가정은 **명시적 진술**로. 모호하면 `[NEEDS CLARIFICATION: 질문]`.
+
+Phase 0~2의 질문에서 사용자가 승인한 권장 답안은 여기 또는 §5~§9에 명시한다. "대화에서 합의됨"으로 남기지 않는다.
 
 ### §3. 사용자 시나리오 (User Stories)
 
@@ -153,6 +186,9 @@
 - [ ] 모든 FR (Functional Requirement)이 단일 명제이며 검증 가능한가
 - [ ] 도메인 어휘가 도메인 사전(`AGENTS.md` "프로젝트 특수 컨벤션", `ARCHITECTURE.md` 도메인 모델 섹션)과 일치하는가 (신규 어휘는 사전 등록 절차 거쳤는가)
 - [ ] **요청 어휘 4축 정합 (charter §4-A)** — 본문에 등장한 모든 핵심 어휘가 (a) 사용자 입력 본문, (b) 도메인 사전, (c) 패키지 `README.md`/`docs/`, (d) 코드베이스 — 4축에서 등가로 사용되는가. 한 축이라도 어긋나면 `[NEEDS CLARIFICATION: 어휘 X — 출처별 의미 차이 확인]` 마커.
+- [ ] **Decision Branch Ledger 반영** — architecture / domain model / API contract / data flow / UX-CLI surface / error policy / compatibility / rollout / tests-docs branch가 모두 `RESOLVED`이거나, §2/§5/§7/§8/§9/§10에 명시적으로 반영되었거나, `[NEEDS CLARIFICATION]`으로 남아 Phase 3을 차단하는가.
+- [ ] **질문 근거 검증** — 사용자에게 물은 질문 중 코드·문서·기존 이슈 탐색으로 답할 수 있었던 것이 없는가. 있었다면 질문을 취소하고 탐색 근거로 스펙을 갱신했는가.
+- [ ] **권장 답안 추적** — 질문마다 제시한 권장 답안이 사용자 승인/수정/거절 중 어떤 상태인지 ledger에 남아 있고, 승인된 답안만 스펙에 반영되었는가.
 - [ ] §5 도메인 계약에 사전·사후조건·불변식이 명시되었는가
 - [ ] §9 범위 밖이 의도적 비목표로 명시되었는가 (`해당 없음`이 실제 부재인지 검토 부재인지 구분)
 - [ ] §10 SC (Success Criteria)가 모두 (관찰 시점, 관찰 대상, 기대값) 3요소를 포함하는가
