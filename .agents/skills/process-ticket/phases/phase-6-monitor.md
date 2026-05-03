@@ -41,7 +41,21 @@
      bash {MONITOR_PR_SKILL_DIR}/scripts/watch.sh
    ```
 3. **분기 (EVENT consumer)**: watch가 stdout으로 emit한 출력의 첫 줄(`EVENT` 또는 `DONE`)과 `reason` 값을 같은 turn 안에서 case로 분기하여 핸들러를 실행한다. **분기 없이 turn을 종료하면 EVENT가 dead code가 된다.** `reason=comments-changed`이면 출력의 `staleHandledIds=` 값을 코멘트 수집 호출 시 `STALE_HANDLED_IDS` 환경변수로 그대로 전달하여 in-place 갱신된 코멘트가 재triage 대상으로 되돌아오게 한다. case 분기의 정확한 형태는 `monitor-pr` SKILL §"EVENT consumer 루프" SSOT.
-4. **재기동**: EVENT 처리 후 baseline을 갱신(`PREV_REVIEW_DECISION`만 직전 출력값으로 업데이트, `(id, updatedAt)` 캐시는 watch가 자동으로 `.monitor-pr-state.json`에 영속)하여 **즉시 1번으로 복귀하여 watch를 다시 호출한다.** DONE이면 Phase 7로 전환.
+4. **재기동 또는 Phase 7 기록**: EVENT 처리 후 baseline을 갱신(`PREV_REVIEW_DECISION`만 직전 출력값으로 업데이트, `(id, updatedAt)` 캐시는 watch가 자동으로 `.monitor-pr-state.json`에 영속)하여 **즉시 1번으로 복귀하여 watch를 다시 호출한다.** `DONE reason=mergeable-clean`이면 `.process-state.json`에 `phase7_ready`를 기록한 뒤 Phase 7로 전환한다. `DONE` 이후에는 추가 watch/poll을 돌리지 않는다.
+
+`phase7_ready` 기록 형식:
+
+```bash
+wt=$(pwd) && ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+jq --arg t "$ts" \
+  --argjson pr "$PR_NUMBER" \
+  --arg m "$MERGE_STATE" \
+  --argjson pending "$PENDING_CHECKS" \
+  --argjson failed "$FAILED_CHECKS" \
+  '.phase7_ready = {reason: "mergeable-clean", pr: $pr, mergeState: $m, pendingChecks: $pending, failedChecks: $failed} | .updated_at = $t' \
+  "$wt/.process-state.json" > "$wt/.process-state.json.tmp" \
+  && mv "$wt/.process-state.json.tmp" "$wt/.process-state.json"
+```
 
 ## 리뷰 코멘트 처리 (MUST)
 
@@ -54,5 +68,7 @@
 ## 종료 조건
 
 PR의 merge button이 활성화된 상태 (`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0`)이며, 외부 리뷰 봇(`REVIEW_BOT_LOGINS`, 기본 `claude[bot],codex[bot]`)이 현재 HEAD를 평가했다. GitHub Copilot/Codex code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다. overnight 모드에서는 타인 코멘트 큐가 비어있을 때만 Phase 7로 진행.
+
+Codecov PR coverage report처럼 required check와 중복되는 정보성 봇 코멘트는 Phase 7 전환을 막지 않는다. 실패 여부는 `failedChecks`가 담당하며, green CI 상태에서 coverage report의 신규/갱신 코멘트만으로 `/triage-comments` 루프에 재진입하지 않는다.
 
 > **MUST**: GitHub Actions / 모든 required check가 pass하고 review bot HEAD 평가가 끝날 때까지 Phase 7로 넘어가지 않는다. `BLOCKED` 상태에서 Phase 7로 전환하면 병합이 불가능하다. 자동화 봇 리뷰어가 pending이면 MERGEABLE 판정 보류 (메모리 `bc25934` 회귀).

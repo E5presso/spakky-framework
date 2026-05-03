@@ -27,7 +27,7 @@ PR 번호를 받아 고정 30초 polling으로 상태를 감시하고 분기 처
 `watch.sh`가 `DONE reason in {merged, mergeable-clean, closed-without-merge, awaiting-human-review}`을 emit하는 순간 본 스킬은 종료다. 호출자는 그 시점에 **추가 `watch.sh` / `poll.sh` / `gh pr view` 호출을 만들지 않는다.** terminal reason 처리는 reason별로 1:1 고정이며 추가 cycle을 요구하지 않는다:
 
 - `reason=merged` → Phase 8 cleanup 1회 실행 후 turn 종료.
-- `reason=mergeable-clean` → Phase 7 머지 게이트로 전환 후 turn 종료.
+- `reason=mergeable-clean` → Phase 7 머지 게이트로 전환 후 turn 종료. 호출자는 `.process-state.json`에 `phase7_ready`를 기록하여 autopilot이 monitor 종료와 merge-gate 진입을 추론 없이 회수할 수 있게 한다.
 - `reason=closed-without-merge` → 결과 보고 (`status: failed`, `failed_reason: PR closed without merge`) 후 turn 종료.
 - `reason=awaiting-human-review` → 결과 보고 (`status: awaiting-review`, `pending_human_comments: <bot CH2 코멘트 URL>`) 후 turn 종료. 봇이 HEAD 를 평가했고 의도적으로 review submission 대신 CH2 코멘트로 휴먼 리뷰 의견을 남긴 상태이므로, 추가 polling 은 봇 재평가 트리거 부재로 무의미하다 — 휴먼 리뷰어가 응답할 때까지 본 PR 의 자동 진행은 정지한다.
 
@@ -89,6 +89,8 @@ REPO=E5presso/spakky-framework PR_NUMBER={N} bash {SKILL_DIR}/scripts/collect_co
 
 **금지**: 에이전트가 코멘트 내용을 보고 "처리 불필요"로 판단하고 triage를 건너뛰는 것. "무지성 반영"(코멘트를 보고 곧바로 코드를 수정하는 것)도 동일하게 금지 — 판단은 `/triage-comments`에서만 이루어진다.
 
+**정보성 봇 코멘트 제외**: `collect_comments.sh`는 Codecov PR coverage report처럼 required check와 중복되는 정보성 봇 코멘트를 미처리 코멘트로 반환하지 않는다. 해당 봇 코멘트의 성공/실패 판단은 GitHub check 상태(`pendingChecks`/`failedChecks`)가 담당하며, 코멘트 본문에 반복 응답하지 않는다.
+
 ### 에이전트 reply 마커 (MUST)
 
 `collect_comments.sh`는 에이전트의 reply를 본문의 invisible marker `<!-- claude-agent-reply to=<id> -->`로 식별한다. `<id>`는 응답이 겨냥하는 **대상 코멘트/리뷰의 숫자 GitHub ID** (인라인 코멘트 id, 이슈 코멘트 id, 리뷰 id 중 하나).
@@ -149,6 +151,8 @@ staleHandledIds=<id1,id2,...>      # reason=comments-changed 일 때만, in-plac
 
 1. **신규 row** — 직전 캐시에 없던 id 등장 (기존 동작).
 2. **in-place 갱신** — 직전 캐시에 존재하지만 `updatedAt`이 더 큰 id 등장. claude bot이 새 푸시 시 기존 review/코멘트를 재작성(`createdAt`은 그대로, `updatedAt`만 증가)하는 케이스에서 발생.
+
+정보성 봇 코멘트(Codecov PR coverage report 등)는 `(id → updatedAt)` 변화 감지 캐시에도 넣지 않는다. required check가 green이면 coverage report의 in-place 갱신은 `comments-changed` EVENT가 아니라 `DONE reason=mergeable-clean`으로 수렴해야 한다.
 
 in-place 갱신이 감지된 id는 `staleHandledIds=` 라인으로 함께 출력된다. 호출자는 이 값을 `collect_comments.sh`의 `STALE_HANDLED_IDS` 환경변수로 전달하여, 해당 id의 기존 `<!-- claude-agent-reply to=<id> -->` 마커를 무효화하고 변경된 본문을 재수집·재triage 대상으로 되돌린다.
 
