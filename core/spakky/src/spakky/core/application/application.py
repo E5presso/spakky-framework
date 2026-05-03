@@ -12,6 +12,12 @@ from typing import Callable, Self
 
 from spakky.core.application.error import AbstractSpakkyApplicationError
 from spakky.core.application.plugin import Plugin
+from spakky.core.application.startup_diagnostics import (
+    ActiveStartupPhaseRecorder,
+    IStartupPhaseRecorder,
+    NoOpStartupPhaseRecorder,
+    StartupReport,
+)
 from spakky.core.common.constants import PLUGIN_PATH
 from spakky.core.common.importing import (
     Module,
@@ -43,6 +49,9 @@ class SpakkyApplication:
     _application_context: IApplicationContext
     """The application context managing all Pods and their lifecycle."""
 
+    _startup_phase_recorder: IStartupPhaseRecorder
+    """Recorder used by startup pipeline diagnostics."""
+
     @property
     def container(self) -> IContainer:
         """Get the IoC container.
@@ -61,6 +70,24 @@ class SpakkyApplication:
         """
         return self._application_context
 
+    @property
+    def startup_phase_recorder(self) -> IStartupPhaseRecorder:
+        """Get the startup phase recorder.
+
+        Returns:
+            Active or no-op startup phase recorder.
+        """
+        return self._startup_phase_recorder
+
+    @property
+    def startup_report(self) -> StartupReport:
+        """Get the startup diagnostics report.
+
+        Returns:
+            Startup report backing the current phase recorder.
+        """
+        return self._startup_phase_recorder.report
+
     def __init__(self, application_context: IApplicationContext) -> None:
         """Initialize the Spakky application.
 
@@ -68,6 +95,16 @@ class SpakkyApplication:
             application_context: The application context to manage Pods.
         """
         self._application_context = application_context
+        self._startup_phase_recorder = NoOpStartupPhaseRecorder()
+
+    def enable_startup_diagnostics(self) -> Self:
+        """Enable startup diagnostics with an active phase recorder.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._startup_phase_recorder = ActiveStartupPhaseRecorder()
+        return self
 
     def add(self, obj: PodType) -> Self:
         """Register a class or function in the application.

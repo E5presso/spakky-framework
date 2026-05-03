@@ -67,6 +67,36 @@ user_service = app.container.get(UserService)
 
 > **📘 Auto-scan**: When `scan()` is called without arguments, it automatically detects the caller's package and scans it. This also works in Docker environments where the application root may not be in `sys.path` - the framework automatically adds the necessary path.
 
+### Startup Diagnostics
+
+Startup diagnostics are opt-in. The default recorder is no-op, so existing
+startup behavior is unchanged until diagnostics are explicitly enabled:
+
+```python
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+app.startup_phase_recorder.record_success(
+    phase_name="scan",
+    elapsed_seconds=0.12,
+    processed_count=4,
+)
+
+with app.startup_phase_recorder.record_phase(phase_name="start") as phase:
+    phase.set_processed_count(1)
+    app.start()
+
+report = app.startup_report
+first_phase = report.records[0]
+```
+
+`StartupReport` stores each startup phase name, elapsed seconds, processed
+count, success/failure status, and an optional structured failure summary.
+Failure summaries keep the exception type name, message, and diagnostic
+details without retaining the raw exception object.
+
 ## Pod Scopes
 
 ```python
