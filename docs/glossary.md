@@ -63,6 +63,10 @@ app = SpakkyApplication(ApplicationContext())
 app.scan()  # 현재 패키지의 Pod 자동 스캔
 ```
 
+### DiscoveryManifest
+
+`SpakkyApplication.scan()`의 discovery 결과를 재사용하기 위한 opt-in JSON artifact입니다. `enable_discovery_manifest()`로 활성화하며, schema version, Python version, scan 대상, exclude pattern, source file mtime/size fingerprint가 일치할 때만 hit로 사용됩니다. decision은 `miss`, `hit`, `stale_schema`, `stale_input` 중 하나로 startup diagnostics에 기록됩니다.
+
 ---
 
 ## Stereotype 데코레이터

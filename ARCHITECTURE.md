@@ -306,6 +306,8 @@ app = (
 
 **`scan()` 자동 감지**: `inspect.stack()`으로 호출자의 패키지를 찾고, 하위 모듈을 재귀 순회하며 `Pod.exists()` 또는 `Tag.exists()`인 객체를 등록합니다.
 
+**DiscoveryManifest 재사용**: `enable_discovery_manifest(path=None)`을 `scan()` 전에 호출하면 scan discovery 결과를 JSON manifest로 저장합니다. manifest fingerprint는 schema version, Python major/minor version, scan 대상 module/package, exclude pattern, source file mtime/size로 구성됩니다. decision은 `miss`, `hit`, `stale_schema`, `stale_input` 중 하나이며 startup diagnostics의 scan phase diagnostic detail로 기록됩니다. `hit`은 저장된 Pod/Tag 후보를 기존 등록 경로로 재생하고, stale/miss는 기존 fresh discovery로 돌아갑니다. container lookup/type cache는 변경하지 않습니다.
+
 ---
 
 ## 코어: AOP 시스템

@@ -392,6 +392,29 @@ app.scan(path="myapp.services")  # 특정 패키지 스캔
 app.scan(exclude={"myapp.tests"})  # 제외 패턴
 ```
 
+반복 startup에서 scan discovery 결과를 재사용하려면 manifest를 명시적으로
+활성화합니다. manifest는 container cache가 아니라 scan artifact이며, 입력이
+바뀌거나 schema가 stale하면 fresh discovery로 돌아갑니다.
+
+```python
+from pathlib import Path
+
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .enable_startup_diagnostics()
+    .enable_discovery_manifest(Path(".spakky/cache/discovery-manifest.json"))
+    .scan(path="myapp.services")
+)
+
+scan_record = app.startup_report.records[0]
+manifest_decision = scan_record.diagnostic_details[0].value
+```
+
+`manifest_decision`은 `miss`, `hit`, `stale_schema`, `stale_input` 중 하나입니다.
+
 ---
 
 ## 생명주기 관리
