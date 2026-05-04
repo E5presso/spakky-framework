@@ -63,8 +63,8 @@ Then 해당 이름의 execution engine이 선택된다.
 ## 4. 기능 요구사항
 
 - **FR-1**: 컨테이너는 단수 주입에서 복수 후보가 모호하면 반드시 명시적 ambiguity error를 발생시켜야 한다.
-- **FR-2**: 단수 후보 선택 우선순위는 `Qualifier`/명시 name, 설정 기반 binding, `@Primary` 단일 후보, 단일 후보 순서여야 한다.
-- **FR-3**: dependency parameter name 자동 매칭은 `@Primary`보다 앞서면 안 된다.
+- **FR-2**: 단수 후보 선택 우선순위는 `Qualifier`/명시 name, 설정 기반 binding, `@Primary` 단일 후보, legacy parameter name 자동 매칭, 단일 후보 순서여야 한다.
+- **FR-3**: dependency parameter name 자동 매칭은 유지하되 명시 선택보다 낮은 legacy convenience로 분류한다.
 - **FR-4**: 컨테이너는 `list[T]`, `tuple[T, ...]`, `dict[str, T]` 형태의 collection injection을 지원해야 한다.
 - **FR-5**: collection injection은 `@Order` 또는 안정적인 Pod name 순서로 재현 가능한 순서를 제공해야 한다.
 - **FR-6**: interface-to-implementation binding을 application config 또는 Pod metadata로 명시할 수 있어야 한다.
@@ -114,7 +114,9 @@ Collection injection
 - `Optional[T]`에서 후보가 여러 개이고 선택이 모호하면 `None`으로 숨기지 않고 ambiguity error를 발생시킨다.
 - `dict[str, T]`는 Pod name을 key로 사용한다.
 - 같은 Pod name 중복 등록은 기존 `PodNameAlreadyExistsError` 정책을 유지한다.
-- parameter name 자동 매칭은 backward compatibility 문제를 일으킬 수 있으므로 deprecation 또는 우선순위 하향이 필요하다.
+- parameter name 자동 매칭은 backward compatibility를 위해 유지한다.
+- parameter name 자동 매칭은 `Qualifier`, 명시 name, 설정 binding, `@Primary`보다 낮은 우선순위를 가진다.
+- 신규 코드에는 parameter name 자동 매칭 대신 `Qualifier`, 명시 name, 또는 binding policy 사용을 권장한다.
 
 ## 8. 상호작용
 
@@ -191,7 +193,7 @@ Agent 마일스톤과의 상호작용:
 
 - single resolution path
 - collection resolution path
-- primary/name/qualifier 우선순위 정리
+- primary/name/qualifier/binding/legacy parameter name 우선순위 정리
 - deterministic ordering
 
 선행: T1, T2
@@ -282,14 +284,22 @@ T3는 central change이므로 단독 처리해야 한다.
 - Agent 마일스톤과의 관계는 선행 기반으로 명시했다.
 - plugin activation 모델은 실제 코드와 문서에 맞춰 `load_plugins()` 자동 로드 모델로 정정했다.
 - Core 구현체 금지 원칙을 반영했다.
-- 다만 `Binding policy API`의 구체 사용자 표면은 아직 사용자 승인이 필요하다.
+- `parameter name 자동 매칭`은 유지하되 명시 선택보다 낮은 legacy convenience로 분류했다.
+- 다만 `Binding policy API`의 구체 사용자 표면은 후속 스펙에서 확정해야 한다.
 
-## 15. 승인 전 질문
+## 15. 확정된 추가 결정
 
-질문: 이 DI 마일스톤에서 `parameter name 자동 매칭`을 어떻게 처리할까요?
+### Parameter name 자동 매칭
 
-왜 묻는가: 현재 생성자 parameter 이름이 Pod name과 같으면 후보 선택에 영향을 줄 수 있다. 이 동작은 편리하지만 암묵적이라, 복수 구현체 환경에서는 예측 가능성을 떨어뜨린다.
+`parameter name 자동 매칭`은 backward compatibility를 위해 유지한다. 다만 복수 구현체 환경에서 암묵적 선택이 `@Primary` 또는 명시 binding을 덮어쓰면 예측 가능성이 떨어지므로, 우선순위를 낮춘다.
 
-권장 답안: `parameter name 자동 매칭`은 유지하되 우선순위를 `@Primary`와 명시 binding보다 낮추고, 문서에서 legacy convenience로 분류한다. 신규 코드에는 `Qualifier` 또는 binding policy를 권장한다.
+우선순위:
 
-대안: 완전히 deprecated하고 다음 major에서 제거한다. 더 엄격하지만 기존 코드 호환성 위험이 크다.
+1. `Qualifier` 또는 명시 name
+2. 설정 기반 binding
+3. 정확히 하나의 `@Primary`
+4. legacy parameter name 자동 매칭
+5. 후보가 정확히 1개
+6. ambiguity error
+
+문서에서는 parameter name 자동 매칭을 legacy convenience로 설명하고, 신규 코드는 `Qualifier`, 명시 name, 또는 binding policy를 사용하도록 유도한다.
