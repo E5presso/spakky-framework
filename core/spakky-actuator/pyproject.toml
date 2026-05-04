@@ -1,12 +1,12 @@
 [project]
 name = "spakky-actuator"
-version = "6.4.0"
+version = "6.5.0"
 description = "Transport-neutral actuator health and info contracts for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.4.0"]
+dependencies = ["spakky>=6.5.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-actuator = "spakky.actuator.main:initialize"

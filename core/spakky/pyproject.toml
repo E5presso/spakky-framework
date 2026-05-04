@@ -1,6 +1,6 @@
 [project]
 name = "spakky"
-version = "6.4.0"
+version = "6.5.0"
 description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,18 +11,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-logging = ["spakky-logging>=6.4.0"]
-security = ["spakky-security>=6.4.0"]
-fastapi = ["spakky-fastapi>=6.4.0"]
-typer = ["spakky-typer>=6.4.0"]
-rabbitmq = ["spakky-rabbitmq>=6.4.0"]
-kafka = ["spakky-kafka>=6.4.0"]
-sqlalchemy = ["spakky-sqlalchemy>=6.4.0"]
-celery = ["spakky-celery>=6.4.0"]
-opentelemetry = ["spakky-opentelemetry>=6.4.0"]
-grpc = ["spakky-grpc>=6.4.0"]
-redis = ["spakky-redis>=6.4.0"]
-saga = ["spakky-saga>=6.4.0"]
+logging = ["spakky-logging>=6.5.0"]
+security = ["spakky-security>=6.5.0"]
+fastapi = ["spakky-fastapi>=6.5.0"]
+typer = ["spakky-typer>=6.5.0"]
+rabbitmq = ["spakky-rabbitmq>=6.5.0"]
+kafka = ["spakky-kafka>=6.5.0"]
+sqlalchemy = ["spakky-sqlalchemy>=6.5.0"]
+celery = ["spakky-celery>=6.5.0"]
+opentelemetry = ["spakky-opentelemetry>=6.5.0"]
+grpc = ["spakky-grpc>=6.5.0"]
+redis = ["spakky-redis>=6.5.0"]
+saga = ["spakky-saga>=6.5.0"]
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]

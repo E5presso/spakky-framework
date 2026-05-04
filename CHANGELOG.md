@@ -1,3 +1,10 @@
+## v6.5.0 (2026-05-04)
+
+### Feat
+
+- require python 3.12
+- **cache**: complete redis-backed cache operations
+
 ## v6.4.0 (2026-05-03)
 
 ### 기능 추가
