@@ -4,6 +4,20 @@ from spakky.core.common.mutability import immutable
 
 
 @immutable
+class PodCandidateDiagnostic:
+    """One candidate Pod observed during dependency resolution."""
+
+    pod_name: str
+    """Registered Pod name for the candidate."""
+
+    pod_type_name: str
+    """Registered Pod type name for the candidate."""
+
+    is_primary: bool
+    """Whether the candidate is marked with @Primary."""
+
+
+@immutable
 class PodDependencyPathNode:
     """One Pod dependency graph edge observed during resolution."""
 
@@ -39,6 +53,12 @@ class PodDependencyResolutionDiagnostic:
     path: tuple[PodDependencyPathNode, ...]
     """Dependency path from the root Pod to the failure point."""
 
+    candidates: tuple[PodCandidateDiagnostic, ...] = ()
+    """Candidate Pods involved in an ambiguity, when applicable."""
+
+    resolution_hints: tuple[str, ...] = ()
+    """Stable human-readable actions that can resolve the failure."""
+
     def as_detail_pairs(self) -> tuple[tuple[str, str], ...]:
         """Return stable key/value details for report adapters."""
         path_value = " -> ".join(
@@ -56,8 +76,21 @@ class PodDependencyResolutionDiagnostic:
             ("dependency_path", path_value),
         )
         if self.dependency_parameter_name is None:
-            return details
-        return details + (
-            ("dependency_parameter", self.dependency_parameter_name),
-            ("requested_type", self.requested_type_name or ""),
+            dependency_details = details
+        else:
+            dependency_details = details + (
+                ("dependency_parameter", self.dependency_parameter_name),
+                ("requested_type", self.requested_type_name or ""),
+            )
+        if not self.candidates:
+            return dependency_details
+        candidate_value = ", ".join(
+            f"{candidate.pod_name}:{candidate.pod_type_name}"
+            f":primary={candidate.is_primary}"
+            for candidate in self.candidates
+        )
+        hint_value = "; ".join(self.resolution_hints)
+        return dependency_details + (
+            ("candidates", candidate_value),
+            ("resolution_hints", hint_value),
         )

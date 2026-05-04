@@ -10,7 +10,10 @@ from typing import Callable, overload
 from spakky.core.common.interfaces.representable import IRepresentable
 from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod, PodType
-from spakky.core.pod.diagnostics import PodDependencyResolutionDiagnostic
+from spakky.core.pod.diagnostics import (
+    PodCandidateDiagnostic,
+    PodDependencyResolutionDiagnostic,
+)
 from spakky.core.pod.error import AbstractSpakkyPodError
 
 
@@ -70,6 +73,41 @@ class NoUniquePodError(AbstractSpakkyPodError):
     """Raised when multiple Pods match criteria without clear qualification."""
 
     message = "No unique pod found; multiple candidates exist"
+    requested_type: type
+    candidates: tuple[PodCandidateDiagnostic, ...]
+    dependency_diagnostic: PodDependencyResolutionDiagnostic | None
+    resolution_hints: tuple[str, ...]
+
+    def __init__(
+        self,
+        requested_type: type,
+        candidates: tuple[PodCandidateDiagnostic, ...],
+        dependency_diagnostic: PodDependencyResolutionDiagnostic | None = None,
+        resolution_hints: tuple[str, ...] = (),
+    ) -> None:
+        """Initialize ambiguity details.
+
+        Args:
+            requested_type: Dependency type requested by the caller.
+            candidates: Candidate Pods that matched the requested type.
+            dependency_diagnostic: Optional structured dependency path.
+            resolution_hints: Actions that can make the selection explicit.
+        """
+        self.requested_type = requested_type
+        self.candidates = candidates
+        self.dependency_diagnostic = dependency_diagnostic
+        self.resolution_hints = resolution_hints
+        candidate_names = ", ".join(candidate.pod_name for candidate in candidates)
+        super().__init__(
+            "\n".join(
+                (
+                    self.message,
+                    "Requested type: " + requested_type.__name__,
+                    "Candidates: " + candidate_names,
+                    "Resolution: " + "; ".join(resolution_hints),
+                )
+            )
+        )
 
 
 class CannotRegisterNonPodObjectError(AbstractSpakkyPodError):

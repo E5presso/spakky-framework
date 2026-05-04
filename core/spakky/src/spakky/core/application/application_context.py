@@ -30,6 +30,7 @@ from spakky.core.pod.annotations.pod import (
 from spakky.core.pod.annotations.qualifier import Qualifier
 from spakky.core.pod.annotations.tag import Tag
 from spakky.core.pod.diagnostics import (
+    PodCandidateDiagnostic,
     PodDependencyPathNode,
     PodDependencyResolutionDiagnostic,
 )
@@ -181,6 +182,8 @@ class ApplicationContext(IApplicationContext):
         dependency_parameter_name: str | None,
         requested_type: object | None,
         dependency_path: tuple[PodDependencyPathNode, ...],
+        candidates: tuple[PodCandidateDiagnostic, ...] = (),
+        resolution_hints: tuple[str, ...] = (),
     ) -> PodDependencyResolutionDiagnostic:
         """Build structured diagnostics from the active Pod dependency path."""
         requested_type_name = (
@@ -192,6 +195,57 @@ class ApplicationContext(IApplicationContext):
             dependency_parameter_name=dependency_parameter_name,
             requested_type_name=requested_type_name,
             path=dependency_path,
+            candidates=candidates,
+            resolution_hints=resolution_hints,
+        )
+
+    def __candidate_diagnostics(
+        self,
+        pods: set[Pod],
+    ) -> tuple[PodCandidateDiagnostic, ...]:
+        """Return stable ambiguity diagnostics for candidate Pods."""
+        return tuple(
+            PodCandidateDiagnostic(
+                pod_name=pod.name,
+                pod_type_name=self.__type_name(pod.type_),
+                is_primary=pod.is_primary,
+            )
+            for pod in sorted(pods, key=lambda candidate: candidate.name)
+        )
+
+    def __ambiguity_hints(
+        self, dependency_parameter_name: str | None
+    ) -> tuple[str, ...]:
+        """Return resolution hints for a single dependency ambiguity."""
+        hints = (
+            "add Annotated[T, Qualifier(...)] to select one candidate",
+            "mark exactly one candidate with @Primary",
+        )
+        if dependency_parameter_name is None:
+            return hints + ("call get(type_, name=...) for an explicit Pod name",)
+        return hints + (
+            "rename the dependency parameter to one candidate Pod name as legacy fallback",
+        )
+
+    def __ambiguity_diagnostic(
+        self,
+        requester_pod: Pod | None,
+        dependency_parameter_name: str | None,
+        requested_type: type,
+        dependency_path: tuple[PodDependencyPathNode, ...],
+        candidates: tuple[PodCandidateDiagnostic, ...],
+        resolution_hints: tuple[str, ...],
+    ) -> PodDependencyResolutionDiagnostic | None:
+        """Build dependency diagnostics when ambiguity occurs during injection."""
+        if requester_pod is None:
+            return None
+        return self.__dependency_diagnostic(
+            pod=requester_pod,
+            dependency_parameter_name=dependency_parameter_name,
+            requested_type=requested_type,
+            dependency_path=dependency_path,
+            candidates=candidates,
+            resolution_hints=resolution_hints,
         )
 
     def __resolve_candidate(
@@ -199,6 +253,9 @@ class ApplicationContext(IApplicationContext):
         type_: type,
         name: str | None,
         qualifiers: list[Qualifier],
+        name_is_dependency_parameter: bool,
+        requester_pod: Pod | None,
+        dependency_path: tuple[PodDependencyPathNode, ...],
     ) -> Pod | None:
         """Resolve a Pod candidate matching type, name, and qualifiers.
 
@@ -214,13 +271,6 @@ class ApplicationContext(IApplicationContext):
             NoUniquePodError: If multiple Pods match without clear qualification.
         """
 
-        def qualify_pod(pod: Pod) -> bool:
-            if any(qualifiers):
-                return all(qualifier.selector(pod) for qualifier in qualifiers)
-            if name is not None:
-                return pod.name == name
-            return pod.is_primary
-
         # Use type index for O(1) lookup instead of O(n) iteration
         pods = self.__type_cache.get(type_, set()).copy()
         if not pods:
@@ -230,13 +280,79 @@ class ApplicationContext(IApplicationContext):
         if len(pods) == 1:
             return next(iter(pods))
 
-        # Multiple candidates: filter by qualifier/name/primary
-        qualified = {pod for pod in pods if qualify_pod(pod)}
-        if len(qualified) == 1:
-            return qualified.pop()
-        if not qualified:
-            return None
-        raise NoUniquePodError(type_, [p.name for p in qualified])
+        if qualifiers:
+            qualified = {
+                pod
+                for pod in pods
+                if all(qualifier.selector(pod) for qualifier in qualifiers)
+            }
+            if len(qualified) == 1:
+                return qualified.pop()
+            if not qualified:
+                return None
+            candidates = self.__candidate_diagnostics(qualified)
+            resolution_hints = self.__ambiguity_hints(None)
+            raise NoUniquePodError(
+                type_,
+                candidates,
+                self.__ambiguity_diagnostic(
+                    requester_pod=requester_pod,
+                    dependency_parameter_name=name,
+                    requested_type=type_,
+                    dependency_path=dependency_path,
+                    candidates=candidates,
+                    resolution_hints=resolution_hints,
+                ),
+                resolution_hints,
+            )
+
+        if name is not None and not name_is_dependency_parameter:
+            named = {pod for pod in pods if pod.name == name}
+            if len(named) == 1:
+                return named.pop()
+            if not named:
+                return None
+
+        primary = {pod for pod in pods if pod.is_primary}
+        if len(primary) == 1:
+            return primary.pop()
+        if len(primary) > 1:
+            candidates = self.__candidate_diagnostics(primary)
+            resolution_hints = self.__ambiguity_hints(name)
+            raise NoUniquePodError(
+                type_,
+                candidates,
+                self.__ambiguity_diagnostic(
+                    requester_pod=requester_pod,
+                    dependency_parameter_name=name,
+                    requested_type=type_,
+                    dependency_path=dependency_path,
+                    candidates=candidates,
+                    resolution_hints=resolution_hints,
+                ),
+                resolution_hints,
+            )
+
+        if name is not None and name_is_dependency_parameter:
+            legacy_named = {pod for pod in pods if pod.name == name}
+            if len(legacy_named) == 1:
+                return legacy_named.pop()
+
+        candidates = self.__candidate_diagnostics(pods)
+        resolution_hints = self.__ambiguity_hints(name)
+        raise NoUniquePodError(
+            type_,
+            candidates,
+            self.__ambiguity_diagnostic(
+                requester_pod=requester_pod,
+                dependency_parameter_name=name,
+                requested_type=type_,
+                dependency_path=dependency_path,
+                candidates=candidates,
+                resolution_hints=resolution_hints,
+            ),
+            resolution_hints,
+        )
 
     def __instantiate_pod(
         self,
@@ -295,6 +411,8 @@ class ApplicationContext(IApplicationContext):
                 dependency_hierarchy=new_hierarchy,
                 dependency_path=current_path,
                 qualifiers=dependency.qualifiers,
+                name_is_dependency_parameter=True,
+                requester_pod=pod,
             )
             if (
                 resolved_dependency is None
@@ -437,6 +555,8 @@ class ApplicationContext(IApplicationContext):
         dependency_hierarchy: tuple[type, ...] | None = None,
         dependency_path: tuple[PodDependencyPathNode, ...] | None = None,
         qualifiers: list[Qualifier] | None = None,
+        name_is_dependency_parameter: bool = False,
+        requester_pod: Pod | None = None,
     ) -> ObjectT | None:
         """Internal method to get or create a Pod instance.
 
@@ -469,7 +589,14 @@ class ApplicationContext(IApplicationContext):
                 type_
             ]  # pragma: no cover - coverage boundary
 
-        pod = self.__resolve_candidate(type_=type_, name=name, qualifiers=qualifiers)
+        pod = self.__resolve_candidate(
+            type_=type_,
+            name=name,
+            qualifiers=qualifiers,
+            name_is_dependency_parameter=name_is_dependency_parameter,
+            requester_pod=requester_pod,
+            dependency_path=dependency_path,
+        )
         if pod is None:
             return None
 

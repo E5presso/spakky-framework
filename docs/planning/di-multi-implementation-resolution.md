@@ -38,26 +38,26 @@ Agent runtime 논의에서 이 문제가 명확히 드러났다. 예를 들어 `
 
 ### US-1: 복수 구현체를 설치해도 애플리케이션이 예측 가능하게 시작된다
 
-Given 사용자가 같은 interface를 구현하는 여러 plugin을 설치했다.  
-When 애플리케이션이 `load_plugins().scan().start()` 순서로 시작된다.  
+Given 사용자가 같은 interface를 구현하는 여러 plugin을 설치했다.
+When 애플리케이션이 `load_plugins().scan().start()` 순서로 시작된다.
 Then DI 컨테이너는 명시 선택이 있으면 해당 구현체를 주입하고, 없으면 후보와 해결 방법이 포함된 오류로 시작을 중단한다.
 
 ### US-2: 단수 구현체가 필요한 의존성은 명시적으로 하나만 선택된다
 
-Given `IRepository` 구현체가 둘 이상 등록되어 있다.  
-When 어떤 Pod가 `IRepository`를 단수로 주입받는다.  
+Given `IRepository` 구현체가 둘 이상 등록되어 있다.
+When 어떤 Pod가 `IRepository`를 단수로 주입받는다.
 Then `Qualifier`, 명시 name, 설정 binding, `@Primary`, 단일 후보 중 하나로 정확히 하나가 선택되어야 한다.
 
 ### US-3: 여러 구현체를 의도적으로 모두 받을 수 있다
 
-Given `IHealthContributor` 또는 `IAgentExecutionEngine` 구현체가 여러 개 등록되어 있다.  
-When 어떤 Pod가 collection 형태로 해당 구현체들을 주입받는다.  
+Given `IHealthContributor` 또는 `IAgentExecutionEngine` 구현체가 여러 개 등록되어 있다.
+When 어떤 Pod가 collection 형태로 해당 구현체들을 주입받는다.
 Then 컨테이너는 후보 전체를 안정적인 순서와 이름으로 제공한다.
 
 ### US-4: 플러그인 adapter 선택은 설치 여부가 아니라 binding policy로 결정된다
 
-Given `spakky-langgraph`와 `spakky-pydantic-ai`가 모두 설치되어 있다.  
-When 어떤 agent definition이 `engine="langgraph"`를 지정하거나 application config가 default engine을 지정한다.  
+Given `spakky-langgraph`와 `spakky-pydantic-ai`가 모두 설치되어 있다.
+When 어떤 agent definition이 `engine="langgraph"`를 지정하거나 application config가 default engine을 지정한다.
 Then 해당 이름의 execution engine이 선택된다.
 
 ## 4. 기능 요구사항
@@ -165,7 +165,7 @@ Agent 마일스톤과의 상호작용:
 
 ### T1. DI resolution semantics 확정 및 오류 진단 설계
 
-담당 요구사항: FR-1, FR-2, FR-7, FR-8  
+담당 요구사항: FR-1, FR-2, FR-7, FR-8
 산출물:
 
 - 단수/복수 resolution decision table
@@ -177,7 +177,7 @@ Agent 마일스톤과의 상호작용:
 
 ### T2. Collection injection 타입 파싱
 
-담당 요구사항: FR-4  
+담당 요구사항: FR-4
 산출물:
 
 - `list[T]`, `tuple[T, ...]`, `dict[str, T]` dependency type parsing
@@ -188,7 +188,7 @@ Agent 마일스톤과의 상호작용:
 
 ### T3. ApplicationContext candidate resolution 리팩터링
 
-담당 요구사항: FR-1, FR-2, FR-3, FR-4, FR-5  
+담당 요구사항: FR-1, FR-2, FR-3, FR-4, FR-5
 산출물:
 
 - single resolution path
@@ -200,7 +200,7 @@ Agent 마일스톤과의 상호작용:
 
 ### T4. Binding policy API 설계 및 구현
 
-담당 요구사항: FR-6  
+담당 요구사항: FR-6
 산출물:
 
 - interface-to-implementation binding 값 객체 또는 annotation
@@ -211,7 +211,7 @@ Agent 마일스톤과의 상호작용:
 
 ### T5. Regression and conformance tests
 
-담당 요구사항: 전체 FR/SC  
+담당 요구사항: 전체 FR/SC
 산출물:
 
 - 단수 ambiguity tests
@@ -224,7 +224,7 @@ Agent 마일스톤과의 상호작용:
 
 ### T6. 문서 동기화
 
-담당 요구사항: FR-8, FR-10  
+담당 요구사항: FR-8, FR-10
 산출물:
 
 - `docs/di-container.md` 업데이트

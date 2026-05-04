@@ -301,6 +301,166 @@ def test_application_context_get_primary_expect_no_unique_error() -> None:
         context.get(type_=ISamplePod)
 
 
+def test_application_context_get_multiple_unqualified_candidates_expect_ambiguity_diagnostic() -> (
+    None
+):
+    """단수 조회 후보가 여러 개이고 선택 정책이 없으면 후보 진단이 포함된 ambiguity error가 발생함을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="first")
+    class FirstSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "first"
+
+    @Pod(name="second")
+    class SecondSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "second"
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(FirstSamplePod)
+    context.add(SecondSamplePod)
+
+    with pytest.raises(NoUniquePodError) as error:
+        context.get(type_=ISamplePod)
+
+    assert [candidate.pod_name for candidate in error.value.candidates] == [
+        "first",
+        "second",
+    ]
+    assert "add Annotated[T, Qualifier(...)]" in error.value.resolution_hints[0]
+    assert error.value.dependency_diagnostic is None
+    assert context.contains(type_=ISamplePod) is True
+
+
+def test_application_context_start_with_ambiguous_dependency_expect_dependency_diagnostic() -> (
+    None
+):
+    """단수 의존성 후보가 모호하면 dependency path와 후보 목록이 포함된 ambiguity error가 발생함을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="first")
+    class FirstSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "first"
+
+    @Pod(name="second")
+    class SecondSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "second"
+
+    @Pod()
+    class SampleService:
+        def __init__(self, pod: ISamplePod) -> None:
+            self.pod = pod
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(FirstSamplePod)
+    context.add(SecondSamplePod)
+    context.add(SampleService)
+
+    with pytest.raises(NoUniquePodError) as error:
+        context.start()
+
+    diagnostic = error.value.dependency_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.failed_pod_name == "sample_service"
+    assert diagnostic.dependency_parameter_name == "pod"
+    assert diagnostic.requested_type_name == "ISamplePod"
+    assert [candidate.pod_name for candidate in diagnostic.candidates] == [
+        "first",
+        "second",
+    ]
+    assert ("dependency_parameter", "pod") in diagnostic.as_detail_pairs()
+    assert any(key == "candidates" for key, _value in diagnostic.as_detail_pairs())
+
+
+def test_application_context_get_multiple_primary_candidates_expect_primary_diagnostic() -> (
+    None
+):
+    """Primary 후보가 둘 이상이면 primary 후보만 포함한 ambiguity diagnostic이 발생함을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Primary()
+    @Pod(name="first")
+    class FirstSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "first"
+
+    @Primary()
+    @Pod(name="second")
+    class SecondSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "second"
+
+    @Pod(name="third")
+    class ThirdSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "third"
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(FirstSamplePod)
+    context.add(SecondSamplePod)
+    context.add(ThirdSamplePod)
+
+    with pytest.raises(NoUniquePodError) as error:
+        context.get(type_=ISamplePod)
+
+    assert [candidate.pod_name for candidate in error.value.candidates] == [
+        "first",
+        "second",
+    ]
+    assert all(candidate.is_primary for candidate in error.value.candidates)
+
+
+def test_application_context_primary_precedes_legacy_parameter_name_expect_primary_injected() -> (
+    None
+):
+    """Primary가 legacy parameter name 자동 매칭보다 높은 우선순위로 주입됨을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="pod")
+    class ParameterNamedSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "parameter"
+
+    @Primary()
+    @Pod(name="primary")
+    class PrimarySamplePod(ISamplePod):
+        def do(self) -> str:
+            return "primary"
+
+    @Pod()
+    class SampleService:
+        __pod: ISamplePod
+
+        def __init__(self, pod: ISamplePod) -> None:
+            self.__pod = pod
+
+        def do(self) -> str:
+            return self.__pod.do()
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(ParameterNamedSamplePod)
+    context.add(PrimarySamplePod)
+    context.add(SampleService)
+    context.start()
+
+    assert context.get(type_=SampleService).do() == "primary"
+
+
 def test_application_context_get_dependency_recursive_by_type() -> None:
     """의존성이 있는 Pod가 재귀적으로 주입됨을 검증한다."""
 

@@ -157,11 +157,13 @@ class NotificationService:
 
 ## 의존성 해결 우선순위
 
-동일 타입의 여러 Pod가 있을 때, 다음 순서로 해결됩니다:
+단수 의존성 또는 `get(type_)` 조회에서 동일 타입의 여러 Pod 후보가 있으면
+컨테이너는 다음 순서로 정확히 하나의 후보를 선택합니다.
 
 ### 1. Qualifier로 명시적 지정
 
-`Annotated`와 `Qualifier`를 사용하여 이름으로 특정 Pod를 지정합니다.
+`Annotated`와 `Qualifier`를 사용하여 특정 Pod를 지정합니다. Qualifier는
+가장 높은 우선순위의 명시 선택 정책입니다.
 
 ```python
 from typing import Annotated
@@ -184,7 +186,19 @@ class UserService:
         self.repository = repository
 ```
 
-### 2. Primary 지정
+### 2. 명시 name 조회
+
+`context.get(IUserRepository, name="cache")`처럼 호출자가 name을 명시하면
+해당 Pod name 후보를 선택합니다. 생성자 파라미터 이름 자동 매칭은
+하위 호환용 fallback이므로 이 단계에 포함되지 않습니다.
+
+### 3. 설정 기반 binding
+
+인터페이스별 binding policy는 DI multi-implementation 마일스톤의 후속
+작업에서 추가됩니다. 추가 후에는 Qualifier/name보다 낮고 `@Primary`보다
+높은 우선순위로 동작합니다.
+
+### 4. Primary 지정
 
 `@Primary`로 기본 선택 대상을 지정합니다.
 
@@ -207,25 +221,46 @@ class UserService:
         self.repository = repository  # DefaultUserRepository
 ```
 
-### 3. 단일 후보
+`@Primary` 후보가 둘 이상이면 컨테이너는 임의로 선택하지 않고
+`NoUniquePodError`를 발생시킵니다.
+
+### 5. Legacy parameter name 자동 매칭
+
+생성자 또는 factory 함수 파라미터 이름이 Pod name과 일치하면 해당 후보를
+선택합니다. 이 동작은 기존 편의를 유지하기 위한 fallback이며, Qualifier,
+명시 name, binding, `@Primary`보다 낮은 우선순위입니다.
+
+### 6. 단일 후보
 
 타입에 해당하는 Pod가 하나뿐이면 자동 선택됩니다.
 
-### 4. 해결 실패
+### 7. 해결 실패
 
 - `NoSuchPodError` — 해당 타입의 Pod가 없음
 - `NoUniquePodError` — 여러 후보가 있으나 구분 불가
 
+`NoUniquePodError`는 요청 타입, 후보 Pod name/type, `@Primary` 여부,
+dependency path, 해결 힌트를 구조화된 diagnostic으로 제공합니다.
+
+### `contains(type_)` 의미
+
+`contains(type_)`는 후보 존재 여부만 확인합니다. 후보가 둘 이상이라 단수
+resolution이 모호해도, 해당 타입 후보가 하나 이상 등록되어 있으면 `True`를
+반환합니다. 실제 단수 선택 가능성은 `get(type_)` 또는 의존성 주입 시점에
+위 우선순위로 판정됩니다.
+
 ---
 
-## 순환 참조 감지
+## Dependency diagnostic
 
-누락되거나 순환된 의존성은 기존 예외 의미를 유지하면서 구조화된
+누락, 순환 참조, ambiguity는 기존 예외 의미를 유지하면서 구조화된
 dependency diagnostic을 함께 제공합니다. 이 진단은 별도 graph cache가
 아니라 등록된 `Pod.dependencies` 메타데이터에서 실패 Pod, 파라미터,
-요청 타입, 의존성 경로를 구성합니다. Adapter는
+요청 타입, 의존성 경로, 후보 Pod, 해결 힌트를 구성합니다. Adapter는
 `dependency_diagnostic.as_detail_pairs()`로 안정적인 key/value 형태를 얻을
 수 있습니다.
+
+## 순환 참조 감지
 
 컨테이너는 의존성 체인에서 순환 참조를 감지합니다.
 
