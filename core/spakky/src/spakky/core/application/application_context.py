@@ -23,6 +23,8 @@ from spakky.core.common.types import ObjectT, is_optional, remove_none
 from spakky.core.pod.annotations.lazy import Lazy
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import (
+    DependencyCollectionKind,
+    DependencyInfo,
     Pod,
     PodType,
     UnexpectedDependencyTypeInjectedError,
@@ -289,6 +291,21 @@ class ApplicationContext(IApplicationContext):
             return typed.pop()
         raise NoSuchPodBindingTargetError(binding)
 
+    def __resolve_collection_candidates(
+        self,
+        type_: type,
+        qualifiers: list[Qualifier],
+    ) -> tuple[Pod, ...]:
+        """Resolve all collection dependency candidates in stable Pod name order."""
+        pods = self.__type_cache.get(type_, set()).copy()
+        if qualifiers:
+            pods = {
+                pod
+                for pod in pods
+                if all(qualifier.selector(pod) for qualifier in qualifiers)
+            }
+        return tuple(sorted(pods, key=lambda pod: pod.name))
+
     def __resolve_candidate(
         self,
         type_: type,
@@ -328,7 +345,7 @@ class ApplicationContext(IApplicationContext):
             if not qualified:
                 return None
             candidates = self.__candidate_diagnostics(qualified)
-            resolution_hints = self.__ambiguity_hints(None)
+            resolution_hints = self.__ambiguity_hints(name)
             raise NoUniquePodError(
                 type_,
                 candidates,
@@ -447,17 +464,24 @@ class ApplicationContext(IApplicationContext):
                     requested_type=requested_type,
                 ),
             )
-            resolved_dependency = self.__get_internal(
-                type_=remove_none(dependency.type_)
-                if is_optional(dependency.type_)
-                else dependency.type_,
-                name=name,
-                dependency_hierarchy=new_hierarchy,
-                dependency_path=current_path,
-                qualifiers=dependency.qualifiers,
-                name_is_dependency_parameter=True,
-                requester_pod=pod,
-            )
+            if dependency.collection_kind is None:
+                resolved_dependency = self.__get_internal(
+                    type_=remove_none(dependency.type_)
+                    if is_optional(dependency.type_)
+                    else dependency.type_,
+                    name=name,
+                    dependency_hierarchy=new_hierarchy,
+                    dependency_path=current_path,
+                    qualifiers=dependency.qualifiers,
+                    name_is_dependency_parameter=True,
+                    requester_pod=pod,
+                )
+            else:
+                resolved_dependency = self.__resolve_collection_dependency(
+                    dependency=dependency,
+                    dependency_hierarchy=new_hierarchy,
+                    dependency_path=current_path,
+                )
             if (
                 resolved_dependency is None
                 and not dependency.has_default
@@ -487,6 +511,77 @@ class ApplicationContext(IApplicationContext):
         self.__record_instantiation_attempt(perf_counter() - started_at)
         post_processed: object = self.__post_process_pod(instance)
         return post_processed
+
+    def __get_pod_instance(
+        self,
+        pod: Pod,
+        dependency_hierarchy: tuple[type, ...],
+        dependency_path: tuple[PodDependencyPathNode, ...],
+    ) -> object:
+        """Get or create an instance for an already resolved Pod candidate."""
+        match pod.scope:
+            case Pod.Scope.SINGLETON:
+                if (cached := self.__get_singleton_cache(pod)) is not None:
+                    return cached
+                with self.__singleton_lock:
+                    if (cached := self.__singleton_cache.get(pod.name)) is not None:
+                        return cached
+                    instance = self.__instantiate_pod(
+                        pod,
+                        dependency_hierarchy,
+                        dependency_path,
+                    )
+                    self.__set_singleton_cache(pod, instance)
+                    return instance
+            case Pod.Scope.CONTEXT:
+                if (cached := self.__get_context_cache(pod)) is not None:
+                    return cached
+
+        instance = self.__instantiate_pod(
+            pod,
+            dependency_hierarchy,
+            dependency_path,
+        )
+
+        match pod.scope:
+            case Pod.Scope.CONTEXT:
+                self.__set_context_cache(pod, instance)
+
+        return instance
+
+    def __resolve_collection_dependency(
+        self,
+        dependency: DependencyInfo,
+        dependency_hierarchy: tuple[type, ...],
+        dependency_path: tuple[PodDependencyPathNode, ...],
+    ) -> object | None:
+        """Resolve list/tuple/dict dependency injection without single ambiguity."""
+        pods = self.__resolve_collection_candidates(
+            type_=dependency.type_,
+            qualifiers=dependency.qualifiers,
+        )
+        if not pods:
+            return None
+
+        instances = [
+            self.__get_pod_instance(
+                pod=pod,
+                dependency_hierarchy=dependency_hierarchy,
+                dependency_path=dependency_path,
+            )
+            for pod in pods
+        ]
+        match dependency.collection_kind:
+            case DependencyCollectionKind.LIST:
+                return instances
+            case DependencyCollectionKind.TUPLE:
+                return tuple(instances)
+            case DependencyCollectionKind.DICT:
+                return {
+                    pod.name: instance
+                    for pod, instance in zip(pods, instances, strict=True)
+                }
+        return None
 
     def __record_instantiation_attempt(self, elapsed_seconds: float) -> None:
         if self.__startup_metrics is None:
@@ -645,39 +740,14 @@ class ApplicationContext(IApplicationContext):
         if pod is None:
             return None
 
-        # Try to hit the cache by scope type of pod
-        match pod.scope:
-            case Pod.Scope.SINGLETON:
-                if (cached := self.__get_singleton_cache(pod)) is not None:
-                    return cast(ObjectT, cached)
-                # Double-checked locking for thread-safe lazy singleton creation
-                with self.__singleton_lock:
-                    # Re-check cache after acquiring lock
-                    if (cached := self.__singleton_cache.get(pod.name)) is not None:
-                        return cast(ObjectT, cached)
-                    instance = self.__instantiate_pod(
-                        pod,
-                        dependency_hierarchy,
-                        dependency_path,
-                    )
-                    self.__set_singleton_cache(pod, instance)
-                    return cast(ObjectT, instance)
-            case Pod.Scope.CONTEXT:
-                if (cached := self.__get_context_cache(pod)) is not None:
-                    return cast(ObjectT, cached)
-
-        instance = self.__instantiate_pod(
-            pod,
-            dependency_hierarchy,
-            dependency_path,
+        return cast(
+            ObjectT,
+            self.__get_pod_instance(
+                pod=pod,
+                dependency_hierarchy=dependency_hierarchy,
+                dependency_path=dependency_path,
+            ),
         )
-
-        # Cache the instance based on pod scope
-        match pod.scope:
-            case Pod.Scope.CONTEXT:
-                self.__set_context_cache(pod, instance)
-
-        return cast(ObjectT, instance)
 
     def __add_post_processor(self, post_processor: IPostProcessor) -> None:
         self.__post_processors.append(post_processor)

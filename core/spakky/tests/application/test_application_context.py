@@ -1042,6 +1042,95 @@ def test_application_context_with_multiple_children_list_not_exists() -> None:
         context.start()
 
 
+def test_application_context_with_multiple_children_list_expect_stable_order() -> None:
+    """list collection 의존성이 모든 후보를 Pod name 순서로 주입함을 검증한다."""
+
+    class IRepository:
+        @abstractmethod
+        def name(self) -> str: ...
+
+    @Pod(name="z_repository")
+    class LastRepository(IRepository):
+        def name(self) -> str:
+            return "last"
+
+    @Pod(name="a_repository")
+    class FirstRepository(IRepository):
+        def name(self) -> str:
+            return "first"
+
+    @Pod()
+    class SampleService:
+        __repositories: list[IRepository]
+
+        def __init__(self, repositories: list[IRepository]) -> None:
+            self.__repositories = repositories
+
+        def names(self) -> list[str]:
+            return [repository.name() for repository in self.__repositories]
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(LastRepository)
+    context.add(FirstRepository)
+    context.add(SampleService)
+    context.start()
+
+    assert context.get(type_=SampleService).names() == ["first", "last"]
+
+
+def test_application_context_with_multiple_children_tuple_expect_qualified_order() -> (
+    None
+):
+    """tuple collection 의존성이 qualifier에 맞는 후보만 안정적 순서로 주입함을 검증한다."""
+
+    class IRepository:
+        @abstractmethod
+        def name(self) -> str: ...
+
+    @Pod(name="primary_second")
+    class PrimarySecondRepository(IRepository):
+        def name(self) -> str:
+            return "primary-second"
+
+    @Pod(name="other")
+    class OtherRepository(IRepository):
+        def name(self) -> str:
+            return "other"
+
+    @Pod(name="primary_first")
+    class PrimaryFirstRepository(IRepository):
+        def name(self) -> str:
+            return "primary-first"
+
+    @Pod()
+    class SampleService:
+        __repositories: tuple[IRepository, ...]
+
+        def __init__(
+            self,
+            repositories: Annotated[
+                tuple[IRepository, ...],
+                Qualifier(lambda pod: pod.name.startswith("primary")),
+            ],
+        ) -> None:
+            self.__repositories = repositories
+
+        def names(self) -> tuple[str, ...]:
+            return tuple(repository.name() for repository in self.__repositories)
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(PrimarySecondRepository)
+    context.add(OtherRepository)
+    context.add(PrimaryFirstRepository)
+    context.add(SampleService)
+    context.start()
+
+    assert context.get(type_=SampleService).names() == (
+        "primary-first",
+        "primary-second",
+    )
+
+
 def test_application_context_with_multiple_children_set_not_exists() -> None:
     """지원하지 않는 set collection 의존성은 Pod metadata 생성 시 실패함을 검증한다."""
 
@@ -1085,6 +1174,48 @@ def test_application_context_with_multiple_children_dict_not_exists() -> None:
         context.start()
 
 
+def test_application_context_with_multiple_children_dict_expect_name_keys() -> None:
+    """dict collection 의존성이 Pod name을 key로 모든 후보를 주입함을 검증한다."""
+
+    class IRepository:
+        @abstractmethod
+        def name(self) -> str: ...
+
+    @Pod(name="second")
+    class SecondRepository(IRepository):
+        def name(self) -> str:
+            return "second"
+
+    @Pod(name="first")
+    class FirstRepository(IRepository):
+        def name(self) -> str:
+            return "first"
+
+    @Pod()
+    class SampleService:
+        __repositories: dict[str, IRepository]
+
+        def __init__(self, repositories: dict[str, IRepository]) -> None:
+            self.__repositories = repositories
+
+        def names(self) -> dict[str, str]:
+            return {
+                name: repository.name()
+                for name, repository in self.__repositories.items()
+            }
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(SecondRepository)
+    context.add(FirstRepository)
+    context.add(SampleService)
+    context.start()
+
+    assert context.get(type_=SampleService).names() == {
+        "first": "first",
+        "second": "second",
+    }
+
+
 def test_application_context_with_optional_dependency() -> None:
     """Optional 타입 의존성이 없을 때 None이 주입됨을 검증한다."""
 
@@ -1108,6 +1239,39 @@ def test_application_context_with_optional_dependency() -> None:
 
     service = context.get(type_=SampleService)
     assert service.do() == "default"
+
+
+def test_application_context_with_optional_ambiguous_dependency_expect_error() -> None:
+    """Optional 단수 의존성의 ambiguity는 None fallback으로 숨기지 않음을 검증한다."""
+
+    class IDependency:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="first")
+    class FirstDependency(IDependency):
+        def do(self) -> str:
+            return "first"
+
+    @Pod(name="second")
+    class SecondDependency(IDependency):
+        def do(self) -> str:
+            return "second"
+
+    @Pod()
+    class SampleService:
+        __service: IDependency | None
+
+        def __init__(self, service: IDependency | None) -> None:
+            self.__service = service
+
+    context = ApplicationContext()
+    context.add(FirstDependency)
+    context.add(SecondDependency)
+    context.add(SampleService)
+
+    with pytest.raises(NoUniquePodError):
+        context.start()
 
 
 def test_application_context_with_multiple_qualifiers() -> None:
