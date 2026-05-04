@@ -222,7 +222,25 @@ class UserService:
 - **클래스 Pod**: `type_ = obj`, `__init__` 파라미터에서 의존성 추출
 - **함수 Pod**: `type_ = return_annotation`, 함수 파라미터에서 의존성 추출
 - `Annotated[T, Qualifier(...)]`로 한정자(qualifier)를 지정 가능
+- `list[T]`, `tuple[T, ...]`, `dict[str, T]` 의존성은 같은 타입의 모든 Pod 후보를 안정적인 Pod name 순서로 주입
 - 유효성 검사: `*args`/`**kwargs` 불가, positional-only 불가, 타입 힌트 필수
+
+### 복수 구현체 DI Resolution
+
+`ApplicationContext`는 하나의 interface/port에 여러 Pod가 등록되어도 registration을 허용합니다. 단수 의존성 주입이나 `get()` 호출에서 하나의 구현체가 필요할 때만 후보를 선택합니다.
+
+| 선택 방식 | API | 우선순위 |
+|-----------|-----|----------|
+| Qualifier | `Annotated[T, Qualifier(...)]` | 1 |
+| 명시 이름 조회 | `context.get(T, name="...")` | 2 |
+| Application binding | `context.bind(PodBinding(...))`, `bind_to_type()`, `bind_to_name()` | 3 |
+| Primary | `@Primary()`가 붙은 후보가 정확히 하나 | 4 |
+| Legacy parameter name | 생성자 파라미터명이 Pod name과 일치 | 5 |
+| 단일 후보 | 후보가 하나뿐인 타입 조회 | 6 |
+
+Application binding은 애플리케이션 설정이 interface와 구현체 선택을 연결하는 정책 값입니다. `spakky.core.pod.binding.PodBinding(interface=T, implementation_type=Impl)` 또는 `PodBinding(interface=T, implementation_name="impl")` 중 정확히 하나의 target selector를 지정해야 하며, 둘 다 없거나 둘 다 있으면 `InvalidPodBindingError`가 발생합니다. Binding 대상이 등록 후보와 일치하지 않으면 `NoSuchPodBindingTargetError`가 발생합니다.
+
+`list[T]`, `tuple[T, ...]`, `dict[str, T]` collection dependency는 모든 후보를 주입하므로 binding/`@Primary`로 단일화하지 않습니다. `dict[str, T]`는 등록된 Pod name을 key로 사용합니다. `set[T]`, bare collection type, `dict[K, T]`에서 `K != str`인 형태는 지원하지 않습니다.
 
 ### Pod 스코프
 

@@ -51,6 +51,24 @@ if propagator is not None:
 
 이 패턴은 플러그인 간 선택적 의존성에 사용됩니다. 예를 들어, `spakky-fastapi`의 `AddBuiltInMiddlewaresPostProcessor`는 `get_or_none(ITracePropagator)`로 propagator를 조회하고, 있으면 `TracingMiddleware`를 등록합니다.
 
+### Collection DI
+
+같은 타입 또는 interface를 구현하는 모든 Pod 후보를 하나의 collection으로
+주입하는 패턴입니다. 생성자 파라미터에 `list[T]`, `tuple[T, ...]`,
+`dict[str, T]`를 선언하면 `ApplicationContext`가 매칭 후보를 Pod name 기준의
+안정적인 순서로 주입합니다. `dict[str, T]`는 Pod name을 key로 사용합니다.
+
+```python
+@Pod()
+class NotificationFanout:
+    def __init__(self, senders: dict[str, IEmailSender]) -> None:
+        self.senders = senders
+```
+
+지원하지 않는 collection 형태는 `UnsupportedCollectionDependencyTypeError`를
+발생시킵니다. 필수 collection 의존성에 매칭 후보가 없으면 Pod 인스턴스화가
+실패하므로, 없을 수 있는 후보 집합은 optional 의존성이나 기본값으로 표현합니다.
+
 ### SpakkyApplication
 
 애플리케이션 부트스트랩 진입점. 컴포넌트 스캔, 플러그인 로딩, 컨테이너 설정을 위한 fluent API를 제공합니다.
@@ -66,6 +84,34 @@ app.scan()  # 현재 패키지의 Pod 자동 스캔
 ### DiscoveryManifest
 
 `SpakkyApplication.scan()`의 discovery 결과를 재사용하기 위한 선택형 JSON artifact입니다. `enable_discovery_manifest()`로 활성화하며, schema version, Python version, scan 대상, exclude pattern, source file mtime/size fingerprint가 일치할 때만 hit로 사용됩니다. decision은 `miss`, `hit`, `stale_schema`, `stale_input` 중 하나로 시작 진단에 기록됩니다.
+
+### Actuator
+
+애플리케이션의 `health`, `readiness`, `liveness`, `info` 상태를 transport-neutral
+모델로 집계하는 상태 확인 표면입니다. `spakky-actuator`는 probe와 info
+contributor를 `ActuatorExtensionRegistry`에 모으고,
+`ActuatorAggregationService`가 endpoint별 결과를 평가합니다.
+
+```python
+from spakky.actuator import ActuatorAggregationService, ActuatorExtensionRegistry
+
+registry = ActuatorExtensionRegistry()
+service = ActuatorAggregationService(registry)
+health = service.evaluate_health()
+```
+
+### Redis Cache Backend
+
+`spakky-cache`의 backend-neutral `ICache[T]` 계약을 Redis 저장소로 구현하는
+플러그인입니다. `spakky-redis`는 `RedisCache[T]`, `RedisCacheConfig`,
+Actuator health/info contributor를 제공합니다.
+
+```python
+from spakky.plugins.redis import RedisCache
+
+cache = RedisCache[str]()
+cache.set("profile:42", "Ada")
+```
 
 ---
 

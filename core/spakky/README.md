@@ -145,9 +145,12 @@ class ContextScopedService:
 ## Qualifier, Primary, Binding
 
 ```python
+from typing import Annotated
+
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.annotations.primary import Primary
+from spakky.core.pod.annotations.qualifier import Qualifier
 from spakky.core.pod.binding import PodBinding
 
 # 이름 기반 qualifier
@@ -159,6 +162,17 @@ class MySQLRepository(IRepository):
 class PostgresRepository(IRepository):
     pass
 
+@Pod()
+class ReportService:
+    def __init__(
+        self,
+        repository: Annotated[
+            IRepository,
+            Qualifier(lambda pod: pod.name == "postgres"),
+        ],
+    ) -> None:
+        self.repository = repository
+
 # Primary: 구현체가 여러 개일 때 우선 선택
 @Primary()
 @Pod()
@@ -168,12 +182,34 @@ class DefaultRepository(IRepository):
 # application config 기반 binding: Primary보다 우선
 context = ApplicationContext()
 context.bind(PodBinding(interface=IRepository, implementation_name="postgres"))
+# 또는 context.bind_to_name(IRepository, "postgres")
+# 또는 context.bind_to_type(IRepository, PostgresRepository)
 context.add(MySQLRepository)
 context.add(PostgresRepository)
 context.add(DefaultRepository)
 
 repository = context.get(IRepository)  # PostgresRepository
 ```
+
+단수 의존성은 explicit `Qualifier`, explicit `get(type_, name=...)`, application binding, `@Primary`, legacy parameter name, 단일 후보 순서로 선택됩니다. 같은 port의 모든 구현체가 필요하면 collection injection을 사용합니다.
+
+```python
+from spakky.core.pod.annotations.pod import Pod
+
+@Pod()
+class RepositoryRegistry:
+    def __init__(
+        self,
+        repositories: list[IRepository],
+        repository_tuple: tuple[IRepository, ...],
+        repository_by_name: dict[str, IRepository],
+    ) -> None:
+        self.repositories = repositories
+        self.repository_tuple = repository_tuple
+        self.repository_by_name = repository_by_name
+```
+
+Collection injection은 Pod 이름순으로 안정적으로 정렬된 후보를 주입하며, `dict[str, T]`는 등록된 Pod name을 key로 사용합니다. Collection 의존성은 binding과 `@Primary`로 단일화하지 않습니다.
 
 ## Stereotype
 

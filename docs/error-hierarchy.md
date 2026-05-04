@@ -108,6 +108,7 @@ Pod 등록 및 인스턴스화 관련 에러입니다.
 
 ```python
 from spakky.core.pod.error import AbstractSpakkyPodError
+from spakky.core.pod.annotations.pod import UnsupportedCollectionDependencyTypeError
 ```
 
 | 에러                                      | 설명                               |
@@ -120,6 +121,7 @@ from spakky.core.pod.error import AbstractSpakkyPodError
 | `CannotUseVarArgsInPodError`              | \*args/\*\*kwargs 사용 금지        |
 | `CannotUsePositionalOnlyArgsInPodError`   | 위치 전용 인자 사용 금지           |
 | `CannotUseOptionalReturnTypeInPodError`   | Optional 반환 타입 금지 (함수 Pod) |
+| `UnsupportedCollectionDependencyTypeError` | 지원하지 않는 collection 의존성 타입 |
 | `UnexpectedDependencyNameInjectedError`   | 예상치 못한 이름의 의존성 주입     |
 | `UnexpectedDependencyTypeInjectedError`   | 예상치 못한 타입의 의존성 주입     |
 
