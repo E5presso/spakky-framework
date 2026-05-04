@@ -28,6 +28,11 @@ app.scan()
 app.start()
 ```
 
+`load_plugins()`의 기본 동작은 설치된 entry point를 자동 발견하고 모두
+초기화하는 것입니다. 복수 구현체 DI 지원은 이 자동 활성화 모델을 바꾸지
+않습니다. 여러 플러그인이 같은 interface나 port 구현체를 등록해도 플러그인은
+그대로 로드되며, 단수 주입 지점에서만 DI 컨테이너의 선택 정책이 적용됩니다.
+
 ### 선택적 플러그인 로드
 
 ```python
@@ -40,6 +45,49 @@ app.load_plugins(include={
     spakky.plugins.sqlalchemy.PLUGIN_NAME,
 })
 ```
+
+### 복수 구현체 선택
+
+서로 다른 플러그인이 같은 port를 구현할 수 있습니다. 예를 들어 여러
+execution adapter 플러그인이 같은 `IAgentAdapter`를 제공하는 경우,
+플러그인을 opt-out하지 않고 application config에서 단수 선택 정책을 등록합니다.
+
+```python
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.binding import PodBinding
+
+context = ApplicationContext()
+context.bind(PodBinding(interface=IAgentAdapter, implementation_name="langgraph"))
+
+app = (
+    SpakkyApplication(context)
+    .load_plugins()
+    .scan()
+    .start()
+)
+```
+
+Binding은 Pod 등록 전에도 선언할 수 있으므로 `load_plugins()` 자동 활성화를
+유지한 채 단수 주입의 기본 구현체만 선택할 수 있습니다. 우선순위는
+`Qualifier`, 명시 name, binding, `@Primary`, legacy parameter name fallback
+순서입니다. Binding target은 concrete type 또는 Pod name 중 정확히 하나만
+지정해야 합니다.
+
+모든 구현체가 필요한 확장 포인트는 단수 port 대신 collection 의존성을
+선언합니다. `list[T]`, `tuple[T, ...]`, `dict[str, T]`는 매칭되는 모든 Pod를
+Pod name 기준의 안정적인 순서로 주입하며, binding으로 하나를 고르지 않습니다.
+
+```python
+@Pod()
+class AgentAdapterRegistry:
+    def __init__(self, adapters: dict[str, IAgentAdapter]) -> None:
+        self.adapters = adapters
+```
+
+`contains(type_)`는 후보 존재 여부만 의미합니다. 여러 플러그인이 같은 port
+후보를 등록해 단수 선택이 모호해도, 후보가 하나 이상이면 `True`입니다. 실제
+단수 resolution 가능성은 `get(type_)` 또는 생성자 주입 시점에 판정됩니다.
 
 ---
 

@@ -153,6 +153,46 @@ class NotificationService:
         self.sms_sender = sms_sender
 ```
 
+### Collection 의존성
+
+같은 인터페이스를 구현하는 모든 Pod가 필요하면 단수 의존성 대신 collection
+타입을 선언합니다. Collection 주입은 `NoUniquePodError`를 발생시키지 않고
+매칭되는 모든 후보를 Pod name 기준의 안정적인 순서로 주입합니다.
+
+지원되는 형태는 다음과 같습니다.
+
+| 타입 힌트 | 주입 값 |
+|-----------|---------|
+| `list[T]` | 매칭 Pod 인스턴스 목록 |
+| `tuple[T, ...]` | 매칭 Pod 인스턴스 튜플 |
+| `dict[str, T]` | Pod name → 인스턴스 매핑 |
+
+```python
+@Pod(name="email")
+class EmailNotifier(INotifier):
+    ...
+
+@Pod(name="slack")
+class SlackNotifier(INotifier):
+    ...
+
+@Pod()
+class NotificationService:
+    def __init__(
+        self,
+        notifiers: list[INotifier],
+        notifier_by_name: dict[str, INotifier],
+    ) -> None:
+        self.notifiers = notifiers
+        self.email = notifier_by_name["email"]
+```
+
+`Annotated[list[T], Qualifier(...)]`, `Annotated[tuple[T, ...], Qualifier(...)]`,
+`Annotated[dict[str, T], Qualifier(...)]`처럼 Qualifier를 붙이면 collection에
+들어갈 후보 전체를 필터링합니다. `list`, `tuple`, `dict`의 element type은
+프레임워크가 관리하는 Pod 타입이어야 하며, `set[T]`, bare `list`, `tuple[T]`,
+`dict[int, T]` 같은 형태는 지원하지 않습니다.
+
 ---
 
 ## 의존성 해결 우선순위
@@ -197,6 +237,8 @@ class UserService:
 애플리케이션 또는 feature config가 `ApplicationContext`에 binding policy를
 등록하면, 같은 interface를 구현하는 후보 중 하나를 명시적으로 선택합니다.
 이 선택은 Qualifier/name보다 낮고 `@Primary`보다 높은 우선순위로 동작합니다.
+Binding은 단수 의존성 선택 정책입니다. Collection 의존성은 binding으로
+하나를 고르지 않고, Qualifier를 통과한 모든 후보를 주입합니다.
 
 ```python
 from spakky.core.application.application_context import ApplicationContext
@@ -228,6 +270,9 @@ adapter = context.get(IAgentAdapter)  # PydanticAiAgentAdapter
 `context.bind_to_type(IAgentAdapter, PydanticAiAgentAdapter)`를 사용할 수
 있습니다. binding은 Pod 등록 전에도 설정할 수 있으므로 plugin 자동 활성화
 모델을 유지하면서 application config에서 선택 정책을 먼저 선언할 수 있습니다.
+즉 `load_plugins()`로 설치된 플러그인을 모두 자동 활성화한 뒤, 특정 port의
+단수 주입 지점에서만 application config가 선택한 구현체를 사용하게 만들 수
+있습니다.
 binding이 type과 name을 동시에 지정하거나 둘 다 생략하면
 `InvalidPodBindingError`가 발생합니다. 지정한 target이 후보 Pod와 일치하지
 않으면 `NoSuchPodBindingTargetError`가 발생합니다.
