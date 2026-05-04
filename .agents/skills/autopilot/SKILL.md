@@ -129,7 +129,26 @@ while M != ∅:
 | S6 외부 봇 위반 누적 | 같은 카테고리 위반 3회+ ledger |
 | S7 merge-gate-stuck | autopilot 하위 clean PR이 사용자 병합 승인 대기로 반환 |
 
-매치 시 **자동 harness fix 티켓 생성** (`gh issue create`) → `meta_queue` 별도 wave로 처리.
+매치 시 **기존 open harness fix 티켓을 먼저 재사용**하고, 없을 때만 신규 티켓을 생성한다. meta 시그널은 중복 생성이 아니라 수렴 대상 식별이 목적이다.
+
+### 3.6-a. meta issue dedupe/reuse 게이트
+
+`gh issue create` 전에 다음 순서로 open 이슈를 조회한다:
+
+```bash
+gh issue list --state open --search "repo:E5presso/spakky-framework S1 OR S7 OR monitor-stuck OR merge-gate-stuck" --json number,title,body,labels --limit 50
+```
+
+1. 동일 시그널 코드(S1-S7)와 동일 원인 어휘(예: `monitor-stuck`, `merge-gate-stuck`, `state 역행`)가 모두 매치되는 open 이슈가 있으면 **그 이슈 번호를 `meta_queue`에 추가**하고 새 이슈를 만들지 않는다.
+2. 제목은 다르지만 본문이 같은 PR/issue evidence 집합을 포함하는 open 이슈가 있으면 duplicate로 보고 **기존 이슈를 재사용**한다.
+3. 매치되는 open 이슈가 없을 때만 `gh issue create`를 실행한다.
+4. 신규/재사용 어느 쪽이든 ledger에는 `signal`, `evidence`, `meta_issue`, `action: reused|created`를 기록한다.
+
+재사용한 이슈가 현재 autopilot 실행의 마일스톤/부모에 연결되어 있지 않더라도, `meta_queue` 처리 대상에는 반드시 포함한다. 중복 open 이슈를 발견했지만 이미 같은 원인의 closed 이슈/merged PR이 있으면, 새 티켓을 만들지 말고 open leftover를 evidence와 함께 정리 대상으로 남긴다.
+
+### 3.6-b. meta_queue 별도 wave
+
+`meta_queue`는 일반 wave 실패 전파와 분리한다. 각 항목은 `/process-ticket {meta_issue} --auto-merge`로 처리하고, 처리 결과가 merged/closed가 될 때까지 Phase 3 fixed-point 루프로 복귀한다.
 
 Ledger 위치: `~/.claude/projects/-Users-spakky-Documents-projects-spakky-framework/state/autopilot-ledger.json`
 
@@ -142,6 +161,22 @@ Ledger 위치: `~/.claude/projects/-Users-spakky-Documents-projects-spakky-frame
 ## Phase 5: 문서 동기화
 
 `/sync-docs all`을 호출하여 머지된 코드 변경에 따른 문서 일괄 동기화.
+
+## Phase 5.5: 최종 meta/open 이슈 fixed-point sweep
+
+Phase 6 최종 보고 직전에, autopilot은 마일스톤/부모 범위와 ledger의 `meta_queue`가 모두 닫힌 고정점인지 확인한다. 이 sweep을 통과하기 전에는 마일스톤 완료/종료를 선언하지 않는다.
+
+1. GitHub open 이슈를 다시 조회한다:
+
+   ```bash
+   gh issue list --state open --milestone {N} --json number,title,body,labels --limit 100
+   gh issue list --state open --search "repo:E5presso/spakky-framework label:enhancement S1 OR S2 OR S3 OR S4 OR S5 OR S6 OR S7 OR meta_queue OR monitor-stuck OR merge-gate-stuck" --json number,title,body,labels --limit 100
+   ```
+
+2. ledger의 unresolved `meta_queue` 항목과 GitHub open meta issue 조회 결과를 합집합으로 계산한다.
+3. 합집합이 비어 있으면 Phase 6으로 진행한다.
+4. 합집합에 기존 open meta issue가 있으면 새 이슈를 만들지 않고 해당 이슈들을 `meta_queue`로 재주입하여 Phase 3으로 복귀한다.
+5. 같은 open set이 3회 반복되면 순환/외부 blocker로 보고하고 stop한다. 이 경우에도 중복 이슈를 추가 생성하지 않는다.
 
 ## Phase 6: 최종 보고
 
@@ -164,7 +199,8 @@ meta_queue 처리: {M}개
 - **autopilot은 병합 승인 질문 금지.** `/autopilot` 호출이 clean PR squash merge 사전 승인이다. 하위 티켓은 `/process-ticket --auto-merge`로만 처리한다.
 - **wall-clock timeout 절대 금지.** Stuck 감지는 논리적 모순 기반만.
 - **후속 티켓 즉시 spawn 의무.** Phase 3-3-quinque 건너뛰기 금지.
-- **Phase 3.6 meta-detection 시그널 매치 시 자동 harness fix 티켓 생성.** 사용자 보고 + meta_queue 처리.
+- **Phase 3.6 meta-detection 시그널 매치 시 open 이슈 dedupe/reuse 후 meta_queue 처리.** 중복 harness fix 티켓 생성 금지.
+- **최종 보고 전 Phase 5.5 meta/open 이슈 fixed-point sweep 필수.** open meta_queue가 남아 있으면 마일스톤 완료 선언 금지.
 - 워크트리는 티켓별 분리. 동일 파일 mutation 충돌 시 직렬화 강제 (S3 시그널).
 - Phase 4 의도 감사는 외부 서브에이전트만 (자기확증 편향 차단).
 
