@@ -20,7 +20,7 @@ from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.core.stereotype.configuration import Configuration
 from typer import Typer, echo
-from typing_extensions import override
+from typing import override
 
 ACTUATOR_COMMAND_ENABLED_ENV = "SPAKKY_TYPER_ACTUATOR_COMMAND_ENABLED"
 ACTUATOR_COMMAND_NAME_ENV = "SPAKKY_TYPER_ACTUATOR_COMMAND_NAME"

@@ -1,18 +1,16 @@
 """Celery-backed implementation of TaskResult."""
 
 import asyncio
-from typing import Generic, TypeVar, cast
+from typing import cast
 
-from typing_extensions import override
+from typing import override
 
 from spakky.task.interfaces.task_result import ITaskResult
 
 from celery.result import AsyncResult
 
-T = TypeVar("T")
 
-
-class CeleryTaskResult(ITaskResult[T], Generic[T]):
+class CeleryTaskResult[T](ITaskResult[T]):
     """Wraps a Celery AsyncResult, exposing the broker-agnostic TaskResult interface."""
 
     _result: AsyncResult

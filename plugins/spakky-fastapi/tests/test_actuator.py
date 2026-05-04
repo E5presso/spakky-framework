@@ -18,7 +18,7 @@ from spakky.plugins.fastapi.post_processors.register_actuator import (
     RegisterActuatorPostProcessor,
 )
 from typing import cast
-from typing_extensions import override
+from typing import override
 from unittest.mock import Mock
 
 import spakky.plugins.fastapi

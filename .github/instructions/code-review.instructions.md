@@ -5,7 +5,7 @@ excludeAgent: "cloud-agent"
 
 # Copilot 코드 리뷰 지침
 
-Spakky Framework는 Spring‑inspired DI/IoC Python 프레임워크(3.11+)입니다.
+Spakky Framework는 Spring‑inspired DI/IoC Python 프레임워크(3.12+)입니다.
 리뷰 코멘트는 **한국어**로 작성합니다.
 
 > 규칙 정본은 `.claude/rules/*.md` — 이 파일은 PR 리뷰 체크포인트만 정의합니다.

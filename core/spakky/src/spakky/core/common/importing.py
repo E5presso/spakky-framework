@@ -6,14 +6,14 @@ from fnmatch import fnmatch
 from logging import getLogger
 from pathlib import Path
 from types import FunctionType, ModuleType
-from typing import Callable, TypeAlias
+from typing import Callable
 
 from spakky.core.common.constants import PATH
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 logger = getLogger(__name__)
 
-Module: TypeAlias = ModuleType | str
+type Module = ModuleType | str
 
 
 class CannotScanNonPackageModuleError(AbstractSpakkyFrameworkError):

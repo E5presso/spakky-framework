@@ -5,7 +5,7 @@ query use cases in CQRS architecture.
 """
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Generic, TypeVar
+from typing import Awaitable
 
 from spakky.core.common.mutability import immutable
 
@@ -20,14 +20,7 @@ class AbstractQuery(ABC):
     ...
 
 
-QueryT_contra = TypeVar("QueryT_contra", bound=AbstractQuery, contravariant=True)
-"""Contravariant type variable for query types."""
-
-ResultT_co = TypeVar("ResultT_co", covariant=True)
-"""Covariant type variable for result types."""
-
-
-class IQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
+class IQueryUseCase[QueryT_contra: AbstractQuery, ResultT_co](ABC):
     """Interface for synchronous query use cases."""
 
     @abstractmethod
@@ -43,7 +36,7 @@ class IQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
         ...
 
 
-class IAsyncQueryUseCase(ABC, Generic[QueryT_contra, ResultT_co]):
+class IAsyncQueryUseCase[QueryT_contra: AbstractQuery, ResultT_co](ABC):
     """Interface for asynchronous query use cases."""
 
     @abstractmethod

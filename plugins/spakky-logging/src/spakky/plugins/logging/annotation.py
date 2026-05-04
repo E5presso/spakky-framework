@@ -1,12 +1,9 @@
 """Logging annotation for automatic method call logging."""
 
 from dataclasses import dataclass, field
-from typing import Callable, ParamSpec, TypeVar
+from typing import Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
-
-P = ParamSpec("P")
-R = TypeVar("R")
 
 
 @dataclass
@@ -47,7 +44,7 @@ class Logged(FunctionAnnotation):
     """Whether to include the return value in log output."""
 
 
-def logged(
+def logged[**P, R](
     enable_masking: bool = True,
     masking_keys: list[str] | None = None,
     slow_threshold_ms: float | None = None,

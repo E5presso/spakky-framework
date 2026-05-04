@@ -7,7 +7,7 @@ salt generation and configurable work factor.
 from typing import ClassVar, overload
 
 import bcrypt
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import PasswordRequiredError

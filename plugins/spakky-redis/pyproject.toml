@@ -3,7 +3,7 @@ name = "spakky-redis"
 version = "6.4.0"
 description = "Redis cache backend plugin for Spakky Framework"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
@@ -30,7 +30,7 @@ module-root = "src"
 module-name = "spakky.plugins.redis"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = [
     "src",
     ".",

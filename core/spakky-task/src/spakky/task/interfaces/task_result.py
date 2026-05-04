@@ -1,12 +1,9 @@
 """Abstract task result handle for background task dispatchers."""
 
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
-
-T = TypeVar("T")
 
 
-class ITaskResult(ABC, Generic[T]):
+class ITaskResult[T](ABC):
     """Abstract handle for the result of a dispatched background task.
 
     Concrete adapters (e.g. CeleryTaskResult) implement this for each broker.

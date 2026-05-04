@@ -5,7 +5,7 @@ command use cases in CQRS architecture.
 """
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Generic, TypeVar
+from typing import Awaitable
 
 from spakky.core.common.mutability import immutable
 
@@ -20,14 +20,7 @@ class AbstractCommand(ABC):
     ...
 
 
-CommandT_contra = TypeVar("CommandT_contra", bound=AbstractCommand, contravariant=True)
-"""Contravariant type variable for command types."""
-
-ResultT_co = TypeVar("ResultT_co", covariant=True)
-"""Covariant type variable for result types."""
-
-
-class ICommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
+class ICommandUseCase[CommandT_contra: AbstractCommand, ResultT_co](ABC):
     """Interface for synchronous command use cases."""
 
     @abstractmethod
@@ -43,7 +36,7 @@ class ICommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
         ...
 
 
-class IAsyncCommandUseCase(ABC, Generic[CommandT_contra, ResultT_co]):
+class IAsyncCommandUseCase[CommandT_contra: AbstractCommand, ResultT_co](ABC):
     """Interface for asynchronous command use cases."""
 
     @abstractmethod

@@ -4,7 +4,7 @@ version = "6.4.0"
 description = "Event handling stereotype for Spakky Framework (@EventHandler, @on_event)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "spakky-domain>=6.4.0",
     "spakky-data>=6.4.0",
@@ -24,7 +24,7 @@ module-root = "src"
 module-name = "spakky.event"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

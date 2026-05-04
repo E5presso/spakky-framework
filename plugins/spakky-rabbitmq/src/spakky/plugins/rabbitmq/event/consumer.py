@@ -8,7 +8,7 @@ to registered handlers.
 from collections.abc import Mapping
 from typing import Any
 
-from typing_extensions import override
+from typing import override
 
 from aio_pika import (
     connect_robust,  # type: ignore[import-untyped]  # aio_pika lacks type stubs

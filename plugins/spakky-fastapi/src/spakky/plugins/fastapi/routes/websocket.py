@@ -5,15 +5,15 @@ with support for FastAPI WebSocket configuration.
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence, TypeAlias
+from typing import Any, Callable, Sequence
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.common.types import AnyT
 
 from fastapi import params
 
-SetIntStr: TypeAlias = set[int | str]
-DictIntStrAny: TypeAlias = dict[int | str, Any]
+type SetIntStr = set[int | str]
+type DictIntStrAny = dict[int | str, Any]
 
 
 @dataclass

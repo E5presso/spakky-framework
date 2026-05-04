@@ -8,7 +8,7 @@ from logging import getLogger
 from typing import Any, ClassVar, Sequence
 from weakref import WeakKeyDictionary
 
-from typing_extensions import override
+from typing import override
 
 from spakky.core.aop.advisor import Advisor, AsyncAdvisor
 from spakky.core.aop.aspect import Aspect, AsyncAspect

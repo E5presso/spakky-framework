@@ -1,17 +1,6 @@
 """Default EventBus implementations that delegate to EventTransport."""
 
-import sys
-
-if (
-    sys.version_info
-    >= (
-        3,
-        12,
-    )
-):  # pragma: no cover - Python 3.12+ import path; coverage may run on a single interpreter
-    from typing import override
-else:
-    from typing_extensions import override
+from typing import override
 
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod

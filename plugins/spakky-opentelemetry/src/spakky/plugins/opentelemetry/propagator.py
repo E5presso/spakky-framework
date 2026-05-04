@@ -2,7 +2,7 @@
 
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 from opentelemetry import context, trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags

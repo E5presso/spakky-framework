@@ -5,7 +5,7 @@ child span for the request lifetime, and injects trace context into
 response headers.
 """
 
-from typing import Awaitable, Callable, TypeAlias
+from typing import Awaitable, Callable
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware, DispatchFunction
@@ -15,7 +15,7 @@ from starlette.types import ASGIApp
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
-Next: TypeAlias = Callable[[Request], Awaitable[Response]]
+type Next = Callable[[Request], Awaitable[Response]]
 
 
 class TracingMiddleware(BaseHTTPMiddleware):

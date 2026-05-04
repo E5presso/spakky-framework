@@ -67,6 +67,7 @@ class Money(AbstractValueObject):
 애그리거트 루트는 도메인 이벤트를 관리하는 엔티티입니다.
 
 ```python
+from typing import Self
 from uuid import UUID, uuid4
 
 from spakky.core.common.mutability import mutable, immutable
@@ -94,7 +95,7 @@ class Order(AbstractAggregateRoot[UUID]):
             raise ValueError("Total cannot be negative")
 
     @classmethod
-    def create(cls, customer_id: UUID, total: int) -> "Order":
+    def create(cls, customer_id: UUID, total: int) -> Self:
         order = cls(uid=cls.next_id(), customer_id=customer_id, total=total)
         order.add_event(OrderCreatedEvent(order_id=order.uid, customer_id=customer_id))
         return order

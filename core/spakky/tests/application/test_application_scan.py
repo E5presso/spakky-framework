@@ -328,7 +328,7 @@ def test_discovery_manifest_fingerprint_in_memory_module_expect_no_sources() -> 
             "schema_version": 1,
             "fingerprint": {
                 "schema_version": "1",
-                "python_version": "3.11",
+                "python_version": "3.12",
                 "module_name": "tests.dummy.dummy_package",
                 "is_package": True,
                 "exclude": [],
@@ -354,7 +354,7 @@ def test_discovery_manifest_fingerprint_in_memory_module_expect_no_sources() -> 
             "schema_version": 1,
             "fingerprint": {
                 "schema_version": 1,
-                "python_version": "3.11",
+                "python_version": "3.12",
                 "module_name": 311,
                 "is_package": True,
                 "exclude": [],
@@ -367,7 +367,7 @@ def test_discovery_manifest_fingerprint_in_memory_module_expect_no_sources() -> 
             "schema_version": 1,
             "fingerprint": {
                 "schema_version": 1,
-                "python_version": "3.11",
+                "python_version": "3.12",
                 "module_name": "tests.dummy.dummy_package",
                 "is_package": "true",
                 "exclude": [],
@@ -380,7 +380,7 @@ def test_discovery_manifest_fingerprint_in_memory_module_expect_no_sources() -> 
             "schema_version": 1,
             "fingerprint": {
                 "schema_version": 1,
-                "python_version": "3.11",
+                "python_version": "3.12",
                 "module_name": "tests.dummy.dummy_package",
                 "is_package": True,
                 "exclude": "tests",

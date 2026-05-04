@@ -1,7 +1,7 @@
 """Error strategy types for saga step failure handling."""
 
 from dataclasses import field
-from typing import TypeAlias, Union
+from typing import Union
 
 from spakky.core.common.mutability import immutable
 
@@ -43,5 +43,5 @@ class Retry:
     then: Union["Compensate", "Skip"] = field(default_factory=Compensate)
 
 
-ErrorStrategy: TypeAlias = Compensate | Skip | Retry
+type ErrorStrategy = Compensate | Skip | Retry
 """에러 전략 유니온 타입."""

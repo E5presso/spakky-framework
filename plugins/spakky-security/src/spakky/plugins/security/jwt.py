@@ -5,9 +5,8 @@ with support for various HMAC algorithms and standard JWT claims.
 """
 
 import json
-import sys
 from datetime import datetime, timedelta
-from typing import Any, Sequence, final
+from typing import Any, Self, Sequence, final
 from uuid import UUID, uuid4
 
 from spakky.plugins.security.encoding import Base64Encoder
@@ -18,11 +17,6 @@ from spakky.plugins.security.error import (
 )
 from spakky.plugins.security.hmac_signer import HMAC, HMACType
 from spakky.plugins.security.key import Key
-
-if sys.version_info >= (3, 11):
-    from typing import Self  # pragma: no cover - Python 3.11+ import path
-else:
-    from typing_extensions import Self  # pragma: no cover - Python <3.11 import path
 
 
 @final

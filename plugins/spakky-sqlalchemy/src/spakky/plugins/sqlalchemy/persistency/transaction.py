@@ -8,7 +8,7 @@ from spakky.plugins.sqlalchemy.persistency.session_manager import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
-from typing_extensions import override
+from typing import override
 
 
 @Pod()

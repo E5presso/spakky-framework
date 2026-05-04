@@ -11,18 +11,17 @@ from typing import (
     Awaitable,
     Callable,
     ParamSpec,
-    TypeAlias,
     TypeVar,
     Union,
     get_args,
     get_origin,
 )
 
-Class: TypeAlias = type[object]
-Func: TypeAlias = Callable[..., Any]
-AsyncFunc: TypeAlias = Callable[..., Awaitable[Any]]
-Action: TypeAlias = Callable[..., None]
-AsyncAction: TypeAlias = Callable[..., Awaitable[None]]
+type Class = type[object]
+type Func = Callable[..., Any]
+type AsyncFunc = Callable[..., Awaitable[Any]]
+type Action = Callable[..., None]
+type AsyncAction = Callable[..., Awaitable[None]]
 
 AnyT = TypeVar("AnyT", bound=Any)
 AnyT_co = TypeVar("AnyT_co", bound=Any, covariant=True)

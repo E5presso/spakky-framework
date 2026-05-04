@@ -10,7 +10,7 @@ from typing import Any
 
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 import grpc
 import grpc.aio

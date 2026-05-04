@@ -10,7 +10,7 @@ from spakky.core.service.background import (
     AbstractBackgroundService,
 )
 from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
-from typing_extensions import override
+from typing import override
 
 from spakky.outbox.common.config import OutboxConfig
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage

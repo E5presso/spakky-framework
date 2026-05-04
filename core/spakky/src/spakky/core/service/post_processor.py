@@ -6,7 +6,7 @@ service Pods with the application context for lifecycle management.
 
 from logging import getLogger
 
-from typing_extensions import override
+from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext

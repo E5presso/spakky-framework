@@ -3,13 +3,10 @@
 from dataclasses import field
 from datetime import timedelta
 from enum import Enum
-from typing import Generic, TypeVar
 
 from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData
 from spakky.saga.status import SagaStatus
-
-SagaDataT_co = TypeVar("SagaDataT_co", bound=AbstractSagaData, covariant=True)
 
 
 class StepStatus(Enum):
@@ -30,7 +27,7 @@ class StepRecord:
 
 
 @immutable
-class SagaResult(Generic[SagaDataT_co]):
+class SagaResult[SagaDataT_co: AbstractSagaData]:
     """사가 실행 결과. 예외를 발생시키지 않고 결과를 전달한다."""
 
     status: SagaStatus

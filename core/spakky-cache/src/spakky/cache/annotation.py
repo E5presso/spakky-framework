@@ -1,14 +1,11 @@
 """Cache method annotations."""
 
 from dataclasses import dataclass
-from typing import Callable, ParamSpec, TypeVar
+from typing import Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
 
 from spakky.cache.interfaces.cache import CacheTTL
-
-P = ParamSpec("P")
-R = TypeVar("R")
 
 
 @dataclass
@@ -36,7 +33,7 @@ class CacheEvict(FunctionAnnotation):
     """Optional cache tags to evict after successful method execution."""
 
 
-def cacheable(
+def cacheable[**P, R](
     key: str | None = None,
     *,
     ttl: CacheTTL = None,
@@ -50,7 +47,7 @@ def cacheable(
     return decorator
 
 
-def cache_evict(
+def cache_evict[**P, R](
     key: str | None = None,
     *,
     tags: tuple[str, ...] = (),

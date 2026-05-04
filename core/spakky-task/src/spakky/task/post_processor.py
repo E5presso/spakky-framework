@@ -6,7 +6,7 @@ from logging import getLogger
 from spakky.core.common.types import Func
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from typing_extensions import override
+from typing import override
 
 from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
 

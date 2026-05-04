@@ -16,7 +16,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.task_handler import TaskRoute
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 from celery import Celery
 from spakky.plugins.celery.common.constants import CELERY_TASK_CONTEXT_KEY

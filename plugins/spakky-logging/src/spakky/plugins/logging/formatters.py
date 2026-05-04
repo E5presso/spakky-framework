@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import ClassVar
 
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.logging.constants import (
     ANSI_DIM,

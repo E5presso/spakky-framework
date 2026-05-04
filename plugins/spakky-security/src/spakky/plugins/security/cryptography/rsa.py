@@ -10,7 +10,7 @@ from Crypto.Cipher import PKCS1_OAEP
 from Crypto.PublicKey import RSA
 from Crypto.PublicKey.RSA import RsaKey
 from Crypto.Signature import PKCS1_v1_5
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.security.cryptography.interface import ICryptor, ISigner
 from spakky.plugins.security.encoding import Base64Encoder

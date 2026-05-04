@@ -9,7 +9,7 @@ from spakky.core.pod.annotations.primary import Primary
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.event_publisher import IAsyncEventBus, IEventBus
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 from spakky.outbox.common.message import OutboxMessage
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage

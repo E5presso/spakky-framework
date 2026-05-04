@@ -3,17 +3,14 @@
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from typing import Generic, TypeAlias, TypeVar
 
 from spakky.cache.result import CacheMetricsSnapshot, CacheResult
 
-CacheTTL: TypeAlias = float | int | timedelta | None
+type CacheTTL = float | int | timedelta | None
 """Cache entry lifetime. None means no automatic expiry."""
 
-T = TypeVar("T")
 
-
-class ICache(ABC, Generic[T]):
+class ICache[T](ABC):
     """Backend-neutral application data cache contract."""
 
     @abstractmethod
@@ -57,7 +54,7 @@ class ICache(ABC, Generic[T]):
         ...
 
 
-class ITaggedCache(ICache[T], ABC):
+class ITaggedCache[T](ICache[T], ABC):
     """Cache backend that can index and evict entries by tag."""
 
     @abstractmethod
@@ -95,7 +92,7 @@ class ITaggedCache(ICache[T], ABC):
         ...
 
 
-class IStampedeProtectedCache(ICache[T], ABC):
+class IStampedeProtectedCache[T](ICache[T], ABC):
     """Cache backend that serializes concurrent miss population."""
 
     @abstractmethod
@@ -123,7 +120,7 @@ class IStampedeProtectedCache(ICache[T], ABC):
         ...
 
 
-class ICacheMetrics(ICache[T], ABC):
+class ICacheMetrics[T](ICache[T], ABC):
     """Cache backend that exposes deterministic metrics counters."""
 
     @abstractmethod
@@ -132,7 +129,7 @@ class ICacheMetrics(ICache[T], ABC):
         ...
 
 
-class IWritePolicyCache(ICache[T], ABC):
+class IWritePolicyCache[T](ICache[T], ABC):
     """Cache backend that coordinates cache writes with an origin writer."""
 
     @abstractmethod

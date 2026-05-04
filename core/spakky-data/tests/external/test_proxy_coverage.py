@@ -1,6 +1,6 @@
 """Test domain ports proxy for complete coverage."""
 
-from typing_extensions import override
+from typing import override
 
 from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.data.external.proxy import ProxyModel

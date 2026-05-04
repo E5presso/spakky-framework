@@ -4,23 +4,11 @@ This module provides base classes for domain and integration events
 in event-driven systems.
 """
 
-import sys
 from abc import ABC
 from dataclasses import field
 from datetime import datetime, timezone
-from typing import Self
+from typing import Self, override
 from uuid import UUID, uuid4
-
-if (
-    sys.version_info
-    >= (
-        3,
-        12,
-    )
-):  # pragma: no cover - Python 3.12+ import path; coverage may run on a single interpreter
-    from typing import override
-else:
-    from typing_extensions import override
 
 from spakky.core.common.interfaces.cloneable import ICloneable
 from spakky.core.common.interfaces.comparable import IComparable

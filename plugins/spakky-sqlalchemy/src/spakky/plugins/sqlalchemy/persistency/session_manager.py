@@ -3,7 +3,7 @@ from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,

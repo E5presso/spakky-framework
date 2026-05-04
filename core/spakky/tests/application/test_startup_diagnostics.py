@@ -3,7 +3,7 @@
 import threading
 
 import pytest
-from typing_extensions import override
+from typing import override
 
 import spakky.core.application.application_context as application_context_module
 from spakky.core.application.application import (

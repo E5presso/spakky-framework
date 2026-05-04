@@ -4,7 +4,7 @@ version = "6.4.0"
 description = "Data access layer for Spakky Framework (Repository implementations, ORM integration)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["spakky-domain>=6.4.0"]
 
 [project.entry-points."spakky.plugins"]
@@ -19,7 +19,7 @@ module-root = "src"
 module-name = "spakky.data"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

@@ -9,14 +9,14 @@ bridge.
 from collections.abc import AsyncIterator
 from inspect import getmembers, isfunction
 from logging import getLogger
-from typing import Callable, TypeVar
+from typing import Callable
 
 from google.protobuf import json_format
 from google.protobuf.message import Message
 from pydantic import BaseModel
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
-from typing_extensions import override
+from typing import override
 
 import grpc
 import grpc.aio
@@ -25,8 +25,6 @@ from spakky.plugins.grpc.error import UnsupportedResponseTypeError
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 
 logger = getLogger(__name__)
-
-BaseModelT = TypeVar("BaseModelT", bound=BaseModel)
 
 
 class GrpcServiceHandler(grpc.GenericRpcHandler):
@@ -356,7 +354,7 @@ def _basemodel_to_protobuf(obj: BaseModel, message_class: type[Message]) -> Mess
     )
 
 
-def _protobuf_to_basemodel(
+def _protobuf_to_basemodel[BaseModelT: BaseModel](
     message: Message, model_type: type[BaseModelT]
 ) -> BaseModelT:
     """Convert a protobuf ``Message`` into a pydantic ``BaseModel`` instance.

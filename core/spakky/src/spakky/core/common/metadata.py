@@ -10,7 +10,6 @@ from typing import (
     Any,
     ClassVar,
     Self,
-    TypeAlias,
     TypeGuard,
     get_args,
     get_origin,
@@ -18,7 +17,7 @@ from typing import (
 
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
-AnnotatedType: TypeAlias = Annotated[type[Any], ...]
+type AnnotatedType = Annotated[type[Any], ...]
 
 
 class MetadataNotFoundError(AbstractSpakkyFrameworkError):

@@ -3,7 +3,7 @@ name = "spakky-saga"
 version = "6.4.0"
 description = "Distributed transaction saga orchestration for Spakky Framework"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = ["spakky>=6.4.0", "spakky-domain>=6.4.0"]
@@ -20,7 +20,7 @@ module-root = "src"
 module-name = "spakky.saga"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

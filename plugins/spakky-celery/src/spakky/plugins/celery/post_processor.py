@@ -19,7 +19,7 @@ from spakky.task.stereotype.schedule import ScheduleRoute
 from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 from celery import Celery, current_task
 from celery.schedules import crontab as celery_crontab

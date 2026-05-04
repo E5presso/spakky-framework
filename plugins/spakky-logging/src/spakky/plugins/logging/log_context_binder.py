@@ -2,7 +2,7 @@
 
 from spakky.core.logging.interfaces.log_context_binder import ILogContextBinder
 from spakky.core.pod.annotations.pod import Pod
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.logging.context import LogContext
 

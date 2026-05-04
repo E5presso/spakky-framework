@@ -5,13 +5,10 @@ for organizing task-queue-driven architectures.
 """
 
 from dataclasses import dataclass
-from typing import Callable, ParamSpec, TypeVar, cast
+from typing import Callable, cast
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 
 @dataclass
@@ -22,7 +19,7 @@ class TaskRoute(FunctionAnnotation):
     """
 
 
-def task(obj: Callable[P, T]) -> Callable[P, T]:
+def task[**P, T](obj: Callable[P, T]) -> Callable[P, T]:
     """Decorator for marking methods as dispatchable tasks.
 
     All @task methods are dispatched to the task queue by the plugin aspect.

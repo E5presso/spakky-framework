@@ -8,7 +8,7 @@ brute-force attacks.
 from hashlib import scrypt
 from typing import ClassVar, overload
 
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.security.encoding import Base64Encoder
 from spakky.plugins.security.error import PasswordRequiredError

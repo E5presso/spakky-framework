@@ -1,4 +1,4 @@
-from typing_extensions import override
+from typing import override
 
 from spakky.core.common.interfaces.representable import IRepresentable
 

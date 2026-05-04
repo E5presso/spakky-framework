@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/pypi/v/spakky.svg" alt="PyPI Version">
   </a>
   <a href="#">
-    <img src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
+    <img src="https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue" alt="Python Versions">
   </a>
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License">
@@ -152,7 +152,7 @@ print(user_service.get_user_name(1))
 
 ### 사전 준비
 
-- Python 3.11+
+- Python 3.12+
 - `uv` 설치
 
 ### 설정

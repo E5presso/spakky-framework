@@ -5,7 +5,7 @@ to appropriate JSON responses and handles unexpected exceptions gracefully.
 """
 
 from logging import getLogger
-from typing import Awaitable, Callable, TypeAlias
+from typing import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware, DispatchFunction
 from starlette.responses import Response
@@ -15,7 +15,7 @@ from fastapi import Request
 from spakky.plugins.fastapi.error import AbstractSpakkyFastAPIError, InternalServerError
 
 logger = getLogger(__name__)
-Next: TypeAlias = Callable[[Request], Awaitable[Response]]
+type Next = Callable[[Request], Awaitable[Response]]
 
 
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):

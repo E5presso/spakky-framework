@@ -5,6 +5,7 @@ import sys
 from enum import StrEnum
 from pathlib import Path
 from types import FunctionType, ModuleType
+from typing import Self
 
 from spakky.core.common.importing import Module, is_package, resolve_module
 from spakky.core.common.mutability import immutable
@@ -78,7 +79,7 @@ class DiscoveryManifestFingerprint:
         cls,
         path: Module,
         exclude: set[Module],
-    ) -> "DiscoveryManifestFingerprint":
+    ) -> Self:
         """Build a fingerprint from scan inputs.
 
         Args:
@@ -126,7 +127,7 @@ class DiscoveryManifestCandidate:
     """Qualified object name inside the module."""
 
     @classmethod
-    def from_object(cls, obj: type | FunctionType) -> "DiscoveryManifestCandidate":
+    def from_object(cls, obj: type | FunctionType) -> Self:
         """Build a candidate identity from a discovered object.
 
         Args:

@@ -1,19 +1,8 @@
 """Event handler registration post-processor."""
 
-import sys
 from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
-
-if (
-    sys.version_info
-    >= (
-        3,
-        12,
-    )
-):  # pragma: no cover - Python 3.12+ import path; coverage may run on a single interpreter
-    from typing import override
-else:
-    from typing_extensions import override
+from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware

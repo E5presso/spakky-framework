@@ -8,10 +8,10 @@ from abc import ABC, abstractmethod
 from functools import wraps
 from inspect import iscoroutinefunction, ismethod
 from types import new_class
-from typing import Any, ClassVar, Generic, Iterable
+from typing import Any, ClassVar, Iterable
 
 from spakky.core.common.constants import DYNAMIC_PROXY_CLASS_NAME_SUFFIX
-from spakky.core.common.types import AsyncFunc, Func, ObjectT
+from spakky.core.common.types import AsyncFunc, Func
 
 
 class IProxyHandler(ABC):
@@ -138,7 +138,7 @@ class AbstractProxyHandler(IProxyHandler, ABC):
         return delattr(target, name)
 
 
-class ProxyFactory(Generic[ObjectT]):
+class ProxyFactory[ObjectT]:
     """Factory for creating dynamic proxy objects.
 
     Creates a proxy that intercepts method calls and attribute access on a target object,

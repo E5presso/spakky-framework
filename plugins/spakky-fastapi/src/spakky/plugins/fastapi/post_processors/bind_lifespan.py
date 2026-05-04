@@ -15,7 +15,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from typing_extensions import override
+from typing import override
 
 from fastapi import FastAPI
 

@@ -1,11 +1,13 @@
 """Startup diagnostics report and phase recorder contracts."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from time import perf_counter
 from types import TracebackType
 
-from typing_extensions import override
+from typing import Self, override
 
 from spakky.core.application.error import AbstractSpakkyApplicationError
 from spakky.core.common.mutability import immutable
@@ -80,7 +82,7 @@ class StartupFailureSummary:
         cls,
         exception: BaseException,
         diagnostic_details: StartupDiagnosticDetails = (),
-    ) -> "StartupFailureSummary":
+    ) -> Self:
         """Create a failure summary from an exception.
 
         Args:
@@ -198,7 +200,7 @@ class IStartupPhaseRecorder(ABC):
         phase_name: StartupPhaseName,
         processed_count: StartupProcessedCount = 0,
         diagnostic_details: StartupDiagnosticDetails = (),
-    ) -> "StartupPhaseRecording":
+    ) -> StartupPhaseRecording:
         """Measure a startup phase and record success or failure.
 
         Args:
@@ -242,7 +244,7 @@ class StartupPhaseRecording:
         self._diagnostic_details = diagnostic_details
         self._started_at = perf_counter()
 
-    def __enter__(self) -> "StartupPhaseRecording":
+    def __enter__(self) -> Self:
         """Enter the startup phase recording context."""
         return self
 

@@ -18,7 +18,7 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.core.service.interfaces.service import IAsyncService
-from typing_extensions import override
+from typing import override
 
 import grpc.aio
 from spakky.plugins.grpc.server_spec import GrpcServerSpec

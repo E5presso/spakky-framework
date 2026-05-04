@@ -19,7 +19,7 @@ from spakky.event.event_consumer import (
 )
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 logger = getLogger(__name__)
 

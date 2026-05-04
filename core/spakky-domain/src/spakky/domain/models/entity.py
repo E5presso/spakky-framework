@@ -4,25 +4,13 @@ This module provides AbstractEntity base class for DDD entities with
 identity, validation, and immutability enforcement.
 """
 
-import sys
 from abc import ABC, abstractmethod
 from dataclasses import field
 from datetime import UTC, datetime
-from typing import Any, ClassVar, Generic
+from typing import Any, ClassVar, override
 from uuid import UUID
 
-if (
-    sys.version_info
-    >= (
-        3,
-        12,
-    )
-):  # pragma: no cover - Python 3.12+ import path; coverage may run on a single interpreter
-    from typing import override
-else:
-    from typing_extensions import override
-
-from spakky.core.common.interfaces.equatable import EquatableT, IEquatable
+from spakky.core.common.interfaces.equatable import IEquatable
 from spakky.core.common.mutability import mutable
 from spakky.core.utils.uuid import uuid7
 
@@ -37,7 +25,7 @@ class CannotMonkeyPatchEntityError(AbstractSpakkyDomainError):
 
 
 @mutable
-class AbstractEntity(AbstractDomainModel, IEquatable, Generic[EquatableT], ABC):
+class AbstractEntity[EquatableT](AbstractDomainModel, IEquatable, ABC):
     """Base class for DDD entities with identity and validation.
 
     Entities are objects with unique identity that maintain consistency

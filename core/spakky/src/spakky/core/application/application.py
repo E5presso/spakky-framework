@@ -327,7 +327,7 @@ class SpakkyApplication:
     def _resolve_manifest_hit(
         self,
         candidates: tuple[DiscoveryManifestCandidate, ...],
-    ) -> "_DiscoveryManifestHit":
+    ) -> _DiscoveryManifestHit:
         discovered_objects: list[PodType] = []
         for candidate in candidates:
             matches = list_objects(

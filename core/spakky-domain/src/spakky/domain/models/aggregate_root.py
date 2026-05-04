@@ -6,9 +6,8 @@ that manage domain events and maintain consistency boundaries.
 
 from abc import ABC
 from dataclasses import field
-from typing import Generic, Sequence, TypeVar
+from typing import Sequence, TypeVar
 
-from spakky.core.common.interfaces.equatable import EquatableT
 from spakky.core.common.mutability import mutable
 
 from spakky.domain.models.entity import AbstractEntity
@@ -16,7 +15,7 @@ from spakky.domain.models.event import AbstractDomainEvent
 
 
 @mutable
-class AbstractAggregateRoot(AbstractEntity[EquatableT], Generic[EquatableT], ABC):
+class AbstractAggregateRoot[EquatableT](AbstractEntity[EquatableT], ABC):
     """Base class for DDD aggregate roots.
 
     Aggregate roots are entities that serve as entry points to aggregates,

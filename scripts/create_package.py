@@ -135,7 +135,7 @@ name = "{name}"
 version = "{version}"
 description = "{description}"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = {{ text = "MIT" }}
 authors = [{{ name = "Spakky", email = "sejong418@icloud.com" }}]
 dependencies = ["spakky>={version}"]
@@ -152,7 +152,7 @@ module-root = "src"
 module-name = "{module_name}"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

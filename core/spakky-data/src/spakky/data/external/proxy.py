@@ -1,13 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Generic, Sequence, TypeVar
+from typing import Sequence
 
 from spakky.core.common.mutability import immutable
 
-ProxyIdT_contra = TypeVar("ProxyIdT_contra", contravariant=True)
-
 
 @immutable
-class ProxyModel(Generic[ProxyIdT_contra]):
+class ProxyModel[ProxyIdT_contra]:
     """Immutable read-only projection model identified by an equatable ID."""
 
     id: ProxyIdT_contra
@@ -23,10 +21,7 @@ class ProxyModel(Generic[ProxyIdT_contra]):
         return hash(self.id)
 
 
-ProxyModelT_co = TypeVar("ProxyModelT_co", bound=ProxyModel[object], covariant=True)
-
-
-class IGenericProxy(ABC, Generic[ProxyModelT_co, ProxyIdT_contra]):
+class IGenericProxy[ProxyModelT_co: ProxyModel[object], ProxyIdT_contra](ABC):
     """Synchronous read-only proxy interface for querying projections."""
 
     @abstractmethod
@@ -50,7 +45,7 @@ class IGenericProxy(ABC, Generic[ProxyModelT_co, ProxyIdT_contra]):
         ...
 
 
-class IAsyncGenericProxy(ABC, Generic[ProxyModelT_co, ProxyIdT_contra]):
+class IAsyncGenericProxy[ProxyModelT_co: ProxyModel[object], ProxyIdT_contra](ABC):
     """Asynchronous read-only proxy interface for querying projections."""
 
     @abstractmethod

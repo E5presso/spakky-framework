@@ -9,7 +9,7 @@ from datetime import timedelta
 from enum import Enum
 from logging import getLogger
 from time import monotonic
-from typing import Awaitable, Callable, Generic
+from typing import Awaitable, Callable
 
 from spakky.saga.data import AbstractSagaData
 from spakky.saga.error import (
@@ -20,7 +20,6 @@ from spakky.saga.error import (
 from spakky.saga.flow import (
     CompensateFn,
     Parallel,
-    SagaDataT,
     SagaFlow,
     SagaStep,
     Transaction,
@@ -40,7 +39,7 @@ def _format_ms(elapsed: timedelta) -> str:
 
 
 @dataclass(frozen=True)
-class _NormalizedStep(Generic[SagaDataT]):
+class _NormalizedStep[SagaDataT: AbstractSagaData]:
     """정규화된 단일 step: 실행에 필요한 모든 메타데이터 포함."""
 
     name: str
@@ -51,7 +50,7 @@ class _NormalizedStep(Generic[SagaDataT]):
 
 
 @dataclass(frozen=True)
-class _NormalizedParallel(Generic[SagaDataT]):
+class _NormalizedParallel[SagaDataT: AbstractSagaData]:
     """정규화된 병렬 그룹. asyncio.gather로 동시 실행된다."""
 
     steps: tuple[_NormalizedStep[SagaDataT], ...]
@@ -74,7 +73,7 @@ class _StrategyResult:
     last_error: Exception
 
 
-class SagaExecutor(Generic[SagaDataT]):
+class SagaExecutor[SagaDataT: AbstractSagaData]:
     """사가 실행 오케스트레이터.
 
     SagaFlow를 입력받아 step 단위로 실행하고, 실패 시 `on_error` 전략을 적용하며,
@@ -465,7 +464,7 @@ class SagaExecutor(Generic[SagaDataT]):
         return _NormalizedParallel(steps=tuple(steps))
 
 
-async def run_saga_flow(
+async def run_saga_flow[SagaDataT: AbstractSagaData](
     flow: SagaFlow[SagaDataT],
     data: SagaDataT,
     *,

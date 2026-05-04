@@ -31,7 +31,7 @@
 1. **예술적 간결함** — 코드를 읽는 것만으로 사람을 감동시킬 수준의 brevity인가? 200줄을 50줄로 줄일 여지가 없는가? (SSOT: `behavioral-guidelines.md` §2 "Simplicity First")
 2. **Self-descriptive** — 코드를 읽는 것만으로 도메인 비즈니스 로직을 파악할 수 있는가? 식별자(클래스·메서드·변수)가 도메인 의미를 직접 전달하는가? (SSOT: `behavioral-guidelines.md` "네이밍", `python-code.md` "명명", 도메인 사전)
 3. **주석 documentation 가치** — 식별자만으로 전달 불가한 부분(숨겨진 도메인 제약·미묘한 invariant·workaround 사유·놀라운 동작)이 주석으로 충분히 보강되었는가? "주석 무조건 금지"가 아니라 "필요할 때 빠뜨리지 않는다"가 원칙. (SSOT: `python-code.md` "주석 정책")
-4. **최신 문법 반영** — Python 3.11+의 현대 문법(PEP 695 generic syntax, `typing.Self`, `@override`, `match`/`case` 등)을 적극 활용하는가? 구식 패턴(`List`/`Dict`/`Optional`, `from __future__ import annotations` 등 금지 항목)을 답습하지 않았는가? (SSOT: `python-code.md` "타입 안전" + "최신 문법", `type-discipline.md`)
+4. **최신 문법 반영** — Python 3.12+의 현대 문법(PEP 695 generic syntax, `typing.Self`, `@override`, `match`/`case` 등)을 적극 활용하는가? 구식 패턴(`List`/`Dict`/`Optional`, 불필요한 forward reference 등 금지 항목)을 답습하지 않았는가? (SSOT: `python-code.md` "타입 안전" + "최신 문법", `type-discipline.md`)
 5. **성능 + 가독성 동시 보전** — 가독성 희생으로 미시 최적화하지 않고, 가독성 우선 작성 후 hot path만 의식적으로 최적화했는가? N+1 쿼리·불필요한 직렬화·O(N²) 명백 회피 패턴이 적용되었는가? (SSOT: `behavioral-guidelines.md` §2 + `python-code.md`)
 6. **Modularity / 유지보수성** — SRP/OCP/LSP/ISP/DIP를 준수하여 변경 영향 범위가 최소화되는가? 단일 클래스가 200줄을 넘으면 책임 분리 시그널을 검토했는가? (SSOT: `python-code.md` "SOLID" + `monorepo.md`/`domain.md`/`aspect.md` 레이어)
 7. **대원칙 준수 (임기응변 금지)** — 그때그때 상황에 맞춘 ad-hoc 코드가 아니라, charter / behavioral-guidelines / python-code / domain rules 같은 **대원칙 아래에서 일관되게** 작성되었는가?

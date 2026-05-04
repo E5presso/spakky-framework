@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Awaitable
 
-from typing_extensions import override
+from typing import override
 
 from spakky.domain.application.command import (
     AbstractCommand,

@@ -111,7 +111,7 @@ class Order(AbstractAggregateRoot[UUID]):
         return uuid4()
 
     @classmethod
-    def create(cls, customer_name: str, total_amount: float) -> "Order":
+    def create(cls, customer_name: str, total_amount: float) -> Self:
         order = cls(
             uid=cls.next_id(),
             customer_name=customer_name,

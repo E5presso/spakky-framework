@@ -6,7 +6,7 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.tracing.w3c_propagator import W3CTracePropagator
-from typing_extensions import override
+from typing import override
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource

@@ -3,10 +3,10 @@ name = "spakky-cache"
 version = "6.4.0"
 description = "Backend-neutral cache contracts and AOP annotations for Spakky Framework"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.4.0", "typing-extensions>=4.15.0"]
+dependencies = ["spakky>=6.4.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-cache = "spakky.cache.main:initialize"
@@ -20,7 +20,7 @@ module-root = "src"
 module-name = "spakky.cache"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = ["src", ".", "../spakky/src"]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

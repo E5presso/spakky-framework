@@ -14,7 +14,7 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from typing_extensions import override
+from typing import override
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse

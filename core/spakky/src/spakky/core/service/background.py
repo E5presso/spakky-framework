@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from asyncio import locks, tasks
 from threading import Thread
 
-from typing_extensions import override
+from typing import override
 
 from spakky.core.service.interfaces.service import IAsyncService, IService
 

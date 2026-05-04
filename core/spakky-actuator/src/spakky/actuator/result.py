@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from dataclasses import field
 from enum import StrEnum
+from typing import Self
 
 from spakky.core.common.mutability import immutable
 
@@ -38,7 +39,7 @@ class ComponentHealthResult:
         *,
         required: bool = True,
         details: Mapping[str, object] | None = None,
-    ) -> "ComponentHealthResult":
+    ) -> Self:
         """Create a healthy component result."""
         return cls(
             name=name,
@@ -54,7 +55,7 @@ class ComponentHealthResult:
         *,
         required: bool = True,
         details: Mapping[str, object] | None = None,
-    ) -> "ComponentHealthResult":
+    ) -> Self:
         """Create an unhealthy component result."""
         return cls(
             name=name,
@@ -73,7 +74,7 @@ class ActuatorHealthResult:
     components: tuple[ComponentHealthResult, ...] = field(default_factory=tuple)
 
     @classmethod
-    def healthy_baseline(cls, endpoint: ActuatorEndpoint) -> "ActuatorHealthResult":
+    def healthy_baseline(cls, endpoint: ActuatorEndpoint) -> Self:
         """Create deterministic healthy baseline result for no probes."""
         return cls(endpoint=endpoint, status=HealthStatus.HEALTHY)
 
@@ -82,7 +83,7 @@ class ActuatorHealthResult:
         cls,
         endpoint: ActuatorEndpoint,
         components: tuple[ComponentHealthResult, ...],
-    ) -> "ActuatorHealthResult":
+    ) -> Self:
         """Create aggregate result from component results."""
         ordered_components = tuple(sorted(components, key=lambda item: item.name))
         if not ordered_components:
@@ -106,7 +107,7 @@ class ActuatorInfoResult:
     info: Mapping[str, object] = field(default_factory=dict)
 
     @classmethod
-    def from_mapping(cls, info: Mapping[str, object]) -> "ActuatorInfoResult":
+    def from_mapping(cls, info: Mapping[str, object]) -> Self:
         """Create deterministic info result from a mapping."""
         return cls(info=_sorted_mapping(info))
 

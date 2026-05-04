@@ -10,16 +10,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, Generic, TypeVar, overload
+from typing import Awaitable, Callable, overload
 
+from spakky.saga.data import AbstractSagaData
 from spakky.saga.engine import run_saga_flow
-from spakky.saga.flow import SagaDataT, SagaFlow, SagaStep
+from spakky.saga.flow import SagaFlow, SagaStep
 from spakky.saga.result import SagaResult
 
-_SelfT = TypeVar("_SelfT")
 
-
-class _SagaStepDescriptor(Generic[SagaDataT]):
+class _SagaStepDescriptor[SagaDataT: AbstractSagaData]:
     """사가 메서드 descriptor. 인스턴스 접근 시 SagaStep을 반환한다.
 
     `@saga_step` 데코레이터가 적용된 메서드에 해당한다. 클래스 속성 수준에서는
@@ -58,7 +57,7 @@ class _SagaStepDescriptor(Generic[SagaDataT]):
         return SagaStep(action=bound_method)
 
 
-def saga_step(
+def saga_step[_SelfT, SagaDataT: AbstractSagaData](
     fn: Callable[[_SelfT, SagaDataT], Awaitable[SagaDataT | None]],
 ) -> _SagaStepDescriptor[SagaDataT]:
     """사가 step 메서드를 descriptor로 감싼다.
@@ -87,7 +86,7 @@ def saga_step(
     return _SagaStepDescriptor(fn)
 
 
-class AbstractSaga(ABC, Generic[SagaDataT]):
+class AbstractSaga[SagaDataT: AbstractSagaData](ABC):
     """사가를 정의하는 제네릭 베이스 클래스.
 
     서브클래스는 flow()를 구현하여 사가 흐름을 선언적으로 정의한다. 사가의

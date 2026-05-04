@@ -106,7 +106,7 @@ def flow(self) -> SagaFlow[CreateOrderSagaData]:
 | 종류 | **코어 패키지** (`core/spakky-saga/`) |
 | 역할 | 분산 트랜잭션 사가 오케스트레이션 |
 | 의존 | `spakky` (DI/AOP), `spakky-domain` (AbstractDomainModel, @immutable) |
-| Python | 3.11+ |
+| Python | 3.12+ |
 
 ### 아키텍처 위치
 

@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import ClassVar, Generic, Self, get_args, get_origin
+from typing import ClassVar, Self, get_args, get_origin
 
 from spakky.core.common.mro import generic_mro
 from spakky.core.common.types import ObjectT
@@ -22,7 +22,7 @@ class AbstractTable(DeclarativeBase, AsyncAttrs):
     __abstract__ = True
 
 
-class AbstractMappableTable(AbstractTable, Generic[ObjectT]):
+class AbstractMappableTable[ObjectT](AbstractTable):
     """Table class with domain object mapping support.
 
     Use this class for tables that map to domain entities. Subclasses must

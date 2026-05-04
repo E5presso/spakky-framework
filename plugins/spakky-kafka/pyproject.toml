@@ -3,7 +3,7 @@ name = "spakky-kafka"
 version = "6.4.0"
 description = "Apache Kafka plugin for Spakky framework"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
@@ -33,7 +33,7 @@ module-root = "src"
 module-name = "spakky.plugins.kafka"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

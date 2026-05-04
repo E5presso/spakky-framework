@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from inspect import Parameter, isclass, isfunction
 from types import NoneType
-from typing import Annotated, TypeAlias, TypeGuard, TypeVar, get_origin
+from typing import Annotated, TypeGuard, TypeVar, get_origin
 from uuid import UUID, uuid4
 
 from spakky.core.common.annotation import Annotation
@@ -43,8 +43,8 @@ class DependencyInfo:
     qualifiers: list[Qualifier] = field(default_factory=list[Qualifier])
 
 
-DependencyMap: TypeAlias = dict[str, DependencyInfo]
-PodType: TypeAlias = Func | Class
+type DependencyMap = dict[str, DependencyInfo]
+type PodType = Func | Class
 PodT = TypeVar("PodT", bound=PodType)
 PodT_co = TypeVar("PodT_co", bound=PodType, covariant=True)
 PodT_contra = TypeVar("PodT_contra", bound=PodType, contravariant=True)
@@ -133,7 +133,7 @@ class Pod(Annotation, IEquatable):
     target: PodType = field(init=False)
     """The target class or function being registered as a Pod."""
 
-    dependencies: DependencyMap = field(init=False, default_factory=DependencyMap)
+    dependencies: DependencyMap = field(init=False, default_factory=dict)
     """Map of dependency names to their injection information."""
 
     def __get_dependencies(self, obj: PodType) -> DependencyMap:

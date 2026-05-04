@@ -2,6 +2,7 @@
 
 from dataclasses import field
 from datetime import datetime
+from typing import Self
 from uuid import UUID
 
 from spakky.core.common.mutability import mutable
@@ -33,7 +34,7 @@ class UserRole(AbstractAggregateRoot[tuple[UUID, UUID]]):
         cls,
         user_id: UUID,
         role_id: UUID,
-    ) -> "UserRole":
+    ) -> Self:
         """Create a new UserRole instance."""
         now = datetime.now()
         return cls(

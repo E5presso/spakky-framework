@@ -5,7 +5,7 @@ for organizing event-driven architectures.
 """
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Generic, TypeAlias, TypeVar
+from typing import Any, Awaitable, Callable, TypeVar
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
@@ -14,12 +14,14 @@ from spakky.domain.models.event import AbstractEvent
 EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
 """Type variable for domain event types (contravariant for handler parameters)."""
 
-EventHandlerMethod: TypeAlias = Callable[[Any, EventT_contra], None | Awaitable[None]]
+type EventHandlerMethod[EventT_contra: AbstractEvent] = Callable[
+    [Any, EventT_contra], None | Awaitable[None]
+]
 """Type alias for event handler callback functions."""
 
 
 @dataclass
-class EventRoute(FunctionAnnotation, Generic[EventT_contra]):
+class EventRoute[EventT_contra: AbstractEvent](FunctionAnnotation):
     """Annotation for marking methods as event handlers.
 
     Associates a method with a specific domain event type.
@@ -42,7 +44,7 @@ class EventRoute(FunctionAnnotation, Generic[EventT_contra]):
         return super().__call__(obj)
 
 
-def on_event(
+def on_event[EventT_contra: AbstractEvent](
     event_type: type[EventT_contra],
 ) -> Callable[
     [EventHandlerMethod[EventT_contra]],

@@ -6,7 +6,7 @@ used to mark controller methods as API endpoints with full FastAPI configuration
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Sequence, TypeAlias
+from typing import Any, Callable, Sequence
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.common.types import AnyT
@@ -16,8 +16,8 @@ from fastapi import Response, params
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
-SetIntStr: TypeAlias = set[int | str]
-DictIntStrAny: TypeAlias = dict[int | str, Any]
+type SetIntStr = set[int | str]
+type DictIntStrAny = dict[int | str, Any]
 
 
 class HTTPMethod(str, Enum):

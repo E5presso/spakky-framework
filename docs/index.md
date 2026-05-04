@@ -1,6 +1,6 @@
 # Spakky Framework
 
-**Python 3.11+를 위한 Spring-inspired DI/IoC 프레임워크**
+**Python 3.12+를 위한 Spring-inspired DI/IoC 프레임워크**
 
 <p style="font-size: 1.2em; color: var(--md-default-fg-color--light);">
 타입 안전한 의존성 주입, AOP, 이벤트 기반 아키텍처를 Python답게.
@@ -106,6 +106,7 @@ class DataService:
 Aggregate Root, Entity, Value Object, Domain Event를 기본 제공합니다.
 
 ```python
+from typing import Self
 from uuid import UUID, uuid4
 
 from spakky.core.common.mutability import mutable, immutable
@@ -131,7 +132,7 @@ class Order(AbstractAggregateRoot[UUID]):
             raise ValueError("total_amount must be non-negative")
 
     @classmethod
-    def create(cls, customer_name: str, total_amount: float) -> "Order":
+    def create(cls, customer_name: str, total_amount: float) -> Self:
         order = cls(uid=cls.next_id(), customer_name=customer_name, total_amount=total_amount)
         order.add_event(Order.Created(order_id=order.uid, total_amount=total_amount))
         return order

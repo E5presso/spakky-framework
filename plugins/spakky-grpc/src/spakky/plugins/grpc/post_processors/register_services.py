@@ -17,7 +17,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.grpc.handler import GrpcServiceHandler
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor

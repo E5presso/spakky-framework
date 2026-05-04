@@ -6,13 +6,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Set
 from datetime import timedelta
 import pickle
 from time import monotonic, sleep
-from typing import Generic, TypeVar
 from uuid import uuid4
 
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from redis.exceptions import RedisError
-from typing_extensions import override
+from typing import override
 
 from spakky.cache import (
     ICacheMetrics,
@@ -34,7 +33,6 @@ from spakky.plugins.redis.error import (
     RedisCacheSerializationError,
 )
 
-T = TypeVar("T")
 RedisKey = str | bytes
 
 
@@ -378,12 +376,11 @@ class AsyncRedisAdapter(IAsyncRedisClient):
 
 
 @Pod()
-class RedisCache(
+class RedisCache[T](
     ITaggedCache[T],
     IStampedeProtectedCache[T],
     ICacheMetrics[T],
     IWritePolicyCache[T],
-    Generic[T],
 ):
     """Redis-backed cache that stores pickled values under a configured prefix."""
 

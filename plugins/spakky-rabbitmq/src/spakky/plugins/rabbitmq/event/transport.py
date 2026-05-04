@@ -9,7 +9,7 @@ from aio_pika import (  # type: ignore[import-untyped]  # aio_pika lacks type st
     connect_robust,
 )
 from pika import BasicProperties, BlockingConnection, URLParameters
-from typing_extensions import override
+from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.event.event_publisher import (

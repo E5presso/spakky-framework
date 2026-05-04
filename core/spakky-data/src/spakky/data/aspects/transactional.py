@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from inspect import iscoroutinefunction
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, Callable
 
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
@@ -8,15 +8,12 @@ from spakky.core.aop.pointcut import Around
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.common.types import AsyncFunc, Func
 from spakky.core.pod.annotations.order import Order
-from typing_extensions import override
+from typing import override
 
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
 )
-
-P = ParamSpec("P")
-R = TypeVar("R")
 
 
 @dataclass
@@ -30,7 +27,7 @@ class Transactional(FunctionAnnotation):
     ...
 
 
-def transactional(func: Callable[P, R]) -> Callable[P, R]:
+def transactional[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     """Decorator for marking methods as transactional.
 
     Args:

@@ -7,14 +7,11 @@ of dynamic protobuf attribute access.
 """
 
 from collections.abc import Callable
-from typing import TypeVar
 
 from google.protobuf import json_format
 from pydantic import BaseModel
 
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
-
-BaseModelT = TypeVar("BaseModelT", bound=BaseModel)
 
 
 def serializer_for(
@@ -35,7 +32,7 @@ def serializer_for(
     return _serialize
 
 
-def deserializer_for(
+def deserializer_for[BaseModelT: BaseModel](
     registry: DescriptorRegistry,
     full_name: str,
     model_type: type[BaseModelT],

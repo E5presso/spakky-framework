@@ -8,7 +8,7 @@ from typing import ClassVar, final
 
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.security.cryptography.interface import ICryptor
 from spakky.plugins.security.encoding import Base64Encoder

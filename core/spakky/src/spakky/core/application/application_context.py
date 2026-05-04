@@ -10,7 +10,7 @@ from types import MappingProxyType, NoneType
 from typing import Callable, cast, overload
 from uuid import UUID, uuid4
 
-from typing_extensions import override
+from typing import override
 
 from spakky.core.aop.post_processor import AspectPostProcessor
 from spakky.core.application.error import AbstractSpakkyApplicationError

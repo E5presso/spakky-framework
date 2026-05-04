@@ -6,7 +6,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 
 ## Overview
 
-- **Framework**: Spring-inspired DI/IoC for Python 3.11+, AOP, plugin system (`uv` monorepo)
+- **Framework**: Spring-inspired DI/IoC for Python 3.12+, AOP, plugin system (`uv` monorepo)
 - **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task`, `spakky-tracing`, `spakky-outbox`, `spakky-saga`
 - **Plugins** (`plugins/`): `spakky-logging`, `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-celery`, `spakky-opentelemetry`, `spakky-grpc`
 

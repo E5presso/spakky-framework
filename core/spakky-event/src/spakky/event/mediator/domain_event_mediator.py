@@ -5,20 +5,8 @@ and Dispatcher interfaces. Mediators manage handler registration and event
 dispatching within the same bounded context.
 """
 
-import sys
 from logging import getLogger
-from typing import Any
-
-if (
-    sys.version_info
-    >= (
-        3,
-        12,
-    )
-):  # pragma: no cover - Python 3.12+ import path; coverage may run on a single interpreter
-    from typing import override
-else:
-    from typing_extensions import override
+from typing import Any, override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractEvent

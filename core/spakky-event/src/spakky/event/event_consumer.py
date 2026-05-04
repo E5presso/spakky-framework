@@ -1,14 +1,18 @@
 """Event consumer interfaces for registering event handlers."""
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, TypeAlias, TypeVar
+from typing import Awaitable, Callable, TypeVar
 
 from spakky.domain.models.event import AbstractEvent
 
 EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
-EventHandlerCallback: TypeAlias = Callable[[EventT_contra], None]
+type EventHandlerCallback[EventT_contra: AbstractEvent] = Callable[
+    [EventT_contra], None
+]
 """Synchronous event handler callback type."""
-AsyncEventHandlerCallback: TypeAlias = Callable[[EventT_contra], Awaitable[None]]
+type AsyncEventHandlerCallback[EventT_contra: AbstractEvent] = Callable[
+    [EventT_contra], Awaitable[None]
+]
 """Asynchronous event handler callback type."""
 
 

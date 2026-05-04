@@ -1,6 +1,6 @@
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
-from typing_extensions import override
+from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.tag_registry_aware import ITagRegistryAware
@@ -11,13 +11,6 @@ from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
 from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 from sqlalchemy import MetaData
 from sqlalchemy import Table as SQLAlchemyTable
-
-AggregateRootT = TypeVar(
-    "AggregateRootT",
-    bound=AbstractAggregateRoot[
-        Any
-    ],  # Any: aggregate ID type is irrelevant to schema lookup
-)
 
 
 class NoSchemaFoundFromDomainError(AbstractSpakkySqlAlchemyORMError):
@@ -91,7 +84,7 @@ class SchemaRegistry(ITagRegistryAware):
                 )
             ] = tag.domain
 
-    def get_type(
+    def get_type[AggregateRootT: AbstractAggregateRoot[Any]](
         self, domain_type: type[AggregateRootT]
     ) -> type[AbstractMappableTable[AggregateRootT]]:
         """Look up the table class registered for the given domain type."""
@@ -100,7 +93,7 @@ class SchemaRegistry(ITagRegistryAware):
             raise NoSchemaFoundFromDomainError(domain_type)
         return cast(type[AbstractMappableTable[AggregateRootT]], table)
 
-    def from_domain(
+    def from_domain[AggregateRootT: AbstractAggregateRoot[Any]](
         self, aggregate: AggregateRootT
     ) -> AbstractMappableTable[AggregateRootT]:
         """Convert a domain object to its corresponding table instance."""

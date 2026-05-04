@@ -7,7 +7,7 @@ import pickle
 import fakeredis
 import pytest
 from redis.exceptions import RedisError
-from typing_extensions import override
+from typing import override
 
 from spakky.cache import CacheHit, CacheMiss, InvalidCacheTTLError
 from spakky.plugins.redis import (

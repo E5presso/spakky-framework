@@ -4,7 +4,7 @@ version = "6.4.0"
 description = "Security utilities plugin for Spakky framework"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
     "argon2-cffi>=25.1.0",
@@ -25,7 +25,7 @@ module-root = "src"
 module-name = "spakky.plugins.security"
 
 [tool.pyrefly]
-python-version = "3.11"
+python-version = "3.12"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 

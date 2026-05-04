@@ -18,7 +18,7 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.grpc.interceptors.error_handling import ErrorHandlingInterceptor
 from spakky.plugins.grpc.interceptors.tracing import TracingInterceptor

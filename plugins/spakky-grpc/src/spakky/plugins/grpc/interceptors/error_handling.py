@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from logging import getLogger
 from typing import Any
 
-from typing_extensions import override
+from typing import override
 
 import grpc
 import grpc.aio

@@ -6,15 +6,12 @@ periodic execution (interval, daily, or crontab-based).
 
 from dataclasses import dataclass
 from datetime import time, timedelta
-from typing import Callable, ParamSpec, TypeVar, cast
+from typing import Callable, cast
 
 from spakky.core.common.annotation import FunctionAnnotation
 
 from spakky.task.error import InvalidScheduleSpecificationError
 from spakky.task.stereotype.crontab import Crontab
-
-P = ParamSpec("P")
-T = TypeVar("T")
 
 
 @dataclass
@@ -39,7 +36,7 @@ class ScheduleRoute(FunctionAnnotation):
             raise InvalidScheduleSpecificationError()
 
 
-def schedule(
+def schedule[**P, T](
     *,
     interval: timedelta | None = None,
     at: time | None = None,

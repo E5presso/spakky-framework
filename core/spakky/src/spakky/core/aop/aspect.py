@@ -6,7 +6,7 @@ method calls across the application.
 
 from dataclasses import dataclass, field
 
-from typing_extensions import override
+from typing import override
 
 from spakky.core.aop.error import AspectInheritanceError
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect

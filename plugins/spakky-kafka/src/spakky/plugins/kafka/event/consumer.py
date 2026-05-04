@@ -20,7 +20,7 @@ from spakky.event.event_consumer import (
 )
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
-from typing_extensions import override
+from typing import override
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 

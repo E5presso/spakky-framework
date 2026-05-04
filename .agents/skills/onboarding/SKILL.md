@@ -13,7 +13,7 @@ user-invocable: true
 아래 도구들이 설치되어 있는지 확인합니다:
 
 ```bash
-# Python 3.11+
+# Python 3.12+
 python3 --version
 
 # uv (패키지 매니저)

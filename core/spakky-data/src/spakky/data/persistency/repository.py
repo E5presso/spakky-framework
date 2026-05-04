@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Generic, Sequence, TypeVar
+from typing import Sequence, TypeVar
 
 from spakky.domain.error import AbstractSpakkyDomainError
-from spakky.domain.models.aggregate_root import AggregateRootT
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 AggregateIdT_contra = TypeVar("AggregateIdT_contra", contravariant=True)
 
@@ -19,7 +19,9 @@ class VersionConflictError(AbstractSpakkyDomainError):
     message = "Version conflict detected during save operation"
 
 
-class IGenericRepository(ABC, Generic[AggregateRootT, AggregateIdT_contra]):
+class IGenericRepository[AggregateRootT: AbstractAggregateRoot, AggregateIdT_contra](
+    ABC
+):
     """Synchronous generic repository interface for aggregate persistence."""
 
     @abstractmethod
@@ -69,7 +71,10 @@ class IGenericRepository(ABC, Generic[AggregateRootT, AggregateIdT_contra]):
         ...
 
 
-class IAsyncGenericRepository(ABC, Generic[AggregateRootT, AggregateIdT_contra]):
+class IAsyncGenericRepository[
+    AggregateRootT: AbstractAggregateRoot,
+    AggregateIdT_contra,
+](ABC):
     """Asynchronous generic repository interface for aggregate persistence."""
 
     @abstractmethod

@@ -4,14 +4,13 @@ from typing import Any, Sequence, get_args, get_origin
 from spakky.core.common.mro import generic_mro
 from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.repository import (
-    AggregateIdT_contra,
     EntityNotFoundError,
     IAsyncGenericRepository,
     IGenericRepository,
     VersionConflictError,
 )
-from spakky.domain.models.aggregate_root import AggregateRootT
-from typing_extensions import override
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
+from typing import override
 
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
 from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable
@@ -34,8 +33,8 @@ class CannotDetermineAggregateTypeError(AbstractSpakkySqlAlchemyPersistencyError
     message = "Cannot determine aggregate type from generic parameters"
 
 
-class AbstractGenericRepository(
-    IGenericRepository[AggregateRootT, AggregateIdT_contra], ABC
+class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, AggregateIdT](
+    IGenericRepository[AggregateRootT, AggregateIdT], ABC
 ):
     """Generic repository implementation for SQLAlchemy.
 
@@ -126,7 +125,7 @@ class AbstractGenericRepository(
         return self._schema_registry.from_domain(aggregate)
 
     @override
-    def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
+    def get(self, aggregate_id: AggregateIdT) -> AggregateRootT:
         try:
             table = self._get_table_type()
             pk_columns = inspect(table).primary_key
@@ -138,7 +137,7 @@ class AbstractGenericRepository(
             raise EntityNotFoundError(aggregate_id)
 
     @override
-    def get_or_none(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT | None:
+    def get_or_none(self, aggregate_id: AggregateIdT) -> AggregateRootT | None:
         table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = self._session_manager.session.execute(
@@ -147,7 +146,7 @@ class AbstractGenericRepository(
         return result.to_domain() if result is not None else None
 
     @override
-    def contains(self, aggregate_id: AggregateIdT_contra) -> bool:
+    def contains(self, aggregate_id: AggregateIdT) -> bool:
         table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = self._session_manager.session.execute(
@@ -158,9 +157,7 @@ class AbstractGenericRepository(
         return result is not None
 
     @override
-    def range(
-        self, aggregate_ids: Sequence[AggregateIdT_contra]
-    ) -> Sequence[AggregateRootT]:
+    def range(self, aggregate_ids: Sequence[AggregateIdT]) -> Sequence[AggregateRootT]:
         table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         results = (
@@ -233,9 +230,10 @@ class AbstractGenericRepository(
         return [table.to_domain() for table in tables]
 
 
-class AbstractAsyncGenericRepository(
-    IAsyncGenericRepository[AggregateRootT, AggregateIdT_contra], ABC
-):
+class AbstractAsyncGenericRepository[
+    AggregateRootT: AbstractAggregateRoot,
+    AggregateIdT,
+](IAsyncGenericRepository[AggregateRootT, AggregateIdT], ABC):
     """Async generic repository implementation for SQLAlchemy.
 
     This class provides basic CRUD operations using SQLAlchemy's async sessions.
@@ -325,7 +323,7 @@ class AbstractAsyncGenericRepository(
         return self._schema_registry.from_domain(aggregate)
 
     @override
-    async def get(self, aggregate_id: AggregateIdT_contra) -> AggregateRootT:
+    async def get(self, aggregate_id: AggregateIdT) -> AggregateRootT:
         try:
             table = self._get_table_type()
             pk_columns = inspect(table).primary_key
@@ -341,9 +339,7 @@ class AbstractAsyncGenericRepository(
             raise EntityNotFoundError(aggregate_id)
 
     @override
-    async def get_or_none(
-        self, aggregate_id: AggregateIdT_contra
-    ) -> AggregateRootT | None:
+    async def get_or_none(self, aggregate_id: AggregateIdT) -> AggregateRootT | None:
         table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = (
@@ -354,7 +350,7 @@ class AbstractAsyncGenericRepository(
         return result.to_domain() if result is not None else None
 
     @override
-    async def contains(self, aggregate_id: AggregateIdT_contra) -> bool:
+    async def contains(self, aggregate_id: AggregateIdT) -> bool:
         table = self._get_table_type()
         pk_columns = inspect(table).primary_key
         result = (
@@ -368,7 +364,7 @@ class AbstractAsyncGenericRepository(
 
     @override
     async def range(
-        self, aggregate_ids: Sequence[AggregateIdT_contra]
+        self, aggregate_ids: Sequence[AggregateIdT]
     ) -> Sequence[AggregateRootT]:
         table = self._get_table_type()
         pk_columns = inspect(table).primary_key
