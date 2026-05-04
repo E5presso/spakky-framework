@@ -8,6 +8,8 @@
 
 > **autopilot 하위 실행**: `/autopilot` 호출 자체가 clean PR squash merge 사전 승인이다. `--auto-merge`가 명시되지 않았더라도 `AskUserQuestion`/`ask-delegate`를 호출하지 않고 즉시 Phase 8로 진행한다. `.process-state.json`의 `phase7_ready`에서 재개한 경우도 동일하다.
 
+> **S7 hard stop 금지**: `--auto-merge` 또는 autopilot 하위 실행에서 Phase 7은 사용자 승인 게이트가 아니라 Phase 8로 넘어가는 0-hop 라우터다. `phase7_ready` 기록, `auto-merging` ping, PR 상태 요약 중 어느 지점에서도 turn을 종료하지 않는다. 허용되는 다음 action은 Phase 8의 `gh pr merge --squash --delete-branch`뿐이다. `status: blocked`, `status: awaiting-merge`, `merge approval required`, `awaiting merge approval` 반환은 모두 형식 위반이며 autopilot의 `merge-gate-stuck` 회수 대상이다.
+
 PR이 병합 가능 상태가 되면:
 
 1. `--auto-merge` 또는 autopilot 하위 실행이면 Phase 8로 즉시 진행한다. 병합 승인 질의를 생성하지 않는다.

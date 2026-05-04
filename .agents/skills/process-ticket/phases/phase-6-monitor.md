@@ -6,6 +6,8 @@
 >
 > **DONE 즉시 정지 (terminal stop).** `reason in {merged, mergeable-clean, closed-without-merge, awaiting-human-review}`이 관찰되는 순간 본 phase는 종료다. **그 시점에 추가 watch / poll / `gh pr view` 호출을 금지한다** — `reason=merged`는 Phase 8 cleanup 1회 실행 후, `mergeable-clean`은 Phase 7 머지 게이트로, `closed-without-merge`는 결과 보고 후, `awaiting-human-review`는 `status: awaiting-review` + `pending_human_comments: <bot CH2 코멘트 URL>` 보고 후 즉시 turn 종료한다. "한 번 더 확인해서 안전하게" / "mergeStateStatus 재검증" / "다음 cycle에 변화가 있는지" 류 추가 호출은 머지 후 dead time을 누적시키는 안티패턴이며 본 절이 명시적으로 차단한다.
 >
+> **auto-merge continuation (S1/S7 회귀 차단).** `DONE reason=mergeable-clean`은 process-ticket 전체의 terminal 반환이 아니라 **Phase 6만의 terminal**이다. `--auto-merge` 또는 autopilot 하위 실행에서는 `phase7_ready` 기록 직후 같은 turn 안에서 Phase 7 `auto-merging` ping을 송신하고 Phase 8 squash merge + cleanup까지 동기 실행한다. `phase7_ready`만 기록한 채 `status: blocked` / `awaiting merge` / `merge approval required` / `status: awaiting-merge` / 산문 요약으로 turn을 종료하는 행위는 `monitor-stuck`/`merge-gate-stuck` 형식 위반이다. 이 경우 호출자(autopilot)가 재개할 수는 있지만, 본 phase 실행자는 fallback에 의존하지 말고 즉시 병합 경로를 계속 수행해야 한다.
+>
 > 다음 4가지 안티패턴은 본 phase에서 명시적으로 금지된다 (`monitor-pr` SKILL §"절대 명령" SSOT):
 >
 > 1. **백그라운드 후 turn 종료** — watch / Monitor / 외부 스크립트를 `&` / `nohup` / `run_in_background: true` / `ScheduleWakeup` / `CronCreate`로 띄운 뒤 "monitor armed" 같은 보고와 함께 turn 종료.
@@ -41,7 +43,7 @@
      bash {MONITOR_PR_SKILL_DIR}/scripts/watch.sh
    ```
 3. **분기 (EVENT consumer)**: watch가 stdout으로 emit한 출력의 첫 줄(`EVENT` 또는 `DONE`)과 `reason` 값을 같은 turn 안에서 case로 분기하여 핸들러를 실행한다. **분기 없이 turn을 종료하면 EVENT가 dead code가 된다.** `reason=comments-changed`이면 출력의 `staleHandledIds=` 값을 코멘트 수집 호출 시 `STALE_HANDLED_IDS` 환경변수로 그대로 전달하여 in-place 갱신된 코멘트가 재triage 대상으로 되돌아오게 한다. case 분기의 정확한 형태는 `monitor-pr` SKILL §"EVENT consumer 루프" SSOT.
-4. **재기동 또는 Phase 7 기록**: EVENT 처리 후 baseline을 갱신(`PREV_REVIEW_DECISION`만 직전 출력값으로 업데이트, `(id, updatedAt)` 캐시는 watch가 자동으로 `.monitor-pr-state.json`에 영속)하여 **즉시 1번으로 복귀하여 watch를 다시 호출한다.** `DONE reason=mergeable-clean`이면 `.process-state.json`에 `phase7_ready`를 기록한 뒤 Phase 7로 전환한다. `DONE` 이후에는 추가 watch/poll을 돌리지 않는다.
+4. **재기동 또는 Phase 7/8 continuation**: EVENT 처리 후 baseline을 갱신(`PREV_REVIEW_DECISION`만 직전 출력값으로 업데이트, `(id, updatedAt)` 캐시는 watch가 자동으로 `.monitor-pr-state.json`에 영속)하여 **즉시 1번으로 복귀하여 watch를 다시 호출한다.** `DONE reason=mergeable-clean`이면 `.process-state.json`에 `phase7_ready`를 기록한 뒤 Phase 7로 전환한다. `--auto-merge` 또는 autopilot 하위 실행이면 Phase 7에서 멈추지 않고 같은 turn 안에서 Phase 8까지 계속 수행한다. `DONE` 이후에는 추가 watch/poll을 돌리지 않는다.
 
 `phase7_ready` 기록 형식:
 
