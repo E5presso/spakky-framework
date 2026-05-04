@@ -1,7 +1,7 @@
 [project]
 name = "spakky-cache"
 version = "6.4.0"
-description = "Backend-neutral cache contracts and in-memory backend for Spakky Framework"
+description = "Backend-neutral cache contracts and AOP annotations for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

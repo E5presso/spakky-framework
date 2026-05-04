@@ -21,3 +21,16 @@ class CacheMiss:
 
 CacheResult: TypeAlias = CacheHit[T] | CacheMiss
 """Cache lookup result type."""
+
+
+@immutable
+class CacheMetricsSnapshot:
+    """Point-in-time cache backend metrics."""
+
+    hits: int = 0
+    misses: int = 0
+    writes: int = 0
+    deletes: int = 0
+    clears: int = 0
+    tag_evictions: int = 0
+    stampede_waits: int = 0

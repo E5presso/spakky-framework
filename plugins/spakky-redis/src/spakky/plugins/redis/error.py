@@ -19,3 +19,9 @@ class RedisCacheSerializationError(AbstractSpakkyRedisError):
     """Raised when a cache value cannot be serialized or deserialized."""
 
     message = "Redis cache serialization failed"
+
+
+class RedisCacheLockTimeoutError(AbstractSpakkyRedisError):
+    """Raised when a cache population lock cannot be acquired in time."""
+
+    message = "Redis cache population lock timed out"

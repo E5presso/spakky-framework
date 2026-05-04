@@ -21,3 +21,9 @@ class CacheKeyGenerationError(AbstractSpakkyCacheError):
     """Raised when a cache annotation cannot produce a deterministic key."""
 
     message = "Cache key generation failed"
+
+
+class CacheBackendCapabilityError(AbstractSpakkyCacheError):
+    """Raised when a cache annotation requires a backend capability."""
+
+    message = "Cache backend does not support the requested capability"

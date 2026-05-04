@@ -20,6 +20,12 @@ from typer.testing import CliRunner
 
 import spakky.plugins.typer
 
+EMPTY_STARTUP_INFO = {
+    "phase_count": 0,
+    "records": [],
+    "total_elapsed_seconds": 0,
+}
+
 
 @Pod()
 class _CliProbe(AbstractHealthProbe):
@@ -96,6 +102,7 @@ def test_actuator_info_command_outputs_core_info_model() -> None:
     assert json.loads(result.output) == {
         "info": {
             "app": "typer",
+            "startup": EMPTY_STARTUP_INFO,
             "version": "test",
         }
     }

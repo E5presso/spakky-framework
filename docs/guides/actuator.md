@@ -130,8 +130,8 @@ export SPAKKY_TYPER_ACTUATOR_COMMAND_ENABLED=false
 export SPAKKY_TYPER_ACTUATOR_COMMAND_NAME=status
 ```
 
-## 범위 밖
+## Backend 제공 Probe
 
-이번 actuator MVP는 플러그인별 상세 health check를 제공하지 않습니다.
-SQLAlchemy 연결, Kafka/RabbitMQ broker, Celery worker 같은 깊은 통합 상태는 각 앱이 `AbstractHealthProbe`로 추가합니다.
-Metrics exporter나 Prometheus/OpenTelemetry exporter 제공도 이 마일스톤 범위가 아닙니다.
+Actuator core는 transport-neutral registry와 aggregation을 담당합니다. Backend plugin은 자신이 소유한 외부 의존 상태를 first-party probe/contributor로 등록할 수 있습니다.
+
+`spakky-redis`는 `RedisCacheHealthProbe`와 `RedisCacheMetricsInfoContributor`를 등록하여 Redis 연결 상태와 cache metrics를 actuator health/info 표면에 노출합니다. SQLAlchemy, Kafka/RabbitMQ, Celery 같은 다른 backend도 같은 `AbstractHealthProbe` / `IInfoContributor` 계약으로 확장합니다.

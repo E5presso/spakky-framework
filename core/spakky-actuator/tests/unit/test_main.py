@@ -1,6 +1,7 @@
 """Tests for actuator plugin initialization."""
 
 from spakky.actuator.config import ActuatorConfig
+from spakky.actuator.interfaces.contributor import IInfoContributor
 from spakky.actuator.main import initialize
 from spakky.actuator.post_processor import ActuatorExtensionPostProcessor
 from spakky.actuator.registry import ActuatorExtensionRegistry
@@ -18,5 +19,6 @@ def test_initialize_expect_registers_actuator_pods() -> None:
     pod_types = {pod.type_ for pod in app.container.pods.values()}
     assert ActuatorConfig in pod_types
     assert ActuatorExtensionRegistry in pod_types
+    assert IInfoContributor in pod_types
     assert ActuatorExtensionPostProcessor in pod_types
     assert ActuatorAggregationService in pod_types

@@ -3186,6 +3186,7 @@ source = { editable = "plugins/spakky-redis" }
 dependencies = [
     { name = "pydantic-settings" },
     { name = "redis" },
+    { name = "spakky-actuator" },
     { name = "spakky-cache" },
 ]
 
@@ -3198,6 +3199,7 @@ dev = [
 requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "redis", specifier = ">=7.1.0" },
+    { name = "spakky-actuator", editable = "core/spakky-actuator" },
     { name = "spakky-cache", editable = "core/spakky-cache" },
 ]
 

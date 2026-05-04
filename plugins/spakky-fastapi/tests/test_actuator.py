@@ -25,6 +25,11 @@ import spakky.plugins.fastapi
 from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
 
 ACTUATOR_PLUGIN_NAME = Plugin(name="spakky-actuator")
+EMPTY_STARTUP_INFO = {
+    "phase_count": 0,
+    "records": [],
+    "total_elapsed_seconds": 0,
+}
 
 
 def _start_app(config: FastAPIActuatorConfig | None = None) -> FastAPI:
@@ -69,7 +74,7 @@ def test_actuator_routes_registered_when_plugins_loaded() -> None:
     assert liveness.status_code == HTTPStatus.OK
     assert info.status_code == HTTPStatus.OK
     assert health.json()["status"] == "healthy"
-    assert info.json() == {"info": {}}
+    assert info.json() == {"info": {"startup": EMPTY_STARTUP_INFO}}
 
 
 def test_actuator_endpoints_output_core_public_result_shape() -> None:
@@ -135,7 +140,13 @@ def test_actuator_endpoints_output_core_public_result_shape() -> None:
             }
         ],
     }
-    assert info.json() == {"info": {"app": "fastapi", "version": "test"}}
+    assert info.json() == {
+        "info": {
+            "app": "fastapi",
+            "startup": EMPTY_STARTUP_INFO,
+            "version": "test",
+        }
+    }
 
 
 def test_disabled_actuator_endpoint_is_not_registered() -> None:

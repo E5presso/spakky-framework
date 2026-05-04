@@ -1,10 +1,11 @@
 """Backend-neutral cache contract."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Generic, TypeAlias, TypeVar
 
-from spakky.cache.result import CacheResult
+from spakky.cache.result import CacheMetricsSnapshot, CacheResult
 
 CacheTTL: TypeAlias = float | int | timedelta | None
 """Cache entry lifetime. None means no automatic expiry."""
@@ -53,4 +54,135 @@ class ICache(ABC, Generic[T]):
     @abstractmethod
     async def clear_async(self) -> None:
         """Async variant of clear."""
+        ...
+
+
+class ITaggedCache(ICache[T], ABC):
+    """Cache backend that can index and evict entries by tag."""
+
+    @abstractmethod
+    def set_with_tags(
+        self,
+        key: str,
+        value: T,
+        *,
+        tags: tuple[str, ...],
+        ttl: CacheTTL = None,
+    ) -> None:
+        """Store a value and associate it with cache tags."""
+        ...
+
+    @abstractmethod
+    def evict_tags(self, *tags: str) -> int:
+        """Remove entries associated with one or more tags."""
+        ...
+
+    @abstractmethod
+    async def set_with_tags_async(
+        self,
+        key: str,
+        value: T,
+        *,
+        tags: tuple[str, ...],
+        ttl: CacheTTL = None,
+    ) -> None:
+        """Async variant of set_with_tags."""
+        ...
+
+    @abstractmethod
+    async def evict_tags_async(self, *tags: str) -> int:
+        """Async variant of evict_tags."""
+        ...
+
+
+class IStampedeProtectedCache(ICache[T], ABC):
+    """Cache backend that serializes concurrent miss population."""
+
+    @abstractmethod
+    def get_or_set(
+        self,
+        key: str,
+        factory: Callable[[], T],
+        *,
+        ttl: CacheTTL = None,
+        tags: tuple[str, ...] = (),
+    ) -> T:
+        """Return cached value or populate it once through a backend lock."""
+        ...
+
+    @abstractmethod
+    async def get_or_set_async(
+        self,
+        key: str,
+        factory: Callable[[], Awaitable[T]],
+        *,
+        ttl: CacheTTL = None,
+        tags: tuple[str, ...] = (),
+    ) -> T:
+        """Async variant of get_or_set."""
+        ...
+
+
+class ICacheMetrics(ICache[T], ABC):
+    """Cache backend that exposes deterministic metrics counters."""
+
+    @abstractmethod
+    def metrics(self) -> CacheMetricsSnapshot:
+        """Return a point-in-time metrics snapshot."""
+        ...
+
+
+class IWritePolicyCache(ICache[T], ABC):
+    """Cache backend that coordinates cache writes with an origin writer."""
+
+    @abstractmethod
+    def write_through(
+        self,
+        key: str,
+        value: T,
+        writer: Callable[[T], None],
+        *,
+        ttl: CacheTTL = None,
+        tags: tuple[str, ...] = (),
+    ) -> None:
+        """Write to the origin first, then update the cache."""
+        ...
+
+    @abstractmethod
+    def write_behind(
+        self,
+        key: str,
+        value: T,
+        writer: Callable[[T], None],
+        *,
+        ttl: CacheTTL = None,
+        tags: tuple[str, ...] = (),
+    ) -> None:
+        """Update the cache first, then invoke the origin writer."""
+        ...
+
+    @abstractmethod
+    async def write_through_async(
+        self,
+        key: str,
+        value: T,
+        writer: Callable[[T], Awaitable[None]],
+        *,
+        ttl: CacheTTL = None,
+        tags: tuple[str, ...] = (),
+    ) -> None:
+        """Async variant of write_through."""
+        ...
+
+    @abstractmethod
+    async def write_behind_async(
+        self,
+        key: str,
+        value: T,
+        writer: Callable[[T], Awaitable[None]],
+        *,
+        ttl: CacheTTL = None,
+        tags: tuple[str, ...] = (),
+    ) -> None:
+        """Async variant of write_behind."""
         ...

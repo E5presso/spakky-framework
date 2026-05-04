@@ -1,6 +1,6 @@
 # spakky-cache
 
-애플리케이션 데이터 캐시 계약과 인메모리 백엔드입니다.
+애플리케이션 데이터 캐시 계약과 AOP 어노테이션입니다.
 
 ## 어노테이션
 
@@ -23,12 +23,6 @@
 ## 캐시 인터페이스
 
 ::: spakky.cache.interfaces.cache
-    options:
-      show_root_heading: false
-
-## 인메모리 백엔드
-
-::: spakky.cache.backends.memory
     options:
       show_root_heading: false
 

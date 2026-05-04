@@ -21,6 +21,9 @@ class Cacheable(FunctionAnnotation):
     ttl: CacheTTL = None
     """Optional cache entry TTL."""
 
+    tags: tuple[str, ...] = ()
+    """Optional tags associated with the stored cache entry."""
+
 
 @dataclass
 class CacheEvict(FunctionAnnotation):
@@ -29,26 +32,32 @@ class CacheEvict(FunctionAnnotation):
     key: str | None = None
     """Optional format string used as the cache key."""
 
+    tags: tuple[str, ...] = ()
+    """Optional cache tags to evict after successful method execution."""
+
 
 def cacheable(
     key: str | None = None,
     *,
     ttl: CacheTTL = None,
+    tags: tuple[str, ...] = (),
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorate a method so its return value is cached by AOP."""
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        return Cacheable(key=key, ttl=ttl)(func)
+        return Cacheable(key=key, ttl=ttl, tags=tags)(func)
 
     return decorator
 
 
 def cache_evict(
     key: str | None = None,
+    *,
+    tags: tuple[str, ...] = (),
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorate a method so its cache entry is evicted after success."""
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
-        return CacheEvict(key=key)(func)
+        return CacheEvict(key=key, tags=tags)(func)
 
     return decorator

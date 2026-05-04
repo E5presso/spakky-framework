@@ -299,7 +299,9 @@ def validate_packaging_metadata(workspace_root: Path) -> list[HarnessViolation]:
     plugin_packages = sorted(
         path.name
         for path in plugins_root.iterdir()
-        if path.is_dir() and path.name.startswith("spakky-")
+        if path.is_dir()
+        and path.name.startswith("spakky-")
+        and (path / "pyproject.toml").exists()
     )
     violations: list[HarnessViolation] = []
 

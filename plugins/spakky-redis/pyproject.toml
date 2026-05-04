@@ -9,6 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "pydantic-settings>=2.13.1",
     "redis>=7.1.0",
+    "spakky-actuator>=6.4.0",
     "spakky-cache>=6.4.0",
 ]
 
@@ -30,7 +31,13 @@ module-name = "spakky.plugins.redis"
 
 [tool.pyrefly]
 python-version = "3.11"
-search_path = ["src", ".", "../../core/spakky/src", "../../core/spakky-cache/src"]
+search_path = [
+    "src",
+    ".",
+    "../../core/spakky/src",
+    "../../core/spakky-actuator/src",
+    "../../core/spakky-cache/src",
+]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
@@ -38,7 +45,12 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "../../core/spakky/src", "../../core/spakky-cache/src"]
+pythonpath = [
+    "src",
+    "../../core/spakky/src",
+    "../../core/spakky-actuator/src",
+    "../../core/spakky-cache/src",
+]
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -77,4 +89,5 @@ exclude_lines = [
 
 [tool.uv.sources]
 spakky = { workspace = true }
+spakky-actuator = { workspace = true }
 spakky-cache = { workspace = true }

@@ -1,6 +1,7 @@
 """Transport-neutral actuator contracts and aggregation services."""
 
 from spakky.actuator.config import ActuatorConfig
+from spakky.actuator.contributors import StartupReportInfoContributor
 from spakky.actuator.interfaces.contributor import (
     IAsyncInfoContributor,
     IInfoContributor,
@@ -32,4 +33,5 @@ __all__ = [
     "ActuatorInfoResult",
     "ComponentHealthResult",
     "HealthStatus",
+    "StartupReportInfoContributor",
 ]

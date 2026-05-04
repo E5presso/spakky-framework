@@ -2,10 +2,15 @@
 
 from spakky.core.application.plugin import Plugin
 
+from spakky.plugins.redis.actuator import (
+    RedisCacheHealthProbe,
+    RedisCacheMetricsInfoContributor,
+)
 from spakky.plugins.redis.cache import RedisCache
 from spakky.plugins.redis.common.config import RedisCacheConfig
 from spakky.plugins.redis.error import (
     AbstractSpakkyRedisError,
+    RedisCacheLockTimeoutError,
     RedisCacheOperationError,
     RedisCacheSerializationError,
 )
@@ -18,6 +23,9 @@ __all__ = [
     "PLUGIN_NAME",
     "RedisCache",
     "RedisCacheConfig",
+    "RedisCacheHealthProbe",
+    "RedisCacheLockTimeoutError",
+    "RedisCacheMetricsInfoContributor",
     "RedisCacheOperationError",
     "RedisCacheSerializationError",
 ]

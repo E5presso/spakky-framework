@@ -9,8 +9,8 @@ from spakky.core.common.types import AsyncFunc, Func
 from spakky.core.pod.annotations.order import Order
 
 from spakky.cache.annotation import CacheEvict, Cacheable
-from spakky.cache.error import CacheKeyGenerationError
-from spakky.cache.interfaces.cache import ICache
+from spakky.cache.error import CacheBackendCapabilityError, CacheKeyGenerationError
+from spakky.cache.interfaces.cache import ICache, IStampedeProtectedCache, ITaggedCache
 from spakky.cache.result import CacheHit
 
 
@@ -64,11 +64,37 @@ class CacheAspect(IAspect):
         evict = CacheEvict.get_or_none(joinpoint)
         if evict is not None:
             result = joinpoint(*args, **kwargs)
-            self._cache.delete(_key_from_call(joinpoint, evict.key, args, kwargs))
+            if evict.key is not None:
+                self._cache.delete(_key_from_call(joinpoint, evict.key, args, kwargs))
+            if evict.tags:
+                if not isinstance(self._cache, ITaggedCache):
+                    raise CacheBackendCapabilityError()
+                self._cache.evict_tags(*evict.tags)
             return result
 
         cacheable = Cacheable.get(joinpoint)
         key = _key_from_call(joinpoint, cacheable.key, args, kwargs)
+        if isinstance(self._cache, IStampedeProtectedCache):
+            return self._cache.get_or_set(
+                key,
+                lambda: joinpoint(*args, **kwargs),
+                ttl=cacheable.ttl,
+                tags=cacheable.tags,
+            )
+        if cacheable.tags:
+            if not isinstance(self._cache, ITaggedCache):
+                raise CacheBackendCapabilityError()
+            cached = self._cache.get(key)
+            if isinstance(cached, CacheHit):
+                return cached.value
+            result = joinpoint(*args, **kwargs)
+            self._cache.set_with_tags(
+                key,
+                result,
+                tags=cacheable.tags,
+                ttl=cacheable.ttl,
+            )
+            return result
         cached = self._cache.get(key)
         if isinstance(cached, CacheHit):
             return cached.value
@@ -98,13 +124,39 @@ class AsyncCacheAspect(IAsyncAspect):
         evict = CacheEvict.get_or_none(joinpoint)
         if evict is not None:
             result = await joinpoint(*args, **kwargs)
-            await self._cache.delete_async(
-                _key_from_call(joinpoint, evict.key, args, kwargs)
-            )
+            if evict.key is not None:
+                await self._cache.delete_async(
+                    _key_from_call(joinpoint, evict.key, args, kwargs)
+                )
+            if evict.tags:
+                if not isinstance(self._cache, ITaggedCache):
+                    raise CacheBackendCapabilityError()
+                await self._cache.evict_tags_async(*evict.tags)
             return result
 
         cacheable = Cacheable.get(joinpoint)
         key = _key_from_call(joinpoint, cacheable.key, args, kwargs)
+        if isinstance(self._cache, IStampedeProtectedCache):
+            return await self._cache.get_or_set_async(
+                key,
+                lambda: joinpoint(*args, **kwargs),
+                ttl=cacheable.ttl,
+                tags=cacheable.tags,
+            )
+        if cacheable.tags:
+            if not isinstance(self._cache, ITaggedCache):
+                raise CacheBackendCapabilityError()
+            cached = await self._cache.get_async(key)
+            if isinstance(cached, CacheHit):
+                return cached.value
+            result = await joinpoint(*args, **kwargs)
+            await self._cache.set_with_tags_async(
+                key,
+                result,
+                tags=cacheable.tags,
+                ttl=cacheable.ttl,
+            )
+            return result
         cached = await self._cache.get_async(key)
         if isinstance(cached, CacheHit):
             return cached.value

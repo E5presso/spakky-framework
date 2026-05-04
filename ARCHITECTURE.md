@@ -17,7 +17,7 @@
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
 | **Core** | `spakky-actuator` | Actuator 상태/정보 계약 (Health, Readiness, Liveness, Info) |
-| **Core** | `spakky-cache` | 애플리케이션 데이터 캐시 계약 (CacheHit, CacheMiss, InMemoryCache) |
+| **Core** | `spakky-cache` | 애플리케이션 데이터 캐시 계약 (CacheHit, CacheMiss, ICache) |
 | **Core** | `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, ITracePropagator, W3C Propagator) |
 | **Core** | `spakky-outbox` | Transactional Outbox 패턴 추상화 (IEventBus 교체, Relay) |
 | **Core** | `spakky-saga` | 사가 오케스트레이션 (SagaFlow, SagaStep, ErrorStrategy, 보상 기반 롤백) |
@@ -46,7 +46,7 @@ graph TD
         event[spakky-event<br/>Publisher · Consumer · Aspect]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
         actuator["spakky-actuator<br/>Health · Readiness · Info"]
-        cache["spakky-cache<br/>CacheHit · CacheMiss · InMemoryCache"]
+        cache["spakky-cache<br/>CacheHit · CacheMiss · ICache"]
         tracing["spakky-tracing<br/>TraceContext · Propagator"]
         outbox[spakky-outbox<br/>OutboxEventBus · Relay]
         saga[spakky-saga<br/>SagaFlow · SagaStep · Compensation]
@@ -425,7 +425,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
 | `spakky-task` | `TaskRegistrationPostProcessor` |
 | `spakky-actuator` | `ActuatorConfig`, `ActuatorExtensionRegistry`, `ActuatorExtensionPostProcessor`, `ActuatorAggregationService` |
-| `spakky-cache` | `InMemoryCache` |
+| `spakky-cache` | `CacheAspect`, `AsyncCacheAspect` |
 | `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
 | `spakky-tracing` | `W3CTracePropagator` |
 | `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` |
@@ -437,7 +437,7 @@ spakky-data = "spakky.data.main:initialize"
 
 `spakky-cache`는 서비스·유스케이스 코드가 backend에 묶이지 않고 `CacheHit`/`CacheMiss`와 sync/async `ICache` 계약으로 애플리케이션 데이터를 캐시하기 위한 코어 패키지입니다. 이 캐시는 `ApplicationContext`의 type/singleton/context 내부 캐시와 별개이며 DI 컨테이너 lookup 동작을 변경하지 않습니다.
 
-`spakky-cache` 플러그인은 기본 `InMemoryCache`를 등록하고, `@cacheable`/`@cache_evict` 메서드를 `CacheAspect`와 `AsyncCacheAspect`로 처리합니다. `spakky-redis`는 같은 계약을 Redis에 연결하는 backend plugin이며, configured key prefix 하위 항목만 clear합니다. distributed lock, cache stampede protection, tag invalidation, write-through/write-behind, metrics/exporter integration은 현재 범위 밖입니다.
+`spakky-cache` 플러그인은 backend-neutral `ICache` 계약과 `@cacheable`/`@cache_evict` 메서드를 처리하는 `CacheAspect`, `AsyncCacheAspect`만 등록합니다. Core layer는 실제 저장소 backend를 제공하지 않습니다. `spakky-redis`는 같은 계약을 Redis에 연결하는 backend plugin이며, configured key prefix 하위 항목만 clear하고 tag invalidation, Redis lock 기반 cache stampede protection, write-through/write-behind policy, metrics snapshot, actuator health/info extension을 제공합니다.
 
 ---
 

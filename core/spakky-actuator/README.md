@@ -13,6 +13,7 @@ pip install spakky-actuator
 - **Health/readiness/liveness 결과**: HTTP, CLI 등 adapter가 공유하는 result 계약
 - **Probe 확장 지점**: Spakky DI로 등록되는 동기/비동기 health probe
 - **Info contributor**: 동기/비동기 info contributor의 결정적 병합
+- **Startup diagnostics contributor**: `SpakkyApplication` startup report를 actuator info로 노출
 - **예외 처리**: Probe 예외를 구조화된 에러 상세가 포함된 비정상 component result로 변환
 - **Transport 중립 core**: FastAPI, Typer, plugin adapter 의존성 없음
 
@@ -93,8 +94,7 @@ class BuildInfo(IInfoContributor):
         return {"version": "1.0.0"}
 ```
 
-SQLAlchemy, Kafka, RabbitMQ, Celery 등 통합별 상세 check는 이 마일스톤에 의도적으로 포함하지 않습니다.
-애플리케이션은 transport adapter를 바꾸지 않고 해당 check를 first-party probe로 추가할 수 있습니다.
+Backend plugin은 자신이 소유한 외부 의존 상태를 first-party probe/contributor로 등록합니다. 예를 들어 `spakky-redis`는 Redis 연결 상태와 cache metrics를 actuator health/info에 연결합니다. 애플리케이션은 transport adapter를 바꾸지 않고 같은 계약으로 자체 check를 추가할 수 있습니다.
 
 ## 라이선스
 
