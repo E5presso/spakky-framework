@@ -29,6 +29,7 @@ from spakky.core.pod.annotations.pod import (
 )
 from spakky.core.pod.annotations.qualifier import Qualifier
 from spakky.core.pod.annotations.tag import Tag
+from spakky.core.pod.binding import PodBinding
 from spakky.core.pod.diagnostics import (
     PodCandidateDiagnostic,
     PodDependencyPathNode,
@@ -44,7 +45,9 @@ from spakky.core.pod.interfaces.application_context import (
 from spakky.core.pod.interfaces.container import (
     CannotRegisterNonPodObjectError,
     CircularDependencyGraphDetectedError,
+    InvalidPodBindingError,
     NoSuchPodError,
+    NoSuchPodBindingTargetError,
     NoUniquePodError,
     PodNameAlreadyExistsError,
 )
@@ -103,6 +106,9 @@ class ApplicationContext(IApplicationContext):
     __type_cache: dict[type, set[Pod]]
     """Cache mapping types to Pods for O(1) lookup."""
 
+    __bindings: dict[type, PodBinding]
+    """Explicit interface-to-implementation binding policies."""
+
     __forward_type_map: dict[str, type]
     """Map for resolving forward reference types."""
 
@@ -139,6 +145,7 @@ class ApplicationContext(IApplicationContext):
         self.__pods = {}
         self.__tags = set()
         self.__type_cache = {}
+        self.__bindings = {}
         self.__singleton_cache = {}
         self.__singleton_lock = RLock()
         self.__shutdown_lock = RLock()
@@ -219,6 +226,7 @@ class ApplicationContext(IApplicationContext):
         """Return resolution hints for a single dependency ambiguity."""
         hints = (
             "add Annotated[T, Qualifier(...)] to select one candidate",
+            "register ApplicationContext.bind(PodBinding(...)) from application config",
             "mark exactly one candidate with @Primary",
         )
         if dependency_parameter_name is None:
@@ -248,6 +256,39 @@ class ApplicationContext(IApplicationContext):
             resolution_hints=resolution_hints,
         )
 
+    def __binding_target_count(self, binding: PodBinding) -> int:
+        """Return how many target selectors a binding specifies."""
+        count = 0
+        if binding.implementation_type is not None:
+            count += 1
+        if binding.implementation_name is not None:
+            count += 1
+        return count
+
+    def __validate_binding(self, binding: PodBinding) -> None:
+        """Validate binding shape without requiring Pods to be registered yet."""
+        if self.__binding_target_count(binding) != 1:
+            raise InvalidPodBindingError
+
+    def __resolve_binding_candidate(
+        self,
+        type_: type,
+        pods: set[Pod],
+    ) -> Pod | None:
+        """Resolve an explicit binding for this requested type, when configured."""
+        binding = self.__bindings.get(type_)
+        if binding is None:
+            return None
+        if binding.implementation_name is not None:
+            named = {pod for pod in pods if pod.name == binding.implementation_name}
+            if len(named) == 1:
+                return named.pop()
+            raise NoSuchPodBindingTargetError(binding)
+        typed = {pod for pod in pods if pod.type_ == binding.implementation_type}
+        if len(typed) == 1:
+            return typed.pop()
+        raise NoSuchPodBindingTargetError(binding)
+
     def __resolve_candidate(
         self,
         type_: type,
@@ -275,10 +316,6 @@ class ApplicationContext(IApplicationContext):
         pods = self.__type_cache.get(type_, set()).copy()
         if not pods:
             return None
-
-        # Fast path: single candidate - no need to filter
-        if len(pods) == 1:
-            return next(iter(pods))
 
         if qualifiers:
             qualified = {
@@ -312,6 +349,13 @@ class ApplicationContext(IApplicationContext):
                 return named.pop()
             if not named:
                 return None
+
+        if binding_candidate := self.__resolve_binding_candidate(type_, pods):
+            return binding_candidate
+
+        # Fast path after explicit selectors and binding policy are honored.
+        if len(pods) == 1:
+            return next(iter(pods))
 
         primary = {pod for pod in pods if pod.is_primary}
         if len(primary) == 1:
@@ -525,6 +569,7 @@ class ApplicationContext(IApplicationContext):
     def __clear_all(self) -> None:
         self.__pods.clear()
         self.__type_cache.clear()
+        self.__bindings.clear()
         self.__forward_type_map.clear()
         with self.__singleton_lock:
             self.__singleton_cache.clear()
@@ -787,6 +832,22 @@ class ApplicationContext(IApplicationContext):
             if base_type not in self.__type_cache:
                 self.__type_cache[base_type] = set()
             self.__type_cache[base_type].add(pod)
+
+    @override
+    def bind(self, binding: PodBinding) -> None:
+        """Register an explicit interface-to-implementation binding policy."""
+        self.__validate_binding(binding)
+        self.__bindings[binding.interface] = binding
+
+    @override
+    def bind_to_type(self, interface: type, implementation: type) -> None:
+        """Bind an interface to a concrete implementation type."""
+        self.bind(PodBinding(interface=interface, implementation_type=implementation))
+
+    @override
+    def bind_to_name(self, interface: type, name: str) -> None:
+        """Bind an interface to a registered Pod name."""
+        self.bind(PodBinding(interface=interface, implementation_name=name))
 
     @override
     def add_service(self, service: IService | IAsyncService) -> None:

@@ -129,7 +129,10 @@ from spakky.core.pod.error import AbstractSpakkyPodError
 from spakky.core.pod.interfaces.container import (
     CircularDependencyGraphDetectedError,
     NoSuchPodError,
+    NoSuchPodBindingTargetError,
     NoUniquePodError,
+    InvalidPodBindingError,
+    PodBindingNotSupportedError,
     CannotRegisterNonPodObjectError,
     PodNameAlreadyExistsError,
 )
@@ -139,7 +142,10 @@ from spakky.core.pod.interfaces.container import (
 | -------------------------------------- | -------------------------- |
 | `CircularDependencyGraphDetectedError` | 순환 의존성 감지           |
 | `NoSuchPodError`                       | 요청한 Pod를 찾을 수 없음  |
+| `NoSuchPodBindingTargetError`          | 명시 binding 대상 없음     |
 | `NoUniquePodError`                     | 여러 후보 Pod 중 선택 불가 |
+| `InvalidPodBindingError`               | 잘못된 binding policy      |
+| `PodBindingNotSupportedError`          | 컨테이너가 binding 미지원  |
 | `CannotRegisterNonPodObjectError`      | @Pod 없는 객체 등록 시도   |
 | `PodNameAlreadyExistsError`            | Pod 이름 중복              |
 

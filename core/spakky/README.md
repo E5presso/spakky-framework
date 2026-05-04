@@ -142,11 +142,13 @@ class ContextScopedService:
     pass
 ```
 
-## Qualifier
+## Qualifier, Primary, Binding
 
 ```python
+from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.annotations.primary import Primary
+from spakky.core.pod.binding import PodBinding
 
 # 이름 기반 qualifier
 @Pod(name="mysql")
@@ -162,6 +164,15 @@ class PostgresRepository(IRepository):
 @Pod()
 class DefaultRepository(IRepository):
     pass
+
+# application config 기반 binding: Primary보다 우선
+context = ApplicationContext()
+context.bind(PodBinding(interface=IRepository, implementation_name="postgres"))
+context.add(MySQLRepository)
+context.add(PostgresRepository)
+context.add(DefaultRepository)
+
+repository = context.get(IRepository)  # PostgresRepository
 ```
 
 ## Stereotype

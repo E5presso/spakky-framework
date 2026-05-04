@@ -10,6 +10,7 @@ from typing import Callable, overload
 from spakky.core.common.interfaces.representable import IRepresentable
 from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod, PodType
+from spakky.core.pod.binding import PodBinding
 from spakky.core.pod.diagnostics import (
     PodCandidateDiagnostic,
     PodDependencyResolutionDiagnostic,
@@ -110,6 +111,31 @@ class NoUniquePodError(AbstractSpakkyPodError):
         )
 
 
+class InvalidPodBindingError(AbstractSpakkyPodError):
+    """Raised when a binding policy does not identify exactly one target kind."""
+
+    message = "Pod binding must specify exactly one implementation target"
+
+
+class NoSuchPodBindingTargetError(AbstractSpakkyPodError):
+    """Raised when an explicit binding does not match any candidate Pod."""
+
+    message = "Pod binding target does not match a registered candidate"
+
+    binding: PodBinding
+
+    def __init__(self, binding: PodBinding) -> None:
+        """Initialize binding target details."""
+        self.binding = binding
+        super().__init__(self.message)
+
+
+class PodBindingNotSupportedError(AbstractSpakkyPodError):
+    """Raised when a container does not implement explicit binding policies."""
+
+    message = "Pod binding policy is not supported by this container"
+
+
 class CannotRegisterNonPodObjectError(AbstractSpakkyPodError):
     """Raised when attempting to register object without @Pod annotation."""
 
@@ -143,6 +169,22 @@ class IContainer(ABC):
             obj: The Pod-annotated class or function to register.
         """
         ...
+
+    def bind(self, binding: PodBinding) -> None:
+        """Register an explicit interface-to-implementation binding policy.
+
+        Args:
+            binding: Binding value supplied by application or feature config.
+        """
+        raise PodBindingNotSupportedError
+
+    def bind_to_type(self, interface: type, implementation: type) -> None:
+        """Bind an interface to a concrete implementation type."""
+        raise PodBindingNotSupportedError
+
+    def bind_to_name(self, interface: type, name: str) -> None:
+        """Bind an interface to a registered Pod name."""
+        raise PodBindingNotSupportedError
 
     @overload
     @abstractmethod

@@ -18,7 +18,12 @@ from spakky.core.pod.annotations.lazy import Lazy
 from spakky.core.pod.annotations.pod import Pod, PodInstantiationFailedError
 from spakky.core.pod.annotations.primary import Primary
 from spakky.core.pod.annotations.qualifier import Qualifier
-from spakky.core.pod.interfaces.container import CannotRegisterNonPodObjectError
+from spakky.core.pod.binding import PodBinding
+from spakky.core.pod.interfaces.container import (
+    CannotRegisterNonPodObjectError,
+    InvalidPodBindingError,
+    NoSuchPodBindingTargetError,
+)
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
 
@@ -459,6 +464,234 @@ def test_application_context_primary_precedes_legacy_parameter_name_expect_prima
     context.start()
 
     assert context.get(type_=SampleService).do() == "primary"
+
+
+def test_application_context_binding_to_type_precedes_primary_expect_bound_type() -> (
+    None
+):
+    """설정 기반 type binding이 Primary보다 높은 우선순위로 주입됨을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Primary()
+    @Pod(name="langgraph")
+    class LangGraphSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "langgraph"
+
+    @Pod(name="pydantic_ai")
+    class PydanticAiSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "pydantic-ai"
+
+    context: ApplicationContext = ApplicationContext()
+    context.bind_to_type(ISamplePod, PydanticAiSamplePod)
+    context.add(LangGraphSamplePod)
+    context.add(PydanticAiSamplePod)
+
+    assert context.get(type_=ISamplePod).do() == "pydantic-ai"
+
+
+def test_application_context_binding_to_name_precedes_legacy_parameter_name_expect_bound_name() -> (
+    None
+):
+    """설정 기반 name binding이 legacy parameter name보다 높은 우선순위로 주입됨을 검증한다."""
+
+    class IAgentAdapter:
+        @abstractmethod
+        def engine(self) -> str: ...
+
+    @Pod(name="langgraph")
+    class LangGraphAgentAdapter(IAgentAdapter):
+        def engine(self) -> str:
+            return "langgraph"
+
+    @Pod(name="pydantic_ai")
+    class PydanticAiAgentAdapter(IAgentAdapter):
+        def engine(self) -> str:
+            return "pydantic-ai"
+
+    @Pod()
+    class AgentRunner:
+        __adapter: IAgentAdapter
+
+        def __init__(self, langgraph: IAgentAdapter) -> None:
+            self.__adapter = langgraph
+
+        def engine(self) -> str:
+            return self.__adapter.engine()
+
+    context: ApplicationContext = ApplicationContext()
+    context.bind(PodBinding(interface=IAgentAdapter, implementation_name="pydantic_ai"))
+    context.add(LangGraphAgentAdapter)
+    context.add(PydanticAiAgentAdapter)
+    context.add(AgentRunner)
+    context.start()
+
+    assert context.get(type_=AgentRunner).engine() == "pydantic-ai"
+
+
+def test_application_context_qualifier_precedes_binding_expect_qualified_candidate() -> (
+    None
+):
+    """Qualifier가 설정 기반 binding보다 높은 우선순위로 주입됨을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="bound")
+    class BoundSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "bound"
+
+    @Pod(name="qualified")
+    class QualifiedSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "qualified"
+
+    @Pod()
+    class SampleService:
+        __pod: ISamplePod
+
+        def __init__(
+            self,
+            pod: Annotated[ISamplePod, Qualifier(lambda pod: pod.name == "qualified")],
+        ) -> None:
+            self.__pod = pod
+
+        def do(self) -> str:
+            return self.__pod.do()
+
+    context: ApplicationContext = ApplicationContext()
+    context.bind_to_name(ISamplePod, "bound")
+    context.add(BoundSamplePod)
+    context.add(QualifiedSamplePod)
+    context.add(SampleService)
+    context.start()
+
+    assert context.get(type_=SampleService).do() == "qualified"
+
+
+def test_application_context_explicit_name_precedes_binding_expect_named_candidate() -> (
+    None
+):
+    """명시 name 조회가 설정 기반 binding보다 높은 우선순위임을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="bound")
+    class BoundSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "bound"
+
+    @Pod(name="named")
+    class NamedSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "named"
+
+    context: ApplicationContext = ApplicationContext()
+    context.bind_to_name(ISamplePod, "bound")
+    context.add(BoundSamplePod)
+    context.add(NamedSamplePod)
+
+    assert context.get(type_=ISamplePod, name="named").do() == "named"
+
+
+def test_application_context_binding_missing_target_expect_binding_error() -> None:
+    """명시 binding 대상이 후보에 없으면 binding target 오류가 발생함을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="available")
+    class AvailableSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "available"
+
+    context: ApplicationContext = ApplicationContext()
+    context.bind_to_name(ISamplePod, "missing")
+    context.add(AvailableSamplePod)
+
+    with pytest.raises(NoSuchPodBindingTargetError):
+        context.get(type_=ISamplePod)
+
+
+def test_application_context_binding_missing_type_target_expect_binding_error() -> None:
+    """명시 type binding 대상이 후보에 없으면 binding target 오류가 발생함을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    class MissingSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "missing"
+
+    @Pod(name="available")
+    class AvailableSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "available"
+
+    context: ApplicationContext = ApplicationContext()
+    context.bind_to_type(ISamplePod, MissingSamplePod)
+    context.add(AvailableSamplePod)
+
+    with pytest.raises(NoSuchPodBindingTargetError):
+        context.get(type_=ISamplePod)
+
+
+def test_application_context_invalid_binding_expect_error() -> None:
+    """binding은 type 또는 name 대상 중 하나만 지정해야 함을 검증한다."""
+
+    class ISamplePod: ...
+
+    class SamplePod(ISamplePod): ...
+
+    context: ApplicationContext = ApplicationContext()
+
+    with pytest.raises(InvalidPodBindingError):
+        context.bind(
+            PodBinding(
+                interface=ISamplePod,
+                implementation_type=SamplePod,
+                implementation_name="sample",
+            )
+        )
+
+
+def test_application_context_ambiguity_hints_include_binding_policy() -> None:
+    """ambiguity diagnostic이 명시 binding 해결 방법을 제시함을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="first")
+    class FirstSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "first"
+
+    @Pod(name="second")
+    class SecondSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "second"
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(FirstSamplePod)
+    context.add(SecondSamplePod)
+
+    with pytest.raises(NoUniquePodError) as error:
+        context.get(type_=ISamplePod)
+
+    assert any(
+        "ApplicationContext.bind" in hint for hint in error.value.resolution_hints
+    )
 
 
 def test_application_context_get_dependency_recursive_by_type() -> None:
