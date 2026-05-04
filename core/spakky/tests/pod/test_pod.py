@@ -1,14 +1,18 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from types import GenericAlias
 from typing import Annotated, Any, Generic, TypeVar, cast
+from typing import List as LegacyList
 
 import pytest
 
 from spakky.core.pod.annotations.pod import (
     CannotDeterminePodTypeError,
     CannotUseVarArgsInPodError,
+    DependencyCollectionKind,
     DependencyInfo,
     Pod,
+    UnsupportedCollectionDependencyTypeError,
     is_class_pod,
     is_function_pod,
 )
@@ -288,6 +292,213 @@ def test_pod_with_qualifier() -> None:
         ),
         "job": DependencyInfo(name="job", type_=str),
     }
+
+
+def test_pod_with_list_collection_dependency_expect_metadata() -> None:
+    """list[T] 의존성이 모든 후보 주입용 metadata로 파싱됨을 검증한다."""
+
+    class IService: ...
+
+    @Pod()
+    class ServiceConsumer:
+        def __init__(self, services: list[IService]) -> None:
+            self.services = services
+
+    assert Pod.get(ServiceConsumer).dependencies == {
+        "services": DependencyInfo(
+            name="services",
+            type_=IService,
+            collection_kind=DependencyCollectionKind.LIST,
+        )
+    }
+
+
+def test_pod_with_tuple_collection_dependency_expect_metadata() -> None:
+    """tuple[T, ...] 의존성이 안정적 순서의 후보 metadata로 파싱됨을 검증한다."""
+
+    class IService: ...
+
+    @Pod()
+    class ServiceConsumer:
+        def __init__(self, services: tuple[IService, ...]) -> None:
+            self.services = services
+
+    assert Pod.get(ServiceConsumer).dependencies == {
+        "services": DependencyInfo(
+            name="services",
+            type_=IService,
+            collection_kind=DependencyCollectionKind.TUPLE,
+        )
+    }
+
+
+def test_pod_with_dict_collection_dependency_expect_name_key_metadata() -> None:
+    """dict[str, T] 의존성이 Pod name key metadata로 파싱됨을 검증한다."""
+
+    class IService: ...
+
+    @Pod()
+    class ServiceConsumer:
+        def __init__(self, services: dict[str, IService]) -> None:
+            self.services = services
+
+    assert Pod.get(ServiceConsumer).dependencies == {
+        "services": DependencyInfo(
+            name="services",
+            type_=IService,
+            collection_kind=DependencyCollectionKind.DICT,
+            collection_key_type=str,
+        )
+    }
+
+
+def test_pod_with_annotated_optional_collection_dependency_expect_metadata() -> None:
+    """Annotated/Optional 조합에서도 collection metadata와 qualifier가 보존됨을 검증한다."""
+
+    class IService: ...
+
+    def is_primary_pod(pod: Pod) -> bool:
+        return pod.is_primary
+
+    @Pod()
+    class ServiceConsumer:
+        def __init__(
+            self,
+            services: Annotated[
+                list[IService] | None,
+                Qualifier(is_primary_pod),
+            ],
+        ) -> None:
+            self.services = services
+
+    assert Pod.get(ServiceConsumer).dependencies == {
+        "services": DependencyInfo(
+            name="services",
+            type_=IService,
+            is_optional=True,
+            qualifiers=[Qualifier(is_primary_pod)],
+            collection_kind=DependencyCollectionKind.LIST,
+        )
+    }
+
+
+def test_pod_with_builtin_collection_dependency_expect_single_generic_metadata() -> (
+    None
+):
+    """builtin element collection은 기존 generic 단수 의존성 metadata로 보존됨을 검증한다."""
+
+    @Pod()
+    class BuiltinCollectionConsumer:
+        def __init__(
+            self,
+            names: list[str],
+            ages: tuple[int, ...],
+            lookup: dict[str, int],
+        ) -> None:
+            self.names = names
+            self.ages = ages
+            self.lookup = lookup
+
+    assert Pod.get(BuiltinCollectionConsumer).dependencies == {
+        "names": DependencyInfo(name="names", type_=list[str]),
+        "ages": DependencyInfo(name="ages", type_=tuple[int, ...]),
+        "lookup": DependencyInfo(name="lookup", type_=dict[str, int]),
+    }
+
+
+def test_pod_with_unsupported_collection_dependency_expect_error() -> None:
+    """지원하지 않는 collection 의존성 타입은 명시적 에러로 실패함을 검증한다."""
+
+    class IService: ...
+
+    with pytest.raises(UnsupportedCollectionDependencyTypeError):
+
+        @Pod()
+        class SetConsumer:
+            def __init__(self, services: set[IService]) -> None:
+                self.services = services
+
+
+def test_pod_with_legacy_bare_list_dependency_expect_error() -> None:
+    """element 타입이 없는 list collection 의존성은 지원하지 않음을 검증한다."""
+
+    with pytest.raises(UnsupportedCollectionDependencyTypeError):
+
+        @Pod()
+        class ListConsumer:
+            def __init__(self, services: LegacyList) -> None:
+                self.services = services
+
+
+def test_pod_with_collection_non_type_element_expect_error() -> None:
+    """element가 타입이 아닌 collection 의존성은 지원하지 않음을 검증한다."""
+    invalid_element = 42
+
+    def invalid_factory(services) -> object:
+        return services
+
+    invalid_factory.__annotations__["services"] = GenericAlias(list, (invalid_element,))
+    invalid_factory.__annotations__["return"] = object
+
+    with pytest.raises(UnsupportedCollectionDependencyTypeError):
+        Pod()(invalid_factory)
+
+
+def test_pod_with_dict_non_string_key_dependency_expect_error() -> None:
+    """dict[str, T] 외의 dict collection 의존성은 지원하지 않음을 검증한다."""
+
+    class IService: ...
+
+    with pytest.raises(UnsupportedCollectionDependencyTypeError):
+
+        @Pod()
+        class DictConsumer:
+            def __init__(self, services: dict[int, IService]) -> None:
+                self.services = services
+
+
+def test_pod_with_tuple_fixed_length_dependency_expect_error() -> None:
+    """tuple[T, ...] 외의 tuple collection 의존성은 지원하지 않음을 검증한다."""
+
+    class IService: ...
+
+    with pytest.raises(UnsupportedCollectionDependencyTypeError):
+
+        @Pod()
+        class TupleConsumer:
+            def __init__(self, services: tuple[IService, IService]) -> None:
+                self.services = services
+
+
+def test_pod_with_non_type_dependency_annotation_expect_error() -> None:
+    """타입이 아닌 의존성 annotation은 CannotDeterminePodTypeError로 실패함을 검증한다."""
+    invalid_annotation = 42
+
+    def invalid_factory(service) -> object:
+        return service
+
+    invalid_factory.__annotations__["service"] = invalid_annotation
+    invalid_factory.__annotations__["return"] = object
+
+    with pytest.raises(CannotDeterminePodTypeError):
+        Pod()(invalid_factory)
+
+
+def test_pod_with_string_dependency_annotation_expect_metadata() -> None:
+    """문자열 forward reference 의존성 annotation은 기존 metadata로 보존됨을 검증한다."""
+
+    def forward_factory(service) -> object:
+        return service
+
+    forward_factory.__annotations__["service"] = "ForwardService"
+    forward_factory.__annotations__["return"] = object
+
+    Pod()(forward_factory)
+
+    dependency = Pod.get(forward_factory).dependencies["service"]
+    assert dependency.name == "service"
+    assert dependency.type_ == "ForwardService"
+    assert dependency.collection_kind is None
 
 
 def test_pod_equality_with_different_type() -> None:

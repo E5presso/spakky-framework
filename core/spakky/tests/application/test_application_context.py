@@ -15,7 +15,11 @@ from spakky.core.application.application_context import (
 from spakky.core.common.annotation import ClassAnnotation
 from spakky.core.common.constants import CONTEXT_ID
 from spakky.core.pod.annotations.lazy import Lazy
-from spakky.core.pod.annotations.pod import Pod, PodInstantiationFailedError
+from spakky.core.pod.annotations.pod import (
+    Pod,
+    PodInstantiationFailedError,
+    UnsupportedCollectionDependencyTypeError,
+)
 from spakky.core.pod.annotations.primary import Primary
 from spakky.core.pod.annotations.qualifier import Qualifier
 from spakky.core.pod.binding import PodBinding
@@ -1039,26 +1043,20 @@ def test_application_context_with_multiple_children_list_not_exists() -> None:
 
 
 def test_application_context_with_multiple_children_set_not_exists() -> None:
-    """set 타입 의존성에 해당하는 Pod가 없을 때 PodInstantiationFailedError가 발생함을 검증한다."""
+    """지원하지 않는 set collection 의존성은 Pod metadata 생성 시 실패함을 검증한다."""
 
     class IRepository:
         @abstractmethod
         def get(self, id: str) -> dict[str, Any]: ...
 
-    @Pod()
-    class SampleService:
-        __repositories: set[IRepository]
+    with pytest.raises(UnsupportedCollectionDependencyTypeError):
 
-        def __init__(self, repositories: set[IRepository]) -> None:
-            self.__repositories = repositories
+        @Pod()
+        class SampleService:
+            __repositories: set[IRepository]
 
-        def get(self, id: str) -> list[dict[str, Any]]:
-            return [repository.get(id) for repository in self.__repositories]
-
-    context: ApplicationContext = ApplicationContext()
-    context.add(SampleService)
-    with pytest.raises(PodInstantiationFailedError):
-        context.start()
+            def __init__(self, repositories: set[IRepository]) -> None:
+                self.__repositories = repositories
 
 
 def test_application_context_with_multiple_children_dict_not_exists() -> None:
