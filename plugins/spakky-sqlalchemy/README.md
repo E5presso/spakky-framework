@@ -46,38 +46,54 @@ export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
 
 ## 사용법
 
+### 전체 흐름
+
+`spakky-sqlalchemy`는 `spakky-data`의 추상 계약을 SQLAlchemy로 구현합니다.
+
+1. 도메인 Aggregate를 정의합니다.
+2. `@Table(Domain)`과 `AbstractMappableTable[Domain]`으로 ORM table을 매핑합니다.
+3. `AbstractGenericRepository` 또는 `AbstractAsyncGenericRepository`를 상속한
+   `@Repository()`를 등록합니다.
+4. Command UseCase에는 Repository를 주입하고 `@Transactional()`로 transaction 경계를 둡니다.
+5. 복잡한 조회는 Repository에 `find_by_*` 메서드를 추가하지 않고 QueryUseCase에서
+   `SessionManager` / `AsyncSessionManager`를 직접 사용합니다.
+
+자세한 end-to-end 예제는 [데이터베이스 가이드](../../docs/guides/sqlalchemy.md)를 참고하세요.
+
 ### 도메인 매핑 테이블 정의
 
 `@Table` decorator와 `AbstractMappableTable` 상속으로 domain model mapping이 있는 ORM table을 정의합니다.
 
 ```python
+from typing import Self
 from uuid import UUID
+
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
-from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
+
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
+from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
 
 # Domain model
 class User(AbstractAggregateRoot[UUID]):
-    id: UUID
     name: str
     email: str
 
 # domain mapping을 가진 table 정의
-@Table()
+@Table(User)
 class UserTable(AbstractMappableTable[User]):
     __tablename__ = "users"
 
-    id: Mapped[UUID] = mapped_column(primary_key=True)
+    uid: Mapped[UUID] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
 
     @classmethod
-    def from_domain(cls, domain: User) -> "UserTable":
-        return cls(id=domain.id, name=domain.name, email=domain.email)
+    def from_domain(cls, domain: User) -> Self:
+        return cls(uid=domain.uid, name=domain.name, email=domain.email)
 
     def to_domain(self) -> User:
-        return User(id=self.id, name=self.name, email=self.email)
+        return User(uid=self.uid, name=self.name, email=self.email)
 ```
 
 ### Repository 구현
@@ -151,6 +167,7 @@ from spakky.core.common.mutability import immutable
 from spakky.core.stereotype.usecase import UseCase
 from spakky.domain.application.query import AbstractQuery, IAsyncQueryUseCase
 from spakky.plugins.sqlalchemy.persistency.session_manager import AsyncSessionManager
+from sqlalchemy import select
 
 
 @immutable
@@ -160,7 +177,7 @@ class FindUserByEmailQuery(AbstractQuery):
 
 @immutable
 class UserDTO:
-    id: UUID
+    uid: UUID
     name: str
     email: str
 
@@ -177,7 +194,7 @@ class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO | 
         table = result.scalar_one_or_none()
         if table is None:
             return None
-        return UserDTO(id=table.id, name=table.name, email=table.email)
+        return UserDTO(uid=table.uid, name=table.name, email=table.email)
 ```
 
 ### Schema Registry

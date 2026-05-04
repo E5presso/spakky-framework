@@ -2,6 +2,11 @@
 
 SQLAlchemy 통합 — ORM, Repository, Transaction, Outbox Storage
 
+`spakky-sqlalchemy`는 `spakky-data`의 Repository/Transaction 계약을 SQLAlchemy engine과
+session으로 구현하는 플러그인입니다. 처음 사용하는 경우에는
+[데이터베이스 가이드](../../guides/sqlalchemy.md)에서 도메인 Aggregate, ORM table,
+Repository, `@Transactional()` UseCase를 한 흐름으로 확인하세요.
+
 ## 메인
 
 ::: spakky.plugins.sqlalchemy.main

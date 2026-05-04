@@ -14,6 +14,9 @@ pip install spakky-data
 - **트랜잭션 관리**: autocommit을 지원하는 추상 transaction 클래스
 - **External Proxy**: 데이터베이스가 아닌 외부 service/storage 데이터 접근용 proxy 패턴
 
+> `spakky-data`는 core 추상화 패키지입니다. SQLAlchemy engine/session/table mapping
+> 구현체가 필요하면 `spakky-sqlalchemy`를 함께 설치하세요.
+
 ## 설계 원칙
 
 ### Repository는 영속화 전용
@@ -48,6 +51,33 @@ class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO]):
 
 ## 빠른 시작
 
+### SQLAlchemy와 함께 쓰는 기본 흐름
+
+사용자 애플리케이션에서 가장 흔한 구성은 `spakky-data`의 Repository/Transaction 계약을
+`spakky-sqlalchemy` 구현체로 채우는 방식입니다.
+
+```bash
+pip install spakky-data spakky-sqlalchemy
+```
+
+```bash
+export SPAKKY_SQLALCHEMY__CONNECTION_STRING="postgresql+psycopg://user:pass@localhost/app"
+export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
+```
+
+흐름은 다음 순서로 구성합니다.
+
+1. `AbstractAggregateRoot` 기반 domain aggregate를 정의합니다.
+2. `spakky.plugins.sqlalchemy.orm.table.AbstractMappableTable`과 `@Table(Domain)`으로
+   ORM table을 매핑합니다.
+3. `spakky.plugins.sqlalchemy.persistency.repository.AbstractAsyncGenericRepository`를
+   상속한 `@Repository()` 구현체를 등록합니다.
+4. `@UseCase()` 메서드에 `@Transactional()`을 붙이고 Repository를 호출합니다.
+5. 복잡한 조회는 Repository에 query method를 추가하지 않고 QueryUseCase에서
+   `AsyncSessionManager` 또는 `SessionManager`로 직접 SQLAlchemy query를 실행합니다.
+
+전체 예제는 [데이터베이스 가이드](../../docs/guides/sqlalchemy.md)를 참고하세요.
+
 ### Repository 패턴
 
 domain aggregate용 repository interface를 정의합니다.
@@ -72,7 +102,9 @@ class IUserRepository(IAsyncGenericRepository[User, UUID]):
 
 ### Transaction 관리
 
-database operation에는 추상 transaction을 사용합니다.
+database operation에는 추상 transaction을 사용합니다. 직접 구현해야 하는 경우도 있지만,
+SQLAlchemy를 쓴다면 `spakky-sqlalchemy`의 `Transaction` / `AsyncTransaction`이 이 계약을
+이미 구현합니다.
 
 ```python
 from spakky.data.persistency.transaction import AbstractAsyncTransaction
