@@ -28,6 +28,7 @@ Architecture Decision Record는 소프트웨어 아키텍처에 영향을 미치
 | [ADR-0006](0006-move-outbox-to-core.md) | spakky-outbox를 core 패키지로 승격 | Accepted | 2026-03-15 |
 | [ADR-0007](0007-spakky-saga-plan.md) | spakky-saga — 분산 트랜잭션 사가 오케스트레이션 코어 패키지 | Accepted | 2026-04-13 |
 | [ADR-0008](0008-type-safety-hardening.md) | 타입 안전성 강화 — pyrefly ignore 박멸과 구조적 개선 | Accepted | 2026-04-13 |
+| [ADR-0009](0009-agentic-hexagonal-architecture.md) | Agentic Hexagonal Architecture — agent runtime 논의 보존 | Proposed | 2026-05-04 |
 
 ## 새 ADR 작성 가이드
 
