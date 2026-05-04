@@ -871,6 +871,19 @@ class UserService:
         ...
 ```
 
+### PodBinding
+
+같은 interface를 구현하는 Pod 후보가 여러 개일 때 application config가
+선택할 구현체를 명시하는 binding policy 값입니다. `ApplicationContext.bind()`,
+`bind_to_name()`, `bind_to_type()`으로 등록하며, Qualifier/name보다 낮고
+`@Primary`보다 높은 우선순위로 단수 의존성을 선택합니다.
+
+```python
+from spakky.core.pod.binding import PodBinding
+
+context.bind(PodBinding(interface=IRepository, implementation_name="postgres"))
+```
+
 ### @Lazy
 
 Pod 인스턴스화를 첫 사용 시점까지 지연.

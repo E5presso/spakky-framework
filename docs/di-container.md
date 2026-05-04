@@ -194,9 +194,43 @@ class UserService:
 
 ### 3. 설정 기반 binding
 
-인터페이스별 binding policy는 DI multi-implementation 마일스톤의 후속
-작업에서 추가됩니다. 추가 후에는 Qualifier/name보다 낮고 `@Primary`보다
-높은 우선순위로 동작합니다.
+애플리케이션 또는 feature config가 `ApplicationContext`에 binding policy를
+등록하면, 같은 interface를 구현하는 후보 중 하나를 명시적으로 선택합니다.
+이 선택은 Qualifier/name보다 낮고 `@Primary`보다 높은 우선순위로 동작합니다.
+
+```python
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.binding import PodBinding
+
+class IAgentAdapter:
+    def engine(self) -> str: ...
+
+@Pod(name="langgraph")
+class LangGraphAgentAdapter(IAgentAdapter):
+    def engine(self) -> str:
+        return "langgraph"
+
+@Pod(name="pydantic_ai")
+class PydanticAiAgentAdapter(IAgentAdapter):
+    def engine(self) -> str:
+        return "pydantic-ai"
+
+context = ApplicationContext()
+context.bind(PodBinding(interface=IAgentAdapter, implementation_name="pydantic_ai"))
+context.add(LangGraphAgentAdapter)
+context.add(PydanticAiAgentAdapter)
+
+adapter = context.get(IAgentAdapter)  # PydanticAiAgentAdapter
+```
+
+간단한 등록에는 `context.bind_to_name(IAgentAdapter, "pydantic_ai")` 또는
+`context.bind_to_type(IAgentAdapter, PydanticAiAgentAdapter)`를 사용할 수
+있습니다. binding은 Pod 등록 전에도 설정할 수 있으므로 plugin 자동 활성화
+모델을 유지하면서 application config에서 선택 정책을 먼저 선언할 수 있습니다.
+binding이 type과 name을 동시에 지정하거나 둘 다 생략하면
+`InvalidPodBindingError`가 발생합니다. 지정한 target이 후보 Pod와 일치하지
+않으면 `NoSuchPodBindingTargetError`가 발생합니다.
 
 ### 4. Primary 지정
 
