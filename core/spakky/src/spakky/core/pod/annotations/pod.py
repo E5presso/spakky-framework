@@ -9,13 +9,14 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from inspect import Parameter, isclass, isfunction
 from types import NoneType
-from typing import Annotated, TypeGuard, TypeVar, get_origin
+from typing import Annotated, TypeGuard, TypeVar, get_args, get_origin
 from uuid import UUID, uuid4
 
 from spakky.core.common.annotation import Annotation
 from spakky.core.common.interfaces.equatable import IEquatable
+from spakky.core.common.metadata import AnnotatedType
 from spakky.core.common.mro import generic_mro
-from spakky.core.common.types import Class, Func, is_optional
+from spakky.core.common.types import Class, Func, is_optional, remove_none
 from spakky.core.pod.diagnostics import PodDependencyResolutionDiagnostic
 from spakky.core.pod.annotations.primary import Primary
 from spakky.core.pod.annotations.qualifier import Qualifier
@@ -41,6 +42,21 @@ class DependencyInfo:
     has_default: bool = False
     is_optional: bool = False
     qualifiers: list[Qualifier] = field(default_factory=list[Qualifier])
+    collection_kind: "DependencyCollectionKind | None" = None
+    collection_key_type: Class | None = None
+
+
+class DependencyCollectionKind(Enum):
+    """Supported collection dependency injection shapes."""
+
+    LIST = auto()
+    """Inject all matching Pods as a stable list."""
+
+    TUPLE = auto()
+    """Inject all matching Pods as a stable tuple."""
+
+    DICT = auto()
+    """Inject matching Pods keyed by registered Pod name."""
 
 
 type DependencyMap = dict[str, DependencyInfo]
@@ -72,6 +88,12 @@ class CannotUseOptionalReturnTypeInPodError(PodAnnotationFailedError):
     """Raised when function Pod has Optional return type."""
 
     message = "Cannot use optional return type in pod"
+
+
+class UnsupportedCollectionDependencyTypeError(PodAnnotationFailedError):
+    """Raised when a collection dependency annotation is unsupported."""
+
+    message = "Unsupported collection dependency type"
 
 
 class UnexpectedDependencyNameInjectedError(PodInstantiationFailedError):
@@ -136,6 +158,102 @@ class Pod(Annotation, IEquatable):
     dependencies: DependencyMap = field(init=False, default_factory=dict)
     """Map of dependency names to their injection information."""
 
+    def __normalize_dependency_annotation(
+        self, annotation: object
+    ) -> tuple[object, list[Qualifier], bool]:
+        qualifiers: list[Qualifier] = []
+        actual_type = annotation
+        if self.__is_annotated_dependency(annotation):
+            actual_type = Qualifier.get_actual_type(annotation)
+            qualifiers = Qualifier.all(annotation)
+        optional = is_optional(actual_type)
+        if optional:
+            actual_type = remove_none(actual_type)
+        return actual_type, qualifiers, optional
+
+    def __is_annotated_dependency(self, annotation: object) -> TypeGuard[AnnotatedType]:
+        return get_origin(annotation) is Annotated
+
+    def __collection_dependency_info(
+        self,
+        name: str,
+        annotation: object,
+        has_default: bool,
+        is_optional_dependency: bool,
+        qualifiers: list[Qualifier],
+    ) -> DependencyInfo | None:
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        if origin is list:
+            if len(args) != 1:
+                raise UnsupportedCollectionDependencyTypeError(name, annotation)
+            if self.__is_builtin_collection_element(args[0]):
+                return None
+            element_type = self.__collection_element_type(name, annotation, args[0])
+            return DependencyInfo(
+                name=name,
+                type_=element_type,
+                has_default=has_default,
+                is_optional=is_optional_dependency,
+                qualifiers=qualifiers,
+                collection_kind=DependencyCollectionKind.LIST,
+            )
+        if origin is tuple:
+            if len(args) != 2 or args[1] is not Ellipsis:
+                raise UnsupportedCollectionDependencyTypeError(name, annotation)
+            if self.__is_builtin_collection_element(args[0]):
+                return None
+            element_type = self.__collection_element_type(name, annotation, args[0])
+            return DependencyInfo(
+                name=name,
+                type_=element_type,
+                has_default=has_default,
+                is_optional=is_optional_dependency,
+                qualifiers=qualifiers,
+                collection_kind=DependencyCollectionKind.TUPLE,
+            )
+        if origin is dict:
+            if len(args) != 2 or args[0] is not str:
+                raise UnsupportedCollectionDependencyTypeError(name, annotation)
+            if self.__is_builtin_collection_element(args[1]):
+                return None
+            element_type = self.__collection_element_type(name, annotation, args[1])
+            return DependencyInfo(
+                name=name,
+                type_=element_type,
+                has_default=has_default,
+                is_optional=is_optional_dependency,
+                qualifiers=qualifiers,
+                collection_kind=DependencyCollectionKind.DICT,
+                collection_key_type=str,
+            )
+        if origin in (set, frozenset) or annotation in (
+            list,
+            tuple,
+            dict,
+            set,
+            frozenset,
+        ):
+            raise UnsupportedCollectionDependencyTypeError(name, annotation)
+        return None
+
+    def __is_builtin_collection_element(self, element_type: object) -> bool:
+        return isclass(element_type) and element_type.__module__ == "builtins"
+
+    def __collection_element_type(
+        self, name: str, annotation: object, element_type: object
+    ) -> Class:
+        if not isclass(element_type):
+            raise UnsupportedCollectionDependencyTypeError(name, annotation)
+        return element_type
+
+    def __is_dependency_type(self, annotation: object) -> TypeGuard[Class]:
+        return (
+            isclass(annotation)
+            or isinstance(annotation, str)
+            or get_origin(annotation) is not None
+        )
+
     def __get_dependencies(self, obj: PodType) -> DependencyMap:
         """Extract dependency information from constructor or function parameters.
 
@@ -169,23 +287,29 @@ class Pod(Annotation, IEquatable):
                 raise CannotUseVarArgsInPodError(obj, parameter.name)
             if parameter.annotation == Parameter.empty:
                 raise CannotDeterminePodTypeError(obj, parameter.name)
-            if get_origin(parameter.annotation) is Annotated:
-                type_ = Qualifier.get_actual_type(parameter.annotation)
-                qualifiers = Qualifier.all(parameter.annotation)
-                dependencies[parameter.name] = DependencyInfo(
-                    name=parameter.name,
-                    type_=type_,
-                    has_default=parameter.default != Parameter.empty,
-                    is_optional=is_optional(parameter.annotation),
-                    qualifiers=qualifiers,
-                )
-            else:
-                dependencies[parameter.name] = DependencyInfo(
-                    name=parameter.name,
-                    type_=parameter.annotation,
-                    is_optional=is_optional(parameter.annotation),
-                    has_default=parameter.default != Parameter.empty,
-                )
+            type_, qualifiers, is_optional_dependency = (
+                self.__normalize_dependency_annotation(parameter.annotation)
+            )
+            has_default = parameter.default != Parameter.empty
+            collection_dependency = self.__collection_dependency_info(
+                name=parameter.name,
+                annotation=type_,
+                has_default=has_default,
+                is_optional_dependency=is_optional_dependency,
+                qualifiers=qualifiers,
+            )
+            if collection_dependency is not None:
+                dependencies[parameter.name] = collection_dependency
+                continue
+            if not self.__is_dependency_type(type_):
+                raise CannotDeterminePodTypeError(obj, parameter.name)
+            dependencies[parameter.name] = DependencyInfo(
+                name=parameter.name,
+                type_=type_,
+                is_optional=is_optional_dependency,
+                has_default=has_default,
+                qualifiers=qualifiers,
+            )
 
         return dependencies
 
