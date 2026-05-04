@@ -276,8 +276,15 @@ class UserService:
 
 1. `__type_cache`에서 타입으로 후보 조회 (O(1))
 2. 후보가 1개 → 즉시 반환
-3. 복수 → Qualifier → name → `@Primary` 순으로 필터링
-4. 여전히 모호 → `NoUniquePodError`
+3. 복수 → Qualifier → 명시 name → 설정 binding → `@Primary` → legacy parameter name 순으로 필터링
+4. 여전히 모호 → 후보 Pod와 해결 힌트가 포함된 `NoUniquePodError`
+
+`contains(type_)`는 타입 후보 존재 여부만 나타냅니다. 후보가 둘 이상이고
+단수 resolution이 모호해도 후보가 등록되어 있으면 `True`이며, 실제 단수
+선택 가능성은 `get(type_)` 또는 의존성 주입 시점에 판정합니다.
+
+`NoUniquePodError`는 요청 타입, 후보 Pod name/type, `@Primary` 여부,
+dependency path, 해결 힌트를 구조화된 diagnostic으로 제공합니다.
 
 **인스턴스화 시 순환 참조 감지:**
 
