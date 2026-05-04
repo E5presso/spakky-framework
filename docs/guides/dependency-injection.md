@@ -187,6 +187,85 @@ def get_engine(database_url: str) -> Engine:
 
 ## 고급 기능
 
+### 복수 구현체 선택
+
+같은 interface나 port를 구현하는 Pod가 여러 개 등록되면 단수 주입은
+명시적인 선택 정책을 따릅니다. 우선순위는 `Qualifier`, 명시 name,
+`ApplicationContext.bind(PodBinding(...))`, `@Primary`, legacy parameter name
+fallback 순서입니다. 이 순서로도 하나를 고를 수 없으면 컨테이너는 임의의
+후보를 선택하지 않고 `NoUniquePodError`를 발생시킵니다.
+
+Application config에서 선택 정책을 관리하려면 binding을 등록합니다.
+
+```python
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.binding import PodBinding
+
+class IEmailSender:
+    def send(self, to: str, body: str) -> None: ...
+
+@Pod(name="smtp")
+class SmtpEmailSender(IEmailSender):
+    def send(self, to: str, body: str) -> None: ...
+
+@Pod(name="console")
+class ConsoleEmailSender(IEmailSender):
+    def send(self, to: str, body: str) -> None: ...
+
+context = ApplicationContext()
+context.bind(PodBinding(interface=IEmailSender, implementation_name="smtp"))
+
+app = SpakkyApplication(context).scan(apps).start()
+sender = app.container.get(IEmailSender)  # SmtpEmailSender
+```
+
+간단한 경우에는 `context.bind_to_name(IEmailSender, "smtp")` 또는
+`context.bind_to_type(IEmailSender, SmtpEmailSender)`를 사용할 수 있습니다.
+Binding은 Pod 등록 전에도 선언할 수 있으므로, 플러그인 자동 로딩 흐름을
+유지하면서 application config만으로 단수 구현체 선택을 제어할 수 있습니다.
+
+### Collection 주입
+
+여러 구현체를 모두 사용해야 하면 단수 타입 대신 collection 타입을 선언합니다.
+Collection 주입은 단수 선택 정책을 적용하지 않고, 매칭되는 모든 후보를 Pod
+name 기준의 안정적인 순서로 주입합니다.
+
+```python
+@Pod()
+class NotificationFanout:
+    def __init__(
+        self,
+        senders: list[IEmailSender],
+        sender_by_name: dict[str, IEmailSender],
+    ) -> None:
+        self.senders = senders
+        self.smtp = sender_by_name["smtp"]
+```
+
+지원 타입은 `list[T]`, `tuple[T, ...]`, `dict[str, T]`입니다. Qualifier를
+붙이면 collection에 들어갈 후보 전체를 필터링할 수 있습니다.
+
+```python
+from typing import Annotated
+from spakky.core.pod.annotations.qualifier import Qualifier
+
+@Pod()
+class PrimaryFanout:
+    def __init__(
+        self,
+        senders: Annotated[
+            list[IEmailSender],
+            Qualifier(lambda p: p.name.startswith("smtp")),
+        ],
+    ) -> None:
+        self.senders = senders
+```
+
+`contains(type_)`는 해당 타입 후보가 등록되어 있는지만 확인합니다. 후보가
+둘 이상이라 단수 resolution이 모호해도 `contains(type_)`는 `True`일 수
+있으며, 실제 단수 선택 가능성은 `get(type_)` 또는 생성자 주입 시점에
+판정됩니다.
+
 ### @Qualifier — 같은 타입의 Pod 구분
 
 같은 인터페이스를 구현하는 Pod가 여러 개 있을 때, `Annotated` 타입 힌트에 `Qualifier`를 넣어 선택 조건을 지정합니다.

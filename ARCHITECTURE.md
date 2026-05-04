@@ -413,7 +413,7 @@ class TimingAspect(IAsyncAspect):
 spakky-data = "spakky.data.main:initialize"
 ```
 
-`SpakkyApplication.load_plugins()`는 `importlib.metadata.entry_points(group="spakky.plugins")`로 등록된 플러그인을 발견하고, 각 플러그인의 `initialize(app: SpakkyApplication)` 함수를 호출합니다.
+`SpakkyApplication.load_plugins()`는 `importlib.metadata.entry_points(group="spakky.plugins")`로 등록된 플러그인을 발견하고, 각 플러그인의 `initialize(app: SpakkyApplication)` 함수를 호출합니다. 복수 구현체 DI resolution은 이 자동 활성화 모델을 유지합니다. 여러 플러그인이 같은 port 후보를 등록해도 플러그인은 그대로 초기화되고, 단수 주입 지점에서만 Qualifier/name/binding/`@Primary`/legacy parameter name 순서로 하나를 선택합니다.
 
 ### 플러그인 등록 요약
 
