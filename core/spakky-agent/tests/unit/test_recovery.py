@@ -206,6 +206,52 @@ def test_resume_plan_expect_terminal_state_is_not_resumable() -> None:
     assert plan.boundary is None
 
 
+def test_resume_plan_expect_distinguishes_terminal_and_interrupted_causes() -> None:
+    """timed_out/failed/cancelled는 terminal이고 interrupted는 recovery 후보로 남는다."""
+    timed_out = AgentState(
+        id="run-timeout",
+        agent_type="CodeAssistant",
+        status=AgentStatus.FAILED,
+        transition=AgentStateTransition.TIMED_OUT,
+        reason=AgentStateReason.TIMEOUT,
+    )
+    failed = AgentState(
+        id="run-failed",
+        agent_type="CodeAssistant",
+        status=AgentStatus.FAILED,
+        transition=AgentStateTransition.FAILED,
+        reason=AgentStateReason.EXECUTION_FAILED,
+    )
+    interrupted = AgentState(
+        id="run-interrupted",
+        agent_type="CodeAssistant",
+        status=AgentStatus.INTERRUPTED,
+        transition=AgentStateTransition.INTERRUPTED,
+        reason=AgentStateReason.USER_INTERRUPTED,
+    )
+    cancelled = AgentState(
+        id="run-cancelled",
+        agent_type="CodeAssistant",
+        status=AgentStatus.CANCELLED,
+        transition=AgentStateTransition.CANCELLED,
+        reason=AgentStateReason.CANCELLATION_REQUESTED,
+    )
+
+    timeout_plan = plan_agent_resume(timed_out, ())
+    failed_plan = plan_agent_resume(failed, ())
+    interrupted_plan = plan_agent_resume(interrupted, ())
+    cancelled_plan = plan_agent_resume(cancelled, ())
+
+    assert timeout_plan.action == AgentResumeAction.NOT_RESUMABLE
+    assert failed_plan.action == AgentResumeAction.NOT_RESUMABLE
+    assert interrupted_plan.action == AgentResumeAction.START
+    assert cancelled_plan.action == AgentResumeAction.NOT_RESUMABLE
+    assert timed_out.reason == AgentStateReason.TIMEOUT
+    assert failed.reason == AgentStateReason.EXECUTION_FAILED
+    assert interrupted.reason == AgentStateReason.USER_INTERRUPTED
+    assert cancelled.reason == AgentStateReason.CANCELLATION_REQUESTED
+
+
 def test_resume_plan_expect_starts_when_no_action_boundary_exists() -> None:
     """action boundary evidence가 아직 없으면 처음 safe point부터 시작한다."""
     state = AgentState(

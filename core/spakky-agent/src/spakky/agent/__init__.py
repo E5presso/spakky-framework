@@ -26,6 +26,18 @@ from spakky.agent.context import (
     ContextTokenBudget,
     IAgentContextHandler,
 )
+from spakky.agent.cancellation import (
+    AgentCancellationCleanupCallable,
+    AgentCancellationCleanupReport,
+    AgentCancellationCleanupResult,
+    AgentCancellationCleanupStatus,
+    AgentCancellationCleanupTask,
+    AgentCancellationRequest,
+    AgentCancellationTargetKind,
+    begin_agent_cancellation,
+    complete_agent_cancellation,
+    run_agent_cancellation_cleanup,
+)
 from spakky.agent.evidence import (
     AgentEvidence,
     AgentEvidenceCandidate,
@@ -167,6 +179,13 @@ __all__ = [
     "AgentActionBoundaryStage",
     "AgentActionKind",
     "AgentBootstrapError",
+    "AgentCancellationCleanupCallable",
+    "AgentCancellationCleanupReport",
+    "AgentCancellationCleanupResult",
+    "AgentCancellationCleanupStatus",
+    "AgentCancellationCleanupTask",
+    "AgentCancellationRequest",
+    "AgentCancellationTargetKind",
     "AgentDelegateTarget",
     "AgentDefinitionError",
     "IAgentDelegate",
@@ -266,6 +285,8 @@ __all__ = [
     "ToolRisk",
     "ToolRiskAxis",
     "bind_agent_tool_invocation",
+    "begin_agent_cancellation",
+    "complete_agent_cancellation",
     "consume_pending_agent_signals",
     "agent_tool",
     "discover_agent_tools",
@@ -273,4 +294,5 @@ __all__ = [
     "parse_agent_approval_decision_signal",
     "plan_agent_resume",
     "plan_agent_tool_approval",
+    "run_agent_cancellation_cleanup",
 ]
