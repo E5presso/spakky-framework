@@ -48,6 +48,14 @@ STARTUP_PHASE_SCAN = "scan"
 STARTUP_PHASE_REGISTRATION = "registration"
 
 _PLUGIN_MODULE_PREFIX = "spakky.plugins."
+_CONTRIBUTION_SKIP_REASON_INACTIVE_FEATURE = "inactive_feature"
+_CONTRIBUTION_SKIP_REASON_INACTIVE_PROVIDER = "inactive_provider"
+_CONTRIBUTION_SKIP_REASON_INCLUDE_FILTER = "include_filter"
+_CONTRIBUTION_SKIP_REASONS = (
+    _CONTRIBUTION_SKIP_REASON_INACTIVE_FEATURE,
+    _CONTRIBUTION_SKIP_REASON_INACTIVE_PROVIDER,
+    _CONTRIBUTION_SKIP_REASON_INCLUDE_FILTER,
+)
 
 
 @immutable
@@ -84,24 +92,152 @@ def _provider_plugins_for_contribution(entry_point: EntryPoint) -> set[Plugin]:
     }
 
 
-def _should_load_contribution(
+def _format_plugin_names(plugins: set[Plugin]) -> str:
+    """Return deterministic plugin names for diagnostic detail values."""
+    return ",".join(sorted(plugin.name for plugin in plugins))
+
+
+def _contribution_context_detail_value(
+    *,
+    group: str,
+    entry_point: EntryPoint,
+    provider_plugins: set[Plugin],
+    feature_plugin: Plugin,
+) -> str:
+    """Return stable contribution context for startup diagnostic details."""
+    return (
+        f"group={group};entry_point={entry_point.name};"
+        f"provider={_format_plugin_names(provider_plugins)};"
+        f"feature={feature_plugin.name}"
+    )
+
+
+def _contribution_skip_reason(
     feature_plugin: Plugin,
     contribution_entry_point: EntryPoint,
     loaded_base_plugins: set[Plugin],
     include: set[Plugin] | None,
-) -> bool:
-    """Return whether a contribution matches active feature/provider filters."""
-    if include is not None and feature_plugin not in include:
-        return False
-    active_provider_plugins = (
-        _provider_plugins_for_contribution(contribution_entry_point)
-        & loaded_base_plugins
-    )
-    if len(active_provider_plugins) == 0:
-        return False
-    if include is None:
-        return True
-    return len(active_provider_plugins & include) > 0
+) -> str | None:
+    """Return a skip reason when contribution filters reject the entry point."""
+    provider_plugins = _provider_plugins_for_contribution(contribution_entry_point)
+    if feature_plugin not in loaded_base_plugins:
+        return _CONTRIBUTION_SKIP_REASON_INACTIVE_FEATURE
+    if include is not None and len(provider_plugins & include) == 0:
+        return _CONTRIBUTION_SKIP_REASON_INCLUDE_FILTER
+    if len(provider_plugins & loaded_base_plugins) == 0:
+        return _CONTRIBUTION_SKIP_REASON_INACTIVE_PROVIDER
+    return None
+
+
+class _ContributionDiagnostics:
+    """Accumulate contribution startup diagnostic details."""
+
+    _loaded_count: int
+    _skipped_count: int
+    _failed_count: int
+    _skipped_by_reason: dict[str, int]
+    _events: list[StartupDiagnosticDetail]
+
+    def __init__(self) -> None:
+        self._loaded_count = 0
+        self._skipped_count = 0
+        self._failed_count = 0
+        self._skipped_by_reason = {reason: 0 for reason in _CONTRIBUTION_SKIP_REASONS}
+        self._events = []
+
+    def record_loaded(
+        self,
+        *,
+        group: str,
+        entry_point: EntryPoint,
+        provider_plugins: set[Plugin],
+        feature_plugin: Plugin,
+    ) -> None:
+        """Record a successfully loaded contribution."""
+        self._loaded_count += 1
+        self._events.append(
+            StartupDiagnosticDetail(
+                key="contributions.loaded.item",
+                value=_contribution_context_detail_value(
+                    group=group,
+                    entry_point=entry_point,
+                    provider_plugins=provider_plugins,
+                    feature_plugin=feature_plugin,
+                ),
+            )
+        )
+
+    def record_skipped(
+        self,
+        *,
+        reason: str,
+        group: str,
+        entry_point: EntryPoint,
+        provider_plugins: set[Plugin],
+        feature_plugin: Plugin,
+    ) -> None:
+        """Record a skipped contribution with its precise reason."""
+        context = _contribution_context_detail_value(
+            group=group,
+            entry_point=entry_point,
+            provider_plugins=provider_plugins,
+            feature_plugin=feature_plugin,
+        )
+        self._skipped_count += 1
+        self._skipped_by_reason[reason] += 1
+        self._events.append(
+            StartupDiagnosticDetail(
+                key="contributions.skipped.item",
+                value=f"reason={reason};{context}",
+            )
+        )
+
+    def record_failed(
+        self,
+        *,
+        group: str,
+        entry_point: EntryPoint,
+        provider_plugins: set[Plugin],
+        feature_plugin: Plugin,
+    ) -> None:
+        """Record contribution failure context before the original error escapes."""
+        self._failed_count += 1
+        self._events.append(
+            StartupDiagnosticDetail(
+                key="contributions.failed.item",
+                value=_contribution_context_detail_value(
+                    group=group,
+                    entry_point=entry_point,
+                    provider_plugins=provider_plugins,
+                    feature_plugin=feature_plugin,
+                ),
+            )
+        )
+
+    def details(self) -> tuple[StartupDiagnosticDetail, ...]:
+        """Return startup diagnostic details for the load_plugins phase."""
+        summary = [
+            StartupDiagnosticDetail(
+                key="contributions.loaded",
+                value=str(self._loaded_count),
+            ),
+            StartupDiagnosticDetail(
+                key="contributions.skipped",
+                value=str(self._skipped_count),
+            ),
+            StartupDiagnosticDetail(
+                key="contributions.failed",
+                value=str(self._failed_count),
+            ),
+        ]
+        summary.extend(
+            StartupDiagnosticDetail(
+                key=f"contributions.skipped.{reason}",
+                value=str(self._skipped_by_reason[reason]),
+            )
+            for reason in _CONTRIBUTION_SKIP_REASONS
+        )
+        return (*summary, *self._events)
 
 
 class CannotDetermineScanPathError(AbstractSpakkyApplicationError):
@@ -406,7 +542,8 @@ class SpakkyApplication:
         """
         loaded_count = 0
         loaded_base_plugins: set[Plugin] = set()
-        active_feature_plugins: set[Plugin] = set()
+        available_feature_plugins: set[Plugin] = set()
+        contribution_diagnostics = _ContributionDiagnostics()
         with self._startup_phase_recorder.record_phase(
             phase_name=STARTUP_PHASE_LOAD_PLUGINS
         ) as plugin_phase:
@@ -414,6 +551,11 @@ class SpakkyApplication:
                 entry_points(group=PLUGIN_PATH),
                 key=lambda entry_point: entry_point.name,
             )
+            available_feature_plugins = {
+                Plugin(name=entry_point.name)
+                for entry_point in base_entry_points
+                if _is_core_feature_entry_point(entry_point)
+            }
             for entry_point in base_entry_points:
                 plugin = Plugin(name=entry_point.name)
                 if include is not None and plugin not in include:
@@ -425,28 +567,57 @@ class SpakkyApplication:
                 plugin_phase.set_processed_count(loaded_count)
                 entry_point_function(self)
                 loaded_base_plugins.add(plugin)
-                if _is_core_feature_entry_point(entry_point):
-                    active_feature_plugins.add(plugin)
             for feature_plugin in sorted(
-                active_feature_plugins,
+                available_feature_plugins,
                 key=lambda plugin: plugin.name,
             ):
+                group = _contribution_entry_point_group(feature_plugin)
                 contribution_entry_points = sorted(
-                    entry_points(group=_contribution_entry_point_group(feature_plugin)),
+                    entry_points(group=group),
                     key=lambda entry_point: entry_point.name,
                 )
                 for contribution_entry_point in contribution_entry_points:
-                    if not _should_load_contribution(
+                    provider_plugins = _provider_plugins_for_contribution(
+                        contribution_entry_point
+                    )
+                    skip_reason = _contribution_skip_reason(
                         feature_plugin=feature_plugin,
                         contribution_entry_point=contribution_entry_point,
                         loaded_base_plugins=loaded_base_plugins,
                         include=include,
-                    ):
+                    )
+                    if skip_reason is not None:
+                        contribution_diagnostics.record_skipped(
+                            reason=skip_reason,
+                            group=group,
+                            entry_point=contribution_entry_point,
+                            provider_plugins=provider_plugins,
+                            feature_plugin=feature_plugin,
+                        )
                         continue
-                    entry_point_function = contribution_entry_point.load()
+                    try:
+                        entry_point_function = contribution_entry_point.load()
+                        entry_point_function(self)
+                    except Exception:
+                        contribution_diagnostics.record_failed(
+                            group=group,
+                            entry_point=contribution_entry_point,
+                            provider_plugins=provider_plugins,
+                            feature_plugin=feature_plugin,
+                        )
+                        plugin_phase.set_diagnostic_details(
+                            contribution_diagnostics.details()
+                        )
+                        raise
                     loaded_count += 1
                     plugin_phase.set_processed_count(loaded_count)
-                    entry_point_function(self)
+                    contribution_diagnostics.record_loaded(
+                        group=group,
+                        entry_point=contribution_entry_point,
+                        provider_plugins=provider_plugins,
+                        feature_plugin=feature_plugin,
+                    )
+            plugin_phase.set_diagnostic_details(contribution_diagnostics.details())
         return self
 
     def start(self) -> Self:
