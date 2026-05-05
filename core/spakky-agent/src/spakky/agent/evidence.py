@@ -12,6 +12,7 @@ from spakky.agent.types import JsonObject
 class AgentEvidenceKind(StrEnum):
     """Kinds of append-only evidence captured by agent execution."""
 
+    ACTION_BOUNDARY = "action_boundary"
     MODEL = "model"
     TOOL = "tool"
     CONTEXT = "context"

@@ -25,6 +25,15 @@ from spakky.agent.evidence import (
     AgentEvidenceCandidate,
     AgentEvidenceKind,
 )
+from spakky.agent.recovery import (
+    AgentActionBoundaryCheckpoint,
+    AgentActionBoundaryStage,
+    AgentActionKind,
+    AgentResumeAction,
+    AgentResumeBoundary,
+    AgentResumePlan,
+    plan_agent_resume,
+)
 from spakky.agent.delegation import (
     AgentDelegateTarget,
     DelegationBudget,
@@ -131,6 +140,9 @@ __all__ = [
     "IAgentStateRepository",
     "AbstractSpakkyAgentError",
     "Agent",
+    "AgentActionBoundaryCheckpoint",
+    "AgentActionBoundaryStage",
+    "AgentActionKind",
     "AgentBootstrapError",
     "AgentDelegateTarget",
     "AgentDefinitionError",
@@ -142,6 +154,9 @@ __all__ = [
     "AgentExecutionSpec",
     "AgentModelConfigurationError",
     "AgentPersistenceConfigurationError",
+    "AgentResumeAction",
+    "AgentResumeBoundary",
+    "AgentResumePlan",
     "AgentSignal",
     "AgentSignalConsumptionBatch",
     "AgentSignalKind",
@@ -225,4 +240,5 @@ __all__ = [
     "consume_pending_agent_signals",
     "agent_tool",
     "discover_agent_tools",
+    "plan_agent_resume",
 ]

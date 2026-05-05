@@ -7,6 +7,9 @@ import spakky.agent as agent_api
 import tests.fixtures.agent_app as agent_app
 from spakky.agent import (
     IAgentModel,
+    AgentActionBoundaryCheckpoint,
+    AgentActionBoundaryStage,
+    AgentActionKind,
     AgentToolCatalog,
     AgentToolBindingError,
     AgentToolBoundInvocation,
@@ -21,6 +24,9 @@ from spakky.agent import (
     AgentExecutionSpec,
     AgentDelegateTarget,
     AgentPersistenceConfigurationError,
+    AgentResumeAction,
+    AgentResumeBoundary,
+    AgentResumePlan,
     AgentSignal,
     AgentSignalConsumptionBatch,
     AgentSignalKind,
@@ -58,6 +64,7 @@ from spakky.agent import (
     ToolCallingSpec,
     agent_tool,
     consume_pending_agent_signals,
+    plan_agent_resume,
 )
 from spakky.agent.main import initialize
 from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
@@ -70,6 +77,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     """이슈 #213이 요구한 public import surface를 노출하는지 검증한다."""
     required_exports = {
         "Agent",
+        "AgentActionBoundaryCheckpoint",
+        "AgentActionBoundaryStage",
+        "AgentActionKind",
         "AgentDelegateTarget",
         "AgentExecutionLimits",
         "AgentExecutionSpec",
@@ -82,6 +92,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentSignalPollPoint",
         "AgentEvidence",
         "AgentEvidenceCandidate",
+        "AgentResumeAction",
+        "AgentResumeBoundary",
+        "AgentResumePlan",
         "ContextPack",
         "ContextManifest",
         "ContextDigest",
@@ -100,12 +113,16 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentToolDescriptor",
         "AgentToolIdentity",
         "consume_pending_agent_signals",
+        "plan_agent_resume",
     }
 
     exported = set(agent_api.__all__)
 
     assert required_exports <= exported
     assert Agent is agent_api.Agent
+    assert AgentActionBoundaryCheckpoint is agent_api.AgentActionBoundaryCheckpoint
+    assert AgentActionBoundaryStage is agent_api.AgentActionBoundaryStage
+    assert AgentActionKind is agent_api.AgentActionKind
     assert AgentDelegateTarget is agent_api.AgentDelegateTarget
     assert AgentExecutionLimits is agent_api.AgentExecutionLimits
     assert AgentExecutionSpec is agent_api.AgentExecutionSpec
@@ -118,6 +135,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentSignalPollPoint is agent_api.AgentSignalPollPoint
     assert AgentEvidence is agent_api.AgentEvidence
     assert AgentEvidenceCandidate is agent_api.AgentEvidenceCandidate
+    assert AgentResumeAction is agent_api.AgentResumeAction
+    assert AgentResumeBoundary is agent_api.AgentResumeBoundary
+    assert AgentResumePlan is agent_api.AgentResumePlan
     assert ContextPack is agent_api.ContextPack
     assert ContextManifest is agent_api.ContextManifest
     assert ContextDigest is agent_api.ContextDigest
@@ -136,6 +156,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentToolDescriptor is agent_api.AgentToolDescriptor
     assert AgentToolIdentity is agent_api.AgentToolIdentity
     assert consume_pending_agent_signals is agent_api.consume_pending_agent_signals
+    assert plan_agent_resume is agent_api.plan_agent_resume
 
 
 def test_public_api_expect_exports_model_contract_types() -> None:
