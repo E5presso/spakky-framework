@@ -17,6 +17,7 @@ from spakky.agent import (
     AgentExecutionLimits,
     AgentExecutionSpec,
     AgentSignal,
+    AgentSignalConsumptionBatch,
     AgentState,
     AgentYield,
     Cancel,
@@ -28,6 +29,7 @@ from spakky.agent import (
     IAgentEvidenceRepository,
     IAgentSignalRepository,
     IAgentStateRepository,
+    AgentSignalPollPoint,
     ModelError,
     ModelRequest,
     ModelResponse,
@@ -42,6 +44,7 @@ from spakky.agent import (
     ToolPermission,
     ToolCallingSpec,
     agent_tool,
+    consume_pending_agent_signals,
 )
 from spakky.agent.main import initialize
 from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
@@ -60,6 +63,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "Error",
         "AgentState",
         "AgentSignal",
+        "AgentSignalConsumptionBatch",
+        "AgentSignalPollPoint",
         "AgentEvidence",
         "ContextPack",
         "ContextManifest",
@@ -75,6 +80,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentToolCatalog",
         "AgentToolDescriptor",
         "AgentToolIdentity",
+        "consume_pending_agent_signals",
     }
 
     exported = set(agent_api.__all__)
@@ -88,6 +94,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert Error is agent_api.Error
     assert AgentState is agent_api.AgentState
     assert AgentSignal is agent_api.AgentSignal
+    assert AgentSignalConsumptionBatch is agent_api.AgentSignalConsumptionBatch
+    assert AgentSignalPollPoint is agent_api.AgentSignalPollPoint
     assert AgentEvidence is agent_api.AgentEvidence
     assert ContextPack is agent_api.ContextPack
     assert ContextManifest is agent_api.ContextManifest
@@ -103,6 +111,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentToolCatalog is agent_api.AgentToolCatalog
     assert AgentToolDescriptor is agent_api.AgentToolDescriptor
     assert AgentToolIdentity is agent_api.AgentToolIdentity
+    assert consume_pending_agent_signals is agent_api.consume_pending_agent_signals
 
 
 def test_public_api_expect_exports_model_contract_types() -> None:
