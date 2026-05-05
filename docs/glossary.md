@@ -160,6 +160,29 @@ class CreateUserUseCase:
         ...
 ```
 
+### @Agent
+
+LLM 기반 orchestration을 수행하는 application workflow component입니다. `@UseCase`와
+동격인 `@Pod` 계열 stereotype이며, inbound adapter에서 호출되고 constructor DI로
+model/workspace/shell/git/repository 같은 outbound port를 주입받습니다.
+
+`@Agent`의 `execute()`는 `AgentYield` stream을 반환할 수 있습니다. `token`,
+`progress`, `tool`, `evidence`, `approval`, `final`, `error`, `cancel` event는
+FastAPI WebSocket, CLI, SSE 같은 inbound adapter가 transport별 payload로 변환합니다.
+
+### IAgentModel
+
+`spakky-agent`가 소유하는 model outbound port입니다. `spakky-vllm`은 이 port의 첫
+공식 provider plugin으로, OpenAI-compatible vLLM HTTP/SSE 응답을 provider-neutral
+`ModelResponse`와 `ModelStreamEvent`로 변환합니다.
+
+### Agent Persistence Contribution
+
+Durable Agent 실행에 필요한 `IAgentStateRepository`, `IAgentSignalRepository`,
+`IAgentEvidenceRepository` 구현을 provider plugin이 기여하는 방식입니다.
+SQLAlchemy 구현은 `spakky.contributions.spakky.agent` entry point로 제공되며,
+운영용 in-memory fallback은 없습니다.
+
 ### @Repository
 
 데이터 접근 계층. 영속성 저장소와의 상호작용을 추상화합니다.

@@ -19,6 +19,56 @@
 
 운영용 persistence나 production in-memory fallback은 포함하지 않습니다. 실제 운영에서는 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`를 SQLAlchemy contribution 같은 provider plugin으로 주입해야 합니다.
 
+## 실행 가능한 빠른 검증
+
+이 guide의 예제는 `core/spakky-agent` 패키지에 실제 코드와 테스트로 들어 있습니다.
+문서 흐름이 코드와 맞는지 확인하려면 package directory에서 acceptance test를 실행합니다.
+
+```bash
+cd core/spakky-agent
+uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-cov
+```
+
+이 테스트는 scripted `IAgentModel` stream을 사용하므로 로컬 vLLM 서버가 없어도 실행됩니다.
+테스트 double repository는 예제/테스트용일 뿐이며, 운영 durable 실행에는
+`spakky-sqlalchemy[agent]`가 제공하는 `spakky.contributions.spakky.agent`
+contribution을 사용해야 합니다.
+
+가장 작은 runnable `@Agent` shape는 다음 fixture와 같습니다. 파일로 저장해
+애플리케이션 scan 대상에 포함하면 `CodeAssistant`는 일반 UseCase처럼 container에서
+resolve됩니다.
+
+```python
+from collections.abc import AsyncGenerator
+
+from spakky.agent import Agent, AgentExecutionSpec, AgentYield, AgentYieldKind, Final
+from spakky.core.pod.annotations.pod import Pod
+
+
+@Pod()
+class AnswerTools:
+    def answer(self, command: str) -> str:
+        return f"handled:{command}"
+
+
+@Agent(spec=AgentExecutionSpec(name="code_assistant", objective="handle commands"))
+class CodeAssistant:
+    def __init__(self, tools: AnswerTools) -> None:
+        self._tools = tools
+
+    async def execute(
+        self,
+        command: str,
+    ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+        yield AgentYield(
+            kind=AgentYieldKind.FINAL,
+            payload=Final(output=self._tools.answer(command), metadata={}),
+        )
+```
+
+Claude Code-like demo는 이 최소 shape에 model stream, workspace/shell/git ports,
+approval signal, evidence repository, action-boundary resume를 더한 것입니다.
+
 ## 구조
 
 ```python

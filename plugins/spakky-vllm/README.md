@@ -9,6 +9,17 @@ without adding model SDK dependencies to core.
 Use this package when an application wants to run `@Agent` workflows against a
 local vLLM server and inject the model through the core `IAgentModel` port.
 
+## Install
+
+```bash
+pip install spakky-vllm
+```
+
+Durable Agent execution also needs `spakky-agent` and a persistence provider such
+as `spakky-sqlalchemy[agent]`. `spakky-vllm` supplies the model adapter only; it
+does not provide state, signal, evidence repositories, inbound HTTP/CLI adapters,
+or a production in-memory persistence fallback.
+
 ## Configuration
 
 Settings are loaded through `VllmConfig` with the `SPAKKY_VLLM__` environment

@@ -27,7 +27,7 @@
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
-| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox 저장소 contribution |
+| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox/Agent persistence contribution |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @logged AOP Aspect |
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
@@ -100,6 +100,7 @@ graph TD
 
     sqlalchemy --> data
     sqlalchemy -. outbox contribution .-> outbox
+    sqlalchemy -. agent persistence contribution .-> agent
     rabbitmq --> event
     rabbitmq --> tracing
     kafka --> event
@@ -146,11 +147,12 @@ graph TD
 
 - **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing`에도 의존 (트레이싱 미들웨어)
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록
+- **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록하며, Agent state/signal/evidence 저장소는 `spakky-agent`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.agent` contribution으로 등록
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
-- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. AgentYield, state/signal/evidence, model port, delegation 계약을 제공하며 vLLM/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
+- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, model port, tool binding, delegation 계약을 제공하며 vLLM/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
+- **vLLM 플러그인** (spakky-vllm) → `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. vLLM OpenAI-compatible HTTP/SSE mapping만 담당하고 core 또는 inbound adapter를 역참조하지 않음
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
@@ -455,6 +457,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
 | `spakky-sqlalchemy` contribution for `spakky-outbox` | `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
+| `spakky-sqlalchemy` contribution for `spakky-agent` | `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`, `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable` |
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
 | `spakky-task` | `TaskRegistrationPostProcessor` |
 | `spakky-actuator` | `ActuatorConfig`, `ActuatorExtensionRegistry`, `ActuatorExtensionPostProcessor`, `ActuatorAggregationService` |
@@ -466,6 +469,16 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` |
+
+### Agentic workflow layer
+
+`spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다.
+
+Core public API의 중심은 `AgentExecutionSpec`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
+
+`spakky-vllm`은 첫 공식 model provider plugin입니다. `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 추가합니다. 이 패키지는 OpenAI-compatible vLLM `/v1/chat/completions` 요청, SSE stream, structured output, tool-call JSON validation을 provider-neutral `ModelResponse`/`ModelStreamEvent`로 변환하며, `spakky-agent` core와 inbound adapter package를 역참조하지 않습니다.
+
+`spakky-sqlalchemy`는 ADR-0010 feature contribution 정책에 따라 Agent persistence를 기여합니다. `spakky.contributions.spakky.agent` entry point는 `spakky-agent` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 base plugin 이후 로드되어 `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`과 세 repository Pod을 등록합니다. Signal은 `consumed_at`으로 pending queue를 구분하고, Evidence repository는 append/read만 노출해 append-only contract를 유지합니다. 별도 `spakky-agent-sqlalchemy` plugin은 만들지 않습니다.
 
 ### 애플리케이션 데이터 캐시
 
@@ -1052,6 +1065,8 @@ flowchart TD
 
 `spakky-sqlalchemy`는 `spakky.contributions.spakky.outbox` entry point로 `SqlAlchemyOutboxStorage`와 `OutboxMessageTable`을 기여합니다. 이 contribution은 `spakky-outbox` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 base plugin 이후 로드됩니다. 커스텀 저장소는 `IAsyncOutboxStorage`를 구현합니다.
 
+Agent persistence도 같은 contribution 모델을 사용합니다. `spakky.contributions.spakky.agent` entry point는 `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`와 `spakky_agent_state`, `spakky_agent_signal`, `spakky_agent_evidence` table을 등록합니다. Durable `@Agent`는 이 repository port가 없으면 bootstrap에서 실패하며, 운영용 in-memory fallback은 없습니다.
+
 > **설계 배경**: [ADR-0002](docs/adr/0002-outbox-plugin-architecture.md), [ADR-0005](docs/adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md), [ADR-0006](docs/adr/0006-move-outbox-to-core.md) 참조.
 
 ---
@@ -1199,7 +1214,7 @@ flowchart TD
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`; outbox contribution에는 `spakky-outbox` extra 또는 별도 설치 필요 |
+| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable`; `spakky-agent` contribution으로 agent state/signal/evidence repository와 table | `sqlalchemy`; outbox contribution에는 `spakky-outbox` extra, agent contribution에는 `spakky-agent` extra 또는 별도 설치 필요 |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` | `httpx`, `pydantic-settings`, `spakky-agent` |
