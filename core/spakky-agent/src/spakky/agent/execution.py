@@ -8,6 +8,7 @@ from types import NoneType
 from typing import get_args, get_origin, get_type_hints
 
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.tooling import AgentToolCatalog, discover_agent_tools
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.error import AbstractSpakkyPodError
 
@@ -88,22 +89,31 @@ class Agent(Pod):
     """UseCase-equivalent Pod stereotype for agentic workflow components."""
 
     spec: AgentExecutionSpec = field(default_factory=AgentExecutionSpec)
+    tool_catalog: AgentToolCatalog = field(
+        init=False,
+        default_factory=AgentToolCatalog,
+    )
 
     def _initialize(self, obj: PodType) -> None:
         """Initialize Pod metadata and validate the Agent execute contract."""
+        agent_class = self._ensure_agent_class(obj)
         try:
-            super()._initialize(obj)
+            super()._initialize(agent_class)
         except AbstractSpakkyPodError as e:
             raise AgentDefinitionError("Agent Pod metadata is invalid") from e
-        self._validate_execute_contract(obj)
+        self._validate_execute_contract(agent_class)
+        self.tool_catalog = discover_agent_tools(agent_class)
 
     def validate_bootstrap(self) -> None:
         """Re-run definition validation during application bootstrap."""
-        self._validate_execute_contract(self.target)
+        self._validate_execute_contract(self._ensure_agent_class(self.target))
 
-    def _validate_execute_contract(self, obj: PodType) -> None:
-        if not isclass(obj):
+    def _ensure_agent_class(self, obj: PodType) -> type[object]:
+        if not isinstance(obj, type):
             raise AgentDefinitionError("@Agent can only annotate classes")
+        return obj
+
+    def _validate_execute_contract(self, obj: type[object]) -> None:
         execute = getattr_static(obj, "execute", None)
         if execute is None:
             raise AgentDefinitionError("@Agent class must define execute()")

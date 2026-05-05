@@ -7,6 +7,9 @@ import spakky.agent as agent_api
 import tests.fixtures.agent_app as agent_app
 from spakky.agent import (
     IAgentModel,
+    AgentToolCatalog,
+    AgentToolDescriptor,
+    AgentToolIdentity,
     Agent,
     AgentBootstrapError,
     AgentDefinitionError,
@@ -35,7 +38,10 @@ from spakky.agent import (
     StreamingOptions,
     Token,
     Tool,
+    ToolEffects,
+    ToolPermission,
     ToolCallingSpec,
+    agent_tool,
 )
 from spakky.agent.main import initialize
 from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
@@ -65,6 +71,10 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "Progress",
         "Token",
         "Tool",
+        "agent_tool",
+        "AgentToolCatalog",
+        "AgentToolDescriptor",
+        "AgentToolIdentity",
     }
 
     exported = set(agent_api.__all__)
@@ -89,6 +99,10 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert Progress is agent_api.Progress
     assert Token is agent_api.Token
     assert Tool is agent_api.Tool
+    assert agent_tool is agent_api.agent_tool
+    assert AgentToolCatalog is agent_api.AgentToolCatalog
+    assert AgentToolDescriptor is agent_api.AgentToolDescriptor
+    assert AgentToolIdentity is agent_api.AgentToolIdentity
 
 
 def test_public_api_expect_exports_model_contract_types() -> None:
@@ -101,6 +115,12 @@ def test_public_api_expect_exports_model_contract_types() -> None:
     assert ModelToolCall is agent_api.ModelToolCall
     assert ModelError is agent_api.ModelError
     assert StreamingOptions is agent_api.StreamingOptions
+
+
+def test_public_api_expect_exports_tool_metadata_types() -> None:
+    """@agent_tool descriptor metadata 타입을 public API로 노출한다."""
+    assert ToolPermission is agent_api.ToolPermission
+    assert ToolEffects is agent_api.ToolEffects
 
 
 def test_public_api_expect_exports_custom_error_hierarchy() -> None:
