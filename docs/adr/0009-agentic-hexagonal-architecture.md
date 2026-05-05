@@ -148,7 +148,10 @@ class CodeAssistant:
         self,
         task: CodeTask,
     ) -> AsyncGenerator[AgentYield[CodeTaskResult], None]:
-        yield Message("Inspecting workspace")
+        yield AgentYield(
+            kind=AgentYieldKind.PROGRESS,
+            payload=Progress("Inspecting workspace"),
+        )
 
         tools = [
             self.workspace.read_file,
@@ -169,14 +172,23 @@ class CodeAssistant:
                 )
             ):
                 if event.is_text_delta:
-                    yield TextDelta(event.text)
+                    yield AgentYield(
+                        kind=AgentYieldKind.TOKEN,
+                        payload=Token(event.text),
+                    )
 
                 if event.is_tool_call:
                     result = await event.invoke_tool()
-                    yield Evidence(result)
+                    yield AgentYield(
+                        kind=AgentYieldKind.TOOL,
+                        payload=Tool(event.name, call_id=event.call_id, result=result),
+                    )
 
                 if event.is_approval_required:
-                    yield Approval(event.request)
+                    yield AgentYield(
+                        kind=AgentYieldKind.APPROVAL,
+                        payload=Approval.from_request(event.request),
+                    )
 
                 if event.is_final:
                     yield Final(event.output)
@@ -201,7 +213,7 @@ async def code_agent_socket(ws: WebSocket, command: CodeTask):
 1. 개발자가 `@Agent CodeAssistant`와 `@agent_tool` workspace/shell/git tool을 작성한다.
 2. FastAPI 또는 Typer inbound adapter가 `CodeAssistant.execute()`를 호출한다.
 3. vLLM local server가 model decision과 token stream을 제공한다.
-4. `TextDelta`가 client로 실시간 전달된다.
+4. `Token` yield가 client로 실시간 전달된다.
 5. Model이 file read/search/bash/write tool call을 선택하고 typed schema로 arguments를 만든다.
 6. Write/bash 같은 unsafe action은 approval signal을 요구할 수 있다.
 7. 사용자는 실행 중 추가 지시, 승인, 취소를 signal로 보낸다.
@@ -277,10 +289,13 @@ class ResolveSupportTicket:
         self,
         command: ResolveSupportTicketCommand,
     ) -> AsyncGenerator[AgentYield[SupportAnswer], None]:
-        yield Message("Searching support knowledge base")
+        yield AgentYield(
+            kind=AgentYieldKind.PROGRESS,
+            payload=Progress("Searching support knowledge base"),
+        )
 
         docs = await self.docs.search_docs(command.question, limit=5)
-        yield Evidence(docs)
+        yield AgentYield(kind=AgentYieldKind.EVIDENCE, payload=Evidence(docs))
 
         async for event in self.model.stream(
             ModelRequest(
@@ -292,9 +307,12 @@ class ResolveSupportTicket:
             )
         ):
             if event.is_text_delta:
-                yield TextDelta(event.text)
+                yield AgentYield(kind=AgentYieldKind.TOKEN, payload=Token(event.text))
 
-        yield Final(SupportAnswer(...))
+        yield AgentYield(
+            kind=AgentYieldKind.FINAL,
+            payload=Final(SupportAnswer(...), metadata={}),
+        )
 ```
 
 이 예시에서 외부 인프라와의 상호작용은 모두 생성자 DI로 정의된다.
@@ -327,7 +345,7 @@ class ResolveSupportTicket:
 
 이 속성들은 독립 옵션이 아니라 다른 계약에서 파생된다.
 
-- Streaming은 `execute()` 반환형이 `AsyncGenerator[AgentYield[OutputT], None]`인지로 판정한다.
+- Streaming은 `execute()` 반환형이 `Generator[AgentYield[T], None, None]` 또는 `AsyncGenerator[AgentYield[T], None]`인지로 판정한다.
 - Interaction은 `accepted_signals`와 `AgentSignalRepository` 활성화 여부로 판정한다.
 - Durability는 `AgentStateRepository`, `AgentSignalRepository`, `AgentEvidenceRepository` contribution이 필요한 실행 경로에서 요구된다.
 - Resumability는 `recovery` strategy가 action-boundary recovery를 요구할 때 파생된다.
@@ -385,19 +403,24 @@ Top-level status는 외부 lifecycle만 표현한다.
 Canonical handler return type은 다음이다.
 
 ```python
+Generator[AgentYield[OutputT], None, None]
 AsyncGenerator[AgentYield[OutputT], None]
 ```
 
-최종 결과는 `Final[OutputT]` yield로 표현한다. Python async generator는 return value를 가질 수 없기 때문이다.
+최종 결과는 `Final[OutputT]` yield로 표현한다. Python async generator는 return value를 가질 수 없고, sync generator의 `StopIteration.value`도 public output contract로 사용하지 않는다.
+
+Non-generator `execute()` 반환형은 UseCase와 같은 직접 결과 계약이다. 직접 결과는 caller가 await/call 결과를 받는 방식이고, inbound adapter가 진행 상황을 stream으로 노출해야 할 때는 `AgentYield` generator 계약을 사용한다.
 
 Public yield vocabulary는 작게 유지한다.
 
-- `TextDelta`
-- `Message`
+- `Token`
+- `Progress`
+- `Tool`
 - `Evidence`
 - `Approval`
-- `Checkpoint`
 - `Final[OutputT]`
+- `Error`
+- `Cancel`
 
 Inbound adapter는 `AgentYield`를 직접 소비해 SSE, WebSocket, CLI stdout, 테스트 collector 등으로 변환한다. 별도 `AgentStreamProjector`나 `AgentStreamEvent`를 core public concept로 두지 않는다.
 
@@ -751,7 +774,7 @@ Core는 과도한 policy object 대신 명확한 handler 개입 지점을 제공
 마일스톤은 다음 유즈케이스를 모두 실제 실행 가능하게 만든다.
 
 1. `@Agent` class를 DI container에 등록한다.
-2. `@Agent.execute()`가 `AsyncGenerator[AgentYield[OutputT], None]`로 streaming result를 반환한다.
+2. `@Agent.execute()`가 `Generator[AgentYield[OutputT], None, None]` 또는 `AsyncGenerator[AgentYield[OutputT], None]`로 streaming result를 반환한다.
 3. Simple output return을 `Final(output)` convenience로 처리한다.
 4. `@Agent` metadata, `execute()` signature, DI graph, contribution registry가 함께 검증된다.
 5. `IAgentModel`을 통해 vLLM OpenAI-compatible server를 호출한다.

@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass, field
 from enum import StrEnum
 from inspect import Parameter, Signature, getattr_static, isclass, signature
+from types import NoneType
 from typing import get_args, get_origin, get_type_hints
 
 from spakky.agent.error import AgentDefinitionError
@@ -160,9 +161,7 @@ class Agent(Pod):
         if return_origin is None and return_annotation in (AsyncGenerator, Generator):
             return_origin = return_annotation
         if return_origin not in (AsyncGenerator, Generator):
-            raise AgentDefinitionError(
-                "@Agent.execute() must return Generator or AsyncGenerator"
-            )
+            return
         return_args = get_args(return_annotation)
         if not return_args:
             raise AgentDefinitionError("@Agent.execute() yield type is required")
@@ -175,3 +174,25 @@ class Agent(Pod):
             or yield_candidate.__name__ != "AgentYield"
         ):
             raise AgentDefinitionError("@Agent.execute() must yield AgentYield items")
+        self._validate_generator_control_types(return_origin, return_args)
+
+    def _validate_generator_control_types(
+        self,
+        return_origin: object,
+        return_args: tuple[object, ...],
+    ) -> None:
+        if len(return_args) < 2 or not self._is_none_annotation(return_args[1]):
+            raise AgentDefinitionError(
+                "@Agent.execute() generator send type must be None"
+            )
+        if (
+            return_origin is Generator
+            and len(return_args) >= 3
+            and not self._is_none_annotation(return_args[2])
+        ):
+            raise AgentDefinitionError(
+                "@Agent.execute() sync generator return type must be None"
+            )
+
+    def _is_none_annotation(self, annotation: object) -> bool:
+        return annotation is None or annotation is NoneType
