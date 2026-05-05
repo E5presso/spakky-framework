@@ -14,6 +14,16 @@
 
 Phase 0~2에서 유지한 Decision Branch Ledger를 스펙화 직전에 한 번 더 훑는다. 이 단계는 "사용자가 말한 요구를 정리"하는 단계가 아니라, 아직 결정되지 않은 설계 가지를 찾아 **한 번에 하나씩 닫는** 단계다.
 
+에픽/마일스톤 에서는 이 sweep이 optional review가 아니라 **Phase 2.5 진입 전 hard gate**다. 다음 조건을 모두 만족해야 스펙 artifact를 작성할 수 있다.
+
+- 9개 branch가 모두 `RESOLVED`, `DEFERRED_BY_EVIDENCE`, `NON_GOAL` 중 하나다.
+- `open_questions` 큐가 비어 있다.
+- `answered_questions`의 모든 Q-ID가 §2/§5/§7/§8/§9/§10 중 하나에 반영되어 있다.
+- `deferred_by_evidence`의 모든 항목이 코드·문서·기존 이슈 근거를 가진다.
+- 모호한 답변을 받은 Q-ID가 재질문 없이 닫힌 사례가 없다.
+
+조건을 만족하지 못하면 스펙에 `[NEEDS CLARIFICATION]`을 적고 계속 진행하지 않는다. 먼저 Phase 0~2 질문 루프로 복귀한다.
+
 ### Branch별 처리 규칙
 
 | Branch | 스펙 반영 위치 | 닫히지 않았을 때 |
@@ -33,13 +43,15 @@ Phase 0~2에서 유지한 Decision Branch Ledger를 스펙화 직전에 한 번 
 ledger에 open branch가 있으면 사용자에게 질문하기 전에 코드·문서·기존 이슈로 답할 수 있는지 먼저 확인한다. 그래도 남는 질문은 아래 형식으로 하나씩 제시한다.
 
 ```
-질문: {현재 가장 upstream인 미해결 결정}
+질문 {Q-ID}: {현재 가장 upstream인 미해결 결정}
 왜 묻는가: {막고 있는 FR/SC/태스크}
 권장 답안: {코드베이스 근거 기반 선택}
 대안: {있다면 1-2개와 비용}
 ```
 
 사용자 답변은 ledger와 스펙 양쪽에 반영한다. ledger만 닫고 스펙 본문에 반영하지 않으면 Phase 3 진입 금지.
+
+답변이 추상적이면 같은 Q-ID로 재질문한다. "유연하게 처리", "일반적인 방식", "필요하면 후속" 같은 답변은 acceptance scenario, policy, non-goal 중 어디에도 검증 가능한 형태로 들어가지 않으므로 닫힌 답변이 아니다.
 
 ## 규모별 분기 (Phase 2 판정 결과에 따라)
 
@@ -187,6 +199,7 @@ Phase 0~2의 질문에서 사용자가 승인한 권장 답안은 여기 또는 
 - [ ] 도메인 어휘가 도메인 사전(`AGENTS.md` "프로젝트 특수 컨벤션", `ARCHITECTURE.md` 도메인 모델 섹션)과 일치하는가 (신규 어휘는 사전 등록 절차 거쳤는가)
 - [ ] **요청 어휘 4축 정합 (charter §4-A)** — 본문에 등장한 모든 핵심 어휘가 (a) 사용자 입력 본문, (b) 도메인 사전, (c) 패키지 `README.md`/`docs/`, (d) 코드베이스 — 4축에서 등가로 사용되는가. 한 축이라도 어긋나면 `[NEEDS CLARIFICATION: 어휘 X — 출처별 의미 차이 확인]` 마커.
 - [ ] **Decision Branch Ledger 반영** — architecture / domain model / API contract / data flow / UX-CLI surface / error policy / compatibility / rollout / tests-docs branch가 모두 `RESOLVED`이거나, §2/§5/§7/§8/§9/§10에 명시적으로 반영되었거나, `[NEEDS CLARIFICATION]`으로 남아 Phase 3을 차단하는가.
+- [ ] **Mandatory Epic Grill Gate** — 에픽/ambitious milestone이면 9개 branch table을 사용자에게 제시했고, `open_questions` 큐가 비었고, 모호 답변을 같은 Q-ID로 재질문했는가.
 - [ ] **질문 근거 검증** — 사용자에게 물은 질문 중 코드·문서·기존 이슈 탐색으로 답할 수 있었던 것이 없는가. 있었다면 질문을 취소하고 탐색 근거로 스펙을 갱신했는가.
 - [ ] **권장 답안 추적** — 질문마다 제시한 권장 답안이 사용자 승인/수정/거절 중 어떤 상태인지 ledger에 남아 있고, 승인된 답안만 스펙에 반영되었는가.
 - [ ] §5 도메인 계약에 사전·사후조건·불변식이 명시되었는가

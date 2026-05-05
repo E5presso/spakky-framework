@@ -2,7 +2,7 @@
 
 > 코딩 스타일 → [CONTRIBUTING.md](CONTRIBUTING.md) | 아키텍처 → [ARCHITECTURE.md](ARCHITECTURE.md) | ADR → [docs/adr/](docs/adr/README.md) | 예제 → [README.md](README.md)
 
-Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `.agents/skills/`입니다. Claude Code는 `CLAUDE.md`와 `.claude/` 래퍼로 같은 정본을 참조합니다.
+Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `.agents/skills/`입니다. Claude Code는 `CLAUDE.md`, `.claude/skills`, `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
 
 ## Overview
 

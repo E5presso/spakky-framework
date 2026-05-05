@@ -37,7 +37,7 @@ user-invocable: true
 스코프에 따라 대상 파일을 수집한다:
 
 - `rules`: `.agents/rules/*.md` 전체 + `AGENTS.md` + `CLAUDE.md`
-- `skills`: `.agents/skills/*/SKILL.md` 전체 + `.agents/skills/`·`.claude/skills/` 래퍼
+- `skills`: `.agents/skills/*/SKILL.md` 전체 + `.claude/skills` symlink adapter
 - `all`: 위 둘 + `.claude/settings.json` + `.codex/` 어댑터
 
 각 파일의 **차단 선언**(금지 표현, 필수 표현, 게이트 표현)을 추출하여 평가 항목 목록을 만든다.

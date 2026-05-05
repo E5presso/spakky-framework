@@ -10,7 +10,7 @@ paths:
 
 # 하네스 작성 규칙
 
-`.agents/rules/`·`.agents/skills/`·`.claude/`·`.codex/`·`AGENTS.md`·`CLAUDE.md` 등 **하네스 자체에 추가·수정되는 모든 텍스트**에 적용된다.
+`.agents/rules/`·`.agents/skills/`·`.claude/`·`.codex/`·`AGENTS.md`·`CLAUDE.md` 등 **하네스 자체에 추가·수정되는 모든 텍스트**에 적용된다. `.claude/skills`와 `.claude/rules`는 `.agents` 정본을 가리키는 symlink adapter이며 별도 본문 복제본을 두지 않는다.
 
 ## 1. 보편 원리만 작성
 

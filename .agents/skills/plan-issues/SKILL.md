@@ -33,15 +33,35 @@ user-invocable: true
 4. **의사결정 트리 지도 유지**: architecture / domain model / API contract / data flow / UX-CLI surface / error policy / compatibility / rollout / tests-docs 각 가지를 `OPEN`, `RESOLVED`, `BLOCKED`로 추적한다.
 5. **가정에는 반박한다**: 모호하거나 위험하거나 서로 모순되는 진술은 그대로 받아쓰지 않는다. "그렇다면 X도 성립해야 하는데 맞습니까?" 형식으로 종속 결정을 드러낸다.
 6. **진행 지도 공유**: 사용자와 논의할 때는 남은 open branch 수와 지금 질문이 어떤 downstream 결정을 막는지 1줄로 표시한다.
+7. **질문 큐가 비기 전에는 진행 금지**: non-trivial 그룹/에픽은 `open_questions`, `answered_questions`, `deferred_by_evidence` 큐를 유지한다. `open_questions`가 남아 있으면 Phase 2.5로 진입하지 않는다.
+8. **불명확한 답변은 같은 질문으로 재질문**: 답변에 "적당히", "나중에", "유연하게", "일반적으로", "필요하면", "잘" 같은 추상어가 남으면 기존 질문 ID를 닫지 않고 같은 ID로 재질문한다. 새 질문으로 넘어가지 않는다.
+9. **사실과 판단을 분리**: 코드·문서·기존 이슈로 닫을 수 있는 것은 fact branch다. public API shape, retention/cleanup, approval default, migration/rollout, protocol support, user-visible behavior는 judgment branch이므로 사용자 승인 없이 닫지 않는다.
 
 ### 질문 포맷
 
 ```
-질문: {지금 막힌 결정 1개}
+질문 {Q-ID}: {지금 막힌 결정 1개}
 왜 묻는가: {이 답이 막고 있는 downstream 결정}
 권장 답안: {코드/문서 근거 기반 기본 선택}
 대안: {있다면 1-2개, 비용 또는 위험 1줄}
 ```
+
+### Open Question Queue
+
+Phase 0부터 Phase 3 승인 전까지 다음 큐를 유지한다. 큐는 사용자에게 매 질문 전 1줄로 요약한다.
+
+| Queue | 의미 |
+|-------|------|
+| `open_questions` | 구현 전 닫아야 하는 judgment branch 질문. stable `Q-<branch>-<n>` ID를 가진다. |
+| `answered_questions` | 사용자 답변이 충분히 구체적이고 스펙에 반영된 질문. |
+| `deferred_by_evidence` | 코드·문서·기존 이슈 근거로 사용자 질문 없이 닫은 fact branch. 근거 경로 또는 이슈 번호 필수. |
+
+규칙:
+
+- non-trivial 그룹/에픽에서 `open_questions`가 비어 있지 않으면 Phase 2.5 진입 금지.
+- 사용자 답변이 모호하면 같은 Q-ID를 유지하고 재질문한다.
+- `answered_questions`는 §2 가정, §5 도메인 계약, §7 경계 조건, §8 상호작용, §9 범위 밖, §10 성공 기준 중 하나에 반영되어야 한다.
+- `deferred_by_evidence`는 Phase 2.5 §11 self-review와 Phase 3.5 T4 입력에 포함한다.
 
 ### Decision Branch Ledger
 
@@ -61,6 +81,24 @@ Phase 0부터 Phase 3 승인 전까지 내부 ledger를 유지한다. Phase 2.5 
 
 Phase 2.5 진입 조건: `OPEN` 또는 `BLOCKED` branch가 있으면 해당 branch를 `[NEEDS CLARIFICATION]` 또는 명시적 non-goal/assumption으로 전환해야 한다. 단순히 ledger에서 삭제하지 않는다.
 
+### Mandatory Epic Grill Gate
+
+에픽/ambitious milestone은 사용자가 "바로 생성"을 승인했더라도 Phase 2.5 전에 반드시 한 번 사용자 앞에서 Grill Gate를 수행한다. 다음 9개 branch를 모두 `RESOLVED`, `DEFERRED_BY_EVIDENCE`, `NON_GOAL`, `OPEN_QUESTION` 중 하나로 표시한다.
+
+| Branch | 최소 확인 질문 |
+|--------|----------------|
+| architecture | core/plugin/adapter 경계와 선행 ADR 충돌이 없는가? |
+| domain model | 새 도메인 명사가 기존 사전과 충돌하지 않는가? |
+| API contract | public contract의 최소 사용자 관찰면이 닫혔는가? |
+| data flow | durable state, event, artifact, external dependency 흐름이 닫혔는가? |
+| UX-CLI surface | 사용자가 기능 완료를 관찰하는 inbound surface가 닫혔는가? |
+| error policy | failure, retry, timeout, cancellation, partial success 정책이 닫혔는가? |
+| compatibility | 기존 API/패키지/문서와의 breaking/non-breaking 기준이 닫혔는가? |
+| rollout | migration, cleanup, retention, deployment boundary가 닫혔는가? |
+| tests-docs | acceptance, conformance, docs sync 기준이 닫혔는가? |
+
+`OPEN_QUESTION`이 1개 이상이면 가장 upstream 질문 하나만 Grill-me 포맷으로 묻는다. 모든 branch가 `RESOLVED`, `DEFERRED_BY_EVIDENCE`, `NON_GOAL`이 될 때까지 반복한다.
+
 ## 핵심 설계 — Spec-Driven Development (SDD) 워크플로
 
 본 스킬은 GitHub Spec Kit / Kiro / Tessl 같은 SDD (Spec-Driven Development) 도구의 핵심 패턴을 차용하되, GitHub Issues 티켓 + `/process-ticket` 소비 형태로 적응한다.
@@ -78,7 +116,7 @@ Phase 2.5 진입 조건: `OPEN` 또는 `BLOCKED` branch가 있으면 해당 bran
 
 1. **Phase 2.5** — 11섹션 구조의 **executable specification artifact**를 캡처한다 (비즈니스 의도·가정·US (User Story)·FR (Functional Requirement)·도메인 계약·도메인 규칙·경계·상호작용·범위 밖·SC (Success Criteria)·self-review).
 2. **Phase 3** — 스펙을 만족하는 태스크 분해 + 쓰기 충돌 매트릭스 + 레이어 선후 + **FR/SC 커버리지 매핑** + 부모 의존 상속.
-3. **Phase 3.5** — 서브에이전트 시뮬레이션 게이트 (T1 티켓별 cold reading + T2 DAG (Directed Acyclic Graph) 모순 + T3 SC value drift + T4 Grill-me interview replay). Soft block으로 검토 후보 사용자 일괄 결정.
+3. **Phase 3.5** — 서브에이전트 시뮬레이션 게이트 (T1 티켓별 cold reading + T2 DAG (Directed Acyclic Graph) 모순 + T3 SC value drift + T4 Grill-me interview replay). T4의 under-questioning/vague closure는 hard block, 나머지는 soft block으로 사용자 결정.
 4. **Phase 4** — 확정된 artifact를 템플릿 슬롯에 **기계적으로 주입**. self-check 11항목 (마커 0개 / FR-SC 역참조 / US 본문 인용 / Constitution 등) + Phase 3.5 게이트 통과 확인 후 이슈 생성.
 
 이 구조는 "논의 내용과 본문 불일치" / "스펙 부실 → `/process-ticket` 할루시네이션" / "의존관계 오류" / "사용자 의도 손실"을 구조적으로 방지한다.
@@ -116,10 +154,13 @@ Phase 2.5 진입 조건: `OPEN` 또는 `BLOCKED` branch가 있으면 해당 bran
 
 1. `$ARGUMENTS`에서 기능 방향성을 수집한다.
 2. Decision Branch Ledger를 초기화하고, 입력 문장에서 이미 닫힌 branch와 open branch를 구분한다.
-3. 코드베이스·문서·기존 이슈로 답할 수 있는 open branch는 먼저 탐색하여 닫는다.
-4. 입력이 모호하거나 불충분하면 `AskUserQuestion`으로 보강한다. 질문은 Grill-me 포맷을 사용하며 **한 번에 가장 큰 차단 질문 1개**만 묻는다. 목표 / 범위 / 제약을 한 번에 묻지 않는다.
-5. 질문에는 항상 권장 답안을 포함한다. 권장 답안이 코드/문서 근거 없이 추측이면 권장 답안 대신 `[NEEDS CLARIFICATION]`으로 표시한다.
-6. 입력이 충분히 명확하면 Phase 1로 진행한다.
+3. `open_questions`, `answered_questions`, `deferred_by_evidence` 큐를 초기화한다.
+4. 코드베이스·문서·기존 이슈로 답할 수 있는 fact branch는 먼저 탐색하여 `deferred_by_evidence`로 닫는다.
+5. 사용자 판단이 필요한 judgment branch는 stable Q-ID로 `open_questions`에 넣는다.
+6. 입력이 모호하거나 불충분하면 `AskUserQuestion`으로 보강한다. 질문은 Grill-me 포맷을 사용하며 **한 번에 가장 큰 차단 질문 1개**만 묻는다. 목표 / 범위 / 제약을 한 번에 묻지 않는다.
+7. 답변이 모호하면 같은 Q-ID로 재질문한다. 충분히 구체적인 답변만 `answered_questions`로 이동한다.
+8. 질문에는 항상 권장 답안을 포함한다. 권장 답안이 코드/문서 근거 없이 추측이면 권장 답안 대신 `[NEEDS CLARIFICATION]`으로 표시한다.
+9. 입력과 질문 큐가 충분히 명확하면 Phase 1로 진행한다.
 
 ## Phase 1: 코드베이스 & 기존 마일스톤 분석
 
@@ -140,6 +181,8 @@ Phase 2.5 진입 조건: `OPEN` 또는 `BLOCKED` branch가 있으면 해당 bran
 작업 규모에 따라 에픽/그룹/단일 구조 선택 → 스펙 방향 논의.
 
 Phase 2 논의는 Grill-me 심문 커널을 따른다. 위계 판정 중 open branch가 발견되면 가장 upstream 결정부터 하나씩 닫는다. 예를 들어 API contract가 domain model 결정을 전제하면 domain model을 먼저 질문하고, 질문마다 권장 답안과 downstream 차단 대상을 함께 제시한다.
+
+에픽/ambitious milestone이면 위계 판정 직후 **Mandatory Epic Grill Gate**를 수행한다. 사용자가 "충분하다"고 말해도 branch table을 한 번 사용자에게 보여주고, `OPEN_QUESTION`이 남아 있으면 한 번에 하나씩 닫는다.
 
 ### 위계 정의
 
@@ -190,9 +233,9 @@ Decision Branch Ledger의 `RESOLVED` 항목은 §2 가정, §5 도메인 계약,
 
 분해 결과를 사용자에게 제시하고 `AskUserQuestion`으로 승인을 받는다. 승인 없이 Phase 3.5로 진행하지 않는다.
 
-## Phase 3.5: 스펙 시뮬레이션 게이트 (Soft Block)
+## Phase 3.5: 스펙 시뮬레이션 게이트 (Block Gate)
 
-서브에이전트로 cold reading 시뮬레이션. T1(티켓별 모호함·silent assumption), T2(에픽·그룹 DAG (Directed Acyclic Graph) 모순), T3(에픽 SC (Success Criteria) value drift) 3-tier. 결과는 검토 후보 리스트로 통합 → `AskUserQuestion` Soft block (전부 기각 시 항목별 사유 1줄 강제).
+서브에이전트로 cold reading 시뮬레이션. T1(티켓별 모호함·silent assumption), T2(에픽·그룹 DAG (Directed Acyclic Graph) 모순), T3(에픽 SC (Success Criteria) value drift), T4(Grill-me interview replay)를 실행한다. T4에서 missing branch, under-questioning, vague closure가 나오면 Phase 0~2 질문 루프로 복귀하는 hard block이고, 나머지 검토 후보는 `AskUserQuestion` soft block으로 일괄 결정한다.
 
 **상세**: `phases/phase-3_5-simulate.md`
 

@@ -10,7 +10,7 @@ paths:
 
 이슈 처리 세션 중 발견된 **스킬/규칙/훅(하네스) 결함의 수정은 해당 이슈를 처리하는 워크트리에서 이뤄지며, 그 세션의 PR에 포함된다.** 루트 리포의 `develop` 브랜치에 직접 쓰지 않는다. 이 원칙은 이 규칙 파일 자체를 포함한 모든 하네스 파일(`.agents/skills/**`, `.agents/rules/**`, `.claude/settings*.json`)에 적용된다.
 
-워크트리에서 스킬 본문을 수정할 때는 정본 경로(`.agents/skills/{name}/SKILL.md`)를 사용하고, `.claude/skills/`는 Claude Code 네이티브 발견용 래퍼로만 유지한다 — 상세는 `.agents/skills/create-worktree/SKILL.md` 참조.
+워크트리에서 스킬 본문을 수정할 때는 정본 경로(`.agents/skills/{name}/SKILL.md`)를 사용한다. `.claude/skills`는 `.agents/skills`를 가리키는 symlink adapter이므로 본문 복제본을 두지 않는다 — 상세는 `.agents/skills/create-worktree/SKILL.md` 참조.
 
 ## 스크립트 코드 테스트 의무
 
