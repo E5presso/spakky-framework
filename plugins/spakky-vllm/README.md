@@ -31,6 +31,20 @@ Loading the plugin registers:
 - `VllmAgentModel`
 - an explicit `IAgentModel -> VllmAgentModel` binding
 
-Streaming chunk mapping is intentionally reserved for the follow-up vLLM streaming
-ticket. Until then, `stream()` exposes the contract and fails clearly instead of
-silently falling back to fake streaming.
+`VllmAgentModel.complete()` sends OpenAI-compatible chat completion requests and
+maps provider responses into `ModelResponse`. `VllmAgentModel.stream()` sends the
+same request with `stream=true`, decodes server-sent event chunks, and emits
+provider-neutral `ModelStreamEvent` values:
+
+- token deltas become `ModelStreamEventKind.TOKEN_DELTA`
+- streamed function-call fragments become `TOOL_CALL_CANDIDATE` at the
+  `tool_calls` finish boundary
+- usage chunks are attached to the final `DONE` event when requested by
+  `StreamingOptions.include_usage`
+- timeout, transport, invalid chunk, provider error, refusal, and non-success
+  finish reasons become typed `ERROR` events followed by `DONE`
+
+Agent implementations can forward token events as `AgentYieldKind.TOKEN` payloads
+and close the async stream when their cancellation lifecycle asks the model call
+to stop. The HTTP stream is owned by the async generator, so `aclose()` releases
+the underlying client stream instead of leaving a background request running.
