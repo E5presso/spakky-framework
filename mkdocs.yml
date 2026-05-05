@@ -75,6 +75,7 @@ plugins:
             - core/spakky-data/src
             - core/spakky-event/src
             - core/spakky-task/src
+            - core/spakky-agent/src
             - core/spakky-tracing/src
             - core/spakky-outbox/src
             - core/spakky-saga/src
@@ -142,6 +143,7 @@ nav:
           - spakky-data: api/core/spakky-data.md
           - spakky-event: api/core/spakky-event.md
           - spakky-task: api/core/spakky-task.md
+          - spakky-agent: api/core/spakky-agent.md
           - spakky-tracing: api/core/spakky-tracing.md
           - spakky-outbox: api/core/spakky-outbox.md
           - spakky-saga: api/core/spakky-saga.md

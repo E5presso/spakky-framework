@@ -16,6 +16,7 @@
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
+| **Core** | `spakky-agent` | Agentic workflow 계약 (AgentExecutionSpec, AgentYield, AgentState/Signal/Evidence, IAgentModel) |
 | **Core** | `spakky-actuator` | Actuator 상태/정보 계약 (Health, Readiness, Liveness, Info) |
 | **Core** | `spakky-cache` | 애플리케이션 데이터 캐시 계약 (CacheHit, CacheMiss, ICache) |
 | **Core** | `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, ITracePropagator, W3C Propagator) |
@@ -45,6 +46,7 @@ graph TD
         data[spakky-data<br/>Repository · Transaction]
         event[spakky-event<br/>Publisher · Consumer · Aspect]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
+        agent["spakky-agent<br/>AgentYield · State · Signal · Model Port"]
         actuator["spakky-actuator<br/>Health · Readiness · Info"]
         cache["spakky-cache<br/>CacheHit · CacheMiss · ICache"]
         tracing["spakky-tracing<br/>TraceContext · Propagator"]
@@ -145,6 +147,7 @@ graph TD
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
+- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. vLLM/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
