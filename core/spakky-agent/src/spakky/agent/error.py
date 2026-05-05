@@ -39,3 +39,9 @@ class AgentModelConfigurationError(AgentBootstrapError):
     """Raised when an agent requires a model adapter but none is registered."""
 
     message = "Agent model adapter is required"
+
+
+class AgentOutputGuardError(AbstractSpakkyAgentError):
+    """Raised when an output guard detects unsafe streaming exposure."""
+
+    message = "Agent output guard failed"

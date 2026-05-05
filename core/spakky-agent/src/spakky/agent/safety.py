@@ -4,8 +4,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from hashlib import sha256
+import re
 
-from spakky.agent.error import AgentDefinitionError
+from spakky.agent.error import AgentDefinitionError, AgentOutputGuardError
 from spakky.agent.types import JsonObject, JsonValue
 
 REDACTED_VALUE = "[REDACTED]"
@@ -49,6 +50,20 @@ class RedactionPolicy(StrEnum):
     REDACT = "redact"
     DROP = "drop"
     REFERENCE_ONLY = "reference_only"
+
+
+class StreamingGuardFailureMode(StrEnum):
+    """Final audit behavior when a streaming guard missed a raw candidate."""
+
+    RAISE = "raise"
+    EMIT_ERROR = "emit_error"
+
+
+class StreamingRedactionAuditStatus(StrEnum):
+    """Final aggregate streaming redaction audit status."""
+
+    PASSED = "passed"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +227,241 @@ class SensitiveFieldDescriptor:
             "path": list(self.path),
             "field": self.field.to_metadata(),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingSensitivePattern:
+    """Caller-supplied deterministic pattern used by streaming redaction."""
+
+    name: str
+    pattern: str
+    replacement: str = REDACTED_VALUE
+    metadata: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Reject blank names and invalid pattern syntax before streaming starts."""
+        _require_non_blank(self.name, "Streaming sensitive pattern name")
+        _require_non_blank(self.pattern, "Streaming sensitive pattern")
+        try:
+            re.compile(self.pattern)
+        except re.error as e:
+            raise AgentDefinitionError("Streaming sensitive pattern is invalid") from e
+
+    def redact(self, value: str) -> tuple[str, int]:
+        """Return redacted text and the number of replacements applied."""
+        compiled = re.compile(self.pattern)
+        return compiled.subn(self.replacement, value)
+
+    def find_matches(self, value: str) -> tuple["StreamingRedactionMatch", ...]:
+        """Return sanitized match locations without exposing raw text."""
+        compiled = re.compile(self.pattern)
+        return tuple(
+            StreamingRedactionMatch(
+                pattern_name=self.name,
+                start=match.start(),
+                end=match.end(),
+                metadata=self.metadata,
+            )
+            for match in compiled.finditer(value)
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingRedactionPolicy:
+    """Bounded buffering policy balancing stream latency and redaction correctness."""
+
+    patterns: Sequence[StreamingSensitivePattern]
+    buffer_size: int = 64
+    emit_chunk_size: int | None = None
+    failure_mode: StreamingGuardFailureMode = StreamingGuardFailureMode.RAISE
+
+    def __post_init__(self) -> None:
+        """Reject policies that would make the guard unbounded or silent."""
+        if self.buffer_size <= 0:
+            raise AgentDefinitionError(
+                "Streaming redaction buffer size must be positive"
+            )
+        if self.emit_chunk_size is not None and self.emit_chunk_size <= 0:
+            raise AgentDefinitionError(
+                "Streaming redaction emit chunk size must be positive"
+            )
+        if len(self.patterns) == 0:
+            raise AgentDefinitionError("Streaming redaction patterns cannot be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingRedactionMatch:
+    """Sanitized final-audit match location for a missed redaction candidate."""
+
+    pattern_name: str
+    start: int
+    end: int
+    metadata: JsonObject = field(default_factory=dict)
+
+    def to_payload(self) -> JsonObject:
+        """Serialize a match without the sensitive value itself."""
+        payload: dict[str, JsonValue] = {
+            "pattern_name": self.pattern_name,
+            "start": self.start,
+            "end": self.end,
+        }
+        if self.metadata:
+            payload["metadata"] = self.metadata
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingRedactionAudit:
+    """Final aggregate audit for a bounded streaming redaction session."""
+
+    status: StreamingRedactionAuditStatus
+    detected_count: int
+    redacted_count: int
+    missed_matches: tuple[StreamingRedactionMatch, ...]
+    buffer_size: int
+    emitted_char_count: int
+    original_char_count: int
+
+    @property
+    def missed_count(self) -> int:
+        """Return the number of raw candidates still present after streaming."""
+        return len(self.missed_matches)
+
+    def to_evidence_payload(self) -> JsonObject:
+        """Serialize audit evidence without raw streamed content."""
+        return {
+            "kind": "streaming_redaction_audit",
+            "status": self.status.value,
+            "detected_count": self.detected_count,
+            "redacted_count": self.redacted_count,
+            "missed_count": self.missed_count,
+            "missed_matches": tuple(
+                match.to_payload() for match in self.missed_matches
+            ),
+            "buffer_size": self.buffer_size,
+            "emitted_char_count": self.emitted_char_count,
+            "original_char_count": self.original_char_count,
+        }
+
+    def to_error_payload(self) -> JsonObject:
+        """Serialize a typed error payload for stream consumers."""
+        return {
+            "code": "streaming_redaction_audit_failed",
+            "message": "Streaming redaction final audit detected unmasked candidates",
+            "retryable": False,
+            "metadata": self.to_evidence_payload(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingRedactionResult:
+    """Output produced by a bounded streaming redaction step."""
+
+    chunks: tuple[str, ...]
+    audit: StreamingRedactionAudit | None = None
+    error: JsonObject | None = None
+
+
+class StreamingRedactionSession:
+    """Stateful bounded redactor for model token streams."""
+
+    def __init__(self, policy: StreamingRedactionPolicy) -> None:
+        self._policy = policy
+        self._patterns = tuple(policy.patterns)
+        self._buffer = ""
+        self._original_chunks: list[str] = []
+        self._emitted_chunks: list[str] = []
+        self._redacted_count = 0
+        self._closed = False
+
+    def push(self, chunk: str) -> StreamingRedactionResult:
+        """Redact one token chunk and emit only the safe bounded prefix."""
+        self._ensure_open()
+        if chunk == "":
+            return StreamingRedactionResult(chunks=())
+        self._original_chunks.append(chunk)
+        self._buffer = self._redact_text(f"{self._buffer}{chunk}")
+        chunks = self._emit_safe_prefix()
+        return StreamingRedactionResult(chunks=chunks)
+
+    def finish(self) -> StreamingRedactionResult:
+        """Flush the remaining buffer and run the mandatory final audit."""
+        self._ensure_open()
+        self._closed = True
+        redacted_buffer = self._redact_text(self._buffer)
+        chunks = self._split_for_emit(redacted_buffer)
+        self._buffer = ""
+        self._emitted_chunks.extend(chunks)
+        audit = self._audit()
+        if audit.status == StreamingRedactionAuditStatus.FAILED:
+            if self._policy.failure_mode == StreamingGuardFailureMode.RAISE:
+                raise AgentOutputGuardError(
+                    "Streaming redaction final audit detected unmasked candidates"
+                )
+            return StreamingRedactionResult(
+                chunks=chunks,
+                audit=audit,
+                error=audit.to_error_payload(),
+            )
+        return StreamingRedactionResult(chunks=chunks, audit=audit)
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise AgentOutputGuardError("Streaming redaction session is already closed")
+
+    def _redact_text(self, value: str) -> str:
+        result = value
+        for pattern in self._patterns:
+            result, count = pattern.redact(result)
+            self._redacted_count += count
+        return result
+
+    def _emit_safe_prefix(self) -> tuple[str, ...]:
+        emit_length = max(0, len(self._buffer) - self._policy.buffer_size)
+        if emit_length == 0:
+            return ()
+        prefix = self._buffer[:emit_length]
+        self._buffer = self._buffer[emit_length:]
+        chunks = self._split_for_emit(prefix)
+        self._emitted_chunks.extend(chunks)
+        return chunks
+
+    def _split_for_emit(self, value: str) -> tuple[str, ...]:
+        if value == "":
+            return ()
+        if self._policy.emit_chunk_size is None:
+            return (value,)
+        chunk_size = self._policy.emit_chunk_size
+        return tuple(
+            value[index : index + chunk_size]
+            for index in range(0, len(value), chunk_size)
+        )
+
+    def _audit(self) -> StreamingRedactionAudit:
+        original = "".join(self._original_chunks)
+        emitted = "".join(self._emitted_chunks)
+        missed_matches = tuple(
+            match
+            for pattern in self._patterns
+            for match in pattern.find_matches(emitted)
+        )
+        detected_count = sum(
+            len(pattern.find_matches(original)) for pattern in self._patterns
+        )
+        status = (
+            StreamingRedactionAuditStatus.FAILED
+            if missed_matches
+            else StreamingRedactionAuditStatus.PASSED
+        )
+        return StreamingRedactionAudit(
+            status=status,
+            detected_count=detected_count,
+            redacted_count=self._redacted_count,
+            missed_matches=missed_matches,
+            buffer_size=self._policy.buffer_size,
+            emitted_char_count=len(emitted),
+            original_char_count=len(original),
+        )
 
 
 def guard_json_value(

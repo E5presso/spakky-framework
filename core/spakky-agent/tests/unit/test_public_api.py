@@ -35,6 +35,7 @@ from spakky.agent import (
     AgentExecutionSpec,
     AgentDelegateTarget,
     AgentPersistenceConfigurationError,
+    AgentOutputGuardError,
     AgentResumeAction,
     AgentResumeBoundary,
     AgentResumePlan,
@@ -80,6 +81,14 @@ from spakky.agent import (
     SecretRef,
     SensitiveField,
     SensitiveFieldDescriptor,
+    StreamingGuardFailureMode,
+    StreamingRedactionAudit,
+    StreamingRedactionAuditStatus,
+    StreamingRedactionMatch,
+    StreamingRedactionPolicy,
+    StreamingRedactionResult,
+    StreamingRedactionSession,
+    StreamingSensitivePattern,
     StreamingOptions,
     Token,
     Tool,
@@ -160,6 +169,14 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "SecretRef",
         "SensitiveField",
         "SensitiveFieldDescriptor",
+        "StreamingGuardFailureMode",
+        "StreamingRedactionAudit",
+        "StreamingRedactionAuditStatus",
+        "StreamingRedactionMatch",
+        "StreamingRedactionPolicy",
+        "StreamingRedactionResult",
+        "StreamingRedactionSession",
+        "StreamingSensitivePattern",
         "IAgentStateRepository",
         "IAgentSignalRepository",
         "IAgentEvidenceRepository",
@@ -239,11 +256,20 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert SecretRef is agent_api.SecretRef
     assert SensitiveField is agent_api.SensitiveField
     assert SensitiveFieldDescriptor is agent_api.SensitiveFieldDescriptor
+    assert StreamingGuardFailureMode is agent_api.StreamingGuardFailureMode
+    assert StreamingRedactionAudit is agent_api.StreamingRedactionAudit
+    assert StreamingRedactionAuditStatus is agent_api.StreamingRedactionAuditStatus
+    assert StreamingRedactionMatch is agent_api.StreamingRedactionMatch
+    assert StreamingRedactionPolicy is agent_api.StreamingRedactionPolicy
+    assert StreamingRedactionResult is agent_api.StreamingRedactionResult
+    assert StreamingRedactionSession is agent_api.StreamingRedactionSession
+    assert StreamingSensitivePattern is agent_api.StreamingSensitivePattern
     assert IAgentStateRepository is agent_api.IAgentStateRepository
     assert IAgentSignalRepository is agent_api.IAgentSignalRepository
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
     assert IAgentDelegate is agent_api.IAgentDelegate
     assert IAgentModel is agent_api.IAgentModel
+    assert AgentOutputGuardError is agent_api.AgentOutputGuardError
     assert Progress is agent_api.Progress
     assert Token is agent_api.Token
     assert Tool is agent_api.Tool
