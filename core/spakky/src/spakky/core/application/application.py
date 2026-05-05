@@ -5,7 +5,7 @@ for configuring and starting a Spakky application with DI/IoC and AOP support.
 """
 
 import inspect
-from importlib.metadata import entry_points
+from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from types import FunctionType, ModuleType
 from typing import Callable, Self
@@ -28,7 +28,7 @@ from spakky.core.application.startup_diagnostics import (
     StartupDiagnosticDetail,
     StartupReport,
 )
-from spakky.core.common.constants import PLUGIN_PATH
+from spakky.core.common.constants import CONTRIBUTION_PATH_PREFIX, PLUGIN_PATH
 from spakky.core.common.importing import (
     Module,
     ensure_importable,
@@ -47,6 +47,8 @@ STARTUP_PHASE_LOAD_PLUGINS = "load_plugins"
 STARTUP_PHASE_SCAN = "scan"
 STARTUP_PHASE_REGISTRATION = "registration"
 
+_PLUGIN_MODULE_PREFIX = "spakky.plugins."
+
 
 @immutable
 class _DiscoveryManifestHit:
@@ -57,6 +59,11 @@ class _DiscoveryManifestHit:
 
     objects: tuple[PodType, ...]
     """Resolved Pod or Tag objects."""
+
+
+def _is_core_feature_entry_point(entry_point: EntryPoint) -> bool:
+    """Return whether a base plugin entry point represents a core feature."""
+    return not entry_point.value.startswith(_PLUGIN_MODULE_PREFIX)
 
 
 class CannotDetermineScanPathError(AbstractSpakkyApplicationError):
@@ -360,23 +367,41 @@ class SpakkyApplication:
             Self for method chaining.
         """
         loaded_count = 0
+        active_feature_plugins: set[Plugin] = set()
         with self._startup_phase_recorder.record_phase(
             phase_name=STARTUP_PHASE_LOAD_PLUGINS
         ) as plugin_phase:
-            for entry_point in entry_points(
-                group=PLUGIN_PATH
-            ):  # pragma: no cover - coverage boundary
-                if include is not None:  # pragma: no cover - coverage boundary
-                    if (
-                        Plugin(name=entry_point.name) not in include
-                    ):  # pragma: no cover - coverage boundary
-                        continue  # pragma: no cover - coverage boundary
+            base_entry_points = sorted(
+                entry_points(group=PLUGIN_PATH),
+                key=lambda entry_point: entry_point.name,
+            )
+            for entry_point in base_entry_points:
+                plugin = Plugin(name=entry_point.name)
+                if include is not None and plugin not in include:
+                    continue
                 entry_point_function: Callable[[SpakkyApplication], None] = (
                     entry_point.load()
                 )
                 loaded_count += 1
                 plugin_phase.set_processed_count(loaded_count)
-                entry_point_function(self)  # pragma: no cover - coverage boundary
+                entry_point_function(self)
+                if _is_core_feature_entry_point(entry_point):
+                    active_feature_plugins.add(plugin)
+            for feature_plugin in sorted(
+                active_feature_plugins,
+                key=lambda plugin: plugin.name,
+            ):
+                contribution_entry_points = sorted(
+                    entry_points(
+                        group=(f"{CONTRIBUTION_PATH_PREFIX}.{feature_plugin.name}")
+                    ),
+                    key=lambda entry_point: entry_point.name,
+                )
+                for contribution_entry_point in contribution_entry_points:
+                    entry_point_function = contribution_entry_point.load()
+                    loaded_count += 1
+                    plugin_phase.set_processed_count(loaded_count)
+                    entry_point_function(self)
         return self
 
     def start(self) -> Self:

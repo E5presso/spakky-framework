@@ -1,6 +1,7 @@
 """Core constants for Spakky framework."""
 
 PLUGIN_PATH = "spakky.plugins"
+CONTRIBUTION_PATH_PREFIX = "spakky.contributions"
 ANNOTATION_METADATA = "__spakky_annotation_metadata__"
 PATH = "__path__"
 ORIGIN_BASES = "__orig_bases__"

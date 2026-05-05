@@ -1,5 +1,11 @@
 """Test application methods for complete coverage."""
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
+import pytest
+
+import spakky.core.application.application as application_module
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.application.application import SpakkyApplication
@@ -13,6 +19,26 @@ class StubAspect(IAspect): ...
 
 @AsyncAspect()
 class AsyncStubAspect(IAsyncAspect): ...
+
+
+@dataclass(frozen=True)
+class FakeEntryPoint:
+    name: str
+    value: str
+    initializer: Callable[[SpakkyApplication], None]
+
+    def load(self) -> Callable[[SpakkyApplication], None]:
+        return self.initializer
+
+
+def _recording_initializer(
+    calls: list[str],
+    label: str,
+) -> Callable[[SpakkyApplication], None]:
+    def initialize(_app: SpakkyApplication) -> None:
+        calls.append(label)
+
+    return initialize
 
 
 def test_add_aspect_expect_registered() -> None:
@@ -36,6 +62,191 @@ def test_load_plugins_with_include() -> None:
     app.load_plugins(include={Plugin(name="non_existent_plugin")})
     # Should complete without error
     assert app is not None
+
+
+def test_load_plugins_expect_contributions_after_base_plugins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """active core feature contribution이 base plugin 이후 로드됨을 검증한다."""
+    calls: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+            )
+        if group == "spakky.contributions.spakky-outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(
+                        calls,
+                        "contribution:sqlalchemy-outbox",
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+
+    SpakkyApplication(ApplicationContext()).load_plugins()
+
+    assert calls == [
+        "base:outbox",
+        "base:sqlalchemy",
+        "contribution:sqlalchemy-outbox",
+    ]
+
+
+def test_load_plugins_without_active_feature_expect_no_contribution_loaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """core feature가 active가 아니면 contribution lookup이 등록을 수행하지 않는다."""
+    calls: list[str] = []
+    requested_groups: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        requested_groups.append(group)
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        return (
+            FakeEntryPoint(
+                name="unexpected",
+                value="unexpected.module:initialize",
+                initializer=_recording_initializer(calls, "unexpected"),
+            ),
+        )
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+
+    SpakkyApplication(ApplicationContext()).load_plugins()
+
+    assert calls == ["base:sqlalchemy"]
+    assert requested_groups == ["spakky.plugins"]
+
+
+def test_load_plugins_include_expect_skipped_feature_has_no_contributions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """include에서 제외된 core feature의 contribution을 조회하지 않음을 검증한다."""
+    calls: list[str] = []
+    requested_groups: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        requested_groups.append(group)
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        return (
+            FakeEntryPoint(
+                name="unexpected",
+                value="unexpected.module:initialize",
+                initializer=_recording_initializer(calls, "unexpected"),
+            ),
+        )
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+
+    SpakkyApplication(ApplicationContext()).load_plugins(
+        include={Plugin(name="spakky-sqlalchemy")}
+    )
+
+    assert calls == ["base:sqlalchemy"]
+    assert requested_groups == ["spakky.plugins"]
+
+
+def test_load_plugins_expect_deterministic_contribution_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """여러 feature/contribution 로딩 순서가 재현 가능함을 검증한다."""
+    calls: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-data",
+                    value="spakky.data.main:initialize",
+                    initializer=_recording_initializer(calls, "base:data"),
+                ),
+            )
+        if group == "spakky.contributions.spakky-data":
+            return (
+                FakeEntryPoint(
+                    name="z-data",
+                    value="example.z_data:initialize",
+                    initializer=_recording_initializer(calls, "contribution:z-data"),
+                ),
+                FakeEntryPoint(
+                    name="a-data",
+                    value="example.a_data:initialize",
+                    initializer=_recording_initializer(calls, "contribution:a-data"),
+                ),
+            )
+        if group == "spakky.contributions.spakky-outbox":
+            return (
+                FakeEntryPoint(
+                    name="z-outbox",
+                    value="example.z_outbox:initialize",
+                    initializer=_recording_initializer(
+                        calls,
+                        "contribution:z-outbox",
+                    ),
+                ),
+                FakeEntryPoint(
+                    name="a-outbox",
+                    value="example.a_outbox:initialize",
+                    initializer=_recording_initializer(
+                        calls,
+                        "contribution:a-outbox",
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+
+    SpakkyApplication(ApplicationContext()).load_plugins()
+
+    assert calls == [
+        "base:data",
+        "base:outbox",
+        "contribution:a-data",
+        "contribution:z-data",
+        "contribution:a-outbox",
+        "contribution:z-outbox",
+    ]
 
 
 def test_stop_application() -> None:
