@@ -25,6 +25,7 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyTracingError
   AbstractSpakkyFrameworkError --> AbstractSpakkyOutboxError
   AbstractSpakkyFrameworkError --> AbstractSpakkySagaError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyAgentError
   AbstractSpakkyFrameworkError --> AbstractSpakkyFastAPIError
   AbstractSpakkyFrameworkError --> AbstractSpakkySqlAlchemyError
   AbstractSpakkyFrameworkError --> AbstractSpakkyCeleryError
@@ -45,6 +46,12 @@ flowchart TD
   AbstractSpakkySagaError --> SagaStepTimeoutError
   AbstractSpakkySagaError --> SagaParallelMergeConflictError
   AbstractSpakkySagaError --> SagaEngineNotConnectedError
+
+  AbstractSpakkyAgentError --> AgentDefinitionError
+  AbstractSpakkyAgentError --> AgentToolBindingError
+  AbstractSpakkyAgentError --> AgentBootstrapError
+  AgentBootstrapError --> AgentPersistenceConfigurationError
+  AgentBootstrapError --> AgentModelConfigurationError
 
   AbstractSpakkyCacheError --> InvalidCacheTTLError
   AbstractSpakkyCacheError --> CacheKeyGenerationError
@@ -295,6 +302,34 @@ from spakky.tracing.error import (
 | 에러                      | 설명                               |
 | ------------------------- | ---------------------------------- |
 | `InvalidTraceparentError` | `traceparent` 헤더 형식이 유효하지 않음 |
+
+---
+
+### spakky-agent
+
+Agentic workflow contract 관련 에러입니다.
+
+```python
+from spakky.agent.error import (
+    AbstractSpakkyAgentError,
+    AgentDefinitionError,
+    AgentToolBindingError,
+    AgentBootstrapError,
+    AgentPersistenceConfigurationError,
+    AgentModelConfigurationError,
+)
+```
+
+| 에러                                    | 설명                                      | 상속                       |
+| --------------------------------------- | ----------------------------------------- | -------------------------- |
+| `AbstractSpakkyAgentError`              | agent 에러 기반 클래스                    | `AbstractSpakkyFrameworkError` |
+| `AgentDefinitionError`                  | `@Agent`/`@agent_tool` 정의 계약 오류     | `AbstractSpakkyAgentError` |
+| `AgentToolBindingError`                 | model tool-call payload를 Python signature에 bind할 수 없음 | `AbstractSpakkyAgentError` |
+| `AgentBootstrapError`                   | agent bootstrap 검증 실패                 | `AbstractSpakkyAgentError` |
+| `AgentPersistenceConfigurationError`     | durable agent persistence contribution 누락 | `AgentBootstrapError`      |
+| `AgentModelConfigurationError`          | 필요한 model adapter 등록 누락            | `AgentBootstrapError`      |
+
+`AgentToolBindingError`는 tool callable 실행 전에 발생하므로, schema에 없는 인자·필수 인자 누락·positional/keyword 중복 같은 잘못된 model payload가 side effect를 만들기 전에 차단됩니다.
 
 ---
 

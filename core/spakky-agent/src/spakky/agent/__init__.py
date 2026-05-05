@@ -8,6 +8,7 @@ from spakky.agent.error import (
     AgentDefinitionError,
     AgentModelConfigurationError,
     AgentPersistenceConfigurationError,
+    AgentToolBindingError,
 )
 from spakky.agent.context import (
     ContextDigest,
@@ -80,6 +81,7 @@ from spakky.agent.state import (
 )
 from spakky.agent.tooling import (
     AgentToolCatalog,
+    AgentToolBoundInvocation,
     AgentToolDefinition,
     AgentToolDescriptor,
     AgentToolIdentity,
@@ -99,6 +101,7 @@ from spakky.agent.tooling import (
     ToolRisk,
     ToolRiskAxis,
     agent_tool,
+    bind_agent_tool_invocation,
     discover_agent_tools,
 )
 from spakky.agent.types import JsonObject, JsonPrimitive, JsonValue
@@ -143,6 +146,8 @@ __all__ = [
     "AgentSignalConsumptionBatch",
     "AgentSignalKind",
     "AgentSignalPollPoint",
+    "AgentToolBindingError",
+    "AgentToolBoundInvocation",
     "AgentToolCatalog",
     "AgentToolDefinition",
     "AgentToolDescriptor",
@@ -216,6 +221,7 @@ __all__ = [
     "ToolResumeMetadata",
     "ToolRisk",
     "ToolRiskAxis",
+    "bind_agent_tool_invocation",
     "consume_pending_agent_signals",
     "agent_tool",
     "discover_agent_tools",
