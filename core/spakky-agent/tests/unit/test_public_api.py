@@ -16,9 +16,12 @@ from spakky.agent import (
     AgentEvidence,
     AgentExecutionLimits,
     AgentExecutionSpec,
+    AgentPersistenceConfigurationError,
     AgentSignal,
     AgentSignalConsumptionBatch,
+    AgentSignalKind,
     AgentState,
+    AgentStatus,
     AgentYield,
     Cancel,
     ContextDigest,
@@ -37,6 +40,7 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolSpec,
     Progress,
+    RecoveryStrategy,
     StreamingOptions,
     Token,
     Tool,
@@ -50,6 +54,7 @@ from spakky.agent.main import initialize
 from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
 
 
 def test_public_api_expect_exports_required_agent_surface() -> None:
@@ -189,3 +194,173 @@ def test_agent_bootstrap_expect_surfaces_execute_contract_as_custom_error(
 
 async def _invalid_execute(command: str) -> AsyncGenerator[str, None]:
     yield command
+
+
+def test_agent_bootstrap_expect_durable_agent_requires_persistence_contribution() -> (
+    None
+):
+    """durable 실행 경로가 repository contribution 없이 시작되지 않음을 검증한다."""
+
+    @Agent(spec=AgentExecutionSpec(recovery=RecoveryStrategy.ACTION_BOUNDARY))
+    class DurableAgentWithoutPersistence:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=agent_api.AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    app = SpakkyApplication(ApplicationContext())
+    initialize(app)
+    app.add(DurableAgentWithoutPersistence)
+
+    with pytest.raises(AgentPersistenceConfigurationError) as exc_info:
+        app.start()
+
+    message = str(exc_info.value)
+    assert "DurableAgentWithoutPersistence" in message
+    assert "IAgentStateRepository" in message
+    assert "IAgentSignalRepository" in message
+    assert "IAgentEvidenceRepository" in message
+    assert "spakky-sqlalchemy[agent]" in message
+    assert "spakky.contributions.spakky.agent" in message
+
+
+def test_agent_bootstrap_expect_manual_processor_requires_injected_container() -> None:
+    """수동 post processor 호출도 durable fallback 없이 custom error를 낸다."""
+
+    @Agent(spec=AgentExecutionSpec(recovery=RecoveryStrategy.ACTION_BOUNDARY))
+    class DurableAgentWithoutContainer:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=agent_api.AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    with pytest.raises(AgentPersistenceConfigurationError):
+        AgentBootstrapValidationPostProcessor().post_process(
+            DurableAgentWithoutContainer()
+        )
+
+
+def test_agent_bootstrap_expect_signal_acceptance_requires_persistence_contribution() -> (
+    None
+):
+    """signal을 받는 agent가 durable inbound queue contribution을 요구한다."""
+
+    @Agent(spec=AgentExecutionSpec(accepted_signals=(AgentSignalKind.USER_MESSAGE,)))
+    class SignaledAgentWithoutPersistence:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=agent_api.AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    app = SpakkyApplication(ApplicationContext())
+    initialize(app)
+    app.add(SignaledAgentWithoutPersistence)
+
+    with pytest.raises(AgentPersistenceConfigurationError):
+        app.start()
+
+
+def test_agent_bootstrap_expect_durable_agent_starts_with_repository_contribution() -> (
+    None
+):
+    """필수 repository port가 등록되면 durable agent bootstrap이 통과한다."""
+
+    @Agent(spec=AgentExecutionSpec(recovery=RecoveryStrategy.ACTION_BOUNDARY))
+    class DurableAgentWithPersistence:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=agent_api.AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    app = SpakkyApplication(ApplicationContext())
+    initialize(app)
+    app.add(FakeAgentStateRepository)
+    app.add(FakeAgentSignalRepository)
+    app.add(FakeAgentEvidenceRepository)
+    app.add(DurableAgentWithPersistence)
+
+    app.start()
+
+    app.stop()
+
+
+def test_agent_bootstrap_type_name_expect_handles_non_class_target() -> None:
+    """diagnostic helper가 비정상 target도 문자열로 표현한다."""
+
+    agent = Agent()
+    agent.target = _invalid_execute
+
+    name = AgentBootstrapValidationPostProcessor()._agent_type_name(agent)
+
+    assert name == str(_invalid_execute)
+
+
+class FakeRepositoryAccessError(Exception):
+    """Raised when a repository test double is invoked unexpectedly."""
+
+
+@Pod()
+class FakeAgentStateRepository(IAgentStateRepository):
+    """Test-only AgentState repository double."""
+
+    def get(self, state_id: str) -> AgentState:
+        raise FakeRepositoryAccessError
+
+    def get_or_none(self, state_id: str) -> AgentState | None:
+        raise FakeRepositoryAccessError
+
+    def save(self, state: AgentState) -> AgentState:
+        return state
+
+    def list_by_status(self, status: AgentStatus) -> tuple[AgentState, ...]:
+        return ()
+
+    def list_resume_candidates(self) -> tuple[AgentState, ...]:
+        return ()
+
+
+@Pod()
+class FakeAgentSignalRepository(IAgentSignalRepository):
+    """Test-only AgentSignal repository double."""
+
+    def append(self, signal: AgentSignal) -> AgentSignal:
+        return signal
+
+    def list_pending(self, state_id: str) -> tuple[AgentSignal, ...]:
+        return ()
+
+    def mark_consumed(self, signal_id: str) -> AgentSignal:
+        raise FakeRepositoryAccessError
+
+
+@Pod()
+class FakeAgentEvidenceRepository(IAgentEvidenceRepository):
+    """Test-only AgentEvidence repository double."""
+
+    def append(self, evidence: AgentEvidence) -> AgentEvidence:
+        return evidence
+
+    def get(self, evidence_id: str) -> AgentEvidence:
+        raise FakeRepositoryAccessError
+
+    def list_by_state(self, state_id: str) -> tuple[AgentEvidence, ...]:
+        return ()
+
+    def list_by_manifest_ref(self, manifest_ref: str) -> tuple[AgentEvidence, ...]:
+        return ()

@@ -108,6 +108,25 @@ class Agent(Pod):
         """Re-run definition validation during application bootstrap."""
         self._validate_execute_contract(self._ensure_agent_class(self.target))
 
+    def required_persistence_repository_types(self) -> tuple[type[object], ...]:
+        """Return repository ports required by this Agent's durable path."""
+        from spakky.agent.interfaces.repository import (
+            IAgentEvidenceRepository,
+            IAgentSignalRepository,
+            IAgentStateRepository,
+        )
+
+        if (
+            self.spec.recovery is RecoveryStrategy.ACTION_BOUNDARY
+            or len(self.spec.accepted_signals) > 0
+        ):
+            return (
+                IAgentStateRepository,
+                IAgentSignalRepository,
+                IAgentEvidenceRepository,
+            )
+        return ()
+
     def _ensure_agent_class(self, obj: PodType) -> type[object]:
         if not isinstance(obj, type):
             raise AgentDefinitionError("@Agent can only annotate classes")
