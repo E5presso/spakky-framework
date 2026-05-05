@@ -154,6 +154,7 @@ def test_agent_evidence_kind_expect_covers_required_evidence_sources() -> None:
         "context",
         "context_digest",
         "context_manifest",
+        "context_optimization",
         "evaluation",
     } <= evidence_kinds
 

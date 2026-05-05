@@ -1,9 +1,15 @@
 """Agent evidence contracts."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
+from spakky.agent.context import (
+    ContextHealthSignal,
+    ContextOptimizationAction,
+    ContextOptimizationEvidenceStage,
+)
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.tooling import EvidenceCapture
 from spakky.agent.types import JsonObject
@@ -18,6 +24,7 @@ class AgentEvidenceKind(StrEnum):
     CONTEXT = "context"
     CONTEXT_MANIFEST = "context_manifest"
     CONTEXT_DIGEST = "context_digest"
+    CONTEXT_OPTIMIZATION = "context_optimization"
     EVALUATION = "evaluation"
     APPROVAL = "approval"
     DELEGATION = "delegation"
@@ -104,6 +111,30 @@ class AgentEvidenceCandidate:
             kind=AgentEvidenceKind.TOOL,
             payload={"tool_identity": tool_identity, "decision": decision},
             summary=summary,
+        )
+
+    @classmethod
+    def context_optimization(
+        cls,
+        *,
+        action: ContextOptimizationAction,
+        stage: ContextOptimizationEvidenceStage,
+        signals: Sequence[ContextHealthSignal] = (),
+        summary: str | None = None,
+    ) -> "AgentEvidenceCandidate":
+        """Create before/after evidence for a context optimization action."""
+        _require_non_blank(action.id, "Context optimization action id")
+        return cls(
+            kind=AgentEvidenceKind.CONTEXT_OPTIMIZATION,
+            payload={
+                "stage": stage.value,
+                "action": action.evidence_payload(),
+                "signals": tuple(signal.evidence_payload() for signal in signals),
+            },
+            summary=summary,
+            digest=action.digest_ref,
+            manifest_ref=action.manifest_ref,
+            reference=action.result_evidence_ref,
         )
 
     def to_evidence(
