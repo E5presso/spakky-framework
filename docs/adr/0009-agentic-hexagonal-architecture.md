@@ -1,29 +1,40 @@
 # ADR-0009: Agentic Hexagonal Architecture
 
-- **상태**: Proposed
+- **상태**: Accepted
 - **날짜**: 2026-05-04
+- **갱신**: 2026-05-05
 - **대체**: 해당 없음
-- **선행**: [ADR-0010 Feature Contribution Policy](0010-feature-contribution-policy.md)
+- **선행 완료**: [ADR-0010 Feature Contribution Policy](0010-feature-contribution-policy.md)
 
 ## 맥락 (Context)
 
 Spakky Framework에 LLM 기반 agent runtime을 추가하는 방향을 논의했다. 초기 질문은 LangGraph와 Pydantic AI 중 어떤 백플레인을 사용할지, 그리고 Service/Repository 같은 DI Pod를 agent tool로 제공할 수 있는 추상화가 필요한지였다.
 
-논의 중 단순한 `run(prompt) -> response` 형태는 프레임워크 기능으로 충분하지 않다는 결론에 도달했다. Agent 기능은 LLM SDK wrapper가 아니라, 로컬 및 SaaS 환경에서 agentic application을 구성하기 위한 계약과 포트가 되어야 한다.
+논의 중 단순한 `run(prompt) -> response` 형태는 프레임워크 기능으로 충분하지 않다는 결론에 도달했다. Agent 기능은 LLM SDK wrapper가 아니라, 로컬 및 SaaS 환경에서 agentic application을 구성하기 위한 계약, orchestration, policy, evidence, persistence port가 되어야 한다.
 
-이 문서는 후속 논의를 재개할 수 있도록 현재까지 합의한 개념, 미결정 사항, 외부 프레임워크 적합성 평가를 보존한다. 이 ADR은 아직 구현 착수 결정을 의미하지 않는다.
+이 ADR은 더 이상 후속 논의 메모가 아니다. ADR-0010이 완료되었으므로, ADR-0009는 구현 가능한 단일 마일스톤 스펙으로 확정한다.
 
-2026-05-05 추가 결정: agent persistence와 인프라 plugin 조합 폭증 문제를 먼저 해결하기 위해 [ADR-0010 Feature Contribution Policy](0010-feature-contribution-policy.md)를 ADR-0009의 선행 마일스톤으로 진행한다.
+마일스톤은 쪼개지 않는다. 하나의 완전한 마일스톤은 다음을 모두 포함한다.
+
+- `core/spakky-agent`의 모든 public contract
+- agent lifecycle을 실제로 구동하는 core orchestration과 policy
+- typed execution backplane adapter
+- durable checkpoint/evidence/artifact persistence contribution
+- DI Pod toolization
+- streaming/interrupt/approval/resume/cancel/evaluate/team execution 유즈케이스
+- conformance test와 user/developer documentation
 
 ## 결정 동인 (Decision Drivers)
 
 - Agent를 LLM 호출 객체가 아니라 소프트웨어적 실행 주체로 정의해야 한다.
-- Spakky의 plugin 구조는 설치된 entry point가 `load_plugins()`에서 자동 활성화되는 모델이다.
-- Core 패키지는 구현체를 포함하지 않고 계약과 값 객체만 제공해야 한다.
-- 로컬 실행과 SaaS 실행을 모두 표현할 수 있어야 한다.
-- API 기반 LLM 호출뿐 아니라 vLLM 같은 self-hosted model provider도 지원해야 한다.
-- LangGraph, Pydantic AI, MCP, AG-UI, A2A, multi-agent/team mode를 단일 개념 체계 안에서 다룰 수 있어야 한다.
+- Core는 저수준 인프라 구현을 포함하지 않지만, 사용자 DX 표면, orchestration, policy, lifecycle, convergence 같은 고수준 로직은 소유해야 한다.
+- Core feature는 항상 plugin을 통한 간접 설치를 전제로 한다. 따라서 기본 in-memory persistence 구현은 제공하지 않는다.
+- Agent persistence는 optional nice-to-have가 아니라 checkpoint/resume/evidence/replay를 위한 필수 계약이다.
+- Feature Contribution Policy를 통해 `spakky-sqlalchemy` 같은 인프라 plugin이 `spakky-agent` persistence 구현을 기여해야 한다.
 - Service/Repository/UseCase 등 DI Pod를 agent tool로 노출할 때 권한, side effect, approval, evidence를 통제해야 한다.
+- 로컬 실행과 SaaS 실행을 모두 표현할 수 있어야 한다. 단, SaaS 제품 구현은 Framework 범위 밖이며 SaaS-ready port만 제공한다.
+- API 기반 모델 호출뿐 아니라 vLLM 같은 self-hosted OpenAI-compatible endpoint도 설정으로 연결 가능해야 한다.
+- AG-UI, MCP, A2A 같은 agent protocol을 특정 adapter 패키지 폭증 없이 같은 event/task/artifact 개념 체계 안에서 표현할 수 있어야 한다.
 
 ## 핵심 정의
 
@@ -45,75 +56,184 @@ Canonical lifecycle:
 
 ## Agentic Hexagonal Architecture
 
-Agentic Hexagonal Architecture는 agent 실행을 hexagonal architecture의 포트와 어댑터로 모델링한다.
+Agentic Hexagonal Architecture는 agent 실행을 hexagonal architecture의 포트와 adapter로 모델링한다.
 
 Domain/Application 영역에는 deterministic UseCase뿐 아니라 undeterministic agentic execution이 존재할 수 있다. 다만 Agent 자체를 억지로 UseCase의 subclass로 보지 않는다. Agent는 목표 수렴 상태머신이며, application layer는 Agent에게 goal을 위임할 수 있다.
 
 포트 구분:
 
 - **Inbound ports**: agent execution을 시작, 제어, 관찰하는 입력면
-- **Outbound ports**: LLM model, tool, memory, checkpoint, message bus, artifact store, remote worker 등 agent가 세계와 상호작용하는 출력면
+- **Outbound ports**: decision backplane, model provider, tool executor, memory, checkpoint store, evidence store, artifact store, message bus, worker backend 등 agent가 세계와 상호작용하는 출력면
 
-Adapter 예시:
+Adapter 구분:
 
-- Inbound: FastAPI, Typer, WebSocket, AG-UI, MCP Apps, A2A, SaaS control API
-- Outbound: LangGraph, Pydantic AI, OpenAI, Anthropic, vLLM, MCP tools, SQLAlchemy store, local/remote worker
+- **Core runtime**: `AgentRuntime`, `AgentExecutionService`, `AgentPolicyEngine`, `AgentToolRegistry`, `AgentEvaluatorPipeline`, `AgentTeamRuntime`
+- **Execution backplane adapter**: Pydantic AI 기반 typed agent 실행
+- **Persistence contribution**: SQLAlchemy 기반 checkpoint/evidence/artifact/run state 저장
+- **Protocol adapter**: AG-UI, MCP, A2A, FastAPI, Typer 같은 외부 노출면. 첫 마일스톤에서는 별도 `spakky-agent-*` 패키지로 만들지 않고, core event/task/artifact DTO가 protocol mapping 가능한 shape를 제공한다.
 
-## 계약 후보
+## Core Responsibility
 
-Core contract 후보:
+`core/spakky-agent`는 다음을 포함한다.
 
-- `Agent`
+- public value objects와 interfaces
+- agent definition/harness DX
+- instruction-to-task normalization
+- lifecycle state machine
+- policy enforcement
+- approval/interrupt/resume orchestration
+- tool registry와 DI Pod toolization metadata
+- evidence requirement와 convergence evaluation pipeline
+- team/subagent coordination contract와 local orchestration
+- streaming event model
+- persistence port 호출 순서와 transaction boundary policy
+- conformance test fixture와 fake port test double
+
+Core가 포함하지 않는 것:
+
+- 외부 LLM SDK 직접 호출
+- DB table/ORM/session 구현
+- 파일 시스템, Redis, SQLAlchemy 같은 저수준 저장소 구현
+- FastAPI/Typer/MCP/A2A 서버 구현
+- vendor-specific API client
+
+따라서 `DefaultAgentRuntime` 같은 고수준 orchestration 구현은 core에 둘 수 있다. 반대로 `InMemoryAgentCheckpointStore`, `FileAgentArtifactStore`, `SqlAlchemyAgentRunStore` 같은 저장소 구현은 core에 둘 수 없다.
+
+## Package Decision
+
+첫 구현 마일스톤은 다음 패키지만 만든다.
+
+| 패키지 | 역할 |
+|------|------|
+| `core/spakky-agent` | Agent contract, runtime orchestration, policy, approval, evidence, convergence, team runtime, persistence ports |
+| `plugins/spakky-pydantic-ai` | Pydantic AI 기반 reference execution backplane adapter |
+| `plugins/spakky-sqlalchemy` contribution | `spakky.contributions.spakky.agent`로 agent durable state/checkpoint/evidence/artifact store 구현 기여 |
+
+명시적으로 만들지 않는 패키지:
+
+| 패키지 | 결정 |
+|------|------|
+| `core/spakky-llm` | 만들지 않는다. 모델 호출 추상화는 agent execution backplane port 안에 둔다. LangChain/Pydantic AI가 이미 제공하는 model abstraction을 중복하지 않는다. |
+| `plugins/spakky-vllm` | 만들지 않는다. vLLM은 OpenAI-compatible endpoint 설정으로 연결한다. 별도 adapter가 필요한 근거가 생기기 전까지 Pydantic AI/OpenAI-compatible model config로 충분하다. |
+| `plugins/spakky-langgraph` | 첫 구현에 포함하지 않는다. LangGraph는 graph-first advanced adapter 후보로 남기되, reference adapter는 Pydantic AI 하나로 고정한다. |
+| `plugins/spakky-agent-fastapi` | 만들지 않는다. 기존 `spakky-fastapi` 빌딩 블록으로 application이 inbound adapter를 작성한다. |
+| `plugins/spakky-agent-typer` | 만들지 않는다. 기존 `spakky-typer` 빌딩 블록으로 application이 CLI adapter를 작성한다. |
+| `plugins/spakky-agent-mcp` | 만들지 않는다. 첫 마일스톤은 MCP outbound tool 사용과 core event/tool schema까지만 다룬다. |
+| `plugins/spakky-agent-a2a` | 만들지 않는다. A2A task/artifact mapping을 고려한 DTO를 제공하되 protocol server adapter는 별도 패키지로 분리하지 않는다. |
+| `plugins/spakky-agent-sqlalchemy` | 만들지 않는다. SQLAlchemy 구현은 ADR-0010 contribution으로 `plugins/spakky-sqlalchemy`에 둔다. |
+
+## Public Contract
+
+`core/spakky-agent`는 다음 contract를 제공한다. 이름은 구현 중 Python naming convention에 맞춰 조정할 수 있지만, 의미와 책임은 유지한다.
+
+### Definition
+
 - `AgentDefinition`
-- `AgentTaskSpec`
+- `AgentHarness`
+- `AgentInstruction`
 - `AgentGoal`
-- `AgentState`
+- `AgentTaskSpec`
+- `AgentCapability`
+- `AgentSkill`
+- `AgentModelProfile`
+- `AgentRuntimeOptions`
+
+### Execution
+
+- `AgentExecutionService`
+- `AgentRuntime`
+- `AgentRun`
+- `AgentRunId`
+- `AgentRunStatus`
 - `AgentPhase`
-- `AgentExecution`
+- `AgentState`
+- `AgentCheckpoint`
 - `AgentExecutionTrace`
-- `AgentAction`
-- `AgentObservation`
+- `AgentEvent`
+- `AgentEventStream`
+
+### Planning And Action
+
 - `AgentPlan`
 - `PlanStep`
-- `AgentPolicy`
-- `AgentHarness`
+- `AgentAction`
+- `AgentObservation`
+- `AgentActionResult`
+- `AgentIteration`
+- `AgentTerminationReason`
+
+### Toolization
+
 - `AgentTool`
 - `AgentToolDescriptor`
 - `AgentToolRegistry`
+- `ToolCall`
+- `ToolResult`
+- `ToolEffect`
+- `ToolRiskLevel`
+- `ToolPolicy`
+- `PodToolFactory`
+
+### Policy And Approval
+
+- `AgentPolicy`
+- `AgentPolicyEngine`
+- `ApprovalPolicy`
+- `AgentInterrupt`
+- `ApprovalRequest`
+- `ApprovalDecision`
+- `AgentPermission`
+- `AgentActor`
+
+### Evidence And Evaluation
+
 - `AgentEvidence`
 - `EvidenceRequirement`
 - `AcceptanceCriterion`
 - `AgentEvaluator`
+- `EvaluatorPipeline`
 - `ConvergenceDecision`
-- `AgentInterrupt`
-- `AgentApproval`
+- `SemanticEvaluationRequest`
+- `DeterministicEvaluationResult`
+
+### Persistence Ports
+
+- `IAgentRunStore`
+- `IAgentCheckpointStore`
+- `IAgentEvidenceStore`
+- `IAgentArtifactStore`
+- `IAgentMessageStore`
+- `IAgentLockStore`
+
+### Backplane Ports
+
+- `IAgentDecisionBackplane`
+- `IAgentModelRouter`
+- `AgentBackplaneRequest`
+- `AgentBackplaneResponse`
+- `AgentModelUsage`
+- `AgentStreamChunk`
+
+### Team Runtime
+
 - `AgentTeam`
-- `AgentMessageBus`
-- `AgentCheckpointStore`
-- `AgentEvidenceStore`
-- `AgentTraceSink`
-- `AgentArtifactStore`
+- `AgentTeamRuntime`
+- `AgentWorker`
+- `AgentWorkerBackend`
+- `AgentMailbox`
+- `AgentMessage`
+- `AgentDelegation`
+- `AgentDelegationPolicy`
 
-LLM contract 후보:
-
-- `ILLMProvider`
-- `IChatModel`
-- `ModelRef`
-- `ModelCapabilities`
-- `ModelRoutingPolicy`
-- `ModelUsage`
-- streaming invocation events
-
-Core에는 구현체를 두지 않는다. 예를 들어 `InMemoryAgentStateStore`, `FileAgentCheckpointStore`, `DefaultAgentRuntime` 같은 구현체는 core에 존재할 수 없다.
-
-## 하네스와 strict contract
+## Strict Contract Pipeline
 
 자연어 지시를 그대로 실행 단위로 사용하면 strict한 프레임워크 계약이 성립하지 않는다. 따라서 자연어는 다음 파이프라인으로 다룬다.
 
 ```text
 Natural Language Intent
   -> AgentTaskSpec
-  -> AgentExecutionPlan
+  -> AgentPlan
+  -> AgentAction / AgentObservation
   -> AgentEvidence
   -> ConvergenceDecision
 ```
@@ -130,47 +250,105 @@ Evaluator는 다음 층으로 분리한다.
 
 Semantic evaluator는 필요하지만 deterministic/policy/trace evaluator와 명시적으로 구분한다.
 
-## Multi-Agent / Team Mode
+## Tool Governance
 
-Agent system은 단일 subagent 위임뿐 아니라 Claude team mode와 유사한 multi-agent collaboration을 지원해야 한다.
+DI Pod를 agent tool로 노출하려면 명시적 metadata가 필요하다. 모든 tool은 다음 속성을 선언한다.
 
-구분:
+- stable tool name
+- input/output schema
+- side effect classification
+- read/write scope
+- required permission
+- approval requirement
+- idempotency hint
+- timeout/retry policy
+- evidence emission rule
 
-- **Subagent**: 특정 작업을 위임받는 실행 단위
-- **Teammate**: team identity, parent session, mailbox/message bus, permission delegation, plan approval, lifecycle을 가진 협업 구성원
-- **Team runtime**: 여러 agent 실행을 spawn, route, inspect, pause, resume, cancel하는 control plane
+기본값은 보수적이어야 한다. metadata가 없는 임의 Pod method를 자동 tool로 공개하지 않는다.
 
-Claude Code 참고 관찰:
+Tool 실행은 `AgentPolicyEngine`을 통과해야 하며, write side effect가 있는 tool은 기본적으로 approval 또는 명시적 policy grant가 필요하다.
 
-- Agent definition은 prompt, tools, disallowed tools, model, MCP servers, skills, max turns, background, memory, effort, permission mode를 포함한다.
-- Skill은 frontmatter로 allowed tools, model, agent, effort, hooks, fork context 등을 정의한다.
-- Team mode는 teammate identity, parent session, mailbox, permission delegation, plan approval, lifecycle을 별도 관리한다.
-- Swarm backend는 tmux, iTerm2, in-process를 분리한다.
+## Persistence And Contribution
 
-Spakky에서는 이를 특정 terminal backend에 묶지 않고 `AgentMessageBus`, `AgentTeamRuntime`, `AgentWorkerBackend` 같은 포트로 일반화한다.
+Agent runtime은 durable persistence 없이 complete로 간주될 수 없다. SQLAlchemy 구현은 `plugins/spakky-sqlalchemy`가 feature contribution으로 제공한다.
 
-## 외부 프레임워크 적합성
+```toml
+[project.optional-dependencies]
+agent = ["spakky-agent>=6.5.0"]
 
-LangGraph/LangChain:
+[project.entry-points."spakky.contributions.spakky.agent"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
+```
 
-- 6단계 lifecycle을 `StateGraph` node와 graph state로 매핑하기 좋다.
-- checkpoint/resume, interrupt, human-in-the-loop, streaming, multi-agent graph에 적합하다.
-- canonical AgentExecution state machine 구현의 기준 adapter 후보로 적합하다.
+Contribution은 다음 구현을 등록한다.
 
-Pydantic AI:
+- `AgentRunTable`
+- `AgentCheckpointTable`
+- `AgentEvidenceTable`
+- `AgentArtifactTable`
+- `AgentMessageTable`
+- `SqlAlchemyAgentRunStore`
+- `SqlAlchemyAgentCheckpointStore`
+- `SqlAlchemyAgentEvidenceStore`
+- `SqlAlchemyAgentArtifactStore`
+- `SqlAlchemyAgentMessageStore`
+- `SqlAlchemyAgentLockStore`
 
-- typed tools, Pydantic model 기반 structured output, toolset composition, MCP, durable execution과 잘 맞는다.
-- `AgentTaskSpec`, `AgentEvidence`, `ConvergenceDecision` 같은 strict contract 구현에 특히 적합하다.
-- 필요하면 pydantic-graph로 canonical state machine을 구현할 수 있다.
+`spakky-sqlalchemy` base plugin은 `spakky-agent` 설치 여부를 감지하지 않는다. `spakky-agent`가 active feature이고 `spakky-sqlalchemy` provider가 active일 때 loader가 contribution을 호출한다.
 
-역할 구분:
+## Execution Backplane Decision
 
-- `spakky-langgraph`: state-machine-first execution adapter
-- `spakky-pydantic-ai`: typed-contract-first execution adapter
-- `spakky-vllm`: local/self-hosted model provider adapter
-- `spakky-agent-*`: inbound/outbound protocol adapters
+Reference execution adapter는 `plugins/spakky-pydantic-ai`로 결정한다.
 
-## 고려한 대안 (Considered Options)
+선정 근거:
+
+- Pydantic AI는 typed output validation, reusable agent, streaming/event/iteration run mode를 제공한다.
+- Pydantic AI durable execution 문서는 long-running, asynchronous, human-in-the-loop, restart/failure recovery use case를 명시적으로 다룬다.
+- Pydantic AI는 MCP와 durable execution을 함께 다룰 수 있다.
+- Spakky의 strict contract는 `AgentTaskSpec`, `AgentEvidence`, `ConvergenceDecision` 같은 Pydantic model 중심의 typed boundary와 잘 맞는다.
+
+LangGraph는 이번 마일스톤의 reference adapter로 선택하지 않는다.
+
+- LangGraph는 checkpoint, interrupt, human-in-the-loop, time travel, fault tolerance가 강한 graph-first runtime이다.
+- 그러나 첫 마일스톤에서 Pydantic AI와 LangGraph를 동시에 구현하면 adapter conformance보다 adapter 간 feature parity가 중심 과제가 된다.
+- LangChain agent abstraction도 LangGraph 기반 durable runtime 방향으로 수렴하고 있으므로, LangGraph는 향후 advanced graph adapter 후보로 충분히 남길 수 있다.
+
+vLLM은 별도 adapter로 선택하지 않는다.
+
+- vLLM은 OpenAI-compatible server를 제공하므로 Pydantic AI/OpenAI-compatible model configuration으로 연결한다.
+- Spakky가 vLLM 전용 scheduling, batching, deployment, GPU control plane을 소유하지 않는 한 `spakky-vllm`은 불필요한 wrapper다.
+
+## Protocol Boundary
+
+첫 마일스톤은 protocol adapter 패키지를 만들지 않는다. 대신 core event/task/artifact model이 다음 protocol로 자연스럽게 mapping되도록 설계한다.
+
+- AG-UI: streaming event, user intent, approval, cancel/resume event mapping
+- MCP: tool descriptor, tool call/result, resource/artifact link mapping
+- A2A: task, task status, message, artifact, streaming task update mapping
+
+Framework 사용자는 기존 `spakky-fastapi`, `spakky-typer`, `spakky-grpc` 빌딩 블록으로 inbound adapter를 작성할 수 있어야 한다. 별도 `spakky-agent-fastapi` 같은 package는 만들지 않는다.
+
+## Required Use Cases
+
+마일스톤은 다음 유즈케이스를 모두 실제 실행 가능하게 만든다.
+
+1. Python code에서 `AgentDefinition`을 선언하고 DI container에 등록한다.
+2. 자연어 instruction을 `AgentTaskSpec`으로 normalize한다.
+3. Agent run을 시작하고 run id/status/current phase를 조회한다.
+4. Agent event stream을 구독해 plan/action/observation/evidence/status 변경을 받는다.
+5. DI Pod method를 명시적 metadata 기반 tool로 등록하고 실행한다.
+6. Tool policy가 read/write/side effect/permission/approval requirement를 판정한다.
+7. Approval이 필요한 action에서 run을 interrupt하고, 승인/거절 후 resume한다.
+8. Run checkpoint를 저장하고 process restart 이후 resume한다.
+9. Evidence와 artifact를 저장하고 evaluator가 convergence decision을 만든다.
+10. Run을 cancel/fail/timeout 처리하고 terminal state를 저장한다.
+11. Subagent에게 bounded task를 위임하고 mailbox/event stream으로 결과를 수집한다.
+12. Team runtime이 worker spawn, message route, pause/resume/cancel을 수행한다.
+13. Pydantic AI backplane이 typed output, streaming, tool call을 Spakky contract로 변환한다.
+14. SQLAlchemy contribution이 run/checkpoint/evidence/artifact/message/lock store를 제공한다.
+15. OpenAI-compatible endpoint 설정으로 self-hosted vLLM server를 사용할 수 있다.
+
+## Considered Options
 
 ### 대안 A: 단일 LLM SDK wrapper
 
@@ -187,62 +365,108 @@ Pydantic AI:
 - tool governance, checkpoint, team mode, evidence, SaaS-ready 요구를 담기 어렵다.
 - LangGraph/Pydantic AI의 고유 장점을 추상화 과정에서 잃는다.
 
-### 대안 B: Agentic Hexagonal Architecture 계약
+### 대안 B: Adapter 다중 구현 동시 제공
 
-Agent를 목표 수렴 상태머신으로 정의하고, inbound/outbound 포트와 adapter로 실행한다.
+`spakky-pydantic-ai`, `spakky-langgraph`, `spakky-vllm`, `spakky-agent-fastapi`, `spakky-agent-typer`, `spakky-agent-mcp`, `spakky-agent-a2a`, `spakky-agent-sqlalchemy`를 모두 만든다.
 
 장점:
 
-- 로컬/SaaS, LangGraph/Pydantic AI, MCP/AG-UI/A2A를 같은 구조로 다룰 수 있다.
-- Service/Repository toolization을 Spakky DI와 연결할 수 있다.
-- evidence/evaluator 기반 strict contract를 설계할 수 있다.
+- 프로토콜과 백플레인별 선택지가 많다.
+- 외형상 완전해 보인다.
 
 단점:
 
-- 초기 설계 범위가 크다.
-- DI의 복수 구현체 선택 문제가 먼저 해결되어야 한다.
-- execution adapter와 persistence adapter의 조합 복잡도가 높다.
+- 패키지 수가 폭증한다.
+- 첫 마일스톤의 중심이 core contract가 아니라 adapter matrix가 된다.
+- inbound adapter는 framework 사용자가 기존 FastAPI/Typer/gRPC 빌딩 블록으로 작성할 수 있는 영역까지 과도하게 포장한다.
+- `spakky-agent-sqlalchemy`는 ADR-0010의 contribution policy와 충돌한다.
+
+### 대안 C: Core-complete + single reference adapter + contribution persistence
+
+`core/spakky-agent`에 모든 고수준 contract와 runtime orchestration을 두고, Pydantic AI reference adapter와 SQLAlchemy contribution persistence만 함께 구현한다.
+
+장점:
+
+- 하나의 마일스톤 안에서 모든 agent contract와 실제 실행 유즈케이스를 완성할 수 있다.
+- adapter package 폭증 없이 실행 가능한 기준 구현을 제공한다.
+- ADR-0010과 일관된다.
+- 이후 adapter 추가 여부는 contract conformance 문제로 축소된다.
+
+단점:
+
+- core scope가 크다.
+- Pydantic AI adapter 품질이 reference behavior의 기준이 되므로 conformance test가 촘촘해야 한다.
+- Protocol server adapter는 첫 화면의 편의 기능이 아니라 application integration responsibility로 남는다.
 
 ## 결정 (Decision)
 
-현재 논의의 기준점으로 대안 B를 채택한다. 다만 이 ADR은 `Proposed` 상태이며, 실제 구현 마일스톤은 DI multi-implementation resolution 이후 다시 구체화한다.
+대안 C를 채택한다.
+
+ADR-0009 마일스톤은 `core/spakky-agent`, `plugins/spakky-pydantic-ai`, `plugins/spakky-sqlalchemy`의 `spakky-agent` contribution을 하나의 완성 단위로 구현한다.
+
+이 마일스톤은 “agent framework의 foundation”이 아니라 “Spakky에서 agentic application을 실제로 작성하고 실행할 수 있는 완성 기능”이어야 한다.
 
 ## 결과 (Consequences)
 
 ### 긍정적
 
 - Agent를 LLM wrapper가 아닌 runtime entity로 모델링할 수 있다.
-- 백플레인 교체 가능성을 추상화 주장으로 끝내지 않고 adapter 계약으로 검증할 수 있다.
-- 하네스, evidence, evaluator, team collaboration을 일관된 개념 체계에 넣을 수 있다.
+- Core가 DX, orchestration, policy, convergence를 소유하므로 Spakky다운 프레임워크 표면이 생긴다.
+- 백플레인 교체 가능성을 추상화 주장으로 끝내지 않고 Pydantic AI reference adapter와 conformance test로 검증할 수 있다.
+- SQLAlchemy persistence는 ADR-0010 contribution으로 제공되어 plugin 폭증을 막는다.
+- AG-UI/MCP/A2A는 DTO/event shape로 고려하되 별도 package 폭증을 만들지 않는다.
 
 ### 부정적
 
-- 현재 DI 컨테이너의 복수 구현체 ambiguity 문제가 agent plugin 조합을 막는다.
-- Core contract와 adapter package 수가 늘어난다.
-- 설계 검증을 위해 conformance test가 필요하다.
+- 단일 마일스톤이 크고 ambitious하다.
+- Core contract 설계 실수가 이후 adapter 생태계 전체에 영향을 준다.
+- Team runtime까지 포함하므로 acceptance test 설계가 어렵다.
 
 ### 중립적
 
 - Agent 하네스의 런타임 정본은 Python annotation/class 기반으로 두고, Markdown/YAML 기반 하네스는 공유/패키징/import-export 표면으로 둔다.
 - 실제 SaaS 구현은 Spakky Framework 범위 밖이다. Framework는 SaaS-ready port만 제공한다.
+- LangGraph adapter는 선택하지 않았지만 배제하지 않는다.
 
-## 미결정 사항
+## 검증 기준
 
-- Agent contract의 정확한 Python API
-- execution adapter와 persistence adapter의 plugin packaging
-- AG-UI/MCP/A2A inbound adapter를 같은 마일스톤에 포함할지 여부
-- evidence/evaluator conformance test 수준
-- vLLM adapter를 직접 구현할지, OpenAI-compatible provider로 일반화할지 여부
-- Agent team runtime의 최소 필수 계약
+- `core/spakky-agent`는 외부 LLM SDK, DB, protocol server에 직접 의존하지 않는다.
+- `core/spakky-agent`는 고수준 runtime orchestration과 policy implementation을 포함한다.
+- `plugins/spakky-pydantic-ai` 없이 core contract import와 unit test가 가능하다.
+- `plugins/spakky-pydantic-ai`가 typed output, streaming, tool call, semantic evaluation을 Spakky contract로 변환한다.
+- `plugins/spakky-sqlalchemy` base plugin은 `spakky-agent` 설치 여부를 감지하지 않는다.
+- `plugins/spakky-sqlalchemy`는 `spakky.contributions.spakky.agent` entry point로 agent persistence 구현을 기여한다.
+- `load_plugins(include=...)`에서 `spakky-agent`와 `spakky-sqlalchemy`가 모두 active일 때만 SQLAlchemy agent contribution이 로드된다.
+- approval interrupt 후 process restart/resume 시나리오가 통과한다.
+- tool side effect policy와 evidence requirement가 테스트로 검증된다.
+- team runtime의 worker spawn/message route/cancel/resume이 테스트로 검증된다.
+- OpenAI-compatible endpoint config로 vLLM server를 사용할 수 있음을 adapter 설정 테스트로 검증한다.
+
+## 티켓화 기준
+
+이 ADR 직후 생성되는 GitHub Issues는 조사 티켓이 아니라 구현 티켓이어야 한다. 기술 선택은 본 ADR에서 완료되었다.
+
+티켓은 다음 축을 모두 포함해야 한다.
+
+- `core/spakky-agent` package skeleton과 public contract
+- runtime lifecycle state machine
+- policy/approval/interrupt/resume
+- tool registry와 DI Pod toolization
+- evidence/evaluator/convergence
+- persistence port와 SQLAlchemy contribution
+- Pydantic AI backplane adapter
+- team runtime과 mailbox
+- event stream/protocol-shape DTO
+- conformance tests
+- README, guide, API docs, ARCHITECTURE sync
 
 ## 참고 자료
 
-- `~/projects/claude-code/src/entrypoints/sdk/coreSchemas.ts`
-- `~/projects/claude-code/src/tools/AgentTool/loadAgentsDir.ts`
-- `~/projects/claude-code/src/tools/AgentTool/runAgent.ts`
-- `~/projects/claude-code/src/utils/teammate.ts`
-- `~/projects/claude-code/src/utils/teammateContext.ts`
-- `~/projects/claude-code/src/utils/teammateMailbox.ts`
-- `~/projects/claude-code/src/utils/swarm/backends/types.ts`
-- LangGraph persistence, interrupts, human-in-the-loop documentation
-- Pydantic AI agent, toolset, MCP, durable execution documentation
+- [ADR-0010: Feature Contribution Policy](0010-feature-contribution-policy.md)
+- [Pydantic AI Agents](https://pydantic.dev/docs/ai/core-concepts/agent/)
+- [Pydantic AI Durable Execution](https://pydantic.dev/docs/ai/integrations/durable_execution/overview/)
+- [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
+- [vLLM OpenAI-Compatible Server](https://docs.vllm.ai/en/stable/getting_started/quickstart/#openai-compatible-server)
+- [Model Context Protocol Tools Specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)
+- [AG-UI Overview](https://docs.ag-ui.com/introduction)
+- [A2A Protocol Specification](https://a2a-protocol.org/latest/specification/)
