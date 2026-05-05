@@ -72,6 +72,17 @@ def test_agent_state_expect_expresses_issue_transition_vocabulary() -> None:
     assert timeout_state.reason == AgentStateReason.TIMEOUT
 
 
+def test_agent_state_reason_expect_covers_approval_decision_outcomes() -> None:
+    """approval wait/reject/defer reason이 typed lifecycle reason으로 구분된다."""
+    reasons = {reason.value for reason in AgentStateReason}
+
+    assert {
+        "approval_required",
+        "approval_rejected",
+        "approval_deferred",
+    } <= reasons
+
+
 def test_agent_state_transition_expect_covers_durable_execution_flow() -> None:
     """pending부터 terminal state까지 durable execution 전이를 열거한다."""
     transitions = {transition.value for transition in AgentStateTransition}

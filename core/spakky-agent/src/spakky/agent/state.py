@@ -38,6 +38,8 @@ class AgentStateReason(StrEnum):
     """Structured reason that refines an externally observable lifecycle state."""
 
     APPROVAL_REQUIRED = "approval_required"
+    APPROVAL_REJECTED = "approval_rejected"
+    APPROVAL_DEFERRED = "approval_deferred"
     USER_INTERRUPTED = "user_interrupted"
     TIMEOUT = "timeout"
     CANCELLATION_REQUESTED = "cancellation_requested"
