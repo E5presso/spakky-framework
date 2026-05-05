@@ -17,6 +17,7 @@ from spakky.agent import (
     AgentEvidence,
     AgentExecutionLimits,
     AgentExecutionSpec,
+    AgentDelegateTarget,
     AgentPersistenceConfigurationError,
     AgentSignal,
     AgentSignalConsumptionBatch,
@@ -30,6 +31,7 @@ from spakky.agent import (
     ContextPack,
     Error,
     Final,
+    IAgentDelegate,
     IAgentEvidenceRepository,
     IAgentSignalRepository,
     IAgentStateRepository,
@@ -66,6 +68,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     """이슈 #213이 요구한 public import surface를 노출하는지 검증한다."""
     required_exports = {
         "Agent",
+        "AgentDelegateTarget",
         "AgentExecutionLimits",
         "AgentExecutionSpec",
         "AgentYield",
@@ -83,6 +86,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "IAgentStateRepository",
         "IAgentSignalRepository",
         "IAgentEvidenceRepository",
+        "IAgentDelegate",
         "IAgentModel",
         "Progress",
         "Token",
@@ -98,6 +102,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
 
     assert required_exports <= exported
     assert Agent is agent_api.Agent
+    assert AgentDelegateTarget is agent_api.AgentDelegateTarget
     assert AgentExecutionLimits is agent_api.AgentExecutionLimits
     assert AgentExecutionSpec is agent_api.AgentExecutionSpec
     assert AgentYield is agent_api.AgentYield
@@ -115,6 +120,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert IAgentStateRepository is agent_api.IAgentStateRepository
     assert IAgentSignalRepository is agent_api.IAgentSignalRepository
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
+    assert IAgentDelegate is agent_api.IAgentDelegate
     assert IAgentModel is agent_api.IAgentModel
     assert Progress is agent_api.Progress
     assert Token is agent_api.Token
