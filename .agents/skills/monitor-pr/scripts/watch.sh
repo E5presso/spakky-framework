@@ -87,7 +87,7 @@ fi
 
 REPO="${REPO:-E5presso/spakky-framework}"
 : "${PR_NUMBER:?PR_NUMBER env required}"
-REVIEW_BOT_LOGINS="${REVIEW_BOT_LOGINS:-claude[bot],codex[bot]}"
+REVIEW_BOT_LOGINS="${REVIEW_BOT_LOGINS:-claude[bot],codex[bot],chatgpt-codex-connector[bot]}"
 REQUIRE_REVIEW_BOT_HEAD_EVAL="${REQUIRE_REVIEW_BOT_HEAD_EVAL:-1}"
 
 prev_state_file="${PREV_STATE_FILE:-}"

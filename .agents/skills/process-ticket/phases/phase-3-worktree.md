@@ -20,6 +20,11 @@
    {"issue_number": {ISSUE-NUMBER}, "worktree": "$wt", "updated_at": "$ts"}
    EOF
    ```
-5. **프로젝트 상태 갱신 (명시적 호출 — silent 누락 금지)** — 서브에이전트로 `/update-project-status {ISSUE-NUMBER} "In Progress"` 실행. 결과 stdout 1줄을 반드시 회수한다:
+5. **root-worktree mutation guard 초기화 (기계적 차단)** — 체크포인트 생성 직후, 구현 파일을 하나라도 수정하기 전에 다음 스크립트를 워크트리 cwd에서 실행한다:
+   ```bash
+   bash .agents/skills/process-ticket/scripts/assert_worktree_isolation.sh --init {ISSUE-NUMBER}
+   ```
+   이 스크립트는 (a) 현재 cwd가 루트 리포지토리가 아니라 `.claude/worktrees/<prefix>-<N>` 아래인지, (b) 브랜치가 `*/<N>`인지, (c) 루트 리포지토리 브랜치가 `develop`이며 dirty 상태가 아닌지 검증하고, 루트 HEAD/status digest를 `.process-state.json.root_guard`에 기록한다. 실패하면 Phase 4 진입 금지. root dirty를 자동 되돌리지 않는다 — 다른 세션의 변경일 수 있으므로 `isolation-failed: ...`를 보고하고 중단한다.
+6. **프로젝트 상태 갱신 (명시적 호출 — silent 누락 금지)** — 서브에이전트로 `/update-project-status {ISSUE-NUMBER} "In Progress"` 실행. 결과 stdout 1줄을 반드시 회수한다:
    - 성공(`이슈 #N 상태 -> In Progress`) 출력 확인 시 진행.
    - 실패·경고(`갱신 실패`·매칭 상태 없음 등) 관찰 시 메인 stdout에 `project-status-update-failed: In Progress <원인>` 1줄 기록 후 본 스킬의 최종 반환 `notes:` 라인에 동일 메시지를 누적한다 (본 작업은 차단하지 않음 — SKILL.md "GitHub 이슈/프로젝트 상태 자동 전이" 참조).
