@@ -57,6 +57,29 @@ items = await collect_stream(
 
 반환되는 item은 `AgentYield` stream입니다. inbound adapter는 `token`, `tool`, `evidence`, `approval`, `cancel`, `final`을 transport별 이벤트로 바꾸면 됩니다. 별도 agent-specific inbound adapter package는 필요하지 않습니다.
 
+## FastAPI WebSocket / Typer adapter 예제
+
+`core/spakky-agent/examples/inbound_adapter_examples.py`는 기존 `spakky-fastapi`와 `spakky-typer` building block으로 같은 `CodeAssistant` stream을 노출합니다. 이 파일은 app-level wiring 예제이며 `spakky-agent-fastapi`나 `spakky-agent-typer` 패키지를 만들지 않습니다.
+
+FastAPI 쪽은 `@ApiController`와 `@websocket`을 사용합니다. 컨트롤러는 container-aware Pod로 등록되고, connection handler 안에서 `CodeAssistant`를 `@UseCase`처럼 container에서 resolve한 뒤 `execute()`를 순회합니다.
+
+```python
+from examples.inbound_adapter_examples import CodeAssistantWebSocketController
+
+# 앱 scan 대상 모듈에 controller를 포함합니다.
+# WebSocket path: /agents/code/ws
+```
+
+각 `AgentYield`는 `{"kind": ..., "payload": ...}` JSON event로 전송됩니다. `approval` event를 보낸 뒤 client가 `{"kind": "approval_decision", "decision": "approve"}` 같은 payload를 보내면 adapter가 `IAgentSignalRepository.append()`로 decision signal을 추가하고 generator를 계속 소비합니다.
+
+Typer 쪽은 `@CliController("agents")`와 `@command("code")`를 사용합니다. command handler 역시 container에서 `CodeAssistant`를 resolve하고 `execute()`를 호출합니다.
+
+```bash
+python main.py agents code --state-id run-1 --instruction "inspect and edit" --read-stdin-signal
+```
+
+`token` yield는 stdout에 즉시 이어 쓰고, `progress`, `approval`, `final` 같은 구조화 event는 줄 단위로 출력합니다. `--read-stdin-signal`을 켜면 첫 stdin JSON line을 user message signal로 append하고, approval 대기 시 다음 stdin JSON line을 approval decision signal로 append합니다.
+
 ## Approval과 resume
 
 읽기 도구(`workspace.read`, `workspace.search`, `git.status`, `git.diff`)는 approval 없이 진행됩니다. 쓰기 또는 side effect 도구(`workspace.write`, `shell.command`, `git.apply`)는 `plan_agent_tool_approval()` 결과에 따라 `AgentYieldKind.APPROVAL`을 먼저 내보냅니다.
