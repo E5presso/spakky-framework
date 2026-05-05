@@ -62,6 +62,8 @@ app = typer.Typer(
     no_args_is_help=False,
 )
 
+COVERAGE_TARGET_PERCENT = 100.0
+
 
 @dataclass(frozen=True, slots=True)
 class CoverageMetrics:
@@ -299,11 +301,19 @@ def parse_coverage_xml(path: Path) -> CoverageMetrics | None:
 
 def _rate_style(rate: float) -> str:
     """Return a Rich style string based on coverage rate."""
-    if rate >= 90:
+    if rate >= COVERAGE_TARGET_PERCENT:
         return "green"
     if rate >= 70:
         return "yellow"
     return "red"
+
+
+def _meets_coverage_target(metrics: CoverageMetrics) -> bool:
+    """Return whether line and branch coverage satisfy the harness target."""
+    return (
+        metrics.line_rate >= COVERAGE_TARGET_PERCENT
+        and metrics.branch_rate >= COVERAGE_TARGET_PERCENT
+    )
 
 
 def collect_coverage_files(packages: list[PackageInfo]) -> list[str]:
@@ -409,6 +419,7 @@ def main(
         print_header("Coverage Summary")
 
         coverage_files = collect_coverage_files(packages)
+        coverage_passed = True
         if coverage_files:
             table = Table(title="Coverage Metrics")
             table.add_column("Package", style="cyan")
@@ -417,13 +428,18 @@ def main(
             table.add_column("Branch %", justify="right")
             table.add_column("File", style="dim")
 
+            low_coverage: list[tuple[PackageInfo, CoverageMetrics]] = []
+            missing_coverage: list[PackageInfo] = []
             for pkg in packages:
                 coverage_path = pkg.full_path / "coverage.xml"
                 rel_path = f"./{pkg.path}/coverage.xml"
                 if rel_path not in coverage_files:
+                    missing_coverage.append(pkg)
                     continue
                 metrics = parse_coverage_xml(coverage_path)
                 if metrics is not None:
+                    if not _meets_coverage_target(metrics):
+                        low_coverage.append((pkg, metrics))
                     line_style = _rate_style(metrics.line_rate)
                     branch_style = _rate_style(metrics.branch_rate)
                     table.add_row(
@@ -434,14 +450,36 @@ def main(
                         rel_path,
                     )
                 else:
+                    missing_coverage.append(pkg)
                     table.add_row(pkg.name, "-", "-", "-", rel_path)
 
             console.print(table)
+
+            if low_coverage or missing_coverage:
+                coverage_passed = False
+                console.print()
+                console.print(
+                    "[red bold]Coverage target not met "
+                    f"({COVERAGE_TARGET_PERCENT:.0f}% line and branch required):[/]"
+                )
+                for pkg, metrics in low_coverage:
+                    console.print(
+                        f"  [red]✗[/] {pkg.name}: "
+                        f"line {metrics.line_rate:.1f}%, "
+                        f"branch {metrics.branch_rate:.1f}%"
+                    )
+                for pkg in missing_coverage:
+                    console.print(f"  [red]✗[/] {pkg.name}: coverage.xml missing")
 
             # Output for CI consumption
             console.print()
             print_info("Coverage files for upload:")
             console.print(f"[dim]{','.join(coverage_files)}[/]")
+        else:
+            coverage_passed = False
+            print_error("No coverage files generated.")
+
+        all_passed = all_passed and coverage_passed
 
         console.print()
         console.rule()

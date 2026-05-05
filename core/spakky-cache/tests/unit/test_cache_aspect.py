@@ -264,6 +264,17 @@ async def test_cacheable_async_method_expect_second_call_uses_cached_value() -> 
     assert AsyncAspect.get(aspect).matches(service.compute_async) is True
 
 
+async def test_cacheable_async_tags_without_backend_capability_expect_cache_error() -> (
+    None
+):
+    """async tagged cache annotation이 tag 미지원 backend에서 명시적으로 실패한다."""
+    aspect = AsyncCacheAspect(RecordingCache())
+    service = CounterService()
+
+    with pytest.raises(CacheBackendCapabilityError):
+        await aspect.around_async(service.compute_tagged_async, 11)
+
+
 def test_cache_evict_method_expect_matching_entry_removed_after_success() -> None:
     """eviction annotation이 성공 후 matching cache entry를 제거하는지 검증한다."""
     cache = RecordingCache()
@@ -377,10 +388,10 @@ async def test_cacheable_async_tags_expect_backend_tag_index_used() -> None:
     assert isinstance(cache.get("async-tagged:13"), CacheMiss)
 
 
-async def test_cacheable_async_tags_without_backend_capability_expect_cache_error() -> (
+async def test_cache_evict_async_tags_without_backend_capability_expect_cache_error() -> (
     None
 ):
-    """async tagged cache annotation이 tag 미지원 backend에서 명시적으로 실패하는지 검증한다."""
+    """async tag eviction annotation이 tag 미지원 backend에서 명시적으로 실패한다."""
     aspect = AsyncCacheAspect(RecordingCache())
     service = CounterService()
 

@@ -1,6 +1,7 @@
 """Tests for actuator plugin initialization."""
 
 from spakky.actuator.config import ActuatorConfig
+from spakky.actuator.contributors import StartupReportInfoContributor
 from spakky.actuator.interfaces.contributor import IInfoContributor
 from spakky.actuator.main import initialize
 from spakky.actuator.post_processor import ActuatorExtensionPostProcessor
@@ -22,3 +23,14 @@ def test_initialize_expect_registers_actuator_pods() -> None:
     assert IInfoContributor in pod_types
     assert ActuatorExtensionPostProcessor in pod_types
     assert ActuatorAggregationService in pod_types
+
+
+def test_initialize_expect_startup_report_contributor_resolves_from_container() -> None:
+    """initialize()가 등록한 startup contributor factory가 container에서 실행되는지 검증한다."""
+    app = SpakkyApplication(ApplicationContext())
+    initialize(app)
+
+    contributor = app.container.get(IInfoContributor)
+
+    assert isinstance(contributor, StartupReportInfoContributor)
+    assert contributor.name == "startup"

@@ -9,11 +9,13 @@ import pytest
 from redis.exceptions import RedisError
 from typing import override
 
+import spakky.plugins.redis.cache as redis_cache_module
 from spakky.cache import CacheHit, CacheMiss, InvalidCacheTTLError
 from spakky.plugins.redis import (
     RedisCache,
     RedisCacheConfig,
     RedisCacheHealthProbe,
+    RedisCacheLockTimeoutError,
     RedisCacheMetricsInfoContributor,
     RedisCacheOperationError,
     RedisCacheSerializationError,
@@ -105,6 +107,18 @@ class BadTypeSyncClient(IRawSyncRedisClient):
         return iter(())
 
 
+class NoneSetIfAbsentSyncClient(BadTypeSyncClient):
+    @override
+    def set_if_absent(self, name: str, value: bytes, *, px: int) -> object:
+        return None
+
+
+class BadSetIfAbsentSyncClient(BadTypeSyncClient):
+    @override
+    def set_if_absent(self, name: str, value: bytes, *, px: int) -> object:
+        return "not-bool"
+
+
 class FailingAsyncClient(IAsyncRedisClient):
     @override
     async def get(self, name: str) -> bytes | None:
@@ -163,6 +177,18 @@ class BadTypeAsyncClient(IRawAsyncRedisClient):
     @override
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
         return _empty_async_keys()
+
+
+class NoneSetIfAbsentAsyncClient(BadTypeAsyncClient):
+    @override
+    async def set_if_absent(self, name: str, value: bytes, *, px: int) -> object:
+        return None
+
+
+class BadSetIfAbsentAsyncClient(BadTypeAsyncClient):
+    @override
+    async def set_if_absent(self, name: str, value: bytes, *, px: int) -> object:
+        return "not-bool"
 
 
 class RedisErrorSyncClient(IRawSyncRedisClient):
@@ -240,7 +266,7 @@ class ContendedSyncClient(ISyncRedisClient):
     @override
     def get(self, name: str) -> bytes | None:
         self.get_calls += 1
-        if self.get_calls == 1:
+        if self.get_calls <= 2:
             return None
         return pickle.dumps("ready", protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -269,6 +295,12 @@ class ContendedSyncClient(ISyncRedisClient):
         return iter(())
 
 
+class TimeoutSyncClient(ContendedSyncClient):
+    @override
+    def get(self, name: str) -> bytes | None:
+        return None
+
+
 class ContendedAsyncClient(IAsyncRedisClient):
     def __init__(self) -> None:
         self.get_calls = 0
@@ -276,7 +308,7 @@ class ContendedAsyncClient(IAsyncRedisClient):
     @override
     async def get(self, name: str) -> bytes | None:
         self.get_calls += 1
-        if self.get_calls == 1:
+        if self.get_calls <= 2:
             return None
         return pickle.dumps("ready", protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -303,6 +335,12 @@ class ContendedAsyncClient(IAsyncRedisClient):
     @override
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
         return _empty_async_keys()
+
+
+class TimeoutAsyncClient(ContendedAsyncClient):
+    @override
+    async def get(self, name: str) -> bytes | None:
+        return None
 
 
 def _cache(
@@ -388,6 +426,16 @@ def test_delete_and_clear_expect_only_configured_prefix_removed() -> None:
     cache.clear()
 
 
+def test_delete_missing_expect_false_and_delete_metric_unchanged() -> None:
+    """delete miss가 False를 반환하고 delete metric을 증가시키지 않는지 검증한다."""
+    cache = _cache(fakeredis.FakeServer())
+
+    deleted = cache.delete("missing")
+
+    assert deleted is False
+    assert cache.metrics().deletes == 0
+
+
 def test_tagged_entries_expect_tag_eviction_removes_matching_values() -> None:
     """tag evict가 같은 tag로 묶인 cache entry만 제거하는지 검증한다."""
     server = fakeredis.FakeServer()
@@ -408,6 +456,16 @@ def test_tagged_entries_expect_tag_eviction_removes_matching_values() -> None:
     other_result = other.get("profile:1")
     assert isinstance(other_result, CacheHit)
     assert other_result.value == "Keep"
+
+
+def test_evict_tags_without_matching_entries_expect_zero() -> None:
+    """tag 인자가 없으면 tag eviction이 no-op으로 끝나는지 검증한다."""
+    cache = _cache(fakeredis.FakeServer())
+
+    deleted = cache.evict_tags()
+
+    assert deleted == 0
+    assert cache.metrics().tag_evictions == 0
 
 
 def test_get_or_set_expect_factory_runs_only_on_miss_and_metrics_recorded() -> None:
@@ -501,12 +559,45 @@ def test_get_or_set_contention_expect_waits_for_peer_value() -> None:
     assert cache.metrics().stampede_waits == 1
 
 
+def test_get_or_set_contention_timeout_expect_cache_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """get_or_set contention timeout이 framework cache error로 노출되는지 검증한다."""
+    times = iter((0.0, 31.0))
+    client = TimeoutSyncClient()
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=client,
+        async_client=AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer())
+            )
+        ),
+    )
+
+    def monotonic() -> float:
+        return next(times)
+
+    monkeypatch.setattr(redis_cache_module, "monotonic", monotonic)
+    monkeypatch.setattr(redis_cache_module, "sleep", lambda seconds: None)
+
+    with pytest.raises(RedisCacheLockTimeoutError):
+        cache.get_or_set("item", lambda: "unused")
+
+    assert cache.metrics().stampede_waits == 1
+
+
 def test_extended_sync_adapter_failures_expect_framework_cache_error() -> None:
     """extended sync adapter operation 실패가 framework cache error로 변환되는지 검증한다."""
     bad = SyncRedisAdapter(BadTypeSyncClient())
+    none_lock = SyncRedisAdapter(NoneSetIfAbsentSyncClient())
+    bad_lock = SyncRedisAdapter(BadSetIfAbsentSyncClient())
     broken = SyncRedisAdapter(RedisErrorSyncClient())
 
     assert bad.set_if_absent("lock", b"1", px=1) is True
+    assert none_lock.set_if_absent("lock", b"1", px=1) is False
+    with pytest.raises(RedisCacheOperationError):
+        bad_lock.set_if_absent("lock", b"1", px=1)
     with pytest.raises(RedisCacheOperationError):
         bad.add_set_members("tag", "key")
     with pytest.raises(RedisCacheOperationError):
@@ -540,6 +631,16 @@ async def test_async_contract_expect_shared_value_and_async_clear() -> None:
     assert isinstance(await cache.get_async("session"), CacheMiss)
 
     await cache.clear_async()
+
+
+async def test_async_delete_missing_expect_false_and_delete_metric_unchanged() -> None:
+    """async delete miss가 False를 반환하고 delete metric을 증가시키지 않는다."""
+    cache = _cache(fakeredis.FakeServer())
+
+    deleted = await cache.delete_async("missing")
+
+    assert deleted is False
+    assert cache.metrics().deletes == 0
 
 
 async def test_async_clear_expect_only_configured_prefix_removed() -> None:
@@ -583,6 +684,16 @@ async def test_async_tagged_entries_expect_tag_eviction_removes_matching_values(
     other_result = await other.get_async("profile:1")
     assert isinstance(other_result, CacheHit)
     assert other_result.value == "Keep"
+
+
+async def test_async_evict_tags_without_matching_entries_expect_zero() -> None:
+    """async tag eviction도 tag 인자가 없으면 no-op으로 끝난다."""
+    cache = _cache(fakeredis.FakeServer())
+
+    deleted = await cache.evict_tags_async()
+
+    assert deleted == 0
+    assert cache.metrics().tag_evictions == 0
 
 
 async def test_async_get_or_set_expect_factory_runs_only_on_miss() -> None:
@@ -643,12 +754,49 @@ async def test_async_get_or_set_contention_expect_waits_for_peer_value() -> None
     assert cache.metrics().stampede_waits == 1
 
 
+async def test_async_get_or_set_contention_timeout_expect_cache_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """async get_or_set contention timeout이 framework cache error로 노출된다."""
+    times = iter((0.0, 31.0))
+    client = TimeoutAsyncClient()
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
+        async_client=client,
+    )
+
+    def monotonic() -> float:
+        return next(times)
+
+    async def sleep(seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(redis_cache_module, "monotonic", monotonic)
+    monkeypatch.setattr(redis_cache_module, "async_sleep", sleep)
+
+    async def factory() -> str:
+        return "unused"
+
+    with pytest.raises(RedisCacheLockTimeoutError):
+        await cache.get_or_set_async("item", factory)
+
+    assert cache.metrics().stampede_waits == 1
+
+
 async def test_extended_async_adapter_failures_expect_framework_cache_error() -> None:
     """extended async adapter operation 실패가 framework cache error로 변환되는지 검증한다."""
     bad = AsyncRedisAdapter(BadTypeAsyncClient())
+    none_lock = AsyncRedisAdapter(NoneSetIfAbsentAsyncClient())
+    bad_lock = AsyncRedisAdapter(BadSetIfAbsentAsyncClient())
     broken = AsyncRedisAdapter(RedisErrorAsyncClient())
 
     assert await bad.set_if_absent("lock", b"1", px=1) is True
+    assert await none_lock.set_if_absent("lock", b"1", px=1) is False
+    with pytest.raises(RedisCacheOperationError):
+        await bad_lock.set_if_absent("lock", b"1", px=1)
     with pytest.raises(RedisCacheOperationError):
         await bad.add_set_members("tag", "key")
     with pytest.raises(RedisCacheOperationError):
