@@ -1,6 +1,10 @@
 """Tests for agent tool descriptor discovery."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
+import typing
+from dataclasses import dataclass
+from enum import Enum, StrEnum
+from typing import Annotated
 
 import pytest
 
@@ -27,6 +31,52 @@ from spakky.agent import (
     discover_agent_tools,
 )
 from spakky.agent.tooling import AGENT_TOOL_DEFINITION_KEY, get_agent_tool_definition
+
+
+class SearchMode(StrEnum):
+    """검색 도구 입력 enum fixture."""
+
+    EXACT = "exact"
+    FUZZY = "fuzzy"
+
+
+class ExitCode(Enum):
+    """정수 enum fixture."""
+
+    OK = 0
+    FAIL = 1
+
+
+class MixedJsonEnum(Enum):
+    """Mixed JSON primitive enum fixture."""
+
+    ENABLED = True
+    SCORE = 0.5
+    EMPTY = None
+
+
+@dataclass(frozen=True, slots=True)
+class SearchFilter:
+    """Nested dataclass fixture for schema generation."""
+
+    tags: list[str]
+    limit: int = 10
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    """Dataclass output fixture for schema generation."""
+
+    title: str
+    scores: Mapping[str, float]
+    filter_: SearchFilter | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DefaultedFilter:
+    """Dataclass fixture whose fields are all optional by default."""
+
+    enabled: bool = False
 
 
 def test_agent_tool_expect_attaches_typed_descriptor_metadata_to_method() -> None:
@@ -88,6 +138,507 @@ def test_agent_expect_discovers_decorated_methods_as_deterministic_catalog() -> 
         "read_file",
         "write_file",
     ]
+
+
+def test_tool_schema_expect_generates_input_schema_from_supported_signature() -> None:
+    """primitive/enum/dataclass/collection/optional signature를 JSON schema로 만든다."""
+
+    @Agent()
+    class SearchAgent:
+        @agent_tool(schema_name="docs.search")
+        def search(
+            self,
+            query: Annotated[str, "model-visible"],
+            mode: SearchMode,
+            filters: list[SearchFilter],
+            window: tuple[int, int],
+            metadata: Mapping[str, str] | None = None,
+        ) -> SearchResult:
+            return SearchResult(
+                title=f"{mode}:{query}",
+                scores={"total": 1.0},
+                filter_=filters[0] if filters else None,
+            )
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(SearchAgent).tool_catalog.by_schema_name("docs.search")
+
+    assert descriptor.schema.input_schema == {
+        "type": "object",
+        "title": "docs.search.input",
+        "properties": {
+            "query": {"type": "string"},
+            "mode": {"enum": ["exact", "fuzzy"], "type": "string"},
+            "filters": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "limit": {"type": "integer"},
+                    },
+                    "additionalProperties": False,
+                    "required": ["tags"],
+                },
+            },
+            "window": {
+                "type": "array",
+                "prefixItems": [{"type": "integer"}, {"type": "integer"}],
+                "minItems": 2,
+                "maxItems": 2,
+            },
+            "metadata": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": {"type": "string"},
+                    },
+                    {"type": "null"},
+                ],
+            },
+        },
+        "additionalProperties": False,
+        "required": ["query", "mode", "filters", "window"],
+    }
+
+
+def test_tool_schema_expect_generates_output_schema_from_return_type() -> None:
+    """tool return annotation도 model-facing JSON schema로 검증되고 보존된다."""
+
+    @Agent()
+    class SearchAgent:
+        @agent_tool(schema_name="docs.result")
+        def result(self, status: ExitCode) -> SearchResult | str:
+            if status == ExitCode.OK:
+                return SearchResult(title="ok", scores={})
+            return "failed"
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(SearchAgent).tool_catalog.by_schema_name("docs.result")
+
+    assert descriptor.schema.input_schema["properties"] == {
+        "status": {"enum": [0, 1], "type": "integer"},
+    }
+    assert descriptor.schema.output_schema == {
+        "title": "docs.result.output",
+        "anyOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "scores": {
+                        "type": "object",
+                        "additionalProperties": {"type": "number"},
+                    },
+                    "filter_": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "tags": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "limit": {"type": "integer"},
+                                },
+                                "additionalProperties": False,
+                                "required": ["tags"],
+                            },
+                            {"type": "null"},
+                        ],
+                    },
+                },
+                "additionalProperties": False,
+                "required": ["title", "scores"],
+            },
+            {"type": "string"},
+        ],
+    }
+
+
+def test_tool_schema_expect_accepts_variadic_tuple_as_array_items() -> None:
+    """tuple[T, ...]는 동일 item type의 배열 schema로 표현한다."""
+
+    @Agent()
+    class PathAgent:
+        @agent_tool(schema_name="path.parts")
+        def join(self, parts: tuple[str, ...]) -> str:
+            return "/".join(parts)
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(PathAgent).tool_catalog.by_schema_name("path.parts")
+
+    assert descriptor.schema.input_schema["properties"] == {
+        "parts": {"type": "array", "items": {"type": "string"}},
+    }
+
+
+def test_tool_schema_expect_omits_required_for_defaulted_parameters() -> None:
+    """default가 있는 parameter는 required 목록에 넣지 않는다."""
+
+    @Agent()
+    class PingAgent:
+        @agent_tool(schema_name="agent.ping")
+        def ping(self, verbose: bool = False) -> None:
+            return None
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(PingAgent).tool_catalog.by_schema_name("agent.ping")
+
+    assert descriptor.schema.input_schema == {
+        "type": "object",
+        "title": "agent.ping.input",
+        "properties": {"verbose": {"type": "boolean"}},
+        "additionalProperties": False,
+    }
+    assert descriptor.schema.output_schema == {
+        "title": "agent.ping.output",
+        "type": "null",
+    }
+
+
+def test_tool_schema_expect_omits_dataclass_required_when_fields_have_defaults() -> (
+    None
+):
+    """dataclass field default도 nested required 목록에서 제외한다."""
+
+    @Agent()
+    class DefaultedDataclassAgent:
+        @agent_tool(schema_name="agent.defaulted")
+        def inspect(self, filter_: DefaultedFilter) -> str:
+            return str(filter_.enabled)
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(DefaultedDataclassAgent).tool_catalog.by_schema_name(
+        "agent.defaulted"
+    )
+
+    assert descriptor.schema.input_schema["properties"] == {
+        "filter_": {
+            "type": "object",
+            "properties": {"enabled": {"type": "boolean"}},
+            "additionalProperties": False,
+        },
+    }
+
+
+def test_tool_schema_expect_preserves_mixed_json_primitive_enum_values() -> None:
+    """mixed primitive enum은 enum 값만 보존하고 단일 type을 강제하지 않는다."""
+
+    @Agent()
+    class MixedEnumAgent:
+        @agent_tool(schema_name="agent.mixed")
+        def inspect(self, value: MixedJsonEnum) -> str:
+            return value.name
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(MixedEnumAgent).tool_catalog.by_schema_name("agent.mixed")
+
+    assert descriptor.schema.input_schema["properties"] == {
+        "value": {"enum": [True, 0.5, None]},
+    }
+
+
+def test_tool_schema_expect_rejects_untyped_and_unsupported_signatures() -> None:
+    """Any/untyped/unsupported 타입은 Agent definition 단계에서 custom error로 실패한다."""
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class UntypedToolAgent:
+            @agent_tool(schema_name="invalid.untyped")
+            def invalid(self, value) -> str:
+                return value
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class AnyToolAgent:
+            @agent_tool(schema_name="invalid.any")
+            def invalid(self, value: typing.Any) -> str:
+                return value
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class ObjectToolAgent:
+            @agent_tool(schema_name="invalid.object")
+            def invalid(self, value: object) -> object:
+                return value
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+
+def test_tool_schema_expect_rejects_untyped_mapping_and_non_string_keys() -> None:
+    """mapping은 string key와 typed value를 명시해야 model schema가 안전하다."""
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class UntypedMappingAgent:
+            @agent_tool(schema_name="invalid.dict")
+            def invalid(self, value: dict) -> str:
+                return str(value)
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class NumericKeyMappingAgent:
+            @agent_tool(schema_name="invalid.keys")
+            def invalid(self, value: dict[int, str]) -> str:
+                return str(value)
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+
+def test_tool_schema_expect_rejects_parameters_without_object_schema() -> None:
+    """positional-only/varargs/varkw는 object argument schema로 표현하지 않는다."""
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class PositionalOnlyToolAgent:
+            @agent_tool(schema_name="invalid.positional")
+            def invalid(self, value: str, /) -> str:
+                return value
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class VarargsToolAgent:
+            @agent_tool(schema_name="invalid.varargs")
+            def invalid(self, *values: str) -> str:
+                return ",".join(values)
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class VarkwToolAgent:
+            @agent_tool(schema_name="invalid.varkw")
+            def invalid(self, **values: str) -> str:
+                return str(values)
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+
+def test_tool_schema_expect_rejects_missing_return_and_bad_enum_values() -> None:
+    """return type과 enum 값도 schema-compatible 계약을 가져야 한다."""
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class MissingReturnToolAgent:
+            @agent_tool(schema_name="invalid.return")
+            def invalid(self, value: str):
+                return value
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+    class BadEnum(Enum):
+        VALUE = ("not", "json", "primitive")
+
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class BadEnumToolAgent:
+            @agent_tool(schema_name="invalid.enum")
+            def invalid(self, value: BadEnum) -> str:
+                return value.name
+
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+
+
+def test_tool_schema_expect_rejects_unresolved_annotations() -> None:
+    """forward reference를 해소할 수 없으면 bootstrap 전 custom error로 실패한다."""
+    scope = _agent_definition_exec_scope()
+    with pytest.raises(AgentDefinitionError):
+        exec(
+            """
+@Agent()
+class UnresolvedToolAgent:
+    @agent_tool(schema_name="invalid.forward")
+    def invalid(self, value: "MissingToolType") -> str:
+        return value
+
+    async def execute(
+        self,
+        command: str,
+    ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+        yield AgentYield(
+            kind=AgentYieldKind.FINAL,
+            payload=Final(output=command, metadata={}),
+        )
+""",
+            scope,
+            scope,
+        )
+
+
+def test_tool_schema_expect_rejects_unresolved_dataclass_fields() -> None:
+    """dataclass field annotation도 schema generation 전에 해소되어야 한다."""
+    scope = _agent_definition_exec_scope()
+    with pytest.raises(AgentDefinitionError):
+        exec(
+            """
+@dataclass(frozen=True, slots=True)
+class BrokenDataclass:
+    value: "MissingFieldType"
+
+
+@Agent()
+class BrokenDataclassToolAgent:
+    @agent_tool(schema_name="invalid.dataclass")
+    def invalid(self, value: BrokenDataclass) -> str:
+        return str(value)
+
+    async def execute(
+        self,
+        command: str,
+    ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+        yield AgentYield(
+            kind=AgentYieldKind.FINAL,
+            payload=Final(output=command, metadata={}),
+        )
+""",
+            scope,
+            scope,
+        )
+
+
+def _agent_definition_exec_scope() -> dict[str, object]:
+    return {
+        "Agent": Agent,
+        "agent_tool": agent_tool,
+        "dataclass": dataclass,
+        "AsyncGenerator": AsyncGenerator,
+        "AgentYield": AgentYield,
+        "AgentYieldKind": AgentYieldKind,
+        "Final": Final,
+    }
 
 
 def test_tool_catalog_expect_preserves_owner_callable_schema_and_metadata() -> None:

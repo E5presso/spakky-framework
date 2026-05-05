@@ -1,15 +1,27 @@
 """Agent tool descriptor discovery contracts."""
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from enum import StrEnum
-from types import FunctionType
+import typing
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import MISSING, Field, dataclass, field, is_dataclass
+from enum import Enum, StrEnum
+from inspect import Parameter, isclass, signature
+from types import FunctionType, NoneType, UnionType
+from typing import get_args, get_origin, get_type_hints
 
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.types import JsonObject, JsonValue
 
 AGENT_TOOL_DEFINITION_KEY = "__spakky_agent_tool_definition__"
 
 AgentToolCallable = Callable[..., object]
+
+_PRIMITIVE_SCHEMA_TYPES: dict[object, str] = {
+    str: "string",
+    int: "integer",
+    float: "number",
+    bool: "boolean",
+    NoneType: "null",
+}
 
 
 class Idempotency(StrEnum):
@@ -117,12 +129,13 @@ class ResultBudget:
 
 @dataclass(frozen=True, slots=True)
 class AgentToolSchemaHandle:
-    """Stable schema handle owned by a descriptor before schema generation."""
+    """Stable schema names and generated JSON schemas owned by a descriptor."""
 
     name: str
-
     input_schema_name: str
     output_schema_name: str
+    input_schema: JsonObject = field(default_factory=dict)
+    output_schema: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Reject blank schema handles."""
@@ -337,6 +350,8 @@ def _build_descriptor(
         name=definition.schema_name,
         input_schema_name=f"{definition.schema_name}.input",
         output_schema_name=f"{definition.schema_name}.output",
+        input_schema=_build_input_schema(function, definition.schema_name),
+        output_schema=_build_output_schema(function, definition.schema_name),
     )
     return AgentToolDescriptor(
         identity=identity,
@@ -365,3 +380,200 @@ def _normalize_name(value: str | None, default: str, label: str) -> str:
 def _require_non_blank(value: str, label: str) -> None:
     if not value.strip():
         raise AgentDefinitionError(f"{label} cannot be blank")
+
+
+def _build_input_schema(function: FunctionType, schema_name: str) -> JsonObject:
+    function_signature = signature(function)
+    type_hints = _resolve_type_hints(function)
+    properties: dict[str, JsonValue] = {}
+    required: list[str] = []
+    for parameter in function_signature.parameters.values():
+        if parameter.name in ("self", "cls"):
+            continue
+        _validate_schema_parameter(parameter)
+        annotation = type_hints.get(parameter.name, parameter.annotation)
+        if annotation == Parameter.empty:
+            raise AgentDefinitionError("Agent tool parameters must be type annotated")
+        properties[parameter.name] = _schema_for_annotation(
+            annotation,
+            f"Agent tool parameter '{parameter.name}'",
+        )
+        if parameter.default == Parameter.empty:
+            required.append(parameter.name)
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "title": f"{schema_name}.input",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+    if required:
+        schema["required"] = required
+    return schema
+
+
+def _build_output_schema(function: FunctionType, schema_name: str) -> JsonObject:
+    function_signature = signature(function)
+    type_hints = _resolve_type_hints(function)
+    annotation = type_hints.get("return", function_signature.return_annotation)
+    if annotation == Parameter.empty:
+        raise AgentDefinitionError("Agent tool return type is required")
+    output_schema = _schema_for_annotation(annotation, "Agent tool return type")
+    schema: dict[str, JsonValue] = {
+        "title": f"{schema_name}.output",
+    }
+    schema.update(output_schema)
+    return schema
+
+
+def _resolve_type_hints(function: FunctionType) -> Mapping[str, object]:
+    try:
+        return get_type_hints(function, include_extras=True)
+    except (NameError, TypeError) as e:
+        raise AgentDefinitionError(
+            "Agent tool type annotations cannot be resolved"
+        ) from e
+
+
+def _validate_schema_parameter(parameter: Parameter) -> None:
+    if parameter.kind == Parameter.POSITIONAL_ONLY:
+        raise AgentDefinitionError("Agent tool parameters cannot be positional-only")
+    if parameter.kind in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
+        raise AgentDefinitionError(
+            "Agent tool parameters cannot use variable arguments"
+        )
+
+
+def _schema_for_annotation(annotation: object, label: str) -> JsonObject:
+    annotation = _unwrap_annotated(annotation)
+    if annotation is typing.Any:
+        raise AgentDefinitionError(f"{label} cannot use Any")
+    primitive_schema = _primitive_schema(annotation)
+    if primitive_schema is not None:
+        return primitive_schema
+    origin = get_origin(annotation)
+    if origin in (typing.Union, UnionType):
+        return _union_schema(annotation, label)
+    if origin in (list,):
+        return _list_schema(annotation, label)
+    if origin is tuple:
+        return _tuple_schema(annotation, label)
+    if origin in (dict, Mapping):
+        return _mapping_schema(annotation, label)
+    if isclass(annotation) and issubclass(annotation, Enum):
+        return _enum_schema(annotation)
+    if isclass(annotation) and is_dataclass(annotation):
+        return _dataclass_schema(annotation, label)
+    raise AgentDefinitionError(f"{label} is not JSON-schema compatible")
+
+
+def _unwrap_annotated(annotation: object) -> object:
+    if get_origin(annotation) is typing.Annotated:
+        return get_args(annotation)[0]
+    return annotation
+
+
+def _primitive_schema(annotation: object) -> JsonObject | None:
+    schema_type = _PRIMITIVE_SCHEMA_TYPES.get(annotation)
+    if schema_type is None:
+        return None
+    return {"type": schema_type}
+
+
+def _union_schema(annotation: object, label: str) -> JsonObject:
+    args = get_args(annotation)
+    alternatives = [_schema_for_annotation(arg, label) for arg in args]
+    return {"anyOf": alternatives}
+
+
+def _list_schema(annotation: object, label: str) -> JsonObject:
+    args = get_args(annotation)
+    return {"type": "array", "items": _schema_for_annotation(args[0], label)}
+
+
+def _tuple_schema(annotation: object, label: str) -> JsonObject:
+    args = get_args(annotation)
+    if len(args) == 2 and args[1] is Ellipsis:
+        return {"type": "array", "items": _schema_for_annotation(args[0], label)}
+    prefix_items = [_schema_for_annotation(arg, label) for arg in args]
+    return {
+        "type": "array",
+        "prefixItems": prefix_items,
+        "minItems": len(prefix_items),
+        "maxItems": len(prefix_items),
+    }
+
+
+def _mapping_schema(annotation: object, label: str) -> JsonObject:
+    args = get_args(annotation)
+    key_type, value_type = args
+    if key_type is not str:
+        raise AgentDefinitionError(f"{label} mapping keys must be strings")
+    return {
+        "type": "object",
+        "additionalProperties": _schema_for_annotation(value_type, label),
+    }
+
+
+def _enum_schema(annotation: type[Enum]) -> JsonObject:
+    values: list[JsonValue] = []
+    value_types: set[str] = set()
+    for member in annotation:
+        value = member.value
+        value_type = _json_value_type(value)
+        if value_type is None:
+            raise AgentDefinitionError("Agent tool enum values must be JSON primitives")
+        values.append(value)
+        value_types.add(value_type)
+    schema: dict[str, JsonValue] = {"enum": values}
+    if len(value_types) == 1:
+        schema["type"] = next(iter(value_types))
+    return schema
+
+
+def _json_value_type(value: object) -> str | None:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if value is None:
+        return "null"
+    return None
+
+
+def _dataclass_schema(annotation: object, label: str) -> JsonObject:
+    type_hints = _resolve_dataclass_hints(annotation, label)
+    properties: dict[str, JsonValue] = {}
+    required: list[str] = []
+    dataclass_fields = typing.cast(
+        Mapping[str, Field[object]],
+        vars(annotation)["__dataclass_fields__"],
+    )
+    for item in dataclass_fields.values():
+        field_annotation = type_hints.get(item.name, item.type)
+        properties[item.name] = _schema_for_annotation(
+            field_annotation,
+            f"{label}.{item.name}",
+        )
+        if item.default is MISSING and item.default_factory is MISSING:
+            required.append(item.name)
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": properties,
+        "additionalProperties": False,
+    }
+    if required:
+        schema["required"] = required
+    return schema
+
+
+def _resolve_dataclass_hints(annotation: object, label: str) -> Mapping[str, object]:
+    try:
+        return get_type_hints(annotation, include_extras=True)
+    except (NameError, TypeError) as e:
+        raise AgentDefinitionError(
+            f"{label} dataclass annotations cannot be resolved"
+        ) from e
