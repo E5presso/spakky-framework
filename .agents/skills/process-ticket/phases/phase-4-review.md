@@ -15,15 +15,35 @@
 
 > **종료 조건 및 모순 에스컬레이션**: Critical만 신규 생성을 차단하고, Warning은 즉시 수정·반박·**후속 이슈 위임** 중 택일 (기술 부채로 전환 허용). Info 심각도는 리뷰어가 생성하지 않는다. 또한 새 iteration이 **직전 iteration에서 해소된 결정을 뒤집는 의문점**을 내면 자동 루프 중단 후 사용자에게 확정 방향 요청 — sub-agent로 실행 중이면 SKILL.md "사용자 질의 위임" 절의 `ask-delegate`로 메인에 위임 (`phase: Phase 4-2`, `trigger: review-loop-flip`), 사용자 직접 호출이면 `AskUserQuestion` 직접. 상세는 `/review-code` 스킬 참조.
 
-## 4-0. root-worktree mutation guard
+## 4-0. pre-edit root-worktree mutation guard
 
-Phase 4의 첫 파일 수정 직전과 각 구현/review iteration 종료 직후, 반드시 워크트리 cwd에서 isolation guard를 실행한다:
+Phase 4의 첫 파일 수정 직전과 각 구현/review iteration 종료 직후, 반드시 **실제 mutation을 수행할 동일 실행 컨텍스트**에서 isolation guard를 실행한다:
 
 ```bash
 bash .agents/skills/process-ticket/scripts/assert_worktree_isolation.sh {ISSUE-NUMBER}
 ```
 
 실패하면 즉시 구현을 멈추고 `failed.phase = "Phase 4 isolation"`을 `.process-state.json`에 기록한 뒤 종료한다. root 변경을 자동 revert하지 않는다 — 다른 세션의 변경일 수 있으며, root 오염 회귀를 숨기면 autopilot S4가 evidence를 잃는다. 본 guard 통과 전에는 `Edit`/`Write`/`apply_patch`/포맷터를 실행하지 않는다.
+
+### 4-0a. `apply_patch` 라우팅 규칙
+
+Codex `apply_patch` 도구는 `workdir` 파라미터가 없으므로, Bash 명령의 `workdir`를 워크트리로 지정해도 별도 `apply_patch` 도구 호출의 기준 경로는 바뀌지 않는다. 따라서 격리 워크트리 수정에서는 다음 중 하나만 허용한다.
+
+1. 세션 CWD가 `EnterWorktree` 등으로 이미 대상 워크트리 루트임을 `pwd`와 `assert_worktree_isolation.sh {ISSUE-NUMBER}`로 확인한 뒤, 상대 경로만 포함한 `apply_patch` 도구를 사용한다.
+2. 세션 CWD가 루트인지 워크트리인지 확실하지 않거나 도구 호출별 `workdir`만 지정 가능한 컨텍스트라면, 별도 `apply_patch` 도구를 쓰지 않고 워크트리 cwd의 Bash에서 안전 wrapper를 실행한다.
+
+```bash
+bash .agents/skills/process-ticket/scripts/safe_worktree_apply_patch.sh {ISSUE-NUMBER} <<'PATCH'
+*** Begin Patch
+*** Update File: path/inside/worktree.ext
+@@
+-old
++new
+*** End Patch
+PATCH
+```
+
+`safe_worktree_apply_patch.sh`는 patch 적용 전후에 `assert_worktree_isolation.sh`를 실행한다. guard가 실패하면 patch 입력이 있어도 mutation 전에 종료해야 하며, root checkout을 자동 revert하지 않는다.
 
 ## 4-1. 구현
 
