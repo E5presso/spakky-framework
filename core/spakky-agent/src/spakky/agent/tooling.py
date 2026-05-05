@@ -9,6 +9,13 @@ from types import FunctionType, NoneType, UnionType
 from typing import get_args, get_origin, get_type_hints
 
 from spakky.agent.error import AgentDefinitionError, AgentToolBindingError
+from spakky.agent.safety import (
+    ContextExposurePolicy,
+    SecretField,
+    SensitiveField,
+    SensitiveFieldDescriptor,
+    schema_with_sensitive_metadata,
+)
 from spakky.agent.types import JsonObject, JsonValue
 
 AGENT_TOOL_DEFINITION_KEY = "__spakky_agent_tool_definition__"
@@ -195,12 +202,36 @@ class AgentToolSchemaHandle:
     output_schema_name: str
     input_schema: JsonObject = field(default_factory=dict)
     output_schema: JsonObject = field(default_factory=dict)
+    input_sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
+    output_sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
 
     def __post_init__(self) -> None:
         """Reject blank schema handles."""
         _require_non_blank(self.name, "Agent tool schema name")
         _require_non_blank(self.input_schema_name, "Agent tool input schema name")
         _require_non_blank(self.output_schema_name, "Agent tool output schema name")
+
+    def input_schema_for(
+        self,
+        policy: ContextExposurePolicy | None = None,
+    ) -> JsonObject:
+        """Return model-facing input schema under the requested exposure policy."""
+        return schema_with_sensitive_metadata(
+            self.input_schema,
+            self.input_sensitive_fields,
+            policy or ContextExposurePolicy(),
+        )
+
+    def output_schema_for(
+        self,
+        policy: ContextExposurePolicy | None = None,
+    ) -> JsonObject:
+        """Return model-facing output schema under the requested exposure policy."""
+        return schema_with_sensitive_metadata(
+            self.output_schema,
+            self.output_sensitive_fields,
+            policy or ContextExposurePolicy(),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -508,12 +539,16 @@ def _build_descriptor(
         owner_qualname=owner.__qualname__,
         name=definition.name,
     )
+    input_schema = _build_input_schema(function, definition.schema_name)
+    output_schema = _build_output_schema(function, definition.schema_name)
     schema = AgentToolSchemaHandle(
         name=definition.schema_name,
         input_schema_name=f"{definition.schema_name}.input",
         output_schema_name=f"{definition.schema_name}.output",
-        input_schema=_build_input_schema(function, definition.schema_name),
-        output_schema=_build_output_schema(function, definition.schema_name),
+        input_schema=input_schema.schema,
+        output_schema=output_schema.schema,
+        input_sensitive_fields=input_schema.sensitive_fields,
+        output_sensitive_fields=output_schema.sensitive_fields,
     )
     return AgentToolDescriptor(
         identity=identity,
@@ -601,11 +636,18 @@ def _require_non_blank(value: str, label: str) -> None:
         raise AgentDefinitionError(f"{label} cannot be blank")
 
 
-def _build_input_schema(function: FunctionType, schema_name: str) -> JsonObject:
+@dataclass(frozen=True, slots=True)
+class _SchemaExtraction:
+    schema: JsonObject
+    sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
+
+
+def _build_input_schema(function: FunctionType, schema_name: str) -> _SchemaExtraction:
     function_signature = signature(function)
     type_hints = _resolve_type_hints(function)
     properties: dict[str, JsonValue] = {}
     required: list[str] = []
+    sensitive_fields: list[SensitiveFieldDescriptor] = []
     for parameter in function_signature.parameters.values():
         if parameter.name in ("self", "cls"):
             continue
@@ -613,10 +655,13 @@ def _build_input_schema(function: FunctionType, schema_name: str) -> JsonObject:
         annotation = type_hints.get(parameter.name, parameter.annotation)
         if annotation == Parameter.empty:
             raise AgentDefinitionError("Agent tool parameters must be type annotated")
-        properties[parameter.name] = _schema_for_annotation(
+        extracted = _schema_for_annotation(
             annotation,
             f"Agent tool parameter '{parameter.name}'",
+            (parameter.name,),
         )
+        properties[parameter.name] = extracted.schema
+        sensitive_fields.extend(extracted.sensitive_fields)
         if parameter.default == Parameter.empty:
             required.append(parameter.name)
     schema: dict[str, JsonValue] = {
@@ -627,21 +672,24 @@ def _build_input_schema(function: FunctionType, schema_name: str) -> JsonObject:
     }
     if required:
         schema["required"] = required
-    return schema
+    return _SchemaExtraction(schema=schema, sensitive_fields=tuple(sensitive_fields))
 
 
-def _build_output_schema(function: FunctionType, schema_name: str) -> JsonObject:
+def _build_output_schema(function: FunctionType, schema_name: str) -> _SchemaExtraction:
     function_signature = signature(function)
     type_hints = _resolve_type_hints(function)
     annotation = type_hints.get("return", function_signature.return_annotation)
     if annotation == Parameter.empty:
         raise AgentDefinitionError("Agent tool return type is required")
-    output_schema = _schema_for_annotation(annotation, "Agent tool return type")
+    output_schema = _schema_for_annotation(annotation, "Agent tool return type", ())
     schema: dict[str, JsonValue] = {
         "title": f"{schema_name}.output",
     }
-    schema.update(output_schema)
-    return schema
+    schema.update(output_schema.schema)
+    return _SchemaExtraction(
+        schema=schema,
+        sensitive_fields=output_schema.sensitive_fields,
+    )
 
 
 def _resolve_type_hints(function: FunctionType) -> Mapping[str, object]:
@@ -662,33 +710,67 @@ def _validate_schema_parameter(parameter: Parameter) -> None:
         )
 
 
-def _schema_for_annotation(annotation: object, label: str) -> JsonObject:
-    annotation = _unwrap_annotated(annotation)
+def _schema_for_annotation(
+    annotation: object,
+    label: str,
+    path: tuple[str, ...],
+) -> _SchemaExtraction:
+    annotation, annotated_sensitive_fields = _unwrap_annotated(annotation, path)
     if annotation is typing.Any:
         raise AgentDefinitionError(f"{label} cannot use Any")
     primitive_schema = _primitive_schema(annotation)
     if primitive_schema is not None:
-        return primitive_schema
+        return _SchemaExtraction(
+            schema=primitive_schema,
+            sensitive_fields=annotated_sensitive_fields,
+        )
     origin = get_origin(annotation)
     if origin in (typing.Union, UnionType):
-        return _union_schema(annotation, label)
+        return _merge_annotated_fields(
+            _union_schema(annotation, label, path),
+            annotated_sensitive_fields,
+        )
     if origin in (list,):
-        return _list_schema(annotation, label)
+        return _merge_annotated_fields(
+            _list_schema(annotation, label, path),
+            annotated_sensitive_fields,
+        )
     if origin is tuple:
-        return _tuple_schema(annotation, label)
+        return _merge_annotated_fields(
+            _tuple_schema(annotation, label, path),
+            annotated_sensitive_fields,
+        )
     if origin in (dict, Mapping):
-        return _mapping_schema(annotation, label)
+        return _merge_annotated_fields(
+            _mapping_schema(annotation, label, path),
+            annotated_sensitive_fields,
+        )
     if isclass(annotation) and issubclass(annotation, Enum):
-        return _enum_schema(annotation)
+        return _SchemaExtraction(
+            schema=_enum_schema(annotation),
+            sensitive_fields=annotated_sensitive_fields,
+        )
     if isclass(annotation) and is_dataclass(annotation):
-        return _dataclass_schema(annotation, label)
+        return _merge_annotated_fields(
+            _dataclass_schema(annotation, label, path),
+            annotated_sensitive_fields,
+        )
     raise AgentDefinitionError(f"{label} is not JSON-schema compatible")
 
 
-def _unwrap_annotated(annotation: object) -> object:
+def _unwrap_annotated(
+    annotation: object,
+    path: tuple[str, ...],
+) -> tuple[object, tuple[SensitiveFieldDescriptor, ...]]:
     if get_origin(annotation) is typing.Annotated:
-        return get_args(annotation)[0]
-    return annotation
+        args = get_args(annotation)
+        sensitive_fields = tuple(
+            SensitiveFieldDescriptor(path, metadata)
+            for metadata in args[1:]
+            if isinstance(metadata, (SensitiveField, SecretField))
+        )
+        return args[0], sensitive_fields
+    return annotation, ()
 
 
 def _primitive_schema(annotation: object) -> JsonObject | None:
@@ -698,39 +780,81 @@ def _primitive_schema(annotation: object) -> JsonObject | None:
     return {"type": schema_type}
 
 
-def _union_schema(annotation: object, label: str) -> JsonObject:
+def _union_schema(
+    annotation: object,
+    label: str,
+    path: tuple[str, ...],
+) -> _SchemaExtraction:
     args = get_args(annotation)
-    alternatives = [_schema_for_annotation(arg, label) for arg in args]
-    return {"anyOf": alternatives}
+    alternatives = tuple(_schema_for_annotation(arg, label, path) for arg in args)
+    return _SchemaExtraction(
+        schema={"anyOf": [extracted.schema for extracted in alternatives]},
+        sensitive_fields=tuple(
+            descriptor
+            for extracted in alternatives
+            for descriptor in extracted.sensitive_fields
+        ),
+    )
 
 
-def _list_schema(annotation: object, label: str) -> JsonObject:
+def _list_schema(
+    annotation: object,
+    label: str,
+    path: tuple[str, ...],
+) -> _SchemaExtraction:
     args = get_args(annotation)
-    return {"type": "array", "items": _schema_for_annotation(args[0], label)}
+    item = _schema_for_annotation(args[0], label, path)
+    return _SchemaExtraction(
+        schema={"type": "array", "items": item.schema},
+        sensitive_fields=item.sensitive_fields,
+    )
 
 
-def _tuple_schema(annotation: object, label: str) -> JsonObject:
+def _tuple_schema(
+    annotation: object,
+    label: str,
+    path: tuple[str, ...],
+) -> _SchemaExtraction:
     args = get_args(annotation)
     if len(args) == 2 and args[1] is Ellipsis:
-        return {"type": "array", "items": _schema_for_annotation(args[0], label)}
-    prefix_items = [_schema_for_annotation(arg, label) for arg in args]
-    return {
-        "type": "array",
-        "prefixItems": prefix_items,
-        "minItems": len(prefix_items),
-        "maxItems": len(prefix_items),
-    }
+        item = _schema_for_annotation(args[0], label, path)
+        return _SchemaExtraction(
+            schema={"type": "array", "items": item.schema},
+            sensitive_fields=item.sensitive_fields,
+        )
+    prefix_items = tuple(_schema_for_annotation(arg, label, path) for arg in args)
+    return _SchemaExtraction(
+        schema={
+            "type": "array",
+            "prefixItems": [extracted.schema for extracted in prefix_items],
+            "minItems": len(prefix_items),
+            "maxItems": len(prefix_items),
+        },
+        sensitive_fields=tuple(
+            descriptor
+            for extracted in prefix_items
+            for descriptor in extracted.sensitive_fields
+        ),
+    )
 
 
-def _mapping_schema(annotation: object, label: str) -> JsonObject:
+def _mapping_schema(
+    annotation: object,
+    label: str,
+    path: tuple[str, ...],
+) -> _SchemaExtraction:
     args = get_args(annotation)
     key_type, value_type = args
     if key_type is not str:
         raise AgentDefinitionError(f"{label} mapping keys must be strings")
-    return {
-        "type": "object",
-        "additionalProperties": _schema_for_annotation(value_type, label),
-    }
+    value = _schema_for_annotation(value_type, label, path)
+    return _SchemaExtraction(
+        schema={
+            "type": "object",
+            "additionalProperties": value.schema,
+        },
+        sensitive_fields=value.sensitive_fields,
+    )
 
 
 def _enum_schema(annotation: type[Enum]) -> JsonObject:
@@ -763,20 +887,28 @@ def _json_value_type(value: object) -> str | None:
     return None
 
 
-def _dataclass_schema(annotation: object, label: str) -> JsonObject:
+def _dataclass_schema(
+    annotation: object,
+    label: str,
+    path: tuple[str, ...],
+) -> _SchemaExtraction:
     type_hints = _resolve_dataclass_hints(annotation, label)
     properties: dict[str, JsonValue] = {}
     required: list[str] = []
+    sensitive_fields: list[SensitiveFieldDescriptor] = []
     dataclass_fields = typing.cast(
         Mapping[str, Field[object]],
         vars(annotation)["__dataclass_fields__"],
     )
     for item in dataclass_fields.values():
         field_annotation = type_hints.get(item.name, item.type)
-        properties[item.name] = _schema_for_annotation(
+        extracted = _schema_for_annotation(
             field_annotation,
             f"{label}.{item.name}",
+            (*path, item.name),
         )
+        properties[item.name] = extracted.schema
+        sensitive_fields.extend(extracted.sensitive_fields)
         if item.default is MISSING and item.default_factory is MISSING:
             required.append(item.name)
     schema: dict[str, JsonValue] = {
@@ -786,7 +918,20 @@ def _dataclass_schema(annotation: object, label: str) -> JsonObject:
     }
     if required:
         schema["required"] = required
-    return schema
+    return _SchemaExtraction(schema=schema, sensitive_fields=tuple(sensitive_fields))
+
+
+def _merge_annotated_fields(
+    extraction: _SchemaExtraction,
+    annotated_sensitive_fields: tuple[SensitiveFieldDescriptor, ...],
+) -> _SchemaExtraction:
+    return _SchemaExtraction(
+        schema=extraction.schema,
+        sensitive_fields=(
+            *annotated_sensitive_fields,
+            *extraction.sensitive_fields,
+        ),
+    )
 
 
 def _resolve_dataclass_hints(annotation: object, label: str) -> Mapping[str, object]:

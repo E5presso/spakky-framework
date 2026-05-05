@@ -6,6 +6,7 @@ import pytest
 
 from spakky.agent import (
     ContextDigest,
+    ContextExposurePolicy,
     ContextFreshness,
     ContextManifest,
     ContextManifestEntry,
@@ -13,8 +14,10 @@ from spakky.agent import (
     ContextPackRole,
     ContextSensitivity,
     ContextTokenBudget,
+    EvidenceExposurePolicy,
     IAgentModel,
     JsonSchemaConstraint,
+    MaskingPolicy,
     ModelError,
     ModelMessage,
     ModelMessageRole,
@@ -25,7 +28,12 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolChoice,
     ModelToolSpec,
+    PII,
+    RedactionPolicy,
     SamplingOptions,
+    SecretField,
+    SensitiveField,
+    SensitiveFieldDescriptor,
     StreamingOptions,
     StructuredOutputSpec,
     ToolCallingSpec,
@@ -165,6 +173,188 @@ def test_model_request_expect_assembles_typed_context_packs_as_messages() -> Non
     )
     assert request.context_manifest is manifest
     assert request.context_digest is digest
+
+
+def test_model_request_expect_guards_sensitive_context_before_assembly() -> None:
+    """secret/PII context는 model message 조립 전에 deterministic guard를 지난다."""
+    secret_pack = ContextPack(
+        id="pack-secret",
+        content="sk-live-1234",
+        source="vault:secret",
+        role=ContextPackRole.EVIDENCE,
+        sensitive_fields=(SensitiveFieldDescriptor((), SecretField()),),
+    )
+    email_pack = ContextPack(
+        id="pack-email",
+        content="owner@example.com",
+        source="profile:1",
+        role=ContextPackRole.EVIDENCE,
+        sensitive_fields=(
+            SensitiveFieldDescriptor(
+                (),
+                SensitiveField(PII.EMAIL, masking=MaskingPolicy.HASH),
+            ),
+        ),
+    )
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "inspect"),),
+        context=(secret_pack, email_pack),
+    )
+
+    assembled = request.assemble_messages()
+    metadata_visible = request.assemble_messages(
+        ContextExposurePolicy(include_sensitive_context_metadata=True)
+    )
+
+    assert assembled[1].content == "[SECRET]"
+    assert assembled[2].content.startswith("[HASHED:email:")
+    assert "owner@example.com" not in assembled[2].content
+    assert "sensitive_fields" not in assembled[1].metadata
+    assert metadata_visible[1].metadata == {
+        "context_pack_id": "pack-secret",
+        "source": "vault:secret",
+        "role": "evidence",
+        "freshness": "unknown",
+        "relevance": None,
+        "token_budget": {
+            "max_tokens": None,
+            "estimated_tokens": None,
+            "reserved_output_tokens": None,
+        },
+        "sensitivity": "internal",
+        "metadata": {},
+        "sensitive_fields": (
+            {
+                "path": [],
+                "field": {
+                    "kind": "secret",
+                    "sensitivity": "secret",
+                    "redaction": "reference_only",
+                },
+            },
+        ),
+    }
+
+
+def test_context_pack_expect_redacted_and_dropped_content_become_safe_text() -> None:
+    """ContextPack 자체가 redacted/drop 상태를 safe text로 변환한다."""
+    redacted_pack = ContextPack(
+        id="pack-redacted",
+        content="raw",
+        source="guard",
+        role=ContextPackRole.EVIDENCE,
+        sensitivity=ContextSensitivity.REDACTED,
+    )
+    dropped_pack = ContextPack(
+        id="pack-dropped",
+        content="raw",
+        source="guard",
+        role=ContextPackRole.EVIDENCE,
+        sensitive_fields=(
+            SensitiveFieldDescriptor(
+                (),
+                SensitiveField(PII.IDENTIFIER, redaction=RedactionPolicy.DROP),
+            ),
+        ),
+    )
+
+    assert redacted_pack.guarded_content() == "[REDACTED]"
+    assert dropped_pack.guarded_content() == "[REDACTED]"
+
+
+def test_model_output_and_stream_expect_apply_path_bound_guard() -> None:
+    """model output/stream payload도 path-bound guard를 재사용한다."""
+    email_field = SensitiveFieldDescriptor(("email",), SensitiveField(PII.EMAIL))
+    token_field = SensitiveFieldDescriptor((), SecretField())
+    response = ModelResponse(
+        content="final raw",
+        structured_output={"email": "owner@example.com", "status": "ok"},
+        tool_calls=(ModelToolCall(name="notify", arguments={"email": "x@y.z"}),),
+    )
+    stream_event = ModelStreamEvent(
+        kind=ModelStreamEventKind.TOKEN_DELTA,
+        token_delta="sk-live-1234",
+        structured_output={"email": "owner@example.com"},
+    )
+
+    guarded_response = response.guarded((email_field,))
+    guarded_stream = stream_event.guarded(
+        (token_field, email_field),
+        EvidenceExposurePolicy(),
+    )
+
+    assert guarded_response.structured_output == {
+        "email": "[REDACTED]",
+        "status": "ok",
+    }
+    assert guarded_response.content == "final raw"
+    assert guarded_stream.token_delta == "[SECRET]"
+    assert guarded_stream.structured_output == {"email": "[REDACTED]"}
+
+
+def test_model_output_and_stream_expect_handle_root_and_empty_guards() -> None:
+    """guard helper는 root descriptors, empty stream fields, tool calls를 처리한다."""
+    root_secret = SensitiveFieldDescriptor((), SecretField())
+    call = ModelToolCall(name="submit", arguments={"secret": "raw"}).guarded(
+        (root_secret,)
+    )
+    response = ModelResponse(
+        content="owner@example.com",
+        structured_output={"status": "ok"},
+    ).guarded((SensitiveFieldDescriptor(("content",), SensitiveField(PII.EMAIL)),))
+    dropped_response = ModelResponse(
+        content="owner@example.com",
+    ).guarded(
+        (
+            SensitiveFieldDescriptor(
+                ("content",),
+                SensitiveField(PII.EMAIL, redaction=RedactionPolicy.DROP),
+            ),
+        )
+    )
+    unstructured_response = ModelResponse(content="ok").guarded(
+        (SensitiveFieldDescriptor(("email",), SensitiveField(PII.EMAIL)),)
+    )
+    event = ModelStreamEvent(
+        kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+        tool_call=ModelToolCall(name="submit", arguments={"secret": "raw"}),
+    ).guarded((SensitiveFieldDescriptor(("secret",), SecretField()),))
+    token_without_matching_descriptor = ModelStreamEvent(
+        kind=ModelStreamEventKind.TOKEN_DELTA,
+        token_delta="plain",
+    ).guarded((SensitiveFieldDescriptor(("email",), SensitiveField(PII.EMAIL)),))
+    token_only_descriptor = ModelStreamEvent(
+        kind=ModelStreamEventKind.TOKEN_DELTA,
+        token_delta="raw",
+    ).guarded((SensitiveFieldDescriptor(("token_delta",), SecretField()),))
+    dropped_token = ModelStreamEvent(
+        kind=ModelStreamEventKind.TOKEN_DELTA,
+        token_delta="raw",
+    ).guarded(
+        (
+            SensitiveFieldDescriptor(
+                ("token_delta",),
+                SensitiveField(PII.IDENTIFIER, redaction=RedactionPolicy.DROP),
+            ),
+        )
+    )
+
+    assert call.arguments == {}
+    assert response.content == "[REDACTED]"
+    assert response.structured_output == {"status": "ok"}
+    assert dropped_response.content == "[REDACTED]"
+    assert unstructured_response.structured_output is None
+    assert event.token_delta is None
+    assert event.structured_output is None
+    assert event.tool_call == ModelToolCall(
+        name="submit",
+        arguments={"secret": "[SECRET]"},
+    )
+    assert token_without_matching_descriptor.token_delta == "plain"
+    assert token_without_matching_descriptor.structured_output is None
+    assert token_only_descriptor.token_delta == "[SECRET]"
+    assert token_only_descriptor.structured_output is None
+    assert dropped_token.token_delta == "[REDACTED]"
 
 
 @pytest.mark.asyncio

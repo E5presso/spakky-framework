@@ -45,6 +45,7 @@ from spakky.agent import (
     AgentStatus,
     AgentYield,
     Cancel,
+    ContextExposurePolicy,
     ContextDigest,
     ContextHealthSignal,
     ContextManifest,
@@ -53,6 +54,8 @@ from spakky.agent import (
     ContextOptimizationEvidenceStage,
     ContextPack,
     ContextRotSymptom,
+    CredentialRef,
+    DataSensitivity,
     Error,
     Final,
     IAgentContextHandler,
@@ -61,14 +64,22 @@ from spakky.agent import (
     IAgentSignalRepository,
     IAgentStateRepository,
     AgentSignalPollPoint,
+    EvidenceExposurePolicy,
+    MaskingPolicy,
     ModelError,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
     ModelToolCall,
     ModelToolSpec,
+    PII,
     Progress,
+    RedactionPolicy,
     RecoveryStrategy,
+    SecretField,
+    SecretRef,
+    SensitiveField,
+    SensitiveFieldDescriptor,
     StreamingOptions,
     Token,
     Tool,
@@ -130,6 +141,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentResumeBoundary",
         "AgentResumePlan",
         "ContextPack",
+        "ContextExposurePolicy",
         "ContextManifest",
         "ContextDigest",
         "ContextHealthSignal",
@@ -138,6 +150,16 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "ContextOptimizationActionKind",
         "ContextOptimizationEvidenceStage",
         "IAgentContextHandler",
+        "CredentialRef",
+        "DataSensitivity",
+        "EvidenceExposurePolicy",
+        "MaskingPolicy",
+        "PII",
+        "RedactionPolicy",
+        "SecretField",
+        "SecretRef",
+        "SensitiveField",
+        "SensitiveFieldDescriptor",
         "IAgentStateRepository",
         "IAgentSignalRepository",
         "IAgentEvidenceRepository",
@@ -196,6 +218,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentResumeBoundary is agent_api.AgentResumeBoundary
     assert AgentResumePlan is agent_api.AgentResumePlan
     assert ContextPack is agent_api.ContextPack
+    assert ContextExposurePolicy is agent_api.ContextExposurePolicy
     assert ContextManifest is agent_api.ContextManifest
     assert ContextDigest is agent_api.ContextDigest
     assert ContextHealthSignal is agent_api.ContextHealthSignal
@@ -206,6 +229,16 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         ContextOptimizationEvidenceStage is agent_api.ContextOptimizationEvidenceStage
     )
     assert IAgentContextHandler is agent_api.IAgentContextHandler
+    assert CredentialRef is agent_api.CredentialRef
+    assert DataSensitivity is agent_api.DataSensitivity
+    assert EvidenceExposurePolicy is agent_api.EvidenceExposurePolicy
+    assert MaskingPolicy is agent_api.MaskingPolicy
+    assert PII is agent_api.PII
+    assert RedactionPolicy is agent_api.RedactionPolicy
+    assert SecretField is agent_api.SecretField
+    assert SecretRef is agent_api.SecretRef
+    assert SensitiveField is agent_api.SensitiveField
+    assert SensitiveFieldDescriptor is agent_api.SensitiveFieldDescriptor
     assert IAgentStateRepository is agent_api.IAgentStateRepository
     assert IAgentSignalRepository is agent_api.IAgentSignalRepository
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
