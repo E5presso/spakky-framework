@@ -2985,8 +2985,12 @@ version = "6.5.0"
 source = { editable = "plugins/spakky-sqlalchemy" }
 dependencies = [
     { name = "spakky-data" },
-    { name = "spakky-outbox" },
     { name = "sqlalchemy" },
+]
+
+[package.optional-dependencies]
+outbox = [
+    { name = "spakky-outbox" },
 ]
 
 [package.dev-dependencies]
@@ -2995,15 +2999,17 @@ dev = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pytest-asyncio" },
     { name = "pytest-integration-mark" },
+    { name = "spakky-outbox" },
     { name = "testcontainers" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "spakky-data", editable = "core/spakky-data" },
-    { name = "spakky-outbox", editable = "core/spakky-outbox" },
+    { name = "spakky-outbox", marker = "extra == 'outbox'", editable = "core/spakky-outbox" },
     { name = "sqlalchemy", specifier = ">=2.0.49" },
 ]
+provides-extras = ["outbox"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3011,6 +3017,7 @@ dev = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
+    { name = "spakky-outbox", editable = "core/spakky-outbox" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4.14.2" },
 ]
 

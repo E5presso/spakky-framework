@@ -219,6 +219,13 @@ class MigrationService:
 schema registry만 등록합니다. SQLAlchemy 기반 Outbox storage/table은 별도 feature
 contribution으로 제공합니다.
 
+Outbox integration이 필요하면 `spakky-outbox`와 함께 설치하거나 SQLAlchemy plugin의
+`outbox` extra를 사용합니다.
+
+```bash
+pip install "spakky-sqlalchemy[outbox]"
+```
+
 ```toml
 [project.entry-points."spakky.contributions.spakky.outbox"]
 spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.outbox:initialize"

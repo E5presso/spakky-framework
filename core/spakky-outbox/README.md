@@ -5,10 +5,13 @@
 ## 설치
 
 ```bash
-pip install spakky-outbox spakky-sqlalchemy
+pip install spakky-outbox "spakky-sqlalchemy[outbox]"
 ```
 
-> **참고**: `spakky-outbox`는 core abstraction을 제공하고, `spakky-sqlalchemy`는 두 패키지가 모두 설치되어 있으면 Outbox storage 구현체를 자동 감지해 등록합니다.
+> **참고**: `spakky-outbox`는 core abstraction을 제공하고, `spakky-sqlalchemy`는
+> `spakky.contributions.spakky.outbox` contribution으로 Outbox storage 구현체를
+> 제공합니다. `spakky-sqlalchemy` 단독 설치는 `spakky-outbox`를 끌어오지
+> 않습니다.
 
 ## 주요 기능
 

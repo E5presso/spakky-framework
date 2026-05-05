@@ -10,7 +10,8 @@ Repository, `@Transactional()` UseCase를 한 흐름으로 확인하세요.
 Outbox storage/table은 base plugin 본체가 아니라
 `spakky.contributions.spakky.outbox` contribution으로 등록됩니다. `load_plugins(include=...)`
 사용 시 `spakky-outbox`와 `spakky-sqlalchemy`가 모두 include set에 있어야 이
-contribution이 로드됩니다.
+contribution이 로드됩니다. 설치 시에는 `spakky-outbox`를 별도로 추가하거나
+`spakky-sqlalchemy[outbox]` extra를 사용하세요.
 
 ## 메인
 

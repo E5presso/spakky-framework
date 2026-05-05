@@ -141,7 +141,7 @@ graph TD
 
 - **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing`에도 의존 (트레이싱 미들웨어)
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인프라 플러그인** (sqlalchemy) → `spakky-data` + `spakky-outbox`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky.contributions.spakky.outbox` contribution으로 등록
+- **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
@@ -1192,7 +1192,7 @@ flowchart TD
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`, `spakky-outbox` |
+| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`; outbox contribution에는 `spakky-outbox` extra 또는 별도 설치 필요 |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
 ### 태스크 플러그인

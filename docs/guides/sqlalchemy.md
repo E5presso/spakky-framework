@@ -332,7 +332,8 @@ SQLAlchemy 기반 Outbox storage/table은 `spakky-sqlalchemy` base plugin 본체
 `spakky.contributions.spakky.outbox` contribution에서 등록됩니다. 이 contribution은
 `spakky-outbox` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 base plugin
 이후 로드됩니다. `load_plugins(include=...)`를 사용한다면 두 plugin을 모두 include set에
-넣어야 합니다. `save()`는 현재 transactional session을 사용하므로 비즈니스 데이터와
+넣어야 합니다. 설치 시에는 `spakky-outbox`를 별도로 추가하거나
+`spakky-sqlalchemy[outbox]` extra를 사용하세요. `save()`는 현재 transactional session을 사용하므로 비즈니스 데이터와
 Outbox 메시지가 같은 DB transaction 안에서 commit 또는 rollback됩니다.
 
 ```python

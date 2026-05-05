@@ -59,6 +59,9 @@ Feature Contribution Policy는 인프라 plugin 하나가 여러 core feature에
 예를 들어 `spakky-sqlalchemy`의 base plugin은 SQLAlchemy connection, session,
 transaction, schema registry를 등록하고, Outbox storage/table은
 `spakky.contributions.spakky.outbox` contribution에서 등록합니다.
+이 contribution은 `spakky-sqlalchemy`의 필수 의존성이 아니며, 사용자는
+`spakky-outbox`를 별도로 설치하거나 `spakky-sqlalchemy[outbox]` extra를 사용할 수
+있습니다.
 
 ```toml
 [project.entry-points."spakky.plugins"]

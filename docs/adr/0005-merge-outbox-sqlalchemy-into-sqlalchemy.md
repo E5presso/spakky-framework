@@ -34,7 +34,7 @@ spakky-dynamodb (향후, 기존 + spakky-outbox contribution)
 
 ## 결정 동인 (Decision Drivers)
 
-- **패키지 수 최소화**: 사용자가 설치할 패키지 수 감소 (`spakky-outbox` + `spakky-sqlalchemy`만으로 충분)
+- **패키지 수 최소화**: 사용자가 설치할 패키지 수 감소 (`spakky-outbox` + `spakky-sqlalchemy[outbox]` 또는 `spakky-outbox` + `spakky-sqlalchemy` 조합으로 충분)
 - **DB 백엔드 = 단일 플러그인 원칙**: 하나의 DB 기술에 대한 모든 구현이 하나의 플러그인에 위치
 - **명시적 metadata 기반 활성화**: optional import guard 대신 ADR-0010의 feature contribution entry point 모델 사용
 - **관리 비용 감소**: 버전 호환성 관리 대상 패키지 1개 감소
@@ -119,7 +119,7 @@ ADR-0002의 핵심 결정(추상화/구현체 분리)은 유효하다. `IOutboxS
 ### 긍정적
 
 - **패키지 수 감소**: `spakky-outbox-sqlalchemy` 제거 (모노레포 패키지 -1)
-- **사용자 설치 단순화**: `spakky-outbox` + `spakky-sqlalchemy`만 설치하면 outbox contribution이 feature/provider 활성 조합에서 로드됨
+- **사용자 설치 단순화**: `spakky-outbox`와 `spakky-sqlalchemy` provider 조합으로 outbox contribution이 feature/provider 활성 조합에서 로드됨. 배포 편의를 위해 `spakky-sqlalchemy[outbox]` extra가 feature contract 의존성을 함께 설치한다.
 - **DB 백엔드 확장 시**: 새 DB 플러그인 하나만 만들면 data + outbox 모두 지원
 - **ADR-0010 패턴과 일관성**: entry point metadata → contribution loading 패턴 재사용
 
@@ -131,7 +131,7 @@ ADR-0002의 핵심 결정(추상화/구현체 분리)은 유효하다. `IOutboxS
 ### 중립적
 
 - `spakky-outbox`의 추상화(`IOutboxStorage`, `OutboxMessage`, Bus, Relay)는 변경 없음
-- `spakky-sqlalchemy`는 outbox contribution module이 feature core contract를 import하므로 `spakky-outbox`를 명시 의존성으로 가진다. 활성화 여부는 import guard가 아니라 base plugin과 contribution provider가 모두 active인지, 그리고 `load_plugins(include=...)` 필터가 양쪽을 포함하는지로 결정된다.
+- `spakky-sqlalchemy` base plugin은 `spakky-outbox`를 기본 의존성으로 끌어오지 않는다. outbox contribution module은 feature core contract를 import하므로 `spakky-sqlalchemy[outbox]` extra 또는 별도 `spakky-outbox` 설치가 필요하다. 활성화 여부는 import guard가 아니라 base plugin과 contribution provider가 모두 active인지, 그리고 `load_plugins(include=...)` 필터가 양쪽을 포함하는지로 결정된다.
 
 ## 참고 자료
 
