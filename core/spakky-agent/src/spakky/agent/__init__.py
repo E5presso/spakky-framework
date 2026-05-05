@@ -12,6 +12,7 @@ from spakky.agent.error import (
 from spakky.agent.evidence import AgentEvidence, AgentEvidenceKind
 from spakky.agent.execution import (
     Agent,
+    AgentExecutionLimits,
     AgentExecutionSpec,
     AgentSignalKind,
     RecoveryStrategy,
@@ -75,6 +76,7 @@ __all__ = [
     "AgentDefinitionError",
     "AgentEvidence",
     "AgentEvidenceKind",
+    "AgentExecutionLimits",
     "AgentExecutionSpec",
     "AgentModelConfigurationError",
     "AgentPersistenceConfigurationError",

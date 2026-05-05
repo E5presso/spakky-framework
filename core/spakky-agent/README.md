@@ -11,7 +11,7 @@
 
 ## 제공하는 public surface
 
-- `Agent`, `AgentExecutionSpec`: agent definition metadata와 실행 의미
+- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미
 - `AgentYield`: `execute()`가 caller에게 흘려보내는 typed stream item
 - `AgentState`: long-running agent execution의 materialized lifecycle state
 - `AgentSignal`: 실행 중 들어오는 user message, approval, cancel 같은 inbound stimulus
@@ -35,9 +35,13 @@ Production persistence fallback도 제공하지 않습니다. State, signal, evi
 from collections.abc import AsyncGenerator
 
 from spakky.agent import (
+    Agent,
+    AgentExecutionLimits,
     AgentExecutionSpec,
     AgentSignalKind,
     AgentYield,
+    AgentYieldKind,
+    Final,
     IAgentModel,
     ModelMessage,
     ModelMessageRole,
@@ -46,26 +50,42 @@ from spakky.agent import (
 )
 
 
+@Agent(
+    spec=AgentExecutionSpec(
+        name="code_assistant",
+        objective="inspect and edit a workspace",
+        accepted_signals=(
+            AgentSignalKind.USER_MESSAGE,
+            AgentSignalKind.APPROVAL_DECISION,
+            AgentSignalKind.CANCEL,
+        ),
+        limits=AgentExecutionLimits(timeout_seconds=300),
+    )
+)
 class CodeAssistant:
     def __init__(self, model: IAgentModel) -> None:
         self.model = model
 
-    async def execute(self, command: str) -> AsyncGenerator[AgentYield[str], None]:
+    async def execute(
+        self,
+        command: str,
+    ) -> AsyncGenerator[AgentYield[Final[str]], None]:
         request = ModelRequest(
             messages=(ModelMessage(ModelMessageRole.USER, command),),
         )
         async for event in self.model.stream(request):
             if event.kind == ModelStreamEventKind.TOKEN_DELTA:
-                ...
+                yield AgentYield(
+                    kind=AgentYieldKind.TEXT_DELTA,
+                    payload=event.token_delta or "",
+                )
 
-
-spec = AgentExecutionSpec(
-    accepted_signals=(
-        AgentSignalKind.USER_MESSAGE,
-        AgentSignalKind.APPROVAL_DECISION,
-        AgentSignalKind.CANCEL,
-    )
-)
+        yield AgentYield(
+            kind=AgentYieldKind.FINAL,
+            payload=Final(output=command, metadata={}),
+        )
 ```
+
+`@Agent`는 `@Pod` 계열 stereotype이므로 application scan과 constructor DI에 참여합니다. `execute()`는 `Generator` 또는 `AsyncGenerator`로 `AgentYield[...]`를 yield해야 하며, 잘못된 signature나 지원하지 않는 metadata는 definition/bootstrap 단계에서 `AgentDefinitionError` 또는 `AgentBootstrapError`로 드러납니다.
 
 `IAgentModel.stream()`은 model adapter가 token delta, tool-call candidate, structured output, error, done을 `ModelStreamEventKind`로 구분해 내보내는 계약입니다. 실제 vLLM/OpenAI-compatible HTTP 연결은 `plugins/spakky-vllm` 같은 outbound adapter가 담당하며, core package에는 production model implementation을 넣지 않습니다.
