@@ -17,6 +17,11 @@ from spakky.agent.execution import (
     RecoveryStrategy,
     StreamingExposureMode,
 )
+from spakky.agent.interfaces.repository import (
+    IAgentEvidenceRepository,
+    IAgentSignalRepository,
+    IAgentStateRepository,
+)
 from spakky.agent.interfaces.model import (
     IAgentModel,
     JsonSchemaConstraint,
@@ -37,7 +42,12 @@ from spakky.agent.interfaces.model import (
     ToolCallingSpec,
 )
 from spakky.agent.signal import AgentSignal, ApprovalDecision
-from spakky.agent.state import AgentState, AgentStatus
+from spakky.agent.state import (
+    AgentState,
+    AgentStateReason,
+    AgentStateTransition,
+    AgentStatus,
+)
 from spakky.agent.types import JsonObject, JsonPrimitive, JsonValue
 from spakky.agent.yield_ import (
     AgentYield,
@@ -56,6 +66,9 @@ PLUGIN_NAME = Plugin(name="spakky-agent")
 
 __all__ = [
     "IAgentModel",
+    "IAgentEvidenceRepository",
+    "IAgentSignalRepository",
+    "IAgentStateRepository",
     "AbstractSpakkyAgentError",
     "Agent",
     "AgentBootstrapError",
@@ -67,6 +80,8 @@ __all__ = [
     "AgentPersistenceConfigurationError",
     "AgentSignal",
     "AgentSignalKind",
+    "AgentStateReason",
+    "AgentStateTransition",
     "AgentState",
     "AgentStatus",
     "AgentYield",

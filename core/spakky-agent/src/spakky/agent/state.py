@@ -20,6 +20,31 @@ class AgentStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class AgentStateTransition(StrEnum):
+    """State transition vocabulary accepted by durable agent orchestration."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    WAITING_APPROVAL = "waiting_approval"
+    CANCELLING = "cancelling"
+    CANCELLED = "cancelled"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    INTERRUPTED = "interrupted"
+
+
+class AgentStateReason(StrEnum):
+    """Structured reason that refines an externally observable lifecycle state."""
+
+    APPROVAL_REQUIRED = "approval_required"
+    USER_INTERRUPTED = "user_interrupted"
+    TIMEOUT = "timeout"
+    CANCELLATION_REQUESTED = "cancellation_requested"
+    CANCELLATION_CLEANUP_FAILED = "cancellation_cleanup_failed"
+    RECOVERY_REQUIRES_HITL = "recovery_requires_hitl"
+
+
 @dataclass(frozen=True, slots=True)
 class AgentState:
     """Materialized state for a long-running agent execution."""
@@ -27,6 +52,8 @@ class AgentState:
     id: str
     agent_type: str
     status: AgentStatus
+    transition: AgentStateTransition | None = None
+    reason: AgentStateReason | None = None
     current_activity: str | None = None
     input_ref: str | None = None
     output_ref: str | None = None

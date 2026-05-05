@@ -12,8 +12,10 @@ class AgentEvidenceKind(StrEnum):
 
     MODEL = "model"
     TOOL = "tool"
+    CONTEXT = "context"
     CONTEXT_MANIFEST = "context_manifest"
     CONTEXT_DIGEST = "context_digest"
+    EVALUATION = "evaluation"
     APPROVAL = "approval"
     DELEGATION = "delegation"
     OUTPUT_GUARD = "output_guard"
@@ -28,5 +30,7 @@ class AgentEvidence:
     kind: AgentEvidenceKind
     payload: JsonObject = field(default_factory=dict)
     summary: str | None = None
+    digest: str | None = None
+    manifest_ref: str | None = None
     reference: str | None = None
     created_at: datetime | None = None
