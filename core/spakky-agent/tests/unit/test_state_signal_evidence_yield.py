@@ -1,5 +1,7 @@
 """Tests for state, signal, evidence, and yield contracts."""
 
+from collections.abc import AsyncGenerator
+
 import pytest
 
 from spakky.agent import (
@@ -16,10 +18,14 @@ from spakky.agent import (
     AgentYieldKind,
     Approval,
     ApprovalDecision,
-    Checkpoint,
+    Cancel,
     Evidence,
+    Error,
     Final,
     Message,
+    Progress,
+    Token,
+    Tool,
     TextDelta,
 )
 
@@ -152,20 +158,41 @@ def test_agent_evidence_kind_expect_covers_required_evidence_sources() -> None:
 
 def test_agent_yield_expect_supports_canonical_stream_vocabulary() -> None:
     """AgentYield가 ADR-0009의 canonical stream item vocabulary를 담는다."""
-    message = AgentYield(kind=AgentYieldKind.MESSAGE, payload=Message("Inspecting"))
-    delta = AgentYield(kind=AgentYieldKind.TEXT_DELTA, payload=TextDelta("hel"))
-    checkpoint = AgentYield(
-        kind=AgentYieldKind.CHECKPOINT,
-        payload=Checkpoint(marker="action-1", metadata={}),
+    progress = AgentYield(
+        kind=AgentYieldKind.PROGRESS,
+        payload=Progress(message="Inspecting", current_step="read"),
+    )
+    token = AgentYield(kind=AgentYieldKind.TOKEN, payload=Token("hel"))
+    tool = AgentYield(
+        kind=AgentYieldKind.TOOL,
+        payload=Tool(name="read_file", call_id="call-1", result="content"),
     )
     final = AgentYield(
         kind=AgentYieldKind.FINAL, payload=Final(output="done", metadata={})
     )
 
-    assert message.payload.text == "Inspecting"
-    assert delta.payload.text == "hel"
-    assert checkpoint.payload.marker == "action-1"
+    assert progress.payload.message == "Inspecting"
+    assert progress.payload.current_step == "read"
+    assert token.payload.text == "hel"
+    assert tool.payload.name == "read_file"
+    assert tool.payload.result == "content"
     assert final.payload.output == "done"
+
+
+def test_agent_yield_kind_expect_covers_issue_215_status_vocabulary() -> None:
+    """token/progress/tool/evidence/approval/final/error/cancel 상태를 열거한다."""
+    yield_kinds = {kind.value for kind in AgentYieldKind}
+
+    assert yield_kinds == {
+        "token",
+        "progress",
+        "tool",
+        "evidence",
+        "approval",
+        "final",
+        "error",
+        "cancel",
+    }
 
 
 def test_agent_yield_expect_supports_evidence_and_approval_items() -> None:
@@ -193,3 +220,48 @@ def test_agent_yield_expect_supports_evidence_and_approval_items() -> None:
         ApprovalDecision.APPROVE,
         ApprovalDecision.CANCEL,
     )
+
+
+def test_agent_yield_expect_supports_error_and_cancel_items() -> None:
+    """error와 cancel stream item이 typed payload로 표현된다."""
+    error_yield = AgentYield(
+        kind=AgentYieldKind.ERROR,
+        payload=Error(code="model_timeout", message="model timed out", retryable=True),
+    )
+    cancel_yield = AgentYield(
+        kind=AgentYieldKind.CANCEL,
+        payload=Cancel(reason="user requested", requested_by="signal-1"),
+    )
+
+    assert error_yield.payload.code == "model_timeout"
+    assert error_yield.payload.retryable is True
+    assert cancel_yield.payload.reason == "user requested"
+    assert cancel_yield.payload.requested_by == "signal-1"
+
+
+async def test_agent_yield_expect_inbound_adapter_collects_stream_directly() -> None:
+    """inbound adapter collector가 별도 projector 없이 AgentYield stream을 소비한다."""
+
+    async def execute() -> AsyncGenerator[AgentYield[object], None]:
+        yield AgentYield(kind=AgentYieldKind.TOKEN, payload=Token("hel"))
+        yield AgentYield(kind=AgentYieldKind.PROGRESS, payload=Progress("reading"))
+        yield AgentYield(
+            kind=AgentYieldKind.FINAL,
+            payload=Final(output={"answer": "done"}, metadata={}),
+        )
+
+    events = [item async for item in execute()]
+
+    assert [event.kind.value for event in events] == ["token", "progress", "final"]
+    assert isinstance(events[0].payload, Token)
+    assert isinstance(events[1].payload, Progress)
+    assert isinstance(events[2].payload, Final)
+
+
+def test_agent_yield_expect_keeps_legacy_payload_aliases() -> None:
+    """기존 Message/TextDelta import는 progress/token payload alias로 남는다."""
+    message = Message("Inspecting")
+    delta = TextDelta("hel")
+
+    assert isinstance(message, Progress)
+    assert isinstance(delta, Token)

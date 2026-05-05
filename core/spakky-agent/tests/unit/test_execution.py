@@ -1,6 +1,6 @@
 """Tests for agent execution contracts."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 
 import pytest
 import tests.fixtures.future_agent_app as future_agent_app
@@ -101,6 +101,38 @@ def test_agent_expect_is_pod_stereotype_with_execution_spec_metadata() -> None:
     assert agent.spec is spec
     assert agent.type_ is SampleAgent
     assert agent.name == "sample_agent"
+
+
+def test_agent_expect_accepts_sync_generator_execute_contract() -> None:
+    """execute가 sync Generator[AgentYield[T], None, None] 계약도 표현한다."""
+
+    @Agent()
+    class SyncGeneratorAgent:
+        def execute(
+            self,
+            command: str,
+        ) -> Generator[AgentYield[Final[str]], None, None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    agent = Agent.get(SyncGeneratorAgent)
+
+    assert agent.type_ is SyncGeneratorAgent
+
+
+def test_agent_expect_accepts_non_generator_direct_result_contract() -> None:
+    """non-generator execute는 streaming이 아닌 직접 결과 계약으로 허용한다."""
+
+    @Agent()
+    class DirectResultAgent:
+        def execute(self, command: str) -> str:
+            return command
+
+    agent = Agent.get(DirectResultAgent)
+
+    assert agent.type_ is DirectResultAgent
 
 
 def test_agent_expect_wraps_pod_constructor_di_metadata() -> None:
@@ -271,13 +303,37 @@ def test_agent_expect_rejects_missing_execute_return_type() -> None:
                 yield command
 
 
-def test_agent_expect_rejects_non_generator_execute_return_type() -> None:
-    """execute는 Generator 또는 AsyncGenerator stream을 반환해야 한다."""
+def test_agent_expect_rejects_generator_with_non_none_send_type() -> None:
+    """execute generator는 inbound adapter가 send 값을 주입하지 않는 계약이다."""
     with pytest.raises(AgentDefinitionError):
 
         @Agent()
-        class NonGeneratorAgent:
-            async def execute(self, command: str) -> str:
+        class GeneratorSendAgent:
+            def execute(
+                self,
+                command: str,
+            ) -> Generator[AgentYield[Final[str]], str, None]:
+                yielded = AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
+                yield yielded
+
+
+def test_agent_expect_rejects_sync_generator_with_return_value_type() -> None:
+    """sync execute generator는 StopIteration value를 public output으로 쓰지 않는다."""
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class GeneratorReturnAgent:
+            def execute(
+                self,
+                command: str,
+            ) -> Generator[AgentYield[Final[str]], None, str]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )
                 return command
 
 

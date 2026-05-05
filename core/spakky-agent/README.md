@@ -48,6 +48,7 @@ from spakky.agent import (
     ModelMessageRole,
     ModelRequest,
     ModelStreamEventKind,
+    Token,
 )
 
 
@@ -77,8 +78,8 @@ class CodeAssistant:
         async for event in self.model.stream(request):
             if event.kind == ModelStreamEventKind.TOKEN_DELTA:
                 yield AgentYield(
-                    kind=AgentYieldKind.TEXT_DELTA,
-                    payload=event.token_delta or "",
+                    kind=AgentYieldKind.TOKEN,
+                    payload=Token(event.token_delta or ""),
                 )
 
         yield AgentYield(
@@ -87,7 +88,11 @@ class CodeAssistant:
         )
 ```
 
-`@Agent`는 `@Pod` 계열 stereotype이므로 application scan과 constructor DI에 참여합니다. `execute()`는 `Generator` 또는 `AsyncGenerator`로 `AgentYield[...]`를 yield해야 하며, 잘못된 signature나 지원하지 않는 metadata는 definition/bootstrap 단계에서 `AgentDefinitionError` 또는 `AgentBootstrapError`로 드러납니다.
+`@Agent`는 `@Pod` 계열 stereotype이므로 application scan과 constructor DI에 참여합니다. `execute()`는 `Generator[AgentYield[T], None, None]` 또는 `AsyncGenerator[AgentYield[T], None]`로 typed stream item을 yield할 수 있고, non-generator 반환형은 streaming 없는 직접 결과 계약으로 취급됩니다. Inbound adapter가 SSE/WebSocket/CLI처럼 진행 상태를 즉시 내보내야 한다면 `AgentYield` generator 계약을 사용해야 합니다.
+
+`AgentYieldKind`의 public status vocabulary는 `token`, `progress`, `tool`, `evidence`, `approval`, `final`, `error`, `cancel`입니다. 각 item의 payload는 `Token`, `Progress`, `Tool`, `Evidence`, `Approval`, `Final[T]`, `Error`, `Cancel` value object로 구분되므로 inbound adapter는 별도 stream projector 없이 generator를 직접 순회해 transport별 이벤트로 바꿀 수 있습니다.
+
+잘못된 signature나 지원하지 않는 metadata는 definition/bootstrap 단계에서 `AgentDefinitionError` 또는 `AgentBootstrapError`로 드러납니다.
 
 `IAgentModel.stream()`은 model adapter가 token delta, tool-call candidate, structured output, error, done을 `ModelStreamEventKind`로 구분해 내보내는 계약입니다. 실제 vLLM/OpenAI-compatible HTTP 연결은 `plugins/spakky-vllm` 같은 outbound adapter가 담당하며, core package에는 production model implementation을 넣지 않습니다.
 

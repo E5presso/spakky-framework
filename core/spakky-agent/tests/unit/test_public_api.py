@@ -16,9 +16,11 @@ from spakky.agent import (
     AgentSignal,
     AgentState,
     AgentYield,
+    Cancel,
     ContextDigest,
     ContextManifest,
     ContextPack,
+    Error,
     Final,
     IAgentEvidenceRepository,
     IAgentSignalRepository,
@@ -29,7 +31,10 @@ from spakky.agent import (
     ModelStreamEvent,
     ModelToolCall,
     ModelToolSpec,
+    Progress,
     StreamingOptions,
+    Token,
+    Tool,
     ToolCallingSpec,
 )
 from spakky.agent.main import initialize
@@ -45,6 +50,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentExecutionLimits",
         "AgentExecutionSpec",
         "AgentYield",
+        "Cancel",
+        "Error",
         "AgentState",
         "AgentSignal",
         "AgentEvidence",
@@ -55,6 +62,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "IAgentSignalRepository",
         "IAgentEvidenceRepository",
         "IAgentModel",
+        "Progress",
+        "Token",
+        "Tool",
     }
 
     exported = set(agent_api.__all__)
@@ -64,6 +74,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentExecutionLimits is agent_api.AgentExecutionLimits
     assert AgentExecutionSpec is agent_api.AgentExecutionSpec
     assert AgentYield is agent_api.AgentYield
+    assert Cancel is agent_api.Cancel
+    assert Error is agent_api.Error
     assert AgentState is agent_api.AgentState
     assert AgentSignal is agent_api.AgentSignal
     assert AgentEvidence is agent_api.AgentEvidence
@@ -74,6 +86,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert IAgentSignalRepository is agent_api.IAgentSignalRepository
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
     assert IAgentModel is agent_api.IAgentModel
+    assert Progress is agent_api.Progress
+    assert Token is agent_api.Token
+    assert Tool is agent_api.Tool
 
 
 def test_public_api_expect_exports_model_contract_types() -> None:
