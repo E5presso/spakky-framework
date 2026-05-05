@@ -3,6 +3,7 @@
 - **상태**: Proposed
 - **날짜**: 2026-05-04
 - **대체**: 해당 없음
+- **선행**: [ADR-0010 Feature Contribution Policy](0010-feature-contribution-policy.md)
 
 ## 맥락 (Context)
 
@@ -11,6 +12,8 @@ Spakky Framework에 LLM 기반 agent runtime을 추가하는 방향을 논의했
 논의 중 단순한 `run(prompt) -> response` 형태는 프레임워크 기능으로 충분하지 않다는 결론에 도달했다. Agent 기능은 LLM SDK wrapper가 아니라, 로컬 및 SaaS 환경에서 agentic application을 구성하기 위한 계약과 포트가 되어야 한다.
 
 이 문서는 후속 논의를 재개할 수 있도록 현재까지 합의한 개념, 미결정 사항, 외부 프레임워크 적합성 평가를 보존한다. 이 ADR은 아직 구현 착수 결정을 의미하지 않는다.
+
+2026-05-05 추가 결정: agent persistence와 인프라 plugin 조합 폭증 문제를 먼저 해결하기 위해 [ADR-0010 Feature Contribution Policy](0010-feature-contribution-policy.md)를 ADR-0009의 선행 마일스톤으로 진행한다.
 
 ## 결정 동인 (Decision Drivers)
 
