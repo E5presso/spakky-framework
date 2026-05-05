@@ -128,6 +128,7 @@ nav:
       - 사가 오케스트레이션: guides/saga.md
       - 애플리케이션 데이터 캐시: guides/cache.md
       - gRPC 통합: guides/grpc.md
+      - CodeAssistant 에이전트 예제: guides/agent-code-assistant.md
   - 심화 가이드:
       - DI/IoC 컨테이너: di-container.md
       - AOP 가이드: aop-guide.md
