@@ -7,8 +7,11 @@ from spakky.plugins.vllm import (
     PLUGIN_NAME,
     VllmAgentModel,
     VllmConfig,
+    VllmModelRefusalError,
     VllmResponseError,
+    VllmStreamingDisabledError,
     VllmStreamingNotImplementedError,
+    VllmTimeoutError,
     VllmTransportError,
 )
 
@@ -20,6 +23,9 @@ def test_public_api_exports_vllm_surface() -> None:
     assert IVllmChatClient is vllm_api.IVllmChatClient
     assert HttpxVllmChatClient is vllm_api.HttpxVllmChatClient
     assert VllmAgentModel is vllm_api.VllmAgentModel
+    assert VllmModelRefusalError is vllm_api.VllmModelRefusalError
     assert VllmResponseError is vllm_api.VllmResponseError
+    assert VllmStreamingDisabledError is vllm_api.VllmStreamingDisabledError
     assert VllmStreamingNotImplementedError is vllm_api.VllmStreamingNotImplementedError
+    assert VllmTimeoutError is vllm_api.VllmTimeoutError
     assert VllmTransportError is vllm_api.VllmTransportError

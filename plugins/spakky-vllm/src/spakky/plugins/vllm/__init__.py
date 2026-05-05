@@ -6,8 +6,11 @@ from spakky.plugins.vllm.client import HttpxVllmChatClient, IVllmChatClient
 from spakky.plugins.vllm.config import VllmConfig
 from spakky.plugins.vllm.error import (
     AbstractVllmError,
+    VllmModelRefusalError,
     VllmResponseError,
+    VllmStreamingDisabledError,
     VllmStreamingNotImplementedError,
+    VllmTimeoutError,
     VllmTransportError,
 )
 from spakky.plugins.vllm.model import VllmAgentModel
@@ -22,7 +25,10 @@ __all__ = [
     "PLUGIN_NAME",
     "VllmAgentModel",
     "VllmConfig",
+    "VllmModelRefusalError",
     "VllmResponseError",
+    "VllmStreamingDisabledError",
     "VllmStreamingNotImplementedError",
+    "VllmTimeoutError",
     "VllmTransportError",
 ]

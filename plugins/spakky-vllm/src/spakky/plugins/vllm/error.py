@@ -17,13 +17,31 @@ class VllmTransportError(AbstractVllmError):
     message = "vLLM transport request failed"
 
 
+class VllmTimeoutError(AbstractVllmError):
+    """Raised when the OpenAI-compatible vLLM endpoint times out."""
+
+    message = "vLLM request timed out"
+
+
 class VllmResponseError(AbstractVllmError):
     """Raised when a vLLM response cannot be mapped to Spakky model contracts."""
 
     message = "vLLM response is invalid"
 
 
+class VllmStreamingDisabledError(AbstractVllmError):
+    """Raised when streaming is disabled by plugin configuration."""
+
+    message = "vLLM streaming is disabled"
+
+
+class VllmModelRefusalError(AbstractVllmError):
+    """Raised when the model refuses to produce a normal completion."""
+
+    message = "vLLM model refused the request"
+
+
 class VllmStreamingNotImplementedError(AbstractVllmError):
-    """Raised until the streaming mapper lands in the dedicated follow-up."""
+    """Backward-compatible alias for pre-streaming adapter failures."""
 
     message = "vLLM streaming mapper is not implemented yet"
