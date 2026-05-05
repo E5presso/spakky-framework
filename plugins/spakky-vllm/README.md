@@ -61,3 +61,66 @@ Agent implementations can forward token events as `AgentYieldKind.TOKEN` payload
 and close the async stream when their cancellation lifecycle asks the model call
 to stop. The HTTP stream is owned by the async generator, so `aclose()` releases
 the underlying client stream instead of leaving a background request running.
+
+## Local vLLM Smoke Path
+
+The package includes an opt-in smoke path for adopters who want to verify the
+adapter against a real local vLLM server without using a paid SaaS key. The
+default test suite skips this path unless `SPAKKY_VLLM_SMOKE=1` is set, and the
+smoke tests also skip when the local `/models` endpoint is unavailable.
+
+Minimum server capability:
+
+- OpenAI-compatible vLLM chat completions endpoint at `/v1/chat/completions`
+- streaming chat completion support
+- tool calling support for `tool_choice="required"`; vLLM documents this for
+  `vllm>=0.8.3` with a tool parser configured
+- a chat/instruct model whose template is compatible with the selected tool
+  parser; `Qwen/Qwen2.5-7B-Instruct` with the `hermes` parser is a practical
+  local smoke target
+
+Start the server in a separate shell:
+
+```bash
+vllm serve Qwen/Qwen2.5-7B-Instruct \
+  --host 127.0.0.1 \
+  --port 8000 \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes
+```
+
+Run the package-local smoke tests from this package directory:
+
+```bash
+export SPAKKY_VLLM__ENDPOINT_URL=http://127.0.0.1:8000/v1
+export SPAKKY_VLLM__MODEL=Qwen/Qwen2.5-7B-Instruct
+export SPAKKY_VLLM_SMOKE=1
+
+uv run pytest tests/smoke/test_local_vllm.py -q
+```
+
+The smoke tests cover three paths:
+
+- `complete()` returns a non-empty response from the local endpoint
+- `stream()` yields at least one `TOKEN_DELTA` and a terminal `DONE` event
+- required tool calling emits a `lookup_weather` tool call whose arguments pass
+  the provided JSON schema
+
+For a visible command-line trace, run the example:
+
+```bash
+uv run python examples/local_smoke.py
+```
+
+Expected output shape:
+
+```text
+COMPLETE ...spakky-vllm-smoke...
+TOKEN_DELTA ...
+TOKEN_DELTA ...
+DONE usage=...
+TOOL_CALL lookup_weather {'city': 'Seoul', 'unit': 'celsius'}
+```
+
+Exact token boundaries and wording are model-dependent; the adapter-level
+contract is the event shape, terminal `DONE`, and schema-validated tool call.
