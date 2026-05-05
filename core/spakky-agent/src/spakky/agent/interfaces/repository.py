@@ -47,12 +47,12 @@ class IAgentSignalRepository(ABC):
 
     @abstractmethod
     def list_pending(self, state_id: str) -> Sequence[AgentSignal]:
-        """Return unconsumed signals for an agent state in queue order."""
+        """Return unconsumed signals for an agent state in append/queue order."""
         ...
 
     @abstractmethod
     def mark_consumed(self, signal_id: str) -> AgentSignal:
-        """Mark a queued signal as consumed at a safe action boundary."""
+        """Mark one queued signal as consumed after a non-blocking poll."""
         ...
 
 

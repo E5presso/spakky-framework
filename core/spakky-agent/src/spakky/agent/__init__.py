@@ -53,6 +53,11 @@ from spakky.agent.interfaces.model import (
     ToolCallingSpec,
 )
 from spakky.agent.signal import AgentSignal, ApprovalDecision
+from spakky.agent.signal_consumption import (
+    AgentSignalConsumptionBatch,
+    AgentSignalPollPoint,
+    consume_pending_agent_signals,
+)
 from spakky.agent.state import (
     AgentState,
     AgentStateReason,
@@ -114,7 +119,9 @@ __all__ = [
     "AgentModelConfigurationError",
     "AgentPersistenceConfigurationError",
     "AgentSignal",
+    "AgentSignalConsumptionBatch",
     "AgentSignalKind",
+    "AgentSignalPollPoint",
     "AgentToolCatalog",
     "AgentToolDefinition",
     "AgentToolDescriptor",
@@ -178,6 +185,7 @@ __all__ = [
     "ToolCallingSpec",
     "ToolEffects",
     "ToolPermission",
+    "consume_pending_agent_signals",
     "agent_tool",
     "discover_agent_tools",
 ]
