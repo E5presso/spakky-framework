@@ -17,6 +17,8 @@
 - `AgentSignal`: 실행 중 들어오는 user message, approval, cancel 같은 inbound stimulus
 - `AgentEvidence`: tool/model/context 판단 근거를 위한 append-only artifact
 - `IAgentModel`: vLLM 등 model backend가 구현하는 outbound port
+- `ModelRequest`, `ModelResponse`, `ModelStreamEvent`: provider-neutral model 호출/응답/stream 계약
+- `ToolCallingSpec`, `ModelToolSpec`, `ModelToolCall`: model-facing tool call 요청과 후보 결과
 
 ## 의존성 경계
 
@@ -29,7 +31,16 @@ Production persistence fallback도 제공하지 않습니다. State, signal, evi
 ```python
 from collections.abc import AsyncGenerator
 
-from spakky.agent import AgentExecutionSpec, AgentSignalKind, AgentYield, IAgentModel
+from spakky.agent import (
+    AgentExecutionSpec,
+    AgentSignalKind,
+    AgentYield,
+    IAgentModel,
+    ModelMessage,
+    ModelMessageRole,
+    ModelRequest,
+    ModelStreamEventKind,
+)
 
 
 class CodeAssistant:
@@ -37,7 +48,12 @@ class CodeAssistant:
         self.model = model
 
     async def execute(self, command: str) -> AsyncGenerator[AgentYield[str], None]:
-        ...
+        request = ModelRequest(
+            messages=(ModelMessage(ModelMessageRole.USER, command),),
+        )
+        async for event in self.model.stream(request):
+            if event.kind == ModelStreamEventKind.TOKEN_DELTA:
+                ...
 
 
 spec = AgentExecutionSpec(
@@ -48,3 +64,5 @@ spec = AgentExecutionSpec(
     )
 )
 ```
+
+`IAgentModel.stream()`은 model adapter가 token delta, tool-call candidate, structured output, error, done을 `ModelStreamEventKind`로 구분해 내보내는 계약입니다. 실제 vLLM/OpenAI-compatible HTTP 연결은 `plugins/spakky-vllm` 같은 outbound adapter가 담당하며, core package에는 production model implementation을 넣지 않습니다.
