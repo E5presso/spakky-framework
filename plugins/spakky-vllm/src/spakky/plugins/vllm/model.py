@@ -74,7 +74,8 @@ class VllmAgentModel(IAgentModel):
         payload: dict[str, object] = {
             "model": self.__config.model,
             "messages": [
-                self._to_openai_message(message) for message in request.messages
+                self._to_openai_message(message)
+                for message in request.assemble_messages()
             ],
             "stream": stream,
         }
@@ -130,16 +131,25 @@ class VllmAgentModel(IAgentModel):
             raise VllmResponseError
         first_choice = self._expect_mapping(choices[0])
         message = self._expect_mapping(first_choice.get("message"))
-        content = message.get("content")
-        if not isinstance(content, str):
-            raise VllmResponseError
         tool_calls = tuple(self._to_tool_calls(message.get("tool_calls")))
+        content = self._to_message_content(message.get("content"), tool_calls)
         return ModelResponse(
             content=content,
             tool_calls=tool_calls,
             usage=self._to_usage(response.get("usage")),
             metadata={"provider": "vllm"},
         )
+
+    def _to_message_content(
+        self,
+        value: object,
+        tool_calls: tuple[ModelToolCall, ...],
+    ) -> str:
+        if isinstance(value, str):
+            return value
+        if value is None and len(tool_calls) > 0:
+            return ""
+        raise VllmResponseError
 
     def _to_tool_calls(self, value: object) -> tuple[ModelToolCall, ...]:
         if value is None:

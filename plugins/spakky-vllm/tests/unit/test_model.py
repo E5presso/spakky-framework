@@ -5,6 +5,8 @@ from typing import override
 
 import pytest
 from spakky.agent import (
+    ContextPack,
+    ContextPackRole,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -81,6 +83,31 @@ async def test_complete_maps_request_to_openai_payload_and_response() -> None:
     }
 
 
+async def test_complete_assembles_context_pack_messages_into_payload() -> None:
+    """ModelRequest context pack은 assemble_messages() 경로로 payload에 포함된다."""
+    client = RecordingClient({"choices": [{"message": {"content": "grounded"}}]})
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "answer"),),
+        context=(
+            ContextPack(
+                id="ctx-1",
+                content="repo facts",
+                source="search",
+                role=ContextPackRole.EVIDENCE,
+            ),
+        ),
+    )
+
+    await model.complete(request)
+
+    assert client.payload is not None
+    assert client.payload["messages"] == [
+        {"role": "user", "content": "answer"},
+        {"role": "user", "content": "repo facts"},
+    ]
+
+
 async def test_complete_maps_tool_calling_surface() -> None:
     """tool calling 요청은 OpenAI function tool payload로 변환된다."""
     client = RecordingClient(
@@ -150,6 +177,33 @@ async def test_complete_maps_tool_calling_surface() -> None:
             },
         }
     ]
+
+
+async def test_complete_accepts_tool_calls_without_text_content() -> None:
+    """tool_calls 중심 assistant 응답은 content가 생략되어도 tool 실행 후보로 수용한다."""
+    client = RecordingClient(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "function": {"name": "search", "arguments": "{}"},
+                            }
+                        ],
+                    }
+                }
+            ],
+        }
+    )
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(messages=(ModelMessage(ModelMessageRole.USER, "hello"),))
+
+    response = await model.complete(request)
+
+    assert response.content == ""
+    assert response.tool_calls[0].name == "search"
 
 
 async def test_complete_maps_structured_output_and_optional_tool_choice() -> None:
