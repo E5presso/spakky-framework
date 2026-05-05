@@ -560,12 +560,16 @@ class DocsTools:
 
 허용되는 타입은 JSON-compatible 또는 explicit string-compatible이어야 한다.
 
+첫 core 구현은 `@agent_tool` descriptor 생성 시 함수 signature와 resolved type hint만 사용해 `AgentToolSchemaHandle.input_schema` / `output_schema`를 생성한다. 입력은 `self`/`cls`를 제외한 parameter object schema로 표현하며, Python default가 없는 parameter만 required로 표시한다. 지원 타입은 primitive, enum, dataclass, `list[T]`, `tuple[...]`, `Mapping[str, T]`, optional/union, `Annotated[T, ...]`이다. Binding과 DTO wrapping은 이 단계에서 수행하지 않는다.
+
 Opt-out 타입:
 
 - `Any`
 - untyped parameter
 - untyped return
 - untyped `dict`
+- non-string mapping key
+- positional-only, `*args`, `**kwargs`
 - untyped `list`
 - raw `object`
 - callable/function parameter
