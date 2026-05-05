@@ -507,7 +507,9 @@ from spakky.outbox.common.message import OutboxMessage
 
 ### IOutboxStorage
 
-Outbox 메시지의 CRUD를 담당하는 포트 인터페이스. `spakky-sqlalchemy` 플러그인이 구현체를 제공합니다.
+Outbox 메시지의 CRUD를 담당하는 포트 인터페이스. `spakky-sqlalchemy`는
+`spakky.contributions.spakky.outbox` contribution으로 SQLAlchemy 구현체와 Outbox
+table을 제공합니다.
 
 ```python
 from spakky.outbox.ports.storage import IOutboxStorage, IAsyncOutboxStorage

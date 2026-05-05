@@ -23,12 +23,14 @@ from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 import spakky.outbox
 import spakky.plugins.rabbitmq  # 또는 spakky.plugins.kafka
+import spakky.plugins.sqlalchemy
 import apps
 
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={
         spakky.outbox.PLUGIN_NAME,
+        spakky.plugins.sqlalchemy.PLUGIN_NAME,  # Outbox storage provider
         spakky.plugins.rabbitmq.PLUGIN_NAME,  # Transport 플러그인 필수
     })
     .scan(apps)
@@ -77,7 +79,9 @@ from spakky.outbox.relay.relay import (
 
 ### IOutboxStorage
 
-Outbox 메시지의 저장/조회/상태 변경을 담당하는 포트 인터페이스입니다. `spakky-sqlalchemy` 플러그인이 구현체를 제공합니다.
+Outbox 메시지의 저장/조회/상태 변경을 담당하는 포트 인터페이스입니다.
+`spakky-sqlalchemy`는 `spakky.contributions.spakky.outbox` contribution으로
+SQLAlchemy 구현체와 Outbox table을 제공합니다.
 
 ```python
 from spakky.outbox.ports.storage import IOutboxStorage, IAsyncOutboxStorage

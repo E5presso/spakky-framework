@@ -10,7 +10,8 @@ Spakky 플러그인 시스템은 Python의 `entry_points` 메커니즘을 사용
 
 1. `pyproject.toml`에 `spakky.plugins` 그룹으로 entry point 등록
 2. `SpakkyApplication.load_plugins()`가 등록된 플러그인 탐색
-3. 각 플러그인의 `initialize(app: SpakkyApplication)` 함수 호출
+3. 각 base 플러그인의 `initialize(app: SpakkyApplication)` 함수 호출
+4. 활성 core feature에 대한 `spakky.contributions.*` entry point 탐색 및 호출
 
 ---
 
@@ -45,6 +46,53 @@ app.load_plugins(include={
     spakky.plugins.sqlalchemy.PLUGIN_NAME,
 })
 ```
+
+`include`가 지정되면 base plugin은 include set에 들어 있는 항목만 로드됩니다.
+Contribution도 같은 명시성 규칙을 따르며, target feature plugin과 provider base
+plugin이 모두 include set에 있고 실제 base plugin으로 로드된 경우에만 호출됩니다.
+
+### Feature Contribution
+
+Feature Contribution Policy는 인프라 plugin 하나가 여러 core feature에 구현을
+기여하기 위한 표준 경로입니다. Base plugin은 자기 substrate의 공통 컴포넌트만
+등록하고, feature-specific port 구현은 별도 contribution entry point로 선언합니다.
+예를 들어 `spakky-sqlalchemy`의 base plugin은 SQLAlchemy connection, session,
+transaction, schema registry를 등록하고, Outbox storage/table은
+`spakky.contributions.spakky.outbox` contribution에서 등록합니다.
+
+```toml
+[project.entry-points."spakky.plugins"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.main:initialize"
+
+[project.entry-points."spakky.contributions.spakky.outbox"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.outbox:initialize"
+```
+
+Contribution group 이름은 `spakky.contributions.<feature>` 형식입니다. Feature
+plugin 이름의 `-`는 Python package metadata group에서 안전하게 쓰기 위해 `.`로
+정규화됩니다. 따라서 `Plugin(name="spakky-outbox")`의 contribution group은
+`spakky.contributions.spakky.outbox`입니다.
+
+Loader 순서는 다음과 같습니다.
+
+1. `spakky.plugins` entry point를 이름순으로 로드합니다.
+2. 로드된 base plugin으로 active feature/provider set을 계산합니다.
+3. active feature 이름순으로 contribution group을 조회합니다.
+4. 각 group 안의 contribution entry point를 이름순으로 호출합니다.
+5. `scan()`과 `start()`는 contribution 로딩 이후 실행됩니다.
+
+Provider base plugin은 contribution entry point name을 파싱하지 않고, 같은
+distribution이 선언한 `spakky.plugins` metadata로 식별합니다. Contribution module은
+target feature core package의 public contract와 자기 plugin 내부 구현만 import할 수
+있으며, 다른 plugin public module을 직접 import하지 않습니다.
+
+Startup diagnostics가 활성화되어 있으면 `load_plugins` phase detail에 contribution
+결과가 함께 기록됩니다. Summary key는 `contributions.loaded`,
+`contributions.skipped`, `contributions.failed`이며, skip reason은
+`inactive_feature`, `inactive_provider`, `include_filter`로 구분됩니다. 개별 항목은
+`contributions.loaded.item`, `contributions.skipped.item`,
+`contributions.failed.item` detail로 feature, provider, group, entry point context를
+남깁니다.
 
 ### 복수 구현체 선택
 
@@ -142,6 +190,7 @@ flowchart TD
   Src --> Namespace[spakky/plugins/example]
   Namespace --> Init[__init__.py]
   Namespace --> Main[main.py<br/>initialize 진입점]
+  Namespace --> Contributions[contributions<br/>feature별 contribution]
   Namespace --> Error[error.py<br/>에러 클래스]
   Namespace --> PostProcessors[post_processors<br/>PostProcessor 구현]
 ```
@@ -179,6 +228,17 @@ spakky-myfeature = "spakky.plugins.myfeature.main:initialize"
 
 [tool.pyrefly]
 module-name = "spakky.plugins.myfeature"
+```
+
+기존 core feature에 구현을 기여하는 인프라 plugin이라면 base plugin entry point와
+contribution entry point를 함께 선언합니다.
+
+```toml
+[project.entry-points."spakky.plugins"]
+spakky-myinfra = "spakky.plugins.myinfra.main:initialize"
+
+[project.entry-points."spakky.contributions.spakky.myfeature"]
+spakky-myinfra = "spakky.plugins.myinfra.contributions.myfeature:initialize"
 ```
 
 ### 3. Plugin 식별자 정의
@@ -349,7 +409,9 @@ class RegisterRoutesPostProcessor(IPostProcessor):
 
 ## 플러그인 의존성
 
-플러그인 간 의존성은 `pyproject.toml`의 `dependencies`로 선언합니다:
+플러그인 간 의존성은 `pyproject.toml`의 `dependencies`로 선언합니다. Contribution은
+target core feature contract를 import할 수 있으므로, provider package는 해당 core
+feature package를 의존성에 포함해야 합니다:
 
 ```toml
 [project]

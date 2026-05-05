@@ -26,7 +26,7 @@
 | **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
-| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox 저장소 등록 |
+| **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox 저장소 contribution |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @logged AOP Aspect |
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
@@ -95,7 +95,7 @@ graph TD
     saga --> domain
 
     sqlalchemy --> data
-    sqlalchemy --> outbox
+    sqlalchemy -. outbox contribution .-> outbox
     rabbitmq --> event
     rabbitmq --> tracing
     kafka --> event
@@ -141,7 +141,7 @@ graph TD
 
 - **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing`에도 의존 (트레이싱 미들웨어)
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인프라 플러그인** (sqlalchemy) → `spakky-data` + `spakky-outbox`에 의존 (Outbox 저장소 등록)
+- **인프라 플러그인** (sqlalchemy) → `spakky-data` + `spakky-outbox`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky.contributions.spakky.outbox` contribution으로 등록
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
@@ -346,7 +346,7 @@ app = (
 
 **`scan()` 자동 감지**: `inspect.stack()`으로 호출자의 패키지를 찾고, 하위 모듈을 재귀 순회하며 `Pod.exists()` 또는 `Tag.exists()`인 객체를 등록합니다.
 
-**Startup diagnostics**: `enable_startup_diagnostics()`는 no-op 기본 recorder를 활성 recorder로 교체합니다. 활성화된 앱은 startup attempt별 `StartupReport`를 생성하고 `load_plugins`, `scan`, `registration`, `post_processor_registration`, `instantiation`, `post_processing`, `service_start` phase를 실행 순서대로 기록합니다. 각 record는 phase name, elapsed seconds, processed count, success/failure status, optional diagnostic details, optional structured failure summary를 포함합니다. 실패 phase는 기록된 뒤 기존 예외를 그대로 전파합니다.
+**Startup diagnostics**: `enable_startup_diagnostics()`는 no-op 기본 recorder를 활성 recorder로 교체합니다. 활성화된 앱은 startup attempt별 `StartupReport`를 생성하고 `load_plugins`, `scan`, `registration`, `post_processor_registration`, `instantiation`, `post_processing`, `service_start` phase를 실행 순서대로 기록합니다. 각 record는 phase name, elapsed seconds, processed count, success/failure status, optional diagnostic details, optional structured failure summary를 포함합니다. `load_plugins` phase는 base plugin 이후 로드된 feature contribution의 loaded/skipped/failed count와 `inactive_feature`, `inactive_provider`, `include_filter` skip reason을 diagnostic detail로 기록합니다. 실패 phase는 기록된 뒤 기존 예외를 그대로 전파합니다.
 
 **DiscoveryManifest 재사용**: `enable_discovery_manifest(path=None)`을 `scan()` 전에 호출하면 scan discovery 결과를 JSON manifest로 저장합니다. manifest fingerprint는 schema version, Python major/minor version, scan 대상 module/package, exclude pattern, source file mtime/size로 구성됩니다. decision은 `miss`, `hit`, `stale_schema`, `stale_input` 중 하나이며 startup diagnostics의 scan phase diagnostic detail로 기록됩니다. `hit`은 저장된 Pod/Tag 후보를 기존 등록 경로로 재생하고, stale/miss는 기존 fresh discovery로 돌아갑니다. container lookup/type cache는 변경하지 않습니다.
 
@@ -432,7 +432,7 @@ class TimingAspect(IAsyncAspect):
 spakky-data = "spakky.data.main:initialize"
 ```
 
-`SpakkyApplication.load_plugins()`는 `importlib.metadata.entry_points(group="spakky.plugins")`로 등록된 플러그인을 발견하고, 각 플러그인의 `initialize(app: SpakkyApplication)` 함수를 호출합니다. 복수 구현체 DI resolution은 이 자동 활성화 모델을 유지합니다. 여러 플러그인이 같은 port 후보를 등록해도 플러그인은 그대로 초기화되고, 단수 주입 지점에서만 Qualifier/name/binding/`@Primary`/legacy parameter name 순서로 하나를 선택합니다.
+`SpakkyApplication.load_plugins()`는 `importlib.metadata.entry_points(group="spakky.plugins")`로 등록된 base 플러그인을 발견하고, 각 플러그인의 `initialize(app: SpakkyApplication)` 함수를 호출합니다. 그 뒤 active core feature마다 `spakky.contributions.<feature>` group을 조회해 feature contribution을 base plugin 이후, `scan()`/`start()` 이전에 호출합니다. Feature plugin 이름의 `-`는 entry point group에서 `.`로 정규화되므로 `spakky-outbox`의 group은 `spakky.contributions.spakky.outbox`입니다. 복수 구현체 DI resolution은 이 자동 활성화 모델을 유지합니다. 여러 플러그인이 같은 port 후보를 등록해도 플러그인은 그대로 초기화되고, 단수 주입 지점에서만 Qualifier/name/binding/`@Primary`/legacy parameter name 순서로 하나를 선택합니다.
 
 ### 플러그인 등록 요약
 
@@ -447,7 +447,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-security` | (없음 — 유틸리티 함수만 제공) |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
-| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction, `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
+| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
+| `spakky-sqlalchemy` contribution for `spakky-outbox` | `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
 | `spakky-task` | `TaskRegistrationPostProcessor` |
 | `spakky-actuator` | `ActuatorConfig`, `ActuatorExtensionRegistry`, `ActuatorExtensionPostProcessor`, `ActuatorAggregationService` |
@@ -1042,7 +1043,7 @@ flowchart TD
 
 ### 저장소 구현
 
-`spakky-sqlalchemy`가 `spakky-outbox`를 감지하면 `SqlAlchemyOutboxStorage`를 자동 등록합니다. 커스텀 저장소는 `IAsyncOutboxStorage`를 구현합니다.
+`spakky-sqlalchemy`는 `spakky.contributions.spakky.outbox` entry point로 `SqlAlchemyOutboxStorage`와 `OutboxMessageTable`을 기여합니다. 이 contribution은 `spakky-outbox` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 base plugin 이후 로드됩니다. 커스텀 저장소는 `IAsyncOutboxStorage`를 구현합니다.
 
 > **설계 배경**: [ADR-0002](docs/adr/0002-outbox-plugin-architecture.md), [ADR-0005](docs/adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md), [ADR-0006](docs/adr/0006-move-outbox-to-core.md) 참조.
 
@@ -1191,7 +1192,7 @@ flowchart TD
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction, `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`, `spakky-outbox` |
+| `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`, `spakky-outbox` |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
 ### 태스크 플러그인
