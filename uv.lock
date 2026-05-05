@@ -11,6 +11,7 @@ resolution-markers = [
 members = [
     "spakky",
     "spakky-actuator",
+    "spakky-agent",
     "spakky-cache",
     "spakky-celery",
     "spakky-data",
@@ -2569,6 +2570,17 @@ provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka
 name = "spakky-actuator"
 version = "6.5.0"
 source = { editable = "core/spakky-actuator" }
+dependencies = [
+    { name = "spakky" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+
+[[package]]
+name = "spakky-agent"
+version = "6.5.0"
+source = { editable = "core/spakky-agent" }
 dependencies = [
     { name = "spakky" },
 ]

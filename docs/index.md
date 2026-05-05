@@ -231,6 +231,7 @@ app = (
 | [spakky-tracing](api/core/spakky-tracing.md) | 분산 트레이싱 추상화              |
 | [spakky-outbox](api/core/spakky-outbox.md) | Outbox 패턴                        |
 | [spakky-saga](api/core/spakky-saga.md)     | 사가 오케스트레이션                |
+| [spakky-agent](api/core/spakky-agent.md)   | Agentic workflow core 계약         |
 | [spakky-actuator](api/core/spakky-actuator.md) | Actuator 상태/정보 계약        |
 | [spakky-cache](api/core/spakky-cache.md)   | 애플리케이션 데이터 캐시 계약      |
 
@@ -280,6 +281,7 @@ flowchart LR
     domain --> core[spakky]
     task[spakky-task] --> core
     tracing_dep --> core
+    agent[spakky-agent] --> core
     cache[spakky-cache] --> core
     saga[spakky-saga] --> domain
     saga --> core
