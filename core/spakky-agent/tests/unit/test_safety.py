@@ -4,6 +4,7 @@ import pytest
 
 from spakky.agent import (
     AgentDefinitionError,
+    AgentOutputGuardError,
     ContextExposurePolicy,
     CredentialRef,
     DataSensitivity,
@@ -15,6 +16,11 @@ from spakky.agent import (
     SecretRef,
     SensitiveField,
     SensitiveFieldDescriptor,
+    StreamingGuardFailureMode,
+    StreamingRedactionAuditStatus,
+    StreamingRedactionPolicy,
+    StreamingRedactionSession,
+    StreamingSensitivePattern,
 )
 from spakky.agent.safety import (
     REDACTED_VALUE,
@@ -304,3 +310,132 @@ def test_masking_policy_expect_supports_last_four_first_last_hash_and_redact() -
     assert first_last_short.guard_text("A") == REDACTED_VALUE
     assert hashed.guard_text("owner@example.com").startswith("[HASHED:email:")
     assert redacted.guard_text("1 Main Street") == REDACTED_VALUE
+
+
+def test_streaming_redaction_expect_detects_sensitive_pattern_across_chunks() -> None:
+    """bounded buffer는 chunk boundary를 가로지르는 pattern도 masking한다."""
+    session = StreamingRedactionSession(
+        StreamingRedactionPolicy(
+            patterns=(
+                StreamingSensitivePattern(
+                    name="api-key",
+                    pattern=r"sk-live-[0-9]+",
+                    replacement="[API_KEY]",
+                ),
+            ),
+            buffer_size=16,
+            emit_chunk_size=4,
+        )
+    )
+
+    first = session.push("token sk-li")
+    second = session.push("ve-1234 ok")
+    final = session.finish()
+    emitted = "".join((*first.chunks, *second.chunks, *final.chunks))
+
+    assert "sk-live-1234" not in emitted
+    assert "[API_KEY]" in emitted
+    assert final.audit is not None
+    assert final.audit.status == StreamingRedactionAuditStatus.PASSED
+    assert final.audit.detected_count == 1
+    assert final.audit.redacted_count == 1
+    assert final.audit.to_evidence_payload()["missed_count"] == 0
+
+
+def test_streaming_redaction_expect_final_audit_emits_error_for_missed_candidate() -> (
+    None
+):
+    """final audit은 bounded window 밖에서 누락된 masking 후보를 error로 남긴다."""
+    session = StreamingRedactionSession(
+        StreamingRedactionPolicy(
+            patterns=(
+                StreamingSensitivePattern(
+                    name="long-token",
+                    pattern=r"TOKEN-[0-9]{8}",
+                    metadata={"source": "detector-a"},
+                ),
+            ),
+            buffer_size=4,
+            failure_mode=StreamingGuardFailureMode.EMIT_ERROR,
+        )
+    )
+
+    chunks = [*session.push("TOKEN-").chunks]
+    chunks.extend(session.push("12345678").chunks)
+    final = session.finish()
+    chunks.extend(final.chunks)
+
+    assert "TOKEN-12345678" in "".join(chunks)
+    assert final.audit is not None
+    assert final.audit.status == StreamingRedactionAuditStatus.FAILED
+    assert final.audit.missed_count == 1
+    assert final.audit.to_evidence_payload()["missed_matches"] == (
+        {
+            "pattern_name": "long-token",
+            "start": 0,
+            "end": 14,
+            "metadata": {"source": "detector-a"},
+        },
+    )
+    assert final.error is not None
+    assert final.error["code"] == "streaming_redaction_audit_failed"
+
+
+def test_streaming_redaction_expect_raises_by_default_on_audit_failure() -> None:
+    """기본 failure mode는 unsafe 후보를 조용히 통과시키지 않는다."""
+    session = StreamingRedactionSession(
+        StreamingRedactionPolicy(
+            patterns=(
+                StreamingSensitivePattern(
+                    name="long-token",
+                    pattern=r"TOKEN-[0-9]{8}",
+                ),
+            ),
+            buffer_size=4,
+        )
+    )
+
+    session.push("TOKEN-")
+    session.push("12345678")
+    with pytest.raises(AgentOutputGuardError):
+        session.finish()
+
+
+def test_streaming_redaction_policy_expect_validates_bounds_and_patterns() -> None:
+    """streaming guard policy는 unbounded/silent 설정을 거부한다."""
+    with pytest.raises(AgentDefinitionError):
+        StreamingRedactionPolicy(patterns=(), buffer_size=8)
+    with pytest.raises(AgentDefinitionError):
+        StreamingRedactionPolicy(
+            patterns=(StreamingSensitivePattern("token", "TOKEN"),),
+            buffer_size=0,
+        )
+    with pytest.raises(AgentDefinitionError):
+        StreamingRedactionPolicy(
+            patterns=(StreamingSensitivePattern("token", "TOKEN"),),
+            emit_chunk_size=0,
+        )
+    with pytest.raises(AgentDefinitionError):
+        StreamingSensitivePattern(" ", "TOKEN")
+    with pytest.raises(AgentDefinitionError):
+        StreamingSensitivePattern("token", "[")
+
+    assert StreamingSensitivePattern("drop", "TOKEN", replacement="").replacement == ""
+    assert StreamingSensitivePattern("token", "TOKEN").find_matches("TOKEN")[
+        0
+    ].to_payload() == {"pattern_name": "token", "start": 0, "end": 5}
+
+
+def test_streaming_redaction_session_expect_handles_empty_and_closed_states() -> None:
+    """streaming session은 빈 chunk와 종료 후 재사용을 명시적으로 처리한다."""
+    session = StreamingRedactionSession(
+        StreamingRedactionPolicy(
+            patterns=(StreamingSensitivePattern("token", r"TOKEN-[0-9]+"),),
+            buffer_size=8,
+        )
+    )
+
+    assert session.push("").chunks == ()
+    assert session.finish().audit is not None
+    with pytest.raises(AgentOutputGuardError):
+        session.push("after-close")
