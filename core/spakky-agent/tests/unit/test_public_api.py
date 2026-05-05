@@ -7,6 +7,11 @@ import spakky.agent as agent_api
 import tests.fixtures.agent_app as agent_app
 from spakky.agent import (
     IAgentModel,
+    AgentApprovalBoundaryKind,
+    AgentApprovalDecisionOutcome,
+    AgentApprovalPlan,
+    AgentApprovalPlanAction,
+    AgentApprovalRequest,
     AgentActionBoundaryCheckpoint,
     AgentActionBoundaryStage,
     AgentActionKind,
@@ -70,7 +75,10 @@ from spakky.agent import (
     ToolCallingSpec,
     agent_tool,
     consume_pending_agent_signals,
+    materialize_agent_approval_decision_state,
+    parse_agent_approval_decision_signal,
     plan_agent_resume,
+    plan_agent_tool_approval,
 )
 from spakky.agent.main import initialize
 from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
@@ -83,6 +91,11 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     """이슈 #213이 요구한 public import surface를 노출하는지 검증한다."""
     required_exports = {
         "Agent",
+        "AgentApprovalBoundaryKind",
+        "AgentApprovalDecisionOutcome",
+        "AgentApprovalPlan",
+        "AgentApprovalPlanAction",
+        "AgentApprovalRequest",
         "AgentActionBoundaryCheckpoint",
         "AgentActionBoundaryStage",
         "AgentActionKind",
@@ -125,13 +138,21 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentToolDescriptor",
         "AgentToolIdentity",
         "consume_pending_agent_signals",
+        "materialize_agent_approval_decision_state",
+        "parse_agent_approval_decision_signal",
         "plan_agent_resume",
+        "plan_agent_tool_approval",
     }
 
     exported = set(agent_api.__all__)
 
     assert required_exports <= exported
     assert Agent is agent_api.Agent
+    assert AgentApprovalBoundaryKind is agent_api.AgentApprovalBoundaryKind
+    assert AgentApprovalDecisionOutcome is agent_api.AgentApprovalDecisionOutcome
+    assert AgentApprovalPlan is agent_api.AgentApprovalPlan
+    assert AgentApprovalPlanAction is agent_api.AgentApprovalPlanAction
+    assert AgentApprovalRequest is agent_api.AgentApprovalRequest
     assert AgentActionBoundaryCheckpoint is agent_api.AgentActionBoundaryCheckpoint
     assert AgentActionBoundaryStage is agent_api.AgentActionBoundaryStage
     assert AgentActionKind is agent_api.AgentActionKind
@@ -176,7 +197,16 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentToolDescriptor is agent_api.AgentToolDescriptor
     assert AgentToolIdentity is agent_api.AgentToolIdentity
     assert consume_pending_agent_signals is agent_api.consume_pending_agent_signals
+    assert (
+        materialize_agent_approval_decision_state
+        is agent_api.materialize_agent_approval_decision_state
+    )
+    assert (
+        parse_agent_approval_decision_signal
+        is agent_api.parse_agent_approval_decision_signal
+    )
     assert plan_agent_resume is agent_api.plan_agent_resume
+    assert plan_agent_tool_approval is agent_api.plan_agent_tool_approval
 
 
 def test_public_api_expect_exports_model_contract_types() -> None:

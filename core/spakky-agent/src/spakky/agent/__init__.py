@@ -31,6 +31,17 @@ from spakky.agent.evidence import (
     AgentEvidenceCandidate,
     AgentEvidenceKind,
 )
+from spakky.agent.approval import (
+    DEFAULT_APPROVAL_DECISIONS,
+    AgentApprovalBoundaryKind,
+    AgentApprovalDecisionOutcome,
+    AgentApprovalPlan,
+    AgentApprovalPlanAction,
+    AgentApprovalRequest,
+    materialize_agent_approval_decision_state,
+    parse_agent_approval_decision_signal,
+    plan_agent_tool_approval,
+)
 from spakky.agent.recovery import (
     AgentActionBoundaryCheckpoint,
     AgentActionBoundaryStage,
@@ -147,6 +158,11 @@ __all__ = [
     "IAgentContextHandler",
     "AbstractSpakkyAgentError",
     "Agent",
+    "AgentApprovalBoundaryKind",
+    "AgentApprovalDecisionOutcome",
+    "AgentApprovalPlan",
+    "AgentApprovalPlanAction",
+    "AgentApprovalRequest",
     "AgentActionBoundaryCheckpoint",
     "AgentActionBoundaryStage",
     "AgentActionKind",
@@ -205,6 +221,7 @@ __all__ = [
     "DelegationPacket",
     "DelegationResult",
     "DelegationReturnPolicy",
+    "DEFAULT_APPROVAL_DECISIONS",
     "Error",
     "DataAccess",
     "EvidenceCapture",
@@ -252,5 +269,8 @@ __all__ = [
     "consume_pending_agent_signals",
     "agent_tool",
     "discover_agent_tools",
+    "materialize_agent_approval_decision_state",
+    "parse_agent_approval_decision_signal",
     "plan_agent_resume",
+    "plan_agent_tool_approval",
 ]
