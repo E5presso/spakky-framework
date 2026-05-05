@@ -12,6 +12,8 @@ paths:
 
 워크트리에서 스킬 본문을 수정할 때는 정본 경로(`.agents/skills/{name}/SKILL.md`)를 사용한다. `.claude/skills`는 `.agents/skills`를 가리키는 symlink adapter이므로 본문 복제본을 두지 않는다 — 상세는 `.agents/skills/create-worktree/SKILL.md` 참조.
 
+격리 워크트리에서 하네스 파일을 patch로 수정할 때는 patch 전 동일 실행 컨텍스트에서 root/worktree guard를 통과시킨다. Codex `apply_patch` 도구는 `workdir` 파라미터가 없으므로 세션 CWD가 대상 워크트리 루트임을 확인한 경우에만 사용하고, 그렇지 않으면 워크트리 cwd의 Bash에서 `.agents/skills/process-ticket/scripts/safe_worktree_apply_patch.sh <issue>` wrapper를 사용한다.
+
 ## 스크립트 코드 테스트 의무
 
 스킬에 포함된 shell 스크립트, jq 필터, API 호출 등 실행 가능한 코드는 실제 환경에서 테스트한 후에만 커밋한다.
