@@ -33,6 +33,7 @@
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
 | **Plugin** | `spakky-grpc` | gRPC 서비스 컨트롤러 통합 (code-first, 타입 안전 프로토콜 생성) |
 | **Plugin** | `spakky-redis` | Redis 기반 애플리케이션 데이터 캐시 backend |
+| **Plugin** | `spakky-vllm` | vLLM OpenAI-compatible `IAgentModel` adapter |
 
 ---
 
@@ -79,6 +80,7 @@ graph TD
             security[spakky-security]
             grpc[spakky-grpc]
             redis[spakky-redis]
+            vllm[spakky-vllm]
         end
     end
 
@@ -117,6 +119,7 @@ graph TD
     grpc --> core
     grpc --> tracing
     redis --> cache
+    vllm --> agent
 
     style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
     style domain fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100
@@ -462,6 +465,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-saga` | (없음 — `@Saga`가 `@Pod` 기반이므로 Pod 스캔만으로 DI 컨테이너가 관리) |
 | `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` |
+| `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` |
 
 ### 애플리케이션 데이터 캐시
 
@@ -1198,6 +1202,7 @@ flowchart TD
 | `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` | `sqlalchemy`; outbox contribution에는 `spakky-outbox` extra 또는 별도 설치 필요 |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
+| `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` | `httpx`, `pydantic-settings`, `spakky-agent` |
 ### 태스크 플러그인
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |

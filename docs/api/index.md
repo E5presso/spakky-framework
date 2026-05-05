@@ -30,3 +30,4 @@
 - [spakky-opentelemetry](plugins/spakky-opentelemetry.md) — OpenTelemetry 브릿지
 - [spakky-grpc](plugins/spakky-grpc.md) — gRPC 통합
 - [spakky-redis](plugins/spakky-redis.md) — Redis 캐시 백엔드
+- [spakky-vllm](plugins/spakky-vllm.md) — vLLM 모델 adapter

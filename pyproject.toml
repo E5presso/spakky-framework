@@ -55,6 +55,7 @@ version_files = [
   "plugins/spakky-opentelemetry/pyproject.toml:version",
   "plugins/spakky-grpc/pyproject.toml:version",
   "plugins/spakky-redis/pyproject.toml:version",
+  "plugins/spakky-vllm/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -82,6 +83,7 @@ members = [
   "plugins/spakky-opentelemetry",
   "plugins/spakky-grpc",
   "plugins/spakky-redis",
+  "plugins/spakky-vllm",
 ]
 
 
@@ -108,6 +110,7 @@ spakky-opentelemetry = { workspace = true }
 spakky-grpc = { workspace = true }
 spakky-saga = { workspace = true }
 spakky-redis = { workspace = true }
+spakky-vllm = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.12"
