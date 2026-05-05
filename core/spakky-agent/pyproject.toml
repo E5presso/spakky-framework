@@ -8,6 +8,12 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = ["spakky>=6.5.0"]
 
+[dependency-groups]
+dev = [
+    "spakky-fastapi>=6.5.0",
+    "spakky-typer>=6.5.0",
+]
+
 [project.entry-points."spakky.plugins"]
 spakky-agent = "spakky.agent.main:initialize"
 
@@ -68,3 +74,5 @@ exclude_lines = [
 
 [tool.uv.sources]
 spakky = { workspace = true }
+spakky-fastapi = { workspace = true }
+spakky-typer = { workspace = true }

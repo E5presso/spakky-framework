@@ -2590,8 +2590,20 @@ dependencies = [
     { name = "spakky" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "spakky-fastapi" },
+    { name = "spakky-typer" },
+]
+
 [package.metadata]
 requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "spakky-fastapi", editable = "plugins/spakky-fastapi" },
+    { name = "spakky-typer", editable = "plugins/spakky-typer" },
+]
 
 [[package]]
 name = "spakky-cache"
