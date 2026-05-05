@@ -15,19 +15,13 @@ from spakky.plugins.sqlalchemy.persistency.transaction import (
     Transaction,
 )
 
-from spakky.plugins.sqlalchemy.outbox.storage import (
-    AsyncSqlAlchemyOutboxStorage,
-    SqlAlchemyOutboxStorage,
-)
-from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
-
 
 def initialize(app: SpakkyApplication) -> None:
     """Initialize the SQLAlchemy plugin.
 
     Registers SQLAlchemy configuration, schema registry, session managers,
-    transaction handlers, and Outbox storage implementations. Async Pods
-    are only registered when support_async_mode is True in the configuration.
+    and transaction handlers. Async Pods are only registered when
+    support_async_mode is True in the configuration.
 
     Args:
         app: The Spakky application instance.
@@ -41,11 +35,7 @@ def initialize(app: SpakkyApplication) -> None:
     app.add(SessionManager)
     app.add(Transaction)
 
-    app.add(OutboxMessageTable)
-    app.add(SqlAlchemyOutboxStorage)
-
     if config.support_async_mode:
         app.add(AsyncConnectionManager)
         app.add(AsyncSessionManager)
         app.add(AsyncTransaction)
-        app.add(AsyncSqlAlchemyOutboxStorage)

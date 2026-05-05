@@ -10,6 +10,9 @@ from spakky.core.application.application_context import ApplicationContext
 from testcontainers.postgres import PostgresContainer
 
 import spakky.plugins.sqlalchemy
+from spakky.plugins.sqlalchemy.contributions.outbox import (
+    initialize as initialize_outbox_contribution,
+)
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
 from spakky.plugins.sqlalchemy.outbox.storage import (
     AsyncSqlAlchemyOutboxStorage,
@@ -64,12 +67,13 @@ def setup_env_vars_fixture(database_url: str) -> str:
 
 @pytest.fixture(name="app", scope="package")
 def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
-    """Create SpakkyApplication with SQLAlchemy plugin (outbox auto-detected)."""
+    """Create SpakkyApplication with SQLAlchemy outbox contribution active."""
     app = SpakkyApplication(ApplicationContext()).load_plugins(
         include={
             spakky.plugins.sqlalchemy.PLUGIN_NAME,
         }
     )
+    initialize_outbox_contribution(app)
     app.start()
 
     yield app

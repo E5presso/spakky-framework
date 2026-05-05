@@ -96,7 +96,7 @@ def test_load_plugins_expect_contributions_after_base_plugins(
                     initializer=_recording_initializer(calls, "base:outbox"),
                 ),
             )
-        if group == "spakky.contributions.spakky-outbox":
+        if group == "spakky.contributions.spakky.outbox":
             return (
                 FakeEntryPoint(
                     name="sqlalchemy-outbox",
@@ -221,7 +221,7 @@ def test_load_plugins_include_feature_and_provider_expect_contribution_loaded(
                     initializer=_recording_initializer(calls, "base:sqlalchemy"),
                 ),
             )
-        if group == "spakky.contributions.spakky-outbox":
+        if group == "spakky.contributions.spakky.outbox":
             return (
                 FakeEntryPoint(
                     name="sqlalchemy-outbox",
@@ -277,7 +277,7 @@ def test_load_plugins_include_feature_only_expect_provider_contribution_skipped(
                     initializer=_recording_initializer(calls, "base:sqlalchemy"),
                 ),
             )
-        if group == "spakky.contributions.spakky-outbox":
+        if group == "spakky.contributions.spakky.outbox":
             return (
                 FakeEntryPoint(
                     name="sqlalchemy-outbox",
@@ -307,7 +307,7 @@ def test_load_plugins_include_feature_only_expect_provider_contribution_skipped(
     assert calls == ["base:outbox"]
     assert requested_groups == [
         "spakky.plugins",
-        "spakky.contributions.spakky-outbox",
+        "spakky.contributions.spakky.outbox",
     ]
 
 
@@ -374,7 +374,7 @@ def test_load_plugins_expect_deterministic_contribution_order(
                     initializer=_recording_initializer(calls, "base:sqlalchemy"),
                 ),
             )
-        if group == "spakky.contributions.spakky-data":
+        if group == "spakky.contributions.spakky.data":
             return (
                 FakeEntryPoint(
                     name="z-data",
@@ -403,7 +403,7 @@ def test_load_plugins_expect_deterministic_contribution_order(
                     ),
                 ),
             )
-        if group == "spakky.contributions.spakky-outbox":
+        if group == "spakky.contributions.spakky.outbox":
             return (
                 FakeEntryPoint(
                     name="z-outbox",
