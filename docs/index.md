@@ -290,7 +290,7 @@ flowchart LR
   kafka -. Kafka .-> event
   kafka -- tracing --> tracing_dep
   sqlalchemy -. ORM .-> data
-  sqlalchemy -- Outbox --> outbox
+  sqlalchemy -. Outbox contribution .-> outbox
   fastapi -. FastAPI .-> core
   fastapi -- tracing --> tracing_dep
   typer -. Typer .-> core

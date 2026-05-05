@@ -387,6 +387,28 @@ def initialize(app: SpakkyApplication) -> None:
     pass
 ```
 
+### Feature contribution
+
+인프라 plugin이 특정 core feature의 port 구현을 제공해야 하면 base plugin 본체에서
+feature 설치 여부를 감지하지 않고 contribution entry point를 선언합니다. Base plugin은
+공통 substrate만 등록하고, contribution은 target feature와 provider base plugin이 모두
+active일 때 base plugin 이후, `scan()`/`start()` 이전에 호출됩니다.
+
+```toml
+[project.entry-points."spakky.plugins"]
+spakky-myinfra = "spakky.plugins.myinfra.main:initialize"
+
+[project.entry-points."spakky.contributions.spakky.outbox"]
+spakky-myinfra = "spakky.plugins.myinfra.contributions.outbox:initialize"
+```
+
+Feature plugin 이름의 `-`는 group 이름에서 `.`로 정규화됩니다. 예를 들어
+`Plugin(name="spakky-outbox")`의 contribution group은
+`spakky.contributions.spakky.outbox`입니다. `load_plugins(include=...)`를 사용할 때는
+feature plugin과 provider plugin이 모두 include set에 있어야 contribution이 로드됩니다.
+Startup diagnostics를 켜면 `load_plugins` phase에 contribution loaded/skipped/failed
+count와 skip reason이 기록됩니다.
+
 자세한 내용은 [기여 가이드](../../CONTRIBUTING.md#-plugin-development)를 참고하세요.
 
 ## 사용 가능한 플러그인

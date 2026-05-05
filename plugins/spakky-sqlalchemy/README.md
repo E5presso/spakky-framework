@@ -213,6 +213,29 @@ class MigrationService:
         return self._schema_registry.metadata
 ```
 
+## Outbox Contribution
+
+`spakky-sqlalchemy` base plugin은 SQLAlchemy connection, session, transaction,
+schema registry만 등록합니다. SQLAlchemy 기반 Outbox storage/table은 별도 feature
+contribution으로 제공합니다.
+
+```toml
+[project.entry-points."spakky.contributions.spakky.outbox"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.outbox:initialize"
+```
+
+이 contribution은 `spakky-outbox` feature와 `spakky-sqlalchemy` provider가 모두
+active일 때 base plugin 이후 로드됩니다. `load_plugins(include=...)`를 사용한다면
+include set에 두 plugin을 모두 넣어야 합니다. `save()`는 현재 transactional session을
+사용하므로 비즈니스 데이터와 Outbox 메시지가 같은 DB transaction 안에서 commit 또는
+rollback됩니다.
+
+```python
+from spakky.plugins.sqlalchemy.outbox.storage import AsyncSqlAlchemyOutboxStorage
+
+storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
+```
+
 ## 주요 기능
 
 - **Domain-Table mapping**: domain model과 ORM table 간 양방향 변환
