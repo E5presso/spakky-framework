@@ -49,6 +49,10 @@
 			"path": "core/spakky-cache",
 		},
 		{
+			"name": "core.agent",
+			"path": "core/spakky-agent",
+		},
+		{
 			"name": "plugins.logging",
 			"path": "plugins/spakky-logging",
 		},
