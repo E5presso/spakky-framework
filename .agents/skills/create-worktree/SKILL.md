@@ -61,4 +61,6 @@ Phase 4~5의 첫 파일 수정 직전에 반드시 다음을 수행한다:
    - ✓ `/Users/.../spakky-framework/.claude/worktrees/{name}/core/...` (워크트리 절대)
 3. **첫 Edit 직후 `git status`로 검증**한다. 워크트리의 `git status`가 변경을 보이지 않으면 루트에 쓴 것이다 — 즉시 루트 변경을 되돌리고 올바른 경로로 다시 쓴다.
 
+`process-ticket` 호출자는 위 수동 확인에 더해 `.agents/skills/process-ticket/scripts/assert_worktree_isolation.sh --init <issue>`를 Phase 3에서 실행하고, Phase 4/4.5/5에서 `assert_worktree_isolation.sh <issue>`를 반복 실행한다. 이 guard가 실패하면 구현·커밋·PR 생성을 중단한다. root checkout 변경은 자동 revert하지 않는다.
+
 $ARGUMENTS

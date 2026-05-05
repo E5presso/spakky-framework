@@ -2,6 +2,16 @@
 
 `/review-code` 수렴 + 최종 `/check` 통과 직후, Phase 5(commit/push/PR) 진입 직전에 **이슈 본문의 "수용 기준" 섹션에 명시된 grep 라인을 워크트리에서 실제 실행**하여 모든 라인의 기대값 일치 여부를 검증한다. `/review-code`는 코드 품질만 검토하므로 본문 명세 항목 중 일부만 처리하고 나머지가 누락되어도 결함으로 보지 않는다 — 본 게이트는 본문 grep 라인의 기계적 실행으로 그 갭을 차단한다.
 
+## 0. root-worktree mutation guard
+
+acceptance grep를 실행하기 직전에 워크트리 cwd에서 다음을 실행한다:
+
+```bash
+bash .agents/skills/process-ticket/scripts/assert_worktree_isolation.sh {ISSUE-NUMBER}
+```
+
+root HEAD/status가 Phase 3 기준선과 달라졌거나 현재 cwd가 해당 이슈 워크트리가 아니면 Phase 5 진입을 차단한다. 이 guard는 "수용 기준 PASS"를 주장하기 전에 root checkout이 오염되지 않았음을 기계적으로 확인하는 S4 회귀 방지 게이트다.
+
 ## 1. 수용 기준 grep 라인 추출
 
 Phase 1에서 수집한 이슈 본문(`gh issue view <N> --json body`)에서 **"수용 기준" / "Acceptance Criteria" 섹션의 grep / find / rg / 코드 식별자 검증 라인**을 추출한다. 추출 대상:

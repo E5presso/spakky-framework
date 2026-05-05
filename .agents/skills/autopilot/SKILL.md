@@ -16,6 +16,7 @@ user-invocable: true
 - wave spawn은 항상 `/process-ticket {T} --auto-merge`로 진입한다.
 - PR이 `mergeStateStatus in (CLEAN, UNSTABLE)`이고 required checks/review bot HEAD 평가가 완료되면 process-ticket은 Phase 8로 즉시 진행한다.
 - sub-agent가 실수로 `phase7_ready` 또는 `status: blocked`/`merge approval required` 형태로 반환하면 autopilot은 사용자에게 묻지 않고 resume sub-agent를 `--auto-merge`로 재기동한다. 같은 이슈에서 2회 반복되면 S1/S2 메타-감지로 하네스 fix 티켓을 생성한다.
+- `phase7_ready`는 checkpoint일 뿐 성공 반환값이 아니다. autopilot 하위 실행은 같은 turn에서 `gh pr merge --squash --delete-branch`와 Phase 8 cleanup까지 끝낸 뒤 `status: merged`를 반환해야 한다.
 - 사용자 질의는 스펙-코드 충돌, 외부 destructive action, 사람 리뷰 코멘트에 대한 제품 결정처럼 charter 질의 트리거가 있는 경우에만 가능하다. clean PR 병합 자체는 autopilot에서 질의 트리거가 아니다.
 
 ## 사용법
@@ -202,6 +203,7 @@ meta_queue 처리: {M}개
 - **Phase 3.6 meta-detection 시그널 매치 시 open 이슈 dedupe/reuse 후 meta_queue 처리.** 중복 harness fix 티켓 생성 금지.
 - **최종 보고 전 Phase 5.5 meta/open 이슈 fixed-point sweep 필수.** open meta_queue가 남아 있으면 마일스톤 완료 선언 금지.
 - 워크트리는 티켓별 분리. 동일 파일 mutation 충돌 시 직렬화 강제 (S3 시그널).
+- process-ticket Phase 3 이후 root checkout mutation이 감지되면 해당 sub-agent 컨텍스트는 오염된 것으로 보고 중단/회수한다. root 변경은 자동 revert하지 않으며 `.process-state.json.root_guard`와 `assert_worktree_isolation.sh` 실패 출력을 evidence로 남긴다.
 - Phase 4 의도 감사는 외부 서브에이전트만 (자기확증 편향 차단).
 
 $ARGUMENTS
