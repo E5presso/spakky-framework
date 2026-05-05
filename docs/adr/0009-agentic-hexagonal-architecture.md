@@ -60,6 +60,155 @@ ADR-0009 마일스톤은 다음을 하나의 완성 단위로 구현한다.
 | `plugins/spakky-agent-a2a` | 만들지 않는다. A2A server adapter는 첫 마일스톤 범위 밖이다. |
 | `plugins/spakky-agent-sqlalchemy` | 만들지 않는다. ADR-0010 contribution으로 `plugins/spakky-sqlalchemy`에 둔다. |
 
+## 마일스톤 성공 그림
+
+이 마일스톤이 성공하면 Framework 사용자는 Claude Code 같은 coding assistant를 "프레임워크가 제공하는 완제품"으로 받는 것이 아니라, 일반 UseCase를 만들듯 `@Agent` application component로 작성할 수 있다.
+
+전체 조립은 다음처럼 보인다.
+
+```text
+CLI / FastAPI / WebSocket inbound adapter
+  -> @Agent CodeAssistant.execute(CodeTask)
+      -> IAgentModel via plugins/spakky-vllm
+      -> @agent_tool workspace/search/read/write/bash/git capabilities
+      -> AgentState / AgentSignal / AgentEvidence repositories
+      -> AgentEvent via spakky-event/outbox
+      -> AgentYield stream
+  -> client
+```
+
+프레임워크가 제공하는 것은 coding assistant 자체가 아니라 다음 building block이다.
+
+- `@Agent`: coding assistant를 UseCase와 같은 application component로 선언한다.
+- `IAgentModel`: vLLM 같은 model backend를 outbound adapter로 호출한다.
+- `@agent_tool`: workspace, file, shell, git, search 같은 기능을 typed tool로 노출한다.
+- `AgentYield`: 생성 중인 텍스트, 중간 메시지, evidence, approval, final output을 caller에게 streaming한다.
+- `AgentSignal`: 실행 중 사용자 지시, 승인, 취소를 agent state에 전달한다.
+- `AgentStateRepository`: long-running 실행 상태를 노출하고 recovery 기준으로 사용한다.
+- `AgentEvidenceRepository`: tool/model/context 판단 근거와 context manifest/digest를 저장한다.
+
+따라서 Claude Code-like assistant는 다음과 같은 application code가 된다.
+
+```python
+@Pod
+class WorkspaceTools:
+    @agent_tool(
+        effects=ToolEffects.read_only(),
+        idempotency=Idempotency.IDEMPOTENT,
+        evidence=EvidenceCapture.structured(),
+    )
+    async def read_file(self, path: WorkspacePath) -> FileContent:
+        ...
+
+    @agent_tool(
+        effects=ToolEffects.write_state(),
+        idempotency=Idempotency.NON_IDEMPOTENT,
+        evidence=EvidenceCapture.reference_only(),
+    )
+    async def write_file(self, path: WorkspacePath, content: str) -> FilePatch:
+        ...
+
+
+@Pod
+class ShellTools:
+    @agent_tool(
+        effects=ToolEffects.external_side_effect(),
+        idempotency=Idempotency.UNKNOWN,
+        evidence=EvidenceCapture.summary(),
+    )
+    async def run(self, command: ShellCommand) -> ShellResult:
+        ...
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        accepted_signals=[
+            AgentSignalKind.USER_MESSAGE,
+            AgentSignalKind.APPROVAL_DECISION,
+            AgentSignalKind.CANCEL,
+        ],
+        streaming_exposure_mode=StreamingExposureMode.BALANCED,
+    )
+)
+class CodeAssistant:
+    def __init__(
+        self,
+        model: IAgentModel,
+        workspace: WorkspaceTools,
+        shell: ShellTools,
+        git: GitTools,
+    ):
+        self.model = model
+        self.workspace = workspace
+        self.shell = shell
+        self.git = git
+
+    async def execute(
+        self,
+        task: CodeTask,
+    ) -> AsyncGenerator[AgentYield[CodeTaskResult], None]:
+        yield Message("Inspecting workspace")
+
+        tools = [
+            self.workspace.read_file,
+            self.workspace.write_file,
+            self.shell.run,
+            self.git.diff,
+        ]
+
+        while True:
+            async for event in self.model.stream(
+                ModelRequest(
+                    messages=[
+                        ModelMessage.system(task.instructions),
+                        ModelMessage.evidence(task.context_refs),
+                    ],
+                    tools=ToolCallingSpec.from_tools(tools),
+                    output=StructuredOutputSpec.from_type(CodeAssistantDecision),
+                )
+            ):
+                if event.is_text_delta:
+                    yield TextDelta(event.text)
+
+                if event.is_tool_call:
+                    result = await event.invoke_tool()
+                    yield Evidence(result)
+
+                if event.is_approval_required:
+                    yield Approval(event.request)
+
+                if event.is_final:
+                    yield Final(event.output)
+                    return
+```
+
+Inbound adapter는 이 generator를 그대로 소비한다.
+
+```python
+@app.websocket("/agents/code")
+async def code_agent_socket(ws: WebSocket, command: CodeTask):
+    agent = container.get(CodeAssistant)
+
+    async for item in agent.execute(command):
+        await ws.send_json(AgentYieldJsonEncoder.encode(item))
+```
+
+사용자가 실행 중 추가 지시를 보내거나 승인을 결정하면 inbound adapter는 `AgentSignalRepository`에 signal을 append한다. Scheduler/application orchestration은 safe boundary에서 signal을 반영한다. 이때 agent business logic은 여전히 `CodeAssistant.execute()`이고, persistence, signal, evidence, recovery는 framework building block이 보조한다.
+
+완성된 마일스톤의 데모는 다음을 보여야 한다.
+
+1. 개발자가 `@Agent CodeAssistant`와 `@agent_tool` workspace/shell/git tool을 작성한다.
+2. FastAPI 또는 Typer inbound adapter가 `CodeAssistant.execute()`를 호출한다.
+3. vLLM local server가 model decision과 token stream을 제공한다.
+4. `TextDelta`가 client로 실시간 전달된다.
+5. Model이 file read/search/bash/write tool call을 선택하고 typed schema로 arguments를 만든다.
+6. Write/bash 같은 unsafe action은 approval signal을 요구할 수 있다.
+7. 사용자는 실행 중 추가 지시, 승인, 취소를 signal로 보낸다.
+8. Process restart 후 incomplete action boundary에서 resume한다.
+9. Evidence와 context manifest/digest가 SQLAlchemy contribution으로 저장된다.
+10. Secret/sensitive field는 LLM-facing context와 stream에서 deterministic guard를 통과한다.
+
 ## 핵심 모델
 
 ### `@Agent`
@@ -68,11 +217,14 @@ ADR-0009 마일스톤은 다음을 하나의 완성 단위로 구현한다.
 
 ```python
 @Agent(
-    execution=AgentExecutionSpec(
-        durable=True,
-        interactive=True,
-        streaming=True,
-        resumable=True,
+    spec=AgentExecutionSpec(
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        accepted_signals=[
+            AgentSignalKind.USER_MESSAGE,
+            AgentSignalKind.APPROVAL_DECISION,
+            AgentSignalKind.CANCEL,
+        ],
+        streaming_exposure_mode=StreamingExposureMode.BALANCED,
     )
 )
 class ResolveSupportTicket:
@@ -89,21 +241,98 @@ class ResolveSupportTicket:
 
 `execute()`는 agent의 business entrypoint다. `AgentRunContext` 같은 runtime context 객체를 인자로 노출하지 않는다. 모델, tool, repository, external service는 일반 Spakky component처럼 DI로 주입한다.
 
-`@Agent.execute()`는 직접 호출 가능하다. 다만 durable/interactive/resumable 실행 보장은 `AgentExecutionSpec`을 만족하는 scheduler, repository, contribution, inbound adapter 조합에서 제공된다.
+`@Agent.execute()`는 직접 호출 가능하다. 호출자는 `@UseCase.execute()`를 호출하듯 input DTO를 넘기고 output 또는 `AgentYield` stream을 받는다. Scheduler, repository, contribution, inbound adapter는 이 같은 business operation을 long-running/recoverable execution으로 운영하기 위한 주변 구성요소다.
+
+### UseCase-Shaped Agent Authoring
+
+개발자가 Agent를 작성하는 감각은 UseCase 작성과 같아야 한다.
+
+```python
+@UseCase
+class ResolveSupportTicket:
+    def __init__(self, docs: DocsPort):
+        self.docs = docs
+
+    async def execute(self, command: ResolveSupportTicketCommand) -> SupportAnswer:
+        docs = await self.docs.search(command.question)
+        return SupportAnswer.from_docs(docs)
+```
+
+동일한 workflow가 model-mediated orchestration을 필요로 하면 `@Agent`로 작성한다.
+
+```python
+@Agent
+class ResolveSupportTicket:
+    def __init__(
+        self,
+        model: IAgentModel,
+        docs: DocsTools,
+        tickets: TicketPort,
+    ):
+        self.model = model
+        self.docs = docs
+        self.tickets = tickets
+
+    async def execute(
+        self,
+        command: ResolveSupportTicketCommand,
+    ) -> AsyncGenerator[AgentYield[SupportAnswer], None]:
+        yield Message("Searching support knowledge base")
+
+        docs = await self.docs.search_docs(command.question, limit=5)
+        yield Evidence(docs)
+
+        async for event in self.model.stream(
+            ModelRequest(
+                messages=[
+                    ModelMessage.user(command.question),
+                    ModelMessage.evidence(docs),
+                ],
+                output=StructuredOutputSpec.from_type(SupportAnswer),
+            )
+        ):
+            if event.is_text_delta:
+                yield TextDelta(event.text)
+
+        yield Final(SupportAnswer(...))
+```
+
+이 예시에서 외부 인프라와의 상호작용은 모두 생성자 DI로 정의된다.
+
+- `IAgentModel`: LLM outbound interface
+- `DocsTools`: `@agent_tool`로 노출 가능한 application capability
+- `TicketPort`: 일반 outbound port
+
+`@Agent` decorator는 이 의존성을 다시 선언하지 않는다. `@Agent`가 제공하는 것은 이 class가 agentic workflow component라는 stereotype, `execute()` streaming contract, schema/metadata 검증, state/signal/evidence/recovery integration point다.
 
 ### `AgentExecutionSpec`
 
-`AgentExecutionSpec`은 `@Agent` 클래스의 실행 계약 metadata다.
+`AgentExecutionSpec`은 인프라 의존성을 선언하는 객체가 아니다. 외부 인프라 의존성은 생성자 DI와 contribution system이 정의한다.
+
+`AgentExecutionSpec`은 `execute()` signature와 DI graph만으로 추론하기 어려운 실행 의미를 보조적으로 선언한다.
+
+- accepted signal kinds
+- recovery strategy
+- `streaming_exposure_mode`
+- timeout/deadline 설정
+- output guard profile
+- delegation/recovery constraints
+
+다음은 `AgentExecutionSpec`의 public boolean flag가 아니다.
 
 - `durable`
 - `interactive`
 - `streaming`
 - `resumable`
-- `streaming_exposure_mode`
-- timeout/deadline/recovery 설정
-- required contribution capability
 
-Bootstrap은 spec이 요구하는 repository/contribution/model adapter가 없으면 fail해야 한다. Silent fallback은 허용하지 않는다.
+이 속성들은 독립 옵션이 아니라 다른 계약에서 파생된다.
+
+- Streaming은 `execute()` 반환형이 `AsyncGenerator[AgentYield[OutputT], None]`인지로 판정한다.
+- Interaction은 `accepted_signals`와 `AgentSignalRepository` 활성화 여부로 판정한다.
+- Durability는 `AgentStateRepository`, `AgentSignalRepository`, `AgentEvidenceRepository` contribution이 필요한 실행 경로에서 요구된다.
+- Resumability는 `recovery` strategy가 action-boundary recovery를 요구할 때 파생된다.
+
+Bootstrap은 `@Agent` metadata, `execute()` signature, DI graph, contribution registry를 함께 검증한다. 필요한 repository/model/tool contribution이 없으면 startup fail한다. Silent fallback은 허용하지 않는다.
 
 ### `AgentState`
 
@@ -524,7 +753,7 @@ Core는 과도한 policy object 대신 명확한 handler 개입 지점을 제공
 1. `@Agent` class를 DI container에 등록한다.
 2. `@Agent.execute()`가 `AsyncGenerator[AgentYield[OutputT], None]`로 streaming result를 반환한다.
 3. Simple output return을 `Final(output)` convenience로 처리한다.
-4. `AgentExecutionSpec`이 요구하는 contribution이 없으면 bootstrap fail한다.
+4. `@Agent` metadata, `execute()` signature, DI graph, contribution registry가 함께 검증된다.
 5. `IAgentModel`을 통해 vLLM OpenAI-compatible server를 호출한다.
 6. vLLM streaming token을 `AgentYield`로 client에 전달한다.
 7. `@agent_tool` decorated method의 signature에서 JSON Schema를 생성한다.
@@ -543,6 +772,7 @@ Core는 과도한 policy object 대신 명확한 handler 개입 지점을 제공
 20. Secret type은 LLM-facing schema/context/evidence로 노출되지 않는다.
 21. Existing `spakky-event`/`spakky-outbox`로 `AgentEvent`를 발행/저장할 수 있다.
 22. FastAPI 같은 inbound adapter가 `AgentYield` generator를 SSE/WebSocket으로 직접 서빙할 수 있다.
+23. Claude Code-like `CodeAssistant` 예제가 workspace read/write, shell, git tool, vLLM streaming, approval, signal, evidence, restart/resume을 통합해 동작한다.
 
 ## 고려한 대안
 
@@ -621,7 +851,7 @@ Pydantic AI 또는 LangGraph를 reference runtime으로 선택하고 Spakky wrap
 - `core/spakky-agent`는 외부 LLM SDK, DB, protocol server에 직접 의존하지 않는다.
 - `@Agent`는 `@UseCase`와 같은 Pod stereotype으로 DI 등록된다.
 - `@Agent.execute()` direct invocation이 business logic invocation으로 가능하다.
-- `AgentExecutionSpec` bootstrap validation이 missing contribution을 startup fail로 만든다.
+- Bootstrap validation이 `@Agent` metadata, `execute()` signature, DI graph, contribution registry를 함께 검사하고 missing contribution을 startup fail로 만든다.
 - Core에는 production in-memory repository 구현이 없다.
 - `plugins/spakky-vllm`이 local vLLM OpenAI-compatible server에 대해 complete/stream을 검증한다.
 - `@agent_tool` signature schema extraction과 early fail이 테스트된다.
@@ -649,6 +879,7 @@ Pydantic AI 또는 LangGraph를 reference runtime으로 선택하고 Spakky wrap
 - delegation between `@Agent` components
 - SQLAlchemy contribution for state/signal/evidence repositories
 - integration examples using existing inbound adapter building blocks
+- Claude Code-like coding assistant integration example
 - conformance tests
 - README, guide, API docs, ARCHITECTURE sync
 
