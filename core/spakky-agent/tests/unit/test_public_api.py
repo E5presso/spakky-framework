@@ -16,6 +16,9 @@ from spakky.agent import (
     AgentSignal,
     AgentState,
     AgentYield,
+    ContextDigest,
+    ContextManifest,
+    ContextPack,
     Final,
     IAgentEvidenceRepository,
     IAgentSignalRepository,
@@ -45,6 +48,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentState",
         "AgentSignal",
         "AgentEvidence",
+        "ContextPack",
+        "ContextManifest",
+        "ContextDigest",
         "IAgentStateRepository",
         "IAgentSignalRepository",
         "IAgentEvidenceRepository",
@@ -61,6 +67,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentState is agent_api.AgentState
     assert AgentSignal is agent_api.AgentSignal
     assert AgentEvidence is agent_api.AgentEvidence
+    assert ContextPack is agent_api.ContextPack
+    assert ContextManifest is agent_api.ContextManifest
+    assert ContextDigest is agent_api.ContextDigest
     assert IAgentStateRepository is agent_api.IAgentStateRepository
     assert IAgentSignalRepository is agent_api.IAgentSignalRepository
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository

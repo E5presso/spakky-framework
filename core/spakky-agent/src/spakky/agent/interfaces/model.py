@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from spakky.agent.context import ContextDigest, ContextManifest, ContextPack
 from spakky.agent.types import JsonObject, JsonValue
 
 
@@ -91,11 +92,26 @@ class ModelRequest:
     """Provider-neutral request passed to an agent model adapter."""
 
     messages: Sequence[ModelMessage]
+    context: Sequence[ContextPack] = field(default_factory=tuple)
+    context_manifest: ContextManifest | None = None
+    context_digest: ContextDigest | None = None
     structured_output: StructuredOutputSpec | None = None
     tool_calling: ToolCallingSpec | None = None
     sampling: SamplingOptions = field(default_factory=SamplingOptions)
     streaming: StreamingOptions = field(default_factory=StreamingOptions)
     metadata: JsonObject = field(default_factory=dict)
+
+    def assemble_messages(self) -> tuple[ModelMessage, ...]:
+        """Assemble prompt messages from typed context packs without concatenation."""
+        context_messages = tuple(
+            ModelMessage(
+                role=ModelMessageRole.EVIDENCE,
+                content=pack.content,
+                metadata=pack.message_metadata(),
+            )
+            for pack in self.context
+        )
+        return (*self.messages, *context_messages)
 
 
 @dataclass(frozen=True, slots=True)

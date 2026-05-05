@@ -9,6 +9,16 @@ from spakky.agent.error import (
     AgentModelConfigurationError,
     AgentPersistenceConfigurationError,
 )
+from spakky.agent.context import (
+    ContextDigest,
+    ContextFreshness,
+    ContextManifest,
+    ContextManifestEntry,
+    ContextPack,
+    ContextPackRole,
+    ContextSensitivity,
+    ContextTokenBudget,
+)
 from spakky.agent.evidence import AgentEvidence, AgentEvidenceKind
 from spakky.agent.execution import (
     Agent,
@@ -92,6 +102,14 @@ __all__ = [
     "Approval",
     "ApprovalDecision",
     "Checkpoint",
+    "ContextDigest",
+    "ContextFreshness",
+    "ContextManifest",
+    "ContextManifestEntry",
+    "ContextPack",
+    "ContextPackRole",
+    "ContextSensitivity",
+    "ContextTokenBudget",
     "Evidence",
     "Final",
     "JsonObject",
