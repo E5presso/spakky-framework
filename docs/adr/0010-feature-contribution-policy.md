@@ -82,7 +82,7 @@ sqlalchemy-agent-state = "spakky.plugins.sqlalchemy.contributions.agent_state:in
 - `spakky-sqlalchemy` 패키지는 하나로 유지된다.
 - feature별 구현 기여는 명시적 entry point로 분리된다.
 - plugin 본체가 다른 core feature 설치 여부를 감지하지 않는다.
-- loader가 누락 contribution을 구조적으로 진단할 수 있다.
+- loader가 로드/스킵/실패한 contribution을 구조적으로 진단할 수 있다.
 - 향후 Redis, Kafka, SQLAlchemy 같은 인프라 plugin이 여러 core feature에 같은 방식으로 기여할 수 있다.
 
 단점:
@@ -100,8 +100,9 @@ Spakky Framework는 **Feature Contribution Policy**를 도입한다. plugin pack
 정책:
 
 - base plugin entry point group은 기존처럼 `spakky.plugins`를 사용한다.
-- feature contribution entry point group은 `spakky.contributions.<feature-plugin-name>` 형식을 사용한다.
-- `<feature-plugin-name>`은 core feature의 plugin name과 동일해야 한다. 예: `spakky-agent`, `spakky-outbox`.
+- feature contribution entry point group은 `spakky.contributions.<normalized-feature-plugin-name>` 형식을 사용한다.
+- `<normalized-feature-plugin-name>`은 core feature plugin name을 Python entry point group segment에 안전한 형태로 정규화한 값이다. 현재 규칙은 plugin name의 `-`를 `.`로 바꾸는 것이다.
+- 예를 들어 `spakky-outbox` feature plugin의 contribution group은 `spakky.contributions.spakky.outbox`이고, `spakky-agent`는 `spakky.contributions.spakky.agent`다.
 - contribution entry point name은 같은 group 안에서 고유해야 한다.
 - contribution module은 해당 feature core package의 public contract를 import할 수 있다.
 - base plugin `initialize()`는 다른 feature 설치 여부를 감지하지 않는다.
@@ -110,7 +111,7 @@ Spakky Framework는 **Feature Contribution Policy**를 도입한다. plugin pack
 - `include`가 지정된 plugin loading에서는 base plugin과 contribution provider/plugin filtering semantics를 명시적으로 정의한다.
 - `include`가 지정되면 target feature plugin과 contribution provider base plugin이 모두 `include`에 있고 실제 base plugin으로 로드된 경우에만 contribution을 로드한다.
 - contribution provider base plugin은 contribution entry point name 파싱이 아니라 해당 entry point distribution의 `spakky.plugins` metadata로 식별한다.
-- diagnostics는 로드된 contribution, skipped contribution, missing required contribution을 startup report에 기록할 수 있어야 한다.
+- diagnostics는 현재 구현된 로드/스킵/실패 contribution 결과를 startup report에 기록한다. 스킵 사유는 `inactive_feature`, `inactive_provider`, `include_filter`로 구분한다.
 
 ## Canonical Loading Model
 
@@ -118,7 +119,7 @@ Spakky Framework는 **Feature Contribution Policy**를 도입한다. plugin pack
 Installed packages
   -> spakky.plugins entry points
   -> active core feature set
-  -> spakky.contributions.<feature> entry points
+  -> spakky.contributions.<normalized-feature> entry points
   -> Pod/Tag registration
   -> ApplicationContext.start()
 ```
@@ -130,6 +131,23 @@ Installed packages
 - 향후 loader API가 feature activation을 별도로 선언한다.
 
 Contribution은 base plugin을 대체하지 않는다. base plugin은 인프라 substrate의 기본 설정과 공통 구현을 등록하고, contribution은 특정 core feature port 구현만 추가 등록한다.
+
+`spakky-outbox`의 SQLAlchemy 구현은 이 모델의 canonical 사례다. `spakky-sqlalchemy`는 base plugin entry point와 별도로 다음 metadata를 선언한다.
+
+```toml
+[project.entry-points."spakky.contributions.spakky.outbox"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.outbox:initialize"
+```
+
+Loader는 base plugin loading 이후 active feature 이름순으로 contribution group을 조회하고, group 내부 entry point 이름순으로 contribution을 호출한다. Provider base plugin은 같은 distribution의 `spakky.plugins` metadata에서 식별되므로 contribution entry point name 자체가 provider 이름을 암시할 필요는 없다.
+
+Startup diagnostics가 활성화되어 있으면 `load_plugins` phase detail에 다음 summary key와 item detail이 기록된다.
+
+- `contributions.loaded`, `contributions.skipped`, `contributions.failed`
+- `contributions.skipped.inactive_feature`, `contributions.skipped.inactive_provider`, `contributions.skipped.include_filter`
+- `contributions.loaded.item`, `contributions.skipped.item`, `contributions.failed.item`
+
+Required contribution absence는 현재 loader diagnostics의 구현 범위가 아니다. feature core가 특정 contribution을 필수로 선언하는 API는 아래 미결정 사항으로 남기며, 그 전까지 구현체 부재는 일반 DI resolution 또는 feature별 검증 단계에서 드러난다.
 
 ## Consequences
 
@@ -176,6 +194,4 @@ ADR-0009의 `spakky-agent`는 checkpoint/evidence/artifact persistence가 필수
 
 ## 미결정 사항
 
-- contribution entry point가 base plugin보다 먼저 로드될 수 없도록 보장하는 구체 순서
 - contribution이 required인지 optional인지 feature core가 선언하는 API
-- contribution diagnostics의 정확한 public model
