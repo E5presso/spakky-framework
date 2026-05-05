@@ -32,6 +32,12 @@ Agentic Hexagonal Architecture core contracts입니다.
     options:
       show_root_heading: false
 
+## Context
+
+::: spakky.agent.context
+    options:
+      show_root_heading: false
+
 ## Recovery
 
 ::: spakky.agent.recovery

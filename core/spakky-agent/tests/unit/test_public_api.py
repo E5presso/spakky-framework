@@ -35,10 +35,16 @@ from spakky.agent import (
     AgentYield,
     Cancel,
     ContextDigest,
+    ContextHealthSignal,
     ContextManifest,
+    ContextOptimizationAction,
+    ContextOptimizationActionKind,
+    ContextOptimizationEvidenceStage,
     ContextPack,
+    ContextRotSymptom,
     Error,
     Final,
+    IAgentContextHandler,
     IAgentDelegate,
     IAgentEvidenceRepository,
     IAgentSignalRepository,
@@ -98,6 +104,12 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "ContextPack",
         "ContextManifest",
         "ContextDigest",
+        "ContextHealthSignal",
+        "ContextRotSymptom",
+        "ContextOptimizationAction",
+        "ContextOptimizationActionKind",
+        "ContextOptimizationEvidenceStage",
+        "IAgentContextHandler",
         "IAgentStateRepository",
         "IAgentSignalRepository",
         "IAgentEvidenceRepository",
@@ -141,6 +153,14 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert ContextPack is agent_api.ContextPack
     assert ContextManifest is agent_api.ContextManifest
     assert ContextDigest is agent_api.ContextDigest
+    assert ContextHealthSignal is agent_api.ContextHealthSignal
+    assert ContextRotSymptom is agent_api.ContextRotSymptom
+    assert ContextOptimizationAction is agent_api.ContextOptimizationAction
+    assert ContextOptimizationActionKind is agent_api.ContextOptimizationActionKind
+    assert (
+        ContextOptimizationEvidenceStage is agent_api.ContextOptimizationEvidenceStage
+    )
+    assert IAgentContextHandler is agent_api.IAgentContextHandler
     assert IAgentStateRepository is agent_api.IAgentStateRepository
     assert IAgentSignalRepository is agent_api.IAgentSignalRepository
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
