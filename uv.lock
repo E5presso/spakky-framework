@@ -32,6 +32,7 @@ members = [
     "spakky-task",
     "spakky-tracing",
     "spakky-typer",
+    "spakky-vllm",
 ]
 
 [[package]]
@@ -2547,6 +2548,9 @@ sqlalchemy = [
 typer = [
     { name = "spakky-typer" },
 ]
+vllm = [
+    { name = "spakky-vllm" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2562,9 +2566,10 @@ requires-dist = [
     { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
     { name = "spakky-sqlalchemy", marker = "extra == 'sqlalchemy'", editable = "plugins/spakky-sqlalchemy" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
+    { name = "spakky-vllm", marker = "extra == 'vllm'", editable = "plugins/spakky-vllm" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "saga"]
+provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
 
 [[package]]
 name = "spakky-actuator"
@@ -3076,6 +3081,25 @@ requires-dist = [
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-actuator", editable = "core/spakky-actuator" },
     { name = "typer", specifier = ">=0.24.1" },
+]
+
+[[package]]
+name = "spakky-vllm"
+version = "6.5.0"
+source = { editable = "plugins/spakky-vllm" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic-settings" },
+    { name = "spakky" },
+    { name = "spakky-agent" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-agent", editable = "core/spakky-agent" },
 ]
 
 [[package]]

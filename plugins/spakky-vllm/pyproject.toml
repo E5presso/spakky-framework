@@ -1,29 +1,20 @@
 [project]
-name = "spakky"
+name = "spakky-vllm"
 version = "6.5.0"
-description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
+description = "vLLM OpenAI-compatible model adapter plugin for Spakky Agent"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
-    "uuid7>=0.1.0",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.13.1",
+    "spakky>=6.5.0",
+    "spakky-agent>=6.5.0",
 ]
 
-[project.optional-dependencies]
-logging = ["spakky-logging>=6.5.0"]
-security = ["spakky-security>=6.5.0"]
-fastapi = ["spakky-fastapi>=6.5.0"]
-typer = ["spakky-typer>=6.5.0"]
-rabbitmq = ["spakky-rabbitmq>=6.5.0"]
-kafka = ["spakky-kafka>=6.5.0"]
-sqlalchemy = ["spakky-sqlalchemy>=6.5.0"]
-celery = ["spakky-celery>=6.5.0"]
-opentelemetry = ["spakky-opentelemetry>=6.5.0"]
-grpc = ["spakky-grpc>=6.5.0"]
-redis = ["spakky-redis>=6.5.0"]
-vllm = ["spakky-vllm>=6.5.0"]
-saga = ["spakky-saga>=6.5.0"]
+[project.entry-points."spakky.plugins"]
+spakky-vllm = "spakky.plugins.vllm.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
@@ -31,11 +22,16 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "spakky.core"
+module-name = "spakky.plugins.vllm"
 
 [tool.pyrefly]
 python-version = "3.12"
-search_path = ["src", "."]
+search_path = [
+    "src",
+    ".",
+    "../../core/spakky/src",
+    "../../core/spakky-agent/src",
+]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
@@ -43,7 +39,11 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky"
+pythonpath = [
+    "src",
+    "../../core/spakky/src",
+    "../../core/spakky-agent/src",
+]
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -53,7 +53,7 @@ addopts = """
     --cov-report=xml
     --no-cov-on-fail
     --strict-markers
-    --dist=load
+    --dist=loadfile
     -p no:warnings
     -n auto
     --spec
@@ -61,7 +61,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/**/*.py"]
+include = ["src/spakky/plugins/vllm/**/*.py"]
 branch = true
 
 [tool.coverage.report]
@@ -71,6 +71,7 @@ fail_under = 100
 skip_empty = true
 exclude_lines = [
     "pragma: no cover",
+    "if TYPE_CHECKING:",
     "def __repr__",
     "raise AssertionError",
     "raise NotImplementedError",
@@ -79,3 +80,7 @@ exclude_lines = [
     "\\.\\.\\.",
     "pass",
 ]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-agent = { workspace = true }

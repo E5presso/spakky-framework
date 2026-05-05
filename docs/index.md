@@ -250,6 +250,7 @@ app = (
 | [spakky-opentelemetry](api/plugins/spakky-opentelemetry.md) | OpenTelemetry 브릿지 |
 | [spakky-grpc](api/plugins/spakky-grpc.md)                   | gRPC 통합           |
 | [spakky-redis](api/plugins/spakky-redis.md)                 | Redis 캐시 백엔드 |
+| [spakky-vllm](api/plugins/spakky-vllm.md)                   | vLLM 모델 adapter |
 
 ### 의존 방향
 
@@ -268,6 +269,7 @@ flowchart LR
     opentelemetry[spakky-opentelemetry]
     grpc[spakky-grpc]
     redis[spakky-redis]
+    vllm[spakky-vllm]
   end
 
   subgraph Core[Core]
@@ -282,6 +284,7 @@ flowchart LR
     task[spakky-task] --> core
     tracing_dep --> core
     agent[spakky-agent] --> core
+    vllm --> agent
     cache[spakky-cache] --> core
     saga[spakky-saga] --> domain
     saga --> core

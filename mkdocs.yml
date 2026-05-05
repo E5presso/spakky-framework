@@ -92,6 +92,7 @@ plugins:
             - plugins/spakky-opentelemetry/src
             - plugins/spakky-grpc/src
             - plugins/spakky-redis/src
+            - plugins/spakky-vllm/src
           options:
             docstring_style: google
             show_source: true
@@ -161,6 +162,7 @@ nav:
           - spakky-opentelemetry: api/plugins/spakky-opentelemetry.md
           - spakky-grpc: api/plugins/spakky-grpc.md
           - spakky-redis: api/plugins/spakky-redis.md
+          - spakky-vllm: api/plugins/spakky-vllm.md
   - ADR:
       - 개요: adr/README.md
       - ADR-0001 이벤트 시스템 재설계: adr/0001-event-system-redesign.md

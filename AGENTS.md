@@ -8,7 +8,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 
 - **Framework**: Spring-inspired DI/IoC for Python 3.12+, AOP, plugin system (`uv` monorepo)
 - **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task`, `spakky-tracing`, `spakky-outbox`, `spakky-saga`
-- **Plugins** (`plugins/`): `spakky-logging`, `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-celery`, `spakky-opentelemetry`, `spakky-grpc`
+- **Plugins** (`plugins/`): `spakky-logging`, `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-celery`, `spakky-opentelemetry`, `spakky-grpc`, `spakky-vllm`
 
 ## Project Quick Reference
 
@@ -31,6 +31,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 | `plugins/spakky-security/` | 암호화/해싱/JWT 유틸리티 |
 | `plugins/spakky-logging/` | 구조화 로깅, @logged AOP Aspect |
 | `plugins/spakky-opentelemetry/` | OpenTelemetry SDK 브릿지 |
+| `plugins/spakky-vllm/` | vLLM OpenAI-compatible `IAgentModel` adapter |
 
 **의존 방향 (단방향):** `.agents/rules/monorepo.md` 참조
 

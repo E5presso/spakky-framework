@@ -92,6 +92,10 @@
 			"name": "plugins.redis",
 			"path": "plugins/spakky-redis",
 		},
+		{
+			"name": "plugins.vllm",
+			"path": "plugins/spakky-vllm",
+		},
 	],
 	"settings": {
 		"yaml.customTags": [

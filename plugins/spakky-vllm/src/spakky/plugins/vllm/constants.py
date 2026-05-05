@@ -1,0 +1,7 @@
+"""Constants for the spakky-vllm plugin."""
+
+SPAKKY_VLLM_CONFIG_ENV_PREFIX: str = "SPAKKY_VLLM__"
+DEFAULT_VLLM_ENDPOINT_URL: str = "http://127.0.0.1:8000/v1"
+DEFAULT_VLLM_MODEL: str = "default"
+DEFAULT_VLLM_REQUEST_TIMEOUT_SECONDS: float = 30.0
+DEFAULT_VLLM_STREAM_TIMEOUT_SECONDS: float = 300.0
