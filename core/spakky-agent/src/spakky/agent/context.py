@@ -5,7 +5,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import cast
 
+from spakky.agent.safety import (
+    ContextExposurePolicy,
+    SensitiveFieldDescriptor,
+    guard_json_value,
+)
 from spakky.agent.types import JsonObject, JsonValue
 
 
@@ -161,11 +167,39 @@ class ContextPack:
     relevance: float | None = None
     token_budget: ContextTokenBudget = field(default_factory=ContextTokenBudget)
     sensitivity: ContextSensitivity = ContextSensitivity.INTERNAL
+    sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
     metadata: JsonObject = field(default_factory=dict)
 
-    def message_metadata(self) -> Mapping[str, JsonValue]:
+    def guarded_content(
+        self,
+        policy: ContextExposurePolicy | None = None,
+    ) -> str:
+        """Return deterministic model-safe content for this context pack."""
+        exposure_policy = policy or ContextExposurePolicy()
+        if self.sensitivity == ContextSensitivity.REDACTED:
+            return "[REDACTED]"
+        guarded = guard_json_value(
+            {"content": self.content},
+            tuple(
+                SensitiveFieldDescriptor(
+                    ("content", *descriptor.path), descriptor.field
+                )
+                for descriptor in self.sensitive_fields
+            ),
+            exposure_policy,
+        )
+        content = cast(Mapping[str, JsonValue], guarded).get("content")
+        if isinstance(content, str):
+            return content
+        return "[REDACTED]"
+
+    def message_metadata(
+        self,
+        policy: ContextExposurePolicy | None = None,
+    ) -> Mapping[str, JsonValue]:
         """Return non-content metadata for provider-neutral model messages."""
-        return {
+        exposure_policy = policy or ContextExposurePolicy()
+        metadata: dict[str, JsonValue] = {
             "context_pack_id": self.id,
             "source": self.source,
             "role": self.role.value,
@@ -179,6 +213,11 @@ class ContextPack:
             "sensitivity": self.sensitivity.value,
             "metadata": self.metadata,
         }
+        if exposure_policy.include_sensitive_context_metadata and self.sensitive_fields:
+            metadata["sensitive_fields"] = tuple(
+                descriptor.to_metadata() for descriptor in self.sensitive_fields
+            )
+        return metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +230,7 @@ class ContextManifestEntry:
     origin_ref: str
     evidence_ref: str | None = None
     digest_ref: str | None = None
+    sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
     metadata: JsonObject = field(default_factory=dict)
 
 

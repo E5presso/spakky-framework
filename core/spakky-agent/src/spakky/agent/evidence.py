@@ -1,6 +1,6 @@
 """Agent evidence contracts."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -11,6 +11,11 @@ from spakky.agent.context import (
     ContextOptimizationEvidenceStage,
 )
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.safety import (
+    EvidenceExposurePolicy,
+    SensitiveFieldDescriptor,
+    guard_json_value,
+)
 from spakky.agent.tooling import EvidenceCapture
 from spakky.agent.types import JsonObject
 
@@ -43,6 +48,7 @@ class AgentEvidence:
     digest: str | None = None
     manifest_ref: str | None = None
     reference: str | None = None
+    sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
     created_at: datetime | None = None
 
 
@@ -56,6 +62,7 @@ class AgentEvidenceCandidate:
     digest: str | None = None
     manifest_ref: str | None = None
     reference: str | None = None
+    sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
 
     @classmethod
     def tool_result(
@@ -65,19 +72,28 @@ class AgentEvidenceCandidate:
         tool_schema_name: str,
         result: JsonObject,
         capture: EvidenceCapture,
+        sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = (),
+        exposure_policy: EvidenceExposurePolicy | None = None,
         summary: str | None = None,
     ) -> "AgentEvidenceCandidate":
         """Create evidence metadata for a captured tool result."""
         _require_non_blank(tool_identity, "Agent tool identity")
         _require_non_blank(tool_schema_name, "Agent tool schema name")
+        policy = exposure_policy or EvidenceExposurePolicy()
+        guarded_result = guard_json_value(result, sensitive_fields, policy)
+        if not isinstance(guarded_result, Mapping):
+            guarded_result = {}
         return cls(
             kind=AgentEvidenceKind.TOOL,
             payload={
                 "tool_identity": tool_identity,
                 "tool_schema_name": tool_schema_name,
                 "capture": capture.value,
-                "result": result,
+                "result": guarded_result,
             },
+            sensitive_fields=sensitive_fields
+            if policy.include_sensitive_metadata
+            else (),
             summary=summary,
         )
 
@@ -156,6 +172,7 @@ class AgentEvidenceCandidate:
             digest=self.digest,
             manifest_ref=self.manifest_ref,
             reference=self.reference,
+            sensitive_fields=self.sensitive_fields,
             created_at=created_at,
         )
 

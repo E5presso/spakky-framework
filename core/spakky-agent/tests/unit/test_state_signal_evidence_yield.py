@@ -23,9 +23,14 @@ from spakky.agent import (
     Evidence,
     Error,
     EvidenceCapture,
+    EvidenceExposurePolicy,
     Final,
     Message,
+    PII,
     Progress,
+    SecretField,
+    SensitiveField,
+    SensitiveFieldDescriptor,
     Token,
     Tool,
     TextDelta,
@@ -194,6 +199,36 @@ def test_agent_evidence_candidate_expect_converts_tool_result() -> None:
         "result": {"content": "hello"},
     }
     assert evidence.summary == "read workspace file"
+
+
+def test_agent_evidence_candidate_expect_guards_sensitive_result_payload() -> None:
+    """evidence payload는 raw secret/PII 대신 deterministic guard 결과를 저장한다."""
+    candidate = AgentEvidenceCandidate.tool_result(
+        tool_identity="tests.WorkspaceTools:lookup",
+        tool_schema_name="workspace.lookup",
+        result={
+            "email": "owner@example.com",
+            "secret": "sk-live-1234",
+            "status": "ok",
+        },
+        capture=EvidenceCapture.STRUCTURED,
+        sensitive_fields=(
+            SensitiveFieldDescriptor(("email",), SensitiveField(PII.EMAIL)),
+            SensitiveFieldDescriptor(("secret",), SecretField()),
+        ),
+        exposure_policy=EvidenceExposurePolicy(),
+    )
+    evidence = candidate.to_evidence(
+        evidence_id="evidence-1",
+        agent_state_id="run-1",
+    )
+
+    assert candidate.payload["result"] == {
+        "email": "[REDACTED]",
+        "secret": "[SECRET]",
+        "status": "ok",
+    }
+    assert evidence.sensitive_fields == candidate.sensitive_fields
 
 
 def test_agent_evidence_candidate_expect_rejects_blank_identity() -> None:

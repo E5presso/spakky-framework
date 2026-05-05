@@ -19,12 +19,18 @@ from spakky.agent import (
     AgentToolSchemaHandle,
     AgentYield,
     AgentYieldKind,
+    ContextExposurePolicy,
     DataAccess,
+    DataSensitivity,
     EvidenceCapture,
     Externality,
     Final,
     Idempotency,
+    MaskingPolicy,
+    PII,
     ResultBudget,
+    SecretField,
+    SensitiveField,
     TimeoutPolicy,
     ToolApprovalRequirement,
     ToolEffects,
@@ -282,6 +288,150 @@ def test_tool_schema_expect_generates_output_schema_from_return_type() -> None:
             },
             {"type": "string"},
         ],
+    }
+
+
+def test_tool_schema_expect_preserves_annotated_sensitive_metadata() -> None:
+    """Annotated SensitiveField metadata는 internal descriptor에 보존된다."""
+
+    @dataclass(frozen=True, slots=True)
+    class CustomerProfile:
+        email: Annotated[str, SensitiveField(PII.EMAIL)]
+        token: Annotated[str, SecretField()]
+        account_id: str
+
+    @Agent()
+    class CustomerAgent:
+        @agent_tool(schema_name="customer.lookup")
+        def lookup(
+            self,
+            profile: CustomerProfile,
+            request_id: Annotated[str, SensitiveField(DataSensitivity.CONFIDENTIAL)],
+        ) -> Annotated[str, SensitiveField(PII.NAME)]:
+            return f"{profile.account_id}:{request_id}"
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(CustomerAgent).tool_catalog.by_schema_name("customer.lookup")
+
+    assert descriptor.schema.input_schema["properties"] == {
+        "profile": {
+            "type": "object",
+            "properties": {
+                "email": {"type": "string"},
+                "token": {"type": "string"},
+                "account_id": {"type": "string"},
+            },
+            "additionalProperties": False,
+            "required": ["email", "token", "account_id"],
+        },
+        "request_id": {"type": "string"},
+    }
+    assert descriptor.schema.input_sensitive_fields[0].path == ("profile", "email")
+    assert descriptor.schema.input_sensitive_fields[0].field == SensitiveField(
+        PII.EMAIL
+    )
+    assert descriptor.schema.input_sensitive_fields[1].path == ("profile", "token")
+    assert descriptor.schema.input_sensitive_fields[1].field == SecretField()
+    assert descriptor.schema.input_sensitive_fields[2].path == ("request_id",)
+    assert descriptor.schema.output_sensitive_fields[0].path == ()
+    assert descriptor.schema.output_sensitive_fields[0].field == SensitiveField(
+        PII.NAME
+    )
+    assert descriptor.schema.output_schema_for(
+        ContextExposurePolicy(include_sensitive_schema_metadata=True)
+    ) == {
+        "title": "customer.lookup.output",
+        "type": "string",
+        "x-spakky-sensitive": [
+            {
+                "path": [],
+                "field": {
+                    "kind": "sensitive",
+                    "category": "name",
+                    "sensitivity": "pii",
+                    "masking": "redact",
+                    "redaction": "redact",
+                },
+            },
+        ],
+    }
+
+
+def test_tool_schema_expect_exposes_sensitive_extension_only_when_policy_allows() -> (
+    None
+):
+    """LLM-facing JSON schema extension은 policy가 허용할 때만 포함된다."""
+
+    @Agent()
+    class LoginAgent:
+        @agent_tool(schema_name="login.submit")
+        def submit(
+            self,
+            password: Annotated[str, SecretField()],
+            email: Annotated[
+                str,
+                SensitiveField(PII.EMAIL, masking=MaskingPolicy.HASH),
+            ],
+        ) -> str:
+            return email
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    schema = Agent.get(LoginAgent).tool_catalog.by_schema_name("login.submit").schema
+
+    assert schema.input_schema_for() == schema.input_schema
+    assert schema.input_schema_for(
+        ContextExposurePolicy(include_sensitive_schema_metadata=True)
+    ) == {
+        "type": "object",
+        "title": "login.submit.input",
+        "properties": {
+            "password": {
+                "type": "string",
+                "x-spakky-sensitive": [
+                    {
+                        "path": ["password"],
+                        "field": {
+                            "kind": "secret",
+                            "sensitivity": "secret",
+                            "redaction": "reference_only",
+                        },
+                    },
+                ],
+            },
+            "email": {
+                "type": "string",
+                "x-spakky-sensitive": [
+                    {
+                        "path": ["email"],
+                        "field": {
+                            "kind": "sensitive",
+                            "category": "email",
+                            "sensitivity": "pii",
+                            "masking": "hash",
+                            "redaction": "redact",
+                        },
+                    },
+                ],
+            },
+        },
+        "additionalProperties": False,
+        "required": ["password", "email"],
     }
 
 
