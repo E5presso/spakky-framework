@@ -78,6 +78,9 @@ REST API · 이벤트 스키마 · DB 스키마 · 인덱스 · Audit Log 필드
 
 ### 축 5 — Blocker / 의존 chain 모순
 
+- **다티켓 마일스톤 blocker 전무**: 활성 자식 태스크가 2개 이상인데 모든 `blockedBy`가 비어 있고 "all-parallel approved" 명시도 없으면 Critical. 모든 티켓이 wave 0에 떨어져 레이어 선후·대표 태스크 의존·통합 순서가 무력화된다.
+- **GraphQL ↔ 본문 불일치**: GitHub `blockedBy` 관계와 본문 `## 선행 이슈` / `Blocked by:` / `Depends on:` 표기가 다르면 Critical 또는 High. `/autopilot`과 `/process-ticket`는 본문 표기를 파싱하므로 GraphQL 관계만으로 충분하지 않다.
+- **Sub-issue 위계 누락**: 부모/그룹 이슈가 자식 목록을 본문에 갖고 있는데 GitHub Sub-issues 관계가 없거나, 반대로 Sub-issues에는 있는데 부모 본문에 없으면 High.
 - **부모 ↔ 자식 chain 표기 충돌**: 부모 본문이 `A → B → C` 표기인데 자식 본문이 "A 완료 후 B·C 병렬"로 표기.
 - **transitive blocker**: 자식의 blockedBy가 직접 부모만 두고 grandparent를 누락 — transitive로 충족되면 OK, 아니면 blocker 추가.
 - **priority ↔ 차단 게이트 부정합**: priority Low인 이슈가 priority Medium Wave의 차단 게이트면 격상 대상.
@@ -109,6 +112,11 @@ REST API · 이벤트 스키마 · DB 스키마 · 인덱스 · Audit Log 필드
 | **High** | Silent assumption 유발 | 자율 정정 위임. 정책 결정 필요시 사용자 질의. |
 | **Medium** | 수용 기준 모호로 검증 실패 위험 | 자율 정정 위임. |
 | **Low** | 스타일·일관성 | 자율 정정 위임. |
+
+Critical 예시:
+- 다티켓 마일스톤의 모든 활성 자식 `blockedBy`가 비어 있음
+- Phase 3 DAG에 edge가 있는데 GitHub `addBlockedBy` 관계 또는 본문 `## 선행 이슈`가 누락됨
+- blocker cycle 또는 완료 불가능한 blocker chain
 
 보고 형식:
 ```

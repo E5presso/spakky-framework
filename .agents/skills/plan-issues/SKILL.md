@@ -228,6 +228,8 @@ Decision Branch Ledger의 `RESOLVED` 항목은 §2 가정, §5 도메인 계약,
 3. 병렬 실행 가능한 태스크 그룹 식별
 4. FR 커버리지 누락 0건 (모든 FR이 1개 이상 태스크에 매핑)
 5. SC 커버리지 누락 0건 (모든 SC가 1개 이상 태스크 산출물 합으로 도달 가능)
+6. **DAG 실체성 확인**: 태스크가 2개 이상이고 전부 병렬이라는 사용자 승인 기록이 없으면 `blockedBy` edge가 1개 이상 존재해야 한다. 전부 `blockedBy: []`인 분해는 wave 0 폭주를 만들므로 Critical 실패다.
+7. **본문 메타데이터 확인**: 모든 자식 태스크 draft는 `## 선행 이슈` 섹션을 가진다. 선행이 없으면 `없음`, 있으면 `- [ ] #N` task list로 적는다. GraphQL 관계만 있고 본문 표기가 없으면 `/process-ticket`와 `/autopilot` 파서가 놓칠 수 있으므로 실패다.
 
 ### 사용자 승인
 
@@ -267,6 +269,7 @@ gh issue create --title "{제목}" --body-file /tmp/issue_{번호}.md \
 3. **자식 태스크 이슈** 생성 — 부모 번호 본문 참조 + 마일스톤/프로젝트 연결
 4. **선후 관계** 설정 (`addBlockedBy` GraphQL mutation)
 5. **Sub-issues 위계** 설정 (`addSubIssue` GraphQL mutation, 그룹 구조)
+6. **관계 read-back 검증** — 생성 직후 `gh issue view`로 본문 `## 선행 이슈`를 확인하고, GraphQL 관계가 실패한 경우 본문 `blockedBy` 표기만으로 성공 처리하지 않는다. GraphQL mutation 실패는 재시도 후 계속 실패하면 사용자에게 Critical로 보고한다.
 
 ### GitHub Sub-issues / blockedBy GraphQL
 
@@ -282,6 +285,16 @@ gh api graphql -f query='mutation { addBlockedBy(input: { issueId: "{ISSUE_ID}",
 ```
 
 **주의**: `gh issue edit --add-sub-issue`는 지원되지 않으므로 반드시 GraphQL mutation을 사용한다.
+
+### Critical Relationship Gate
+
+Phase 4 종료 전 다음 조건을 모두 만족해야 한다. 하나라도 실패하면 Phase 5로 넘어가지 않는다.
+
+1. 부모/그룹 이슈가 있는 경우 모든 자식은 GraphQL `addSubIssue`로 부모에 연결되어 있다.
+2. Phase 3 DAG의 모든 edge는 GraphQL `addBlockedBy`로 생성되어 있다.
+3. 각 자식 본문에는 `## 선행 이슈` 섹션이 있고, GraphQL `blockedBy`와 같은 번호를 task list로 가진다.
+4. 태스크가 2개 이상이고 "all-parallel" 사용자 승인이 없는데 `blockedBy` edge 총합이 0이면 Critical 실패다.
+5. `gh issue list --milestone ...`와 `gh issue view` read-back 결과로 프로젝트/마일스톤/라벨/sub-issue/blocker 누락이 없음을 확인한다.
 
 ## Phase 5: 결과 보고
 
@@ -334,6 +347,7 @@ gh api graphql -f query='mutation { addBlockedBy(input: { issueId: "{ISSUE_ID}",
   - 레이어 기반 선후(Port 정의 → 구현 → 배선)를 자동 적용한다.
   - 부모 간 의존은 자식으로 상속되며, 대표 태스크(인터페이스 확정)를 의존 대상으로 삼는다.
   - 자식 태스크의 `blockedBy`는 동일 부모 형제 또는 다른 부모의 대표 태스크만 허용.
+  - 다티켓 마일스톤에서 전체 `blockedBy`가 비어 있으면 Critical 실패다. 정말 전부 병렬이면 Phase 3 승인 기록에 `all-parallel approved`를 명시한다.
 - **이슈 본문의 Stale 방지**: 파일 경로/시그니처/커밋은 금지, 도메인 스펙은 최대 밀도.
 - **코드베이스 분석은 Explore 서브에이전트**로 실행한다.
 - **이슈 생성은 top-down 순서**: 마일스톤 → 부모 이슈 → 자식 태스크 → 선행 관계.
@@ -341,6 +355,7 @@ gh api graphql -f query='mutation { addBlockedBy(input: { issueId: "{ISSUE_ID}",
 - **이슈 본문은 Write 도구로 임시 파일에 작성** 후 `--body-file`로 전달한다 (UTF-8 깨짐 방지).
 - 그룹의 자식 이슈는 GraphQL `addSubIssue` mutation으로 부모와 위계를 연결한다.
 - 선행 의존은 GraphQL `addBlockedBy` mutation으로 설정한다.
+- 선행 의존은 본문 `## 선행 이슈` 섹션에도 task list로 중복 표기한다. GraphQL UI 관계는 사람과 GitHub용, 본문 표기는 `/autopilot`·`/process-ticket` 파서용이다.
 - 각 Phase 전환 시 사용자에게 현재 단계를 간결하게 알린다.
 
 $ARGUMENTS
