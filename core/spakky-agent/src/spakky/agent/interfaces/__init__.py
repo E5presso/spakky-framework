@@ -1,5 +1,15 @@
 """Agent public interface ports."""
 
+from spakky.agent.context import (
+    ContextDigest,
+    ContextFreshness,
+    ContextManifest,
+    ContextManifestEntry,
+    ContextPack,
+    ContextPackRole,
+    ContextSensitivity,
+    ContextTokenBudget,
+)
 from spakky.agent.interfaces.model import (
     IAgentModel,
     JsonSchemaConstraint,
@@ -31,6 +41,14 @@ __all__ = [
     "IAgentSignalRepository",
     "IAgentStateRepository",
     "JsonSchemaConstraint",
+    "ContextDigest",
+    "ContextFreshness",
+    "ContextManifest",
+    "ContextManifestEntry",
+    "ContextPack",
+    "ContextPackRole",
+    "ContextSensitivity",
+    "ContextTokenBudget",
     "ModelError",
     "ModelMessage",
     "ModelMessageRole",

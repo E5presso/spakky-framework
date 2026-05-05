@@ -5,6 +5,14 @@ from collections.abc import AsyncIterator
 import pytest
 
 from spakky.agent import (
+    ContextDigest,
+    ContextFreshness,
+    ContextManifest,
+    ContextManifestEntry,
+    ContextPack,
+    ContextPackRole,
+    ContextSensitivity,
+    ContextTokenBudget,
     IAgentModel,
     JsonSchemaConstraint,
     ModelError,
@@ -87,6 +95,76 @@ def test_model_request_expect_provider_neutral_structured_output_contract() -> N
     assert request.sampling.max_tokens == 64
     assert request.streaming.include_usage is True
     assert request.streaming.include_progress is False
+
+
+def test_model_request_expect_assembles_typed_context_packs_as_messages() -> None:
+    """ModelRequest는 raw 문자열 결합 대신 ContextPack 기반 메시지를 조립한다."""
+    pack = ContextPack(
+        id="pack-1",
+        content="ticket context",
+        source="issue:#233",
+        role=ContextPackRole.EVIDENCE,
+        freshness=ContextFreshness.CURRENT,
+        relevance=0.92,
+        token_budget=ContextTokenBudget(max_tokens=512, estimated_tokens=128),
+        sensitivity=ContextSensitivity.CONFIDENTIAL,
+        metadata={"origin": "github"},
+    )
+    manifest = ContextManifest(
+        id="manifest-1",
+        entries=(
+            ContextManifestEntry(
+                pack_id="pack-1",
+                source="issue:#233",
+                role=ContextPackRole.EVIDENCE,
+                origin_ref="github:issue:233",
+                evidence_ref="evidence-1",
+            ),
+        ),
+        evidence_refs=("evidence-1",),
+    )
+    digest = ContextDigest(
+        id="digest-1",
+        context_identity="agent-run:state-1:model-call-1",
+        source_manifest_ref="manifest-1",
+        digest="sha256:abc123",
+        derived_from_pack_ids=("pack-1",),
+        compression_evidence_ref="evidence-2",
+        algorithm="summary-v1",
+    )
+
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "summarize"),),
+        context=(pack,),
+        context_manifest=manifest,
+        context_digest=digest,
+    )
+
+    assembled = request.assemble_messages()
+
+    assert assembled == (
+        ModelMessage(ModelMessageRole.USER, "summarize"),
+        ModelMessage(
+            role=ModelMessageRole.EVIDENCE,
+            content="ticket context",
+            metadata={
+                "context_pack_id": "pack-1",
+                "source": "issue:#233",
+                "role": "evidence",
+                "freshness": "current",
+                "relevance": 0.92,
+                "token_budget": {
+                    "max_tokens": 512,
+                    "estimated_tokens": 128,
+                    "reserved_output_tokens": None,
+                },
+                "sensitivity": "confidential",
+                "metadata": {"origin": "github"},
+            },
+        ),
+    )
+    assert request.context_manifest is manifest
+    assert request.context_digest is digest
 
 
 @pytest.mark.asyncio
