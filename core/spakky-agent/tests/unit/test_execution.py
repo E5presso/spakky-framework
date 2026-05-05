@@ -3,6 +3,8 @@
 from collections.abc import AsyncGenerator
 
 import pytest
+import tests.fixtures.future_agent_app as future_agent_app
+import spakky.agent.execution as execution_module
 
 from spakky.core.pod.annotations.pod import Pod
 
@@ -287,3 +289,37 @@ def test_agent_expect_rejects_unparameterized_generator_return_type() -> None:
         class UnparameterizedGeneratorAgent:
             async def execute(self, command: str) -> AsyncGenerator:
                 yield command
+
+
+def test_agent_expect_resolves_postponed_execute_return_annotation() -> None:
+    """future annotations 스타일의 execute 반환 타입도 해석해 검증한다."""
+    agent = Agent.get(future_agent_app.FutureAnnotatedAgent)
+
+    assert agent.type_ is future_agent_app.FutureAnnotatedAgent
+
+
+def test_agent_expect_rejects_unresolvable_execute_return_annotation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """해석 불가능한 지연 반환 타입은 custom definition error로 드러난다."""
+
+    def unresolved_type_hints(
+        target: object,
+        include_extras: bool = False,
+    ) -> dict[str, object]:
+        raise NameError(target, include_extras)
+
+    monkeypatch.setattr(execution_module, "get_type_hints", unresolved_type_hints)
+
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent()
+        class UnknownReturnAnnotationAgent:
+            async def execute(
+                self,
+                command: str,
+            ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+                yield AgentYield(
+                    kind=AgentYieldKind.FINAL,
+                    payload=Final(output=command, metadata={}),
+                )

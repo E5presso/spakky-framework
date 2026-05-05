@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass, field
 from enum import StrEnum
 from inspect import Parameter, Signature, getattr_static, isclass, signature
-from typing import get_args, get_origin
+from typing import get_args, get_origin, get_type_hints
 
 from spakky.agent.error import AgentDefinitionError
 from spakky.core.pod.annotations.pod import Pod, PodType
@@ -108,7 +108,11 @@ class Agent(Pod):
             raise AgentDefinitionError("@Agent class must define execute()")
         execute_signature = signature(execute)
         self._validate_execute_parameters(execute_signature)
-        self._validate_execute_return_type(execute_signature)
+        return_annotation = self._resolve_execute_return_annotation(
+            execute,
+            execute_signature,
+        )
+        self._validate_execute_return_type(return_annotation)
 
     def _validate_execute_parameters(self, execute_signature: Signature) -> None:
         parameters = list(execute_signature.parameters.values())
@@ -128,8 +132,28 @@ class Agent(Pod):
                     "@Agent.execute() parameters must be type annotated"
                 )
 
-    def _validate_execute_return_type(self, execute_signature: Signature) -> None:
+    def _resolve_execute_return_annotation(
+        self,
+        execute: object,
+        execute_signature: Signature,
+    ) -> object:
         return_annotation = execute_signature.return_annotation
+        if return_annotation == Signature.empty:
+            return return_annotation
+        hint_target = (
+            execute.__func__
+            if isinstance(execute, (staticmethod, classmethod))
+            else execute
+        )
+        try:
+            type_hints = get_type_hints(hint_target, include_extras=True)
+        except (NameError, TypeError) as e:
+            raise AgentDefinitionError(
+                "@Agent.execute() return type annotation cannot be resolved"
+            ) from e
+        return type_hints.get("return", return_annotation)
+
+    def _validate_execute_return_type(self, return_annotation: object) -> None:
         if return_annotation == Signature.empty:
             raise AgentDefinitionError("@Agent.execute() return type is required")
         return_origin = get_origin(return_annotation)
