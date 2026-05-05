@@ -80,7 +80,9 @@ def _contribution_entry_point_group(feature_plugin: Plugin) -> str:
     return f"{CONTRIBUTION_PATH_PREFIX}.{feature_group_segment}"
 
 
-def _provider_plugins_for_contribution(entry_point: EntryPoint) -> set[Plugin]:
+def _provider_plugins_for_contribution(
+    entry_point: EntryPoint,
+) -> set[Plugin]:
     """Return base plugin providers declared by the entry point distribution."""
     distribution = entry_point.dist
     if distribution is None:
@@ -120,11 +122,12 @@ def _contribution_skip_reason(
 ) -> str | None:
     """Return a skip reason when contribution filters reject the entry point."""
     provider_plugins = _provider_plugins_for_contribution(contribution_entry_point)
+    active_provider_plugins = provider_plugins & loaded_base_plugins
     if feature_plugin not in loaded_base_plugins:
         return _CONTRIBUTION_SKIP_REASON_INACTIVE_FEATURE
-    if include is not None and len(provider_plugins & include) == 0:
+    if include is not None and len(active_provider_plugins & include) == 0:
         return _CONTRIBUTION_SKIP_REASON_INCLUDE_FILTER
-    if len(provider_plugins & loaded_base_plugins) == 0:
+    if len(active_provider_plugins) == 0:
         return _CONTRIBUTION_SKIP_REASON_INACTIVE_PROVIDER
     return None
 

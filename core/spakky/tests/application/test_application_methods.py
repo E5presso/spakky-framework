@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.metadata import EntryPoint
 
 import pytest
 
@@ -548,6 +549,40 @@ def test_load_plugins_diagnostics_expect_include_filter_skip_reason(
     assert calls == ["base:outbox"]
     assert details["contributions.skipped"] == ("1",)
     assert details["contributions.skipped.include_filter"] == ("1",)
+
+
+def test_contribution_skip_reason_include_expect_active_provider_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """include filter는 활성 provider 중 include 포함 여부로 판단한다."""
+    contribution_entry_point = EntryPoint(
+        name="sqlalchemy-outbox",
+        value="spakky.plugins.sqlalchemy.contributions.outbox:initialize",
+        group="spakky.contributions.spakky.outbox",
+    )
+    monkeypatch.setattr(
+        application_module,
+        "_provider_plugins_for_contribution",
+        lambda _entry_point: {
+            Plugin(name="spakky-sqlalchemy"),
+            Plugin(name="spakky-other-provider"),
+        },
+    )
+
+    skip_reason = application_module._contribution_skip_reason(
+        feature_plugin=Plugin(name="spakky-outbox"),
+        contribution_entry_point=contribution_entry_point,
+        loaded_base_plugins={
+            Plugin(name="spakky-outbox"),
+            Plugin(name="spakky-sqlalchemy"),
+        },
+        include={
+            Plugin(name="spakky-outbox"),
+            Plugin(name="spakky-other-provider"),
+        },
+    )
+
+    assert skip_reason == "include_filter"
 
 
 def test_load_plugins_diagnostics_expect_inactive_feature_skip_reason(
