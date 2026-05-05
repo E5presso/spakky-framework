@@ -2,15 +2,20 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib.metadata import EntryPoint
 
 import pytest
 
 import spakky.core.application.application as application_module
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
-from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application import (
+    STARTUP_PHASE_LOAD_PLUGINS,
+    SpakkyApplication,
+)
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.application.plugin import Plugin
+from spakky.core.application.startup_diagnostics import StartupPhaseStatus
 
 
 @Aspect()
@@ -51,6 +56,18 @@ def _recording_initializer(
         calls.append(label)
 
     return initialize
+
+
+def _load_plugins_diagnostic_values(
+    app: SpakkyApplication,
+) -> dict[str, tuple[str, ...]]:
+    records_by_phase = {
+        record.phase_name: record for record in app.startup_report.records
+    }
+    details_by_key: dict[str, list[str]] = {}
+    for detail in records_by_phase[STARTUP_PHASE_LOAD_PLUGINS].diagnostic_details:
+        details_by_key.setdefault(detail.key, []).append(detail.value)
+    return {key: tuple(values) for key, values in details_by_key.items()}
 
 
 def test_add_aspect_expect_registered() -> None:
@@ -164,7 +181,7 @@ def test_load_plugins_without_active_feature_expect_no_contribution_loaded(
 def test_load_plugins_include_expect_skipped_feature_has_no_contributions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """include에서 제외된 core feature의 contribution을 조회하지 않음을 검증한다."""
+    """include에서 제외된 core feature의 contribution을 로드하지 않음을 검증한다."""
     calls: list[str] = []
     requested_groups: list[str] = []
 
@@ -183,6 +200,14 @@ def test_load_plugins_include_expect_skipped_feature_has_no_contributions(
                     initializer=_recording_initializer(calls, "base:sqlalchemy"),
                 ),
             )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(calls, "unexpected"),
+                ),
+            )
         return (
             FakeEntryPoint(
                 name="unexpected",
@@ -198,7 +223,10 @@ def test_load_plugins_include_expect_skipped_feature_has_no_contributions(
     )
 
     assert calls == ["base:sqlalchemy"]
-    assert requested_groups == ["spakky.plugins"]
+    assert requested_groups == [
+        "spakky.plugins",
+        "spakky.contributions.spakky.outbox",
+    ]
 
 
 def test_load_plugins_include_feature_and_provider_expect_contribution_loaded(
@@ -333,6 +361,14 @@ def test_load_plugins_include_empty_expect_no_base_or_contribution_loaded(
                     initializer=_recording_initializer(calls, "base:sqlalchemy"),
                 ),
             )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(calls, "unexpected"),
+                ),
+            )
         return (
             FakeEntryPoint(
                 name="unexpected",
@@ -346,7 +382,338 @@ def test_load_plugins_include_empty_expect_no_base_or_contribution_loaded(
     SpakkyApplication(ApplicationContext()).load_plugins(include=set())
 
     assert calls == []
-    assert requested_groups == ["spakky.plugins"]
+    assert requested_groups == [
+        "spakky.plugins",
+        "spakky.contributions.spakky.outbox",
+    ]
+
+
+def test_load_plugins_diagnostics_expect_loaded_contribution_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """diagnostics가 loaded contribution count와 context를 기록함을 검증한다."""
+    calls: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(
+                        calls,
+                        "contribution:sqlalchemy-outbox",
+                    ),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.load_plugins()
+
+    details = _load_plugins_diagnostic_values(app)
+    assert details["contributions.loaded"] == ("1",)
+    assert details["contributions.skipped"] == ("0",)
+    assert details["contributions.failed"] == ("0",)
+    assert details["contributions.loaded.item"] == (
+        (
+            "group=spakky.contributions.spakky.outbox;"
+            "entry_point=sqlalchemy-outbox;"
+            "provider=spakky-sqlalchemy;"
+            "feature=spakky-outbox"
+        ),
+    )
+
+
+def test_load_plugins_diagnostics_expect_skipped_contribution_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """diagnostics가 skipped contribution count와 skip reason을 기록함을 검증한다."""
+    calls: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+            )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(calls, "unexpected"),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.load_plugins()
+
+    details = _load_plugins_diagnostic_values(app)
+    assert calls == ["base:outbox"]
+    assert details["contributions.loaded"] == ("0",)
+    assert details["contributions.skipped"] == ("1",)
+    assert details["contributions.skipped.inactive_provider"] == ("1",)
+    assert details["contributions.skipped.item"] == (
+        (
+            "reason=inactive_provider;"
+            "group=spakky.contributions.spakky.outbox;"
+            "entry_point=sqlalchemy-outbox;"
+            "provider=spakky-sqlalchemy;"
+            "feature=spakky-outbox"
+        ),
+    )
+
+
+def test_load_plugins_diagnostics_expect_include_filter_skip_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """include filter로 skip된 contribution reason을 diagnostics에 기록한다."""
+    calls: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(calls, "unexpected"),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.load_plugins(include={Plugin(name="spakky-outbox")})
+
+    details = _load_plugins_diagnostic_values(app)
+    assert calls == ["base:outbox"]
+    assert details["contributions.skipped"] == ("1",)
+    assert details["contributions.skipped.include_filter"] == ("1",)
+
+
+def test_contribution_skip_reason_include_expect_active_provider_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """include filter는 활성 provider 중 include 포함 여부로 판단한다."""
+    contribution_entry_point = EntryPoint(
+        name="sqlalchemy-outbox",
+        value="spakky.plugins.sqlalchemy.contributions.outbox:initialize",
+        group="spakky.contributions.spakky.outbox",
+    )
+    monkeypatch.setattr(
+        application_module,
+        "_provider_plugins_for_contribution",
+        lambda _entry_point: {
+            Plugin(name="spakky-sqlalchemy"),
+            Plugin(name="spakky-other-provider"),
+        },
+    )
+
+    skip_reason = application_module._contribution_skip_reason(
+        feature_plugin=Plugin(name="spakky-outbox"),
+        contribution_entry_point=contribution_entry_point,
+        loaded_base_plugins={
+            Plugin(name="spakky-outbox"),
+            Plugin(name="spakky-sqlalchemy"),
+        },
+        include={
+            Plugin(name="spakky-outbox"),
+            Plugin(name="spakky-other-provider"),
+        },
+    )
+
+    assert skip_reason == "include_filter"
+
+
+def test_load_plugins_diagnostics_expect_inactive_feature_skip_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """target feature가 inactive이면 skip reason을 diagnostics에 기록한다."""
+    calls: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(calls, "unexpected"),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.load_plugins(include={Plugin(name="spakky-sqlalchemy")})
+
+    details = _load_plugins_diagnostic_values(app)
+    assert calls == ["base:sqlalchemy"]
+    assert details["contributions.skipped"] == ("1",)
+    assert details["contributions.skipped.inactive_feature"] == ("1",)
+
+
+def test_load_plugins_diagnostics_expect_failed_contribution_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """contribution failure context를 기록하고 기존 예외 의미를 전파한다."""
+
+    def failing_initializer(_app: SpakkyApplication) -> None:
+        raise RuntimeError("contribution failed")
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer([], "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer([], "base:sqlalchemy"),
+                ),
+            )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=failing_initializer,
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    with pytest.raises(RuntimeError, match="contribution failed"):
+        app.load_plugins()
+
+    record = app.startup_report.records[0]
+    assert record.status is StartupPhaseStatus.FAILURE
+    assert record.failure_summary is not None
+    assert record.failure_summary.diagnostic_details[2].value == "1"
+    assert record.failure_summary.diagnostic_details[-1].key == (
+        "contributions.failed.item"
+    )
+
+
+def test_load_plugins_diagnostics_expect_zero_contribution_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """contribution entry point가 없어도 zero contribution 상태를 기록한다."""
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer([], "base:outbox"),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+    app = SpakkyApplication(ApplicationContext()).enable_startup_diagnostics()
+
+    app.load_plugins()
+
+    details = _load_plugins_diagnostic_values(app)
+    assert details["contributions.loaded"] == ("0",)
+    assert details["contributions.skipped"] == ("0",)
+    assert details["contributions.failed"] == ("0",)
 
 
 def test_load_plugins_expect_deterministic_contribution_order(
