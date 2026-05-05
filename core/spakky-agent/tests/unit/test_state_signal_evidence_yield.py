@@ -7,6 +7,7 @@ import pytest
 from spakky.agent import (
     AgentDefinitionError,
     AgentEvidence,
+    AgentEvidenceCandidate,
     AgentEvidenceKind,
     AgentSignal,
     AgentSignalKind,
@@ -21,6 +22,7 @@ from spakky.agent import (
     Cancel,
     Evidence,
     Error,
+    EvidenceCapture,
     Final,
     Message,
     Progress,
@@ -154,6 +156,75 @@ def test_agent_evidence_kind_expect_covers_required_evidence_sources() -> None:
         "context_manifest",
         "evaluation",
     } <= evidence_kinds
+
+
+def test_agent_evidence_candidate_expect_converts_tool_result() -> None:
+    """tool result evidence 후보가 append-only AgentEvidence로 변환된다."""
+    candidate = AgentEvidenceCandidate.tool_result(
+        tool_identity="tests.WorkspaceTools:read_file",
+        tool_schema_name="workspace.read_file",
+        result={"content": "hello"},
+        capture=EvidenceCapture.STRUCTURED,
+        summary="read workspace file",
+    )
+
+    evidence = candidate.to_evidence(
+        evidence_id="evidence-1",
+        agent_state_id="run-1",
+    )
+
+    assert evidence.kind == AgentEvidenceKind.TOOL
+    assert evidence.agent_state_id == "run-1"
+    assert evidence.payload == {
+        "tool_identity": "tests.WorkspaceTools:read_file",
+        "tool_schema_name": "workspace.read_file",
+        "capture": "structured",
+        "result": {"content": "hello"},
+    }
+    assert evidence.summary == "read workspace file"
+
+
+def test_agent_evidence_candidate_expect_rejects_blank_identity() -> None:
+    """evidence 후보의 추적 식별자는 blank 문자열일 수 없다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentEvidenceCandidate.tool_result(
+            tool_identity=" ",
+            tool_schema_name="workspace.read_file",
+            result={},
+            capture=EvidenceCapture.STRUCTURED,
+        )
+
+
+def test_agent_evidence_candidate_expect_converts_decisions_to_evidence() -> None:
+    """model/tool decision evidence 후보가 append-only artifact shape을 가진다."""
+    model_candidate = AgentEvidenceCandidate.model_decision(
+        model="vllm/qwen",
+        decision={"next_action": "call_tool"},
+    )
+    tool_candidate = AgentEvidenceCandidate.tool_decision(
+        tool_identity="tests.ShellTools:run",
+        decision={"approved": False, "reason": "destructive"},
+    )
+
+    model_evidence = model_candidate.to_evidence(
+        evidence_id="model-evidence-1",
+        agent_state_id="run-1",
+    )
+    tool_evidence = tool_candidate.to_evidence(
+        evidence_id="tool-evidence-1",
+        agent_state_id="run-1",
+    )
+
+    assert model_evidence.kind == AgentEvidenceKind.MODEL
+    assert model_evidence.payload == {
+        "model": "vllm/qwen",
+        "decision": {"next_action": "call_tool"},
+    }
+    assert tool_evidence.kind == AgentEvidenceKind.TOOL
+    assert tool_evidence.payload == {
+        "tool_identity": "tests.ShellTools:run",
+        "decision": {"approved": False, "reason": "destructive"},
+    }
 
 
 def test_agent_yield_expect_supports_canonical_stream_vocabulary() -> None:

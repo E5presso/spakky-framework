@@ -19,7 +19,11 @@ from spakky.agent.context import (
     ContextSensitivity,
     ContextTokenBudget,
 )
-from spakky.agent.evidence import AgentEvidence, AgentEvidenceKind
+from spakky.agent.evidence import (
+    AgentEvidence,
+    AgentEvidenceCandidate,
+    AgentEvidenceKind,
+)
 from spakky.agent.execution import (
     Agent,
     AgentExecutionLimits,
@@ -80,6 +84,10 @@ from spakky.agent.tooling import (
     ToolApprovalRequirement,
     ToolEffects,
     ToolPermission,
+    ToolResumeAction,
+    ToolResumeMetadata,
+    ToolRisk,
+    ToolRiskAxis,
     agent_tool,
     discover_agent_tools,
 )
@@ -113,6 +121,7 @@ __all__ = [
     "AgentBootstrapError",
     "AgentDefinitionError",
     "AgentEvidence",
+    "AgentEvidenceCandidate",
     "AgentEvidenceKind",
     "AgentExecutionLimits",
     "AgentExecutionSpec",
@@ -185,6 +194,10 @@ __all__ = [
     "ToolCallingSpec",
     "ToolEffects",
     "ToolPermission",
+    "ToolResumeAction",
+    "ToolResumeMetadata",
+    "ToolRisk",
+    "ToolRiskAxis",
     "consume_pending_agent_signals",
     "agent_tool",
     "discover_agent_tools",

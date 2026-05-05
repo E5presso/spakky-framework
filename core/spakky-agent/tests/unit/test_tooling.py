@@ -27,6 +27,9 @@ from spakky.agent import (
     ToolApprovalRequirement,
     ToolEffects,
     ToolPermission,
+    ToolResumeAction,
+    ToolRisk,
+    ToolRiskAxis,
     agent_tool,
     discover_agent_tools,
 )
@@ -104,6 +107,8 @@ def test_agent_tool_expect_attaches_typed_descriptor_metadata_to_method() -> Non
     assert definition.metadata.idempotency == Idempotency.IDEMPOTENT
     assert definition.metadata.evidence == EvidenceCapture.STRUCTURED
     assert definition.metadata.approval == ToolApprovalRequirement.NOT_REQUIRED
+    assert definition.metadata.risk == ToolRisk(axes=(ToolRiskAxis.READ,))
+    assert definition.metadata.requires_approval_candidate is False
 
 
 def test_agent_expect_discovers_decorated_methods_as_deterministic_catalog() -> None:
@@ -678,6 +683,15 @@ def test_tool_catalog_expect_preserves_owner_callable_schema_and_metadata() -> N
     assert descriptor.metadata.effects == ToolEffects.external_side_effect()
     assert descriptor.metadata.idempotency == Idempotency.NON_IDEMPOTENT
     assert descriptor.metadata.approval == ToolApprovalRequirement.REQUIRED
+    assert descriptor.metadata.risk == ToolRisk(
+        axes=(
+            ToolRiskAxis.READ,
+            ToolRiskAxis.WRITE,
+            ToolRiskAxis.SIDE_EFFECT,
+            ToolRiskAxis.NETWORK,
+        )
+    )
+    assert descriptor.metadata.requires_approval_candidate is True
 
 
 def test_tool_catalog_expect_lookup_by_identity_and_schema_name() -> None:
@@ -864,6 +878,96 @@ def test_agent_tool_expect_derives_effect_defaults_and_overrides() -> None:
     assert definition.metadata.effects == ToolEffects.write_state()
     assert definition.metadata.data_access == DataAccess.READ_WRITE
     assert definition.metadata.externality == Externality.EXTERNAL
+    assert definition.metadata.risk == ToolRisk(
+        axes=(
+            ToolRiskAxis.READ,
+            ToolRiskAxis.WRITE,
+            ToolRiskAxis.SIDE_EFFECT,
+            ToolRiskAxis.NETWORK,
+        )
+    )
+
+
+def test_agent_tool_expect_represents_destructive_network_risk_axes() -> None:
+    """ToolRisk가 read/write/side-effect/destructive/network 축을 표현한다."""
+
+    @agent_tool(
+        effects=ToolEffects.destructive_action(),
+        data_access=DataAccess.READ_WRITE,
+    )
+    def delete_workspace(value: str) -> str:
+        return value
+
+    definition = get_agent_tool_definition(delete_workspace)
+
+    assert definition is not None
+    assert definition.metadata.risk == ToolRisk(
+        axes=(
+            ToolRiskAxis.READ,
+            ToolRiskAxis.WRITE,
+            ToolRiskAxis.SIDE_EFFECT,
+            ToolRiskAxis.DESTRUCTIVE,
+            ToolRiskAxis.NETWORK,
+        )
+    )
+    assert definition.metadata.requires_approval_candidate is True
+
+
+def test_agent_tool_expect_rejects_duplicate_risk_axes() -> None:
+    """ToolRisk 직접 생성 시 중복 축은 정의 오류로 거부한다."""
+    with pytest.raises(AgentDefinitionError):
+        ToolRisk(axes=(ToolRiskAxis.READ, ToolRiskAxis.READ))
+
+
+def test_agent_tool_expect_approval_is_candidate_not_global_requirement() -> None:
+    """approval metadata는 위험 후보를 표현하지만 모든 tool에 강제되지 않는다."""
+
+    @agent_tool(effects=ToolEffects.read_only())
+    def read_workspace(value: str) -> str:
+        return value
+
+    @agent_tool(
+        effects=ToolEffects.write_state(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def trusted_write(value: str) -> str:
+        return value
+
+    read_definition = get_agent_tool_definition(read_workspace)
+    write_definition = get_agent_tool_definition(trusted_write)
+
+    assert read_definition is not None
+    assert write_definition is not None
+    assert read_definition.metadata.requires_approval_candidate is False
+    assert write_definition.metadata.risk.includes(ToolRiskAxis.SIDE_EFFECT) is True
+    assert write_definition.metadata.requires_approval_candidate is False
+
+
+def test_agent_tool_expect_idempotency_drives_resume_decision() -> None:
+    """idempotency metadata가 resume 중복 실행 판단에 쓰이는 형태로 저장된다."""
+
+    @agent_tool(idempotency=Idempotency.IDEMPOTENT)
+    def read_file(value: str) -> str:
+        return value
+
+    @agent_tool(idempotency=Idempotency.NON_IDEMPOTENT)
+    def write_file(value: str) -> str:
+        return value
+
+    read_definition = get_agent_tool_definition(read_file)
+    write_definition = get_agent_tool_definition(write_file)
+
+    assert read_definition is not None
+    assert write_definition is not None
+    assert read_definition.metadata.resume.action_for_completed_boundary() == (
+        ToolResumeAction.SKIP_COMPLETED
+    )
+    assert read_definition.metadata.resume.action_for_incomplete_boundary() == (
+        ToolResumeAction.RETRY
+    )
+    assert write_definition.metadata.resume.action_for_incomplete_boundary() == (
+        ToolResumeAction.REQUIRE_APPROVAL
+    )
 
 
 def test_agent_tool_expect_rejects_corrupt_attached_metadata() -> None:
