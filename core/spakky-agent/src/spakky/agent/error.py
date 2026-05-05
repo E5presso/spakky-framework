@@ -17,6 +17,12 @@ class AgentDefinitionError(AbstractSpakkyAgentError):
     message = "Agent definition is invalid"
 
 
+class AgentToolBindingError(AbstractSpakkyAgentError):
+    """Raised when a model tool-call payload cannot be bound safely."""
+
+    message = "Agent tool invocation payload is invalid"
+
+
 class AgentBootstrapError(AbstractSpakkyAgentError):
     """Raised when agent bootstrap validation fails."""
 

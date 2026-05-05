@@ -4,11 +4,11 @@ import typing
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import MISSING, Field, dataclass, field, is_dataclass
 from enum import Enum, StrEnum
-from inspect import Parameter, isclass, signature
+from inspect import Parameter, Signature, isclass, signature
 from types import FunctionType, NoneType, UnionType
 from typing import get_args, get_origin, get_type_hints
 
-from spakky.agent.error import AgentDefinitionError
+from spakky.agent.error import AgentDefinitionError, AgentToolBindingError
 from spakky.agent.types import JsonObject, JsonValue
 
 AGENT_TOOL_DEFINITION_KEY = "__spakky_agent_tool_definition__"
@@ -336,6 +336,18 @@ class AgentToolDescriptor:
         """Return the descriptor-local tool name."""
         return self.identity.name
 
+    def bind_invocation(self, payload: JsonObject) -> "AgentToolBoundInvocation":
+        """Bind a decoded model payload before the tool callable is invoked."""
+        return bind_agent_tool_invocation(self.callable, payload)
+
+
+@dataclass(frozen=True, slots=True)
+class AgentToolBoundInvocation:
+    """Python-call-ready tool invocation arguments."""
+
+    args: tuple[object, ...] = ()
+    kwargs: Mapping[str, object] = field(default_factory=dict)
+
 
 @dataclass(frozen=True, slots=True)
 class AgentToolCatalog:
@@ -460,6 +472,32 @@ def get_agent_tool_definition(
     return candidate
 
 
+def bind_agent_tool_invocation(
+    function: AgentToolCallable,
+    payload: JsonObject,
+) -> AgentToolBoundInvocation:
+    """Bind a structured model payload to a tool function signature."""
+    invocation = _parse_invocation_payload(payload)
+    try:
+        function_signature = signature(function)
+    except (TypeError, ValueError) as e:
+        raise AgentToolBindingError(
+            "Agent tool callable signature cannot be inspected"
+        ) from e
+    call_signature = _drop_owner_parameter(function_signature)
+    try:
+        bound = call_signature.bind(*invocation.args, **invocation.kwargs)
+    except TypeError as e:
+        raise AgentToolBindingError(
+            "Agent tool invocation payload cannot be bound"
+        ) from e
+    bound.apply_defaults()
+    return AgentToolBoundInvocation(
+        args=tuple(bound.args),
+        kwargs=dict(bound.kwargs),
+    )
+
+
 def _build_descriptor(
     owner: type[object],
     function: FunctionType,
@@ -493,6 +531,63 @@ def _unwrap_function(member: object) -> FunctionType | None:
     if isinstance(member, FunctionType):
         return member
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class _StructuredInvocationPayload:
+    args: tuple[object, ...]
+    kwargs: Mapping[str, object]
+
+
+def _parse_invocation_payload(payload: JsonObject) -> _StructuredInvocationPayload:
+    payload_dict = _copy_string_key_mapping(
+        payload,
+        "Agent tool invocation payload",
+    )
+    if "args" in payload_dict or "kwargs" in payload_dict:
+        return _parse_args_kwargs_payload(payload_dict)
+    return _StructuredInvocationPayload(args=(), kwargs=payload_dict)
+
+
+def _parse_args_kwargs_payload(
+    payload: Mapping[str, object],
+) -> _StructuredInvocationPayload:
+    extra_keys = set(payload) - {"args", "kwargs"}
+    if extra_keys:
+        raise AgentToolBindingError(
+            "Agent tool structured invocation payload cannot mix direct arguments"
+        )
+    args = _payload_args(payload.get("args", ()))
+    kwargs = _payload_kwargs(payload.get("kwargs", {}))
+    return _StructuredInvocationPayload(args=args, kwargs=kwargs)
+
+
+def _payload_args(value: object) -> tuple[object, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, str):
+        raise AgentToolBindingError("Agent tool invocation args must be an array")
+    return tuple(value)
+
+
+def _payload_kwargs(value: object) -> Mapping[str, object]:
+    return _copy_string_key_mapping(value, "Agent tool invocation kwargs")
+
+
+def _copy_string_key_mapping(value: object, label: str) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise AgentToolBindingError(f"{label} must be an object")
+    result: dict[str, object] = {}
+    for key in value:
+        if not isinstance(key, str):
+            raise AgentToolBindingError(f"{label} keys must be strings")
+        result[key] = value[key]
+    return result
+
+
+def _drop_owner_parameter(function_signature: Signature) -> Signature:
+    parameters = tuple(function_signature.parameters.values())
+    if parameters and parameters[0].name in ("self", "cls"):
+        parameters = parameters[1:]
+    return function_signature.replace(parameters=parameters)
 
 
 def _normalize_name(value: str | None, default: str, label: str) -> str:

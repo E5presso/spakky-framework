@@ -8,6 +8,8 @@ import tests.fixtures.agent_app as agent_app
 from spakky.agent import (
     IAgentModel,
     AgentToolCatalog,
+    AgentToolBindingError,
+    AgentToolBoundInvocation,
     AgentToolDescriptor,
     AgentToolIdentity,
     AgentEvidenceCandidate,
@@ -92,6 +94,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "Token",
         "Tool",
         "agent_tool",
+        "AgentToolBindingError",
+        "AgentToolBoundInvocation",
         "AgentToolCatalog",
         "AgentToolDescriptor",
         "AgentToolIdentity",
@@ -126,6 +130,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert Token is agent_api.Token
     assert Tool is agent_api.Tool
     assert agent_tool is agent_api.agent_tool
+    assert AgentToolBindingError is agent_api.AgentToolBindingError
+    assert AgentToolBoundInvocation is agent_api.AgentToolBoundInvocation
     assert AgentToolCatalog is agent_api.AgentToolCatalog
     assert AgentToolDescriptor is agent_api.AgentToolDescriptor
     assert AgentToolIdentity is agent_api.AgentToolIdentity

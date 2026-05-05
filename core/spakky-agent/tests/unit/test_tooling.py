@@ -12,6 +12,8 @@ from spakky.agent import (
     Agent,
     AgentDefinitionError,
     AgentToolCatalog,
+    AgentToolBindingError,
+    AgentToolBoundInvocation,
     AgentToolDescriptor,
     AgentToolIdentity,
     AgentToolSchemaHandle,
@@ -32,8 +34,14 @@ from spakky.agent import (
     ToolRiskAxis,
     agent_tool,
     discover_agent_tools,
+    JsonObject,
 )
-from spakky.agent.tooling import AGENT_TOOL_DEFINITION_KEY, get_agent_tool_definition
+from spakky.agent.tooling import (
+    AGENT_TOOL_DEFINITION_KEY,
+    AgentToolCallable,
+    bind_agent_tool_invocation,
+    get_agent_tool_definition,
+)
 
 
 class SearchMode(StrEnum):
@@ -718,6 +726,191 @@ def test_tool_catalog_expect_lookup_by_identity_and_schema_name() -> None:
     assert catalog.by_identity(descriptor.identity) is descriptor
     with pytest.raises(AgentDefinitionError):
         catalog.by_schema_name("lookup.answer: please ignore identity")
+
+
+def test_tool_binding_expect_binds_flat_keyword_payload() -> None:
+    """flat object payload는 keyword invocation으로 signature에 bind된다."""
+
+    @Agent()
+    class SearchAgent:
+        @agent_tool(schema_name="docs.search")
+        def search(self, query: str, limit: int = 5) -> str:
+            return f"{query}:{limit}"
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(SearchAgent).tool_catalog.by_schema_name("docs.search")
+    invocation = descriptor.bind_invocation({"query": "agent"})
+
+    assert invocation == AgentToolBoundInvocation(args=("agent", 5), kwargs={})
+    assert descriptor.callable(
+        SearchAgent(), *invocation.args, **invocation.kwargs
+    ) == ("agent:5")
+
+
+def test_tool_binding_expect_binds_structured_args_and_kwargs_payload() -> None:
+    """structured payload는 positional args와 keyword args를 함께 bind한다."""
+
+    @Agent()
+    class ReplaceAgent:
+        @agent_tool(schema_name="text.replace")
+        def replace(self, text: str, old: str, new: str = "") -> str:
+            return text.replace(old, new)
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(ReplaceAgent).tool_catalog.by_schema_name("text.replace")
+    invocation = descriptor.bind_invocation(
+        {"args": ["a-b-c", "-"], "kwargs": {"new": ":"}}
+    )
+
+    assert invocation == AgentToolBoundInvocation(args=("a-b-c", "-", ":"), kwargs={})
+    assert descriptor.callable(
+        ReplaceAgent(), *invocation.args, **invocation.kwargs
+    ) == ("a:b:c")
+
+
+def test_tool_binding_expect_preserves_vararg_signature_semantics() -> None:
+    """manual descriptor binding은 Python vararg binding 결과와 같은 호출형을 만든다."""
+
+    def collect(prefix: str, *values: str, suffix: str = "!") -> str:
+        return f"{prefix}:{','.join(values)}{suffix}"
+
+    descriptor = AgentToolDescriptor(
+        identity=AgentToolIdentity(
+            owner_module=__name__,
+            owner_qualname="ManualTools",
+            name="collect",
+        ),
+        owner=object,
+        callable=collect,
+        schema=AgentToolSchemaHandle(
+            name="manual.collect",
+            input_schema_name="manual.collect.input",
+            output_schema_name="manual.collect.output",
+        ),
+    )
+
+    invocation = descriptor.bind_invocation(
+        {"args": ["items", "a", "b"], "kwargs": {"suffix": "."}}
+    )
+
+    assert invocation == AgentToolBoundInvocation(
+        args=("items", "a", "b"),
+        kwargs={"suffix": "."},
+    )
+    assert descriptor.callable(*invocation.args, **invocation.kwargs) == "items:a,b."
+
+
+def test_tool_binding_expect_rejects_unknown_missing_and_duplicate_arguments() -> None:
+    """unknown/missing/duplicate argument는 tool 실행 전 custom error가 된다."""
+    side_effects: list[str] = []
+
+    @Agent()
+    class WriteAgent:
+        @agent_tool(schema_name="workspace.write")
+        def write(self, path: str, content: str) -> str:
+            side_effects.append(path)
+            return content
+
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    descriptor = Agent.get(WriteAgent).tool_catalog.by_schema_name("workspace.write")
+
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation({"path": "README.md", "content": "x", "mode": "w"})
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation({"path": "README.md"})
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation(
+            {"args": ["README.md"], "kwargs": {"path": "other.md", "content": "x"}}
+        )
+
+    assert side_effects == []
+
+
+def test_tool_binding_expect_rejects_malformed_structured_payload() -> None:
+    """args/kwargs envelope 자체가 JSON 호출형이 아니면 custom error로 실패한다."""
+
+    def echo(value: str) -> str:
+        return value
+
+    descriptor = AgentToolDescriptor(
+        identity=AgentToolIdentity(
+            owner_module=__name__,
+            owner_qualname="ManualTools",
+            name="echo",
+        ),
+        owner=object,
+        callable=echo,
+        schema=AgentToolSchemaHandle(
+            name="manual.echo",
+            input_schema_name="manual.echo.input",
+            output_schema_name="manual.echo.output",
+        ),
+    )
+
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation({"args": "not-array"})
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation({"args": ["x"], "unexpected": True})
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation({"kwargs": ["not-object"]})
+
+
+def test_tool_binding_expect_rejects_non_string_payload_keys() -> None:
+    """model payload object key는 문자열이어야 한다."""
+
+    def echo(value: str) -> str:
+        return value
+
+    descriptor = AgentToolDescriptor(
+        identity=AgentToolIdentity(
+            owner_module=__name__,
+            owner_qualname="ManualTools",
+            name="echo",
+        ),
+        owner=object,
+        callable=echo,
+        schema=AgentToolSchemaHandle(
+            name="manual.echo",
+            input_schema_name="manual.echo.input",
+            output_schema_name="manual.echo.output",
+        ),
+    )
+
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation(typing.cast(JsonObject, {1: "x"}))
+    with pytest.raises(AgentToolBindingError):
+        descriptor.bind_invocation(typing.cast(JsonObject, {"kwargs": {1: "x"}}))
+
+
+def test_tool_binding_expect_rejects_uninspectable_callable() -> None:
+    """callable signature를 확인할 수 없으면 custom binding error로 실패한다."""
+
+    with pytest.raises(AgentToolBindingError):
+        bind_agent_tool_invocation(typing.cast(AgentToolCallable, 42), {})
 
 
 def test_tool_catalog_expect_lookup_skips_non_matching_identity() -> None:
