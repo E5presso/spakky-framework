@@ -9,6 +9,11 @@ import pytest
 from spakky.plugins.sqlalchemy.common.config import SQLAlchemyConnectionConfig
 from spakky.plugins.sqlalchemy.main import initialize
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
+from spakky.plugins.sqlalchemy.outbox.storage import (
+    AsyncSqlAlchemyOutboxStorage,
+    SqlAlchemyOutboxStorage,
+)
+from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
 from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
     ConnectionManager,
@@ -106,3 +111,16 @@ def test_initialize_default_async_mode_expect_async_pods_registered(
     assert AsyncConnectionManager in added_types
     assert AsyncSessionManager in added_types
     assert AsyncTransaction in added_types
+
+
+def test_initialize_expect_outbox_pods_not_registered_by_base_plugin(
+    mock_app: MagicMock,
+) -> None:
+    """SQLAlchemy base plugin은 outbox contribution Pod을 직접 등록하지 않는다."""
+
+    initialize(mock_app)
+
+    added_types = [call.args[0] for call in mock_app.add.call_args_list]
+    assert OutboxMessageTable not in added_types
+    assert SqlAlchemyOutboxStorage not in added_types
+    assert AsyncSqlAlchemyOutboxStorage not in added_types
