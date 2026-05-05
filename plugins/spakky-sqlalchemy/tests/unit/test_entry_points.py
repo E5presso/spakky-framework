@@ -47,3 +47,22 @@ def test_load_plugins_with_outbox_and_sqlalchemy_expect_outbox_contribution_regi
     assert app.application_context.contains_tag(Table.get(OutboxMessageTable))
     assert SqlAlchemyOutboxStorage in added_types
     assert AsyncSqlAlchemyOutboxStorage in added_types
+
+
+def test_load_plugins_with_sqlalchemy_only_expect_outbox_contribution_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """spakky-outbox 비활성 조합에서는 SQLAlchemy outbox Pod을 등록하지 않는다."""
+    monkeypatch.setenv(
+        "SPAKKY_SQLALCHEMY__CONNECTION_STRING",
+        "postgresql+psycopg://test:test@localhost/test",
+    )
+
+    app = SpakkyApplication(ApplicationContext()).load_plugins(
+        include={spakky.plugins.sqlalchemy.PLUGIN_NAME}
+    )
+    added_types = {pod.type_ for pod in app.container.pods.values()}
+
+    assert not app.application_context.contains_tag(Table.get(OutboxMessageTable))
+    assert SqlAlchemyOutboxStorage not in added_types
+    assert AsyncSqlAlchemyOutboxStorage not in added_types
