@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator, Generator
 from uuid import uuid4
 
 import pytest
+import spakky.outbox
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from testcontainers.postgres import PostgresContainer
@@ -64,9 +65,10 @@ def setup_env_vars_fixture(database_url: str) -> str:
 
 @pytest.fixture(name="app", scope="package")
 def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
-    """Create SpakkyApplication with SQLAlchemy plugin (outbox auto-detected)."""
+    """Create SpakkyApplication with SQLAlchemy outbox contribution active."""
     app = SpakkyApplication(ApplicationContext()).load_plugins(
         include={
+            spakky.outbox.PLUGIN_NAME,
             spakky.plugins.sqlalchemy.PLUGIN_NAME,
         }
     )
