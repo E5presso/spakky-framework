@@ -28,8 +28,17 @@ class Idempotency(StrEnum):
     """Action idempotency declared by a tool."""
 
     IDEMPOTENT = "idempotent"
+    CONDITIONALLY_IDEMPOTENT = "conditionally_idempotent"
     NON_IDEMPOTENT = "non_idempotent"
     UNKNOWN = "unknown"
+
+
+class ToolResumeAction(StrEnum):
+    """Resume action allowed by stored tool idempotency metadata."""
+
+    RETRY = "retry"
+    REQUIRE_APPROVAL = "require_approval"
+    SKIP_COMPLETED = "skip_completed"
 
 
 class DataAccess(StrEnum):
@@ -68,6 +77,16 @@ class ToolApprovalRequirement(StrEnum):
     DERIVED = "derived"
 
 
+class ToolRiskAxis(StrEnum):
+    """Derived risk axes exposed for policy and UI decisions."""
+
+    READ = "read"
+    WRITE = "write"
+    SIDE_EFFECT = "side_effect"
+    DESTRUCTIVE = "destructive"
+    NETWORK = "network"
+
+
 @dataclass(frozen=True, slots=True)
 class ToolPermission:
     """Typed permission marker attached to a tool descriptor."""
@@ -86,6 +105,8 @@ class ToolEffects:
 
     data_access: DataAccess = DataAccess.NONE
     externality: Externality = Externality.LOCAL
+    destructive: bool = False
+    network: bool = False
 
     @classmethod
     def read_only(cls) -> "ToolEffects":
@@ -100,7 +121,20 @@ class ToolEffects:
     @classmethod
     def external_side_effect(cls) -> "ToolEffects":
         """Declare a tool that crosses an external side-effect boundary."""
-        return cls(data_access=DataAccess.READ_WRITE, externality=Externality.EXTERNAL)
+        return cls(
+            data_access=DataAccess.READ_WRITE,
+            externality=Externality.EXTERNAL,
+            network=True,
+        )
+
+    @classmethod
+    def destructive_action(cls) -> "ToolEffects":
+        """Declare a tool that may irreversibly mutate local or external state."""
+        return cls(
+            data_access=DataAccess.WRITE,
+            externality=Externality.EXTERNAL,
+            destructive=True,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +159,31 @@ class ResultBudget:
         """Reject result budgets that cannot constrain output."""
         if self.max_bytes is not None and self.max_bytes <= 0:
             raise AgentDefinitionError("Agent tool result budget must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class ToolResumeMetadata:
+    """Stored idempotency metadata used when resuming an incomplete action."""
+
+    idempotency: Idempotency = Idempotency.UNKNOWN
+
+    @classmethod
+    def from_metadata(cls, metadata: "AgentToolMetadata") -> "ToolResumeMetadata":
+        """Build resume metadata from a tool descriptor metadata object."""
+        return cls(idempotency=metadata.idempotency)
+
+    def action_for_completed_boundary(self) -> ToolResumeAction:
+        """Return the resume action for an already completed action boundary."""
+        return ToolResumeAction.SKIP_COMPLETED
+
+    def action_for_incomplete_boundary(self) -> ToolResumeAction:
+        """Return the resume action for an incomplete action boundary."""
+        if self.idempotency in (
+            Idempotency.IDEMPOTENT,
+            Idempotency.CONDITIONALLY_IDEMPOTENT,
+        ):
+            return ToolResumeAction.RETRY
+        return ToolResumeAction.REQUIRE_APPROVAL
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,7 +225,7 @@ class AgentToolIdentity:
 
 @dataclass(frozen=True, slots=True)
 class AgentToolMetadata:
-    """Typed risk, approval, and evidence metadata for a tool descriptor."""
+    """Typed approval, idempotency, and evidence metadata for a descriptor."""
 
     permissions: tuple[ToolPermission, ...] = ()
     effects: ToolEffects = field(default_factory=ToolEffects)
@@ -177,6 +236,71 @@ class AgentToolMetadata:
     result_budget: ResultBudget = field(default_factory=ResultBudget)
     evidence: EvidenceCapture = EvidenceCapture.NONE
     approval: ToolApprovalRequirement = ToolApprovalRequirement.DERIVED
+
+    @property
+    def risk(self) -> "ToolRisk":
+        """Return derived risk axes without storing risk as source metadata."""
+        return ToolRisk.from_metadata(self)
+
+    @property
+    def resume(self) -> ToolResumeMetadata:
+        """Return resume metadata derived from stored idempotency."""
+        return ToolResumeMetadata.from_metadata(self)
+
+    @property
+    def requires_approval_candidate(self) -> bool:
+        """Return whether this tool is a HITL approval candidate."""
+        if self.approval == ToolApprovalRequirement.REQUIRED:
+            return True
+        if self.approval == ToolApprovalRequirement.NOT_REQUIRED:
+            return False
+        return self.risk.requires_approval_candidate
+
+
+@dataclass(frozen=True, slots=True)
+class ToolRisk:
+    """Derived typed risk axes for policy and evidence annotations."""
+
+    axes: tuple[ToolRiskAxis, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Reject duplicate axes so risk comparisons stay deterministic."""
+        seen: set[ToolRiskAxis] = set()
+        for axis in self.axes:
+            if axis in seen:
+                raise AgentDefinitionError("Agent tool risk axes must be unique")
+            seen.add(axis)
+
+    @classmethod
+    def from_metadata(cls, metadata: AgentToolMetadata) -> "ToolRisk":
+        """Derive risk axes from source tool metadata."""
+        axes: list[ToolRiskAxis] = []
+        if metadata.data_access in (DataAccess.READ, DataAccess.READ_WRITE):
+            axes.append(ToolRiskAxis.READ)
+        if metadata.data_access in (DataAccess.WRITE, DataAccess.READ_WRITE):
+            axes.append(ToolRiskAxis.WRITE)
+        if metadata.data_access in (DataAccess.WRITE, DataAccess.READ_WRITE):
+            axes.append(ToolRiskAxis.SIDE_EFFECT)
+        if metadata.externality in (Externality.EXTERNAL, Externality.UNKNOWN):
+            axes.append(ToolRiskAxis.SIDE_EFFECT)
+        if metadata.effects.destructive:
+            axes.append(ToolRiskAxis.DESTRUCTIVE)
+        if metadata.effects.network or metadata.externality == Externality.EXTERNAL:
+            axes.append(ToolRiskAxis.NETWORK)
+        return cls(axes=_deduplicate_axes(axes))
+
+    @property
+    def requires_approval_candidate(self) -> bool:
+        """Return whether the risk is strong enough to suggest HITL approval."""
+        if self.includes(ToolRiskAxis.DESTRUCTIVE):
+            return True
+        return self.includes(ToolRiskAxis.SIDE_EFFECT) and (
+            self.includes(ToolRiskAxis.WRITE) or self.includes(ToolRiskAxis.NETWORK)
+        )
+
+    def includes(self, axis: ToolRiskAxis) -> bool:
+        """Return whether this risk contains the requested axis."""
+        return axis in self.axes
 
 
 @dataclass(frozen=True, slots=True)
@@ -577,3 +701,11 @@ def _resolve_dataclass_hints(annotation: object, label: str) -> Mapping[str, obj
         raise AgentDefinitionError(
             f"{label} dataclass annotations cannot be resolved"
         ) from e
+
+
+def _deduplicate_axes(axes: Sequence[ToolRiskAxis]) -> tuple[ToolRiskAxis, ...]:
+    ordered: list[ToolRiskAxis] = []
+    for axis in axes:
+        if axis not in ordered:
+            ordered.append(axis)
+    return tuple(ordered)

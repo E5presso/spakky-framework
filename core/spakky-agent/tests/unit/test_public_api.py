@@ -10,6 +10,7 @@ from spakky.agent import (
     AgentToolCatalog,
     AgentToolDescriptor,
     AgentToolIdentity,
+    AgentEvidenceCandidate,
     Agent,
     AgentBootstrapError,
     AgentDefinitionError,
@@ -46,6 +47,10 @@ from spakky.agent import (
     Tool,
     ToolEffects,
     ToolPermission,
+    ToolResumeAction,
+    ToolResumeMetadata,
+    ToolRisk,
+    ToolRiskAxis,
     ToolCallingSpec,
     agent_tool,
     consume_pending_agent_signals,
@@ -71,6 +76,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentSignalConsumptionBatch",
         "AgentSignalPollPoint",
         "AgentEvidence",
+        "AgentEvidenceCandidate",
         "ContextPack",
         "ContextManifest",
         "ContextDigest",
@@ -102,6 +108,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentSignalConsumptionBatch is agent_api.AgentSignalConsumptionBatch
     assert AgentSignalPollPoint is agent_api.AgentSignalPollPoint
     assert AgentEvidence is agent_api.AgentEvidence
+    assert AgentEvidenceCandidate is agent_api.AgentEvidenceCandidate
     assert ContextPack is agent_api.ContextPack
     assert ContextManifest is agent_api.ContextManifest
     assert ContextDigest is agent_api.ContextDigest
@@ -135,6 +142,10 @@ def test_public_api_expect_exports_tool_metadata_types() -> None:
     """@agent_tool descriptor metadata 타입을 public API로 노출한다."""
     assert ToolPermission is agent_api.ToolPermission
     assert ToolEffects is agent_api.ToolEffects
+    assert ToolRisk is agent_api.ToolRisk
+    assert ToolRiskAxis is agent_api.ToolRiskAxis
+    assert ToolResumeAction is agent_api.ToolResumeAction
+    assert ToolResumeMetadata is agent_api.ToolResumeMetadata
 
 
 def test_public_api_expect_exports_custom_error_hierarchy() -> None:
