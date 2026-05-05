@@ -11,9 +11,14 @@ from spakky.agent import (
     AgentSignal,
     AgentState,
     AgentYield,
+    ModelError,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
+    ModelToolCall,
+    ModelToolSpec,
+    StreamingOptions,
+    ToolCallingSpec,
 )
 from spakky.agent.main import initialize
 from spakky.core.application.application import SpakkyApplication
@@ -49,6 +54,11 @@ def test_public_api_expect_exports_model_contract_types() -> None:
     assert ModelRequest is agent_api.ModelRequest
     assert ModelResponse is agent_api.ModelResponse
     assert ModelStreamEvent is agent_api.ModelStreamEvent
+    assert ModelToolSpec is agent_api.ModelToolSpec
+    assert ToolCallingSpec is agent_api.ToolCallingSpec
+    assert ModelToolCall is agent_api.ModelToolCall
+    assert ModelError is agent_api.ModelError
+    assert StreamingOptions is agent_api.StreamingOptions
 
 
 def test_public_api_expect_exports_custom_error_hierarchy() -> None:

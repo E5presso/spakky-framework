@@ -43,6 +43,32 @@ class StructuredOutputSpec:
     output_type_name: str | None = None
 
 
+class ModelToolChoice(StrEnum):
+    """Provider-neutral tool calling strategy requested from a model adapter."""
+
+    AUTO = "auto"
+    NONE = "none"
+    REQUIRED = "required"
+
+
+@dataclass(frozen=True, slots=True)
+class ModelToolSpec:
+    """LLM-facing tool descriptor normalized by agent tooling."""
+
+    name: str
+    parameters: JsonSchemaConstraint
+    description: str | None = None
+    metadata: JsonObject = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallingSpec:
+    """Tool calling contract requested from a model adapter."""
+
+    tools: Sequence[ModelToolSpec]
+    choice: ModelToolChoice = ModelToolChoice.AUTO
+
+
 @dataclass(frozen=True, slots=True)
 class SamplingOptions:
     """Portable model sampling options."""
@@ -53,12 +79,22 @@ class SamplingOptions:
 
 
 @dataclass(frozen=True, slots=True)
+class StreamingOptions:
+    """Portable model streaming options."""
+
+    include_usage: bool = True
+    include_progress: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class ModelRequest:
     """Provider-neutral request passed to an agent model adapter."""
 
     messages: Sequence[ModelMessage]
     structured_output: StructuredOutputSpec | None = None
+    tool_calling: ToolCallingSpec | None = None
     sampling: SamplingOptions = field(default_factory=SamplingOptions)
+    streaming: StreamingOptions = field(default_factory=StreamingOptions)
     metadata: JsonObject = field(default_factory=dict)
 
 
@@ -72,11 +108,32 @@ class ModelUsage:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelToolCall:
+    """Tool invocation candidate emitted by a model adapter."""
+
+    name: str
+    arguments: JsonObject
+    call_id: str | None = None
+    metadata: JsonObject = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class ModelError:
+    """Provider-neutral model failure payload."""
+
+    code: str
+    message: str
+    retryable: bool = False
+    metadata: JsonObject = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class ModelResponse:
     """Provider-neutral non-streaming model response."""
 
     content: str
     structured_output: JsonValue = None
+    tool_calls: Sequence[ModelToolCall] = field(default_factory=tuple)
     usage: ModelUsage = field(default_factory=ModelUsage)
     metadata: JsonObject = field(default_factory=dict)
 
@@ -84,11 +141,12 @@ class ModelResponse:
 class ModelStreamEventKind(StrEnum):
     """Provider-neutral streaming event kinds emitted by a model adapter."""
 
-    TEXT_DELTA = "text_delta"
-    TOOL_CALL = "tool_call"
+    TOKEN_DELTA = "token_delta"
+    TOOL_CALL_CANDIDATE = "tool_call_candidate"
+    STRUCTURED_OUTPUT = "structured_output"
     PROGRESS = "progress"
-    FINAL = "final"
-    FAILED = "failed"
+    ERROR = "error"
+    DONE = "done"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,9 +154,12 @@ class ModelStreamEvent:
     """Provider-neutral model streaming event."""
 
     kind: ModelStreamEventKind
-    text: str | None = None
-    payload: JsonObject = field(default_factory=dict)
+    token_delta: str | None = None
+    tool_call: ModelToolCall | None = None
+    structured_output: JsonValue = None
+    error: ModelError | None = None
     usage: ModelUsage | None = None
+    metadata: JsonObject = field(default_factory=dict)
 
 
 class IAgentModel(ABC):
