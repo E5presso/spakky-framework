@@ -22,10 +22,22 @@ class AsyncStubAspect(IAsyncAspect): ...
 
 
 @dataclass(frozen=True)
+class FakeDistributionEntryPoint:
+    name: str
+    group: str
+
+
+@dataclass(frozen=True)
+class FakeDistribution:
+    entry_points: tuple[FakeDistributionEntryPoint, ...]
+
+
+@dataclass(frozen=True)
 class FakeEntryPoint:
     name: str
     value: str
     initializer: Callable[[SpakkyApplication], None]
+    dist: FakeDistribution | None = None
 
     def load(self) -> Callable[[SpakkyApplication], None]:
         return self.initializer
@@ -92,6 +104,14 @@ def test_load_plugins_expect_contributions_after_base_plugins(
                     initializer=_recording_initializer(
                         calls,
                         "contribution:sqlalchemy-outbox",
+                    ),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
                     ),
                 ),
             )
@@ -181,6 +201,154 @@ def test_load_plugins_include_expect_skipped_feature_has_no_contributions(
     assert requested_groups == ["spakky.plugins"]
 
 
+def test_load_plugins_include_feature_and_provider_expect_contribution_loaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """include가 feature와 provider를 모두 담으면 contribution을 로드한다."""
+    calls: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(
+                        calls,
+                        "contribution:sqlalchemy-outbox",
+                    ),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+
+    SpakkyApplication(ApplicationContext()).load_plugins(
+        include={Plugin(name="spakky-outbox"), Plugin(name="spakky-sqlalchemy")}
+    )
+
+    assert calls == [
+        "base:outbox",
+        "base:sqlalchemy",
+        "contribution:sqlalchemy-outbox",
+    ]
+
+
+def test_load_plugins_include_feature_only_expect_provider_contribution_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """include에 provider가 없으면 feature contribution을 skip한다."""
+    calls: list[str] = []
+    requested_groups: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        requested_groups.append(group)
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        if group == "spakky.contributions.spakky.outbox":
+            return (
+                FakeEntryPoint(
+                    name="sqlalchemy-outbox",
+                    value=("spakky.plugins.sqlalchemy.contributions.outbox:initialize"),
+                    initializer=_recording_initializer(
+                        calls,
+                        "contribution:sqlalchemy-outbox",
+                    ),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
+                ),
+            )
+        return ()
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+
+    SpakkyApplication(ApplicationContext()).load_plugins(
+        include={Plugin(name="spakky-outbox")}
+    )
+
+    assert calls == ["base:outbox"]
+    assert requested_groups == [
+        "spakky.plugins",
+        "spakky.contributions.spakky.outbox",
+    ]
+
+
+def test_load_plugins_include_empty_expect_no_base_or_contribution_loaded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """include가 빈 set이면 base plugin과 contribution을 모두 로드하지 않는다."""
+    calls: list[str] = []
+    requested_groups: list[str] = []
+
+    def fake_entry_points(group: str) -> tuple[FakeEntryPoint, ...]:
+        requested_groups.append(group)
+        if group == "spakky.plugins":
+            return (
+                FakeEntryPoint(
+                    name="spakky-outbox",
+                    value="spakky.outbox.main:initialize",
+                    initializer=_recording_initializer(calls, "base:outbox"),
+                ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
+            )
+        return (
+            FakeEntryPoint(
+                name="unexpected",
+                value="unexpected.module:initialize",
+                initializer=_recording_initializer(calls, "unexpected"),
+            ),
+        )
+
+    monkeypatch.setattr(application_module, "entry_points", fake_entry_points)
+
+    SpakkyApplication(ApplicationContext()).load_plugins(include=set())
+
+    assert calls == []
+    assert requested_groups == ["spakky.plugins"]
+
+
 def test_load_plugins_expect_deterministic_contribution_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -200,6 +368,11 @@ def test_load_plugins_expect_deterministic_contribution_order(
                     value="spakky.data.main:initialize",
                     initializer=_recording_initializer(calls, "base:data"),
                 ),
+                FakeEntryPoint(
+                    name="spakky-sqlalchemy",
+                    value="spakky.plugins.sqlalchemy.main:initialize",
+                    initializer=_recording_initializer(calls, "base:sqlalchemy"),
+                ),
             )
         if group == "spakky.contributions.spakky.data":
             return (
@@ -207,11 +380,27 @@ def test_load_plugins_expect_deterministic_contribution_order(
                     name="z-data",
                     value="example.z_data:initialize",
                     initializer=_recording_initializer(calls, "contribution:z-data"),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
                 ),
                 FakeEntryPoint(
                     name="a-data",
                     value="example.a_data:initialize",
                     initializer=_recording_initializer(calls, "contribution:a-data"),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
                 ),
             )
         if group == "spakky.contributions.spakky.outbox":
@@ -223,6 +412,14 @@ def test_load_plugins_expect_deterministic_contribution_order(
                         calls,
                         "contribution:z-outbox",
                     ),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
+                    ),
                 ),
                 FakeEntryPoint(
                     name="a-outbox",
@@ -230,6 +427,14 @@ def test_load_plugins_expect_deterministic_contribution_order(
                     initializer=_recording_initializer(
                         calls,
                         "contribution:a-outbox",
+                    ),
+                    dist=FakeDistribution(
+                        entry_points=(
+                            FakeDistributionEntryPoint(
+                                name="spakky-sqlalchemy",
+                                group="spakky.plugins",
+                            ),
+                        )
                     ),
                 ),
             )
@@ -242,6 +447,7 @@ def test_load_plugins_expect_deterministic_contribution_order(
     assert calls == [
         "base:data",
         "base:outbox",
+        "base:sqlalchemy",
         "contribution:a-data",
         "contribution:z-data",
         "contribution:a-outbox",
