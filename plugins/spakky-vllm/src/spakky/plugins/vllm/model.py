@@ -8,6 +8,7 @@ from typing import override
 from spakky.agent import (
     IAgentModel,
     JsonObject,
+    JsonSchemaConstraint,
     JsonValue,
     ModelError,
     ModelMessage,
@@ -19,6 +20,8 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolChoice,
     ModelUsage,
+    StructuredOutputSpec,
+    ToolCallingSpec,
 )
 from spakky.core.pod.annotations.pod import Pod
 
@@ -26,6 +29,7 @@ from spakky.plugins.vllm.client import IVllmChatClient
 from spakky.plugins.vllm.config import VllmConfig
 from spakky.plugins.vllm.error import (
     AbstractVllmError,
+    VllmConstrainedDecodingUnsupportedError,
     VllmModelRefusalError,
     VllmResponseError,
     VllmStreamingDisabledError,
@@ -48,10 +52,11 @@ class _ToolCallBuffer:
     def to_tool_call(self, adapter: "VllmAgentModel") -> ModelToolCall:
         if self.name is None:
             raise VllmResponseError
+        constraint = adapter._tool_constraint_for(self.name)
         provider_arguments = "".join(self.arguments_fragments)
         return ModelToolCall(
             name=self.name,
-            arguments=adapter._to_tool_arguments(provider_arguments),
+            arguments=adapter._to_tool_arguments(provider_arguments, constraint),
             call_id=self.call_id,
             metadata={"provider_arguments": provider_arguments},
         )
@@ -63,17 +68,22 @@ class VllmAgentModel(IAgentModel):
 
     __config: VllmConfig
     __client: IVllmChatClient
+    __tool_schema_by_name: Mapping[str, JsonSchemaConstraint] | None
 
     def __init__(self, config: VllmConfig, client: IVllmChatClient) -> None:
         self.__config = config
         self.__client = client
+        self.__tool_schema_by_name = None
 
     @override
     async def complete(self, request: ModelRequest) -> ModelResponse:
         """Return a provider-neutral model response from vLLM chat completions."""
         payload = self._to_chat_completion_payload(request, stream=False)
+        self.__tool_schema_by_name = self._tool_constraints_by_name(
+            request.tool_calling
+        )
         response = await self.__client.complete(payload, self.__config)
-        return self._to_model_response(response)
+        return self._to_model_response(response, request)
 
     @override
     def stream(self, request: ModelRequest) -> AsyncGenerator[ModelStreamEvent, None]:
@@ -89,7 +99,16 @@ class VllmAgentModel(IAgentModel):
             yield self._done_event(None, None)
             return
 
-        payload = self._to_chat_completion_payload(request, stream=True)
+        try:
+            payload = self._to_chat_completion_payload(request, stream=True)
+        except AbstractVllmError as e:
+            yield self._to_error_event(e)
+            yield self._done_event(None, None)
+            return
+        self.__tool_schema_by_name = self._tool_constraints_by_name(
+            request.tool_calling
+        )
+        structured_fragments: list[str] = []
         tool_buffers: dict[int, _ToolCallBuffer] = {}
         finish_reason: str | None = None
         usage: ModelUsage | None = None
@@ -116,6 +135,8 @@ class VllmAgentModel(IAgentModel):
                     choice = self._expect_mapping(raw_choice)
                     async for event in self._stream_choice_events(
                         choice,
+                        request.structured_output,
+                        structured_fragments,
                         tool_buffers,
                     ):
                         yield event
@@ -127,6 +148,14 @@ class VllmAgentModel(IAgentModel):
                         if finish_reason == "tool_calls":
                             for event in self._tool_call_events(tool_buffers):
                                 yield event
+                        if (
+                            finish_reason == "stop"
+                            and request.structured_output is not None
+                        ):
+                            yield self._to_structured_output_event(
+                                structured_fragments,
+                                request.structured_output,
+                            )
                         terminal_error = self._finish_reason_error(finish_reason)
         except AbstractVllmError as e:
             yield self._to_error_event(e)
@@ -163,6 +192,7 @@ class VllmAgentModel(IAgentModel):
         if request.sampling.max_tokens is not None:
             payload["max_tokens"] = request.sampling.max_tokens
         if request.structured_output is not None:
+            structured_schema = request.structured_output.constraint.schema
             payload["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
@@ -170,18 +200,21 @@ class VllmAgentModel(IAgentModel):
                         request.structured_output.output_type_name
                         or "structured_output"
                     ),
-                    "schema": dict(request.structured_output.constraint.schema),
+                    "schema": structured_schema,
                     "strict": request.structured_output.constraint.strict,
                 },
             }
+            payload["structured_outputs"] = {"json": structured_schema}
         if request.tool_calling is not None:
+            self._ensure_tool_constraints_supported(request.tool_calling)
             payload["tools"] = [
                 {
                     "type": "function",
                     "function": {
                         "name": tool.name,
                         "description": tool.description or "",
-                        "parameters": dict(tool.parameters.schema),
+                        "parameters": tool.parameters.schema,
+                        "strict": tool.parameters.strict,
                     },
                 }
                 for tool in request.tool_calling.tools
@@ -204,7 +237,11 @@ class VllmAgentModel(IAgentModel):
             ModelToolChoice.REQUIRED: "required",
         }[choice]
 
-    def _to_model_response(self, response: Mapping[str, object]) -> ModelResponse:
+    def _to_model_response(
+        self,
+        response: Mapping[str, object],
+        request: ModelRequest,
+    ) -> ModelResponse:
         choices = self._expect_sequence(response.get("choices"))
         if len(choices) == 0:
             raise VllmResponseError
@@ -217,9 +254,22 @@ class VllmAgentModel(IAgentModel):
         if finish_reason == "content_filter":
             raise VllmModelRefusalError
         tool_calls = tuple(self._to_tool_calls(message.get("tool_calls")))
+        if (
+            request.tool_calling is not None
+            and request.tool_calling.choice == ModelToolChoice.NONE
+            and len(tool_calls) > 0
+        ):
+            raise VllmResponseError
         content = self._to_message_content(message.get("content"), tool_calls)
+        structured_output = None
+        if request.structured_output is not None:
+            structured_output = self._to_structured_output(
+                content,
+                request.structured_output.constraint,
+            )
         return ModelResponse(
             content=content,
+            structured_output=structured_output,
             tool_calls=tool_calls,
             usage=self._to_usage(response.get("usage")),
             metadata={"provider": "vllm", "finish_reason": finish_reason},
@@ -228,6 +278,8 @@ class VllmAgentModel(IAgentModel):
     async def _stream_choice_events(
         self,
         choice: Mapping[str, object],
+        structured_output: StructuredOutputSpec | None,
+        structured_fragments: list[str],
         tool_buffers: dict[int, _ToolCallBuffer],
     ) -> AsyncIterator[ModelStreamEvent]:
         delta_value = choice.get("delta")
@@ -236,6 +288,8 @@ class VllmAgentModel(IAgentModel):
         delta = self._expect_mapping(delta_value)
         content = self._optional_string(delta.get("content"))
         if content is not None and content != "":
+            if structured_output is not None:
+                structured_fragments.append(content)
             yield ModelStreamEvent(
                 kind=ModelStreamEventKind.TOKEN_DELTA,
                 token_delta=content,
@@ -295,6 +349,20 @@ class VllmAgentModel(IAgentModel):
         tool_buffers.clear()
         return events
 
+    def _to_structured_output_event(
+        self,
+        structured_fragments: Sequence[str],
+        structured_output: StructuredOutputSpec,
+    ) -> ModelStreamEvent:
+        return ModelStreamEvent(
+            kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+            structured_output=self._to_structured_output(
+                "".join(structured_fragments),
+                structured_output.constraint,
+            ),
+            metadata={"provider": "vllm"},
+        )
+
     def _to_provider_error(self, value: object) -> ModelError | None:
         if value is None:
             return None
@@ -351,6 +419,13 @@ class VllmAgentModel(IAgentModel):
                 retryable=False,
                 metadata={"provider": "vllm"},
             )
+        if isinstance(error, VllmConstrainedDecodingUnsupportedError):
+            return ModelError(
+                code="vllm_constrained_decoding_unsupported",
+                message=VllmConstrainedDecodingUnsupportedError.message,
+                retryable=False,
+                metadata={"provider": "vllm"},
+            )
         return ModelError(
             code="vllm_response_error",
             message=VllmResponseError.message,
@@ -391,10 +466,14 @@ class VllmAgentModel(IAgentModel):
             name = function.get("name")
             if not isinstance(name, str):
                 raise VllmResponseError
+            constraint = self._tool_constraint_for(name)
             calls.append(
                 ModelToolCall(
                     name=name,
-                    arguments=self._to_tool_arguments(function.get("arguments")),
+                    arguments=self._to_tool_arguments(
+                        function.get("arguments"),
+                        constraint,
+                    ),
                     call_id=self._optional_string(item.get("id")),
                     metadata={
                         "provider_arguments": self._optional_string(
@@ -406,15 +485,41 @@ class VllmAgentModel(IAgentModel):
             )
         return tuple(calls)
 
-    def _to_tool_arguments(self, value: object) -> JsonObject:
+    def _to_tool_arguments(
+        self,
+        value: object,
+        constraint: JsonSchemaConstraint | None = None,
+    ) -> JsonObject:
         raw_arguments = self._optional_string(value)
         if raw_arguments is None or raw_arguments == "":
-            return {}
+            arguments: JsonObject = {}
+            if constraint is not None:
+                self._validate_json_value(arguments, constraint.schema)
+            return arguments
         try:
             decoded: object = loads(raw_arguments)
         except JSONDecodeError as e:
             raise VllmResponseError from e
-        return self._to_json_object(decoded)
+        arguments = self._to_json_object(decoded)
+        if constraint is not None:
+            self._validate_json_value(arguments, constraint.schema)
+        return arguments
+
+    def _to_structured_output(
+        self,
+        value: object,
+        constraint: JsonSchemaConstraint,
+    ) -> JsonValue:
+        raw_content = self._optional_string(value)
+        if raw_content is None or raw_content == "":
+            raise VllmResponseError
+        try:
+            decoded: object = loads(raw_content)
+        except JSONDecodeError as e:
+            raise VllmResponseError from e
+        structured_output = self._to_json_value(decoded)
+        self._validate_json_value(structured_output, constraint.schema)
+        return structured_output
 
     def _to_json_object(self, value: object) -> JsonObject:
         if not isinstance(value, Mapping):
@@ -434,6 +539,170 @@ class VllmAgentModel(IAgentModel):
         if isinstance(value, Sequence):
             return tuple(self._to_json_value(item) for item in value)
         raise VllmResponseError
+
+    def _tool_constraints_by_name(
+        self,
+        tool_calling: ToolCallingSpec | None,
+    ) -> Mapping[str, JsonSchemaConstraint] | None:
+        if tool_calling is None:
+            return None
+        constraints: dict[str, JsonSchemaConstraint] = {}
+        for tool in tool_calling.tools:
+            if tool.name in constraints:
+                raise VllmResponseError
+            constraints[tool.name] = tool.parameters
+        return constraints
+
+    def _tool_constraint_for(self, name: str) -> JsonSchemaConstraint | None:
+        if self.__tool_schema_by_name is None:
+            return None
+        constraint = self.__tool_schema_by_name.get(name)
+        if constraint is None:
+            raise VllmResponseError
+        return constraint
+
+    def _ensure_tool_constraints_supported(
+        self,
+        tool_calling: ToolCallingSpec,
+    ) -> None:
+        if tool_calling.choice != ModelToolChoice.AUTO:
+            return
+        for tool in tool_calling.tools:
+            if tool.parameters.strict:
+                raise VllmConstrainedDecodingUnsupportedError
+
+    def _validate_json_value(
+        self,
+        value: JsonValue,
+        schema: Mapping[str, JsonValue],
+    ) -> None:
+        alternatives = schema.get("anyOf")
+        if alternatives is not None:
+            self._validate_any_of(value, alternatives)
+            return
+        enum_values = schema.get("enum")
+        if enum_values is not None:
+            self._validate_enum(value, enum_values)
+        schema_type = self._optional_string(schema.get("type"))
+        if schema_type is None:
+            return
+        if schema_type == "object":
+            self._validate_object(value, schema)
+            return
+        if schema_type == "array":
+            self._validate_array(value, schema)
+            return
+        if schema_type == "string" and not isinstance(value, str):
+            raise VllmResponseError
+        if schema_type == "integer" and (
+            not isinstance(value, int) or isinstance(value, bool)
+        ):
+            raise VllmResponseError
+        if schema_type == "number" and (
+            not isinstance(value, int | float) or isinstance(value, bool)
+        ):
+            raise VllmResponseError
+        if schema_type == "boolean" and not isinstance(value, bool):
+            raise VllmResponseError
+        if schema_type == "null" and value is not None:
+            raise VllmResponseError
+
+    def _validate_any_of(self, value: JsonValue, alternatives: JsonValue) -> None:
+        if not isinstance(alternatives, Sequence) or isinstance(alternatives, str):
+            raise VllmResponseError
+        for alternative in alternatives:
+            if not isinstance(alternative, Mapping):
+                raise VllmResponseError
+            try:
+                self._validate_json_value(value, alternative)
+                return
+            except VllmResponseError:
+                continue
+        raise VllmResponseError
+
+    def _validate_enum(self, value: JsonValue, enum_values: JsonValue) -> None:
+        if not isinstance(enum_values, Sequence) or isinstance(enum_values, str):
+            raise VllmResponseError
+        if value not in enum_values:
+            raise VllmResponseError
+
+    def _validate_object(
+        self,
+        value: JsonValue,
+        schema: Mapping[str, JsonValue],
+    ) -> None:
+        if not isinstance(value, Mapping):
+            raise VllmResponseError
+        required = schema.get("required", ())
+        if not isinstance(required, Sequence) or isinstance(required, str):
+            raise VllmResponseError
+        for required_key in required:
+            if not isinstance(required_key, str) or required_key not in value:
+                raise VllmResponseError
+        properties = schema.get("properties", {})
+        if not isinstance(properties, Mapping):
+            raise VllmResponseError
+        additional_properties = schema.get("additionalProperties", True)
+        for key, item in value.items():
+            property_schema = properties.get(key)
+            if property_schema is None:
+                self._validate_additional_property(item, additional_properties)
+                continue
+            if not isinstance(property_schema, Mapping):
+                raise VllmResponseError
+            self._validate_json_value(item, property_schema)
+
+    def _validate_additional_property(
+        self,
+        value: JsonValue,
+        additional_properties: JsonValue,
+    ) -> None:
+        if additional_properties is False:
+            raise VllmResponseError
+        if additional_properties is True:
+            return
+        if not isinstance(additional_properties, Mapping):
+            raise VllmResponseError
+        self._validate_json_value(value, additional_properties)
+
+    def _validate_array(
+        self,
+        value: JsonValue,
+        schema: Mapping[str, JsonValue],
+    ) -> None:
+        if not isinstance(value, Sequence) or isinstance(value, str):
+            raise VllmResponseError
+        min_items = self._optional_int(schema.get("minItems"))
+        if min_items is not None and len(value) < min_items:
+            raise VllmResponseError
+        max_items = self._optional_int(schema.get("maxItems"))
+        if max_items is not None and len(value) > max_items:
+            raise VllmResponseError
+        prefix_items = schema.get("prefixItems")
+        if prefix_items is not None:
+            self._validate_prefix_items(value, prefix_items)
+            return
+        item_schema = schema.get("items")
+        if item_schema is None:
+            return
+        if not isinstance(item_schema, Mapping):
+            raise VllmResponseError
+        for item in value:
+            self._validate_json_value(item, item_schema)
+
+    def _validate_prefix_items(
+        self,
+        value: Sequence[JsonValue],
+        prefix_items: JsonValue,
+    ) -> None:
+        if not isinstance(prefix_items, Sequence) or isinstance(prefix_items, str):
+            raise VllmResponseError
+        if len(value) < len(prefix_items):
+            raise VllmResponseError
+        for index, item_schema in enumerate(prefix_items):
+            if not isinstance(item_schema, Mapping):
+                raise VllmResponseError
+            self._validate_json_value(value[index], item_schema)
 
     def _to_usage(self, value: object) -> ModelUsage:
         if value is None:
