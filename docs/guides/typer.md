@@ -185,3 +185,44 @@ class OrderCLI:
 ```
 
 명령 옵션 이름은 Typer의 기본 규칙을 따릅니다. 위 예시는 `python main.py orders import --path ./orders.json`처럼 호출합니다. `@command(name=None)`이면 메서드명이 Typer command 이름이 되고, 그룹 이름은 `@CliController("orders")` 또는 클래스명 kebab-case로 정해집니다.
+
+## AgentYield stream CLI
+
+`@Agent`도 CLI adapter에서는 UseCase와 같은 방식으로 다룹니다. Typer 전용 agent plugin을 만들지 않고, `@CliController` command가 container에서 agent Pod를 resolve한 뒤 `execute()`를 순회하면 됩니다. CodeAssistant demo의 CLI 예제는 `core/spakky-agent/examples/inbound_adapter_examples.py`에 있습니다.
+
+```python
+from examples.code_assistant_demo import CodeAssistant, CodeAssistantCommand
+from examples.inbound_adapter_examples import agent_signal_from_json, agent_yield_to_event
+from spakky.agent import IAgentSignalRepository
+from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
+from spakky.core.pod.interfaces.container import IContainer
+from spakky.plugins.typer.stereotypes.cli_controller import CliController, command
+
+
+@CliController("agents")
+class AgentCLI(IContainerAware):
+    _container: IContainer
+
+    def set_container(self, container: IContainer) -> None:
+        self._container = container
+
+    @command("code")
+    async def code(self, state_id: str, instruction: str) -> None:
+        command_dto = CodeAssistantCommand(state_id=state_id, instruction=instruction)
+        agent = self._container.get(CodeAssistant)
+        signals = self._container.get(IAgentSignalRepository)
+
+        async for item in agent.execute(command_dto):
+            event = agent_yield_to_event(item)
+            print(event["payload"].get("text", ""), end="")
+            if item.kind.value == "approval":
+                signals.append(
+                    agent_signal_from_json(
+                        state_id,
+                        {"kind": "approval_decision", "decision": "approve"},
+                        approval=item.payload,
+                    )
+                )
+```
+
+실제 예제 command는 `token`을 stdout에 즉시 쓰고, 다른 `AgentYield`는 줄 단위 event로 출력합니다. `--read-stdin-signal` 옵션을 켜면 stdin JSON line을 `AgentSignalKind.USER_MESSAGE` 또는 `AgentSignalKind.APPROVAL_DECISION`으로 변환해 repository에 append합니다.

@@ -206,6 +206,53 @@ class ChatController:
             await socket.send_text(f"Echo: {message}")
 ```
 
+### AgentYield stream 노출
+
+`@Agent`는 inbound adapter에서 `@UseCase`처럼 container로 resolve한 뒤 `execute()`를 호출합니다. Agent 전용 FastAPI plugin package를 만들 필요는 없습니다. CodeAssistant demo의 WebSocket 예제는 `core/spakky-agent/examples/inbound_adapter_examples.py`에 있습니다.
+
+```python
+from examples.code_assistant_demo import CodeAssistant
+from examples.inbound_adapter_examples import (
+    agent_signal_from_json,
+    agent_yield_to_event,
+    code_assistant_command_from_json,
+)
+from fastapi import WebSocket
+from spakky.agent import IAgentSignalRepository
+from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
+from spakky.core.pod.interfaces.container import IContainer
+from spakky.plugins.fastapi.routes import websocket
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+
+
+@ApiController("/agents")
+class AgentController(IContainerAware):
+    _container: IContainer
+
+    def set_container(self, container: IContainer) -> None:
+        self._container = container
+
+    @websocket("/code/ws")
+    async def code(self, socket: WebSocket) -> None:
+        await socket.accept()
+        command = code_assistant_command_from_json(await socket.receive_json())
+        agent = self._container.get(CodeAssistant)
+        signals = self._container.get(IAgentSignalRepository)
+
+        async for item in agent.execute(command):
+            await socket.send_json(agent_yield_to_event(item))
+            if item.kind.value == "approval":
+                signals.append(
+                    agent_signal_from_json(
+                        command.state_id,
+                        await socket.receive_json(),
+                        approval=item.payload,
+                    )
+                )
+```
+
+실제 예제는 inbound JSON을 `CodeAssistantCommand`와 `AgentSignal`로 변환합니다. 핵심은 WebSocket이 transport 변환만 담당하고, agent business workflow는 container에서 얻은 `CodeAssistant.execute()` 안에 남긴다는 점입니다.
+
 ---
 
 ## 분산 트레이싱
