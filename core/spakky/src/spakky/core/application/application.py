@@ -66,6 +66,38 @@ def _is_core_feature_entry_point(entry_point: EntryPoint) -> bool:
     return not entry_point.value.startswith(_PLUGIN_MODULE_PREFIX)
 
 
+def _provider_plugins_for_contribution(entry_point: EntryPoint) -> set[Plugin]:
+    """Return base plugin providers declared by the entry point distribution."""
+    distribution = entry_point.dist
+    if distribution is None:
+        return set()
+    return {
+        Plugin(name=provider_entry_point.name)
+        for provider_entry_point in distribution.entry_points
+        if provider_entry_point.group == PLUGIN_PATH
+    }
+
+
+def _should_load_contribution(
+    feature_plugin: Plugin,
+    contribution_entry_point: EntryPoint,
+    loaded_base_plugins: set[Plugin],
+    include: set[Plugin] | None,
+) -> bool:
+    """Return whether a contribution matches active feature/provider filters."""
+    if include is not None and feature_plugin not in include:
+        return False
+    active_provider_plugins = (
+        _provider_plugins_for_contribution(contribution_entry_point)
+        & loaded_base_plugins
+    )
+    if len(active_provider_plugins) == 0:
+        return False
+    if include is None:
+        return True
+    return len(active_provider_plugins & include) > 0
+
+
 class CannotDetermineScanPathError(AbstractSpakkyApplicationError):
     """Raised when the scan path cannot be automatically determined."""
 
@@ -367,6 +399,7 @@ class SpakkyApplication:
             Self for method chaining.
         """
         loaded_count = 0
+        loaded_base_plugins: set[Plugin] = set()
         active_feature_plugins: set[Plugin] = set()
         with self._startup_phase_recorder.record_phase(
             phase_name=STARTUP_PHASE_LOAD_PLUGINS
@@ -385,6 +418,7 @@ class SpakkyApplication:
                 loaded_count += 1
                 plugin_phase.set_processed_count(loaded_count)
                 entry_point_function(self)
+                loaded_base_plugins.add(plugin)
                 if _is_core_feature_entry_point(entry_point):
                     active_feature_plugins.add(plugin)
             for feature_plugin in sorted(
@@ -398,6 +432,13 @@ class SpakkyApplication:
                     key=lambda entry_point: entry_point.name,
                 )
                 for contribution_entry_point in contribution_entry_points:
+                    if not _should_load_contribution(
+                        feature_plugin=feature_plugin,
+                        contribution_entry_point=contribution_entry_point,
+                        loaded_base_plugins=loaded_base_plugins,
+                        include=include,
+                    ):
+                        continue
                     entry_point_function = contribution_entry_point.load()
                     loaded_count += 1
                     plugin_phase.set_processed_count(loaded_count)

@@ -108,6 +108,8 @@ Spakky Framework는 **Feature Contribution Policy**를 도입한다. plugin pack
 - contribution `initialize()`도 다른 plugin을 직접 import하지 않고, feature core contract와 자기 plugin 내부 구현만 import한다.
 - loader는 base plugin loading 이후 활성 feature contribution을 로드한다.
 - `include`가 지정된 plugin loading에서는 base plugin과 contribution provider/plugin filtering semantics를 명시적으로 정의한다.
+- `include`가 지정되면 target feature plugin과 contribution provider base plugin이 모두 `include`에 있고 실제 base plugin으로 로드된 경우에만 contribution을 로드한다.
+- contribution provider base plugin은 contribution entry point name 파싱이 아니라 해당 entry point distribution의 `spakky.plugins` metadata로 식별한다.
 - diagnostics는 로드된 contribution, skipped contribution, missing required contribution을 startup report에 기록할 수 있어야 한다.
 
 ## Canonical Loading Model
@@ -174,7 +176,6 @@ ADR-0009의 `spakky-agent`는 checkpoint/evidence/artifact persistence가 필수
 
 ## 미결정 사항
 
-- `include`가 provider plugin만 포함하고 feature plugin을 제외한 경우 contribution을 skip할지, 진단만 남길지
 - contribution entry point가 base plugin보다 먼저 로드될 수 없도록 보장하는 구체 순서
 - contribution이 required인지 optional인지 feature core가 선언하는 API
 - contribution diagnostics의 정확한 public model
