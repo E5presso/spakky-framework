@@ -7,6 +7,8 @@ import pytest
 from spakky.agent import (
     ContextPack,
     ContextPackRole,
+    JsonObject,
+    JsonValue,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -24,6 +26,7 @@ from spakky.plugins.vllm.client import IVllmChatClient
 from spakky.plugins.vllm.config import VllmConfig
 from spakky.plugins.vllm.error import (
     AbstractVllmError,
+    VllmConstrainedDecodingUnsupportedError,
     VllmModelRefusalError,
     VllmResponseError,
     VllmTimeoutError,
@@ -152,6 +155,22 @@ async def test_complete_assembles_context_pack_messages_into_payload() -> None:
 
 async def test_complete_maps_tool_calling_surface() -> None:
     """tool calling 요청은 OpenAI function tool payload로 변환된다."""
+    search_schema = {
+        "type": "object",
+        "properties": {
+            "q": {"type": "string"},
+            "limit": {"type": "integer"},
+            "exact": {"type": "boolean"},
+            "filters": {
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+            },
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "empty": {"anyOf": [{"type": "null"}, {"type": "string"}]},
+        },
+        "required": ["q"],
+        "additionalProperties": False,
+    }
     client = RecordingClient(
         {
             "choices": [
@@ -185,9 +204,7 @@ async def test_complete_maps_tool_calling_surface() -> None:
                 ModelToolSpec(
                     name="search",
                     description="Search workspace",
-                    parameters=JsonSchemaConstraint(
-                        schema={"type": "object", "properties": {}},
-                    ),
+                    parameters=JsonSchemaConstraint(schema=search_schema),
                 ),
             ),
             choice=ModelToolChoice.REQUIRED,
@@ -215,7 +232,8 @@ async def test_complete_maps_tool_calling_surface() -> None:
             "function": {
                 "name": "search",
                 "description": "Search workspace",
-                "parameters": {"type": "object", "properties": {}},
+                "parameters": search_schema,
+                "strict": True,
             },
         }
     ]
@@ -250,36 +268,48 @@ async def test_complete_accepts_tool_calls_without_text_content() -> None:
 
 async def test_complete_maps_structured_output_and_optional_tool_choice() -> None:
     """structured output과 optional tool choice가 OpenAI-compatible payload에 반영된다."""
-    client = RecordingClient({"choices": [{"message": {"content": "{}"}}]})
+    client = RecordingClient({"choices": [{"message": {"content": '{"answer":"ok"}'}}]})
     model = VllmAgentModel(VllmConfig(), client)
+    output_schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+        "additionalProperties": False,
+    }
+    tool_schema = {"type": "object"}
     request = ModelRequest(
         messages=(ModelMessage(ModelMessageRole.USER, "json"),),
         structured_output=StructuredOutputSpec(
-            constraint=JsonSchemaConstraint(schema={"type": "object"}, strict=False),
+            constraint=JsonSchemaConstraint(schema=output_schema, strict=False),
         ),
         tool_calling=ToolCallingSpec(
             tools=(
                 ModelToolSpec(
                     name="noop",
-                    parameters=JsonSchemaConstraint(schema={"type": "object"}),
+                    parameters=JsonSchemaConstraint(schema=tool_schema),
                 ),
             ),
             choice=ModelToolChoice.NONE,
         ),
     )
 
-    await model.complete(request)
+    response = await model.complete(request)
 
+    assert response.structured_output == {"answer": "ok"}
     assert client.payload is not None
     assert client.payload["response_format"] == {
         "type": "json_schema",
         "json_schema": {
             "name": "structured_output",
-            "schema": {"type": "object"},
+            "schema": output_schema,
             "strict": False,
         },
     }
+    assert client.payload["structured_outputs"] == {"json": output_schema}
     assert client.payload["tool_choice"] == "none"
+    tools = client.payload["tools"]
+    assert isinstance(tools, list)
+    assert tools[0]["function"]["parameters"] is tool_schema
 
 
 async def test_complete_maps_named_structured_output_and_auto_tool_choice() -> None:
@@ -296,7 +326,10 @@ async def test_complete_maps_named_structured_output_and_auto_tool_choice() -> N
             tools=(
                 ModelToolSpec(
                     name="noop",
-                    parameters=JsonSchemaConstraint(schema={"type": "object"}),
+                    parameters=JsonSchemaConstraint(
+                        schema={"type": "object"},
+                        strict=False,
+                    ),
                 ),
             ),
             choice=ModelToolChoice.AUTO,
@@ -310,6 +343,318 @@ async def test_complete_maps_named_structured_output_and_auto_tool_choice() -> N
     assert isinstance(response_format, dict)
     assert response_format["json_schema"]["name"] == "Answer"
     assert client.payload["tool_choice"] == "auto"
+
+
+async def test_complete_auto_strict_tool_choice_expect_capability_error() -> None:
+    """vLLM auto tool choice는 schema constrained decoding 보장을 조용히 가장하지 않는다."""
+    client = RecordingClient({"choices": [{"message": {"content": "{}"}}]})
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "call tool"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="search",
+                    parameters=JsonSchemaConstraint(
+                        schema={"type": "object"},
+                        strict=True,
+                    ),
+                ),
+            ),
+            choice=ModelToolChoice.AUTO,
+        ),
+    )
+
+    with pytest.raises(VllmConstrainedDecodingUnsupportedError):
+        await model.complete(request)
+
+
+async def test_complete_invalid_structured_output_expect_response_error() -> None:
+    """structured output 응답은 tool 실행 후보로 넘어가기 전에 parse/validation 된다."""
+    client = RecordingClient({"choices": [{"message": {"content": '{"count":"bad"}'}}]})
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "json"),),
+        structured_output=StructuredOutputSpec(
+            constraint=JsonSchemaConstraint(
+                schema={
+                    "type": "object",
+                    "properties": {"count": {"type": "integer"}},
+                    "required": ["count"],
+                    "additionalProperties": False,
+                },
+            ),
+        ),
+    )
+
+    with pytest.raises(VllmResponseError):
+        await model.complete(request)
+
+
+async def test_complete_invalid_tool_arguments_expect_response_error() -> None:
+    """tool arguments가 schema와 맞지 않으면 ModelToolCall 후보 생성 전에 실패한다."""
+    client = RecordingClient(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "search",
+                                    "arguments": '{"limit":"bad"}',
+                                }
+                            }
+                        ],
+                    }
+                }
+            ],
+        }
+    )
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "call tool"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="search",
+                    parameters=JsonSchemaConstraint(
+                        schema={
+                            "type": "object",
+                            "properties": {
+                                "q": {"type": "string"},
+                                "limit": {"type": "integer"},
+                            },
+                            "required": ["q"],
+                            "additionalProperties": False,
+                        },
+                    ),
+                ),
+            ),
+            choice=ModelToolChoice.REQUIRED,
+        ),
+    )
+
+    with pytest.raises(VllmResponseError):
+        await model.complete(request)
+
+
+async def test_complete_none_tool_choice_with_tool_call_expect_response_error() -> None:
+    """tool_choice none인데 provider가 tool call을 반환하면 명시적으로 실패한다."""
+    client = RecordingClient(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {"function": {"name": "search", "arguments": "{}"}}
+                        ],
+                    }
+                }
+            ],
+        }
+    )
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "do not call"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="search",
+                    parameters=JsonSchemaConstraint(schema={"type": "object"}),
+                ),
+            ),
+            choice=ModelToolChoice.NONE,
+        ),
+    )
+
+    with pytest.raises(VllmResponseError):
+        await model.complete(request)
+
+
+async def test_complete_unknown_tool_call_name_expect_response_error() -> None:
+    """요청하지 않은 tool 이름은 실행 후보로 정규화하지 않는다."""
+    client = RecordingClient(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {"function": {"name": "other", "arguments": "{}"}}
+                        ],
+                    }
+                }
+            ],
+        }
+    )
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "call tool"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="search",
+                    parameters=JsonSchemaConstraint(schema={"type": "object"}),
+                ),
+            ),
+            choice=ModelToolChoice.REQUIRED,
+        ),
+    )
+
+    with pytest.raises(VllmResponseError):
+        await model.complete(request)
+
+
+async def test_complete_empty_tool_arguments_are_validated() -> None:
+    """빈 tool arguments도 schema가 요구하는 필드가 있으면 실패한다."""
+    client = RecordingClient(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {"function": {"name": "search", "arguments": ""}}
+                        ],
+                    }
+                }
+            ],
+        }
+    )
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "call tool"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="search",
+                    parameters=JsonSchemaConstraint(
+                        schema={
+                            "type": "object",
+                            "properties": {"q": {"type": "string"}},
+                            "required": ["q"],
+                        },
+                    ),
+                ),
+            ),
+            choice=ModelToolChoice.REQUIRED,
+        ),
+    )
+
+    with pytest.raises(VllmResponseError):
+        await model.complete(request)
+
+
+def test_duplicate_tool_schema_names_expect_response_error() -> None:
+    """중복 tool name은 provider response 검증 map을 만들 수 없다."""
+    model = VllmAgentModel(VllmConfig(), RecordingClient({"choices": []}))
+    tool_calling = ToolCallingSpec(
+        tools=(
+            ModelToolSpec(
+                name="search",
+                parameters=JsonSchemaConstraint(schema={"type": "object"}),
+            ),
+            ModelToolSpec(
+                name="search",
+                parameters=JsonSchemaConstraint(schema={"type": "object"}),
+            ),
+        ),
+    )
+
+    with pytest.raises(VllmResponseError):
+        model._tool_constraints_by_name(tool_calling)
+
+
+@pytest.mark.parametrize("content", ["", "not-json"])
+async def test_complete_malformed_structured_output_expect_response_error(
+    content: str,
+) -> None:
+    """structured output content가 비었거나 JSON이 아니면 실패한다."""
+    client = RecordingClient({"choices": [{"message": {"content": content}}]})
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "json"),),
+        structured_output=StructuredOutputSpec(
+            constraint=JsonSchemaConstraint(schema={"type": "object"}),
+        ),
+    )
+
+    with pytest.raises(VllmResponseError):
+        await model.complete(request)
+
+
+def test_schema_validator_accepts_core_generated_schema_shapes() -> None:
+    """로컬 schema validator는 core가 생성하는 JSON Schema subset을 수용한다."""
+    model = VllmAgentModel(VllmConfig(), RecordingClient({"choices": []}))
+
+    model._validate_json_value("a", {"enum": ["a"], "type": "string"})
+    model._validate_json_value("a", {"enum": ["a"]})
+    model._validate_json_value(
+        "a", {"anyOf": [{"type": "integer"}, {"type": "string"}]}
+    )
+    model._validate_json_value(
+        {"extra": "ok"},
+        {"type": "object", "additionalProperties": True},
+    )
+    model._validate_json_value(
+        {"extra": "ok"},
+        {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+        },
+    )
+    model._validate_json_value(("a", 1), {"type": "array"})
+    model._validate_json_value(
+        ("a", 1),
+        {"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}]},
+    )
+    model._validate_json_value(
+        ("a", "b"), {"type": "array", "items": {"type": "string"}}
+    )
+    model._validate_json_value(("a",), {"type": "array", "minItems": 1, "maxItems": 2})
+
+
+@pytest.mark.parametrize(
+    "value,schema",
+    [
+        ("a", {"enum": "bad"}),
+        ("a", {"enum": ["b"]}),
+        ("a", {"anyOf": "bad"}),
+        ("a", {"anyOf": ["bad"]}),
+        ("a", {"anyOf": [{"type": "integer"}]}),
+        (1, {"type": "object"}),
+        ({}, {"type": "object", "required": "bad"}),
+        ({}, {"type": "object", "required": [1]}),
+        ({"x": 1}, {"type": "object", "properties": "bad"}),
+        ({"x": 1}, {"type": "object", "properties": {"x": "bad"}}),
+        ({"x": 1}, {"type": "object", "additionalProperties": False}),
+        ({"x": 1}, {"type": "object", "additionalProperties": "bad"}),
+        ("a", {"type": "array"}),
+        ((), {"type": "array", "minItems": 1}),
+        (("a", "b"), {"type": "array", "maxItems": 1}),
+        (("a",), {"type": "array", "items": "bad"}),
+        ((), {"type": "array", "prefixItems": [{"type": "string"}]}),
+        (("a",), {"type": "array", "prefixItems": "bad"}),
+        (("a",), {"type": "array", "prefixItems": ["bad"]}),
+        (1, {"type": "string"}),
+        (True, {"type": "integer"}),
+        (True, {"type": "number"}),
+        ("true", {"type": "boolean"}),
+        ("null", {"type": "null"}),
+    ],
+)
+def test_schema_validator_rejects_invalid_shapes(
+    value: JsonValue,
+    schema: JsonObject,
+) -> None:
+    """schema subset 위반은 모두 provider response error로 표면화된다."""
+    model = VllmAgentModel(VllmConfig(), RecordingClient({"choices": []}))
+
+    with pytest.raises(VllmResponseError):
+        model._validate_json_value(value, schema)
 
 
 async def test_complete_invalid_response_expect_vllm_response_error() -> None:
@@ -460,6 +805,51 @@ async def test_stream_maps_token_deltas_usage_and_done_event() -> None:
     assert client.payload["stream_options"] == {"include_usage": True}
 
 
+async def test_stream_emits_structured_output_event_after_json_completion() -> None:
+    """streaming structured output은 token 이후 검증된 STRUCTURED_OUTPUT event를 낸다."""
+    client = RecordingClient(
+        {"choices": []},
+        stream_chunks=(
+            {"choices": [{"delta": {"content": '{"answer"'}}]},
+            {"choices": [{"delta": {"content": ':"ok"}'}, "finish_reason": "stop"}]},
+        ),
+    )
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "json"),),
+        structured_output=StructuredOutputSpec(
+            constraint=JsonSchemaConstraint(
+                schema={
+                    "type": "object",
+                    "properties": {"answer": {"type": "string"}},
+                    "required": ["answer"],
+                    "additionalProperties": False,
+                },
+            ),
+        ),
+    )
+
+    events = [event async for event in model.stream(request)]
+
+    assert events[0].kind == ModelStreamEventKind.TOKEN_DELTA
+    assert events[1].kind == ModelStreamEventKind.TOKEN_DELTA
+    assert events[2] == ModelStreamEvent(
+        kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+        structured_output={"answer": "ok"},
+        metadata={"provider": "vllm"},
+    )
+    assert events[3].kind == ModelStreamEventKind.DONE
+    assert client.payload is not None
+    assert client.payload["structured_outputs"] == {
+        "json": {
+            "type": "object",
+            "properties": {"answer": {"type": "string"}},
+            "required": ["answer"],
+            "additionalProperties": False,
+        }
+    }
+
+
 async def test_stream_maps_tool_call_chunks_after_tool_finish_reason() -> None:
     """streaming tool_call delta 조각은 완료 시점에 ModelToolCall 후보가 된다."""
     client = RecordingClient(
@@ -573,6 +963,30 @@ async def test_stream_tool_call_chunks_accept_omitted_index_and_function() -> No
     assert events[0].tool_call is not None
     assert events[0].tool_call.name == "search"
     assert events[0].tool_call.arguments == {}
+
+
+async def test_stream_auto_strict_tool_choice_emits_capability_error() -> None:
+    """stream()은 지원되지 않는 constrained decoding 조합을 ERROR event로 표면화한다."""
+    model = VllmAgentModel(VllmConfig(), RecordingClient({"choices": []}))
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "call tool"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="search",
+                    parameters=JsonSchemaConstraint(schema={"type": "object"}),
+                ),
+            ),
+            choice=ModelToolChoice.AUTO,
+        ),
+    )
+
+    events = [event async for event in model.stream(request)]
+
+    assert events[0].kind == ModelStreamEventKind.ERROR
+    assert events[0].error is not None
+    assert events[0].error.code == "vllm_constrained_decoding_unsupported"
+    assert events[1].kind == ModelStreamEventKind.DONE
 
 
 async def test_stream_tool_call_finish_without_name_expect_error_event() -> None:

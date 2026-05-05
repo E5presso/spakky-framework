@@ -29,6 +29,12 @@ class VllmResponseError(AbstractVllmError):
     message = "vLLM response is invalid"
 
 
+class VllmConstrainedDecodingUnsupportedError(AbstractVllmError):
+    """Raised when requested tool constraints are not enforced by vLLM."""
+
+    message = "vLLM cannot enforce requested constrained decoding mode"
+
+
 class VllmStreamingDisabledError(AbstractVllmError):
     """Raised when streaming is disabled by plugin configuration."""
 
