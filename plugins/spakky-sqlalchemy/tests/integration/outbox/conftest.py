@@ -5,12 +5,14 @@ from typing import Any, AsyncGenerator, Generator
 from uuid import uuid4
 
 import pytest
-import spakky.outbox
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from testcontainers.postgres import PostgresContainer
 
 import spakky.plugins.sqlalchemy
+from spakky.plugins.sqlalchemy.contributions.outbox import (
+    initialize as initialize_outbox_contribution,
+)
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
 from spakky.plugins.sqlalchemy.outbox.storage import (
     AsyncSqlAlchemyOutboxStorage,
@@ -68,10 +70,10 @@ def app_fixture(setup_env_vars: str) -> Generator[SpakkyApplication, Any, None]:
     """Create SpakkyApplication with SQLAlchemy outbox contribution active."""
     app = SpakkyApplication(ApplicationContext()).load_plugins(
         include={
-            spakky.outbox.PLUGIN_NAME,
             spakky.plugins.sqlalchemy.PLUGIN_NAME,
         }
     )
+    initialize_outbox_contribution(app)
     app.start()
 
     yield app

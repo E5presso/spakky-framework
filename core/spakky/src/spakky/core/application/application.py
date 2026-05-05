@@ -66,6 +66,12 @@ def _is_core_feature_entry_point(entry_point: EntryPoint) -> bool:
     return not entry_point.value.startswith(_PLUGIN_MODULE_PREFIX)
 
 
+def _contribution_entry_point_group(feature_plugin: Plugin) -> str:
+    """Return the package-metadata-safe contribution group for a feature."""
+    feature_group_segment = feature_plugin.name.replace("-", ".")
+    return f"{CONTRIBUTION_PATH_PREFIX}.{feature_group_segment}"
+
+
 class CannotDetermineScanPathError(AbstractSpakkyApplicationError):
     """Raised when the scan path cannot be automatically determined."""
 
@@ -392,9 +398,7 @@ class SpakkyApplication:
                 key=lambda plugin: plugin.name,
             ):
                 contribution_entry_points = sorted(
-                    entry_points(
-                        group=(f"{CONTRIBUTION_PATH_PREFIX}.{feature_plugin.name}")
-                    ),
+                    entry_points(group=_contribution_entry_point_group(feature_plugin)),
                     key=lambda entry_point: entry_point.name,
                 )
                 for contribution_entry_point in contribution_entry_points:

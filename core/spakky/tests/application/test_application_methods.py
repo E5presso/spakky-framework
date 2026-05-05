@@ -84,7 +84,7 @@ def test_load_plugins_expect_contributions_after_base_plugins(
                     initializer=_recording_initializer(calls, "base:outbox"),
                 ),
             )
-        if group == "spakky.contributions.spakky-outbox":
+        if group == "spakky.contributions.spakky.outbox":
             return (
                 FakeEntryPoint(
                     name="sqlalchemy-outbox",
@@ -201,7 +201,7 @@ def test_load_plugins_expect_deterministic_contribution_order(
                     initializer=_recording_initializer(calls, "base:data"),
                 ),
             )
-        if group == "spakky.contributions.spakky-data":
+        if group == "spakky.contributions.spakky.data":
             return (
                 FakeEntryPoint(
                     name="z-data",
@@ -214,7 +214,7 @@ def test_load_plugins_expect_deterministic_contribution_order(
                     initializer=_recording_initializer(calls, "contribution:a-data"),
                 ),
             )
-        if group == "spakky.contributions.spakky-outbox":
+        if group == "spakky.contributions.spakky.outbox":
             return (
                 FakeEntryPoint(
                     name="z-outbox",
