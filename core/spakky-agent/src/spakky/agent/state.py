@@ -40,6 +40,7 @@ class AgentStateReason(StrEnum):
     APPROVAL_REQUIRED = "approval_required"
     APPROVAL_REJECTED = "approval_rejected"
     APPROVAL_DEFERRED = "approval_deferred"
+    EXECUTION_FAILED = "execution_failed"
     USER_INTERRUPTED = "user_interrupted"
     TIMEOUT = "timeout"
     CANCELLATION_REQUESTED = "cancellation_requested"

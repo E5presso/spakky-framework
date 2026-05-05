@@ -15,6 +15,11 @@ from spakky.agent import (
     AgentStateReason,
     AgentStateTransition,
     AgentStatus,
+    AgentCancellationCleanupReport,
+    AgentCancellationCleanupResult,
+    AgentCancellationCleanupTask,
+    AgentCancellationTargetKind,
+    AgentCancellationRequest,
     AgentYield,
     AgentYieldKind,
     Approval,
@@ -29,6 +34,9 @@ from spakky.agent import (
     Token,
     Tool,
     TextDelta,
+    begin_agent_cancellation,
+    complete_agent_cancellation,
+    run_agent_cancellation_cleanup,
 )
 
 
@@ -98,6 +106,258 @@ def test_agent_state_transition_expect_covers_durable_execution_flow() -> None:
         "timed_out",
         "interrupted",
     }
+
+
+def test_agent_state_expect_begin_cancellation_from_cancel_signal() -> None:
+    """cancel signal 수신은 terminal state 대신 CANCELLING으로 먼저 전이한다."""
+    state = AgentState(
+        id="run-1",
+        agent_type="CodeAssistant",
+        status=AgentStatus.ACTIVE,
+    )
+    signal = AgentSignal(
+        id="signal-1",
+        agent_state_id="run-1",
+        kind=AgentSignalKind.CANCEL,
+        payload={"reason": "user stopped", "requested_by": "cli"},
+    )
+
+    cancelling = begin_agent_cancellation(state, signal)
+
+    assert cancelling.status == AgentStatus.CANCELLING
+    assert cancelling.transition == AgentStateTransition.CANCELLING
+    assert cancelling.reason == AgentStateReason.CANCELLATION_REQUESTED
+    assert cancelling.metadata["cancellation_signal_id"] == "signal-1"
+    assert cancelling.metadata["cancellation_reason"] == "user stopped"
+
+
+@pytest.mark.asyncio
+async def test_agent_cancellation_cleanup_expect_invokes_model_and_tool_hooks() -> None:
+    """model stream/tool cleanup hook 결과가 evidence와 CANCELLED state에 반영된다."""
+    observed: list[AgentCancellationRequest] = []
+
+    async def cleanup(
+        request: AgentCancellationRequest,
+    ) -> AgentCancellationCleanupResult:
+        observed.append(request)
+        return AgentCancellationCleanupResult.succeeded(
+            target_kind=request.target_kind,
+            target_ref=request.target_ref,
+            reason="released",
+            metadata={"closed": True},
+        )
+
+    state = AgentState(
+        id="run-1",
+        agent_type="CodeAssistant",
+        status=AgentStatus.CANCELLING,
+        transition=AgentStateTransition.CANCELLING,
+        reason=AgentStateReason.CANCELLATION_REQUESTED,
+    )
+    signal = AgentSignal(
+        id="signal-1",
+        agent_state_id="run-1",
+        kind=AgentSignalKind.CANCEL,
+        payload={"reason": "stop", "requested_by": "socket"},
+    )
+    tasks = (
+        AgentCancellationCleanupTask(
+            target_kind=AgentCancellationTargetKind.MODEL_STREAM,
+            target_ref="model-stream-1",
+            cleanup=cleanup,
+        ),
+        AgentCancellationCleanupTask(
+            target_kind=AgentCancellationTargetKind.TOOL_EXECUTION,
+            target_ref="tool-call-1",
+            cleanup=cleanup,
+        ),
+    )
+
+    report = await run_agent_cancellation_cleanup(
+        state=state,
+        signal=signal,
+        tasks=tasks,
+    )
+    evidence = report.to_evidence_candidate(summary="cancel cleanup").to_evidence(
+        evidence_id="evidence-1",
+        agent_state_id="run-1",
+    )
+    terminal = complete_agent_cancellation(state, report)
+
+    assert [request.target_kind for request in observed] == [
+        AgentCancellationTargetKind.MODEL_STREAM,
+        AgentCancellationTargetKind.TOOL_EXECUTION,
+    ]
+    assert observed[0].to_payload()["requested_by"] == "socket"
+    assert report.cleanup_succeeded is True
+    assert evidence.kind == AgentEvidenceKind.CANCELLATION
+    assert evidence.payload["cleanup_succeeded"] is True
+    assert terminal.status == AgentStatus.CANCELLED
+    assert terminal.transition == AgentStateTransition.CANCELLED
+    assert terminal.reason == AgentStateReason.CANCELLATION_REQUESTED
+
+
+@pytest.mark.asyncio
+async def test_agent_cancellation_cleanup_expect_failure_marks_state_failed() -> None:
+    """cleanup 실패는 CANCELLED가 아니라 FAILED(reason=cleanup failed)로 끝난다."""
+
+    async def cleanup(
+        request: AgentCancellationRequest,
+    ) -> AgentCancellationCleanupResult:
+        return AgentCancellationCleanupResult.failed(
+            target_kind=request.target_kind,
+            target_ref=request.target_ref,
+            error_code="tool_cleanup_failed",
+            message="tool refused cancellation",
+        )
+
+    state = AgentState(
+        id="run-1",
+        agent_type="CodeAssistant",
+        status=AgentStatus.CANCELLING,
+        transition=AgentStateTransition.CANCELLING,
+        reason=AgentStateReason.CANCELLATION_REQUESTED,
+    )
+    signal = AgentSignal(
+        id="signal-1",
+        agent_state_id="run-1",
+        kind=AgentSignalKind.CANCEL,
+    )
+
+    report = await run_agent_cancellation_cleanup(
+        state=state,
+        signal=signal,
+        tasks=(
+            AgentCancellationCleanupTask(
+                target_kind=AgentCancellationTargetKind.TOOL_EXECUTION,
+                target_ref="tool-call-1",
+                cleanup=cleanup,
+            ),
+        ),
+    )
+    terminal = complete_agent_cancellation(state, report)
+
+    assert report.cleanup_succeeded is False
+    assert report.failed_outcomes[0].error_code == "tool_cleanup_failed"
+    assert terminal.status == AgentStatus.FAILED
+    assert terminal.transition == AgentStateTransition.FAILED
+    assert terminal.reason == AgentStateReason.CANCELLATION_CLEANUP_FAILED
+
+
+@pytest.mark.asyncio
+async def test_agent_cancellation_cleanup_expect_rejects_mismatched_hook_target() -> (
+    None
+):
+    """cleanup hook이 다른 target outcome을 반환하면 evidence 오염 전에 거부한다."""
+
+    async def cleanup(
+        request: AgentCancellationRequest,
+    ) -> AgentCancellationCleanupResult:
+        return AgentCancellationCleanupResult.succeeded(
+            target_kind=request.target_kind,
+            target_ref="different-target",
+        )
+
+    state = AgentState(
+        id="run-1",
+        agent_type="CodeAssistant",
+        status=AgentStatus.CANCELLING,
+    )
+    signal = AgentSignal(
+        id="signal-1",
+        agent_state_id="run-1",
+        kind=AgentSignalKind.CANCEL,
+    )
+
+    with pytest.raises(AgentDefinitionError):
+        await run_agent_cancellation_cleanup(
+            state=state,
+            signal=signal,
+            tasks=(
+                AgentCancellationCleanupTask(
+                    target_kind=AgentCancellationTargetKind.MODEL_STREAM,
+                    target_ref="model-stream-1",
+                    cleanup=cleanup,
+                ),
+            ),
+        )
+
+
+def test_agent_cancellation_contract_expect_supports_skipped_cleanup() -> None:
+    """이미 닫힌 target은 skipped outcome으로 evidence에 남기되 실패로 보지 않는다."""
+    result = AgentCancellationCleanupResult.skipped(
+        target_kind=AgentCancellationTargetKind.MODEL_STREAM,
+        target_ref="model-stream-1",
+        reason="already closed",
+    )
+    report = complete_agent_cancellation(
+        AgentState(
+            id="run-1",
+            agent_type="CodeAssistant",
+            status=AgentStatus.CANCELLING,
+        ),
+        report=AgentCancellationCleanupReport(
+            state_id="run-1",
+            signal_id="signal-1",
+            outcomes=(result,),
+        ),
+    )
+
+    assert result.to_payload()["status"] == "skipped"
+    assert report.status == AgentStatus.CANCELLED
+
+
+def test_agent_cancellation_contract_expect_rejects_invalid_inputs() -> None:
+    """state/signal/target 식별자가 없거나 cancel 외 signal이면 custom error다."""
+    state = AgentState(
+        id="run-1", agent_type="CodeAssistant", status=AgentStatus.ACTIVE
+    )
+    non_cancel = AgentSignal(
+        id="signal-1",
+        agent_state_id="run-1",
+        kind=AgentSignalKind.USER_MESSAGE,
+    )
+
+    with pytest.raises(AgentDefinitionError):
+        begin_agent_cancellation(state, non_cancel)
+    with pytest.raises(AgentDefinitionError):
+        begin_agent_cancellation(
+            state,
+            AgentSignal(
+                id="signal-2",
+                agent_state_id="other-run",
+                kind=AgentSignalKind.CANCEL,
+            ),
+        )
+    with pytest.raises(AgentDefinitionError):
+        AgentCancellationCleanupTask(
+            target_kind=AgentCancellationTargetKind.TOOL_EXECUTION,
+            target_ref=" ",
+            cleanup=_successful_tool_cleanup,
+        )
+    with pytest.raises(AgentDefinitionError):
+        AgentCancellationCleanupResult.succeeded(
+            target_kind=AgentCancellationTargetKind.MODEL_STREAM,
+            target_ref="model-stream-1",
+            reason=" ",
+        )
+    with pytest.raises(AgentDefinitionError):
+        complete_agent_cancellation(
+            state,
+            AgentCancellationCleanupReport(
+                state_id="other-run",
+                signal_id="signal-1",
+            ),
+        )
+
+
+async def _successful_tool_cleanup(
+    request: AgentCancellationRequest,
+) -> AgentCancellationCleanupResult:
+    return AgentCancellationCleanupResult.succeeded(
+        target_kind=request.target_kind,
+        target_ref=request.target_ref,
+    )
 
 
 def test_agent_state_expect_rejects_negative_pending_signal_count() -> None:

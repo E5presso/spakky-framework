@@ -15,6 +15,12 @@ from spakky.agent import (
     AgentActionBoundaryCheckpoint,
     AgentActionBoundaryStage,
     AgentActionKind,
+    AgentCancellationCleanupReport,
+    AgentCancellationCleanupResult,
+    AgentCancellationCleanupStatus,
+    AgentCancellationCleanupTask,
+    AgentCancellationRequest,
+    AgentCancellationTargetKind,
     AgentToolCatalog,
     AgentToolBindingError,
     AgentToolBoundInvocation,
@@ -74,11 +80,14 @@ from spakky.agent import (
     ToolRiskAxis,
     ToolCallingSpec,
     agent_tool,
+    begin_agent_cancellation,
+    complete_agent_cancellation,
     consume_pending_agent_signals,
     materialize_agent_approval_decision_state,
     parse_agent_approval_decision_signal,
     plan_agent_resume,
     plan_agent_tool_approval,
+    run_agent_cancellation_cleanup,
 )
 from spakky.agent.main import initialize
 from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
@@ -99,6 +108,12 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentActionBoundaryCheckpoint",
         "AgentActionBoundaryStage",
         "AgentActionKind",
+        "AgentCancellationCleanupReport",
+        "AgentCancellationCleanupResult",
+        "AgentCancellationCleanupStatus",
+        "AgentCancellationCleanupTask",
+        "AgentCancellationRequest",
+        "AgentCancellationTargetKind",
         "AgentDelegateTarget",
         "AgentExecutionLimits",
         "AgentExecutionSpec",
@@ -137,11 +152,14 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentToolCatalog",
         "AgentToolDescriptor",
         "AgentToolIdentity",
+        "begin_agent_cancellation",
+        "complete_agent_cancellation",
         "consume_pending_agent_signals",
         "materialize_agent_approval_decision_state",
         "parse_agent_approval_decision_signal",
         "plan_agent_resume",
         "plan_agent_tool_approval",
+        "run_agent_cancellation_cleanup",
     }
 
     exported = set(agent_api.__all__)
@@ -156,6 +174,12 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentActionBoundaryCheckpoint is agent_api.AgentActionBoundaryCheckpoint
     assert AgentActionBoundaryStage is agent_api.AgentActionBoundaryStage
     assert AgentActionKind is agent_api.AgentActionKind
+    assert AgentCancellationCleanupReport is agent_api.AgentCancellationCleanupReport
+    assert AgentCancellationCleanupResult is agent_api.AgentCancellationCleanupResult
+    assert AgentCancellationCleanupStatus is agent_api.AgentCancellationCleanupStatus
+    assert AgentCancellationCleanupTask is agent_api.AgentCancellationCleanupTask
+    assert AgentCancellationRequest is agent_api.AgentCancellationRequest
+    assert AgentCancellationTargetKind is agent_api.AgentCancellationTargetKind
     assert AgentDelegateTarget is agent_api.AgentDelegateTarget
     assert AgentExecutionLimits is agent_api.AgentExecutionLimits
     assert AgentExecutionSpec is agent_api.AgentExecutionSpec
@@ -196,6 +220,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentToolCatalog is agent_api.AgentToolCatalog
     assert AgentToolDescriptor is agent_api.AgentToolDescriptor
     assert AgentToolIdentity is agent_api.AgentToolIdentity
+    assert begin_agent_cancellation is agent_api.begin_agent_cancellation
+    assert complete_agent_cancellation is agent_api.complete_agent_cancellation
     assert consume_pending_agent_signals is agent_api.consume_pending_agent_signals
     assert (
         materialize_agent_approval_decision_state
@@ -207,6 +233,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     )
     assert plan_agent_resume is agent_api.plan_agent_resume
     assert plan_agent_tool_approval is agent_api.plan_agent_tool_approval
+    assert run_agent_cancellation_cleanup is agent_api.run_agent_cancellation_cleanup
 
 
 def test_public_api_expect_exports_model_contract_types() -> None:
