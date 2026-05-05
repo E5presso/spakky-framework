@@ -305,6 +305,9 @@ fallback을 제공하지 않습니다.
 | `ConnectionManager` | 동기 SQLAlchemy engine lifecycle |
 | `AsyncConnectionManager` | 비동기 SQLAlchemy engine lifecycle |
 | `SQLAlchemyConnectionConfig` | 환경변수 기반 설정 |
+| `SqlAlchemyAgentStateRepository` | `IAgentStateRepository`의 SQLAlchemy 구현 |
+| `SqlAlchemyAgentSignalRepository` | `IAgentSignalRepository`의 SQLAlchemy 구현. `consumed_at`으로 pending signal queue를 구분 |
+| `SqlAlchemyAgentEvidenceRepository` | `IAgentEvidenceRepository`의 SQLAlchemy 구현. append/read만 노출 |
 
 ## Repository 메서드
 

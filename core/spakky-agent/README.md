@@ -9,6 +9,22 @@
 - model adapter를 `IAgentModel` outbound port로 구현하려는 경우
 - long-running execution의 state, signal, evidence 계약을 plugin contribution으로 구현하려는 경우
 
+## 설치
+
+Core contract만 사용할 때는 `spakky-agent`를 설치합니다.
+
+```bash
+pip install spakky-agent
+```
+
+로컬 vLLM model adapter와 SQLAlchemy durable repository를 함께 쓰는 일반적인 ADR-0009 조합은 다음처럼 설치합니다.
+
+```bash
+pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
+```
+
+`spakky-agent`는 public API와 bootstrap validation만 제공합니다. Production state/signal/evidence repository는 `spakky.contributions.spakky.agent` provider contribution으로 들어와야 하며, 운영용 in-memory persistence fallback은 없습니다.
+
 ## 제공하는 public surface
 
 - `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미

@@ -46,13 +46,14 @@
 
 ---
 
-**Spakky**는 확장 가능하고 모듈화된 애플리케이션을 쉽게 만들 수 있도록 설계된 현대적인 Spring-inspired Python 의존성 주입 프레임워크입니다. Inversion of Control(IoC)과 Aspect-Oriented Programming(AOP)을 Python 생태계에 맞게 제공하며 **FastAPI**, **RabbitMQ**, **Typer**를 일급으로 지원합니다.
+**Spakky**는 확장 가능하고 모듈화된 애플리케이션을 쉽게 만들 수 있도록 설계된 현대적인 Spring-inspired Python 의존성 주입 프레임워크입니다. Inversion of Control(IoC)과 Aspect-Oriented Programming(AOP)을 Python 생태계에 맞게 제공하며 **FastAPI**, **RabbitMQ**, **Typer**, **Agentic workflow**를 일급으로 지원합니다.
 
 ## ✨ 주요 기능
 
 - **의존성 주입(DI)**: `@Pod` 데코레이터를 사용하는 강력한 IoC 컨테이너이며 Singleton, Prototype, Context 스코프를 지원합니다.
 - **관점 지향 프로그래밍(AOP)**: `@Aspect`, `@Before`, `@After`, `@Around`를 기본 제공하여 로깅과 트랜잭션 같은 횡단 관심사를 처리합니다.
 - **모듈형 플러그인 시스템**: 주요 라이브러리를 플러그인으로 쉽게 확장할 수 있는 아키텍처.
+- **Agentic workflow**: `@Agent`, `AgentYield`, `IAgentModel`, `@agent_tool`로 Claude Code-like workflow를 UseCase처럼 구성합니다.
 - **타입 안전성**: 현대적인 Python 타입 힌트를 기준으로 설계되었습니다.
 - **비동기 우선**: `asyncio`와 비동기 의존성 주입을 네이티브로 지원합니다.
 
@@ -107,6 +108,12 @@ pip install spakky
 
 ```bash
 pip install "spakky[fastapi,kafka]"
+```
+
+Agentic workflow를 구성할 때는 core contract, model adapter, durable persistence provider를 명시적으로 설치합니다. 운영용 in-memory persistence fallback은 제공하지 않습니다.
+
+```bash
+pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
 ```
 
 ### 기본 사용법

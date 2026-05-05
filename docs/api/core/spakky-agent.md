@@ -2,6 +2,19 @@
 
 Agentic Hexagonal Architecture core contracts입니다.
 
+## Install
+
+```bash
+pip install spakky-agent
+```
+
+`spakky-agent` owns the public contracts: `@Agent`, `AgentExecutionSpec`,
+`AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`,
+`@agent_tool`, context/safety/recovery, and delegation types. It intentionally
+does not import vLLM, SQLAlchemy, FastAPI, or Typer. Durable production execution
+requires repository implementations from a provider contribution such as
+`spakky-sqlalchemy[agent]`; there is no production in-memory fallback.
+
 ## Public API
 
 ::: spakky.agent

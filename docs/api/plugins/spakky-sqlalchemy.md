@@ -13,6 +13,14 @@ Outbox storage/table은 base plugin 본체가 아니라
 contribution이 로드됩니다. 설치 시에는 `spakky-outbox`를 별도로 추가하거나
 `spakky-sqlalchemy[outbox]` extra를 사용하세요.
 
+Agent state/signal/evidence persistence도 base plugin 본체가 아니라
+`spakky.contributions.spakky.agent` contribution으로 등록됩니다. Durable `@Agent`
+execution을 운영에서 사용하려면 `spakky-agent`와 `spakky-sqlalchemy[agent]`를
+함께 설치하고 두 plugin을 모두 active 상태로 로드해야 합니다. 이 contribution은
+`SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`,
+`SqlAlchemyAgentEvidenceRepository`와 `AgentStateTable`, `AgentSignalTable`,
+`AgentEvidenceTable`을 등록합니다. 운영용 in-memory fallback은 제공하지 않습니다.
+
 ## 메인
 
 ::: spakky.plugins.sqlalchemy.main
@@ -72,6 +80,20 @@ options:
 show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.outbox.table
+options:
+show_root_heading: false
+
+## Agent Persistence
+
+::: spakky.plugins.sqlalchemy.contributions.agent
+options:
+show_root_heading: false
+
+::: spakky.plugins.sqlalchemy.agent.repository
+options:
+show_root_heading: false
+
+::: spakky.plugins.sqlalchemy.agent.table
 options:
 show_root_heading: false
 
