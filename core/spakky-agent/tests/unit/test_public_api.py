@@ -1,19 +1,25 @@
 """Tests for spakky-agent public API exports."""
 
+from collections.abc import AsyncGenerator
+
+import pytest
 import spakky.agent as agent_api
+import tests.fixtures.agent_app as agent_app
 from spakky.agent import (
     IAgentModel,
     Agent,
     AgentBootstrapError,
     AgentDefinitionError,
     AgentEvidence,
+    AgentExecutionLimits,
     AgentExecutionSpec,
-    IAgentEvidenceRepository,
     AgentSignal,
     AgentState,
+    AgentYield,
+    Final,
+    IAgentEvidenceRepository,
     IAgentSignalRepository,
     IAgentStateRepository,
-    AgentYield,
     ModelError,
     ModelRequest,
     ModelResponse,
@@ -24,6 +30,7 @@ from spakky.agent import (
     ToolCallingSpec,
 )
 from spakky.agent.main import initialize
+from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 
@@ -32,6 +39,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     """이슈 #213이 요구한 public import surface를 노출하는지 검증한다."""
     required_exports = {
         "Agent",
+        "AgentExecutionLimits",
         "AgentExecutionSpec",
         "AgentYield",
         "AgentState",
@@ -47,6 +55,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
 
     assert required_exports <= exported
     assert Agent is agent_api.Agent
+    assert AgentExecutionLimits is agent_api.AgentExecutionLimits
     assert AgentExecutionSpec is agent_api.AgentExecutionSpec
     assert AgentYield is agent_api.AgentYield
     assert AgentState is agent_api.AgentState
@@ -76,11 +85,54 @@ def test_public_api_expect_exports_custom_error_hierarchy() -> None:
     assert issubclass(AgentBootstrapError, agent_api.AbstractSpakkyAgentError)
 
 
-def test_initialize_expect_registers_no_production_fallbacks() -> None:
-    """core package 초기화가 persistence/model fallback 구현을 등록하지 않는다."""
+def test_initialize_expect_registers_only_bootstrap_validation() -> None:
+    """core package 초기화가 persistence/model fallback 없이 검증기만 등록한다."""
     app = SpakkyApplication(ApplicationContext())
 
-    before = dict(app.container.pods)
     initialize(app)
 
-    assert app.container.pods == before
+    assert app.container.contains(AgentBootstrapValidationPostProcessor) is True
+    assert app.container.contains(IAgentModel) is False
+
+
+async def test_agent_expect_scans_resolves_and_invokes_like_usecase() -> None:
+    """@Agent class가 scan, constructor DI, 직접 execute 호출에 참여한다."""
+    app = SpakkyApplication(ApplicationContext())
+    initialize(app)
+
+    app.scan(agent_app).start()
+
+    agent = app.container.get(agent_app.CodeAssistant)
+    items: list[AgentYield[Final[str]]] = []
+    async for item in agent.execute("ticket-214"):
+        items.append(item)
+
+    assert len(items) == 1
+    assert items[0].payload.output == "handled:ticket-214"
+
+
+def test_agent_bootstrap_expect_surfaces_execute_contract_as_custom_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """bootstrap 재검증에서 execute 계약 손상이 custom error로 드러난다."""
+
+    @Agent()
+    class ValidAtDefinition:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=agent_api.AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    agent = Agent.get(ValidAtDefinition)
+    monkeypatch.setattr(agent.target, "execute", _invalid_execute)
+
+    with pytest.raises(AgentBootstrapError):
+        AgentBootstrapValidationPostProcessor().post_process(ValidAtDefinition())
+
+
+async def _invalid_execute(command: str) -> AsyncGenerator[str, None]:
+    yield command
