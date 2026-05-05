@@ -184,6 +184,65 @@ def test_agent_evidence_candidate_expect_converts_tool_result() -> None:
     assert evidence.summary == "read workspace file"
 
 
+def test_agent_evidence_candidate_expect_enforces_capture_policy() -> None:
+    """tool result evidence는 EvidenceCapture 정책에 맞는 payload만 보존한다."""
+    none_candidate = AgentEvidenceCandidate.tool_result(
+        tool_identity="tests.WorkspaceTools:read_file",
+        tool_schema_name="workspace.read_file",
+        result={"content": "secret"},
+        capture=EvidenceCapture.NONE,
+    )
+    reference_candidate = AgentEvidenceCandidate.tool_result(
+        tool_identity="tests.WorkspaceTools:read_file",
+        tool_schema_name="workspace.read_file",
+        result={"content": "secret"},
+        capture=EvidenceCapture.REFERENCE_ONLY,
+        reference="blob://evidence/result-1",
+    )
+    summary_candidate = AgentEvidenceCandidate.tool_result(
+        tool_identity="tests.WorkspaceTools:read_file",
+        tool_schema_name="workspace.read_file",
+        result={"content": "secret"},
+        capture=EvidenceCapture.SUMMARY,
+        summary="read workspace file",
+    )
+    redacted_candidate = AgentEvidenceCandidate.tool_result(
+        tool_identity="tests.WorkspaceTools:read_file",
+        tool_schema_name="workspace.read_file",
+        result={"content": "secret"},
+        capture=EvidenceCapture.REDACTED,
+    )
+
+    assert "result" not in none_candidate.payload
+    assert "result" not in reference_candidate.payload
+    assert reference_candidate.reference == "blob://evidence/result-1"
+    assert "result" not in summary_candidate.payload
+    assert summary_candidate.summary == "read workspace file"
+    assert redacted_candidate.payload == {
+        "tool_identity": "tests.WorkspaceTools:read_file",
+        "tool_schema_name": "workspace.read_file",
+        "capture": "redacted",
+        "redacted": True,
+    }
+
+
+def test_agent_evidence_candidate_expect_snapshots_payload() -> None:
+    """append-only evidence payload는 후보 변환 시점의 JSON 스냅샷으로 고정된다."""
+    mutable_payload = {"items": ["before"]}
+    candidate = AgentEvidenceCandidate(
+        kind=AgentEvidenceKind.TOOL,
+        payload=mutable_payload,
+    )
+
+    evidence = candidate.to_evidence(
+        evidence_id="evidence-1",
+        agent_state_id="run-1",
+    )
+    mutable_payload["items"] = ["after"]
+
+    assert evidence.payload == {"items": ["before"]}
+
+
 def test_agent_evidence_candidate_expect_rejects_blank_identity() -> None:
     """evidence 후보의 추적 식별자는 blank 문자열일 수 없다."""
     with pytest.raises(AgentDefinitionError):

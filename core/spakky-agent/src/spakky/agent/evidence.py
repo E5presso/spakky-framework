@@ -1,12 +1,13 @@
 """Agent evidence contracts."""
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.tooling import EvidenceCapture
-from spakky.agent.types import JsonObject
+from spakky.agent.types import JsonObject, JsonValue
 
 
 class AgentEvidenceKind(StrEnum):
@@ -58,19 +59,27 @@ class AgentEvidenceCandidate:
         result: JsonObject,
         capture: EvidenceCapture,
         summary: str | None = None,
+        reference: str | None = None,
     ) -> "AgentEvidenceCandidate":
         """Create evidence metadata for a captured tool result."""
         _require_non_blank(tool_identity, "Agent tool identity")
         _require_non_blank(tool_schema_name, "Agent tool schema name")
+        if reference is not None:
+            _require_non_blank(reference, "Agent evidence reference")
+        payload: dict[str, JsonValue] = {
+            "tool_identity": tool_identity,
+            "tool_schema_name": tool_schema_name,
+            "capture": capture.value,
+        }
+        if capture in (EvidenceCapture.STRUCTURED, EvidenceCapture.RAW):
+            payload["result"] = _snapshot_json_object(result)
+        if capture == EvidenceCapture.REDACTED:
+            payload["redacted"] = True
         return cls(
             kind=AgentEvidenceKind.TOOL,
-            payload={
-                "tool_identity": tool_identity,
-                "tool_schema_name": tool_schema_name,
-                "capture": capture.value,
-                "result": result,
-            },
+            payload=payload,
             summary=summary,
+            reference=reference,
         )
 
     @classmethod
@@ -85,7 +94,7 @@ class AgentEvidenceCandidate:
         _require_non_blank(model, "Agent model name")
         return cls(
             kind=AgentEvidenceKind.MODEL,
-            payload={"model": model, "decision": decision},
+            payload={"model": model, "decision": _snapshot_json_object(decision)},
             summary=summary,
         )
 
@@ -101,7 +110,10 @@ class AgentEvidenceCandidate:
         _require_non_blank(tool_identity, "Agent tool identity")
         return cls(
             kind=AgentEvidenceKind.TOOL,
-            payload={"tool_identity": tool_identity, "decision": decision},
+            payload={
+                "tool_identity": tool_identity,
+                "decision": _snapshot_json_object(decision),
+            },
             summary=summary,
         )
 
@@ -119,7 +131,7 @@ class AgentEvidenceCandidate:
             id=evidence_id,
             agent_state_id=agent_state_id,
             kind=self.kind,
-            payload=self.payload,
+            payload=_snapshot_json_object(self.payload),
             summary=self.summary,
             digest=self.digest,
             manifest_ref=self.manifest_ref,
@@ -131,3 +143,15 @@ class AgentEvidenceCandidate:
 def _require_non_blank(value: str, label: str) -> None:
     if not value.strip():
         raise AgentDefinitionError(f"{label} cannot be blank")
+
+
+def _snapshot_json_object(value: JsonObject) -> JsonObject:
+    return {key: _snapshot_json_value(item) for key, item in value.items()}
+
+
+def _snapshot_json_value(value: JsonValue) -> JsonValue:
+    if isinstance(value, Mapping):
+        return _snapshot_json_object(value)
+    if isinstance(value, Sequence) and not isinstance(value, str):
+        return [_snapshot_json_value(item) for item in value]
+    return value
