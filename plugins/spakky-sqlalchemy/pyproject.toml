@@ -13,9 +13,11 @@ dependencies = [
 
 [project.optional-dependencies]
 outbox = ["spakky-outbox>=6.5.0"]
+agent = ["spakky-agent>=6.5.0"]
 
 [dependency-groups]
 dev = [
+    "spakky-agent>=6.5.0",
     "spakky-outbox>=6.5.0",
     "testcontainers[postgres]>=4.14.2",
     "psycopg[binary]>=3.3.3",
@@ -29,6 +31,9 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.main:initialize"
 
 [project.entry-points."spakky.contributions.spakky.outbox"]
 spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.outbox:initialize"
+
+[project.entry-points."spakky.contributions.spakky.agent"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
@@ -48,7 +53,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky/plugins/sqlalchemy"
+pythonpath = ["src/spakky/plugins/sqlalchemy", "../../core/spakky-agent/src"]
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -92,3 +97,4 @@ exclude_lines = [
 [tool.uv.sources]
 spakky-data = { workspace = true }
 spakky-outbox = { workspace = true }
+spakky-agent = { workspace = true }

@@ -243,6 +243,34 @@ from spakky.plugins.sqlalchemy.outbox.storage import AsyncSqlAlchemyOutboxStorag
 storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
 ```
 
+## Agent Persistence Contribution
+
+`spakky-agent`의 durable state, signal, evidence repository는 production
+in-memory fallback을 두지 않고 provider contribution으로만 공급됩니다.
+SQLAlchemy 구현은 별도 `spakky-agent-sqlalchemy` 패키지를 만들지 않고 이
+패키지의 `agent` extra와 contribution entry point로 제공합니다.
+
+```bash
+pip install "spakky-sqlalchemy[agent]"
+```
+
+```toml
+[project.entry-points."spakky.contributions.spakky.agent"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
+```
+
+`spakky-agent`와 `spakky-sqlalchemy`가 모두 active이면 다음 Pod과 schema가
+등록됩니다.
+
+- `SqlAlchemyAgentStateRepository`
+- `SqlAlchemyAgentSignalRepository`
+- `SqlAlchemyAgentEvidenceRepository`
+- `spakky_agent_state`, `spakky_agent_signal`, `spakky_agent_evidence`
+
+각 repository는 현재 SQLAlchemy transactional session을 사용합니다. Signal은
+`consumed_at`으로 pending queue를 구분하고, Evidence repository는 append/read
+메서드만 노출해 agent-facing append-only 계약을 유지합니다.
+
 ## 주요 기능
 
 - **Domain-Table mapping**: domain model과 ORM table 간 양방향 변환
