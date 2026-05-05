@@ -9,6 +9,8 @@ from spakky.agent import (
     AgentSignal,
     AgentSignalKind,
     AgentState,
+    AgentStateReason,
+    AgentStateTransition,
     AgentStatus,
     AgentYield,
     AgentYieldKind,
@@ -37,6 +39,48 @@ def test_agent_state_expect_uses_adr_lifecycle_statuses() -> None:
     assert state.current_activity == "approval required"
 
 
+def test_agent_state_expect_expresses_issue_transition_vocabulary() -> None:
+    """이슈 #221의 전이 어휘를 ADR top-level status와 분리해 표현한다."""
+    approval_state = AgentState(
+        id="run-1",
+        agent_type="CodeAssistant",
+        status=AgentStatus.INTERRUPTED,
+        transition=AgentStateTransition.WAITING_APPROVAL,
+        reason=AgentStateReason.APPROVAL_REQUIRED,
+    )
+    timeout_state = AgentState(
+        id="run-2",
+        agent_type="CodeAssistant",
+        status=AgentStatus.FAILED,
+        transition=AgentStateTransition.TIMED_OUT,
+        reason=AgentStateReason.TIMEOUT,
+    )
+
+    assert approval_state.status == AgentStatus.INTERRUPTED
+    assert approval_state.transition == AgentStateTransition.WAITING_APPROVAL
+    assert approval_state.reason == AgentStateReason.APPROVAL_REQUIRED
+    assert timeout_state.status == AgentStatus.FAILED
+    assert timeout_state.transition == AgentStateTransition.TIMED_OUT
+    assert timeout_state.reason == AgentStateReason.TIMEOUT
+
+
+def test_agent_state_transition_expect_covers_durable_execution_flow() -> None:
+    """pending부터 terminal state까지 durable execution 전이를 열거한다."""
+    transitions = {transition.value for transition in AgentStateTransition}
+
+    assert transitions == {
+        "pending",
+        "running",
+        "waiting_approval",
+        "cancelling",
+        "cancelled",
+        "completed",
+        "failed",
+        "timed_out",
+        "interrupted",
+    }
+
+
 def test_agent_state_expect_rejects_negative_pending_signal_count() -> None:
     """state snapshot이 불가능한 signal count를 custom error로 거부한다."""
     with pytest.raises(AgentDefinitionError):
@@ -61,6 +105,18 @@ def test_agent_signal_expect_carries_inbound_stimulus_payload() -> None:
     assert signal.payload == {"decision": "approve"}
 
 
+def test_agent_signal_expect_covers_durable_inbound_queue_vocabulary() -> None:
+    """user message, approval decision, cancel, resume 신호를 표현한다."""
+    signal_kinds = {kind.value for kind in AgentSignalKind}
+
+    assert {
+        "user_message",
+        "approval_decision",
+        "cancel",
+        "resume",
+    } <= signal_kinds
+
+
 def test_agent_evidence_expect_append_only_artifact_shape() -> None:
     """AgentEvidence가 update/delete 없이 append artifact shape만 제공한다."""
     evidence = AgentEvidence(
@@ -69,11 +125,29 @@ def test_agent_evidence_expect_append_only_artifact_shape() -> None:
         kind=AgentEvidenceKind.CONTEXT_DIGEST,
         payload={"digest": "abc"},
         summary="compressed context",
+        digest="sha256:abc",
+        manifest_ref="manifest-1",
     )
 
     assert evidence.kind == AgentEvidenceKind.CONTEXT_DIGEST
     assert evidence.payload == {"digest": "abc"}
     assert evidence.summary == "compressed context"
+    assert evidence.digest == "sha256:abc"
+    assert evidence.manifest_ref == "manifest-1"
+
+
+def test_agent_evidence_kind_expect_covers_required_evidence_sources() -> None:
+    """tool/model/context/evaluation evidence와 digest/manifest를 표현한다."""
+    evidence_kinds = {kind.value for kind in AgentEvidenceKind}
+
+    assert {
+        "tool",
+        "model",
+        "context",
+        "context_digest",
+        "context_manifest",
+        "evaluation",
+    } <= evidence_kinds
 
 
 def test_agent_yield_expect_supports_canonical_stream_vocabulary() -> None:

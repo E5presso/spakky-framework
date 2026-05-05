@@ -1,4 +1,4 @@
-"""Agent public interfaces."""
+"""Agent public interface ports."""
 
 from spakky.agent.interfaces.model import (
     IAgentModel,
@@ -13,9 +13,17 @@ from spakky.agent.interfaces.model import (
     SamplingOptions,
     StructuredOutputSpec,
 )
+from spakky.agent.interfaces.repository import (
+    IAgentEvidenceRepository,
+    IAgentSignalRepository,
+    IAgentStateRepository,
+)
 
 __all__ = [
+    "IAgentEvidenceRepository",
     "IAgentModel",
+    "IAgentSignalRepository",
+    "IAgentStateRepository",
     "JsonSchemaConstraint",
     "ModelMessage",
     "ModelMessageRole",

@@ -8,8 +8,11 @@ from spakky.agent import (
     AgentDefinitionError,
     AgentEvidence,
     AgentExecutionSpec,
+    IAgentEvidenceRepository,
     AgentSignal,
     AgentState,
+    IAgentSignalRepository,
+    IAgentStateRepository,
     AgentYield,
     ModelRequest,
     ModelResponse,
@@ -29,6 +32,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "AgentState",
         "AgentSignal",
         "AgentEvidence",
+        "IAgentStateRepository",
+        "IAgentSignalRepository",
+        "IAgentEvidenceRepository",
         "IAgentModel",
     }
 
@@ -41,6 +47,9 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentState is agent_api.AgentState
     assert AgentSignal is agent_api.AgentSignal
     assert AgentEvidence is agent_api.AgentEvidence
+    assert IAgentStateRepository is agent_api.IAgentStateRepository
+    assert IAgentSignalRepository is agent_api.IAgentSignalRepository
+    assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
     assert IAgentModel is agent_api.IAgentModel
 
 
