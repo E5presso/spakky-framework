@@ -1,10 +1,13 @@
-# Changelog
+# 변경 기록
 
-All notable changes to spakky-vllm are documented in this file.
+`spakky-vllm`의 주요 변경 사항을 이 파일에 기록합니다.
 
-## Unreleased
+## 미출시
 
-- Implemented vLLM OpenAI-compatible streaming over chat completions SSE chunks.
-- Added typed streaming error events for timeout, transport, invalid chunk,
-  provider error, refusal, and non-success finish reasons.
-- Added token delta, tool-call candidate, usage, and cancellation-close coverage.
+- Chat Completions SSE 청크 기반의 vLLM OpenAI 호환 스트리밍을 구현했습니다.
+- 타임아웃, 전송 오류, 잘못된 청크, 제공자 오류, 거절, 비성공 종료 사유에
+  대한 타입화된 스트리밍 오류 이벤트를 추가했습니다.
+- 토큰 델타, 도구 호출 후보, 사용량, 취소 시 닫기 동작의 테스트 범위를
+  추가했습니다.
+- CI와 로컬 커밋 시간을 예측 가능하게 유지하기 위해 실제 로컬 모델 호출 smoke/eval
+  코드를 제거하고 fake client 기반 adapter 검증만 남겼습니다.

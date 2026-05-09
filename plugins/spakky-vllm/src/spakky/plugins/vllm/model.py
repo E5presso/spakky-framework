@@ -191,6 +191,8 @@ class VllmAgentModel(IAgentModel):
             payload["top_p"] = request.sampling.top_p
         if request.sampling.max_tokens is not None:
             payload["max_tokens"] = request.sampling.max_tokens
+        if len(self.__config.chat_template_kwargs) > 0:
+            payload["chat_template_kwargs"] = dict(self.__config.chat_template_kwargs)
         if request.structured_output is not None:
             structured_schema = request.structured_output.constraint.schema
             payload["response_format"] = {

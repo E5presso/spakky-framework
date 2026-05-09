@@ -1,7 +1,6 @@
 """Acceptance tests for the vLLM agent model adapter."""
 
 from collections.abc import AsyncGenerator, Mapping
-from importlib import import_module
 from typing import override
 
 from spakky.agent import (
@@ -93,14 +92,6 @@ async def test_vllm_acceptance_fake_expect_streaming_tokens_structured_output_an
     }
     assert tool_client.payload is not None
     assert tool_client.payload["tool_choice"] == "required"
-
-
-def test_vllm_acceptance_expect_local_smoke_remains_opt_in() -> None:
-    """local vLLM smoke는 CI fake acceptance와 별도 opt-in env gate를 유지한다."""
-    smoke = import_module("tests.smoke.test_local_vllm")
-
-    assert smoke.SMOKE_ENV == "SPAKKY_VLLM_SMOKE"
-    assert smoke._smoke_enabled() is False
 
 
 class _FakeVllmClient(IVllmChatClient):

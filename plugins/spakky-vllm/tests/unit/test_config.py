@@ -21,3 +21,13 @@ def test_config_normalizes_chat_completion_url_without_double_slash(
     config = VllmConfig()
 
     assert config.chat_completions_url == "http://localhost:9000/v1/chat/completions"
+
+
+def test_config_loads_chat_template_kwargs_from_nested_env(monkeypatch) -> None:
+    """vLLM chat template kwargs can be configured for model-specific switches."""
+    monkeypatch.setenv("SPAKKY_VLLM__CHAT_TEMPLATE_KWARGS__ENABLE_THINKING", "false")
+    monkeypatch.setenv("SPAKKY_VLLM__CHAT_TEMPLATE_KWARGS__MODE", "qwen")
+
+    config = VllmConfig()
+
+    assert config.chat_template_kwargs == {"enable_thinking": False, "mode": "qwen"}

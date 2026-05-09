@@ -153,6 +153,21 @@ async def test_complete_assembles_context_pack_messages_into_payload() -> None:
     ]
 
 
+async def test_complete_includes_configured_chat_template_kwargs() -> None:
+    """vLLM model-specific chat template kwargs are passed through."""
+    client = RecordingClient({"choices": [{"message": {"content": "ok"}}]})
+    config = VllmConfig()
+    config.chat_template_kwargs["enable_thinking"] = False
+    model = VllmAgentModel(config, client)
+
+    await model.complete(
+        ModelRequest(messages=(ModelMessage(ModelMessageRole.USER, "hello"),))
+    )
+
+    assert client.payload is not None
+    assert client.payload["chat_template_kwargs"] == {"enable_thinking": False}
+
+
 async def test_complete_maps_tool_calling_surface() -> None:
     """tool calling 요청은 OpenAI function tool payload로 변환된다."""
     search_schema = {
