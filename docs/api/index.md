@@ -8,7 +8,7 @@
 
 - [spakky](core/spakky.md) — DI 컨테이너, AOP, 부트스트랩
 - [spakky-domain](core/spakky-domain.md) — DDD 빌딩 블록
-- [spakky-auth](core/spakky-auth.md) — 인증/인가 core package root
+- [spakky-auth](core/spakky-auth.md) — 인증/인가 semantic model
 - [spakky-data](core/spakky-data.md) — Repository, Transaction 추상화
 - [spakky-event](core/spakky-event.md) — 인프로세스 이벤트
 - [spakky-task](core/spakky-task.md) — 태스크 추상화

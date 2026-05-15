@@ -226,7 +226,7 @@ app = (
 | ------------------------------------------ | ---------------------------------- |
 | [spakky](api/core/spakky.md)               | DI 컨테이너, AOP, 부트스트랩      |
 | [spakky-domain](api/core/spakky-domain.md) | DDD 빌딩 블록                      |
-| [spakky-auth](api/core/spakky-auth.md)     | 인증/인가 core package root        |
+| [spakky-auth](api/core/spakky-auth.md)     | 인증/인가 semantic model           |
 | [spakky-data](api/core/spakky-data.md)     | Repository, Transaction 추상화     |
 | [spakky-event](api/core/spakky-event.md)   | 인프로세스 이벤트                  |
 | [spakky-task](api/core/spakky-task.md)     | 태스크 추상화 (스케줄링, 디스패치) |

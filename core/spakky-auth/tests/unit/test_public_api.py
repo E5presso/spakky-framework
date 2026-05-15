@@ -1,4 +1,41 @@
-from spakky.auth import PLUGIN_NAME
+from datetime import UTC, datetime
+from base64 import urlsafe_b64decode
+import json
+
+import pytest
+
+from spakky.auth import (
+    AUTH_CONTEXT_CONTEXT_KEY,
+    AUTH_CONTEXT_SNAPSHOT_HEADER_KEY,
+    AUTH_CONTEXT_SNAPSHOT_METADATA_KEY,
+    AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+    DEFAULT_AUTH_CLOCK_SKEW_SECONDS,
+    EXPIRED_SNAPSHOT_DECISION,
+    INVALID_SNAPSHOT_DECISION,
+    MISSING_SNAPSHOT_DECISION,
+    PLUGIN_NAME,
+    VERIFICATION_PROVIDER_UNAVAILABLE_DECISION,
+    AbstractSpakkyAuthError,
+    AuthClaim,
+    AuthContext,
+    AuthContextNotFoundError,
+    AuthContextSnapshot,
+    AuthContextSnapshotError,
+    AuthContextSnapshotSignature,
+    AuthSubject,
+    AuthVerificationProviderUnavailableError,
+    AuthenticationError,
+    AuthorizationDecision,
+    AuthorizationDecisionState,
+    AuthorizationError,
+    AuthorizationReasonCode,
+    CredentialCarrier,
+    CredentialCarrierKind,
+    CredentialCarrierLocation,
+    InvalidAuthContextValueError,
+    require_auth_context,
+    store_auth_context,
+)
 from spakky.auth.main import initialize
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -12,3 +49,147 @@ def test_initialize_is_registration_only_for_package_skeleton() -> None:
     app = SpakkyApplication(ApplicationContext())
 
     assert initialize(app) is None
+
+
+def test_auth_constants_define_context_and_snapshot_contract_keys() -> None:
+    assert AUTH_CONTEXT_CONTEXT_KEY == "spakky.auth.context"
+    assert AUTH_CONTEXT_SNAPSHOT_METADATA_KEY == "spakky.auth.context_snapshot"
+    assert AUTH_CONTEXT_SNAPSHOT_HEADER_KEY == "x-spakky-auth-context-snapshot"
+    assert AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION == 1
+    assert DEFAULT_AUTH_CLOCK_SKEW_SECONDS == 60
+
+
+def test_credential_carrier_preserves_boundary_local_material() -> None:
+    carrier = CredentialCarrier(
+        kind=CredentialCarrierKind.BEARER_TOKEN,
+        location=CredentialCarrierLocation.AUTHORIZATION_HEADER,
+        material="Bearer token",
+        name="authorization",
+        scheme="Bearer",
+    )
+
+    assert carrier.kind == CredentialCarrierKind.BEARER_TOKEN
+    assert carrier.location == CredentialCarrierLocation.AUTHORIZATION_HEADER
+    assert carrier.material == "Bearer token"
+    assert carrier.name == "authorization"
+    assert carrier.scheme == "Bearer"
+
+
+def test_auth_context_round_trips_through_application_context_values() -> None:
+    application_context = ApplicationContext()
+    auth_context = AuthContext(
+        subject=AuthSubject(id="user-1", display_name="User One"),
+        issuer="issuer-1",
+        tenant="tenant-1",
+        roles=("role:admin",),
+        scopes=("documents:read",),
+        claims=(AuthClaim(name="email", value="user@example.com"),),
+    )
+
+    store_auth_context(application_context, auth_context)
+
+    assert require_auth_context(application_context) == auth_context
+
+
+def test_require_auth_context_rejects_missing_context_value() -> None:
+    application_context = ApplicationContext()
+
+    with pytest.raises(AuthContextNotFoundError):
+        require_auth_context(application_context)
+
+
+def test_require_auth_context_rejects_invalid_context_value() -> None:
+    application_context = ApplicationContext()
+    application_context.set_context_value(AUTH_CONTEXT_CONTEXT_KEY, "not auth context")
+
+    with pytest.raises(InvalidAuthContextValueError):
+        require_auth_context(application_context)
+
+
+def test_authorization_decision_states_and_default_snapshot_mapping() -> None:
+    assert {state.value for state in AuthorizationDecisionState} == {
+        "ALLOW",
+        "CHALLENGE",
+        "DENY",
+        "ERROR",
+    }
+    assert AuthorizationDecision.allow() == AuthorizationDecision(
+        state=AuthorizationDecisionState.ALLOW,
+        reason_code=AuthorizationReasonCode.AUTHORIZED,
+    )
+    assert AuthorizationDecision.challenge(
+        AuthorizationReasonCode.MISSING_CREDENTIAL,
+        "login required",
+    ) == AuthorizationDecision(
+        state=AuthorizationDecisionState.CHALLENGE,
+        reason_code=AuthorizationReasonCode.MISSING_CREDENTIAL,
+        reason="login required",
+    )
+    assert (
+        AuthorizationDecision.deny(AuthorizationReasonCode.INSUFFICIENT_SCOPE).state
+        == AuthorizationDecisionState.DENY
+    )
+    assert (
+        AuthorizationDecision.error(AuthorizationReasonCode.INTERNAL_ERROR).state
+        == AuthorizationDecisionState.ERROR
+    )
+    assert MISSING_SNAPSHOT_DECISION.state == AuthorizationDecisionState.CHALLENGE
+    assert INVALID_SNAPSHOT_DECISION.state == AuthorizationDecisionState.CHALLENGE
+    assert EXPIRED_SNAPSHOT_DECISION.state == AuthorizationDecisionState.CHALLENGE
+    assert (
+        VERIFICATION_PROVIDER_UNAVAILABLE_DECISION.state
+        == AuthorizationDecisionState.ERROR
+    )
+
+
+def test_auth_context_snapshot_produces_canonical_base64url_signed_envelope() -> None:
+    snapshot = AuthContextSnapshot(
+        subject=AuthSubject(id="user-1", display_name="User One"),
+        issuer="issuer-1",
+        issued_at=datetime(2026, 5, 15, 1, 2, 3, tzinfo=UTC),
+        expires_at=datetime(2026, 5, 15, 1, 7, 3, tzinfo=UTC),
+        tenant="tenant-1",
+        roles=("role:admin",),
+        scopes=("documents:read", "documents:write"),
+        selected_claims=(
+            AuthClaim(name="email", value="user@example.com"),
+            AuthClaim(name="age", value=42),
+        ),
+        correlation_id="corr-1",
+        delegation_chain=("service:a", "service:b"),
+        signature=AuthContextSnapshotSignature(
+            key_id="key-1",
+            algorithm="ed25519",
+            signature="signature-bytes",
+        ),
+    )
+
+    payload = snapshot.canonical_payload()
+    envelope = snapshot.canonical_json()
+    encoded = snapshot.base64url_canonical_json()
+    padding = "=" * (-len(encoded) % 4)
+    decoded = urlsafe_b64decode(f"{encoded}{padding}").decode()
+
+    assert payload["schema_version"] == AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION
+    assert payload["selected_claims"] == {
+        "age": 42,
+        "email": "user@example.com",
+    }
+    assert payload["signature"] == {
+        "algorithm": "ed25519",
+        "key_id": "key-1",
+        "signature": "signature-bytes",
+    }
+    assert envelope == json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    assert decoded == envelope
+    assert "=" not in encoded
+
+
+def test_auth_error_hierarchy_is_framework_scoped() -> None:
+    assert issubclass(AuthenticationError, AbstractSpakkyAuthError)
+    assert issubclass(AuthorizationError, AbstractSpakkyAuthError)
+    assert issubclass(AuthContextSnapshotError, AbstractSpakkyAuthError)
+    assert issubclass(
+        AuthVerificationProviderUnavailableError,
+        AuthContextSnapshotError,
+    )
