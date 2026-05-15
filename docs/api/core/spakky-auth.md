@@ -48,6 +48,10 @@ Provider-neutral authentication and authorization semantic model.
     options:
       show_root_heading: false
 
+::: spakky.auth.startup
+    options:
+      show_root_heading: false
+
 ::: spakky.auth.error
     options:
       show_root_heading: false

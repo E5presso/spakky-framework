@@ -20,12 +20,14 @@ pip install spakky-auth
 - `IAuthenticationProvider`, `IAuthorizationPolicyEvaluator`, `IPermissionChecker`, `IRoleChecker`, `IScopeChecker`, `IRelationChecker`, `IAuthContextSnapshotSigner`, `IAuthContextSnapshotVerifier`, `IPasswordHasher`, `IPasswordVerifier`: ABC + `abstractmethod` 기반 public provider port
 - `AuthInvocation`, `AuthDynamicRef`, `IAuthInvocationResolver`: resource/action/tenant dynamic ref를 invocation에서 resolve하기 위한 provider-neutral 계약
 - `AuthProviderContribution`: `spakky.contributions.spakky.auth` feature-local contribution이 capability set을 선언하기 위한 metadata 계약
+- `AuthSnapshotPropagationConfig`: signed `AuthContextSnapshot` 전파 사용 여부를 선언하는 feature-local config
 - `public_access`, `protected`, `require_scope`, `require_role`, `require_permission`, `require_policy`, `require_relation`: class/function boundary에 public/protected auth metadata를 선언하는 Spakky-native decorator
 - `get_effective_auth_metadata`: class-level과 method-level requirement를 AND semantics로 결합하고 exact duplicate canonical requirement를 idempotent하게 deduplicate하는 metadata aggregation API
 - `AuthorizationAspect`, `AsyncAuthorizationAspect`: request-scope `AuthContext`를 읽어 protected metadata를 sync/async AOP로 enforcement하는 component
+- `AuthCapabilityStartupValidationService`: plugin load/scan 이후 service start 이전에 protected metadata와 snapshot propagation config가 요구하는 `AuthCapability` 제공자 count를 검증하는 startup service
 - `AbstractSpakkyAuthError` 기반 auth 오류 hierarchy
 
-Provider implementation, startup validation, boundary integration은 후속 이슈에서 추가됩니다. Decorator가 없는 boundary는 allow all이며, protected/decorated boundary는 request-scope `AuthContext`와 provider-neutral checker port를 통해 fail closed로 처리됩니다.
+Provider implementation과 boundary integration은 후속 이슈에서 추가됩니다. Decorator가 없는 boundary는 allow all이며, protected/decorated boundary는 request-scope `AuthContext`와 provider-neutral checker port를 통해 fail closed로 처리됩니다.
 
 ## Decorator Metadata & AOP Enforcement
 
@@ -49,7 +51,18 @@ Stacked requirement는 canonical `AuthRequirement` tuple로 aggregate되며, exa
 
 ## Provider Contribution Contract
 
-Auth provider plugin은 base plugin entry point와 별도로 `spakky.contributions.spakky.auth` contribution entry point를 선언하고, 해당 contribution에서 `AuthProviderContribution` capability set과 필요한 port 구현 Pod을 등록합니다. Core `spakky-auth`는 provider plugin 이름이나 provider-specific 문자열로 분기하지 않습니다. Capability count 검증과 protected boundary enforcement는 후속 이슈에서 feature-local startup validation 및 AOP로 연결됩니다.
+Auth provider plugin은 base plugin entry point와 별도로 `spakky.contributions.spakky.auth` contribution entry point를 선언하고, 해당 contribution에서 `AuthProviderContribution` capability set과 필요한 port 구현 Pod을 등록합니다. Core `spakky-auth`는 provider plugin 이름이나 provider-specific 문자열로 분기하지 않습니다. Capability count 검증과 protected boundary enforcement는 feature-local startup validation 및 AOP로 연결됩니다.
+
+## Startup Capability Validation
+
+`initialize()`는 `AuthCapabilityStartupValidationService`를 등록합니다. 이 service는 `load_plugins()`와 `scan()`으로 등록된 Pod metadata 및 `AuthProviderContribution` contribution을 기준으로 service lifecycle start 전에 fail-fast validation을 수행합니다.
+
+- protected metadata가 하나라도 있으면 `AUTHENTICATION` capability 제공자가 정확히 1개 필요합니다.
+- `require_permission`, `require_role`, `require_scope`, `require_policy`, `require_relation` metadata는 각각 `PERMISSION_CHECK`, `ROLE_CHECK`, `SCOPE_CHECK`, `POLICY_EVALUATION`, `RELATION_CHECK` 제공자가 정확히 1개 필요합니다.
+- enabled `AuthSnapshotPropagationConfig`가 있으면 `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY` 제공자가 각각 정확히 1개 필요합니다.
+- protected usage와 enabled snapshot propagation config가 모두 없으면 provider가 없어도 startup fatal이 아닙니다.
+
+count가 0 또는 2 이상이면 `AuthStartupCapabilityValidationError`가 발생하며, 각 mismatch는 `auth.capability.validation.error` startup diagnostic detail로 노출됩니다. 이 검증은 `spakky-auth` feature-local capability count 확인만 수행하며 generic contribution routing이나 provider priority/routing은 구현하지 않습니다.
 
 ## Context & Snapshot Keys
 
@@ -75,7 +88,7 @@ missing, invalid, expired snapshot은 기본적으로 `CHALLENGE` decision이며
 spakky-auth = "spakky.auth.main:initialize"
 ```
 
-현재 `initialize()`는 `AuthorizationAspect`와 `AsyncAuthorizationAspect`를 등록합니다. 후속 이슈에서 startup validation과 boundary integration이 추가되면 같은 entry point를 통해 feature-local component를 등록합니다.
+현재 `initialize()`는 `AuthCapabilityStartupValidationService`, `AuthorizationAspect`, `AsyncAuthorizationAspect`를 등록합니다. 후속 이슈에서 boundary integration이 추가되면 같은 entry point를 통해 feature-local component를 등록합니다.
 
 ## 개발 검증
 

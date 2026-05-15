@@ -6,6 +6,7 @@ from typing import override
 from spakky.auth.context import AuthContext, require_auth_context
 from spakky.auth.decision import AuthorizationDecision, AuthorizationDecisionState
 from spakky.auth.error import (
+    AuthContextNotFoundError,
     AuthRequirementDeniedError,
     AuthRequirementProviderUnavailableError,
 )
@@ -32,6 +33,9 @@ from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import Around
 from spakky.core.common.types import AsyncFunc, Func
 from spakky.core.pod.annotations.order import Order
+from spakky.core.pod.interfaces.aware.application_context_aware import (
+    IApplicationContextAware,
+)
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 
 
@@ -45,10 +49,10 @@ def _matches_async(boundary: Func) -> bool:
 
 @Order(0)
 @Aspect()
-class AuthorizationAspect(IAspect):
+class AuthorizationAspect(IAspect, IApplicationContextAware):
     """Synchronous aspect enforcing protected auth metadata."""
 
-    _application_context: IApplicationContext
+    _application_context: IApplicationContext | None
     _authorization_policy_evaluator: IAuthorizationPolicyEvaluator | None
     _permission_checker: IPermissionChecker | None
     _relation_checker: IRelationChecker | None
@@ -57,7 +61,7 @@ class AuthorizationAspect(IAspect):
 
     def __init__(
         self,
-        application_context: IApplicationContext,
+        application_context: IApplicationContext | None = None,
         authorization_policy_evaluator: IAuthorizationPolicyEvaluator | None = None,
         permission_checker: IPermissionChecker | None = None,
         relation_checker: IRelationChecker | None = None,
@@ -71,6 +75,11 @@ class AuthorizationAspect(IAspect):
         self._role_checker = role_checker
         self._scope_checker = scope_checker
 
+    @override
+    def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Inject the application context when managed as a Pod."""
+        self._application_context = application_context
+
     @Around(_matches_sync)
     @override
     def around(
@@ -82,7 +91,7 @@ class AuthorizationAspect(IAspect):
         metadata = get_effective_auth_metadata(joinpoint)
         if not metadata.protected:
             return joinpoint(*args, **kwargs)
-        auth_context = require_auth_context(self._application_context)
+        auth_context = require_auth_context(self._required_application_context())
         for requirement in metadata.requirements:
             decision = self._evaluate_requirement(requirement, auth_context)
             if decision.state is not AuthorizationDecisionState.ALLOW:
@@ -149,13 +158,18 @@ class AuthorizationAspect(IAspect):
             )
         raise AuthRequirementProviderUnavailableError()  # pragma: no cover - exhaustive AuthRequirementKind guard
 
+    def _required_application_context(self) -> IApplicationContext:
+        if self._application_context is None:
+            raise AuthContextNotFoundError()
+        return self._application_context
+
 
 @Order(0)
 @AsyncAspect()
-class AsyncAuthorizationAspect(IAsyncAspect):
+class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
     """Asynchronous aspect enforcing protected auth metadata."""
 
-    _application_context: IApplicationContext
+    _application_context: IApplicationContext | None
     _authorization_policy_evaluator: IAuthorizationPolicyEvaluator | None
     _permission_checker: IPermissionChecker | None
     _relation_checker: IRelationChecker | None
@@ -164,7 +178,7 @@ class AsyncAuthorizationAspect(IAsyncAspect):
 
     def __init__(
         self,
-        application_context: IApplicationContext,
+        application_context: IApplicationContext | None = None,
         authorization_policy_evaluator: IAuthorizationPolicyEvaluator | None = None,
         permission_checker: IPermissionChecker | None = None,
         relation_checker: IRelationChecker | None = None,
@@ -178,6 +192,11 @@ class AsyncAuthorizationAspect(IAsyncAspect):
         self._role_checker = role_checker
         self._scope_checker = scope_checker
 
+    @override
+    def set_application_context(self, application_context: IApplicationContext) -> None:
+        """Inject the application context when managed as a Pod."""
+        self._application_context = application_context
+
     @Around(_matches_async)
     @override
     async def around_async(
@@ -189,7 +208,7 @@ class AsyncAuthorizationAspect(IAsyncAspect):
         metadata = get_effective_auth_metadata(joinpoint)
         if not metadata.protected:
             return await joinpoint(*args, **kwargs)
-        auth_context = require_auth_context(self._application_context)
+        auth_context = require_auth_context(self._required_application_context())
         for requirement in metadata.requirements:
             decision = self._evaluate_requirement(requirement, auth_context)
             if decision.state is not AuthorizationDecisionState.ALLOW:
@@ -255,3 +274,8 @@ class AsyncAuthorizationAspect(IAsyncAspect):
                 ScopeCheckRequest(auth_context=auth_context, scope=requirement.ref)
             )
         raise AuthRequirementProviderUnavailableError()  # pragma: no cover - exhaustive AuthRequirementKind guard
+
+    def _required_application_context(self) -> IApplicationContext:
+        if self._application_context is None:
+            raise AuthContextNotFoundError()
+        return self._application_context

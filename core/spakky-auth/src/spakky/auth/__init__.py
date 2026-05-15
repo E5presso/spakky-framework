@@ -112,6 +112,14 @@ from spakky.auth.ports import (
     SnapshotSignRequest,
 )
 from spakky.auth.snapshot import AuthContextSnapshot, AuthContextSnapshotSignature
+from spakky.auth.startup import (
+    AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY,
+    AuthCapabilityStartupValidationService,
+    AuthSnapshotPropagationConfig,
+    AuthStartupCapabilityDiagnostic,
+    AuthStartupCapabilityValidationError,
+    AuthStartupContainerUnavailableError,
+)
 from spakky.core.application.plugin import Plugin
 
 PLUGIN_NAME = Plugin(name="spakky-auth")
@@ -123,6 +131,7 @@ __all__ = [
     "AUTH_CONTEXT_SNAPSHOT_METADATA_KEY",
     "AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION",
     "AUTH_CONTRIBUTION_ENTRY_POINT_GROUP",
+    "AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY",
     "DEFAULT_AUTH_CLOCK_SKEW_SECONDS",
     "EXPIRED_SNAPSHOT_DECISION",
     "INVALID_SNAPSHOT_DECISION",
@@ -136,6 +145,7 @@ __all__ = [
     "AuthClaimValue",
     "AuthBoundaryRef",
     "AuthCapability",
+    "AuthCapabilityStartupValidationService",
     "AuthContext",
     "AuthContextError",
     "AuthContextNotFoundError",
@@ -164,6 +174,10 @@ __all__ = [
     "AuthResourceRef",
     "AuthRoleRef",
     "AuthScopeRef",
+    "AuthSnapshotPropagationConfig",
+    "AuthStartupCapabilityDiagnostic",
+    "AuthStartupCapabilityValidationError",
+    "AuthStartupContainerUnavailableError",
     "AuthSubject",
     "AuthTenantRef",
     "AuthVerificationProviderUnavailableError",
