@@ -159,7 +159,7 @@ SendMessage(
 
 1. **워크트리 enumerate**: `git worktree list --porcelain`으로 현재 활성 워크트리 목록을 수집. 본 wave에서 spawn한 티켓 번호에 해당하는 워크트리만 대상.
 2. **state 파일 읽기**: 각 워크트리의 `.process-state.json`을 Read. 파일 부재 시 그 티켓은 §3-6 fallback 영역(워크트리 진입 전 종료) — 본 routine 대상에서 제외.
-3. **메타데이터 집계**: 티켓 번호는 branch name parse(`feat/420-...` → `420`), `commit_done` / `push_done` / `pr_opened` / `monitor_started` / `merged` / `failed` 필드 존재 여부, `updated_at` ISO timestamp.
+3. **메타데이터 집계**: 티켓 번호는 branch name parse(`feat/420-...` → `420`), `commit_done` / `push_done` / `pr_opened` / `monitor_started` / `phase7_ready` / `merged` / `failed` 필드 존재 여부, `updated_at` ISO timestamp.
 
 ### Stuck 판정 — 논리적 모순 검출 (자의적 timeout 임계값 금지)
 
@@ -167,12 +167,13 @@ SendMessage(
 
 - **모순 A (PR 종결 미반영)**: `state.pr_opened.number` 존재 + `state.merged` / `state.failed` 부재 상태에서 `gh pr view <number> --json mergeable,state,mergeStateStatus` 단발 조회 결과가 `state == "MERGED"` 또는 `state == "CLOSED"`. 즉 PR이 외부에서 이미 종결되었는데 서브에이전트가 그 사건을 흡수해 반환하지 못한 모순. monitor-pr의 책무 경계상 PR 종결 = 반환 트리거다.
 - **모순 B (DIRTY/CONFLICTING 회피 불능)**: `state.monitor_started` 존재 + `state.merged` 부재 상태에서 `gh pr view <number>`가 `mergeStateStatus == "DIRTY"` 또는 `mergeable == "CONFLICTING"`. monitor-pr 루프는 DIRTY 감지 시 conflict resolution 분기로 진입하여 결국 반환해야 한다(charter §4-B "메인 블로커 회피 금지" 적용 영역). DIRTY 상태가 관찰되는데 서브에이전트가 같은 wave 대기 큐에서 미반환이면 그 분기 자체가 진행되지 않고 있는 상태 = stuck.
+- **모순 C (auto-merge clean terminal 미흡수)**: `state.monitor_started` 존재 + `state.merged` / `state.failed` 부재 상태에서 `gh pr view <number> --json mergeable,state,mergeStateStatus,statusCheckRollup` 단발 조회 결과가 `state == "OPEN"`, `mergeStateStatus in {"CLEAN","UNSTABLE"}`, `pendingChecks == 0`, `failedChecks == 0`이면 stuck 후보로 분류한다. 이 상태는 `monitor-pr`의 `DONE reason=mergeable-clean` terminal 조건과 동일하며, autopilot 하위 `/process-ticket --auto-merge`는 `phase7_ready` 기록 후 Phase 8 squash merge + cleanup까지 같은 turn에서 완료해야 한다. `monitor_started` 또는 `phase7_ready`만 남고 wave 반환이 없으면 병합 승인 대기가 아니라 resume 대상이다.
 
-`gh pr view`는 본 routine 단일 인터벌마다 stuck 후보당 1회만 호출 — 백오프 polling 루프가 아니다 ("메인 polling 금지" 규칙과의 정합성).
+`gh pr view`는 본 routine 단일 인터벌마다 stuck 후보당 1회만 호출 — 백오프 polling 루프가 아니다 ("메인 polling 금지" 규칙과의 정합성). 모순 C의 `pendingChecks` / `failedChecks` 계산은 `monitor-pr/scripts/watch.sh`와 동일하게 `statusCheckRollup`에서 완료 전 check와 실패/에러 conclusion을 세며, 외부 리뷰 봇 workflow(`Claude Auto PR Code Review`, `Claude Code Review`, `Codex Code Review`) 실패는 review-event 경로가 담당하므로 CI 실패 카운트에서 제외한다.
 
 ### SendMessage probe (오감지 false positive 방지)
 
-모순 A 또는 모순 B 충족 시점에 sub-agent가 사실은 정상 진행 중일 가능성(예: conflict resolution 분기 안에서 git pull · 충돌 수정 · 재push을 거치는 wall-clock 긴 분기 진입 직후)이 있다. 즉시 새 resume sub-agent를 spawn하면 worktree·PR을 동시에 mutation하여 race를 일으킨다. 본 절은 spawn 분기 진입 전 **SendMessage probe (생존 확인 메시지)** 1회를 강제하여 false positive를 회수한다.
+모순 A/B/C 충족 시점에 sub-agent가 사실은 정상 진행 중일 가능성(예: conflict resolution 분기 안에서 git pull · 충돌 수정 · 재push을 거치는 wall-clock 긴 분기 진입 직후, 또는 clean terminal을 관찰하고 Phase 8 병합 명령에 진입한 직후)이 있다. 즉시 새 resume sub-agent를 spawn하면 worktree·PR을 동시에 mutation하여 race를 일으킨다. 본 절은 spawn 분기 진입 전 **SendMessage probe (생존 확인 메시지)** 1회를 강제하여 false positive를 회수한다.
 
 #### probe 메시지 정형 (5줄 이내, 산문 금지)
 
@@ -180,7 +181,7 @@ SendMessage(
 SendMessage(
   to: "{T}",
   summary: "stuck-probe {T}",
-  message: "stuck-probe: {T}\nreason: <모순 A | 모순 B>\nevidence: <pr_state=MERGED/CLOSED | mergeStateStatus=DIRTY 등 1줄>\nrequest: 현재 phase, 진행 blocker, ETA를 5줄로 회신"
+  message: "stuck-probe: {T}\nreason: <모순 A | 모순 B | 모순 C>\nevidence: <pr_state=MERGED/CLOSED | mergeStateStatus=DIRTY | mergeStateStatus=CLEAN pendingChecks=0 failedChecks=0 등 1줄>\nrequest: 현재 phase, 진행 blocker, ETA를 5줄로 회신"
 )
 ```
 
@@ -203,7 +204,7 @@ probe 발송 후 다음 §3-3-bis enumerate 인터벌(60초)까지 메시지 큐
 
 #### 분기 결정
 
-- **응답 정상**: probe-ack 정형 충족 + ETA가 모순 A/B 해소를 함의함 → spawn 생략. 다음 enumerate 인터벌에서 같은 sub-agent의 state 전이를 재확인. 동일 티켓 probe는 wave당 최대 3회 (3회 enumerate cycle 동안 false positive 회수에 충분).
+- **응답 정상**: probe-ack 정형 충족 + ETA가 모순 A/B/C 해소를 함의함 → spawn 생략. 다음 enumerate 인터벌에서 같은 sub-agent의 state 전이를 재확인. 동일 티켓 probe는 wave당 최대 3회 (3회 enumerate cycle 동안 false positive 회수에 충분).
 - **응답 stuck 자인**: probe-ack에서 sub-agent가 `blocker`로 명시 stuck 상태를 진술 → SendMessage로 의도 보강 메시지 1회 전송 (예: "DIRTY 상태에서 conflict resolution 분기 이어가, watch.sh DONE까지 turn 종료 금지"). 다음 enumerate cycle에서 state 전이 없으면 spawn 분기 진입.
 - **무응답** (3 cycle 누적): 아래 "Resume 서브에이전트 spawn" 분기 진입.
 
@@ -217,7 +218,7 @@ Agent(
   description: "resume #{T}",
   run_in_background: true,
   permission_mode: "bypassPermissions",  # §3-2-ter 조건부 inherit — 메인 세션이 bypass 모드일 때만 명시
-  prompt: "Invoke the /process-ticket skill with argument '{T} --auto-merge'. 워크트리 `<path>`가 이미 존재하며 `.process-state.json`이 다음 상태를 기록하고 있다: pr_opened={pr.number}, monitor_started={ts}, merged=null. PR `#{pr.number}`가 외부에서 {모순 A/B 사유}로 stuck 상태이므로 monitor 단계를 이어받아 처리(필요 시 conflict resolution 후 재push)하고 wave 반환 형식으로 응답하라. **Phase 6 monitor 절대 명령**: 너는 자기 turn 안에서 직접 `monitor-pr/scripts/watch.sh`를 포그라운드 Bash로 호출하고 EVENT는 같은 turn 안에서 case 분기로 처리한다. DONE(merged/mergeable-clean/closed-without-merge/awaiting-human-review)이 나올 때까지 turn 종료 금지. `&`/`nohup`/`run_in_background: true`/`Monitor`/`ScheduleWakeup` 사용 금지, '알림 대기'·'외부 이벤트 수신'·1~2 cycle 후 종료 금지, `reason` case 분기 없는 종료 금지. SSOT는 `monitor-pr/SKILL.md` §'절대 명령'. **Monitor heartbeat ping**: `watch.sh`가 `EVENT reason=heartbeat`을 emit하면 (변화 없는 cycle 6회=3분 누적) 즉시 `SendMessage(to: \"team-lead\", summary: \"phase-tick {T}\", message: \"phase: monitor-pr | tick: poll <N> | pr=<#> | ci=<status> | review=<state>\")` 1줄 송신 후 같은 turn 안에서 watch.sh를 재호출하여 polling 재개 — 메인 세션이 monitor 루프를 hang으로 오판하지 않도록 보장. 본 ping은 단방향, 회신 대기 금지. **반환 형식**은 §3-2와 동일."
+  prompt: "Invoke the /process-ticket skill with argument '{T} --auto-merge'. 워크트리 `<path>`가 이미 존재하며 `.process-state.json`이 다음 상태를 기록하고 있다: pr_opened={pr.number}, monitor_started={ts}, phase7_ready={phase7_ready|null}, merged=null. PR `#{pr.number}`가 외부에서 {모순 A/B/C 사유}로 stuck 상태이므로 monitor 단계를 이어받아 처리(필요 시 clean terminal이면 Phase 8 auto-merge부터 즉시 진행, DIRTY이면 conflict resolution 후 재push)하고 wave 반환 형식으로 응답하라. **Phase 6 monitor 절대 명령**: 너는 자기 turn 안에서 직접 `monitor-pr/scripts/watch.sh`를 포그라운드 Bash로 호출하고 EVENT는 같은 turn 안에서 case 분기로 처리한다. DONE(merged/mergeable-clean/closed-without-merge/awaiting-human-review)이 나올 때까지 turn 종료 금지. `&`/`nohup`/`run_in_background: true`/`Monitor`/`ScheduleWakeup` 사용 금지, '알림 대기'·'외부 이벤트 수신'·1~2 cycle 후 종료 금지, `reason` case 분기 없는 종료 금지. SSOT는 `monitor-pr/SKILL.md` §'절대 명령'. `DONE reason=mergeable-clean` 또는 기존 `phase7_ready`는 반환 사유가 아니라 Phase 8 진입 조건이다. `phase7_ready`만 기록하고 반환하지 말고 같은 turn에서 `gh pr merge --squash --delete-branch`와 cleanup까지 완료하라. **Monitor heartbeat ping**: `watch.sh`가 `EVENT reason=heartbeat`을 emit하면 (변화 없는 cycle 6회=3분 누적) 즉시 `SendMessage(to: \"team-lead\", summary: \"phase-tick {T}\", message: \"phase: monitor-pr | tick: poll <N> | pr=<#> | ci=<status> | review=<state>\")` 1줄 송신 후 같은 turn 안에서 watch.sh를 재호출하여 polling 재개 — 메인 세션이 monitor 루프를 hang으로 오판하지 않도록 보장. 본 ping은 단방향, 회신 대기 금지. **반환 형식**은 §3-2와 동일."
 )
 ```
 
