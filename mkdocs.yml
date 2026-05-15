@@ -134,6 +134,7 @@ nav:
       - AOP 가이드: aop-guide.md
       - 이벤트 시스템: event-system.md
       - 플러그인 API: plugin-api.md
+      - 인증/인가 마일스톤 스펙: planning/auth-authorization-milestone-scope.md
   - 참조:
       - 용어 사전: glossary.md
       - 에러 계층 구조: error-hierarchy.md
@@ -173,3 +174,7 @@ nav:
       - ADR-0005 Outbox SQLAlchemy 통합: adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md
       - ADR-0006 spakky-outbox 코어 승격: adr/0006-move-outbox-to-core.md
       - ADR-0007 spakky-saga 분산 트랜잭션 오케스트레이션: adr/0007-spakky-saga-plan.md
+      - ADR-0008 타입 안전성 강화: adr/0008-type-safety-hardening.md
+      - ADR-0009 Agentic Hexagonal Architecture: adr/0009-agentic-hexagonal-architecture.md
+      - ADR-0010 Feature Contribution Policy: adr/0010-feature-contribution-policy.md
+      - ADR-0011 Auth Contribution Routing Boundary: adr/0011-auth-contribution-routing-boundary.md
