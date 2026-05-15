@@ -180,3 +180,4 @@ nav:
       - ADR-0009 Agentic Hexagonal Architecture: adr/0009-agentic-hexagonal-architecture.md
       - ADR-0010 Feature Contribution Policy: adr/0010-feature-contribution-policy.md
       - ADR-0011 Auth Contribution Routing Boundary: adr/0011-auth-contribution-routing-boundary.md
+      - ADR-0012 Contribution 라우팅 정책: adr/0012-contribution-routing-policy.md

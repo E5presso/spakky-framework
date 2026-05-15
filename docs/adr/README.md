@@ -1,10 +1,10 @@
-# Architecture Decision Records (ADR)
+# 아키텍처 결정 기록 (ADR)
 
 > 이 디렉토리는 Spakky Framework의 주요 아키텍처 의사결정을 기록합니다.
 
 ## ADR이란?
 
-Architecture Decision Record는 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결정**을 구조화된 형식으로 기록한 문서입니다.
+ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결정**을 구조화된 형식으로 기록한 문서입니다.
 각 ADR은 결정의 맥락, 고려한 대안, 최종 선택과 그 근거를 포함합니다.
 
 ## 상태 정의
@@ -31,6 +31,7 @@ Architecture Decision Record는 소프트웨어 아키텍처에 영향을 미치
 | [ADR-0009](0009-agentic-hexagonal-architecture.md) | Agentic Hexagonal Architecture — agent runtime 논의 보존 | Proposed | 2026-05-04 |
 | [ADR-0010](0010-feature-contribution-policy.md) | Feature Contribution Policy — core feature별 plugin contribution 로딩 정책 | Accepted | 2026-05-05 |
 | [ADR-0011](0011-auth-contribution-routing-boundary.md) | Auth Contribution Routing Boundary — 인증/인가 contribution routing 범위 경계 | Proposed | 2026-05-15 |
+| [ADR-0012](0012-contribution-routing-policy.md) | Contribution 라우팅 정책 — 복수 contribution 탐지와 선택 정책 | Proposed | 2026-05-10 |
 
 ## 새 ADR 작성 가이드
 
