@@ -13,6 +13,7 @@ from spakky.core.application.discovery_manifest import (
 )
 from spakky.core.application.startup_diagnostics import (
     ActiveStartupPhaseRecorder,
+    IStartupDiagnosticDetailProvider,
     IStartupPhaseRecorder,
     NoOpStartupPhaseRecorder,
     StartupDiagnosticDetail,
@@ -39,6 +40,7 @@ __all__ = [
     "DiscoveryManifestLoadResult",
     "DiscoveryManifestSourceFingerprint",
     "DiscoveryManifestStore",
+    "IStartupDiagnosticDetailProvider",
     "IStartupPhaseRecorder",
     "NoOpStartupPhaseRecorder",
     "StartupDiagnosticDetail",

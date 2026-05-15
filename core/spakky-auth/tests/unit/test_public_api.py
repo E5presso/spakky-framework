@@ -9,6 +9,7 @@ from spakky.auth import (
     AUTH_CONTEXT_SNAPSHOT_HEADER_KEY,
     AUTH_CONTEXT_SNAPSHOT_METADATA_KEY,
     AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+    AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY,
     DEFAULT_AUTH_CLOCK_SKEW_SECONDS,
     EXPIRED_SNAPSHOT_DECISION,
     INVALID_SNAPSHOT_DECISION,
@@ -16,6 +17,7 @@ from spakky.auth import (
     PLUGIN_NAME,
     VERIFICATION_PROVIDER_UNAVAILABLE_DECISION,
     AbstractSpakkyAuthError,
+    AuthCapability,
     AuthClaim,
     AuthContext,
     AuthContextNotFoundError,
@@ -26,6 +28,11 @@ from spakky.auth import (
     AuthContextSnapshot,
     AuthContextSnapshotError,
     AuthContextSnapshotSignature,
+    AuthCapabilityStartupValidationService,
+    AuthSnapshotPropagationConfig,
+    AuthStartupCapabilityDiagnostic,
+    AuthStartupCapabilityValidationError,
+    AuthStartupContainerUnavailableError,
     AuthSubject,
     AuthVerificationProviderUnavailableError,
     AuthenticationError,
@@ -69,6 +76,7 @@ def test_initialize_registers_authorization_aspects() -> None:
     initialize(app)
 
     pod_types = {pod.type_ for pod in app.container.pods.values()}
+    assert AuthCapabilityStartupValidationService in pod_types
     assert AuthorizationAspect in pod_types
     assert AsyncAuthorizationAspect in pod_types
 
@@ -79,6 +87,26 @@ def test_auth_constants_define_context_and_snapshot_contract_keys() -> None:
     assert AUTH_CONTEXT_SNAPSHOT_HEADER_KEY == "x-spakky-auth-context-snapshot"
     assert AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION == 1
     assert DEFAULT_AUTH_CLOCK_SKEW_SECONDS == 60
+    assert AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY == (
+        "auth.capability.validation.error"
+    )
+
+
+def test_auth_startup_contracts_are_exported_from_package_root() -> None:
+    diagnostic = AuthStartupCapabilityDiagnostic(
+        capability=AuthCapability.AUTHENTICATION,
+        provider_count=0,
+        provider_ids=(),
+        required_by=("protected",),
+    )
+    error = AuthStartupCapabilityValidationError(diagnostics=(diagnostic,))
+
+    assert AuthSnapshotPropagationConfig(enabled=True).enabled
+    assert error.diagnostics == (diagnostic,)
+    assert issubclass(AuthStartupContainerUnavailableError, AbstractSpakkyAuthError)
+    assert error.startup_diagnostic_details[0].key == (
+        AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY
+    )
 
 
 def test_credential_carrier_preserves_boundary_local_material() -> None:

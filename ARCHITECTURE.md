@@ -151,7 +151,7 @@ graph TD
 
 - **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing`에도 의존 (트레이싱 미들웨어)
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인증/인가 코어** (spakky-auth) → `spakky` 코어에만 의존. provider-neutral semantic model, ABC port, `AuthCapability`, `spakky.contributions.spakky.auth` contribution contract를 제공하며, AOP enforcement와 provider implementation은 후속 인증/인가 이슈에서 추가
+- **인증/인가 코어** (spakky-auth) → `spakky` 코어에만 의존. provider-neutral semantic model, ABC port, `AuthCapability`, `spakky.contributions.spakky.auth` contribution contract, AOP enforcement, feature-local capability startup validation을 제공하며 provider implementation은 후속 인증/인가 이슈에서 추가
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록하며, Agent state/signal/evidence 저장소는 `spakky-agent`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.agent` contribution으로 등록
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
@@ -453,7 +453,7 @@ spakky-data = "spakky.data.main:initialize"
 |---------|-------------------|
 | `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` |
 | `spakky-domain` | (없음 — 모델만 제공) |
-| `spakky-auth` | Provider-neutral auth model, ABC port, `AuthCapability`, auth contribution contract |
+| `spakky-auth` | Provider-neutral auth model, ABC port, `AuthCapability`, auth contribution contract, AOP enforcement, capability startup validation |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor`, `RegisterActuatorPostProcessor` |

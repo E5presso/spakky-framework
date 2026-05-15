@@ -92,10 +92,16 @@ class StartupFailureSummary:
         Returns:
             Failure summary containing exception type and message only.
         """
+        resolved_diagnostic_details = diagnostic_details
+        if isinstance(exception, IStartupDiagnosticDetailProvider):
+            resolved_diagnostic_details = (
+                *diagnostic_details,
+                *exception.startup_diagnostic_details,
+            )
         return cls(
             exception_type_name=type(exception).__name__,
             message=str(exception),
-            diagnostic_details=diagnostic_details,
+            diagnostic_details=resolved_diagnostic_details,
         )
 
 
@@ -217,6 +223,16 @@ class IStartupPhaseRecorder(ABC):
             processed_count=processed_count,
             diagnostic_details=diagnostic_details,
         )
+
+
+class IStartupDiagnosticDetailProvider(ABC):
+    """Interface for startup exceptions that expose structured diagnostics."""
+
+    @property
+    @abstractmethod
+    def startup_diagnostic_details(self) -> StartupDiagnosticDetails:
+        """Structured diagnostic details to attach to startup failure summaries."""
+        ...
 
 
 class StartupPhaseRecording:

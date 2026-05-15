@@ -21,8 +21,10 @@ from spakky.core.application.application_context import (
 )
 from spakky.core.application.startup_diagnostics import (
     ActiveStartupPhaseRecorder,
+    IStartupDiagnosticDetailProvider,
     NoOpStartupPhaseRecorder,
     StartupDiagnosticDetail,
+    StartupDiagnosticDetails,
     StartupElapsedTimeCannotBeNegativeError,
     StartupFailureSummaryNotAllowedError,
     StartupFailureSummary,
@@ -57,6 +59,21 @@ class FailingStartupService(IService):
     @override
     def stop(self) -> None:
         self._stopped = True
+
+
+class StructuredStartupError(Exception, IStartupDiagnosticDetailProvider):
+    """Startup exception exposing structured diagnostic details."""
+
+    _details: StartupDiagnosticDetails
+
+    def __init__(self, details: StartupDiagnosticDetails) -> None:
+        self._details = details
+        super().__init__("structured startup failed")
+
+    @property
+    @override
+    def startup_diagnostic_details(self) -> StartupDiagnosticDetails:
+        return self._details
 
 
 @Pod()
@@ -114,6 +131,23 @@ def test_active_startup_phase_recorder_failure_expect_structured_summary() -> No
     assert record.failure_summary.message == "plugin load failed"
     assert record.failure_summary.diagnostic_details == (detail,)
     assert recorder.report.records == (record,)
+
+
+def test_startup_failure_summary_from_diagnostic_exception_expect_details() -> None:
+    """startup exception이 제공한 structured detail이 failure summary에 보존됨을 검증한다."""
+    phase_detail = StartupDiagnosticDetail(key="phase", value="service_start")
+    exception_detail = StartupDiagnosticDetail(
+        key="auth.capability.validation.error",
+        value="capability=AUTHENTICATION;provider_count=0",
+    )
+
+    summary = StartupFailureSummary.from_exception(
+        StructuredStartupError(details=(exception_detail,)),
+        diagnostic_details=(phase_detail,),
+    )
+
+    assert summary.message == "structured startup failed"
+    assert summary.diagnostic_details == (phase_detail, exception_detail)
 
 
 def test_active_startup_phase_recorder_zero_count_expect_preserved() -> None:

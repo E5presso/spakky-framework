@@ -151,7 +151,7 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 | 플러그인        | 설명                           |
 | --------------- | ------------------------------ |
 | `spakky-domain` | DDD 빌딩 블록                  |
-| `spakky-auth`   | Provider-neutral 인증/인가 semantic model, ABC port, contribution contract |
+| `spakky-auth`   | Provider-neutral 인증/인가 semantic model, ABC port, AOP enforcement, capability startup validation |
 | `spakky-data`   | Repository, Transaction 추상화 |
 | `spakky-event`  | 인프로세스 이벤트 시스템       |
 | `spakky-task`    | 태스크 큐 추상화 (@TaskHandler, @task, @schedule) |

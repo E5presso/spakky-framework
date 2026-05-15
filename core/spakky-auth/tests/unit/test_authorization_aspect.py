@@ -211,6 +211,30 @@ def test_protected_boundary_fails_closed_without_auth_context() -> None:
         aspect.around(boundary)
 
 
+def test_protected_boundary_fails_closed_without_injected_application_context() -> None:
+    aspect = AuthorizationAspect()
+
+    @protected
+    def boundary() -> str:
+        return "ok"
+
+    with pytest.raises(AuthContextNotFoundError):
+        aspect.around(boundary)
+
+
+async def test_async_protected_boundary_fails_closed_without_injected_application_context() -> (
+    None
+):
+    aspect = AsyncAuthorizationAspect()
+
+    @protected
+    async def boundary() -> str:
+        return "ok"
+
+    with pytest.raises(AuthContextNotFoundError):
+        await aspect.around_async(boundary)
+
+
 def test_non_allow_decision_fails_closed_before_joinpoint() -> None:
     application_context = _context_with_auth()
     scope_checker = ConfigurableScopeChecker(
