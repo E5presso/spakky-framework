@@ -13,6 +13,7 @@
 |------|--------|------|
 | **Core** | `spakky` | DI Container, AOP, 애플리케이션 부트스트랩 |
 | **Core** | `spakky-domain` | DDD 빌딩 블록 (Entity, AggregateRoot, ValueObject, Event, CQRS) |
+| **Core** | `spakky-auth` | Provider-neutral 인증/인가 package root와 feature entry point |
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
@@ -44,6 +45,7 @@ graph TD
     subgraph core_packages ["Core Packages"]
         core[spakky<br/>DI · AOP · Plugin]
         domain[spakky-domain<br/>Entity · Event · CQRS]
+        auth[spakky-auth<br/>Auth root · Entry Point]
         data[spakky-data<br/>Repository · Transaction]
         event[spakky-event<br/>Publisher · Consumer · Aspect]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
@@ -85,6 +87,7 @@ graph TD
     end
 
     domain --> core
+    auth --> core
     data --> domain
     event --> domain
     event --> data
@@ -124,6 +127,7 @@ graph TD
 
     style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
     style domain fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100
+    style auth fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100
     style data fill:#e8f5e9,stroke:#66bb6a,stroke-width:2px,color:#1b5e20
     style event fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
     style outbox fill:#f3e5f5,stroke:#ab47bc,stroke-width:2px,color:#4a148c
@@ -147,6 +151,7 @@ graph TD
 
 - **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing`에도 의존 (트레이싱 미들웨어)
 - **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
+- **인증/인가 코어** (spakky-auth) → `spakky` 코어에만 의존. 현재 등록 단계에서는 provider-neutral import root와 feature entry point만 제공하며, AuthContext/decision/AOP enforcement는 후속 인증/인가 이슈에서 추가
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록하며, Agent state/signal/evidence 저장소는 `spakky-agent`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.agent` contribution으로 등록
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
@@ -448,6 +453,7 @@ spakky-data = "spakky.data.main:initialize"
 |---------|-------------------|
 | `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` |
 | `spakky-domain` | (없음 — 모델만 제공) |
+| `spakky-auth` | (없음 — 현재 등록 단계에서는 import root와 feature entry point만 제공) |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor`, `RegisterActuatorPostProcessor` |
