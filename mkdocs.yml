@@ -72,6 +72,7 @@ plugins:
           paths:
             - core/spakky/src
             - core/spakky-domain/src
+            - core/spakky-auth/src
             - core/spakky-data/src
             - core/spakky-event/src
             - core/spakky-task/src
@@ -143,6 +144,7 @@ nav:
       - Core:
           - spakky: api/core/spakky.md
           - spakky-domain: api/core/spakky-domain.md
+          - spakky-auth: api/core/spakky-auth.md
           - spakky-data: api/core/spakky-data.md
           - spakky-event: api/core/spakky-event.md
           - spakky-task: api/core/spakky-task.md

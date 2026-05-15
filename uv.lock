@@ -12,6 +12,7 @@ members = [
     "spakky",
     "spakky-actuator",
     "spakky-agent",
+    "spakky-auth",
     "spakky-cache",
     "spakky-celery",
     "spakky-data",
@@ -2604,6 +2605,17 @@ dev = [
     { name = "spakky-fastapi", editable = "plugins/spakky-fastapi" },
     { name = "spakky-typer", editable = "plugins/spakky-typer" },
 ]
+
+[[package]]
+name = "spakky-auth"
+version = "6.5.0"
+source = { editable = "core/spakky-auth" }
+dependencies = [
+    { name = "spakky" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-cache"
