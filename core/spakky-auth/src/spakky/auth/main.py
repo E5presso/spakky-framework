@@ -1,13 +1,15 @@
 """Plugin initialization entry point for spakky-auth."""
 
+from spakky.auth.aspects import AsyncAuthorizationAspect, AuthorizationAspect
 from spakky.core.application.application import SpakkyApplication
 
 
 def initialize(app: SpakkyApplication) -> None:
     """Initialize the spakky-auth package.
 
-    The semantic model is exposed as importable provider-neutral contracts.
-    Runtime providers, decorators, and enforcement components are added by
+    Registers auth AOP enforcement components. Provider implementations,
+    startup validation, and boundary AuthContext seeding are added by
     downstream auth issues.
     """
-    return
+    app.add(AuthorizationAspect)
+    app.add(AsyncAuthorizationAspect)

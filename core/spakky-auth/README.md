@@ -20,9 +20,32 @@ pip install spakky-auth
 - `IAuthenticationProvider`, `IAuthorizationPolicyEvaluator`, `IPermissionChecker`, `IRoleChecker`, `IScopeChecker`, `IRelationChecker`, `IAuthContextSnapshotSigner`, `IAuthContextSnapshotVerifier`, `IPasswordHasher`, `IPasswordVerifier`: ABC + `abstractmethod` 기반 public provider port
 - `AuthInvocation`, `AuthDynamicRef`, `IAuthInvocationResolver`: resource/action/tenant dynamic ref를 invocation에서 resolve하기 위한 provider-neutral 계약
 - `AuthProviderContribution`: `spakky.contributions.spakky.auth` feature-local contribution이 capability set을 선언하기 위한 metadata 계약
+- `public_access`, `protected`, `require_scope`, `require_role`, `require_permission`, `require_policy`, `require_relation`: class/function boundary에 public/protected auth metadata를 선언하는 Spakky-native decorator
+- `get_effective_auth_metadata`: class-level과 method-level requirement를 AND semantics로 결합하고 exact duplicate canonical requirement를 idempotent하게 deduplicate하는 metadata aggregation API
+- `AuthorizationAspect`, `AsyncAuthorizationAspect`: request-scope `AuthContext`를 읽어 protected metadata를 sync/async AOP로 enforcement하는 component
 - `AbstractSpakkyAuthError` 기반 auth 오류 hierarchy
 
-Decorator metadata, AOP enforcement, provider implementation, startup validation은 후속 이슈에서 추가됩니다.
+Provider implementation, startup validation, boundary integration은 후속 이슈에서 추가됩니다. Decorator가 없는 boundary는 allow all이며, protected/decorated boundary는 request-scope `AuthContext`와 provider-neutral checker port를 통해 fail closed로 처리됩니다.
+
+## Decorator Metadata & AOP Enforcement
+
+Public boundary는 `@public_access`로 명시하고, 인증만 필요한 boundary는 `@protected`로 표시합니다. 권한 requirement는 다음 decorator로 추가합니다.
+
+```python
+from spakky.auth import protected, require_role, require_scope
+
+
+@require_role("role:admin")
+class DocumentController:
+    @require_scope("documents:read")
+    @protected
+    def read(self) -> str:
+        return "ok"
+```
+
+Stacked requirement는 canonical `AuthRequirement` tuple로 aggregate되며, exact duplicate는 제거됩니다. Class-level requirement와 method-level requirement는 AND semantics로 결합됩니다. `public_access`와 protected requirement가 effective metadata에서 동시에 관찰되면 `ConflictingAuthMetadataError`가 발생합니다. OR/ANY semantics는 decorator 조합이 아니라 후속 `spakky-policy` named policy로 표현합니다.
+
+`AuthorizationAspect`와 `AsyncAuthorizationAspect`는 메서드 인자로 `AuthContext`를 요구하지 않습니다. 각 inbound adapter가 `ApplicationContext` request/context scope에 seed한 `AuthContext`를 `require_auth_context()`로 읽고, provider-neutral checker port decision이 `ALLOW`가 아니면 `AuthRequirementDeniedError`로 실패합니다.
 
 ## Provider Contribution Contract
 
@@ -52,7 +75,7 @@ missing, invalid, expired snapshot은 기본적으로 `CHALLENGE` decision이며
 spakky-auth = "spakky.auth.main:initialize"
 ```
 
-현재 `initialize()`는 등록용 no-op입니다. 후속 enforcement component가 추가되면 이 entry point를 통해 feature-local component를 등록합니다.
+현재 `initialize()`는 `AuthorizationAspect`와 `AsyncAuthorizationAspect`를 등록합니다. 후속 이슈에서 startup validation과 boundary integration이 추가되면 같은 entry point를 통해 feature-local component를 등록합니다.
 
 ## 개발 검증
 
