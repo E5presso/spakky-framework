@@ -10,15 +10,23 @@ pip install spakky-auth
 
 ## 현재 범위
 
-`spakky-auth`는 인증/인가 마일스톤의 provider-neutral semantic model을 소유합니다. Provider plugin과 boundary integration이 의존할 수 있는 `spakky.auth` import root, package metadata, workspace registration, documentation API path와 함께 다음 core 계약을 제공합니다.
+`spakky-auth`는 인증/인가 마일스톤의 provider-neutral semantic model과 public provider contract를 소유합니다. Provider plugin과 boundary integration이 의존할 수 있는 `spakky.auth` import root, package metadata, workspace registration, documentation API path와 함께 다음 core 계약을 제공합니다.
 
 - `AuthContext`, `AuthSubject`, `AuthClaim`: inbound adapter가 사용자 호출 전에 `ApplicationContext` context value에 seed하는 인증 상태
 - `CredentialCarrier`: provider가 해석할 boundary-local credential 전달체
 - `AuthorizationDecision`, `AuthorizationDecisionState`, `AuthorizationReasonCode`: `ALLOW`, `CHALLENGE`, `DENY`, `ERROR` 판정 모델
 - `AuthContextSnapshot`: raw bearer token 대신 task/broker/saga 등으로 전파하는 signed snapshot envelope 계약
+- `AuthCapability`: authentication, policy evaluation, permission/role/scope/relation check, snapshot sign/verify, password hash/verify capability 선언
+- `IAuthenticationProvider`, `IAuthorizationPolicyEvaluator`, `IPermissionChecker`, `IRoleChecker`, `IScopeChecker`, `IRelationChecker`, `IAuthContextSnapshotSigner`, `IAuthContextSnapshotVerifier`, `IPasswordHasher`, `IPasswordVerifier`: ABC + `abstractmethod` 기반 public provider port
+- `AuthInvocation`, `AuthDynamicRef`, `IAuthInvocationResolver`: resource/action/tenant dynamic ref를 invocation에서 resolve하기 위한 provider-neutral 계약
+- `AuthProviderContribution`: `spakky.contributions.spakky.auth` feature-local contribution이 capability set을 선언하기 위한 metadata 계약
 - `AbstractSpakkyAuthError` 기반 auth 오류 hierarchy
 
-ABC port, decorator metadata, AOP enforcement, provider implementation, startup validation은 후속 이슈에서 추가됩니다.
+Decorator metadata, AOP enforcement, provider implementation, startup validation은 후속 이슈에서 추가됩니다.
+
+## Provider Contribution Contract
+
+Auth provider plugin은 base plugin entry point와 별도로 `spakky.contributions.spakky.auth` contribution entry point를 선언하고, 해당 contribution에서 `AuthProviderContribution` capability set과 필요한 port 구현 Pod을 등록합니다. Core `spakky-auth`는 provider plugin 이름이나 provider-specific 문자열로 분기하지 않습니다. Capability count 검증과 protected boundary enforcement는 후속 이슈에서 feature-local startup validation 및 AOP로 연결됩니다.
 
 ## Context & Snapshot Keys
 

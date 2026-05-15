@@ -28,6 +28,22 @@ Provider-neutral authentication and authorization semantic model.
     options:
       show_root_heading: false
 
+::: spakky.auth.capability
+    options:
+      show_root_heading: false
+
+::: spakky.auth.contribution
+    options:
+      show_root_heading: false
+
+::: spakky.auth.invocation
+    options:
+      show_root_heading: false
+
+::: spakky.auth.ports
+    options:
+      show_root_heading: false
+
 ::: spakky.auth.snapshot
     options:
       show_root_heading: false
