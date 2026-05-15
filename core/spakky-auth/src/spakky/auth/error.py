@@ -47,6 +47,24 @@ class AuthorizationError(AbstractSpakkyAuthError):
     message = "Authorization failed"
 
 
+class ConflictingAuthMetadataError(AuthorizationError):
+    """Raised when public and protected auth metadata are both effective."""
+
+    message = "Public access and protected auth requirements conflict"
+
+
+class AuthRequirementDeniedError(AuthorizationError):
+    """Raised when an auth requirement decision is not ALLOW."""
+
+    message = "Authorization requirement was not allowed"
+
+
+class AuthRequirementProviderUnavailableError(AuthorizationError):
+    """Raised when no provider is available for a protected requirement."""
+
+    message = "Authorization requirement provider is unavailable"
+
+
 class AuthContextSnapshotError(AbstractSpakkyAuthError):
     """Raised when an AuthContextSnapshot cannot be used."""
 

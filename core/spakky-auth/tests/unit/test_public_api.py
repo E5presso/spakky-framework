@@ -19,21 +19,39 @@ from spakky.auth import (
     AuthClaim,
     AuthContext,
     AuthContextNotFoundError,
+    AuthRequirement,
+    AuthRequirementDeniedError,
+    AuthRequirementKind,
+    AuthRequirementProviderUnavailableError,
     AuthContextSnapshot,
     AuthContextSnapshotError,
     AuthContextSnapshotSignature,
     AuthSubject,
     AuthVerificationProviderUnavailableError,
     AuthenticationError,
+    AsyncAuthorizationAspect,
     AuthorizationDecision,
+    AuthorizationAspect,
     AuthorizationDecisionState,
     AuthorizationError,
     AuthorizationReasonCode,
+    ConflictingAuthMetadataError,
     CredentialCarrier,
     CredentialCarrierKind,
     CredentialCarrierLocation,
     InvalidAuthContextValueError,
+    ProtectedRequirement,
+    PublicAccess,
+    get_effective_auth_metadata,
+    has_auth_boundary_metadata,
+    protected,
+    public_access,
     require_auth_context,
+    require_permission,
+    require_policy,
+    require_relation,
+    require_role,
+    require_scope,
     store_auth_context,
 )
 from spakky.auth.main import initialize
@@ -45,10 +63,14 @@ def test_plugin_name_identifies_auth_package() -> None:
     assert PLUGIN_NAME.name == "spakky-auth"
 
 
-def test_initialize_is_registration_only_for_package_skeleton() -> None:
+def test_initialize_registers_authorization_aspects() -> None:
     app = SpakkyApplication(ApplicationContext())
 
-    assert initialize(app) is None
+    initialize(app)
+
+    pod_types = {pod.type_ for pod in app.container.pods.values()}
+    assert AuthorizationAspect in pod_types
+    assert AsyncAuthorizationAspect in pod_types
 
 
 def test_auth_constants_define_context_and_snapshot_contract_keys() -> None:
@@ -188,8 +210,44 @@ def test_auth_context_snapshot_produces_canonical_base64url_signed_envelope() ->
 def test_auth_error_hierarchy_is_framework_scoped() -> None:
     assert issubclass(AuthenticationError, AbstractSpakkyAuthError)
     assert issubclass(AuthorizationError, AbstractSpakkyAuthError)
+    assert issubclass(ConflictingAuthMetadataError, AuthorizationError)
+    assert issubclass(AuthRequirementDeniedError, AuthorizationError)
+    assert issubclass(AuthRequirementProviderUnavailableError, AuthorizationError)
     assert issubclass(AuthContextSnapshotError, AbstractSpakkyAuthError)
     assert issubclass(
         AuthVerificationProviderUnavailableError,
         AuthContextSnapshotError,
     )
+
+
+def test_public_auth_decorators_are_exported_from_package_root() -> None:
+    @require_relation("owner", resource="document:1")
+    @require_policy("document:1", "read")
+    @require_permission("documents:read", resource="document:1")
+    @require_role("role:admin")
+    @require_scope("documents:read")
+    @protected
+    def protected_boundary() -> str:
+        return "protected"
+
+    @public_access
+    def public_boundary() -> str:
+        return "public"
+
+    protected_metadata = get_effective_auth_metadata(protected_boundary)
+    public_metadata = get_effective_auth_metadata(public_boundary)
+
+    assert has_auth_boundary_metadata(protected_boundary)
+    assert has_auth_boundary_metadata(public_boundary)
+    assert protected_metadata.protected
+    assert public_metadata.public_access
+    assert PublicAccess.exists(public_boundary)
+    assert all(
+        isinstance(item, AuthRequirement) for item in protected_metadata.requirements
+    )
+    assert all(
+        item.kind in AuthRequirementKind for item in protected_metadata.requirements
+    )
+    assert len(ProtectedRequirement.all(protected_boundary)) == 6
+    assert AuthorizationAspect.__name__ == "AuthorizationAspect"
+    assert AsyncAuthorizationAspect.__name__ == "AsyncAuthorizationAspect"
