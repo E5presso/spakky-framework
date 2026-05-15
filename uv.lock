@@ -15,6 +15,7 @@ members = [
     "spakky-auth",
     "spakky-cache",
     "spakky-celery",
+    "spakky-cryptography",
     "spakky-data",
     "spakky-domain",
     "spakky-event",
@@ -2516,6 +2517,9 @@ dependencies = [
 celery = [
     { name = "spakky-celery" },
 ]
+cryptography = [
+    { name = "spakky-cryptography" },
+]
 fastapi = [
     { name = "spakky-fastapi" },
 ]
@@ -2556,6 +2560,7 @@ vllm = [
 [package.metadata]
 requires-dist = [
     { name = "spakky-celery", marker = "extra == 'celery'", editable = "plugins/spakky-celery" },
+    { name = "spakky-cryptography", marker = "extra == 'cryptography'", editable = "plugins/spakky-cryptography" },
     { name = "spakky-fastapi", marker = "extra == 'fastapi'", editable = "plugins/spakky-fastapi" },
     { name = "spakky-grpc", marker = "extra == 'grpc'", editable = "plugins/spakky-grpc" },
     { name = "spakky-kafka", marker = "extra == 'kafka'", editable = "plugins/spakky-kafka" },
@@ -2570,7 +2575,7 @@ requires-dist = [
     { name = "spakky-vllm", marker = "extra == 'vllm'", editable = "plugins/spakky-vllm" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
+provides-extras = ["logging", "cryptography", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
 
 [[package]]
 name = "spakky-actuator"
@@ -2663,6 +2668,27 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.26.0" },
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
     { name = "testcontainers", extras = ["rabbitmq"], specifier = ">=4.14.2" },
+]
+
+[[package]]
+name = "spakky-cryptography"
+version = "6.5.0"
+source = { editable = "plugins/spakky-cryptography" }
+dependencies = [
+    { name = "argon2-cffi" },
+    { name = "bcrypt" },
+    { name = "pycryptodome" },
+    { name = "spakky" },
+    { name = "spakky-auth" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "argon2-cffi", specifier = ">=25.1.0" },
+    { name = "bcrypt", specifier = ">=5.0.0" },
+    { name = "pycryptodome", specifier = ">=3.23.0" },
+    { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
 ]
 
 [[package]]

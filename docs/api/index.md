@@ -24,6 +24,7 @@
 - [spakky-logging](plugins/spakky-logging.md) — 구조화된 로깅
 - [spakky-fastapi](plugins/spakky-fastapi.md) — FastAPI 통합
 - [spakky-rabbitmq](plugins/spakky-rabbitmq.md) — RabbitMQ 통합
+- [spakky-cryptography](plugins/spakky-cryptography.md) — 암호화/Auth snapshot/password provider
 - [spakky-security](plugins/spakky-security.md) — 보안 (JWT, 인증)
 - [spakky-typer](plugins/spakky-typer.md) — Typer CLI 통합
 - [spakky-kafka](plugins/spakky-kafka.md) — Kafka 통합

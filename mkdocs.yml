@@ -85,6 +85,7 @@ plugins:
             - plugins/spakky-logging/src
             - plugins/spakky-fastapi/src
             - plugins/spakky-rabbitmq/src
+            - plugins/spakky-cryptography/src
             - plugins/spakky-security/src
             - plugins/spakky-typer/src
             - plugins/spakky-kafka/src
@@ -158,6 +159,7 @@ nav:
           - spakky-logging: api/plugins/spakky-logging.md
           - spakky-fastapi: api/plugins/spakky-fastapi.md
           - spakky-rabbitmq: api/plugins/spakky-rabbitmq.md
+          - spakky-cryptography: api/plugins/spakky-cryptography.md
           - spakky-security: api/plugins/spakky-security.md
           - spakky-typer: api/plugins/spakky-typer.md
           - spakky-kafka: api/plugins/spakky-kafka.md
