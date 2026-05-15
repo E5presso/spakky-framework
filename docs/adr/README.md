@@ -30,6 +30,7 @@ Architecture Decision Record는 소프트웨어 아키텍처에 영향을 미치
 | [ADR-0008](0008-type-safety-hardening.md) | 타입 안전성 강화 — pyrefly ignore 박멸과 구조적 개선 | Accepted | 2026-04-13 |
 | [ADR-0009](0009-agentic-hexagonal-architecture.md) | Agentic Hexagonal Architecture — agent runtime 논의 보존 | Proposed | 2026-05-04 |
 | [ADR-0010](0010-feature-contribution-policy.md) | Feature Contribution Policy — core feature별 plugin contribution 로딩 정책 | Accepted | 2026-05-05 |
+| [ADR-0011](0011-auth-contribution-routing-boundary.md) | Auth Contribution Routing Boundary — 인증/인가 contribution routing 범위 경계 | Proposed | 2026-05-15 |
 
 ## 새 ADR 작성 가이드
 
