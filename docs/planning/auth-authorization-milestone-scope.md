@@ -22,7 +22,8 @@
 - feature-local capability startup validation
 - `spakky-cryptography`, `spakky-oidc`, `spakky-policy`, `spakky-openfga` provider plugin
 - FastAPI, gRPC, Typer, task, Celery, event, RabbitMQ, Kafka, Saga boundary integration
-- `spakky-security` shim 없는 제거와 migration documentation
+- `spakky-security` shim 없는 제거와
+  [symbol mapping inventory](spakky-security-symbol-mapping.md) 기반 migration documentation
 
 ## 범위 밖
 

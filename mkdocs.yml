@@ -86,6 +86,7 @@ plugins:
             - plugins/spakky-fastapi/src
             - plugins/spakky-rabbitmq/src
             - plugins/spakky-cryptography/src
+            - plugins/spakky-oidc/src
             - plugins/spakky-policy/src
             - plugins/spakky-security/src
             - plugins/spakky-typer/src
@@ -138,6 +139,7 @@ nav:
       - 이벤트 시스템: event-system.md
       - 플러그인 API: plugin-api.md
       - 인증/인가 마일스톤 스펙: planning/auth-authorization-milestone-scope.md
+      - spakky-security 제거 매핑: planning/spakky-security-symbol-mapping.md
   - 참조:
       - 용어 사전: glossary.md
       - 에러 계층 구조: error-hierarchy.md
@@ -161,6 +163,7 @@ nav:
           - spakky-fastapi: api/plugins/spakky-fastapi.md
           - spakky-rabbitmq: api/plugins/spakky-rabbitmq.md
           - spakky-cryptography: api/plugins/spakky-cryptography.md
+          - spakky-oidc: api/plugins/spakky-oidc.md
           - spakky-policy: api/plugins/spakky-policy.md
           - spakky-security: api/plugins/spakky-security.md
           - spakky-typer: api/plugins/spakky-typer.md
