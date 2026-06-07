@@ -14,6 +14,12 @@ Spakky extras로도 설치할 수 있습니다.
 pip install spakky[sqlalchemy]
 ```
 
+PostgreSQL 예제를 그대로 따라간다면 driver까지 포함하는 extra를 사용하세요.
+
+```bash
+pip install "spakky[database-postgres]"
+```
+
 ## 설정
 
 `SPAKKY_SQLALCHEMY__` 접두사로 환경변수를 설정합니다.
@@ -43,6 +49,9 @@ export SPAKKY_SQLALCHEMY__AUTOCOMMIT="true"
 # 비동기 지원(선택)
 export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
 ```
+
+`postgresql+psycopg://` connection string은 `psycopg` driver가 필요합니다.
+`spakky[database-postgres]`를 쓰거나 프로젝트 의존성에 `psycopg[binary]`를 직접 추가하세요.
 
 ## 사용법
 

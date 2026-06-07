@@ -16,17 +16,29 @@ pip install spakky
 ```
 
 처음에는 이 설치만으로 충분합니다. 만들려는 앱의 경계가 정해졌다면 extra를 고르면 됩니다.
+Extra는 두 층으로 나뉩니다. `minimal`, `recommended`, `full`은 설치 범위를 고르는 tier이고, `web`, `database`, `events-*`, `security` 같은 이름은 만들 앱의 종류를 나타냅니다.
+
+| Tier | 설치 예 | 언제 고르나요 |
+| --- | --- | --- |
+| Minimal | `pip install spakky` | DI/AOP와 플러그인 로딩을 먼저 익힐 때 |
+| Recommended | `pip install "spakky[recommended]"` | FastAPI + SQLAlchemy + 운영 기본기를 갖춘 일반 서비스 |
+| Full | `pip install "spakky[full]"` | 공식 통합을 한 환경에서 모두 실험하거나 문서 예제를 넓게 검증할 때 |
 
 | 만들고 싶은 앱 | 설치 예 |
 | --- | --- |
-| 최소 DI/AOP 실험 | `pip install spakky` |
-| 일반적인 HTTP 서비스 | `pip install "spakky[recommended]"` |
-| FastAPI 중심 서비스 | `pip install "spakky[web]"` |
-| 데이터베이스 서비스 | `pip install "spakky[database]"` |
-| 이벤트/브로커 기반 서비스 | `pip install "spakky[event-driven]"` |
+| FastAPI 중심 HTTP 서비스 | `pip install "spakky[web]"` |
+| SQLAlchemy 데이터베이스 서비스 | `pip install "spakky[database]"` |
+| PostgreSQL driver까지 포함한 데이터베이스 서비스 | `pip install "spakky[database-postgres]"` |
+| RabbitMQ 이벤트 서비스 | `pip install "spakky[events-rabbitmq]"` |
+| Kafka 이벤트 서비스 | `pip install "spakky[events-kafka]"` |
+| Outbox + SQLAlchemy 이벤트 저장소 | `pip install "spakky[events-outbox-sqlalchemy]"` |
+| RabbitMQ, Kafka, Outbox를 모두 쓰는 이벤트 서비스 | `pip install "spakky[event-driven]"` |
+| CLI 애플리케이션 | `pip install "spakky[cli]"` |
+| Celery worker | `pip install "spakky[worker]"` |
+| Redis cache 애플리케이션 | `pip install "spakky[cache-app]"` |
 | 인증/인가가 필요한 서비스 | `pip install "spakky[security]"` |
+| 관측성/운영 기본기 | `pip install "spakky[observability]"` |
 | Agent workflow | `pip install "spakky[agent]"` |
-| 모든 공식 통합 | `pip install "spakky[full]"` |
 
 패키지를 직접 조합해야 한다면 아래 지도를 기준으로 고르면 됩니다.
 

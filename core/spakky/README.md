@@ -8,11 +8,13 @@
 pip install spakky
 ```
 
-플러그인을 함께 설치할 수도 있습니다.
+앱의 형태가 정해졌다면 extra를 고르면 됩니다.
 
 ```bash
-pip install spakky[fastapi]
-pip install spakky[fastapi,kafka,cryptography]
+pip install "spakky[recommended]"              # FastAPI + SQLAlchemy + 운영 기본기
+pip install "spakky[web]"                      # FastAPI 중심 HTTP 서비스
+pip install "spakky[events-kafka]"             # Kafka 이벤트 서비스
+pip install "spakky[full]"                     # 모든 공식 통합
 ```
 
 ## 주요 기능

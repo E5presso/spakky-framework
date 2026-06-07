@@ -11,6 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+minimal = []
 domain = ["spakky-domain>=6.5.0"]
 data = ["spakky-data>=6.5.0"]
 event = ["spakky-event>=6.5.0"]
@@ -50,12 +51,27 @@ database = [
     "spakky-data>=6.5.0",
     "spakky[sqlalchemy]>=6.5.0",
 ]
-event-driven = [
+database-postgres = [
+    "spakky[database]>=6.5.0",
+    "psycopg[binary]>=3.3.3",
+]
+events-rabbitmq = [
+    "spakky-event>=6.5.0",
+    "spakky[rabbitmq]>=6.5.0",
+]
+events-kafka = [
+    "spakky-event>=6.5.0",
+    "spakky[kafka]>=6.5.0",
+]
+events-outbox-sqlalchemy = [
     "spakky-event>=6.5.0",
     "spakky-outbox>=6.5.0",
-    "spakky[rabbitmq]>=6.5.0",
-    "spakky[kafka]>=6.5.0",
     "spakky[sqlalchemy]>=6.5.0",
+]
+event-driven = [
+    "spakky[events-rabbitmq]>=6.5.0",
+    "spakky[events-kafka]>=6.5.0",
+    "spakky[events-outbox-sqlalchemy]>=6.5.0",
 ]
 worker = [
     "spakky-task>=6.5.0",
@@ -84,14 +100,9 @@ agent = [
     "spakky[sqlalchemy]>=6.5.0",
 ]
 recommended = [
-    "spakky-domain>=6.5.0",
-    "spakky-data>=6.5.0",
-    "spakky-event>=6.5.0",
-    "spakky[fastapi]>=6.5.0",
-    "spakky[sqlalchemy]>=6.5.0",
-    "spakky[logging]>=6.5.0",
-    "spakky-tracing>=6.5.0",
-    "spakky-actuator>=6.5.0",
+    "spakky[web]>=6.5.0",
+    "spakky[database]>=6.5.0",
+    "spakky[observability]>=6.5.0",
 ]
 full = [
     "spakky-actuator>=6.5.0",
