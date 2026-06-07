@@ -43,6 +43,14 @@ def test_get_named_endpoint_with_explicit_name_and_description(api: FastAPI) -> 
         assert response.text == "Named!"
 
 
+def test_sync_route_handler_returns_response(api: FastAPI) -> None:
+    """Ordinary sync route handlers return their result without being awaited."""
+    with TestClient(api) as client:
+        response = client.get("/dummy/sync")
+        assert response.status_code == HTTPStatus.OK
+        assert response.json() == {"message": "sync ok"}
+
+
 def test_post(api: FastAPI) -> None:
     """POST 요청으로 JSON 데이터를 전송하고 응답을 받을 수 있음을 검증한다."""
     with TestClient(api) as client:

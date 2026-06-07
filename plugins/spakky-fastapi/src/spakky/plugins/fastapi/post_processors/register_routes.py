@@ -6,7 +6,7 @@ classes, creating FastAPI endpoints with proper dependency injection.
 
 from dataclasses import asdict
 from functools import wraps
-from inspect import getmembers, signature
+from inspect import getmembers, isawaitable, signature
 from logging import getLogger
 from typing import Any
 
@@ -37,6 +37,12 @@ from spakky.plugins.fastapi.routes.websocket import WebSocketRoute
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 
 logger = getLogger(__name__)
+
+
+async def _resolve_route_result(result: Any) -> Any:
+    if isawaitable(result):
+        return await result
+    return result
 
 
 @Order(0)
@@ -147,7 +153,9 @@ class RegisterRoutesPostProcessor(
                             method_to_call
                         ):
                             kwargs[request_name] = auth_request
-                        return await method_to_call(*args, **kwargs)
+                        return await _resolve_route_result(
+                            method_to_call(*args, **kwargs)
+                        )
                     except AbstractSpakkyAuthError as e:
                         auth_boundary.map_http_auth_error(e)
 
@@ -198,7 +206,9 @@ class RegisterRoutesPostProcessor(
                             method_to_call
                         ):
                             kwargs[websocket_name] = websocket
-                        return await method_to_call(*args, **kwargs)
+                        return await _resolve_route_result(
+                            method_to_call(*args, **kwargs)
+                        )
                     except AbstractSpakkyAuthError as e:
                         await auth_boundary.close_websocket_for_auth_error(websocket, e)
                         return None

@@ -64,6 +64,10 @@ class DummyController(IApplicationContextAware):
         """This docstring should be ignored since description is provided."""
         return "Named!"
 
+    @get("/sync")
+    def get_sync_dummy(self) -> dict[str, str]:
+        return {"message": "sync ok"}
+
     @get(
         "/file/{name}",
         response_class=FileResponse,
