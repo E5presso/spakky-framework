@@ -47,7 +47,7 @@ class DocumentController:
 
 Stacked requirement는 canonical `AuthRequirement` tuple로 aggregate되며, exact duplicate는 제거됩니다. Class-level requirement와 method-level requirement는 AND semantics로 결합됩니다. `public_access`와 protected requirement가 effective metadata에서 동시에 관찰되면 `ConflictingAuthMetadataError`가 발생합니다. OR/ANY semantics는 decorator 조합이 아니라 후속 `spakky-policy` named policy로 표현합니다.
 
-`AuthorizationAspect`와 `AsyncAuthorizationAspect`는 메서드 인자로 `AuthContext`를 요구하지 않습니다. 각 inbound adapter가 `ApplicationContext` request/context scope에 seed한 `AuthContext`를 `require_auth_context()`로 읽고, provider-neutral checker port decision이 `ALLOW`가 아니면 `AuthRequirementDeniedError`로 실패합니다.
+`AuthorizationAspect`와 `AsyncAuthorizationAspect`는 메서드 인자로 `AuthContext`를 요구하지 않습니다. 각 inbound adapter가 `ApplicationContext` request/context scope에 seed한 `AuthContext`를 `require_auth_context()`로 읽고, provider-neutral checker port decision이 `ALLOW`가 아니면 `AuthRequirementDeniedError`로 실패합니다. 이 오류는 non-ALLOW `AuthorizationDecision`을 `decision` 속성에 보존하므로 inbound adapter는 원래 reason code를 CLI/HTTP/gRPC 등 transport별 응답으로 매핑할 수 있습니다.
 
 ## Provider Contribution Contract
 
