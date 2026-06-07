@@ -2813,6 +2813,7 @@ dependencies = [
     { name = "orjson" },
     { name = "spakky" },
     { name = "spakky-actuator" },
+    { name = "spakky-auth" },
     { name = "spakky-tracing" },
     { name = "websockets" },
 ]
@@ -2823,6 +2824,7 @@ requires-dist = [
     { name = "orjson", specifier = ">=3.11.8" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-actuator", editable = "core/spakky-actuator" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
     { name = "websockets", specifier = ">=16.0" },
 ]

@@ -1,6 +1,14 @@
 # spakky-fastapi
 
-FastAPI 통합 — 라우트 데코레이터, 자동 엔드포인트 등록
+FastAPI 통합 — 라우트 데코레이터, 자동 엔드포인트 등록, 인증 경계 통합
+
+`spakky-fastapi`는 HTTP `Authorization: Bearer <token>`과 WebSocket
+`Authorization: Bearer <token>` 또는 `access_token=<token>` connection query를
+`CredentialCarrier`로 추출하고, 사용자 handler 호출 전에 `AuthContext`를
+request/context scope에 seed합니다. 보호된 handler는 인증만을 위해 FastAPI
+`Request` 또는 `WebSocket` 파라미터를 선언할 필요가 없습니다. HTTP auth failure는
+CHALLENGE=401, DENY=403, ERROR=500으로 매핑되고, WebSocket auth failure는
+connection close로 처리됩니다.
 
 ## 스테레오타입
 

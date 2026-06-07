@@ -1,15 +1,42 @@
 import logging
 from logging import Formatter, StreamHandler, getLogger
-from typing import Any, AsyncGenerator, Generator
+from typing import Any, AsyncGenerator, Generator, override
 
 import pytest
 from fastapi import FastAPI
+from spakky.auth import (
+    AuthContext,
+    AuthInvocation,
+    AuthSubject,
+    AuthenticationError,
+    CredentialCarrier,
+    IAuthenticationProvider,
+)
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
 
 import spakky.plugins.fastapi
 from tests import apps
+
+
+@Pod()
+class FakeAuthenticationProvider(IAuthenticationProvider):
+    """Authentication provider used by FastAPI boundary tests."""
+
+    @override
+    def authenticate(
+        self,
+        credential: CredentialCarrier,
+        invocation: AuthInvocation,
+    ) -> AuthContext:
+        if credential.material == "invalid":
+            raise AuthenticationError()
+        return AuthContext(
+            subject=AuthSubject(id=credential.material),
+            issuer=invocation.boundary,
+            credential_carrier=credential,
+        )
 
 
 @pytest.fixture(name="name", scope="package")
@@ -46,12 +73,42 @@ async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
         .scan(apps)
         .add(get_name)
         .add(get_api)
+        .add(FakeAuthenticationProvider)
     )
     app.start()
 
     yield app
 
     logger.removeHandler(console)
+
+
+@pytest.mark.asyncio
+@pytest.fixture(name="api_without_auth_provider", scope="function")
+async def get_api_without_auth_provider_fixture(
+    name: str,
+) -> AsyncGenerator[FastAPI, Any]:
+    @Pod(name="key")
+    def get_name() -> str:
+        return name
+
+    @Pod(name="api")
+    def get_api() -> FastAPI:
+        return FastAPI(debug=True)
+
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .load_plugins(
+            include={
+                spakky.plugins.fastapi.PLUGIN_NAME,
+            }
+        )
+        .scan(apps)
+        .add(get_name)
+        .add(get_api)
+    )
+    app.start()
+
+    yield app.container.get(type_=FastAPI)
 
 
 @pytest.mark.asyncio
