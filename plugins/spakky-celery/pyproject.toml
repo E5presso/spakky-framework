@@ -9,6 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "celery>=5.6.3",
     "pydantic-settings>=2.13.1",
+    "spakky-auth>=6.5.0",
     "spakky-task>=6.5.0",
     "spakky-tracing>=6.5.0",
 ]
@@ -94,5 +95,6 @@ exclude_lines = [
 
 [tool.uv.sources]
 spakky = { workspace = true }
+spakky-auth = { workspace = true }
 spakky-task = { workspace = true }
 spakky-tracing = { workspace = true }

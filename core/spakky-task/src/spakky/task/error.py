@@ -17,6 +17,18 @@ class TaskNotFoundError(AbstractSpakkyTaskError):
     message = "Task not found in the registry"
 
 
+class TaskApplicationContextNotFoundError(AbstractSpakkyTaskError):
+    """Raised when direct task execution has no ApplicationContext."""
+
+    message = "ApplicationContext is required for direct task execution"
+
+
+class TaskAsyncInvocationRequiredError(AbstractSpakkyTaskError):
+    """Raised when an async task is invoked through the sync direct path."""
+
+    message = "Async task requires execute_async for direct execution"
+
+
 class DuplicateTaskError(AbstractSpakkyTaskError):
     """Raised when attempting to register a task that already exists."""
 

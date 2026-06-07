@@ -8,6 +8,9 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = ["spakky>=6.5.0"]
 
+[dependency-groups]
+dev = ["spakky-auth>=6.5.0"]
+
 [project.entry-points."spakky.plugins"]
 spakky-task = "spakky.task.main:initialize"
 
@@ -66,4 +69,7 @@ exclude_lines = [
     "pass",
 ]
 
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-auth = { workspace = true }
 

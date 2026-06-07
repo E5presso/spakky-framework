@@ -130,3 +130,33 @@ class MixedHandler:
 
 !!! tip "실제 실행은 플러그인이 담당"
 `@task`와 `@schedule`은 메타데이터만 부여합니다. 실제 실행은 `spakky-celery` 같은 플러그인이 처리합니다.
+
+---
+
+## 같은 프로세스 직접 실행과 AuthContext
+
+`DirectTaskExecutor`는 현재 `ApplicationContext`에서 task handler를 찾아 같은 프로세스 안에서 호출합니다. 이 경로는 request-scope context를 clear하지 않으므로 이미 seed된 `AuthContext`를 그대로 사용하며, `AuthContextSnapshot`을 만들거나 task method argument로 `AuthContext`를 전달하지 않습니다.
+
+```python
+from spakky.auth import protected
+from spakky.task import DirectTaskExecutor, DirectTaskInvocation, TaskHandler, task
+
+@TaskHandler()
+class ProtectedTaskHandler:
+    @task
+    @protected
+    def rebuild_index(self) -> None:
+        ...
+
+application_context = ...
+executor = DirectTaskExecutor()
+executor.set_application_context(application_context)
+executor.execute(
+    DirectTaskInvocation(
+        handler_type=ProtectedTaskHandler,
+        method_name="rebuild_index",
+    )
+)
+```
+
+보호된 task는 기존 auth AOP metadata를 route metadata로 보존합니다. 따라서 `spakky-auth` enforcement가 함께 적용된 같은 프로세스 직접 실행에서는 `ALLOW`만 사용자 task를 호출하고, `CHALLENGE`, `DENY`, `ERROR` 결정은 fail-closed로 처리됩니다.

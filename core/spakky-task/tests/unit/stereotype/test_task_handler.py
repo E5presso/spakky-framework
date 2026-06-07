@@ -1,8 +1,17 @@
 """Unit tests for TaskHandler stereotype and @task decorator."""
 
+from dataclasses import dataclass
+
+from spakky.auth import protected, public_access, require_role, require_scope
 from spakky.core.pod.annotations.pod import Pod
 
-from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute, task
+from spakky.task.stereotype.task_handler import (
+    TaskHandler,
+    TaskRoute,
+    _task_auth_requirement_from_annotation,
+    collect_task_auth_metadata,
+    task,
+)
 
 
 def test_task_handler_is_pod_subclass() -> None:
@@ -114,3 +123,129 @@ def test_task_decorator_is_simple_callable() -> None:
     handler = SimpleTaskHandler()
     route = TaskRoute.get(handler.process)
     assert isinstance(route, TaskRoute)
+
+
+def test_task_route_collects_protected_auth_metadata_without_auth_argument() -> None:
+    """@task metadata는 AuthContext method argument 없이 보호 요구사항을 보존한다."""
+
+    @require_role("role:admin", tenant="tenant:1")
+    class ProtectedTaskHandler:
+        @task
+        @require_scope("tasks:run")
+        def process(self) -> None:
+            return None
+
+    handler = ProtectedTaskHandler()
+    metadata = collect_task_auth_metadata(
+        handler.process,
+        owner_type=ProtectedTaskHandler,
+    )
+
+    assert metadata.protected
+    assert [(item.kind, item.ref, item.tenant) for item in metadata.requirements] == [
+        ("ROLE", "role:admin", "tenant:1"),
+        ("SCOPE", "tasks:run", None),
+    ]
+
+
+def test_task_route_collects_public_auth_metadata() -> None:
+    """@task metadata는 명시적 public_access marker도 보존한다."""
+
+    class PublicTaskHandler:
+        @task
+        @public_access
+        def process(self) -> None:
+            return None
+
+    handler = PublicTaskHandler()
+    metadata = collect_task_auth_metadata(handler.process)
+
+    assert metadata.public_access
+    assert not metadata.protected
+
+
+def test_task_route_auth_metadata_defaults_to_public_unprotected() -> None:
+    """auth decorator가 없는 task route는 보호 요구사항을 갖지 않는다."""
+
+    @TaskHandler()
+    class SampleTaskHandler:
+        @task
+        def process(self) -> None:
+            return None
+
+    route = TaskRoute.get(SampleTaskHandler().process)
+
+    assert not route.auth_metadata.public_access
+    assert not route.auth_metadata.protected
+
+
+def test_protected_marker_on_task_records_authenticated_requirement() -> None:
+    """@protected task는 authenticated marker requirement를 task metadata로 노출한다."""
+
+    class ProtectedTaskHandler:
+        @task
+        @protected
+        def process(self) -> None:
+            return None
+
+    handler = ProtectedTaskHandler()
+    metadata = collect_task_auth_metadata(handler.process)
+
+    assert metadata.requirements[0].kind == "AUTHENTICATED"
+
+
+def test_invalid_auth_annotation_payload_is_ignored() -> None:
+    """비정상 auth annotation payload는 task metadata requirement로 변환하지 않는다."""
+    assert _task_auth_requirement_from_annotation(object()) is None
+
+
+def test_invalid_auth_requirement_ref_is_ignored() -> None:
+    """비정상 auth requirement ref는 task metadata requirement로 변환하지 않는다."""
+
+    @dataclass
+    class BrokenRequirement:
+        kind: str | None
+        ref: object
+
+    @dataclass
+    class BrokenProtectedRequirement:
+        requirement: BrokenRequirement
+
+    annotation = BrokenProtectedRequirement(
+        requirement=BrokenRequirement(kind=None, ref=1)
+    )
+
+    assert _task_auth_requirement_from_annotation(annotation) is None
+
+
+def test_non_string_auth_requirement_fields_are_stringified() -> None:
+    """문자열이 아닌 auth metadata 필드는 task route metadata에서 문자열화된다."""
+
+    @dataclass
+    class NumericRequirement:
+        kind: str
+        ref: str
+        resource: int
+        action: int
+        tenant: int
+
+    @dataclass
+    class NumericProtectedRequirement:
+        requirement: NumericRequirement
+
+    annotation = NumericProtectedRequirement(
+        requirement=NumericRequirement(
+            kind="POLICY",
+            ref="document:1",
+            resource=1,
+            action=2,
+            tenant=3,
+        )
+    )
+
+    metadata = _task_auth_requirement_from_annotation(annotation)
+
+    assert metadata is not None
+    assert metadata.resource == "1"
+    assert metadata.action == "2"
+    assert metadata.tenant == "3"

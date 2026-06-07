@@ -15,6 +15,7 @@ pip install spakky-task
 - **`@schedule` decorator**: 메서드를 주기 실행 대상(interval, daily, crontab)으로 표시합니다.
 - **`Crontab` value object**: `Weekday`/`Month` enum을 사용하는 Python-native cron 명세
 - **Post-processor**: `@TaskHandler` pod에서 task route를 자동 스캔하고 등록합니다.
+- **직접 실행**: 같은 프로세스에서 task를 실행할 때 기존 request-scope context를 유지합니다.
 - **구현체 중립**: 플러그인을 통해 Celery 등 임의의 태스크 큐 백엔드와 동작
 
 ## 사용법
@@ -103,6 +104,38 @@ routes = post_processor.get_task_routes()
 # {<bound method send_email>: TaskRoute(), ...}
 ```
 
+### 인증 metadata와 직접 실행
+
+`@task`는 `spakky-auth`의 보호 decorator와 함께 사용할 수 있습니다. Task route는 보호 요구사항 metadata를 보존하며, 직접 실행은 현재 `ApplicationContext`의 request-scope 값을 그대로 사용합니다. 같은 프로세스에서 실행되는 task는 `AuthContextSnapshot`이 필요하지 않고, 보호된 task도 `AuthContext`를 메서드 인자로 받을 필요가 없습니다.
+
+```python
+from spakky.auth import protected, require_auth_context
+from spakky.core.pod.interfaces.application_context import IApplicationContext
+from spakky.task import DirectTaskExecutor, DirectTaskInvocation, TaskHandler, task
+
+
+@TaskHandler()
+class ReportTaskHandler:
+    def __init__(self, application_context: IApplicationContext) -> None:
+        self._application_context = application_context
+
+    @task
+    @protected
+    def generate(self) -> str:
+        return require_auth_context(self._application_context).subject.id
+
+
+application_context: IApplicationContext = ...
+executor = DirectTaskExecutor()
+executor.set_application_context(application_context)
+result = executor.execute(
+    DirectTaskInvocation(
+        handler_type=ReportTaskHandler,
+        method_name="generate",
+    )
+)
+```
+
 ## 구성 요소
 
 | 구성 요소 | 설명 |
@@ -115,6 +148,8 @@ routes = post_processor.get_task_routes()
 | `Crontab` | cron 유사 schedule 명세용 frozen dataclass |
 | `Weekday` | 요일용 `IntEnum`(Monday=0 ... Sunday=6) |
 | `Month` | 월용 `IntEnum`(January=1 ... December=12) |
+| `DirectTaskExecutor` | request-scope context를 유지하는 같은 프로세스 task 실행기 |
+| `DirectTaskInvocation` | 직접 실행 대상 handler/method/argument metadata |
 | `TaskRegistrationPostProcessor` | `@TaskHandler` pod를 스캔하고 `@task` 메서드를 수집 |
 
 ## 에러
