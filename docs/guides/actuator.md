@@ -99,11 +99,26 @@ class BuildInfo(IInfoContributor):
 | `GET /actuator/liveness` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/info` | `200 OK` | N/A |
 
+!!! warning "Production exposure"
+
+    FastAPI actuator routes are unauthenticated by default. When enabled, they are
+    regular public HTTP routes unless the application places them behind internal networking,
+    an API gateway, a reverse-proxy allowlist, or another explicit access-control layer.
+    Production deployments should disable unneeded endpoints, move the base path under an
+    internal route, and set `ActuatorConfig(include_details=False)` before exposing actuator
+    traffic outside a trusted boundary.
+
 `FastAPIActuatorConfig`로 base path와 endpoint별 노출 여부를 조정합니다.
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
+from spakky.actuator import ActuatorConfig
 from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
+
+
+@Pod()
+def actuator_config() -> ActuatorConfig:
+    return ActuatorConfig(include_details=False)
 
 
 @Pod()
