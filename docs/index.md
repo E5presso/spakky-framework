@@ -200,7 +200,8 @@ app = (
 | [이벤트 시스템](guides/events.md)          | `@EventHandler`, `@on_event`, EventBus, 이벤트 발행    |
 | [태스크 & 스케줄링](guides/tasks.md)       | `@task`, `@schedule`, Crontab                          |
 | [FastAPI 통합](guides/fastapi.md)          | `@ApiController`, HTTP 라우팅, WebSocket               |
-| [보안](guides/security.md)                 | JWT, 암호화, 패스워드 해싱                             |
+| [보안](guides/security.md)                 | 인증/인가 decorator, provider, boundary 전파            |
+| [인증/인가 전환](guides/auth-migration.md) | 제거된 security utility에서 auth provider 구조로 전환   |
 | [CLI 애플리케이션](guides/typer.md)        | `@Controller`, Typer 명령어                            |
 | [데이터베이스](guides/sqlalchemy.md)       | Transaction, Repository, ORM                           |
 | [구조화 로깅](guides/logging.md)           | `@logged`, LogContext, 포맷 설정                       |
