@@ -49,10 +49,14 @@ class _ToolCallBuffer:
         if fragment is not None:
             self.arguments_fragments.append(fragment)
 
-    def to_tool_call(self, adapter: "VllmAgentModel") -> ModelToolCall:
+    def to_tool_call(
+        self,
+        adapter: "VllmAgentModel",
+        tool_schema_by_name: Mapping[str, JsonSchemaConstraint] | None,
+    ) -> ModelToolCall:
         if self.name is None:
             raise VllmResponseError
-        constraint = adapter._tool_constraint_for(self.name)
+        constraint = adapter._tool_constraint_for(self.name, tool_schema_by_name)
         provider_arguments = "".join(self.arguments_fragments)
         return ModelToolCall(
             name=self.name,
@@ -68,22 +72,18 @@ class VllmAgentModel(IAgentModel):
 
     __config: VllmConfig
     __client: IVllmChatClient
-    __tool_schema_by_name: Mapping[str, JsonSchemaConstraint] | None
 
     def __init__(self, config: VllmConfig, client: IVllmChatClient) -> None:
         self.__config = config
         self.__client = client
-        self.__tool_schema_by_name = None
 
     @override
     async def complete(self, request: ModelRequest) -> ModelResponse:
         """Return a provider-neutral model response from vLLM chat completions."""
         payload = self._to_chat_completion_payload(request, stream=False)
-        self.__tool_schema_by_name = self._tool_constraints_by_name(
-            request.tool_calling
-        )
+        tool_schema_by_name = self._tool_constraints_by_name(request.tool_calling)
         response = await self.__client.complete(payload, self.__config)
-        return self._to_model_response(response, request)
+        return self._to_model_response(response, request, tool_schema_by_name)
 
     @override
     def stream(self, request: ModelRequest) -> AsyncGenerator[ModelStreamEvent, None]:
@@ -105,9 +105,7 @@ class VllmAgentModel(IAgentModel):
             yield self._to_error_event(e)
             yield self._done_event(None, None)
             return
-        self.__tool_schema_by_name = self._tool_constraints_by_name(
-            request.tool_calling
-        )
+        tool_schema_by_name = self._tool_constraints_by_name(request.tool_calling)
         structured_fragments: list[str] = []
         tool_buffers: dict[int, _ToolCallBuffer] = {}
         finish_reason: str | None = None
@@ -146,7 +144,10 @@ class VllmAgentModel(IAgentModel):
                     if choice_finish_reason is not None:
                         finish_reason = choice_finish_reason
                         if finish_reason == "tool_calls":
-                            for event in self._tool_call_events(tool_buffers):
+                            for event in self._tool_call_events(
+                                tool_buffers,
+                                tool_schema_by_name,
+                            ):
                                 yield event
                         if (
                             finish_reason == "stop"
@@ -243,6 +244,7 @@ class VllmAgentModel(IAgentModel):
         self,
         response: Mapping[str, object],
         request: ModelRequest,
+        tool_schema_by_name: Mapping[str, JsonSchemaConstraint] | None,
     ) -> ModelResponse:
         choices = self._expect_sequence(response.get("choices"))
         if len(choices) == 0:
@@ -255,7 +257,9 @@ class VllmAgentModel(IAgentModel):
             raise VllmModelRefusalError
         if finish_reason == "content_filter":
             raise VllmModelRefusalError
-        tool_calls = tuple(self._to_tool_calls(message.get("tool_calls")))
+        tool_calls = tuple(
+            self._to_tool_calls(message.get("tool_calls"), tool_schema_by_name)
+        )
         if (
             request.tool_calling is not None
             and request.tool_calling.choice == ModelToolChoice.NONE
@@ -339,11 +343,14 @@ class VllmAgentModel(IAgentModel):
     def _tool_call_events(
         self,
         tool_buffers: dict[int, _ToolCallBuffer],
+        tool_schema_by_name: Mapping[str, JsonSchemaConstraint] | None,
     ) -> tuple[ModelStreamEvent, ...]:
         events = tuple(
             ModelStreamEvent(
                 kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
-                tool_call=tool_buffers[index].to_tool_call(self),
+                tool_call=tool_buffers[index].to_tool_call(
+                    self, tool_schema_by_name
+                ),
                 metadata={"provider": "vllm"},
             )
             for index in sorted(tool_buffers)
@@ -457,7 +464,11 @@ class VllmAgentModel(IAgentModel):
             return ""
         raise VllmResponseError
 
-    def _to_tool_calls(self, value: object) -> tuple[ModelToolCall, ...]:
+    def _to_tool_calls(
+        self,
+        value: object,
+        tool_schema_by_name: Mapping[str, JsonSchemaConstraint] | None,
+    ) -> tuple[ModelToolCall, ...]:
         if value is None:
             return ()
         raw_calls = self._expect_sequence(value)
@@ -468,7 +479,7 @@ class VllmAgentModel(IAgentModel):
             name = function.get("name")
             if not isinstance(name, str):
                 raise VllmResponseError
-            constraint = self._tool_constraint_for(name)
+            constraint = self._tool_constraint_for(name, tool_schema_by_name)
             calls.append(
                 ModelToolCall(
                     name=name,
@@ -555,10 +566,14 @@ class VllmAgentModel(IAgentModel):
             constraints[tool.name] = tool.parameters
         return constraints
 
-    def _tool_constraint_for(self, name: str) -> JsonSchemaConstraint | None:
-        if self.__tool_schema_by_name is None:
+    def _tool_constraint_for(
+        self,
+        name: str,
+        tool_schema_by_name: Mapping[str, JsonSchemaConstraint] | None,
+    ) -> JsonSchemaConstraint | None:
+        if tool_schema_by_name is None:
             return None
-        constraint = self.__tool_schema_by_name.get(name)
+        constraint = tool_schema_by_name.get(name)
         if constraint is None:
             raise VllmResponseError
         return constraint
