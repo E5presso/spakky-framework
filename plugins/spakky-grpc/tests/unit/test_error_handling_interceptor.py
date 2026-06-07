@@ -8,8 +8,22 @@ import grpc
 import grpc.aio
 import pytest
 
+from spakky.auth import (
+    AbstractSpakkyAuthError,
+    AuthContextNotFoundError,
+    AuthenticationError,
+    AuthorizationDecision,
+    AuthorizationReasonCode,
+    AuthRequirementDeniedError,
+    AuthRequirementProviderUnavailableError,
+    AuthVerificationProviderUnavailableError,
+    InvalidAuthContextSnapshotError,
+)
 from spakky.plugins.grpc.error import InternalError, InvalidArgument, NotFound
-from spakky.plugins.grpc.interceptors.error_handling import ErrorHandlingInterceptor
+from spakky.plugins.grpc.interceptors.error_handling import (
+    ErrorHandlingInterceptor,
+    _abort_auth_error,
+)
 
 
 def _make_handler(
@@ -252,3 +266,75 @@ async def test_multiple_error_types_map_to_correct_status(
             await wrapped.unary_unary(b"request", ctx)
 
         ctx.abort.assert_awaited_once_with(error_class.status_code, error_class.message)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (AuthContextNotFoundError(), grpc.StatusCode.UNAUTHENTICATED),
+        (AuthenticationError(), grpc.StatusCode.UNAUTHENTICATED),
+        (
+            AuthRequirementDeniedError(
+                AuthorizationDecision.challenge(
+                    AuthorizationReasonCode.MISSING_CREDENTIAL
+                )
+            ),
+            grpc.StatusCode.UNAUTHENTICATED,
+        ),
+        (
+            AuthRequirementDeniedError(
+                AuthorizationDecision.deny(AuthorizationReasonCode.POLICY_DENIED)
+            ),
+            grpc.StatusCode.PERMISSION_DENIED,
+        ),
+        (
+            AuthRequirementDeniedError(
+                AuthorizationDecision.error(AuthorizationReasonCode.INTERNAL_ERROR)
+            ),
+            grpc.StatusCode.INTERNAL,
+        ),
+        (AuthRequirementProviderUnavailableError(), grpc.StatusCode.UNAVAILABLE),
+        (AuthVerificationProviderUnavailableError(), grpc.StatusCode.UNAVAILABLE),
+        (InvalidAuthContextSnapshotError(), grpc.StatusCode.INTERNAL),
+    ],
+)
+async def test_auth_errors_map_to_expected_grpc_status(
+    interceptor: ErrorHandlingInterceptor,
+    error: Exception,
+    expected_status: grpc.StatusCode,
+) -> None:
+    """Auth boundary errors should map to canonical gRPC status codes."""
+    behavior = AsyncMock(side_effect=error)
+    handler = _make_handler(unary_unary=behavior)
+    continuation = AsyncMock(return_value=handler)
+    ctx = AsyncMock(spec=grpc.aio.ServicerContext)
+    ctx.abort = AsyncMock(side_effect=grpc.aio.AbortError(expected_status, ""))
+
+    wrapped = await interceptor.intercept_service(continuation, _make_call_details())
+    assert wrapped.unary_unary is not None
+    with pytest.raises(grpc.aio.AbortError):
+        await wrapped.unary_unary(b"request", ctx)
+
+    _status, details = ctx.abort.call_args.args
+    assert _status is expected_status
+    assert details != ""
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        AuthenticationError(),
+        AuthRequirementDeniedError(),
+        AuthRequirementProviderUnavailableError(),
+    ],
+)
+async def test_auth_abort_helper_returns_after_mapped_abort(
+    error: AbstractSpakkyAuthError,
+) -> None:
+    """Auth abort helper should stop after the first mapped abort call."""
+    ctx = AsyncMock(spec=grpc.aio.ServicerContext)
+    ctx.abort = AsyncMock(return_value=None)
+
+    await _abort_auth_error(ctx, error)
+
+    ctx.abort.assert_awaited_once()

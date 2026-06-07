@@ -2809,6 +2809,7 @@ dependencies = [
     { name = "protobuf" },
     { name = "pydantic" },
     { name = "spakky" },
+    { name = "spakky-auth" },
     { name = "spakky-tracing" },
 ]
 
@@ -2824,6 +2825,7 @@ requires-dist = [
     { name = "protobuf", specifier = ">=6.33.0" },
     { name = "pydantic", specifier = ">=2.4" },
     { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
 

@@ -22,6 +22,7 @@ import grpc
 import grpc.aio
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
 from spakky.plugins.grpc.error import UnsupportedResponseTypeError
+from spakky.plugins.grpc.auth import seed_grpc_auth_context
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 
 logger = getLogger(__name__)
@@ -111,6 +112,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request_deserializer = self._make_deserializer(rpc_annotation.request_type)
             response_serializer = self._make_serializer(rpc_annotation.response_type)
             handler = self._make_rpc_method_handler(
+                full_method=full_method,
                 method_name=method_name,
                 rpc_annotation=rpc_annotation,
                 request_deserializer=request_deserializer,
@@ -125,6 +127,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
     def _make_rpc_method_handler(
         self,
         *,
+        full_method: str,
         method_name: str,
         rpc_annotation: Rpc,
         request_deserializer: Callable[[bytes], object] | None,
@@ -135,25 +138,31 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
         if method_type is RpcMethodType.UNARY:
             return grpc.unary_unary_rpc_method_handler(
-                self._make_unary_behavior(method_name, rpc_annotation),
+                self._make_unary_behavior(full_method, method_name, rpc_annotation),
                 request_deserializer=request_deserializer,
                 response_serializer=response_serializer,
             )
         if method_type is RpcMethodType.SERVER_STREAMING:
             return grpc.unary_stream_rpc_method_handler(
-                self._make_server_streaming_behavior(method_name, rpc_annotation),
+                self._make_server_streaming_behavior(
+                    full_method, method_name, rpc_annotation
+                ),
                 request_deserializer=request_deserializer,
                 response_serializer=response_serializer,
             )
         if method_type is RpcMethodType.CLIENT_STREAMING:
             return grpc.stream_unary_rpc_method_handler(
-                self._make_client_streaming_behavior(method_name, rpc_annotation),
+                self._make_client_streaming_behavior(
+                    full_method, method_name, rpc_annotation
+                ),
                 request_deserializer=request_deserializer,
                 response_serializer=response_serializer,
             )
         # BIDI_STREAMING
         return grpc.stream_stream_rpc_method_handler(
-            self._make_bidi_streaming_behavior(method_name, rpc_annotation),
+            self._make_bidi_streaming_behavior(
+                full_method, method_name, rpc_annotation
+            ),
             request_deserializer=request_deserializer,
             response_serializer=response_serializer,
         )
@@ -162,6 +171,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_unary_behavior(
         self,
+        full_method: str,
         method_name: str,
         rpc_annotation: Rpc,
     ) -> Callable[..., object]:
@@ -172,8 +182,13 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request: object,
             context: grpc.aio.ServicerContext,
         ) -> object:
-            del context
             self._application_context.clear_context()
+            seed_grpc_auth_context(
+                container=self._container,
+                application_context=self._application_context,
+                context=context,
+                operation=full_method,
+            )
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)  # RPC handler method lookup
@@ -190,6 +205,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_server_streaming_behavior(
         self,
+        full_method: str,
         method_name: str,
         rpc_annotation: Rpc,
     ) -> Callable[..., AsyncIterator[object]]:
@@ -200,8 +216,13 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request: object,
             context: grpc.aio.ServicerContext,
         ) -> AsyncIterator[object]:
-            del context
             self._application_context.clear_context()
+            seed_grpc_auth_context(
+                container=self._container,
+                application_context=self._application_context,
+                context=context,
+                operation=full_method,
+            )
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)  # RPC handler method lookup
@@ -221,6 +242,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_client_streaming_behavior(
         self,
+        full_method: str,
         method_name: str,
         rpc_annotation: Rpc,
     ) -> Callable[..., object]:
@@ -231,8 +253,13 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request_iterator: AsyncIterator[object],
             context: grpc.aio.ServicerContext,
         ) -> object:
-            del context
             self._application_context.clear_context()
+            seed_grpc_auth_context(
+                container=self._container,
+                application_context=self._application_context,
+                context=context,
+                operation=full_method,
+            )
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)  # RPC handler method lookup
@@ -250,6 +277,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_bidi_streaming_behavior(
         self,
+        full_method: str,
         method_name: str,
         rpc_annotation: Rpc,
     ) -> Callable[..., AsyncIterator[object]]:
@@ -260,8 +288,13 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             request_iterator: AsyncIterator[object],
             context: grpc.aio.ServicerContext,
         ) -> AsyncIterator[object]:
-            del context
             self._application_context.clear_context()
+            seed_grpc_auth_context(
+                container=self._container,
+                application_context=self._application_context,
+                context=context,
+                operation=full_method,
+            )
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)  # RPC handler method lookup

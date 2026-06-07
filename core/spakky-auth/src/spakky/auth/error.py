@@ -2,6 +2,8 @@
 
 from abc import ABC
 
+from spakky.auth.decision import AuthorizationDecision
+
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
@@ -57,6 +59,11 @@ class AuthRequirementDeniedError(AuthorizationError):
     """Raised when an auth requirement decision is not ALLOW."""
 
     message = "Authorization requirement was not allowed"
+    decision: AuthorizationDecision | None
+
+    def __init__(self, decision: AuthorizationDecision | None = None) -> None:
+        self.decision = decision
+        super().__init__()
 
 
 class AuthRequirementProviderUnavailableError(AuthorizationError):
