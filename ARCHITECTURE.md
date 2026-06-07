@@ -25,7 +25,6 @@
 | **Core** | `spakky-saga` | 사가 오케스트레이션 (SagaFlow, SagaStep, ErrorStrategy, 보상 기반 롤백) |
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
-| **Plugin** | `spakky-security` | 암호화/해싱/JWT 유틸리티 |
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox/Agent persistence contribution |
@@ -80,7 +79,6 @@ graph TD
         subgraph ui ["UI & Utility"]
             fastapi[spakky-fastapi]
             typer[spakky-typer]
-            security[spakky-security]
             grpc[spakky-grpc]
             redis[spakky-redis]
             openfga[spakky-openfga]
@@ -122,7 +120,6 @@ graph TD
     fastapi -. actuator endpoints .-> actuator
     typer --> core
     typer -. actuator commands .-> actuator
-    security --> core
     grpc --> core
     grpc --> tracing
     redis --> cache
@@ -463,7 +460,6 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor`, `RegisterActuatorPostProcessor` |
 | `spakky-typer` | `TyperCLIPostProcessor`, `ActuatorTyperCommandPostProcessor` |
-| `spakky-security` | (없음 — 유틸리티 함수만 제공) |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
@@ -1226,7 +1222,6 @@ flowchart TD
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
 | `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable`; `spakky-agent` contribution으로 agent state/signal/evidence repository와 table | `sqlalchemy`; outbox contribution에는 `spakky-outbox` extra, agent contribution에는 `spakky-agent` extra 또는 별도 설치 필요 |
-| `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
 | `spakky-policy` | `SpakkyPolicyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 policy/permission/role/scope capability 선언 | `pyyaml`, `spakky-auth` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` | `openfga-sdk`, `pydantic-settings`, `spakky-auth` |

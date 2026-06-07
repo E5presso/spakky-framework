@@ -33,7 +33,7 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyGrpcError
   AbstractSpakkyFrameworkError --> AbstractSpakkyLoggingError
   AbstractSpakkyFrameworkError --> AbstractOpenFgaError
-  AbstractSpakkyFrameworkError --> SecurityErrors[spakky-security concrete errors]
+  AbstractSpakkyFrameworkError --> CryptographyErrors[spakky-cryptography concrete errors]
   AbstractSpakkyFrameworkError --> CommonErrors[common concrete errors]
 
   AbstractSpakkyDomainError --> AbstractDomainValidationError
@@ -429,19 +429,16 @@ from spakky.plugins.celery.error import (
 | `InvalidTimezoneError`        | 유효하지 않은 IANA timezone 문자열             |
 | `InvalidScheduleRouteError`   | ScheduleRoute에 유효한 스케줄 명세가 없음      |
 
-### spakky-security
+### spakky-cryptography
 
-보안 관련 에러입니다. `spakky-security` 에러들은 패키지별 기반 클래스 없이 `AbstractSpakkyFrameworkError`를 직접 상속합니다.
+암호화와 패스워드 해싱 관련 에러입니다. `spakky-cryptography` 에러들은 패키지별 기반 클래스 없이 `AbstractSpakkyFrameworkError`를 직접 상속합니다.
 
 ```python
-from spakky.plugins.security.error import (
+from spakky.plugins.cryptography.error import (
     DecryptionFailedError,
     KeySizeError,
     PrivateKeyRequiredError,
     CannotImportAsymmetricKeyError,
-    InvalidJWTFormatError,
-    JWTDecodingError,
-    JWTProcessingError,
     InvalidKeyConstructorCallError,
     IncompatibleKeyTypeError,
     PasswordRequiredError,
@@ -455,9 +452,6 @@ from spakky.plugins.security.error import (
 | `KeySizeError`                   | 유효하지 않은 암호화 키 크기       |
 | `PrivateKeyRequiredError`        | 비대칭 키 연산 시 개인키 미제공    |
 | `CannotImportAsymmetricKeyError` | 비대칭 키 임포트 실패              |
-| `InvalidJWTFormatError`          | JWT 토큰 형식 오류                 |
-| `JWTDecodingError`               | JWT 토큰 디코딩 실패              |
-| `JWTProcessingError`             | JWT 토큰 처리 중 오류             |
 | `InvalidKeyConstructorCallError` | `Key()` 생성자 호출 인자 오류      |
 | `IncompatibleKeyTypeError`       | 호환되지 않는 키 타입 비교         |
 | `PasswordRequiredError`          | 필수 password 파라미터 누락        |
