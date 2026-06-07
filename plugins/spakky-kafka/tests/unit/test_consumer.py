@@ -5,7 +5,7 @@ for both synchronous and asynchronous Kafka event consumers.
 """
 
 import threading
-from typing import Any, Generator
+from typing import Any, Generator, override
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -38,6 +38,18 @@ class AnotherEvent(AbstractIntegrationEvent):
     """Another test integration event."""
 
     value: int
+
+
+@immutable
+class RenamedEvent(AbstractIntegrationEvent):
+    """Integration event with custom outbound topic identity."""
+
+    data: str
+
+    @property
+    @override
+    def event_name(self) -> str:
+        return "external.renamed.v1"
 
 
 @pytest.fixture(name="config")
@@ -104,6 +116,23 @@ def test_sync_consumer_register_expect_handler_stored(
 
 @patch("spakky.plugins.kafka.event.consumer.Consumer")
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_register_custom_event_name_expect_topic_lookup(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Custom event_name 등록은 class name 대신 outbound topic과 일치한다."""
+    consumer = KafkaEventConsumer(config)
+    handler = MagicMock()
+
+    consumer.register(RenamedEvent, handler)
+
+    assert consumer.type_lookup["external.renamed.v1"] is RenamedEvent
+    assert "RenamedEvent" not in consumer.type_lookup
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
 def test_sync_consumer_register_multiple_handlers_expect_all_stored(
     mock_admin_cls: MagicMock,
     mock_consumer_cls: MagicMock,
@@ -166,6 +195,31 @@ def test_sync_consumer_initialize_expect_subscribe(
 
 @patch("spakky.plugins.kafka.event.consumer.Consumer")
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_initialize_custom_event_name_expect_subscribe_to_event_name(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Custom event_name topic을 생성하고 구독한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = set()
+    mock_admin_cls.return_value = mock_admin
+
+    mock_inner_consumer = MagicMock()
+    mock_consumer_cls.return_value = mock_inner_consumer
+
+    consumer = KafkaEventConsumer(config)
+    consumer.register(RenamedEvent, MagicMock())
+
+    consumer.initialize()
+
+    mock_inner_consumer.subscribe.assert_called_once_with(
+        topics=["external.renamed.v1"]
+    )
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
 def test_sync_consumer_route_event_handler_expect_handler_called(
     mock_admin_cls: MagicMock,
     mock_consumer_cls: MagicMock,
@@ -179,6 +233,30 @@ def test_sync_consumer_route_event_handler_expect_handler_called(
     mock_message = MagicMock()
     mock_message.error.return_value = None
     mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "hello"}'
+
+    consumer._route_event_handler(mock_message)
+
+    handler.assert_called_once()
+    event_arg = handler.call_args[0][0]
+    assert event_arg.data == "hello"
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_route_custom_event_name_expect_handler_called(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Custom event_name topic 수신이 class name mismatch 없이 handler로 라우팅된다."""
+    consumer = KafkaEventConsumer(config)
+    handler = MagicMock()
+    consumer.register(RenamedEvent, handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "external.renamed.v1"
     mock_message.value.return_value = b'{"data": "hello"}'
 
     consumer._route_event_handler(mock_message)
@@ -393,6 +471,21 @@ def test_async_consumer_register_expect_handler_stored(
 
 
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_async_consumer_register_custom_event_name_expect_topic_lookup(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Async custom event_name 등록도 outbound topic identity를 사용한다."""
+    consumer = AsyncKafkaEventConsumer(config)
+    handler = AsyncMock()
+
+    consumer.register(RenamedEvent, handler)
+
+    assert consumer.type_lookup["external.renamed.v1"] is RenamedEvent
+    assert "RenamedEvent" not in consumer.type_lookup
+
+
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
 def test_async_consumer_register_multiple_handlers_expect_all_stored(
     mock_admin_cls: MagicMock,
     config: KafkaConnectionConfig,
@@ -462,6 +555,30 @@ async def test_async_consumer_initialize_async_expect_subscribe(
     await consumer.initialize_async()
 
     mock_aio_consumer.subscribe.assert_awaited_once_with(topics=["SampleEvent"])
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AIOConsumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_initialize_custom_event_name_expect_subscribe_to_event_name(
+    mock_admin_cls: MagicMock,
+    mock_aio_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Async consumer도 custom event_name topic을 생성하고 구독한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = set()
+    mock_admin_cls.return_value = mock_admin
+
+    mock_aio_consumer = AsyncMock()
+    mock_aio_consumer_cls.return_value = mock_aio_consumer
+
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.register(RenamedEvent, AsyncMock())
+
+    await consumer.initialize_async()
+
+    mock_aio_consumer.subscribe.assert_awaited_once_with(topics=["external.renamed.v1"])
 
 
 @pytest.mark.asyncio

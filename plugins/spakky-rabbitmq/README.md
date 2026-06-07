@@ -14,6 +14,9 @@ pip install spakky-rabbitmq
 pip install spakky[rabbitmq]
 ```
 
+`IAsyncEventPublisher`와 함께 쓰는 RabbitMQ 이벤트 서비스라면 event core까지 포함하는
+`spakky[events-rabbitmq]`를 권장합니다.
+
 ## 설정
 
 `SPAKKY_RABBITMQ__` prefix를 가진 환경변수를 설정합니다:

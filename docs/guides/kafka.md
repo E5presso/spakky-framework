@@ -1,7 +1,7 @@
 # Kafka 통합
 
 > `spakky-kafka`는 `IEventTransport` 인터페이스를 통해 Integration Event를 Apache Kafka로 전송하고, 백그라운드 Consumer로 수신합니다.
-> 이벤트 클래스 이름을 Kafka topic으로 사용하므로 발행자와 소비자가 같은 이벤트 타입 계약을 공유해야 합니다.
+> `AbstractIntegrationEvent.event_name` 값을 Kafka topic으로 사용하므로 발행자와 소비자가 같은 이벤트 타입 계약을 공유해야 합니다.
 
 ---
 
@@ -16,16 +16,21 @@
 ## 설정
 
 `KafkaConnectionConfig`는 `@Configuration`이므로 환경변수에서 자동 로딩됩니다.
+발행 예제는 `IAsyncEventPublisher`와 event bus를 사용하므로 `spakky-kafka`와 함께 `spakky-event`를 설치하고 로드해야 합니다. Kafka만 쓴다면 `pip install "spakky[events-kafka]"`가 가장 가볍습니다. RabbitMQ, Kafka, Outbox를 한 번에 실험하려면 `pip install "spakky[event-driven]"`를 사용하세요.
 
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+import spakky.event
 import spakky.plugins.kafka
 import apps
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .load_plugins(include={spakky.plugins.kafka.PLUGIN_NAME})
+    .load_plugins(include={
+        spakky.event.PLUGIN_NAME,
+        spakky.plugins.kafka.PLUGIN_NAME,
+    })
     .scan(apps)
     .start()
 )
@@ -104,7 +109,7 @@ class OrderEventHandler:
         print(f"주문 접수: {event.order_id}, 금액: {event.total_amount}")
 ```
 
-토픽 이름은 이벤트 클래스의 `__name__`(예: `OrderPlacedEvent`)으로 자동 결정됩니다. 토픽이 존재하지 않으면 `number_of_partitions`와 `replication_factor` 설정값으로 자동 생성합니다.
+토픽 이름은 이벤트 인스턴스의 `event_name`과 같은 값으로 자동 결정됩니다. 기본값은 이벤트 클래스명(예: `OrderPlacedEvent`)이며, custom `event_name` property를 오버라이드하면 발행 topic과 소비 topic이 함께 그 값을 사용합니다. 토픽이 존재하지 않으면 `number_of_partitions`와 `replication_factor` 설정값으로 자동 생성합니다.
 
 ---
 

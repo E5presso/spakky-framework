@@ -76,6 +76,9 @@ class RabbitMQConnectionConfig(BaseSettings):
     )
     """Message action for retryable provider ERROR decisions."""
 
+    malformed_payload_action: RabbitMQAuthFailureAction = RabbitMQAuthFailureAction.ACK
+    """Message action for malformed payloads that cannot be deserialized."""
+
     @property
     def protocol(self) -> str:
         """Determine protocol based on SSL usage.

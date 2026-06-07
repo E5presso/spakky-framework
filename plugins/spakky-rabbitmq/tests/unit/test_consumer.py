@@ -5,7 +5,7 @@ particularly the InvalidMessageError conditions.
 """
 
 from os import environ
-from typing import Any, Generator
+from typing import Any, Generator, override
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -34,6 +34,17 @@ class SampleIntegrationEvent(AbstractIntegrationEvent):
     """Sample integration event for testing."""
 
     data: str
+
+
+class RenamedIntegrationEvent(AbstractIntegrationEvent):
+    """Integration event with custom outbound routing identity."""
+
+    data: str
+
+    @property
+    @override
+    def event_name(self) -> str:
+        return "external.renamed.v1"
 
 
 @pytest.fixture(name="config")
@@ -176,6 +187,29 @@ def test_sync_consumer_route_event_handler_success_expect_ack(
 
     handler.assert_called_once()
     channel.basic_ack.assert_called_once_with(123)
+
+
+def test_sync_consumer_malformed_payload_default_ack_expect_handler_not_called(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """Malformed payload는 기본 poison 정책에 따라 ack/drop되고 handler를 호출하지 않는다."""
+    consumer = RabbitMQEventConsumer(config)
+    handler = MagicMock()
+    consumer.register(SampleIntegrationEvent, handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {}
+
+    consumer._route_event_handler(channel, method_frame, properties, b'{"data":')
+
+    handler.assert_not_called()
+    channel.basic_ack.assert_called_once_with(123)
+    channel.basic_nack.assert_not_called()
 
 
 def test_sync_consumer_register_multiple_handlers_expect_all_called(
@@ -336,6 +370,29 @@ async def test_async_consumer_register_multiple_handlers_expect_all_called(
     handler1.assert_awaited_once()
     handler2.assert_awaited_once()
     message.ack.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_malformed_payload_default_ack_expect_handler_not_called(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 malformed payload도 ack/drop되어 poison-loop를 만들지 않는다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+    handler = AsyncMock()
+    consumer.register(SampleIntegrationEvent, handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data":'
+    message.headers = {}
+
+    await consumer._route_event_handler(message)
+
+    handler.assert_not_awaited()
+    message.ack.assert_awaited_once()
+    message.nack.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -500,6 +557,36 @@ def test_sync_consumer_initialize_expect_connection_and_channel_created(
     assert consumer.type_lookup["consumer_tag_1"] == SampleIntegrationEvent
 
 
+def test_sync_consumer_initialize_custom_event_name_expect_queue_matches_routing(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """Custom event_name을 가진 consumer queue가 outbound routing key와 일치한다."""
+    from unittest.mock import patch
+
+    consumer = RabbitMQEventConsumer(config)
+    consumer.register(RenamedIntegrationEvent, MagicMock())
+
+    mock_channel = MagicMock()
+    mock_channel.basic_consume.return_value = "consumer_tag_1"
+    mock_connection = MagicMock()
+    mock_connection.channel.return_value = mock_channel
+
+    with patch(
+        "spakky.plugins.rabbitmq.event.consumer.BlockingConnection",
+        return_value=mock_connection,
+    ):
+        consumer.initialize()
+
+    mock_channel.queue_declare.assert_called_once_with(
+        "external.renamed.v1", durable=True
+    )
+    mock_channel.basic_consume.assert_called_once_with(
+        "external.renamed.v1",
+        consumer._route_event_handler,
+    )
+    assert consumer.type_lookup["consumer_tag_1"] == RenamedIntegrationEvent
+
+
 def test_sync_consumer_dispose_expect_channel_and_connection_closed(
     config: RabbitMQConnectionConfig,
 ) -> None:
@@ -557,6 +644,37 @@ async def test_async_consumer_initialize_async_expect_connection_and_channel_cre
     )
     mock_queue.consume.assert_called_once()
     assert consumer.type_lookup["consumer_tag_1"] == SampleIntegrationEvent
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_initialize_custom_event_name_expect_queue_matches_routing(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer도 custom event_name queue를 선언한다."""
+    from unittest.mock import patch
+
+    consumer = AsyncRabbitMQEventConsumer(config)
+    consumer.register(RenamedIntegrationEvent, AsyncMock())
+
+    mock_queue = AsyncMock()
+    mock_queue.consume.return_value = "consumer_tag_1"
+    mock_channel = AsyncMock()
+    mock_channel.declare_queue.return_value = mock_queue
+    mock_connection = AsyncMock()
+    mock_connection.channel.return_value = mock_channel
+
+    with patch(
+        "spakky.plugins.rabbitmq.event.consumer.connect_robust",
+        new_callable=AsyncMock,
+        return_value=mock_connection,
+    ):
+        await consumer.initialize_async()
+
+    mock_channel.declare_queue.assert_awaited_once_with(
+        "external.renamed.v1", durable=True
+    )
+    mock_queue.consume.assert_awaited_once()
+    assert consumer.type_lookup["consumer_tag_1"] == RenamedIntegrationEvent
 
 
 @pytest.mark.asyncio
