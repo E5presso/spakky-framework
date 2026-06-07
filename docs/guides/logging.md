@@ -152,4 +152,4 @@ export SPAKKY_LOGGING__PACKAGE_LEVELS__uvicorn=30
 
 ## 분산 트레이싱 연동
 
-`spakky-opentelemetry` 플러그인이 함께 로드되면, `LogContextBridge`가 `TraceContext`의 trace/span ID를 `LogContext`에 자동 동기화합니다. 별도 설정 없이 로그에 트레이스 ID가 포함됩니다.
+`spakky-opentelemetry` 플러그인이 함께 로드되면, `LogContextBridge` pod instance의 `sync()`를 호출하여 `TraceContext`의 trace/span ID를 `LogContext`에 동기화할 수 있습니다. 자동으로 호출되는 lifecycle hook은 없으므로, 미들웨어나 Aspect처럼 `TraceContext`를 설정하는 지점에서 `bridge.sync()`를 호출합니다.

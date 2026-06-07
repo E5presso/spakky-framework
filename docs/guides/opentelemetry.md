@@ -117,7 +117,7 @@ from spakky.plugins.opentelemetry.propagator import OTelTracePropagator
 
 ## LogContextBridge --- 트레이스-로깅 동기화
 
-`spakky-logging`이 설치되어 있으면, `LogContextBridge`를 사용하여 현재 `TraceContext`의 trace_id/span_id를 `LogContext`에 자동 바인딩할 수 있습니다.
+`spakky-logging`이 설치되어 있으면, `LogContextBridge` pod instance의 `sync()`를 호출하여 현재 `TraceContext`의 trace_id/span_id를 `LogContext`에 바인딩할 수 있습니다.
 
 ```python
 from spakky.plugins.opentelemetry.bridge import LogContextBridge
@@ -137,7 +137,8 @@ if ctx is not None:
     TraceContext.set(ctx.child())
 
 # 로그 컨텍스트에 trace_id/span_id 동기화
-LogContextBridge.sync()
+bridge: LogContextBridge = app.context.get_pod(LogContextBridge)
+bridge.sync()
 # → LogContext.bind(trace_id=ctx.trace_id, span_id=ctx.span_id)
 ```
 
