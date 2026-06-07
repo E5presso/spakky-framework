@@ -454,6 +454,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` |
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-auth` | Provider-neutral auth model, ABC port, `AuthCapability`, auth contribution contract, AOP enforcement, capability startup validation |
+| `spakky-policy` | YAML/TOML/JSON policy document evaluator for RBAC/PBAC/ABAC authorization |
 | `spakky-oidc` | OIDC/OAuth bearer credential verification provider for `AuthCapability.AUTHENTICATION` |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
@@ -1223,6 +1224,7 @@ flowchart TD
 |---------|-------------|-----------|
 | `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable`; `spakky-agent` contribution으로 agent state/signal/evidence repository와 table | `sqlalchemy`; outbox contribution에는 `spakky-outbox` extra, agent contribution에는 `spakky-agent` extra 또는 별도 설치 필요 |
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
+| `spakky-policy` | `SpakkyPolicyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 policy/permission/role/scope capability 선언 | `pyyaml`, `spakky-auth` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` | `httpx`, `pydantic-settings`, `spakky-agent` |
 ### 태스크 플러그인

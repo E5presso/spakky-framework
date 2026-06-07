@@ -1,32 +1,22 @@
 [project]
-name = "spakky"
+name = "spakky-policy"
 version = "6.5.0"
-description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
+description = "Policy document evaluator plugin for Spakky auth"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
-    "uuid7>=0.1.0",
+    "pyyaml>=6.0.3",
+    "spakky>=6.5.0",
+    "spakky-auth>=6.5.0",
 ]
 
-[project.optional-dependencies]
-logging = ["spakky-logging>=6.5.0"]
-cryptography = ["spakky-cryptography>=6.5.0"]
-oidc = ["spakky-oidc>=6.5.0"]
-policy = ["spakky-policy>=6.5.0"]
-security = ["spakky-security>=6.5.0"]
-fastapi = ["spakky-fastapi>=6.5.0"]
-typer = ["spakky-typer>=6.5.0"]
-rabbitmq = ["spakky-rabbitmq>=6.5.0"]
-kafka = ["spakky-kafka>=6.5.0"]
-sqlalchemy = ["spakky-sqlalchemy>=6.5.0"]
-celery = ["spakky-celery>=6.5.0"]
-opentelemetry = ["spakky-opentelemetry>=6.5.0"]
-grpc = ["spakky-grpc>=6.5.0"]
-redis = ["spakky-redis>=6.5.0"]
-vllm = ["spakky-vllm>=6.5.0"]
-saga = ["spakky-saga>=6.5.0"]
+[project.entry-points."spakky.plugins"]
+spakky-policy = "spakky.plugins.policy.main:initialize"
+
+[project.entry-points."spakky.contributions.spakky.auth"]
+spakky-policy = "spakky.plugins.policy.contributions.auth:initialize"
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]
@@ -34,11 +24,11 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "spakky.core"
+module-name = "spakky.plugins.policy"
 
 [tool.pyrefly]
 python-version = "3.12"
-search_path = ["src", "."]
+search_path = ["src", ".", "../../core/spakky/src", "../../core/spakky-auth/src"]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
@@ -46,7 +36,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky"
+pythonpath = ["src", "../../core/spakky/src", "../../core/spakky-auth/src"]
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -64,7 +54,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/**/*.py"]
+include = ["src/spakky/plugins/policy/**/*.py"]
 branch = true
 
 [tool.coverage.report]
@@ -82,3 +72,7 @@ exclude_lines = [
     "\\.\\.\\.",
     "pass",
 ]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-auth = { workspace = true }

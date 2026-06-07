@@ -27,6 +27,7 @@ members = [
     "spakky-oidc",
     "spakky-opentelemetry",
     "spakky-outbox",
+    "spakky-policy",
     "spakky-rabbitmq",
     "spakky-redis",
     "spakky-saga",
@@ -2606,6 +2607,9 @@ oidc = [
 opentelemetry = [
     { name = "spakky-opentelemetry" },
 ]
+policy = [
+    { name = "spakky-policy" },
+]
 rabbitmq = [
     { name = "spakky-rabbitmq" },
 ]
@@ -2638,6 +2642,7 @@ requires-dist = [
     { name = "spakky-logging", marker = "extra == 'logging'", editable = "plugins/spakky-logging" },
     { name = "spakky-oidc", marker = "extra == 'oidc'", editable = "plugins/spakky-oidc" },
     { name = "spakky-opentelemetry", marker = "extra == 'opentelemetry'", editable = "plugins/spakky-opentelemetry" },
+    { name = "spakky-policy", marker = "extra == 'policy'", editable = "plugins/spakky-policy" },
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-redis", marker = "extra == 'redis'", editable = "plugins/spakky-redis" },
     { name = "spakky-saga", marker = "extra == 'saga'", editable = "core/spakky-saga" },
@@ -2647,7 +2652,7 @@ requires-dist = [
     { name = "spakky-vllm", marker = "extra == 'vllm'", editable = "plugins/spakky-vllm" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "cryptography", "oidc", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
+provides-extras = ["logging", "cryptography", "oidc", "policy", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
 
 [[package]]
 name = "spakky-actuator"
@@ -3037,6 +3042,23 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky-event", editable = "core/spakky-event" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
+]
+
+[[package]]
+name = "spakky-policy"
+version = "6.5.0"
+source = { editable = "plugins/spakky-policy" }
+dependencies = [
+    { name = "pyyaml" },
+    { name = "spakky" },
+    { name = "spakky-auth" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
 ]
 
 [[package]]
