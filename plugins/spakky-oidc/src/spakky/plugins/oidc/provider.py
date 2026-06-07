@@ -361,10 +361,27 @@ class OidcAuthenticationProvider(IAuthenticationProvider):
                 retained.append(
                     AuthClaim(
                         name=name,
-                        value=self._claim_value(claims[name]),
+                        value=self._retained_claim_value(name, claims[name]),
                     )
                 )
         return tuple(retained)
+
+    def _retained_claim_value(self, name: str, value: object) -> AuthClaimValue:
+        if name == "aud":
+            return self._audience_claim_value(value)
+        return self._claim_value(value)
+
+    def _audience_claim_value(self, value: object) -> AuthClaimValue:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list | tuple):
+            values: list[str] = []
+            for item in value:
+                if not isinstance(item, str):
+                    raise OidcTokenValidationError()
+                values.append(item)
+            return json.dumps(values, separators=(",", ":"))
+        raise OidcTokenValidationError()
 
     def _claim_value(self, value: object) -> AuthClaimValue:
         if value is None:

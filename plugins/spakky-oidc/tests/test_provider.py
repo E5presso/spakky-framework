@@ -181,6 +181,23 @@ def test_valid_oidc_bearer_maps_to_auth_context_without_raw_token() -> None:
     assert auth_context.metadata == ()
 
 
+def test_valid_multi_audience_with_matching_azp_authenticates_and_retains_aud() -> None:
+    key = _private_key()
+    claims = _claims(datetime.now(UTC))
+    claims["aud"] = [AUDIENCE, "api://other"]
+    claims["azp"] = CLIENT_ID
+    token = _token(key, claims)
+    provider = _provider(_public_jwk(key))
+
+    result = provider.authenticate_result(_carrier(token), _invocation())
+
+    assert result.decision.state == AuthorizationDecisionState.ALLOW
+    assert result.auth_context is not None
+    retained_claims = {claim.name: claim.value for claim in result.auth_context.claims}
+    assert retained_claims["aud"] == '["api://spakky","api://other"]'
+    assert retained_claims["azp"] == CLIENT_ID
+
+
 def test_custom_discovery_url_and_optional_azp_client_are_supported() -> None:
     key = _private_key()
     claims = _claims(datetime.now(UTC))
@@ -401,6 +418,14 @@ def test_invalid_claim_shapes_are_rejected(claim_patch: dict[str, object]) -> No
     result = provider.authenticate_result(_carrier(_token(key, claims)), _invocation())
 
     assert result.decision.reason_code == AuthorizationReasonCode.INVALID_CREDENTIAL
+
+
+@pytest.mark.parametrize("audience", [[AUDIENCE, 1], 42])
+def test_retained_audience_claim_rejects_non_string_shapes(audience: object) -> None:
+    provider = _provider(_public_jwk(_private_key()))
+
+    with pytest.raises(OidcTokenValidationError):
+        provider._audience_claim_value(audience)
 
 
 def test_jwks_shape_and_header_validation_fail_fast() -> None:

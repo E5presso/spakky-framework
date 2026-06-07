@@ -153,8 +153,10 @@ def read_document(document_id: str) -> str:
 provider plugin이 `spakky.contributions.spakky.auth` entry point로 선언하는 기능
 단위입니다. `spakky-auth` startup validation은 보호된 boundary와 snapshot propagation이
 요구하는 `AUTHENTICATION`, `POLICY_EVALUATION`, `PERMISSION_CHECK`, `ROLE_CHECK`,
-`SCOPE_CHECK`, `RELATION_CHECK`, `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY`, `PASSWORD_HASH`,
-`PASSWORD_VERIFY` capability가 정확히 하나의 provider에 의해 충족되는지 확인합니다.
+`SCOPE_CHECK`, `RELATION_CHECK`, `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY` capability가
+정확히 하나의 provider에 의해 충족되는지 확인합니다. `PASSWORD_HASH`와
+`PASSWORD_VERIFY`는 provider가 선언하고 사용할 수 있는 capability지만, 현재 startup
+validation은 password-only provider의 고유성을 startup requirement로 계산하지 않습니다.
 
 ### AuthContextSnapshot
 
