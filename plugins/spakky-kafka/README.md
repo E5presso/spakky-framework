@@ -14,6 +14,9 @@ pip install spakky-kafka
 pip install spakky[kafka]
 ```
 
+`IAsyncEventPublisher`와 함께 쓰는 Kafka 이벤트 서비스라면 event core까지 포함하는
+`spakky[events-kafka]`를 권장합니다.
+
 ## 설정
 
 `SPAKKY_KAFKA__` prefix를 가진 환경변수를 설정합니다:

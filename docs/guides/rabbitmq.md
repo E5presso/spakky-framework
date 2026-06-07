@@ -1,7 +1,7 @@
 # RabbitMQ 통합
 
 > `spakky-rabbitmq`는 `IEventTransport` 인터페이스를 통해 Integration Event를 RabbitMQ로 전송하고, 백그라운드 Consumer로 수신합니다.
-> 이벤트 클래스 이름을 큐/라우팅 키로 사용하므로 발행자와 소비자가 같은 이벤트 타입 계약을 공유해야 합니다.
+> `AbstractIntegrationEvent.event_name` 값을 큐/라우팅 키로 사용하므로 발행자와 소비자가 같은 이벤트 타입 계약을 공유해야 합니다.
 
 ---
 
@@ -16,16 +16,21 @@
 ## 설정
 
 `RabbitMQConnectionConfig`는 `@Configuration`이므로 환경변수에서 자동 로딩됩니다.
+발행 예제는 `IAsyncEventPublisher`와 event bus를 사용하므로 `spakky-rabbitmq`와 함께 `spakky-event`를 설치하고 로드해야 합니다. RabbitMQ만 쓴다면 `pip install "spakky[events-rabbitmq]"`가 가장 가볍습니다. RabbitMQ, Kafka, Outbox를 한 번에 실험하려면 `pip install "spakky[event-driven]"`를 사용하세요.
 
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+import spakky.event
 import spakky.plugins.rabbitmq
 import apps
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .load_plugins(include={spakky.plugins.rabbitmq.PLUGIN_NAME})
+    .load_plugins(include={
+        spakky.event.PLUGIN_NAME,
+        spakky.plugins.rabbitmq.PLUGIN_NAME,
+    })
     .scan(apps)
     .start()
 )
@@ -43,6 +48,7 @@ export SPAKKY_RABBITMQ__EXCHANGE_NAME=my-exchange  # Optional
 export SPAKKY_RABBITMQ__AUTH_CHALLENGE_ACTION=ack
 export SPAKKY_RABBITMQ__AUTH_DENY_ACTION=ack
 export SPAKKY_RABBITMQ__AUTH_ERROR_ACTION=nack_requeue
+export SPAKKY_RABBITMQ__MALFORMED_PAYLOAD_ACTION=ack
 ```
 
 | 필드 | 환경변수 | 기본값 | 설명 |
@@ -56,8 +62,9 @@ export SPAKKY_RABBITMQ__AUTH_ERROR_ACTION=nack_requeue
 | `auth_challenge_action` | `SPAKKY_RABBITMQ__AUTH_CHALLENGE_ACTION` | `ack` | missing/invalid/expired snapshot 처리 |
 | `auth_deny_action` | `SPAKKY_RABBITMQ__AUTH_DENY_ACTION` | `ack` | protected handler DENY 처리 |
 | `auth_error_action` | `SPAKKY_RABBITMQ__AUTH_ERROR_ACTION` | `nack_requeue` | verifier/provider ERROR 처리 |
+| `malformed_payload_action` | `SPAKKY_RABBITMQ__MALFORMED_PAYLOAD_ACTION` | `ack` | JSON/스키마 오류 poison message 처리 |
 
-`auth_*_action` 값은 `ack`, `nack_requeue`, `nack_drop` 중 하나입니다. 기본 정책은 CHALLENGE/DENY를 ack하여 poison-loop를 피하고, ERROR는 requeue하여 일시적인 verifier/provider 장애를 재시도합니다.
+`*_action` 값은 `ack`, `nack_requeue`, `nack_drop` 중 하나입니다. 기본 정책은 CHALLENGE/DENY와 malformed payload를 ack하여 poison-loop를 피하고, ERROR는 requeue하여 일시적인 verifier/provider 장애를 재시도합니다.
 
 ---
 
@@ -108,7 +115,7 @@ class OrderEventHandler:
         print(f"주문 접수: {event.order_id}, 금액: {event.total_amount}")
 ```
 
-큐 이름은 이벤트 클래스의 `__name__`(예: `OrderPlacedEvent`)으로 자동 결정됩니다.
+큐 이름은 이벤트 인스턴스의 `event_name`과 같은 값으로 자동 결정됩니다. 기본값은 이벤트 클래스명(예: `OrderPlacedEvent`)이며, custom `event_name` property를 오버라이드하면 발행 routing key와 소비 queue 이름이 함께 그 값을 사용합니다.
 
 ---
 
@@ -139,7 +146,7 @@ sequenceDiagram
 | 항목 | 규칙 |
 |------|------|
 | 이벤트 이름 | `AbstractIntegrationEvent.event_name` 값, 기본은 클래스명 |
-| 큐 이름 | 수신 핸들러가 등록한 이벤트 클래스명, durable queue로 선언 |
+| 큐 이름 | 수신 핸들러가 등록한 이벤트의 `event_name`, durable queue로 선언 |
 | payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
 | headers | `ITracePropagator.inject()`가 넣은 trace header와 signed `AuthContextSnapshot` metadata |
 | exchange 없음 | 기본 exchange에 큐 이름 routing key로 발행 |
@@ -186,4 +193,4 @@ sequenceDiagram
 
 보호된 handler에서 snapshot이 없거나 invalid/expired이면 `CHALLENGE`로 fail-closed 처리합니다. 정책 evaluator가 `DENY`를 반환해도 handler는 호출되지 않습니다. 검증 provider가 unavailable이면 `ERROR`로 처리하며, 기본 RabbitMQ 정책은 `nack_requeue`입니다.
 
-Payload 직렬화, event name routing, trace header 추출 동작은 snapshot 검증과 독립적으로 유지됩니다.
+Payload 직렬화, event name routing, trace header 추출 동작은 snapshot 검증과 독립적으로 유지됩니다. JSON 파싱이나 이벤트 스키마 검증에 실패한 malformed payload는 handler 호출 전 poison message로 분류되며, 기본 정책은 `ack`로 drop합니다. 이 정책은 `SPAKKY_RABBITMQ__MALFORMED_PAYLOAD_ACTION`으로 조정할 수 있습니다.

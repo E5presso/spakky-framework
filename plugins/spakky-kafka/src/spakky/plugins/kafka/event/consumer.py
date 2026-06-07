@@ -1,5 +1,5 @@
 from logging import getLogger
-from typing import Any
+from typing import Any, cast
 
 from spakky.auth import (
     AuthContextNotFoundError,
@@ -32,6 +32,14 @@ from spakky.plugins.kafka.auth import KAFKA_AUTH_HEADERS_PARAMETER
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 
 logger = getLogger(__name__)
+
+
+def _event_routing_name(event: type[AbstractEvent]) -> str:
+    descriptor = event.__dict__.get("event_name")
+    if isinstance(descriptor, property):
+        probe = object.__new__(event)
+        return cast(str, descriptor.__get__(probe, event))
+    return event.__name__
 
 
 @Pod()
@@ -174,13 +182,15 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         if event not in self.handlers:
             self.handlers[event] = []
             self.type_adapters[event] = TypeAdapter(event)
-            self.type_lookup[event.__name__] = event
+            self.type_lookup[_event_routing_name(event)] = event
         self.handlers[event].append(handler)
 
     @override
     def initialize(self) -> None:
         """Create Kafka topics and subscribe the consumer."""
-        topics: list[str] = [event_type.__name__ for event_type in self.handlers.keys()]
+        topics: list[str] = [
+            _event_routing_name(event_type) for event_type in self.handlers.keys()
+        ]
         self._create_topics(topics=topics)
         self.consumer.subscribe(topics=topics)
 
@@ -342,14 +352,16 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         if event not in self.handlers:
             self.handlers[event] = []
             self.type_adapters[event] = TypeAdapter(event)
-            self.type_lookup[event.__name__] = event
+            self.type_lookup[_event_routing_name(event)] = event
         self.handlers[event].append(handler)
 
     @override
     async def initialize_async(self) -> None:
         """Create Kafka topics and subscribe the async consumer."""
         self.consumer = AIOConsumer(self.config.configuration_dict)
-        topics: list[str] = [event_type.__name__ for event_type in self.handlers.keys()]
+        topics: list[str] = [
+            _event_routing_name(event_type) for event_type in self.handlers.keys()
+        ]
         self._create_topics(topics=topics)
         await self.consumer.subscribe(topics=topics)
 

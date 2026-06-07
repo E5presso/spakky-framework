@@ -6,7 +6,7 @@ to registered handlers.
 """
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from typing import override
 
@@ -17,7 +17,7 @@ from aio_pika.abc import AbstractIncomingMessage, AbstractRobustConnection
 from pika import URLParameters
 from pika.adapters.blocking_connection import BlockingChannel, BlockingConnection
 from pika.spec import Basic, BasicProperties
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
@@ -51,6 +51,14 @@ from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
 
+def _event_routing_name(event: type[AbstractEvent]) -> str:
+    descriptor = event.__dict__.get("event_name")
+    if isinstance(descriptor, property):
+        probe = object.__new__(event)
+        return cast(str, descriptor.__get__(probe, event))
+    return event.__name__
+
+
 @Pod()
 class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     """Synchronous RabbitMQ event consumer.
@@ -77,6 +85,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     _auth_challenge_action: RabbitMQAuthFailureAction
     _auth_deny_action: RabbitMQAuthFailureAction
     _auth_error_action: RabbitMQAuthFailureAction
+    _malformed_payload_action: RabbitMQAuthFailureAction
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event consumer.
@@ -93,6 +102,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self._auth_challenge_action = config.auth_challenge_action
         self._auth_deny_action = config.auth_deny_action
         self._auth_error_action = config.auth_error_action
+        self._malformed_payload_action = config.malformed_payload_action
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
@@ -154,6 +164,8 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
             for handler in handlers:
                 handler(event)
             channel.basic_ack(method_frame.delivery_tag)
+        except ValidationError:
+            self._handle_malformed_payload(channel, method_frame.delivery_tag)
         except AuthRequirementDeniedError as error:
             self._handle_auth_failure(channel, method_frame.delivery_tag, error)
         finally:
@@ -168,6 +180,21 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         error: AuthRequirementDeniedError,
     ) -> None:
         action = self._auth_failure_action(error)
+        self._apply_action(channel, delivery_tag, action)
+
+    def _handle_malformed_payload(
+        self,
+        channel: BlockingChannel,
+        delivery_tag: int,
+    ) -> None:
+        self._apply_action(channel, delivery_tag, self._malformed_payload_action)
+
+    @staticmethod
+    def _apply_action(
+        channel: BlockingChannel,
+        delivery_tag: int,
+        action: RabbitMQAuthFailureAction,
+    ) -> None:
         if action is RabbitMQAuthFailureAction.ACK:
             channel.basic_ack(delivery_tag)
             return
@@ -227,9 +254,10 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.channel = self.connection.channel()
 
         for event_type in self.handlers:
-            self.channel.queue_declare(event_type.__name__, durable=True)
+            routing_name = _event_routing_name(event_type)
+            self.channel.queue_declare(routing_name, durable=True)
             consumer_tag = self.channel.basic_consume(
-                event_type.__name__,
+                routing_name,
                 self._route_event_handler,
             )
             self.type_lookup[consumer_tag] = event_type
@@ -279,6 +307,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
     _auth_challenge_action: RabbitMQAuthFailureAction
     _auth_deny_action: RabbitMQAuthFailureAction
     _auth_error_action: RabbitMQAuthFailureAction
+    _malformed_payload_action: RabbitMQAuthFailureAction
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event consumer.
@@ -294,6 +323,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self._auth_challenge_action = config.auth_challenge_action
         self._auth_deny_action = config.auth_deny_action
         self._auth_error_action = config.auth_error_action
+        self._malformed_payload_action = config.malformed_payload_action
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
@@ -349,6 +379,8 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
             for handler in handlers:
                 await handler(event)
             await message.ack()
+        except ValidationError:
+            await self._handle_malformed_payload(message)
         except AuthRequirementDeniedError as error:
             await self._handle_auth_failure(message, error)
         finally:
@@ -362,6 +394,19 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         error: AuthRequirementDeniedError,
     ) -> None:
         action = self._auth_failure_action(error)
+        await self._apply_action(message, action)
+
+    async def _handle_malformed_payload(
+        self,
+        message: AbstractIncomingMessage,
+    ) -> None:
+        await self._apply_action(message, self._malformed_payload_action)
+
+    @staticmethod
+    async def _apply_action(
+        message: AbstractIncomingMessage,
+        action: RabbitMQAuthFailureAction,
+    ) -> None:
         if action is RabbitMQAuthFailureAction.ACK:
             await message.ack()
             return
@@ -414,7 +459,8 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self.channel = await self.connection.channel()
 
         for event_type in self.handlers:
-            queue = await self.channel.declare_queue(event_type.__name__, durable=True)
+            routing_name = _event_routing_name(event_type)
+            queue = await self.channel.declare_queue(routing_name, durable=True)
             consumer_tag = await queue.consume(self._route_event_handler)
             self.type_lookup[consumer_tag] = event_type
 

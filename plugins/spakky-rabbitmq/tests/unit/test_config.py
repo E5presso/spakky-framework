@@ -29,6 +29,7 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_CHALLENGE_ACTION",
         f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_DENY_ACTION",
         f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_ERROR_ACTION",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}MALFORMED_PAYLOAD_ACTION",
     ]
     original_values = {}
     for key in keys_to_remove:
@@ -151,6 +152,7 @@ def test_rabbitmq_config_auth_failure_actions_default_avoid_poison_loop(
     assert config.auth_challenge_action is RabbitMQAuthFailureAction.ACK
     assert config.auth_deny_action is RabbitMQAuthFailureAction.ACK
     assert config.auth_error_action is RabbitMQAuthFailureAction.NACK_REQUEUE
+    assert config.malformed_payload_action is RabbitMQAuthFailureAction.ACK
 
 
 def test_rabbitmq_config_auth_failure_actions_load_from_environment(
@@ -165,12 +167,14 @@ def test_rabbitmq_config_auth_failure_actions_load_from_environment(
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_CHALLENGE_ACTION"] = "nack_drop"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_DENY_ACTION"] = "nack_drop"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_ERROR_ACTION"] = "nack_requeue"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}MALFORMED_PAYLOAD_ACTION"] = "nack_drop"
 
     config = RabbitMQConnectionConfig()
 
     assert config.auth_challenge_action is RabbitMQAuthFailureAction.NACK_DROP
     assert config.auth_deny_action is RabbitMQAuthFailureAction.NACK_DROP
     assert config.auth_error_action is RabbitMQAuthFailureAction.NACK_REQUEUE
+    assert config.malformed_payload_action is RabbitMQAuthFailureAction.NACK_DROP
 
 
 def test_rabbitmq_config_env_prefix_is_correct() -> None:
