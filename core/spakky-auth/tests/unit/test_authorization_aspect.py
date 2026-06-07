@@ -249,8 +249,9 @@ def test_non_allow_decision_fails_closed_before_joinpoint() -> None:
         called = True
         return "ok"
 
-    with pytest.raises(AuthRequirementDeniedError):
+    with pytest.raises(AuthRequirementDeniedError) as excinfo:
         aspect.around(boundary)
+    assert excinfo.value.decision == scope_checker.decision
     assert not called
 
 
@@ -279,8 +280,9 @@ async def test_async_non_allow_decision_fails_closed_before_joinpoint() -> None:
         called = True
         return "ok"
 
-    with pytest.raises(AuthRequirementDeniedError):
+    with pytest.raises(AuthRequirementDeniedError) as excinfo:
         await aspect.around_async(boundary)
+    assert excinfo.value.decision == scope_checker.decision
     assert not called
 
 

@@ -13,6 +13,15 @@ from typing import override
 
 import grpc
 import grpc.aio
+from spakky.auth import (
+    AbstractSpakkyAuthError,
+    AuthContextNotFoundError,
+    AuthenticationError,
+    AuthorizationDecisionState,
+    AuthRequirementDeniedError,
+    AuthRequirementProviderUnavailableError,
+    AuthVerificationProviderUnavailableError,
+)
 from spakky.plugins.grpc.error import AbstractGrpcStatusError, InternalError
 
 logger = getLogger(__name__)
@@ -52,6 +61,8 @@ class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
                 return await behavior(request_or_iterator, context)
             except AbstractGrpcStatusError as error:
                 await context.abort(error.status_code, error.message)
+            except AbstractSpakkyAuthError as error:
+                await _abort_auth_error(context, error)
             except Exception as error:
                 if isinstance(error, grpc.aio.BaseError):
                     raise
@@ -80,6 +91,8 @@ class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
                     yield response
             except AbstractGrpcStatusError as error:
                 await context.abort(error.status_code, error.message)
+            except AbstractSpakkyAuthError as error:
+                await _abort_auth_error(context, error)
             except Exception as error:
                 if isinstance(error, grpc.aio.BaseError):
                     raise
@@ -149,3 +162,35 @@ class _WrappedHandler(grpc.RpcMethodHandler):
         self.stream_stream = (
             wrap_stream(handler.stream_stream) if handler.stream_stream else None
         )  # type: ignore[arg-type] — grpc stubs define sync handler types but grpc.aio uses async
+
+
+async def _abort_auth_error(
+    context: grpc.aio.ServicerContext,
+    error: AbstractSpakkyAuthError,
+) -> None:
+    if isinstance(error, AuthContextNotFoundError | AuthenticationError):
+        await context.abort(grpc.StatusCode.UNAUTHENTICATED, error.message)
+        return
+    if isinstance(error, AuthRequirementDeniedError):
+        await context.abort(_status_for_requirement_denial(error), error.message)
+        return
+    if isinstance(
+        error,
+        AuthRequirementProviderUnavailableError
+        | AuthVerificationProviderUnavailableError,
+    ):
+        await context.abort(grpc.StatusCode.UNAVAILABLE, error.message)
+        return
+    await context.abort(grpc.StatusCode.INTERNAL, InternalError.message)
+
+
+def _status_for_requirement_denial(
+    error: AuthRequirementDeniedError,
+) -> grpc.StatusCode:
+    if error.decision is None:
+        return grpc.StatusCode.PERMISSION_DENIED
+    if error.decision.state is AuthorizationDecisionState.CHALLENGE:
+        return grpc.StatusCode.UNAUTHENTICATED
+    if error.decision.state is AuthorizationDecisionState.DENY:
+        return grpc.StatusCode.PERMISSION_DENIED
+    return grpc.StatusCode.INTERNAL

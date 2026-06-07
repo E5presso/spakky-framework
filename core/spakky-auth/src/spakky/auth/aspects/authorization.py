@@ -95,7 +95,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
         for requirement in metadata.requirements:
             decision = self._evaluate_requirement(requirement, auth_context)
             if decision.state is not AuthorizationDecisionState.ALLOW:
-                raise AuthRequirementDeniedError()
+                raise AuthRequirementDeniedError(decision)
         return joinpoint(*args, **kwargs)
 
     def _evaluate_requirement(
@@ -212,7 +212,7 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
         for requirement in metadata.requirements:
             decision = self._evaluate_requirement(requirement, auth_context)
             if decision.state is not AuthorizationDecisionState.ALLOW:
-                raise AuthRequirementDeniedError()
+                raise AuthRequirementDeniedError(decision)
         return await joinpoint(*args, **kwargs)
 
     def _evaluate_requirement(

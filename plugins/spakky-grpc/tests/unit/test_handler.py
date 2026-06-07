@@ -1,7 +1,7 @@
 """Unit tests for GrpcServiceHandler and its json_format bridge helpers."""
 
 from collections.abc import AsyncGenerator, AsyncIterator
-from typing import Annotated
+from typing import Annotated, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc
@@ -9,11 +9,21 @@ import grpc.aio
 import pytest
 from google.protobuf import json_format
 from pydantic import BaseModel
+from spakky.auth import (
+    AuthContext,
+    AuthInvocation,
+    AuthSubject,
+    CredentialCarrier,
+    IAuthenticationProvider,
+    require_auth_context,
+)
+from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.container import IContainer
+from typing import override
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
-from spakky.plugins.grpc.error import UnsupportedResponseTypeError
+from spakky.plugins.grpc.error import Unavailable, UnsupportedResponseTypeError
 from spakky.plugins.grpc.handler import (
     GrpcServiceHandler,
     _basemodel_to_protobuf,
@@ -66,6 +76,65 @@ class MultiRpcController:
         """Regular method, not decorated with @rpc."""
 
 
+class RecordingAuthenticationProvider(IAuthenticationProvider):
+    """Authentication provider recording the boundary credential and invocation."""
+
+    credential: CredentialCarrier | None
+    invocation: AuthInvocation | None
+
+    def __init__(self) -> None:
+        self.credential = None
+        self.invocation = None
+
+    @override
+    def authenticate(
+        self,
+        credential: CredentialCarrier,
+        invocation: AuthInvocation,
+    ) -> AuthContext:
+        self.credential = credential
+        self.invocation = invocation
+        return AuthContext(
+            subject=AuthSubject(id="user:grpc"),
+            issuer="test-provider",
+            credential_carrier=credential,
+        )
+
+
+class AuthAwareController:
+    """Controller reading AuthContext seeded by the gRPC boundary."""
+
+    application_context: ApplicationContext
+
+    def __init__(self, application_context: ApplicationContext) -> None:
+        self.application_context = application_context
+
+    @rpc(request_type=PingRequest, response_type=PingReply)
+    async def unary_subject(self, request: PingRequest) -> PingReply:
+        """Return the seeded subject id."""
+        del request
+        return PingReply(
+            value=require_auth_context(self.application_context).subject.id
+        )
+
+    @rpc(
+        method_type=RpcMethodType.SERVER_STREAMING,
+        request_type=PingRequest,
+        response_type=PingReply,
+    )
+    async def stream_subject(
+        self,
+        request: PingRequest,
+    ) -> AsyncGenerator[PingReply, None]:
+        """Yield the seeded subject id."""
+        del request
+        subject = require_auth_context(self.application_context).subject.id
+        yield PingReply(value=subject)
+
+
+AuthAwareGrpcController = GrpcController(package="auth.v1")(AuthAwareController)
+
+
 def _build_registry_for(controller_type: type) -> DescriptorRegistry:
     """Build and register descriptors for a controller type."""
     registry = DescriptorRegistry()
@@ -79,6 +148,30 @@ def _make_call_details(method: str) -> MagicMock:
     details = MagicMock(spec=grpc.HandlerCallDetails)
     details.method = method
     return details
+
+
+def _make_auth_context() -> AsyncMock:
+    context = AsyncMock(spec=grpc.aio.ServicerContext)
+    context.invocation_metadata.return_value = (("authorization", "Bearer token-1"),)
+    return context
+
+
+def _make_auth_handler(
+    application_context: ApplicationContext,
+    provider: IAuthenticationProvider | None,
+) -> GrpcServiceHandler:
+    registry = _build_registry_for(AuthAwareGrpcController)
+    container = MagicMock(spec=IContainer)
+    container.get.return_value = AuthAwareController(application_context)
+    container.get_or_none.return_value = provider
+    return GrpcServiceHandler(
+        controller_type=AuthAwareGrpcController,
+        package="auth.v1",
+        service_name="AuthAwareController",
+        container=container,
+        application_context=application_context,
+        registry=registry,
+    )
 
 
 @pytest.fixture
@@ -189,6 +282,63 @@ async def test_handler_unary_behavior_calls_controller(
     context = AsyncMock(spec=grpc.aio.ServicerContext)
     result = await handler.unary_unary(deserialized, context)
     assert result is reply
+
+
+async def test_unary_behavior_seeds_auth_context_from_bearer_metadata() -> None:
+    """Unary dispatch should seed AuthContext before invoking user code."""
+    application_context = ApplicationContext()
+    provider = RecordingAuthenticationProvider()
+    auth_handler = _make_auth_handler(application_context, provider)
+
+    details = _make_call_details("/auth.v1.AuthAwareController/unary_subject")
+    handler = auth_handler.service(details)
+    assert handler is not None
+    assert handler.unary_unary is not None
+
+    result = await handler.unary_unary(object(), _make_auth_context())
+
+    assert isinstance(result, PingReply)
+    assert result.value == "user:grpc"
+    assert provider.credential is not None
+    assert provider.credential.material == "token-1"
+    assert provider.credential.scheme == "Bearer"
+    assert provider.invocation is not None
+    assert provider.invocation.boundary == "grpc"
+    assert provider.invocation.operation == "/auth.v1.AuthAwareController/unary_subject"
+
+
+async def test_server_streaming_behavior_seeds_auth_context_before_iteration() -> None:
+    """Streaming dispatch should seed AuthContext before user stream iteration."""
+    application_context = ApplicationContext()
+    auth_handler = _make_auth_handler(
+        application_context, RecordingAuthenticationProvider()
+    )
+
+    details = _make_call_details("/auth.v1.AuthAwareController/stream_subject")
+    handler = auth_handler.service(details)
+    assert handler is not None
+    assert handler.unary_stream is not None
+
+    stream = cast(
+        AsyncIterator[PingReply],
+        handler.unary_stream(object(), _make_auth_context()),
+    )
+    values = [reply.value async for reply in stream]
+
+    assert values == ["user:grpc"]
+
+
+async def test_bearer_metadata_without_auth_provider_fails_unavailable() -> None:
+    """Credential-bearing calls fail closed when no auth provider is present."""
+    auth_handler = _make_auth_handler(ApplicationContext(), None)
+
+    details = _make_call_details("/auth.v1.AuthAwareController/unary_subject")
+    handler = auth_handler.service(details)
+    assert handler is not None
+    assert handler.unary_unary is not None
+
+    with pytest.raises(Unavailable):
+        await handler.unary_unary(object(), _make_auth_context())
 
 
 async def test_handler_serializer_produces_bytes(

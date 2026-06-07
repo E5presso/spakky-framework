@@ -11,6 +11,7 @@ dependencies = [
     "protobuf>=6.33.0",
     "pydantic>=2.4",
     "spakky>=6.5.0",
+    "spakky-auth>=6.5.0",
     "spakky-tracing>=6.5.0",
 ]
 
@@ -81,4 +82,5 @@ exclude_lines = [
 
 [tool.uv.sources]
 spakky = { workspace = true }
+spakky-auth = { workspace = true }
 spakky-tracing = { workspace = true }

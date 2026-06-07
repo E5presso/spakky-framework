@@ -10,7 +10,7 @@ pydantic `BaseModel`로 메시지를 선언하고 `@GrpcController` + `@rpc` 데
 pip install spakky-grpc
 ```
 
-의존성: `grpcio`, `protobuf`, `pydantic>=2.4`, `spakky`, `spakky-tracing`.
+의존성: `grpcio`, `protobuf`, `pydantic>=2.4`, `spakky`, `spakky-auth`, `spakky-tracing`.
 
 ## 빠른 시작
 
@@ -124,6 +124,29 @@ app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 | `InternalError` | `INTERNAL` |
 
 예상되지 않은 예외는 `INTERNAL`로 정규화됩니다.
+
+### 인증 경계
+
+gRPC 핸들러는 각 unary/stream 호출에서 `ApplicationContext.clear_context()`를 먼저 호출한 뒤, 사용자 컨트롤러 메서드 실행 전에 gRPC metadata의 인증 credential을 읽어 `spakky-auth`의 `AuthContext`를 request/context scope에 저장합니다.
+
+지원 metadata:
+
+| Metadata key | Credential |
+|---|---|
+| `authorization: Bearer <token>` | `CredentialCarrierKind.BEARER_TOKEN` |
+| `spakky.auth.context_snapshot` | `CredentialCarrierKind.AUTH_CONTEXT_SNAPSHOT` |
+| `x-spakky-auth-context-snapshot` | `CredentialCarrierKind.AUTH_CONTEXT_SNAPSHOT` |
+
+credential이 있으면 `IAuthenticationProvider.authenticate()`가 `AuthInvocation(boundary="grpc", operation="/<package>.<service>/<method>")`와 함께 호출됩니다. 인증 제공자가 없으면 `UNAVAILABLE`로 fail-closed 됩니다. credential이 없는 public handler는 그대로 허용되며, `spakky-auth` 보호 데코레이터가 붙은 handler는 기존 AOP enforcement가 AuthContext 부재를 감지해 `UNAUTHENTICATED`로 실패합니다.
+
+Auth error 매핑:
+
+| Auth outcome | gRPC Status |
+|---|---|
+| `CHALLENGE` / 인증 실패 / AuthContext 없음 | `UNAUTHENTICATED` |
+| `DENY` | `PERMISSION_DENIED` |
+| provider unavailable | `UNAVAILABLE` |
+| framework/config/evaluation error | `INTERNAL` |
 
 ### 트레이싱
 
