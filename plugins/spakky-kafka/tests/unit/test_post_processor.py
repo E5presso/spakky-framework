@@ -6,6 +6,18 @@ and correctly ignores DomainEvent handlers.
 
 from unittest.mock import Mock
 
+from typing import override
+
+from spakky.auth import (
+    AUTH_CONTEXT_SNAPSHOT_HEADER_KEY,
+    AuthContext,
+    AuthInvocation,
+    AuthSubject,
+    IAuthContextSnapshotVerifier,
+    protected,
+    require_auth_context,
+    store_auth_context,
+)
 from spakky.tracing.propagator import ITracePropagator
 
 import pytest
@@ -19,6 +31,22 @@ from spakky.event.event_consumer import (
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 from spakky.plugins.kafka.post_processor import KafkaPostProcessor
+
+
+class RecordingSnapshotVerifier(IAuthContextSnapshotVerifier):
+    """Snapshot verifier fake for Kafka post-processor auth tests."""
+
+    @override
+    def verify_snapshot(
+        self,
+        snapshot_envelope: str,
+        invocation: AuthInvocation,
+    ) -> AuthContext:
+        del snapshot_envelope, invocation
+        return AuthContext(
+            subject=AuthSubject(id="user:kafka"),
+            issuer="test-verifier",
+        )
 
 
 @immutable
@@ -262,6 +290,154 @@ def test_kafka_post_processor_sync_endpoint_invocation_expect_handler_called() -
     assert received_event is not None
     assert received_event.message == "test"
     mock_context.clear_context.assert_called()
+
+
+def test_kafka_post_processor_seeds_auth_after_context_clear() -> None:
+    """AuthContext is seeded after clear_context and before protected handler."""
+    received_subjects: list[str] = []
+    application_context = ApplicationContext()
+    store_auth_context(
+        application_context,
+        AuthContext(subject=AuthSubject(id="stale"), issuer="stale"),
+    )
+
+    @EventHandler()
+    class ProtectedEventHandler:
+        @on_event(SampleIntegrationEvent)
+        @protected
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            del event
+            received_subjects.append(
+                require_auth_context(application_context).subject.id
+            )
+
+    mock_consumer = Mock()
+    mock_async_consumer = Mock()
+    verifier = RecordingSnapshotVerifier()
+    handler_instance = ProtectedEventHandler()
+    mock_container = Mock()
+
+    def get_mock(t: type) -> object:
+        if t == IEventConsumer:
+            return mock_consumer
+        if t == IAsyncEventConsumer:
+            return mock_async_consumer
+        if t is type(handler_instance):
+            return handler_instance
+        return None
+
+    mock_container.get.side_effect = get_mock
+    mock_container.get_or_none.side_effect = lambda t: (
+        verifier if t is IAuthContextSnapshotVerifier else None
+    )
+
+    post_processor = KafkaPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(application_context)
+
+    post_processor.post_process(handler_instance)
+
+    registered_endpoint = mock_consumer.register.call_args[0][1]
+    registered_endpoint(
+        SampleIntegrationEvent(message="test"),
+        _spakky_kafka_headers={AUTH_CONTEXT_SNAPSHOT_HEADER_KEY: "snapshot"},
+    )
+
+    assert received_subjects == ["user:kafka"]
+    mock_consumer.register_auth_boundary.assert_called_once_with(registered_endpoint)
+
+
+def test_kafka_post_processor_protected_missing_snapshot_skips_handler() -> None:
+    """Protected Kafka handler is not invoked when snapshot is missing."""
+    handler_called = False
+    application_context = ApplicationContext()
+
+    @EventHandler()
+    class ProtectedEventHandler:
+        @on_event(SampleIntegrationEvent)
+        @protected
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            del event
+            nonlocal handler_called
+            handler_called = True
+
+    mock_consumer = Mock()
+    mock_async_consumer = Mock()
+    handler_instance = ProtectedEventHandler()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else handler_instance
+        if t is type(handler_instance)
+        else None
+    )
+    mock_container.get_or_none.return_value = None
+
+    post_processor = KafkaPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(application_context)
+
+    post_processor.post_process(handler_instance)
+    registered_endpoint = mock_consumer.register.call_args[0][1]
+
+    result = registered_endpoint(SampleIntegrationEvent(message="test"))
+
+    assert result is None
+    assert not handler_called
+
+
+@pytest.mark.asyncio
+async def test_kafka_post_processor_async_protected_missing_snapshot_skips_handler() -> (
+    None
+):
+    """Protected async Kafka handler is not invoked when snapshot is missing."""
+    handler_called = False
+    application_context = ApplicationContext()
+
+    @EventHandler()
+    class ProtectedAsyncEventHandler:
+        @on_event(SampleIntegrationEvent)
+        @protected
+        async def handle_integration_event(
+            self,
+            event: SampleIntegrationEvent,
+        ) -> None:
+            del event
+            nonlocal handler_called
+            handler_called = True
+
+    mock_consumer = Mock()
+    mock_async_consumer = Mock()
+    handler_instance = ProtectedAsyncEventHandler()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else handler_instance
+        if t is type(handler_instance)
+        else None
+    )
+    mock_container.get_or_none.return_value = None
+
+    post_processor = KafkaPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(application_context)
+
+    post_processor.post_process(handler_instance)
+    registered_endpoint = mock_async_consumer.register.call_args[0][1]
+
+    result = await registered_endpoint(SampleIntegrationEvent(message="test"))
+
+    assert result is None
+    assert not handler_called
+    mock_async_consumer.register_auth_boundary.assert_called_once_with(
+        registered_endpoint
+    )
 
 
 @pytest.mark.asyncio

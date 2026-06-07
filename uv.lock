@@ -3167,6 +3167,7 @@ dependencies = [
     { name = "confluent-kafka" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "spakky-auth" },
     { name = "spakky-event" },
     { name = "spakky-tracing" },
 ]
@@ -3183,6 +3184,7 @@ requires-dist = [
     { name = "confluent-kafka", specifier = ">=2.14.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-event", editable = "core/spakky-event" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]

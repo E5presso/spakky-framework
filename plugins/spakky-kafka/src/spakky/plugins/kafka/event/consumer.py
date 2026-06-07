@@ -1,6 +1,12 @@
 from logging import getLogger
 from typing import Any
 
+from spakky.auth import (
+    AuthContextNotFoundError,
+    AuthRequirementDeniedError,
+    AuthRequirementProviderUnavailableError,
+    AuthVerificationProviderUnavailableError,
+)
 from confluent_kafka import Consumer, Message
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.aio import AIOConsumer
@@ -22,6 +28,7 @@ from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 from typing import override
 
+from spakky.plugins.kafka.auth import KAFKA_AUTH_HEADERS_PARAMETER
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 
 logger = getLogger(__name__)
@@ -38,6 +45,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     admin: AdminClient
     consumer: Consumer
     _propagator: ITracePropagator | None
+    _auth_boundary_handlers: set[EventHandlerCallback[Any]]
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the Kafka consumer with connection config."""
@@ -47,6 +55,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.type_adapters = {}
         self.handlers = {}
         self._propagator = None
+        self._auth_boundary_handlers = set()
         self.admin = AdminClient(self.config.configuration_dict)
         self.consumer = Consumer(
             self.config.configuration_dict,
@@ -60,6 +69,10 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             propagator: An ITracePropagator instance.
         """
         self._propagator = propagator
+
+    def register_auth_boundary(self, handler: EventHandlerCallback[Any]) -> None:
+        """Mark a registered post-processor endpoint as Kafka auth-aware."""
+        self._auth_boundary_handlers.add(handler)
 
     @staticmethod
     def _to_string_headers(
@@ -120,8 +133,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
             logger.warning(f"Received message for unknown event type: {topic}")
             return
+        headers = self._to_string_headers(message.headers())
         if self._propagator is not None:
-            carrier = self._to_string_headers(message.headers())
+            carrier = headers
             parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
@@ -133,7 +147,17 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             event_data = self.type_adapters[event_type].validate_json(event_message)
             handlers = self.handlers[event_type]
             for handler in handlers:
+                if handler in self._auth_boundary_handlers:
+                    handler(event_data, **{KAFKA_AUTH_HEADERS_PARAMETER: headers})
+                    continue
                 handler(event_data)
+        except (
+            AuthVerificationProviderUnavailableError,
+            AuthRequirementProviderUnavailableError,
+        ):
+            raise
+        except (AuthContextNotFoundError, AuthRequirementDeniedError):
+            return
         except Exception as e:  # pragma: no cover - 핸들러 예외 방어
             logger.error(f"Error processing message for event type {topic}: {e}")
         finally:
@@ -188,6 +212,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     admin: AdminClient
     consumer: AIOConsumer
     _propagator: ITracePropagator | None
+    _auth_boundary_handlers: set[AsyncEventHandlerCallback[Any]]
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the async Kafka consumer with connection config."""
@@ -197,6 +222,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self.type_adapters = {}
         self.handlers = {}
         self._propagator = None
+        self._auth_boundary_handlers = set()
         self.admin = AdminClient(self.config.configuration_dict)
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
@@ -206,6 +232,10 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             propagator: An ITracePropagator instance.
         """
         self._propagator = propagator
+
+    def register_auth_boundary(self, handler: AsyncEventHandlerCallback[Any]) -> None:
+        """Mark a registered post-processor endpoint as Kafka auth-aware."""
+        self._auth_boundary_handlers.add(handler)
 
     @staticmethod
     def _to_string_headers(
@@ -268,8 +298,9 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
             logger.warning(f"Received message for unknown event type: {topic}")
             return
+        headers = self._to_string_headers(message.headers())
         if self._propagator is not None:
-            carrier = self._to_string_headers(message.headers())
+            carrier = headers
             parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
@@ -281,7 +312,20 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             event_data = self.type_adapters[event_type].validate_json(event_message)
             handlers = self.handlers[event_type]
             for handler in handlers:
+                if handler in self._auth_boundary_handlers:
+                    await handler(
+                        event_data,
+                        **{KAFKA_AUTH_HEADERS_PARAMETER: headers},
+                    )
+                    continue
                 await handler(event_data)
+        except (
+            AuthVerificationProviderUnavailableError,
+            AuthRequirementProviderUnavailableError,
+        ):
+            raise
+        except (AuthContextNotFoundError, AuthRequirementDeniedError):
+            return
         except Exception as e:  # pragma: no cover - 핸들러 예외 방어
             logger.error(f"Error processing message for event type {topic}: {e}")
         finally:

@@ -3,6 +3,7 @@ from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
 from typing import Any
 
+from spakky.auth import AuthorizationDecisionState, get_effective_auth_metadata
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -20,6 +21,11 @@ from spakky.event.event_consumer import (
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 from spakky.tracing.propagator import ITracePropagator
 from typing import override
+
+from spakky.plugins.kafka.auth import (
+    KafkaAuthBoundary,
+    KafkaHandlerAuthBinding,
+)
 
 logger = getLogger(__name__)
 
@@ -74,6 +80,7 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
         handler: EventHandler = EventHandler.get(pod)
         consumer = self.__container.get(IEventConsumer)
         async_consumer = self.__container.get(IAsyncEventConsumer)
+        auth_boundary = KafkaAuthBoundary(self.__container, self.__application_context)
         propagator = self.__application_context.get_or_none(ITracePropagator)
         if propagator is not None:
             if hasattr(  # optional tracing bridge injection
@@ -97,20 +104,37 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
             logger.info(
                 f"[{type(self).__name__}] {route.event_type.__name__} -> {method.__qualname__}"
             )
+            auth_metadata = get_effective_auth_metadata(
+                method,
+                owner_type=handler.type_,
+            )
+            auth_binding = KafkaHandlerAuthBinding(
+                operation=f"{handler.type_.__module__}.{handler.type_.__qualname__}.{name}",
+                protected=auth_metadata.protected,
+            )
 
             if iscoroutinefunction(method):
 
                 @wraps(method)
                 async def async_endpoint(
                     *args: Any,
+                    _spakky_kafka_headers: dict[str, str] | None = None,
                     method_name: str = name,
                     controller_type: type[object] = handler.type_,
                     context: IContainer = self.__container,
+                    boundary: KafkaAuthBoundary = auth_boundary,
+                    binding: KafkaHandlerAuthBinding = auth_binding,
                     **kwargs: Any,
                 ) -> Any:
                     # Each message is handled in isolation, so clear the
                     # application context to avoid reusing dependency state.
                     self.__application_context.clear_context()
+                    decision = boundary.seed_auth_context(
+                        _spakky_kafka_headers or {},
+                        binding,
+                    )
+                    if decision.state is not AuthorizationDecisionState.ALLOW:
+                        return None
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(  # event handler method lookup
                         controller_instance, method_name
@@ -118,19 +142,33 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                     return await method_to_call(*args, **kwargs)
 
                 async_consumer.register(route.event_type, async_endpoint)
+                if hasattr(  # optional auth-aware Kafka consumer bridge
+                    async_consumer,
+                    "register_auth_boundary",
+                ):
+                    async_consumer.register_auth_boundary(async_endpoint)
                 continue
 
             @wraps(method)
             def endpoint(
                 *args: Any,
+                _spakky_kafka_headers: dict[str, str] | None = None,
                 method_name: str = name,
                 controller_type: type[object] = handler.type_,
                 context: IContainer = self.__container,
+                boundary: KafkaAuthBoundary = auth_boundary,
+                binding: KafkaHandlerAuthBinding = auth_binding,
                 **kwargs: Any,
             ) -> Any:
                 # Synchronous consumers share threads, so drop any lingering
                 # scoped data before invoking the handler.
                 self.__application_context.clear_context()
+                decision = boundary.seed_auth_context(
+                    _spakky_kafka_headers or {},
+                    binding,
+                )
+                if decision.state is not AuthorizationDecisionState.ALLOW:
+                    return None
                 controller_instance = context.get(controller_type)
                 method_to_call = getattr(  # async event handler method lookup
                     controller_instance, method_name
@@ -138,4 +176,9 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                 return method_to_call(*args, **kwargs)
 
             consumer.register(route.event_type, endpoint)
+            if hasattr(  # optional auth-aware Kafka consumer bridge
+                consumer,
+                "register_auth_boundary",
+            ):
+                consumer.register_auth_boundary(endpoint)
         return pod

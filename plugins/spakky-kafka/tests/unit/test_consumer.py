@@ -9,6 +9,11 @@ from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from spakky.auth import (
+    AUTH_CONTEXT_SNAPSHOT_HEADER_KEY,
+    AuthRequirementDeniedError,
+    AuthVerificationProviderUnavailableError,
+)
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.tracing.context import TraceContext
@@ -210,6 +215,94 @@ def test_sync_consumer_route_multiple_handlers_expect_all_called(
 
 @patch("spakky.plugins.kafka.event.consumer.Consumer")
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_auth_boundary_handler_receives_headers(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Auth-aware post-processor endpoints receive Kafka headers from consumer."""
+    del mock_admin_cls, mock_consumer_cls
+    consumer = KafkaEventConsumer(config)
+    captured_headers: list[dict[str, str] | None] = []
+
+    def handler(
+        event: SampleEvent,
+        _spakky_kafka_headers: dict[str, str] | None = None,
+    ) -> None:
+        del event
+        captured_headers.append(_spakky_kafka_headers)
+
+    consumer.register(SampleEvent, handler)
+    consumer.register_auth_boundary(handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "hello"}'
+    mock_message.headers.return_value = [
+        (AUTH_CONTEXT_SNAPSHOT_HEADER_KEY, b"snapshot-envelope"),
+    ]
+
+    consumer._route_event_handler(mock_message)
+
+    assert captured_headers == [{AUTH_CONTEXT_SNAPSHOT_HEADER_KEY: "snapshot-envelope"}]
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_auth_deny_is_handled_without_retry(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """DENY-style auth failures do not escape the route handler."""
+    del mock_admin_cls, mock_consumer_cls
+    consumer = KafkaEventConsumer(config)
+
+    def handler(event: SampleEvent) -> None:
+        del event
+        raise AuthRequirementDeniedError()
+
+    consumer.register(SampleEvent, handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "hello"}'
+    mock_message.headers.return_value = []
+
+    consumer._route_event_handler(mock_message)
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_provider_unavailable_is_retryable(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Provider unavailable ERROR propagates instead of being logged and advanced."""
+    del mock_admin_cls, mock_consumer_cls
+    consumer = KafkaEventConsumer(config)
+
+    def handler(event: SampleEvent) -> None:
+        del event
+        raise AuthVerificationProviderUnavailableError()
+
+    consumer.register(SampleEvent, handler)
+
+    mock_message = MagicMock()
+    mock_message.error.return_value = None
+    mock_message.topic.return_value = "SampleEvent"
+    mock_message.value.return_value = b'{"data": "hello"}'
+    mock_message.headers.return_value = []
+
+    with pytest.raises(AuthVerificationProviderUnavailableError):
+        consumer._route_event_handler(mock_message)
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
 def test_sync_consumer_run_expect_poll_and_route(
     mock_admin_cls: MagicMock,
     mock_consumer_cls: MagicMock,
@@ -313,6 +406,22 @@ def test_async_consumer_register_multiple_handlers_expect_all_stored(
     consumer.register(SampleEvent, handler2)
 
     assert len(consumer.handlers[SampleEvent]) == 2
+
+
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_async_consumer_register_auth_boundary_expect_handler_marked(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """Async consumer records auth-aware endpoints for header delivery."""
+    del mock_admin_cls
+    consumer = AsyncKafkaEventConsumer(config)
+    handler = AsyncMock()
+
+    consumer.register(SampleEvent, handler)
+    consumer.register_auth_boundary(handler)
+
+    assert handler in consumer._auth_boundary_handlers
 
 
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")

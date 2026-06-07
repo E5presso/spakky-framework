@@ -108,6 +108,24 @@ class AsyncUserService:
 - **소비 측**: 수신 메시지에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
 - 헤더가 없으면 새로운 루트 트레이스를 시작합니다
 
+## AuthContext 스냅샷 소비
+
+`spakky-auth` 보호 decorator가 붙은 Kafka event handler는 raw bearer token을
+받지 않습니다. Consumer는 사용자 handler 호출 직전에
+`x-spakky-auth-context-snapshot` 또는 `spakky.auth.context_snapshot` Kafka header의
+signed `AuthContextSnapshot`을 `IAuthContextSnapshotVerifier`로 검증하고,
+`ApplicationContext`에 `AuthContext`를 seed합니다.
+
+- snapshot 검증은 `KafkaPostProcessor`가 message별 `clear_context()`를 수행한 뒤,
+  사용자 handler를 호출하기 전에 실행됩니다.
+- missing, invalid, expired snapshot은 보호된 handler를 호출하지 않는 CHALLENGE
+  fail-closed로 처리하며 Kafka consumer loop는 메시지를 처리 완료로 둡니다.
+- 보호 요구사항 DENY도 handler 호출을 완료 처리하여 offset poison loop를 만들지
+  않습니다.
+- verifier provider unavailable은 ERROR로 전파되어 consumer route에서 삼키지 않고
+  broker/runtime retry 정책에 맡깁니다.
+- 기존 `traceparent` header와 event payload 역직렬화 의미는 그대로 유지됩니다.
+
 ## 주요 기능
 
 - **자동 topic 생성**: 이벤트 타입 이름을 기준으로 topic 생성
@@ -126,6 +144,7 @@ class AsyncUserService:
 | `KafkaEventConsumer` | 동기 event consumer(background service) |
 | `AsyncKafkaEventConsumer` | 비동기 event consumer(background service) |
 | `KafkaConnectionConfig` | 환경변수 기반 설정 |
+| `KafkaAuthBoundary` | signed `AuthContextSnapshot` 검증 및 `AuthContext` seeding |
 
 ## 라이선스
 
