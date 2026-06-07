@@ -86,15 +86,36 @@ class MyController:
             await websocket.send_text(f"Echo: {data}")
 ```
 
-### FastAPI 인스턴스 접근
+### FastAPI 앱 등록과 접근
 
 ```python
 from fastapi import FastAPI
 from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
 
-# application.start() 이후
-fast_api = application.container.get(FastAPI)
+import apps
+import spakky.plugins.fastapi
+
+
+@Pod(name="api")
+def get_api() -> FastAPI:
+    return FastAPI(title="My API")
+
+
+application = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(include={spakky.plugins.fastapi.PLUGIN_NAME})
+    .scan(apps)
+    .add(get_api)
+    .start()
+)
+
+fast_api: FastAPI = application.container.get(FastAPI)
 ```
+
+`spakky-fastapi`는 route, middleware, lifespan post-processor를 등록하지만
+`FastAPI` 인스턴스 자체는 애플리케이션에서 Pod로 등록해야 합니다.
 
 ### TestClient 테스트
 
@@ -174,10 +195,12 @@ FastAPI wrapper가 Spakky request context를 clear한 뒤 credential 전달체�
 
 ## 설정
 
-플러그인은 `FastAPI` 인스턴스를 Pod로 자동 등록합니다. 플러그인을 로드하기 전에 직접 만든 FastAPI 인스턴스를 등록하면 커스터마이즈할 수 있습니다:
+애플리케이션은 사용할 `FastAPI` 인스턴스를 Pod로 직접 등록해야 합니다.
+플러그인은 그 인스턴스에 route, middleware, lifespan hook을 연결합니다:
 
 ```python
 from fastapi import FastAPI
+from spakky.core.pod.annotations.pod import Pod
 
 @Pod()
 def custom_fastapi() -> FastAPI:
