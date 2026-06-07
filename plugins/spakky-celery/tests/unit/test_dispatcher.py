@@ -5,9 +5,27 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from spakky.auth import (
+    AuthContext,
+    AuthRequirementDeniedError,
+    AuthSubject,
+    AuthorizationDecision,
+    AuthorizationDecisionState,
+    AuthorizationReasonCode,
+    IScopeChecker,
+    ScopeCheckRequest,
+    require_auth_context,
+    require_scope,
+    store_auth_context,
+)
+from spakky.auth.aspects.authorization import AuthorizationAspect
+from spakky.core.aop.advisor import Advisor
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.order import Order
 from spakky.task.stereotype.task_handler import TaskRoute
 from spakky.tracing.context import TraceContext
 from spakky.tracing.w3c_propagator import W3CTracePropagator
+from typing import override
 
 from spakky.plugins.celery.aspects.task_dispatch import (
     CELERY_TASK_CONTEXT_KEY,
@@ -45,6 +63,52 @@ def _create_mock_application_context(*, inside_task: bool = False) -> MagicMock:
     context = MagicMock()
     context.get_context_value.return_value = True if inside_task else None
     return context
+
+
+class ConfigurableScopeChecker(IScopeChecker):
+    decision: AuthorizationDecision
+
+    def __init__(self, decision: AuthorizationDecision) -> None:
+        self.decision = decision
+
+    @override
+    def check_scope(self, request: ScopeCheckRequest) -> AuthorizationDecision:
+        return self.decision
+
+
+def _create_direct_task_context() -> ApplicationContext:
+    context = ApplicationContext()
+    context.set_context_value(CELERY_TASK_CONTEXT_KEY, True)
+    store_auth_context(
+        context,
+        AuthContext(
+            subject=AuthSubject(id="subject-1"),
+            issuer="issuer-1",
+        ),
+    )
+    return context
+
+
+def _run_sync_task_aspect_chain(
+    application_context: ApplicationContext,
+    joinpoint: Callable[..., Any],
+    authorization_decision: AuthorizationDecision,
+) -> tuple[object, MagicMock]:
+    celery = _create_mock_celery()
+    dispatch_aspect = CeleryTaskDispatchAspect(celery)
+    dispatch_aspect.set_application_context(application_context)
+    auth_aspect = AuthorizationAspect(
+        application_context,
+        scope_checker=ConfigurableScopeChecker(authorization_decision),
+    )
+    runnable: Callable[..., Any] = joinpoint
+    for aspect in sorted(
+        (auth_aspect, dispatch_aspect),
+        key=lambda item: Order.get_or_default(item, Order()).order,
+        reverse=True,
+    ):
+        runnable = Advisor(aspect, runnable)
+    return runnable(), celery
 
 
 def _create_joinpoint(
@@ -166,6 +230,65 @@ def test_around_sends_empty_headers_when_propagator_none_expect_no_traceparent()
 
     call_kwargs = celery.send_task.call_args
     assert call_kwargs.kwargs["headers"] == {}
+
+
+def test_task_dispatch_aspect_runs_inside_authorization_aspect() -> None:
+    """Auth enforcement must wrap direct task execution before dispatch semantics."""
+    assert Order.get(AuthorizationAspect).order == 0
+    assert Order.get(CeleryTaskDispatchAspect).order == 10
+
+
+def test_protected_direct_task_uses_existing_auth_context() -> None:
+    """같은 process task 직접 실행은 snapshot 없이 기존 AuthContext를 사용한다."""
+    application_context = _create_direct_task_context()
+
+    @TaskRoute()
+    @require_scope("tasks:run")
+    def joinpoint() -> str:
+        return require_auth_context(application_context).subject.id
+
+    result, celery = _run_sync_task_aspect_chain(
+        application_context,
+        joinpoint,
+        AuthorizationDecision.allow(),
+    )
+
+    assert result == "subject-1"
+    celery.send_task.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        AuthorizationDecision.challenge(AuthorizationReasonCode.MISSING_CREDENTIAL),
+        AuthorizationDecision.deny(AuthorizationReasonCode.INSUFFICIENT_SCOPE),
+        AuthorizationDecision.error(AuthorizationReasonCode.INTERNAL_ERROR),
+    ],
+)
+def test_protected_direct_task_non_allow_decision_fails_closed(
+    decision: AuthorizationDecision,
+) -> None:
+    """보호된 direct task는 CHALLENGE/DENY/ERROR 결정을 fail-closed 처리한다."""
+    application_context = _create_direct_task_context()
+    called = False
+
+    @TaskRoute()
+    @require_scope("tasks:run")
+    def joinpoint() -> None:
+        nonlocal called
+        called = True
+
+    with pytest.raises(AuthRequirementDeniedError) as excinfo:
+        _run_sync_task_aspect_chain(application_context, joinpoint, decision)
+
+    assert excinfo.value.decision is decision
+    assert excinfo.value.decision is not None
+    assert excinfo.value.decision.state in {
+        AuthorizationDecisionState.CHALLENGE,
+        AuthorizationDecisionState.DENY,
+        AuthorizationDecisionState.ERROR,
+    }
+    assert not called
 
 
 # ── Async AsyncCeleryTaskDispatchAspect ──

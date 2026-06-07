@@ -1,6 +1,7 @@
 """Unit tests for TaskRegistrationPostProcessor."""
 
 from spakky.core.pod.annotations.pod import Pod
+from spakky.auth import require_scope
 
 from spakky.task.post_processor import TaskRegistrationPostProcessor
 from spakky.task.stereotype.task_handler import TaskHandler, task
@@ -107,3 +108,23 @@ def test_get_task_routes_returns_copy() -> None:
 
     assert routes1 is not routes2
     assert routes1 == routes2
+
+
+def test_post_processor_registers_task_auth_metadata() -> None:
+    """TaskRegistrationPostProcessor는 등록 route에 auth metadata를 복사한다."""
+
+    @TaskHandler()
+    class SampleTaskHandler:
+        @task
+        @require_scope("tasks:run")
+        def process(self) -> None:
+            return None
+
+    processor = TaskRegistrationPostProcessor()
+    handler = SampleTaskHandler()
+    processor.post_process(handler)
+
+    route = processor.get_task_routes()[handler.process]
+
+    assert route.auth_metadata.protected
+    assert route.auth_metadata.requirements[0].ref == "tasks:run"

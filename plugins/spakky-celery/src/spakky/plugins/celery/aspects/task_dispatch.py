@@ -25,7 +25,7 @@ from spakky.plugins.celery.common.task_result import CeleryTaskResult
 logger = getLogger(__name__)
 
 
-@Order(0)
+@Order(10)
 @Aspect()
 class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
     """Intercepts synchronous @task method calls and dispatches them to Celery broker.
@@ -72,7 +72,7 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
         return CeleryTaskResult(async_result)
 
 
-@Order(0)
+@Order(10)
 @AsyncAspect()
 class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
     """Intercepts asynchronous @task method calls and dispatches them to Celery broker.

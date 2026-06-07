@@ -8,7 +8,11 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from typing import override
 
-from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
+from spakky.task.stereotype.task_handler import (
+    TaskHandler,
+    TaskRoute,
+    collect_task_auth_metadata,
+)
 
 logger = getLogger(__name__)
 
@@ -46,6 +50,10 @@ class TaskRegistrationPostProcessor(IPostProcessor):
             if route is None:
                 continue
 
+            route.auth_metadata = collect_task_auth_metadata(
+                method,
+                owner_type=pod_type,
+            )
             self._task_routes[method] = route
             logger.debug(f"Registered task {pod_type.__name__}.{name}")
 

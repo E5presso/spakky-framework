@@ -22,6 +22,12 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+## 직접 실행
+
+::: spakky.task.direct
+options:
+show_root_heading: false
+
 ## 후처리기
 
 ::: spakky.task.post_processor

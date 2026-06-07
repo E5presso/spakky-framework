@@ -2717,6 +2717,7 @@ source = { editable = "plugins/spakky-celery" }
 dependencies = [
     { name = "celery" },
     { name = "pydantic-settings" },
+    { name = "spakky-auth" },
     { name = "spakky-task" },
     { name = "spakky-tracing" },
 ]
@@ -2734,6 +2735,7 @@ dev = [
 requires-dist = [
     { name = "celery", specifier = ">=5.6.3" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-task", editable = "core/spakky-task" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]
@@ -3217,8 +3219,16 @@ dependencies = [
     { name = "spakky" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "spakky-auth" },
+]
+
 [package.metadata]
 requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "spakky-auth", editable = "core/spakky-auth" }]
 
 [[package]]
 name = "spakky-tracing"
