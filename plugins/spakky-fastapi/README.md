@@ -128,13 +128,26 @@ HTTP payload는 transport-neutral core result shape를 그대로 반영합니다
 | `GET /actuator/liveness` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/info` | `200 OK` | N/A |
 
+FastAPI actuator routes are unauthenticated by default. In production, expose
+them only behind internal networking, an API gateway, a reverse-proxy allowlist,
+or another explicit access-control layer. Disable unneeded endpoints and set
+`ActuatorConfig(include_details=False)` before allowing actuator traffic outside
+a trusted boundary.
+
 Endpoint 노출과 base path는 `FastAPIActuatorConfig`로 설정합니다.
 Component detail 노출은 `spakky.actuator.ActuatorConfig`로 제어합니다.
 `readiness`는 traffic/work readiness용이며, `liveness`는 process-local check로 남아 외부 의존성 실패와 독립적이어야 합니다.
 
 ```python
 from spakky.core.pod.annotations.pod import Pod
+from spakky.actuator import ActuatorConfig
 from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
+
+
+@Pod()
+def actuator_config() -> ActuatorConfig:
+    return ActuatorConfig(include_details=False)
+
 
 @Pod()
 def fastapi_actuator_config() -> FastAPIActuatorConfig:
