@@ -65,10 +65,6 @@
 			"path": "plugins/spakky-rabbitmq",
 		},
 		{
-			"name": "plugins.security",
-			"path": "plugins/spakky-security",
-		},
-		{
 			"name": "plugins.typer",
 			"path": "plugins/spakky-typer",
 		},

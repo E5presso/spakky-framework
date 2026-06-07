@@ -246,7 +246,6 @@ app = (
 | [spakky-rabbitmq](api/plugins/spakky-rabbitmq.md)     | RabbitMQ 통합    |
 | [spakky-policy](api/plugins/spakky-policy.md)         | 정책 문서 AuthZ evaluator |
 | [spakky-openfga](api/plugins/spakky-openfga.md)       | OpenFGA 관계 검사 AuthZ provider |
-| [spakky-security](api/plugins/spakky-security.md)     | 보안 (JWT, 인증) |
 | [spakky-typer](api/plugins/spakky-typer.md)           | Typer CLI 통합   |
 | [spakky-kafka](api/plugins/spakky-kafka.md)           | Kafka 통합       |
 | [spakky-sqlalchemy](api/plugins/spakky-sqlalchemy.md) | SQLAlchemy 통합  |
@@ -268,7 +267,6 @@ flowchart LR
     fastapi[spakky-fastapi]
     typer[spakky-typer]
     logging[spakky-logging]
-    security[spakky-security]
     celery[spakky-celery]
     opentelemetry[spakky-opentelemetry]
     grpc[spakky-grpc]

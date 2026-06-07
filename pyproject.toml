@@ -50,7 +50,6 @@ version_files = [
   "plugins/spakky-rabbitmq/pyproject.toml:version",
   "plugins/spakky-cryptography/pyproject.toml:version",
   "plugins/spakky-openfga/pyproject.toml:version",
-  "plugins/spakky-security/pyproject.toml:version",
   "plugins/spakky-typer/pyproject.toml:version",
   "plugins/spakky-kafka/pyproject.toml:version",
   "plugins/spakky-sqlalchemy/pyproject.toml:version",
@@ -83,7 +82,6 @@ members = [
   "plugins/spakky-rabbitmq",
   "plugins/spakky-cryptography",
   "plugins/spakky-openfga",
-  "plugins/spakky-security",
   "plugins/spakky-typer",
   "plugins/spakky-kafka",
   "plugins/spakky-sqlalchemy",
@@ -107,7 +105,6 @@ spakky-fastapi = { workspace = true }
 spakky-rabbitmq = { workspace = true }
 spakky-cryptography = { workspace = true }
 spakky-openfga = { workspace = true }
-spakky-security = { workspace = true }
 spakky-typer = { workspace = true }
 spakky-kafka = { workspace = true }
 spakky-sqlalchemy = { workspace = true }

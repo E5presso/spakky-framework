@@ -1,7 +1,7 @@
 # spakky-cryptography
 
-`spakky-cryptography` provides retained cryptographic utilities from
-`spakky-security` and the auth provider capabilities required by signed
+`spakky-cryptography` provides cryptographic utilities and the auth provider
+capabilities required by signed
 `AuthContextSnapshot` propagation and password hash verification.
 
 ## Retained Utilities

@@ -573,30 +573,15 @@ LogContext.bind(request_id="abc-123")
 
 ---
 
-## 보안 유틸리티 (spakky-security)
-
-### JWT
-
-JSON Web Token 생성, 파싱, HMAC 서명 검증을 담당하는 유틸리티 객체. 기본 헤더는 `typ=JWT`, `alg=HS256`이며 `set_payload()`, `set_expiration()`, `sign()`, `verify()`, `export()`로 클레임, 만료, 서명, 검증 생명주기를 다룹니다.
-
-```python
-from datetime import timedelta
-
-from spakky.plugins.security.jwt import JWT
-from spakky.plugins.security.key import Key
-
-token = JWT().set_payload(user_id="user-123").set_expiration(timedelta(hours=1))
-token.sign(Key(size=32))
-token_string = token.export()
-```
+## 암호화 유틸리티 (spakky-cryptography)
 
 ### HMAC
 
 공유 `Key`로 문자열을 서명하고 검증하는 유틸리티. `HMACType`은 `HS224`, `HS256`, `HS384`, `HS512` 알고리즘을 표현합니다.
 
 ```python
-from spakky.plugins.security.hmac_signer import HMAC, HMACType
-from spakky.plugins.security.key import Key
+from spakky.plugins.cryptography.hmac_signer import HMAC, HMACType
+from spakky.plugins.cryptography.key import Key
 
 key = Key(size=32)
 signature = HMAC.sign_text(key, HMACType.HS256, "message")
@@ -608,7 +593,7 @@ is_valid = HMAC.verify(key, HMACType.HS256, "message", signature)
 패스워드 해시를 생성하고 입력 패스워드를 검증하는 인코더 계열. `Argon2PasswordEncoder`, `BcryptPasswordEncoder`, `ScryptPasswordEncoder`, `Pbkdf2PasswordEncoder`가 `encode()`와 `challenge(password)` 계약을 제공합니다.
 
 ```python
-from spakky.plugins.security.password.argon2 import Argon2PasswordEncoder
+from spakky.plugins.cryptography.password.argon2 import Argon2PasswordEncoder
 
 hashed = Argon2PasswordEncoder(password="secret").encode()
 is_valid = Argon2PasswordEncoder(password_hash=hashed).challenge("secret")

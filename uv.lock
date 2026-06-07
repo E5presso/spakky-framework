@@ -32,7 +32,6 @@ members = [
     "spakky-rabbitmq",
     "spakky-redis",
     "spakky-saga",
-    "spakky-security",
     "spakky-sqlalchemy",
     "spakky-task",
     "spakky-tracing",
@@ -2858,9 +2857,6 @@ redis = [
 saga = [
     { name = "spakky-saga" },
 ]
-security = [
-    { name = "spakky-security" },
-]
 sqlalchemy = [
     { name = "spakky-sqlalchemy" },
 ]
@@ -2886,13 +2882,12 @@ requires-dist = [
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-redis", marker = "extra == 'redis'", editable = "plugins/spakky-redis" },
     { name = "spakky-saga", marker = "extra == 'saga'", editable = "core/spakky-saga" },
-    { name = "spakky-security", marker = "extra == 'security'", editable = "plugins/spakky-security" },
     { name = "spakky-sqlalchemy", marker = "extra == 'sqlalchemy'", editable = "plugins/spakky-sqlalchemy" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "spakky-vllm", marker = "extra == 'vllm'", editable = "plugins/spakky-vllm" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "cryptography", "oidc", "policy", "openfga", "security", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
+provides-extras = ["logging", "cryptography", "oidc", "policy", "openfga", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
 
 [[package]]
 name = "spakky-actuator"
@@ -3409,25 +3404,6 @@ requires-dist = [
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-domain", editable = "core/spakky-domain" },
-]
-
-[[package]]
-name = "spakky-security"
-version = "6.5.0"
-source = { editable = "plugins/spakky-security" }
-dependencies = [
-    { name = "argon2-cffi" },
-    { name = "bcrypt" },
-    { name = "pycryptodome" },
-    { name = "spakky" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "argon2-cffi", specifier = ">=25.1.0" },
-    { name = "bcrypt", specifier = ">=5.0.0" },
-    { name = "pycryptodome", specifier = ">=3.23.0" },
-    { name = "spakky", editable = "core/spakky" },
 ]
 
 [[package]]

@@ -12,7 +12,7 @@ pip install spakky
 
 ```bash
 pip install spakky[fastapi]
-pip install spakky[fastapi,kafka,security]
+pip install spakky[fastapi,kafka,cryptography]
 ```
 
 ## 주요 기능
@@ -424,7 +424,6 @@ count와 skip reason이 기록됩니다.
 | [`spakky-logging`](https://pypi.org/project/spakky-logging/) | AOP 기반 구조화 로깅 |
 | [`spakky-openfga`](https://pypi.org/project/spakky-openfga/) | OpenFGA 관계 검사 AuthZ provider |
 | [`spakky-opentelemetry`](https://pypi.org/project/spakky-opentelemetry/) | OpenTelemetry SDK bridge |
-| [`spakky-security`](https://pypi.org/project/spakky-security/) | 보안 유틸리티 |
 
 ## 코어 모듈
 

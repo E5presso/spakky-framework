@@ -22,8 +22,7 @@
 - feature-local capability startup validation
 - `spakky-cryptography`, `spakky-oidc`, `spakky-policy`, `spakky-openfga` provider plugin
 - FastAPI, gRPC, Typer, task, Celery, event, RabbitMQ, Kafka, Saga boundary integration
-- `spakky-security` shim 없는 제거와
-  [symbol mapping inventory](spakky-security-symbol-mapping.md) 기반 migration documentation
+- legacy security utility package shim 없는 제거와 migration documentation
 
 ## 범위 밖
 
@@ -97,7 +96,7 @@ graph TD
     B09["#296 B09: Saga boundary"]
 
     R01["#297 R01: security symbol mapping"]
-    R02["#298 R02: remove spakky-security"]
+    R02["#298 R02: remove legacy security package"]
     R04["#299 R04: final docs and migration guide"]
     R03["#300 R03: final conformance matrix"]
 
