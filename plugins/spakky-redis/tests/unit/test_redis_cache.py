@@ -301,6 +301,30 @@ class TimeoutSyncClient(ContendedSyncClient):
         return None
 
 
+class ReacquirableSyncClient(ContendedSyncClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.values: dict[str, bytes] = {}
+        self.lock_attempts = 0
+
+    @override
+    def get(self, name: str) -> bytes | None:
+        return self.values.get(name)
+
+    @override
+    def set(self, name: str, value: bytes, *, px: int | None = None) -> None:
+        self.values[name] = value
+
+    @override
+    def set_if_absent(self, name: str, value: bytes, *, px: int) -> bool:
+        self.lock_attempts += 1
+        return self.lock_attempts > 1
+
+    @override
+    def add_set_members(self, name: str, *values: RedisKey) -> int:
+        return len(values)
+
+
 class ContendedAsyncClient(IAsyncRedisClient):
     def __init__(self) -> None:
         self.get_calls = 0
@@ -341,6 +365,30 @@ class TimeoutAsyncClient(ContendedAsyncClient):
     @override
     async def get(self, name: str) -> bytes | None:
         return None
+
+
+class ReacquirableAsyncClient(ContendedAsyncClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.values: dict[str, bytes] = {}
+        self.lock_attempts = 0
+
+    @override
+    async def get(self, name: str) -> bytes | None:
+        return self.values.get(name)
+
+    @override
+    async def set(self, name: str, value: bytes, *, px: int | None = None) -> None:
+        self.values[name] = value
+
+    @override
+    async def set_if_absent(self, name: str, value: bytes, *, px: int) -> bool:
+        self.lock_attempts += 1
+        return self.lock_attempts > 1
+
+    @override
+    async def add_set_members(self, name: str, *values: RedisKey) -> int:
+        return len(values)
 
 
 def _cache(
@@ -559,6 +607,33 @@ def test_get_or_set_contention_expect_waits_for_peer_value() -> None:
     assert cache.metrics().stampede_waits == 1
 
 
+def test_get_or_set_contention_expect_reacquires_abandoned_lock() -> None:
+    """A waiter reacquires ownership when no peer ever publishes the value."""
+    client = ReacquirableSyncClient()
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=client,
+        async_client=AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer())
+            )
+        ),
+    )
+    calls = 0
+
+    def factory() -> str:
+        nonlocal calls
+        calls += 1
+        return "recovered"
+
+    value = cache.get_or_set("item", factory, tags=("items",))
+
+    assert value == "recovered"
+    assert calls == 1
+    assert client.lock_attempts == 2
+    assert cache.metrics().stampede_waits == 1
+
+
 def test_get_or_set_contention_timeout_expect_cache_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -751,6 +826,31 @@ async def test_async_get_or_set_contention_expect_waits_for_peer_value() -> None
     value = await cache.get_or_set_async("item", factory)
 
     assert value == "ready"
+    assert cache.metrics().stampede_waits == 1
+
+
+async def test_async_get_or_set_contention_expect_reacquires_abandoned_lock() -> None:
+    """A waiter reacquires ownership when no peer ever publishes the value."""
+    client = ReacquirableAsyncClient()
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
+        async_client=client,
+    )
+    calls = 0
+
+    async def factory() -> str:
+        nonlocal calls
+        calls += 1
+        return "recovered"
+
+    value = await cache.get_or_set_async("item", factory, tags=("items",))
+
+    assert value == "recovered"
+    assert calls == 1
+    assert client.lock_attempts == 2
     assert cache.metrics().stampede_waits == 1
 
 

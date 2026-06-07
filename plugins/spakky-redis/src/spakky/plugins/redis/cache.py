@@ -534,18 +534,22 @@ class RedisCache[T](
         lock_key = self._lock_key(key)
         token = uuid4().hex.encode()
         if self._client.set_if_absent(lock_key, token, px=self._lock_ttl_ms()):
-            try:
-                second_check = self.get(key)
-                if isinstance(second_check, CacheHit):
-                    return second_check.value
-                value = factory()
-                self.set_with_tags(key, value, tags=tags, ttl=ttl)
-                return value
-            finally:
-                self._client.delete(lock_key)
+            return self._produce_locked_value(
+                key,
+                factory,
+                lock_key=lock_key,
+                ttl=ttl,
+                tags=tags,
+            )
 
         self._stampede_waits += 1
-        return self._wait_for_value(key)
+        return self._wait_for_value_or_reacquire(
+            key,
+            factory,
+            lock_key=lock_key,
+            ttl=ttl,
+            tags=tags,
+        )
 
     @override
     async def get_or_set_async(
@@ -567,18 +571,22 @@ class RedisCache[T](
             token,
             px=self._lock_ttl_ms(),
         ):
-            try:
-                second_check = await self.get_async(key)
-                if isinstance(second_check, CacheHit):
-                    return second_check.value
-                value = await factory()
-                await self.set_with_tags_async(key, value, tags=tags, ttl=ttl)
-                return value
-            finally:
-                await self._async_client.delete(lock_key)
+            return await self._produce_locked_value_async(
+                key,
+                factory,
+                lock_key=lock_key,
+                ttl=ttl,
+                tags=tags,
+            )
 
         self._stampede_waits += 1
-        return await self._wait_for_value_async(key)
+        return await self._wait_for_value_or_reacquire_async(
+            key,
+            factory,
+            lock_key=lock_key,
+            ttl=ttl,
+            tags=tags,
+        )
 
     @override
     def metrics(self) -> CacheMetricsSnapshot:
@@ -710,21 +718,97 @@ class RedisCache[T](
     def _lock_ttl_ms(self) -> int:
         return 30_000
 
-    def _wait_for_value(self, key: str) -> T:
+    def _produce_locked_value(
+        self,
+        key: str,
+        factory: Callable[[], T],
+        *,
+        lock_key: str,
+        ttl: CacheTTL,
+        tags: tuple[str, ...],
+    ) -> T:
+        try:
+            second_check = self.get(key)
+            if isinstance(second_check, CacheHit):
+                return second_check.value
+            value = factory()
+            self.set_with_tags(key, value, tags=tags, ttl=ttl)
+            return value
+        finally:
+            self._client.delete(lock_key)
+
+    async def _produce_locked_value_async(
+        self,
+        key: str,
+        factory: Callable[[], Awaitable[T]],
+        *,
+        lock_key: str,
+        ttl: CacheTTL,
+        tags: tuple[str, ...],
+    ) -> T:
+        try:
+            second_check = await self.get_async(key)
+            if isinstance(second_check, CacheHit):
+                return second_check.value
+            value = await factory()
+            await self.set_with_tags_async(key, value, tags=tags, ttl=ttl)
+            return value
+        finally:
+            await self._async_client.delete(lock_key)
+
+    def _wait_for_value_or_reacquire(
+        self,
+        key: str,
+        factory: Callable[[], T],
+        *,
+        lock_key: str,
+        ttl: CacheTTL,
+        tags: tuple[str, ...],
+    ) -> T:
         deadline = monotonic() + 30.0
         while monotonic() < deadline:
             cached = self.get(key)
             if isinstance(cached, CacheHit):
                 return cached.value
+            token = uuid4().hex.encode()
+            if self._client.set_if_absent(lock_key, token, px=self._lock_ttl_ms()):
+                return self._produce_locked_value(
+                    key,
+                    factory,
+                    lock_key=lock_key,
+                    ttl=ttl,
+                    tags=tags,
+                )
             sleep(0.01)
         raise RedisCacheLockTimeoutError()
 
-    async def _wait_for_value_async(self, key: str) -> T:
+    async def _wait_for_value_or_reacquire_async(
+        self,
+        key: str,
+        factory: Callable[[], Awaitable[T]],
+        *,
+        lock_key: str,
+        ttl: CacheTTL,
+        tags: tuple[str, ...],
+    ) -> T:
         deadline = monotonic() + 30.0
         while monotonic() < deadline:
             cached = await self.get_async(key)
             if isinstance(cached, CacheHit):
                 return cached.value
+            token = uuid4().hex.encode()
+            if await self._async_client.set_if_absent(
+                lock_key,
+                token,
+                px=self._lock_ttl_ms(),
+            ):
+                return await self._produce_locked_value_async(
+                    key,
+                    factory,
+                    lock_key=lock_key,
+                    ttl=ttl,
+                    tags=tags,
+                )
             await async_sleep(0.01)
         raise RedisCacheLockTimeoutError()
 
