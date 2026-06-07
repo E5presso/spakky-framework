@@ -5,11 +5,20 @@ as managed beans in the IoC container, along with dependency resolution logic.
 """
 
 import inspect
+import ast
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from inspect import Parameter, isclass, isfunction
 from types import NoneType
-from typing import Annotated, TypeGuard, TypeVar, get_args, get_origin
+from typing import (
+    Annotated,
+    ForwardRef,
+    TypeGuard,
+    TypeVar,
+    cast,
+    get_args,
+    get_origin,
+)
 from uuid import UUID, uuid4
 
 from spakky.core.common.annotation import Annotation
@@ -118,6 +127,12 @@ class UnexpectedDependencyTypeInjectedError(PodInstantiationFailedError):
         super().__init__(*args)
 
 
+@dataclass(frozen=True)
+class _ResolvedAnnotatedDependency:
+    actual_type: object
+    metadatas: tuple[object, ...]
+
+
 @dataclass(eq=False)
 class Pod(Annotation, IEquatable):
     """Annotation for marking classes and functions as managed Pods in the IoC container.
@@ -158,14 +173,125 @@ class Pod(Annotation, IEquatable):
     dependencies: DependencyMap = field(init=False, default_factory=dict)
     """Map of dependency names to their injection information."""
 
+    def __annotation_globalns(self, obj: PodType) -> dict[str, object]:
+        namespace = cast(Func, obj).__globals__.copy()
+        namespace.setdefault("Annotated", Annotated)
+        namespace.setdefault("Qualifier", Qualifier)
+        return namespace
+
+    def __resolve_parameter_annotation(
+        self,
+        annotation: object,
+        globalns: dict[str, object],
+    ) -> object:
+        if not isinstance(annotation, str):
+            return annotation
+        try:
+            return eval(annotation, globalns)
+        except NameError:
+            return self.__resolve_annotated_forward_annotation(annotation, globalns)
+        except (SyntaxError, TypeError):
+            return annotation
+
+    def __resolve_annotated_forward_annotation(
+        self,
+        annotation: str,
+        globalns: dict[str, object],
+    ) -> object:
+        expression = ast.parse(annotation, mode="eval").body
+        if not self.__is_annotated_expression(expression):
+            return annotation
+        annotation_parts = self.__annotated_expression_parts(expression)
+        if annotation_parts is None:
+            return annotation
+        actual_type_node, metadata_nodes = annotation_parts
+        actual_type = self.__resolve_forward_actual_type(
+            node=actual_type_node,
+            globalns=globalns,
+        )
+        metadatas = self.__resolve_metadata_nodes(
+            nodes=metadata_nodes,
+            globalns=globalns,
+        )
+        if actual_type is None or metadatas is None:
+            return annotation
+        return _ResolvedAnnotatedDependency(
+            actual_type=actual_type,
+            metadatas=metadatas,
+        )
+
+    def __is_annotated_expression(
+        self, expression: ast.expr
+    ) -> TypeGuard[ast.Subscript]:
+        if not isinstance(expression, ast.Subscript):
+            return False
+        value = expression.value
+        if isinstance(value, ast.Name):
+            return value.id == "Annotated"
+        return (
+            isinstance(value, ast.Attribute)
+            and value.attr == "Annotated"
+            and isinstance(value.value, ast.Name)
+            and value.value.id == "typing"
+        )
+
+    def __annotated_expression_parts(
+        self,
+        expression: ast.Subscript,
+    ) -> tuple[ast.expr, tuple[ast.expr, ...]] | None:
+        if not isinstance(expression.slice, ast.Tuple):
+            return None
+        elements = tuple(expression.slice.elts)
+        if len(elements) < 2:
+            return None
+        return elements[0], elements[1:]
+
+    def __resolve_forward_actual_type(
+        self,
+        node: ast.expr,
+        globalns: dict[str, object],
+    ) -> object | None:
+        source = ast.unparse(node)
+        try:
+            return eval(source, globalns)
+        except NameError:
+            if isinstance(node, ast.Name):
+                return node.id
+            return source
+
+    def __resolve_metadata_nodes(
+        self,
+        nodes: tuple[ast.expr, ...],
+        globalns: dict[str, object],
+    ) -> tuple[object, ...] | None:
+        metadatas: list[object] = []
+        for node in nodes:
+            source = ast.unparse(node)
+            try:
+                metadatas.append(eval(source, globalns))
+            except NameError:
+                return None
+            except (SyntaxError, TypeError):
+                return None
+        return tuple(metadatas)
+
     def __normalize_dependency_annotation(
         self, annotation: object
     ) -> tuple[object, list[Qualifier], bool]:
         qualifiers: list[Qualifier] = []
         actual_type = annotation
-        if self.__is_annotated_dependency(annotation):
+        if isinstance(annotation, _ResolvedAnnotatedDependency):
+            actual_type = annotation.actual_type
+            qualifiers = [
+                metadata
+                for metadata in annotation.metadatas
+                if isinstance(metadata, Qualifier)
+            ]
+        elif self.__is_annotated_dependency(annotation):
             actual_type = Qualifier.get_actual_type(annotation)
             qualifiers = Qualifier.all(annotation)
+        if isinstance(actual_type, ForwardRef):
+            actual_type = actual_type.__forward_arg__
         optional = is_optional(actual_type)
         if optional:
             actual_type = remove_none(actual_type)
@@ -279,6 +405,7 @@ class Pod(Annotation, IEquatable):
             # Remove self parameter if obj is an instance method
             parameters = parameters[1:]
 
+        annotation_globalns = self.__annotation_globalns(obj)
         dependencies: DependencyMap = {}
         for parameter in parameters:
             if parameter.kind == Parameter.POSITIONAL_ONLY:
@@ -287,8 +414,12 @@ class Pod(Annotation, IEquatable):
                 raise CannotUseVarArgsInPodError(obj, parameter.name)
             if parameter.annotation == Parameter.empty:
                 raise CannotDeterminePodTypeError(obj, parameter.name)
+            annotation = self.__resolve_parameter_annotation(
+                annotation=parameter.annotation,
+                globalns=annotation_globalns,
+            )
             type_, qualifiers, is_optional_dependency = (
-                self.__normalize_dependency_annotation(parameter.annotation)
+                self.__normalize_dependency_annotation(annotation)
             )
             has_default = parameter.default != Parameter.empty
             collection_dependency = self.__collection_dependency_info(

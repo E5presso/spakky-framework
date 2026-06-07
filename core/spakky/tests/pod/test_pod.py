@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from types import GenericAlias
+import typing
 from typing import Annotated, Any, Generic, TypeVar, cast
 from typing import List as LegacyList
 
@@ -499,6 +500,209 @@ def test_pod_with_string_dependency_annotation_expect_metadata() -> None:
     assert dependency.name == "service"
     assert dependency.type_ == "ForwardService"
     assert dependency.collection_kind is None
+
+
+def test_pod_with_postponed_annotated_qualifier_expect_metadata() -> None:
+    """postponed Annotated Qualifier annotation이 qualifier metadata를 보존함을 검증한다."""
+    namespace: dict[str, object] = {
+        "Annotated": Annotated,
+        "Pod": Pod,
+        "Qualifier": Qualifier,
+    }
+    exec(
+        """
+from __future__ import annotations
+
+class PaymentGateway:
+    pass
+
+@Pod(name="stripe")
+class StripeGateway(PaymentGateway):
+    pass
+
+@Pod()
+class CheckoutService:
+    def __init__(
+        self,
+        stripe_gateway: Annotated[
+            PaymentGateway, Qualifier(lambda pod: pod.name == "stripe")
+        ],
+    ) -> None:
+        self.stripe_gateway = stripe_gateway
+""",
+        namespace,
+    )
+
+    checkout_service = cast(type, namespace["CheckoutService"])
+    payment_gateway = cast(type, namespace["PaymentGateway"])
+    stripe_gateway = cast(type, namespace["StripeGateway"])
+    dependency = Pod.get(checkout_service).dependencies["stripe_gateway"]
+
+    assert dependency.type_ is payment_gateway
+    assert len(dependency.qualifiers) == 1
+    assert dependency.qualifiers[0].selector(Pod.get(stripe_gateway)) is True
+
+
+def test_pod_with_postponed_annotated_forward_ref_expect_metadata() -> None:
+    """postponed Annotated 내부 unresolved forward ref는 문자열 타입으로 보존된다."""
+    namespace: dict[str, object] = {
+        "Annotated": Annotated,
+        "Pod": Pod,
+        "Qualifier": Qualifier,
+    }
+    exec(
+        """
+from __future__ import annotations
+
+@Pod(name="forward")
+class ForwardCandidate:
+    pass
+
+@Pod()
+class NeedsForward:
+    def __init__(
+        self,
+        dependency: Annotated[
+            ForwardDependency, Qualifier(lambda pod: pod.name == "forward")
+        ],
+    ) -> None:
+        self.dependency = dependency
+""",
+        namespace,
+    )
+
+    needs_forward = cast(type, namespace["NeedsForward"])
+    forward_candidate = cast(type, namespace["ForwardCandidate"])
+    dependency = Pod.get(needs_forward).dependencies["dependency"]
+
+    assert dependency.type_ == "ForwardDependency"
+    assert len(dependency.qualifiers) == 1
+    assert dependency.qualifiers[0].selector(Pod.get(forward_candidate)) is True
+
+
+def test_pod_with_postponed_annotation_edge_cases_expect_forward_preservation() -> None:
+    """부분 평가할 수 없는 postponed annotation은 기존 문자열 forward ref로 보존된다."""
+
+    def malformed_factory(service) -> object:
+        return service
+
+    malformed_factory.__annotations__["service"] = "list["
+    malformed_factory.__annotations__["return"] = object
+    Pod()(malformed_factory)
+
+    def incomplete_annotated_factory(service) -> object:
+        return service
+
+    incomplete_annotated_factory.__annotations__["service"] = (
+        "Annotated[ForwardDependency]"
+    )
+    incomplete_annotated_factory.__annotations__["return"] = object
+    Pod()(incomplete_annotated_factory)
+
+    def missing_metadata_factory(service) -> object:
+        return service
+
+    missing_metadata_factory.__annotations__["service"] = (
+        "Annotated[ForwardDependency, MissingQualifier]"
+    )
+    missing_metadata_factory.__annotations__["return"] = object
+    Pod()(missing_metadata_factory)
+
+    def unsupported_actual_factory(service) -> object:
+        return service
+
+    unsupported_actual_factory.__annotations__["service"] = (
+        "Annotated[1[0], Qualifier(lambda pod: True)]"
+    )
+    unsupported_actual_factory.__annotations__["return"] = object
+    Pod()(unsupported_actual_factory)
+
+    assert Pod.get(malformed_factory).dependencies["service"].type_ == "list["
+    assert (
+        Pod.get(incomplete_annotated_factory).dependencies["service"].type_
+        == "Annotated[ForwardDependency]"
+    )
+    assert (
+        Pod.get(missing_metadata_factory).dependencies["service"].type_
+        == "Annotated[ForwardDependency, MissingQualifier]"
+    )
+    assert (
+        Pod.get(unsupported_actual_factory).dependencies["service"].type_
+        == "Annotated[1[0], Qualifier(lambda pod: True)]"
+    )
+
+
+def test_pod_with_postponed_typing_annotated_forward_ref_expect_metadata() -> None:
+    """typing.Annotated 형태의 postponed forward ref도 qualifier metadata를 보존한다."""
+    namespace: dict[str, object] = {
+        "Pod": Pod,
+        "Qualifier": Qualifier,
+        "typing": typing,
+    }
+    exec(
+        """
+from __future__ import annotations
+
+@Pod(name="forward")
+class ForwardCandidate:
+    pass
+
+@Pod()
+class NeedsForward:
+    def __init__(
+        self,
+        dependency: typing.Annotated[
+            ForwardDependency, Qualifier(lambda pod: pod.name == "forward")
+        ],
+    ) -> None:
+        self.dependency = dependency
+""",
+        namespace,
+    )
+
+    needs_forward = cast(type, namespace["NeedsForward"])
+    forward_candidate = cast(type, namespace["ForwardCandidate"])
+    dependency = Pod.get(needs_forward).dependencies["dependency"]
+
+    assert dependency.type_ == "ForwardDependency"
+    assert len(dependency.qualifiers) == 1
+    assert dependency.qualifiers[0].selector(Pod.get(forward_candidate)) is True
+
+
+def test_pod_with_postponed_annotated_quoted_forward_ref_expect_metadata() -> None:
+    """문자열 literal forward ref가 Annotated 안에 있을 때도 문자열 타입으로 보존된다."""
+
+    def quoted_forward_factory(service) -> object:
+        return service
+
+    quoted_forward_factory.__annotations__["service"] = (
+        "Annotated['ForwardDependency', Qualifier(lambda pod: True)]"
+    )
+    quoted_forward_factory.__annotations__["return"] = object
+    Pod()(quoted_forward_factory)
+
+    dependency = Pod.get(quoted_forward_factory).dependencies["service"]
+
+    assert dependency.type_ == "ForwardDependency"
+    assert len(dependency.qualifiers) == 1
+
+
+def test_pod_with_postponed_composite_forward_ref_expect_source_preserved() -> None:
+    """복합 unresolved forward ref는 source 문자열을 보존해 기존 forward-ref 경로로 남긴다."""
+
+    def composite_forward_factory(service) -> object:
+        return service
+
+    composite_forward_factory.__annotations__["service"] = (
+        "Annotated[list[ForwardDependency], Qualifier(lambda pod: True)]"
+    )
+    composite_forward_factory.__annotations__["return"] = object
+    Pod()(composite_forward_factory)
+
+    dependency = Pod.get(composite_forward_factory).dependencies["service"]
+
+    assert dependency.type_ == "list[ForwardDependency]"
+    assert len(dependency.qualifiers) == 1
 
 
 def test_pod_equality_with_different_type() -> None:
