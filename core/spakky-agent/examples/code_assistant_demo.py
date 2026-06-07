@@ -370,10 +370,7 @@ class CodeAssistant:
                         idempotency=Idempotency.IDEMPOTENT,
                     ),
                 )
-            elif (
-                event.kind is ModelStreamEventKind.ERROR
-                and event.error is not None
-            ):
+            elif event.kind is ModelStreamEventKind.ERROR and event.error is not None:
                 current_state = self._states.get(state.id)
                 self._states.save(
                     replace(

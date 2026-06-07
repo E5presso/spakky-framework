@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def test_readme_setup_expect_manual_typer_pod_registration() -> None:
     """README must show that applications register the Typer Pod."""
-    readme = Path("plugins/spakky-typer/README.md").read_text(encoding="utf-8")
+    readme = (REPO_ROOT / "plugins/spakky-typer/README.md").read_text(encoding="utf-8")
 
     assert '@Pod(name="cli")' in readme
     assert "def get_cli() -> Typer:" in readme

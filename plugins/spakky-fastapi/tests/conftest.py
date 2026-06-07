@@ -45,7 +45,6 @@ def get_name_fixture() -> Generator[str, Any, None]:
     yield name
 
 
-@pytest.mark.asyncio
 @pytest.fixture(name="app", scope="function")
 async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
     logger = getLogger("debug")
@@ -82,7 +81,6 @@ async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
     logger.removeHandler(console)
 
 
-@pytest.mark.asyncio
 @pytest.fixture(name="api_without_auth_provider", scope="function")
 async def get_api_without_auth_provider_fixture(
     name: str,
@@ -111,7 +109,6 @@ async def get_api_without_auth_provider_fixture(
     yield app.container.get(type_=FastAPI)
 
 
-@pytest.mark.asyncio
 @pytest.fixture(name="api", scope="function")
 async def get_api_fixture(app: SpakkyApplication) -> AsyncGenerator[FastAPI, Any]:
     yield app.container.get(type_=FastAPI)

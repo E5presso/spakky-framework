@@ -2,11 +2,15 @@
 
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def test_fastapi_actuator_docs_expect_security_hardening_warning() -> None:
     """Docs must warn that FastAPI actuator routes need explicit protection."""
-    guide = Path("docs/guides/actuator.md").read_text(encoding="utf-8")
-    readme = Path("plugins/spakky-fastapi/README.md").read_text(encoding="utf-8")
+    guide = (REPO_ROOT / "docs/guides/actuator.md").read_text(encoding="utf-8")
+    readme = (REPO_ROOT / "plugins/spakky-fastapi/README.md").read_text(
+        encoding="utf-8"
+    )
 
     for doc in (guide, readme):
         assert "unauthenticated by default" in doc
