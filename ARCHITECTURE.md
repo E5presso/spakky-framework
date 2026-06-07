@@ -33,7 +33,10 @@
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
 | **Plugin** | `spakky-grpc` | gRPC 서비스 컨트롤러 통합 (code-first, 타입 안전 프로토콜 생성) |
 | **Plugin** | `spakky-redis` | Redis 기반 애플리케이션 데이터 캐시 backend |
+| **Plugin** | `spakky-cryptography` | 암호화 유틸리티와 Auth snapshot/password provider |
 | **Plugin** | `spakky-openfga` | OpenFGA 관계 검사 AuthZ provider |
+| **Plugin** | `spakky-oidc` | OIDC/OAuth bearer credential 인증 provider |
+| **Plugin** | `spakky-policy` | YAML/TOML/JSON policy document 기반 AuthZ evaluator |
 | **Plugin** | `spakky-vllm` | vLLM OpenAI-compatible `IAgentModel` adapter |
 
 ---
@@ -81,7 +84,10 @@ graph TD
             typer[spakky-typer]
             grpc[spakky-grpc]
             redis[spakky-redis]
+            cryptography[spakky-cryptography]
             openfga[spakky-openfga]
+            oidc[spakky-oidc]
+            policy[spakky-policy]
             vllm[spakky-vllm]
         end
     end
@@ -91,8 +97,10 @@ graph TD
     data --> domain
     event --> domain
     event --> data
+    event --> auth
     event --> tracing
     task_pkg --> core
+    agent --> core
     tracing --> core
     actuator --> core
     cache --> core
@@ -100,15 +108,26 @@ graph TD
     outbox --> tracing
     saga --> core
     saga --> domain
+    saga --> auth
 
     sqlalchemy --> data
     sqlalchemy -. outbox contribution .-> outbox
     sqlalchemy -. agent persistence contribution .-> agent
+    rabbitmq --> auth
     rabbitmq --> event
     rabbitmq --> tracing
+    kafka --> auth
     kafka --> event
     kafka --> tracing
+    cryptography --> core
+    cryptography --> auth
+    openfga --> core
     openfga --> auth
+    oidc --> core
+    oidc --> auth
+    policy --> core
+    policy --> auth
+    celery_plugin --> auth
     celery_plugin --> task_pkg
     celery_plugin --> tracing
     logging_pkg --> core
@@ -116,13 +135,18 @@ graph TD
     otel --> tracing
     otel -.->|optional| logging_pkg
     fastapi --> core
+    fastapi --> auth
     fastapi --> tracing
-    fastapi -. actuator endpoints .-> actuator
+    fastapi --> actuator
     typer --> core
-    typer -. actuator commands .-> actuator
+    typer --> auth
+    typer --> actuator
     grpc --> core
+    grpc --> auth
     grpc --> tracing
     redis --> cache
+    redis --> actuator
+    vllm --> core
     vllm --> agent
 
     style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
@@ -143,17 +167,20 @@ graph TD
     style otel fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style fastapi fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style typer fill:#f5f5f5,stroke:#9e9e9e,color:#424242
-    style security fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style cryptography fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style openfga fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style oidc fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style policy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style grpc fill:#f5f5f5,stroke:#9e9e9e,color:#424242
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
 
-- **UI 플러그인** (fastapi, typer) → `spakky` 코어에만 의존. fastapi는 `spakky-tracing`에도 의존 (트레이싱 미들웨어)
-- **유틸리티 플러그인** (security) → `spakky` 코어에만 의존
-- **인증/인가 코어** (spakky-auth) → `spakky` 코어에만 의존. provider-neutral semantic model, ABC port, `AuthCapability`, `spakky.contributions.spakky.auth` contribution contract, AOP enforcement, feature-local capability startup validation을 제공하며 provider implementation은 후속 인증/인가 이슈에서 추가
+- **UI 플러그인** (fastapi, typer, grpc) → `spakky` 코어와 boundary auth/tracing/actuator 계약에 의존. inbound boundary에서 credential을 읽어 `AuthContext`를 request/context scope에 seed
+- **인증/인가 코어** (spakky-auth) → `spakky` 코어에만 의존. provider-neutral semantic model, ABC port, `AuthCapability`, `spakky.contributions.spakky.auth` contribution contract, AOP enforcement, feature-local capability startup validation을 제공
+- **Auth provider 플러그인** (spakky-cryptography, spakky-oidc, spakky-openfga, spakky-policy) → `spakky` + `spakky-auth`에 의존. snapshot/password, bearer authentication, relation check, policy/permission/role/scope capability를 `spakky.contributions.spakky.auth` contribution으로 등록
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록하며, Agent state/signal/evidence 저장소는 `spakky-agent`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.agent` contribution으로 등록
-- **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-tracing`에도 의존 (컨텍스트 전파)
+- **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-auth`와 `spakky-tracing`에도 의존 (auth snapshot + 컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, model port, tool binding, delegation 계약을 제공하며 vLLM/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
@@ -162,12 +189,12 @@ graph TD
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
 - **이벤트 코어** (spakky-event) → `spakky-domain` + `spakky-data` + `spakky-auth` + `spakky-tracing`에 의존
-- **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-tracing`에 의존 (컨텍스트 전파)
+- **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-auth` + `spakky-tracing`에 의존 (auth snapshot + 컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
 - **사가 코어** (spakky-saga) → `spakky` + `spakky-domain` + `spakky-auth`에 의존
-- **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-tracing`에 의존 + `grpcio`, `protobuf` 외부 의존성
-- **Redis 캐시 플러그인** (spakky-redis) → `spakky-cache`에 의존 + `redis`, `pydantic-settings` 외부 의존성
+- **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-auth` + `spakky-tracing`에 의존 + `grpcio`, `protobuf` 외부 의존성
+- **Redis 캐시 플러그인** (spakky-redis) → `spakky-cache` + `spakky-actuator`에 의존 + `redis`, `pydantic-settings` 외부 의존성
 
 ---
 
@@ -454,8 +481,10 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` |
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-auth` | Provider-neutral auth model, ABC port, `AuthCapability`, auth contribution contract, AOP enforcement, capability startup validation |
+| `spakky-cryptography` | Cryptographic utility surface; `CryptographyAuthProvider` contribution for snapshot sign/verify and password hash/verify |
 | `spakky-policy` | YAML/TOML/JSON policy document evaluator for RBAC/PBAC/ABAC authorization |
 | `spakky-oidc` | OIDC/OAuth bearer credential verification provider for `AuthCapability.AUTHENTICATION` |
+| `spakky-openfga` | OpenFGA relation/policy authorization provider contribution |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
 | `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor`, `RegisterActuatorPostProcessor` |
@@ -1222,7 +1251,9 @@ flowchart TD
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
 | `spakky-sqlalchemy` | ConnectionConfig, SchemaRegistry, Session/ConnectionManager, Transaction; `spakky-outbox` contribution으로 `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable`; `spakky-agent` contribution으로 agent state/signal/evidence repository와 table | `sqlalchemy`; outbox contribution에는 `spakky-outbox` extra, agent contribution에는 `spakky-agent` extra 또는 별도 설치 필요 |
+| `spakky-cryptography` | `CryptographyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 snapshot sign/verify와 password hash/verify capability 선언 | `argon2-cffi`, `bcrypt`, `pycryptodome`, `spakky-auth` |
 | `spakky-policy` | `SpakkyPolicyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 policy/permission/role/scope capability 선언 | `pyyaml`, `spakky-auth` |
+| `spakky-oidc` | `OidcAuthenticationProvider`; `spakky.contributions.spakky.auth` contribution으로 bearer authentication capability 선언 | `pyjwt[crypto]`, `spakky-auth` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` | `openfga-sdk`, `pydantic-settings`, `spakky-auth` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` | `httpx`, `pydantic-settings`, `spakky-agent` |

@@ -7,7 +7,7 @@
 
 ## 개요
 
-Spakky는 구조화된 에러 계층을 제공합니다. 모든 프레임워크 에러는 `AbstractSpakkyFrameworkError`를 상속하며, 각 패키지별로 전용 기반 에러 클래스가 있습니다.
+Spakky는 구조화된 에러 계층을 제공합니다. 대부분의 프레임워크 에러는 `AbstractSpakkyFrameworkError`를 상속하며, 패키지별 기반 에러 클래스 아래에 모입니다. Provider-local 입력 검증 예외처럼 프레임워크 경계 밖에서 쓰이는 예외는 해당 섹션에 별도로 표시합니다.
 
 ```mermaid
 flowchart TD
@@ -21,6 +21,8 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyExternalError
   AbstractSpakkyFrameworkError --> AbstractSpakkyEventError
   AbstractSpakkyFrameworkError --> AbstractSpakkyTaskError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyAuthError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyActuatorError
   AbstractSpakkyFrameworkError --> AbstractSpakkyCacheError
   AbstractSpakkyFrameworkError --> AbstractSpakkyTracingError
   AbstractSpakkyFrameworkError --> AbstractSpakkyOutboxError
@@ -32,9 +34,12 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyOpenTelemetryError
   AbstractSpakkyFrameworkError --> AbstractSpakkyGrpcError
   AbstractSpakkyFrameworkError --> AbstractSpakkyLoggingError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyOidcError
   AbstractSpakkyFrameworkError --> AbstractOpenFgaError
+  AbstractSpakkyFrameworkError --> AbstractVllmError
   AbstractSpakkyFrameworkError --> CryptographyErrors[spakky-cryptography concrete errors]
   AbstractSpakkyFrameworkError --> CommonErrors[common concrete errors]
+  Exception --> PolicyDocumentError
 
   AbstractSpakkyDomainError --> AbstractDomainValidationError
   AbstractSpakkyDomainError --> EntityNotFoundError
@@ -49,22 +54,56 @@ flowchart TD
   AbstractSpakkySagaError --> SagaEngineNotConnectedError
 
   AbstractSpakkyAgentError --> AgentDefinitionError
-  AbstractOpenFgaError --> OpenFgaProviderUnavailableError
-  AbstractOpenFgaError --> OpenFgaReferenceMappingError
   AbstractSpakkyAgentError --> AgentToolBindingError
   AbstractSpakkyAgentError --> AgentBootstrapError
+  AbstractSpakkyAgentError --> AgentOutputGuardError
   AgentBootstrapError --> AgentPersistenceConfigurationError
   AgentBootstrapError --> AgentModelConfigurationError
 
+  AbstractSpakkyAuthError --> AuthContextError
+  AbstractSpakkyAuthError --> CredentialCarrierError
+  AbstractSpakkyAuthError --> AuthenticationError
+  AbstractSpakkyAuthError --> AuthorizationError
+  AbstractSpakkyAuthError --> AuthContextSnapshotError
+  AuthContextError --> AuthContextNotFoundError
+  AuthContextError --> InvalidAuthContextValueError
+  AuthorizationError --> ConflictingAuthMetadataError
+  AuthorizationError --> AuthRequirementDeniedError
+  AuthorizationError --> AuthRequirementProviderUnavailableError
+  AuthContextSnapshotError --> MissingAuthContextSnapshotError
+  AuthContextSnapshotError --> InvalidAuthContextSnapshotError
+  AuthContextSnapshotError --> ExpiredAuthContextSnapshotError
+  AuthContextSnapshotError --> AuthVerificationProviderUnavailableError
+
   AbstractSpakkyCacheError --> InvalidCacheTTLError
   AbstractSpakkyCacheError --> CacheKeyGenerationError
+  AbstractSpakkyCacheError --> CacheBackendCapabilityError
   AbstractSpakkyCacheError --> AbstractSpakkyRedisError
   AbstractSpakkyRedisError --> RedisCacheOperationError
   AbstractSpakkyRedisError --> RedisCacheSerializationError
+  AbstractSpakkyRedisError --> RedisCacheLockTimeoutError
 
   AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyORMError
   AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyPersistencyError
+  AbstractSpakkySqlAlchemyPersistencyError --> AgentPersistenceRowNotFoundError
   AbstractSpakkyGrpcError --> AbstractGrpcStatusError
+  AbstractSpakkyActuatorError --> CannotEvaluateAsyncExtensionSynchronouslyError
+  AbstractSpakkyOidcError --> OidcDiscoveryError
+  AbstractSpakkyOidcError --> OidcJwksError
+  AbstractSpakkyOidcError --> OidcCredentialError
+  AbstractSpakkyOidcError --> OidcTokenValidationError
+  AbstractOpenFgaError --> OpenFgaProviderUnavailableError
+  AbstractOpenFgaError --> OpenFgaReferenceMappingError
+  AbstractVllmError --> VllmTransportError
+  AbstractVllmError --> VllmTimeoutError
+  AbstractVllmError --> VllmResponseError
+  AbstractVllmError --> VllmConstrainedDecodingUnsupportedError
+  AbstractVllmError --> VllmStreamingDisabledError
+  AbstractVllmError --> VllmModelRefusalError
+  AbstractVllmError --> VllmStreamingNotImplementedError
+  PolicyDocumentError --> PolicyDocumentLoadError
+  PolicyDocumentError --> PolicyDocumentValidationError
+  PolicyDocumentError --> PolicyEvaluationError
 ```
 
 ---
@@ -101,6 +140,12 @@ class AbstractSpakkyFrameworkError(Exception, ABC):
 
 ```python
 from spakky.core.application.error import AbstractSpakkyApplicationError
+from spakky.core.application.startup_diagnostics import (
+    StartupElapsedTimeCannotBeNegativeError,
+    StartupFailureSummaryNotAllowedError,
+    StartupFailureSummaryRequiredError,
+    StartupProcessedCountCannotBeNegativeError,
+)
 ```
 
 | 에러                                                    | 설명                                  |
@@ -111,6 +156,10 @@ from spakky.core.application.error import AbstractSpakkyApplicationError
 | `ApplicationContextAlreadyStoppedError`                 | 이미 중지된 컨텍스트를 재중지 시도    |
 | `EventLoopThreadNotStartedInApplicationContextError`    | 이벤트 루프 스레드 미시작 상태에서 접근 |
 | `EventLoopThreadAlreadyStartedInApplicationContextError`| 이벤트 루프 스레드 중복 시작 시도     |
+| `StartupElapsedTimeCannotBeNegativeError`               | startup phase elapsed time이 음수      |
+| `StartupProcessedCountCannotBeNegativeError`            | startup phase processed count가 음수   |
+| `StartupFailureSummaryRequiredError`                    | 실패 phase record에 failure summary가 없음 |
+| `StartupFailureSummaryNotAllowedError`                  | 성공 phase record에 failure summary가 있음 |
 
 #### AbstractSpakkyPodError
 
@@ -213,6 +262,56 @@ from spakky.domain.error import (
 
 ---
 
+### spakky-auth
+
+인증/인가 semantic model, provider capability validation, snapshot propagation 관련 에러입니다.
+
+```python
+from spakky.auth.error import (
+    AbstractSpakkyAuthError,
+    AuthContextError,
+    AuthContextNotFoundError,
+    InvalidAuthContextValueError,
+    CredentialCarrierError,
+    AuthenticationError,
+    AuthorizationError,
+    ConflictingAuthMetadataError,
+    AuthRequirementDeniedError,
+    AuthRequirementProviderUnavailableError,
+    AuthContextSnapshotError,
+    MissingAuthContextSnapshotError,
+    InvalidAuthContextSnapshotError,
+    ExpiredAuthContextSnapshotError,
+    AuthVerificationProviderUnavailableError,
+)
+from spakky.auth.startup import (
+    AuthStartupCapabilityValidationError,
+    AuthStartupContainerUnavailableError,
+)
+```
+
+| 에러 | 설명 |
+| ---- | ---- |
+| `AbstractSpakkyAuthError` | auth 에러 기반 클래스 |
+| `AuthContextError` | `AuthContext` 저장 또는 조회 실패 기반 클래스 |
+| `AuthContextNotFoundError` | `ApplicationContext`에 `AuthContext` 값이 없음 |
+| `InvalidAuthContextValueError` | context 값이 `AuthContext` 인스턴스가 아님 |
+| `CredentialCarrierError` | credential carrier를 해석할 수 없음 |
+| `AuthenticationError` | 인증 실패 |
+| `AuthorizationError` | 인가 실패 기반 클래스 |
+| `ConflictingAuthMetadataError` | public marker와 protected requirement가 함께 유효함 |
+| `AuthRequirementDeniedError` | requirement decision이 `ALLOW`가 아니며 `decision`을 보존함 |
+| `AuthRequirementProviderUnavailableError` | 보호 requirement를 처리할 provider가 없음 |
+| `AuthContextSnapshotError` | snapshot 전파/검증 실패 기반 클래스 |
+| `MissingAuthContextSnapshotError` | snapshot metadata가 없음 |
+| `InvalidAuthContextSnapshotError` | snapshot envelope가 malformed 또는 unsigned 상태 |
+| `ExpiredAuthContextSnapshotError` | snapshot 유효 시간이 만료됨 |
+| `AuthVerificationProviderUnavailableError` | snapshot verifier provider를 사용할 수 없음 |
+| `AuthStartupCapabilityValidationError` | 필요한 auth capability provider 수가 0개 또는 2개 이상 |
+| `AuthStartupContainerUnavailableError` | startup validation에 필요한 container가 없음 |
+
+---
+
 ### spakky-event
 
 이벤트 시스템 관련 에러입니다.
@@ -263,6 +362,8 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 from spakky.task.error import (
     AbstractSpakkyTaskError,
     TaskNotFoundError,
+    TaskApplicationContextNotFoundError,
+    TaskAsyncInvocationRequiredError,
     DuplicateTaskError,
     InvalidScheduleSpecificationError,
 )
@@ -271,8 +372,28 @@ from spakky.task.error import (
 | 에러                                | 설명                                                    |
 | ----------------------------------- | ------------------------------------------------------- |
 | `TaskNotFoundError`                 | 레지스트리에서 태스크를 찾을 수 없음                    |
+| `TaskApplicationContextNotFoundError` | 직접 실행에 필요한 `ApplicationContext`가 없음         |
+| `TaskAsyncInvocationRequiredError`  | async task를 sync 직접 실행 경로로 호출함               |
 | `DuplicateTaskError`               | 중복 태스크 등록 시도                                   |
 | `InvalidScheduleSpecificationError` | `@schedule`에 `interval`/`at`/`crontab` 중 하나만 필요 |
+
+---
+
+### spakky-actuator
+
+Actuator health/info extension 평가 관련 에러입니다.
+
+```python
+from spakky.actuator.error import (
+    AbstractSpakkyActuatorError,
+    CannotEvaluateAsyncExtensionSynchronouslyError,
+)
+```
+
+| 에러 | 설명 |
+| ---- | ---- |
+| `AbstractSpakkyActuatorError` | actuator 에러 기반 클래스 |
+| `CannotEvaluateAsyncExtensionSynchronouslyError` | sync 평가 경로에서 async-only extension을 평가하려 함 |
 
 ---
 
@@ -283,6 +404,7 @@ from spakky.task.error import (
 ```python
 from spakky.cache.error import (
     AbstractSpakkyCacheError,
+    CacheBackendCapabilityError,
     CacheKeyGenerationError,
     InvalidCacheTTLError,
 )
@@ -292,6 +414,7 @@ from spakky.cache.error import (
 | ------------------------- | ------------------------------ |
 | `InvalidCacheTTLError`    | 0 이하 TTL 값 지정 시도        |
 | `CacheKeyGenerationError` | cache 어노테이션 key 생성 실패 |
+| `CacheBackendCapabilityError` | cache annotation이 backend 미지원 capability를 요구 |
 
 ---
 
@@ -324,6 +447,7 @@ from spakky.agent.error import (
     AgentBootstrapError,
     AgentPersistenceConfigurationError,
     AgentModelConfigurationError,
+    AgentOutputGuardError,
 )
 ```
 
@@ -335,6 +459,7 @@ from spakky.agent.error import (
 | `AgentBootstrapError`                   | agent bootstrap 검증 실패                 | `AbstractSpakkyAgentError` |
 | `AgentPersistenceConfigurationError`     | durable agent persistence contribution 누락 | `AgentBootstrapError`      |
 | `AgentModelConfigurationError`          | 필요한 model adapter 등록 누락            | `AgentBootstrapError`      |
+| `AgentOutputGuardError`                 | streaming output guard가 unsafe exposure를 감지 | `AbstractSpakkyAgentError` |
 
 `AgentToolBindingError`는 tool callable 실행 전에 발생하므로, schema에 없는 인자·필수 인자 누락·positional/keyword 중복 같은 잘못된 model payload가 side effect를 만들기 전에 차단됩니다.
 
@@ -398,6 +523,7 @@ SQLAlchemy 통합 관련 에러입니다.
 from spakky.plugins.sqlalchemy.error import AbstractSpakkySqlAlchemyError
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
 from spakky.plugins.sqlalchemy.persistency.error import AbstractSpakkySqlAlchemyPersistencyError
+from spakky.plugins.sqlalchemy.agent.error import AgentPersistenceRowNotFoundError
 ```
 
 | 에러                                      | 설명                             | 상속                           |
@@ -410,6 +536,7 @@ from spakky.plugins.sqlalchemy.persistency.error import AbstractSpakkySqlAlchemy
 | `NoSchemaFoundFromDomainError`            | 도메인 타입에 대한 스키마 없음   | `AbstractSpakkySqlAlchemyORMError` |
 | `CannotDetermineAggregateTypeError`       | Aggregate 타입 추론 불가         | `AbstractSpakkySqlAlchemyPersistencyError` |
 | `SessionNotInitializedError`              | 세션 미초기화 상태에서 접근      | `AbstractSpakkySqlAlchemyPersistencyError` |
+| `AgentPersistenceRowNotFoundError`        | agent persistence row를 찾을 수 없음 | `AbstractSpakkySqlAlchemyPersistencyError` |
 
 ### spakky-celery
 
@@ -456,6 +583,48 @@ from spakky.plugins.cryptography.error import (
 | `IncompatibleKeyTypeError`       | 호환되지 않는 키 타입 비교         |
 | `PasswordRequiredError`          | 필수 password 파라미터 누락        |
 | `AsymmetricKeyRequiredError`     | 비대칭 키 또는 크기 파라미터 누락  |
+
+### spakky-oidc
+
+OIDC bearer authentication provider 관련 에러입니다. Provider는 이 에러들을 인증 실패 decision으로 매핑하거나 adapter 경계에서 fail-closed 응답으로 변환합니다.
+
+```python
+from spakky.plugins.oidc.error import (
+    AbstractSpakkyOidcError,
+    OidcCredentialError,
+    OidcDiscoveryError,
+    OidcJwksError,
+    OidcTokenValidationError,
+)
+```
+
+| 에러 | 설명 |
+| ---- | ---- |
+| `AbstractSpakkyOidcError` | OIDC provider 에러 기반 클래스 |
+| `OidcDiscoveryError` | discovery metadata를 로드하거나 신뢰할 수 없음 |
+| `OidcJwksError` | JWKS key material이 없거나 bearer credential 검증에 실패 |
+| `OidcCredentialError` | credential carrier가 bearer token으로 사용할 수 없음 |
+| `OidcTokenValidationError` | JWT signature, issuer, audience, 시간 claim 등 OIDC 검증 실패 |
+
+### spakky-policy
+
+Policy document loader/evaluator 내부의 provider-local 입력 검증 예외입니다. 이 예외들은 `AbstractSpakkyFrameworkError`를 상속하지 않는 plain `Exception` 계층이며, auth provider 경계에서는 `AuthorizationDecision.ERROR`로 매핑됩니다.
+
+```python
+from spakky.plugins.policy.error import (
+    PolicyDocumentError,
+    PolicyDocumentLoadError,
+    PolicyDocumentValidationError,
+    PolicyEvaluationError,
+)
+```
+
+| 에러 | 설명 |
+| ---- | ---- |
+| `PolicyDocumentError` | policy document 실패 기반 클래스 |
+| `PolicyDocumentLoadError` | policy document를 로드할 수 없음 |
+| `PolicyDocumentValidationError` | 입력 문서를 canonical policy model로 만들 수 없음 |
+| `PolicyEvaluationError` | policy 평가를 완료할 수 없음 |
 
 ### spakky-outbox
 
@@ -508,6 +677,7 @@ Redis 캐시 백엔드 관련 에러입니다.
 ```python
 from spakky.plugins.redis.error import (
     AbstractSpakkyRedisError,
+    RedisCacheLockTimeoutError,
     RedisCacheOperationError,
     RedisCacheSerializationError,
 )
@@ -518,6 +688,7 @@ from spakky.plugins.redis.error import (
 | `AbstractSpakkyRedisError`     | Redis 캐시 백엔드 에러 기반 클래스 |
 | `RedisCacheOperationError`     | Redis 명령 실행 또는 응답 변환 실패  |
 | `RedisCacheSerializationError` | cache 값 직렬화 또는 역직렬화 실패   |
+| `RedisCacheLockTimeoutError`   | cache population lock 획득 타임아웃 |
 
 ### spakky-saga
 
@@ -606,6 +777,34 @@ from spakky.plugins.openfga.error import (
 | ---- | ---- |
 | `OpenFgaProviderUnavailableError` | OpenFGA check provider 호출 실패 또는 비가용 상태 |
 | `OpenFgaReferenceMappingError` | canonical auth ref를 OpenFGA user/object/relation으로 변환할 수 없음 |
+
+### spakky-vllm
+
+vLLM OpenAI-compatible model adapter 관련 에러입니다. Provider 응답은 `spakky-agent`의 `ModelError`/stream event로 변환되기 전에 이 계층에서 정규화됩니다.
+
+```python
+from spakky.plugins.vllm.error import (
+    AbstractVllmError,
+    VllmConstrainedDecodingUnsupportedError,
+    VllmModelRefusalError,
+    VllmResponseError,
+    VllmStreamingDisabledError,
+    VllmStreamingNotImplementedError,
+    VllmTimeoutError,
+    VllmTransportError,
+)
+```
+
+| 에러 | 설명 |
+| ---- | ---- |
+| `AbstractVllmError` | vLLM adapter 에러 기반 클래스 |
+| `VllmTransportError` | OpenAI-compatible endpoint 요청 실패 |
+| `VllmTimeoutError` | vLLM 요청 타임아웃 |
+| `VllmResponseError` | provider 응답을 Spakky model contract로 매핑할 수 없음 |
+| `VllmConstrainedDecodingUnsupportedError` | 요청된 tool constraint를 vLLM이 강제할 수 없음 |
+| `VllmStreamingDisabledError` | plugin 설정에서 streaming이 비활성화됨 |
+| `VllmModelRefusalError` | 모델이 정상 completion 생성을 거부함 |
+| `VllmStreamingNotImplementedError` | pre-streaming adapter 실패 호환 alias |
 
 ---
 

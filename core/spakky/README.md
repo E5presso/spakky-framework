@@ -409,21 +409,27 @@ feature plugin과 provider plugin이 모두 include set에 있어야 contributio
 Startup diagnostics를 켜면 `load_plugins` phase에 contribution loaded/skipped/failed
 count와 skip reason이 기록됩니다.
 
-자세한 내용은 [기여 가이드](../../CONTRIBUTING.md#-plugin-development)를 참고하세요.
+자세한 내용은 [기여 가이드](../../CONTRIBUTING.md)를 참고하세요.
 
 ## 사용 가능한 플러그인
 
 | 플러그인 | 설명 |
 |--------|-------------|
 | [`spakky-fastapi`](https://pypi.org/project/spakky-fastapi/) | FastAPI 통합 |
+| [`spakky-grpc`](https://pypi.org/project/spakky-grpc/) | gRPC 서비스 컨트롤러 통합 |
 | [`spakky-typer`](https://pypi.org/project/spakky-typer/) | Typer CLI 통합 |
 | [`spakky-sqlalchemy`](https://pypi.org/project/spakky-sqlalchemy/) | SQLAlchemy ORM 통합 |
 | [`spakky-kafka`](https://pypi.org/project/spakky-kafka/) | Apache Kafka event system |
 | [`spakky-rabbitmq`](https://pypi.org/project/spakky-rabbitmq/) | RabbitMQ event system |
+| [`spakky-redis`](https://pypi.org/project/spakky-redis/) | Redis cache backend |
+| [`spakky-cryptography`](https://pypi.org/project/spakky-cryptography/) | Snapshot sign/verify와 password hash/verify Auth provider |
+| [`spakky-oidc`](https://pypi.org/project/spakky-oidc/) | OIDC/OAuth bearer credential 인증 provider |
 | [`spakky-celery`](https://pypi.org/project/spakky-celery/) | Celery task dispatch |
 | [`spakky-logging`](https://pypi.org/project/spakky-logging/) | AOP 기반 구조화 로깅 |
 | [`spakky-openfga`](https://pypi.org/project/spakky-openfga/) | OpenFGA 관계 검사 AuthZ provider |
+| [`spakky-policy`](https://pypi.org/project/spakky-policy/) | Policy document 기반 AuthZ evaluator |
 | [`spakky-opentelemetry`](https://pypi.org/project/spakky-opentelemetry/) | OpenTelemetry SDK bridge |
+| [`spakky-vllm`](https://pypi.org/project/spakky-vllm/) | vLLM OpenAI-compatible Agent model adapter |
 
 ## 코어 모듈
 
@@ -442,11 +448,16 @@ count와 skip reason이 기록됩니다.
 | 패키지 | 설명 |
 |---------|-------------|
 | [`spakky-domain`](https://pypi.org/project/spakky-domain/) | DDD 빌딩 블록(Entity, AggregateRoot, ValueObject, Event) |
+| [`spakky-auth`](https://pypi.org/project/spakky-auth/) | Provider-neutral 인증/인가 계약과 boundary metadata |
 | [`spakky-data`](https://pypi.org/project/spakky-data/) | Repository와 transaction 추상화 |
 | [`spakky-event`](https://pypi.org/project/spakky-event/) | Event handling(`@EventHandler` stereotype) |
 | [`spakky-task`](https://pypi.org/project/spakky-task/) | Task queue 추상화(`@TaskHandler`, `@task`, `@schedule`) |
+| [`spakky-agent`](https://pypi.org/project/spakky-agent/) | Agentic workflow 계약과 model/delegation port |
+| [`spakky-actuator`](https://pypi.org/project/spakky-actuator/) | Health, readiness, liveness, info actuator 계약 |
+| [`spakky-cache`](https://pypi.org/project/spakky-cache/) | Backend-neutral application data cache 계약 |
 | [`spakky-tracing`](https://pypi.org/project/spakky-tracing/) | 분산 트레이싱 추상화(TraceContext, Propagator) |
 | [`spakky-outbox`](https://pypi.org/project/spakky-outbox/) | Transactional Outbox 패턴(OutboxEventBus, Relay) |
+| [`spakky-saga`](https://pypi.org/project/spakky-saga/) | 분산 트랜잭션 사가 오케스트레이션 |
 
 ## 라이선스
 

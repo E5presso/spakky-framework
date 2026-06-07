@@ -113,6 +113,54 @@ cache = RedisCache[str]()
 cache.set("profile:42", "Ada")
 ```
 
+### AuthContext
+
+`spakky-auth`가 정의하는 request/context-scoped 인증 상태입니다. Inbound adapter나
+snapshot verifier가 `ApplicationContext` context value에 저장하며, 보호된 boundary는
+사용자 메서드 인자 대신 이 context를 읽어 인증 주체, tenant, role, scope, safe claim을
+평가합니다.
+
+```python
+from spakky.auth import AuthContext, AuthSubject
+
+auth_context = AuthContext(
+    subject=AuthSubject(id="user:alice"),
+    issuer="issuer:local",
+    scopes=("documents:read",),
+)
+```
+
+### Auth Requirement Decorator
+
+클래스나 메서드 boundary에 provider-neutral auth metadata를 붙이는 decorator입니다.
+`@protected`, `@require_scope`, `@require_role`, `@require_permission`,
+`@require_policy`, `@require_relation`은 AND semantics로 결합되며, 실제 decision은
+등록된 provider port가 수행합니다.
+
+```python
+from spakky.auth import protected, require_scope
+
+@protected
+@require_scope("documents:read")
+def read_document(document_id: str) -> str:
+    ...
+```
+
+### Auth Provider Capability
+
+provider plugin이 `spakky.contributions.spakky.auth` entry point로 선언하는 기능
+단위입니다. `spakky-auth` startup validation은 보호된 boundary와 snapshot propagation이
+요구하는 `AUTHENTICATION`, `POLICY_EVALUATION`, `PERMISSION_CHECK`, `ROLE_CHECK`,
+`SCOPE_CHECK`, `RELATION_CHECK`, `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY`, `PASSWORD_HASH`,
+`PASSWORD_VERIFY` capability가 정확히 하나의 provider에 의해 충족되는지 확인합니다.
+
+### AuthContextSnapshot
+
+task, broker, event, saga 같은 비동기 경계에서 raw bearer token 대신 전파하는
+provider-neutral 인증 snapshot입니다. `spakky-cryptography`는 HMAC 기반
+`SNAPSHOT_SIGN`/`SNAPSHOT_VERIFY` provider를 제공하고, consumer boundary는 snapshot을
+검증한 뒤 `AuthContext`를 seed합니다.
+
 ---
 
 ## Stereotype 데코레이터

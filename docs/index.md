@@ -245,6 +245,8 @@ app = (
 | [spakky-logging](api/plugins/spakky-logging.md)       | 구조화된 로깅    |
 | [spakky-fastapi](api/plugins/spakky-fastapi.md)       | FastAPI 통합     |
 | [spakky-rabbitmq](api/plugins/spakky-rabbitmq.md)     | RabbitMQ 통합    |
+| [spakky-cryptography](api/plugins/spakky-cryptography.md) | 암호화/Auth snapshot/password provider |
+| [spakky-oidc](api/plugins/spakky-oidc.md)             | OIDC bearer 인증 provider |
 | [spakky-policy](api/plugins/spakky-policy.md)         | 정책 문서 AuthZ evaluator |
 | [spakky-openfga](api/plugins/spakky-openfga.md)       | OpenFGA 관계 검사 AuthZ provider |
 | [spakky-typer](api/plugins/spakky-typer.md)           | Typer CLI 통합   |
@@ -272,6 +274,9 @@ flowchart LR
     opentelemetry[spakky-opentelemetry]
     grpc[spakky-grpc]
     redis[spakky-redis]
+    cryptography[spakky-cryptography]
+    oidc[spakky-oidc]
+    policy[spakky-policy]
     openfga[spakky-openfga]
     vllm[spakky-vllm]
   end
@@ -288,30 +293,40 @@ flowchart LR
     task[spakky-task] --> core
     tracing_dep --> core
     agent[spakky-agent] --> core
-    vllm --> agent
+    auth[spakky-auth] --> core
     cache[spakky-cache] --> core
     saga[spakky-saga] --> domain
+    saga --> auth
     saga --> core
   end
 
   rabbitmq -. RabbitMQ .-> event
+  rabbitmq -- auth snapshot --> auth
   rabbitmq -- tracing --> tracing_dep
   kafka -. Kafka .-> event
+  kafka -- auth snapshot --> auth
   kafka -- tracing --> tracing_dep
   sqlalchemy -. ORM .-> data
   sqlalchemy -. Outbox contribution .-> outbox
   fastapi -. FastAPI .-> core
+  fastapi -- auth boundary --> auth
   fastapi -- tracing --> tracing_dep
   typer -. Typer .-> core
+  typer -- auth boundary --> auth
   logging -. 로깅 .-> core
-  security -. 인증 .-> core
+  cryptography -. snapshot/password .-> auth
+  oidc -. bearer authn .-> auth
+  policy -. AuthZ policy .-> auth
   celery -. Celery .-> task
+  celery -- auth snapshot --> auth
   celery -- tracing --> tracing_dep
   opentelemetry -. OTel .-> core
   opentelemetry -- OTel --> tracing_dep
   opentelemetry -. logging .-> logging
   grpc -. gRPC .-> core
+  grpc -- auth boundary --> auth
   grpc -- tracing --> tracing_dep
   redis -. Redis .-> cache
   openfga -. ReBAC .-> auth
+  vllm -. model adapter .-> agent
 ```
