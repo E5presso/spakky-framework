@@ -30,6 +30,12 @@ Spakky extras를 사용한다면 다음처럼 설치할 수 있습니다.
 pip install spakky[sqlalchemy]
 ```
 
+PostgreSQL 예제를 그대로 따라간다면 driver까지 포함하는 extra를 쓰면 됩니다.
+
+```bash
+pip install "spakky[database-postgres]"
+```
+
 ---
 
 ## 설정
@@ -42,6 +48,10 @@ export SPAKKY_SQLALCHEMY__ECHO="false"
 export SPAKKY_SQLALCHEMY__AUTOCOMMIT="true"
 export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
 ```
+
+`postgresql+psycopg://` URL은 `psycopg` driver가 필요합니다. `spakky[database]`와
+`spakky[sqlalchemy]`는 특정 DB driver를 강제로 설치하지 않습니다. PostgreSQL을 쓴다면
+`spakky[database-postgres]`를 선택하거나 프로젝트 의존성에 `psycopg[binary]`를 직접 추가하세요.
 
 애플리케이션은 플러그인을 로드한 뒤 도메인, ORM table, Repository, UseCase가 들어 있는
 패키지를 scan해야 합니다.
