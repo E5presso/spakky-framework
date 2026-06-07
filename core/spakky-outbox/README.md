@@ -91,6 +91,8 @@ class CreateOrderUseCase:
 | `OutboxConfig`                                                       | 환경변수 기반 설정                                  |
 | `OutboxMessage`                                                      | Outbox message model                                                     |
 
+`OutboxEventBus`와 `AsyncOutboxEventBus`는 메시지를 저장할 때 `DirectEventBus`와 같은 outbound metadata 정책을 사용합니다. 기존 tracing header는 보존하고, auth snapshot 전파가 활성화된 request-scope에서는 `spakky.auth.context_snapshot`에 signed `AuthContextSnapshot` envelope를 저장합니다. Raw bearer token은 Outbox headers에 저장하지 않습니다.
+
 ### 커스텀 Storage 구현
 
 custom storage backend를 구현하려면 다음 interface를 구현합니다.

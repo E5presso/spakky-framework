@@ -8,6 +8,7 @@ from spakky.event.bus.transport_event_bus import (
     AsyncDirectEventBus,
     DirectEventBus,
 )
+from spakky.event.auth_propagation import AuthContextSnapshotHeaderInjector
 from spakky.event.mediator.domain_event_mediator import (
     AsyncEventMediator,
     EventMediator,
@@ -31,6 +32,7 @@ def initialize(app: SpakkyApplication) -> None:
     app.add(AsyncEventMediator)
     app.add(EventPublisher)
     app.add(AsyncEventPublisher)
+    app.add(AuthContextSnapshotHeaderInjector)
     app.add(DirectEventBus)
     app.add(AsyncDirectEventBus)
 

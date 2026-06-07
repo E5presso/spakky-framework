@@ -2796,6 +2796,7 @@ version = "6.5.0"
 source = { editable = "core/spakky-event" }
 dependencies = [
     { name = "pydantic" },
+    { name = "spakky-auth" },
     { name = "spakky-data" },
     { name = "spakky-domain" },
     { name = "spakky-tracing" },
@@ -2804,6 +2805,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-data", editable = "core/spakky-data" },
     { name = "spakky-domain", editable = "core/spakky-domain" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },

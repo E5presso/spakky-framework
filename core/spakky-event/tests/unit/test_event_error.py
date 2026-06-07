@@ -1,5 +1,7 @@
 from spakky.event.error import (
     AbstractSpakkyEventError,
+    AuthSnapshotPropagationContextUnavailableError,
+    AuthSnapshotPropagationSignerUnavailableError,
     UnknownEventTypeError,
 )
 
@@ -26,3 +28,14 @@ def test_unknown_event_type_error_stores_event_type_expect_attribute_accessible(
     assert error.event_type is SomeType
     assert error.message == "Unknown event type"
     assert isinstance(error, AbstractSpakkyEventError)
+
+
+def test_auth_snapshot_propagation_errors_are_event_errors() -> None:
+    """snapshot 전파 오류가 event error hierarchy에 속함을 검증한다."""
+    context_error = AuthSnapshotPropagationContextUnavailableError()
+    signer_error = AuthSnapshotPropagationSignerUnavailableError()
+
+    assert context_error.message == "Auth snapshot propagation context is unavailable"
+    assert signer_error.message == "Auth snapshot propagation signer is unavailable"
+    assert isinstance(context_error, AbstractSpakkyEventError)
+    assert isinstance(signer_error, AbstractSpakkyEventError)

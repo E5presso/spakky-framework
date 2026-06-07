@@ -130,7 +130,19 @@ app = (
 | `EventMediator` / `AsyncEventMediator` | Consumer와 Dispatcher를 결합한 in-process 구현체 |
 | `EventPublisher` / `AsyncEventPublisher` | Type-based router(DomainEvent→Mediator, IntegrationEvent→EventBus) |
 | `DirectEventBus` / `AsyncDirectEventBus` | 기본 EventBus → EventTransport 위임 구현 |
+| `AuthContextSnapshotHeaderInjector` | Event/Outbox outbound header에 signed `AuthContextSnapshot` metadata를 주입하는 helper |
 | `EventHandlerRegistrationPostProcessor` | `@EventHandler` 메서드를 자동 등록 |
+
+### 전파 metadata
+
+`DirectEventBus`와 `AsyncDirectEventBus`는 `IEventTransport.send(event_name, payload, headers)` public signature를 유지하면서 outbound header를 구성합니다.
+
+| metadata | 조건 | 설명 |
+|----------|------|------|
+| `traceparent` | `spakky-tracing` propagator 활성 | 기존 W3C tracing header를 보존합니다. |
+| `spakky.auth.context_snapshot` | `AuthSnapshotPropagationConfig(enabled=True)` + request-scope `AuthContext` + snapshot signer provider | raw bearer token 대신 signed `AuthContextSnapshot` envelope를 전파합니다. |
+
+`Authorization: Bearer ...` 같은 raw bearer credential은 event header로 전파하지 않습니다.
 
 ### 타입
 
@@ -146,6 +158,8 @@ app = (
 | 클래스 | 설명 |
 |-------|-------------|
 | `AbstractSpakkyEventError` | event operation 기반 error |
+| `AuthSnapshotPropagationContextUnavailableError` | snapshot 전파가 활성화되었지만 `ApplicationContext`를 읽을 수 없을 때 발생 |
+| `AuthSnapshotPropagationSignerUnavailableError` | snapshot 전파가 활성화되었지만 signer provider가 없을 때 발생 |
 | `InvalidMessageError` | message가 malformed일 때 발생 |
 
 ## 관련 패키지

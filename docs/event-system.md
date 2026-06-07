@@ -239,6 +239,8 @@ class UserEventHandler:
 | `IEventConsumer` / `IAsyncEventConsumer` | `register` | 핸들러 콜백 등록 (통합) |
 | `IEventDispatcher` / `IAsyncEventDispatcher` | `dispatch` | 인프로세스 핸들러 전달 (통합) |
 
+`DirectEventBus` / `AsyncDirectEventBus`는 transport public signature를 바꾸지 않고 headers에 outbound metadata를 주입합니다. `spakky-tracing`의 tracing header는 그대로 보존하며, auth snapshot 전파가 활성화된 request-scope에서는 `spakky.auth.context_snapshot`에 signed `AuthContextSnapshot` envelope를 담습니다. Raw bearer token은 event header로 전파하지 않습니다.
+
 ---
 
 ## DomainEvent vs IntegrationEvent
@@ -355,4 +357,3 @@ Publisher 코드는 브로커에 의존하지 않습니다. `IAsyncEventPublishe
 ### 재시도 전략
 
 분산 환경에서의 재시도는 메시지 브로커 수준에서 처리됩니다. RabbitMQ의 nack/requeue, Kafka의 offset 관리 등 트랜스포트 구현체가 재시도 로직을 담당합니다. 개별 핸들러에 재시도 로직을 직접 구현할 필요는 없습니다.
-

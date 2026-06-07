@@ -161,7 +161,7 @@ graph TD
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
-- **이벤트 코어** (spakky-event) → `spakky-domain` + `spakky-data` + `spakky-tracing`에 의존
+- **이벤트 코어** (spakky-event) → `spakky-domain` + `spakky-data` + `spakky-auth` + `spakky-tracing`에 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-tracing`에 의존 (컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
@@ -745,7 +745,7 @@ flowchart TD
 - **Publisher** (`IEventPublisher`): `publish(event: AbstractEvent)` — 타입 기반 라우팅
   - `AbstractDomainEvent` → `EventMediator` (인프로세스 dispatch)
   - `AbstractIntegrationEvent` → `IEventBus` (외부 전송)
-- **EventBus** (`IEventBus`): `send(event: AbstractIntegrationEvent)` — Integration Event 발행 진입점, Outbox seam 역할
+- **EventBus** (`IEventBus`): `send(event: AbstractIntegrationEvent)` — Integration Event 발행 진입점, Outbox seam 역할. `DirectEventBus` / `AsyncDirectEventBus`는 기존 tracing header를 보존하고, `AuthSnapshotPropagationConfig(enabled=True)`와 request-scope `AuthContext`가 있으면 raw bearer token 대신 signed `AuthContextSnapshot` envelope를 `spakky.auth.context_snapshot` metadata로 주입합니다.
 - **EventTransport** (`IEventTransport`): `send(event: AbstractIntegrationEvent)` — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현)
 - **Dispatcher**: `dispatch(event)` — 등록된 핸들러에 인프로세스 전달
 - **Consumer**: `register(event_type, handler)` — 이벤트 타입과 콜백 연결
@@ -1064,7 +1064,7 @@ flowchart TD
 | 컴포넌트 | 설명 |
 |---------|------|
 | `IOutboxStorage` / `IAsyncOutboxStorage` | 아웃박스 메시지 저장소 포트 |
-| `OutboxEventBus` / `AsyncOutboxEventBus` | `@Primary`로 `DirectEventBus`를 교체하는 EventBus seam |
+| `OutboxEventBus` / `AsyncOutboxEventBus` | `@Primary`로 `DirectEventBus`를 교체하는 EventBus seam. 저장되는 Outbox headers에는 tracing metadata와 signed `AuthContextSnapshot` metadata가 함께 보존되며 raw bearer token은 저장하지 않음 |
 | `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (polling → `IEventTransport.send()`) |
 | `OutboxConfig` | 환경변수 기반 설정 (polling interval, batch size, retry 등) |
 | `OutboxMessage` | 아웃박스 메시지 모델 |

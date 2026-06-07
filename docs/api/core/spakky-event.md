@@ -26,6 +26,12 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+## Auth Propagation
+
+::: spakky.event.auth_propagation
+options:
+show_root_heading: false
+
 ## Mediator
 
 ::: spakky.event.mediator.domain_event_mediator
