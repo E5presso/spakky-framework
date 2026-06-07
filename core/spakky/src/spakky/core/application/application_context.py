@@ -776,16 +776,39 @@ class ApplicationContext(IApplicationContext):
         )
         self.__event_thread.start()
 
-        for service in self.__services:
-            service.start()
+        started_services: list[IService] = []
+        started_async_services: list[IAsyncService] = []
 
-        async def start_async_services() -> None:
-            if self.__event_loop is None:  # pragma: no cover - coverage boundary
-                raise EventLoopThreadNotStartedInApplicationContextError
-            for service in self.__async_services:
-                await service.start_async()
+        try:
+            for service in self.__services:
+                service.start()
+                started_services.append(service)
 
-        run_coroutine_threadsafe(start_async_services(), self.__event_loop).result()
+            async def start_async_services() -> None:
+                if self.__event_loop is None:  # pragma: no cover - coverage boundary
+                    raise EventLoopThreadNotStartedInApplicationContextError
+                for service in self.__async_services:
+                    await service.start_async()
+                    started_async_services.append(service)
+
+            run_coroutine_threadsafe(start_async_services(), self.__event_loop).result()
+        except BaseException:
+            for service in reversed(started_services):
+                service.stop()
+
+            async def stop_started_async_services() -> None:
+                for service in reversed(started_async_services):
+                    await service.stop_async()
+
+            run_coroutine_threadsafe(
+                stop_started_async_services(), self.__event_loop
+            ).result()
+            self.__event_loop.call_soon_threadsafe(self.__event_loop.stop)  # type: ignore[arg-type]  # stop() is valid callback
+            self.__event_thread.join()
+            self.__event_loop = None
+            self.__event_thread = None
+            self.__is_started = False
+            raise
 
     def __stop_services(self) -> None:
         """Stop all services and shutdown event loop.
