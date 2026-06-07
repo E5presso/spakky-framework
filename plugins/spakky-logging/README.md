@@ -33,15 +33,14 @@ class UserService:
 
 `LoggingConfig`로 기본값을 override합니다.
 
-```python
-from spakky.plugins.logging import LoggingConfig, LogFormat
+`LoggingConfig` is loaded as a `@Configuration` pod and reads
+`SPAKKY_LOGGING__*` environment variables through `pydantic-settings`.
 
-config = LoggingConfig(
-    level="DEBUG",
-    format=LogFormat.JSON,
-    mask_keys=frozenset({"password", "token", "secret"}),
-    slow_threshold_ms=500,
-)
+```bash
+export SPAKKY_LOGGING__LEVEL=10
+export SPAKKY_LOGGING__FORMAT=json
+export SPAKKY_LOGGING__MASK_KEYS='["password", "token", "secret"]'
+export SPAKKY_LOGGING__SLOW_THRESHOLD_MS=500
 ```
 
 ### 4. LogContext 전파
