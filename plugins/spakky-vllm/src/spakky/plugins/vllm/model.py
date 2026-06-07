@@ -348,9 +348,7 @@ class VllmAgentModel(IAgentModel):
         events = tuple(
             ModelStreamEvent(
                 kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
-                tool_call=tool_buffers[index].to_tool_call(
-                    self, tool_schema_by_name
-                ),
+                tool_call=tool_buffers[index].to_tool_call(self, tool_schema_by_name),
                 metadata={"provider": "vllm"},
             )
             for index in sorted(tool_buffers)
