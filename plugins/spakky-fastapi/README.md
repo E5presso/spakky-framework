@@ -21,6 +21,7 @@ pip install spakky[fastapi]
 - **OpenAPI 통합**: tag와 documentation 자동 설정
 - **에러 처리 middleware**: debug mode를 포함한 built-in exception handling
 - **Context 관리**: request-scoped 의존성 주입 지원
+- **Auth 경계 통합**: `spakky-auth` 보호 handler용 `AuthContext` seeding
 - **Actuator endpoint**: `spakky-actuator` 로드 시 선택적 `/actuator/*` HTTP endpoint 제공
 
 ## 사용법
@@ -145,6 +146,18 @@ def fastapi_actuator_config() -> FastAPIActuatorConfig:
 
 FastAPI adapter는 플러그인별 상세 check를 자동 등록하지 않습니다.
 데이터베이스, broker, worker readiness가 actuator 출력에 영향을 줘야 한다면 애플리케이션에 `spakky.actuator.AbstractHealthProbe` Pod를 등록하세요.
+
+## Auth 경계 통합
+
+`spakky-fastapi`는 HTTP/WebSocket 경계에서 `spakky-auth`의 `AuthContext`를 seed합니다.
+FastAPI wrapper가 Spakky request context를 clear한 뒤 credential 전달체를 추출하고,
+사용자 handler 호출 전에 인증 provider로 `AuthContext`를 저장합니다. 보호된 handler는
+인증만을 위해 FastAPI `Request`, `WebSocket`, 또는 `AuthContext` 파라미터를 선언할 필요가 없습니다.
+
+- HTTP는 `Authorization: Bearer <token>`을 지원합니다.
+- WebSocket은 `Authorization: Bearer <token>`과 `access_token=<token>` connection query를 지원합니다.
+- HTTP auth failure는 CHALLENGE 401, DENY 403, ERROR 500으로 매핑됩니다.
+- WebSocket auth failure는 보호된 handler 호출 전에 connection close로 처리됩니다.
 
 ## 구성 요소
 

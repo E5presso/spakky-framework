@@ -10,6 +10,7 @@ from inspect import getmembers, signature
 from logging import getLogger
 from typing import Any
 
+from spakky.auth import AbstractSpakkyAuthError
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -25,6 +26,11 @@ from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import FastAPIError
 from fastapi.utils import (
     create_model_field,  # type: ignore[import-untyped] - fastapi.utils 내부 모듈, 타입 스텁 미제공
+)
+from spakky.plugins.fastapi.auth import (
+    HTTP_AUTH_REQUEST_PARAMETER,
+    WEBSOCKET_AUTH_PARAMETER,
+    FastAPIAuthBoundary,
 )
 from spakky.plugins.fastapi.routes.route import Route
 from spakky.plugins.fastapi.routes.websocket import WebSocketRoute
@@ -123,12 +129,35 @@ class RegisterRoutesPostProcessor(
                     # Reset context so request-scoped Pods do not leak between
                     # consecutive FastAPI requests processed on the same worker.
                     self.__application_context.clear_context()
+                    auth_request = kwargs.pop(HTTP_AUTH_REQUEST_PARAMETER)
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(  # route decorator method lookup
                         controller_instance, method_name
                     )  # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
-                    return await method_to_call(*args, **kwargs)
+                    auth_boundary = FastAPIAuthBoundary(
+                        context,
+                        self.__application_context,
+                    )
+                    try:
+                        auth_boundary.seed_http_auth_context(
+                            auth_request,
+                            method_to_call,
+                        )
+                        for request_name in auth_boundary.request_argument_names(
+                            method_to_call
+                        ):
+                            kwargs[request_name] = auth_request
+                        return await method_to_call(*args, **kwargs)
+                    except AbstractSpakkyAuthError as e:
+                        auth_boundary.map_http_auth_error(e)
 
+                auth_boundary = FastAPIAuthBoundary(
+                    self.__container,
+                    self.__application_context,
+                )
+                endpoint.__dict__["__signature__"] = (
+                    auth_boundary.signature_with_request(method)
+                )
                 router.add_api_route(endpoint=endpoint, **asdict(route))
             if websocket_route is not None:
                 # pylint: disable=line-too-long
@@ -151,12 +180,36 @@ class RegisterRoutesPostProcessor(
                     # WebSocket sessions reuse the same event loop task, so we
                     # clear the context to guarantee per-connection isolation.
                     self.__application_context.clear_context()
+                    websocket = kwargs.pop(WEBSOCKET_AUTH_PARAMETER)
                     controller_instance = context.get(controller_type)
                     method_to_call = getattr(  # websocket decorator method lookup
                         controller_instance, method_name
                     )  # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
-                    return await method_to_call(*args, **kwargs)
+                    auth_boundary = FastAPIAuthBoundary(
+                        context,
+                        self.__application_context,
+                    )
+                    try:
+                        auth_boundary.seed_websocket_auth_context(
+                            websocket,
+                            method_to_call,
+                        )
+                        for websocket_name in auth_boundary.websocket_argument_names(
+                            method_to_call
+                        ):
+                            kwargs[websocket_name] = websocket
+                        return await method_to_call(*args, **kwargs)
+                    except AbstractSpakkyAuthError as e:
+                        await auth_boundary.close_websocket_for_auth_error(websocket, e)
+                        return None
 
+                auth_boundary = FastAPIAuthBoundary(
+                    self.__container,
+                    self.__application_context,
+                )
+                websocket_endpoint.__dict__["__signature__"] = (
+                    auth_boundary.signature_with_websocket(method)
+                )
                 router.add_api_websocket_route(
                     endpoint=websocket_endpoint, **asdict(websocket_route)
                 )
