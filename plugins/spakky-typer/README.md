@@ -20,6 +20,7 @@ pip install spakky[typer]
 - **비동기 지원**: CLI command에서 async/await 전체 지원
 - **Command grouping**: command를 논리적 group으로 구성
 - **의존성 주입**: 서비스가 controller에 자동 주입
+- **Auth boundary 통합**: `--auth-token` / `SPAKKY_AUTH_TOKEN` 전달체로 `AuthContext` seed 및 protected command fail-closed 처리
 - **Rich 통합**: Typer의 rich console output 활용
 - **Actuator command**: `spakky-actuator` 로드 시 `actuator` 상태 command 등록
 
@@ -115,6 +116,40 @@ typer_app = application.container.get(Typer)
 if __name__ == "__main__":
     typer_app()
 ```
+
+### Auth boundary
+
+`spakky-auth` decorator를 CLI controller method에 선언하면 Typer adapter가 command 실행 전에 auth 전달체를 추출하고 `ApplicationContext`에 `AuthContext`를 seed합니다.
+
+전달체 우선순위는 `--auth-token` option, 그 다음 `SPAKKY_AUTH_TOKEN` env var입니다. stdin은 auth 전달체로 사용하지 않습니다.
+
+```python
+from spakky.auth import protected, require_scope
+from spakky.plugins.typer.stereotypes.cli_controller import CliController, command
+
+
+@CliController("docs")
+class DocumentCliController:
+    @command("read")
+    @require_scope("documents:read")
+    def read_document(self, document_id: str) -> None:
+        print(f"read {document_id}")
+```
+
+```bash
+python main.py docs read --document-id doc-1 --auth-token "$TOKEN"
+SPAKKY_AUTH_TOKEN="$TOKEN" python main.py docs read --document-id doc-1
+```
+
+Auth 결과는 reason code를 출력하고 Typer exit code로 매핑됩니다.
+
+| Decision | Exit code |
+|----------|-----------|
+| `CHALLENGE` | `2` |
+| `DENY` | `3` |
+| `ERROR` | `1` |
+
+Decorator가 없는 command는 provider나 token 없이 허용됩니다. Protected command는 token/provider/AuthContext/checker가 없거나 authorization decision이 `ALLOW`가 아니면 fail closed 됩니다.
 
 ### Actuator command
 

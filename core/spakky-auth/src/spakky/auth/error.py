@@ -3,7 +3,6 @@
 from abc import ABC
 
 from spakky.auth.decision import AuthorizationDecision
-
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 

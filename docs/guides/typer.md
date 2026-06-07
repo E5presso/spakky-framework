@@ -186,6 +186,36 @@ class OrderCLI:
 
 명령 옵션 이름은 Typer의 기본 규칙을 따릅니다. 위 예시는 `python main.py orders import --path ./orders.json`처럼 호출합니다. `@command(name=None)`이면 메서드명이 Typer command 이름이 되고, 그룹 이름은 `@CliController("orders")` 또는 클래스명 kebab-case로 정해집니다.
 
+## Auth boundary 통합
+
+`spakky-auth`를 함께 사용하면 CLI command method에 `@protected`, `@require_scope`, `@require_role`, `@require_permission`, `@require_policy`, `@require_relation` metadata를 선언할 수 있습니다. Typer adapter는 command 실행 직전에 `--auth-token` option을 먼저 읽고, 없으면 `SPAKKY_AUTH_TOKEN` env var를 읽어 `CredentialCarrier(location=CLI_OPTION)`로 provider에 전달합니다. stdin은 auth 전달체가 아닙니다.
+
+```python
+from spakky.auth import require_scope
+from spakky.plugins.typer.stereotypes.cli_controller import CliController, command
+
+
+@CliController("documents")
+class DocumentCLI:
+    @command("read")
+    @require_scope("documents:read")
+    def read_document(self, document_id: str) -> None:
+        print(f"reading {document_id}")
+```
+
+```bash
+python main.py documents read --document-id doc-1 --auth-token "$TOKEN"
+SPAKKY_AUTH_TOKEN="$TOKEN" python main.py documents read --document-id doc-1
+```
+
+Decorator가 없는 command는 auth provider 없이도 allow all입니다. Protected command는 token, authentication provider, `AuthContext`, authorization checker 중 필요한 요소가 없거나 decision이 `ALLOW`가 아니면 fail closed 됩니다. CLI 출력은 reason code 기반이며 exit code는 다음처럼 고정됩니다.
+
+| Decision | Exit code | 예시 reason code |
+|----------|-----------|------------------|
+| `CHALLENGE` | `2` | `MISSING_CREDENTIAL`, `INVALID_CREDENTIAL` |
+| `DENY` | `3` | `INSUFFICIENT_SCOPE`, `POLICY_DENIED` |
+| `ERROR` | `1` | `VERIFICATION_PROVIDER_UNAVAILABLE` |
+
 ## AgentYield stream CLI
 
 `@Agent`도 CLI adapter에서는 UseCase와 같은 방식으로 다룹니다. Typer 전용 agent plugin을 만들지 않고, `@CliController` command가 container에서 agent Pod를 resolve한 뒤 `execute()`를 순회하면 됩니다. CodeAssistant demo의 CLI 예제는 `core/spakky-agent/examples/inbound_adapter_examples.py`에 있습니다.

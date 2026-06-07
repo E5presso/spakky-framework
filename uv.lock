@@ -3125,6 +3125,7 @@ source = { editable = "plugins/spakky-typer" }
 dependencies = [
     { name = "spakky" },
     { name = "spakky-actuator" },
+    { name = "spakky-auth" },
     { name = "typer" },
 ]
 
@@ -3132,6 +3133,7 @@ dependencies = [
 requires-dist = [
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-actuator", editable = "core/spakky-actuator" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "typer", specifier = ">=0.24.1" },
 ]
 

@@ -5,10 +5,28 @@ decorated classes, with support for both sync and async command handlers.
 """
 
 from functools import wraps
-from inspect import getmembers, iscoroutinefunction
+from inspect import Parameter, Signature, getmembers, iscoroutinefunction, signature
 from logging import getLogger
-from typing import Any
+import os
+from typing import Any, Callable, Never, cast
 
+from spakky.auth import (
+    AuthContextNotFoundError,
+    AuthInvocation,
+    AuthRequirementDeniedError,
+    AuthRequirementProviderUnavailableError,
+    AuthVerificationProviderUnavailableError,
+    AuthenticationError,
+    AuthorizationDecision,
+    AuthorizationReasonCode,
+    AuthorizationDecisionState,
+    CredentialCarrier,
+    CredentialCarrierKind,
+    CredentialCarrierLocation,
+    IAuthenticationProvider,
+    get_effective_auth_metadata,
+    store_auth_context,
+)
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -22,9 +40,77 @@ from typing import override
 
 from spakky.plugins.typer.stereotypes.cli_controller import CliController, TyperCommand
 from spakky.plugins.typer.utils.asyncio import run_async
-from typer import Typer
+from typer import Exit, Option, Typer, echo
+from typer.models import OptionInfo
 
 logger = getLogger(__name__)
+
+AUTH_TOKEN_OPTION_PARAMETER = "_spakky_auth_token"
+AUTH_TOKEN_ENV_VAR = "SPAKKY_AUTH_TOKEN"
+
+
+def _auth_token_parameter() -> Parameter:
+    return Parameter(
+        AUTH_TOKEN_OPTION_PARAMETER,
+        kind=Parameter.KEYWORD_ONLY,
+        default=Option(
+            None,
+            "--auth-token",
+            envvar=AUTH_TOKEN_ENV_VAR,
+            help="Authentication bearer token.",
+        ),
+        annotation=str | None,
+    )
+
+
+def _existing_auth_token_parameter(original: Signature) -> str | None:
+    for parameter in original.parameters.values():
+        if parameter.name in {AUTH_TOKEN_OPTION_PARAMETER, "auth_token"}:
+            return parameter.name
+        if (
+            isinstance(parameter.default, OptionInfo)
+            and parameter.default.param_decls is not None
+            and "--auth-token" in parameter.default.param_decls
+        ):
+            return parameter.name
+    return None
+
+
+def _with_auth_token_option(method: Callable[..., object]) -> Signature:
+    original = signature(method)
+    if _existing_auth_token_parameter(original) is not None:
+        return original
+    return original.replace(
+        parameters=tuple(original.parameters.values()) + (_auth_token_parameter(),)
+    )
+
+
+def _invocation(controller_type: type[object], method_name: str) -> AuthInvocation:
+    return AuthInvocation(
+        boundary="CLI",
+        operation=f"{controller_type.__module__}.{controller_type.__qualname__}.{method_name}",
+    )
+
+
+def _carrier(auth_token: str) -> CredentialCarrier:
+    return CredentialCarrier(
+        kind=CredentialCarrierKind.BEARER_TOKEN,
+        location=CredentialCarrierLocation.CLI_OPTION,
+        material=auth_token,
+        name="--auth-token",
+        scheme="Bearer",
+    )
+
+
+def _exit(decision: AuthorizationDecision) -> Never:
+    echo(decision.reason_code.value)
+    if decision.reason is not None:
+        echo(decision.reason)
+    if decision.state is AuthorizationDecisionState.CHALLENGE:
+        raise Exit(code=2)
+    if decision.state is AuthorizationDecisionState.DENY:
+        raise Exit(code=3)
+    raise Exit(code=1)
 
 
 @Order(0)
@@ -88,6 +174,13 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         for name, method in getmembers(pod, callable):
             command: TyperCommand | None = TyperCommand.get_or_none(method)
             if command is not None:
+                auth_metadata = get_effective_auth_metadata(
+                    method,
+                    owner_type=controller.type_,
+                )
+                existing_auth_token_parameter = _existing_auth_token_parameter(
+                    signature(method)
+                )
                 # pylint: disable=line-too-long
                 logger.info(
                     f"[{type(self).__name__}] {command.name!r} -> {'async' if iscoroutinefunction(method) else ''} {method.__qualname__}"
@@ -99,11 +192,55 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     method_name: str = name,
                     controller_type: type[object] = controller.type_,
                     container: IContainer = self.__container,
+                    protected: bool = auth_metadata.protected,
+                    auth_token_parameter: str | None = existing_auth_token_parameter,
                     **kwargs: Any,
                 ) -> Any:
+                    auth_token = (
+                        kwargs.get(auth_token_parameter)
+                        if auth_token_parameter is not None
+                        else kwargs.pop(AUTH_TOKEN_OPTION_PARAMETER, None)
+                    )
+                    if auth_token is None:
+                        auth_token = os.environ.get(AUTH_TOKEN_ENV_VAR)
                     # CLI invocations often share the same interpreter session,
                     # so purge any context-scoped Pods to avoid cross-command leaks.
                     self.__application_context.clear_context()
+                    invocation = _invocation(controller_type, method_name)
+                    if isinstance(auth_token, str) and auth_token:
+                        provider = container.get_or_none(IAuthenticationProvider)
+                        if provider is None:
+                            if protected:
+                                _exit(
+                                    AuthorizationDecision.error(
+                                        AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
+                                    )
+                                )
+                        else:
+                            try:
+                                auth_context = provider.authenticate(
+                                    _carrier(auth_token),
+                                    invocation,
+                                )
+                            except AuthVerificationProviderUnavailableError:
+                                _exit(
+                                    AuthorizationDecision.error(
+                                        AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
+                                    )
+                                )
+                            except AuthenticationError:
+                                _exit(
+                                    AuthorizationDecision.challenge(
+                                        AuthorizationReasonCode.INVALID_CREDENTIAL
+                                    )
+                                )
+                            store_auth_context(self.__application_context, auth_context)
+                    elif protected:
+                        _exit(
+                            AuthorizationDecision.challenge(
+                                AuthorizationReasonCode.MISSING_CREDENTIAL
+                            )
+                        )
                     controller_instance = container.get(controller_type)
                     # 프레임워크 내부: CLI 커맨드 메서드 동적 디스패치
                     method_to_call = getattr(  # command decorator method lookup
@@ -111,7 +248,30 @@ class TyperCLIPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     )
                     if iscoroutinefunction(method_to_call):
                         method_to_call = run_async(method_to_call)
-                    return method_to_call(*args, **kwargs)
+                    try:
+                        return method_to_call(*args, **kwargs)
+                    except AuthContextNotFoundError:
+                        _exit(
+                            AuthorizationDecision.challenge(
+                                AuthorizationReasonCode.MISSING_CREDENTIAL
+                            )
+                        )
+                    except AuthRequirementProviderUnavailableError:
+                        _exit(
+                            AuthorizationDecision.error(
+                                AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
+                            )
+                        )
+                    except AuthRequirementDeniedError as error:
+                        _exit(
+                            error.decision
+                            if error.decision is not None
+                            else AuthorizationDecision.deny(
+                                AuthorizationReasonCode.POLICY_DENIED
+                            )
+                        )
+
+                cast(Any, endpoint).__signature__ = _with_auth_token_option(method)
 
                 command_group.command(
                     name=command.name,
