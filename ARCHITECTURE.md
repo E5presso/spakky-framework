@@ -34,6 +34,7 @@
 | **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
 | **Plugin** | `spakky-grpc` | gRPC 서비스 컨트롤러 통합 (code-first, 타입 안전 프로토콜 생성) |
 | **Plugin** | `spakky-redis` | Redis 기반 애플리케이션 데이터 캐시 backend |
+| **Plugin** | `spakky-openfga` | OpenFGA 관계 검사 AuthZ provider |
 | **Plugin** | `spakky-vllm` | vLLM OpenAI-compatible `IAgentModel` adapter |
 
 ---
@@ -82,6 +83,7 @@ graph TD
             security[spakky-security]
             grpc[spakky-grpc]
             redis[spakky-redis]
+            openfga[spakky-openfga]
             vllm[spakky-vllm]
         end
     end
@@ -108,6 +110,7 @@ graph TD
     rabbitmq --> tracing
     kafka --> event
     kafka --> tracing
+    openfga --> auth
     celery_plugin --> task_pkg
     celery_plugin --> tracing
     logging_pkg --> core
@@ -1226,6 +1229,7 @@ flowchart TD
 | `spakky-security` | (등록 없음 — 유틸리티 함수만) | `argon2-cffi`, `bcrypt`, `pycryptodome` |
 | `spakky-policy` | `SpakkyPolicyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 policy/permission/role/scope capability 선언 | `pyyaml`, `spakky-auth` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
+| `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` | `openfga-sdk`, `pydantic-settings`, `spakky-auth` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` | `httpx`, `pydantic-settings`, `spakky-agent` |
 ### 태스크 플러그인
 

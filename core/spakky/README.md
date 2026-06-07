@@ -422,6 +422,7 @@ count와 skip reason이 기록됩니다.
 | [`spakky-rabbitmq`](https://pypi.org/project/spakky-rabbitmq/) | RabbitMQ event system |
 | [`spakky-celery`](https://pypi.org/project/spakky-celery/) | Celery task dispatch |
 | [`spakky-logging`](https://pypi.org/project/spakky-logging/) | AOP 기반 구조화 로깅 |
+| [`spakky-openfga`](https://pypi.org/project/spakky-openfga/) | OpenFGA 관계 검사 AuthZ provider |
 | [`spakky-opentelemetry`](https://pypi.org/project/spakky-opentelemetry/) | OpenTelemetry SDK bridge |
 | [`spakky-security`](https://pypi.org/project/spakky-security/) | 보안 유틸리티 |
 

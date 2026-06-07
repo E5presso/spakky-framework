@@ -1,0 +1,1 @@
+"""OpenFGA contribution entry points."""
