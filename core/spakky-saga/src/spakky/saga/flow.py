@@ -34,11 +34,7 @@ class SagaStep[SagaDataT: AbstractSagaData]:
         self,
         compensate: Callable[[SagaDataT], Awaitable[None]] | SagaStep[SagaDataT],
     ) -> Transaction[SagaDataT]:
-        compensate_fn: Callable[[SagaDataT], Awaitable[None]] = (
-            cast(Callable[[SagaDataT], Awaitable[None]], compensate.action)
-            if isinstance(compensate, SagaStep)
-            else compensate
-        )
+        compensate_fn = _resolve_compensate_fn(compensate)
         compensate_auth_boundary = (
             compensate.auth_boundary if isinstance(compensate, SagaStep) else compensate
         )
@@ -178,13 +174,14 @@ def step[SagaDataT: AbstractSagaData](
         on_error if on_error is not None else Compensate()
     )
     if compensate is not None:
+        compensate_fn = _resolve_compensate_fn(compensate)
         return Transaction(
             action=action,
-            compensate=compensate,
+            compensate=compensate_fn,
             on_error=resolved_on_error,
             timeout=timeout,
             action_auth_boundary=action,
-            compensate_auth_boundary=compensate,
+            compensate_auth_boundary=compensate_fn,
         )
     return SagaStep(
         action=action,
@@ -192,6 +189,16 @@ def step[SagaDataT: AbstractSagaData](
         timeout=timeout,
         auth_boundary=action,
     )
+
+
+def _resolve_compensate_fn[SagaDataT: AbstractSagaData](
+    compensate: Callable[[SagaDataT], Awaitable[None]] | SagaStep[SagaDataT],
+) -> Callable[[SagaDataT], Awaitable[None]]:
+    if isinstance(compensate, SagaStep):
+        return cast(Callable[[SagaDataT], Awaitable[None]], compensate.action)
+    if callable(compensate):
+        return compensate
+    raise SagaFlowDefinitionError
 
 
 def parallel[SagaDataT: AbstractSagaData](

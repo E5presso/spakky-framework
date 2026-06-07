@@ -62,6 +62,12 @@ def test_step_with_compensate_expect_transaction() -> None:
     assert isinstance(result.on_error, Compensate)
 
 
+def test_step_with_non_callable_compensate_expect_definition_error() -> None:
+    """step() rejects invalid compensation before saga execution."""
+    with pytest.raises(SagaFlowDefinitionError):
+        step(_action, compensate="bad")  # type: ignore[arg-type]
+
+
 def test_step_with_on_error_expect_strategy_applied() -> None:
     """step(action, on_error=)이 에러 전략을 적용하는지 검증한다."""
     result = step(_action, on_error=Skip())
@@ -282,6 +288,21 @@ def test_step_with_compensate_equivalent_to_rshift_expect_same_result() -> None:
     assert via_func.action is via_op.action
     assert via_func.compensate is via_op.compensate
     assert type(via_func.on_error) is type(via_op.on_error)
+
+
+def test_rshift_with_non_callable_compensate_expect_definition_error() -> None:
+    """SagaStep >> rejects invalid compensation before saga execution."""
+    with pytest.raises(SagaFlowDefinitionError):
+        SagaStep(action=_action) >> "bad"  # type: ignore[operator]
+
+
+def test_rshift_with_non_callable_saga_step_compensate_expect_definition_error() -> None:
+    """Builder-created SagaStep >> rejects invalid compensation values."""
+    action_step = step(_action)
+    assert isinstance(action_step, SagaStep)
+
+    with pytest.raises(SagaFlowDefinitionError):
+        action_step >> "bad"  # type: ignore[operator]
 
 
 def test_parallel_func_equivalent_to_and_operator_expect_same_items() -> None:
