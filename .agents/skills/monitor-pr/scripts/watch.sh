@@ -12,12 +12,14 @@
 #
 # 환경변수 (선택):
 #   PREV_STATE_FILE
-#     — 직전 cycle에 관찰된 코멘트/리뷰의 (id, updatedAt) 페어 캐시 파일 경로.
-#       JSON 스키마: {"ch1": {"<id>": "<updatedAt>", ...}, "ch2": {...}, "ch3": {...}}
+#     — 직전 cycle에 관찰된 코멘트/리뷰의 (id, updatedAt) 페어와 reviewDecision 캐시 파일 경로.
+#       JSON 스키마: {"ch1": {"<id>": "<updatedAt>", ...}, "ch2": {...}, "ch3": {...}, "reviewDecision": "<X>"}
 #       파일이 없거나 비어 있으면 첫 cycle을 baseline으로 채워 다음 변화부터 EVENT로 보고한다.
-#       매 cycle 종료 시 현재 스냅샷으로 덮어쓴다.
-#   PREV_REVIEW_DECISION
-#     — 직전 cycle의 reviewDecision. 비어 있으면 첫 cycle에서 baseline으로 채운다.
+#       매 cycle 종료 시 현재 스냅샷으로 덮어쓴다. reviewDecision도 이 파일에 영속하므로
+#       호출자는 별도 환경변수를 넘기지 않는다.
+#   INTERRUPT_FILE
+#     — 메인 세션이 monitor 중인 호출자에게 SendMessage를 보낸 직후 쓰는 sentinel 파일 경로.
+#       존재하면 삭제 후 EVENT reason=interrupt를 emit한다. 미지정 시 비활성.
 #
 # 출력 형식 (마지막 1회만 출력 후 종료):
 #   - 종료 조건 도달:
@@ -37,7 +39,7 @@
 #       reviewCommentCount=<N>
 #       pendingChecks=<N>
 #       failedChecks=<N>
-#       reason=<comments-changed|review-decision-changed|ci-failed|merge-dirty|bot-stuck|heartbeat>
+#       reason=<comments-changed|review-decision-changed|ci-failed|merge-dirty|bot-stuck|heartbeat|interrupt>
 #       staleHandledIds=<id1,id2,...>   # reason=comments-changed 일 때만, in-place 갱신된 id 목록 (없으면 빈 값)
 #
 # heartbeat: 변화 없는 cycle이 6회(=3분) 누적되면 1회 송신하여 호출자가 SendMessage tick ping을 송신하도록
@@ -91,16 +93,18 @@ REVIEW_BOT_LOGINS="${REVIEW_BOT_LOGINS:-claude[bot],codex[bot],chatgpt-codex-con
 REQUIRE_REVIEW_BOT_HEAD_EVAL="${REQUIRE_REVIEW_BOT_HEAD_EVAL:-1}"
 
 prev_state_file="${PREV_STATE_FILE:-}"
-prev_review_decision="${PREV_REVIEW_DECISION:-}"
+interrupt_file="${INTERRUPT_FILE:-}"
 
 # Load prev state map from file (or empty if absent).
 # baseline_done: 첫 cycle 이후 1로 set. 코멘트 0개·reviewDecision null PR에서도 baseline init이
 # 반복되어 EVENT(ci-failed·bot-stuck 등) 누락되는 회귀를 차단한다.
 if [ -n "$prev_state_file" ] && [ -s "$prev_state_file" ]; then
   prev_state=$(cat "$prev_state_file")
+  prev_review_decision=$(echo "$prev_state" | jq -r '.reviewDecision // ""')
   baseline_done=1
 else
-  prev_state='{"ch1":{},"ch2":{},"ch3":{}}'
+  prev_state='{"ch1":{},"ch2":{},"ch3":{},"reviewDecision":""}'
+  prev_review_decision=""
   baseline_done=0
 fi
 
@@ -155,7 +159,20 @@ has_new_ids() {
 }
 
 while true; do
-  sleep 30
+  interrupted=0
+  for _ in $(seq 30); do
+    sleep 1
+    if [ -n "$interrupt_file" ] && [ -f "$interrupt_file" ]; then
+      interrupted=1
+      break
+    fi
+  done
+  if [ "$interrupted" -eq 1 ]; then
+    rm -f "$interrupt_file"
+    echo "EVENT"
+    echo "reason=interrupt"
+    exit 0
+  fi
 
   snapshot=$(gh pr view "$PR_NUMBER" --repo "$REPO" \
     --json mergeStateStatus,reviewDecision,statusCheckRollup,comments,state,headRefOid)
@@ -209,14 +226,16 @@ while true; do
   curr_state=$(jq -n \
     --argjson ch1 "$ch1_raw" \
     --argjson ch2 "$ch2_raw" \
-    --argjson ch3 "$ch3_raw" '
+    --argjson ch3 "$ch3_raw" \
+    --arg reviewDecision "$review_decision" '
     def tracked_comment:
       (.user.login != "linear[bot]")
       and (((.user.login == "codecov[bot]") and ((.body // "") | test("^## \\[Codecov\\]"; "i"))) | not);
     {
       ch1: ($ch1 | map(select(tracked_comment) | {(.id|tostring): (.updated_at // .created_at)}) | add // {}),
       ch2: ($ch2 | map(select(tracked_comment) | {(.id|tostring): (.updated_at // .created_at)}) | add // {}),
-      ch3: ($ch3 | map(select(tracked_comment) | {(.id|tostring): (.submitted_at // "")}) | add // {})
+      ch3: ($ch3 | map(select(tracked_comment) | {(.id|tostring): (.submitted_at // "")}) | add // {}),
+      reviewDecision: $reviewDecision
     }
   ')
 

@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git rev-parse --git-dir | grep -q worktrees && git fetch origin develop -q && git rebase --autostash origin/develop -q || true",
+            "timeout": 30,
+            "statusMessage": "Rebasing worktree onto origin/develop..."
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)\"/.codex/hooks/check-worktree-isolation.sh",
+            "timeout": 5,
+            "statusMessage": "Checking worktree isolation..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$(git rev-parse --show-toplevel)\"/.codex/hooks/check-python-edit.sh",
+            "timeout": 30,
+            "statusMessage": "Formatting and type checking edited Python files..."
+          }
+        ]
+      }
+    ]
+  }
+}

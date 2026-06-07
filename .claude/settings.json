@@ -54,21 +54,28 @@
         ]
       }
     ],
-    "PostToolUse": [
+    "PreToolUse": [
       {
-        "matcher": "Write|Edit",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|apply_patch",
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && uv run ruff format \"$f\" && uv run ruff check --fix \"$f\"; } 2>/dev/null || true",
-            "timeout": 15,
-            "statusMessage": "Formatting with ruff..."
-          },
+            "command": "\"$(git rev-parse --show-toplevel)\"/.agents/hooks/check-worktree-isolation.sh",
+            "timeout": 5,
+            "statusMessage": "Checking worktree isolation..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|apply_patch",
+        "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; [[ \"$f\" == *.py ]] && cd \"$(git rev-parse --show-toplevel)\" && result=$(uv run pyrefly check \"$f\" 2>&1) && exit 0 || echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"pyrefly type check errors in $f:\\n$result\\\"}}\"; } 2>/dev/null || true",
+            "command": "\"$(git rev-parse --show-toplevel)\"/.agents/hooks/check-python-edit.sh",
             "timeout": 30,
-            "statusMessage": "Type checking with pyrefly..."
+            "statusMessage": "Formatting and type checking edited Python files..."
           }
         ]
       }

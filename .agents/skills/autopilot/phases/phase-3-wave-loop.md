@@ -185,6 +185,8 @@ SendMessage(
 )
 ```
 
+probe를 포함해 메인이 실행 중인 process-ticket sub-agent에게 SendMessage를 보낸 경우, 같은 티켓의 워크트리 경로를 알고 있으면 SendMessage 직후 `<worktree>/.monitor-interrupt` 파일을 쓴다. monitor-pr `watch.sh`는 이 sentinel을 감지하면 `EVENT reason=interrupt`로 반환하고, sub-agent turn이 종료되면서 방금 보낸 메시지가 inbox로 배달된다. 순서는 항상 **SendMessage 먼저, sentinel write 나중**이다. 대상 sub-agent가 아직 Phase 6에 도달하지 않았으면 Phase 6 진입 시 stale sentinel을 지우므로 안전하다.
+
 #### probe-ack (probe acknowledgment, 응답) 정형
 
 sub-agent는 다음 형식으로 회신한다 (산문 금지):

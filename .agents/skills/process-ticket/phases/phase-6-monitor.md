@@ -36,14 +36,15 @@
    - `TOTAL > 0`이면 **반드시 `/triage-comments {PR_NUMBER}`를 호출**한다. default/overnight 모드 공통 규칙이며 예외가 없다.
 2. **LISTENING**: `monitor-pr`의 watch 단계를 포그라운드 Bash로 1회 호출한다. baseline 캐시 파일은 워크트리 루트의 `.monitor-pr-state.json`에 유지하여 호출 간 `(id, updatedAt)` 페어를 보존한다. **이 호출은 `run_in_background: true` / `&` / `nohup` 어떤 형태도 사용하지 않는다 — 포그라운드 단일 점유가 본 phase의 차단력 그 자체다.**
    ```bash
+   rm -f {워크트리 경로}/.monitor-interrupt
    REPO=$(gh repo view --json owner,name --jq '.owner.login + "/" + .name') \
    PR_NUMBER={PR} \
    PREV_STATE_FILE={워크트리 경로}/.monitor-pr-state.json \
-   PREV_REVIEW_DECISION={직전 결과 또는 빈 값} \
+   INTERRUPT_FILE={워크트리 경로}/.monitor-interrupt \
      bash {MONITOR_PR_SKILL_DIR}/scripts/watch.sh
    ```
-3. **분기 (EVENT consumer)**: watch가 stdout으로 emit한 출력의 첫 줄(`EVENT` 또는 `DONE`)과 `reason` 값을 같은 turn 안에서 case로 분기하여 핸들러를 실행한다. **분기 없이 turn을 종료하면 EVENT가 dead code가 된다.** `reason=comments-changed`이면 출력의 `staleHandledIds=` 값을 코멘트 수집 호출 시 `STALE_HANDLED_IDS` 환경변수로 그대로 전달하여 in-place 갱신된 코멘트가 재triage 대상으로 되돌아오게 한다. case 분기의 정확한 형태는 `monitor-pr` SKILL §"EVENT consumer 루프" SSOT.
-4. **재기동 또는 Phase 7/8 continuation**: EVENT 처리 후 baseline을 갱신(`PREV_REVIEW_DECISION`만 직전 출력값으로 업데이트, `(id, updatedAt)` 캐시는 watch가 자동으로 `.monitor-pr-state.json`에 영속)하여 **즉시 1번으로 복귀하여 watch를 다시 호출한다.** `DONE reason=mergeable-clean`이면 `.process-state.json`에 `phase7_ready`를 기록한 뒤 Phase 7로 전환한다. `--auto-merge` 또는 autopilot 하위 실행이면 Phase 7에서 멈추지 않고 같은 turn 안에서 Phase 8까지 계속 수행한다. `DONE` 이후에는 추가 watch/poll을 돌리지 않는다.
+3. **분기 (EVENT consumer)**: watch가 stdout으로 emit한 출력의 첫 줄(`EVENT` 또는 `DONE`)과 `reason` 값을 같은 turn 안에서 case로 분기하여 핸들러를 실행한다. **분기 없이 turn을 종료하면 EVENT가 dead code가 된다.** `reason=comments-changed`이면 출력의 `staleHandledIds=` 값을 코멘트 수집 호출 시 `STALE_HANDLED_IDS` 환경변수로 그대로 전달하여 in-place 갱신된 코멘트가 재triage 대상으로 되돌아오게 한다. `reason=interrupt`이면 메인 지시 수신을 위해 turn을 종료하고, 새 turn에서 지시 처리 후 INIT으로 복귀한다. case 분기의 정확한 형태는 `monitor-pr` SKILL §"EVENT consumer 루프" SSOT.
+4. **재기동 또는 Phase 7/8 continuation**: EVENT 처리 후 baseline은 watch가 자동으로 `.monitor-pr-state.json`에 영속하므로 **즉시 1번으로 복귀하여 watch를 다시 호출한다.** 단 `reason=interrupt`는 inbox 지시 배달을 위한 yield라서 즉시 재호출하지 않는다. `DONE reason=mergeable-clean`이면 `.process-state.json`에 `phase7_ready`를 기록한 뒤 Phase 7로 전환한다. `--auto-merge` 또는 autopilot 하위 실행이면 Phase 7에서 멈추지 않고 같은 turn 안에서 Phase 8까지 계속 수행한다. `DONE` 이후에는 추가 watch/poll을 돌리지 않는다.
 
 `phase7_ready` 기록 형식:
 
