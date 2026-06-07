@@ -3597,6 +3597,7 @@ name = "spakky-sqlalchemy"
 version = "6.5.0"
 source = { editable = "plugins/spakky-sqlalchemy" }
 dependencies = [
+    { name = "pydantic-settings" },
     { name = "spakky-data" },
     { name = "sqlalchemy" },
 ]
@@ -3622,6 +3623,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky-agent", marker = "extra == 'agent'", editable = "core/spakky-agent" },
     { name = "spakky-data", editable = "core/spakky-data" },
     { name = "spakky-outbox", marker = "extra == 'outbox'", editable = "core/spakky-outbox" },
