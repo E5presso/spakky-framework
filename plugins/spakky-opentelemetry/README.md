@@ -71,13 +71,14 @@ app = (
 
 ### LogContext 브릿지
 
-`spakky-logging`이 설치되어 있으면 `LogContextBridge.sync()`로 trace_id/span_id를 로그 컨텍스트에 바인딩할 수 있습니다. `spakky-logging`이 없으면 no-op으로 동작합니다:
+`spakky-logging`이 설치되어 있으면 `LogContextBridge` pod instance의 `sync()`를 호출하여 trace_id/span_id를 로그 컨텍스트에 바인딩할 수 있습니다. `spakky-logging`이 없으면 no-op으로 동작합니다:
 
 ```python
 from spakky.plugins.opentelemetry.bridge import LogContextBridge
 
 # TraceContext 설정 후
-LogContextBridge.sync()  # LogContext에 trace_id, span_id 자동 바인딩
+bridge: LogContextBridge = app.context.get_pod(LogContextBridge)
+bridge.sync()  # LogContext에 trace_id, span_id 바인딩
 ```
 
 ## 라이선스
