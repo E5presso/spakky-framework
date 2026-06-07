@@ -4,9 +4,19 @@ Tests that the RabbitMQ PostProcessor only registers IntegrationEvent handlers
 and correctly ignores DomainEvent handlers.
 """
 
+from collections.abc import Callable
 from unittest.mock import Mock
 
 import pytest
+from spakky.auth import (
+    AUTH_CONTEXT_SNAPSHOT_HEADER_KEY,
+    AuthContext,
+    AuthInvocation,
+    AuthSubject,
+    IAuthContextSnapshotVerifier,
+    require_auth_context,
+    require_scope,
+)
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
@@ -15,7 +25,12 @@ from spakky.event.event_consumer import (
     IEventConsumer,
 )
 from spakky.event.stereotype.event_handler import EventHandler, on_event
+from spakky.plugins.rabbitmq.auth import (
+    reset_current_rabbitmq_message_headers,
+    set_current_rabbitmq_message_headers,
+)
 from spakky.tracing.propagator import ITracePropagator
+from typing import override
 
 from spakky.plugins.rabbitmq.post_processor import RabbitMQPostProcessor
 
@@ -32,6 +47,31 @@ class SampleDomainEvent(AbstractDomainEvent):
     """Test domain event for testing."""
 
     message: str
+
+
+class RecordingSnapshotVerifier(IAuthContextSnapshotVerifier):
+    """Snapshot verifier stub that records post-processor invocations."""
+
+    envelope: str | None
+    invocation: AuthInvocation | None
+
+    def __init__(self) -> None:
+        self.envelope = None
+        self.invocation = None
+
+    @override
+    def verify_snapshot(
+        self,
+        snapshot_envelope: str,
+        invocation: AuthInvocation,
+    ) -> AuthContext:
+        self.envelope = snapshot_envelope
+        self.invocation = invocation
+        return AuthContext(
+            subject=AuthSubject(id="subject-1"),
+            issuer="issuer-1",
+            scopes=("rabbitmq:consume",),
+        )
 
 
 def test_rabbitmq_post_processor_registers_integration_event_expect_success() -> None:
@@ -309,6 +349,74 @@ def test_rabbitmq_post_processor_sync_endpoint_invocation_expect_handler_called(
     assert handler_called["value"] is True
     assert handler_called["result"] == "handled: test"
     mock_context.clear_context.assert_called_once()
+
+
+def test_rabbitmq_post_processor_protected_sync_endpoint_seeds_auth_after_clear() -> (
+    None
+):
+    """보호된 endpoint는 clear_context 후 handler 호출 전 AuthContext를 seed한다."""
+    application_context = ApplicationContext()
+    verifier = RecordingSnapshotVerifier()
+    handler_called: dict[str, bool | str] = {"value": False, "subject": ""}
+
+    @EventHandler()
+    class SampleEventHandler:
+        @on_event(SampleIntegrationEvent)
+        @require_scope("rabbitmq:consume")
+        def handle_integration_event(self, event: SampleIntegrationEvent) -> None:
+            handler_called["value"] = True
+            handler_called["subject"] = require_auth_context(
+                application_context
+            ).subject.id
+
+    captured_endpoint: dict[
+        str,
+        Callable[[SampleIntegrationEvent], None] | None,
+    ] = {"fn": None}
+
+    def capture_register(
+        event_type: type[SampleIntegrationEvent],
+        endpoint: Callable[[SampleIntegrationEvent], None],
+    ) -> None:
+        captured_endpoint["fn"] = endpoint
+
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_consumer.register.side_effect = capture_register
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+    handler_instance = SampleEventHandler()
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer
+        if t == IEventConsumer
+        else mock_async_consumer
+        if t == IAsyncEventConsumer
+        else handler_instance
+        if t == SampleEventHandler
+        else None
+    )
+    mock_container.get_or_none.side_effect = lambda t: (
+        verifier if t == IAuthContextSnapshotVerifier else None
+    )
+
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(application_context)
+    post_processor.post_process(handler_instance)
+
+    token = set_current_rabbitmq_message_headers(
+        {AUTH_CONTEXT_SNAPSHOT_HEADER_KEY: "header-snapshot"}
+    )
+    try:
+        event = SampleIntegrationEvent(message="test")
+        assert captured_endpoint["fn"] is not None
+        captured_endpoint["fn"](event)
+    finally:
+        reset_current_rabbitmq_message_headers(token)
+
+    assert handler_called["value"] is True
+    assert handler_called["subject"] == "subject-1"
+    assert verifier.envelope == "header-snapshot"
+    assert verifier.invocation is not None
 
 
 @pytest.mark.asyncio

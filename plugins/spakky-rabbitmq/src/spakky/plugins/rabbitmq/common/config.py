@@ -4,12 +4,26 @@ Provides configuration dataclass for RabbitMQ connection parameters including
 host, port, credentials, and exchange settings.
 """
 
+from enum import StrEnum
 from typing import ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
 
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
+
+
+class RabbitMQAuthFailureAction(StrEnum):
+    """Ack/nack action used when a protected RabbitMQ handler fails auth."""
+
+    ACK = "ack"
+    """Acknowledge and drop the message."""
+
+    NACK_REQUEUE = "nack_requeue"
+    """Negative-acknowledge and requeue the message."""
+
+    NACK_DROP = "nack_drop"
+    """Negative-acknowledge without requeueing the message."""
 
 
 @Configuration()
@@ -50,6 +64,17 @@ class RabbitMQConnectionConfig(BaseSettings):
 
     exchange_name: str | None = None
     """Optional exchange name for pub/sub message routing."""
+
+    auth_challenge_action: RabbitMQAuthFailureAction = RabbitMQAuthFailureAction.ACK
+    """Message action for missing, invalid, or expired snapshot decisions."""
+
+    auth_deny_action: RabbitMQAuthFailureAction = RabbitMQAuthFailureAction.ACK
+    """Message action for explicit DENY decisions from protected handlers."""
+
+    auth_error_action: RabbitMQAuthFailureAction = (
+        RabbitMQAuthFailureAction.NACK_REQUEUE
+    )
+    """Message action for retryable provider ERROR decisions."""
 
     @property
     def protocol(self) -> str:

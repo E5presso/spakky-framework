@@ -9,7 +9,10 @@ from typing import Any, Generator
 
 import pytest
 
-from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
+from spakky.plugins.rabbitmq.common.config import (
+    RabbitMQAuthFailureAction,
+    RabbitMQConnectionConfig,
+)
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
 
 
@@ -23,6 +26,9 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{RABBITMQ_CONFIG_ENV_PREFIX}USER",
         f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD",
         f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_CHALLENGE_ACTION",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_DENY_ACTION",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_ERROR_ACTION",
     ]
     original_values = {}
     for key in keys_to_remove:
@@ -128,6 +134,43 @@ def test_rabbitmq_config_exchange_name_is_optional(clean_env: None) -> None:
     config = RabbitMQConnectionConfig()
 
     assert config.exchange_name is None
+
+
+def test_rabbitmq_config_auth_failure_actions_default_avoid_poison_loop(
+    clean_env: None,
+) -> None:
+    """인증 실패 ack/nack 기본값이 poison-loop를 피하고 ERROR만 재시도함을 검증한다."""
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "guest"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "guest"
+
+    config = RabbitMQConnectionConfig()
+
+    assert config.auth_challenge_action is RabbitMQAuthFailureAction.ACK
+    assert config.auth_deny_action is RabbitMQAuthFailureAction.ACK
+    assert config.auth_error_action is RabbitMQAuthFailureAction.NACK_REQUEUE
+
+
+def test_rabbitmq_config_auth_failure_actions_load_from_environment(
+    clean_env: None,
+) -> None:
+    """환경 변수로 인증 실패 ack/nack 정책을 구성할 수 있음을 검증한다."""
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "guest"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "guest"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_CHALLENGE_ACTION"] = "nack_drop"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_DENY_ACTION"] = "nack_drop"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_ERROR_ACTION"] = "nack_requeue"
+
+    config = RabbitMQConnectionConfig()
+
+    assert config.auth_challenge_action is RabbitMQAuthFailureAction.NACK_DROP
+    assert config.auth_deny_action is RabbitMQAuthFailureAction.NACK_DROP
+    assert config.auth_error_action is RabbitMQAuthFailureAction.NACK_REQUEUE
 
 
 def test_rabbitmq_config_env_prefix_is_correct() -> None:

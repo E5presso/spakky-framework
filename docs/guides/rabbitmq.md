@@ -40,6 +40,9 @@ export SPAKKY_RABBITMQ__PORT=5672
 export SPAKKY_RABBITMQ__USER=guest
 export SPAKKY_RABBITMQ__PASSWORD=guest
 export SPAKKY_RABBITMQ__EXCHANGE_NAME=my-exchange  # Optional
+export SPAKKY_RABBITMQ__AUTH_CHALLENGE_ACTION=ack
+export SPAKKY_RABBITMQ__AUTH_DENY_ACTION=ack
+export SPAKKY_RABBITMQ__AUTH_ERROR_ACTION=nack_requeue
 ```
 
 | 필드 | 환경변수 | 기본값 | 설명 |
@@ -50,6 +53,11 @@ export SPAKKY_RABBITMQ__EXCHANGE_NAME=my-exchange  # Optional
 | `user` | `SPAKKY_RABBITMQ__USER` | (필수) | 인증 사용자명 |
 | `password` | `SPAKKY_RABBITMQ__PASSWORD` | (필수) | 인증 비밀번호 |
 | `exchange_name` | `SPAKKY_RABBITMQ__EXCHANGE_NAME` | `None` | Exchange 이름 (pub/sub 라우팅) |
+| `auth_challenge_action` | `SPAKKY_RABBITMQ__AUTH_CHALLENGE_ACTION` | `ack` | missing/invalid/expired snapshot 처리 |
+| `auth_deny_action` | `SPAKKY_RABBITMQ__AUTH_DENY_ACTION` | `ack` | protected handler DENY 처리 |
+| `auth_error_action` | `SPAKKY_RABBITMQ__AUTH_ERROR_ACTION` | `nack_requeue` | verifier/provider ERROR 처리 |
+
+`auth_*_action` 값은 `ack`, `nack_requeue`, `nack_drop` 중 하나입니다. 기본 정책은 CHALLENGE/DENY를 ack하여 poison-loop를 피하고, ERROR는 requeue하여 일시적인 verifier/provider 장애를 재시도합니다.
 
 ---
 
@@ -133,7 +141,7 @@ sequenceDiagram
 | 이벤트 이름 | `AbstractIntegrationEvent.event_name` 값, 기본은 클래스명 |
 | 큐 이름 | 수신 핸들러가 등록한 이벤트 클래스명, durable queue로 선언 |
 | payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
-| headers | `ITracePropagator.inject()`가 넣은 trace header |
+| headers | `ITracePropagator.inject()`가 넣은 trace header와 signed `AuthContextSnapshot` metadata |
 | exchange 없음 | 기본 exchange에 큐 이름 routing key로 발행 |
 | exchange 있음 | configured exchange에 이벤트 이름 routing key로 발행하고 큐를 bind |
 
@@ -162,3 +170,20 @@ sequenceDiagram
 - `ITracePropagator`가 컨테이너에 없으면 트레이싱은 비활성 상태로, 별도 에러 없이 동작합니다
 
 별도 설정이나 코드 변경 없이, 플러그인 로드만으로 동작합니다.
+
+---
+
+## 인증/인가 snapshot 수신
+
+`spakky-auth`의 보호 decorator가 붙은 RabbitMQ event handler는 signed `AuthContextSnapshot`을 검증한 뒤 `ApplicationContext` request/context scope에 `AuthContext`를 seed합니다. 이 작업은 `RabbitMQPostProcessor` wrapper가 기존 integration context를 `clear_context()`로 비운 직후, 사용자 handler 호출 전에 수행됩니다.
+
+수신 측은 다음 header를 snapshot envelope로 인식합니다.
+
+| header | 설명 |
+|--------|------|
+| `spakky.auth.context_snapshot` | Event/Outbox transport metadata key |
+| `x-spakky-auth-context-snapshot` | HTTP/gRPC-style snapshot header key |
+
+보호된 handler에서 snapshot이 없거나 invalid/expired이면 `CHALLENGE`로 fail-closed 처리합니다. 정책 evaluator가 `DENY`를 반환해도 handler는 호출되지 않습니다. 검증 provider가 unavailable이면 `ERROR`로 처리하며, 기본 RabbitMQ 정책은 `nack_requeue`입니다.
+
+Payload 직렬화, event name routing, trace header 추출 동작은 snapshot 검증과 독립적으로 유지됩니다.
