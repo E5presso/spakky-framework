@@ -1,5 +1,6 @@
 """Tests for vLLM model adapter mapping."""
 
+import asyncio
 from collections.abc import AsyncGenerator, Mapping
 from typing import override
 
@@ -85,6 +86,69 @@ class RecordingClient(IVllmChatClient):
                 yield chunk
         finally:
             self.stream_closed = True
+
+
+class CoordinatedCompleteClient(IVllmChatClient):
+    """Hold the first complete call until a second call reaches the adapter."""
+
+    def __init__(self) -> None:
+        self.first_call_ready = asyncio.Event()
+        self.second_call_ready = asyncio.Event()
+        self.calls = 0
+
+    @override
+    async def complete(
+        self,
+        payload: Mapping[str, object],
+        config: VllmConfig,
+    ) -> Mapping[str, object]:
+        self.calls += 1
+        if self.calls == 1:
+            self.first_call_ready.set()
+            await self.second_call_ready.wait()
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "shared",
+                                        "arguments": '{"a":"ok"}',
+                                    }
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+        self.second_call_ready.set()
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "shared",
+                                    "arguments": '{"b":"ok"}',
+                                }
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+
+    @override
+    def stream(
+        self,
+        payload: Mapping[str, object],
+        config: VllmConfig,
+    ) -> AsyncGenerator[Mapping[str, object], None]:
+        raise NotImplementedError
 
 
 async def test_complete_maps_request_to_openai_payload_and_response() -> None:
@@ -453,6 +517,59 @@ async def test_complete_invalid_tool_arguments_expect_response_error() -> None:
 
     with pytest.raises(VllmResponseError):
         await model.complete(request)
+
+
+async def test_complete_keeps_tool_schemas_request_local_under_concurrency() -> None:
+    """Concurrent complete() calls validate tool arguments with their own schemas."""
+    client = CoordinatedCompleteClient()
+    model = VllmAgentModel(VllmConfig(), client)
+    first_request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "first"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="shared",
+                    parameters=JsonSchemaConstraint(
+                        schema={
+                            "type": "object",
+                            "properties": {"a": {"type": "string"}},
+                            "required": ["a"],
+                            "additionalProperties": False,
+                        }
+                    ),
+                ),
+            ),
+            choice=ModelToolChoice.REQUIRED,
+        ),
+    )
+    second_request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "second"),),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="shared",
+                    parameters=JsonSchemaConstraint(
+                        schema={
+                            "type": "object",
+                            "properties": {"b": {"type": "string"}},
+                            "required": ["b"],
+                            "additionalProperties": False,
+                        }
+                    ),
+                ),
+            ),
+            choice=ModelToolChoice.REQUIRED,
+        ),
+    )
+
+    first_task = asyncio.create_task(model.complete(first_request))
+    await client.first_call_ready.wait()
+    second_task = asyncio.create_task(model.complete(second_request))
+
+    first_response, second_response = await asyncio.gather(first_task, second_task)
+
+    assert first_response.tool_calls[0].arguments == {"a": "ok"}
+    assert second_response.tool_calls[0].arguments == {"b": "ok"}
 
 
 async def test_complete_none_tool_choice_with_tool_call_expect_response_error() -> None:
