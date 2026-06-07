@@ -1,7 +1,7 @@
 import asyncio
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable, cast, override
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,6 +19,7 @@ from spakky.core.pod.annotations.pod import (
     Pod,
     PodInstantiationFailedError,
     UnsupportedCollectionDependencyTypeError,
+    UnexpectedDependencyTypeInjectedError,
 )
 from spakky.core.pod.annotations.primary import Primary
 from spakky.core.pod.annotations.qualifier import Qualifier
@@ -29,6 +30,10 @@ from spakky.core.pod.interfaces.container import (
     NoSuchPodBindingTargetError,
 )
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
+from spakky.core.service.interfaces.service import (
+    IAsyncService as LifecycleAsyncService,
+    IService as LifecycleService,
+)
 
 
 def test_application_context_register_expect_success() -> None:
@@ -388,6 +393,68 @@ def test_application_context_start_with_ambiguous_dependency_expect_dependency_d
     ]
     assert ("dependency_parameter", "pod") in diagnostic.as_detail_pairs()
     assert any(key == "candidates" for key, _value in diagnostic.as_detail_pairs())
+
+
+def test_application_context_start_with_postponed_annotated_qualifier_expect_resolution() -> (
+    None
+):
+    """future annotations 문자열의 Annotated Qualifier가 실제 DI 선택에 적용됨을 검증한다."""
+    namespace: dict[str, object] = {
+        "Annotated": Annotated,
+        "ApplicationContext": ApplicationContext,
+        "Pod": Pod,
+        "Primary": Primary,
+        "Qualifier": Qualifier,
+    }
+    exec(
+        """
+from __future__ import annotations
+
+class PaymentGateway:
+    def charge(self) -> str:
+        raise NotImplementedError
+
+@Pod(name="stripe")
+class StripeGateway(PaymentGateway):
+    def charge(self) -> str:
+        return "stripe"
+
+@Primary()
+@Pod(name="sandbox")
+class SandboxGateway(PaymentGateway):
+    def charge(self) -> str:
+        return "sandbox"
+
+@Pod()
+class CheckoutService:
+    def __init__(
+        self,
+        gateway: PaymentGateway,
+        stripe_gateway: Annotated[
+            PaymentGateway, Qualifier(lambda pod: pod.name == "stripe")
+        ],
+    ) -> None:
+        self.gateway = gateway
+        self.stripe_gateway = stripe_gateway
+
+def resolve_charges() -> tuple[str, str]:
+    context = ApplicationContext()
+    context.add(StripeGateway)
+    context.add(SandboxGateway)
+    context.add(CheckoutService)
+    context.start()
+    try:
+        service = context.get(CheckoutService)
+        return service.gateway.charge(), service.stripe_gateway.charge()
+    finally:
+        context.stop()
+""",
+        namespace,
+    )
+
+    resolve_charges = cast(Callable[[], tuple[str, str]], namespace["resolve_charges"])
+
+    assert resolve_charges() == ("sandbox", "stripe")
 
 
 def test_application_context_get_multiple_primary_candidates_expect_primary_diagnostic() -> (
@@ -1653,7 +1720,6 @@ def test_application_context_lazy_pod_not_initialized() -> None:
 
 def test_application_context_initialize_pods_missing_raises_error() -> None:
     """존재하지 않는 의존성으로 Pod 초기화 시 에러가 발생함을 검증한다."""
-    from spakky.core.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
 
     class NonExistentPod:  # noqa: F841
         """Dummy class for type annotation."""
@@ -1676,7 +1742,6 @@ def test_application_context_initialize_pods_missing_raises_error() -> None:
 
 def test_application_context_missing_dependency_expect_structured_diagnostic() -> None:
     """누락된 Pod 의존성 실패가 Pod.dependencies 기반 경로 진단을 포함함을 검증한다."""
-    from spakky.core.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
 
     class MissingDependency:
         """Unregistered dependency type."""
@@ -1711,6 +1776,153 @@ def test_application_context_missing_dependency_expect_structured_diagnostic() -
         ("dependency_parameter", "missing_dep"),
         ("requested_type", "MissingDependency"),
     )
+
+
+def test_application_context_start_failure_expect_retry_without_partial_caches() -> (
+    None
+):
+    """startup 실패 후 started 상태와 부분 singleton/context cache가 재시도를 오염시키지 않음을 검증한다."""
+    singleton_instances: list[object] = []
+    context_instances: list[object] = []
+
+    @Pod()
+    class StableSingleton:
+        def __init__(self) -> None:
+            singleton_instances.append(self)
+
+    @Pod(scope=Pod.Scope.CONTEXT)
+    class StableContextScoped:
+        def __init__(self) -> None:
+            context_instances.append(self)
+
+    @Pod()
+    class MissingDependency:
+        pass
+
+    @Pod()
+    class FailingConsumer:
+        def __init__(
+            self,
+            singleton: StableSingleton,
+            context_scoped: StableContextScoped,
+            missing: MissingDependency,
+        ) -> None:
+            self.singleton = singleton
+            self.context_scoped = context_scoped
+            self.missing = missing
+
+    context = ApplicationContext()
+    context.add(StableSingleton)
+    context.add(StableContextScoped)
+    context.add(FailingConsumer)
+
+    with pytest.raises(UnexpectedDependencyTypeInjectedError):
+        context.start()
+
+    assert context.is_started is False
+    assert len(singleton_instances) == 1
+    assert len(context_instances) == 1
+
+    context.add(MissingDependency)
+    context.start()
+    try:
+        consumer = context.get(FailingConsumer)
+
+        assert context.is_started is True
+        assert len(singleton_instances) == 2
+        assert len(context_instances) == 2
+        assert consumer.singleton is singleton_instances[-1]
+        assert consumer.context_scoped is context_instances[-1]
+    finally:
+        context.stop()
+
+
+def test_application_context_start_service_failure_expect_started_services_stopped() -> (
+    None
+):
+    """service startup 실패 시 이미 시작된 service를 rollback stop한다."""
+    events: list[str] = []
+
+    class StartedService(LifecycleService):
+        @override
+        def set_stop_event(self, stop_event: Any) -> None:
+            self.stop_event = stop_event
+
+        @override
+        def start(self) -> None:
+            events.append("started.start")
+
+        @override
+        def stop(self) -> None:
+            events.append("started.stop")
+
+    class FailingService(LifecycleService):
+        @override
+        def set_stop_event(self, stop_event: Any) -> None:
+            self.stop_event = stop_event
+
+        @override
+        def start(self) -> None:
+            events.append("failing.start")
+            raise RuntimeError("service failed")
+
+        @override
+        def stop(self) -> None:
+            events.append("failing.stop")
+
+    context = ApplicationContext()
+    context.add_service(StartedService())
+    context.add_service(FailingService())
+
+    with pytest.raises(RuntimeError):
+        context.start()
+
+    assert context.is_started is False
+    assert events == ["started.start", "failing.start", "started.stop"]
+
+
+def test_application_context_start_async_service_failure_expect_started_services_stopped() -> (
+    None
+):
+    """async service startup 실패 시 이미 시작된 async service를 rollback stop한다."""
+    events: list[str] = []
+
+    class StartedAsyncService(LifecycleAsyncService):
+        @override
+        def set_stop_event(self, stop_event: Any) -> None:
+            self.stop_event = stop_event
+
+        @override
+        async def start_async(self) -> None:
+            events.append("started.start")
+
+        @override
+        async def stop_async(self) -> None:
+            events.append("started.stop")
+
+    class FailingAsyncService(LifecycleAsyncService):
+        @override
+        def set_stop_event(self, stop_event: Any) -> None:
+            self.stop_event = stop_event
+
+        @override
+        async def start_async(self) -> None:
+            events.append("failing.start")
+            raise RuntimeError("service failed")
+
+        @override
+        async def stop_async(self) -> None:
+            events.append("failing.stop")
+
+    context = ApplicationContext()
+    context.add_service(StartedAsyncService())
+    context.add_service(FailingAsyncService())
+
+    with pytest.raises(RuntimeError):
+        context.start()
+
+    assert context.is_started is False
+    assert events == ["started.start", "failing.start", "started.stop"]
 
 
 def test_set_singleton_cache_with_non_singleton_pod() -> None:
@@ -2037,7 +2249,6 @@ def test_application_context_get_qualified_multiple_candidates_none_match_expect
     None
 ):
     """여러 후보 중 qualifier로 필터링했지만 매치되는 Pod가 없을 때 UnexpectedDependencyTypeInjectedError가 발생함을 검증한다."""
-    from spakky.core.pod.annotations.pod import UnexpectedDependencyTypeInjectedError
 
     class ISamplePod:
         @abstractmethod

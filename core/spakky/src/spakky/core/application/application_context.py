@@ -17,6 +17,8 @@ from spakky.core.application.error import AbstractSpakkyApplicationError
 from spakky.core.application.startup_diagnostics import (
     IStartupPhaseRecorder,
     NoOpStartupPhaseRecorder,
+    StartupDiagnosticDetail,
+    StartupDiagnosticDetails,
 )
 from spakky.core.common.constants import CONTEXT_ID, CONTEXT_SCOPE_CACHE
 from spakky.core.common.types import ObjectT, is_optional, remove_none
@@ -206,6 +208,25 @@ class ApplicationContext(IApplicationContext):
             path=dependency_path,
             candidates=candidates,
             resolution_hints=resolution_hints,
+        )
+
+    def __startup_diagnostic_details(
+        self,
+        exception: BaseException,
+    ) -> StartupDiagnosticDetails:
+        """Convert dependency resolution diagnostics into startup report details."""
+        dependency_diagnostic: PodDependencyResolutionDiagnostic | None = None
+        if isinstance(exception, UnexpectedDependencyTypeInjectedError):
+            dependency_diagnostic = exception.dependency_diagnostic
+        if isinstance(exception, NoUniquePodError):
+            dependency_diagnostic = exception.dependency_diagnostic
+        if isinstance(exception, CircularDependencyGraphDetectedError):
+            dependency_diagnostic = exception.dependency_diagnostic
+        if dependency_diagnostic is None:
+            return ()
+        return tuple(
+            StartupDiagnosticDetail(key=key, value=value)
+            for key, value in dependency_diagnostic.as_detail_pairs()
         )
 
     def __candidate_diagnostics(
@@ -672,6 +693,38 @@ class ApplicationContext(IApplicationContext):
         self.__services.clear()
         self.__async_services.clear()
 
+    def __rollback_failed_start(
+        self,
+        original_service_count: int,
+        original_async_service_count: int,
+        started_services: list[IService],
+        started_async_services: list[IAsyncService],
+    ) -> None:
+        event_loop = self.__event_loop
+        event_thread = self.__event_thread
+        for service in reversed(started_services):
+            service.stop()
+        if event_loop is not None and started_async_services:
+
+            async def stop_started_async_services() -> None:
+                for service in reversed(started_async_services):
+                    await service.stop_async()
+
+            run_coroutine_threadsafe(stop_started_async_services(), event_loop).result()
+        if event_loop is not None:
+            event_loop.call_soon_threadsafe(event_loop.stop)  # type: ignore[arg-type]  # stop() is valid callback
+        if event_thread is not None:
+            event_thread.join()
+        self.__event_loop = None
+        self.__event_thread = None
+        with self.__singleton_lock:
+            self.__singleton_cache.clear()
+        self.clear_context()
+        self.__post_processors.clear()
+        del self.__services[original_service_count:]
+        del self.__async_services[original_async_service_count:]
+        self.__is_started = False
+
     def __set_singleton_cache(self, pod: Pod, instance: object) -> None:
         self.__singleton_cache[pod.name] = instance
 
@@ -757,7 +810,11 @@ class ApplicationContext(IApplicationContext):
         loop.run_forever()
         loop.close()
 
-    def __start_services(self) -> None:
+    def __start_services(
+        self,
+        started_services: list[IService],
+        started_async_services: list[IAsyncService],
+    ) -> None:
         """Start all registered sync and async services.
 
         Raises:
@@ -776,39 +833,18 @@ class ApplicationContext(IApplicationContext):
         )
         self.__event_thread.start()
 
-        started_services: list[IService] = []
-        started_async_services: list[IAsyncService] = []
+        for service in self.__services:
+            service.start()
+            started_services.append(service)
 
-        try:
-            for service in self.__services:
-                service.start()
-                started_services.append(service)
+        async def start_async_services() -> None:
+            if self.__event_loop is None:  # pragma: no cover - coverage boundary
+                raise EventLoopThreadNotStartedInApplicationContextError
+            for service in self.__async_services:
+                await service.start_async()
+                started_async_services.append(service)
 
-            async def start_async_services() -> None:
-                if self.__event_loop is None:  # pragma: no cover - coverage boundary
-                    raise EventLoopThreadNotStartedInApplicationContextError
-                for service in self.__async_services:
-                    await service.start_async()
-                    started_async_services.append(service)
-
-            run_coroutine_threadsafe(start_async_services(), self.__event_loop).result()
-        except BaseException:
-            for service in reversed(started_services):
-                service.stop()
-
-            async def stop_started_async_services() -> None:
-                for service in reversed(started_async_services):
-                    await service.stop_async()
-
-            run_coroutine_threadsafe(
-                stop_started_async_services(), self.__event_loop
-            ).result()
-            self.__event_loop.call_soon_threadsafe(self.__event_loop.stop)  # type: ignore[arg-type]  # stop() is valid callback
-            self.__event_thread.join()
-            self.__event_loop = None
-            self.__event_thread = None
-            self.__is_started = False
-            raise
+        run_coroutine_threadsafe(start_async_services(), self.__event_loop).result()
 
     def __stop_services(self) -> None:
         """Stop all services and shutdown event loop.
@@ -973,6 +1009,10 @@ class ApplicationContext(IApplicationContext):
             if startup_phase_recorder is not None
             else NoOpStartupPhaseRecorder()
         )
+        original_service_count = len(self.__services)
+        original_async_service_count = len(self.__async_services)
+        started_services: list[IService] = []
+        started_async_services: list[IAsyncService] = []
         self.__is_started = True
         try:
             with recorder.record_phase(
@@ -992,6 +1032,7 @@ class ApplicationContext(IApplicationContext):
                         elapsed_seconds=startup_metrics.instantiation_elapsed_seconds,
                         exception=e,
                         processed_count=startup_metrics.instantiation_attempt_count,
+                        diagnostic_details=self.__startup_diagnostic_details(e),
                     )
                 else:
                     recorder.record_success(
@@ -1004,6 +1045,9 @@ class ApplicationContext(IApplicationContext):
                         elapsed_seconds=startup_metrics.post_processing_elapsed_seconds,
                         exception=startup_metrics.post_processing_exception,
                         processed_count=startup_metrics.post_processing_application_count,
+                        diagnostic_details=self.__startup_diagnostic_details(
+                            startup_metrics.post_processing_exception
+                        ),
                     )
                 raise
 
@@ -1023,7 +1067,15 @@ class ApplicationContext(IApplicationContext):
                 phase_name=STARTUP_PHASE_SERVICE_START,
                 processed_count=service_start_count,
             ):
-                self.__start_services()
+                self.__start_services(started_services, started_async_services)
+        except BaseException:
+            self.__rollback_failed_start(
+                original_service_count=original_service_count,
+                original_async_service_count=original_async_service_count,
+                started_services=started_services,
+                started_async_services=started_async_services,
+            )
+            raise
         finally:
             self.__startup_metrics = None
 

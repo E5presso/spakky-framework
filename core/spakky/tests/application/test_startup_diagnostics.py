@@ -33,7 +33,7 @@ from spakky.core.application.startup_diagnostics import (
     StartupPhaseStatus,
     StartupProcessedCountCannotBeNegativeError,
 )
-from spakky.core.pod.annotations.pod import Pod
+from spakky.core.pod.annotations.pod import Pod, UnexpectedDependencyTypeInjectedError
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.core.service.interfaces.service import IService
 
@@ -396,6 +396,42 @@ def test_spakky_application_start_failure_expect_recorded_and_propagated() -> No
     finally:
         if context.is_started:
             app.stop()
+
+
+def test_application_context_start_dependency_failure_summary_expect_dependency_details() -> (
+    None
+):
+    """DI startup failure summary가 dependency diagnostic detail을 포함함을 검증한다."""
+
+    class MissingDependency:
+        """Unregistered dependency type."""
+
+    @Pod(name="diagnostic_consumer")
+    class DiagnosticConsumer:
+        def __init__(self, missing: MissingDependency) -> None:
+            self.missing = missing
+
+    context = ApplicationContext()
+    context.add(DiagnosticConsumer)
+    recorder = ActiveStartupPhaseRecorder()
+
+    with pytest.raises(UnexpectedDependencyTypeInjectedError):
+        context.start(recorder)
+
+    failure = recorder.report.records[-1]
+    assert context.is_started is False
+    assert failure.phase_name == STARTUP_PHASE_INSTANTIATION
+    assert failure.status is StartupPhaseStatus.FAILURE
+    assert failure.failure_summary is not None
+
+    details = {
+        detail.key: detail.value
+        for detail in failure.failure_summary.diagnostic_details
+    }
+    assert details["failed_pod"] == "diagnostic_consumer"
+    assert details["dependency_path"] == "DiagnosticConsumer.missing:MissingDependency"
+    assert details["dependency_parameter"] == "missing"
+    assert details["requested_type"] == "MissingDependency"
 
 
 def test_spakky_application_post_processing_failure_expect_phase_failure() -> None:
