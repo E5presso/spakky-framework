@@ -3135,12 +3135,14 @@ version = "6.5.0"
 source = { editable = "core/spakky-saga" }
 dependencies = [
     { name = "spakky" },
+    { name = "spakky-auth" },
     { name = "spakky-domain" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "spakky", editable = "core/spakky" },
+    { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-domain", editable = "core/spakky-domain" },
 ]
 

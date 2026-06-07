@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import sleep as _sleep
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from enum import Enum
 from logging import getLogger
 from time import monotonic
 from typing import Awaitable, Callable
 
+from spakky.saga.auth import SagaAuthExecutionContext
 from spakky.saga.data import AbstractSagaData
 from spakky.saga.error import (
     SagaCompensationFailedError,
@@ -47,6 +48,10 @@ class _NormalizedStep[SagaDataT: AbstractSagaData]:
     compensate: Callable[[SagaDataT], Awaitable[None]] | None
     on_error: ErrorStrategy
     step_timeout: timedelta | None
+    auth_boundary: object | None
+    auth_owner_type: type[object] | None
+    compensate_auth_boundary: object | None
+    compensate_auth_owner_type: type[object] | None
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,16 @@ class _StrategyResult:
     last_error: Exception
 
 
+@dataclass(frozen=True)
+class _CompensableStep[SagaDataT: AbstractSagaData]:
+    """Compensation callback plus auth metadata retained from flow definition."""
+
+    name: str
+    compensate: CompensateFn[SagaDataT]
+    auth_boundary: object | None
+    auth_owner_type: type[object] | None
+
+
 class SagaExecutor[SagaDataT: AbstractSagaData]:
     """사가 실행 오케스트레이터.
 
@@ -86,11 +101,15 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
         flow: SagaFlow[SagaDataT],
         data: SagaDataT,
         saga_name: str = _ANONYMOUS_SAGA_NAME,
+        auth_context: SagaAuthExecutionContext | None = None,
     ) -> None:
         self._flow = flow
         self._data: SagaDataT = data
         self._saga_name = saga_name
-        self._compensable: list[tuple[str, CompensateFn[SagaDataT]]] = []
+        self._auth_context = (
+            auth_context if auth_context is not None else SagaAuthExecutionContext()
+        )
+        self._compensable: list[_CompensableStep[SagaDataT]] = []
         self._history: list[StepRecord] = []
         self._saga_start: float = 0.0
 
@@ -180,7 +199,7 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
         step_start = monotonic()
         logger.info("[saga=%s step=%s status=started]", self._saga_name, step_item.name)
         try:
-            result = await self._invoke_action(step_item.action, step_item.step_timeout)
+            result = await self._invoke_step_action(step_item)
         except Exception as error:  # noqa: BLE001 - saga engine catches all step errors
             self._record_step_failure(step_item.name, step_start, error)
             strategy_result = await self._apply_strategy(step_item, error)
@@ -188,10 +207,10 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
                 return None
             return (step_item.name, strategy_result.last_error)
         if isinstance(result, AbstractSagaData):
-            self._data = result  # type: ignore[assignment] - runtime SagaData subtype check
+            self._data = self._preserve_auth_context_snapshot(result)  # type: ignore[assignment] - runtime SagaData subtype check
         self._record_step_committed(step_item.name, step_start)
         if step_item.compensate is not None:
-            self._compensable.append((step_item.name, step_item.compensate))
+            self._remember_compensable(step_item)
         return None
 
     async def _execute_parallel(
@@ -212,10 +231,7 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
             )
         step_starts = [monotonic() for _ in group.steps]
         results = await asyncio.gather(
-            *(
-                self._invoke_action(step_item.action, step_item.step_timeout)
-                for step_item in group.steps
-            ),
+            *(self._invoke_step_action(step_item) for step_item in group.steps),
             return_exceptions=True,
         )
 
@@ -235,10 +251,23 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
             else:
                 self._record_step_committed(step_item.name, started)
                 if step_item.compensate is not None:
-                    self._compensable.append((step_item.name, step_item.compensate))
+                    self._remember_compensable(step_item)
         if cancellation is not None:
             raise cancellation
         return first_failure
+
+    async def _invoke_step_action(
+        self,
+        step_item: _NormalizedStep[SagaDataT],
+    ) -> SagaDataT | None:
+        """Authorize and invoke a saga step action."""
+        self._auth_context.authorize_step(
+            step_name=step_item.name,
+            boundary=step_item.auth_boundary,
+            owner_type=step_item.auth_owner_type,
+            data=self._data,
+        )
+        return await self._invoke_action(step_item.action, step_item.step_timeout)
 
     async def _invoke_action(
         self,
@@ -301,18 +330,16 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
                 attempt,
             )
             try:
-                result = await self._invoke_action(
-                    step_item.action, step_item.step_timeout
-                )
+                result = await self._invoke_step_action(step_item)
             except Exception as error:  # noqa: BLE001 - saga engine catches all step errors
                 last_error = error
                 self._record_step_failure(step_item.name, step_start, error)
                 continue
             if isinstance(result, AbstractSagaData):
-                self._data = result  # type: ignore[assignment] - runtime SagaData subtype check
+                self._data = self._preserve_auth_context_snapshot(result)  # type: ignore[assignment] - runtime SagaData subtype check
             self._record_step_committed(step_item.name, step_start)
             if step_item.compensate is not None:
-                self._compensable.append((step_item.name, step_item.compensate))
+                self._remember_compensable(step_item)
             return _StrategyResult(
                 outcome=_StrategyOutcome.CONTINUE,
                 last_error=last_error,
@@ -336,21 +363,47 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
             SagaCompensationFailedError: 보상 실행 중 에러 발생 시
                 (on_compensation_failure 핸들러가 있어도 최종적으로 raise).
         """
-        for comp_name, comp_fn in reversed(self._compensable):
+        for compensable in reversed(self._compensable):
             comp_start = monotonic()
             logger.info(
                 "[saga=%s step=%s status=compensating]",
                 self._saga_name,
-                comp_name,
+                compensable.name,
             )
             try:
-                await comp_fn(self._data)
-                self._record_step_compensated(comp_name, comp_start)
+                self._auth_context.authorize_step(
+                    step_name=compensable.name,
+                    boundary=compensable.auth_boundary,
+                    owner_type=compensable.auth_owner_type,
+                    data=self._data,
+                )
+                await compensable.compensate(self._data)
+                self._record_step_compensated(compensable.name, comp_start)
             except Exception as comp_error:  # noqa: BLE001 - compensation failure handling
-                self._record_step_failure(comp_name, comp_start, comp_error)
+                self._record_step_failure(compensable.name, comp_start, comp_error)
                 if self._flow.compensation_failure_handler is not None:
                     await self._flow.compensation_failure_handler(self._data)
                 raise SagaCompensationFailedError from comp_error
+
+    def _remember_compensable(self, step_item: _NormalizedStep[SagaDataT]) -> None:
+        if step_item.compensate is None:
+            return  # pragma: no cover - callers only register compensable steps
+        self._compensable.append(
+            _CompensableStep(
+                name=step_item.name,
+                compensate=step_item.compensate,
+                auth_boundary=step_item.compensate_auth_boundary,
+                auth_owner_type=step_item.compensate_auth_owner_type,
+            )
+        )
+
+    def _preserve_auth_context_snapshot(self, data: SagaDataT) -> SagaDataT:
+        """Carry the current signed snapshot across SagaData replacements."""
+        if data.auth_context_snapshot is not None:
+            return data
+        if self._data.auth_context_snapshot is None:
+            return data
+        return replace(data, auth_context_snapshot=self._data.auth_context_snapshot)
 
     def _record(self, name: str, status: StepStatus, start: float) -> timedelta:
         """실행 기록 1건을 추가하고 경과 시간을 반환한다."""
@@ -428,6 +481,10 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
                         compensate=None,
                         on_error=Compensate(),
                         step_timeout=None,
+                        auth_boundary=item,
+                        auth_owner_type=None,
+                        compensate_auth_boundary=None,
+                        compensate_auth_owner_type=None,
                     )
                 )
             else:
@@ -442,12 +499,32 @@ class SagaExecutor[SagaDataT: AbstractSagaData]:
         # dynamic __name__ access: runtime function name for logging/debugging
         name = getattr(item.action, "__name__", "<unknown>")  # callable diagnostics
         compensate = item.compensate if isinstance(item, Transaction) else None
+        auth_boundary = (
+            item.action_auth_boundary
+            if isinstance(item, Transaction)
+            else item.auth_boundary
+        )
+        auth_owner_type = (
+            item.action_auth_owner_type
+            if isinstance(item, Transaction)
+            else item.auth_owner_type
+        )
+        compensate_auth_boundary = (
+            item.compensate_auth_boundary if isinstance(item, Transaction) else None
+        )
+        compensate_auth_owner_type = (
+            item.compensate_auth_owner_type if isinstance(item, Transaction) else None
+        )
         return _NormalizedStep(
             name=name,
             action=item.action,
             compensate=compensate,
             on_error=item.on_error,
             step_timeout=item.timeout,
+            auth_boundary=auth_boundary,
+            auth_owner_type=auth_owner_type,
+            compensate_auth_boundary=compensate_auth_boundary,
+            compensate_auth_owner_type=compensate_auth_owner_type,
         )
 
     @staticmethod
@@ -469,6 +546,7 @@ async def run_saga_flow[SagaDataT: AbstractSagaData](
     data: SagaDataT,
     *,
     saga_name: str = _ANONYMOUS_SAGA_NAME,
+    auth_context: SagaAuthExecutionContext | None = None,
 ) -> SagaResult[SagaDataT]:
     """SagaFlow를 실행하고 결과를 반환한다.
 
@@ -476,6 +554,7 @@ async def run_saga_flow[SagaDataT: AbstractSagaData](
         flow: 사가 흐름 정의.
         data: 초기 사가 비즈니스 데이터.
         saga_name: 구조화 로그에 포함될 사가 이름. 기본값은 익명 표기.
+        auth_context: protected saga step enforcement에 사용할 auth provider ports.
 
     Returns:
         SagaResult[SagaDataT]: 사가 실행 결과. 예외를 발생시키지 않는다
@@ -485,4 +564,6 @@ async def run_saga_flow[SagaDataT: AbstractSagaData](
         SagaCompensationFailedError: 보상 실행 중 에러 발생
             (on_compensation_failure 미설정 시).
     """
-    return await SagaExecutor(flow, data, saga_name=saga_name).run()
+    return await SagaExecutor(
+        flow, data, saga_name=saga_name, auth_context=auth_context
+    ).run()

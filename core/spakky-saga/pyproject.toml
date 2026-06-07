@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.5.0", "spakky-domain>=6.5.0"]
+dependencies = ["spakky>=6.5.0", "spakky-domain>=6.5.0", "spakky-auth>=6.5.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-saga = "spakky.saga.main:initialize"
@@ -21,7 +21,7 @@ module-name = "spakky.saga"
 
 [tool.pyrefly]
 python-version = "3.12"
-search_path = ["src", "."]
+search_path = ["src", ".", "../spakky-auth/src"]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
 
 [tool.ruff]
@@ -29,7 +29,7 @@ builtins = ["_"]
 cache-dir = "~/.cache/ruff"
 
 [tool.pytest.ini_options]
-pythonpath = "src/spakky/saga"
+pythonpath = ["src", "../spakky-auth/src"]
 testpaths = "tests"
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
@@ -69,3 +69,4 @@ exclude_lines = [
 [tool.uv.sources]
 spakky = { workspace = true }
 spakky-domain = { workspace = true }
+spakky-auth = { workspace = true }

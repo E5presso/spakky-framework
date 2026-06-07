@@ -13,3 +13,5 @@ class AbstractSagaData(AbstractDomainModel, ABC):
     """사가의 비즈니스 데이터. 엔진 상태를 포함하지 않는다."""
 
     saga_id: UUID = field(default_factory=uuid4)
+    auth_context_snapshot: str | None = None
+    """Signed AuthContextSnapshot envelope propagated across saga execution."""

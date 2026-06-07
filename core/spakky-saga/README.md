@@ -18,6 +18,7 @@ pip install spakky-saga
 - **Timeout**: step별 `timeout=`과 saga별 `SagaFlow.timeout()` 지원
 - **병렬 실행**: `asyncio.gather` 기반 group(`&` operator / `parallel()`)
 - **보상**: 실패 시 commit된 step을 역순으로 자동 rollback
+- **AuthContextSnapshot 전파**: `AbstractSagaData.auth_context_snapshot` signed envelope를 실행, retry, parallel, compensation 동안 유지하고 protected saga step을 enforcement합니다.
 - **`SagaResult[T]`**: `status`, `data`, `failed_step`, `error`, `history`, `elapsed`를 담는 non-throwing result
 - **구조화 로깅**: `[saga=... step=... status=... elapsed=...ms]` format
 
@@ -72,6 +73,33 @@ if result.status is SagaStatus.COMPLETED:
     ...
 ```
 
+### Protected Saga Step
+
+```python
+from spakky.auth import protected, require_scope
+from spakky.saga import SagaAuthExecutionContext
+
+
+@Saga()
+class ProtectedOrderSaga(AbstractSaga[OrderSagaData]):
+    @saga_step
+    @protected
+    @require_scope("orders:write")
+    async def issue_ticket(self, data: OrderSagaData) -> OrderSagaData:
+        ...
+
+
+result = await saga.execute(
+    OrderSagaData(order_id=1, customer_id=42, auth_context_snapshot="signed-envelope"),
+    auth_context=SagaAuthExecutionContext(
+        snapshot_verifier=snapshot_verifier,
+        scope_checker=scope_checker,
+    ),
+)
+```
+
+Protected step은 raw bearer token을 받지 않고 signed `AuthContextSnapshot` envelope를 검증합니다. missing, invalid, expired snapshot은 `CHALLENGE` decision으로 step failure가 되며, provider unavailable은 `ERROR` decision으로 기존 saga failure/compensation policy를 따릅니다.
+
 ### Builder 함수 대안
 
 ```python
@@ -111,7 +139,8 @@ flow = saga_flow(
 | `@Saga()` | saga orchestrator class용 stereotype(`@Pod` 확장) |
 | `AbstractSaga[SagaDataT]` | `flow()` 추상 메서드와 `execute()`를 가진 ABC 기반 클래스 |
 | `@saga_step` | `>>`, `&`, `|` 연산자를 활성화하는 descriptor decorator |
-| `AbstractSagaData` | base data model(`@immutable` + `AbstractDomainModel`, `saga_id: UUID` 자동 생성) |
+| `AbstractSagaData` | base data model(`@immutable` + `AbstractDomainModel`, `saga_id: UUID` 자동 생성, `auth_context_snapshot` envelope 전파) |
+| `SagaAuthExecutionContext` | protected saga step enforcement에 사용할 snapshot verifier/checker port 묶음 |
 
 ### Flow 타입
 

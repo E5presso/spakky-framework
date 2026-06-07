@@ -12,6 +12,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Awaitable, Callable, overload
 
+from spakky.core.common.constants import ANNOTATION_METADATA
+from spakky.saga.auth import SagaAuthExecutionContext
 from spakky.saga.data import AbstractSagaData
 from spakky.saga.engine import run_saga_flow
 from spakky.saga.flow import SagaFlow, SagaStep
@@ -26,13 +28,20 @@ class _SagaStepDescriptor[SagaDataT: AbstractSagaData]:
     bound method를 SagaStep으로 감싸 반환하여 연산자(>>, &, |) 사용이 가능해진다.
     """
 
-    __slots__ = ("_fn",)
+    __slots__ = ("_fn", ANNOTATION_METADATA)
 
     def __init__(
         self,
         fn: Callable[..., Awaitable[SagaDataT | None]],
     ) -> None:
         self._fn = fn
+        metadata = (
+            getattr(  # preserve framework annotations through descriptor conversion
+                fn, ANNOTATION_METADATA, None
+            )
+        )
+        if metadata is not None:
+            setattr(self, ANNOTATION_METADATA, metadata)  # framework metadata slot
 
     @overload
     def __get__(
@@ -54,7 +63,12 @@ class _SagaStepDescriptor[SagaDataT: AbstractSagaData]:
         if obj is None:
             return self
         bound_method = self._fn.__get__(obj, objtype)
-        return SagaStep(action=bound_method)
+        owner_type = objtype if objtype is not None else type(obj)
+        return SagaStep(
+            action=bound_method,
+            auth_boundary=self,
+            auth_owner_type=owner_type,
+        )
 
 
 def saga_step[_SelfT, SagaDataT: AbstractSagaData](
@@ -119,7 +133,12 @@ class AbstractSaga[SagaDataT: AbstractSagaData](ABC):
         """
         ...  # pragma: no branch - AbstractMethod only
 
-    async def execute(self, data: SagaDataT) -> SagaResult[SagaDataT]:
+    async def execute(
+        self,
+        data: SagaDataT,
+        *,
+        auth_context: SagaAuthExecutionContext | None = None,
+    ) -> SagaResult[SagaDataT]:
         """사가를 실행한다.
 
         SagaFlow에 정의된 step들을 순차 실행하고, 실패 시
@@ -135,4 +154,9 @@ class AbstractSaga[SagaDataT: AbstractSagaData](ABC):
             SagaCompensationFailedError: 보상 실행 중 에러 발생
                 (on_compensation_failure 미설정 시).
         """
-        return await run_saga_flow(self.flow(), data, saga_name=type(self).__name__)
+        return await run_saga_flow(
+            self.flow(),
+            data,
+            saga_name=type(self).__name__,
+            auth_context=auth_context,
+        )

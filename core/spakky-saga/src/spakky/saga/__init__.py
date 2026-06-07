@@ -1,6 +1,7 @@
 """Spakky Saga package - Distributed transaction saga orchestration."""
 
 from spakky.core.application.plugin import Plugin
+from spakky.saga.auth import SAGA_AUTH_BOUNDARY, SagaAuthExecutionContext
 from spakky.saga.base import AbstractSaga, saga_step
 from spakky.saga.data import AbstractSagaData
 from spakky.saga.error import (
@@ -44,6 +45,9 @@ __all__ = [
     # Base
     "AbstractSaga",
     "saga_step",
+    # Auth
+    "SAGA_AUTH_BOUNDARY",
+    "SagaAuthExecutionContext",
     # Data
     "AbstractSagaData",
     # Status
