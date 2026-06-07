@@ -42,6 +42,8 @@ def test_rpc_server_streaming_method_type() -> None:
 
     annotation = Rpc.get(list_features)
     assert annotation.method_type == RpcMethodType.SERVER_STREAMING
+    assert annotation.request_type is HelloRequest
+    assert annotation.response_type is HelloResponse
 
 
 def test_rpc_client_streaming_method_type() -> None:
@@ -56,6 +58,8 @@ def test_rpc_client_streaming_method_type() -> None:
 
     annotation = Rpc.get(record_route)
     assert annotation.method_type == RpcMethodType.CLIENT_STREAMING
+    assert annotation.request_type is HelloRequest
+    assert annotation.response_type is HelloResponse
 
 
 def test_rpc_bidi_streaming_method_type() -> None:
@@ -70,6 +74,21 @@ def test_rpc_bidi_streaming_method_type() -> None:
 
     annotation = Rpc.get(route_chat)
     assert annotation.method_type == RpcMethodType.BIDI_STREAMING
+    assert annotation.request_type is HelloRequest
+    assert annotation.response_type is HelloResponse
+
+
+def test_rpc_streaming_hint_without_type_arg_returns_none() -> None:
+    """Bare AsyncIterator hints should not be treated as message types."""
+
+    @rpc(method_type=RpcMethodType.CLIENT_STREAMING)
+    async def record_route(self: object, requests: AsyncIterator) -> HelloResponse:
+        """Record route."""
+        ...
+
+    annotation = Rpc.get(record_route)
+    assert annotation.request_type is None
+    assert annotation.response_type is HelloResponse
 
 
 def test_rpc_extracts_request_type_from_hints() -> None:

@@ -1,6 +1,6 @@
 """Unit tests for descriptor_builder module."""
 
-from typing import Annotated
+from typing import Annotated, AsyncIterator
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
 from pydantic import BaseModel
@@ -177,6 +177,47 @@ def test_build_service_descriptor_sets_streaming_flags() -> None:
     assert not methods["client_streaming"].server_streaming
     assert methods["bidi_streaming"].client_streaming
     assert methods["bidi_streaming"].server_streaming
+
+
+def test_build_file_descriptor_unwraps_streaming_type_hints() -> None:
+    """Documented AsyncIterator[T] signatures generate T descriptors."""
+
+    @GrpcController(package="test.v1")
+    class StreamingHintService:
+        """Controller using documented streaming type hints."""
+
+        @rpc(method_type=RpcMethodType.SERVER_STREAMING)
+        async def server_streaming(
+            self, request: HelloRequest
+        ) -> AsyncIterator[HelloResponse]:
+            """Server-streaming method."""
+            ...
+
+        @rpc(method_type=RpcMethodType.CLIENT_STREAMING)
+        async def client_streaming(
+            self, requests: AsyncIterator[HelloRequest]
+        ) -> HelloResponse:
+            """Client-streaming method."""
+            ...
+
+        @rpc(method_type=RpcMethodType.BIDI_STREAMING)
+        async def bidi_streaming(
+            self, requests: AsyncIterator[HelloRequest]
+        ) -> AsyncIterator[HelloResponse]:
+            """Bidirectional-streaming method."""
+            ...
+
+    file_desc = build_file_descriptor(StreamingHintService)
+    methods = {method.name: method for method in file_desc.service[0].method}
+    message_names = {message.name for message in file_desc.message_type}
+
+    assert methods["server_streaming"].input_type == ".test.v1.HelloRequest"
+    assert methods["server_streaming"].output_type == ".test.v1.HelloResponse"
+    assert methods["client_streaming"].input_type == ".test.v1.HelloRequest"
+    assert methods["client_streaming"].output_type == ".test.v1.HelloResponse"
+    assert methods["bidi_streaming"].input_type == ".test.v1.HelloRequest"
+    assert methods["bidi_streaming"].output_type == ".test.v1.HelloResponse"
+    assert message_names == {"HelloRequest", "HelloResponse"}
 
 
 def test_build_file_descriptor_complete() -> None:
