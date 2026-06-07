@@ -1,5 +1,7 @@
 # OpenTelemetry 통합
 
+> Spakky tracing 추상화를 OpenTelemetry SDK와 OTLP exporter로 연결하는 방법을 설명합니다.
+
 `spakky-opentelemetry`는 Spakky의 분산 트레이싱 추상화(`spakky-tracing`)를 OpenTelemetry SDK에 연결하는 브릿지 플러그인입니다.
 
 ---

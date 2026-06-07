@@ -42,7 +42,7 @@
 
 문서와 코드가 불일치할 경우:
 
-```
+```text
 Code > CONTRIBUTING.md > docs/ > README.md
 ```
 

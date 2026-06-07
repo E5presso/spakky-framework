@@ -11,6 +11,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+domain = ["spakky-domain>=6.5.0"]
+data = ["spakky-data>=6.5.0"]
+event = ["spakky-event>=6.5.0"]
+task = ["spakky-task>=6.5.0"]
+agent-core = ["spakky-agent>=6.5.0"]
+actuator = ["spakky-actuator>=6.5.0"]
+cache-core = ["spakky-cache>=6.5.0"]
+tracing = ["spakky-tracing>=6.5.0"]
+outbox = ["spakky-outbox>=6.5.0"]
+auth = ["spakky-auth>=6.5.0"]
 logging = ["spakky-logging>=6.5.0"]
 cryptography = ["spakky-cryptography>=6.5.0"]
 oidc = ["spakky-oidc>=6.5.0"]
@@ -27,6 +37,90 @@ grpc = ["spakky-grpc>=6.5.0"]
 redis = ["spakky-redis>=6.5.0"]
 vllm = ["spakky-vllm>=6.5.0"]
 saga = ["spakky-saga>=6.5.0"]
+web = [
+    "spakky[fastapi]>=6.5.0",
+    "spakky[logging]>=6.5.0",
+]
+cli = [
+    "spakky[typer]>=6.5.0",
+    "spakky[logging]>=6.5.0",
+]
+database = [
+    "spakky-domain>=6.5.0",
+    "spakky-data>=6.5.0",
+    "spakky[sqlalchemy]>=6.5.0",
+]
+event-driven = [
+    "spakky-event>=6.5.0",
+    "spakky-outbox>=6.5.0",
+    "spakky[rabbitmq]>=6.5.0",
+    "spakky[kafka]>=6.5.0",
+    "spakky[sqlalchemy]>=6.5.0",
+]
+worker = [
+    "spakky-task>=6.5.0",
+    "spakky[celery]>=6.5.0",
+]
+security = [
+    "spakky-auth>=6.5.0",
+    "spakky[cryptography]>=6.5.0",
+    "spakky[oidc]>=6.5.0",
+    "spakky[policy]>=6.5.0",
+    "spakky[openfga]>=6.5.0",
+]
+observability = [
+    "spakky-actuator>=6.5.0",
+    "spakky[logging]>=6.5.0",
+    "spakky-tracing>=6.5.0",
+    "spakky[opentelemetry]>=6.5.0",
+]
+cache-app = [
+    "spakky-cache>=6.5.0",
+    "spakky[redis]>=6.5.0",
+]
+agent = [
+    "spakky-agent>=6.5.0",
+    "spakky[vllm]>=6.5.0",
+    "spakky[sqlalchemy]>=6.5.0",
+]
+recommended = [
+    "spakky-domain>=6.5.0",
+    "spakky-data>=6.5.0",
+    "spakky-event>=6.5.0",
+    "spakky[fastapi]>=6.5.0",
+    "spakky[sqlalchemy]>=6.5.0",
+    "spakky[logging]>=6.5.0",
+    "spakky-tracing>=6.5.0",
+    "spakky-actuator>=6.5.0",
+]
+full = [
+    "spakky-actuator>=6.5.0",
+    "spakky-agent>=6.5.0",
+    "spakky-auth>=6.5.0",
+    "spakky-cache>=6.5.0",
+    "spakky-data>=6.5.0",
+    "spakky-domain>=6.5.0",
+    "spakky-event>=6.5.0",
+    "spakky-outbox>=6.5.0",
+    "spakky-saga>=6.5.0",
+    "spakky-task>=6.5.0",
+    "spakky-tracing>=6.5.0",
+    "spakky[celery]>=6.5.0",
+    "spakky[cryptography]>=6.5.0",
+    "spakky[fastapi]>=6.5.0",
+    "spakky[grpc]>=6.5.0",
+    "spakky[kafka]>=6.5.0",
+    "spakky[logging]>=6.5.0",
+    "spakky[oidc]>=6.5.0",
+    "spakky[openfga]>=6.5.0",
+    "spakky[opentelemetry]>=6.5.0",
+    "spakky[policy]>=6.5.0",
+    "spakky[rabbitmq]>=6.5.0",
+    "spakky[redis]>=6.5.0",
+    "spakky[sqlalchemy]>=6.5.0",
+    "spakky[typer]>=6.5.0",
+    "spakky[vllm]>=6.5.0",
+]
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.11.0"]

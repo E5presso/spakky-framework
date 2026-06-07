@@ -43,3 +43,9 @@ show_root_heading: false
 ::: spakky.plugins.celery.error
 options:
 show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.celery.common.constants
+    options:
+      show_root_heading: false

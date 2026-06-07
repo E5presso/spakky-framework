@@ -741,6 +741,7 @@ from spakky.plugins.grpc.error import (
 
 | 에러                  | gRPC 상태 코드        | 설명                |
 | --------------------- | ---------------------- | ------------------- |
+| `AbstractGrpcStatusError` | — | gRPC status error의 공통 기반 클래스 |
 | `InvalidArgument`     | `INVALID_ARGUMENT`     | 잘못된 요청 인자       |
 | `NotFound`            | `NOT_FOUND`            | 리소스 없음           |
 | `AlreadyExists`       | `ALREADY_EXISTS`       | 리소스 이미 존재       |
@@ -775,6 +776,7 @@ from spakky.plugins.openfga.error import (
 
 | 에러 | 설명 |
 | ---- | ---- |
+| `AbstractOpenFgaError` | OpenFGA provider 에러의 공통 기반 클래스 |
 | `OpenFgaProviderUnavailableError` | OpenFGA check provider 호출 실패 또는 비가용 상태 |
 | `OpenFgaReferenceMappingError` | canonical auth ref를 OpenFGA user/object/relation으로 변환할 수 없음 |
 
@@ -917,9 +919,9 @@ class CircularDependencyGraphDetectedError(AbstractSpakkyPodError):
         super().__init__()
         self.dependency_chain = dependency_chain
 
-    def __str__(self) -> str:
-        # 상세한 의존성 경로 표시
-        return f"{self.message}\nPath: {' -> '.join(t.__name__ for t in self.dependency_chain)}"
+    @property
+    def dependency_path(self) -> str:
+        return " -> ".join(t.__name__ for t in self.dependency_chain)
 ```
 
 ### 3. 에러 체이닝

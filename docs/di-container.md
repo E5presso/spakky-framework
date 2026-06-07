@@ -126,13 +126,13 @@ class OrderService:
 다음은 허용되지 않습니다:
 
 ```python
-# ❌ 위치 전용 인자 금지
+# 위치 전용 인자 금지
 def __init__(self, repo: Repository, /): ...
 
-# ❌ *args, **kwargs 금지
+# *args, **kwargs 금지
 def __init__(self, *args, **kwargs): ...
 
-# ❌ 함수 Pod에서 Optional 반환 타입 금지
+# 함수 Pod에서 Optional 반환 타입 금지
 @Pod()
 def create_service() -> Service | None: ...  # 에러
 ```

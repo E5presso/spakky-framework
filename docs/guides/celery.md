@@ -1,5 +1,7 @@
 # Celery 태스크
 
+> `spakky-celery`로 Spakky task handler를 Celery task로 등록하고 실행하는 흐름을 설명합니다.
+
 `spakky-celery`는 `@task` 데코레이터가 붙은 메서드를 Celery 태스크로 자동 등록합니다.
 
 ---

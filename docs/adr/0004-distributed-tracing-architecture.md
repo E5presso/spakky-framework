@@ -95,13 +95,16 @@ A + C를 결합하되, 트레이싱을 별도 코어 패키지(`spakky-tracing`)
 
 ### 의존성 방향
 
-```
-spakky-tracing → spakky (코어 DI만 사용)
-spakky-logging → spakky (코어 DI만 사용, tracing과 독립)
-spakky-event → spakky-tracing (필수 의존성 — propagator를 통한 headers inject)
-각 플러그인 → spakky-tracing (설치되어 있을 때 ITracePropagator DI 주입)
-spakky-opentelemetry → spakky-tracing + opentelemetry-api + opentelemetry-sdk
-spakky-opentelemetry → spakky-logging (선택적 — 설치되어 있을 때 trace_id↔LogContext 브릿지)
+```mermaid
+flowchart TD
+  tracing[spakky-tracing] --> core[spakky]
+  logging[spakky-logging] --> core
+  event[spakky-event] --> tracing
+  plugins[각 플러그인] -. 설치 시 ITracePropagator 주입 .-> tracing
+  otel[spakky-opentelemetry] --> tracing
+  otel --> otelApi[opentelemetry-api]
+  otel --> otelSdk[opentelemetry-sdk]
+  otel -. 선택적 LogContext bridge .-> logging
 ```
 
 ### 핵심 인터페이스

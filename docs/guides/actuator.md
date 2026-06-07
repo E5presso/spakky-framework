@@ -1,6 +1,8 @@
 # Actuator 상태 확인
 
-`spakky-actuator`는 애플리케이션 상태를 transport-neutral 모델로 집계합니다.
+> `spakky-actuator`로 health, readiness, liveness, info 상태를 전송 방식과 독립적으로 모으는 방법을 설명합니다.
+
+`spakky-actuator`는 애플리케이션 상태를 전송 방식과 독립적인 모델로 집계합니다.
 FastAPI와 Typer 플러그인은 같은 core result를 HTTP 엔드포인트나 CLI 명령으로 노출합니다.
 
 ## 의미 구분
@@ -64,7 +66,7 @@ liveness = service.evaluate_liveness()
 ## DI 확장
 
 애플리케이션에서는 probe와 info contributor를 Pod로 등록하면 됩니다.
-`spakky-actuator` plugin이 `ActuatorExtensionPostProcessor`를 등록하고, DI-managed extension을 `ActuatorExtensionRegistry`에 모읍니다.
+`spakky-actuator` plugin이 `ActuatorExtensionPostProcessor`를 등록하고, DI가 관리하는 extension을 `ActuatorExtensionRegistry`에 모읍니다.
 
 ```python
 from collections.abc import Mapping
@@ -132,6 +134,6 @@ export SPAKKY_TYPER_ACTUATOR_COMMAND_NAME=status
 
 ## Backend 제공 Probe
 
-Actuator core는 transport-neutral registry와 aggregation을 담당합니다. Backend plugin은 자신이 소유한 외부 의존 상태를 first-party probe/contributor로 등록할 수 있습니다.
+Actuator core는 전송 방식과 독립적인 registry와 aggregation을 담당합니다. Backend plugin은 자신이 소유한 외부 의존 상태를 기본 probe/contributor로 등록할 수 있습니다.
 
 `spakky-redis`는 `RedisCacheHealthProbe`와 `RedisCacheMetricsInfoContributor`를 등록하여 Redis 연결 상태와 cache metrics를 actuator health/info 표면에 노출합니다. SQLAlchemy, Kafka/RabbitMQ, Celery 같은 다른 backend도 같은 `AbstractHealthProbe` / `IInfoContributor` 계약으로 확장합니다.

@@ -1,5 +1,7 @@
 # AOP (관점 지향 프로그래밍)
 
+> AOP로 로깅, 트랜잭션, 인증 같은 횡단 관심사를 비즈니스 코드 밖으로 분리하는 방법을 설명합니다.
+
 AOP를 사용하면 로깅, 트랜잭션, 인증 같은 **횡단 관심사**를 비즈니스 로직에서 분리할 수 있습니다.
 
 ---
@@ -111,6 +113,8 @@ service.fail()
 ---
 
 ## Advice 타입
+
+아래 예시는 앞에서 사용한 AOP import와 marker annotation 패턴을 이어서 보여주는 축약 예시입니다. 그대로 복사해 새 파일에 붙일 때는 `Aspect`, `AsyncAspect`, `IAspect`, `IAsyncAspect`, `Before`, `After`, `AfterReturning`, `AfterRaising`, `Around`, `Any`, `Func`, 그리고 예시에 쓰는 marker annotation을 함께 정의하세요.
 
 ### Before — 메서드 실행 전
 

@@ -10,8 +10,9 @@
 
 초기 설계(GitHub Issue #4)는 `spakky-outbox`가 `spakky-sqlalchemy`에 직접 의존하는 구조였다:
 
-```
-spakky-outbox → spakky-sqlalchemy (하드 의존)
+```mermaid
+flowchart LR
+  outbox[spakky-outbox] -->|하드 의존| sqlalchemy[spakky-sqlalchemy]
 ```
 
 이 설계는 SQLAlchemy 외의 영속화 기술(MongoDB, DynamoDB 등)을 지원하지 못한다는 구조적 한계가 있다.
@@ -37,13 +38,12 @@ spakky-outbox → spakky-sqlalchemy (하드 의존)
 
 `spakky-outbox`는 인터페이스와 코어 로직만 제공하고, `spakky-outbox-sqlalchemy` 등 구현체를 별도 패키지로 분리:
 
-```
-plugins/
-├── spakky-outbox/                    # 추상화 (IOutboxStorage, Bus, Relay, Config)
-├── spakky-outbox-sqlalchemy/         # SQLAlchemy 구현체
-├── spakky-outbox-mongodb/            # MongoDB 구현체 (향후)
-└── spakky-outbox-dynamodb/           # DynamoDB 구현체 (향후)
-```
+| 패키지 | 역할 |
+|---|---|
+| `spakky-outbox` | 추상화 (`IOutboxStorage`, Bus, Relay, Config) |
+| `spakky-outbox-sqlalchemy` | SQLAlchemy 구현체 |
+| `spakky-outbox-mongodb` | MongoDB 구현체 (향후) |
+| `spakky-outbox-dynamodb` | DynamoDB 구현체 (향후) |
 
 - **장점**: 단일 책임, 명확한 확장 포인트, 새 DB는 구현체만 추가
 - **단점**: 패키지 수 증가 (2개 이상 설치 필요)
@@ -69,11 +69,10 @@ dynamodb = ["boto3>=1.28"]
 
 `spakky-sqlalchemy`에 Outbox 기능을 직접 추가:
 
-```
-plugins/
-├── spakky-sqlalchemy/               # + OutboxStorage, OutboxMessageTable
-├── spakky-mongodb/                  # + OutboxStorage (향후)
-```
+| 패키지 | 추가되는 Outbox 기능 |
+|---|---|
+| `spakky-sqlalchemy` | `OutboxStorage`, `OutboxMessageTable` |
+| `spakky-mongodb` | `OutboxStorage` (향후) |
 
 - **장점**: 기존 플러그인 재사용
 - **단점**: 책임 분리 위반 (SQLAlchemy 플러그인이 Event 시스템 알아야 함), `spakky-event` 의존 추가로 순환 가능성
@@ -84,32 +83,19 @@ plugins/
 
 ### 패키지 구조
 
-```
-plugins/
-├── spakky-outbox/
-│   └── src/spakky/plugins/outbox/
-│       ├── __init__.py
-│       ├── error.py
-│       ├── main.py                   # initialize(app)
-│       ├── common/
-│       │   ├── config.py             # OutboxConfig
-│       │   └── message.py            # OutboxMessage (dataclass)
-│       ├── ports/
-│       │   └── storage.py            # IOutboxStorage, IAsyncOutboxStorage
-│       ├── bus/
-│       │   └── outbox_event_bus.py   # AsyncOutboxEventBus (@Primary IAsyncEventBus)
-│       └── relay/
-│           └── relay.py              # OutboxRelay (IOutboxStorage → IAsyncEventTransport)
-│
-└── spakky-outbox-sqlalchemy/
-    └── src/spakky/plugins/outbox_sqlalchemy/
-        ├── __init__.py
-        ├── main.py                   # initialize(app)
-        ├── persistency/
-        │   └── table.py              # OutboxBase, OutboxMessageTable
-        └── adapters/
-            └── storage.py            # SqlAlchemyOutboxStorage (@Primary IOutboxStorage)
-```
+| 패키지 | 경로 | 책임 |
+|---|---|---|
+| `spakky-outbox` | `src/spakky/plugins/outbox/__init__.py` | 패키지 루트 |
+| `spakky-outbox` | `src/spakky/plugins/outbox/error.py` | Outbox 에러 |
+| `spakky-outbox` | `src/spakky/plugins/outbox/main.py` | `initialize(app)` |
+| `spakky-outbox` | `src/spakky/plugins/outbox/common/config.py` | `OutboxConfig` |
+| `spakky-outbox` | `src/spakky/plugins/outbox/common/message.py` | `OutboxMessage` |
+| `spakky-outbox` | `src/spakky/plugins/outbox/ports/storage.py` | `IOutboxStorage`, `IAsyncOutboxStorage` |
+| `spakky-outbox` | `src/spakky/plugins/outbox/bus/outbox_event_bus.py` | `AsyncOutboxEventBus` |
+| `spakky-outbox` | `src/spakky/plugins/outbox/relay/relay.py` | `OutboxRelay` |
+| `spakky-outbox-sqlalchemy` | `src/spakky/plugins/outbox_sqlalchemy/main.py` | `initialize(app)` |
+| `spakky-outbox-sqlalchemy` | `src/spakky/plugins/outbox_sqlalchemy/persistency/table.py` | `OutboxBase`, `OutboxMessageTable` |
+| `spakky-outbox-sqlalchemy` | `src/spakky/plugins/outbox_sqlalchemy/adapters/storage.py` | `SqlAlchemyOutboxStorage` |
 
 ### 핵심 인터페이스
 
@@ -158,34 +144,33 @@ class IAsyncOutboxStorage(ABC):
 
 ### 의존성 그래프
 
-```
-spakky-event
-     │
-     ▼
-spakky-outbox (IOutboxStorage, AsyncOutboxEventBus, OutboxRelay)
-     │
-     ├────────────────────────┬────────────────────────┐
-     ▼                        ▼                        ▼
-spakky-outbox-sqlalchemy  spakky-outbox-mongodb  spakky-outbox-dynamodb
-     │                        │                        │
-     ▼                        ▼                        ▼
-spakky-sqlalchemy         motor (MongoDB)          boto3 (AWS)
+```mermaid
+flowchart TD
+  event[spakky-event] --> outbox[spakky-outbox]
+  outbox --> outboxSqlalchemy[spakky-outbox-sqlalchemy]
+  outbox --> outboxMongo[spakky-outbox-mongodb]
+  outbox --> outboxDynamo[spakky-outbox-dynamodb]
+  outboxSqlalchemy --> sqlalchemy[spakky-sqlalchemy]
+  outboxMongo --> motor[motor MongoDB]
+  outboxDynamo --> boto[boto3 AWS]
 ```
 
 ### 이벤트 흐름
 
-```
-[Store Path — 같은 트랜잭션]
-UseCase → AsyncEventPublisher
-       → AsyncOutboxEventBus (@Primary IAsyncEventBus)
-       → IOutboxStorage.save()
-       → 비즈니스 데이터와 원자적 커밋
+```mermaid
+flowchart TD
+  subgraph StorePath[Store Path: 같은 트랜잭션]
+    UseCase --> Publisher[AsyncEventPublisher]
+    Publisher --> Bus[AsyncOutboxEventBus]
+    Bus --> Save[IOutboxStorage.save]
+    Save --> Commit[비즈니스 데이터와 원자적 커밋]
+  end
 
-[Relay Path — 독립 세션]
-OutboxRelay (BackgroundService)
-       → IOutboxStorage.fetch_pending()
-       → IAsyncEventTransport.send() (기존 Kafka/RabbitMQ)
-       → IOutboxStorage.mark_published()
+  subgraph RelayPath[Relay Path: 독립 세션]
+    Relay[OutboxRelay BackgroundService] --> Fetch[IOutboxStorage.fetch_pending]
+    Fetch --> Send[IAsyncEventTransport.send]
+    Send --> Mark[IOutboxStorage.mark_published]
+  end
 ```
 
 ### 플러그인 위치: `plugins/`

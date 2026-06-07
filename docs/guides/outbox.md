@@ -1,5 +1,7 @@
 # Transactional Outbox
 
+> `spakky-outbox`로 transaction 이후 Integration Event를 at-least-once로 전달하는 흐름을 설명합니다.
+
 `spakky-outbox`는 Transactional Outbox 패턴을 구현하여 Integration Event의 at-least-once 전달을 보장합니다.
 
 ---

@@ -1,5 +1,7 @@
 # spakky
 
+> `spakky`는 DI 컨테이너, AOP, 애플리케이션 부트스트랩, Pod 스캔을 제공하는 핵심 패키지입니다.
+
 DI 컨테이너, AOP, 부트스트랩 — Spakky Framework의 핵심 패키지
 
 ## Application
@@ -13,6 +15,14 @@ options:
 show_root_heading: false
 
 ::: spakky.core.application.plugin
+options:
+show_root_heading: false
+
+::: spakky.core.application.discovery_manifest
+options:
+show_root_heading: false
+
+::: spakky.core.application.startup_diagnostics
 options:
 show_root_heading: false
 
@@ -38,6 +48,10 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+::: spakky.core.aop.interfaces.aspect
+options:
+show_root_heading: false
+
 ::: spakky.core.aop.error
 options:
 show_root_heading: false
@@ -48,7 +62,35 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+::: spakky.core.pod.annotations.pod
+options:
+show_root_heading: false
+
+::: spakky.core.pod.annotations.lazy
+options:
+show_root_heading: false
+
+::: spakky.core.pod.annotations.order
+options:
+show_root_heading: false
+
+::: spakky.core.pod.annotations.primary
+options:
+show_root_heading: false
+
+::: spakky.core.pod.annotations.qualifier
+options:
+show_root_heading: false
+
+::: spakky.core.pod.annotations.tag
+options:
+show_root_heading: false
+
 ::: spakky.core.pod.binding
+options:
+show_root_heading: false
+
+::: spakky.core.pod.diagnostics
 options:
 show_root_heading: false
 
@@ -76,6 +118,26 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+::: spakky.core.pod.interfaces.aware.aware
+options:
+show_root_heading: false
+
+::: spakky.core.pod.interfaces.aware.application_context_aware
+options:
+show_root_heading: false
+
+::: spakky.core.pod.interfaces.aware.container_aware
+options:
+show_root_heading: false
+
+::: spakky.core.pod.interfaces.aware.tag_registry_aware
+options:
+show_root_heading: false
+
+::: spakky.core.pod.post_processors.aware_post_processor
+options:
+show_root_heading: false
+
 ::: spakky.core.pod.error
 options:
 show_root_heading: false
@@ -83,6 +145,10 @@ show_root_heading: false
 ## Service
 
 ::: spakky.core.service.interfaces
+options:
+show_root_heading: false
+
+::: spakky.core.service.interfaces.service
 options:
 show_root_heading: false
 
@@ -114,11 +180,47 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+::: spakky.core.common.constants
+options:
+show_root_heading: false
+
+::: spakky.core.common.error
+options:
+show_root_heading: false
+
 ::: spakky.core.common.interfaces
 options:
 show_root_heading: false
 
+::: spakky.core.common.interfaces.cloneable
+options:
+show_root_heading: false
+
+::: spakky.core.common.interfaces.comparable
+options:
+show_root_heading: false
+
+::: spakky.core.common.interfaces.disposable
+options:
+show_root_heading: false
+
+::: spakky.core.common.interfaces.equatable
+options:
+show_root_heading: false
+
+::: spakky.core.common.interfaces.representable
+options:
+show_root_heading: false
+
 ::: spakky.core.common.metadata
+options:
+show_root_heading: false
+
+::: spakky.core.common.mro
+options:
+show_root_heading: false
+
+::: spakky.core.common.mutability
 options:
 show_root_heading: false
 
@@ -127,6 +229,12 @@ options:
 show_root_heading: false
 
 ::: spakky.core.common.types
+options:
+show_root_heading: false
+
+## 로깅 인터페이스
+
+::: spakky.core.logging.interfaces.log_context_binder
 options:
 show_root_heading: false
 

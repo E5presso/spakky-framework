@@ -1,5 +1,7 @@
 # 애플리케이션 데이터 캐시
 
+> `spakky-cache`의 backend-neutral cache 계약과 `spakky-redis` 운영 백엔드를 함께 사용하는 방법을 설명합니다.
+
 Spakky 캐시는 서비스와 유스케이스 코드에서 사용하는 백엔드 중립 애플리케이션 데이터 캐시입니다. `ApplicationContext` 내부의 타입 캐시, 싱글톤 캐시, 컨텍스트 캐시와는 별개이며 Pod 발견이나 주입 방식은 바꾸지 않습니다.
 
 반복 조회, 외부 호출, 비용이 큰 계산 결과에 대해 일관된 hit/miss 계약이 필요하면 `spakky-cache`를 사용합니다. 캐시 항목을 여러 프로세스 인스턴스가 공유해야 하면 `spakky-redis`를 사용합니다.

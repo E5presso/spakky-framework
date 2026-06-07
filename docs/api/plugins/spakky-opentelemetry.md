@@ -31,3 +31,9 @@ show_root_heading: false
 ::: spakky.plugins.opentelemetry.error
 options:
 show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.opentelemetry.main
+    options:
+      show_root_heading: false

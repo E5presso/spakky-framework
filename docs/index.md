@@ -1,33 +1,59 @@
 # Spakky Framework
 
-**Python 3.12+를 위한 Spring-inspired DI/IoC 프레임워크**
+> Spakky는 Python 3.12+에서 의존성 주입, AOP, 이벤트, 플러그인 통합을 한 흐름으로 엮어 주는 애플리케이션 프레임워크입니다.
+> 작은 서비스부터 FastAPI, CLI, 메시지 브로커, Agent workflow까지 같은 컴포넌트 모델로 확장할 수 있습니다.
 
-<p style="font-size: 1.2em; color: var(--md-default-fg-color--light);">
-타입 안전한 의존성 주입, AOP, 이벤트 기반 아키텍처를 Python답게.
-</p>
+Spakky를 쓰면 비즈니스 코드는 직접 객체를 만들고 연결하는 일에서 한 걸음 떨어질 수 있습니다. `@Pod()`로 컴포넌트를 등록하고, 생성자 타입 힌트로 의존성을 선언하고, 필요할 때 FastAPI, SQLAlchemy, Celery, Kafka, RabbitMQ 같은 플러그인을 붙입니다.
 
----
+가장 먼저 얻는 성공 경험은 단순합니다. “내 클래스가 컨테이너에 등록되고, 다른 클래스에 자동으로 주입된다.” 여기서 시작해 트랜잭션, 이벤트 발행, 스케줄링, 인증, 캐시, 분산 트레이싱, Agent 실행으로 넓혀 가면 됩니다.
 
-## 30초 만에 시작하기
+## 첫 애플리케이션
 
-**1. 설치**
+먼저 `spakky`를 설치합니다.
 
 ```bash
 pip install spakky
 ```
 
-**2. 첫 번째 애플리케이션**
+처음에는 이 설치만으로 충분합니다. 만들려는 앱의 경계가 정해졌다면 extra를 고르면 됩니다.
+
+| 만들고 싶은 앱 | 설치 예 |
+| --- | --- |
+| 최소 DI/AOP 실험 | `pip install spakky` |
+| 일반적인 HTTP 서비스 | `pip install "spakky[recommended]"` |
+| FastAPI 중심 서비스 | `pip install "spakky[web]"` |
+| 데이터베이스 서비스 | `pip install "spakky[database]"` |
+| 이벤트/브로커 기반 서비스 | `pip install "spakky[event-driven]"` |
+| 인증/인가가 필요한 서비스 | `pip install "spakky[security]"` |
+| Agent workflow | `pip install "spakky[agent]"` |
+| 모든 공식 통합 | `pip install "spakky[full]"` |
+
+패키지를 직접 조합해야 한다면 아래 지도를 기준으로 고르면 됩니다.
+
+| 영역 | 패키지 |
+| --- | --- |
+| 기본 컨테이너 | `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task` |
+| 애플리케이션 경계 | `spakky-fastapi`, `spakky-typer`, `spakky-grpc`, `spakky-sqlalchemy` |
+| 메시징과 워크플로우 | `spakky-celery`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-outbox`, `spakky-saga` |
+| 인증/인가 | `spakky-auth`, `spakky-cryptography`, `spakky-oidc`, `spakky-policy`, `spakky-openfga` |
+| 운영 | `spakky-logging`, `spakky-tracing`, `spakky-opentelemetry`, `spakky-actuator`, `spakky-cache`, `spakky-redis` |
+| Agent | `spakky-agent`, `spakky-vllm` |
+
+애플리케이션 패키지에 Pod를 하나 만들고 스캔합니다.
 
 ```python
-from spakky.core.pod.annotations.pod import Pod
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-import apps  # 여러분의 패키지
+from spakky.core.pod.annotations.pod import Pod
+
+import apps
+
 
 @Pod()
 class GreetingService:
     def greet(self, name: str) -> str:
         return f"Hello, {name}!"
+
 
 app = (
     SpakkyApplication(ApplicationContext())
@@ -36,298 +62,43 @@ app = (
 )
 
 service = app.container.get(type_=GreetingService)
-print(service.greet("World"))  # Hello, World!
+print(service.greet("World"))
 ```
 
-이것만으로 **DI 컨테이너**에 `GreetingService`가 싱글톤으로 등록되고, 타입 기반으로 조회할 수 있습니다.
+`@Pod()`가 붙은 클래스는 `ApplicationContext`가 관리합니다. 다른 Pod가 `GreetingService`를 생성자 인자로 받으면 Spakky가 타입을 보고 자동으로 넣어 줍니다.
 
----
+## 무엇을 만들 수 있나요?
 
-## 주요 기능
-
-### :material-needle: 의존성 주입
-
-`@Pod` 데코레이터 하나로 자동 등록. 생성자 주입으로 의존성을 자동 해결합니다.
-
-```python
-@Pod()
-class UserRepository:
-    def find_by_id(self, user_id: UUID) -> User: ...
-
-@Pod()
-class UserService:
-    _repo: UserRepository  # 자동 주입
-
-    def __init__(self, repo: UserRepository) -> None:
-        self._repo = repo
-
-    def get_user(self, user_id: UUID) -> User:
-        return self._repo.find_by_id(user_id)
-```
-
-### :material-layers-triple: AOP (관점 지향 프로그래밍)
-
-횡단 관심사를 깔끔하게 분리. Before, After, Around 어드바이스를 지원합니다.
-
-```python
-from dataclasses import dataclass
-from typing import Any
-
-from spakky.core.aop.aspect import Aspect
-from spakky.core.aop.interfaces.aspect import IAspect
-from spakky.core.aop.pointcut import Around
-from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import Func
-
-@dataclass
-class Timed(FunctionAnnotation):
-    """실행 시간 측정 어노테이션"""
-
-@Aspect()
-class TimingAspect(IAspect):
-    @Around(Timed.exists)
-    def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
-        import time
-        start = time.perf_counter()
-        result = joinpoint(*args, **kwargs)
-        elapsed = time.perf_counter() - start
-        print(f"{joinpoint.__name__}: {elapsed:.3f}s")
-        return result
-
-@Pod()
-class DataService:
-    @Timed()
-    def heavy_computation(self) -> int:
-        return sum(range(1_000_000))
-```
-
-### :material-domain: DDD 빌딩 블록
-
-Aggregate Root, Entity, Value Object, Domain Event를 기본 제공합니다.
-
-```python
-from typing import Self
-from uuid import UUID, uuid4
-
-from spakky.core.common.mutability import mutable, immutable
-from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from spakky.domain.models.event import AbstractDomainEvent
-
-@mutable
-class Order(AbstractAggregateRoot[UUID]):
-    customer_name: str
-    total_amount: float
-
-    @immutable
-    class Created(AbstractDomainEvent):
-        order_id: UUID
-        total_amount: float
-
-    @classmethod
-    def next_id(cls) -> UUID:
-        return uuid4()
-
-    def validate(self) -> None:
-        if self.total_amount < 0:
-            raise ValueError("total_amount must be non-negative")
-
-    @classmethod
-    def create(cls, customer_name: str, total_amount: float) -> Self:
-        order = cls(uid=cls.next_id(), customer_name=customer_name, total_amount=total_amount)
-        order.add_event(Order.Created(order_id=order.uid, total_amount=total_amount))
-        return order
-```
-
-### :material-lightning-bolt: 이벤트 기반 아키텍처
-
-도메인 이벤트와 통합 이벤트를 자동으로 라우팅합니다.
-`@Transactional` 메서드가 성공하면, 수집된 Aggregate의 이벤트가 자동으로 발행됩니다.
-
-```python
-from spakky.core.stereotype.usecase import UseCase
-from spakky.data.aspects.transactional import transactional
-from spakky.event.stereotype.event_handler import EventHandler, on_event
-
-@UseCase()
-class CreateOrderUseCase:
-    def __init__(self, order_repository: IOrderRepository) -> None:
-        self._order_repository = order_repository
-
-    @transactional
-    async def execute(self, customer_name: str, total_amount: float) -> Order:
-        order = Order.create(customer_name=customer_name, total_amount=total_amount)
-        return await self._order_repository.save(order)
-        # → Repository.save()가 AggregateCollector에 자동 등록
-        # → 메서드 성공 후 Aspect가 order.events를 자동 발행
-
-@EventHandler()
-class OrderEventHandler:
-    @on_event(Order.Created)
-    async def on_order_created(self, event: Order.Created) -> None:
-        print(f"주문 생성됨: {event.order_id}")
-```
-
-### :material-puzzle: 플러그인 시스템
-
-FastAPI, SQLAlchemy, Celery 등을 플러그인으로 간편하게 통합합니다.
-
-```python
-import spakky.plugins.fastapi
-import spakky.plugins.sqlalchemy
-
-app = (
-    SpakkyApplication(ApplicationContext())
-    .load_plugins(include={
-        spakky.plugins.fastapi.PLUGIN_NAME,
-        spakky.plugins.sqlalchemy.PLUGIN_NAME,
-    })
-    .scan(apps)
-    .start()
-)
-```
-
----
-
-## 튜토리얼
-
-실제 코드를 따라하며 배울 수 있는 단계별 가이드:
-
-| 가이드                                     | 배울 내용                                              |
-| ------------------------------------------ | ------------------------------------------------------ |
-| [DI와 Pod](guides/dependency-injection.md) | `@Pod`, 생성자 주입, `@Qualifier`, `@Primary`, `@Lazy` |
-| [AOP](guides/aop.md)                       | `@Aspect`, Before/After/Around, 커스텀 어노테이션      |
-| [도메인 모델링](guides/domain-modeling.md) | Entity, Value Object, Aggregate Root, Domain Event     |
-| [이벤트 시스템](guides/events.md)          | `@EventHandler`, `@on_event`, EventBus, 이벤트 발행    |
-| [태스크 & 스케줄링](guides/tasks.md)       | `@task`, `@schedule`, Crontab                          |
-| [FastAPI 통합](guides/fastapi.md)          | `@ApiController`, HTTP 라우팅, WebSocket               |
-| [보안](guides/security.md)                 | 인증/인가 decorator, provider, boundary 전파            |
-| [인증/인가 전환](guides/auth-migration.md) | 제거된 security utility에서 auth provider 구조로 전환   |
-| [CLI 애플리케이션](guides/typer.md)        | `@Controller`, Typer 명령어                            |
-| [데이터베이스](guides/sqlalchemy.md)       | Transaction, Repository, ORM                           |
-| [구조화 로깅](guides/logging.md)           | `@logged`, LogContext, 포맷 설정                       |
-| [Celery 태스크](guides/celery.md)          | 태스크 디스패치, 비동기 실행                           |
-| [RabbitMQ 통합](guides/rabbitmq.md)        | Integration Event 발행/수신, Exchange 라우팅            |
-| [Kafka 통합](guides/kafka.md)              | Integration Event 발행/수신, SASL 인증                  |
-| [Transactional Outbox](guides/outbox.md)   | at-least-once 전달, Relay, OutboxEventBus               |
-| [분산 트레이싱](guides/tracing.md)         | TraceContext, Propagator, W3C traceparent              |
-| [OpenTelemetry 통합](guides/opentelemetry.md) | OTel SDK 브릿지, OTLP exporter, Propagator 자동 교체 |
-| [Actuator 상태 확인](guides/actuator.md) | Health, Readiness, Liveness, Info, probe 확장 |
-| [사가 오케스트레이션](guides/saga.md) | SagaFlow, SagaStep, 보상 기반 롤백, ErrorStrategy |
-| [애플리케이션 데이터 캐시](guides/cache.md) | `CacheHit`, `CacheMiss`, `@cacheable`, Redis 백엔드 |
-| [gRPC 통합](guides/grpc.md) | `@GrpcController`, `@rpc`, code-first 프로토콜 생성 |
-| [AI Agent 개발](guides/agents.md) | `@Agent`, `AgentYield`, `@agent_tool`, `IAgentModel`, SSE, AG-UI/CopilotKit, durable resume |
-| [CodeAssistant 에이전트 예제](guides/agent-code-assistant.md) | workspace/shell/git tool, vLLM stream, approval, evidence, cancel/resume |
-
----
-
-## 패키지 구조
-
-### 코어
-
-| 패키지                                     | 설명                               |
-| ------------------------------------------ | ---------------------------------- |
-| [spakky](api/core/spakky.md)               | DI 컨테이너, AOP, 부트스트랩      |
-| [spakky-domain](api/core/spakky-domain.md) | DDD 빌딩 블록                      |
-| [spakky-auth](api/core/spakky-auth.md)     | 인증/인가 semantic model           |
-| [spakky-data](api/core/spakky-data.md)     | Repository, Transaction 추상화     |
-| [spakky-event](api/core/spakky-event.md)   | 인프로세스 이벤트                  |
-| [spakky-task](api/core/spakky-task.md)     | 태스크 추상화 (스케줄링, 디스패치) |
-| [spakky-tracing](api/core/spakky-tracing.md) | 분산 트레이싱 추상화              |
-| [spakky-outbox](api/core/spakky-outbox.md) | Outbox 패턴                        |
-| [spakky-saga](api/core/spakky-saga.md)     | 사가 오케스트레이션                |
-| [spakky-agent](api/core/spakky-agent.md)   | Agentic workflow core 계약         |
-| [spakky-actuator](api/core/spakky-actuator.md) | Actuator 상태/정보 계약        |
-| [spakky-cache](api/core/spakky-cache.md)   | 애플리케이션 데이터 캐시 계약      |
-
-### 플러그인
-
-| 패키지                                                | 설명             |
-| ----------------------------------------------------- | ---------------- |
-| [spakky-logging](api/plugins/spakky-logging.md)       | 구조화된 로깅    |
-| [spakky-fastapi](api/plugins/spakky-fastapi.md)       | FastAPI 통합     |
-| [spakky-rabbitmq](api/plugins/spakky-rabbitmq.md)     | RabbitMQ 통합    |
-| [spakky-cryptography](api/plugins/spakky-cryptography.md) | 암호화/Auth snapshot/password provider |
-| [spakky-oidc](api/plugins/spakky-oidc.md)             | OIDC bearer 인증 provider |
-| [spakky-policy](api/plugins/spakky-policy.md)         | 정책 문서 AuthZ evaluator |
-| [spakky-openfga](api/plugins/spakky-openfga.md)       | OpenFGA 관계 검사 AuthZ provider |
-| [spakky-typer](api/plugins/spakky-typer.md)           | Typer CLI 통합   |
-| [spakky-kafka](api/plugins/spakky-kafka.md)           | Kafka 통합       |
-| [spakky-sqlalchemy](api/plugins/spakky-sqlalchemy.md) | SQLAlchemy 통합  |
-| [spakky-celery](api/plugins/spakky-celery.md)         | Celery 통합      |
-| [spakky-opentelemetry](api/plugins/spakky-opentelemetry.md) | OpenTelemetry 브릿지 |
-| [spakky-grpc](api/plugins/spakky-grpc.md)                   | gRPC 통합           |
-| [spakky-redis](api/plugins/spakky-redis.md)                 | Redis 캐시 백엔드 |
-| [spakky-vllm](api/plugins/spakky-vllm.md)                   | vLLM 모델 adapter |
-
-### 의존 방향
+Spakky의 핵심은 “같은 방식으로 컴포넌트를 만들고, 필요한 경계만 플러그인으로 확장한다”는 점입니다.
 
 ```mermaid
 flowchart LR
-  subgraph Plugins[Plugins]
-    direction TB
-    rabbitmq[spakky-rabbitmq]
-    kafka[spakky-kafka]
-    sqlalchemy[spakky-sqlalchemy]
-    fastapi[spakky-fastapi]
-    typer[spakky-typer]
-    logging[spakky-logging]
-    celery[spakky-celery]
-    opentelemetry[spakky-opentelemetry]
-    grpc[spakky-grpc]
-    redis[spakky-redis]
-    cryptography[spakky-cryptography]
-    oidc[spakky-oidc]
-    policy[spakky-policy]
-    openfga[spakky-openfga]
-    vllm[spakky-vllm]
-  end
-
-  subgraph Core[Core]
-    direction TB
-    outbox[spakky-outbox] --> event[spakky-event]
-    outbox --> tracing_dep[spakky-tracing]
-    event --> data[spakky-data]
-    event --> tracing_dep
-    event --> domain[spakky-domain]
-    data --> domain
-    domain --> core[spakky]
-    task[spakky-task] --> core
-    tracing_dep --> core
-    agent[spakky-agent] --> core
-    auth[spakky-auth] --> core
-    cache[spakky-cache] --> core
-    saga[spakky-saga] --> domain
-    saga --> auth
-    saga --> core
-  end
-
-  rabbitmq -. RabbitMQ .-> event
-  rabbitmq -- auth snapshot --> auth
-  rabbitmq -- tracing --> tracing_dep
-  kafka -. Kafka .-> event
-  kafka -- auth snapshot --> auth
-  kafka -- tracing --> tracing_dep
-  sqlalchemy -. ORM .-> data
-  sqlalchemy -. Outbox contribution .-> outbox
-  fastapi -. FastAPI .-> core
-  fastapi -- auth boundary --> auth
-  fastapi -- tracing --> tracing_dep
-  typer -. Typer .-> core
-  typer -- auth boundary --> auth
-  logging -. 로깅 .-> core
-  cryptography -. snapshot/password .-> auth
-  oidc -. bearer authn .-> auth
-  policy -. AuthZ policy .-> auth
-  celery -. Celery .-> task
-  celery -- auth snapshot --> auth
-  celery -- tracing --> tracing_dep
-  opentelemetry -. OTel .-> core
-  opentelemetry -- OTel --> tracing_dep
-  opentelemetry -. logging .-> logging
-  grpc -. gRPC .-> core
-  grpc -- auth boundary --> auth
-  grpc -- tracing --> tracing_dep
-  redis -. Redis .-> cache
-  openfga -. ReBAC .-> auth
-  vllm -. model adapter .-> agent
+  App[Application code] --> DI[DI / Pod]
+  DI --> AOP[AOP]
+  DI --> Domain[Domain model]
+  AOP --> Data[Transaction / Repository]
+  Domain --> Event[Domain / Integration Event]
+  Event --> Broker[Kafka / RabbitMQ / Outbox]
+  DI --> Inbound[FastAPI / Typer / gRPC]
+  DI --> Ops[Actuator / Logging / Tracing]
+  DI --> Agent[Agent workflow]
 ```
+
+| 하고 싶은 일 | 먼저 볼 문서 |
+| --- | --- |
+| 클래스를 컨테이너에 등록하고 주입하기 | [DI & Pod](guides/dependency-injection.md) |
+| 로깅, 트랜잭션 같은 공통 관심사 분리하기 | [AOP](guides/aop.md) |
+| Aggregate, Entity, Value Object로 도메인 모델 만들기 | [도메인 모델링](guides/domain-modeling.md) |
+| UseCase 성공 뒤 이벤트를 발행하고 처리하기 | [이벤트 시스템](guides/events.md) |
+| HTTP API를 FastAPI 위에 올리기 | [FastAPI 통합](guides/fastapi.md) |
+| 데이터베이스와 트랜잭션 붙이기 | [데이터베이스](guides/sqlalchemy.md) |
+| 인증/인가 요구사항을 특정 provider에 묶이지 않게 선언하기 | [인증/인가](guides/security.md) |
+| 긴 실행, 도구 호출, 승인 흐름이 있는 Agent 만들기 | [AI Agent 개발](guides/agents.md), [AI Agent 심화](guides/agents-advanced.md) |
+
+## 다음 단계
+
+처음이라면 [DI & Pod](guides/dependency-injection.md), [AOP](guides/aop.md), [도메인 모델링](guides/domain-modeling.md)을 차례로 읽어 보세요. 이 세 문서가 Spakky의 기본 문법입니다.
+
+이미 애플리케이션 경계가 정해졌다면 필요한 통합 문서로 바로 가면 됩니다. HTTP는 [FastAPI 통합](guides/fastapi.md), CLI는 [CLI 애플리케이션](guides/typer.md), gRPC는 [gRPC 통합](guides/grpc.md), 메시징은 [RabbitMQ 통합](guides/rabbitmq.md) 또는 [Kafka 통합](guides/kafka.md)을 보면 됩니다.
+
+운영 기능은 [구조화 로깅](guides/logging.md), [분산 트레이싱](guides/tracing.md), [OpenTelemetry 통합](guides/opentelemetry.md), [Actuator 상태 확인](guides/actuator.md)에서 이어집니다. 더 깊은 설계나 마이그레이션은 심화 가이드로 분리되어 있습니다. API 이름과 시그니처를 확인해야 할 때는 [API Reference](api/index.md)를 사용하세요.

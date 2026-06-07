@@ -111,35 +111,45 @@ plugins:
 
 nav:
   - Home: index.md
-  - 튜토리얼:
-      - DI & Pod: guides/dependency-injection.md
-      - AOP: guides/aop.md
-      - 도메인 모델링: guides/domain-modeling.md
-      - 이벤트 시스템: guides/events.md
-      - 태스크 & 스케줄링: guides/tasks.md
-      - FastAPI 통합: guides/fastapi.md
-      - 보안: guides/security.md
-      - 인증/인가 전환: guides/auth-migration.md
-      - CLI (Typer): guides/typer.md
-      - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
-      - 구조화 로깅: guides/logging.md
-      - Celery 태스크: guides/celery.md
-      - RabbitMQ 통합: guides/rabbitmq.md
-      - Kafka 통합: guides/kafka.md
-      - Transactional Outbox: guides/outbox.md
-      - 분산 트레이싱: guides/tracing.md
-      - OpenTelemetry 통합: guides/opentelemetry.md
-      - Actuator 상태 확인: guides/actuator.md
-      - 사가 오케스트레이션: guides/saga.md
-      - 애플리케이션 데이터 캐시: guides/cache.md
-      - gRPC 통합: guides/grpc.md
-      - AI Agent 개발: guides/agents.md
-      - CodeAssistant 에이전트 예제: guides/agent-code-assistant.md
+  - 가이드:
+      - 시작하기:
+          - DI & Pod: guides/dependency-injection.md
+          - AOP: guides/aop.md
+          - 도메인 모델링: guides/domain-modeling.md
+          - 이벤트 시스템: guides/events.md
+          - 태스크 & 스케줄링: guides/tasks.md
+      - 애플리케이션 경계:
+          - FastAPI 통합: guides/fastapi.md
+          - CLI (Typer): guides/typer.md
+          - gRPC 통합: guides/grpc.md
+          - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
+      - 메시징과 워크플로우:
+          - Celery 태스크: guides/celery.md
+          - RabbitMQ 통합: guides/rabbitmq.md
+          - Kafka 통합: guides/kafka.md
+          - Transactional Outbox: guides/outbox.md
+          - 사가 오케스트레이션: guides/saga.md
+      - 운영:
+          - 보안: guides/security.md
+          - 구조화 로깅: guides/logging.md
+          - 분산 트레이싱: guides/tracing.md
+          - OpenTelemetry 통합: guides/opentelemetry.md
+          - Actuator 상태 확인: guides/actuator.md
+          - 애플리케이션 데이터 캐시: guides/cache.md
+      - Agent:
+          - AI Agent 개발: guides/agents.md
+          - CodeAssistant 에이전트 예제: guides/agent-code-assistant.md
   - 심화 가이드:
       - DI/IoC 컨테이너: di-container.md
+      - DI & Pod 심화: guides/dependency-injection-advanced.md
       - AOP 가이드: aop-guide.md
       - 이벤트 시스템: event-system.md
+      - gRPC 심화: guides/grpc-advanced.md
+      - AI Agent 심화: guides/agents-advanced.md
+      - 인증/인가 심화: guides/security-advanced.md
+      - 사가 심화: guides/saga-advanced.md
       - 플러그인 API: plugin-api.md
+      - 인증/인가 전환: guides/auth-migration.md
       - 인증/인가 마일스톤 스펙: planning/auth-authorization-milestone-scope.md
   - 참조:
       - 용어 사전: glossary.md

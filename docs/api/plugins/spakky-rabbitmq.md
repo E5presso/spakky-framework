@@ -37,3 +37,9 @@ show_root_heading: false
 ::: spakky.plugins.rabbitmq.post_processor
 options:
 show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.rabbitmq.common.constants
+    options:
+      show_root_heading: false

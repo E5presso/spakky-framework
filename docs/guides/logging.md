@@ -1,5 +1,7 @@
 # 구조화 로깅
 
+> `spakky-logging`의 `@logged()` annotation, LogContext, formatter 설정을 소개합니다.
+
 `spakky-logging`은 `@logged()` 데코레이터로 메서드 호출을 자동 로깅하고, `LogContext`로 컨텍스트를 전파합니다.
 
 ---

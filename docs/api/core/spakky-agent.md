@@ -1,5 +1,7 @@
 # spakky-agent
 
+> `spakky-agent`는 Agent workflow를 Spakky 컴포넌트로 모델링하기 위한 계약, 도구, 상태, signal, evidence 타입을 제공합니다.
+
 Agentic Hexagonal Architecture core contracts입니다.
 
 ## Install
@@ -39,6 +41,10 @@ requires repository implementations from a provider contribution such as
     options:
       show_root_heading: false
 
+::: spakky.agent.signal_consumption
+    options:
+      show_root_heading: false
+
 ## Evidence
 
 ::: spakky.agent.evidence
@@ -57,6 +63,36 @@ requires repository implementations from a provider contribution such as
     options:
       show_root_heading: false
 
+## Approval
+
+::: spakky.agent.approval
+    options:
+      show_root_heading: false
+
+## Cancellation
+
+::: spakky.agent.cancellation
+    options:
+      show_root_heading: false
+
+## Delegation
+
+::: spakky.agent.delegation
+    options:
+      show_root_heading: false
+
+## Safety
+
+::: spakky.agent.safety
+    options:
+      show_root_heading: false
+
+## Tooling
+
+::: spakky.agent.tooling
+    options:
+      show_root_heading: false
+
 ## Yield
 
 ::: spakky.agent.yield_
@@ -66,6 +102,26 @@ requires repository implementations from a provider contribution such as
 ## Model Interface
 
 ::: spakky.agent.interfaces.model
+    options:
+      show_root_heading: false
+
+::: spakky.agent.interfaces.repository
+    options:
+      show_root_heading: false
+
+## Types
+
+::: spakky.agent.types
+    options:
+      show_root_heading: false
+
+## Plugin
+
+::: spakky.agent.main
+    options:
+      show_root_heading: false
+
+::: spakky.agent.post_processor
     options:
       show_root_heading: false
 

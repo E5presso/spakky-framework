@@ -1,6 +1,14 @@
 # spakky-saga
 
+> `spakky-saga`는 보상 기반 분산 트랜잭션 흐름을 선언하고 실행하는 Saga 계약을 제공합니다.
+
 사가 오케스트레이션 — SagaFlow, SagaStep, 보상 기반 롤백
+
+## 플러그인 진입점
+
+::: spakky.saga.main
+    options:
+      show_root_heading: false
 
 ## 스테레오타입
 
@@ -50,8 +58,24 @@
     options:
       show_root_heading: false
 
+## Auth Propagation
+
+::: spakky.saga.auth
+    options:
+      show_root_heading: false
+
 ## 에러
 
 ::: spakky.saga.error
+    options:
+      show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.saga.auth
+    options:
+      show_root_heading: false
+
+::: spakky.saga.main
     options:
       show_root_heading: false

@@ -499,13 +499,13 @@ class MyFeatureError(AbstractSpakkyFrameworkError):
 ### 스캔보다 명시적 등록 선호
 
 ```python
-# ✅ 권장: 명시적 등록
+# 권장: 명시적 등록
 def initialize(app: SpakkyApplication) -> None:
     app.add(ServiceA)
     app.add(ServiceB)
     app.add(MyPostProcessor)
 
-# ⚠️ 주의: 스캔은 예상치 못한 Pod 등록 가능
+# 주의: 스캔은 예상치 못한 Pod 등록 가능
 def initialize(app: SpakkyApplication) -> None:
     app.scan(path="spakky.plugins.myfeature")
 ```

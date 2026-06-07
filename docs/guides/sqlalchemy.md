@@ -1,5 +1,7 @@
 # 데이터베이스 (SQLAlchemy)
 
+> `spakky-data` 계약을 SQLAlchemy table, repository, transaction으로 구현하는 방법을 설명합니다.
+
 `spakky-data`는 Repository와 Transaction의 추상 계약을 제공합니다. 실제 SQLAlchemy
 engine, session, table mapping, repository 구현체는 `spakky-sqlalchemy` 플러그인이
 등록합니다.

@@ -35,3 +35,13 @@ OpenFGA relationship authorization provider for Spakky Auth.
 ::: spakky.plugins.openfga.error
     options:
       show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.openfga.constants
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.openfga.contributions.auth
+    options:
+      show_root_heading: false

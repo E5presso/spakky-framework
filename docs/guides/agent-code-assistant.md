@@ -1,28 +1,29 @@
-# Agent 만들기: CodeAssistant building-block demo
+# Agent 만들기: CodeAssistant 심화 예제
 
-이 문서는 [AI Agent 개발](agents.md)을 읽은 뒤 보는 runnable 심화 예제입니다. `core/spakky-agent/examples/code_assistant_demo.py`는 `` business component가 constructor DI로 model, workspace, shell, git, state/signal/evidence repository를 받고, 외부 세계 동작은 `` method로 노출하는 Claude Code-like 흐름을 보여줍니다.
+> `spakky-agent`의 tool, approval, evidence, state/signal repository를 하나의 실행 흐름으로 연결하는 심화 예제입니다.
+
+이 문서는 [AI Agent 개발](agents.md)과 [AI Agent 심화](agents-advanced.md)를 읽은 뒤 보는 실행 가능한 예제입니다. `core/spakky-agent/examples/code_assistant_demo.py`는 `CodeAssistant`가 생성자 주입으로 model, workspace, shell, git, state/signal/evidence repository를 받고, 외부 세계 동작을 `@agent_tool` 메서드로 노출하는 흐름을 보여줍니다.
 
 ## 무엇을 검증하나
 
-이 demo는 다음 building block이 한 execution 안에서 연결되는지 보여줍니다.
+이 예제는 다음 요소가 하나의 execution 안에서 어떻게 이어지는지 보여줍니다.
 
-- `@Agent CodeAssistant`와 constructor DI
+- `@Agent CodeAssistant`와 생성자 주입
 - `workspace.read`, `workspace.search`, `workspace.write`
 - `shell.command`
 - `git.status`, `git.diff`, `git.apply`
 - `IAgentModel.stream()` 기반 vLLM-compatible token/tool-call stream
-- risk-boundary approval wait와 `AgentSignalKind.APPROVAL_DECISION`
+- 위험한 작업 앞에서 멈추는 approval wait와 `AgentSignalKind.APPROVAL_DECISION`
 - 실행 중 `AgentSignalKind.USER_MESSAGE` 소비
 - append-only `AgentEvidence`
 - `AgentSignalKind.CANCEL`을 통한 cancellation lifecycle
-- action-boundary evidence 기반 restart/resume 계획
+- action boundary evidence를 사용한 restart/resume 계획
 
-운영용 persistence나 production in-memory fallback은 포함하지 않습니다. 실제 운영에서는 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`를 SQLAlchemy contribution 같은 provider plugin으로 주입해야 합니다.
+운영용 영속 저장소는 예제 안에 포함하지 않습니다. 실제 운영에서는 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`를 SQLAlchemy contribution 같은 provider plugin으로 주입해야 합니다.
 
 ## 실행 가능한 빠른 검증
 
-이 guide의 예제는 `core/spakky-agent` 패키지에 실제 코드와 테스트로 들어 있습니다.
-문서 흐름이 코드와 맞는지 확인하려면 package directory에서 acceptance test를 실행합니다.
+이 가이드의 예제는 `core/spakky-agent` 패키지에 실제 코드와 테스트로 들어 있습니다. 문서 흐름이 코드와 맞는지 확인하려면 패키지 디렉터리에서 acceptance test를 실행합니다.
 
 ```bash
 cd core/spakky-agent
@@ -30,13 +31,11 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 ```
 
 이 테스트는 scripted `IAgentModel` stream을 사용하므로 로컬 vLLM 서버가 없어도 실행됩니다.
-테스트 double repository는 예제/테스트용일 뿐이며, 운영 durable 실행에는
+테스트 double repository는 예제와 테스트를 위한 것이며, 운영 durable 실행에는
 `spakky-sqlalchemy[agent]`가 제공하는 `spakky.contributions.spakky.agent`
 contribution을 사용해야 합니다.
 
-가장 작은 runnable `@Agent` shape는 다음 fixture와 같습니다. 파일로 저장해
-애플리케이션 scan 대상에 포함하면 `CodeAssistant`는 일반 UseCase처럼 container에서
-resolve됩니다.
+가장 작은 실행 가능한 `@Agent` 형태는 다음 예시와 같습니다. 파일로 저장해 애플리케이션 scan 대상에 포함하면 `CodeAssistant`는 일반 UseCase처럼 container에서 resolve됩니다.
 
 ```python
 from collections.abc import AsyncGenerator
@@ -66,8 +65,7 @@ class CodeAssistant:
         )
 ```
 
-Claude Code-like demo는 이 최소 shape에 model stream, workspace/shell/git ports,
-approval signal, evidence repository, action-boundary resume를 더한 것입니다.
+CodeAssistant 예제는 이 최소 형태에 model stream, workspace/shell/git port, approval signal, evidence repository, action boundary resume를 더한 구성입니다. 각 개념의 배경은 [AI Agent 심화](agents-advanced.md)에서 먼저 확인할 수 있습니다.
 
 ## 구조
 
@@ -105,11 +103,11 @@ items = await collect_stream(
 )
 ```
 
-반환되는 item은 `AgentYield` stream입니다. inbound adapter는 `token`, `tool`, `evidence`, `approval`, `cancel`, `final`을 transport별 이벤트로 바꾸면 됩니다. 별도 agent-specific inbound adapter package는 필요하지 않습니다.
+반환되는 item은 `AgentYield` stream입니다. inbound adapter는 `token`, `tool`, `evidence`, `approval`, `cancel`, `final`을 transport별 이벤트로 바꾸면 됩니다. 별도 Agent 전용 inbound adapter package는 필요하지 않습니다.
 
 ## FastAPI WebSocket / Typer adapter 예제
 
-`core/spakky-agent/examples/inbound_adapter_examples.py`는 기존 `spakky-fastapi`와 `spakky-typer` building block으로 같은 `CodeAssistant` stream을 노출합니다. 이 파일은 app-level wiring 예제이며 `spakky-agent-fastapi`나 `spakky-agent-typer` 패키지를 만들지 않습니다.
+`core/spakky-agent/examples/inbound_adapter_examples.py`는 기존 `spakky-fastapi`와 `spakky-typer` building block으로 같은 `CodeAssistant` stream을 노출합니다. 이 파일은 애플리케이션 wiring 예제이며 `spakky-agent-fastapi`나 `spakky-agent-typer` 패키지를 만들지 않습니다.
 
 FastAPI 쪽은 `@ApiController`와 `@websocket`을 사용합니다. 컨트롤러는 container-aware Pod로 등록되고, connection handler 안에서 `CodeAssistant`를 `@UseCase`처럼 container에서 resolve한 뒤 `execute()`를 순회합니다.
 
@@ -152,7 +150,7 @@ signals.append(
 )
 ```
 
-restart 후에는 저장된 `AgentState`, pending `AgentSignal`, append-only `AgentEvidence`를 사용해 `plan_agent_resume()`이 다음 action을 결정합니다. 완료된 boundary는 `skip_completed`, incomplete idempotent boundary는 `retry`, 불확실하거나 approval wait 중인 boundary는 `require_hitl`로 materialize됩니다.
+restart 후에는 저장된 `AgentState`, pending `AgentSignal`, append-only `AgentEvidence`를 사용해 `plan_agent_resume()`이 다음 action을 결정합니다. 완료된 boundary는 `skip_completed`, incomplete idempotent boundary는 `retry`, 불확실하거나 approval wait 중인 boundary는 `require_hitl`로 정리됩니다.
 
 ## 실제 vLLM 연결
 
@@ -166,4 +164,4 @@ from spakky.plugins.vllm.model import VllmAgentModel
 model = VllmAgentModel(VllmConfig(), HttpxVllmChatClient())
 ```
 
-이 model을 `CodeAssistant` 생성자에 주입하면 `IAgentModel.stream()`에서 vLLM OpenAI-compatible SSE가 provider-neutral `ModelStreamEvent`로 변환되어 demo agent에 들어옵니다.
+이 model을 `CodeAssistant` 생성자에 주입하면 `IAgentModel.stream()`에서 vLLM OpenAI-compatible SSE가 공통 `ModelStreamEvent`로 변환되어 demo Agent에 들어옵니다.

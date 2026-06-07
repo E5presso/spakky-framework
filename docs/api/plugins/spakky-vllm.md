@@ -13,3 +13,29 @@ streaming event 변환, structured output, required tool calling, error mapping�
 검증합니다.
 
 ::: spakky.plugins.vllm
+
+## 추가 모듈
+
+::: spakky.plugins.vllm.config
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.vllm.client
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.vllm.model
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.vllm.error
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.vllm.constants
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.vllm.main
+    options:
+      show_root_heading: false

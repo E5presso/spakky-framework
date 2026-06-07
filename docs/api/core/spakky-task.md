@@ -1,6 +1,14 @@
 # spakky-task
 
+> `spakky-task`는 task handler, schedule, crontab, direct execution 계약을 제공합니다.
+
 태스크 추상화 — 스케줄링, 디스패치
+
+## 플러그인 진입점
+
+::: spakky.task.main
+options:
+show_root_heading: false
 
 ## 스테레오타입
 
@@ -39,3 +47,9 @@ show_root_heading: false
 ::: spakky.task.error
 options:
 show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.task.main
+    options:
+      show_root_heading: false

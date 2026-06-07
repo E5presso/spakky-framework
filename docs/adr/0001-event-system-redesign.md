@@ -191,51 +191,59 @@ Outbox 플러그인이 있으면 `OutboxEventBus`가 `@Primary`로 `IAsyncEventB
 
 #### Domain Event만 (가장 단순)
 
-```
-UseCase(@Transactional)
-  → repository.save(order) → collector.collect(order)
-  → [Aspect after_returning] → publisher.publish(OrderCreatedEvent)
-    → mediator.dispatch() → OrderCreatedHandler.handle()
-  → COMMIT
+```mermaid
+flowchart TD
+  UseCase["UseCase(@Transactional)"] --> Save["repository.save(order)"]
+  Save --> Collect["collector.collect(order)"]
+  Collect --> Aspect["Aspect after_returning"]
+  Aspect --> Publish["publisher.publish(OrderCreatedEvent)"]
+  Publish --> Dispatch["mediator.dispatch()"]
+  Dispatch --> Handler["OrderCreatedHandler.handle()"]
+  Handler --> Commit["COMMIT"]
 ```
 
 #### Domain → Integration (외부 전송)
 
-```
-  → publisher.publish(OrderCreatedEvent)
-    → mediator.dispatch()
-      → OrderCreatedHandler.handle()
-        → publisher.publish(OrderCreatedIntegrationEvent)  ← 핸들러가 결정
-          → bus.send() → TransportEventBus → KafkaEventTransport → Kafka
+```mermaid
+flowchart TD
+  PublishDomain["publisher.publish(OrderCreatedEvent)"] --> Dispatch["mediator.dispatch()"]
+  Dispatch --> Handler["OrderCreatedHandler.handle()"]
+  Handler --> PublishIntegration["publisher.publish(OrderCreatedIntegrationEvent)"]
+  PublishIntegration --> Bus["bus.send()"]
+  Bus --> TransportBus["TransportEventBus"]
+  TransportBus --> Transport["KafkaEventTransport"]
+  Transport --> Kafka["Kafka"]
 ```
 
 #### Outbox 적용 (PnP 플러그인)
 
-```
-  → bus.send(OrderCreatedIntegrationEvent)
-    → OutboxEventBus.send()  ← @Primary로 TransportEventBus 교체
-      → outbox_table.insert() (같은 트랜잭션)
-  → COMMIT
+```mermaid
+flowchart TD
+  Bus["bus.send(OrderCreatedIntegrationEvent)"] --> OutboxBus["OutboxEventBus.send()"]
+  OutboxBus --> Insert["outbox_table.insert()"]
+  Insert --> Commit["COMMIT"]
 
-  [OutboxRelay - background]
-    → outbox_table poll → KafkaEventTransport.send() → 발행 완료 마킹
+  Relay["OutboxRelay - background"] --> Poll["outbox_table poll"]
+  Poll --> Send["KafkaEventTransport.send()"]
+  Send --> Mark["발행 완료 마킹"]
 ```
 
 `OutboxRelay`는 `IEventTransport`에 의존하므로 `IEventBus`와 DI 경쟁이 없다.
 
 ### 패키지 경계
 
-```
-spakky-domain       AbstractEvent, AbstractDomainEvent, AbstractIntegrationEvent
-      ↓
-spakky-data         AggregateCollector, @Transactional
-      ↓
-spakky-event        IEventPublisher, IEventBus, IEventTransport,
-                    EventMediator, EventPublisher, TransportEventBus,
-                    TransactionalEventPublishingAspect
-      ↓         ↓
-spakky-kafka    spakky-rabbitmq
-(KafkaEventTransport) (RabbitMQEventTransport)
+```mermaid
+flowchart TD
+  Domain["spakky-domain<br/>AbstractEvent, AbstractDomainEvent, AbstractIntegrationEvent"]
+  Data["spakky-data<br/>AggregateCollector, @Transactional"]
+  Event["spakky-event<br/>IEventPublisher, IEventBus, IEventTransport<br/>EventMediator, EventPublisher, TransportEventBus<br/>TransactionalEventPublishingAspect"]
+  Kafka["spakky-kafka<br/>KafkaEventTransport"]
+  RabbitMQ["spakky-rabbitmq<br/>RabbitMQEventTransport"]
+
+  Domain --> Data
+  Data --> Event
+  Event --> Kafka
+  Event --> RabbitMQ
 ```
 
 - `spakky-sqlalchemy`는 `spakky-data`만 의존. `spakky-event`에 의존하지 않음.

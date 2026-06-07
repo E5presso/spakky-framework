@@ -185,7 +185,7 @@ class UserService:
 
 로그 출력 예시:
 
-```
+```text
 [AsyncLoggingAspect] UserService.create_user(name='john', password='******') returned User(id=123) (0.05s)
 ```
 
@@ -354,13 +354,13 @@ Spakky AOP는 런타임 프록시 방식입니다. 다음 제한이 있습니다
 Around advice에서 `joinpoint`를 호출하지 않으면 대상 메서드가 실행되지 않습니다. 의도적으로 건너뛰는 경우가 아니면 반드시 호출하세요.
 
 ```python
-# ❌ 잘못된 예 - joinpoint 미호출
+# 잘못된 예 - joinpoint 미호출
 @Around(pointcut=is_target)
 def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
     print("로깅만 하고 실제 메서드는 실행 안 됨!")
     return None
 
-# ✅ 올바른 예
+# 올바른 예
 @Around(pointcut=is_target)
 def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
     print("로깅")
@@ -372,13 +372,13 @@ def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
 Around advice에서 `joinpoint()` 결과를 반환하지 않으면 호출자가 `None`을 받습니다.
 
 ```python
-# ❌ 잘못된 예 - 반환값 누락
+# 잘못된 예 - 반환값 누락
 @Around(pointcut=is_target)
 def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
     result = joinpoint(*args, **kwargs)
     # return 없음 → 호출자는 None 받음
 
-# ✅ 올바른 예
+# 올바른 예
 @Around(pointcut=is_target)
 def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
     result = joinpoint(*args, **kwargs)

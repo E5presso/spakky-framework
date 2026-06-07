@@ -1,5 +1,7 @@
 # 분산 트레이싱
 
+> `TraceContext`, propagator, W3C traceparent로 서비스 경계의 trace를 전달하는 방법을 설명합니다.
+
 서비스 간 요청 흐름을 추적하는 분산 트레이싱 시스템입니다.
 W3C Trace Context Level 2 표준을 기반으로, 외부 의존성 없이 순수 Python으로 구현됩니다.
 
@@ -100,11 +102,14 @@ class CreateOrderUseCase:
 
 ## W3C traceparent 형식
 
-```
-00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
-^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^
-버전         trace_id (32자)           span_id (16자)  flags
-```
+예를 들어 `00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01`은 다음처럼 해석됩니다.
+
+| 구간 | 값 | 의미 |
+|------|----|------|
+| 버전 | `00` | traceparent 형식 버전 |
+| trace_id | `0af7651916cd43dd8448eb211c80319c` | 전체 요청 흐름을 식별하는 32자 ID |
+| span_id | `b7ad6b7169203331` | 현재 작업 단위를 식별하는 16자 ID |
+| flags | `01` | 샘플링 여부 등 추적 옵션 |
 
 - `flags`: `01` = 샘플링됨, `00` = 샘플링 안 됨
 
@@ -177,34 +182,39 @@ await asyncio.gather(handle_request_a(), handle_request_b())
 
 1. `spakky-opentelemetry` 패키지를 설치합니다:
 
-    ```bash
-    uv add spakky-opentelemetry "spakky-opentelemetry[otlp]"
-    ```
+```bash
+uv add spakky-opentelemetry "spakky-opentelemetry[otlp]"
+```
 
 2. 플러그인을 활성화합니다:
 
-    ```python
-    import spakky.tracing
-    import spakky.plugins.opentelemetry
+```python
+import apps
+import spakky.plugins.opentelemetry
+import spakky.tracing
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 
-    app = (
-        SpakkyApplication(ApplicationContext())
-        .load_plugins(include={
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
             spakky.tracing.PLUGIN_NAME,
             spakky.plugins.opentelemetry.PLUGIN_NAME,
-        })
-        .scan(apps)
-        .start()
+        }
     )
-    ```
+    .scan(apps)
+    .start()
+)
+```
 
 3. 환경변수로 exporter를 설정합니다:
 
-    ```bash
-    export SPAKKY_OTEL_SERVICE_NAME=order-service
-    export SPAKKY_OTEL_EXPORTER_TYPE=otlp
-    export SPAKKY_OTEL_EXPORTER_ENDPOINT=http://jaeger:4317
-    ```
+```bash
+export SPAKKY_OTEL_SERVICE_NAME=order-service
+export SPAKKY_OTEL_EXPORTER_TYPE=otlp
+export SPAKKY_OTEL_EXPORTER_ENDPOINT=http://jaeger:4317
+```
 
 `spakky-opentelemetry`의 `OTelSetupPostProcessor`가 컨테이너 내의 `W3CTracePropagator`를 `OTelTracePropagator`로 자동 교체합니다. `ITracePropagator` 인터페이스를 통해 주입받는 기존 코드는 변경할 필요가 없습니다.
 

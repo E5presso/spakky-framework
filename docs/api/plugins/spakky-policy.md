@@ -44,3 +44,9 @@ explainable RBAC/PBAC/ABAC authorization evaluator for `spakky-auth`.
 ::: spakky.plugins.policy.error
     options:
       show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.policy.main
+    options:
+      show_root_heading: false

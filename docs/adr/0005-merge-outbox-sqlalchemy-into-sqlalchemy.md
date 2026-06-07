@@ -16,19 +16,16 @@
 
 ### 현재 구조 vs 제안 구조
 
-```
-# 현재 (ADR-0002)
-spakky-outbox (추상화)
-spakky-outbox-sqlalchemy (브릿지) → spakky-outbox + spakky-sqlalchemy
-spakky-outbox-mongodb (향후 브릿지) → spakky-outbox + motor
-spakky-outbox-dynamodb (향후 브릿지) → spakky-outbox + boto3
-
-# 제안 (ADR-0010 이후 구현 형태)
-spakky-outbox (추상화)
-spakky-sqlalchemy (기존 + spakky-outbox contribution)
-spakky-mongodb (향후, 기존 + spakky-outbox contribution)
-spakky-dynamodb (향후, 기존 + spakky-outbox contribution)
-```
+| 구조 | 패키지 |
+|------|--------|
+| 현재 (ADR-0002) | `spakky-outbox` (추상화) |
+| 현재 (ADR-0002) | `spakky-outbox-sqlalchemy` (브릿지) -> `spakky-outbox` + `spakky-sqlalchemy` |
+| 현재 (ADR-0002) | `spakky-outbox-mongodb` (향후 브릿지) -> `spakky-outbox` + `motor` |
+| 현재 (ADR-0002) | `spakky-outbox-dynamodb` (향후 브릿지) -> `spakky-outbox` + `boto3` |
+| 제안 (ADR-0010 이후 구현 형태) | `spakky-outbox` (추상화) |
+| 제안 (ADR-0010 이후 구현 형태) | `spakky-sqlalchemy` (기존 + `spakky-outbox` contribution) |
+| 제안 (ADR-0010 이후 구현 형태) | `spakky-mongodb` (향후, 기존 + `spakky-outbox` contribution) |
+| 제안 (ADR-0010 이후 구현 형태) | `spakky-dynamodb` (향후, 기존 + `spakky-outbox` contribution) |
 
 **DB 백엔드 하나를 추가하면 그 DB로 할 수 있는 모든 것이 하나의 플러그인에서 제공된다.** 브릿지 패키지 0개.
 
@@ -70,16 +67,13 @@ ADR-0002 그대로. `spakky-outbox-sqlalchemy`를 독립 패키지로 유지.
 
 1. **코드 이동**: `spakky-outbox-sqlalchemy`의 소스 파일을 `spakky-sqlalchemy`로 이동
 
-   ```
-   plugins/spakky-sqlalchemy/src/spakky/plugins/sqlalchemy/
-   ├── ... (기존)
-   ├── contributions/
-   │   └── outbox.py              # spakky-outbox contribution initialize()
-   └── outbox/
-       ├── __init__.py
-       ├── storage.py             # SqlAlchemyOutboxStorage, AsyncSqlAlchemyOutboxStorage
-       └── table.py               # OutboxMessageTable
-   ```
+   | 경로 | 설명 |
+   |------|------|
+   | `plugins/spakky-sqlalchemy/src/spakky/plugins/sqlalchemy/` | 기존 SQLAlchemy 플러그인 루트 |
+   | `plugins/spakky-sqlalchemy/src/spakky/plugins/sqlalchemy/contributions/outbox.py` | `spakky-outbox` contribution `initialize()` |
+   | `plugins/spakky-sqlalchemy/src/spakky/plugins/sqlalchemy/outbox/__init__.py` | Outbox 구현 패키지 |
+   | `plugins/spakky-sqlalchemy/src/spakky/plugins/sqlalchemy/outbox/storage.py` | `SqlAlchemyOutboxStorage`, `AsyncSqlAlchemyOutboxStorage` |
+   | `plugins/spakky-sqlalchemy/src/spakky/plugins/sqlalchemy/outbox/table.py` | `OutboxMessageTable` |
 
 2. **Contribution 등록**: `spakky-sqlalchemy`의 base plugin은 outbox를 감지하지 않는다. 패키지 metadata가 `spakky.contributions.spakky.outbox` group을 선언하고, loader가 `spakky-outbox` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 contribution을 호출한다.
 
@@ -95,16 +89,16 @@ ADR-0002 그대로. `spakky-outbox-sqlalchemy`를 독립 패키지로 유지.
 
 3. **Contribution initialize**: outbox Pod 등록은 contribution module에만 위치한다.
 
-   ```python
-   def initialize(app: SpakkyApplication) -> None:
-       config = SQLAlchemyConnectionConfig()
+```python
+def initialize(app: SpakkyApplication) -> None:
+    config = SQLAlchemyConnectionConfig()
 
-       app.add(OutboxMessageTable)
-       app.add(SqlAlchemyOutboxStorage)
+    app.add(OutboxMessageTable)
+    app.add(SqlAlchemyOutboxStorage)
 
-       if config.support_async_mode:
-           app.add(AsyncSqlAlchemyOutboxStorage)
-   ```
+    if config.support_async_mode:
+        app.add(AsyncSqlAlchemyOutboxStorage)
+```
 
 4. **패키지 제거**: `spakky-outbox-sqlalchemy` 패키지 삭제, 워크스페이스에서 제거
 

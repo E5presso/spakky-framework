@@ -1,5 +1,7 @@
 # spakky-data
 
+> `spakky-data`는 Repository, Transaction, Aggregate collection 같은 데이터 접근 추상화를 제공합니다.
+
 Repository, Transaction 추상화 — 데이터 접근 계층
 
 `spakky-data`는 core 레이어의 추상 계약만 제공합니다. 애플리케이션에서 SQLAlchemy로
@@ -8,6 +10,12 @@ Repository, Transaction 추상화 — 데이터 접근 계층
 
 사용자 흐름은 [데이터베이스 가이드](../../guides/sqlalchemy.md)를 먼저 보는 편이 좋습니다.
 이 페이지는 실제 API 표면을 확인하기 위한 레퍼런스입니다.
+
+## 플러그인 진입점
+
+::: spakky.data.main
+options:
+show_root_heading: false
 
 ## 스테레오타입
 

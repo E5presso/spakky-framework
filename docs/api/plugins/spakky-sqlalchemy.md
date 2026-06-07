@@ -102,3 +102,13 @@ show_root_heading: false
 ::: spakky.plugins.sqlalchemy.error
 options:
 show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.sqlalchemy.agent.error
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.sqlalchemy.common.constants
+    options:
+      show_root_heading: false

@@ -290,7 +290,7 @@ async def place_order(self, command: PlaceOrderCommand) -> Order:
         order = Order.create(command)
         await self.repository.save(order)
 
-    # ❌ 트랜잭션 외부에서 발행 - 실패하면 이벤트 누락
+    # 트랜잭션 외부에서 발행 - 실패하면 이벤트 누락
     await self.publisher.publish(OrderPlacedEvent(...))
     return order
 ```

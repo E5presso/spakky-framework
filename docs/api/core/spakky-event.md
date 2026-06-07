@@ -1,6 +1,14 @@
 # spakky-event
 
+> `spakky-event`는 이벤트 발행, 소비, dispatch, handler stereotype을 제공하는 core 패키지입니다.
+
 인프로세스 이벤트 시스템 — EventBus, EventTransport, EventMediator
+
+## 플러그인 진입점
+
+::: spakky.event.main
+options:
+show_root_heading: false
 
 ## Publisher 인터페이스
 

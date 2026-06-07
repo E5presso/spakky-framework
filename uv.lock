@@ -2818,14 +2818,88 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+actuator = [
+    { name = "spakky-actuator" },
+]
+agent = [
+    { name = "spakky-agent" },
+    { name = "spakky-sqlalchemy" },
+    { name = "spakky-vllm" },
+]
+agent-core = [
+    { name = "spakky-agent" },
+]
+auth = [
+    { name = "spakky-auth" },
+]
+cache-app = [
+    { name = "spakky-cache" },
+    { name = "spakky-redis" },
+]
+cache-core = [
+    { name = "spakky-cache" },
+]
 celery = [
     { name = "spakky-celery" },
+]
+cli = [
+    { name = "spakky-logging" },
+    { name = "spakky-typer" },
 ]
 cryptography = [
     { name = "spakky-cryptography" },
 ]
+data = [
+    { name = "spakky-data" },
+]
+database = [
+    { name = "spakky-data" },
+    { name = "spakky-domain" },
+    { name = "spakky-sqlalchemy" },
+]
+domain = [
+    { name = "spakky-domain" },
+]
+event = [
+    { name = "spakky-event" },
+]
+event-driven = [
+    { name = "spakky-event" },
+    { name = "spakky-kafka" },
+    { name = "spakky-outbox" },
+    { name = "spakky-rabbitmq" },
+    { name = "spakky-sqlalchemy" },
+]
 fastapi = [
     { name = "spakky-fastapi" },
+]
+full = [
+    { name = "spakky-actuator" },
+    { name = "spakky-agent" },
+    { name = "spakky-auth" },
+    { name = "spakky-cache" },
+    { name = "spakky-celery" },
+    { name = "spakky-cryptography" },
+    { name = "spakky-data" },
+    { name = "spakky-domain" },
+    { name = "spakky-event" },
+    { name = "spakky-fastapi" },
+    { name = "spakky-grpc" },
+    { name = "spakky-kafka" },
+    { name = "spakky-logging" },
+    { name = "spakky-oidc" },
+    { name = "spakky-openfga" },
+    { name = "spakky-opentelemetry" },
+    { name = "spakky-outbox" },
+    { name = "spakky-policy" },
+    { name = "spakky-rabbitmq" },
+    { name = "spakky-redis" },
+    { name = "spakky-saga" },
+    { name = "spakky-sqlalchemy" },
+    { name = "spakky-task" },
+    { name = "spakky-tracing" },
+    { name = "spakky-typer" },
+    { name = "spakky-vllm" },
 ]
 grpc = [
     { name = "spakky-grpc" },
@@ -2836,6 +2910,12 @@ kafka = [
 logging = [
     { name = "spakky-logging" },
 ]
+observability = [
+    { name = "spakky-actuator" },
+    { name = "spakky-logging" },
+    { name = "spakky-opentelemetry" },
+    { name = "spakky-tracing" },
+]
 oidc = [
     { name = "spakky-oidc" },
 ]
@@ -2845,11 +2925,24 @@ openfga = [
 opentelemetry = [
     { name = "spakky-opentelemetry" },
 ]
+outbox = [
+    { name = "spakky-outbox" },
+]
 policy = [
     { name = "spakky-policy" },
 ]
 rabbitmq = [
     { name = "spakky-rabbitmq" },
+]
+recommended = [
+    { name = "spakky-actuator" },
+    { name = "spakky-data" },
+    { name = "spakky-domain" },
+    { name = "spakky-event" },
+    { name = "spakky-fastapi" },
+    { name = "spakky-logging" },
+    { name = "spakky-sqlalchemy" },
+    { name = "spakky-tracing" },
 ]
 redis = [
     { name = "spakky-redis" },
@@ -2857,8 +2950,21 @@ redis = [
 saga = [
     { name = "spakky-saga" },
 ]
+security = [
+    { name = "spakky-auth" },
+    { name = "spakky-cryptography" },
+    { name = "spakky-oidc" },
+    { name = "spakky-openfga" },
+    { name = "spakky-policy" },
+]
 sqlalchemy = [
     { name = "spakky-sqlalchemy" },
+]
+task = [
+    { name = "spakky-task" },
+]
+tracing = [
+    { name = "spakky-tracing" },
 ]
 typer = [
     { name = "spakky-typer" },
@@ -2866,11 +2972,80 @@ typer = [
 vllm = [
     { name = "spakky-vllm" },
 ]
+web = [
+    { name = "spakky-fastapi" },
+    { name = "spakky-logging" },
+]
+worker = [
+    { name = "spakky-celery" },
+    { name = "spakky-task" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "spakky", extras = ["celery"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["celery"], marker = "extra == 'worker'", editable = "core/spakky" },
+    { name = "spakky", extras = ["cryptography"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["cryptography"], marker = "extra == 'security'", editable = "core/spakky" },
+    { name = "spakky", extras = ["fastapi"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["fastapi"], marker = "extra == 'recommended'", editable = "core/spakky" },
+    { name = "spakky", extras = ["fastapi"], marker = "extra == 'web'", editable = "core/spakky" },
+    { name = "spakky", extras = ["grpc"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["kafka"], marker = "extra == 'event-driven'", editable = "core/spakky" },
+    { name = "spakky", extras = ["kafka"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["logging"], marker = "extra == 'cli'", editable = "core/spakky" },
+    { name = "spakky", extras = ["logging"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["logging"], marker = "extra == 'observability'", editable = "core/spakky" },
+    { name = "spakky", extras = ["logging"], marker = "extra == 'recommended'", editable = "core/spakky" },
+    { name = "spakky", extras = ["logging"], marker = "extra == 'web'", editable = "core/spakky" },
+    { name = "spakky", extras = ["oidc"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["oidc"], marker = "extra == 'security'", editable = "core/spakky" },
+    { name = "spakky", extras = ["openfga"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["openfga"], marker = "extra == 'security'", editable = "core/spakky" },
+    { name = "spakky", extras = ["opentelemetry"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["opentelemetry"], marker = "extra == 'observability'", editable = "core/spakky" },
+    { name = "spakky", extras = ["policy"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["policy"], marker = "extra == 'security'", editable = "core/spakky" },
+    { name = "spakky", extras = ["rabbitmq"], marker = "extra == 'event-driven'", editable = "core/spakky" },
+    { name = "spakky", extras = ["rabbitmq"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["redis"], marker = "extra == 'cache-app'", editable = "core/spakky" },
+    { name = "spakky", extras = ["redis"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["sqlalchemy"], marker = "extra == 'agent'", editable = "core/spakky" },
+    { name = "spakky", extras = ["sqlalchemy"], marker = "extra == 'database'", editable = "core/spakky" },
+    { name = "spakky", extras = ["sqlalchemy"], marker = "extra == 'event-driven'", editable = "core/spakky" },
+    { name = "spakky", extras = ["sqlalchemy"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["sqlalchemy"], marker = "extra == 'recommended'", editable = "core/spakky" },
+    { name = "spakky", extras = ["typer"], marker = "extra == 'cli'", editable = "core/spakky" },
+    { name = "spakky", extras = ["typer"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["vllm"], marker = "extra == 'agent'", editable = "core/spakky" },
+    { name = "spakky", extras = ["vllm"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky-actuator", marker = "extra == 'actuator'", editable = "core/spakky-actuator" },
+    { name = "spakky-actuator", marker = "extra == 'full'", editable = "core/spakky-actuator" },
+    { name = "spakky-actuator", marker = "extra == 'observability'", editable = "core/spakky-actuator" },
+    { name = "spakky-actuator", marker = "extra == 'recommended'", editable = "core/spakky-actuator" },
+    { name = "spakky-agent", marker = "extra == 'agent'", editable = "core/spakky-agent" },
+    { name = "spakky-agent", marker = "extra == 'agent-core'", editable = "core/spakky-agent" },
+    { name = "spakky-agent", marker = "extra == 'full'", editable = "core/spakky-agent" },
+    { name = "spakky-auth", marker = "extra == 'auth'", editable = "core/spakky-auth" },
+    { name = "spakky-auth", marker = "extra == 'full'", editable = "core/spakky-auth" },
+    { name = "spakky-auth", marker = "extra == 'security'", editable = "core/spakky-auth" },
+    { name = "spakky-cache", marker = "extra == 'cache-app'", editable = "core/spakky-cache" },
+    { name = "spakky-cache", marker = "extra == 'cache-core'", editable = "core/spakky-cache" },
+    { name = "spakky-cache", marker = "extra == 'full'", editable = "core/spakky-cache" },
     { name = "spakky-celery", marker = "extra == 'celery'", editable = "plugins/spakky-celery" },
     { name = "spakky-cryptography", marker = "extra == 'cryptography'", editable = "plugins/spakky-cryptography" },
+    { name = "spakky-data", marker = "extra == 'data'", editable = "core/spakky-data" },
+    { name = "spakky-data", marker = "extra == 'database'", editable = "core/spakky-data" },
+    { name = "spakky-data", marker = "extra == 'full'", editable = "core/spakky-data" },
+    { name = "spakky-data", marker = "extra == 'recommended'", editable = "core/spakky-data" },
+    { name = "spakky-domain", marker = "extra == 'database'", editable = "core/spakky-domain" },
+    { name = "spakky-domain", marker = "extra == 'domain'", editable = "core/spakky-domain" },
+    { name = "spakky-domain", marker = "extra == 'full'", editable = "core/spakky-domain" },
+    { name = "spakky-domain", marker = "extra == 'recommended'", editable = "core/spakky-domain" },
+    { name = "spakky-event", marker = "extra == 'event'", editable = "core/spakky-event" },
+    { name = "spakky-event", marker = "extra == 'event-driven'", editable = "core/spakky-event" },
+    { name = "spakky-event", marker = "extra == 'full'", editable = "core/spakky-event" },
+    { name = "spakky-event", marker = "extra == 'recommended'", editable = "core/spakky-event" },
     { name = "spakky-fastapi", marker = "extra == 'fastapi'", editable = "plugins/spakky-fastapi" },
     { name = "spakky-grpc", marker = "extra == 'grpc'", editable = "plugins/spakky-grpc" },
     { name = "spakky-kafka", marker = "extra == 'kafka'", editable = "plugins/spakky-kafka" },
@@ -2878,16 +3053,27 @@ requires-dist = [
     { name = "spakky-oidc", marker = "extra == 'oidc'", editable = "plugins/spakky-oidc" },
     { name = "spakky-openfga", marker = "extra == 'openfga'", editable = "plugins/spakky-openfga" },
     { name = "spakky-opentelemetry", marker = "extra == 'opentelemetry'", editable = "plugins/spakky-opentelemetry" },
+    { name = "spakky-outbox", marker = "extra == 'event-driven'", editable = "core/spakky-outbox" },
+    { name = "spakky-outbox", marker = "extra == 'full'", editable = "core/spakky-outbox" },
+    { name = "spakky-outbox", marker = "extra == 'outbox'", editable = "core/spakky-outbox" },
     { name = "spakky-policy", marker = "extra == 'policy'", editable = "plugins/spakky-policy" },
     { name = "spakky-rabbitmq", marker = "extra == 'rabbitmq'", editable = "plugins/spakky-rabbitmq" },
     { name = "spakky-redis", marker = "extra == 'redis'", editable = "plugins/spakky-redis" },
+    { name = "spakky-saga", marker = "extra == 'full'", editable = "core/spakky-saga" },
     { name = "spakky-saga", marker = "extra == 'saga'", editable = "core/spakky-saga" },
     { name = "spakky-sqlalchemy", marker = "extra == 'sqlalchemy'", editable = "plugins/spakky-sqlalchemy" },
+    { name = "spakky-task", marker = "extra == 'full'", editable = "core/spakky-task" },
+    { name = "spakky-task", marker = "extra == 'task'", editable = "core/spakky-task" },
+    { name = "spakky-task", marker = "extra == 'worker'", editable = "core/spakky-task" },
+    { name = "spakky-tracing", marker = "extra == 'full'", editable = "core/spakky-tracing" },
+    { name = "spakky-tracing", marker = "extra == 'observability'", editable = "core/spakky-tracing" },
+    { name = "spakky-tracing", marker = "extra == 'recommended'", editable = "core/spakky-tracing" },
+    { name = "spakky-tracing", marker = "extra == 'tracing'", editable = "core/spakky-tracing" },
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "spakky-vllm", marker = "extra == 'vllm'", editable = "plugins/spakky-vllm" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["logging", "cryptography", "oidc", "policy", "openfga", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga"]
+provides-extras = ["domain", "data", "event", "task", "agent-core", "actuator", "cache-core", "tracing", "outbox", "auth", "logging", "cryptography", "oidc", "policy", "openfga", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "vllm", "saga", "web", "cli", "database", "event-driven", "worker", "security", "observability", "cache-app", "agent", "recommended", "full"]
 
 [[package]]
 name = "spakky-actuator"

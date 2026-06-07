@@ -43,3 +43,21 @@ show_root_heading: false
 ::: spakky.plugins.logging.post_processor
 options:
 show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.logging.constants
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.logging.error
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.logging.log_context_binder
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.logging.main
+    options:
+      show_root_heading: false

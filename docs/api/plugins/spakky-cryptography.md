@@ -83,3 +83,9 @@ Cryptography utilities and auth snapshot/password provider.
 ::: spakky.plugins.cryptography.error
     options:
       show_root_heading: false
+
+## 추가 모듈
+
+::: spakky.plugins.cryptography.contributions.auth
+    options:
+      show_root_heading: false

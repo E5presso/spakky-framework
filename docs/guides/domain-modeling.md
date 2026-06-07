@@ -1,5 +1,7 @@
 # 도메인 모델링
 
+> Aggregate, Entity, ValueObject, DomainEvent를 Spakky domain 패키지로 모델링하는 방법을 설명합니다.
+
 Spakky Domain은 DDD(Domain-Driven Design)의 빌딩 블록을 제공합니다.
 
 ---
