@@ -82,6 +82,8 @@ R03 should prove that historical references to the removed package exist only in
 rg -n "spakky-security|spakky\.plugins\.security" . --glob '*.py' --glob '*.md' --glob '!uv.lock'
 ```
 
+Expected matches are limited to this file. The `docs/guides/security.md` conformance guide intentionally links here without spelling the legacy package or old import root.
+
 Allowed match policy:
 
 | Pattern | Allowed path | Reason |

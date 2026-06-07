@@ -312,6 +312,45 @@ Missing, invalid, and expired snapshots fail the protected step as `CHALLENGE`. 
 
 ---
 
+## R03 final conformance matrix
+
+R03 runs after R04 and is the final technical gate for the authentication and authorization milestone. The matrix below is the cross-package reference for the implemented boundary behavior.
+
+| Boundary | Public call without decorator | Protected success | `CHALLENGE` path | `DENY` path | `ERROR` / provider unavailable | Context ordering | Snapshot path | Startup validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| FastAPI HTTP | Allowed; handler runs without a credential | Bearer credential seeds `AuthContext`; requirement decorators evaluate before handler | 401 for missing, invalid, or expired inbound bearer credential | 403 for authorization denial | 500 for auth provider unavailable or metadata conflict | Existing request scope is cleared before `AuthContext` is stored | Not propagated by HTTP; bearer is inbound only | Protected route requires exactly one matching provider capability |
+| FastAPI WebSocket | Allowed; handler runs without a credential | Header bearer or `access_token` query token seeds `AuthContext` before handler | close code 1008 for missing, invalid, or expired credential | close code 1008 | close code 1011 | WebSocket wrapper clears scope before seed | Not propagated by WebSocket; bearer is inbound only | Protected socket handler requires exactly one matching provider capability |
+| gRPC unary | Allowed when no auth metadata is present | Metadata bearer or signed snapshot seeds `AuthContext` before unary handler | gRPC unauthenticated for missing, invalid, or expired credential/snapshot | gRPC permission denied | gRPC unavailable/internal for provider unavailable or metadata conflict | Interceptor clears request scope before seed | Accepts `spakky.auth.context_snapshot` and `x-spakky-auth-context-snapshot` | Protected RPC requires exactly one matching provider capability |
+| gRPC stream | Allowed when no auth metadata is present | Stream interceptor seeds `AuthContext` before user stream handling | gRPC unauthenticated for missing, invalid, or expired credential/snapshot | gRPC permission denied | gRPC unavailable/internal for provider unavailable or metadata conflict | Interceptor clears request scope before seed | Accepts metadata/header snapshot credentials | Protected stream requires exactly one matching provider capability |
+| Typer | Allowed even without provider or token | `--auth-token` or `SPAKKY_AUTH_TOKEN` seeds `AuthContext` before command | exit 2 for missing, invalid, or expired bearer credential | exit 3 | exit 1 | CLI command clears context before seed | No snapshot propagation; stdin is not an auth carrier | Protected command requires exactly one matching provider capability |
+| spakky-task direct | Allowed in current request/context scope | Task metadata is evaluated against existing `AuthContext` | Protected direct call without context fails closed as `CHALLENGE` | Requirement denial fails closed as `DENY` | Provider unavailable or missing requirement provider is `ERROR` | Direct execution does not clear the current scope | Queue adapters receive copied metadata; direct execution does not require a snapshot | Protected task metadata requires exactly one matching provider capability |
+| Celery | Public task runs without snapshot | Worker verifies signed snapshot, seeds `AuthContext`, then evaluates task metadata | Missing, invalid, or expired snapshot is `CHALLENGE` | Requirement denial is `DENY` | Verifier unavailable is retryable `ERROR` | Worker clears scope before snapshot seed | Dispatch writes `spakky.auth.context_snapshot`; worker verifies it | Enabled propagation requires exactly one signer and one verifier provider |
+| spakky-event propagation | Public event send can skip snapshot when no `AuthContext` exists | Outbound event includes signed `AuthContextSnapshot` metadata when enabled | Downstream protected consumer maps missing, invalid, or expired snapshot to `CHALLENGE` | Downstream handler denial is `DENY` | Missing signer for enabled propagation or invalid context is `ERROR` | Outbound injector removes raw bearer before writing snapshot | Uses `spakky.auth.context_snapshot`; raw bearer is never propagated | Enabled propagation requires exactly one snapshot signer and verifier |
+| RabbitMQ | Public handler preserves previous no-auth behavior | Consumer verifies snapshot and seeds `AuthContext` before handler | Missing, invalid, or expired snapshot maps to configured challenge action, default `ack` | Default `ack` | Default `nack_requeue` | Message-local context and application context are cleared before seed | Metadata key wins over `x-spakky-auth-context-snapshot` when both exist | Protected handler and enabled propagation require exactly one provider per capability |
+| Kafka | Public handler preserves previous no-auth behavior | Consumer verifies snapshot and seeds `AuthContext` before handler | Missing, invalid, or expired snapshot skips protected handler with non-ALLOW decision | Protected handler skipped with non-ALLOW decision | Provider unavailable is propagated as retryable infrastructure error | Consumer clears application context before auth-aware wrapper runs | `x-spakky-auth-context-snapshot` wins, `spakky.auth.context_snapshot` is fallback | Protected handler and enabled propagation require exactly one provider per capability |
+| Saga | Public step/compensation follows normal saga flow | Step verifies snapshot, seeds `AuthContext`, and evaluates decorators | Missing, invalid, or expired snapshot fails protected step as `CHALLENGE` | Requirement denial fails step as `DENY` | Provider unavailable or missing requirement provider fails step as `ERROR` | Step wrapper seeds before action or compensation callback | `AbstractSagaData.auth_context_snapshot` is preserved across replacement data unless explicitly replaced | Protected step and snapshot propagation require exactly one provider per capability |
+
+Provider count validation is feature-local: zero providers or two or more providers for a required capability fail startup when protected metadata or enabled snapshot propagation needs that capability. Zero providers remain valid only when the application has no protected auth usage and no enabled snapshot propagation.
+
+## R03 provider matrix
+
+| Provider | Valid path | Invalid path | Unavailable path | Evidence surface |
+| --- | --- | --- | --- | --- |
+| OIDC | Valid bearer JWT maps selected safe claims to `AuthContext` | malformed token, invalid signature, issuer/audience/`azp`/time claim failure, or JWKS key miss returns `CHALLENGE / INVALID_CREDENTIAL` | discovery or JWKS fetch failure returns `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE` | `plugins/spakky-oidc` provider tests and FastAPI/gRPC/Typer boundary tests |
+| Policy | Matching allow returns explainable allow evidence | explicit deny wins; no matching allow returns deny evidence | malformed or unavailable policy document/provider returns `ERROR` through the auth port | `plugins/spakky-policy` evaluator/provider tests |
+| OpenFGA | Check response allowed maps to `ALLOW` | check response denied maps to `DENY` | OpenFGA client/service unavailable maps to `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE` | `plugins/spakky-openfga` provider tests |
+| Cryptography | Snapshot sign/verify, hash, HMAC, and password verify success return provider-native success values | invalid signature, malformed envelope, expired snapshot, and password verification failure return `CHALLENGE / INVALID_CREDENTIAL` where exposed through auth ports | signer/verifier/password provider unavailable maps to `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE` | `plugins/spakky-cryptography` auth provider tests |
+
+R03 evidence commands:
+
+```bash
+uv run mkdocs build --strict
+```
+
+Run the legacy reference-search command from [인증/인가 전환 가이드](auth-migration.md). It must match only that migration guide. Matches in source, package READMEs, API reference pages, planning docs, root docs, pyproject files, or examples fail the R03 gate.
+
+---
+
 ## Diagnostics
 
 Startup validation runs after plugin loading and scan, before service start.
