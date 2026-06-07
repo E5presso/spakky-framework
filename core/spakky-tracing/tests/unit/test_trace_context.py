@@ -97,6 +97,22 @@ def test_roundtrip_traceparent_expect_identity() -> None:
     assert restored.trace_flags == original.trace_flags
 
 
+def test_from_traceparent_zero_trace_id_expect_error() -> None:
+    """from_traceparent() rejects the W3C-forbidden all-zero trace ID."""
+    with pytest.raises(InvalidTraceparentError):
+        TraceContext.from_traceparent(
+            "00-00000000000000000000000000000000-b7ad6b7169203331-01"
+        )
+
+
+def test_from_traceparent_zero_span_id_expect_error() -> None:
+    """from_traceparent() rejects the W3C-forbidden all-zero span ID."""
+    with pytest.raises(InvalidTraceparentError):
+        TraceContext.from_traceparent(
+            "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01"
+        )
+
+
 def test_get_set_clear_expect_contextvar_lifecycle() -> None:
     """get()/set()/clear()가 contextvars 기반 생명주기를 올바르게 관리하는지 검증한다."""
     assert TraceContext.get() is None
