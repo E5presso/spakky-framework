@@ -9,10 +9,18 @@ from typing import Any, Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from spakky.auth import (
+    AuthRequirementDeniedError,
+    AuthorizationDecision,
+    AuthorizationReasonCode,
+)
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.error import InvalidMessageError
 
-from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
+from spakky.plugins.rabbitmq.common.config import (
+    RabbitMQAuthFailureAction,
+    RabbitMQConnectionConfig,
+)
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
 from spakky.plugins.rabbitmq.event.consumer import (
     AsyncRabbitMQEventConsumer,
@@ -161,6 +169,7 @@ def test_sync_consumer_route_event_handler_success_expect_ack(
     method_frame.consumer_tag = "test_tag"
     method_frame.delivery_tag = 123
     properties = MagicMock()
+    properties.headers = {}
     body = b'{"data": "test"}'
 
     consumer._route_event_handler(channel, method_frame, properties, body)
@@ -189,6 +198,7 @@ def test_sync_consumer_register_multiple_handlers_expect_all_called(
     method_frame.consumer_tag = "test_tag"
     method_frame.delivery_tag = 123
     properties = MagicMock()
+    properties.headers = {}
     body = b'{"data": "test"}'
 
     consumer._route_event_handler(channel, method_frame, properties, body)
@@ -196,6 +206,108 @@ def test_sync_consumer_register_multiple_handlers_expect_all_called(
     handler1.assert_called_once()
     handler2.assert_called_once()
     channel.basic_ack.assert_called_once_with(123)
+
+
+def test_sync_consumer_auth_challenge_default_ack_expect_handler_not_retried(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """CHALLENGE auth failure는 기본적으로 ack되어 poison-loop를 피한다."""
+    consumer = RabbitMQEventConsumer(config)
+
+    def handler(event: SampleIntegrationEvent) -> None:
+        raise AuthRequirementDeniedError(
+            AuthorizationDecision.challenge(AuthorizationReasonCode.SNAPSHOT_MISSING)
+        )
+
+    consumer.register(SampleIntegrationEvent, handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {}
+    body = b'{"data": "test"}'
+
+    consumer._route_event_handler(channel, method_frame, properties, body)
+
+    channel.basic_ack.assert_called_once_with(123)
+    channel.basic_nack.assert_not_called()
+
+
+def test_sync_consumer_auth_error_default_nack_requeue_expect_retry(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """ERROR auth failure는 기본적으로 nack requeue로 retryable transport 정책을 따른다."""
+    consumer = RabbitMQEventConsumer(config)
+
+    def handler(event: SampleIntegrationEvent) -> None:
+        raise AuthRequirementDeniedError(
+            AuthorizationDecision.error(
+                AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
+            )
+        )
+
+    consumer.register(SampleIntegrationEvent, handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    channel = MagicMock()
+    method_frame = MagicMock()
+    method_frame.consumer_tag = "test_tag"
+    method_frame.delivery_tag = 123
+    properties = MagicMock()
+    properties.headers = {}
+    body = b'{"data": "test"}'
+
+    consumer._route_event_handler(channel, method_frame, properties, body)
+
+    channel.basic_ack.assert_not_called()
+    channel.basic_nack.assert_called_once_with(123, requeue=True)
+
+
+def test_sync_consumer_auth_deny_configured_nack_drop_expect_drop(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """DENY auth failure는 설정된 nack-drop 정책을 적용한다."""
+    consumer = RabbitMQEventConsumer(config)
+    consumer._auth_deny_action = RabbitMQAuthFailureAction.NACK_DROP
+    channel = MagicMock()
+
+    consumer._handle_auth_failure(
+        channel,
+        123,
+        AuthRequirementDeniedError(
+            AuthorizationDecision.deny(AuthorizationReasonCode.POLICY_DENIED)
+        ),
+    )
+
+    channel.basic_ack.assert_not_called()
+    channel.basic_nack.assert_called_once_with(123, requeue=False)
+
+
+def test_sync_consumer_auth_decision_none_uses_error_policy(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """decision 없는 auth failure는 ERROR 정책으로 처리한다."""
+    consumer = RabbitMQEventConsumer(config)
+
+    action = consumer._auth_failure_action(AuthRequirementDeniedError())
+
+    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
+
+
+def test_sync_consumer_auth_allow_decision_uses_error_policy(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """ALLOW decision이 예외로 들어온 불가능 상태는 ERROR 정책으로 처리한다."""
+    consumer = RabbitMQEventConsumer(config)
+
+    action = consumer._auth_failure_action(
+        AuthRequirementDeniedError(AuthorizationDecision.allow())
+    )
+
+    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
 
 
 @pytest.mark.asyncio
@@ -224,6 +336,106 @@ async def test_async_consumer_register_multiple_handlers_expect_all_called(
     handler1.assert_awaited_once()
     handler2.assert_awaited_once()
     message.ack.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_auth_challenge_default_ack_expect_handler_not_retried(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 CHALLENGE auth failure는 기본적으로 ack되어 poison-loop를 피한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+
+    async def handler(event: SampleIntegrationEvent) -> None:
+        raise AuthRequirementDeniedError(
+            AuthorizationDecision.challenge(AuthorizationReasonCode.SNAPSHOT_INVALID)
+        )
+
+    consumer.register(SampleIntegrationEvent, handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+    message.headers = {}
+
+    await consumer._route_event_handler(message)
+
+    message.ack.assert_awaited_once()
+    message.nack.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_auth_error_default_nack_requeue_expect_retry(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 ERROR auth failure는 nack requeue로 retryable transport 정책을 따른다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+
+    async def handler(event: SampleIntegrationEvent) -> None:
+        raise AuthRequirementDeniedError(
+            AuthorizationDecision.error(
+                AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
+            )
+        )
+
+    consumer.register(SampleIntegrationEvent, handler)
+    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+
+    message = AsyncMock()
+    message.consumer_tag = "test_tag"
+    message.delivery_tag = 123
+    message.body = b'{"data": "test"}'
+    message.headers = {}
+
+    await consumer._route_event_handler(message)
+
+    message.ack.assert_not_awaited()
+    message.nack.assert_awaited_once_with(requeue=True)
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_auth_deny_configured_nack_drop_expect_drop(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 DENY auth failure는 설정된 nack-drop 정책을 적용한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+    consumer._auth_deny_action = RabbitMQAuthFailureAction.NACK_DROP
+    message = AsyncMock()
+
+    await consumer._handle_auth_failure(
+        message,
+        AuthRequirementDeniedError(
+            AuthorizationDecision.deny(AuthorizationReasonCode.POLICY_DENIED)
+        ),
+    )
+
+    message.ack.assert_not_awaited()
+    message.nack.assert_awaited_once_with(requeue=False)
+
+
+def test_async_consumer_auth_decision_none_uses_error_policy(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer도 decision 없는 auth failure를 ERROR 정책으로 처리한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+
+    action = consumer._auth_failure_action(AuthRequirementDeniedError())
+
+    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
+
+
+def test_async_consumer_auth_allow_decision_uses_error_policy(
+    config: RabbitMQConnectionConfig,
+) -> None:
+    """비동기 consumer도 ALLOW 예외 상태를 ERROR 정책으로 처리한다."""
+    consumer = AsyncRabbitMQEventConsumer(config)
+
+    action = consumer._auth_failure_action(
+        AuthRequirementDeniedError(AuthorizationDecision.allow())
+    )
+
+    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
 
 
 def test_sync_consumer_check_if_event_set_when_set_expect_stop_consuming(

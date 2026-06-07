@@ -9,6 +9,7 @@ from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
 from typing import Any
 
+from spakky.auth import IAuthContextSnapshotVerifier, get_effective_auth_metadata
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -24,6 +25,7 @@ from spakky.event.event_consumer import (
     IEventConsumer,
 )
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
+from spakky.plugins.rabbitmq.auth import RabbitMQAuthBoundary
 from spakky.tracing.propagator import ITracePropagator
 from typing import override
 
@@ -80,6 +82,10 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         handler: EventHandler = EventHandler.get(pod)
         consumer = self.__container.get(IEventConsumer)
         async_consumer = self.__container.get(IAsyncEventConsumer)
+        auth_boundary = RabbitMQAuthBoundary(
+            self.__application_context,
+            self.__container.get_or_none(IAuthContextSnapshotVerifier),
+        )
         propagator = self.__application_context.get_or_none(ITracePropagator)
         if propagator is not None:
             # 프레임워크 내부: consumer 인터페이스가 선택적 propagator를 지원하는지 확인
@@ -98,6 +104,10 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                 continue
             if not issubclass(route.event_type, AbstractIntegrationEvent):
                 continue
+            auth_metadata = get_effective_auth_metadata(
+                method,
+                owner_type=handler.type_,
+            )
 
             # pylint: disable=line-too-long
             logger.info(
@@ -111,12 +121,19 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     *args: Any,
                     method_name: str = name,
                     controller_type: type[object] = handler.type_,
+                    event_type: type[AbstractEvent] = route.event_type,
+                    protected: bool = auth_metadata.protected,
                     context: IContainer = self.__container,
                     **kwargs: Any,
                 ) -> Any:
                     # Each message is handled in isolation, so clear the
                     # application context to avoid reusing dependency state.
                     self.__application_context.clear_context()
+                    auth_boundary.seed_auth_context(
+                        event_type=event_type,
+                        operation=f"{controller_type.__module__}.{controller_type.__qualname__}.{method_name}",
+                        protected=protected,
+                    )
                     controller_instance = context.get(controller_type)
                     # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                     method_to_call = getattr(  # event handler method lookup
@@ -132,12 +149,19 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                 *args: Any,
                 method_name: str = name,
                 controller_type: type[object] = handler.type_,
+                event_type: type[AbstractEvent] = route.event_type,
+                protected: bool = auth_metadata.protected,
                 context: IContainer = self.__container,
                 **kwargs: Any,
             ) -> Any:
                 # Synchronous consumers share threads, so drop any lingering
                 # scoped data before invoking the handler.
                 self.__application_context.clear_context()
+                auth_boundary.seed_auth_context(
+                    event_type=event_type,
+                    operation=f"{controller_type.__module__}.{controller_type.__qualname__}.{method_name}",
+                    protected=protected,
+                )
                 controller_instance = context.get(controller_type)
                 # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
                 method_to_call = getattr(  # async event handler method lookup

@@ -20,6 +20,12 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+## 인증 Boundary
+
+::: spakky.plugins.rabbitmq.auth
+options:
+show_root_heading: false
+
 ## 설정
 
 ::: spakky.plugins.rabbitmq.common.config

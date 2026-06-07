@@ -34,8 +34,19 @@ from spakky.event.event_consumer import (
     IAsyncEventConsumer,
     IEventConsumer,
 )
+from spakky.auth import (
+    AuthRequirementDeniedError,
+    AuthorizationDecisionState,
+)
 
-from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
+from spakky.plugins.rabbitmq.auth import (
+    reset_current_rabbitmq_message_headers,
+    set_current_rabbitmq_message_headers,
+)
+from spakky.plugins.rabbitmq.common.config import (
+    RabbitMQAuthFailureAction,
+    RabbitMQConnectionConfig,
+)
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
@@ -63,6 +74,9 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
     connection: BlockingConnection
     channel: BlockingChannel
     _propagator: ITracePropagator | None
+    _auth_challenge_action: RabbitMQAuthFailureAction
+    _auth_deny_action: RabbitMQAuthFailureAction
+    _auth_error_action: RabbitMQAuthFailureAction
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event consumer.
@@ -76,6 +90,9 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.type_adapters = {}
         self.handlers = {}
         self._propagator = None
+        self._auth_challenge_action = config.auth_challenge_action
+        self._auth_deny_action = config.auth_deny_action
+        self._auth_error_action = config.auth_error_action
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
@@ -99,7 +116,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         Returns:
             A dict with string keys and string values.
         """
-        if raw is None:
+        if raw is None or not isinstance(raw, Mapping):
             return {}
         result: dict[str, str] = {}
         for key, value in raw.items():
@@ -123,11 +140,12 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         """
         if method_frame.consumer_tag is None or method_frame.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
+        carrier = self._to_string_headers(properties.headers)
         if self._propagator is not None:
-            carrier = self._to_string_headers(properties.headers)
             parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
+        token = set_current_rabbitmq_message_headers(carrier)
         try:
             event_type = self.type_lookup[method_frame.consumer_tag]
             handlers = self.handlers[event_type]
@@ -136,9 +154,41 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
             for handler in handlers:
                 handler(event)
             channel.basic_ack(method_frame.delivery_tag)
+        except AuthRequirementDeniedError as error:
+            self._handle_auth_failure(channel, method_frame.delivery_tag, error)
         finally:
+            reset_current_rabbitmq_message_headers(token)
             if self._propagator is not None:
                 TraceContext.clear()
+
+    def _handle_auth_failure(
+        self,
+        channel: BlockingChannel,
+        delivery_tag: int,
+        error: AuthRequirementDeniedError,
+    ) -> None:
+        action = self._auth_failure_action(error)
+        if action is RabbitMQAuthFailureAction.ACK:
+            channel.basic_ack(delivery_tag)
+            return
+        if action is RabbitMQAuthFailureAction.NACK_REQUEUE:
+            channel.basic_nack(delivery_tag, requeue=True)
+            return
+        channel.basic_nack(delivery_tag, requeue=False)
+
+    def _auth_failure_action(
+        self,
+        error: AuthRequirementDeniedError,
+    ) -> RabbitMQAuthFailureAction:
+        decision = error.decision
+        if decision is None:
+            return self._auth_error_action
+        return {
+            AuthorizationDecisionState.ALLOW: self._auth_error_action,
+            AuthorizationDecisionState.CHALLENGE: self._auth_challenge_action,
+            AuthorizationDecisionState.DENY: self._auth_deny_action,
+            AuthorizationDecisionState.ERROR: self._auth_error_action,
+        }[decision.state]
 
     def _check_if_event_set(self) -> None:
         if self._stop_event.is_set():
@@ -226,6 +276,9 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
     handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     connection: AbstractRobustConnection
     _propagator: ITracePropagator | None
+    _auth_challenge_action: RabbitMQAuthFailureAction
+    _auth_deny_action: RabbitMQAuthFailureAction
+    _auth_error_action: RabbitMQAuthFailureAction
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event consumer.
@@ -238,6 +291,9 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         self.type_adapters = {}
         self.handlers = {}
         self._propagator = None
+        self._auth_challenge_action = config.auth_challenge_action
+        self._auth_deny_action = config.auth_deny_action
+        self._auth_error_action = config.auth_error_action
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
@@ -261,7 +317,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         Returns:
             A dict with string keys and string values.
         """
-        if raw is None:
+        if raw is None or not isinstance(raw, Mapping):
             return {}
         result: dict[str, str] = {}
         for key, value in raw.items():
@@ -279,11 +335,12 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         """
         if message.consumer_tag is None or message.delivery_tag is None:
             raise InvalidMessageError("Missing consumer tag or delivery tag.")
+        carrier = self._to_string_headers(message.headers)
         if self._propagator is not None:
-            carrier = self._to_string_headers(message.headers)
             parent = self._propagator.extract(carrier)
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
+        token = set_current_rabbitmq_message_headers(carrier)
         try:
             event_type = self.type_lookup[message.consumer_tag]
             handlers = self.handlers[event_type]
@@ -292,9 +349,40 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
             for handler in handlers:
                 await handler(event)
             await message.ack()
+        except AuthRequirementDeniedError as error:
+            await self._handle_auth_failure(message, error)
         finally:
+            reset_current_rabbitmq_message_headers(token)
             if self._propagator is not None:
                 TraceContext.clear()
+
+    async def _handle_auth_failure(
+        self,
+        message: AbstractIncomingMessage,
+        error: AuthRequirementDeniedError,
+    ) -> None:
+        action = self._auth_failure_action(error)
+        if action is RabbitMQAuthFailureAction.ACK:
+            await message.ack()
+            return
+        if action is RabbitMQAuthFailureAction.NACK_REQUEUE:
+            await message.nack(requeue=True)
+            return
+        await message.nack(requeue=False)
+
+    def _auth_failure_action(
+        self,
+        error: AuthRequirementDeniedError,
+    ) -> RabbitMQAuthFailureAction:
+        decision = error.decision
+        if decision is None:
+            return self._auth_error_action
+        return {
+            AuthorizationDecisionState.ALLOW: self._auth_error_action,
+            AuthorizationDecisionState.CHALLENGE: self._auth_challenge_action,
+            AuthorizationDecisionState.DENY: self._auth_deny_action,
+            AuthorizationDecisionState.ERROR: self._auth_error_action,
+        }[decision.state]
 
     @override
     def register(
