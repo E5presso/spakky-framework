@@ -27,6 +27,8 @@ class SagaStep[SagaDataT: AbstractSagaData]:
     action: Callable[[SagaDataT], Awaitable[SagaDataT | None]]
     on_error: ErrorStrategy = field(default_factory=Compensate)
     timeout: timedelta | None = None
+    auth_boundary: object | None = None
+    auth_owner_type: type[object] | None = None
 
     def __rshift__(
         self,
@@ -37,11 +39,21 @@ class SagaStep[SagaDataT: AbstractSagaData]:
             if isinstance(compensate, SagaStep)
             else compensate
         )
+        compensate_auth_boundary = (
+            compensate.auth_boundary if isinstance(compensate, SagaStep) else compensate
+        )
+        compensate_auth_owner_type = (
+            compensate.auth_owner_type if isinstance(compensate, SagaStep) else None
+        )
         return Transaction(
             action=self.action,
             compensate=compensate_fn,
             on_error=self.on_error,
             timeout=self.timeout,
+            action_auth_boundary=self.auth_boundary,
+            action_auth_owner_type=self.auth_owner_type,
+            compensate_auth_boundary=compensate_auth_boundary,
+            compensate_auth_owner_type=compensate_auth_owner_type,
         )
 
     def __and__(
@@ -64,6 +76,10 @@ class Transaction[SagaDataT: AbstractSagaData]:
     compensate: Callable[[SagaDataT], Awaitable[None]]
     on_error: ErrorStrategy = field(default_factory=Compensate)
     timeout: timedelta | None = None
+    action_auth_boundary: object | None = None
+    action_auth_owner_type: type[object] | None = None
+    compensate_auth_boundary: object | None = None
+    compensate_auth_owner_type: type[object] | None = None
 
     def __and__(
         self,
@@ -167,11 +183,14 @@ def step[SagaDataT: AbstractSagaData](
             compensate=compensate,
             on_error=resolved_on_error,
             timeout=timeout,
+            action_auth_boundary=action,
+            compensate_auth_boundary=compensate,
         )
     return SagaStep(
         action=action,
         on_error=resolved_on_error,
         timeout=timeout,
+        auth_boundary=action,
     )
 
 
@@ -200,7 +219,7 @@ def parallel[SagaDataT: AbstractSagaData](
         elif isinstance(item, Parallel):
             promoted.extend(item.items)
         elif callable(item):
-            promoted.append(SagaStep(action=item))
+            promoted.append(SagaStep(action=item, auth_boundary=item))
         else:
             raise SagaFlowDefinitionError
     return Parallel(items=tuple(promoted))
@@ -231,7 +250,7 @@ def saga_flow[SagaDataT: AbstractSagaData](
         if isinstance(item, (SagaStep, Transaction, Parallel)):
             promoted.append(item)
         elif callable(item):
-            promoted.append(SagaStep(action=item))
+            promoted.append(SagaStep(action=item, auth_boundary=item))
         else:
             raise SagaFlowDefinitionError
     return SagaFlow(items=tuple(promoted))

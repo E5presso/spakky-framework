@@ -165,7 +165,7 @@ graph TD
 - **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-tracing`에 의존 (컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
-- **사가 코어** (spakky-saga) → `spakky` + `spakky-domain`에 의존
+- **사가 코어** (spakky-saga) → `spakky` + `spakky-domain` + `spakky-auth`에 의존
 - **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-tracing`에 의존 + `grpcio`, `protobuf` 외부 의존성
 - **Redis 캐시 플러그인** (spakky-redis) → `spakky-cache`에 의존 + `redis`, `pydantic-settings` 외부 의존성
 
