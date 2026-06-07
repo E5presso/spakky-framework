@@ -1,129 +1,328 @@
-# 보안
+# 인증/인가
 
-Spakky의 보안 관련 표면은 provider-neutral 인증/인가 계약과 provider 플러그인으로 나뉩니다. 이 가이드는 암호화, 해시, HMAC, 패스워드 해싱처럼 애플리케이션 코드에서 직접 사용할 수 있는 `spakky-cryptography` 유틸리티를 다룹니다.
+Spakky의 인증/인가는 `spakky-auth`가 공통 의미 모델을 소유하고, provider 플러그인이 실제 인증·인가 결정을 제공하며, 각 adapter가 실행 경계에서 `AuthContext`를 seed하거나 signed `AuthContextSnapshot`을 전파하는 구조입니다.
 
-JWT bearer 검증은 애플리케이션 유틸리티가 아니라 `spakky-oidc` provider와 `spakky-auth` port를 통해 처리합니다.
+핵심 규칙은 단순합니다.
 
----
-
-## Hash
-
-다양한 알고리즘으로 데이터를 해싱합니다.
-
-```python
-from spakky.plugins.cryptography.hash import Hash, HashType
-
-h = Hash("Hello World!", hash_type=HashType.SHA256)
-print(h.hex)
-print(h.b64)
-print(h.b64_urlsafe)
-
-with open("document.pdf", "rb") as f:
-    file_hash = Hash(f, hash_type=HashType.SHA512)
-    print(file_hash.hex)
-```
-
-**지원 알고리즘:** `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`
+- decorator가 없는 boundary는 allow all입니다.
+- `@protected`, `@require_scope`, `@require_role`, `@require_permission`, `@require_policy`, `@require_relation`이 붙은 boundary는 fail closed입니다.
+- raw bearer token은 HTTP, WebSocket, gRPC, CLI 같은 inbound boundary에서만 credential로 읽습니다.
+- task, broker, event, saga 전파에는 raw bearer token 대신 signed `AuthContextSnapshot`을 사용합니다.
 
 ---
 
-## HMAC 서명
+## 패키지 구성
+
+필요한 기능에 맞춰 core와 provider plugin을 함께 설치합니다.
+
+```bash
+pip install spakky-auth spakky-oidc spakky-policy spakky-openfga spakky-cryptography
+```
+
+애플리케이션은 auth core plugin과 실제 provider plugin을 함께 로드합니다. Provider contribution은 `spakky.contributions.spakky.auth` entry point로 capability를 선언하고, `spakky-auth` startup validation은 보호된 boundary와 snapshot propagation이 요구하는 capability가 정확히 1개인지 검사합니다.
 
 ```python
-from spakky.plugins.cryptography.hmac_signer import HMAC, HMACType
-from spakky.plugins.cryptography.key import Key
+import spakky.auth
+import spakky.plugins.cryptography
+import spakky.plugins.oidc
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
 
-key = Key(size=32)
-signature = HMAC.sign_text(key, HMACType.HS256, "중요한 데이터")
-assert HMAC.verify(key, HMACType.HS256, "중요한 데이터", signature)
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.auth.PLUGIN_NAME,
+            spakky.plugins.oidc.PLUGIN_NAME,
+            Plugin(name="spakky-policy"),
+            spakky.plugins.cryptography.PLUGIN_NAME,
+        }
+    )
+    .scan(apps)
+    .start()
+)
 ```
+
+`spakky-openfga`는 relation check 또는 OpenFGA-backed policy evaluation이 필요할 때 추가합니다. `spakky-cryptography`는 signed snapshot 전파와 password hash/verify capability를 제공합니다.
 
 ---
 
-## 암호화
+## Decorator
 
-### AES
-
-```python
-from spakky.plugins.cryptography.cryptography.aes import Aes
-from spakky.plugins.cryptography.key import Key
-
-cipher = Aes(key=Key(size=32))
-encrypted = cipher.encrypt("비밀 메시지")
-decrypted = cipher.decrypt(encrypted)
-assert decrypted == "비밀 메시지"
-```
-
-### AES-GCM (인증된 암호화)
+Decorator는 class 또는 method boundary에 provider-neutral metadata를 붙입니다. 메서드는 `AuthContext`를 인자로 받을 필요가 없습니다. Adapter가 사용자 코드 호출 전에 `ApplicationContext` request/context scope에 context를 저장하고, `AuthorizationAspect` 또는 adapter wrapper가 metadata를 평가합니다.
 
 ```python
-from spakky.plugins.cryptography.cryptography.gcm import Gcm
-from spakky.plugins.cryptography.key import Key
+from spakky.auth import protected, require_role, require_scope
+from spakky.plugins.fastapi.routes import get
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 
-cipher = Gcm(key=Key(size=32))
-encrypted = cipher.encrypt("비밀 메시지")
-decrypted = cipher.decrypt(encrypted)
+
+@ApiController("/documents")
+@require_role("role:editor")
+class DocumentController:
+    @get("/{document_id}")
+    @require_scope("documents:read")
+    @protected
+    def read(self, document_id: str) -> dict[str, str]:
+        return {"id": document_id}
 ```
 
-### RSA
+Class-level requirement와 method-level requirement는 AND semantics로 결합됩니다. 같은 canonical requirement는 중복 제거됩니다. `@public_access`와 protected requirement가 같은 effective metadata에 함께 있으면 `ConflictingAuthMetadataError`로 시작 또는 호출이 실패합니다.
 
-```python
-from spakky.plugins.cryptography.cryptography.rsa import AsymmetricKey, Rsa
+| Decorator | Provider capability |
+| --- | --- |
+| `@protected` | `AUTHENTICATION` |
+| `@require_scope("documents:read")` | `SCOPE_CHECK` |
+| `@require_role("role:admin")` | `ROLE_CHECK` |
+| `@require_permission("documents:read", resource="document:1")` | `PERMISSION_CHECK` |
+| `@require_policy("document:1", "read")` | `POLICY_EVALUATION` |
+| `@require_relation("owner", resource="document:1")` | `RELATION_CHECK` |
 
-cipher = Rsa(key=AsymmetricKey(size=2048))
-encrypted = cipher.encrypt("비밀 메시지")
-decrypted = cipher.decrypt(encrypted)
-```
+OR/ANY 의미는 decorator 조합이 아니라 `spakky-policy`의 named policy로 표현합니다.
 
 ---
 
-## 패스워드 해싱
+## Provider
 
-### Argon2 (권장)
+### OIDC
 
-```python
-from spakky.plugins.cryptography.password.argon2 import Argon2PasswordEncoder
-
-encoder = Argon2PasswordEncoder(password="my-password")
-hashed = encoder.encode()
-
-encoder = Argon2PasswordEncoder(password_hash=hashed)
-assert encoder.challenge("my-password")
-assert not encoder.challenge("wrong-password")
-```
-
-### bcrypt
+`spakky-oidc`는 bearer JWT를 검증하고 `AuthContext`로 매핑하는 authentication provider입니다. 범위는 inbound bearer token 인증입니다. Browser login, callback, session, refresh, logout route는 제공하지 않습니다.
 
 ```python
-from spakky.plugins.cryptography.password.bcrypt import BcryptPasswordEncoder
+from spakky.auth import (
+    AuthInvocation,
+    CredentialCarrier,
+    CredentialCarrierKind,
+    CredentialCarrierLocation,
+)
+from spakky.plugins.oidc import OidcAuthenticationProvider, OidcProviderConfig
 
-encoder = BcryptPasswordEncoder(password="my-password")
-hashed = encoder.encode()
+provider = OidcAuthenticationProvider(
+    config=OidcProviderConfig(
+        issuer="https://issuer.example.test",
+        audience="api://spakky",
+        client_id="spakky-client",
+        roles_claim="roles",
+        scopes_claim="scope",
+        tenant_claim="tenant",
+    )
+)
 
-encoder = BcryptPasswordEncoder(password_hash=hashed)
-assert encoder.challenge("my-password")
+auth_context = provider.authenticate(
+    CredentialCarrier(
+        kind=CredentialCarrierKind.BEARER_TOKEN,
+        location=CredentialCarrierLocation.AUTHORIZATION_HEADER,
+        material="eyJ...",
+        name="Authorization",
+        scheme="Bearer",
+    ),
+    AuthInvocation(boundary="HTTP", operation="GET /documents"),
+)
 ```
 
-### PBKDF2
+OIDC provider는 discovery document와 JWKS를 읽고, `kid` key selection, RS256 signature, issuer, audience, `azp`, `exp`, `nbf`, `iat`, clock skew를 검증합니다. `sub`, display name, tenant, roles, scopes, selected safe claims만 `AuthContext`에 남기며 raw bearer token은 claims, metadata, credential carrier에 보존하지 않습니다.
+
+Failure mapping은 다음과 같습니다.
+
+| Failure | Decision |
+| --- | --- |
+| missing bearer credential | `CHALLENGE / MISSING_CREDENTIAL` |
+| malformed credential or invalid token | `CHALLENGE / INVALID_CREDENTIAL` |
+| JWKS key selection failure | `CHALLENGE / INVALID_CREDENTIAL` |
+| discovery/provider unavailable | `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE` |
+
+### Policy
+
+`spakky-policy`는 YAML, TOML, JSON policy document를 typed model로 로드하고 RBAC, PBAC, ABAC-style rule을 평가합니다. Policy UI, generic policy API, MCP/tool authorization, authorized data filtering은 범위 밖입니다.
 
 ```python
-from spakky.plugins.cryptography.password.pbkdf2 import Pbkdf2PasswordEncoder
+from spakky.auth import AuthContext, AuthSubject
+from spakky.plugins.policy import PolicyDocumentEvaluator, PolicyEvaluationInput
+from spakky.plugins.policy.loader import policy_document_from_mapping
 
-encoder = Pbkdf2PasswordEncoder(password="my-password")
-hashed = encoder.encode()
+document = policy_document_from_mapping(
+    {
+        "version": "2026-06",
+        "metadata": {"name": "document-policy"},
+        "roles": [
+            {"ref": "role:editor", "permissions": ["permission:documents-read"]}
+        ],
+        "policies": [
+            {
+                "ref": "policy:documents-read",
+                "statements": [
+                    {
+                        "ref": "allow-editor-read",
+                        "effect": "allow",
+                        "roles": ["role:editor"],
+                        "permissions": ["permission:documents-read"],
+                        "resources": ["document:1"],
+                        "actions": ["read"],
+                    }
+                ],
+            }
+        ],
+    }
+)
 
-encoder = Pbkdf2PasswordEncoder(password_hash=hashed)
-assert encoder.challenge("my-password")
+result = PolicyDocumentEvaluator(document).evaluate(
+    PolicyEvaluationInput(
+        auth_context=AuthContext(
+            subject=AuthSubject(id="user:alice"),
+            issuer="issuer:test",
+            roles=("role:editor",),
+        ),
+        resource="document:1",
+        action="read",
+        policy="policy:documents-read",
+    )
+)
+assert result.allowed
 ```
 
-### scrypt
+Explicit deny가 matching allow보다 우선합니다. Matching allow가 없으면 default deny evidence를 반환합니다. Conditions는 `all`, `any`, `not` composition과 `equals`, `not_equals`, `in`, `contains`, `exists` operator를 지원합니다.
+
+### OpenFGA
+
+`spakky-openfga`는 check-only OpenFGA provider입니다. Tuple write, authorization model migration, admin CLI/API, list resources, tuple/model management, data/query filtering은 제공하지 않습니다.
+
+```bash
+export SPAKKY_OPENFGA_API_URL=http://localhost:8080
+export SPAKKY_OPENFGA_STORE_ID=store-id
+export SPAKKY_OPENFGA_AUTHORIZATION_MODEL_ID=model-id
+export SPAKKY_OPENFGA_PRINCIPAL_TYPE=user
+export SPAKKY_OPENFGA_INCLUDE_TENANT_IN_OBJECT=true
+```
+
+`RelationCheckRequest.relation`과 `AuthorizationRequest.action`은 OpenFGA relation으로 매핑됩니다. `AuthContext.subject.id`는 OpenFGA user로 매핑되며 type prefix가 없으면 `principal_type`이 붙습니다. Tenant가 있으면 기본적으로 `<tenant>/<resource>` 형태로 object ref에 포함됩니다.
+
+Provider unavailable은 `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE` decision입니다. 빈 canonical reference처럼 OpenFGA user/object/relation으로 매핑할 수 없는 값은 `ERROR / INTERNAL_ERROR` decision으로 반환됩니다.
+
+### Cryptography
+
+`spakky-cryptography`는 retained crypto utility와 auth provider capability를 함께 제공합니다.
+
+- `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY`: `AuthContextSnapshot` HMAC envelope sign/verify
+- `PASSWORD_HASH`, `PASSWORD_VERIFY`: password hash/verify port
+- `Key`, `Base64Encoder`, `Hash`, `HMAC`, `Aes`, `Gcm`, `Rsa`, retained password encoders
 
 ```python
-from spakky.plugins.cryptography.password.scrypt import ScryptPasswordEncoder
+from datetime import timedelta
 
-encoder = ScryptPasswordEncoder(password="my-password")
-hashed = encoder.encode()
+from spakky.auth import AuthContext, AuthInvocation, AuthSubject, SnapshotSignRequest
+from spakky.plugins.cryptography import (
+    CryptographyAuthProvider,
+    CryptographyAuthProviderConfig,
+)
 
-encoder = ScryptPasswordEncoder(password_hash=hashed)
-assert encoder.challenge("my-password")
+provider = CryptographyAuthProvider(
+    config=CryptographyAuthProviderConfig(snapshot_ttl=timedelta(minutes=5))
+)
+snapshot = provider.sign_snapshot(
+    SnapshotSignRequest(
+        auth_context=AuthContext(
+            subject=AuthSubject(id="user:alice"),
+            issuer="issuer:test",
+            scopes=("documents:read",),
+        )
+    )
+)
+auth_context = provider.verify_snapshot(
+    snapshot.base64url_canonical_json(),
+    AuthInvocation(boundary="task", operation="documents.reindex"),
+)
 ```
+
+Missing, invalid, and expired snapshot envelopes map to `CHALLENGE`. Verification provider unavailable maps to `ERROR`. Password verification failure maps to `CHALLENGE / INVALID_CREDENTIAL`; password provider unavailable maps to `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE`.
+
+---
+
+## Boundary
+
+### FastAPI HTTP and WebSocket
+
+FastAPI HTTP routes read `Authorization: Bearer <token>`. WebSocket handlers first use the same authorization header and fall back to `access_token` query parameter. The adapter injects an internal `Request` or `WebSocket` parameter into the FastAPI signature, authenticates before user handler invocation, and stores `AuthContext` in `ApplicationContext`.
+
+| Condition | HTTP result | WebSocket result |
+| --- | --- | --- |
+| public route with missing or bad credential | user handler runs | user handler runs |
+| protected route missing credential | 401 | close code 1008 |
+| authentication failure | 401 | close code 1008 |
+| authorization DENY | 403 | close code 1008 |
+| provider unavailable or metadata conflict | 500 | close code 1011 |
+
+### gRPC
+
+gRPC reads invocation metadata. `authorization: Bearer <token>` becomes a bearer credential. If no bearer metadata exists, the adapter accepts `spakky.auth.context_snapshot` or `x-spakky-auth-context-snapshot` as an `AUTH_CONTEXT_SNAPSHOT` credential. When a credential exists but no authentication provider is registered, the helper raises gRPC `Unavailable`.
+
+The boundary value in `AuthInvocation` is `grpc`, and operation is the registered RPC operation string.
+
+### Typer CLI
+
+Typer commands get an auth option automatically when no existing `--auth-token` option is present. The adapter reads `--auth-token` first and `SPAKKY_AUTH_TOKEN` second. stdin is not an auth carrier. Before each command, it clears context-scoped state to avoid cross-command leakage, authenticates the bearer token when present, and seeds `AuthContext`.
+
+| Decision | Exit code | Output |
+| --- | --- | --- |
+| `CHALLENGE` | 2 | reason code and optional reason |
+| `DENY` | 3 | reason code and optional reason |
+| `ERROR` | 1 | reason code and optional reason |
+
+Commands without auth decorator are allowed even when no provider exists.
+
+### spakky-task direct execution
+
+Direct in-process task execution keeps the current request/context scope. It does not clear `ApplicationContext`, does not require a snapshot, and does not pass `AuthContext` as a method argument. Auth decorator metadata is copied onto task routes so queue adapters can enforce it later.
+
+### Celery
+
+Celery dispatch aspects inject signed snapshot metadata into task headers when `AuthSnapshotPropagationConfig(enabled=True)` is registered and the current context contains an `AuthContext`. The header key is `spakky.auth.context_snapshot`. If propagation is enabled and a context exists but no signer is available, dispatch fails loudly.
+
+Protected worker tasks verify the snapshot, seed `AuthContext`, then evaluate task metadata before user code. Missing, invalid, or expired snapshots are `CHALLENGE`; verifier unavailable is `ERROR` and is retryable by `is_retryable_auth_failure()`.
+
+### spakky-event propagation
+
+`AuthContextSnapshotHeaderInjector` removes raw bearer `Authorization` headers from outbound event headers even when propagation is disabled. When propagation is enabled and an `AuthContext` exists, it signs and writes `spakky.auth.context_snapshot`. Missing application context, invalid context value, or missing signer are loud errors; missing `AuthContext` in a public flow simply skips the snapshot.
+
+### RabbitMQ
+
+RabbitMQ consumers convert AMQP headers to string values, store them in a message-local context, clear `ApplicationContext`, verify a signed snapshot, and seed `AuthContext` before the integration event handler runs. Supported keys are `spakky.auth.context_snapshot` and `x-spakky-auth-context-snapshot`; the metadata key wins when both are present.
+
+Protected handler auth failures are mapped to configured message actions:
+
+| Decision state | Default action |
+| --- | --- |
+| `CHALLENGE` | `ack` |
+| `DENY` | `ack` |
+| `ERROR` | `nack_requeue` |
+
+The actions are configured by RabbitMQ settings `auth_challenge_action`, `auth_deny_action`, and `auth_error_action`.
+
+### Kafka
+
+Kafka consumers decode message headers, clear `ApplicationContext`, and pass headers only to auth-aware handler wrappers. Protected handlers verify `x-spakky-auth-context-snapshot` first and `spakky.auth.context_snapshot` as fallback, case-insensitively. Missing, invalid, or expired snapshot returns a non-ALLOW decision and the handler is skipped. Snapshot verifier unavailable is propagated as an error so the consumer can treat it as retryable infrastructure failure.
+
+Public Kafka handlers preserve previous no-auth behavior and run without a snapshot or verifier.
+
+### Saga
+
+`AbstractSagaData` carries `auth_context_snapshot`. Protected saga steps and protected compensation callbacks verify that snapshot before execution and then evaluate the same decorator requirement kinds as normal auth boundaries. If a step returns replacement saga data without a snapshot, the engine preserves the current snapshot; if the returned data includes a new snapshot, the engine keeps the new one.
+
+Missing, invalid, and expired snapshots fail the protected step as `CHALLENGE`. Provider unavailable or missing requirement provider fails as `ERROR`. Saga history records the step failure and normal saga error strategy handling continues.
+
+---
+
+## Diagnostics
+
+Startup validation runs after plugin loading and scan, before service start.
+
+- Any protected metadata requires exactly one `AUTHENTICATION` provider.
+- `@require_permission`, `@require_role`, `@require_scope`, `@require_policy`, and `@require_relation` require exactly one matching provider capability.
+- Enabled `AuthSnapshotPropagationConfig` requires exactly one `SNAPSHOT_SIGN` and one `SNAPSHOT_VERIFY` provider.
+- If no protected usage and no enabled snapshot propagation config exist, provider absence is not fatal.
+
+Provider count 0 or 2+ raises `AuthStartupCapabilityValidationError` and emits `auth.capability.validation.error` startup diagnostic detail. Runtime non-ALLOW decisions are preserved on `AuthRequirementDeniedError.decision` so adapters can map `CHALLENGE`, `DENY`, and `ERROR` to transport-specific responses.
+
+## Migration
+
+See [인증/인가 전환 가이드](auth-migration.md) for migration from the removed legacy security package and the final grep allowlist used by the R03 conformance gate.

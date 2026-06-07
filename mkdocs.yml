@@ -119,6 +119,7 @@ nav:
       - 태스크 & 스케줄링: guides/tasks.md
       - FastAPI 통합: guides/fastapi.md
       - 보안: guides/security.md
+      - 인증/인가 전환: guides/auth-migration.md
       - CLI (Typer): guides/typer.md
       - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
       - 구조화 로깅: guides/logging.md
