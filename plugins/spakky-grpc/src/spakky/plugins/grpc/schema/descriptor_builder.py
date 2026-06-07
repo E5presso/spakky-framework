@@ -17,7 +17,7 @@ from google.protobuf.descriptor_pb2 import (
     ServiceDescriptorProto,
 )
 from pydantic import BaseModel
-from spakky.plugins.grpc.decorators.rpc import Rpc
+from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
 from spakky.plugins.grpc.schema.type_map import (
     extract_proto_field,
     resolve_type,
@@ -126,10 +126,13 @@ def build_service_descriptor(
         else:
             output_type = ""
 
+        method_type = rpc_annotation.method_type
         method_desc = MethodDescriptorProto(
             name=method_name,
             input_type=input_type,
             output_type=output_type,
+            client_streaming=method_type in (RpcMethodType.CLIENT_STREAMING, RpcMethodType.BIDI_STREAMING),
+            server_streaming=method_type in (RpcMethodType.SERVER_STREAMING, RpcMethodType.BIDI_STREAMING),
         )
 
         service.method.append(method_desc)
