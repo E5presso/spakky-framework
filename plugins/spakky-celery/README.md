@@ -21,6 +21,7 @@ pip install spakky-celery
 - **Worker context 감지**: context key로 worker 내부 재dispatch 방지
 - **자동 등록**: `@TaskHandler` pod를 스캔해 Celery task로 자동 등록합니다.
 - **전체 설정**: broker URL, serializer, timezone 등을 환경변수로 설정
+- **AuthContextSnapshot 전파**: `spakky-auth` snapshot propagation이 활성화되면 raw bearer token 대신 signed snapshot을 task header에 담아 보호된 worker task를 fail-closed로 실행합니다.
 
 ## 설정
 
@@ -129,6 +130,20 @@ AOP aspect가 호출을 가로채 Celery로 자동 라우팅합니다.
 - **디스패치 측**: `@task` 호출 시 현재 `TraceContext`를 Celery 메시지 헤더에 주입합니다
 - **워커 측**: 수신 태스크에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
 - 헤더가 없으면 새로운 루트 트레이스를 시작합니다
+
+## 인증/인가 스냅샷 전파
+
+`spakky-auth`의 `AuthSnapshotPropagationConfig(enabled=True)`와 `IAuthContextSnapshotSigner` / `IAuthContextSnapshotVerifier` provider가 등록되어 있으면, `CeleryTaskDispatchAspect`와 `AsyncCeleryTaskDispatchAspect`는 현재 request/context scope의 `AuthContext`를 signed `AuthContextSnapshot`으로 직렬화해 Celery task header `spakky.auth.context_snapshot`에 저장합니다.
+
+Worker endpoint는 task 실행 시작 시 `ApplicationContext.clear_context()` 후 `spakky.plugins.celery.task_context`를 설정하고, 보호된 task metadata가 있으면 snapshot을 검증해 `AuthContext`를 다시 seed합니다. 이후 `@protected`, `@require_scope`, `@require_role`, `@require_permission`, `@require_policy`, `@require_relation` requirement를 worker boundary에서 fail-closed로 평가합니다.
+
+| 상황 | 결과 |
+|------|------|
+| snapshot missing / invalid / expired | `CHALLENGE` decision을 담은 task failure |
+| requirement `DENY` | retry 없이 task failure |
+| verifier 또는 auth provider unavailable `ERROR` | Celery retryable task error |
+
+Raw bearer token은 task/broker header로 전파하지 않습니다. 같은 worker process 안에서 재호출되는 task는 기존 Celery task context를 감지해 재dispatch하지 않고 직접 실행합니다.
 
 ## 관련 패키지
 

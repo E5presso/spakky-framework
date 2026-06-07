@@ -4,6 +4,7 @@ from inspect import iscoroutinefunction
 from logging import getLogger
 from typing import Any
 
+from spakky.auth import AuthSnapshotPropagationConfig, IAuthContextSnapshotSigner
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import Around
@@ -19,6 +20,7 @@ from spakky.tracing.propagator import ITracePropagator
 from typing import override
 
 from celery import Celery
+from spakky.plugins.celery.auth import inject_auth_context_snapshot
 from spakky.plugins.celery.common.constants import CELERY_TASK_CONTEXT_KEY
 from spakky.plugins.celery.common.task_result import CeleryTaskResult
 
@@ -37,11 +39,22 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
     _celery: Celery
     _application_context: IApplicationContext
     _propagator: ITracePropagator | None
+    _auth_snapshot_signer: IAuthContextSnapshotSigner | None
+    _auth_snapshot_propagation_config: AuthSnapshotPropagationConfig
 
-    def __init__(self, celery: Celery) -> None:
+    def __init__(
+        self,
+        celery: Celery,
+        auth_snapshot_signer: IAuthContextSnapshotSigner | None = None,
+        auth_snapshot_propagation_config: AuthSnapshotPropagationConfig | None = None,
+    ) -> None:
         """Initialize with the Celery application instance."""
         self._celery = celery
         self._propagator = None
+        self._auth_snapshot_signer = auth_snapshot_signer
+        self._auth_snapshot_propagation_config = (
+            auth_snapshot_propagation_config or AuthSnapshotPropagationConfig()
+        )
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -62,6 +75,12 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
         task_headers: dict[str, str] = {}
         if self._propagator is not None:
             self._propagator.inject(task_headers)
+        inject_auth_context_snapshot(
+            task_headers,
+            application_context=self._application_context,
+            auth_snapshot_signer=self._auth_snapshot_signer,
+            auth_snapshot_propagation_config=self._auth_snapshot_propagation_config,
+        )
         async_result = self._celery.send_task(
             task_name,
             args=args,
@@ -84,11 +103,22 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
     _celery: Celery
     _application_context: IApplicationContext
     _propagator: ITracePropagator | None
+    _auth_snapshot_signer: IAuthContextSnapshotSigner | None
+    _auth_snapshot_propagation_config: AuthSnapshotPropagationConfig
 
-    def __init__(self, celery: Celery) -> None:
+    def __init__(
+        self,
+        celery: Celery,
+        auth_snapshot_signer: IAuthContextSnapshotSigner | None = None,
+        auth_snapshot_propagation_config: AuthSnapshotPropagationConfig | None = None,
+    ) -> None:
         """Initialize with the Celery application instance."""
         self._celery = celery
         self._propagator = None
+        self._auth_snapshot_signer = auth_snapshot_signer
+        self._auth_snapshot_propagation_config = (
+            auth_snapshot_propagation_config or AuthSnapshotPropagationConfig()
+        )
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -111,6 +141,12 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
         task_headers: dict[str, str] = {}
         if self._propagator is not None:
             self._propagator.inject(task_headers)
+        inject_auth_context_snapshot(
+            task_headers,
+            application_context=self._application_context,
+            auth_snapshot_signer=self._auth_snapshot_signer,
+            auth_snapshot_propagation_config=self._auth_snapshot_propagation_config,
+        )
         async_result = self._celery.send_task(
             task_name,
             args=args,

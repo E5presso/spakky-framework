@@ -14,6 +14,12 @@ show_root_heading: false
 options:
 show_root_heading: false
 
+## Auth
+
+::: spakky.plugins.celery.auth
+options:
+show_root_heading: false
+
 ## 설정
 
 ::: spakky.plugins.celery.common.config

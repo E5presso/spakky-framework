@@ -1,19 +1,26 @@
 """Tests for CeleryTaskDispatchAspect and AsyncCeleryTaskDispatchAspect."""
 
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 from spakky.auth import (
+    AUTH_CONTEXT_SNAPSHOT_METADATA_KEY,
     AuthContext,
+    AuthContextSnapshot,
+    AuthContextSnapshotSignature,
     AuthRequirementDeniedError,
+    AuthSnapshotPropagationConfig,
     AuthSubject,
     AuthorizationDecision,
     AuthorizationDecisionState,
     AuthorizationReasonCode,
+    IAuthContextSnapshotSigner,
     IScopeChecker,
     ScopeCheckRequest,
+    SnapshotSignRequest,
     require_auth_context,
     require_scope,
     store_auth_context,
@@ -76,6 +83,31 @@ class ConfigurableScopeChecker(IScopeChecker):
         return self.decision
 
 
+class RecordingSnapshotSigner(IAuthContextSnapshotSigner):
+    requests: list[SnapshotSignRequest]
+
+    def __init__(self) -> None:
+        self.requests = []
+
+    @override
+    def sign_snapshot(self, request: SnapshotSignRequest) -> AuthContextSnapshot:
+        self.requests.append(request)
+        return AuthContextSnapshot(
+            subject=request.auth_context.subject,
+            issuer=request.auth_context.issuer,
+            issued_at=datetime(2026, 5, 15, 1, 2, 3, tzinfo=UTC),
+            expires_at=datetime(2026, 5, 15, 1, 7, 3, tzinfo=UTC),
+            signature=AuthContextSnapshotSignature(
+                key_id="key:test",
+                algorithm="HS256",
+                signature="signature-1",
+            ),
+            tenant=request.auth_context.tenant,
+            roles=request.auth_context.roles,
+            scopes=request.auth_context.scopes,
+        )
+
+
 def _create_direct_task_context() -> ApplicationContext:
     context = ApplicationContext()
     context.set_context_value(CELERY_TASK_CONTEXT_KEY, True)
@@ -87,6 +119,14 @@ def _create_direct_task_context() -> ApplicationContext:
         ),
     )
     return context
+
+
+def _auth_context() -> AuthContext:
+    return AuthContext(
+        subject=AuthSubject(id="subject-1"),
+        issuer="issuer-1",
+        scopes=("tasks:run",),
+    )
 
 
 def _run_sync_task_aspect_chain(
@@ -215,6 +255,29 @@ def test_around_injects_traceparent_expect_headers_contain_traceparent() -> None
     headers = call_kwargs.kwargs["headers"]
     assert "traceparent" in headers
     assert headers["traceparent"] == SAMPLE_TRACEPARENT
+
+
+def test_around_injects_signed_auth_snapshot_expect_header() -> None:
+    """snapshot propagation enabled이면 signed AuthContextSnapshot이 task header로 전파된다."""
+    celery = _create_mock_celery()
+    signer = RecordingSnapshotSigner()
+    application_context = ApplicationContext()
+    store_auth_context(application_context, _auth_context())
+    aspect = CeleryTaskDispatchAspect(
+        celery,
+        auth_snapshot_signer=signer,
+        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+    )
+    aspect.set_application_context(application_context)
+    joinpoint = _create_joinpoint("send_email")
+
+    aspect.around(joinpoint)
+
+    call_kwargs = celery.send_task.call_args
+    headers = call_kwargs.kwargs["headers"]
+    assert AUTH_CONTEXT_SNAPSHOT_METADATA_KEY in headers
+    assert len(signer.requests) == 1
+    assert signer.requests[0].auth_context == _auth_context()
 
 
 def test_around_sends_empty_headers_when_propagator_none_expect_no_traceparent() -> (
@@ -383,6 +446,30 @@ async def test_async_around_injects_traceparent_expect_headers_contain_tracepare
     headers = call_kwargs.kwargs["headers"]
     assert "traceparent" in headers
     assert headers["traceparent"] == SAMPLE_TRACEPARENT
+
+
+@pytest.mark.asyncio
+async def test_async_around_injects_signed_auth_snapshot_expect_header() -> None:
+    """async dispatch도 signed AuthContextSnapshot을 task header로 전파한다."""
+    celery = _create_mock_celery()
+    signer = RecordingSnapshotSigner()
+    application_context = ApplicationContext()
+    store_auth_context(application_context, _auth_context())
+    aspect = AsyncCeleryTaskDispatchAspect(
+        celery,
+        auth_snapshot_signer=signer,
+        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+    )
+    aspect.set_application_context(application_context)
+    joinpoint = _create_async_joinpoint("async_send_email")
+
+    await aspect.around_async(joinpoint)
+
+    call_kwargs = celery.send_task.call_args
+    headers = call_kwargs.kwargs["headers"]
+    assert AUTH_CONTEXT_SNAPSHOT_METADATA_KEY in headers
+    assert len(signer.requests) == 1
+    assert signer.requests[0].auth_context == _auth_context()
 
 
 @pytest.mark.asyncio
