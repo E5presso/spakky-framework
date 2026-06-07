@@ -20,16 +20,26 @@
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+import spakky.event
 import spakky.plugins.kafka
 import apps
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .load_plugins(include={spakky.plugins.kafka.PLUGIN_NAME})
+    .load_plugins(include={
+        spakky.event.PLUGIN_NAME,
+        spakky.plugins.kafka.PLUGIN_NAME,
+    })
     .scan(apps)
     .start()
 )
 ```
+
+`IEventPublisher`, `IAsyncEventPublisher`, and the default event bus are
+registered by `spakky-event`; `spakky-kafka` provides the Kafka transport and
+consumer integration. Installing `spakky[event-driven]` includes both plugins,
+so explicit loading should include both plugin names when using the publishing
+examples below.
 
 환경변수 예시:
 

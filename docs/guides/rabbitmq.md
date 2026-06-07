@@ -20,16 +20,26 @@
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+import spakky.event
 import spakky.plugins.rabbitmq
 import apps
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .load_plugins(include={spakky.plugins.rabbitmq.PLUGIN_NAME})
+    .load_plugins(include={
+        spakky.event.PLUGIN_NAME,
+        spakky.plugins.rabbitmq.PLUGIN_NAME,
+    })
     .scan(apps)
     .start()
 )
 ```
+
+`IEventPublisher`, `IAsyncEventPublisher`, and the default event bus are
+registered by `spakky-event`; `spakky-rabbitmq` provides the RabbitMQ
+transport and consumer integration. Installing `spakky[event-driven]` includes
+both plugins, so explicit loading should include both plugin names when using
+the publishing examples below.
 
 환경변수 예시:
 
