@@ -32,6 +32,7 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyOpenTelemetryError
   AbstractSpakkyFrameworkError --> AbstractSpakkyGrpcError
   AbstractSpakkyFrameworkError --> AbstractSpakkyLoggingError
+  AbstractSpakkyFrameworkError --> AbstractOpenFgaError
   AbstractSpakkyFrameworkError --> SecurityErrors[spakky-security concrete errors]
   AbstractSpakkyFrameworkError --> CommonErrors[common concrete errors]
 
@@ -48,6 +49,8 @@ flowchart TD
   AbstractSpakkySagaError --> SagaEngineNotConnectedError
 
   AbstractSpakkyAgentError --> AgentDefinitionError
+  AbstractOpenFgaError --> OpenFgaProviderUnavailableError
+  AbstractOpenFgaError --> OpenFgaReferenceMappingError
   AbstractSpakkyAgentError --> AgentToolBindingError
   AbstractSpakkyAgentError --> AgentBootstrapError
   AgentBootstrapError --> AgentPersistenceConfigurationError
@@ -590,6 +593,25 @@ from spakky.plugins.grpc.error import (
 | `MissingProtoFieldAnnotationError`    | `ProtoField` 어노테이션 누락              |
 | `UnsupportedResponseTypeError`        | protobuf `Message`나 Pydantic `BaseModel`이 아닌 응답 |
 | `DescriptorAlreadyRegisteredError`    | 이미 등록된 descriptor 재등록 시도     |
+
+### spakky-openfga
+
+OpenFGA 관계 검사 provider 관련 에러입니다. provider 내부에서는 이 에러들을
+`AuthorizationDecision`으로 매핑하므로 enforcement 경계는 fail-closed decision을
+처리합니다.
+
+```python
+from spakky.plugins.openfga.error import (
+    AbstractOpenFgaError,
+    OpenFgaProviderUnavailableError,
+    OpenFgaReferenceMappingError,
+)
+```
+
+| 에러 | 설명 |
+| ---- | ---- |
+| `OpenFgaProviderUnavailableError` | OpenFGA check provider 호출 실패 또는 비가용 상태 |
+| `OpenFgaReferenceMappingError` | canonical auth ref를 OpenFGA user/object/relation으로 변환할 수 없음 |
 
 ---
 
