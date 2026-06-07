@@ -253,6 +253,8 @@ class AgentController(IContainerAware):
 
 실제 예제는 inbound JSON을 `CodeAssistantCommand`와 `AgentSignal`로 변환합니다. 핵심은 WebSocket이 transport 변환만 담당하고, agent business workflow는 container에서 얻은 `CodeAssistant.execute()` 안에 남긴다는 점입니다.
 
+SSE나 AG-UI/CopilotKit 연동이 필요하면 [AI Agent 개발](agents.md)의 SSE 및 AG-UI adapter 예제를 사용합니다. Spakky-native SSE는 `AgentYield`를 `data: {"kind": ...}` frame으로 보내고, CopilotKit용 endpoint는 AG-UI `data: {"type": ...}` event stream으로 별도 변환해야 합니다.
+
 ---
 
 ## 분산 트레이싱

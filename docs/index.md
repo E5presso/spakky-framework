@@ -215,7 +215,8 @@ app = (
 | [사가 오케스트레이션](guides/saga.md) | SagaFlow, SagaStep, 보상 기반 롤백, ErrorStrategy |
 | [애플리케이션 데이터 캐시](guides/cache.md) | `CacheHit`, `CacheMiss`, `@cacheable`, Redis 백엔드 |
 | [gRPC 통합](guides/grpc.md) | `@GrpcController`, `@rpc`, code-first 프로토콜 생성 |
-| [CodeAssistant 에이전트 예제](guides/agent-code-assistant.md) | `@Agent`, `@agent_tool`, vLLM stream, approval, evidence, cancel/resume |
+| [AI Agent 개발](guides/agents.md) | `@Agent`, `AgentYield`, `@agent_tool`, `IAgentModel`, SSE, AG-UI/CopilotKit, durable resume |
+| [CodeAssistant 에이전트 예제](guides/agent-code-assistant.md) | workspace/shell/git tool, vLLM stream, approval, evidence, cancel/resume |
 
 ---
 

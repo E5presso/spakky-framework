@@ -1,6 +1,6 @@
-# CodeAssistant building-block demo
+# Agent 만들기: CodeAssistant building-block demo
 
-`core/spakky-agent/examples/code_assistant_demo.py`는 ADR-0009의 Claude Code-like 흐름을 제품 앱이 아니라 프레임워크 조합 예제로 보여줍니다. 핵심은 `@Agent` business component가 constructor DI로 model, workspace, shell, git, state/signal/evidence repository를 받고, 외부 세계 동작은 `@agent_tool` method로 노출한다는 점입니다.
+이 문서는 [AI Agent 개발](agents.md)을 읽은 뒤 보는 runnable 심화 예제입니다. `core/spakky-agent/examples/code_assistant_demo.py`는 `` business component가 constructor DI로 model, workspace, shell, git, state/signal/evidence repository를 받고, 외부 세계 동작은 `` method로 노출하는 Claude Code-like 흐름을 보여줍니다.
 
 ## 무엇을 검증하나
 
