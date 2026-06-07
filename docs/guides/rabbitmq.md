@@ -156,7 +156,7 @@ sequenceDiagram
 
 `spakky-tracing`은 `spakky-rabbitmq`의 필수 의존성입니다. 컨테이너에 `ITracePropagator`가 등록되어 있으면 메시지 헤더를 통해 `TraceContext`가 자동 전파됩니다.
 
-- **발행 측**: `OutboxEventBus` 또는 `DirectEventBus`가 현재 `TraceContext`를 메시지 헤더에 주입
+- **발행 측**: `OutboxEventBus` 또는 `DirectEventBus`가 현재 `TraceContext`를 메시지 헤더에 주입. `AuthSnapshotPropagationConfig(enabled=True)`가 활성화되어 있으면 raw bearer token 대신 signed `AuthContextSnapshot` metadata도 함께 주입
 - **수신 측**: `RabbitMQEventConsumer`가 헤더에서 `TraceContext`를 추출하여 자식 span 생성
 - 헤더가 없으면 새로운 루트 트레이스를 시작
 - `ITracePropagator`가 컨테이너에 없으면 트레이싱은 비활성 상태로, 별도 에러 없이 동작합니다

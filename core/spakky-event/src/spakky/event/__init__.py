@@ -8,8 +8,11 @@ from spakky.event.bus import (
     AsyncDirectEventBus,
     DirectEventBus,
 )
+from spakky.event.auth_propagation import AuthContextSnapshotHeaderInjector
 from spakky.event.error import (
     AbstractSpakkyEventError,
+    AuthSnapshotPropagationContextUnavailableError,
+    AuthSnapshotPropagationSignerUnavailableError,
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
@@ -61,6 +64,7 @@ __all__ = [
     "AsyncEventPublisher",
     "EventPublisher",
     # Bus Implementations
+    "AuthContextSnapshotHeaderInjector",
     "AsyncDirectEventBus",
     "DirectEventBus",
     # Post-Processors
@@ -70,6 +74,8 @@ __all__ = [
     "TransactionalEventPublishingAspect",
     # Errors
     "AbstractSpakkyEventError",
+    "AuthSnapshotPropagationContextUnavailableError",
+    "AuthSnapshotPropagationSignerUnavailableError",
     "InvalidMessageError",
 ]
 

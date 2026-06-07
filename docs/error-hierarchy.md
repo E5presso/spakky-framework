@@ -217,14 +217,18 @@ from spakky.domain.error import (
 ```python
 from spakky.event.error import (
     AbstractSpakkyEventError,
+    AuthSnapshotPropagationContextUnavailableError,
+    AuthSnapshotPropagationSignerUnavailableError,
     InvalidMessageError,
     UnknownEventTypeError,
 )
 ```
 
-| 에러                    | 설명                                      |
-| ----------------------- | ----------------------------------------- |
-| `InvalidMessageError`   | 잘못된 메시지 형식                        |
+| 에러 | 설명 |
+| ---- | ---- |
+| `AuthSnapshotPropagationContextUnavailableError` | snapshot 전파가 활성화되었지만 `ApplicationContext`를 읽을 수 없음 |
+| `AuthSnapshotPropagationSignerUnavailableError` | snapshot 전파가 활성화되었지만 signer provider가 없음 |
+| `InvalidMessageError` | 잘못된 메시지 형식 |
 | `UnknownEventTypeError` | Domain/Integration Event가 아닌 타입 발행 |
 
 ---

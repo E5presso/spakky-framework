@@ -13,6 +13,18 @@ class InvalidMessageError(AbstractSpakkyEventError):
     message = "Invalid or malformed message received"
 
 
+class AuthSnapshotPropagationSignerUnavailableError(AbstractSpakkyEventError):
+    """Raised when signed snapshot propagation lacks a signer provider."""
+
+    message = "Auth snapshot propagation signer is unavailable"
+
+
+class AuthSnapshotPropagationContextUnavailableError(AbstractSpakkyEventError):
+    """Raised when signed snapshot propagation cannot read ApplicationContext."""
+
+    message = "Auth snapshot propagation context is unavailable"
+
+
 class UnknownEventTypeError(AbstractSpakkyEventError):
     """Raised when an event type is neither domain nor integration."""
 

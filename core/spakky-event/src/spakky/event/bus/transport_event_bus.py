@@ -7,6 +7,7 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.tracing.propagator import ITracePropagator
 
+from spakky.event.auth_propagation import AuthContextSnapshotHeaderInjector
 from spakky.event.event_publisher import (
     IAsyncEventBus,
     IAsyncEventTransport,
@@ -21,16 +22,21 @@ class DirectEventBus(IEventBus):
 
     _transport: IEventTransport
     _propagator: ITracePropagator
+    _auth_snapshot_headers: AuthContextSnapshotHeaderInjector
     _adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(
         self,
         transport: IEventTransport,
         propagator: ITracePropagator,
+        auth_snapshot_headers: AuthContextSnapshotHeaderInjector | None = None,
     ) -> None:
         """Initialize with the given transport and trace propagator."""
         self._transport = transport
         self._propagator = propagator
+        self._auth_snapshot_headers = (
+            auth_snapshot_headers or AuthContextSnapshotHeaderInjector()
+        )
         self._adapters = {}
 
     @override
@@ -42,6 +48,7 @@ class DirectEventBus(IEventBus):
         adapter = self._adapters[event_type]
         headers: dict[str, str] = {}
         self._propagator.inject(headers)
+        self._auth_snapshot_headers.inject(headers)
         self._transport.send(
             event.event_name,
             adapter.dump_json(event),
@@ -55,16 +62,21 @@ class AsyncDirectEventBus(IAsyncEventBus):
 
     _transport: IAsyncEventTransport
     _propagator: ITracePropagator
+    _auth_snapshot_headers: AuthContextSnapshotHeaderInjector
     _adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(
         self,
         transport: IAsyncEventTransport,
         propagator: ITracePropagator,
+        auth_snapshot_headers: AuthContextSnapshotHeaderInjector | None = None,
     ) -> None:
         """Initialize with the given async transport and trace propagator."""
         self._transport = transport
         self._propagator = propagator
+        self._auth_snapshot_headers = (
+            auth_snapshot_headers or AuthContextSnapshotHeaderInjector()
+        )
         self._adapters = {}
 
     @override
@@ -76,6 +88,7 @@ class AsyncDirectEventBus(IAsyncEventBus):
         adapter = self._adapters[event_type]
         headers: dict[str, str] = {}
         self._propagator.inject(headers)
+        self._auth_snapshot_headers.inject(headers)
         await self._transport.send(
             event.event_name,
             adapter.dump_json(event),

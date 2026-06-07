@@ -142,3 +142,7 @@ class PlaceOrderUseCase:
 ## 분산 트레이싱
 
 `spakky-tracing`이 설치되면 `OutboxEventBus`가 현재 `TraceContext`를 메시지 헤더에 자동 주입합니다. Relay가 전송할 때 해당 헤더가 그대로 브로커 메시지에 포함되므로, 수신 측에서 트레이스 컨텍스트가 복원됩니다.
+
+## 인증 컨텍스트 전파
+
+`spakky-auth`의 `AuthSnapshotPropagationConfig(enabled=True)`가 활성화되어 있고 현재 request/context scope에 `AuthContext`가 있으면 `OutboxEventBus` / `AsyncOutboxEventBus`는 Outbox message headers에 `spakky.auth.context_snapshot` metadata를 저장합니다. 이 값은 `IAuthContextSnapshotSigner`가 만든 signed `AuthContextSnapshot` envelope이며, raw bearer token은 저장하지 않습니다. 기존 `traceparent` header는 함께 보존됩니다.
