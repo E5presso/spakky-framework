@@ -6,7 +6,7 @@ from google.protobuf.descriptor_pb2 import FieldDescriptorProto
 from pydantic import BaseModel
 
 from spakky.plugins.grpc.annotations.field import ProtoField
-from spakky.plugins.grpc.decorators.rpc import rpc
+from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
 from spakky.plugins.grpc.schema.descriptor_builder import (
     build_file_descriptor,
     build_message_descriptor,
@@ -119,6 +119,64 @@ def test_build_service_descriptor_unary() -> None:
 
     assert "HelloRequest" in collected
     assert "HelloResponse" in collected
+
+
+def test_build_service_descriptor_sets_streaming_flags() -> None:
+    """Descriptor methods expose the streaming mode selected by @rpc."""
+
+    @GrpcController(package="test.v1")
+    class StreamingService:
+        """Service with all four RPC streaming modes."""
+
+        @rpc(
+            method_type=RpcMethodType.UNARY,
+            request_type=HelloRequest,
+            response_type=HelloResponse,
+        )
+        async def unary(self, request: HelloRequest) -> HelloResponse:
+            """Unary method."""
+            ...
+
+        @rpc(
+            method_type=RpcMethodType.SERVER_STREAMING,
+            request_type=HelloRequest,
+            response_type=HelloResponse,
+        )
+        async def server_streaming(self, request: HelloRequest) -> HelloResponse:
+            """Server-streaming method."""
+            ...
+
+        @rpc(
+            method_type=RpcMethodType.CLIENT_STREAMING,
+            request_type=HelloRequest,
+            response_type=HelloResponse,
+        )
+        async def client_streaming(self, request: HelloRequest) -> HelloResponse:
+            """Client-streaming method."""
+            ...
+
+        @rpc(
+            method_type=RpcMethodType.BIDI_STREAMING,
+            request_type=HelloRequest,
+            response_type=HelloResponse,
+        )
+        async def bidi_streaming(self, request: HelloRequest) -> HelloResponse:
+            """Bidirectional-streaming method."""
+            ...
+
+    service = build_service_descriptor(
+        StreamingService, "test.v1", "StreamingService", {}
+    )
+    methods = {method.name: method for method in service.method}
+
+    assert not methods["unary"].client_streaming
+    assert not methods["unary"].server_streaming
+    assert not methods["server_streaming"].client_streaming
+    assert methods["server_streaming"].server_streaming
+    assert methods["client_streaming"].client_streaming
+    assert not methods["client_streaming"].server_streaming
+    assert methods["bidi_streaming"].client_streaming
+    assert methods["bidi_streaming"].server_streaming
 
 
 def test_build_file_descriptor_complete() -> None:
