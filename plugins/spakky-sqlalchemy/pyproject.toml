@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "spakky-data>=6.5.0",
+    "pydantic-settings>=2.13.1",
     "sqlalchemy>=2.0.49",
 ]
 
