@@ -67,166 +67,27 @@ git diff --cached --name-only
 
 ### Step 3: Write → Review 수렴 루프 (대상별)
 
-판단된 각 대상(dev/user)에 대해 **Write → Review 수렴 루프**를 실행한다. dev와 user는 서로 다른 파일을 수정하므로 **백그라운드 병렬** 실행한다.
+판단된 각 대상(dev/user)에 대해 **Write → Review 수렴 루프**를 실행한다. dev와 user는 파일 소유가 분리되므로 백그라운드 병렬 실행한다. 메인은 오케스트레이터이며 직접 문서를 수정하지 않는다.
 
-메인 에이전트는 **순수 오케스트레이터** — 직접 문서를 수정하거나 검증하지 않는다. 두 서브에이전트의 실행과 피드백 전달만 담당한다.
+필수 불변식:
+- 라우터가 Step 2.5에서 읽은 서브 스킬 SKILL.md 내용을 Write/Review 프롬프트에 인라인 포함한다.
+- Write는 read+write 권한, Review는 fresh context에서 적대적 read-only 검증. 같은 컨텍스트 금지.
+- 비용 절감으로 라운드를 줄이지 않는다. Critical/Warning 0건 또는 동일 이슈 3회 반복만 종료 조건이다.
+- 동일 이슈가 2라운드 이상 반복되면 메인이 분쟁 대상 코드와 규칙을 직접 읽어 Writer/Verifier 중 누구도 자동 채택하지 않고 판정한다.
 
-> **원칙**: 비용을 고려하지 않는다. Review 에이전트가 더 이상 지적할 것이 없을 때까지 반복한다.
-> **핵심**: 서브 스킬의 SKILL.md는 서브에이전트에 자동 로드되지 않는다. 라우터가 Step 2.5에서 Read한 SKILL.md 내용을 서브에이전트 프롬프트에 **인라인으로 직접 포함**한다.
+Write 프롬프트 입력/출력:
 
-#### 3-0. 서브에이전트 역할 분리
-
-> **서브에이전트 요구사항**:
-> - **Write 에이전트**: 파일 수정 권한(read + write) 필수. 읽기 전용 에이전트로는 수렴 루프가 동작하지 않는다.
-> - **모델 수준**: Write/Review 모두 메인 에이전트와 동등 수준의 모델을 사용한다. 저성능 모델은 문서 작성·검증 품질이 부족하다.
-
-| 역할 | 실행 방식 | 담당 |
-|------|----------|------|
-| **오케스트레이터** (메인) | 메인 컨텍스트 | 루프 제어, 피드백 전달, 수렴 판정, 결과 통합 |
-| **Write 에이전트** | 서브에이전트 (read + write) | Phase 1 (변경 감지) + Phase 2 (문서 작성/수정). 이전 라운드 피드백 반영 |
-| **Review 에이전트** | 서브에이전트 (fresh context, read-only 가능) | Phase 3 (팩트체크). Write 결과를 독립적·적대적으로 검증 |
-
-Write와 Review는 **반드시 별도 서브에이전트**로 실행한다. 같은 컨텍스트에서 작성과 검증을 수행하면 self-confirmation bias가 발생한다.
-
-#### 3-1. 수렴 루프 알고리즘
-
-```python
-review_history: list[ReviewResult] = []
-round = 1
-
-while True:
-    # ── Write ──
-    write_result = call_write_subagent(
-        phases=Phase_1 + Phase_2,       # 서브 스킬 SKILL.md에서 인라인
-        previous_reviews=review_history, # 모든 이전 라운드의 리뷰 피드백
-        round=round,
-    )
-
-    # ── Review (fresh context) ──
-    review_result = call_review_subagent(
-        phases=Phase_3,                  # 서브 스킬 SKILL.md에서 인라인
-        modified_files=write_result.files,
-        coverage_matrix=write_result.matrix,
-        source_packages=[변경된 패키지 경로],
-    )
-
-    # ── 수렴 판정 ──
-    actionable = count(review_result, severity in {Critical, Warning})
-
-    if actionable == 0:
-        break  # 수렴 완료
-
-    if same_issues_repeated(review_history, review_result, threshold=3):
-        mark_as_unresolved(review_result)
-        break  # 고착 탈출
-
-    # ── 분쟁 판정 (3회 이상 반복되는 이슈) ──
-    disputes = find_recurring_issues(review_history, review_result, threshold=2)
-    for dispute in disputes:
-        verdict = orchestrator_arbitrate(dispute)  # 메인이 코드 직접 Read
-        review_result.apply_verdict(dispute, verdict)
-
-    # ── 피드백 축적 ──
-    review_history.append(review_result)
-    round += 1
-```
-
-#### 3-1-bis. 분쟁 판정 (Orchestrator)
-
-같은 이슈가 2라운드 이상 반복되면 Writer/Verifier 간 인식 차이가 좁혀지지 않는 상태다. 메인 오케스트레이터가 **코드를 직접 Read하여 판정**한다. Writer/Verifier 어느 쪽 견해도 자동 채택하지 않는다.
-
-판정 절차:
-
-1. 분쟁 대상 코드 파일을 Read (해당 라인 ±20)
-2. 관련 규칙 파일(`rules/*.md`, ARCHITECTURE.md) 인용
-3. 판정 결과 3가지 중 하나:
-   - **Writer 채택**: Verifier 지적이 잘못됨 → 다음 라운드에 Writer 결과 보호
-   - **Verifier 채택**: Writer 결과 수정 필요 → Writer에 강한 지시 전달
-   - **양쪽 부분 정확**: Orchestrator가 정확한 수정 방향을 명시하여 Writer에 전달
-
-판정 근거(코드 인용 + 규칙 인용)는 다음 라운드 Writer 프롬프트에 포함한다.
-
-**종료 조건** (우선순위 순):
-
-1. **수렴**: Critical + Warning = 0건 → 성공 종료
-2. **고착**: 동일 이슈가 3라운드 연속 반복 → 미해결로 보고 후 종료
-3. **라운드 제한 없음**: 수렴 또는 고착이 유일한 종료 조건이다
-
-> Info, 미확인 이슈는 수렴 판정에서 제외한다. 최종 결과에만 포함한다.
-
-#### 3-2. Write 서브에이전트 프롬프트
-
-프롬프트에 인라인으로 포함할 내용:
-
-| 항목 | 내용 |
+| 입력 | 출력 |
 |------|------|
-| Phase 내용 | 서브 스킬 SKILL.md의 **Phase 1 + Phase 2 전문** + 규칙 섹션 |
-| 패키지명 | 인자로 받은 패키지명 (있는 경우) |
-| 라운드 번호 | 현재 라운드 (`round`) |
-| 이전 리뷰 피드백 | `review_history` 전체 — **모든** 이전 라운드의 이슈 목록 |
+| 서브 스킬 Phase 1+2+규칙, 패키지명, 라운드 번호, 모든 이전 Review 피드백 | 수정/생성 파일 목록, 커버리지 매트릭스 |
 
-**라운드 1**: 이전 리뷰 없이 순수 동기화 수행.
-**라운드 2+**: 프롬프트에 아래 지시를 추가한다:
+Review 프롬프트 입력/출력:
 
-```
-이전 {N}회 라운드에서 Review 에이전트가 다음 이슈를 지적했습니다.
-반드시 모든 Critical/Warning 이슈를 수정하세요.
-이전에 수정했으나 재지적된 이슈는 접근 방식을 바꿔 수정하세요.
-
-{review_history 전문}
-```
-
-**Write 출력 형식 (필수)**:
-
-```
-수정/생성 파일 목록:
-- {경로}: {변경 요약}
-
-커버리지 매트릭스:
-{Phase 1에서 생성한 매트릭스}
-```
-
-#### 3-3. Review 서브에이전트 프롬프트
-
-**반드시 fresh context 서브에이전트**로 실행한다 (Write와 동일 컨텍스트 금지).
-
-프롬프트에 인라인으로 포함할 내용:
-
-| 항목 | 내용 |
+| 입력 | 출력 |
 |------|------|
-| Phase 내용 | 서브 스킬 SKILL.md의 **Phase 3 전문** (체크리스트 포함) |
-| Write 결과 | 수정/생성된 파일 경로 목록 |
-| 커버리지 매트릭스 | Write가 출력한 매트릭스 |
-| 소스 패키지 경로 | 변경된 패키지의 `src/` 경로 |
+| 서브 스킬 Phase 3 전체, Write 결과 파일 목록, 커버리지 매트릭스, 변경 패키지 `src/` 경로 | `[Critical|Warning|Info|미확인] 경로:라인 — 설명`, 체크리스트 순회 결과 |
 
-**Review 에이전트 행동 지침** (프롬프트에 반드시 명시):
-
-```
-당신은 적대적 검증자입니다. Write 에이전트의 결과를 신뢰하지 마세요.
-
-1. Phase 3의 모든 체크리스트 항목을 빠짐없이 순회하세요.
-   이슈가 없어도 "순회 완료"를 명시하세요.
-2. 문서의 코드 블록을 하나도 빠짐없이 실제 소스 파일과 대조하세요.
-3. import 경로, 클래스 시그니처, 데코레이터 파라미터를 한 글자도
-   신뢰하지 않고 실제 .py 파일을 Read하여 검증하세요.
-4. 코드에 존재하지만 문서에 누락된 항목도 지적하세요.
-5. "아마 맞을 것이다"로 넘어가지 마세요. 확인할 수 없으면 [미확인]으로 보고하세요.
-```
-
-**Review 출력 형식 (필수)**:
-
-```
-이슈 목록:
-- [Critical] {경로}:{라인} — {설명}
-- [Warning] {경로}:{라인} — {설명}
-- [Info] {경로}:{라인} — {설명}
-- [미확인] {경로}:{라인} — {설명}
-
-체크리스트 순회 결과:
-- {영역}: {N}개 검증, {M}개 이슈
-
-이슈 없음 시: "모든 체크리스트를 순회하였으며, 이슈가 없습니다."
-```
+Review 프롬프트에는 반드시 다음을 포함한다: Write 결과를 신뢰하지 말 것, 모든 체크리스트 순회, 모든 코드 블록과 import/시그니처/데코레이터 파라미터를 실제 `.py` 파일로 대조, 코드에는 있으나 문서에 없는 항목 지적, 확인 불가 시 `[미확인]` 보고. 이슈가 없어도 "모든 체크리스트를 순회하였으며, 이슈가 없습니다."를 출력한다.
 
 ### Step 4: 교차 검증 루프
 
@@ -245,9 +106,10 @@ while True:
      - 패키지 README Features ↔ docs/guides/ 해당 가이드의 기능 설명 일치?
      - 신규 추가된 용어/개념 → docs/glossary.md에 반영?
      - 에러 클래스 추가 → docs/error-hierarchy.md에 반영?
-  4. 불일치 발견 시 해당 파일을 직접 수정
-  5. 불일치 0건이면 루프 종료
-  6. 동일 불일치가 3회 반복되면 미해결로 보고 후 종료
+  4. 불일치 발견 시 메인이 직접 수정하지 않고, 해당 대상(dev/user)의 Step 3 Write → Review 루프에 피드백으로 투입
+  5. 양쪽 수렴 완료 후 Step 4를 다시 실행
+  6. 불일치 0건이면 루프 종료
+  7. 동일 불일치가 3회 반복되면 미해결로 보고 후 종료
 ```
 
 ### Step 5: 결과 통합

@@ -41,7 +41,7 @@ Phase 1에서 수집한 이슈 본문(`gh issue view <N> --json body`)에서 **"
 
 ## 4. PR 본문 첨부 (외부 검증 가능 형태)
 
-PASS 또는 partial 결과를 `/create-pr` 호출 시 PR 본문 "Acceptance Criteria" 섹션으로 전달한다. 형식:
+PASS 또는 partial 결과를 워크트리 루트 `.acceptance-criteria.md`에 쓰고, `/create-pr {ISSUE-NUMBER} --acceptance-file .acceptance-criteria.md` 호출로 PR 본문 "Acceptance Criteria" 섹션에 전달한다. 형식:
 
 ```
 ## Acceptance Criteria (자가 grep)

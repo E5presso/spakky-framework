@@ -28,12 +28,12 @@ charter §1 적용: 본 스킬은 *비즈니스 의도 → 기술 결정* 위계
 ## 핵심 원칙
 
 1. **활성 이슈만 감사**: Closed(완료) · Closed(취소) · Duplicate은 결과 보고에서 제외하되, "이미 Closed지만 description이 Backlog로 표기된" stale 메타데이터는 별도 항목으로 보고.
-2. **결과 명제 ≠ 검증 수단**: 자식 이슈 수용 기준이 별도 CI / PR 본문 첨부 / 리뷰어 수동 확인 같은 **검증 수단을 강제**하면 정책 위반 후보. 코딩 컨벤션은 하네스 (`charter` / `behavioral` / `agent-architecture`) 가 default 차단점.
+2. **결과 명제 ≠ 검증 수단**: 자식 이슈 수용 기준이 별도 CI / PR 본문 첨부 / 리뷰어 수동 확인 같은 **검증 수단을 강제**하면 정책 위반 후보. 코딩 컨벤션은 `.agents/rules/charter.md`, `.agents/rules/behavioral-guidelines.md`, `docs/adr/0009-agentic-hexagonal-architecture.md`가 default 차단점.
 3. **추상 인터페이스 표기 stale**: 이전 Wave에서 `I*` 추상 인터페이스(Port)가 제거된 경우, 이후 Wave 본문에서 같은 식별자를 사용하면 stale. P2 같은 "추상 → 구체 전환" Wave 직후가 위험 구간.
 4. **사용자 질의 ≠ 자율 진행** (charter §4):
    - **사용자 질의 (paranoid)**: 정책 결정 (사전 등재 시점·새 마이크로 이슈 신설), 도메인 사전 미등재 신규 어휘, 마일스톤 §4.4 외부 계약 변경 가능성.
    - **자율 진행 (positive bias)**: stale 표기 정정, priority 격상, blocker chain 정정, 수용 기준 escape hatch 약화.
-5. **추가 모순점 후속 처리**: 정정 위임 도중 새로 발견된 모순은 **이 세션 내에서** 후속 TODO로 처리. 다음 세션 위임 금지 (behavioral.md "Surgical Changes" 컨텍스트 윈도우 관리).
+5. **추가 모순점 후속 처리**: 정정 위임 도중 새로 발견된 모순은 **이 세션 내에서** 후속 TODO로 처리. 다음 세션 위임 금지 (`.agents/rules/behavioral-guidelines.md` "Surgical Changes" 컨텍스트 윈도우 관리).
 6. **Self-confirmation bias 회피 (fresh slate 재감사)**: Phase 4 정정 위임 후 Phase 6 수렴 루프로 재진입할 때, 재감사 서브에이전트에는 **이전 회차 수정 내역·발견 목록을 전달하지 않는다.** 변경된 부분에만 attention이 가서 누적/유발 모순을 놓치는 간접적 self-confirmation bias를 차단하기 위함이다. 재감사 prompt는 "본문을 처음 보는 시각으로 8축 검사" 명령만 포함한다.
 
 ## Phase 0: 입력 수집
@@ -55,52 +55,16 @@ charter §1 적용: 본 스킬은 *비즈니스 의도 → 기술 결정* 위계
 
 각 활성 이슈 본문을 다음 8축으로 검사:
 
-### 축 1 — 이전 Wave 산출물 ↔ 자식 본문 stale 표기
-
-이전 Wave (예: P2)가 12종 추상 인터페이스(Port)를 제거했다면, 후속 Wave 자식 본문에 `I*` 식별자가 잔존하는지 grep. 정정 매핑 표를 만들어 두면 자율 정정 위임 가능.
-
-### 축 2 — 검증 수단 강제 표기
-
-다음 패턴은 정책 위반 후보:
-- "별도 grep CI 신설", "ci 태스크에 grep job 추가"
-- "PR 본문에 grep 결과 첨부 + 리뷰어 수동 확인"
-- "통합 테스트 + grep 검증"
-
-수용 기준은 결과 명제(예: "0 hits")만 두고 검증 수단은 본문에서 제거. 코딩 컨벤션은 하네스가 차단.
-
-### 축 3 — 외부 계약 (마일스톤 §4.4) 위반 가능성
-
-REST API · 이벤트 스키마 · DB 스키마 · 인덱스 · Audit Log 필드 변경을 자식이 슬쩍 포함하는지. "Outbound Port 시그니처 변경 허용" 같은 광범위 표현은 **변경 허용 / 금지 화이트리스트** 명시 필요.
-
-### 축 4 — 도메인 사전 미등재 신규 어휘
-
-`ARCHITECTURE.md` / `AGENTS.md` 미등재 어휘가 자식 코드 PR로 도입되면 behavioral.md "네이밍" 위반. 사전 등재 시점이 코드 PR 이후라면 prospective 등재 마이크로 이슈 또는 게이트 보강 필요.
-
-### 축 5 — Blocker / 의존 chain 모순
-
-- **다티켓 마일스톤 blocker 전무**: 활성 자식 태스크가 2개 이상인데 모든 `blockedBy`가 비어 있고 "all-parallel approved" 명시도 없으면 Critical. 모든 티켓이 wave 0에 떨어져 레이어 선후·대표 태스크 의존·통합 순서가 무력화된다.
-- **GraphQL ↔ 본문 불일치**: GitHub `blockedBy` 관계와 본문 `## 선행 이슈` / `Blocked by:` / `Depends on:` 표기가 다르면 Critical 또는 High. `/autopilot`과 `/process-ticket`는 본문 표기를 파싱하므로 GraphQL 관계만으로 충분하지 않다.
-- **Sub-issue 위계 누락**: 부모/그룹 이슈가 자식 목록을 본문에 갖고 있는데 GitHub Sub-issues 관계가 없거나, 반대로 Sub-issues에는 있는데 부모 본문에 없으면 High.
-- **부모 ↔ 자식 chain 표기 충돌**: 부모 본문이 `A → B → C` 표기인데 자식 본문이 "A 완료 후 B·C 병렬"로 표기.
-- **transitive blocker**: 자식의 blockedBy가 직접 부모만 두고 grandparent를 누락 — transitive로 충족되면 OK, 아니면 blocker 추가.
-- **priority ↔ 차단 게이트 부정합**: priority Low인 이슈가 priority Medium Wave의 차단 게이트면 격상 대상.
-
-### 축 6 — 수용 기준 모호 (escape hatch / "또는" / 부정확 숫자)
-
-- "X 충족 **또는** 주석으로 사유 명시" — escape hatch 약화 (default 강제, 예외 명시).
-- "약 N개" — 부정확 숫자 → "분석 시점 grep으로 확정"으로 단순화.
-- "X 명시 **또는** ADR 링크" — 결정 미루기 → 한 가지로 결정 (보통 ADR 링크가 SSOT 단일성에 유리).
-
-### 축 7 — 마일스톤 description ↔ 자식 이슈 정합
-
-- 자식이 마일스톤 description에 미등재 (§커버리지 매핑·§기존 이슈 처리 누락).
-- Closed 자식이 description에 Backlog로 표기 (stale 메타데이터).
-- description 본문에 명시된 자식 chain이 실제 자식 blockedBy와 다름.
-
-### 축 8 — 본문 ↔ 도메인 사전 ↔ 코드 사실 정합
-
-- 식별자(클래스 이름·메서드)가 코드에 실제 존재하는지 (자식이 grep 재확정 명시했는지).
-- 호출 경계 (Inbound Adapter → UseCase|Aspect) 진술이 마일스톤 §1·§4.1 규칙과 일관한지.
+| 축 | 검사 |
+|----|------|
+| 1. 이전 Wave 산출물 ↔ 자식 본문 stale | 제거·변경된 Port/클래스/메서드 식별자 잔존, 정정 매핑 가능 여부 |
+| 2. 검증 수단 강제 표기 | 별도 CI, PR 첨부, 리뷰어 수동 확인 등 수단 강제. 수용 기준은 결과 명제만 둔다 |
+| 3. 외부 계약 위반 가능성 | REST/API, 이벤트 스키마, DB 스키마, 인덱스, Audit Log, 외부 계약 화이트리스트 누락 |
+| 4. 도메인 사전 미등재 신규 어휘 | `ARCHITECTURE.md` / `AGENTS.md` 미등재 어휘, 사전 등재 시점 모순 |
+| 5. Blocker / 의존 chain 모순 | blocker 전무, GraphQL ↔ 본문 불일치, Sub-issue 누락, 부모/자식 chain 충돌, transitive blocker, priority ↔ 차단 게이트 부정합 |
+| 6. 수용 기준 모호 | escape hatch, "또는", "약 N개", 결정 미루기 표현 |
+| 7. 마일스톤 description ↔ 자식 이슈 | 커버리지 매핑 누락, Closed/Backlog stale, description chain ↔ blockedBy 불일치 |
+| 8. 본문 ↔ 도메인 사전 ↔ 코드 사실 | 클래스·메서드·호출 경계가 실제 코드와 도메인 사전에 존재하는지 |
 
 ## Phase 3: 심각도 분류 + 사용자 보고
 
@@ -135,33 +99,7 @@ Critical 예시:
 
 ### 위임 prompt 골격
 
-```
-gh CLI를 사용해 <이슈 N개>를 정정합니다.
-
-## 배경
-<해당 모순점이 발생한 사유 + 정책 SSOT 인용>
-
-## 정정 매핑 표
-| 기존 | 정정 후 |
-| -- | -- |
-| ... | ... |
-
-## 절차 (각 이슈별)
-1. gh issue view <번호> --json number,title,body — description 확보
-2. 위 표대로 부분 치환
-3. gh issue edit <번호> --body-file <파일> 호출
-4. read-back 확인
-
-## 제약
-- description 외 필드 변경 금지 (priority 격상 등 명시 항목 제외).
-- 다른 절·문장 톤 유지.
-- 한국어, behavioral.md "축약어 풀이 병기" 유지.
-- 검증 수단(별도 CI · PR 첨부 · 리뷰어 확인) 표기 추가 금지.
-
-## 보고 형식 (한국어, N자 이내)
-- 각 이슈별 변경 요약 1줄
-- 추가 발견 모순점 (있으면 보고만, 본 작업 범위 외 정정 금지)
-```
+필수 입력: 대상 이슈 번호, 모순 사유 + 정책 SSOT, 정정 매핑 표, read-back 요구. 제약: description 외 필드 변경 금지(명시 항목 제외), 기존 톤 유지, `.agents/rules/behavioral-guidelines.md` 축약어 풀이, 검증 수단 표기 추가 금지. 보고는 이슈별 변경 요약 1줄 + 추가 발견 모순점(보고만).
 
 ### 사용자 질의 항목 (정책 결정)
 
@@ -194,16 +132,7 @@ Phase 4 정정 위임이 완료되면 GitHub Issue 본문이 갱신된 상태에
 
 ### 재감사 위임 prompt 골격
 
-```
-마일스톤 <식별자> 와 활성 자식 N개 이슈 본문에 대해 정합 감사를 수행하세요.
-
-**중요**: 본 감사는 fresh slate 감사입니다. 어떤 사전 가정·이전 발견 목록·수정 이력도 없이,
-본문을 처음 보는 시각으로 처음부터 8축 검사하세요. "이미 정정되었을 것"이라는 가정 금지.
-
-(이하 Phase 1~3 보고 형식 골격)
-
-**Critical 0개로 수렴되면 그 사실을 명시.** 거짓 발견 생성 금지.
-```
+마일스톤/활성 자식 본문을 처음 보는 시각으로 8축 감사한다. 이전 발견·수정 이력·"이미 정정" 가정을 전달하지 않는다. Critical 0개면 그 사실을 명시하고 거짓 발견을 만들지 않는다.
 
 ## Phase 7: 최종 보고
 
@@ -219,13 +148,13 @@ Phase 4 정정 위임이 완료되면 GitHub Issue 본문이 갱신된 상태에
 
 - **코드 변경 없음** — 본 스킬은 GitHub Issue 본문만 다룬다. 코드 정합 검증 결과로 코드 변경이 필요하면 후속 이슈를 `/plan-issues`로 생성.
 - **마일스톤 description 갱신은 신중히** — 본문이 매우 길고 markdown 표·mermaid 다이어그램 포함. 부분 치환 시 다른 절 절단 검증 필수.
-- **"이왕 하는 김에" 금지** (behavioral.md §3): 감사 결과 외 인접 본문 개선 금지.
-- **하네스 수정 동반 시** — 본 스킬 사용 결과로 하네스 (rules / 다른 스킬) 보강이 필요하면 같은 세션의 워크트리 PR에 포함 (`AGENTS.md` "하네스 교정" 정합).
+- **"이왕 하는 김에" 금지** (`.agents/rules/behavioral-guidelines.md` §3): 감사 결과 외 인접 본문 개선 금지.
+- **하네스 수정 동반 시** — 본 스킬 사용 결과로 하네스 보강이 필요하면 `.agents/rules/harness-writing.md`와 `.agents/skills/process-ticket/phases/phase-2-plan.md`의 하네스 교정 절차를 따른다.
 
 ## 참고 컨텍스트
 
-- `charter.md` §1 (정책 → 비즈니스 → 코드) + §4 (모호함 처리)
-- `behavioral.md` §3 "Surgical Changes" + "스펙 검증" + "네이밍"
-- `harness-writing.md` (보편 원리만 작성)
+- `.agents/rules/charter.md` §1 (정책 → 비즈니스 → 코드) + §4 (모호함 처리)
+- `.agents/rules/behavioral-guidelines.md` §3 "Surgical Changes" + "스펙 검증" + "네이밍"
+- `.agents/rules/harness-writing.md` (보편 원리만 작성)
 - `/plan-issues` (스펙 작성 측 짝)
 - `/refactor-code` (코드 측 감사 짝 — 본 스킬은 스펙 측)

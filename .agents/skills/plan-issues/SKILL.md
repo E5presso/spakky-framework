@@ -9,123 +9,59 @@ user-invocable: true
 
 자연어로 설명된 기능 방향성을 받아, 에이전트(`/process-ticket`)가 소비할 수 있는 구체적인 GitHub 이슈 티켓을 자동 생성한다. Spec-first 워크플로로 스펙·분해 artifact를 먼저 확정하고 이슈 본문은 기계적으로 주입한다.
 
-## 비즈니스 의도 우선 (Paranoid Posture)
+## 비즈니스 의도 우선 + Grill Gate
 
-본 스킬은 charter §4-A에 따라 **편집증 수준의 paranoid posture**로 동작한다. 이 단계의 산출물(스펙·분해 artifact)은 후속 모든 작업의 SSOT (Single Source of Truth)이 되며, 여기서 발생한 모호함은 `/process-ticket`이 silent assumption으로 메우게 된다 — 결과적으로 코드 품질 + 생산성 손실로 직결된다.
+`charter.md` §1·§2·§4-A를 모든 Phase에 선행 적용한다. 본 스킬은 후속 `/process-ticket`이 silent assumption으로 메우지 않도록 계획 단계의 모호함을 최대 강도로 차단한다.
 
-따라서:
-- **모호함 자판정 금지의 강도가 최대치**다. "이 정도면 알 수 있겠지", "기본값으로 진행", "본문 추론으로 메우기" 등의 패턴을 모두 차단한다.
-- **요청 어휘 4축 정합 검증**: 요청 어휘가 (a) 사용자 입력 본문, (b) 도메인 사전(`AGENTS.md` "프로젝트 특수 컨벤션", `ARCHITECTURE.md` 도메인 모델 섹션), (c) 패키지 `README.md` / `docs/`, (d) 코드베이스 — 4축 모두에서 등가로 사용되는지 확인. 한 축이라도 어긋남이 발견되면 즉시 사용자 질의.
-- **집요한 후속 질문**: 한 번 답을 얻었더라도 그 답이 또 다른 공백을 드러내면 그것도 묻는다. "한 번 물었으니 충분"으로 종결하지 않는다.
-- **외부 게이트 우선**: Phase 3.5 시뮬레이션 게이트는 self-confirmation bias 회피의 핵심 장치 — 비용 절감 사유로 생략하지 않는다 (자명 티켓 조건 충족 시에만 생략).
+Phase 2 진입 전 반드시:
+- 마일스톤 의도 / 티켓 위치 / 도메인 사전 정합을 목적 어휘로 2-3줄 요약하고 사용자에게 공유.
+- 요청 어휘가 사용자 입력, 도메인 사전(`AGENTS.md`, `ARCHITECTURE.md`), 패키지 README/docs, 코드베이스 4축에서 같은 뜻인지 확인.
+- 코드·문서·기존 이슈로 닫히는 fact branch는 묻지 않고 `deferred_by_evidence`에 근거를 남긴다.
+- public API shape, rollout, approval default, migration, user-visible behavior 같은 judgment branch는 사용자 승인 없이 닫지 않는다.
 
-`charter.md` §1·§2를 모든 Phase 전체에 선행 적용한다. Phase 2(위계 판정) 진입 전, charter §2 3-축 정렬(마일스톤 의도 / 티켓 위치 / 도메인 사전 정합)을 목적 어휘로 스스로 답하고 사용자에게 2-3줄로 요약 공유한다. 하나라도 막히면 Phase 2 진입 금지.
+### Decision Ledger
 
-## Grill-me 심문 커널
+Phase 0부터 Phase 3 승인 전까지 다음 상태를 유지한다:
 
-본 스킬은 `grill-me`류 계획 검증 스킬의 핵심 철학을 Phase 0~3.5에 내장한다. 목적은 사용자를 피곤하게 만드는 것이 아니라, **구현 전에 의사결정 트리의 빈 가지를 찾아 한 번에 하나씩 닫는 것**이다.
+| 항목 | 내용 |
+|------|------|
+| `open_questions` | stable `Q-<branch>-<n>` ID를 가진 judgment branch 질문 |
+| `answered_questions` | 충분히 구체적이고 Phase 2.5 스펙에 반영된 답 |
+| `deferred_by_evidence` | 코드·문서·기존 이슈 근거로 닫은 fact branch |
+| Branch ledger | architecture, domain model, API contract, data flow, UX-CLI surface, error policy, compatibility, rollout, tests-docs 상태(`OPEN/RESOLVED/BLOCKED/NON_GOAL`) |
 
-### 원칙
+`open_questions` 또는 `BLOCKED` branch가 남으면 Phase 2.5 진입 금지. 질문은 한 번에 가장 upstream 1개만 묻고, 답변이 "적당히/나중에/유연하게/필요하면" 같은 추상어를 남기면 같은 Q-ID로 재질문한다.
 
-1. **한 번에 한 질문**: 목표 / 범위 / 제약을 한꺼번에 묻지 않는다. 현재 가장 큰 차단 가지 1개만 질문한다. 단, 사용자가 일괄 답변을 명시적으로 원하면 2-3개까지 묶을 수 있다.
-2. **질문마다 추천 답안 포함**: 질문은 항상 "권장 답안"을 같이 제시한다. 권장 답안은 코드베이스·기존 문서·마일스톤 맥락에서 가장 보수적인 선택이며, 사용자가 빠르게 승인/수정할 수 있어야 한다.
-3. **코드로 답할 수 있으면 묻지 않는다**: 기존 패턴, 공개 인터페이스, 네이밍, 패키지 경계, 이전 티켓 존재 여부는 사용자에게 묻기 전에 코드베이스·문서·GitHub 이슈를 탐색한다.
-4. **의사결정 트리 지도 유지**: architecture / domain model / API contract / data flow / UX-CLI surface / error policy / compatibility / rollout / tests-docs 각 가지를 `OPEN`, `RESOLVED`, `BLOCKED`로 추적한다.
-5. **가정에는 반박한다**: 모호하거나 위험하거나 서로 모순되는 진술은 그대로 받아쓰지 않는다. "그렇다면 X도 성립해야 하는데 맞습니까?" 형식으로 종속 결정을 드러낸다.
-6. **진행 지도 공유**: 사용자와 논의할 때는 남은 open branch 수와 지금 질문이 어떤 downstream 결정을 막는지 1줄로 표시한다.
-7. **질문 큐가 비기 전에는 진행 금지**: non-trivial 그룹/에픽은 `open_questions`, `answered_questions`, `deferred_by_evidence` 큐를 유지한다. `open_questions`가 남아 있으면 Phase 2.5로 진입하지 않는다.
-8. **불명확한 답변은 같은 질문으로 재질문**: 답변에 "적당히", "나중에", "유연하게", "일반적으로", "필요하면", "잘" 같은 추상어가 남으면 기존 질문 ID를 닫지 않고 같은 ID로 재질문한다. 새 질문으로 넘어가지 않는다.
-9. **사실과 판단을 분리**: 코드·문서·기존 이슈로 닫을 수 있는 것은 fact branch다. public API shape, retention/cleanup, approval default, migration/rollout, protocol support, user-visible behavior는 judgment branch이므로 사용자 승인 없이 닫지 않는다.
-
-### 질문 포맷
+질문 포맷:
 
 ```
 질문 {Q-ID}: {지금 막힌 결정 1개}
-왜 묻는가: {이 답이 막고 있는 downstream 결정}
+왜 묻는가: {막힌 downstream 결정}
 권장 답안: {코드/문서 근거 기반 기본 선택}
-대안: {있다면 1-2개, 비용 또는 위험 1줄}
+대안: {1-2개, 비용 또는 위험 1줄}
 ```
 
-### Open Question Queue
+에픽/ambitious milestone은 Phase 2.5 전에 Branch ledger를 사용자에게 한 번 제시한다. `OPEN_QUESTION`이 있으면 위 포맷으로 닫을 때까지 반복한다.
 
-Phase 0부터 Phase 3 승인 전까지 다음 큐를 유지한다. 큐는 사용자에게 매 질문 전 1줄로 요약한다.
+## 핵심 설계 — SDD 워크플로
 
-| Queue | 의미 |
-|-------|------|
-| `open_questions` | 구현 전 닫아야 하는 judgment branch 질문. stable `Q-<branch>-<n>` ID를 가진다. |
-| `answered_questions` | 사용자 답변이 충분히 구체적이고 스펙에 반영된 질문. |
-| `deferred_by_evidence` | 코드·문서·기존 이슈 근거로 사용자 질문 없이 닫은 fact branch. 근거 경로 또는 이슈 번호 필수. |
+스펙 품질이 구현 품질이다. 이 스킬은 자연어 요청을 `/process-ticket` 소비 가능한 GitHub Issues로 바꾸기 전에 다음 SDD (Spec-Driven Development) 게이트를 통과시킨다:
 
-규칙:
+1. 사용자 시나리오 먼저 고정: 누가, 무엇을, 왜 관찰하는가. acceptance scenario는 Given/When/Then.
+2. 모호함은 `[NEEDS CLARIFICATION]`으로 표시하고, 마커 1개라도 남으면 Phase 3 진입 차단.
+3. FR (Functional Requirement) / SC (Success Criteria)에 ID를 부여하여 태스크와 양방향 추적.
+4. SC는 관찰 시점, 관찰 대상, 기대값 3요소를 가진다. "잘 동작한다" 금지.
+5. `charter.md` 위반은 Complexity Tracking 표로 가시화하고 사용자 승인 없이 통과 금지.
+6. Phase 2.5 self-review와 Phase 3.5 cold-session 시뮬레이션을 통과한 artifact만 Phase 4에서 기계적으로 주입.
 
-- non-trivial 그룹/에픽에서 `open_questions`가 비어 있지 않으면 Phase 2.5 진입 금지.
-- 사용자 답변이 모호하면 같은 Q-ID를 유지하고 재질문한다.
-- `answered_questions`는 §2 가정, §5 도메인 계약, §7 경계 조건, §8 상호작용, §9 범위 밖, §10 성공 기준 중 하나에 반영되어야 한다.
-- `deferred_by_evidence`는 Phase 2.5 §11 self-review와 Phase 3.5 T4 입력에 포함한다.
+Phase 흐름:
 
-### Decision Branch Ledger
+1. **Phase 2.5** — 11섹션 executable spec(비즈니스 의도, 가정, US, FR, 도메인 계약/규칙, 경계, 상호작용, 범위 밖, SC, self-review).
+2. **Phase 3** — 태스크 분해, 쓰기 충돌 매트릭스, 레이어 선후, FR/SC 커버리지, 부모 의존 상속.
+3. **Phase 3.5** — T1 티켓별 cold reading, T2 DAG 모순, T3 SC value drift, T4 Grill-me replay. T4 under-questioning/vague closure는 hard block.
+4. **Phase 4** — 템플릿 슬롯에 artifact를 기계적으로 주입하고 11항목 self-check 후 이슈 생성.
 
-Phase 0부터 Phase 3 승인 전까지 내부 ledger를 유지한다. Phase 2.5 self-review와 Phase 3.5 시뮬레이션 입력에는 요약본을 포함한다.
-
-| Branch | Status | Decision / Open Question | Blocks |
-|--------|--------|--------------------------|--------|
-| architecture | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| domain model | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| API contract | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| data flow | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| UX-CLI surface | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| error policy | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| compatibility | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| rollout | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-| tests-docs | OPEN/RESOLVED/BLOCKED | {결정 또는 질문} | {막는 FR/태스크} |
-
-Phase 2.5 진입 조건: `OPEN` 또는 `BLOCKED` branch가 있으면 해당 branch를 `[NEEDS CLARIFICATION]` 또는 명시적 non-goal/assumption으로 전환해야 한다. 단순히 ledger에서 삭제하지 않는다.
-
-### Mandatory Epic Grill Gate
-
-에픽/ambitious milestone은 사용자가 "바로 생성"을 승인했더라도 Phase 2.5 전에 반드시 한 번 사용자 앞에서 Grill Gate를 수행한다. 다음 9개 branch를 모두 `RESOLVED`, `DEFERRED_BY_EVIDENCE`, `NON_GOAL`, `OPEN_QUESTION` 중 하나로 표시한다.
-
-| Branch | 최소 확인 질문 |
-|--------|----------------|
-| architecture | core/plugin/adapter 경계와 선행 ADR 충돌이 없는가? |
-| domain model | 새 도메인 명사가 기존 사전과 충돌하지 않는가? |
-| API contract | public contract의 최소 사용자 관찰면이 닫혔는가? |
-| data flow | durable state, event, artifact, external dependency 흐름이 닫혔는가? |
-| UX-CLI surface | 사용자가 기능 완료를 관찰하는 inbound surface가 닫혔는가? |
-| error policy | failure, retry, timeout, cancellation, partial success 정책이 닫혔는가? |
-| compatibility | 기존 API/패키지/문서와의 breaking/non-breaking 기준이 닫혔는가? |
-| rollout | migration, cleanup, retention, deployment boundary가 닫혔는가? |
-| tests-docs | acceptance, conformance, docs sync 기준이 닫혔는가? |
-
-`OPEN_QUESTION`이 1개 이상이면 가장 upstream 질문 하나만 Grill-me 포맷으로 묻는다. 모든 branch가 `RESOLVED`, `DEFERRED_BY_EVIDENCE`, `NON_GOAL`이 될 때까지 반복한다.
-
-## 핵심 설계 — Spec-Driven Development (SDD) 워크플로
-
-본 스킬은 GitHub Spec Kit / Kiro / Tessl 같은 SDD (Spec-Driven Development) 도구의 핵심 패턴을 차용하되, GitHub Issues 티켓 + `/process-ticket` 소비 형태로 적응한다.
-
-### 핵심 SDD 원칙 (스펙 품질 = 구현 품질)
-
-1. **사용자 시나리오 우선 (User Stories first)**: 도메인/계약/규칙 진술 전에 "누가, 무엇을, 왜 관찰" 축을 먼저 고정한다. 모든 acceptance scenario는 **Given/When/Then**으로.
-2. **모호함은 마커로 가시화 (`[NEEDS CLARIFICATION]`)**: 추론으로 메우지 않고 마커로 표시한다. 마커 1개라도 남으면 Phase 3 진입 차단.
-3. **번호 추적 (FR-/SC- IDs)**: 모든 기능 요구사항(FR (Functional Requirement))과 성공 기준(SC (Success Criteria))에 ID를 부여하여 태스크 → 요구사항 양방향 traceability 확보.
-4. **검증 가능한 SC**: 모든 성공 기준은 (관찰 시점, 관찰 대상, 기대값) 3요소 포함. "잘 동작한다" 금지.
-5. **Constitution Check**: `charter.md` 위반은 Complexity Tracking 표로 가시화 후 사용자 승인 없이 통과 금지.
-6. **스펙 self-review gate**: Phase 2.5 §11 체크리스트를 에이전트가 자체 통과시킨 후에만 사용자 제시.
-
-### Phase 흐름
-
-1. **Phase 2.5** — 11섹션 구조의 **executable specification artifact**를 캡처한다 (비즈니스 의도·가정·US (User Story)·FR (Functional Requirement)·도메인 계약·도메인 규칙·경계·상호작용·범위 밖·SC (Success Criteria)·self-review).
-2. **Phase 3** — 스펙을 만족하는 태스크 분해 + 쓰기 충돌 매트릭스 + 레이어 선후 + **FR/SC 커버리지 매핑** + 부모 의존 상속.
-3. **Phase 3.5** — 서브에이전트 시뮬레이션 게이트 (T1 티켓별 cold reading + T2 DAG (Directed Acyclic Graph) 모순 + T3 SC value drift + T4 Grill-me interview replay). T4의 under-questioning/vague closure는 hard block, 나머지는 soft block으로 사용자 결정.
-4. **Phase 4** — 확정된 artifact를 템플릿 슬롯에 **기계적으로 주입**. self-check 11항목 (마커 0개 / FR-SC 역참조 / US 본문 인용 / Constitution 등) + Phase 3.5 게이트 통과 확인 후 이슈 생성.
-
-이 구조는 "논의 내용과 본문 불일치" / "스펙 부실 → `/process-ticket` 할루시네이션" / "의존관계 오류" / "사용자 의도 손실"을 구조적으로 방지한다.
-
-### 과대 설계 회피 (Kiro 안티패턴 회피)
-
-- 자명 티켓(단일 + 단일 패키지 + 직접 도출 + 마커 0)은 Phase 2.5/3 승인 생략.
-- 단일 규모는 US (User Story) 1개, FR (Functional Requirement) 1-3개로 압축 가능. **11섹션을 모든 규모에 채우는 것이 목적이 아니다 — 의도 손실을 막는 것이 목적**.
-- "버그 1건을 16 AC로 부풀리기" 안티패턴: P1은 1-3개로 제한.
+자명 티켓(단일 + 단일 패키지 + 직접 도출 + 마커 0)은 Phase 2.5/3 승인을 생략할 수 있지만, US 1개·FR 1-3개·SC 1-2개와 Phase 4 self-check는 생략하지 않는다.
 
 ## 사용법
 

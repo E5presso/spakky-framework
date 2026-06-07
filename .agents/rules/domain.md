@@ -46,5 +46,5 @@ class Order(AbstractAggregateRoot[UUID]):
 
 ## 금지 사항
 
-- 인프라 의존성 (`SQLAlchemy`, `httpx`, `aiokafka` 등) import 금지
+- 인프라 의존성 import 금지. 예: `sqlalchemy`, `httpx`, `aiokafka`, `aio_pika`, `kafka`, `fastapi`, `typer`, `celery`, `opentelemetry`, `grpc`, `redis`
 - 도메인 객체에서 I/O 수행 금지

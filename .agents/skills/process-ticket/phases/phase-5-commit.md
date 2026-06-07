@@ -27,7 +27,7 @@
    wt=$(pwd) && ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ") && ref=$(git symbolic-ref HEAD)
    jq --arg r "$ref" --arg t "$ts" '.push_done = $r | .updated_at = $t' "$wt/.process-state.json" > "$wt/.process-state.json.tmp" && mv "$wt/.process-state.json.tmp" "$wt/.process-state.json"
    ```
-8. `/create-pr {ISSUE-NUMBER}` 서브스킬을 실행하여 PR을 생성한다. PR 타이틀에 `(#<ISSUE-NUMBER>)` 포함 필수. 한글 타이틀은 heredoc 이스케이프 버그 회피를 위해 `--title` 단일 인자로 전달한다.
+8. `/create-pr {ISSUE-NUMBER} --acceptance-file .acceptance-criteria.md` 서브스킬을 실행하여 PR을 생성한다. Phase 4.5 결과가 `missing`이면 `/create-pr {ISSUE-NUMBER} --acceptance-missing`을 호출한다. PR 타이틀에 `(#<ISSUE-NUMBER>)` 포함 필수. 한글 타이틀은 heredoc 이스케이프 버그 회피를 위해 `--title` 단일 인자로 전달한다.
 9. **체크포인트 갱신** — `.process-state.json`에 `pr_opened` 기록 (PR 번호와 URL):
    ```bash
    wt=$(pwd) && ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

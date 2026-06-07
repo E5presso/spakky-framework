@@ -11,25 +11,7 @@ Conventional Commits 형식: `<type>(<scope>): <subject>`
 
 **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
-| Scope | 패키지 경로 |
-|-------|------------|
-| `core` | `core/spakky` |
-| `domain` | `core/spakky-domain` |
-| `data` | `core/spakky-data` |
-| `event` | `core/spakky-event` |
-| `task` | `core/spakky-task` |
-| `outbox` | `core/spakky-outbox` |
-| `tracing` | `core/spakky-tracing` |
-| `logging` | `plugins/spakky-logging` |
-| `fastapi` | `plugins/spakky-fastapi` |
-| `kafka` | `plugins/spakky-kafka` |
-| `rabbitmq` | `plugins/spakky-rabbitmq` |
-| `security` | `plugins/spakky-security` |
-| `sqlalchemy` | `plugins/spakky-sqlalchemy` |
-| `typer` | `plugins/spakky-typer` |
-| `celery` | `plugins/spakky-celery` |
-
-여러 패키지 변경 시 핵심 변경의 scope 사용, 또는 scope 생략.
+Scope는 변경된 workspace member에서 도출한다: `pyproject.toml` `[tool.uv.workspace].members`가 SSOT이며 `spakky-` 접두사는 제거한다. 예외: `core/spakky`는 `core`. 여러 패키지 변경은 핵심 패키지 scope를 쓰거나 scope를 생략한다.
 
 ## 워크플로우
 

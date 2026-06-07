@@ -7,33 +7,8 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 ## Overview
 
 - **Framework**: Spring-inspired DI/IoC for Python 3.12+, AOP, plugin system (`uv` monorepo)
-- **Core** (`core/`): `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task`, `spakky-tracing`, `spakky-outbox`, `spakky-saga`
-- **Plugins** (`plugins/`): `spakky-logging`, `spakky-fastapi`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-security`, `spakky-typer`, `spakky-sqlalchemy`, `spakky-celery`, `spakky-opentelemetry`, `spakky-grpc`, `spakky-vllm`
-
-## Project Quick Reference
-
-| 경로 | 역할 |
-|------|------|
-| `core/spakky/` | DI Container, AOP, 부트스트랩 |
-| `core/spakky-domain/` | DDD 빌딩 블록 (Entity, AggregateRoot, ValueObject, Event) |
-| `core/spakky-data/` | Repository, Transaction 추상화 |
-| `core/spakky-event/` | 인프로세스 이벤트 (Publisher, Consumer, EventHandler) |
-| `core/spakky-task/` | 태스크 추상화 (스케줄링, 디스패치) |
-| `core/spakky-tracing/` | 분산 트레이싱 추상화 (TraceContext, Propagator) |
-| `core/spakky-outbox/` | Transactional Outbox 패턴 (OutboxEventBus, Relay) |
-| `core/spakky-saga/` | Saga 오케스트레이션 (SagaFlow, SagaStep) |
-| `plugins/spakky-fastapi/` | FastAPI REST 컨트롤러 통합 |
-| `plugins/spakky-typer/` | Typer CLI 컨트롤러 통합 |
-| `plugins/spakky-sqlalchemy/` | SQLAlchemy ORM 통합 |
-| `plugins/spakky-rabbitmq/` | RabbitMQ 이벤트 브로커 통합 |
-| `plugins/spakky-kafka/` | Kafka 이벤트 브로커 통합 |
-| `plugins/spakky-celery/` | Celery 태스크 디스패치 |
-| `plugins/spakky-security/` | 암호화/해싱/JWT 유틸리티 |
-| `plugins/spakky-logging/` | 구조화 로깅, @logged AOP Aspect |
-| `plugins/spakky-opentelemetry/` | OpenTelemetry SDK 브릿지 |
-| `plugins/spakky-vllm/` | vLLM OpenAI-compatible `IAgentModel` adapter |
-
-**의존 방향 (단방향):** `.agents/rules/monorepo.md` 참조
+- **Workspace packages**: 패키지 목록의 SSOT는 `pyproject.toml` `[tool.uv.workspace].members`. 역할 설명은 각 패키지 `README.md`와 `pyproject.toml` description에서 확인한다.
+- **Dependency direction**: `.agents/rules/monorepo.md` 의존 방향 매트릭스
 
 ## 스킬 & 워크플로우
 
@@ -76,7 +51,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 
 ## 서브에이전트 활용
 
-서브에이전트 바이어스 원칙은 `behavioral-guidelines.md` §5 참조. 모노레포 특성상 패키지별 병렬 작업에 특히 유효합니다.
+서브에이전트 바이어스 원칙은 `.agents/rules/behavioral-guidelines.md` §5 참조. 모노레포 특성상 패키지별 병렬 작업에 특히 유효합니다.
 
 ### 주의사항
 

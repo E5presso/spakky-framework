@@ -18,7 +18,7 @@ Agent(
   description: "process #{T}",
   run_in_background: true,
   permission_mode: "bypassPermissions",  # 메인 세션이 bypass 모드일 때만 명시 — §3-2-ter 조건부 inherit 절차 참조
-  prompt: "**FIRST ACTION (do this before any other output)**: Use the `Skill` tool to invoke `process-ticket` with `args: \"{T} --auto-merge\"`. Do not output any analysis, plan, summary, or commentary before that tool call — meta-analysis without invoking the skill leaves the ticket unprocessed. If the `Skill` tool is not in your available toolset or the invocation errors, do NOT proceed silently — `SendMessage(to: \"team-lead\", summary: \"skill-unavailable {T}\", message: \"skill-unavailable: {T}\\nreason: <error 1줄>\")` 회신 후 종료. **Phase 6 monitor 절대 명령 (의역·완화 금지)**: 너는 자기 turn 안에서 직접 `monitor-pr/scripts/watch.sh`를 포그라운드 Bash로 호출하고, EVENT가 emit되면 같은 turn 안에서 case 분기 핸들러를 실행한 뒤 즉시 `watch.sh`를 다시 호출한다. **`reason in {merged, mergeable-clean, closed-without-merge, awaiting-human-review}`이면 즉시 DONE으로 간주 — 추가 `watch.sh` 호출 금지**. Phase 8 cleanup(`reason=merged`), Phase 7/8 자동 머지(`mergeable-clean`: `phase7_ready` 기록 후 같은 turn에서 `gh pr merge --squash --delete-branch`와 cleanup까지 완료; `phase7_ready`만 반환 금지), 결과 보고(`closed-without-merge`), 또는 `awaiting-human-review` 시 `status: awaiting-review` + `pending_human_comments: <bot CH2 코멘트 URL>` 보고를 수행 후 즉시 turn 종료한다. 위 4종 reason은 terminal 케이스이며 추가 cycle을 돌면 머지 후 dead time이 누적된다. 다음 4종 안티패턴 금지 — (1) `&` / `nohup` / `run_in_background: true` / `Monitor` / `ScheduleWakeup`로 띄우고 'monitor armed' 보고 후 종료, (2) '알림 대기' / '외부 이벤트 수신' / '사용자가 알려줄 것'으로 polling 위임, (3) 1~2 cycle 후 'CI 진행 중' / '변화 없음' / '오래 걸릴 것'으로 종료, (4) `watch.sh` stdout의 `reason` case 분기 없이 종료. SSOT는 `monitor-pr/SKILL.md` §'절대 명령'. **Root isolation guard**: Phase 3 이후 구현·검증·커밋 전 `process-ticket/scripts/assert_worktree_isolation.sh`가 실패하면 root checkout 오염 가능성이므로 즉시 failed 반환하고 root 변경을 자동 revert하지 않는다. **Monitor heartbeat ping**: `watch.sh`가 `EVENT reason=heartbeat`을 emit하면 (변화 없는 cycle 6회=3분 누적) 즉시 `SendMessage(to: \"team-lead\", summary: \"phase-tick {T}\", message: \"phase: monitor-pr | tick: poll <N> | pr=<#> | ci=<status> | review=<state>\")` 1줄 송신 후 같은 turn 안에서 watch.sh를 재호출하여 polling 재개 — 메인 세션이 monitor 루프를 hang으로 오판하지 않도록 보장. 본 ping은 단방향, 회신 대기 금지. 진행 중 charter §4-A/§4-B 질의 트리거 또는 behavioral-guidelines.md '스펙 검증 / 후속 티켓' 규칙으로 **신규 후속 GitHub 티켓을 생성한 경우**, 그 티켓의 구현은 **직접 분기하지 말고 autopilot에 번호만 보고**한다 (autopilot이 회수 라운드에서 처리). 사용자 질의가 필요한 경우(charter §4-A 트리거·plan 승인·review escalation 등)는 `AskUserQuestion`을 직접 호출하지 말고 `SendMessage`로 메인(team-lead)에 `ask-delegate`로 위임한다 — 단일 ledger 정합 (process-ticket SKILL.md '사용자 질의 위임' SSOT). **하네스 교정 (`.agents/skills/`·`.agents/rules/`·`AGENTS.md` 또는 동등 자산 변경 포함) 티켓은 plan summary를 `ask-delegate`로 질의하고 회신 수신 후에만 Phase 5 진입한다 — low-risk 자가 판정 무효** (process-ticket SKILL.md Phase 2 §2-1 SSOT). **Phase 전환 progress ping**: 각 Phase 진입 시점에 `SendMessage(to: \"team-lead\", summary: \"phase-ping {T}\", message: \"phase: <name> | ticket: {T} | <1줄>\")` 1줄을 송신한다 — 정형·송신 시점은 process-ticket SKILL.md '*Phase 전환 progress ping*' SSOT. 본 ping은 단방향이며 회신을 기다리지 않는다. **Phase 내부 heartbeat + Blocker 즉시 emit**: 동일 phase 안에서 직전 ping 이후 3분+ 도구 호출이 누적되면 `phase: <name> | tick: <action> | <1줄>` 정형 heartbeat 1건 송신. CI fail·통합/유닛 test fail·triage decision 보류·환경 차단 발견 즉시 `phase: <name> | blocker: <kind> | <1줄>` 정형 blocker ping 1건 송신 (phase 종료 대기 금지). 정형·트리거는 process-ticket SKILL.md '*Phase 내부 heartbeat*' + '*Blocker 즉시 emit*' SSOT. **반환 형식 (4줄 이내, 산문 금지)**: `status: merged|awaiting-review|failed` / `pr: #N (URL)` / `pending: 사람 코멘트 N건 [URL,...]` 또는 `failed_reason: 1줄` / `spawned: TICKET-NUMBER,... 또는 none`. 진행 과정·디버깅 로그 반환 금지."
+  prompt: "**FIRST ACTION (do this before any other output)**: Use the `Skill` tool to invoke `process-ticket` with `args: \"{T} --auto-merge\"`. Do not output any analysis, plan, summary, or commentary before that tool call — meta-analysis without invoking the skill leaves the ticket unprocessed. If the `Skill` tool is not in your available toolset or the invocation errors, do NOT proceed silently — `SendMessage(to: \"team-lead\", summary: \"skill-unavailable {T}\", message: \"skill-unavailable: {T}\\nreason: <error 1줄>\")` 회신 후 종료. **Phase 6 monitor 절대 명령 (의역·완화 금지)**: 너는 자기 turn 안에서 직접 `monitor-pr/scripts/watch.sh`를 포그라운드 Bash로 호출하고, EVENT가 emit되면 같은 turn 안에서 case 분기 핸들러를 실행한 뒤 즉시 `watch.sh`를 다시 호출한다. **`reason in {merged, mergeable-clean, closed-without-merge, awaiting-human-review}`이면 즉시 DONE으로 간주 — 추가 `watch.sh` 호출 금지**. Phase 8 cleanup(`reason=merged`), Phase 7/8 자동 머지(`mergeable-clean`: `phase7_ready` 기록 후 같은 turn에서 `gh pr merge --squash --delete-branch`와 cleanup까지 완료; `phase7_ready`만 반환 금지), 결과 보고(`closed-without-merge`), 또는 `awaiting-human-review` 시 `status: awaiting-review` + `pending_human_comments: <bot CH2 코멘트 URL>` 보고를 수행 후 즉시 turn 종료한다. 위 4종 reason은 terminal 케이스이며 추가 cycle을 돌면 머지 후 dead time이 누적된다. 다음 4종 안티패턴 금지 — (1) `&` / `nohup` / `run_in_background: true` / `Monitor` / `ScheduleWakeup`로 띄우고 'monitor armed' 보고 후 종료, (2) '알림 대기' / '외부 이벤트 수신' / '사용자가 알려줄 것'으로 polling 위임, (3) 1~2 cycle 후 'CI 진행 중' / '변화 없음' / '오래 걸릴 것'으로 종료, (4) `watch.sh` stdout의 `reason` case 분기 없이 종료. SSOT는 `monitor-pr/SKILL.md` §'절대 명령'. **Root isolation guard**: Phase 3 이후 구현·검증·커밋 전 `process-ticket/scripts/assert_worktree_isolation.sh`가 실패하면 root checkout 오염 가능성이므로 즉시 failed 반환하고 root 변경을 자동 revert하지 않는다. **Monitor heartbeat ping**: `watch.sh`가 `EVENT reason=heartbeat`을 emit하면 (변화 없는 cycle 6회=3분 누적) 즉시 `SendMessage(to: \"team-lead\", summary: \"phase-tick {T}\", message: \"phase: monitor-pr | tick: poll <N> | pr=<#> | ci=<status> | review=<state>\")` 1줄 송신 후 같은 turn 안에서 watch.sh를 재호출하여 polling 재개 — 메인 세션이 monitor 루프를 hang으로 오판하지 않도록 보장. 본 ping은 단방향, 회신 대기 금지. 진행 중 charter §4-A/§4-B 질의 트리거 또는 behavioral-guidelines.md '스펙 검증 / 후속 티켓' 규칙으로 **신규 후속 GitHub 티켓을 생성한 경우**, 그 티켓의 구현은 **직접 분기하지 말고 autopilot에 번호만 보고**한다 (autopilot이 회수 라운드에서 처리). 사용자 질의가 필요한 경우(charter §4-A 트리거·plan 승인·review escalation 등)는 `AskUserQuestion`을 직접 호출하지 말고 `SendMessage`로 메인(team-lead)에 `ask-delegate`로 위임한다 — 단일 ledger 정합 (process-ticket SKILL.md '사용자 질의 위임' SSOT). **하네스 교정 (`.agents/skills/`·`.agents/rules/`·`AGENTS.md` 또는 동등 자산 변경 포함) 티켓은 plan summary를 `ask-delegate`로 질의하고 회신 수신 후에만 Phase 5 진입한다 — low-risk 자가 판정 무효** (process-ticket SKILL.md Phase 2 §2-1 SSOT). **Phase 전환 progress ping**: 각 Phase 진입 시점에 `SendMessage(to: \"team-lead\", summary: \"phase-ping {T}\", message: \"phase: <name> | issue: {T} | <1줄>\")` 1줄을 송신한다 — 정형·송신 시점은 process-ticket SKILL.md '*Phase 전환 progress ping*' SSOT. 본 ping은 단방향이며 회신을 기다리지 않는다. **Phase 내부 heartbeat + Blocker 즉시 emit**: 동일 phase 안에서 직전 ping 이후 3분+ 도구 호출이 누적되면 `phase: <name> | tick: <action> | <1줄>` 정형 heartbeat 1건 송신. CI fail·통합/유닛 test fail·triage decision 보류·환경 차단 발견 즉시 `phase: <name> | blocker: <kind> | <1줄>` 정형 blocker ping 1건 송신 (phase 종료 대기 금지). 정형·트리거는 process-ticket SKILL.md '*Phase 내부 heartbeat*' + '*Blocker 즉시 emit*' SSOT. **반환 형식**: process-ticket SKILL.md "서브에이전트 반환 형식 (강제)" 절의 canonical schema만 사용한다. `status`, `pr`, `issue`, `acceptance_check`, `issue_status`, `pending_human_comments`, `spawned` 라인을 모두 포함하고 산문·진행 로그·디버깅 로그는 반환하지 않는다."
 )
 ```
 
@@ -47,28 +47,7 @@ team 정리는 Phase 6 최종 리포트의 워크트리 sweep 직후 `TeamDelete
 
 ## 3-2-ter. 권한 모드 inherit (메인 → sub-agent 조건부 명시)
 
-`Agent` tool로 spawn된 sub-agent는 메인 세션의 permission 모드를 자동 inherit하지 않는다 — 메인이 `bypass permissions` 모드로 시작했어도 sub-agent는 일반 모드로 동작하여 매 도구 호출마다 `permission_request` protocol 메시지를 메인 inbox로 송신, 메인 turn이 회신 보고로 점유되어 user-responsive 보장이 깨진다. §3-2 / §3-3-bis resume / §3-6 fallback resume / §3.6-2 메타 fix 등 본 phase의 모든 spawn 형식은 본 절을 인용하여 권한 모드를 명시한다.
-
-### 명시 규칙 (조건부)
-
-메인 세션 시작 시 사용자가 `bypass permissions`를 선택했는지 여부에 따라 spawn 형식이 갈린다:
-
-- **메인이 bypass permissions 모드** → 모든 spawn `Agent({...})` 호출에 `permission_mode: "bypassPermissions"`를 명시한다. sub-agent는 동일 모드로 진입하여 도구 호출 시 permission prompt를 발생시키지 않는다.
-- **메인이 일반 모드 (default)** → `permission_mode` 키를 spawn 호출에서 누락한다. sub-agent는 일반 모드로 진입하며 권한 prompt가 사용자에게 직접 도달한다 (autopilot 메인이 회신 중계자가 되지 않음).
-
-메인 세션이 어느 모드인지 직접 introspect하는 API는 없으므로, autopilot 시작 시 메인이 1회 자기 모드를 평가하여 본 wave spawn부터 모든 spawn에 동일한 명시 정책을 적용한다. 평가 방법: autopilot 호출자(사용자)가 bypass 모드로 세션을 시작했음이 명시(예: 호출 인자 `--bypass`·AGENTS.md 합의·세션 시작 메시지의 `bypass permissions` 선언) 또는 첫 sub-agent 도구 호출이 `permission_request`를 트리거하지 않는지 관찰. 모호하면 명시하여 진행 — `permission_mode` 키가 무시되는 환경에서도 호출은 실패하지 않으며, 명시 누락이 sub-agent hang을 야기하는 비대칭이 더 비싸다.
-
-### 적용 spawn 형식 enumeration
-
-본 phase 내 다음 spawn 호출 모두 `permission_mode: "bypassPermissions"`를 명시한다:
-
-- §3-2 wave spawn (process-ticket sub-agent)
-- §3-3-bis resume sub-agent (stuck 감지 후)
-- §3-3-quinque mid-flight 후속 spawn (`spawned` 필드 즉시 분해)
-- §3-6 fallback resume sub-agent (`.process-state.json` 회수)
-- §3.6-2 메타 fix sub-agent (외부 검증 어긋남 회수)
-
-명시 누락 시 sub-agent의 도구 호출이 `permission_request`로 메인 inbox에 도달, autopilot은 그 메시지에 plain text "approved" 회신을 1회 송신한 뒤 wave 진행 — 단, 본 회신이 누적되면 user-facing 채널(SendMessage·AskUserQuestion 단일 ledger)이 시스템 트래픽으로 오염되므로 명시로 1차 차단하는 것이 default.
+메인이 bypass permissions 모드이면 본 phase의 모든 `Agent({...})` spawn에 `permission_mode: "bypassPermissions"`를 명시한다. 일반 모드면 키를 생략한다. 모드 introspection API가 없으므로 autopilot 시작 시 1회 평가하여 같은 정책을 §3-2, §3-3-bis, §3-3-quinque, §3-6, §3.6-2 spawn에 일괄 적용한다. 명시 누락으로 `permission_request`가 메인 inbox에 도달하면 1회 승인 후 진행하되, 누적되면 시스템 트래픽 오염으로 보고한다.
 
 ## 3-3. 웨이브 완료 대기
 
@@ -81,20 +60,17 @@ team 정리는 Phase 6 최종 리포트의 워크트리 sweep 직후 `TeamDelete
 서브에이전트가 반환할 때까지 대기한다. 각 서브에이전트의 반환 값에서 다음을 파싱한다:
 - `status`: `merged` | `awaiting-review` | `failed`
 - `pr`: PR 번호 · URL (있으면)
-- `pending_human_comments`: 사람 리뷰어 미응답 코멘트 링크 (있으면)
+- `issue`: GitHub Issue 번호
+- `acceptance_check`: `PASS` | `partial` | `missing`
+- `issue_status`: `Done` | `InReview` | `InProgress` | `Backlog` | `Cancelled`
+- `pending_human_comments`: 사람 리뷰어 미응답 코멘트 링크 (`awaiting-review`이면 URL 목록, 아니면 `none`)
 - `spawned`: 서브에이전트가 본 라운드에서 생성한 신규 후속 GitHub 티켓 번호 목록 (없으면 `none`) — §3-3-quinque에서 즉시 spawn, Phase 3.5는 누락 fallback.
 
 **merge-gate-stuck 회수**: `status: blocked`, `status: awaiting-merge`, `merge approval required`, `phase7_ready without merged` 등 clean PR 병합 승인 대기 의미의 반환은 autopilot에서 유효한 차단 결과가 아니다. 사용자에게 묻지 않고 §3-6 fallback resume을 `process-ticket {T} --auto-merge`로 실행한다. 같은 티켓에서 2회 반복되면 SKILL.md S7 `merge-gate-stuck`으로 ledger 기록 + 메타 fix 티켓을 생성한다. 정상 하위 실행은 `DONE reason=mergeable-clean` 관찰 후 `phase7_ready`를 기록하더라도 그 상태를 반환하지 않고 같은 turn에서 Phase 8 merge/cleanup을 완료해 `status: merged`만 반환한다.
 
 ### 반환 형식 검증
 
-process-ticket SKILL.md "서브에이전트 반환 형식 (강제)" 절의 정규형을 따라야 한다. autopilot은 다음 정규식으로 1차 검증한다:
-
-```
-^status: (merged|awaiting-review|failed)$
-^pr: (#\d+ \(https?://[^)]+\)|none)$
-^ticket: \d+$
-```
+process-ticket SKILL.md "서브에이전트 반환 형식 (강제)" 절의 정규형과 조건부 검사(`status: failed` → `failed_reason` 필수)를 그대로 적용한다. 불일치 시 §3-6 fallback으로 진입한다.
 
 미준수 시 §3-6 fallback으로 진입한다 (재실행 또는 워크트리 체크포인트 회수). 미준수 사유가 merge approval 대기이면 사용자 질의 없이 `--auto-merge` resume만 허용한다.
 
@@ -155,7 +131,7 @@ SendMessage(
 
 ### 동작
 
-§3-3 wave 대기 동안 일정 간격(60초 — §0-4와 동일하게 ping 비용을 결정성으로 평탄화)으로 다음을 수행한다. autopilot 메인 polling 금지 규칙(SKILL.md "autopilot 메인 세션은 직접 polling 금지")은 PR 상태에 대한 적용이며, 워크트리 파일 enumerate + GitHub 외부 단발 조회는 polling 루프가 아닌 stuck 감지 단발 query이므로 본 routine은 그 규칙과 충돌하지 않는다.
+§3-3 wave 대기 동안 stuck-enumerate 간격(60초, monitor-pr 30초 watch cadence와 무관)으로 다음을 수행한다. autopilot 메인 polling 금지 규칙(SKILL.md "autopilot 메인 세션은 직접 polling 금지")은 PR 상태에 대한 적용이며, 워크트리 파일 enumerate + GitHub 외부 단발 조회는 polling 루프가 아닌 stuck 감지 단발 query이므로 본 routine은 그 규칙과 충돌하지 않는다.
 
 1. **워크트리 enumerate**: `git worktree list --porcelain`으로 현재 활성 워크트리 목록을 수집. 본 wave에서 spawn한 티켓 번호에 해당하는 워크트리만 대상.
 2. **state 파일 읽기**: 각 워크트리의 `.process-state.json`을 Read. 파일 부재 시 그 티켓은 §3-6 fallback 영역(워크트리 진입 전 종료) — 본 routine 대상에서 제외.

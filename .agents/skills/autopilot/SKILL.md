@@ -64,57 +64,17 @@ wave[2] = wave[0,1]만 blocker로 가진 티켓
 
 ## Phase 3: Wave 실행 루프
 
-```
-for wave_idx, wave in enumerate(waves):
-    skip = read_skip_set()  # 실패 전파로 skip된 티켓
-    spawn_targets = [t for t in wave if t not in skip]
+상세 절차는 `phases/phase-3-wave-loop.md`가 SSOT다. SKILL.md에는 실행 불변식만 둔다:
 
-    # 3-2. 병렬 spawn (단일 메시지의 다중 Agent tool_use, /process-ticket --auto-merge)
-    results = spawn_parallel(spawn_targets, run_in_background=True)
-
-    # 3-3. 반환 대기 + 즉시 spawn (recursively)
-    for r in results:
-        if r.spawned:  # 후속 티켓 즉시 spawn (약속 차단)
-            spawn_parallel(r.spawned, run_in_background=True)
-
-    # 3-3-bis. Stuck 감지 (논리적 모순 기반, wall-clock 금지)
-    if detect_stuck(results):
-        report_and_pause()
-
-    # 3-4. 실패 전파 (BFS로 후속 노드 skip)
-    propagate_failures(results, downstream_waves)
-
-    # 3-5. 다음 웨이브
-```
-
-### 3-3-bis. Stuck 감지 시그널 (모순 기반)
-
-| 시그널 | 모순 정의 |
-|-------|---------|
-| monitor-stuck | PR mergeable + CI green인데 process-ticket이 Phase 7 진입 안 함 |
-| merge-gate-stuck | autopilot 하위 process-ticket이 clean PR에서 병합 승인을 사용자에게 요청하거나 `phase7_ready` 상태로 반환 |
-| state 부재 | 워크트리에 `.process-state.json` 없음 |
-| state 역행 | phase 키 역행 (Phase 6 → Phase 4) |
-| 동일 파일 mutation | 다른 워크트리들이 같은 파일을 동시 수정 |
-
-**wall-clock timeout 절대 금지.** 시간이 오래 걸린다고 stuck이 아니다. 모순만이 stuck.
-
-### 3-3-quinque. 후속 티켓 즉시 spawn
-
-서브에이전트 결과의 `spawned: [...]` 필드를 **동일 turn 내 spawn**한다. "후속 티켓을 만들겠습니다"만 남기고 종료하는 것 원천 차단.
+- wave별 티켓은 단일 메시지의 다중 sub-agent 호출로 병렬 spawn하고, 항상 `/process-ticket {T} --auto-merge`로 진입한다.
+- 반환은 `process-ticket`의 canonical schema만 수용한다. `phase7_ready`, `status: blocked`, merge 승인 대기 산문은 merge-gate-stuck이다.
+- `spawned` 필드는 같은 turn 안에서 즉시 백그라운드 spawn한다. "후속 티켓을 만들겠다"만 남기는 반환 금지.
+- stuck은 wall-clock이 아니라 논리적 모순으로만 판단한다: terminal PR 미반환, merge-dirty 미처리, clean terminal 미흡수, state 부재/역행, 동일 파일 mutation 등.
+- 실패 전파는 BFS skip 집합으로 다음 wave에 적용하고, meta 시그널은 Phase 3.6 ledger로 분리한다.
 
 ## Phase 3.5: 후속 티켓 회수 (Fallback Fixed-Point)
 
-Phase 3-3-quinque에서 누락된 spawn이 있을 수 있다. Wave 종료 후:
-
-```
-M = compute_missing_spawns()  # 약속 vs 실제 spawn 차집합
-while M != ∅:
-    spawn_parallel(M, run_in_background=True)
-    M = compute_missing_spawns()
-    if same_M_repeats(threshold=3):
-        report_cycle_and_stop()  # 순환 분해 의심
-```
+Phase 3-3-quinque에서 누락된 spawn이 있는지 wave 종료 후 약속 vs 실제 spawn 차집합으로 확인한다. 차집합은 즉시 spawn하고, 같은 차집합이 3회 반복되면 순환 분해 의심으로 stop한다.
 
 ## Phase 3.6: 자기 운영 결함 메타-감지
 

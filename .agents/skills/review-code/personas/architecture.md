@@ -18,5 +18,5 @@
 ## SSOT
 
 - `.agents/rules/monorepo.md` — 패키지별 의존 방향
-- `.agents/rules/domain.md` — Aggregate 경계, Port 정의
+- `.agents/rules/domain.md` — Aggregate 경계
 - `.agents/rules/aspect.md` — Aspect 동기/비동기 쌍 규칙

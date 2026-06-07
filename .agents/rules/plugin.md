@@ -35,7 +35,7 @@ def initialize(app: SpakkyApplication) -> None:
 | 트랜스포트 (MQ) | `spakky-event` |
 | 태스크 브로커 (Celery) | `spakky-task` |
 
-플러그인 → 다른 플러그인 직접 의존 **금지**
+플러그인 → 다른 플러그인 직접 의존 **금지**. 절대 import(`spakky.plugins.x`)와 상대 cross-plugin import 모두 포함한다.
 
 ## pyproject.toml 필수 항목
 
@@ -51,4 +51,4 @@ markers = ["known_issue(reason): 알려진 버그"]
 
 - `__init__.py`에 공개 API 직접 노출 금지
 - `initialize`에서 동기 I/O 금지
-- 다른 플러그인 직접 import 금지
+- 다른 플러그인 직접 import 금지 (절대·상대 import 모두)

@@ -45,8 +45,8 @@ PR 번호를 받아 고정 30초 polling으로 상태를 감시하고 분기 처
   - 별도 무한 루프 백그라운드 스크립트
   - 추가 `sleep`, 가변/증가 간격, exponent backoff
 - **서브에이전트 컨텍스트에서는 백그라운드 알림이 도달하지 않는다.** `Monitor`/`run_in_background`로 polling을 외부화하면 서브에이전트는 알림 수신처가 없어 turn 종료 → 머지 전 조기 exit. 본 스킬이 `watch.sh` 단일 포그라운드 호출을 강제하는 이유다 (회귀 시그널은 §"서브에이전트 조기 종료 회귀 시그널" 참조).
-- **스크립트는 raw 상태만 출력한다.** 이벤트 분류/비교는 호출자(에이전트)가 직전 결과와 비교하여 판단한다.
-- **임의 shell 명령 호출 절대 금지.** 호출자는 본 스킬이 명시한 스크립트(`poll.sh`, `collect_comments.sh`)와 명시된 다른 스킬(`/triage-comments`, `/plan-issues`, `/check`, `/commit`)만 호출한다. 아래는 모두 금지:
+- **스크립트 출력 계약**: `watch.sh`는 `EVENT`/`DONE`을 emit하고, `poll.sh`/`collect_comments.sh`는 raw 상태를 출력한다. 호출자는 본 스킬의 라우팅 표로만 분기하며 임의 분류를 추가하지 않는다.
+- **임의 shell 명령 호출 절대 금지.** 호출자는 본 스킬이 명시한 스크립트(`watch.sh`, `poll.sh`, `collect_comments.sh`)와 명시된 다른 스킬(`/triage-comments`, `/plan-issues`, `/check`, `/commit`)만 호출한다. 아래는 모두 금지:
   - `gh pr view`, `gh pr checks`, `gh pr diff`, `gh api repos/...` 직접 호출
   - `git diff`, `git log`, `git status` 등으로 PR/CI 상태를 자체 추론
   - 코멘트 본문을 잘 모르겠다는 이유로 별도 `gh api` 호출
@@ -54,7 +54,7 @@ PR 번호를 받아 고정 30초 polling으로 상태를 감시하고 분기 처
   - 스크립트 출력이 부족해 보여도 추가 명령으로 보강 시도
 
   스크립트 출력만으로 분기 판단이 불가능하다면 그것은 스크립트의 결함이다 — 사용자에게 보고하고 스크립트를 수정한다 (`/optimize-harness`). 호출자가 우회 명령으로 메우지 않는다.
-- **PR/이슈 mutation도 정의된 sub-skill만.** PR 메타 변경(`gh pr edit`), 코멘트 reply, 라벨 추가 등은 모두 `/triage-comments` 등 정의된 sub-skill을 통한다. 호출자가 직접 `gh pr edit` / `gh api ... replies` 호출 금지. (코멘트 reply 마커 규칙은 sub-skill이 책임진다.)
+- **PR/이슈 mutation은 정의된 절차만.** 코멘트 reply는 `/triage-comments`, PR 생성 메타는 `/create-pr`, 재리뷰 요청은 본 스킬 §"트리아지 후 처리"의 명시 명령만 허용한다. 그 외 `gh pr edit` / `gh api ... replies` 직접 호출 금지.
 
 ## 상태 머신
 
@@ -167,70 +167,25 @@ in-place 갱신이 감지된 id는 `staleHandledIds=` 라인으로 함께 출력
 
 **긴 대기가 필요해도 동일 규칙**: 단일 `watch.sh` 호출이 cycle을 내부에서 반복한다. "긴 대기가 예상되니 백그라운드로 돌리고 알림을 기다리자"로 자기 turn을 종료하지 않는다 (서브에이전트 조기 종료의 직접 원인).
 
-### EVENT consumer 루프 (MUST — 호출자 책무 명시)
+### EVENT/DONE 라우팅 계약 (MUST — 호출자 책무)
 
-`watch.sh`는 EVENT/DONE 블록을 stdout으로 1회 emit하고 종료한다. 호출자(에이전트)는 **출력 블록을 읽고 `reason` 값으로 case 분기하여 핸들러를 실행**해야 한다 — 핸들러 정의가 SKILL.md에 있어도 case 분기 주체가 없으면 dead code가 된다.
+`watch.sh`는 EVENT/DONE 블록을 stdout으로 1회 emit하고 종료한다. 호출자는 같은 turn 안에서 출력 블록을 읽고 `reason` 값으로 아래 표의 **허용된 다음 행동**만 수행한다. EVENT는 `interrupt`를 제외하고 final response 금지이며, 처리 후 INIT으로 복귀해 `watch.sh`를 다시 호출한다.
 
-호출자는 자기 turn 안에서 다음 형태로 `watch.sh` 호출 + EVENT 분기를 실행한다 — 단일 Bash 호출 안에서 watch.sh 출력을 직접 case로 분기하는 패턴이다:
+| 출력 | 허용된 다음 행동 | final response |
+|------|------------------|----------------|
+| `EVENT reason=comments-changed` | `STALE_HANDLED_IDS`를 넘겨 `collect_comments.sh` → `/triage-comments` → INIT | NO |
+| `EVENT reason=review-decision-changed` | `collect_comments.sh` → `/triage-comments` → INIT | NO |
+| `EVENT reason=ci-failed` | 로컬 CI 재현 → 수정 → push → INIT | NO |
+| `EVENT reason=merge-dirty` | 자동 rebase (§"Merge dirty — develop 자동 rebase") → push → INIT | NO |
+| `EVENT reason=bot-stuck` | 빈 커밋 retrigger (§"봇 응답 정체 retrigger") → INIT | NO |
+| `EVENT reason=heartbeat` | SendMessage tick ping (§"Heartbeat ping") → INIT | NO |
+| `EVENT reason=interrupt` | turn 종료(yield) → inbox 지시 처리 → INIT | YES (yield 전용) |
+| `DONE reason=mergeable-clean` | Phase 7 전환. auto-merge/autopilot이면 같은 turn에서 Phase 8까지 계속 | YES after action |
+| `DONE reason=merged` | Phase 8 cleanup 1회 | YES after action |
+| `DONE reason=closed-without-merge` | `status: failed`, `failed_reason: PR closed without merge` 보고 | YES |
+| `DONE reason=awaiting-human-review` | `status: awaiting-review`, `pending_human_comments` 보고 | YES |
 
-```bash
-OUT=$(REPO=E5presso/spakky-framework PR_NUMBER={N} \
-  PREV_STATE_FILE={워크트리}/.monitor-pr-state.json \
-  INTERRUPT_FILE={워크트리}/.monitor-interrupt \
-  bash {SKILL_DIR}/scripts/watch.sh)
-
-MARKER=$(echo "$OUT" | head -n 1)              # EVENT | DONE
-REASON=$(echo "$OUT" | grep '^reason=' | cut -d= -f2)
-STALE=$(echo "$OUT" | grep '^staleHandledIds=' | cut -d= -f2)
-
-case "$MARKER:$REASON" in
-  "EVENT:comments-changed")        # STALE_HANDLED_IDS=$STALE collect_comments.sh → /triage-comments → INIT
-    ;;
-  "EVENT:review-decision-changed") # collect_comments.sh → /triage-comments → INIT
-    ;;
-  "EVENT:ci-failed")               # 로컬 CI 재현 → 수정 → push → INIT
-    ;;
-  "EVENT:merge-dirty")             # rebase/conflict 해결 → push → INIT
-    ;;
-  "EVENT:bot-stuck")               # 빈 커밋 retrigger (3회 상한) → INIT
-    ;;
-  "EVENT:heartbeat")                # SendMessage tick ping 1줄 → INIT (watch.sh 재호출, cycle 카운터 0부터 재시작)
-    ;;
-  "EVENT:interrupt")                # turn 종료(yield) — 새 turn에서 지시 처리 후 INIT
-    ;;
-  "DONE:mergeable-clean"|"DONE:merged")
-    # Phase 7/8 전환
-    ;;
-  "DONE:closed-without-merge")
-    # status: failed
-    ;;
-  "DONE:awaiting-human-review")
-    # status: awaiting-review (봇이 HEAD 평가 후 휴먼 리뷰 위임 — pending_human_comments 보고 후 종료)
-    ;;
-esac
-```
-
-핸들러 본문(주석 자리)은 §"이벤트 분기" 표의 처리 컬럼에 1:1로 매핑된다. 분기 후 종료 조건(DONE)이 아니면 INIT으로 복귀하여 `watch.sh`를 다시 1회 호출한다. 단 `reason=interrupt`는 monitor 중인 turn을 종료해야 inbox 지시가 배달되므로 즉시 재호출하지 않는다.
-
-> **consumer 부재 시 동작 미정의 (MUST)**: 호출자가 `watch.sh`만 호출하고 EVENT 블록을 case로 분기하지 않은 채 자기 turn을 종료하면 본 스킬은 동작하지 않는다. EVENT 핸들러 정의는 case 분기 주체가 살아 있는 동안에만 의미를 갖는다. "Watch armed. 알림 대기." 같은 turn 종료 메시지는 §"서브에이전트 조기 종료 회귀 시그널"의 직접 위반이다.
-
-> **직렬화로 회피하지 않음 (회귀 방지)**: 병렬 PR이 다수 존재해도 본 fix는 동시 진행을 막는 직렬화가 아니다 — **각 PR을 처리하는 서브에이전트가 자기 turn 안에서 자기 PR의 EVENT consumer 루프를 살려 두면**, `merge-dirty`·`ci-failed` 등 모든 이벤트가 PR별로 독립 처리된다. 동시성 제약을 거는 우회 fix(autopilot wave 직렬화·동시 PR 1개 제한 등)를 본 스킬에 추가하지 않는다.
-
-## 이벤트 분기
-
-| `watch.sh` 출력 | 처리 |
-|-----------|------|
-| `EVENT reason=comments-changed` | `STALE_HANDLED_IDS={staleHandledIds 값} collect_comments.sh` 실행 → TRIAGE 게이트 → INIT (다음 `watch.sh` 호출) |
-| `EVENT reason=review-decision-changed` | `collect_comments.sh` 실행 → TRIAGE 게이트 → INIT |
-| `EVENT reason=ci-failed` | 로컬 CI 재현 → 수정 → push → INIT |
-| `EVENT reason=merge-dirty` | 자동 rebase (§"Merge dirty — develop 자동 rebase") → INIT |
-| `EVENT reason=bot-stuck` | 빈 커밋 retrigger (§"봇 응답 정체 retrigger") → INIT |
-| `EVENT reason=heartbeat` | SendMessage tick ping (§"Heartbeat ping") → INIT (watch.sh 재호출) |
-| `EVENT reason=interrupt` | turn 종료(yield) → 지시가 inbox 배달 → 새 turn에서 지시 처리 → INIT |
-| `DONE reason=mergeable-clean` | 종료 (Phase 7 전환) |
-| `DONE reason=merged` | 종료 (이미 머지됨 — Phase 8 정리만 수행) |
-| `DONE reason=closed-without-merge` | 종료 (PR이 머지 없이 닫힘 — autopilot은 `status: failed`, `failed_reason: PR closed without merge`로 보고하고 다음 wave 진행 차단) |
-| `DONE reason=awaiting-human-review` | 종료 (봇이 HEAD 평가 후 review submission 대신 CH2 코멘트로 휴먼 리뷰 위임 — `status: awaiting-review`, `pending_human_comments: <bot CH2 코멘트 URL>`로 보고하고 휴먼 응답 대기) |
+**consumer 부재는 Critical 위반**: 호출자가 `watch.sh`만 호출하고 위 표로 분기하지 않은 채 종료하면 핸들러 정의는 dead code다. 병렬 PR은 직렬화로 해결하지 않는다. 각 PR을 처리하는 서브에이전트가 자기 turn 안에서 자기 PR의 라우팅 계약을 유지한다.
 
 ### 코멘트 수집 (이벤트 핸들러)
 

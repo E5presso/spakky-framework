@@ -37,9 +37,9 @@ require_text "$autopilot_wave" 'phase7_ready={phase7_ready|null}' \
 require_text "$autopilot_wave" '반환하지 말고 같은 turn에서 `gh pr merge --squash --delete-branch`와 cleanup까지 완료하라' \
   'resume prompt must forbid returning after phase7_ready'
 
-require_text "$phase6" '`DONE reason=mergeable-clean`은 process-ticket 전체의 terminal 반환이 아니라 **Phase 6만의 terminal**' \
+require_text "$phase6" '`DONE reason=mergeable-clean`은 Phase 6만의 terminal이므로' \
   'process-ticket Phase 6 must treat mergeable-clean as nonterminal for auto-merge'
-require_text "$phase6" 'Phase 8 squash merge + cleanup까지 동기 실행한다' \
+require_text "$phase6" 'Phase 8 squash merge + cleanup까지 계속한다' \
   'process-ticket Phase 6 must continue to Phase 8 in auto-merge mode'
 require_text "$phase7" 'Phase 7은 사용자 승인 게이트가 아니라 Phase 8로 넘어가는 0-hop 라우터다' \
   'process-ticket Phase 7 must be a zero-hop router in auto-merge mode'
