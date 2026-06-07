@@ -21,6 +21,10 @@
 			"path": "core/spakky-domain",
 		},
 		{
+			"name": "core.auth",
+			"path": "core/spakky-auth",
+		},
+		{
 			"name": "core.data",
 			"path": "core/spakky-data",
 		},
@@ -35,6 +39,10 @@
 		{
 			"name": "core.outbox",
 			"path": "core/spakky-outbox",
+		},
+		{
+			"name": "core.tracing",
+			"path": "core/spakky-tracing",
 		},
 		{
 			"name": "core.saga",
@@ -63,6 +71,14 @@
 		{
 			"name": "plugins.rabbitmq",
 			"path": "plugins/spakky-rabbitmq",
+		},
+		{
+			"name": "plugins.cryptography",
+			"path": "plugins/spakky-cryptography",
+		},
+		{
+			"name": "plugins.openfga",
+			"path": "plugins/spakky-openfga",
 		},
 		{
 			"name": "plugins.typer",
@@ -96,6 +112,14 @@
 			"name": "plugins.vllm",
 			"path": "plugins/spakky-vllm",
 		},
+		{
+			"name": "plugins.oidc",
+			"path": "plugins/spakky-oidc",
+		},
+		{
+			"name": "plugins.policy",
+			"path": "plugins/spakky-policy",
+		}
 	],
 	"settings": {
 		"yaml.customTags": [
@@ -180,15 +204,32 @@
 			"scripts",
 			"core",
 			"domain",
+			"auth",
 			"data",
 			"event",
+			"task",
+			"agent",
+			"actuator",
+			"cache",
+			"outbox",
+			"tracing",
+			"saga",
+			"logging",
 			"fastapi",
 			"rabbitmq",
 			"security",
+			"cryptography",
+			"openfga",
 			"typer",
 			"kafka",
 			"sqlalchemy",
-			"outbox",
+			"celery",
+			"opentelemetry",
+			"grpc",
+			"redis",
+			"vllm",
+			"oidc",
+			"policy",
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml",
