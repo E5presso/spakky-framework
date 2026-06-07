@@ -22,6 +22,7 @@ from spakky.agent import (
     AgentSignal,
     AgentSignalKind,
     AgentState,
+    AgentStateReason,
     AgentStateTransition,
     AgentStatus,
     AgentYield,
@@ -30,6 +31,7 @@ from spakky.agent import (
     Cancel,
     Evidence,
     EvidenceCapture,
+    Error,
     Final,
     Idempotency,
     JsonSchemaConstraint,
@@ -368,6 +370,34 @@ class CodeAssistant:
                         idempotency=Idempotency.IDEMPOTENT,
                     ),
                 )
+            elif (
+                event.kind is ModelStreamEventKind.ERROR
+                and event.error is not None
+            ):
+                current_state = self._states.get(state.id)
+                self._states.save(
+                    replace(
+                        current_state,
+                        status=AgentStatus.FAILED,
+                        transition=AgentStateTransition.FAILED,
+                        reason=AgentStateReason.EXECUTION_FAILED,
+                        current_activity="model stream failed",
+                        metadata={
+                            **current_state.metadata,
+                            "model_error_code": event.error.code,
+                        },
+                    )
+                )
+                yield AgentYield(
+                    kind=AgentYieldKind.ERROR,
+                    payload=Error(
+                        code=event.error.code,
+                        message=event.error.message,
+                        retryable=event.error.retryable,
+                        metadata=event.error.metadata,
+                    ),
+                )
+                return
 
         final_state = self._states.save(
             replace(

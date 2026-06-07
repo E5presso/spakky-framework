@@ -35,10 +35,12 @@ from spakky.agent import (
     Approval,
     ApprovalDecision,
     Cancel,
+    Error,
     Evidence,
     Final,
     IAgentModel,
     JsonValue,
+    ModelError,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -216,6 +218,46 @@ async def test_code_assistant_demo_expect_cancellation_reaches_terminal_state() 
     assert AgentEvidenceKind.CANCELLATION in {
         artifact.kind for artifact in evidence.list_by_state("cancel-run")
     }
+
+
+async def test_code_assistant_demo_expect_model_stream_error_fails_state() -> None:
+    """model ERROR events surface to callers instead of completing silently."""
+    states = FakeStateRepository()
+
+    items = await collect_stream(
+        StaticModel(
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.ERROR,
+                    error=ModelError(
+                        code="rate_limited",
+                        message="provider rate limit",
+                        retryable=True,
+                        metadata={"provider": "test"},
+                    ),
+                ),
+            )
+        ),
+        FakeWorkspace({}),
+        FakeShell(),
+        FakeGit(),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+        CodeAssistantCommand(state_id="error-run", instruction="trigger model error"),
+    )
+
+    assert [item.kind for item in items] == [
+        AgentYieldKind.PROGRESS,
+        AgentYieldKind.ERROR,
+    ]
+    assert not any(item.kind is AgentYieldKind.FINAL for item in items)
+    error_payload = items[-1].payload
+    assert isinstance(error_payload, Error)
+    assert error_payload.code == "rate_limited"
+    assert error_payload.retryable is True
+    assert error_payload.metadata == {"provider": "test"}
+    assert states.get("error-run").status is AgentStatus.FAILED
 
 
 async def test_code_assistant_demo_expect_restart_resume_uses_persisted_boundaries() -> (
