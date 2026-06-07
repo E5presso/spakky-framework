@@ -4,10 +4,11 @@ Provides the @rpc decorator for marking controller methods as gRPC service
 methods with support for all four gRPC streaming patterns.
 """
 
+from collections.abc import AsyncIterator as AsyncIteratorABC
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from inspect import signature
-from typing import Callable, get_type_hints
+from typing import Callable, get_args, get_origin, get_type_hints
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.common.types import AnyT
@@ -27,6 +28,15 @@ class RpcMethodType(StrEnum):
     SERVER_STREAMING = auto()
     CLIENT_STREAMING = auto()
     BIDI_STREAMING = auto()
+
+
+def _unwrap_streaming_type(annotation: object) -> object:
+    """Return the message type inside supported streaming annotations."""
+    if get_origin(annotation) is AsyncIteratorABC:
+        args = get_args(annotation)
+        if args:
+            return args[0]
+    return annotation
 
 
 @dataclass
@@ -75,9 +85,11 @@ class Rpc(FunctionAnnotation):
             params = list(signature(obj).parameters.values())
             non_self_params = [p for p in params if p.name != "self"]
             if non_self_params:
-                self.request_type = hints.get(non_self_params[0].name)
+                request_hint = hints.get(non_self_params[0].name)
+                self.request_type = _unwrap_streaming_type(request_hint)
         if self.response_type is None:
-            self.response_type = hints.get("return")
+            response_hint = hints.get("return")
+            self.response_type = _unwrap_streaming_type(response_hint)
 
 
 def rpc(
