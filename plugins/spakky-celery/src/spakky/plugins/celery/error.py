@@ -21,3 +21,9 @@ class InvalidScheduleRouteError(AbstractSpakkyCeleryError):
     """Raised when a ScheduleRoute has no valid schedule specification."""
 
     message = "ScheduleRoute has no schedule specification"
+
+
+class AuthSnapshotPropagationSignerUnavailableError(AbstractSpakkyCeleryError):
+    """Raised when signed task snapshot propagation has no signer provider."""
+
+    message = "Auth context snapshot signer is unavailable"

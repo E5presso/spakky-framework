@@ -1,12 +1,33 @@
 """Tests for CeleryPostProcessor."""
 
+from collections.abc import Callable
 from datetime import time, timedelta
+from typing import override
 from unittest.mock import MagicMock, patch
 
 import pytest
 from celery import Celery
+from celery.exceptions import Retry
 from celery.schedules import crontab as celery_crontab
 from celery.schedules import schedule as celery_schedule
+from spakky.auth import (
+    AUTH_CONTEXT_CONTEXT_KEY,
+    AUTH_CONTEXT_SNAPSHOT_METADATA_KEY,
+    AuthContext,
+    AuthInvocation,
+    AuthRequirementDeniedError,
+    AuthSubject,
+    AuthVerificationProviderUnavailableError,
+    AuthorizationDecision,
+    AuthorizationDecisionState,
+    AuthorizationReasonCode,
+    ExpiredAuthContextSnapshotError,
+    IAuthContextSnapshotVerifier,
+    IScopeChecker,
+    InvalidAuthContextSnapshotError,
+    ScopeCheckRequest,
+    require_scope,
+)
 from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.crontab import Crontab, Weekday
 from spakky.task.stereotype.schedule import schedule
@@ -31,6 +52,48 @@ class _SampleTaskHandler:
     @task
     def process_data(self, data: str) -> None:
         pass
+
+
+def _auth_context() -> AuthContext:
+    return AuthContext(
+        subject=AuthSubject(id="subject-1"),
+        issuer="issuer-1",
+        scopes=("tasks:run",),
+    )
+
+
+class SnapshotVerifier(IAuthContextSnapshotVerifier):
+    error: Exception | None
+    calls: list[tuple[str, AuthInvocation]]
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.calls = []
+
+    @override
+    def verify_snapshot(
+        self,
+        snapshot_envelope: str,
+        invocation: AuthInvocation,
+    ) -> AuthContext:
+        self.calls.append((snapshot_envelope, invocation))
+        if self.error is not None:
+            raise self.error
+        return _auth_context()
+
+
+class ScopeChecker(IScopeChecker):
+    decision: AuthorizationDecision
+    requests: list[ScopeCheckRequest]
+
+    def __init__(self, decision: AuthorizationDecision) -> None:
+        self.decision = decision
+        self.requests = []
+
+    @override
+    def check_scope(self, request: ScopeCheckRequest) -> AuthorizationDecision:
+        self.requests.append(request)
+        return self.decision
 
 
 def _create_celery() -> Celery:
@@ -194,6 +257,218 @@ def test_celery_post_processor_registers_async_tasks() -> None:
     application_context_mock.clear_context.assert_called_once()
     assert async_handler.calls == ["async_payload"]
     assert result == "async: async_payload"
+
+
+def _registered_endpoint_for_handler(
+    handler_type: type[object],
+    handler: object,
+    *,
+    snapshot_verifier: IAuthContextSnapshotVerifier | None,
+    scope_checker: IScopeChecker | None,
+) -> tuple[Callable[..., object], MagicMock]:
+    celery_mock = MagicMock()
+    application_context_mock = MagicMock()
+
+    def get_from_context(type_: type[object]) -> object:
+        if type_ is Celery:
+            return celery_mock
+        if type_ is handler_type:
+            return handler
+        raise AssertionError(f"Unexpected dependency lookup: {type_}")
+
+    application_context_mock.get.side_effect = get_from_context
+    application_context_mock.get_or_none.return_value = None
+
+    post_processor = CeleryPostProcessor(
+        auth_snapshot_verifier=snapshot_verifier,
+        scope_checker=scope_checker,
+    )
+    post_processor.set_application_context(application_context_mock)
+    post_processor.post_process(handler)
+
+    endpoint = celery_mock.task.return_value.call_args_list[0].args[0]
+    return endpoint, application_context_mock
+
+
+def test_protected_sync_endpoint_verifies_snapshot_and_seeds_auth_context() -> None:
+    """protected worker task는 snapshot 검증 후 AuthContext를 seed하고 실행한다."""
+
+    @TaskHandler()
+    class ProtectedHandler:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        @task
+        @require_scope("tasks:run")
+        def protected_task(self, value: str) -> str:
+            self.calls.append(value)
+            return value
+
+    handler = ProtectedHandler()
+    verifier = SnapshotVerifier()
+    checker = ScopeChecker(AuthorizationDecision.allow())
+    endpoint, application_context_mock = _registered_endpoint_for_handler(
+        ProtectedHandler,
+        handler,
+        snapshot_verifier=verifier,
+        scope_checker=checker,
+    )
+    mock_request = MagicMock()
+    mock_request.get.return_value = {
+        AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "snapshot-envelope"
+    }
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        result = endpoint("payload")
+
+    assert result == "payload"
+    assert handler.calls == ["payload"]
+    assert verifier.calls[0][0] == "snapshot-envelope"
+    assert checker.requests[0].auth_context == _auth_context()
+    application_context_mock.set_context_value.assert_any_call(
+        AUTH_CONTEXT_CONTEXT_KEY,
+        _auth_context(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("headers", "verifier_error", "expected_reason"),
+    [
+        ({}, None, AuthorizationReasonCode.SNAPSHOT_MISSING),
+        (
+            {AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "invalid-envelope"},
+            InvalidAuthContextSnapshotError(),
+            AuthorizationReasonCode.SNAPSHOT_INVALID,
+        ),
+        (
+            {AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "expired-envelope"},
+            ExpiredAuthContextSnapshotError(),
+            AuthorizationReasonCode.SNAPSHOT_EXPIRED,
+        ),
+    ],
+)
+def test_protected_sync_endpoint_snapshot_challenge_fails_closed(
+    headers: dict[str, str],
+    verifier_error: Exception | None,
+    expected_reason: AuthorizationReasonCode,
+) -> None:
+    """missing/invalid/expired snapshot은 CHALLENGE task failure로 닫힌다."""
+
+    @TaskHandler()
+    class ProtectedHandler:
+        def __init__(self) -> None:
+            self.called = False
+
+        @task
+        @require_scope("tasks:run")
+        def protected_task(self) -> None:
+            self.called = True
+
+    handler = ProtectedHandler()
+    endpoint, _ = _registered_endpoint_for_handler(
+        ProtectedHandler,
+        handler,
+        snapshot_verifier=SnapshotVerifier(verifier_error),
+        scope_checker=ScopeChecker(AuthorizationDecision.allow()),
+    )
+    mock_request = MagicMock()
+    mock_request.get.return_value = headers
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        with pytest.raises(AuthRequirementDeniedError) as excinfo:
+            endpoint()
+
+    assert excinfo.value.decision is not None
+    assert excinfo.value.decision.state is AuthorizationDecisionState.CHALLENGE
+    assert excinfo.value.decision.reason_code is expected_reason
+    assert not handler.called
+    mock_current_task.retry.assert_not_called()
+
+
+def test_protected_sync_endpoint_deny_fails_task_without_retry() -> None:
+    """authorization DENY decision은 retry 없이 task failure가 된다."""
+
+    @TaskHandler()
+    class ProtectedHandler:
+        def __init__(self) -> None:
+            self.called = False
+
+        @task
+        @require_scope("tasks:run")
+        def protected_task(self) -> None:
+            self.called = True
+
+    handler = ProtectedHandler()
+    endpoint, _ = _registered_endpoint_for_handler(
+        ProtectedHandler,
+        handler,
+        snapshot_verifier=SnapshotVerifier(),
+        scope_checker=ScopeChecker(
+            AuthorizationDecision.deny(AuthorizationReasonCode.INSUFFICIENT_SCOPE)
+        ),
+    )
+    mock_request = MagicMock()
+    mock_request.get.return_value = {
+        AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "snapshot-envelope"
+    }
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        with pytest.raises(AuthRequirementDeniedError) as excinfo:
+            endpoint()
+
+    assert excinfo.value.decision is not None
+    assert excinfo.value.decision.state is AuthorizationDecisionState.DENY
+    assert not handler.called
+    mock_current_task.retry.assert_not_called()
+
+
+def test_protected_sync_endpoint_verification_error_uses_celery_retry() -> None:
+    """verification provider unavailable ERROR는 Celery retryable task 오류로 매핑된다."""
+
+    @TaskHandler()
+    class ProtectedHandler:
+        def __init__(self) -> None:
+            self.called = False
+
+        @task
+        @require_scope("tasks:run")
+        def protected_task(self) -> None:
+            self.called = True
+
+    handler = ProtectedHandler()
+    endpoint, _ = _registered_endpoint_for_handler(
+        ProtectedHandler,
+        handler,
+        snapshot_verifier=SnapshotVerifier(AuthVerificationProviderUnavailableError()),
+        scope_checker=ScopeChecker(AuthorizationDecision.allow()),
+    )
+    mock_request = MagicMock()
+    mock_request.get.return_value = {
+        AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "snapshot-envelope"
+    }
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        mock_current_task.retry.side_effect = Retry()
+        with pytest.raises(Retry):
+            endpoint()
+
+    retry_error = mock_current_task.retry.call_args.kwargs["exc"]
+    assert isinstance(retry_error, AuthRequirementDeniedError)
+    assert retry_error.decision is not None
+    assert retry_error.decision.state is AuthorizationDecisionState.ERROR
+    assert not handler.called
 
 
 # =============================================================================
@@ -494,6 +769,19 @@ def test_sync_endpoint_no_trace_when_propagator_none_expect_context_unset() -> N
     endpoint()
 
     assert handler.captured_ctx is None
+
+
+def test_current_task_headers_non_dict_expect_empty() -> None:
+    """current_task headers가 dict가 아니면 빈 header carrier로 처리한다."""
+    post_processor = CeleryPostProcessor()
+    mock_request = MagicMock()
+    mock_request.get.return_value = ["not", "headers"]
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        assert post_processor._current_task_headers() == {}
 
 
 def test_async_endpoint_extracts_trace_context_expect_child_span() -> None:

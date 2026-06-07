@@ -6,6 +6,16 @@ from inspect import getmembers, iscoroutinefunction, isfunction
 from logging import getLogger
 from typing import Any, Callable
 
+from celery.exceptions import Retry
+from spakky.auth import (
+    AuthRequirementDeniedError,
+    IAuthContextSnapshotVerifier,
+    IAuthorizationPolicyEvaluator,
+    IPermissionChecker,
+    IRelationChecker,
+    IRoleChecker,
+    IScopeChecker,
+)
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -16,7 +26,11 @@ from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.core.utils.inspection import get_fully_qualified_name
 from spakky.task.stereotype.crontab import Crontab, Month, Weekday
 from spakky.task.stereotype.schedule import ScheduleRoute
-from spakky.task.stereotype.task_handler import TaskHandler, TaskRoute
+from spakky.task.stereotype.task_handler import (
+    TaskHandler,
+    TaskRoute,
+    collect_task_auth_metadata,
+)
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 from typing import override
@@ -27,6 +41,10 @@ from celery.schedules import schedule as celery_schedule
 from spakky.plugins.celery.aspects.task_dispatch import (
     AsyncCeleryTaskDispatchAspect,
     CeleryTaskDispatchAspect,
+)
+from spakky.plugins.celery.auth import (
+    is_retryable_auth_failure,
+    seed_and_authorize_celery_task,
 )
 from spakky.plugins.celery.common.constants import CELERY_TASK_CONTEXT_KEY
 from spakky.plugins.celery.error import InvalidScheduleRouteError
@@ -40,6 +58,28 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
     """Post-processor that registers TaskHandler-annotated Pods as Celery tasks."""
 
     __application_context: IApplicationContext
+    __auth_snapshot_verifier: IAuthContextSnapshotVerifier | None
+    __authorization_policy_evaluator: IAuthorizationPolicyEvaluator | None
+    __permission_checker: IPermissionChecker | None
+    __relation_checker: IRelationChecker | None
+    __role_checker: IRoleChecker | None
+    __scope_checker: IScopeChecker | None
+
+    def __init__(
+        self,
+        auth_snapshot_verifier: IAuthContextSnapshotVerifier | None = None,
+        authorization_policy_evaluator: IAuthorizationPolicyEvaluator | None = None,
+        permission_checker: IPermissionChecker | None = None,
+        relation_checker: IRelationChecker | None = None,
+        role_checker: IRoleChecker | None = None,
+        scope_checker: IScopeChecker | None = None,
+    ) -> None:
+        self.__auth_snapshot_verifier = auth_snapshot_verifier
+        self.__authorization_policy_evaluator = authorization_policy_evaluator
+        self.__permission_checker = permission_checker
+        self.__relation_checker = relation_checker
+        self.__role_checker = role_checker
+        self.__scope_checker = scope_checker
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -58,10 +98,10 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         def endpoint(*args: Any, **kwargs: Any) -> Any:
             self.__application_context.clear_context()
             self.__application_context.set_context_value(CELERY_TASK_CONTEXT_KEY, True)
+            task_name = get_fully_qualified_name(method)
+            raw_headers = self._current_task_headers()
+            self._seed_and_authorize_task(task_name, method, handler_type, raw_headers)
             if propagator is not None:
-                raw_headers: dict[str, object] = (
-                    current_task.request.get("headers") or {}
-                )
                 carrier: dict[str, str] = {
                     k: v for k, v in raw_headers.items() if isinstance(v, str)
                 }
@@ -94,10 +134,10 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
             """Async wrapper that sets context and invokes handler method."""
             self.__application_context.clear_context()
             self.__application_context.set_context_value(CELERY_TASK_CONTEXT_KEY, True)
+            task_name = get_fully_qualified_name(method)
+            raw_headers = self._current_task_headers()
+            self._seed_and_authorize_task(task_name, method, handler_type, raw_headers)
             if propagator is not None:
-                raw_headers: dict[str, object] = (
-                    current_task.request.get("headers") or {}
-                )
                 carrier: dict[str, str] = {
                     k: v for k, v in raw_headers.items() if isinstance(v, str)
                 }
@@ -165,6 +205,53 @@ class CeleryPostProcessor(IPostProcessor, IApplicationContextAware):
         task_name = get_fully_qualified_name(method)
         celery.task(name=task_name)(endpoint)
         return task_name
+
+    def _current_task_headers(self) -> dict[str, object]:
+        try:
+            request = current_task.request
+        except AttributeError:
+            return {}
+        raw_headers = request.get("headers") or {}
+        if isinstance(raw_headers, dict):
+            return raw_headers
+        return {}
+
+    def _seed_and_authorize_task(
+        self,
+        task_name: str,
+        method: Callable[..., Any],
+        handler_type: type[object],
+        raw_headers: dict[str, object],
+    ) -> None:
+        route = TaskRoute.get_or_none(method)
+        if route is None:
+            return
+        route.auth_metadata = collect_task_auth_metadata(
+            method,
+            owner_type=handler_type,
+        )
+        headers = {k: v for k, v in raw_headers.items() if isinstance(v, str)}
+        try:
+            seed_and_authorize_celery_task(
+                application_context=self.__application_context,
+                task_name=task_name,
+                headers=headers,
+                auth_metadata=route.auth_metadata,
+                snapshot_verifier=self.__auth_snapshot_verifier,
+                authorization_policy_evaluator=self.__authorization_policy_evaluator,
+                permission_checker=self.__permission_checker,
+                relation_checker=self.__relation_checker,
+                role_checker=self.__role_checker,
+                scope_checker=self.__scope_checker,
+            )
+        except AuthRequirementDeniedError as error:
+            if not is_retryable_auth_failure(error):
+                raise
+            try:
+                current_task.retry(exc=error)
+            except Retry as retry:
+                raise retry from error
+            raise
 
     @override
     def post_process(self, pod: object) -> object:
