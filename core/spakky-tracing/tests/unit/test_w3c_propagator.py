@@ -70,6 +70,30 @@ def test_extract_invalid_header_expect_none() -> None:
     assert ctx is None
 
 
+def test_extract_zero_trace_id_expect_none() -> None:
+    """extract() ignores W3C-forbidden all-zero trace IDs."""
+    propagator = W3CTracePropagator()
+    carrier = {
+        TRACEPARENT_HEADER: "00-00000000000000000000000000000000-b7ad6b7169203331-01",
+    }
+
+    ctx = propagator.extract(carrier)
+
+    assert ctx is None
+
+
+def test_extract_zero_span_id_expect_none() -> None:
+    """extract() ignores W3C-forbidden all-zero span IDs."""
+    propagator = W3CTracePropagator()
+    carrier = {
+        TRACEPARENT_HEADER: "00-0af7651916cd43dd8448eb211c80319c-0000000000000000-01",
+    }
+
+    ctx = propagator.extract(carrier)
+
+    assert ctx is None
+
+
 def test_fields_expect_traceparent() -> None:
     """fields()가 ["traceparent"]를 반환하는지 검증한다."""
     propagator = W3CTracePropagator()

@@ -30,6 +30,8 @@ class TraceContext:
     _TRACE_ID_BYTES: ClassVar[int] = 16
     _SPAN_ID_BYTES: ClassVar[int] = 8
     _HEX_BASE: ClassVar[int] = 16
+    _ZERO_TRACE_ID: ClassVar[str] = "0" * 32
+    _ZERO_SPAN_ID: ClassVar[str] = "0" * 16
 
     trace_id: str
     span_id: str
@@ -74,6 +76,8 @@ class TraceContext:
         if match is None:
             raise InvalidTraceparentError()
         _version, trace_id, span_id, flags_hex = match.groups()
+        if trace_id == cls._ZERO_TRACE_ID or span_id == cls._ZERO_SPAN_ID:
+            raise InvalidTraceparentError()
         return cls(
             trace_id=trace_id,
             span_id=span_id,
