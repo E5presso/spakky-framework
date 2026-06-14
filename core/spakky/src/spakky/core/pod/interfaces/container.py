@@ -5,10 +5,10 @@ and dependency injection.
 """
 
 from abc import ABC, abstractmethod
-from typing import Callable, overload
+from typing import overload
+from collections.abc import Callable
 
 from spakky.core.common.interfaces.representable import IRepresentable
-from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.binding import PodBinding
 from spakky.core.pod.diagnostics import (
@@ -188,18 +188,18 @@ class IContainer(ABC):
 
     @overload
     @abstractmethod
-    def get(self, type_: type[ObjectT]) -> ObjectT: ...
+    def get[T: object](self, type_: type[T]) -> T: ...
 
     @overload
     @abstractmethod
-    def get(self, type_: type[ObjectT], name: str) -> ObjectT: ...
+    def get[T: object](self, type_: type[T], name: str) -> T: ...
 
     @abstractmethod
-    def get(
+    def get[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT | object:
+    ) -> T | object:
         """Get a Pod instance by type and optional name.
 
         Args:
@@ -213,18 +213,18 @@ class IContainer(ABC):
 
     @overload
     @abstractmethod
-    def get_or_none(self, type_: type[ObjectT]) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T]) -> T | None: ...
 
     @overload
     @abstractmethod
-    def get_or_none(self, type_: type[ObjectT], name: str) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T], name: str) -> T | None: ...
 
     @abstractmethod
-    def get_or_none(
+    def get_or_none[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT | None:
+    ) -> T | None:
         """Get a Pod instance by type and optional name, or None if not found.
 
         Args:

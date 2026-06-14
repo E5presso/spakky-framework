@@ -1,7 +1,8 @@
 import asyncio
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Annotated, Any, Callable, cast, override
+from typing import Annotated, Any, cast, override
+from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest

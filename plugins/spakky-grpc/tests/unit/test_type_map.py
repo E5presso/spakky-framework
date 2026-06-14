@@ -86,7 +86,7 @@ def test_list_basemodel_maps_to_repeated_message() -> None:
 
 def test_optional_str_maps_to_optional_string() -> None:
     """Optional[str]이 optional TYPE_STRING으로 매핑되는지 검증한다."""
-    result = resolve_type(Optional[str])
+    result = resolve_type(Optional[str])  # noqa: UP045 - legacy typing input contract
     assert result.proto_type == FieldDescriptorProto.TYPE_STRING
     assert result.is_optional
     assert not result.is_repeated
@@ -155,7 +155,7 @@ def test_multi_type_union_raises_error() -> None:
     from typing import Union
 
     with pytest.raises(UnsupportedFieldTypeError):
-        resolve_type(Union[str, int])
+        resolve_type(Union[str, int])  # noqa: UP007 - legacy typing input contract
 
 
 def test_extract_proto_field_multi_field_basemodel() -> None:
@@ -175,7 +175,7 @@ def test_optional_basemodel_maps_to_optional_message() -> None:
     class Inner(BaseModel):
         value: Annotated[str, ProtoField(number=1)]
 
-    result = resolve_type(Optional[Inner])
+    result = resolve_type(Optional[Inner])  # noqa: UP045 - legacy typing input contract
     assert result.proto_type == FieldDescriptorProto.TYPE_MESSAGE
     assert result.is_optional
     assert result.is_message

@@ -4,7 +4,6 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from inspect import getmembers_static
-from typing import TypeVar
 
 from spakky.auth.error import ConflictingAuthMetadataError
 from spakky.auth.invocation import (
@@ -17,8 +16,6 @@ from spakky.auth.invocation import (
     AuthTenantRef,
 )
 from spakky.core.common.annotation import Annotation
-
-DecoratedT = TypeVar("DecoratedT", bound=object)
 
 AUTHENTICATED_REQUIREMENT_REF = "authenticated"
 
@@ -84,12 +81,12 @@ class ProtectedRequirement(Annotation):
     requirement: AuthRequirement
 
 
-def public_access(obj: DecoratedT) -> DecoratedT:
+def public_access[T: object](obj: T) -> T:
     """Mark a class or method as explicitly public."""
     return PublicAccess()(obj)
 
 
-def protected(obj: DecoratedT) -> DecoratedT:
+def protected[T: object](obj: T) -> T:
     """Require an authenticated request-scope AuthContext."""
     return _requirement_decorator(
         AuthRequirement(
@@ -99,12 +96,12 @@ def protected(obj: DecoratedT) -> DecoratedT:
     )(obj)
 
 
-def require_permission(
+def require_permission[T: object](
     permission: AuthPermissionRef,
     *,
     resource: AuthResourceRef | None = None,
     tenant: AuthTenantRef | None = None,
-) -> Callable[[DecoratedT], DecoratedT]:
+) -> Callable[[T], T]:
     """Require a permission decision for a class or method boundary."""
     return _requirement_decorator(
         AuthRequirement(
@@ -116,12 +113,12 @@ def require_permission(
     )
 
 
-def require_policy(
+def require_policy[T: object](
     resource: AuthResourceRef,
     action: AuthActionRef,
     *,
     tenant: AuthTenantRef | None = None,
-) -> Callable[[DecoratedT], DecoratedT]:
+) -> Callable[[T], T]:
     """Require a resource/action policy decision for a boundary."""
     return _requirement_decorator(
         AuthRequirement(
@@ -134,12 +131,12 @@ def require_policy(
     )
 
 
-def require_relation(
+def require_relation[T: object](
     relation: AuthRelationRef,
     *,
     resource: AuthResourceRef,
     tenant: AuthTenantRef | None = None,
-) -> Callable[[DecoratedT], DecoratedT]:
+) -> Callable[[T], T]:
     """Require a relationship decision for a resource boundary."""
     return _requirement_decorator(
         AuthRequirement(
@@ -151,11 +148,11 @@ def require_relation(
     )
 
 
-def require_role(
+def require_role[T: object](
     role: AuthRoleRef,
     *,
     tenant: AuthTenantRef | None = None,
-) -> Callable[[DecoratedT], DecoratedT]:
+) -> Callable[[T], T]:
     """Require a role decision for a class or method boundary."""
     return _requirement_decorator(
         AuthRequirement(
@@ -166,7 +163,7 @@ def require_role(
     )
 
 
-def require_scope(scope: AuthScopeRef) -> Callable[[DecoratedT], DecoratedT]:
+def require_scope[T: object](scope: AuthScopeRef) -> Callable[[T], T]:
     """Require a scope decision for a class or method boundary."""
     return _requirement_decorator(
         AuthRequirement(kind=AuthRequirementKind.SCOPE, ref=scope)
@@ -207,10 +204,10 @@ def has_auth_boundary_metadata(obj: object) -> bool:
     )
 
 
-def _requirement_decorator(
+def _requirement_decorator[T: object](
     requirement: AuthRequirement,
-) -> Callable[[DecoratedT], DecoratedT]:
-    def decorator(obj: DecoratedT) -> DecoratedT:
+) -> Callable[[T], T]:
+    def decorator(obj: T) -> T:
         return ProtectedRequirement(requirement=requirement)(obj)
 
     return decorator

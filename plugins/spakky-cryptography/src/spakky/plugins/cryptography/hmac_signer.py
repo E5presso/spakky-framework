@@ -6,15 +6,16 @@ hash algorithms (SHA-224, SHA-256, SHA-384, SHA-512).
 
 import hashlib
 import hmac
-from enum import Enum
-from typing import Callable, final
+from collections.abc import Callable
+from enum import StrEnum
+from typing import final
 
 from spakky.plugins.cryptography.encoding import Base64Encoder
 from spakky.plugins.cryptography.key import Key
 
 
 @final
-class HMACType(str, Enum):
+class HMACType(StrEnum):
     """Supported HMAC hash algorithms."""
 
     HS224 = "HS224"

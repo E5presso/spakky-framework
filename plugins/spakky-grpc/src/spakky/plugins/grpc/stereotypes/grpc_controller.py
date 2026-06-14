@@ -5,8 +5,8 @@ controllers with automatic service registration and protobuf package configurati
 """
 
 from dataclasses import dataclass
+from typing import cast
 
-from spakky.core.common.types import AnyT
 from spakky.core.stereotype.controller import Controller
 
 
@@ -30,7 +30,7 @@ class GrpcController(Controller):
     service_name: str | None = None
     """gRPC service name. Defaults to the class name."""
 
-    def __call__(self, obj: AnyT) -> AnyT:
+    def __call__[T: object](self, obj: type[T]) -> type[T]:
         """Apply the gRPC controller stereotype to a class.
 
         Automatically generates the service name from the class name
@@ -43,5 +43,5 @@ class GrpcController(Controller):
             The decorated class registered as a Pod.
         """
         if self.service_name is None:
-            self.service_name = obj.__name__  # type: ignore[union-attr] - 제네릭 AnyT가 클래스 타입으로 좁혀지지 않아 __name__ 접근 오탐
-        return super().__call__(obj)
+            self.service_name = obj.__name__
+        return cast(type[T], super().__call__(obj))

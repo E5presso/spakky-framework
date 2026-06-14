@@ -1,7 +1,8 @@
 """Integration test fixtures for outbox storage with PostgreSQL."""
 
 import os
-from typing import Any, AsyncGenerator, Generator
+from typing import Any
+from collections.abc import AsyncGenerator, Generator
 from uuid import uuid4
 
 import pytest

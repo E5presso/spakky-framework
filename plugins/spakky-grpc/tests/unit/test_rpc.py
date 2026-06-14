@@ -1,6 +1,6 @@
 """Unit tests for @rpc decorator."""
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from pydantic import BaseModel
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType, rpc

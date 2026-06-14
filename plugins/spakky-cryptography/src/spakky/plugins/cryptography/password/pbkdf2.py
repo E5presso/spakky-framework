@@ -109,13 +109,7 @@ class Pbkdf2PasswordEncoder(IPasswordEncoder):
         Returns:
             Encoded password hash string with algorithm, hash type, and parameters.
         """
-        return "{algorithm}:{hash_type}:{iteration}:{salt}:{hash}".format(
-            algorithm=self.ALGORITHM_TYPE,
-            hash_type=self.__hash_type.lower(),
-            iteration=self.__iteration,
-            salt=self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64,
-            hash=self.__hash,
-        )
+        return f"{self.ALGORITHM_TYPE}:{self.__hash_type.lower()}:{self.__iteration}:{self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64}:{self.__hash}"
 
     @override
     def challenge(self, password: str) -> bool:

@@ -123,16 +123,7 @@ class ScryptPasswordEncoder(IPasswordEncoder):
         Returns:
             Encoded password hash string with algorithm and parameters.
         """
-        return "{algorithm}:{salt}:{n}:{r}:{p}:{maxmem}:{dklen}:{hash}".format(
-            algorithm=self.ALGORITHM_TYPE,
-            salt=self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64,
-            n=self.__n,
-            r=self.__r,
-            p=self.__p,
-            maxmem=self.__maxmem,
-            dklen=self.__dklen,
-            hash=self.__hash,
-        )
+        return f"{self.ALGORITHM_TYPE}:{self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64}:{self.__n}:{self.__r}:{self.__p}:{self.__maxmem}:{self.__dklen}:{self.__hash}"
 
     @override
     def challenge(self, password: str) -> bool:

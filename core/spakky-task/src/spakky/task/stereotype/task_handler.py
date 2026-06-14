@@ -6,7 +6,8 @@ for organizing task-queue-driven architectures.
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import Callable, cast
+from typing import cast
+from collections.abc import Callable
 
 from spakky.core.common.constants import ANNOTATION_METADATA
 from spakky.core.common.annotation import FunctionAnnotation

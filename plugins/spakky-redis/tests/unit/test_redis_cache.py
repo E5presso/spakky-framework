@@ -1,6 +1,6 @@
 """Tests for the Redis cache backend."""
 
-from collections.abc import AsyncIterator, Iterator, Mapping, Set
+from collections.abc import AsyncIterator, Iterator, Mapping
 from datetime import timedelta
 import pickle
 
@@ -31,7 +31,8 @@ from spakky.plugins.redis.cache import (
     SyncRedisAdapter,
 )
 
-RedisKey = str | bytes
+type RedisKey = str | bytes
+type RedisKeySet = set[RedisKey]
 
 
 async def _empty_async_keys() -> AsyncIterator[RedisKey]:
@@ -65,7 +66,7 @@ class FailingSyncClient(ISyncRedisClient):
         raise RedisCacheOperationError
 
     @override
-    def set_members(self, name: str) -> Set[RedisKey]:
+    def set_members(self, name: str) -> RedisKeySet:
         raise RedisCacheOperationError
 
     @override
@@ -141,7 +142,7 @@ class FailingAsyncClient(IAsyncRedisClient):
         raise RedisCacheOperationError
 
     @override
-    async def set_members(self, name: str) -> Set[RedisKey]:
+    async def set_members(self, name: str) -> RedisKeySet:
         raise RedisCacheOperationError
 
     @override
@@ -287,7 +288,7 @@ class ContendedSyncClient(ISyncRedisClient):
         return 0
 
     @override
-    def set_members(self, name: str) -> Set[RedisKey]:
+    def set_members(self, name: str) -> RedisKeySet:
         return set()
 
     @override
@@ -353,7 +354,7 @@ class ContendedAsyncClient(IAsyncRedisClient):
         return 0
 
     @override
-    async def set_members(self, name: str) -> Set[RedisKey]:
+    async def set_members(self, name: str) -> RedisKeySet:
         return set()
 
     @override

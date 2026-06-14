@@ -10,7 +10,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, overload
+from typing import overload
+from collections.abc import Awaitable, Callable
 
 from spakky.core.common.constants import ANNOTATION_METADATA
 from spakky.saga.auth import SagaAuthExecutionContext
@@ -71,8 +72,8 @@ class _SagaStepDescriptor[SagaDataT: AbstractSagaData]:
         )
 
 
-def saga_step[_SelfT, SagaDataT: AbstractSagaData](
-    fn: Callable[[_SelfT, SagaDataT], Awaitable[SagaDataT | None]],
+def saga_step[SelfT, SagaDataT: AbstractSagaData](
+    fn: Callable[[SelfT, SagaDataT], Awaitable[SagaDataT | None]],
 ) -> _SagaStepDescriptor[SagaDataT]:
     """사가 step 메서드를 descriptor로 감싼다.
 

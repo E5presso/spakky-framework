@@ -8,7 +8,7 @@ from spakky.core.common.types import remove_none
 def test_remove_none_returns_union() -> None:
     """여러 개의 non-None 타입이 있을 때 remove_none이 Union을 반환함을 검증한다."""
     # Test with Union[int, str, float, None] -> Union[int, str, float]
-    type_with_none = Union[int, str, float, None]
+    type_with_none = Union[int, str, float, None]  # noqa: UP007 - legacy typing input contract
     result = remove_none(type_with_none)
 
     # Verify it returns a Union type

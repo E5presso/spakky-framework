@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from io import StringIO
-from typing import TypeVar, cast, overload
+from typing import cast, overload
 
 from examples.code_assistant_demo import CodeAssistant, CodeAssistantCommand
 from examples.inbound_adapter_examples import (
@@ -31,8 +31,6 @@ from tests.unit.test_code_assistant_demo import (
     RecordingModel,
     _tool_call,
 )
-
-ObjectT = TypeVar("ObjectT", bound=object)
 
 
 async def test_fastapi_websocket_example_expect_streams_agent_yields_and_appends_approval() -> (
@@ -179,34 +177,34 @@ class RecordingContainer(IContainer):
         return None
 
     @overload
-    def get(self, type_: type[ObjectT]) -> ObjectT: ...
+    def get[T: object](self, type_: type[T]) -> T: ...
 
     @overload
-    def get(self, type_: type[ObjectT], name: str) -> ObjectT: ...
+    def get[T: object](self, type_: type[T], name: str) -> T: ...
 
-    def get(
+    def get[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT:
+    ) -> T:
         self.resolved_types = (*self.resolved_types, type_)
         if type_ is CodeAssistant:
-            return cast(ObjectT, self._agent)
+            return cast(T, self._agent)
         if type_ is IAgentSignalRepository:
-            return cast(ObjectT, self._signals)
+            return cast(T, self._signals)
         raise NoSuchPodError
 
     @overload
-    def get_or_none(self, type_: type[ObjectT]) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T]) -> T | None: ...
 
     @overload
-    def get_or_none(self, type_: type[ObjectT], name: str) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T], name: str) -> T | None: ...
 
-    def get_or_none(
+    def get_or_none[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT | None:
+    ) -> T | None:
         try:
             if name is None:
                 return self.get(type_)

@@ -4,7 +4,8 @@ These fixtures set up a complete in-memory event publishing infrastructure
 without external dependencies like databases.
 """
 
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 
 import pytest
 import spakky.data

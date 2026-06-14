@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Self, TypeVar
+from typing import Self
 
 
 class IComparable(ABC):
@@ -46,10 +46,3 @@ class IComparable(ABC):
         Returns:
             bool: True if self is greater than or equal to __value, False otherwise.
         """
-
-
-ComparableT = TypeVar("ComparableT", bound=IComparable)
-ComparableT_co = TypeVar("ComparableT_co", bound=IComparable, covariant=True)
-ComparableT_contra = TypeVar(
-    "ComparableT_contra", bound=IComparable, contravariant=True
-)

@@ -1,6 +1,7 @@
 """Unit tests for descriptor_builder module."""
 
-from typing import Annotated, AsyncIterator
+from typing import Annotated
+from collections.abc import AsyncIterator
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
 from pydantic import BaseModel

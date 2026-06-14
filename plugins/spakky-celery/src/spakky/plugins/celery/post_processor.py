@@ -4,7 +4,8 @@ import asyncio
 from functools import wraps
 from inspect import getmembers, iscoroutinefunction, isfunction
 from logging import getLogger
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from celery.exceptions import Retry
 from spakky.auth import (

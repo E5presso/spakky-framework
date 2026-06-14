@@ -6,7 +6,8 @@ periodic execution (interval, daily, or crontab-based).
 
 from dataclasses import dataclass
 from datetime import time, timedelta
-from typing import Callable, cast
+from typing import cast
+from collections.abc import Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
 

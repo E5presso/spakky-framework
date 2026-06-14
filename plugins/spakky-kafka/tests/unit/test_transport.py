@@ -4,7 +4,8 @@ Tests send, topic creation, and delivery reporting
 for both synchronous and asynchronous Kafka event transports.
 """
 
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

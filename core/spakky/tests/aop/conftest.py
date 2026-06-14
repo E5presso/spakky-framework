@@ -1,6 +1,7 @@
 import logging
 from logging import Formatter, Logger, StreamHandler, getLogger
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 
 import pytest
 

@@ -4,9 +4,9 @@ Provides a convenience decorator for marking controller methods as HTTP OPTIONS
 endpoints with full FastAPI configuration support.
 """
 
-from typing import Any, Callable, Sequence
+from typing import Any
+from collections.abc import Callable, Sequence
 
-from spakky.core.common.types import AnyT
 from starlette.routing import Route as StarletteRoute
 
 from fastapi import Response, params
@@ -20,7 +20,7 @@ from spakky.plugins.fastapi.routes.route import (
 )
 
 
-def options(
+def options[T](
     path: str,
     response_model: type[Any] | None = None,
     status_code: int | None = None,
@@ -44,7 +44,7 @@ def options(
     route_class_override: type[APIRoute] | None = None,
     callbacks: list[StarletteRoute] | None = None,
     openapi_extra: dict[str, Any] | None = None,
-) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator to mark a controller method as an HTTP OPTIONS endpoint.
 
     Convenience wrapper around @route that automatically sets the HTTP method

@@ -5,7 +5,8 @@ This module contains the logic for weaving aspects into Pod objects at runtime.
 
 import sys
 from logging import getLogger
-from typing import Any, ClassVar, Sequence
+from typing import Any, ClassVar
+from collections.abc import Sequence
 from weakref import WeakKeyDictionary
 
 from typing import override

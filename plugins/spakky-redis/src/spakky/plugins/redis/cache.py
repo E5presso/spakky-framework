@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from asyncio import sleep as async_sleep
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Set
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from datetime import timedelta
 import pickle
 from time import monotonic, sleep
@@ -33,7 +33,8 @@ from spakky.plugins.redis.error import (
     RedisCacheSerializationError,
 )
 
-RedisKey = str | bytes
+type RedisKey = str | bytes
+type RedisKeySet = set[RedisKey]
 
 
 class ISyncRedisClient(ABC):
@@ -58,7 +59,7 @@ class ISyncRedisClient(ABC):
     def add_set_members(self, name: str, *values: RedisKey) -> int: ...
 
     @abstractmethod
-    def set_members(self, name: str) -> Set[RedisKey]: ...
+    def set_members(self, name: str) -> RedisKeySet: ...
 
     @abstractmethod
     def scan_iter(self, match: str) -> Iterator[RedisKey]: ...
@@ -83,7 +84,7 @@ class IAsyncRedisClient(ABC):
     async def add_set_members(self, name: str, *values: RedisKey) -> int: ...
 
     @abstractmethod
-    async def set_members(self, name: str) -> Set[RedisKey]: ...
+    async def set_members(self, name: str) -> RedisKeySet: ...
 
     @abstractmethod
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]: ...
@@ -283,7 +284,7 @@ class SyncRedisAdapter(ISyncRedisClient):
         raise RedisCacheOperationError
 
     @override
-    def set_members(self, name: str) -> Set[RedisKey]:
+    def set_members(self, name: str) -> RedisKeySet:
         try:
             members = self._raw.set_members(name)
         except RedisError as e:
@@ -358,7 +359,7 @@ class AsyncRedisAdapter(IAsyncRedisClient):
         raise RedisCacheOperationError
 
     @override
-    async def set_members(self, name: str) -> Set[RedisKey]:
+    async def set_members(self, name: str) -> RedisKeySet:
         try:
             members = await self._raw.set_members(name)
         except RedisError as e:

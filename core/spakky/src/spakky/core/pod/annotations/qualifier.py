@@ -5,7 +5,8 @@ dependency qualifiers in Annotated type hints.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+from collections.abc import Callable
 
 from spakky.core.common.metadata import AbstractMetadata
 from spakky.core.pod.error import QualifierSelectorNotCallableError

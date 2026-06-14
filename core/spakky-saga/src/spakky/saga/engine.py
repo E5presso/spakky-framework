@@ -9,7 +9,7 @@ from datetime import timedelta
 from enum import Enum
 from logging import getLogger
 from time import monotonic
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from spakky.saga.auth import SagaAuthExecutionContext
 from spakky.saga.data import AbstractSagaData

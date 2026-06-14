@@ -1,9 +1,9 @@
 """Tests for EventHandlerRegistrationPostProcessor."""
 
-from typing import Callable, overload
+from typing import overload
+from collections.abc import Callable
 
 from spakky.core.common.mutability import immutable
-from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.domain.models.event import (
@@ -79,16 +79,16 @@ class InMemoryContainer(IContainer):
         pass
 
     @overload
-    def get(self, type_: type[ObjectT]) -> ObjectT: ...
+    def get[T: object](self, type_: type[T]) -> T: ...
 
     @overload
-    def get(self, type_: type[ObjectT], name: str) -> ObjectT: ...
+    def get[T: object](self, type_: type[T], name: str) -> T: ...
 
-    def get(
+    def get[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT:
+    ) -> T:
         """Get consumer based on type."""
         if type_ is IEventConsumer:
             return self._sync_consumer  # type: ignore[return-value] - fake container returns requested interface
@@ -96,11 +96,11 @@ class InMemoryContainer(IContainer):
             return self._async_consumer  # type: ignore[return-value] - fake container returns requested interface
         raise ValueError(f"Unexpected type: {type_}")
 
-    def get_or_none(
+    def get_or_none[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT | None:
+    ) -> T | None:
         """Not implemented for testing."""
         return None
 

@@ -7,7 +7,8 @@ from contextvars import ContextVar
 from threading import RLock, Thread
 from time import perf_counter
 from types import MappingProxyType, NoneType
-from typing import Callable, cast, overload
+from typing import cast, overload
+from collections.abc import Callable
 from uuid import UUID, uuid4
 
 from typing import override
@@ -21,7 +22,7 @@ from spakky.core.application.startup_diagnostics import (
     StartupDiagnosticDetails,
 )
 from spakky.core.common.constants import CONTEXT_ID, CONTEXT_SCOPE_CACHE
-from spakky.core.common.types import ObjectT, is_optional, remove_none
+from spakky.core.common.types import is_optional, remove_none
 from spakky.core.pod.annotations.lazy import Lazy
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import (
@@ -741,16 +742,16 @@ class ApplicationContext(IApplicationContext):
         cached = cache.get(pod.name)
         return cached
 
-    def __get_internal(
+    def __get_internal[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None,
         dependency_hierarchy: tuple[type, ...] | None = None,
         dependency_path: tuple[PodDependencyPathNode, ...] | None = None,
         qualifiers: list[Qualifier] | None = None,
         name_is_dependency_parameter: bool = False,
         requester_pod: Pod | None = None,
-    ) -> ObjectT | None:
+    ) -> T | None:
         """Internal method to get or create a Pod instance.
 
         Args:
@@ -794,7 +795,7 @@ class ApplicationContext(IApplicationContext):
             return None
 
         return cast(
-            ObjectT,
+            T,
             self.__get_pod_instance(
                 pod=pod,
                 dependency_hierarchy=dependency_hierarchy,
@@ -1096,17 +1097,17 @@ class ApplicationContext(IApplicationContext):
             self.__is_started = False
 
     @overload
-    def get(self, type_: type[ObjectT]) -> ObjectT: ...
+    def get[T: object](self, type_: type[T]) -> T: ...
 
     @overload
-    def get(self, type_: type[ObjectT], name: str) -> ObjectT: ...
+    def get[T: object](self, type_: type[T], name: str) -> T: ...
 
     @override
-    def get(
+    def get[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT | object:
+    ) -> T | object:
         """Get a Pod instance by type and optional name.
 
         Args:
@@ -1125,17 +1126,17 @@ class ApplicationContext(IApplicationContext):
         return instance
 
     @overload
-    def get_or_none(self, type_: type[ObjectT]) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T]) -> T | None: ...
 
     @overload
-    def get_or_none(self, type_: type[ObjectT], name: str) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T], name: str) -> T | None: ...
 
     @override
-    def get_or_none(
+    def get_or_none[T: object](
         self,
-        type_: type[ObjectT],
+        type_: type[T],
         name: str | None = None,
-    ) -> ObjectT | None:
+    ) -> T | None:
         """Get a Pod instance by type and optional name, or None if not found.
 
         Args:

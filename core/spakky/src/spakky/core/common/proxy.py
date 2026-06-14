@@ -8,7 +8,8 @@ from abc import ABC, abstractmethod
 from functools import wraps
 from inspect import iscoroutinefunction, ismethod
 from types import new_class
-from typing import Any, ClassVar, Iterable
+from typing import Any, ClassVar
+from collections.abc import Iterable
 
 from spakky.core.common.constants import DYNAMIC_PROXY_CLASS_NAME_SUFFIX
 from spakky.core.common.types import AsyncFunc, Func
@@ -138,7 +139,7 @@ class AbstractProxyHandler(IProxyHandler, ABC):
         return delattr(target, name)
 
 
-class ProxyFactory[ObjectT]:
+class ProxyFactory[T]:
     """Factory for creating dynamic proxy objects.
 
     Creates a proxy that intercepts method calls and attribute access on a target object,
@@ -163,10 +164,10 @@ class ProxyFactory[ObjectT]:
     )
     """Class-level attributes that should not be proxied."""
 
-    _type: type[ObjectT]
+    _type: type[T]
     """The type of the target object."""
 
-    _target: ObjectT
+    _target: T
     """The target object being proxied."""
 
     _handler: IProxyHandler
@@ -177,7 +178,7 @@ class ProxyFactory[ObjectT]:
 
     def __init__(
         self,
-        target: ObjectT,
+        target: T,
         handler: IProxyHandler,
     ) -> None:
         """Initialize the proxy factory.
@@ -248,11 +249,11 @@ class ProxyFactory[ObjectT]:
     def __proxy_init__(self) -> None:
         return
 
-    def create(self) -> ObjectT:
+    def create(self) -> T:
         """Create a proxy instance for the target object.
 
         Returns:
-            ObjectT: A proxy instance that wraps the target object.
+            A proxy instance that wraps the target object.
         """
         return new_class(
             name=self._type.__name__ + DYNAMIC_PROXY_CLASS_NAME_SUFFIX,

@@ -1,6 +1,6 @@
 """Celery configuration."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, ClassVar
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -25,7 +25,7 @@ def _validate_timezone(value: str) -> str:
 Timezone = Annotated[str, AfterValidator(_validate_timezone)]
 
 
-class CelerySerializer(str, Enum):
+class CelerySerializer(StrEnum):
     """Celery message serialization formats."""
 
     JSON = "json"

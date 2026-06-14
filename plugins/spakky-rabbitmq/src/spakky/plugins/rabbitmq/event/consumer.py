@@ -30,7 +30,6 @@ from spakky.event.error import (
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
-    EventT_contra,
     IAsyncEventConsumer,
     IEventConsumer,
 )
@@ -223,7 +222,7 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.connection.add_callback_threadsafe(self._check_if_event_set)
 
     @override
-    def register(
+    def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: EventHandlerCallback[EventT_contra],
@@ -238,7 +237,9 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
         """
         if event not in self.handlers:
             self.handlers[event] = []
-            self.type_adapters[event] = TypeAdapter(event)
+            self.type_adapters[event] = cast(
+                TypeAdapter[AbstractEvent], TypeAdapter(event)
+            )
         self.handlers[event].append(handler)
 
     @override
@@ -430,7 +431,7 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         }[decision.state]
 
     @override
-    def register(
+    def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: AsyncEventHandlerCallback[EventT_contra],
@@ -445,7 +446,9 @@ class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundSer
         """
         if event not in self.handlers:
             self.handlers[event] = []
-            self.type_adapters[event] = TypeAdapter(event)
+            self.type_adapters[event] = cast(
+                TypeAdapter[AbstractEvent], TypeAdapter(event)
+            )
         self.handlers[event].append(handler)
 
     @override

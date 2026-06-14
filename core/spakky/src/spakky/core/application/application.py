@@ -8,7 +8,8 @@ import inspect
 from importlib.metadata import EntryPoint, entry_points
 from pathlib import Path
 from types import FunctionType, ModuleType
-from typing import Callable, Self
+from typing import Self
+from collections.abc import Callable
 
 from spakky.core.application.discovery_manifest import (
     DISCOVERY_MANIFEST_DETAIL_KEY,

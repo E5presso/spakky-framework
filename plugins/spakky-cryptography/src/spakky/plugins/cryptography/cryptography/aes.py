@@ -61,10 +61,7 @@ class Aes(ICryptor):
             iv=iv.binary,
         )
         cipher_bytes: bytes = cryptor.encrypt(plain_bytes)
-        return "{iv}:{cipher}".format(
-            iv=iv.b64_urlsafe if self.url_safe else iv.b64,
-            cipher=Base64Encoder.from_bytes(cipher_bytes, self.url_safe),
-        )
+        return f"{iv.b64_urlsafe if self.url_safe else iv.b64}:{Base64Encoder.from_bytes(cipher_bytes, self.url_safe)}"
 
     @override
     def decrypt(self, cipher: str) -> str:

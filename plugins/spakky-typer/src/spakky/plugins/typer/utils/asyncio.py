@@ -6,12 +6,10 @@ enabling async command handlers in Typer CLI applications.
 
 import asyncio
 from functools import wraps
-from typing import Awaitable, Callable
-
-from spakky.core.common.types import P, R
+from collections.abc import Awaitable, Callable
 
 
-def run_async(func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
+def run_async[**P, R](func: Callable[P, Awaitable[R]]) -> Callable[P, R]:
     """Convert an async function to a synchronous function.
 
     Wraps an async function so it can be called synchronously by running

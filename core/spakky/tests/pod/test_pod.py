@@ -2,8 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from types import GenericAlias
 import typing
-from typing import Annotated, Any, Generic, TypeVar, cast
-from typing import List as LegacyList
+from typing import Annotated, Any, cast
 
 import pytest
 
@@ -37,9 +36,8 @@ def test_pod_issubclass_of() -> None:
 
 def test_pod_issubclass_of_with_generic() -> None:
     """Pod의 is_family_with 메서드가 제네릭 타입과의 상속 관계를 올바르게 판단함을 검증한다."""
-    T_contra = TypeVar("T_contra", contravariant=True)
 
-    class IA(ABC, Generic[T_contra]):
+    class IA[T_contra](ABC):
         @abstractmethod
         def do(self, t: T_contra) -> None: ...
 
@@ -427,7 +425,7 @@ def test_pod_with_legacy_bare_list_dependency_expect_error() -> None:
 
         @Pod()
         class ListConsumer:
-            def __init__(self, services: LegacyList) -> None:
+            def __init__(self, services: typing.List) -> None:  # noqa: UP006 - legacy bare typing.List input contract
                 self.services = services
 
 

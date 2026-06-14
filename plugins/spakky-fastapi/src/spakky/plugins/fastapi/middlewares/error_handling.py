@@ -5,7 +5,7 @@ to appropriate JSON responses and handles unexpected exceptions gracefully.
 """
 
 from logging import getLogger
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware, DispatchFunction
 from starlette.responses import Response

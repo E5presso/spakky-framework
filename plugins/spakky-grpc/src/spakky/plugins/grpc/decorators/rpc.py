@@ -8,10 +8,10 @@ from collections.abc import AsyncIterator as AsyncIteratorABC
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from inspect import signature
-from typing import Callable, get_args, get_origin, get_type_hints
+from typing import get_args, get_origin, get_type_hints
+from collections.abc import Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import AnyT
 
 
 class RpcMethodType(StrEnum):
@@ -32,11 +32,12 @@ class RpcMethodType(StrEnum):
 
 def _unwrap_streaming_type(annotation: object | None) -> type | None:
     """Return the message type inside supported streaming annotations."""
+    if annotation is AsyncIteratorABC:
+        return None
     candidate = annotation
-    if get_origin(annotation) is AsyncIteratorABC:
+    if get_origin(annotation) is AsyncIteratorABC and get_args(annotation):
         args = get_args(annotation)
-        if args:
-            candidate = args[0]
+        candidate = args[0]
     if isinstance(candidate, type):
         return candidate
     return None
@@ -61,7 +62,7 @@ class Rpc(FunctionAnnotation):
     request_type: type | None = None
     response_type: type | None = None
 
-    def __call__(self, obj: Callable[..., AnyT]) -> Callable[..., AnyT]:
+    def __call__[T](self, obj: Callable[..., T]) -> Callable[..., T]:
         """Annotate a method as an RPC endpoint.
 
         Extracts request and response types from type hints if not
@@ -95,11 +96,11 @@ class Rpc(FunctionAnnotation):
             self.response_type = _unwrap_streaming_type(response_hint)
 
 
-def rpc(
+def rpc[T](
     method_type: RpcMethodType = RpcMethodType.UNARY,
     request_type: type | None = None,
     response_type: type | None = None,
-) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator to mark a controller method as a gRPC RPC endpoint.
 
     Attaches RPC configuration to the method including streaming pattern
@@ -116,7 +117,7 @@ def rpc(
         A decorator function that attaches the RPC configuration.
     """
 
-    def wrapper(method: Callable[..., AnyT]) -> Callable[..., AnyT]:
+    def wrapper(method: Callable[..., T]) -> Callable[..., T]:
         return Rpc(
             method_type=method_type,
             request_type=request_type,

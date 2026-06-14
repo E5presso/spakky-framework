@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Generator, cast
+from typing import cast
+from collections.abc import Generator
 
 import pytest
 from spakky.agent import (

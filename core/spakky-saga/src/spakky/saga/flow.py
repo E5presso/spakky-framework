@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import field, replace
 from datetime import timedelta
-from typing import Awaitable, Callable, Self, cast
+from typing import Self, cast
+from collections.abc import Awaitable, Callable
 
 from spakky.core.common.mutability import immutable
 from spakky.saga.data import AbstractSagaData

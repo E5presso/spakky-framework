@@ -4,7 +4,7 @@ Provides utilities for computing cryptographic hashes using various algorithms
 including MD5, SHA1, SHA224, SHA256, SHA384, and SHA512.
 """
 
-from enum import Enum
+from enum import StrEnum
 from io import BufferedReader
 from typing import final
 
@@ -14,7 +14,7 @@ from spakky.plugins.cryptography.encoding import Base64Encoder
 
 
 @final
-class HashType(str, Enum):
+class HashType(StrEnum):
     """Supported cryptographic hash algorithms."""
 
     MD5 = "MD5"

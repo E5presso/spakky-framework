@@ -1,20 +1,20 @@
 from dataclasses import dataclass
-from typing import Callable, Self, final
+from typing import Self, final
+from collections.abc import Callable
 
 from spakky.core.common.constants import ANNOTATION_METADATA
 from spakky.core.common.error import AbstractSpakkyFrameworkError
-from spakky.core.common.types import AnyT, ObjectT
 
 
 @dataclass
 class Annotation:
     """Base class for type-safely injecting metadata(annotation as said) into objects."""
 
-    def __call__(self, obj: AnyT) -> AnyT:
+    def __call__[T](self, obj: T) -> T:
         return self.__set_metadata(obj)
 
     @final
-    def __set_metadata(self, obj: AnyT) -> AnyT:
+    def __set_metadata[T](self, obj: T) -> T:
         metadata: dict[type, list[Self]] = self.__get_metadata(obj)
         for base_type in type(self).mro():
             if base_type not in metadata:
@@ -133,14 +133,14 @@ class Annotation:
 class ClassAnnotation(Annotation):
     """Annotation for classes."""
 
-    def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
+    def __call__[T: object](self, obj: type[T]) -> type[T]:
         """Call method to annotate a class.
 
         Args:
-            obj (type[ObjectT]): The class to annotate.
+            obj: The class to annotate.
 
         Returns:
-            type[ObjectT]: The annotated class.
+            The annotated class.
         """
         return super().__call__(obj)
 
@@ -149,14 +149,14 @@ class ClassAnnotation(Annotation):
 class FunctionAnnotation(Annotation):
     """Annotation for functions."""
 
-    def __call__(self, obj: Callable[..., AnyT]) -> Callable[..., AnyT]:
+    def __call__[T](self, obj: Callable[..., T]) -> Callable[..., T]:
         """Call method to annotate a function.
 
         Args:
-            obj (Callable[..., AnyT]): The function to annotate.
+            obj: The function to annotate.
 
         Returns:
-            Callable[..., AnyT]: The annotated function.
+            The annotated function.
         """
         return super().__call__(obj)
 

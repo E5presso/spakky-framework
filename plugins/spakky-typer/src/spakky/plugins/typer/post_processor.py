@@ -8,7 +8,8 @@ from functools import wraps
 from inspect import Parameter, Signature, getmembers, iscoroutinefunction, signature
 from logging import getLogger
 import os
-from typing import Any, Callable, Never, cast
+from typing import Any, Never, cast
+from collections.abc import Callable
 
 from spakky.auth import (
     AuthContextNotFoundError,

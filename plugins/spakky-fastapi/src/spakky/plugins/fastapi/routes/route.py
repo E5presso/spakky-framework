@@ -4,12 +4,12 @@ Provides the core @route decorator and Route annotation class that can be
 used to mark controller methods as API endpoints with full FastAPI configuration.
 """
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Callable, Sequence
+from enum import StrEnum
+from typing import Any
 
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import AnyT
 from starlette.routing import Route as StarletteRoute
 
 from fastapi import Response, params
@@ -20,7 +20,7 @@ type SetIntStr = set[int | str]
 type DictIntStrAny = dict[int | str, Any]
 
 
-class HTTPMethod(str, Enum):
+class HTTPMethod(StrEnum):
     """HTTP methods supported by FastAPI routes."""
 
     GET = "GET"
@@ -97,7 +97,7 @@ class Route(FunctionAnnotation):
     openapi_extra: dict[str, Any] | None = None
 
 
-def route(
+def route[T](
     path: str,
     response_model: type[Any] | None = None,
     status_code: int | None = None,
@@ -122,7 +122,7 @@ def route(
     route_class_override: type[APIRoute] | None = None,
     callbacks: list[StarletteRoute] | None = None,
     openapi_extra: dict[str, Any] | None = None,
-) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator to mark a controller method as an API route.
 
     Attaches route configuration to the method which will be registered by
@@ -158,7 +158,7 @@ def route(
         A decorator function that attaches the route configuration.
     """
 
-    def wrapper(method: Callable[..., AnyT]) -> Callable[..., AnyT]:
+    def wrapper(method: Callable[..., T]) -> Callable[..., T]:
         return Route(
             path=path,
             response_model=response_model,

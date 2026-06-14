@@ -1,7 +1,7 @@
 """Logging annotation for automatic method call logging."""
 
 from dataclasses import dataclass, field
-from typing import Callable
+from collections.abc import Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
 

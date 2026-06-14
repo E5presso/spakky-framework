@@ -9,7 +9,7 @@ bridge.
 from collections.abc import AsyncIterator
 from inspect import getmembers, isfunction
 from logging import getLogger
-from typing import Callable
+from collections.abc import Callable
 
 from google.protobuf import json_format
 from google.protobuf.message import Message

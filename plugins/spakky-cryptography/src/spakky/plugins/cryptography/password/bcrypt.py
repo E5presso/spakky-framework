@@ -85,11 +85,7 @@ class BcryptPasswordEncoder(IPasswordEncoder):
         Returns:
             Encoded password hash string with algorithm and salt.
         """
-        return "{algorithm}:{salt}:{hash}".format(
-            algorithm=self.ALGORITHM_TYPE,
-            salt=self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64,
-            hash=self.__hash,
-        )
+        return f"{self.ALGORITHM_TYPE}:{self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64}:{self.__hash}"
 
     @override
     def challenge(self, password: str) -> bool:

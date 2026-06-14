@@ -5,10 +5,10 @@ with support for FastAPI WebSocket configuration.
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import Any
+from collections.abc import Callable, Sequence
 
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import AnyT
 
 from fastapi import params
 
@@ -33,11 +33,11 @@ class WebSocketRoute(FunctionAnnotation):
     dependencies: Sequence[params.Depends] | None = None
 
 
-def websocket(
+def websocket[T](
     path: str,
     name: str | None = None,
     dependencies: Sequence[params.Depends] | None = None,
-) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator to mark a controller method as a WebSocket endpoint.
 
     Attaches WebSocket route configuration to the method which will be

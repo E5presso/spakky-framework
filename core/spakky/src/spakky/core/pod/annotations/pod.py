@@ -14,7 +14,6 @@ from typing import (
     Annotated,
     ForwardRef,
     TypeGuard,
-    TypeVar,
     cast,
     get_args,
     get_origin,
@@ -70,9 +69,6 @@ class DependencyCollectionKind(Enum):
 
 type DependencyMap = dict[str, DependencyInfo]
 type PodType = Func | Class
-PodT = TypeVar("PodT", bound=PodType)
-PodT_co = TypeVar("PodT_co", bound=PodType, covariant=True)
-PodT_contra = TypeVar("PodT_contra", bound=PodType, contravariant=True)
 
 
 class CannotDeterminePodTypeError(PodAnnotationFailedError):
@@ -477,7 +473,7 @@ class Pod(Annotation, IEquatable):
         self.target = obj
         self.dependencies = dependencies
 
-    def __call__(self, obj: PodT) -> PodT:
+    def __call__[T: PodType](self, obj: T) -> T:
         """Apply Pod annotation to target class or function.
 
         Args:

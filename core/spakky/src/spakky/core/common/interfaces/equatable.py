@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import TypeVar
 
 
 class IEquatable(ABC):
@@ -23,8 +22,3 @@ class IEquatable(ABC):
         Returns:
             int: The hash value.
         """
-
-
-EquatableT = TypeVar("EquatableT")
-EquatableT_co = TypeVar("EquatableT_co", covariant=True)
-EquatableT_contra = TypeVar("EquatableT_contra", contravariant=True)

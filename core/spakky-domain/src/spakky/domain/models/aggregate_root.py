@@ -6,7 +6,7 @@ that manage domain events and maintain consistency boundaries.
 
 from abc import ABC
 from dataclasses import field
-from typing import Sequence, TypeVar
+from collections.abc import Sequence
 
 from spakky.core.common.mutability import mutable
 
@@ -56,17 +56,3 @@ class AbstractAggregateRoot[EquatableT](AbstractEntity[EquatableT], ABC):
     def clear_events(self) -> None:
         """Clear all domain events from this aggregate."""
         self.__events.clear()
-
-
-AggregateRootT = TypeVar("AggregateRootT", bound=AbstractAggregateRoot)
-"""Type variable for aggregate root types (invariant for repositories)."""
-
-AggregateRootT_co = TypeVar(
-    "AggregateRootT_co", bound=AbstractAggregateRoot, covariant=True
-)
-"""Type variable for aggregate root types (covariant for read-only operations)."""
-
-AggregateRootT_contra = TypeVar(
-    "AggregateRootT_contra", bound=AbstractAggregateRoot, contravariant=True
-)
-"""Type variable for aggregate root types (contravariant for input parameters)."""

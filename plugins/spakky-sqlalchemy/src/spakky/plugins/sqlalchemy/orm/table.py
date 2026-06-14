@@ -3,7 +3,6 @@ from dataclasses import dataclass, field
 from typing import ClassVar, Self, get_args, get_origin
 
 from spakky.core.common.mro import generic_mro
-from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.tag import Tag
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
@@ -22,7 +21,7 @@ class AbstractTable(DeclarativeBase, AsyncAttrs):
     __abstract__ = True
 
 
-class AbstractMappableTable[ObjectT](AbstractTable):
+class AbstractMappableTable[T](AbstractTable):
     """Table class with domain object mapping support.
 
     Use this class for tables that map to domain entities. Subclasses must
@@ -33,10 +32,10 @@ class AbstractMappableTable[ObjectT](AbstractTable):
 
     @classmethod
     @abstractmethod
-    def from_domain(cls, domain: ObjectT) -> Self: ...
+    def from_domain(cls, domain: T) -> Self: ...
 
     @abstractmethod
-    def to_domain(self) -> ObjectT: ...
+    def to_domain(self) -> T: ...
 
 
 class CannotUseTableAnnotationError(AbstractSpakkySqlAlchemyORMError):
@@ -53,7 +52,7 @@ class Table(Tag):
     domain: type[object] | None = field(default=__target_domain_type_sentinel__)
     table: type[AbstractTable] = field(init=False)
 
-    def __call__(self, obj: type[ObjectT]) -> type[ObjectT]:
+    def __call__[T: object](self, obj: type[T]) -> type[T]:
         if not issubclass(obj, AbstractTable):
             raise CannotUseTableAnnotationError(obj)
 

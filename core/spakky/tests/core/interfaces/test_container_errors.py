@@ -1,8 +1,8 @@
-from typing import Callable, overload
+from typing import overload
+from collections.abc import Callable
 
 import pytest
 
-from spakky.core.common.types import ObjectT
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.binding import PodBinding
 from spakky.core.pod.interfaces.container import (
@@ -31,23 +31,23 @@ class LegacyContainerDouble(IContainer):
         return
 
     @overload
-    def get(self, type_: type[ObjectT]) -> ObjectT: ...
+    def get[T: object](self, type_: type[T]) -> T: ...
 
     @overload
-    def get(self, type_: type[ObjectT], name: str) -> ObjectT: ...
+    def get[T: object](self, type_: type[T], name: str) -> T: ...
 
-    def get(self, type_: type[ObjectT], name: str | None = None) -> ObjectT | object:
+    def get[T: object](self, type_: type[T], name: str | None = None) -> T | object:
         return object()
 
     @overload
-    def get_or_none(self, type_: type[ObjectT]) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T]) -> T | None: ...
 
     @overload
-    def get_or_none(self, type_: type[ObjectT], name: str) -> ObjectT | None: ...
+    def get_or_none[T: object](self, type_: type[T], name: str) -> T | None: ...
 
-    def get_or_none(
-        self, type_: type[ObjectT], name: str | None = None
-    ) -> ObjectT | None:
+    def get_or_none[T: object](
+        self, type_: type[T], name: str | None = None
+    ) -> T | None:
         return None
 
     @overload

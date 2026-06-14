@@ -49,12 +49,12 @@ class ServicePostProcessor(IPostProcessor):
             pod.set_stop_event(self.__application_context.thread_stop_event)
             self.__application_context.add_service(pod)
             logger.debug(
-                (f"[{type(self).__name__}] {type(pod).__name__!r} added to container")
+                f"[{type(self).__name__}] {type(pod).__name__!r} added to container"
             )
         if isinstance(pod, IAsyncService):
             pod.set_stop_event(self.__application_context.task_stop_event)
             self.__application_context.add_service(pod)
             logger.debug(
-                (f"[{type(self).__name__}] {type(pod).__name__!r} added to container")
+                f"[{type(self).__name__}] {type(pod).__name__!r} added to container"
             )
         return pod

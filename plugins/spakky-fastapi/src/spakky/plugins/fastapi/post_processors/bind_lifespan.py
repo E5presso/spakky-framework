@@ -6,7 +6,8 @@ background services like RabbitMQ consumers.
 """
 
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Mapping
+from typing import Any
+from collections.abc import AsyncGenerator, Mapping
 
 from spakky.core.pod.annotations.order import Order
 from spakky.core.pod.annotations.pod import Pod

@@ -4,7 +4,7 @@ Provides configuration dataclass for Kafka connection parameters including
 bootstrap servers, consumer group, and security settings.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,7 +13,7 @@ from spakky.core.stereotype.configuration import Configuration
 from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 
 
-class AutoOffsetResetType(str, Enum):
+class AutoOffsetResetType(StrEnum):
     """Kafka consumer auto offset reset policies."""
 
     EARLIEST = "earliest"

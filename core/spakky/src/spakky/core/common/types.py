@@ -5,56 +5,22 @@ particularly for Optional/Union type handling.
 """
 
 from inspect import getmembers_static
+from functools import reduce
+from operator import or_
 from types import UnionType
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    ParamSpec,
-    TypeVar,
     Union,
     get_args,
     get_origin,
 )
+from collections.abc import Awaitable, Callable
 
 type Class = type[object]
 type Func = Callable[..., Any]
 type AsyncFunc = Callable[..., Awaitable[Any]]
 type Action = Callable[..., None]
 type AsyncAction = Callable[..., Awaitable[None]]
-
-AnyT = TypeVar("AnyT", bound=Any)
-AnyT_co = TypeVar("AnyT_co", bound=Any, covariant=True)
-AnyT_contra = TypeVar("AnyT_contra", bound=Any, contravariant=True)
-
-ObjectT = TypeVar("ObjectT", bound=object)
-ObjectT_co = TypeVar("ObjectT_co", bound=object, covariant=True)
-ObjectT_contra = TypeVar("ObjectT_contra", bound=object, contravariant=True)
-
-ClassT = TypeVar("ClassT", bound=Class)
-ClassT_co = TypeVar("ClassT_co", bound=Class, covariant=True)
-ClassT_contra = TypeVar("ClassT_contra", bound=Class, contravariant=True)
-
-FuncT = TypeVar("FuncT", bound=Func)
-FuncT_co = TypeVar("FuncT_co", bound=Func, covariant=True)
-FuncT_contra = TypeVar("FuncT_contra", bound=Func, contravariant=True)
-
-AsyncFuncT = TypeVar("AsyncFuncT", bound=AsyncFunc)
-AsyncFuncT_co = TypeVar("AsyncFuncT_co", bound=AsyncFunc, covariant=True)
-AsyncFuncT_contra = TypeVar("AsyncFuncT_contra", bound=AsyncFunc, contravariant=True)
-
-ActionT = TypeVar("ActionT", bound=Action)
-ActionT_co = TypeVar("ActionT_co", bound=Action, covariant=True)
-ActionT_contra = TypeVar("ActionT_contra", bound=Action, contravariant=True)
-
-AsyncActionT = TypeVar("AsyncActionT", bound=AsyncAction)
-AsyncActionT_co = TypeVar("AsyncActionT_co", bound=AsyncAction, covariant=True)
-AsyncActionT_contra = TypeVar(
-    "AsyncActionT_contra", bound=AsyncAction, contravariant=True
-)
-
-P = ParamSpec("P")
-R = TypeVar("R")
 
 
 def is_optional(type_: Any) -> bool:
@@ -93,7 +59,7 @@ def remove_none(type_: Any) -> Any:
             return type(None)
         if len(non_none_args) == 1:
             return non_none_args[0]
-        return Union[non_none_args]  # type: ignore[valid-type]  # Dynamic Union construction
+        return reduce(or_, non_none_args)
     return type_
 
 

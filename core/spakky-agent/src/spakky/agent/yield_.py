@@ -2,13 +2,10 @@
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Generic, TypeVar
 
 from spakky.agent.evidence import AgentEvidence
 from spakky.agent.signal import ApprovalDecision
 from spakky.agent.types import JsonObject, JsonValue
-
-OutputT = TypeVar("OutputT")
 
 
 class AgentYieldKind(StrEnum):
@@ -25,7 +22,7 @@ class AgentYieldKind(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class AgentYield(Generic[OutputT]):
+class AgentYield[OutputT]:
     """Typed stream item returned from an agent execute generator."""
 
     kind: AgentYieldKind
@@ -106,7 +103,7 @@ class Cancel:
 
 
 @dataclass(frozen=True, slots=True)
-class Final(Generic[OutputT]):
+class Final[OutputT]:
     """Final output carried by a generator stream."""
 
     output: OutputT

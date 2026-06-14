@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from inspect import iscoroutinefunction
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect

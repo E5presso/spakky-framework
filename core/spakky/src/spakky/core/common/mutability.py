@@ -7,8 +7,6 @@ from abc import ABC
 from dataclasses import Field, dataclass, field
 from typing import Any, ClassVar, dataclass_transform
 
-from spakky.core.common.types import AnyT
-
 
 @dataclass_transform(
     eq_default=False,
@@ -16,14 +14,14 @@ from spakky.core.common.types import AnyT
     frozen_default=False,
     field_specifiers=(field,),
 )
-def mutable(cls: type[AnyT]) -> type[AnyT]:
+def mutable[T](cls: type[T]) -> type[T]:
     """Decorator to create a mutable dataclass with keyword-only arguments.
 
     Args:
         cls: The class to transform into a mutable dataclass.
 
     Returns:
-        type[AnyT]: A mutable dataclass with frozen=False, kw_only=True, eq=False.
+        A mutable dataclass with frozen=False, kw_only=True, eq=False.
     """
     return dataclass(frozen=False, kw_only=True, eq=False)(cls)
 
@@ -34,14 +32,14 @@ def mutable(cls: type[AnyT]) -> type[AnyT]:
     frozen_default=True,
     field_specifiers=(field,),
 )
-def immutable(cls: type[AnyT]) -> type[AnyT]:
+def immutable[T](cls: type[T]) -> type[T]:
     """Decorator to create an immutable dataclass with keyword-only arguments.
 
     Args:
         cls: The class to transform into an immutable dataclass.
 
     Returns:
-        type[AnyT]: An immutable dataclass with frozen=True, kw_only=True, eq=False.
+        An immutable dataclass with frozen=True, kw_only=True, eq=False.
     """
     return dataclass(frozen=True, kw_only=True, eq=False)(cls)
 

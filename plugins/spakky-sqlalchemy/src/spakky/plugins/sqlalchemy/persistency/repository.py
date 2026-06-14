@@ -1,5 +1,6 @@
 from abc import ABC
-from typing import Any, Sequence, get_args, get_origin
+from typing import Any, get_args, get_origin
+from collections.abc import Sequence
 
 from spakky.core.common.mro import generic_mro
 from spakky.data.persistency.aggregate_collector import AggregateCollector

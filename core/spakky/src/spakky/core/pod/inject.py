@@ -6,23 +6,22 @@ from the container when constructor injection is not available.
 
 from typing import overload
 
-from spakky.core.common.types import ObjectT
 from spakky.core.pod.interfaces.container import IContainer
 
 
 @overload
-def inject(context: IContainer, type_: type[ObjectT]) -> ObjectT: ...
+def inject[T: object](context: IContainer, type_: type[T]) -> T: ...
 
 
 @overload
-def inject(context: IContainer, type_: type[ObjectT], name: str) -> ObjectT: ...
+def inject[T: object](context: IContainer, type_: type[T], name: str) -> T: ...
 
 
-def inject(
+def inject[T: object](
     context: IContainer,
-    type_: type[ObjectT],
+    type_: type[T],
     name: str | None = None,
-) -> object | ObjectT:
+) -> object | T:
     """Manually inject a Pod from the container.
 
     Args:

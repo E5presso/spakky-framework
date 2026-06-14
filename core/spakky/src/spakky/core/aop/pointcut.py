@@ -6,7 +6,7 @@ method calls (before, after, around, etc.).
 
 from abc import ABC
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.common.types import Func

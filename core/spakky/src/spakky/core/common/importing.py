@@ -6,7 +6,7 @@ from fnmatch import fnmatch
 from logging import getLogger
 from pathlib import Path
 from types import FunctionType, ModuleType
-from typing import Callable
+from collections.abc import Callable
 
 from spakky.core.common.constants import PATH
 from spakky.core.common.error import AbstractSpakkyFrameworkError

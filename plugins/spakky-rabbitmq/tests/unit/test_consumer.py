@@ -5,7 +5,8 @@ particularly the InvalidMessageError conditions.
 """
 
 from os import environ
-from typing import Any, Generator, override
+from typing import Any, override
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

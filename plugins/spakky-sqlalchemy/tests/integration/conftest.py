@@ -3,7 +3,8 @@
 import logging
 import os
 from logging import Formatter, StreamHandler, getLogger
-from typing import Any, AsyncGenerator, Generator
+from typing import Any
+from collections.abc import AsyncGenerator, Generator
 from uuid import uuid4
 
 import pytest

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import ClassVar
 
 from typing import override
@@ -55,7 +55,7 @@ class SpakkyTextFormatter(logging.Formatter):
         """
         timestamp = datetime.fromtimestamp(
             record.created,
-            tz=timezone.utc,
+            tz=UTC,
         ).astimezone()
         ts_str = timestamp.strftime(self.datefmt or DEFAULT_DATE_FORMAT)
 
@@ -114,7 +114,7 @@ class SpakkyJsonFormatter(logging.Formatter):
         """
         timestamp = datetime.fromtimestamp(
             record.created,
-            tz=timezone.utc,
+            tz=UTC,
         ).astimezone()
         ts_str = timestamp.strftime(self.datefmt or DEFAULT_DATE_FORMAT)
 
@@ -164,7 +164,7 @@ class SpakkyPrettyFormatter(logging.Formatter):
         """
         timestamp = datetime.fromtimestamp(
             record.created,
-            tz=timezone.utc,
+            tz=UTC,
         ).astimezone()
         ts_str = timestamp.strftime(PRETTY_TIME_FORMAT) + f"{record.msecs:03.0f}"
 

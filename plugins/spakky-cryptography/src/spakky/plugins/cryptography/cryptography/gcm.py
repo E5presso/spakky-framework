@@ -63,12 +63,7 @@ class Gcm(ICryptor):
         )
         cryptor.update(aad.binary)
         cipher_bytes, tag_bytes = cryptor.encrypt_and_digest(plain_bytes)
-        return "{aad}:{tag}:{iv}:{cipher}".format(
-            aad=aad.b64_urlsafe if self.url_safe else aad.b64,
-            tag=Base64Encoder.from_bytes(tag_bytes, self.url_safe),
-            iv=iv.b64_urlsafe if self.url_safe else iv.b64,
-            cipher=Base64Encoder.from_bytes(cipher_bytes, self.url_safe),
-        )
+        return f"{aad.b64_urlsafe if self.url_safe else aad.b64}:{Base64Encoder.from_bytes(tag_bytes, self.url_safe)}:{iv.b64_urlsafe if self.url_safe else iv.b64}:{Base64Encoder.from_bytes(cipher_bytes, self.url_safe)}"
 
     @override
     def decrypt(self, cipher: str) -> str:

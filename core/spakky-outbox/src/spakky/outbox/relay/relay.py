@@ -1,7 +1,6 @@
 """Outbox Relay Background Services (sync and async)."""
 
 import logging
-from asyncio import TimeoutError as AsyncTimeoutError
 from asyncio import wait_for
 
 from spakky.core.pod.annotations.pod import Pod
@@ -113,7 +112,7 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
                     timeout=self._config.polling_interval_seconds,
                 )
                 break
-            except AsyncTimeoutError:
+            except TimeoutError:
                 continue
 
     async def _relay_batch(self) -> None:

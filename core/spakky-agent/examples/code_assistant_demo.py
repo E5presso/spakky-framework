@@ -3,7 +3,7 @@
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from subprocess import PIPE, run
+from subprocess import run
 from typing import override
 
 from spakky.agent import (
@@ -237,8 +237,7 @@ class SubprocessShellAdapter(IShellPort):
             command,
             cwd=self._cwd,
             shell=True,
-            stdout=PIPE,
-            stderr=PIPE,
+            capture_output=True,
             text=True,
             check=False,
         )

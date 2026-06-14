@@ -6,7 +6,7 @@ in event-driven systems.
 
 from abc import ABC
 from dataclasses import field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Self, override
 from uuid import UUID, uuid4
 
@@ -25,7 +25,7 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
     event_id: UUID = field(default_factory=uuid4)
     """Unique identifier for this event."""
 
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     """When the event occurred."""
 
     @property

@@ -1,6 +1,6 @@
 """DI 통합 테스트: @Saga() 클래스가 컨테이너에서 해석되어 복합 흐름을 실행하는지 검증한다."""
 
-from typing import Generator
+from collections.abc import Generator
 from uuid import uuid4
 
 import pytest

@@ -118,15 +118,7 @@ class Argon2PasswordEncoder(IPasswordEncoder):
         Returns:
             Encoded password hash string with algorithm and parameters.
         """
-        return "{algorithm}:{salt}:{time_cost}:{memory_cost}:{parallelism}:{hash_len}:{hash}".format(
-            algorithm=self.ALGORITHM_TYPE,
-            salt=self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64,
-            time_cost=self.__time_cost,
-            memory_cost=self.__memory_cost,
-            parallelism=self.__parallelism,
-            hash_len=self.__hash_len,
-            hash=self.__hash,
-        )
+        return f"{self.ALGORITHM_TYPE}:{self.__salt.b64_urlsafe if self.__url_safe else self.__salt.b64}:{self.__time_cost}:{self.__memory_cost}:{self.__parallelism}:{self.__hash_len}:{self.__hash}"
 
     @override
     def challenge(self, password: str) -> bool:

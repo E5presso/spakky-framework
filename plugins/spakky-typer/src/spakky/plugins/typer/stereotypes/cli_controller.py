@@ -5,10 +5,11 @@ with automatic command registration and the @command decorator for methods.
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
+from typing import cast
 
 from spakky.core.common.annotation import FunctionAnnotation
-from spakky.core.common.types import AnyT
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.typer.utils.casing import pascal_to_kebab
@@ -52,7 +53,7 @@ class TyperCommand(FunctionAnnotation):
     rich_help_panel: str | None = Default(None)
 
 
-def command(
+def command[T](
     name: str | None = None,
     cls: type[TyperCommandClass] | None = None,
     context_settings: dict[Any, Any] | None = None,
@@ -65,7 +66,7 @@ def command(
     hidden: bool = False,
     deprecated: bool = False,
     rich_help_panel: str | None = Default(None),
-) -> Callable[[Callable[..., AnyT]], Callable[..., AnyT]]:
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator to mark a controller method as a CLI command.
 
     Attaches Typer command configuration to the method which will be registered
@@ -89,7 +90,7 @@ def command(
         A decorator function that attaches the command configuration.
     """
 
-    def wrapper(method: Callable[..., AnyT]) -> Callable[..., AnyT]:
+    def wrapper(method: Callable[..., T]) -> Callable[..., T]:
         return TyperCommand(
             name=name,
             cls=cls,
@@ -123,7 +124,7 @@ class CliController(Pod):
     group_name: str | None = None
     """CLI command group name for organizing related commands."""
 
-    def __call__(self, obj: AnyT) -> AnyT:
+    def __call__[T: object](self, obj: type[T]) -> type[T]:
         """Apply the CLI controller stereotype to a class.
 
         Automatically generates the group name from the class name if not provided.
@@ -135,7 +136,5 @@ class CliController(Pod):
             The decorated class registered as a Pod.
         """
         if self.group_name is None:
-            self.group_name = pascal_to_kebab(
-                obj.__name__  # type: ignore[attr-defined] - 동적 타입 매개변수의 __name__ 접근
-            )
-        return super().__call__(obj)
+            self.group_name = pascal_to_kebab(obj.__name__)
+        return cast(type[T], super().__call__(obj))

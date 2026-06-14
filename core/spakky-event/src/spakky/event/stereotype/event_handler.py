@@ -5,14 +5,12 @@ for organizing event-driven architectures.
 """
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractEvent
-
-EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
-"""Type variable for domain event types (contravariant for handler parameters)."""
 
 type EventHandlerMethod[EventT_contra: AbstractEvent] = Callable[
     [Any, EventT_contra], None | Awaitable[None]

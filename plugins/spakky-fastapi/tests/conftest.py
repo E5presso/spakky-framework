@@ -1,6 +1,7 @@
 import logging
 from logging import Formatter, StreamHandler, getLogger
-from typing import Any, AsyncGenerator, Generator, override
+from typing import Any, override
+from collections.abc import AsyncGenerator, Generator
 
 import pytest
 from fastapi import FastAPI

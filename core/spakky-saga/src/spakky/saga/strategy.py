@@ -1,7 +1,6 @@
 """Error strategy types for saga step failure handling."""
 
 from dataclasses import field
-from typing import Union
 
 from spakky.core.common.mutability import immutable
 
@@ -40,7 +39,7 @@ class Retry:
 
     max_attempts: int = 3
     backoff: ExponentialBackoff = field(default_factory=ExponentialBackoff)
-    then: Union["Compensate", "Skip"] = field(default_factory=Compensate)
+    then: Compensate | Skip = field(default_factory=Compensate)
 
 
 type ErrorStrategy = Compensate | Skip | Retry

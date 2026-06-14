@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import dataclass
-from typing import Awaitable
+from collections.abc import Awaitable
 
 from typing import override
 

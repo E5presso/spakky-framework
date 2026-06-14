@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Callable, Self
+from typing import Self
+from collections.abc import Callable
 from uuid import UUID
 
 import pytest

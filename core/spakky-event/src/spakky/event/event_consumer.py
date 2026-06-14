@@ -1,11 +1,10 @@
 """Event consumer interfaces for registering event handlers."""
 
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
 
 from spakky.domain.models.event import AbstractEvent
 
-EventT_contra = TypeVar("EventT_contra", bound=AbstractEvent, contravariant=True)
 type EventHandlerCallback[EventT_contra: AbstractEvent] = Callable[
     [EventT_contra], None
 ]
@@ -20,7 +19,7 @@ class IEventConsumer(ABC):
     """Synchronous event consumer interface for registering event handlers."""
 
     @abstractmethod
-    def register(
+    def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: EventHandlerCallback[EventT_contra],
@@ -33,7 +32,7 @@ class IAsyncEventConsumer(ABC):
     """Asynchronous event consumer interface for registering event handlers."""
 
     @abstractmethod
-    def register(
+    def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: AsyncEventHandlerCallback[EventT_contra],

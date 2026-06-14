@@ -1,7 +1,7 @@
 """Cache method annotations."""
 
 from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 from spakky.core.common.annotation import FunctionAnnotation
 

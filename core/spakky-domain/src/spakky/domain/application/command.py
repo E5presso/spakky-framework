@@ -5,7 +5,7 @@ command use cases in CQRS architecture.
 """
 
 from abc import ABC, abstractmethod
-from typing import Awaitable
+from collections.abc import Awaitable
 
 from spakky.core.common.mutability import immutable
 

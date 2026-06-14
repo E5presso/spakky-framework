@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from types import TracebackType
-from typing import Self, TypeVar
+from typing import Self
 
 
 class IDisposable(ABC):
@@ -61,18 +61,3 @@ class IAsyncDisposable(ABC):
         Returns:
             bool | None: True if the exception was handled, False otherwise.
         """
-
-
-DisposableT = TypeVar("DisposableT", bound=IDisposable)
-DisposableT_co = TypeVar("DisposableT_co", bound=IDisposable, covariant=True)
-DisposableT_contra = TypeVar(
-    "DisposableT_contra", bound=IDisposable, contravariant=True
-)
-
-AsyncDisposableT = TypeVar("AsyncDisposableT", bound=IAsyncDisposable)
-AsyncDisposableT_co = TypeVar(
-    "AsyncDisposableT_co", bound=IAsyncDisposable, covariant=True
-)
-AsyncDisposableT_contra = TypeVar(
-    "AsyncDisposableT_contra", bound=IAsyncDisposable, contravariant=True
-)

@@ -5,7 +5,8 @@ for both synchronous and asynchronous Kafka event consumers.
 """
 
 import threading
-from typing import Any, Generator, override
+from typing import Any, override
+from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

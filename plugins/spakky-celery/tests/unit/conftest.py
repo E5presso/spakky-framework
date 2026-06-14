@@ -3,7 +3,8 @@
 import logging
 from logging import Formatter, StreamHandler, getLogger
 from os import environ
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 
 import pytest
 from celery import Celery

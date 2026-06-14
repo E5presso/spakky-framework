@@ -20,7 +20,6 @@ from spakky.domain.models.event import AbstractEvent
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
-    EventT_contra,
     IAsyncEventConsumer,
     IEventConsumer,
 )
@@ -173,7 +172,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
                 TraceContext.clear()
 
     @override
-    def register(
+    def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: EventHandlerCallback[EventT_contra],
@@ -181,7 +180,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         """Register a handler for the given event type."""
         if event not in self.handlers:
             self.handlers[event] = []
-            self.type_adapters[event] = TypeAdapter(event)
+            self.type_adapters[event] = cast(
+                TypeAdapter[AbstractEvent], TypeAdapter(event)
+            )
             self.type_lookup[_event_routing_name(event)] = event
         self.handlers[event].append(handler)
 
@@ -343,7 +344,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
                 TraceContext.clear()
 
     @override
-    def register(
+    def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: AsyncEventHandlerCallback[EventT_contra],
@@ -351,7 +352,9 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         """Register an async handler for the given event type."""
         if event not in self.handlers:
             self.handlers[event] = []
-            self.type_adapters[event] = TypeAdapter(event)
+            self.type_adapters[event] = cast(
+                TypeAdapter[AbstractEvent], TypeAdapter(event)
+            )
             self.type_lookup[_event_routing_name(event)] = event
         self.handlers[event].append(handler)
 
