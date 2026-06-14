@@ -1,6 +1,6 @@
 [project]
 name = "spakky-cryptography"
-version = "6.6.0"
+version = "6.6.1"
 description = "Cryptography and auth snapshot provider plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,8 +11,8 @@ dependencies = [
     "bcrypt>=5.0.0",
     "pydantic-settings>=2.13.1",
     "pycryptodome>=3.23.0",
-    "spakky>=6.6.0",
-    "spakky-auth>=6.6.0",
+    "spakky>=6.6.1",
+    "spakky-auth>=6.6.1",
 ]
 
 [project.entry-points."spakky.plugins"]

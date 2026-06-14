@@ -5,6 +5,6 @@ All notable changes to spakky-saga are documented in this file.
 See the root CHANGELOG.md for a full summary of modifications affecting the
 entire workspace.
 
-## 6.6.0
+## 6.6.1
 
-- Release 6.6.0
+- Release 6.6.1

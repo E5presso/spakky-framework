@@ -1,3 +1,9 @@
+## v6.6.1 (2026-06-14)
+
+### Fix
+
+- align auth provider dx and docs
+
 ## v6.6.0 (2026-06-14)
 
 ### Feat
