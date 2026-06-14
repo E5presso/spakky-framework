@@ -212,7 +212,7 @@ Port와 UseCase를 개별 나열하지 말고, **카테고리별 패턴**으로 
 1. 컨트롤러 구성 패턴 (prefix, 태그, 버저닝, command 그룹)
 2. 요청/응답 스키마 설계 패턴 (Pydantic BaseModel 구조, DTO 매퍼, 네이밍)
 3. 에러 응답 패턴 (상태 코드 사용 규칙, 에러 본문 구조, 도메인 에러 ↔ HTTP/gRPC status 매핑)
-4. 인증/인가 패턴 (`spakky-security` 통합, 있는 경우)
+4. 인증/인가 패턴 (`spakky-auth` provider 구조, 있는 경우)
 5. 현재 엔드포인트·command·서비스 요약 테이블 (경로/이름, 메서드, 용도 — 1줄씩)
 
 ### tech-decisions / 의존성 정책

@@ -35,7 +35,11 @@ body:
         - spakky-fastapi
         - spakky-rabbitmq
         - spakky-kafka
-        - spakky-security
+        - spakky-auth
+        - spakky-cryptography
+        - spakky-oidc
+        - spakky-policy
+        - spakky-openfga
         - spakky-typer
         - spakky-sqlalchemy
         - Documentation
