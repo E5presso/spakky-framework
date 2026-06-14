@@ -307,7 +307,7 @@ def test_config_without_details_expect_details_removed() -> None:
         _Probe("db", ComponentHealthResult.unhealthy("db", details={"error": "x"}))
     )
     service = ActuatorAggregationService(
-        registry, ActuatorConfig(include_details=False)
+        registry, ActuatorConfig().model_copy(update={"include_details": False})
     )
 
     result = service.evaluate_health()
@@ -322,7 +322,7 @@ def test_config_without_details_expect_healthy_details_removed() -> None:
         _Probe("db", ComponentHealthResult.healthy("db", details={"ok": True}))
     )
     service = ActuatorAggregationService(
-        registry, ActuatorConfig(include_details=False)
+        registry, ActuatorConfig().model_copy(update={"include_details": False})
     )
 
     result = service.evaluate_health()

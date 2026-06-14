@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
+    "pydantic-settings>=2.13.1",
     "pyyaml>=6.0.3",
     "spakky>=6.6.0",
     "spakky-auth>=6.6.0",

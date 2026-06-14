@@ -33,8 +33,8 @@ class UserService:
 
 `LoggingConfig`로 기본값을 override합니다.
 
-`LoggingConfig` is loaded as a `@Configuration` pod and reads
-`SPAKKY_LOGGING__*` environment variables through `pydantic-settings`.
+`LoggingConfig`는 `@Configuration` Pod로 로드되며, `pydantic-settings`를 통해
+`SPAKKY_LOGGING__*` 환경변수를 읽습니다.
 
 ```bash
 export SPAKKY_LOGGING__LEVEL=10
@@ -62,16 +62,16 @@ with LogContext.scope(trace_id="t-789"):
 | 기능                     | 설명                                                |
 | --------------------------- | ---------------------------------------------------------- |
 | `@logged()` annotation      | AOP 기반 method call/result/error 자동 logging       |
-| `LogContext`                | contextvars 기반 structured context propagation           |
+| `LogContext`                | contextvars 기반 structured context 전파           |
 | `ContextInjectingFilter`    | 모든 `LogRecord`에 LogContext value 주입           |
-| `SpakkyTextFormatter`       | pipe-separated text format                                 |
+| `SpakkyTextFormatter`       | pipe로 구분된 text format                                 |
 | `SpakkyJsonFormatter`       | line당 JSON object 하나                                   |
-| `SpakkyPrettyFormatter`     | 개발용 ANSI-colored multi-column format           |
+| `SpakkyPrettyFormatter`     | 개발용 ANSI color multi-column format           |
 | `LoggingConfig`             | 중앙 logging configuration용 `@Configuration` pod |
 | `LoggingSetupPostProcessor` | application start 시 root logger 자동 설정           |
 | 민감 데이터 masking      | log output에서 `password`, `token`, `secret` 등을 masking |
-| 느린 호출 감지         | method execution이 threshold를 넘으면 warning 출력 |
-| 결과 truncation           | 긴 return value를 log output에서 truncate |
+| 느린 호출 감지         | method 실행 시간이 threshold를 넘으면 warning 출력 |
+| 결과 truncation           | 긴 return value를 log output에서 잘라냄 |
 
 ## 라이선스
 

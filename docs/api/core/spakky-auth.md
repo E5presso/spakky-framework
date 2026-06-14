@@ -2,7 +2,7 @@
 
 > `spakky-auth`는 인증 상태, 인가 요구사항, provider capability, snapshot 전파 계약을 정의합니다.
 
-Provider-neutral authentication and authorization semantic model.
+Provider-neutral 인증/인가 의미 모델입니다.
 
 ## 패키지 루트
 

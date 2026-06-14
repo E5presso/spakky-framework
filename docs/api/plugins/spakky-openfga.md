@@ -1,6 +1,6 @@
 # spakky-openfga
 
-OpenFGA relationship authorization provider for Spakky Auth.
+Spakky Auth relation 인가를 위한 OpenFGA provider API입니다.
 
 ## 패키지 루트
 
@@ -30,7 +30,7 @@ OpenFGA relationship authorization provider for Spakky Auth.
     options:
       show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.plugins.openfga.error
     options:

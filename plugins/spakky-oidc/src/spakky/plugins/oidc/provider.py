@@ -3,13 +3,14 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import final, override, cast
+from typing import ClassVar, final, override, cast
 from urllib.error import URLError
 from urllib.request import urlopen
 import json
 
 import jwt
 from jwt import PyJWK, PyJWTError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from spakky.auth import (
     AuthCapability,
@@ -26,6 +27,7 @@ from spakky.auth import (
     IAuthenticationProvider,
 )
 from spakky.core.pod.annotations.pod import Pod
+from spakky.core.stereotype.configuration import Configuration
 from spakky.plugins.oidc.error import (
     AbstractSpakkyOidcError,
     OidcCredentialError,
@@ -64,14 +66,20 @@ def fetch_json_document(url: str) -> JsonObject:
     raise OidcDiscoveryError()
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class OidcProviderConfig:
+@Configuration()
+class OidcProviderConfig(BaseSettings):
     """Runtime config for OIDC bearer authentication."""
 
-    issuer: str
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="SPAKKY_OIDC_",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+    )
+
+    issuer: str = "https://issuer.example.test"
     """Expected issuer and base URL for discovery when discovery_url is omitted."""
 
-    audience: str | tuple[str, ...]
+    audience: str | tuple[str, ...] = "spakky"
     """Accepted audience value or values."""
 
     client_id: str | None = None
@@ -107,6 +115,9 @@ class OidcProviderConfig:
     provider_available: bool = True
     """Whether provider dependencies are usable at runtime."""
 
+    def __init__(self) -> None:
+        super().__init__()
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OidcAuthenticationResult:
@@ -139,10 +150,7 @@ class OidcAuthenticationProvider(IAuthenticationProvider):
 
     def __init__(
         self,
-        config: OidcProviderConfig = OidcProviderConfig(
-            issuer="https://issuer.example.test",
-            audience="spakky",
-        ),
+        config: OidcProviderConfig,
     ) -> None:
         self._config = config
 

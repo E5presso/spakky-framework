@@ -1,7 +1,7 @@
 # spakky-policy
 
-`spakky-policy` provides YAML/TOML/JSON policy document loading and an
-explainable RBAC/PBAC/ABAC authorization evaluator for `spakky-auth`.
+`spakky-policy`는 YAML/TOML/JSON policy document 로드와 `spakky-auth`용
+RBAC/PBAC/ABAC authorization evaluator를 제공합니다.
 
 ## 패키지 루트
 
@@ -39,7 +39,7 @@ explainable RBAC/PBAC/ABAC authorization evaluator for `spakky-auth`.
     options:
       show_root_heading: false
 
-## Errors
+## 에러
 
 ::: spakky.plugins.policy.error
     options:

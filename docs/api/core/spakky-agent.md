@@ -2,20 +2,20 @@
 
 > `spakky-agent`는 Agent workflow를 Spakky 컴포넌트로 모델링하기 위한 계약, 도구, 상태, signal, evidence 타입을 제공합니다.
 
-Agentic Hexagonal Architecture core contracts입니다.
+Agentic Hexagonal Architecture의 core 계약입니다.
 
-## Install
+## 설치
 
 ```bash
 pip install spakky-agent
 ```
 
-`spakky-agent` owns the public contracts: `@Agent`, `AgentExecutionSpec`,
-`AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`,
-`@agent_tool`, context/safety/recovery, and delegation types. It intentionally
-does not import vLLM, SQLAlchemy, FastAPI, or Typer. Durable production execution
-requires repository implementations from a provider contribution such as
-`spakky-sqlalchemy[agent]`; there is no production in-memory fallback.
+`spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `AgentYield`, `AgentState`,
+`AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, context/safety/recovery,
+delegation 타입 같은 public contract를 소유합니다. 이 패키지는 의도적으로 vLLM,
+SQLAlchemy, FastAPI, Typer를 import하지 않습니다. 운영에서 durable execution을 사용하려면
+`spakky-sqlalchemy[agent]` 같은 provider contribution의 repository 구현이 필요하며,
+운영용 in-memory fallback은 제공하지 않습니다.
 
 ## Public API
 
@@ -23,7 +23,7 @@ requires repository implementations from a provider contribution such as
     options:
       show_root_heading: false
 
-## Execution
+## 실행
 
 ::: spakky.agent.execution
     options:

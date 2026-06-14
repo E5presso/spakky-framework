@@ -273,8 +273,8 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 `AgentExecutionSpec(recovery=RecoveryStrategy.ACTION_BOUNDARY)` 또는 `accepted_signals`를
 사용하는 Agent는 bootstrap 시 `IAgentStateRepository`, `IAgentSignalRepository`,
 `IAgentEvidenceRepository`를 모두 요구하므로, 이 contribution이 누락되면 core가
-`AgentPersistenceConfigurationError`로 실패합니다. 이 패키지는 production in-memory
-fallback을 제공하지 않습니다.
+`AgentPersistenceConfigurationError`로 실패합니다. 이 패키지는 운영용 in-memory fallback을
+제공하지 않습니다.
 
 `spakky-agent`와 `spakky-sqlalchemy`가 모두 active이면 다음 Pod과 schema가
 등록됩니다.

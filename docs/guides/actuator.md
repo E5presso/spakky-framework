@@ -61,7 +61,7 @@ liveness = service.evaluate_liveness()
 ```
 
 `ComponentHealthResult.unhealthy(..., required=False)`는 component 자체는 unhealthy로 보존하지만 aggregate status를 실패시키지 않습니다.
-`ActuatorConfig(include_details=False)`를 등록하면 component details 노출을 제한합니다.
+`SPAKKY_ACTUATOR_INCLUDE_DETAILS=false` 또는 `ActuatorConfig().model_copy(update={"include_details": False})` Pod를 등록하면 component details 노출을 제한합니다.
 
 ## DI 확장
 
@@ -99,14 +99,13 @@ class BuildInfo(IInfoContributor):
 | `GET /actuator/liveness` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/info` | `200 OK` | N/A |
 
-!!! warning "Production exposure"
+!!! warning "운영 환경 노출"
 
-    FastAPI actuator routes are unauthenticated by default. When enabled, they are
-    regular public HTTP routes unless the application places them behind internal networking,
-    an API gateway, a reverse-proxy allowlist, or another explicit access-control layer.
-    Production deployments should disable unneeded endpoints, move the base path under an
-    internal route, and set `ActuatorConfig(include_details=False)` before exposing actuator
-    traffic outside a trusted boundary.
+    FastAPI actuator route는 기본적으로 인증을 자동 적용하지 않습니다. 활성화하면 애플리케이션이
+    내부망, API 게이트웨이, 리버스 프록시 허용 목록, 또는 별도의 접근 제어 계층 뒤에 두지
+    않는 한 일반 공개 HTTP route입니다. 운영 환경에서는 필요 없는 endpoint를 끄고, base path를
+    내부 route 아래로 옮기며, 신뢰 경계 밖으로 actuator traffic을 노출하기 전에
+    `SPAKKY_ACTUATOR_INCLUDE_DETAILS=false`를 설정하세요.
 
 `FastAPIActuatorConfig`로 base path와 endpoint별 노출 여부를 조정합니다.
 
@@ -118,7 +117,7 @@ from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
 
 @Pod()
 def actuator_config() -> ActuatorConfig:
-    return ActuatorConfig(include_details=False)
+    return ActuatorConfig().model_copy(update={"include_details": False})
 
 
 @Pod()

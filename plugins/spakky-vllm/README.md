@@ -64,7 +64,7 @@ schema로 파싱·검증한 뒤에만 `ModelToolCall`로 노출됩니다.
 event chunk를 디코딩해 provider-neutral `ModelStreamEvent` 값을 내보냅니다.
 
 - token delta는 `ModelStreamEventKind.TOKEN_DELTA`
-- streamed function-call fragment는 `tool_calls` finish boundary에서 `TOOL_CALL_CANDIDATE`
+- streaming function-call 조각은 `tool_calls` finish boundary에서 `TOOL_CALL_CANDIDATE`
 - structured JSON content는 terminal validation 이후 `STRUCTURED_OUTPUT`
 - `StreamingOptions.include_usage`가 켜진 경우 usage chunk는 마지막 `DONE` event에 첨부
 - timeout, transport, invalid chunk, invalid structured output, provider error,

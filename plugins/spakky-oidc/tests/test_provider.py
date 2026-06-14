@@ -117,9 +117,13 @@ def _fetcher(jwk: dict[str, object]) -> Callable[[str], dict[str, object]]:
     return fetch
 
 
+def _config(**overrides: object) -> OidcProviderConfig:
+    return OidcProviderConfig().model_copy(update=overrides)
+
+
 def _provider(jwk: dict[str, object]) -> OidcAuthenticationProvider:
     return OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             client_id=CLIENT_ID,
@@ -158,6 +162,17 @@ def test_load_plugins_with_auth_and_oidc_registers_provider_contribution() -> No
         and contribution.provider_id == OIDC_AUTH_PROVIDER_ID
         for contribution in contributions
     )
+
+
+def test_load_plugins_with_oidc_expect_binds_authentication_provider() -> None:
+    """load_plugins()가 OIDC provider를 auth port에 binding하는지 검증한다."""
+    app = SpakkyApplication(ApplicationContext()).load_plugins(
+        include={spakky.plugins.oidc.PLUGIN_NAME}
+    )
+
+    provider = app.container.get(spakky.auth.IAuthenticationProvider)
+
+    assert isinstance(provider, OidcAuthenticationProvider)
 
 
 def test_valid_oidc_bearer_maps_to_auth_context_without_raw_token() -> None:
@@ -212,7 +227,7 @@ def test_custom_discovery_url_and_optional_azp_client_are_supported() -> None:
         return {}
 
     provider = OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             client_id=None,
@@ -267,7 +282,7 @@ def test_unusable_bearer_carrier_raises(material: str, scheme: str) -> None:
 
 def test_provider_unavailable_maps_to_error() -> None:
     provider = OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             provider_available=False,
@@ -287,7 +302,7 @@ def test_discovery_issuer_mismatch_maps_to_provider_unavailable() -> None:
         return {"issuer": "https://other.example.test", "jwks_uri": f"{ISSUER}/jwks"}
 
     provider = OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             json_fetcher=fetch,
@@ -377,7 +392,7 @@ def test_custom_claim_mapping_supports_string_roles_and_scope_arrays() -> None:
     claims["scp"] = ["openid", "profile"]
     claims["tenant_id"] = "tenant-2"
     provider = OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             client_id=CLIENT_ID,
@@ -438,7 +453,7 @@ def test_jwks_shape_and_header_validation_fail_fast() -> None:
         return {"keys": ["not-a-key"]}
 
     provider = OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             json_fetcher=fetch_bad_keys,
@@ -454,7 +469,7 @@ def test_jwks_shape_and_header_validation_fail_fast() -> None:
         return {"keys": "not-a-list"}
 
     provider_without_keys = OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             json_fetcher=fetch_no_keys,
@@ -473,7 +488,7 @@ def test_jwks_shape_and_header_validation_fail_fast() -> None:
 
 def test_missing_discovery_fields_and_non_string_dict_keys_are_rejected() -> None:
     provider = OidcAuthenticationProvider(
-        config=OidcProviderConfig(
+        config=_config(
             issuer=ISSUER,
             audience=AUDIENCE,
             json_fetcher=lambda url: {"issuer": ISSUER},

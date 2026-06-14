@@ -137,24 +137,27 @@ graph TD
     P02 --> R03
 ```
 
-## Downstream issue body contract
+## 하위 이슈 본문 계약
 
-The issue bodies for #279 through #300 are treated as the implementation contract for their own tickets. They must stay aligned with this baseline.
+#279부터 #300까지의 이슈 본문은 각 티켓의 구현 계약으로 취급합니다. 모든 본문은 이 기준선과
+정합성을 유지해야 합니다.
 
-- #279 starts only after #278.
-- #280 starts only after package registration in #279.
-- #281 starts only after the semantic model in #280.
-- #282 starts only after the public port/capability contract in #281.
-- #283 validates auth feature capabilities locally; it does not implement generic contribution routing.
-- Provider tickets #284 through #287 depend on the public auth contract in #281.
-- Boundary tickets #288 through #296 depend on decorator/AOP enforcement and startup validation where their issue body lists #282 and #283.
-- Removal/documentation tickets #297 through #300 run after provider and cleanup prerequisites listed in their issue bodies.
+- #279는 #278 이후에만 시작합니다.
+- #280은 #279의 package registration 이후에만 시작합니다.
+- #281은 #280의 semantic model 이후에만 시작합니다.
+- #282는 #281의 public port/capability contract 이후에만 시작합니다.
+- #283은 auth feature capability를 로컬에서 검증하며, generic contribution routing을 구현하지 않습니다.
+- Provider 티켓 #284부터 #287까지는 #281의 public auth contract에 의존합니다.
+- Boundary 티켓 #288부터 #296까지는 각 이슈 본문이 #282와 #283을 명시한 경우 decorator/AOP enforcement와 startup validation에 의존합니다.
+- 제거/문서화 티켓 #297부터 #300까지는 각 이슈 본문에 적힌 provider 및 cleanup 선행 조건 이후에 실행합니다.
 
-If a downstream ticket appears to require Redis/SQLAlchemy auth persistence, audit, approval, MCP runtime auth, data filtering, or generic provider routing, that requirement is out of scope for the current milestone unless a later issue explicitly accepts it.
+하위 티켓이 Redis/SQLAlchemy auth persistence, audit, approval, MCP runtime auth, data filtering,
+generic provider routing을 요구하는 것처럼 보이면, 이후 이슈가 명시적으로 수용하지 않는 한
+현재 마일스톤 범위 밖으로 봅니다.
 
 ## 검증
 
-This document is documentation-only. The required verification for #278 is:
+이 문서는 documentation-only 변경입니다. #278의 필수 검증은 다음과 같습니다.
 
 ```bash
 uv run mkdocs build --strict

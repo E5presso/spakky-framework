@@ -17,7 +17,6 @@ from spakky.plugins.openfga.client import (
     IOpenFgaCheckClient,
     OpenFgaCheckRequest,
     OpenFgaCheckResult,
-    OpenFgaSdkCheckClient,
 )
 from spakky.plugins.openfga.config import OpenFgaConfig
 from spakky.plugins.openfga.constants import OPENFGA_AUTH_PROVIDER_ID
@@ -36,8 +35,8 @@ class OpenFgaAuthProvider(IRelationChecker, IAuthorizationPolicyEvaluator):
 
     def __init__(
         self,
-        client: IOpenFgaCheckClient = OpenFgaSdkCheckClient(),
-        config: OpenFgaConfig = OpenFgaConfig(),
+        client: IOpenFgaCheckClient,
+        config: OpenFgaConfig,
     ) -> None:
         self._client = client
         self._config = config

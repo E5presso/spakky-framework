@@ -3101,11 +3101,15 @@ name = "spakky-actuator"
 version = "6.6.0"
 source = { editable = "core/spakky-actuator" }
 dependencies = [
+    { name = "pydantic-settings" },
     { name = "spakky" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "spakky", editable = "core/spakky" },
+]
 
 [[package]]
 name = "spakky-agent"
@@ -3199,6 +3203,7 @@ dependencies = [
     { name = "argon2-cffi" },
     { name = "bcrypt" },
     { name = "pycryptodome" },
+    { name = "pydantic-settings" },
     { name = "spakky" },
     { name = "spakky-auth" },
 ]
@@ -3208,6 +3213,7 @@ requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1.0" },
     { name = "bcrypt", specifier = ">=5.0.0" },
     { name = "pycryptodome", specifier = ">=3.23.0" },
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-auth", editable = "core/spakky-auth" },
 ]
@@ -3417,6 +3423,7 @@ name = "spakky-oidc"
 version = "6.6.0"
 source = { editable = "plugins/spakky-oidc" }
 dependencies = [
+    { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
     { name = "spakky" },
     { name = "spakky-auth" },
@@ -3424,6 +3431,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.1" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-auth", editable = "core/spakky-auth" },
@@ -3518,6 +3526,7 @@ name = "spakky-policy"
 version = "6.6.0"
 source = { editable = "plugins/spakky-policy" }
 dependencies = [
+    { name = "pydantic-settings" },
     { name = "pyyaml" },
     { name = "spakky" },
     { name = "spakky-auth" },
@@ -3525,6 +3534,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-auth", editable = "core/spakky-auth" },

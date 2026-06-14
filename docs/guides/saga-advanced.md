@@ -289,12 +289,12 @@ Saga 엔진은 실행 전 구간을 구조화 로그로 출력합니다. 로거 
 
 ```mermaid
 flowchart TD
-  AbstractSpakkySagaError[AbstractSpakkySagaError]
-  AbstractSpakkySagaError --> SagaFlowDefinitionError[SagaFlowDefinitionError<br/>SagaFlow 정의 오류]
-  AbstractSpakkySagaError --> SagaCompensationFailedError[SagaCompensationFailedError<br/>보상 로직 실행 중 예외]
-  AbstractSpakkySagaError --> SagaStepTimeoutError[SagaStepTimeoutError<br/>step 타임아웃 초과]
-  AbstractSpakkySagaError --> SagaParallelMergeConflictError[SagaParallelMergeConflictError<br/>병렬 step 결과 병합 충돌]
-  AbstractSpakkySagaError --> SagaEngineNotConnectedError[SagaEngineNotConnectedError<br/>엔진 미초기화 상태 실행 시도]
+  AbstractSpakkySagaError["AbstractSpakkySagaError"]
+  AbstractSpakkySagaError --> SagaFlowDefinitionError["SagaFlowDefinitionError<br/>SagaFlow 정의 오류"]
+  AbstractSpakkySagaError --> SagaCompensationFailedError["SagaCompensationFailedError<br/>보상 로직 실행 중 예외"]
+  AbstractSpakkySagaError --> SagaStepTimeoutError["SagaStepTimeoutError<br/>step 타임아웃 초과"]
+  AbstractSpakkySagaError --> SagaParallelMergeConflictError["SagaParallelMergeConflictError<br/>병렬 step 결과 병합 충돌"]
+  AbstractSpakkySagaError --> SagaEngineNotConnectedError["SagaEngineNotConnectedError<br/>엔진 미초기화 상태 실행 시도"]
 ```
 
 ## 더 볼 곳

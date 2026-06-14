@@ -1,6 +1,6 @@
 # spakky-oidc
 
-OIDC bearer authentication provider plugin API.
+OIDC bearer 인증 provider 플러그인 API입니다.
 
 ::: spakky.plugins.oidc
     options:

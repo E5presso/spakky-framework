@@ -149,11 +149,10 @@ HTTP payload는 transport-neutral core result shape를 그대로 반영합니다
 | `GET /actuator/liveness` | `200 OK` | `503 Service Unavailable` |
 | `GET /actuator/info` | `200 OK` | N/A |
 
-FastAPI actuator routes are unauthenticated by default. In production, expose
-them only behind internal networking, an API gateway, a reverse-proxy allowlist,
-or another explicit access-control layer. Disable unneeded endpoints and set
-`ActuatorConfig(include_details=False)` before allowing actuator traffic outside
-a trusted boundary.
+FastAPI actuator route는 기본적으로 인증을 자동 적용하지 않습니다. 운영 환경에서는
+내부망, API 게이트웨이, 리버스 프록시 허용 목록, 또는 별도의 접근 제어 계층 뒤에서만
+노출하세요. 신뢰 경계 밖으로 actuator traffic을 허용하기 전에는 필요 없는 endpoint를 끄고
+`SPAKKY_ACTUATOR_INCLUDE_DETAILS=false`를 설정하세요.
 
 Endpoint 노출과 base path는 `FastAPIActuatorConfig`로 설정합니다.
 Component detail 노출은 `spakky.actuator.ActuatorConfig`로 제어합니다.
@@ -167,7 +166,7 @@ from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
 
 @Pod()
 def actuator_config() -> ActuatorConfig:
-    return ActuatorConfig(include_details=False)
+    return ActuatorConfig().model_copy(update={"include_details": False})
 
 
 @Pod()

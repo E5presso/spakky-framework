@@ -49,9 +49,19 @@ def _auth_context(
     )
 
 
+def _provider(
+    client: IOpenFgaCheckClient,
+    config: OpenFgaConfig | None = None,
+) -> OpenFgaAuthProvider:
+    return OpenFgaAuthProvider(
+        client=client,
+        config=OpenFgaConfig() if config is None else config,
+    )
+
+
 def test_relation_check_maps_principal_relation_resource_and_request_tenant() -> None:
     client = RecordingCheckClient()
-    provider = OpenFgaAuthProvider(client=client)
+    provider = _provider(client)
 
     decision = provider.check_relation(
         RelationCheckRequest(
@@ -74,7 +84,7 @@ def test_relation_check_maps_principal_relation_resource_and_request_tenant() ->
 
 def test_policy_evaluation_maps_action_and_context_tenant_to_relation_check() -> None:
     client = RecordingCheckClient()
-    provider = OpenFgaAuthProvider(client=client)
+    provider = _provider(client)
 
     decision = provider.evaluate_policy(
         AuthorizationRequest(
@@ -95,7 +105,7 @@ def test_policy_evaluation_maps_action_and_context_tenant_to_relation_check() ->
 
 
 def test_relation_check_denies_when_openfga_denies() -> None:
-    provider = OpenFgaAuthProvider(client=RecordingCheckClient(allowed=False))
+    provider = _provider(RecordingCheckClient(allowed=False))
 
     decision = provider.check_relation(
         RelationCheckRequest(
@@ -110,7 +120,7 @@ def test_relation_check_denies_when_openfga_denies() -> None:
 
 
 def test_provider_unavailable_maps_to_error_decision() -> None:
-    provider = OpenFgaAuthProvider(client=RecordingCheckClient(unavailable=True))
+    provider = _provider(RecordingCheckClient(unavailable=True))
 
     decision = provider.check_relation(
         RelationCheckRequest(
@@ -129,7 +139,7 @@ def test_provider_unavailable_maps_to_error_decision() -> None:
 
 def test_configured_unavailable_maps_to_error_without_calling_client() -> None:
     client = RecordingCheckClient()
-    provider = OpenFgaAuthProvider(
+    provider = _provider(
         client=client,
         config=OpenFgaConfig().model_copy(update={"relation_check_available": False}),
     )
@@ -152,7 +162,7 @@ def test_configured_unavailable_maps_to_error_without_calling_client() -> None:
 
 def test_blank_canonical_refs_map_to_internal_error_decision() -> None:
     client = RecordingCheckClient()
-    provider = OpenFgaAuthProvider(client=client)
+    provider = _provider(client)
 
     decision = provider.check_relation(
         RelationCheckRequest(
@@ -169,7 +179,7 @@ def test_blank_canonical_refs_map_to_internal_error_decision() -> None:
 
 def test_tenant_object_mapping_can_be_disabled() -> None:
     client = RecordingCheckClient()
-    provider = OpenFgaAuthProvider(
+    provider = _provider(
         client=client,
         config=OpenFgaConfig().model_copy(update={"include_tenant_in_object": False}),
     )

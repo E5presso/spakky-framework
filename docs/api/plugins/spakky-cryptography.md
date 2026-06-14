@@ -1,6 +1,6 @@
 # spakky-cryptography
 
-Cryptography utilities and auth snapshot/password provider.
+암호화 utility와 auth snapshot/password provider API입니다.
 
 ## 패키지 루트
 

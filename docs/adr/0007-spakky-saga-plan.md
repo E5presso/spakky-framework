@@ -112,10 +112,10 @@ def flow(self) -> SagaFlow[CreateOrderSagaData]:
 
 ```mermaid
 flowchart TD
-  Controller[Controller] --> UseCase[UseCase: 단일 Aggregate, 로컬 @Transactional]
-  Controller --> Saga[Saga: 복수 서비스, 분산 트랜잭션 오케스트레이션]
-  Saga --> Internal[UseCase 호출: 내부 서비스 위임]
-  Saga --> External[Command 발행: 외부 서비스]
+  Controller["Controller"] --> UseCase["UseCase: 단일 Aggregate, 로컬 @Transactional"]
+  Controller --> Saga["Saga: 복수 서비스, 분산 트랜잭션 오케스트레이션"]
+  Saga --> Internal["UseCase 호출: 내부 서비스 위임"]
+  Saga --> External["Command 발행: 외부 서비스"]
 ```
 
 - `@Saga()`는 `@UseCase()`와 **동급**의 application layer 스테레오타입
@@ -126,13 +126,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  Pod[Pod] --> UseCase[UseCase: 단일 비즈니스 오퍼레이션]
-  Pod --> Saga[Saga: 분산 트랜잭션 오케스트레이션]
-  Pod --> Controller[Controller: 외부 요청 수신]
-  Pod --> Repository[Repository: 데이터 접근]
-  Pod --> EventHandler[EventHandler: 이벤트 처리]
-  Pod --> TaskHandler[TaskHandler: 비동기 태스크]
-  Pod --> Configuration[Configuration: 설정/팩토리]
+  Pod["Pod"] --> UseCase["UseCase: 단일 비즈니스 오퍼레이션"]
+  Pod --> Saga["Saga: 분산 트랜잭션 오케스트레이션"]
+  Pod --> Controller["Controller: 외부 요청 수신"]
+  Pod --> Repository["Repository: 데이터 접근"]
+  Pod --> EventHandler["EventHandler: 이벤트 처리"]
+  Pod --> TaskHandler["TaskHandler: 비동기 태스크"]
+  Pod --> Configuration["Configuration: 설정/팩토리"]
 ```
 
 ### Saga의 역할 제한 (순수 흐름 제어기)
@@ -345,17 +345,17 @@ step(
 
 ```mermaid
 flowchart TD
-  Failure[step 실패] --> IsRetry{on_error가 Retry?}
-  IsRetry -->|예| Retry[최대 max_attempts까지 재시도]
-  Retry --> RetrySuccess{재시도 성공?}
-  RetrySuccess -->|예| Next[다음 step으로]
-  RetrySuccess -->|아니요| Then[then 전략 적용]
-  Then --> ThenDefault[기본값: Compensate]
+  Failure["step 실패"] --> IsRetry{"on_error가 Retry?"}
+  IsRetry -->|예| Retry["최대 max_attempts까지 재시도"]
+  Retry --> RetrySuccess{"재시도 성공?"}
+  RetrySuccess -->|예| Next["다음 step으로"]
+  RetrySuccess -->|아니요| Then["then 전략 적용"]
+  Then --> ThenDefault["기본값: Compensate"]
 
-  IsRetry -->|아니요| IsSkip{on_error가 Skip?}
+  IsRetry -->|아니요| IsSkip{"on_error가 Skip?"}
   IsSkip -->|예| Next
-  IsSkip -->|아니요| IsCompensate{on_error가 Compensate?}
-  IsCompensate -->|예| Compensate[역순 보상 시작]
+  IsSkip -->|아니요| IsCompensate{"on_error가 Compensate?"}
+  IsCompensate -->|예| Compensate["역순 보상 시작"]
 ```
 
 연산자로 표현:
@@ -415,29 +415,29 @@ class SagaStatus(Enum):
 
 ```mermaid
 flowchart TD
-  Normal0[정상: Step 0 commit] --> Normal1[Step 1 commit]
-  Normal1 --> Normal2[Step 2 commit]
-  Normal2 --> NormalDone[COMPLETED]
+  Normal0["정상: Step 0 commit"] --> Normal1["Step 1 commit"]
+  Normal1 --> Normal2["Step 2 commit"]
+  Normal2 --> NormalDone["COMPLETED"]
 
-  Fail0[Step 1 실패: Step 0 commit] --> Fail1[Step 1 failure]
-  Fail1 --> FailComp[Step 0 compensate]
-  FailComp --> FailDone[FAILED]
+  Fail0["Step 1 실패: Step 0 commit"] --> Fail1["Step 1 failure"]
+  Fail1 --> FailComp["Step 0 compensate"]
+  FailComp --> FailDone["FAILED"]
 
-  Retry0[Retry: Step 0 commit] --> Retry1[Step 1 commit]
-  Retry1 --> Retry2[Step 2 failure]
-  Retry2 --> RetryAgain[retry]
-  RetryAgain --> RetrySuccess[Step 2 commit]
-  RetrySuccess --> RetryDone[COMPLETED]
-  RetryAgain --> RetryExhausted[max_attempts 초과]
-  RetryExhausted --> RetryThen[then 전략 적용]
-  RetryThen --> RetryFailed[FAILED]
+  Retry0["Retry: Step 0 commit"] --> Retry1["Step 1 commit"]
+  Retry1 --> Retry2["Step 2 failure"]
+  Retry2 --> RetryAgain["retry"]
+  RetryAgain --> RetrySuccess["Step 2 commit"]
+  RetrySuccess --> RetryDone["COMPLETED"]
+  RetryAgain --> RetryExhausted["max_attempts 초과"]
+  RetryExhausted --> RetryThen["then 전략 적용"]
+  RetryThen --> RetryFailed["FAILED"]
 
-  Parallel0[병렬 실패: Step 0 commit] --> Parallel1[parallel group]
-  Parallel1 --> ParallelSuccess[Step 1a commit]
-  Parallel1 --> ParallelFailure[Step 1b failure]
-  ParallelFailure --> ParallelComp1[Step 1a compensate]
-  ParallelComp1 --> ParallelComp0[Step 0 compensate]
-  ParallelComp0 --> ParallelDone[FAILED]
+  Parallel0["병렬 실패: Step 0 commit"] --> Parallel1["parallel group"]
+  Parallel1 --> ParallelSuccess["Step 1a commit"]
+  Parallel1 --> ParallelFailure["Step 1b failure"]
+  ParallelFailure --> ParallelComp1["Step 1a compensate"]
+  ParallelComp1 --> ParallelComp0["Step 0 compensate"]
+  ParallelComp0 --> ParallelDone["FAILED"]
 ```
 
 ### 병렬 step의 data 처리

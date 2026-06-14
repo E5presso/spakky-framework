@@ -92,38 +92,50 @@ OR/ANY 같은 복합 조건은 decorator 조합으로 표현하지 않습니다.
 `spakky-oidc`는 Bearer JWT를 검증하고 `AuthContext`로 매핑하는 authentication provider입니다. 이 플러그인은 inbound bearer token 인증에 집중합니다. Browser login, callback, session, refresh, logout route는 애플리케이션이나 별도 서비스에서 다룹니다.
 
 ```python
-from spakky.auth import (
-    AuthInvocation,
-    CredentialCarrier,
-    CredentialCarrierKind,
-    CredentialCarrierLocation,
-)
-from spakky.plugins.oidc import OidcAuthenticationProvider, OidcProviderConfig
+from fastapi import FastAPI
+from spakky.auth import protected, require_scope
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.fastapi.routes import get
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+import spakky.auth
+import spakky.plugins.fastapi
+import spakky.plugins.oidc
 
-provider = OidcAuthenticationProvider(
-    config=OidcProviderConfig(
-        issuer="https://issuer.example.test",
-        audience="api://spakky",
-        client_id="spakky-client",
-        roles_claim="roles",
-        scopes_claim="scope",
-        tenant_claim="tenant",
+
+@ApiController("/documents")
+class DocumentController:
+    @get("/{document_id}")
+    @require_scope("documents:read")
+    @protected
+    def read(self, document_id: str) -> dict[str, str]:
+        return {"id": document_id}
+
+
+@Pod()
+def get_api() -> FastAPI:
+    return FastAPI()
+
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.auth.PLUGIN_NAME,
+            spakky.plugins.fastapi.PLUGIN_NAME,
+            spakky.plugins.oidc.PLUGIN_NAME,
+        }
     )
+    .add(get_api)
+    .add(DocumentController)
+    .start()
 )
-
-auth_context = provider.authenticate(
-    CredentialCarrier(
-        kind=CredentialCarrierKind.BEARER_TOKEN,
-        location=CredentialCarrierLocation.AUTHORIZATION_HEADER,
-        material="eyJ...",
-        name="Authorization",
-        scheme="Bearer",
-    ),
-    AuthInvocation(boundary="HTTP", operation="GET /documents"),
-)
+api = app.container.get(FastAPI)
 ```
 
 OIDC provider는 discovery document와 JWKS를 읽고, `kid` key selection, RS256 signature, issuer, audience, `azp`, `exp`, `nbf`, `iat`, clock skew를 검증합니다. `sub`, display name, tenant, roles, scopes, selected safe claims만 `AuthContext`에 남기며 raw bearer token은 claims, metadata, credential carrier에 보존하지 않습니다.
+FastAPI/gRPC/Typer 같은 inbound adapter가 boundary에서 bearer credential을 읽고 provider-neutral auth port를 호출한 뒤 `AuthContext`를 저장하므로, 애플리케이션 코드는 provider를 직접 호출하지 않고 decorator로 요구사항을 선언합니다.
 
 실패는 다음 decision으로 정규화됩니다.
 
@@ -139,51 +151,54 @@ OIDC provider는 discovery document와 JWKS를 읽고, `kid` key selection, RS25
 `spakky-policy`는 YAML, TOML, JSON policy document를 typed model로 로드하고 RBAC, PBAC, ABAC-style rule을 평가합니다. Policy UI, generic policy API, MCP/tool authorization, authorized data filtering은 범위 밖입니다.
 
 ```python
-from spakky.auth import AuthContext, AuthSubject
-from spakky.plugins.policy import PolicyDocumentEvaluator, PolicyEvaluationInput
-from spakky.plugins.policy.loader import policy_document_from_mapping
+from fastapi import FastAPI
+from spakky.auth import protected, require_policy
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.fastapi.routes import get
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+import spakky.auth
+import spakky.plugins.fastapi
+import spakky.plugins.policy
 
-document = policy_document_from_mapping(
-    {
-        "version": "2026-06",
-        "metadata": {"name": "document-policy"},
-        "roles": [
-            {"ref": "role:editor", "permissions": ["permission:documents-read"]}
-        ],
-        "policies": [
-            {
-                "ref": "policy:documents-read",
-                "statements": [
-                    {
-                        "ref": "allow-editor-read",
-                        "effect": "allow",
-                        "roles": ["role:editor"],
-                        "permissions": ["permission:documents-read"],
-                        "resources": ["document:1"],
-                        "actions": ["read"],
-                    }
-                ],
-            }
-        ],
-    }
-)
 
-result = PolicyDocumentEvaluator(document).evaluate(
-    PolicyEvaluationInput(
-        auth_context=AuthContext(
-            subject=AuthSubject(id="user:alice"),
-            issuer="issuer:test",
-            roles=("role:editor",),
-        ),
-        resource="document:1",
-        action="read",
-        policy="policy:documents-read",
+@ApiController("/documents")
+class DocumentController:
+    @get("/{document_id}")
+    @require_policy(resource="document:1", action="read")
+    @protected
+    def read(self, document_id: str) -> dict[str, str]:
+        return {"id": document_id}
+
+
+@Pod()
+def get_api() -> FastAPI:
+    return FastAPI()
+
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.auth.PLUGIN_NAME,
+            spakky.plugins.fastapi.PLUGIN_NAME,
+            spakky.plugins.policy.PLUGIN_NAME,
+        }
     )
+    .add(get_api)
+    .add(DocumentController)
+    .start()
 )
-assert result.allowed
+api = app.container.get(FastAPI)
 ```
 
-Explicit deny가 matching allow보다 우선합니다. Matching allow가 없으면 default deny evidence를 반환합니다. Conditions는 `all`, `any`, `not` composition과 `equals`, `not_equals`, `in`, `contains`, `exists` operator를 지원합니다.
+`SPAKKY_POLICY_DOCUMENT_PATH`가 YAML, TOML, JSON policy document를 가리키면
+plugin이 해당 문서를 DI-managed `PolicyDocument`로 로드합니다.
+
+명시적 deny는 matching allow보다 우선합니다. Matching allow가 없으면 default deny evidence를
+반환합니다. Condition은 `all`, `any`, `not` composition과 `equals`, `not_equals`, `in`,
+`contains`, `exists` operator를 지원합니다.
 
 ### OpenFGA
 
@@ -205,37 +220,49 @@ Provider를 호출할 수 없으면 `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE` 
 
 `spakky-cryptography`는 기존 crypto utility와 auth provider 기능을 함께 제공합니다.
 
-- `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY`: `AuthContextSnapshot` HMAC envelope sign/verify
+- `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY`: `AuthContextSnapshot` HMAC envelope 서명/검증
 - `PASSWORD_HASH`, `PASSWORD_VERIFY`: password hash/verify port
-- `Key`, `Base64Encoder`, `Hash`, `HMAC`, `Aes`, `Gcm`, `Rsa`, retained password encoders
+- `Key`, `Base64Encoder`, `Hash`, `HMAC`, `Aes`, `Gcm`, `Rsa`, 유지되는 password encoder
 
 ```python
-from datetime import timedelta
+from spakky.auth import AuthSnapshotPropagationConfig, IPasswordHasher
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.core.stereotype.usecase import UseCase
+import spakky.auth
+import spakky.plugins.cryptography
 
-from spakky.auth import AuthContext, AuthInvocation, AuthSubject, SnapshotSignRequest
-from spakky.plugins.cryptography import (
-    CryptographyAuthProvider,
-    CryptographyAuthProviderConfig,
-)
 
-provider = CryptographyAuthProvider(
-    config=CryptographyAuthProviderConfig(snapshot_ttl=timedelta(minutes=5))
-)
-snapshot = provider.sign_snapshot(
-    SnapshotSignRequest(
-        auth_context=AuthContext(
-            subject=AuthSubject(id="user:alice"),
-            issuer="issuer:test",
-            scopes=("documents:read",),
-        )
+@Pod()
+def auth_snapshot_propagation_config() -> AuthSnapshotPropagationConfig:
+    return AuthSnapshotPropagationConfig(enabled=True)
+
+
+@UseCase()
+class RegisterPassword:
+    def __init__(self, hasher: IPasswordHasher) -> None:
+        self._hasher = hasher
+
+    def execute(self, password: str) -> str:
+        return self._hasher.hash_password(password)
+
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.auth.PLUGIN_NAME,
+            spakky.plugins.cryptography.PLUGIN_NAME,
+        }
     )
-)
-auth_context = provider.verify_snapshot(
-    snapshot.base64url_canonical_json(),
-    AuthInvocation(boundary="task", operation="documents.reindex"),
+    .add(auth_snapshot_propagation_config)
+    .add(RegisterPassword)
+    .start()
 )
 ```
 
+`SPAKKY_CRYPTOGRAPHY_SNAPSHOT_KEY`에는 url-safe Base64 HMAC key를 설정할 수 있습니다.
 Snapshot envelope이 없거나 잘못되었거나 만료되면 `CHALLENGE`로 매핑됩니다. Verification provider를 사용할 수 없으면 `ERROR`가 됩니다. Password verification failure는 `CHALLENGE / INVALID_CREDENTIAL`, password provider 비가용은 `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE`로 매핑됩니다.
 
 ---

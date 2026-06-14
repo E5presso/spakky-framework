@@ -1,72 +1,74 @@
 # spakky-policy
 
-`spakky-policy` loads YAML, TOML, and JSON policy documents into typed canonical
-models and evaluates RBAC, PBAC, and ABAC-style authorization rules for
-`spakky-auth`.
+`spakky-policy`는 YAML, TOML, JSON policy document를 typed canonical model로 로드하고
+`spakky-auth`의 RBAC, PBAC, ABAC-style 인가 규칙을 평가하는 provider 플러그인입니다.
 
-## Installation
+## 설치
 
 ```bash
-pip install spakky-policy
+pip install spakky-auth spakky-policy spakky-fastapi
 ```
 
-## Usage
+## 사용법
+
+`SPAKKY_POLICY_DOCUMENT_PATH`가 YAML, TOML, JSON 문서를 가리키면 플러그인이 해당 문서를
+DI-managed `PolicyDocument`로 로드합니다. 경로를 설정하지 않으면 비어 있는 policy document를
+등록해 인가 요청을 안전하게 거부합니다.
 
 ```python
-from spakky.auth import AuthContext, AuthSubject
-from spakky.plugins.policy import PolicyDocumentEvaluator, PolicyEvaluationInput
-from spakky.plugins.policy.loader import policy_document_from_mapping
+from fastapi import FastAPI
+from spakky.auth import protected, require_policy
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.fastapi.routes import get
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+import spakky.auth
+import spakky.plugins.fastapi
+import spakky.plugins.policy
 
-document = policy_document_from_mapping(
-    {
-        "version": "2026-06",
-        "metadata": {"name": "article-policy"},
-        "roles": [{"ref": "role:editor", "permissions": ["permission:article-read"]}],
-        "policies": [
-            {
-                "ref": "policy:article-read",
-                "statements": [
-                    {
-                        "ref": "allow-editor-read",
-                        "effect": "allow",
-                        "roles": ["role:editor"],
-                        "permissions": ["permission:article-read"],
-                        "resources": ["article:1"],
-                        "actions": ["article:read"],
-                    }
-                ],
-            }
-        ],
-    }
-)
 
-auth_context = AuthContext(
-    subject=AuthSubject(id="user:alice"),
-    issuer="issuer:test",
-    roles=("role:editor",),
-)
-result = PolicyDocumentEvaluator(document).evaluate(
-    PolicyEvaluationInput(
-        auth_context=auth_context,
-        resource="article:1",
-        action="article:read",
-        policy="policy:article-read",
+@ApiController("/articles")
+class ArticleController:
+    @get("/{article_id}")
+    @require_policy(resource="article:1", action="article:read")
+    @protected
+    def read(self, article_id: str) -> dict[str, str]:
+        return {"id": article_id}
+
+
+@Pod()
+def get_api() -> FastAPI:
+    return FastAPI()
+
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.auth.PLUGIN_NAME,
+            spakky.plugins.fastapi.PLUGIN_NAME,
+            spakky.plugins.policy.PLUGIN_NAME,
+        }
     )
+    .add(get_api)
+    .add(ArticleController)
+    .start()
 )
-assert result.allowed is True
+api = app.container.get(FastAPI)
 ```
 
-## Policy Semantics
+## Policy 의미
 
-- Explicit deny statements take precedence over matching allow statements.
-- No matching allow statement returns default deny evidence.
-- Conditions support `all`, `any`, and `not` composition plus `equals`,
-  `not_equals`, `in`, `contains`, and `exists` atomic operators.
-- Resource, action, and tenant refs are canonical strings supplied by
-  `AuthorizationRequest`, decorator metadata, `AuthContext`, or resolver output.
-- Named policies are the OR/ANY user-facing surface; MCP/tool authorization,
-  generic policy APIs, policy UI, and authorized data filtering are out of scope.
+- 명시적 deny statement는 matching allow statement보다 우선합니다.
+- matching allow statement가 없으면 default deny evidence를 반환합니다.
+- condition은 `all`, `any`, `not` composition과 `equals`, `not_equals`, `in`,
+  `contains`, `exists` atomic operator를 지원합니다.
+- resource, action, tenant ref는 decorator metadata, `AuthContext`, resolver output,
+  또는 provider-neutral `AuthorizationRequest`에서 온 canonical string입니다.
+- named policy가 OR/ANY 사용자 표면입니다. MCP/tool authorization, generic policy API,
+  policy UI, authorized data filtering은 이 패키지 범위 밖입니다.
 
-## License
+## 라이선스
 
-MIT License
+MIT

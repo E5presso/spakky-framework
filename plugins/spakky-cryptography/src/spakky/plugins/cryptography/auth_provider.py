@@ -1,11 +1,13 @@
 """Auth snapshot and password capabilities backed by cryptographic utilities."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import override
+from typing import ClassVar, override
 import json
 
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.auth import (
     AuthCapability,
     AuthClaim,
@@ -32,6 +34,7 @@ from spakky.auth import (
 )
 from spakky.auth.constants import AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION
 from spakky.core.pod.annotations.pod import Pod
+from spakky.core.stereotype.configuration import Configuration
 from spakky.plugins.cryptography.encoding import Base64Encoder
 from spakky.plugins.cryptography.hmac_signer import HMAC, HMACType
 from spakky.plugins.cryptography.key import Key
@@ -54,11 +57,18 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class CryptographyAuthProviderConfig:
+@Configuration()
+class CryptographyAuthProviderConfig(BaseSettings):
     """Runtime config for cryptography auth provider capabilities."""
 
-    snapshot_key: Key = field(default_factory=lambda: Key(size=32))
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix="SPAKKY_CRYPTOGRAPHY_",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        arbitrary_types_allowed=True,
+    )
+
+    snapshot_key: Key = Field(default_factory=lambda: Key(size=32))
     """HMAC key used to sign and verify AuthContextSnapshot envelopes."""
 
     snapshot_key_id: str = "spakky-cryptography:default"
@@ -75,6 +85,16 @@ class CryptographyAuthProviderConfig:
 
     password_available: bool = True
     """Whether password hashing provider dependencies are available."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @field_validator("snapshot_key", mode="before")
+    @classmethod
+    def _parse_snapshot_key(cls, value: Key | str) -> Key:
+        if isinstance(value, Key):
+            return value
+        return Key(base64=value, url_safe=True)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -101,7 +121,7 @@ class CryptographyAuthProvider(
 
     def __init__(
         self,
-        config: CryptographyAuthProviderConfig = CryptographyAuthProviderConfig(),
+        config: CryptographyAuthProviderConfig,
     ) -> None:
         self._config = config
 

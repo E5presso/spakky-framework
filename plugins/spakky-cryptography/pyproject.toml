@@ -9,6 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "argon2-cffi>=25.1.0",
     "bcrypt>=5.0.0",
+    "pydantic-settings>=2.13.1",
     "pycryptodome>=3.23.0",
     "spakky>=6.6.0",
     "spakky-auth>=6.6.0",

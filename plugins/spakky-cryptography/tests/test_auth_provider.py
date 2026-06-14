@@ -18,6 +18,10 @@ from spakky.auth import (
     AuthorizationReasonCode,
     AuthVerificationProviderUnavailableError,
     ExpiredAuthContextSnapshotError,
+    IAuthContextSnapshotSigner,
+    IAuthContextSnapshotVerifier,
+    IPasswordHasher,
+    IPasswordVerifier,
     InvalidAuthContextSnapshotError,
     MissingAuthContextSnapshotError,
     SnapshotSignRequest,
@@ -53,13 +57,17 @@ def _naive_clock() -> datetime:
 def _provider(
     clock: Callable[[], datetime] = _fixed_clock,
 ) -> CryptographyAuthProvider:
-    config = CryptographyAuthProviderConfig(
+    config = _config(
         snapshot_key=Key(binary=b"0" * 32),
         snapshot_key_id="key:test",
         snapshot_ttl=timedelta(minutes=5),
         clock=clock,
     )
     return CryptographyAuthProvider(config=config)
+
+
+def _config(**overrides: object) -> CryptographyAuthProviderConfig:
+    return CryptographyAuthProviderConfig().model_copy(update=overrides)
 
 
 def _auth_context() -> AuthContext:
@@ -153,6 +161,25 @@ def test_enabled_snapshot_propagation_starts_with_cryptography_provider() -> Non
 
     app.start()
     app.stop()
+
+
+def test_load_plugins_with_cryptography_expect_auth_ports_bound() -> None:
+    """load_plugins()가 cryptography provider를 auth port들에 binding하는지 검증한다."""
+    app = SpakkyApplication(ApplicationContext()).load_plugins(
+        include={spakky.plugins.cryptography.PLUGIN_NAME}
+    )
+
+    app.start()
+
+    assert isinstance(
+        app.container.get(IAuthContextSnapshotSigner), CryptographyAuthProvider
+    )
+    assert isinstance(
+        app.container.get(IAuthContextSnapshotVerifier),
+        CryptographyAuthProvider,
+    )
+    assert isinstance(app.container.get(IPasswordHasher), CryptographyAuthProvider)
+    assert isinstance(app.container.get(IPasswordVerifier), CryptographyAuthProvider)
 
 
 def test_snapshot_sign_verify_round_trips_auth_context() -> None:
@@ -315,6 +342,18 @@ def test_default_provider_clock_returns_aware_datetime() -> None:
     assert now.tzinfo is not None
 
 
+def test_config_reads_snapshot_key_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SPAKKY_CRYPTOGRAPHY_SNAPSHOT_KEY가 Key 설정으로 파싱되는지 검증한다."""
+    key = Key(binary=b"2" * 32)
+    monkeypatch.setenv("SPAKKY_CRYPTOGRAPHY_SNAPSHOT_KEY", key.b64_urlsafe)
+
+    config = CryptographyAuthProviderConfig()
+
+    assert config.snapshot_key.binary == key.binary
+
+
 def test_invalid_datetime_value_raises_invalid_snapshot() -> None:
     provider = _provider()
 
@@ -346,7 +385,7 @@ def test_invalid_claim_value_raises_invalid_snapshot() -> None:
 def test_tampered_snapshot_verification_maps_to_challenge() -> None:
     provider = _provider()
     other_provider = CryptographyAuthProvider(
-        config=CryptographyAuthProviderConfig(
+        config=_config(
             snapshot_key=Key(binary=b"1" * 32),
             snapshot_key_id="key:test",
             clock=_fixed_clock,
@@ -388,7 +427,7 @@ def test_expired_snapshot_verification_raises_and_maps_to_challenge() -> None:
 
 def test_snapshot_provider_unavailable_maps_to_error() -> None:
     provider = CryptographyAuthProvider(
-        config=CryptographyAuthProviderConfig(
+        config=_config(
             snapshot_key=Key(binary=b"0" * 32),
             verification_available=False,
             clock=_fixed_clock,
@@ -416,18 +455,14 @@ def test_password_hash_verify_returns_allow_for_valid_password() -> None:
 
 
 def test_password_hash_provider_unavailable_raises_auth_error() -> None:
-    provider = CryptographyAuthProvider(
-        config=CryptographyAuthProviderConfig(password_available=False)
-    )
+    provider = CryptographyAuthProvider(config=_config(password_available=False))
 
     with pytest.raises(AuthVerificationProviderUnavailableError):
         provider.hash_password("secret")
 
 
 def test_password_verify_provider_unavailable_returns_error() -> None:
-    provider = CryptographyAuthProvider(
-        config=CryptographyAuthProviderConfig(password_available=False)
-    )
+    provider = CryptographyAuthProvider(config=_config(password_available=False))
 
     decision = provider.verify_password("secret", "hash")
 

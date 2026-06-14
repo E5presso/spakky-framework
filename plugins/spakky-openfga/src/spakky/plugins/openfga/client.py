@@ -50,7 +50,7 @@ class OpenFgaSdkCheckClient(IOpenFgaCheckClient):
 
     _config: OpenFgaConfig
 
-    def __init__(self, config: OpenFgaConfig = OpenFgaConfig()) -> None:
+    def __init__(self, config: OpenFgaConfig) -> None:
         self._config = config
 
     @override

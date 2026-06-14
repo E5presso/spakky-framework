@@ -16,7 +16,12 @@ from spakky.auth import (
     ScopeCheckRequest,
 )
 from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.policy.config import SpakkyPolicyConfig
 from spakky.plugins.policy.evaluator import PolicyDocumentEvaluator
+from spakky.plugins.policy.loader import (
+    load_policy_document,
+    policy_document_from_mapping,
+)
 from spakky.plugins.policy.model import PolicyDocument
 
 POLICY_AUTH_PROVIDER_ID = "provider:spakky-policy"
@@ -59,6 +64,19 @@ class SpakkyPolicyAuthProvider(
     def check_scope(self, request: ScopeCheckRequest) -> AuthorizationDecision:
         """Check whether the subject has a scope."""
         return self._evaluator.check_scope(request)
+
+
+@Pod(name="spakky_policy_document")
+def spakky_policy_document(config: SpakkyPolicyConfig) -> PolicyDocument:
+    """Load the configured policy document for DI-managed auth providers."""
+    if config.document_path is None:
+        return policy_document_from_mapping(
+            {
+                "version": "1",
+                "metadata": {"name": "spakky-policy"},
+            }
+        )
+    return load_policy_document(config.document_path)
 
 
 @Pod(name="spakky_policy_auth_provider_contribution")

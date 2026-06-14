@@ -70,8 +70,10 @@ from spakky.actuator import (
     ActuatorEndpoint,
     ComponentHealthResult,
 )
+from spakky.core.pod.annotations.pod import Pod
 
 
+@Pod()
 class ProcessProbe(AbstractHealthProbe):
     @property
     def name(self) -> str:
@@ -85,6 +87,7 @@ class ProcessProbe(AbstractHealthProbe):
         return ComponentHealthResult.healthy(self.name)
 
 
+@Pod()
 class BuildInfo(IInfoContributor):
     @property
     def name(self) -> str:

@@ -21,11 +21,11 @@
 
 ```mermaid
 flowchart TD
-  Controller --> UseCase[UseCase<br/>단일 Aggregate, 로컬 @Transactional]
-  Controller --> Saga[Saga<br/>복수 서비스/프로세스, 분산 트랜잭션 오케스트레이션]
-  Saga --> InternalUseCase[UseCase 호출<br/>내부 서비스 위임]
-  Saga --> Command[Command 발행<br/>외부 서비스]
-  InternalUseCase --> Repository[Repository / AggregateRoot<br/>UseCase 내부에서만]
+  Controller["Controller"] --> UseCase["UseCase<br/>단일 Aggregate, 로컬 @Transactional"]
+  Controller --> Saga["Saga<br/>복수 서비스/프로세스, 분산 트랜잭션 오케스트레이션"]
+  Saga --> InternalUseCase["UseCase 호출<br/>내부 서비스 위임"]
+  Saga --> Command["Command 발행<br/>외부 서비스"]
+  InternalUseCase --> Repository["Repository / AggregateRoot<br/>UseCase 내부에서만"]
 ```
 
 Saga는 **흐름 제어기(flow orchestrator)** 역할만 담당합니다. Repository 접근·Aggregate 조작·트랜잭션 경계·비즈니스 규칙 판단은 **호출되는 UseCase**에서 수행합니다. 이 경계는 다음 절의 "역할 제한"으로 강제됩니다.
@@ -225,23 +225,23 @@ class OrderSaga(AbstractSaga[OrderSagaData]):
 
 ```mermaid
 sequenceDiagram
-  participant Grpc as Controller
-  participant Saga as OrderSaga
-  participant Create as CreateOrderUseCase<br/>@Transactional
-  participant Stock as ReserveStockUseCase<br/>@Transactional
-  participant Pay as ProcessPaymentUseCase<br/>@Transactional
-  participant Cancel as CancelOrderUseCase<br/>@Transactional
+  participant Controller as "Controller"
+  participant OrderSaga as "OrderSaga"
+  participant CreateStep as "CreateOrderUseCase"
+  participant StockStep as "ReserveStockUseCase"
+  participant PaymentStep as "ProcessPaymentUseCase"
+  participant CancelStep as "CancelOrderUseCase"
 
-  Grpc->>Saga: execute(OrderSagaData)
-  Saga->>Create: execute(customer_id, total)
-  Create-->>Saga: commit order(PENDING), order_id
-  Saga->>Stock: execute(order_id)
-  Stock-->>Saga: commit reservation_id
-  Saga->>Pay: execute(order_id, total)
-  Pay--x Saga: payment failed
-  Saga->>Stock: release_stock(reservation_id)
-  Saga->>Cancel: cancel_order(order_id)
-  Saga-->>Grpc: SagaResult(status=FAILED)
+  Controller->>OrderSaga: Execute saga
+  OrderSaga->>CreateStep: Create order transaction
+  CreateStep-->>OrderSaga: Commit pending order and return order id
+  OrderSaga->>StockStep: Reserve stock transaction
+  StockStep-->>OrderSaga: Commit reservation id
+  OrderSaga->>PaymentStep: Process payment transaction
+  PaymentStep--xOrderSaga: Payment failed
+  OrderSaga->>StockStep: Release stock compensation
+  OrderSaga->>CancelStep: Cancel order compensation
+  OrderSaga-->>Controller: Return failed SagaResult
 ```
 
 Saga compensation은 DB rollback과 다릅니다.
