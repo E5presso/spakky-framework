@@ -1,6 +1,6 @@
 [project]
 name = "spakky-vllm"
-version = "6.6.1"
+version = "6.7.0"
 description = "vLLM OpenAI-compatible model adapter plugin for Spakky Agent"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,8 +9,8 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "httpx>=0.28.1",
     "pydantic-settings>=2.13.1",
-    "spakky>=6.6.1",
-    "spakky-agent>=6.6.1",
+    "spakky>=6.7.0",
+    "spakky-agent>=6.7.0",
 ]
 
 [project.entry-points."spakky.plugins"]

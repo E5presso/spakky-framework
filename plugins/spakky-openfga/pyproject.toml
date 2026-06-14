@@ -1,6 +1,6 @@
 [project]
 name = "spakky-openfga"
-version = "6.6.1"
+version = "6.7.0"
 description = "OpenFGA relationship authorization provider plugin for Spakky Auth"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,8 +9,8 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "openfga-sdk>=0.10.3",
     "pydantic-settings>=2.13.1",
-    "spakky>=6.6.1",
-    "spakky-auth>=6.6.1",
+    "spakky>=6.7.0",
+    "spakky-auth>=6.7.0",
 ]
 
 [project.entry-points."spakky.plugins"]

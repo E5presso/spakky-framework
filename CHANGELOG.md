@@ -1,3 +1,9 @@
+## v6.7.0 (2026-06-14)
+
+### Feat
+
+- align plugin configuration and docs DX
+
 ## v6.6.1 (2026-06-14)
 
 ### Fix

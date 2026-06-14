@@ -1,12 +1,12 @@
 [project]
 name = "spakky-auth"
-version = "6.6.1"
+version = "6.7.0"
 description = "Provider-neutral authentication and authorization contracts for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.6.1"]
+dependencies = ["spakky>=6.7.0"]
 
 [project.entry-points."spakky.plugins"]
 spakky-auth = "spakky.auth.main:initialize"
