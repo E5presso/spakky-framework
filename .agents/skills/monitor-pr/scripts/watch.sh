@@ -239,6 +239,17 @@ while true; do
   latest_bot_ch2_date=$(echo "$ch2_raw" \
     | jq -r '[.[] | select(.user.login == "claude[bot]") | (if (.updated_at // "") > (.created_at // "") then .updated_at else .created_at end)] | sort | last // ""' 2>/dev/null || echo "")
 
+  bot_evaluated_head=0
+  if [ -n "$latest_bot_ch2_date" ] && [ -n "$head_commit_date" ] \
+     && [ "$latest_bot_ch2_date" \> "$head_commit_date" ]; then
+    bot_evaluated_head=1
+  fi
+  if [ -n "$latest_bot_review_oid" ] \
+     && [ "$latest_bot_review_oid" = "$head_oid" ] \
+     && [ "$latest_bot_review_state" = "COMMENTED" ]; then
+    bot_evaluated_head=1
+  fi
+
   # Build current (id -> updated_at) map per channel.
   # CH1 (인라인 리뷰 코멘트), CH2 (일반 PR 코멘트): updated_at 필드 사용.
   # CH3 (리뷰): GitHub Reviews API는 updated_at을 노출하지 않으므로 submitted_at을 baseline으로 쓴다.
@@ -279,9 +290,11 @@ while true; do
     exit 0
   fi
 
-  # 종료 조건 2: CLEAN/UNSTABLE + APPROVED + CI green
-  if [ "$review_decision" = "APPROVED" ] \
+  # 종료 조건 2: CLEAN/UNSTABLE + CI green + review bot HEAD 평가 완료
+  # Codex/Copilot review bots often submit COMMENTED reviews instead of formal APPROVED.
+  if { [ "${REQUIRE_REVIEW_BOT_HEAD_EVAL:-1}" = "0" ] || [ "$bot_evaluated_head" = "1" ]; } \
      && { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
+     && [ "$pending_checks" = "0" ] \
      && [ "$failed_checks" = "0" ]; then
     persist_state
     snapshot_and_emit "DONE" "mergeable-clean"
@@ -343,16 +356,6 @@ while true; do
   # (f) auto-approvable 태그의 의의: pr-review SKILL.md 가 AE6/AE7 또는 전 파일 AE1–AE5 매칭 시
   # `gh pr edit --add-label "auto-approvable"` 로 자동 부여한다. 태그가 없으면 봇 자동 승인 비적격이며
   # 휴먼 리뷰가 정상 경로 — retrigger 시도는 빈 커밋만 누적시켜 무의미하다.
-  bot_evaluated_head=0
-  if [ -n "$latest_bot_ch2_date" ] && [ -n "$head_commit_date" ] \
-     && [ "$latest_bot_ch2_date" \> "$head_commit_date" ]; then
-    bot_evaluated_head=1
-  fi
-  if [ -n "$latest_bot_review_oid" ] \
-     && [ "$latest_bot_review_oid" = "$head_oid" ] \
-     && [ "$latest_bot_review_state" = "COMMENTED" ]; then
-    bot_evaluated_head=1
-  fi
   if [ "$pending_checks" = "0" ] \
      && [ "$merge_state" != "CLEAN" ] \
      && [ "$review_decision" != "APPROVED" ] \

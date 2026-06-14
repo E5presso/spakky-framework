@@ -34,7 +34,8 @@ fi
 # 개별 인라인 코멘트의 container 역할만 하므로 CH1에서 이미 집계됨 — CH3에서 중복 제외.
 ACTIONABLE_COMMENT_FILTER='
   def actionable_comment:
-    ((.body // "") | test("<!-- [a-zA-Z0-9_-]*linkback -->")) | not;
+    (((.body // "") | test("<!-- [a-zA-Z0-9_-]*linkback -->")) | not)
+    and (((.user.login // "") | test("^(codecov|linear)(\\[bot\\])?$")) | not);
 
   def review_noise:
     select(.state != "APPROVED") | select((.body // "") | length > 0);
