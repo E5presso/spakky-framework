@@ -10,7 +10,7 @@ paths:
 모든 pre-commit 도구(pyrefly, ruff 등)는 **패키지 디렉토리 내에서** 실행:
 
 ```bash
-cd core/spakky && uv run pyrefly check
+cd core/spakky && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text
 cd core/spakky && uv run ruff check .
 cd core/spakky && uv run pytest
 ```

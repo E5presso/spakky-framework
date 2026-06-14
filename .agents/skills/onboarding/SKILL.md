@@ -66,7 +66,7 @@ uv run pre-commit install
 
 ```bash
 # 코어 패키지 예시
-cd core/spakky && uv run ruff check . && uv run pyrefly check
+cd core/spakky && uv run ruff check . && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text
 ```
 
 ## Step 6: 테스트 실행

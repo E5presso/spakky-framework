@@ -117,7 +117,7 @@ flowchart TD
 ```yaml
 # root에서 동작: cd core/spakky 후 실행
 # standalone에서 동작: 현재 디렉토리에서 실행
-entry: bash -c 'if [ -d "core/spakky" ]; then cd core/spakky; fi && uv run pyrefly check'
+entry: bash -c 'if [ -d "core/spakky" ]; then cd core/spakky; fi && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text'
 ```
 
 pre-commit 설정에는 다음 항목이 포함됩니다.

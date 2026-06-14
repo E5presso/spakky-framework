@@ -38,6 +38,9 @@ mkdir -p "$bin_dir"
 cat > "$bin_dir/uv" <<'SH'
 #!/usr/bin/env bash
 printf '%s|%s\n' "$PWD" "$*" >> "$UV_HOOK_LOG"
+if [ "${UV_HOOK_WARN:-0}" = "1" ] && [ "$1 $2" = "run pyrefly" ]; then
+  printf ' WARN src/example.py:1:1-2: synthetic warning [synthetic]\n'
+fi
 exit 0
 SH
 chmod +x "$bin_dir/uv"
@@ -58,11 +61,11 @@ fi
 
 grep -Fxq "$repo/core/spakky|run ruff format $repo/core/spakky/src/spakky/__init__.py" "$log_file" \
   || { echo "FAIL: missing core package ruff format dispatch" >&2; exit 1; }
-grep -Fxq "$repo/core/spakky|run pyrefly check $repo/core/spakky/src/spakky/__init__.py" "$log_file" \
+grep -Fxq "$repo/core/spakky|run pyrefly check --min-severity warn --no-progress-bar --output-format min-text $repo/core/spakky/src/spakky/__init__.py" "$log_file" \
   || { echo "FAIL: missing core package pyrefly dispatch" >&2; exit 1; }
 grep -Fxq "$repo/plugins/spakky-fastapi|run ruff format $repo/plugins/spakky-fastapi/src/spakky/plugins/fastapi/__init__.py" "$log_file" \
   || { echo "FAIL: missing plugin package ruff format dispatch" >&2; exit 1; }
-grep -Fxq "$repo/plugins/spakky-fastapi|run pyrefly check $repo/plugins/spakky-fastapi/src/spakky/plugins/fastapi/__init__.py" "$log_file" \
+grep -Fxq "$repo/plugins/spakky-fastapi|run pyrefly check --min-severity warn --no-progress-bar --output-format min-text $repo/plugins/spakky-fastapi/src/spakky/plugins/fastapi/__init__.py" "$log_file" \
   || { echo "FAIL: missing plugin package pyrefly dispatch" >&2; exit 1; }
 
 if grep -Fq "$repo|run ruff" "$log_file"; then
@@ -88,7 +91,26 @@ fi
 
 grep -Fxq "$wt_a/core/spakky|run ruff format $wt_a/core/spakky/src/spakky/__init__.py" "$log_file" \
   || { echo "FAIL: missing worktree package ruff format dispatch" >&2; cat "$log_file" >&2; exit 1; }
-grep -Fxq "$wt_a/core/spakky|run pyrefly check $wt_a/core/spakky/src/spakky/__init__.py" "$log_file" \
+grep -Fxq "$wt_a/core/spakky|run pyrefly check --min-severity warn --no-progress-bar --output-format min-text $wt_a/core/spakky/src/spakky/__init__.py" "$log_file" \
   || { echo "FAIL: missing worktree package pyrefly dispatch" >&2; cat "$log_file" >&2; exit 1; }
+
+>"$log_file"
+warning_output="$raw_dir/warning-output.json"
+warning_payload="$(jq -n \
+  --arg f "$repo/core/spakky/src/spakky/__init__.py" \
+  '{tool_name:"Edit", tool_input:{file_path:$f}}')"
+
+status=0
+PATH="$bin_dir:$PATH" UV_HOOK_LOG="$log_file" UV_HOOK_WARN=1 \
+  bash -c "cd '$repo' && printf '%s' '$warning_payload' | '$HOOK'" >"$warning_output" || status=$?
+
+if [ "$status" -eq 0 ]; then
+  echo "FAIL: hook allowed pyrefly warning" >&2
+  cat "$warning_output" >&2
+  exit 1
+fi
+
+grep -Fq "synthetic warning" "$warning_output" \
+  || { echo "FAIL: hook did not report pyrefly warning" >&2; cat "$warning_output" >&2; exit 1; }
 
 echo "PASS: Python edit hook dispatches from package roots"

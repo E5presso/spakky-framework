@@ -109,7 +109,16 @@ jobs:
 
       - name: Run type checking
         working-directory: ${{ steps.pkg.outputs.path }}
-        run: uv run pyrefly check
+        run: |
+          status=0
+          output="$(uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text 2>&1)" || status=$?
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if printf '%s\n' "$output" | grep -Eq '^[[:space:]]+WARN '; then
+            exit 1
+          fi
 
       - name: Run unit tests
         working-directory: ${{ steps.pkg.outputs.path }}

@@ -31,7 +31,7 @@ Fixes #
 - [ ] 새 test와 기존 test가 local에서 통과합니다(각 package directory에서 `uv run pytest` 실행).
 - [ ] linter를 실행했습니다(`uv run ruff check`).
 - [ ] formatter를 실행했습니다(`uv run ruff format`).
-- [ ] type checker를 실행했습니다(`uv run pyrefly check`).
+- [ ] type checker를 실행했습니다(`uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text`).
 - [ ] 필요한 경우 문서를 업데이트했습니다.
 - [ ] commit이 [Conventional Commits](https://www.conventionalcommits.org/) format을 따릅니다.
 

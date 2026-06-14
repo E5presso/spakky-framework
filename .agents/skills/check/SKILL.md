@@ -21,7 +21,7 @@ user-invocable: true
 2. **Python 하네스 규칙 검증** — `uv run python ../../.agents/skills/check/scripts/validate_python_harness.py .` (패키지 디렉토리 내에서, root pre-commit도 전체 실행)
 3. **레이어 의존 방향 검증** — 패키지 간 역방향 import가 없는지 확인.
 4. **Lint** — `uv run ruff check .` (패키지 디렉토리 내에서)
-5. **타입 체크** — `uv run pyrefly check` (패키지 디렉토리 내에서)
+5. **타입 체크** — `uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text` (패키지 디렉토리 내에서, warning도 실패로 처리)
 6. **테스트** — `uv run pytest` (패키지 디렉토리 내에서)
 
 ## 1. Python 하네스 규칙 검증
@@ -78,10 +78,10 @@ cd <package-dir> && uv run ruff check .
 ## 4. 타입 체크
 
 ```bash
-cd <package-dir> && uv run pyrefly check
+cd <package-dir> && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text
 ```
 
-- 실패 시 → 테스트 실행하지 않고 타입 오류부터 수정 후 재실행.
+- 실패하거나 warning이 출력되면 → 테스트 실행하지 않고 타입 오류/경고부터 수정 후 재실행.
 - opt-out 주석은 최후 수단. 사유 필수: `# pyrefly: ignore - 사유`
 
 ## 5. 테스트 & 커버리지

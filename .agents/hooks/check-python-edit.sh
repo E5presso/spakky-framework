@@ -196,9 +196,9 @@ ${fmt_output}
     continue
   fi
 
-  type_output="$(cd "$pkg_root" && uv run pyrefly check "$abs_path" 2>&1)"
+  type_output="$(cd "$pkg_root" && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text "$abs_path" 2>&1)"
   type_status=$?
-  if [ "$type_status" -ne 0 ]; then
+  if [ "$type_status" -ne 0 ] || printf '%s\n' "$type_output" | grep -Eq '^[[:space:]]+WARN '; then
     errors="${errors}pyrefly errors in ${abs_path}:
 ${type_output}
 "
@@ -209,3 +209,4 @@ done < <(extract_paths)
 
 jq -n --arg errors "$errors" \
   '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$errors}}'
+exit 1

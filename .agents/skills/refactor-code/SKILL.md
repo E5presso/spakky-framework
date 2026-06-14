@@ -50,10 +50,10 @@ user-invocable: true
 
 ```bash
 # 패키지별로 실행
-cd <package-dir> && uv run pyrefly check
+cd <package-dir> && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text
 ```
 
-> **주의**: `uv run pyrefly check`가 `0 errors (N suppressed)`를 반환해도
+> **주의**: `uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text`가 `0 errors (N suppressed)`를 반환해도
 > VS Code 익스텐션이 오류를 표시할 수 있다.
 > pyrefly 프로젝트 모드는 다른 패키지의 `src/` 디렉토리를 `project_excludes`로 자동 제외하므로
 > cross-package TypeVar 추론 오류가 suppressed 처리된다.
