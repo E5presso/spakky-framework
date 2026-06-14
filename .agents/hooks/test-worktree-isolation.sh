@@ -64,6 +64,16 @@ mk_apply_patch() {
   jq -n --arg cwd "$cwd" --arg c "$cmd" '{cwd:$cwd, tool_name:"apply_patch", tool_input:{command:$c}}'
 }
 
+mk_exec_command() {
+  local cmd="$1"
+  jq -n --arg c "$cmd" '{tool_name:"exec_command", tool_input:{cmd:$c}}'
+}
+
+mk_exec_command_workdir() {
+  local cmd="$1" workdir="$2"
+  jq -n --arg c "$cmd" --arg workdir "$workdir" '{tool_name:"exec_command", tool_input:{cmd:$c, workdir:$workdir}}'
+}
+
 run_case "Edit inside worktree -> allow" \
   "$wt_a" "$(mk_edit "$wt_a/core.py")" 0
 
@@ -84,6 +94,21 @@ run_case "apply_patch relative path from worktree -> allow" \
 
 run_case "apply_patch parent traversal -> deny" \
   "$wt_a" "$(mk_apply_patch "$wt_a" "../../../seed.txt")" 2
+
+run_case "exec_command touching root absolute path -> deny" \
+  "$wt_a" "$(mk_exec_command "touch $repo/root.py")" 2
+
+run_case "exec_command root workdir relative mutation -> deny" \
+  "$wt_a" "$(mk_exec_command_workdir "touch root.py" "$repo")" 2
+
+run_case "exec_command worktree workdir relative mutation -> allow" \
+  "$wt_b" "$(mk_exec_command_workdir "touch worktree.py" "$wt_a")" 0
+
+run_case "exec_command explicit cd into worktree from root workdir -> allow" \
+  "$wt_b" "$(mk_exec_command_workdir "(cd $wt_a && touch worktree.py)" "$repo")" 0
+
+run_case "exec_command git -C worktree then root mutation -> deny" \
+  "$wt_b" "$(mk_exec_command_workdir "git -C $wt_a status && touch root.py" "$repo")" 2
 
 if [ "$fail" -ne 0 ]; then
   echo "FAIL: $fail failed, $pass passed" >&2

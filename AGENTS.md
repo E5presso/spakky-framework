@@ -35,7 +35,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 ```
 
 - **이슈 작업은 `/process-ticket`으로 시작한다.** 직접 코딩하지 않는다.
-- **마일스톤 단위 작업은 `/autopilot`으로 시작한다.** 단일 티켓은 `/process-ticket`.
+- **마일스톤 단위 작업은 `/autopilot`으로 시작한다.** 단일 이슈는 `/process-ticket`.
 - **버그 조사는 `/investigate`로 시작한다.** 가설 없이 코드를 수정하지 않는다.
 - **코드 변경 후 문서 동기화는 `/sync-docs`로 수행한다.**
 - **하네스 변경 후 `/evaluate-harness`로 회귀 검증.** 5-test 게이트는 `/optimize-harness`.

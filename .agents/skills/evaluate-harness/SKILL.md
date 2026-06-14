@@ -1,152 +1,75 @@
 ---
-name: evaluate-harness
-description: 하네스가 선언한 규칙이 실제로 차단되는지 외부 서브에이전트로 독립 검증합니다. 선언-실행 단절, 회피 경로, 포인터 무효점을 적발하고 보고만 수행하며 직접 보강하지 않습니다.
-argument-hint: "[scope: rules|skills|all]"
+description: 실패 시나리오를 하네스에 시뮬레이션하여 차단력을 검증. 선언과 실제 시행의 단절, 자기 확신 회피 경로, 포인터 체인 무효 지점을 적발한다.
+argument-hint: "[시나리오 명세 또는 '최근 세션']"
 user-invocable: true
 ---
 
-# Evaluate Harness — 하네스 외부 검증
+# Evaluate Harness — 시나리오 기반 하네스 검증
 
-하네스 규칙이 **선언만 있고 실제 차단되지 않는** 단절을 외부 서브에이전트로 검증한다. 자기확증 편향을 구조적으로 차단하기 위해 **사전적 회귀 검증** 용도다.
+하네스가 **선언만 하고 시행되지 않는 규칙**을 골라낸다. 규칙 품질이 아니라 **실제 차단 여부**를 본다.
 
-## 본분 (Boundary)
+## 언제 쓰는가
 
-본 스킬의 본분은 **평가와 위임**이다. 보강(코드/설정/스킬 본문 수정)은 본분 밖이며, 사용자가 "전부 자동으로"라고 응답해도 본 스킬 안에서 직접 수정에 진입하지 않는다.
-
-- ✅ 본분 안: 갭 식별 → 다축 분류 → 보고서 작성 → 위임 경로 제시 → 사용자 승인 시 위임 호출
-- ❌ 본분 밖: `pyproject.toml`/`settings.json`/스킬 본문/규칙 본문 직접 편집, 코드베이스 위반 직접 수정, 신규 규칙 제안
-
-본 경계는 charter §1 "scope creep 금지"와 §4-A "모호함을 스스로 채우지 않는다"의 직접 적용이다. 보강이 필요하면 별도 SSOT(`/optimize-harness`, `/plan-issues` → `/process-ticket`)로 위임한다.
+- `/optimize-harness`로 토큰을 줄인 뒤 규칙이 여전히 시행되는지 확인
+- 세션 중 반복 관찰된 실패 패턴이 하네스에 포함되는지 확인
+- 새 규칙 추가·기존 규칙 축약 후 포인터 체인·외부 게이트 배선이 유지되는지 확인
 
 ## 사용법
 
-```bash
-/evaluate-harness            # 전체 평가
-/evaluate-harness rules      # rules/*.md만
-/evaluate-harness skills     # skills/*/SKILL.md만
 ```
-
-자동 트리거:
-- `/optimize-harness` Phase 7 (회귀 검증)
-- 하네스 PR 머지 직후 (recommended, 수동)
+/evaluate-harness                         # 최근 세션 관찰 실패 자동 수집
+/evaluate-harness "실패 시나리오 자유 서술"   # 특정 시나리오 재현
+```
 
 ---
 
-## Phase 1: 평가 대상 수집
+## 절차
 
-스코프에 따라 대상 파일을 수집한다:
+### 1. 실패 시나리오 수집
 
-- `rules`: `.agents/rules/*.md` 전체 + `AGENTS.md` + `CLAUDE.md`
-- `skills`: `.agents/skills/*/SKILL.md` 전체 + `.claude/skills` symlink adapter
-- `all`: 위 둘 + `.claude/settings.json` + `.codex/` 어댑터
+인자가 없으면 **최근 세션 관찰 실패**를 사용자로부터 수집 (`사용자 질의`). 인자가 자유 서술이면 그대로 사용. 기본 시나리오 예:
 
-각 파일의 **차단 선언**(금지 표현, 필수 표현, 게이트 표현)을 추출하여 평가 항목 목록을 만든다.
+- 에이전트가 이슈 본문을 그대로 믿고 비즈니스 맥락 확인 없이 기술 결정을 시작
+- 코드-이슈 어긋남을 "후속 이슈"으로 회피
+- 기존 시그니처를 그대로 복제하며 DI/외부 호출자 경계를 판단하지 않음
+- "Device N" 같은 번호+일반 명사 라벨 사용
+- 공개 레퍼런스를 사용자에게 물음
 
-## Phase 2: 외부 서브에이전트 검증 (병렬)
+### 2. 대상 파일 식별
 
-`Explore` 또는 `general-purpose` 서브에이전트를 **카테고리별 병렬 spawn**한다. 각 서브에이전트에게:
+기본 로드 대상:
 
-- 평가 대상 규칙 1개 또는 1개 그룹
-- 코드베이스 탐색 권한 (read-only)
-- 다음 4축으로 검증하고 다축 분류로 보고하도록 지시
+- `.agents/rules/charter.md`, `AGENTS.md`
+- `.agents/rules/behavioral-guidelines.md`, `python-code.md`, `type-discipline.md`, `domain.md`, `review-heuristics.md`
+- 시나리오에 연관된 스킬 파일 (SKILL.md + phase-*.md)
+- `/review-code` 관련 persona 파일
 
-### 검증 4축
+### 3. 서브에이전트 검증 실행
 
-1. **선언-실행 단절**: 규칙이 차단을 선언하지만, 실제 코드/도구에서 차단되지 않는가?
-   - 예: "src/에서 assert 금지" 선언인데 lint/hook이 차단하지 않음 → 단절.
-2. **포인터 무효점**: 규칙이 다른 파일을 참조하는데, 그 파일이 없거나 해당 항목이 없는가?
-3. **회피 경로**: 규칙을 형식만 지키고 의도를 우회하는 알려진 패턴이 코드베이스에 존재하는가?
-4. **Stale 사실**: 규칙이 가정한 코드 구조·도구·버전이 현재와 다른가?
+`general-purpose` 서브에이전트(`model: opus`)를 호출하여 각 시나리오에 대해:
 
-### 다축 분류 (필수)
+1. **예상 행동 추적**: 하네스를 따른 에이전트가 해당 시나리오에서 어느 단계·파일·조항에 근거해 어떤 행동을 하는지 `file:line`으로 기술
+2. **차단 판정**: 강함 / 약함 / 실패. 약함·실패는 선언과 시행의 단절 지점을 구체 인용
+3. **회피 경로**: 규칙이 있어도 자판정·포인터 무효화·게이트 우회로 빠져나갈 경로 탐지
+4. **구체 수정안**: `파일 경로 + 위치 + 새 문구` 수준의 diff 제안
 
-각 발견은 다음 **3축**으로 동시 분류한다. 단일 severity 라벨로는 위임 경로가 갈리지 않으므로, 사용자와 에이전트 모두가 작업 종류를 즉시 식별할 수 있도록 강제한다.
+### 4. 판정 분류
 
-| 축 | 값 | 정의 |
-|----|----|------|
-| **severity** | `critical` | 차단 선언이 실효되지 않음 → 규칙이 사실상 무효 |
-|             | `warning`  | 부분적 enforcement 또는 일관성 결손 |
-|             | `info`     | 문서·라벨링 수준의 개선 여지 |
-| **regression-risk** | `none` | 변경이 코드 동작에 영향 없음 (포인터·문구·라벨) |
-|                    | `low`  | lint/config 추가만, 기존 코드 변경 0건 예상 |
-|                    | `medium` | 기존 코드 일부 수정 필요, 모듈 단위 회귀 검토 |
-|                    | `high` | 프레임워크 코어/공유 인프라 변경, 전사 회귀 위험 |
-| **scope** | `harness-only` | ``.agents/rules/`와 `.agents/skills/` 또는 도구 어댑터 내부에서 완결 |
-|          | `config-only` | `pyproject.toml`/`pre-commit` 등 빌드 설정만 |
-|          | `code-and-policy` | 코드 변경 + 정책 결정 동반 (ADR 후보) |
-|          | `framework-core` | `core/spakky/`·AOP·DI 등 기반 동작 변경 |
+- **통과**: 모든 시나리오 강함
+- **조건부 통과**: 약함이 있으나 회피 경로가 실사용에서 발생 확률 낮음
+- **미통과**: 실패 1건 이상 또는 치명적 약함
 
-**분류 규칙**:
-- `severity:critical` 단독은 자동 진입을 의미하지 않는다. **위임 경로는 `(severity, regression-risk, scope)` 3축 조합**으로만 결정된다 (Phase 4 위임 매트릭스 참조).
-- 같은 발견이 두 축의 다른 값을 동시에 갖는 것처럼 보이면 가장 보수적인(높은 위험·넓은 범위) 값을 선택한다.
+### 5. 후속 조치
 
-## Phase 3: 보고서 통합
-
-서브에이전트 결과를 메인이 통합한다. 각 항목은 다축 라벨을 명시한다:
-
-```markdown
-## Evaluate Harness 보고서
-
-스코프: {scope}
-평가 대상: {N}개 규칙, {M}개 스킬
-
-### Critical
-- [규칙명] {요약} `severity:critical / regression:none / scope:harness-only`
-  - 단절: {설명}
-  - 위임 후보: {Phase 4 매트릭스 매칭}
-
-### Warning
-- ...
-
-### Info
-- ...
-
-### 통과 항목: {K}개 (생략)
-```
-
-## Phase 4: 위임 매트릭스 (직접 보강 금지)
-
-본 스킬은 **위임 경로 제시까지만** 수행한다. 사용자 승인을 받으면 매트릭스에 정의된 SSOT 스킬을 호출하여 작업을 넘긴다. 본 스킬 세션 안에서 직접 코드/설정/스킬 본문을 편집하지 않는다.
-
-### 위임 매트릭스
-
-각 행은 (severity, regression-risk, scope) 3축을 모두 명시한다. 매칭 우선순위: 위에서 아래로 첫 일치 행을 채택. 한 항목이 여러 행에 부합하면 위(더 보수적인) 행을 적용.
-
-| severity | regression-risk | scope | 위임 경로 | 사유 |
-|----------|-----------------|-------|----------|------|
-| `*` | `high` | `framework-core` | **사용자 직접 결정 필요** | 프레임워크 동작 변경, 자동 위임 금지 (severity 무관) |
-| `critical \| warning` | `medium` | `code-and-policy` | `/plan-issues` (ADR 동반) → `/autopilot` | 정책 결정 동반, 마일스톤 단위 분해 |
-| `critical \| warning` | `low` | `config-only` | `/plan-issues` → `/process-ticket` | 단일 이슈 단위 빌드 설정 변경, 패키지 단위 검증 필요 |
-| `critical \| warning` | `none` | `harness-only` | `/optimize-harness` (1줄 정정 묶음) | 회귀 위험 0의 포인터·라벨 정정 자동 묶음 처리 |
-| `info` | `none` | `harness-only` | `/optimize-harness` | 문서·라벨 정리 |
-
-**정규화 규칙**:
-- 위 매트릭스에 매칭되지 않는 조합은 한 단계 더 보수적인 가까운 행으로 라우팅 (예: `critical / medium / framework-core`는 1행 적용 → 사용자 결정 필요).
-- `severity:info / regression:>none` 조합은 발생하지 않음 — info는 정의상 동작 변경 없음. 발생 시 분류 오류이므로 재분류한다.
-
-### 사용자 응답에 따른 분기
-
-발견 항목들을 위 매트릭스로 분류한 뒤 사용자에게 보고하고 다음 중 하나로 응답을 받는다:
-
-- **"위임"**: 분류별로 적합한 SSOT 스킬을 호출 (한 세션에 여러 SSOT 병렬 호출 가능, 단 본 스킬은 즉시 종료)
-- **"이슈만 등록"**: GitHub 이슈로 등록 후 종료. `/plan-issues` 또는 `gh issue create` 사용
-- **"무시"**: 보고만 남기고 종료. 보고서를 `.agents/evaluations/{date}.md`로 보존 (선택). 디렉토리가 없으면 생성한 후 작성
-
-사용자가 "전부 자동으로", "알아서 해" 등으로 응답해도 본 스킬은 **위임 매트릭스 적용**까지만 자동 진행하며, **`framework-core` 또는 `regression:high` 항목은 명시적 사용자 결정 없이 위임하지 않는다**. 이는 charter §4-A·§1의 직접 적용이다.
-
-### 모두 통과
-
-- **모두 통과**: 1줄 보고 ("Evaluate Harness: {N}개 검사 모두 통과") 후 종료.
+- 치명 결함 발견 시 `/optimize-harness`로 진입 (수정 + 재검증 루프)
+- 결함 없음이면 판정 보고 후 종료
 
 ---
 
 ## 규칙
 
-- 메인 에이전트는 **검증 대상 코드를 직접 평가하지 않는다.** 외부 서브에이전트만이 평가 권한을 가진다 (자기확증 편향 차단).
-- 서브에이전트는 `Explore` 또는 `general-purpose`만 사용. 코드 수정 권한 없는 에이전트로 한정.
-- 평가 결과는 **차단 선언과 실제 차단의 갭**만 보고한다. 신규 규칙 제안은 본 스킬 본분 밖.
-- Phase 2 병렬 spawn은 동일 메시지에서 다중 Agent 호출로 수행한다.
-- **Phase 4 직접 보강 금지**: 본 스킬 세션에서 `Edit`/`Write` 도구로 `pyproject.toml`·`settings.json`·`.agents/rules/*`·`.agents/skills/*` 본문을 수정하지 않는다. 위임만 한다.
-- Phase 4의 `evaluations/` 보고서 보존은 예외 (보고는 본분 안).
-
-$ARGUMENTS
+- **서브에이전트 사용 필수.** 메인 컨텍스트에서 자기 하네스를 평가하면 self-confirmation bias. 서브에이전트(opus)가 독립 판정.
+- **선언 ≠ 시행.** 헌장에 "persona가 탐지한다"고 써 있어도 persona 파일에 탐지 시그널이 없으면 실패로 판정한다.
+- **포인터 체인은 로드 경로까지 검증.** skill이 charter §N을 참조해도 charter 자동 Read 지시가 없으면 체인 단절.
+- **회피 경로를 집요하게 탐지.** "판정 주체가 에이전트 자신"이면 self-confirmation 잠재 빈틈으로 보고.
+- **보고 총량 압축.** 장문 분석 지양. 섹션별 요점만.

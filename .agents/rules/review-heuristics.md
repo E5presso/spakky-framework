@@ -23,7 +23,7 @@ paths:
 
 > 모든 코드베이스는 저마다의 레거시를 갖고 있으며, 이를 꾸준히 개선하는 것은 개발자의 책무다. 이미 그런 스타일의 코드가 있었다고 해서 새 코드도 그렇게 써도 된다는 의미는 아니다.
 
-새 코드는 charter §2 / `python-code.md` "최신 문법" / `type-discipline.md` 같은 **대원칙 SSOT**를 따른다. 같은 파일·도메인 안에 신구 스타일이 혼재하면 새 코드는 신스타일로 통일하고, 레거시 정리가 필요하면 후속 티켓 분기(`/plan-issues`)로 처리.
+새 코드는 charter §2 / `python-code.md` "최신 문법" / `type-discipline.md` 같은 **대원칙 SSOT**를 따른다. 같은 파일·도메인 안에 신구 스타일이 혼재하면 새 코드는 신스타일로 통일하고, 레거시 정리가 필요하면 후속 이슈 분기(`/plan-issues`)로 처리.
 
 시그널: 새 코드에 `List[T]`/`Dict[K,V]`/`Optional[T]` 답습, `from __future__ import annotations` 답습, `TypeVar` 명시 선언 (PEP 695로 풀릴 케이스), 구식 isinstance 체인 (match/case로 풀릴 케이스).
 

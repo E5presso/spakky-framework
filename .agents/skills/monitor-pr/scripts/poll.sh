@@ -2,7 +2,7 @@
 # PR 상태 스냅샷을 30초 주기 polling으로 수집한다.
 # 이벤트 분류/비교는 수행하지 않는다 — raw 상태만 출력하고, 판단은 호출자(에이전트)가 한다.
 #
-# 사용법: REPO=E5presso/spakky-framework PR_NUMBER=123 bash poll.sh
+# 사용법: REPO=E5presso/spakky-framework PR_NUMBER=23504 bash poll.sh
 # 동작:
 #   1. 30초 sleep
 #   2. gh pr view --json ... 으로 상태 스냅샷 획득
@@ -18,7 +18,7 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
-REPO="${REPO:-E5presso/spakky-framework}"
+: "${REPO:?REPO env required}"
 : "${PR_NUMBER:?PR_NUMBER env required}"
 
 sleep 30
@@ -32,4 +32,4 @@ echo "mergeState=$(echo "$snapshot" | jq -r '.mergeStateStatus // ""')"
 echo "reviewDecision=$(echo "$snapshot" | jq -r '.reviewDecision // ""')"
 echo "commentCount=$(echo "$snapshot" | jq '.comments | length')"
 echo "reviewCommentCount=$reviewCommentCount"
-echo "failedChecks=$(echo "$snapshot" | jq '[.statusCheckRollup // [] | .[] | select((.conclusion == "FAILURE" or .conclusion == "ERROR") and (.workflowName as $name | ["Claude Auto PR Code Review", "Claude Code Review", "Codex Code Review"] | index($name) | not))] | length')"
+echo "failedChecks=$(echo "$snapshot" | jq '[.statusCheckRollup // [] | group_by(.name // .context) | .[] | sort_by(.startedAt // .completedAt // "") | last | select(((.conclusion == "FAILURE" or .conclusion == "ERROR") or (.state == "FAILURE" or .state == "ERROR")) and (.workflowName != "Auto PR Code Review"))] | length')"

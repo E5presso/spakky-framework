@@ -13,7 +13,9 @@ raw_dir="$(mktemp -d -t spakky-python-hook-test-XXXXXX)"
 trap 'rm -rf "$raw_dir"' EXIT
 raw_dir="$(cd "$raw_dir" && pwd -P)"
 repo="$raw_dir/repo"
+repo_link="$raw_dir/repo-link"
 mkdir -p "$repo/core/spakky/src/spakky" "$repo/plugins/spakky-fastapi/src/spakky/plugins/fastapi"
+ln -s "$repo" "$repo_link"
 (
   cd "$repo"
   git init -q -b develop
@@ -26,6 +28,8 @@ mkdir -p "$repo/core/spakky/src/spakky" "$repo/plugins/spakky-fastapi/src/spakky
   touch plugins/spakky-fastapi/src/spakky/plugins/fastapi/__init__.py
   git add .
   git commit -q -m "seed"
+  git worktree add -q .claude/worktrees/wt-a -b wt-a develop
+  git worktree add -q .claude/worktrees/wt-b -b wt-b develop
 )
 
 bin_dir="$raw_dir/bin"
@@ -65,5 +69,26 @@ if grep -Fq "$repo|run ruff" "$log_file"; then
   echo "FAIL: hook dispatched from repo root" >&2
   exit 1
 fi
+
+>"$log_file"
+wt_a="$repo/.claude/worktrees/wt-a"
+wt_b="$repo/.claude/worktrees/wt-b"
+worktree_payload="$(jq -n \
+  --arg f "$wt_a/core/spakky/src/spakky/__init__.py" \
+  '{tool_name:"Edit", tool_input:{file_path:$f}}')"
+
+status=0
+PATH="$bin_dir:$PATH" UV_HOOK_LOG="$log_file" \
+  bash -c "cd '$wt_b' && printf '%s' '$worktree_payload' | '$HOOK'" || status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo "FAIL: worktree hook exited with $status" >&2
+  exit 1
+fi
+
+grep -Fxq "$wt_a/core/spakky|run ruff format $wt_a/core/spakky/src/spakky/__init__.py" "$log_file" \
+  || { echo "FAIL: missing worktree package ruff format dispatch" >&2; cat "$log_file" >&2; exit 1; }
+grep -Fxq "$wt_a/core/spakky|run pyrefly check $wt_a/core/spakky/src/spakky/__init__.py" "$log_file" \
+  || { echo "FAIL: missing worktree package pyrefly dispatch" >&2; cat "$log_file" >&2; exit 1; }
 
 echo "PASS: Python edit hook dispatches from package roots"

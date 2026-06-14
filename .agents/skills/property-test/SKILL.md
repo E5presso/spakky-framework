@@ -81,7 +81,7 @@ user-invocable: true
 - `tests/property/test_{모듈명}_properties.py`
 ```
 
-`AskUserQuestion`으로 승인을 받는다:
+`사용자 질의`로 승인을 받는다:
 
 ```yaml
 question: "위 속성 테스트 생성 계획을 승인하시겠습니까?"

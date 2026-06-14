@@ -42,7 +42,7 @@ charter §1 적용: 본 스킬은 *비즈니스 의도 → 기술 결정* 위계
 - 마일스톤 번호 / 이름 / URL: `gh api repos/E5presso/spakky-framework/milestones`로 정규화
 - 또는 이슈 번호 묶음: 각 `gh issue view <번호> --json number,title,body,labels,milestone,state,assignees`
 
-식별자 모호 시 `AskUserQuestion`으로 객관식 질의.
+식별자 모호 시 `사용자 질의`로 객관식 질의.
 
 ## Phase 1: 활성 이슈 수집
 
@@ -103,7 +103,7 @@ Critical 예시:
 
 ### 사용자 질의 항목 (정책 결정)
 
-- 새 이슈 신설이 필요한 항목 (예: "사전 prospective 등재 마이크로 이슈") — `AskUserQuestion`으로 옵션 제시 (default 권장 옵션 첫 번째).
+- 새 이슈 신설이 필요한 항목 (예: "사전 prospective 등재 마이크로 이슈") — `사용자 질의`로 옵션 제시 (default 권장 옵션 첫 번째).
 - 마일스톤 §4.4 외부 계약 변경 가능성이 있는 항목.
 - 도메인 사전 미등재 신규 어휘.
 
@@ -126,7 +126,7 @@ Phase 4 정정 위임이 완료되면 GitHub Issue 본문이 갱신된 상태에
    - "이미 정정되었을 것"이라는 가정
 3. 재감사 결과 수신 후 종료 분기:
    - **Critical 0개로 수렴** → Phase 7 진입.
-   - **Critical 0 + High/Medium/Low만 잔존** → 자율 정정 가능 항목은 Phase 4로 위임, 사용자 질의 항목은 `AskUserQuestion`으로 질의. 질의 회신 후 본 루프 1회 추가 진입.
+   - **Critical 0 + High/Medium/Low만 잔존** → 자율 정정 가능 항목은 Phase 4로 위임, 사용자 질의 항목은 `사용자 질의`로 질의. 질의 회신 후 본 루프 1회 추가 진입.
    - **Critical 잔존** → Phase 4로 자율 정정 위임 (정책 결정 필요시 사용자 질의) 후 본 루프 1회 추가 진입.
 4. **수렴 실패 가드**: 동일 발견이 연속 2회 잔존 또는 누적 iteration 3회 도달 시 사용자 보고 후 종료. 무한 루프 차단.
 

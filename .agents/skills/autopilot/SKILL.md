@@ -1,169 +1,105 @@
 ---
-name: autopilot
-description: GitHub 마일스톤 또는 부모 이슈를 받아 자식 티켓들을 DAG wave-loop로 병렬 처리합니다. 후속 티켓 즉시 spawn, 자기 운영 결함 자동 감지(meta-detection), 마일스톤 단일 세션 완성을 보증합니다.
-argument-hint: "<milestone-number | parent-issue-number>"
+description: 마일스톤/부모 이슈/이슈 묶음의 SDLC 전체를 무인 자동화하는 오케스트레이터. 의존 DAG (Directed Acyclic Graph) 웨이브 병렬로 각 이슈를 서브에이전트의 `/process-ticket --auto-merge`로 실행하고, 모든 머지 완료 후 마일스톤 의도 감사 + `/sync-docs`까지 수행한다.
+argument-hint: "<milestone-name | #N | #101,#102,...>"
 user-invocable: true
 ---
 
-# Autopilot — 마일스톤 SDLC 자동 오케스트레이션
+# Autopilot — 마일스톤 무인 자동화 오케스트레이터
 
-`/process-ticket`을 단일 티켓 단위로 호출하는 대신, **마일스톤 또는 부모 이슈의 자식 티켓 전체**를 DAG wave-loop로 병렬 자동 처리한다. 후속 티켓이 발생하면 즉시 spawn, 자기 운영 결함은 자동 감지하여 별도 fix wave로 처리.
+> **궁극 목표**: 하나의 세션 내에서 **단일 부모 이슈 또는 단일 마일스톤의 end-to-end 구현을 성립시킨다.** 도중에 신규 후속 이슈이 쏟아져 나오더라도 **메인 세션이 sub-agent의 `spawned: ISSUE-NUMBER,...` 보고를 수신하는 즉시 background sub-agent로 spawn**하여 약속만 남기고 끝나는 것을 원천 차단한다 (`behavioral-guidelines.md` "후속 이슈 자동 실행 default = 즉시 분해" SSOT 정합). [Phase 3.5 회수 라운드](phases/phase-3_5-recovery.md)는 즉시 spawn이 누락된 ID만 흡수하는 **fallback fixed-point 게이트**로 동작한다. 모든 phase·결정·재시도는 이 목표에 종속된다.
 
-## 자동 병합 권한
-
-`/autopilot` 호출 자체는 해당 마일스톤/부모/명시 티켓 집합의 clean PR에 대한 **사전 squash merge 승인**이다. Autopilot 메인은 티켓별 Phase 7 병합 승인 질문을 사용자에게 띄우지 않는다.
-
-- wave spawn은 항상 `/process-ticket {T} --auto-merge`로 진입한다.
-- PR이 `mergeStateStatus in (CLEAN, UNSTABLE)`이고 required checks/review bot HEAD 평가가 완료되면 process-ticket은 Phase 8로 즉시 진행한다.
-- sub-agent가 실수로 `phase7_ready` 또는 `status: blocked`/`merge approval required` 형태로 반환하면 autopilot은 사용자에게 묻지 않고 resume sub-agent를 `--auto-merge`로 재기동한다. 같은 이슈에서 2회 반복되면 S1/S2 메타-감지로 하네스 fix 티켓을 생성한다.
-- `phase7_ready`는 checkpoint일 뿐 성공 반환값이 아니다. autopilot 하위 실행은 같은 turn에서 `gh pr merge --squash --delete-branch`와 Phase 8 cleanup까지 끝낸 뒤 `status: merged`를 반환해야 한다.
-- 사용자 질의는 스펙-코드 충돌, 외부 destructive action, 사람 리뷰 코멘트에 대한 제품 결정처럼 charter 질의 트리거가 있는 경우에만 가능하다. clean PR 병합 자체는 autopilot에서 질의 트리거가 아니다.
+본 스킬은 마일스톤 단위 업무 자동화 스킬이다. 한 번 호출하면 마일스톤이 끝날 때까지 사람이 개입하지 않는다 — **단, 기술적 모순(charter §4-A 의도 정렬, §4-B 질의 트리거)을 감지하면 즉시 stop & 사용자 질의**한다. 애매한 선호 판단만 자율 진행한다.
 
 ## 사용법
 
-```bash
-/autopilot 12              # 마일스톤 #12의 자식 이슈 전체
-/autopilot parent:42       # 부모 이슈 #42의 자식 이슈 전체
-/autopilot 7,8,9           # 명시적 이슈 목록
 ```
+/autopilot 420                            # 부모 이슈 420의 모든 미완료 자식 이슈
+/autopilot "마일스톤 이름"                # 해당 마일스톤 내 모든 미완료 이슈
+/autopilot #101,#102,#103            # 지정 이슈 목록
+```
+
+### 인자 (필수)
+
+대상 이슈 집합의 식별자. 자동 판별 (정규식 기반 — 모호하면 `사용자 질의`로 확인):
+- `^#?\d+$` 형태 → **부모 이슈 ID**
+- 쉼표(`,`) 포함 → **이슈 ID 목록**
+- 그 외 → **마일스톤 이름**
+
+## 본질
+
+### 메인 세션 = 오케스트레이터, 이슈 SDLC = 서브에이전트
+
+각 이슈의 분석·계획·구현·리뷰·CI 모니터링·코멘트 triage·머지는 서브에이전트(`/process-ticket --auto-merge`)가 수행한다. 메인 세션은 Phase 1-2(수집/DAG)·웨이브 결과 수집·Phase 4-6(감사/문서/리포트) 트리거만 담당한다.
+
+서브에이전트 사용 이유:
+1. **병렬성** — 같은 웨이브의 이슈를 동시 spawn하여 wall-clock 단축.
+2. **메인 세션 컨텍스트 오염 회피** — 오케스트레이터가 N개 이슈의 SDLC 디테일을 누적 흡수하면 윈도우 폭발·지시 이탈·오동작이 발생한다. 서브에이전트는 격리된 컨텍스트에서 시작하여 결과 요약만 반환한다.
+
+### 자율 진행 vs 사용자 질의
+
+- **자율 진행** (사용자 질의 금지): 애매한 선호 판단(어느 옵션이 더 깔끔한가, 함수 시그니처 디테일, 변수명 등 — charter §4-B "자율 진행" 영역).
+- **메인 블로커 fix 자율 진행**: CI red·hook 실패·import 깨짐 등은 무한 재시도로 근본 원인까지 추적 (charter §4-B "메인 블로커 회피 금지"). process-ticket Phase 6 LISTENING 루프가 담당.
+- **gap 발견 → 자동 분해 default (자율 진행 영역, 질의 대상 아님)**: 실행 중 spec·code·harness·인접 도메인 gap을 인지하면 `behavioral-guidelines.md` "스펙 검증 / 후속 이슈"의 default(= 즉시 후속 이슈 분해 + 본 세션 백그라운드 spawn)를 그대로 적용한다. 이는 자율 진행 영역이며 사용자 질의 대상이 아니다 — gap 인지 자체가 default를 발동시킨다. `ask-delegate`를 "후속 이슈를 만들까요" / "분해해도 될까요" / "별도 PR로 빼도 될까요" 류 gap 회피 통로로 사용하는 것은 안티패턴이며, 메인의 ask-delegate 수신 처리(Phase 3 §3-3-quater)가 1차로 차단한다.
+- **stop & 사용자 질의** (charter §4-A·§4-B 질의 트리거): 스펙↔코드 직접 충돌, 도메인 사전 미등록 신규 어휘, 이슈 분해 단위 재정의 필요(분해 자체에 대한 비즈니스 의도 공백 — "분해할지 말지"가 아니라 "어떤 단위로 분해할지"), 정책·규칙 위반 가능성, 외부 시스템 destructive mutation. **기술적 모순을 무인 자동화 명목으로 녹여 기술 부채로 만들지 않는다.** 동시에 위 트리거에 해당하지 않는 gap을 "사용자 결정 필요" 라벨로 끌어올려 자동 분해 default를 약화시키지도 않는다 — 트리거 경계는 양방향 보존된다.
+
+### 머지 정책
+
+- `gh pr merge --auto`, `--admin` flag는 어떤 경우에도 사용하지 않는다.
+- 머지는 process-ticket Phase 6의 monitor → triage → monitor 루프로 PR이 **CLEAN 상태(CI green + 모든 코멘트 처리 완료 + reviewDecision=APPROVED)** 에 도달한 직후, agent가 `gh pr merge --squash --delete-branch`를 직접 호출하여 수행한다 (`--auto-merge` 플래그 동작).
+- claude bot 리뷰 자동승인 환경을 활용하여 외부 코멘트(대부분 bot)를 triage 루프 안에서 흡수한다. 사람 리뷰어 코멘트가 들어오면 triage가 수용/반박을 판정하고, 반박 케이스에서 사람 응답을 기다려야 하면 해당 PR은 awaiting-review로 두고 후속 웨이브 중 그 가지에 의존하는 노드만 차단(독립 가지는 계속 진행).
+
+### 사용자 질의 단일 채널
+
+sub-agent의 질의(charter §4-A 트리거·plan 승인·review escalation·머지 승인)는 모두 SendMessage `ask-delegate`로 메인(team-lead)에 위임된다 (`/process-ticket` SKILL.md "사용자 질의 위임" 정합). 메인이 user-facing 단일 채널을 보유 — sub-agent 직접 `사용자 질의`를 호출 0건. 메인은 `ask-delegate` 수신 시 self_check 결과에 따라 즉시 채택 또는 `사용자 질의`를 호출을 분기한다 (Phase 3 §3-3-quater SSOT).
+
+### 후속 이슈 GitHub 메타데이터 계약
+
+gap 후속 이슈은 **현재 autopilot 실행의 같은 작업 묶음**이다 — `spawned: ISSUE-NUMBER,...` 보고는 ID만으로 불충분하며, 메인은 spawn 전에 `team`·`project`·`projectMilestone`·`assignee`·라벨 최소 집합(원본의 비용/계층/작업 성격 3종 — 미존재 라벨명 신규 생성 금지)을 재조회·보정·재검증한다. 기대값(source 이슈 snapshot 1차, `autopilot_metadata_context` fallback)·보정·검증·보류 절차는 `phases/phase-3-wave-loop.md` §3-3-quinque "후속 이슈 즉시 spawn" SSOT. sub-agent는 검증까지 끝난 ID만 `spawned`·`gaps_dispatched`에 보고한다 — 미검증 ID 보고·보정 실패의 `notes:` 은닉은 gap-defer와 동일한 실패.
 
 ---
 
-## Phase 1: 티켓 수집 (Dual-Path 수렴 게이트)
+## 진행률 정형 (사용자 알림 prefix)
 
-GitHub의 milestone 필터/parent 추적이 누락 가능성이 있다. 두 경로로 수집하여 **불일치 시 자동 fix 티켓 생성**.
-
-### 1-1. Path A: GitHub API 페이지네이션
-
-```bash
-gh issue list --milestone {N} --state open --json number,title,body,labels,assignees --limit 100
-```
-
-### 1-2. Path B: 마일스톤 description 본문 파싱
-
-마일스톤 description에서 명시된 자식 이슈 번호 (예: `Children: #7, #8, #9`) 추출.
-
-### 1-3. 수렴 게이트
-
-A와 B를 비교:
-- 일치: 진행
-- 불일치 (A에 있으나 B에 없음 등): **harness fix 티켓 자동 생성** (Phase 3.6 meta-detection 시그널) 후 사용자 보고. 진행 여부 사용자 확인.
-
-## Phase 2: DAG 구성 & 위상정렬
-
-각 티켓의 본문에서 `blockedBy: #N` 또는 `Depends on: #N` 표기를 파싱하여 의존 그래프 구성.
+메인이 사용자에게 출력하는 **모든** `[autopilot] ...` 1줄 알림(wave/후속/stuck/fallback/메타 fix 알림, sub-agent ping 표시 포함)에 다음 prefix를 부착한다. **예외 3종 (부착 금지)**: Phase 6 §6-1 최종 리포트(자체 형식) / 사용자 질의 본문(`사용자 질의`·`ask-delegate` 처리 보고 — 시각적 잡음) / abort·exit 메시지(charter §4-A stop 보고).
 
 ```
-wave[0] = blocker 없는 티켓
-wave[1] = wave[0]만 blocker로 가진 티켓
-wave[2] = wave[0,1]만 blocker로 가진 티켓
-...
+[autopilot {N}/{M} ({P}%) ETA {Xh Ym}] <메시지 본문>
 ```
 
-순환 의존 감지 시 즉시 stop & 사용자 보고.
+- **`N`** — `wave_results` terminal status(`merged`/`awaiting-review`/`failed`/`skipped`) 누적 이슈 수.
+- **`M`** — Phase 1 §5 확정 `total_issue_count`. **M 갱신 (본 정의가 단일 기술 지점)**: Phase 3.5 재귀 진입 직전 `total_issue_count += len(누락 spawn 집합)` — 진행률 일시 후퇴는 "총 작업량 증가"를 알리는 올바른 신호, 자의적 가중치 금지 (`behavioral-guidelines.md` "자의적 임계값 금지" 정합).
+- **`P`** — `round(N * 100 / M, 1)`. `M == 0`이면 `100.0` (정상 빈 결과 종료).
+- **`ETA`** — `N == 0` → `--h --m` (측정 불가) / `N == M` → `0h 0m` / 그 외 → `(now − start_ts) × (M − N) / N`을 시·분으로 표기.
+- **`start_ts`** — Phase 1 §5 보고 직후 1회만 기록. Phase 3.5 재귀 라운드에서도 동일 값 유지 (가장 바깥 진입부터의 누적).
 
-## Phase 3: Wave 실행 루프
+**출력 직전 자가검사 (의무, 외부 게이트)**: `start_ts`·`M`이 실행 상태 사전에 존재하고 `N`·ETA를 위 정의대로 산출했는가 — 하나라도 No면 본 turn의 prefix 출력 자체가 정형 위반, 누락 필드 보고 + 상태 사전 보강 후 재계산한다. **`N > 0`인 turn에서 `ETA --h --m` placeholder 출력 = 위반** — self-confirmation bias로 placeholder가 통과하지 않도록 하는 행동 테스트 게이트.
 
-상세 절차는 `phases/phase-3-wave-loop.md`가 SSOT다. SKILL.md에는 실행 불변식만 둔다:
+---
 
-- wave별 티켓은 단일 메시지의 다중 sub-agent 호출로 병렬 spawn하고, 항상 `/process-ticket {T} --auto-merge`로 진입한다.
-- 반환은 `process-ticket`의 canonical schema만 수용한다. `phase7_ready`, `status: blocked`, merge 승인 대기 산문은 merge-gate-stuck이다.
-- `spawned` 필드는 같은 turn 안에서 즉시 백그라운드 spawn한다. "후속 티켓을 만들겠다"만 남기는 반환 금지.
-- stuck은 wall-clock이 아니라 논리적 모순으로만 판단한다: terminal PR 미반환, merge-dirty 미처리, clean terminal 미흡수, state 부재/역행, 동일 파일 mutation 등.
-- 실패 전파는 BFS skip 집합으로 다음 wave에 적용하고, meta 시그널은 Phase 3.6 ledger로 분리한다.
+## Phase 개요
 
-## Phase 3.5: 후속 티켓 회수 (Fallback Fixed-Point)
+각 Phase 진입 시 해당 파일을 Read로 로드하여 단계별 절차를 적용한다.
 
-Phase 3-3-quinque에서 누락된 spawn이 있는지 wave 종료 후 약속 vs 실제 spawn 차집합으로 확인한다. 차집합은 즉시 spawn하고, 같은 차집합이 3회 반복되면 순환 분해 의심으로 stop한다.
-
-## Phase 3.6: 자기 운영 결함 메타-감지
-
-전체 wave 수행 중 다음 시그널을 누적 ledger로 기록:
-
-| 시그널 | 모순 정의 |
-|-------|---------|
-| S1 monitor-stuck | (3-3-bis와 동일) |
-| S2 resume loop | 동일 ticket에 fallback resume 2회+ spawn |
-| S3 직렬화 미작동 | 동일 파일 mutation PR 3개+ 동시 OPEN |
-| S4 state 부재/역행 | (3-3-bis 항목) |
-| S5 consumer 미감지 | EVENT 발생인데 phase 전이 부재 |
-| S6 외부 봇 위반 누적 | 같은 카테고리 위반 3회+ ledger |
-| S7 merge-gate-stuck | autopilot 하위 clean PR이 사용자 병합 승인 대기로 반환 |
-
-매치 시 **기존 open harness fix 티켓을 먼저 재사용**하고, 없을 때만 신규 티켓을 생성한다. meta 시그널은 중복 생성이 아니라 수렴 대상 식별이 목적이다.
-
-### 3.6-a. meta issue dedupe/reuse 게이트
-
-`gh issue create` 전에 다음 순서로 open 이슈를 조회한다:
-
-```bash
-gh issue list --state open --search "repo:E5presso/spakky-framework S1 OR S7 OR monitor-stuck OR merge-gate-stuck" --json number,title,body,labels --limit 50
-```
-
-1. 동일 시그널 코드(S1-S7)와 동일 원인 어휘(예: `monitor-stuck`, `merge-gate-stuck`, `state 역행`)가 모두 매치되는 open 이슈가 있으면 **그 이슈 번호를 `meta_queue`에 추가**하고 새 이슈를 만들지 않는다.
-2. 제목은 다르지만 본문이 같은 PR/issue evidence 집합을 포함하는 open 이슈가 있으면 duplicate로 보고 **기존 이슈를 재사용**한다.
-3. 매치되는 open 이슈가 없을 때만 `gh issue create`를 실행한다.
-4. 신규/재사용 어느 쪽이든 ledger에는 `signal`, `evidence`, `meta_issue`, `action: reused|created`를 기록한다.
-
-재사용한 이슈가 현재 autopilot 실행의 마일스톤/부모에 연결되어 있지 않더라도, `meta_queue` 처리 대상에는 반드시 포함한다. 중복 open 이슈를 발견했지만 이미 같은 원인의 closed 이슈/merged PR이 있으면, 새 티켓을 만들지 말고 open leftover를 evidence와 함께 정리 대상으로 남긴다.
-
-### 3.6-b. meta_queue 별도 wave
-
-`meta_queue`는 일반 wave 실패 전파와 분리한다. 각 항목은 `/process-ticket {meta_issue} --auto-merge`로 처리하고, 처리 결과가 merged/closed가 될 때까지 Phase 3 fixed-point 루프로 복귀한다.
-
-Ledger 위치: `~/.claude/projects/-Users-spakky-Documents-projects-spakky-framework/state/autopilot-ledger.json`
-
-## Phase 4: 의도 감사 (Intent Audit)
-
-전체 wave 종료 후, 마일스톤 description의 의도와 머지된 PR들의 합집합이 일치하는지 외부 서브에이전트로 감사. `/audit-codebase`와 같은 다관점 검증 위임.
-
-발견된 갭 → 신규 자식 티켓 생성 후 Phase 3로 복귀 (fixed-point).
-
-## Phase 5: 문서 동기화
-
-`/sync-docs all`을 호출하여 머지된 코드 변경에 따른 문서 일괄 동기화.
-
-## Phase 5.5: 최종 meta/open 이슈 fixed-point sweep
-
-Phase 6 최종 보고 직전에, autopilot은 마일스톤/부모 범위와 ledger의 `meta_queue`가 모두 닫힌 고정점인지 확인한다. 이 sweep을 통과하기 전에는 마일스톤 완료/종료를 선언하지 않는다.
-
-1. GitHub open 이슈를 다시 조회한다:
-
-   ```bash
-   gh issue list --state open --milestone {N} --json number,title,body,labels --limit 100
-   gh issue list --state open --search "repo:E5presso/spakky-framework label:enhancement S1 OR S2 OR S3 OR S4 OR S5 OR S6 OR S7 OR meta_queue OR monitor-stuck OR merge-gate-stuck" --json number,title,body,labels --limit 100
-   ```
-
-2. ledger의 unresolved `meta_queue` 항목과 GitHub open meta issue 조회 결과를 합집합으로 계산한다.
-3. 합집합이 비어 있으면 Phase 6으로 진행한다.
-4. 합집합에 기존 open meta issue가 있으면 새 이슈를 만들지 않고 해당 이슈들을 `meta_queue`로 재주입하여 Phase 3으로 복귀한다.
-5. 같은 open set이 3회 반복되면 순환/외부 blocker로 보고하고 stop한다. 이 경우에도 중복 이슈를 추가 생성하지 않는다.
-
-## Phase 6: 최종 보고
-
-```
-## Autopilot 완료
-
-마일스톤: #{N} ({title})
-처리 티켓: {K}개 (성공 {S}, 실패 {F}, skip {SK})
-spawned 후속 티켓: {N}개
-meta_queue 처리: {M}개
-사이클 시간: {hh:mm:ss}
-```
+| Phase | 책무 | 상세 |
+|-------|------|------|
+| **Phase 1** | 대상 이슈 수집 (dual-path 수렴 게이트) — 마일스톤 ID 해석 / project 페이지네이션 / 부모 epic 추출 + parentId 트래버스 / 수렴 실패 시 §3.6-2 자동 fix 이슈 | `phases/phase-1-collection.md` |
+| **Phase 2** | DAG 구성 & 웨이브 계산 — 부모 epic 의존 재작성 + 위상정렬 | `phases/phase-2-dag.md` |
+| **Phase 3** | 웨이브 실행 루프 — 병렬 진입 / 반환 대기 / stuck 능동 감지 / 실패 전파 / fallback | `phases/phase-3-wave-loop.md` (+ 조건부 Read: PR 머지 이벤트 시 `phases/ledger-bot-violations.md`, 신규 이슈 생성·편입 시 `phases/new-ticket-intake.md`) |
+| **Phase 3.5** | 후속 이슈 회수 라운드 (fixed-point) | `phases/phase-3_5-recovery.md` |
+| **Phase 3.6** | 자기 운영 결함 자동 감지·이슈화 (메타-자동화) | `phases/phase-3_6-meta-detection.md` |
+| **Phase 4** | 마일스톤 의도 감사 (서브에이전트 위임) | `phases/phase-4-intent-audit.md` |
+| **Phase 5** | 문서 동기화 (`/sync-docs` 서브에이전트 위임) | `phases/phase-5-sync-docs.md` |
+| **Phase 6** | 최종 리포트 — 부모 epic 자동 Done / 잔존 워크트리 sweep / 리포트 출력 | `phases/phase-6-final-report.md` |
 
 ---
 
 ## 규칙
 
-- **단일 티켓은 `/process-ticket` 사용.** Autopilot은 마일스톤·부모 단위만.
-- **wave 내 spawn은 단일 메시지의 다중 Agent tool_use.** 순차 spawn 금지 (메인 turn 점유 방지).
-- **autopilot은 병합 승인 질문 금지.** `/autopilot` 호출이 clean PR squash merge 사전 승인이다. 하위 티켓은 `/process-ticket --auto-merge`로만 처리한다.
-- **wall-clock timeout 절대 금지.** Stuck 감지는 논리적 모순 기반만.
-- **후속 티켓 즉시 spawn 의무.** Phase 3-3-quinque 건너뛰기 금지.
-- **Phase 3.6 meta-detection 시그널 매치 시 open 이슈 dedupe/reuse 후 meta_queue 처리.** 중복 harness fix 티켓 생성 금지.
-- **최종 보고 전 Phase 5.5 meta/open 이슈 fixed-point sweep 필수.** open meta_queue가 남아 있으면 마일스톤 완료 선언 금지.
-- 워크트리는 티켓별 분리. 동일 파일 mutation 충돌 시 직렬화 강제 (S3 시그널).
-- process-ticket Phase 3 이후 root checkout mutation이 감지되면 해당 sub-agent 컨텍스트는 오염된 것으로 보고 중단/회수한다. root 변경은 자동 revert하지 않으며 `.process-state.json.root_guard`와 `assert_worktree_isolation.sh` 실패 출력을 evidence로 남긴다.
-- Phase 4 의도 감사는 외부 서브에이전트만 (자기확증 편향 차단).
+본문·phase 파일이 보유한 규칙은 재기술하지 않는다 — 아래는 본 섹션이 단독 보유하는 항목만.
 
-$ARGUMENTS
+- **서브에이전트 `model` 티어링**: §3-2 wave spawn은 미지정(전 Phase 혼재 — process-ticket 내부 티어링 위임) / §3-3-bis 상태 흡수형 resume(모순 A·C·E, terminal-return 회수)은 `model: sonnet` 명시 / 모순 B(conflict resolution) resume은 미지정.
+- 모든 서브에이전트 반환은 **구조화된 단일 메시지로 압축** — 진행 과정·디버깅 로그·중간 추론 반환 금지 (정형·줄 상한은 각 phase 파일이 정의).
+- 각 Phase 전환 시 사용자에게 현재 단계를 간결하게 알린다.
+- **autopilot 메인 세션은 PR 상태 직접 polling 금지** (`gh pr view ... mergeStateStatus` Bash `until`-loop 등) — monitor/merge는 서브에이전트(`/process-ticket --auto-merge`) 책임. 예외는 Phase 3.6 메타-감지 한정 (`phases/phase-3_6-meta-detection.md` §3.6-3 SSOT). monitor 도달 전 조기 종료·monitor 내 stuck 미반환은 Bash polling 떠맡기가 아니라 **resume 서브에이전트 spawn**(§3-6 fallback / §3-3-bis 능동 감지 — 워크트리 state 단발 query는 polling 금지 범위 외)으로 회수한다.
+- **GitHub MCP tool prefix는 `GitHub connector/gh *`** — 구식 prefix 사용 금지.
+- **sub-agent `skill-unavailable` 보고 수신 시** §3-6 fallback과 동등 escalation — charter §4-A 트리거(기술적 모순)로 사용자 질의로 이어진다.

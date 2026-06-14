@@ -93,7 +93,7 @@ Phase 흐름:
 3. `open_questions`, `answered_questions`, `deferred_by_evidence` 큐를 초기화한다.
 4. 코드베이스·문서·기존 이슈로 답할 수 있는 fact branch는 먼저 탐색하여 `deferred_by_evidence`로 닫는다.
 5. 사용자 판단이 필요한 judgment branch는 stable Q-ID로 `open_questions`에 넣는다.
-6. 입력이 모호하거나 불충분하면 `AskUserQuestion`으로 보강한다. 질문은 Grill-me 포맷을 사용하며 **한 번에 가장 큰 차단 질문 1개**만 묻는다. 목표 / 범위 / 제약을 한 번에 묻지 않는다.
+6. 입력이 모호하거나 불충분하면 `사용자 질의`로 보강한다. 질문은 Grill-me 포맷을 사용하며 **한 번에 가장 큰 차단 질문 1개**만 묻는다. 목표 / 범위 / 제약을 한 번에 묻지 않는다.
 7. 답변이 모호하면 같은 Q-ID로 재질문한다. 충분히 구체적인 답변만 `answered_questions`로 이동한다.
 8. 질문에는 항상 권장 답안을 포함한다. 권장 답안이 코드/문서 근거 없이 추측이면 권장 답안 대신 `[NEEDS CLARIFICATION]`으로 표시한다.
 9. 입력과 질문 큐가 충분히 명확하면 Phase 1로 진행한다.
@@ -169,11 +169,11 @@ Decision Branch Ledger의 `RESOLVED` 항목은 §2 가정, §5 도메인 계약,
 
 ### 사용자 승인
 
-분해 결과를 사용자에게 제시하고 `AskUserQuestion`으로 승인을 받는다. 승인 없이 Phase 3.5로 진행하지 않는다.
+분해 결과를 사용자에게 제시하고 `사용자 질의`로 승인을 받는다. 승인 없이 Phase 3.5로 진행하지 않는다.
 
 ## Phase 3.5: 스펙 시뮬레이션 게이트 (Block Gate)
 
-서브에이전트로 cold reading 시뮬레이션. T1(티켓별 모호함·silent assumption), T2(에픽·그룹 DAG (Directed Acyclic Graph) 모순), T3(에픽 SC (Success Criteria) value drift), T4(Grill-me interview replay)를 실행한다. T4에서 missing branch, under-questioning, vague closure가 나오면 Phase 0~2 질문 루프로 복귀하는 hard block이고, 나머지 검토 후보는 `AskUserQuestion` soft block으로 일괄 결정한다.
+서브에이전트로 cold reading 시뮬레이션. T1(티켓별 모호함·silent assumption), T2(에픽·그룹 DAG (Directed Acyclic Graph) 모순), T3(에픽 SC (Success Criteria) value drift), T4(Grill-me interview replay)를 실행한다. T4에서 missing branch, under-questioning, vague closure가 나오면 Phase 0~2 질문 루프로 복귀하는 hard block이고, 나머지 검토 후보는 `사용자 질의` soft block으로 일괄 결정한다.
 
 **상세**: `phases/phase-3_5-simulate.md`
 

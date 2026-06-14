@@ -260,7 +260,7 @@ git rev-parse @{u}   # 위와 일치 확인
 STATE=.process-state.json
 COUNT=$(jq -r '.bot_stuck_retrigger_count // 0' "$STATE" 2>/dev/null || echo 0)
 if [ "$COUNT" -ge 3 ]; then
-  # 사용자 질의 분기 — polling 정지, AskUserQuestion 호출
+  # 사용자 질의 분기 — polling 정지, 사용자 질의 호출
   echo "bot-stuck 3회 초과 — 사용자 질의"
   exit 0
 fi
@@ -272,7 +272,7 @@ git commit --allow-empty -m "chore: Retrigger bot review (#$NEW)"
 git push
 ```
 
-상한 도달 시 `AskUserQuestion`으로 (1) 추가 retrigger 시도, (2) polling 중단·수동 개입, (3) PR close 등 중 사용자 판정을 받는다. 자체 판단으로 4회 차 retrigger를 강행하지 않는다.
+상한 도달 시 `사용자 질의`로 (1) 추가 retrigger 시도, (2) polling 중단·수동 개입, (3) PR close 등 중 사용자 판정을 받는다. 자체 판단으로 4회 차 retrigger를 강행하지 않는다.
 
 ### Merge dirty — develop 자동 rebase (`reason=merge-dirty`)
 
@@ -354,7 +354,7 @@ SendMessage(
 1. `/triage-comments {PR}` 실행 (자동 승인).
    - 수용 → 코드 수정 + 커밋 & push + 스레드 응답
    - 반론 → 스레드에 근거
-   - 보류 → `AskUserQuestion`
+   - 보류 → `사용자 질의`
 2. 리뷰어에게 재리뷰 요청: `gh pr edit {PR} --repo E5presso/spakky-framework --add-reviewer {LOGIN}`
 
 ## Polling 운영 규칙 (MUST)

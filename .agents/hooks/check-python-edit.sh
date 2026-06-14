@@ -121,29 +121,42 @@ resolve_path() {
 
 package_root_for_path() {
   local p="$1"
+  local target_repo_root="$2"
   case "$p" in
-    "$repo_root"/core/*/*.py|"$repo_root"/plugins/*/*.py) ;;
-    "$repo_root"/core/*/*/*.py|"$repo_root"/plugins/*/*/*.py) ;;
+    "$target_repo_root"/core/*/*.py|"$target_repo_root"/plugins/*/*.py) ;;
+    "$target_repo_root"/core/*/*/*.py|"$target_repo_root"/plugins/*/*/*.py) ;;
     *) return ;;
   esac
 
   local rel rest name pkg_root
-  rel="${p#"$repo_root"/}"
+  rel="${p#"$target_repo_root"/}"
   case "$rel" in
     core/*)
       rest="${rel#core/}"
       name="${rest%%/*}"
-      pkg_root="$repo_root/core/$name"
+      pkg_root="$target_repo_root/core/$name"
       ;;
     plugins/*)
       rest="${rel#plugins/}"
       name="${rest%%/*}"
-      pkg_root="$repo_root/plugins/$name"
+      pkg_root="$target_repo_root/plugins/$name"
       ;;
     *) return ;;
   esac
 
   [ -f "$pkg_root/pyproject.toml" ] && printf '%s\n' "$pkg_root"
+}
+
+repo_root_for_path() {
+  local p="$1"
+  local dir="${p%/*}"
+
+  while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do
+    dir="${dir%/*}"
+    [ -z "$dir" ] && dir="/"
+  done
+
+  git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true
 }
 
 errors=""
@@ -167,7 +180,11 @@ $abs_path
 $abs_path
 "
 
-  pkg_root="$(package_root_for_path "$abs_path")"
+  target_repo_root="$(repo_root_for_path "$abs_path")"
+  [ -z "$target_repo_root" ] && continue
+  target_repo_root="$(cd "$target_repo_root" 2>/dev/null && pwd -P || printf '%s\n' "$target_repo_root")"
+
+  pkg_root="$(package_root_for_path "$abs_path" "$target_repo_root")"
   [ -z "$pkg_root" ] && continue
 
   fmt_output="$(cd "$pkg_root" && uv run ruff format "$abs_path" && uv run ruff check --fix "$abs_path" 2>&1)"

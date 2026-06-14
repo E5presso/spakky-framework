@@ -95,6 +95,14 @@ deny_path() {
   exit 2
 }
 
+command_text() {
+  tool_input_text "command"
+}
+
+command_workdir() {
+  printf '%s' "$input" | jq -r '.tool_input.workdir // .cwd // empty'
+}
+
 check_mutation_path() {
   case "$1" in
     ../*|*/../*|*/..) deny_path "$1" ;;
@@ -105,6 +113,54 @@ check_mutation_path() {
   [ -z "$path" ] && return
   path_inside_any_worktree "$path" && return
   path_targets_root "$path" && deny_path "$path"
+}
+
+check_shell_command() {
+  local cmd="$1" workdir="$2"
+  [ -z "$cmd" ] && return
+
+  case "$cmd" in
+    *"$repo_root"/../*|*"$repo_root"/..|*"$worktrees_dir"/*/../*) deny_path "$cmd" ;;
+  esac
+
+  case "$cmd" in
+    *"$repo_root"/*|*"$repo_root")
+      case "$cmd" in
+        *"$worktrees_dir"/*) ;;
+        *"touch "*|*"rm "*|*"mv "*|*"cp "*|*"mkdir "*|*"rmdir "*|*"tee "*|*">"*|*">>"*) deny_path "$cmd" ;;
+      esac
+      ;;
+  esac
+
+  [ -z "$workdir" ] && return
+  local resolved_workdir
+  resolved_workdir="$(resolve_tool_path "$workdir")"
+  path_inside_any_worktree "$resolved_workdir" && return
+  path_targets_root "$resolved_workdir" || return
+
+  case "$cmd" in
+    *"cd $worktrees_dir/"*|*"cd \"$worktrees_dir/"*)
+      case "$cmd" in
+        *"cd -"*|*"builtin cd -"*|*"eval "*"cd -"*) deny_path "$cmd" ;;
+        *) return ;;
+      esac
+      ;;
+    *"git -C $worktrees_dir/"*|*"git -C \"$worktrees_dir/"*)
+      case "$cmd" in
+        *"; touch "*|*"&& touch "*|*"|| touch "*|*"; mkdir "*|*"&& mkdir "*|*"|| mkdir "*|*"; rm "*|*"&& rm "*|*"|| rm "*|*"; mv "*|*"&& mv "*|*"|| mv "*|*"; cp "*|*"&& cp "*|*"|| cp "*|*">"*|*">>"*) ;;
+        *) return ;;
+      esac
+      ;;
+  esac
+
+  case "$cmd" in
+    touch\ *|*"; touch "*|*"&& touch "*|*"|| touch "*|\
+    mkdir\ *|*"; mkdir "*|*"&& mkdir "*|*"|| mkdir "*|\
+    rm\ *|*"; rm "*|*"&& rm "*|*"|| rm "*|\
+    mv\ *|*"; mv "*|*"&& mv "*|*"|| mv "*|\
+    cp\ *|*"; cp "*|*"&& cp "*|*"|| cp "*|\
+    *">"*|*">>"*) deny_path "$cmd" ;;
+  esac
 }
 
 case "$tool_name" in
@@ -121,6 +177,9 @@ case "$tool_name" in
       check_mutation_path "$path"
     done < <(printf '%s\n' "$command" \
       | sed -nE 's/^\*\*\* (Add|Update|Delete) File: (.*)$/\2/p; s/^\*\*\* Move to: (.*)$/\1/p')
+    ;;
+  Bash|shell|exec_command|unified_exec)
+    check_shell_command "$(command_text)" "$(command_workdir)"
     ;;
 esac
 

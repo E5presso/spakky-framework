@@ -1,25 +1,24 @@
 ---
-name: create-worktree
-description: 이슈 번호와 접두어를 받아 source 브랜치 최신화 → 워크트리 생성 → 브랜치 이름 설정까지 수행합니다.
+description: GitHub Issue 번호를 받아 develop 최신화 → 워크트리 생성 → 브랜치 설정까지 수행합니다.
 argument-hint: "<prefix> <issue-number>"
 user-invocable: false
 ---
 
 # Create Worktree — 워크트리 생성 서브스킬
 
-이슈 번호와 접두어(prefix)를 받아 워크트리를 생성한다.
+GitHub Issue 번호와 접두어(prefix)를 받아 워크트리를 생성한다. **메인 세션에서만 호출** — sub-agent는 워크트리 절대경로를 인자로 받아 사용하며 본 스킬을 직접 호출하지 않는다.
 
 ## 사용법
 
-서브에이전트에서 호출:
+상위 스킬에서 호출:
 
 ```
 /create-worktree feat 42
 ```
 
 인자: `<prefix> <issue-number>`
-- prefix: git workflow 접두어 (`feat`, `fix`, `refactor`, `docs`, `hotfix`, `release` 등)
-- issue-number: GitHub Issue 번호
+- prefix: git workflow 접두어 (`feat`, `fix`, `refactor`, `docs`, `hotfix` 등). 워크트리 디렉토리명에는 사용되지 않으며, 호출자가 브랜치명 컨벤션을 일치시키는 용도다.
+- issue-number: GitHub Issue 번호 (예: `42`, `1234`)
 
 ## 절차
 
@@ -27,41 +26,31 @@ user-invocable: false
    - **워크트리명**: `{prefix}-{issue-number}` (하이픈) — 예: `feat-42`
    - **브랜치명**: `{prefix}/{issue-number}` (슬래시) — 예: `feat/42`
 
-2. **source 브랜치 최신화**:
+2. **repo 절대경로 도출**:
    ```bash
-   git fetch origin develop
+   REPO_ROOT=$(git -C <호출자 cwd 또는 루트 체크아웃 임의 경로> rev-parse --path-format=absolute --git-common-dir | sed 's|/\.git$||')
+   WORKTREE_ABS="$REPO_ROOT/.claude/worktrees/{워크트리명}"
+   ```
+   `<repo_root>/.claude/worktrees/`가 표준 위치다. 다른 위치 사용 금지 — `check-worktree-isolation.sh`가 이 prefix로 워크트리 소속을 판정한다.
+
+3. **develop 최신화**:
+   ```bash
+   git -C "$REPO_ROOT" fetch origin develop
    ```
 
-3. **워크트리 생성**:
-   - `EnterWorktree`의 `name` 파라미터에 워크트리명(`feat-42`)을 전달한다.
+4. **워크트리 생성** (`EnterWorktree` 도구 사용 금지 — cwd 드리프트 회귀 원인):
+   ```bash
+   git -C "$REPO_ROOT" worktree add "$WORKTREE_ABS" -b {prefix}/{issue-number} origin/develop
+   ```
+   기존 브랜치가 이미 있으면 `-b` 대신 `git worktree add "$WORKTREE_ABS" {prefix}/{issue-number}`로 진입한다. 기존 브랜치에 미병합 커밋이 있으면 삭제하지 말고 중단한다.
 
-4. **develop 기준으로 리셋**:
-   - `EnterWorktree`는 세션의 원래 HEAD에서 워크트리를 만든다. 워크트리 진입 후 develop으로 맞춘다:
-     ```bash
-     git reset --hard origin/develop
-     ```
+5. **생성 확인**:
+   ```bash
+   git -C "$WORKTREE_ABS" rev-parse --show-toplevel  # → $WORKTREE_ABS 동일해야 함
+   git -C "$WORKTREE_ABS" branch --show-current      # → {prefix}/{issue-number}
+   ```
+   확인 실패 시 즉시 중단하고 호출자에게 오류를 반환한다.
 
-5. **브랜치명 변경**:
-   - 워크트리 생성 후 브랜치명을 `{prefix}/{issue-number}`로 변경한다:
-     ```bash
-     git branch -m {prefix}/{issue-number}
-     ```
-   - 이전 작업으로 같은 이름의 브랜치가 남아 실패하면, `git log origin/develop..{prefix}/{issue-number}`로 미병합 커밋 유무를 확인한 후 없을 때만 `git branch -D`로 삭제하고 재시도한다.
-
-## ⚠️ 워크트리 진입 후 필수 확인 (루트 오염 방지)
-
-`EnterWorktree`가 세션의 CWD를 워크트리로 바꾸더라도, **Read/Edit/Write 도구에 전달하는 절대 경로는 바뀌지 않는다.** 도구 호출에서 무심코 `/Users/.../spakky-framework/core/...` (루트 리포 경로)를 쓰면 **develop 브랜치가 오염된다.**
-
-Phase 4~5의 첫 파일 수정 직전에 반드시 다음을 수행한다:
-
-1. **워크트리 절대 경로 확보**: `pwd` → `.claude/worktrees/{prefix}-{issue-number}`로 끝나야 함.
-2. **파일 수정 시 상대 경로 우선**. CWD가 워크트리이므로 상대 경로(`core/spakky-saga/src/...`)는 자동으로 올바른 위치를 가리킨다.
-   - ✗ `/Users/.../spakky-framework/core/...` (루트 — 금지)
-   - ✓ `core/spakky-saga/src/...` (상대 — 권장)
-   - ✓ `/Users/.../spakky-framework/.claude/worktrees/{name}/core/...` (워크트리 절대)
-3. **`apply_patch`는 별도 취급**한다. Codex `apply_patch` 도구는 `workdir` 파라미터가 없으므로 세션 CWD가 대상 워크트리 루트일 때만 사용한다. 세션 CWD가 확실하지 않으면 워크트리 cwd의 Bash에서 `.agents/skills/process-ticket/scripts/safe_worktree_apply_patch.sh <issue>` wrapper로 patch를 적용한다.
-4. **첫 Edit 직후 `git status`로 검증**한다. 워크트리의 `git status`가 변경을 보이지 않으면 루트에 쓴 것이다 — 즉시 중단하고 root/워크트리 상태를 보고한다. root 변경은 다른 세션의 변경일 수 있으므로 자동 되돌림으로 숨기지 않는다.
-
-`process-ticket` 호출자는 위 수동 확인에 더해 `.agents/skills/process-ticket/scripts/assert_worktree_isolation.sh --init <issue>`를 Phase 3에서 실행하고, Phase 4/4.5/5에서 `assert_worktree_isolation.sh <issue>`를 반복 실행한다. 이 guard가 실패하면 구현·커밋·PR 생성을 중단한다. root checkout 변경은 자동 revert하지 않는다.
+6. **반환값**: 호출자에게 워크트리 **절대경로** `$WORKTREE_ABS` 를 명시적으로 반환한다. 후속 phase (Phase 4 구현, Phase 5 commit, Phase 8 cleanup)는 이 절대경로를 모든 도구 호출 인자에 직접 사용한다. 호출자가 본 절대경로를 sub-agent prompt에 명시 인자로 전달하여 sub-agent가 자기 워크트리만 인지하도록 한다 (형제 격리는 컨벤션 의존 — `worktree-isolation.md` 참조).
 
 $ARGUMENTS
