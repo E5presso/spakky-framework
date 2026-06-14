@@ -9,6 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "fastapi[standard]>=0.135.3",
     "orjson>=3.11.8",
+    "pydantic-settings>=2.13.1",
     "spakky>=6.6.1",
     "spakky-actuator>=6.6.1",
     "spakky-auth>=6.6.1",

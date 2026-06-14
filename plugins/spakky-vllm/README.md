@@ -1,8 +1,7 @@
 # spakky-vllm
 
-`spakky-vllm`은 `spakky-agent`를 위한 첫 공식 `IAgentModel` 어댑터
-패키지입니다. 코어에 모델 SDK 의존성을 넣지 않고, Spakky Agent workflow를
-로컬 vLLM OpenAI-compatible HTTP 엔드포인트에 연결합니다.
+> `spakky-vllm`은 `spakky-agent`를 위한 공식 `IAgentModel` adapter plugin입니다.
+> Spakky Agent workflow를 로컬 vLLM OpenAI-compatible HTTP endpoint에 연결합니다.
 
 ## 언제 필요한가
 

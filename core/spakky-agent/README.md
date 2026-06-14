@@ -1,6 +1,7 @@
 # spakky-agent
 
-`spakky-agent`는 ADR-0009 Agentic Hexagonal Architecture의 core contract 패키지입니다. Agent를 LLM SDK wrapper가 아니라 `@UseCase`와 같은 application workflow component로 다루기 위한 public 타입 표면을 제공합니다.
+> `spakky-agent`는 ADR-0009 Agentic Hexagonal Architecture의 core contract 패키지입니다.
+> Agent를 LLM SDK wrapper가 아니라 `@UseCase`와 같은 application workflow component로 다루기 위한 public 타입 표면을 제공합니다.
 
 ## 언제 필요한가
 

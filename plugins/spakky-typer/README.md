@@ -1,6 +1,7 @@
 # Spakky Typer
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Typer CLI 통합 플러그인입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Typer CLI 통합 플러그인입니다.
+> `@CliController`와 `@command` 선언, actuator command group을 Typer 앱에 자동 등록합니다.
 
 ## 설치
 
@@ -187,7 +188,8 @@ python main.py actuator info
 각 command는 transport 중립 actuator core result model에서 결정적 JSON을 출력합니다.
 `readiness`는 앱이 작업을 받을 준비가 되었는지 보고합니다. `liveness`는 프로세스 내부 check로 남아야 하며 외부 의존성을 사용할 수 없다는 이유만으로 실패하면 안 됩니다.
 
-command 등록은 다음으로 비활성화합니다:
+`ActuatorTyperConfig`는 플러그인이 등록하는 `@Configuration` Pod입니다.
+command 등록은 다음 환경변수로 비활성화합니다:
 
 ```bash
 export SPAKKY_TYPER_ACTUATOR_COMMAND_ENABLED=false
@@ -238,6 +240,8 @@ if __name__ == "__main__":
 | `CliController` | CLI command group용 stereotype |
 | `command` | CLI command용 decorator |
 | `TyperCLIPostProcessor` | 자동 command 등록 post-processor |
+| `ActuatorTyperConfig` | `@Configuration` 기반 actuator command 설정 |
+| `ActuatorTyperCommandPostProcessor` | `ActuatorAggregationService`가 있을 때 actuator command group 등록 |
 
 ## Command decorator 옵션
 

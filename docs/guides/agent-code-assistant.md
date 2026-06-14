@@ -157,11 +157,23 @@ restart 후에는 저장된 `AgentState`, pending `AgentSignal`, append-only `Ag
 로컬 vLLM 서버 연결은 core demo가 아니라 `spakky-vllm` plugin이 담당합니다.
 
 ```python
-from spakky.plugins.vllm.client import HttpxVllmChatClient
-from spakky.plugins.vllm.config import VllmConfig
-from spakky.plugins.vllm.model import VllmAgentModel
+from spakky.agent import IAgentModel
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
 
-model = VllmAgentModel(VllmConfig(), HttpxVllmChatClient())
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            Plugin(name="spakky-agent"),
+            Plugin(name="spakky-vllm"),
+        }
+    )
+    .start()
+)
+model = app.container.get(type_=IAgentModel)
 ```
 
+`spakky-vllm` 플러그인은 `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 설정합니다.
 이 model을 `CodeAssistant` 생성자에 주입하면 `IAgentModel.stream()`에서 vLLM OpenAI-compatible SSE가 공통 `ModelStreamEvent`로 변환되어 demo Agent에 들어옵니다.

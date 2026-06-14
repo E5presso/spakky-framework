@@ -1,6 +1,7 @@
 # Spakky DDD
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Domain-Driven Design 빌딩 블록입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Domain-Driven Design 빌딩 블록입니다.
+> Entity, AggregateRoot, ValueObject, DomainEvent, Command, Query 모델의 공통 기반을 제공합니다.
 
 ## 설치
 

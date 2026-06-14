@@ -5,8 +5,10 @@ from http import HTTPStatus
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 from spakky.actuator.interfaces.contributor import IInfoContributor
 from spakky.actuator.interfaces.probe import AbstractHealthProbe
+from spakky.actuator.registry import ActuatorExtensionRegistry
 from spakky.actuator.result import ActuatorEndpoint, ComponentHealthResult
 from spakky.actuator.service import ActuatorAggregationService
 from spakky.core.application.application import SpakkyApplication
@@ -14,6 +16,7 @@ from spakky.core.application.application_context import ApplicationContext
 from spakky.core.application.plugin import Plugin
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.container import IContainer
+from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
 from spakky.plugins.fastapi.post_processors.register_actuator import (
     RegisterActuatorPostProcessor,
 )
@@ -22,7 +25,6 @@ from typing import override
 from unittest.mock import Mock
 
 import spakky.plugins.fastapi
-from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
 
 ACTUATOR_PLUGIN_NAME = Plugin(name="spakky-actuator")
 EMPTY_STARTUP_INFO = {
@@ -32,7 +34,7 @@ EMPTY_STARTUP_INFO = {
 }
 
 
-def _start_app(config: FastAPIActuatorConfig | None = None) -> FastAPI:
+def _start_app() -> FastAPI:
     @Pod(name="api")
     def get_api() -> FastAPI:
         return FastAPI(debug=True)
@@ -47,14 +49,6 @@ def _start_app(config: FastAPIActuatorConfig | None = None) -> FastAPI:
         )
         .add(get_api)
     )
-    if config is not None:
-
-        @Pod(name="fastapi_actuator_config")
-        def get_actuator_config() -> FastAPIActuatorConfig:
-            return config
-
-        app.add(get_actuator_config)
-
     app.start()
     return app.container.get(type_=FastAPI)
 
@@ -149,9 +143,12 @@ def test_actuator_endpoints_output_core_public_result_shape() -> None:
     }
 
 
-def test_disabled_actuator_endpoint_is_not_registered() -> None:
+def test_disabled_actuator_endpoint_is_not_registered(
+    monkeypatch: MonkeyPatch,
+) -> None:
     """비활성화된 actuator endpoint는 FastAPI route로 노출되지 않는다."""
-    api = _start_app(FastAPIActuatorConfig(readiness_enabled=False))
+    monkeypatch.setenv("SPAKKY_FASTAPI_ACTUATOR_READINESS_ENABLED", "false")
+    api = _start_app()
 
     with TestClient(api) as client:
         readiness = client.get("/actuator/readiness")
@@ -161,16 +158,15 @@ def test_disabled_actuator_endpoint_is_not_registered() -> None:
     assert health.status_code == HTTPStatus.OK
 
 
-def test_disabled_actuator_endpoint_group_uses_configured_base_path() -> None:
+def test_disabled_actuator_endpoint_group_uses_configured_base_path(
+    monkeypatch: MonkeyPatch,
+) -> None:
     """config가 비활성화한 endpoint 묶음은 등록되지 않고 base path는 정규화된다."""
-    api = _start_app(
-        FastAPIActuatorConfig(
-            base_path="/",
-            health_enabled=False,
-            liveness_enabled=False,
-            info_enabled=False,
-        )
-    )
+    monkeypatch.setenv("SPAKKY_FASTAPI_ACTUATOR_BASE_PATH", "/")
+    monkeypatch.setenv("SPAKKY_FASTAPI_ACTUATOR_HEALTH_ENABLED", "false")
+    monkeypatch.setenv("SPAKKY_FASTAPI_ACTUATOR_LIVENESS_ENABLED", "false")
+    monkeypatch.setenv("SPAKKY_FASTAPI_ACTUATOR_INFO_ENABLED", "false")
+    api = _start_app()
 
     with TestClient(api) as client:
         readiness = client.get("/readiness")
@@ -184,9 +180,12 @@ def test_disabled_actuator_endpoint_group_uses_configured_base_path() -> None:
     assert info.status_code == HTTPStatus.NOT_FOUND
 
 
-def test_disabled_actuator_integration_registers_no_routes() -> None:
+def test_disabled_actuator_integration_registers_no_routes(
+    monkeypatch: MonkeyPatch,
+) -> None:
     """actuator HTTP exposure가 꺼져 있으면 표준 route가 등록되지 않는다."""
-    api = _start_app(FastAPIActuatorConfig(enabled=False))
+    monkeypatch.setenv("SPAKKY_FASTAPI_ACTUATOR_ENABLED", "false")
+    api = _start_app()
 
     with TestClient(api) as client:
         health = client.get("/actuator/health")
@@ -212,6 +211,24 @@ def test_actuator_post_processor_ignores_fastapi_without_actuator_service() -> N
         response = client.get("/actuator/health")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+def test_actuator_post_processor_uses_default_config_when_config_pod_absent() -> None:
+    """FastAPI actuator config Pod가 없어도 기본 설정으로 route를 등록한다."""
+    service = ActuatorAggregationService(ActuatorExtensionRegistry())
+    processor = _make_processor(service)
+    api = FastAPI()
+
+    assert processor.post_process(api) is api
+    with TestClient(api) as client:
+        response = client.get("/actuator/health")
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {
+        "endpoint": "health",
+        "status": "healthy",
+        "components": [],
+    }
 
 
 def test_unhealthy_readiness_returns_service_unavailable() -> None:
@@ -261,9 +278,17 @@ def test_unhealthy_readiness_returns_service_unavailable() -> None:
 
 def _make_processor(
     service: ActuatorAggregationService | None,
+    config: FastAPIActuatorConfig | None = None,
 ) -> RegisterActuatorPostProcessor:
+    def get_or_none(pod_type: type[object]) -> object | None:
+        if pod_type is ActuatorAggregationService:
+            return service
+        if pod_type is FastAPIActuatorConfig:
+            return config
+        return None
+
     container = Mock(spec=IContainer)
-    container.get_or_none.return_value = service
+    container.get_or_none.side_effect = get_or_none
     processor = RegisterActuatorPostProcessor()
     processor.set_container(cast(IContainer, container))
     return processor

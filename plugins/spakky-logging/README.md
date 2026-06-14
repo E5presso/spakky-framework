@@ -1,6 +1,7 @@
 # spakky-logging
 
-Spakky Framework를 위한 구조화 로깅 시스템입니다. contextvars 기반 로그 컨텍스트 전파, 설정 가능한 formatter(Text, JSON, Pretty), AOP 기반 메서드 호출 로깅, PostProcessor 기반 자동 설정을 제공합니다.
+> Spakky Framework를 위한 구조화 로깅 시스템입니다.
+> Context-local log binding, formatter 설정, AOP 기반 메서드 호출 로깅, PostProcessor 기반 자동 설정을 제공합니다.
 
 ## 설치
 

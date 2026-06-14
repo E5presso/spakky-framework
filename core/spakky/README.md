@@ -1,6 +1,7 @@
 # Spakky
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)의 코어 모듈입니다. Python을 위한 Spring-inspired 의존성 주입 프레임워크를 제공합니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)의 코어 모듈입니다.
+> Python 3.12+에서 DI/IoC, AOP, plugin loading, Pod scanning을 Spring-inspired 방식으로 제공합니다.
 
 ## 설치
 

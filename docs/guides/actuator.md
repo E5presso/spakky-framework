@@ -17,18 +17,22 @@ FastAPI와 Typer 플러그인은 같은 core result를 HTTP 엔드포인트나 C
 기본 health probe는 `health`와 `readiness`에만 참여합니다.
 `liveness`는 데이터베이스, 브로커, 외부 API 같은 의존성 readiness와 분리해야 합니다.
 
-## 코어 사용
+## 애플리케이션 등록
 
 ```python
 from spakky.actuator import (
     AbstractHealthProbe,
     ActuatorAggregationService,
     ActuatorEndpoint,
-    ActuatorExtensionRegistry,
     ComponentHealthResult,
 )
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
+from spakky.core.pod.annotations.pod import Pod
 
 
+@Pod()
 class DatabaseProbe(AbstractHealthProbe):
     @property
     def name(self) -> str:
@@ -38,6 +42,7 @@ class DatabaseProbe(AbstractHealthProbe):
         return ComponentHealthResult.healthy(self.name)
 
 
+@Pod()
 class ProcessProbe(AbstractHealthProbe):
     @property
     def name(self) -> str:
@@ -51,17 +56,20 @@ class ProcessProbe(AbstractHealthProbe):
         return ComponentHealthResult.healthy(self.name)
 
 
-registry = ActuatorExtensionRegistry()
-registry.register_health_probe(DatabaseProbe())
-registry.register_health_probe(ProcessProbe())
-
-service = ActuatorAggregationService(registry)
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(include={Plugin(name="spakky-actuator")})
+    .add(DatabaseProbe)
+    .add(ProcessProbe)
+    .start()
+)
+service = app.container.get(type_=ActuatorAggregationService)
 readiness = service.evaluate_readiness()
 liveness = service.evaluate_liveness()
 ```
 
 `ComponentHealthResult.unhealthy(..., required=False)`는 component 자체는 unhealthy로 보존하지만 aggregate status를 실패시키지 않습니다.
-`SPAKKY_ACTUATOR_INCLUDE_DETAILS=false` 또는 `ActuatorConfig().model_copy(update={"include_details": False})` Pod를 등록하면 component details 노출을 제한합니다.
+`SPAKKY_ACTUATOR_INCLUDE_DETAILS=false`를 설정하면 component details 노출을 제한합니다.
 
 ## DI 확장
 
@@ -107,25 +115,13 @@ class BuildInfo(IInfoContributor):
     내부 route 아래로 옮기며, 신뢰 경계 밖으로 actuator traffic을 노출하기 전에
     `SPAKKY_ACTUATOR_INCLUDE_DETAILS=false`를 설정하세요.
 
-`FastAPIActuatorConfig`로 base path와 endpoint별 노출 여부를 조정합니다.
+`FastAPIActuatorConfig`는 `spakky-fastapi` 플러그인이 `@Configuration` Pod로 등록합니다.
+base path와 endpoint별 노출 여부는 환경변수로 조정합니다.
 
-```python
-from spakky.core.pod.annotations.pod import Pod
-from spakky.actuator import ActuatorConfig
-from spakky.plugins.fastapi.actuator import FastAPIActuatorConfig
-
-
-@Pod()
-def actuator_config() -> ActuatorConfig:
-    return ActuatorConfig().model_copy(update={"include_details": False})
-
-
-@Pod()
-def fastapi_actuator_config() -> FastAPIActuatorConfig:
-    return FastAPIActuatorConfig(
-        base_path="/internal/actuator",
-        readiness_enabled=False,
-    )
+```bash
+export SPAKKY_ACTUATOR_INCLUDE_DETAILS=false
+export SPAKKY_FASTAPI_ACTUATOR_BASE_PATH=/internal/actuator
+export SPAKKY_FASTAPI_ACTUATOR_READINESS_ENABLED=false
 ```
 
 ## Typer 노출
@@ -139,6 +135,7 @@ python main.py actuator liveness
 python main.py actuator info
 ```
 
+`ActuatorTyperConfig`는 `spakky-typer` 플러그인이 `@Configuration` Pod로 등록합니다.
 다음 환경변수로 명령 노출을 제어합니다.
 
 ```bash

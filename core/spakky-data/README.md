@@ -1,6 +1,7 @@
 # Spakky Data
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 데이터 접근 레이어 추상화입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 데이터 접근 레이어 추상화입니다.
+> Repository와 transaction boundary를 application layer에서 backend-neutral하게 선언하도록 돕습니다.
 
 ## 설치
 

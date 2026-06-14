@@ -18,3 +18,5 @@ def test_fastapi_actuator_docs_expect_security_hardening_warning() -> None:
         assert "리버스 프록시 허용 목록" in doc
         assert "접근 제어 계층" in doc
         assert "SPAKKY_ACTUATOR_INCLUDE_DETAILS=false" in doc
+        assert "SPAKKY_FASTAPI_ACTUATOR_BASE_PATH" in doc
+        assert "SPAKKY_FASTAPI_ACTUATOR_READINESS_ENABLED" in doc

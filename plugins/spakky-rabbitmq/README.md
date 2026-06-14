@@ -1,6 +1,7 @@
 # Spakky RabbitMQ
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 RabbitMQ 플러그인입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 RabbitMQ 플러그인입니다.
+> Event transport, consumer lifecycle, tracing/auth metadata propagation을 RabbitMQ boundary에 연결합니다.
 
 ## 설치
 

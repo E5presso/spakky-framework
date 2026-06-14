@@ -1,6 +1,7 @@
 # spakky-opentelemetry
 
-Spakky Framework를 OpenTelemetry SDK에 연결하는 브릿지입니다.
+> Spakky Framework를 OpenTelemetry SDK에 연결하는 observability bridge입니다.
+> `spakky-tracing`의 W3C propagator를 OpenTelemetry propagator로 교체하고, 선택적으로 logging context와 trace context를 동기화합니다.
 
 `spakky-tracing`이 제공하는 `ITracePropagator` 인터페이스의 OpenTelemetry 구현체입니다. 플러그인을 설치하면 `OTelSetupPostProcessor`가 컨테이너의 `W3CTracePropagator`를 `OTelTracePropagator`로 자동 교체하여, OTel 백엔드(Jaeger, Grafana Tempo 등)와 연동합니다.
 
@@ -18,12 +19,6 @@ Spakky Framework를 OpenTelemetry SDK에 연결하는 브릿지입니다.
 
 ```bash
 pip install spakky-opentelemetry
-```
-
-OTLP exporter 사용 시:
-
-```bash
-pip install spakky-opentelemetry[otlp]
 ```
 
 spakky-logging 브릿지 사용 시:
@@ -77,7 +72,7 @@ app = (
 from spakky.plugins.opentelemetry.bridge import LogContextBridge
 
 # TraceContext 설정 후
-bridge: LogContextBridge = app.context.get_pod(LogContextBridge)
+bridge = app.container.get(type_=LogContextBridge)
 bridge.sync()  # LogContext에 trace_id, span_id 바인딩
 ```
 

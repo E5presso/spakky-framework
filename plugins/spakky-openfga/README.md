@@ -1,7 +1,7 @@
 # spakky-openfga
 
-`spakky-openfga`는 Spakky Auth의 relation 기반 인가를 위해 OpenFGA check만 수행하는
-authorization provider 플러그인입니다.
+> `spakky-openfga`는 Spakky Auth의 relation 기반 인가를 OpenFGA check로 수행하는 provider 플러그인입니다.
+> `@require_relation` metadata를 OpenFGA tuple model과 store/client 설정에 연결합니다.
 
 ## Auth Provider Capability
 

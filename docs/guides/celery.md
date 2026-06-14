@@ -173,9 +173,14 @@ value = result.get()
 
 ```python
 from spakky.auth import AuthSnapshotPropagationConfig, require_scope
+from spakky.core.pod.annotations.pod import Pod
 from spakky.task import TaskHandler, task
 
-app.add(lambda: AuthSnapshotPropagationConfig(enabled=True))
+
+@Pod()
+def auth_snapshot_propagation_config() -> AuthSnapshotPropagationConfig:
+    return AuthSnapshotPropagationConfig(enabled=True)
+
 
 @TaskHandler()
 class ReportTasks:

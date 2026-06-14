@@ -1,6 +1,7 @@
 # Spakky Actuator
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 transport 중립 actuator 계약입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 transport 중립 actuator 계약입니다.
+> Health, readiness, liveness, info 상태를 HTTP나 CLI adapter와 분리된 모델로 집계합니다.
 
 ## 설치
 
@@ -35,11 +36,15 @@ pip install spakky-actuator
 from spakky.actuator import (
     AbstractHealthProbe,
     ActuatorAggregationService,
-    ActuatorExtensionRegistry,
     ComponentHealthResult,
 )
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
+from spakky.core.pod.annotations.pod import Pod
 
 
+@Pod()
 class DatabaseProbe(AbstractHealthProbe):
     @property
     def name(self) -> str:
@@ -49,10 +54,13 @@ class DatabaseProbe(AbstractHealthProbe):
         return ComponentHealthResult.healthy(self.name)
 
 
-registry = ActuatorExtensionRegistry()
-registry.register_health_probe(DatabaseProbe())
-
-service = ActuatorAggregationService(registry)
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(include={Plugin(name="spakky-actuator")})
+    .add(DatabaseProbe)
+    .start()
+)
+service = app.container.get(type_=ActuatorAggregationService)
 health = service.evaluate_health()
 readiness = service.evaluate_readiness()
 ```
@@ -61,7 +69,7 @@ readiness = service.evaluate_readiness()
 
 Component health를 제공하려면 `AbstractHealthProbe` 또는 `AbstractAsyncHealthProbe` Pod를 등록하세요.
 `info`에 metadata를 제공하려면 `IInfoContributor` 또는 `IAsyncInfoContributor` Pod를 등록하세요.
-Actuator 플러그인은 `ActuatorExtensionPostProcessor`를 추가하여 해당 Pod를 발견하고 `ActuatorExtensionRegistry`에 저장합니다.
+Actuator 플러그인은 `ActuatorExtensionPostProcessor`를 추가하여 DI가 관리하는 extension Pod를 발견하고 `ActuatorExtensionRegistry`에 저장합니다.
 
 ```python
 from spakky.actuator import (

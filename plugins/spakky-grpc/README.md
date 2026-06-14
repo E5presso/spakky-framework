@@ -1,6 +1,7 @@
 # spakky-grpc
 
-[Spakky Framework](https://framework.spakky.com)를 위한 code-first gRPC 플러그인입니다.
+> [Spakky Framework](https://framework.spakky.com)를 위한 code-first gRPC 플러그인입니다.
+> `@GrpcController`와 `@rpc` 선언을 gRPC service descriptor와 server binding으로 자동 변환합니다.
 
 pydantic `BaseModel`로 메시지를 선언하고 `@GrpcController` + `@rpc` 데코레이터로 서비스를 정의하면, 런타임에 protobuf descriptor를 자동 생성하여 `grpc.aio.Server`에 등록합니다. `.proto` 파일이나 codegen 단계가 필요 없습니다. protobuf ↔ BaseModel 변환은 `google.protobuf.json_format` 브릿지(JSON 중간 표현)로 수행됩니다.
 

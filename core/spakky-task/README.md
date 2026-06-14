@@ -1,6 +1,7 @@
 # spakky-task
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 태스크 큐 추상화 레이어입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 태스크 큐 추상화 레이어입니다.
+> `@task`와 `@schedule` metadata를 backend plugin이 실행 가능한 task route로 변환하게 합니다.
 
 ## 설치
 

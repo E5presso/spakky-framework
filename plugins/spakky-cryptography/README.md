@@ -1,7 +1,7 @@
 # spakky-cryptography
 
-`spakky-cryptography`는 암호화 utility와 서명된 `AuthContextSnapshot` 전파, password hash
-검증에 필요한 auth provider capability를 제공하는 플러그인입니다.
+> `spakky-cryptography`는 암호화 utility와 서명된 `AuthContextSnapshot` 전파를 제공합니다.
+> Password hash 검증과 snapshot sign/verify capability를 `spakky-auth` provider contribution으로 연결합니다.
 
 ## 유지되는 Utility
 

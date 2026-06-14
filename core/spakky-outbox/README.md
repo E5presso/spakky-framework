@@ -1,6 +1,7 @@
 # spakky-outbox
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 트랜잭셔널 Outbox 패턴 패키지입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 트랜잭셔널 Outbox 패턴 패키지입니다.
+> `IEventBus`를 `@Primary` outbox bus로 교체해 이벤트 저장과 외부 전송을 분리합니다.
 
 ## 설치
 

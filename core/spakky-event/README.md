@@ -205,8 +205,8 @@ in-process event system은 Interface Segregation Principle을 따릅니다.
 flowchart TD
     publisher[Publisher]
     dispatcher[Dispatcher]
-    mediator[Mediator<br/>Consumer + Dispatcher]
-    handler[EventHandler<br/>@on_event]
+    mediator["Mediator<br/>Consumer + Dispatcher"]
+    handler["EventHandler<br/>@on_event"]
 
     publisher --> dispatcher
     dispatcher --> mediator

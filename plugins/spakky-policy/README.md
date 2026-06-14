@@ -1,7 +1,7 @@
 # spakky-policy
 
-`spakky-policy`는 YAML, TOML, JSON policy document를 typed canonical model로 로드하고
-`spakky-auth`의 RBAC, PBAC, ABAC-style 인가 규칙을 평가하는 provider 플러그인입니다.
+> `spakky-policy`는 YAML, TOML, JSON policy document를 typed canonical model로 로드합니다.
+> `spakky-auth`의 RBAC, PBAC, ABAC-style 인가 규칙을 provider contribution으로 평가합니다.
 
 ## 설치
 

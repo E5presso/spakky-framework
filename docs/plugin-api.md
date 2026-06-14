@@ -196,10 +196,10 @@ flowchart TD
   Package --> Src[src]
   Src --> Namespace[spakky/plugins/example]
   Namespace --> Init[__init__.py]
-  Namespace --> Main[main.py<br/>initialize 진입점]
-  Namespace --> Contributions[contributions<br/>feature별 contribution]
-  Namespace --> Error[error.py<br/>에러 클래스]
-  Namespace --> PostProcessors[post_processors<br/>PostProcessor 구현]
+  Namespace --> Main["main.py<br/>initialize 진입점"]
+  Namespace --> Contributions["contributions<br/>feature별 contribution"]
+  Namespace --> Error["error.py<br/>에러 클래스"]
+  Namespace --> PostProcessors["post_processors<br/>PostProcessor 구현"]
 ```
 
 ---

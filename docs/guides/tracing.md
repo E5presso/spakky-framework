@@ -40,10 +40,10 @@ class CreateOrderUseCase:
 
 ```mermaid
 flowchart TD
-  Http[HTTP 요청<br/>trace_id=abc<br/>span_id=001]
-  EventA[Event A<br/>trace_id=abc<br/>span_id=002<br/>parent=001]
-  CeleryTask[Celery Task<br/>trace_id=abc<br/>span_id=003<br/>parent=002]
-  GrpcCall[gRPC Call<br/>trace_id=abc<br/>span_id=004<br/>parent=001]
+  Http["HTTP 요청<br/>trace_id=abc<br/>span_id=001"]
+  EventA["Event A<br/>trace_id=abc<br/>span_id=002<br/>parent=001"]
+  CeleryTask["Celery Task<br/>trace_id=abc<br/>span_id=003<br/>parent=002"]
+  GrpcCall["gRPC Call<br/>trace_id=abc<br/>span_id=004<br/>parent=001"]
 
   Http --> EventA
   EventA --> CeleryTask
@@ -183,7 +183,7 @@ await asyncio.gather(handle_request_a(), handle_request_b())
 1. `spakky-opentelemetry` 패키지를 설치합니다:
 
 ```bash
-uv add spakky-opentelemetry "spakky-opentelemetry[otlp]"
+uv add spakky-opentelemetry
 ```
 
 2. 플러그인을 활성화합니다:

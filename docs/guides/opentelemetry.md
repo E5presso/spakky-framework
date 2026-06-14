@@ -38,10 +38,11 @@ app = (
 )
 ```
 
-`load_plugins()`가 `spakky-opentelemetry`의 엔트리포인트(`spakky.plugins.opentelemetry.main:initialize`)를 호출하면, 다음 두 Pod가 컨테이너에 등록됩니다:
+`load_plugins()`가 `spakky-opentelemetry`의 엔트리포인트(`spakky.plugins.opentelemetry.main:initialize`)를 호출하면, 다음 Pod가 컨테이너에 등록됩니다:
 
 1. **`OpenTelemetryConfig`** --- 환경변수 기반 설정 (`@Configuration`)
 2. **`OTelSetupPostProcessor`** --- `TracerProvider` 초기화 및 propagator 교체 (`IPostProcessor`)
+3. **`LogContextBridge`** --- `spakky-logging`이 있을 때 trace context를 log context로 동기화
 
 ---
 
@@ -137,7 +138,7 @@ if ctx is not None:
     TraceContext.set(ctx.child())
 
 # 로그 컨텍스트에 trace_id/span_id 동기화
-bridge: LogContextBridge = app.context.get_pod(LogContextBridge)
+bridge = app.container.get(type_=LogContextBridge)
 bridge.sync()
 # → LogContext.bind(trace_id=ctx.trace_id, span_id=ctx.span_id)
 ```
@@ -171,11 +172,7 @@ export SPAKKY_OTEL_EXPORTER_ENDPOINT=http://jaeger:4317
 export SPAKKY_OTEL_SAMPLE_RATE=1.0
 ```
 
-OTLP exporter는 선택적 의존성입니다:
-
-```bash
-uv add "spakky-opentelemetry[otlp]"
-```
+OTLP exporter는 `spakky-opentelemetry` 기본 dependency에 포함됩니다.
 
 ### Grafana Tempo (OTLP gRPC)
 

@@ -1,6 +1,7 @@
 # spakky-celery
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 [Celery](https://docs.celeryq.dev/) 통합 플러그인입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 [Celery](https://docs.celeryq.dev/) 통합 플러그인입니다.
+> `@task`/`@schedule` metadata를 Celery task dispatch와 beat schedule로 자동 연결합니다.
 
 AOP 기반 자동 task dispatch와 주기 schedule 등록을 제공합니다.
 `@task` 또는 `@schedule`로 장식된 메서드는 명시적인 dispatcher 호출 없이 가로채져 Celery로 라우팅됩니다.

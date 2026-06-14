@@ -196,13 +196,25 @@ class AnswerAgent:
 운영에서 vLLM을 쓰면 `spakky-vllm` adapter를 주입합니다.
 
 ```python
-from spakky.plugins.vllm.client import HttpxVllmChatClient
-from spakky.plugins.vllm.config import VllmConfig
-from spakky.plugins.vllm.model import VllmAgentModel
+from spakky.agent import IAgentModel
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
 
-model = VllmAgentModel(VllmConfig(), HttpxVllmChatClient())
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            Plugin(name="spakky-agent"),
+            Plugin(name="spakky-vllm"),
+        }
+    )
+    .start()
+)
+model = app.container.get(type_=IAgentModel)
 ```
 
+`spakky-vllm` 플러그인은 `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 설정합니다.
 테스트에서는 network가 없는 scripted `IAgentModel` fake를 만들어 token이나 tool event를 원하는 순서로 내보내면 됩니다.
 
 ## 다음 단계

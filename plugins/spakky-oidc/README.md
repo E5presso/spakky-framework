@@ -1,7 +1,7 @@
 # spakky-oidc
 
-`spakky-oidc`는 OIDC/OAuth bearer JWT credential을 검증하고, 검증된 claim을
-`spakky.auth.AuthContext`로 매핑하는 인증 provider 플러그인입니다.
+> `spakky-oidc`는 OIDC/OAuth bearer JWT credential을 검증하는 인증 provider 플러그인입니다.
+> 검증된 claim을 `spakky.auth.AuthContext`로 매핑하고 bearer authentication capability를 제공합니다.
 
 이 플러그인은 `spakky.contributions.spakky.auth` entry point로
 `AuthCapability.AUTHENTICATION`을 제공합니다. Browser login, callback, session,

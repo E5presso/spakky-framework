@@ -46,18 +46,18 @@
 ```mermaid
 graph TD
     subgraph core_packages ["Core Packages"]
-        core[spakky<br/>DI · AOP · Plugin]
-        domain[spakky-domain<br/>Entity · Event · CQRS]
-        auth[spakky-auth<br/>Auth root · Entry Point]
-        data[spakky-data<br/>Repository · Transaction]
-        event[spakky-event<br/>Publisher · Consumer · Aspect]
+        core["spakky<br/>DI · AOP · Plugin"]
+        domain["spakky-domain<br/>Entity · Event · CQRS"]
+        auth["spakky-auth<br/>Auth root · Entry Point"]
+        data["spakky-data<br/>Repository · Transaction"]
+        event["spakky-event<br/>Publisher · Consumer · Aspect"]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
         agent["spakky-agent<br/>AgentYield · State · Signal · Model Port · Delegation"]
         actuator["spakky-actuator<br/>Health · Readiness · Info"]
         cache["spakky-cache<br/>CacheHit · CacheMiss · ICache"]
         tracing["spakky-tracing<br/>TraceContext · Propagator"]
-        outbox[spakky-outbox<br/>OutboxEventBus · Relay]
-        saga[spakky-saga<br/>SagaFlow · SagaStep · Compensation]
+        outbox["spakky-outbox<br/>OutboxEventBus · Relay"]
+        saga["spakky-saga<br/>SagaFlow · SagaStep · Compensation"]
     end
 
     subgraph plugins ["Plugins"]
@@ -359,12 +359,12 @@ Pod 생성 후 순차적으로 적용되는 후처리기입니다.
 flowchart TD
     pod[Pod 생성]
     aware[ApplicationContextAwareProcessor]
-    inject[IContainerAware<br/>ITagRegistryAware<br/>IApplicationContextAware 주입]
+    inject["IContainerAware<br/>ITagRegistryAware<br/>IApplicationContextAware 주입"]
     aspect[AspectPostProcessor]
     proxy[매칭되는 Aspect의 Dynamic Proxy 래핑]
     service[ServicePostProcessor]
     lifecycle[IService / IAsyncService 라이프사이클 등록]
-    custom[사용자 정의 IPostProcessor<br/>@Order 순서]
+    custom["사용자 정의 IPostProcessor<br/>@Order 순서"]
 
     pod --> aware --> inject --> aspect --> proxy --> service --> lifecycle --> custom
 ```
@@ -421,21 +421,30 @@ app = (
 
 ```mermaid
 flowchart TD
-    processor[AspectPostProcessor]
-    collect[매칭되는 Aspect 수집]
-    order[@Order 정렬]
-    factory[ProxyFactory]
+    processor["AspectPostProcessor"]
+    collect["매칭되는 Aspect 수집"]
+    order["@Order 정렬"]
+    factory["ProxyFactory"]
     subclass["types.new_class('{TypeName}@DynamicProxy', ...)"]
-    handler[AspectProxyHandler]
-    chain[Advisor 체인 구성]
-    call[Advisor.__call__]
-    before[before]
-    around[around(joinpoint)]
-    result[after_returning / after_raising]
-    after[after]
+    handler["AspectProxyHandler"]
+    chain["Advisor 체인 구성"]
+    advisor_call["Advisor.__call__"]
+    before["before"]
+    around["around(joinpoint)"]
+    result["after_returning / after_raising"]
+    after["after"]
 
-    processor --> collect --> order --> factory --> subclass --> handler --> chain --> call
-    call --> before --> around --> result --> after
+    processor --> collect
+    collect --> order
+    order --> factory
+    factory --> subclass
+    subclass --> handler
+    handler --> chain
+    chain --> advisor_call
+    advisor_call --> before
+    before --> around
+    around --> result
+    result --> after
 ```
 
 - **런타임 서브클래스**: `types.new_class()`로 프록시 클래스를 생성하여 `isinstance()` 투명성을 유지합니다.
@@ -478,7 +487,7 @@ spakky-data = "spakky.data.main:initialize"
 
 | 플러그인 | 등록하는 컴포넌트 |
 |---------|-------------------|
-| `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` |
+| `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect`, `LogContextBinder` |
 | `spakky-domain` | (없음 — 모델만 제공) |
 | `spakky-auth` | Provider-neutral auth model, ABC port, `AuthCapability`, auth contribution contract, AOP enforcement, capability startup validation |
 | `spakky-cryptography` | Cryptographic utility surface; `CryptographyAuthProvider` contribution for snapshot sign/verify and password hash/verify |
@@ -487,8 +496,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-openfga` | OpenFGA relation/policy authorization provider contribution |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
 | `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
-| `spakky-fastapi` | `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterRoutesPostProcessor`, `RegisterActuatorPostProcessor` |
-| `spakky-typer` | `TyperCLIPostProcessor`, `ActuatorTyperCommandPostProcessor` |
+| `spakky-fastapi` | `FastAPIActuatorConfig`, `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterActuatorPostProcessor`, `RegisterRoutesPostProcessor` |
+| `spakky-typer` | `ActuatorTyperConfig`, `ActuatorTyperCommandPostProcessor`, `TyperCLIPostProcessor` |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
@@ -500,10 +509,10 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-cache` | `CacheAspect`, `AsyncCacheAspect` |
 | `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
 | `spakky-tracing` | `W3CTracePropagator` |
-| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` |
+| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor`, `LogContextBridge` |
 | `spakky-saga` | (없음 — `@Saga`가 `@Pod` 기반이므로 Pod 스캔만으로 DI 컨테이너가 관리) |
 | `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
-| `spakky-redis` | `RedisCacheConfig`, `RedisCache` |
+| `spakky-redis` | `RedisCacheConfig`, `RedisCache`, `RedisCacheHealthProbe`, `RedisCacheMetricsInfoContributor` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` |
 
 ### Agentic workflow layer
@@ -687,17 +696,18 @@ class AggregateCollector:
 
 ```mermaid
 flowchart TD
-    tx[AbstractTransaction<br/>context manager]
+    tx["AbstractTransaction<br/>context manager"]
     enter["__enter__()"]
-    init[initialize()]
+    init["initialize()"]
     exit["__exit__()"]
-    commit[commit()]
-    rollback[rollback()]
-    dispose[dispose()]
-    flag[autocommit_enabled 플래그]
-    async_tx[AbstractAsyncTransaction<br/>async context manager]
+    commit["commit()"]
+    rollback["rollback()"]
+    dispose["dispose()"]
+    flag["autocommit_enabled 플래그"]
+    async_tx["AbstractAsyncTransaction<br/>async context manager"]
 
-    tx --> enter --> init
+    tx --> enter
+    enter --> init
     tx --> exit
     exit --> commit
     exit --> rollback
@@ -829,8 +839,8 @@ class UserEventHandler:
 ```mermaid
 sequenceDiagram
     participant U as @Transactional method
-    participant TA as TransactionalAspect<br/>@Order(0)
-    participant EA as TransactionalEventPublishingAspect<br/>@Order(1)
+    participant TA as "TransactionalAspect<br/>@Order(0)"
+    participant EA as "TransactionalEventPublishingAspect<br/>@Order(1)"
     participant R as Repository
     participant C as AggregateCollector
     participant P as EventPublisher
@@ -895,16 +905,21 @@ class OrderEventHandler:
 
 ```mermaid
 flowchart TD
-    event_bus[IEventBus]
-    direct[DirectEventBus]
-    outbox_bus[OutboxEventBus<br/>@Primary]
-    table[outbox_table.insert()<br/>같은 트랜잭션]
-    relay[OutboxRelay<br/>background]
-    transport[IEventTransport.send()]
-    broker[Kafka / RabbitMQ]
+    event_bus["IEventBus"]
+    direct["DirectEventBus"]
+    outbox_bus["OutboxEventBus<br/>@Primary"]
+    table["outbox_table.insert()<br/>같은 트랜잭션"]
+    relay["OutboxRelay<br/>background"]
+    transport["IEventTransport.send()"]
+    broker["Kafka / RabbitMQ"]
 
-    event_bus --> direct --> transport --> broker
-    event_bus --> outbox_bus --> table --> relay --> transport
+    event_bus --> direct
+    direct --> transport
+    transport --> broker
+    event_bus --> outbox_bus
+    outbox_bus --> table
+    table --> relay
+    relay --> transport
 ```
 
 - **DirectEventBus**: 기본 `IEventBus` 구현. `IEventTransport`에 직접 위임
@@ -917,15 +932,15 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant S as UseCase
-    participant TA as TransactionalAspect<br/>(@Order=0)
-    participant EA as EventPublishingAspect<br/>(@Order=1)
+    participant TA as "TransactionalAspect<br/>(@Order=0)"
+    participant EA as "EventPublishingAspect<br/>(@Order=1)"
     participant R as Repository
-    participant C as AggregateCollector<br/>(CONTEXT)
+    participant C as "AggregateCollector<br/>(CONTEXT)"
     participant A as Aggregate
-    participant P as EventPublisher<br/>(타입 라우터)
+    participant P as "EventPublisher<br/>(타입 라우터)"
     participant M as EventMediator
     participant H as EventHandler
-    participant B as EventBus<br/>(Kafka/RabbitMQ)
+    participant B as "EventBus<br/>(Kafka/RabbitMQ)"
     participant DB as Database
 
     Note over S,DB: @Transactional 메서드 호출
@@ -1073,16 +1088,21 @@ Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Pr
 
 ```mermaid
 flowchart TD
-    event_bus[IEventBus]
-    direct[DirectEventBus]
-    outbox_bus[OutboxEventBus<br/>@Primary]
-    table[outbox_table.insert()<br/>같은 트랜잭션]
-    relay[OutboxRelay<br/>background]
-    transport[IEventTransport]
-    broker[Kafka / RabbitMQ]
+    event_bus["IEventBus"]
+    direct["DirectEventBus"]
+    outbox_bus["OutboxEventBus<br/>@Primary"]
+    table["outbox_table.insert()<br/>같은 트랜잭션"]
+    relay["OutboxRelay<br/>background"]
+    transport["IEventTransport"]
+    broker["Kafka / RabbitMQ"]
 
-    event_bus --> direct --> transport --> broker
-    event_bus --> outbox_bus --> table --> relay --> transport
+    event_bus --> direct
+    direct --> transport
+    transport --> broker
+    event_bus --> outbox_bus
+    outbox_bus --> table
+    table --> relay
+    relay --> transport
 ```
 
 `IEventBus`와 `IEventTransport`가 다른 인터페이스이므로 DI 경쟁 없이 `@Primary` 교체로 PnP를 달성합니다.
@@ -1209,7 +1229,7 @@ flow = saga_flow(
 
 ```mermaid
 flowchart TD
-    base[AbstractSpakkySagaError<br/>ABC]
+    base["AbstractSpakkySagaError<br/>ABC"]
     flow[SagaFlowDefinitionError]
     compensation[SagaCompensationFailedError]
     timeout[SagaStepTimeoutError]
@@ -1234,7 +1254,9 @@ flowchart TD
 | `spakky-fastapi` | `RegisterRoutesPostProcessor` | `@ApiController`의 라우트를 FastAPI에 등록 |
 | | `BindLifespanPostProcessor` | 앱 라이프사이클 바인딩 |
 | | `AddBuiltInMiddlewaresPostProcessor` | CONTEXT 스코프 미들웨어 등록. `TracingMiddleware` 자동 추가 (`spakky-tracing` 필수 의존) |
+| | `RegisterActuatorPostProcessor` | `ActuatorAggregationService`가 있을 때 FastAPI actuator route 등록 |
 | `spakky-typer` | `TyperCLIPostProcessor` | `@CliController`의 커맨드를 Typer에 등록 |
+| | `ActuatorTyperCommandPostProcessor` | `ActuatorAggregationService`가 있을 때 actuator command group 등록 |
 | `spakky-grpc` | `RegisterServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
 | | `AddInterceptorsPostProcessor` | `TracingInterceptor`, `ErrorHandlingInterceptor` 자동 추가 |
 | | `BindServerPostProcessor` | gRPC 서버 바인딩 및 라이프사이클 관리 |
@@ -1254,7 +1276,7 @@ flowchart TD
 | `spakky-cryptography` | `CryptographyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 snapshot sign/verify와 password hash/verify capability 선언 | `argon2-cffi`, `bcrypt`, `pycryptodome`, `spakky-auth` |
 | `spakky-policy` | `SpakkyPolicyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 policy/permission/role/scope capability 선언 | `pyyaml`, `spakky-auth` |
 | `spakky-oidc` | `OidcAuthenticationProvider`; `spakky.contributions.spakky.auth` contribution으로 bearer authentication capability 선언 | `pyjwt[crypto]`, `spakky-auth` |
-| `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async) | `redis`, `pydantic-settings`, `spakky-cache` |
+| `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async), `RedisCacheHealthProbe`, `RedisCacheMetricsInfoContributor` | `redis`, `pydantic-settings`, `spakky-cache`, `spakky-actuator` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` | `openfga-sdk`, `pydantic-settings`, `spakky-auth` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` | `httpx`, `pydantic-settings`, `spakky-agent` |
 ### 태스크 플러그인
@@ -1275,8 +1297,8 @@ flowchart TD
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
-| `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect` | `pydantic-settings` |
-| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor` | `opentelemetry-api`, `opentelemetry-sdk`, `pydantic-settings` |
+| `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect`, `LogContextBinder` | `pydantic-settings` |
+| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor`, `LogContextBridge` | `opentelemetry-api`, `opentelemetry-sdk`, `pydantic-settings` |
 
 **OTel Propagator 교체 메커니즘:**
 

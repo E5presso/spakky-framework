@@ -1,8 +1,9 @@
 """Typer command adapter for actuator status output."""
 
 from json import dumps
-from os import getenv
+from typing import ClassVar
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.actuator.result import (
     ActuatorHealthResult,
     ActuatorInfoResult,
@@ -22,33 +23,24 @@ from spakky.core.stereotype.configuration import Configuration
 from typer import Typer, echo
 from typing import override
 
-ACTUATOR_COMMAND_ENABLED_ENV = "SPAKKY_TYPER_ACTUATOR_COMMAND_ENABLED"
-ACTUATOR_COMMAND_NAME_ENV = "SPAKKY_TYPER_ACTUATOR_COMMAND_NAME"
+SPAKKY_TYPER_ACTUATOR_CONFIG_ENV_PREFIX = "SPAKKY_TYPER_ACTUATOR_"
 
 
 @Configuration()
-class ActuatorTyperConfig:
-    """Configuration for Typer actuator command exposure."""
+class ActuatorTyperConfig(BaseSettings):
+    """Typer actuator command exposure settings loaded from environment."""
 
-    command_enabled: bool
-    command_name: str
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix=SPAKKY_TYPER_ACTUATOR_CONFIG_ENV_PREFIX,
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+    )
 
-    def __init__(
-        self,
-        command_enabled: bool | None = None,
-        command_name: str | None = None,
-    ) -> None:
-        """Initialize Typer actuator command configuration."""
-        self.command_enabled = (
-            _env_bool(ACTUATOR_COMMAND_ENABLED_ENV, default=True)
-            if command_enabled is None
-            else command_enabled
-        )
-        self.command_name = (
-            getenv(ACTUATOR_COMMAND_NAME_ENV, "actuator")
-            if command_name is None
-            else command_name
-        )
+    command_enabled: bool = True
+    command_name: str = "actuator"
+
+    def __init__(self) -> None:
+        super().__init__()
 
 
 @Order(1)
@@ -144,10 +136,3 @@ def _component_payload(result: ComponentHealthResult) -> dict[str, object]:
         "required": result.required,
         "status": result.status.value,
     }
-
-
-def _env_bool(name: str, *, default: bool) -> bool:
-    value = getenv(name)
-    if value is None:
-        return default
-    return value.lower() in {"1", "true", "yes", "on"}

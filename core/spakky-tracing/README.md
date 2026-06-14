@@ -1,6 +1,7 @@
 # Spakky Tracing
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 분산 트레이싱 추상화입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 분산 트레이싱 추상화입니다.
+> `TraceContext`와 `ITracePropagator`로 HTTP, messaging, task boundary 사이의 trace metadata를 전달합니다.
 
 ## 설치
 

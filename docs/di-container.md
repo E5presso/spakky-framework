@@ -358,7 +358,7 @@ class ServiceB:
 ```mermaid
 flowchart TD
   ServiceA --> ServiceB
-  ServiceB --> ServiceAAgain[ServiceA<br/>CIRCULAR]
+  ServiceB --> ServiceAAgain["ServiceA<br/>CIRCULAR"]
 ```
 
 ### 해결 방법

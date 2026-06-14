@@ -1,6 +1,7 @@
 # Spakky SQLAlchemy
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 SQLAlchemy 통합 플러그인입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 SQLAlchemy 통합 플러그인입니다.
+> Connection/session/transaction Pod와 outbox/agent persistence contribution을 SQLAlchemy로 제공합니다.
 
 ## 설치
 

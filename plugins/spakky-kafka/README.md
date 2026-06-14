@@ -1,6 +1,7 @@
 # Spakky Kafka
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Apache Kafka 플러그인입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Apache Kafka 플러그인입니다.
+> Event transport, consumer lifecycle, tracing/auth metadata propagation을 Kafka boundary에 연결합니다.
 
 ## 설치
 

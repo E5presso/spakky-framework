@@ -1,6 +1,7 @@
 # Spakky Cache
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 백엔드 중립 애플리케이션 데이터 캐시 계약과 AOP 어노테이션입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 백엔드 중립 애플리케이션 데이터 캐시 계약과 AOP 어노테이션입니다.
+> 서비스 메서드의 `@cacheable`/`@cache_evict` 선언을 등록된 cache backend Pod와 연결합니다.
 
 ## 설치
 
@@ -22,20 +23,47 @@ pip install spakky-cache
 ```python
 from datetime import timedelta
 
-from spakky.cache import CacheHit
-from spakky.plugins.redis import RedisCache
+from spakky.cache import cache_evict, cacheable
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
+from spakky.core.stereotype.usecase import UseCase
 
-cache = RedisCache[str]()
-cache.set("profile:42", "Ada", ttl=timedelta(minutes=5))
 
-result = cache.get("profile:42")
-if isinstance(result, CacheHit):
-    print(result.value)
+@UseCase()
+class ProfileService:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    @cacheable(key="profile:{0}", ttl=timedelta(minutes=5))
+    def load_profile(self, user_id: str) -> str:
+        self.calls += 1
+        return f"profile:{user_id}"
+
+    @cache_evict(key="profile:{0}")
+    def refresh_profile(self, user_id: str) -> None:
+        ...
+
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            Plugin(name="spakky-cache"),
+            Plugin(name="spakky-redis"),
+        }
+    )
+    .add(ProfileService)
+    .start()
+)
+
+profiles = app.container.get(type_=ProfileService)
+profiles.load_profile("42")
 ```
 
 ## 어노테이션 사용
 
-`spakky-cache` 플러그인을 로드한 뒤 서비스 메서드에 어노테이션을 붙입니다. 이 플러그인은 `CacheAspect`, `AsyncCacheAspect`를 등록하며, 실제 저장소 backend는 `spakky-redis` 같은 plugin이 제공합니다.
+`spakky-cache` 플러그인을 로드한 뒤 서비스 메서드에 어노테이션을 붙입니다. 이 플러그인은 `CacheAspect`, `AsyncCacheAspect`를 등록하며, 실제 저장소 backend는 `spakky-redis` 같은 plugin이 `ICache` Pod로 제공합니다.
 
 ```python
 from datetime import timedelta
@@ -66,15 +94,15 @@ class ProfileService:
 ## 비동기 사용
 
 ```python
-from spakky.cache import CacheHit
-from spakky.plugins.redis import RedisCache
+from spakky.cache import cacheable
+from spakky.core.stereotype.usecase import UseCase
 
-cache = RedisCache[int]()
-await cache.set_async("answer", 42)
 
-result = await cache.get_async("answer")
-if isinstance(result, CacheHit):
-    assert result.value == 42
+@UseCase()
+class AnswerService:
+    @cacheable(key="answer:{0}")
+    async def load_answer(self, question_id: str) -> int:
+        return 42
 ```
 
 ## TTL 규칙

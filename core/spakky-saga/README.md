@@ -1,6 +1,7 @@
 # spakky-saga
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 분산 트랜잭션 사가 오케스트레이션입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 분산 트랜잭션 사가 오케스트레이션입니다.
+> `@Saga`와 `@saga_step`으로 보상 기반 workflow를 DI-managed application component로 선언합니다.
 
 ## 설치
 

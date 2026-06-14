@@ -1,6 +1,7 @@
 # Spakky Redis
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Redis 캐시 백엔드 플러그인입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 Redis 캐시 백엔드 플러그인입니다.
+> `spakky-cache`의 `ICache` 계약과 actuator health/info extension을 Redis 저장소에 연결합니다.
 
 ## 설치
 
@@ -22,16 +23,41 @@ pip install spakky-redis
 ```python
 from datetime import timedelta
 
-from spakky.cache import CacheHit
-from spakky.plugins.redis import RedisCache
+from spakky.cache import cache_evict, cacheable
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
+from spakky.core.stereotype.usecase import UseCase
 
-cache = RedisCache[str]()
-cache.set("profile:42", "Ada", ttl=timedelta(minutes=5))
 
-result = cache.get("profile:42")
-if isinstance(result, CacheHit):
-    print(result.value)
+@UseCase()
+class ProfileService:
+    @cacheable(key="profile:{0}", ttl=timedelta(minutes=5))
+    def load_profile(self, user_id: str) -> str:
+        return f"profile:{user_id}"
+
+    @cache_evict(key="profile:{0}")
+    def refresh_profile(self, user_id: str) -> None:
+        ...
+
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            Plugin(name="spakky-cache"),
+            Plugin(name="spakky-redis"),
+        }
+    )
+    .add(ProfileService)
+    .start()
+)
+
+profiles = app.container.get(type_=ProfileService)
+profiles.load_profile("42")
 ```
+
+`spakky-redis`는 `RedisCacheConfig`, `RedisCache`, actuator health/info extension을 Pod로 등록합니다. 서비스 코드는 cache backend를 직접 생성하지 않고 `spakky-cache` 어노테이션 또는 `ICache` 계약에 의존합니다.
 
 ## 설정
 
@@ -51,15 +77,15 @@ if isinstance(result, CacheHit):
 ## 비동기 사용
 
 ```python
-from spakky.cache import CacheHit
-from spakky.plugins.redis import RedisCache
+from spakky.cache import cacheable
+from spakky.core.stereotype.usecase import UseCase
 
-cache = RedisCache[int]()
-await cache.set_async("answer", 42)
 
-result = await cache.get_async("answer")
-if isinstance(result, CacheHit):
-    assert result.value == 42
+@UseCase()
+class AnswerService:
+    @cacheable(key="answer:{0}")
+    async def load_answer(self, question_id: str) -> int:
+        return 42
 ```
 
 ## 계약 참고

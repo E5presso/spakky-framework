@@ -1,6 +1,7 @@
 # Spakky Auth
 
-[Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 provider-neutral 인증/인가 core package입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 provider-neutral 인증/인가 core package입니다.
+> Inbound adapter와 provider plugin이 같은 auth context, requirement, capability contract를 공유하게 합니다.
 
 ## 설치
 
