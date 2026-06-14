@@ -1,6 +1,6 @@
 [project]
 name = "spakky"
-version = "6.5.0"
+version = "6.6.0"
 description = "Core module for Spakky framework to support DI/IoC, AOP, Plugin system, and more."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -12,32 +12,32 @@ dependencies = [
 
 [project.optional-dependencies]
 minimal = []
-domain = ["spakky-domain>=6.5.0"]
-data = ["spakky-data>=6.5.0"]
-event = ["spakky-event>=6.5.0"]
-task = ["spakky-task>=6.5.0"]
-agent-core = ["spakky-agent>=6.5.0"]
-actuator = ["spakky-actuator>=6.5.0"]
-cache-core = ["spakky-cache>=6.5.0"]
-tracing = ["spakky-tracing>=6.5.0"]
-outbox = ["spakky-outbox>=6.5.0"]
-auth = ["spakky-auth>=6.5.0"]
-logging = ["spakky-logging>=6.5.0"]
-cryptography = ["spakky-cryptography>=6.5.0"]
-oidc = ["spakky-oidc>=6.5.0"]
-policy = ["spakky-policy>=6.5.0"]
-openfga = ["spakky-openfga>=6.5.0"]
-fastapi = ["spakky-fastapi>=6.5.0"]
-typer = ["spakky-typer>=6.5.0"]
-rabbitmq = ["spakky-rabbitmq>=6.5.0"]
-kafka = ["spakky-kafka>=6.5.0"]
-sqlalchemy = ["spakky-sqlalchemy>=6.5.0"]
-celery = ["spakky-celery>=6.5.0"]
-opentelemetry = ["spakky-opentelemetry>=6.5.0"]
-grpc = ["spakky-grpc>=6.5.0"]
-redis = ["spakky-redis>=6.5.0"]
-vllm = ["spakky-vllm>=6.5.0"]
-saga = ["spakky-saga>=6.5.0"]
+domain = ["spakky-domain>=6.6.0"]
+data = ["spakky-data>=6.6.0"]
+event = ["spakky-event>=6.6.0"]
+task = ["spakky-task>=6.6.0"]
+agent-core = ["spakky-agent>=6.6.0"]
+actuator = ["spakky-actuator>=6.6.0"]
+cache-core = ["spakky-cache>=6.6.0"]
+tracing = ["spakky-tracing>=6.6.0"]
+outbox = ["spakky-outbox>=6.6.0"]
+auth = ["spakky-auth>=6.6.0"]
+logging = ["spakky-logging>=6.6.0"]
+cryptography = ["spakky-cryptography>=6.6.0"]
+oidc = ["spakky-oidc>=6.6.0"]
+policy = ["spakky-policy>=6.6.0"]
+openfga = ["spakky-openfga>=6.6.0"]
+fastapi = ["spakky-fastapi>=6.6.0"]
+typer = ["spakky-typer>=6.6.0"]
+rabbitmq = ["spakky-rabbitmq>=6.6.0"]
+kafka = ["spakky-kafka>=6.6.0"]
+sqlalchemy = ["spakky-sqlalchemy>=6.6.0"]
+celery = ["spakky-celery>=6.6.0"]
+opentelemetry = ["spakky-opentelemetry>=6.6.0"]
+grpc = ["spakky-grpc>=6.6.0"]
+redis = ["spakky-redis>=6.6.0"]
+vllm = ["spakky-vllm>=6.6.0"]
+saga = ["spakky-saga>=6.6.0"]
 web = [
     "spakky[fastapi]>=6.5.0",
     "spakky[logging]>=6.5.0",
@@ -47,8 +47,8 @@ cli = [
     "spakky[logging]>=6.5.0",
 ]
 database = [
-    "spakky-domain>=6.5.0",
-    "spakky-data>=6.5.0",
+    "spakky-domain>=6.6.0",
+    "spakky-data>=6.6.0",
     "spakky[sqlalchemy]>=6.5.0",
 ]
 database-postgres = [
@@ -56,16 +56,16 @@ database-postgres = [
     "psycopg[binary]>=3.3.3",
 ]
 events-rabbitmq = [
-    "spakky-event>=6.5.0",
+    "spakky-event>=6.6.0",
     "spakky[rabbitmq]>=6.5.0",
 ]
 events-kafka = [
-    "spakky-event>=6.5.0",
+    "spakky-event>=6.6.0",
     "spakky[kafka]>=6.5.0",
 ]
 events-outbox-sqlalchemy = [
-    "spakky-event>=6.5.0",
-    "spakky-outbox>=6.5.0",
+    "spakky-event>=6.6.0",
+    "spakky-outbox>=6.6.0",
     "spakky[sqlalchemy]>=6.5.0",
 ]
 event-driven = [
@@ -74,28 +74,28 @@ event-driven = [
     "spakky[events-outbox-sqlalchemy]>=6.5.0",
 ]
 worker = [
-    "spakky-task>=6.5.0",
+    "spakky-task>=6.6.0",
     "spakky[celery]>=6.5.0",
 ]
 security = [
-    "spakky-auth>=6.5.0",
+    "spakky-auth>=6.6.0",
     "spakky[cryptography]>=6.5.0",
     "spakky[oidc]>=6.5.0",
     "spakky[policy]>=6.5.0",
     "spakky[openfga]>=6.5.0",
 ]
 observability = [
-    "spakky-actuator>=6.5.0",
+    "spakky-actuator>=6.6.0",
     "spakky[logging]>=6.5.0",
-    "spakky-tracing>=6.5.0",
+    "spakky-tracing>=6.6.0",
     "spakky[opentelemetry]>=6.5.0",
 ]
 cache-app = [
-    "spakky-cache>=6.5.0",
+    "spakky-cache>=6.6.0",
     "spakky[redis]>=6.5.0",
 ]
 agent = [
-    "spakky-agent>=6.5.0",
+    "spakky-agent>=6.6.0",
     "spakky[vllm]>=6.5.0",
     "spakky[sqlalchemy]>=6.5.0",
 ]
@@ -105,17 +105,17 @@ recommended = [
     "spakky[observability]>=6.5.0",
 ]
 full = [
-    "spakky-actuator>=6.5.0",
-    "spakky-agent>=6.5.0",
-    "spakky-auth>=6.5.0",
-    "spakky-cache>=6.5.0",
-    "spakky-data>=6.5.0",
-    "spakky-domain>=6.5.0",
-    "spakky-event>=6.5.0",
-    "spakky-outbox>=6.5.0",
-    "spakky-saga>=6.5.0",
-    "spakky-task>=6.5.0",
-    "spakky-tracing>=6.5.0",
+    "spakky-actuator>=6.6.0",
+    "spakky-agent>=6.6.0",
+    "spakky-auth>=6.6.0",
+    "spakky-cache>=6.6.0",
+    "spakky-data>=6.6.0",
+    "spakky-domain>=6.6.0",
+    "spakky-event>=6.6.0",
+    "spakky-outbox>=6.6.0",
+    "spakky-saga>=6.6.0",
+    "spakky-task>=6.6.0",
+    "spakky-tracing>=6.6.0",
     "spakky[celery]>=6.5.0",
     "spakky[cryptography]>=6.5.0",
     "spakky[fastapi]>=6.5.0",

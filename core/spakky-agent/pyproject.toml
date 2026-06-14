@@ -1,12 +1,12 @@
 [project]
 name = "spakky-agent"
-version = "6.5.0"
+version = "6.6.0"
 description = "Agentic hexagonal architecture contracts for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=6.5.0"]
+dependencies = ["spakky>=6.6.0"]
 
 [dependency-groups]
 dev = [

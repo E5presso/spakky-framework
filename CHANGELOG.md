@@ -1,3 +1,93 @@
+## v6.6.0 (2026-06-14)
+
+### Feat
+
+- **core**: add curated package extras
+- add new authentication and authorization plugins
+- **celery**: add auth snapshot task boundary (#292) (#326)
+- **rabbitmq**: add auth snapshot consumer boundary (#294) (#325)
+- **kafka**: add auth snapshot consumer boundary (#324)
+- **openfga**: add OpenFGA auth provider (#287) (#317)
+- **task**: add auth-aware direct task execution (#322)
+- **saga**: add auth snapshot protected step enforcement (#296) (#321)
+- **event**: propagate signed auth snapshots (#320)
+- **policy**: add authz policy evaluator (#319)
+- **typer**: integrate auth boundary enforcement (#318)
+- **fastapi**: integrate auth boundary seeding (#316)
+- **oidc**: add bearer auth provider (#285)
+- **grpc**: add auth boundary integration (#289) (#314)
+- **cryptography**: add auth snapshot provider (#310)
+- **harness**: add shared runtime gates
+- **adr**: add ADR-0012 for contribution routing policy
+- **auth**: add capability startup validation (#309)
+- **auth**: add auth decorator metadata and enforcement (#308)
+- **auth**: define provider port contracts (#281) (#307)
+- **auth**: define core auth semantic model (#280) (#306)
+- **auth**: register spakky-auth package (#279) (#305)
+- **vllm**: pass through chat template kwargs
+- **agent**: add inbound adapter stream examples (#238) (#270)
+- **agent**: add CodeAssistant building-block demo (#237) (#269)
+- **agent**: add bounded streaming redaction audit (#268)
+- **agent**: add sensitive metadata guards (#266)
+- **agent**: add cancellation cleanup lifecycle contracts (#264)
+- **agent**: add risk-boundary approval workflow (#265)
+- **agent**: add context optimization signals (#263)
+- **vllm**: constrain tool structured outputs (#262)
+- **agent**: add action boundary resume contracts (#224) (#261)
+- **agent**: bind structured tool invocation payloads (#219) (#260)
+- **agent**: add delegation contracts (#232) (#255)
+- **agent**: add tool execution metadata contracts (#220) (#256)
+- **vllm**: implement streaming model calls (#259)
+- **agent**: generate agent tool schemas (#258)
+- **agent**: enforce durable persistence contribution (#257)
+- **agent**: add non-blocking signal consumption (#254)
+- **vllm**: add vLLM model adapter plugin (#225)
+- **agent**: add agent tool descriptor discovery (#253)
+- **sqlalchemy**: add agent persistence contribution (#222)
+- **agent**: define AgentYield stream contracts
+- **agent**: add typed context pack contracts (#249)
+- **agent**: add Agent pod stereotype (#214) (#247)
+- **agent**: define state signal evidence contracts (#221)
+- **agent**: define typed model stream contracts (#245)
+- **agent**: add core package contracts (#241)
+- **core**: report contribution startup diagnostics (#194) (#201)
+- **sqlalchemy**: move outbox registration to contribution (#192) (#199)
+- **core**: filter contributions by active provider (#200)
+- **core**: load active feature contributions (#198)
+- **core**: resolve DI collection candidates (#176)
+- **core**: parse collection dependency metadata (#175)
+- **core**: add DI binding policy API (#177)
+- **di**: add ambiguity diagnostics (#174)
+- **di**: update feature requirements and clarify parameter name matching priority
+- **adr**: add ADR-0009 for Agentic Hexagonal Architecture and document DI multi-implementation resolution
+
+### Fix
+
+- **harness**: fail on pyrefly warnings
+- clear pyrefly warning diagnostics
+- **harness**: restore monitor pr merge gates
+- **oidc**: accept retained multi-audience claims (#384)
+- **messaging**: align event routing and rabbitmq ack handling (#383)
+- **core**: tighten startup diagnostics and qualifier resolution (#380)
+- **saga**: reject invalid compensation builders (#372)
+- **redis**: reacquire stampede lock while waiting (#371)
+- **fastapi**: support sync route handler results (#369)
+- **sqlalchemy**: declare pydantic settings dependency (#368)
+- **agent**: surface code assistant model stream errors (#367)
+- keep vllm tool schemas request-local (#363)
+- rollback started services on startup failure (#362)
+- include default opentelemetry otlp exporter (#361)
+- detect clean auto-merge monitor stalls (#304)
+- **harness**: guard apply_patch worktree routing (#244) (#248)
+- **harness**: guard process-ticket worktree isolation (#243)
+- enforce 100 percent coverage gate
+- dedupe autopilot meta issue sweep (#184)
+- enforce process-ticket auto-merge continuation (#189)
+
+### Refactor
+
+- modernize python 3.12 typing style
+
 ## v6.5.0 (2026-05-04)
 
 ### Feat
