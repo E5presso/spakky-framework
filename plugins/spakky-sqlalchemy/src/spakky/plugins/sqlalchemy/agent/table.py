@@ -1,7 +1,7 @@
 """SQLAlchemy schema mappings for spakky-agent persistence contracts."""
 
 from datetime import datetime
-from typing import Self, cast
+from typing import Self
 
 from spakky.agent.evidence import AgentEvidence, AgentEvidenceKind
 from spakky.agent.execution import AgentSignalKind
@@ -87,7 +87,7 @@ class AgentStateTable(AbstractMappableTable[AgentState]):
             pending_signal_count=self.pending_signal_count,
             last_event_cursor=self.last_event_cursor,
             recovery_marker=self.recovery_marker,
-            metadata=cast(JsonObject, self.metadata_json),
+            metadata=self.metadata_json,
             created_at=self.created_at,
             updated_at=self.updated_at,
         )
@@ -134,7 +134,7 @@ class AgentSignalTable(AbstractMappableTable[AgentSignal]):
             id=self.id,
             agent_state_id=self.agent_state_id,
             kind=AgentSignalKind(self.kind),
-            payload=cast(JsonObject, self.payload),
+            payload=self.payload,
             created_at=self.created_at,
         )
 
@@ -181,7 +181,7 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
             id=self.id,
             agent_state_id=self.agent_state_id,
             kind=AgentEvidenceKind(self.kind),
-            payload=cast(JsonObject, self.payload),
+            payload=self.payload,
             summary=self.summary,
             digest=self.digest,
             manifest_ref=self.manifest_ref,

@@ -6,7 +6,6 @@ and ``@rpc``-decorated controller methods into protobuf
 """
 
 from inspect import getmembers, isfunction
-from typing import cast
 
 from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
@@ -60,7 +59,7 @@ def build_message_descriptor(
         field_desc = FieldDescriptorProto(
             name=field_name,
             number=proto_field.number,
-            type=cast(FieldDescriptorProto.Type.ValueType, resolved.proto_type),
+            type=resolved.proto_type,
         )
 
         if resolved.is_repeated:

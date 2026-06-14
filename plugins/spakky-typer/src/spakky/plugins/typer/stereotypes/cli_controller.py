@@ -7,7 +7,6 @@ with automatic command registration and the @command decorator for methods.
 from dataclasses import dataclass
 from typing import Any
 from collections.abc import Callable
-from typing import cast
 
 from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
@@ -137,4 +136,4 @@ class CliController(Pod):
         """
         if self.group_name is None:
             self.group_name = pascal_to_kebab(obj.__name__)
-        return cast(type[T], super().__call__(obj))
+        return super().__call__(obj)

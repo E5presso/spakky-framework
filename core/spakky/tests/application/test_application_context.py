@@ -1829,7 +1829,7 @@ def test_application_context_start_failure_expect_retry_without_partial_caches()
     try:
         consumer = context.get(FailingConsumer)
 
-        assert context.is_started is True
+        assert context.is_started
         assert len(singleton_instances) == 2
         assert len(context_instances) == 2
         assert consumer.singleton is singleton_instances[-1]

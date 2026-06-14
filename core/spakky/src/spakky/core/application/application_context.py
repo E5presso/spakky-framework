@@ -541,33 +541,30 @@ class ApplicationContext(IApplicationContext):
         dependency_path: tuple[PodDependencyPathNode, ...],
     ) -> object:
         """Get or create an instance for an already resolved Pod candidate."""
-        match pod.scope:
-            case Pod.Scope.SINGLETON:
-                if (cached := self.__get_singleton_cache(pod)) is not None:
+        if pod.scope is Pod.Scope.SINGLETON:
+            if (cached := self.__get_singleton_cache(pod)) is not None:
+                return cached
+            with self.__singleton_lock:
+                if (cached := self.__singleton_cache.get(pod.name)) is not None:
                     return cached
-                with self.__singleton_lock:
-                    if (cached := self.__singleton_cache.get(pod.name)) is not None:
-                        return cached
-                    instance = self.__instantiate_pod(
-                        pod,
-                        dependency_hierarchy,
-                        dependency_path,
-                    )
-                    self.__set_singleton_cache(pod, instance)
-                    return instance
-            case Pod.Scope.CONTEXT:
-                if (cached := self.__get_context_cache(pod)) is not None:
-                    return cached
-
+                instance = self.__instantiate_pod(
+                    pod,
+                    dependency_hierarchy,
+                    dependency_path,
+                )
+                self.__set_singleton_cache(pod, instance)
+                return instance
+        if pod.scope is Pod.Scope.CONTEXT:
+            if (cached := self.__get_context_cache(pod)) is not None:
+                return cached
         instance = self.__instantiate_pod(
             pod,
             dependency_hierarchy,
             dependency_path,
         )
 
-        match pod.scope:
-            case Pod.Scope.CONTEXT:
-                self.__set_context_cache(pod, instance)
+        if pod.scope is Pod.Scope.CONTEXT:
+            self.__set_context_cache(pod, instance)
 
         return instance
 
@@ -593,16 +590,15 @@ class ApplicationContext(IApplicationContext):
             )
             for pod in pods
         ]
-        match dependency.collection_kind:
-            case DependencyCollectionKind.LIST:
-                return instances
-            case DependencyCollectionKind.TUPLE:
-                return tuple(instances)
-            case DependencyCollectionKind.DICT:
-                return {
-                    pod.name: instance
-                    for pod, instance in zip(pods, instances, strict=True)
-                }
+        if dependency.collection_kind is DependencyCollectionKind.LIST:
+            return instances
+        if dependency.collection_kind is DependencyCollectionKind.TUPLE:
+            return tuple(instances)
+        if dependency.collection_kind is DependencyCollectionKind.DICT:
+            return {
+                pod.name: instance
+                for pod, instance in zip(pods, instances, strict=True)
+            }
         return None
 
     def __record_instantiation_attempt(self, elapsed_seconds: float) -> None:

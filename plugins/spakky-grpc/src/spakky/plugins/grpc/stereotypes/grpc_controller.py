@@ -5,7 +5,6 @@ controllers with automatic service registration and protobuf package configurati
 """
 
 from dataclasses import dataclass
-from typing import cast
 
 from spakky.core.stereotype.controller import Controller
 
@@ -44,4 +43,4 @@ class GrpcController(Controller):
         """
         if self.service_name is None:
             self.service_name = obj.__name__
-        return cast(type[T], super().__call__(obj))
+        return super().__call__(obj)
