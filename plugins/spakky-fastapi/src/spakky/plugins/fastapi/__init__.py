@@ -19,6 +19,16 @@ Example:
 """
 
 from spakky.core.application.plugin import Plugin
+from spakky.plugins.fastapi.config import (
+    SPAKKY_FASTAPI_CONFIG_ENV_PREFIX,
+    FastAPIConfig,
+)
 
 PLUGIN_NAME = Plugin(name="spakky-fastapi")
 """Plugin identifier for the FastAPI integration."""
+
+__all__ = (
+    "FastAPIConfig",
+    "PLUGIN_NAME",
+    "SPAKKY_FASTAPI_CONFIG_ENV_PREFIX",
+)

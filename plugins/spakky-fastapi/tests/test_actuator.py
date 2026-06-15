@@ -35,19 +35,11 @@ EMPTY_STARTUP_INFO = {
 
 
 def _start_app() -> FastAPI:
-    @Pod(name="api")
-    def get_api() -> FastAPI:
-        return FastAPI(debug=True)
-
-    app = (
-        SpakkyApplication(ApplicationContext())
-        .load_plugins(
-            include={
-                ACTUATOR_PLUGIN_NAME,
-                spakky.plugins.fastapi.PLUGIN_NAME,
-            }
-        )
-        .add(get_api)
+    app = SpakkyApplication(ApplicationContext()).load_plugins(
+        include={
+            ACTUATOR_PLUGIN_NAME,
+            spakky.plugins.fastapi.PLUGIN_NAME,
+        }
     )
     app.start()
     return app.container.get(type_=FastAPI)
@@ -99,10 +91,6 @@ def test_actuator_endpoints_output_core_public_result_shape() -> None:
         def contribute_info(self) -> Mapping[str, object]:
             return {"app": "fastapi", "version": "test"}
 
-    @Pod(name="api")
-    def get_api() -> FastAPI:
-        return FastAPI(debug=True)
-
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(
@@ -111,7 +99,6 @@ def test_actuator_endpoints_output_core_public_result_shape() -> None:
                 spakky.plugins.fastapi.PLUGIN_NAME,
             }
         )
-        .add(get_api)
         .add(HttpProbe)
         .add(HttpInfoContributor)
     )
@@ -250,10 +237,6 @@ def test_unhealthy_readiness_returns_service_unavailable() -> None:
         def check(self) -> ComponentHealthResult:
             return ComponentHealthResult.unhealthy(self.name)
 
-    @Pod(name="api")
-    def get_api() -> FastAPI:
-        return FastAPI(debug=True)
-
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(
@@ -262,7 +245,6 @@ def test_unhealthy_readiness_returns_service_unavailable() -> None:
                 spakky.plugins.fastapi.PLUGIN_NAME,
             }
         )
-        .add(get_api)
         .add(UnhealthyReadinessProbe)
     )
     app.start()

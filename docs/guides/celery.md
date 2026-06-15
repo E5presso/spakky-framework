@@ -172,14 +172,8 @@ value = result.get()
 `spakky-auth` snapshot propagation을 활성화하면 Celery dispatch 경계는 현재 `AuthContext`를 signed snapshot으로 전파합니다.
 
 ```python
-from spakky.auth import AuthSnapshotPropagationConfig, require_scope
-from spakky.core.pod.annotations.pod import Pod
+from spakky.auth import require_scope
 from spakky.task import TaskHandler, task
-
-
-@Pod()
-def auth_snapshot_propagation_config() -> AuthSnapshotPropagationConfig:
-    return AuthSnapshotPropagationConfig(enabled=True)
 
 
 @TaskHandler()
@@ -190,6 +184,7 @@ class ReportTasks:
         ...
 ```
 
+- `SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`로 활성화합니다.
 - dispatch aspect는 Celery task header `spakky.auth.context_snapshot`에 signed `AuthContextSnapshot` envelope를 저장합니다.
 - worker endpoint는 `clear_context()` 후 Celery task context key를 설정하고, 보호된 task 실행 전에 snapshot을 검증해 `AuthContext`를 seed합니다.
 - snapshot missing / invalid / expired는 `CHALLENGE` task failure, requirement `DENY`는 task failure, verifier/provider unavailable `ERROR`는 Celery retryable task error로 처리됩니다.

@@ -55,6 +55,18 @@ def test_bind_server_with_non_spec_pod_expect_pod_returned_and_no_service_regist
     harness.application_context.add_service.assert_not_called()
 
 
+def test_bind_server_with_unbound_spec_expect_no_service_registered(
+    harness: BindServerHarness,
+) -> None:
+    """Spec without bind addresses should not start a network listener."""
+    spec = GrpcServerSpec()
+
+    result = harness.processor.post_process(spec)
+
+    assert result is spec
+    harness.application_context.add_service.assert_not_called()
+
+
 async def test_bind_server_with_spec_pod_expect_service_wrapping_spec_added_to_context(
     harness: BindServerHarness,
 ) -> None:
@@ -62,6 +74,7 @@ async def test_bind_server_with_spec_pod_expect_service_wrapping_spec_added_to_c
     built_server = MagicMock(spec=grpc.aio.Server)
     built_server.start = AsyncMock()
     spec = MagicMock(spec=GrpcServerSpec)
+    spec.bind_addresses = ["127.0.0.1:50051"]
     spec.build = MagicMock(return_value=built_server)
 
     result = harness.processor.post_process(spec)

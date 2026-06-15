@@ -136,6 +136,9 @@ class BindServerPostProcessor(
         """
         if not isinstance(pod, GrpcServerSpec):
             return pod
+        if not pod.bind_addresses:
+            logger.info("Skipped gRPC server lifecycle binding; no bind address set")
+            return pod
 
         service = GrpcServerService(pod)
         service.set_stop_event(self.__application_context.task_stop_event)

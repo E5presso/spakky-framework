@@ -924,7 +924,7 @@ class GetUserRequest(BaseModel):
 
 ### DescriptorRegistry
 
-protobuf descriptor를 캐싱하고 관리하는 레지스트리. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다. `RegisterServicesPostProcessor`가 `container.get(DescriptorRegistry)`로 조회하므로 사용자가 `@Pod()`으로 반드시 등록해야 합니다.
+protobuf descriptor를 캐싱하고 관리하는 레지스트리. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다. `spakky-grpc` 플러그인이 기본 Pod로 등록하므로 사용자는 listener 주소 같은 애플리케이션 설정만 제공합니다.
 
 ---
 

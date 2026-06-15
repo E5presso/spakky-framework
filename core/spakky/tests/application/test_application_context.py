@@ -566,6 +566,74 @@ def test_application_context_binding_to_type_precedes_primary_expect_bound_type(
     assert context.get(type_=ISamplePod).do() == "pydantic-ai"
 
 
+def test_application_context_resolves_parameterized_generic_dependency_by_origin() -> (
+    None
+):
+    """Generic port 구현체를 parameterized 의존성에 주입할 수 있음을 검증한다."""
+
+    class IGenericPort[T]:
+        def value(self) -> T:
+            raise NotImplementedError
+
+    @Pod()
+    class StringGenericPort(IGenericPort[str]):
+        def value(self) -> str:
+            return "resolved"
+
+    @Pod()
+    class GenericConsumer:
+        __port: IGenericPort[object]
+
+        def __init__(self, port: IGenericPort[object]) -> None:
+            self.__port = port
+
+        def value(self) -> object:
+            return self.__port.value()
+
+    context = ApplicationContext()
+    context.add(StringGenericPort)
+    context.add(GenericConsumer)
+    context.start()
+
+    assert context.get(GenericConsumer).value() == "resolved"
+
+
+def test_application_context_prefers_exact_parameterized_generic_candidate() -> None:
+    """Generic port 후보가 여럿이면 정확한 specialization을 먼저 선택한다."""
+
+    class IGenericPort[T]:
+        def value(self) -> T:
+            raise NotImplementedError
+
+    @Pod()
+    class StringGenericPort(IGenericPort[str]):
+        def value(self) -> str:
+            return "string"
+
+    @Pod()
+    class IntegerGenericPort(IGenericPort[int]):
+        def value(self) -> int:
+            return 1
+
+    @Pod()
+    class StringConsumer:
+        __port: IGenericPort[str]
+
+        def __init__(self, port: IGenericPort[str]) -> None:
+            self.__port = port
+
+        def value(self) -> str:
+            return self.__port.value()
+
+    context = ApplicationContext()
+    context.add(StringGenericPort)
+    context.add(IntegerGenericPort)
+    context.add(StringConsumer)
+    context.start()
+
+    assert context.get(StringConsumer).value() == "string"
+
+
 def test_application_context_binding_to_name_precedes_legacy_parameter_name_expect_bound_name() -> (
     None
 ):

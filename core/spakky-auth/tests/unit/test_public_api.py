@@ -15,6 +15,7 @@ from spakky.auth import (
     INVALID_SNAPSHOT_DECISION,
     MISSING_SNAPSHOT_DECISION,
     PLUGIN_NAME,
+    SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX,
     VERIFICATION_PROVIDER_UNAVAILABLE_DECISION,
     AbstractSpakkyAuthError,
     AuthCapability,
@@ -49,6 +50,7 @@ from spakky.auth import (
     InvalidAuthContextValueError,
     ProtectedRequirement,
     PublicAccess,
+    effective_auth_snapshot_propagation_config,
     get_effective_auth_metadata,
     has_auth_boundary_metadata,
     protected,
@@ -76,6 +78,7 @@ def test_initialize_registers_authorization_aspects() -> None:
     initialize(app)
 
     pod_types = {pod.type_ for pod in app.container.pods.values()}
+    assert AuthSnapshotPropagationConfig in pod_types
     assert AuthCapabilityStartupValidationService in pod_types
     assert AuthorizationAspect in pod_types
     assert AsyncAuthorizationAspect in pod_types
@@ -107,6 +110,32 @@ def test_auth_startup_contracts_are_exported_from_package_root() -> None:
     assert error.startup_diagnostic_details[0].key == (
         AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY
     )
+
+
+def test_snapshot_propagation_config_loads_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        f"{SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX}ENABLED",
+        "true",
+    )
+
+    config = AuthSnapshotPropagationConfig()
+
+    assert config.enabled
+
+
+def test_effective_snapshot_propagation_config_enables_when_any_config_enabled() -> (
+    None
+):
+    config = effective_auth_snapshot_propagation_config(
+        (
+            AuthSnapshotPropagationConfig(enabled=False),
+            AuthSnapshotPropagationConfig(enabled=True),
+        )
+    )
+
+    assert config.enabled
 
 
 def test_credential_carrier_preserves_boundary_local_material() -> None:

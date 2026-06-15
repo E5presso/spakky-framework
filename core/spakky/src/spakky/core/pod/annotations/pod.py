@@ -376,6 +376,10 @@ class Pod(Annotation, IEquatable):
             or get_origin(annotation) is not None
         )
 
+    def __runtime_base_types(self, type_: type) -> set[type]:
+        """Return base types indexed by the runtime container."""
+        return set(generic_mro(type_))
+
     def __get_dependencies(self, obj: PodType) -> DependencyMap:
         """Extract dependency information from constructor or function parameters.
 
@@ -469,7 +473,7 @@ class Pod(Annotation, IEquatable):
         if not self.name:
             self.name = pascal_to_snake(obj.__name__)
         self.type_ = type_
-        self.base_types = set(generic_mro(type_))
+        self.base_types = self.__runtime_base_types(type_)
         self.target = obj
         self.dependencies = dependencies
 

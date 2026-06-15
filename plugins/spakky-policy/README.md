@@ -20,7 +20,6 @@ from fastapi import FastAPI
 from spakky.auth import protected, require_policy
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.fastapi.routes import get
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 import spakky.auth
@@ -37,11 +36,6 @@ class ArticleController:
         return {"id": article_id}
 
 
-@Pod()
-def get_api() -> FastAPI:
-    return FastAPI()
-
-
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(
@@ -51,7 +45,6 @@ app = (
             spakky.plugins.policy.PLUGIN_NAME,
         }
     )
-    .add(get_api)
     .add(ArticleController)
     .start()
 )

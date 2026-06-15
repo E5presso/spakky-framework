@@ -5,13 +5,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_readme_setup_expect_manual_fastapi_pod_registration() -> None:
-    """README must show that applications register the FastAPI Pod."""
+def test_readme_setup_explains_default_fastapi_app() -> None:
+    """README must show the plugin-provided FastAPI app path."""
     readme = (REPO_ROOT / "plugins/spakky-fastapi/README.md").read_text(
         encoding="utf-8"
     )
 
-    assert '@Pod(name="api")' in readme
-    assert "def get_api() -> FastAPI:" in readme
-    assert ".add(get_api)" in readme
-    assert "자동 등록합니다" not in readme
+    assert "`spakky-fastapi`는 기본 `FastAPI` 앱을 Pod로 제공합니다." in readme
+    assert "SPAKKY_FASTAPI_TITLE" in readme
+    assert ".add(custom_fastapi)" in readme
+    assert "Pod로 직접 등록해야 합니다" not in readme

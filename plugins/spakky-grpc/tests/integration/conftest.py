@@ -1,6 +1,7 @@
 """Integration-test fixtures booting a real ``grpc.aio.Server`` per test."""
 
 from collections.abc import AsyncIterator, Iterator
+from os import environ
 
 import grpc
 import grpc.aio
@@ -8,10 +9,10 @@ import pytest
 import pytest_asyncio
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 
 import spakky.plugins.grpc
 import spakky.tracing
+from spakky.plugins.grpc.config import SPAKKY_GRPC_CONFIG_ENV_PREFIX
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.server_spec import GrpcServerSpec
 from tests.integration import apps
@@ -28,25 +29,22 @@ def _build_app(*, with_tracing: bool) -> SpakkyApplication:
     if with_tracing:
         plugins.add(spakky.tracing.PLUGIN_NAME)
 
-    @Pod(name="grpc_server_spec")
-    def get_spec() -> GrpcServerSpec:
-        spec = GrpcServerSpec()
-        spec.add_insecure_port("127.0.0.1:0")
-        return spec
-
-    @Pod(name="descriptor_registry")
-    def get_registry() -> DescriptorRegistry:
-        return DescriptorRegistry()
-
-    app = (
-        SpakkyApplication(ApplicationContext())
-        .load_plugins(include=plugins)
-        .scan(apps)
-        .add(get_spec)
-        .add(get_registry)
-    )
-    app.start()
-    return app
+    bind_addresses_env = f"{SPAKKY_GRPC_CONFIG_ENV_PREFIX}BIND_ADDRESSES"
+    previous_bind_addresses = environ.get(bind_addresses_env)
+    environ[bind_addresses_env] = '["127.0.0.1:0"]'
+    try:
+        app = (
+            SpakkyApplication(ApplicationContext())
+            .load_plugins(include=plugins)
+            .scan(apps)
+        )
+        app.start()
+        return app
+    finally:
+        if previous_bind_addresses is None:
+            environ.pop(bind_addresses_env, None)
+        else:
+            environ[bind_addresses_env] = previous_bind_addresses
 
 
 def _port_of(app: SpakkyApplication) -> int:

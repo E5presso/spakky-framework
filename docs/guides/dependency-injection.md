@@ -172,9 +172,9 @@ assert service_a is service_b  # 같은 인스턴스
 def get_database_url() -> str:
     return "postgresql://localhost/mydb"
 
-@Pod(name="api")
-def get_api() -> FastAPI:
-    return FastAPI(debug=True)
+@Pod(name="read_model_schema")
+def get_read_model_schema() -> str:
+    return "public"
 ```
 
 함수 파라미터도 클래스 생성자와 동일하게 **자동 주입**됩니다. 반환 타입이 Pod의 타입이 됩니다.

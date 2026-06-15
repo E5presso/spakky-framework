@@ -40,7 +40,7 @@ Auth decorator가 없는 command는 provider가 없어도 실행됩니다.
 
 같은 프로세스에서 직접 task를 실행하면 현재 request/context scope를 그대로 사용합니다. `ApplicationContext`를 비우지 않고, snapshot도 요구하지 않으며, task method에 `AuthContext`를 인자로 넘기지도 않습니다. Auth decorator metadata는 task route로 복사되므로 queue adapter가 worker 실행 시점에 같은 요구사항을 강제할 수 있습니다.
 
-`AuthSnapshotPropagationConfig(enabled=True)`가 등록되어 있고 현재 context에 `AuthContext`가 있으면, Celery dispatch aspect는 task header에 signed snapshot metadata를 넣습니다. Header key는 `spakky.auth.context_snapshot`입니다. 전파가 켜져 있고 context도 있는데 signer가 없으면 dispatch는 조용히 넘어가지 않고 실패합니다.
+`SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`로 snapshot propagation이 활성화되어 있고 현재 context에 `AuthContext`가 있으면, Celery dispatch aspect는 task header에 signed snapshot metadata를 넣습니다. Header key는 `spakky.auth.context_snapshot`입니다. 전파가 켜져 있고 context도 있는데 signer가 없으면 dispatch는 조용히 넘어가지 않고 실패합니다.
 
 보호된 worker task는 사용자 코드가 실행되기 전에 snapshot을 검증하고 `AuthContext`를 저장한 뒤 task metadata를 평가합니다. Snapshot이 없거나 잘못되었거나 만료되면 `CHALLENGE`로 처리됩니다. Verifier를 사용할 수 없으면 `ERROR`가 되며, `is_retryable_auth_failure()`로 재시도 가능한 실패인지 확인할 수 있습니다.
 
@@ -99,7 +99,7 @@ Startup validation은 plugin loading과 scan 뒤, service start 전에 실행됩
 
 - 보호된 metadata가 있으면 `AUTHENTICATION` provider가 정확히 하나 필요합니다.
 - `@require_permission`, `@require_role`, `@require_scope`, `@require_policy`, `@require_relation`은 각각 일치하는 provider capability가 정확히 하나 필요합니다.
-- 활성화된 `AuthSnapshotPropagationConfig`에는 `SNAPSHOT_SIGN` provider와 `SNAPSHOT_VERIFY` provider가 각각 정확히 하나 필요합니다.
+- 활성화된 snapshot propagation 설정에는 `SNAPSHOT_SIGN` provider와 `SNAPSHOT_VERIFY` provider가 각각 정확히 하나 필요합니다.
 - 보호된 사용처가 없고 snapshot propagation config도 켜져 있지 않다면 provider가 없어도 fatal하지 않습니다.
 
 Provider가 0개이거나 2개 이상이면 `AuthStartupCapabilityValidationError`가 발생하고 `auth.capability.validation.error` startup diagnostic detail이 기록됩니다. Runtime non-ALLOW decision은 `AuthRequirementDeniedError.decision`에 보존되므로 adapter가 `CHALLENGE`, `DENY`, `ERROR`를 transport별 응답으로 매핑할 수 있습니다.

@@ -32,6 +32,12 @@ gRPC 서비스 컨트롤러 통합 — code-first, 타입 안전 프로토콜 �
     options:
       show_root_heading: false
 
+## 설정
+
+::: spakky.plugins.grpc.config
+    options:
+      show_root_heading: false
+
 ## 서버 명세
 
 ::: spakky.plugins.grpc.server_spec

@@ -140,7 +140,7 @@ app = (
 | metadata | 조건 | 설명 |
 |----------|------|------|
 | `traceparent` | `spakky-tracing` propagator 활성 | 기존 W3C tracing header를 보존합니다. |
-| `spakky.auth.context_snapshot` | `AuthSnapshotPropagationConfig(enabled=True)` + request-scope `AuthContext` + snapshot signer provider | raw bearer token 대신 signed `AuthContextSnapshot` envelope를 전파합니다. |
+| `spakky.auth.context_snapshot` | `SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true` + request-scope `AuthContext` + snapshot signer provider | raw bearer token 대신 signed `AuthContextSnapshot` envelope를 전파합니다. |
 
 `Authorization: Bearer ...` 같은 raw bearer credential은 event header로 전파하지 않습니다.
 

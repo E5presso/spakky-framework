@@ -85,7 +85,9 @@ def test_enabled_propagation_without_application_context_fails_loudly() -> None:
     """enabled 상태에서 ApplicationContext가 없으면 조용히 누락하지 않는다."""
     injector = AuthContextSnapshotHeaderInjector(
         auth_snapshot_signer=FakeSnapshotSigner(),
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
 
     with pytest.raises(AuthSnapshotPropagationContextUnavailableError):
@@ -97,7 +99,9 @@ def test_enabled_propagation_without_auth_context_skips_snapshot() -> None:
     signer = FakeSnapshotSigner()
     injector = AuthContextSnapshotHeaderInjector(
         auth_snapshot_signer=signer,
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
     injector.set_application_context(ApplicationContext())
     headers: dict[str, str] = {}
@@ -114,7 +118,9 @@ def test_enabled_propagation_with_invalid_context_value_fails() -> None:
     application_context.set_context_value(AUTH_CONTEXT_CONTEXT_KEY, "invalid")
     injector = AuthContextSnapshotHeaderInjector(
         auth_snapshot_signer=FakeSnapshotSigner(),
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
     injector.set_application_context(application_context)
 
@@ -127,7 +133,9 @@ def test_enabled_propagation_without_signer_fails_loudly() -> None:
     application_context = ApplicationContext()
     store_auth_context(application_context, _auth_context())
     injector = AuthContextSnapshotHeaderInjector(
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
     injector.set_application_context(application_context)
 
@@ -142,7 +150,9 @@ def test_enabled_propagation_injects_signed_snapshot_envelope() -> None:
     signer = FakeSnapshotSigner()
     injector = AuthContextSnapshotHeaderInjector(
         auth_snapshot_signer=signer,
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
     injector.set_application_context(application_context)
     headers: dict[str, str] = {}

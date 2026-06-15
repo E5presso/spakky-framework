@@ -11,7 +11,7 @@ dependencies = ["spakky-domain>=6.7.0"]
 spakky-data = "spakky.data.main:initialize"
 
 [build-system]
-requires = ["uv_build>=0.10.10,<0.11.0"]
+requires = ["uv_build>=0.10.10,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

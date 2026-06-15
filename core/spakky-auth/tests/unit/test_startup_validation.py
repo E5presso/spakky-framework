@@ -11,6 +11,7 @@ from spakky.auth import (
     AuthCapabilityStartupValidationService,
     AuthStartupCapabilityValidationError,
     AuthStartupContainerUnavailableError,
+    SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX,
     protected,
     require_permission,
     require_policy,
@@ -266,6 +267,30 @@ def test_auth_startup_validation_rejects_enabled_snapshot_propagation_without_pr
     app = SpakkyApplication(context)
     initialize(app)
     app.add(enabled_snapshot_propagation_config)
+
+    try:
+        with pytest.raises(AuthStartupCapabilityValidationError) as raised:
+            app.start()
+    finally:
+        if context.is_started:
+            app.stop()
+
+    assert {item.capability for item in raised.value.diagnostics} == {
+        AuthCapability.SNAPSHOT_SIGN,
+        AuthCapability.SNAPSHOT_VERIFY,
+    }
+
+
+def test_auth_startup_validation_rejects_env_enabled_snapshot_propagation_without_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        f"{SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX}ENABLED",
+        "true",
+    )
+    context = ApplicationContext()
+    app = SpakkyApplication(context)
+    initialize(app)
 
     try:
         with pytest.raises(AuthStartupCapabilityValidationError) as raised:

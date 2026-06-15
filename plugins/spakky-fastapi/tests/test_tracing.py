@@ -165,10 +165,6 @@ def test_post_processor_with_tracing_plugin_expect_traceparent_in_response() -> 
     def get_name() -> str:
         return "test"
 
-    @Pod(name="api")
-    def get_api() -> FastAPI:
-        return FastAPI(debug=True)
-
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(
@@ -179,7 +175,6 @@ def test_post_processor_with_tracing_plugin_expect_traceparent_in_response() -> 
         )
         .scan(apps)
         .add(get_name)
-        .add(get_api)
     )
     app.start()
 
@@ -206,10 +201,6 @@ def test_post_processor_without_tracing_plugin_expect_no_traceparent() -> None:
     def get_name() -> str:
         return "test"
 
-    @Pod(name="api")
-    def get_api() -> FastAPI:
-        return FastAPI(debug=True)
-
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(
@@ -219,7 +210,6 @@ def test_post_processor_without_tracing_plugin_expect_no_traceparent() -> None:
         )
         .scan(apps)
         .add(get_name)
-        .add(get_api)
     )
     app.start()
 

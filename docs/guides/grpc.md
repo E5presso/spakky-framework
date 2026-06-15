@@ -21,31 +21,20 @@
 pip install spakky-grpc
 ```
 
-`spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`, `protobuf`, `pydantic>=2.4`에 의존합니다.
+`spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`, `protobuf`, `pydantic>=2.4`, `pydantic-settings`에 의존합니다.
 
-`GrpcServerSpec`과 `DescriptorRegistry` Pod를 **둘 다** 등록해야 합니다. PostProcessor가 인터셉터와 서비스 핸들러를 spec에 누적하고, `RegisterServicesPostProcessor`가 컨테이너에서 `DescriptorRegistry`를 조회(`container.get(DescriptorRegistry)`)하여 생성된 protobuf descriptor를 등록하므로 `DescriptorRegistry` Pod는 **필수**입니다. `start()` 호출 시 ApplicationContext의 이벤트 루프에서 실제 `grpc.aio.Server`가 생성·구동됩니다.
+`spakky-grpc` 플러그인은 `GrpcConfig`, `GrpcServerSpec`, `DescriptorRegistry`를 기본 Pod로 등록합니다. 서버를 리슨하려면 bind address를 환경변수로 지정합니다. bind address가 비어 있으면 descriptor와 handler 등록은 가능하지만 네트워크 listener는 열지 않습니다.
+
+```bash
+export SPAKKY_GRPC_BIND_ADDRESSES='["127.0.0.1:50051"]'
+```
 
 ```python
 import spakky.plugins.grpc
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
-from spakky.plugins.grpc.schema.registry import DescriptorRegistry
-from spakky.plugins.grpc.server_spec import GrpcServerSpec
 
 import apps  # `@GrpcController`가 정의된 사용자 패키지
-
-
-@Pod()
-def get_spec() -> GrpcServerSpec:
-    spec = GrpcServerSpec()
-    spec.add_insecure_port("127.0.0.1:50051")
-    return spec
-
-
-@Pod()
-def get_registry() -> DescriptorRegistry:
-    return DescriptorRegistry()
 
 
 app = (
@@ -54,8 +43,6 @@ app = (
         spakky.plugins.grpc.PLUGIN_NAME,
     })
     .scan(apps)
-    .add(get_spec)
-    .add(get_registry)
     .start()
 )
 ```
@@ -162,7 +149,7 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 
 ## PostProcessor
 
-`GrpcServerSpec` Pod를 등록하면 아래 세 PostProcessor가 순서대로 spec에 구성을 누적합니다. 실제 `grpc.aio.Server` 인스턴스는 `start()` 시점에 ApplicationContext의 이벤트 루프에서 `GrpcServerSpec.build()`로 생성됩니다.
+`spakky-grpc` 플러그인이 제공하는 `GrpcServerSpec` Pod에 아래 세 PostProcessor가 순서대로 구성을 누적합니다. 실제 `grpc.aio.Server` 인스턴스는 `start()` 시점에 ApplicationContext의 이벤트 루프에서 `GrpcServerSpec.build()`로 생성됩니다.
 
 | PostProcessor | Order | 역할 |
 |--------------|-------|------|
@@ -236,26 +223,11 @@ class EchoController:
 # main.py
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 
 import spakky.plugins.grpc
 import spakky.tracing
-from spakky.plugins.grpc.schema.registry import DescriptorRegistry
-from spakky.plugins.grpc.server_spec import GrpcServerSpec
 
 import apps
-
-
-@Pod()
-def get_spec() -> GrpcServerSpec:
-    spec = GrpcServerSpec()
-    spec.add_insecure_port("127.0.0.1:50051")
-    return spec
-
-
-@Pod()
-def get_registry() -> DescriptorRegistry:
-    return DescriptorRegistry()
 
 
 app = (
@@ -265,13 +237,11 @@ app = (
         spakky.tracing.PLUGIN_NAME,
     })
     .scan(apps)
-    .add(get_spec)
-    .add(get_registry)
 )
 app.start()
 ```
 
-`app.start()` 호출 시 PostProcessor 체인이 실행되어 `EchoController`의 핸들러와 인터셉터가 spec에 누적되고, `GrpcServerService`가 ApplicationContext의 이벤트 루프 스레드에서 `spec.build()`로 실제 서버를 생성한 뒤 `127.0.0.1:50051`에서 리슨합니다.
+`SPAKKY_GRPC_BIND_ADDRESSES='["127.0.0.1:50051"]'`가 설정되어 있으면 `app.start()` 호출 시 PostProcessor 체인이 실행되어 `EchoController`의 핸들러와 인터셉터가 spec에 누적되고, `GrpcServerService`가 ApplicationContext의 이벤트 루프 스레드에서 `spec.build()`로 실제 서버를 생성한 뒤 `127.0.0.1:50051`에서 리슨합니다.
 
 ### 클라이언트 호출
 
@@ -324,7 +294,7 @@ asyncio.run(main(app.container.get(DescriptorRegistry)))
 
 | 항목 | 설명 |
 |------|------|
-| `GrpcServerSpec` + `DescriptorRegistry` Pod 필수 | FastAPI는 `FastAPI()` 인스턴스를 플러그인이 제공하지만, gRPC는 바인드 주소를 보유한 `GrpcServerSpec`과 protobuf descriptor 저장소인 `DescriptorRegistry`를 사용자가 Pod로 등록해야 함 |
+| `SPAKKY_GRPC_BIND_ADDRESSES` | FastAPI와 마찬가지로 런타임 공유 객체는 플러그인이 제공하고, gRPC listener 주소만 환경 설정으로 지정함 |
 | 메서드 시그니처 제약 | `@rpc` 메서드는 **요청 `BaseModel` 1개**만 파라미터로 받음. FastAPI처럼 path/query 파라미터를 분리하지 않음 (path·query 개념이 gRPC에 없음) |
 | 메시지는 pydantic `BaseModel` + `ProtoField` | `pydantic.BaseModel` 서브클래스 + `Annotated[T, ProtoField(number=N)]`로 선언. 필드 번호는 사용자가 명시. protobuf ↔ BaseModel 변환은 `google.protobuf.json_format` 브릿지로 수행 |
 | 스트리밍 | `AsyncIterator[T]`를 요청/응답 타입으로 사용하여 4가지 스트리밍 패턴 지원 (FastAPI는 `StreamingResponse`로 단방향만) |

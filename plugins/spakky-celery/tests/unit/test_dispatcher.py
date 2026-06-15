@@ -266,7 +266,9 @@ def test_around_injects_signed_auth_snapshot_expect_header() -> None:
     aspect = CeleryTaskDispatchAspect(
         celery,
         auth_snapshot_signer=signer,
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
     aspect.set_application_context(application_context)
     joinpoint = _create_joinpoint("send_email")
@@ -458,7 +460,9 @@ async def test_async_around_injects_signed_auth_snapshot_expect_header() -> None
     aspect = AsyncCeleryTaskDispatchAspect(
         celery,
         auth_snapshot_signer=signer,
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
     aspect.set_application_context(application_context)
     joinpoint = _create_async_joinpoint("async_send_email")

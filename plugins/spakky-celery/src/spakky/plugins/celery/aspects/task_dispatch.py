@@ -4,7 +4,11 @@ from inspect import iscoroutinefunction
 from logging import getLogger
 from typing import Any
 
-from spakky.auth import AuthSnapshotPropagationConfig, IAuthContextSnapshotSigner
+from spakky.auth import (
+    AuthSnapshotPropagationConfig,
+    IAuthContextSnapshotSigner,
+    effective_auth_snapshot_propagation_config,
+)
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import Around
@@ -46,14 +50,18 @@ class CeleryTaskDispatchAspect(IAspect, IApplicationContextAware):
         self,
         celery: Celery,
         auth_snapshot_signer: IAuthContextSnapshotSigner | None = None,
-        auth_snapshot_propagation_config: AuthSnapshotPropagationConfig | None = None,
+        auth_snapshot_propagation_configs: tuple[
+            AuthSnapshotPropagationConfig, ...
+        ] = (),
     ) -> None:
         """Initialize with the Celery application instance."""
         self._celery = celery
         self._propagator = None
         self._auth_snapshot_signer = auth_snapshot_signer
         self._auth_snapshot_propagation_config = (
-            auth_snapshot_propagation_config or AuthSnapshotPropagationConfig()
+            effective_auth_snapshot_propagation_config(
+                auth_snapshot_propagation_configs
+            )
         )
 
     @override
@@ -110,14 +118,18 @@ class AsyncCeleryTaskDispatchAspect(IAsyncAspect, IApplicationContextAware):
         self,
         celery: Celery,
         auth_snapshot_signer: IAuthContextSnapshotSigner | None = None,
-        auth_snapshot_propagation_config: AuthSnapshotPropagationConfig | None = None,
+        auth_snapshot_propagation_configs: tuple[
+            AuthSnapshotPropagationConfig, ...
+        ] = (),
     ) -> None:
         """Initialize with the Celery application instance."""
         self._celery = celery
         self._propagator = None
         self._auth_snapshot_signer = auth_snapshot_signer
         self._auth_snapshot_propagation_config = (
-            auth_snapshot_propagation_config or AuthSnapshotPropagationConfig()
+            effective_auth_snapshot_propagation_config(
+                auth_snapshot_propagation_configs
+            )
         )
 
     @override

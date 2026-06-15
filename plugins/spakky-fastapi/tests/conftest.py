@@ -59,10 +59,6 @@ async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
     def get_name() -> str:
         return name
 
-    @Pod(name="api")
-    def get_api() -> FastAPI:
-        return FastAPI(debug=True)
-
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(
@@ -72,7 +68,6 @@ async def get_app_fixture(name: str) -> AsyncGenerator[SpakkyApplication, Any]:
         )
         .scan(apps)
         .add(get_name)
-        .add(get_api)
         .add(FakeAuthenticationProvider)
     )
     app.start()
@@ -90,10 +85,6 @@ async def get_api_without_auth_provider_fixture(
     def get_name() -> str:
         return name
 
-    @Pod(name="api")
-    def get_api() -> FastAPI:
-        return FastAPI(debug=True)
-
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(
@@ -103,7 +94,6 @@ async def get_api_without_auth_provider_fixture(
         )
         .scan(apps)
         .add(get_name)
-        .add(get_api)
     )
     app.start()
 

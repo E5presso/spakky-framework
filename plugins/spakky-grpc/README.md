@@ -11,9 +11,13 @@ pydantic `BaseModel`로 메시지를 선언하고 `@GrpcController` + `@rpc` 데
 pip install spakky-grpc
 ```
 
-의존성: `grpcio`, `protobuf`, `pydantic>=2.4`, `spakky`, `spakky-auth`, `spakky-tracing`.
+의존성: `grpcio`, `protobuf`, `pydantic>=2.4`, `pydantic-settings`, `spakky`, `spakky-auth`, `spakky-tracing`.
 
 ## 빠른 시작
+
+```bash
+export SPAKKY_GRPC_BIND_ADDRESSES='["127.0.0.1:50051"]'
+```
 
 ```python
 from typing import Annotated
@@ -21,13 +25,10 @@ from typing import Annotated
 from pydantic import BaseModel
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 
 import spakky.plugins.grpc
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
-from spakky.plugins.grpc.schema.registry import DescriptorRegistry
-from spakky.plugins.grpc.server_spec import GrpcServerSpec
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 import apps  # `@GrpcController`-decorated classes live in your own package
@@ -48,29 +49,15 @@ class HelloController:
         return HelloReply(message=f"Hello, {request.name}!")
 
 
-@Pod()
-def get_spec() -> GrpcServerSpec:
-    spec = GrpcServerSpec()
-    spec.add_insecure_port("127.0.0.1:50051")
-    return spec
-
-
-@Pod()
-def get_registry() -> DescriptorRegistry:
-    return DescriptorRegistry()
-
-
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={spakky.plugins.grpc.PLUGIN_NAME})
     .scan(apps)  # your package containing HelloController above
-    .add(get_spec)
-    .add(get_registry)
 )
 app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 ```
 
-`GrpcServerSpec`는 핸들러·인터셉터·바인드 주소를 누적합니다. 실제 `grpc.aio.Server`는 `ApplicationContext`의 이벤트 루프 스레드에서 `spec.build()`로 생성되므로 `grpc.aio` 내부 Future가 올바른 루프에 바인딩됩니다.
+플러그인은 `GrpcConfig`, `GrpcServerSpec`, `DescriptorRegistry`를 기본 Pod로 등록합니다. `GrpcServerSpec`는 핸들러·인터셉터·바인드 주소를 누적합니다. 실제 `grpc.aio.Server`는 `ApplicationContext`의 이벤트 루프 스레드에서 `spec.build()`로 생성되므로 `grpc.aio` 내부 Future가 올바른 루프에 바인딩됩니다. `SPAKKY_GRPC_BIND_ADDRESSES`가 비어 있으면 listener를 열지 않습니다.
 
 ## 타입 매핑
 

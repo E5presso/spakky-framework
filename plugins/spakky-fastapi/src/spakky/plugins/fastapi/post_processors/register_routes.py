@@ -8,7 +8,7 @@ from dataclasses import asdict
 from functools import wraps
 from inspect import getmembers, isawaitable, signature
 from logging import getLogger
-from typing import Any
+from typing import Any, cast
 
 from spakky.auth import AbstractSpakkyAuthError
 from spakky.core.pod.annotations.order import Order
@@ -78,6 +78,15 @@ class RegisterRoutesPostProcessor(
         """
         self.__application_context = application_context
 
+    def __fastapi_apps(self) -> tuple[FastAPI, ...]:
+        """Return all FastAPI application Pods currently registered."""
+        return tuple(
+            cast(FastAPI, fast_api)
+            for fast_api in self.__application_context.find(
+                lambda pod: pod.type_ is FastAPI or FastAPI in pod.base_types
+            )
+        )
+
     @override
     def post_process(self, pod: object) -> object:
         """Register routes from API controllers.
@@ -95,7 +104,6 @@ class RegisterRoutesPostProcessor(
         if not ApiController.exists(pod):
             return pod
 
-        fast_api = self.__container.get(FastAPI)
         controller = ApiController.get(pod)
         router: APIRouter = APIRouter(prefix=controller.prefix, tags=controller.tags)
         for name, method in getmembers(pod, callable):
@@ -223,5 +231,6 @@ class RegisterRoutesPostProcessor(
                 router.add_api_websocket_route(
                     endpoint=websocket_endpoint, **asdict(websocket_route)
                 )
-        fast_api.include_router(router)
+        for fast_api in self.__fastapi_apps():
+            fast_api.include_router(router)
         return pod

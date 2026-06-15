@@ -147,4 +147,4 @@ class PlaceOrderUseCase:
 
 ## 인증 컨텍스트 전파
 
-`spakky-auth`의 `AuthSnapshotPropagationConfig(enabled=True)`가 활성화되어 있고 현재 request/context scope에 `AuthContext`가 있으면 `OutboxEventBus` / `AsyncOutboxEventBus`는 Outbox message headers에 `spakky.auth.context_snapshot` metadata를 저장합니다. 이 값은 `IAuthContextSnapshotSigner`가 만든 signed `AuthContextSnapshot` envelope이며, raw bearer token은 저장하지 않습니다. 기존 `traceparent` header는 함께 보존됩니다.
+`SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`가 설정되어 있고 현재 request/context scope에 `AuthContext`가 있으면 `OutboxEventBus` / `AsyncOutboxEventBus`는 Outbox message headers에 `spakky.auth.context_snapshot` metadata를 저장합니다. 이 값은 `IAuthContextSnapshotSigner`가 만든 signed `AuthContextSnapshot` envelope이며, raw bearer token은 저장하지 않습니다. 기존 `traceparent` header는 함께 보존됩니다.

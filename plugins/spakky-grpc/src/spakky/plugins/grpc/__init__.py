@@ -7,6 +7,16 @@ This plugin provides code-first gRPC service integration with:
 """
 
 from spakky.core.application.plugin import Plugin
+from spakky.plugins.grpc.config import (
+    SPAKKY_GRPC_CONFIG_ENV_PREFIX,
+    GrpcConfig,
+)
 
 PLUGIN_NAME = Plugin(name="spakky-grpc")
 """Plugin identifier for the gRPC integration."""
+
+__all__ = [
+    "PLUGIN_NAME",
+    "SPAKKY_GRPC_CONFIG_ENV_PREFIX",
+    "GrpcConfig",
+]

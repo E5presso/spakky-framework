@@ -10,6 +10,7 @@ from spakky.auth import (
     IAuthContextSnapshotSigner,
     InvalidAuthContextValueError,
     SnapshotSignRequest,
+    effective_auth_snapshot_propagation_config,
 )
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -37,11 +38,15 @@ class AuthContextSnapshotHeaderInjector(IApplicationContextAware):
     def __init__(
         self,
         auth_snapshot_signer: IAuthContextSnapshotSigner | None = None,
-        auth_snapshot_propagation_config: AuthSnapshotPropagationConfig | None = None,
+        auth_snapshot_propagation_configs: tuple[
+            AuthSnapshotPropagationConfig, ...
+        ] = (),
     ) -> None:
         self._auth_snapshot_signer = auth_snapshot_signer
         self._auth_snapshot_propagation_config = (
-            auth_snapshot_propagation_config or AuthSnapshotPropagationConfig()
+            effective_auth_snapshot_propagation_config(
+                auth_snapshot_propagation_configs
+            )
         )
         self._application_context = None
 

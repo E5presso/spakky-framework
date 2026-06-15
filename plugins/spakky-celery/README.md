@@ -134,7 +134,7 @@ AOP aspect가 호출을 가로채 Celery로 자동 라우팅합니다.
 
 ## 인증/인가 스냅샷 전파
 
-`spakky-auth`의 `AuthSnapshotPropagationConfig(enabled=True)`와 `IAuthContextSnapshotSigner` / `IAuthContextSnapshotVerifier` provider가 등록되어 있으면, `CeleryTaskDispatchAspect`와 `AsyncCeleryTaskDispatchAspect`는 현재 request/context scope의 `AuthContext`를 signed `AuthContextSnapshot`으로 직렬화해 Celery task header `spakky.auth.context_snapshot`에 저장합니다.
+`SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`와 `IAuthContextSnapshotSigner` / `IAuthContextSnapshotVerifier` provider가 등록되어 있으면, `CeleryTaskDispatchAspect`와 `AsyncCeleryTaskDispatchAspect`는 현재 request/context scope의 `AuthContext`를 signed `AuthContextSnapshot`으로 직렬화해 Celery task header `spakky.auth.context_snapshot`에 저장합니다.
 
 Worker endpoint는 task 실행 시작 시 `ApplicationContext.clear_context()` 후 `spakky.plugins.celery.task_context`를 설정하고, 보호된 task metadata가 있으면 snapshot을 검증해 `AuthContext`를 다시 seed합니다. 이후 `@protected`, `@require_scope`, `@require_role`, `@require_permission`, `@require_policy`, `@require_relation` requirement를 worker boundary에서 fail-closed로 평가합니다.
 

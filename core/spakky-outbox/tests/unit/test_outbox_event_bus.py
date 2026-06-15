@@ -143,7 +143,9 @@ def _enabled_auth_headers(
     store_auth_context(application_context, _auth_context())
     injector = AuthContextSnapshotHeaderInjector(
         auth_snapshot_signer=signer,
-        auth_snapshot_propagation_config=AuthSnapshotPropagationConfig(enabled=True),
+        auth_snapshot_propagation_configs=(
+            AuthSnapshotPropagationConfig(enabled=True),
+        ),
     )
     injector.set_application_context(application_context)
     return injector

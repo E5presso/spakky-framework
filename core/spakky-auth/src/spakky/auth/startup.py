@@ -3,8 +3,9 @@
 from dataclasses import dataclass
 from inspect import getmembers_static
 import threading
-from typing import override
+from typing import ClassVar, override
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.auth.capability import AuthCapability
 from spakky.auth.contribution import (
     AuthContributionProviderId,
@@ -31,13 +32,39 @@ from spakky.core.service.interfaces.service import IService
 AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY = "auth.capability.validation.error"
 """Startup diagnostic detail key for invalid auth capability provider counts."""
 
+SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX = "SPAKKY_AUTH_SNAPSHOT_PROPAGATION_"
+"""Environment prefix for signed AuthContextSnapshot propagation settings."""
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class AuthSnapshotPropagationConfig:
+
+class AuthSnapshotPropagationConfig(BaseSettings):
     """Feature-local config declaring signed AuthContextSnapshot propagation use."""
+
+    model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
+        env_prefix=SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX,
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        frozen=True,
+    )
 
     enabled: bool = False
     """Whether this application propagates signed AuthContextSnapshot envelopes."""
+
+
+@Pod(name="auth_snapshot_propagation_config")
+def auth_snapshot_propagation_config() -> AuthSnapshotPropagationConfig:
+    """Load signed AuthContextSnapshot propagation settings from environment."""
+    return AuthSnapshotPropagationConfig()
+
+
+def effective_auth_snapshot_propagation_config(
+    configs: tuple[AuthSnapshotPropagationConfig, ...],
+) -> AuthSnapshotPropagationConfig:
+    """Collapse all registered snapshot propagation configs into one decision."""
+    if len(configs) == 0:
+        return AuthSnapshotPropagationConfig()
+    return AuthSnapshotPropagationConfig(
+        enabled=any(config.enabled for config in configs)
+    )
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

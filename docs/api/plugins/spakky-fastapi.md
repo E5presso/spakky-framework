@@ -64,7 +64,13 @@ show_root_heading: false
 options:
 show_root_heading: false
 
-## 후처리기s
+## 설정
+
+::: spakky.plugins.fastapi.config
+options:
+show_root_heading: false
+
+## 후처리기
 
 ::: spakky.plugins.fastapi.post_processors.bind_lifespan
 options:

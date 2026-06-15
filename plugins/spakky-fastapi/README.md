@@ -1,7 +1,7 @@
 # Spakky FastAPI
 
 > [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 FastAPI 통합 플러그인입니다.
-> 사용자가 Pod로 등록한 FastAPI 앱에 `@ApiController` route, context middleware, lifespan binding, actuator endpoint를 연결합니다.
+> 플러그인이 제공하거나 사용자가 등록한 FastAPI 앱에 `@ApiController` route, context middleware, lifespan binding, actuator endpoint를 연결합니다.
 
 ## 설치
 
@@ -87,36 +87,29 @@ class MyController:
             await websocket.send_text(f"Echo: {data}")
 ```
 
-### FastAPI 앱 등록과 접근
+### FastAPI 앱 접근
 
 ```python
 from fastapi import FastAPI
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 
 import apps
 import spakky.plugins.fastapi
-
-
-@Pod(name="api")
-def get_api() -> FastAPI:
-    return FastAPI(title="My API")
 
 
 application = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={spakky.plugins.fastapi.PLUGIN_NAME})
     .scan(apps)
-    .add(get_api)
     .start()
 )
 
 fast_api: FastAPI = application.container.get(FastAPI)
 ```
 
-`spakky-fastapi`는 route, middleware, lifespan post-processor를 등록하지만
-`FastAPI` 인스턴스 자체는 애플리케이션에서 Pod로 등록해야 합니다.
+`spakky-fastapi`는 기본 `FastAPI` 앱을 Pod로 제공합니다. 앱 title, description,
+version, debug는 `SPAKKY_FASTAPI_*` 환경변수로 설정합니다.
 
 ### TestClient 테스트
 
@@ -189,18 +182,33 @@ FastAPI wrapper가 Spakky request context를 clear한 뒤 credential 전달체�
 | `websocket` | WebSocket endpoint decorator |
 | `ErrorHandlingMiddleware` | built-in exception handling middleware |
 | `TracingMiddleware` | trace context propagation middleware (`spakky-tracing` 필수 의존) |
+| `FastAPIConfig` | 플러그인 제공 기본 FastAPI 앱 설정 |
 | `FastAPIActuatorConfig` | FastAPI actuator endpoint 노출 설정 |
 | `RegisterActuatorPostProcessor` | 자동 actuator endpoint 등록 post-processor |
 | `RegisterRoutesPostProcessor` | 자동 route 등록 post-processor |
 
 ## 설정
 
-애플리케이션은 사용할 `FastAPI` 인스턴스를 Pod로 직접 등록해야 합니다.
-플러그인은 그 인스턴스에 route, middleware, lifespan hook을 연결합니다:
+기본 앱 설정은 환경변수로 조정합니다:
+
+```bash
+export SPAKKY_FASTAPI_TITLE="My API"
+export SPAKKY_FASTAPI_VERSION="1.0.0"
+export SPAKKY_FASTAPI_DEBUG=false
+```
+
+커스텀 `FastAPI` 인스턴스가 필요하면 플러그인 로드 전에 Pod로 등록합니다.
+이 경우 플러그인은 기본 앱을 중복 등록하지 않고, 등록된 앱에 route, middleware,
+lifespan hook을 연결합니다:
 
 ```python
 from fastapi import FastAPI
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
+
+import spakky.plugins.fastapi
+
 
 @Pod()
 def custom_fastapi() -> FastAPI:
@@ -209,6 +217,13 @@ def custom_fastapi() -> FastAPI:
         description="Custom API configuration",
         version="1.0.0",
     )
+
+application = (
+    SpakkyApplication(ApplicationContext())
+    .add(custom_fastapi)
+    .load_plugins(include={spakky.plugins.fastapi.PLUGIN_NAME})
+    .start()
+)
 ```
 
 ## 라이선스

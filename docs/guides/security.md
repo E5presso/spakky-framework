@@ -96,7 +96,6 @@ from fastapi import FastAPI
 from spakky.auth import protected, require_scope
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.fastapi.routes import get
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 import spakky.auth
@@ -113,11 +112,6 @@ class DocumentController:
         return {"id": document_id}
 
 
-@Pod()
-def get_api() -> FastAPI:
-    return FastAPI()
-
-
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(
@@ -127,7 +121,6 @@ app = (
             spakky.plugins.oidc.PLUGIN_NAME,
         }
     )
-    .add(get_api)
     .add(DocumentController)
     .start()
 )
@@ -155,7 +148,6 @@ from fastapi import FastAPI
 from spakky.auth import protected, require_policy
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.fastapi.routes import get
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 import spakky.auth
@@ -172,11 +164,6 @@ class DocumentController:
         return {"id": document_id}
 
 
-@Pod()
-def get_api() -> FastAPI:
-    return FastAPI()
-
-
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(
@@ -186,7 +173,6 @@ app = (
             spakky.plugins.policy.PLUGIN_NAME,
         }
     )
-    .add(get_api)
     .add(DocumentController)
     .start()
 )
@@ -225,18 +211,12 @@ Provider를 호출할 수 없으면 `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE` 
 - `Key`, `Base64Encoder`, `Hash`, `HMAC`, `Aes`, `Gcm`, `Rsa`, 유지되는 password encoder
 
 ```python
-from spakky.auth import AuthSnapshotPropagationConfig, IPasswordHasher
+from spakky.auth import IPasswordHasher
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 from spakky.core.stereotype.usecase import UseCase
 import spakky.auth
 import spakky.plugins.cryptography
-
-
-@Pod()
-def auth_snapshot_propagation_config() -> AuthSnapshotPropagationConfig:
-    return AuthSnapshotPropagationConfig(enabled=True)
 
 
 @UseCase()
@@ -256,12 +236,12 @@ app = (
             spakky.plugins.cryptography.PLUGIN_NAME,
         }
     )
-    .add(auth_snapshot_propagation_config)
     .add(RegisterPassword)
     .start()
 )
 ```
 
+Snapshot propagation은 `spakky-auth`가 제공하는 기본 설정 Pod로 관리되며, `SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`로 활성화합니다.
 `SPAKKY_CRYPTOGRAPHY_SNAPSHOT_KEY`에는 url-safe Base64 HMAC key를 설정할 수 있습니다.
 Snapshot envelope이 없거나 잘못되었거나 만료되면 `CHALLENGE`로 매핑됩니다. Verification provider를 사용할 수 없으면 `ERROR`가 됩니다. Password verification failure는 `CHALLENGE / INVALID_CREDENTIAL`, password provider 비가용은 `ERROR / VERIFICATION_PROVIDER_UNAVAILABLE`로 매핑됩니다.
 

@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from threading import RLock, Thread
 from time import perf_counter
 from types import MappingProxyType, NoneType
-from typing import cast, overload
+from typing import cast, get_origin, overload
 from collections.abc import Callable
 from uuid import UUID, uuid4
 
@@ -313,13 +313,36 @@ class ApplicationContext(IApplicationContext):
             return typed.pop()
         raise NoSuchPodBindingTargetError(binding)
 
+    def __candidate_pods_for_type(self, type_: type) -> set[Pod]:
+        """Return exact candidates, falling back to generic origin candidates."""
+        pods = self.__type_cache.get(type_, set()).copy()
+        if pods:
+            return pods
+        origin = get_origin(type_)
+        if origin is None:
+            return pods
+        return self.__type_cache.get(origin, set()).copy()
+
+    def __resolve_binding_candidate_for_type(
+        self,
+        type_: type,
+        pods: set[Pod],
+    ) -> Pod | None:
+        """Resolve exact binding first, then generic-origin binding."""
+        if binding_candidate := self.__resolve_binding_candidate(type_, pods):
+            return binding_candidate
+        origin = get_origin(type_)
+        if origin is None:
+            return None
+        return self.__resolve_binding_candidate(origin, pods)
+
     def __resolve_collection_candidates(
         self,
         type_: type,
         qualifiers: list[Qualifier],
     ) -> tuple[Pod, ...]:
         """Resolve all collection dependency candidates in stable Pod name order."""
-        pods = self.__type_cache.get(type_, set()).copy()
+        pods = self.__candidate_pods_for_type(type_)
         if qualifiers:
             pods = {
                 pod
@@ -327,6 +350,12 @@ class ApplicationContext(IApplicationContext):
                 if all(qualifier.selector(pod) for qualifier in qualifiers)
             }
         return tuple(sorted(pods, key=lambda pod: pod.name))
+
+    def __index_type_cache(self, type_: type, pod: Pod) -> None:
+        """Index one Pod under a runtime-resolvable type key."""
+        if type_ not in self.__type_cache:
+            self.__type_cache[type_] = set()
+        self.__type_cache[type_].add(pod)
 
     def __resolve_candidate(
         self,
@@ -351,8 +380,9 @@ class ApplicationContext(IApplicationContext):
             NoUniquePodError: If multiple Pods match without clear qualification.
         """
 
-        # Use type index for O(1) lookup instead of O(n) iteration
-        pods = self.__type_cache.get(type_, set()).copy()
+        # Use type index for O(1) lookup instead of O(n) iteration.
+        # Parameterized generics are matched exactly first, then by runtime origin.
+        pods = self.__candidate_pods_for_type(type_)
         if not pods:
             return None
 
@@ -389,7 +419,7 @@ class ApplicationContext(IApplicationContext):
             if not named:
                 return None
 
-        if binding_candidate := self.__resolve_binding_candidate(type_, pods):
+        if binding_candidate := self.__resolve_binding_candidate_for_type(type_, pods):
             return binding_candidate
 
         # Fast path after explicit selectors and binding policy are honored.
@@ -945,19 +975,20 @@ class ApplicationContext(IApplicationContext):
             self.__forward_type_map[base_type.__name__] = base_type
         self.__pods[pod.name] = pod
 
-        # Update type index for fast lookup
-        # pod.type_은 클래스 자체이므로 같은 타입 두 Pod은 이름 충돌로 위에서 차단됨
-        if (
-            pod.type_ not in self.__type_cache
-        ):  # pragma: no branch - same-type pod names are rejected above
-            self.__type_cache[pod.type_] = set()
-        self.__type_cache[pod.type_].add(pod)
+        # Update type index for fast lookup.
+        self.__index_type_cache(pod.type_, pod)
+        pod_type_origin = get_origin(pod.type_)
+        if pod_type_origin is not None:
+            self.__index_type_cache(pod_type_origin, pod)
 
         # Also index by all base types for polymorphic lookups
         for base_type in pod.base_types:
             if base_type not in self.__type_cache:
                 self.__type_cache[base_type] = set()
             self.__type_cache[base_type].add(pod)
+            base_type_origin = get_origin(base_type)
+            if base_type_origin is not None:
+                self.__index_type_cache(base_type_origin, pod)
 
     @override
     def bind(self, binding: PodBinding) -> None:

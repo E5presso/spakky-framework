@@ -9,30 +9,52 @@
 
 ```python
 from fastapi import FastAPI
-from spakky.core.pod.annotations.pod import Pod
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 import apps
-
-@Pod(name="api")
-def get_api() -> FastAPI:
-    return FastAPI(debug=True)
 
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins()
     .scan(apps)
-    .add(get_api)
     .start()
 )
 
 api: FastAPI = app.container.get(type_=FastAPI)
 ```
 
-`app.start()` 시점에 `RegisterRoutesPostProcessor`가 `@ApiController` Pod를 찾아 `FastAPI.include_router()`로 라우트를 등록합니다. FastAPI 서버는 Spakky가 직접 실행하지 않으므로, ASGI 서버가 import할 수 있는 모듈 전역에 `api` 객체를 노출합니다.
+`spakky-fastapi`는 기본 `FastAPI` 앱을 Pod로 제공합니다. `app.start()` 시점에 `RegisterRoutesPostProcessor`가 `@ApiController` Pod를 찾아 `FastAPI.include_router()`로 라우트를 등록합니다. FastAPI 서버는 Spakky가 직접 실행하지 않으므로, ASGI 서버가 import할 수 있는 모듈 전역에 `api` 객체를 노출합니다.
 
 ```python
 # main.py
+from fastapi import FastAPI
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+import apps
+import spakky.plugins.fastapi
+
+
+spakky_app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(include={spakky.plugins.fastapi.PLUGIN_NAME})
+    .scan(apps)
+    .start()
+)
+
+api: FastAPI = spakky_app.container.get(FastAPI)
+```
+
+```bash
+export SPAKKY_FASTAPI_TITLE="Orders API"
+uvicorn main:api --reload
+```
+
+FastAPI lifespan은 `BindLifespanPostProcessor`가 감싸므로, ASGI 서버가 종료될 때 `ApplicationContext.stop()`이 호출되어 `IService`/`IAsyncService` 리소스가 정리됩니다.
+
+커스텀 `FastAPI` 인스턴스가 필요하면 플러그인 로드 전에 Pod로 등록합니다. 이 경우 플러그인은 기본 앱을 중복 등록하지 않습니다.
+
+```python
 from fastapi import FastAPI
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -43,26 +65,18 @@ import spakky.plugins.fastapi
 
 
 @Pod()
-def get_api() -> FastAPI:
-    return FastAPI(title="Orders API")
+def custom_fastapi() -> FastAPI:
+    return FastAPI(title="Orders API", version="1.0.0")
 
 
 spakky_app = (
     SpakkyApplication(ApplicationContext())
+    .add(custom_fastapi)
     .load_plugins(include={spakky.plugins.fastapi.PLUGIN_NAME})
     .scan(apps)
-    .add(get_api)
     .start()
 )
-
-api: FastAPI = spakky_app.container.get(FastAPI)
 ```
-
-```bash
-uvicorn main:api --reload
-```
-
-FastAPI lifespan은 `BindLifespanPostProcessor`가 감싸므로, ASGI 서버가 종료될 때 `ApplicationContext.stop()`이 호출되어 `IService`/`IAsyncService` 리소스가 정리됩니다.
 
 ---
 

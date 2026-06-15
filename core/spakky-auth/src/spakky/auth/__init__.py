@@ -114,11 +114,13 @@ from spakky.auth.ports import (
 from spakky.auth.snapshot import AuthContextSnapshot, AuthContextSnapshotSignature
 from spakky.auth.startup import (
     AUTH_STARTUP_VALIDATION_ERROR_DETAIL_KEY,
+    SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX,
     AuthCapabilityStartupValidationService,
     AuthSnapshotPropagationConfig,
     AuthStartupCapabilityDiagnostic,
     AuthStartupCapabilityValidationError,
     AuthStartupContainerUnavailableError,
+    effective_auth_snapshot_propagation_config,
 )
 from spakky.core.application.plugin import Plugin
 
@@ -137,6 +139,7 @@ __all__ = [
     "INVALID_SNAPSHOT_DECISION",
     "MISSING_SNAPSHOT_DECISION",
     "PLUGIN_NAME",
+    "SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX",
     "VERIFICATION_PROVIDER_UNAVAILABLE_DECISION",
     "AbstractSpakkyAuthError",
     "AuthActionRef",
@@ -213,6 +216,7 @@ __all__ = [
     "PermissionCheckRequest",
     "ProtectedRequirement",
     "PublicAccess",
+    "effective_auth_snapshot_propagation_config",
     "get_effective_auth_metadata",
     "has_auth_boundary_metadata",
     "protected",

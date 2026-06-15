@@ -3139,11 +3139,15 @@ name = "spakky-auth"
 version = "6.7.0"
 source = { editable = "core/spakky-auth" }
 dependencies = [
+    { name = "pydantic-settings" },
     { name = "spakky" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "spakky", editable = "core/spakky" },
+]
 
 [[package]]
 name = "spakky-cache"
@@ -3341,6 +3345,7 @@ dependencies = [
     { name = "grpcio" },
     { name = "protobuf" },
     { name = "pydantic" },
+    { name = "pydantic-settings" },
     { name = "spakky" },
     { name = "spakky-auth" },
     { name = "spakky-tracing" },
@@ -3357,6 +3362,7 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.68.0" },
     { name = "protobuf", specifier = ">=6.33.0" },
     { name = "pydantic", specifier = ">=2.4" },
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-auth", editable = "core/spakky-auth" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },

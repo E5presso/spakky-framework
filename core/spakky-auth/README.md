@@ -60,7 +60,7 @@ Auth provider plugin은 base plugin entry point와 별도로 `spakky.contributio
 
 - protected metadata가 하나라도 있으면 `AUTHENTICATION` capability 제공자가 정확히 1개 필요합니다.
 - `require_permission`, `require_role`, `require_scope`, `require_policy`, `require_relation` metadata는 각각 `PERMISSION_CHECK`, `ROLE_CHECK`, `SCOPE_CHECK`, `POLICY_EVALUATION`, `RELATION_CHECK` 제공자가 정확히 1개 필요합니다.
-- enabled `AuthSnapshotPropagationConfig`가 있으면 `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY` 제공자가 각각 정확히 1개 필요합니다.
+- `SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`로 snapshot propagation이 활성화되면 `SNAPSHOT_SIGN`, `SNAPSHOT_VERIFY` 제공자가 각각 정확히 1개 필요합니다.
 - protected usage와 enabled snapshot propagation config가 모두 없으면 provider가 없어도 startup fatal이 아닙니다.
 
 count가 0 또는 2 이상이면 `AuthStartupCapabilityValidationError`가 발생하며, 각 mismatch는 `auth.capability.validation.error` startup diagnostic detail로 노출됩니다. 이 검증은 `spakky-auth` feature-local capability count 확인만 수행하며 generic contribution routing이나 provider priority/routing은 구현하지 않습니다.
