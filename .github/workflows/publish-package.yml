@@ -12,6 +12,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_existing:
+        description: 'Skip files that already exist on PyPI (for partial upload recovery)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -69,11 +74,12 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           print-hash: true
+          skip-existing: ${{ inputs.skip_existing }}
 
       - name: Summary
         run: |
           if [ "${{ inputs.dry_run }}" == "true" ]; then
             echo "🧪 Dry run complete for ${{ inputs.package }} - package was built but not published"
           else
-            echo "✅ Published ${{ inputs.package }} to PyPI"
+            echo "✅ Published ${{ inputs.package }} to PyPI (skip_existing=${{ inputs.skip_existing }})"
           fi
