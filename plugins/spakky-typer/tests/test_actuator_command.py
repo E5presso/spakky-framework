@@ -50,11 +50,6 @@ class _CliInfoContributor(IInfoContributor):
         return {"app": "typer", "version": "test"}
 
 
-@Pod(name="cli")
-def _get_cli() -> Typer:
-    return Typer()
-
-
 def test_actuator_command_registered_when_actuator_plugin_loaded() -> None:
     """actuator plugin 로드 시 actuator command group이 등록되는지 검증한다."""
     with _actuator_cli() as cli:
@@ -141,7 +136,6 @@ def _actuator_cli() -> Generator[Typer, None, None]:
                 Plugin(name="spakky-actuator"),
             }
         )
-        .add(_get_cli)
         .add(_CliProbe)
         .add(_CliInfoContributor)
     )

@@ -7,15 +7,12 @@ from typing import Any
 from collections.abc import Generator
 
 import pytest
-from celery import Celery
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 
 import spakky.plugins.celery
 from spakky.plugins.celery.common.config import (
     SPAKKY_CELERY_CONFIG_ENV_PREFIX,
-    CeleryConfig,
 )
 from tests import apps
 from tests.apps.dummy import execution_record
@@ -34,12 +31,6 @@ def environment_variables_fixture() -> Generator[None, Any, None]:
             del environ[key]
 
 
-@Pod()
-def get_celery(config: CeleryConfig) -> Celery:
-    """Create a Celery instance for testing with in-memory broker."""
-    return Celery(main=config.app_name, broker=config.broker_url)
-
-
 @pytest.fixture(name="app", scope="function")
 def app_fixture() -> Generator[SpakkyApplication, Any, None]:
     """Create a SpakkyApplication with Celery plugin in eager mode."""
@@ -53,7 +44,6 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(include={spakky.plugins.celery.PLUGIN_NAME})
-        .add(get_celery)
         .scan(apps)
     )
     app.start()

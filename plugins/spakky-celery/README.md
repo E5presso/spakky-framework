@@ -21,6 +21,7 @@ pip install spakky-celery
 - **Schedule 등록**: `@schedule` 메서드는 Celery Beat에 자동 등록됩니다.
 - **Worker context 감지**: context key로 worker 내부 재dispatch 방지
 - **자동 등록**: `@TaskHandler` pod를 스캔해 Celery task로 자동 등록합니다.
+- **기본 Celery 앱**: `CeleryConfig` 기반 `Celery` 앱을 Pod로 자동 등록합니다.
 - **전체 설정**: broker URL, serializer, timezone 등을 환경변수로 설정
 - **AuthContextSnapshot 전파**: `spakky-auth` snapshot propagation이 활성화되면 raw bearer token 대신 signed snapshot을 task header에 담아 보호된 worker task를 fail-closed로 실행합니다.
 
@@ -90,6 +91,8 @@ app = (
     .start()
 )
 ```
+
+커스텀 `Celery` 인스턴스를 써야 한다면 플러그인을 로드하기 전에 `Celery` 반환 Pod를 먼저 등록하세요.
 
 ### 3. Task 메서드 일반 호출
 

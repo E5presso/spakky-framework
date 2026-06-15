@@ -110,22 +110,15 @@ class DatabaseCliController:
 from typer import Typer
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 
 import apps
 import spakky.plugins.typer
-
-
-@Pod(name="cli")
-def get_cli() -> Typer:
-    return Typer()
 
 
 application = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={spakky.plugins.typer.PLUGIN_NAME})
     .scan(apps)
-    .add(get_cli)
     .start()
 )
 
@@ -137,8 +130,8 @@ if __name__ == "__main__":
     typer_app()
 ```
 
-`spakky-typer`는 command registration post-processor를 등록하지만
-`Typer` 인스턴스 자체는 애플리케이션에서 Pod로 등록해야 합니다.
+`spakky-typer`는 기본 `Typer` 앱을 Pod로 제공합니다. 커스텀 `Typer` 인스턴스를
+사용하려면 플러그인을 로드하기 전에 `Typer` 반환 Pod를 먼저 등록하세요.
 
 ### Auth boundary
 
@@ -209,21 +202,15 @@ Typer adapter는 플러그인별 상세 check를 자동 등록하지 않습니�
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 from typer import Typer
 import my_cli_module
-
-
-@Pod(name="cli")
-def get_cli() -> Typer:
-    return Typer()
+import spakky.plugins.typer
 
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .load_plugins()
+    .load_plugins(include={spakky.plugins.typer.PLUGIN_NAME})
     .scan(my_cli_module)
-    .add(get_cli)
     .start()
 )
 

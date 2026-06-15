@@ -9,27 +9,23 @@
 
 ```python
 from typer import Typer
-from spakky.core.pod.annotations.pod import Pod
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 import apps
+import spakky.plugins.typer
 
-@Pod(name="cli")
-def get_cli() -> Typer:
-    return Typer()
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .load_plugins()
+    .load_plugins(include={spakky.plugins.typer.PLUGIN_NAME})
     .scan(apps)
-    .add(get_cli)
     .start()
 )
 
 cli: Typer = app.container.get(type_=Typer)
 ```
 
-`app.start()` 이후 `TyperCLIPostProcessor`가 `@CliController` Pod의 `@command()` 메서드를 Typer 앱에 등록합니다. 실제 실행 파일에서는 컨테이너에서 꺼낸 `Typer` 객체를 모듈 전역에 두고, `__main__`에서 호출합니다.
+`spakky-typer`는 기본 `Typer` 앱을 Pod로 제공합니다. `app.start()` 이후 `TyperCLIPostProcessor`가 `@CliController` Pod의 `@command()` 메서드를 Typer 앱에 등록합니다. 실제 실행 파일에서는 컨테이너에서 꺼낸 `Typer` 객체를 모듈 전역에 두고, `__main__`에서 호출합니다.
 
 ```python
 # main.py
@@ -37,22 +33,15 @@ from typer import Typer
 
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
 
 import apps
 import spakky.plugins.typer
-
-
-@Pod()
-def get_cli() -> Typer:
-    return Typer(help="Order operations")
 
 
 spakky_app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={spakky.plugins.typer.PLUGIN_NAME})
     .scan(apps)
-    .add(get_cli)
     .start()
 )
 

@@ -124,11 +124,6 @@ def _auth_provider_contribution() -> AuthProviderContribution:
     )
 
 
-@Pod(name="cli")
-def _get_auth_cli() -> Typer:
-    return Typer()
-
-
 _AUTH_CREDENTIALS: list[CredentialCarrier] = []
 _AUTH_INVOCATIONS: list[AuthInvocation] = []
 _AUTH_APP_CONTEXT = ApplicationContext()
@@ -152,7 +147,6 @@ def _start_auth_cli(
     app = (
         SpakkyApplication(_AUTH_APP_CONTEXT)
         .load_plugins(include=plugins)
-        .add(_get_auth_cli)
         .add(AuthBoundaryController)
     )
     if provider == "allow":

@@ -20,6 +20,7 @@ Example:
 
 from spakky.core.application.plugin import Plugin
 from spakky.plugins.typer.actuator import ActuatorTyperConfig
+from spakky.plugins.typer.main import typer_app
 
 PLUGIN_NAME = Plugin(name="spakky-typer")
 """Plugin identifier for the Typer CLI integration."""
@@ -27,4 +28,5 @@ PLUGIN_NAME = Plugin(name="spakky-typer")
 __all__ = [
     "ActuatorTyperConfig",
     "PLUGIN_NAME",
+    "typer_app",
 ]

@@ -33,10 +33,6 @@ def get_cli_fixture(name: str) -> Generator[Typer, Any, None]:
     def get_name() -> str:
         return name
 
-    @Pod(name="cli")
-    def get_cli() -> Typer:
-        return Typer()
-
     app = (
         SpakkyApplication(ApplicationContext())
         .load_plugins(
@@ -46,7 +42,6 @@ def get_cli_fixture(name: str) -> Generator[Typer, Any, None]:
         )
         .scan(apps)
         .add(get_name)
-        .add(get_cli)
     )
     app.start()
 

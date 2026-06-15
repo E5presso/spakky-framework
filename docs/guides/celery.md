@@ -17,26 +17,18 @@
 ## 설정
 
 `CeleryConfig`는 `@Configuration`이므로 환경변수에서 자동 로딩됩니다.
-함수 Pod로 `Celery` 인스턴스를 생성하면 `CeleryConfig`가 자동 주입됩니다.
+`spakky-celery`는 이 설정으로 기본 `Celery` 앱 Pod를 생성합니다.
 
 ```python
-from celery import Celery
-from spakky.core.pod.annotations.pod import Pod
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
-from spakky.plugins.celery.common.config import CeleryConfig
 import spakky.plugins.celery
 import apps
-
-@Pod()
-def get_celery(config: CeleryConfig) -> Celery:
-    return Celery(main=config.app_name, broker=config.broker_url)
 
 app = (
     SpakkyApplication(ApplicationContext())
     .load_plugins(include={spakky.plugins.celery.PLUGIN_NAME})
     .scan(apps)
-    .add(get_celery)
     .start()
 )
 ```
