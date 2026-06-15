@@ -28,6 +28,20 @@ OPT_OUT_MARKERS = (
     "# pragma: no branch",
 )
 
+EXCLUDED_PATH_PARTS = {
+    ".mypy_cache",
+    ".pytest_cache",
+    ".pyrefly",
+    ".qa",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "site",
+    "site-packages",
+}
+
 
 class HarnessViolation:
     def __init__(self, path: Path, line: int, message: str) -> None:
@@ -243,7 +257,7 @@ def iter_python_files(root: Path) -> list[Path]:
     return sorted(
         path
         for path in root.rglob("*.py")
-        if ".venv" not in path.parts and "__pycache__" not in path.parts
+        if not EXCLUDED_PATH_PARTS.intersection(path.parts)
     )
 
 
