@@ -1,3 +1,9 @@
+## v6.8.0 (2026-06-15)
+
+### Feat
+
+- improve framework integration defaults
+
 ## v6.7.0 (2026-06-14)
 
 ### Feat
