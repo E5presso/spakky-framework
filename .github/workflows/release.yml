@@ -111,6 +111,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           print-hash: true
+          skip-existing: true
 
       - name: Summary
         run: echo "✅ Published ${{ matrix.package }} v${{ needs.bump.outputs.released_version }}"
@@ -162,9 +163,15 @@ jobs:
             echo "- \`${pkg}==${VERSION}\`" >> release_notes.md
           done
 
-          gh release create "$TAG" \
-            --title "v${VERSION}" \
-            --notes-file release_notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "v${VERSION}" \
+              --notes-file release_notes.md
+          else
+            gh release create "$TAG" \
+              --title "v${VERSION}" \
+              --notes-file release_notes.md
+          fi
 
   sync-develop:
     name: Sync develop branch
