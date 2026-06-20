@@ -1,3 +1,13 @@
+## v6.9.0 (2026-06-20)
+
+### Feat
+
+- provide default app pods for cli and celery
+
+### Fix
+
+- **release**: tolerate partial publish recovery
+
 ## v6.8.0 (2026-06-15)
 
 ### Feat
