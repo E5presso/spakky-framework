@@ -4,7 +4,6 @@ from collections.abc import Generator
 from contextlib import contextmanager
 import json
 
-from click.testing import Result
 from pytest import MonkeyPatch
 from collections.abc import Mapping
 
@@ -16,7 +15,7 @@ from spakky.core.application.application_context import ApplicationContext
 from spakky.core.application.plugin import Plugin
 from spakky.core.pod.annotations.pod import Pod
 from typer import Typer
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 import spakky.plugins.typer
 

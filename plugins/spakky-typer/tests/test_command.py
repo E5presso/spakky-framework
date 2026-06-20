@@ -1,7 +1,6 @@
 from inspect import signature
 from typing import Literal, override
 
-from click.testing import Result
 from pytest import MonkeyPatch
 import spakky.auth
 from spakky.auth import (
@@ -26,7 +25,7 @@ from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
 from typer import Option, Typer
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 import spakky.plugins.typer
 from spakky.plugins.typer.post_processor import _with_auth_token_option

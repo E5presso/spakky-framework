@@ -106,7 +106,9 @@ async def test_capture_trace_with_traceparent_expect_child_span_on_server(
     trailing = await rpc_call.trailing_metadata()
     headers = {key: value for key, value in trailing}
     assert "traceparent" in headers
-    parts = headers["traceparent"].split("-")
+    traceparent = headers["traceparent"]
+    assert isinstance(traceparent, str)
+    parts = traceparent.split("-")
     assert parts[1] == SAMPLE_TRACE_ID
     assert parts[2] != SAMPLE_SPAN_ID
 
@@ -134,7 +136,9 @@ async def test_capture_trace_without_traceparent_expect_new_root_trace(
     trailing = await rpc_call.trailing_metadata()
     headers = {key: value for key, value in trailing}
     assert "traceparent" in headers
-    assert TRACEPARENT_PATTERN.match(headers["traceparent"])
+    traceparent = headers["traceparent"]
+    assert isinstance(traceparent, str)
+    assert TRACEPARENT_PATTERN.match(traceparent)
 
 
 @pytest.mark.asyncio

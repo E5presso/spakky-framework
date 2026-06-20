@@ -4,6 +4,8 @@ Catches domain exceptions and maps them to appropriate gRPC status codes.
 Unexpected exceptions are logged and returned as ``INTERNAL`` status.
 """
 
+from __future__ import annotations
+
 import traceback
 from collections.abc import AsyncIterator, Awaitable, Callable
 from logging import getLogger
@@ -107,13 +109,14 @@ class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
         return wrapper
 
     @override
-    async def intercept_service(
+    async def intercept_service[RequestT, ResponseT](
         self,
         continuation: Callable[
-            [grpc.HandlerCallDetails], Awaitable[grpc.RpcMethodHandler]
+            [grpc.HandlerCallDetails],
+            Awaitable[grpc.RpcMethodHandler[RequestT, ResponseT] | None],
         ],
         handler_call_details: grpc.HandlerCallDetails,
-    ) -> grpc.RpcMethodHandler:
+    ) -> grpc.RpcMethodHandler[RequestT, ResponseT] | None:
         """Intercept an RPC and wrap the handler with error handling.
 
         Args:
@@ -125,7 +128,7 @@ class ErrorHandlingInterceptor(grpc.aio.ServerInterceptor):
         """
         handler = await continuation(handler_call_details)
         if handler is None:
-            return handler  # type: ignore[return-value] — unimplemented method
+            return handler
         return _WrappedHandler(
             handler,
             wrap_unary=self._wrap_unary_behavior,

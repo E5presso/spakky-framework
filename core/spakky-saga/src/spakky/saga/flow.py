@@ -102,7 +102,7 @@ class Parallel[SagaDataT: AbstractSagaData]:
     def __and__(
         self,
         other: SagaStep[SagaDataT] | Transaction[SagaDataT] | Parallel[SagaDataT],
-    ) -> Self:
+    ) -> Parallel[SagaDataT]:
         if isinstance(other, Parallel):
             return Parallel(items=(*self.items, *other.items))
         return Parallel(items=(*self.items, other))

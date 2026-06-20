@@ -218,7 +218,7 @@ def list_functions(
 
 
 def list_objects(
-    module: ModuleType, selector: Callable[[object], bool] | None = None
+    module: ModuleType, selector: Callable[[type | FunctionType], bool] | None = None
 ) -> set[type | FunctionType]:
     """List all classes and functions in a module, optionally filtered by a selector.
 

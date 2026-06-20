@@ -1,6 +1,9 @@
 """Unit tests for TracingInterceptor."""
 
-from collections.abc import AsyncIterator
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc
@@ -10,6 +13,11 @@ import pytest
 from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 from spakky.plugins.grpc.interceptors.tracing import TracingInterceptor
+
+type UnaryBehavior = Callable[[object, grpc.aio.ServicerContext], Awaitable[object]]
+type StreamBehavior = Callable[
+    [object, grpc.aio.ServicerContext], AsyncIterator[object]
+]
 
 
 class FakePropagator(ITracePropagator):
@@ -66,6 +74,26 @@ def _make_call_details(
     return details
 
 
+def _require_unary_unary(
+    handler: grpc.RpcMethodHandler[object, object] | None,
+) -> UnaryBehavior:
+    """Return a non-null unary-unary behavior from a wrapped handler."""
+    assert handler is not None
+    behavior = handler.unary_unary
+    assert behavior is not None
+    return cast(UnaryBehavior, behavior)
+
+
+def _require_unary_stream(
+    handler: grpc.RpcMethodHandler[object, object] | None,
+) -> StreamBehavior:
+    """Return a non-null unary-stream behavior from a wrapped handler."""
+    assert handler is not None
+    behavior = handler.unary_stream
+    assert behavior is not None
+    return cast(StreamBehavior, behavior)
+
+
 @pytest.fixture(autouse=True)
 def _clear_trace_context() -> None:
     """Ensure trace context is clean before each test."""
@@ -90,8 +118,8 @@ async def test_tracing_interceptor_creates_new_root_when_no_parent(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
-    await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    await unary_unary(b"request", context)
 
     assert len(propagator.extract_calls) == 1
     assert len(propagator.inject_calls) == 1
@@ -119,8 +147,8 @@ async def test_tracing_interceptor_creates_child_when_parent_exists(
     wrapped = await interceptor.intercept_service(
         continuation, _make_call_details(metadata=metadata)
     )
-    assert wrapped.unary_unary is not None
-    await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    await unary_unary(b"request", context)
 
     assert len(captured_ctx) == 1
     child = captured_ctx[0]
@@ -144,8 +172,8 @@ async def test_tracing_interceptor_extracts_metadata_as_dict(
     wrapped = await interceptor.intercept_service(
         continuation, _make_call_details(metadata=metadata)
     )
-    assert wrapped.unary_unary is not None
-    await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    await unary_unary(b"request", context)
 
     assert propagator.extract_calls[0] == {
         "traceparent": "00-abc-def-01",
@@ -167,8 +195,8 @@ async def test_tracing_interceptor_handles_binary_metadata_values(
     wrapped = await interceptor.intercept_service(
         continuation, _make_call_details(metadata=metadata)
     )
-    assert wrapped.unary_unary is not None
-    await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    await unary_unary(b"request", context)
 
     assert propagator.extract_calls[0] == {"key": "bytes-value"}
 
@@ -184,8 +212,8 @@ async def test_tracing_interceptor_injects_trailing_metadata(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
-    await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    await unary_unary(b"request", context)
 
     context.set_trailing_metadata.assert_called_once()
     trailing = dict(context.set_trailing_metadata.call_args.args[0])
@@ -203,8 +231,8 @@ async def test_tracing_interceptor_clears_context_after_rpc(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
-    await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    await unary_unary(b"request", context)
 
     assert TraceContext.get() is None
 
@@ -220,9 +248,9 @@ async def test_tracing_interceptor_clears_context_on_error(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
+    unary_unary = _require_unary_unary(wrapped)
     with pytest.raises(RuntimeError, match="boom"):
-        await wrapped.unary_unary(b"request", context)
+        await unary_unary(b"request", context)
 
     assert TraceContext.get() is None
 
@@ -251,8 +279,8 @@ async def test_tracing_interceptor_handles_none_metadata(
     wrapped = await interceptor.intercept_service(
         continuation, _make_call_details(metadata=None)
     )
-    assert wrapped.unary_unary is not None
-    await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    await unary_unary(b"request", context)
 
     assert propagator.extract_calls[0] == {}
 
@@ -274,8 +302,8 @@ async def test_tracing_interceptor_stream_handler_injects_and_clears(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_stream is not None
-    results = [item async for item in wrapped.unary_stream(b"request", context)]  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+    unary_stream = _require_unary_stream(wrapped)
+    results = [item async for item in unary_stream(b"request", context)]  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
 
     assert results == [b"a", b"b"]
     context.set_trailing_metadata.assert_called_once()

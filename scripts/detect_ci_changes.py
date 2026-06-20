@@ -28,6 +28,7 @@ from common import (
     get_changed_packages,
     print_error,
 )
+from lib.git import ROOT_FILES_TRIGGER_ALL
 
 app = typer.Typer(
     help="Detect changed packages for CI matrix generation.",
@@ -37,9 +38,6 @@ app = typer.Typer(
 
 CORE_PACKAGE_NAME = "spakky"
 """Name of the core package that triggers full test runs when changed."""
-
-ROOT_FILES_TRIGGER_ALL = frozenset({"pyproject.toml", "uv.lock"})
-"""Root files that trigger full test runs when changed."""
 
 
 @app.command()

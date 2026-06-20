@@ -3,7 +3,7 @@
 import re
 from contextvars import ContextVar
 from secrets import token_hex
-from typing import ClassVar, Self
+from typing import ClassVar, Self, cast
 
 from spakky.core.common.mutability import immutable
 from spakky.tracing.error import InvalidTraceparentError
@@ -103,7 +103,7 @@ class TraceContext:
             A new TraceContext sharing the same trace_id, with a new span_id
             and parent_span_id set to the current span_id.
         """
-        return TraceContext(
+        return type(self)(
             trace_id=self.trace_id,
             span_id=self.generate_span_id(),
             parent_span_id=self.span_id,
@@ -117,7 +117,7 @@ class TraceContext:
         Returns:
             The current TraceContext, or None if not set.
         """
-        return _trace_context.get()
+        return cast(Self | None, _trace_context.get())
 
     @classmethod
     def set(cls, ctx: Self) -> None:

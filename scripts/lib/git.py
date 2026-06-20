@@ -8,6 +8,9 @@ from lib.config import WORKSPACE_ROOT
 from lib.models import PackageInfo
 from lib.workspace import get_all_packages
 
+ROOT_FILES_TRIGGER_ALL = frozenset({"pyproject.toml", "uv.lock"})
+"""Root dependency files whose changes affect the whole workspace."""
+
 
 def get_staged_files() -> set[str]:
     """Get list of files staged for commit.
@@ -136,6 +139,9 @@ def get_changed_packages(changed_files: set[str]) -> list[PackageInfo]:
     from lib.workspace import build_reverse_dependency_graph, get_dependent_packages
 
     all_packages = get_all_packages()
+    if changed_files & ROOT_FILES_TRIGGER_ALL:
+        return all_packages
+
     directly_changed: set[str] = set()
 
     for pkg in all_packages:

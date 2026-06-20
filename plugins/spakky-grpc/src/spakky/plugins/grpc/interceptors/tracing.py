@@ -5,6 +5,8 @@ span for the RPC lifetime, and injects trace context into trailing
 metadata.
 """
 
+from __future__ import annotations
+
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -95,13 +97,14 @@ class TracingInterceptor(grpc.aio.ServerInterceptor):
         return wrapper
 
     @override
-    async def intercept_service(
+    async def intercept_service[RequestT, ResponseT](
         self,
         continuation: Callable[
-            [grpc.HandlerCallDetails], Awaitable[grpc.RpcMethodHandler]
+            [grpc.HandlerCallDetails],
+            Awaitable[grpc.RpcMethodHandler[RequestT, ResponseT] | None],
         ],
         handler_call_details: grpc.HandlerCallDetails,
-    ) -> grpc.RpcMethodHandler:
+    ) -> grpc.RpcMethodHandler[RequestT, ResponseT] | None:
         """Intercept an RPC and set up W3C Trace Context.
 
         Extracts trace context from incoming metadata, creates a child span
@@ -128,7 +131,7 @@ class TracingInterceptor(grpc.aio.ServerInterceptor):
 
         if handler is None:
             TraceContext.clear()
-            return handler  # type: ignore[return-value] — unimplemented method
+            return handler
 
         return _WrappedHandler(
             handler,

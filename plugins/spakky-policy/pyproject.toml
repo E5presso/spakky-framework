@@ -74,6 +74,11 @@ exclude_lines = [
     "pass",
 ]
 
+[dependency-groups]
+dev = [
+    "types-pyyaml>=6.0.12.20260518",
+]
+
 [tool.uv.sources]
 spakky = { workspace = true }
 spakky-auth = { workspace = true }

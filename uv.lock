@@ -3399,6 +3399,8 @@ dependencies = [
 dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-integration-mark" },
+    { name = "types-grpcio" },
+    { name = "types-protobuf" },
 ]
 
 [package.metadata]
@@ -3416,6 +3418,8 @@ requires-dist = [
 dev = [
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
+    { name = "types-grpcio", specifier = ">=1.0.0.20260614" },
+    { name = "types-protobuf", specifier = ">=7.34.1.20260518" },
 ]
 
 [[package]]
@@ -3584,6 +3588,11 @@ dependencies = [
     { name = "spakky-auth" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "types-pyyaml" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.13.1" },
@@ -3591,6 +3600,9 @@ requires-dist = [
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-auth", editable = "core/spakky-auth" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "types-pyyaml", specifier = ">=6.0.12.20260518" }]
 
 [[package]]
 name = "spakky-rabbitmq"
@@ -3912,6 +3924,33 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5e/ed/ef06584ccdd5c410df0837951ecd7e15d9a6144ea1bd4c73cecab1a89891/typer-0.26.7.tar.gz", hash = "sha256:e314a34c617e419c091b2830dda3ea1f257134ff593061a8f5b9717ab8dddb3a", size = 201709, upload-time = "2026-06-03T07:18:06.843Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/24/25/2201973529af2c954de0bb725323c3aaed6d7f0ceee8f550dec9185df013/typer-0.26.7-py3-none-any.whl", hash = "sha256:5c87cfbc5d34491c5346ebf49c23e18d56ccb863268d3a8d592b26087c2f5e58", size = 122456, upload-time = "2026-06-03T07:18:05.732Z" },
+]
+
+[[package]]
+name = "types-grpcio"
+version = "1.0.0.20260614"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/1c/e299150827a2224fe9ddb59e9f789f0eb8e72e0befc23fd47195024311fa/types_grpcio-1.0.0.20260614.tar.gz", hash = "sha256:e86d1aabb7e7eedae487c3ac10e010a13d5db1fd350e766562053af557366aab", size = 15063, upload-time = "2026-06-14T06:23:33.591Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/f5/a8b8ca4d891bc4e835ef758a8fb50c7539c7f45bc0e42fae2b847cbc59b7/types_grpcio-1.0.0.20260614-py3-none-any.whl", hash = "sha256:050472cb4ef329ae8fe20278c62bc0da5b961aad3dd889cc35f6e0c70d368dae", size = 15629, upload-time = "2026-06-14T06:23:32.616Z" },
+]
+
+[[package]]
+name = "types-protobuf"
+version = "7.34.1.20260518"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/59/e2b13b499d15e6720150c4b1a8d91e31fcacf716b432397475b3151ff7e4/types_protobuf-7.34.1.20260518.tar.gz", hash = "sha256:28cfaded25889cb83ebfb63cfb0a43628f0b6f3785767bec17287dc6468795f2", size = 68936, upload-time = "2026-05-18T06:01:47.332Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/1f/ec5caf72c2e3b688ca3927e0979a04ddad19e1afc4bf1c199bd743e0f419/types_protobuf-7.34.1.20260518-py3-none-any.whl", hash = "sha256:a0a5337413347166439c0e07cbc26c6164d091401c6f01b1dfd8cdb966c4dd8f", size = 85992, upload-time = "2026-05-18T06:01:45.696Z" },
+]
+
+[[package]]
+name = "types-pyyaml"
+version = "6.0.12.20260518"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/83/4a1afc3fbfcf5b8d46fc390cd95ed6b0dc9010a265f4e9f46314efffa37a/types_pyyaml-6.0.12.20260518.tar.gz", hash = "sha256:d917f83fb38462550338c1297faedd860b3ec83912b96b1e3d73255f7473e466", size = 17850, upload-time = "2026-05-18T06:01:58.675Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/a2/c01db32be2ae7d6a1689972f3c492b149ee4e164b12fdfd9f64b50888215/types_pyyaml-6.0.12.20260518-py3-none-any.whl", hash = "sha256:d2150f75a231c9fe9c7463bd29487d93e60bac90400287351384bc2284eba7cd", size = 20312, upload-time = "2026-05-18T06:01:57.368Z" },
 ]
 
 [[package]]

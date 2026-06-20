@@ -229,7 +229,10 @@ class RegisterRoutesPostProcessor(
                     auth_boundary.signature_with_websocket(method)
                 )
                 router.add_api_websocket_route(
-                    endpoint=websocket_endpoint, **asdict(websocket_route)
+                    path=websocket_route.path,
+                    endpoint=websocket_endpoint,
+                    name=websocket_route.name,
+                    dependencies=websocket_route.dependencies,
                 )
         for fast_api in self.__fastapi_apps():
             fast_api.include_router(router)

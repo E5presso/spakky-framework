@@ -1,7 +1,10 @@
 """Unit tests for ErrorHandlingInterceptor."""
 
+from __future__ import annotations
+
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc
@@ -24,6 +27,11 @@ from spakky.plugins.grpc.interceptors.error_handling import (
     ErrorHandlingInterceptor,
     _abort_auth_error,
 )
+
+type UnaryBehavior = Callable[[object, grpc.aio.ServicerContext], Awaitable[object]]
+type StreamBehavior = Callable[
+    [object, grpc.aio.ServicerContext], AsyncIterator[object]
+]
 
 
 def _make_handler(
@@ -52,6 +60,26 @@ def _make_call_details(method: str = "/test.Service/Method") -> MagicMock:
     details.method = method
     details.invocation_metadata = ()
     return details
+
+
+def _require_unary_unary(
+    handler: grpc.RpcMethodHandler[object, object] | None,
+) -> UnaryBehavior:
+    """Return a non-null unary-unary behavior from a wrapped handler."""
+    assert handler is not None
+    behavior = handler.unary_unary
+    assert behavior is not None
+    return cast(UnaryBehavior, behavior)
+
+
+def _require_unary_stream(
+    handler: grpc.RpcMethodHandler[object, object] | None,
+) -> StreamBehavior:
+    """Return a non-null unary-stream behavior from a wrapped handler."""
+    assert handler is not None
+    behavior = handler.unary_stream
+    assert behavior is not None
+    return cast(StreamBehavior, behavior)
 
 
 @pytest.fixture
@@ -84,8 +112,8 @@ async def test_unary_handler_passes_through_on_success(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
-    result = await wrapped.unary_unary(b"request", context)
+    unary_unary = _require_unary_unary(wrapped)
+    result = await unary_unary(b"request", context)
 
     assert result == b"response"
     behavior.assert_awaited_once_with(b"request", context)
@@ -101,9 +129,9 @@ async def test_unary_handler_catches_grpc_error_expect_abort_with_status(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
+    unary_unary = _require_unary_unary(wrapped)
     with pytest.raises(grpc.aio.AbortError):
-        await wrapped.unary_unary(b"request", context)
+        await unary_unary(b"request", context)
 
     context.abort.assert_awaited_once_with(grpc.StatusCode.NOT_FOUND, "Not Found")
 
@@ -118,9 +146,9 @@ async def test_unary_handler_catches_unexpected_error_expect_internal(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
+    unary_unary = _require_unary_unary(wrapped)
     with pytest.raises(grpc.aio.AbortError):
-        await wrapped.unary_unary(b"request", context)
+        await unary_unary(b"request", context)
 
     context.abort.assert_awaited_once_with(
         grpc.StatusCode.INTERNAL, InternalError.message
@@ -138,9 +166,9 @@ async def test_unary_handler_reraises_grpc_rpc_error(
 
     ctx = AsyncMock(spec=grpc.aio.ServicerContext)
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
+    unary_unary = _require_unary_unary(wrapped)
     with pytest.raises(grpc.aio.AbortError):
-        await wrapped.unary_unary(b"request", ctx)
+        await unary_unary(b"request", ctx)
 
     ctx.abort.assert_not_awaited()
 
@@ -157,9 +185,9 @@ async def test_unary_handler_debug_mode_includes_traceback(
     wrapped = await debug_interceptor.intercept_service(
         continuation, _make_call_details()
     )
-    assert wrapped.unary_unary is not None
+    unary_unary = _require_unary_unary(wrapped)
     with pytest.raises(grpc.aio.AbortError):
-        await wrapped.unary_unary(b"request", context)
+        await unary_unary(b"request", context)
 
     _code, details = context.abort.call_args.args
     assert "RuntimeError" in details
@@ -177,12 +205,12 @@ async def test_unary_handler_logs_unexpected_error(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
+    unary_unary = _require_unary_unary(wrapped)
     with (
         caplog.at_level(logging.ERROR),
         pytest.raises(grpc.aio.AbortError),
     ):
-        await wrapped.unary_unary(b"request", context)
+        await unary_unary(b"request", context)
 
     assert "RuntimeError('oops')" in caplog.text
 
@@ -212,8 +240,8 @@ async def test_stream_handler_passes_through_on_success(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_stream is not None
-    results = [item async for item in wrapped.unary_stream(b"request", context)]  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+    unary_stream = _require_unary_stream(wrapped)
+    results = [item async for item in unary_stream(b"request", context)]  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
 
     assert results == [b"a", b"b"]
 
@@ -234,9 +262,9 @@ async def test_stream_handler_catches_grpc_error_expect_abort(
     continuation = AsyncMock(return_value=handler)
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_stream is not None
+    unary_stream = _require_unary_stream(wrapped)
     with pytest.raises(grpc.aio.AbortError):
-        async for _ in wrapped.unary_stream(b"request", context):  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+        async for _ in unary_stream(b"request", context):  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
             pass
 
     context.abort.assert_awaited_once_with(
@@ -261,9 +289,9 @@ async def test_multiple_error_types_map_to_correct_status(
         wrapped = await interceptor.intercept_service(
             continuation, _make_call_details()
         )
-        assert wrapped.unary_unary is not None
+        unary_unary = _require_unary_unary(wrapped)
         with pytest.raises(grpc.aio.AbortError):
-            await wrapped.unary_unary(b"request", ctx)
+            await unary_unary(b"request", ctx)
 
         ctx.abort.assert_awaited_once_with(error_class.status_code, error_class.message)
 
@@ -311,9 +339,9 @@ async def test_auth_errors_map_to_expected_grpc_status(
     ctx.abort = AsyncMock(side_effect=grpc.aio.AbortError(expected_status, ""))
 
     wrapped = await interceptor.intercept_service(continuation, _make_call_details())
-    assert wrapped.unary_unary is not None
+    unary_unary = _require_unary_unary(wrapped)
     with pytest.raises(grpc.aio.AbortError):
-        await wrapped.unary_unary(b"request", ctx)
+        await unary_unary(b"request", ctx)
 
     _status, details = ctx.abort.call_args.args
     assert _status is expected_status
