@@ -1,3 +1,9 @@
+## v6.9.1 (2026-06-20)
+
+### Fix
+
+- restore pyrefly CI compatibility
+
 ## v6.9.0 (2026-06-20)
 
 ### Feat
