@@ -61,7 +61,30 @@ app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 
 ## 타입 매핑
 
-`ProtoField` 어노테이션이 부착된 pydantic `BaseModel` 필드(`Annotated[T, ProtoField(number=N)]`)를 protobuf 필드로 매핑합니다. 필드 번호는 `BaseModel.model_fields[name].metadata`에서 읽어옵니다.
+pydantic `BaseModel`의 각 필드를 protobuf 필드로 매핑합니다. `ProtoField` 어노테이션은 선택 사항입니다.
+
+### 필드 번호 할당
+
+필드 번호는 다음 규칙으로 결정됩니다.
+
+- **자동 도출 (기본)**: `ProtoField` 어노테이션이 없으면 필드 이름의 SHA-256 해시로부터 번호를 결정합니다. 번호는 유효 범위 `1`..`536_870_911` 안에 들어오며, protobuf가 예약한 `19_000`..`19_999` 구간을 피합니다. 필드를 추가하거나 순서를 바꾸어도 기존 필드의 번호는 변하지 않아 wire 호환성이 유지됩니다.
+- **명시 지정 (오버라이드)**: `Annotated[T, ProtoField(number=N)]`을 붙이면 해당 필드는 `N`번을 사용합니다. 동일 메시지 안에서 자동 도출 필드와 혼용할 수 있습니다.
+
+```python
+from pydantic import BaseModel
+from typing import Annotated
+from spakky.plugins.grpc.annotations.field import ProtoField
+
+# ProtoField 없이 — 번호는 필드 이름 해시로 자동 결정
+class HelloRequest(BaseModel):
+    name: str
+
+# ProtoField로 번호 명시 지정
+class HelloReply(BaseModel):
+    message: Annotated[str, ProtoField(number=1)]
+```
+
+### 타입 매핑 표
 
 | Python | Protobuf |
 |---|---|

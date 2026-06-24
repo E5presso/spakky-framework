@@ -1,8 +1,10 @@
 """Pydantic BaseModel to protobuf FileDescriptorProto builder.
 
-Converts pydantic ``BaseModel`` subclasses with ``ProtoField`` metadata
-and ``@rpc``-decorated controller methods into protobuf
-``FileDescriptorProto`` instances.
+Converts pydantic ``BaseModel`` subclasses and ``@rpc``-decorated
+controller methods into protobuf ``FileDescriptorProto`` instances. Field
+numbers are assigned deterministically from field names (see
+:mod:`spakky.plugins.grpc.schema.field_number`); an explicit
+``ProtoField`` annotation overrides the derived number for a field.
 """
 
 from inspect import getmembers, isfunction
@@ -17,10 +19,8 @@ from google.protobuf.descriptor_pb2 import (
 )
 from pydantic import BaseModel
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
-from spakky.plugins.grpc.schema.type_map import (
-    extract_proto_field,
-    resolve_type,
-)
+from spakky.plugins.grpc.schema.field_number import assign_field_numbers
+from spakky.plugins.grpc.schema.type_map import resolve_type
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
@@ -52,13 +52,14 @@ def build_message_descriptor(
     descriptor = DescriptorProto(name=name)
     collected[name] = descriptor
 
+    field_numbers = assign_field_numbers(model_type)
+
     for field_name, field_info in model_type.model_fields.items():
         resolved = resolve_type(field_info.annotation)
-        proto_field = extract_proto_field(model_type, field_name)
 
         field_desc = FieldDescriptorProto(
             name=field_name,
-            number=proto_field.number,
+            number=field_numbers[field_name],
             type=resolved.proto_type,
         )
 

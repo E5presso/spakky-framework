@@ -6,7 +6,6 @@ from spakky.core.common.error import AbstractSpakkyFrameworkError
 from spakky.plugins.grpc.error import (
     AbstractSpakkyGrpcError,
     DescriptorAlreadyRegisteredError,
-    MissingProtoFieldAnnotationError,
     UnsupportedFieldTypeError,
 )
 
@@ -30,22 +29,6 @@ def test_unsupported_field_type_error_stores_field_type() -> None:
     """UnsupportedFieldTypeError가 field_type을 저장하는지 검증한다."""
     error = UnsupportedFieldTypeError(int)
     assert error.field_type is int
-
-
-def test_missing_proto_field_annotation_error_is_grpc_error() -> None:
-    """MissingProtoFieldAnnotationError가 AbstractSpakkyGrpcError의 서브클래스인지 검증한다."""
-    assert issubclass(MissingProtoFieldAnnotationError, AbstractSpakkyGrpcError)
-
-
-def test_missing_proto_field_annotation_error_stores_context() -> None:
-    """MissingProtoFieldAnnotationError가 model_type과 field_name을 저장하는지 검증한다."""
-
-    class Dummy:
-        pass
-
-    error = MissingProtoFieldAnnotationError(Dummy, "name")
-    assert error.model_type is Dummy
-    assert error.field_name == "name"
 
 
 def test_descriptor_already_registered_error_is_grpc_error() -> None:

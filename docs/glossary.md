@@ -908,8 +908,7 @@ gRPC 메서드 유형을 나타내는 열거형:
 
 ### ProtoField
 
-Pydantic `BaseModel` 필드에 protobuf 메타데이터를 부착하는 어노테이션입니다.
-code-first protobuf descriptor 생성 시 `DescriptorBuilder`가 `model_fields`에서 이 metadata를 읽습니다.
+Pydantic `BaseModel` 필드에 protobuf 필드 번호를 명시적으로 지정할 때 사용하는 **선택적** 어노테이션입니다. `ProtoField`를 생략하면 `DescriptorBuilder`가 필드 이름의 SHA-256 해시에서 번호를 자동 부여합니다. 이름 기반이므로 필드 추가·순서 변경 시에도 기존 필드 번호가 바뀌지 않아 와이어 호환성이 유지됩니다. 예약 구간 19000–19999는 자동으로 건너뜁니다. 기존 `.proto` 계약과 번호를 맞춰야 할 때만 `ProtoField(number=N)`으로 번호를 직접 지정합니다.
 
 ```python
 from typing import Annotated
@@ -918,7 +917,12 @@ from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
 
 
+# 자동 번호 부여 (기본)
 class GetUserRequest(BaseModel):
+    user_id: str
+
+# 번호 명시 (기존 계약 유지가 필요한 경우)
+class GetUserRequestPinned(BaseModel):
     user_id: Annotated[str, ProtoField(number=1)]
 ```
 
