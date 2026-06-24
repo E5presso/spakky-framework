@@ -20,26 +20,24 @@ export SPAKKY_GRPC_BIND_ADDRESSES='["127.0.0.1:50051"]'
 ```
 
 ```python
-from typing import Annotated
-
 from pydantic import BaseModel
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 
 import spakky.plugins.grpc
-from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 import apps  # `@GrpcController`-decorated classes live in your own package
 
 
+# ProtoField 없이 — 필드 번호는 필드 이름 해시로 자동 결정됩니다.
 class HelloRequest(BaseModel):
-    name: Annotated[str, ProtoField(number=1)]
+    name: str
 
 
 class HelloReply(BaseModel):
-    message: Annotated[str, ProtoField(number=1)]
+    message: str
 
 
 @GrpcController(package="example.hello")
