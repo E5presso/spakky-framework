@@ -9,7 +9,7 @@
 
 1. `@GrpcController`로 gRPC 서비스 컨트롤러를 선언
 2. `@rpc`로 메서드를 RPC 엔드포인트로 마크
-3. `ProtoField` 어노테이션으로 요청/응답 타입에 protobuf 메타데이터 부착
+3. pydantic `BaseModel`으로 요청/응답 타입 정의 (`ProtoField`로 필드 번호를 명시하거나 생략하여 자동 번호 부여)
 4. `DescriptorBuilder`가 Python 타입에서 protobuf descriptor를 자동 생성
 5. PostProcessor들이 서비스 등록, 인터셉터 추가, 서버 바인딩을 자동 처리
 
@@ -96,7 +96,24 @@ class UserServiceController:
 
 ### ProtoField
 
-pydantic `BaseModel` 필드에 protobuf 필드 번호를 부착합니다. `.proto` 파일 없이 Python 타입만으로 protobuf descriptor를 생성합니다. `DescriptorBuilder`가 `BaseModel.model_fields[name].metadata`에서 `ProtoField` 인스턴스를 읽어오므로 메시지 타입은 **반드시 `pydantic.BaseModel` 서브클래스**여야 합니다.
+pydantic `BaseModel` 필드에 protobuf 필드 번호를 명시적으로 지정할 때 사용하는 **선택적** 어노테이션입니다. `.proto` 파일 없이 Python 타입만으로 protobuf descriptor를 생성합니다. 메시지 타입은 **반드시 `pydantic.BaseModel` 서브클래스**여야 합니다.
+
+**기본 동작 — 자동 번호 부여**: `ProtoField`를 생략하면 `DescriptorBuilder`가 필드 이름의 SHA-256 해시에서 protobuf 필드 번호를 자동으로 결정합니다. 이름에서 번호가 결정되므로 필드 선언 순서를 바꿔도 기존 번호는 변하지 않고, 필드를 추가해도 기존 번호가 보존되어 와이어 호환성이 유지됩니다. 단 새 필드 이름의 salt-0 해시가 기존 필드 번호와 충돌하는 드문 경우(약 5.4억분의 1 확률)에만 기존 필드가 재해싱되며, 이때는 `ProtoField(number=N)`으로 번호를 고정할 수 있습니다. 예약 구간 19000–19999는 자동으로 건너뜁니다.
+
+```python
+from pydantic import BaseModel
+
+# ProtoField 없이 자동 번호 부여 — 필드 이름에서 결정론적으로 계산됨
+class GetUserRequest(BaseModel):
+    user_id: str
+
+class GetUserResponse(BaseModel):
+    user_id: str
+    name: str
+    email: str
+```
+
+**번호 명시 — `ProtoField(number=N)`**: 기존 `.proto` 계약과 번호를 맞춰야 하거나 번호를 직접 제어하고 싶은 경우에만 `ProtoField`로 번호를 지정합니다.
 
 ```python
 from typing import Annotated
@@ -131,7 +148,7 @@ class GetUserResponse(BaseModel):
 
 ### DescriptorRegistry
 
-protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `ProtoField` 어노테이션이 부착된 Python 타입에서 descriptor를 자동 생성합니다.
+protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다.
 
 ---
 
@@ -181,8 +198,8 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 | 에러 | 설명 |
 |------|------|
 | `UnsupportedFieldTypeError` | 지원하지 않는 protobuf 필드 타입 |
-| `MissingProtoFieldAnnotationError` | `ProtoField` 어노테이션 누락 |
 | `DescriptorAlreadyRegisteredError` | 이미 등록된 descriptor 재등록 시도 |
+| `ProtoFieldNumberConflictError` | 명시 `ProtoField` 번호가 자동 부여 필드의 번호와 충돌 |
 
 ---
 
@@ -194,20 +211,18 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 `Pro
 
 ```python
 # apps/echo.py
-from typing import Annotated
-
 from pydantic import BaseModel
-from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import rpc
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
+# ProtoField 없이 선언 — 필드 번호는 이름 해시에서 자동 부여됨
 class EchoRequest(BaseModel):
-    text: Annotated[str, ProtoField(number=1)]
+    text: str
 
 
 class EchoReply(BaseModel):
-    text: Annotated[str, ProtoField(number=1)]
+    text: str
 
 
 @GrpcController(package="example.echo")
@@ -296,7 +311,7 @@ asyncio.run(main(app.container.get(DescriptorRegistry)))
 |------|------|
 | `SPAKKY_GRPC_BIND_ADDRESSES` | FastAPI와 마찬가지로 런타임 공유 객체는 플러그인이 제공하고, gRPC listener 주소만 환경 설정으로 지정함 |
 | 메서드 시그니처 제약 | `@rpc` 메서드는 **요청 `BaseModel` 1개**만 파라미터로 받음. FastAPI처럼 path/query 파라미터를 분리하지 않음 (path·query 개념이 gRPC에 없음) |
-| 메시지는 pydantic `BaseModel` + `ProtoField` | `pydantic.BaseModel` 서브클래스 + `Annotated[T, ProtoField(number=N)]`로 선언. 필드 번호는 사용자가 명시. protobuf ↔ BaseModel 변환은 `google.protobuf.json_format` 브릿지로 수행 |
+| 메시지는 pydantic `BaseModel` | `pydantic.BaseModel` 서브클래스로 선언. 필드 번호는 이름 해시에서 자동 부여되며, `Annotated[T, ProtoField(number=N)]`으로 명시 지정도 가능. protobuf ↔ BaseModel 변환은 `google.protobuf.json_format` 브릿지로 수행 |
 | 스트리밍 | `AsyncIterator[T]`를 요청/응답 타입으로 사용하여 4가지 스트리밍 패턴 지원 (FastAPI는 `StreamingResponse`로 단방향만) |
 | 에러 → 상태 코드 매핑 | HTTP 상태 코드 대신 gRPC `StatusCode`. `AbstractGrpcStatusError` 서브클래스를 `ErrorHandlingInterceptor`가 매핑 |
 

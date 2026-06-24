@@ -1,19 +1,14 @@
 """Unit tests for type_map module."""
 
-from typing import Annotated, Optional
+from typing import Optional
 
 import pytest
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
 from pydantic import BaseModel
-from spakky.plugins.grpc.annotations.field import ProtoField
-from spakky.plugins.grpc.error import (
-    MissingProtoFieldAnnotationError,
-    UnsupportedFieldTypeError,
-)
+from spakky.plugins.grpc.error import UnsupportedFieldTypeError
 from spakky.plugins.grpc.schema.type_map import (
     PYTHON_TO_PROTO_TYPE,
     ResolvedFieldType,
-    extract_proto_field,
     resolve_type,
 )
 
@@ -55,7 +50,7 @@ def test_nested_basemodel_maps_to_type_message() -> None:
     """중첩 BaseModel이 TYPE_MESSAGE로 매핑되는지 검증한다."""
 
     class Inner(BaseModel):
-        value: Annotated[str, ProtoField(number=1)]
+        value: str
 
     result = resolve_type(Inner)
     assert result.proto_type == FieldDescriptorProto.TYPE_MESSAGE
@@ -75,7 +70,7 @@ def test_list_basemodel_maps_to_repeated_message() -> None:
     """list[BaseModel]이 repeated TYPE_MESSAGE로 매핑되는지 검증한다."""
 
     class Item(BaseModel):
-        name: Annotated[str, ProtoField(number=1)]
+        name: str
 
     result = resolve_type(list[Item])
     assert result.proto_type == FieldDescriptorProto.TYPE_MESSAGE
@@ -103,27 +98,6 @@ def test_unsupported_type_raises_error() -> None:
     """지원하지 않는 타입에 대해 UnsupportedFieldTypeError를 발생시키는지 검증한다."""
     with pytest.raises(UnsupportedFieldTypeError):
         resolve_type(complex)
-
-
-def test_extract_proto_field_from_annotated() -> None:
-    """Annotated 타입에서 ProtoField를 추출하는지 검증한다."""
-
-    class Msg(BaseModel):
-        name: Annotated[str, ProtoField(number=3)]
-
-    result = extract_proto_field(Msg, "name")
-    assert result.number == 3
-
-
-def test_extract_proto_field_missing_raises_error() -> None:
-    """존재하지 않는 필드에서 MissingProtoFieldAnnotationError를 발생시키는지 검증한다."""
-
-    class Msg(BaseModel):
-        name: str
-
-    with pytest.raises(MissingProtoFieldAnnotationError) as exc_info:
-        extract_proto_field(Msg, "name")
-    assert exc_info.value.field_name == "name"
 
 
 def test_python_to_proto_type_has_all_basic_types() -> None:
@@ -158,47 +132,14 @@ def test_multi_type_union_raises_error() -> None:
         resolve_type(Union[str, int])  # noqa: UP007 - legacy typing input contract
 
 
-def test_extract_proto_field_multi_field_basemodel() -> None:
-    """멀티 필드 BaseModel에서 두 번째 필드의 ProtoField를 추출하는지 검증한다."""
-
-    class Multi(BaseModel):
-        first: Annotated[str, ProtoField(number=1)]
-        second: Annotated[int, ProtoField(number=2)]
-
-    result = extract_proto_field(Multi, "second")
-    assert result.number == 2
-
-
 def test_optional_basemodel_maps_to_optional_message() -> None:
     """Optional[BaseModel]이 optional TYPE_MESSAGE로 매핑되는지 검증한다."""
 
     class Inner(BaseModel):
-        value: Annotated[str, ProtoField(number=1)]
+        value: str
 
     result = resolve_type(Optional[Inner])  # noqa: UP045 - legacy typing input contract
     assert result.proto_type == FieldDescriptorProto.TYPE_MESSAGE
     assert result.is_optional
     assert result.is_message
     assert result.message_type is Inner
-
-
-def test_extract_proto_field_nonexistent_field_raises_error() -> None:
-    """존재하지 않는 필드명을 요청하면 MissingProtoFieldAnnotationError를 발생시키는지 검증한다."""
-
-    class Msg(BaseModel):
-        name: Annotated[str, ProtoField(number=1)]
-
-    with pytest.raises(MissingProtoFieldAnnotationError) as exc_info:
-        extract_proto_field(Msg, "nonexistent")
-    assert exc_info.value.field_name == "nonexistent"
-
-
-def test_extract_proto_field_annotated_without_proto_field_raises_error() -> None:
-    """Annotated이지만 ProtoField가 없는 필드에서 MissingProtoFieldAnnotationError를 발생시키는지 검증한다."""
-
-    class Msg(BaseModel):
-        name: Annotated[str, "not a proto field"]
-
-    with pytest.raises(MissingProtoFieldAnnotationError) as exc_info:
-        extract_proto_field(Msg, "name")
-    assert exc_info.value.field_name == "name"

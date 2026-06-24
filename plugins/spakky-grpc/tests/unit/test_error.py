@@ -6,7 +6,7 @@ from spakky.core.common.error import AbstractSpakkyFrameworkError
 from spakky.plugins.grpc.error import (
     AbstractSpakkyGrpcError,
     DescriptorAlreadyRegisteredError,
-    MissingProtoFieldAnnotationError,
+    ProtoFieldNumberConflictError,
     UnsupportedFieldTypeError,
 )
 
@@ -32,22 +32,6 @@ def test_unsupported_field_type_error_stores_field_type() -> None:
     assert error.field_type is int
 
 
-def test_missing_proto_field_annotation_error_is_grpc_error() -> None:
-    """MissingProtoFieldAnnotationError가 AbstractSpakkyGrpcError의 서브클래스인지 검증한다."""
-    assert issubclass(MissingProtoFieldAnnotationError, AbstractSpakkyGrpcError)
-
-
-def test_missing_proto_field_annotation_error_stores_context() -> None:
-    """MissingProtoFieldAnnotationError가 model_type과 field_name을 저장하는지 검증한다."""
-
-    class Dummy:
-        pass
-
-    error = MissingProtoFieldAnnotationError(Dummy, "name")
-    assert error.model_type is Dummy
-    assert error.field_name == "name"
-
-
 def test_descriptor_already_registered_error_is_grpc_error() -> None:
     """DescriptorAlreadyRegisteredError가 AbstractSpakkyGrpcError의 서브클래스인지 검증한다."""
     assert issubclass(DescriptorAlreadyRegisteredError, AbstractSpakkyGrpcError)
@@ -57,3 +41,21 @@ def test_descriptor_already_registered_error_stores_file_name() -> None:
     """DescriptorAlreadyRegisteredError가 file_name을 저장하는지 검증한다."""
     error = DescriptorAlreadyRegisteredError("test.proto")
     assert error.file_name == "test.proto"
+
+
+def test_proto_field_number_conflict_error_is_grpc_error() -> None:
+    """ProtoFieldNumberConflictError가 AbstractSpakkyGrpcError의 서브클래스인지 검증한다."""
+    assert issubclass(ProtoFieldNumberConflictError, AbstractSpakkyGrpcError)
+
+
+def test_proto_field_number_conflict_error_stores_context() -> None:
+    """ProtoFieldNumberConflictError가 충돌 컨텍스트를 저장하는지 검증한다."""
+
+    class Dummy:
+        pass
+
+    error = ProtoFieldNumberConflictError(Dummy, "pinned", "name", 95775423)
+    assert error.model_type is Dummy
+    assert error.explicit_field_name == "pinned"
+    assert error.derived_field_name == "name"
+    assert error.number == 95775423
