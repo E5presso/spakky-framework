@@ -98,7 +98,7 @@ class UserServiceController:
 
 pydantic `BaseModel` 필드에 protobuf 필드 번호를 명시적으로 지정할 때 사용하는 **선택적** 어노테이션입니다. `.proto` 파일 없이 Python 타입만으로 protobuf descriptor를 생성합니다. 메시지 타입은 **반드시 `pydantic.BaseModel` 서브클래스**여야 합니다.
 
-**기본 동작 — 자동 번호 부여**: `ProtoField`를 생략하면 `DescriptorBuilder`가 필드 이름의 SHA-256 해시에서 protobuf 필드 번호를 자동으로 결정합니다. 이름에서 번호가 결정되므로 필드를 추가하거나 선언 순서를 바꿔도 기존 필드의 번호는 변하지 않아 와이어 호환성이 유지됩니다. 예약 구간 19000–19999는 자동으로 건너뜁니다.
+**기본 동작 — 자동 번호 부여**: `ProtoField`를 생략하면 `DescriptorBuilder`가 필드 이름의 SHA-256 해시에서 protobuf 필드 번호를 자동으로 결정합니다. 이름에서 번호가 결정되므로 필드 선언 순서를 바꿔도 기존 번호는 변하지 않고, 필드를 추가해도 기존 번호가 보존되어 와이어 호환성이 유지됩니다. 단 새 필드 이름의 salt-0 해시가 기존 필드 번호와 충돌하는 드문 경우(약 5.4억분의 1 확률)에만 기존 필드가 재해싱되며, 이때는 `ProtoField(number=N)`으로 번호를 고정할 수 있습니다. 예약 구간 19000–19999는 자동으로 건너뜁니다.
 
 ```python
 from pydantic import BaseModel

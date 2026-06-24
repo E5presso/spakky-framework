@@ -84,6 +84,73 @@ def test_reordering_fields_expect_existing_field_numbers_unchanged() -> None:
     assert reordered == original
 
 
+def test_reordering_colliding_pair_expect_identical_numbers() -> None:
+    """salt-0 충돌 쌍을 재배치해도 두 필드 번호가 동일한지 검증한다.
+
+    재배치 불변식(SC-1)은 충돌이 있어도 절대적이다 — 할당이 이름 집합의
+    순수 함수이기 때문이다. ``f23200``과 ``f3323``은 salt-0 번호가
+    동일(78767513)하여 한쪽이 재해싱되지만, 그 결과는 선언 순서와 무관하다.
+    """
+
+    class DeclaredAB(BaseModel):
+        f3323: str
+        f23200: str
+
+    class DeclaredBA(BaseModel):
+        f23200: str
+        f3323: str
+
+    assert assign_field_numbers(DeclaredAB) == assign_field_numbers(DeclaredBA)
+
+
+def test_adding_colliding_field_rehashes_the_sorted_loser() -> None:
+    """salt-0 충돌 쌍에서 사전순 뒤 이름이 추가 시 재해싱되는 경계를 고정한다.
+
+    자동 번호의 단일 호환성 경계(모듈 docstring "Wire-compatibility
+    guarantee and its single boundary")를 명시적으로 박제한다. ``f23200``은
+    ``f3323``보다 사전순 앞서므로 salt-0 번호(78767513)를 차지하고, 기존
+    필드 ``f3323``은 재해싱된다. 절대 락이 필요하면 ProtoField로 고정한다.
+    """
+
+    class Before(BaseModel):
+        f3323: str
+
+    class After(BaseModel):
+        f3323: str
+        f23200: str
+
+    before = assign_field_numbers(Before)
+    after = assign_field_numbers(After)
+
+    assert before["f3323"] == _hash_to_number("f3323", 0)
+    assert after["f23200"] == _hash_to_number("f3323", 0)
+    assert after["f3323"] == _hash_to_number("f3323", 1)
+    assert after["f3323"] != before["f3323"]
+
+
+def test_colliding_field_pinned_with_protofield_is_stable_on_add() -> None:
+    """ProtoField로 고정한 필드는 충돌 상대가 추가돼도 번호가 불변임을 검증한다.
+
+    salt-0 충돌 경계에서도 명시 ProtoField는 무조건 그 번호를 유지한다 —
+    docstring이 권고하는 "무조건 락" 경로를 검증한다.
+    """
+    pinned_number = _hash_to_number("f3323", 0)
+
+    class Before(BaseModel):
+        f3323: Annotated[str, ProtoField(number=pinned_number)]
+
+    class After(BaseModel):
+        f3323: Annotated[str, ProtoField(number=pinned_number)]
+        f23200: str
+
+    before = assign_field_numbers(Before)
+    after = assign_field_numbers(After)
+
+    assert before["f3323"] == pinned_number
+    assert after["f3323"] == pinned_number
+    assert after["f23200"] != pinned_number
+
+
 def test_explicit_protofield_expect_override_number() -> None:
     """ProtoField를 명시하면 해당 번호로 오버라이드되는지 검증한다 (FR-3)."""
 

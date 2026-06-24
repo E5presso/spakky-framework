@@ -2,10 +2,8 @@
 
 Assigns protobuf field numbers to pydantic ``BaseModel`` fields without
 requiring an explicit :class:`ProtoField` annotation. Each number is
-derived from a stable hash of the field *name*, so adding or reordering
-fields never changes the numbers of pre-existing fields (wire
-compatibility). Explicit ``ProtoField`` annotations override the derived
-number for the annotated field.
+derived from a stable hash of the field *name*. Explicit ``ProtoField``
+annotations override the derived number for the annotated field.
 
 Protobuf field-number constraints honored here:
 
@@ -19,6 +17,24 @@ by deterministic re-hashing of the colliding name with an incrementing
 salt. Re-hashing operates on names sorted lexicographically, so the final
 assignment is a pure function of the *set* of field names plus their
 explicit overrides — independent of declaration order.
+
+Wire-compatibility guarantee and its single boundary:
+
+- **Reordering** a message's fields never changes any number — the
+  assignment depends only on the set of names, not their declaration
+  order. This is absolute.
+- **Adding** a field never changes the numbers of pre-existing fields,
+  *except* when the new name's primary (salt-0) number equals a slot a
+  pre-existing field already occupies. Because derived names are processed
+  in sorted order, a newly added name that sorts ahead of an existing name
+  and shares its salt-0 number takes that slot and forces the existing
+  field to re-hash. This is the only case where an existing number can
+  change, and it requires a SHA-256 salt-0 collision in the
+  ~536-million-wide assignable space (probability ~1 in 5.4e8 per name
+  pair). The outcome stays fully deterministic and reproducible from the
+  field names alone; it is never silently nondeterministic. Callers that
+  need an unconditional number lock for a specific field pin it with an
+  explicit ``ProtoField(number=N)``.
 """
 
 from hashlib import sha256

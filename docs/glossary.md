@@ -908,7 +908,7 @@ gRPC 메서드 유형을 나타내는 열거형:
 
 ### ProtoField
 
-Pydantic `BaseModel` 필드에 protobuf 필드 번호를 명시적으로 지정할 때 사용하는 **선택적** 어노테이션입니다. `ProtoField`를 생략하면 `DescriptorBuilder`가 필드 이름의 SHA-256 해시에서 번호를 자동 부여합니다. 이름 기반이므로 필드 추가·순서 변경 시에도 기존 필드 번호가 바뀌지 않아 와이어 호환성이 유지됩니다. 예약 구간 19000–19999는 자동으로 건너뜁니다. 기존 `.proto` 계약과 번호를 맞춰야 할 때만 `ProtoField(number=N)`으로 번호를 직접 지정합니다.
+Pydantic `BaseModel` 필드에 protobuf 필드 번호를 명시적으로 지정할 때 사용하는 **선택적** 어노테이션입니다. `ProtoField`를 생략하면 `DescriptorBuilder`가 필드 이름의 SHA-256 해시에서 번호를 자동 부여합니다. 이름 기반이므로 필드 순서를 바꿔도 기존 번호는 변하지 않고, 필드를 추가해도 기존 번호가 보존됩니다(새 이름의 salt-0 해시가 기존 번호와 충돌하는 약 5.4억분의 1 확률의 경우만 예외). 예약 구간 19000–19999는 자동으로 건너뜁니다. 기존 `.proto` 계약과 번호를 맞추거나 특정 필드 번호를 무조건 고정해야 할 때 `ProtoField(number=N)`으로 번호를 직접 지정합니다.
 
 ```python
 from typing import Annotated
