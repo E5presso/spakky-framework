@@ -41,6 +41,7 @@ from hashlib import sha256
 
 from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
+from spakky.plugins.grpc.error import ProtoFieldNumberConflictError
 
 MIN_FIELD_NUMBER = 1
 """Smallest valid protobuf field number."""
@@ -90,18 +91,29 @@ def assign_field_numbers(model_type: type[BaseModel]) -> dict[str, int]:
 
     Fields carrying an explicit :class:`ProtoField` annotation are assigned
     that exact number. All remaining fields receive a number derived from a
-    stable hash of their name. Collisions (between two derived numbers, or a
-    derived number landing on an explicit override) are resolved by
-    deterministic re-hashing of the field name sorted lexicographically.
+    stable hash of their name, processed in lexicographic order. Collisions
+    between two derived numbers are resolved by deterministic re-hashing.
+
+    A derived field's primary (salt-0) number colliding with an explicit
+    override is *not* silently re-hashed — that would change the auto field's
+    wire number whenever an explicit field claims it. Such a collision raises
+    :class:`ProtoFieldNumberConflictError` so the author resolves it
+    explicitly (pin the auto field too, or pick a different number).
 
     Args:
         model_type: The ``BaseModel`` subclass whose fields to number.
 
     Returns:
         A mapping of field name to assigned protobuf field number.
+
+    Raises:
+        ProtoFieldNumberConflictError: If an auto-derived field's primary
+            number equals an explicit ``ProtoField`` number in the same
+            message.
     """
     assigned: dict[str, int] = {}
     used: set[int] = set()
+    explicit_owner: dict[int, str] = {}
     derived_names: list[str] = []
 
     for field_name, field_info in model_type.model_fields.items():
@@ -112,12 +124,18 @@ def assign_field_numbers(model_type: type[BaseModel]) -> dict[str, int]:
         if override is not None:
             assigned[field_name] = override.number
             used.add(override.number)
+            explicit_owner[override.number] = field_name
         else:
             derived_names.append(field_name)
 
     for field_name in sorted(derived_names):
+        primary = _hash_to_number(field_name, 0)
+        if primary in explicit_owner:
+            raise ProtoFieldNumberConflictError(
+                model_type, explicit_owner[primary], field_name, primary
+            )
         salt = 0
-        number = _hash_to_number(field_name, salt)
+        number = primary
         while number in used:
             salt += 1
             number = _hash_to_number(field_name, salt)

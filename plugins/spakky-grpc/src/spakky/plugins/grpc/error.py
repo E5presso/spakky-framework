@@ -116,3 +116,29 @@ class DescriptorAlreadyRegisteredError(AbstractSpakkyGrpcError):
     def __init__(self, file_name: str) -> None:
         super().__init__()
         self.file_name = file_name
+
+
+class ProtoFieldNumberConflictError(AbstractSpakkyGrpcError):
+    """Raised when an explicit ProtoField number collides with an auto-derived one.
+
+    An explicit ``ProtoField(number=N)`` reserves ``N`` for its field. If an
+    auto-numbered field in the same message natively hashes to ``N``, silently
+    re-hashing the auto field would change its wire number and break
+    compatibility. This conflict is surfaced as a build error instead so the
+    author pins the auto field's number too or chooses a different ``N``.
+    """
+
+    message = "Explicit ProtoField number collides with an auto-derived field number"
+
+    def __init__(
+        self,
+        model_type: type,
+        explicit_field_name: str,
+        derived_field_name: str,
+        number: int,
+    ) -> None:
+        super().__init__()
+        self.model_type = model_type
+        self.explicit_field_name = explicit_field_name
+        self.derived_field_name = derived_field_name
+        self.number = number

@@ -9,8 +9,10 @@ deterministically, the protobuf reserved range is avoided, and explicit
 
 from typing import Annotated, Optional
 
+import pytest
 from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
+from spakky.plugins.grpc.error import ProtoFieldNumberConflictError
 from spakky.plugins.grpc.schema.field_number import (
     MAX_FIELD_NUMBER,
     MIN_FIELD_NUMBER,
@@ -128,27 +130,42 @@ def test_adding_colliding_field_rehashes_the_sorted_loser() -> None:
     assert after["f3323"] != before["f3323"]
 
 
-def test_colliding_field_pinned_with_protofield_is_stable_on_add() -> None:
-    """ProtoField로 고정한 필드는 충돌 상대가 추가돼도 번호가 불변임을 검증한다.
+def test_explicit_number_colliding_with_auto_primary_raises_conflict() -> None:
+    """명시 번호가 자동 필드의 salt-0 번호와 충돌하면 빌드 오류로 막는지 검증한다.
 
-    salt-0 충돌 경계에서도 명시 ProtoField는 무조건 그 번호를 유지한다 —
-    docstring이 권고하는 "무조건 락" 경로를 검증한다.
+    자동 ``name`` 필드의 salt-0 번호를 새 ProtoField가 명시하면, 조용히
+    ``name``을 재번호화하는 대신 ProtoFieldNumberConflictError를 던져 작성자가
+    충돌을 명시적으로 해소하게 한다 (silent wire 번호 변경 차단).
     """
-    pinned_number = _hash_to_number("f3323", 0)
+    auto_number = _hash_to_number("name", 0)
 
-    class Before(BaseModel):
-        f3323: Annotated[str, ProtoField(number=pinned_number)]
+    class Conflicting(BaseModel):
+        name: str
+        pinned: Annotated[str, ProtoField(number=auto_number)]
 
-    class After(BaseModel):
-        f3323: Annotated[str, ProtoField(number=pinned_number)]
-        f23200: str
+    with pytest.raises(ProtoFieldNumberConflictError) as exc_info:
+        assign_field_numbers(Conflicting)
 
-    before = assign_field_numbers(Before)
-    after = assign_field_numbers(After)
+    assert exc_info.value.derived_field_name == "name"
+    assert exc_info.value.explicit_field_name == "pinned"
+    assert exc_info.value.number == auto_number
 
-    assert before["f3323"] == pinned_number
-    assert after["f3323"] == pinned_number
-    assert after["f23200"] != pinned_number
+
+def test_explicit_number_not_colliding_with_auto_primary_is_stable() -> None:
+    """명시 번호가 자동 필드와 충돌하지 않으면 두 필드가 모두 유지되는지 검증한다.
+
+    docstring이 권고하는 "ProtoField로 번호 고정" 경로의 정상 케이스다 —
+    명시 번호가 자동 필드의 salt-0 번호와 다르면 충돌 없이 공존한다.
+    """
+
+    class Mixed(BaseModel):
+        name: str
+        pinned: Annotated[str, ProtoField(number=1)]
+
+    numbers = assign_field_numbers(Mixed)
+
+    assert numbers["pinned"] == 1
+    assert numbers["name"] == _hash_to_number("name", 0)
 
 
 def test_explicit_protofield_expect_override_number() -> None:
@@ -230,21 +247,6 @@ def test_distinct_derived_fields_expect_distinct_numbers() -> None:
     numbers = assign_field_numbers(ManyDistinct)
 
     assert len(set(numbers.values())) == len(numbers)
-
-
-def test_derived_field_colliding_with_explicit_override_expect_rehash() -> None:
-    """파생 번호가 명시 ProtoField 번호와 충돌하면 재해싱되는지 검증한다."""
-    target = _hash_to_number("auto", 0)
-
-    class Collide(BaseModel):
-        auto: str
-        pinned: Annotated[int, ProtoField(number=target)]
-
-    numbers = assign_field_numbers(Collide)
-
-    assert numbers["pinned"] == target
-    assert numbers["auto"] != target
-    assert numbers["auto"] == _hash_to_number("auto", 1)
 
 
 def test_optional_and_repeated_fields_get_numbers() -> None:

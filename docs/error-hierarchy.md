@@ -733,6 +733,7 @@ from spakky.plugins.grpc.error import (
     UnsupportedFieldTypeError,
     UnsupportedResponseTypeError,
     DescriptorAlreadyRegisteredError,
+    ProtoFieldNumberConflictError,
 )
 ```
 
@@ -757,6 +758,7 @@ from spakky.plugins.grpc.error import (
 | `UnsupportedFieldTypeError`           | 지원하지 않는 protobuf 필드 타입          |
 | `UnsupportedResponseTypeError`        | protobuf `Message`나 Pydantic `BaseModel`이 아닌 응답 |
 | `DescriptorAlreadyRegisteredError`    | 이미 등록된 descriptor 재등록 시도     |
+| `ProtoFieldNumberConflictError`       | 명시 `ProtoField` 번호가 자동 부여 필드의 번호와 충돌 |
 
 ### spakky-openfga
 
