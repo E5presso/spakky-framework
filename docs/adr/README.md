@@ -32,6 +32,7 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 | [ADR-0010](0010-feature-contribution-policy.md) | Feature Contribution Policy — core feature별 plugin contribution 로딩 정책 | Accepted | 2026-05-05 |
 | [ADR-0011](0011-auth-contribution-routing-boundary.md) | Auth Contribution Routing Boundary — 인증/인가 contribution routing 범위 경계 | Proposed | 2026-05-15 |
 | [ADR-0012](0012-contribution-routing-policy.md) | Contribution 라우팅 정책 — 복수 contribution 탐지와 선택 정책 | Proposed | 2026-05-10 |
+| [ADR-0013](0013-declarative-agent-loop-ownership.md) | 선언형 Agent — 프레임워크 루프 소유·프로토콜 중립 코어·AG-UI/A2A/MCP 어댑터 | Accepted | 2026-06-24 |
 
 ## 새 ADR 작성 가이드
 

@@ -200,3 +200,4 @@ nav:
       - ADR-0010 Feature Contribution Policy: adr/0010-feature-contribution-policy.md
       - ADR-0011 Auth Contribution Routing Boundary: adr/0011-auth-contribution-routing-boundary.md
       - ADR-0012 Contribution 라우팅 정책: adr/0012-contribution-routing-policy.md
+      - ADR-0013 선언형 Agent 루프 소유·프로토콜 중립: adr/0013-declarative-agent-loop-ownership.md
