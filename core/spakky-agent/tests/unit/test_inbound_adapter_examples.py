@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from io import StringIO
 from typing import cast, overload
 
-from examples.code_assistant_demo import CodeAssistant, CodeAssistantCommand
+from examples.code_assistant_demo import CodeAssistant
 from examples.inbound_adapter_examples import (
     AgentJsonWebSocket,
     agent_signal_from_json,
@@ -18,6 +18,7 @@ from spakky.agent import (
     JsonValue,
     ModelStreamEvent,
     ModelStreamEventKind,
+    RunAgentInput,
 )
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.interfaces.container import IContainer, NoSuchPodError
@@ -39,19 +40,19 @@ async def test_fastapi_websocket_example_expect_streams_agent_yields_and_appends
     """WebSocket adapter resolves @Agent and forwards token/progress/approval/final."""
     signals = FakeSignalRepository(())
     container = RecordingContainer(_code_assistant(signals), signals)
-    socket = RecordingWebSocket(
-        (
-            {
-                "kind": "approval_decision",
-                "decision": "approve",
-            },
-        )
-    )
+    socket = RecordingWebSocket(())
 
     await stream_code_assistant_to_websocket(
         container,
         socket,
-        CodeAssistantCommand(state_id="ws-run", instruction="write approved note"),
+        RunAgentInput(state_id="ws-run", instruction="write approved note"),
+        inbound_signals=(
+            {
+                "kind": "approval_decision",
+                "request_id": "approval:ws-run:workspace.write",
+                "decision": "approve",
+            },
+        ),
     )
 
     assert container.resolved_types == (CodeAssistant, IAgentSignalRepository)
@@ -75,14 +76,16 @@ async def test_typer_cli_example_expect_stdout_streaming_and_stdin_user_signal_a
         "".join(
             (
                 '{"kind":"user_message","message":"keep it small"}\n',
-                '{"kind":"approval_decision","decision":"approve"}\n',
+                '{"kind":"approval_decision",'
+                '"request_id":"approval:cli-run:workspace.write",'
+                '"decision":"approve"}\n',
             )
         )
     )
 
     await stream_code_assistant_to_stdout(
         container,
-        CodeAssistantCommand(state_id="cli-run", instruction="write approved note"),
+        RunAgentInput(state_id="cli-run", instruction="write approved note"),
         stdout=stdout,
         stdin=stdin,
         read_stdin_signal=True,

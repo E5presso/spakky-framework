@@ -5,9 +5,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from spakky.agent.error import AgentDefinitionError
-from spakky.agent.execution import AgentSignalKind
 from spakky.agent.interfaces.repository import IAgentSignalRepository
-from spakky.agent.signal import AgentSignal
+from spakky.agent.signal import AgentSignal, AgentSignalKind
 
 
 class AgentSignalPollPoint(StrEnum):

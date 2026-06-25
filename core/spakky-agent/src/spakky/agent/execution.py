@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 
 from spakky.agent.compaction import ICompactionStrategy
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.hooks import AgentSignalHookCatalog, discover_agent_signal_hooks
+from spakky.agent.signal import AgentSignalKind
 from spakky.agent.tooling import AgentToolCatalog, discover_agent_tools
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.error import AbstractSpakkyPodError
@@ -32,19 +34,6 @@ class StreamingExposureMode(StrEnum):
     BALANCED = "balanced"
     STRICT = "strict"
     NO_STREAM_UNTIL_FINAL_GUARDED = "no_stream_until_final_guarded"
-
-
-class AgentSignalKind(StrEnum):
-    """Inbound stimulus kinds that an agent may accept while running."""
-
-    USER_MESSAGE = "user_message"
-    APPROVAL_DECISION = "approval_decision"
-    CANCEL = "cancel"
-    PAUSE = "pause"
-    RESUME = "resume"
-    STEERING_INSTRUCTION = "steering_instruction"
-    EXTERNAL_EVENT = "external_event"
-    SCHEDULER_WAKE_UP = "scheduler_wake_up"
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +155,10 @@ class Agent(Pod):
         init=False,
         default_factory=AgentToolCatalog,
     )
+    signal_hook_catalog: AgentSignalHookCatalog = field(
+        init=False,
+        default_factory=AgentSignalHookCatalog,
+    )
 
     def _initialize(self, obj: PodType) -> None:
         """Initialize Pod metadata and validate the Agent execute contract."""
@@ -177,6 +170,7 @@ class Agent(Pod):
         self._ensure_execute_provided(agent_class)
         self._validate_execute_contract(agent_class)
         self.tool_catalog = discover_agent_tools(agent_class)
+        self.signal_hook_catalog = discover_agent_signal_hooks(agent_class)
 
     def validate_bootstrap(self) -> None:
         """Re-run definition validation during application bootstrap."""

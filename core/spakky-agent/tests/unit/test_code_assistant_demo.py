@@ -8,8 +8,6 @@ from examples.code_assistant_demo import (
     IShellPort,
     IWorkspacePort,
     CodeAssistant,
-    CodeAssistantCommand,
-    CodeAssistantResult,
     GitCommandResult,
     ShellCommandResult,
     StaticModel,
@@ -26,6 +24,7 @@ from spakky.agent import (
     Agent,
     AgentEvidence,
     AgentEvidenceKind,
+    AgentRunResult,
     AgentSignal,
     AgentSignalKind,
     AgentState,
@@ -48,6 +47,7 @@ from spakky.agent import (
     ModelStreamEventKind,
     ModelToolCall,
     Progress,
+    RunAgentInput,
     Token,
     Tool,
 )
@@ -136,7 +136,7 @@ async def test_code_assistant_demo_expect_runs_end_to_end_building_block_scenari
         states,
         signals,
         evidence,
-        CodeAssistantCommand(state_id="run-1", instruction="make a small edit"),
+        RunAgentInput(state_id="run-1", instruction="make a small edit"),
     )
 
     assert _kinds(items) == {
@@ -174,7 +174,7 @@ async def test_code_assistant_demo_expect_runs_end_to_end_building_block_scenari
     ]
     final_payload = _final_payload(items)
 
-    assert final_payload.output == CodeAssistantResult(
+    assert final_payload.output == AgentRunResult(
         state_id="run-1",
         status="completed",
         tool_calls=(
@@ -210,7 +210,7 @@ async def test_code_assistant_demo_expect_cancellation_reaches_terminal_state() 
         states,
         FakeSignalRepository((_cancel_signal("cancel-run"),)),
         evidence,
-        CodeAssistantCommand(state_id="cancel-run", instruction="stop now"),
+        RunAgentInput(state_id="cancel-run", instruction="stop now"),
     )
 
     assert len(items) == 1
@@ -245,7 +245,7 @@ async def test_code_assistant_demo_expect_model_stream_error_fails_state() -> No
         states,
         FakeSignalRepository(()),
         FakeEvidenceRepository(),
-        CodeAssistantCommand(state_id="error-run", instruction="trigger model error"),
+        RunAgentInput(state_id="error-run", instruction="trigger model error"),
     )
 
     assert [item.kind for item in items] == [
@@ -285,7 +285,7 @@ async def test_code_assistant_demo_expect_restart_resume_uses_persisted_boundari
         states,
         signals,
         evidence,
-        CodeAssistantCommand(state_id="resume-run", instruction="status"),
+        RunAgentInput(state_id="resume-run", instruction="status"),
     )
     items = await collect_stream(
         StaticModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),)),
@@ -295,7 +295,7 @@ async def test_code_assistant_demo_expect_restart_resume_uses_persisted_boundari
         states,
         signals,
         evidence,
-        CodeAssistantCommand(
+        RunAgentInput(
             state_id="resume-run",
             instruction="resume",
             resume=True,
@@ -308,6 +308,50 @@ async def test_code_assistant_demo_expect_restart_resume_uses_persisted_boundari
         and "skip_completed" in item.payload.message
         for item in items
     )
+
+
+async def test_code_assistant_demo_expect_steering_hook_echoes_instruction() -> None:
+    """STEERING_INSTRUCTION signal은 @on_signal 훅의 Progress yield로 stream에 노출된다."""
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="steer:run-1",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={"instruction": "narrow the diff to one file"},
+            ),
+        )
+    )
+
+    items = await collect_stream(
+        StaticModel(
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="ok"
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            )
+        ),
+        FakeWorkspace({}),
+        FakeShell(),
+        FakeGit(),
+        states,
+        signals,
+        evidence,
+        RunAgentInput(state_id="run-1", instruction="edit a file"),
+    )
+
+    assert any(
+        item.kind is AgentYieldKind.PROGRESS
+        and isinstance(item.payload, Progress)
+        and item.payload.current_step == "steering"
+        and "narrow the diff to one file" in item.payload.message
+        for item in items
+    )
+    assert signals.list_pending("run-1") == ()
+    assert states.get("run-1").status is AgentStatus.COMPLETED
 
 
 class RecordingModel(IAgentModel):
@@ -543,7 +587,7 @@ def _kinds(items: Sequence[AgentYield[object]]) -> set[AgentYieldKind]:
     return {item.kind for item in items}
 
 
-def _final_payload(items: Sequence[AgentYield[object]]) -> Final[CodeAssistantResult]:
+def _final_payload(items: Sequence[AgentYield[object]]) -> Final[AgentRunResult]:
     for item in reversed(items):
         if isinstance(item.payload, Final):
             return item.payload

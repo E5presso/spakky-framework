@@ -106,10 +106,16 @@ from spakky.agent.execution import (
     AgentCompactionPolicy,
     AgentExecutionLimits,
     AgentExecutionSpec,
-    AgentSignalKind,
     AgentTeammate,
     RecoveryStrategy,
     StreamingExposureMode,
+)
+from spakky.agent.hooks import (
+    AgentSignalHookCatalog,
+    AgentSignalHookDescriptor,
+    AgentSignalHookIdentity,
+    discover_agent_signal_hooks,
+    on_signal,
 )
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.runner import AgentRunner, AgentRunResult
@@ -139,7 +145,7 @@ from spakky.agent.interfaces.model import (
     StructuredOutputSpec,
     ToolCallingSpec,
 )
-from spakky.agent.signal import AgentSignal, ApprovalDecision
+from spakky.agent.signal import AgentSignal, AgentSignalKind, ApprovalDecision
 from spakky.agent.signal_consumption import (
     AgentSignalConsumptionBatch,
     AgentSignalPollPoint,
@@ -278,6 +284,9 @@ __all__ = [
     "AgentRunner",
     "AgentSignal",
     "AgentSignalConsumptionBatch",
+    "AgentSignalHookCatalog",
+    "AgentSignalHookDescriptor",
+    "AgentSignalHookIdentity",
     "AgentSignalKind",
     "AgentSignalPollPoint",
     "AgentTeammate",
@@ -395,7 +404,9 @@ __all__ = [
     "complete_agent_cancellation",
     "consume_pending_agent_signals",
     "agent_tool",
+    "discover_agent_signal_hooks",
     "discover_agent_tools",
+    "on_signal",
     "materialize_agent_approval_decision_state",
     "parse_agent_approval_decision_signal",
     "plan_agent_resume",
