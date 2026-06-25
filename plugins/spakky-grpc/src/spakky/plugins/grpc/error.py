@@ -142,3 +142,50 @@ class ProtoFieldNumberConflictError(AbstractSpakkyGrpcError):
         self.explicit_field_name = explicit_field_name
         self.derived_field_name = derived_field_name
         self.number = number
+
+
+class InvalidProtoFieldNumberError(AbstractSpakkyGrpcError):
+    """Raised when an explicit ProtoField number is not a valid protobuf number.
+
+    An explicit ``ProtoField(number=N)`` must fall in the assignable protobuf
+    range: ``1`` .. ``536_870_911`` (``2**29 - 1``) and outside the protobuf
+    reserved band ``19_000`` .. ``19_999``. The auto-numbering path already
+    honors these constraints deterministically, but an explicit override
+    bypassed them and only failed later at descriptor-pool build time with an
+    opaque protobuf message. This error surfaces the violation at schema-build
+    time with the offending field and number so the author corrects it.
+    """
+
+    message = "Explicit ProtoField number is outside the valid protobuf range"
+
+    def __init__(self, model_type: type, field_name: str, number: int) -> None:
+        super().__init__()
+        self.model_type = model_type
+        self.field_name = field_name
+        self.number = number
+
+
+class DuplicateProtoFieldNumberError(AbstractSpakkyGrpcError):
+    """Raised when two explicit ProtoField numbers collide in one message.
+
+    Each protobuf field number must be unique within its message. Two fields
+    carrying the same explicit ``ProtoField(number=N)`` would later be rejected
+    by the descriptor pool with an opaque message. This error surfaces the
+    duplicate at schema-build time, naming both colliding fields and the shared
+    number so the author repins one of them.
+    """
+
+    message = "Duplicate explicit ProtoField number within a single message"
+
+    def __init__(
+        self,
+        model_type: type,
+        first_field_name: str,
+        second_field_name: str,
+        number: int,
+    ) -> None:
+        super().__init__()
+        self.model_type = model_type
+        self.first_field_name = first_field_name
+        self.second_field_name = second_field_name
+        self.number = number

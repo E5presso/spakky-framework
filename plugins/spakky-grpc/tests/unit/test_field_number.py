@@ -12,7 +12,11 @@ from typing import Annotated, Optional
 import pytest
 from pydantic import BaseModel
 from spakky.plugins.grpc.annotations.field import ProtoField
-from spakky.plugins.grpc.error import ProtoFieldNumberConflictError
+from spakky.plugins.grpc.error import (
+    DuplicateProtoFieldNumberError,
+    InvalidProtoFieldNumberError,
+    ProtoFieldNumberConflictError,
+)
 from spakky.plugins.grpc.schema.field_number import (
     MAX_FIELD_NUMBER,
     MIN_FIELD_NUMBER,
@@ -259,3 +263,105 @@ def test_optional_and_repeated_fields_get_numbers() -> None:
     numbers = assign_field_numbers(Composite)
 
     assert set(numbers) == {"tags", "nickname"}
+
+
+def test_explicit_number_in_reserved_range_raises_invalid() -> None:
+    """예약 범위(19000~19999)를 명시한 ProtoField가 빌드 오류로 차단되는지 검증한다.
+
+    자동 경로는 예약 범위를 회피하지만 명시 override는 그 회피를 우회한다.
+    예약 범위 번호를 명시하면 descriptor pool 빌드 시점이 아니라 번호 부여
+    시점에 InvalidProtoFieldNumberError로 조기 차단되어야 한다 (US: 사용자가
+    실수로 19000번대를 지정한 경우).
+    """
+
+    class Reserved(BaseModel):
+        name: Annotated[str, ProtoField(number=RESERVED_RANGE_START)]
+
+    with pytest.raises(InvalidProtoFieldNumberError) as exc_info:
+        assign_field_numbers(Reserved)
+
+    assert exc_info.value.field_name == "name"
+    assert exc_info.value.number == RESERVED_RANGE_START
+    assert exc_info.value.model_type is Reserved
+
+
+def test_explicit_number_at_reserved_range_end_raises_invalid() -> None:
+    """예약 범위 끝(19999)을 명시한 ProtoField도 차단되는지 경계값을 고정한다."""
+
+    class ReservedEnd(BaseModel):
+        name: Annotated[str, ProtoField(number=RESERVED_RANGE_END)]
+
+    with pytest.raises(InvalidProtoFieldNumberError) as exc_info:
+        assign_field_numbers(ReservedEnd)
+
+    assert exc_info.value.number == RESERVED_RANGE_END
+
+
+def test_explicit_number_above_max_raises_invalid() -> None:
+    """유효 범위 상한(536870911)을 초과한 명시 번호가 차단되는지 검증한다.
+
+    사용자가 2**29 이상 번호를 명시하면 protobuf가 거부하기 전에
+    InvalidProtoFieldNumberError로 조기 실패해야 한다.
+    """
+
+    class TooBig(BaseModel):
+        name: Annotated[str, ProtoField(number=MAX_FIELD_NUMBER + 1)]
+
+    with pytest.raises(InvalidProtoFieldNumberError) as exc_info:
+        assign_field_numbers(TooBig)
+
+    assert exc_info.value.field_name == "name"
+    assert exc_info.value.number == MAX_FIELD_NUMBER + 1
+
+
+def test_explicit_number_below_min_raises_invalid() -> None:
+    """유효 범위 하한(1) 미만(0)을 명시한 번호가 차단되는지 검증한다.
+
+    0이나 음수는 유효한 protobuf 필드 번호가 아니다 — 번호 부여 시점에
+    InvalidProtoFieldNumberError로 막아야 한다.
+    """
+
+    class TooSmall(BaseModel):
+        name: Annotated[str, ProtoField(number=MIN_FIELD_NUMBER - 1)]
+
+    with pytest.raises(InvalidProtoFieldNumberError) as exc_info:
+        assign_field_numbers(TooSmall)
+
+    assert exc_info.value.number == MIN_FIELD_NUMBER - 1
+
+
+def test_duplicate_explicit_numbers_raises_duplicate() -> None:
+    """같은 메시지 내 두 명시 ProtoField 번호가 중복이면 차단되는지 검증한다.
+
+    한 메시지에서 두 필드가 동일한 ProtoField(number=N)를 가지면 descriptor
+    pool이 거부하기 전에 DuplicateProtoFieldNumberError로 조기 실패하여 두
+    충돌 필드와 공유 번호를 알려야 한다 (US: 복붙 실수로 같은 번호 명시).
+    """
+
+    class Duplicated(BaseModel):
+        first: Annotated[str, ProtoField(number=5)]
+        second: Annotated[str, ProtoField(number=5)]
+
+    with pytest.raises(DuplicateProtoFieldNumberError) as exc_info:
+        assign_field_numbers(Duplicated)
+
+    assert exc_info.value.first_field_name == "first"
+    assert exc_info.value.second_field_name == "second"
+    assert exc_info.value.number == 5
+    assert exc_info.value.model_type is Duplicated
+
+
+def test_distinct_explicit_numbers_are_accepted() -> None:
+    """서로 다른 명시 번호를 가진 두 필드는 정상적으로 공존하는지 검증한다.
+
+    유효·고유한 명시 번호는 검증을 통과해 그대로 부여되는 정상 경로다 —
+    중복 검증이 정상 케이스를 막지 않음을 보장한다.
+    """
+
+    class DistinctExplicit(BaseModel):
+        first: Annotated[str, ProtoField(number=5)]
+        second: Annotated[str, ProtoField(number=6)]
+
+    numbers = assign_field_numbers(DistinctExplicit)
+
+    assert numbers == {"first": 5, "second": 6}

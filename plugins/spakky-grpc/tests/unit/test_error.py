@@ -6,6 +6,8 @@ from spakky.core.common.error import AbstractSpakkyFrameworkError
 from spakky.plugins.grpc.error import (
     AbstractSpakkyGrpcError,
     DescriptorAlreadyRegisteredError,
+    DuplicateProtoFieldNumberError,
+    InvalidProtoFieldNumberError,
     ProtoFieldNumberConflictError,
     UnsupportedFieldTypeError,
 )
@@ -59,3 +61,38 @@ def test_proto_field_number_conflict_error_stores_context() -> None:
     assert error.explicit_field_name == "pinned"
     assert error.derived_field_name == "name"
     assert error.number == 95775423
+
+
+def test_invalid_proto_field_number_error_is_grpc_error() -> None:
+    """InvalidProtoFieldNumberError가 AbstractSpakkyGrpcError의 서브클래스인지 검증한다."""
+    assert issubclass(InvalidProtoFieldNumberError, AbstractSpakkyGrpcError)
+
+
+def test_invalid_proto_field_number_error_stores_context() -> None:
+    """InvalidProtoFieldNumberError가 위반 필드·번호 컨텍스트를 저장하는지 검증한다."""
+
+    class Dummy:
+        pass
+
+    error = InvalidProtoFieldNumberError(Dummy, "name", 19000)
+    assert error.model_type is Dummy
+    assert error.field_name == "name"
+    assert error.number == 19000
+
+
+def test_duplicate_proto_field_number_error_is_grpc_error() -> None:
+    """DuplicateProtoFieldNumberError가 AbstractSpakkyGrpcError의 서브클래스인지 검증한다."""
+    assert issubclass(DuplicateProtoFieldNumberError, AbstractSpakkyGrpcError)
+
+
+def test_duplicate_proto_field_number_error_stores_context() -> None:
+    """DuplicateProtoFieldNumberError가 두 충돌 필드와 공유 번호를 저장하는지 검증한다."""
+
+    class Dummy:
+        pass
+
+    error = DuplicateProtoFieldNumberError(Dummy, "first", "second", 5)
+    assert error.model_type is Dummy
+    assert error.first_field_name == "first"
+    assert error.second_field_name == "second"
+    assert error.number == 5
