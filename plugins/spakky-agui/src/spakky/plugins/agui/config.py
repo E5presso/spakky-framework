@@ -14,6 +14,9 @@ DEFAULT_AGUI_SSE_PATH = "/agui"
 DEFAULT_AGUI_WEBSOCKET_PATH = "/agui/ws"
 """Default mount path for the AG-UI WebSocket endpoint."""
 
+DEFAULT_AGUI_HTTP_STREAM_PATH = "/agui/stream"
+"""Default mount path for the AG-UI HTTP streaming endpoint."""
+
 
 @Configuration()
 class AgUiConfig(BaseSettings):
@@ -30,6 +33,9 @@ class AgUiConfig(BaseSettings):
 
     websocket_path: str = DEFAULT_AGUI_WEBSOCKET_PATH
     """Path the AG-UI WebSocket endpoint is mounted at on the FastAPI application."""
+
+    http_stream_path: str = DEFAULT_AGUI_HTTP_STREAM_PATH
+    """Path the AG-UI HTTP streaming endpoint is mounted at on the FastAPI app."""
 
     emit_state_snapshot: bool = True
     """Whether STATE_SNAPSHOT neutral events are projected to AG-UI; when False

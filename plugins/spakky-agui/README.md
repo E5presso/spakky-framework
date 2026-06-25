@@ -1,15 +1,15 @@
 # spakky-agui
 
 > `spakky-agui`는 `spakky-agent`를 위한 공식 AG-UI (Agent User Interaction) protocol adapter plugin입니다.
-> 선언형 `@Agent` 실행 스트림을 AG-UI 이벤트로 투영(project)하여 SSE (Server-Sent Events)와
-> WebSocket으로 노출하고, deferred-tool 방식의 HITL (Human-in-the-loop) 승인 흐름을 지원합니다.
+> 선언형 `@Agent` 실행 스트림을 AG-UI 이벤트로 투영(project)하여 SSE (Server-Sent Events),
+> HTTP streaming, WebSocket으로 노출하고, deferred-tool 방식의 HITL (Human-in-the-loop) 승인 흐름을 지원합니다.
 
 ## 언제 필요한가
 
 애플리케이션이 선언형 `@Agent` workflow를 실행하고, 그 실행 이벤트(토큰, 도구 호출,
 승인 요청, 종료)를 AG-UI 호환 프런트엔드에 실시간 스트리밍하려 할 때 사용합니다.
 렌더링(프런트엔드 UI)은 본 plugin의 범위 밖입니다 — 본 plugin은 와이어 프로토콜(SSE
-프레임 또는 WebSocket text message)만 책임집니다.
+프레임, HTTP JSON-line chunk, 또는 WebSocket text message)만 책임집니다.
 
 ## 설치
 
@@ -18,7 +18,8 @@ pip install spakky-agui
 ```
 
 durable Agent 실행(state·signal·evidence repository)과 모델 어댑터(`IAgentModel`)는
-별도 provider가 제공합니다. `spakky-agui`는 inbound SSE/WebSocket 어댑터만 제공합니다.
+별도 provider가 제공합니다. `spakky-agui`는 inbound SSE/HTTP streaming/WebSocket 어댑터만
+제공합니다.
 
 ## 설정
 
@@ -28,6 +29,7 @@ durable Agent 실행(state·signal·evidence repository)과 모델 어댑터(`IA
 |------|--------|------|
 | `SPAKKY_AGUI_SSE_PATH` | `/agui` | SSE endpoint가 마운트되는 경로 |
 | `SPAKKY_AGUI_WEBSOCKET_PATH` | `/agui/ws` | WebSocket endpoint가 마운트되는 경로 |
+| `SPAKKY_AGUI_HTTP_STREAM_PATH` | `/agui/stream` | HTTP streaming endpoint가 마운트되는 경로 |
 | `SPAKKY_AGUI_EMIT_STATE_SNAPSHOT` | `true` | 중립 `STATE_SNAPSHOT` 이벤트를 AG-UI로 투영할지 여부 |
 | `SPAKKY_AGUI_MESSAGES_SNAPSHOT_ENABLED` | `false` | `RUN_FINISHED` 직전에 `MESSAGES_SNAPSHOT` 프레임을 1회 방출할지 여부 |
 
@@ -37,6 +39,7 @@ durable Agent 실행(state·signal·evidence repository)과 모델 어댑터(`IA
 AgentRunner.run_events() → 중립 AgentEvent  (런너가 native로 방출)
 중립 AgentEvent  ──(AgUiProjector)──▶  AG-UI BaseEvent
 AG-UI BaseEvent  ──(EventEncoder)──▶  "data: {...}\n\n" SSE 프레임
+                                      또는 "{...}\n" HTTP streaming chunk
                                       또는 WebSocket text message
 ```
 
@@ -82,6 +85,7 @@ from spakky.plugins.agui import (
     AgUiProjector,
     AgUiRunDriver,
     add_agui_endpoint,
+    add_agui_http_stream_endpoint,
     add_agui_websocket_endpoint,
     ingest_decision,
 )
@@ -109,11 +113,14 @@ def run_driver_factory(
 
 
 add_agui_endpoint(app, run_driver_factory=run_driver_factory, config=config)
+add_agui_http_stream_endpoint(app, run_driver_factory=run_driver_factory, config=config)
 add_agui_websocket_endpoint(app, run_driver_factory=run_driver_factory, config=config)
 ```
 
 `POST /agui`로 AG-UI `RunAgentInput`을 보내면 `text/event-stream` 응답으로 실행
-이벤트가 스트리밍됩니다. WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 AG-UI
+이벤트가 스트리밍됩니다. `POST /agui/stream`은 같은 AG-UI event payload를 SSE `data:`
+프레이밍 없이 `application/x-ndjson` HTTP response chunks로 순차 전달합니다.
+WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 AG-UI
 `RunAgentInput` JSON을 text/JSON message로 보내고, 실행 이벤트를 AG-UI encoded text
 message로 순서대로 받습니다. 같은 연결에서 후속 `RunAgentInput`을 보내 승인 결정
 (`forwardedProps.approvalDecision` 또는 deferred tool-result message)을 전달할 수 있습니다.
