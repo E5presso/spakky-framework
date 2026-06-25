@@ -100,11 +100,17 @@ class ReasoningDeltaEvent:
 
 @dataclass(frozen=True, slots=True)
 class ToolCallStartEvent:
-    """A model has begun emitting a tool call with a known name."""
+    """A model has begun emitting a tool call with a known name.
+
+    ``parent_message_id`` links the tool call to the assistant message that
+    requested it (``None`` when the model emits the call outside any message).
+    AG-UI projects this as ``parentMessageId`` on ``TOOL_CALL_START``.
+    """
 
     attribution: AgentEventAttribution
     call_id: str
     tool_name: str
+    parent_message_id: str | None = None
     metadata: JsonObject = field(default_factory=dict)
 
     kind: AgentEventKind = field(default=AgentEventKind.TOOL_CALL_START, init=False)
@@ -138,11 +144,18 @@ class ToolCallEndEvent:
 
 @dataclass(frozen=True, slots=True)
 class ToolCallResultEvent:
-    """The result returned by executing a completed tool call."""
+    """The result returned by executing a completed tool call.
+
+    ``message_id`` identifies the conversation message this tool result belongs
+    to, so an adapter can attach the result to the right message. AG-UI requires
+    it as ``messageId`` on ``TOOL_CALL_RESULT``; without it the result frame
+    cannot be reconstructed losslessly.
+    """
 
     attribution: AgentEventAttribution
     call_id: str
     tool_name: str
+    message_id: str
     result: JsonValue = None
     metadata: JsonObject = field(default_factory=dict)
 
