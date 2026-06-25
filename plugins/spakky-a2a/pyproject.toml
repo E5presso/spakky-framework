@@ -1,0 +1,87 @@
+[project]
+name = "spakky-a2a"
+version = "6.9.1"
+description = "A2A (Agent2Agent) protocol server plugin for Spakky framework"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = [
+    "a2a-sdk[http-server]>=1.1.0",
+    "pydantic>=2.4",
+    "pydantic-settings>=2.13.1",
+    "spakky>=6.9.1",
+    "spakky-agent>=6.9.1",
+]
+
+[project.entry-points."spakky.plugins"]
+spakky-a2a = "spakky.plugins.a2a.main:initialize"
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.3.0",
+    "pytest-integration-mark>=0.2.0",
+    "httpx>=0.28.0",
+    "types-protobuf>=7.34.1.20260518",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.10,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.a2a"
+
+[tool.pyrefly]
+python-version = "3.12"
+search_path = ["src", "."]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = "src/spakky/plugins/a2a"
+testpaths = "tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = ["known_issue(reason): 알려진 버그"]
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=load
+    -p no:warnings
+    -n auto
+    --spec
+    --with-integration
+"""
+spec_test_format = "{result} {docstring_summary}"
+
+[tool.coverage.run]
+include = ["src/spakky/plugins/a2a/**/*.py"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 100
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+    "\\.\\.\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-agent = { workspace = true }
