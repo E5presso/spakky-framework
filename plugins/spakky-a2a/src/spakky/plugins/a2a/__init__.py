@@ -12,6 +12,8 @@ from spakky.plugins.a2a.config import (
     SPAKKY_A2A_CONFIG_ENV_PREFIX,
     A2AConfig,
 )
+from spakky.plugins.a2a.client import A2ARemoteAgentClient, RemoteA2AMessage
+from spakky.plugins.a2a.delegation import A2AAgentDelegate, A2AStreamEventMapper
 from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
 
 PLUGIN_NAME = Plugin(name="spakky-a2a")
@@ -21,5 +23,9 @@ __all__ = [
     "PLUGIN_NAME",
     "SPAKKY_A2A_CONFIG_ENV_PREFIX",
     "A2AConfig",
+    "A2AAgentDelegate",
+    "A2ARemoteAgentClient",
+    "A2AStreamEventMapper",
     "A2AAgentServer",
+    "RemoteA2AMessage",
 ]

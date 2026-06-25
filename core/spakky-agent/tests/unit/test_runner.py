@@ -1,6 +1,6 @@
 """Tests for the framework-owned AgentRunner execution loop."""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import override
 
@@ -11,6 +11,7 @@ from spakky.agent import (
     Agent,
     AgentEvidenceKind,
     AgentExecutionSpec,
+    AgentTeammate,
     AgentRunner,
     AgentRunResult,
     AgentSignalKind,
@@ -161,6 +162,28 @@ class StatelessProbeAgent:
     def echo_read(self, value: str) -> EchoRecord:
         """Echo a value back as a structured result."""
         return EchoRecord(value=value)
+
+
+@Agent(spec=AgentExecutionSpec(name="researcher"))
+class ResearcherAgent:
+    """Local teammate fixture used by delegation tool wiring tests."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="orchestrator",
+        teammates=(AgentTeammate(name="researcher", pod=ResearcherAgent),),
+    )
+)
+class OrchestratorAgent:
+    """Parent agent with a local teammate declared in its execution spec."""
+
+    def __init__(self, model: IAgentModel, researcher: ResearcherAgent) -> None:
+        self._model = model
+        self._researcher = researcher
 
 
 @Agent(spec=AgentExecutionSpec(name="toolless_probe"))
@@ -1231,6 +1254,58 @@ async def test_agent_runner_events_expect_tool_call_lifecycle_distinct_events() 
     assert {event.call_id for event in (start[0], args[0], end[0], result[0])} == {
         "read-1"
     }
+
+
+async def test_agent_runner_events_expect_local_teammate_events_join_parent_stream() -> (
+    None
+):
+    """teammate tool 호출이 child neutral events를 parent stream에 합류시킨다."""
+    child = ResearcherAgent(
+        RecordingModel(
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="child-result",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            )
+        )
+    )
+    parent = OrchestratorAgent(
+        RecordingModel(
+            (
+                _tool_event(
+                    "teammate.researcher.delegate",
+                    {"instruction": "inspect the repo"},
+                    "delegate-1",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            )
+        ),
+        child,
+    )
+    runner = AgentRunner.for_agent_instance(parent)
+
+    events = await _collect_events(
+        runner.run_events(RunAgentInput(state_id="parent-run", instruction="delegate"))
+    )
+
+    child_messages = [
+        event
+        for event in events
+        if isinstance(event, MessageDeltaEvent)
+        and event.attribution.agent_id == "researcher"
+    ]
+    parent_results = [
+        event for event in events if isinstance(event, ToolCallResultEvent)
+    ]
+    assert child_messages[0].delta == "child-result"
+    assert child_messages[0].attribution.parent_run_id == "parent-run"
+    assert child_messages[0].attribution.conversation_id == "parent-run"
+    assert parent_results[0].tool_name == "teammate.researcher.delegate"
+    result_payload = parent_results[0].result
+    assert isinstance(result_payload, Mapping)
+    assert result_payload["summary"] == "teammate 'researcher' completed"
 
 
 async def test_agent_runner_events_expect_message_and_reasoning_distinguished() -> None:

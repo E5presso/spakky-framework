@@ -1,12 +1,16 @@
 """End-to-end A2A transport tests over the assembled ASGI app."""
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 import pytest
 from spakky.agent.execution import Agent, AgentSignalKind
 from spakky.agent.interfaces.model import ModelStreamEvent
+from spakky.agent.delegation import AgentDelegateTarget, DelegationPacket
+from spakky.agent.event import MessageDeltaEvent, RunFinishedEvent
 
+from spakky.plugins.a2a.client import A2ARemoteAgentClient
+from spakky.plugins.a2a.delegation import A2AAgentDelegate
 from tests.integration.conftest import (
     AssistantAgent,
     build_app,
@@ -124,6 +128,43 @@ async def test_tasks_get_returns_persisted_task(
         fetched = await client.post(rpc_url, json=_send("tasks/get", {"id": task_id}))
 
     assert fetched.json()["result"]["id"] == task_id
+
+
+@pytest.mark.integration
+async def test_remote_delegate_calls_a2a_server_and_merges_child_events(
+    token_events: Sequence[ModelStreamEvent],
+) -> None:
+    """Remote teammate delegation calls A2A and returns attributed child events."""
+    async with make_client(build_app(token_events)) as client:
+        delegate = A2AAgentDelegate(
+            client=A2ARemoteAgentClient(httpx_client=client),
+        )
+        result = await delegate.delegate_tool_result(
+            DelegationPacket(
+                id="parent-run:delegate-1",
+                parent_agent_state_id="parent-run",
+                target=AgentDelegateTarget(
+                    agent_type="remote:assistant",
+                    agent_name="assistant",
+                    metadata={
+                        "card_url": "http://testserver/.well-known/agent-card.json"
+                    },
+                ),
+                task={"instruction": "hi"},
+                metadata={"conversation_id": "thread-1"},
+            )
+        )
+
+    assert isinstance(result.output, Mapping)
+    assert result.output["state"] == "TASK_STATE_COMPLETED"
+    messages = [
+        event for event in result.events if isinstance(event, MessageDeltaEvent)
+    ]
+    finishes = [event for event in result.events if isinstance(event, RunFinishedEvent)]
+    assert "hello " in "".join(event.delta for event in messages)
+    assert messages[0].attribution.parent_run_id == "parent-run"
+    assert messages[0].attribution.agent_id == "assistant"
+    assert finishes
 
 
 @pytest.mark.integration

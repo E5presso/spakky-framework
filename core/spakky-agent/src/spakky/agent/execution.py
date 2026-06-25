@@ -9,6 +9,7 @@ from typing import get_args, get_origin, get_type_hints
 from urllib.parse import urlsplit
 
 from spakky.agent.compaction import ICompactionStrategy
+from spakky.agent.delegation import build_teammate_tool_descriptors
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.hooks import AgentSignalHookCatalog, discover_agent_signal_hooks
 from spakky.agent.signal import AgentSignalKind
@@ -169,7 +170,14 @@ class Agent(Pod):
             raise AgentDefinitionError("Agent Pod metadata is invalid") from e
         self._ensure_execute_provided(agent_class)
         self._validate_execute_contract(agent_class)
-        self.tool_catalog = discover_agent_tools(agent_class)
+        discovered_tools = discover_agent_tools(agent_class)
+        teammate_tools = build_teammate_tool_descriptors(
+            agent_class,
+            self.spec.teammates,
+        )
+        self.tool_catalog = AgentToolCatalog(
+            descriptors=(*discovered_tools.descriptors, *teammate_tools),
+        )
         self.signal_hook_catalog = discover_agent_signal_hooks(agent_class)
 
     def validate_bootstrap(self) -> None:

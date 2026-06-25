@@ -59,6 +59,7 @@ class AgentCardFactory:
         tool_skills = [
             self._tool_skill(descriptor)
             for descriptor in agent.tool_catalog.descriptors
+            if not self._is_teammate_delegation_tool(descriptor)
         ]
         teammate_skills = [
             self._teammate_skill(teammate) for teammate in spec.teammates
@@ -103,6 +104,13 @@ class AgentCardFactory:
             description="Delegated teammate",
             tags=[TEAMMATE_DELEGATION_TAG],
         )
+
+    @staticmethod
+    def _is_teammate_delegation_tool(descriptor: AgentToolDescriptor) -> bool:
+        """Return whether a tool descriptor is the runner's synthetic teammate tool."""
+        return descriptor.schema.name.startswith(
+            "teammate."
+        ) and descriptor.schema.name.endswith(".delegate")
 
     @staticmethod
     def _skill_tags(metadata: AgentToolMetadata) -> list[str]:

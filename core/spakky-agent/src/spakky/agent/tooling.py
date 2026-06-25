@@ -22,6 +22,8 @@ AGENT_TOOL_DEFINITION_KEY = "__spakky_agent_tool_definition__"
 
 AgentToolCallable = Callable[..., object]
 
+_RUNTIME_CONTEXT_PARAMETER_NAME = "runtime_context"
+
 _PRIMITIVE_SCHEMA_TYPES: dict[object, str] = {
     str: "string",
     int: "integer",
@@ -335,6 +337,23 @@ class ToolRisk:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentToolRuntimeContext:
+    """Runtime correlation data injected into framework-owned tool callables."""
+
+    state_id: str
+    conversation_id: str
+    call_id: str
+    tool_name: str
+
+    def __post_init__(self) -> None:
+        """Reject runtime context that cannot link events and evidence."""
+        _require_non_blank(self.state_id, "Agent tool runtime state id")
+        _require_non_blank(self.conversation_id, "Agent tool runtime conversation id")
+        _require_non_blank(self.call_id, "Agent tool runtime call id")
+        _require_non_blank(self.tool_name, "Agent tool runtime tool name")
+
+
+@dataclass(frozen=True, slots=True)
 class AgentToolDefinition:
     """Method-level metadata attached by @agent_tool before owner discovery."""
 
@@ -515,7 +534,7 @@ def bind_agent_tool_invocation(
         raise AgentToolBindingError(
             "Agent tool callable signature cannot be inspected"
         ) from e
-    call_signature = _drop_owner_parameter(function_signature)
+    call_signature = _drop_injected_parameters(function_signature)
     try:
         bound = call_signature.bind(*invocation.args, **invocation.kwargs)
     except TypeError as e:
@@ -618,9 +637,11 @@ def _copy_string_key_mapping(value: object, label: str) -> dict[str, object]:
     return result
 
 
-def _drop_owner_parameter(function_signature: Signature) -> Signature:
+def _drop_injected_parameters(function_signature: Signature) -> Signature:
     parameters = tuple(function_signature.parameters.values())
     if parameters and parameters[0].name in ("self", "cls"):
+        parameters = parameters[1:]
+    if parameters and parameters[0].name == _RUNTIME_CONTEXT_PARAMETER_NAME:
         parameters = parameters[1:]
     return function_signature.replace(parameters=parameters)
 
@@ -650,6 +671,8 @@ def _build_input_schema(function: FunctionType, schema_name: str) -> _SchemaExtr
     sensitive_fields: list[SensitiveFieldDescriptor] = []
     for parameter in function_signature.parameters.values():
         if parameter.name in ("self", "cls"):
+            continue
+        if parameter.name == _RUNTIME_CONTEXT_PARAMETER_NAME:
             continue
         _validate_schema_parameter(parameter)
         annotation = type_hints.get(parameter.name, parameter.annotation)

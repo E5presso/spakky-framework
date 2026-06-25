@@ -49,6 +49,12 @@ def test_run_agent_input_expect_rejects_blank_conversation_id() -> None:
         RunAgentInput(state_id="run-1", instruction="do it", conversation_id=" ")
 
 
+def test_run_agent_input_expect_rejects_blank_parent_run_id() -> None:
+    """공백 parent_run_id는 delegation parent linkage로 쓸 수 없어 거부된다."""
+    with pytest.raises(AgentDefinitionError):
+        RunAgentInput(state_id="run-1", instruction="do it", parent_run_id=" ")
+
+
 def test_run_agent_input_expect_defaults_message_history_empty() -> None:
     """클라이언트 주입 이력을 생략하면 빈 history로 단일턴 시드를 의미한다."""
     run_input = RunAgentInput(state_id="run-1", instruction="do it")

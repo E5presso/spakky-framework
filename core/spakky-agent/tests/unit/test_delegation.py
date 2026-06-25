@@ -1,13 +1,19 @@
 """Tests for agent delegation contracts."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
+from typing import cast
 
 import pytest
 
 from spakky.agent import (
+    Agent,
     AgentDelegateTarget,
     AgentDefinitionError,
     AgentEvidenceKind,
+    AgentExecutionSpec,
+    AgentTeammate,
+    AgentToolDispatcher,
+    AgentToolRuntimeContext,
     AgentYield,
     AgentYieldKind,
     DelegationBudget,
@@ -16,9 +22,47 @@ from spakky.agent import (
     DelegationPacket,
     DelegationResult,
     DelegationReturnPolicy,
+    DelegationToolResult,
     Evidence,
     IAgentDelegate,
+    JsonValue,
+    ModelToolCall,
 )
+from spakky.agent.delegation import _packet_instruction, _task_payload
+from spakky.agent.error import AgentToolDispatchError
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="remote-parent",
+        teammates=(
+            AgentTeammate(
+                name="remote",
+                card_url="https://remote.example/.well-known/agent-card.json",
+            ),
+        ),
+    )
+)
+class RemoteParentAgent:
+    """Parent fixture exposing a remote teammate delegate port."""
+
+    def __init__(self, delegate: IAgentDelegate | None = None) -> None:
+        if delegate is not None:
+            self._delegate = delegate
+
+
+class LocalTeammate:
+    """Local teammate type used to exercise missing pod resolution."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="local-parent",
+        teammates=(AgentTeammate(name="local", pod=LocalTeammate),),
+    )
+)
+class LocalParentWithoutChild:
+    """Parent fixture declaring but not injecting a local teammate."""
 
 
 def test_delegation_packet_expect_expresses_task_context_constraints_output_budget() -> (
@@ -126,6 +170,181 @@ async def test_agent_delegate_hook_expect_streams_delegation_result_yields() -> 
     assert items[0].payload.packet_id == "delegation-1"
 
 
+async def test_delegate_tool_result_expect_collects_terminal_result() -> None:
+    """IAgentDelegate 기본 collector가 terminal result를 tool result로 변환한다."""
+    packet = DelegationPacket(
+        id="delegation-1",
+        parent_agent_state_id="run-parent",
+        target=AgentDelegateTarget(agent_type="ResearchAgent"),
+        task={"goal": "inspect"},
+    )
+    delegate = RecordingDelegate()
+
+    result = await delegate.delegate_tool_result(packet)
+
+    assert isinstance(result, DelegationToolResult)
+    assert result.summary == "done"
+    assert result.metadata["packet_id"] == "delegation-1"
+
+
+async def test_remote_teammate_tool_expect_dispatches_through_delegate_port() -> None:
+    """remote teammate synthetic tool이 IAgentDelegate port로 위임된다."""
+    delegate = RecordingDelegate()
+    dispatcher = AgentToolDispatcher(
+        target=RemoteParentAgent(delegate),
+        catalog=Agent.get(RemoteParentAgent).tool_catalog,
+        runtime_context=AgentToolRuntimeContext(
+            state_id="parent-run",
+            conversation_id="thread-1",
+            call_id="call-1",
+            tool_name="teammate.remote.delegate",
+        ),
+    )
+
+    result = await dispatcher.dispatch(
+        ModelToolCall(
+            name="teammate.remote.delegate",
+            arguments={"instruction": "inspect", "task": {"topic": "a2a"}},
+        )
+    )
+
+    assert isinstance(result, DelegationToolResult)
+    assert result.metadata["packet_id"] == "parent-run:call-1"
+    assert delegate.last_packet is not None
+    assert delegate.last_packet.parent_agent_state_id == "parent-run"
+    assert delegate.last_packet.target.metadata["card_url"] == (
+        "https://remote.example/.well-known/agent-card.json"
+    )
+
+
+async def test_remote_teammate_tool_expect_rejects_missing_delegate_port() -> None:
+    """remote teammate tool은 delegate port가 없으면 dispatch error를 낸다."""
+    dispatcher = AgentToolDispatcher(
+        target=RemoteParentAgent(),
+        catalog=Agent.get(RemoteParentAgent).tool_catalog,
+        runtime_context=AgentToolRuntimeContext(
+            state_id="parent-run",
+            conversation_id="thread-1",
+            call_id="call-1",
+            tool_name="teammate.remote.delegate",
+        ),
+    )
+
+    with pytest.raises(AgentToolDispatchError):
+        await dispatcher.dispatch(
+            ModelToolCall(
+                name="teammate.remote.delegate",
+                arguments={"instruction": "inspect"},
+            )
+        )
+
+
+async def test_remote_teammate_tool_expect_rejects_blank_instruction() -> None:
+    """teammate tool instruction은 공백일 수 없다."""
+    dispatcher = AgentToolDispatcher(
+        target=RemoteParentAgent(RecordingDelegate()),
+        catalog=Agent.get(RemoteParentAgent).tool_catalog,
+        runtime_context=AgentToolRuntimeContext(
+            state_id="parent-run",
+            conversation_id="thread-1",
+            call_id="call-1",
+            tool_name="teammate.remote.delegate",
+        ),
+    )
+
+    with pytest.raises(AgentToolDispatchError):
+        await dispatcher.dispatch(
+            ModelToolCall(
+                name="teammate.remote.delegate",
+                arguments={"instruction": " "},
+            )
+        )
+
+
+async def test_local_teammate_tool_expect_rejects_missing_child_pod() -> None:
+    """local teammate tool은 parent에 child pod가 없으면 dispatch error를 낸다."""
+    dispatcher = AgentToolDispatcher(
+        target=LocalParentWithoutChild(),
+        catalog=Agent.get(LocalParentWithoutChild).tool_catalog,
+        runtime_context=AgentToolRuntimeContext(
+            state_id="parent-run",
+            conversation_id="thread-1",
+            call_id="call-1",
+            tool_name="teammate.local.delegate",
+        ),
+    )
+
+    with pytest.raises(AgentToolDispatchError):
+        await dispatcher.dispatch(
+            ModelToolCall(
+                name="teammate.local.delegate",
+                arguments={"instruction": "inspect"},
+            )
+        )
+
+
+def test_delegation_tool_result_expect_rejects_blank_summary() -> None:
+    """DelegationToolResult summary는 model-facing 결과라 공백일 수 없다."""
+    with pytest.raises(AgentDefinitionError):
+        DelegationToolResult(summary=" ")
+
+
+async def test_delegate_tool_result_expect_rejects_delegate_without_result() -> None:
+    """delegate가 DelegationResult를 내지 않으면 custom dispatch error다."""
+    packet = DelegationPacket(
+        id="delegation-1",
+        parent_agent_state_id="run-parent",
+        target=AgentDelegateTarget(agent_type="ResearchAgent"),
+        task={"goal": "inspect"},
+    )
+
+    with pytest.raises(AgentToolDispatchError):
+        await EmptyDelegate().delegate_tool_result(packet)
+
+
+async def test_delegate_tool_result_expect_ignores_non_result_payloads() -> None:
+    """delegate stream의 non-result payload는 terminal result로 보지 않는다."""
+    packet = DelegationPacket(
+        id="delegation-1",
+        parent_agent_state_id="run-parent",
+        target=AgentDelegateTarget(agent_type="ResearchAgent"),
+        task={"goal": "inspect"},
+    )
+
+    with pytest.raises(AgentToolDispatchError):
+        await NonResultDelegate().delegate_tool_result(packet)
+
+
+def test_delegation_helpers_expect_reject_malformed_task_payloads() -> None:
+    """defensive helper가 비문자 task key와 instruction 없는 packet을 거부한다."""
+    malformed = cast(Mapping[str, JsonValue], {1: "bad"})
+    packet = DelegationPacket(
+        id="delegation-1",
+        parent_agent_state_id="run-parent",
+        target=AgentDelegateTarget(agent_type="ResearchAgent"),
+        task={},
+    )
+
+    with pytest.raises(AgentToolDispatchError):
+        _task_payload("inspect", malformed)
+    with pytest.raises(AgentToolDispatchError):
+        _packet_instruction(packet)
+
+
+def test_teammate_descriptor_expect_rejects_name_without_schema_token() -> None:
+    """teammate 이름이 schema token을 만들 수 없으면 definition error다."""
+    with pytest.raises(AgentDefinitionError):
+
+        @Agent(
+            spec=AgentExecutionSpec(
+                name="bad",
+                teammates=(AgentTeammate(name="!!!", pod=LocalTeammate),),
+            )
+        )
+        class BadSchemaAgent:
+            """Agent whose teammate name cannot become a schema token."""
+
+
 def test_delegation_contracts_expect_reject_blank_identity_and_invalid_budget() -> None:
     """Delegation 계약이 bootstrap 전에 불가능한 식별자와 budget을 거부한다."""
     with pytest.raises(AgentDefinitionError):
@@ -194,4 +413,36 @@ class RecordingDelegate(IAgentDelegate):
                 target=packet.target,
                 summary="done",
             ),
+        )
+
+
+class EmptyDelegate(IAgentDelegate):
+    """Delegate fixture that emits no terminal DelegationResult."""
+
+    async def delegate(
+        self,
+        packet: DelegationPacket,
+    ) -> AsyncGenerator[AgentYield[DelegationResult], None]:
+        if False:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=DelegationResult(
+                    id="never",
+                    packet_id=packet.id,
+                    target=packet.target,
+                    summary="never",
+                ),
+            )
+
+
+class NonResultDelegate(IAgentDelegate):
+    """Delegate fixture that emits a non-DelegationResult payload."""
+
+    async def delegate(
+        self,
+        packet: DelegationPacket,
+    ) -> AsyncGenerator[AgentYield[DelegationResult], None]:
+        yield AgentYield(
+            kind=AgentYieldKind.FINAL,
+            payload=cast(DelegationResult, "not a delegation result"),
         )

@@ -33,6 +33,7 @@ class RunAgentInput:
     state_id: str
     instruction: str
     conversation_id: str | None = None
+    parent_run_id: str | None = None
     resume: bool = False
     message_history: tuple[ModelMessage, ...] = ()
     metadata: JsonObject = field(default_factory=dict)
@@ -47,6 +48,8 @@ class RunAgentInput:
             raise AgentDefinitionError(
                 "Run agent input conversation id cannot be blank"
             )
+        if self.parent_run_id is not None and not self.parent_run_id.strip():
+            raise AgentDefinitionError("Run agent input parent run id cannot be blank")
 
     @property
     def effective_conversation_id(self) -> str:
