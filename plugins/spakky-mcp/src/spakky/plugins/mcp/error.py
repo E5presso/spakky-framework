@@ -1,4 +1,4 @@
-"""Error classes for the spakky-mcp client plugin."""
+"""Error classes for the spakky-mcp adapter (external clients and tool server)."""
 
 from abc import ABC
 
@@ -6,7 +6,7 @@ from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
 class AbstractMcpError(AbstractSpakkyFrameworkError, ABC):
-    """Base class for MCP client adapter errors."""
+    """Base class for MCP adapter errors (external client and tool server)."""
 
     ...
 
@@ -45,3 +45,9 @@ class McpCatalogMergeError(AbstractMcpError):
     """Raised when an external MCP tool collides with an existing catalog tool."""
 
     message = "MCP tool collides with an existing catalog tool"
+
+
+class McpToolExposureError(AbstractMcpError):
+    """Raised when dispatching an inbound MCP tool call against the agent fails."""
+
+    message = "MCP tool call dispatch failed"

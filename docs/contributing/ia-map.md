@@ -74,4 +74,4 @@
 | `contributing/ia-map.md` | 기여 | 작성 완료 (이 문서) |
 | `guides/agent-ag-ui.md` | Agent > 프로토콜 어댑터 | 빈 페이지(후속 태스크) |
 | `guides/agent-a2a.md` | Agent > 프로토콜 어댑터 | 빈 페이지(후속 태스크) |
-| `guides/agent-mcp.md` | Agent > 프로토콜 어댑터 | 빈 페이지(후속 태스크) |
+| `guides/agent-mcp.md` | Agent > 프로토콜 어댑터 | 작성 완료 |
