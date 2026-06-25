@@ -307,6 +307,38 @@ def test_public_api_expect_exports_model_contract_types() -> None:
     assert StreamingOptions is agent_api.StreamingOptions
 
 
+def test_public_api_expect_exports_event_taxonomy_types() -> None:
+    """프로토콜 중립 이벤트 taxonomy를 public API로 노출한다."""
+    from spakky.agent.event import (
+        AgentEvent,
+        AgentEventAttribution,
+        AgentEventKind,
+    )
+
+    assert AgentEvent is agent_api.AgentEvent
+    assert AgentEventAttribution is agent_api.AgentEventAttribution
+    assert AgentEventKind is agent_api.AgentEventKind
+    event_exports = {
+        "AgentEvent",
+        "AgentEventAttribution",
+        "AgentEventKind",
+        "MessageDeltaEvent",
+        "ReasoningDeltaEvent",
+        "ToolCallStartEvent",
+        "ToolCallArgsDeltaEvent",
+        "ToolCallEndEvent",
+        "ToolCallResultEvent",
+        "RunStartedEvent",
+        "RunFinishedEvent",
+        "StepStartedEvent",
+        "StepFinishedEvent",
+        "StateSnapshotEvent",
+        "StateDeltaEvent",
+        "ArtifactEvent",
+    }
+    assert event_exports <= set(agent_api.__all__)
+
+
 def test_public_api_expect_exports_tool_metadata_types() -> None:
     """@agent_tool descriptor metadata 타입을 public API로 노출한다."""
     assert ToolPermission is agent_api.ToolPermission
