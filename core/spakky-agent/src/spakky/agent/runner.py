@@ -246,7 +246,14 @@ class AgentRunner:
                 )
                 return
         yield StepFinishedEvent(attribution, step_name="model-call")
-        if state is not None:
+        # A tool that paused for approval already saved a WAIT_FOR_APPROVAL state
+        # (INTERRUPTED, not ACTIVE); completing it would clobber the durable pause
+        # the adapter surfaces as its deferred-tool request, so only an unpaused
+        # (still ACTIVE) run transitions to COMPLETED — mirroring _run_durable.
+        if (
+            state is not None
+            and self._states_required().get(state.id).status is AgentStatus.ACTIVE
+        ):
             self._complete_state(state.id)
         yield RunFinishedEvent(attribution)
 
