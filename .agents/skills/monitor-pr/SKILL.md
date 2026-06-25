@@ -229,19 +229,22 @@ claude bot이 동일 review id `R1`의 본문을 새 푸시 시 in-place로 재�
 - review bot의 CH2 issue comment가 HEAD commit 시점 이후에 작성됨
 - review bot의 CH3 review가 HEAD commit id에 anchor됨 (`COMMENTED`, `APPROVED`, `CHANGES_REQUESTED` 모두 평가 완료로 간주)
 
-`watch.sh`가 다음 5-조건을 모두 만족하면 `EVENT reason=bot-stuck`을 송신한다:
+`watch.sh`가 다음 6-조건을 모두 만족하면 `EVENT reason=bot-stuck`을 송신한다:
 
 (a) 모든 CI check가 COMPLETED (PENDING/IN_PROGRESS 0건)
 (b) `mergeStateStatus != CLEAN`
 (c) `reviewDecision != APPROVED`
 (d) latest external review bot review의 `commit_id != HEAD oid` (또는 review bot review 부재)
 (e) external review bot이 HEAD commit 시점 이후로 CH2 issue comment 도 남기지 않았다
+(f) PR labels에 `auto-approvable`이 포함되어 있다
 
 이 상태는 rebase 후 동일 트리·force-push 후 사실상 hash 미변경 등으로 봇이 신규 커밋으로 인식하지 않아 재리뷰 트리거가 누락된 정체다. CI는 끝났지만 GitHub가 아직 mergeable로 계산하지 않아 polling만 무한 반복된다.
 
 대상 봇은 기본적으로 `claude[bot]`, `codex[bot]`, `chatgpt-codex-connector[bot]`이며, GitHub App login이 다르면 `REVIEW_BOT_LOGINS` 환경변수에 콤마 구분으로 추가한다.
 
 **(e)의 의의 (회귀 차단)**: 외부 리뷰 봇은 자동 승인 비적격 판정 시 formal review 대신 CH2 issue comment 로 "팀원 리뷰 필요" 의견을 남기는 경로를 가질 수 있다. 이 경우 봇은 현재 HEAD 를 평가했지만 의도적으로 review submission 을 하지 않은 것이며, 휴먼 리뷰어 승인을 대기해야 한다. (d) 만으로 판정하면 본 case 가 stuck 으로 잘못 분류되어 빈 커밋 retrigger 가 동일 판정만 재발행하면서 폴링·크레딧을 소진한다 — (e) 가 이 회귀를 차단한다.
+
+**(f)의 의의 (회귀 차단)**: `auto-approvable` 라벨은 `/pr-review`가 `AUTO_APPROVE` 판정일 때만 부여하고 다른 verdict에서는 제거하는 복구 허용 신호다. 라벨이 없는 PR은 자동 승인 비적격 또는 사람 검토 대기가 정상 경로이므로 `bot-stuck` retrigger를 보내지 않는다. 이 라벨은 승인 트리거가 아니며, 승인 트리거는 `ai-review` commit status다.
 
 **핸들러**: 빈 커밋 + push로 새 commit hash 생성 → 봇 재리뷰 + CI 재실행 유도.
 
