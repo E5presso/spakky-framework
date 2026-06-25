@@ -4,8 +4,20 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
-from spakky.agent.execution import AgentSignalKind
 from spakky.agent.types import JsonObject
+
+
+class AgentSignalKind(StrEnum):
+    """Inbound stimulus kinds that an agent may accept while running."""
+
+    USER_MESSAGE = "user_message"
+    APPROVAL_DECISION = "approval_decision"
+    CANCEL = "cancel"
+    PAUSE = "pause"
+    RESUME = "resume"
+    STEERING_INSTRUCTION = "steering_instruction"
+    EXTERNAL_EVENT = "external_event"
+    SCHEDULER_WAKE_UP = "scheduler_wake_up"
 
 
 class ApprovalDecision(StrEnum):

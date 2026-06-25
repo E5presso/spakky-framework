@@ -63,7 +63,8 @@ from spakky.agent.evidence import (
     AgentEvidenceCandidate,
     AgentEvidenceKind,
 )
-from spakky.agent.execution import Agent, AgentSignalKind, RecoveryStrategy
+from spakky.agent.execution import Agent, RecoveryStrategy
+from spakky.agent.hooks import AgentSignalHookDescriptor
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.interfaces.model import (
     IAgentModel,
@@ -91,7 +92,7 @@ from spakky.agent.recovery import (
     AgentActionBoundaryCheckpoint,
     plan_agent_resume,
 )
-from spakky.agent.signal import AgentSignal, ApprovalDecision
+from spakky.agent.signal import AgentSignal, AgentSignalKind, ApprovalDecision
 from spakky.agent.state import (
     AgentState,
     AgentStateReason,
@@ -414,7 +415,7 @@ class AgentRunner:
             if cancel is not None:
                 yield cancel
                 return
-            for signal_item in self._consume_user_messages(state):
+            async for signal_item in self._consume_inbound_signals(state):
                 yield signal_item
             terminated = False
             async for item in self._consume_stream_event(
@@ -787,34 +788,75 @@ class AgentRunner:
             )
         return None
 
-    def _consume_user_messages(
+    async def _consume_inbound_signals(
         self,
         state: AgentState,
-    ) -> list[AgentYield[object]]:
-        items: list[AgentYield[object]] = []
+    ) -> AsyncGenerator[AgentYield[object], None]:
+        """Dispatch pending non-terminal signals at the model-stream poll point.
+
+        Cancel and approval decisions own dedicated phases, so this poll handles
+        the remaining inbound kinds. A declarative ``@on_signal`` hook, when one
+        is declared for the kind, owns the reaction and its yielded items flow
+        into the public stream. A ``USER_MESSAGE`` with no declared hook falls
+        back to the built-in progress item so the default loop still observes the
+        message. Other kinds with no hook stay pending for a later poll rather
+        than being silently consumed without a handler.
+        """
         for signal in self._signals_required().list_pending(state.id):
-            if signal.kind is not AgentSignalKind.USER_MESSAGE:
+            if signal.kind in (
+                AgentSignalKind.CANCEL,
+                AgentSignalKind.APPROVAL_DECISION,
+            ):
                 continue
-            self._signals_required().mark_consumed(signal.id)
-            self._append_candidate(
-                state.id,
-                AgentEvidenceCandidate(
-                    kind=AgentEvidenceKind.EVALUATION,
-                    payload={"signal_id": signal.id, "payload": signal.payload},
-                    summary="user signal consumed",
-                ),
-            )
-            items.append(
-                AgentYield(
-                    kind=AgentYieldKind.PROGRESS,
-                    payload=Progress(
-                        "user message consumed",
-                        current_step="signal",
-                        metadata={"signal_id": signal.id},
-                    ),
-                )
-            )
-        return items
+            hooks = self.agent.signal_hook_catalog.hooks_for(signal.kind)
+            if hooks:
+                async for item in self._dispatch_signal_hooks(state, signal, hooks):
+                    yield item
+                continue
+            if signal.kind is AgentSignalKind.USER_MESSAGE:
+                yield self._consume_default_user_message(state, signal)
+
+    async def _dispatch_signal_hooks(
+        self,
+        state: AgentState,
+        signal: AgentSignal,
+        hooks: Sequence[AgentSignalHookDescriptor],
+    ) -> AsyncGenerator[AgentYield[object], None]:
+        self._signals_required().mark_consumed(signal.id)
+        self._append_candidate(
+            state.id,
+            AgentEvidenceCandidate(
+                kind=AgentEvidenceKind.EVALUATION,
+                payload={"signal_id": signal.id, "payload": signal.payload},
+                summary=f"{signal.kind.value} signal hook handled",
+            ),
+        )
+        for hook in hooks:
+            async for item in hook.callable(self.target, signal):
+                yield item
+
+    def _consume_default_user_message(
+        self,
+        state: AgentState,
+        signal: AgentSignal,
+    ) -> AgentYield[object]:
+        self._signals_required().mark_consumed(signal.id)
+        self._append_candidate(
+            state.id,
+            AgentEvidenceCandidate(
+                kind=AgentEvidenceKind.EVALUATION,
+                payload={"signal_id": signal.id, "payload": signal.payload},
+                summary="user signal consumed",
+            ),
+        )
+        return AgentYield(
+            kind=AgentYieldKind.PROGRESS,
+            payload=Progress(
+                "user message consumed",
+                current_step="signal",
+                metadata={"signal_id": signal.id},
+            ),
+        )
 
     def _consume_approval(
         self,

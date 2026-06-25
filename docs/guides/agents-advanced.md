@@ -1,6 +1,6 @@
 # AI Agent 심화
 
-> `spakky-agent`의 tool catalog, approval, durable execution, transport adapter, AG-UI/CopilotKit 연동을 다룹니다.
+> `spakky-agent`의 tool catalog, approval, `@on_signal` 선언형 훅, context compaction, teammate, durable execution, transport adapter, AG-UI/CopilotKit 연동을 다룹니다.
 
 이 문서는 [AI Agent 개발](agents.md)을 읽은 뒤 보는 심화 가이드입니다. 여기서는 작은 Agent를 운영형 Agent로 확장할 때 필요한 선택지를 정리합니다.
 
@@ -128,21 +128,23 @@ request = ModelRequest(
 )
 ```
 
-Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE`를 내보내면 Agent는 보통 다음 순서로 처리합니다.
+Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE`를 내보내면, **runner가** 다음 순서를 자동으로 수행합니다 (개발자가 루프 본문에 작성하지 않습니다, ADR-0013 §1).
 
 1. `call.name`으로 `AgentToolCatalog`에서 descriptor를 찾습니다.
 2. `plan_agent_tool_approval()`로 approval이 필요한지 판단합니다.
-3. 필요하면 `AgentYieldKind.APPROVAL`을 yield하고 decision signal을 기다립니다.
+3. 필요하면 `AgentYieldKind.APPROVAL`을 yield하고 decision signal을 기다립니다 (HITL pause → resume).
 4. 승인되었거나 approval이 필요 없으면 `descriptor.bind_invocation(call.arguments)`로 argument를 검증합니다.
 5. Python method를 호출합니다.
-6. result를 `AgentYieldKind.TOOL`이나 evidence로 남깁니다.
+6. result를 `AgentYieldKind.TOOL`과 append-only evidence로 남깁니다.
+
+`bind_invocation()`은 model payload가 Python signature와 맞는지 검사합니다. 필수 인자 누락, 알 수 없는 인자, 중복 인자는 tool method가 실행되기 전에 `AgentToolBindingError`로 실패합니다. 이 전체 dispatch는 `AgentToolDispatcher`가 담당하며, 외부 MCP 도구도 같은 `AgentToolCatalog`로 정규화되어 동일 경로로 호출됩니다.
+
+루프 본문을 직접 들여다보고 싶다면 동일 단계를 명시적으로 작성한 코드는 다음과 같습니다 — 커스텀 제어가 필요할 때만 `execute()` 본문으로 옮깁니다.
 
 ```python
 from spakky.agent import Agent, AgentYield, plan_agent_tool_approval
 
-metadata = Agent.get(CodeAssistant)
-descriptor = metadata.tool_catalog.by_schema_name(call.name)
-
+descriptor = Agent.get(CodeAssistant).tool_catalog.by_schema_name(call.name)
 approval = plan_agent_tool_approval(
     descriptor=descriptor,
     approval_id=f"approval:{state.id}:{call.name}",
@@ -150,16 +152,12 @@ approval = plan_agent_tool_approval(
     agent_type="CodeAssistant",
     call_id=call.call_id,
 )
-
 if approval.requires_approval and approval.yield_item is not None:
     yield AgentYield(kind=approval.yield_item.kind, payload=approval.yield_item.payload)
     return
-
 bound = descriptor.bind_invocation(call.arguments)
 result = descriptor.callable(self, *bound.args, **bound.kwargs)
 ```
-
-`bind_invocation()`은 model payload가 Python signature와 맞는지 검사합니다. 필수 인자 누락, 알 수 없는 인자, 중복 인자는 tool method가 실행되기 전에 `AgentToolBindingError`로 실패합니다.
 
 ## Approval, signal, cancel
 
@@ -196,6 +194,61 @@ Signal은 실행 중 Agent에게 들어오는 외부 입력입니다.
 Durable repository를 쓰는 경우 orchestration은 safe boundary에서 `consume_pending_agent_signals()`를 호출합니다. 이 helper는 pending queue를 append order로 읽고, 현재 Agent가 받아들일 수 있는 prefix만 consumed 처리합니다.
 
 Cancel은 바로 terminal state로 덮어쓰는 flag가 아닙니다. 일반적인 흐름은 `begin_agent_cancellation()`으로 state를 `CANCELLING`으로 만들고, model stream/tool/delegate cleanup hook을 실행한 뒤 `complete_agent_cancellation()`으로 끝냅니다.
+
+## 선언형 시그널 훅: `@on_signal`
+
+`CANCEL`과 `APPROVAL_DECISION`은 runner가 전용 단계에서 처리하지만, 그 외 시그널(`USER_MESSAGE`·`STEERING_INSTRUCTION`·`EXTERNAL_EVENT`·`SCHEDULER_WAKE_UP` 등)에 **커스텀 반응**을 붙이고 싶을 때 `@on_signal`을 씁니다. 이것은 `@agent_tool`과 같은 선언형 seam입니다 — `execute()` 루프를 작성하지 않고, 시그널 종류별 핸들러만 선언하면 runner가 해당 시그널을 소비하는 poll 지점에서 자동 호출합니다.
+
+```python
+from collections.abc import AsyncGenerator
+
+from spakky.agent import (
+    Agent,
+    AgentExecutionSpec,
+    AgentSignal,
+    AgentSignalKind,
+    AgentYield,
+    AgentYieldKind,
+    Progress,
+    on_signal,
+)
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="steerable_agent",
+        objective="react to steering instructions mid-run",
+        accepted_signals=(AgentSignalKind.STEERING_INSTRUCTION,),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class SteerableAgent:
+    def __init__(self, model: IAgentModel, states, signals, evidence) -> None:
+        ...
+
+    @on_signal(AgentSignalKind.STEERING_INSTRUCTION)
+    async def on_steering(
+        self,
+        signal: AgentSignal,
+    ) -> AsyncGenerator[AgentYield[object], None]:
+        yield AgentYield(
+            kind=AgentYieldKind.PROGRESS,
+            payload=Progress(
+                f"steering applied: {signal.payload.get('instruction')}",
+                current_step="steering",
+            ),
+        )
+```
+
+`@on_signal` 계약은 정의 시점에 검증됩니다.
+
+- 메서드는 `async def`이며 `AgentYield` item을 yield하는 async generator여야 합니다.
+- `self` 외에 정확히 하나의 `signal: AgentSignal` 인자를 받아야 합니다.
+- 반환 annotation은 `AsyncGenerator[AgentYield[...], None]`이어야 합니다.
+
+위반하면 bootstrap 전에 `AgentDefinitionError`로 실패합니다. 훅이 선언된 시그널 종류는 훅이 소비를 책임지고 yield한 item이 public stream으로 흘러갑니다. 훅이 없는 `USER_MESSAGE`는 runner의 기본 "user message consumed" progress로 폴백합니다.
+
+pydantic-ai의 `@agent.instructions`/event handler 데코레이터처럼, `@on_signal`은 비즈니스 반응만 선언하고 폴링·소비·evidence 기록은 runner가 담당합니다.
 
 ## Durable 실행과 repository
 
@@ -247,6 +300,64 @@ Restart 후에는 `plan_agent_resume(state, evidence, pending_signals)`가 다�
 
 Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 history를 고치지 않고, redaction, correction, context digest 갱신도 새 evidence를 append하는 방식으로 표현합니다.
 
+## Context compaction
+
+긴 멀티턴 대화는 결국 model backend의 context window를 넘습니다. 압축할지 여부(언제)는 runner가 소유하고, 압축하는 방법(어떻게)은 교체 가능한 `ICompactionStrategy` 포트가 담당합니다 (ADR-0013 §7). `@Agent` spec에 `AgentCompactionPolicy`를 선언하면 runner가 각 model 요청 직전, 누적 토큰 추정치가 임계값을 넘었을 때 선언된 전략 chain을 history에 적용합니다 — 개발자가 루프 본문에서 직접 호출하지 않습니다.
+
+```python
+from spakky.agent import (
+    AgentCompactionPolicy,
+    AgentExecutionSpec,
+    KeepRecentMessagesCompactionStrategy,
+    TrimToolResultsCompactionStrategy,
+)
+
+spec = AgentExecutionSpec(
+    name="long_session_agent",
+    objective="hold a long multi-turn session",
+    compaction=AgentCompactionPolicy(
+        strategies=(
+            TrimToolResultsCompactionStrategy(max_characters=2000),
+            KeepRecentMessagesCompactionStrategy(max_messages=20),
+        ),
+        trigger_token_threshold=8000,
+    ),
+)
+```
+
+`strategies`는 순서대로 적용되는 chain입니다 — 각 전략의 출력이 다음 전략의 입력이 됩니다. 내장 전략은 다음과 같습니다.
+
+| 전략 | 압축 방식 |
+|------|-----------|
+| `KeepRecentMessagesCompactionStrategy` | 가장 오래된 메시지를 버리고 최근 N개만 유지 (가장 저렴) |
+| `TrimToolResultsCompactionStrategy` | 오래된 tool result 본문을 잘라 토큰을 줄임 |
+| `SummarizeOldTurnsCompactionStrategy` | 보조 model 호출로 오래된 turn을 요약 (가장 풍부) |
+| `ProviderManagedCompactionStrategy` | history를 그대로 두고 provider가 압축을 소유 (no-op 명시) |
+
+`ICompactionStrategy`를 직접 구현해 커스텀 전략을 주입할 수도 있습니다. 압축은 ADR-0009 `ContextDigest` 모델과 정렬되어 raw evidence를 대체하지 않고 derived 결과로 표현됩니다.
+
+pydantic-ai의 message history processor / `compact_messages` capability와 같은 자리를 `ICompactionStrategy` 포트가 채웁니다.
+
+## Teammate (팀 모드)와 delegation
+
+multi-agent 팀 모드는 `@Agent` spec의 `teammates`로 선언합니다. 로컬 teammate는 로컬 `@Agent` Pod 타입으로, 원격 teammate는 A2A `AgentCard` 엔드포인트 URL로 해석됩니다 (ADR-0013 §8).
+
+```python
+from spakky.agent import AgentExecutionSpec, AgentTeammate
+
+spec = AgentExecutionSpec(
+    name="orchestrator",
+    objective="delegate sub-tasks to teammates",
+    delegation_allowed=True,
+    teammates=(
+        AgentTeammate(name="researcher", pod=ResearchAgent),
+        AgentTeammate(name="remote_reviewer", card_url="https://reviewer.example/agent"),
+    ),
+)
+```
+
+`AgentTeammate`는 정확히 하나의 바인딩(로컬 `pod` 또는 원격 `card_url`)만 선언해야 하며, 위반 시 정의 시점에 `AgentDefinitionError`로 실패합니다. 위임은 ADR-0009 delegation building block(`DelegationPacket`/`DelegationResult`) 위에서 동작하고, 원격 위임은 A2A 어댑터를 통해 확장됩니다.
+
 ## FastAPI, WebSocket, SSE, CLI
 
 Agent 전용 inbound package는 필요하지 않습니다. 기존 `spakky-fastapi`나 `spakky-typer` controller에서 Agent를 resolve하고 stream을 변환합니다.
@@ -256,9 +367,13 @@ WebSocket adapter의 핵심은 다음과 같습니다.
 ```python
 @websocket("/agents/code/ws")
 async def code_socket(self, websocket: WebSocket) -> None:
-    command = await websocket.receive_json()
+    payload = await websocket.receive_json()
+    run_input = code_assistant_command_from_json(payload)
     agent = self._container.get(CodeAssistant)
-    async for item in agent.execute(command):
+    signals = self._container.get(IAgentSignalRepository)
+    for signal_payload in code_assistant_signals_from_json(payload):
+        signals.append(agent_signal_from_json(run_input.state_id, signal_payload))
+    async for item in agent.execute(run_input):
         await websocket.send_json(agent_yield_to_event(item))
 ```
 
@@ -316,11 +431,13 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 
 ## 운영 체크리스트
 
-- `@Agent.execute()` input과 return/yield type이 모두 annotate되어 있습니다.
+- 가능한 한 `execute()` 본문을 생략하고 runner-backed 루프를 사용합니다. 커스텀 `execute()`를 직접 쓸 때만 input과 return/yield type을 모두 annotate합니다.
 - Agent가 provider SDK, DB client, HTTP framework를 직접 import하지 않고 port/interface에 의존합니다.
 - Model backend는 `IAgentModel` adapter 뒤에 있습니다.
 - 모든 model-callable capability는 `@agent_tool`로 선언되어 schema, risk, idempotency, evidence metadata가 있습니다.
+- 실행 중 시그널 반응은 `@on_signal` 훅으로 선언하고 루프 본문에 폴링 코드를 작성하지 않습니다.
 - Write/network/destructive tool은 approval path가 있습니다.
+- 긴 멀티턴 Agent는 `AgentCompactionPolicy`를 spec에 선언합니다.
 - Durable path를 쓰면 state/signal/evidence repository contribution이 등록되어 있습니다.
 - Inbound adapter는 `AgentYieldKind.APPROVAL`을 사용자 decision signal로 연결합니다.
 - CopilotKit 연동 endpoint는 Spakky-native `AgentYield` JSON이 아니라 AG-UI `type` event stream을 반환합니다.

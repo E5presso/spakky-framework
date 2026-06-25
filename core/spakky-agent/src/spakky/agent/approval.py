@@ -5,8 +5,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from spakky.agent.error import AgentDefinitionError
-from spakky.agent.execution import AgentSignalKind
-from spakky.agent.signal import AgentSignal, ApprovalDecision
+from spakky.agent.signal import AgentSignal, AgentSignalKind, ApprovalDecision
 from spakky.agent.state import (
     AgentState,
     AgentStateReason,

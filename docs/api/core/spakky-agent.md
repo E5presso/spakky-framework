@@ -93,6 +93,12 @@ SQLAlchemy, FastAPI, Typer를 import하지 않습니다. 운영에서 durable ex
     options:
       show_root_heading: false
 
+## Signal Hooks
+
+::: spakky.agent.hooks
+    options:
+      show_root_heading: false
+
 ## Yield
 
 ::: spakky.agent.yield_

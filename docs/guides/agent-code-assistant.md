@@ -2,7 +2,7 @@
 
 > `spakky-agent`의 tool, approval, evidence, state/signal repository를 하나의 실행 흐름으로 연결하는 심화 예제입니다.
 
-이 문서는 [AI Agent 개발](agents.md)과 [AI Agent 심화](agents-advanced.md)를 읽은 뒤 보는 실행 가능한 예제입니다. `core/spakky-agent/examples/code_assistant_demo.py`는 `CodeAssistant`가 생성자 주입으로 model, workspace, shell, git, state/signal/evidence repository를 받고, 외부 세계 동작을 `@agent_tool` 메서드로 노출하는 흐름을 보여줍니다.
+이 문서는 [AI Agent 개발](agents.md)과 [AI Agent 심화](agents-advanced.md)를 읽은 뒤 보는 실행 가능한 예제입니다. `core/spakky-agent/examples/code_assistant_demo.py`는 `CodeAssistant`가 생성자 주입으로 model, workspace, shell, git, state/signal/evidence repository를 받고, 외부 세계 동작을 `@agent_tool` 메서드로 노출하는 **선언형** 흐름을 보여줍니다. `CodeAssistant`에는 `execute()` 본문이 없습니다 — model 호출 → tool 호출 → 승인 → evidence → 종료 루프는 프레임워크 runner가 spec과 `@agent_tool` 카탈로그로부터 자동 제공합니다 (ADR-0013 §1). 시그널 반응이 필요한 지점은 `@on_signal` 훅으로 선언합니다.
 
 ## 무엇을 검증하나
 
@@ -35,37 +35,40 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 `spakky-sqlalchemy[agent]`가 제공하는 `spakky.contributions.spakky.agent`
 contribution을 사용해야 합니다.
 
-가장 작은 실행 가능한 `@Agent` 형태는 다음 예시와 같습니다. 파일로 저장해 애플리케이션 scan 대상에 포함하면 `CodeAssistant`는 일반 UseCase처럼 container에서 resolve됩니다.
+가장 작은 선언형 `@Agent` 형태는 다음 예시와 같습니다. 도구만 선언하고 `execute()`를 생략하면, 파일로 저장해 애플리케이션 scan 대상에 포함했을 때 `CodeAssistant`는 일반 UseCase처럼 container에서 resolve되고, runner가 표준 실행 루프를 `execute()`로 제공합니다.
 
 ```python
-from collections.abc import AsyncGenerator
+from spakky.agent import (
+    Agent,
+    AgentExecutionSpec,
+    EvidenceCapture,
+    IAgentModel,
+    Idempotency,
+    ToolApprovalRequirement,
+    ToolEffects,
+    agent_tool,
+)
 
-from spakky.agent import Agent, AgentExecutionSpec, AgentYield, AgentYieldKind, Final
-from spakky.core.pod.annotations.pod import Pod
 
-
-@Pod()
-class AnswerTools:
-    def answer(self, command: str) -> str:
-        return f"handled:{command}"
-
-
-@Agent(spec=AgentExecutionSpec(name="code_assistant", objective="handle commands"))
+@Agent(spec=AgentExecutionSpec(name="code_assistant", objective="inspect a workspace"))
 class CodeAssistant:
-    def __init__(self, tools: AnswerTools) -> None:
-        self._tools = tools
+    def __init__(self, model: IAgentModel, workspace: IWorkspacePort) -> None:
+        self._model = model
+        self._workspace = workspace
 
-    async def execute(
-        self,
-        command: str,
-    ) -> AsyncGenerator[AgentYield[Final[str]], None]:
-        yield AgentYield(
-            kind=AgentYieldKind.FINAL,
-            payload=Final(output=self._tools.answer(command), metadata={}),
-        )
+    @agent_tool(
+        schema_name="workspace.read",
+        description="Read a text file from the bounded workspace.",
+        effects=ToolEffects.read_only(),
+        idempotency=Idempotency.IDEMPOTENT,
+        evidence=EvidenceCapture.STRUCTURED,
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def workspace_read(self, path: str) -> WorkspaceReadResult:
+        return self._workspace.read_text(path)
 ```
 
-CodeAssistant 예제는 이 최소 형태에 model stream, workspace/shell/git port, approval signal, evidence repository, action boundary resume를 더한 구성입니다. 각 개념의 배경은 [AI Agent 심화](agents-advanced.md)에서 먼저 확인할 수 있습니다.
+`code_assistant_demo.py`의 CodeAssistant는 이 최소 형태에 workspace/shell/git port 도구 7종, write/shell/apply 도구의 approval, evidence repository, action boundary resume, 그리고 `@on_signal(AgentSignalKind.STEERING_INSTRUCTION)` 훅을 더한 구성입니다. 각 개념의 배경은 [AI Agent 심화](agents-advanced.md)에서 먼저 확인할 수 있습니다.
 
 ## 구조
 
@@ -83,10 +86,11 @@ print([descriptor.schema.name for descriptor in agent.tool_catalog.descriptors])
 
 ## 실행 collector
 
-예제 파일의 `collect_stream()`은 FastAPI, WebSocket, Typer 같은 inbound adapter가 할 일을 작은 함수로 축약한 것입니다.
+예제 파일의 `collect_stream()`은 FastAPI, WebSocket, Typer 같은 inbound adapter가 할 일을 작은 함수로 축약한 것입니다. 호출 입력은 `RunAgentInput`이며, runner-backed `execute()`를 순회해 `AgentYield` stream을 모읍니다.
 
 ```python
-from examples.code_assistant_demo import CodeAssistantCommand, collect_stream
+from examples.code_assistant_demo import collect_stream
+from spakky.agent import RunAgentInput
 
 items = await collect_stream(
     model,
@@ -96,14 +100,14 @@ items = await collect_stream(
     states,
     signals,
     evidence,
-    CodeAssistantCommand(
+    RunAgentInput(
         state_id="run-1",
         instruction="inspect the workspace and make a small approved edit",
     ),
 )
 ```
 
-반환되는 item은 `AgentYield` stream입니다. inbound adapter는 `token`, `tool`, `evidence`, `approval`, `cancel`, `final`을 transport별 이벤트로 바꾸면 됩니다. 별도 Agent 전용 inbound adapter package는 필요하지 않습니다.
+반환되는 item은 `AgentYield` stream입니다. inbound adapter는 `token`, `tool`, `evidence`, `approval`, `cancel`, `final`을 transport별 이벤트로 바꾸면 됩니다. 최종 `FINAL` payload는 runner가 만드는 `AgentRunResult`(state_id, status, tool_calls, evidence_count)입니다. 별도 Agent 전용 inbound adapter package는 필요하지 않습니다.
 
 ## FastAPI WebSocket / Typer adapter 예제
 
@@ -118,7 +122,7 @@ from examples.inbound_adapter_examples import CodeAssistantWebSocketController
 # WebSocket path: /agents/code/ws
 ```
 
-각 `AgentYield`는 `{"kind": ..., "payload": ...}` JSON event로 전송됩니다. `approval` event를 보낸 뒤 client가 `{"kind": "approval_decision", "decision": "approve"}` 같은 payload를 보내면 adapter가 `IAgentSignalRepository.append()`로 decision signal을 추가하고 generator를 계속 소비합니다.
+각 `AgentYield`는 `{"kind": ..., "payload": ...}` JSON event로 전송됩니다. runner는 approval decision을 durable signal queue에서 non-blocking으로 확인하므로, WebSocket 예제는 첫 command payload의 `signals` 배열에 사전 수신된 user message / approval decision을 넣어 큐에 append한 뒤 stream을 시작합니다.
 
 Typer 쪽은 `@CliController("agents")`와 `@command("code")`를 사용합니다. command handler 역시 container에서 `CodeAssistant`를 resolve하고 `execute()`를 호출합니다.
 
@@ -126,7 +130,7 @@ Typer 쪽은 `@CliController("agents")`와 `@command("code")`를 사용합니다
 python main.py agents code --state-id run-1 --instruction "inspect and edit" --read-stdin-signal
 ```
 
-`token` yield는 stdout에 즉시 이어 쓰고, `progress`, `approval`, `final` 같은 구조화 event는 줄 단위로 출력합니다. `--read-stdin-signal`을 켜면 첫 stdin JSON line을 user message signal로 append하고, approval 대기 시 다음 stdin JSON line을 approval decision signal로 append합니다.
+`token` yield는 stdout에 즉시 이어 쓰고, `progress`, `approval`, `final` 같은 구조화 event는 줄 단위로 출력합니다. `--read-stdin-signal`을 켜면 stdin JSON line들을 실행 전에 signal queue로 append합니다. 따라서 approval을 같은 run에서 통과시키려면 해당 approval decision JSON line을 미리 제공하고, 이미 `approval` event를 받은 뒤 decision을 보낸 경우에는 같은 state_id로 resume run을 시작합니다.
 
 ## Approval과 resume
 

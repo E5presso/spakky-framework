@@ -6,8 +6,7 @@ from enum import StrEnum
 
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.evidence import AgentEvidenceCandidate, AgentEvidenceKind
-from spakky.agent.execution import AgentSignalKind
-from spakky.agent.signal import AgentSignal
+from spakky.agent.signal import AgentSignal, AgentSignalKind
 from spakky.agent.state import (
     AgentState,
     AgentStateReason,

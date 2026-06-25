@@ -1,13 +1,12 @@
 """Acceptance tests for the ADR-0009 CodeAssistant demo."""
 
 from examples.code_assistant_demo import (
-    CodeAssistantCommand,
-    CodeAssistantResult,
     StaticModel,
     collect_stream,
 )
 from spakky.agent import (
     AgentEvidenceKind,
+    AgentRunResult,
     AgentStatus,
     AgentYield,
     AgentYieldKind,
@@ -18,6 +17,7 @@ from spakky.agent import (
     ModelStreamEvent,
     ModelStreamEventKind,
     Progress,
+    RunAgentInput,
     Token,
     Tool,
 )
@@ -78,7 +78,7 @@ async def test_code_assistant_acceptance_expect_streaming_approval_signal_eviden
         states,
         signals,
         evidence,
-        CodeAssistantCommand(state_id="run-1", instruction="make a safe edit"),
+        RunAgentInput(state_id="run-1", instruction="make a safe edit"),
     )
 
     assert _payload_count(items, Token) == 1
@@ -94,7 +94,7 @@ async def test_code_assistant_acceptance_expect_streaming_approval_signal_eviden
         AgentEvidenceKind.EVALUATION,
         AgentEvidenceKind.TOOL,
     }
-    assert _final_payload(items).output == CodeAssistantResult(
+    assert _final_payload(items).output == AgentRunResult(
         state_id="run-1",
         status="completed",
         tool_calls=("workspace.read", "workspace.write", "shell.command"),
@@ -109,7 +109,7 @@ async def test_code_assistant_acceptance_expect_streaming_approval_signal_eviden
         states,
         signals,
         evidence,
-        CodeAssistantCommand(
+        RunAgentInput(
             state_id="run-1",
             instruction="resume",
             resume=True,
@@ -141,7 +141,7 @@ async def test_code_assistant_acceptance_expect_cancellation_terminal_state() ->
         states,
         FakeSignalRepository((_cancel_signal("cancel-run"),)),
         evidence,
-        CodeAssistantCommand(state_id="cancel-run", instruction="stop"),
+        RunAgentInput(state_id="cancel-run", instruction="stop"),
     )
 
     assert len(items) == 1
@@ -159,7 +159,7 @@ def _payload_count(
     return sum(1 for item in items if isinstance(item.payload, payload_type))
 
 
-def _final_payload(items: tuple[AgentYield[object], ...]) -> Final[CodeAssistantResult]:
+def _final_payload(items: tuple[AgentYield[object], ...]) -> Final[AgentRunResult]:
     for item in reversed(items):
         if isinstance(item.payload, Final):
             return item.payload

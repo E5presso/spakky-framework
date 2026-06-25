@@ -45,6 +45,7 @@ pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
 - `AgentState`: long-running agent execution의 materialized lifecycle state
 - `AgentSignal`: 실행 중 들어오는 user message, approval, cancel 같은 inbound stimulus
 - `AgentSignalPollPoint`, `consume_pending_agent_signals`: safe boundary나 configured poll point에서 durable signal queue를 대기 없이 소비하는 helper
+- `on_signal`, `discover_agent_signal_hooks`, `AgentSignalHookCatalog`: 선언형 시그널 훅(ADR-0013 §1). `@on_signal(kind)`는 `@agent_tool`과 같은 선언형 seam으로, `async def m(self, signal: AgentSignal) -> AsyncGenerator[AgentYield[object], None]` 메서드를 표시한다. `Agent` discovery가 `@agent_tool`과 동일한 MRO 워크로 훅을 수집해 `signal_hook_catalog`에 담고, runner가 해당 종류 시그널을 소비하는 poll 지점에서 자동 호출하여 yield된 item을 public stream으로 흘려보낸다. `CANCEL`·`APPROVAL_DECISION`은 runner 전용 단계가 처리하므로 훅 대상에서 제외되고, 훅이 없는 `USER_MESSAGE`는 기본 progress로 폴백한다. 계약 위반(비 async generator, `signal: AgentSignal` 외 인자, `AgentYield` 외 yield 타입)은 정의 시점에 `AgentDefinitionError`로 거부된다.
 - `AgentApprovalRequest`, `plan_agent_tool_approval`, `parse_agent_approval_decision_signal`: 위험 boundary에서만 HITL approval을 요구하고 decision signal을 typed state target으로 해석하는 helper
 - `begin_agent_cancellation`, `run_agent_cancellation_cleanup`, `complete_agent_cancellation`: cancel signal을 `CANCELLING`으로 materialize하고 model stream/tool/delegate cleanup hook 결과를 evidence와 terminal state에 반영하는 helper
 - `AgentEvidence`: tool/model/context 판단 근거를 위한 append-only artifact
@@ -114,6 +115,36 @@ from spakky.agent import RunAgentInput
 run_input = RunAgentInput(state_id="run-001", instruction="Read README.md and summarize.")
 async for item in agent_instance.execute(run_input):
     print(item)
+```
+
+실행 중 들어오는 시그널에 커스텀 반응이 필요하면 `@on_signal`을 선언합니다 — 루프 본문을 작성하지 않고 시그널 종류별 핸들러만 선언하면 runner가 자동 호출합니다.
+
+```python
+from collections.abc import AsyncGenerator
+
+from spakky.agent import (
+    AgentSignal,
+    AgentSignalKind,
+    AgentYield,
+    AgentYieldKind,
+    Progress,
+    on_signal,
+)
+
+
+class FileAgent:
+    @on_signal(AgentSignalKind.STEERING_INSTRUCTION)
+    async def on_steering(
+        self,
+        signal: AgentSignal,
+    ) -> AsyncGenerator[AgentYield[object], None]:
+        yield AgentYield(
+            kind=AgentYieldKind.PROGRESS,
+            payload=Progress(
+                f"steering: {signal.payload.get('instruction')}",
+                current_step="steering",
+            ),
+        )
 ```
 
 ### 커스텀 execute() 탈출 경로

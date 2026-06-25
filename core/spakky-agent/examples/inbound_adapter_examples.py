@@ -6,7 +6,7 @@ the `@Agent` business object that is already registered in the container.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import fields, is_dataclass
 from enum import Enum
 import json
@@ -14,7 +14,7 @@ from sys import stdin as process_stdin, stdout as process_stdout
 from typing import TextIO, override
 from uuid import uuid4
 
-from examples.code_assistant_demo import CodeAssistant, CodeAssistantCommand
+from examples.code_assistant_demo import CodeAssistant
 from fastapi import WebSocket
 from spakky.agent import (
     IAgentSignalRepository,
@@ -22,12 +22,11 @@ from spakky.agent import (
     AgentSignalKind,
     AgentYield,
     AgentYieldKind,
-    Approval,
     ApprovalDecision,
     JsonObject,
     JsonValue,
+    RunAgentInput,
 )
-from spakky.agent.error import AgentDefinitionError
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.plugins.fastapi.routes import websocket
@@ -62,11 +61,13 @@ class CodeAssistantWebSocketController(IContainerAware):
     @websocket("/code/ws")
     async def code_assistant(self, socket: WebSocket) -> None:
         await socket.accept()
-        command = code_assistant_command_from_json(await socket.receive_json())
+        payload = await socket.receive_json()
+        run_input = code_assistant_command_from_json(payload)
         await stream_code_assistant_to_websocket(
             _require_container(self._container),
             socket,
-            command,
+            run_input,
+            inbound_signals=code_assistant_signals_from_json(payload),
         )
         await socket.close()
 
@@ -91,7 +92,7 @@ class CodeAssistantCliController(IContainerAware):
     ) -> None:
         await stream_code_assistant_to_stdout(
             _require_container(self._container),
-            CodeAssistantCommand(
+            RunAgentInput(
                 state_id=state_id,
                 instruction=instruction,
                 resume=resume,
@@ -105,38 +106,47 @@ class CodeAssistantCliController(IContainerAware):
 async def stream_code_assistant_to_websocket(
     container: IContainer,
     socket: AgentJsonWebSocket | WebSocket,
-    command: CodeAssistantCommand,
+    run_input: RunAgentInput,
+    *,
+    inbound_signals: Sequence[object] = (),
 ) -> None:
-    """Resolve CodeAssistant from the container and stream yields as JSON."""
+    """Resolve CodeAssistant from the container and stream yields as JSON.
+
+    The framework runner polls the durable signal queue non-blockingly and
+    consumes an approval decision at the tool boundary it reaches (ADR-0013 §5),
+    so the adapter queues any inbound steering/approval messages from the
+    initial command payload before the run rather than blocking the stream for a
+    reply.
+    """
     agent = container.get(CodeAssistant)
     signals = container.get(IAgentSignalRepository)
-    async for item in agent.execute(command):
+    for payload in inbound_signals:
+        signals.append(agent_signal_from_json(run_input.state_id, payload))
+    async for item in _execute_code_assistant(agent, run_input):
         await socket.send_json(agent_yield_to_event(item))
-        if item.kind is AgentYieldKind.APPROVAL:
-            signals.append(
-                agent_signal_from_json(
-                    command.state_id,
-                    await socket.receive_json(),
-                    approval=_approval_payload(item),
-                )
-            )
 
 
 async def stream_code_assistant_to_stdout(
     container: IContainer,
-    command: CodeAssistantCommand,
+    run_input: RunAgentInput,
     *,
     stdout: TextIO,
     stdin: TextIO,
     read_stdin_signal: bool = False,
 ) -> None:
-    """Resolve CodeAssistant and expose its AgentYield stream on stdout."""
+    """Resolve CodeAssistant and expose its AgentYield stream on stdout.
+
+    Inbound stdin signals are queued before the run so the framework runner's
+    non-blocking approval poll observes the decision at the tool boundary it
+    reaches (ADR-0013 §5).
+    """
     signals = container.get(IAgentSignalRepository)
     if read_stdin_signal:
-        _append_signal_line(signals, command.state_id, stdin.readline())
+        for line in stdin:
+            _append_signal_line(signals, run_input.state_id, line)
 
     agent = container.get(CodeAssistant)
-    async for item in agent.execute(command):
+    async for item in _execute_code_assistant(agent, run_input):
         event = agent_yield_to_event(item)
         if item.kind is AgentYieldKind.TOKEN:
             stdout.write(_event_text(event))
@@ -144,26 +154,44 @@ async def stream_code_assistant_to_stdout(
         else:
             stdout.write(f"{event}\n")
             stdout.flush()
-        if item.kind is AgentYieldKind.APPROVAL:
-            _append_signal_line(
-                signals,
-                command.state_id,
-                stdin.readline(),
-                approval=_approval_payload(item),
-            )
 
 
-def code_assistant_command_from_json(payload: object) -> CodeAssistantCommand:
-    """Build the command DTO from an inbound JSON payload."""
-    data = _mapping(payload, "CodeAssistant command")
+def _execute_code_assistant(
+    agent: CodeAssistant,
+    run_input: RunAgentInput,
+) -> AsyncGenerator[AgentYield[object], None]:
+    """Run the CodeAssistant's framework-provided execute() on a resolved instance.
+
+    ``execute()`` is synthesized onto the class at decoration time (ADR-0013 §1),
+    so it is read from the class namespace (``vars``) rather than a statically
+    known attribute and called with the resolved instance as the bound ``self``.
+    """
+    execute = vars(CodeAssistant)["execute"]
+    return execute(agent, run_input)
+
+
+def code_assistant_command_from_json(payload: object) -> RunAgentInput:
+    """Build the run input from an inbound JSON payload."""
+    data = _mapping(payload, "CodeAssistant run input")
     state_id = _text(data, "state_id")
     instruction = _text(data, "instruction")
     resume = data.get("resume") is True
-    return CodeAssistantCommand(
+    return RunAgentInput(
         state_id=state_id,
         instruction=instruction,
         resume=resume,
     )
+
+
+def code_assistant_signals_from_json(payload: object) -> tuple[object, ...]:
+    """Read optional prequeued signals from a CodeAssistant command payload."""
+    data = _mapping(payload, "CodeAssistant run input")
+    signals = data.get("signals")
+    if signals is None:
+        return ()
+    if isinstance(signals, tuple | list):
+        return tuple(signals)
+    raise InboundAdapterExampleError("signals must be a JSON array")
 
 
 def agent_yield_to_event(item: AgentYield[object]) -> dict[str, JsonValue]:
@@ -177,15 +205,13 @@ def agent_yield_to_event(item: AgentYield[object]) -> dict[str, JsonValue]:
 def agent_signal_from_json(
     state_id: str,
     payload: object,
-    *,
-    approval: Approval | None = None,
 ) -> AgentSignal:
     """Materialize an AgentSignal from WebSocket or stdin JSON payload."""
     data = _mapping(payload, "Agent signal")
     kind = _signal_kind(data)
-    signal_payload = _signal_payload(kind, data, approval)
+    signal_payload = _signal_payload(kind, data)
     return AgentSignal(
-        id=_signal_id(state_id, kind, data, approval),
+        id=_signal_id(state_id, kind, data),
         agent_state_id=state_id,
         kind=kind,
         payload=signal_payload,
@@ -196,15 +222,11 @@ def _append_signal_line(
     signals: IAgentSignalRepository,
     state_id: str,
     line: str,
-    *,
-    approval: Approval | None = None,
 ) -> None:
     text = line.strip()
     if not text:
         return
-    signals.append(
-        agent_signal_from_json(state_id, json.loads(text), approval=approval)
-    )
+    signals.append(agent_signal_from_json(state_id, json.loads(text)))
 
 
 def _event_text(event: Mapping[str, JsonValue]) -> str:
@@ -231,13 +253,10 @@ def _signal_kind(data: Mapping[str, object]) -> AgentSignalKind:
 def _signal_payload(
     kind: AgentSignalKind,
     data: Mapping[str, object],
-    approval: Approval | None,
 ) -> JsonObject:
     if kind is AgentSignalKind.APPROVAL_DECISION:
         decision = _approval_decision(data)
         request_id = _optional_text(data, "request_id")
-        if request_id is None and approval is not None:
-            request_id = approval.id
         if request_id is None:
             raise InboundAdapterExampleError("Approval signal requires request_id")
         return {"request_id": request_id, "decision": decision.value}
@@ -258,20 +277,15 @@ def _signal_id(
     state_id: str,
     kind: AgentSignalKind,
     data: Mapping[str, object],
-    approval: Approval | None,
 ) -> str:
     signal_id = _optional_text(data, "id")
     if signal_id is not None:
         return signal_id
-    if kind is AgentSignalKind.APPROVAL_DECISION and approval is not None:
-        return approval.id
+    if kind is AgentSignalKind.APPROVAL_DECISION:
+        request_id = _optional_text(data, "request_id")
+        if request_id is not None:
+            return request_id
     return f"signal:{state_id}:{kind.value}:{uuid4().hex}"
-
-
-def _approval_payload(item: AgentYield[object]) -> Approval:
-    if isinstance(item.payload, Approval):
-        return item.payload
-    raise AgentDefinitionError("Approval yield must carry an Approval payload")
 
 
 def _json_value(value: object) -> JsonValue:

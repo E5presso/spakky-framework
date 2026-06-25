@@ -2,17 +2,21 @@
 
 > `spakky-agent`로 LLM 실행과 도구 호출을 Spakky 애플리케이션 안에 자연스럽게 넣는 입문 가이드입니다.
 
-Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플리케이션 컴포넌트입니다. 일반 `@UseCase`처럼 생성자 주입을 받고, 실행 결과는 `AgentYield` stream으로 내보냅니다. 모델 호출, 도구 호출, 승인, 재개 같은 복잡한 기능은 필요할 때 단계적으로 붙입니다.
+Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플리케이션 컴포넌트입니다. 일반 `@UseCase`처럼 생성자 주입을 받고, 실행 결과는 `AgentYield` stream으로 내보냅니다.
+
+핵심은 **누가 실행 루프를 소유하는가**입니다. [ADR-0013](../adr/0013-declarative-agent-loop-ownership.md)에 따라 model 호출 → tool 호출 추출 → tool 실행 → 결과 주입 → 종료 판정으로 이어지는 반복 루프는 **프레임워크 runner가 소유**합니다. 개발자는 루프 본문을 작성하지 않고 `@Agent` spec으로 **무엇을** 실행할지(어떤 model, 어떤 tool, 어떤 정책)만 선언합니다. 이 개발 경험(DX)은 pydantic-ai를 참조합니다 — pydantic-ai에서 `agent.run()`이 루프를 소유하고 개발자는 `@agent.tool`로 도구만 선언하듯이, Spakky에서는 runner가 루프를 소유하고 개발자는 `@agent_tool`(도구)과 `@on_signal`(시그널 반응)만 선언합니다.
 
 처음에는 세 가지만 기억하면 충분합니다.
 
 | 개념 | 역할 |
 |------|------|
-| `@Agent` | Agent class를 Spakky Pod로 등록합니다. |
-| `execute()` | Agent가 실제 일을 하는 public entrypoint입니다. |
+| `@Agent` | Agent class를 Spakky Pod로 등록하고 실행 spec을 선언합니다. |
+| `@agent_tool` | model이 호출할 수 있는 Python 도구를 선언합니다. |
 | `AgentYield` | HTTP, WebSocket, CLI 같은 adapter가 받을 실행 이벤트입니다. |
 
-Tool, approval, durable repository, AG-UI/CopilotKit 연동은 [AI Agent 심화](agents-advanced.md)에서 다룹니다. 실제 CodeAssistant 흐름을 보고 싶다면 [CodeAssistant 에이전트 예제](agent-code-assistant.md)를 이어서 보세요.
+`@Agent`가 도구만 선언하고 `execute()` 본문을 작성하지 않으면, 프레임워크가 표준 실행 루프를 `execute()`로 자동 제공합니다. model-mediated orchestration의 기본 흐름을 벗어나는 커스텀 제어가 필요할 때만 `execute()` 본문을 직접 작성합니다.
+
+선언형 시그널 훅(`@on_signal`), approval, durable repository, context compaction, teammate, AG-UI/A2A/MCP 어댑터는 [AI Agent 심화](agents-advanced.md)에서 다룹니다. 실제 CodeAssistant 흐름을 보고 싶다면 [CodeAssistant 에이전트 예제](agent-code-assistant.md)를 이어서 보세요.
 
 ## 언제 Agent를 쓰나요?
 
@@ -217,15 +221,73 @@ model = app.container.get(type_=IAgentModel)
 `spakky-vllm` 플러그인은 `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 설정합니다.
 테스트에서는 network가 없는 scripted `IAgentModel` fake를 만들어 token이나 tool event를 원하는 순서로 내보내면 됩니다.
 
+## 선언형 Agent: 루프를 프레임워크에 맡기기
+
+앞의 예제는 `execute()` 본문을 직접 작성했습니다. 도구를 호출하는 Agent라면 보통 그럴 필요가 없습니다. `@Agent`가 도구만 선언하고 `execute()`를 생략하면, 프레임워크 runner가 model 호출 → tool 호출 → 결과 주입 → 종료 판정 루프를 `execute()`로 자동 제공합니다.
+
+```python
+from spakky.agent import (
+    Agent,
+    AgentExecutionSpec,
+    EvidenceCapture,
+    IAgentModel,
+    Idempotency,
+    ToolApprovalRequirement,
+    ToolEffects,
+    agent_tool,
+)
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="note_agent",
+        objective="read and write notes for a topic",
+        instructions="Use the declared tools to manage the user's notes.",
+    )
+)
+class NoteAgent:
+    def __init__(self, model: IAgentModel, notes: NoteStore) -> None:
+        self._model = model
+        self._notes = notes
+
+    @agent_tool(
+        schema_name="note.read",
+        description="Read a note for a topic.",
+        effects=ToolEffects.read_only(),
+        idempotency=Idempotency.IDEMPOTENT,
+        evidence=EvidenceCapture.STRUCTURED,
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def read_note(self, topic: str) -> str:
+        return self._notes.read(topic)
+```
+
+`NoteAgent`에는 `execute()`가 없습니다. runner가 spec(`instructions`)과 생성자에 주입된 `IAgentModel`, 그리고 `@agent_tool` 카탈로그로부터 표준 루프를 합성합니다. 호출 입력은 `RunAgentInput`입니다.
+
+```python
+from spakky.agent import AgentYieldKind, RunAgentInput
+
+agent = container.get(NoteAgent)
+async for item in agent.execute(
+    RunAgentInput(state_id="run-1", instruction="summarize my agent notes")
+):
+    if item.kind is AgentYieldKind.TOOL:
+        ...  # tool 호출 결과
+    elif item.kind is AgentYieldKind.FINAL:
+        return item.payload.output  # 타입은 AgentRunResult
+```
+
+pydantic-ai의 `Agent(..., output_type=...)` + `@agent.tool` + `agent.run()` 조합과 같은 자리를 Spakky에서는 `@Agent(spec=...)` + `@agent_tool` + runner-backed `execute(RunAgentInput)`가 채웁니다. 차이는 도구·model·repository가 모두 **생성자 DI**로 주입된다는 점입니다 — spec은 의존성을 다시 선언하지 않습니다.
+
 ## 다음 단계
 
 처음부터 CodeAssistant 전체를 만들려고 하면 어렵습니다. 이 순서로 쌓아 올리세요.
 
-1. `@Agent` class와 `execute()`만 만든다.
-2. `AgentYieldKind.FINAL`만 yield해서 container resolve와 invocation을 확인한다.
-3. `IAgentModel`을 생성자로 받고 token stream을 `AgentYieldKind.TOKEN`으로 변환한다.
-4. read-only `@agent_tool` 하나를 추가한다.
-5. write/network/destructive tool을 추가하고 approval event를 처리한다.
+1. `@Agent` class에 `@agent_tool` 하나를 선언하고 `execute()`는 생략한다 (runner가 자동 제공).
+2. container에서 resolve해 `RunAgentInput`으로 호출하고 `AgentYieldKind.FINAL`을 확인한다.
+3. `IAgentModel`을 생성자로 받아 model-mediated tool 호출 루프를 돌린다.
+4. write/network/destructive tool을 추가하고 approval event를 처리한다.
+5. 실행 중 시그널 반응이 필요하면 `@on_signal` 훅을 선언한다.
 6. durable 실행이 필요해지면 state/signal/evidence repository를 붙인다.
 7. FastAPI, WebSocket, SSE, CLI adapter에서 `AgentYield`를 transport event로 변환한다.
 
