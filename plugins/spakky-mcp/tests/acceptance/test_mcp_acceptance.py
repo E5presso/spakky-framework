@@ -69,6 +69,11 @@ def weather_server() -> FastMCP:
         """Return a canned forecast for a city."""
         return f"sunny in {city}"
 
+    @server.tool()
+    def join(args: list[str]) -> str:
+        """Expose a tool whose input field is literally named ``args``."""
+        return ",".join(args)
+
     return server
 
 
@@ -130,3 +135,23 @@ async def test_external_tool_merges_with_native_catalog_and_both_dispatch(
 
     assert external_result == {"result": "sunny in busan"}
     assert native_result == "hello"
+
+
+async def test_external_tool_with_reserved_args_field_dispatches(
+    weather_server: FastMCP,
+) -> None:
+    """A tool whose input field is named ``args`` executes with the field intact."""
+    async with create_connected_server_and_client_session(weather_server) as session:
+        await session.initialize()
+        catalog = await _discover(session, "weather")
+        dispatcher = AgentToolDispatcher(target=object(), catalog=catalog)
+
+        result = await dispatcher.dispatch(
+            ModelToolCall(
+                name="weather__join",
+                arguments={"args": ["a", "b", "c"]},
+                call_id="call-4",
+            )
+        )
+
+    assert result == {"result": "a,b,c"}

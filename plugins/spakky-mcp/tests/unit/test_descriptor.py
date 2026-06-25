@@ -8,7 +8,6 @@ from spakky.agent import (
     ToolApprovalRequirement,
     ToolRiskAxis,
 )
-from spakky.agent.error import AgentToolBindingError
 
 from spakky.plugins.mcp.constants import MCP_EXTERNAL_TOOL_OWNER_MODULE
 from spakky.plugins.mcp.descriptor import (
@@ -148,8 +147,8 @@ def test_normalize_call_result_rejects_empty_content() -> None:
         normalize_call_result(result)
 
 
-def test_external_callable_is_owner_less() -> None:
-    """The bound external callable accepts arbitrary keyword arguments."""
+def test_external_descriptor_binds_payload_as_keyword_arguments() -> None:
+    """The MCP argument object binds verbatim as keyword arguments."""
     descriptor = build_external_descriptor("weather", _tool(), _unused_callable)
     bound = descriptor.bind_invocation({"text": "hello"})
 
@@ -157,9 +156,24 @@ def test_external_callable_is_owner_less() -> None:
     assert bound.args == ()
 
 
-def test_external_callable_binding_rejects_positional_only_payload() -> None:
-    """A structured args payload cannot bind to the keyword-only callable."""
-    descriptor = build_external_descriptor("weather", _tool(), _unused_callable)
+def test_external_descriptor_preserves_reserved_args_field() -> None:
+    """A tool field named ``args`` survives instead of hitting the call heuristic.
 
-    with pytest.raises(AgentToolBindingError):
-        descriptor.bind_invocation({"args": ["hello"]})
+    The core binder reserves a top-level ``args`` key for positional structured
+    calls, which would fail to bind to the owner-less callable; the external
+    descriptor forwards it verbatim so the MCP field name is preserved.
+    """
+    descriptor = build_external_descriptor("weather", _tool(), _unused_callable)
+    bound = descriptor.bind_invocation({"args": ["a", "b"]})
+
+    assert bound.kwargs == {"args": ["a", "b"]}
+    assert bound.args == ()
+
+
+def test_external_descriptor_preserves_reserved_kwargs_field() -> None:
+    """A tool field named ``kwargs`` keeps its field name instead of unwrapping."""
+    descriptor = build_external_descriptor("weather", _tool(), _unused_callable)
+    bound = descriptor.bind_invocation({"kwargs": {"query": "rain"}})
+
+    assert bound.kwargs == {"kwargs": {"query": "rain"}}
+    assert bound.args == ()

@@ -5,6 +5,7 @@ from spakky.plugins.mcp import (
     PLUGIN_NAME,
     AbstractMcpError,
     ExternalMcpTool,
+    ExternalMcpToolDescriptor,
     McpCatalogMergeError,
     McpClient,
     McpConfig,
@@ -46,6 +47,7 @@ def test_public_api_exposes_client_and_catalog_surface() -> None:
     assert normalize_call_result is mcp_api.normalize_call_result
     assert prefixed_tool_name is mcp_api.prefixed_tool_name
     assert ExternalMcpTool is mcp_api.ExternalMcpTool
+    assert ExternalMcpToolDescriptor is mcp_api.ExternalMcpToolDescriptor
 
 
 def test_public_api_exposes_error_surface() -> None:

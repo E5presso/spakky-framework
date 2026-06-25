@@ -14,6 +14,7 @@ from spakky.plugins.mcp.config import (
 )
 from spakky.plugins.mcp.descriptor import (
     ExternalMcpTool,
+    ExternalMcpToolDescriptor,
     build_external_descriptor,
     build_external_descriptors,
     build_mcp_runner,
@@ -38,6 +39,7 @@ __all__ = [
     "PLUGIN_NAME",
     "AbstractMcpError",
     "ExternalMcpTool",
+    "ExternalMcpToolDescriptor",
     "McpCatalogMergeError",
     "McpClient",
     "McpConfig",

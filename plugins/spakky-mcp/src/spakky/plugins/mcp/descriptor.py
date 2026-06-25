@@ -12,11 +12,12 @@ request and the dispatch loop on the identical catalog path.
 import copy
 import dataclasses
 from collections.abc import Awaitable, Callable, Sequence
-from typing import cast
+from typing import cast, override
 
 from mcp.types import CallToolResult, TextContent, Tool
 from spakky.agent import (
     AgentRunner,
+    AgentToolBoundInvocation,
     AgentToolCatalog,
     AgentToolDescriptor,
     AgentToolIdentity,
@@ -51,6 +52,24 @@ class ExternalMcpTool:
     """Sentinel owner type for catalog descriptors discovered from MCP servers."""
 
 
+class ExternalMcpToolDescriptor(AgentToolDescriptor):
+    """Descriptor that binds the MCP argument object verbatim to its callable.
+
+    The core binder (``bind_agent_tool_invocation``) reserves top-level ``args``
+    and ``kwargs`` payload keys for its positional/keyword structured-call form.
+    An external MCP tool may legitimately declare input fields named ``args`` or
+    ``kwargs``; routing such a payload through that heuristic would fail to bind
+    or drop the field name. MCP tool inputs are always a flat JSON object, so
+    this descriptor forwards the whole payload as keyword arguments without the
+    structured-call interpretation, preserving every declared field name.
+    """
+
+    @override
+    def bind_invocation(self, payload: JsonObject) -> AgentToolBoundInvocation:
+        """Forward the MCP argument object as keyword arguments verbatim."""
+        return AgentToolBoundInvocation(args=(), kwargs=dict(payload))
+
+
 def prefixed_tool_name(server_name: str, raw_tool_name: str) -> str:
     """Return the collision-safe model-facing name for an external tool."""
     return f"{server_name}{MCP_TOOL_NAME_SEPARATOR}{raw_tool_name}"
@@ -76,7 +95,7 @@ def build_external_descriptor(
         input_schema=_normalize_input_schema(tool.inputSchema),
         output_schema=output_schema,
     )
-    return AgentToolDescriptor(
+    return ExternalMcpToolDescriptor(
         identity=identity,
         owner=ExternalMcpTool,
         callable=callable_,
