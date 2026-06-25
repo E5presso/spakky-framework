@@ -49,7 +49,22 @@ from spakky.agent.error import (
     AgentPersistenceConfigurationError,
     AgentToolDispatchError,
 )
+from spakky.agent.event import (
+    AgentEvent,
+    AgentEventKind,
+    MessageDeltaEvent,
+    ReasoningDeltaEvent,
+    RunFinishedEvent,
+    RunStartedEvent,
+    StepFinishedEvent,
+    StepStartedEvent,
+    ToolCallArgsDeltaEvent,
+    ToolCallEndEvent,
+    ToolCallResultEvent,
+    ToolCallStartEvent,
+)
 from spakky.agent.inbound import RunAgentInput
+from tests.unit.test_event import _to_a2a, _to_ag_ui
 from tests.unit.test_code_assistant_demo import (
     FakeEvidenceRepository,
     FakeSignalRepository,
@@ -1132,3 +1147,387 @@ class DurableSessionAgent:
         self._signals = signals
         self._evidence = evidence
         self._task_store = task_store
+
+
+# --- Neutral AgentEvent emission (issue #441 SC-1/SC-2/SC-3) ---
+
+
+async def _collect_events(
+    stream: AsyncIterator[AgentEvent],
+) -> tuple[AgentEvent, ...]:
+    items: list[AgentEvent] = []
+    async for item in stream:
+        items.append(item)
+    return tuple(items)
+
+
+async def _run_events_durable(
+    model: IAgentModel,
+    command: RunAgentInput,
+    states: FakeStateRepository,
+    signals: FakeSignalRepository,
+    evidence: FakeEvidenceRepository,
+) -> tuple[AgentEvent, ...]:
+    agent = ProbeAgent(model, states, signals, evidence)
+    runner = AgentRunner.for_agent_instance(agent)
+    return await _collect_events(runner.run_events(command))
+
+
+def _tool_lifecycle_events(name: str, call_id: str) -> tuple[ModelStreamEvent, ...]:
+    """A full C2 model-stream tool-call lifecycle for one call."""
+    handle = ModelToolCall(name=name, arguments={}, call_id=call_id)
+    return (
+        ModelStreamEvent(kind=ModelStreamEventKind.TOOL_CALL_START, tool_call=handle),
+        ModelStreamEvent(
+            kind=ModelStreamEventKind.TOOL_CALL_ARGS_DELTA,
+            tool_call=handle,
+            tool_call_args_delta='{"value":',
+        ),
+        ModelStreamEvent(
+            kind=ModelStreamEventKind.TOOL_CALL_ARGS_DELTA,
+            tool_call=handle,
+            tool_call_args_delta='"hi"}',
+        ),
+        ModelStreamEvent(kind=ModelStreamEventKind.TOOL_CALL_END, tool_call=handle),
+        _tool_event(name, {"value": "hi"}, call_id),
+    )
+
+
+async def test_agent_runner_events_expect_tool_call_lifecycle_distinct_events() -> None:
+    """SC-1: 도구 1회 호출이 start/args/end/result 구분 AgentEvent로 방출된다."""
+    model = RecordingModel(
+        (
+            *_tool_lifecycle_events("echo.read", "read-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="echo"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    start = [event for event in events if isinstance(event, ToolCallStartEvent)]
+    args = [event for event in events if isinstance(event, ToolCallArgsDeltaEvent)]
+    end = [event for event in events if isinstance(event, ToolCallEndEvent)]
+    result = [event for event in events if isinstance(event, ToolCallResultEvent)]
+    assert [event.kind for event in (start[0], args[0], end[0], result[0])] == [
+        AgentEventKind.TOOL_CALL_START,
+        AgentEventKind.TOOL_CALL_ARGS_DELTA,
+        AgentEventKind.TOOL_CALL_END,
+        AgentEventKind.TOOL_CALL_RESULT,
+    ]
+    assert start[0].tool_name == "echo.read"
+    assert "".join(event.args_delta for event in args) == '{"value":"hi"}'
+    assert result[0].result == {"value": "hi"}
+    assert {event.call_id for event in (start[0], args[0], end[0], result[0])} == {
+        "read-1"
+    }
+
+
+async def test_agent_runner_events_expect_message_and_reasoning_distinguished() -> None:
+    """SC-2: message와 reasoning이 구분된 AgentEvent로 방출된다."""
+    model = _ReasoningModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.MESSAGE_DELTA,
+                message_delta="answer",
+            ),
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.REASONING_DELTA,
+                reasoning_delta="thinking",
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="say hi"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    messages = [event for event in events if isinstance(event, MessageDeltaEvent)]
+    reasoning = [event for event in events if isinstance(event, ReasoningDeltaEvent)]
+    assert [event.delta for event in messages] == ["answer"]
+    assert [event.delta for event in reasoning] == ["thinking"]
+    assert messages[0].message_id != reasoning[0].reasoning_id
+
+
+async def test_agent_runner_events_expect_token_delta_projected_as_message() -> None:
+    """generic TOKEN_DELTA 채널도 message delta AgentEvent로 투영된다."""
+    model = RecordingModel(
+        (
+            ModelStreamEvent(kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="tok"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    messages = [event for event in events if isinstance(event, MessageDeltaEvent)]
+    assert [event.delta for event in messages] == ["tok"]
+
+
+async def test_agent_runner_events_expect_adapters_build_lossless_frames() -> None:
+    """SC-3: 어댑터가 러너 이벤트 출력에서 무손실 프레임을 구성할 수 있다."""
+    model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.MESSAGE_DELTA, message_delta="hi"
+            ),
+            *_tool_lifecycle_events("echo.read", "read-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(
+            state_id="run-1",
+            instruction="echo",
+            conversation_id="thread-1",
+        ),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    for event in events:
+        ag_ui = _to_ag_ui(event)
+        a2a = _to_a2a(event)
+        assert ag_ui["threadId"] == a2a["contextId"] == "thread-1"
+        assert ag_ui["runId"] == a2a["taskId"] == "run-1"
+        assert ag_ui["type"]
+    result = next(event for event in events if isinstance(event, ToolCallResultEvent))
+    assert _to_ag_ui(result)["messageId"] == result.message_id
+
+
+async def test_agent_runner_events_expect_run_and_step_lifecycle_wraps_loop() -> None:
+    """run/step lifecycle 이벤트가 모델 루프를 감싸 RUN/STEP 합성을 가능케 한다."""
+    events = await _run_events_durable(
+        RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),)),
+        RunAgentInput(state_id="run-1", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert isinstance(events[0], RunStartedEvent)
+    assert isinstance(events[1], StepStartedEvent)
+    assert isinstance(events[-2], StepFinishedEvent)
+    assert isinstance(events[-1], RunFinishedEvent)
+    assert events[-1].error is None
+
+
+async def test_agent_runner_events_expect_completed_durable_state_after_run() -> None:
+    """durable 실행은 이벤트 스트림 종료 시 상태를 COMPLETED로 전이한다."""
+    states = FakeStateRepository()
+
+    await _run_events_durable(
+        RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),)),
+        RunAgentInput(state_id="run-1", instruction="x"),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert states.get("run-1").status is AgentStatus.COMPLETED
+
+
+async def test_agent_runner_events_expect_model_error_emits_run_error() -> None:
+    """모델 ERROR 이벤트는 RunFinished의 error로 노출되며 종료한다."""
+    model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.ERROR,
+                error=ModelError(code="boom", message="provider failed"),
+            ),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error == {"code": "boom", "message": "provider failed"}
+
+
+async def test_agent_runner_events_expect_reasoning_suppressed_without_capability() -> (
+    None
+):
+    """capability가 reasoning을 지원하지 않으면 reasoning AgentEvent는 생략된다."""
+    model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.REASONING_DELTA,
+                reasoning_delta="thinking",
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert not any(isinstance(event, ReasoningDeltaEvent) for event in events)
+
+
+async def test_agent_runner_events_expect_approval_gate_blocks_result_emission() -> (
+    None
+):
+    """승인 미결 도구는 dispatch 없이 tool result AgentEvent를 방출하지 않는다."""
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="write"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert not any(isinstance(event, ToolCallResultEvent) for event in events)
+
+
+async def test_agent_runner_events_expect_approved_tool_emits_result() -> None:
+    """승인 결정 수신 도구는 dispatch 후 tool result AgentEvent를 방출한다."""
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    signals = FakeSignalRepository(
+        (_approval_signal("run-1", "approval:run-1:echo.write", "approve"),)
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="write"),
+        FakeStateRepository(),
+        signals,
+        FakeEvidenceRepository(),
+    )
+
+    result = [event for event in events if isinstance(event, ToolCallResultEvent)]
+    assert result[0].tool_name == "echo.write"
+
+
+async def test_agent_runner_events_expect_unknown_stream_event_ignored() -> None:
+    """surfacing 대상이 아닌 모델 이벤트 종류는 조용히 무시된다."""
+    events = await _run_events_durable(
+        RecordingModel(
+            (
+                ModelStreamEvent(kind=ModelStreamEventKind.PROGRESS),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            )
+        ),
+        RunAgentInput(state_id="run-1", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert isinstance(events[-1], RunFinishedEvent)
+    assert not any(isinstance(event, MessageDeltaEvent) for event in events)
+
+
+async def test_agent_runner_events_expect_stateless_agent_emits_events() -> None:
+    """durable port가 없는 stateless agent도 이벤트 스트림을 방출한다."""
+    model = RecordingModel(
+        (
+            _tool_event("echo.read", {"value": "hi"}, "read-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    agent = StatelessProbeAgent(model)
+    runner = AgentRunner.for_agent_instance(agent)
+
+    events = await _collect_events(
+        runner.run_events(RunAgentInput(state_id="run-1", instruction="x"))
+    )
+
+    assert isinstance(events[0], RunStartedEvent)
+    assert any(isinstance(event, ToolCallResultEvent) for event in events)
+    assert isinstance(events[-1], RunFinishedEvent)
+
+
+async def test_agent_runner_events_expect_missing_call_id_uses_name_fallback() -> None:
+    """call_id가 없는 도구 호출도 이름 기반 fallback id로 lifecycle을 연결한다."""
+    handle = ModelToolCall(name="echo.read", arguments={"value": "hi"}, call_id=None)
+    model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.TOOL_CALL_START, tool_call=handle
+            ),
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE, tool_call=handle
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    start = next(event for event in events if isinstance(event, ToolCallStartEvent))
+    result = next(event for event in events if isinstance(event, ToolCallResultEvent))
+    assert start.call_id == result.call_id == "call:echo.read"
+
+
+async def test_agent_runner_events_expect_fine_grained_tool_events_without_payload() -> (
+    None
+):
+    """tool_call이 없는 미세 도구 채널 이벤트는 boundary AgentEvent를 방출하지 않는다."""
+    model = RecordingModel(
+        (
+            ModelStreamEvent(kind=ModelStreamEventKind.TOOL_CALL_START),
+            ModelStreamEvent(kind=ModelStreamEventKind.TOOL_CALL_ARGS_DELTA),
+            ModelStreamEvent(kind=ModelStreamEventKind.TOOL_CALL_END),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert not any(isinstance(event, ToolCallStartEvent) for event in events)
+    assert not any(isinstance(event, ToolCallEndEvent) for event in events)
