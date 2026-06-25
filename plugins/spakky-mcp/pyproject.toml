@@ -1,0 +1,86 @@
+[project]
+name = "spakky-mcp"
+version = "6.9.1"
+description = "MCP client adapter that joins external MCP server tools into the Spakky Agent tool catalog"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
+dependencies = [
+    "mcp>=1.28.0",
+    "pydantic-settings>=2.13.1",
+    "spakky>=6.9.1",
+    "spakky-agent>=6.9.1",
+]
+
+[project.entry-points."spakky.plugins"]
+spakky-mcp = "spakky.plugins.mcp.main:initialize"
+
+[build-system]
+requires = ["uv_build>=0.10.10,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "spakky.plugins.mcp"
+
+[tool.pyrefly]
+python-version = "3.12"
+search_path = [
+    "src",
+    ".",
+    "../../core/spakky/src",
+    "../../core/spakky-agent/src",
+]
+project_excludes = ["**/__pycache__", "**/*.pyc"]
+
+[tool.ruff]
+builtins = ["_"]
+cache-dir = "~/.cache/ruff"
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "src",
+    "../../core/spakky/src",
+    "../../core/spakky-agent/src",
+]
+testpaths = "tests"
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+addopts = """
+    --cov
+    --cov-report=term
+    --cov-report=xml
+    --no-cov-on-fail
+    --strict-markers
+    --dist=loadfile
+    -p no:warnings
+    -n auto
+    --spec
+"""
+spec_test_format = "{result} {docstring_summary}"
+
+[tool.coverage.run]
+include = ["src/spakky/plugins/mcp/**/*.py"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+fail_under = 100
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+    "@(typing\\.)?overload",
+    "\\.\\.\\.",
+    "pass",
+]
+
+[tool.uv.sources]
+spakky = { workspace = true }
+spakky-agent = { workspace = true }

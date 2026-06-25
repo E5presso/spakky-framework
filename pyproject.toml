@@ -60,6 +60,7 @@ version_files = [
   "plugins/spakky-vllm/pyproject.toml:version",
   "plugins/spakky-oidc/pyproject.toml:version",
   "plugins/spakky-policy/pyproject.toml:version",
+  "plugins/spakky-mcp/pyproject.toml:version",
 ]
 update_changelog_on_bump = true
 
@@ -92,6 +93,7 @@ members = [
   "plugins/spakky-vllm",
   "plugins/spakky-oidc",
   "plugins/spakky-policy",
+  "plugins/spakky-mcp",
 ]
 
 
@@ -123,6 +125,7 @@ spakky-redis = { workspace = true }
 spakky-vllm = { workspace = true }
 spakky-oidc = { workspace = true }
 spakky-policy = { workspace = true }
+spakky-mcp = { workspace = true }
 
 [tool.pyrefly]
 python-version = "3.12"
