@@ -25,6 +25,7 @@ from spakky.agent import (
     AgentStateReason,
     AgentStateTransition,
     AgentStatus,
+    AgentToolDispatcher,
     AgentYield,
     AgentYieldKind,
     ApprovalDecision,
@@ -62,7 +63,6 @@ from spakky.agent import (
     plan_agent_tool_approval,
     run_agent_cancellation_cleanup,
 )
-from spakky.agent.error import AgentDefinitionError
 from spakky.agent.tooling import AgentToolDescriptor
 
 
@@ -611,7 +611,7 @@ class CodeAssistant:
                 metadata={"call_id": call.call_id or ""},
             ),
         )
-        result = self._invoke_tool(call)
+        result = await self._invoke_tool(call)
         self._append_boundary(
             state.id,
             AgentActionBoundaryCheckpoint.after_tool_call(
@@ -636,34 +636,12 @@ class CodeAssistant:
             payload=Evidence(evidence=evidence),
         )
 
-    def _invoke_tool(self, call: ModelToolCall) -> JsonValue:
-        if call.name == "workspace.read":
-            return _workspace_read_result(
-                self.workspace_read(_text_arg(call, "path")),
-            )
-        if call.name == "workspace.search":
-            return _workspace_search_result(
-                self.workspace_search(
-                    _text_arg(call, "query"),
-                    _optional_text_arg(call, "pattern") or "*",
-                ),
-            )
-        if call.name == "workspace.write":
-            return _workspace_write_result(
-                self.workspace_write(
-                    _text_arg(call, "path"),
-                    _text_arg(call, "content"),
-                ),
-            )
-        if call.name == "shell.command":
-            return _shell_result(self.shell_command(_text_arg(call, "command")))
-        if call.name == "git.status":
-            return _git_json_result(self.git_status())
-        if call.name == "git.diff":
-            return _git_json_result(self.git_diff(_optional_text_arg(call, "path")))
-        if call.name == "git.apply":
-            return _git_json_result(self.git_apply(_text_arg(call, "patch")))
-        raise CodeAssistantDemoError(f"Unknown CodeAssistant tool: {call.name}")
+    async def _invoke_tool(self, call: ModelToolCall) -> JsonValue:
+        result = await AgentToolDispatcher(
+            target=self,
+            catalog=Agent.get(CodeAssistant).tool_catalog,
+        ).dispatch(call)
+        return _tool_result_json(result)
 
     def _append_tool_evidence(
         self,
@@ -810,54 +788,42 @@ def _git_result(operation: str, result: ShellCommandResult) -> GitCommandResult:
     )
 
 
-def _workspace_read_result(result: WorkspaceReadResult) -> dict[str, JsonValue]:
-    return {"path": result.path, "content": result.content}
-
-
-def _workspace_search_result(result: WorkspaceSearchResult) -> dict[str, JsonValue]:
-    return {
-        "query": result.query,
-        "hits": tuple(
-            {"path": hit.path, "line_number": hit.line_number, "line": hit.line}
-            for hit in result.hits
-        ),
-    }
-
-
-def _workspace_write_result(result: WorkspaceWriteResult) -> dict[str, JsonValue]:
-    return {"path": result.path, "bytes_written": result.bytes_written}
-
-
-def _shell_result(result: ShellCommandResult) -> dict[str, JsonValue]:
-    return {
-        "command": result.command,
-        "exit_code": result.exit_code,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-    }
-
-
-def _git_json_result(result: GitCommandResult) -> dict[str, JsonValue]:
-    return {
-        "operation": result.operation,
-        "exit_code": result.exit_code,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-    }
-
-
-def _text_arg(call: ModelToolCall, name: str) -> str:
-    value = call.arguments.get(name)
-    if not isinstance(value, str) or not value.strip():
-        raise AgentDefinitionError(f"Model tool argument '{name}' must be text")
-    return value
-
-
-def _optional_text_arg(call: ModelToolCall, name: str) -> str | None:
-    value = call.arguments.get(name)
-    if isinstance(value, str) and value.strip():
-        return value
-    return None
+def _tool_result_json(result: object) -> JsonValue:
+    match result:
+        case WorkspaceReadResult():
+            return {"path": result.path, "content": result.content}
+        case WorkspaceSearchResult():
+            return {
+                "query": result.query,
+                "hits": tuple(
+                    {
+                        "path": hit.path,
+                        "line_number": hit.line_number,
+                        "line": hit.line,
+                    }
+                    for hit in result.hits
+                ),
+            }
+        case WorkspaceWriteResult():
+            return {"path": result.path, "bytes_written": result.bytes_written}
+        case ShellCommandResult():
+            return {
+                "command": result.command,
+                "exit_code": result.exit_code,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+        case GitCommandResult():
+            return {
+                "operation": result.operation,
+                "exit_code": result.exit_code,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+        case _:
+            raise CodeAssistantDemoError(
+                "CodeAssistant tool returned an unknown result"
+            )
 
 
 def _optional_signal_text(signal: AgentSignal, name: str) -> str | None:

@@ -23,6 +23,12 @@ class AgentToolBindingError(AbstractSpakkyAgentError):
     message = "Agent tool invocation payload is invalid"
 
 
+class AgentToolDispatchError(AbstractSpakkyAgentError):
+    """Raised when a model tool call names a tool absent from the catalog."""
+
+    message = "Agent tool call cannot be dispatched"
+
+
 class AgentBootstrapError(AbstractSpakkyAgentError):
     """Raised when agent bootstrap validation fails."""
 

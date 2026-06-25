@@ -10,7 +10,9 @@ from spakky.agent.error import (
     AgentOutputGuardError,
     AgentPersistenceConfigurationError,
     AgentToolBindingError,
+    AgentToolDispatchError,
 )
+from spakky.agent.dispatcher import AgentToolDispatcher
 from spakky.agent.context import (
     ContextDigest,
     ContextFreshness,
@@ -231,6 +233,8 @@ __all__ = [
     "AgentToolCatalog",
     "AgentToolDefinition",
     "AgentToolDescriptor",
+    "AgentToolDispatchError",
+    "AgentToolDispatcher",
     "AgentToolIdentity",
     "AgentToolMetadata",
     "AgentToolSchemaHandle",
