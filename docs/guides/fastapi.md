@@ -3,6 +3,49 @@
 > `spakky-fastapi`는 FastAPI 엔드포인트를 `@ApiController` 클래스로 구조화합니다.
 > Controller Pod를 스캔하면 route decorator가 붙은 메서드를 FastAPI 라우터에 자동 등록합니다.
 
+이 문서는 **처음 HTTP API를 붙일 때 필요한 기초**만 다룹니다. WebSocket·분산 트레이싱 자동 등록·커스텀 FastAPI 인스턴스·라우트 등록 내부 동작 같은 심화 주제는 [FastAPI 심화](fastapi-advanced.md)를 참고하세요.
+
+---
+
+## 요청 처리 흐름
+
+`@ApiController` Pod의 route 메서드 하나가 HTTP 요청을 받기까지의 경로입니다. 사용자 코드(Controller)는 프레임워크 코어(DI/Pod)와 플러그인(`spakky-fastapi`)을 거쳐 ASGI 서버에 연결됩니다.
+
+```mermaid
+graph TD
+  Client[HTTP 클라이언트]:::external
+
+  subgraph App[애플리케이션 코드]
+    Controller["@ApiController"]:::app
+    UseCase["@UseCase"]:::app
+  end
+
+  subgraph Framework[Spakky Framework]
+    DI[DI / Pod 컨테이너]:::core
+    subgraph Plugin[spakky-fastapi]
+      RR[RegisterRoutesPostProcessor]:::plugin
+      Router[FastAPI 라우터]:::plugin
+    end
+  end
+
+  ASGI[ASGI 서버 uvicorn]:::external
+
+  Client --> ASGI
+  ASGI --> Router
+  Router --> Controller
+  Controller --> UseCase
+  DI --> Controller
+  DI --> UseCase
+  RR --> Router
+
+  classDef app fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+  classDef core fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+  classDef plugin fill:#FFF3E0,stroke:#EF6C00,color:#E65100
+  classDef external fill:#ECEFF1,stroke:#546E7A,color:#263238
+```
+
+`app.start()` 시점에 `RegisterRoutesPostProcessor`가 `@ApiController` Pod를 찾아 route 메서드를 `FastAPI` 라우터에 등록합니다. 요청이 들어오면 ASGI 서버 → 라우터 → Controller 메서드 → UseCase 순으로 흐르고, Controller·UseCase 인스턴스는 DI 컨테이너가 제공합니다.
+
 ---
 
 ## 기본 설정
@@ -50,33 +93,9 @@ export SPAKKY_FASTAPI_TITLE="Orders API"
 uvicorn main:api --reload
 ```
 
+기본 앱의 `title`·`description`·`version`·`debug`는 `FastAPIConfig`(`@Configuration`)가 `SPAKKY_FASTAPI_` 접두사 환경변수에서 읽습니다. 위처럼 `SPAKKY_FASTAPI_TITLE`을 설정하면 OpenAPI 문서 제목이 바뀝니다.
+
 FastAPI lifespan은 `BindLifespanPostProcessor`가 감싸므로, ASGI 서버가 종료될 때 `ApplicationContext.stop()`이 호출되어 `IService`/`IAsyncService` 리소스가 정리됩니다.
-
-커스텀 `FastAPI` 인스턴스가 필요하면 플러그인 로드 전에 Pod로 등록합니다. 이 경우 플러그인은 기본 앱을 중복 등록하지 않습니다.
-
-```python
-from fastapi import FastAPI
-from spakky.core.application.application import SpakkyApplication
-from spakky.core.application.application_context import ApplicationContext
-from spakky.core.pod.annotations.pod import Pod
-
-import apps
-import spakky.plugins.fastapi
-
-
-@Pod()
-def custom_fastapi() -> FastAPI:
-    return FastAPI(title="Orders API", version="1.0.0")
-
-
-spakky_app = (
-    SpakkyApplication(ApplicationContext())
-    .add(custom_fastapi)
-    .load_plugins(include={spakky.plugins.fastapi.PLUGIN_NAME})
-    .scan(apps)
-    .start()
-)
-```
 
 ---
 
@@ -84,12 +103,13 @@ spakky_app = (
 
 ### HTTP 메서드 데코레이터
 
+`@ApiController(prefix)`는 클래스를 REST 컨트롤러로 등록하고, `prefix`를 모든 route 앞에 붙입니다. 메서드에는 `spakky.plugins.fastapi.routes`의 `get`·`post`·`put`·`patch`·`delete`·`head`·`options`·`websocket` 데코레이터를 사용합니다.
+
 ```python
 from pydantic import BaseModel
-from fastapi import WebSocket
 from fastapi.responses import PlainTextResponse
 from spakky.plugins.fastapi.routes import (
-    get, post, put, patch, delete, head, options, websocket,
+    get, post, put, patch, delete, head, options,
 )
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 
@@ -154,6 +174,8 @@ class UserController:
         return "GET, POST, PUT, PATCH, DELETE"
 ```
 
+반환 타입이 Pydantic 모델이면 `RegisterRoutesPostProcessor`가 `response_model`을 자동 추론합니다. 메서드 docstring은 route `description`으로, 메서드명은 route `name`(예: `list_users` → `List Users`)으로 자동 채워집니다. 이 추론·등록의 내부 동작은 [FastAPI 심화](fastapi-advanced.md#route-registration)에서 다룹니다.
+
 ### UseCase와 에러 매핑
 
 Controller에는 Repository를 직접 주입하지 말고 `@UseCase()` Pod를 주입합니다. 예상 가능한 HTTP 실패는 `spakky.plugins.fastapi.error`의 에러 클래스로 변환하면 `ErrorHandlingMiddleware`가 JSON 응답으로 바꿉니다.
@@ -204,85 +226,20 @@ class OrderController:
         return OrderResponse(order_id=str(order.uid), status=order.status.value)
 ```
 
-`@post(..., status_code=201)`처럼 route decorator에 전달한 옵션은 내부 `Route` annotation에 저장되고 그대로 `FastAPI.add_api_route()`에 전달됩니다. 반환 타입이 Pydantic 모델이면 `RegisterRoutesPostProcessor`가 `response_model`을 자동 추론합니다.
+`@post(..., status_code=201)`처럼 route decorator에 전달한 옵션은 내부 `Route` annotation에 저장되고 그대로 `FastAPI.add_api_route()`에 전달됩니다.
 
-### WebSocket
+`spakky.plugins.fastapi.error`가 제공하는 기본 에러 클래스는 다음과 같습니다. 모두 `AbstractSpakkyFastAPIError`를 상속하며 `to_response()`로 JSON 응답으로 변환됩니다.
 
-```python
-@ApiController("/chat")
-class ChatController:
-    @websocket("/ws")
-    async def chat(self, socket: WebSocket) -> None:
-        """WebSocket /chat/ws"""
-        await socket.accept()
-        while True:
-            message = await socket.receive_text()
-            await socket.send_text(f"Echo: {message}")
-```
+| 에러 클래스 | HTTP 상태 코드 |
+| --- | --- |
+| `BadRequest` | 400 |
+| `Unauthorized` | 401 |
+| `Forbidden` | 403 |
+| `NotFound` | 404 |
+| `Conflict` | 409 |
+| `InternalServerError` | 500 |
 
-### AgentYield stream 노출
-
-`@Agent`는 inbound adapter에서 `@UseCase`처럼 container로 resolve한 뒤 `execute()`를 호출합니다. Agent 전용 FastAPI plugin package를 만들 필요는 없습니다. CodeAssistant demo의 WebSocket 예제는 `core/spakky-agent/examples/inbound_adapter_examples.py`에 있습니다.
-
-```python
-from examples.code_assistant_demo import CodeAssistant
-from examples.inbound_adapter_examples import (
-    agent_signal_from_json,
-    agent_yield_to_event,
-    code_assistant_command_from_json,
-)
-from fastapi import WebSocket
-from spakky.agent import IAgentSignalRepository
-from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
-from spakky.core.pod.interfaces.container import IContainer
-from spakky.plugins.fastapi.routes import websocket
-from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
-
-
-@ApiController("/agents")
-class AgentController(IContainerAware):
-    _container: IContainer
-
-    def set_container(self, container: IContainer) -> None:
-        self._container = container
-
-    @websocket("/code/ws")
-    async def code(self, socket: WebSocket) -> None:
-        await socket.accept()
-        command = code_assistant_command_from_json(await socket.receive_json())
-        agent = self._container.get(CodeAssistant)
-        signals = self._container.get(IAgentSignalRepository)
-
-        async for item in agent.execute(command):
-            await socket.send_json(agent_yield_to_event(item))
-            if item.kind.value == "approval":
-                signals.append(
-                    agent_signal_from_json(
-                        command.state_id,
-                        await socket.receive_json(),
-                        approval=item.payload,
-                    )
-                )
-```
-
-실제 예제는 inbound JSON을 `CodeAssistantCommand`와 `AgentSignal`로 변환합니다. 핵심은 WebSocket이 transport 변환만 담당하고, agent business workflow는 container에서 얻은 `CodeAssistant.execute()` 안에 남긴다는 점입니다.
-
-SSE나 AG-UI/CopilotKit 연동이 필요하면 [AI Agent 개발](agents.md)의 SSE 및 AG-UI adapter 예제를 사용합니다. Spakky-native SSE는 `AgentYield`를 `data: {"kind": ...}` frame으로 보내고, CopilotKit용 endpoint는 AG-UI `data: {"type": ...}` event stream으로 별도 변환해야 합니다.
-
----
-
-## 분산 트레이싱
-
-`spakky-tracing`은 `spakky-fastapi`의 필수 의존성입니다. 컨테이너에 `ITracePropagator`가 등록되어 있으면 `TracingMiddleware`가 자동으로 등록되어 모든 HTTP 요청에 대해 W3C `TraceContext`를 전파합니다.
-
-`AddBuiltInMiddlewaresPostProcessor`가 컨테이너에서 `get_or_none(ITracePropagator)`로 propagator를 조회하고, 있으면 `TracingMiddleware`를 FastAPI에 자동 추가합니다.
-
-- 수신 요청의 `traceparent` 헤더에서 `TraceContext`를 추출하여 자식 스팬을 생성합니다
-- 헤더가 없으면 새로운 루트 트레이스를 시작합니다
-- 응답 헤더에 `traceparent`를 자동 주입합니다
-- 요청 완료 후 `TraceContext`를 자동으로 정리합니다
-
-별도 설정이나 코드 변경 없이, 플러그인 로드만으로 동작합니다.
+미들웨어 실행 순서와 커스텀 에러 정의는 [FastAPI 심화](fastapi-advanced.md#middleware-error)에서 다룹니다.
 
 ---
 
@@ -304,3 +261,16 @@ class FileController:
     async def download(self, filename: str) -> str:
         return f"storage/{filename}"
 ```
+
+---
+
+## 다음 단계
+
+| 주제 | 문서 |
+| --- | --- |
+| 라우트 등록 내부 동작·`response_model` 추론 | [FastAPI 심화](fastapi-advanced.md#route-registration) |
+| 커스텀 FastAPI 인스턴스 | [FastAPI 심화](fastapi-advanced.md#custom-instance) |
+| 미들웨어 순서·커스텀 에러 | [FastAPI 심화](fastapi-advanced.md#middleware-error) |
+| WebSocket | [FastAPI 심화](fastapi-advanced.md#websocket) |
+| 분산 트레이싱 자동 등록 | [FastAPI 심화](fastapi-advanced.md#tracing) |
+| Agent stream 노출 | [FastAPI 심화](fastapi-advanced.md#agent-stream) |
