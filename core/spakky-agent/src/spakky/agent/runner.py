@@ -77,6 +77,7 @@ from spakky.agent.interfaces.model import (
     ModelToolCall,
     ModelToolChoice,
     ModelToolSpec,
+    ModelUsage,
     SamplingOptions,
     ToolCallingSpec,
 )
@@ -116,6 +117,22 @@ DEFAULT_SYSTEM_INSTRUCTION = "Use the declared tools to accomplish the objective
 
 DEFAULT_SAMPLING = SamplingOptions(temperature=0.0, max_tokens=512)
 """Deterministic default sampling for the framework-owned model request."""
+
+ESTIMATED_CHARACTERS_PER_TOKEN = 4
+"""Provider-neutral characters-per-token ratio for the compaction trigger estimate.
+
+The core cannot call a provider tokenizer (it stays protocol-neutral, ADR-0013
+§2), so the compaction trigger estimates token count from transcript length using
+the widely-used ~4-characters-per-token approximation. The estimate only decides
+*whether* the declared chain runs; the strategies themselves bound the result, so
+an approximate trigger is sufficient.
+"""
+
+
+def _estimate_token_count(history: tuple[ModelMessage, ...]) -> int:
+    """Estimate the token cost of a history from its transcript length."""
+    characters = sum(len(message.content) for message in history)
+    return characters // ESTIMATED_CHARACTERS_PER_TOKEN
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,9 +229,10 @@ class AgentRunner:
             else None
         )
         cursor = _MessageCursor(state_id=run_input.state_id)
+        history = await self._resolved_history(run_input)
         yield RunStartedEvent(attribution)
         yield StepStartedEvent(attribution, step_name="model-call")
-        async for event in self.model.stream(self._model_request(run_input)):
+        async for event in self.model.stream(self._model_request(run_input, history)):
             async for item in self._consume_stream_event_as_events(
                 event, state, attribution, cursor
             ):
@@ -351,7 +369,8 @@ class AgentRunner:
         tool_calls: list[str] = []
         assistant_text: list[str] = []
         yield _progress("preparing model request", "model")
-        async for event in self.model.stream(self._model_request(run_input)):
+        history = await self._resolved_history(run_input)
+        async for event in self.model.stream(self._model_request(run_input, history)):
             async for item in self._consume_stream_event(
                 event, None, tool_calls, assistant_text
             ):
@@ -385,7 +404,9 @@ class AgentRunner:
         assistant_text: list[str] = []
         yield _progress("preparing model request", "model")
         self._append_boundary(state.id, _before_model(self._model_action_id()))
-        request = self._model_request(run_input)
+        request = self._model_request(
+            run_input, await self._resolved_history(run_input)
+        )
 
         # Phase 5: consume the provider-neutral model stream.
         async for event in self.model.stream(request):
@@ -601,7 +622,11 @@ class AgentRunner:
             ),
         )
 
-    def _model_request(self, run_input: RunAgentInput) -> ModelRequest:
+    def _model_request(
+        self,
+        run_input: RunAgentInput,
+        history: tuple[ModelMessage, ...],
+    ) -> ModelRequest:
         tools = tuple(
             ModelToolSpec(
                 name=descriptor.schema.name,
@@ -620,13 +645,25 @@ class AgentRunner:
                     ModelMessageRole.SYSTEM,
                     self.agent.spec.instructions or DEFAULT_SYSTEM_INSTRUCTION,
                 ),
-                *self._resolve_history(run_input),
+                *history,
                 ModelMessage(ModelMessageRole.USER, run_input.instruction),
             ),
             tool_calling=tool_calling,
             sampling=DEFAULT_SAMPLING,
             metadata={"state_id": run_input.state_id, **run_input.metadata},
         )
+
+    async def _resolved_history(
+        self,
+        run_input: RunAgentInput,
+    ) -> tuple[ModelMessage, ...]:
+        """Resolve prior-turn messages and apply declared compaction (ADR-0013 §7).
+
+        The raw history is resolved first, then the agent's declared compaction
+        chain is applied so the seeded transcript stays within the backend's
+        context window before it reaches the model request.
+        """
+        return await self._compact_history(self._resolve_history(run_input))
 
     def _resolve_history(self, run_input: RunAgentInput) -> tuple[ModelMessage, ...]:
         """Resolve the prior-turn messages that seed this run's model request.
@@ -647,6 +684,30 @@ class AgentRunner:
                 run_input.effective_conversation_id
             )
         )
+
+    async def _compact_history(
+        self,
+        history: tuple[ModelMessage, ...],
+    ) -> tuple[ModelMessage, ...]:
+        """Apply the declared compaction chain when the token estimate trips it.
+
+        Compaction runs only when an agent declares a policy and the running token
+        estimate of the resolved history crosses ``trigger_token_threshold`` — a
+        short conversation is sent verbatim. The estimate and the backend
+        ``ModelCapability`` are passed to each strategy so a strategy can scale its
+        effect, then each strategy's output is threaded into the next (chain order
+        is compaction order).
+        """
+        policy = self.agent.spec.compaction
+        if policy is None:
+            return history
+        usage = ModelUsage(total_tokens=_estimate_token_count(history))
+        if (usage.total_tokens or 0) < policy.trigger_token_threshold:
+            return history
+        capability = self.model.capability
+        for strategy in policy.strategies:
+            history = await strategy.compact(history, usage, capability)
+        return history
 
     def _persist_turns(
         self,

@@ -20,9 +20,11 @@ from spakky.agent import (
     AgentTeammate,
     AgentYield,
     AgentYieldKind,
-    CompactionStrategy,
     Final,
     AgentSignalKind,
+    KeepRecentMessagesCompactionStrategy,
+    ProviderManagedCompactionStrategy,
+    TrimToolResultsCompactionStrategy,
     RecoveryStrategy,
     StreamingExposureMode,
 )
@@ -543,21 +545,17 @@ def test_agent_execution_spec_expect_rejects_duplicate_teammate_names() -> None:
 
 
 def test_agent_execution_spec_expect_declares_compaction_policy() -> None:
-    """spec이 compaction 전략 체인과 임계치 정책을 선언적으로 보유한다."""
+    """spec이 pluggable 전략 체인과 임계치 정책을 선언적으로 보유한다."""
+    sliding = KeepRecentMessagesCompactionStrategy(max_messages=10)
+    trimming = TrimToolResultsCompactionStrategy(max_characters=2000)
     policy = AgentCompactionPolicy(
-        strategies=(
-            CompactionStrategy.DROP_OLDEST_EVIDENCE,
-            CompactionStrategy.SUMMARIZE_TRANSCRIPT,
-        ),
+        strategies=(trimming, sliding),
         trigger_token_threshold=8000,
     )
     spec = AgentExecutionSpec(compaction=policy)
 
     assert spec.compaction is policy
-    assert spec.compaction.strategies == (
-        CompactionStrategy.DROP_OLDEST_EVIDENCE,
-        CompactionStrategy.SUMMARIZE_TRANSCRIPT,
-    )
+    assert spec.compaction.strategies == (trimming, sliding)
     assert spec.compaction.trigger_token_threshold == 8000
 
 
@@ -567,23 +565,11 @@ def test_agent_compaction_policy_expect_rejects_empty_strategy_chain() -> None:
         AgentCompactionPolicy(strategies=(), trigger_token_threshold=1000)
 
 
-def test_agent_compaction_policy_expect_rejects_duplicate_strategies() -> None:
-    """compaction 전략 체인은 같은 전략을 중복할 수 없다."""
-    with pytest.raises(AgentDefinitionError):
-        AgentCompactionPolicy(
-            strategies=(
-                CompactionStrategy.SUMMARIZE_TRANSCRIPT,
-                CompactionStrategy.SUMMARIZE_TRANSCRIPT,
-            ),
-            trigger_token_threshold=1000,
-        )
-
-
 def test_agent_compaction_policy_expect_rejects_non_positive_threshold() -> None:
     """compaction trigger 임계치는 양수여야 한다."""
     with pytest.raises(AgentDefinitionError):
         AgentCompactionPolicy(
-            strategies=(CompactionStrategy.DEDUPLICATE_EVIDENCE,),
+            strategies=(ProviderManagedCompactionStrategy(),),
             trigger_token_threshold=0,
         )
 
@@ -602,6 +588,7 @@ def test_agent_expect_consumes_full_declarative_spec_at_definition() -> None:
                 payload=Final(output=command, metadata={}),
             )
 
+    provider_managed = ProviderManagedCompactionStrategy()
     spec = AgentExecutionSpec(
         name="support_agent",
         instructions="Resolve support tickets within policy.",
@@ -611,7 +598,7 @@ def test_agent_expect_consumes_full_declarative_spec_at_definition() -> None:
             AgentTeammate(name="billing", card_url="https://billing.internal/card"),
         ),
         compaction=AgentCompactionPolicy(
-            strategies=(CompactionStrategy.OFFLOAD_TO_EXTERNAL_STORE,),
+            strategies=(provider_managed,),
             trigger_token_threshold=16000,
         ),
     )
@@ -637,6 +624,4 @@ def test_agent_expect_consumes_full_declarative_spec_at_definition() -> None:
         "billing",
     )
     assert agent.spec.compaction is not None
-    assert agent.spec.compaction.strategies == (
-        CompactionStrategy.OFFLOAD_TO_EXTERNAL_STORE,
-    )
+    assert agent.spec.compaction.strategies == (provider_managed,)

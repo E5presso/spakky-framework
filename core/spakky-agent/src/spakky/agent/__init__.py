@@ -94,6 +94,13 @@ from spakky.agent.delegation import (
     DelegationReturnPolicy,
     IAgentDelegate,
 )
+from spakky.agent.compaction import (
+    ICompactionStrategy,
+    KeepRecentMessagesCompactionStrategy,
+    ProviderManagedCompactionStrategy,
+    SummarizeOldTurnsCompactionStrategy,
+    TrimToolResultsCompactionStrategy,
+)
 from spakky.agent.execution import (
     Agent,
     AgentCompactionPolicy,
@@ -101,7 +108,6 @@ from spakky.agent.execution import (
     AgentExecutionSpec,
     AgentSignalKind,
     AgentTeammate,
-    CompactionStrategy,
     RecoveryStrategy,
     StreamingExposureMode,
 )
@@ -309,7 +315,11 @@ __all__ = [
     "ContextRotSymptom",
     "ContextSensitivity",
     "ContextTokenBudget",
-    "CompactionStrategy",
+    "ICompactionStrategy",
+    "KeepRecentMessagesCompactionStrategy",
+    "ProviderManagedCompactionStrategy",
+    "SummarizeOldTurnsCompactionStrategy",
+    "TrimToolResultsCompactionStrategy",
     "CredentialRef",
     "DelegationBudget",
     "DelegationContextSlice",
