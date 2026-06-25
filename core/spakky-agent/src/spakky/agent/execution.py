@@ -6,11 +6,15 @@ from enum import StrEnum
 from inspect import Parameter, Signature, getattr_static, isclass, signature
 from types import NoneType
 from typing import get_args, get_origin, get_type_hints
+from urllib.parse import urlsplit
 
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.tooling import AgentToolCatalog, discover_agent_tools
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.error import AbstractSpakkyPodError
+
+REMOTE_AGENT_CARD_SCHEMES = ("http", "https")
+"""URL schemes accepted for a remote teammate's AgentCard endpoint."""
 
 
 class RecoveryStrategy(StrEnum):
@@ -55,16 +59,89 @@ class AgentExecutionLimits:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentTeammate:
+    """Declared collaborator an agent may delegate to during execution.
+
+    A teammate is resolved either in-process by a local @Agent Pod type or
+    remotely by an AgentCard endpoint URL. Exactly one binding is declared;
+    the runtime delegation wiring (follow-up E4) consumes this declaration.
+    """
+
+    name: str
+    pod: type[object] | None = None
+    card_url: str | None = None
+
+    def __post_init__(self) -> None:
+        """Reject teammates that cannot resolve to a single delegate target."""
+        if not self.name.strip():
+            raise AgentDefinitionError("Agent teammate name cannot be blank")
+        if (self.pod is None) == (self.card_url is None):
+            raise AgentDefinitionError(
+                "Agent teammate must declare exactly one of a local pod "
+                "or a remote AgentCard url"
+            )
+        if self.pod is not None and not isclass(self.pod):
+            raise AgentDefinitionError("Agent teammate pod must be a class")
+        if self.card_url is not None:
+            parts = urlsplit(self.card_url)
+            if parts.scheme not in REMOTE_AGENT_CARD_SCHEMES or not parts.netloc:
+                raise AgentDefinitionError(
+                    "Agent teammate AgentCard url must be an http(s) endpoint"
+                )
+
+
+class CompactionStrategy(StrEnum):
+    """Ordered context-compaction tactic applied when the threshold trips."""
+
+    DROP_OLDEST_EVIDENCE = "drop_oldest_evidence"
+    SUMMARIZE_TRANSCRIPT = "summarize_transcript"
+    DEDUPLICATE_EVIDENCE = "deduplicate_evidence"
+    OFFLOAD_TO_EXTERNAL_STORE = "offload_to_external_store"
+
+
+@dataclass(frozen=True, slots=True)
+class AgentCompactionPolicy:
+    """Declared compaction chain plus the token threshold that triggers it.
+
+    The strategies form an ordered chain applied in sequence once the
+    running token count crosses ``trigger_token_threshold``. The runtime
+    compaction handler (follow-up C7) consumes this declaration.
+    """
+
+    strategies: tuple[CompactionStrategy, ...]
+    trigger_token_threshold: int
+
+    def __post_init__(self) -> None:
+        """Reject compaction policies that cannot be enforced consistently."""
+        if not self.strategies:
+            raise AgentDefinitionError(
+                "Agent compaction policy requires at least one strategy"
+            )
+        if len(set(self.strategies)) != len(self.strategies):
+            raise AgentDefinitionError(
+                "Agent compaction strategies cannot repeat in the chain"
+            )
+        if self.trigger_token_threshold <= 0:
+            raise AgentDefinitionError(
+                "Agent compaction trigger token threshold must be positive"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class AgentExecutionSpec:
     """Declarative execution semantics that cannot be inferred from DI alone."""
 
     name: str | None = None
     objective: str | None = None
+    instructions: str | None = None
+    output_type: type[object] | None = None
     accepted_signals: tuple[AgentSignalKind, ...] = ()
     recovery: RecoveryStrategy = RecoveryStrategy.NONE
     streaming_exposure_mode: StreamingExposureMode = StreamingExposureMode.BALANCED
     timeout_seconds: float | None = None
     limits: AgentExecutionLimits = field(default_factory=AgentExecutionLimits)
+    teammates: tuple[AgentTeammate, ...] = ()
+    compaction: AgentCompactionPolicy | None = None
     delegation_allowed: bool = False
     metadata: dict[str, str] = field(default_factory=dict)
 
@@ -74,6 +151,10 @@ class AgentExecutionSpec:
             raise AgentDefinitionError("Agent name cannot be blank")
         if self.objective is not None and not self.objective.strip():
             raise AgentDefinitionError("Agent objective cannot be blank")
+        if self.instructions is not None and not self.instructions.strip():
+            raise AgentDefinitionError("Agent instructions cannot be blank")
+        if self.output_type is not None and not isclass(self.output_type):
+            raise AgentDefinitionError("Agent output type must be a class")
         if self.timeout_seconds is not None and self.timeout_seconds <= 0:
             raise AgentDefinitionError("Agent timeout must be positive")
         if (
@@ -82,6 +163,9 @@ class AgentExecutionSpec:
             and self.timeout_seconds != self.limits.timeout_seconds
         ):
             raise AgentDefinitionError("Agent timeout declarations must match")
+        teammate_names = [teammate.name for teammate in self.teammates]
+        if len(set(teammate_names)) != len(teammate_names):
+            raise AgentDefinitionError("Agent teammate names must be unique")
 
 
 @dataclass(eq=False)

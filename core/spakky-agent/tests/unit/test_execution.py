@@ -6,15 +6,21 @@ import pytest
 import tests.fixtures.future_agent_app as future_agent_app
 import spakky.agent.execution as execution_module
 
+from pydantic import BaseModel
+
 from spakky.core.pod.annotations.pod import Pod
+
 
 from spakky.agent import (
     Agent,
+    AgentCompactionPolicy,
     AgentDefinitionError,
     AgentExecutionLimits,
     AgentExecutionSpec,
+    AgentTeammate,
     AgentYield,
     AgentYieldKind,
+    CompactionStrategy,
     Final,
     AgentSignalKind,
     RecoveryStrategy,
@@ -29,10 +35,14 @@ def test_agent_execution_spec_expect_defaults_are_non_durable_and_balanced() -> 
     assert spec.accepted_signals == ()
     assert spec.name is None
     assert spec.objective is None
+    assert spec.instructions is None
+    assert spec.output_type is None
     assert spec.recovery == RecoveryStrategy.NONE
     assert spec.streaming_exposure_mode == StreamingExposureMode.BALANCED
     assert spec.timeout_seconds is None
     assert spec.limits == AgentExecutionLimits()
+    assert spec.teammates == ()
+    assert spec.compaction is None
     assert spec.delegation_allowed is False
     assert spec.metadata == {}
 
@@ -379,3 +389,233 @@ def test_agent_expect_rejects_unresolvable_execute_return_annotation(
                     kind=AgentYieldKind.FINAL,
                     payload=Final(output=command, metadata={}),
                 )
+
+
+class _SupportTicketResolution(BaseModel):
+    """Structured output a support agent declares for resolved tickets."""
+
+    ticket_id: str
+    resolved: bool
+
+
+def test_agent_execution_spec_expect_declares_instructions_and_output_type() -> None:
+    """선언형 spec이 시스템 지시와 구조화 출력 타입을 단일 선언점에 담는다."""
+    spec = AgentExecutionSpec(
+        instructions="Resolve support tickets within policy.",
+        output_type=_SupportTicketResolution,
+    )
+
+    assert spec.instructions == "Resolve support tickets within policy."
+    assert spec.output_type is _SupportTicketResolution
+
+
+def test_agent_execution_spec_expect_rejects_blank_instructions() -> None:
+    """instructions는 공백 문자열일 수 없다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentExecutionSpec(instructions="   ")
+
+
+def test_agent_execution_spec_expect_rejects_non_class_output_type() -> None:
+    """output_type은 구조화 출력 타입(class)이어야 한다."""
+    instance_not_class = _SupportTicketResolution(ticket_id="T-1", resolved=True)
+    with pytest.raises(AgentDefinitionError):
+        # pyrefly: ignore - 의도적으로 class가 아닌 instance를 전달해 런타임 가드 검증
+        AgentExecutionSpec(output_type=instance_not_class)
+
+
+def test_agent_execution_spec_expect_declares_local_pod_teammate() -> None:
+    """teammate를 로컬 @Agent Pod 타입으로 선언해 in-process 위임을 표현한다."""
+
+    @Agent()
+    class ResearcherAgent:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    teammate = AgentTeammate(name="researcher", pod=ResearcherAgent)
+    spec = AgentExecutionSpec(teammates=(teammate,))
+
+    assert spec.teammates == (teammate,)
+    assert spec.teammates[0].pod is ResearcherAgent
+    assert spec.teammates[0].card_url is None
+
+
+def test_agent_teammate_expect_declares_remote_agent_card_url() -> None:
+    """teammate를 원격 AgentCard URL로 선언해 cross-process 위임을 표현한다."""
+    teammate = AgentTeammate(
+        name="billing",
+        card_url="https://billing.internal/.well-known/agent-card.json",
+    )
+
+    assert teammate.pod is None
+    assert teammate.card_url == "https://billing.internal/.well-known/agent-card.json"
+
+
+def test_agent_teammate_expect_rejects_blank_name() -> None:
+    """teammate name은 공백 문자열일 수 없다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentTeammate(name=" ", card_url="https://billing.internal/card")
+
+
+def test_agent_teammate_expect_rejects_declaring_neither_binding() -> None:
+    """teammate는 로컬 pod·원격 url 중 하나를 반드시 선언해야 한다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentTeammate(name="orphan")
+
+
+def test_agent_teammate_expect_rejects_declaring_both_bindings() -> None:
+    """teammate는 로컬 pod와 원격 url을 동시에 선언할 수 없다."""
+
+    @Agent()
+    class LocalAgent:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    with pytest.raises(AgentDefinitionError):
+        AgentTeammate(
+            name="ambiguous",
+            pod=LocalAgent,
+            card_url="https://peer.internal/card",
+        )
+
+
+def test_agent_teammate_expect_rejects_non_class_pod() -> None:
+    """teammate의 로컬 binding은 class여야 한다."""
+    instance_not_class = object()
+    with pytest.raises(AgentDefinitionError):
+        # pyrefly: ignore - 의도적으로 class가 아닌 instance를 전달해 런타임 가드 검증
+        AgentTeammate(name="bad_pod", pod=instance_not_class)
+
+
+def test_agent_teammate_expect_rejects_non_http_card_url_scheme() -> None:
+    """원격 AgentCard URL은 http(s) 스킴이어야 한다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentTeammate(name="ftp_peer", card_url="ftp://peer.internal/card")
+
+
+def test_agent_teammate_expect_rejects_card_url_without_host() -> None:
+    """원격 AgentCard URL은 호스트(netloc)를 포함해야 한다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentTeammate(name="hostless", card_url="https:///card")
+
+
+def test_agent_execution_spec_expect_rejects_duplicate_teammate_names() -> None:
+    """teammate roster에 같은 이름이 중복되면 거부한다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentExecutionSpec(
+            teammates=(
+                AgentTeammate(name="peer", card_url="https://a.internal/card"),
+                AgentTeammate(name="peer", card_url="https://b.internal/card"),
+            )
+        )
+
+
+def test_agent_execution_spec_expect_declares_compaction_policy() -> None:
+    """spec이 compaction 전략 체인과 임계치 정책을 선언적으로 보유한다."""
+    policy = AgentCompactionPolicy(
+        strategies=(
+            CompactionStrategy.DROP_OLDEST_EVIDENCE,
+            CompactionStrategy.SUMMARIZE_TRANSCRIPT,
+        ),
+        trigger_token_threshold=8000,
+    )
+    spec = AgentExecutionSpec(compaction=policy)
+
+    assert spec.compaction is policy
+    assert spec.compaction.strategies == (
+        CompactionStrategy.DROP_OLDEST_EVIDENCE,
+        CompactionStrategy.SUMMARIZE_TRANSCRIPT,
+    )
+    assert spec.compaction.trigger_token_threshold == 8000
+
+
+def test_agent_compaction_policy_expect_rejects_empty_strategy_chain() -> None:
+    """compaction 정책은 최소 하나의 전략을 요구한다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentCompactionPolicy(strategies=(), trigger_token_threshold=1000)
+
+
+def test_agent_compaction_policy_expect_rejects_duplicate_strategies() -> None:
+    """compaction 전략 체인은 같은 전략을 중복할 수 없다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentCompactionPolicy(
+            strategies=(
+                CompactionStrategy.SUMMARIZE_TRANSCRIPT,
+                CompactionStrategy.SUMMARIZE_TRANSCRIPT,
+            ),
+            trigger_token_threshold=1000,
+        )
+
+
+def test_agent_compaction_policy_expect_rejects_non_positive_threshold() -> None:
+    """compaction trigger 임계치는 양수여야 한다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentCompactionPolicy(
+            strategies=(CompactionStrategy.DEDUPLICATE_EVIDENCE,),
+            trigger_token_threshold=0,
+        )
+
+
+def test_agent_expect_consumes_full_declarative_spec_at_definition() -> None:
+    """@Agent(spec=...)가 instructions·output_type·teammates·compaction을 함께 보존한다."""
+
+    @Agent()
+    class PlannerAgent:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    spec = AgentExecutionSpec(
+        name="support_agent",
+        instructions="Resolve support tickets within policy.",
+        output_type=_SupportTicketResolution,
+        teammates=(
+            AgentTeammate(name="planner", pod=PlannerAgent),
+            AgentTeammate(name="billing", card_url="https://billing.internal/card"),
+        ),
+        compaction=AgentCompactionPolicy(
+            strategies=(CompactionStrategy.OFFLOAD_TO_EXTERNAL_STORE,),
+            trigger_token_threshold=16000,
+        ),
+    )
+
+    @Agent(spec=spec)
+    class SupportAgent:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    agent = Agent.get(SupportAgent)
+
+    assert agent.spec is spec
+    assert agent.spec.instructions == "Resolve support tickets within policy."
+    assert agent.spec.output_type is _SupportTicketResolution
+    assert tuple(teammate.name for teammate in agent.spec.teammates) == (
+        "planner",
+        "billing",
+    )
+    assert agent.spec.compaction is not None
+    assert agent.spec.compaction.strategies == (
+        CompactionStrategy.OFFLOAD_TO_EXTERNAL_STORE,
+    )
