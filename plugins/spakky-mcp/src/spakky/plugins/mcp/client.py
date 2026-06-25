@@ -9,6 +9,7 @@ tears the connections down on exit.
 
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import timedelta
 
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp import ClientSession, StdioServerParameters
@@ -40,17 +41,25 @@ type DiscoveredServer = tuple[ClientSession, tuple[AgentToolDescriptor, ...]]
 def make_mcp_tool_callable(
     session: ClientSession,
     raw_tool_name: str,
+    call_timeout_seconds: float,
 ) -> McpToolCallable:
     """Bind an owner-less async callable that invokes one external MCP tool.
 
     The callable's only parameter is ``**arguments``: the dispatcher's
     owner-prefix step skips it (no leading self/cls) and binds the model payload
-    straight to the keyword arguments forwarded to ``call_tool``.
+    straight to the keyword arguments forwarded to ``call_tool``. The configured
+    per-server timeout bounds each call so a hung external tool cannot block the
+    agent loop indefinitely.
     """
+    read_timeout = timedelta(seconds=call_timeout_seconds)
 
     async def invoke(**arguments: object) -> JsonValue:
         try:
-            result = await session.call_tool(raw_tool_name, arguments=dict(arguments))
+            result = await session.call_tool(
+                raw_tool_name,
+                arguments=dict(arguments),
+                read_timeout_seconds=read_timeout,
+            )
         except McpToolInvocationError:
             raise
         except Exception as e:  # MCP/transport failures surface as a typed error.
@@ -81,12 +90,22 @@ async def _transport_streams(
 @asynccontextmanager
 async def connect_server(
     server: McpServerConfig,
+    connect_timeout_seconds: float,
 ) -> AsyncGenerator[DiscoveredServer, None]:
-    """Open a server connection and discover its tools as catalog descriptors."""
+    """Open a server connection and discover its tools as catalog descriptors.
+
+    ``connect_timeout_seconds`` bounds the ``initialize`` handshake (the session
+    read timeout) so an unresponsive server fails fast instead of hanging the
+    connection.
+    """
     try:
         async with (
             _transport_streams(server) as (read, write),
-            ClientSession(read, write) as session,
+            ClientSession(
+                read,
+                write,
+                read_timeout_seconds=timedelta(seconds=connect_timeout_seconds),
+            ) as session,
         ):
             await session.initialize()
             descriptors = await _discover_descriptors(session, server)
@@ -108,7 +127,9 @@ async def _discover_descriptors(
     return build_external_descriptors(
         server.name,
         listed.tools,
-        lambda raw_tool_name: make_mcp_tool_callable(session, raw_tool_name),
+        lambda raw_tool_name: make_mcp_tool_callable(
+            session, raw_tool_name, server.call_timeout_seconds
+        ),
     )
 
 
@@ -138,7 +159,7 @@ class McpClient:
         async with AsyncExitStack() as stack:
             for server in self._servers(server_names):
                 _session, server_descriptors = await stack.enter_async_context(
-                    connect_server(server)
+                    connect_server(server, self.config.connect_timeout_seconds)
                 )
                 descriptors.extend(server_descriptors)
             yield build_mcp_runner(agent_instance, descriptors)

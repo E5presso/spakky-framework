@@ -1,5 +1,7 @@
 """Unit tests proving external MCP tools dispatch via the owner-less path."""
 
+from datetime import timedelta
+
 from mcp.types import CallToolResult, TextContent, Tool
 from spakky.agent import AgentToolCatalog, AgentToolDispatcher
 from spakky.agent.interfaces.model import ModelToolCall
@@ -18,6 +20,7 @@ class _RecordingSession:
         self,
         name: str,
         arguments: dict[str, object],
+        read_timeout_seconds: timedelta,
     ) -> CallToolResult:
         self.calls.append((name, arguments))
         return CallToolResult(
@@ -35,7 +38,7 @@ def _catalog(session: _RecordingSession) -> AgentToolCatalog:
     descriptor = build_external_descriptor(
         "weather",
         tool,
-        make_mcp_tool_callable(session, "echo"),  # type: ignore[arg-type] - test double mirrors ClientSession.call_tool
+        make_mcp_tool_callable(session, "echo", 60.0),  # type: ignore[arg-type] - test double mirrors ClientSession.call_tool
     )
     return AgentToolCatalog(descriptors=(descriptor,))
 

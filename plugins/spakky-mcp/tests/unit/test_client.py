@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 import pytest
 from mcp import StdioServerParameters
@@ -34,6 +35,7 @@ class _FakeSession:
         self._list_error = list_error
         self._call_error = call_error
         self.initialized = False
+        self.last_read_timeout: timedelta | None = None
 
     async def __aenter__(self) -> "_FakeSession":
         return self
@@ -53,7 +55,9 @@ class _FakeSession:
         self,
         name: str,
         arguments: dict[str, object],
+        read_timeout_seconds: timedelta,
     ) -> CallToolResult:
+        self.last_read_timeout = read_timeout_seconds
         if self._call_error is not None:
             raise self._call_error
         return CallToolResult(
@@ -84,24 +88,34 @@ def _patch_session_and_streams(
     monkeypatch.setattr(
         client_module,
         "ClientSession",
-        lambda _read, _write: session,
+        lambda _read, _write, read_timeout_seconds=None: session,
     )
 
 
 async def test_make_callable_returns_normalized_structured_result() -> None:
     """The bound callable returns the normalized structured tool result."""
     session = _FakeSession()
-    invoke = make_mcp_tool_callable(session, "echo")  # type: ignore[arg-type] - fake mirrors call_tool
+    invoke = make_mcp_tool_callable(session, "echo", 60.0)  # type: ignore[arg-type] - fake mirrors call_tool
 
     result = await invoke(city="seoul")
 
     assert result == {"args": {"city": "seoul"}}
 
 
+async def test_make_callable_forwards_configured_call_timeout() -> None:
+    """The callable bounds each call with the configured per-server timeout."""
+    session = _FakeSession()
+    invoke = make_mcp_tool_callable(session, "echo", 12.5)  # type: ignore[arg-type] - fake mirrors call_tool
+
+    await invoke(city="seoul")
+
+    assert session.last_read_timeout == timedelta(seconds=12.5)
+
+
 async def test_make_callable_wraps_transport_failure() -> None:
     """A raw transport failure during a call surfaces as an invocation error."""
     session = _FakeSession(call_error=RuntimeError("socket closed"))
-    invoke = make_mcp_tool_callable(session, "echo")  # type: ignore[arg-type] - fake mirrors call_tool
+    invoke = make_mcp_tool_callable(session, "echo", 60.0)  # type: ignore[arg-type] - fake mirrors call_tool
 
     with pytest.raises(McpToolInvocationError):
         await invoke(city="seoul")
@@ -110,7 +124,7 @@ async def test_make_callable_wraps_transport_failure() -> None:
 async def test_make_callable_preserves_typed_invocation_error() -> None:
     """A typed invocation error from result mapping is not re-wrapped."""
     session = _FakeSession(call_error=McpToolInvocationError())
-    invoke = make_mcp_tool_callable(session, "echo")  # type: ignore[arg-type] - fake mirrors call_tool
+    invoke = make_mcp_tool_callable(session, "echo", 60.0)  # type: ignore[arg-type] - fake mirrors call_tool
 
     with pytest.raises(McpToolInvocationError):
         await invoke(city="seoul")
@@ -124,7 +138,7 @@ async def test_connect_server_discovers_descriptors(
     _patch_session_and_streams(monkeypatch, session)
     server = McpServerConfig(name="weather", command="weather-server")
 
-    async with connect_server(server) as (_session, descriptors):
+    async with connect_server(server, 30.0) as (_session, descriptors):
         assert session.initialized is True
         assert [descriptor.schema.name for descriptor in descriptors] == [
             "weather__echo"
@@ -140,7 +154,7 @@ async def test_connect_server_wraps_discovery_failure(
     server = McpServerConfig(name="weather", command="weather-server")
 
     with pytest.raises(McpToolDiscoveryError):
-        async with connect_server(server) as _discovered:
+        async with connect_server(server, 30.0) as _discovered:
             pass
 
 
@@ -160,7 +174,7 @@ async def test_connect_server_wraps_transport_failure(
     server = McpServerConfig(name="weather", command="weather-server")
 
     with pytest.raises(McpTransportError):
-        async with connect_server(server) as _discovered:
+        async with connect_server(server, 30.0) as _discovered:
             pass
 
 
@@ -179,14 +193,18 @@ async def test_streamable_http_transport_selected(
 
     session = _FakeSession(tools=[_echo_tool()])
     monkeypatch.setattr(client_module, "streamable_http_client", _fake_http)
-    monkeypatch.setattr(client_module, "ClientSession", lambda _read, _write: session)
+    monkeypatch.setattr(
+        client_module,
+        "ClientSession",
+        lambda _read, _write, read_timeout_seconds=None: session,
+    )
     server = McpServerConfig(
         name="weather",
         transport=McpTransport.STREAMABLE_HTTP,
         url="https://example.test/mcp",
     )
 
-    async with connect_server(server) as (_session, descriptors):
+    async with connect_server(server, 30.0) as (_session, descriptors):
         assert used["url"] == "https://example.test/mcp"
         assert len(descriptors) == 1
 
@@ -204,7 +222,11 @@ async def test_stdio_transport_selected(monkeypatch: pytest.MonkeyPatch) -> None
 
     session = _FakeSession(tools=[_echo_tool()])
     monkeypatch.setattr(client_module, "stdio_client", _fake_stdio)
-    monkeypatch.setattr(client_module, "ClientSession", lambda _read, _write: session)
+    monkeypatch.setattr(
+        client_module,
+        "ClientSession",
+        lambda _read, _write, read_timeout_seconds=None: session,
+    )
     server = McpServerConfig(
         name="weather",
         command="weather-server",
@@ -212,7 +234,7 @@ async def test_stdio_transport_selected(monkeypatch: pytest.MonkeyPatch) -> None
         env={"TOKEN": "x"},
     )
 
-    async with connect_server(server) as (_session, descriptors):
+    async with connect_server(server, 30.0) as (_session, descriptors):
         assert captured[0].command == "weather-server"
         assert captured[0].args == ["--verbose"]
         assert len(descriptors) == 1

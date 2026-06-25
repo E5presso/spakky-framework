@@ -80,7 +80,7 @@ async def _discover(
     descriptors = build_external_descriptors(
         server_name,
         listed.tools,
-        lambda raw_tool_name: make_mcp_tool_callable(session, raw_tool_name),
+        lambda raw_tool_name: make_mcp_tool_callable(session, raw_tool_name, 60.0),
     )
     return AgentToolCatalog(descriptors=descriptors)
 
