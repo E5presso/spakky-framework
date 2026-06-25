@@ -1,0 +1,32 @@
+name: AI Review Auto Approve
+
+on:
+  status:
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: read
+
+jobs:
+  approve:
+    name: Approve verified ai-review status
+    if: ${{ github.event.context == 'ai-review' && github.event.state == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      STATUS_CONTEXT: ${{ github.event.context }}
+      STATUS_STATE: ${{ github.event.state }}
+      STATUS_SHA: ${{ github.event.sha }}
+    steps:
+      - name: Checkout workflow scripts
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Approve PR when ai-review status is trusted
+        id: approve
+        shell: bash
+        run: .github/scripts/ai_review_auto_approve.sh
