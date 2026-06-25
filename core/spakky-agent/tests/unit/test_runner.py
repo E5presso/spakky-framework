@@ -27,6 +27,10 @@ from spakky.agent import (
     Idempotency,
     ITaskStore,
     JsonValue,
+    AgentCompactionPolicy,
+    KeepRecentMessagesCompactionStrategy,
+    SummarizeOldTurnsCompactionStrategy,
+    TrimToolResultsCompactionStrategy,
     ModelCapability,
     ModelError,
     ModelMessage,
@@ -1531,3 +1535,196 @@ async def test_agent_runner_events_expect_fine_grained_tool_events_without_paylo
 
     assert not any(isinstance(event, ToolCallStartEvent) for event in events)
     assert not any(isinstance(event, ToolCallEndEvent) for event in events)
+
+
+# A 1-message sliding window plus a low threshold makes the trip deterministic:
+# the injected history below estimates well past the threshold, so compaction
+# always runs and keeps exactly the final message.
+@Agent(
+    spec=AgentExecutionSpec(
+        name="compacting_probe",
+        compaction=AgentCompactionPolicy(
+            strategies=(KeepRecentMessagesCompactionStrategy(max_messages=1),),
+            trigger_token_threshold=4,
+        ),
+    )
+)
+class CompactingProbeAgent:
+    """Stateless agent that declares a sliding-window compaction policy."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+
+def _long_history() -> tuple[ModelMessage, ...]:
+    """History whose estimated tokens exceed the probe's threshold of 4."""
+    return (
+        ModelMessage(ModelMessageRole.USER, "x" * 40),
+        ModelMessage(ModelMessageRole.ASSISTANT, "y" * 40),
+        ModelMessage(ModelMessageRole.USER, "z" * 40),
+    )
+
+
+async def test_agent_runner_expect_compaction_applies_when_threshold_tripped() -> None:
+    """선언된 compaction은 임계치를 넘은 이력을 모델 요청 전에 자동 압축한다."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    await _collect(
+        _invoke_execute(
+            CompactingProbeAgent(model),
+            RunAgentInput(
+                state_id="run-1",
+                instruction="latest",
+                message_history=_long_history(),
+            ),
+        )
+    )
+
+    assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.USER, "z" * 40),
+        (ModelMessageRole.USER, "latest"),
+    ]
+
+
+async def test_agent_runner_expect_compaction_skipped_below_threshold() -> None:
+    """추정 토큰이 임계치 미만이면 compaction은 이력을 그대로 통과시킨다."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    await _collect(
+        _invoke_execute(
+            CompactingProbeAgent(model),
+            RunAgentInput(
+                state_id="run-1",
+                instruction="latest",
+                message_history=(
+                    ModelMessage(ModelMessageRole.USER, "hi"),
+                    ModelMessage(ModelMessageRole.ASSISTANT, "yo"),
+                ),
+            ),
+        )
+    )
+
+    assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.USER, "hi"),
+        (ModelMessageRole.ASSISTANT, "yo"),
+        (ModelMessageRole.USER, "latest"),
+    ]
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="chained_compacting_probe",
+        compaction=AgentCompactionPolicy(
+            strategies=(
+                TrimToolResultsCompactionStrategy(max_characters=4),
+                KeepRecentMessagesCompactionStrategy(max_messages=2),
+            ),
+            trigger_token_threshold=4,
+        ),
+    )
+)
+class ChainedCompactingProbeAgent:
+    """Agent that chains tool-result trimming ahead of a sliding window."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+
+async def test_agent_runner_expect_compaction_chain_applies_in_declared_order() -> None:
+    """compaction 체인은 선언 순서대로 적용된다(트리밍 후 슬라이딩 윈도우)."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    await _collect(
+        _invoke_execute(
+            ChainedCompactingProbeAgent(model),
+            RunAgentInput(
+                state_id="run-1",
+                instruction="latest",
+                message_history=(
+                    ModelMessage(ModelMessageRole.USER, "u" * 40),
+                    ModelMessage(ModelMessageRole.TOOL, "0123456789"),
+                    ModelMessage(ModelMessageRole.ASSISTANT, "a" * 40),
+                ),
+            ),
+        )
+    )
+
+    assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.TOOL, "0123"),
+        (ModelMessageRole.ASSISTANT, "a" * 40),
+        (ModelMessageRole.USER, "latest"),
+    ]
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="event_compacting_probe",
+        compaction=AgentCompactionPolicy(
+            strategies=(KeepRecentMessagesCompactionStrategy(max_messages=1),),
+            trigger_token_threshold=4,
+        ),
+    )
+)
+class EventCompactingProbeAgent:
+    """Compacting agent exercised through the neutral event stream."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+
+async def test_agent_runner_expect_event_stream_also_compacts_history() -> None:
+    """neutral event 스트림(run_events) 경로도 동일하게 이력을 압축한다."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    runner = AgentRunner.for_agent_instance(EventCompactingProbeAgent(model))
+
+    events: list[AgentEvent] = []
+    async for event in runner.run_events(
+        RunAgentInput(
+            state_id="run-1",
+            instruction="latest",
+            message_history=_long_history(),
+        )
+    ):
+        events.append(event)
+
+    assert any(isinstance(event, RunFinishedEvent) for event in events)
+    assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.USER, "z" * 40),
+        (ModelMessageRole.USER, "latest"),
+    ]
+
+
+async def test_agent_runner_expect_summarize_strategy_uses_injected_model() -> None:
+    """요약 전략은 주입된 모델로 오래된 턴을 요약해 모델 요청을 압축한다."""
+    summarizer = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    strategy = SummarizeOldTurnsCompactionStrategy(model=summarizer, keep_recent=1)
+
+    @Agent(
+        spec=AgentExecutionSpec(
+            name="summarizing_runner_probe",
+            compaction=AgentCompactionPolicy(
+                strategies=(strategy,),
+                trigger_token_threshold=4,
+            ),
+        )
+    )
+    class SummarizingRunnerProbeAgent:
+        def __init__(self, model: IAgentModel) -> None:
+            self._model = model
+
+    main_model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    await _collect(
+        _invoke_execute(
+            SummarizingRunnerProbeAgent(main_model),
+            RunAgentInput(
+                state_id="run-1",
+                instruction="latest",
+                message_history=_long_history(),
+            ),
+        )
+    )
+
+    seeded = _user_and_assistant_contents(main_model.requests[0])
+    assert seeded[0] == (ModelMessageRole.EVIDENCE, "recorded")
+    assert seeded[-2] == (ModelMessageRole.USER, "z" * 40)
+    assert seeded[-1] == (ModelMessageRole.USER, "latest")

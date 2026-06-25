@@ -8,6 +8,7 @@ from types import NoneType
 from typing import get_args, get_origin, get_type_hints
 from urllib.parse import urlsplit
 
+from spakky.agent.compaction import ICompactionStrategy
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.tooling import AgentToolCatalog, discover_agent_tools
 from spakky.core.pod.annotations.pod import Pod, PodType
@@ -90,25 +91,17 @@ class AgentTeammate:
                 )
 
 
-class CompactionStrategy(StrEnum):
-    """Ordered context-compaction tactic applied when the threshold trips."""
-
-    DROP_OLDEST_EVIDENCE = "drop_oldest_evidence"
-    SUMMARIZE_TRANSCRIPT = "summarize_transcript"
-    DEDUPLICATE_EVIDENCE = "deduplicate_evidence"
-    OFFLOAD_TO_EXTERNAL_STORE = "offload_to_external_store"
-
-
 @dataclass(frozen=True, slots=True)
 class AgentCompactionPolicy:
     """Declared compaction chain plus the token threshold that triggers it.
 
-    The strategies form an ordered chain applied in sequence once the
-    running token count crosses ``trigger_token_threshold``. The runtime
-    compaction handler (follow-up C7) consumes this declaration.
+    The strategies form an ordered chain of pluggable ``ICompactionStrategy``
+    ports applied in sequence once the running token estimate crosses
+    ``trigger_token_threshold``. The runner threads each strategy's output into
+    the next, so chain order is the compaction order (ADR-0013 §7).
     """
 
-    strategies: tuple[CompactionStrategy, ...]
+    strategies: tuple[ICompactionStrategy, ...]
     trigger_token_threshold: int
 
     def __post_init__(self) -> None:
@@ -116,10 +109,6 @@ class AgentCompactionPolicy:
         if not self.strategies:
             raise AgentDefinitionError(
                 "Agent compaction policy requires at least one strategy"
-            )
-        if len(set(self.strategies)) != len(self.strategies):
-            raise AgentDefinitionError(
-                "Agent compaction strategies cannot repeat in the chain"
             )
         if self.trigger_token_threshold <= 0:
             raise AgentDefinitionError(
