@@ -40,6 +40,12 @@ class VllmConfig(BaseSettings):
     stream_enabled: bool = True
     """Whether callers may request the streaming model surface."""
 
+    context_window_tokens: int | None = None
+    """Served model context window in tokens; None when the operator leaves it undeclared."""
+
+    supports_reasoning: bool = False
+    """Whether the served model emits reasoning output the adapter should surface."""
+
     chat_template_kwargs: dict[str, bool | int | float | str] = Field(
         default_factory=dict
     )
