@@ -190,6 +190,18 @@ uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 
 각 하위 프로젝트는 VS Code에서 독립적으로 열 수 있습니다. 각 하위 프로젝트의 `.vscode/settings.json`는 루트 가상환경을 가리키므로 Python IntelliSense가 정상 동작합니다.
 
+### PR 코드 리뷰 자동 승인
+
+메인테이너는 PR push 후 로컬 에이전트 세션에서 `/pr-review <PR_NUMBER>`를 실행해 열린 PR의 diff를 검토하고, 결과 verdict를 PR 코멘트와 head commit의 `ai-review` status로 발행합니다. 본인 PR은 GitHub 정책상 직접 approve할 수 없으므로, `ai-review=success`가 신뢰 게이트를 통과하면 GitHub Actions의 `github-actions[bot]`가 대신 formal Approve를 남깁니다.
+
+| Verdict | `ai-review` status | 봇 승인 |
+|---------|--------------------|---------|
+| `AUTO_APPROVE` | `success` | 같은 repo PR head, stale SHA 없음, status creator role `admin`/`maintain`일 때 승인 |
+| `CHANGES_REQUESTED` | `failure` | 승인 없음 |
+| `HUMAN_REVIEW` | `pending` | 승인 없음 |
+
+승인 트리거는 commit status뿐입니다. PR 코멘트의 verdict marker와 `auto-approvable` 라벨은 정보·복구용이며, `.github/workflows/ai-review.yml`은 승인 직전에 GitHub API로 head SHA, fork 여부, status creator 권한을 다시 확인합니다. `ai-review`는 develop branch protection의 required status check로 강제하지 않고, 기존 "승인 1개" 요건을 충족하는 자동 승인 신호로만 사용합니다.
+
 ### 테스트 실행
 
 ```bash
