@@ -3,9 +3,13 @@
 > `spakky-saga`는 분산 트랜잭션의 보상(compensation) 기반 롤백을 오케스트레이션합니다.
 > `SagaFlow`, `SagaStep`, `Transaction`, `Parallel`을 조합하여 비즈니스 프로세스를 선언적으로 모델링합니다.
 
+이 문서는 사가의 **개념**(언제·왜 쓰는가)과 **사용법**(어떻게 정의하고 호출하는가)을 나누어 설명합니다. events·outbox·saga가 함께 동작하는 전체 그림은 [이벤트 기반 아키텍처 통합 가이드](event-driven.md)를 참고하세요.
+
 ---
 
-## 동작 원리
+## 개념
+
+### 동작 원리
 
 1. `@Saga` 스테레오타입으로 사가 오케스트레이터 클래스를 DI 컨테이너에 등록
 2. `@saga_step` 데코레이터로 사가 step 메서드를 `SagaStep` 디스크립터로 감쌈
@@ -13,28 +17,34 @@
 4. `AbstractSaga.execute(data)` 또는 `run_saga_flow(flow, data)`가 흐름을 실행하고 `SagaResult`를 반환
 5. step 실패 시 `ErrorStrategy`(Compensate/Skip/Retry)에 따라 분기하고, 필요 시 commit된 step을 역순으로 보상
 
----
-
-## Saga의 아키텍처 위치
+### Saga의 아키텍처 위치
 
 `@Saga()`는 `@UseCase()`와 **동급**의 application layer 스테레오타입입니다. 두 스테레오타입 모두 `Pod`을 상속하므로 DI 컨테이너가 동일한 방식으로 관리하며, Controller가 둘 중 어느 것이든 직접 주입받아 호출할 수 있습니다.
 
 ```mermaid
-flowchart TD
-  Controller["Controller"] --> UseCase["UseCase<br/>단일 Aggregate, 로컬 @Transactional"]
-  Controller --> Saga["Saga<br/>복수 서비스/프로세스, 분산 트랜잭션 오케스트레이션"]
-  Saga --> InternalUseCase["UseCase 호출<br/>내부 서비스 위임"]
-  Saga --> Command["Command 발행<br/>외부 서비스"]
-  InternalUseCase --> Repository["Repository / AggregateRoot<br/>UseCase 내부에서만"]
+graph TD
+  Controller["Controller"]:::app
+  UseCase["UseCase<br/>단일 Aggregate, 로컬 @Transactional"]:::app
+  Saga["Saga<br/>복수 서비스/프로세스, 분산 트랜잭션 오케스트레이션"]:::app
+  InternalUseCase["UseCase 호출<br/>내부 서비스 위임"]:::app
+  Command["Command 발행<br/>외부 서비스"]:::external
+  Repository["Repository / AggregateRoot<br/>UseCase 내부에서만"]:::app
+
+  Controller --> UseCase
+  Controller --> Saga
+  Saga --> InternalUseCase
+  Saga --> Command
+  InternalUseCase --> Repository
+
+  classDef app fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+  classDef external fill:#ECEFF1,stroke:#546E7A,color:#263238
 ```
 
 Saga는 **흐름 제어기(flow orchestrator)** 역할만 담당합니다. Repository 접근·Aggregate 조작·트랜잭션 경계·비즈니스 규칙 판단은 **호출되는 UseCase**에서 수행합니다. 이 경계는 다음 절의 "역할 제한"으로 강제됩니다.
 
 > ADR-0007 §아키텍처 위치 참조.
 
----
-
-## UseCase vs Saga
+### UseCase vs Saga
 
 구현하려는 오퍼레이션이 아래 중 어느 쪽에 가까운지를 기준으로 선택합니다.
 
@@ -48,9 +58,7 @@ Saga는 **흐름 제어기(flow orchestrator)** 역할만 담당합니다. Repos
 
 단일 Aggregate 내부 변경이면 `@UseCase()` + `@Transactional`로 충분합니다. 복수 서비스를 가로지르며 보상이 필요한 순간에만 `@Saga()`로 승격합니다.
 
----
-
-## Saga의 역할 제한 (순수 흐름 제어기)
+### Saga의 역할 제한 (순수 흐름 제어기)
 
 Saga는 "흐름을 짠다"는 하나의 관심사만 책임집니다. 아래 범주를 넘어가면 Saga가 아니라 UseCase/Aggregate로 옮겨야 합니다.
 
@@ -67,7 +75,9 @@ Saga는 "흐름을 짠다"는 하나의 관심사만 책임집니다. 아래 범
 
 ---
 
-## 설정
+## 사용법
+
+### 설정
 
 `spakky-saga`는 `spakky`와 `spakky-domain`에 의존합니다.
 
@@ -93,9 +103,9 @@ app = (
 
 ---
 
-## 사가 정의
+### 사가 정의
 
-### AbstractSagaData
+#### AbstractSagaData
 
 사가 비즈니스 데이터 모델은 `AbstractSagaData`를 상속합니다. `@immutable` + `AbstractDomainModel` 기반이며, 각 step에는 읽기 전용으로 전달됩니다. `saga_id: UUID` 필드가 기본 제공됩니다.
 
@@ -117,7 +127,7 @@ class OrderSagaData(AbstractSagaData):
 
 Saga가 식별자(`order_id`, `reservation_id`, `payment_id`)를 **흐름 진행 중에 발급**하기 때문에 이들 필드는 `None` 기본값을 가진 optional로 선언합니다. 각 step은 `dataclasses.replace(data, ...)`로 새 인스턴스를 반환하여 이후 step에 전달합니다.
 
-### @Saga + AbstractSaga + @saga_step
+#### @Saga + AbstractSaga + @saga_step
 
 `@Saga()`는 DI 컨테이너에 사가 클래스를 등록하는 스테레오타입입니다. `AbstractSaga[SagaDataT]`를 상속하여 `flow()`를 구현하면 `execute(data)`가 정의된 흐름을 실행합니다.
 
@@ -212,14 +222,14 @@ class OrderSaga(AbstractSaga[OrderSagaData]):
         )
 ```
 
-### UseCase 주입 패턴
+#### UseCase 주입 패턴
 
 - `__init__`에서 필요한 UseCase를 **타입 기반 DI**로 주입받습니다. Saga도 `Pod`이므로 컨테이너가 자동으로 해결합니다.
 - 각 step은 주입받은 UseCase의 `execute()`를 **한 줄**로 호출합니다.
 - `@Transactional`은 UseCase 쪽에 붙입니다. Saga 자체는 트랜잭션 경계를 관리하지 않습니다.
 - Repository/Aggregate를 Saga에 직접 주입하지 않습니다. 직접 주입이 필요하다고 느껴지면 그 로직은 UseCase로 승격되어야 한다는 신호입니다.
 
-### @Transactional UseCase를 Saga step으로 묶기
+#### @Transactional UseCase를 Saga step으로 묶기
 
 실무에서 Saga step의 action/compensate는 대부분 `@UseCase()` 클래스의 `@Transactional()` 메서드입니다. 로컬 DB 트랜잭션은 각 UseCase 안에서 시작하고 끝나며, Saga 엔진은 이미 commit된 step 목록만 기억했다가 이후 step 실패 시 보상 UseCase를 역순으로 호출합니다.
 
@@ -264,7 +274,7 @@ Saga compensation은 DB rollback과 다릅니다.
 
 마지막 확정 step 전까지는 Semantic Lock 패턴을 적용해 `PENDING` 주문을 외부 확정 주문으로 취급하지 않습니다. 보상 UseCase는 "rollback SQL"이 아니라 `cancel()`, `release()`, `refund()` 같은 명시적 도메인 상태 전이를 수행해야 합니다.
 
-### step 시그니처 규약
+#### step 시그니처 규약
 
 | 역할 | 시그니처 | 반환값 |
 |------|---------|--------|
@@ -275,11 +285,11 @@ action이 새 `AbstractSagaData` 인스턴스를 반환하면 엔진이 이후 s
 
 ---
 
-## SagaFlow DSL과 실행 세부사항
+### SagaFlow DSL과 실행 세부사항
 
 기본 흐름은 `self.create_order >> self.cancel_order`처럼 action과 compensation을 묶는 방식으로 충분합니다. 병렬 실행, `Retry`/`Skip`, step timeout, `run_saga_flow`, `SagaResult.history`, 보상 실패 에스컬레이션처럼 운영에서 필요한 세부 주제는 [사가 심화](saga-advanced.md)에 정리했습니다.
 
-## Controller에서 Saga 호출
+### Controller에서 Saga 호출
 
 Controller는 Saga를 다른 Pod와 동일하게 DI로 주입받아 `execute()`를 호출하고, `SagaResult.status`로 응답을 분기합니다. 예외는 발생하지 않으므로 `try/except`가 아니라 **상태 분기**로 제어 흐름을 짭니다.
 
