@@ -16,6 +16,7 @@ from spakky.plugins.agui import (
     add_agui_http_stream_endpoint,
     add_agui_websocket_endpoint,
     agui_stdio_payloads,
+    approval_from_pause,
     ingest_decision,
     project_approval,
     project_pending_approval,
@@ -35,6 +36,7 @@ def test_public_api_exports_agui_surface() -> None:
     assert add_agui_http_stream_endpoint is agui_api.add_agui_http_stream_endpoint
     assert add_agui_websocket_endpoint is agui_api.add_agui_websocket_endpoint
     assert agui_stdio_payloads is agui_api.agui_stdio_payloads
+    assert approval_from_pause is agui_api.approval_from_pause
     assert ingest_decision is agui_api.ingest_decision
     assert project_approval is agui_api.project_approval
     assert project_pending_approval is agui_api.project_pending_approval

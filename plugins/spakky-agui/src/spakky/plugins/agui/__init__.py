@@ -11,6 +11,7 @@ from spakky.plugins.agui.error import (
     AgUiRunResolutionError,
 )
 from spakky.plugins.agui.hitl import (
+    approval_from_pause,
     ingest_decision,
     project_approval,
     project_pending_approval,
@@ -44,6 +45,7 @@ __all__ = [
     "add_agui_http_stream_endpoint",
     "add_agui_websocket_endpoint",
     "agui_stdio_payloads",
+    "approval_from_pause",
     "ingest_decision",
     "project_approval",
     "project_pending_approval",

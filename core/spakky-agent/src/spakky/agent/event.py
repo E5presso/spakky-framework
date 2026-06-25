@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.state import AgentStateReason
 from spakky.agent.types import JsonObject, JsonValue
 
 
@@ -40,6 +41,7 @@ class AgentEventKind(StrEnum):
     TOOL_CALL_END = "tool_call_end"
     TOOL_CALL_RESULT = "tool_call_result"
     RUN_STARTED = "run_started"
+    RUN_PAUSED = "run_paused"
     RUN_FINISHED = "run_finished"
     STEP_STARTED = "step_started"
     STEP_FINISHED = "step_finished"
@@ -173,6 +175,38 @@ class RunStartedEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class RunPausedEvent:
+    """A run has paused without terminal success or failure.
+
+    The event is intentionally protocol-neutral: it carries core lifecycle
+    reason plus the input prompt/decision envelope adapters need to project
+    their own input-required or auth-required protocol states.
+    """
+
+    attribution: AgentEventAttribution
+    reason: AgentStateReason
+    prompt: str
+    state_id: str
+    approval_id: str | None = None
+    tool_call_id: str | None = None
+    allowed_decisions: tuple[str, ...] = ()
+    metadata: JsonObject = field(default_factory=dict)
+
+    kind: AgentEventKind = field(default=AgentEventKind.RUN_PAUSED, init=False)
+
+    def __post_init__(self) -> None:
+        """Reject pause events that cannot be shown or resumed."""
+        if not self.prompt.strip():
+            raise AgentDefinitionError("Agent run pause prompt cannot be blank")
+        if not self.state_id.strip():
+            raise AgentDefinitionError("Agent run pause state id cannot be blank")
+        if self.approval_id is not None and not self.approval_id.strip():
+            raise AgentDefinitionError("Agent run pause approval id cannot be blank")
+        if self.tool_call_id is not None and not self.tool_call_id.strip():
+            raise AgentDefinitionError("Agent run pause tool call id cannot be blank")
+
+
+@dataclass(frozen=True, slots=True)
 class RunFinishedEvent:
     """A run has finished executing.
 
@@ -256,6 +290,7 @@ type AgentEvent = (
     | ToolCallEndEvent
     | ToolCallResultEvent
     | RunStartedEvent
+    | RunPausedEvent
     | RunFinishedEvent
     | StepStartedEvent
     | StepFinishedEvent

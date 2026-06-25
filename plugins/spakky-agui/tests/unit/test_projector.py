@@ -30,6 +30,7 @@ from spakky.agent.event import (
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent as NeutralRunFinishedEvent,
+    RunPausedEvent as NeutralRunPausedEvent,
     RunStartedEvent as NeutralRunStartedEvent,
     StateDeltaEvent as NeutralStateDeltaEvent,
     StateSnapshotEvent as NeutralStateSnapshotEvent,
@@ -40,6 +41,7 @@ from spakky.agent.event import (
     ToolCallResultEvent as NeutralToolCallResultEvent,
     ToolCallStartEvent as NeutralToolCallStartEvent,
 )
+from spakky.agent.state import AgentStateReason
 
 from spakky.plugins.agui.config import AgUiConfig
 from spakky.plugins.agui.projector import AgUiProjector
@@ -395,6 +397,33 @@ def test_run_finished_closes_open_message_before_terminal() -> None:
 
     assert isinstance(events[0], TextMessageEndEvent)
     assert isinstance(events[-1], RunFinishedEvent)
+
+
+def test_run_paused_projects_hitl_approval_without_run_finished() -> None:
+    """RUN_PAUSED approval은 deferred hitl_approval tool frame으로 투영된다."""
+    projector = _projector()
+
+    events = projector.project(
+        NeutralRunPausedEvent(
+            attribution=_attribution(),
+            reason=AgentStateReason.APPROVAL_REQUIRED,
+            prompt="Approve write?",
+            state_id="run-1",
+            approval_id="approval-1",
+            tool_call_id="call-1",
+            allowed_decisions=("approve", "reject"),
+            metadata={"tool_name": "write"},
+        )
+    )
+
+    assert isinstance(events[0], ToolCallStartEvent)
+    assert events[0].tool_call_id == "approval-1"
+    assert events[0].tool_call_name == "hitl_approval"
+    assert isinstance(events[1], ToolCallArgsEvent)
+    assert '"prompt":"Approve write?"' in events[1].delta
+    assert '"allowed_decisions":["approve","reject"]' in events[1].delta
+    assert isinstance(events[2], ToolCallEndEvent)
+    assert not any(isinstance(event, RunFinishedEvent) for event in events)
 
 
 def test_run_finished_with_error_emits_run_error() -> None:

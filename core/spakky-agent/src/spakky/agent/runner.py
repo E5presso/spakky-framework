@@ -51,6 +51,7 @@ from spakky.agent.event import (
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
+    RunPausedEvent,
     RunStartedEvent,
     StepFinishedEvent,
     StepStartedEvent,
@@ -105,7 +106,7 @@ from spakky.agent.tooling import (
     AgentToolRuntimeContext,
     Idempotency,
 )
-from spakky.agent.types import JsonValue
+from spakky.agent.types import JsonObject, JsonValue
 from spakky.agent.yield_ import (
     AgentYield,
     AgentYieldKind,
@@ -237,8 +238,19 @@ class AgentRunner:
         cursor = _MessageCursor(state_id=run_input.state_id)
         history = await self._resolved_history(run_input)
         yield RunStartedEvent(attribution)
+        if state is not None:
+            cancel = await self._consume_cancel(state)
+            if cancel is not None:
+                yield RunFinishedEvent(attribution, error=_cancel_error(cancel))
+                return
         yield StepStartedEvent(attribution, step_name="model-call")
         async for event in self.model.stream(self._model_request(run_input, history)):
+            if state is not None:
+                cancel = await self._consume_cancel(state)
+                if cancel is not None:
+                    yield StepFinishedEvent(attribution, step_name="model-call")
+                    yield RunFinishedEvent(attribution, error=_cancel_error(cancel))
+                    return
             async for item in self._consume_stream_event_as_events(
                 event, state, attribution, cursor
             ):
@@ -250,6 +262,20 @@ class AgentRunner:
                     error={"code": event.error.code, "message": event.error.message},
                 )
                 return
+            if (
+                state is not None
+                and event.kind is ModelStreamEventKind.TOOL_CALL_CANDIDATE
+                and event.tool_call is not None
+                and self._states_required().get(state.id).status
+                is not AgentStatus.ACTIVE
+            ):
+                current = self._states_required().get(state.id)
+                yield StepFinishedEvent(attribution, step_name="model-call")
+                if current.status is AgentStatus.INTERRUPTED:
+                    yield _run_paused_event(current, attribution)
+                    return
+                yield RunFinishedEvent(attribution, error=_state_error(current))
+                return
         yield StepFinishedEvent(attribution, step_name="model-call")
         # A tool that paused for approval already saved a WAIT_FOR_APPROVAL state
         # (INTERRUPTED, not ACTIVE); completing it would clobber the durable pause
@@ -260,6 +286,13 @@ class AgentRunner:
             and self._states_required().get(state.id).status is AgentStatus.ACTIVE
         ):
             self._complete_state(state.id)
+        elif state is not None:
+            current = self._states_required().get(state.id)
+            if current.status is AgentStatus.INTERRUPTED:
+                yield _run_paused_event(current, attribution)
+                return
+            yield RunFinishedEvent(attribution, error=_state_error(current))
+            return
         yield RunFinishedEvent(attribution)
 
     async def _consume_stream_event_as_events(
@@ -339,7 +372,7 @@ class AgentRunner:
         """
         descriptor = self.agent.tool_catalog.by_schema_name(call.name)
         if state is not None:
-            _, cleared = self._resolve_approval(state, descriptor, call)
+            _, _, cleared = self._resolve_approval(state, descriptor, call)
             if not cleared:
                 return
             self._append_boundary(state.id, _before_tool(descriptor, call))
@@ -512,7 +545,7 @@ class AgentRunner:
     ) -> AsyncGenerator[AgentYield[object], None]:
         descriptor = self.agent.tool_catalog.by_schema_name(call.name)
         if state is not None:
-            approval_item, cleared = self._resolve_approval(state, descriptor, call)
+            approval_item, _, cleared = self._resolve_approval(state, descriptor, call)
             if approval_item is not None:
                 yield approval_item
             if not cleared:
@@ -539,13 +572,14 @@ class AgentRunner:
         state: AgentState,
         descriptor: AgentToolDescriptor,
         call: ModelToolCall,
-    ) -> tuple[AgentYield[object] | None, bool]:
+    ) -> tuple[AgentYield[object] | None, AgentApprovalRequest | None, bool]:
         """Drive the HITL pause -> approval-request -> resume flow for one call.
 
-        Returns ``(approval_item, cleared)``: the approval request to surface (or
-        ``None`` when no approval is needed) paired with whether the tool may now
-        proceed. ``cleared`` is decided by the durable approval decision polled
-        from the signal queue, the non-blocking resume the ADR-0013 §5 flow uses.
+        Returns ``(approval_item, request, cleared)``: the approval request to
+        surface (or ``None`` when no approval is needed), its durable request
+        envelope, and whether the tool may now proceed. ``cleared`` is decided by
+        the durable approval decision polled from the signal queue, the
+        non-blocking resume the ADR-0013 §5 flow uses.
         """
         plan = plan_agent_tool_approval(
             descriptor=descriptor,
@@ -555,7 +589,7 @@ class AgentRunner:
             call_id=call.call_id,
         )
         if not (plan.requires_approval and plan.yield_item is not None):
-            return None, True
+            return None, None, True
         self._append_boundary(state.id, _before_approval(call, descriptor))
         # plan_agent_tool_approval pairs state with yield_item for WAIT_FOR_APPROVAL.
         if plan.state is not None:  # pragma: no branch - state paired with yield_item
@@ -567,7 +601,7 @@ class AgentRunner:
         cleared = self._consume_approval(state.id, plan.request)
         if cleared:
             self._append_boundary(state.id, _after_approval(call, descriptor))
-        return approval_item, cleared
+        return approval_item, plan.request, cleared
 
     async def _dispatch(
         self,
@@ -1121,6 +1155,58 @@ def _evidence_yield(evidence: AgentEvidence) -> AgentYield[object]:
     return AgentYield(kind=AgentYieldKind.EVIDENCE, payload=Evidence(evidence=evidence))
 
 
+def _run_paused_event(
+    state: AgentState,
+    attribution: AgentEventAttribution,
+) -> RunPausedEvent:
+    approval = state.metadata.get("approval")
+    approval_id: str | None = None
+    tool_call_id: str | None = None
+    allowed_decisions: tuple[str, ...] = ()
+    event_metadata = dict(state.metadata)
+    if isinstance(approval, Mapping):
+        event_metadata = dict(approval)
+        approval_id = _optional_mapping_text(approval, "id")
+        tool_call_id = _optional_mapping_text(approval, "call_id")
+        nested = approval.get("metadata")
+        if tool_call_id is None and isinstance(nested, Mapping):
+            tool_call_id = _optional_mapping_text(nested, "call_id")
+        allowed_decisions = _string_tuple(approval.get("allowed_decisions"))
+    return RunPausedEvent(
+        attribution=attribution,
+        reason=state.reason or AgentStateReason.USER_INTERRUPTED,
+        prompt=state.current_activity or "Run paused.",
+        state_id=state.id,
+        approval_id=approval_id,
+        tool_call_id=tool_call_id,
+        allowed_decisions=allowed_decisions,
+        metadata=event_metadata,
+    )
+
+
+def _cancel_error(item: AgentYield[object]) -> JsonObject:
+    payload = item.payload
+    if isinstance(payload, Cancel):
+        metadata: dict[str, JsonValue] = dict(payload.metadata)
+        if payload.requested_by is not None:
+            metadata["requested_by"] = payload.requested_by
+        return {
+            "code": "cancelled",
+            "message": payload.reason or "run cancelled",
+            "metadata": metadata,
+        }
+    return {"code": "cancelled", "message": "run cancelled"}
+
+
+def _state_error(state: AgentState) -> JsonObject:
+    reason = state.reason.value if state.reason is not None else state.status.value
+    return {
+        "code": reason,
+        "message": state.current_activity or reason,
+        "metadata": {"state": state.status.value},
+    }
+
+
 def _before_model(action_id: str) -> AgentActionBoundaryCheckpoint:
     return AgentActionBoundaryCheckpoint.before_model_call(
         action_id,
@@ -1208,6 +1294,19 @@ def _optional_signal_text(signal: AgentSignal, name: str) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
     return None
+
+
+def _optional_mapping_text(mapping: Mapping[str, JsonValue], name: str) -> str | None:
+    value = mapping.get(name)
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _string_tuple(value: JsonValue) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
 
 
 def _call_id(call: ModelToolCall) -> str:

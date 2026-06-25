@@ -20,6 +20,7 @@ from spakky.agent.event import (
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
+    RunPausedEvent,
     RunStartedEvent,
     StateDeltaEvent,
     StateSnapshotEvent,
@@ -30,6 +31,7 @@ from spakky.agent.event import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
+from spakky.agent.state import AgentStateReason
 from spakky.agent.types import JsonValue
 
 
@@ -71,6 +73,15 @@ def _every_event(attribution: AgentEventAttribution) -> tuple[AgentEvent, ...]:
             result={"hits": 3},
         ),
         RunStartedEvent(attribution),
+        RunPausedEvent(
+            attribution,
+            reason=AgentStateReason.APPROVAL_REQUIRED,
+            prompt="Approve write?",
+            state_id="run-1",
+            approval_id="approval-1",
+            tool_call_id="call-1",
+            allowed_decisions=("approve", "reject"),
+        ),
         RunFinishedEvent(attribution),
         StepStartedEvent(attribution, step_name="model-call"),
         StepFinishedEvent(attribution, step_name="model-call"),
@@ -153,6 +164,33 @@ def test_event_kind_expect_is_read_only_discriminant() -> None:
         event.kind = AgentEventKind.ARTIFACT  # type: ignore[misc] - frozen dataclass
 
 
+@pytest.mark.parametrize(
+    ("prompt", "state_id", "approval_id", "tool_call_id"),
+    [
+        (" ", "run-1", "approval-1", "call-1"),
+        ("pause", "", "approval-1", "call-1"),
+        ("pause", "run-1", " ", "call-1"),
+        ("pause", "run-1", "approval-1", " "),
+    ],
+)
+def test_run_paused_event_expect_rejects_blank_resume_envelope(
+    prompt: str,
+    state_id: str,
+    approval_id: str | None,
+    tool_call_id: str | None,
+) -> None:
+    """RUN_PAUSED event는 표시·재개 식별자를 공백으로 둘 수 없다."""
+    with pytest.raises(AgentDefinitionError):
+        RunPausedEvent(
+            _root_attribution(),
+            reason=AgentStateReason.APPROVAL_REQUIRED,
+            prompt=prompt,
+            state_id=state_id,
+            approval_id=approval_id,
+            tool_call_id=tool_call_id,
+        )
+
+
 # --- AG-UI lossless mapping (group D adapter projection) ---
 
 
@@ -213,6 +251,14 @@ def _to_ag_ui(event: AgentEvent) -> Mapping[str, JsonValue]:
             }
         case RunStartedEvent():
             return {**base, "type": "RUN_STARTED"}
+        case RunPausedEvent(reason=reason, prompt=prompt, approval_id=approval_id):
+            return {
+                **base,
+                "type": "RUN_PAUSED",
+                "reason": reason.value,
+                "prompt": prompt,
+                "approvalId": approval_id,
+            }
         case RunFinishedEvent(error=error):
             return {**base, "type": "RUN_ERROR" if error else "RUN_FINISHED"}
         case StepStartedEvent(step_name=step_name):

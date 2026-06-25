@@ -23,8 +23,6 @@ from spakky.agent.execution import (
 )
 from spakky.agent.interfaces.model import IAgentModel
 from spakky.agent.signal import ApprovalDecision
-from spakky.agent.state import AgentState, AgentStateReason, AgentStatus
-from spakky.agent.types import JsonObject
 
 from spakky.plugins.a2a.error import InvalidApprovalDecisionError
 from spakky.plugins.a2a.executor.adapter import (
@@ -219,16 +217,6 @@ async def test_ensure_task_reuses_current_task_on_resume(
     assert queue.events == []
 
 
-def _interrupted_state(metadata: JsonObject) -> AgentState:
-    return AgentState(
-        id="t1",
-        agent_type="durable",
-        status=AgentStatus.COMPLETED,
-        reason=AgentStateReason.APPROVAL_REQUIRED,
-        metadata=metadata,
-    )
-
-
 async def test_reconcile_terminal_completes_a_clean_run(
     queue: RecordingEventQueue,
 ) -> None:
@@ -271,63 +259,15 @@ async def test_reconcile_terminal_failure_uses_fallback_message(
     assert MessageToDict(status.status.message.parts[0]) == {"text": "run failed"}
 
 
-async def test_reconcile_terminal_pauses_for_approval(
+async def test_reconcile_terminal_leaves_projected_pause_untouched(
     queue: RecordingEventQueue,
 ) -> None:
-    """A durable APPROVAL_REQUIRED state pauses the task for input."""
-    signals = FakeSignalRepository()
-    states = FakeStateRepository()
-    states.save(
-        _interrupted_state(
-            {"approval": {"id": "approval:t1:write", "allowed_decisions": ["approve"]}}
-        )
-    )
-    agent = _DurableAgent(StubModel(), signals, states, FakeEvidenceRepository())
-    executor = SpakkyAgentExecutor(agent, AgentEventProjector())
+    """A RUN_PAUSED outcome has already applied its non-terminal task state."""
+    executor, _ = _durable_executor()
     updater = TaskUpdater(queue, task_id="t1", context_id="c1")
 
-    await executor._reconcile_terminal("t1", RunOutcome(error=None), updater)
-
-    status = queue.status_updates()[0]
-    assert status.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
-    parts = [MessageToDict(part) for part in status.status.message.parts]
-    assert parts[1]["data"]["approval_id"] == "approval:t1:write"
-
-
-async def test_reconcile_terminal_approval_uses_prompt_fallback(
-    queue: RecordingEventQueue,
-) -> None:
-    """A pending approval without a prompt falls back to a generic pause message."""
-    states = FakeStateRepository()
-    states.save(_interrupted_state({"approval": {"id": "approval:t1:write"}}))
-    agent = _DurableAgent(
-        StubModel(), FakeSignalRepository(), states, FakeEvidenceRepository()
+    await executor._reconcile_terminal(
+        "t1", RunOutcome(error=None, paused=True), updater
     )
-    executor = SpakkyAgentExecutor(agent, AgentEventProjector())
-    updater = TaskUpdater(queue, task_id="t1", context_id="c1")
 
-    await executor._reconcile_terminal("t1", RunOutcome(error=None), updater)
-
-    status = queue.status_updates()[0]
-    assert MessageToDict(status.status.message.parts[0]) == {
-        "text": "Approval required to continue."
-    }
-
-
-def test_pending_approval_absent_without_state_repository() -> None:
-    """A stateless agent never reports a pending approval pause."""
-    executor = SpakkyAgentExecutor(_StatelessAgent(StubModel()), AgentEventProjector())
-
-    assert executor._pending_approval("t1") is None
-
-
-def test_pending_approval_absent_when_metadata_is_malformed() -> None:
-    """An APPROVAL_REQUIRED state with non-mapping approval metadata reports None."""
-    states = FakeStateRepository()
-    states.save(_interrupted_state({"approval": "not-a-mapping"}))
-    agent = _DurableAgent(
-        StubModel(), FakeSignalRepository(), states, FakeEvidenceRepository()
-    )
-    executor = SpakkyAgentExecutor(agent, AgentEventProjector())
-
-    assert executor._pending_approval("t1") is None
+    assert queue.status_updates() == []
