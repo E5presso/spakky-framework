@@ -17,4 +17,6 @@
 
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
+| [FastAPI 심화](../guides/fastapi-advanced.md) | 라우트 등록 내부 동작·커스텀 인스턴스·미들웨어·WebSocket·트레이싱·Agent stream |
+| [CLI (Typer) 심화](../guides/typer-advanced.md) | 명령 등록 내부 동작·비동기 명령·컨텍스트 정리·인증 경계·Agent stream |
 | [gRPC 심화](../guides/grpc-advanced.md) | 무설정 변환·스트리밍·인터셉터 |

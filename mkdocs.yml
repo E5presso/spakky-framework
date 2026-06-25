@@ -133,6 +133,8 @@ nav:
           - gRPC 통합: guides/grpc.md
           - 데이터베이스 (SQLAlchemy): guides/sqlalchemy.md
       - 심화:
+          - FastAPI 심화: guides/fastapi-advanced.md
+          - CLI (Typer) 심화: guides/typer-advanced.md
           - gRPC 심화: guides/grpc-advanced.md
   - 메시징과 워크플로우:
       - 개요: sections/messaging.md
