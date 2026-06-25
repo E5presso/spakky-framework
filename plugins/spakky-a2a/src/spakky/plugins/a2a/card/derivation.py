@@ -30,13 +30,20 @@ TEAMMATE_DELEGATION_TAG = "delegation"
 class AgentCardFactory:
     """Builds an a2a-sdk ``AgentCard`` from an @Agent Pod declaration."""
 
-    def build(self, agent: Agent, base_url: str, version: str) -> AgentCard:
+    def build(
+        self,
+        agent: Agent,
+        base_url: str,
+        version: str,
+        protocol: TransportProtocol = TransportProtocol.JSONRPC,
+    ) -> AgentCard:
         """Derive an AgentCard from an @Agent spec, tools, and teammates.
 
         Args:
             agent: The @Agent Pod metadata carrying spec and tool catalog.
             base_url: Transport endpoint advertised on the card interface.
             version: Semantic version advertised on the card.
+            protocol: A2A transport protocol advertised for ``base_url``.
 
         Returns:
             A protobuf ``AgentCard`` ready to publish on the well-known route.
@@ -63,7 +70,7 @@ class AgentCardFactory:
             supported_interfaces=[
                 AgentInterface(
                     url=base_url,
-                    protocol_binding=TransportProtocol.JSONRPC.value,
+                    protocol_binding=protocol.value,
                 )
             ],
             capabilities=AgentCapabilities(

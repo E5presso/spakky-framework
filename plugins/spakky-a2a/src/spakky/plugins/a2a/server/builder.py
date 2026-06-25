@@ -8,7 +8,6 @@ mounted on a Starlette app the host application can further mount.
 
 from typing import override
 
-from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.utils import DEFAULT_RPC_URL
 from spakky.agent.execution import Agent
@@ -18,14 +17,9 @@ from spakky.core.pod.interfaces.container import IContainer
 from starlette.applications import Starlette
 
 from spakky.plugins.a2a.card.derivation import AgentCardFactory
-from spakky.plugins.a2a.executor.adapter import SpakkyAgentExecutor
-from spakky.plugins.a2a.executor.event_mapping import AgentEventProjector
+from spakky.plugins.a2a.server.request_handler import build_a2a_request_handler
 from spakky.plugins.a2a.server.registry import A2AAgentRegistry
 from spakky.plugins.a2a.store.interfaces import IA2ATaskRepository
-from spakky.plugins.a2a.store.task_store import (
-    InMemoryA2ATaskRepository,
-    SpakkyA2ATaskStore,
-)
 
 
 def build_a2a_app(
@@ -51,12 +45,12 @@ def build_a2a_app(
         base_url,
         version,
     )
-    store = SpakkyA2ATaskStore(repository or InMemoryA2ATaskRepository())
-    executor = SpakkyAgentExecutor(agent_instance, AgentEventProjector())
-    handler = DefaultRequestHandler(
-        agent_executor=executor,
-        task_store=store,
-        agent_card=card,
+    handler = build_a2a_request_handler(
+        agent_instance,
+        base_url=base_url,
+        version=version,
+        repository=repository,
+        card=card,
     )
     routes = [
         *create_agent_card_routes(card),
