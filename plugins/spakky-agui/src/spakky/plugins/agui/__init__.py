@@ -15,6 +15,7 @@ from spakky.plugins.agui.hitl import (
     project_approval,
     project_pending_approval,
 )
+from spakky.plugins.agui.http_stream import add_agui_http_stream_endpoint
 from spakky.plugins.agui.projector import AgUiProjector
 from spakky.plugins.agui.transport import AgUiRunDriver
 from spakky.plugins.agui.websocket import add_agui_websocket_endpoint
@@ -33,6 +34,7 @@ __all__ = [
     "PLUGIN_NAME",
     "RunDriverFactory",
     "add_agui_endpoint",
+    "add_agui_http_stream_endpoint",
     "add_agui_websocket_endpoint",
     "ingest_decision",
     "project_approval",
