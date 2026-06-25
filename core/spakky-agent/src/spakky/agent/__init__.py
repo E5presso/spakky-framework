@@ -112,6 +112,7 @@ from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
     IAgentStateRepository,
 )
+from spakky.agent.interfaces.task_store import ConversationTurn, ITaskStore
 from spakky.agent.interfaces.model import (
     IAgentModel,
     JsonSchemaConstraint,
@@ -216,6 +217,8 @@ __all__ = [
     "IAgentSignalRepository",
     "IAgentStateRepository",
     "IAgentContextHandler",
+    "ITaskStore",
+    "ConversationTurn",
     "AbstractSpakkyAgentError",
     "Agent",
     "AgentApprovalBoundaryKind",

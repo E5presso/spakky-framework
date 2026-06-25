@@ -1,6 +1,6 @@
 """Tests for the framework-owned AgentRunner execution loop."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from typing import override
 
@@ -19,14 +19,18 @@ from spakky.agent import (
     AgentYieldKind,
     Approval,
     Cancel,
+    ConversationTurn,
     Error,
     EvidenceCapture,
     Final,
     IAgentModel,
     Idempotency,
+    ITaskStore,
     JsonValue,
     ModelCapability,
     ModelError,
+    ModelMessage,
+    ModelMessageRole,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -885,3 +889,246 @@ class _CancelInjectingModel(IAgentModel):
         )
         yield ModelStreamEvent(kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="t")
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+
+class FakeTaskStore(ITaskStore):
+    """In-memory conversation-history store keyed by conversation id."""
+
+    def __init__(self) -> None:
+        self._histories: dict[str, list[ConversationTurn]] = {}
+
+    @override
+    def load_history(self, conversation_id: str) -> tuple[ConversationTurn, ...]:
+        return tuple(self._histories.get(conversation_id, ()))
+
+    @override
+    def append_turns(
+        self,
+        conversation_id: str,
+        turns: Sequence[ConversationTurn],
+    ) -> None:
+        self._histories.setdefault(conversation_id, []).extend(turns)
+
+
+@Agent(spec=AgentExecutionSpec(name="session_probe"))
+class SessionProbeAgent:
+    """Stateless agent with a session store to exercise multi-turn history."""
+
+    def __init__(self, model: IAgentModel, task_store: ITaskStore) -> None:
+        self._model = model
+        self._task_store = task_store
+
+
+def _user_and_assistant_contents(
+    request: ModelRequest,
+) -> list[tuple[ModelMessageRole, str]]:
+    """Return the non-system messages the runner sent, in order."""
+    return [
+        (message.role, message.content)
+        for message in request.messages
+        if message.role is not ModelMessageRole.SYSTEM
+    ]
+
+
+async def test_agent_runner_expect_persisted_session_keeps_multi_turn_history() -> None:
+    """같은 conversation의 다음 턴은 영속된 이전 user·assistant 이력을 모델에 싣는다."""
+    store = FakeTaskStore()
+
+    first_model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.MESSAGE_DELTA,
+                message_delta="a physicist",
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    await _collect(
+        _invoke_execute(
+            SessionProbeAgent(first_model, store),
+            RunAgentInput(
+                state_id="turn-1",
+                instruction="who was Einstein?",
+                conversation_id="thread-7",
+            ),
+        )
+    )
+
+    second_model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    await _collect(
+        _invoke_execute(
+            SessionProbeAgent(second_model, store),
+            RunAgentInput(
+                state_id="turn-2",
+                instruction="his famous equation?",
+                conversation_id="thread-7",
+            ),
+        )
+    )
+
+    assert _user_and_assistant_contents(second_model.requests[0]) == [
+        (ModelMessageRole.USER, "who was Einstein?"),
+        (ModelMessageRole.ASSISTANT, "a physicist"),
+        (ModelMessageRole.USER, "his famous equation?"),
+    ]
+    assert store.load_history("thread-7") == (
+        ConversationTurn(ModelMessageRole.USER, "who was Einstein?"),
+        ConversationTurn(ModelMessageRole.ASSISTANT, "a physicist"),
+        ConversationTurn(ModelMessageRole.USER, "his famous equation?"),
+    )
+
+
+async def test_agent_runner_expect_silent_run_persists_only_user_turn() -> None:
+    """assistant 텍스트가 없는 턴은 user turn만 영속해 다음 턴이 질문을 본다."""
+    store = FakeTaskStore()
+
+    await _collect(
+        _invoke_execute(
+            SessionProbeAgent(
+                RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),)),
+                store,
+            ),
+            RunAgentInput(
+                state_id="turn-1",
+                instruction="ping",
+                conversation_id="thread-9",
+            ),
+        )
+    )
+
+    assert store.load_history("thread-9") == (
+        ConversationTurn(ModelMessageRole.USER, "ping"),
+    )
+
+
+async def test_agent_runner_expect_client_injected_history_seeds_request() -> None:
+    """클라이언트가 주입한 이력은 store 없이도 모델 요청을 시드한다."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(
+                state_id="run-1",
+                instruction="his famous equation?",
+                message_history=(
+                    ModelMessage(ModelMessageRole.USER, "who was Einstein?"),
+                    ModelMessage(ModelMessageRole.ASSISTANT, "a physicist"),
+                ),
+            ),
+        )
+    )
+
+    assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.USER, "who was Einstein?"),
+        (ModelMessageRole.ASSISTANT, "a physicist"),
+        (ModelMessageRole.USER, "his famous equation?"),
+    ]
+
+
+async def test_agent_runner_expect_client_history_takes_precedence_over_store() -> None:
+    """클라이언트 주입 이력이 있으면 영속 store는 조회·기록 모두 건너뛴다."""
+    store = FakeTaskStore()
+    store.append_turns(
+        "thread-7",
+        (ConversationTurn(ModelMessageRole.USER, "stored prior turn"),),
+    )
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    await _collect(
+        _invoke_execute(
+            SessionProbeAgent(model, store),
+            RunAgentInput(
+                state_id="turn-2",
+                instruction="latest",
+                conversation_id="thread-7",
+                message_history=(
+                    ModelMessage(ModelMessageRole.USER, "client prior turn"),
+                ),
+            ),
+        )
+    )
+
+    assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.USER, "client prior turn"),
+        (ModelMessageRole.USER, "latest"),
+    ]
+    # The client owns the stateless transcript; the server session stays untouched.
+    assert store.load_history("thread-7") == (
+        ConversationTurn(ModelMessageRole.USER, "stored prior turn"),
+    )
+
+
+async def test_agent_runner_expect_no_store_run_persists_nothing() -> None:
+    """store가 주입되지 않은 stateless 실행은 어떤 turn도 영속하지 않는다."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    items = await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(state_id="run-1", instruction="x"),
+        )
+    )
+
+    assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.USER, "x"),
+    ]
+    assert items[-1].kind is AgentYieldKind.FINAL
+
+
+async def test_agent_runner_expect_durable_session_persists_history() -> None:
+    """durable agent도 task store가 주입되면 멀티턴 이력을 영속한다."""
+    store = FakeTaskStore()
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+
+    agent = DurableSessionAgent(
+        RecordingModel(
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="hi there",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            )
+        ),
+        states,
+        signals,
+        evidence,
+        store,
+    )
+    await _collect(
+        _invoke_execute(
+            agent,
+            RunAgentInput(
+                state_id="run-1",
+                instruction="hello",
+                conversation_id="thread-d",
+            ),
+        )
+    )
+
+    assert store.load_history("thread-d") == (
+        ConversationTurn(ModelMessageRole.USER, "hello"),
+        ConversationTurn(ModelMessageRole.ASSISTANT, "hi there"),
+    )
+
+
+@Agent(spec=DURABLE_SPEC, name="durable_session")
+class DurableSessionAgent:
+    """Durable agent carrying a session store alongside its repositories."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+        task_store: ITaskStore,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+        self._task_store = task_store

@@ -35,12 +35,15 @@ from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
     IAgentStateRepository,
 )
+from spakky.agent.interfaces.task_store import ConversationTurn, ITaskStore
 
 __all__ = [
+    "ConversationTurn",
     "IAgentEvidenceRepository",
     "IAgentModel",
     "IAgentSignalRepository",
     "IAgentStateRepository",
+    "ITaskStore",
     "JsonSchemaConstraint",
     "ContextDigest",
     "ContextFreshness",
