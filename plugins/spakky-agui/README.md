@@ -2,14 +2,15 @@
 
 > `spakky-agui`는 `spakky-agent`를 위한 공식 AG-UI (Agent User Interaction) protocol adapter plugin입니다.
 > 선언형 `@Agent` 실행 스트림을 AG-UI 이벤트로 투영(project)하여 SSE (Server-Sent Events),
-> HTTP streaming, WebSocket으로 노출하고, deferred-tool 방식의 HITL (Human-in-the-loop) 승인 흐름을 지원합니다.
+> HTTP streaming, WebSocket, CLI stdio로 노출하고, deferred-tool 방식의 HITL (Human-in-the-loop) 승인 흐름을 지원합니다.
 
 ## 언제 필요한가
 
 애플리케이션이 선언형 `@Agent` workflow를 실행하고, 그 실행 이벤트(토큰, 도구 호출,
 승인 요청, 종료)를 AG-UI 호환 프런트엔드에 실시간 스트리밍하려 할 때 사용합니다.
 렌더링(프런트엔드 UI)은 본 plugin의 범위 밖입니다 — 본 plugin은 와이어 프로토콜(SSE
-프레임, HTTP JSON-line chunk, 또는 WebSocket text message)만 책임집니다.
+프레임, HTTP JSON-line chunk, WebSocket text message, 또는 stdout JSON-line payload)만
+책임집니다.
 
 ## 설치
 
@@ -18,8 +19,8 @@ pip install spakky-agui
 ```
 
 durable Agent 실행(state·signal·evidence repository)과 모델 어댑터(`IAgentModel`)는
-별도 provider가 제공합니다. `spakky-agui`는 inbound SSE/HTTP streaming/WebSocket 어댑터만
-제공합니다.
+별도 provider가 제공합니다. `spakky-agui`는 inbound SSE/HTTP streaming/WebSocket/stdio
+프로토콜 어댑터만 제공합니다.
 
 ## 설정
 
@@ -41,6 +42,7 @@ AgentRunner.run_events() → 중립 AgentEvent  (런너가 native로 방출)
 AG-UI BaseEvent  ──(EventEncoder)──▶  "data: {...}\n\n" SSE 프레임
                                       또는 "{...}\n" HTTP streaming chunk
                                       또는 WebSocket text message
+                                      또는 stdout "{...}\n" stdio payload
 ```
 
 - **`AgentRunner.run_events()`**: 런너가 중립 `AgentEvent` taxonomy를 native로 방출하는
@@ -124,6 +126,25 @@ WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 AG-UI
 `RunAgentInput` JSON을 text/JSON message로 보내고, 실행 이벤트를 AG-UI encoded text
 message로 순서대로 받습니다. 같은 연결에서 후속 `RunAgentInput`을 보내 승인 결정
 (`forwardedProps.approvalDecision` 또는 deferred tool-result message)을 전달할 수 있습니다.
+
+CLI stdio 경계는 `RunAgentInput` JSON 문서를 stdin 또는 문자열 인자로 받고 stdout에 AG-UI
+event payload를 한 줄에 하나씩 출력합니다. Typer 같은 CLI plugin은 이 callable을 command로
+등록하면 됩니다.
+
+```python
+from sys import stdin, stdout
+
+from spakky.plugins.agui import AgUiStdioCommand
+
+agui_stdio = AgUiStdioCommand(
+    run_driver_factory=run_driver_factory,
+    input_stream=stdin,
+    output_stream=stdout,
+)
+
+# CLI command body에서:
+# await agui_stdio(run_input_json=None)  # stdin 사용
+```
 
 ### endpoint 와이어링이 plugin `initialize`에 없는 이유
 

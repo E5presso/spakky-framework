@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from spakky.plugins.agui.config import AgUiConfig
 from spakky.plugins.agui.endpoint import RunDriverFactory, _to_core_input
+from spakky.plugins.agui.serialization import sse_frame_payload
 from spakky.plugins.agui.transport import AgUiRunDriver
 
 HTTP_STREAM_MEDIA_TYPE = "application/x-ndjson"
@@ -47,14 +48,4 @@ def add_agui_http_stream_endpoint(
 
 async def _http_stream_chunks(driver: AgUiRunDriver) -> AsyncIterator[str]:
     async for frame in driver:
-        yield _sse_frame_payload(frame)
-
-
-def _sse_frame_payload(frame: str) -> str:
-    """Convert one AG-UI SSE frame into a raw JSON-line HTTP stream chunk."""
-    payload_lines = [
-        line.removeprefix("data:").lstrip()
-        for line in frame.splitlines()
-        if line.startswith("data:")
-    ]
-    return "\n".join(payload_lines) + "\n"
+        yield sse_frame_payload(frame)

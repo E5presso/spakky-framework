@@ -17,6 +17,12 @@ from spakky.plugins.agui.hitl import (
 )
 from spakky.plugins.agui.http_stream import add_agui_http_stream_endpoint
 from spakky.plugins.agui.projector import AgUiProjector
+from spakky.plugins.agui.stdio import (
+    AgUiStdioCommand,
+    agui_stdio_payloads,
+    read_agui_run_input,
+    run_agui_stdio,
+)
 from spakky.plugins.agui.transport import AgUiRunDriver
 from spakky.plugins.agui.websocket import add_agui_websocket_endpoint
 
@@ -30,13 +36,17 @@ __all__ = [
     "AgUiPendingApprovalError",
     "AgUiProjector",
     "AgUiRunDriver",
+    "AgUiStdioCommand",
     "AgUiRunResolutionError",
     "PLUGIN_NAME",
     "RunDriverFactory",
     "add_agui_endpoint",
     "add_agui_http_stream_endpoint",
     "add_agui_websocket_endpoint",
+    "agui_stdio_payloads",
     "ingest_decision",
     "project_approval",
     "project_pending_approval",
+    "read_agui_run_input",
+    "run_agui_stdio",
 ]
