@@ -39,11 +39,6 @@ module-name = "spakky.plugins.grpc"
 python-version = "3.12"
 search_path = ["src", "."]
 project_excludes = ["**/__pycache__", "**/*.pyc"]
-# Scope type checking to the package's own sources explicitly. Without an
-# explicit `project_includes`, pyrefly consults the repo's root .gitignore
-# (which lists `.claude/worktrees/`) and skips every file when this package
-# is checked from inside a git-isolation worktree (process-ticket workflow).
-project_includes = ["src", "tests"]
 
 [tool.ruff]
 builtins = ["_"]

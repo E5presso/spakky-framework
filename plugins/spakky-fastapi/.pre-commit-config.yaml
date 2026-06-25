@@ -18,7 +18,7 @@ repos:
     hooks:
       - id: pyrefly-typecheck
         name: Pyrefly (type checking)
-        entry: bash -c 'if [ -d "plugins/spakky-fastapi" ]; then cd plugins/spakky-fastapi; fi && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text'
+        entry: bash -c 'if [ -d "plugins/spakky-fastapi" ]; then cd plugins/spakky-fastapi; fi && uv run pyrefly check src tests --min-severity warn --no-progress-bar --output-format min-text'
         language: system
         types: [python]
         pass_filenames: false
