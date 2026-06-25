@@ -517,9 +517,9 @@ spakky-data = "spakky.data.main:initialize"
 
 ### Agentic workflow layer
 
-`spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다.
+`spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다. spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 `@Agent`가 `AgentRunner` 기반 표준 실행 루프를 `execute()`로 자동 바인딩한다(ADR-0013 §1).
 
-Core public API의 중심은 `AgentExecutionSpec`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
+Core public API의 중심은 `AgentExecutionSpec`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, `AgentRunner`/`AgentRunResult`, `RunAgentInput`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
 
 `spakky-vllm`은 첫 공식 model provider plugin입니다. `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 추가합니다. 이 패키지는 OpenAI-compatible vLLM `/v1/chat/completions` 요청, SSE stream, structured output, tool-call JSON validation을 provider-neutral `ModelResponse`/`ModelStreamEvent`로 변환하며, `spakky-agent` core와 inbound adapter package를 역참조하지 않습니다.
 

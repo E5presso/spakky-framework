@@ -185,6 +185,7 @@ class Agent(Pod):
             super()._initialize(agent_class)
         except AbstractSpakkyPodError as e:
             raise AgentDefinitionError("Agent Pod metadata is invalid") from e
+        self._ensure_execute_provided(agent_class)
         self._validate_execute_contract(agent_class)
         self.tool_catalog = discover_agent_tools(agent_class)
 
@@ -216,10 +217,27 @@ class Agent(Pod):
             raise AgentDefinitionError("@Agent can only annotate classes")
         return obj
 
+    def _ensure_execute_provided(self, obj: type[object]) -> None:
+        """Bind the framework-owned loop as ``execute()`` when none is declared.
+
+        ADR-0013 §1 keeps the ``execute()`` interface but lets the framework
+        runner auto-provide the standard loop. A developer who declares only a
+        spec plus ``@agent_tool`` methods writes no loop body; the synthesized
+        ``execute()`` satisfies the strict contract validated below, so the
+        validator is reused rather than weakened. A developer-written
+        ``execute()`` is left untouched for custom control.
+        """
+        if getattr_static(obj, "execute", None) is not None:
+            return
+        from spakky.agent.runner import runner_backed_execute
+
+        # Framework metaprogramming: bind the runner-backed generator as the
+        # agent's execute() so the strict contract validation accepts it.
+        obj.execute = runner_backed_execute  # type: ignore[attr-defined] - synthesized contract method
+
     def _validate_execute_contract(self, obj: type[object]) -> None:
-        execute = getattr_static(obj, "execute", None)
-        if execute is None:
-            raise AgentDefinitionError("@Agent class must define execute()")
+        # _ensure_execute_provided guarantees execute() exists before validation.
+        execute = getattr_static(obj, "execute")
         execute_signature = signature(execute)
         self._validate_execute_parameters(execute_signature)
         return_annotation = self._resolve_execute_return_annotation(

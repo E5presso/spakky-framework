@@ -341,6 +341,17 @@ def test_public_api_expect_exports_event_taxonomy_types() -> None:
     assert event_exports <= set(agent_api.__all__)
 
 
+def test_public_api_expect_exports_runner_and_inbound_types() -> None:
+    """프레임워크 실행 루프 소유의 runner/inbound 계약을 public API로 노출한다."""
+    from spakky.agent import AgentRunner, AgentRunResult, RunAgentInput
+
+    assert AgentRunner is agent_api.AgentRunner
+    assert AgentRunResult is agent_api.AgentRunResult
+    assert RunAgentInput is agent_api.RunAgentInput
+    runner_exports = {"AgentRunner", "AgentRunResult", "RunAgentInput"}
+    assert runner_exports <= set(agent_api.__all__)
+
+
 def test_public_api_expect_exports_tool_metadata_types() -> None:
     """@agent_tool descriptor metadata 타입을 public API로 노출한다."""
     assert ToolPermission is agent_api.ToolPermission
