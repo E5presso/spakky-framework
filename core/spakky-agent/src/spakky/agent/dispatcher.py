@@ -33,6 +33,7 @@ class AgentToolDispatcher:
     without the bound ``target``.
     """
 
+    # target: any agent instance owning the catalog tools — no common base type.
     target: object
     catalog: AgentToolCatalog
 
@@ -43,6 +44,8 @@ class AgentToolDispatcher:
                 return descriptor
         raise AgentToolDispatchError("Agent tool call names an unregistered tool")
 
+    # Returns object: tool results are heterogeneous per tool — the adapter
+    # owns serialization of the concrete return value into evidence/yield.
     async def dispatch(self, call: ModelToolCall) -> object:
         """Bind a model tool call payload and invoke its catalog callable."""
         descriptor = self.descriptor_for(call)
