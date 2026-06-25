@@ -17,6 +17,7 @@ from spakky.plugins.agui.hitl import (
 )
 from spakky.plugins.agui.projector import AgUiProjector
 from spakky.plugins.agui.transport import AgUiRunDriver
+from spakky.plugins.agui.websocket import add_agui_websocket_endpoint
 
 PLUGIN_NAME = Plugin(name="spakky-agui")
 """Plugin identifier for the AG-UI adapter package."""
@@ -32,6 +33,7 @@ __all__ = [
     "PLUGIN_NAME",
     "RunDriverFactory",
     "add_agui_endpoint",
+    "add_agui_websocket_endpoint",
     "ingest_decision",
     "project_approval",
     "project_pending_approval",

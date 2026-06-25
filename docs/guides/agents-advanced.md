@@ -388,12 +388,12 @@ AG-UI는 `AgentYield`와 다른 wire protocol입니다. 공식 AG-UI HTTP agent�
 
 현재 Spakky 상태를 정확히 말하면 다음과 같습니다.
 
-- `spakky-agent`는 AG-UI와 개념적으로 맞는 stream/event building block을 제공합니다.
+- `spakky-agent`는 AG-UI와 개념적으로 맞는 중립 `AgentEvent` stream building block을 제공합니다.
 - `AgentYield` 자체는 AG-UI event가 아닙니다.
-- 현재 repository에는 built-in `spakky-agent-agui` adapter나 AG-UI event class가 없습니다.
-- CopilotKit은 AG-UI `HttpAgent`로 Spakky backend에 붙을 수 있지만, Spakky 쪽에 AG-UI HTTP/SSE adapter endpoint를 구현해야 합니다.
+- `spakky-agui` plugin은 `AgentRunner.run_events()`를 AG-UI event로 투영하고 FastAPI SSE/WebSocket endpoint를 등록합니다.
+- CopilotKit은 AG-UI `HttpAgent`로 `spakky-agui` SSE endpoint에 붙을 수 있습니다. WebSocket이 필요한 클라이언트는 같은 `RunAgentInput`을 WebSocket message로 보내고 AG-UI encoded event frame을 text message로 받습니다.
 
-권장 mapping은 다음과 같습니다.
+수동 adapter를 직접 작성할 때의 권장 mapping은 다음과 같습니다.
 
 | Spakky `AgentYieldKind` | AG-UI event | 설명 |
 |-------------------------|-------------|------|
@@ -406,7 +406,7 @@ AG-UI는 `AgentYield`와 다른 wire protocol입니다. 공식 AG-UI HTTP agent�
 | `FINAL` | `TEXT_MESSAGE_END` + `RUN_FINISHED` | token message가 열려 있으면 먼저 닫습니다. |
 | `ERROR` | `RUN_ERROR` | `Error.message`를 AG-UI error message로 보냅니다. |
 
-정리하면 CopilotKit으로 붙일 수는 있습니다. 단, Spakky endpoint가 CopilotKit `HttpAgent`가 기대하는 AG-UI request/response를 구현해야 합니다. `AgentYield`를 그대로 SSE로 흘리는 Spakky-native endpoint는 CopilotKit용 endpoint가 아닙니다.
+정리하면 CopilotKit으로 붙일 수 있습니다. 단, endpoint는 CopilotKit `HttpAgent`가 기대하는 AG-UI request/response를 구현해야 합니다. `AgentYield`를 그대로 SSE로 흘리는 Spakky-native endpoint는 CopilotKit용 endpoint가 아닙니다. 기본 구현은 [AG-UI 어댑터](agent-ag-ui.md)를 사용합니다.
 
 ## 테스트 전략
 
@@ -440,7 +440,7 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 - 긴 멀티턴 Agent는 `AgentCompactionPolicy`를 spec에 선언합니다.
 - Durable path를 쓰면 state/signal/evidence repository contribution이 등록되어 있습니다.
 - Inbound adapter는 `AgentYieldKind.APPROVAL`을 사용자 decision signal로 연결합니다.
-- CopilotKit 연동 endpoint는 Spakky-native `AgentYield` JSON이 아니라 AG-UI `type` event stream을 반환합니다.
+- CopilotKit 연동 endpoint는 Spakky-native `AgentYield` JSON이 아니라 AG-UI `type` event stream을 반환합니다. 기본 구현은 `spakky-agui`의 SSE/WebSocket endpoint를 사용합니다.
 - Cancel은 cancellation lifecycle로 처리하고 즉시 terminal state로 덮지 않습니다.
 - Evidence는 append-only로 남깁니다.
 - 테스트는 실제 model server 없이 scripted stream으로 주요 branch를 검증합니다.
