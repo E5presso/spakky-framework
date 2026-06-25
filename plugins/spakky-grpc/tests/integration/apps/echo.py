@@ -26,37 +26,67 @@ from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
 
 
 class EchoRequest(BaseModel):
-    """Single-field request used by unary and streaming echo methods."""
+    """Single-field request used by unary and streaming echo methods.
 
-    text: Annotated[str, ProtoField(number=1)]
+    Declared without ``ProtoField`` — the field number is derived from the
+    field name hash (zero-config code-first protobuf).
+    """
+
+    text: str
 
 
 class EchoReply(BaseModel):
-    """Single-field reply mirroring the request text."""
+    """Single-field reply mirroring the request text (zero-config numbering)."""
 
-    text: Annotated[str, ProtoField(number=1)]
+    text: str
 
 
 class CountRequest(BaseModel):
     """Controls how many messages the server should emit/aggregate."""
 
-    count: Annotated[int, ProtoField(number=1)]
+    count: int
 
 
 class CountReply(BaseModel):
     """Aggregated count reply for client-streaming tests."""
 
-    total: Annotated[int, ProtoField(number=1)]
+    total: int
+
+
+class ProfileRequest(BaseModel):
+    """Multi-field, mixed-type zero-config request.
+
+    Exercises the zero-config DX path with more than one field: every field
+    number is derived from the field name hash, so the client and server
+    agree on the wire layout without any ``ProtoField`` annotation.
+    """
+
+    nickname: str
+    age: int
+    verified: bool
+
+
+class ProfileReply(BaseModel):
+    """Multi-field zero-config reply mirroring the request fields."""
+
+    nickname: str
+    age: int
+    verified: bool
 
 
 class ErrorRequest(BaseModel):
     """Identifies which error the controller should raise."""
 
-    code: Annotated[str, ProtoField(number=1)]
+    code: str
 
 
 class TraceReply(BaseModel):
-    """Returns the captured server-side trace context."""
+    """Returns the captured server-side trace context.
+
+    Retains explicit ``ProtoField`` overrides so the integration suite
+    keeps exercising the explicit-numbering path alongside the zero-config
+    messages above.
+    """
 
     trace_id: Annotated[str, ProtoField(number=1)]
     parent_span_id: Annotated[str, ProtoField(number=2)]
@@ -130,6 +160,15 @@ class EchoController:
         """Echo every inbound request back to the client."""
         async for item in requests:
             yield EchoReply(text=item.text)
+
+    @rpc()
+    async def echo_profile(self, request: ProfileRequest) -> ProfileReply:
+        """Return a multi-field zero-config reply mirroring the request."""
+        return ProfileReply(
+            nickname=request.nickname,
+            age=request.age,
+            verified=request.verified,
+        )
 
     @rpc()
     async def raise_error(self, request: ErrorRequest) -> EchoReply:
