@@ -13,3 +13,13 @@ from spakky.agent.types import JsonValue
 def dump_json(value: JsonValue) -> str:
     """Serialize a neutral JSON value to compact JSON text."""
     return dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+def sse_frame_payload(frame: str) -> str:
+    """Convert one AG-UI SSE frame into a raw JSON-line event payload."""
+    payload_lines = [
+        line.removeprefix("data:").lstrip()
+        for line in frame.splitlines()
+        if line.startswith("data:")
+    ]
+    return "\n".join(payload_lines) + "\n"
