@@ -6,6 +6,7 @@
 ## 언제 필요한가
 
 - agentic workflow를 Spakky DI/hexagonal architecture 안에서 표현하려는 경우
+- spec과 `@agent_tool` 메서드만 선언하고 프레임워크가 표준 실행 루프(`execute()`)를 자동 제공하게 하려는 경우
 - `AgentYield` stream을 FastAPI, WebSocket, CLI 같은 inbound adapter가 직접 소비하게 하려는 경우
 - model adapter를 `IAgentModel` outbound port로 구현하려는 경우
 - long-running execution의 state, signal, evidence 계약을 plugin contribution으로 구현하려는 경우
@@ -28,7 +29,9 @@ pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
 
 ## 제공하는 public surface
 
-- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 이번 변경에서 네 가지 선언 필드를 추가로 제공한다 — `instructions: str | None` (system-level 안내 문자열, 빈 문자열 거부), `output_type: type[object] | None` (구조화 출력 타입 선언; 클래스여야 하며 provider에 중립, pydantic-ai `output_type`과 같은 의미), `teammates: tuple[AgentTeammate, ...]` (협력 agent 선언, 이름 중복 거부), `compaction: AgentCompactionPolicy | None` (컨텍스트 압축 전략 체인 + token threshold 선언). 잘못된 값은 모두 `AgentDefinitionError`로 거부된다.
+- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 이번 변경에서 네 가지 선언 필드를 추가로 제공한다 — `instructions: str | None` (system-level 안내 문자열, 빈 문자열 거부), `output_type: type[object] | None` (구조화 출력 타입 선언; 클래스여야 하며 provider에 중립, pydantic-ai `output_type`과 같은 의미), `teammates: tuple[AgentTeammate, ...]` (협력 agent 선언, 이름 중복 거부), `compaction: AgentCompactionPolicy | None` (컨텍스트 압축 전략 체인 + token threshold 선언). 잘못된 값은 모두 `AgentDefinitionError`로 거부된다. `execute()` 없이 spec + `@agent_tool` 메서드만 선언하면 프레임워크가 `AgentRunner` 기반 표준 루프를 `execute()`로 자동 바인딩한다(ADR-0013 §1). 개발자가 직접 `execute()`를 작성한 경우에는 건드리지 않는다.
+- `AgentRunner`, `AgentRunResult`: 프레임워크가 소유하는 표준 실행 루프. `AgentRunner.for_agent_instance(instance)`는 인스턴스에 주입된 속성을 타입 기반으로 탐색해 `IAgentModel`·`IAgentStateRepository`·`IAgentSignalRepository`·`IAgentEvidenceRepository`를 resolve한다. `run(run_input)` 메서드는 `AsyncGenerator[AgentYield[object], None]`을 yield한다. `accepted_signals`/`RecoveryStrategy.ACTION_BOUNDARY` 선언이 없는 stateless agent는 model → tool → final의 단순 경로를 실행하고, durable agent는 state 전이·signal 소비·HITL pause→approval→resume 흐름·action boundary checkpoint까지 모두 처리한다. `AgentRunResult`는 spec이 `output_type`을 선언하지 않을 때 기본으로 반환되는 중립 종료 요약 dataclass(`state_id`, `status`, `tool_calls`, `evidence_count`)다.
+- `RunAgentInput`: inbound run 계약. `state_id`(실행 상관 ID), `instruction`(모델 요청의 사용자 프롬프트), `conversation_id`(멀티턴 스레드 ID, 생략 시 `state_id`로 대체), `resume`(일시 중단된 실행 재개 여부), `metadata`(runner 레벨 부가 정보)를 담는다. `effective_conversation_id` property는 `conversation_id or state_id`를 반환한다. approval decision은 이 계약이 아닌 signal repository를 통해 전달된다.
 - `AgentTeammate`: 이름과 로컬 Pod 타입(`pod`) 또는 원격 AgentCard http(s) URL(`card_url`) 중 정확히 하나를 선언하는 협력 agent 기술자. 둘 다 지정하거나 둘 다 생략하면 `AgentDefinitionError`. 런타임 위임 배선은 후속 태스크 E4에서 구현된다.
 - `CompactionStrategy`: 컨텍스트 압축 전략 열거형(`StrEnum`). 값은 `DROP_OLDEST_EVIDENCE`, `SUMMARIZE_TRANSCRIPT`, `DEDUPLICATE_EVIDENCE`, `OFFLOAD_TO_EXTERNAL_STORE`.
 - `AgentCompactionPolicy`: 압축 전략 체인(`strategies: tuple[CompactionStrategy, ...]`, 비어 있거나 중복 불가)과 트리거 토큰 임계값(`trigger_token_threshold: int`, 양수 필수)을 선언하는 값 타입. 런타임 압축 핸들러는 후속 태스크 C7에서 구현된다.
@@ -66,6 +69,50 @@ Durable 실행 경로는 `AgentExecutionSpec.recovery == RecoveryStrategy.ACTION
 `AgentEvidenceRepository`의 agent-facing interface는 append/read 계열만 노출합니다. Redaction, correction, context digest 갱신은 기존 evidence를 수정하지 않고 새 evidence를 append하는 방식으로 표현합니다.
 
 ## 사용 예시
+
+### 선언형 — 프레임워크 제공 루프 (권장)
+
+spec과 `@agent_tool` 메서드만 작성하면 `@Agent`가 `AgentRunner` 기반 표준 루프를 `execute()`로 자동 바인딩합니다. `RunAgentInput`을 인자로 받아 `AgentYield` 스트림을 내보내는 표준 루프가 model → tool dispatch → HITL pause/resume → state 전이 → final 까지 처리합니다.
+
+```python
+from spakky.agent import (
+    Agent,
+    AgentExecutionSpec,
+    IAgentModel,
+    agent_tool,
+)
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="file_agent",
+        instructions="Use the declared tools to read and summarize files.",
+    )
+)
+class FileAgent:
+    def __init__(self, model: IAgentModel) -> None:
+        self.model = model
+
+    @agent_tool(schema_name="file.read")
+    async def read_file(self, path: str) -> str:
+        with open(path) as f:
+            return f.read()
+    # execute()를 작성하지 않으면 AgentRunner 기반 표준 루프가 자동으로 제공된다.
+```
+
+호출 측은 `RunAgentInput`을 구성해 `execute()`를 호출합니다.
+
+```python
+from spakky.agent import RunAgentInput
+
+run_input = RunAgentInput(state_id="run-001", instruction="Read README.md and summarize.")
+async for item in agent_instance.execute(run_input):
+    print(item)
+```
+
+### 커스텀 execute() 탈출 경로
+
+자동 제공 루프로 표현할 수 없는 커스텀 제어가 필요한 경우에만 `execute()`를 직접 작성합니다. 이 경우 자동 바인딩은 적용되지 않으며, `execute()` 본문이 전체 실행을 책임집니다.
 
 ```python
 from collections.abc import AsyncGenerator
@@ -123,7 +170,7 @@ class CodeAssistant:
         )
 ```
 
-`@Agent`는 `@Pod` 계열 stereotype이므로 application scan과 constructor DI에 참여합니다. `execute()`는 `Generator[AgentYield[T], None, None]` 또는 `AsyncGenerator[AgentYield[T], None]`로 typed stream item을 yield할 수 있고, non-generator 반환형은 streaming 없는 직접 결과 계약으로 취급됩니다. Inbound adapter가 SSE/WebSocket/CLI처럼 진행 상태를 즉시 내보내야 한다면 `AgentYield` generator 계약을 사용해야 합니다.
+`@Agent`는 `@Pod` 계열 stereotype이므로 application scan과 constructor DI에 참여합니다. spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 프레임워크가 `AgentRunner` 기반 표준 루프를 `execute()`로 자동 바인딩합니다(ADR-0013 §1). 커스텀 제어가 필요한 경우에만 `execute()`를 직접 작성하며, 이 경우 자동 바인딩은 적용되지 않습니다. `execute()`는 `Generator[AgentYield[T], None, None]` 또는 `AsyncGenerator[AgentYield[T], None]`로 typed stream item을 yield할 수 있고, non-generator 반환형은 streaming 없는 직접 결과 계약으로 취급됩니다. Inbound adapter가 SSE/WebSocket/CLI처럼 진행 상태를 즉시 내보내야 한다면 `AgentYield` generator 계약을 사용해야 합니다.
 
 `AgentYieldKind`의 public status vocabulary는 `token`, `progress`, `tool`, `evidence`, `approval`, `final`, `error`, `cancel`입니다. 각 item의 payload는 `Token`, `Progress`, `Tool`, `Evidence`, `Approval`, `Final[T]`, `Error`, `Cancel` value object로 구분되므로 inbound adapter는 별도 stream projector 없이 generator를 직접 순회해 transport별 이벤트로 바꿀 수 있습니다.
 

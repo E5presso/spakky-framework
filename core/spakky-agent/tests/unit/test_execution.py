@@ -170,12 +170,33 @@ def test_agent_expect_wraps_pod_constructor_di_metadata() -> None:
     assert agent.dependencies["tools"].type_ is AgentTools
 
 
-def test_agent_expect_rejects_missing_execute_contract() -> None:
-    """execute가 없는 class는 definition 단계에서 custom error로 거부한다."""
-    with pytest.raises(AgentDefinitionError):
+def test_agent_expect_auto_provides_execute_when_absent() -> None:
+    """execute 본문이 없으면 프레임워크 runner-backed execute가 자동 제공된다."""
+    from spakky.agent.runner import runner_backed_execute
 
-        @Agent()
-        class MissingExecute: ...
+    @Agent()
+    class DeclarationOnlyAgent: ...
+
+    assert Agent.get(DeclarationOnlyAgent) is not None
+    assert vars(DeclarationOnlyAgent)["execute"] is runner_backed_execute
+
+
+def test_agent_expect_keeps_user_supplied_execute() -> None:
+    """개발자가 execute를 직접 작성하면 자동 제공이 그것을 덮어쓰지 않는다."""
+    from spakky.agent.runner import runner_backed_execute
+
+    @Agent()
+    class CustomExecuteAgent:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    assert CustomExecuteAgent.execute is not runner_backed_execute
 
 
 def test_agent_expect_rejects_non_agent_yield_return_type() -> None:

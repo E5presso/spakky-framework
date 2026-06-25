@@ -105,6 +105,8 @@ from spakky.agent.execution import (
     RecoveryStrategy,
     StreamingExposureMode,
 )
+from spakky.agent.inbound import RunAgentInput
+from spakky.agent.runner import AgentRunner, AgentRunResult
 from spakky.agent.interfaces.repository import (
     IAgentEvidenceRepository,
     IAgentSignalRepository,
@@ -263,6 +265,8 @@ __all__ = [
     "AgentResumeAction",
     "AgentResumeBoundary",
     "AgentResumePlan",
+    "AgentRunResult",
+    "AgentRunner",
     "AgentSignal",
     "AgentSignalConsumptionBatch",
     "AgentSignalKind",
@@ -344,6 +348,7 @@ __all__ = [
     "RecoveryStrategy",
     "RedactionPolicy",
     "ResultBudget",
+    "RunAgentInput",
     "SamplingOptions",
     "SecretField",
     "SecretRef",
