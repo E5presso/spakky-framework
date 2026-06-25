@@ -63,3 +63,23 @@ class InvalidApprovalDecisionError(AbstractSpakkyA2AError):
     def __init__(self, decision: str) -> None:
         super().__init__()
         self.decision = decision
+
+
+class UnsupportedA2AGrpcResultError(AbstractSpakkyA2AError):
+    """Raised when a unary A2A gRPC method returns an unsupported result."""
+
+    message = "A2A gRPC result type is not supported"
+
+    def __init__(self, result_type: type[object]) -> None:
+        super().__init__()
+        self.result_type = result_type
+
+
+class UnsupportedA2AGrpcEventError(AbstractSpakkyA2AError):
+    """Raised when a streaming A2A gRPC event cannot be wrapped."""
+
+    message = "A2A gRPC event type is not supported"
+
+    def __init__(self, event_type: type[object]) -> None:
+        super().__init__()
+        self.event_type = event_type
