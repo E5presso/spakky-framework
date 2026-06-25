@@ -1,8 +1,12 @@
-# MCP 클라이언트 어댑터
+# MCP 어댑터 (클라이언트·서버)
 
-> 외부 MCP(Model Context Protocol) 서버의 도구를 발견해 선언형 Agent의 도구 카탈로그에 합류시키는 클라이언트 어댑터 가이드입니다. 외부 도구는 `@agent_tool`로 선언한 도구와 **동일한 디스패치 경로**로 자동 호출됩니다.
+> MCP(Model Context Protocol) 양방향 어댑터 가이드입니다. **클라이언트** 방향은 외부 MCP 서버의 도구를 선언형 Agent의 도구 카탈로그에 합류시키고, **서버** 방향은 Agent의 `@agent_tool` 도구를 MCP 서버로 노출해 외부 MCP 클라이언트가 발견·호출하게 합니다.
 
-`spakky-mcp` 플러그인은 [ADR-0013](../adr/0013-declarative-agent-loop-ownership.md) §2의 결정에 따라 프로토콜 중립 코어(`spakky-agent`) 밖에 위치하는 독립 어댑터입니다. 코어는 MCP 라이브러리에 의존하지 않으며, 외부 도구 정규화·연결 수명주기는 이 플러그인이 전담합니다.
+`spakky-mcp` 플러그인은 [ADR-0013](../adr/0013-declarative-agent-loop-ownership.md) §2의 결정에 따라 프로토콜 중립 코어(`spakky-agent`) 밖에 위치하는 독립 어댑터입니다. 코어는 MCP 라이브러리에 의존하지 않으며, 외부 도구 정규화·연결 수명주기와 도구의 MCP 서버 노출은 이 플러그인이 전담합니다.
+
+> 아래 "클라이언트" 절은 외부 도구를 끌어오는 방향이고, "서버" 절은 자신의 도구를 내보내는 방향입니다.
+
+## 클라이언트: 외부 도구 끌어오기
 
 ## 언제 쓰는가
 
@@ -73,6 +77,53 @@ async def run_with_external_tools(client: McpClient, agent: WeatherAgent) -> Non
 - 외부 도구 결과는 구조화 콘텐츠(`structuredContent`)가 있으면 그대로, 없으면 텍스트 콘텐츠를 모아 JSON 값으로 정규화합니다.
 - 서버가 오류 결과(`isError`)를 반환하거나 연결·디스커버리·호출이 실패하면 `McpTransportError`·`McpToolDiscoveryError`·`McpToolInvocationError` 등 타입화된 오류로 표면화됩니다.
 - 외부 도구 이름이 기존 카탈로그 도구와 충돌하면 `McpCatalogMergeError`로 거부됩니다.
+
+## 서버: 자신의 도구 내보내기
+
+반대 방향으로, Agent가 선언한 `@agent_tool` 도구를 MCP 서버로 노출하면 외부 MCP 클라이언트가 표준 MCP 프로토콜로 그 도구들을 발견·호출할 수 있습니다. 노출된 각 도구는 모델이 보는 것과 같은 디스패치 경로(`AgentToolDispatcher`)로 실행되므로, 원격 클라이언트의 호출은 로컬 모델의 도구 호출과 동일하게 동작합니다.
+
+### 서버 만들기
+
+`build_agent_tool_server(agent_instance, server_name)`는 한 에이전트 인스턴스의 도구 카탈로그를 노출하는 MCP `Server`를 만듭니다. `list_tools` 요청에는 각 카탈로그 디스크립터를 `mcp.types.Tool`(모델용 이름·설명·입력 JSON Schema)로 변환해 응답하고, `call_tool` 요청은 디스패처로 위임합니다.
+
+```python
+from spakky.plugins.mcp import build_agent_tool_server, serve_stdio
+
+
+async def expose_over_stdio(agent: WeatherAgent) -> None:
+    server = build_agent_tool_server(agent, "spakky-agent")
+    await serve_stdio(server)  # stdio 전송으로 클라이언트가 연결을 닫을 때까지 서빙
+```
+
+`McpToolServer` Pod를 쓰면 설정(`McpConfig.tool_server`)에 선언한 서버 이름·전송으로 같은 작업을 수행합니다.
+
+```python
+from spakky.plugins.mcp import McpToolServer
+
+
+async def expose(server: McpToolServer, agent: WeatherAgent) -> None:
+    await server.serve_stdio(agent)
+```
+
+### 전송 선택
+
+| 전송 | 진입점 | 용도 |
+|------|--------|------|
+| `stdio` | `serve_stdio(server)` / `McpToolServer.serve_stdio(agent)` | 클라이언트가 하위 프로세스로 서버를 구동 |
+| `streamable_http` | `streamable_http_session_manager(server)` / `McpToolServer.streamable_http_session_manager(agent)` | 원격 HTTP 노출 — 반환된 세션 매니저를 호스트 애플리케이션의 lifespan에서 구동하고 인바운드 요청을 `handle_request`로 라우팅 |
+
+`streamable_http` 세션 매니저는 자신의 `run()` 컨텍스트 동안 단일 task group을 소유하며 컨텍스트를 벗어나면 재사용할 수 없습니다 — 호스트 애플리케이션 lifespan에서 1회 구동합니다.
+
+### 서버 노출 설정
+
+| 환경변수 | 의미 | 기본값 |
+|----------|------|--------|
+| `SPAKKY_MCP__TOOL_SERVER__NAME` | MCP 핸드셰이크에서 광고할 서버 이름 | `spakky-agent` |
+| `SPAKKY_MCP__TOOL_SERVER__TRANSPORT` | `stdio`(기본) 또는 `streamable_http` | `stdio` |
+
+### 결과 변환
+
+도구 디스패치 결과는 MCP의 `content`(사람이 읽는 텍스트)와 `structuredContent`(기계가 읽는 JSON)로 변환됩니다. 매핑(`dict`) 결과는 그대로 구조화 콘텐츠가 되고, 그 외 값은 `{"result": ...}` 형태로 감싸집니다 — 이는 클라이언트 방향의 결과 정규화(`normalize_call_result`)가 읽어 들이는 형태와 대칭입니다. 디스패치가 실패하면 `McpToolExposureError`로 표면화되어 SDK가 원격 클라이언트에 도구 오류로 보고합니다.
 
 ## 함께 보기
 

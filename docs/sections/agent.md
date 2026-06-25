@@ -25,4 +25,4 @@
 | --- | --- |
 | [AG-UI 어댑터](../guides/agent-ag-ui.md) | AG-UI 프로토콜로 Agent 실행을 UI에 스트리밍 |
 | [A2A 어댑터](../guides/agent-a2a.md) | A2A(Agent-to-Agent) 프로토콜 연동 |
-| [MCP 어댑터](../guides/agent-mcp.md) | MCP(Model Context Protocol) 서버로 도구 노출 |
+| [MCP 어댑터](../guides/agent-mcp.md) | MCP(Model Context Protocol) 클라이언트·서버 양방향 어댑터 |

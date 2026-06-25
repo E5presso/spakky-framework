@@ -1,4 +1,4 @@
-"""Configuration for the spakky-mcp client plugin."""
+"""Configuration for the spakky-mcp adapter (external clients and tool server)."""
 
 from enum import StrEnum
 from typing import ClassVar
@@ -10,6 +10,7 @@ from spakky.core.stereotype.configuration import Configuration
 from spakky.plugins.mcp.constants import (
     DEFAULT_MCP_CALL_TIMEOUT_SECONDS,
     DEFAULT_MCP_CONNECT_TIMEOUT_SECONDS,
+    DEFAULT_MCP_SERVER_NAME,
     MCP_TOOL_NAME_SEPARATOR,
     SPAKKY_MCP_CONFIG_ENV_PREFIX,
 )
@@ -74,6 +75,21 @@ def _is_http_url(url: str | None) -> bool:
     return url is not None and (url.startswith("http://") or url.startswith("https://"))
 
 
+class McpToolServerConfig(BaseModel):
+    """Declaration of how this agent exposes its own tools as an MCP server."""
+
+    name: str = DEFAULT_MCP_SERVER_NAME
+    transport: McpTransport = McpTransport.STDIO
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        """Reject a blank server identity that cannot front the protocol handshake."""
+        if not value.strip():
+            raise McpServerConfigurationError("MCP server name cannot be blank")
+        return value
+
+
 @Configuration()
 class McpConfig(BaseSettings):
     """Settings declaring the external MCP servers an agent consumes."""
@@ -89,6 +105,9 @@ class McpConfig(BaseSettings):
 
     connect_timeout_seconds: float = DEFAULT_MCP_CONNECT_TIMEOUT_SECONDS
     """Timeout budget for establishing an MCP server connection."""
+
+    tool_server: McpToolServerConfig = McpToolServerConfig()
+    """Identity and transport this agent advertises when exposing its own tools."""
 
     def __init__(self) -> None:
         super().__init__()

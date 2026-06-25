@@ -13,9 +13,14 @@ from spakky.plugins.mcp import (
     McpServerConfig,
     McpServerConfigurationError,
     McpToolDiscoveryError,
+    McpToolExposureError,
     McpToolInvocationError,
+    McpToolServer,
+    McpToolServerConfig,
     McpTransport,
     McpTransportError,
+    build_agent_tool_server,
+    build_agent_tools,
     build_external_descriptor,
     build_external_descriptors,
     build_mcp_runner,
@@ -23,7 +28,10 @@ from spakky.plugins.mcp import (
     make_mcp_tool_callable,
     merge_external_catalog,
     normalize_call_result,
+    normalize_dispatch_result,
     prefixed_tool_name,
+    serve_stdio,
+    streamable_http_session_manager,
 )
 
 
@@ -32,7 +40,19 @@ def test_public_api_exposes_plugin_identity() -> None:
     assert PLUGIN_NAME.name == "spakky-mcp"
     assert McpConfig is mcp_api.McpConfig
     assert McpServerConfig is mcp_api.McpServerConfig
+    assert McpToolServerConfig is mcp_api.McpToolServerConfig
     assert McpTransport is mcp_api.McpTransport
+
+
+def test_public_api_exposes_tool_server_surface() -> None:
+    """The public API exposes the server-side exposure functions and Pod."""
+    assert McpToolServer is mcp_api.McpToolServer
+    assert build_agent_tool_server is mcp_api.build_agent_tool_server
+    assert build_agent_tools is mcp_api.build_agent_tools
+    assert normalize_dispatch_result is mcp_api.normalize_dispatch_result
+    assert serve_stdio is mcp_api.serve_stdio
+    assert streamable_http_session_manager is mcp_api.streamable_http_session_manager
+    assert McpToolExposureError is mcp_api.McpToolExposureError
 
 
 def test_public_api_exposes_client_and_catalog_surface() -> None:

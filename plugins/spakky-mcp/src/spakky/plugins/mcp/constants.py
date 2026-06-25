@@ -1,4 +1,4 @@
-"""Constants for the spakky-mcp client plugin."""
+"""Constants for the spakky-mcp adapter (external clients and tool server)."""
 
 SPAKKY_MCP_CONFIG_ENV_PREFIX: str = "SPAKKY_MCP__"
 DEFAULT_MCP_CONNECT_TIMEOUT_SECONDS: float = 30.0
@@ -11,3 +11,7 @@ MCP_EXTERNAL_TOOL_OWNER_MODULE: str = "spakky.plugins.mcp"
 # Separates a server name from a raw tool name in the model-facing tool name. A
 # double underscore avoids the dotted form some model tool-name validators reject.
 MCP_TOOL_NAME_SEPARATOR: str = "__"
+
+# Default identity advertised when this plugin exposes an agent's tools as an
+# MCP server, used in the protocol initialization handshake.
+DEFAULT_MCP_SERVER_NAME: str = "spakky-agent"
