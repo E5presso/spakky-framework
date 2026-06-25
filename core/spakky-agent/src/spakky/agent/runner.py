@@ -9,10 +9,17 @@ contracts), consumes durable signals, drives the unified HITL pause -> approval
 request -> resume flow (ADR-0013 §5), and terminates with a typed final output
 shaped by ``spec.output_type``.
 
-The loop yields the public ``AgentYield`` vocabulary. ADR-0013 §3 generalizes
-that vocabulary into the neutral ``AgentEvent`` taxonomy and assigns the exact
-projection to the follow-up protocol-adapter groups; the runner therefore stays
-on ``AgentYield`` and does not emit ``AgentEvent`` directly.
+The runner exposes two streams over the same orchestration. ``run()`` yields the
+public ``AgentYield`` vocabulary that inbound adapters already consume. ``run_events()``
+yields the protocol-neutral ``AgentEvent`` taxonomy (ADR-0013 §3) that AG-UI (#414)
+and A2A (#415) adapters project losslessly: the runner emits message/reasoning
+deltas, the tool-call ``start``/``args-delta``/``end``/``result`` lifecycle, and
+run/step boundaries as distinct events carrying attribution (agent / run / parent /
+conversation), rather than collapsing them into coarse ``AgentYield`` items that an
+adapter would have to re-expand. The fine-grained model-stream channels (C2
+``ModelStreamEventKind`` message/reasoning/tool-args deltas) project one-to-one onto
+the neutral taxonomy; ``REASONING_DELTA`` is omitted when the model declares no
+reasoning capability (graceful degrade, ADR-0013 §4).
 """
 
 from collections.abc import AsyncGenerator, Mapping, Sequence
@@ -36,6 +43,20 @@ from spakky.agent.error import (
     AgentModelConfigurationError,
     AgentPersistenceConfigurationError,
     AgentToolDispatchError,
+)
+from spakky.agent.event import (
+    AgentEvent,
+    AgentEventAttribution,
+    MessageDeltaEvent,
+    ReasoningDeltaEvent,
+    RunFinishedEvent,
+    RunStartedEvent,
+    StepFinishedEvent,
+    StepStartedEvent,
+    ToolCallArgsDeltaEvent,
+    ToolCallEndEvent,
+    ToolCallResultEvent,
+    ToolCallStartEvent,
 )
 from spakky.agent.evidence import (
     AgentEvidence,
@@ -171,6 +192,157 @@ class AgentRunner:
             return
         async for item in self._run_durable(run_input, self.states):
             yield item
+
+    async def run_events(
+        self,
+        run_input: RunAgentInput,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Run one model-mediated loop, emitting the neutral event taxonomy.
+
+        This is the lossless native stream AG-UI/A2A adapters consume (ADR-0013
+        §3). It shares the run's orchestration with ``run()`` — model request,
+        tool dispatch, durable approval gating, evidence persistence — but emits
+        distinct ``AgentEvent`` members instead of coarse ``AgentYield`` items, so
+        an adapter projects each event one-to-one rather than re-expanding framing.
+        """
+        attribution = self._event_attribution(run_input)
+        state = (
+            self._ensure_active_state(run_input, self.states)
+            if self.states is not None
+            else None
+        )
+        cursor = _MessageCursor(state_id=run_input.state_id)
+        yield RunStartedEvent(attribution)
+        yield StepStartedEvent(attribution, step_name="model-call")
+        async for event in self.model.stream(self._model_request(run_input)):
+            async for item in self._consume_stream_event_as_events(
+                event, state, attribution, cursor
+            ):
+                yield item
+            if event.kind is ModelStreamEventKind.ERROR and event.error is not None:
+                yield StepFinishedEvent(attribution, step_name="model-call")
+                yield RunFinishedEvent(
+                    attribution,
+                    error={"code": event.error.code, "message": event.error.message},
+                )
+                return
+        yield StepFinishedEvent(attribution, step_name="model-call")
+        if state is not None:
+            self._complete_state(state.id)
+        yield RunFinishedEvent(attribution)
+
+    async def _consume_stream_event_as_events(
+        self,
+        event: ModelStreamEvent,
+        state: AgentState | None,
+        attribution: AgentEventAttribution,
+        cursor: "_MessageCursor",
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Project one model stream event onto the neutral event taxonomy.
+
+        The fine-grained C2 tool channels (``TOOL_CALL_START``/``ARGS_DELTA``/
+        ``END``) project straight through as boundary events; ``TOOL_CALL_CANDIDATE``
+        is the dispatch trigger that produces the ``ToolCallResultEvent`` after the
+        tool runs (gated by the same durable approval flow ``run()`` uses).
+        """
+        match event.kind:
+            case ModelStreamEventKind.TOKEN_DELTA:
+                yield MessageDeltaEvent(
+                    attribution,
+                    message_id=cursor.message_id,
+                    delta=event.token_delta or "",
+                )
+            case ModelStreamEventKind.MESSAGE_DELTA:
+                yield MessageDeltaEvent(
+                    attribution,
+                    message_id=cursor.message_id,
+                    delta=event.message_delta or "",
+                )
+            case ModelStreamEventKind.REASONING_DELTA:
+                if self.model.capability.supports_reasoning:
+                    yield ReasoningDeltaEvent(
+                        attribution,
+                        reasoning_id=cursor.reasoning_id,
+                        delta=event.reasoning_delta or "",
+                    )
+            case ModelStreamEventKind.TOOL_CALL_START if event.tool_call is not None:
+                yield ToolCallStartEvent(
+                    attribution,
+                    call_id=_call_id(event.tool_call),
+                    tool_name=event.tool_call.name,
+                    parent_message_id=cursor.message_id,
+                )
+            case ModelStreamEventKind.TOOL_CALL_ARGS_DELTA if (
+                event.tool_call is not None
+            ):
+                yield ToolCallArgsDeltaEvent(
+                    attribution,
+                    call_id=_call_id(event.tool_call),
+                    args_delta=event.tool_call_args_delta or "",
+                )
+            case ModelStreamEventKind.TOOL_CALL_END if event.tool_call is not None:
+                yield ToolCallEndEvent(attribution, call_id=_call_id(event.tool_call))
+            case ModelStreamEventKind.TOOL_CALL_CANDIDATE if (
+                event.tool_call is not None
+            ):
+                async for item in self._dispatch_tool_call_event(
+                    state, event.tool_call, attribution, cursor
+                ):
+                    yield item
+            case _:
+                return
+
+    async def _dispatch_tool_call_event(
+        self,
+        state: AgentState | None,
+        call: ModelToolCall,
+        attribution: AgentEventAttribution,
+        cursor: "_MessageCursor",
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Dispatch a complete tool call and emit its neutral result event.
+
+        Mirrors ``_execute_tool_call`` but emits ``ToolCallResultEvent`` instead of
+        an ``AgentYield``. Durable approval gating and evidence persistence are the
+        same shared steps, so an unapproved call dispatches nothing and emits no
+        result (the adapter surfaces approval as its own deferred-tool idiom).
+        """
+        descriptor = self.agent.tool_catalog.by_schema_name(call.name)
+        if state is not None:
+            _, cleared = self._resolve_approval(state, descriptor, call)
+            if not cleared:
+                return
+            self._append_boundary(state.id, _before_tool(descriptor, call))
+        result = await self._dispatch(call)
+        if state is not None:
+            self._append_boundary(state.id, _after_tool(descriptor, call))
+            self._append_tool_evidence(state.id, descriptor, result)
+        yield ToolCallResultEvent(
+            attribution,
+            call_id=_call_id(call),
+            tool_name=call.name,
+            message_id=cursor.message_id,
+            result=result,
+        )
+
+    def _event_attribution(
+        self,
+        run_input: RunAgentInput,
+    ) -> AgentEventAttribution:
+        return AgentEventAttribution(
+            agent_id=self._agent_type(),
+            run_id=run_input.state_id,
+            conversation_id=run_input.effective_conversation_id,
+        )
+
+    def _complete_state(self, state_id: str) -> None:
+        self._states_required().save(
+            replace(
+                self._states_required().get(state_id),
+                status=AgentStatus.COMPLETED,
+                transition=AgentStateTransition.COMPLETED,
+                current_activity="run completed",
+            )
+        )
 
     async def _run_stateless(
         self,
@@ -741,6 +913,29 @@ class AgentRunner:
         return AgentRunner._resolve_required(attributes, port_type)
 
 
+@dataclass(slots=True)
+class _MessageCursor:
+    """Synthesize stable message/reasoning ids for one run's event stream.
+
+    The C2 model stream carries no message or reasoning ids — those channels are
+    plain text deltas. The neutral taxonomy (and AG-UI ``messageId``/``reasoningId``)
+    needs a stable id so an adapter groups deltas and attaches a tool result to the
+    right message. One assistant message block and one reasoning block per run are
+    sufficient for the framework-owned single-step loop, so the ids are derived
+    deterministically from the run id rather than counted per delta.
+    """
+
+    state_id: str
+
+    @property
+    def message_id(self) -> str:
+        return f"{self.state_id}:message"
+
+    @property
+    def reasoning_id(self) -> str:
+        return f"{self.state_id}:reasoning"
+
+
 async def runner_backed_execute(
     self: object,
     run_input: RunAgentInput,
@@ -869,3 +1064,14 @@ def _optional_signal_text(signal: AgentSignal, name: str) -> str | None:
     if isinstance(value, str) and value.strip():
         return value
     return None
+
+
+def _call_id(call: ModelToolCall) -> str:
+    """Resolve the stable tool-call id correlating a call's lifecycle events.
+
+    ``ModelToolCall.call_id`` is the adapter-provided id that ties the
+    ``start``/``args``/``end``/``result`` events of one call together. A model
+    that omits it (``None``) gets a name-derived fallback so the lifecycle still
+    shares one non-blank id, which the neutral attribution requires.
+    """
+    return call.call_id or f"call:{call.name}"
