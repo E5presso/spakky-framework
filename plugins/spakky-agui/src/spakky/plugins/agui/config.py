@@ -11,10 +11,13 @@ SPAKKY_AGUI_CONFIG_ENV_PREFIX = "SPAKKY_AGUI_"
 DEFAULT_AGUI_SSE_PATH = "/agui"
 """Default mount path for the AG-UI SSE endpoint."""
 
+DEFAULT_AGUI_WEBSOCKET_PATH = "/agui/ws"
+"""Default mount path for the AG-UI WebSocket endpoint."""
+
 
 @Configuration()
 class AgUiConfig(BaseSettings):
-    """Settings for the AG-UI SSE adapter."""
+    """Settings for the AG-UI adapter."""
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
         env_prefix=SPAKKY_AGUI_CONFIG_ENV_PREFIX,
@@ -24,6 +27,9 @@ class AgUiConfig(BaseSettings):
 
     sse_path: str = DEFAULT_AGUI_SSE_PATH
     """Path the AG-UI SSE endpoint is mounted at on the FastAPI application."""
+
+    websocket_path: str = DEFAULT_AGUI_WEBSOCKET_PATH
+    """Path the AG-UI WebSocket endpoint is mounted at on the FastAPI application."""
 
     emit_state_snapshot: bool = True
     """Whether STATE_SNAPSHOT neutral events are projected to AG-UI; when False

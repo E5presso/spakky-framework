@@ -1,12 +1,12 @@
 # AG-UI 어댑터
 
 > 선언형 Agent를 AG-UI (Agent User Interaction) 프로토콜로 노출해, Agent 실행 이벤트를
-> UI에 SSE (Server-Sent Events)로 스트리밍하는 어댑터 가이드입니다. 렌더링(프런트엔드)은
-> 범위 밖이며, 본 가이드는 와이어 프로토콜까지를 다룹니다.
+> UI에 SSE (Server-Sent Events) 또는 WebSocket으로 스트리밍하는 어댑터 가이드입니다.
+> 렌더링(프런트엔드)은 범위 밖이며, 본 가이드는 와이어 프로토콜까지를 다룹니다.
 
-`spakky-agui` plugin은 선언형 `@Agent`의 실행 스트림을 AG-UI 이벤트로 투영하여 SSE로
-노출합니다. 승인이 필요한 도구는 deferred-tool 방식의 HITL (Human-in-the-loop) 흐름으로
-표면화됩니다.
+`spakky-agui` plugin은 선언형 `@Agent`의 실행 스트림을 AG-UI 이벤트로 투영하여
+SSE/WebSocket으로 노출합니다. 승인이 필요한 도구는 deferred-tool 방식의 HITL
+(Human-in-the-loop) 흐름으로 표면화됩니다.
 
 ## 1. `@Agent` 선언
 
@@ -50,11 +50,12 @@ class Assistant:
         return f"write:{topic}"
 ```
 
-## 2. SSE endpoint 마운트
+## 2. endpoint 마운트
 
-`add_agui_endpoint`로 FastAPI 앱에 `POST {sse_path}` 라우트를 등록합니다. plugin은
-`fastapi` 서드파티에 직접 의존하며(`StreamingResponse`), `spakky-fastapi` plugin을
-import하지 않습니다.
+`add_agui_endpoint`로 FastAPI 앱에 `POST {sse_path}` SSE 라우트를 등록하고,
+`add_agui_websocket_endpoint`로 `WebSocket {websocket_path}` 라우트를 등록합니다. plugin은
+`fastapi` 서드파티에 직접 의존하며(`StreamingResponse`, `WebSocket`), `spakky-fastapi`
+plugin을 import하지 않습니다.
 
 ```python
 from fastapi import FastAPI
@@ -64,7 +65,7 @@ from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 from spakky.agent import AgentRunner, RunAgentInput
 from spakky.plugins.agui import (
     AgUiProjector, AgUiRunDriver,
-    AgUiConfig, add_agui_endpoint, ingest_decision,
+    AgUiConfig, add_agui_endpoint, add_agui_websocket_endpoint, ingest_decision,
 )
 
 app = FastAPI()
@@ -86,7 +87,14 @@ def run_driver_factory(core_input, ag_ui_input, accept):
 
 
 add_agui_endpoint(app, run_driver_factory=run_driver_factory, config=config)
+add_agui_websocket_endpoint(app, run_driver_factory=run_driver_factory, config=config)
 ```
+
+SSE 클라이언트는 `POST /agui` body로 AG-UI `RunAgentInput`을 보내고 `text/event-stream`
+응답을 받습니다. WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 `RunAgentInput` JSON을
+text/JSON message로 보내고, AG-UI encoded event frame을 text message로 순서대로 받습니다.
+같은 WebSocket 연결에서 후속 `RunAgentInput`을 보내 승인 결정(`forwardedProps.approvalDecision`
+또는 deferred tool-result message)을 전달할 수 있습니다.
 
 `initialize`는 `AgUiConfig`만 등록합니다. 투영기는 실행마다 상태를 가지므로 싱글턴 Pod이
 될 수 없고, 어떤 Agent가 응답할지는 애플리케이션마다 다르기 때문에 endpoint 와이어링은
@@ -97,6 +105,7 @@ add_agui_endpoint(app, run_driver_factory=run_driver_factory, config=config)
 | 환경변수 | 기본값 | 목적 |
 |---------|--------|------|
 | `SPAKKY_AGUI_SSE_PATH` | `/agui` | SSE endpoint 경로 |
+| `SPAKKY_AGUI_WEBSOCKET_PATH` | `/agui/ws` | WebSocket endpoint 경로 |
 | `SPAKKY_AGUI_EMIT_STATE_SNAPSHOT` | `true` | `STATE_SNAPSHOT` 투영 여부 |
 | `SPAKKY_AGUI_MESSAGES_SNAPSHOT_ENABLED` | `false` | `RUN_FINISHED` 직전 `MESSAGES_SNAPSHOT` 방출 여부 |
 
@@ -128,8 +137,9 @@ dispatch 없이 결과를 내보내지 않고, 그 멈춤은 durable한 `WAIT_FO
    승인 요청이 남습니다. `AgUiRunDriver`는 종단 `RUN_FINISHED` 직전에 그 상태를 읽어
    (`project_pending_approval`), `hitl_approval`의 `TOOL_CALL_START`/`ARGS`/`END` 프레임을
    주입합니다 — **결과 프레임은 없습니다** (결과 지연).
-2. 클라이언트가 사람의 결정을 수집해 다음 `RunAgentInput`에 담아 다시 POST합니다 (deferred
-   call id를 향한 tool-result 메시지, 또는 `forwardedProps.approvalDecision`).
+2. 클라이언트가 사람의 결정을 수집해 다음 `RunAgentInput`에 담아 다시 전송합니다 (SSE에서는
+   POST, WebSocket에서는 같은 연결의 후속 message; deferred call id를 향한 tool-result 메시지,
+   또는 `forwardedProps.approvalDecision`).
 3. `ingest_decision`이 결정을 디코딩하여 durable signal queue에 `APPROVAL_DECISION`
    signal로 적재하면 런너가 `run_events()`를 다시 돌며 재개합니다. `APPROVE`/`MODIFY`는
    도구를 진행시키고, `REJECT`는 종료로 이어집니다.
