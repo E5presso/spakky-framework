@@ -49,6 +49,7 @@ pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
 - `ModelRequest`, `ModelResponse`, `ModelStreamEvent`: provider-neutral model 호출/응답/stream 계약
 - `ToolCallingSpec`, `ModelToolSpec`, `ModelToolCall`: model-facing tool call 요청과 후보 결과
 - `agent_tool`, `AgentToolBoundInvocation`, `AgentToolBindingError`, `ToolEffects`, `ToolRisk`, `ToolApprovalRequirement`, `ToolResumeMetadata`, `EvidenceCapture`: tool binding, risk, approval, idempotency, evidence capture metadata
+- `AgentToolDispatcher`, `AgentToolDispatchError`: model tool-call을 카탈로그 descriptor로 조회·자동 바인딩·실행하는 디스패치 building block과 미등록 도구 에러
 
 ## 의존성 경계
 
@@ -149,6 +150,18 @@ async def lookup_customer(
 ```
 
 Model adapter가 decoded tool-call JSON을 받으면 tool 실행 전에 `descriptor.bind_invocation(payload)`로 Python signature binding을 수행합니다. Payload는 flat keyword object(`{"query": "agent", "limit": 5}`) 또는 structured object(`{"args": ["agent"], "kwargs": {"limit": 5}}`)를 사용할 수 있습니다. Binding은 `inspect.Signature`의 required/default/duplicate/unknown argument semantics를 따르며, 실패 시 tool callable을 실행하지 않고 `AgentToolBindingError`를 발생시킵니다.
+
+`AgentToolDispatcher`는 이 조회·바인딩·실행을 하나의 building block으로 묶어, 소비자가 `if call.name == ...` 같은 이름 문자열 매칭 디스패치를 직접 작성하지 않도록 합니다. `AgentToolDispatcher(target=agent_instance, catalog=Agent.get(MyAgent).tool_catalog).dispatch(call)`은 `ModelToolCall.name`으로 descriptor를 조회하고, `bind_invocation`으로 `call.arguments`를 바인딩한 뒤, descriptor callable을 실행해 결과를 반환합니다. 동기/비동기 tool 모두를 처리하고, `self`/`cls` owner parameter가 없는 descriptor(MCP normalize 등 외부 도구)는 instance 없이 호출합니다. 카탈로그에 없는 이름은 `AgentToolDispatchError`로 실패합니다.
+
+```python
+from spakky.agent import Agent, AgentToolDispatcher
+
+dispatcher = AgentToolDispatcher(
+    target=assistant,
+    catalog=Agent.get(CodeAssistant).tool_catalog,
+)
+result = await dispatcher.dispatch(model_tool_call)
+```
 
 ## Delegation contract
 
