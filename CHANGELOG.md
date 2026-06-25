@@ -1,3 +1,35 @@
+## v6.10.0 (2026-06-25)
+
+### Feat
+
+- **agent**: add first-class HITL pause events (#461)
+- **a2a**: add teammate delegation client wiring (#460)
+- **agui**: add CLI stdio protocol boundary (#459)
+- **a2a**: add rest transport (#458)
+- **agui**: add HTTP streaming endpoint (#457)
+- **a2a**: add grpc transport (#456)
+- **agui**: add WebSocket AG-UI endpoint (#455)
+- **a2a**: add A2A server adapter (#454)
+- **agui**: add AG-UI SSE adapter (#453)
+- **agent**: add declarative signal hooks (#451)
+- **mcp**: MCP 서버로 에이전트 도구 노출 (#417) (#447)
+- **mcp**: MCP 클라이언트 어댑터로 외부 서버 도구를 카탈로그에 합류 (#416) (#444)
+- **agent**: pluggable CompactionStrategy 포트 + 내장 전략 4종 (#445)
+- **agent**: AgentRunner emits neutral AgentEvent taxonomy for lossless adapter mapping (#443)
+- **agent**: 멀티턴 세션/이력 + TaskStore 영속성 포트 (#411) (#442)
+- **agent**: AgentRunner owns execution loop with auto-provided execute() and HITL (#440)
+- **grpc**: validate explicit ProtoField numbers (reserved/range/duplicate) (#439)
+- **agent**: ModelCapability descriptor + IAgentModel 스트림 계약 확장 (#404) (#437)
+- **agent**: extend AgentExecutionSpec with instructions/output_type/teammates/compaction (#435)
+- **agent**: AgentToolDispatcher 자동 도구 디스패치 (#406) (#434)
+- **agent**: add protocol-neutral event taxonomy (#433)
+- **grpc**: 이름 해시 기반 안정 필드 번호 변환 엔진 + ProtoField 선택화 (#427)
+
+### Fix
+
+- **agent**: add tool-call message linkage to event taxonomy (#438)
+- **harness**: type-check src and tests in worktree pre-commit pyrefly (#431)
+
 ## v6.9.1 (2026-06-20)
 
 ### Fix

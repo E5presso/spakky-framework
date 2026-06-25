@@ -1,6 +1,6 @@
 [project]
 name = "spakky-agui"
-version = "6.9.1"
+version = "6.10.0"
 description = "AG-UI protocol adapter plugin for Spakky Agent"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,8 +10,8 @@ dependencies = [
     "ag-ui-protocol>=0.1.19",
     "fastapi[standard]>=0.135.3",
     "pydantic-settings>=2.13.1",
-    "spakky>=6.9.1",
-    "spakky-agent>=6.9.1",
+    "spakky>=6.10.0",
+    "spakky-agent>=6.10.0",
 ]
 
 [project.entry-points."spakky.plugins"]
