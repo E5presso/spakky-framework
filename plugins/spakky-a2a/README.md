@@ -2,6 +2,36 @@
 
 A2A (Agent2Agent) protocol server plugin for the Spakky framework.
 
+## REST HTTP+JSON transport
+
+`build_a2a_rest_app()` builds a mountable Starlette app for the official A2A
+HTTP+JSON binding. The transport reuses the same AgentCard derivation,
+`TaskStore`, `SpakkyAgentExecutor`, and neutral agent-event projection used by
+the JSON-RPC and gRPC transports.
+
+```python
+from spakky.plugins.a2a.rest_transport import build_a2a_rest_app
+
+app = build_a2a_rest_app(
+    assistant_agent,
+    base_url="https://agents.example.com/a2a",
+    version="1.0.0",
+)
+```
+
+The SDK route names differ from JSON-RPC method strings:
+
+| A2A operation | REST route |
+|---------------|------------|
+| `message/send` | `POST /message:send` |
+| `message/stream` | `POST /message:stream` |
+| `tasks/get` | `GET /tasks/{id}` |
+| `tasks/cancel` | `POST /tasks/{id}:cancel` |
+| `tasks/subscribe` | `GET /tasks/{id}:subscribe` or `POST /tasks/{id}:subscribe` |
+
+REST request and response bodies use the A2A SDK protobuf JSON encoding. For
+example, send a user message with `{"message":{"role":"ROLE_USER","messageId":"m1","parts":[{"text":"hi"}]}}`.
+
 ## gRPC transport
 
 `build_a2a_grpc_handler()` builds a `grpc.GenericRpcHandler` for the official
