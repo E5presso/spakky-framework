@@ -40,6 +40,7 @@ from spakky.agent import (
     Final,
     IAgentModel,
     JsonValue,
+    ModelCapability,
     ModelError,
     ModelRequest,
     ModelResponse,
@@ -315,6 +316,11 @@ class RecordingModel(IAgentModel):
     def __init__(self, events: Sequence[ModelStreamEvent]) -> None:
         self._events = tuple(events)
         self.requests: list[ModelRequest] = []
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
 
     @override
     async def complete(self, request: ModelRequest) -> ModelResponse:

@@ -1,6 +1,7 @@
 """Tests for agent model interface contracts."""
 
 from collections.abc import AsyncIterator
+from typing import override
 
 import pytest
 
@@ -18,6 +19,7 @@ from spakky.agent import (
     IAgentModel,
     JsonSchemaConstraint,
     MaskingPolicy,
+    ModelCapability,
     ModelError,
     ModelMessage,
     ModelMessageRole,
@@ -43,6 +45,15 @@ from spakky.agent import (
 class FakeAgentModel(IAgentModel):
     """Test double for the abstract model port."""
 
+    def __init__(self, capability: ModelCapability | None = None) -> None:
+        self._capability = capability or ModelCapability()
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return self._capability
+
+    @override
     async def complete(self, request: ModelRequest) -> ModelResponse:
         return ModelResponse(
             content=f"complete:{len(request.messages)}",
@@ -73,6 +84,7 @@ class FakeAgentModel(IAgentModel):
         )
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
+    @override
     def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         return self._events()
 
@@ -394,10 +406,189 @@ async def test_agent_model_expect_complete_and_stream_are_typed_port_methods() -
     ]
 
 
+class ReasoningCapableModel(IAgentModel):
+    """Reasoning-capable model that emits distinguished delta channels."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability(
+            supports_reasoning=True,
+            context_window_tokens=128_000,
+            supports_token_counting=True,
+        )
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        return ModelResponse(content="planned")
+
+    async def _events(self) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.REASONING_DELTA,
+            reasoning_delta="weighing options",
+        )
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.MESSAGE_DELTA,
+            message_delta="Calling search",
+        )
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.TOOL_CALL_START,
+            tool_call=ModelToolCall(name="search_docs", arguments={}, call_id="c1"),
+        )
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.TOOL_CALL_ARGS_DELTA,
+            tool_call_args_delta='{"query":"agent"}',
+        )
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.TOOL_CALL_END,
+            tool_call=ModelToolCall(
+                name="search_docs", arguments={"query": "agent"}, call_id="c1"
+            ),
+        )
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+    @override
+    def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        return self._events()
+
+
+class ReasoningFreeModel(IAgentModel):
+    """Model whose backend lacks reasoning — it omits reasoning events."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability(
+            supports_reasoning=False,
+            context_window_tokens=8_192,
+        )
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        return ModelResponse(content="answered")
+
+    async def _events(self) -> AsyncIterator[ModelStreamEvent]:
+        if self.capability.supports_reasoning:  # pragma: no branch - degrade guard
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.REASONING_DELTA,
+                reasoning_delta="unreachable",
+            )
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.MESSAGE_DELTA,
+            message_delta="answer",
+        )
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+    @override
+    def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        return self._events()
+
+
+def test_model_capability_expect_queryable_before_run() -> None:
+    """런타임 전 capability descriptor로 reasoning·context_window·token counting을 조회한다."""
+    capability = ReasoningCapableModel().capability
+
+    assert capability.supports_reasoning is True
+    assert capability.context_window_tokens == 128_000
+    assert capability.supports_token_counting is True
+
+
+def test_model_capability_expect_default_descriptor_declares_no_extras() -> None:
+    """기본 capability descriptor는 reasoning·token counting 미지원, context window 미선언이다."""
+    capability = ModelCapability()
+
+    assert capability.supports_reasoning is False
+    assert capability.context_window_tokens is None
+    assert capability.supports_token_counting is False
+
+
+@pytest.mark.asyncio
+async def test_model_stream_expect_emits_distinguished_delta_channels() -> None:
+    """reasoning capable model이 reasoning/message/tool-args delta와 tool-call 경계를 구분 방출한다."""
+    model = ReasoningCapableModel()
+    request = ModelRequest(messages=(ModelMessage(ModelMessageRole.USER, "plan"),))
+
+    events = [event async for event in model.stream(request)]
+
+    assert [event.kind for event in events] == [
+        ModelStreamEventKind.REASONING_DELTA,
+        ModelStreamEventKind.MESSAGE_DELTA,
+        ModelStreamEventKind.TOOL_CALL_START,
+        ModelStreamEventKind.TOOL_CALL_ARGS_DELTA,
+        ModelStreamEventKind.TOOL_CALL_END,
+        ModelStreamEventKind.DONE,
+    ]
+    assert events[0].reasoning_delta == "weighing options"
+    assert events[1].message_delta == "Calling search"
+    assert events[2].tool_call is not None
+    assert events[2].tool_call.call_id == "c1"
+    assert events[3].tool_call_args_delta == '{"query":"agent"}'
+    assert events[4].tool_call is not None
+    assert events[4].tool_call.arguments == {"query": "agent"}
+
+
+@pytest.mark.asyncio
+async def test_model_stream_expect_omits_reasoning_when_capability_absent() -> None:
+    """reasoning 미지원 model은 capability 사전 판별로 reasoning 이벤트를 에러 없이 생략한다."""
+    model = ReasoningFreeModel()
+    request = ModelRequest(messages=(ModelMessage(ModelMessageRole.USER, "answer"),))
+
+    assert model.capability.supports_reasoning is False
+
+    events = [event async for event in model.stream(request)]
+
+    assert [event.kind for event in events] == [
+        ModelStreamEventKind.MESSAGE_DELTA,
+        ModelStreamEventKind.DONE,
+    ]
+    assert all(
+        event.kind is not ModelStreamEventKind.REASONING_DELTA for event in events
+    )
+
+
+def test_model_stream_event_expect_guards_message_and_reasoning_channels() -> None:
+    """message_delta·reasoning_delta·tool_call_args_delta도 path-bound guard를 지난다."""
+    secret = SecretField()
+    message_event = ModelStreamEvent(
+        kind=ModelStreamEventKind.MESSAGE_DELTA,
+        message_delta="sk-live-1234",
+    ).guarded((SensitiveFieldDescriptor(("message_delta",), secret),))
+    reasoning_event = ModelStreamEvent(
+        kind=ModelStreamEventKind.REASONING_DELTA,
+        reasoning_delta="sk-live-1234",
+    ).guarded((SensitiveFieldDescriptor((), secret),))
+    args_event = ModelStreamEvent(
+        kind=ModelStreamEventKind.TOOL_CALL_ARGS_DELTA,
+        tool_call_args_delta="sk-live-1234",
+    ).guarded((SensitiveFieldDescriptor(("tool_call_args_delta",), secret),))
+
+    assert message_event.message_delta == "[SECRET]"
+    assert reasoning_event.reasoning_delta == "[SECRET]"
+    assert args_event.tool_call_args_delta == "[SECRET]"
+
+
 def test_model_stream_event_kind_expect_issue_216_required_vocabulary() -> None:
-    """Model stream event가 #216 수용 기준의 canonical event kind를 노출한다."""
+    """Model stream event가 #216 기존 canonical event kind를 계속 노출한다."""
+    issue_216_vocabulary = {
+        "token_delta",
+        "tool_call_candidate",
+        "structured_output",
+        "progress",
+        "error",
+        "done",
+    }
+    assert issue_216_vocabulary <= {kind.value for kind in ModelStreamEventKind}
+
+
+def test_model_stream_event_kind_expect_distinguished_delta_vocabulary() -> None:
+    """Model stream event가 reasoning/message/tool-args delta와 tool-call 경계를 구분한다."""
     assert {kind.value for kind in ModelStreamEventKind} == {
         "token_delta",
+        "message_delta",
+        "reasoning_delta",
+        "tool_call_start",
+        "tool_call_args_delta",
+        "tool_call_end",
         "tool_call_candidate",
         "structured_output",
         "progress",

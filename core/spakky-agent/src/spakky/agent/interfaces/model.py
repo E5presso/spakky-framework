@@ -228,6 +228,11 @@ class ModelStreamEventKind(StrEnum):
     """Provider-neutral streaming event kinds emitted by a model adapter."""
 
     TOKEN_DELTA = "token_delta"
+    MESSAGE_DELTA = "message_delta"
+    REASONING_DELTA = "reasoning_delta"
+    TOOL_CALL_START = "tool_call_start"
+    TOOL_CALL_ARGS_DELTA = "tool_call_args_delta"
+    TOOL_CALL_END = "tool_call_end"
     TOOL_CALL_CANDIDATE = "tool_call_candidate"
     STRUCTURED_OUTPUT = "structured_output"
     PROGRESS = "progress"
@@ -237,15 +242,51 @@ class ModelStreamEventKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ModelStreamEvent:
-    """Provider-neutral model streaming event."""
+    """Provider-neutral model streaming event.
+
+    ``token_delta`` carries the generic streamed token channel. ``message_delta``
+    and ``reasoning_delta`` distinguish assistant-facing text from model reasoning
+    so callers can route or suppress reasoning independently. ``tool_call_args_delta``
+    carries incremental tool-call argument text framed by ``TOOL_CALL_START`` and
+    ``TOOL_CALL_END`` boundary events that reference the same ``tool_call``.
+    """
 
     kind: ModelStreamEventKind
     token_delta: str | None = None
+    message_delta: str | None = None
+    reasoning_delta: str | None = None
     tool_call: ModelToolCall | None = None
+    tool_call_args_delta: str | None = None
     structured_output: JsonValue = None
     error: ModelError | None = None
     usage: ModelUsage | None = None
     metadata: JsonObject = field(default_factory=dict)
+
+    @staticmethod
+    def _guard_text_delta(
+        field_name: str,
+        value: str,
+        sensitive_fields: Sequence[SensitiveFieldDescriptor],
+        policy: EvidenceExposurePolicy,
+    ) -> str:
+        """Guard one streamed text channel against root or path-bound descriptors."""
+        descriptors = tuple(
+            descriptor
+            for descriptor in sensitive_fields
+            if descriptor.path in ((), (field_name,))
+        )
+        if not descriptors:
+            return value
+        guarded = guard_json_value(
+            {field_name: value},
+            tuple(
+                SensitiveFieldDescriptor((field_name,), descriptor.field)
+                for descriptor in descriptors
+            ),
+            policy,
+        )
+        guarded_value = cast(Mapping[str, JsonValue], guarded).get(field_name)
+        return guarded_value if isinstance(guarded_value, str) else "[REDACTED]"
 
     def guarded(
         self,
@@ -254,35 +295,28 @@ class ModelStreamEvent:
     ) -> "ModelStreamEvent":
         """Return a copy with sensitive streaming payloads guarded."""
         exposure_policy = policy or EvidenceExposurePolicy()
-        token_delta = self.token_delta
-        structured_output = self.structured_output
-        tool_call = self.tool_call
-        if token_delta is not None:
-            token_descriptors = tuple(
-                descriptor
-                for descriptor in sensitive_fields
-                if descriptor.path in ((), ("token_delta",))
+        text_channels: dict[str, str | None] = {
+            "token_delta": self.token_delta,
+            "message_delta": self.message_delta,
+            "reasoning_delta": self.reasoning_delta,
+            "tool_call_args_delta": self.tool_call_args_delta,
+        }
+        guarded_text = {
+            field_name: self._guard_text_delta(
+                field_name, value, sensitive_fields, exposure_policy
             )
-            if token_descriptors:
-                guarded_token = guard_json_value(
-                    {"token_delta": token_delta},
-                    tuple(
-                        SensitiveFieldDescriptor(("token_delta",), descriptor.field)
-                        for descriptor in token_descriptors
-                    ),
-                    exposure_policy,
-                )
-                token_value = cast(Mapping[str, JsonValue], guarded_token).get(
-                    "token_delta"
-                )
-                if isinstance(token_value, str):
-                    token_delta = token_value
-                else:
-                    token_delta = "[REDACTED]"
+            for field_name, value in text_channels.items()
+            if value is not None
+        }
+        text_paths = (
+            (),
+            *((field_name,) for field_name in text_channels),
+        )
+        structured_output = self.structured_output
         structured_descriptors = tuple(
             descriptor
             for descriptor in sensitive_fields
-            if descriptor.path not in ((), ("token_delta",))
+            if descriptor.path not in text_paths
         )
         if structured_descriptors:
             structured_output = guard_json_value(
@@ -290,18 +324,42 @@ class ModelStreamEvent:
                 structured_descriptors,
                 exposure_policy,
             )
+        tool_call = self.tool_call
         if tool_call is not None:
             tool_call = tool_call.guarded(sensitive_fields, exposure_policy)
         return replace(
             self,
-            token_delta=token_delta,
             structured_output=structured_output,
             tool_call=tool_call,
+            **guarded_text,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ModelCapability:
+    """Provider-neutral declaration of a model backend's queryable abilities.
+
+    The agent runner consults this descriptor before a run to adjust behaviour
+    without invoking the backend. ``supports_reasoning`` gates whether the runner
+    expects ``REASONING_DELTA`` events; when False the adapter omits them rather
+    than failing (graceful degrade). ``context_window_tokens`` is ``None`` when the
+    backend does not declare a fixed limit. ``supports_token_counting`` declares
+    whether the backend can report token accounting for a request before sending it.
+    """
+
+    supports_reasoning: bool = False
+    context_window_tokens: int | None = None
+    supports_token_counting: bool = False
 
 
 class IAgentModel(ABC):
     """Outbound model adapter port owned by spakky-agent core."""
+
+    @property
+    @abstractmethod
+    def capability(self) -> ModelCapability:
+        """Return the backend capability descriptor queryable before a run."""
+        ...
 
     @abstractmethod
     async def complete(self, request: ModelRequest) -> ModelResponse:

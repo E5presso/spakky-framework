@@ -26,6 +26,7 @@ from spakky.agent import (
     Final,
     Idempotency,
     JsonSchemaConstraint,
+    ModelCapability,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -268,6 +269,11 @@ class _ScriptedModel(IAgentModel):
     def __init__(self, events: Sequence[ModelStreamEvent]) -> None:
         self._events = tuple(events)
         self.requests: list[ModelRequest] = []
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
 
     @override
     async def complete(self, request: ModelRequest) -> ModelResponse:
