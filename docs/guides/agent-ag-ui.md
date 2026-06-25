@@ -1,6 +1,146 @@
 # AG-UI 어댑터
 
-> 선언형 Agent를 AG-UI 프로토콜로 노출해, Agent 실행 이벤트를 UI에 스트리밍하는 어댑터 가이드입니다.
+> 선언형 Agent를 AG-UI (Agent User Interaction) 프로토콜로 노출해, Agent 실행 이벤트를
+> UI에 SSE (Server-Sent Events)로 스트리밍하는 어댑터 가이드입니다. 렌더링(프런트엔드)은
+> 범위 밖이며, 본 가이드는 와이어 프로토콜까지를 다룹니다.
 
-!!! note "작성 예정"
-    이 페이지는 정보구조(IA) 재설계에서 마련한 자리입니다. 선언형 Agent 어댑터 기능이 추가되면 후속 문서 태스크가 내용을 채웁니다. 지금은 [AI Agent 개발](agents.md)과 [AI Agent 심화](agents-advanced.md)를 참고하세요.
+`spakky-agui` plugin은 선언형 `@Agent`의 실행 스트림을 AG-UI 이벤트로 투영하여 SSE로
+노출합니다. 승인이 필요한 도구는 deferred-tool 방식의 HITL (Human-in-the-loop) 흐름으로
+표면화됩니다.
+
+## 1. `@Agent` 선언
+
+선언형 Agent는 spec과 `@agent_tool` 메서드만 선언하면 프레임워크가 실행 루프를 제공합니다
+(자세한 내용은 [AI Agent 심화](agents-advanced.md)).
+
+```python
+from spakky.agent import (
+    Agent, AgentExecutionSpec, AgentSignalKind, RecoveryStrategy,
+    EvidenceCapture, Idempotency, ToolApprovalRequirement, ToolEffects, agent_tool,
+)
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="assistant",
+        objective="answer with tools",
+        accepted_signals=(
+            AgentSignalKind.APPROVAL_DECISION,
+        ),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class Assistant:
+    def __init__(self, model, states, signals, evidence) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="note.write",
+        description="Write a note after human approval.",
+        effects=ToolEffects.write_state(),
+        idempotency=Idempotency.CONDITIONALLY_IDEMPOTENT,
+        evidence=EvidenceCapture.STRUCTURED,
+        approval=ToolApprovalRequirement.REQUIRED,
+    )
+    def note_write(self, topic: str) -> str:
+        """Write a note for a topic after approval."""
+        return f"write:{topic}"
+```
+
+## 2. SSE endpoint 마운트
+
+`add_agui_endpoint`로 FastAPI 앱에 `POST {sse_path}` 라우트를 등록합니다. plugin은
+`fastapi` 서드파티에 직접 의존하며(`StreamingResponse`), `spakky-fastapi` plugin을
+import하지 않습니다.
+
+```python
+from fastapi import FastAPI
+from ag_ui.encoder import EventEncoder
+from ag_ui.core import RunAgentInput as AgUiRunAgentInput
+
+from spakky.agent import AgentRunner, RunAgentInput
+from spakky.plugins.agui import (
+    AgUiProjector, AgUiRunDriver,
+    AgUiConfig, add_agui_endpoint, ingest_decision,
+)
+
+app = FastAPI()
+config = application.container.get(AgUiConfig)
+
+
+def run_driver_factory(core_input, ag_ui_input, accept):
+    assistant = application.container.get(Assistant)
+    runner = AgentRunner.for_agent_instance(assistant)
+    if core_input.resume:
+        ingest_decision(ag_ui_input, runner.signals, core_input.state_id)
+    return AgUiRunDriver(
+        runner=runner,
+        run_input=core_input,
+        agent_id="assistant",
+        projector=AgUiProjector(config),
+        encoder=EventEncoder(accept=accept),
+    )
+
+
+add_agui_endpoint(app, run_driver_factory=run_driver_factory, config=config)
+```
+
+`initialize`는 `AgUiConfig`만 등록합니다. 투영기는 실행마다 상태를 가지므로 싱글턴 Pod이
+될 수 없고, 어떤 Agent가 응답할지는 애플리케이션마다 다르기 때문에 endpoint 와이어링은
+애플리케이션 작성자의 명시적 호출(public hook)로 남깁니다.
+
+### 설정
+
+| 환경변수 | 기본값 | 목적 |
+|---------|--------|------|
+| `SPAKKY_AGUI_SSE_PATH` | `/agui` | SSE endpoint 경로 |
+| `SPAKKY_AGUI_EMIT_STATE_SNAPSHOT` | `true` | `STATE_SNAPSHOT` 투영 여부 |
+| `SPAKKY_AGUI_MESSAGES_SNAPSHOT_ENABLED` | `false` | `RUN_FINISHED` 직전 `MESSAGES_SNAPSHOT` 방출 여부 |
+
+## 3. 이벤트 매핑 (중립 → AG-UI)
+
+| 중립 `AgentEvent` | AG-UI 이벤트 |
+|------------------|-------------|
+| `MESSAGE_DELTA` | `TEXT_MESSAGE_START` + `TEXT_MESSAGE_CONTENT` (빈 delta 생략) |
+| `REASONING_DELTA` | `REASONING_START` + `REASONING_MESSAGE_START` + `REASONING_MESSAGE_CONTENT` |
+| `TOOL_CALL_START` | `TOOL_CALL_START` |
+| `TOOL_CALL_ARGS_DELTA` | `TOOL_CALL_ARGS` |
+| `TOOL_CALL_END` | `TOOL_CALL_END` |
+| `TOOL_CALL_RESULT` | `TOOL_CALL_RESULT` |
+| `RUN_STARTED` | `RUN_STARTED` |
+| `RUN_FINISHED` | `RUN_FINISHED` 또는 `RUN_ERROR` |
+| `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED` |
+| `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (설정 게이트) |
+| `STATE_DELTA` | `STATE_DELTA` |
+| `ARTIFACT` | `CUSTOM` (name=`artifact`) |
+
+## 4. deferred-tool HITL 흐름
+
+AG-UI에는 1급 승인 이벤트가 없습니다. 승인 요청은 `hitl_approval` 도구의 **deferred tool
+call**로 표면화됩니다. `run_events()`는 승인 이벤트를 방출하지 않습니다 — 승인 필요 도구는
+dispatch 없이 결과를 내보내지 않고, 그 멈춤은 durable한 `WAIT_FOR_APPROVAL` 상태(상태
+`INTERRUPTED`, 사유 `APPROVAL_REQUIRED`)로 기록됩니다.
+
+1. 런너가 승인 필요 도구에서 멈추면 `run_events()` 스트림은 결과 없이 끝나고, durable 상태에
+   승인 요청이 남습니다. `AgUiRunDriver`는 종단 `RUN_FINISHED` 직전에 그 상태를 읽어
+   (`project_pending_approval`), `hitl_approval`의 `TOOL_CALL_START`/`ARGS`/`END` 프레임을
+   주입합니다 — **결과 프레임은 없습니다** (결과 지연).
+2. 클라이언트가 사람의 결정을 수집해 다음 `RunAgentInput`에 담아 다시 POST합니다 (deferred
+   call id를 향한 tool-result 메시지, 또는 `forwardedProps.approvalDecision`).
+3. `ingest_decision`이 결정을 디코딩하여 durable signal queue에 `APPROVAL_DECISION`
+   signal로 적재하면 런너가 `run_events()`를 다시 돌며 재개합니다. `APPROVE`/`MODIFY`는
+   도구를 진행시키고, `REJECT`는 종료로 이어집니다.
+
+## 매핑 충실도
+
+도구·메시지·실행 이벤트 매핑은 `run_events()`를 통해 **완전 무손실(lossless)**입니다. 런너가
+메시지/추론 delta, 도구 호출 `start`/`args-delta`/`end`/`result` 생명주기, run/step 경계를
+각각 별개의 중립 `AgentEvent`로 native 방출하므로, 어댑터는 거친 yield를 재구성하지 않고
+1:1로 투영합니다(과거 `AgentYield → AgentEvent` bridge는 제거되었습니다). reasoning을
+지원하지 않는 모델에서는 `REASONING_DELTA`가 생략되고(graceful degrade), 현재 모델 루프가
+생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/`ARTIFACT`는 live 런에서 방출되지 않지만
+projector는 taxonomy 완전성을 위해 이들 종류도 계속 처리합니다. `parentRunId`는 `run_events`가
+parent run을 세팅하지 않으므로 `RUN_STARTED`에 항상 포함되지 않습니다.

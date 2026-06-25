@@ -14,6 +14,7 @@ from spakky.agent import (
     AgentRunner,
     AgentRunResult,
     AgentSignalKind,
+    AgentStateReason,
     AgentStatus,
     AgentYield,
     AgentYieldKind,
@@ -1402,23 +1403,29 @@ async def test_agent_runner_events_expect_reasoning_suppressed_without_capabilit
 async def test_agent_runner_events_expect_approval_gate_blocks_result_emission() -> (
     None
 ):
-    """승인 미결 도구는 dispatch 없이 tool result AgentEvent를 방출하지 않는다."""
+    """승인 미결 도구는 dispatch 없이 result를 방출하지 않고 paused 상태를 보존한다."""
     model = RecordingModel(
         (
             _tool_event("echo.write", {"value": "draft"}, "write-1"),
             ModelStreamEvent(kind=ModelStreamEventKind.DONE),
         )
     )
+    states = FakeStateRepository()
 
     events = await _run_events_durable(
         model,
         RunAgentInput(state_id="run-1", instruction="write"),
-        FakeStateRepository(),
+        states,
         FakeSignalRepository(()),
         FakeEvidenceRepository(),
     )
 
     assert not any(isinstance(event, ToolCallResultEvent) for event in events)
+    # The guard must NOT complete a run that paused for approval — the durable
+    # WAIT_FOR_APPROVAL state stays INTERRUPTED so the adapter can surface it.
+    paused = states.get("run-1")
+    assert paused.status is AgentStatus.INTERRUPTED
+    assert paused.reason is AgentStateReason.APPROVAL_REQUIRED
 
 
 async def test_agent_runner_events_expect_approved_tool_emits_result() -> None:

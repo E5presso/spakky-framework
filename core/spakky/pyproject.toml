@@ -17,6 +17,7 @@ data = ["spakky-data>=6.9.1"]
 event = ["spakky-event>=6.9.1"]
 task = ["spakky-task>=6.9.1"]
 agent-core = ["spakky-agent>=6.9.1"]
+agui = ["spakky-agui>=6.9.1"]
 actuator = ["spakky-actuator>=6.9.1"]
 cache-core = ["spakky-cache>=6.9.1"]
 tracing = ["spakky-tracing>=6.9.1"]
@@ -99,6 +100,7 @@ agent = [
     "spakky-agent>=6.9.1",
     "spakky[vllm]>=6.5.0",
     "spakky[mcp]>=6.5.0",
+    "spakky[agui]>=6.5.0",
     "spakky[sqlalchemy]>=6.5.0",
 ]
 recommended = [
@@ -118,6 +120,7 @@ full = [
     "spakky-saga>=6.9.1",
     "spakky-task>=6.9.1",
     "spakky-tracing>=6.9.1",
+    "spakky[agui]>=6.5.0",
     "spakky[celery]>=6.5.0",
     "spakky[cryptography]>=6.5.0",
     "spakky[fastapi]>=6.5.0",
