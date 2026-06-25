@@ -64,6 +64,7 @@ from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
     IAgentStateRepository,
 )
+from spakky.agent.interfaces.task_store import ConversationTurn, ITaskStore
 from spakky.agent.recovery import (
     AgentActionBoundaryCheckpoint,
     plan_agent_resume,
@@ -122,6 +123,10 @@ class AgentRunner:
     states: IAgentStateRepository | None = None
     signals: IAgentSignalRepository | None = None
     evidence: IAgentEvidenceRepository | None = None
+    # task_store is None for a run that has no server-persisted conversation; the
+    # caller then carries history inline via RunAgentInput.message_history or runs
+    # single-turn (ADR-0013 §6).
+    task_store: ITaskStore | None = None
 
     @classmethod
     def for_agent_instance(cls, instance: object) -> "AgentRunner":
@@ -142,6 +147,7 @@ class AgentRunner:
         states = cls._resolve_optional(attributes, IAgentStateRepository)
         signals = cls._resolve_optional(attributes, IAgentSignalRepository)
         evidence = cls._resolve_optional(attributes, IAgentEvidenceRepository)
+        task_store = cls._resolve_optional(attributes, ITaskStore)
         runner = cls(
             agent=agent,
             target=instance,
@@ -149,6 +155,7 @@ class AgentRunner:
             states=states,
             signals=signals,
             evidence=evidence,
+            task_store=task_store,
         )
         runner._require_durable_ports()
         return runner
@@ -170,12 +177,16 @@ class AgentRunner:
         run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentYield[object], None]:
         tool_calls: list[str] = []
+        assistant_text: list[str] = []
         yield _progress("preparing model request", "model")
         async for event in self.model.stream(self._model_request(run_input)):
-            async for item in self._consume_stream_event(event, None, tool_calls):
+            async for item in self._consume_stream_event(
+                event, None, tool_calls, assistant_text
+            ):
                 yield item
             if event.kind is ModelStreamEventKind.ERROR and event.error is not None:
                 return
+        self._persist_turns(run_input, assistant_text)
         yield self._final_yield(run_input.state_id, tool_calls, evidence_count=0)
 
     async def _run_durable(
@@ -199,6 +210,7 @@ class AgentRunner:
 
         # Phase 4: open the model action boundary and request the model.
         tool_calls: list[str] = []
+        assistant_text: list[str] = []
         yield _progress("preparing model request", "model")
         self._append_boundary(state.id, _before_model(self._model_action_id()))
         request = self._model_request(run_input)
@@ -212,7 +224,9 @@ class AgentRunner:
             for signal_item in self._consume_user_messages(state):
                 yield signal_item
             terminated = False
-            async for item in self._consume_stream_event(event, state, tool_calls):
+            async for item in self._consume_stream_event(
+                event, state, tool_calls, assistant_text
+            ):
                 yield item
             if event.kind is ModelStreamEventKind.ERROR and event.error is not None:
                 return
@@ -234,6 +248,7 @@ class AgentRunner:
                 current_activity="run completed",
             )
         )
+        self._persist_turns(run_input, assistant_text)
         yield self._final_yield(
             final_state.id,
             tool_calls,
@@ -245,12 +260,20 @@ class AgentRunner:
         event: ModelStreamEvent,
         state: AgentState | None,
         tool_calls: list[str],
+        assistant_text: list[str],
     ) -> AsyncGenerator[AgentYield[object], None]:
-        """Translate one model stream event into the public yield vocabulary."""
+        """Translate one model stream event into the public yield vocabulary.
+
+        Assistant-visible text (token and message deltas, not reasoning) is
+        accumulated into ``assistant_text`` so the completed run can persist the
+        assistant turn into the conversation transcript (ADR-0013 §6).
+        """
         match event.kind:
             case ModelStreamEventKind.TOKEN_DELTA:
+                assistant_text.append(event.token_delta or "")
                 yield _token(event.token_delta or "")
             case ModelStreamEventKind.MESSAGE_DELTA:
+                assistant_text.append(event.message_delta or "")
                 yield _token(event.message_delta or "")
             case ModelStreamEventKind.REASONING_DELTA:
                 if self.model.capability.supports_reasoning:
@@ -425,12 +448,55 @@ class AgentRunner:
                     ModelMessageRole.SYSTEM,
                     self.agent.spec.instructions or DEFAULT_SYSTEM_INSTRUCTION,
                 ),
+                *self._resolve_history(run_input),
                 ModelMessage(ModelMessageRole.USER, run_input.instruction),
             ),
             tool_calling=tool_calling,
             sampling=DEFAULT_SAMPLING,
             metadata={"state_id": run_input.state_id, **run_input.metadata},
         )
+
+    def _resolve_history(self, run_input: RunAgentInput) -> tuple[ModelMessage, ...]:
+        """Resolve the prior-turn messages that seed this run's model request.
+
+        The two ADR-0013 §6 multi-turn paths are mutually exclusive per run:
+        client-injected ``message_history`` wins when present (the stateless
+        caller owns the transcript), otherwise a wired ``TaskStore`` supplies the
+        server-persisted transcript keyed by ``effective_conversation_id``. With
+        neither, the run is single-turn and seeds from the instruction alone.
+        """
+        if run_input.message_history:
+            return run_input.message_history
+        if self.task_store is None:
+            return ()
+        return tuple(
+            turn.as_model_message()
+            for turn in self.task_store.load_history(
+                run_input.effective_conversation_id
+            )
+        )
+
+    def _persist_turns(
+        self,
+        run_input: RunAgentInput,
+        assistant_text: Sequence[str],
+    ) -> None:
+        """Append this run's user and assistant turns to the persisted session.
+
+        Only a server-persisted session (a wired ``TaskStore``) accumulates the
+        transcript. A client-injected-history run owns its own transcript (the
+        stateless ADR-0013 §6 path) and is never written back, even when a store
+        is also wired — the two multi-turn paths stay mutually exclusive per run.
+        A run that produced no assistant text persists only the user turn, so the
+        next turn still sees this instruction.
+        """
+        if self.task_store is None or run_input.message_history:
+            return
+        reply = "".join(assistant_text)
+        turns = [ConversationTurn(ModelMessageRole.USER, run_input.instruction)]
+        if reply.strip():
+            turns.append(ConversationTurn(ModelMessageRole.ASSISTANT, reply))
+        self.task_store.append_turns(run_input.effective_conversation_id, turns)
 
     def _final_yield(
         self,

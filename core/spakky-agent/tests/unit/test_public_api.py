@@ -352,6 +352,16 @@ def test_public_api_expect_exports_runner_and_inbound_types() -> None:
     assert runner_exports <= set(agent_api.__all__)
 
 
+def test_public_api_expect_exports_session_history_types() -> None:
+    """멀티턴 세션 이력(TaskStore) 계약을 public API로 노출한다."""
+    from spakky.agent import ConversationTurn, ITaskStore
+
+    assert ITaskStore is agent_api.ITaskStore
+    assert ConversationTurn is agent_api.ConversationTurn
+    session_exports = {"ITaskStore", "ConversationTurn"}
+    assert session_exports <= set(agent_api.__all__)
+
+
 def test_public_api_expect_exports_tool_metadata_types() -> None:
     """@agent_tool descriptor metadata 타입을 public API로 노출한다."""
     assert ToolPermission is agent_api.ToolPermission

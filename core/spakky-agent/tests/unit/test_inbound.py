@@ -2,7 +2,7 @@
 
 import pytest
 
-from spakky.agent import RunAgentInput
+from spakky.agent import ModelMessage, ModelMessageRole, RunAgentInput
 from spakky.agent.error import AgentDefinitionError
 
 
@@ -47,3 +47,26 @@ def test_run_agent_input_expect_rejects_blank_conversation_id() -> None:
     """공백 conversation_id는 멀티턴 식별자로 쓸 수 없어 거부된다."""
     with pytest.raises(AgentDefinitionError):
         RunAgentInput(state_id="run-1", instruction="do it", conversation_id=" ")
+
+
+def test_run_agent_input_expect_defaults_message_history_empty() -> None:
+    """클라이언트 주입 이력을 생략하면 빈 history로 단일턴 시드를 의미한다."""
+    run_input = RunAgentInput(state_id="run-1", instruction="do it")
+
+    assert run_input.message_history == ()
+
+
+def test_run_agent_input_expect_client_injected_history_carried() -> None:
+    """클라이언트가 주입한 이전 대화 이력이 inbound 입력에 그대로 전달된다."""
+    history = (
+        ModelMessage(ModelMessageRole.USER, "who was Einstein?"),
+        ModelMessage(ModelMessageRole.ASSISTANT, "a physicist"),
+    )
+
+    run_input = RunAgentInput(
+        state_id="run-2",
+        instruction="his famous equation?",
+        message_history=history,
+    )
+
+    assert run_input.message_history == history
