@@ -28,7 +28,10 @@ pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
 
 ## 제공하는 public surface
 
-- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미
+- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 이번 변경에서 네 가지 선언 필드를 추가로 제공한다 — `instructions: str | None` (system-level 안내 문자열, 빈 문자열 거부), `output_type: type[object] | None` (구조화 출력 타입 선언; 클래스여야 하며 provider에 중립, pydantic-ai `output_type`과 같은 의미), `teammates: tuple[AgentTeammate, ...]` (협력 agent 선언, 이름 중복 거부), `compaction: AgentCompactionPolicy | None` (컨텍스트 압축 전략 체인 + token threshold 선언). 잘못된 값은 모두 `AgentDefinitionError`로 거부된다.
+- `AgentTeammate`: 이름과 로컬 Pod 타입(`pod`) 또는 원격 AgentCard http(s) URL(`card_url`) 중 정확히 하나를 선언하는 협력 agent 기술자. 둘 다 지정하거나 둘 다 생략하면 `AgentDefinitionError`. 런타임 위임 배선은 후속 태스크 E4에서 구현된다.
+- `CompactionStrategy`: 컨텍스트 압축 전략 열거형(`StrEnum`). 값은 `DROP_OLDEST_EVIDENCE`, `SUMMARIZE_TRANSCRIPT`, `DEDUPLICATE_EVIDENCE`, `OFFLOAD_TO_EXTERNAL_STORE`.
+- `AgentCompactionPolicy`: 압축 전략 체인(`strategies: tuple[CompactionStrategy, ...]`, 비어 있거나 중복 불가)과 트리거 토큰 임계값(`trigger_token_threshold: int`, 양수 필수)을 선언하는 값 타입. 런타임 압축 핸들러는 후속 태스크 C7에서 구현된다.
 - `AgentYield`: `execute()`가 caller에게 흘려보내는 typed stream item
 - `AgentState`: long-running agent execution의 materialized lifecycle state
 - `AgentSignal`: 실행 중 들어오는 user message, approval, cancel 같은 inbound stimulus

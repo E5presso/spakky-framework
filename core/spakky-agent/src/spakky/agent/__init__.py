@@ -76,9 +76,12 @@ from spakky.agent.delegation import (
 )
 from spakky.agent.execution import (
     Agent,
+    AgentCompactionPolicy,
     AgentExecutionLimits,
     AgentExecutionSpec,
     AgentSignalKind,
+    AgentTeammate,
+    CompactionStrategy,
     RecoveryStrategy,
     StreamingExposureMode,
 )
@@ -208,6 +211,7 @@ __all__ = [
     "AgentCancellationCleanupTask",
     "AgentCancellationRequest",
     "AgentCancellationTargetKind",
+    "AgentCompactionPolicy",
     "AgentDelegateTarget",
     "AgentDefinitionError",
     "IAgentDelegate",
@@ -226,6 +230,7 @@ __all__ = [
     "AgentSignalConsumptionBatch",
     "AgentSignalKind",
     "AgentSignalPollPoint",
+    "AgentTeammate",
     "AgentToolBindingError",
     "AgentToolBoundInvocation",
     "AgentToolCatalog",
@@ -258,6 +263,7 @@ __all__ = [
     "ContextRotSymptom",
     "ContextSensitivity",
     "ContextTokenBudget",
+    "CompactionStrategy",
     "CredentialRef",
     "DelegationBudget",
     "DelegationContextSlice",
