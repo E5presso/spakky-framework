@@ -15,7 +15,9 @@ from spakky.agent import (
     AgentRunner,
     AgentRunResult,
     AgentSignalKind,
+    AgentState,
     AgentStateReason,
+    AgentStateTransition,
     AgentStatus,
     AgentYield,
     AgentYieldKind,
@@ -57,10 +59,12 @@ from spakky.agent.error import (
 )
 from spakky.agent.event import (
     AgentEvent,
+    AgentEventAttribution,
     AgentEventKind,
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
+    RunPausedEvent,
     RunStartedEvent,
     StepFinishedEvent,
     StepStartedEvent,
@@ -934,6 +938,32 @@ class _CancelInjectingModel(IAgentModel):
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
 
+class _StateMutatingModel(IAgentModel):
+    """Model that mutates durable state before yielding DONE."""
+
+    def __init__(
+        self,
+        states: FakeStateRepository,
+        state: AgentState,
+    ) -> None:
+        self._states = states
+        self._state = state
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        return ModelResponse(content="unused")
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        self._states.save(self._state)
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+
 class FakeTaskStore(ITaskStore):
     """In-memory conversation-history store keyed by conversation id."""
 
@@ -1450,6 +1480,39 @@ async def test_agent_runner_events_expect_model_error_emits_run_error() -> None:
     assert finished.error == {"code": "boom", "message": "provider failed"}
 
 
+async def test_agent_runner_events_expect_cancel_signal_pre_loop_terminates() -> None:
+    """run_events 경로도 모델 호출 전 CANCEL signal을 terminal error로 방출한다."""
+    from spakky.agent import AgentSignal
+
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="cancel:run-1",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.CANCEL,
+                payload={"reason": "stop"},
+            ),
+        )
+    )
+
+    events = await _run_events_durable(
+        RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),)),
+        RunAgentInput(state_id="run-1", instruction="cancel"),
+        states,
+        signals,
+        FakeEvidenceRepository(),
+    )
+
+    assert len(events) == 2
+    assert isinstance(events[0], RunStartedEvent)
+    finished = events[1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error is not None
+    assert finished.error["code"] == "cancelled"
+    assert states.get("run-1").status is AgentStatus.CANCELLED
+
+
 async def test_agent_runner_events_expect_reasoning_suppressed_without_capability() -> (
     None
 ):
@@ -1478,7 +1541,7 @@ async def test_agent_runner_events_expect_reasoning_suppressed_without_capabilit
 async def test_agent_runner_events_expect_approval_gate_blocks_result_emission() -> (
     None
 ):
-    """승인 미결 도구는 dispatch 없이 result를 방출하지 않고 paused 상태를 보존한다."""
+    """승인 미결 도구는 RunFinished(success) 대신 pause event로 멈춘다."""
     model = RecordingModel(
         (
             _tool_event("echo.write", {"value": "draft"}, "write-1"),
@@ -1496,8 +1559,16 @@ async def test_agent_runner_events_expect_approval_gate_blocks_result_emission()
     )
 
     assert not any(isinstance(event, ToolCallResultEvent) for event in events)
-    # The guard must NOT complete a run that paused for approval — the durable
-    # WAIT_FOR_APPROVAL state stays INTERRUPTED so the adapter can surface it.
+    assert not any(
+        isinstance(event, RunFinishedEvent) and event.error is None for event in events
+    )
+    pause = events[-1]
+    assert isinstance(pause, RunPausedEvent)
+    assert pause.reason is AgentStateReason.APPROVAL_REQUIRED
+    assert pause.prompt == "Approve tool invocation: echo_write"
+    assert pause.approval_id == "approval:run-1:echo.write"
+    assert pause.tool_call_id == "write-1"
+    assert pause.allowed_decisions == ("approve", "reject", "modify", "defer", "cancel")
     paused = states.get("run-1")
     assert paused.status is AgentStatus.INTERRUPTED
     assert paused.reason is AgentStateReason.APPROVAL_REQUIRED
@@ -1527,6 +1598,35 @@ async def test_agent_runner_events_expect_approved_tool_emits_result() -> None:
     assert result[0].tool_name == "echo.write"
 
 
+async def test_agent_runner_events_expect_rejected_approval_emits_error_finish() -> (
+    None
+):
+    """승인 거부는 pause가 아니라 failed RunFinishedEvent로 종단된다."""
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    signals = FakeSignalRepository(
+        (_approval_signal("run-1", "approval:run-1:echo.write", "reject"),)
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="write"),
+        FakeStateRepository(),
+        signals,
+        FakeEvidenceRepository(),
+    )
+
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error is not None
+    assert finished.error["code"] == "approval_rejected"
+    assert not any(isinstance(event, RunPausedEvent) for event in events)
+
+
 async def test_agent_runner_events_expect_unknown_stream_event_ignored() -> None:
     """surfacing 대상이 아닌 모델 이벤트 종류는 조용히 무시된다."""
     events = await _run_events_durable(
@@ -1544,6 +1644,131 @@ async def test_agent_runner_events_expect_unknown_stream_event_ignored() -> None
 
     assert isinstance(events[-1], RunFinishedEvent)
     assert not any(isinstance(event, MessageDeltaEvent) for event in events)
+
+
+async def test_agent_runner_events_expect_auth_interrupt_after_stream_pauses() -> None:
+    """model stream 종료 시점의 auth_required state도 RunPausedEvent로 노출된다."""
+    states = FakeStateRepository()
+    model = _StateMutatingModel(
+        states,
+        AgentState(
+            id="run-1",
+            agent_type="runner_probe",
+            status=AgentStatus.INTERRUPTED,
+            transition=AgentStateTransition.INTERRUPTED,
+            reason=AgentStateReason.AUTH_REQUIRED,
+            current_activity="Sign in to continue.",
+        ),
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="needs auth"),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    pause = events[-1]
+    assert isinstance(pause, RunPausedEvent)
+    assert pause.reason is AgentStateReason.AUTH_REQUIRED
+    assert pause.prompt == "Sign in to continue."
+    assert pause.approval_id is None
+    assert pause.allowed_decisions == ()
+
+
+async def test_agent_runner_events_expect_failed_state_after_stream_emits_error() -> (
+    None
+):
+    """model stream 종료 시점의 failed state는 상태 reason 기반 error로 종단된다."""
+    states = FakeStateRepository()
+    model = _StateMutatingModel(
+        states,
+        AgentState(
+            id="run-1",
+            agent_type="runner_probe",
+            status=AgentStatus.FAILED,
+            transition=AgentStateTransition.FAILED,
+            reason=None,
+        ),
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="fail late"),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error is not None
+    assert finished.error["code"] == "failed"
+
+
+def test_run_paused_event_helper_expect_accepts_top_level_tool_call_id() -> None:
+    """approval metadata의 top-level call_id도 pause event 필드로 승격된다."""
+    from spakky.agent.runner import _run_paused_event
+
+    event = _run_paused_event(
+        AgentState(
+            id="run-1",
+            agent_type="runner_probe",
+            status=AgentStatus.INTERRUPTED,
+            reason=AgentStateReason.APPROVAL_REQUIRED,
+            current_activity="Approve?",
+            metadata={
+                "approval": {
+                    "id": "approval-1",
+                    "call_id": "call-1",
+                    "allowed_decisions": ["approve"],
+                    "metadata": "legacy",
+                }
+            },
+        ),
+        AgentEventAttribution(
+            agent_id="runner_probe",
+            run_id="run-1",
+            conversation_id="run-1",
+        ),
+    )
+
+    assert event.tool_call_id == "call-1"
+    assert event.allowed_decisions == ("approve",)
+
+
+def test_cancel_error_helper_expect_fallback_for_non_cancel_payload() -> None:
+    """cancel error helper는 예상 밖 payload에서도 generic cancelled error를 낸다."""
+    from spakky.agent.runner import _cancel_error
+
+    error = _cancel_error(
+        AgentYield(kind=AgentYieldKind.PROGRESS, payload=Progress("x"))
+    )
+
+    assert error == {"code": "cancelled", "message": "run cancelled"}
+
+
+async def test_agent_runner_events_expect_cancel_signal_mid_stream_terminates() -> None:
+    """run_events 경로도 모델 스트림 중 도착한 CANCEL signal을 소비한다."""
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    model = _CancelInjectingModel(states, signals)
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="cancel mid"),
+        states,
+        signals,
+        FakeEvidenceRepository(),
+    )
+
+    assert states.get("run-1").status is AgentStatus.CANCELLED
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error is not None
+    assert finished.error["code"] == "cancelled"
+    assert not any(isinstance(event, RunPausedEvent) for event in events)
 
 
 async def test_agent_runner_events_expect_stateless_agent_emits_events() -> None:

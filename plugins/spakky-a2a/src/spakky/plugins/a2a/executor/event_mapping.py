@@ -6,11 +6,11 @@ update. A2A 1.x parts are protobuf messages: text is ``Part(text=...)`` and
 structured data is ``Part(data=<google.protobuf.Value>)``, built from a
 JSON-compatible value via ``ParseDict``.
 
-``RUN_FINISHED`` is not applied as a terminal transition here. The runner's
-``run_events()`` always emits ``RUN_FINISHED`` even when a tool call paused on a
-human approval gate, so the executor reconciles the real terminal state (complete,
-fail, or input-required) once after draining the stream. This projector therefore
-returns the run's terminal outcome rather than calling ``complete()`` itself.
+``RUN_FINISHED`` is not applied as a terminal transition here: the executor owns
+the single complete/failed terminal update after draining the stream. Neutral
+``RUN_PAUSED`` events are different: they are already non-terminal protocol
+interrupts, so this projector maps them directly to A2A input-required or
+auth-required task states.
 """
 
 from dataclasses import dataclass
@@ -26,6 +26,7 @@ from spakky.agent.event import (
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
+    RunPausedEvent,
     StateDeltaEvent,
     StateSnapshotEvent,
     StepFinishedEvent,
@@ -36,20 +37,22 @@ from spakky.agent.event import (
     ToolCallStartEvent,
 )
 from spakky.agent.types import JsonObject, JsonValue
+from spakky.agent.state import AgentStateReason
 
 from spakky.plugins.a2a.error import UnsupportedAgentEventError
 
 
 @dataclass(frozen=True, slots=True)
 class RunOutcome:
-    """Terminal result of one run, reconciled by the executor after draining.
+    """Terminal or interrupt result of one run, reconciled by the executor.
 
     ``error`` is ``None`` for a successful run and carries the runner's terminal
-    failure payload otherwise. The executor applies the single terminal task
-    transition, since an approval pause must override a runner-reported success.
+    failure payload otherwise. ``paused`` is true after a ``RUN_PAUSED`` event
+    has already applied the non-terminal task transition.
     """
 
     error: JsonObject | None
+    paused: bool = False
 
 
 class AgentEventProjector:
@@ -77,6 +80,9 @@ class AgentEventProjector:
                 await updater.start_work()
             case AgentEventKind.RUN_FINISHED:
                 return RunOutcome(error=_as(event, RunFinishedEvent).error)
+            case AgentEventKind.RUN_PAUSED:
+                await self._project_run_paused(_as(event, RunPausedEvent), updater)
+                return RunOutcome(error=None, paused=True)
             case AgentEventKind.STEP_STARTED:
                 await self._project_step(
                     _as(event, StepStartedEvent).step_name, updater
@@ -211,12 +217,43 @@ class AgentEventProjector:
             ),
         )
 
+    @staticmethod
+    async def _project_run_paused(
+        event: RunPausedEvent,
+        updater: TaskUpdater,
+    ) -> None:
+        parts = [
+            Part(text=event.prompt),
+            _data_part(_pause_payload(event)),
+        ]
+        message = updater.new_agent_message(
+            parts,
+            metadata={"pause_reason": event.reason.value},
+        )
+        if event.reason is AgentStateReason.AUTH_REQUIRED:
+            await updater.update_status(TaskState.TASK_STATE_AUTH_REQUIRED, message)
+            return
+        await updater.requires_input(message)
+
 
 def _data_part(payload: JsonObject) -> Part:
     """Build a protobuf data ``Part`` from a JSON-compatible mapping."""
     value = Value()
     ParseDict(dict(payload), value)
     return Part(data=value)
+
+
+def _pause_payload(event: RunPausedEvent) -> JsonObject:
+    payload: dict[str, JsonValue] = {
+        "reason": event.reason.value,
+        "state_id": event.state_id,
+        "allowed_decisions": list(event.allowed_decisions),
+    }
+    if event.approval_id is not None:
+        payload["approval_id"] = event.approval_id
+    if event.tool_call_id is not None:
+        payload["tool_call_id"] = event.tool_call_id
+    return payload
 
 
 def _data_part_from_value(content: JsonValue) -> Part:

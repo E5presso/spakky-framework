@@ -27,12 +27,11 @@ class AgUiApprovalDecodeError(AbstractAgUiError):
 class AgUiPendingApprovalError(AbstractAgUiError):
     """Raised when a paused-for-approval state carries malformed approval metadata.
 
-    After ``run_events`` ends, the transport reads the durable WAIT_FOR_APPROVAL
-    state to surface the deferred-tool approval request. The runner stores the
-    ``AgentApprovalRequest`` under ``metadata["approval"]`` with the prompt in
-    ``current_activity``; this error is raised when a state flagged
-    ``APPROVAL_REQUIRED`` is missing that metadata, omits the prompt, or carries
-    an unknown decision — an impossible state the adapter refuses to paper over.
+    The event-driven path converts ``RunPausedEvent`` to a deferred-tool approval
+    request. Legacy helpers can still rebuild that request from durable
+    WAIT_FOR_APPROVAL state. This error is raised when either source lacks the
+    approval id, prompt, or known decision list the adapter needs to render the
+    pause without guessing.
     """
 
     message = "AG-UI pending approval state is missing or has invalid metadata"

@@ -58,6 +58,9 @@ from spakky.agent.event import (
     RunFinishedEvent as NeutralRunFinishedEvent,
 )
 from spakky.agent.event import (
+    RunPausedEvent as NeutralRunPausedEvent,
+)
+from spakky.agent.event import (
     RunStartedEvent as NeutralRunStartedEvent,
 )
 from spakky.agent.event import (
@@ -88,6 +91,7 @@ from spakky.agent.event import (
 from spakky.agent.types import JsonObject, JsonValue
 
 from spakky.plugins.agui.config import AgUiConfig
+from spakky.plugins.agui.hitl import HITL_APPROVAL_TOOL_NAME, approval_from_pause
 from spakky.plugins.agui.serialization import dump_json
 
 ASSISTANT_ROLE = "assistant"
@@ -133,6 +137,8 @@ class AgUiProjector:
                 return self._project_tool_result(event)
             case NeutralRunStartedEvent():
                 return self._project_run_started(event)
+            case NeutralRunPausedEvent():
+                return self._project_run_paused(event)
             case NeutralRunFinishedEvent():
                 return self._project_run_finished(event)
             case NeutralStepStartedEvent():
@@ -245,6 +251,33 @@ class AgUiProjector:
                 result=event.metadata.get("output"),
             )
         )
+        return events
+
+    def _project_run_paused(self, event: NeutralRunPausedEvent) -> list[BaseEvent]:
+        approval = approval_from_pause(event)
+        events = self._close_open_frames()
+        events.append(
+            ToolCallStartEvent(
+                tool_call_id=approval.id,
+                tool_call_name=HITL_APPROVAL_TOOL_NAME,
+                parent_message_id=self._open_message_id,
+            )
+        )
+        events.append(
+            ToolCallArgsEvent(
+                tool_call_id=approval.id,
+                delta=dump_json(
+                    {
+                        "prompt": approval.prompt,
+                        "allowed_decisions": [
+                            decision.value for decision in approval.allowed_decisions
+                        ],
+                        **approval.metadata,
+                    }
+                ),
+            )
+        )
+        events.append(ToolCallEndEvent(tool_call_id=approval.id))
         return events
 
     def _project_step_started(self, event: NeutralStepStartedEvent) -> list[BaseEvent]:

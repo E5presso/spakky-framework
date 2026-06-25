@@ -13,6 +13,7 @@ from spakky.agent.event import (
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
+    RunPausedEvent,
     RunStartedEvent,
     StateDeltaEvent,
     StateSnapshotEvent,
@@ -23,6 +24,7 @@ from spakky.agent.event import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
+from spakky.agent.state import AgentStateReason
 
 from spakky.plugins.a2a.error import UnsupportedAgentEventError
 from spakky.plugins.a2a.executor.event_mapping import AgentEventProjector, RunOutcome
@@ -75,6 +77,56 @@ async def test_run_finished_error_returns_outcome_with_error(
     )
 
     assert outcome == RunOutcome(error={"code": "boom", "message": "x"})
+
+
+async def test_run_paused_approval_requires_input(
+    queue: RecordingEventQueue,
+    updater: TaskUpdater,
+) -> None:
+    """RUN_PAUSED approval_required maps directly to A2A input-required."""
+    outcome = await _project(
+        RunPausedEvent(
+            ATTRIBUTION,
+            reason=AgentStateReason.APPROVAL_REQUIRED,
+            prompt="Approve write?",
+            state_id="task-1",
+            approval_id="approval-1",
+            tool_call_id="call-1",
+            allowed_decisions=("approve", "reject"),
+        ),
+        updater,
+    )
+
+    assert outcome == RunOutcome(error=None, paused=True)
+    status = queue.status_updates()[0]
+    assert status.status.state == TaskState.TASK_STATE_INPUT_REQUIRED
+    parts = _part_dicts(status.status.message.parts)
+    assert parts[0] == {"text": "Approve write?"}
+    data = parts[1]["data"]
+    assert isinstance(data, dict)
+    assert data["approval_id"] == "approval-1"
+    assert data["allowed_decisions"] == ["approve", "reject"]
+
+
+async def test_run_paused_auth_required_maps_to_auth_required(
+    queue: RecordingEventQueue,
+    updater: TaskUpdater,
+) -> None:
+    """RUN_PAUSED auth_required maps directly to A2A auth-required."""
+    outcome = await _project(
+        RunPausedEvent(
+            ATTRIBUTION,
+            reason=AgentStateReason.AUTH_REQUIRED,
+            prompt="Sign in to continue.",
+            state_id="task-1",
+        ),
+        updater,
+    )
+
+    assert outcome == RunOutcome(error=None, paused=True)
+    status = queue.status_updates()[0]
+    assert status.status.state == TaskState.TASK_STATE_AUTH_REQUIRED
+    assert status.status.message.metadata["pause_reason"] == "auth_required"
 
 
 async def test_step_started_emits_working_with_step_name(

@@ -314,4 +314,4 @@ def test_hitl_resume_with_reject_terminates_without_tool_result() -> None:
     ]
     assert approval_signals[0].payload["decision"] == "reject"
     assert "TOOL_CALL_RESULT" not in types
-    assert types[-1] == "RUN_FINISHED"
+    assert types[-1] == "RUN_ERROR"

@@ -65,6 +65,16 @@ The SDK route names differ from JSON-RPC method strings:
 REST request and response bodies use the A2A SDK protobuf JSON encoding. For
 example, send a user message with `{"message":{"role":"ROLE_USER","messageId":"m1","parts":[{"text":"hi"}]}}`.
 
+## HITL and auth interrupts
+
+`SpakkyAgentExecutor` consumes the core `AgentRunner.run_events()` stream. Approval
+and auth pauses arrive as protocol-neutral `RunPausedEvent` items rather than as
+successful `RunFinishedEvent` terminals. The A2A projector maps
+`reason=approval_required` to `TASK_STATE_INPUT_REQUIRED` and includes the
+approval id plus allowed decisions in a data part. It maps `reason=auth_required`
+to `TASK_STATE_AUTH_REQUIRED`, so auth-required is reachable without inspecting
+durable `state.reason` after the run stream drains.
+
 ## gRPC transport
 
 `build_a2a_grpc_handler()` builds a `grpc.GenericRpcHandler` for the official

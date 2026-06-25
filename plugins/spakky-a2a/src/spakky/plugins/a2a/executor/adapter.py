@@ -6,12 +6,10 @@ onto A2A task events. The A2A task id seeds the agent's durable ``state_id`` so 
 human-approval pause resumes on the same run when the caller sends the next
 message with the same task id and an approval-decision data part.
 
-The runner's ``run_events()`` always emits ``RUN_FINISHED`` even when a tool call
-paused on an approval gate, leaving the durable state ``reason`` at
-``APPROVAL_REQUIRED`` while forcing its status to completed. This executor
-therefore reconciles the single terminal A2A transition after draining the
-stream: an approval pause becomes ``input-required``; otherwise the run's
-``RUN_FINISHED`` outcome becomes completed or failed.
+The runner emits approval/auth interruptions as first-class ``RunPausedEvent``
+items, so the A2A projector maps those directly to ``input-required`` or
+``auth-required``. This executor only reconciles ordinary ``RUN_FINISHED``
+success/failure after the stream drains.
 """
 
 from collections.abc import AsyncGenerator, Sequence
@@ -29,11 +27,9 @@ from spakky.agent.execution import AgentSignalKind
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
-    IAgentStateRepository,
 )
 from spakky.agent.runner import AgentRunner
 from spakky.agent.signal import AgentSignal, ApprovalDecision
-from spakky.agent.state import AgentStateReason
 from spakky.agent.types import JsonObject
 
 from spakky.plugins.a2a.error import InvalidApprovalDecisionError
@@ -45,17 +41,8 @@ APPROVAL_ID_PART_KEY = "approval_id"
 APPROVAL_DECISION_PART_KEY = "decision"
 """Inbound data-part key carrying the chosen approval decision value."""
 
-APPROVAL_METADATA_KEY = "approval"
-"""Durable state metadata key holding the pending approval request."""
-
-APPROVAL_ALLOWED_DECISIONS_KEY = "allowed_decisions"
-"""Approval metadata key listing the decisions the client may return."""
-
 RUN_FAILED_FALLBACK_MESSAGE = "run failed"
 """Status message used when a failed run carries no error message."""
-
-APPROVAL_PROMPT_FALLBACK = "Approval required to continue."
-"""Status message used when the pending approval carries no prompt."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,51 +90,21 @@ class SpakkyAgentExecutor(AgentExecutor):
 
     async def _reconcile_terminal(
         self,
-        task_id: str,
+        _task_id: str,
         outcome: RunOutcome | None,
         updater: TaskUpdater,
     ) -> None:
         """Apply the single terminal A2A transition after draining the stream.
 
-        A pending approval (durable state ``reason`` ``APPROVAL_REQUIRED``) takes
-        precedence over the runner's forced ``RUN_FINISHED`` success, becoming an
-        ``input-required`` pause; otherwise the run's outcome decides completion.
+        A ``RUN_PAUSED`` event has already applied its non-terminal A2A state.
+        Otherwise the run's outcome decides completion or failure.
         """
-        pause = self._pending_approval(task_id)
-        if pause is not None:
-            await self._project_approval_pause(pause, updater)
+        if outcome is not None and outcome.paused:
             return
         if outcome is not None and outcome.error is not None:
             await self._project_run_failure(outcome.error, updater)
             return
         await updater.complete()
-
-    async def _project_approval_pause(
-        self,
-        approval: JsonObject,
-        updater: TaskUpdater,
-    ) -> None:
-        """Pause the task for human input, echoing the approval id and choices."""
-        approval_id = approval.get("id")
-        allowed = approval.get(APPROVAL_ALLOWED_DECISIONS_KEY)
-        prompt = approval.get("prompt")
-        await updater.requires_input(
-            updater.new_agent_message(
-                [
-                    Part(
-                        text=prompt
-                        if isinstance(prompt, str)
-                        else APPROVAL_PROMPT_FALLBACK
-                    ),
-                    _data_part(
-                        {
-                            APPROVAL_ID_PART_KEY: approval_id,
-                            APPROVAL_ALLOWED_DECISIONS_KEY: allowed,
-                        }
-                    ),
-                ]
-            )
-        )
 
     @staticmethod
     async def _project_run_failure(error: JsonObject, updater: TaskUpdater) -> None:
@@ -166,24 +123,6 @@ class SpakkyAgentExecutor(AgentExecutor):
                 ]
             ),
         )
-
-    def _pending_approval(self, task_id: str) -> JsonObject | None:
-        """Return the pending approval request when the run paused for one.
-
-        ``run_events()`` forces the durable status to completed even on an approval
-        pause, but preserves ``reason == APPROVAL_REQUIRED`` and the approval
-        request in ``metadata['approval']`` — that pair is the lossless pause signal.
-        """
-        states = self._state_repository()
-        if states is None:
-            return None
-        state = states.get_or_none(task_id)
-        if state is None or state.reason is not AgentStateReason.APPROVAL_REQUIRED:
-            return None
-        approval = state.metadata.get(APPROVAL_METADATA_KEY)
-        if not isinstance(approval, dict):
-            return None
-        return approval
 
     @override
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
@@ -294,10 +233,6 @@ class SpakkyAgentExecutor(AgentExecutor):
         ``getattr``) and matched by runtime type since attribute names vary.
         """
         return self._resolve(tuple(vars(self._agent).values()), IAgentSignalRepository)
-
-    def _state_repository(self) -> IAgentStateRepository | None:
-        """Resolve the agent's state repository by type from its attributes."""
-        return self._resolve(tuple(vars(self._agent).values()), IAgentStateRepository)
 
     @staticmethod
     def _resolve[PortT](

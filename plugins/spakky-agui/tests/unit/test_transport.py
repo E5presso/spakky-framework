@@ -11,6 +11,7 @@ from spakky.agent.event import (
     AgentEventAttribution,
     MessageDeltaEvent,
     RunFinishedEvent,
+    RunPausedEvent,
     RunStartedEvent,
     StepFinishedEvent,
     StepStartedEvent,
@@ -20,12 +21,7 @@ from spakky.agent.event import (
 )
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.runner import AgentRunner
-from spakky.agent.state import (
-    AgentState,
-    AgentStateReason,
-    AgentStateTransition,
-    AgentStatus,
-)
+from spakky.agent.state import AgentStateReason
 
 from spakky.plugins.agui.config import AgUiConfig
 from spakky.plugins.agui.projector import AgUiProjector
@@ -54,18 +50,6 @@ class _ScriptedRunner:
             yield event
 
 
-class _PausedStateRepository:
-    """Fake state repository returning a single state for the run by id."""
-
-    def __init__(self, state: AgentState) -> None:
-        self._state = state
-
-    def get_or_none(self, state_id: str) -> AgentState | None:
-        if state_id == self._state.id:
-            return self._state
-        return None
-
-
 def _run_input() -> RunAgentInput:
     return RunAgentInput(
         state_id="run-1", instruction="do it", conversation_id="conv-1"
@@ -85,21 +69,16 @@ def _driver(
     )
 
 
-def _paused_state() -> AgentState:
-    return AgentState(
-        id="run-1",
-        agent_type="assistant",
-        status=AgentStatus.INTERRUPTED,
-        transition=AgentStateTransition.WAITING_APPROVAL,
+def _pause_event() -> RunPausedEvent:
+    return RunPausedEvent(
+        attribution=_ATTRIBUTION,
         reason=AgentStateReason.APPROVAL_REQUIRED,
-        current_activity="Approve tool invocation: note_write",
-        metadata={
-            "approval": {
-                "id": "approval:run-1:note.write",
-                "allowed_decisions": ["approve", "reject"],
-                "metadata": {"tool_name": "note_write"},
-            }
-        },
+        prompt="Approve tool invocation: note_write",
+        state_id="run-1",
+        approval_id="approval:run-1:note.write",
+        tool_call_id="write-1",
+        allowed_decisions=("approve", "reject"),
+        metadata={"tool_name": "note_write"},
     )
 
 
@@ -171,17 +150,13 @@ async def test_driver_stateless_run_emits_no_pending_approval() -> None:
     assert _event_type(frames[-1]) == "RUN_FINISHED"
 
 
-async def test_driver_durable_run_without_pending_approval_emits_no_frame() -> None:
-    """durable run이지만 해당 run 상태가 없으면 승인 프레임을 내지 않는다."""
-    other_state = AgentState(
-        id="other", agent_type="assistant", status=AgentStatus.COMPLETED
-    )
+async def test_driver_run_without_pause_event_emits_no_approval_frame() -> None:
+    """pause event가 없으면 승인 프레임을 내지 않는다."""
     driver = _driver(
         (
             RunStartedEvent(attribution=_ATTRIBUTION),
             RunFinishedEvent(attribution=_ATTRIBUTION),
-        ),
-        states=_PausedStateRepository(other_state),
+        )
     )
 
     frames = [frame async for frame in driver]
@@ -189,16 +164,15 @@ async def test_driver_durable_run_without_pending_approval_emits_no_frame() -> N
     assert "hitl_approval" not in "".join(frames)
 
 
-async def test_driver_surfaces_pending_approval_before_run_finished() -> None:
-    """paused 상태가 있으면 deferred-tool 승인 프레임을 RUN_FINISHED 직전에 주입한다."""
+async def test_driver_surfaces_pause_event_as_deferred_approval() -> None:
+    """RunPausedEvent가 deferred-tool 승인 프레임으로 직접 투영된다."""
     driver = _driver(
         (
             RunStartedEvent(attribution=_ATTRIBUTION),
             StepStartedEvent(attribution=_ATTRIBUTION, step_name="model-call"),
             StepFinishedEvent(attribution=_ATTRIBUTION, step_name="model-call"),
-            RunFinishedEvent(attribution=_ATTRIBUTION),
-        ),
-        states=_PausedStateRepository(_paused_state()),
+            _pause_event(),
+        )
     )
 
     frames = [frame async for frame in driver]
@@ -206,11 +180,10 @@ async def test_driver_surfaces_pending_approval_before_run_finished() -> None:
     text = "".join(frames)
 
     assert "hitl_approval" in text
-    assert types.index("TOOL_CALL_START") < types.index("RUN_FINISHED")
     assert "TOOL_CALL_END" in types
     # The deferred approval is unresolved — no result frame is emitted.
     assert "TOOL_CALL_RESULT" not in types
-    assert types[-1] == "RUN_FINISHED"
+    assert "RUN_FINISHED" not in types
 
 
 def _event_type(frame: str) -> str:

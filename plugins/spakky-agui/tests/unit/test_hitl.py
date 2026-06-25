@@ -8,6 +8,7 @@ from pytest import mark, raises
 
 from spakky.agent.event import (
     AgentEventAttribution,
+    RunPausedEvent,
     ToolCallArgsDeltaEvent,
     ToolCallEndEvent,
     ToolCallResultEvent,
@@ -27,6 +28,7 @@ from spakky.agent.yield_ import Approval
 
 from spakky.plugins.agui.error import AgUiApprovalDecodeError, AgUiPendingApprovalError
 from spakky.plugins.agui.hitl import (
+    approval_from_pause,
     carries_approval_decision,
     find_pending_approval,
     ingest_decision,
@@ -121,6 +123,43 @@ def test_project_approval_emits_deferred_tool_frame_without_result() -> None:
     assert '"tool":"note.write"' in events[1].args_delta
     assert isinstance(events[2], ToolCallEndEvent)
     assert not any(isinstance(e, ToolCallResultEvent) for e in events)
+
+
+def test_approval_from_pause_preserves_prompt_decisions_and_metadata() -> None:
+    """RunPausedEvent의 승인 envelope가 Approval로 손실 없이 변환된다."""
+    pause = RunPausedEvent(
+        attribution=_attribution(),
+        reason=AgentStateReason.APPROVAL_REQUIRED,
+        prompt="approve write?",
+        state_id="run-1",
+        approval_id="appr-1",
+        tool_call_id="call-1",
+        allowed_decisions=("approve", "reject"),
+        metadata={"tool": "note.write"},
+    )
+
+    approval = approval_from_pause(pause)
+
+    assert approval.id == "appr-1"
+    assert approval.prompt == "approve write?"
+    assert approval.allowed_decisions == (
+        ApprovalDecision.APPROVE,
+        ApprovalDecision.REJECT,
+    )
+    assert approval.metadata == {"tool": "note.write"}
+
+
+def test_approval_from_pause_without_approval_id_raises() -> None:
+    """approval id 없는 pause event는 deferred approval로 투영할 수 없다."""
+    pause = RunPausedEvent(
+        attribution=_attribution(),
+        reason=AgentStateReason.AUTH_REQUIRED,
+        prompt="sign in",
+        state_id="run-1",
+    )
+
+    with raises(AgUiPendingApprovalError):
+        approval_from_pause(pause)
 
 
 def test_ingest_decision_from_tool_result_writes_approval_signal() -> None:

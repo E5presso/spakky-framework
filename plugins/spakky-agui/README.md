@@ -52,9 +52,8 @@ AG-UI BaseEvent  ──(EventEncoder)──▶  "data: {...}\n\n" SSE 프레임
   투영하는 상태 기계입니다. 열린 message/reasoning/tool 프레임을 추적하고, 스트림이
   중간에 끊겨도 `finish()`가 열린 프레임을 닫아 와이어 형식을 보존합니다.
 - **`AgUiRunDriver`**: `run_events()`를 projector·encoder에 연결하는 async generator입니다.
-  `StreamingResponse`에 직접 전달됩니다. `run_events()`는 승인 이벤트를 방출하지 않으므로,
-  종단 `RUN_FINISHED` 직전에 durable한 승인 대기 상태를 읽어 deferred-tool 승인 프레임을
-  주입합니다(아래 HITL 참조).
+  `StreamingResponse`에 직접 전달됩니다. 승인 대기는 `RunPausedEvent`로 들어오며,
+  projector가 이를 deferred-tool 승인 프레임으로 직접 투영합니다(아래 HITL 참조).
 
 ## 이벤트 매핑 (중립 → AG-UI)
 
@@ -67,6 +66,7 @@ AG-UI BaseEvent  ──(EventEncoder)──▶  "data: {...}\n\n" SSE 프레임
 | `TOOL_CALL_END` | `TOOL_CALL_END` |
 | `TOOL_CALL_RESULT` | `TOOL_CALL_RESULT` (`content`는 result의 JSON 텍스트) |
 | `RUN_STARTED` | `RUN_STARTED` (`threadId`=conversation, `runId`; `parentRunId`는 `run_events`가 parent run을 세팅하지 않아 항상 없음) |
+| `RUN_PAUSED` | 열린 프레임 닫기 → 승인 pause는 `hitl_approval` deferred tool `TOOL_CALL_START`/`ARGS`/`END` |
 | `RUN_FINISHED` | 열린 프레임 닫기 → `RUN_FINISHED` 또는 `RUN_ERROR` |
 | `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED` |
 | `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (`emit_state_snapshot=true`일 때만) |
@@ -157,20 +157,20 @@ agui_stdio = AgUiStdioCommand(
 ## HITL — deferred-tool 승인 흐름
 
 AG-UI에는 1급 승인 이벤트가 없으므로, 승인 요청은 **deferred tool call**로 표면화됩니다.
-`run_events()`는 승인 이벤트를 방출하지 않습니다 — 승인이 필요한 도구는 dispatch 없이
-결과를 내보내지 않고, 런너는 그 멈춤을 durable한 `WAIT_FOR_APPROVAL` 상태(상태 `INTERRUPTED`,
-사유 `APPROVAL_REQUIRED`)로 기록합니다. 따라서 승인 요청은 어댑터가 그 상태를 읽어 표면화합니다.
+`run_events()`는 승인이 필요한 도구에서 dispatch 없이 멈출 때, 성공 `RUN_FINISHED` 대신
+`RunPausedEvent(reason=APPROVAL_REQUIRED)`를 방출합니다. 이 이벤트는 승인 prompt,
+approval id, tool call id, allowed decisions를 담고 있으므로 어댑터가 durable state를
+재조회하지 않고 직접 표면화할 수 있습니다.
 
-1. 런너가 승인이 필요한 도구에서 멈추면, `run_events()` 스트림은 결과 없이 종료되고 durable
-   상태에 승인 요청이 남습니다. `AgUiRunDriver`는 종단 `RUN_FINISHED` 직전에 그 상태를 읽어
-   (`project_pending_approval`), 승인을 `hitl_approval` 도구의 `TOOL_CALL_START`/`ARGS`/`END`
+1. 런너가 승인이 필요한 도구에서 멈추면, `run_events()`는 `RunPausedEvent`를 방출합니다.
+   `AgUiProjector`는 이를 `hitl_approval` 도구의 `TOOL_CALL_START`/`ARGS`/`END`
    프레임으로 투영합니다 — **결과(result) 프레임은 없습니다** (결과가 지연되었기 때문).
 2. 클라이언트는 이 deferred tool을 렌더링하고 사람의 결정을 받습니다.
 3. 클라이언트는 다음 `RunAgentInput`에 그 결정을 담아 다시 POST합니다 — deferred call id를
    향한 tool-result 메시지로, 또는 `forwardedProps.approvalDecision`으로.
 4. `ingest_decision`이 그 결정을 디코딩하여 durable signal queue에 `APPROVAL_DECISION`
    signal로 적재하면, 런너가 `run_events()`를 다시 돌며 멈췄던 지점을 재개합니다 — APPROVE는
-   도구 결과와 `RUN_FINISHED`로, REJECT는 결과 없이 종단으로 이어집니다.
+   도구 결과와 `RUN_FINISHED`로, REJECT는 실패 `RUN_FINISHED`로 이어집니다.
 
 ## 매핑 충실도
 

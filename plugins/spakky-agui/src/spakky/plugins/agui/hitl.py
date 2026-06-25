@@ -9,13 +9,10 @@ next ``RunAgentInput`` (as the deferred tool's result message, or as
 and appends it to the durable signal queue the runner polls (ADR-0013 §5), which
 is the only channel the core run accepts an approval decision through.
 
-The core ``run_events`` stream emits **no** approval event when a tool pauses
-for approval — it dispatches nothing and emits no result. The pause is instead
-durable: the runner saves a WAIT_FOR_APPROVAL state (status ``INTERRUPTED``,
-reason ``APPROVAL_REQUIRED``) carrying the ``AgentApprovalRequest`` metadata.
-``project_pending_approval`` reads that durable state after the stream ends and
-rebuilds the deferred-tool frame, which is the adapter's only hook to surface a
-pending approval the lossless event stream does not carry.
+The core ``run_events`` stream emits a first-class ``RunPausedEvent`` when a
+tool pauses for approval. AG-UI still represents that pause as a deferred tool
+call, but the adapter now projects the pause event directly instead of
+reconciling durable state after a terminal ``RUN_FINISHED``.
 """
 
 import uuid
@@ -28,6 +25,7 @@ from ag_ui.core import ToolMessage
 from spakky.agent.event import (
     AgentEvent,
     AgentEventAttribution,
+    RunPausedEvent,
     ToolCallArgsDeltaEvent,
     ToolCallEndEvent,
     ToolCallStartEvent,
@@ -87,6 +85,20 @@ def project_approval(
     ]
 
 
+def approval_from_pause(event: RunPausedEvent) -> Approval:
+    """Convert a neutral pause event into the AG-UI approval payload."""
+    if event.approval_id is None:
+        raise AgUiPendingApprovalError
+    return Approval(
+        id=event.approval_id,
+        prompt=event.prompt,
+        allowed_decisions=tuple(
+            _decode_decision(decision) for decision in event.allowed_decisions
+        ),
+        metadata=dict(event.metadata),
+    )
+
+
 def find_pending_approval(state: AgentState) -> Approval | None:
     """Reconstruct the pending approval from a durable WAIT_FOR_APPROVAL state.
 
@@ -118,8 +130,8 @@ def project_pending_approval(
 ) -> list[AgentEvent]:
     """Project a durable pending approval into the deferred-tool request frame.
 
-    The transport calls this after the ``run_events`` stream ends, since that
-    stream emits no approval event: the pause lives only in the durable state.
+    This remains as a compatibility helper for callers that already hold a
+    durable state snapshot. The run driver consumes ``RunPausedEvent`` directly.
     Returns an empty list when the state is not paused for approval.
     """
     approval = find_pending_approval(state)

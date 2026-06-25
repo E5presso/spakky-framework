@@ -93,6 +93,7 @@ def test_agent_state_reason_expect_covers_approval_decision_outcomes() -> None:
         "approval_required",
         "approval_rejected",
         "approval_deferred",
+        "auth_required",
     } <= reasons
 
 
