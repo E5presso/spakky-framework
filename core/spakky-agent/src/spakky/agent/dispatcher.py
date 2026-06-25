@@ -18,9 +18,11 @@ from spakky.agent.tooling import (
     AgentToolCallable,
     AgentToolCatalog,
     AgentToolDescriptor,
+    AgentToolRuntimeContext,
 )
 
 _OWNER_PARAMETER_NAMES = ("self", "cls")
+_RUNTIME_CONTEXT_PARAMETER_NAME = "runtime_context"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +38,7 @@ class AgentToolDispatcher:
     # target: any agent instance owning the catalog tools — no common base type.
     target: object
     catalog: AgentToolCatalog
+    runtime_context: AgentToolRuntimeContext | None = None
 
     def descriptor_for(self, call: ModelToolCall) -> AgentToolDescriptor:
         """Resolve the catalog descriptor a model tool call targets."""
@@ -51,7 +54,7 @@ class AgentToolDispatcher:
         descriptor = self.descriptor_for(call)
         invocation = descriptor.bind_invocation(call.arguments)
         callable_ = descriptor.callable
-        positional = self._with_owner_prefix(callable_, invocation.args)
+        positional = self._with_injected_prefix(callable_, invocation.args)
         if iscoroutinefunction(callable_):
             awaitable: Awaitable[object] = callable_(
                 *positional,
@@ -60,12 +63,20 @@ class AgentToolDispatcher:
             return await awaitable
         return callable_(*positional, **invocation.kwargs)
 
-    def _with_owner_prefix(
+    def _with_injected_prefix(
         self,
         callable_: AgentToolCallable,
         args: tuple[object, ...],
     ) -> tuple[object, ...]:
         parameters = tuple(signature(callable_).parameters.values())
+        injected: list[object] = []
         if parameters and parameters[0].name in _OWNER_PARAMETER_NAMES:
-            return (self.target, *args)
-        return args
+            injected.append(self.target)
+            parameters = parameters[1:]
+        if parameters and parameters[0].name == _RUNTIME_CONTEXT_PARAMETER_NAME:
+            if self.runtime_context is None:
+                raise AgentToolDispatchError(
+                    "Agent tool requires runtime context but none was provided"
+                )
+            injected.append(self.runtime_context)
+        return (*injected, *args)

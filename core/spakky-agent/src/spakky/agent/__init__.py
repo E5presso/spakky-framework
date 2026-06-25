@@ -86,6 +86,7 @@ from spakky.agent.recovery import (
 )
 from spakky.agent.delegation import (
     AgentDelegateTarget,
+    DelegationToolResult,
     DelegationBudget,
     DelegationContextSlice,
     DelegationExpectedOutput,
@@ -185,6 +186,7 @@ from spakky.agent.tooling import (
     AgentToolDescriptor,
     AgentToolIdentity,
     AgentToolMetadata,
+    AgentToolRuntimeContext,
     AgentToolSchemaHandle,
     DataAccess,
     EvidenceCapture,
@@ -299,6 +301,7 @@ __all__ = [
     "AgentToolDispatcher",
     "AgentToolIdentity",
     "AgentToolMetadata",
+    "AgentToolRuntimeContext",
     "AgentToolSchemaHandle",
     "AgentStateReason",
     "AgentStateTransition",
@@ -336,6 +339,7 @@ __all__ = [
     "DelegationPacket",
     "DelegationResult",
     "DelegationReturnPolicy",
+    "DelegationToolResult",
     "DEFAULT_APPROVAL_DECISIONS",
     "Error",
     "DataAccess",

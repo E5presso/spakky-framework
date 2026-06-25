@@ -38,6 +38,7 @@ from spakky.agent.cancellation import (
     complete_agent_cancellation,
     run_agent_cancellation_cleanup,
 )
+from spakky.agent.delegation import DelegationToolResult
 from spakky.agent.dispatcher import AgentToolDispatcher
 from spakky.agent.error import (
     AgentModelConfigurationError,
@@ -99,7 +100,11 @@ from spakky.agent.state import (
     AgentStateTransition,
     AgentStatus,
 )
-from spakky.agent.tooling import AgentToolDescriptor, Idempotency
+from spakky.agent.tooling import (
+    AgentToolDescriptor,
+    AgentToolRuntimeContext,
+    Idempotency,
+)
 from spakky.agent.types import JsonValue
 from spakky.agent.yield_ import (
     AgentYield,
@@ -338,7 +343,11 @@ class AgentRunner:
             if not cleared:
                 return
             self._append_boundary(state.id, _before_tool(descriptor, call))
-        result = await self._dispatch(call)
+        result_object = await self._dispatch(call, attribution)
+        if isinstance(result_object, DelegationToolResult):
+            for child_event in result_object.events:
+                yield child_event
+        result = _tool_result_json(result_object)
         if state is not None:
             self._append_boundary(state.id, _after_tool(descriptor, call))
             self._append_tool_evidence(state.id, descriptor, result)
@@ -358,6 +367,7 @@ class AgentRunner:
             agent_id=self._agent_type(),
             run_id=run_input.state_id,
             conversation_id=run_input.effective_conversation_id,
+            parent_run_id=run_input.parent_run_id,
         )
 
     def _complete_state(self, state_id: str) -> None:
@@ -508,7 +518,15 @@ class AgentRunner:
             if not cleared:
                 return
             self._append_boundary(state.id, _before_tool(descriptor, call))
-        result = await self._dispatch(call)
+        result_object = await self._dispatch(
+            call,
+            AgentEventAttribution(
+                agent_id=self._agent_type(),
+                run_id=state.id if state is not None else _call_id(call),
+                conversation_id=state.id if state is not None else _call_id(call),
+            ),
+        )
+        result = _tool_result_json(result_object)
         if state is not None:
             self._append_boundary(state.id, _after_tool(descriptor, call))
             yield _evidence_yield(
@@ -551,12 +569,22 @@ class AgentRunner:
             self._append_boundary(state.id, _after_approval(call, descriptor))
         return approval_item, cleared
 
-    async def _dispatch(self, call: ModelToolCall) -> JsonValue:
+    async def _dispatch(
+        self,
+        call: ModelToolCall,
+        attribution: AgentEventAttribution,
+    ) -> object:
         dispatcher = AgentToolDispatcher(
             target=self.target,
             catalog=self.agent.tool_catalog,
+            runtime_context=AgentToolRuntimeContext(
+                state_id=attribution.run_id,
+                conversation_id=attribution.conversation_id,
+                call_id=_call_id(call),
+                tool_name=call.name,
+            ),
         )
-        return _tool_result_json(await dispatcher.dispatch(call))
+        return await dispatcher.dispatch(call)
 
     def _fail_on_model_error(
         self,
@@ -1158,6 +1186,12 @@ def _tool_result_json(result: object) -> JsonValue:
     """
     if result is None or isinstance(result, (bool, int, float, str)):
         return result
+    if isinstance(result, DelegationToolResult):
+        return {
+            "summary": result.summary,
+            "output": _tool_result_json(result.output),
+            "metadata": _tool_result_json(result.metadata),
+        }
     if isinstance(result, BaseModel):
         return result.model_dump(mode="json")
     if is_dataclass(result) and not isinstance(result, type):

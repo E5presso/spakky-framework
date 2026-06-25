@@ -2,6 +2,39 @@
 
 A2A (Agent2Agent) protocol server plugin for the Spakky framework.
 
+## Remote teammate delegation
+
+`A2AAgentDelegate` implements the core `IAgentDelegate` port for teammates whose
+`AgentExecutionSpec.teammates` entry points at a remote AgentCard URL. The core
+agent runner exposes each teammate as a model-callable delegation tool named
+`teammate.<name>.delegate`; local teammate pods run in-process, while remote
+teammates use the official `a2a-sdk` client.
+
+```python
+from spakky.agent import Agent, AgentExecutionSpec, AgentTeammate
+from spakky.plugins.a2a import A2AAgentDelegate
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="orchestrator",
+        teammates=(
+            AgentTeammate(
+                name="researcher",
+                card_url="https://agents.example.com/.well-known/agent-card.json",
+            ),
+        ),
+    )
+)
+class Orchestrator:
+    def __init__(self, delegate: A2AAgentDelegate) -> None:
+        self._delegate = delegate
+```
+
+Remote delegation sends `message/send` through the SDK client, tracks the remote
+task stream, and maps child task/message/artifact updates back into Spakky's
+protocol-neutral event stream with the parent run id preserved.
+
 ## REST HTTP+JSON transport
 
 `build_a2a_rest_app()` builds a mountable Starlette app for the official A2A

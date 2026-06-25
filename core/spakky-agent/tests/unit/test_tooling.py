@@ -16,6 +16,7 @@ from spakky.agent import (
     AgentToolBoundInvocation,
     AgentToolDescriptor,
     AgentToolIdentity,
+    AgentToolRuntimeContext,
     AgentToolSchemaHandle,
     AgentYield,
     AgentYieldKind,
@@ -123,6 +124,30 @@ def test_agent_tool_expect_attaches_typed_descriptor_metadata_to_method() -> Non
     assert definition.metadata.approval == ToolApprovalRequirement.NOT_REQUIRED
     assert definition.metadata.risk == ToolRisk(axes=(ToolRiskAxis.READ,))
     assert definition.metadata.requires_approval_candidate is False
+
+
+def test_runtime_context_parameter_expect_hidden_from_schema_and_binding() -> None:
+    """runtime_context parameter는 model-facing schema와 payload binding에서 제외된다."""
+
+    class RuntimeContextToolOwner:
+        """Tool owner fixture with injected runtime context."""
+
+        @agent_tool(schema_name="ctx.echo")
+        def echo(
+            self,
+            runtime_context: AgentToolRuntimeContext,
+            value: str,
+        ) -> str:
+            return f"{runtime_context.state_id}:{value}"
+
+    catalog = discover_agent_tools(RuntimeContextToolOwner)
+    descriptor = catalog.by_schema_name("ctx.echo")
+    bound = bind_agent_tool_invocation(descriptor.callable, {"value": "hi"})
+    properties = descriptor.schema.input_schema["properties"]
+
+    assert isinstance(properties, Mapping)
+    assert "runtime_context" not in properties
+    assert bound.args == ("hi",)
 
 
 def test_agent_expect_discovers_decorated_methods_as_deterministic_catalog() -> None:
