@@ -55,13 +55,19 @@ def _every_event(attribution: AgentEventAttribution) -> tuple[AgentEvent, ...]:
     return (
         MessageDeltaEvent(attribution, message_id="msg-1", delta="Hel"),
         ReasoningDeltaEvent(attribution, reasoning_id="rsn-1", delta="thinking"),
-        ToolCallStartEvent(attribution, call_id="call-1", tool_name="search"),
+        ToolCallStartEvent(
+            attribution,
+            call_id="call-1",
+            tool_name="search",
+            parent_message_id="msg-1",
+        ),
         ToolCallArgsDeltaEvent(attribution, call_id="call-1", args_delta='{"q":'),
         ToolCallEndEvent(attribution, call_id="call-1"),
         ToolCallResultEvent(
             attribution,
             call_id="call-1",
             tool_name="search",
+            message_id="msg-2",
             result={"hits": 3},
         ),
         RunStartedEvent(attribution),
@@ -172,12 +178,17 @@ def _to_ag_ui(event: AgentEvent) -> Mapping[str, JsonValue]:
                 "reasoningId": reasoning_id,
                 "delta": delta,
             }
-        case ToolCallStartEvent(call_id=call_id, tool_name=tool_name):
+        case ToolCallStartEvent(
+            call_id=call_id,
+            tool_name=tool_name,
+            parent_message_id=parent_message_id,
+        ):
             return {
                 **base,
                 "type": "TOOL_CALL_START",
                 "toolCallId": call_id,
                 "toolCallName": tool_name,
+                "parentMessageId": parent_message_id,
             }
         case ToolCallArgsDeltaEvent(call_id=call_id, args_delta=args_delta):
             return {
@@ -188,11 +199,16 @@ def _to_ag_ui(event: AgentEvent) -> Mapping[str, JsonValue]:
             }
         case ToolCallEndEvent(call_id=call_id):
             return {**base, "type": "TOOL_CALL_END", "toolCallId": call_id}
-        case ToolCallResultEvent(call_id=call_id, result=result):
+        case ToolCallResultEvent(
+            call_id=call_id,
+            message_id=message_id,
+            result=result,
+        ):
             return {
                 **base,
                 "type": "TOOL_CALL_RESULT",
                 "toolCallId": call_id,
+                "messageId": message_id,
                 "content": result,
             }
         case RunStartedEvent():
@@ -247,12 +263,52 @@ def test_ag_ui_mapping_expect_tool_call_lifecycle_shares_call_id() -> None:
         ToolCallStartEvent(attribution, call_id="call-9", tool_name="search"),
         ToolCallArgsDeltaEvent(attribution, call_id="call-9", args_delta="{}"),
         ToolCallEndEvent(attribution, call_id="call-9"),
-        ToolCallResultEvent(attribution, call_id="call-9", tool_name="search"),
+        ToolCallResultEvent(
+            attribution,
+            call_id="call-9",
+            tool_name="search",
+            message_id="msg-9",
+        ),
     )
 
     projected_ids = {_to_ag_ui(event)["toolCallId"] for event in lifecycle}
 
     assert projected_ids == {"call-9"}
+
+
+def test_ag_ui_mapping_expect_tool_result_preserves_message_id() -> None:
+    """도구 결과의 message_id가 AG-UI 필수 messageId로 무손실 매핑된다."""
+    event = ToolCallResultEvent(
+        _root_attribution(),
+        call_id="call-1",
+        tool_name="search",
+        message_id="msg-7",
+        result={"hits": 1},
+    )
+
+    projected = _to_ag_ui(event)
+
+    assert projected["type"] == "TOOL_CALL_RESULT"
+    assert projected["messageId"] == "msg-7"
+    assert projected["toolCallId"] == "call-1"
+
+
+def test_ag_ui_mapping_expect_tool_call_start_projects_parent_message_id() -> None:
+    """tool call의 parent_message_id가 AG-UI parentMessageId로 매핑된다."""
+    linked = ToolCallStartEvent(
+        _root_attribution(),
+        call_id="call-1",
+        tool_name="search",
+        parent_message_id="msg-3",
+    )
+    unlinked = ToolCallStartEvent(
+        _root_attribution(),
+        call_id="call-2",
+        tool_name="search",
+    )
+
+    assert _to_ag_ui(linked)["parentMessageId"] == "msg-3"
+    assert _to_ag_ui(unlinked)["parentMessageId"] is None
 
 
 # --- A2A lossless mapping (group E adapter projection) ---
@@ -296,6 +352,7 @@ def test_cross_protocol_mapping_expect_same_neutral_event_round_trips_both() -> 
         _delegated_attribution(),
         call_id="call-1",
         tool_name="search",
+        message_id="msg-1",
         result={"ok": True},
     )
 
