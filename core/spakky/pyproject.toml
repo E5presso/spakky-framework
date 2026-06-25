@@ -37,6 +37,7 @@ opentelemetry = ["spakky-opentelemetry>=6.9.1"]
 grpc = ["spakky-grpc>=6.9.1"]
 redis = ["spakky-redis>=6.9.1"]
 vllm = ["spakky-vllm>=6.9.1"]
+mcp = ["spakky-mcp>=6.9.1"]
 saga = ["spakky-saga>=6.9.1"]
 web = [
     "spakky[fastapi]>=6.5.0",
@@ -97,6 +98,7 @@ cache-app = [
 agent = [
     "spakky-agent>=6.9.1",
     "spakky[vllm]>=6.5.0",
+    "spakky[mcp]>=6.5.0",
     "spakky[sqlalchemy]>=6.5.0",
 ]
 recommended = [
@@ -122,6 +124,7 @@ full = [
     "spakky[grpc]>=6.5.0",
     "spakky[kafka]>=6.5.0",
     "spakky[logging]>=6.5.0",
+    "spakky[mcp]>=6.5.0",
     "spakky[oidc]>=6.5.0",
     "spakky[openfga]>=6.5.0",
     "spakky[opentelemetry]>=6.5.0",
