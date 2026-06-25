@@ -144,6 +144,8 @@ nav:
           - Kafka 통합: guides/kafka.md
           - Transactional Outbox: guides/outbox.md
           - 사가 오케스트레이션: guides/saga.md
+      - 이벤트 기반 아키텍처:
+          - 통합 가이드: guides/event-driven.md
       - 심화:
           - 사가 심화: guides/saga-advanced.md
   - 보안:

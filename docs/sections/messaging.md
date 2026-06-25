@@ -14,6 +14,12 @@
 | [Transactional Outbox](../guides/outbox.md) | 이벤트 발행과 DB 트랜잭션을 원자적으로 묶기 |
 | [사가 오케스트레이션](../guides/saga.md) | 분산 트랜잭션을 보상 단계로 조율하기 |
 
+## 이벤트 기반 아키텍처
+
+| 문서 | 무엇을 배우나요 |
+| --- | --- |
+| [이벤트 기반 아키텍처 통합 가이드](../guides/event-driven.md) | events·outbox·saga를 하나의 분산 워크플로우로 엮기 (개념 → 사용법 + 도식) |
+
 ## 심화
 
 | 문서 | 무엇을 배우나요 |
