@@ -30,6 +30,7 @@ pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
 
 - `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미
 - `AgentYield`: `execute()`가 caller에게 흘려보내는 typed stream item
+- `AgentEvent`, `AgentEventKind`, `AgentEventAttribution`: AG-UI·A2A·MCP 어댑터가 무손실로 변환하는 프로토콜 중립 이벤트 taxonomy. message/reasoning delta, tool call(start·args delta·end·result), run/step 수명주기, state(snapshot·delta), artifact를 구분하며, 모든 이벤트가 `agent_id`(attribution) + `parent_run_id`(위임 parent link, 루트는 `None`) + `conversation_id`(thread/context)를 운반합니다. AG-UI `runId`/`parentRunId`/`threadId`와 A2A `taskId`/parent task/`contextId`로 1:1 매핑됩니다
 - `AgentState`: long-running agent execution의 materialized lifecycle state
 - `AgentSignal`: 실행 중 들어오는 user message, approval, cancel 같은 inbound stimulus
 - `AgentSignalPollPoint`, `consume_pending_agent_signals`: safe boundary나 configured poll point에서 durable signal queue를 대기 없이 소비하는 helper
