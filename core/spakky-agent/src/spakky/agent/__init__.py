@@ -113,6 +113,7 @@ from spakky.agent.interfaces.repository import (
 from spakky.agent.interfaces.model import (
     IAgentModel,
     JsonSchemaConstraint,
+    ModelCapability,
     ModelError,
     ModelMessage,
     ModelMessageRole,
@@ -325,6 +326,7 @@ __all__ = [
     "JsonValue",
     "MaskingPolicy",
     "Message",
+    "ModelCapability",
     "ModelError",
     "ModelMessage",
     "ModelMessageRole",

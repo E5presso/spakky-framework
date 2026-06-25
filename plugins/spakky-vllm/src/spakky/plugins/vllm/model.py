@@ -10,6 +10,7 @@ from spakky.agent import (
     JsonObject,
     JsonSchemaConstraint,
     JsonValue,
+    ModelCapability,
     ModelError,
     ModelMessage,
     ModelMessageRole,
@@ -76,6 +77,21 @@ class VllmAgentModel(IAgentModel):
     def __init__(self, config: VllmConfig, client: IVllmChatClient) -> None:
         self.__config = config
         self.__client = client
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        """Return the vLLM backend capability declared by configuration.
+
+        vLLM reports token usage on every chat completion, so token counting is
+        always supported. Reasoning support and context window depend on the served
+        model and are declared via ``VllmConfig``.
+        """
+        return ModelCapability(
+            supports_reasoning=self.__config.supports_reasoning,
+            context_window_tokens=self.__config.context_window_tokens,
+            supports_token_counting=True,
+        )
 
     @override
     async def complete(self, request: ModelRequest) -> ModelResponse:

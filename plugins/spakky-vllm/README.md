@@ -30,6 +30,8 @@ persistence fallback은 제공하지 않습니다.
 | `SPAKKY_VLLM__REQUEST_TIMEOUT_SECONDS` | `30.0` | 비스트리밍 요청 timeout |
 | `SPAKKY_VLLM__STREAM_TIMEOUT_SECONDS` | `300.0` | 스트리밍 요청 timeout |
 | `SPAKKY_VLLM__STREAM_ENABLED` | `true` | public streaming surface 활성화 여부 |
+| `SPAKKY_VLLM__CONTEXT_WINDOW_TOKENS` | 미설정 | served 모델 context window(토큰); `capability`로 노출, 미설정 시 미선언 |
+| `SPAKKY_VLLM__SUPPORTS_REASONING` | `false` | served 모델 reasoning 지원 여부; `capability.supports_reasoning`으로 노출 |
 | `SPAKKY_VLLM__CHAT_TEMPLATE_KWARGS__ENABLE_THINKING` | 미설정 | vLLM chat template에 전달할 모델별 옵션 예시 |
 
 `chat_template_kwargs`는 vLLM의 모델별 chat template 옵션을 요청 payload에 그대로
@@ -45,6 +47,11 @@ persistence fallback은 제공하지 않습니다.
 - `HttpxVllmChatClient`
 - `VllmAgentModel`
 - 명시적 `IAgentModel -> VllmAgentModel` binding
+
+`VllmAgentModel.capability`는 backend 능력을 run 이전에 노출하는 `ModelCapability`
+descriptor를 반환합니다. vLLM은 모든 chat completion 응답에 usage를 보고하므로 token
+counting은 항상 지원하며, reasoning 지원 여부와 context window는 `VllmConfig`의
+`supports_reasoning`·`context_window_tokens`로 선언합니다.
 
 `VllmAgentModel.complete()`는 OpenAI-compatible chat completion 요청을 보내고,
 provider 응답을 `ModelResponse`로 변환합니다. structured output 요청에는

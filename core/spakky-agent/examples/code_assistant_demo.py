@@ -12,6 +12,7 @@ from spakky.agent import (
     IAgentSignalRepository,
     IAgentStateRepository,
     Agent,
+    ModelCapability,
     AgentActionBoundaryCheckpoint,
     AgentEvidence,
     AgentEvidenceCandidate,
@@ -856,6 +857,11 @@ class StaticModel(IAgentModel):
 
     def __init__(self, events: Sequence[ModelStreamEvent]) -> None:
         self._events = tuple(events)
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
 
     @override
     async def complete(self, request: ModelRequest) -> ModelResponse:

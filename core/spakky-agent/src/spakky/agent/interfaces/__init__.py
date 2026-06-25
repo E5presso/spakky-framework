@@ -13,6 +13,7 @@ from spakky.agent.context import (
 from spakky.agent.interfaces.model import (
     IAgentModel,
     JsonSchemaConstraint,
+    ModelCapability,
     ModelError,
     ModelMessage,
     ModelMessageRole,
@@ -49,6 +50,7 @@ __all__ = [
     "ContextPackRole",
     "ContextSensitivity",
     "ContextTokenBudget",
+    "ModelCapability",
     "ModelError",
     "ModelMessage",
     "ModelMessageRole",

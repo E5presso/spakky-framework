@@ -10,6 +10,7 @@ from spakky.agent import (
     ContextPackRole,
     JsonObject,
     JsonValue,
+    ModelCapability,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -1292,3 +1293,31 @@ async def test_stream_cancellation_closes_underlying_stream() -> None:
 
     assert first.token_delta == "hi"
     assert client.stream_closed is True
+
+
+def test_capability_default_expect_token_counting_only() -> None:
+    """기본 설정은 token counting만 지원하고 reasoning·context window는 미선언이다."""
+    model = VllmAgentModel(VllmConfig(), RecordingClient({"choices": []}))
+
+    capability = model.capability
+
+    assert capability == ModelCapability(
+        supports_reasoning=False,
+        context_window_tokens=None,
+        supports_token_counting=True,
+    )
+
+
+def test_capability_expect_reflects_configured_reasoning_and_window(
+    monkeypatch,
+) -> None:
+    """operator가 선언한 reasoning 지원·context window가 capability descriptor에 반영된다."""
+    monkeypatch.setenv("SPAKKY_VLLM__SUPPORTS_REASONING", "true")
+    monkeypatch.setenv("SPAKKY_VLLM__CONTEXT_WINDOW_TOKENS", "32768")
+    model = VllmAgentModel(VllmConfig(), RecordingClient({"choices": []}))
+
+    capability = model.capability
+
+    assert capability.supports_reasoning is True
+    assert capability.context_window_tokens == 32768
+    assert capability.supports_token_counting is True
