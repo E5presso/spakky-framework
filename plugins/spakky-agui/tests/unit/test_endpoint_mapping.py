@@ -55,13 +55,20 @@ def test_to_core_input_maps_ids_and_last_user_message() -> None:
     assert core.resume is False
 
 
-def test_to_core_input_does_not_forward_parent_run_id() -> None:
-    """parentRunId는 코어로 전달되지 않는다(run_events가 parent run을 세팅하지 않음)."""
+def test_to_core_input_forwards_parent_run_id() -> None:
+    """parentRunId가 코어 parent_run_id로 전달된다."""
     core = _to_core_input(
         _ag_ui_input([{"id": "u1", "role": "user", "content": "hi"}], parent="parent-9")
     )
 
-    assert core.metadata == {}
+    assert core.parent_run_id == "parent-9"
+
+
+def test_to_core_input_without_parent_run_id_sets_none() -> None:
+    """parentRunId가 없으면 코어 parent_run_id가 None이다."""
+    core = _to_core_input(_ag_ui_input([{"id": "u1", "role": "user", "content": "hi"}]))
+
+    assert core.parent_run_id is None
 
 
 def test_to_core_input_skips_non_text_user_message() -> None:

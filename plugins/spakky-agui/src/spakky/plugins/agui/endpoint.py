@@ -70,13 +70,14 @@ def _to_core_input(ag_ui_input: AgUiRunAgentInput) -> RunAgentInput:
     ``runId`` is the durable run/state id, ``threadId`` the conversation, and the
     last user message seeds the instruction. ``resume`` is set when the input
     carries an approval decision so the runner replays its paused boundary.
-    ``parentRunId`` is not forwarded: ``run_events`` does not set a parent run on
-    its attribution, so a delegation parent has no neutral channel to flow through.
+    ``parentRunId`` preserves delegated run ancestry through the neutral core
+    attribution path.
     """
     return RunAgentInput(
         state_id=ag_ui_input.run_id,
         instruction=_last_user_text(ag_ui_input),
         conversation_id=ag_ui_input.thread_id,
+        parent_run_id=ag_ui_input.parent_run_id,
         resume=carries_approval_decision(ag_ui_input),
     )
 
