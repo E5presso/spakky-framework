@@ -1,3 +1,9 @@
+## v6.11.0 (2026-06-26)
+
+### Feat
+
+- **agent**: add declarative adapter plugin wiring
+
 ## v6.10.1 (2026-06-26)
 
 ### Fix
