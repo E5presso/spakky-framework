@@ -4,6 +4,12 @@
 
 `McpClient`가 `IAgentRunnerFactory` 구현체로 외부 서버 연결 수명주기를 소유합니다. `McpRuntimeServerResolver`는 configured server 이름과 run-time inline server 선언을 해석하고, descriptor 계층은 발견된 MCP tools를 lazy search/call meta-tools 뒤에 보관합니다.
 
+## v7 Breaking Change
+
+v7에서 `spakky-mcp`는 Agent의 자체 도구를 MCP server로 노출하던 공개 API를 제거했습니다. 삭제된 표면은 `MCPServer`, `MCPToolServer`, `McpToolServerConfig`, `build_agent_tool_server`, `serve_stdio`, `McpConfig.tool_server`, server registry 모듈입니다.
+
+새 계약은 단방향입니다. MCP server는 FastMCP나 공식 MCP SDK 등으로 별도 구현하고, Spakky Agent run에는 `McpConfig.servers` 또는 `RunAgentInput.metadata["mcp"]["servers"]`로 연결합니다. Agent class에는 MCP 노출 annotation을 붙이지 않습니다.
+
 ## Public API
 
 ::: spakky.plugins.mcp
