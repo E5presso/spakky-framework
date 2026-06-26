@@ -25,6 +25,26 @@ uv add "spakky[agent]"
 
 Loading the plugin registers `McpClient` as `IAgentRunnerFactory`. Inbound adapters such as AG-UI and A2A can keep using the runner factory; MCP servers join the run through `RunAgentInput.metadata`.
 
+## v7 breaking change
+
+`spakky-mcp` v7 removes the reverse "Agent tools as an MCP server" surface:
+
+- removed `MCPServer`, `MCPToolServer`, `McpToolServerConfig`,
+  `build_agent_tool_server`, `serve_stdio`, and the server registry modules,
+- removed `McpConfig.tool_server`,
+- removed Agent annotations whose only purpose was exposing local Agent tools
+  as an MCP server.
+
+The replacement path is intentionally one-way:
+
+1. Build MCP servers with FastMCP, the official MCP SDK, or another MCP server
+   framework.
+2. Register allowed servers in `McpConfig.servers` or accept per-run inline
+   declarations from user/service settings.
+3. Pass selected servers through `RunAgentInput.metadata["mcp"]["servers"]`.
+4. Let `spakky-mcp` attach those external tools lazily through
+   `mcp_search_tools` and `mcp_call_tool`.
+
 ## Configure servers
 
 Configured servers use the `SPAKKY_MCP__` settings prefix.
