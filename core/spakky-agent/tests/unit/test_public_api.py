@@ -1,6 +1,7 @@
 """Tests for spakky-agent public API exports."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
+from typing import override
 
 import pytest
 import spakky.agent as agent_api
@@ -64,6 +65,8 @@ from spakky.agent import (
     IAgentEvidenceRepository,
     IAgentSignalRepository,
     IAgentStateRepository,
+    IAgentRunnerFactory,
+    AgentRunnerFactory,
     AgentSignalPollPoint,
     EvidenceExposurePolicy,
     MaskingPolicy,
@@ -183,6 +186,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "IAgentEvidenceRepository",
         "IAgentDelegate",
         "IAgentModel",
+        "IAgentRunnerFactory",
+        "AgentRunnerFactory",
         "Progress",
         "Token",
         "Tool",
@@ -270,6 +275,8 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
     assert IAgentDelegate is agent_api.IAgentDelegate
     assert IAgentModel is agent_api.IAgentModel
+    assert IAgentRunnerFactory is agent_api.IAgentRunnerFactory
+    assert AgentRunnerFactory is agent_api.AgentRunnerFactory
     assert AgentOutputGuardError is agent_api.AgentOutputGuardError
     assert Progress is agent_api.Progress
     assert Token is agent_api.Token
@@ -378,12 +385,14 @@ def test_public_api_expect_exports_custom_error_hierarchy() -> None:
     assert issubclass(AgentBootstrapError, agent_api.AbstractSpakkyAgentError)
 
 
-def test_initialize_expect_registers_only_bootstrap_validation() -> None:
-    """core package 초기화가 persistence/model fallback 없이 검증기만 등록한다."""
+def test_initialize_expect_registers_runner_factory_and_bootstrap_validation() -> None:
+    """core package 초기화가 runner factory와 검증기를 등록한다."""
     app = SpakkyApplication(ApplicationContext())
 
     initialize(app)
 
+    assert app.container.contains(IAgentRunnerFactory) is True
+    assert app.container.contains(AgentRunnerFactory) is True
     assert app.container.contains(AgentBootstrapValidationPostProcessor) is True
     assert app.container.contains(IAgentModel) is False
 
@@ -544,6 +553,39 @@ def test_agent_bootstrap_type_name_expect_handles_non_class_target() -> None:
     name = AgentBootstrapValidationPostProcessor()._agent_type_name(agent)
 
     assert name == str(_invalid_execute)
+
+
+async def test_agent_runner_factory_opens_native_runner_context() -> None:
+    """기본 AgentRunnerFactory가 request-scoped native runner를 연다."""
+
+    class FactoryModel(IAgentModel):
+        @property
+        @override
+        def capability(self) -> ModelCapability:
+            return ModelCapability()
+
+        @override
+        async def complete(self, request: ModelRequest) -> ModelResponse:
+            return ModelResponse(content="done")
+
+        @override
+        async def stream(
+            self, request: ModelRequest
+        ) -> AsyncIterator[ModelStreamEvent]:
+            return
+            yield
+
+    @Agent(spec=AgentExecutionSpec(name="factory_probe"))
+    class FactoryAgent:
+        def __init__(self, model: IAgentModel) -> None:
+            self._model = model
+
+    factory = AgentRunnerFactory()
+    model = FactoryModel()
+    assistant = FactoryAgent(model)
+
+    async with factory.open_runner(assistant, server_names=("unused",)) as runner:
+        assert runner.model is model
 
 
 class FakeRepositoryAccessError(Exception):

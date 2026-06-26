@@ -28,7 +28,7 @@ from spakky.agent.inbound import RunAgentInput
 from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
 )
-from spakky.agent.runner import AgentRunner
+from spakky.agent.runner_factory import AgentRunnerFactory, IAgentRunnerFactory
 from spakky.agent.signal import AgentSignal, ApprovalDecision
 from spakky.agent.types import JsonObject
 
@@ -58,10 +58,17 @@ class SpakkyAgentExecutor(AgentExecutor):
 
     _agent: object
     _projector: AgentEventProjector
+    _runner_factory: IAgentRunnerFactory
 
-    def __init__(self, agent: object, projector: AgentEventProjector) -> None:
+    def __init__(
+        self,
+        agent: object,
+        projector: AgentEventProjector,
+        runner_factory: IAgentRunnerFactory | None = None,
+    ) -> None:
         self._agent = agent
         self._projector = projector
+        self._runner_factory = runner_factory or AgentRunnerFactory()
 
     @override
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
@@ -84,9 +91,14 @@ class SpakkyAgentExecutor(AgentExecutor):
                 outcome = projected
         await self._reconcile_terminal(task.id, outcome, updater)
 
-    def _run_events(self, run_input: RunAgentInput) -> AsyncGenerator[AgentEvent, None]:
+    async def _run_events(
+        self,
+        run_input: RunAgentInput,
+    ) -> AsyncGenerator[AgentEvent, None]:
         """Drive the runner's neutral event stream for one run."""
-        return AgentRunner.for_agent_instance(self._agent).run_events(run_input)
+        async with self._runner_factory.open_runner(self._agent) as runner:
+            async for event in runner.run_events(run_input):
+                yield event
 
     async def _reconcile_terminal(
         self,

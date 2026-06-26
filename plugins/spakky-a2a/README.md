@@ -19,28 +19,50 @@ pip install spakky-a2a
 |----------------------|---------|---------|
 | `SPAKKY_A2A_DEFAULT_BASE_URL` | `http://localhost:8000` | 기본 config를 쓰는 derived AgentCard interface에 광고할 base URL |
 | `SPAKKY_A2A_DEFAULT_VERSION` | `1.0.0` | derived AgentCard에 광고할 semantic version |
+| `SPAKKY_A2A_DEFAULT_MOUNT_PATH_PREFIX` | `/a2a` | 자동 mount되는 A2A agent app의 path prefix |
 
-Plugin 초기화는 `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, 그리고 `@Agent`와 `@A2AAgentServer`가 함께 붙은 class를 발견하는 post-processor를 등록합니다.
+Plugin 초기화는 `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, A2A remote delegate Pod, 그리고 `@Agent`와 `@A2AAgentServer`가 함께 붙은 class를 발견해 ASGI host에 mount하는 post-processor를 등록합니다.
 
 ## Agent 노출
 
-`@A2AAgentServer`는 `@Agent`와 같은 class에 쌓는 tag입니다. `@Agent`가 Pod를 등록하고, tag는 A2A transport metadata를 기록합니다.
+`@A2AAgentServer`는 `@Agent`와 같은 class에 쌓는 tag입니다. `@Agent`가 Pod를 등록하고, tag는 A2A transport metadata와 optional mount path를 기록합니다.
 
 ```python
 from spakky.agent import Agent, AgentExecutionSpec, IAgentModel
 from spakky.plugins.a2a import A2AAgentServer
 
 
-@A2AAgentServer(base_url="https://agents.example.com/a2a", version="1.0.0")
+@A2AAgentServer(
+    base_url="https://agents.example.com/a2a/planner",
+    version="1.0.0",
+    mount_path="/a2a/planner",
+)
 @Agent(spec=AgentExecutionSpec(name="planner", objective="Plan work"))
 class PlannerAgent:
     def __init__(self, model: IAgentModel) -> None:
         self.model = model
 ```
 
-애플리케이션 bootstrap 이후 `A2AAgentServerSpec.build_app_for("planner")`는 등록된 agent를 resolve합니다. Container에 `IA2ATaskRepository`가 등록되어 있으면 이를 사용하고, 없으면 `InMemoryA2ATaskRepository`를 사용합니다.
+애플리케이션이 Starlette/FastAPI host Pod를 제공하면 plugin post-processor가 bootstrap 중
+`mount_path`에 A2A JSON-RPC + AgentCard app을 자동 mount합니다. `mount_path`를 생략하면
+`{default_mount_path_prefix}/{agent_name}`을 사용합니다. `base_url`과 `version`을 생략하면
+`A2AConfig.default_base_url`, `A2AConfig.default_version`을 사용합니다.
 
-직접 조립할 때는 transport별 builder를 사용합니다.
+```python
+from starlette.applications import Starlette
+from spakky.core.pod.annotations.pod import Pod
+
+
+@Pod(name="asgi_host")
+def asgi_host() -> Starlette:
+    return Starlette()
+```
+
+애플리케이션 bootstrap 이후 `A2AAgentServerSpec.build_app_for("planner")`는 등록된 agent를
+resolve하는 lower-level API로 사용할 수 있습니다. Container에 `IA2ATaskRepository`가 등록되어
+있으면 이를 사용하고, 없으면 `InMemoryA2ATaskRepository`를 사용합니다.
+
+직접 조립해야 하는 host 환경에서는 transport별 builder를 lower-level API로 사용할 수 있습니다.
 
 ```python
 from spakky.plugins.a2a.server.builder import build_a2a_app
@@ -67,7 +89,7 @@ grpc_handler = build_a2a_grpc_handler(agent, base_url="https://agents.example.co
 
 ## 원격 Teammate 위임
 
-`A2AAgentDelegate`는 `AgentExecutionSpec.teammates` entry가 원격 AgentCard URL을 가리키는 teammate를 위해 core `IAgentDelegate` port를 구현합니다. Core agent runner는 각 teammate를 `teammate.<name>.delegate`라는 model-callable delegation tool로 노출합니다. Local teammate Pod는 in-process로 실행하고, remote teammate는 공식 `a2a-sdk` client를 사용합니다.
+`A2AAgentDelegate`는 `AgentExecutionSpec.teammates` entry가 원격 AgentCard URL을 가리키는 teammate를 위해 core `IAgentDelegate` port를 구현합니다. Plugin 초기화가 `A2AAgentDelegate`를 Pod로 등록하고 `IAgentDelegate`에 바인딩하므로 parent agent는 `IAgentDelegate` 또는 `A2AAgentDelegate`를 생성자 주입으로 받을 수 있습니다. Core agent runner는 각 teammate를 `teammate.<schema_token(name)>.delegate`라는 model-callable delegation tool로 노출합니다. `schema_token`은 teammate name의 앞뒤 공백을 제거한 뒤 `[a-zA-Z0-9_]`가 아닌 연속 문자를 단일 `_`로 치환하고, 앞뒤 `_`를 제거한 다음 소문자화한 값입니다. 이 결과가 비면 agent definition 단계에서 거부됩니다. Local teammate Pod는 in-process로 실행하고, remote teammate는 공식 `a2a-sdk` client를 사용합니다.
 
 ```python
 from spakky.agent import Agent, AgentExecutionSpec, AgentTeammate

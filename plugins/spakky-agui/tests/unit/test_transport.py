@@ -1,10 +1,12 @@
 """Tests for the AG-UI SSE run driver consuming the neutral event stream."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from json import loads
 from typing import cast
 
+from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 from ag_ui.encoder import EventEncoder
+from pytest import raises
 
 from spakky.agent.event import (
     AgentEvent,
@@ -20,12 +22,19 @@ from spakky.agent.event import (
     ToolCallStartEvent,
 )
 from spakky.agent.inbound import RunAgentInput
+from spakky.agent.interfaces.repository import IAgentSignalRepository
 from spakky.agent.runner import AgentRunner
+from spakky.agent.signal import AgentSignal
 from spakky.agent.state import AgentStateReason
 
 from spakky.plugins.agui.config import AgUiConfig
+from spakky.plugins.agui.endpoint_input import (
+    AgUiInboundRun,
+    RESUME_APPROVAL_INSTRUCTION,
+)
+from spakky.plugins.agui.error import AgUiApprovalDecodeError
 from spakky.plugins.agui.projector import AgUiProjector
-from spakky.plugins.agui.transport import AgUiRunDriver
+from spakky.plugins.agui.transport import AgUiManagedRunDriver, AgUiRunDriver
 
 _ATTRIBUTION = AgentEventAttribution(
     agent_id="assistant", run_id="run-1", conversation_id="conv-1"
@@ -39,15 +48,48 @@ class _ScriptedRunner:
         self,
         script: tuple[AgentEvent, ...],
         states: object | None = None,
+        signals: IAgentSignalRepository | None = None,
     ) -> None:
         self._script = script
         self.states = states
+        self.signals = signals
 
     async def run_events(
         self, run_input: RunAgentInput
     ) -> AsyncGenerator[AgentEvent, None]:
         for event in self._script:
             yield event
+
+
+class _RunnerContext:
+    def __init__(
+        self,
+        runner: _ScriptedRunner | None = None,
+    ) -> None:
+        self._runner = runner or _ScriptedRunner((), states=None)
+
+    async def __aenter__(self) -> AgentRunner:
+        return cast(AgentRunner, self._runner)
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+
+class _FakeSignalRepository(IAgentSignalRepository):
+    def __init__(self) -> None:
+        self.appended: list[AgentSignal] = []
+
+    def append(self, signal: AgentSignal) -> AgentSignal:
+        self.appended.append(signal)
+        return signal
+
+    def list_pending(self, state_id: str) -> Sequence[AgentSignal]:
+        return tuple(
+            signal for signal in self.appended if signal.agent_state_id == state_id
+        )
+
+    def mark_consumed(self, signal_id: str) -> AgentSignal:
+        return next(signal for signal in self.appended if signal.id == signal_id)
 
 
 def _run_input() -> RunAgentInput:
@@ -184,6 +226,100 @@ async def test_driver_surfaces_pause_event_as_deferred_approval() -> None:
     # The deferred approval is unresolved — no result frame is emitted.
     assert "TOOL_CALL_RESULT" not in types
     assert "RUN_FINISHED" not in types
+
+
+async def test_managed_driver_requires_signal_repository_for_resume() -> None:
+    """resume decision을 적재할 signal repository가 없으면 typed error다."""
+    ag_ui_input = AgUiRunAgentInput.model_validate(
+        {
+            "threadId": "conv-1",
+            "runId": "run-1",
+            "state": None,
+            "messages": [
+                {
+                    "id": "tool-1",
+                    "role": "tool",
+                    "content": (
+                        '{"request_id":"approval:run-1:note.write",'
+                        '"decision":"approve"}'
+                    ),
+                    "toolCallId": "approval:run-1:note.write",
+                }
+            ],
+            "tools": [],
+            "context": [],
+            "forwardedProps": None,
+        }
+    )
+    driver = AgUiManagedRunDriver(
+        runner_context=_RunnerContext(),
+        inbound=AgUiInboundRun(
+            ag_ui_input=ag_ui_input,
+            core_input=RunAgentInput(
+                state_id="run-1",
+                instruction=RESUME_APPROVAL_INSTRUCTION,
+                conversation_id="conv-1",
+                resume=True,
+            ),
+        ),
+        agent_id="assistant",
+        config=AgUiConfig(),
+        accept=None,
+    )
+
+    with raises(AgUiApprovalDecodeError):
+        _ = [frame async for frame in driver]
+
+
+async def test_managed_driver_ingests_resume_decision_before_streaming() -> None:
+    """resume decision은 runner stream 전 durable signal queue에 적재된다."""
+    signals = _FakeSignalRepository()
+    ag_ui_input = AgUiRunAgentInput.model_validate(
+        {
+            "threadId": "conv-1",
+            "runId": "run-1",
+            "state": None,
+            "messages": [
+                {
+                    "id": "tool-1",
+                    "role": "tool",
+                    "content": (
+                        '{"request_id":"approval:run-1:note.write",'
+                        '"decision":"approve"}'
+                    ),
+                    "toolCallId": "approval:run-1:note.write",
+                }
+            ],
+            "tools": [],
+            "context": [],
+            "forwardedProps": None,
+        }
+    )
+    driver = AgUiManagedRunDriver(
+        runner_context=_RunnerContext(
+            _ScriptedRunner(
+                (RunFinishedEvent(attribution=_ATTRIBUTION),),
+                signals=signals,
+            )
+        ),
+        inbound=AgUiInboundRun(
+            ag_ui_input=ag_ui_input,
+            core_input=RunAgentInput(
+                state_id="run-1",
+                instruction=RESUME_APPROVAL_INSTRUCTION,
+                conversation_id="conv-1",
+                resume=True,
+            ),
+        ),
+        agent_id="assistant",
+        config=AgUiConfig(),
+        accept=None,
+    )
+
+    frames = [frame async for frame in driver]
+
+    assert _event_type(frames[-1]) == "RUN_FINISHED"
+    assert signals.appended[0].agent_state_id == "run-1"
 
 
 def _event_type(frame: str) -> str:

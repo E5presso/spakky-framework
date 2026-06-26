@@ -18,10 +18,14 @@ class A2AAgentServer(Tag):
     Attributes:
         base_url: Transport endpoint advertised on the derived AgentCard.
         version: Semantic version advertised on the derived AgentCard.
+        mount_path: Starlette/FastAPI mount path for automatic ASGI exposure.
     """
 
-    base_url: str
+    base_url: str | None = None
     """Transport endpoint advertised on the derived AgentCard interface."""
 
-    version: str
+    version: str | None = None
     """Semantic version advertised on the derived AgentCard."""
+
+    mount_path: str | None = None
+    """ASGI host mount path. None uses ``A2AConfig.default_mount_path_prefix``."""

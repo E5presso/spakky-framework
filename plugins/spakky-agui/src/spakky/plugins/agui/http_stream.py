@@ -7,7 +7,7 @@ SSE ``data:`` framing; clients that want SSE should keep using
 ``add_agui_endpoint``.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator
 
 from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 from fastapi import FastAPI, Request
@@ -16,7 +16,6 @@ from fastapi.responses import StreamingResponse
 from spakky.plugins.agui.config import AgUiConfig
 from spakky.plugins.agui.endpoint import RunDriverFactory, _to_core_input
 from spakky.plugins.agui.serialization import sse_frame_payload
-from spakky.plugins.agui.transport import AgUiRunDriver
 
 HTTP_STREAM_MEDIA_TYPE = "application/x-ndjson"
 """Media type for AG-UI HTTP streaming chunks."""
@@ -46,6 +45,6 @@ def add_agui_http_stream_endpoint(
     app.add_api_route(config.http_stream_path, run_agui_http_stream, methods=["POST"])
 
 
-async def _http_stream_chunks(driver: AgUiRunDriver) -> AsyncIterator[str]:
+async def _http_stream_chunks(driver: AsyncIterable[str]) -> AsyncIterator[str]:
     async for frame in driver:
         yield sse_frame_payload(frame)

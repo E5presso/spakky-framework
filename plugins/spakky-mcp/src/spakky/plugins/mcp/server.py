@@ -34,6 +34,7 @@ from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.mcp.config import McpConfig
 from spakky.plugins.mcp.error import McpToolExposureError
+from spakky.plugins.mcp.server_registry import McpToolServerEntry, McpToolServerRegistry
 
 
 def build_agent_tools(catalog: AgentToolCatalog) -> list[Tool]:
@@ -128,16 +129,30 @@ def streamable_http_session_manager(server: Server) -> StreamableHTTPSessionMana
 class McpToolServer:
     """Application entry point exposing an agent's tools over an MCP transport."""
 
-    def __init__(self, config: McpConfig) -> None:
+    def __init__(
+        self,
+        config: McpConfig,
+        registry: McpToolServerRegistry | None = None,
+    ) -> None:
         self.config = config
+        self.registry = registry
 
     def build_server(self, agent_instance: object) -> Server:
         """Build an MCP server advertising the configured identity for one agent."""
         return build_agent_tool_server(agent_instance, self.config.tool_server.name)
 
+    def build_server_for(self, agent_name: str) -> Server:
+        """Build an MCP server for a registered @McpToolServerAgent name."""
+        entry = self._entry(agent_name)
+        return build_agent_tool_server(entry.instance, self._server_name(entry))
+
     async def serve_stdio(self, agent_instance: object) -> None:
         """Serve the agent's tools over stdio until the connected client closes."""
         await serve_stdio(self.build_server(agent_instance))
+
+    async def serve_stdio_for(self, agent_name: str) -> None:
+        """Serve a registered agent's tools over stdio."""
+        await serve_stdio(self.build_server_for(agent_name))
 
     def streamable_http_session_manager(
         self,
@@ -145,3 +160,20 @@ class McpToolServer:
     ) -> StreamableHTTPSessionManager:
         """Build the streamable-HTTP session manager exposing the agent's tools."""
         return streamable_http_session_manager(self.build_server(agent_instance))
+
+    def streamable_http_session_manager_for(
+        self,
+        agent_name: str,
+    ) -> StreamableHTTPSessionManager:
+        """Build a streamable-HTTP manager for a registered agent."""
+        return streamable_http_session_manager(self.build_server_for(agent_name))
+
+    def _entry(self, agent_name: str) -> McpToolServerEntry:
+        if self.registry is None:
+            from spakky.plugins.mcp.error import McpToolServerNotRegisteredError
+
+            raise McpToolServerNotRegisteredError(agent_name)
+        return self.registry.get(agent_name)
+
+    def _server_name(self, entry: McpToolServerEntry) -> str:
+        return entry.metadata.server_name or self.config.tool_server.name

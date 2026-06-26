@@ -22,7 +22,7 @@ pip install spakky-mcp
 pip install "spakky[agent]"
 ```
 
-plugin 초기화는 `McpConfig`, `McpClient`, `McpToolServer`를 등록합니다. 외부 도구를 끌어올 때는 `McpClient`, 자신의 도구를 내보낼 때는 `McpToolServer` 또는 module-level server helper를 사용합니다.
+plugin 초기화는 `McpConfig`, `McpClient`, `McpToolServerRegistry`, `McpToolServer`, MCP post-processor를 등록합니다. 또한 `IAgentRunnerFactory`를 `McpClient`로 바인딩하므로 AG-UI/A2A 같은 inbound adapter가 runner factory를 통해 실행할 때 외부 도구가 자동으로 합류합니다.
 
 ## 외부 서버 선언
 
@@ -54,19 +54,25 @@ export SPAKKY_MCP__SERVERS='[{"name": "weather", "command": "weather-mcp-server"
 
 ## 에이전트에 합류시키기
 
-`McpClient.open_runner`는 선언한 외부 서버에 연결해 도구를 발견하고, 에이전트의 기존 도구 카탈로그에 외부 도구를 더한 `AgentRunner`를 돌려줍니다. 외부 서버 세션은 `async with` 블록 동안 유지되며 블록을 벗어나면 정리됩니다.
+외부 MCP tool은 `IAgentRunnerFactory` 경로로 합류합니다. `spakky-mcp`가 로드되면 이 port가
+`McpClient`에 바인딩되고, inbound adapter가 agent run마다 factory context를 열 때 외부 서버에
+연결해 도구를 발견합니다. 외부 서버 세션은 runner context 동안 유지되며 context를 벗어나면
+정리됩니다.
 
 ```python
-from spakky.plugins.mcp import McpClient
+from spakky.agent import IAgentRunnerFactory
 
 
-async def run_with_external_tools(client: McpClient, agent: WeatherAgent) -> None:
-    async with client.open_runner(agent) as runner:
+async def custom_inbound_boundary(
+    factory: IAgentRunnerFactory,
+    agent: WeatherAgent,
+) -> None:
+    async with factory.open_runner(agent, server_names=("weather",)) as runner:
         async for item in runner.run(run_input):
-            ...  # 외부 도구가 native @agent_tool 도구와 같은 경로로 디스패치된다
+            ...
 ```
 
-`server_names`를 지정하면 선언된 서버 중 일부만 연결합니다(`open_runner(agent, server_names=["weather"])`). 인자를 생략하면 선언된 모든 서버를 연결합니다.
+`server_names`를 지정하면 선언된 서버 중 일부만 연결합니다. 인자를 생략하면 선언된 모든 서버를 연결합니다. 일반 AG-UI/A2A 경계에서는 애플리케이션 코드가 이 factory를 직접 호출하지 않습니다.
 
 ## 동작 원리: 소유자 없는(owner-less) 도구
 
@@ -86,42 +92,49 @@ async def run_with_external_tools(client: McpClient, agent: WeatherAgent) -> Non
 
 ### 서버 만들기
 
-`build_agent_tool_server(agent_instance, server_name)`는 한 에이전트 인스턴스의 도구 카탈로그를 노출하는 MCP `Server`를 만듭니다. `list_tools` 요청에는 각 카탈로그 디스크립터를 `mcp.types.Tool`(모델용 이름·설명·입력 JSON Schema)로 변환해 응답하고, `call_tool` 요청은 디스패처로 위임합니다.
+MCP server로 노출할 Agent는 `@Agent` 위에 `@McpToolServerAgent` marker를 쌓습니다.
 
 ```python
-from spakky.plugins.mcp import build_agent_tool_server, serve_stdio
+from spakky.agent import Agent, AgentExecutionSpec, agent_tool
+from spakky.plugins.mcp import McpToolServerAgent
 
 
-async def expose_over_stdio(agent: WeatherAgent) -> None:
-    server = build_agent_tool_server(agent, "spakky-agent")
-    await serve_stdio(server)  # stdio 전송으로 클라이언트가 연결을 닫을 때까지 서빙
+@McpToolServerAgent(server_name="weather-agent")
+@Agent(spec=AgentExecutionSpec(name="weather"))
+class WeatherAgent:
+    @agent_tool(schema_name="forecast", description="Return a forecast.")
+    def forecast(self, city: str) -> str:
+        return f"sunny:{city}"
 ```
 
-`McpToolServer` Pod를 쓰면 설정(`McpConfig.tool_server`)에 선언한 서버 이름·전송으로 같은 작업을 수행합니다.
+`McpToolServer` Pod는 registry에서 agent를 resolve하므로 host entrypoint는 agent instance를 직접 넘기지 않습니다.
 
 ```python
 from spakky.plugins.mcp import McpToolServer
 
 
-async def expose(server: McpToolServer, agent: WeatherAgent) -> None:
-    await server.serve_stdio(agent)
+async def expose(server: McpToolServer) -> None:
+    await server.serve_stdio_for("weather")
 ```
 
 ### 전송 선택
 
 | 전송 | 진입점 | 용도 |
 |------|--------|------|
-| `stdio` | `serve_stdio(server)` / `McpToolServer.serve_stdio(agent)` | 클라이언트가 하위 프로세스로 서버를 구동 |
-| `streamable_http` | `streamable_http_session_manager(server)` / `McpToolServer.streamable_http_session_manager(agent)` | 원격 HTTP 노출 — 반환된 세션 매니저를 호스트 애플리케이션의 lifespan에서 구동하고 인바운드 요청을 `handle_request`로 라우팅 |
+| `stdio` | `McpToolServer.serve_stdio_for(agent_name)` | 클라이언트가 하위 프로세스로 서버를 구동 |
+| `streamable_http` | `McpToolServer.streamable_http_session_manager_for(agent_name)` | 원격 HTTP 노출 — 반환된 세션 매니저를 호스트 애플리케이션의 lifespan에서 구동하고 인바운드 요청을 `handle_request`로 라우팅 |
 
 `streamable_http` 세션 매니저는 자신의 `run()` 컨텍스트 동안 단일 task group을 소유하며 컨텍스트를 벗어나면 재사용할 수 없습니다 — 호스트 애플리케이션 lifespan에서 1회 구동합니다.
+
+`build_agent_tool_server(agent_instance, server_name)`, `serve_stdio(server)`,
+`streamable_http_session_manager(server)`는 특수 host와 테스트를 위한 lower-level API입니다.
 
 ### 서버 노출 설정
 
 | 환경변수 | 의미 | 기본값 |
 |----------|------|--------|
 | `SPAKKY_MCP__TOOL_SERVER__NAME` | MCP 핸드셰이크에서 광고할 서버 이름 | `spakky-agent` |
-| `SPAKKY_MCP__TOOL_SERVER__TRANSPORT` | `stdio`(기본) 또는 `streamable_http` | `stdio` |
+| `SPAKKY_MCP__TOOL_SERVER__TRANSPORT` | 설정 모델에 보존되는 전송 의도 값. 실제 전송은 host entrypoint가 `serve_stdio_for()` 또는 `streamable_http_session_manager_for()` 호출로 선택 | `stdio` |
 
 ### 결과 변환
 

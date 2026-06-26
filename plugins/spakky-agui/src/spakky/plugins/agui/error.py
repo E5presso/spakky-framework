@@ -48,3 +48,9 @@ class AgUiRunResolutionError(AbstractAgUiError):
     """
 
     message = "AG-UI run request could not be resolved to a runnable agent run"
+
+
+class AgUiEndpointConflictError(AbstractAgUiError):
+    """Raised when multiple AG-UI agents claim the same transport path."""
+
+    message = "AG-UI endpoint path is claimed by more than one exposed agent"

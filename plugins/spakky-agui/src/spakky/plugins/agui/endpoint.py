@@ -15,7 +15,7 @@ endpoint stays agnostic about which agent answers, mirroring pydantic-ai's
 directly (ADR-0013 §2) rather than importing the ``spakky-fastapi`` plugin.
 """
 
-from collections.abc import Callable
+from collections.abc import AsyncIterable, Callable
 
 from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 from fastapi import FastAPI, Request
@@ -24,16 +24,14 @@ from fastapi.responses import StreamingResponse
 from spakky.agent.inbound import RunAgentInput
 
 from spakky.plugins.agui.config import AgUiConfig
-from spakky.plugins.agui.error import AgUiRunResolutionError
-from spakky.plugins.agui.hitl import carries_approval_decision
-from spakky.plugins.agui.transport import AgUiRunDriver
+from spakky.plugins.agui.endpoint_input import to_core_input
 
 SSE_MEDIA_TYPE = "text/event-stream"
 """Media type for the AG-UI server-sent event stream."""
 
 type RunDriverFactory = Callable[
     [RunAgentInput, AgUiRunAgentInput, str | None],
-    AgUiRunDriver,
+    AsyncIterable[str],
 ]
 """Resolves the agent run for a request and returns a ready SSE driver.
 
@@ -73,21 +71,4 @@ def _to_core_input(ag_ui_input: AgUiRunAgentInput) -> RunAgentInput:
     ``parentRunId`` preserves delegated run ancestry through the neutral core
     attribution path.
     """
-    return RunAgentInput(
-        state_id=ag_ui_input.run_id,
-        instruction=_last_user_text(ag_ui_input),
-        conversation_id=ag_ui_input.thread_id,
-        parent_run_id=ag_ui_input.parent_run_id,
-        resume=carries_approval_decision(ag_ui_input),
-    )
-
-
-def _last_user_text(ag_ui_input: AgUiRunAgentInput) -> str:
-    """Return the most recent user message text seeding the model request."""
-    for message in reversed(ag_ui_input.messages):
-        if message.role != "user":
-            continue
-        content = message.content
-        if isinstance(content, str) and content.strip():
-            return content
-    raise AgUiRunResolutionError
+    return to_core_input(ag_ui_input)

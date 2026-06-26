@@ -3,6 +3,7 @@
 from spakky.core.application.application import SpakkyApplication
 
 from spakky.agent.post_processor import AgentBootstrapValidationPostProcessor
+from spakky.agent.runner_factory import AgentRunnerFactory
 
 
 def initialize(app: SpakkyApplication) -> None:
@@ -11,4 +12,5 @@ def initialize(app: SpakkyApplication) -> None:
     The package intentionally registers no persistence implementation; production
     repositories must arrive through feature contributions.
     """
+    app.add(AgentRunnerFactory)
     app.add(AgentBootstrapValidationPostProcessor)

@@ -121,6 +121,7 @@ from spakky.agent.hooks import (
 )
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.runner import AgentRunner, AgentRunResult
+from spakky.agent.runner_factory import AgentRunnerFactory, IAgentRunnerFactory
 from spakky.agent.interfaces.repository import (
     IAgentEvidenceRepository,
     IAgentSignalRepository,
@@ -228,6 +229,7 @@ PLUGIN_NAME = Plugin(name="spakky-agent")
 
 __all__ = [
     "IAgentModel",
+    "IAgentRunnerFactory",
     "IAgentEvidenceRepository",
     "IAgentSignalRepository",
     "IAgentStateRepository",
@@ -286,6 +288,7 @@ __all__ = [
     "AgentResumePlan",
     "AgentRunResult",
     "AgentRunner",
+    "AgentRunnerFactory",
     "AgentSignal",
     "AgentSignalConsumptionBatch",
     "AgentSignalHookCatalog",

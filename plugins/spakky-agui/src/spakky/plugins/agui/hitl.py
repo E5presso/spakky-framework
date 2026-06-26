@@ -245,7 +245,11 @@ def _decision_source(
     for message in reversed(ag_ui_input.messages):
         if not isinstance(message, ToolMessage):
             continue
-        content = _decode_tool_content(message.content)
+        content = _decode_tool_content(
+            message.content,
+            message.tool_call_id,
+            ag_ui_input.run_id,
+        )
         if content is not None:
             return content
     forwarded = ag_ui_input.forwarded_props
@@ -256,9 +260,18 @@ def _decision_source(
     return None
 
 
-def _decode_tool_content(content: str) -> Mapping[str, JsonValue] | None:
+def _decode_tool_content(
+    content: str,
+    tool_call_id: str | None,
+    run_id: str,
+) -> Mapping[str, JsonValue] | None:
     parsed = _load_json_object(content)
     if parsed is None or "decision" not in parsed:
+        return None
+    request_id = parsed.get("request_id")
+    if not isinstance(request_id, str) or request_id != tool_call_id:
+        return None
+    if not request_id.startswith(f"approval:{run_id}:"):
         return None
     return parsed
 

@@ -7,7 +7,7 @@ event JSON payload per stdout line. Rendering, colors, and nested views remain
 the responsibility of the consuming UI process.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterable, AsyncIterator
 from dataclasses import dataclass
 from typing import TextIO
 
@@ -15,7 +15,6 @@ from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 
 from spakky.plugins.agui.endpoint import RunDriverFactory, _to_core_input
 from spakky.plugins.agui.serialization import sse_frame_payload
-from spakky.plugins.agui.transport import AgUiRunDriver
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +67,7 @@ def read_agui_run_input(
     return AgUiRunAgentInput.model_validate_json(payload)
 
 
-async def agui_stdio_payloads(driver: AgUiRunDriver) -> AsyncIterator[str]:
+async def agui_stdio_payloads(driver: AsyncIterable[str]) -> AsyncIterator[str]:
     """Yield AG-UI event JSON-lines from an ``AgUiRunDriver``-compatible stream."""
     async for frame in driver:
         yield sse_frame_payload(frame)

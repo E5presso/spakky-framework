@@ -38,6 +38,10 @@ contribution의 repository 구현이 필요하며, 운영용 in-memory fallback�
     options:
       show_root_heading: false
 
+::: spakky.agent.runner_factory
+    options:
+      show_root_heading: false
+
 ## Event
 
 ::: spakky.agent.event

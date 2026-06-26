@@ -2,7 +2,7 @@
 
 > `spakky-agui`는 `spakky-agent`의 protocol-neutral `AgentEvent` stream을 AG-UI 이벤트로 투영하고 FastAPI SSE, HTTP streaming, WebSocket, stdio 경계로 노출합니다.
 
-AG-UI endpoint는 애플리케이션이 `RunDriverFactory`를 제공해 어떤 `@Agent`를 실행할지 결정합니다. plugin 초기화는 `AgUiConfig`만 등록하므로 endpoint wiring은 애플리케이션 코드에서 명시적으로 수행합니다.
+FastAPI SSE/HTTP streaming/WebSocket endpoint는 `@AgUiAgent @Agent` 선언을 `AgUiAgentRegistry`에 등록한 뒤 post-processor가 host FastAPI Pod에 자동 mount합니다. `add_agui_endpoint` 계열 helper는 lower-level 호환 API입니다.
 
 ## Public API
 
@@ -17,6 +17,18 @@ AG-UI endpoint는 애플리케이션이 `RunDriverFactory`를 제공해 어떤 `
       show_root_heading: false
 
 ## Endpoint
+
+::: spakky.plugins.agui.stereotypes.agui_agent
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.agui.server.registry
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.agui.post_processors.mount_fastapi
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.agui.endpoint
     options:

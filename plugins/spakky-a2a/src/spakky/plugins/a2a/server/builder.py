@@ -11,13 +11,16 @@ from typing import override
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.utils import DEFAULT_RPC_URL
 from spakky.agent.execution import Agent
+from spakky.agent.runner_factory import IAgentRunnerFactory
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from starlette.applications import Starlette
 
 from spakky.plugins.a2a.card.derivation import AgentCardFactory
+from spakky.plugins.a2a.config import A2AConfig
 from spakky.plugins.a2a.server.request_handler import build_a2a_request_handler
+from spakky.plugins.a2a.server.registry import A2AAgentServerEntry
 from spakky.plugins.a2a.server.registry import A2AAgentRegistry
 from spakky.plugins.a2a.store.interfaces import IA2ATaskRepository
 
@@ -28,6 +31,8 @@ def build_a2a_app(
     base_url: str,
     version: str,
     repository: IA2ATaskRepository | None = None,
+    agent_type: type[object] | None = None,
+    runner_factory: IAgentRunnerFactory | None = None,
 ) -> Starlette:
     """Assemble a mountable A2A ASGI application for an @Agent instance.
 
@@ -36,12 +41,13 @@ def build_a2a_app(
         base_url: Transport endpoint advertised on the derived AgentCard.
         version: Semantic version advertised on the derived AgentCard.
         repository: Task persistence port; an in-memory store is used when None.
+        agent_type: Original @Agent class, supplied when the instance is proxied.
 
     Returns:
         A Starlette application exposing the agent-card and JSON-RPC routes.
     """
     card = AgentCardFactory().build(
-        Agent.get(type(agent_instance)),
+        Agent.get(agent_type or type(agent_instance)),
         base_url,
         version,
     )
@@ -50,7 +56,9 @@ def build_a2a_app(
         base_url=base_url,
         version=version,
         repository=repository,
+        agent_type=agent_type,
         card=card,
+        runner_factory=runner_factory,
     )
     routes = [
         *create_agent_card_routes(card),
@@ -84,9 +92,29 @@ class A2AAgentServerSpec(IContainerAware):
         entry = self._container.get(A2AAgentRegistry).get(agent_name)
         # Repository Pod is optional; absent one, persistence stays in-process.
         repository = self._container.get_or_none(IA2ATaskRepository)
+        runner_factory = self._container.get(IAgentRunnerFactory)
         return build_a2a_app(
             entry.instance,
-            base_url=entry.metadata.base_url,
-            version=entry.metadata.version,
+            base_url=self._base_url(entry),
+            version=self._version(entry),
             repository=repository,
+            agent_type=entry.agent_type,
+            runner_factory=runner_factory,
         )
+
+    def mount_path_for(self, agent_name: str) -> str:
+        """Return the ASGI mount path for a registered agent."""
+        entry = self._container.get(A2AAgentRegistry).get(agent_name)
+        if entry.metadata.mount_path is not None:
+            return entry.metadata.mount_path
+        prefix = self._config().default_mount_path_prefix.rstrip("/")
+        return f"{prefix}/{agent_name}"
+
+    def _base_url(self, entry: A2AAgentServerEntry) -> str:
+        return entry.metadata.base_url or self._config().default_base_url
+
+    def _version(self, entry: A2AAgentServerEntry) -> str:
+        return entry.metadata.version or self._config().default_version
+
+    def _config(self) -> A2AConfig:
+        return self._container.get(A2AConfig)

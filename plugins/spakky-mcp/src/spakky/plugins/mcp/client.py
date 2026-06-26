@@ -10,13 +10,19 @@ tears the connections down on exit.
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
+from typing import override
 
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.message import SessionMessage
-from spakky.agent import AgentRunner, AgentToolDescriptor, JsonValue
+from spakky.agent import (
+    AgentRunner,
+    AgentToolDescriptor,
+    IAgentRunnerFactory,
+    JsonValue,
+)
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.mcp.config import McpConfig, McpServerConfig, McpTransport
@@ -134,8 +140,8 @@ async def _discover_descriptors(
 
 
 @Pod()
-class McpClient:
-    """Application entry point that joins external MCP tools to an agent runner."""
+class McpClient(IAgentRunnerFactory):
+    """Runner factory that joins external MCP tools to an agent runner."""
 
     def __init__(self, config: McpConfig) -> None:
         self.config = config
@@ -149,6 +155,7 @@ class McpClient:
         return tuple(self.config.server_by_name(name) for name in server_names)
 
     @asynccontextmanager
+    @override
     async def open_runner(
         self,
         agent_instance: object,

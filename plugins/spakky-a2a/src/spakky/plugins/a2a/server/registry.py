@@ -13,7 +13,9 @@ from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
 class A2AAgentServerEntry:
     """A discovered @Agent instance paired with its A2A transport metadata."""
 
+    agent_name: str
     instance: object
+    agent_type: type[object]
     metadata: A2AAgentServer
 
 
@@ -26,15 +28,24 @@ class A2AAgentRegistry:
     def __init__(self) -> None:
         self._entries = {}
 
-    def register(self, instance: object, metadata: A2AAgentServer) -> None:
+    def register(
+        self,
+        instance: object,
+        agent_type: type[object],
+        metadata: A2AAgentServer,
+    ) -> None:
         """Register an @Agent instance under its resolved agent name.
 
         Args:
             instance: The @Agent Pod instance to serve.
+            agent_type: The original @Agent type, unwrapped from AOP proxies.
             metadata: The A2A transport metadata declared on the agent class.
         """
-        self._entries[self._agent_name(instance)] = A2AAgentServerEntry(
+        agent_name = self._agent_name(agent_type)
+        self._entries[agent_name] = A2AAgentServerEntry(
+            agent_name=agent_name,
             instance=instance,
+            agent_type=agent_type,
             metadata=metadata,
         )
 
@@ -49,8 +60,12 @@ class A2AAgentRegistry:
             raise A2AAgentServerNotRegisteredError(agent_name)
         return entry
 
+    def list_entries(self) -> tuple[A2AAgentServerEntry, ...]:
+        """Return registered A2A agent entries in stable name order."""
+        return tuple(self._entries[name] for name in sorted(self._entries))
+
     @staticmethod
-    def _agent_name(instance: object) -> str:
+    def _agent_name(agent_type: type[object]) -> str:
         """Resolve an agent's registry name from its spec name or class name."""
-        agent = Agent.get(type(instance))
-        return agent.spec.name or type(instance).__name__
+        agent = Agent.get(agent_type)
+        return agent.spec.name or agent_type.__name__

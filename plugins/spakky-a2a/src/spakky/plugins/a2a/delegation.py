@@ -32,6 +32,7 @@ from spakky.agent import (
 from spakky.agent.delegation import DelegationPacket
 from spakky.agent.error import AgentToolDispatchError
 from spakky.agent.types import JsonObject, JsonValue
+from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.a2a.client import A2ARemoteAgentClient, RemoteA2AMessage
 
@@ -134,6 +135,7 @@ class A2AStreamEventMapper:
         )
 
 
+@Pod()
 @dataclass(frozen=True, slots=True)
 class A2AAgentDelegate(IAgentDelegate):
     """Delegate remote teammate calls through the official A2A client."""
