@@ -90,6 +90,20 @@ lower-level escape hatch입니다. 일반 애플리케이션은 `@A2ACompatible`
 - tool: synthetic teammate delegation tool을 제외한 native `@agent_tool` descriptor
 - delegation skill: 선언된 `AgentTeammate` entry
 
+## 실행별 입력
+
+Executor는 A2A inbound message의 task id를 `RunAgentInput.state_id`로, context id를 `conversation_id`로 사용합니다. Message data part에 `modelSelection` 또는 `model_selection`을 넣으면 `RunAgentInput.model_selection`으로 전달되고, `mcp`와 `metadata` object는 `RunAgentInput.metadata`로 전달됩니다.
+
+```json
+{
+  "modelSelection": {"provider": "openrouter", "model": "anthropic/claude-sonnet-4.5"},
+  "mcp": {"servers": ["github"]},
+  "metadata": {"tenant": "acme"}
+}
+```
+
+Approval resume은 data part의 `approval_id`, `decision`을 `APPROVAL_DECISION` signal로 변환합니다.
+
 ## 원격 Teammate 위임
 
 `A2AAgentDelegate`는 `AgentExecutionSpec.teammates` entry가 원격 AgentCard URL을 가리키는 teammate를 위해 core `IAgentDelegate` port를 구현합니다. Plugin 초기화가 `A2AAgentDelegate`를 Pod로 등록하고 `IAgentDelegate`에 바인딩하므로 parent agent는 `IAgentDelegate` 또는 `A2AAgentDelegate`를 생성자 주입으로 받을 수 있습니다. Core agent runner는 각 teammate를 `teammate.<schema_token(name)>.delegate`라는 model-callable delegation tool로 노출합니다. `schema_token`은 teammate name의 앞뒤 공백을 제거한 뒤 `[a-zA-Z0-9_]`가 아닌 연속 문자를 단일 `_`로 치환하고, 앞뒤 `_`를 제거한 다음 소문자화한 값입니다. 이 결과가 비면 agent definition 단계에서 거부됩니다. Local teammate Pod는 in-process로 실행하고, remote teammate는 공식 `a2a-sdk` client를 사용합니다.

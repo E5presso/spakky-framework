@@ -6,6 +6,7 @@ from typing import override
 import pytest
 
 from spakky.agent import (
+    AgentDefinitionError,
     ContextDigest,
     ContextExposurePolicy,
     ContextFreshness,
@@ -25,6 +26,7 @@ from spakky.agent import (
     ModelMessageRole,
     ModelRequest,
     ModelResponse,
+    ModelSelection,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolCall,
@@ -115,6 +117,28 @@ def test_model_request_expect_provider_neutral_structured_output_contract() -> N
     assert request.sampling.max_tokens == 64
     assert request.streaming.include_usage is True
     assert request.streaming.include_progress is False
+
+
+def test_model_request_expect_carries_run_model_selection() -> None:
+    """ModelRequest는 provider/model/profile 선택을 typed field로 보존한다."""
+    selection = ModelSelection(
+        provider="openrouter",
+        model="anthropic/claude-sonnet-4.5",
+        profile="coding",
+        metadata={"tier": "paid"},
+    )
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "hello"),),
+        model_selection=selection,
+    )
+
+    assert request.model_selection is selection
+
+
+def test_model_selection_expect_rejects_blank_fields() -> None:
+    """빈 provider/model/profile 값은 adapter까지 내려가기 전에 거부된다."""
+    with pytest.raises(AgentDefinitionError):
+        ModelSelection(provider=" ")
 
 
 def test_model_request_expect_assembles_typed_context_packs_as_messages() -> None:

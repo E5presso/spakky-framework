@@ -8,11 +8,36 @@
 
 ## 클라이언트: 외부 도구 끌어오기
 
-## 언제 쓰는가
+### 언제 쓰는가
 
-이미 운영 중인 외부 MCP 서버(파일 시스템, 검색, 사내 도구 서버 등)의 도구를 에이전트가 일반 도구처럼 사용하고 싶을 때 씁니다. 외부 서버를 선언하면 그 도구들이 모델에게 노출되고, 모델이 호출하면 프레임워크 실행 루프가 외부 서버로 디스패치합니다.
+이미 운영 중인 외부 MCP 서버(파일 시스템, 검색, 사내 도구 서버 등)의 도구를 에이전트가 일반 도구처럼 사용하고 싶을 때 씁니다. 외부 서버는 사용자나 3rd-party가 FastMCP, 공식 MCP SDK, 사내 서버 등 원하는 방식으로 만들면 됩니다. `spakky-mcp`는 그 서버를 만드는 프레임워크가 아니라, 서버 연결을 열고 발견된 tools를 Spakky Agent tool catalog에 합류시키는 connector입니다.
 
 이 플러그인은 **도구 공급원**일 뿐 모델 어댑터가 아닙니다. 실행에는 별도의 `IAgentModel` 공급자(예: `spakky-vllm`)가 필요합니다.
+
+외부 서버 선택은 Agent class annotation에 굽지 않습니다. 서비스 설정이나 사용자 설정이 `RunAgentInput.metadata["mcp"]["servers"]`에 서버 이름 또는 inline 서버 선언을 넣고, `MCPClient`가 run마다 그 값을 해석합니다. pydantic-ai의 `Agent(..., toolsets=[MCPToolset(...)])`처럼 toolset은 Agent class 자체가 아니라 조립/실행 경계에서 선택합니다.
+
+인증 경계도 분리되어 있습니다. `spakky-mcp`는 MCP transport에 필요한 HTTP client를 구성할 수 있지만, 3rd-party 사용자 consent 화면, Authorization Code/PKCE callback, 장기 refresh-token 저장 정책은 애플리케이션 책임입니다.
+
+| 서버 형태 | 인증 방식 |
+|-----------|-----------|
+| `stdio` MCP 서버 | 서버 프로세스가 자체적으로 읽는 환경변수나 credential store를 `env`/실행 환경으로 전달합니다. |
+| `streamable_http` MCP 서버 | `auth.headers`, `auth.bearer_token_env`, `auth.oauth_client_credentials`로 HTTP header 또는 OAuth client-credentials token을 구성합니다. Authorization Code/PKCE는 custom `IMcpHttpClientProvider`로 확장합니다. |
+
+즉 "MCP를 붙이면 모든 3rd-party OAuth가 자동으로 끝난다"가 아니라, **서비스가 준비한 MCP server endpoint/process를 Agent run에 plug-and-play로 합류시킨다**가 기능입니다.
+
+```mermaid
+flowchart LR
+  Agent["@Agent + @agent_tool catalog"] --> Runner[AgentRunner]
+  Config[McpConfig.servers] --> Resolver[McpRuntimeServerResolver]
+  Input[RunAgentInput.metadata.mcp.servers] --> Resolver
+  Resolver --> Client[MCPClient / IAgentRunnerFactory]
+  Client --> Stdio["stdio server process\n(auth is server/env responsibility)"]
+  Client --> Http["streamable_http URL\n(headers / bearer / client credentials)"]
+  Stdio --> ExternalTools[Discovered MCP tools]
+  Http --> ExternalTools
+  ExternalTools --> Catalog[Merged AgentToolCatalog]
+  Catalog --> Runner
+```
 
 ## 설치
 
@@ -42,15 +67,64 @@ export SPAKKY_MCP__SERVERS='[{"name": "weather", "command": "weather-mcp-server"
 
 | 필드 | 의미 |
 |------|------|
-| `name` | 서버 이름. 도구 이름 충돌을 막는 접두사로 쓰이며 `__`를 포함할 수 없습니다. |
+| `name` | 서버 이름. configured server와 runtime inline server 전체에서 유일해야 하며, 도구 이름 충돌을 막는 접두사로 쓰입니다. `__`를 포함할 수 없습니다. |
 | `transport` | `stdio`(기본) 또는 `streamable_http` |
 | `command`, `args`, `env` | `stdio` 전송에서 서버를 구동할 명령·인자·환경변수 |
 | `url` | `streamable_http` 전송에서 서버의 http(s) 엔드포인트 |
+| `auth.headers` | `streamable_http` 요청에 붙일 정적 HTTP headers |
+| `auth.bearer_token_env` | bearer token을 읽을 환경변수 이름 |
+| `auth.oauth_client_credentials` | OAuth2 client-credentials token 요청 설정 |
 | `call_timeout_seconds` | 도구 호출 타임아웃(초). 기본 `60.0` |
+
+예를 들어 인증 토큰을 환경변수로 읽는 stdio MCP 서버는 다음처럼 선언합니다. 이 토큰을 해석하고 3rd-party API에 OAuth/Bearer 요청을 보내는 책임은 해당 MCP 서버에 있습니다.
+
+```bash
+export SPAKKY_MCP__SERVERS='[
+  {
+    "name": "github",
+    "transport": "stdio",
+    "command": "github-mcp-server",
+    "env": {"GITHUB_TOKEN": "ghp_..."}
+  }
+]'
+```
+
+원격 HTTP MCP 서버가 bearer token을 요구하면 다음처럼 선언합니다.
+
+```bash
+export SPAKKY_MCP__SERVERS='[
+  {
+    "name": "linear",
+    "transport": "streamable_http",
+    "url": "https://mcp.example.com/linear",
+    "auth": {"bearer_token_env": "LINEAR_MCP_TOKEN"}
+  }
+]'
+```
+
+OAuth client-credentials가 필요한 서버는 token endpoint와 client credential source를 선언합니다.
+
+```bash
+export SPAKKY_MCP__SERVERS='[
+  {
+    "name": "internal",
+    "transport": "streamable_http",
+    "url": "https://mcp.example.com/internal",
+    "auth": {
+      "oauth_client_credentials": {
+        "token_url": "https://auth.example.com/oauth/token",
+        "client_id_env": "MCP_CLIENT_ID",
+        "client_secret_env": "MCP_CLIENT_SECRET",
+        "scopes": ["mcp:tools"]
+      }
+    }
+  }
+]'
+```
 
 ## 도구 이름 접두사
 
-여러 서버가 같은 이름의 도구를 노출해도 충돌하지 않도록, 모델이 보는 도구 이름은 `<서버이름>__<도구이름>` 형태로 접두사가 붙습니다. 예를 들어 `weather` 서버의 `forecast` 도구는 카탈로그에 `weather__forecast`로 등록됩니다.
+여러 서버가 같은 이름의 도구를 노출해도 충돌하지 않도록, 모델이 보는 도구 이름은 `<서버이름>__<도구이름>` 형태로 접두사가 붙습니다. 예를 들어 `weather` 서버의 `forecast` 도구는 카탈로그에 `weather__forecast`로 등록됩니다. 서버 이름 자체는 전역 유일해야 합니다. 같은 `name`을 두 번 선언하거나 runtime `servers` 배열에서 같은 이름을 두 번 선택하면 어떤 credential/server가 선택되는지 모호해지므로 `McpServerConfigurationError`로 실패합니다.
 
 ## 에이전트에 합류시키기
 
@@ -60,19 +134,46 @@ export SPAKKY_MCP__SERVERS='[{"name": "weather", "command": "weather-mcp-server"
 정리됩니다.
 
 ```python
-from spakky.agent import IAgentRunnerFactory
+from spakky.agent import IAgentRunnerFactory, RunAgentInput
 
 
 async def custom_inbound_boundary(
     factory: IAgentRunnerFactory,
     agent: WeatherAgent,
 ) -> None:
-    async with factory.open_runner(agent, server_names=("weather",)) as runner:
+    run_input = RunAgentInput(
+        state_id="run-1",
+        instruction="answer with external tools",
+        metadata={"mcp": {"servers": ["weather"]}},
+    )
+    async with factory.open_runner(agent, run_input=run_input) as runner:
         async for item in runner.run(run_input):
             ...
 ```
 
-`server_names`를 지정하면 선언된 서버 중 일부만 연결합니다. 인자를 생략하면 선언된 모든 서버를 연결합니다. 일반 AG-UI/A2A 경계에서는 애플리케이션 코드가 이 factory를 직접 호출하지 않습니다.
+`servers` 배열의 각 항목은 `McpConfig.servers`에 선언된 서버 이름이거나 inline 서버 선언입니다. `metadata["mcp"]["servers"]`를 생략하면 configured MCP server 전체를 연결합니다. Runtime inline 선언의 `name`도 configured server와 같은 namespace를 공유하므로 한 run 안에서 중복될 수 없습니다.
+
+```python
+RunAgentInput(
+    state_id="run-2",
+    instruction="inspect issue status",
+    metadata={
+        "mcp": {
+            "servers": [
+                "github",
+                {
+                    "name": "tenant-search",
+                    "transport": "streamable_http",
+                    "url": "https://tenant.example.com/mcp",
+                    "auth": {"bearer_token_env": "TENANT_MCP_TOKEN"},
+                },
+            ]
+        }
+    },
+)
+```
+
+AG-UI에서는 `forwardedProps.mcp`, A2A에서는 data part의 `mcp` object가 같은 metadata로 변환됩니다. 예를 들어 AG-UI client는 `forwardedProps: {"mcp": {"servers": ["github"]}}`를 보낼 수 있습니다.
 
 ## 동작 원리: 소유자 없는(owner-less) 도구
 

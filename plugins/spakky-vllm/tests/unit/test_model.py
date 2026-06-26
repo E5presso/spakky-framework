@@ -14,6 +14,7 @@ from spakky.agent import (
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
+    ModelSelection,
     ModelStreamEvent,
     ModelStreamEventKind,
     JsonSchemaConstraint,
@@ -30,6 +31,7 @@ from spakky.plugins.vllm.error import (
     AbstractVllmError,
     VllmConstrainedDecodingUnsupportedError,
     VllmModelRefusalError,
+    VllmModelSelectionError,
     VllmResponseError,
     VllmTimeoutError,
     VllmTransportError,
@@ -216,6 +218,36 @@ async def test_complete_assembles_context_pack_messages_into_payload() -> None:
         {"role": "user", "content": "answer"},
         {"role": "user", "content": "repo facts"},
     ]
+
+
+async def test_complete_uses_run_model_selection_model() -> None:
+    """vLLM provider 선택은 요청별 model 값을 OpenAI-compatible payload에 반영한다."""
+    client = RecordingClient({"choices": [{"message": {"content": "ok"}}]})
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "hello"),),
+        model_selection=ModelSelection(provider="vllm", model="qwen3-32b"),
+    )
+
+    await model.complete(request)
+
+    assert client.payload is not None
+    assert client.payload["model"] == "qwen3-32b"
+
+
+async def test_complete_rejects_other_model_provider_selection() -> None:
+    """vLLM adapter는 다른 provider 선택을 자기 boundary 밖 요청으로 거부한다."""
+    client = RecordingClient({"choices": [{"message": {"content": "ok"}}]})
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "hello"),),
+        model_selection=ModelSelection(provider="openai", model="gpt-5.5"),
+    )
+
+    with pytest.raises(VllmModelSelectionError):
+        await model.complete(request)
+
+    assert client.payload is None
 
 
 async def test_complete_includes_configured_chat_template_kwargs() -> None:
@@ -1271,6 +1303,26 @@ async def test_stream_disabled_emits_typed_error_without_client_call(
     assert events[0].kind == ModelStreamEventKind.ERROR
     assert events[0].error is not None
     assert events[0].error.code == "vllm_streaming_disabled"
+    assert events[1].kind == ModelStreamEventKind.DONE
+    assert client.payload is None
+
+
+async def test_stream_rejects_other_model_provider_selection_without_client_call() -> (
+    None
+):
+    """stream도 provider mismatch를 HTTP 호출 전 typed error event로 변환한다."""
+    client = RecordingClient({"choices": []})
+    model = VllmAgentModel(VllmConfig(), client)
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.USER, "hello"),),
+        model_selection=ModelSelection(provider="openai", model="gpt-5.5"),
+    )
+
+    events = [event async for event in model.stream(request)]
+
+    assert events[0].kind == ModelStreamEventKind.ERROR
+    assert events[0].error is not None
+    assert events[0].error.code == "vllm_model_selection_invalid"
     assert events[1].kind == ModelStreamEventKind.DONE
     assert client.payload is None
 

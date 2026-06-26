@@ -8,12 +8,14 @@ framework runner.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
 
+from spakky.agent.inbound import RunAgentInput
+from spakky.agent.model_resolver import IAgentModelResolver
 from spakky.agent.runner import AgentRunner
 
 
@@ -24,7 +26,7 @@ class IAgentRunnerFactory(ABC):
     def open_runner(
         self,
         agent_instance: object,
-        server_names: Sequence[str] | None = None,
+        run_input: RunAgentInput | None = None,
     ) -> AbstractAsyncContextManager[AgentRunner]:
         """Yield a runner bound to ``agent_instance`` for one adapter request."""
         ...
@@ -34,13 +36,20 @@ class IAgentRunnerFactory(ABC):
 class AgentRunnerFactory(IAgentRunnerFactory):
     """Default runner factory using the native framework-owned runner."""
 
+    def __init__(self, model_resolver: IAgentModelResolver | None = None) -> None:
+        self._model_resolver = model_resolver
+
     @override
     @asynccontextmanager
     async def open_runner(
         self,
         agent_instance: object,
-        server_names: Sequence[str] | None = None,
+        run_input: RunAgentInput | None = None,
     ) -> AsyncGenerator[AgentRunner, None]:
-        """Yield the native runner; ``server_names`` is for plugin overrides."""
-        _ = server_names
-        yield AgentRunner.for_agent_instance(agent_instance)
+        """Yield the native runner for one request."""
+        runner = AgentRunner.for_agent_instance(agent_instance)
+        if self._model_resolver is not None:
+            model = self._model_resolver.resolve_model(agent_instance, run_input)
+            if model is not None:
+                runner = runner.with_model(model)
+        yield runner

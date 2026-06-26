@@ -11,6 +11,10 @@ MCP(Model Context Protocol) 양방향 어댑터 플러그인입니다. **클라�
 
 이 플러그인은 **도구 공급원/노출원**이며 모델 어댑터가 아닙니다 — 에이전트 실행에는 별도의 `IAgentModel` 공급자(예: `spakky-vllm`)가 필요합니다.
 
+MCP 서버는 사용자나 3rd-party가 FastMCP, 공식 SDK, 사내 서버 등 원하는 방식으로 만들면 됩니다. `spakky-mcp`는 서버 제작 프레임워크가 아니라, 실행 시점에 외부 MCP server tools를 Agent catalog에 합류시키는 connector입니다.
+
+인증 경계도 분리되어 있습니다. `stdio` 서버는 서버 프로세스가 자체적으로 읽는 환경변수나 credential store로 인증하고, `spakky-mcp`는 필요한 `env`를 전달할 수 있습니다. `streamable_http` 서버는 `auth.headers`, `auth.bearer_token_env`, `auth.oauth_client_credentials`로 정적 header, bearer token, OAuth client-credentials token을 구성할 수 있습니다. Authorization Code/PKCE, 사용자 consent, refresh-token 저장 정책은 애플리케이션이 custom `IMcpHttpClientProvider`로 확장합니다.
+
 ## 설치
 
 ```bash
@@ -28,7 +32,33 @@ uv add "spakky[agent]"
 | `SPAKKY_MCP__SERVERS` | 외부 MCP 서버 목록(JSON 배열) | `[]` |
 | `SPAKKY_MCP__CONNECT_TIMEOUT_SECONDS` | 연결 수립 타임아웃(초) | `30.0` |
 
-서버 항목은 `name`, `transport`(`stdio` 또는 `streamable_http`), `command`/`args`/`env`(stdio), `url`(streamable_http), `call_timeout_seconds`를 가집니다. `name`은 도구 이름 충돌을 막는 접두사로 쓰이며 `__`를 포함할 수 없습니다.
+서버 항목은 `name`, `transport`(`stdio` 또는 `streamable_http`), `command`/`args`/`env`(stdio), `url`(streamable_http), `auth`, `call_timeout_seconds`를 가집니다. `name`은 configured server와 runtime inline server 전체에서 유일해야 하며, 도구 이름 충돌을 막는 접두사로 쓰입니다. `__`를 포함할 수 없습니다.
+
+```bash
+export SPAKKY_MCP__SERVERS='[
+  {
+    "name": "github",
+    "transport": "stdio",
+    "command": "github-mcp-server",
+    "env": {"GITHUB_TOKEN": "ghp_..."}
+  }
+]'
+```
+
+위 예시에서 GitHub 인증을 처리하는 주체는 `github-mcp-server`입니다. Spakky는 해당 process를 띄우고 MCP tool을 발견해 Agent tool catalog에 합류시킵니다.
+
+원격 MCP 서버는 HTTP auth 설정을 함께 선언할 수 있습니다.
+
+```bash
+export SPAKKY_MCP__SERVERS='[
+  {
+    "name": "linear",
+    "transport": "streamable_http",
+    "url": "https://mcp.example.com/linear",
+    "auth": {"bearer_token_env": "LINEAR_MCP_TOKEN"}
+  }
+]'
+```
 
 도구를 MCP 서버로 노출할 때의 기본 식별자는 `SPAKKY_MCP__TOOL_SERVER__NAME`(기본 `spakky-agent`)으로 선언합니다. `SPAKKY_MCP__TOOL_SERVER__TRANSPORT`는 설정 모델에 보존되는 전송 의도 값이며, 현재 host entrypoint는 `serve_stdio_for()` 또는 `streamable_http_session_manager_for()` 중 하나를 명시적으로 호출해 실제 전송을 선택합니다.
 
@@ -43,14 +73,21 @@ plugin이 로드되면 `IAgentRunnerFactory`가 `MCPClient`로 바인딩되고, 
 adapter가 그 factory로 runner를 열 때 선언된 MCP server tools가 runner catalog에 합류합니다.
 
 ```python
-from spakky.agent import IAgentRunnerFactory
+from spakky.agent import IAgentRunnerFactory, RunAgentInput
 
 
 async def custom_inbound_boundary(factory: IAgentRunnerFactory, agent: object) -> None:
-    async with factory.open_runner(agent, server_names=("weather",)) as runner:
+    run_input = RunAgentInput(
+        state_id="run-1",
+        instruction="answer with external tools",
+        metadata={"mcp": {"servers": ["weather"]}},
+    )
+    async with factory.open_runner(agent, run_input=run_input) as runner:
         async for item in runner.run(run_input):
             ...
 ```
+
+`metadata["mcp"]["servers"]`에는 configured server 이름 또는 inline server declaration을 넣습니다. 생략하면 configured MCP server 전체가 연결됩니다. 같은 run 안에서 같은 서버 `name`이 두 번 선택되면 모호하므로 configuration error로 실패합니다. AG-UI는 `forwardedProps.mcp`, A2A는 data part의 `mcp` object를 같은 runtime metadata로 변환합니다.
 
 모델이 보는 외부 도구 이름은 `<서버이름>__<도구이름>` 형태로 접두사가 붙어 서버 간 이름 충돌을 막습니다.
 

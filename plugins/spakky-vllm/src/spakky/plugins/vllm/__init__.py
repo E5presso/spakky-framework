@@ -7,6 +7,7 @@ from spakky.plugins.vllm.config import VllmConfig
 from spakky.plugins.vllm.error import (
     AbstractVllmError,
     VllmModelRefusalError,
+    VllmModelSelectionError,
     VllmResponseError,
     VllmStreamingDisabledError,
     VllmStreamingNotImplementedError,
@@ -26,6 +27,7 @@ __all__ = [
     "VllmAgentModel",
     "VllmConfig",
     "VllmModelRefusalError",
+    "VllmModelSelectionError",
     "VllmResponseError",
     "VllmStreamingDisabledError",
     "VllmStreamingNotImplementedError",

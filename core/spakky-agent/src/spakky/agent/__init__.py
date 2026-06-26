@@ -120,6 +120,7 @@ from spakky.agent.hooks import (
     on_signal,
 )
 from spakky.agent.inbound import RunAgentInput
+from spakky.agent.model_resolver import IAgentModelResolver
 from spakky.agent.runner import AgentRunner, AgentRunResult
 from spakky.agent.runner_factory import AgentRunnerFactory, IAgentRunnerFactory
 from spakky.agent.interfaces.repository import (
@@ -137,6 +138,7 @@ from spakky.agent.interfaces.model import (
     ModelMessageRole,
     ModelRequest,
     ModelResponse,
+    ModelSelection,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolCall,
@@ -229,6 +231,7 @@ PLUGIN_NAME = Plugin(name="spakky-agent")
 
 __all__ = [
     "IAgentModel",
+    "IAgentModelResolver",
     "IAgentRunnerFactory",
     "IAgentEvidenceRepository",
     "IAgentSignalRepository",
@@ -367,6 +370,7 @@ __all__ = [
     "ModelMessageRole",
     "ModelRequest",
     "ModelResponse",
+    "ModelSelection",
     "ModelStreamEvent",
     "ModelStreamEventKind",
     "ModelToolCall",

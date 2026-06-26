@@ -22,6 +22,3 @@ class AGUICompatible(Tag):
 
     websocket_path: str | None = None
     """WebSocket endpoint path. None uses ``AgUiConfig.websocket_path``."""
-
-    server_names: tuple[str, ...] = ()
-    """External MCP server names to join for this agent. Empty means all configured."""

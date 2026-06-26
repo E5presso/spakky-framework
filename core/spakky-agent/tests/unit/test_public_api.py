@@ -65,6 +65,7 @@ from spakky.agent import (
     IAgentEvidenceRepository,
     IAgentSignalRepository,
     IAgentStateRepository,
+    IAgentModelResolver,
     IAgentRunnerFactory,
     AgentRunnerFactory,
     AgentSignalPollPoint,
@@ -74,6 +75,7 @@ from spakky.agent import (
     ModelError,
     ModelRequest,
     ModelResponse,
+    ModelSelection,
     ModelStreamEvent,
     ModelToolCall,
     ModelToolSpec,
@@ -186,6 +188,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
         "IAgentEvidenceRepository",
         "IAgentDelegate",
         "IAgentModel",
+        "IAgentModelResolver",
         "IAgentRunnerFactory",
         "AgentRunnerFactory",
         "Progress",
@@ -275,6 +278,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert IAgentEvidenceRepository is agent_api.IAgentEvidenceRepository
     assert IAgentDelegate is agent_api.IAgentDelegate
     assert IAgentModel is agent_api.IAgentModel
+    assert IAgentModelResolver is agent_api.IAgentModelResolver
     assert IAgentRunnerFactory is agent_api.IAgentRunnerFactory
     assert AgentRunnerFactory is agent_api.AgentRunnerFactory
     assert AgentOutputGuardError is agent_api.AgentOutputGuardError
@@ -308,6 +312,7 @@ def test_public_api_expect_exports_model_contract_types() -> None:
     assert ModelCapability is agent_api.ModelCapability
     assert ModelRequest is agent_api.ModelRequest
     assert ModelResponse is agent_api.ModelResponse
+    assert ModelSelection is agent_api.ModelSelection
     assert ModelStreamEvent is agent_api.ModelStreamEvent
     assert ModelToolSpec is agent_api.ModelToolSpec
     assert ToolCallingSpec is agent_api.ToolCallingSpec
@@ -584,7 +589,7 @@ async def test_agent_runner_factory_opens_native_runner_context() -> None:
     model = FactoryModel()
     assistant = FactoryAgent(model)
 
-    async with factory.open_runner(assistant, server_names=("unused",)) as runner:
+    async with factory.open_runner(assistant) as runner:
         assert runner.model is model
 
 

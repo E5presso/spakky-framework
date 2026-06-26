@@ -41,6 +41,7 @@ from spakky.agent import (
     ModelMessageRole,
     ModelRequest,
     ModelResponse,
+    ModelSelection,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolCall,
@@ -649,6 +650,56 @@ async def test_agent_runner_expect_reasoning_surfaced_when_capability_present() 
     )
 
 
+async def test_agent_runner_expect_model_selection_passed_to_model_request() -> None:
+    """RunAgentInput.model_selection은 ModelRequest.model_selection으로 전달된다."""
+    selection = ModelSelection(provider="openrouter", model="anthropic/claude")
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(
+                state_id="run-1",
+                instruction="reason",
+                model_selection=selection,
+            ),
+        )
+    )
+
+    assert model.requests[0].model_selection is selection
+
+
+async def test_agent_runner_expect_model_selection_used_for_capability() -> None:
+    """Runner capability gating consults capability_for() with the run selector."""
+    selection = ModelSelection(provider="openrouter", model="anthropic/claude")
+    model = _SelectionAwareReasoningModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.REASONING_DELTA,
+                reasoning_delta="thinking",
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(
+                state_id="run-1",
+                instruction="reason",
+                model_selection=selection,
+            ),
+        )
+    )
+
+    assert model.capability_selections == [selection]
+    assert any(
+        isinstance(item.payload, Token) and item.payload.text == "thinking"
+        for item in items
+    )
+
+
 async def test_agent_runner_expect_message_delta_surfaced_as_token() -> None:
     """MESSAGE_DELTA는 assistant 텍스트로서 token으로 노출된다."""
     model = RecordingModel(
@@ -900,6 +951,22 @@ class _ReasoningModel(RecordingModel):
     @override
     def capability(self) -> ModelCapability:
         return ModelCapability(supports_reasoning=True)
+
+
+class _SelectionAwareReasoningModel(RecordingModel):
+    """RecordingModel variant whose capability depends on run model selection."""
+
+    def __init__(self, events: Sequence[ModelStreamEvent]) -> None:
+        super().__init__(events)
+        self.capability_selections: list[ModelSelection | None] = []
+
+    @override
+    def capability_for(
+        self,
+        selection: ModelSelection | None = None,
+    ) -> ModelCapability:
+        self.capability_selections.append(selection)
+        return ModelCapability(supports_reasoning=selection is not None)
 
 
 class _CancelInjectingModel(IAgentModel):

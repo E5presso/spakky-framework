@@ -8,6 +8,7 @@ from mcp.types import Tool
 from spakky.agent import (
     Agent,
     AgentExecutionSpec,
+    AgentRunner,
     AgentToolDescriptor,
     AgentYield,
     AgentYieldKind,
@@ -120,7 +121,10 @@ def test_merge_rejects_schema_name_collision() -> None:
 def test_build_mcp_runner_augments_catalog() -> None:
     """The runner sees a catalog combining native and external tools."""
     agent = WeatherAgent(_StubModel())
-    runner = build_mcp_runner(agent, [_external_descriptor()])
+    runner = build_mcp_runner(
+        AgentRunner.for_agent_instance(agent),
+        [_external_descriptor()],
+    )
 
     schema_names = {
         descriptor.schema.name for descriptor in runner.agent.tool_catalog.descriptors
@@ -131,7 +135,7 @@ def test_build_mcp_runner_augments_catalog() -> None:
 def test_build_mcp_runner_leaves_shared_agent_metadata_unmutated() -> None:
     """Augmenting the runner does not mutate the shared Agent Pod catalog."""
     agent = WeatherAgent(_StubModel())
-    build_mcp_runner(agent, [_external_descriptor()])
+    build_mcp_runner(AgentRunner.for_agent_instance(agent), [_external_descriptor()])
 
     shared_names = {
         descriptor.schema.name

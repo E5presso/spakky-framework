@@ -131,6 +131,27 @@ A2A executor는 inbound task id를 core `RunAgentInput.state_id`로 사용하고
 
 승인 재개는 inbound A2A data part에 `approval_id`와 `decision`을 담아 보냅니다. executor는 이를 `APPROVAL_DECISION` signal로 append하고 `RunAgentInput(resume=True)`로 runner를 재개합니다.
 
+A2A client가 사용자별 model/provider 선택이나 MCP 서버 선택을 함께 전달해야 하면 message data part를 사용합니다. Executor는 `modelSelection` 또는 `model_selection`을 `RunAgentInput.model_selection`으로, `metadata`와 `mcp` object를 `RunAgentInput.metadata`로 변환합니다.
+
+```json
+{
+  "modelSelection": {
+    "provider": "openrouter",
+    "model": "anthropic/claude-sonnet-4.5",
+    "profile": "coding",
+    "metadata": {"tier": "paid"}
+  },
+  "mcp": {
+    "servers": ["github"]
+  },
+  "metadata": {
+    "tenant": "acme"
+  }
+}
+```
+
+`mcp.servers`에는 `McpConfig.servers`에 선언된 서버 이름 또는 inline MCP server declaration을 넣습니다. 같은 run 안에서 같은 MCP server `name`을 두 번 선택하면 도구 prefix와 credential 선택이 모호하므로 `McpServerConfigurationError`로 실패합니다.
+
 ## Teammate 위임
 
 `AgentExecutionSpec.teammates`에 선언한 teammate는 runner가 model-callable delegation tool로 노출합니다. tool schema 이름은 `teammate.<schema_token(name)>.delegate`입니다. `schema_token`은 teammate name의 앞뒤 공백을 제거한 뒤 `[a-zA-Z0-9_]`가 아닌 연속 문자를 단일 `_`로 치환하고, 앞뒤 `_`를 제거한 다음 소문자화한 값입니다. 이 결과가 비면 agent definition 단계에서 거부됩니다.
