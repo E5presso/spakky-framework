@@ -1206,6 +1206,208 @@ class DurableSessionAgent:
         self._evidence = evidence
         self._task_store = task_store
 
+    @agent_tool(
+        schema_name="echo.write",
+        description="Write echo requiring approval.",
+        effects=ToolEffects.write_state(),
+        idempotency=Idempotency.CONDITIONALLY_IDEMPOTENT,
+        evidence=EvidenceCapture.STRUCTURED,
+        approval=ToolApprovalRequirement.REQUIRED,
+    )
+    def echo_write(self, value: str) -> EchoRecord:
+        """Echo a value back after approval."""
+        return EchoRecord(value=value)
+
+
+async def _run_session_events(
+    model: IAgentModel,
+    store: ITaskStore,
+    command: RunAgentInput,
+) -> tuple[AgentEvent, ...]:
+    runner = AgentRunner.for_agent_instance(SessionProbeAgent(model, store))
+    return await _collect_events(runner.run_events(command))
+
+
+async def test_agent_runner_events_expect_session_history_persisted_like_run() -> None:
+    """run_events 정상 완료도 run처럼 user·assistant turn을 영속한다."""
+    store = FakeTaskStore()
+    model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.MESSAGE_DELTA,
+                message_delta="a physicist",
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    await _run_session_events(
+        model,
+        store,
+        RunAgentInput(
+            state_id="turn-1",
+            instruction="who was Einstein?",
+            conversation_id="thread-7",
+        ),
+    )
+
+    assert store.load_history("thread-7") == (
+        ConversationTurn(ModelMessageRole.USER, "who was Einstein?"),
+        ConversationTurn(ModelMessageRole.ASSISTANT, "a physicist"),
+    )
+
+
+async def test_agent_runner_events_expect_reasoning_not_persisted_as_assistant_turn() -> (
+    None
+):
+    """run_events는 reasoning-only content를 assistant turn으로 영속하지 않는다."""
+    store = FakeTaskStore()
+    model = _ReasoningModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.REASONING_DELTA,
+                reasoning_delta="thinking",
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    await _run_session_events(
+        model,
+        store,
+        RunAgentInput(
+            state_id="turn-1",
+            instruction="reason privately",
+            conversation_id="thread-7",
+        ),
+    )
+
+    assert store.load_history("thread-7") == (
+        ConversationTurn(ModelMessageRole.USER, "reason privately"),
+    )
+
+
+async def test_agent_runner_events_expect_error_run_does_not_persist_session() -> None:
+    """run_events 모델 ERROR 경로는 대화 turn을 영속하지 않는다."""
+    store = FakeTaskStore()
+    model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.ERROR,
+                error=ModelError(code="boom", message="provider failed"),
+            ),
+        )
+    )
+
+    await _run_session_events(
+        model,
+        store,
+        RunAgentInput(
+            state_id="turn-1",
+            instruction="fail",
+            conversation_id="thread-7",
+        ),
+    )
+
+    assert store.load_history("thread-7") == ()
+
+
+async def test_agent_runner_events_expect_client_history_session_not_persisted() -> (
+    None
+):
+    """client-injected message_history run은 task store에 다시 쓰지 않는다."""
+    store = FakeTaskStore()
+
+    await _run_session_events(
+        RecordingModel(
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="server reply",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            )
+        ),
+        store,
+        RunAgentInput(
+            state_id="turn-1",
+            instruction="latest",
+            conversation_id="thread-7",
+            message_history=(ModelMessage(ModelMessageRole.USER, "client prior turn"),),
+        ),
+    )
+
+    assert store.load_history("thread-7") == ()
+
+
+async def test_agent_runner_events_expect_cancelled_session_not_persisted() -> None:
+    """run_events CANCEL 경로는 대화 turn을 영속하지 않는다."""
+    from spakky.agent import AgentSignal
+
+    store = FakeTaskStore()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="cancel:run-1",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.CANCEL,
+                payload={"reason": "stop"},
+            ),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        DurableSessionAgent(
+            RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),)),
+            FakeStateRepository(),
+            signals,
+            FakeEvidenceRepository(),
+            store,
+        )
+    )
+
+    await _collect_events(
+        runner.run_events(
+            RunAgentInput(
+                state_id="run-1",
+                instruction="cancel",
+                conversation_id="thread-7",
+            )
+        )
+    )
+
+    assert store.load_history("thread-7") == ()
+
+
+async def test_agent_runner_events_expect_paused_session_not_persisted() -> None:
+    """run_events approval pause 경로는 대화 turn을 영속하지 않는다."""
+    store = FakeTaskStore()
+    runner = AgentRunner.for_agent_instance(
+        DurableSessionAgent(
+            RecordingModel(
+                (
+                    _tool_event("echo.write", {"value": "draft"}, "write-1"),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                )
+            ),
+            FakeStateRepository(),
+            FakeSignalRepository(()),
+            FakeEvidenceRepository(),
+            store,
+        )
+    )
+
+    await _collect_events(
+        runner.run_events(
+            RunAgentInput(
+                state_id="run-1",
+                instruction="write",
+                conversation_id="thread-7",
+            )
+        )
+    )
+
+    assert store.load_history("thread-7") == ()
+
 
 # --- Neutral AgentEvent emission (issue #441 SC-1/SC-2/SC-3) ---
 
