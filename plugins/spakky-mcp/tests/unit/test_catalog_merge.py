@@ -33,7 +33,7 @@ from spakky.plugins.mcp.descriptor import (
     build_mcp_runner,
     merge_external_catalog,
 )
-from spakky.plugins.mcp.error import McpCatalogMergeError
+from spakky.plugins.mcp.error import McpCatalogMergeError, McpToolInvocationError
 
 
 class _StubModel(IAgentModel):
@@ -229,6 +229,70 @@ async def test_lazy_call_invokes_selected_external_tool() -> None:
 
     assert result == {"ok": True}
     assert called == [{"city": "seoul"}]
+
+
+async def test_lazy_search_rejects_non_positive_limit() -> None:
+    """The search meta-tool rejects invalid result limits."""
+    search, _call = build_lazy_mcp_descriptors([_external_descriptor()])
+
+    with pytest.raises(McpToolInvocationError, match="search limit"):
+        await _invoke_descriptor_callable(search, query="", limit=0)
+
+
+async def test_lazy_call_rejects_blank_tool_name() -> None:
+    """The call meta-tool requires a non-blank tool name."""
+    _search, call = build_lazy_mcp_descriptors([_external_descriptor()])
+
+    with pytest.raises(McpToolInvocationError, match="cannot be blank"):
+        await _invoke_descriptor_callable(call, tool_name=" ", arguments={})
+
+
+async def test_lazy_call_rejects_unknown_tool_name() -> None:
+    """The call meta-tool only invokes tools returned by the search catalog."""
+    _search, call = build_lazy_mcp_descriptors([_external_descriptor()])
+
+    with pytest.raises(McpToolInvocationError, match="not available"):
+        await _invoke_descriptor_callable(
+            call, tool_name="weather__missing", arguments={}
+        )
+
+
+async def test_lazy_call_rejects_non_object_arguments() -> None:
+    """The call meta-tool forwards only JSON object arguments to MCP tools."""
+    _search, call = build_lazy_mcp_descriptors([_external_descriptor()])
+
+    with pytest.raises(McpToolInvocationError, match="must be an object"):
+        await _invoke_descriptor_callable(
+            call,
+            tool_name="weather__get_data",
+            arguments=["not", "object"],
+        )
+
+
+async def test_lazy_call_accepts_sync_descriptor_callable_result() -> None:
+    """The call meta-tool preserves compatibility with sync descriptor callables."""
+
+    def _sync_callable(**arguments: object) -> JsonValue:
+        return {"sync": cast(str, arguments["city"])}
+
+    descriptor = build_external_descriptor(
+        "weather",
+        Tool(
+            name="get_data",
+            description="external",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        cast(Callable[..., Awaitable[JsonValue]], _sync_callable),
+    )
+    _search, call = build_lazy_mcp_descriptors([descriptor])
+
+    result = await _invoke_descriptor_callable(
+        call,
+        tool_name="weather__get_data",
+        arguments={"city": "seoul"},
+    )
+
+    assert result == {"sync": "seoul"}
 
 
 def test_build_mcp_runner_leaves_shared_agent_metadata_unmutated() -> None:
