@@ -54,8 +54,9 @@ class AgentTeammate:
     """Declared collaborator an agent may delegate to during execution.
 
     A teammate is resolved either in-process by a local @Agent Pod type or
-    remotely by an AgentCard endpoint URL. Exactly one binding is declared;
-    the runtime delegation wiring (follow-up E4) consumes this declaration.
+    remotely by an AgentCard endpoint URL. Exactly one binding is declared; the
+    runtime exposes it as a synthetic teammate delegation tool and dispatches it
+    through the local runner or an injected ``IAgentDelegate`` port.
     """
 
     name: str

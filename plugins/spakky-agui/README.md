@@ -65,7 +65,7 @@ AG-UI BaseEvent  ──(EventEncoder)──▶  "data: {...}\n\n" SSE 프레임
 | `TOOL_CALL_ARGS_DELTA` | `TOOL_CALL_ARGS` (빈 delta는 생략) |
 | `TOOL_CALL_END` | `TOOL_CALL_END` |
 | `TOOL_CALL_RESULT` | `TOOL_CALL_RESULT` (`content`는 result의 JSON 텍스트) |
-| `RUN_STARTED` | `RUN_STARTED` (`threadId`=conversation, `runId`; `parentRunId`는 `run_events`가 parent run을 세팅하지 않아 항상 없음) |
+| `RUN_STARTED` | `RUN_STARTED` (`threadId`=conversation, `runId`, `parentRunId`=neutral `parent_run_id`가 있을 때) |
 | `RUN_PAUSED` | 열린 프레임 닫기 → 승인 pause는 `hitl_approval` deferred tool `TOOL_CALL_START`/`ARGS`/`END` |
 | `RUN_FINISHED` | 열린 프레임 닫기 → `RUN_FINISHED` 또는 `RUN_ERROR` |
 | `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED` |
@@ -84,6 +84,7 @@ from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 
 from spakky.agent import AgentRunner, RunAgentInput
 from spakky.plugins.agui import (
+    AgUiConfig,
     AgUiProjector,
     AgUiRunDriver,
     add_agui_endpoint,
@@ -126,6 +127,10 @@ WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 AG-UI
 `RunAgentInput` JSON을 text/JSON message로 보내고, 실행 이벤트를 AG-UI encoded text
 message로 순서대로 받습니다. 같은 연결에서 후속 `RunAgentInput`을 보내 승인 결정
 (`forwardedProps.approvalDecision` 또는 deferred tool-result message)을 전달할 수 있습니다.
+SSE/HTTP/WebSocket/stdio 입력 경계는 AG-UI `threadId`·`runId`·마지막 user text·approval
+resume 여부를 core `RunAgentInput`으로 변환합니다. 중립 `RunPausedEvent`나 delegated child
+event처럼 runner가 이미 `parent_run_id`를 가진 이벤트를 내보내면 projector는 이를 AG-UI
+`parentRunId`로 그대로 투영합니다.
 
 CLI stdio 경계는 `RunAgentInput` JSON 문서를 stdin 또는 문자열 인자로 받고 stdout에 AG-UI
 event payload를 한 줄에 하나씩 출력합니다. Typer 같은 CLI plugin은 이 callable을 command로

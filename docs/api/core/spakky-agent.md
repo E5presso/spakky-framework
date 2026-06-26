@@ -10,12 +10,13 @@ Agentic Hexagonal Architecture의 core 계약입니다.
 pip install spakky-agent
 ```
 
-`spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `AgentYield`, `AgentState`,
-`AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, context/safety/recovery,
-delegation 타입 같은 public contract를 소유합니다. 이 패키지는 의도적으로 vLLM,
-SQLAlchemy, FastAPI, Typer를 import하지 않습니다. 운영에서 durable execution을 사용하려면
-`spakky-sqlalchemy[agent]` 같은 provider contribution의 repository 구현이 필요하며,
-운영용 in-memory fallback은 제공하지 않습니다.
+`spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `RunAgentInput`, `AgentRunner`,
+`AgentEvent`, `AgentYield`, tool dispatch, context compaction, state/signal/evidence
+repository port, task store, safety/recovery/delegation 타입 같은 public contract를
+소유합니다. 이 패키지는 의도적으로 vLLM, SQLAlchemy, FastAPI, Typer, AG-UI, A2A,
+MCP를 import하지 않습니다. 운영에서 durable execution을 사용하려면 provider
+contribution의 repository 구현이 필요하며, 운영용 in-memory fallback은 제공하지
+않습니다.
 
 ## Public API
 
@@ -26,6 +27,26 @@ SQLAlchemy, FastAPI, Typer를 import하지 않습니다. 운영에서 durable ex
 ## 실행
 
 ::: spakky.agent.execution
+    options:
+      show_root_heading: false
+
+::: spakky.agent.inbound
+    options:
+      show_root_heading: false
+
+::: spakky.agent.runner
+    options:
+      show_root_heading: false
+
+## Event
+
+::: spakky.agent.event
+    options:
+      show_root_heading: false
+
+## Dispatcher
+
+::: spakky.agent.dispatcher
     options:
       show_root_heading: false
 
@@ -54,6 +75,12 @@ SQLAlchemy, FastAPI, Typer를 import하지 않습니다. 운영에서 durable ex
 ## Context
 
 ::: spakky.agent.context
+    options:
+      show_root_heading: false
+
+## Compaction
+
+::: spakky.agent.compaction
     options:
       show_root_heading: false
 
@@ -107,11 +134,19 @@ SQLAlchemy, FastAPI, Typer를 import하지 않습니다. 운영에서 durable ex
 
 ## Model Interface
 
+::: spakky.agent.interfaces
+    options:
+      show_root_heading: false
+
 ::: spakky.agent.interfaces.model
     options:
       show_root_heading: false
 
 ::: spakky.agent.interfaces.repository
+    options:
+      show_root_heading: false
+
+::: spakky.agent.interfaces.task_store
     options:
       show_root_heading: false
 

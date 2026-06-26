@@ -53,7 +53,7 @@
 - **의존성 주입(DI)**: `@Pod` 데코레이터를 사용하는 강력한 IoC 컨테이너이며 Singleton, Prototype, Context 스코프를 지원합니다.
 - **관점 지향 프로그래밍(AOP)**: `@Aspect`, `@Before`, `@After`, `@Around`를 기본 제공하여 로깅과 트랜잭션 같은 횡단 관심사를 처리합니다.
 - **모듈형 플러그인 시스템**: 주요 라이브러리를 플러그인으로 쉽게 확장할 수 있는 아키텍처.
-- **Agentic workflow**: `@Agent`, `AgentYield`, `IAgentModel`, `@agent_tool`로 Claude Code-like workflow를 UseCase처럼 구성합니다.
+- **Agentic workflow**: `@Agent`, `AgentRunner`, `AgentEvent`, `AgentYield`, `IAgentModel`, `@agent_tool`로 Claude Code-like workflow를 UseCase처럼 구성하고, AG-UI/A2A stream adapter와 MCP tool adapter로 노출합니다.
 - **타입 안전성**: 현대적인 Python 타입 힌트를 기준으로 설계되었습니다.
 - **비동기 우선**: `asyncio`와 비동기 의존성 주입을 네이티브로 지원합니다.
 
@@ -71,7 +71,7 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 | **`spakky-data`** | 데이터 접근 추상화(Repository, Transaction, External Proxy) |
 | **`spakky-event`** | 이벤트 처리(IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
 | **`spakky-task`** | 태스크 큐 추상화(@TaskHandler, @task, @schedule, Crontab) |
-| **`spakky-agent`** | Agentic workflow core 계약(AgentExecutionSpec, AgentYield, AgentState/Signal/Evidence, IAgentModel, delegation) |
+| **`spakky-agent`** | Agentic workflow core 계약(AgentExecutionSpec, AgentRunner, AgentEvent/Yield, State/Signal/Evidence, IAgentModel, delegation) |
 | **`spakky-actuator`** | 전송 계층 중립 health, readiness, liveness, info 계약 |
 | **`spakky-cache`** | 백엔드 중립 애플리케이션 데이터 캐시 계약과 AOP 어노테이션 |
 | **`spakky-tracing`** | 분산 트레이싱 추상화(TraceContext, ITracePropagator, W3C Propagator) |
@@ -94,6 +94,9 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 | **`spakky-sqlalchemy`** | [SQLAlchemy](https://www.sqlalchemy.org/) ORM 데이터베이스 통합 |
 | **`spakky-typer`** | [Typer](https://typer.tiangolo.com/) 기반 CLI 애플리케이션 지원 |
 | **`spakky-vllm`** | 로컬 vLLM OpenAI-compatible endpoint를 위한 `IAgentModel` adapter |
+| **`spakky-agui`** | AG-UI protocol adapter(SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
+| **`spakky-a2a`** | A2A AgentCard/server transport와 remote teammate delegation adapter |
+| **`spakky-mcp`** | 외부 MCP tool catalog merge와 agent tool MCP server 노출 adapter |
 | **`spakky-celery`** | AOP를 통한 [Celery](https://docs.celeryq.dev/) 태스크 디스패치와 스케줄 등록 |
 | **`spakky-logging`** | `@logged` AOP aspect를 포함한 구조화 로깅 시스템 |
 | **`spakky-opentelemetry`** | 분산 트레이싱을 위한 OpenTelemetry SDK 브릿지 |
