@@ -15,6 +15,9 @@ pip install spakky
 pip install "spakky[recommended]"              # FastAPI + SQLAlchemy + 운영 기본기
 pip install "spakky[web]"                      # FastAPI 중심 HTTP 서비스
 pip install "spakky[events-kafka]"             # Kafka 이벤트 서비스
+pip install "spakky[agent]"                    # Agent core + vLLM + AG-UI/A2A/MCP + SQLAlchemy persistence
+pip install "spakky[security]"                 # Auth core + cryptography/OIDC/policy/OpenFGA providers
+pip install "spakky[cache-app]"                # Cache core + Redis backend
 pip install "spakky[full]"                     # 모든 공식 통합
 ```
 
@@ -433,6 +436,9 @@ count와 skip reason이 기록됩니다.
 | [`spakky-policy`](https://pypi.org/project/spakky-policy/) | Policy document 기반 AuthZ evaluator |
 | [`spakky-opentelemetry`](https://pypi.org/project/spakky-opentelemetry/) | OpenTelemetry SDK bridge |
 | [`spakky-vllm`](https://pypi.org/project/spakky-vllm/) | vLLM OpenAI-compatible Agent model adapter |
+| [`spakky-agui`](https://pypi.org/project/spakky-agui/) | AG-UI protocol adapter |
+| [`spakky-a2a`](https://pypi.org/project/spakky-a2a/) | A2A AgentCard/server transport와 remote teammate delegation adapter |
+| [`spakky-mcp`](https://pypi.org/project/spakky-mcp/) | MCP client/server adapter |
 
 ## 코어 모듈
 
@@ -461,6 +467,19 @@ count와 skip reason이 기록됩니다.
 | [`spakky-tracing`](https://pypi.org/project/spakky-tracing/) | 분산 트레이싱 추상화(TraceContext, Propagator) |
 | [`spakky-outbox`](https://pypi.org/project/spakky-outbox/) | Transactional Outbox 패턴(OutboxEventBus, Relay) |
 | [`spakky-saga`](https://pypi.org/project/spakky-saga/) | 분산 트랜잭션 사가 오케스트레이션 |
+
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
 
 ## 라이선스
 

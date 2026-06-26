@@ -28,7 +28,7 @@ pip install spakky-auth
 - `AuthCapabilityStartupValidationService`: plugin load/scan 이후 service start 이전에 protected metadata와 snapshot propagation config가 요구하는 `AuthCapability` 제공자 count를 검증하는 startup service
 - `AbstractSpakkyAuthError` 기반 auth 오류 hierarchy
 
-Provider implementation과 boundary integration은 후속 이슈에서 추가됩니다. Decorator가 없는 boundary는 allow all이며, protected/decorated boundary는 request-scope `AuthContext`와 provider-neutral checker port를 통해 fail closed로 처리됩니다.
+Provider implementation과 boundary integration은 현재 별도 패키지와 adapter에 분산되어 있습니다. `spakky-cryptography`는 snapshot sign/verify와 password hash/verify를, `spakky-oidc`는 inbound bearer credential 인증을, `spakky-policy`는 policy/permission/role/scope 평가를, `spakky-openfga`는 relation/policy check를 `spakky.contributions.spakky.auth` contribution으로 제공합니다. FastAPI, Typer, gRPC, Kafka, RabbitMQ, Celery 같은 boundary adapter는 credential 또는 signed snapshot을 읽어 request/context scope에 `AuthContext`를 seed하거나 보호된 handler 앞에서 provider-neutral checker port를 호출합니다. Decorator가 없는 boundary는 allow all이며, protected/decorated boundary는 request-scope `AuthContext`와 provider-neutral checker port를 통해 fail closed로 처리됩니다.
 
 ## Decorator Metadata & AOP Enforcement
 
@@ -89,7 +89,7 @@ missing, invalid, expired snapshot은 기본적으로 `CHALLENGE` decision이며
 spakky-auth = "spakky.auth.main:initialize"
 ```
 
-현재 `initialize()`는 `AuthCapabilityStartupValidationService`, `AuthorizationAspect`, `AsyncAuthorizationAspect`를 등록합니다. 후속 이슈에서 boundary integration이 추가되면 같은 entry point를 통해 feature-local component를 등록합니다.
+현재 `initialize()`는 `AuthCapabilityStartupValidationService`, `AuthorizationAspect`, `AsyncAuthorizationAspect`를 등록합니다. Provider plugin은 각자의 base entry point와 `spakky.contributions.spakky.auth` contribution entry point를 함께 제공하며, inbound/transport adapter는 이 core entry point를 수정하지 않고 같은 provider-neutral contract를 사용합니다.
 
 ## 개발 검증
 

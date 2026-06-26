@@ -155,6 +155,19 @@ Raw bearer token은 task/broker header로 전파하지 않습니다. 같은 work
 - **`spakky-rabbitmq`**: RabbitMQ event transport(Celery broker로도 사용 가능)
 - **`spakky-tracing`**: 분산 트레이싱 추상화(필수, context propagation 활성화)
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT License

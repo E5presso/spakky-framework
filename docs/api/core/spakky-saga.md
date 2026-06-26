@@ -69,13 +69,3 @@
 ::: spakky.saga.error
     options:
       show_root_heading: false
-
-## 추가 모듈
-
-::: spakky.saga.auth
-    options:
-      show_root_heading: false
-
-::: spakky.saga.main
-    options:
-      show_root_heading: false

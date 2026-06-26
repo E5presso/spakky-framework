@@ -165,6 +165,19 @@ result = executor.execute(
 
 - **`spakky-celery`**: AOP 기반 task dispatch와 schedule 등록을 위한 Celery backend
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT License

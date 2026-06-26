@@ -176,6 +176,19 @@ app.load_plugins(include={
 | 1 | `AddInterceptorsPostProcessor` | 에러/트레이싱 인터셉터를 `GrpcServerSpec`에 추가 |
 | 2 | `BindServerPostProcessor` | `GrpcServerService`를 `ApplicationContext`에 등록 (start_async에서 `spec.build()`) |
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT License입니다. [Spakky Framework repository](https://github.com/E5presso/spakky-framework)를 참고하세요.

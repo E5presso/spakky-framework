@@ -148,6 +148,19 @@ class AsyncUserService:
 - **`InvalidMessageError`**: 필수 metadata(`consumer_tag` 또는 `delivery_tag`)가 없는 message에서 발생
 - 보호된 handler 인증/인가 실패는 handler를 호출하지 않고 ack/nack 정책으로 fail-closed 처리됩니다
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT License

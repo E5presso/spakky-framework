@@ -29,6 +29,13 @@ class AssistantAgent:
 
 plugin 초기화는 `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`를 등록합니다. 부트스트랩 후 `@A2AAgentServer`와 `@Agent`가 모두 붙은 Pod는 registry에 agent name 기준으로 들어갑니다.
 
+`A2AConfig`는 `SPAKKY_A2A_` 접두사의 환경변수를 읽습니다. 이 값은 `@A2AAgentServer`가 `base_url` 또는 `version`을 직접 지정하지 않을 때 derived AgentCard 기본값으로 사용됩니다.
+
+| 환경변수 | 의미 | 기본값 |
+| --- | --- | --- |
+| `SPAKKY_A2A_DEFAULT_BASE_URL` | AgentCard transport interface에 광고할 base URL | `http://localhost:8000` |
+| `SPAKKY_A2A_DEFAULT_VERSION` | AgentCard에 광고할 semantic version | `1.0.0` |
+
 ```python
 from spakky.plugins.a2a.server.builder import A2AAgentServerSpec
 

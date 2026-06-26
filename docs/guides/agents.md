@@ -223,6 +223,19 @@ app = (
 model = app.container.get(type_=IAgentModel)
 ```
 
+`spakky-vllm`은 `SPAKKY_VLLM__` 접두사의 환경변수를 읽습니다.
+
+| 환경변수 | 의미 | 기본값 |
+| --- | --- | --- |
+| `SPAKKY_VLLM__ENDPOINT_URL` | OpenAI-compatible vLLM base URL | `http://127.0.0.1:8000/v1` |
+| `SPAKKY_VLLM__MODEL` | chat completions 요청에 넘길 model id | `default` |
+| `SPAKKY_VLLM__REQUEST_TIMEOUT_SECONDS` | non-streaming 요청 timeout | `30.0` |
+| `SPAKKY_VLLM__STREAM_TIMEOUT_SECONDS` | streaming 요청 timeout | `300.0` |
+| `SPAKKY_VLLM__STREAM_ENABLED` | streaming surface 사용 가능 여부 | `true` |
+| `SPAKKY_VLLM__CONTEXT_WINDOW_TOKENS` | 운영자가 선언한 context window token 수 | 미설정 |
+| `SPAKKY_VLLM__SUPPORTS_REASONING` | reasoning delta를 surface할지 여부 | `false` |
+| `SPAKKY_VLLM__CHAT_TEMPLATE_KWARGS` | vLLM chat template kwargs JSON/object | `{}` |
+
 `spakky-vllm` 플러그인은 `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 설정합니다.
 테스트에서는 network가 없는 scripted `IAgentModel` fake를 만들어 token이나 tool event를 원하는 순서로 내보내면 됩니다.
 

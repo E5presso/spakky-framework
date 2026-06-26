@@ -186,3 +186,20 @@ approval id, tool call id, allowed decisions를 담고 있으므로 어댑터가
 생략하며(graceful degrade), 현재 모델 루프가 생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/
 `ARTIFACT`는 live 런에서 방출되지 않습니다. projector는 taxonomy 완전성을 위해 이들 종류도
 계속 처리합니다.
+
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
+## 라이선스
+
+MIT License

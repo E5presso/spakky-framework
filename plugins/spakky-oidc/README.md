@@ -72,6 +72,19 @@ Inbound adapter는 boundary에서 bearer credential을 관찰하고 provider-neu
 호출해 `AuthContext`를 저장합니다. 애플리케이션 코드는 provider를 직접 호출하지 않고
 `spakky-auth` decorator로 요구사항을 선언합니다.
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT

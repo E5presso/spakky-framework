@@ -49,6 +49,23 @@ export SPAKKY_SQLALCHEMY__AUTOCOMMIT="true"
 export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
 ```
 
+주요 설정은 다음과 같습니다. 전체 field는 [`spakky-sqlalchemy` API Reference](../api/plugins/spakky-sqlalchemy.md)의 `SQLAlchemyConnectionConfig`를 기준으로 확인합니다.
+
+| 환경변수 | 의미 | 기본값 |
+| --- | --- | --- |
+| `SPAKKY_SQLALCHEMY__CONNECTION_STRING` | SQLAlchemy database URL | 필수 |
+| `SPAKKY_SQLALCHEMY__ECHO` | SQL statement logging | `false` |
+| `SPAKKY_SQLALCHEMY__ECHO_POOL` | pool checkout/checkin logging | `false` |
+| `SPAKKY_SQLALCHEMY__POOL_SIZE` | persistent pool connection 수 | `5` |
+| `SPAKKY_SQLALCHEMY__POOL_MAX_OVERFLOW` | pool size 초과 허용 connection 수 | `10` |
+| `SPAKKY_SQLALCHEMY__POOL_TIMEOUT` | pool 고갈 시 대기 시간(초) | `30.0` |
+| `SPAKKY_SQLALCHEMY__POOL_RECYCLE` | connection recycle 초, `-1`은 비활성 | `-1` |
+| `SPAKKY_SQLALCHEMY__POOL_PRE_PING` | checkout 전 liveness check | `false` |
+| `SPAKKY_SQLALCHEMY__SESSION_AUTOFLUSH` | query 전 pending change flush | `true` |
+| `SPAKKY_SQLALCHEMY__SESSION_EXPIRE_ON_COMMIT` | commit 후 ORM object expire | `true` |
+| `SPAKKY_SQLALCHEMY__AUTOCOMMIT` | transaction context 종료 시 자동 commit | `true` |
+| `SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE` | async session/transaction Pod 등록 여부 | `true` |
+
 `postgresql+psycopg://` URL은 `psycopg` driver가 필요합니다. `spakky[database]`와
 `spakky[sqlalchemy]`는 특정 DB driver를 강제로 설치하지 않습니다. PostgreSQL을 쓴다면
 `spakky[database-postgres]`를 선택하거나 프로젝트 의존성에 `psycopg[binary]`를 직접 추가하세요.
