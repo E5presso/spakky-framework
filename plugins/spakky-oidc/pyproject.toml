@@ -1,6 +1,6 @@
 [project]
 name = "spakky-oidc"
-version = "6.13.0"
+version = "7.0.0"
 description = "OIDC bearer authentication provider plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,8 +9,8 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "pydantic-settings>=2.13.1",
     "pyjwt[crypto]>=2.10.1",
-    "spakky>=6.13.0",
-    "spakky-auth>=6.13.0",
+    "spakky>=7.0.0",
+    "spakky-auth>=7.0.0",
 ]
 
 [project.entry-points."spakky.plugins"]
