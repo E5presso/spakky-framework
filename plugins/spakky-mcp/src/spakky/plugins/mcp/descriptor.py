@@ -129,18 +129,18 @@ def merge_external_catalog(
 
 
 def build_mcp_runner(
-    agent_instance: object,
+    runner: AgentRunner,
     external: Sequence[AgentToolDescriptor],
 ) -> AgentRunner:
     """Build a runner whose catalog also carries external MCP tools.
 
-    ``AgentRunner.for_agent_instance`` resolves the model and durable ports.
-    The agent Pod metadata is a shared singleton, so its catalog is augmented on
-    a ``copy.copy`` rather than in place; ``dataclasses.replace`` on the agent
-    would reset the ``init=False`` ``tool_catalog`` to an empty default and drop
-    the native tools, so the copy is required.
+    The caller supplies an already-open native runner so any request-scoped model
+    resolver or durable-port assembly has already happened. The agent Pod
+    metadata is a shared singleton, so its catalog is augmented on a ``copy.copy``
+    rather than in place; ``dataclasses.replace`` on the agent would reset the
+    ``init=False`` ``tool_catalog`` to an empty default and drop the native tools,
+    so the copy is required.
     """
-    runner = AgentRunner.for_agent_instance(agent_instance)
     merged = merge_external_catalog(runner.agent.tool_catalog, external)
     augmented_agent = copy.copy(runner.agent)
     augmented_agent.tool_catalog = merged

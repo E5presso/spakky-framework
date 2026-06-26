@@ -118,9 +118,23 @@ class Researcher:
     ...
 ```
 
-`@AGUICompatible(server_names=("weather",))`를 지정하면 `spakky-mcp`가 제공하는
-`IAgentRunnerFactory`가 해당 external MCP server tool만 이 Agent run에 결합합니다. 비워두면
-configured MCP server 전체를 사용합니다.
+`@AGUICompatible`에는 MCP 서버명을 굽지 않습니다. 서비스나 사용자가 run마다 붙일 외부 MCP
+server를 고르면 AG-UI `forwardedProps.mcp`가 core `RunAgentInput.metadata["mcp"]`로 변환되고,
+`spakky-mcp`가 그 run에만 toolset을 합류시킵니다.
+
+```json
+{
+  "threadId": "conv-1",
+  "runId": "run-1",
+  "messages": [{"id": "u1", "role": "user", "content": "check the issue"}],
+  "tools": [],
+  "context": [],
+  "forwardedProps": {
+    "modelSelection": {"provider": "openrouter", "model": "anthropic/claude-sonnet"},
+    "mcp": {"servers": ["github"]}
+  }
+}
+```
 
 `POST /agui`로 AG-UI `RunAgentInput`을 보내면 `text/event-stream` 응답으로 실행
 이벤트가 스트리밍됩니다. `POST /agui/stream`은 같은 AG-UI event payload를 SSE `data:`

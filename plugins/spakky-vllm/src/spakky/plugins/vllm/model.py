@@ -32,6 +32,7 @@ from spakky.plugins.vllm.error import (
     AbstractVllmError,
     VllmConstrainedDecodingUnsupportedError,
     VllmModelRefusalError,
+    VllmModelSelectionError,
     VllmResponseError,
     VllmStreamingDisabledError,
     VllmTimeoutError,
@@ -195,7 +196,7 @@ class VllmAgentModel(IAgentModel):
         stream: bool,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
-            "model": self.__config.model,
+            "model": self._selected_model(request),
             "messages": [
                 self._to_openai_message(message)
                 for message in request.assemble_messages()
@@ -242,6 +243,15 @@ class VllmAgentModel(IAgentModel):
         if stream and request.streaming.include_usage:
             payload["stream_options"] = {"include_usage": True}
         return payload
+
+    def _selected_model(self, request: ModelRequest) -> str:
+        """Return the vLLM model id selected for this request."""
+        selection = request.model_selection
+        if selection is None:
+            return self.__config.model
+        if selection.provider not in (None, "vllm"):
+            raise VllmModelSelectionError
+        return selection.model or self.__config.model
 
     def _to_openai_message(self, message: ModelMessage) -> dict[str, object]:
         role = message.role.value
@@ -446,6 +456,13 @@ class VllmAgentModel(IAgentModel):
             return ModelError(
                 code="vllm_constrained_decoding_unsupported",
                 message=VllmConstrainedDecodingUnsupportedError.message,
+                retryable=False,
+                metadata={"provider": "vllm"},
+            )
+        if isinstance(error, VllmModelSelectionError):
+            return ModelError(
+                code="vllm_model_selection_invalid",
+                message=VllmModelSelectionError.message,
                 retryable=False,
                 metadata={"provider": "vllm"},
             )

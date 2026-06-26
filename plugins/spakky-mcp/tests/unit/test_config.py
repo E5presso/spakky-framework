@@ -3,7 +3,10 @@
 import pytest
 
 from spakky.plugins.mcp.config import (
+    McpOAuthClientAuthMethod,
+    McpOAuthClientCredentialsConfig,
     McpConfig,
+    McpServerAuthConfig,
     McpServerConfig,
     McpToolServerConfig,
     McpTransport,
@@ -84,6 +87,161 @@ def test_streamable_http_server_accepts_https_url() -> None:
     assert server.url == "https://example.test/mcp"
 
 
+def test_streamable_http_server_accepts_static_auth_headers() -> None:
+    """A remote MCP server can declare static HTTP auth headers."""
+    server = McpServerConfig(
+        name="github",
+        transport=McpTransport.STREAMABLE_HTTP,
+        url="https://mcp.example.test",
+        auth=McpServerAuthConfig(headers={"X-Api-Key": "secret"}),
+    )
+
+    assert server.auth.headers == {"X-Api-Key": "secret"}
+
+
+def test_streamable_http_server_accepts_bearer_token_env() -> None:
+    """A remote MCP server can resolve bearer auth from an env var at connect time."""
+    server = McpServerConfig(
+        name="github",
+        transport=McpTransport.STREAMABLE_HTTP,
+        url="https://mcp.example.test",
+        auth=McpServerAuthConfig(bearer_token_env="GITHUB_MCP_TOKEN"),
+    )
+
+    assert server.auth.bearer_token_env == "GITHUB_MCP_TOKEN"
+
+
+def test_streamable_http_server_accepts_oauth_client_credentials() -> None:
+    """A remote MCP server can declare OAuth2 client-credentials auth."""
+    server = McpServerConfig(
+        name="linear",
+        transport=McpTransport.STREAMABLE_HTTP,
+        url="https://mcp.example.test",
+        auth=McpServerAuthConfig(
+            oauth_client_credentials=McpOAuthClientCredentialsConfig(
+                token_url="https://auth.example.test/oauth/token",
+                client_id_env="LINEAR_CLIENT_ID",
+                client_secret_env="LINEAR_CLIENT_SECRET",
+                scopes=("mcp:tools",),
+                client_auth_method=McpOAuthClientAuthMethod.CLIENT_SECRET_POST,
+            )
+        ),
+    )
+
+    oauth = server.auth.oauth_client_credentials
+    assert oauth is not None
+    assert oauth.token_url == "https://auth.example.test/oauth/token"
+    assert oauth.scopes == ("mcp:tools",)
+
+
+def test_oauth_client_credentials_rejects_non_http_token_url() -> None:
+    """OAuth token acquisition requires an HTTP(S) token endpoint."""
+    with pytest.raises(McpServerConfigurationError):
+        McpOAuthClientCredentialsConfig(
+            token_url="ftp://auth.example.test/oauth/token",
+            client_id="client",
+            client_secret="secret",
+        )
+
+
+def test_oauth_client_credentials_rejects_blank_optional_text() -> None:
+    """Blank optional OAuth text values are configuration errors."""
+    with pytest.raises(McpServerConfigurationError):
+        McpOAuthClientCredentialsConfig(
+            token_url="https://auth.example.test/oauth/token",
+            client_id=" ",
+            client_secret="secret",
+        )
+
+
+def test_oauth_client_credentials_rejects_blank_scope() -> None:
+    """Blank OAuth scopes cannot be serialized into a token request."""
+    with pytest.raises(McpServerConfigurationError):
+        McpOAuthClientCredentialsConfig(
+            token_url="https://auth.example.test/oauth/token",
+            client_id="client",
+            client_secret="secret",
+            scopes=("tools:read", " "),
+        )
+
+
+def test_server_auth_rejects_bearer_and_oauth_together() -> None:
+    """Bearer-token auth and OAuth token acquisition cannot both own Authorization."""
+    with pytest.raises(McpServerConfigurationError):
+        McpServerAuthConfig(
+            bearer_token_env="GITHUB_MCP_TOKEN",
+            oauth_client_credentials=McpOAuthClientCredentialsConfig(
+                token_url="https://auth.example.test/oauth/token",
+                client_id="client",
+                client_secret="secret",
+            ),
+        )
+
+
+def test_oauth_client_credentials_requires_client_identity() -> None:
+    """OAuth client credentials require a configured client id source."""
+    with pytest.raises(McpServerConfigurationError):
+        McpOAuthClientCredentialsConfig(
+            token_url="https://auth.example.test/oauth/token",
+            client_secret="secret",
+        )
+
+
+def test_oauth_client_credentials_requires_client_secret() -> None:
+    """OAuth client credentials require a configured client secret source."""
+    with pytest.raises(McpServerConfigurationError):
+        McpOAuthClientCredentialsConfig(
+            token_url="https://auth.example.test/oauth/token",
+            client_id="client",
+        )
+
+
+def test_server_auth_rejects_blank_header_values() -> None:
+    """HTTP auth headers cannot hide missing names or values."""
+    with pytest.raises(McpServerConfigurationError):
+        McpServerAuthConfig(headers={"X-Api-Key": " "})
+
+
+def test_server_auth_rejects_multiline_headers() -> None:
+    """HTTP auth headers cannot smuggle newline-delimited header content."""
+    with pytest.raises(McpServerConfigurationError):
+        McpServerAuthConfig(headers={"X-Api-Key": "secret\nsecond"})
+
+
+def test_server_auth_rejects_blank_bearer_source() -> None:
+    """Blank bearer token sources fail before connection setup."""
+    with pytest.raises(McpServerConfigurationError):
+        McpServerAuthConfig(bearer_token_env=" ")
+
+
+def test_server_auth_rejects_dual_bearer_sources() -> None:
+    """Bearer auth must have exactly one literal or env-backed source."""
+    with pytest.raises(McpServerConfigurationError):
+        McpServerAuthConfig(
+            bearer_token="token",
+            bearer_token_env="GITHUB_MCP_TOKEN",
+        )
+
+
+def test_server_auth_rejects_authorization_header_with_token_owner() -> None:
+    """Static Authorization cannot be combined with generated bearer auth."""
+    with pytest.raises(McpServerConfigurationError):
+        McpServerAuthConfig(
+            headers={"Authorization": "Bearer static"},
+            bearer_token="dynamic",
+        )
+
+
+def test_stdio_server_rejects_auth_config() -> None:
+    """HTTP auth config is invalid for stdio MCP server declarations."""
+    with pytest.raises(McpServerConfigurationError):
+        McpServerConfig(
+            name="local",
+            command="local-mcp",
+            auth=McpServerAuthConfig(headers={"X-Api-Key": "secret"}),
+        )
+
+
 def test_server_name_cannot_be_blank() -> None:
     """A blank server name cannot prefix tool names."""
     with pytest.raises(McpServerConfigurationError):
@@ -111,6 +269,20 @@ def test_server_accepts_explicit_positive_call_timeout() -> None:
     )
 
     assert server.call_timeout_seconds == 12.5
+
+
+def test_config_rejects_duplicate_server_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Configured MCP server names must be globally unique."""
+    monkeypatch.setenv(
+        "SPAKKY_MCP__SERVERS",
+        '[{"name": "github", "command": "github-mcp"},'
+        ' {"name": "github", "command": "other-github-mcp"}]',
+    )
+
+    with pytest.raises(McpServerConfigurationError):
+        McpConfig()
 
 
 def test_server_by_name_returns_declared_server(

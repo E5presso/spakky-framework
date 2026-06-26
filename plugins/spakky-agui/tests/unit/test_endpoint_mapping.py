@@ -25,7 +25,9 @@ class _StaticDriver:
 
 
 def _ag_ui_input(
-    messages: list[dict[str, object]], parent: str | None = None
+    messages: list[dict[str, object]],
+    parent: str | None = None,
+    forwarded: object | None = None,
 ) -> AgUiRunAgentInput:
     return AgUiRunAgentInput.model_validate(
         {
@@ -36,7 +38,7 @@ def _ag_ui_input(
             "messages": messages,
             "tools": [],
             "context": [],
-            "forwardedProps": None,
+            "forwardedProps": forwarded,
         }
     )
 
@@ -66,6 +68,115 @@ def test_to_core_input_forwards_parent_run_id() -> None:
     )
 
     assert core.parent_run_id == "parent-9"
+
+
+def test_to_core_input_forwards_model_selection_and_mcp_metadata() -> None:
+    """forwardedProps의 modelSelection과 mcp는 core run input으로 승격된다."""
+    core = _to_core_input(
+        _ag_ui_input(
+            [{"id": "u1", "role": "user", "content": "hi"}],
+            forwarded={
+                "modelSelection": {
+                    "provider": "openrouter",
+                    "model": "anthropic/claude-sonnet-4.5",
+                    "profile": "coding",
+                    "metadata": {"tier": "paid"},
+                },
+                "mcp": {"servers": ["github"]},
+                "metadata": {"tenant": "acme"},
+            },
+        )
+    )
+
+    assert core.model_selection is not None
+    assert core.model_selection.provider == "openrouter"
+    assert core.model_selection.model == "anthropic/claude-sonnet-4.5"
+    assert core.model_selection.profile == "coding"
+    assert core.model_selection.metadata == {"tier": "paid"}
+    assert core.metadata == {
+        "tenant": "acme",
+        "mcp": {"servers": ["github"]},
+    }
+
+
+def test_to_core_input_without_forwarded_props_has_no_runtime_overrides() -> None:
+    """forwardedProps 생략은 실행별 model/MCP override 없음으로 해석된다."""
+    core = _to_core_input(_ag_ui_input([{"id": "u1", "role": "user", "content": "hi"}]))
+
+    assert core.model_selection is None
+    assert core.metadata == {}
+
+
+def test_to_core_input_rejects_non_object_forwarded_props() -> None:
+    """forwardedProps가 객체가 아니면 core 입력으로 승격하지 않는다."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [{"id": "u1", "role": "user", "content": "hi"}],
+                forwarded=["not", "an", "object"],
+            )
+        )
+
+
+def test_to_core_input_allows_forwarded_metadata_without_model_selection() -> None:
+    """modelSelection 없이 metadata만 전달해도 run metadata로 승격된다."""
+    core = _to_core_input(
+        _ag_ui_input(
+            [{"id": "u1", "role": "user", "content": "hi"}],
+            forwarded={"metadata": {"tenant": "acme"}},
+        )
+    )
+
+    assert core.model_selection is None
+    assert core.metadata == {"tenant": "acme"}
+
+
+def test_to_core_input_rejects_non_object_model_selection() -> None:
+    """modelSelection이 객체가 아니면 typed run selection으로 해석하지 않는다."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [{"id": "u1", "role": "user", "content": "hi"}],
+                forwarded={"modelSelection": "openai:gpt"},
+            )
+        )
+
+
+def test_to_core_input_allows_partial_model_selection() -> None:
+    """modelSelection의 optional field는 생략 가능하다."""
+    core = _to_core_input(
+        _ag_ui_input(
+            [{"id": "u1", "role": "user", "content": "hi"}],
+            forwarded={"modelSelection": {"provider": "openai"}},
+        )
+    )
+
+    assert core.model_selection is not None
+    assert core.model_selection.provider == "openai"
+    assert core.model_selection.model is None
+    assert core.model_selection.metadata == {}
+
+
+def test_to_core_input_rejects_blank_model_selection_text() -> None:
+    """modelSelection 문자열 필드는 공백일 수 없다."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [{"id": "u1", "role": "user", "content": "hi"}],
+                forwarded={"modelSelection": {"provider": " "}},
+            )
+        )
+
+
+def test_to_core_input_rejects_non_object_run_metadata() -> None:
+    """forwardedProps.metadata는 JSON object여야 한다."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [{"id": "u1", "role": "user", "content": "hi"}],
+                forwarded={"metadata": "tenant=acme"},
+            )
+        )
 
 
 def test_to_core_input_without_parent_run_id_sets_none() -> None:

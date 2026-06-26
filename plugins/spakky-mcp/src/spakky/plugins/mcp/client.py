@@ -7,24 +7,28 @@ configured server's session open for the duration of the yielded runner, then
 tears the connections down on exit.
 """
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import timedelta
 from typing import override
 
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
+from httpx import AsyncClient
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.message import SessionMessage
 from spakky.agent import (
     AgentRunner,
+    AgentRunnerFactory,
     AgentToolDescriptor,
     IAgentRunnerFactory,
     JsonValue,
+    RunAgentInput,
 )
 from spakky.core.pod.annotations.pod import Pod
 
+from spakky.plugins.mcp.auth import IMcpHttpClientProvider, McpHttpClientProvider
 from spakky.plugins.mcp.config import McpConfig, McpServerConfig, McpTransport
 from spakky.plugins.mcp.descriptor import (
     McpToolCallable,
@@ -36,6 +40,10 @@ from spakky.plugins.mcp.error import (
     McpToolDiscoveryError,
     McpToolInvocationError,
     McpTransportError,
+)
+from spakky.plugins.mcp.runtime import (
+    IMcpRuntimeServerResolver,
+    McpRuntimeServerResolver,
 )
 
 type McpReadStream = MemoryObjectReceiveStream[SessionMessage | Exception]
@@ -78,6 +86,7 @@ def make_mcp_tool_callable(
 @asynccontextmanager
 async def _transport_streams(
     server: McpServerConfig,
+    http_client: AsyncClient | None = None,
 ) -> AsyncGenerator[tuple[McpReadStream, McpWriteStream], None]:
     """Yield the (read, write) stream pair for a server's transport."""
     if server.transport is McpTransport.STDIO:
@@ -89,7 +98,18 @@ async def _transport_streams(
         async with stdio_client(parameters) as (read, write):
             yield read, write
         return
-    async with streamable_http_client(server.url or "") as (read, write, _session_id):
+    if http_client is None:
+        async with streamable_http_client(server.url or "") as (
+            read,
+            write,
+            _session_id,
+        ):
+            yield read, write
+        return
+    async with streamable_http_client(
+        server.url or "",
+        http_client=http_client,
+    ) as (read, write, _session_id):
         yield read, write
 
 
@@ -97,6 +117,7 @@ async def _transport_streams(
 async def connect_server(
     server: McpServerConfig,
     connect_timeout_seconds: float,
+    http_client: AsyncClient | None = None,
 ) -> AsyncGenerator[DiscoveredServer, None]:
     """Open a server connection and discover its tools as catalog descriptors.
 
@@ -106,7 +127,7 @@ async def connect_server(
     """
     try:
         async with (
-            _transport_streams(server) as (read, write),
+            _transport_streams(server, http_client) as (read, write),
             ClientSession(
                 read,
                 write,
@@ -143,30 +164,47 @@ async def _discover_descriptors(
 class McpClient(IAgentRunnerFactory):
     """Runner factory that joins external MCP tools to an agent runner."""
 
-    def __init__(self, config: McpConfig) -> None:
-        self.config = config
-
-    def _servers(
+    def __init__(
         self,
-        server_names: Sequence[str] | None,
-    ) -> tuple[McpServerConfig, ...]:
-        if server_names is None:
-            return self.config.servers
-        return tuple(self.config.server_by_name(name) for name in server_names)
+        config: McpConfig,
+        http_client_provider: IMcpHttpClientProvider | None = None,
+        runtime_server_resolver: IMcpRuntimeServerResolver | None = None,
+        runner_factory: AgentRunnerFactory | None = None,
+    ) -> None:
+        self.config = config
+        self._runner_factory = runner_factory or AgentRunnerFactory()
+        self._http_client_provider = http_client_provider or McpHttpClientProvider()
+        self._runtime_server_resolver = (
+            runtime_server_resolver or McpRuntimeServerResolver(config)
+        )
 
     @asynccontextmanager
     @override
     async def open_runner(
         self,
         agent_instance: object,
-        server_names: Sequence[str] | None = None,
+        run_input: RunAgentInput | None = None,
     ) -> AsyncGenerator[AgentRunner, None]:
         """Yield a runner whose catalog also carries the external MCP tools."""
         descriptors: list[AgentToolDescriptor] = []
+        servers = self._runtime_server_resolver.resolve_servers(
+            agent_instance,
+            run_input,
+        )
         async with AsyncExitStack() as stack:
-            for server in self._servers(server_names):
+            for server in servers:
+                http_client = await stack.enter_async_context(
+                    self._http_client_provider.open_client(server)
+                )
                 _session, server_descriptors = await stack.enter_async_context(
-                    connect_server(server, self.config.connect_timeout_seconds)
+                    connect_server(
+                        server,
+                        self.config.connect_timeout_seconds,
+                        http_client,
+                    )
                 )
                 descriptors.extend(server_descriptors)
-            yield build_mcp_runner(agent_instance, descriptors)
+            runner = await stack.enter_async_context(
+                self._runner_factory.open_runner(agent_instance, run_input=run_input)
+            )
+            yield build_mcp_runner(runner, descriptors)

@@ -3,18 +3,23 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import timedelta
+from typing import override
 
 import pytest
 from mcp import StdioServerParameters
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
+from spakky.agent import AgentRunnerFactory, IAgentModel, IAgentModelResolver
+from spakky.agent import RunAgentInput
 from spakky.plugins.mcp import client as client_module
 from spakky.plugins.mcp.client import (
     McpClient,
     connect_server,
     make_mcp_tool_callable,
 )
+from spakky.plugins.mcp.auth import McpHttpClientProvider
 from spakky.plugins.mcp.config import McpConfig, McpServerConfig, McpTransport
+from spakky.plugins.mcp.config import McpServerAuthConfig
 from spakky.plugins.mcp.error import (
     McpToolDiscoveryError,
     McpToolInvocationError,
@@ -66,6 +71,24 @@ class _FakeSession:
         )
 
 
+class _SelectedModelResolver(IAgentModelResolver):
+    """Model resolver double proving MCP wraps the native runner factory."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self.model = model
+        self.last_input: RunAgentInput | None = None
+
+    @override
+    def resolve_model(
+        self,
+        agent_instance: object,
+        run_input: RunAgentInput | None = None,
+    ) -> IAgentModel | None:
+        _ = agent_instance
+        self.last_input = run_input
+        return self.model
+
+
 def _echo_tool() -> Tool:
     return Tool(
         name="echo",
@@ -81,6 +104,7 @@ def _patch_session_and_streams(
     @asynccontextmanager
     async def _streams(
         _server: McpServerConfig,
+        _http_client: object | None = None,
     ) -> AsyncGenerator[tuple[object, object], None]:
         yield object(), object()
 
@@ -166,7 +190,9 @@ async def test_connect_server_wraps_transport_failure(
     @asynccontextmanager
     async def _failing_streams(
         _server: McpServerConfig,
+        _http_client: object | None = None,
     ) -> AsyncGenerator[tuple[object, object], None]:
+        _ = _http_client
         raise RuntimeError("connection refused")
         yield object(), object()  # pragma: no cover - unreachable after raise
 
@@ -207,6 +233,56 @@ async def test_streamable_http_transport_selected(
     async with connect_server(server, 30.0) as (_session, descriptors):
         assert used["url"] == "https://example.test/mcp"
         assert len(descriptors) == 1
+
+
+async def test_streamable_http_transport_passes_auth_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Authenticated remote MCP servers receive configured HTTP headers."""
+    monkeypatch.setenv("WEATHER_MCP_TOKEN", "token-123")
+    captured: dict[str, str] = {}
+
+    @asynccontextmanager
+    async def _fake_http(
+        url: str,
+        *,
+        http_client: object | None = None,
+        terminate_on_close: bool = True,
+    ) -> AsyncGenerator[tuple[object, object, object], None]:
+        captured["url"] = url
+        captured["authorization"] = http_client.headers["authorization"]  # type: ignore[attr-defined] - fake inspects SDK client
+        captured["api_key"] = http_client.headers["x-api-key"]  # type: ignore[attr-defined] - fake inspects SDK client
+        yield object(), object(), object()
+
+    session = _FakeSession(tools=[_echo_tool()])
+    monkeypatch.setattr(client_module, "streamable_http_client", _fake_http)
+    monkeypatch.setattr(
+        client_module,
+        "ClientSession",
+        lambda _read, _write, read_timeout_seconds=None: session,
+    )
+    server = McpServerConfig(
+        name="weather",
+        transport=McpTransport.STREAMABLE_HTTP,
+        url="https://example.test/mcp",
+        auth=McpServerAuthConfig(
+            headers={"X-Api-Key": "static-key"},
+            bearer_token_env="WEATHER_MCP_TOKEN",
+        ),
+    )
+
+    async with McpHttpClientProvider().open_client(server) as http_client:
+        async with connect_server(server, 30.0, http_client) as (
+            _session,
+            descriptors,
+        ):
+            assert len(descriptors) == 1
+
+    assert captured == {
+        "url": "https://example.test/mcp",
+        "authorization": "Bearer token-123",
+        "api_key": "static-key",
+    }
 
 
 async def test_stdio_transport_selected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,10 +331,30 @@ async def test_open_runner_with_no_servers_yields_native_only_runner() -> None:
         assert names == {"local.now"}
 
 
+async def test_open_runner_preserves_native_model_resolver() -> None:
+    """MCP runner augmentation does not bypass request-scoped model resolution."""
+    from tests.unit.test_catalog_merge import WeatherAgent, _StubModel
+
+    selected = _StubModel()
+    resolver = _SelectedModelResolver(selected)
+    run_input = RunAgentInput(state_id="run-1", instruction="answer")
+    client = McpClient(
+        McpConfig(),
+        runner_factory=AgentRunnerFactory(model_resolver=resolver),
+    )
+
+    async with client.open_runner(
+        WeatherAgent(_StubModel()), run_input=run_input
+    ) as runner:
+        assert runner.model is selected
+
+    assert resolver.last_input is run_input
+
+
 async def test_open_runner_merges_named_server_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """open_runner merges a named server's tools into the agent catalog."""
+    """run metadata selects the configured server tools joined to the catalog."""
     from tests.unit.test_catalog_merge import WeatherAgent, _StubModel
 
     session = _FakeSession(tools=[_echo_tool()])
@@ -268,9 +364,79 @@ async def test_open_runner_merges_named_server_tools(
     client = McpClient(config)
     agent = WeatherAgent(_StubModel())
 
-    async with client.open_runner(agent, server_names=["weather"]) as runner:
+    async with client.open_runner(
+        agent,
+        run_input=RunAgentInput(
+            state_id="run-1",
+            instruction="answer",
+            metadata={"mcp": {"servers": ["weather"]}},
+        ),
+    ) as runner:
         names = {
             descriptor.schema.name
             for descriptor in runner.agent.tool_catalog.descriptors
         }
         assert names == {"local.now", "weather__echo"}
+
+
+async def test_open_runner_uses_run_input_mcp_server_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run metadata selects user/service MCP servers joined to one Agent run."""
+    from tests.unit.test_catalog_merge import WeatherAgent, _StubModel
+
+    session = _FakeSession(tools=[_echo_tool()])
+    _patch_session_and_streams(monkeypatch, session)
+    config = McpConfig()
+    config.servers = (
+        McpServerConfig(name="weather", command="weather-server"),
+        McpServerConfig(name="unused", command="unused-server"),
+    )
+    client = McpClient(config)
+    agent = WeatherAgent(_StubModel())
+
+    async with client.open_runner(
+        agent,
+        run_input=RunAgentInput(
+            state_id="run-2",
+            instruction="answer",
+            metadata={"mcp": {"servers": ["weather"]}},
+        ),
+    ) as runner:
+        names = {
+            descriptor.schema.name
+            for descriptor in runner.agent.tool_catalog.descriptors
+        }
+        assert names == {"local.now", "weather__echo"}
+
+
+async def test_open_runner_accepts_inline_runtime_mcp_server_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run metadata can carry an inline MCP server declaration from user settings."""
+    from tests.unit.test_catalog_merge import WeatherAgent, _StubModel
+
+    session = _FakeSession(tools=[_echo_tool()])
+    _patch_session_and_streams(monkeypatch, session)
+    client = McpClient(McpConfig())
+    agent = WeatherAgent(_StubModel())
+
+    async with client.open_runner(
+        agent,
+        run_input=RunAgentInput(
+            state_id="run-3",
+            instruction="answer",
+            metadata={
+                "mcp": {
+                    "servers": [
+                        {"name": "github", "command": "github-mcp-server"},
+                    ]
+                }
+            },
+        ),
+    ) as runner:
+        names = {
+            descriptor.schema.name
+            for descriptor in runner.agent.tool_catalog.descriptors
+        }
+        assert names == {"local.now", "github__echo"}

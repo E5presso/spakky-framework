@@ -24,7 +24,7 @@ from spakky.agent.execution import (
 from spakky.agent.interfaces.model import IAgentModel
 from spakky.agent.signal import ApprovalDecision
 
-from spakky.plugins.a2a.error import InvalidApprovalDecisionError
+from spakky.plugins.a2a.error import A2ARunResolutionError, InvalidApprovalDecisionError
 from spakky.plugins.a2a.executor.adapter import (
     SpakkyAgentExecutor,
     _InboundApproval,
@@ -123,6 +123,104 @@ def test_inbound_approval_absent_without_approval_id() -> None:
     context = _context([_data_part({"decision": "approve"})])
 
     assert executor._inbound_approval(context) is None
+
+
+def test_model_selection_parsed_from_data_part() -> None:
+    """A2A data part의 modelSelection은 core ModelSelection으로 변환된다."""
+    executor, _ = _durable_executor()
+    context = _context(
+        [
+            _data_part(
+                {
+                    "modelSelection": {
+                        "provider": "openrouter",
+                        "model": "anthropic/claude-sonnet-4.5",
+                        "profile": "coding",
+                        "metadata": {"tier": "paid"},
+                    }
+                }
+            )
+        ]
+    )
+
+    selection = executor._model_selection(context)
+
+    assert selection is not None
+    assert selection.provider == "openrouter"
+    assert selection.model == "anthropic/claude-sonnet-4.5"
+    assert selection.profile == "coding"
+    assert selection.metadata == {"tier": "paid"}
+
+
+def test_run_metadata_parsed_from_data_part() -> None:
+    """A2A data part의 metadata와 mcp는 core RunAgentInput metadata로 변환된다."""
+    executor, _ = _durable_executor()
+    context = _context(
+        [
+            _data_part(
+                {
+                    "metadata": {"tenant": "acme"},
+                    "mcp": {"servers": ["github"]},
+                }
+            )
+        ]
+    )
+
+    assert executor._run_metadata(context) == {
+        "tenant": "acme",
+        "mcp": {"servers": ["github"]},
+    }
+
+
+def test_model_selection_rejects_malformed_data_part() -> None:
+    """modelSelection이 객체가 아니면 run resolution 오류로 실패한다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._model_selection(_context([_data_part({"modelSelection": "bad"})]))
+
+
+def test_model_selection_allows_missing_optional_fields() -> None:
+    """modelSelection의 optional field는 생략 가능하다."""
+    executor, _ = _durable_executor()
+
+    selection = executor._model_selection(
+        _context([_data_part({"modelSelection": {}})])
+    )
+
+    assert selection is not None
+    assert selection.provider is None
+    assert selection.model is None
+    assert selection.profile is None
+    assert selection.metadata == {}
+
+
+def test_model_selection_rejects_blank_text_field() -> None:
+    """공백 modelSelection 문자열 필드는 run resolution 오류다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._model_selection(
+            _context([_data_part({"modelSelection": {"provider": " "}})])
+        )
+
+
+def test_model_selection_rejects_non_object_metadata() -> None:
+    """modelSelection.metadata는 object여야 한다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._model_selection(
+            _context([_data_part({"modelSelection": {"metadata": "bad"}})])
+        )
+
+
+def test_run_metadata_rejects_non_object_metadata_part() -> None:
+    """A2A metadata data part는 object여야 한다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._run_metadata(_context([_data_part({"metadata": "bad"})]))
 
 
 def test_inbound_approval_parsed_from_data_part() -> None:

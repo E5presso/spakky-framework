@@ -14,7 +14,7 @@ from spakky.plugins.a2a.config import (
 )
 from spakky.plugins.a2a.client import A2ARemoteAgentClient, RemoteA2AMessage
 from spakky.plugins.a2a.delegation import A2AAgentDelegate, A2AStreamEventMapper
-from spakky.plugins.a2a.error import A2AEndpointConflictError
+from spakky.plugins.a2a.error import A2AEndpointConflictError, A2ARunResolutionError
 from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
 from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
@@ -31,5 +31,6 @@ __all__ = [
     "A2ACompatible",
     "A2AAgentServer",
     "A2AEndpointConflictError",
+    "A2ARunResolutionError",
     "RemoteA2AMessage",
 ]

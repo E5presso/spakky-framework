@@ -75,8 +75,9 @@ class _RunnerFactory:
     def open_runner(
         self,
         agent_instance: object,
-        server_names: object = None,
+        run_input: object = None,
     ) -> "_RunnerContext":
+        _ = agent_instance, run_input
         return _RunnerContext()
 
 

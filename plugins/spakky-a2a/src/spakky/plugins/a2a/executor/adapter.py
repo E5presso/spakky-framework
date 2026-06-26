@@ -12,9 +12,9 @@ items, so the A2A projector maps those directly to ``input-required`` or
 success/failure after the stream drains.
 """
 
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import override
+from typing import cast, override
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
@@ -25,14 +25,15 @@ from google.protobuf.struct_pb2 import Value
 from spakky.agent.event import AgentEvent
 from spakky.agent.execution import AgentSignalKind
 from spakky.agent.inbound import RunAgentInput
+from spakky.agent.interfaces.model import ModelSelection
 from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
 )
 from spakky.agent.runner_factory import AgentRunnerFactory, IAgentRunnerFactory
 from spakky.agent.signal import AgentSignal, ApprovalDecision
-from spakky.agent.types import JsonObject
+from spakky.agent.types import JsonObject, JsonValue
 
-from spakky.plugins.a2a.error import InvalidApprovalDecisionError
+from spakky.plugins.a2a.error import A2ARunResolutionError, InvalidApprovalDecisionError
 from spakky.plugins.a2a.executor.event_mapping import AgentEventProjector, RunOutcome
 
 APPROVAL_ID_PART_KEY = "approval_id"
@@ -40,6 +41,18 @@ APPROVAL_ID_PART_KEY = "approval_id"
 
 APPROVAL_DECISION_PART_KEY = "decision"
 """Inbound data-part key carrying the chosen approval decision value."""
+
+MODEL_SELECTION_PART_KEY = "modelSelection"
+"""Inbound data-part key carrying a run-scoped provider/model selector."""
+
+MODEL_SELECTION_SNAKE_PART_KEY = "model_selection"
+"""Snake-case model selection key accepted for non-JavaScript A2A clients."""
+
+RUN_METADATA_PART_KEY = "metadata"
+"""Inbound data-part key carrying extra core RunAgentInput metadata."""
+
+MCP_PART_KEY = "mcp"
+"""Inbound data-part key carrying runtime MCP server selectors."""
 
 RUN_FAILED_FALLBACK_MESSAGE = "run failed"
 """Status message used when a failed run carries no error message."""
@@ -83,6 +96,8 @@ class SpakkyAgentExecutor(AgentExecutor):
             instruction=self._instruction(context),
             conversation_id=context.context_id,
             resume=approval is not None,
+            model_selection=self._model_selection(context),
+            metadata=self._run_metadata(context),
         )
         outcome: RunOutcome | None = None
         async for event in self._run_events(run_input):
@@ -96,7 +111,10 @@ class SpakkyAgentExecutor(AgentExecutor):
         run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Drive the runner's neutral event stream for one run."""
-        async with self._runner_factory.open_runner(self._agent) as runner:
+        async with self._runner_factory.open_runner(
+            self._agent,
+            run_input=run_input,
+        ) as runner:
             async for event in runner.run_events(run_input):
                 yield event
 
@@ -190,13 +208,7 @@ class SpakkyAgentExecutor(AgentExecutor):
         the runner's approval request id, so it is preserved verbatim to match the
         pending approval rather than being re-derived from the task id.
         """
-        message = context.message
-        if message is None:
-            return None
-        for part in message.parts:
-            if not part.HasField("data"):
-                continue
-            data = MessageToDict(part.data)
+        for data in self._data_part_payloads(context):
             approval_id = data.get(APPROVAL_ID_PART_KEY)
             if not isinstance(approval_id, str):
                 continue
@@ -205,6 +217,76 @@ class SpakkyAgentExecutor(AgentExecutor):
                 decision=self._parse_decision(data.get(APPROVAL_DECISION_PART_KEY)),
             )
         return None
+
+    def _model_selection(self, context: RequestContext) -> ModelSelection | None:
+        """Extract a run-scoped model selector from inbound A2A data parts."""
+        for data in self._data_part_payloads(context):
+            value = data.get(MODEL_SELECTION_PART_KEY)
+            if value is None:
+                value = data.get(MODEL_SELECTION_SNAKE_PART_KEY)
+            if value is None:
+                continue
+            if not isinstance(value, Mapping):
+                raise A2ARunResolutionError(MODEL_SELECTION_PART_KEY)
+            selection = cast(Mapping[str, object], value)
+            return ModelSelection(
+                provider=self._optional_text(selection.get("provider"), "provider"),
+                model=self._optional_text(selection.get("model"), "model"),
+                profile=self._optional_text(selection.get("profile"), "profile"),
+                metadata=self._json_object(
+                    selection.get("metadata"),
+                    "modelSelection.metadata",
+                ),
+            )
+        return None
+
+    def _run_metadata(self, context: RequestContext) -> JsonObject:
+        """Extract generic run metadata and runtime MCP selectors from A2A data."""
+        metadata: dict[str, JsonValue] = {}
+        for data in self._data_part_payloads(context):
+            run_metadata = data.get(RUN_METADATA_PART_KEY)
+            if run_metadata is not None:
+                metadata.update(self._json_object(run_metadata, RUN_METADATA_PART_KEY))
+            mcp = data.get(MCP_PART_KEY)
+            if mcp is not None:
+                metadata[MCP_PART_KEY] = self._json_object(mcp, MCP_PART_KEY)
+        return metadata
+
+    @staticmethod
+    def _data_part_payloads(
+        context: RequestContext,
+    ) -> tuple[Mapping[str, object], ...]:
+        """Return all inbound data parts as object mappings."""
+        message = context.message
+        if message is None:
+            return ()
+        payloads: list[Mapping[str, object]] = []
+        for part in message.parts:
+            if part.HasField("data"):
+                payloads.append(cast(Mapping[str, object], MessageToDict(part.data)))
+        return tuple(payloads)
+
+    @staticmethod
+    def _optional_text(value: object, field: str) -> str | None:
+        """Decode optional model selector text from an A2A data part."""
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            raise A2ARunResolutionError(field)
+        return value
+
+    @staticmethod
+    def _json_object(value: object, field: str) -> JsonObject:
+        """Decode a JSON object from an A2A data part."""
+        if value is None:
+            return {}
+        if not isinstance(value, Mapping):
+            raise A2ARunResolutionError(field)
+        return {
+            key: cast(JsonValue, item)
+            for key, item in cast(Mapping[object, object], value).items()
+            if isinstance(key, str)
+        }
 
     @staticmethod
     def _parse_decision(value: object) -> ApprovalDecision:

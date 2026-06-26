@@ -6,6 +6,7 @@ from spakky.plugins.a2a.error import (
     AbstractSpakkyA2AError,
     A2AAgentCardDerivationError,
     A2AAgentServerNotRegisteredError,
+    A2ARunResolutionError,
     InvalidApprovalDecisionError,
     UnsupportedAgentEventError,
     UnsupportedFinalOutputError,
@@ -51,3 +52,13 @@ def test_invalid_approval_decision_error_carries_decision() -> None:
     error = InvalidApprovalDecisionError("maybe")
 
     assert error.decision == "maybe"
+
+
+def test_a2a_run_resolution_error_preserves_field() -> None:
+    """A2ARunResolutionError preserves the invalid inbound field."""
+    error = A2ARunResolutionError("modelSelection")
+
+    assert error.field == "modelSelection"
+    assert (
+        error.message == "A2A run request could not be resolved to a runnable agent run"
+    )

@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
+    "httpx>=0.28.1",
     "mcp>=1.28.0",
     "pydantic-settings>=2.13.1",
     "spakky>=6.12.0",
