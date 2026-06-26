@@ -1,8 +1,14 @@
 # spakky-mcp
 
-> `spakky-mcp`는 외부 MCP server tool을 `AgentToolCatalog`에 병합하고, 반대로 `@agent_tool` 카탈로그를 MCP server로 노출하는 양방향 어댑터입니다.
+> `spakky-mcp`는 외부 MCP server tools를 Spakky Agent run에 연결하는 단방향 adapter입니다.
 
-client 방향은 `MCPClient`가 `IAgentRunnerFactory` 구현체로 외부 서버 연결 수명주기를 소유하고, server 방향은 `@MCPServer @Agent`를 registry에 등록한 뒤 `MCPToolServer`가 agent name으로 tool catalog를 MCP `Server`로 변환합니다. agent instance를 직접 받는 helper들은 lower-level API입니다.
+`McpClient`가 `IAgentRunnerFactory` 구현체로 외부 서버 연결 수명주기를 소유합니다. `McpRuntimeServerResolver`는 configured server 이름과 run-time inline server 선언을 해석하고, descriptor 계층은 발견된 MCP tools를 lazy search/call meta-tools 뒤에 보관합니다.
+
+## v7 Breaking Change
+
+v7에서 `spakky-mcp`는 Agent의 자체 도구를 MCP server로 노출하던 공개 API를 제거했습니다. 삭제된 표면은 `MCPServer`, `MCPToolServer`, `McpToolServerConfig`, `build_agent_tool_server`, `serve_stdio`, `McpConfig.tool_server`, server registry 모듈입니다.
+
+새 계약은 단방향입니다. MCP server는 FastMCP나 공식 MCP SDK 등으로 별도 구현하고, Spakky Agent run에는 `McpConfig.servers` 또는 `RunAgentInput.metadata["mcp"]["servers"]`로 연결합니다. Agent class에는 MCP 노출 annotation을 붙이지 않습니다.
 
 ## Public API
 
@@ -26,27 +32,17 @@ client 방향은 `MCPClient`가 `IAgentRunnerFactory` 구현체로 외부 서버
     options:
       show_root_heading: false
 
+## Runtime Resolution
+
+::: spakky.plugins.mcp.runtime
+    options:
+      show_root_heading: false
+
 ## Descriptor
 
+`descriptor` 모듈은 `McpClient`가 발견한 외부 MCP tools를 lazy `mcp_search_tools` / `mcp_call_tool` 표면 뒤에 보관하기 위한 내부 정규화 계층입니다. 애플리케이션 코드는 일반적으로 `McpClient`, `McpConfig`, `IMcpRuntimeServerResolver`만 사용합니다. `mcp_call_tool` approval request는 meta-tool이 아니라 선택된 외부 MCP tool 이름과 arguments를 노출합니다.
+
 ::: spakky.plugins.mcp.descriptor
-    options:
-      show_root_heading: false
-
-## Server
-
-::: spakky.plugins.mcp.stereotypes.mcp_server
-    options:
-      show_root_heading: false
-
-::: spakky.plugins.mcp.server_registry
-    options:
-      show_root_heading: false
-
-::: spakky.plugins.mcp.post_processors.register_tool_server_agents
-    options:
-      show_root_heading: false
-
-::: spakky.plugins.mcp.server
     options:
       show_root_heading: false
 

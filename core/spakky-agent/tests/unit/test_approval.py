@@ -281,6 +281,15 @@ def test_plan_agent_tool_approval_expect_preserves_prompt_and_optional_metadata(
         agent_type="ApprovalFixtureAgent",
         call_id="tool-call-1",
     )
+    plan_with_action_ref = plan_agent_tool_approval(
+        descriptor=descriptor,
+        approval_id="approval-3",
+        agent_state_id="run-1",
+        agent_type="ApprovalFixtureAgent",
+        prompt="Approve external target?",
+        action_ref="external.tool:target",
+        metadata={"target": "external"},
+    )
 
     assert plan_without_call_id.request is not None
     assert plan_without_call_id.request.prompt == "Run deployment?"
@@ -288,6 +297,10 @@ def test_plan_agent_tool_approval_expect_preserves_prompt_and_optional_metadata(
     assert plan_without_call_id.request.metadata["metadata"] == {"source": "test"}
     assert plan_with_call_id.request is not None
     assert plan_with_call_id.request.metadata["call_id"] == "tool-call-1"
+    assert plan_with_action_ref.request is not None
+    assert plan_with_action_ref.request.prompt == "Approve external target?"
+    assert plan_with_action_ref.request.action_ref == "external.tool:target"
+    assert plan_with_action_ref.request.metadata["metadata"] == {"target": "external"}
 
 
 def test_plan_agent_tool_approval_expect_rejects_invalid_state_metadata() -> None:

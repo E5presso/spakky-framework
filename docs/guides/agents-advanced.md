@@ -69,11 +69,12 @@ flowchart LR
   Yield --> Native[Native HTTP / WebSocket / CLI adapter]
   Event --> AGUI[spakky-agui projector]
   Event --> A2A[spakky-a2a executor/projector]
-  Catalog[AgentToolCatalog] --> MCPServer[spakky-mcp server direction]
-  MCPClient[spakky-mcp client direction] --> Catalog
+  MCPServers[External MCP servers] --> MCPClient[spakky-mcp runtime connector]
+  MCPClient --> LazyTools[mcp_search_tools / mcp_call_tool]
+  LazyTools --> Catalog[AgentToolCatalog]
 ```
 
-따라서 직접 protocol adapter를 만들 때는 `AgentYield`를 AG-UI/A2A event로 억지 변환하지 말고 `run_events()`를 사용합니다. 반대로 MCP를 붙일 때는 "실행 stream을 노출한다"가 아니라 "외부 MCP tool을 Agent tool catalog에 합치거나, Agent tool catalog를 MCP client에게 노출한다"로 이해해야 합니다.
+따라서 직접 protocol adapter를 만들 때는 `AgentYield`를 AG-UI/A2A event로 억지 변환하지 말고 `run_events()`를 사용합니다. 반대로 MCP를 붙일 때는 "실행 stream을 노출한다"가 아니라 "run마다 선택된 외부 MCP 서버를 Agent tool catalog에 lazy search/call 도구로 합류시킨다"로 이해해야 합니다.
 
 ## Tool 설계
 
@@ -532,7 +533,7 @@ SSE는 단방향 server-to-client stream입니다. 사용자의 새 메시지나
 - `RunPausedEvent`는 approval/auth/user-input pause를 중립 이벤트로 표현하고, adapter가 AG-UI deferred tool 또는 A2A `input-required`/`auth-required` 상태로 투영합니다.
 - `spakky-agui`는 `AgentEvent`를 AG-UI `BaseEvent`로 투영하고 FastAPI SSE, HTTP streaming, WebSocket, stdio 경계를 제공합니다.
 - `spakky-a2a`는 `AgentEvent`를 A2A task/message/artifact update로 투영하고 AgentCard, JSON-RPC, HTTP+JSON REST, gRPC transport를 제공합니다.
-- `spakky-mcp`는 `AgentEvent` stream을 소비하지 않습니다. MCP client 방향에서는 외부 MCP server tool을 `AgentToolCatalog`에 병합하고, server 방향에서는 agent의 `@agent_tool` catalog를 MCP tool server로 노출합니다.
+- `spakky-mcp`는 `AgentEvent` stream을 소비하지 않습니다. 외부 MCP server tool을 직접 전부 노출하지 않고 `mcp_search_tools`와 `mcp_call_tool`만 `AgentToolCatalog`에 병합합니다.
 
 수동 adapter를 직접 작성할 때는 `AgentYieldKind`를 AG-UI로 재구성하지 말고 다음 `AgentEvent` mapping을 기준으로 삼습니다.
 
@@ -591,5 +592,5 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 - [spakky-vllm API Reference](../api/plugins/spakky-vllm.md): OpenAI-compatible vLLM model adapter를 확인합니다.
 - [spakky-agui API Reference](../api/plugins/spakky-agui.md): AG-UI endpoint, projector, HITL helpers를 확인합니다.
 - [spakky-a2a API Reference](../api/plugins/spakky-a2a.md): A2A server, transport, delegation API를 확인합니다.
-- [spakky-mcp API Reference](../api/plugins/spakky-mcp.md): MCP external tool client와 tool server API를 확인합니다.
+- [spakky-mcp API Reference](../api/plugins/spakky-mcp.md): 외부 MCP 서버 연결, runtime server resolution, lazy MCP tool API를 확인합니다.
 - [spakky-sqlalchemy API Reference](../api/plugins/spakky-sqlalchemy.md): durable agent repository contribution을 확인합니다.

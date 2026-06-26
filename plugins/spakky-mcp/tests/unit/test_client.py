@@ -17,6 +17,7 @@ from spakky.plugins.mcp.client import (
     connect_server,
     make_mcp_tool_callable,
 )
+from spakky.plugins.mcp.descriptor import MCP_CALL_TOOL_NAME, MCP_SEARCH_TOOLS_NAME
 from spakky.plugins.mcp.auth import McpHttpClientProvider
 from spakky.plugins.mcp.config import McpConfig, McpServerConfig, McpTransport
 from spakky.plugins.mcp.config import McpServerAuthConfig
@@ -354,7 +355,7 @@ async def test_open_runner_preserves_native_model_resolver() -> None:
 async def test_open_runner_merges_named_server_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """run metadata selects the configured server tools joined to the catalog."""
+    """run metadata selects configured servers behind lazy MCP catalog tools."""
     from tests.unit.test_catalog_merge import WeatherAgent, _StubModel
 
     session = _FakeSession(tools=[_echo_tool()])
@@ -376,13 +377,13 @@ async def test_open_runner_merges_named_server_tools(
             descriptor.schema.name
             for descriptor in runner.agent.tool_catalog.descriptors
         }
-        assert names == {"local.now", "weather__echo"}
+        assert names == {"local.now", MCP_SEARCH_TOOLS_NAME, MCP_CALL_TOOL_NAME}
 
 
 async def test_open_runner_uses_run_input_mcp_server_names(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run metadata selects user/service MCP servers joined to one Agent run."""
+    """Run metadata selects user/service MCP servers for one Agent run."""
     from tests.unit.test_catalog_merge import WeatherAgent, _StubModel
 
     session = _FakeSession(tools=[_echo_tool()])
@@ -407,13 +408,13 @@ async def test_open_runner_uses_run_input_mcp_server_names(
             descriptor.schema.name
             for descriptor in runner.agent.tool_catalog.descriptors
         }
-        assert names == {"local.now", "weather__echo"}
+        assert names == {"local.now", MCP_SEARCH_TOOLS_NAME, MCP_CALL_TOOL_NAME}
 
 
 async def test_open_runner_accepts_inline_runtime_mcp_server_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run metadata can carry an inline MCP server declaration from user settings."""
+    """Run metadata can carry inline MCP server declarations from user settings."""
     from tests.unit.test_catalog_merge import WeatherAgent, _StubModel
 
     session = _FakeSession(tools=[_echo_tool()])
@@ -439,4 +440,4 @@ async def test_open_runner_accepts_inline_runtime_mcp_server_config(
             descriptor.schema.name
             for descriptor in runner.agent.tool_catalog.descriptors
         }
-        assert names == {"local.now", "github__echo"}
+        assert names == {"local.now", MCP_SEARCH_TOOLS_NAME, MCP_CALL_TOOL_NAME}

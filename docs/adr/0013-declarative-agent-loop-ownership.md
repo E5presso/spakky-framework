@@ -57,7 +57,7 @@ ADR-0009는 이 두 결정을 명시적으로 닫지 않았다 (`spakky-agent-mc
 
 - AG-UI 어댑터 → `ag_ui` 라이브러리 의존, 코어 이벤트를 AG-UI `RunAgentInput`/`BaseEvent`로 변환.
 - A2A 어댑터 → 공식 `a2a-python` 라이브러리 의존, 코어 실행을 A2A `Task` 상태 머신으로 노출.
-- MCP 어댑터 → MCP 라이브러리 의존, 외부 MCP tool descriptor를 코어 tool 계약으로 정규화 (및 코어 tool을 MCP server로 노출).
+- MCP 어댑터 → MCP 라이브러리 의존, 외부 MCP server tools를 코어 tool 계약으로 정규화하되 모델에는 lazy search/call 도구만 노출.
 
 채택 이유:
 

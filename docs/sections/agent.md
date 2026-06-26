@@ -19,13 +19,13 @@
 
 ## 어댑터
 
-선언형 Agent는 두 종류의 adapter로 노출됩니다. AG-UI와 A2A는 `AgentRunner.run_events()`가 내보내는 protocol-neutral `AgentEvent` stream을 각 wire protocol event로 투영합니다. MCP는 event stream을 소비하지 않고 외부 MCP tool을 `AgentToolCatalog`에 병합하거나 agent의 `@agent_tool` catalog를 MCP server로 노출합니다.
+선언형 Agent는 여러 adapter와 함께 사용할 수 있습니다. AG-UI와 A2A는 `AgentRunner.run_events()`가 내보내는 protocol-neutral `AgentEvent` stream을 각 wire protocol event로 투영합니다. MCP는 event stream을 소비하지 않고 run마다 선택된 외부 MCP server tools를 lazy search/call 도구로 `AgentToolCatalog`에 합류시킵니다.
 
 | 문서 | 무엇을 다루나요 |
 | --- | --- |
 | [AG-UI 어댑터](../guides/agent-ag-ui.md) | AG-UI 프로토콜로 Agent 실행을 UI에 스트리밍 |
 | [A2A 어댑터](../guides/agent-a2a.md) | A2A(Agent-to-Agent) 프로토콜 연동 |
-| [MCP 어댑터](../guides/agent-mcp.md) | MCP(Model Context Protocol) 클라이언트·서버 양방향 어댑터 |
+| [MCP 어댑터](../guides/agent-mcp.md) | 외부 MCP server tools를 Agent run에 연결 |
 
 ## API Reference
 
@@ -34,4 +34,4 @@
 | [spakky-agent](../api/core/spakky-agent.md) | `AgentRunner`, `RunAgentInput`, `AgentEvent`, `AgentYield`, tool/repository/compaction 계약 |
 | [spakky-agui](../api/plugins/spakky-agui.md) | AG-UI endpoint, projector, HITL, stdio helpers |
 | [spakky-a2a](../api/plugins/spakky-a2a.md) | A2A AgentCard, server builder, executor, REST/gRPC transport, delegation |
-| [spakky-mcp](../api/plugins/spakky-mcp.md) | MCP external tool client, descriptor merge, tool server |
+| [spakky-mcp](../api/plugins/spakky-mcp.md) | 외부 MCP 서버 연결, runtime server resolution, lazy MCP tool search/call |

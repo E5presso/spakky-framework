@@ -212,7 +212,7 @@ class SimpleAgent:
 | Custom `execute()` | LLM loop 없이 직접 stream을 만들 때 | 실행에 필요한 일반 Pod만 주입 | `execute()`가 없으면 runner-backed mode로 해석됩니다. |
 | Runner-backed tool Agent | `execute()`를 생략하고 model이 `@agent_tool`을 호출하게 할 때 | `IAgentModel`과 tool이 사용할 app port | `IAgentModel`이 없으면 runner가 model 요청을 만들 수 없습니다. |
 | Durable runner-backed Agent | approval, cancel, resume, action-boundary recovery가 필요할 때 | `IAgentModel`, `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository` | repository provider가 없으면 bootstrap에서 실패해야 합니다. |
-| Protocol-exposed Agent | AG-UI/A2A/MCP로 노출할 때 | 위 mode의 의존성 + host Pod(FastAPI/Starlette 등) 또는 MCP host entrypoint | protocol marker를 빼면 Agent는 내부 component로만 남습니다. |
+| Protocol-exposed Agent | AG-UI/A2A 같은 inbound protocol로 Agent를 실행할 때 | 위 mode의 의존성 + host Pod(FastAPI/Starlette 등) | protocol marker를 빼면 Agent는 내부 component로만 남습니다. MCP는 Agent annotation이 아니라 run metadata로 외부 서버를 붙입니다. |
 
 Runner-backed mode에서 runner는 생성자 parameter 이름이 아니라 **type**으로 필요한 port를 찾습니다. 그래서 `model: IAgentModel`, `states: IAgentStateRepository`처럼 정확한 interface type을 생성자에 선언합니다. 같은 type의 Pod가 여러 개 있으면 Spakky DI의 qualifier/primary 규칙으로 해소해야 합니다. `self._model` 같은 attribute 이름은 관례일 뿐 runner discovery의 public contract가 아닙니다.
 
@@ -438,16 +438,18 @@ async def stream_protocol_events(
 
 ## Annotation catalog
 
-Agent 주변 annotation은 두 종류입니다. `@Agent`는 Pod 등록까지 하는 실행 component annotation이고, `@agent_tool`/`@on_signal`은 Agent class 안의 method metadata입니다. `@AGUICompatible`, `@A2ACompatible`, `@MCPServer`는 모두 `Tag`입니다. 즉 "새 서버 객체"를 만드는 annotation이 아니라, 이미 `@Agent`가 등록한 같은 class를 protocol post-processor가 발견할 수 있게 표시합니다.
+Agent 주변 annotation은 두 종류입니다. `@Agent`는 Pod 등록까지 하는 실행 component annotation이고, `@agent_tool`/`@on_signal`은 Agent class 안의 method metadata입니다. `@AGUICompatible`, `@A2ACompatible`은 protocol adapter가 같은 Agent class를 발견할 수 있게 붙이는 `Tag`입니다.
 
 ```mermaid
 flowchart LR
   Class[Python class] --> Agent["@Agent: Pod + execution spec"]
   Agent --> Catalog["@agent_tool / @on_signal catalogs"]
-  Agent --> Tags["Protocol tags: @AGUICompatible / @A2ACompatible / @MCPServer"]
+  Agent --> Tags["Protocol tags: @AGUICompatible / @A2ACompatible"]
   Tags --> PostProcessors[Plugin post-processors]
-  PostProcessors --> Registries[AG-UI / A2A / MCP registries]
-  Registries --> Hosts[FastAPI / Starlette / MCP host]
+  PostProcessors --> Registries[AG-UI / A2A registries]
+  Registries --> Hosts[FastAPI / Starlette hosts]
+  RunInput[RunAgentInput.metadata.mcp.servers] --> MCP[spakky-mcp runtime server resolver]
+  MCP --> Catalog
 ```
 
 | annotation | 붙이는 곳 | 목적 | 언제 쓰나 | 안 쓰면 |
@@ -457,18 +459,16 @@ flowchart LR
 | `@on_signal(kind)` | Agent async generator method | 특정 `AgentSignalKind`를 runner poll 지점에서 처리합니다. | 실행 중 steering/user message/external event에 커스텀 반응해야 할 때 사용합니다. | runner 기본 처리만 사용하거나 해당 signal을 소비하지 않습니다. |
 | `@AGUICompatible(...)` | `@Agent` class | Agent run을 AG-UI SSE/HTTP streaming/WebSocket route로 노출할 metadata를 붙입니다. | AG-UI 호환 UI에 실시간 실행 이벤트를 보낼 때 사용합니다. | Agent는 내부 실행 가능하지만 AG-UI route에 자동 등록되지 않습니다. |
 | `@A2ACompatible(...)` | `@Agent` class | AgentCard, JSON-RPC/REST/gRPC A2A transport metadata를 붙입니다. | 다른 Agent가 표준 A2A protocol로 호출해야 할 때 사용합니다. | AgentCard와 A2A endpoint가 자동 생성되지 않습니다. |
-| `@MCPServer(...)` | `@Agent` class | Agent의 native `@agent_tool` catalog를 MCP tool server registry에 노출합니다. | 외부 MCP client가 이 Agent의 도구를 발견/호출해야 할 때 사용합니다. | 내부 Agent tool은 유지되지만 MCP server에는 등록되지 않습니다. |
 | `@Pod()` | class 또는 factory function | 일반 DI component를 등록합니다. | Agent가 사용할 service, port adapter, host app을 등록할 때 사용합니다. | 생성자 주입 대상으로 resolve되지 않습니다. |
 | `@Configuration` | class | 설정 객체를 container에 등록합니다. | 환경변수 기반 설정을 주입해야 할 때 사용합니다. | config provider가 자동 등록되지 않습니다. |
 
-외부 MCP 서버를 Agent가 소비하게 만들 때는 `@MCPServer`를 붙이지 않습니다. 외부 서버는 `spakky-mcp`의 `McpConfig.servers` 또는 `RunAgentInput.metadata["mcp"]["servers"]`에서 선택하고, 플러그인이 run마다 discovered tools를 catalog에 합류시킵니다. `@MCPServer`는 반대 방향, 즉 이 Agent의 native tools를 MCP server로 노출할 때만 사용합니다.
+외부 MCP 서버를 Agent가 소비하게 만들 때는 Agent annotation을 추가하지 않습니다. 외부 서버는 `spakky-mcp`의 `McpConfig.servers` 또는 `RunAgentInput.metadata["mcp"]["servers"]`에서 선택하고, 플러그인이 run마다 lazy `mcp_search_tools`/`mcp_call_tool` 도구를 catalog에 합류시킵니다.
 
 모델도 Agent class에 이름을 굽지 않습니다. Agent는 `IAgentModel` port만 주입받고, 사용자나 서비스가 provider/model을 고르는 경우 `RunAgentInput.model_selection`으로 전달합니다. Runner는 이를 `ModelRequest.model_selection`에 실어 vLLM, OpenRouter, Anthropic, Vertex, OpenAI 같은 adapter/router가 해석하게 합니다.
 
 Protocol marker는 아래 순서를 문서화된 표준으로 사용합니다. Python decorator는 아래에서 위로 적용되므로 `@Agent`가 class에 가장 가까이 놓이고, protocol marker가 같은 class 위에 metadata를 덧붙입니다.
 
 ```python
-@MCPServer(server_name="assistant-tools")
 @AGUICompatible(sse_path="/agents/assistant/agui")
 @A2ACompatible(mount_path="/a2a/assistant")
 @Agent(spec=AgentExecutionSpec(name="assistant"))
@@ -476,7 +476,7 @@ class Assistant:
     ...
 ```
 
-하나의 Agent를 여러 protocol로 동시에 노출할 수 있습니다. 다만 각 marker는 서로 다른 책임입니다. AG-UI/A2A는 실행 event stream을 protocol event로 투영하고, MCP server 방향은 실행 event를 내보내는 것이 아니라 `@agent_tool` catalog를 MCP tool로 노출합니다.
+하나의 Agent를 여러 protocol로 동시에 노출할 수 있습니다. 다만 AG-UI/A2A marker는 실행 event stream을 protocol event로 투영하는 책임만 갖습니다. MCP 서버 연결은 class marker가 아니라 run input metadata에서 선택합니다.
 
 ## 다음 단계
 
