@@ -32,7 +32,7 @@ pip install spakky-auth spakky-cryptography
 | --- | --- | --- |
 | `SPAKKY_CRYPTOGRAPHY_SNAPSHOT_KEY` | snapshot HMAC key, URL-safe base64 문자열 | 런타임 생성 32-byte key |
 | `SPAKKY_CRYPTOGRAPHY_SNAPSHOT_KEY_ID` | signed snapshot envelope에 들어갈 key id | `spakky-cryptography:default` |
-| `SPAKKY_CRYPTOGRAPHY_SNAPSHOT_TTL` | 새 snapshot 유효 기간 | `5m` |
+| `SPAKKY_CRYPTOGRAPHY_SNAPSHOT_TTL` | 새 snapshot 유효 기간. 환경변수로 지정할 때는 초 단위 숫자 또는 Pydantic duration 형식을 사용 | `300` |
 | `SPAKKY_CRYPTOGRAPHY_VERIFICATION_AVAILABLE` | snapshot verification provider 가용성 | `true` |
 | `SPAKKY_CRYPTOGRAPHY_PASSWORD_AVAILABLE` | password hash/verify provider 가용성 | `true` |
 

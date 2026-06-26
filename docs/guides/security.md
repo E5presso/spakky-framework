@@ -139,7 +139,7 @@ FastAPI/gRPC/Typer 같은 inbound adapter가 boundary에서 bearer credential을
 | `SPAKKY_OIDC_CLIENT_ID` | token의 `azp`가 있을 때 기대하는 client id | 미설정 |
 | `SPAKKY_OIDC_DISCOVERY_URL` | 명시 discovery URL | `<issuer>/.well-known/openid-configuration` |
 | `SPAKKY_OIDC_ALGORITHM` | 기대 JWT signing algorithm | `RS256` |
-| `SPAKKY_OIDC_CLOCK_SKEW` | `exp`/`nbf`/`iat` clock skew 허용치 | `60s` |
+| `SPAKKY_OIDC_CLOCK_SKEW` | `exp`/`nbf`/`iat` clock skew 허용치. 환경변수로 지정할 때는 초 단위 숫자 또는 Pydantic duration 형식을 사용 | `60` |
 | `SPAKKY_OIDC_RETAINED_CLAIM_NAMES` | `AuthContext.claims`에 보존할 safe claim 목록 | provider 기본값 |
 | `SPAKKY_OIDC_ROLES_CLAIM` | role refs claim 이름 | `roles` |
 | `SPAKKY_OIDC_SCOPES_CLAIM` | scope refs claim 이름 | `scope` |
