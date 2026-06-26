@@ -38,24 +38,6 @@ pip install "spakky[agent]"
 
 plugin 초기화는 `McpConfig`, HTTP client provider, runtime resolver, `McpClient`를 등록하고 `IAgentRunnerFactory`를 `McpClient`로 바인딩합니다. 그래서 AG-UI/A2A 같은 inbound adapter가 runner factory를 통해 실행하면 MCP 서버가 자동으로 합류합니다.
 
-## v7 마이그레이션
-
-`spakky-mcp` v7은 Agent 도구를 MCP 서버로 노출하던 역방향 API를 제거합니다.
-
-제거된 공개 표면:
-
-- `MCPServer`, `MCPToolServer`, `McpToolServerConfig`
-- `build_agent_tool_server`, `serve_stdio`
-- `McpConfig.tool_server`
-- Agent class에 붙여 MCP 서버 노출을 선언하던 annotation과 registry 모듈
-
-마이그레이션 경로:
-
-1. MCP 서버는 FastMCP, 공식 MCP SDK, 사내 서버 프레임워크 등으로 별도 구현합니다.
-2. Agent 서비스는 허용된 서버를 `McpConfig.servers`에 저장하거나, 사용자 설정에서 per-run inline declaration을 구성합니다.
-3. 실행 시 `RunAgentInput.metadata["mcp"]["servers"]`에 선택된 서버를 넣습니다.
-4. Agent class에는 MCP annotation을 붙이지 않습니다. `spakky-mcp`가 runner factory에서 외부 서버를 lazy tool로 붙입니다.
-
 ## 서버 선언
 
 `McpConfig.servers`에는 서비스가 미리 허용한 서버를 선언합니다. `SPAKKY_MCP__` 환경변수로도 같은 값을 넣을 수 있습니다.
