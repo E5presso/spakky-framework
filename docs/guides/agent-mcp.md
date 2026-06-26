@@ -244,6 +244,7 @@ MCP 서버는 도구가 많을 수 있습니다. 모든 MCP tool schema를 모�
 ```
 
 이 구조 때문에 서버가 100개 tool을 제공해도 최초 model request에는 `mcp_search_tools`, `mcp_call_tool`만 들어갑니다. 필요한 tool schema는 검색 결과로만 좁혀서 들어갑니다.
+`mcp_call_tool`이 HITL approval 후보가 되면 approval prompt와 `action_ref`는 meta-tool 이름이 아니라 선택된 외부 tool 이름을 기준으로 만들어지고, approval metadata에는 `mcp_tool_name`과 `mcp_arguments`가 포함됩니다.
 
 ## 동작 원리
 
@@ -253,7 +254,7 @@ MCP 서버는 도구가 많을 수 있습니다. 모든 MCP tool schema를 모�
 2. 각 서버 transport session을 열고 MCP `initialize`와 `list_tools()`를 수행합니다.
 3. 발견된 tool을 세션 내부 descriptor registry에 보관합니다.
 4. Agent catalog에는 `mcp_search_tools`, `mcp_call_tool`만 병합합니다.
-5. `mcp_call_tool`이 호출되면 registry에서 실제 descriptor를 찾아 MCP `call_tool`로 전달합니다.
+5. `mcp_call_tool`이 호출되면 registry에서 실제 descriptor를 찾아 MCP `call_tool`로 전달합니다. approval이 필요하면 선택된 외부 tool 이름과 arguments를 approval request에 싣습니다.
 6. runner context가 닫히면 모든 MCP session을 닫습니다.
 
 외부 tool 결과는 `structuredContent`가 있으면 그대로, 없으면 텍스트 콘텐츠를 모아 JSON 값으로 정규화합니다. 서버가 오류 결과(`isError`)를 반환하거나 연결·디스커버리·호출이 실패하면 `McpTransportError`, `McpToolDiscoveryError`, `McpToolInvocationError` 등 타입화된 오류로 표면화됩니다.

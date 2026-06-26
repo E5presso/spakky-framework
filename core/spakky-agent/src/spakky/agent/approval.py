@@ -68,6 +68,7 @@ class AgentApprovalRequest:
         agent_state_id: str,
         descriptor: AgentToolDescriptor,
         prompt: str | None = None,
+        action_ref: str | None = None,
         call_id: str | None = None,
         metadata: JsonObject | None = None,
     ) -> "AgentApprovalRequest":
@@ -79,7 +80,7 @@ class AgentApprovalRequest:
             boundary=AgentApprovalBoundaryKind.TOOL_INVOCATION,
             prompt=prompt or f"Approve tool invocation: {descriptor.name}",
             risk=descriptor.metadata.risk,
-            action_ref=descriptor.identity.key,
+            action_ref=action_ref or descriptor.identity.key,
             metadata=request_metadata,
         )
 
@@ -158,6 +159,7 @@ def plan_agent_tool_approval(
     agent_state_id: str,
     agent_type: str,
     prompt: str | None = None,
+    action_ref: str | None = None,
     call_id: str | None = None,
     metadata: JsonObject | None = None,
 ) -> AgentApprovalPlan:
@@ -170,6 +172,7 @@ def plan_agent_tool_approval(
         agent_state_id=agent_state_id,
         descriptor=descriptor,
         prompt=prompt,
+        action_ref=action_ref,
         call_id=call_id,
         metadata=metadata,
     )

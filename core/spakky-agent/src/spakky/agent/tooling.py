@@ -291,6 +291,22 @@ class AgentToolMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentToolApprovalContext:
+    """Invocation-specific approval display and correlation metadata."""
+
+    prompt: str | None = None
+    action_ref: str | None = None
+    metadata: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Reject blank override strings before they enter approval state."""
+        if self.prompt is not None:
+            _require_non_blank(self.prompt, "Agent tool approval prompt")
+        if self.action_ref is not None:
+            _require_non_blank(self.action_ref, "Agent tool approval action ref")
+
+
+@dataclass(frozen=True, slots=True)
 class ToolRisk:
     """Derived typed risk axes for policy and evidence annotations."""
 
@@ -389,6 +405,11 @@ class AgentToolDescriptor:
     def bind_invocation(self, payload: JsonObject) -> "AgentToolBoundInvocation":
         """Bind a decoded model payload before the tool callable is invoked."""
         return bind_agent_tool_invocation(self.callable, payload)
+
+    def approval_context(self, payload: JsonObject) -> AgentToolApprovalContext:
+        """Return invocation-specific approval context for this payload."""
+        _ = payload
+        return AgentToolApprovalContext()
 
 
 @dataclass(frozen=True, slots=True)

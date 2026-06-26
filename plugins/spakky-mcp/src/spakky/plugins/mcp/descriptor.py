@@ -17,6 +17,7 @@ from typing import cast, override
 from mcp.types import CallToolResult, TextContent, Tool
 from spakky.agent import (
     AgentRunner,
+    AgentToolApprovalContext,
     AgentToolBoundInvocation,
     AgentToolCatalog,
     AgentToolDescriptor,
@@ -80,6 +81,30 @@ class ExternalMcpToolDescriptor(AgentToolDescriptor):
     def bind_invocation(self, payload: JsonObject) -> AgentToolBoundInvocation:
         """Forward the MCP argument object as keyword arguments verbatim."""
         return AgentToolBoundInvocation(args=(), kwargs=dict(payload))
+
+
+class LazyMcpCallToolDescriptor(AgentToolDescriptor):
+    """Lazy call descriptor that surfaces the selected external tool to HITL."""
+
+    @override
+    def approval_context(self, payload: JsonObject) -> AgentToolApprovalContext:
+        """Expose the target MCP tool name and arguments to approval requests."""
+        tool_name = payload.get("tool_name")
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return AgentToolApprovalContext()
+        arguments = payload.get("arguments")
+        safe_arguments = (
+            cast(JsonObject, dict(arguments)) if isinstance(arguments, dict) else {}
+        )
+        return AgentToolApprovalContext(
+            prompt=f"Approve MCP tool invocation: {tool_name.strip()}",
+            action_ref=_external_tool_action_ref(tool_name.strip()),
+            metadata={
+                "mcp_meta_tool": MCP_CALL_TOOL_NAME,
+                "mcp_tool_name": tool_name.strip(),
+                "mcp_arguments": safe_arguments,
+            },
+        )
 
 
 def prefixed_tool_name(server_name: str, raw_tool_name: str) -> str:
@@ -232,6 +257,7 @@ def build_lazy_mcp_descriptors(
             },
             effects=ToolEffects.external_side_effect(),
             approval=ToolApprovalRequirement.DERIVED,
+            descriptor_type=LazyMcpCallToolDescriptor,
         ),
     )
 
@@ -293,6 +319,7 @@ def _lazy_descriptor(
     input_schema: JsonObject,
     effects: ToolEffects,
     approval: ToolApprovalRequirement,
+    descriptor_type: type[AgentToolDescriptor] = AgentToolDescriptor,
 ) -> AgentToolDescriptor:
     identity = AgentToolIdentity(
         owner_module=MCP_EXTERNAL_TOOL_OWNER_MODULE,
@@ -306,7 +333,7 @@ def _lazy_descriptor(
         input_schema=input_schema,
         output_schema={"type": "object", "additionalProperties": True},
     )
-    return AgentToolDescriptor(
+    return descriptor_type(
         identity=identity,
         owner=LazyMcpToolset,
         callable=callable_,
@@ -318,6 +345,14 @@ def _lazy_descriptor(
             externality=effects.externality,
             approval=approval,
         ),
+    )
+
+
+def _external_tool_action_ref(prefixed_name: str) -> str:
+    server_name = prefixed_name.split(MCP_TOOL_NAME_SEPARATOR, 1)[0]
+    return (
+        f"{MCP_EXTERNAL_TOOL_OWNER_MODULE}."
+        f"{ExternalMcpTool.__qualname__}.{server_name}:{prefixed_name}"
     )
 
 

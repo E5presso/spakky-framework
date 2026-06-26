@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import override
+from typing import cast, override
 
 import pytest
 from pydantic import BaseModel
@@ -19,6 +19,8 @@ from spakky.agent import (
     AgentStateReason,
     AgentStateTransition,
     AgentStatus,
+    AgentToolApprovalContext,
+    AgentToolDescriptor,
     AgentYield,
     AgentYieldKind,
     Approval,
@@ -30,6 +32,7 @@ from spakky.agent import (
     IAgentModel,
     Idempotency,
     ITaskStore,
+    JsonObject,
     JsonValue,
     AgentCompactionPolicy,
     KeepRecentMessagesCompactionStrategy,
@@ -435,6 +438,50 @@ async def test_agent_runner_expect_no_pending_decision_pauses_without_dispatch()
     assert any(isinstance(item.payload, Approval) for item in items)
     assert not any(isinstance(item.payload, Tool) for item in items)
     assert states.get("run-1").status is AgentStatus.INTERRUPTED
+
+
+async def test_agent_runner_expect_approval_context_overrides_pause_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """runner approval pause는 descriptor의 호출별 approval context를 보존한다."""
+
+    def fake_approval_context(
+        self: AgentToolDescriptor, payload: JsonObject
+    ) -> AgentToolApprovalContext:
+        assert self.schema.name == "echo.write"
+        return AgentToolApprovalContext(
+            prompt=f"Approve external target: {payload['value']}",
+            action_ref=f"external.echo:{payload['value']}",
+            metadata={"target": payload["value"]},
+        )
+
+    monkeypatch.setattr(AgentToolDescriptor, "approval_context", fake_approval_context)
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    states = FakeStateRepository()
+
+    items = await _run_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="write"),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    approval_payloads = [
+        item.payload for item in items if isinstance(item.payload, Approval)
+    ]
+    assert len(approval_payloads) == 1
+    approval = approval_payloads[0]
+    assert approval.prompt == "Approve external target: draft"
+    assert approval.metadata["action_ref"] == "external.echo:draft"
+    approval_tool_metadata = cast(JsonObject, approval.metadata["metadata"])
+    assert approval_tool_metadata["metadata"] == {"target": "draft"}
+    assert states.get("run-1").metadata["approval"] == approval.metadata
 
 
 async def test_agent_runner_expect_model_error_fails_state_and_yields_error() -> None:

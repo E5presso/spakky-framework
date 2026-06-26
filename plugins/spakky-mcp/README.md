@@ -125,6 +125,7 @@ MCP servers can expose many tools. `spakky-mcp` does not push every external too
 External tool names are returned by search as `<server_name>__<tool_name>`. For example, `weather` server tool `forecast` becomes `weather__forecast`.
 
 This keeps large MCP toolsets from polluting the model context while still letting the model discover and invoke the tools it needs.
+When `mcp_call_tool` requires human approval, the approval request names the selected external MCP tool and includes the selected arguments in metadata.
 
 ## Development checks
 

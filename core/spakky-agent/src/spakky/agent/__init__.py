@@ -185,6 +185,7 @@ from spakky.agent.state import (
 )
 from spakky.agent.tooling import (
     AgentToolCatalog,
+    AgentToolApprovalContext,
     AgentToolBoundInvocation,
     AgentToolDefinition,
     AgentToolDescriptor,
@@ -301,6 +302,7 @@ __all__ = [
     "AgentSignalPollPoint",
     "AgentTeammate",
     "AgentToolBindingError",
+    "AgentToolApprovalContext",
     "AgentToolBoundInvocation",
     "AgentToolCatalog",
     "AgentToolDefinition",

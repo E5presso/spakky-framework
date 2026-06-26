@@ -23,6 +23,7 @@ from spakky.agent import (
     AgentCancellationRequest,
     AgentCancellationTargetKind,
     AgentToolCatalog,
+    AgentToolApprovalContext,
     AgentToolBindingError,
     AgentToolBoundInvocation,
     AgentToolDescriptor,
@@ -289,6 +290,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
     assert AgentToolBindingError is agent_api.AgentToolBindingError
     assert AgentToolBoundInvocation is agent_api.AgentToolBoundInvocation
     assert AgentToolCatalog is agent_api.AgentToolCatalog
+    assert AgentToolApprovalContext is agent_api.AgentToolApprovalContext
     assert AgentToolDescriptor is agent_api.AgentToolDescriptor
     assert AgentToolIdentity is agent_api.AgentToolIdentity
     assert begin_agent_cancellation is agent_api.begin_agent_cancellation
