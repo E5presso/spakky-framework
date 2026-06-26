@@ -8,13 +8,11 @@ from spakky.plugins.mcp.config import (
     McpConfig,
     McpServerAuthConfig,
     McpServerConfig,
-    McpToolServerConfig,
     McpTransport,
 )
 from spakky.plugins.mcp.constants import (
     DEFAULT_MCP_CALL_TIMEOUT_SECONDS,
     DEFAULT_MCP_CONNECT_TIMEOUT_SECONDS,
-    DEFAULT_MCP_SERVER_NAME,
 )
 from spakky.plugins.mcp.error import McpServerConfigurationError
 
@@ -25,31 +23,6 @@ def test_config_defaults_to_no_servers() -> None:
 
     assert config.servers == ()
     assert config.connect_timeout_seconds == DEFAULT_MCP_CONNECT_TIMEOUT_SECONDS
-
-
-def test_config_defaults_tool_server_to_default_identity() -> None:
-    """Default config exposes the default tool-server name over stdio."""
-    config = McpConfig()
-
-    assert config.tool_server.name == DEFAULT_MCP_SERVER_NAME
-    assert config.tool_server.transport is McpTransport.STDIO
-
-
-def test_tool_server_name_cannot_be_blank() -> None:
-    """A blank tool-server name cannot front the protocol handshake."""
-    with pytest.raises(McpServerConfigurationError):
-        McpToolServerConfig(name="   ")
-
-
-def test_tool_server_accepts_named_identity_and_transport() -> None:
-    """An explicit tool-server identity and transport are retained."""
-    tool_server = McpToolServerConfig(
-        name="my-agent",
-        transport=McpTransport.STREAMABLE_HTTP,
-    )
-
-    assert tool_server.name == "my-agent"
-    assert tool_server.transport is McpTransport.STREAMABLE_HTTP
 
 
 def test_stdio_server_uses_default_call_timeout() -> None:

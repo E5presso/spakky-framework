@@ -1,9 +1,9 @@
-"""End-to-end acceptance: external MCP tools dispatch through the agent path.
+"""End-to-end acceptance: external MCP tool descriptors dispatch correctly.
 
 Drives a real in-process MCP server (FastMCP) over the SDK's in-memory client
-session, discovers its tools, normalizes them into the agent tool catalog, and
-dispatches a model tool call through the real ``AgentToolDispatcher`` — the same
-path native ``@agent_tool`` methods take (issue #416 SC-1).
+session, discovers its tools, normalizes them into descriptors, and dispatches a
+model tool call through the real ``AgentToolDispatcher``. Runtime runners expose
+these descriptors through lazy ``mcp_search_tools`` / ``mcp_call_tool``.
 """
 
 from collections.abc import AsyncGenerator
@@ -113,7 +113,7 @@ async def test_external_mcp_tool_dispatches_through_agent_dispatcher(
 async def test_external_tool_merges_with_native_catalog_and_both_dispatch(
     weather_server: FastMCP,
 ) -> None:
-    """External and native tools coexist in one catalog and both dispatch."""
+    """Low-level external descriptors can merge with native descriptors."""
     async with create_connected_server_and_client_session(weather_server) as session:
         await session.initialize()
         external = await _discover(session, "weather")

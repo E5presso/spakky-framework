@@ -40,7 +40,7 @@
 | **Plugin** | `spakky-vllm` | vLLM OpenAI-compatible `IAgentModel` adapter |
 | **Plugin** | `spakky-agui` | AG-UI protocol adapter (SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
 | **Plugin** | `spakky-a2a` | A2A server/delegation adapter (AgentCard, JSON-RPC, REST, gRPC, remote teammate delegate) |
-| **Plugin** | `spakky-mcp` | MCP client/server adapter (external tool catalog merge, agent tool exposure) |
+| **Plugin** | `spakky-mcp` | 외부 MCP 서버 도구를 Agent run에 lazy search/call 도구로 연결하는 client adapter |
 
 ---
 
@@ -200,7 +200,7 @@ graph TD
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, model port, tool binding, delegation 계약을 제공하며 vLLM/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
 - **vLLM 플러그인** (spakky-vllm) → `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. vLLM OpenAI-compatible HTTP/SSE mapping만 담당하고 core 또는 inbound adapter를 역참조하지 않음
-- **Agent protocol adapter 플러그인** (spakky-agui, spakky-a2a, spakky-mcp) → `spakky` + `spakky-agent`에 의존. AG-UI/A2A는 `AgentRunner.run_events()`의 중립 `AgentEvent` stream을 각 프로토콜로 투영하고, MCP는 외부 MCP tool을 agent tool catalog에 병합하거나 agent의 `@agent_tool` catalog를 MCP server로 노출한다. 이 어댑터들은 `spakky-fastapi`/`spakky-grpc` 같은 inbound framework plugin에 역의존하지 않고 필요한 외부 SDK/FastAPI/Starlette/gRPC/MCP 라이브러리를 직접 사용한다.
+- **Agent protocol adapter 플러그인** (spakky-agui, spakky-a2a, spakky-mcp) → `spakky` + `spakky-agent`에 의존. AG-UI/A2A는 `AgentRunner.run_events()`의 중립 `AgentEvent` stream을 각 프로토콜로 투영하고, MCP는 외부 MCP server tools를 lazy search/call 도구로 Agent run에 합류시킨다. 이 어댑터들은 `spakky-fastapi`/`spakky-grpc` 같은 inbound framework plugin에 역의존하지 않고 필요한 외부 SDK/FastAPI/Starlette/gRPC/MCP 라이브러리를 직접 사용한다.
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
@@ -539,7 +539,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-agent` | `AgentBootstrapValidationPostProcessor` |
 | `spakky-agui` | `AgUiConfig` |
 | `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, `MountA2AASGIPostProcessor`, `RegisterA2AGRPCPostProcessor` |
-| `spakky-mcp` | `MCPConfig`, `MCPClient`, `MCPToolServer` |
+| `spakky-mcp` | `MCPConfig`, `MCPClient`, `MCPRuntimeServerResolver` |
 
 ### Agentic workflow layer
 
@@ -1295,7 +1295,7 @@ flowchart TD
 |---------|------------------|-----------|
 | `spakky-agui` | `AgUiConfig`, `AgUiProjector`, `AgUiRunDriver`, `add_agui_endpoint`, `add_agui_http_stream_endpoint`, `add_agui_websocket_endpoint`, `AgUiStdioCommand`, deferred-tool HITL decision ingestion | `ag-ui-protocol`, `fastapi[standard]`, `pydantic-settings`, `spakky-agent` |
 | `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, `MountA2AASGIPostProcessor`, `RegisterA2AGRPCPostProcessor`, `@A2ACompatible`, `A2AAgentDelegate`, in-memory `IA2ATaskRepository` fallback | `a2a-sdk[http-server]`, `grpcio`, `pydantic`, `pydantic-settings`, `spakky-agent` |
-| `spakky-mcp` | `MCPConfig`, `MCPClient.open_runner`, external `AgentToolDescriptor` merge, `MCPToolServer`, stdio/streamable-HTTP tool server exposure | `mcp`, `pydantic-settings`, `spakky-agent` |
+| `spakky-mcp` | `MCPConfig`, `MCPClient.open_runner`, runtime MCP server resolution, lazy `mcp_search_tools`/`mcp_call_tool` catalog merge | `mcp`, `httpx`, `pydantic-settings`, `spakky-agent` |
 
 ### 트랜스포트 플러그인
 

@@ -71,7 +71,6 @@ flowchart TD
   AbstractMcpError --> McpToolInvocationError
   AbstractMcpError --> McpResponseError
   AbstractMcpError --> McpCatalogMergeError
-  AbstractMcpError --> McpToolExposureError
 
   AbstractSpakkyAgentError --> AgentDefinitionError
   AbstractSpakkyAgentError --> AgentToolBindingError
@@ -884,7 +883,7 @@ from spakky.plugins.a2a.error import (
 
 ### spakky-mcp
 
-MCP external tool client와 tool server 노출 관련 에러입니다.
+외부 MCP 서버 연결, tool discovery, lazy MCP 호출 관련 에러입니다.
 
 ```python
 from spakky.plugins.mcp.error import (
@@ -893,7 +892,6 @@ from spakky.plugins.mcp.error import (
     McpResponseError,
     McpServerConfigurationError,
     McpToolDiscoveryError,
-    McpToolExposureError,
     McpToolInvocationError,
     McpTransportError,
 )
@@ -902,13 +900,12 @@ from spakky.plugins.mcp.error import (
 | 에러 | 설명 | 상속 |
 | ---- | ---- | ---- |
 | `AbstractMcpError` | MCP adapter 에러 기반 클래스 | `AbstractSpakkyFrameworkError` |
-| `McpServerConfigurationError` | 외부 MCP server 또는 tool server 설정이 유효하지 않음 | `AbstractMcpError` |
+| `McpServerConfigurationError` | 외부 MCP server 설정이 유효하지 않음 | `AbstractMcpError` |
 | `McpTransportError` | 외부 MCP server 연결 또는 initialize 실패 | `AbstractMcpError` |
 | `McpToolDiscoveryError` | 외부 MCP server의 tool discovery 실패 | `AbstractMcpError` |
 | `McpToolInvocationError` | 외부 MCP tool 호출 실패 또는 error result 수신 | `AbstractMcpError` |
 | `McpResponseError` | MCP tool result를 JSON 값으로 매핑할 수 없음 | `AbstractMcpError` |
-| `McpCatalogMergeError` | 외부 MCP tool이 기존 agent catalog tool과 충돌 | `AbstractMcpError` |
-| `McpToolExposureError` | inbound MCP `call_tool`을 agent tool dispatcher로 실행하지 못함 | `AbstractMcpError` |
+| `McpCatalogMergeError` | lazy MCP meta-tool이 기존 agent catalog tool과 충돌 | `AbstractMcpError` |
 
 ---
 

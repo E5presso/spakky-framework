@@ -333,11 +333,11 @@ HTTP+JSON REST, gRPC transport에 선언형으로 연결합니다. `A2AAgentDele
 
 ### MCP Adapter
 
-`spakky-mcp`가 제공하는 Model Context Protocol 양방향 adapter입니다. client 방향의
-`MCPClient.open_runner()`는 외부 MCP server tool을 `AgentToolCatalog`에 병합한
-`AgentRunner`를 열고, server 방향의 `MCPToolServer`와 `build_agent_tool_server()`는
-기존 `@agent_tool` 카탈로그를 MCP `Server`로 노출합니다. MCP server는 agent가 아니라
-도구 카탈로그를 표준 MCP 프로토콜로 제공하는 protocol host입니다.
+`spakky-mcp`가 제공하는 Model Context Protocol adapter입니다.
+`MCPClient.open_runner()`는 run마다 선택된 외부 MCP server tools를 lazy
+`mcp_search_tools`/`mcp_call_tool` 경로로 `AgentToolCatalog`에 합류시킨
+`AgentRunner`를 엽니다. MCP server는 agent가 아니라 외부 도구 카탈로그를 표준 MCP
+프로토콜로 제공하는 별도 tool host입니다.
 
 ### @Repository
 
