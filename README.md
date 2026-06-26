@@ -96,7 +96,7 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 | **`spakky-vllm`** | 로컬 vLLM OpenAI-compatible endpoint를 위한 `IAgentModel` adapter |
 | **`spakky-agui`** | AG-UI protocol adapter(SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
 | **`spakky-a2a`** | A2A AgentCard/server transport와 remote teammate delegation adapter |
-| **`spakky-mcp`** | 외부 MCP tool catalog merge와 agent tool MCP server 노출 adapter |
+| **`spakky-mcp`** | 외부 MCP server tools를 Agent run에 lazy search/call 도구로 연결하는 adapter |
 | **`spakky-celery`** | AOP를 통한 [Celery](https://docs.celeryq.dev/) 태스크 디스패치와 스케줄 등록 |
 | **`spakky-logging`** | `@logged` AOP aspect를 포함한 구조화 로깅 시스템 |
 | **`spakky-opentelemetry`** | 분산 트레이싱을 위한 OpenTelemetry SDK 브릿지 |
