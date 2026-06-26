@@ -17,6 +17,8 @@ SSE, HTTP streaming, WebSocket, stdio로 노출합니다. 승인이 필요한 �
 from spakky.agent import (
     Agent, AgentExecutionSpec, AgentSignalKind, RecoveryStrategy,
     EvidenceCapture, Idempotency, ToolApprovalRequirement, ToolEffects, agent_tool,
+    IAgentEvidenceRepository, IAgentModel, IAgentSignalRepository,
+    IAgentStateRepository,
 )
 
 
@@ -31,7 +33,13 @@ from spakky.agent import (
     )
 )
 class Assistant:
-    def __init__(self, model, states, signals, evidence) -> None:
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: IAgentStateRepository,
+        signals: IAgentSignalRepository,
+        evidence: IAgentEvidenceRepository,
+    ) -> None:
         self._model = model
         self._states = states
         self._signals = signals
@@ -52,48 +60,53 @@ class Assistant:
 
 ## 2. endpoint 마운트
 
-`add_agui_endpoint`로 FastAPI 앱에 `POST {sse_path}` SSE 라우트를 등록하고,
-`add_agui_http_stream_endpoint`로 `POST {http_stream_path}` NDJSON streaming 라우트를,
-`add_agui_websocket_endpoint`로 `WebSocket {websocket_path}` 라우트를 등록합니다. plugin은
-`fastapi` 서드파티에 직접 의존하며(`StreamingResponse`, `WebSocket`), `spakky-fastapi`
-plugin을 import하지 않습니다.
+AG-UI 노출은 `@Agent` 위에 `@AgUiAgent` tag를 쌓아 선언합니다. plugin은
+`AgUiConfig`, `AgUiAgentRegistry`, FastAPI mount post-processor를 등록하고, post-processor가
+marked Agent와 FastAPI Pod를 발견해 SSE/HTTP streaming/WebSocket route를 자동으로 붙입니다.
+애플리케이션 코드는 `run_driver_factory`나 `add_agui_endpoint()`를 호출하지 않습니다.
 
 ```python
 from fastapi import FastAPI
-from ag_ui.encoder import EventEncoder
-from ag_ui.core import RunAgentInput as AgUiRunAgentInput
-
-from spakky.agent import AgentRunner
-from spakky.plugins.agui import (
-    AgUiProjector, AgUiRunDriver, AgUiRunResolutionError,
-    AgUiConfig, add_agui_endpoint, add_agui_http_stream_endpoint,
-    add_agui_websocket_endpoint, ingest_decision,
-)
-
-app = FastAPI()
-config = application.container.get(AgUiConfig)
+from spakky.agent import Agent, AgentExecutionSpec, IAgentModel
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.agui import AgUiAgent
 
 
-def run_driver_factory(core_input, ag_ui_input, accept):
-    assistant = application.container.get(Assistant)
-    runner = AgentRunner.for_agent_instance(assistant)
-    if core_input.resume:
-        if runner.signals is None:
-            raise AgUiRunResolutionError
-        ingest_decision(ag_ui_input, runner.signals, core_input.state_id)
-    return AgUiRunDriver(
-        runner=runner,
-        run_input=core_input,
-        agent_id="assistant",
-        projector=AgUiProjector(config),
-        encoder=EventEncoder(accept=accept or ""),
-    )
+@Pod(name="fastapi_app")
+def fastapi_app() -> FastAPI:
+    return FastAPI()
 
 
-add_agui_endpoint(app, run_driver_factory=run_driver_factory, config=config)
-add_agui_http_stream_endpoint(app, run_driver_factory=run_driver_factory, config=config)
-add_agui_websocket_endpoint(app, run_driver_factory=run_driver_factory, config=config)
+@AgUiAgent()
+@Agent(spec=AgentExecutionSpec(name="assistant", objective="answer with tools"))
+class Assistant:
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+
+application = SpakkyApplication(ApplicationContext())
+application.load_plugins().scan(my_app).start()
+app = application.container.get(FastAPI)
 ```
+
+여러 Agent를 노출할 때는 path 충돌을 피하도록 각 Agent에 경로를 선언합니다.
+
+```python
+@AgUiAgent(
+    sse_path="/agents/researcher/agui",
+    http_stream_path="/agents/researcher/agui/stream",
+    websocket_path="/agents/researcher/agui/ws",
+)
+@Agent(spec=AgentExecutionSpec(name="researcher"))
+class Researcher:
+    ...
+```
+
+`@AgUiAgent(server_names=("weather",))`를 지정하면 `spakky-mcp`가 제공하는
+`IAgentRunnerFactory`가 해당 external MCP server tool만 이 Agent run에 결합합니다. 비워두면
+configured MCP server 전체를 사용합니다.
 
 SSE 클라이언트는 `POST /agui` body로 AG-UI `RunAgentInput`을 보내고 `text/event-stream`
 응답을 받습니다. HTTP streaming 클라이언트는 `POST /agui/stream` body로 같은 입력을 보내고
@@ -105,33 +118,8 @@ text/JSON message로 보내고, AG-UI encoded event frame을 text message로 순
 CLI나 MCP-style local bridge가 AG-UI payload를 stdio로 주고받아야 하면
 `AgUiStdioCommand`를 사용합니다. 입력은 AG-UI `RunAgentInput` JSON 한 건이고, 출력은
 AG-UI encoded event payload를 한 줄에 하나씩 씁니다.
-
-```python
-from sys import stdin, stdout
-
-from spakky.plugins.agui import AgUiStdioCommand, run_agui_stdio
-
-agui_stdio = AgUiStdioCommand(
-    run_driver_factory=run_driver_factory,
-    input_stream=stdin,
-    output_stream=stdout,
-)
-
-# stdin에서 입력을 읽는 CLI command body:
-await agui_stdio(run_input_json=None)
-
-# 이미 읽은 JSON 문자열을 넘기는 lower-level helper:
-await run_agui_stdio(
-    run_driver_factory=run_driver_factory,
-    run_input_json=raw_json,
-    input_stream=stdin,
-    output_stream=stdout,
-)
-```
-
-`initialize`는 `AgUiConfig`만 등록합니다. 투영기는 실행마다 상태를 가지므로 싱글턴 Pod이
-될 수 없고, 어떤 Agent가 응답할지는 애플리케이션마다 다르기 때문에 endpoint 와이어링은
-애플리케이션 작성자의 명시적 호출(public hook)로 남깁니다.
+stdio 전용 host는 lower-level `RunDriverFactory`를 `AgUiStdioCommand`에 전달합니다. 일반
+FastAPI SSE/HTTP/WebSocket 노출은 `@AgUiAgent` 선언만 사용합니다.
 
 ### 설정
 
@@ -172,7 +160,9 @@ projector는 이 pause를 `TOOL_CALL_START`/`TOOL_CALL_ARGS`/`TOOL_CALL_END` 프
    `AgUiProjector`는 이를 `hitl_approval` deferred tool frame으로 투영합니다.
 2. 클라이언트가 사람의 결정을 수집해 다음 `RunAgentInput`에 담아 다시 전송합니다 (SSE에서는
    POST, WebSocket에서는 같은 연결의 후속 message; deferred call id를 향한 tool-result 메시지,
-   또는 `forwardedProps.approvalDecision`).
+   또는 `forwardedProps.approvalDecision`). 결정 payload는
+   `{"request_id": "<approval id>", "decision": "approve|reject|modify|defer|cancel"}` 형태여야 하며,
+   `modified_payload`와 `comment`를 선택적으로 포함할 수 있습니다.
 3. `ingest_decision`이 결정을 디코딩하여 durable signal queue에 `APPROVAL_DECISION`
    signal로 적재하면 런너가 `run_events()`를 다시 돌며 재개합니다. `APPROVE`/`MODIFY`는
    도구를 진행시키고, `REJECT`는 종료로 이어집니다.

@@ -3,6 +3,7 @@
 from a2a.server.routes import create_agent_card_routes, create_rest_routes
 from a2a.utils import TransportProtocol
 from spakky.agent.execution import Agent
+from spakky.agent.runner_factory import IAgentRunnerFactory
 from starlette.applications import Starlette
 
 from spakky.plugins.a2a.card.derivation import AgentCardFactory
@@ -18,6 +19,7 @@ def build_a2a_rest_app(
     repository: IA2ATaskRepository | None = None,
     agent_type: type | None = None,
     path_prefix: str = "",
+    runner_factory: IAgentRunnerFactory | None = None,
 ) -> Starlette:
     """Build a mountable A2A HTTP+JSON REST app for one @Agent instance.
 
@@ -46,6 +48,7 @@ def build_a2a_rest_app(
         agent_type=agent_type,
         protocol=TransportProtocol.HTTP_JSON,
         card=card,
+        runner_factory=runner_factory,
     )
     routes = [
         *create_agent_card_routes(card),

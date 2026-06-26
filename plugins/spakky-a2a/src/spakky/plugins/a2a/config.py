@@ -14,6 +14,9 @@ DEFAULT_A2A_BASE_URL = "http://localhost:8000"
 DEFAULT_A2A_VERSION = "1.0.0"
 """Fallback semantic version advertised on a derived AgentCard."""
 
+DEFAULT_A2A_MOUNT_PATH_PREFIX = "/a2a"
+"""Default Starlette/FastAPI mount prefix for discovered A2A agents."""
+
 
 @Configuration()
 class A2AConfig(BaseSettings):
@@ -30,6 +33,9 @@ class A2AConfig(BaseSettings):
 
     default_version: str = DEFAULT_A2A_VERSION
     """Semantic version advertised on a derived AgentCard."""
+
+    default_mount_path_prefix: str = DEFAULT_A2A_MOUNT_PATH_PREFIX
+    """URL prefix under which discovered A2A agents are mounted."""
 
     def __init__(self) -> None:
         super().__init__()

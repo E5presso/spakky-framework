@@ -51,3 +51,13 @@ class McpToolExposureError(AbstractMcpError):
     """Raised when dispatching an inbound MCP tool call against the agent fails."""
 
     message = "MCP tool call dispatch failed"
+
+
+class McpToolServerNotRegisteredError(AbstractMcpError):
+    """Raised when no MCP tool-server agent exists for a requested name."""
+
+    message = "No MCP tool-server agent is registered for the agent name"
+
+    def __init__(self, agent_name: str) -> None:
+        super().__init__()
+        self.agent_name = agent_name

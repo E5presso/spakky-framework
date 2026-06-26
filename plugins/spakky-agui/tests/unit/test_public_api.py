@@ -3,8 +3,13 @@
 import spakky.plugins.agui as agui_api
 from spakky.plugins.agui import (
     AbstractAgUiError,
+    AgUiAgent,
+    AgUiAgentEntry,
+    AgUiAgentRegistry,
     AgUiApprovalDecodeError,
     AgUiConfig,
+    AgUiEndpointConflictError,
+    AgUiManagedRunDriver,
     AgUiPendingApprovalError,
     AgUiProjector,
     AgUiRunDriver,
@@ -29,7 +34,11 @@ def test_public_api_exports_agui_surface() -> None:
     """public API가 plugin id, config, adapter 구성요소, 에러, hook을 노출한다."""
     assert PLUGIN_NAME.name == "spakky-agui"
     assert AgUiConfig is agui_api.AgUiConfig
+    assert AgUiAgent is agui_api.AgUiAgent
+    assert AgUiAgentEntry is agui_api.AgUiAgentEntry
+    assert AgUiAgentRegistry is agui_api.AgUiAgentRegistry
     assert AgUiProjector is agui_api.AgUiProjector
+    assert AgUiManagedRunDriver is agui_api.AgUiManagedRunDriver
     assert AgUiRunDriver is agui_api.AgUiRunDriver
     assert AgUiStdioCommand is agui_api.AgUiStdioCommand
     assert add_agui_endpoint is agui_api.add_agui_endpoint
@@ -45,5 +54,6 @@ def test_public_api_exports_agui_surface() -> None:
     assert RunDriverFactory is agui_api.RunDriverFactory
     assert AbstractAgUiError is agui_api.AbstractAgUiError
     assert AgUiApprovalDecodeError is agui_api.AgUiApprovalDecodeError
+    assert AgUiEndpointConflictError is agui_api.AgUiEndpointConflictError
     assert AgUiPendingApprovalError is agui_api.AgUiPendingApprovalError
     assert AgUiRunResolutionError is agui_api.AgUiRunResolutionError

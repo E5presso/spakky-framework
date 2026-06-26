@@ -50,6 +50,6 @@ class RegisterA2AAgentServersPostProcessor(IPostProcessor, IContainerAware):
         if not (A2AAgentServer.exists(pod_type) and Agent.exists(pod_type)):
             return pod
         registry = self._container.get(A2AAgentRegistry)
-        registry.register(pod, A2AAgentServer.get(pod_type))
+        registry.register(pod, pod_type, A2AAgentServer.get(pod_type))
         logger.info("Registered A2A agent server from %s", pod_type.__qualname__)
         return pod

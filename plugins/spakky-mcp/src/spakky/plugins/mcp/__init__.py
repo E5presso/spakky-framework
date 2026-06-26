@@ -36,8 +36,14 @@ from spakky.plugins.mcp.error import (
     McpToolDiscoveryError,
     McpToolExposureError,
     McpToolInvocationError,
+    McpToolServerNotRegisteredError,
     McpTransportError,
 )
+from spakky.plugins.mcp.server_registry import (
+    McpToolServerEntry,
+    McpToolServerRegistry,
+)
+from spakky.plugins.mcp.stereotypes.mcp_tool_server_agent import McpToolServerAgent
 from spakky.plugins.mcp.server import (
     McpToolServer,
     build_agent_tool_server,
@@ -65,7 +71,11 @@ __all__ = [
     "McpToolExposureError",
     "McpToolInvocationError",
     "McpToolServer",
+    "McpToolServerAgent",
     "McpToolServerConfig",
+    "McpToolServerEntry",
+    "McpToolServerNotRegisteredError",
+    "McpToolServerRegistry",
     "McpTransport",
     "McpTransportError",
     "build_agent_tool_server",

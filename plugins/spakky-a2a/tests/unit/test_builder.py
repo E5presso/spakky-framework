@@ -50,6 +50,7 @@ def test_server_spec_builds_app_for_registered_agent() -> None:
     registry = A2AAgentRegistry()
     registry.register(
         ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
         _planner_marker(),
     )
     container = MagicMock(spec=IContainer)
@@ -74,7 +75,9 @@ def test_server_spec_unknown_agent_raises() -> None:
 def test_server_spec_uses_container_repository_when_present() -> None:
     """A repository Pod resolved from the container is passed to the builder."""
     registry = A2AAgentRegistry()
-    registry.register(ServedPlannerAgent(StubModel()), _planner_marker())
+    registry.register(
+        ServedPlannerAgent(StubModel()), ServedPlannerAgent, _planner_marker()
+    )
     repository = InMemoryA2ATaskRepository()
     container = MagicMock(spec=IContainer)
     container.get = MagicMock(return_value=registry)
@@ -86,7 +89,27 @@ def test_server_spec_uses_container_repository_when_present() -> None:
     container.get_or_none.assert_called_once_with(IA2ATaskRepository)
 
 
-def _planner_marker():
+def test_server_spec_mount_path_uses_marker_override() -> None:
+    """@A2AAgentServer mount_path가 있으면 config prefix 대신 그 값을 쓴다."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(mount_path="/custom/planner"),
+    )
+    container = MagicMock(spec=IContainer)
+    container.get = MagicMock(return_value=registry)
+
+    assert (
+        _spec_with_container(container).mount_path_for("planner") == "/custom/planner"
+    )
+
+
+def _planner_marker(mount_path: str | None = None):
     from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
 
-    return A2AAgentServer(base_url="http://planner.local", version="1.2.3")
+    return A2AAgentServer(
+        base_url="http://planner.local",
+        version="1.2.3",
+        mount_path=mount_path,
+    )

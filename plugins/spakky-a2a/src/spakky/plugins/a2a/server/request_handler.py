@@ -4,6 +4,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.types import AgentCard
 from a2a.utils import TransportProtocol
 from spakky.agent.execution import Agent
+from spakky.agent.runner_factory import IAgentRunnerFactory
 
 from spakky.plugins.a2a.card.derivation import AgentCardFactory
 from spakky.plugins.a2a.executor.adapter import SpakkyAgentExecutor
@@ -24,6 +25,7 @@ def build_a2a_request_handler(
     agent_type: type | None = None,
     protocol: TransportProtocol = TransportProtocol.JSONRPC,
     card: AgentCard | None = None,
+    runner_factory: IAgentRunnerFactory | None = None,
 ) -> DefaultRequestHandler:
     """Build the official SDK request handler shared by A2A transports."""
     agent_card = card or AgentCardFactory().build(
@@ -33,7 +35,11 @@ def build_a2a_request_handler(
         protocol=protocol,
     )
     store = SpakkyA2ATaskStore(repository or InMemoryA2ATaskRepository())
-    executor = SpakkyAgentExecutor(agent_instance, AgentEventProjector())
+    executor = SpakkyAgentExecutor(
+        agent_instance,
+        AgentEventProjector(),
+        runner_factory=runner_factory,
+    )
     return DefaultRequestHandler(
         agent_executor=executor,
         task_store=store,

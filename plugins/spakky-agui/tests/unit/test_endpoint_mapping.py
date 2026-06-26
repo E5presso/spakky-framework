@@ -11,6 +11,10 @@ from pytest import raises
 from spakky.agent.inbound import RunAgentInput
 from spakky.plugins.agui.config import AgUiConfig
 from spakky.plugins.agui.endpoint import add_agui_endpoint, _to_core_input
+from spakky.plugins.agui.endpoint_input import (
+    RESUME_APPROVAL_INSTRUCTION,
+    inbound_run,
+)
 from spakky.plugins.agui.error import AgUiRunResolutionError
 from spakky.plugins.agui.transport import AgUiRunDriver
 
@@ -95,6 +99,38 @@ def test_to_core_input_without_user_message_raises() -> None:
         _to_core_input(
             _ag_ui_input([{"id": "a1", "role": "assistant", "content": "ack"}])
         )
+
+
+def test_to_core_input_allows_approval_only_resume() -> None:
+    """resume approval만 있는 입력은 user message 없이도 코어 resume으로 매핑된다."""
+    core = _to_core_input(
+        _ag_ui_input(
+            [
+                {
+                    "id": "tool-1",
+                    "role": "tool",
+                    "content": (
+                        '{"request_id":"approval:run-1:note.write",'
+                        '"decision":"approve"}'
+                    ),
+                    "toolCallId": "approval:run-1:note.write",
+                }
+            ]
+        )
+    )
+
+    assert core.instruction == RESUME_APPROVAL_INSTRUCTION
+    assert core.resume is True
+
+
+def test_inbound_run_pairs_raw_and_core_input() -> None:
+    """inbound_run은 raw AG-UI 입력과 neutral RunAgentInput을 함께 보존한다."""
+    ag_ui_input = _ag_ui_input([{"id": "u1", "role": "user", "content": "hello"}])
+
+    inbound = inbound_run(ag_ui_input)
+
+    assert inbound.ag_ui_input is ag_ui_input
+    assert inbound.core_input.instruction == "hello"
 
 
 def test_add_agui_endpoint_invokes_driver_factory_with_mapped_input() -> None:

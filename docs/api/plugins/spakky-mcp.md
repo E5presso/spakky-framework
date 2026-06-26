@@ -2,7 +2,7 @@
 
 > `spakky-mcp`는 외부 MCP server tool을 `AgentToolCatalog`에 병합하고, 반대로 `@agent_tool` 카탈로그를 MCP server로 노출하는 양방향 어댑터입니다.
 
-client 방향은 외부 서버 연결 수명주기를 `McpClient.open_runner()`가 소유하고, server 방향은 `McpToolServer` 또는 `build_agent_tool_server()`가 한 agent instance의 tool catalog를 MCP `Server`로 변환합니다.
+client 방향은 `McpClient`가 `IAgentRunnerFactory` 구현체로 외부 서버 연결 수명주기를 소유하고, server 방향은 `@McpToolServerAgent @Agent`를 registry에 등록한 뒤 `McpToolServer`가 agent name으로 tool catalog를 MCP `Server`로 변환합니다. agent instance를 직접 받는 helper들은 lower-level API입니다.
 
 ## Public API
 
@@ -33,6 +33,18 @@ client 방향은 외부 서버 연결 수명주기를 `McpClient.open_runner()`�
       show_root_heading: false
 
 ## Server
+
+::: spakky.plugins.mcp.stereotypes.mcp_tool_server_agent
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.mcp.server_registry
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.mcp.post_processors.register_tool_server_agents
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.mcp.server
     options:

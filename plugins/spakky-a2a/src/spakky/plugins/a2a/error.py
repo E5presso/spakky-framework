@@ -35,6 +35,12 @@ class A2AAgentCardDerivationError(AbstractSpakkyA2AError):
         self.agent_name = agent_name
 
 
+class A2AEndpointConflictError(AbstractSpakkyA2AError):
+    """Raised when multiple A2A agents claim the same ASGI mount path."""
+
+    message = "A2A endpoint path is claimed by more than one exposed agent"
+
+
 class UnsupportedAgentEventError(AbstractSpakkyA2AError):
     """Raised when an AgentEvent kind has no A2A task-event projection."""
 

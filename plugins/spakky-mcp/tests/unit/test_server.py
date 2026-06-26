@@ -27,6 +27,8 @@ from spakky.agent import (
 )
 
 from spakky.plugins.mcp.config import McpConfig, McpToolServerConfig
+from spakky.plugins.mcp.error import McpToolServerNotRegisteredError
+from spakky.plugins.mcp.server_registry import McpToolServerRegistry
 from spakky.plugins.mcp.server import (
     McpToolServer,
     build_agent_tool_server,
@@ -35,8 +37,10 @@ from spakky.plugins.mcp.server import (
     serve_stdio,
     streamable_http_session_manager,
 )
+from spakky.plugins.mcp.stereotypes.mcp_tool_server_agent import McpToolServerAgent
 
 
+@McpToolServerAgent(server_name="marked-agent")
 @Agent(spec=AgentExecutionSpec(name="unit", objective="serve tools"))
 class ToolAgent:
     """Agent fixture with one native tool used across server unit tests."""
@@ -160,11 +164,65 @@ def test_tool_server_build_server_uses_configured_name(
     assert server.name == "named-agent"
 
 
+def test_tool_server_build_server_for_registered_agent_uses_marker_name() -> None:
+    """The Pod builds a server for a declaratively registered MCP agent."""
+    registry = McpToolServerRegistry()
+    registry.register(
+        ToolAgent(), ToolAgent, McpToolServerAgent(server_name="marked-agent")
+    )
+    server = McpToolServer(McpConfig(), registry).build_server_for("unit")
+
+    assert isinstance(server, Server)
+    assert server.name == "marked-agent"
+
+
+def test_tool_server_build_server_for_uses_config_name_when_marker_omits_name() -> None:
+    """Marker server_name 생략 시 tool_server config name을 사용한다."""
+    registry = McpToolServerRegistry()
+    registry.register(ToolAgent(), ToolAgent, McpToolServerAgent())
+    config = McpConfig()
+    config.tool_server = McpToolServerConfig(name="fallback-agent")
+
+    server = McpToolServer(config, registry).build_server_for("unit")
+
+    assert server.name == "fallback-agent"
+
+
+def test_tool_server_for_without_registry_raises_registered_error() -> None:
+    """Registry 없는 Pod에서 agent-name 기반 server를 요청하면 typed error다."""
+    with pytest.raises(McpToolServerNotRegisteredError) as exc_info:
+        McpToolServer(McpConfig()).build_server_for("missing")
+
+    assert exc_info.value.agent_name == "missing"
+
+
+def test_registry_get_unknown_agent_raises_registered_error() -> None:
+    """Registry에 없는 agent name 조회는 typed error로 실패한다."""
+    with pytest.raises(McpToolServerNotRegisteredError) as exc_info:
+        McpToolServerRegistry().get("missing")
+
+    assert exc_info.value.agent_name == "missing"
+
+
 def test_tool_server_streamable_http_session_manager_wraps_built_server(
     tool_server: McpToolServer,
 ) -> None:
     """The Pod exposes a streamable-HTTP manager for the built server."""
     manager = tool_server.streamable_http_session_manager(ToolAgent())
+
+    assert isinstance(manager, StreamableHTTPSessionManager)
+
+
+def test_tool_server_streamable_http_session_manager_for_registered_agent() -> None:
+    """agent-name 기반 streamable HTTP manager가 registry에서 server를 만든다."""
+    registry = McpToolServerRegistry()
+    registry.register(
+        ToolAgent(), ToolAgent, McpToolServerAgent(server_name="marked-agent")
+    )
+
+    manager = McpToolServer(McpConfig(), registry).streamable_http_session_manager_for(
+        "unit"
+    )
 
     assert isinstance(manager, StreamableHTTPSessionManager)
 
@@ -183,3 +241,23 @@ async def test_tool_server_serve_stdio_delegates_to_built_server(monkeypatch) ->
     await McpToolServer(config).serve_stdio(ToolAgent())
 
     assert served[0].name == "named-agent"
+
+
+async def test_tool_server_serve_stdio_for_delegates_to_registered_agent(
+    monkeypatch,
+) -> None:
+    """agent-name 기반 stdio serving은 registered agent server를 사용한다."""
+    served: list[Server] = []
+
+    async def _serve(server: Server) -> None:
+        served.append(server)
+
+    registry = McpToolServerRegistry()
+    registry.register(
+        ToolAgent(), ToolAgent, McpToolServerAgent(server_name="marked-agent")
+    )
+    monkeypatch.setattr("spakky.plugins.mcp.server.serve_stdio", _serve)
+
+    await McpToolServer(McpConfig(), registry).serve_stdio_for("unit")
+
+    assert served[0].name == "marked-agent"

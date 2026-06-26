@@ -13,6 +13,7 @@ the runner left mid-message is still well-formed on the wire.
 """
 
 from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager
 
 from ag_ui.core import BaseEvent
 from ag_ui.encoder import EventEncoder
@@ -24,6 +25,10 @@ from spakky.agent.event import (
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.runner import AgentRunner
 
+from spakky.plugins.agui.config import AgUiConfig
+from spakky.plugins.agui.endpoint_input import AgUiInboundRun
+from spakky.plugins.agui.error import AgUiApprovalDecodeError
+from spakky.plugins.agui.hitl import ingest_decision
 from spakky.plugins.agui.projector import AgUiProjector
 
 
@@ -63,3 +68,42 @@ class AgUiRunDriver:
 
     def _encode(self, events: list[BaseEvent]) -> list[str]:
         return [self._encoder.encode(event) for event in events]
+
+
+class AgUiManagedRunDriver:
+    """Open a request-scoped runner for the lifetime of one AG-UI stream."""
+
+    def __init__(
+        self,
+        runner_context: AbstractAsyncContextManager[AgentRunner],
+        inbound: AgUiInboundRun,
+        agent_id: str,
+        config: AgUiConfig,
+        accept: str | None,
+    ) -> None:
+        self._runner_context = runner_context
+        self._inbound = inbound
+        self._agent_id = agent_id
+        self._config = config
+        self._accept = accept
+
+    async def __aiter__(self) -> AsyncIterator[str]:
+        """Yield frames while the runner factory context remains open."""
+        async with self._runner_context as runner:
+            if self._inbound.core_input.resume:
+                if runner.signals is None:
+                    raise AgUiApprovalDecodeError
+                ingest_decision(
+                    self._inbound.ag_ui_input,
+                    runner.signals,
+                    self._inbound.core_input.state_id,
+                )
+            driver = AgUiRunDriver(
+                runner=runner,
+                run_input=self._inbound.core_input,
+                agent_id=self._agent_id,
+                projector=AgUiProjector(self._config),
+                encoder=EventEncoder(accept=self._accept or ""),
+            )
+            async for frame in driver:
+                yield frame

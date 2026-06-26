@@ -46,6 +46,7 @@ def test_registers_marked_agent_pod(
     assert result is pod
     entry = registry.get("planner")
     assert entry.instance is pod
+    assert entry.agent_type is ServedPlannerAgent
     assert entry.metadata.base_url == "http://planner.local"
 
 
@@ -93,4 +94,6 @@ def test_unwraps_aop_proxy_type_before_registering(
     result = processor.post_process(proxy)
 
     assert result is proxy
-    assert registry.get("planner").instance is proxy
+    entry = registry.get("planner")
+    assert entry.instance is proxy
+    assert entry.agent_type is ServedPlannerAgent

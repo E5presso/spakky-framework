@@ -16,7 +16,11 @@ from spakky.plugins.mcp import (
     McpToolExposureError,
     McpToolInvocationError,
     McpToolServer,
+    McpToolServerAgent,
     McpToolServerConfig,
+    McpToolServerEntry,
+    McpToolServerNotRegisteredError,
+    McpToolServerRegistry,
     McpTransport,
     McpTransportError,
     build_agent_tool_server,
@@ -47,6 +51,9 @@ def test_public_api_exposes_plugin_identity() -> None:
 def test_public_api_exposes_tool_server_surface() -> None:
     """The public API exposes the server-side exposure functions and Pod."""
     assert McpToolServer is mcp_api.McpToolServer
+    assert McpToolServerAgent is mcp_api.McpToolServerAgent
+    assert McpToolServerEntry is mcp_api.McpToolServerEntry
+    assert McpToolServerRegistry is mcp_api.McpToolServerRegistry
     assert build_agent_tool_server is mcp_api.build_agent_tool_server
     assert build_agent_tools is mcp_api.build_agent_tools
     assert normalize_dispatch_result is mcp_api.normalize_dispatch_result
@@ -79,3 +86,4 @@ def test_public_api_exposes_error_surface() -> None:
     assert McpToolInvocationError is mcp_api.McpToolInvocationError
     assert McpResponseError is mcp_api.McpResponseError
     assert McpCatalogMergeError is mcp_api.McpCatalogMergeError
+    assert McpToolServerNotRegisteredError is mcp_api.McpToolServerNotRegisteredError

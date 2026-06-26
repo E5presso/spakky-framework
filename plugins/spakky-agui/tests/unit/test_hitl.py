@@ -43,6 +43,9 @@ _DEFAULT_APPROVAL: JsonObject = {
 }
 """Well-formed approval metadata the runner stores on a WAIT_FOR_APPROVAL state."""
 
+_APPROVAL_ID = "approval:run-1:note.write"
+"""Core approval id namespace used by the runner for deferred approval calls."""
+
 
 class _FakeSignalRepository(IAgentSignalRepository):
     def __init__(self) -> None:
@@ -68,7 +71,10 @@ def _attribution() -> AgentEventAttribution:
     )
 
 
-def _tool_result_input(content: str) -> AgUiRunAgentInput:
+def _tool_result_input(
+    content: str,
+    tool_call_id: str = _APPROVAL_ID,
+) -> AgUiRunAgentInput:
     return AgUiRunAgentInput.model_validate(
         {
             "threadId": "conv-1",
@@ -79,7 +85,7 @@ def _tool_result_input(content: str) -> AgUiRunAgentInput:
                     "id": "msg-1",
                     "role": "tool",
                     "content": content,
-                    "toolCallId": "appr-1",
+                    "toolCallId": tool_call_id,
                 }
             ],
             "tools": [],
@@ -165,7 +171,9 @@ def test_approval_from_pause_without_approval_id_raises() -> None:
 def test_ingest_decision_from_tool_result_writes_approval_signal() -> None:
     """tool-result 메시지의 결정이 APPROVAL_DECISION signal로 적재된다."""
     signals = _FakeSignalRepository()
-    ag_ui_input = _tool_result_input('{"request_id": "appr-1", "decision": "approve"}')
+    ag_ui_input = _tool_result_input(
+        f'{{"request_id": "{_APPROVAL_ID}", "decision": "approve"}}'
+    )
 
     ingest_decision(ag_ui_input, signals, "run-1")
 
@@ -173,14 +181,14 @@ def test_ingest_decision_from_tool_result_writes_approval_signal() -> None:
     signal = signals.appended[0]
     assert signal.agent_state_id == "run-1"
     assert signal.kind is AgentSignalKind.APPROVAL_DECISION
-    assert signal.payload == {"request_id": "appr-1", "decision": "approve"}
+    assert signal.payload == {"request_id": _APPROVAL_ID, "decision": "approve"}
 
 
 def test_ingest_decision_carries_modified_payload_and_comment() -> None:
     """modified_payload/comment가 있으면 signal payload에 함께 적재된다."""
     signals = _FakeSignalRepository()
     ag_ui_input = _tool_result_input(
-        '{"request_id": "appr-1", "decision": "modify",'
+        f'{{"request_id": "{_APPROVAL_ID}", "decision": "modify",'
         ' "modified_payload": {"topic": "x"}, "comment": "ok"}'
     )
 
@@ -210,7 +218,7 @@ def test_ingest_decision_accepts_every_approval_decision(
     """모든 ApprovalDecision 멤버가 디코딩되어 signal로 적재된다."""
     signals = _FakeSignalRepository()
     ag_ui_input = _tool_result_input(
-        f'{{"request_id": "appr-1", "decision": "{decision.value}"}}'
+        f'{{"request_id": "{_APPROVAL_ID}", "decision": "{decision.value}"}}'
     )
 
     ingest_decision(ag_ui_input, signals, "run-1")
@@ -239,7 +247,9 @@ def test_ingest_decision_with_missing_request_id_raises() -> None:
 def test_ingest_decision_with_invalid_decision_raises() -> None:
     """ApprovalDecision에 없는 값은 AgUiApprovalDecodeError를 던진다."""
     signals = _FakeSignalRepository()
-    ag_ui_input = _tool_result_input('{"request_id": "appr-1", "decision": "explode"}')
+    ag_ui_input = _tool_result_input(
+        f'{{"request_id": "{_APPROVAL_ID}", "decision": "explode"}}'
+    )
 
     with raises(AgUiApprovalDecodeError):
         ingest_decision(ag_ui_input, signals, "run-1")
@@ -248,7 +258,9 @@ def test_ingest_decision_with_invalid_decision_raises() -> None:
 def test_ingest_decision_with_non_string_decision_raises() -> None:
     """decision 값이 문자열이 아니면 AgUiApprovalDecodeError를 던진다."""
     signals = _FakeSignalRepository()
-    ag_ui_input = _tool_result_input('{"request_id": "appr-1", "decision": 7}')
+    ag_ui_input = _tool_result_input(
+        f'{{"request_id": "{_APPROVAL_ID}", "decision": 7}}'
+    )
 
     with raises(AgUiApprovalDecodeError):
         ingest_decision(ag_ui_input, signals, "run-1")
@@ -281,11 +293,36 @@ def test_ingest_decision_ignores_tool_content_without_decision_key() -> None:
         ingest_decision(ag_ui_input, signals, "run-1")
 
 
+def test_ingest_decision_ignores_unaddressed_tool_result_decision() -> None:
+    """request_id와 toolCallId가 다른 일반 tool result는 approval resume이 아니다."""
+    signals = _FakeSignalRepository()
+    ag_ui_input = _tool_result_input(
+        f'{{"request_id": "{_APPROVAL_ID}", "decision": "approve"}}',
+        tool_call_id="ordinary-tool-call",
+    )
+
+    with raises(AgUiApprovalDecodeError):
+        ingest_decision(ag_ui_input, signals, "run-1")
+    assert signals.appended == []
+
+
 def test_carries_approval_decision_true_for_tool_result() -> None:
     """tool-result 결정이 있으면 carries_approval_decision이 True다."""
-    ag_ui_input = _tool_result_input('{"request_id": "appr-1", "decision": "approve"}')
+    ag_ui_input = _tool_result_input(
+        f'{{"request_id": "{_APPROVAL_ID}", "decision": "approve"}}'
+    )
 
     assert carries_approval_decision(ag_ui_input) is True
+
+
+def test_carries_approval_decision_false_for_unaddressed_tool_result() -> None:
+    """일반 tool result의 decision 필드는 resume 신호로 오인하지 않는다."""
+    ag_ui_input = _tool_result_input(
+        '{"request_id": "ordinary-tool-call", "decision": "approve"}',
+        tool_call_id="ordinary-tool-call",
+    )
+
+    assert carries_approval_decision(ag_ui_input) is False
 
 
 def test_carries_approval_decision_false_without_decision() -> None:

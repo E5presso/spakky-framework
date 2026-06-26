@@ -1,6 +1,7 @@
 """Assembly helpers for the A2A gRPC transport."""
 
 from a2a.utils import TransportProtocol
+from spakky.agent.runner_factory import IAgentRunnerFactory
 
 from spakky.plugins.a2a.grpc_transport.handler import A2AGrpcHandler
 from spakky.plugins.a2a.server.request_handler import build_a2a_request_handler
@@ -14,6 +15,7 @@ def build_a2a_grpc_handler(
     version: str,
     repository: IA2ATaskRepository | None = None,
     agent_type: type | None = None,
+    runner_factory: IAgentRunnerFactory | None = None,
 ) -> A2AGrpcHandler:
     """Build a gRPC handler for one @Agent-backed A2A server.
 
@@ -34,5 +36,6 @@ def build_a2a_grpc_handler(
         repository=repository,
         agent_type=agent_type,
         protocol=TransportProtocol.GRPC,
+        runner_factory=runner_factory,
     )
     return A2AGrpcHandler(request_handler)
