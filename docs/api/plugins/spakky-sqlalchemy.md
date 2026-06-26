@@ -24,84 +24,84 @@ execution을 운영에서 사용하려면 `spakky-agent`와 `spakky-sqlalchemy[a
 ## 메인
 
 ::: spakky.plugins.sqlalchemy.main
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 설정
 
 ::: spakky.plugins.sqlalchemy.common.config
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## ORM
 
 ::: spakky.plugins.sqlalchemy.orm.table
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.orm.schema_registry
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.orm.error
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 영속성
 
 ::: spakky.plugins.sqlalchemy.persistency.repository
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.persistency.transaction
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.persistency.session_manager
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.persistency.connection_manager
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.persistency.error
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## Outbox
 
 ::: spakky.plugins.sqlalchemy.contributions.outbox
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.outbox.storage
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.outbox.table
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## Agent Persistence
 
 ::: spakky.plugins.sqlalchemy.contributions.agent
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.agent.repository
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.plugins.sqlalchemy.agent.table
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 에러
 
 ::: spakky.plugins.sqlalchemy.error
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 추가 모듈
 

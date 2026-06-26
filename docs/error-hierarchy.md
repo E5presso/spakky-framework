@@ -42,7 +42,7 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractVllmError
   AbstractSpakkyFrameworkError --> CryptographyErrors[spakky-cryptography concrete errors]
   AbstractSpakkyFrameworkError --> CommonErrors[common concrete errors]
-  Exception --> PolicyDocumentError
+  AbstractSpakkyFrameworkError --> PolicyDocumentError
 
   AbstractSpakkyDomainError --> AbstractDomainValidationError
   AbstractSpakkyDomainError --> EntityNotFoundError
@@ -630,7 +630,7 @@ from spakky.plugins.oidc.error import (
 
 ### spakky-policy
 
-Policy document loader/evaluator 내부의 provider-local 입력 검증 예외입니다. 이 예외들은 `AbstractSpakkyFrameworkError`를 상속하지 않는 plain `Exception` 계층이며, auth provider 경계에서는 `AuthorizationDecision.ERROR`로 매핑됩니다.
+Policy document loader/evaluator 내부의 provider-local 입력 검증 예외입니다. 이 예외들은 `AbstractSpakkyFrameworkError`를 상속하는 `PolicyDocumentError` 계층이며, auth provider 경계에서는 `AuthorizationDecision.ERROR`로 매핑됩니다.
 
 ```python
 from spakky.plugins.policy.error import (
@@ -756,6 +756,8 @@ from spakky.plugins.grpc.error import (
     UnsupportedResponseTypeError,
     DescriptorAlreadyRegisteredError,
     ProtoFieldNumberConflictError,
+    InvalidProtoFieldNumberError,
+    DuplicateProtoFieldNumberError,
 )
 ```
 
@@ -781,6 +783,8 @@ from spakky.plugins.grpc.error import (
 | `UnsupportedResponseTypeError`        | protobuf `Message`나 Pydantic `BaseModel`이 아닌 응답 |
 | `DescriptorAlreadyRegisteredError`    | 이미 등록된 descriptor 재등록 시도     |
 | `ProtoFieldNumberConflictError`       | 명시 `ProtoField` 번호가 자동 부여 필드의 번호와 충돌 |
+| `InvalidProtoFieldNumberError`        | 명시 `ProtoField(number=...)`가 protobuf 유효 범위 밖이거나 reserved band에 있음 |
+| `DuplicateProtoFieldNumberError`      | 같은 message 안에서 두 필드가 같은 명시 `ProtoField` 번호를 사용 |
 
 ### spakky-openfga
 

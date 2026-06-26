@@ -130,6 +130,23 @@ api = app.container.get(FastAPI)
 OIDC provider는 discovery document와 JWKS를 읽고, `kid` key selection, RS256 signature, issuer, audience, `azp`, `exp`, `nbf`, `iat`, clock skew를 검증합니다. `sub`, display name, tenant, roles, scopes, selected safe claims만 `AuthContext`에 남기며 raw bearer token은 claims, metadata, credential carrier에 보존하지 않습니다.
 FastAPI/gRPC/Typer 같은 inbound adapter가 boundary에서 bearer credential을 읽고 provider-neutral auth port를 호출한 뒤 `AuthContext`를 저장하므로, 애플리케이션 코드는 provider를 직접 호출하지 않고 decorator로 요구사항을 선언합니다.
 
+`spakky-oidc`는 `SPAKKY_OIDC_` 접두사의 환경변수를 읽습니다.
+
+| 환경변수 | 의미 | 기본값 |
+| --- | --- | --- |
+| `SPAKKY_OIDC_ISSUER` | expected issuer이자 discovery URL 기본 base | `https://issuer.example.test` |
+| `SPAKKY_OIDC_AUDIENCE` | 허용 audience 문자열 또는 문자열 목록 | `spakky` |
+| `SPAKKY_OIDC_CLIENT_ID` | token의 `azp`가 있을 때 기대하는 client id | 미설정 |
+| `SPAKKY_OIDC_DISCOVERY_URL` | 명시 discovery URL | `<issuer>/.well-known/openid-configuration` |
+| `SPAKKY_OIDC_ALGORITHM` | 기대 JWT signing algorithm | `RS256` |
+| `SPAKKY_OIDC_CLOCK_SKEW` | `exp`/`nbf`/`iat` clock skew 허용치 | `60s` |
+| `SPAKKY_OIDC_RETAINED_CLAIM_NAMES` | `AuthContext.claims`에 보존할 safe claim 목록 | provider 기본값 |
+| `SPAKKY_OIDC_ROLES_CLAIM` | role refs claim 이름 | `roles` |
+| `SPAKKY_OIDC_SCOPES_CLAIM` | scope refs claim 이름 | `scope` |
+| `SPAKKY_OIDC_TENANT_CLAIM` | tenant ref claim 이름 | `tenant` |
+| `SPAKKY_OIDC_DISPLAY_NAME_CLAIM` | subject display name claim 이름 | `name` |
+| `SPAKKY_OIDC_PROVIDER_AVAILABLE` | provider dependency 가용성 테스트/운영 토글 | `true` |
+
 실패는 다음 decision으로 정규화됩니다.
 
 | 실패 | Decision |

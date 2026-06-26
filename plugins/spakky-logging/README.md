@@ -74,6 +74,19 @@ with LogContext.scope(trace_id="t-789"):
 | 느린 호출 감지         | method 실행 시간이 threshold를 넘으면 warning 출력 |
 | 결과 truncation           | 긴 return value를 log output에서 잘라냄 |
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT License

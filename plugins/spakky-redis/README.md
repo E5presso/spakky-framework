@@ -96,6 +96,19 @@ class AnswerService:
 
 `set_with_tags()` / `evict_tags()`는 Redis set 기반 tag index로 그룹 무효화를 처리합니다. `get_or_set()`은 Redis lock으로 동일 key miss population을 직렬화합니다. `write_through()`는 origin writer 성공 후 cache를 갱신하고, `write_behind()`는 cache 갱신 후 origin writer를 호출합니다. `metrics()`는 hit/miss/write/delete/clear/tag eviction/stampede wait counter를 반환하며, actuator가 로드되면 `RedisCacheHealthProbe`와 `RedisCacheMetricsInfoContributor`가 등록됩니다.
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT License
