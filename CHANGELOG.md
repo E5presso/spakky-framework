@@ -1,3 +1,9 @@
+## v6.10.1 (2026-06-26)
+
+### Fix
+
+- **agent**: promote agent adapter fixes to main
+
 ## v6.10.0 (2026-06-25)
 
 ### Feat
