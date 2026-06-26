@@ -218,13 +218,13 @@ RunAgentInput(
 )
 ```
 
-`metadata["mcp"]["servers"]`를 생략하면 configured MCP server 전체를 연결합니다. 같은 run 안에서 같은 서버 이름이 두 번 나오거나 inline server가 configured server 이름을 shadow하면 `McpServerConfigurationError`로 실패합니다.
+`metadata["mcp"]["servers"]`를 생략하면 configured MCP server 전체를 연결합니다. `servers: []`는 이번 run에서 MCP 서버를 하나도 붙이지 않겠다는 명시적 선택입니다. 같은 run 안에서 같은 서버 이름이 두 번 나오거나 inline server가 configured server 이름을 shadow하면 `McpServerConfigurationError`로 실패합니다.
 
 AG-UI에서는 `forwardedProps.mcp`, A2A에서는 data part의 `mcp` object가 같은 metadata로 변환됩니다.
 
 ## Lazy tool 탐색
 
-MCP 서버는 도구가 많을 수 있습니다. 모든 MCP tool schema를 모델 요청에 곧바로 넣으면 context 오염과 비용 증가가 생깁니다. `spakky-mcp`는 pydantic-ai의 deferred MCP toolset 패턴처럼 기본적으로 lazy catalog를 씁니다.
+MCP 서버는 도구가 많을 수 있습니다. 모든 MCP tool schema를 모델 요청에 곧바로 넣으면 context 오염과 비용 증가가 생깁니다. pydantic-ai는 `Agent(..., toolsets=[MCPToolset(...)])`처럼 외부 MCP 서버를 Agent toolset으로 붙이고, 필요한 경우 `defer_loading()`으로 tool search를 켭니다. `spakky-mcp`도 같은 방향의 MCP client connector이지만, Spakky에서는 lazy search/call catalog가 기본 정책입니다.
 
 모델이 처음부터 보는 MCP 관련 도구는 두 개뿐입니다.
 

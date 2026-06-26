@@ -109,6 +109,18 @@ def test_runtime_resolver_uses_configured_servers_when_metadata_has_no_servers()
     ) == ("weather", "github")
 
 
+def test_runtime_resolver_empty_servers_metadata_selects_no_servers() -> None:
+    """An explicit empty runtime selector attaches no configured MCP servers."""
+    resolver = McpRuntimeServerResolver(_config())
+    run_input = RunAgentInput(
+        state_id="run-1",
+        instruction="answer",
+        metadata={MCP_METADATA_KEY: {MCP_SERVERS_METADATA_KEY: []}},
+    )
+
+    assert resolver.resolve_servers(object(), run_input) == ()
+
+
 def test_runtime_resolver_accepts_inline_server_declarations() -> None:
     """User/service settings may provide inline MCP server declarations per run."""
     resolver = McpRuntimeServerResolver(McpConfig())

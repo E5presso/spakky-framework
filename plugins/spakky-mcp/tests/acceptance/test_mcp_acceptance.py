@@ -29,7 +29,10 @@ from spakky.agent.interfaces.model import ModelToolCall
 
 from spakky.plugins.mcp.client import make_mcp_tool_callable
 from spakky.plugins.mcp.descriptor import (
+    MCP_CALL_TOOL_NAME,
+    MCP_SEARCH_TOOLS_NAME,
     build_external_descriptors,
+    build_lazy_mcp_descriptors,
     merge_external_catalog,
 )
 
@@ -155,3 +158,45 @@ async def test_external_tool_with_reserved_args_field_dispatches(
         )
 
     assert result == {"result": "a,b,c"}
+
+
+async def test_lazy_search_then_call_dispatches_real_mcp_tool(
+    weather_server: FastMCP,
+) -> None:
+    """Lazy MCP meta-tools search and call a real FastMCP tool end to end."""
+    async with create_connected_server_and_client_session(weather_server) as session:
+        await session.initialize()
+        external = await _discover(session, "weather")
+        lazy_catalog = AgentToolCatalog(
+            descriptors=build_lazy_mcp_descriptors(external.descriptors)
+        )
+        dispatcher = AgentToolDispatcher(target=object(), catalog=lazy_catalog)
+
+        search_result = await dispatcher.dispatch(
+            ModelToolCall(
+                name=MCP_SEARCH_TOOLS_NAME,
+                arguments={"query": "forecast", "limit": 5},
+                call_id="call-5",
+            )
+        )
+
+        assert isinstance(search_result, dict)
+        tools = search_result["tools"]
+        assert isinstance(tools, list)
+        assert len(tools) == 1
+        selected_tool = tools[0]
+        assert isinstance(selected_tool, dict)
+        assert selected_tool["name"] == "weather__forecast"
+
+        call_result = await dispatcher.dispatch(
+            ModelToolCall(
+                name=MCP_CALL_TOOL_NAME,
+                arguments={
+                    "tool_name": selected_tool["name"],
+                    "arguments": {"city": "seoul"},
+                },
+                call_id="call-6",
+            )
+        )
+
+    assert call_result == {"result": "sunny in seoul"}
