@@ -107,6 +107,19 @@ class BuildInfo(IInfoContributor):
 
 Backend plugin은 자신이 소유한 외부 의존 상태를 first-party probe/contributor로 등록합니다. 예를 들어 `spakky-redis`는 Redis 연결 상태와 cache metrics를 actuator health/info에 연결합니다. 애플리케이션은 transport adapter를 바꾸지 않고 같은 계약으로 자체 check를 추가할 수 있습니다.
 
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
 ## 라이선스
 
 MIT License

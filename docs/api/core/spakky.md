@@ -7,251 +7,251 @@ DI 컨테이너, AOP, 부트스트랩 — Spakky Framework의 핵심 패키지
 ## Application
 
 ::: spakky.core.application.application
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.application.application_context
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.application.plugin
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.application.discovery_manifest
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.application.startup_diagnostics
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.application.error
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## AOP
 
 ::: spakky.core.aop.aspect
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.aop.advisor
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.aop.pointcut
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.aop.interfaces
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.aop.interfaces.aspect
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.aop.error
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## Pod
 
 ::: spakky.core.pod.annotations
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.annotations.pod
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.annotations.lazy
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.annotations.order
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.annotations.primary
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.annotations.qualifier
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.annotations.tag
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.binding
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.diagnostics
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.inject
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.container
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.application_context
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.post_processor
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.tag_registry
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.aware
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.aware.aware
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.aware.application_context_aware
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.aware.container_aware
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.interfaces.aware.tag_registry_aware
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.post_processors.aware_post_processor
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.pod.error
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## Service
 
 ::: spakky.core.service.interfaces
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.service.interfaces.service
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.service.background
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.service.post_processor
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 스테레오타입
 
 ::: spakky.core.stereotype.configuration
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.stereotype.controller
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.stereotype.usecase
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 공통
 
 ::: spakky.core.common.annotation
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.constants
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.error
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.interfaces
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.interfaces.cloneable
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.interfaces.comparable
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.interfaces.disposable
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.interfaces.equatable
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.interfaces.representable
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.metadata
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.mro
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.mutability
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.proxy
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.common.types
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 로깅 인터페이스
 
 ::: spakky.core.logging.interfaces.log_context_binder
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ## 유틸리티
 
 ::: spakky.core.utils.casing
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.utils.inspection
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.utils.naming
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false
 
 ::: spakky.core.utils.uuid
-options:
-show_root_heading: false
+    options:
+      show_root_heading: false

@@ -96,3 +96,42 @@ background request를 남기지 않습니다.
 - server-sent event chunk를 `ModelStreamEvent`로 변환하는 streaming adapter 동작
 - timeout, transport, provider error, refusal, unsupported constrained decoding mode,
   non-success finish reason의 typed error mapping
+
+## 사용 예
+
+```python
+import spakky.agent
+import spakky.plugins.vllm
+from spakky.agent import IAgentModel
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+app = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.agent.PLUGIN_NAME,
+            spakky.plugins.vllm.PLUGIN_NAME,
+        }
+    )
+    .start()
+)
+model = app.container.get(type_=IAgentModel)
+```
+
+## 개발 검증
+
+패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
+
+```bash
+uv run ruff format .
+uv run ruff check .
+uv run pyrefly check
+uv run pytest
+```
+
+`pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
+
+## 라이선스
+
+MIT License

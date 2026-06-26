@@ -40,6 +40,19 @@ export SPAKKY_CELERY__BROKER_URL=amqp://guest:guest@localhost:5672//
 export SPAKKY_CELERY__APP_NAME=myapp
 ```
 
+주요 설정은 다음과 같습니다. 값은 `CeleryConfig`에서 읽으며 serializer는 `json`, `pickle`, `yaml`, `msgpack` 중 하나입니다.
+
+| 환경변수 | 의미 | 기본값 |
+| --- | --- | --- |
+| `SPAKKY_CELERY__APP_NAME` | Celery application name | `spakky-celery` |
+| `SPAKKY_CELERY__BROKER_URL` | Celery broker URL | 필수 |
+| `SPAKKY_CELERY__RESULT_BACKEND` | result backend URL, 미설정 시 result 저장 안 함 | 미설정 |
+| `SPAKKY_CELERY__TASK_SERIALIZER` | task message serializer | `json` |
+| `SPAKKY_CELERY__RESULT_SERIALIZER` | task result serializer | `json` |
+| `SPAKKY_CELERY__ACCEPT_CONTENT` | deserialize 허용 content 목록 | `json` |
+| `SPAKKY_CELERY__TIMEZONE` | schedule timezone, IANA 이름 | `UTC` |
+| `SPAKKY_CELERY__ENABLE_UTC` | 내부 datetime UTC 처리 | `true` |
+
 ---
 
 ## 태스크 정의

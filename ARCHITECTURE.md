@@ -499,37 +499,47 @@ spakky-data = "spakky.data.main:initialize"
 
 `SpakkyApplication.load_plugins()`는 `importlib.metadata.entry_points(group="spakky.plugins")`로 등록된 base 플러그인을 발견하고, 각 플러그인의 `initialize(app: SpakkyApplication)` 함수를 호출합니다. 그 뒤 active core feature마다 `spakky.contributions.<feature>` group을 조회해 feature contribution을 base plugin 이후, `scan()`/`start()` 이전에 호출합니다. Feature plugin 이름의 `-`는 entry point group에서 `.`로 정규화되므로 `spakky-outbox`의 group은 `spakky.contributions.spakky.outbox`입니다. 복수 구현체 DI resolution은 이 자동 활성화 모델을 유지합니다. 여러 플러그인이 같은 port 후보를 등록해도 플러그인은 그대로 초기화되고, 단수 주입 지점에서만 Qualifier/name/binding/`@Primary`/legacy parameter name 순서로 하나를 선택합니다.
 
-### 플러그인 등록 요약
+### 플러그인 자동 등록 요약
 
-| 플러그인 | 등록하는 컴포넌트 |
-|---------|-------------------|
+아래 표는 각 base plugin `initialize()` 또는 contribution `initialize()`가 `app.add(...)`로 등록하는 구성요소를 요약합니다. 공개 helper/API는 각 패키지 README와 API Reference에서 설명합니다.
+
+| Entry point | 자동 등록 구성요소 |
+|-------------|--------------------|
 | `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect`, `LogContextBinder` |
 | `spakky-domain` | (없음 — 모델만 제공) |
-| `spakky-auth` | Provider-neutral auth model, ABC port, `AuthCapability`, auth contribution contract, AOP enforcement, capability startup validation |
-| `spakky-cryptography` | Cryptographic utility surface; `CryptographyAuthProvider` contribution for snapshot sign/verify and password hash/verify |
-| `spakky-policy` | YAML/TOML/JSON policy document evaluator for RBAC/PBAC/ABAC authorization |
-| `spakky-oidc` | OIDC/OAuth bearer credential verification provider for `AuthCapability.AUTHENTICATION` |
-| `spakky-openfga` | OpenFGA relation/policy authorization provider contribution |
+| `spakky-auth` | `auth_snapshot_propagation_config`, `AuthCapabilityStartupValidationService`, `AuthorizationAspect`, `AsyncAuthorizationAspect` |
+| `spakky-cryptography` | `CryptographyAuthProviderConfig`, `CryptographyAuthProvider` |
+| `spakky-cryptography` contribution for `spakky-auth` | `cryptography_auth_provider_contribution` |
+| `spakky-policy` | `SpakkyPolicyConfig`, `spakky_policy_document`, `SpakkyPolicyAuthProvider` |
+| `spakky-policy` contribution for `spakky-auth` | `policy_auth_provider_contribution` |
+| `spakky-oidc` | `OidcProviderConfig`, `OidcAuthenticationProvider` |
+| `spakky-oidc` contribution for `spakky-auth` | `oidc_auth_provider_contribution` |
+| `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` |
+| `spakky-openfga` contribution for `spakky-auth` | `openfga_auth_provider_contribution` |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
-| `spakky-event` | `EventMediator`, `EventPublisher` (sync+async), `DirectEventBus` (sync+async), `TransactionalEventPublishingAspect` (sync+async), `EventHandlerRegistrationPostProcessor` |
-| `spakky-fastapi` | `FastAPIActuatorConfig`, `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterActuatorPostProcessor`, `RegisterRoutesPostProcessor` |
-| `spakky-typer` | `ActuatorTyperConfig`, `ActuatorTyperCommandPostProcessor`, `TyperCLIPostProcessor` |
-| `spakky-rabbitmq` | `RabbitMQConnectionConfig`, Consumer/`RabbitMQEventTransport` (sync+async), `RabbitMQPostProcessor` |
-| `spakky-kafka` | `KafkaConnectionConfig`, Consumer/`KafkaEventTransport` (sync+async), `KafkaPostProcessor` |
-| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, Session/ConnectionManager, Transaction |
-| `spakky-sqlalchemy` contribution for `spakky-outbox` | `SqlAlchemyOutboxStorage` (sync+async), `OutboxMessageTable` |
-| `spakky-sqlalchemy` contribution for `spakky-agent` | `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`, `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable` |
-| `spakky-outbox` | `OutboxConfig`, `OutboxEventBus` (sync+async), `OutboxRelayBackgroundService` (sync+async) |
-| `spakky-task` | `TaskRegistrationPostProcessor` |
-| `spakky-actuator` | `ActuatorConfig`, `ActuatorExtensionRegistry`, `ActuatorExtensionPostProcessor`, `ActuatorAggregationService` |
+| `spakky-event` | `AsyncTransactionalEventPublishingAspect`, `TransactionalEventPublishingAspect`, `EventMediator`, `AsyncEventMediator`, `EventPublisher`, `AsyncEventPublisher`, `AuthContextSnapshotHeaderInjector`, `DirectEventBus`, `AsyncDirectEventBus`, `EventHandlerRegistrationPostProcessor` |
+| `spakky-fastapi` | `FastAPIConfig`, `fastapi_app`(기존 FastAPI Pod가 없을 때), `FastAPIActuatorConfig`, `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterActuatorPostProcessor`, `RegisterRoutesPostProcessor` |
+| `spakky-typer` | `typer_app`(기존 Typer Pod가 없을 때), `ActuatorTyperConfig`, `ActuatorTyperCommandPostProcessor`, `TyperCLIPostProcessor` |
+| `spakky-rabbitmq` | `RabbitMQConnectionConfig`, `RabbitMQPostProcessor`, `RabbitMQEventConsumer`, `RabbitMQEventTransport`, `AsyncRabbitMQEventConsumer`, `AsyncRabbitMQEventTransport` |
+| `spakky-kafka` | `KafkaConnectionConfig`, `KafkaEventConsumer`, `KafkaEventTransport`, `AsyncKafkaEventConsumer`, `AsyncKafkaEventTransport`, `KafkaPostProcessor` |
+| `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, `ConnectionManager`, `SessionManager`, `Transaction`; async mode 활성화 시 `AsyncConnectionManager`, `AsyncSessionManager`, `AsyncTransaction` |
+| `spakky-sqlalchemy` contribution for `spakky-outbox` | `OutboxMessageTable`, `SqlAlchemyOutboxStorage`; async mode 활성화 시 `AsyncSqlAlchemyOutboxStorage` |
+| `spakky-sqlalchemy` contribution for `spakky-agent` | `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`, `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository` |
+| `spakky-outbox` | `OutboxConfig`, `OutboxEventBus`, `AsyncOutboxEventBus`, `OutboxRelayBackgroundService`, `AsyncOutboxRelayBackgroundService` |
+| `spakky-task` | `DirectTaskExecutor`, `TaskRegistrationPostProcessor` |
+| `spakky-actuator` | `ActuatorConfig`, `ActuatorExtensionRegistry`, `_startup_report_info_contributor(app)`, `ActuatorExtensionPostProcessor`, `ActuatorAggregationService` |
 | `spakky-cache` | `CacheAspect`, `AsyncCacheAspect` |
-| `spakky-celery` | `CeleryConfig`, `CeleryPostProcessor`, `CeleryTaskDispatchAspect` (sync+async) |
+| `spakky-celery` | `CeleryConfig`, `celery_app`(기존 Celery Pod가 없을 때), `CeleryPostProcessor`, `CeleryTaskDispatchAspect`, `AsyncCeleryTaskDispatchAspect` |
 | `spakky-tracing` | `W3CTracePropagator` |
 | `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor`, `LogContextBridge` |
 | `spakky-saga` | (없음 — `@Saga`가 `@Pod` 기반이므로 Pod 스캔만으로 DI 컨테이너가 관리) |
-| `spakky-grpc` | `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
-| `spakky-redis` | `RedisCacheConfig`, `RedisCache`, `RedisCacheHealthProbe`, `RedisCacheMetricsInfoContributor` |
+| `spakky-grpc` | `GrpcConfig`, `descriptor_registry`, `grpc_server_spec`, `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
+| `spakky-redis` | `RedisCacheConfig`, `RedisCache`, `redis_cache_health_probe`, `redis_cache_metrics_info_contributor` |
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` |
+| `spakky-agent` | `AgentBootstrapValidationPostProcessor` |
+| `spakky-agui` | `AgUiConfig` |
+| `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor` |
+| `spakky-mcp` | `McpConfig`, `McpClient`, `McpToolServer` |
 
 ### Agentic workflow layer
 
