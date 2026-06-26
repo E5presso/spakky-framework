@@ -44,6 +44,7 @@ from spakky.plugins.mcp.server_registry import (
     McpToolServerRegistry,
 )
 from spakky.plugins.mcp.stereotypes.mcp_tool_server_agent import McpToolServerAgent
+from spakky.plugins.mcp.stereotypes.mcp_server import MCPServer
 from spakky.plugins.mcp.server import (
     McpToolServer,
     build_agent_tool_server,
@@ -56,26 +57,63 @@ from spakky.plugins.mcp.server import (
 PLUGIN_NAME = Plugin(name="spakky-mcp")
 """Plugin identifier for the MCP adapter package."""
 
+MCPClient = McpClient
+"""Uppercase-acronym alias for :class:`McpClient`."""
+
+MCPConfig = McpConfig
+"""Uppercase-acronym alias for :class:`McpConfig`."""
+
+MCPServerConfig = McpServerConfig
+"""Uppercase-acronym alias for :class:`McpServerConfig`."""
+
+MCPToolServer = McpToolServer
+"""Uppercase-acronym alias for :class:`McpToolServer`."""
+
+MCPToolServerEntry = McpToolServerEntry
+"""Uppercase-acronym alias for :class:`McpToolServerEntry`."""
+
+MCPToolServerConfig = McpToolServerConfig
+"""Uppercase-acronym alias for :class:`McpToolServerConfig`."""
+
+MCPToolServerNotRegisteredError = McpToolServerNotRegisteredError
+"""Uppercase-acronym alias for :class:`McpToolServerNotRegisteredError`."""
+
+MCPToolServerRegistry = McpToolServerRegistry
+"""Uppercase-acronym alias for :class:`McpToolServerRegistry`."""
+
+MCPTransport = McpTransport
+"""Uppercase-acronym alias for :class:`McpTransport`."""
+
 __all__ = [
     "PLUGIN_NAME",
     "AbstractMcpError",
     "ExternalMcpTool",
     "ExternalMcpToolDescriptor",
     "McpCatalogMergeError",
+    "MCPClient",
     "McpClient",
+    "MCPConfig",
     "McpConfig",
     "McpResponseError",
+    "MCPServerConfig",
     "McpServerConfig",
     "McpServerConfigurationError",
     "McpToolDiscoveryError",
     "McpToolExposureError",
     "McpToolInvocationError",
+    "MCPServer",
+    "MCPToolServer",
     "McpToolServer",
     "McpToolServerAgent",
+    "MCPToolServerEntry",
+    "MCPToolServerConfig",
     "McpToolServerConfig",
     "McpToolServerEntry",
+    "MCPToolServerNotRegisteredError",
     "McpToolServerNotRegisteredError",
+    "MCPToolServerRegistry",
     "McpToolServerRegistry",
+    "MCPTransport",
     "McpTransport",
     "McpTransportError",
     "build_agent_tool_server",

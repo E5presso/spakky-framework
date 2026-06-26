@@ -37,10 +37,10 @@ from spakky.plugins.mcp.server import (
     serve_stdio,
     streamable_http_session_manager,
 )
-from spakky.plugins.mcp.stereotypes.mcp_tool_server_agent import McpToolServerAgent
+from spakky.plugins.mcp.stereotypes.mcp_server import MCPServer
 
 
-@McpToolServerAgent(server_name="marked-agent")
+@MCPServer(server_name="marked-agent")
 @Agent(spec=AgentExecutionSpec(name="unit", objective="serve tools"))
 class ToolAgent:
     """Agent fixture with one native tool used across server unit tests."""
@@ -167,9 +167,7 @@ def test_tool_server_build_server_uses_configured_name(
 def test_tool_server_build_server_for_registered_agent_uses_marker_name() -> None:
     """The Pod builds a server for a declaratively registered MCP agent."""
     registry = McpToolServerRegistry()
-    registry.register(
-        ToolAgent(), ToolAgent, McpToolServerAgent(server_name="marked-agent")
-    )
+    registry.register(ToolAgent(), ToolAgent, MCPServer(server_name="marked-agent"))
     server = McpToolServer(McpConfig(), registry).build_server_for("unit")
 
     assert isinstance(server, Server)
@@ -179,7 +177,7 @@ def test_tool_server_build_server_for_registered_agent_uses_marker_name() -> Non
 def test_tool_server_build_server_for_uses_config_name_when_marker_omits_name() -> None:
     """Marker server_name 생략 시 tool_server config name을 사용한다."""
     registry = McpToolServerRegistry()
-    registry.register(ToolAgent(), ToolAgent, McpToolServerAgent())
+    registry.register(ToolAgent(), ToolAgent, MCPServer())
     config = McpConfig()
     config.tool_server = McpToolServerConfig(name="fallback-agent")
 
@@ -216,9 +214,7 @@ def test_tool_server_streamable_http_session_manager_wraps_built_server(
 def test_tool_server_streamable_http_session_manager_for_registered_agent() -> None:
     """agent-name 기반 streamable HTTP manager가 registry에서 server를 만든다."""
     registry = McpToolServerRegistry()
-    registry.register(
-        ToolAgent(), ToolAgent, McpToolServerAgent(server_name="marked-agent")
-    )
+    registry.register(ToolAgent(), ToolAgent, MCPServer(server_name="marked-agent"))
 
     manager = McpToolServer(McpConfig(), registry).streamable_http_session_manager_for(
         "unit"
@@ -253,9 +249,7 @@ async def test_tool_server_serve_stdio_for_delegates_to_registered_agent(
         served.append(server)
 
     registry = McpToolServerRegistry()
-    registry.register(
-        ToolAgent(), ToolAgent, McpToolServerAgent(server_name="marked-agent")
-    )
+    registry.register(ToolAgent(), ToolAgent, MCPServer(server_name="marked-agent"))
     monkeypatch.setattr("spakky.plugins.mcp.server.serve_stdio", _serve)
 
     await McpToolServer(McpConfig(), registry).serve_stdio_for("unit")

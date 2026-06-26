@@ -17,7 +17,7 @@ from spakky.agent.tooling import (
     agent_tool,
 )
 
-from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
 
 class StubModel(IAgentModel):
@@ -38,7 +38,7 @@ class StubModel(IAgentModel):
         yield  # pragma: no cover - empty async generator body
 
 
-@A2AAgentServer(base_url="http://planner.local", version="1.2.3")
+@A2ACompatible(base_url="http://planner.local", version="1.2.3")
 @Agent(spec=AgentExecutionSpec(name="planner", objective="Plan things."))
 class ServedPlannerAgent:
     """Agent marked for A2A serving, used by registry and builder tests."""

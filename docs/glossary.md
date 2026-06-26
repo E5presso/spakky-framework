@@ -326,17 +326,18 @@ event가 없으므로 `RunPausedEvent`는 `hitl_approval` deferred tool call로 
 
 ### A2A Adapter
 
-`spakky-a2a`가 제공하는 Agent-to-Agent protocol adapter입니다. `@A2AAgentServer` marker와
-server builder는 `@Agent` spec/tool/teammate에서 AgentCard를 파생하고, JSON-RPC,
-HTTP+JSON REST, gRPC transport로 노출합니다. `A2AAgentDelegate`는 원격 AgentCard를
+`spakky-a2a`가 제공하는 Agent-to-Agent protocol adapter입니다. `@A2ACompatible` marker와
+post-processors는 `@Agent` spec/tool/teammate에서 AgentCard를 파생하고, JSON-RPC,
+HTTP+JSON REST, gRPC transport에 선언형으로 연결합니다. `A2AAgentDelegate`는 원격 AgentCard를
 사용해 teammate call을 보내고 remote stream을 child `AgentEvent`로 parent run에 합류시킵니다.
 
 ### MCP Adapter
 
 `spakky-mcp`가 제공하는 Model Context Protocol 양방향 adapter입니다. client 방향의
-`McpClient.open_runner()`는 외부 MCP server tool을 `AgentToolCatalog`에 병합한
-`AgentRunner`를 열고, server 방향의 `McpToolServer`와 `build_agent_tool_server()`는
-기존 `@agent_tool` 카탈로그를 MCP `Server`로 노출합니다.
+`MCPClient.open_runner()`는 외부 MCP server tool을 `AgentToolCatalog`에 병합한
+`AgentRunner`를 열고, server 방향의 `MCPToolServer`와 `build_agent_tool_server()`는
+기존 `@agent_tool` 카탈로그를 MCP `Server`로 노출합니다. MCP server는 agent가 아니라
+도구 카탈로그를 표준 MCP 프로토콜로 제공하는 protocol host입니다.
 
 ### @Repository
 

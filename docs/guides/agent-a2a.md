@@ -14,30 +14,34 @@ pip install spakky-a2a
 
 ## 서버로 노출
 
-`@A2AAgentServer`는 `@Agent` class에 붙는 marker입니다. `@Agent`가 Pod 등록을 담당하고, A2A marker는 AgentCard에 광고할 base URL/version과 optional ASGI mount path를 기록합니다.
+`@A2ACompatible`는 `@Agent` class에 붙는 marker입니다. `@Agent`가 Pod 등록을 담당하고, A2A marker는 AgentCard에 광고할 public transport URL/version과 optional ASGI/gRPC exposure metadata를 기록합니다.
 
 ```python
 from spakky.agent import Agent, AgentExecutionSpec
-from spakky.plugins.a2a import A2AAgentServer
+from spakky.plugins.a2a import A2ACompatible
 
 
-@A2AAgentServer(
+@A2ACompatible(
     base_url="https://agents.example.com/a2a/assistant",
     version="1.0.0",
     mount_path="/a2a/assistant",
+    rest_mount_path="/a2a-rest/assistant",
+    rest_base_url="https://agents.example.com/a2a-rest/assistant",
+    grpc_enabled=True,
+    grpc_base_url="grpc://agents.example.com:443",
 )
 @Agent(spec=AgentExecutionSpec(name="assistant", objective="answer with tools"))
 class AssistantAgent:
     ...
 ```
 
-plugin 초기화는 `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, ASGI mount post-processor, remote delegate Pod를 등록합니다. 부트스트랩 후 `@A2AAgentServer`와 `@Agent`가 모두 붙은 Pod는 registry에 agent name 기준으로 들어가고, Starlette/FastAPI host Pod가 있으면 자동으로 mount됩니다.
+plugin 초기화는 `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, ASGI mount post-processor, gRPC registration post-processor, remote delegate Pod를 등록합니다. 부트스트랩 후 `@A2ACompatible`와 `@Agent`가 모두 붙은 Pod는 registry에 agent name 기준으로 들어가고, Starlette/FastAPI host Pod가 있으면 자동으로 mount됩니다. `spakky-grpc`가 함께 로드되어 `GrpcServerSpec`가 있으면 `grpc_enabled=True` entry의 gRPC handler도 자동 등록됩니다.
 
-`A2AConfig`는 `SPAKKY_A2A_` 접두사의 환경변수를 읽습니다. 이 값은 `@A2AAgentServer`가 `base_url` 또는 `version`을 직접 지정하지 않을 때 derived AgentCard 기본값으로 사용됩니다.
+`A2AConfig`는 `SPAKKY_A2A_` 접두사의 환경변수를 읽습니다. `default_base_url`은 marker가 `base_url`을 생략할 때 실제 mount path와 결합되어 AgentCard interface URL을 유도합니다.
 
 | 환경변수 | 의미 | 기본값 |
 | --- | --- | --- |
-| `SPAKKY_A2A_DEFAULT_BASE_URL` | AgentCard transport interface에 광고할 base URL | `http://localhost:8000` |
+| `SPAKKY_A2A_DEFAULT_BASE_URL` | mount path와 결합할 public host URL | `http://localhost:8000` |
 | `SPAKKY_A2A_DEFAULT_VERSION` | AgentCard에 광고할 semantic version | `1.0.0` |
 | `SPAKKY_A2A_DEFAULT_MOUNT_PATH_PREFIX` | 자동 mount path prefix | `/a2a` |
 
@@ -53,54 +57,22 @@ def asgi_host() -> Starlette:
 
 `mount_path`를 생략하면 `{default_mount_path_prefix}/{agent_name}`을 사용합니다. Bootstrap 후
 `/a2a/assistant/.well-known/agent-card.json`과 `/a2a/assistant/` JSON-RPC route가 host app에
-존재합니다. Registry에 등록된 app을 직접 얻어야 하는 특수 host에서는 `A2AAgentServerSpec`을
-lower-level API로 사용할 수 있습니다.
-
-```python
-from spakky.plugins.a2a.server.builder import A2AAgentServerSpec
-
-spec = application.container.get(A2AAgentServerSpec)
-a2a_app = spec.build_app_for("assistant")
-```
-
-agent instance를 직접 들고 있는 테스트/어댑터 경계에서는 builder를 호출할 수 있습니다.
-
-```python
-from spakky.plugins.a2a.server.builder import build_a2a_app
-
-a2a_app = build_a2a_app(
-    assistant,
-    base_url="https://agents.example.com/a2a",
-    version="1.0.0",
-)
-```
+존재합니다. `rest_mount_path`를 지정하면 `/a2a-rest/assistant/.well-known/agent-card.json`과
+REST operation route가 같은 host app에 추가됩니다.
 
 ## Transport 선택
 
-`build_a2a_app()`은 AgentCard route와 JSON-RPC route를 함께 가진 mountable Starlette app을 만듭니다. HTTP+JSON REST 또는 gRPC가 필요하면 transport별 builder를 사용합니다.
+일반 애플리케이션은 transport별 builder 함수를 호출하지 않습니다. 노출할 transport를 `@A2ACompatible` metadata로 선언하고, plugin post-processor가 host에 연결합니다.
 
-| transport | builder | 설명 |
-|-----------|---------|------|
-| JSON-RPC + AgentCard | `build_a2a_app()` | `a2a-sdk` JSON-RPC route와 AgentCard route를 노출합니다. |
-| HTTP+JSON REST + AgentCard | `build_a2a_rest_app()` | REST operation route와 AgentCard route를 노출합니다. |
-| gRPC | `build_a2a_grpc_handler()` | 공식 `lf.a2a.v1.A2AService` generic gRPC handler를 만듭니다. |
+| transport | 선언 | 결과 |
+|-----------|------|------|
+| JSON-RPC + AgentCard | `mount_path` 또는 기본 prefix | Starlette/FastAPI host에 mount |
+| HTTP+JSON REST + AgentCard | `rest_mount_path` | Starlette/FastAPI host에 별도 mount |
+| gRPC | `grpc_enabled=True`, 선택적 `grpc_base_url` | `spakky-grpc` `GrpcServerSpec`에 handler 등록 |
 
-```python
-from spakky.plugins.a2a.rest_transport.builder import build_a2a_rest_app
-from spakky.plugins.a2a.grpc_transport import build_a2a_grpc_handler
+`base_url`, `rest_base_url`, `grpc_base_url`은 AgentCard에 광고되는 public operation endpoint입니다. ASGI mount path나 reverse proxy prefix가 외부 URL에 보이면 포함해야 합니다. AgentCard discovery path인 `/.well-known/agent-card.json` 자체는 포함하지 않습니다. 값을 생략하면 JSON-RPC는 `default_base_url + mount_path`, REST는 `default_base_url + rest_mount_path`를 사용합니다. gRPC는 HTTP path 기반 mount가 아니므로 실제 listener/scheme이 다르면 `grpc_base_url`을 명시합니다.
 
-rest_app = build_a2a_rest_app(
-    assistant,
-    base_url="https://agents.example.com/a2a",
-    version="1.0.0",
-    path_prefix="/v1",
-)
-grpc_handler = build_a2a_grpc_handler(
-    assistant,
-    base_url="https://agents.example.com/a2a-grpc",
-    version="1.0.0",
-)
-```
+`A2AAgentServerSpec.build_app_for()`, `build_rest_app_for()`, `build_grpc_handler_for()`와 transport builder 함수들은 custom host와 테스트를 위한 lower-level API입니다.
 
 ## AgentCard derivation
 
@@ -116,19 +88,28 @@ grpc_handler = build_a2a_grpc_handler(
 
 ## Task 저장소
 
-서버 builder의 `repository` 인자는 optional `IA2ATaskRepository`입니다. 지정하지 않으면 `InMemoryA2ATaskRepository`가 사용됩니다. 운영에서 durable task state가 필요하면 `IA2ATaskRepository` 구현을 Pod나 builder 인자로 제공합니다.
+서버 transport는 container에서 optional `IA2ATaskRepository` Pod를 찾습니다. 등록된 repository가 없으면 `InMemoryA2ATaskRepository`가 사용됩니다. 운영에서 durable task state가 필요하면 repository 구현을 Pod로 등록합니다.
 
 ```python
+from collections.abc import Sequence
+from a2a.types import Task
+from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.a2a.store.interfaces import IA2ATaskRepository
-from spakky.plugins.a2a.server.builder import build_a2a_app
 
-repository = application.container.get(IA2ATaskRepository)
-a2a_app = build_a2a_app(
-    assistant,
-    base_url="https://agents.example.com/a2a",
-    version="1.0.0",
-    repository=repository,
-)
+
+@Pod()
+class PostgresA2ATaskRepository(IA2ATaskRepository):
+    def get_or_none(self, task_id: str) -> Task | None:
+        ...
+
+    def save(self, task: Task) -> None:
+        ...
+
+    def delete(self, task_id: str) -> None:
+        ...
+
+    def list_all(self) -> Sequence[Task]:
+        ...
 ```
 
 `SpakkyA2ATaskStore`는 synchronous repository를 `a2a-sdk`의 async `TaskStore`로 감싸는 bridge입니다.

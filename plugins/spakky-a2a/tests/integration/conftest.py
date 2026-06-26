@@ -36,7 +36,7 @@ from spakky.agent.tooling import (
 from starlette.applications import Starlette
 
 from spakky.plugins.a2a.server.builder import build_a2a_app
-from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 from tests.unit.conftest import (
     FakeEvidenceRepository,
     FakeSignalRepository,
@@ -87,7 +87,7 @@ def _tool(name: str) -> ModelStreamEvent:
     )
 
 
-@A2AAgentServer(base_url="http://assistant.local", version="1.0.0")
+@A2ACompatible(base_url="http://assistant.local", version="1.0.0")
 @Agent(spec=DURABLE_SPEC)
 class AssistantAgent:
     """Durable served agent exercised through the A2A transport."""

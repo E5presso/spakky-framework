@@ -1,4 +1,4 @@
-"""Tests for registering @McpToolServerAgent Pods."""
+"""Tests for registering @MCPServer Pods."""
 
 from unittest.mock import MagicMock
 
@@ -45,7 +45,7 @@ def test_registers_marked_agent_pod(
     processor: RegisterMcpToolServerAgentsPostProcessor,
     registry: McpToolServerRegistry,
 ) -> None:
-    """@McpToolServerAgent @Agent Pod가 registry에 등록된다."""
+    """@MCPServer @Agent Pod가 registry에 등록된다."""
     pod = ToolAgent()
 
     result = processor.post_process(pod)

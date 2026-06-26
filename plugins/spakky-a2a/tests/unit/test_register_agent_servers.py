@@ -1,4 +1,4 @@
-"""Tests for the @A2AAgentServer registration post-processor."""
+"""Tests for the @A2ACompatible registration post-processor."""
 
 from unittest.mock import MagicMock
 
@@ -38,7 +38,7 @@ def test_registers_marked_agent_pod(
     processor: RegisterA2AAgentServersPostProcessor,
     registry: A2AAgentRegistry,
 ) -> None:
-    """A Pod with both @Agent and @A2AAgentServer is registered by name."""
+    """A Pod with both @Agent and @A2ACompatible is registered by name."""
     pod = ServedPlannerAgent(StubModel())
 
     result = processor.post_process(pod)

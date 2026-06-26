@@ -1,4 +1,4 @@
-"""Integration: @AgUiAgent is mounted on FastAPI through DI post-processing."""
+"""Integration: @AGUICompatible is mounted on FastAPI through DI post-processing."""
 
 from collections.abc import AsyncIterator
 from json import loads
@@ -22,7 +22,7 @@ from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.agui.main import initialize as initialize_agui
-from spakky.plugins.agui.stereotypes.agui_agent import AgUiAgent
+from spakky.plugins.agui.stereotypes.agui_compatible import AGUICompatible
 
 
 @Pod()
@@ -47,7 +47,7 @@ class AutoMountModel(IAgentModel):
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
 
-@AgUiAgent()
+@AGUICompatible()
 @Agent(spec=AgentExecutionSpec(name="auto_agui", objective="answer"))
 class AutoMountedAssistant:
     """Agent exposed through AG-UI solely by declaration."""
@@ -86,7 +86,7 @@ def _build_app() -> FastAPI:
 
 
 def test_agui_agent_mounts_sse_endpoint_without_manual_factory() -> None:
-    """@AgUiAgent @Agent가 수동 endpoint helper 없이 /agui SSE를 노출한다."""
+    """@AGUICompatible @Agent가 수동 endpoint helper 없이 /agui SSE를 노출한다."""
     client = TestClient(_build_app())
 
     response = client.post("/agui", json=_run_agent_input())

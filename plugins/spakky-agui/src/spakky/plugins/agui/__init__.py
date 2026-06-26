@@ -27,6 +27,7 @@ from spakky.plugins.agui.stdio import (
     run_agui_stdio,
 )
 from spakky.plugins.agui.stereotypes.agui_agent import AgUiAgent
+from spakky.plugins.agui.stereotypes.agui_compatible import AGUICompatible
 from spakky.plugins.agui.transport import AgUiManagedRunDriver, AgUiRunDriver
 from spakky.plugins.agui.websocket import add_agui_websocket_endpoint
 
@@ -38,6 +39,7 @@ __all__ = [
     "AgUiApprovalDecodeError",
     "AgUiConfig",
     "AgUiEndpointConflictError",
+    "AGUICompatible",
     "AgUiAgent",
     "AgUiAgentEntry",
     "AgUiAgentRegistry",

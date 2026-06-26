@@ -1,7 +1,7 @@
 """Plugin initialization for the A2A protocol server integration.
 
 Registers the plugin configuration, the agent-server registry, the container-aware
-app-builder spec, and the post-processor that discovers @A2AAgentServer-marked
+app-builder spec, and the post-processor that discovers @A2ACompatible-marked
 @Agent Pods. This function is called automatically during plugin loading.
 """
 
@@ -11,6 +11,9 @@ from spakky.agent import AgentRunnerFactory, IAgentDelegate, IAgentRunnerFactory
 from spakky.plugins.a2a.config import A2AConfig
 from spakky.plugins.a2a.delegation import A2AAgentDelegate
 from spakky.plugins.a2a.post_processors.mount_asgi import MountA2AASGIPostProcessor
+from spakky.plugins.a2a.post_processors.register_grpc import (
+    RegisterA2AGRPCPostProcessor,
+)
 from spakky.plugins.a2a.post_processors.register_agent_servers import (
     RegisterA2AAgentServersPostProcessor,
 )
@@ -33,3 +36,4 @@ def initialize(app: SpakkyApplication) -> None:
     app.add(A2AAgentServerSpec)
     app.add(RegisterA2AAgentServersPostProcessor)
     app.add(MountA2AASGIPostProcessor)
+    app.add(RegisterA2AGRPCPostProcessor)

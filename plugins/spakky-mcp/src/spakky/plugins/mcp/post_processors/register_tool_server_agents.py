@@ -1,4 +1,4 @@
-"""Post-processor registering @McpToolServerAgent-marked @Agent Pods."""
+"""Post-processor registering @MCPServer-marked @Agent Pods."""
 
 from logging import getLogger
 from typing import override
@@ -12,7 +12,7 @@ from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 
 from spakky.plugins.mcp.server_registry import McpToolServerRegistry
-from spakky.plugins.mcp.stereotypes.mcp_tool_server_agent import McpToolServerAgent
+from spakky.plugins.mcp.stereotypes.mcp_server import MCPServer
 
 logger = getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = getLogger(__name__)
 @Order(0)
 @Pod()
 class RegisterMcpToolServerAgentsPostProcessor(IPostProcessor, IContainerAware):
-    """Registers Pods carrying both @Agent and @McpToolServerAgent."""
+    """Registers Pods carrying both @Agent and @MCPServer."""
 
     _container: IContainer
 
@@ -37,11 +37,11 @@ class RegisterMcpToolServerAgentsPostProcessor(IPostProcessor, IContainerAware):
 
     @override
     def post_process(self, pod: object) -> object:
-        """Register *pod* when it is an MCP tool-server agent."""
+        """Register *pod* when it is an @MCPServer-compatible @Agent."""
         pod_type = self._unwrap_proxy_type(type(pod))
-        if not (McpToolServerAgent.exists(pod_type) and Agent.exists(pod_type)):
+        if not (MCPServer.exists(pod_type) and Agent.exists(pod_type)):
             return pod
         registry = self._container.get(McpToolServerRegistry)
-        registry.register(pod, pod_type, McpToolServerAgent.get(pod_type))
-        logger.info("Registered MCP tool-server agent from %s", pod_type.__qualname__)
+        registry.register(pod, pod_type, MCPServer.get(pod_type))
+        logger.info("Registered MCP server from %s", pod_type.__qualname__)
         return pod

@@ -538,8 +538,8 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` |
 | `spakky-agent` | `AgentBootstrapValidationPostProcessor` |
 | `spakky-agui` | `AgUiConfig` |
-| `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor` |
-| `spakky-mcp` | `McpConfig`, `McpClient`, `McpToolServer` |
+| `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, `MountA2AASGIPostProcessor`, `RegisterA2AGRPCPostProcessor` |
+| `spakky-mcp` | `MCPConfig`, `MCPClient`, `MCPToolServer` |
 
 ### Agentic workflow layer
 
@@ -1294,8 +1294,8 @@ flowchart TD
 | 플러그인 | 등록/공개 컴포넌트 | 외부 의존성 |
 |---------|------------------|-----------|
 | `spakky-agui` | `AgUiConfig`, `AgUiProjector`, `AgUiRunDriver`, `add_agui_endpoint`, `add_agui_http_stream_endpoint`, `add_agui_websocket_endpoint`, `AgUiStdioCommand`, deferred-tool HITL decision ingestion | `ag-ui-protocol`, `fastapi[standard]`, `pydantic-settings`, `spakky-agent` |
-| `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, `@A2AAgentServer`, `build_a2a_app`, `build_a2a_rest_app`, `build_a2a_grpc_handler`, `A2AAgentDelegate`, in-memory `IA2ATaskRepository` fallback | `a2a-sdk[http-server]`, `grpcio`, `pydantic`, `pydantic-settings`, `spakky-agent` |
-| `spakky-mcp` | `McpConfig`, `McpClient.open_runner`, external `AgentToolDescriptor` merge, `McpToolServer`, stdio/streamable-HTTP tool server exposure | `mcp`, `pydantic-settings`, `spakky-agent` |
+| `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, `MountA2AASGIPostProcessor`, `RegisterA2AGRPCPostProcessor`, `@A2ACompatible`, `A2AAgentDelegate`, in-memory `IA2ATaskRepository` fallback | `a2a-sdk[http-server]`, `grpcio`, `pydantic`, `pydantic-settings`, `spakky-agent` |
+| `spakky-mcp` | `MCPConfig`, `MCPClient.open_runner`, external `AgentToolDescriptor` merge, `MCPToolServer`, stdio/streamable-HTTP tool server exposure | `mcp`, `pydantic-settings`, `spakky-agent` |
 
 ### 트랜스포트 플러그인
 

@@ -3,6 +3,7 @@
 import spakky.plugins.agui as agui_api
 from spakky.plugins.agui import (
     AbstractAgUiError,
+    AGUICompatible,
     AgUiAgent,
     AgUiAgentEntry,
     AgUiAgentRegistry,
@@ -34,7 +35,8 @@ def test_public_api_exports_agui_surface() -> None:
     """public API가 plugin id, config, adapter 구성요소, 에러, hook을 노출한다."""
     assert PLUGIN_NAME.name == "spakky-agui"
     assert AgUiConfig is agui_api.AgUiConfig
-    assert AgUiAgent is agui_api.AgUiAgent
+    assert AGUICompatible is agui_api.AGUICompatible
+    assert AgUiAgent is AGUICompatible
     assert AgUiAgentEntry is agui_api.AgUiAgentEntry
     assert AgUiAgentRegistry is agui_api.AgUiAgentRegistry
     assert AgUiProjector is agui_api.AgUiProjector

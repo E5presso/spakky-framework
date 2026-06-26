@@ -6,7 +6,7 @@ from spakky.agent import Agent
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.agui.error import AgUiRunResolutionError
-from spakky.plugins.agui.stereotypes.agui_agent import AgUiAgent
+from spakky.plugins.agui.stereotypes.agui_compatible import AGUICompatible
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,7 +15,7 @@ class AgUiAgentEntry:
 
     instance: object
     agent_type: type[object]
-    metadata: AgUiAgent
+    metadata: AGUICompatible
 
     @property
     def agent_name(self) -> str:
@@ -37,7 +37,7 @@ class AgUiAgentRegistry:
         self,
         instance: object,
         agent_type: type[object],
-        metadata: AgUiAgent,
+        metadata: AGUICompatible,
     ) -> AgUiAgentEntry:
         """Register one exposed @Agent instance and return the entry."""
         entry = AgUiAgentEntry(

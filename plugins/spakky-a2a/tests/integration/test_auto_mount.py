@@ -1,4 +1,4 @@
-"""Integration: @A2AAgentServer agents mount on ASGI hosts through DI."""
+"""Integration: @A2ACompatible agents mount on ASGI hosts through DI."""
 
 from collections.abc import AsyncIterator
 
@@ -21,7 +21,7 @@ from starlette.applications import Starlette
 from typing import override
 
 from spakky.plugins.a2a.main import initialize as initialize_a2a
-from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
 type JsonObject = dict[str, object]
 
@@ -48,7 +48,7 @@ class AutoMountModel(IAgentModel):
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
 
-@A2AAgentServer(base_url="http://auto.local", version="1.0.0")
+@A2ACompatible(base_url="http://auto.local", version="1.0.0")
 @Agent(spec=AgentExecutionSpec(name="auto_a2a", objective="answer"))
 class AutoMountedA2AAgent:
     """Agent exposed as A2A solely by declaration."""
@@ -88,7 +88,7 @@ def _build_app() -> Starlette:
 
 
 async def test_a2a_agent_mounts_jsonrpc_app_without_manual_builder() -> None:
-    """@A2AAgentServer @Agent가 수동 builder 없이 ASGI host에 mount된다."""
+    """@A2ACompatible @Agent가 수동 builder 없이 ASGI host에 mount된다."""
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=_build_app()),
         base_url="http://testserver",

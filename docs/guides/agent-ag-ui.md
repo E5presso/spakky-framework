@@ -60,7 +60,7 @@ class Assistant:
 
 ## 2. endpoint 마운트
 
-AG-UI 노출은 `@Agent` 위에 `@AgUiAgent` tag를 쌓아 선언합니다. plugin은
+AG-UI 노출은 `@Agent` 위에 `@AGUICompatible` tag를 쌓아 선언합니다. plugin은
 `AgUiConfig`, `AgUiAgentRegistry`, FastAPI mount post-processor를 등록하고, post-processor가
 marked Agent와 FastAPI Pod를 발견해 SSE/HTTP streaming/WebSocket route를 자동으로 붙입니다.
 애플리케이션 코드는 `run_driver_factory`나 `add_agui_endpoint()`를 호출하지 않습니다.
@@ -71,7 +71,7 @@ from spakky.agent import Agent, AgentExecutionSpec, IAgentModel
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
-from spakky.plugins.agui import AgUiAgent
+from spakky.plugins.agui import AGUICompatible
 
 
 @Pod(name="fastapi_app")
@@ -79,7 +79,7 @@ def fastapi_app() -> FastAPI:
     return FastAPI()
 
 
-@AgUiAgent()
+@AGUICompatible()
 @Agent(spec=AgentExecutionSpec(name="assistant", objective="answer with tools"))
 class Assistant:
     def __init__(self, model: IAgentModel) -> None:
@@ -94,7 +94,7 @@ app = application.container.get(FastAPI)
 여러 Agent를 노출할 때는 path 충돌을 피하도록 각 Agent에 경로를 선언합니다.
 
 ```python
-@AgUiAgent(
+@AGUICompatible(
     sse_path="/agents/researcher/agui",
     http_stream_path="/agents/researcher/agui/stream",
     websocket_path="/agents/researcher/agui/ws",
@@ -104,7 +104,7 @@ class Researcher:
     ...
 ```
 
-`@AgUiAgent(server_names=("weather",))`를 지정하면 `spakky-mcp`가 제공하는
+`@AGUICompatible(server_names=("weather",))`를 지정하면 `spakky-mcp`가 제공하는
 `IAgentRunnerFactory`가 해당 external MCP server tool만 이 Agent run에 결합합니다. 비워두면
 configured MCP server 전체를 사용합니다.
 
@@ -119,7 +119,7 @@ CLI나 MCP-style local bridge가 AG-UI payload를 stdio로 주고받아야 하�
 `AgUiStdioCommand`를 사용합니다. 입력은 AG-UI `RunAgentInput` JSON 한 건이고, 출력은
 AG-UI encoded event payload를 한 줄에 하나씩 씁니다.
 stdio 전용 host는 lower-level `RunDriverFactory`를 `AgUiStdioCommand`에 전달합니다. 일반
-FastAPI SSE/HTTP/WebSocket 노출은 `@AgUiAgent` 선언만 사용합니다.
+FastAPI SSE/HTTP/WebSocket 노출은 `@AGUICompatible` 선언만 사용합니다.
 
 ### 설정
 

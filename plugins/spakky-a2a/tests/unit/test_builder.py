@@ -7,6 +7,7 @@ from spakky.core.pod.interfaces.container import IContainer
 from starlette.applications import Starlette
 
 from spakky.plugins.a2a.error import A2AAgentServerNotRegisteredError
+from spakky.plugins.a2a.config import A2AConfig
 from spakky.plugins.a2a.server.builder import A2AAgentServerSpec, build_a2a_app
 from spakky.plugins.a2a.server.registry import A2AAgentRegistry
 from spakky.plugins.a2a.store.interfaces import IA2ATaskRepository
@@ -89,8 +90,46 @@ def test_server_spec_uses_container_repository_when_present() -> None:
     container.get_or_none.assert_called_once_with(IA2ATaskRepository)
 
 
+def test_server_spec_builds_rest_app_for_registered_agent() -> None:
+    """The spec can build the declared REST transport from the registry."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(rest_mount_path="/rest/planner"),
+    )
+    config = A2AConfig()
+    config.default_base_url = "https://agents.example.com"
+    container = MagicMock(spec=IContainer)
+    container.get = MagicMock(
+        side_effect=lambda key: config if key is A2AConfig else registry
+    )
+    container.get_or_none = MagicMock(return_value=None)
+
+    app = _spec_with_container(container).build_rest_app_for("planner")
+
+    assert isinstance(app, Starlette)
+
+
+def test_server_spec_builds_grpc_handler_for_registered_agent() -> None:
+    """The spec can build the declared gRPC handler from the registry."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(grpc_base_url="grpc://planner.local"),
+    )
+    container = MagicMock(spec=IContainer)
+    container.get = MagicMock(return_value=registry)
+    container.get_or_none = MagicMock(return_value=None)
+
+    handler = _spec_with_container(container).build_grpc_handler_for("planner")
+
+    assert handler is not None
+
+
 def test_server_spec_mount_path_uses_marker_override() -> None:
-    """@A2AAgentServer mount_path가 있으면 config prefix 대신 그 값을 쓴다."""
+    """@A2ACompatible mount_path가 있으면 config prefix 대신 그 값을 쓴다."""
     registry = A2AAgentRegistry()
     registry.register(
         ServedPlannerAgent(StubModel()),
@@ -105,11 +144,101 @@ def test_server_spec_mount_path_uses_marker_override() -> None:
     )
 
 
-def _planner_marker(mount_path: str | None = None):
-    from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+def test_server_spec_derives_default_base_url_from_mount_path() -> None:
+    """base_url 생략 시 default_base_url과 실제 mount path를 합쳐 광고한다."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(base_url=None, mount_path="/custom/planner"),
+    )
+    config = A2AConfig()
+    config.default_base_url = "https://agents.example.com/root/"
+    container = MagicMock(spec=IContainer)
+    container.get = MagicMock(
+        side_effect=lambda key: config if key is A2AConfig else registry
+    )
 
-    return A2AAgentServer(
-        base_url="http://planner.local",
+    entry = registry.get("planner")
+
+    assert (
+        _spec_with_container(container)._base_url(entry)
+        == "https://agents.example.com/root/custom/planner"
+    )
+
+
+def test_server_spec_rest_base_url_uses_explicit_value() -> None:
+    """rest_base_url이 있으면 REST mount path에서 유도하지 않는다."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(
+            base_url=None,
+            rest_mount_path="/rest/planner",
+            rest_base_url="https://rest.example/planner",
+        ),
+    )
+    container = MagicMock(spec=IContainer)
+    container.get = MagicMock(return_value=registry)
+    entry = registry.get("planner")
+
+    assert (
+        _spec_with_container(container)._rest_base_url(entry)
+        == "https://rest.example/planner"
+    )
+
+
+def test_server_spec_rest_base_url_falls_back_to_agent_base_url() -> None:
+    """REST 전용 endpoint가 없으면 AgentCard base_url을 재사용한다."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(base_url="https://agents.example.com/a2a/planner"),
+    )
+    container = MagicMock(spec=IContainer)
+    container.get = MagicMock(return_value=registry)
+    entry = registry.get("planner")
+
+    assert (
+        _spec_with_container(container)._rest_base_url(entry)
+        == "https://agents.example.com/a2a/planner"
+    )
+
+
+def test_server_spec_grpc_base_url_falls_back_to_agent_base_url() -> None:
+    """grpc_base_url을 생략하면 AgentCard base_url을 재사용한다."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(base_url="https://agents.example.com/a2a/planner"),
+    )
+    container = MagicMock(spec=IContainer)
+    container.get = MagicMock(return_value=registry)
+    entry = registry.get("planner")
+
+    assert (
+        _spec_with_container(container)._grpc_base_url(entry)
+        == "https://agents.example.com/a2a/planner"
+    )
+
+
+def _planner_marker(
+    base_url: str | None = "http://planner.local",
+    mount_path: str | None = None,
+    rest_mount_path: str | None = None,
+    rest_base_url: str | None = None,
+    grpc_base_url: str | None = None,
+):
+    from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
+
+    return A2ACompatible(
+        base_url=base_url,
         version="1.2.3",
         mount_path=mount_path,
+        rest_mount_path=rest_mount_path,
+        rest_base_url=rest_base_url,
+        grpc_base_url=grpc_base_url,
     )
