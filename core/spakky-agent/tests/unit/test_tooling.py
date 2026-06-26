@@ -12,6 +12,7 @@ from spakky.agent import (
     Agent,
     AgentDefinitionError,
     AgentToolCatalog,
+    AgentToolApprovalContext,
     AgentToolBindingError,
     AgentToolBoundInvocation,
     AgentToolDescriptor,
@@ -875,6 +876,15 @@ def test_tool_catalog_expect_preserves_owner_callable_schema_and_metadata() -> N
         )
     )
     assert descriptor.metadata.requires_approval_candidate is True
+    assert descriptor.approval_context({"command": "ls"}) == AgentToolApprovalContext()
+
+
+def test_agent_tool_approval_context_expect_rejects_blank_overrides() -> None:
+    """approval context override 문자열은 approval state에 들어가기 전 검증된다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentToolApprovalContext(prompt=" ")
+    with pytest.raises(AgentDefinitionError):
+        AgentToolApprovalContext(action_ref=" ")
 
 
 def test_tool_catalog_expect_lookup_by_identity_and_schema_name() -> None:

@@ -606,12 +606,16 @@ class AgentRunner:
         the durable approval decision polled from the signal queue, the
         non-blocking resume the ADR-0013 §5 flow uses.
         """
+        approval_context = descriptor.approval_context(call.arguments)
         plan = plan_agent_tool_approval(
             descriptor=descriptor,
             approval_id=self._approval_id(state.id, call),
             agent_state_id=state.id,
             agent_type=self._agent_type(),
+            prompt=approval_context.prompt,
+            action_ref=approval_context.action_ref,
             call_id=call.call_id,
+            metadata=approval_context.metadata,
         )
         if not (plan.requires_approval and plan.yield_item is not None):
             return None, None, True

@@ -34,7 +34,7 @@
 
 ## Descriptor
 
-`descriptor` 모듈은 `McpClient`가 발견한 외부 MCP tools를 lazy `mcp_search_tools` / `mcp_call_tool` 표면 뒤에 보관하기 위한 내부 정규화 계층입니다. 애플리케이션 코드는 일반적으로 `McpClient`, `McpConfig`, `IMcpRuntimeServerResolver`만 사용합니다.
+`descriptor` 모듈은 `McpClient`가 발견한 외부 MCP tools를 lazy `mcp_search_tools` / `mcp_call_tool` 표면 뒤에 보관하기 위한 내부 정규화 계층입니다. 애플리케이션 코드는 일반적으로 `McpClient`, `McpConfig`, `IMcpRuntimeServerResolver`만 사용합니다. `mcp_call_tool` approval request는 meta-tool이 아니라 선택된 외부 MCP tool 이름과 arguments를 노출합니다.
 
 ::: spakky.plugins.mcp.descriptor
     options:

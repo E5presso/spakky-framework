@@ -154,6 +154,37 @@ def test_lazy_mcp_search_is_not_an_approval_candidate() -> None:
     assert call.metadata.requires_approval_candidate is True
 
 
+def test_lazy_call_approval_context_names_selected_external_tool() -> None:
+    """Approval requests show the MCP tool selected through the lazy call surface."""
+    _search, call = build_lazy_mcp_descriptors([_external_descriptor()])
+
+    context = call.approval_context(
+        {"tool_name": "weather__get_data", "arguments": {"city": "seoul"}}
+    )
+
+    assert context.prompt == "Approve MCP tool invocation: weather__get_data"
+    assert (
+        context.action_ref
+        == "spakky.plugins.mcp.ExternalMcpTool.weather:weather__get_data"
+    )
+    assert context.metadata == {
+        "mcp_meta_tool": MCP_CALL_TOOL_NAME,
+        "mcp_tool_name": "weather__get_data",
+        "mcp_arguments": {"city": "seoul"},
+    }
+
+
+def test_lazy_call_approval_context_falls_back_for_invalid_tool_name() -> None:
+    """Invalid lazy-call payloads keep the default meta-tool approval context."""
+    _search, call = build_lazy_mcp_descriptors([_external_descriptor()])
+
+    context = call.approval_context({"tool_name": " "})
+
+    assert context.prompt is None
+    assert context.action_ref is None
+    assert context.metadata == {}
+
+
 async def test_lazy_search_returns_matching_external_tool_summaries() -> None:
     """The search meta-tool returns MCP tool schemas without listing all upfront."""
     search, _call = build_lazy_mcp_descriptors(
