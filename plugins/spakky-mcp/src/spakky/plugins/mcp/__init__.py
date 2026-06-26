@@ -7,13 +7,21 @@ issue #417).
 
 from spakky.core.application.plugin import Plugin
 
+from spakky.plugins.mcp.auth import (
+    IMcpHttpClientProvider,
+    McpHttpClientProvider,
+    resolve_http_auth_headers,
+)
 from spakky.plugins.mcp.client import (
     McpClient,
     connect_server,
     make_mcp_tool_callable,
 )
 from spakky.plugins.mcp.config import (
+    McpOAuthClientAuthMethod,
+    McpOAuthClientCredentialsConfig,
     McpConfig,
+    McpServerAuthConfig,
     McpServerConfig,
     McpToolServerConfig,
     McpTransport,
@@ -43,6 +51,12 @@ from spakky.plugins.mcp.server_registry import (
     McpToolServerEntry,
     McpToolServerRegistry,
 )
+from spakky.plugins.mcp.runtime import (
+    IMcpRuntimeServerResolver,
+    MCP_METADATA_KEY,
+    MCP_SERVERS_METADATA_KEY,
+    McpRuntimeServerResolver,
+)
 from spakky.plugins.mcp.stereotypes.mcp_tool_server_agent import McpToolServerAgent
 from spakky.plugins.mcp.stereotypes.mcp_server import MCPServer
 from spakky.plugins.mcp.server import (
@@ -62,6 +76,15 @@ MCPClient = McpClient
 
 MCPConfig = McpConfig
 """Uppercase-acronym alias for :class:`McpConfig`."""
+
+MCPHttpClientProvider = McpHttpClientProvider
+"""Uppercase-acronym alias for :class:`McpHttpClientProvider`."""
+
+MCPRuntimeServerResolver = McpRuntimeServerResolver
+"""Uppercase-acronym alias for :class:`McpRuntimeServerResolver`."""
+
+MCPServerAuthConfig = McpServerAuthConfig
+"""Uppercase-acronym alias for :class:`McpServerAuthConfig`."""
 
 MCPServerConfig = McpServerConfig
 """Uppercase-acronym alias for :class:`McpServerConfig`."""
@@ -89,12 +112,24 @@ __all__ = [
     "AbstractMcpError",
     "ExternalMcpTool",
     "ExternalMcpToolDescriptor",
+    "IMcpHttpClientProvider",
+    "IMcpRuntimeServerResolver",
+    "MCP_METADATA_KEY",
+    "MCP_SERVERS_METADATA_KEY",
     "McpCatalogMergeError",
     "MCPClient",
     "McpClient",
     "MCPConfig",
     "McpConfig",
+    "MCPHttpClientProvider",
+    "McpHttpClientProvider",
+    "MCPRuntimeServerResolver",
+    "McpRuntimeServerResolver",
+    "McpOAuthClientAuthMethod",
+    "McpOAuthClientCredentialsConfig",
     "McpResponseError",
+    "MCPServerAuthConfig",
+    "McpServerAuthConfig",
     "MCPServerConfig",
     "McpServerConfig",
     "McpServerConfigurationError",
@@ -127,6 +162,7 @@ __all__ = [
     "normalize_call_result",
     "normalize_dispatch_result",
     "prefixed_tool_name",
+    "resolve_http_auth_headers",
     "serve_stdio",
     "streamable_http_session_manager",
 ]

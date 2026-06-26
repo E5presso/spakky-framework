@@ -2,7 +2,7 @@
 
 import pytest
 
-from spakky.agent import ModelMessage, ModelMessageRole, RunAgentInput
+from spakky.agent import ModelMessage, ModelMessageRole, ModelSelection, RunAgentInput
 from spakky.agent.error import AgentDefinitionError
 
 
@@ -29,6 +29,18 @@ def test_run_agent_input_expect_resume_flag_carried() -> None:
     run_input = RunAgentInput(state_id="run-1", instruction="do it", resume=True)
 
     assert run_input.resume is True
+
+
+def test_run_agent_input_expect_model_selection_carried() -> None:
+    """요청별 model selection은 inbound contract에 typed field로 보존된다."""
+    selection = ModelSelection(provider="openrouter", model="anthropic/claude")
+    run_input = RunAgentInput(
+        state_id="run-1",
+        instruction="do it",
+        model_selection=selection,
+    )
+
+    assert run_input.model_selection is selection
 
 
 def test_run_agent_input_expect_rejects_blank_state_id() -> None:

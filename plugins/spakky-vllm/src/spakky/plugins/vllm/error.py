@@ -47,6 +47,12 @@ class VllmModelRefusalError(AbstractVllmError):
     message = "vLLM model refused the request"
 
 
+class VllmModelSelectionError(AbstractVllmError):
+    """Raised when a run selects a model outside the vLLM adapter boundary."""
+
+    message = "vLLM model selection is invalid"
+
+
 class VllmStreamingNotImplementedError(AbstractVllmError):
     """Backward-compatible alias for pre-streaming adapter failures."""
 

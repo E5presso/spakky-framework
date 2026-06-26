@@ -21,6 +21,46 @@
 
 운영용 영속 저장소는 예제 안에 포함하지 않습니다. 실제 운영에서는 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`를 SQLAlchemy contribution 같은 provider plugin으로 주입해야 합니다.
 
+## 전체 구조
+
+CodeAssistant는 "코딩 에이전트 제품"이 아니라 framework building block을 한 파일에 모은 예제입니다. 파일을 읽고, 검색하고, 쓰고, shell/git을 호출하는 기능은 모두 port 뒤에 있습니다. Agent는 port를 생성자 주입으로 받고, 각 port 동작을 `@agent_tool`로 model에게 노출합니다.
+
+```mermaid
+flowchart TD
+  Inbound[FastAPI WebSocket / Typer / test collector] --> Input[RunAgentInput]
+  Inbound --> Agent[CodeAssistant @Agent]
+  Agent --> Model[IAgentModel]
+  Agent --> Workspace[IWorkspacePort]
+  Agent --> Shell[IShellPort]
+  Agent --> Git[IGitPort]
+  Agent --> State[IAgentStateRepository]
+  Agent --> Signals[IAgentSignalRepository]
+  Agent --> Evidence[IAgentEvidenceRepository]
+  Agent --> Tools["@agent_tool catalog: workspace.*, shell.command, git.*"]
+  Tools --> Runner[framework runner-backed execute]
+  Input --> Runner
+  Runner --> Stream[AgentYield stream]
+  Stream --> Inbound
+```
+
+예제 파일에서 이름이 어디서 오는지 먼저 확인하세요.
+
+| 이름 | 위치 | 역할 |
+|------|------|------|
+| `WorkspaceReadResult`, `WorkspaceSearchResult`, `WorkspaceWriteResult` | `code_assistant_demo.py` dataclass | workspace tool 결과 payload |
+| `ShellCommandResult`, `GitCommandResult` | `code_assistant_demo.py` dataclass | shell/git tool 결과 payload |
+| `IWorkspacePort`, `IShellPort`, `IGitPort` | `code_assistant_demo.py` interface | Agent가 외부 세계를 직접 import하지 않게 하는 port |
+| `LocalWorkspaceAdapter`, `SubprocessShellAdapter`, `GitCliAdapter` | `code_assistant_demo.py` adapter | demo용 실제 adapter. 운영에서는 Pod로 등록해 주입합니다. |
+| `StaticModel` | `code_assistant_demo.py` fake model | smoke/test에서 vLLM 없이 runner를 움직이는 scripted model |
+| `FakeStateRepository`, `FakeSignalRepository`, `FakeEvidenceRepository` | `tests/unit/test_code_assistant_demo.py` test double | acceptance test용 in-memory repository |
+| `CodeAssistantWebSocketController`, `CodeAssistantCliController` | `inbound_adapter_examples.py` | 기존 FastAPI/Typer plugin으로 Agent stream을 노출하는 adapter 예제 |
+
+처음 따라 할 때는 세 단계를 나누면 됩니다.
+
+1. **core demo를 읽는다**: `CodeAssistant`의 constructor와 `@agent_tool` 7개가 어떤 port를 쓰는지 확인합니다.
+2. **test collector로 실행한다**: acceptance test처럼 `StaticModel` 또는 scripted `RecordingModel`, fake repository, fake workspace를 직접 넘겨 `collect_stream()`을 호출합니다.
+3. **애플리케이션에 붙인다**: 실제 앱에서는 workspace/shell/git adapter와 repository provider를 `@Pod`로 등록하고, FastAPI/Typer controller가 container에서 `CodeAssistant`를 resolve합니다.
+
 ## 실행 가능한 빠른 검증
 
 이 가이드의 예제는 `core/spakky-agent` 패키지에 실제 코드와 테스트로 들어 있습니다. 문서 흐름이 코드와 맞는지 확인하려면 패키지 디렉터리에서 acceptance test를 실행합니다.
@@ -36,6 +76,8 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 contribution을 사용해야 합니다.
 
 가장 작은 선언형 `@Agent` 형태는 다음 예시와 같습니다. 도구만 선언하고 `execute()`를 생략하면, 파일로 저장해 애플리케이션 scan 대상에 포함했을 때 `CodeAssistant`는 일반 UseCase처럼 container에서 resolve되고, runner가 표준 실행 루프를 `execute()`로 제공합니다.
+
+아래 snippet은 핵심 모양만 보여줍니다. 실제로 실행하려면 `IWorkspacePort`와 `WorkspaceReadResult`도 같은 모듈에 정의하거나 import해야 하며, 앱에서는 `IWorkspacePort` 구현체를 `@Pod`로 등록해야 합니다.
 
 ```python
 from spakky.agent import (
@@ -69,6 +111,46 @@ class CodeAssistant:
 ```
 
 `code_assistant_demo.py`의 CodeAssistant는 이 최소 형태에 workspace/shell/git port 도구 7종, write/shell/apply 도구의 approval, evidence repository, action boundary resume, 그리고 `@on_signal(AgentSignalKind.STEERING_INSTRUCTION)` 훅을 더한 구성입니다. 각 개념의 배경은 [AI Agent 심화](agents-advanced.md)에서 먼저 확인할 수 있습니다.
+
+## 앱으로 조립할 때 필요한 Pod
+
+예제는 library/test 형태라서 운영 앱의 `main.py`를 대신 만들지 않습니다. 앱으로 붙일 때는 아래 Pod들이 container에 있어야 합니다.
+
+| Pod/interface | test에서는 | 운영 앱에서는 |
+|---------------|------------|---------------|
+| `IAgentModel` | `StaticModel` 또는 scripted fake를 직접 전달 | `spakky-vllm`의 `VllmAgentModel` 또는 다른 model adapter |
+| `IWorkspacePort` | `FakeWorkspace` | workspace root를 제한하는 `LocalWorkspaceAdapter` Pod |
+| `IShellPort` | `FakeShell` | cwd를 제한하는 `SubprocessShellAdapter` Pod |
+| `IGitPort` | `FakeGit` | shell port를 사용하는 `GitCliAdapter` Pod |
+| `IAgentStateRepository` | `FakeStateRepository` | `spakky-sqlalchemy[agent]` contribution repository |
+| `IAgentSignalRepository` | `FakeSignalRepository` | `spakky-sqlalchemy[agent]` contribution repository |
+| `IAgentEvidenceRepository` | `FakeEvidenceRepository` | `spakky-sqlalchemy[agent]` contribution repository |
+
+앱 entrypoint는 보통 다음 모양입니다. 실제 port adapter factory와 SQLAlchemy 설정은 애플리케이션 모듈에 `@Pod`로 둡니다.
+
+```python
+import spakky.agent
+import spakky.plugins.fastapi
+import spakky.plugins.vllm
+import my_code_app
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+application = (
+    SpakkyApplication(ApplicationContext())
+    .load_plugins(
+        include={
+            spakky.agent.PLUGIN_NAME,
+            spakky.plugins.vllm.PLUGIN_NAME,
+            spakky.plugins.fastapi.PLUGIN_NAME,
+        }
+    )
+    .scan(my_code_app)
+    .start()
+)
+```
+
+Durable repository까지 운영 구성으로 쓰려면 `spakky-sqlalchemy` plugin과 `spakky.contributions.spakky.agent` contribution을 함께 구성합니다. 그렇지 않으면 acceptance test처럼 repository double을 명시적으로 넘기는 테스트 경로만 안전합니다.
 
 ## 구조
 

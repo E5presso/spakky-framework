@@ -4,6 +4,77 @@
 
 이 문서는 [AI Agent 개발](agents.md)을 읽은 뒤 보는 심화 가이드입니다. 여기서는 작은 Agent를 운영형 Agent로 확장할 때 필요한 선택지를 정리합니다.
 
+기초 문서가 "무엇을 작성해야 실행되는가"를 다룬다면, 이 문서는 "왜 그렇게 나뉘어 있고 어떤 경계가 원리를 지키는가"를 다룹니다. 세 가지 원칙이 전체 설계를 묶습니다.
+
+1. Runner가 loop를 소유하고, Agent class는 선언을 소유합니다.
+2. 위험한 side effect는 approval/evidence/action boundary 뒤에서만 실행됩니다.
+3. 외부 protocol은 core event를 재해석하지 않고 `AgentEvent`를 각 wire event로 투영합니다.
+
+## 원리: 선언은 Agent, 반복은 Runner
+
+Runner-backed Agent에서 개발자는 `execute()` 루프를 쓰지 않습니다. `@Agent` spec, `@agent_tool`, `@on_signal`, 생성자 주입 port를 선언하면 runner가 그 선언을 읽어 model/tool/signal loop를 수행합니다.
+
+```mermaid
+sequenceDiagram
+  participant Adapter as Inbound adapter
+  participant Agent as @Agent instance
+  participant Runner as AgentRunner
+  participant Model as IAgentModel
+  participant Tools as AgentToolDispatcher
+  participant Repo as State/Signal/Evidence repositories
+
+  Adapter->>Agent: execute(RunAgentInput)
+  Agent->>Runner: synthesized runner-backed execute()
+  Runner->>Repo: load state, pending signals, evidence
+  Runner->>Model: stream(ModelRequest + tool schemas)
+  Model-->>Runner: token deltas / tool call candidates / done
+  Runner-->>Adapter: AgentYield TOKEN/PROGRESS
+  Runner->>Tools: dispatch approved tool call
+  Tools-->>Runner: typed result
+  Runner->>Repo: append evidence and state boundary
+  Runner-->>Adapter: AgentYield TOOL / FINAL / APPROVAL / ERROR
+```
+
+이 구조의 이점은 loop 정책이 한 곳에 있다는 점입니다. Approval, signal polling, evidence append, retry/resume, compaction을 각 Agent가 제각각 구현하지 않고 runner가 일관되게 적용합니다. 커스텀 `execute()`는 이 표준 loop를 벗어나야 할 때의 escape hatch입니다.
+
+## 원리: 도구 호출은 계약, side effect는 경계
+
+`@agent_tool`은 "함수를 모델에게 보여준다"만 의미하지 않습니다. Python signature는 입력 schema가 되고, metadata는 approval/evidence/retry 판단의 근거가 됩니다.
+
+```mermaid
+flowchart TD
+  Candidate[Model tool call candidate] --> Lookup[AgentToolCatalog lookup]
+  Lookup --> Approval{approval required?}
+  Approval -- no --> Bind[Bind JSON payload to Python signature]
+  Approval -- yes --> Pause[RunPaused / AgentYield APPROVAL]
+  Pause --> Decision[APPROVAL_DECISION signal]
+  Decision --> Approved{approved?}
+  Approved -- no --> Finish[terminal result or rejection]
+  Approved -- yes --> Bind
+  Bind --> Dispatch[AgentToolDispatcher invokes method]
+  Dispatch --> Evidence[Append AgentEvidence]
+  Evidence --> Continue[Inject tool result into next model request]
+```
+
+읽기 tool은 `ToolEffects.read_only()`와 `approval=NOT_REQUIRED`로 의도를 분명히 합니다. 쓰기, shell, 외부 API, patch 적용처럼 상태를 바꾸는 tool은 approval을 명시하거나 기본 `DERIVED` 판정에 맡깁니다. Evidence는 append-only라서 나중에 resume/retry를 판단할 때 "무엇을 이미 실행했는가"를 재구성할 수 있습니다.
+
+## 원리: Protocol adapter는 투영 계층
+
+Core runner는 AG-UI, A2A, MCP를 직접 알지 않습니다. AG-UI와 A2A는 `AgentRunner.run_events()`의 protocol-neutral `AgentEvent`를 각 protocol event로 바꿉니다. MCP는 다릅니다. MCP는 실행 event stream adapter가 아니라 **tool adapter**입니다.
+
+```mermaid
+flowchart LR
+  Runner[AgentRunner] --> Yield[AgentYield]
+  Runner --> Event[AgentEvent]
+  Yield --> Native[Native HTTP / WebSocket / CLI adapter]
+  Event --> AGUI[spakky-agui projector]
+  Event --> A2A[spakky-a2a executor/projector]
+  Catalog[AgentToolCatalog] --> MCPServer[spakky-mcp server direction]
+  MCPClient[spakky-mcp client direction] --> Catalog
+```
+
+따라서 직접 protocol adapter를 만들 때는 `AgentYield`를 AG-UI/A2A event로 억지 변환하지 말고 `run_events()`를 사용합니다. 반대로 MCP를 붙일 때는 "실행 stream을 노출한다"가 아니라 "외부 MCP tool을 Agent tool catalog에 합치거나, Agent tool catalog를 MCP client에게 노출한다"로 이해해야 합니다.
+
 ## Tool 설계
 
 Tool은 모델이 호출할 수 있는 애플리케이션 기능입니다. `@agent_tool`은 Python method의 signature를 읽어 schema를 만들고, risk, approval, evidence, idempotency metadata를 함께 보관합니다.
@@ -309,7 +380,55 @@ Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 hi
 
 ## 멀티턴 대화와 TaskStore
 
-`RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
+`RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `model_selection`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
+
+`model_selection`은 요청별 provider/model/profile 선택입니다. Agent class는 특정 모델 이름을 소유하지 않고 `IAgentModel` port만 주입받습니다. 서비스 boundary가 사용자 선택을 `RunAgentInput.model_selection`으로 전달하면 runner는 같은 값을 `ModelRequest.model_selection`에 실어 adapter/router로 넘기고, reasoning gate와 compaction은 `IAgentModel.capability_for(selection)`을 조회합니다. vLLM 단일 adapter는 `provider in (None, "vllm")`만 수용하고, OpenRouter/Anthropic/Vertex/OpenAI 같은 multi-provider 지원은 router adapter가 이 selector를 해석하는 방식으로 확장합니다.
+
+런타임 모델 선택을 서비스에서 지원하려면 `IAgentModelResolver`를 Pod로 등록하고 `AgentRunnerFactory`에 주입되게 합니다. Resolver가 `None`을 반환하면 agent 생성자에 이미 주입된 기본 `IAgentModel`을 그대로 사용합니다. 특정 provider/model/profile을 처리할 수 있으면 그 run에 사용할 model adapter를 반환합니다.
+
+```python
+from typing import override
+
+from spakky.agent import IAgentModel, IAgentModelResolver, RunAgentInput
+from spakky.core.pod.annotations.pod import Pod
+
+
+@Pod()
+class ModelRouter(IAgentModelResolver):
+    def __init__(
+        self,
+        openai_model: OpenAIModelAdapter,
+        anthropic_model: AnthropicModelAdapter,
+        openrouter_model: OpenRouterModelAdapter,
+    ) -> None:
+        self._models: dict[str, IAgentModel] = {
+            "openai": openai_model,
+            "anthropic": anthropic_model,
+            "openrouter": openrouter_model,
+        }
+
+    @override
+    def resolve_model(
+        self,
+        agent_instance: object,
+        run_input: RunAgentInput | None = None,
+    ) -> IAgentModel | None:
+        _ = agent_instance
+        if run_input is None or run_input.model_selection is None:
+            return None
+        provider = run_input.model_selection.provider
+        if provider is None:
+            return None
+        return self._models.get(provider)
+```
+
+각 adapter는 `ModelRequest.model_selection.model`을 provider의 실제 model id로 해석합니다. 예를 들어 OpenRouter adapter는 `anthropic/claude-sonnet-4.5` 같은 provider-qualified model id를 그대로 보낼 수 있고, Anthropic/OpenAI 전용 adapter는 자기 provider만 허용하도록 검증할 수 있습니다. Router adapter를 하나의 `IAgentModel` 구현으로 만들 수도 있습니다. 그 경우 `complete()`/`stream()` 안에서 `request.model_selection`을 읽어 provider SDK를 선택하고, `capability_for(selection)`도 provider별 context window와 reasoning 지원 여부를 반환해야 합니다.
+
+| Inbound | 모델 선택 전달 |
+|---------|----------------|
+| Python/custom boundary | `RunAgentInput(model_selection=ModelSelection(...))` |
+| AG-UI | `forwardedProps.modelSelection` |
+| A2A | message data part의 `modelSelection` 또는 `model_selection` |
 
 멀티턴 history는 두 경로 중 하나로만 들어옵니다.
 

@@ -71,10 +71,12 @@ from spakky.agent.inbound import RunAgentInput
 from spakky.agent.interfaces.model import (
     IAgentModel,
     JsonSchemaConstraint,
+    ModelCapability,
     ModelError,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
+    ModelSelection,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolCall,
@@ -205,6 +207,10 @@ class AgentRunner:
         runner._require_durable_ports()
         return runner
 
+    def with_model(self, model: IAgentModel) -> "AgentRunner":
+        """Return a runner using a run-specific model adapter."""
+        return replace(self, model=model)
+
     async def run(
         self,
         run_input: RunAgentInput,
@@ -253,7 +259,7 @@ class AgentRunner:
                     yield RunFinishedEvent(attribution, error=_cancel_error(cancel))
                     return
             async for item in self._consume_stream_event_as_events(
-                event, state, attribution, cursor
+                event, state, attribution, cursor, run_input
             ):
                 yield item
             self._accumulate_assistant_text(event, assistant_text)
@@ -304,6 +310,7 @@ class AgentRunner:
         state: AgentState | None,
         attribution: AgentEventAttribution,
         cursor: "_MessageCursor",
+        run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Project one model stream event onto the neutral event taxonomy.
 
@@ -326,7 +333,7 @@ class AgentRunner:
                     delta=event.message_delta or "",
                 )
             case ModelStreamEventKind.REASONING_DELTA:
-                if self.model.capability.supports_reasoning:
+                if self._model_capability(run_input).supports_reasoning:
                     yield ReasoningDeltaEvent(
                         attribution,
                         reasoning_id=cursor.reasoning_id,
@@ -440,7 +447,7 @@ class AgentRunner:
         history = await self._resolved_history(run_input)
         async for event in self.model.stream(self._model_request(run_input, history)):
             async for item in self._consume_stream_event(
-                event, None, tool_calls, assistant_text
+                event, None, tool_calls, assistant_text, run_input
             ):
                 yield item
             if event.kind is ModelStreamEventKind.ERROR and event.error is not None:
@@ -486,7 +493,7 @@ class AgentRunner:
                 yield signal_item
             terminated = False
             async for item in self._consume_stream_event(
-                event, state, tool_calls, assistant_text
+                event, state, tool_calls, assistant_text, run_input
             ):
                 yield item
             if event.kind is ModelStreamEventKind.ERROR and event.error is not None:
@@ -522,6 +529,7 @@ class AgentRunner:
         state: AgentState | None,
         tool_calls: list[str],
         assistant_text: list[str],
+        run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentYield[object], None]:
         """Translate one model stream event into the public yield vocabulary.
 
@@ -537,7 +545,7 @@ class AgentRunner:
                 assistant_text.append(event.message_delta or "")
                 yield _token(event.message_delta or "")
             case ModelStreamEventKind.REASONING_DELTA:
-                if self.model.capability.supports_reasoning:
+                if self._model_capability(run_input).supports_reasoning:
                     yield _token(event.reasoning_delta or "")
             case ModelStreamEventKind.TOOL_CALL_CANDIDATE if (
                 event.tool_call is not None
@@ -737,6 +745,7 @@ class AgentRunner:
             ),
             tool_calling=tool_calling,
             sampling=DEFAULT_SAMPLING,
+            model_selection=run_input.model_selection,
             metadata={"state_id": run_input.state_id, **run_input.metadata},
         )
 
@@ -750,7 +759,10 @@ class AgentRunner:
         chain is applied so the seeded transcript stays within the backend's
         context window before it reaches the model request.
         """
-        return await self._compact_history(self._resolve_history(run_input))
+        return await self._compact_history(
+            self._resolve_history(run_input),
+            run_input.model_selection,
+        )
 
     def _resolve_history(self, run_input: RunAgentInput) -> tuple[ModelMessage, ...]:
         """Resolve the prior-turn messages that seed this run's model request.
@@ -775,6 +787,7 @@ class AgentRunner:
     async def _compact_history(
         self,
         history: tuple[ModelMessage, ...],
+        model_selection: ModelSelection | None,
     ) -> tuple[ModelMessage, ...]:
         """Apply the declared compaction chain when the token estimate trips it.
 
@@ -791,10 +804,14 @@ class AgentRunner:
         usage = ModelUsage(total_tokens=_estimate_token_count(history))
         if (usage.total_tokens or 0) < policy.trigger_token_threshold:
             return history
-        capability = self.model.capability
+        capability = self.model.capability_for(model_selection)
         for strategy in policy.strategies:
             history = await strategy.compact(history, usage, capability)
         return history
+
+    def _model_capability(self, run_input: RunAgentInput) -> ModelCapability:
+        """Return capability for this run's selected model."""
+        return self.model.capability_for(run_input.model_selection)
 
     def _persist_turns(
         self,

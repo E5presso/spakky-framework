@@ -71,6 +71,16 @@ class InvalidApprovalDecisionError(AbstractSpakkyA2AError):
         self.decision = decision
 
 
+class A2ARunResolutionError(AbstractSpakkyA2AError):
+    """Raised when an inbound A2A request carries invalid run configuration."""
+
+    message = "A2A run request could not be resolved to a runnable agent run"
+
+    def __init__(self, field: str) -> None:
+        super().__init__()
+        self.field = field
+
+
 class UnsupportedA2AGrpcResultError(AbstractSpakkyA2AError):
     """Raised when a unary A2A gRPC method returns an unsupported result."""
 

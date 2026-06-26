@@ -172,11 +172,10 @@ class MountAgUiFastAPIPostProcessor(
             accept: str | None,
         ) -> AgUiManagedRunDriver:
             runner_factory = self._container.get(IAgentRunnerFactory)
-            server_names = entry.metadata.server_names or None
             return AgUiManagedRunDriver(
                 runner_context=runner_factory.open_runner(
                     entry.instance,
-                    server_names=server_names,
+                    run_input=core_input,
                 ),
                 inbound=AgUiInboundRun(
                     ag_ui_input=ag_ui_input,

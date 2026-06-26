@@ -6,12 +6,24 @@ from spakky.plugins.mcp import (
     AbstractMcpError,
     ExternalMcpTool,
     ExternalMcpToolDescriptor,
+    IMcpHttpClientProvider,
+    IMcpRuntimeServerResolver,
+    MCP_METADATA_KEY,
+    MCP_SERVERS_METADATA_KEY,
     McpCatalogMergeError,
     MCPClient,
     McpClient,
     MCPConfig,
     McpConfig,
+    MCPHttpClientProvider,
+    McpHttpClientProvider,
+    McpOAuthClientAuthMethod,
+    McpOAuthClientCredentialsConfig,
     McpResponseError,
+    MCPRuntimeServerResolver,
+    McpRuntimeServerResolver,
+    MCPServerAuthConfig,
+    McpServerAuthConfig,
     MCPServerConfig,
     McpServerConfig,
     McpServerConfigurationError,
@@ -44,6 +56,7 @@ from spakky.plugins.mcp import (
     normalize_call_result,
     normalize_dispatch_result,
     prefixed_tool_name,
+    resolve_http_auth_headers,
     serve_stdio,
     streamable_http_session_manager,
 )
@@ -56,10 +69,14 @@ def test_public_api_exposes_plugin_identity() -> None:
     assert McpConfig is mcp_api.McpConfig
     assert MCPServerConfig is McpServerConfig
     assert McpServerConfig is mcp_api.McpServerConfig
+    assert MCPServerAuthConfig is McpServerAuthConfig
+    assert McpServerAuthConfig is mcp_api.McpServerAuthConfig
     assert MCPToolServerConfig is McpToolServerConfig
     assert McpToolServerConfig is mcp_api.McpToolServerConfig
     assert MCPTransport is McpTransport
     assert McpTransport is mcp_api.McpTransport
+    assert McpOAuthClientAuthMethod is mcp_api.McpOAuthClientAuthMethod
+    assert McpOAuthClientCredentialsConfig is mcp_api.McpOAuthClientCredentialsConfig
 
 
 def test_public_api_exposes_tool_server_surface() -> None:
@@ -94,6 +111,15 @@ def test_public_api_exposes_client_and_catalog_surface() -> None:
     assert prefixed_tool_name is mcp_api.prefixed_tool_name
     assert ExternalMcpTool is mcp_api.ExternalMcpTool
     assert ExternalMcpToolDescriptor is mcp_api.ExternalMcpToolDescriptor
+    assert IMcpHttpClientProvider is mcp_api.IMcpHttpClientProvider
+    assert MCPHttpClientProvider is McpHttpClientProvider
+    assert McpHttpClientProvider is mcp_api.McpHttpClientProvider
+    assert IMcpRuntimeServerResolver is mcp_api.IMcpRuntimeServerResolver
+    assert MCPRuntimeServerResolver is McpRuntimeServerResolver
+    assert McpRuntimeServerResolver is mcp_api.McpRuntimeServerResolver
+    assert MCP_METADATA_KEY == "mcp"
+    assert MCP_SERVERS_METADATA_KEY == "servers"
+    assert resolve_http_auth_headers is mcp_api.resolve_http_auth_headers
 
 
 def test_public_api_exposes_error_surface() -> None:

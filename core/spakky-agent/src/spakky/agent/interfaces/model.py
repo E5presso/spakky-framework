@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import cast
 
 from spakky.agent.context import ContextDigest, ContextManifest, ContextPack
+from spakky.agent.error import AgentDefinitionError
 from spakky.agent.safety import (
     ContextExposurePolicy,
     EvidenceExposurePolicy,
@@ -95,6 +96,31 @@ class StreamingOptions:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelSelection:
+    """Provider/model selector carried by one Agent run.
+
+    A service may let a user choose OpenAI, Anthropic, Vertex, OpenRouter, vLLM,
+    or another provider per run. The selector is intentionally provider-neutral:
+    concrete adapters or routing models decide which values they accept.
+    """
+
+    provider: str | None = None
+    model: str | None = None
+    profile: str | None = None
+    metadata: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Reject blank selector fields before they reach provider adapters."""
+        for label, value in (
+            ("provider", self.provider),
+            ("model", self.model),
+            ("profile", self.profile),
+        ):
+            if value is not None and not value.strip():
+                raise AgentDefinitionError(f"Model selection {label} cannot be blank")
+
+
+@dataclass(frozen=True, slots=True)
 class ModelRequest:
     """Provider-neutral request passed to an agent model adapter."""
 
@@ -106,6 +132,7 @@ class ModelRequest:
     tool_calling: ToolCallingSpec | None = None
     sampling: SamplingOptions = field(default_factory=SamplingOptions)
     streaming: StreamingOptions = field(default_factory=StreamingOptions)
+    model_selection: ModelSelection | None = None
     metadata: JsonObject = field(default_factory=dict)
 
     def assemble_messages(
@@ -360,6 +387,19 @@ class IAgentModel(ABC):
     def capability(self) -> ModelCapability:
         """Return the backend capability descriptor queryable before a run."""
         ...
+
+    def capability_for(
+        self,
+        selection: ModelSelection | None = None,
+    ) -> ModelCapability:
+        """Return capability for a run-specific model selection.
+
+        Existing fixed-model adapters can ignore the selector and inherit the
+        default. Routing adapters can override this to expose per-model context
+        windows, reasoning support, or token-counting support before a request.
+        """
+        _ = selection
+        return self.capability
 
     @abstractmethod
     async def complete(self, request: ModelRequest) -> ModelResponse:

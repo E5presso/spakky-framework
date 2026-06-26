@@ -3900,6 +3900,7 @@ name = "spakky-mcp"
 version = "6.12.0"
 source = { editable = "plugins/spakky-mcp" }
 dependencies = [
+    { name = "httpx" },
     { name = "mcp" },
     { name = "pydantic-settings" },
     { name = "spakky" },
@@ -3908,6 +3909,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", specifier = ">=1.28.0" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
     { name = "spakky", editable = "core/spakky" },
