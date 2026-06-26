@@ -142,7 +142,7 @@ class McpToolServer:
         return build_agent_tool_server(agent_instance, self.config.tool_server.name)
 
     def build_server_for(self, agent_name: str) -> Server:
-        """Build an MCP server for a registered @McpToolServerAgent name."""
+        """Build an MCP server for a registered @MCPServer-compatible agent name."""
         entry = self._entry(agent_name)
         return build_agent_tool_server(entry.instance, self._server_name(entry))
 

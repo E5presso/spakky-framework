@@ -7,20 +7,30 @@ from spakky.plugins.mcp import (
     ExternalMcpTool,
     ExternalMcpToolDescriptor,
     McpCatalogMergeError,
+    MCPClient,
     McpClient,
+    MCPConfig,
     McpConfig,
     McpResponseError,
+    MCPServerConfig,
     McpServerConfig,
     McpServerConfigurationError,
     McpToolDiscoveryError,
     McpToolExposureError,
     McpToolInvocationError,
     McpToolServer,
+    MCPServer,
+    MCPToolServer,
+    MCPToolServerEntry,
     McpToolServerAgent,
+    MCPToolServerConfig,
     McpToolServerConfig,
     McpToolServerEntry,
+    MCPToolServerNotRegisteredError,
     McpToolServerNotRegisteredError,
+    MCPToolServerRegistry,
     McpToolServerRegistry,
+    MCPTransport,
     McpTransport,
     McpTransportError,
     build_agent_tool_server,
@@ -42,17 +52,25 @@ from spakky.plugins.mcp import (
 def test_public_api_exposes_plugin_identity() -> None:
     """The public API exposes the plugin id and its config surface."""
     assert PLUGIN_NAME.name == "spakky-mcp"
+    assert MCPConfig is McpConfig
     assert McpConfig is mcp_api.McpConfig
+    assert MCPServerConfig is McpServerConfig
     assert McpServerConfig is mcp_api.McpServerConfig
+    assert MCPToolServerConfig is McpToolServerConfig
     assert McpToolServerConfig is mcp_api.McpToolServerConfig
+    assert MCPTransport is McpTransport
     assert McpTransport is mcp_api.McpTransport
 
 
 def test_public_api_exposes_tool_server_surface() -> None:
     """The public API exposes the server-side exposure functions and Pod."""
+    assert MCPToolServer is McpToolServer
     assert McpToolServer is mcp_api.McpToolServer
-    assert McpToolServerAgent is mcp_api.McpToolServerAgent
+    assert MCPServer is mcp_api.MCPServer
+    assert McpToolServerAgent is MCPServer
+    assert MCPToolServerEntry is McpToolServerEntry
     assert McpToolServerEntry is mcp_api.McpToolServerEntry
+    assert MCPToolServerRegistry is McpToolServerRegistry
     assert McpToolServerRegistry is mcp_api.McpToolServerRegistry
     assert build_agent_tool_server is mcp_api.build_agent_tool_server
     assert build_agent_tools is mcp_api.build_agent_tools
@@ -64,6 +82,7 @@ def test_public_api_exposes_tool_server_surface() -> None:
 
 def test_public_api_exposes_client_and_catalog_surface() -> None:
     """The public API exposes the client and catalog-integration functions."""
+    assert MCPClient is McpClient
     assert McpClient is mcp_api.McpClient
     assert connect_server is mcp_api.connect_server
     assert make_mcp_tool_callable is mcp_api.make_mcp_tool_callable
@@ -86,4 +105,5 @@ def test_public_api_exposes_error_surface() -> None:
     assert McpToolInvocationError is mcp_api.McpToolInvocationError
     assert McpResponseError is mcp_api.McpResponseError
     assert McpCatalogMergeError is mcp_api.McpCatalogMergeError
+    assert MCPToolServerNotRegisteredError is McpToolServerNotRegisteredError
     assert McpToolServerNotRegisteredError is mcp_api.McpToolServerNotRegisteredError

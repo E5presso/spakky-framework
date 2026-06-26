@@ -2,7 +2,7 @@
 
 > `spakky-agui`는 `spakky-agent`의 protocol-neutral `AgentEvent` stream을 AG-UI 이벤트로 투영하고 FastAPI SSE, HTTP streaming, WebSocket, stdio 경계로 노출합니다.
 
-FastAPI SSE/HTTP streaming/WebSocket endpoint는 `@AgUiAgent @Agent` 선언을 `AgUiAgentRegistry`에 등록한 뒤 post-processor가 host FastAPI Pod에 자동 mount합니다. `add_agui_endpoint` 계열 helper는 lower-level 호환 API입니다.
+FastAPI SSE/HTTP streaming/WebSocket endpoint는 `@AGUICompatible @Agent` 선언을 `AgUiAgentRegistry`에 등록한 뒤 post-processor가 host FastAPI Pod에 자동 mount합니다. `add_agui_endpoint` 계열 helper는 lower-level 호환 API입니다.
 
 ## Public API
 
@@ -18,7 +18,7 @@ FastAPI SSE/HTTP streaming/WebSocket endpoint는 `@AgUiAgent @Agent` 선언을 `
 
 ## Endpoint
 
-::: spakky.plugins.agui.stereotypes.agui_agent
+::: spakky.plugins.agui.stereotypes.agui_compatible
     options:
       show_root_heading: false
 

@@ -6,7 +6,7 @@ from spakky.agent import Agent
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.mcp.error import McpToolServerNotRegisteredError
-from spakky.plugins.mcp.stereotypes.mcp_tool_server_agent import McpToolServerAgent
+from spakky.plugins.mcp.stereotypes.mcp_server import MCPServer
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,7 +15,7 @@ class McpToolServerEntry:
 
     instance: object
     agent_type: type[object]
-    metadata: McpToolServerAgent
+    metadata: MCPServer
 
     @property
     def agent_name(self) -> str:
@@ -37,9 +37,9 @@ class McpToolServerRegistry:
         self,
         instance: object,
         agent_type: type[object],
-        metadata: McpToolServerAgent,
+        metadata: MCPServer,
     ) -> McpToolServerEntry:
-        """Register one MCP tool-server agent and return the entry."""
+        """Register one MCP server entry and return it."""
         entry = McpToolServerEntry(
             instance=instance,
             agent_type=agent_type,

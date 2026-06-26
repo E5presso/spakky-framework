@@ -47,15 +47,28 @@ class _Container:
 
 
 class _ServerSpec:
-    def __init__(self, mount_path: str = "/a2a/planner") -> None:
+    def __init__(
+        self,
+        mount_path: str = "/a2a/planner",
+        rest_mount_path: str | None = None,
+    ) -> None:
         self.builds: list[str] = []
+        self.rest_builds: list[str] = []
         self.mount_path = mount_path
+        self.rest_mount_path = rest_mount_path
 
     def mount_path_for(self, agent_name: str) -> str:
         return self.mount_path
 
+    def rest_mount_path_for(self, agent_name: str) -> str | None:
+        return self.rest_mount_path
+
     def build_app_for(self, agent_name: str) -> Starlette:
         self.builds.append(agent_name)
+        return Starlette()
+
+    def build_rest_app_for(self, agent_name: str) -> Starlette:
+        self.rest_builds.append(agent_name)
         return Starlette()
 
 
@@ -105,6 +118,41 @@ def test_agent_post_process_mounts_on_existing_asgi_hosts() -> None:
 
     assert processed is agent
     assert spec.builds == ["planner"]
+
+
+def test_declared_rest_mount_path_mounts_rest_app() -> None:
+    """rest_mount_path 선언이 있으면 REST app도 별도 path에 mount된다."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(rest_mount_path="/a2a-rest/planner"),
+    )
+    spec = _ServerSpec(rest_mount_path="/a2a-rest/planner")
+    host = Starlette()
+
+    _processor(registry, spec).post_process(host)
+
+    paths = {getattr(route, "path", None) for route in host.routes}
+    assert "/a2a/planner" in paths
+    assert "/a2a-rest/planner" in paths
+    assert spec.builds == ["planner"]
+    assert spec.rest_builds == ["planner"]
+
+
+def test_rest_and_jsonrpc_cannot_claim_same_path() -> None:
+    """REST와 JSON-RPC transport가 같은 path를 공유하면 route 충돌로 거부한다."""
+    registry = A2AAgentRegistry()
+    registry.register(
+        ServedPlannerAgent(StubModel()),
+        ServedPlannerAgent,
+        _planner_marker(rest_mount_path="/a2a/planner"),
+    )
+
+    with pytest.raises(A2AEndpointConflictError):
+        _processor(registry, _ServerSpec(rest_mount_path="/a2a/planner")).post_process(
+            Starlette()
+        )
 
 
 def test_unmarked_agent_is_returned_without_mounting() -> None:
@@ -160,9 +208,9 @@ def test_path_conflict_between_agents_is_rejected() -> None:
     """서로 다른 A2A agent가 같은 mount path를 claim하면 실패한다."""
 
     from spakky.agent import Agent, AgentExecutionSpec
-    from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+    from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
-    @A2AAgentServer()
+    @A2ACompatible()
     @Agent(spec=AgentExecutionSpec(name="writer", objective="write"))
     class WriterAgent:
         def __init__(self) -> None:
@@ -172,13 +220,17 @@ def test_path_conflict_between_agents_is_rejected() -> None:
     registry.register(
         ServedPlannerAgent(StubModel()), ServedPlannerAgent, _planner_marker()
     )
-    registry.register(WriterAgent(), WriterAgent, A2AAgentServer())
+    registry.register(WriterAgent(), WriterAgent, A2ACompatible())
 
     with pytest.raises(A2AEndpointConflictError):
         _processor(registry, _ServerSpec()).post_process(Starlette())
 
 
-def _planner_marker():
-    from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+def _planner_marker(rest_mount_path: str | None = None):
+    from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
-    return A2AAgentServer(base_url="http://planner.local", version="1.2.3")
+    return A2ACompatible(
+        base_url="http://planner.local",
+        version="1.2.3",
+        rest_mount_path=rest_mount_path,
+    )

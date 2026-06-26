@@ -75,7 +75,7 @@ AG-UI BaseEvent  ──(EventEncoder)──▶  "data: {...}\n\n" SSE 프레임
 
 ## 사용법
 
-`@Agent` 위에 `@AgUiAgent`를 쌓고 FastAPI host를 Pod으로 등록합니다. plugin
+`@Agent` 위에 `@AGUICompatible`를 쌓고 FastAPI host를 Pod으로 등록합니다. plugin
 `initialize()`는 `AgUiConfig`, `AgUiAgentRegistry`, FastAPI mount post-processor를 등록하므로
 애플리케이션 코드는 `run_driver_factory`나 `add_agui_endpoint()`를 호출하지 않습니다.
 
@@ -85,7 +85,7 @@ from spakky.agent import Agent, AgentExecutionSpec, IAgentModel
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.pod.annotations.pod import Pod
-from spakky.plugins.agui import AgUiAgent
+from spakky.plugins.agui import AGUICompatible
 
 
 @Pod(name="fastapi_app")
@@ -93,7 +93,7 @@ def fastapi_app() -> FastAPI:
     return FastAPI()
 
 
-@AgUiAgent()
+@AGUICompatible()
 @Agent(spec=AgentExecutionSpec(name="assistant", objective="answer with tools"))
 class Assistant:
     def __init__(self, model: IAgentModel) -> None:
@@ -108,7 +108,7 @@ app = application.container.get(FastAPI)
 여러 Agent를 AG-UI로 노출한다면 각 Agent가 서로 다른 path를 선언해야 합니다.
 
 ```python
-@AgUiAgent(
+@AGUICompatible(
     sse_path="/agents/researcher/agui",
     http_stream_path="/agents/researcher/agui/stream",
     websocket_path="/agents/researcher/agui/ws",
@@ -118,7 +118,7 @@ class Researcher:
     ...
 ```
 
-`@AgUiAgent(server_names=("weather",))`를 지정하면 `spakky-mcp`가 제공하는
+`@AGUICompatible(server_names=("weather",))`를 지정하면 `spakky-mcp`가 제공하는
 `IAgentRunnerFactory`가 해당 external MCP server tool만 이 Agent run에 결합합니다. 비워두면
 configured MCP server 전체를 사용합니다.
 
@@ -139,7 +139,7 @@ CLI stdio 경계는 아직 host command가 필요하므로 lower-level `AgUiStdi
 한 줄에 하나씩 출력합니다. Typer 같은 CLI plugin은 이 callable을 command로 등록하면 됩니다.
 
 stdio 전용 host는 `AgUiStdioCommand`에 lower-level `RunDriverFactory`를 전달합니다. 일반
-FastAPI SSE/HTTP/WebSocket 노출은 위의 `@AgUiAgent` 선언만 사용합니다.
+FastAPI SSE/HTTP/WebSocket 노출은 위의 `@AGUICompatible` 선언만 사용합니다.
 
 ## HITL — deferred-tool 승인 흐름
 

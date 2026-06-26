@@ -21,16 +21,16 @@ from spakky.plugins.agui.post_processors.mount_fastapi import (
     MountAgUiFastAPIPostProcessor,
 )
 from spakky.plugins.agui.server.registry import AgUiAgentRegistry
-from spakky.plugins.agui.stereotypes.agui_agent import AgUiAgent
+from spakky.plugins.agui.stereotypes.agui_compatible import AGUICompatible
 
 
-@AgUiAgent()
+@AGUICompatible()
 @Agent(spec=AgentExecutionSpec(name="assistant", objective="answer"))
 class _MountedAssistant:
     """Agent fixture exposed through the AG-UI auto-mount path."""
 
 
-@AgUiAgent()
+@AGUICompatible()
 @Agent(spec=AgentExecutionSpec(name="researcher", objective="research"))
 class _MountedResearcher:
     """Second fixture used to prove path conflict detection."""
@@ -130,7 +130,7 @@ def test_app_post_process_mounts_registered_agent_routes() -> None:
     """FastAPI Pod가 나중에 처리되어도 registry의 AG-UI agent routes가 붙는다."""
     registry = AgUiAgentRegistry()
     registry.register(
-        _MountedAssistant(), _MountedAssistant, AgUiAgent.get(_MountedAssistant)
+        _MountedAssistant(), _MountedAssistant, AGUICompatible.get(_MountedAssistant)
     )
     app = FastAPI()
 
@@ -175,7 +175,7 @@ def test_mounting_same_agent_twice_is_idempotent() -> None:
 
 
 def test_dynamic_proxy_type_is_unwrapped_before_mounting() -> None:
-    """AOP dynamic proxy subclass도 원본 @AgUiAgent marker로 등록된다."""
+    """AOP dynamic proxy subclass도 원본 @AGUICompatible marker로 등록된다."""
 
     class MountedAssistantDynamicProxy(_MountedAssistant):
         marker = "proxy"
@@ -198,10 +198,10 @@ def test_auto_mount_detects_path_conflicts_between_agents() -> None:
     """서로 다른 AG-UI agent가 같은 path를 claim하면 conflict로 실패한다."""
     registry = AgUiAgentRegistry()
     registry.register(
-        _MountedAssistant(), _MountedAssistant, AgUiAgent.get(_MountedAssistant)
+        _MountedAssistant(), _MountedAssistant, AGUICompatible.get(_MountedAssistant)
     )
     registry.register(
-        _MountedResearcher(), _MountedResearcher, AgUiAgent.get(_MountedResearcher)
+        _MountedResearcher(), _MountedResearcher, AGUICompatible.get(_MountedResearcher)
     )
 
     try:
@@ -226,10 +226,10 @@ def test_registry_lists_entries_by_agent_name() -> None:
     """registry list는 agent 이름 기준 stable order를 보존한다."""
     registry = AgUiAgentRegistry()
     registry.register(
-        _MountedResearcher(), _MountedResearcher, AgUiAgent.get(_MountedResearcher)
+        _MountedResearcher(), _MountedResearcher, AGUICompatible.get(_MountedResearcher)
     )
     registry.register(
-        _MountedAssistant(), _MountedAssistant, AgUiAgent.get(_MountedAssistant)
+        _MountedAssistant(), _MountedAssistant, AGUICompatible.get(_MountedAssistant)
     )
 
     assert [entry.agent_name for entry in registry.list_entries()] == [

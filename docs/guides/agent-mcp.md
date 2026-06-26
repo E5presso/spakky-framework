@@ -22,11 +22,11 @@ pip install spakky-mcp
 pip install "spakky[agent]"
 ```
 
-plugin 초기화는 `McpConfig`, `McpClient`, `McpToolServerRegistry`, `McpToolServer`, MCP post-processor를 등록합니다. 또한 `IAgentRunnerFactory`를 `McpClient`로 바인딩하므로 AG-UI/A2A 같은 inbound adapter가 runner factory를 통해 실행할 때 외부 도구가 자동으로 합류합니다.
+plugin 초기화는 `MCPConfig`, `MCPClient`, `MCPToolServerRegistry`, `MCPToolServer`, MCP post-processor를 등록합니다. 또한 `IAgentRunnerFactory`를 `MCPClient`로 바인딩하므로 AG-UI/A2A 같은 inbound adapter가 runner factory를 통해 실행할 때 외부 도구가 자동으로 합류합니다.
 
 ## 외부 서버 선언
 
-외부 서버는 `SPAKKY_MCP__` 접두사 환경변수 또는 `McpConfig`로 선언합니다. `transport`는 `stdio`(하위 프로세스로 서버 구동)와 `streamable_http`(원격 HTTP 서버)를 지원합니다.
+외부 서버는 `SPAKKY_MCP__` 접두사 환경변수 또는 `MCPConfig`로 선언합니다. `transport`는 `stdio`(하위 프로세스로 서버 구동)와 `streamable_http`(원격 HTTP 서버)를 지원합니다.
 
 ```bash
 # stdio 서버 1개를 JSON 배열로 선언
@@ -55,7 +55,7 @@ export SPAKKY_MCP__SERVERS='[{"name": "weather", "command": "weather-mcp-server"
 ## 에이전트에 합류시키기
 
 외부 MCP tool은 `IAgentRunnerFactory` 경로로 합류합니다. `spakky-mcp`가 로드되면 이 port가
-`McpClient`에 바인딩되고, inbound adapter가 agent run마다 factory context를 열 때 외부 서버에
+`MCPClient`에 바인딩되고, inbound adapter가 agent run마다 factory context를 열 때 외부 서버에
 연결해 도구를 발견합니다. 외부 서버 세션은 runner context 동안 유지되며 context를 벗어나면
 정리됩니다.
 
@@ -92,14 +92,16 @@ async def custom_inbound_boundary(
 
 ### 서버 만들기
 
-MCP server로 노출할 Agent는 `@Agent` 위에 `@McpToolServerAgent` marker를 쌓습니다.
+MCP server는 agent가 아니라 MCP protocol host입니다. `@MCPServer`는 `@Agent` 자체를
+서버라고 부르는 annotation이 아니라, 그 Agent의 `@agent_tool` 카탈로그를 MCP server에
+연결하겠다는 marker입니다.
 
 ```python
 from spakky.agent import Agent, AgentExecutionSpec, agent_tool
-from spakky.plugins.mcp import McpToolServerAgent
+from spakky.plugins.mcp import MCPServer
 
 
-@McpToolServerAgent(server_name="weather-agent")
+@MCPServer(server_name="weather-agent")
 @Agent(spec=AgentExecutionSpec(name="weather"))
 class WeatherAgent:
     @agent_tool(schema_name="forecast", description="Return a forecast.")
@@ -107,13 +109,13 @@ class WeatherAgent:
         return f"sunny:{city}"
 ```
 
-`McpToolServer` Pod는 registry에서 agent를 resolve하므로 host entrypoint는 agent instance를 직접 넘기지 않습니다.
+`MCPToolServer` Pod는 registry에서 agent를 resolve하므로 host entrypoint는 agent instance를 직접 넘기지 않습니다.
 
 ```python
-from spakky.plugins.mcp import McpToolServer
+from spakky.plugins.mcp import MCPToolServer
 
 
-async def expose(server: McpToolServer) -> None:
+async def expose(server: MCPToolServer) -> None:
     await server.serve_stdio_for("weather")
 ```
 
@@ -121,8 +123,8 @@ async def expose(server: McpToolServer) -> None:
 
 | 전송 | 진입점 | 용도 |
 |------|--------|------|
-| `stdio` | `McpToolServer.serve_stdio_for(agent_name)` | 클라이언트가 하위 프로세스로 서버를 구동 |
-| `streamable_http` | `McpToolServer.streamable_http_session_manager_for(agent_name)` | 원격 HTTP 노출 — 반환된 세션 매니저를 호스트 애플리케이션의 lifespan에서 구동하고 인바운드 요청을 `handle_request`로 라우팅 |
+| `stdio` | `MCPToolServer.serve_stdio_for(agent_name)` | 클라이언트가 하위 프로세스로 서버를 구동 |
+| `streamable_http` | `MCPToolServer.streamable_http_session_manager_for(agent_name)` | 원격 HTTP 노출 — 반환된 세션 매니저를 호스트 애플리케이션의 lifespan에서 구동하고 인바운드 요청을 `handle_request`로 라우팅 |
 
 `streamable_http` 세션 매니저는 자신의 `run()` 컨텍스트 동안 단일 task group을 소유하며 컨텍스트를 벗어나면 재사용할 수 없습니다 — 호스트 애플리케이션 lifespan에서 1회 구동합니다.
 

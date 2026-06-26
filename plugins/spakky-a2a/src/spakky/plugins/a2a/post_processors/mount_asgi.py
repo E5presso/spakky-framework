@@ -1,5 +1,6 @@
 """Post-processor that mounts discovered A2A agents on ASGI host Pods."""
 
+from collections.abc import Callable
 from logging import getLogger
 from typing import cast, override
 
@@ -19,7 +20,7 @@ from starlette.applications import Starlette
 from spakky.plugins.a2a.error import A2AEndpointConflictError
 from spakky.plugins.a2a.server.builder import A2AAgentServerSpec
 from spakky.plugins.a2a.server.registry import A2AAgentRegistry, A2AAgentServerEntry
-from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
 logger = getLogger(__name__)
 
@@ -34,7 +35,7 @@ class MountA2AASGIPostProcessor(
     _container: IContainer
     _application_context: IApplicationContext
     _claimed_paths: dict[tuple[int, str], str]
-    _mounted: set[tuple[int, str]]
+    _mounted: set[tuple[int, str, str]]
 
     def __init__(self) -> None:
         self._claimed_paths = {}
@@ -62,7 +63,7 @@ class MountA2AASGIPostProcessor(
             self._mount_registered_agents(pod)
             return pod
         agent_type = self._unwrap_proxy_type(type(pod))
-        if not (A2AAgentServer.exists(agent_type) and Agent.exists(agent_type)):
+        if not (A2ACompatible.exists(agent_type) and Agent.exists(agent_type)):
             return pod
         entry = self._container.get(A2AAgentRegistry).get(self._agent_name(agent_type))
         for app in self._asgi_hosts():
@@ -86,17 +87,44 @@ class MountA2AASGIPostProcessor(
 
     def _mount_entry(self, app: Starlette, entry: A2AAgentServerEntry) -> None:
         spec = self._container.get(A2AAgentServerSpec)
-        path = spec.mount_path_for(entry.agent_name)
+        self._mount_app(
+            app,
+            entry,
+            transport="jsonrpc",
+            path=spec.mount_path_for(entry.agent_name),
+            app_factory=lambda: spec.build_app_for(entry.agent_name),
+        )
+        rest_path = spec.rest_mount_path_for(entry.agent_name)
+        if rest_path is None:
+            return
+        self._mount_app(
+            app,
+            entry,
+            transport="rest",
+            path=rest_path,
+            app_factory=lambda: spec.build_rest_app_for(entry.agent_name),
+        )
+
+    def _mount_app(
+        self,
+        app: Starlette,
+        entry: A2AAgentServerEntry,
+        *,
+        transport: str,
+        path: str,
+        app_factory: Callable[[], Starlette],
+    ) -> None:
         app_id = id(app)
         claim_key = (app_id, path)
-        current_agent = self._claimed_paths.get(claim_key)
-        if current_agent is not None and current_agent != entry.agent_name:
+        label = f"{entry.agent_name}:{transport}"
+        current_label = self._claimed_paths.get(claim_key)
+        if current_label is not None and current_label != label:
             raise A2AEndpointConflictError
-        self._claimed_paths[claim_key] = entry.agent_name
-        mount_key = (app_id, entry.agent_name)
+        self._claimed_paths[claim_key] = label
+        mount_key = (app_id, entry.agent_name, transport)
         if mount_key in self._mounted:
             return
-        app.mount(path, spec.build_app_for(entry.agent_name))
+        app.mount(path, app_factory())
         self._mounted.add(mount_key)
 
     @staticmethod

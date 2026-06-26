@@ -9,6 +9,9 @@ from spakky.plugins.a2a.config import A2AConfig
 from spakky.plugins.a2a.delegation import A2AAgentDelegate
 from spakky.plugins.a2a.main import initialize
 from spakky.plugins.a2a.post_processors.mount_asgi import MountA2AASGIPostProcessor
+from spakky.plugins.a2a.post_processors.register_grpc import (
+    RegisterA2AGRPCPostProcessor,
+)
 from spakky.plugins.a2a.post_processors.register_agent_servers import (
     RegisterA2AAgentServersPostProcessor,
 )
@@ -32,12 +35,13 @@ def test_initialize_registers_plugin_pods() -> None:
             call(A2AAgentServerSpec),
             call(RegisterA2AAgentServersPostProcessor),
             call(MountA2AASGIPostProcessor),
+            call(RegisterA2AGRPCPostProcessor),
         ],
         any_order=False,
     )
     app.container.contains.assert_called_once_with(IAgentRunnerFactory)
     app.container.bind_to_type.assert_called_once_with(IAgentDelegate, A2AAgentDelegate)
-    assert app.add.call_count == 7
+    assert app.add.call_count == 8
 
 
 def test_initialize_reuses_existing_runner_factory_binding() -> None:

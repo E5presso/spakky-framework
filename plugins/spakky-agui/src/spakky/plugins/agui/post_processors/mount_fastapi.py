@@ -25,7 +25,7 @@ from spakky.plugins.agui.endpoint_input import AgUiInboundRun
 from spakky.plugins.agui.error import AgUiEndpointConflictError
 from spakky.plugins.agui.http_stream import add_agui_http_stream_endpoint
 from spakky.plugins.agui.server.registry import AgUiAgentEntry, AgUiAgentRegistry
-from spakky.plugins.agui.stereotypes.agui_agent import AgUiAgent
+from spakky.plugins.agui.stereotypes.agui_compatible import AGUICompatible
 from spakky.plugins.agui.transport import AgUiManagedRunDriver
 from spakky.plugins.agui.websocket import add_agui_websocket_endpoint
 
@@ -39,7 +39,7 @@ type _EndpointRegistrar = Callable[..., None]
 class MountAgUiFastAPIPostProcessor(
     IPostProcessor, IContainerAware, IApplicationContextAware
 ):
-    """Discover @AgUiAgent @Agent Pods and mount their AG-UI FastAPI routes."""
+    """Discover @AGUICompatible @Agent Pods and mount their AG-UI FastAPI routes."""
 
     _container: IContainer
     _application_context: IApplicationContext
@@ -72,10 +72,10 @@ class MountAgUiFastAPIPostProcessor(
             self._mount_registered_agents(pod)
             return pod
         agent_type = self._unwrap_proxy_type(type(pod))
-        if not (AgUiAgent.exists(agent_type) and Agent.exists(agent_type)):
+        if not (AGUICompatible.exists(agent_type) and Agent.exists(agent_type)):
             return pod
         registry = self._container.get(AgUiAgentRegistry)
-        entry = registry.register(pod, agent_type, AgUiAgent.get(agent_type))
+        entry = registry.register(pod, agent_type, AGUICompatible.get(agent_type))
         for app in self._fastapi_apps():
             self._mount_entry(app, entry)
         logger.info("Registered AG-UI agent from %s", agent_type.__qualname__)

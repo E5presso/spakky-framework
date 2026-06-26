@@ -6,7 +6,7 @@ from spakky.agent.execution import Agent
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.a2a.error import A2AAgentServerNotRegisteredError
-from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,7 +16,7 @@ class A2AAgentServerEntry:
     agent_name: str
     instance: object
     agent_type: type[object]
-    metadata: A2AAgentServer
+    metadata: A2ACompatible
 
 
 @Pod()
@@ -32,7 +32,7 @@ class A2AAgentRegistry:
         self,
         instance: object,
         agent_type: type[object],
-        metadata: A2AAgentServer,
+        metadata: A2ACompatible,
     ) -> None:
         """Register an @Agent instance under its resolved agent name.
 

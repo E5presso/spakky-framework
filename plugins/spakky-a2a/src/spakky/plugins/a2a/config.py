@@ -9,7 +9,7 @@ SPAKKY_A2A_CONFIG_ENV_PREFIX = "SPAKKY_A2A_"
 """Environment prefix for A2A plugin settings."""
 
 DEFAULT_A2A_BASE_URL = "http://localhost:8000"
-"""Fallback base URL advertised on a derived AgentCard interface."""
+"""Fallback public host URL used to derive AgentCard transport endpoints."""
 
 DEFAULT_A2A_VERSION = "1.0.0"
 """Fallback semantic version advertised on a derived AgentCard."""
@@ -29,7 +29,7 @@ class A2AConfig(BaseSettings):
     )
 
     default_base_url: str = DEFAULT_A2A_BASE_URL
-    """Base URL advertised on a derived AgentCard transport interface."""
+    """Public host URL combined with the mount path when a marker omits base_url."""
 
     default_version: str = DEFAULT_A2A_VERSION
     """Semantic version advertised on a derived AgentCard."""

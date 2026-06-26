@@ -16,6 +16,7 @@ from spakky.plugins.a2a.client import A2ARemoteAgentClient, RemoteA2AMessage
 from spakky.plugins.a2a.delegation import A2AAgentDelegate, A2AStreamEventMapper
 from spakky.plugins.a2a.error import A2AEndpointConflictError
 from spakky.plugins.a2a.stereotypes.a2a_agent_server import A2AAgentServer
+from spakky.plugins.a2a.stereotypes.a2a_compatible import A2ACompatible
 
 PLUGIN_NAME = Plugin(name="spakky-a2a")
 """Plugin identifier for the A2A integration."""
@@ -27,6 +28,7 @@ __all__ = [
     "A2AAgentDelegate",
     "A2ARemoteAgentClient",
     "A2AStreamEventMapper",
+    "A2ACompatible",
     "A2AAgentServer",
     "A2AEndpointConflictError",
     "RemoteA2AMessage",
