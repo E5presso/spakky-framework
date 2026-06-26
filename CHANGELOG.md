@@ -1,3 +1,9 @@
+## v7.1.0 (2026-06-26)
+
+### Feat
+
+- **mcp**: finalize lazy external tool selection
+
 ## v7.0.0 (2026-06-26)
 
 ### BREAKING CHANGE
