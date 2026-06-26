@@ -40,4 +40,4 @@
 - [spakky-vllm](plugins/spakky-vllm.md) — vLLM 모델 어댑터
 - [spakky-agui](plugins/spakky-agui.md) — AG-UI SSE/HTTP streaming/WebSocket/stdio 어댑터
 - [spakky-a2a](plugins/spakky-a2a.md) — A2A AgentCard, task, delegation 어댑터
-- [spakky-mcp](plugins/spakky-mcp.md) — MCP 외부 도구 클라이언트와 tool server 어댑터
+- [spakky-mcp](plugins/spakky-mcp.md) — 외부 MCP 서버 도구를 Agent run에 lazy search/call 도구로 연결하는 어댑터
