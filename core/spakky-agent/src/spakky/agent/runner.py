@@ -237,6 +237,7 @@ class AgentRunner:
         )
         cursor = _MessageCursor(state_id=run_input.state_id)
         history = await self._resolved_history(run_input)
+        assistant_text: list[str] = []
         yield RunStartedEvent(attribution)
         if state is not None:
             cancel = await self._consume_cancel(state)
@@ -255,6 +256,7 @@ class AgentRunner:
                 event, state, attribution, cursor
             ):
                 yield item
+            self._accumulate_assistant_text(event, assistant_text)
             if event.kind is ModelStreamEventKind.ERROR and event.error is not None:
                 yield StepFinishedEvent(attribution, step_name="model-call")
                 yield RunFinishedEvent(
@@ -293,6 +295,7 @@ class AgentRunner:
                 return
             yield RunFinishedEvent(attribution, error=_state_error(current))
             return
+        self._persist_turns(run_input, assistant_text)
         yield RunFinishedEvent(attribution)
 
     async def _consume_stream_event_as_events(
@@ -353,6 +356,20 @@ class AgentRunner:
                     state, event.tool_call, attribution, cursor
                 ):
                     yield item
+            case _:
+                return
+
+    def _accumulate_assistant_text(
+        self,
+        event: ModelStreamEvent,
+        assistant_text: list[str],
+    ) -> None:
+        """Collect assistant-visible deltas for persisted transcripts."""
+        match event.kind:
+            case ModelStreamEventKind.TOKEN_DELTA:
+                assistant_text.append(event.token_delta or "")
+            case ModelStreamEventKind.MESSAGE_DELTA:
+                assistant_text.append(event.message_delta or "")
             case _:
                 return
 
