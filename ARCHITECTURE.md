@@ -38,6 +38,9 @@
 | **Plugin** | `spakky-oidc` | OIDC/OAuth bearer credential 인증 provider |
 | **Plugin** | `spakky-policy` | YAML/TOML/JSON policy document 기반 AuthZ evaluator |
 | **Plugin** | `spakky-vllm` | vLLM OpenAI-compatible `IAgentModel` adapter |
+| **Plugin** | `spakky-agui` | AG-UI protocol adapter (SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
+| **Plugin** | `spakky-a2a` | A2A server/delegation adapter (AgentCard, JSON-RPC, REST, gRPC, remote teammate delegate) |
+| **Plugin** | `spakky-mcp` | MCP client/server adapter (external tool catalog merge, agent tool exposure) |
 
 ---
 
@@ -89,6 +92,9 @@ graph TD
             oidc[spakky-oidc]
             policy[spakky-policy]
             vllm[spakky-vllm]
+            agui[spakky-agui]
+            a2a[spakky-a2a]
+            mcp[spakky-mcp]
         end
     end
 
@@ -148,6 +154,12 @@ graph TD
     redis --> actuator
     vllm --> core
     vllm --> agent
+    agui --> core
+    agui --> agent
+    a2a --> core
+    a2a --> agent
+    mcp --> core
+    mcp --> agent
 
     style core fill:#e1f5ff,stroke:#42a5f5,stroke-width:2px,color:#0d47a1
     style domain fill:#fff4e1,stroke:#ffa726,stroke-width:2px,color:#e65100
@@ -172,6 +184,9 @@ graph TD
     style oidc fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style policy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style grpc fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style agui fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style a2a fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style mcp fill:#f5f5f5,stroke:#9e9e9e,color:#424242
 ```
 
 **핵심: 단방향 의존.** 하위 패키지는 상위 패키지를 모릅니다.
@@ -185,6 +200,7 @@ graph TD
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, model port, tool binding, delegation 계약을 제공하며 vLLM/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
 - **vLLM 플러그인** (spakky-vllm) → `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. vLLM OpenAI-compatible HTTP/SSE mapping만 담당하고 core 또는 inbound adapter를 역참조하지 않음
+- **Agent protocol adapter 플러그인** (spakky-agui, spakky-a2a, spakky-mcp) → `spakky` + `spakky-agent`에 의존. AG-UI/A2A는 `AgentRunner.run_events()`의 중립 `AgentEvent` stream을 각 프로토콜로 투영하고, MCP는 외부 MCP tool을 agent tool catalog에 병합하거나 agent의 `@agent_tool` catalog를 MCP server로 노출한다. 이 어댑터들은 `spakky-fastapi`/`spakky-grpc` 같은 inbound framework plugin에 역의존하지 않고 필요한 외부 SDK/FastAPI/Starlette/gRPC/MCP 라이브러리를 직접 사용한다.
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
@@ -517,9 +533,11 @@ spakky-data = "spakky.data.main:initialize"
 
 ### Agentic workflow layer
 
-`spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다. spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 `@Agent`가 `AgentRunner` 기반 표준 실행 루프를 `execute()`로 자동 바인딩한다(ADR-0013 §1). `AgentRunner`는 같은 orchestration 위에 두 stream을 노출합니다 — inbound adapter가 소비하는 public `AgentYield` stream(`run()`)과 AG-UI·A2A 어댑터가 무손실로 투영하는 프로토콜 중립 `AgentEvent` stream(`run_events()`). 후자는 message/reasoning delta와 tool call `start`·`args-delta`·`end`·`result` lifecycle, run/step 경계를 구분된 이벤트로 방출해 어댑터가 거친 framing을 합성하지 않고 1:1로 매핑하게 합니다(ADR-0013 §3).
+`spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다. `AgentExecutionSpec`은 `instructions`, `output_type`, `teammates`, `compaction`, `delegation_allowed`, `metadata` 같은 실행 의미를 DI metadata로 보존하고, spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 `@Agent`가 `AgentRunner` 기반 표준 실행 루프를 `execute()`로 자동 바인딩한다(ADR-0013 §1). `AgentRunner`는 같은 orchestration 위에 두 stream을 노출합니다 — inbound adapter가 소비하는 public `AgentYield` stream(`run()`)과 AG-UI·A2A 어댑터가 무손실로 투영하는 프로토콜 중립 `AgentEvent` stream(`run_events()`). 후자는 message/reasoning delta와 tool call `start`·`args-delta`·`end`·`result` lifecycle, run/step 경계를 구분된 이벤트로 방출해 어댑터가 거친 framing을 합성하지 않고 1:1로 매핑하게 합니다(ADR-0013 §3).
 
-Core public API의 중심은 `AgentExecutionSpec`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, `AgentRunner`/`AgentRunResult`, `RunAgentInput`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
+Core public API의 중심은 `AgentExecutionSpec`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, `AgentRunner`/`AgentRunResult`, `RunAgentInput`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. `RunAgentInput.parent_run_id`는 delegated child run을 parent run과 연결하는 중립 attribution이고, `ToolCallStartEvent.parent_message_id`와 `ToolCallResultEvent.message_id`는 AG-UI 같은 어댑터가 tool-call frame을 lossless하게 재구성하는 메시지 링크입니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
+
+`AgentExecutionSpec.teammates`는 `AgentTeammate(pod=...)` 또는 `AgentTeammate(card_url=...)` 선언을 받아 `teammate.<name>.delegate` synthetic tool descriptor로 노출합니다. 로컬 teammate는 parent instance에 주입된 child `@Agent` Pod를 찾아 `AgentRunner.run_events()`로 in-process 실행하고, 원격 teammate는 parent에 주입된 `IAgentDelegate` port로 위임합니다. `spakky-a2a`의 `A2AAgentDelegate`는 이 원격 port의 공식 A2A 구현입니다.
 
 `spakky-vllm`은 첫 공식 model provider plugin입니다. `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 추가합니다. 이 패키지는 OpenAI-compatible vLLM `/v1/chat/completions` 요청, SSE stream, structured output, tool-call JSON validation을 provider-neutral `ModelResponse`/`ModelStreamEvent`로 변환하며, `spakky-agent` core와 inbound adapter package를 역참조하지 않습니다.
 
@@ -1260,6 +1278,14 @@ flowchart TD
 | `spakky-grpc` | `RegisterServicesPostProcessor` | `@GrpcController`의 `@rpc` 메서드를 gRPC 서비스로 등록 |
 | | `AddInterceptorsPostProcessor` | `TracingInterceptor`, `ErrorHandlingInterceptor` 자동 추가 |
 | | `BindServerPostProcessor` | gRPC 서버 바인딩 및 라이프사이클 관리 |
+
+### Agent 프로토콜 플러그인
+
+| 플러그인 | 등록/공개 컴포넌트 | 외부 의존성 |
+|---------|------------------|-----------|
+| `spakky-agui` | `AgUiConfig`, `AgUiProjector`, `AgUiRunDriver`, `add_agui_endpoint`, `add_agui_http_stream_endpoint`, `add_agui_websocket_endpoint`, `AgUiStdioCommand`, deferred-tool HITL decision ingestion | `ag-ui-protocol`, `fastapi[standard]`, `pydantic-settings`, `spakky-agent` |
+| `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, `@A2AAgentServer`, `build_a2a_app`, `build_a2a_rest_app`, `build_a2a_grpc_handler`, `A2AAgentDelegate`, in-memory `IA2ATaskRepository` fallback | `a2a-sdk[http-server]`, `grpcio`, `pydantic`, `pydantic-settings`, `spakky-agent` |
+| `spakky-mcp` | `McpConfig`, `McpClient.open_runner`, external `AgentToolDescriptor` merge, `McpToolServer`, stdio/streamable-HTTP tool server exposure | `mcp`, `pydantic-settings`, `spakky-agent` |
 
 ### 트랜스포트 플러그인
 

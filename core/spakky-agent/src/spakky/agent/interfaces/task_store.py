@@ -5,18 +5,17 @@ framework runner reconciles:
 
 - **server-side persisted sessions** — the framework persists the running
   transcript and continues it by ``conversation_id``. This port is that
-  persistence contract. It is deliberately named ``TaskStore`` because the same
-  contribution backs A2A ``Task`` persistence (E-group): an A2A ``Task`` history
-  and an agent conversation history are the same durable transcript viewed
-  through two protocol lenses, so one store serves both.
+  conversation-history persistence contract. It is protocol-neutral, but it is
+  not the A2A task snapshot repository: ``spakky-a2a`` owns A2A ``Task`` storage
+  through its plugin repository and bridges it to ``a2a-sdk`` ``TaskStore``.
 - **client-injected history** — a stateless caller passes the prior transcript
   on each run (``RunAgentInput.message_history``) and no store is consulted.
 
 The ``conversation_id`` key is the protocol-neutral thread identifier carried by
 every event (``AgentEventAttribution.conversation_id``) and seeded by
 ``RunAgentInput.effective_conversation_id``. AG-UI projects it as ``threadId``
-and A2A projects it as ``contextId``, so a single persisted history is
-addressable from both protocol adapters without remapping keys.
+and A2A projects it as ``contextId`` when an adapter wants transcript replay;
+A2A protocol ``Task`` records remain plugin-owned snapshots.
 """
 
 from abc import ABC, abstractmethod
@@ -64,9 +63,9 @@ class ITaskStore(ABC):
     """Durable conversation-history store keyed by ``conversation_id``.
 
     Persists the running transcript of a server-side session so a later run with
-    the same ``conversation_id`` continues the conversation (ADR-0013 §6). The
-    same contribution backs A2A ``Task`` persistence (E-group), so the store is
-    keyed by the protocol-neutral conversation id, not a protocol-specific id.
+    the same ``conversation_id`` continues the conversation (ADR-0013 §6). A2A
+    can map its ``contextId`` to this key for transcript replay, while A2A task
+    snapshots are stored by ``spakky-a2a``'s repository bridge.
     """
 
     @abstractmethod

@@ -17,10 +17,12 @@
 ## 설치
 
 ```bash
-uv add spakky-mcp
+pip install spakky-mcp
 # 또는 에이전트 번들로
-uv add "spakky[agent]"
+pip install "spakky[agent]"
 ```
+
+plugin 초기화는 `McpConfig`, `McpClient`, `McpToolServer`를 등록합니다. 외부 도구를 끌어올 때는 `McpClient`, 자신의 도구를 내보낼 때는 `McpToolServer` 또는 module-level server helper를 사용합니다.
 
 ## 외부 서버 선언
 
@@ -129,4 +131,6 @@ async def expose(server: McpToolServer, agent: WeatherAgent) -> None:
 
 - [AI Agent 개발](agents.md)
 - [AI Agent 심화](agents-advanced.md)
+- [spakky-mcp API Reference](../api/plugins/spakky-mcp.md)
+- [spakky-agent API Reference](../api/core/spakky-agent.md)
 - [ADR-0013: 선언형 Agent](../adr/0013-declarative-agent-loop-ownership.md)

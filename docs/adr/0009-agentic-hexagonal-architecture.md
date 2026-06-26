@@ -479,9 +479,18 @@ Contribution은 다음 구현을 등록한다.
 LLM 호출은 outbound infrastructure port다. Core interface 이름은 `IAgentModel`이다.
 
 ```python
-class IAgentModel(Protocol):
+from abc import ABC, abstractmethod
+
+
+class IAgentModel(ABC):
+    @property
+    @abstractmethod
+    def capability(self) -> ModelCapability: ...
+
+    @abstractmethod
     async def complete(self, request: ModelRequest) -> ModelResponse: ...
 
+    @abstractmethod
     def stream(
         self,
         request: ModelRequest,

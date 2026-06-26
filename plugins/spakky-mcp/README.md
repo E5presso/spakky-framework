@@ -32,6 +32,8 @@ uv add "spakky[agent]"
 
 도구를 MCP 서버로 노출할 때의 식별자·전송은 `SPAKKY_MCP__TOOL_SERVER__NAME`(기본 `spakky-agent`)·`SPAKKY_MCP__TOOL_SERVER__TRANSPORT`(기본 `stdio`)로 선언합니다.
 
+`initialize()`는 `McpConfig`, `McpClient`, `McpToolServer`를 application container에 등록합니다.
+
 ## 사용
 
 ### 클라이언트: 외부 도구 끌어오기
@@ -49,6 +51,8 @@ async def run_with_external_tools(client: McpClient, agent: object) -> None:
 
 모델이 보는 외부 도구 이름은 `<서버이름>__<도구이름>` 형태로 접두사가 붙어 서버 간 이름 충돌을 막습니다.
 
+`McpClient.open_runner()`는 지정된 서버들의 transport session을 열고 `list_tools()` 결과를 `AgentToolDescriptor`로 정규화한 뒤, native catalog와 external catalog를 합친 runner를 yield합니다. 이 runner는 context manager가 살아 있는 동안만 외부 도구 callable이 유효합니다. `ExternalMcpToolDescriptor`는 MCP argument object를 그대로 keyword argument로 전달하므로 MCP schema가 `args` 또는 `kwargs`라는 필드를 선언해도 Spakky의 structured-call binding heuristic에 의해 손실되지 않습니다.
+
 ### 서버: 자신의 도구 내보내기
 
 ```python
@@ -61,6 +65,8 @@ async def expose_tools(server: McpToolServer, agent: object) -> None:
 ```
 
 원격 노출에는 `McpToolServer.streamable_http_session_manager(agent)`가 돌려주는 세션 매니저를 호스트 애플리케이션 lifespan에서 구동합니다.
+
+서버 방향은 agent의 `AgentToolCatalog`를 `mcp.types.Tool` 목록으로 변환하고, inbound `call_tool`을 `AgentToolDispatcher`로 실행합니다. 반환값은 MCP `content`와 `structuredContent`로 정규화됩니다. mapping 결과는 structured payload 그대로 노출하고, scalar 결과는 `{"result": ...}`로 감싸서 항상 JSON object structured content를 제공합니다.
 
 자세한 내용은 [MCP 어댑터 가이드](../../docs/guides/agent-mcp.md)를 참고하세요.
 

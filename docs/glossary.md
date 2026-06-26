@@ -259,9 +259,42 @@ LLM 기반 orchestration을 수행하는 application workflow component입니다
 동격인 `@Pod` 계열 stereotype이며, inbound adapter에서 호출되고 constructor DI로
 model/workspace/shell/git/repository 같은 outbound port를 주입받습니다.
 
-`@Agent`의 `execute()`는 `AgentYield` stream을 반환할 수 있습니다. `token`,
-`progress`, `tool`, `evidence`, `approval`, `final`, `error`, `cancel` event는
-FastAPI WebSocket, CLI, SSE 같은 inbound adapter가 transport별 payload로 변환합니다.
+`@Agent`가 `execute()`를 직접 선언하면 `AgentYield` stream 계약을 검증합니다.
+`execute()`를 생략하면 framework runner가 `RunAgentInput`을 받는 runner-backed
+`execute()`를 합성합니다. FastAPI WebSocket, CLI, SSE 같은 Spakky-native inbound
+adapter는 `AgentYield`를 transport별 payload로 변환하고, protocol adapter는
+`AgentRunner.run_events()`의 `AgentEvent`를 사용합니다.
+
+### RunAgentInput
+
+`spakky.agent.inbound.RunAgentInput`은 runner-backed Agent 실행을 시작하거나 재개하는
+inbound contract입니다. `state_id`는 run/state id, `instruction`은 이번 model request의
+사용자 지시, `conversation_id`는 멀티턴 thread id, `parent_run_id`는 delegation parent를
+나타냅니다. `resume=True`는 durable signal queue에 들어온 승인 결정 같은 외부 입력을
+반영해 paused run을 재개할 때 사용합니다.
+
+`message_history`가 있으면 caller가 history를 직접 제공하는 stateless 경로이고, 없으면
+runner가 optional `ITaskStore`에서 `effective_conversation_id`로 persisted history를 읽습니다.
+
+### ITaskStore
+
+`spakky.agent.interfaces.task_store.ITaskStore`는 core Agent transcript를
+`conversation_id`로 저장하는 server-side session port입니다. `ConversationTurn`은 user
+또는 assistant 발화만 담고, 다음 run의 model request history로 재생됩니다. A2A protocol
+`Task` snapshot 저장은 `spakky-a2a`의 `IA2ATaskRepository`/`SpakkyA2ATaskStore`가 담당하므로
+core transcript store와 섞지 않습니다.
+
+### AgentEvent
+
+`spakky.agent.event.AgentEvent`는 AG-UI, A2A 같은 protocol adapter가 소비하는
+protocol-neutral event union입니다. `MessageDeltaEvent`, `ReasoningDeltaEvent`,
+`ToolCallStartEvent`, `ToolCallArgsDeltaEvent`, `ToolCallEndEvent`, `ToolCallResultEvent`,
+`RunStartedEvent`, `RunPausedEvent`, `RunFinishedEvent`, `StepStartedEvent`,
+`StepFinishedEvent`, `StateSnapshotEvent`, `StateDeltaEvent`, `ArtifactEvent`가 포함됩니다.
+
+모든 event는 `AgentEventAttribution(agent_id, run_id, conversation_id, parent_run_id)`를
+통해 어떤 agent/run/conversation에서 나왔는지 보존합니다. AG-UI는 이를 `runId`와
+`threadId`로, A2A는 task id와 context id로 투영합니다.
 
 ### IAgentModel
 
@@ -275,6 +308,35 @@ Durable Agent 실행에 필요한 `IAgentStateRepository`, `IAgentSignalReposito
 `IAgentEvidenceRepository` 구현을 provider plugin이 기여하는 방식입니다.
 SQLAlchemy 구현은 `spakky.contributions.spakky.agent` entry point로 제공되며,
 운영용 in-memory fallback은 없습니다.
+
+### AgentTeammate
+
+`AgentExecutionSpec.teammates`에 들어가는 delegation 선언입니다. `AgentTeammate`는
+`name`과 정확히 하나의 binding을 갖습니다. 로컬 teammate는 `pod=SomeAgent`, 원격
+teammate는 `card_url="https://.../.well-known/agent-card.json"`로 선언합니다.
+둘 다 없거나 둘 다 있으면 `AgentDefinitionError`입니다.
+
+### AG-UI Adapter
+
+`spakky-agui`가 제공하는 UI streaming protocol adapter입니다. `AgentRunner.run_events()`의
+`AgentEvent`를 AG-UI `BaseEvent`로 투영하고, FastAPI SSE endpoint(`add_agui_endpoint`),
+HTTP streaming endpoint(`add_agui_http_stream_endpoint`), WebSocket endpoint
+(`add_agui_websocket_endpoint`), stdio helper를 제공합니다. AG-UI에는 전용 approval
+event가 없으므로 `RunPausedEvent`는 `hitl_approval` deferred tool call로 표현됩니다.
+
+### A2A Adapter
+
+`spakky-a2a`가 제공하는 Agent-to-Agent protocol adapter입니다. `@A2AAgentServer` marker와
+server builder는 `@Agent` spec/tool/teammate에서 AgentCard를 파생하고, JSON-RPC,
+HTTP+JSON REST, gRPC transport로 노출합니다. `A2AAgentDelegate`는 원격 AgentCard를
+사용해 teammate call을 보내고 remote stream을 child `AgentEvent`로 parent run에 합류시킵니다.
+
+### MCP Adapter
+
+`spakky-mcp`가 제공하는 Model Context Protocol 양방향 adapter입니다. client 방향의
+`McpClient.open_runner()`는 외부 MCP server tool을 `AgentToolCatalog`에 병합한
+`AgentRunner`를 열고, server 방향의 `McpToolServer`와 `build_agent_tool_server()`는
+기존 `@agent_tool` 카탈로그를 MCP `Server`로 노출합니다.
 
 ### @Repository
 

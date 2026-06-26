@@ -1,11 +1,11 @@
 # AG-UI 어댑터
 
 > 선언형 Agent를 AG-UI (Agent User Interaction) 프로토콜로 노출해, Agent 실행 이벤트를
-> UI에 SSE (Server-Sent Events) 또는 WebSocket으로 스트리밍하는 어댑터 가이드입니다.
+> UI에 SSE (Server-Sent Events), HTTP streaming, WebSocket, stdio로 스트리밍하는 어댑터 가이드입니다.
 > 렌더링(프런트엔드)은 범위 밖이며, 본 가이드는 와이어 프로토콜까지를 다룹니다.
 
-`spakky-agui` plugin은 선언형 `@Agent`의 실행 스트림을 AG-UI 이벤트로 투영하여
-SSE/WebSocket으로 노출합니다. 승인이 필요한 도구는 deferred-tool 방식의 HITL
+`spakky-agui` plugin은 선언형 `@Agent`의 `AgentRunner.run_events()` 스트림을 AG-UI 이벤트로 투영하여
+SSE, HTTP streaming, WebSocket, stdio로 노출합니다. 승인이 필요한 도구는 deferred-tool 방식의 HITL
 (Human-in-the-loop) 흐름으로 표면화됩니다.
 
 ## 1. `@Agent` 선언
@@ -53,6 +53,7 @@ class Assistant:
 ## 2. endpoint 마운트
 
 `add_agui_endpoint`로 FastAPI 앱에 `POST {sse_path}` SSE 라우트를 등록하고,
+`add_agui_http_stream_endpoint`로 `POST {http_stream_path}` NDJSON streaming 라우트를,
 `add_agui_websocket_endpoint`로 `WebSocket {websocket_path}` 라우트를 등록합니다. plugin은
 `fastapi` 서드파티에 직접 의존하며(`StreamingResponse`, `WebSocket`), `spakky-fastapi`
 plugin을 import하지 않습니다.
@@ -62,10 +63,11 @@ from fastapi import FastAPI
 from ag_ui.encoder import EventEncoder
 from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 
-from spakky.agent import AgentRunner, RunAgentInput
+from spakky.agent import AgentRunner
 from spakky.plugins.agui import (
-    AgUiProjector, AgUiRunDriver,
-    AgUiConfig, add_agui_endpoint, add_agui_websocket_endpoint, ingest_decision,
+    AgUiProjector, AgUiRunDriver, AgUiRunResolutionError,
+    AgUiConfig, add_agui_endpoint, add_agui_http_stream_endpoint,
+    add_agui_websocket_endpoint, ingest_decision,
 )
 
 app = FastAPI()
@@ -76,25 +78,56 @@ def run_driver_factory(core_input, ag_ui_input, accept):
     assistant = application.container.get(Assistant)
     runner = AgentRunner.for_agent_instance(assistant)
     if core_input.resume:
+        if runner.signals is None:
+            raise AgUiRunResolutionError
         ingest_decision(ag_ui_input, runner.signals, core_input.state_id)
     return AgUiRunDriver(
         runner=runner,
         run_input=core_input,
         agent_id="assistant",
         projector=AgUiProjector(config),
-        encoder=EventEncoder(accept=accept),
+        encoder=EventEncoder(accept=accept or ""),
     )
 
 
 add_agui_endpoint(app, run_driver_factory=run_driver_factory, config=config)
+add_agui_http_stream_endpoint(app, run_driver_factory=run_driver_factory, config=config)
 add_agui_websocket_endpoint(app, run_driver_factory=run_driver_factory, config=config)
 ```
 
 SSE 클라이언트는 `POST /agui` body로 AG-UI `RunAgentInput`을 보내고 `text/event-stream`
-응답을 받습니다. WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 `RunAgentInput` JSON을
+응답을 받습니다. HTTP streaming 클라이언트는 `POST /agui/stream` body로 같은 입력을 보내고
+`application/x-ndjson` chunk를 받습니다. WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 `RunAgentInput` JSON을
 text/JSON message로 보내고, AG-UI encoded event frame을 text message로 순서대로 받습니다.
 같은 WebSocket 연결에서 후속 `RunAgentInput`을 보내 승인 결정(`forwardedProps.approvalDecision`
 또는 deferred tool-result message)을 전달할 수 있습니다.
+
+CLI나 MCP-style local bridge가 AG-UI payload를 stdio로 주고받아야 하면
+`AgUiStdioCommand`를 사용합니다. 입력은 AG-UI `RunAgentInput` JSON 한 건이고, 출력은
+AG-UI encoded event payload를 한 줄에 하나씩 씁니다.
+
+```python
+from sys import stdin, stdout
+
+from spakky.plugins.agui import AgUiStdioCommand, run_agui_stdio
+
+agui_stdio = AgUiStdioCommand(
+    run_driver_factory=run_driver_factory,
+    input_stream=stdin,
+    output_stream=stdout,
+)
+
+# stdin에서 입력을 읽는 CLI command body:
+await agui_stdio(run_input_json=None)
+
+# 이미 읽은 JSON 문자열을 넘기는 lower-level helper:
+await run_agui_stdio(
+    run_driver_factory=run_driver_factory,
+    run_input_json=raw_json,
+    input_stream=stdin,
+    output_stream=stdout,
+)
+```
 
 `initialize`는 `AgUiConfig`만 등록합니다. 투영기는 실행마다 상태를 가지므로 싱글턴 Pod이
 될 수 없고, 어떤 Agent가 응답할지는 애플리케이션마다 다르기 때문에 endpoint 와이어링은
@@ -106,6 +139,7 @@ text/JSON message로 보내고, AG-UI encoded event frame을 text message로 순
 |---------|--------|------|
 | `SPAKKY_AGUI_SSE_PATH` | `/agui` | SSE endpoint 경로 |
 | `SPAKKY_AGUI_WEBSOCKET_PATH` | `/agui/ws` | WebSocket endpoint 경로 |
+| `SPAKKY_AGUI_HTTP_STREAM_PATH` | `/agui/stream` | NDJSON HTTP streaming endpoint 경로 |
 | `SPAKKY_AGUI_EMIT_STATE_SNAPSHOT` | `true` | `STATE_SNAPSHOT` 투영 여부 |
 | `SPAKKY_AGUI_MESSAGES_SNAPSHOT_ENABLED` | `false` | `RUN_FINISHED` 직전 `MESSAGES_SNAPSHOT` 방출 여부 |
 
@@ -120,6 +154,7 @@ text/JSON message로 보내고, AG-UI encoded event frame을 text message로 순
 | `TOOL_CALL_END` | `TOOL_CALL_END` |
 | `TOOL_CALL_RESULT` | `TOOL_CALL_RESULT` |
 | `RUN_STARTED` | `RUN_STARTED` |
+| `RUN_PAUSED` | `hitl_approval` deferred `TOOL_CALL_*` frame |
 | `RUN_FINISHED` | `RUN_FINISHED` 또는 `RUN_ERROR` |
 | `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED` |
 | `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (설정 게이트) |
@@ -129,14 +164,12 @@ text/JSON message로 보내고, AG-UI encoded event frame을 text message로 순
 ## 4. deferred-tool HITL 흐름
 
 AG-UI에는 1급 승인 이벤트가 없습니다. 승인 요청은 `hitl_approval` 도구의 **deferred tool
-call**로 표면화됩니다. `run_events()`는 승인 이벤트를 방출하지 않습니다 — 승인 필요 도구는
-dispatch 없이 결과를 내보내지 않고, 그 멈춤은 durable한 `WAIT_FOR_APPROVAL` 상태(상태
-`INTERRUPTED`, 사유 `APPROVAL_REQUIRED`)로 기록됩니다.
+call**로 표면화됩니다. core runner는 승인 필요 도구에서 멈출 때 `RunPausedEvent`를 방출하고,
+projector는 이 pause를 `TOOL_CALL_START`/`TOOL_CALL_ARGS`/`TOOL_CALL_END` 프레임으로 바꿉니다.
+결과 프레임은 일부러 보내지 않습니다.
 
-1. 런너가 승인 필요 도구에서 멈추면 `run_events()` 스트림은 결과 없이 끝나고, durable 상태에
-   승인 요청이 남습니다. `AgUiRunDriver`는 종단 `RUN_FINISHED` 직전에 그 상태를 읽어
-   (`project_pending_approval`), `hitl_approval`의 `TOOL_CALL_START`/`ARGS`/`END` 프레임을
-   주입합니다 — **결과 프레임은 없습니다** (결과 지연).
+1. 런너가 승인 필요 도구에서 멈추면 `run_events()`가 `RunPausedEvent`를 내보냅니다.
+   `AgUiProjector`는 이를 `hitl_approval` deferred tool frame으로 투영합니다.
 2. 클라이언트가 사람의 결정을 수집해 다음 `RunAgentInput`에 담아 다시 전송합니다 (SSE에서는
    POST, WebSocket에서는 같은 연결의 후속 message; deferred call id를 향한 tool-result 메시지,
    또는 `forwardedProps.approvalDecision`).
@@ -152,5 +185,10 @@ dispatch 없이 결과를 내보내지 않고, 그 멈춤은 durable한 `WAIT_FO
 1:1로 투영합니다(과거 `AgentYield → AgentEvent` bridge는 제거되었습니다). reasoning을
 지원하지 않는 모델에서는 `REASONING_DELTA`가 생략되고(graceful degrade), 현재 모델 루프가
 생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/`ARTIFACT`는 live 런에서 방출되지 않지만
-projector는 taxonomy 완전성을 위해 이들 종류도 계속 처리합니다. `parentRunId`는 `run_events`가
-parent run을 세팅하지 않으므로 `RUN_STARTED`에 항상 포함되지 않습니다.
+projector는 taxonomy 완전성을 위해 이들 종류도 계속 처리합니다. `parentRunId`는 `RunAgentInput.parent_run_id`가
+전달된 실행에서만 `RUN_STARTED`에 포함됩니다.
+
+## API Reference
+
+- [spakky-agui API Reference](../api/plugins/spakky-agui.md): endpoint, transport, projector, HITL helper 시그니처를 확인합니다.
+- [spakky-agent API Reference](../api/core/spakky-agent.md): `AgentRunner.run_events()`, `RunAgentInput`, `AgentEvent`를 확인합니다.
