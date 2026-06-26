@@ -38,3 +38,6 @@
 - [spakky-grpc](plugins/spakky-grpc.md) — gRPC 통합
 - [spakky-redis](plugins/spakky-redis.md) — Redis 캐시 백엔드
 - [spakky-vllm](plugins/spakky-vllm.md) — vLLM 모델 어댑터
+- [spakky-agui](plugins/spakky-agui.md) — AG-UI SSE/HTTP streaming/WebSocket/stdio 어댑터
+- [spakky-a2a](plugins/spakky-a2a.md) — A2A AgentCard, task, delegation 어댑터
+- [spakky-mcp](plugins/spakky-mcp.md) — MCP 외부 도구 클라이언트와 tool server 어댑터

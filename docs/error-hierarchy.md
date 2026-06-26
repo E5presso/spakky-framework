@@ -28,6 +28,9 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyOutboxError
   AbstractSpakkyFrameworkError --> AbstractSpakkySagaError
   AbstractSpakkyFrameworkError --> AbstractSpakkyAgentError
+  AbstractSpakkyFrameworkError --> AbstractAgUiError
+  AbstractSpakkyFrameworkError --> AbstractSpakkyA2AError
+  AbstractSpakkyFrameworkError --> AbstractMcpError
   AbstractSpakkyFrameworkError --> AbstractSpakkyFastAPIError
   AbstractSpakkyFrameworkError --> AbstractSpakkySqlAlchemyError
   AbstractSpakkyFrameworkError --> AbstractSpakkyCeleryError
@@ -52,6 +55,23 @@ flowchart TD
   AbstractSpakkySagaError --> SagaStepTimeoutError
   AbstractSpakkySagaError --> SagaParallelMergeConflictError
   AbstractSpakkySagaError --> SagaEngineNotConnectedError
+
+  AbstractAgUiError --> AgUiApprovalDecodeError
+  AbstractAgUiError --> AgUiPendingApprovalError
+  AbstractAgUiError --> AgUiRunResolutionError
+
+  AbstractSpakkyA2AError --> A2AAgentServerNotRegisteredError
+  AbstractSpakkyA2AError --> A2AAgentCardDerivationError
+  AbstractSpakkyA2AError --> UnsupportedAgentEventError
+  AbstractSpakkyA2AError --> InvalidApprovalDecisionError
+
+  AbstractMcpError --> McpServerConfigurationError
+  AbstractMcpError --> McpTransportError
+  AbstractMcpError --> McpToolDiscoveryError
+  AbstractMcpError --> McpToolInvocationError
+  AbstractMcpError --> McpResponseError
+  AbstractMcpError --> McpCatalogMergeError
+  AbstractMcpError --> McpToolExposureError
 
   AbstractSpakkyAgentError --> AgentDefinitionError
   AbstractSpakkyAgentError --> AgentToolBindingError
@@ -444,6 +464,7 @@ from spakky.agent.error import (
     AbstractSpakkyAgentError,
     AgentDefinitionError,
     AgentToolBindingError,
+    AgentToolDispatchError,
     AgentBootstrapError,
     AgentPersistenceConfigurationError,
     AgentModelConfigurationError,
@@ -456,6 +477,7 @@ from spakky.agent.error import (
 | `AbstractSpakkyAgentError`              | agent 에러 기반 클래스                    | `AbstractSpakkyFrameworkError` |
 | `AgentDefinitionError`                  | `@Agent`/`@agent_tool` 정의 계약 오류     | `AbstractSpakkyAgentError` |
 | `AgentToolBindingError`                 | model tool-call payload를 Python signature에 bind할 수 없음 | `AbstractSpakkyAgentError` |
+| `AgentToolDispatchError`                | model tool call이 등록되지 않은 tool을 가리키거나 dispatch할 수 없음 | `AbstractSpakkyAgentError` |
 | `AgentBootstrapError`                   | agent bootstrap 검증 실패                 | `AbstractSpakkyAgentError` |
 | `AgentPersistenceConfigurationError`     | durable agent persistence contribution 누락 | `AgentBootstrapError`      |
 | `AgentModelConfigurationError`          | 필요한 model adapter 등록 누락            | `AgentBootstrapError`      |
@@ -807,6 +829,82 @@ from spakky.plugins.vllm.error import (
 | `VllmStreamingDisabledError` | plugin 설정에서 streaming이 비활성화됨 |
 | `VllmModelRefusalError` | 모델이 정상 completion 생성을 거부함 |
 | `VllmStreamingNotImplementedError` | pre-streaming adapter 실패 호환 alias |
+
+### spakky-agui
+
+AG-UI protocol adapter 관련 에러입니다. AG-UI request를 core `RunAgentInput`으로 매핑하거나, HITL approval decision을 signal queue로 적재할 때 발생합니다.
+
+```python
+from spakky.plugins.agui.error import (
+    AbstractAgUiError,
+    AgUiApprovalDecodeError,
+    AgUiPendingApprovalError,
+    AgUiRunResolutionError,
+)
+```
+
+| 에러 | 설명 | 상속 |
+| ---- | ---- | ---- |
+| `AbstractAgUiError` | AG-UI adapter 에러 기반 클래스 | `AbstractSpakkyFrameworkError` |
+| `AgUiApprovalDecodeError` | resume input의 approval decision payload가 없거나 유효하지 않음 | `AbstractAgUiError` |
+| `AgUiPendingApprovalError` | paused approval state 또는 `RunPausedEvent`가 approval id, prompt, decision 목록을 제공하지 못함 | `AbstractAgUiError` |
+| `AgUiRunResolutionError` | AG-UI run request를 실행 가능한 agent run으로 해석할 수 없음 | `AbstractAgUiError` |
+
+### spakky-a2a
+
+A2A AgentCard, task event projection, gRPC wrapper, approval resume 관련 에러입니다.
+
+```python
+from spakky.plugins.a2a.error import (
+    AbstractSpakkyA2AError,
+    A2AAgentCardDerivationError,
+    A2AAgentServerNotRegisteredError,
+    InvalidApprovalDecisionError,
+    UnsupportedA2AGrpcEventError,
+    UnsupportedA2AGrpcResultError,
+    UnsupportedAgentEventError,
+    UnsupportedFinalOutputError,
+)
+```
+
+| 에러 | 설명 | 상속 |
+| ---- | ---- | ---- |
+| `AbstractSpakkyA2AError` | A2A plugin 에러 기반 클래스 | `AbstractSpakkyFrameworkError` |
+| `A2AAgentServerNotRegisteredError` | 요청한 agent name으로 등록된 A2A server가 없음 | `AbstractSpakkyA2AError` |
+| `A2AAgentCardDerivationError` | `@Agent` 선언에서 AgentCard를 파생할 수 없음 | `AbstractSpakkyA2AError` |
+| `UnsupportedAgentEventError` | `AgentEvent` kind를 A2A task event로 투영할 수 없음 | `AbstractSpakkyA2AError` |
+| `UnsupportedFinalOutputError` | final output을 A2A part로 투영할 수 없음 | `AbstractSpakkyA2AError` |
+| `InvalidApprovalDecisionError` | inbound approval-decision data part가 알려진 `ApprovalDecision` 값이 아님 | `AbstractSpakkyA2AError` |
+| `UnsupportedA2AGrpcResultError` | unary A2A gRPC method 결과 타입이 지원되지 않음 | `AbstractSpakkyA2AError` |
+| `UnsupportedA2AGrpcEventError` | streaming A2A gRPC event를 `StreamResponse`로 감쌀 수 없음 | `AbstractSpakkyA2AError` |
+
+### spakky-mcp
+
+MCP external tool client와 tool server 노출 관련 에러입니다.
+
+```python
+from spakky.plugins.mcp.error import (
+    AbstractMcpError,
+    McpCatalogMergeError,
+    McpResponseError,
+    McpServerConfigurationError,
+    McpToolDiscoveryError,
+    McpToolExposureError,
+    McpToolInvocationError,
+    McpTransportError,
+)
+```
+
+| 에러 | 설명 | 상속 |
+| ---- | ---- | ---- |
+| `AbstractMcpError` | MCP adapter 에러 기반 클래스 | `AbstractSpakkyFrameworkError` |
+| `McpServerConfigurationError` | 외부 MCP server 또는 tool server 설정이 유효하지 않음 | `AbstractMcpError` |
+| `McpTransportError` | 외부 MCP server 연결 또는 initialize 실패 | `AbstractMcpError` |
+| `McpToolDiscoveryError` | 외부 MCP server의 tool discovery 실패 | `AbstractMcpError` |
+| `McpToolInvocationError` | 외부 MCP tool 호출 실패 또는 error result 수신 | `AbstractMcpError` |
+| `McpResponseError` | MCP tool result를 JSON 값으로 매핑할 수 없음 | `AbstractMcpError` |
+| `McpCatalogMergeError` | 외부 MCP tool이 기존 agent catalog tool과 충돌 | `AbstractMcpError` |
+| `McpToolExposureError` | inbound MCP `call_tool`을 agent tool dispatcher로 실행하지 못함 | `AbstractMcpError` |
 
 ---
 

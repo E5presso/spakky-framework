@@ -18,7 +18,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 |---------|-----------|----------|
 | **plan** | `/plan-issues`, `/audit-spec`, `/impact-analysis` | — |
 | **build** | `/autopilot`, `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
-| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code` | — |
+| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/pr-review`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code` | — |
 | **ship** | — | `/create-pr`, `/triage-comments`, `/monitor-pr`, `/update-project-status` |
 | **meta** | `/onboarding`, `/update-dependencies`, `/sync-docs`, `/evaluate-harness`, `/optimize-harness`, `/promote-memory` | `/sync-dev-docs`, `/sync-user-docs` |
 
@@ -34,6 +34,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 하네스 진화: /evaluate-harness (선언-실행 단절 감지) → /optimize-harness (5-test) → /promote-memory (메모리 승격)
 ```
 
+- `/review-code`는 변경 diff의 결함 의문점을 생성하는 동료 리뷰 스킬이고, `/pr-review`는 열린 PR에 verdict 코멘트와 `ai-review` commit status를 발행하는 자동 승인 신호 스킬이다. 빌트인 `/code-review`(cloud)는 외부 GitHub 코드 리뷰 표면이며 스킬 맵 등재 대상이 아니다.
 - **이슈 작업은 `/process-ticket`으로 시작한다.** 직접 코딩하지 않는다.
 - **마일스톤 단위 작업은 `/autopilot`으로 시작한다.** 단일 이슈는 `/process-ticket`.
 - **버그 조사는 `/investigate`로 시작한다.** 가설 없이 코드를 수정하지 않는다.
@@ -124,7 +125,7 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 - 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
 - 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
 - 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
-- 리뷰가 통과 가능하더라도 GitHub formal Approve를 자동 승인 게이트로 가정하지 않는다. 사람 승인 또는 branch protection은 별도 정책으로 남긴다.
+- verdict 기반 봇 자동 승인은 `/pr-review`가 PR head commit에 `ai-review=success` status를 게시하고 `.github/workflows/ai-review.yml`이 같은 repo head, stale SHA 없음, status creator role `admin|maintain`을 GitHub API로 재검증할 때만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트·라벨은 승인 트리거가 아니며, `ai-review`는 required status check로 강제하지 않고 기존 branch protection 승인 요건을 충족하는 신호로만 사용한다.
 
 ### 코딩 규칙 정본
 

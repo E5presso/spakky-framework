@@ -2,7 +2,7 @@
 
 > `spakky-agent`로 LLM 실행과 도구 호출을 Spakky 애플리케이션 안에 자연스럽게 넣는 입문 가이드입니다.
 
-Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플리케이션 컴포넌트입니다. 일반 `@UseCase`처럼 생성자 주입을 받고, 실행 결과는 `AgentYield` stream으로 내보냅니다.
+Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플리케이션 컴포넌트입니다. 일반 `@UseCase`처럼 생성자 주입을 받고, native adapter에는 `AgentYield` stream을, AG-UI/A2A 같은 protocol adapter에는 `AgentRunner.run_events()`의 `AgentEvent` stream을 제공합니다.
 
 핵심은 **누가 실행 루프를 소유하는가**입니다. [ADR-0013](../adr/0013-declarative-agent-loop-ownership.md)에 따라 model 호출 → tool 호출 추출 → tool 실행 → 결과 주입 → 종료 판정으로 이어지는 반복 루프는 **프레임워크 runner가 소유**합니다. 개발자는 루프 본문을 작성하지 않고 `@Agent` spec으로 **무엇을** 실행할지(어떤 model, 어떤 tool, 어떤 정책)만 선언합니다. 이 개발 경험(DX)은 pydantic-ai를 참조합니다 — pydantic-ai에서 `agent.run()`이 루프를 소유하고 개발자는 `@agent.tool`로 도구만 선언하듯이, Spakky에서는 runner가 루프를 소유하고 개발자는 `@agent_tool`(도구)과 `@on_signal`(시그널 반응)만 선언합니다.
 
@@ -11,8 +11,10 @@ Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플�
 | 개념 | 역할 |
 |------|------|
 | `@Agent` | Agent class를 Spakky Pod로 등록하고 실행 spec을 선언합니다. |
+| `RunAgentInput` | runner-backed Agent 실행을 시작하거나 재개하는 inbound contract입니다. |
 | `@agent_tool` | model이 호출할 수 있는 Python 도구를 선언합니다. |
-| `AgentYield` | HTTP, WebSocket, CLI 같은 adapter가 받을 실행 이벤트입니다. |
+| `AgentYield` | Spakky-native HTTP, WebSocket, CLI adapter가 받을 실행 이벤트입니다. |
+| `AgentEvent` | AG-UI, A2A 같은 protocol adapter가 손실 없이 투영하는 중립 이벤트입니다. |
 
 `@Agent`가 도구만 선언하고 `execute()` 본문을 작성하지 않으면, 프레임워크가 표준 실행 루프를 `execute()`로 자동 제공합니다. model-mediated orchestration의 기본 흐름을 벗어나는 커스텀 제어가 필요할 때만 `execute()` 본문을 직접 작성합니다.
 
@@ -38,21 +40,21 @@ Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플�
 pip install spakky-agent
 ```
 
-로컬 vLLM 모델 adapter와 운영용 repository까지 함께 쓰려면 다음처럼 설치합니다.
+Agent core, vLLM model adapter, AG-UI/A2A/MCP protocol adapter, SQLAlchemy provider까지 함께 쓰려면 다음처럼 설치합니다.
 
 ```bash
 pip install "spakky[agent]"
 ```
 
-직접 조합하고 싶다면 같은 구성을 아래처럼 나눠 설치할 수 있습니다.
+직접 조합하고 싶다면 필요한 축만 나눠 설치할 수 있습니다.
 
 ```bash
-pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
+pip install spakky-agent spakky-vllm spakky-agui spakky-a2a spakky-mcp "spakky-sqlalchemy[agent]"
 ```
 
 ## 실행 흐름
 
-Agent는 transport를 직접 알지 않습니다. HTTP, WebSocket, CLI adapter가 container에서 Agent를 꺼내고, Agent가 내보낸 `AgentYield`를 각 transport의 응답으로 바꿉니다.
+Agent는 transport를 직접 알지 않습니다. HTTP, WebSocket, CLI adapter는 container에서 Agent를 꺼내 `AgentYield`를 native 응답으로 바꾸고, AG-UI/A2A protocol adapter는 같은 runner의 `AgentEvent`를 각 프로토콜 이벤트로 투영합니다.
 
 ```mermaid
 flowchart TD
@@ -60,8 +62,11 @@ flowchart TD
   Adapter --> Agent["@Agent class"]
   Agent --> Model[IAgentModel]
   Model --> Backend[vLLM or another model backend]
-  Agent --> Yield[AgentYield stream]
+  Agent --> Runner[AgentRunner]
+  Runner --> Yield[AgentYield stream]
+  Runner --> Event[AgentEvent stream]
   Yield --> Adapter
+  Event --> Adapter
   Adapter --> Client
 ```
 
@@ -107,7 +112,7 @@ class SimpleAgent:
 | `execute(command: str)` | Agent 실행 entrypoint입니다. 인자는 type annotation이 필요합니다. |
 | `AgentYieldKind.FINAL` | 실행이 끝났음을 adapter에게 알립니다. |
 
-`execute()` 계약은 bootstrap 시점에 검증됩니다. `execute()`가 없거나, parameter annotation이 없거나, `*args`/`**kwargs`를 쓰거나, `AgentYield`가 아닌 값을 yield하도록 annotation하면 definition error가 납니다.
+직접 `execute()`를 선언하면 bootstrap 시점에 계약이 검증됩니다. parameter annotation이 없거나, `*args`/`**kwargs`를 쓰거나, generator가 `AgentYield`가 아닌 값을 yield하도록 annotation하면 definition error가 납니다. `execute()`를 생략하면 `@Agent`가 `RunAgentInput`을 받는 runner-backed `execute()`를 합성하므로 직접 루프를 작성할 필요가 없습니다.
 
 ## 응답으로 바꾸기
 
@@ -279,6 +284,8 @@ async for item in agent.execute(
 
 pydantic-ai의 `Agent(..., output_type=...)` + `@agent.tool` + `agent.run()` 조합과 같은 자리를 Spakky에서는 `@Agent(spec=...)` + `@agent_tool` + runner-backed `execute(RunAgentInput)`가 채웁니다. 차이는 도구·model·repository가 모두 **생성자 DI**로 주입된다는 점입니다 — spec은 의존성을 다시 선언하지 않습니다.
 
+AG-UI나 A2A처럼 protocol fidelity가 필요한 adapter를 직접 만들 때는 coarse한 `AgentYield`를 재해석하지 말고 `AgentRunner.for_agent_instance(agent).run_events(run_input)`을 사용합니다. `AgentEvent`는 message/reasoning delta, tool call start/args/end/result, run/step boundary, pause, state, artifact를 분리해 내보내므로 adapter가 wire protocol 이벤트로 1:1 투영할 수 있습니다.
+
 ## 다음 단계
 
 처음부터 CodeAssistant 전체를 만들려고 하면 어렵습니다. 이 순서로 쌓아 올리세요.
@@ -289,10 +296,11 @@ pydantic-ai의 `Agent(..., output_type=...)` + `@agent.tool` + `agent.run()` 조
 4. write/network/destructive tool을 추가하고 approval event를 처리한다.
 5. 실행 중 시그널 반응이 필요하면 `@on_signal` 훅을 선언한다.
 6. durable 실행이 필요해지면 state/signal/evidence repository를 붙인다.
-7. FastAPI, WebSocket, SSE, CLI adapter에서 `AgentYield`를 transport event로 변환한다.
+7. FastAPI, WebSocket, SSE, CLI adapter에서는 `AgentYield`를 native transport event로, AG-UI/A2A adapter에서는 `AgentEvent`를 protocol event로 변환한다.
 
 ## 더 볼 곳
 
-- [AI Agent 심화](agents-advanced.md): tool catalog, approval, durable repository, AG-UI/CopilotKit 연동을 다룹니다.
+- [AI Agent 심화](agents-advanced.md): tool catalog, approval, durable repository, protocol event stream을 다룹니다.
+- [AG-UI 어댑터](agent-ag-ui.md), [A2A 어댑터](agent-a2a.md), [MCP 어댑터](agent-mcp.md): 외부 프로토콜별 endpoint와 transport wiring을 확인합니다.
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 흐름으로 연결합니다.
 - [spakky-agent API Reference](../api/core/spakky-agent.md): public class와 helper의 상세 signature를 확인합니다.

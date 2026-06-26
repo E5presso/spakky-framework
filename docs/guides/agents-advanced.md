@@ -1,6 +1,6 @@
 # AI Agent 심화
 
-> `spakky-agent`의 tool catalog, approval, `@on_signal` 선언형 훅, context compaction, teammate, durable execution, transport adapter, AG-UI/CopilotKit 연동을 다룹니다.
+> `spakky-agent`의 tool catalog, approval, `@on_signal` 선언형 훅, context compaction, teammate, durable execution, `AgentEvent` stream, protocol adapter 연동을 다룹니다.
 
 이 문서는 [AI Agent 개발](agents.md)을 읽은 뒤 보는 심화 가이드입니다. 여기서는 작은 Agent를 운영형 Agent로 확장할 때 필요한 선택지를 정리합니다.
 
@@ -11,8 +11,8 @@ Tool은 모델이 호출할 수 있는 애플리케이션 기능입니다. `@age
 읽기 tool은 approval 없이 실행할 수 있도록 명시합니다.
 
 ```python
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol
 
 from spakky.agent import (
     Agent,
@@ -31,14 +31,19 @@ class WorkspaceReadResult:
     content: str
 
 
-class WorkspacePort(Protocol):
+class IWorkspacePort(ABC):
+    @abstractmethod
     def read_text(self, path: str) -> WorkspaceReadResult:
+        ...
+
+    @abstractmethod
+    def write_text(self, path: str, content: str) -> "WorkspaceWriteResult":
         ...
 
 
 @Agent(spec=AgentExecutionSpec(name="code_assistant", objective="inspect files"))
 class CodeAssistant:
-    def __init__(self, workspace: WorkspacePort) -> None:
+    def __init__(self, workspace: IWorkspacePort) -> None:
         self._workspace = workspace
 
     @agent_tool(
@@ -209,7 +214,9 @@ from spakky.agent import (
     AgentSignalKind,
     AgentYield,
     AgentYieldKind,
+    IAgentModel,
     Progress,
+    RecoveryStrategy,
     on_signal,
 )
 
@@ -300,6 +307,19 @@ Restart 후에는 `plan_agent_resume(state, evidence, pending_signals)`가 다�
 
 Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 history를 고치지 않고, redaction, correction, context digest 갱신도 새 evidence를 append하는 방식으로 표현합니다.
 
+## 멀티턴 대화와 TaskStore
+
+`RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
+
+멀티턴 history는 두 경로 중 하나로만 들어옵니다.
+
+| 경로 | 언제 쓰나 | runner 동작 |
+|------|-----------|-------------|
+| `RunAgentInput.message_history` | 클라이언트가 이전 transcript를 매 요청에 실어 보낼 때 | inline history를 그대로 model request 앞에 붙입니다. |
+| `ITaskStore` | 서버가 conversation transcript를 보존할 때 | `effective_conversation_id`로 `ConversationTurn` 목록을 읽어 model message로 변환합니다. |
+
+둘 다 있으면 inline `message_history`가 우선합니다. `ITaskStore`는 `ConversationTurn(role, content, metadata)`를 저장하며, role은 `USER` 또는 `ASSISTANT`만 허용됩니다. A2A protocol `Task` snapshot 저장은 `spakky-a2a`의 `IA2ATaskRepository`와 `SpakkyA2ATaskStore`가 담당하므로 core transcript store와 별도로 구성합니다.
+
 ## Context compaction
 
 긴 멀티턴 대화는 결국 model backend의 context window를 넘습니다. 압축할지 여부(언제)는 runner가 소유하고, 압축하는 방법(어떻게)은 교체 가능한 `ICompactionStrategy` 포트가 담당합니다 (ADR-0013 §7). `@Agent` spec에 `AgentCompactionPolicy`를 선언하면 runner가 각 model 요청 직전, 누적 토큰 추정치가 임계값을 넘었을 때 선언된 전략 chain을 history에 적용합니다 — 개발자가 루프 본문에서 직접 호출하지 않습니다.
@@ -382,31 +402,31 @@ SSE는 단방향 server-to-client stream입니다. 사용자의 새 메시지나
 - `POST /agents/code/sse`: 실행을 시작하고 `AgentYield`를 SSE frame으로 흘려보냅니다.
 - `POST /agents/code/signals`: approval decision, cancel, user message를 `IAgentSignalRepository`에 append합니다.
 
-## AG-UI와 CopilotKit
+## Protocol event stream
 
-AG-UI는 `AgentYield`와 다른 wire protocol입니다. 공식 AG-UI HTTP agent는 POST body로 `threadId`, `runId`, `messages`, `state`, `tools`, `context`, `forwardedProps`를 받고, 응답은 `text/event-stream`으로 `data: {"type": ...}` frame을 흘려보냅니다.
+`AgentRunner`는 같은 orchestration을 두 stream으로 제공합니다. `run()`은 Spakky-native inbound adapter가 소비하는 `AgentYield`를 내보내고, `run_events()`는 AG-UI/A2A 같은 protocol adapter가 손실 없이 투영하는 `AgentEvent` taxonomy를 내보냅니다.
 
 현재 Spakky 상태를 정확히 말하면 다음과 같습니다.
 
-- `spakky-agent`는 AG-UI와 개념적으로 맞는 중립 `AgentEvent` stream building block을 제공합니다.
-- `AgentYield` 자체는 AG-UI event가 아닙니다.
-- `spakky-agui` plugin은 `AgentRunner.run_events()`를 AG-UI event로 투영하고 FastAPI SSE/WebSocket endpoint를 등록합니다.
-- CopilotKit은 AG-UI `HttpAgent`로 `spakky-agui` SSE endpoint에 붙을 수 있습니다. WebSocket이 필요한 클라이언트는 같은 `RunAgentInput`을 WebSocket message로 보내고 AG-UI encoded event frame을 text message로 받습니다.
+- `AgentYield` 자체는 AG-UI 또는 A2A event가 아닙니다.
+- `AgentEventAttribution`은 `agent_id`, `run_id`, `conversation_id`, optional `parent_run_id`를 모든 이벤트에 싣습니다.
+- `RunPausedEvent`는 approval/auth/user-input pause를 중립 이벤트로 표현하고, adapter가 AG-UI deferred tool 또는 A2A `input-required`/`auth-required` 상태로 투영합니다.
+- `spakky-agui`는 `AgentEvent`를 AG-UI `BaseEvent`로 투영하고 FastAPI SSE, HTTP streaming, WebSocket, stdio 경계를 제공합니다.
+- `spakky-a2a`는 `AgentEvent`를 A2A task/message/artifact update로 투영하고 AgentCard, JSON-RPC, HTTP+JSON REST, gRPC transport를 제공합니다.
+- `spakky-mcp`는 `AgentEvent` stream을 소비하지 않습니다. MCP client 방향에서는 외부 MCP server tool을 `AgentToolCatalog`에 병합하고, server 방향에서는 agent의 `@agent_tool` catalog를 MCP tool server로 노출합니다.
 
-수동 adapter를 직접 작성할 때의 권장 mapping은 다음과 같습니다.
+수동 adapter를 직접 작성할 때는 `AgentYieldKind`를 AG-UI로 재구성하지 말고 다음 `AgentEvent` mapping을 기준으로 삼습니다.
 
-| Spakky `AgentYieldKind` | AG-UI event | 설명 |
-|-------------------------|-------------|------|
-| stream 시작 전 | `RUN_STARTED` | `threadId`와 `runId`는 AG-UI request 값을 사용합니다. |
-| 첫 `TOKEN` 전 | `TEXT_MESSAGE_START` | assistant message id를 생성합니다. |
-| `TOKEN` | `TEXT_MESSAGE_CONTENT` | `Token.text`를 `delta`로 보냅니다. |
-| `PROGRESS` | `CUSTOM` | Spakky progress는 AG-UI step lifecycle과 1:1이 아니므로 `CUSTOM`이 안전합니다. |
-| `TOOL` result | `TOOL_CALL_RESULT` | `Tool.result`를 JSON string 또는 text content로 보냅니다. |
-| `APPROVAL` | `CUSTOM` 또는 `STATE_DELTA` | AG-UI core에는 Spakky approval 전용 event가 없으므로 frontend 약속이 필요합니다. |
-| `FINAL` | `TEXT_MESSAGE_END` + `RUN_FINISHED` | token message가 열려 있으면 먼저 닫습니다. |
-| `ERROR` | `RUN_ERROR` | `Error.message`를 AG-UI error message로 보냅니다. |
+| 중립 `AgentEvent` | 주 사용처 |
+|-------------------|-----------|
+| `MESSAGE_DELTA`, `REASONING_DELTA` | AG-UI text/reasoning frame, A2A task working message |
+| `TOOL_CALL_START`, `TOOL_CALL_ARGS_DELTA`, `TOOL_CALL_END`, `TOOL_CALL_RESULT` | AG-UI tool call lifecycle, A2A tool artifact/status |
+| `RUN_STARTED`, `RUN_FINISHED`, `RUN_PAUSED` | run/task lifecycle, error, HITL pause |
+| `STEP_STARTED`, `STEP_FINISHED` | progress step status |
+| `STATE_SNAPSHOT`, `STATE_DELTA` | shared state projection |
+| `ARTIFACT` | protocol-specific artifact/custom event |
 
-정리하면 CopilotKit으로 붙일 수 있습니다. 단, endpoint는 CopilotKit `HttpAgent`가 기대하는 AG-UI request/response를 구현해야 합니다. `AgentYield`를 그대로 SSE로 흘리는 Spakky-native endpoint는 CopilotKit용 endpoint가 아닙니다. 기본 구현은 [AG-UI 어댑터](agent-ag-ui.md)를 사용합니다.
+CopilotKit으로 붙일 때도 endpoint는 AG-UI `RunAgentInput` request/response를 구현해야 합니다. Spakky-native `AgentYield` JSON stream은 CopilotKit용 endpoint가 아니며, 기본 구현은 [AG-UI 어댑터](agent-ag-ui.md)를 사용합니다.
 
 ## 테스트 전략
 
@@ -440,7 +460,7 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 - 긴 멀티턴 Agent는 `AgentCompactionPolicy`를 spec에 선언합니다.
 - Durable path를 쓰면 state/signal/evidence repository contribution이 등록되어 있습니다.
 - Inbound adapter는 `AgentYieldKind.APPROVAL`을 사용자 decision signal로 연결합니다.
-- CopilotKit 연동 endpoint는 Spakky-native `AgentYield` JSON이 아니라 AG-UI `type` event stream을 반환합니다. 기본 구현은 `spakky-agui`의 SSE/WebSocket endpoint를 사용합니다.
+- Protocol adapter는 Spakky-native `AgentYield` JSON이 아니라 `AgentRunner.run_events()`에서 나온 `AgentEvent`를 각 wire protocol event로 투영합니다.
 - Cancel은 cancellation lifecycle로 처리하고 즉시 terminal state로 덮지 않습니다.
 - Evidence는 append-only로 남깁니다.
 - 테스트는 실제 model server 없이 scripted stream으로 주요 branch를 검증합니다.
@@ -450,4 +470,7 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 execution으로 연결한 runnable demo입니다.
 - [spakky-agent API Reference](../api/core/spakky-agent.md): public class와 helper의 상세 signature를 확인합니다.
 - [spakky-vllm API Reference](../api/plugins/spakky-vllm.md): OpenAI-compatible vLLM model adapter를 확인합니다.
+- [spakky-agui API Reference](../api/plugins/spakky-agui.md): AG-UI endpoint, projector, HITL helpers를 확인합니다.
+- [spakky-a2a API Reference](../api/plugins/spakky-a2a.md): A2A server, transport, delegation API를 확인합니다.
+- [spakky-mcp API Reference](../api/plugins/spakky-mcp.md): MCP external tool client와 tool server API를 확인합니다.
 - [spakky-sqlalchemy API Reference](../api/plugins/spakky-sqlalchemy.md): durable agent repository contribution을 확인합니다.
