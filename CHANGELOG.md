@@ -1,3 +1,13 @@
+## v7.0.0 (2026-06-26)
+
+### BREAKING CHANGE
+
+- spakky-mcp no longer exports MCPServer, MCPToolServer, McpToolServerConfig, build_agent_tool_server, serve_stdio, McpConfig.tool_server, or server registry/stereotype APIs. Build MCP servers separately with FastMCP, the official MCP SDK, or another MCP-compatible server framework, then attach them to Agent runs through McpConfig.servers or RunAgentInput.metadata["mcp"]["servers"].
+
+### Feat
+
+- **mcp**: make external servers lazy plug-and-play
+
 ## v6.13.0 (2026-06-26)
 
 ### Feat
