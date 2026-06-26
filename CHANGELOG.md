@@ -1,3 +1,9 @@
+## v6.13.0 (2026-06-26)
+
+### Feat
+
+- **agent**: support runtime model and MCP tool selection
+
 ## v6.12.0 (2026-06-26)
 
 ### Feat
