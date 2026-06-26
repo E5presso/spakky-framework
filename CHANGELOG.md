@@ -1,3 +1,9 @@
+## v6.12.0 (2026-06-26)
+
+### Feat
+
+- add acronym-compatible agent plugin APIs
+
 ## v6.11.0 (2026-06-26)
 
 ### Feat
