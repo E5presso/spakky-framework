@@ -119,6 +119,18 @@
 		{
 			"name": "plugins.policy",
 			"path": "plugins/spakky-policy",
+		},
+		{
+			"name": "plugins.agui",
+			"path": "plugins/spakky-agui",
+		},
+		{
+			"name": "plugins.a2a",
+			"path": "plugins/spakky-a2a",
+		},
+		{
+			"name": "plugins.mcp",
+			"path": "plugins/spakky-mcp",
 		}
 	],
 	"settings": {
@@ -230,6 +242,9 @@
 			"vllm",
 			"oidc",
 			"policy",
+			"agui",
+			"a2a",
+			"mcp"
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml",
