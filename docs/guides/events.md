@@ -92,7 +92,7 @@ class AsyncOrderEventHandler:
 
 #### 같은 이벤트, 여러 핸들러
 
-하나의 이벤트에 여러 핸들러를 등록할 수 있습니다. 도메인 이벤트와 통합 이벤트 모두 동일합니다.
+하나의 Domain Event에 여러 핸들러를 등록할 수 있습니다. `@EventHandler` 자동 등록은 `AbstractDomainEvent` 서브클래스만 대상으로 하며, Integration Event는 bus/transport consumer 경로로 처리합니다.
 
 ```python
 @EventHandler()
@@ -173,7 +173,7 @@ app = (
 ```
 
 !!! info "자동 등록"
-    `app.start()` 시점에 `EventHandlerRegistrationPostProcessor`가 `@EventHandler` 클래스를 스캔하여 `@on_event` 메서드를 이벤트 타입별로 자동 등록합니다.
+    `app.start()` 시점에 `EventHandlerRegistrationPostProcessor`가 `@EventHandler` 클래스를 스캔하여 `@on_event` 메서드를 Domain Event 타입별로 자동 등록합니다. `AbstractIntegrationEvent`는 자동 등록 대상이 아니라 broker consumer 경로에서 처리됩니다.
 
 ---
 

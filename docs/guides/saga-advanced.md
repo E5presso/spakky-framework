@@ -99,7 +99,7 @@ from datetime import timedelta
 step(saga.call_external_api, timeout=timedelta(seconds=3)) | Retry(max_attempts=2)
 ```
 
-`SagaFlow.timeout(duration)`으로 Saga 전체 타임아웃을 설정합니다. 초과 시 `SagaStatus.TIMED_OUT`으로 종료되며, 그 시점까지 commit된 step은 역순으로 보상됩니다.
+`SagaFlow.timeout(duration)`으로 Saga 전체 타임아웃을 설정합니다. 초과 시 `SagaStatus.TIMED_OUT`으로 종료되며, 그 시점까지 commit된 step은 역순으로 보상됩니다. v1 제약상 timeout이 `parallel()` 그룹 실행 도중 만료되면, 이미 성공했지만 compensable 등록 전인 side effect는 보상되지 않을 수 있습니다.
 
 ```python
 from datetime import timedelta

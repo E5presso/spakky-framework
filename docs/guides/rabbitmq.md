@@ -58,7 +58,7 @@ export SPAKKY_RABBITMQ__MALFORMED_PAYLOAD_ACTION=ack
 | `port` | `SPAKKY_RABBITMQ__PORT` | (필수) | RabbitMQ 포트 |
 | `user` | `SPAKKY_RABBITMQ__USER` | (필수) | 인증 사용자명 |
 | `password` | `SPAKKY_RABBITMQ__PASSWORD` | (필수) | 인증 비밀번호 |
-| `exchange_name` | `SPAKKY_RABBITMQ__EXCHANGE_NAME` | `None` | Exchange 이름 (pub/sub 라우팅) |
+| `exchange_name` | `SPAKKY_RABBITMQ__EXCHANGE_NAME` | `None` | Exchange 이름 (event_name routing key 라우팅) |
 | `auth_challenge_action` | `SPAKKY_RABBITMQ__AUTH_CHALLENGE_ACTION` | `ack` | missing/invalid/expired snapshot 처리 |
 | `auth_deny_action` | `SPAKKY_RABBITMQ__AUTH_DENY_ACTION` | `ack` | protected handler DENY 처리 |
 | `auth_error_action` | `SPAKKY_RABBITMQ__AUTH_ERROR_ACTION` | `nack_requeue` | verifier/provider ERROR 처리 |
@@ -158,10 +158,10 @@ sequenceDiagram
 
 ## Exchange 라우팅
 
-`exchange_name`을 설정하면 pub/sub 패턴으로 동작합니다.
+`exchange_name`을 설정하면 configured exchange에 이벤트 이름을 routing key로 사용합니다.
 
-- Transport가 exchange를 선언하고 큐를 바인딩
-- 같은 exchange에 여러 큐가 바인딩되면 메시지가 팬아웃
+- Transport가 exchange를 선언하고 이벤트 이름과 같은 durable queue를 바인딩
+- 발행 시 `event_name` routing key로 publish하므로 소비 queue도 같은 routing key 계약을 사용
 
 `exchange_name`이 `None`이면 기본 exchange(direct)를 사용합니다.
 

@@ -69,7 +69,7 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
 
 ## AggregateRoot에서 이벤트 발생
 
-AggregateRoot는 도메인 이벤트를 수집하고, 트랜잭션 커밋 시 발행합니다.
+AggregateRoot는 도메인 이벤트를 수집만 합니다. 트랜잭션 커밋 후 발행은 저장된 Aggregate를 추적하는 `AggregateCollector`와 `TransactionalEventPublishingAspect`의 책임입니다.
 
 ```python
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
@@ -107,6 +107,8 @@ class Order(AbstractAggregateRoot[UUID]):
 - `remove_event(event)` — 이벤트 제거
 - `clear_events()` — 모든 이벤트 제거
 - `events` — 현재 이벤트 목록 (읽기 전용)
+
+Repository 저장 경로에서 `AggregateCollector.collect()`가 AggregateRoot 참조를 모으고, 트랜잭션 커밋 후 `TransactionalEventPublishingAspect`가 수집된 AggregateRoot의 `events`를 읽어 `IEventPublisher`로 발행합니다.
 
 ---
 
@@ -222,7 +224,7 @@ class UserEventHandler:
 
 ### 핸들러 자동 등록
 
-`@EventHandler` Pod가 등록되면, `@on_event`로 표시된 메서드가 자동으로 Consumer에 등록됩니다.
+`@EventHandler` Pod가 등록되면, `AbstractDomainEvent`를 받는 `@on_event` 메서드가 in-process Consumer에 자동 등록됩니다. `AbstractIntegrationEvent`는 이 자동 등록 대상이 아니라 RabbitMQ/Kafka 같은 transport consumer 경로에서 처리합니다.
 
 ---
 
