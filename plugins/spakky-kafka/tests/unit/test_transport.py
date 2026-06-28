@@ -175,6 +175,7 @@ async def test_async_transport_send_expect_produce_and_flush(
 
     mock_aio_producer_cls.assert_called_once_with(
         bootstrap_servers=config.bootstrap_servers,
+        client_id=config.client_id,
     )
     mock_producer.start.assert_awaited_once()
     mock_producer.send_and_wait.assert_awaited_once_with(
@@ -183,3 +184,44 @@ async def test_async_transport_send_expect_produce_and_flush(
         headers=[("traceparent", b"00-abc-def-01")],
     )
     mock_producer.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+async def test_async_transport_send_with_sasl_config_expect_security_kwargs(
+    mock_admin_cls: MagicMock,
+    mock_aio_producer_cls: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """비동기 producer 생성 시 SASL/security 설정을 aiokafka kwargs로 전달한다."""
+    from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
+
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID", "test-group")
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID", "secure-client")
+    monkeypatch.setenv(
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS", "secure:9093"
+    )
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SECURITY_PROTOCOL", "SASL_SSL")
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_MECHANISM", "PLAIN")
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_USERNAME", "api-key")
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_PASSWORD", "api-secret")
+
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = set()
+    mock_admin_cls.return_value = mock_admin
+    mock_producer = AsyncMock()
+    mock_aio_producer_cls.return_value = mock_producer
+
+    config = KafkaConnectionConfig()
+    transport = AsyncKafkaEventTransport(config)
+    await transport.send("SecureEvent", b"{}", {})
+
+    mock_aio_producer_cls.assert_called_once_with(
+        bootstrap_servers="secure:9093",
+        client_id="secure-client",
+        security_protocol="SASL_SSL",
+        sasl_mechanism="PLAIN",
+        sasl_plain_username="api-key",
+        sasl_plain_password="api-secret",
+    )

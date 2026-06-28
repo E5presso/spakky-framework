@@ -111,6 +111,21 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             ]
         )
 
+    def _producer_config(self) -> dict[str, str]:
+        config = {
+            "bootstrap_servers": self.config.bootstrap_servers,
+            "client_id": self.config.client_id,
+        }
+        if self.config.security_protocol:
+            config["security_protocol"] = self.config.security_protocol
+        if self.config.sasl_mechanism:
+            config["sasl_mechanism"] = self.config.sasl_mechanism
+        if self.config.sasl_username:
+            config["sasl_plain_username"] = self.config.sasl_username
+        if self.config.sasl_password:
+            config["sasl_plain_password"] = self.config.sasl_password
+        return config
+
     @override
     async def send(
         self,
@@ -126,9 +141,7 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             headers: Metadata headers for trace propagation.
         """
         self._create_topic(topic=event_name)
-        producer = AIOKafkaProducer(
-            bootstrap_servers=self.config.bootstrap_servers,
-        )
+        producer = AIOKafkaProducer(**self._producer_config())
         await producer.start()
         try:
             await producer.send_and_wait(
