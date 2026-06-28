@@ -27,18 +27,22 @@ Spakky의 트레이싱 아키텍처는 두 계층으로 나뉩니다:
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+import spakky.tracing
 import spakky.plugins.opentelemetry
 import apps
 
 app = (
     SpakkyApplication(ApplicationContext())
-    .load_plugins(include={spakky.plugins.opentelemetry.PLUGIN_NAME})
+    .load_plugins(include={
+        spakky.tracing.PLUGIN_NAME,
+        spakky.plugins.opentelemetry.PLUGIN_NAME,
+    })
     .scan(apps)
     .start()
 )
 ```
 
-`load_plugins()`가 `spakky-opentelemetry`의 엔트리포인트(`spakky.plugins.opentelemetry.main:initialize`)를 호출하면, 다음 Pod가 컨테이너에 등록됩니다:
+선택적 `include`를 사용할 때 propagator 교체까지 활성화하려면 `spakky.tracing.PLUGIN_NAME`도 함께 포함해야 합니다. `spakky-tracing`이 기본 `W3CTracePropagator`를 등록하고, `spakky-opentelemetry`의 엔트리포인트(`spakky.plugins.opentelemetry.main:initialize`)가 다음 Pod를 등록합니다:
 
 1. **`OpenTelemetryConfig`** --- 환경변수 기반 설정 (`@Configuration`)
 2. **`OTelSetupPostProcessor`** --- `TracerProvider` 초기화 및 propagator 교체 (`IPostProcessor`)

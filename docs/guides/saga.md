@@ -291,7 +291,7 @@ action이 새 `AbstractSagaData` 인스턴스를 반환하면 엔진이 이후 s
 
 ### Controller에서 Saga 호출
 
-Controller는 Saga를 다른 Pod와 동일하게 DI로 주입받아 `execute()`를 호출하고, `SagaResult.status`로 응답을 분기합니다. 예외는 발생하지 않으므로 `try/except`가 아니라 **상태 분기**로 제어 흐름을 짭니다.
+Controller는 Saga를 다른 Pod와 동일하게 DI로 주입받아 `execute()`를 호출하고, `SagaResult.status`로 응답을 분기합니다. 일반 step 실패는 예외로 던지지 않고 `SagaResult.status`로 반환되므로 **상태 분기**로 제어 흐름을 짭니다. 다만 보상 실행 자체가 실패하면 `SagaCompensationFailedError`가 raise될 수 있습니다.
 
 `spakky-fastapi`를 사용하는 예시입니다 (`@ApiController(prefix)` + `@post(path)`).
 

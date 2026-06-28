@@ -59,9 +59,12 @@ flowchart TD
   AbstractAgUiError --> AgUiApprovalDecodeError
   AbstractAgUiError --> AgUiPendingApprovalError
   AbstractAgUiError --> AgUiRunResolutionError
+  AbstractAgUiError --> AgUiEndpointConflictError
 
   AbstractSpakkyA2AError --> A2AAgentServerNotRegisteredError
   AbstractSpakkyA2AError --> A2AAgentCardDerivationError
+  AbstractSpakkyA2AError --> A2AEndpointConflictError
+  AbstractSpakkyA2AError --> A2ARunResolutionError
   AbstractSpakkyA2AError --> UnsupportedAgentEventError
   AbstractSpakkyA2AError --> InvalidApprovalDecisionError
 
@@ -119,6 +122,7 @@ flowchart TD
   AbstractVllmError --> VllmConstrainedDecodingUnsupportedError
   AbstractVllmError --> VllmStreamingDisabledError
   AbstractVllmError --> VllmModelRefusalError
+  AbstractVllmError --> VllmModelSelectionError
   AbstractVllmError --> VllmStreamingNotImplementedError
   PolicyDocumentError --> PolicyDocumentLoadError
   PolicyDocumentError --> PolicyDocumentValidationError
@@ -814,6 +818,7 @@ from spakky.plugins.vllm.error import (
     AbstractVllmError,
     VllmConstrainedDecodingUnsupportedError,
     VllmModelRefusalError,
+    VllmModelSelectionError,
     VllmResponseError,
     VllmStreamingDisabledError,
     VllmStreamingNotImplementedError,
@@ -831,6 +836,7 @@ from spakky.plugins.vllm.error import (
 | `VllmConstrainedDecodingUnsupportedError` | 요청된 tool constraint를 vLLM이 강제할 수 없음 |
 | `VllmStreamingDisabledError` | plugin 설정에서 streaming이 비활성화됨 |
 | `VllmModelRefusalError` | 모델이 정상 completion 생성을 거부함 |
+| `VllmModelSelectionError` | run이 vLLM adapter 범위 밖의 model을 선택함 |
 | `VllmStreamingNotImplementedError` | pre-streaming adapter 실패 호환 alias |
 
 ### spakky-agui
@@ -841,6 +847,7 @@ AG-UI protocol adapter 관련 에러입니다. AG-UI request를 core `RunAgentIn
 from spakky.plugins.agui.error import (
     AbstractAgUiError,
     AgUiApprovalDecodeError,
+    AgUiEndpointConflictError,
     AgUiPendingApprovalError,
     AgUiRunResolutionError,
 )
@@ -850,6 +857,7 @@ from spakky.plugins.agui.error import (
 | ---- | ---- | ---- |
 | `AbstractAgUiError` | AG-UI adapter 에러 기반 클래스 | `AbstractSpakkyFrameworkError` |
 | `AgUiApprovalDecodeError` | resume input의 approval decision payload가 없거나 유효하지 않음 | `AbstractAgUiError` |
+| `AgUiEndpointConflictError` | 여러 AG-UI agent가 같은 transport path를 claim함 | `AbstractAgUiError` |
 | `AgUiPendingApprovalError` | paused approval state 또는 `RunPausedEvent`가 approval id, prompt, decision 목록을 제공하지 못함 | `AbstractAgUiError` |
 | `AgUiRunResolutionError` | AG-UI run request를 실행 가능한 agent run으로 해석할 수 없음 | `AbstractAgUiError` |
 
@@ -860,8 +868,10 @@ A2A AgentCard, task event projection, gRPC wrapper, approval resume 관련 에�
 ```python
 from spakky.plugins.a2a.error import (
     AbstractSpakkyA2AError,
+    A2AEndpointConflictError,
     A2AAgentCardDerivationError,
     A2AAgentServerNotRegisteredError,
+    A2ARunResolutionError,
     InvalidApprovalDecisionError,
     UnsupportedA2AGrpcEventError,
     UnsupportedA2AGrpcResultError,
@@ -875,6 +885,8 @@ from spakky.plugins.a2a.error import (
 | `AbstractSpakkyA2AError` | A2A plugin 에러 기반 클래스 | `AbstractSpakkyFrameworkError` |
 | `A2AAgentServerNotRegisteredError` | 요청한 agent name으로 등록된 A2A server가 없음 | `AbstractSpakkyA2AError` |
 | `A2AAgentCardDerivationError` | `@Agent` 선언에서 AgentCard를 파생할 수 없음 | `AbstractSpakkyA2AError` |
+| `A2AEndpointConflictError` | 여러 A2A agent가 같은 ASGI mount path를 claim함 | `AbstractSpakkyA2AError` |
+| `A2ARunResolutionError` | inbound A2A request의 run 설정을 실행 가능한 agent run으로 해석할 수 없음 | `AbstractSpakkyA2AError` |
 | `UnsupportedAgentEventError` | `AgentEvent` kind를 A2A task event로 투영할 수 없음 | `AbstractSpakkyA2AError` |
 | `UnsupportedFinalOutputError` | final output을 A2A part로 투영할 수 없음 | `AbstractSpakkyA2AError` |
 | `InvalidApprovalDecisionError` | inbound approval-decision data part가 알려진 `ApprovalDecision` 값이 아님 | `AbstractSpakkyA2AError` |

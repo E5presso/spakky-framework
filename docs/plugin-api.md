@@ -387,30 +387,41 @@ spakky-fastapi = "spakky.plugins.fastapi.main:initialize"
 # plugins/spakky-fastapi/src/spakky/plugins/fastapi/main.py
 def initialize(app: SpakkyApplication) -> None:
     """FastAPI 플러그인 초기화"""
+    app.add(FastAPIConfig)
+    if not _has_fastapi_pod(app):
+        app.add(fastapi_app)
+    app.add(FastAPIActuatorConfig)
     app.add(BindLifespanPostProcessor)
     app.add(AddBuiltInMiddlewaresPostProcessor)
+    app.add(RegisterActuatorPostProcessor)
     app.add(RegisterRoutesPostProcessor)
 ```
+
+사용자가 이미 `FastAPI` Pod를 등록했다면 플러그인은 기본 `fastapi_app`을 추가하지 않습니다.
 
 ### PostProcessor 구현
 
 ```python
 @Pod()
-class RegisterRoutesPostProcessor(IPostProcessor):
-    """Controller의 라우트를 FastAPI에 등록"""
+class RegisterRoutesPostProcessor(
+    IPostProcessor, IContainerAware, IApplicationContextAware
+):
+    """Controller의 라우트를 등록된 모든 FastAPI Pod에 등록"""
 
-    def __init__(self, fast_api: FastAPI) -> None:
-        self.fast_api = fast_api
+    def set_container(self, container: IContainer) -> None: ...
+
+    def set_application_context(
+        self,
+        application_context: IApplicationContext,
+    ) -> None: ...
 
     def post_process(self, pod: object) -> object:
-        if Controller.exists(type(pod)):
-            self._register_routes(pod)
-        return pod
-
-    def _register_routes(self, controller: object) -> None:
-        # 라우트 등록 로직
+        # @ApiController Pod에서 APIRouter를 만들고,
+        # application_context에 등록된 모든 FastAPI Pod에 include_router()
         ...
 ```
+
+`RegisterRoutesPostProcessor`는 `FastAPI` 단일 인스턴스를 생성자에서 주입받지 않습니다. 컨테이너와 `ApplicationContext`를 통해 `FastAPI` 타입 Pod를 찾아, 각 앱에 같은 controller router를 포함합니다.
 
 ---
 

@@ -444,7 +444,7 @@ class Email(AbstractValueObject):
 
 ### AggregateRoot
 
-일관성 경계를 관리하는 엔터티의 진입점. 도메인 이벤트를 수집하고 발행합니다. `AbstractAggregateRoot`를 상속합니다.
+일관성 경계를 관리하는 엔터티의 진입점. 도메인 이벤트를 수집하며, 발행은 `AggregateCollector`와 `TransactionalEventPublishingAspect`가 트랜잭션 커밋 후 수행합니다. `AbstractAggregateRoot`를 상속합니다.
 
 ```python
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
@@ -528,7 +528,7 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
 - **Consumer** — 핸들러를 **등록**하는 인터페이스 (`register(event_type, callback)`)
 - **EventHandler** — 이벤트를 **처리**하는 클래스 스테레오타입 (`@EventHandler` + `@on_event`)
 
-`EventHandlerRegistrationPostProcessor`가 `@EventHandler` Pod를 스캔하여 `@on_event` 메서드를 Consumer에 자동 등록합니다.
+`EventHandlerRegistrationPostProcessor`가 `@EventHandler` Pod를 스캔하여 `AbstractDomainEvent`를 받는 `@on_event` 메서드를 in-process Consumer에 자동 등록합니다. `AbstractIntegrationEvent`는 broker transport consumer 경로에서 처리합니다.
 
 ### EventPublisher
 
@@ -660,7 +660,7 @@ app.load_plugins(include={FASTAPI_PLUGIN})
 
 ### AggregateCollector
 
-AggregateRoot에서 발생한 도메인 이벤트를 수집하여 트랜잭션 커밋 시 발행하는 컴포넌트.
+Repository 저장 경로에서 AggregateRoot 참조를 수집하는 컴포넌트. 트랜잭션 커밋 후 `TransactionalEventPublishingAspect`가 collector에 모인 AggregateRoot의 이벤트를 발행합니다.
 
 ---
 
@@ -903,6 +903,8 @@ flow = saga_flow(
 |------|---------|------|
 | step | `step(..., timeout=timedelta(...))` | 초과 시 `SagaStepTimeoutError`가 `on_error` 전략을 거침 |
 | saga | `SagaFlow.timeout(duration)` | 초과 시 `SagaStatus.TIMED_OUT`으로 종료하고 commit된 step을 역순 보상 |
+
+v1 제약상 전체 timeout이 `parallel()` 그룹 실행 도중 만료되면, 이미 성공했지만 compensable 등록 전인 side effect는 보상되지 않을 수 있습니다. 순차 step이나 이미 완료된 parallel 그룹의 commit된 step은 정상 보상됩니다.
 
 ### run_saga_flow
 
