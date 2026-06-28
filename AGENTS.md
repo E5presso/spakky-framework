@@ -44,6 +44,7 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 ## Documentation Maintenance Rules
 
 - **Code-first**: 모든 기술은 실제 코드 기반. 환각 금지
+- **Installed-version wins**: 외부 최신 문서(Context7 포함)와 consumer repo의 설치 버전 API가 충돌하면 설치된 패키지의 실제 import surface를 우선한다. `uv pip list`, lock 파일, `uv run python` introspection으로 검증 후 적용한다.
 - **Cross-reference**: 문서화 전 정확한 코드 라인 확인 필수
 - **Sync all docs**: 코드 변경 시 관련 마크다운 업데이트 (`CHANGELOG.md` 자동 생성 제외)
 - **Sub-package READMEs**: `core/*/README.md`, `plugins/*/README.md` 항상 확인/업데이트
