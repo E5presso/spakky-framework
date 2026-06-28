@@ -11,6 +11,7 @@ paths:
 ## 원칙
 
 - **Code-first**: 모든 문서 사실은 실제 코드로 검증한다. 환각 금지.
+- **Installed-version wins**: consumer repo의 의존성 버전과 외부 문서(Context7, PyPI README, generated docs)가 충돌하면 설치된 패키지의 실제 import surface를 우선한다. `uv pip list`, lock 파일, `uv run python` introspection으로 검증한 뒤 그 버전에서 import 가능한 경로만 문서/코드에 반영한다.
 - **변경과 동시 반영**: 코드 변경을 포함한 PR에 문서 갱신을 함께 포함한다. "문서는 나중에"는 금지.
 - **Priority**: Code > `CONTRIBUTING.md` > `AGENTS.md` > 패키지 `README.md` > `docs/`. 불일치 시 상위 우선순위에 맞춰 하위를 수정한다.
 
@@ -38,6 +39,7 @@ paths:
 
 - 코드를 수정한 PR에서 `/sync-docs` 호출을 건너뛰는 것
 - 존재하지 않는 API/경로를 문서에 기재하는 것
+- 외부 최신 문서만 근거로 consumer repo 코드를 변경하는 것. 특히 설치 버전에서 import되지 않는 모듈/클래스(`ModuleNotFoundError`, `ImportError`)는 문서가 최신이어도 사용하지 않는다.
 - `CHANGELOG.md`를 수동 편집하는 것 (commitizen이 자동 생성)
 
 ## 예외
