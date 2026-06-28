@@ -1,3 +1,9 @@
+## v7.1.1 (2026-06-28)
+
+### Fix
+
+- **kafka**: propagate async producer security config (#484) (#485)
+
 ## v7.1.0 (2026-06-26)
 
 ### Feat
