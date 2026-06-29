@@ -4,7 +4,7 @@ This module provides AbstractValueObject for representing immutable domain conce
 compared by their attributes rather than identity.
 """
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from dataclasses import astuple
 from typing import Self, override
 
@@ -44,14 +44,12 @@ class AbstractValueObject(AbstractDomainModel, IEquatable, ICloneable, IDataclas
         """
         return self
 
-    @abstractmethod
     def validate(self) -> None:
         """Validate value object state.
 
-        Raises:
-            AbstractDomainValidationError: If validation fails.
+        Subclasses may override this method to enforce value object invariants.
         """
-        ...
+        return
 
     @override
     def __eq__(self, __value: object) -> bool:
