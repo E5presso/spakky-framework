@@ -592,6 +592,8 @@ classDiagram
     }
     class AbstractEvent {
         @immutable
+        validate()
+        __post_init__()
     }
     class AbstractDomainEvent {
         Bounded Context 내부 이벤트
@@ -609,7 +611,8 @@ classDiagram
 - `uid`, `version` (UUID v7), `created_at`, `updated_at` 필드
 - 동등성: `uid` 기반 (identity equality)
 - `__setattr__` 오버라이드: 유효성 검사 + `updated_at`/`version` 자동 갱신
-- 추상 메서드: `next_id()`, `validate()`
+- 추상 메서드: `next_id()`
+- `validate()`는 기본 no-op virtual hook이며, 필요 시 재정의한다. `__post_init__()`에서 생성 직후 호출하고 변경 시에도 재검증
 
 ### AggregateRoot
 
@@ -622,11 +625,13 @@ classDiagram
 - 동등성: `astuple(self)` 기반 (structural equality)
 - 모든 속성 타입이 hashable인지 `__init_subclass__`에서 검증
 - `clone()` → `self` 반환 (불변이므로 안전)
+- `validate()`는 기본 no-op virtual hook이며, 필요 시 재정의한다. `__post_init__()`에서 생성 직후 호출
 
 ### Event
 
 - `event_id: UUID`, `timestamp: datetime`
 - `event_name` → 클래스명
+- `validate()`는 기본 no-op virtual hook이며, 필요 시 재정의한다. `__post_init__()`에서 생성 직후 호출
 - `IComparable` 구현: `timestamp` 기반 비교
 
 ### CQRS

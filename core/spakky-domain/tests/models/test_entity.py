@@ -18,9 +18,6 @@ def test_entity_equals() -> None:
     class User(AbstractEntity[UUID]):
         name: str
 
-        def validate(self) -> None:
-            return
-
         @classmethod
         def next_id(cls) -> UUID:
             return uuid4()
@@ -42,9 +39,6 @@ def test_entity_not_equals_with_wrong_type() -> None:
     class User(AbstractEntity[UUID]):
         name: str
 
-        def validate(self) -> None:
-            return
-
         @classmethod
         def next_id(cls) -> UUID:
             return uuid4()
@@ -56,9 +50,6 @@ def test_entity_not_equals_with_wrong_type() -> None:
     @mutable
     class Class(AbstractEntity[UUID]):
         name: str
-
-        def validate(self) -> None:
-            return
 
         @classmethod
         def next_id(cls) -> UUID:
@@ -81,9 +72,6 @@ def test_entity_not_equals_transient() -> None:
     class User(AbstractEntity[UUID]):
         name: str
 
-        def validate(self) -> None:
-            return
-
         @classmethod
         def next_id(cls) -> UUID:
             return uuid4()
@@ -104,9 +92,6 @@ def test_entity_not_equals() -> None:
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
-
-        def validate(self) -> None:
-            return
 
         @classmethod
         def next_id(cls) -> UUID:
@@ -129,9 +114,6 @@ def test_entity_hash() -> None:
     class User(AbstractEntity[UUID]):
         name: str
 
-        def validate(self) -> None:
-            return
-
         @classmethod
         def next_id(cls) -> UUID:
             return uuid4()
@@ -150,9 +132,6 @@ def test_entity_prevent_monkey_patching() -> None:
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
-
-        def validate(self) -> None:
-            return
 
         def update_name(self, name: str) -> None:
             self.name = name
@@ -276,9 +255,6 @@ def test_entity_auto_updates_timestamp_and_version_on_change() -> None:
         name: str
         email: str
 
-        def validate(self) -> None:
-            return
-
         @classmethod
         def next_id(cls) -> UUID:
             return uuid4()
@@ -313,9 +289,6 @@ def test_entity_metadata_fields_do_not_trigger_auto_update() -> None:
     @mutable
     class User(AbstractEntity[UUID]):
         name: str
-
-        def validate(self) -> None:
-            return
 
         @classmethod
         def next_id(cls) -> UUID:

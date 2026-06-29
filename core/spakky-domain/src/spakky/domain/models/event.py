@@ -28,6 +28,13 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     """When the event occurred."""
 
+    def validate(self) -> None:
+        """Validate event state.
+
+        Subclasses may override this method to enforce event invariants.
+        """
+        return
+
     @property
     def event_name(self) -> str:
         """Get event type name.
@@ -115,6 +122,11 @@ class AbstractEvent(AbstractDomainModel, IEquatable, IComparable, ICloneable, AB
             True if this event occurred after or at same time as the other.
         """
         return self.timestamp >= __value.timestamp
+
+    @override
+    def __post_init__(self) -> None:
+        """Validate event after initialization."""
+        self.validate()
 
 
 @immutable

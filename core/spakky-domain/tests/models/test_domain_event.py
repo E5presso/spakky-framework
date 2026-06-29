@@ -1,9 +1,64 @@
 from datetime import datetime
+from typing import override
 from uuid import UUID
 
+import pytest
 from spakky.core.common.mutability import immutable
 
+from spakky.domain.error import AbstractDomainValidationError
 from spakky.domain.models.event import AbstractDomainEvent
+
+
+class InvalidEventError(AbstractDomainValidationError):
+    """Raised when a test event is invalid."""
+
+    message = "Test event is invalid."
+
+
+def test_domain_event_validate_called_on_initialization() -> None:
+    """도메인 이벤트 초기화 후 override된 validate가 호출됨을 검증한다."""
+    validated_codes: list[str] = []
+
+    @immutable
+    class ValidatingEvent(AbstractDomainEvent):
+        code: str
+
+        @override
+        def validate(self) -> None:
+            validated_codes.append(self.code)
+
+    event = ValidatingEvent(code="ready")
+
+    assert event.code == "ready"
+    assert validated_codes == ["ready"]
+
+
+def test_domain_event_default_validate_allows_initialization() -> None:
+    """validate를 재정의하지 않은 도메인 이벤트 생성이 허용됨을 검증한다."""
+
+    @immutable
+    class SampleEvent(AbstractDomainEvent):
+        code: str
+
+    event = SampleEvent(code="ready")
+
+    assert event.code == "ready"
+
+
+def test_domain_event_invalid_state_expect_error() -> None:
+    """검증에 실패한 도메인 이벤트 생성이 실패함을 검증한다."""
+
+    @immutable
+    class PositiveQuantityEvent(AbstractDomainEvent):
+        quantity: int
+
+        @override
+        def validate(self) -> None:
+            if self.quantity <= 0:
+                raise InvalidEventError()
+
+    with pytest.raises(InvalidEventError):
+        PositiveQuantityEvent(quantity=0)
 
 
 def test_domain_event_equals() -> None:

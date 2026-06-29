@@ -65,14 +65,12 @@ class AbstractEntity[EquatableT](AbstractDomainModel, IEquatable, ABC):
         """
         ...
 
-    @abstractmethod
     def validate(self) -> None:
         """Validate entity state.
 
-        Raises:
-            AbstractDomainValidationError: If validation fails.
+        Subclasses may override this method to enforce entity invariants.
         """
-        ...
+        return
 
     @override
     def __eq__(self, other: object) -> bool:

@@ -15,9 +15,6 @@ def test_value_object_equals() -> None:
         name: str
         age: int
 
-        def validate(self) -> None:
-            return
-
     value_object1: SampleValueObject = SampleValueObject(name="John", age=30)
     value_object2: SampleValueObject = SampleValueObject(name="John", age=30)
     assert value_object1 == value_object2
@@ -30,9 +27,6 @@ def test_value_object_not_equals() -> None:
     class SampleValueObject(AbstractValueObject):
         name: str
         age: int
-
-        def validate(self) -> None:
-            return
 
     value_object1: SampleValueObject = SampleValueObject(name="John", age=30)
     value_object2: SampleValueObject = SampleValueObject(name="Sarah", age=30)
@@ -47,16 +41,10 @@ def test_value_object_not_equals_with_wrong_type() -> None:
         name: str
         age: int
 
-        def validate(self) -> None:
-            return
-
     @immutable
     class AnotherValueObject(AbstractValueObject):
         name: str
         age: int
-
-        def validate(self) -> None:
-            return
 
     value_object1: SampleValueObject = SampleValueObject(name="John", age=30)
     value_object2: AnotherValueObject = AnotherValueObject(name="Sarah", age=30)
@@ -71,9 +59,6 @@ def test_value_object_clone() -> None:
         name: str
         age: int
 
-        def validate(self) -> None:
-            return
-
     value_object1: SampleValueObject = SampleValueObject(name="John", age=30)
     value_object2: SampleValueObject = value_object1.clone()
     assert value_object1 == value_object2
@@ -86,9 +71,6 @@ def test_value_object_hash() -> None:
     class SampleValueObject(AbstractValueObject):
         name: str
         age: int
-
-        def validate(self) -> None:
-            return
 
     value_object1: SampleValueObject = SampleValueObject(name="John", age=30)
     value_object2: SampleValueObject = SampleValueObject(name="John", age=30)
@@ -104,9 +86,6 @@ def test_value_object_can_only_composed_by_hashable_objects_expect_success() -> 
         age: int
         jobs: frozenset[str]
 
-        def validate(self) -> None:
-            return
-
 
 def test_value_object_can_only_composed_by_hashable_objects_expect_error() -> None:
     """해시 불가능한 타입을 포함한 값 객체 생성 시 UnhashableFieldTypeError가 발생함을 검증한다."""
@@ -120,9 +99,6 @@ def test_value_object_can_only_composed_by_hashable_objects_expect_error() -> No
             age: int
             jobs: list
 
-            def validate(self) -> None:
-                return
-
     assert exc_info.value.field_name == "jobs"
 
 
@@ -133,9 +109,6 @@ def test_value_object_hash_order_sensitive() -> None:
     class Pair(AbstractValueObject):
         first: int
         second: int
-
-        def validate(self) -> None:
-            return
 
     # Different order should produce different hashes
     pair1 = Pair(first=1, second=2)
@@ -152,9 +125,6 @@ def test_value_object_hash_in_set() -> None:
     class Point(AbstractValueObject):
         x: int
         y: int
-
-        def validate(self) -> None:
-            return
 
     point1 = Point(x=1, y=2)
     point2 = Point(x=1, y=2)
