@@ -1,3 +1,9 @@
+## v7.2.0 (2026-06-29)
+
+### Feat
+
+- **domain**: validate events after initialization (#489)
+
 ## v7.1.1 (2026-06-28)
 
 ### Fix

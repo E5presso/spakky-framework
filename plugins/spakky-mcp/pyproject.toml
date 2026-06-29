@@ -1,6 +1,6 @@
 [project]
 name = "spakky-mcp"
-version = "7.1.1"
+version = "7.2.0"
 description = "MCP client adapter that joins external MCP server tools into the Spakky Agent tool catalog"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,8 +10,8 @@ dependencies = [
     "httpx>=0.28.1",
     "mcp>=1.28.0",
     "pydantic-settings>=2.13.1",
-    "spakky>=7.1.1",
-    "spakky-agent>=7.1.1",
+    "spakky>=7.2.0",
+    "spakky-agent>=7.2.0",
 ]
 
 [project.entry-points."spakky.plugins"]
