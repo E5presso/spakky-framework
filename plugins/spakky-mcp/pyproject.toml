@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "httpx>=0.28.1",
-    "mcp>=1.28.0",
+    "mcp>=1.28.1",
     "pydantic-settings>=2.13.1",
     "spakky>=7.2.0",
     "spakky-agent>=7.2.0",
