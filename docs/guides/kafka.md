@@ -59,6 +59,9 @@ export SPAKKY_KAFKA__POLL_TIMEOUT=1.0
 | `replication_factor` | `SPAKKY_KAFKA__REPLICATION_FACTOR` | `1` | 토픽 복제 팩터 |
 | `auto_offset_reset` | `SPAKKY_KAFKA__AUTO_OFFSET_RESET` | `earliest` | 오프셋 리셋 정책 |
 | `poll_timeout` | `SPAKKY_KAFKA__POLL_TIMEOUT` | `1.0` | 폴링 타임아웃 (초) |
+| `dead_letter_topic_suffix` | `SPAKKY_KAFKA__DEAD_LETTER_TOPIC_SUFFIX` | `.dlt` | 원본 토픽에 붙여 dead-letter 토픽 이름을 만드는 접미사 |
+| `max_handler_retries` | `SPAKKY_KAFKA__MAX_HANDLER_RETRIES` | `0` | dead-letter로 보내기 전 핸들러를 다시 호출하는 횟수 |
+| `dead_letter_delivery_timeout` | `SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT` | `10.0` | dead-letter 레코드 배달을 기다리는 최대 시간 (초) |
 
 ---
 
@@ -143,10 +146,37 @@ sequenceDiagram
 | payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
 | headers | `ITracePropagator.inject()`가 넣은 trace header |
 | consumer group | `SPAKKY_KAFKA__GROUP_ID` |
-| topic 생성 | 없으면 `number_of_partitions`, `replication_factor`로 생성 |
+| topic 생성 | 없으면 `number_of_partitions`, `replication_factor`로 생성 (dead-letter 토픽 포함) |
 | offset reset | `SPAKKY_KAFKA__AUTO_OFFSET_RESET` (`earliest`/`latest`/`none`) |
+| 처리 실패 | `<topic>` + `dead_letter_topic_suffix` 토픽으로 전달 |
 
 `spakky-outbox`를 함께 로드하면 `OutboxEventBus` / `AsyncOutboxEventBus`가 기본 bus를 대체하므로 이벤트는 Kafka에 즉시 produce되지 않고 Outbox 테이블에 저장됩니다. Relay가 재시도 가능한 방식으로 Kafka transport를 호출하므로, 주문 생성 같은 DB 변경과 Kafka 발행을 원자적으로 묶어야 할 때 기본 선택은 Outbox 조합입니다.
+
+---
+
+## 처리 실패 메시지 (dead-letter)
+
+핸들러가 실패하거나 메시지 본문이 이벤트 타입으로 역직렬화되지 않으면, Consumer는 그 메시지를 원본 토픽 이름에 `dead_letter_topic_suffix`(기본 `.dlt`)를 붙인 토픽으로 보냅니다. 예를 들어 `OrderPlacedEvent` 처리에 실패하면 `OrderPlacedEvent.dlt`로 전달됩니다. dead-letter 토픽은 `initialize` 시점에 구독 토픽과 함께 자동 생성됩니다.
+
+원본 본문과 key는 바이트 그대로 전달합니다. 원본 헤더는 consumer가 읽은 문자열 형태로 함께 실리므로, 값이 UTF-8 문자열이 아닌 헤더와 값이 없는 헤더는 옮겨지지 않습니다. 여기에 다음 헤더를 덧붙입니다. 재처리 도구는 본문을 열지 않고 이 헤더만으로 판단할 수 있습니다.
+
+| 헤더 | 값 |
+|------|-----|
+| `x-spakky-dead-letter-original-topic` | 원본 토픽 이름 |
+| `x-spakky-dead-letter-original-partition` | 원본 파티션 번호 |
+| `x-spakky-dead-letter-original-offset` | 원본 오프셋 |
+| `x-spakky-dead-letter-original-timestamp` | 원본 메시지 타임스탬프 |
+| `x-spakky-dead-letter-consumer-group` | 처리에 실패한 consumer group |
+| `x-spakky-dead-letter-exception-type` | 예외 클래스 이름 |
+| `x-spakky-dead-letter-exception-message` | 예외 메시지 |
+
+dead-letter 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배달을 기다립니다. 레코드가 크기 제한을 넘거나 producer 큐가 가득 찼거나 브로커가 거절하면 오류 로그를 남기고 consumer는 계속 폴링합니다 — 실패가 조용히 사라지지도, 소비가 멈추지도 않습니다.
+
+비동기 consumer에서 시간 안에 배달 확인을 받지 못한 경우는 확정 실패와 구분해 "unconfirmed" 로그를 남깁니다. 이때 레코드는 producer 배치에 남아 나중에 실제로 배달될 수 있으므로, 그 로그만 근거로 수동 재발행하면 dead-letter 토픽에 중복이 생깁니다.
+
+`max_handler_retries`를 0보다 크게 설정하면 dead-letter로 보내기 전에 같은 메시지로 핸들러를 그 횟수만큼 다시 호출합니다. 재호출은 해당 이벤트에 등록된 모든 핸들러를 다시 실행하므로, 이 값을 올리려면 핸들러가 멱등해야 합니다. 역직렬화 실패는 같은 본문으로 다시 시도해도 결과가 같으므로 이 설정과 무관하게 즉시 dead-letter로 보냅니다.
+
+지연 재시도 토픽 계층은 두지 않습니다. 메시지를 다른 토픽으로 옮기는 순간 그 aggregate의 파티션 내 순서가 깨지기 때문입니다.
 
 ---
 

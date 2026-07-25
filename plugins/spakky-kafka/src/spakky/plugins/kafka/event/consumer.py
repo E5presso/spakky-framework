@@ -1,3 +1,4 @@
+from asyncio import wait_for
 from logging import getLogger
 from typing import Any, cast
 
@@ -7,10 +8,11 @@ from spakky.auth import (
     AuthRequirementProviderUnavailableError,
     AuthVerificationProviderUnavailableError,
 )
-from confluent_kafka import Consumer, Message
+from aiokafka import AIOKafkaProducer
+from confluent_kafka import Consumer, KafkaError, KafkaException, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.aio import AIOConsumer
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
@@ -29,6 +31,7 @@ from typing import override
 
 from spakky.plugins.kafka.auth import KAFKA_AUTH_HEADERS_PARAMETER
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
+from spakky.plugins.kafka.common.constants import DeadLetterHeaderKey
 
 logger = getLogger(__name__)
 
@@ -51,6 +54,8 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
     handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: Consumer
+    producer: Producer
+    """Dead-letter producer, bound by `initialize` for the service lifetime."""
     _propagator: ITracePropagator | None
     _auth_boundary_handlers: set[EventHandlerCallback[Any]]
 
@@ -128,6 +133,82 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             ]
         )
 
+    @staticmethod
+    def _dead_letter_delivery_report(
+        error: KafkaError | None,
+        message: Message,
+    ) -> None:
+        """Log the broker verdict on a dead-letter record.
+
+        `Producer.produce` only enqueues, so failures the broker decides —
+        authorization refusals and delivery timeouts — surface only here.
+        """
+        if error is not None:
+            logger.error(f"Dead-letter delivery failed for {message.topic()}: {error}")
+
+    def _send_to_dead_letter(
+        self,
+        topic: str,
+        message: Message,
+        headers: dict[str, str],
+        error: Exception,
+    ) -> None:
+        """Forward a message the handlers could not process to its dead-letter topic.
+
+        The original body and key are forwarded unchanged and the decoded original
+        headers travel with them, so the record can be replayed from its own
+        coordinates.
+
+        Args:
+            topic: Topic the failed message was consumed from.
+            message: The Kafka message that could not be processed.
+            headers: Decoded headers of the original message.
+            error: Exception that ended the last processing attempt.
+        """
+        _, original_timestamp = message.timestamp()
+        dead_letter_headers: dict[str, bytes | str | None] = {
+            **headers,
+            DeadLetterHeaderKey.ORIGINAL_TOPIC.value: topic,
+            DeadLetterHeaderKey.ORIGINAL_PARTITION.value: str(message.partition()),
+            DeadLetterHeaderKey.ORIGINAL_OFFSET.value: str(message.offset()),
+            DeadLetterHeaderKey.ORIGINAL_TIMESTAMP.value: str(original_timestamp),
+            DeadLetterHeaderKey.CONSUMER_GROUP.value: self.config.group_id,
+            DeadLetterHeaderKey.EXCEPTION_TYPE.value: type(error).__name__,
+            DeadLetterHeaderKey.EXCEPTION_MESSAGE.value: str(error),
+        }
+        try:
+            self.producer.produce(
+                topic=f"{topic}{self.config.dead_letter_topic_suffix}",
+                value=message.value(),
+                key=message.key(),
+                headers=dead_letter_headers,
+                callback=self._dead_letter_delivery_report,
+            )
+        except (BufferError, KafkaException) as delivery_error:
+            # produce() rejects a record over `message.max.bytes` and a full local
+            # queue synchronously. This runs on the poll thread, so an escaping
+            # exception would kill consumption while stop() still looks clean.
+            logger.error(f"Dead-letter delivery failed for {topic}: {delivery_error}")
+            return
+        undelivered = self.producer.flush(self.config.dead_letter_delivery_timeout)
+        if undelivered:
+            logger.error(
+                f"Dead-letter record for {topic} still unsent after "
+                f"{self.config.dead_letter_delivery_timeout}s"
+            )
+
+    def _invoke_handlers(
+        self,
+        event_type: type[AbstractEvent],
+        event_data: AbstractEvent,
+        headers: dict[str, str],
+    ) -> None:
+        for handler in self.handlers[event_type]:
+            if handler in self._auth_boundary_handlers:
+                handler(event_data, **{KAFKA_AUTH_HEADERS_PARAMETER: headers})
+                continue
+            handler(event_data)
+
     def _route_event_handler(self, message: Message) -> None:
         if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
             logger.error(f"Consumer error: {message.error()}")
@@ -151,22 +232,36 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             if event_message is None:  # pragma: no cover - Kafka 메시지 본문 누락 방어
                 logger.warning(f"Received empty message for event type: {topic}")
                 return
-            event_data = self.type_adapters[event_type].validate_json(event_message)
-            handlers = self.handlers[event_type]
-            for handler in handlers:
-                if handler in self._auth_boundary_handlers:
-                    handler(event_data, **{KAFKA_AUTH_HEADERS_PARAMETER: headers})
-                    continue
-                handler(event_data)
-        except (
-            AuthVerificationProviderUnavailableError,
-            AuthRequirementProviderUnavailableError,
-        ):
-            raise
-        except (AuthContextNotFoundError, AuthRequirementDeniedError):
-            return
-        except Exception as e:  # pragma: no cover - 핸들러 예외 방어
-            logger.error(f"Error processing message for event type {topic}: {e}")
+            try:
+                event_data = self.type_adapters[event_type].validate_json(event_message)
+            except ValidationError as error:
+                # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
+                logger.error(f"Cannot deserialize message from topic {topic}: {error}")
+                self._send_to_dead_letter(topic, message, headers, error)
+                return
+            remaining_retries = self.config.max_handler_retries
+            while True:
+                try:
+                    self._invoke_handlers(event_type, event_data, headers)
+                    return
+                except (
+                    AuthVerificationProviderUnavailableError,
+                    AuthRequirementProviderUnavailableError,
+                ):
+                    raise
+                except (AuthContextNotFoundError, AuthRequirementDeniedError):
+                    return
+                except Exception as error:
+                    if remaining_retries == 0:
+                        logger.error(
+                            f"Error processing message for event type {topic}: {error}"
+                        )
+                        self._send_to_dead_letter(topic, message, headers, error)
+                        return
+                    remaining_retries -= 1
+                    logger.warning(
+                        f"Retrying message for event type {topic} after error: {error}"
+                    )
         finally:
             if self._propagator is not None:
                 TraceContext.clear()
@@ -188,11 +283,15 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
 
     @override
     def initialize(self) -> None:
-        """Create Kafka topics and subscribe the consumer."""
+        """Create Kafka topics, open the dead-letter producer, and subscribe."""
         topics: list[str] = [
             _event_routing_name(event_type) for event_type in self.handlers.keys()
         ]
-        self._create_topics(topics=topics)
+        self.producer = Producer(self.config.configuration_dict, logger=logger)
+        self._create_topics(
+            topics=topics
+            + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
+        )
         self.consumer.subscribe(topics=topics)
 
     @override
@@ -208,7 +307,13 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
 
     @override
     def dispose(self) -> None:
-        """Close the Kafka consumer connection."""
+        """Flush pending dead-letter records and close the Kafka consumer.
+
+        The flush is bounded so an unreachable broker cannot block shutdown
+        forever; records still queued at that point are reported by the
+        delivery callback.
+        """
+        self.producer.flush(self.config.dead_letter_delivery_timeout)
         self.consumer.close()
 
 
@@ -222,6 +327,8 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     admin: AdminClient
     consumer: AIOConsumer
+    producer: AIOKafkaProducer
+    """Dead-letter producer, bound by `initialize_async` for the service lifetime."""
     _propagator: ITracePropagator | None
     _auth_boundary_handlers: set[AsyncEventHandlerCallback[Any]]
 
@@ -295,9 +402,76 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             ]
         )
 
-    async def _route_event_handler(  # pragma: no cover - 별도 asyncio 태스크로 실행
-        self, message: Message
+    async def _send_to_dead_letter(
+        self,
+        topic: str,
+        message: Message,
+        headers: dict[str, str],
+        error: Exception,
     ) -> None:
+        """Forward a message the handlers could not process to its dead-letter topic.
+
+        The original body and key are forwarded unchanged and the decoded original
+        headers travel with them, so the record can be replayed from its own
+        coordinates. Delivery is awaited so a broker rejection is logged rather
+        than lost, and it is bounded so one unreachable broker cannot stall the
+        poll loop.
+
+        Args:
+            topic: Topic the failed message was consumed from.
+            message: The Kafka message that could not be processed.
+            headers: Decoded headers of the original message.
+            error: Exception that ended the last processing attempt.
+        """
+        _, original_timestamp = message.timestamp()
+        dead_letter_headers: dict[str, str] = {
+            **headers,
+            DeadLetterHeaderKey.ORIGINAL_TOPIC.value: topic,
+            DeadLetterHeaderKey.ORIGINAL_PARTITION.value: str(message.partition()),
+            DeadLetterHeaderKey.ORIGINAL_OFFSET.value: str(message.offset()),
+            DeadLetterHeaderKey.ORIGINAL_TIMESTAMP.value: str(original_timestamp),
+            DeadLetterHeaderKey.CONSUMER_GROUP.value: self.config.group_id,
+            DeadLetterHeaderKey.EXCEPTION_TYPE.value: type(error).__name__,
+            DeadLetterHeaderKey.EXCEPTION_MESSAGE.value: str(error),
+        }
+        try:
+            await wait_for(
+                self.producer.send_and_wait(
+                    topic=f"{topic}{self.config.dead_letter_topic_suffix}",
+                    value=message.value(),
+                    key=message.key(),
+                    headers=[
+                        (key, value.encode())
+                        for key, value in dead_letter_headers.items()
+                    ],
+                ),
+                timeout=self.config.dead_letter_delivery_timeout,
+            )
+        except TimeoutError:
+            # Only the confirmation wait is abandoned here — the record stays in the
+            # producer batch and may still reach the broker, so replaying it by hand
+            # can duplicate it. Reported apart from a confirmed refusal.
+            logger.error(
+                f"Dead-letter delivery for {topic} unconfirmed after "
+                f"{self.config.dead_letter_delivery_timeout}s; "
+                "it may still be delivered"
+            )
+        except Exception as delivery_error:
+            logger.error(f"Dead-letter delivery failed for {topic}: {delivery_error}")
+
+    async def _invoke_handlers(
+        self,
+        event_type: type[AbstractEvent],
+        event_data: AbstractEvent,
+        headers: dict[str, str],
+    ) -> None:
+        for handler in self.handlers[event_type]:
+            if handler in self._auth_boundary_handlers:
+                await handler(event_data, **{KAFKA_AUTH_HEADERS_PARAMETER: headers})
+                continue
+            await handler(event_data)
+
+    async def _route_event_handler(self, message: Message) -> None:
         if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
             logger.error(f"Consumer error: {message.error()}")
             return
@@ -320,25 +494,36 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             if event_message is None:  # pragma: no cover - Kafka 메시지 본문 누락 방어
                 logger.warning(f"Received empty message for event type: {topic}")
                 return
-            event_data = self.type_adapters[event_type].validate_json(event_message)
-            handlers = self.handlers[event_type]
-            for handler in handlers:
-                if handler in self._auth_boundary_handlers:
-                    await handler(
-                        event_data,
-                        **{KAFKA_AUTH_HEADERS_PARAMETER: headers},
+            try:
+                event_data = self.type_adapters[event_type].validate_json(event_message)
+            except ValidationError as error:
+                # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
+                logger.error(f"Cannot deserialize message from topic {topic}: {error}")
+                await self._send_to_dead_letter(topic, message, headers, error)
+                return
+            remaining_retries = self.config.max_handler_retries
+            while True:
+                try:
+                    await self._invoke_handlers(event_type, event_data, headers)
+                    return
+                except (
+                    AuthVerificationProviderUnavailableError,
+                    AuthRequirementProviderUnavailableError,
+                ):
+                    raise
+                except (AuthContextNotFoundError, AuthRequirementDeniedError):
+                    return
+                except Exception as error:
+                    if remaining_retries == 0:
+                        logger.error(
+                            f"Error processing message for event type {topic}: {error}"
+                        )
+                        await self._send_to_dead_letter(topic, message, headers, error)
+                        return
+                    remaining_retries -= 1
+                    logger.warning(
+                        f"Retrying message for event type {topic} after error: {error}"
                     )
-                    continue
-                await handler(event_data)
-        except (
-            AuthVerificationProviderUnavailableError,
-            AuthRequirementProviderUnavailableError,
-        ):
-            raise
-        except (AuthContextNotFoundError, AuthRequirementDeniedError):
-            return
-        except Exception as e:  # pragma: no cover - 핸들러 예외 방어
-            logger.error(f"Error processing message for event type {topic}: {e}")
         finally:
             if self._propagator is not None:
                 TraceContext.clear()
@@ -360,12 +545,19 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
 
     @override
     async def initialize_async(self) -> None:
-        """Create Kafka topics and subscribe the async consumer."""
+        """Create Kafka topics, open the dead-letter producer, and subscribe."""
         self.consumer = AIOConsumer(self.config.configuration_dict)
+        self.producer = AIOKafkaProducer(
+            **self.config.async_producer_configuration_dict
+        )
+        await self.producer.start()
         topics: list[str] = [
             _event_routing_name(event_type) for event_type in self.handlers.keys()
         ]
-        self._create_topics(topics=topics)
+        self._create_topics(
+            topics=topics
+            + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
+        )
         await self.consumer.subscribe(topics=topics)
 
     @override
@@ -381,5 +573,6 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
 
     @override
     async def dispose_async(self) -> None:
-        """Close the async Kafka consumer connection."""
+        """Flush pending dead-letter records and close the async Kafka consumer."""
+        await self.producer.stop()
         await self.consumer.close()

@@ -45,6 +45,14 @@ export SPAKKY_KAFKA__NUMBER_OF_PARTITIONS="3"
 export SPAKKY_KAFKA__REPLICATION_FACTOR="1"
 ```
 
+### 처리 실패 메시지 설정 (선택)
+
+```bash
+export SPAKKY_KAFKA__DEAD_LETTER_TOPIC_SUFFIX=".dlt"
+export SPAKKY_KAFKA__MAX_HANDLER_RETRIES="0"
+export SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT="10.0"
+```
+
 ## 사용법
 
 ### 이벤트 발행
@@ -130,9 +138,35 @@ signed `AuthContextSnapshot`을 `IAuthContextSnapshotVerifier`로 검증하고,
   broker/runtime retry 정책에 맡깁니다.
 - 기존 `traceparent` header와 event payload 역직렬화 의미는 그대로 유지됩니다.
 
+## 처리 실패 메시지 (dead-letter)
+
+핸들러 실패와 역직렬화 실패 메시지는 원본 topic 이름에 `dead_letter_topic_suffix`(기본
+`.dlt`)를 붙인 topic으로 전달됩니다. 원본 본문과 key는 바이트 그대로 전달하고, 원본
+header는 consumer가 읽은 문자열 형태로 함께 싣습니다(값이 없거나 UTF-8 문자열이 아닌
+header는 제외). 재처리 도구가 본문을 열지 않고 판단할 수 있도록 원본 좌표와 예외
+정보를 header로 덧붙입니다.
+
+- `x-spakky-dead-letter-original-topic` / `-partition` / `-offset` / `-timestamp`: 원본 좌표
+- `x-spakky-dead-letter-consumer-group`: 처리에 실패한 consumer group
+- `x-spakky-dead-letter-exception-type` / `-exception-message`: 실패 원인
+
+`max_handler_retries`를 0보다 크게 두면 dead-letter 전에 핸들러를 그 횟수만큼 다시
+호출합니다. 재호출은 해당 이벤트의 모든 handler를 다시 실행하므로 handler 멱등성이
+전제입니다. 역직렬화 실패는 재시도가 해결하지 못하므로 이 설정과 무관하게 즉시
+dead-letter로 보냅니다.
+
+dead-letter 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배달을 기다립니다.
+크기 제한 초과·producer 큐 포화·브로커 거절은 오류 로그를 남기고 consumer는 계속
+폴링합니다. 비동기 경로에서 배달 확인이 시간 안에 오지 않은 경우는 확정 실패와 구분해
+"unconfirmed"로 기록합니다 — 그 레코드는 나중에 배달될 수 있어 수동 재발행 시 중복이
+생깁니다.
+
+dead-letter topic은 consumer `initialize` 시점에 구독 topic과 함께 생성됩니다.
+
 ## 주요 기능
 
-- **자동 topic 생성**: 이벤트 타입 이름을 기준으로 topic 생성
+- **자동 topic 생성**: 이벤트 타입 이름을 기준으로 topic 생성 (dead-letter topic 포함)
+- **Dead-letter 경로**: 처리 실패 메시지를 원본 좌표·예외 header와 함께 `.dlt` topic으로 전달
 - **동기/비동기 지원**: 동기 및 비동기 publisher/consumer 모두 지원
 - **Background service 패턴**: consumer polling을 background service로 실행
 - **Pydantic 직렬화**: 이벤트를 Pydantic으로 직렬화/역직렬화
@@ -148,6 +182,7 @@ signed `AuthContextSnapshot`을 `IAuthContextSnapshotVerifier`로 검증하고,
 | `KafkaEventConsumer` | 동기 event consumer(background service) |
 | `AsyncKafkaEventConsumer` | 비동기 event consumer(background service) |
 | `KafkaConnectionConfig` | 환경변수 기반 설정 |
+| `DeadLetterHeaderKey` | dead-letter 메시지에 실리는 원본 좌표·예외 header 키 |
 | `KafkaAuthBoundary` | signed `AuthContextSnapshot` 검증 및 `AuthContext` seeding |
 
 ## 개발 검증

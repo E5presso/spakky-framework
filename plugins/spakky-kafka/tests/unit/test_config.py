@@ -9,6 +9,7 @@ from typing import Any
 from collections.abc import Generator
 
 import pytest
+from pydantic import ValidationError
 
 from spakky.plugins.kafka.common.config import (
     AutoOffsetResetType,
@@ -31,6 +32,9 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}NUMBER_OF_PARTITIONS",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}REPLICATION_FACTOR",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}AUTO_OFFSET_RESET",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_TOPIC_SUFFIX",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}MAX_HANDLER_RETRIES",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_DELIVERY_TIMEOUT",
     ]
     original_values = {}
     for key in keys_to_remove:
@@ -97,6 +101,9 @@ def test_kafka_config_default_values(clean_env: None) -> None:
     assert config.number_of_partitions == 1
     assert config.replication_factor == 1
     assert config.auto_offset_reset == AutoOffsetResetType.EARLIEST
+    assert config.dead_letter_topic_suffix == ".dlt"
+    assert config.max_handler_retries == 0
+    assert config.dead_letter_delivery_timeout == 10.0
 
 
 def test_kafka_config_configuration_dict_basic(clean_env: None) -> None:
@@ -166,6 +173,86 @@ def test_kafka_config_with_custom_partitions_and_replication(clean_env: None) ->
 
     assert config.number_of_partitions == 3
     assert config.replication_factor == 2
+
+
+def test_kafka_config_with_custom_dead_letter_settings(clean_env: None) -> None:
+    """dead-letter 접미사와 재시도 상한이 환경 변수에서 로드되는지 검증한다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_TOPIC_SUFFIX"] = ".dead"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}MAX_HANDLER_RETRIES"] = "3"
+
+    config = KafkaConnectionConfig()
+
+    assert config.dead_letter_topic_suffix == ".dead"
+    assert config.max_handler_retries == 3
+
+
+def test_kafka_config_with_negative_max_handler_retries_expect_rejected(
+    clean_env: None,
+) -> None:
+    """음수 재시도 상한은 무한 재시도를 만들므로 설정 로딩에서 거부된다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}MAX_HANDLER_RETRIES"] = "-1"
+
+    with pytest.raises(ValidationError):
+        KafkaConnectionConfig()
+
+
+def test_kafka_config_with_empty_dead_letter_topic_suffix_expect_rejected(
+    clean_env: None,
+) -> None:
+    """빈 접미사는 실패 메시지를 원본 토픽으로 되돌리므로 설정 로딩에서 거부된다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_TOPIC_SUFFIX"] = ""
+
+    with pytest.raises(ValidationError):
+        KafkaConnectionConfig()
+
+
+def test_kafka_config_async_producer_configuration_dict_with_sasl(
+    clean_env: None,
+) -> None:
+    """비동기 producer 설정이 aiokafka 키워드로 SASL 자격까지 전달하는지 검증한다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "secure-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "secure:9093"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SECURITY_PROTOCOL"] = "SASL_SSL"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_MECHANISM"] = "PLAIN"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_USERNAME"] = "api-key"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_PASSWORD"] = "api-secret"
+
+    config = KafkaConnectionConfig()
+
+    assert config.async_producer_configuration_dict == {
+        "bootstrap_servers": "secure:9093",
+        "client_id": "secure-client",
+        "security_protocol": "SASL_SSL",
+        "sasl_mechanism": "PLAIN",
+        "sasl_plain_username": "api-key",
+        "sasl_plain_password": "api-secret",
+    }
+
+
+def test_kafka_config_async_producer_configuration_dict_without_sasl(
+    clean_env: None,
+) -> None:
+    """SASL 미설정 환경에서는 연결 정보만 aiokafka 키워드로 전달한다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "plain-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+
+    config = KafkaConnectionConfig()
+
+    assert config.async_producer_configuration_dict == {
+        "bootstrap_servers": "localhost:9092",
+        "client_id": "plain-client",
+    }
 
 
 def test_kafka_config_env_prefix_is_correct() -> None:

@@ -1,7 +1,9 @@
 from asyncio import sleep as asleep
+from os import environ
 from time import sleep, time
 
 import pytest
+from confluent_kafka import Consumer, Message
 from pydantic import TypeAdapter
 from spakky.core.application.application import SpakkyApplication
 from spakky.event.event_consumer import (
@@ -13,13 +15,20 @@ from spakky.event.event_publisher import (
     IEventTransport,
 )
 
+from spakky.plugins.kafka.common.config import AutoOffsetResetType
+from spakky.plugins.kafka.common.constants import (
+    SPAKKY_KAFKA_CONFIG_ENV_PREFIX,
+    DeadLetterHeaderKey,
+)
 from spakky.plugins.kafka.event.consumer import (
     AsyncKafkaEventConsumer,
     KafkaEventConsumer,
 )
 from tests.apps.dummy import (
+    AsyncFailingEvent,
     DummyEventHandler,
     DuplicateTestEvent,
+    FailingEvent,
     SampleEvent,
 )
 
@@ -117,3 +126,79 @@ async def test_multiple_handler_registration_async(app: SpakkyApplication) -> No
     consumer.register(DuplicateTestEvent, handler2)
 
     assert len(consumer.handlers[DuplicateTestEvent]) == 2
+
+
+def decode_headers(record: Message) -> dict[str, str]:
+    """Decode the byte-valued Kafka headers of a record for assertion."""
+    return {
+        key: value.decode()
+        for key, value in (record.headers() or [])
+        if isinstance(value, bytes)
+    }
+
+
+def read_dead_letter_record(topic: str) -> Message:
+    """Consume the single record the consumer routed to `topic`, or time out."""
+    dead_letter_consumer = Consumer(
+        {
+            "group.id": f"dead-letter-reader-{topic}",
+            "client.id": f"dead-letter-reader-{topic}",
+            "bootstrap.servers": environ[
+                f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"
+            ],
+            "auto.offset.reset": AutoOffsetResetType.EARLIEST.value,
+        }
+    )
+    dead_letter_consumer.subscribe([topic])
+    try:
+        start = time()
+        while time() - start <= MAX_WAIT_TIME:
+            record = dead_letter_consumer.poll(timeout=POLL_INTERVAL)
+            if record is not None and record.error() is None:
+                return record
+        raise TimeoutError(f"No dead-letter record arrived on {topic}")
+    finally:
+        dead_letter_consumer.close()
+
+
+def test_synchronous_handler_failure_expect_dead_letter_record(
+    app: SpakkyApplication,
+) -> None:
+    """동기 핸들러가 실패한 메시지가 dead-letter 토픽에서 원본 본문·헤더와 함께 관찰된다."""
+    transport = app.container.get(IEventTransport)
+    event = FailingEvent(message="sync-poison")
+    payload = TypeAdapter(FailingEvent).dump_json(event)
+
+    transport.send("FailingEvent", payload, {})
+
+    record = read_dead_letter_record("FailingEvent.dlt")
+    assert record.value() == payload
+    headers = decode_headers(record)
+    assert headers[DeadLetterHeaderKey.ORIGINAL_TOPIC] == "FailingEvent"
+    assert headers[DeadLetterHeaderKey.CONSUMER_GROUP] == "test-group"
+    assert headers[DeadLetterHeaderKey.EXCEPTION_TYPE] == "RuntimeError"
+    assert (
+        "cannot process sync-poison" in headers[DeadLetterHeaderKey.EXCEPTION_MESSAGE]
+    )
+
+
+@pytest.mark.asyncio
+async def test_asynchronous_handler_failure_expect_dead_letter_record(
+    app: SpakkyApplication,
+) -> None:
+    """비동기 핸들러가 실패한 메시지가 dead-letter 토픽에서 원본 본문·헤더와 함께 관찰된다."""
+    transport = app.container.get(IAsyncEventTransport)
+    event = AsyncFailingEvent(message="async-poison")
+    payload = TypeAdapter(AsyncFailingEvent).dump_json(event)
+
+    await transport.send("AsyncFailingEvent", payload, {})
+
+    record = read_dead_letter_record("AsyncFailingEvent.dlt")
+    assert record.value() == payload
+    headers = decode_headers(record)
+    assert headers[DeadLetterHeaderKey.ORIGINAL_TOPIC] == "AsyncFailingEvent"
+    assert headers[DeadLetterHeaderKey.CONSUMER_GROUP] == "test-group"
+    assert headers[DeadLetterHeaderKey.EXCEPTION_TYPE] == "RuntimeError"
+    assert (
+        "cannot process async-poison" in headers[DeadLetterHeaderKey.EXCEPTION_MESSAGE]
+    )
