@@ -2,7 +2,6 @@
 
 import logging
 from asyncio import wait_for
-from uuid import UUID
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import (
@@ -14,6 +13,7 @@ from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
 from typing import override
 
 from spakky.outbox.common.config import OutboxConfig
+from spakky.outbox.common.message import OutboxMessage
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
 
 logger = logging.getLogger(__name__)
@@ -55,12 +55,67 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
             self._relay_batch()
             self._stop_event.wait(timeout=self._config.polling_interval_seconds)
 
+    def __register_refusal(
+        self,
+        message: OutboxMessage,
+        halted_partition_keys: set[str],
+    ) -> None:
+        """Spend one retry on a refused message, or abandon it when none is left.
+
+        A message whose budget is spent will never be fetched again, so it is
+        abandoned rather than left behind: that releases its partition key,
+        which would otherwise wait forever on a message nobody will retry, and
+        keeps the record findable. A message that still has budget holds its key
+        back until it is delivered, so nothing of that key overtakes it.
+        """
+        if message.retry_count + 1 >= self._config.max_retry_count:
+            self._storage.mark_abandoned(message.id)
+            return
+        self._storage.increment_retry(message.id)
+        if message.partition_key is not None:
+            halted_partition_keys.add(message.partition_key)
+
+    def __publish_one_at_a_time(
+        self,
+        messages: list[OutboxMessage],
+        halted_partition_keys: set[str],
+    ) -> None:
+        """Replay a batch whose flush failed, confirming one message at a time.
+
+        A batch flush reports that the broker refused something but not what, so
+        neither the retry budget nor the partition key hold-back can be aimed
+        without replaying. Confirming one message per flush puts the broker's
+        verdict on the message that earned it: the refused message spends its
+        budget and holds back the rest of its key, while its neighbours publish.
+        The replay can re-deliver a record the failed flush had already accepted
+        — delivery stays at-least-once, which consumers already assume.
+        """
+        for message in messages:
+            if message.partition_key in halted_partition_keys:
+                continue
+            try:
+                self._transport.send(
+                    message.event_name,
+                    message.payload,
+                    message.headers,
+                    message.partition_key,
+                )
+                self._transport.flush()
+            except EventTransportNotRunningError:
+                logger.info("Transport stopped while confirming outbox messages")
+                return
+            except Exception:
+                logger.exception("Failed to relay outbox message %s", message.id)
+                self.__register_refusal(message, halted_partition_keys)
+                continue
+            self._storage.mark_published(message.id)
+
     def _relay_batch(self) -> None:
         messages = self._storage.fetch_pending(
             self._config.batch_size,
             self._config.max_retry_count,
         )
-        relayed_message_ids: list[UUID] = []
+        relayed: list[OutboxMessage] = []
         # Keys whose earlier message the transport refused. Handing a later
         # message of the same key to the producer would put it ahead of the
         # refused one on the same broker partition, so the rest of the key waits
@@ -83,41 +138,29 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
                 # charging retries here would exhaust healthy messages.
                 logger.info(
                     "Transport stopped while relaying; deferring %d outbox messages",
-                    len(messages) - len(relayed_message_ids),
+                    len(messages) - len(relayed),
                 )
                 return
             except Exception:
-                logger.exception(
-                    "Failed to relay outbox message %s",
-                    message.id,
-                )
-                if message.retry_count + 1 >= self._config.max_retry_count:
-                    # The retry budget is spent, so this message will never be
-                    # fetched again. Abandoning it explicitly keeps its
-                    # partition key from waiting on a message nobody will retry,
-                    # and leaves the record findable instead of silently stuck.
-                    self._storage.mark_abandoned(message.id)
-                    continue
-                self._storage.increment_retry(message.id)
-                if message.partition_key is not None:
-                    halted_partition_keys.add(message.partition_key)
+                logger.exception("Failed to relay outbox message %s", message.id)
+                self.__register_refusal(message, halted_partition_keys)
                 continue
-            relayed_message_ids.append(message.id)
-        if not relayed_message_ids:
+            relayed.append(message)
+        if not relayed:
             return
         # The batch is marked published only after flush() returns, so a batch
-        # that never left the client stays pending. Retry counts are not charged
-        # here: a flush failure belongs to the transport, not to any one message.
+        # that never left the client stays pending.
         try:
             self._transport.flush()
         except Exception:
             logger.exception(
                 "Failed to flush %d relayed outbox messages",
-                len(relayed_message_ids),
+                len(relayed),
             )
+            self.__publish_one_at_a_time(relayed, halted_partition_keys)
             return
-        for message_id in relayed_message_ids:
-            self._storage.mark_published(message_id)
+        for message in relayed:
+            self._storage.mark_published(message.id)
 
 
 @Pod()
@@ -163,12 +206,67 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
             except TimeoutError:
                 continue
 
+    async def __register_refusal(
+        self,
+        message: OutboxMessage,
+        halted_partition_keys: set[str],
+    ) -> None:
+        """Spend one retry on a refused message, or abandon it when none is left.
+
+        A message whose budget is spent will never be fetched again, so it is
+        abandoned rather than left behind: that releases its partition key,
+        which would otherwise wait forever on a message nobody will retry, and
+        keeps the record findable. A message that still has budget holds its key
+        back until it is delivered, so nothing of that key overtakes it.
+        """
+        if message.retry_count + 1 >= self._config.max_retry_count:
+            await self._storage.mark_abandoned(message.id)
+            return
+        await self._storage.increment_retry(message.id)
+        if message.partition_key is not None:
+            halted_partition_keys.add(message.partition_key)
+
+    async def __publish_one_at_a_time(
+        self,
+        messages: list[OutboxMessage],
+        halted_partition_keys: set[str],
+    ) -> None:
+        """Replay a batch whose flush failed, confirming one message at a time.
+
+        A batch flush reports that the broker refused something but not what, so
+        neither the retry budget nor the partition key hold-back can be aimed
+        without replaying. Confirming one message per flush puts the broker's
+        verdict on the message that earned it: the refused message spends its
+        budget and holds back the rest of its key, while its neighbours publish.
+        The replay can re-deliver a record the failed flush had already accepted
+        — delivery stays at-least-once, which consumers already assume.
+        """
+        for message in messages:
+            if message.partition_key in halted_partition_keys:
+                continue
+            try:
+                await self._transport.send(
+                    message.event_name,
+                    message.payload,
+                    message.headers,
+                    message.partition_key,
+                )
+                await self._transport.flush()
+            except EventTransportNotRunningError:
+                logger.info("Transport stopped while confirming outbox messages")
+                return
+            except Exception:
+                logger.exception("Failed to relay outbox message %s", message.id)
+                await self.__register_refusal(message, halted_partition_keys)
+                continue
+            await self._storage.mark_published(message.id)
+
     async def _relay_batch(self) -> None:
         messages = await self._storage.fetch_pending(
             self._config.batch_size,
             self._config.max_retry_count,
         )
-        relayed_message_ids: list[UUID] = []
+        relayed: list[OutboxMessage] = []
         # Keys whose earlier message the transport refused. Handing a later
         # message of the same key to the producer would put it ahead of the
         # refused one on the same broker partition, so the rest of the key waits
@@ -191,38 +289,26 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
                 # charging retries here would exhaust healthy messages.
                 logger.info(
                     "Transport stopped while relaying; deferring %d outbox messages",
-                    len(messages) - len(relayed_message_ids),
+                    len(messages) - len(relayed),
                 )
                 return
             except Exception:
-                logger.exception(
-                    "Failed to relay outbox message %s",
-                    message.id,
-                )
-                if message.retry_count + 1 >= self._config.max_retry_count:
-                    # The retry budget is spent, so this message will never be
-                    # fetched again. Abandoning it explicitly keeps its
-                    # partition key from waiting on a message nobody will retry,
-                    # and leaves the record findable instead of silently stuck.
-                    await self._storage.mark_abandoned(message.id)
-                    continue
-                await self._storage.increment_retry(message.id)
-                if message.partition_key is not None:
-                    halted_partition_keys.add(message.partition_key)
+                logger.exception("Failed to relay outbox message %s", message.id)
+                await self.__register_refusal(message, halted_partition_keys)
                 continue
-            relayed_message_ids.append(message.id)
-        if not relayed_message_ids:
+            relayed.append(message)
+        if not relayed:
             return
         # The batch is marked published only after flush() returns, so a batch
-        # that never left the client stays pending. Retry counts are not charged
-        # here: a flush failure belongs to the transport, not to any one message.
+        # that never left the client stays pending.
         try:
             await self._transport.flush()
         except Exception:
             logger.exception(
                 "Failed to flush %d relayed outbox messages",
-                len(relayed_message_ids),
+                len(relayed),
             )
+            await self.__publish_one_at_a_time(relayed, halted_partition_keys)
             return
-        for message_id in relayed_message_ids:
-            await self._storage.mark_published(message_id)
+        for message in relayed:
+            await self._storage.mark_published(message.id)

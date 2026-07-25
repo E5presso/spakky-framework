@@ -2,6 +2,7 @@ from spakky.event.error import (
     AbstractSpakkyEventError,
     AuthSnapshotPropagationContextUnavailableError,
     AuthSnapshotPropagationSignerUnavailableError,
+    EventDeliveryRejectedError,
     UnknownEventTypeError,
 )
 
@@ -39,3 +40,13 @@ def test_auth_snapshot_propagation_errors_are_event_errors() -> None:
     assert signer_error.message == "Auth snapshot propagation signer is unavailable"
     assert isinstance(context_error, AbstractSpakkyEventError)
     assert isinstance(signer_error, AbstractSpakkyEventError)
+
+
+def test_event_delivery_rejected_error_expect_reasons_preserved() -> None:
+    """EventDeliveryRejectedError가 브로커 거부 사유를 보존하는지 검증한다."""
+    error = EventDeliveryRejectedError(
+        ["MSG_SIZE_TOO_LARGE", "TOPIC_AUTHORIZATION_FAILED"]
+    )
+
+    assert error.reasons == ["MSG_SIZE_TOO_LARGE", "TOPIC_AUTHORIZATION_FAILED"]
+    assert error.message == "Broker rejected event delivery"

@@ -237,7 +237,7 @@ class UserEventHandler:
 |-----------|------|------|
 | `IEventPublisher` / `IAsyncEventPublisher` | `publish` | 단일 발행 진입점 (타입 기반 라우팅) |
 | `IEventBus` / `IAsyncEventBus` | `send` | Integration Event 발행 진입점 (Outbox seam) |
-| `IEventTransport` / `IAsyncEventTransport` | `send` / `flush` | 실제 메시지 브로커 전송 (`event_name`, `payload`, `headers`, `partition_key`). `send`는 payload를 broker client에 넘기고, 배치 끝에 호출하는 `flush`가 전송을 확정합니다 |
+| `IEventTransport` / `IAsyncEventTransport` | `send` / `flush` | 실제 메시지 브로커 전송 (`event_name`, `payload`, `headers`, `partition_key`). `send`는 payload를 broker client에 넘기고, 배치 끝에 호출하는 `flush`가 전송을 확정하며 거부된 레코드를 예외로 올립니다 |
 | `IEventConsumer` / `IAsyncEventConsumer` | `register` | 핸들러 콜백 등록 (통합) |
 | `IEventDispatcher` / `IAsyncEventDispatcher` | `dispatch` | 인프로세스 핸들러 전달 (통합) |
 

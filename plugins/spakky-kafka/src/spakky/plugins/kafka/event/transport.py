@@ -22,7 +22,10 @@ from typing import override
 from spakky.core.common.mutability import immutable
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.interfaces.service import IAsyncService, IService
-from spakky.event.error import EventTransportNotRunningError
+from spakky.event.error import (
+    EventDeliveryRejectedError,
+    EventTransportNotRunningError,
+)
 from spakky.event.event_publisher import (
     IAsyncEventTransport,
     IEventTransport,
@@ -59,6 +62,7 @@ class KafkaEventTransport(IEventTransport, IService):
     config: KafkaConnectionConfig
     admin: AdminClient
     producer: Producer
+    _delivery_rejections: list[str]
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the Kafka producer with connection config."""
@@ -68,6 +72,7 @@ class KafkaEventTransport(IEventTransport, IService):
             self.config.producer_configuration_dict,
             logger=logger,
         )
+        self._delivery_rejections = []
 
     def _create_topic(self, topic: str) -> None:
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
@@ -88,10 +93,12 @@ class KafkaEventTransport(IEventTransport, IService):
         error: KafkaError | None,
         message: Message,
     ) -> None:
-        if (
-            error is not None
-        ):  # pragma: no cover - Kafka 브로커 콜백으로 커버리지 수집 불가
+        if error is not None:
             logger.error(f"Message delivery failed: {error}")
+            # confluent_kafka reports a rejection only here. Keeping it lets
+            # flush() fail, so the caller does not record an undelivered record
+            # as published.
+            self._delivery_rejections.append(str(error))
         else:
             logger.info(
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
@@ -144,11 +151,20 @@ class KafkaEventTransport(IEventTransport, IService):
     def flush(self) -> None:
         """Block until the producer has sent every queued record.
 
-        A record the broker rejects is reported to the delivery callback, which
-        logs it — confluent_kafka surfaces no error here, so a rejected record
-        does not make this call fail.
+        Rejections collected by the delivery callback are raised here as
+        `EventDeliveryRejectedError`. Without this the caller would treat a
+        refused record as delivered — the outbox relay would mark it published
+        and the event would be lost with no trace beyond a log line.
+
+        Raises:
+            EventDeliveryRejectedError: The broker refused at least one record.
         """
         self.producer.flush()
+        if not self._delivery_rejections:
+            return
+        rejections = self._delivery_rejections
+        self._delivery_rejections = []
+        raise EventDeliveryRejectedError(rejections)
 
 
 @immutable

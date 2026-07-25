@@ -114,6 +114,52 @@ class SelectivelyFailingSyncTransport(IEventTransport):
         return
 
 
+class RefusingOnFlushSyncTransport(IEventTransport):
+    """Accepts every send and reports the broker's refusal at flush, like Kafka."""
+
+    def __init__(self, refused_payloads: set[bytes]) -> None:
+        self.refused_payloads = refused_payloads
+        self.pending_payloads: list[bytes] = []
+        self.sent_payloads: list[bytes] = []
+
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        self.pending_payloads.append(payload)
+
+    def flush(self) -> None:
+        pending = self.pending_payloads
+        self.pending_payloads = []
+        if any(payload in self.refused_payloads for payload in pending):
+            raise ConnectionError("Broker refused a record in this batch")
+        self.sent_payloads.extend(pending)
+
+
+class StoppingDuringReplaySyncTransport(IEventTransport):
+    """Fails the batch flush, then reports shutdown when the replay resends."""
+
+    def __init__(self) -> None:
+        self.flush_attempts = 0
+
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        if self.flush_attempts > 0:
+            raise EventTransportNotRunningError
+
+    def flush(self) -> None:
+        self.flush_attempts += 1
+        raise ConnectionError("Broker unreachable")
+
+
 class InMemorySyncOutboxStorage(IOutboxStorage):
     def __init__(self, pending: list[OutboxMessage] | None = None) -> None:
         self.pending: list[OutboxMessage] = pending or []
@@ -228,6 +274,52 @@ class SelectivelyFailingAsyncTransport(IAsyncEventTransport):
         return
 
 
+class RefusingOnFlushAsyncTransport(IAsyncEventTransport):
+    """Accepts every send and reports the broker's refusal at flush, like Kafka."""
+
+    def __init__(self, refused_payloads: set[bytes]) -> None:
+        self.refused_payloads = refused_payloads
+        self.pending_payloads: list[bytes] = []
+        self.sent_payloads: list[bytes] = []
+
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        self.pending_payloads.append(payload)
+
+    async def flush(self) -> None:
+        pending = self.pending_payloads
+        self.pending_payloads = []
+        if any(payload in self.refused_payloads for payload in pending):
+            raise ConnectionError("Broker refused a record in this batch")
+        self.sent_payloads.extend(pending)
+
+
+class StoppingDuringReplayAsyncTransport(IAsyncEventTransport):
+    """Fails the batch flush, then reports shutdown when the replay resends."""
+
+    def __init__(self) -> None:
+        self.flush_attempts = 0
+
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        if self.flush_attempts > 0:
+            raise EventTransportNotRunningError
+
+    async def flush(self) -> None:
+        self.flush_attempts += 1
+        raise ConnectionError("Broker unreachable")
+
+
 class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
     def __init__(self, pending: list[OutboxMessage] | None = None) -> None:
         self.pending: list[OutboxMessage] = pending or []
@@ -327,10 +419,8 @@ def test_relay_batch_with_three_messages_expect_single_flush_after_last_send() -
     assert storage.published_ids == [message.id for message in messages]
 
 
-def test_relay_batch_flush_failure_expect_batch_left_pending_without_retry_charge() -> (
-    None
-):
-    """배치 flush가 실패하면 발행 완료로 표시하지 않고 retry count도 올리지 않는다."""
+def test_relay_batch_flush_failure_expect_retry_charged_per_message() -> None:
+    """배치 flush가 실패하면 메시지별로 재확인하여 실패한 메시지에 retry를 부과한다."""
     messages = [
         _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
         for index in range(2)
@@ -343,7 +433,7 @@ def test_relay_batch_flush_failure_expect_batch_left_pending_without_retry_charg
     relay._relay_batch()
 
     assert storage.published_ids == []
-    assert storage.retried_ids == []
+    assert storage.retried_ids == [message.id for message in messages]
 
 
 def test_relay_batch_transport_stopped_expect_batch_left_pending_without_retry_charge() -> (
@@ -477,6 +567,87 @@ def test_relay_batch_abandoned_message_expect_partition_key_released() -> None:
     assert storage.published_ids == [following.id]
 
 
+def test_relay_batch_flush_refusal_expect_rest_of_key_held_back() -> None:
+    """flush에서 거부된 메시지가 같은 키의 후속 메시지를 보류시키는지 검증한다."""
+    first = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    second = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemorySyncOutboxStorage(pending=[first, second])
+    transport = RefusingOnFlushSyncTransport({first.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert transport.sent_payloads == []
+    assert storage.published_ids == []
+    assert storage.retried_ids == [first.id]
+
+
+def test_relay_batch_flush_refusal_expect_other_keys_published() -> None:
+    """flush 거부가 다른 파티션 키의 발행을 막지 않는지 검증한다."""
+    refused = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    other_key = _make_message(
+        RelayTestIntegrationEvent(order_id="CART-1"), partition_key="CART"
+    )
+
+    storage = InMemorySyncOutboxStorage(pending=[refused, other_key])
+    transport = RefusingOnFlushSyncTransport({refused.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert transport.sent_payloads == [other_key.payload]
+    assert storage.published_ids == [other_key.id]
+    assert storage.retried_ids == [refused.id]
+
+
+def test_relay_batch_flush_refusal_with_budget_spent_expect_abandoned() -> None:
+    """flush 거부로 재시도를 소진한 메시지를 발행 포기하고 키를 여는지 검증한다."""
+    exhausted = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"),
+        partition_key="ORD",
+        retry_count=2,
+    )
+    following = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemorySyncOutboxStorage(pending=[exhausted, following])
+    transport = RefusingOnFlushSyncTransport({exhausted.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert storage.abandoned_ids == [exhausted.id]
+    assert storage.retried_ids == []
+    assert transport.sent_payloads == [following.payload]
+    assert storage.published_ids == [following.id]
+
+
+def test_relay_batch_shutdown_during_replay_expect_batch_left_pending() -> None:
+    """flush 실패 후 재확인 중 transport가 닫히면 남은 배치를 그대로 두는지 검증한다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(2)
+    ]
+
+    storage = InMemorySyncOutboxStorage(pending=messages)
+    transport = StoppingDuringReplaySyncTransport()
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
+    assert storage.abandoned_ids == []
+
+
 def test_relay_run_stops_on_stop_event() -> None:
     """run이 stop_event 설정 시 정상 종료하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
@@ -535,10 +706,10 @@ async def test_async_relay_batch_with_three_messages_expect_single_flush_after_l
 
 
 @pytest.mark.asyncio
-async def test_async_relay_batch_flush_failure_expect_batch_left_pending_without_retry_charge() -> (
+async def test_async_relay_batch_flush_failure_expect_retry_charged_per_message() -> (
     None
 ):
-    """배치 flush가 실패하면 발행 완료로 표시하지 않고 retry count도 올리지 않는다."""
+    """배치 flush가 실패하면 메시지별로 재확인하여 실패한 메시지에 retry를 부과한다."""
     messages = [
         _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
         for index in range(2)
@@ -553,7 +724,7 @@ async def test_async_relay_batch_flush_failure_expect_batch_left_pending_without
     await relay._relay_batch()
 
     assert storage.published_ids == []
-    assert storage.retried_ids == []
+    assert storage.retried_ids == [message.id for message in messages]
 
 
 @pytest.mark.asyncio
@@ -696,6 +867,93 @@ async def test_async_relay_batch_abandoned_expect_partition_key_released() -> No
     assert storage.abandoned_ids == [exhausted.id]
     assert transport.sent_payloads == [following.payload]
     assert storage.published_ids == [following.id]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_flush_refusal_expect_rest_of_key_held_back() -> None:
+    """flush에서 거부된 메시지가 같은 키의 후속 메시지를 보류시키는지 검증한다."""
+    first = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    second = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemoryAsyncOutboxStorage(pending=[first, second])
+    transport = RefusingOnFlushAsyncTransport({first.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert transport.sent_payloads == []
+    assert storage.published_ids == []
+    assert storage.retried_ids == [first.id]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_flush_refusal_expect_other_keys_published() -> None:
+    """flush 거부가 다른 파티션 키의 발행을 막지 않는지 검증한다."""
+    refused = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    other_key = _make_message(
+        RelayTestIntegrationEvent(order_id="CART-1"), partition_key="CART"
+    )
+
+    storage = InMemoryAsyncOutboxStorage(pending=[refused, other_key])
+    transport = RefusingOnFlushAsyncTransport({refused.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert transport.sent_payloads == [other_key.payload]
+    assert storage.published_ids == [other_key.id]
+    assert storage.retried_ids == [refused.id]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_flush_refusal_budget_spent_expect_abandoned() -> None:
+    """flush 거부로 재시도를 소진한 메시지를 발행 포기하고 키를 여는지 검증한다."""
+    exhausted = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"),
+        partition_key="ORD",
+        retry_count=2,
+    )
+    following = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemoryAsyncOutboxStorage(pending=[exhausted, following])
+    transport = RefusingOnFlushAsyncTransport({exhausted.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert storage.abandoned_ids == [exhausted.id]
+    assert storage.retried_ids == []
+    assert transport.sent_payloads == [following.payload]
+    assert storage.published_ids == [following.id]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_shutdown_during_replay_expect_batch_left_pending() -> (
+    None
+):
+    """flush 실패 후 재확인 중 transport가 닫히면 남은 배치를 그대로 두는지 검증한다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(2)
+    ]
+
+    storage = InMemoryAsyncOutboxStorage(pending=messages)
+    transport = StoppingDuringReplayAsyncTransport()
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
+    assert storage.abandoned_ids == []
 
 
 @pytest.mark.asyncio

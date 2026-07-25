@@ -82,9 +82,11 @@ class IEventTransport(ABC):
     def flush(self) -> None:
         """Block until the broker client has finished sending what send() handed over.
 
-        A successful return means the client drained its send queue. Whether a
-        rejected record raises depends on the broker client, so an implementation
-        documents what it surfaces.
+        A successful return means every record this caller handed over reached
+        the broker. An implementation that learns of a rejection only through a
+        delivery callback collects it and raises here — a caller that batches
+        records has no other moment to learn that the batch did not arrive, and
+        would otherwise record undelivered events as published.
         """
         ...
 
@@ -126,8 +128,10 @@ class IAsyncEventTransport(ABC):
     async def flush(self) -> None:
         """Block until the broker client has finished sending what send() handed over.
 
-        A successful return means the client drained its send queue. Whether a
-        rejected record raises depends on the broker client, so an implementation
-        documents what it surfaces.
+        A successful return means every record this caller handed over reached
+        the broker. An implementation that learns of a rejection only through a
+        delivery callback collects it and raises here — a caller that batches
+        records has no other moment to learn that the batch did not arrive, and
+        would otherwise record undelivered events as published.
         """
         ...

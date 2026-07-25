@@ -119,7 +119,7 @@ app = (
 |-----------|-------------|
 | `IEventPublisher` / `IAsyncEventPublisher` | Event publish 진입점(type-based routing) |
 | `IEventBus` / `IAsyncEventBus` | Integration event send 진입점(Outbox 경계) |
-| `IEventTransport` / `IAsyncEventTransport` | 실제 message broker transport. `send`로 payload를 넘기고, 배치 끝에서 `flush`로 전송을 확정합니다. 애플리케이션 수명 밖의 발행은 `EventTransportNotRunningError`로 거부됩니다 |
+| `IEventTransport` / `IAsyncEventTransport` | 실제 message broker transport. `send`로 payload를 넘기고, 배치 끝에서 `flush`로 전송을 확정합니다. `flush`는 브로커가 거부한 레코드를 예외로 올립니다. 애플리케이션 수명 밖의 발행은 `EventTransportNotRunningError`로 거부됩니다 |
 | `IEventConsumer` / `IAsyncEventConsumer` | Handler callback 등록 |
 | `IEventDispatcher` / `IAsyncEventDispatcher` | In-process handler dispatch |
 
