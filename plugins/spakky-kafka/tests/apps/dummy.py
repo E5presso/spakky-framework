@@ -28,6 +28,20 @@ class AsyncTestEvent(AbstractIntegrationEvent):
     message: str
 
 
+@immutable
+class FailingEvent(AbstractIntegrationEvent):
+    """Event whose synchronous handler always fails, exercising dead-letter routing."""
+
+    message: str
+
+
+@immutable
+class AsyncFailingEvent(AbstractIntegrationEvent):
+    """Event whose asynchronous handler always fails, exercising dead-letter routing."""
+
+    message: str
+
+
 @EventHandler()
 class DummyEventHandler(IApplicationContextAware):
     __application_context: IApplicationContext
@@ -84,3 +98,16 @@ class AsyncEventHandler(IApplicationContextAware):
         print(f"Async handler received event: {event}")
         self.__count += 1
         self.__context_ids.add(self.__application_context.get_context_id())
+
+
+@EventHandler()
+class FailingEventHandler:
+    """Handler that always raises, so the message must land on the dead-letter topic."""
+
+    @on_event(FailingEvent)
+    def handle_failing(self, event: FailingEvent) -> None:
+        raise RuntimeError(f"cannot process {event.message}")
+
+    @on_event(AsyncFailingEvent)
+    async def handle_async_failing(self, event: AsyncFailingEvent) -> None:
+        raise RuntimeError(f"cannot process {event.message}")
