@@ -199,7 +199,7 @@ class GrpcClient:
                 method.__name__, expected, rpc_annotation.method_type
             )
         if rpc_annotation.request_type is None or rpc_annotation.response_type is None:
-            raise MessagelessRpcMethodError(method.__name__)
+            raise MessagelessRpcMethodError(method.__qualname__)
         # `Rpc` stores both models as bare `type` objects erased of their identity,
         # while `RequestT`/`ResponseT` come from the controller method signature the
         # caller passed in — the same classes by construction of the `@rpc` decorator.

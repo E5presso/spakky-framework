@@ -19,6 +19,7 @@ from google.protobuf.descriptor_pb2 import (
 )
 from pydantic import BaseModel
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
+from spakky.plugins.grpc.error import MessagelessRpcMethodError
 from spakky.plugins.grpc.schema.field_number import assign_field_numbers
 from spakky.plugins.grpc.schema.type_map import resolve_type
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
@@ -103,6 +104,12 @@ def build_service_descriptor(
 
     Returns:
         A ``ServiceDescriptorProto`` for the controller.
+
+    Raises:
+        MessagelessRpcMethodError: If an ``@rpc`` method declares no request
+            or no response model. protobuf requires every method to name an
+            input and an output message, so such a declaration cannot be
+            expressed as a descriptor at all.
     """
     service = ServiceDescriptorProto(name=service_name)
 
@@ -113,23 +120,16 @@ def build_service_descriptor(
         rpc_annotation = Rpc.get(method)
         request_type = rpc_annotation.request_type
         response_type = rpc_annotation.response_type
+        if request_type is None or response_type is None:
+            raise MessagelessRpcMethodError(f"{controller_type.__name__}.{method_name}")
 
-        if request_type is not None:
-            build_message_descriptor(request_type, collected)
-            input_type = f".{package}.{request_type.__name__}"
-        else:
-            input_type = ""
-
-        if response_type is not None:
-            build_message_descriptor(response_type, collected)
-            output_type = f".{package}.{response_type.__name__}"
-        else:
-            output_type = ""
+        build_message_descriptor(request_type, collected)
+        build_message_descriptor(response_type, collected)
 
         method_desc = MethodDescriptorProto(
             name=method_name,
-            input_type=input_type,
-            output_type=output_type,
+            input_type=f".{package}.{request_type.__name__}",
+            output_type=f".{package}.{response_type.__name__}",
             client_streaming=rpc_annotation.method_type
             in {RpcMethodType.CLIENT_STREAMING, RpcMethodType.BIDI_STREAMING},
             server_streaming=rpc_annotation.method_type
@@ -152,6 +152,10 @@ def build_file_descriptor(controller_type: type) -> FileDescriptorProto:
 
     Returns:
         A ``FileDescriptorProto`` ready for ``descriptor_pool`` registration.
+
+    Raises:
+        MessagelessRpcMethodError: If an ``@rpc`` method declares no request
+            or no response model.
     """
     annotation = GrpcController.get(controller_type)
     package = annotation.package

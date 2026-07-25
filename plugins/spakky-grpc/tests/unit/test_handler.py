@@ -23,7 +23,11 @@ from spakky.core.pod.interfaces.container import IContainer
 from typing import override
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
-from spakky.plugins.grpc.error import Unavailable, UnsupportedResponseTypeError
+from spakky.plugins.grpc.error import (
+    MessagelessRpcMethodError,
+    Unavailable,
+    UnsupportedResponseTypeError,
+)
 from spakky.plugins.grpc.codec import basemodel_to_protobuf, protobuf_to_basemodel
 from spakky.plugins.grpc.handler import GrpcServiceHandler
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor
@@ -483,38 +487,27 @@ async def test_serializer_rejects_unsupported_type(
     assert excinfo.value.value_type is str
 
 
-def test_make_deserializer_returns_none_when_no_request_type() -> None:
-    """_make_deserializer should return None when request_type is None."""
-    registry = _build_registry_for(PingController)
-    container = MagicMock(spec=IContainer)
-    application_context = MagicMock(spec=IApplicationContext)
-    handler = GrpcServiceHandler(
-        controller_type=PingController,
-        package="handler.v1",
-        service_name="PingController",
-        container=container,
-        application_context=application_context,
-        registry=registry,
-    )
-    result = handler._make_deserializer(None)
-    assert result is None
+def test_build_handlers_messageless_rpc_expect_messageless_error() -> None:
+    """등록 경로를 우회해 만든 핸들러도 메시지 없는 rpc를 통과시키지 않는지 검증한다."""
 
+    @GrpcController(package="handler.v1", service_name="Probe")
+    class ProbeController:
+        """Controller whose rpc declares no response model."""
 
-def test_make_serializer_returns_none_when_no_response_type() -> None:
-    """_make_serializer should return None when response_type is None."""
-    registry = _build_registry_for(PingController)
-    container = MagicMock(spec=IContainer)
-    application_context = MagicMock(spec=IApplicationContext)
-    handler = GrpcServiceHandler(
-        controller_type=PingController,
-        package="handler.v1",
-        service_name="PingController",
-        container=container,
-        application_context=application_context,
-        registry=registry,
-    )
-    result = handler._make_serializer(None)
-    assert result is None
+        @rpc()
+        async def ping(self, request: PingRequest) -> None:
+            """RPC without a response model."""
+
+    with pytest.raises(MessagelessRpcMethodError) as excinfo:
+        GrpcServiceHandler(
+            controller_type=ProbeController,
+            package="handler.v1",
+            service_name="Probe",
+            container=MagicMock(spec=IContainer),
+            application_context=MagicMock(spec=IApplicationContext),
+            registry=_build_registry_for(PingController),
+        )
+    assert excinfo.value.method_name == "ProbeController.ping"
 
 
 # ------------------------------------------------------------------

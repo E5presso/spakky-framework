@@ -11,6 +11,7 @@ from inspect import signature
 from typing import get_args, get_origin, get_type_hints
 from collections.abc import Callable
 
+from pydantic import BaseModel
 from spakky.core.common.annotation import FunctionAnnotation
 
 
@@ -30,15 +31,23 @@ class RpcMethodType(StrEnum):
     BIDI_STREAMING = auto()
 
 
-def _unwrap_streaming_type(annotation: object | None) -> type | None:
-    """Return the message type inside supported streaming annotations."""
+def _unwrap_streaming_type(annotation: object | None) -> type[BaseModel] | None:
+    """Return the message model inside supported streaming annotations.
+
+    Only a pydantic ``BaseModel`` subclass can become a protobuf message, so
+    anything else — a bare ``AsyncIterator``, the ``NoneType`` behind a
+    ``-> None`` hint, a plain ``str`` parameter — is reported as absent.
+    Keeping ``None`` the single marker for "this method declares no message
+    here" lets every consumer of ``Rpc`` test one condition instead of
+    inspecting the type it received.
+    """
     if annotation is AsyncIteratorABC:
         return None
     candidate = annotation
     if get_origin(annotation) is AsyncIteratorABC and get_args(annotation):
         args = get_args(annotation)
         candidate = args[0]
-    if isinstance(candidate, type):
+    if isinstance(candidate, type) and issubclass(candidate, BaseModel):
         return candidate
     return None
 
@@ -52,15 +61,15 @@ class Rpc(FunctionAnnotation):
 
     Attributes:
         method_type: gRPC streaming pattern for this method.
-        request_type: Request message type. Auto-extracted from type hints
-            if not provided.
-        response_type: Response message type. Auto-extracted from type hints
-            if not provided.
+        request_type: Request message model, or ``None`` when the method
+            declares none. Auto-extracted from type hints if not provided.
+        response_type: Response message model, or ``None`` when the method
+            declares none. Auto-extracted from type hints if not provided.
     """
 
     method_type: RpcMethodType = RpcMethodType.UNARY
-    request_type: type | None = None
-    response_type: type | None = None
+    request_type: type[BaseModel] | None = None
+    response_type: type[BaseModel] | None = None
 
     def __call__[T](self, obj: Callable[..., T]) -> Callable[..., T]:
         """Annotate a method as an RPC endpoint.
@@ -98,8 +107,8 @@ class Rpc(FunctionAnnotation):
 
 def rpc[T](
     method_type: RpcMethodType = RpcMethodType.UNARY,
-    request_type: type | None = None,
-    response_type: type | None = None,
+    request_type: type[BaseModel] | None = None,
+    response_type: type[BaseModel] | None = None,
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator to mark a controller method as a gRPC RPC endpoint.
 
@@ -108,9 +117,9 @@ def rpc[T](
 
     Args:
         method_type: gRPC streaming pattern for this method.
-        request_type: Request message type. Auto-extracted from type hints
+        request_type: Request message model. Auto-extracted from type hints
             if not provided.
-        response_type: Response message type. Auto-extracted from type hints
+        response_type: Response message model. Auto-extracted from type hints
             if not provided.
 
     Returns:

@@ -265,6 +265,12 @@ class MessagelessRpcMethodError(AbstractSpakkyGrpcError):
     method missing either cannot be addressed over the wire. Reporting it here
     names the offending method instead of surfacing an opaque descriptor-pool
     rejection about an unresolvable empty type name.
+
+    Raised from two places that reach the same invalid declaration: controller
+    registration (``build_service_descriptor``) and client callable
+    construction. Both carry ``method_name`` as ``<controller>.<method>`` so a
+    log line identifies the declaration even when several controllers share a
+    method name.
     """
 
     message = "RPC method must declare both a request and a response model"
