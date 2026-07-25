@@ -119,7 +119,7 @@ app = (
 |-----------|-------------|
 | `IEventPublisher` / `IAsyncEventPublisher` | Event publish 진입점(type-based routing) |
 | `IEventBus` / `IAsyncEventBus` | Integration event send 진입점(Outbox 경계) |
-| `IEventTransport` / `IAsyncEventTransport` | 실제 message broker transport |
+| `IEventTransport` / `IAsyncEventTransport` | 실제 message broker transport. `send`로 payload를 넘기고, 배치 끝에서 `flush`로 전송을 확정합니다. 애플리케이션 수명 밖의 발행은 `EventTransportNotRunningError`로 거부됩니다 |
 | `IEventConsumer` / `IAsyncEventConsumer` | Handler callback 등록 |
 | `IEventDispatcher` / `IAsyncEventDispatcher` | In-process handler dispatch |
 
@@ -135,7 +135,7 @@ app = (
 
 ### 전파 metadata
 
-`DirectEventBus`와 `AsyncDirectEventBus`는 `IEventTransport.send(event_name, payload, headers, partition_key)` public signature로 outbound header를 구성하고, 이벤트가 선언한 partition key를 그대로 넘깁니다.
+`DirectEventBus`와 `AsyncDirectEventBus`는 `IEventTransport.send(event_name, payload, headers, partition_key)` public signature로 outbound header를 구성하고, 이벤트가 선언한 partition key를 그대로 넘깁니다. 직접 발행은 1건 배치이므로 두 bus는 `send` 직후 `flush`를 호출하여 전송을 확정한 뒤 반환합니다.
 
 | metadata | 조건 | 설명 |
 |----------|------|------|

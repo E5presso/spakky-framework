@@ -22,6 +22,9 @@ class StubTransport(IEventTransport):
         self.called = True
         self.last_headers = headers
 
+    def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
+
 
 class AsyncStubTransport(IAsyncEventTransport):
     """Async stub transport that records call arguments."""
@@ -39,6 +42,9 @@ class AsyncStubTransport(IAsyncEventTransport):
     ) -> None:
         self.called = True
         self.last_headers = headers
+
+    async def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
 
 
 def test_transport_send_with_empty_headers_expect_empty_dict() -> None:

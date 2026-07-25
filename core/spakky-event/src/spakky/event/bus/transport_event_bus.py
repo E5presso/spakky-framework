@@ -41,7 +41,11 @@ class DirectEventBus(IEventBus):
 
     @override
     def send(self, event: AbstractIntegrationEvent) -> None:
-        """Serialize and send an integration event via transport."""
+        """Serialize and send an integration event via transport.
+
+        A direct publish is a batch of one, so the transport is flushed before
+        returning and the caller gets the same delivery guarantee as before.
+        """
         event_type = type(event)
         if event_type not in self._adapters:
             self._adapters[event_type] = TypeAdapter(event_type)
@@ -55,6 +59,7 @@ class DirectEventBus(IEventBus):
             headers,
             event.partition_key,
         )
+        self._transport.flush()
 
 
 @Pod()
@@ -82,7 +87,11 @@ class AsyncDirectEventBus(IAsyncEventBus):
 
     @override
     async def send(self, event: AbstractIntegrationEvent) -> None:
-        """Serialize and send an integration event via async transport."""
+        """Serialize and send an integration event via async transport.
+
+        A direct publish is a batch of one, so the transport is flushed before
+        returning and the caller gets the same delivery guarantee as before.
+        """
         event_type = type(event)
         if event_type not in self._adapters:
             self._adapters[event_type] = TypeAdapter(event_type)
@@ -96,3 +105,4 @@ class AsyncDirectEventBus(IAsyncEventBus):
             headers,
             event.partition_key,
         )
+        await self._transport.flush()

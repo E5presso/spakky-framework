@@ -202,3 +202,37 @@ async def test_async_transport_send_with_partition_key_expect_routing_unchanged(
     assert mock_default_exchange.publish.call_args.kwargs == {
         "routing_key": "test_event"
     }
+
+
+def test_sync_transport_flush_expect_no_broker_round_trip() -> None:
+    """send가 이미 발행을 마치므로 flush가 브로커에 다시 접속하지 않음을 검증한다."""
+    config = MagicMock(spec=RabbitMQConnectionConfig)
+    config.connection_string = "amqp://test:test@localhost:5672/"
+    config.exchange_name = None
+
+    transport = RabbitMQEventTransport(config)
+
+    with patch(
+        "spakky.plugins.rabbitmq.event.transport.BlockingConnection"
+    ) as mock_connection_cls:
+        assert transport.flush() is None
+
+    mock_connection_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_async_transport_flush_expect_no_broker_round_trip() -> None:
+    """send가 이미 발행을 마치므로 flush가 브로커에 다시 접속하지 않음을 검증한다."""
+    config = MagicMock(spec=RabbitMQConnectionConfig)
+    config.connection_string = "amqp://test:test@localhost:5672/"
+    config.exchange_name = None
+
+    transport = AsyncRabbitMQEventTransport(config)
+
+    with patch(
+        "spakky.plugins.rabbitmq.event.transport.connect_robust",
+        new_callable=AsyncMock,
+    ) as mock_connect:
+        assert await transport.flush() is None
+
+    mock_connect.assert_not_awaited()

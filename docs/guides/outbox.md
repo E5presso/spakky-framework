@@ -143,6 +143,12 @@ from spakky.outbox.bus.outbox_event_bus import OutboxEventBus, AsyncOutboxEventB
 
 백그라운드 서비스로 실행되며, Outbox 테이블에서 미전송 메시지를 주기적으로 가져와 `IEventTransport`로 전송합니다.
 
+한 번 가져온 배치는 전부 `send`한 뒤 `flush`를 한 번만 호출하고, flush가 성공한 다음에 발행 완료로 표시합니다.
+
+- 개별 메시지의 `send`가 실패하면 그 메시지의 retry count만 올립니다.
+- 배치 `flush`가 실패하면 어느 메시지의 잘못인지 가릴 수 없으므로 retry count를 올리지 않고 배치를 미발행 상태로 남깁니다. 다음 폴링에서 같은 배치를 다시 발행하므로 소비자 멱등성이 전제입니다(at-least-once).
+- 애플리케이션 종료로 transport가 닫히면(`EventTransportNotRunningError`) 남은 배치를 그대로 두고 릴레이를 멈춥니다. 종료는 전달 실패가 아니므로 retry count를 소모하지 않습니다.
+
 ```python
 from spakky.outbox.relay.relay import (
     OutboxRelayBackgroundService,

@@ -47,6 +47,10 @@ class PartitionKeyRecordingTransport(IEventTransport):
     ) -> None:
         self.partition_keys.append(partition_key)
 
+    @override
+    def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
+
 
 class AsyncPartitionKeyRecordingTransport(IAsyncEventTransport):
     """Async transport that records the partition key it was handed."""
@@ -63,6 +67,10 @@ class AsyncPartitionKeyRecordingTransport(IAsyncEventTransport):
         partition_key: str | None = None,
     ) -> None:
         self.partition_keys.append(partition_key)
+
+    @override
+    async def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
 
 
 def test_direct_event_bus_forwards_event_partition_key() -> None:

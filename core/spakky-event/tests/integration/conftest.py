@@ -86,6 +86,10 @@ class InMemoryEventTransport(IEventTransport):
     ) -> None:
         pass
 
+    def flush(self) -> None:
+        """No-op flush."""
+        pass
+
 
 @Pod()
 class InMemoryAsyncEventTransport(IAsyncEventTransport):
@@ -98,6 +102,10 @@ class InMemoryAsyncEventTransport(IAsyncEventTransport):
         headers: dict[str, str],
         partition_key: str | None = None,
     ) -> None:
+        pass
+
+    async def flush(self) -> None:
+        """No-op flush."""
         pass
 
 

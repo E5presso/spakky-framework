@@ -48,7 +48,12 @@ class IAsyncEventBus(ABC):
 
 
 class IEventTransport(ABC):
-    """Low-level synchronous transport for pre-serialized event payloads."""
+    """Low-level synchronous transport for pre-serialized event payloads.
+
+    The caller owns the publish batch boundary: hand one or more payloads to
+    send() and call flush() once at the end of the batch. Transports may buffer
+    payloads until flush() so that broker round trips are batched.
+    """
 
     @abstractmethod
     def send(
@@ -58,7 +63,7 @@ class IEventTransport(ABC):
         headers: dict[str, str],
         partition_key: str | None = None,
     ) -> None:
-        """Send a serialized event payload to the message broker.
+        """Hand a serialized event payload to the broker client for delivery.
 
         Args:
             event_name: Destination topic / routing key.
@@ -66,12 +71,33 @@ class IEventTransport(ABC):
             headers: Metadata headers for trace and auth propagation.
             partition_key: Key pinning the payload to one broker partition.
                 None spreads payloads round-robin.
+
+        Raises:
+            EventTransportNotRunningError: When the transport's broker client is
+                not open, which happens outside the application lifecycle.
+        """
+        ...
+
+    @abstractmethod
+    def flush(self) -> None:
+        """Block until the broker client has finished sending what send() handed over.
+
+        A successful return means the client drained its send queue. Whether a
+        rejected record raises depends on the broker client, so an implementation
+        documents what it surfaces.
         """
         ...
 
 
 class IAsyncEventTransport(ABC):
-    """Low-level asynchronous transport for pre-serialized event payloads."""
+    """Low-level asynchronous transport for pre-serialized event payloads.
+
+    The caller owns the publish batch boundary: hand one or more payloads to
+    send() and call flush() once at the end of the batch. Transports may buffer
+    payloads until flush() so that broker round trips are batched. Publishers
+    share one transport, so a batch's send() and flush() belong to the same
+    execution context and flush() reports only that publisher's payloads.
+    """
 
     @abstractmethod
     async def send(
@@ -81,7 +107,7 @@ class IAsyncEventTransport(ABC):
         headers: dict[str, str],
         partition_key: str | None = None,
     ) -> None:
-        """Send a serialized event payload to the message broker.
+        """Hand a serialized event payload to the broker client for delivery.
 
         Args:
             event_name: Destination topic / routing key.
@@ -89,5 +115,19 @@ class IAsyncEventTransport(ABC):
             headers: Metadata headers for trace and auth propagation.
             partition_key: Key pinning the payload to one broker partition.
                 None spreads payloads round-robin.
+
+        Raises:
+            EventTransportNotRunningError: When the transport's broker client is
+                not open, which happens outside the application lifecycle.
+        """
+        ...
+
+    @abstractmethod
+    async def flush(self) -> None:
+        """Block until the broker client has finished sending what send() handed over.
+
+        A successful return means the client drained its send queue. Whether a
+        rejected record raises depends on the broker client, so an implementation
+        documents what it surfaces.
         """
         ...

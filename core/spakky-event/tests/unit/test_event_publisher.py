@@ -29,10 +29,12 @@ def test_async_event_bus_interface() -> None:
 
 
 def test_event_transport_interface() -> None:
-    """IEventTransport 인터페이스가 send 메서드를 가짐을 검증한다."""
+    """IEventTransport 인터페이스가 send/flush 메서드를 가짐을 검증한다."""
     assert hasattr(IEventTransport, "send")
+    assert hasattr(IEventTransport, "flush")
 
 
 def test_async_event_transport_interface() -> None:
-    """IAsyncEventTransport 인터페이스가 send 메서드를 가짐을 검증한다."""
+    """IAsyncEventTransport 인터페이스가 send/flush 메서드를 가짐을 검증한다."""
     assert hasattr(IAsyncEventTransport, "send")
+    assert hasattr(IAsyncEventTransport, "flush")

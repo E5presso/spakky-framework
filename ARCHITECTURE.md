@@ -817,7 +817,7 @@ flowchart TD
   - `AbstractDomainEvent` → `EventMediator` (인프로세스 dispatch)
   - `AbstractIntegrationEvent` → `IEventBus` (외부 전송)
 - **EventBus** (`IEventBus`): `send(event: AbstractIntegrationEvent)` — Integration Event 발행 진입점, Outbox seam 역할. `DirectEventBus` / `AsyncDirectEventBus`는 기존 tracing header를 보존하고, `SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`와 request-scope `AuthContext`가 있으면 raw bearer token 대신 signed `AuthContextSnapshot` envelope를 `spakky.auth.context_snapshot` metadata로 주입합니다.
-- **EventTransport** (`IEventTransport`): `send(event_name, payload, headers, partition_key)` — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현). `partition_key`가 `None`이면 브로커가 라운드로빈으로 분산합니다.
+- **EventTransport** (`IEventTransport`): `send(event_name, payload, headers, partition_key)` / `flush()` — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현). `send`는 broker client에 레코드를 넘기고, 호출자가 배치 끝에 부르는 `flush`가 전송을 확정합니다. `partition_key`가 `None`이면 브로커가 라운드로빈으로 분산합니다.
 - **Dispatcher**: `dispatch(event)` — 등록된 핸들러에 인프로세스 전달
 - **Consumer**: `register(event_type, handler)` — 이벤트 타입과 콜백 연결
 
@@ -943,7 +943,7 @@ flowchart TD
     outbox_bus["OutboxEventBus<br/>@Primary"]
     table["outbox_table.insert()<br/>같은 트랜잭션"]
     relay["OutboxRelay<br/>background"]
-    transport["IEventTransport.send()"]
+    transport["IEventTransport.send()<br/>+ 배치 끝 flush()"]
     broker["Kafka / RabbitMQ"]
 
     event_bus --> direct
@@ -1146,7 +1146,7 @@ flowchart TD
 |---------|------|
 | `IOutboxStorage` / `IAsyncOutboxStorage` | 아웃박스 메시지 저장소 포트 |
 | `OutboxEventBus` / `AsyncOutboxEventBus` | `@Primary`로 `DirectEventBus`를 교체하는 EventBus seam. 저장되는 Outbox headers에는 tracing metadata와 signed `AuthContextSnapshot` metadata가 함께 보존되며 raw bearer token은 저장하지 않음 |
-| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (polling → `IEventTransport.send()`) |
+| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (polling → 배치 `IEventTransport.send()` → 배치 끝 `flush()` → 발행 완료 표시) |
 | `OutboxConfig` | 환경변수 기반 설정 (polling interval, batch size, retry 등) |
 | `OutboxMessage` | 아웃박스 메시지 모델 |
 

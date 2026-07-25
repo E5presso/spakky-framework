@@ -25,6 +25,17 @@ class AuthSnapshotPropagationContextUnavailableError(AbstractSpakkyEventError):
     message = "Auth snapshot propagation context is unavailable"
 
 
+class EventTransportNotRunningError(AbstractSpakkyEventError):
+    """Raised when a transport is used outside the application lifecycle.
+
+    Transports whose broker client is opened at application start and closed at
+    application stop raise this instead of publishing into a closed client, so
+    that callers can tell a shutdown window apart from a delivery failure.
+    """
+
+    message = "Event transport is not running"
+
+
 class UnknownEventTypeError(AbstractSpakkyEventError):
     """Raised when an event type is neither domain nor integration."""
 
