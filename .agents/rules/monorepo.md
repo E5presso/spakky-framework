@@ -10,10 +10,12 @@ paths:
 모든 pre-commit 도구(pyrefly, ruff 등)는 **패키지 디렉토리 내에서** 실행:
 
 ```bash
-cd core/spakky && uv run pyrefly check --min-severity warn --no-progress-bar --output-format min-text
+cd core/spakky && uv run pyrefly check src tests --min-severity warn --no-progress-bar --output-format min-text
 cd core/spakky && uv run ruff check .
 cd core/spakky && uv run pytest
 ```
+
+pyrefly는 경로 인자를 생략하면 git 무시 규칙을 적용하므로, 워크트리(`.claude/worktrees/<branch>`)에서는 소스 전체가 검사 대상에서 빠진다. 소스가 제외되지 않는 형태로 호출한다 — 경로 인자(`src tests`) 또는 `--disable-project-excludes-heuristics`.
 
 **금지**: 루트에서 `uv run pyrefly check`, `uv run ruff check`, `uv run pytest` 직접 실행
 
