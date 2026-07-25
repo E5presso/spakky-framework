@@ -56,6 +56,9 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
     def increment_retry(self, message_id: object) -> None:
         raise AssertionError("Not expected to be called")
 
+    def mark_abandoned(self, message_id: object) -> None:
+        raise AssertionError("Not expected to be called")
+
 
 class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
     def __init__(self) -> None:
@@ -71,6 +74,9 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
         raise AssertionError("Not expected to be called")
 
     async def increment_retry(self, message_id: object) -> None:
+        raise AssertionError("Not expected to be called")
+
+    async def mark_abandoned(self, message_id: object) -> None:
         raise AssertionError("Not expected to be called")
 
 

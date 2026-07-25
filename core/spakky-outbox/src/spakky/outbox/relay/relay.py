@@ -61,7 +61,15 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
             self._config.max_retry_count,
         )
         relayed_message_ids: list[UUID] = []
+        # Keys whose earlier message the transport refused. Handing a later
+        # message of the same key to the producer would put it ahead of the
+        # refused one on the same broker partition, so the rest of the key waits
+        # for a later poll. Messages without a partition key carry no ordering
+        # claim and keep skipping past failures as before.
+        halted_partition_keys: set[str] = set()
         for message in messages:
+            if message.partition_key in halted_partition_keys:
+                continue
             try:
                 self._transport.send(
                     message.event_name,
@@ -83,7 +91,16 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
                     "Failed to relay outbox message %s",
                     message.id,
                 )
+                if message.retry_count + 1 >= self._config.max_retry_count:
+                    # The retry budget is spent, so this message will never be
+                    # fetched again. Abandoning it explicitly keeps its
+                    # partition key from waiting on a message nobody will retry,
+                    # and leaves the record findable instead of silently stuck.
+                    self._storage.mark_abandoned(message.id)
+                    continue
                 self._storage.increment_retry(message.id)
+                if message.partition_key is not None:
+                    halted_partition_keys.add(message.partition_key)
                 continue
             relayed_message_ids.append(message.id)
         if not relayed_message_ids:
@@ -152,7 +169,15 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
             self._config.max_retry_count,
         )
         relayed_message_ids: list[UUID] = []
+        # Keys whose earlier message the transport refused. Handing a later
+        # message of the same key to the producer would put it ahead of the
+        # refused one on the same broker partition, so the rest of the key waits
+        # for a later poll. Messages without a partition key carry no ordering
+        # claim and keep skipping past failures as before.
+        halted_partition_keys: set[str] = set()
         for message in messages:
+            if message.partition_key in halted_partition_keys:
+                continue
             try:
                 await self._transport.send(
                     message.event_name,
@@ -174,7 +199,16 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
                     "Failed to relay outbox message %s",
                     message.id,
                 )
+                if message.retry_count + 1 >= self._config.max_retry_count:
+                    # The retry budget is spent, so this message will never be
+                    # fetched again. Abandoning it explicitly keeps its
+                    # partition key from waiting on a message nobody will retry,
+                    # and leaves the record findable instead of silently stuck.
+                    await self._storage.mark_abandoned(message.id)
+                    continue
                 await self._storage.increment_retry(message.id)
+                if message.partition_key is not None:
+                    halted_partition_keys.add(message.partition_key)
                 continue
             relayed_message_ids.append(message.id)
         if not relayed_message_ids:

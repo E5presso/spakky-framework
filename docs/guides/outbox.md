@@ -20,11 +20,11 @@ Outbox는 이벤트를 **비즈니스 데이터와 같은 DB 트랜잭션 안에
 2. Integration Event 발행 시 메시지 브로커 대신 Outbox 테이블에 저장합니다 (트랜잭션 내).
 3. `OutboxRelayBackgroundService`가 주기적으로 Outbox 테이블을 폴링합니다.
 4. 미전송 메시지를 `IEventTransport`(Kafka/RabbitMQ)를 통해 실제 전송합니다.
-5. 전송 성공 시 메시지를 published 처리, 실패 시 재시도 카운트를 증가시킵니다.
+5. 전송 성공 시 메시지를 published 처리, 실패 시 재시도 카운트를 증가시킵니다. 실패한 메시지에 파티션 키가 있으면 같은 배치에 있는 그 키의 후속 메시지를 보류하고, `max_retry_count`를 소진하면 그 메시지를 발행 포기(abandoned) 처리하여 키를 다시 진행시킵니다.
 
 ### 폴링 → 전송 흐름
 
-발행 측(UseCase 트랜잭션)과 전송 측(Relay 폴링)이 시간적으로 분리됩니다. Relay는 `fetch_pending`으로 미전송 메시지를 원자적으로 claim한 뒤 전송하고, 성공·실패에 따라 상태를 갱신합니다.
+발행 측(UseCase 트랜잭션)과 전송 측(Relay 폴링)이 시간적으로 분리됩니다. Relay는 `fetch_pending`으로 미전송 메시지를 원자적으로 claim한 뒤 전송하고, 성공·실패에 따라 상태를 갱신합니다. 파티션 키가 있는 메시지는 키 단위로 claim·발행되어 상대 순서가 보전됩니다 — [Kafka 가이드](kafka.md)의 파티션 키 절 참조.
 
 ```mermaid
 sequenceDiagram
@@ -59,8 +59,19 @@ stateDiagram-v2
   Pending --> Claimed: fetch_pending (claimed_at 기록)
   Claimed --> Published: 전송 성공 → mark_published
   Claimed --> Pending: 전송 실패 → increment_retry
+  Claimed --> Abandoned: 마지막 재시도까지 실패 → mark_abandoned
   Claimed --> Pending: claim_timeout 초과 (크래시 복구)
   Published --> [*]
+  Abandoned --> [*]
+```
+
+`Abandoned`는 `max_retry_count`를 소진하고도 전송되지 못한 메시지의 종착 상태입니다. 이 상태로 넘기지 않으면 메시지가 조회 대상에서만 빠진 채 "가장 오래된 미발행 메시지"로 남아 같은 파티션 키의 후속 메시지를 영구히 막습니다. `abandoned_at`이 찍힌 row는 발행 대기열을 떠나므로 그 키가 다시 진행하며, row 자체는 남아 있어 운영자가 무엇이 버려졌는지 조회할 수 있습니다.
+
+```sql
+SELECT id, event_name, partition_key, retry_count, abandoned_at
+FROM spakky_event_outbox
+WHERE abandoned_at IS NOT NULL
+ORDER BY abandoned_at DESC;
 ```
 
 ---
@@ -104,7 +115,7 @@ export SPAKKY_OUTBOX__CLAIM_TIMEOUT_SECONDS=300.0
 |------|---------|--------|------|
 | `polling_interval_seconds` | `SPAKKY_OUTBOX__POLLING_INTERVAL_SECONDS` | `1.0` | 폴링 주기 (초) |
 | `batch_size` | `SPAKKY_OUTBOX__BATCH_SIZE` | `100` | 배치당 처리 메시지 수 |
-| `max_retry_count` | `SPAKKY_OUTBOX__MAX_RETRY_COUNT` | `5` | 최대 재시도 횟수 |
+| `max_retry_count` | `SPAKKY_OUTBOX__MAX_RETRY_COUNT` | `5` | 최대 재시도 횟수. 소진 시 메시지를 발행 포기 처리 |
 | `claim_timeout_seconds` | `SPAKKY_OUTBOX__CLAIM_TIMEOUT_SECONDS` | `300.0` | 메시지 잠금 타임아웃 (초) |
 
 ### 이벤트 발행
@@ -169,9 +180,10 @@ from spakky.outbox.ports.storage import IOutboxStorage, IAsyncOutboxStorage
 | 메서드 | 설명 |
 |--------|------|
 | `save(message)` | 현재 트랜잭션 내에서 메시지 저장 |
-| `fetch_pending(limit, max_retry)` | 미전송 메시지 조회 (잠금 포함) |
+| `fetch_pending(limit, max_retry)` | 미전송 메시지 claim (잠금 포함). 파티션 키는 통째로 claim한다 — 키의 가장 오래된 미발행 메시지를 함께 잡지 못하면 그 키의 메시지를 넘기지 않는다 |
 | `mark_published(message_id)` | 메시지를 전송 완료 처리 |
 | `increment_retry(message_id)` | 재시도 카운트 증가 |
+| `mark_abandoned(message_id)` | 재시도를 소진한 메시지를 발행 포기 처리 (발행 대기열에서 제외하되 레코드는 보존) |
 
 #### OutboxMessage
 
@@ -192,15 +204,17 @@ from spakky.outbox.common.message import OutboxMessage
 | `published_at` | `datetime \| None` | 전송 완료 시각 |
 | `retry_count` | `int` | 재시도 횟수 |
 | `claimed_at` | `datetime \| None` | 잠금 시각 |
+| `abandoned_at` | `datetime \| None` | 재시도를 소진하여 발행을 포기한 시각. `None`이면 아직 발행 대기 중 |
 
 ---
 
-## 스키마 업그레이드 — `partition_key` 컬럼 추가
+## 스키마 업그레이드 — `partition_key`·`abandoned_at` 컬럼 추가
 
 `spakky-sqlalchemy`의 `OutboxMessageTable`은 migration용 table metadata만 제공하고, 운영 스키마 적용은 사용자 migration이 소유합니다(`SchemaRegistry`). 따라서 이미 `spakky_event_outbox` 테이블이 배포된 환경을 이 버전으로 올릴 때는 컬럼 추가 DDL을 직접 실행해야 합니다.
 
 ```sql
 ALTER TABLE spakky_event_outbox ADD COLUMN partition_key TEXT NULL;
+ALTER TABLE spakky_event_outbox ADD COLUMN abandoned_at TIMESTAMPTZ NULL;
 ```
 
 DDL을 실행하지 않은 채 배포하면 다음 두 곳이 깨집니다.
@@ -210,7 +224,7 @@ DDL을 실행하지 않은 채 배포하면 다음 두 곳이 깨집니다.
 | `IOutboxStorage.save()` | 존재하지 않는 컬럼을 참조하는 INSERT가 실패합니다. `save()`는 비즈니스 트랜잭션 안에서 호출되므로 **이벤트를 발행하는 모든 UseCase가 함께 롤백됩니다.** |
 | `OutboxRelayBackgroundService` | `fetch_pending()`의 SELECT가 실패하고, 이 예외는 릴레이의 재시도 `try` 블록 밖에서 발생하므로 **릴레이 백그라운드 서비스가 종료됩니다.** |
 
-컬럼의 `NULL` 허용은 "파티션 키 없음"(라운드로빈 발행)이라는 도메인 값을 표현하기 위한 것이며, 마이그레이션을 대신하지 않습니다. 기존 row는 DDL 적용 후 `partition_key`가 `NULL`이 되어 이전과 동일하게 라운드로빈으로 발행됩니다.
+두 컬럼의 `NULL` 허용은 각각 "파티션 키 없음"(라운드로빈 발행)과 "아직 발행 대기 중"이라는 도메인 값을 표현하기 위한 것이며, 마이그레이션을 대신하지 않습니다. 기존 row는 DDL 적용 후 `partition_key`와 `abandoned_at`이 `NULL`이 되어 이전과 동일하게 라운드로빈으로 발행 대기합니다.
 
 ---
 

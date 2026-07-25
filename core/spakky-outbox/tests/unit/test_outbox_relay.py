@@ -92,11 +92,34 @@ class StoppedSyncTransport(IEventTransport):
         """Never reached: the transport refuses the batch at the first send."""
 
 
+class SelectivelyFailingSyncTransport(IEventTransport):
+    """Rejects the given payloads and records every payload it accepts."""
+
+    def __init__(self, rejected_payloads: set[bytes]) -> None:
+        self.rejected_payloads = rejected_payloads
+        self.sent_payloads: list[bytes] = []
+
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        if payload in self.rejected_payloads:
+            raise ConnectionError("Transport rejected the message")
+        self.sent_payloads.append(payload)
+
+    def flush(self) -> None:
+        return
+
+
 class InMemorySyncOutboxStorage(IOutboxStorage):
     def __init__(self, pending: list[OutboxMessage] | None = None) -> None:
         self.pending: list[OutboxMessage] = pending or []
         self.published_ids: list[object] = []
         self.retried_ids: list[object] = []
+        self.abandoned_ids: list[object] = []
 
     def save(self, message: OutboxMessage) -> None:
         self.pending.append(message)
@@ -113,6 +136,9 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
 
     def increment_retry(self, message_id: object) -> None:
         self.retried_ids.append(message_id)
+
+    def mark_abandoned(self, message_id: object) -> None:
+        self.abandoned_ids.append(message_id)
 
 
 # ── Async test doubles ──
@@ -180,11 +206,34 @@ class StoppedAsyncTransport(IAsyncEventTransport):
         """Never reached: the transport refuses the batch at the first send."""
 
 
+class SelectivelyFailingAsyncTransport(IAsyncEventTransport):
+    """Rejects the given payloads and records every payload it accepts."""
+
+    def __init__(self, rejected_payloads: set[bytes]) -> None:
+        self.rejected_payloads = rejected_payloads
+        self.sent_payloads: list[bytes] = []
+
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        if payload in self.rejected_payloads:
+            raise ConnectionError("Transport rejected the message")
+        self.sent_payloads.append(payload)
+
+    async def flush(self) -> None:
+        return
+
+
 class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
     def __init__(self, pending: list[OutboxMessage] | None = None) -> None:
         self.pending: list[OutboxMessage] = pending or []
         self.published_ids: list[object] = []
         self.retried_ids: list[object] = []
+        self.abandoned_ids: list[object] = []
 
     async def save(self, message: OutboxMessage) -> None:
         self.pending.append(message)
@@ -202,6 +251,9 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
     async def increment_retry(self, message_id: object) -> None:
         self.retried_ids.append(message_id)
 
+    async def mark_abandoned(self, message_id: object) -> None:
+        self.abandoned_ids.append(message_id)
+
 
 # ── Common helpers ──
 
@@ -209,6 +261,7 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
 def _make_message(
     event: AbstractIntegrationEvent,
     partition_key: str | None = None,
+    retry_count: int = 0,
 ) -> OutboxMessage:
     adapter: TypeAdapter[AbstractIntegrationEvent] = TypeAdapter(type(event))
     return OutboxMessage(
@@ -218,6 +271,7 @@ def _make_message(
         headers={"traceparent": "00-abc123-def456-01"},
         partition_key=partition_key,
         created_at=datetime.now(UTC),
+        retry_count=retry_count,
     )
 
 
@@ -325,6 +379,102 @@ def test_relay_batch_increments_retry_on_transport_failure() -> None:
 
     assert len(storage.published_ids) == 0
     assert message.id in storage.retried_ids
+
+
+def test_relay_batch_partition_key_after_failure_expect_rest_of_key_held_back() -> None:
+    """같은 파티션 키의 선행 메시지가 실패하면 후속 메시지를 보류하는지 검증한다."""
+    first = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    second = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemorySyncOutboxStorage(pending=[first, second])
+    transport = SelectivelyFailingSyncTransport({first.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert transport.sent_payloads == []
+    assert storage.published_ids == []
+    assert storage.retried_ids == [first.id]
+
+
+def test_relay_batch_partition_key_failure_expect_other_keys_unaffected() -> None:
+    """한 파티션 키의 실패가 다른 키의 발행을 막지 않는지 검증한다."""
+    failing = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    other_key = _make_message(
+        RelayTestIntegrationEvent(order_id="CART-1"), partition_key="CART"
+    )
+
+    storage = InMemorySyncOutboxStorage(pending=[failing, other_key])
+    transport = SelectivelyFailingSyncTransport({failing.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert transport.sent_payloads == [other_key.payload]
+    assert storage.published_ids == [other_key.id]
+
+
+def test_relay_batch_without_partition_key_expect_failure_skipped() -> None:
+    """파티션 키가 없는 메시지는 실패를 건너뛰고 계속 발행되는지 검증한다."""
+    failing = _make_message(RelayTestIntegrationEvent(order_id="ORD-1"))
+    following = _make_message(RelayTestIntegrationEvent(order_id="ORD-2"))
+
+    storage = InMemorySyncOutboxStorage(pending=[failing, following])
+    transport = SelectivelyFailingSyncTransport({failing.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert transport.sent_payloads == [following.payload]
+    assert storage.published_ids == [following.id]
+    assert storage.retried_ids == [failing.id]
+
+
+def test_relay_batch_retry_budget_spent_expect_message_abandoned() -> None:
+    """마지막 재시도까지 실패한 메시지를 발행 포기 처리하는지 검증한다."""
+    message = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"),
+        partition_key="ORD",
+        retry_count=2,
+    )
+
+    storage = InMemorySyncOutboxStorage(pending=[message])
+    transport = SelectivelyFailingSyncTransport({message.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert storage.abandoned_ids == [message.id]
+    assert storage.retried_ids == []
+    assert storage.published_ids == []
+
+
+def test_relay_batch_abandoned_message_expect_partition_key_released() -> None:
+    """발행 포기한 메시지가 같은 키의 후속 메시지를 막지 않는지 검증한다."""
+    exhausted = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"),
+        partition_key="ORD",
+        retry_count=2,
+    )
+    following = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemorySyncOutboxStorage(pending=[exhausted, following])
+    transport = SelectivelyFailingSyncTransport({exhausted.payload})
+
+    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay._relay_batch()
+
+    assert storage.abandoned_ids == [exhausted.id]
+    assert transport.sent_payloads == [following.payload]
+    assert storage.published_ids == [following.id]
 
 
 def test_relay_run_stops_on_stop_event() -> None:
@@ -441,6 +591,111 @@ async def test_async_relay_batch_increments_retry_on_transport_failure() -> None
 
     assert len(storage.published_ids) == 0
     assert message.id in storage.retried_ids
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_partition_key_after_failure_expect_key_held_back() -> (
+    None
+):
+    """같은 파티션 키의 선행 메시지가 실패하면 후속 메시지를 보류하는지 검증한다."""
+    first = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    second = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemoryAsyncOutboxStorage(pending=[first, second])
+    transport = SelectivelyFailingAsyncTransport({first.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert transport.sent_payloads == []
+    assert storage.published_ids == []
+    assert storage.retried_ids == [first.id]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_partition_key_failure_expect_other_keys_unaffected() -> (
+    None
+):
+    """한 파티션 키의 실패가 다른 키의 발행을 막지 않는지 검증한다."""
+    failing = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    other_key = _make_message(
+        RelayTestIntegrationEvent(order_id="CART-1"), partition_key="CART"
+    )
+
+    storage = InMemoryAsyncOutboxStorage(pending=[failing, other_key])
+    transport = SelectivelyFailingAsyncTransport({failing.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert transport.sent_payloads == [other_key.payload]
+    assert storage.published_ids == [other_key.id]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_without_partition_key_expect_failure_skipped() -> None:
+    """파티션 키가 없는 메시지는 실패를 건너뛰고 계속 발행되는지 검증한다."""
+    failing = _make_message(RelayTestIntegrationEvent(order_id="ORD-1"))
+    following = _make_message(RelayTestIntegrationEvent(order_id="ORD-2"))
+
+    storage = InMemoryAsyncOutboxStorage(pending=[failing, following])
+    transport = SelectivelyFailingAsyncTransport({failing.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert transport.sent_payloads == [following.payload]
+    assert storage.published_ids == [following.id]
+    assert storage.retried_ids == [failing.id]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_retry_budget_spent_expect_message_abandoned() -> None:
+    """마지막 재시도까지 실패한 메시지를 발행 포기 처리하는지 검증한다."""
+    message = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"),
+        partition_key="ORD",
+        retry_count=2,
+    )
+
+    storage = InMemoryAsyncOutboxStorage(pending=[message])
+    transport = SelectivelyFailingAsyncTransport({message.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert storage.abandoned_ids == [message.id]
+    assert storage.retried_ids == []
+    assert storage.published_ids == []
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_abandoned_expect_partition_key_released() -> None:
+    """발행 포기한 메시지가 같은 키의 후속 메시지를 막지 않는지 검증한다."""
+    exhausted = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"),
+        partition_key="ORD",
+        retry_count=2,
+    )
+    following = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+
+    storage = InMemoryAsyncOutboxStorage(pending=[exhausted, following])
+    transport = SelectivelyFailingAsyncTransport({exhausted.payload})
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    await relay._relay_batch()
+
+    assert storage.abandoned_ids == [exhausted.id]
+    assert transport.sent_payloads == [following.payload]
+    assert storage.published_ids == [following.id]
 
 
 @pytest.mark.asyncio

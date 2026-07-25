@@ -122,7 +122,7 @@ class OrderEventHandler:
 
 Kafka가 보장하는 순서는 파티션 안에서만 성립합니다. 파티션이 2개 이상인 토픽에서 같은 주문의 생성/취소 이벤트가 서로 다른 파티션으로 흩어지면, 소비자는 생성보다 취소를 먼저 볼 수 있습니다.
 
-`AbstractIntegrationEvent.partition_key`를 오버라이드하면 같은 키를 가진 이벤트가 항상 같은 파티션으로 갑니다. 보통 aggregate id를 키로 씁니다. 파티션 키는 순서 보장의 **전제 조건**이며, 그것만으로 순서가 완결되지는 않습니다(아래 주의 참조).
+`AbstractIntegrationEvent.partition_key`를 오버라이드하면 같은 키를 가진 이벤트가 항상 같은 파티션으로 갑니다. 보통 aggregate id를 키로 씁니다. 파티션 키는 순서 보장의 **전제 조건**이며, 발행 경로가 그 키의 상대 순서를 함께 지켜야 순서가 완결됩니다(아래 참고 참조).
 
 ```python
 from spakky.core.common.mutability import immutable
@@ -145,14 +145,18 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
 
 `spakky-outbox`를 함께 쓰면 bus가 이벤트의 `partition_key`를 Outbox 레코드의 `partition_key` 컬럼에 저장하고, Relay가 그 값을 그대로 Kafka transport에 넘깁니다.
 
-!!! warning "파티션 키만으로는 순서가 완결되지 않습니다"
-    파티션 키는 "같은 키가 같은 파티션으로 간다"만 보장합니다. 같은 파티션 안의 상대 순서는 아래 세 경로에서 여전히 뒤집힐 수 있습니다.
+!!! note "Outbox 경로에서 키 단위 순서가 지켜지는 방식"
+    `spakky-outbox`를 경유하면 릴레이가 파티션 키 단위 상대 순서를 보전합니다. 순서를 지키는 대가는 실패한 키의 지연입니다.
 
+    - **배치 확정**: 릴레이는 배치의 메시지를 순차로 `send`한 뒤 배치 끝에서 `flush()` 한 번으로 확정합니다. `flush()`가 실패하면 배치 전체가 미발행으로 남아 다음 폴링에서 같은 순서로 다시 발행되므로, 브로커 거부가 키 안의 상대 순서를 바꾸지 않습니다.
+    - **개별 전송 실패**: 어떤 키의 메시지를 producer에 넘기는 것 자체가 실패하면 릴레이는 같은 배치에 있는 그 키의 후속 메시지를 발행하지 않고 보류합니다. 그 키는 실패한 메시지가 발행될 때까지 진행하지 않으며, 재개는 그 메시지의 claim이 만료된 뒤(`claim_timeout_seconds`, 기본 300초)입니다.
+    - **릴레이 다중 인스턴스**: `fetch_pending()`은 파티션 키를 통째로 claim합니다. 그 키의 가장 오래된 미발행 메시지를 잡은 인스턴스만 그 키를 진행하므로, 두 인스턴스가 같은 키를 병렬 발행하지 않습니다.
+    - **재시도 소진**: 어떤 메시지가 `max_retry_count`를 소진하면 릴레이가 그 메시지를 발행 포기(abandoned) 처리하고 키를 다시 진행시킵니다. 그 키의 순서 보장은 포기된 메시지까지이며, 그 이후 메시지는 포기된 메시지 없이 발행됩니다. 포기 사실은 `abandoned_at`으로 남으므로 운영자가 무엇이 빠졌는지 조회할 수 있습니다 — 조회 쿼리는 [Outbox 가이드](outbox.md) 참조.
     - **producer 재시도**: 프레임워크가 `enable.idempotence=true`를 고정하고 transport가 producer를 애플리케이션 수명 동안 하나로 유지하므로, 그 수명 안의 재시도는 파티션 내 순서를 뒤집지 않습니다. 다만 프로세스가 재시작하면 새 producer 세션이 시작되어 이전 세션과의 상대 순서까지는 보장하지 않습니다.
-    - **Outbox 릴레이의 개별 메시지 재시도**: `OutboxRelayBackgroundService`는 메시지 전송이 실패하면 재시도 횟수만 올리고 **다음 메시지로 넘어갑니다.** 같은 키의 후속 메시지가 먼저 발행되고 실패한 메시지는 다음 폴링에서 재전송되므로 순서가 뒤집힙니다.
-    - **릴레이 다중 인스턴스**: `fetch_pending()`의 `SELECT ... FOR UPDATE SKIP LOCKED`는 같은 키의 연속 메시지가 서로 다른 배치로 나뉘어 병렬 발행되는 것을 막지 않습니다.
 
-    Outbox 경로에서 키 단위 순서가 요구사항이면 위 릴레이 동작을 먼저 확인하십시오.
+    파티션 키가 없는 메시지에는 보류 제약이 적용되지 않습니다 — 실패한 메시지를 건너뛰고 계속 발행합니다. 키 단위 claim은 파티션 키가 있는 행에만 조건을 걸므로 키 없는 메시지의 claim 경로도 종전과 같습니다.
+
+    **storage 구현 조건**: 위 다중 인스턴스 보장은 Outbox storage가 키 단위 claim을 구현할 때 성립합니다. 프레임워크가 제공하는 `SqlAlchemyOutboxStorage`는 `SELECT ... FOR UPDATE SKIP LOCKED`를 지원하는 백엔드(PostgreSQL 9.5+, MySQL 8.0+)에서 이를 구현합니다 — 지원하지 않는 백엔드에서는 릴레이를 단일 인스턴스로 운영해야 합니다.
 
 ---
 

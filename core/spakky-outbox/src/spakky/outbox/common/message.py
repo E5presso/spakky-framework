@@ -21,3 +21,5 @@ class OutboxMessage:
     # IOutboxStorage implementations keeps binding to the same fields.
     partition_key: str | None = field(default=None)
     """Key pinning the message to one broker partition. None spreads round-robin."""
+    abandoned_at: datetime | None = field(default=None)
+    """When the relay gave up on this message. None means it is still pending."""

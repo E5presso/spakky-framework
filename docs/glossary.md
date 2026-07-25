@@ -551,7 +551,7 @@ Integration Event가 어느 브로커 파티션으로 갈지 결정하는 값입
 
 같은 파티션 키를 가진 이벤트는 항상 같은 파티션으로 갑니다 — Kafka가 보장하는 순서는 파티션 안에서만 성립하므로, 파티션 키는 순서 보장의 **전제 조건**입니다. 보통 aggregate id를 키로 사용합니다.
 
-다만 파티션 키만으로 순서가 완결되지는 않습니다. producer 재시도, Outbox 릴레이의 개별 메시지 재시도, 릴레이 다중 인스턴스는 같은 파티션 안에서도 상대 순서를 뒤집을 수 있습니다 — 상세는 [Kafka 가이드](guides/kafka.md)의 파티션 키 절 참조.
+Outbox를 경유하는 경로에서는 릴레이가 키 단위 순서를 함께 지킵니다. 전송이 실패한 키는 그 메시지가 발행될 때까지 후속 메시지를 보류하고, `fetch_pending`이 키를 통째로 claim하여 여러 릴레이 인스턴스가 같은 키를 병렬 발행하지 않습니다. 재시도를 소진한 메시지는 발행 포기(abandoned) 처리되어 키를 다시 열어 줍니다 — 상세와 그 대가는 [Kafka 가이드](guides/kafka.md)의 파티션 키 절 참조.
 
 전달 경로: 이벤트 → `IEventBus` → (`OutboxMessage.partition_key` 컬럼 경유) → `IEventTransport.send(..., partition_key=...)` → Kafka `produce(key=...)`. RabbitMQ transport는 파티션 개념이 없어 이 값을 라우팅에 사용하지 않습니다.
 

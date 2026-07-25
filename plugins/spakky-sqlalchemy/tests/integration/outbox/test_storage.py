@@ -17,6 +17,7 @@ def _make_message(
     unique_id: str,
     event_name: str = "TestEvent",
     retry_count: int = 0,
+    partition_key: str | None = None,
 ) -> OutboxMessage:
     """Create OutboxMessage for testing with unique identifier."""
     return OutboxMessage(
@@ -26,6 +27,7 @@ def _make_message(
         created_at=datetime.now(UTC),
         retry_count=retry_count,
         headers={},
+        partition_key=partition_key,
     )
 
 
@@ -218,3 +220,79 @@ async def test_fetch_pending_reclaims_timed_out_messages(
     second = await short_timeout_async_storage.fetch_pending(limit=100, max_retry=5)
     second_ids = [r.id for r in second]
     assert message.id in second_ids
+
+
+@pytest.mark.asyncio
+async def test_fetch_pending_partition_key_head_claimed_expect_tail_left_pending(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """키의 선두 메시지가 claim된 동안 같은 키의 후속 메시지가 보류되는지 검증한다."""
+    partition_key = f"ORDER-{unique_id}"
+    head = _make_message(unique_id, event_name="Head", partition_key=partition_key)
+
+    async with async_transaction:
+        await async_storage.save(head)
+    claimed = await async_storage.fetch_pending(limit=100, max_retry=5)
+    assert head.id in {r.id for r in claimed}
+
+    tail = _make_message(unique_id, event_name="Tail", partition_key=partition_key)
+    async with async_transaction:
+        await async_storage.save(tail)
+
+    second = await async_storage.fetch_pending(limit=100, max_retry=5)
+    assert tail.id not in {r.id for r in second}
+
+    # Leave nothing awaiting delivery: a key stuck in this shared database would
+    # keep occupying the claim window of every later test.
+    await async_storage.mark_published(head.id)
+    await async_storage.mark_published(tail.id)
+
+
+@pytest.mark.asyncio
+async def test_fetch_pending_partition_key_head_published_expect_tail_claimable(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """키의 선두 메시지가 발행되면 같은 키의 후속 메시지를 claim하는지 검증한다."""
+    partition_key = f"ORDER-{unique_id}"
+    head = _make_message(unique_id, event_name="Head", partition_key=partition_key)
+
+    async with async_transaction:
+        await async_storage.save(head)
+    await async_storage.fetch_pending(limit=100, max_retry=5)
+
+    tail = _make_message(unique_id, event_name="Tail", partition_key=partition_key)
+    async with async_transaction:
+        await async_storage.save(tail)
+    await async_storage.mark_published(head.id)
+
+    result = await async_storage.fetch_pending(limit=100, max_retry=5)
+    assert tail.id in {r.id for r in result}
+
+    await async_storage.mark_published(tail.id)
+
+
+@pytest.mark.asyncio
+async def test_fetch_pending_partition_key_head_abandoned_expect_tail_claimable(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """발행 포기한 선두 메시지가 같은 키의 후속 메시지를 막지 않는지 검증한다."""
+    partition_key = f"ORDER-{unique_id}"
+    head = _make_message(unique_id, event_name="Head", partition_key=partition_key)
+    tail = _make_message(unique_id, event_name="Tail", partition_key=partition_key)
+
+    async with async_transaction:
+        await async_storage.save(head)
+        await async_storage.save(tail)
+    await async_storage.mark_abandoned(head.id)
+
+    result = await async_storage.fetch_pending(limit=100, max_retry=5)
+    assert head.id not in {r.id for r in result}
+    assert tail.id in {r.id for r in result}
+
+    await async_storage.mark_published(tail.id)
