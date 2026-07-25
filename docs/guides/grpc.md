@@ -21,12 +21,50 @@
 pip install spakky-grpc
 ```
 
-`spakky-grpc`는 `spakky`, `spakky-tracing`, `grpcio`, `protobuf`, `pydantic>=2.4`, `pydantic-settings`에 의존합니다.
+`spakky-grpc`는 `spakky`, `spakky-auth`, `spakky-tracing`, `grpcio`, `grpcio-health-checking`, `grpcio-reflection`, `protobuf`, `pydantic>=2.4`, `pydantic-settings`에 의존합니다.
 
-`spakky-grpc` 플러그인은 `GrpcConfig`, `GrpcServerSpec`, `DescriptorRegistry`를 기본 Pod로 등록합니다. 서버를 리슨하려면 bind address를 환경변수로 지정합니다. bind address가 비어 있으면 descriptor와 handler 등록은 가능하지만 네트워크 listener는 열지 않습니다.
+`spakky-grpc` 플러그인은 `GrpcConfig`, `GrpcServerSpec`, `DescriptorRegistry`, 헬스체크 servicer를 기본 Pod로 등록합니다. 서버를 리슨하려면 bind address를 환경변수로 지정합니다. bind address가 비어 있으면 descriptor와 handler 등록은 가능하지만 네트워크 listener는 열지 않습니다.
 
 ```bash
 export SPAKKY_GRPC_BIND_ADDRESSES='["127.0.0.1:50051"]'
+```
+
+모든 설정은 `SPAKKY_GRPC_` 접두사 환경변수로 주입합니다.
+
+| 환경변수 | 기본값 | 역할 |
+|---|---|---|
+| `SPAKKY_GRPC_BIND_ADDRESSES` | `()` | listener 주소 목록 (`host:port`) |
+| `SPAKKY_GRPC_SERVER_OPTIONS` | `{}` | `grpc.aio.server(options=...)`로 전달되는 채널 인자 |
+| `SPAKKY_GRPC_TLS_CERTIFICATE_CHAIN_FILE` | `None` | 서버 인증서 체인 PEM 파일 |
+| `SPAKKY_GRPC_TLS_PRIVATE_KEY_FILE` | `None` | 인증서 체인에 대응하는 개인키 PEM 파일 |
+| `SPAKKY_GRPC_TLS_CLIENT_CA_FILE` | `None` | 클라이언트 인증서를 서명한 CA PEM 파일 |
+| `SPAKKY_GRPC_REQUIRE_CLIENT_AUTH` | `false` | 클라이언트 인증서 제시 강제 여부 |
+| `SPAKKY_GRPC_HEALTH_SERVICE_ENABLED` | `true` | `grpc.health.v1.Health` 노출 여부 |
+| `SPAKKY_GRPC_REFLECTION_SERVICE_ENABLED` | `true` | 서버 리플렉션 노출 여부 |
+
+### 전송 보안
+
+인증서 체인과 개인키를 지정하면 모든 bind address가 TLS listener로 열립니다. 한쪽만 지정하면 평문으로 조용히 내려가지 않고 `IncompleteTlsCredentialsError`로 기동에 실패합니다.
+
+```bash
+export SPAKKY_GRPC_TLS_CERTIFICATE_CHAIN_FILE=/etc/tls/server.crt
+export SPAKKY_GRPC_TLS_PRIVATE_KEY_FILE=/etc/tls/server.key
+export SPAKKY_GRPC_TLS_CLIENT_CA_FILE=/etc/tls/ca.crt   # 상호 TLS
+export SPAKKY_GRPC_REQUIRE_CLIENT_AUTH=true
+```
+
+`REQUIRE_CLIENT_AUTH`를 켰는데 CA 파일이 없으면 `MissingClientCertificateAuthorityError`로 실패합니다.
+
+### 서버 옵션
+
+keepalive, 최대 메시지 크기, 최대 연결 수명은 모두 `SERVER_OPTIONS` 한 곳에서 조정합니다. gRPC가 문서화한 채널 인자를 그대로 받습니다.
+
+```bash
+export SPAKKY_GRPC_SERVER_OPTIONS='{
+  "grpc.keepalive_time_ms": 30000,
+  "grpc.max_receive_message_length": 8388608,
+  "grpc.max_connection_age_ms": 600000
+}'
 ```
 
 ```python
@@ -166,13 +204,92 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 Pyth
 
 ## PostProcessor
 
-`spakky-grpc` 플러그인이 제공하는 `GrpcServerSpec` Pod에 아래 세 PostProcessor가 순서대로 구성을 누적합니다. 실제 `grpc.aio.Server` 인스턴스는 `start()` 시점에 ApplicationContext의 이벤트 루프에서 `GrpcServerSpec.build()`로 생성됩니다.
+`spakky-grpc` 플러그인이 제공하는 `GrpcServerSpec` Pod에 아래 세 PostProcessor가 순서대로 구성을 누적합니다. 실제 `grpc.aio.Server` 인스턴스는 `start()` 시점에 ApplicationContext의 이벤트 루프에서 `GrpcServerSpec.build_async()`로 생성됩니다.
 
 | PostProcessor | Order | 역할 |
 |--------------|-------|------|
 | `RegisterServicesPostProcessor` | 0 | `@GrpcController`의 `@rpc` 메서드를 generic handler로 빌드하여 spec에 추가 |
 | `AddInterceptorsPostProcessor` | 1 | `ErrorHandlingInterceptor`, `TracingInterceptor`를 spec에 추가 |
 | `BindServerPostProcessor` | 2 | `GrpcServerService`를 ApplicationContext에 등록하여 spec 기반으로 서버를 생성·시작·종료 |
+
+---
+
+## 표준 서비스
+
+애플리케이션 서비스와 함께 gRPC 생태계의 두 표준 서비스가 기본으로 열립니다.
+
+| 서비스 | 설정 키 | 용도 |
+|---|---|---|
+| `grpc.health.v1.Health` | `SPAKKY_GRPC_HEALTH_SERVICE_ENABLED` | Kubernetes gRPC 네이티브 프로브 |
+| `grpc.reflection.v1alpha.ServerReflection` | `SPAKKY_GRPC_REFLECTION_SERVICE_ENABLED` | 실행 중인 서버의 서비스·메시지 조회 |
+
+두 서비스의 스키마도 플러그인의 `DescriptorRegistry`에 함께 등록되므로, 리플렉션이 목록에 올린 서비스는 모두 `describe`까지 가능합니다. `.proto` 산출물이 없는 code-first 서비스를 `grpcurl` 같은 도구로 진단할 때 이 경로가 유일한 수단입니다.
+
+Kubernetes 프로브는 서비스 이름 없이 전체 상태를 조회하며, 기동 직후 `SERVING`입니다.
+
+```yaml
+livenessProbe:
+  grpc:
+    port: 50051
+```
+
+의존성이 끊겼을 때 특정 서비스를 `NOT_SERVING`으로 내리려면 헬스체크 servicer Pod를 주입합니다.
+
+```python
+from grpc_health.v1 import health, health_pb2
+
+
+class OrderReadiness:
+    def __init__(self, servicer: health.aio.HealthServicer) -> None:
+        self.servicer = servicer
+
+    async def mark_unavailable(self) -> None:
+        await self.servicer.set(
+            "example.echo.EchoController",
+            health_pb2.HealthCheckResponse.NOT_SERVING,
+        )
+```
+
+---
+
+## 클라이언트 헬퍼
+
+필드 번호가 필드 **이름**에서 도출되므로, 호출자가 메시지 모델을 따로 복제해 두면 이름을 바꾸는 리팩터링 한 번에 와이어가 갈라지고 필드가 조용히 사라집니다. `GrpcClient`는 서버가 등록하는 것과 같은 컨트롤러 클래스에서 descriptor를 만들고, 호출 대상도 문자열이 아니라 메서드 참조로 지정합니다.
+
+```python
+import grpc.aio
+from spakky.plugins.grpc.client import GrpcClient
+
+async with grpc.aio.insecure_channel("127.0.0.1:50051") as channel:
+    client = GrpcClient(channel, EchoController)
+    reply = await client.unary_unary(EchoController.echo)(EchoRequest(text="hello"))
+```
+
+| 메서드 | 대상 `RpcMethodType` | 반환 |
+|---|---|---|
+| `unary_unary` | `UNARY` | 응답 모델을 await |
+| `unary_stream` | `SERVER_STREAMING` | 응답 모델을 async iterate |
+| `stream_unary` | `CLIENT_STREAMING` | 요청 async iterator를 전달하고 응답을 await |
+| `stream_stream` | `BIDI_STREAMING` | 요청 async iterator를 전달하고 응답을 async iterate |
+
+선언과 다른 스트리밍 패턴을 요청하면 `RpcMethodTypeMismatchError`, `@rpc`가 없는 메서드를 넘기면 `NotAnRpcMethodError`로 호출 전에 실패합니다. 서버와 같은 프로세스에서 호출한다면 세 번째 인자로 서버의 `DescriptorRegistry`를 넘겨 descriptor 재컴파일을 생략할 수 있습니다.
+
+---
+
+## descriptor 스냅샷으로 와이어 파손 막기
+
+필드 이름을 바꾸는 순간 필드 번호가 바뀌므로, `.proto` 산출물이 없는 code-first 방식에서는 편집기의 이름 바꾸기가 장애 원인이 됩니다. `spakky-grpc-descriptor-snapshot` 명령이 생성 결과(메시지 → 필드 이름 → 번호·타입)를 결정론적 JSON으로 출력하므로, 스냅샷을 커밋해 두고 CI에서 diff하면 이 변화를 배포 전에 잡을 수 있습니다.
+
+```bash
+spakky-grpc-descriptor-snapshot apps > descriptors.json
+```
+
+```bash
+# CI 게이트: 와이어 배치가 바뀌면 실패
+spakky-grpc-descriptor-snapshot apps | diff - descriptors.json
+```
+
+인자는 `@GrpcController`가 선언된 모듈 또는 패키지의 점 표기 경로이며, 패키지를 넘기면 하위 모듈까지 훑습니다. 명령은 실행 디렉터리를 `sys.path`에 추가하므로 프로젝트 루트에서 그대로 호출합니다.
 
 ---
 
@@ -200,6 +317,21 @@ protobuf descriptor를 캐싱하고 관리합니다. `DescriptorBuilder`가 Pyth
 | `UnsupportedFieldTypeError` | 지원하지 않는 protobuf 필드 타입 |
 | `DescriptorAlreadyRegisteredError` | 이미 등록된 descriptor 재등록 시도 |
 | `ProtoFieldNumberConflictError` | 명시 `ProtoField` 번호가 자동 부여 필드의 번호와 충돌 |
+
+### 전송 보안 설정 에러
+
+| 에러 | 설명 |
+|------|------|
+| `IncompleteTlsCredentialsError` | 인증서 체인과 개인키 중 한쪽만 설정됨 |
+| `MissingClientCertificateAuthorityError` | 클라이언트 인증을 요구했으나 client CA 파일이 없음 |
+
+### 클라이언트 호출 에러
+
+| 에러 | 설명 |
+|------|------|
+| `NotAnRpcMethodError` | `@rpc`가 없는 메서드로 호출을 만들려 함 |
+| `RpcMethodTypeMismatchError` | 선언된 스트리밍 패턴과 다른 호출 형태를 요청 |
+| `MessagelessRpcMethodError` | `@rpc` 메서드가 request 또는 response 모델을 선언하지 않음 |
 
 ---
 
@@ -256,11 +388,11 @@ app = (
 app.start()
 ```
 
-`SPAKKY_GRPC_BIND_ADDRESSES='["127.0.0.1:50051"]'`가 설정되어 있으면 `app.start()` 호출 시 PostProcessor 체인이 실행되어 `EchoController`의 핸들러와 인터셉터가 spec에 누적되고, `GrpcServerService`가 ApplicationContext의 이벤트 루프 스레드에서 `spec.build()`로 실제 서버를 생성한 뒤 `127.0.0.1:50051`에서 리슨합니다.
+`SPAKKY_GRPC_BIND_ADDRESSES='["127.0.0.1:50051"]'`가 설정되어 있으면 `app.start()` 호출 시 PostProcessor 체인이 실행되어 `EchoController`의 핸들러와 인터셉터가 spec에 누적되고, `GrpcServerService`가 ApplicationContext의 이벤트 루프 스레드에서 `spec.build_async()`로 실제 서버를 생성한 뒤 `127.0.0.1:50051`에서 리슨합니다.
 
 ### 클라이언트 호출
 
-클라이언트는 `DescriptorRegistry`에서 컴파일된 protobuf 메시지 클래스를 얻어 요청을 직렬화합니다.
+클라이언트는 서버와 같은 컨트롤러 선언에서 `GrpcClient`를 만듭니다. 메시지 모델을 다시 정의하지 않으므로 필드 번호가 양쪽에서 갈라질 여지가 없습니다.
 
 ```python
 # client.py
@@ -268,26 +400,21 @@ import asyncio
 
 import grpc.aio
 
-from spakky.plugins.grpc.schema.registry import DescriptorRegistry
+from spakky.plugins.grpc.client import GrpcClient
+
+from apps.echo import EchoController, EchoRequest
 
 
-async def main(registry: DescriptorRegistry) -> None:
-    request_cls = registry.get_message_class("example.echo.EchoRequest")
-    reply_cls = registry.get_message_class("example.echo.EchoReply")
-
+async def main() -> None:
     async with grpc.aio.insecure_channel("127.0.0.1:50051") as channel:
-        call = channel.unary_unary(
-            "/example.echo.EchoController/echo",
-            request_serializer=lambda msg: msg.SerializeToString(),
-            response_deserializer=lambda data: reply_cls.FromString(data),
+        client = GrpcClient(channel, EchoController)
+        reply = await client.unary_unary(EchoController.echo)(
+            EchoRequest(text="hello")
         )
-        request = request_cls()
-        request.text = "hello"
-        reply = await call(request)
         print(reply.text)  # "hello"
 
 
-asyncio.run(main(app.container.get(DescriptorRegistry)))
+asyncio.run(main())
 ```
 
 통합 테스트 전체 예제는 `plugins/spakky-grpc/tests/integration/`를 참고하세요. 유닛·에러·트레이싱 시나리오를 실제 `grpc.aio.Server`로 검증합니다.

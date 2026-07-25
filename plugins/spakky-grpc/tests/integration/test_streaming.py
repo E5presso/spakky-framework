@@ -6,7 +6,7 @@ import grpc.aio
 import pytest
 
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
-from tests.integration._client import deserializer_for, serializer_for
+from spakky.plugins.grpc.codec import deserializer_for, serializer_for
 from tests.integration.apps.echo import CountReply, CountRequest, EchoReply, EchoRequest
 
 PACKAGE = "test.echo"

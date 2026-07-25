@@ -86,7 +86,7 @@ async def get_grpc_channel_fixture(
             version="1.0.0",
         )
     )
-    server = spec.build()
+    server = await spec.build_async()
     await server.start()
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{spec.bound_ports[0]}")
     try:
@@ -110,7 +110,7 @@ async def get_approval_grpc_channel_fixture(
             version="1.0.0",
         )
     )
-    server = spec.build()
+    server = await spec.build_async()
     await server.start()
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{spec.bound_ports[0]}")
     try:

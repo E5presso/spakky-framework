@@ -11,7 +11,6 @@ from inspect import getmembers, isfunction
 from logging import getLogger
 from collections.abc import Callable
 
-from google.protobuf import json_format
 from google.protobuf.message import Message
 from pydantic import BaseModel
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -20,6 +19,7 @@ from typing import override
 
 import grpc
 import grpc.aio
+from spakky.plugins.grpc.codec import basemodel_to_protobuf, protobuf_to_basemodel
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
 from spakky.plugins.grpc.error import UnsupportedResponseTypeError
 from spakky.plugins.grpc.auth import seed_grpc_auth_context
@@ -195,7 +195,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             if request_type is None:
                 return await handler_method()
             domain_request = (
-                _protobuf_to_basemodel(request, request_type)
+                protobuf_to_basemodel(request, request_type)
                 if isinstance(request, Message)
                 else request
             )
@@ -231,7 +231,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
                     yield item
                 return
             domain_request = (
-                _protobuf_to_basemodel(request, request_type)
+                protobuf_to_basemodel(request, request_type)
                 if isinstance(request, Message)
                 else request
             )
@@ -267,7 +267,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:
                     if request_type is not None and isinstance(request, Message):
-                        yield _protobuf_to_basemodel(request, request_type)
+                        yield protobuf_to_basemodel(request, request_type)
                     else:
                         yield request
 
@@ -302,7 +302,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:
                     if request_type is not None and isinstance(request, Message):
-                        yield _protobuf_to_basemodel(request, request_type)
+                        yield protobuf_to_basemodel(request, request_type)
                     else:
                         yield request
 
@@ -350,62 +350,8 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             if isinstance(obj, Message):
                 return obj.SerializeToString()
             if isinstance(obj, BaseModel):
-                msg = _basemodel_to_protobuf(obj, message_class)
+                msg = basemodel_to_protobuf(obj, message_class)
                 return msg.SerializeToString()
             raise UnsupportedResponseTypeError(type(obj))
 
         return _serialize
-
-
-# ------------------------------------------------------------------
-# Module-level conversion helpers
-# ------------------------------------------------------------------
-
-
-def _basemodel_to_protobuf(obj: BaseModel, message_class: type[Message]) -> Message:
-    """Convert a pydantic ``BaseModel`` instance into a protobuf ``Message``.
-
-    Uses the ``google.protobuf.json_format`` bridge: the model is
-    serialised to JSON via pydantic's v2 ``model_dump_json`` API and
-    then parsed into a protobuf ``Message`` by
-    ``json_format.Parse``. ``None`` values from optional fields are
-    emitted as JSON ``null`` which ``json_format`` treats as "field
-    unset" for proto3 optional fields.
-
-    Args:
-        obj: The pydantic ``BaseModel`` instance to convert.
-        message_class: The target protobuf message class.
-
-    Returns:
-        A populated protobuf ``Message``.
-    """
-    payload = obj.model_dump_json()
-    return json_format.Parse(
-        payload,
-        message_class(),
-        ignore_unknown_fields=False,
-    )
-
-
-def _protobuf_to_basemodel[BaseModelT: BaseModel](
-    message: Message, model_type: type[BaseModelT]
-) -> BaseModelT:
-    """Convert a protobuf ``Message`` into a pydantic ``BaseModel`` instance.
-
-    Uses the ``google.protobuf.json_format`` bridge: the message is
-    serialised to JSON with ``preserving_proto_field_name=True`` so
-    field names round-trip unchanged into ``model_validate_json``.
-
-    Args:
-        message: The protobuf message.
-        model_type: The target ``BaseModel`` subclass.
-
-    Returns:
-        An instance of ``model_type`` populated from ``message``.
-    """
-    payload = json_format.MessageToJson(
-        message,
-        preserving_proto_field_name=True,
-        always_print_fields_with_no_presence=True,
-    )
-    return model_type.model_validate_json(payload)

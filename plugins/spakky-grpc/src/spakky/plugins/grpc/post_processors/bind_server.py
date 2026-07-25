@@ -69,7 +69,7 @@ class GrpcServerService(IAsyncService):
     @override
     async def start_async(self) -> None:
         """Build the gRPC server on the current loop and start it."""
-        self._server = self._spec.build()
+        self._server = await self._spec.build_async()
         await self._server.start()
         logger.info("gRPC server started")
 

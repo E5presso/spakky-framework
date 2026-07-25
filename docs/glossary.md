@@ -993,7 +993,32 @@ class GetUserRequestPinned(BaseModel):
 
 ### DescriptorRegistry
 
-protobuf descriptor를 캐싱하고 관리하는 레지스트리. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다. `spakky-grpc` 플러그인이 기본 Pod로 등록하므로 사용자는 listener 주소 같은 애플리케이션 설정만 제공합니다.
+protobuf descriptor를 캐싱하고 관리하는 레지스트리. `DescriptorBuilder`가 Python 타입에서 descriptor를 자동 생성합니다. `spakky-grpc` 플러그인이 기본 Pod로 등록하므로 사용자는 listener 주소 같은 애플리케이션 설정만 제공합니다. 등록된 서비스의 전체 이름 목록(`service_names`)은 서버 리플렉션이 광고할 대상이 됩니다.
+
+### GrpcServerSpec
+
+`grpc.aio.Server`를 만들기 전까지 필요한 구성(핸들러, 인터셉터, bind 대상, 채널 옵션, 표준 서비스 등록 콜백)을 누적하는 명세. `grpc.aio.server()`가 호출 시점의 이벤트 루프에 묶이기 때문에, 실제 서버 생성은 서버를 구동할 루프에서 `build()`로 미뤄집니다. bind 대상은 주소와 TLS 자격증명을 함께 담으므로 평문 포트와 TLS 포트를 같은 목록에서 표현합니다.
+
+### GrpcClient
+
+`@GrpcController` 선언 하나에서 호출 가능한 gRPC callable을 만들어 주는 클라이언트. 호출자가 메시지 모델을 복제하면 필드 이름 한 글자 차이로 필드 번호가 갈라지므로, 서버가 등록하는 것과 같은 컨트롤러 클래스에서 descriptor를 만들고 호출 대상도 메서드 참조로 지정합니다.
+
+```python
+from spakky.plugins.grpc.client import GrpcClient
+
+client = GrpcClient(channel, UserServiceController)
+response = await client.unary_unary(UserServiceController.get_user)(
+    GetUserRequest(user_id="1")
+)
+```
+
+### 표준 서비스 (health·reflection)
+
+애플리케이션 서비스와 함께 노출되는 gRPC 생태계 표준 서비스. `grpc.health.v1.Health`는 Kubernetes의 gRPC 네이티브 프로브가 호출하는 대상이고, 서버 리플렉션은 `.proto` 산출물이 없는 code-first 서비스를 외부 도구에서 조회하는 유일한 경로입니다. 둘 다 `SPAKKY_GRPC_HEALTH_SERVICE_ENABLED`·`SPAKKY_GRPC_REFLECTION_SERVICE_ENABLED`로 끌 수 있습니다.
+
+### descriptor 스냅샷
+
+컨트롤러에서 생성되는 와이어 배치(메시지 → 필드 이름 → 번호·타입)를 결정론적 JSON으로 렌더링한 결과. `spakky-grpc-descriptor-snapshot` 명령으로 출력하며, 저장소에 커밋해 두고 CI에서 diff하면 필드 이름 변경이 만드는 와이어 파손을 배포 전에 잡습니다.
 
 ---
 
