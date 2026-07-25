@@ -332,7 +332,7 @@ async def test_async_transport_flush_rejected_record_expect_broker_error_raised(
     mock_aio_producer_cls: MagicMock,
     config: KafkaConnectionConfig,
 ) -> None:
-    """broker가 거부한 레코드가 있으면 배치 끝 flush가 그 실패를 올리는지 검증한다."""
+    """broker가 거부한 레코드를 flush가 EventDeliveryRejectedError로 올리는지 검증한다."""
     mock_admin = MagicMock()
     mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
     mock_admin_cls.return_value = mock_admin
@@ -349,8 +349,10 @@ async def test_async_transport_flush_rejected_record_expect_broker_error_raised(
     await transport.send("TestEvent", b"{}", {})
     await transport.send("TestEvent", b"{}", {})
 
-    with pytest.raises(ConnectionError):
+    with pytest.raises(EventDeliveryRejectedError) as rejection:
         await transport.flush()
+
+    assert rejection.value.reasons == ["Broker rejected the record"]
 
 
 @pytest.mark.asyncio
@@ -394,7 +396,7 @@ async def test_async_transport_concurrent_publishers_expect_rejection_to_its_own
         healthy_publisher_flushed.set()
 
     healthy_publisher = create_task(publish_healthy_record())
-    with pytest.raises(ConnectionError):
+    with pytest.raises(EventDeliveryRejectedError):
         await publish_rejected_record()
     await healthy_publisher
 

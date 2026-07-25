@@ -8,7 +8,10 @@ from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
-from spakky.event.error import EventTransportNotRunningError
+from spakky.event.error import (
+    EventDeliveryRejectedError,
+    EventTransportNotRunningError,
+)
 from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
 from typing import override
 
@@ -87,6 +90,8 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
         without replaying. Confirming one message per flush puts the broker's
         verdict on the message that earned it: the refused message spends its
         budget and holds back the rest of its key, while its neighbours publish.
+        Only a refusal counts — a transport that cannot reach the broker at all
+        stops the replay untouched, because an outage is no message's fault.
         The replay can re-deliver a record the failed flush had already accepted
         — delivery stays at-least-once, which consumers already assume.
         """
@@ -101,13 +106,20 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
                     message.partition_key,
                 )
                 self._transport.flush()
-            except EventTransportNotRunningError:
-                logger.info("Transport stopped while confirming outbox messages")
-                return
-            except Exception:
-                logger.exception("Failed to relay outbox message %s", message.id)
+            except EventDeliveryRejectedError:
+                logger.exception("Broker refused outbox message %s", message.id)
                 self.__register_refusal(message, halted_partition_keys)
                 continue
+            except Exception:
+                # The transport itself is failing — a closed client, a lost
+                # connection, a timeout. That is no single message's fault, so
+                # the rest of the batch is left pending instead of spending
+                # budgets that would abandon healthy messages during an outage.
+                logger.exception(
+                    "Transport failed while confirming outbox message %s",
+                    message.id,
+                )
+                return
             self._storage.mark_published(message.id)
 
     def _relay_batch(self) -> None:
@@ -238,6 +250,8 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
         without replaying. Confirming one message per flush puts the broker's
         verdict on the message that earned it: the refused message spends its
         budget and holds back the rest of its key, while its neighbours publish.
+        Only a refusal counts — a transport that cannot reach the broker at all
+        stops the replay untouched, because an outage is no message's fault.
         The replay can re-deliver a record the failed flush had already accepted
         — delivery stays at-least-once, which consumers already assume.
         """
@@ -252,13 +266,20 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
                     message.partition_key,
                 )
                 await self._transport.flush()
-            except EventTransportNotRunningError:
-                logger.info("Transport stopped while confirming outbox messages")
-                return
-            except Exception:
-                logger.exception("Failed to relay outbox message %s", message.id)
+            except EventDeliveryRejectedError:
+                logger.exception("Broker refused outbox message %s", message.id)
                 await self.__register_refusal(message, halted_partition_keys)
                 continue
+            except Exception:
+                # The transport itself is failing — a closed client, a lost
+                # connection, a timeout. That is no single message's fault, so
+                # the rest of the batch is left pending instead of spending
+                # budgets that would abandon healthy messages during an outage.
+                logger.exception(
+                    "Transport failed while confirming outbox message %s",
+                    message.id,
+                )
+                return
             await self._storage.mark_published(message.id)
 
     async def _relay_batch(self) -> None:

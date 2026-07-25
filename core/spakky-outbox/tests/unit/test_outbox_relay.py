@@ -10,7 +10,10 @@ import pytest
 from pydantic import TypeAdapter
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
-from spakky.event.error import EventTransportNotRunningError
+from spakky.event.error import (
+    EventDeliveryRejectedError,
+    EventTransportNotRunningError,
+)
 from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
 
 from spakky.outbox.common.config import OutboxConfig
@@ -134,8 +137,9 @@ class RefusingOnFlushSyncTransport(IEventTransport):
     def flush(self) -> None:
         pending = self.pending_payloads
         self.pending_payloads = []
-        if any(payload in self.refused_payloads for payload in pending):
-            raise ConnectionError("Broker refused a record in this batch")
+        refused = [p for p in pending if p in self.refused_payloads]
+        if refused:
+            raise EventDeliveryRejectedError(["MSG_SIZE_TOO_LARGE"] * len(refused))
         self.sent_payloads.extend(pending)
 
 
@@ -294,8 +298,9 @@ class RefusingOnFlushAsyncTransport(IAsyncEventTransport):
     async def flush(self) -> None:
         pending = self.pending_payloads
         self.pending_payloads = []
-        if any(payload in self.refused_payloads for payload in pending):
-            raise ConnectionError("Broker refused a record in this batch")
+        refused = [p for p in pending if p in self.refused_payloads]
+        if refused:
+            raise EventDeliveryRejectedError(["MSG_SIZE_TOO_LARGE"] * len(refused))
         self.sent_payloads.extend(pending)
 
 
@@ -419,8 +424,10 @@ def test_relay_batch_with_three_messages_expect_single_flush_after_last_send() -
     assert storage.published_ids == [message.id for message in messages]
 
 
-def test_relay_batch_flush_failure_expect_retry_charged_per_message() -> None:
-    """배치 flush가 실패하면 메시지별로 재확인하여 실패한 메시지에 retry를 부과한다."""
+def test_relay_batch_broker_unreachable_expect_batch_left_pending_without_retry() -> (
+    None
+):
+    """브로커에 닿지 못하면 재확인이 멈추고 어느 메시지도 retry를 쓰지 않는다."""
     messages = [
         _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
         for index in range(2)
@@ -433,7 +440,8 @@ def test_relay_batch_flush_failure_expect_retry_charged_per_message() -> None:
     relay._relay_batch()
 
     assert storage.published_ids == []
-    assert storage.retried_ids == [message.id for message in messages]
+    assert storage.retried_ids == []
+    assert storage.abandoned_ids == []
 
 
 def test_relay_batch_transport_stopped_expect_batch_left_pending_without_retry_charge() -> (
@@ -706,10 +714,8 @@ async def test_async_relay_batch_with_three_messages_expect_single_flush_after_l
 
 
 @pytest.mark.asyncio
-async def test_async_relay_batch_flush_failure_expect_retry_charged_per_message() -> (
-    None
-):
-    """배치 flush가 실패하면 메시지별로 재확인하여 실패한 메시지에 retry를 부과한다."""
+async def test_async_relay_batch_broker_unreachable_expect_no_retry_charged() -> None:
+    """브로커에 닿지 못하면 재확인이 멈추고 어느 메시지도 retry를 쓰지 않는다."""
     messages = [
         _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
         for index in range(2)
@@ -724,7 +730,8 @@ async def test_async_relay_batch_flush_failure_expect_retry_charged_per_message(
     await relay._relay_batch()
 
     assert storage.published_ids == []
-    assert storage.retried_ids == [message.id for message in messages]
+    assert storage.retried_ids == []
+    assert storage.abandoned_ids == []
 
 
 @pytest.mark.asyncio

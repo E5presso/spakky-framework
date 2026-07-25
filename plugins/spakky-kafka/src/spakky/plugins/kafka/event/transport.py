@@ -268,19 +268,33 @@ class AsyncKafkaEventTransport(IAsyncEventTransport, IAsyncService):
         producer: AIOKafkaProducer,
         deliveries: list[Future[RecordMetadata]],
     ) -> None:
-        """Send buffered batches out and raise whatever the broker rejected.
+        """Send buffered batches out and report what the broker refused.
 
         Only the claimed records are awaited. Records another publisher handed
         over stay with that publisher, so a rejection is reported to whoever sent
         the record rather than to whoever happened to flush first.
+
+        A failure of the flush itself propagates as it comes: the client could
+        not talk to the broker, which is no single record's fault. A failure
+        carried by a record's own delivery future is that record's verdict and
+        is raised as `EventDeliveryRejectedError`, so a caller can tell the two
+        apart and only spend a retry budget on the second.
+
+        Raises:
+            EventDeliveryRejectedError: The broker refused at least one record.
         """
         await producer.flush()
         outcomes = await gather(*deliveries, return_exceptions=True)
-        for outcome in outcomes:
-            if isinstance(outcome, BaseException):
-                # Every outcome is retrieved before raising, so a second rejected
-                # record does not linger as an unretrieved exception.
-                raise outcome
+        # Every outcome is retrieved before raising, so a second rejected record
+        # does not linger as an unretrieved exception.
+        refusals = [
+            outcome for outcome in outcomes if isinstance(outcome, BaseException)
+        ]
+        if not refusals:
+            return
+        raise EventDeliveryRejectedError([str(refusal) for refusal in refusals]) from (
+            refusals[0]
+        )
 
     @override
     def set_stop_event(self, stop_event: locks.Event) -> None:
