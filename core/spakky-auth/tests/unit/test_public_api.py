@@ -138,6 +138,20 @@ def test_effective_snapshot_propagation_config_enables_when_any_config_enabled()
     assert config.enabled
 
 
+def test_effective_snapshot_propagation_config_disables_when_no_config_registered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """스냅샷 전파 config를 아무도 등록하지 않은 앱은 전파 비활성으로 판정된다."""
+    monkeypatch.delenv(
+        f"{SPAKKY_AUTH_SNAPSHOT_PROPAGATION_CONFIG_ENV_PREFIX}ENABLED",
+        raising=False,
+    )
+
+    config = effective_auth_snapshot_propagation_config(())
+
+    assert not config.enabled
+
+
 def test_credential_carrier_preserves_boundary_local_material() -> None:
     carrier = CredentialCarrier(
         kind=CredentialCarrierKind.BEARER_TOKEN,

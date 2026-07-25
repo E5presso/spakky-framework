@@ -3,6 +3,12 @@
 from dataclasses import dataclass
 
 from spakky.auth import protected, public_access, require_role, require_scope
+from spakky.auth.metadata import (
+    AuthRequirement,
+    AuthRequirementKind,
+    ProtectedRequirement,
+)
+from spakky.core.common.constants import ANNOTATION_METADATA
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.task.stereotype.task_handler import (
@@ -192,6 +198,96 @@ def test_protected_marker_on_task_records_authenticated_requirement() -> None:
     metadata = collect_task_auth_metadata(handler.process)
 
     assert metadata.requirements[0].kind == "AUTHENTICATED"
+
+
+def test_requirement_declared_on_class_and_method_is_collected_once() -> None:
+    """클래스와 메서드에 같은 요구사항이 중복 선언되어도 task metadata는 한 번만 담는다."""
+
+    @require_scope("tasks:run")
+    class DuplicateScopeTaskHandler:
+        @task
+        @require_scope("tasks:run")
+        def process(self) -> None:
+            return None
+
+    handler = DuplicateScopeTaskHandler()
+    metadata = collect_task_auth_metadata(
+        handler.process,
+        owner_type=DuplicateScopeTaskHandler,
+    )
+
+    assert [(item.kind, item.ref) for item in metadata.requirements] == [
+        ("SCOPE", "tasks:run"),
+    ]
+
+
+def test_non_mapping_annotation_metadata_attribute_is_ignored() -> None:
+    """spakky annotation 속성을 dict가 아닌 값이 점유하면 요구사항을 수집하지 않는다."""
+
+    def process() -> None:
+        return None
+
+    setattr(process, ANNOTATION_METADATA, "not-a-metadata-mapping")
+
+    metadata = collect_task_auth_metadata(process)
+
+    assert metadata.requirements == ()
+    assert not metadata.public_access
+
+
+def test_annotation_metadata_entry_without_type_key_is_ignored() -> None:
+    """annotation type이 아닌 키로 등록된 metadata 항목은 요구사항으로 수집하지 않는다."""
+
+    def process() -> None:
+        return None
+
+    setattr(
+        process,
+        ANNOTATION_METADATA,
+        {
+            "not-an-annotation-type": [
+                ProtectedRequirement(
+                    requirement=AuthRequirement(
+                        kind=AuthRequirementKind.ROLE,
+                        ref="role:admin",
+                    )
+                )
+            ]
+        },
+    )
+
+    metadata = collect_task_auth_metadata(process)
+
+    assert metadata.requirements == ()
+
+
+def test_unreadable_entry_among_auth_annotations_keeps_valid_requirement() -> None:
+    """auth annotation 목록에 해석 불가 항목이 섞여도 유효한 요구사항은 보존된다."""
+
+    def process() -> None:
+        return None
+
+    setattr(
+        process,
+        ANNOTATION_METADATA,
+        {
+            ProtectedRequirement: [
+                object(),
+                ProtectedRequirement(
+                    requirement=AuthRequirement(
+                        kind=AuthRequirementKind.SCOPE,
+                        ref="tasks:run",
+                    )
+                ),
+            ]
+        },
+    )
+
+    metadata = collect_task_auth_metadata(process)
+
+    assert [(item.kind, item.ref) for item in metadata.requirements] == [
+        ("SCOPE", "tasks:run"),
+    ]
 
 
 def test_invalid_auth_annotation_payload_is_ignored() -> None:

@@ -405,3 +405,57 @@ def test_discovery_manifest_malformed_payload_expect_store_miss(
     result = DiscoveryManifestStore(manifest_path).load(fingerprint)
 
     assert result.decision is DiscoveryManifestDecision.MISS
+
+
+@pytest.mark.parametrize(
+    ("exclude", "sources", "candidates"),
+    [
+        ([1], [], []),
+        ([], "tests.dummy.dummy_package", []),
+        ([], ["tests.dummy.dummy_package"], []),
+        ([], [{"path": 1, "mtime_ns": 1, "size": 1}], []),
+        ([], [{"path": "module_a.py", "mtime_ns": "1", "size": 1}], []),
+        ([], [{"path": "module_a.py", "mtime_ns": 1, "size": "1"}], []),
+        ([], [], "tests.dummy.dummy_package.PodA"),
+        ([], [], ["tests.dummy.dummy_package.PodA"]),
+        ([], [], [{"module_name": 1, "qualname": "PodA"}]),
+        (
+            [],
+            [],
+            [{"module_name": "tests.dummy.dummy_package.module_a", "qualname": 1}],
+        ),
+    ],
+)
+def test_discovery_manifest_malformed_nested_element_expect_store_miss(
+    tmp_path: Path,
+    exclude: object,
+    sources: object,
+    candidates: object,
+) -> None:
+    """manifest의 중첩 원소 타입이 스키마와 어긋나면 store load는 miss를 반환한다."""
+    from tests.dummy import dummy_package
+
+    manifest_path = tmp_path / "discovery-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "fingerprint": {
+                    "schema_version": 1,
+                    "python_version": "3.12",
+                    "module_name": "tests.dummy.dummy_package",
+                    "is_package": True,
+                    "exclude": exclude,
+                    "sources": sources,
+                },
+                "module_names": [],
+                "candidates": candidates,
+            }
+        ),
+        encoding="utf-8",
+    )
+    fingerprint = DiscoveryManifestFingerprint.from_scan_input(dummy_package, set())
+
+    result = DiscoveryManifestStore(manifest_path).load(fingerprint)
+
+    assert result.decision is DiscoveryManifestDecision.MISS

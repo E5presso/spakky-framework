@@ -398,6 +398,31 @@ def test_spakky_application_start_failure_expect_recorded_and_propagated() -> No
             app.stop()
 
 
+def test_application_context_start_constructor_failure_expect_instantiation_elapsed_recorded() -> (
+    None
+):
+    """Pod 생성자가 실패해도 그때까지의 instantiation 소요 시간이 실패 record에 누적됨을 검증한다."""
+
+    @Pod(name="exploding_pod")
+    class ExplodingPod:
+        def __init__(self) -> None:
+            raise RuntimeError("constructor failed")
+
+    context = ApplicationContext()
+    context.add(ExplodingPod)
+    recorder = ActiveStartupPhaseRecorder()
+
+    with pytest.raises(RuntimeError, match="constructor failed"):
+        context.start(recorder)
+
+    failure = recorder.report.records[-1]
+    assert failure.phase_name == STARTUP_PHASE_INSTANTIATION
+    assert failure.status is StartupPhaseStatus.FAILURE
+    assert failure.failure_summary is not None
+    assert failure.failure_summary.message == "constructor failed"
+    assert failure.elapsed_seconds > 0
+
+
 def test_application_context_start_dependency_failure_summary_expect_dependency_details() -> (
     None
 ):

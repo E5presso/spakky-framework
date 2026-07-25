@@ -396,6 +396,78 @@ def test_application_context_start_with_ambiguous_dependency_expect_dependency_d
     assert any(key == "candidates" for key, _value in diagnostic.as_detail_pairs())
 
 
+def test_application_context_start_with_ambiguous_qualifier_expect_qualified_candidates_reported() -> (
+    None
+):
+    """Qualifier가 후보를 하나로 좁히지 못하면 통과한 후보만 담은 ambiguity error가 발생함을 검증한다."""
+
+    class ISamplePod:
+        @abstractmethod
+        def do(self) -> str: ...
+
+    @Pod(name="first_remote")
+    class FirstSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "first"
+
+    @Pod(name="second_remote")
+    class SecondSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "second"
+
+    @Pod(name="local_only")
+    class LocalSamplePod(ISamplePod):
+        def do(self) -> str:
+            return "local"
+
+    @Pod()
+    class SampleService:
+        def __init__(
+            self,
+            pod: Annotated[
+                ISamplePod,
+                Qualifier(lambda candidate: candidate.name.endswith("remote")),
+            ],
+        ) -> None:
+            self.pod = pod
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(FirstSamplePod)
+    context.add(SecondSamplePod)
+    context.add(LocalSamplePod)
+    context.add(SampleService)
+
+    with pytest.raises(NoUniquePodError) as error:
+        context.start()
+
+    assert [candidate.pod_name for candidate in error.value.candidates] == [
+        "first_remote",
+        "second_remote",
+    ]
+    diagnostic = error.value.dependency_diagnostic
+    assert diagnostic is not None
+    assert diagnostic.failed_pod_name == "sample_service"
+    assert diagnostic.dependency_parameter_name == "pod"
+
+
+def test_application_context_get_or_none_with_unregistered_name_expect_none() -> None:
+    """등록된 타입이라도 존재하지 않는 Pod 이름으로 조회하면 None을 반환함을 검증한다."""
+
+    @Pod(name="registered_sample")
+    class SamplePod:
+        def do(self) -> str:
+            return "registered"
+
+    context: ApplicationContext = ApplicationContext()
+    context.add(SamplePod)
+    context.start()
+
+    assert context.get_or_none(SamplePod, "unregistered_sample") is None
+    assert context.get_or_none(SamplePod, "registered_sample") is not None
+
+    context.stop()
+
+
 def test_application_context_start_with_postponed_annotated_qualifier_expect_resolution() -> (
     None
 ):

@@ -1,5 +1,7 @@
 """Policy evaluator tests."""
 
+import pytest
+
 from spakky.auth import (
     AuthContext,
     AuthSubject,
@@ -248,6 +250,128 @@ def test_no_condition_statement_matches(auth_context):
     result = PolicyDocumentEvaluator(document).evaluate(
         PolicyEvaluationInput(auth_context=auth_context, policy="policy:no-condition")
     )
+    assert result.allowed is True
+
+
+@pytest.mark.parametrize(("region", "allowed"), [("kr", True), ("us", False)])
+def test_in_condition_with_scalar_value_expect_equality_semantics(
+    auth_context, region, allowed
+):
+    """단일 스칼라 value를 가진 in 조건은 동등 비교로 평가된다."""
+    document = policy_document_from_mapping(
+        {
+            "version": "1",
+            "policies": [
+                {
+                    "ref": "policy:scalar-in",
+                    "statements": [
+                        {
+                            "ref": "allow-scalar-in",
+                            "effect": "allow",
+                            "condition": {
+                                "operator": "in",
+                                "key": "region",
+                                "value": region,
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    result = PolicyDocumentEvaluator(document).evaluate(
+        PolicyEvaluationInput(auth_context=auth_context, policy="policy:scalar-in")
+    )
+    assert result.allowed is allowed
+
+
+def test_contains_condition_on_non_string_claim_expect_fails_closed(auth_context):
+    """contains 조건은 문자열이 아닌 클레임 값(mfa=True)에 대해 매칭되지 않는다."""
+    document = policy_document_from_mapping(
+        {
+            "version": "1",
+            "policies": [
+                {
+                    "ref": "policy:contains-mfa",
+                    "statements": [
+                        {
+                            "ref": "allow-contains-mfa",
+                            "effect": "allow",
+                            "condition": {
+                                "operator": "contains",
+                                "key": "mfa",
+                                "value": "true",
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    result = PolicyDocumentEvaluator(document).evaluate(
+        PolicyEvaluationInput(auth_context=auth_context, policy="policy:contains-mfa")
+    )
+    assert result.allowed is False
+    assert PolicyEvidenceKind.CONDITION_FAILED in {
+        item.kind for item in result.evidence
+    }
+
+
+def test_exists_condition_on_absent_claim_expect_fails_closed(auth_context):
+    """AuthContext가 발급하지 않은 클레임 키의 exists 조건은 매칭되지 않는다."""
+    document = policy_document_from_mapping(
+        {
+            "version": "1",
+            "policies": [
+                {
+                    "ref": "policy:requires-clearance",
+                    "statements": [
+                        {
+                            "ref": "allow-clearance",
+                            "effect": "allow",
+                            "condition": {"operator": "exists", "key": "clearance"},
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    result = PolicyDocumentEvaluator(document).evaluate(
+        PolicyEvaluationInput(
+            auth_context=auth_context, policy="policy:requires-clearance"
+        )
+    )
+    assert "clearance" not in {claim.name for claim in auth_context.claims}
+    assert result.allowed is False
+    assert PolicyEvidenceKind.CONDITION_FAILED in {
+        item.kind for item in result.evidence
+    }
+
+
+def test_statement_scope_filter_with_document_subject_grant_expect_allow(auth_context):
+    """문서 subject에 부여된 scope는 AuthContext에 없어도 statement scope 필터를 만족한다."""
+    document = policy_document_from_mapping(
+        {
+            "version": "1",
+            "subjects": [{"ref": "user:alice", "scopes": ["scope:reports"]}],
+            "policies": [
+                {
+                    "ref": "policy:report-read",
+                    "statements": [
+                        {
+                            "ref": "allow-report-scope",
+                            "effect": "allow",
+                            "scopes": ["scope:reports"],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    result = PolicyDocumentEvaluator(document).evaluate(
+        PolicyEvaluationInput(auth_context=auth_context, policy="policy:report-read")
+    )
+    assert "scope:reports" not in auth_context.scopes
     assert result.allowed is True
 
 

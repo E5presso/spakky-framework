@@ -2054,6 +2054,35 @@ def test_run_paused_event_helper_expect_accepts_top_level_tool_call_id() -> None
     assert event.allowed_decisions == ("approve",)
 
 
+def test_run_paused_event_helper_expect_ignores_non_list_allowed_decisions() -> None:
+    """단일 문자열 allowed_decisions는 문자 단위로 분해되지 않고 빈 목록이 된다."""
+    from spakky.agent.runner import _run_paused_event
+
+    event = _run_paused_event(
+        AgentState(
+            id="run-1",
+            agent_type="runner_probe",
+            status=AgentStatus.INTERRUPTED,
+            reason=AgentStateReason.APPROVAL_REQUIRED,
+            current_activity="Approve?",
+            metadata={
+                "approval": {
+                    "id": "approval-1",
+                    "call_id": "call-1",
+                    "allowed_decisions": "approve",
+                }
+            },
+        ),
+        AgentEventAttribution(
+            agent_id="runner_probe",
+            run_id="run-1",
+            conversation_id="run-1",
+        ),
+    )
+
+    assert event.allowed_decisions == ()
+
+
 def test_cancel_error_helper_expect_fallback_for_non_cancel_payload() -> None:
     """cancel error helper는 예상 밖 payload에서도 generic cancelled error를 낸다."""
     from spakky.agent.runner import _cancel_error

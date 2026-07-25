@@ -272,6 +272,115 @@ async def test_stream_handler_catches_grpc_error_expect_abort(
     )
 
 
+async def test_stream_handler_catches_auth_error_expect_unauthenticated_abort(
+    interceptor: ErrorHandlingInterceptor,
+    context: AsyncMock,
+) -> None:
+    """An auth failure raised mid-stream should abort with UNAUTHENTICATED."""
+
+    async def stream_behavior(
+        request: object, ctx: grpc.aio.ServicerContext
+    ) -> AsyncIterator[bytes]:
+        yield b"first"
+        raise AuthenticationError()
+
+    handler = _make_handler(unary_stream=stream_behavior)
+    continuation = AsyncMock(return_value=handler)
+
+    wrapped = await interceptor.intercept_service(continuation, _make_call_details())
+    unary_stream = _require_unary_stream(wrapped)
+    with pytest.raises(grpc.aio.AbortError):
+        async for _ in unary_stream(b"request", context):  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+            pass
+
+    context.abort.assert_awaited_once_with(
+        grpc.StatusCode.UNAUTHENTICATED, AuthenticationError.message
+    )
+
+
+async def test_stream_handler_catches_unexpected_error_expect_internal(
+    interceptor: ErrorHandlingInterceptor,
+    context: AsyncMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unhandled exception mid-stream should be logged and abort as INTERNAL."""
+
+    async def stream_behavior(
+        request: object, ctx: grpc.aio.ServicerContext
+    ) -> AsyncIterator[bytes]:
+        yield b"first"
+        raise RuntimeError("oops")
+
+    handler = _make_handler(unary_stream=stream_behavior)
+    continuation = AsyncMock(return_value=handler)
+
+    wrapped = await interceptor.intercept_service(continuation, _make_call_details())
+    unary_stream = _require_unary_stream(wrapped)
+    with (
+        caplog.at_level(logging.ERROR),
+        pytest.raises(grpc.aio.AbortError),
+    ):
+        async for _ in unary_stream(b"request", context):  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+            pass
+
+    assert "RuntimeError('oops')" in caplog.text
+    context.abort.assert_awaited_once_with(
+        grpc.StatusCode.INTERNAL, InternalError.message
+    )
+
+
+async def test_stream_handler_debug_mode_includes_traceback(
+    debug_interceptor: ErrorHandlingInterceptor,
+    context: AsyncMock,
+) -> None:
+    """In debug mode, INTERNAL details from a stream should carry the traceback."""
+
+    async def stream_behavior(
+        request: object, ctx: grpc.aio.ServicerContext
+    ) -> AsyncIterator[bytes]:
+        yield b"first"
+        raise RuntimeError("oops")
+
+    handler = _make_handler(unary_stream=stream_behavior)
+    continuation = AsyncMock(return_value=handler)
+
+    wrapped = await debug_interceptor.intercept_service(
+        continuation, _make_call_details()
+    )
+    unary_stream = _require_unary_stream(wrapped)
+    with pytest.raises(grpc.aio.AbortError):
+        async for _ in unary_stream(b"request", context):  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+            pass
+
+    _code, details = context.abort.call_args.args
+    assert "RuntimeError" in details
+    assert "Traceback" in details
+
+
+async def test_stream_handler_reraises_grpc_rpc_error(
+    interceptor: ErrorHandlingInterceptor,
+) -> None:
+    """A gRPC error raised mid-stream should propagate instead of aborting again."""
+
+    async def stream_behavior(
+        request: object, ctx: grpc.aio.ServicerContext
+    ) -> AsyncIterator[bytes]:
+        yield b"first"
+        raise grpc.aio.AbortError(grpc.StatusCode.CANCELLED, "cancelled")
+
+    handler = _make_handler(unary_stream=stream_behavior)
+    continuation = AsyncMock(return_value=handler)
+
+    ctx = AsyncMock(spec=grpc.aio.ServicerContext)
+    wrapped = await interceptor.intercept_service(continuation, _make_call_details())
+    unary_stream = _require_unary_stream(wrapped)
+    with pytest.raises(grpc.aio.AbortError):
+        async for _ in unary_stream(b"request", ctx):  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+            pass
+
+    ctx.abort.assert_not_awaited()
+
+
 async def test_multiple_error_types_map_to_correct_status(
     interceptor: ErrorHandlingInterceptor,
 ) -> None:

@@ -33,6 +33,7 @@ from spakky.agent import (
     Message,
     PII,
     Progress,
+    RedactionPolicy,
     SecretField,
     SensitiveField,
     SensitiveFieldDescriptor,
@@ -490,6 +491,25 @@ def test_agent_evidence_candidate_expect_guards_sensitive_result_payload() -> No
         "status": "ok",
     }
     assert evidence.sensitive_fields == candidate.sensitive_fields
+
+
+def test_agent_evidence_candidate_expect_drops_root_level_secret_result() -> None:
+    """전체 tool result가 root-level secret으로 표시되면 evidence는 빈 payload를 남긴다."""
+    candidate = AgentEvidenceCandidate.tool_result(
+        tool_identity="tests.VaultTools:read_credential",
+        tool_schema_name="vault.read_credential",
+        result={"token": "sk-live-1234"},
+        capture=EvidenceCapture.STRUCTURED,
+        sensitive_fields=(
+            SensitiveFieldDescriptor(
+                (),
+                SecretField(redaction=RedactionPolicy.DROP),
+            ),
+        ),
+        exposure_policy=EvidenceExposurePolicy(),
+    )
+
+    assert candidate.payload["result"] == {}
 
 
 def test_agent_evidence_candidate_expect_rejects_blank_identity() -> None:

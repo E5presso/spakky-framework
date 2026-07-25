@@ -382,6 +382,22 @@ def test_invalid_claim_value_raises_invalid_snapshot() -> None:
         provider._claim_value(["unsupported"])
 
 
+def test_non_string_role_entry_raises_invalid_snapshot() -> None:
+    """roles 목록에 문자열이 아닌 항목이 섞이면 snapshot을 거절한다."""
+    provider = _provider()
+
+    with pytest.raises(InvalidAuthContextSnapshotError):
+        provider._string_tuple_value({"roles": ["role:admin", 7]}, "roles")
+
+
+def test_non_sequence_scopes_raises_invalid_snapshot() -> None:
+    """scopes가 목록이 아닌 단일 문자열이면 snapshot을 거절한다."""
+    provider = _provider()
+
+    with pytest.raises(InvalidAuthContextSnapshotError):
+        provider._string_tuple_value({"scopes": "documents:read"}, "scopes")
+
+
 def test_tampered_snapshot_verification_maps_to_challenge() -> None:
     provider = _provider()
     other_provider = CryptographyAuthProvider(

@@ -352,6 +352,35 @@ async def _make_awaitable(value: _OrderData) -> _OrderData:
     return value
 
 
+@pytest.mark.asyncio
+async def test_bare_callable_flow_item_expect_executed_as_named_step() -> None:
+    """SagaFlow에 직접 담긴 bare callable도 함수 이름을 가진 step으로 실행된다."""
+    flow = SagaFlow(items=(_succeed_with_data,))
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.COMPLETED
+    assert result.history[0].name == "_succeed_with_data"
+    assert result.data.ticket_id is not None
+
+
+@pytest.mark.asyncio
+async def test_bare_callable_flow_item_failure_expect_compensated_and_failed() -> None:
+    """bare callable step은 기본 Compensate 전략으로 정규화되어 실패 시 보상된다."""
+    flow = SagaFlow(
+        items=(
+            Transaction(action=_succeed, compensate=_compensate_logged),
+            _fail,
+        )
+    )
+    data = _OrderData(order_id=uuid4())
+    result = await run_saga_flow(flow, data)
+
+    assert result.status is SagaStatus.FAILED
+    assert result.failed_step == "_fail"
+    assert _compensation_log == ["compensated"]
+
+
 # --- Retry 전략 ---
 
 

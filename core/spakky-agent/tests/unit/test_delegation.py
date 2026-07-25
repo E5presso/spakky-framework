@@ -217,6 +217,22 @@ async def test_remote_teammate_tool_expect_dispatches_through_delegate_port() ->
     )
 
 
+async def test_remote_teammate_tool_expect_rejects_absent_runtime_context() -> None:
+    """runtime context 없이 만든 dispatcher는 teammate tool을 디스패치하지 않는다."""
+    dispatcher = AgentToolDispatcher(
+        target=RemoteParentAgent(RecordingDelegate()),
+        catalog=Agent.get(RemoteParentAgent).tool_catalog,
+    )
+
+    with pytest.raises(AgentToolDispatchError):
+        await dispatcher.dispatch(
+            ModelToolCall(
+                name="teammate.remote.delegate",
+                arguments={"instruction": "inspect"},
+            )
+        )
+
+
 async def test_remote_teammate_tool_expect_rejects_missing_delegate_port() -> None:
     """remote teammate tool은 delegate port가 없으면 dispatch error를 낸다."""
     dispatcher = AgentToolDispatcher(

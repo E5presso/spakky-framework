@@ -144,6 +144,29 @@ def test_stream_mapper_expect_maps_terminal_and_artifact_events() -> None:
     ]
 
 
+def test_stream_mapper_expect_failed_task_carries_remote_failure_error() -> None:
+    """terminal Task가 failed 상태면 RunFinished가 remote 실패 error를 싣는다."""
+    events = A2AStreamEventMapper().map(
+        StreamResponse(
+            task=Task(
+                id="child-task",
+                context_id="thread-1",
+                status=TaskStatus(state=TaskState.TASK_STATE_FAILED),
+            )
+        ),
+        _packet(),
+    )
+
+    assert isinstance(events[0], RunStartedEvent)
+    finished = events[1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error == {
+        "code": "remote_a2a_failed",
+        "message": "TASK_STATE_FAILED",
+    }
+    assert finished.attribution.run_id == "child-task"
+
+
 def test_stream_mapper_expect_ignores_empty_message_and_unknown_response() -> None:
     """본문 없는 message와 payload 없는 response는 이벤트를 만들지 않는다."""
     mapper = A2AStreamEventMapper()
