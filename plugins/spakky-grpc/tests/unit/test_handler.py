@@ -452,6 +452,54 @@ def test_bidi_streaming_handler_has_correct_flags(
     assert handler.response_streaming is True
 
 
+async def _domain_request_frames() -> AsyncIterator[PingRequest]:
+    """Yield request frames a caller already turned into domain models."""
+    yield PingRequest(value="first")
+    yield PingRequest(value="last")
+
+
+async def test_client_streaming_behavior_with_domain_frames_expect_no_reconversion(
+    stream_handler: GrpcServiceHandler,
+) -> None:
+    """Client-streaming frames that are already domain models reach the controller as-is."""
+    stream_handler._container.get.return_value = StreamController()
+
+    details = _make_call_details("/stream.v1.StreamSvc/client_stream")
+    handler = stream_handler.service(details)
+    assert handler is not None
+    assert handler.stream_unary is not None
+
+    result = await handler.stream_unary(
+        _domain_request_frames(),  # type: ignore[arg-type] — grpc stubs declare a sync Iterator but grpc.aio delivers an async one
+        AsyncMock(spec=grpc.aio.ServicerContext),
+    )
+
+    assert isinstance(result, PingReply)
+    assert result.value == "last"
+
+
+async def test_bidi_streaming_behavior_with_domain_frames_expect_no_reconversion(
+    stream_handler: GrpcServiceHandler,
+) -> None:
+    """Bidi frames that are already domain models reach the controller as-is."""
+    stream_handler._container.get.return_value = StreamController()
+
+    details = _make_call_details("/stream.v1.StreamSvc/bidi_stream")
+    handler = stream_handler.service(details)
+    assert handler is not None
+    assert handler.stream_stream is not None
+
+    stream = cast(
+        AsyncIterator[PingReply],
+        handler.stream_stream(
+            _domain_request_frames(),  # type: ignore[arg-type] — grpc stubs declare a sync Iterator but grpc.aio delivers an async one
+            AsyncMock(spec=grpc.aio.ServicerContext),
+        ),
+    )
+
+    assert [reply.value async for reply in stream] == ["first", "last"]
+
+
 # ------------------------------------------------------------------
 # Serializer / deserializer edge cases
 # ------------------------------------------------------------------

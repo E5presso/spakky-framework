@@ -171,6 +171,24 @@ def test_logging_aspect_log_args_false_expect_args_hidden() -> None:
     logger.removeHandler(handler)
 
 
+def test_logging_aspect_positional_args_expect_reprs_in_log() -> None:
+    """LoggingAspect가 위치 인자를 repr 형태로 호출부에 이어 로깅함을 검증한다."""
+    logger, handler = _setup_logger()
+
+    class Dummy:
+        @logged()
+        def greet(self, name: str, times: int) -> str:
+            return " ".join(["hi"] * times) + f" {name}"
+
+    aspect = LoggingAspect()
+    result = aspect.around(Dummy().greet, "John", 2)
+
+    assert result == "hi hi John"
+    assert "greet('John', 2)" in handler.log_records[0]
+
+    logger.removeHandler(handler)
+
+
 def test_logging_aspect_log_result_false_expect_result_hidden() -> None:
     """LoggingAspect가 log_result=False일 때 반환값을 숨김을 검증한다."""
     logger, handler = _setup_logger()

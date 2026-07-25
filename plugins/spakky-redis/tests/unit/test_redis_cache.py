@@ -6,6 +6,7 @@ import pickle
 
 import fakeredis
 import pytest
+from redis.connection import SSLConnection
 from redis.exceptions import RedisError
 from typing import override
 
@@ -296,6 +297,30 @@ class ContendedSyncClient(ISyncRedisClient):
         return iter(())
 
 
+class SecondCheckHitSyncClient(ContendedSyncClient):
+    """Lock winner whose double-checked read already finds a peer-published value."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.deleted: list[RedisKey] = []
+
+    @override
+    def get(self, name: str) -> bytes | None:
+        self.get_calls += 1
+        if self.get_calls == 1:
+            return None
+        return pickle.dumps("peer-value", protocol=pickle.HIGHEST_PROTOCOL)
+
+    @override
+    def set_if_absent(self, name: str, value: bytes, *, px: int) -> bool:
+        return True
+
+    @override
+    def delete(self, *names: RedisKey) -> int:
+        self.deleted.extend(names)
+        return len(names)
+
+
 class TimeoutSyncClient(ContendedSyncClient):
     @override
     def get(self, name: str) -> bytes | None:
@@ -360,6 +385,30 @@ class ContendedAsyncClient(IAsyncRedisClient):
     @override
     def scan_iter(self, match: str) -> AsyncIterator[RedisKey]:
         return _empty_async_keys()
+
+
+class SecondCheckHitAsyncClient(ContendedAsyncClient):
+    """Lock winner whose double-checked read already finds a peer-published value."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.deleted: list[RedisKey] = []
+
+    @override
+    async def get(self, name: str) -> bytes | None:
+        self.get_calls += 1
+        if self.get_calls == 1:
+            return None
+        return pickle.dumps("peer-value", protocol=pickle.HIGHEST_PROTOCOL)
+
+    @override
+    async def set_if_absent(self, name: str, value: bytes, *, px: int) -> bool:
+        return True
+
+    @override
+    async def delete(self, *names: RedisKey) -> int:
+        self.deleted.extend(names)
+        return len(names)
 
 
 class TimeoutAsyncClient(ContendedAsyncClient):
@@ -635,6 +684,33 @@ def test_get_or_set_contention_expect_reacquires_abandoned_lock() -> None:
     assert cache.metrics().stampede_waits == 1
 
 
+def test_get_or_set_lock_winner_expect_second_check_returns_peer_value() -> None:
+    """lock을 획득한 caller가 double-check에서 peer 값을 발견하면 factory 없이 반환한다."""
+    client = SecondCheckHitSyncClient()
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=client,
+        async_client=AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer())
+            )
+        ),
+    )
+    factory_calls = 0
+
+    def factory() -> str:
+        nonlocal factory_calls
+        factory_calls += 1
+        return "unused"
+
+    value = cache.get_or_set("item", factory)
+
+    assert value == "peer-value"
+    assert factory_calls == 0
+    assert cache.metrics().stampede_waits == 0
+    assert client.deleted == ["spakky:cache:__lock__:item"]
+
+
 def test_get_or_set_contention_timeout_expect_cache_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -855,6 +931,33 @@ async def test_async_get_or_set_contention_expect_reacquires_abandoned_lock() ->
     assert cache.metrics().stampede_waits == 1
 
 
+async def test_async_get_or_set_lock_winner_expect_second_check_returns_peer_value() -> (
+    None
+):
+    """async lock 획득자가 double-check에서 peer 값을 발견하면 factory 없이 반환한다."""
+    client = SecondCheckHitAsyncClient()
+    cache = RedisCache[str](
+        config=RedisCacheConfig(),
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
+        async_client=client,
+    )
+    factory_calls = 0
+
+    async def factory() -> str:
+        nonlocal factory_calls
+        factory_calls += 1
+        return "unused"
+
+    value = await cache.get_or_set_async("item", factory)
+
+    assert value == "peer-value"
+    assert factory_calls == 0
+    assert cache.metrics().stampede_waits == 0
+    assert client.deleted == ["spakky:cache:__lock__:item"]
+
+
 async def test_async_get_or_set_contention_timeout_expect_cache_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1047,6 +1150,45 @@ async def test_async_unexpected_response_type_expect_framework_cache_error() -> 
         await cache.get_async("bad")
     with pytest.raises(RedisCacheOperationError):
         await cache.delete_async("bad")
+
+
+def test_create_client_expect_config_credentials_and_timeout_propagated() -> None:
+    """자체 생성되는 sync client가 설정된 SSL 스킴·자격증명·소켓 타임아웃을 전파하는지 검증한다."""
+    config = RedisCacheConfig.model_construct(
+        host="cache.internal",
+        port=6380,
+        db=3,
+        username="ops",
+        password="s3cret",
+        use_ssl=True,
+        key_prefix="spakky:cache:",
+        socket_timeout=2.5,
+    )
+    cache = RedisCache[object](
+        config=config,
+        client=SyncRedisAdapter(
+            RedisRawSyncClient(fakeredis.FakeRedis(server=fakeredis.FakeServer()))
+        ),
+        async_client=AsyncRedisAdapter(
+            RedisRawAsyncClient(
+                fakeredis.aioredis.FakeRedis(server=fakeredis.FakeServer())
+            )
+        ),
+    )
+
+    created = cache._create_client()
+
+    assert isinstance(created, SyncRedisAdapter)
+    raw = created._raw
+    assert isinstance(raw, RedisRawSyncClient)
+    connection_pool = raw._raw.connection_pool
+    assert connection_pool.connection_class is SSLConnection
+    assert connection_pool.connection_kwargs["host"] == "cache.internal"
+    assert connection_pool.connection_kwargs["port"] == 6380
+    assert connection_pool.connection_kwargs["db"] == 3
+    assert connection_pool.connection_kwargs["username"] == "ops"
+    assert connection_pool.connection_kwargs["password"] == "s3cret"
+    assert connection_pool.connection_kwargs["socket_timeout"] == 2.5
 
 
 def test_serialization_failure_expect_framework_cache_error() -> None:

@@ -92,6 +92,19 @@ def test_consume_pending_agent_signals_expect_does_not_overtake_unaccepted_signa
     ]
 
 
+def test_consume_pending_agent_signals_expect_stops_at_max_signals() -> None:
+    """max_signals에 도달하면 남은 pending signal은 다음 poll을 위해 큐에 남는다."""
+    queue = InboundSignalQueue()
+    queue.append(AgentSignal("signal-1", "run-1", AgentSignalKind.USER_MESSAGE))
+    queue.append(AgentSignal("signal-2", "run-1", AgentSignalKind.USER_MESSAGE))
+
+    batch = consume_pending_agent_signals(queue, "run-1", max_signals=1)
+
+    assert [signal.id for signal in batch.signals] == ["signal-1"]
+    assert queue.consumed_ids == ["signal-1"]
+    assert [signal.id for signal in queue.list_pending("run-1")] == ["signal-2"]
+
+
 async def test_inbound_adapter_append_expect_running_stream_polls_without_waiting() -> (
     None
 ):

@@ -525,7 +525,9 @@ class SpakkyApplication:
                     objects=(),
                 )
             obj = next(iter(matches))
-            if isinstance(obj, FunctionType) or isinstance(obj, type):
+            if (
+                isinstance(obj, FunctionType) or isinstance(obj, type)
+            ):  # pragma: no branch - list_objects는 class/function만 반환하므로 거짓 분기가 없음
                 discovered_objects.append(obj)
         return _DiscoveryManifestHit(
             decision=DiscoveryManifestDecision.HIT,

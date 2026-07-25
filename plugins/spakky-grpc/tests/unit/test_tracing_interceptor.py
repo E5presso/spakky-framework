@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import cast
+from typing import cast, override
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc
@@ -43,6 +43,25 @@ class FakePropagator(ITracePropagator):
     def fields(self) -> list[str]:
         """Return W3C trace context field names."""
         return ["traceparent", "tracestate"]
+
+
+class NonRecordingPropagator(ITracePropagator):
+    """Propagator that serialises nothing, as for a non-recording context."""
+
+    @override
+    def inject(self, carrier: dict[str, str]) -> None:
+        """Leave the carrier untouched."""
+
+    @override
+    def extract(self, carrier: dict[str, str]) -> TraceContext | None:
+        """Report that the carrier holds no inbound trace context."""
+        del carrier
+        return None
+
+    @override
+    def fields(self) -> list[str]:
+        """Report that no header fields are written."""
+        return []
 
 
 def _make_handler(
@@ -307,6 +326,48 @@ async def test_tracing_interceptor_stream_handler_injects_and_clears(
 
     assert results == [b"a", b"b"]
     context.set_trailing_metadata.assert_called_once()
+    assert TraceContext.get() is None
+
+
+async def test_tracing_interceptor_without_injected_fields_expect_no_trailing_metadata(
+    context: AsyncMock,
+) -> None:
+    """A propagator writing no fields should leave trailing metadata unset."""
+    interceptor = TracingInterceptor(propagator=NonRecordingPropagator())
+    behavior = AsyncMock(return_value=b"ok")
+    handler = _make_handler(unary_unary=behavior)
+    continuation = AsyncMock(return_value=handler)
+
+    wrapped = await interceptor.intercept_service(continuation, _make_call_details())
+    unary_unary = _require_unary_unary(wrapped)
+    result = await unary_unary(b"request", context)
+
+    assert result == b"ok"
+    context.set_trailing_metadata.assert_not_called()
+    assert TraceContext.get() is None
+
+
+async def test_tracing_interceptor_stream_without_injected_fields_expect_no_metadata(
+    context: AsyncMock,
+) -> None:
+    """A streaming RPC should complete unchanged when nothing is injected."""
+    interceptor = TracingInterceptor(propagator=NonRecordingPropagator())
+
+    async def stream_behavior(
+        request: object, ctx: grpc.aio.ServicerContext
+    ) -> AsyncIterator[bytes]:
+        yield b"a"
+        yield b"b"
+
+    handler = _make_handler(unary_stream=stream_behavior)
+    continuation = AsyncMock(return_value=handler)
+
+    wrapped = await interceptor.intercept_service(continuation, _make_call_details())
+    unary_stream = _require_unary_stream(wrapped)
+    results = [item async for item in unary_stream(b"request", context)]  # type: ignore[arg-type] — grpc stubs declare sync Iterator but grpc.aio uses async
+
+    assert results == [b"a", b"b"]
+    context.set_trailing_metadata.assert_not_called()
     assert TraceContext.get() is None
 
 

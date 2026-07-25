@@ -29,6 +29,7 @@ from spakky.plugins.oidc.error import (
     OidcTokenValidationError,
 )
 from spakky.plugins.oidc.provider import (
+    DEFAULT_RETAINED_CLAIMS,
     OIDC_AUTH_PROVIDER_ID,
     OidcAuthenticationProvider,
     OidcProviderConfig,
@@ -414,10 +415,41 @@ def test_custom_claim_mapping_supports_string_roles_and_scope_arrays() -> None:
     assert auth_context.claims[0].name == "sub"
 
 
+def test_token_without_roles_and_scope_claims_expect_empty_refs() -> None:
+    """역할·범위 클레임을 발급하지 않는 IdP 토큰은 빈 역할·범위로 매핑된다."""
+    key = _private_key()
+    claims = _claims(datetime.now(UTC))
+    del claims["roles"]
+    del claims["scope"]
+    provider = _provider(_public_jwk(key))
+
+    auth_context = provider.authenticate(_carrier(_token(key, claims)), _invocation())
+
+    assert auth_context.subject.id == "subject-1"
+    assert auth_context.roles == ()
+    assert auth_context.scopes == ()
+
+
+def test_token_without_a_retained_claim_expect_claim_omitted_from_context() -> None:
+    """보존 대상 클레임이 토큰에 없으면 해당 클레임 없이 AuthContext가 구성된다."""
+    key = _private_key()
+    claims = _claims(datetime.now(UTC))
+    del claims["email"]
+    provider = _provider(_public_jwk(key))
+
+    auth_context = provider.authenticate(_carrier(_token(key, claims)), _invocation())
+
+    retained_names = tuple(claim.name for claim in auth_context.claims)
+    assert "email" in DEFAULT_RETAINED_CLAIMS
+    assert "email" not in retained_names
+    assert "name" in retained_names
+
+
 @pytest.mark.parametrize(
     "claim_patch",
     [
         {"roles": ["ok", 1]},
+        {"roles": 42},
         {"scope": ["ok", 1]},
         {"tenant": 42},
         {"aud": [AUDIENCE, 1]},
@@ -441,6 +473,23 @@ def test_retained_audience_claim_rejects_non_string_shapes(audience: object) -> 
 
     with pytest.raises(OidcTokenValidationError):
         provider._audience_claim_value(audience)
+
+
+@pytest.mark.parametrize("audience", [[AUDIENCE, 1], 42])
+def test_authorized_party_check_with_non_string_audience_expect_rejection(
+    audience: object,
+) -> None:
+    """azp 검증이 읽는 aud 클레임이 문자열·문자열 배열이 아니면 토큰을 거부한다.
+
+    PyJWT가 동일 형태를 decode 단계에서 먼저 거부하므로 authenticate() 경로로는
+    도달하지 않는 방어 지점이라 검증 메서드를 직접 호출한다.
+    """
+    provider = _provider(_public_jwk(_private_key()))
+
+    with pytest.raises(OidcTokenValidationError):
+        provider._validate_authorized_party(
+            {"sub": "subject-1", "iss": ISSUER, "aud": audience, "azp": CLIENT_ID}
+        )
 
 
 def test_jwks_shape_and_header_validation_fail_fast() -> None:

@@ -26,7 +26,7 @@ class _GrpcServerSpecLike:
 
     def add_handler(self, handler: object) -> None:
         """Register a generic RPC handler."""
-        ...
+        ...  # pragma: no cover - runtime receiver is always the cast GrpcServerSpec
 
 
 @Order(2)

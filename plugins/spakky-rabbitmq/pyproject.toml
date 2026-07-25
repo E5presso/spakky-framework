@@ -82,8 +82,6 @@ exclude_lines = [
   "raise NotImplementedError",
   "@(abc\\.)?abstractmethod",
   "@(typing\\.)?overload",
-  "\\.\\.\\.\\.",
-  "pass",
 ]
 
 [tool.uv.sources]

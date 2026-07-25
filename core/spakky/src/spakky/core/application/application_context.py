@@ -416,7 +416,7 @@ class ApplicationContext(IApplicationContext):
             named = {pod for pod in pods if pod.name == name}
             if len(named) == 1:
                 return named.pop()
-            if not named:
+            if not named:  # pragma: no branch - Pod 이름은 컨테이너에서 유일하므로 named 후보는 0개 또는 1개
                 return None
 
         if binding_candidate := self.__resolve_binding_candidate_for_type(type_, pods):
@@ -629,7 +629,7 @@ class ApplicationContext(IApplicationContext):
                 pod.name: instance
                 for pod, instance in zip(pods, instances, strict=True)
             }
-        return None
+        return None  # pragma: no cover - exhaustive DependencyCollectionKind (None은 호출 지점에서 이미 분기)
 
     def __record_instantiation_attempt(self, elapsed_seconds: float) -> None:
         if self.__startup_metrics is None:

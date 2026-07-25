@@ -471,6 +471,82 @@ def test_protected_sync_endpoint_verification_error_uses_celery_retry() -> None:
     assert not handler.called
 
 
+def test_protected_sync_endpoint_expect_denial_propagates_when_retry_does_not_raise() -> (
+    None
+):
+    """celery retry가 Retry를 발생시키지 못하면 원래 auth 실패가 그대로 전파된다."""
+
+    @TaskHandler()
+    class ProtectedHandler:
+        def __init__(self) -> None:
+            self.called = False
+
+        @task
+        @require_scope("tasks:run")
+        def protected_task(self) -> None:
+            self.called = True
+
+    handler = ProtectedHandler()
+    endpoint, _ = _registered_endpoint_for_handler(
+        ProtectedHandler,
+        handler,
+        snapshot_verifier=SnapshotVerifier(AuthVerificationProviderUnavailableError()),
+        scope_checker=ScopeChecker(AuthorizationDecision.allow()),
+    )
+    mock_request = MagicMock()
+    mock_request.get.return_value = {
+        AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "snapshot-envelope"
+    }
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        with pytest.raises(AuthRequirementDeniedError) as excinfo:
+            endpoint()
+
+    mock_current_task.retry.assert_called_once()
+    assert excinfo.value.decision is not None
+    assert excinfo.value.decision.state is AuthorizationDecisionState.ERROR
+    assert not handler.called
+
+
+def test_schedule_only_endpoint_expect_auth_seeding_skipped() -> None:
+    """@task 없이 @schedule만 붙은 beat 메서드는 auth seeding 없이 실행된다."""
+
+    @TaskHandler()
+    class ScheduleOnlyHandler:
+        def __init__(self) -> None:
+            self.called = False
+
+        @schedule(interval=timedelta(minutes=5))
+        def refresh_cache(self) -> None:
+            self.called = True
+
+    handler = ScheduleOnlyHandler()
+    verifier = SnapshotVerifier()
+    endpoint, _ = _registered_endpoint_for_handler(
+        ScheduleOnlyHandler,
+        handler,
+        snapshot_verifier=verifier,
+        scope_checker=ScopeChecker(AuthorizationDecision.allow()),
+    )
+    mock_request = MagicMock()
+    mock_request.get.return_value = {
+        AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "snapshot-envelope"
+    }
+
+    with patch(
+        "spakky.plugins.celery.post_processor.current_task"
+    ) as mock_current_task:
+        mock_current_task.request = mock_request
+        endpoint()
+
+    assert handler.called
+    assert verifier.calls == []
+    mock_current_task.retry.assert_not_called()
+
+
 # =============================================================================
 # Scenario: Schedule registration
 # =============================================================================
