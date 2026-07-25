@@ -91,12 +91,17 @@ class KafkaConnectionConfig(BaseSettings):
         super().__init__()
 
     @property
-    def configuration_dict(self) -> dict[str, str | int | float | bool]:
+    def connection_configuration_dict(self) -> dict[str, str | int | float | bool]:
+        """librdkafka settings that only describe how to reach the cluster.
+
+        Shared by the admin client, the producer, and the consumer. Delivery
+        semantics live in `producer_configuration_dict` and
+        `consumer_configuration_dict` instead, because the safe producer default
+        and the safe consumer default are opposites of each other.
+        """
         config: dict[str, str | int | float | bool] = {
-            "group.id": self.group_id,
             "client.id": self.client_id,
             "bootstrap.servers": self.bootstrap_servers,
-            "auto.offset.reset": self.auto_offset_reset.value,
         }
         if self.security_protocol:
             config["security.protocol"] = self.security_protocol
@@ -109,16 +114,50 @@ class KafkaConnectionConfig(BaseSettings):
         return config
 
     @property
-    def async_producer_configuration_dict(self) -> dict[str, str]:
-        """Same connection settings rendered as `aiokafka.AIOKafkaProducer` keywords.
+    def producer_configuration_dict(self) -> dict[str, str | int | float | bool]:
+        """Producer settings that keep retries from duplicating or reordering.
 
-        `aiokafka` takes snake_case keywords instead of the dotted librdkafka
-        property names in `configuration_dict`, so every async producer in this
-        plugin reads its settings here rather than mapping them again.
+        `enable.idempotence` makes the broker deduplicate retried batches and
+        pins `max.in.flight.requests.per.connection` low enough that a retry
+        cannot overtake an earlier batch on the same partition. `acks=all` waits
+        for every in-sync replica so an acknowledged event survives the loss of
+        the partition leader.
         """
-        config = {
+        return {
+            **self.connection_configuration_dict,
+            "enable.idempotence": True,
+            "acks": "all",
+        }
+
+    @property
+    def consumer_configuration_dict(self) -> dict[str, str | int | float | bool]:
+        """Consumer settings that tie the offset to the handler outcome.
+
+        `enable.auto.commit=false` is what makes delivery at-least-once: the
+        offset advances only when `KafkaEventConsumer` commits it after the
+        handlers finish, so a handler failure leaves the message to be
+        redelivered instead of silently dropping it.
+        """
+        return {
+            **self.connection_configuration_dict,
+            "group.id": self.group_id,
+            "auto.offset.reset": self.auto_offset_reset.value,
+            "enable.auto.commit": False,
+        }
+
+    @property
+    def async_producer_configuration_dict(self) -> dict[str, str | bool]:
+        """The same producer guarantees expressed as `aiokafka` keyword names.
+
+        `aiokafka` takes constructor keywords instead of a librdkafka property
+        dictionary, so the key spelling differs while the delivery guarantee is
+        identical to `producer_configuration_dict`.
+        """
+        config: dict[str, str | bool] = {
             "bootstrap_servers": self.bootstrap_servers,
             "client_id": self.client_id,
+            "enable_idempotence": True,
+            "acks": "all",
         }
         if self.security_protocol:
             config["security_protocol"] = self.security_protocol

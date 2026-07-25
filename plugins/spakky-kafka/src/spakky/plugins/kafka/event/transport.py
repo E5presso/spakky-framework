@@ -27,8 +27,11 @@ class KafkaEventTransport(IEventTransport):
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the Kafka producer with connection config."""
         self.config = config
-        self.admin = AdminClient(self.config.configuration_dict)
-        self.producer = Producer(self.config.configuration_dict, logger=logger)
+        self.admin = AdminClient(self.config.connection_configuration_dict)
+        self.producer = Producer(
+            self.config.producer_configuration_dict,
+            logger=logger,
+        )
 
     def _create_topic(self, topic: str) -> None:
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
@@ -97,7 +100,7 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the async Kafka transport with connection config."""
         self.config = config
-        self.admin = AdminClient(self.config.configuration_dict)
+        self.admin = AdminClient(self.config.connection_configuration_dict)
 
     def _create_topic(  # pragma: no cover - Kafka 브로커 콜백으로 커버리지 수집 불가
         self, topic: str

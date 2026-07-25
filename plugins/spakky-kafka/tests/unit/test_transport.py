@@ -49,12 +49,14 @@ def test_sync_transport_init_expect_success(
     mock_producer_cls: MagicMock,
     config: KafkaConnectionConfig,
 ) -> None:
-    """동기 KafkaEventTransport가 올바르게 초기화되는지 검증한다."""
+    """동기 KafkaEventTransport가 멱등 발행 설정으로 producer를 만드는지 검증한다."""
     transport = KafkaEventTransport(config)
 
     assert transport.config is config
-    mock_admin_cls.assert_called_once_with(config.configuration_dict)
-    mock_producer_cls.assert_called_once()
+    mock_admin_cls.assert_called_once_with(config.connection_configuration_dict)
+    producer_config = mock_producer_cls.call_args[0][0]
+    assert producer_config["enable.idempotence"] is True
+    assert producer_config["acks"] == "all"
 
 
 @patch("spakky.plugins.kafka.event.transport.Producer")
@@ -150,7 +152,7 @@ def test_async_transport_init_expect_success(
     transport = AsyncKafkaEventTransport(config)
 
     assert transport.config is config
-    mock_admin_cls.assert_called_once_with(config.configuration_dict)
+    mock_admin_cls.assert_called_once_with(config.connection_configuration_dict)
 
 
 @pytest.mark.asyncio
@@ -177,6 +179,8 @@ async def test_async_transport_send_expect_produce_and_flush(
     mock_aio_producer_cls.assert_called_once_with(
         bootstrap_servers=config.bootstrap_servers,
         client_id=config.client_id,
+        enable_idempotence=True,
+        acks="all",
     )
     mock_producer.start.assert_awaited_once()
     mock_producer.send_and_wait.assert_awaited_once_with(
@@ -222,6 +226,8 @@ async def test_async_transport_send_with_sasl_config_expect_security_kwargs(
     mock_aio_producer_cls.assert_called_once_with(
         bootstrap_servers="secure:9093",
         client_id="secure-client",
+        enable_idempotence=True,
+        acks="all",
         security_protocol="SASL_SSL",
         sasl_mechanism="PLAIN",
         sasl_plain_username="api-key",

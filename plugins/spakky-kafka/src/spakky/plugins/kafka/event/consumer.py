@@ -1,4 +1,5 @@
 from asyncio import wait_for
+from enum import StrEnum
 from logging import getLogger
 from typing import Any, cast
 
@@ -9,7 +10,14 @@ from spakky.auth import (
     AuthVerificationProviderUnavailableError,
 )
 from aiokafka import AIOKafkaProducer
-from confluent_kafka import Consumer, KafkaError, KafkaException, Message, Producer
+from confluent_kafka import (
+    Consumer,
+    KafkaError,
+    KafkaException,
+    Message,
+    Producer,
+    TopicPartition,
+)
 from confluent_kafka.admin import AdminClient, NewTopic
 from confluent_kafka.aio import AIOConsumer
 from pydantic import TypeAdapter, ValidationError
@@ -34,6 +42,30 @@ from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 from spakky.plugins.kafka.common.constants import DeadLetterHeaderKey
 
 logger = getLogger(__name__)
+
+
+class MessageOutcome(StrEnum):
+    """What running the handlers settled about one consumed message.
+
+    The consumer turns this into the offset action that gives the delivery
+    guarantee: an offset must never move past a message whose failure is not
+    stored anywhere else.
+    """
+
+    PROCESSED = "processed"
+    """The consumer is done with the message and commits its offset.
+
+    Covers handler success, every failure a retry cannot fix (a refused auth
+    boundary, an empty message body), and a failure whose dead-letter record
+    reached the broker.
+    """
+
+    RETRYABLE = "retryable"
+    """The message is still the only copy of its own failure, so it comes back.
+
+    Reached when dead-lettering itself failed. The consumer rewinds its position
+    to the message instead of committing, and the next poll delivers it again.
+    """
 
 
 def _event_routing_name(event: type[AbstractEvent]) -> str:
@@ -68,9 +100,9 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.handlers = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
-        self.admin = AdminClient(self.config.configuration_dict)
+        self.admin = AdminClient(self.config.connection_configuration_dict)
         self.consumer = Consumer(
-            self.config.configuration_dict,
+            self.config.consumer_configuration_dict,
             logger=logger,
         )
 
@@ -152,7 +184,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         message: Message,
         headers: dict[str, str],
         error: Exception,
-    ) -> None:
+    ) -> bool:
         """Forward a message the handlers could not process to its dead-letter topic.
 
         The original body and key are forwarded unchanged and the decoded original
@@ -164,6 +196,11 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             message: The Kafka message that could not be processed.
             headers: Decoded headers of the original message.
             error: Exception that ended the last processing attempt.
+
+        Returns:
+            Whether the dead-letter record reached the broker. `False` means the
+            failure is stored nowhere, so the caller must keep the original
+            message rather than commit its offset.
         """
         _, original_timestamp = message.timestamp()
         dead_letter_headers: dict[str, bytes | str | None] = {
@@ -189,13 +226,15 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             # queue synchronously. This runs on the poll thread, so an escaping
             # exception would kill consumption while stop() still looks clean.
             logger.error(f"Dead-letter delivery failed for {topic}: {delivery_error}")
-            return
+            return False
         undelivered = self.producer.flush(self.config.dead_letter_delivery_timeout)
         if undelivered:
             logger.error(
                 f"Dead-letter record for {topic} still unsent after "
                 f"{self.config.dead_letter_delivery_timeout}s"
             )
+            return False
+        return True
 
     def _invoke_handlers(
         self,
@@ -209,13 +248,129 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
                 continue
             handler(event_data)
 
+    def _dead_letter_outcome(
+        self,
+        topic: str,
+        message: Message,
+        headers: dict[str, str],
+        error: Exception,
+    ) -> MessageOutcome:
+        """Decide what happens to the offset of a message the handlers refused.
+
+        The offset may only advance once the failure is stored somewhere else. If
+        the dead-letter record never reached the broker, committing would destroy
+        the only remaining copy of the event, so the message is kept for another
+        attempt instead.
+        """
+        if self._send_to_dead_letter(topic, message, headers, error):
+            return MessageOutcome.PROCESSED
+        return MessageOutcome.RETRYABLE
+
+    def _commit_offset(self, message: Message) -> None:
+        """Advance the committed offset past `message`.
+
+        A commit can be rejected while the consumer group rebalances or the
+        broker is unreachable. Letting that escape would end the poll loop and
+        stop every subscription this consumer owns, so the rejection is logged
+        and the next processed message commits a higher offset in its place.
+        """
+        try:
+            committed = self.consumer.commit(message=message, asynchronous=False)
+        except KafkaException as error:
+            logger.error(
+                f"Offset commit failed for event type {message.topic()}: {error}"
+            )
+            return
+        for position in committed:
+            if position.error is not None:
+                logger.error(
+                    f"Offset commit rejected for {position.topic} "
+                    f"[{position.partition}]: {position.error}"
+                )
+
+    def _rewind_to(self, position: TopicPartition) -> None:
+        """Move the consume position back so the next poll returns that message.
+
+        Leaving the offset uncommitted is not enough on its own: the consumer's
+        in-memory position has already moved past the message, so the next
+        message that succeeds would commit an offset beyond the failed one and
+        the failure would never come back.
+        """
+        try:
+            self.consumer.seek(position)
+        except KafkaException as error:
+            logger.error(
+                f"Cannot rewind {position.topic} [{position.partition}] to offset "
+                f"{position.offset}, message is not retryable: {error}"
+            )
+
+    def _dispatch_to_handlers(
+        self,
+        message: Message,
+        topic: str,
+        event_type: type[AbstractEvent],
+        headers: dict[str, str],
+    ) -> MessageOutcome:
+        """Run every handler registered for one polled message.
+
+        Returns:
+            `PROCESSED` when the consumer is done with the message, `RETRYABLE`
+            when the message must be delivered again.
+
+        Raises:
+            AuthVerificationProviderUnavailableError: Snapshot verification is
+                unavailable, which is not a verdict about this message.
+            AuthRequirementProviderUnavailableError: Authorization data is
+                unavailable, which is not a verdict about this message.
+        """
+        event_message: bytes | None = message.value()
+        if event_message is None:
+            logger.warning(f"Received empty message for event type: {topic}")
+            return MessageOutcome.PROCESSED
+        try:
+            event_data = self.type_adapters[event_type].validate_json(event_message)
+        except ValidationError as error:
+            # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
+            logger.error(f"Cannot deserialize message from topic {topic}: {error}")
+            return self._dead_letter_outcome(topic, message, headers, error)
+        remaining_retries = self.config.max_handler_retries
+        while True:
+            try:
+                self._invoke_handlers(event_type, event_data, headers)
+                return MessageOutcome.PROCESSED
+            except (
+                AuthVerificationProviderUnavailableError,
+                AuthRequirementProviderUnavailableError,
+            ):
+                raise
+            except (AuthContextNotFoundError, AuthRequirementDeniedError) as error:
+                logger.warning(
+                    f"Auth boundary refused message for event type {topic}, "
+                    f"discarding it: {error}"
+                )
+                return MessageOutcome.PROCESSED
+            except Exception as error:
+                if remaining_retries == 0:
+                    logger.error(
+                        f"Error processing message for event type {topic}: {error}"
+                    )
+                    return self._dead_letter_outcome(topic, message, headers, error)
+                remaining_retries -= 1
+                logger.warning(
+                    f"Retrying message for event type {topic} after error: {error}"
+                )
+
     def _route_event_handler(self, message: Message) -> None:
         if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
             logger.error(f"Consumer error: {message.error()}")
             return
         topic: str | None = message.topic()
-        if topic is None:  # pragma: no cover - Kafka 메시지 비정상 상태
-            logger.warning("Received message with no topic.")
+        partition: int | None = message.partition()
+        offset: int | None = message.offset()
+        if (  # pragma: no cover - Kafka 메시지 비정상 상태
+            topic is None or partition is None or offset is None
+        ):
+            logger.warning("Received message with no topic, partition or offset.")
             return
         event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
@@ -228,40 +383,14 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
         try:
-            event_message: bytes | None = message.value()
-            if event_message is None:  # pragma: no cover - Kafka 메시지 본문 누락 방어
-                logger.warning(f"Received empty message for event type: {topic}")
-                return
-            try:
-                event_data = self.type_adapters[event_type].validate_json(event_message)
-            except ValidationError as error:
-                # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
-                logger.error(f"Cannot deserialize message from topic {topic}: {error}")
-                self._send_to_dead_letter(topic, message, headers, error)
-                return
-            remaining_retries = self.config.max_handler_retries
-            while True:
-                try:
-                    self._invoke_handlers(event_type, event_data, headers)
-                    return
-                except (
-                    AuthVerificationProviderUnavailableError,
-                    AuthRequirementProviderUnavailableError,
-                ):
-                    raise
-                except (AuthContextNotFoundError, AuthRequirementDeniedError):
-                    return
-                except Exception as error:
-                    if remaining_retries == 0:
-                        logger.error(
-                            f"Error processing message for event type {topic}: {error}"
-                        )
-                        self._send_to_dead_letter(topic, message, headers, error)
-                        return
-                    remaining_retries -= 1
-                    logger.warning(
-                        f"Retrying message for event type {topic} after error: {error}"
-                    )
+            outcome = self._dispatch_to_handlers(message, topic, event_type, headers)
+            match outcome:
+                case MessageOutcome.PROCESSED:
+                    self._commit_offset(message)
+                case (
+                    MessageOutcome.RETRYABLE
+                ):  # pragma: no branch - 전수 분기, 미매치 불가
+                    self._rewind_to(TopicPartition(topic, partition, offset))
         finally:
             if self._propagator is not None:
                 TraceContext.clear()
@@ -287,7 +416,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         topics: list[str] = [
             _event_routing_name(event_type) for event_type in self.handlers.keys()
         ]
-        self.producer = Producer(self.config.configuration_dict, logger=logger)
+        self.producer = Producer(self.config.producer_configuration_dict, logger=logger)
         self._create_topics(
             topics=topics
             + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
@@ -341,7 +470,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self.handlers = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
-        self.admin = AdminClient(self.config.configuration_dict)
+        self.admin = AdminClient(self.config.connection_configuration_dict)
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
@@ -408,7 +537,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         message: Message,
         headers: dict[str, str],
         error: Exception,
-    ) -> None:
+    ) -> bool:
         """Forward a message the handlers could not process to its dead-letter topic.
 
         The original body and key are forwarded unchanged and the decoded original
@@ -422,6 +551,13 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             message: The Kafka message that could not be processed.
             headers: Decoded headers of the original message.
             error: Exception that ended the last processing attempt.
+
+        Returns:
+            Whether the dead-letter record is confirmed at the broker. `False`
+            means the failure may be stored nowhere, so the caller must keep the
+            original message rather than commit its offset. An unconfirmed
+            timeout also reports `False`: keeping the message can duplicate the
+            dead-letter record, which is the recoverable direction.
         """
         _, original_timestamp = message.timestamp()
         dead_letter_headers: dict[str, str] = {
@@ -456,8 +592,11 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
                 f"{self.config.dead_letter_delivery_timeout}s; "
                 "it may still be delivered"
             )
+            return False
         except Exception as delivery_error:
             logger.error(f"Dead-letter delivery failed for {topic}: {delivery_error}")
+            return False
+        return True
 
     async def _invoke_handlers(
         self,
@@ -471,13 +610,131 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
                 continue
             await handler(event_data)
 
+    async def _dead_letter_outcome(
+        self,
+        topic: str,
+        message: Message,
+        headers: dict[str, str],
+        error: Exception,
+    ) -> MessageOutcome:
+        """Decide what happens to the offset of a message the handlers refused.
+
+        The offset may only advance once the failure is stored somewhere else. If
+        the dead-letter record is not confirmed at the broker, committing would
+        destroy the only remaining copy of the event, so the message is kept for
+        another attempt instead.
+        """
+        if await self._send_to_dead_letter(topic, message, headers, error):
+            return MessageOutcome.PROCESSED
+        return MessageOutcome.RETRYABLE
+
+    async def _commit_offset(self, message: Message) -> None:
+        """Advance the committed offset past `message`.
+
+        A commit can be rejected while the consumer group rebalances or the
+        broker is unreachable. Letting that escape would end the polling task and
+        stop every subscription this consumer owns, so the rejection is logged
+        and the next processed message commits a higher offset in its place.
+        """
+        try:
+            committed = await self.consumer.commit(message=message, asynchronous=False)
+        except KafkaException as error:
+            logger.error(
+                f"Offset commit failed for event type {message.topic()}: {error}"
+            )
+            return
+        for position in committed:
+            if position.error is not None:
+                logger.error(
+                    f"Offset commit rejected for {position.topic} "
+                    f"[{position.partition}]: {position.error}"
+                )
+
+    async def _rewind_to(self, position: TopicPartition) -> None:
+        """Move the consume position back so the next poll returns that message.
+
+        Leaving the offset uncommitted is not enough on its own: the consumer's
+        in-memory position has already moved past the message, so the next
+        message that succeeds would commit an offset beyond the failed one and
+        the failure would never come back.
+        """
+        try:
+            await self.consumer.seek(position)
+        except KafkaException as error:
+            logger.error(
+                f"Cannot rewind {position.topic} [{position.partition}] to offset "
+                f"{position.offset}, message is not retryable: {error}"
+            )
+
+    async def _dispatch_to_handlers(
+        self,
+        message: Message,
+        topic: str,
+        event_type: type[AbstractEvent],
+        headers: dict[str, str],
+    ) -> MessageOutcome:
+        """Run every handler registered for one polled message.
+
+        Returns:
+            `PROCESSED` when the consumer is done with the message, `RETRYABLE`
+            when the message must be delivered again.
+
+        Raises:
+            AuthVerificationProviderUnavailableError: Snapshot verification is
+                unavailable, which is not a verdict about this message.
+            AuthRequirementProviderUnavailableError: Authorization data is
+                unavailable, which is not a verdict about this message.
+        """
+        event_message: bytes | None = message.value()
+        if event_message is None:
+            logger.warning(f"Received empty message for event type: {topic}")
+            return MessageOutcome.PROCESSED
+        try:
+            event_data = self.type_adapters[event_type].validate_json(event_message)
+        except ValidationError as error:
+            # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
+            logger.error(f"Cannot deserialize message from topic {topic}: {error}")
+            return await self._dead_letter_outcome(topic, message, headers, error)
+        remaining_retries = self.config.max_handler_retries
+        while True:
+            try:
+                await self._invoke_handlers(event_type, event_data, headers)
+                return MessageOutcome.PROCESSED
+            except (
+                AuthVerificationProviderUnavailableError,
+                AuthRequirementProviderUnavailableError,
+            ):
+                raise
+            except (AuthContextNotFoundError, AuthRequirementDeniedError) as error:
+                logger.warning(
+                    f"Auth boundary refused message for event type {topic}, "
+                    f"discarding it: {error}"
+                )
+                return MessageOutcome.PROCESSED
+            except Exception as error:
+                if remaining_retries == 0:
+                    logger.error(
+                        f"Error processing message for event type {topic}: {error}"
+                    )
+                    return await self._dead_letter_outcome(
+                        topic, message, headers, error
+                    )
+                remaining_retries -= 1
+                logger.warning(
+                    f"Retrying message for event type {topic} after error: {error}"
+                )
+
     async def _route_event_handler(self, message: Message) -> None:
         if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
             logger.error(f"Consumer error: {message.error()}")
             return
         topic: str | None = message.topic()
-        if topic is None:  # pragma: no cover - Kafka 메시지 비정상 상태
-            logger.warning("Received message with no topic.")
+        partition: int | None = message.partition()
+        offset: int | None = message.offset()
+        if (  # pragma: no cover - Kafka 메시지 비정상 상태
+            topic is None or partition is None or offset is None
+        ):
+            logger.warning("Received message with no topic, partition or offset.")
             return
         event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
@@ -490,40 +747,16 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             ctx = parent.child() if parent is not None else TraceContext.new_root()
             TraceContext.set(ctx)
         try:
-            event_message: bytes | None = message.value()
-            if event_message is None:  # pragma: no cover - Kafka 메시지 본문 누락 방어
-                logger.warning(f"Received empty message for event type: {topic}")
-                return
-            try:
-                event_data = self.type_adapters[event_type].validate_json(event_message)
-            except ValidationError as error:
-                # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
-                logger.error(f"Cannot deserialize message from topic {topic}: {error}")
-                await self._send_to_dead_letter(topic, message, headers, error)
-                return
-            remaining_retries = self.config.max_handler_retries
-            while True:
-                try:
-                    await self._invoke_handlers(event_type, event_data, headers)
-                    return
-                except (
-                    AuthVerificationProviderUnavailableError,
-                    AuthRequirementProviderUnavailableError,
-                ):
-                    raise
-                except (AuthContextNotFoundError, AuthRequirementDeniedError):
-                    return
-                except Exception as error:
-                    if remaining_retries == 0:
-                        logger.error(
-                            f"Error processing message for event type {topic}: {error}"
-                        )
-                        await self._send_to_dead_letter(topic, message, headers, error)
-                        return
-                    remaining_retries -= 1
-                    logger.warning(
-                        f"Retrying message for event type {topic} after error: {error}"
-                    )
+            outcome = await self._dispatch_to_handlers(
+                message, topic, event_type, headers
+            )
+            match outcome:
+                case MessageOutcome.PROCESSED:
+                    await self._commit_offset(message)
+                case (
+                    MessageOutcome.RETRYABLE
+                ):  # pragma: no branch - 전수 분기, 미매치 불가
+                    await self._rewind_to(TopicPartition(topic, partition, offset))
         finally:
             if self._propagator is not None:
                 TraceContext.clear()
@@ -546,7 +779,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
     @override
     async def initialize_async(self) -> None:
         """Create Kafka topics, open the dead-letter producer, and subscribe."""
-        self.consumer = AIOConsumer(self.config.configuration_dict)
+        self.consumer = AIOConsumer(self.config.consumer_configuration_dict)
         self.producer = AIOKafkaProducer(
             **self.config.async_producer_configuration_dict
         )

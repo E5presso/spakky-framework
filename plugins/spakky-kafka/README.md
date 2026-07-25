@@ -53,6 +53,55 @@ export SPAKKY_KAFKA__MAX_HANDLER_RETRIES="0"
 export SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT="10.0"
 ```
 
+## 전달 의미 (at-least-once)
+
+`KafkaConnectionConfig`는 producer 설정과 consumer 설정을 분리하여 각각의 안전한
+기본값을 프레임워크가 고정합니다. 환경변수로 덮어쓸 수 있는 항목이 아닙니다.
+
+| 속성 | 대상 | 고정 값 | 결과 |
+|------|------|--------|------|
+| `producer_configuration_dict` | `confluent_kafka.Producer` (이벤트 발행 + dead-letter 발행) | `enable.idempotence=true`, `acks=all` | 한 producer 세션의 재시도가 중복 발행·파티션 내 재정렬을 만들지 않고, 승인된 이벤트가 파티션 리더 장애를 견딤 |
+| `async_producer_configuration_dict` | `aiokafka.AIOKafkaProducer` | `enable_idempotence=True`, `acks="all"` | 같은 값을 aiokafka 키 이름으로 표현 |
+| `consumer_configuration_dict` | `confluent_kafka.Consumer`, `AIOConsumer` | `enable.auto.commit=false` | offset이 핸들러 결과에 따라서만 전진 |
+| `connection_configuration_dict` | `AdminClient` 및 위 3종의 공통 기반 | `client.id`, `bootstrap.servers`, SASL/TLS | 클러스터 접속 정보만 담음 |
+
+`AsyncKafkaEventTransport.send`는 호출마다 producer를 새로 만들어 닫으므로, 비동기 발행
+경로의 멱등 보장 범위는 그 한 번의 `send`가 내부적으로 재시도하는 구간까지입니다. 서로
+다른 `send` 호출 사이의 파티션 내 순서는 보장하지 않습니다.
+
+Consumer는 등록된 핸들러가 끝난 뒤 그 메시지를 처리 완료로 볼지 다시 받을지 결정합니다.
+`MessageOutcome`이 그 두 결정을 나타냅니다.
+
+| 핸들러 결과 | `MessageOutcome` | offset 처리 |
+|------------|------------------|------------|
+| 성공 | `PROCESSED` | 커밋 후 다음 메시지로 진행 |
+| 실패 → dead-letter 발행 성공 | `PROCESSED` | 커밋. 실패가 `.dlt` 토픽에 남았으므로 파티션을 막지 않음 |
+| 실패 → dead-letter 발행 실패·미확인 | `RETRYABLE` | 커밋하지 않고 그 메시지로 `seek` 되감기 |
+| 역직렬화 실패 | dead-letter 결과에 따름 | 위 두 줄과 같은 규칙 |
+| AuthContext DENY / snapshot CHALLENGE | `PROCESSED` | warning 로그 후 커밋. 재시도해도 같은 결정임 |
+| 본문 없는 메시지 | `PROCESSED` | warning 로그 후 커밋. 처리할 대상이 없음 |
+| 검증 provider 장애 | (해당 없음) | 예외를 전파하여 consumer 루프를 중단. 커밋하지 않았으므로 재시작 시 그 메시지부터 다시 처리 |
+
+**offset은 실패가 다른 곳에 저장된 뒤에만 전진합니다.** dead-letter 발행이 실패했는데
+커밋해 버리면 그 이벤트의 마지막 사본이 사라집니다. 그래서 발행 실패는 커밋 대신 되감기로
+이어집니다.
+
+**커밋을 건너뛰는 것만으로는 재처리가 성립하지 않습니다.** `enable.auto.commit=false`는
+브로커 커밋만 끄고 consumer의 소비 위치는 poll마다 전진합니다. 되감지 않으면 뒤따르는
+메시지의 성공 커밋이 실패한 메시지의 offset을 지나쳐 버려 그 메시지는 rebalance나
+재시작으로도 돌아오지 않습니다. `seek` 되감기가 재처리를 성립시키는 수단입니다.
+
+전달 의미가 at-most-once에서 at-least-once로 바뀌었으므로 **같은 이벤트가 두 번 이상
+전달될 수 있습니다.** 이벤트 핸들러는 멱등해야 합니다. 이미 처리한 이벤트 식별자를
+저장하거나 upsert로 반영하는 방식이 필요합니다.
+
+커밋과 되감기 실패는 로그로 남기고 삼킵니다. consumer 루프는 background service 스레드
+(비동기는 asyncio 태스크)에서 돌기 때문에, 커밋 실패 예외를 전파하면 애플리케이션은 살아
+있는 채로 모든 구독이 멈춥니다.
+
+메시지 단위 동기 커밋은 브로커 왕복을 한 번씩 추가합니다. 처리량이 커밋 지연에 지배되는
+워크로드라면 파티션 수를 늘려 consumer를 병렬화합니다.
+
 ## 사용법
 
 ### 이벤트 발행
@@ -166,6 +215,7 @@ dead-letter topic은 consumer `initialize` 시점에 구독 topic과 함께 생�
 ## 주요 기능
 
 - **자동 topic 생성**: 이벤트 타입 이름을 기준으로 topic 생성 (dead-letter topic 포함)
+- **at-least-once 전달**: 멱등 producer + 실패가 저장된 뒤에만 전진하는 명시적 offset 커밋
 - **Dead-letter 경로**: 처리 실패 메시지를 원본 좌표·예외 header와 함께 `.dlt` topic으로 전달
 - **파티션 키 라우팅**: `AbstractIntegrationEvent.partition_key`를 오버라이드하면 같은 키의 이벤트가 같은 파티션으로 가서 순서가 유지됩니다. 기본값 `None`은 라운드로빈 분산
 - **동기/비동기 지원**: 동기 및 비동기 publisher/consumer 모두 지원
