@@ -793,6 +793,7 @@ from spakky.plugins.grpc.error import (
 | `ProtoFieldNumberConflictError`       | 명시 `ProtoField` 번호가 자동 부여 필드의 번호와 충돌 |
 | `InvalidProtoFieldNumberError`        | 명시 `ProtoField(number=...)`가 protobuf 유효 범위 밖이거나 reserved band에 있음 |
 | `DuplicateProtoFieldNumberError`      | 같은 message 안에서 두 필드가 같은 명시 `ProtoField` 번호를 사용 |
+| `MessagelessRpcMethodError`           | `@rpc` 메서드가 request 또는 response 모델을 선언하지 않음. protobuf는 모든 method에 input/output 메시지를 요구하므로 컨트롤러 등록 시점(`build_service_descriptor`)에 차단되며, 클라이언트 호출 생성 시점에도 같은 에러가 발생 |
 
 **전송 보안 설정 에러:**
 
@@ -807,7 +808,6 @@ from spakky.plugins.grpc.error import (
 | ----------------------------- | ------------------------------------------ |
 | `NotAnRpcMethodError`         | `@rpc`가 붙지 않은 메서드로 호출을 만들려 함 |
 | `RpcMethodTypeMismatchError`  | 메서드가 선언한 스트리밍 패턴과 다른 호출 형태를 요청 |
-| `MessagelessRpcMethodError`   | `@rpc` 메서드가 request 또는 response 모델을 선언하지 않음 |
 
 ### spakky-openfga
 

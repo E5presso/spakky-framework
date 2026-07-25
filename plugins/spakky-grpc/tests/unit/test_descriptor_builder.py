@@ -3,11 +3,13 @@
 from typing import Annotated
 from collections.abc import AsyncIterator
 
+import pytest
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
 from pydantic import BaseModel
 
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
+from spakky.plugins.grpc.error import MessagelessRpcMethodError
 from spakky.plugins.grpc.schema.descriptor_builder import (
     build_file_descriptor,
     build_message_descriptor,
@@ -266,8 +268,8 @@ def test_build_message_descriptor_optional_field() -> None:
     assert field.proto3_optional is True
 
 
-def test_build_service_descriptor_no_request_type() -> None:
-    """request_type이 None인 rpc 메서드에서 input_type이 빈 문자열인지 검증한다."""
+def test_build_service_descriptor_missing_request_expect_messageless_error() -> None:
+    """request 모델이 없는 rpc 선언이 메서드 이름과 함께 차단되는지 검증한다."""
 
     @GrpcController(package="test.v1")
     class NoRequestService:
@@ -279,16 +281,15 @@ def test_build_service_descriptor_no_request_type() -> None:
             ...
 
     collected: dict = {}
-    service = build_service_descriptor(
-        NoRequestService, "test.v1", "NoRequestService", collected
-    )
-    method = service.method[0]
-    assert method.input_type == ""
-    assert method.output_type == ".test.v1.HelloResponse"
+    with pytest.raises(MessagelessRpcMethodError) as raised:
+        build_service_descriptor(
+            NoRequestService, "test.v1", "NoRequestService", collected
+        )
+    assert raised.value.method_name == "NoRequestService.no_request"
 
 
-def test_build_service_descriptor_no_response_type() -> None:
-    """response_type이 None인 rpc 메서드에서 output_type이 빈 문자열인지 검증한다."""
+def test_build_service_descriptor_missing_response_expect_messageless_error() -> None:
+    """response 모델이 없는 rpc 선언이 메서드 이름과 함께 차단되는지 검증한다."""
 
     @GrpcController(package="test.v1")
     class NoResponseService:
@@ -300,12 +301,28 @@ def test_build_service_descriptor_no_response_type() -> None:
             ...
 
     collected: dict = {}
-    service = build_service_descriptor(
-        NoResponseService, "test.v1", "NoResponseService", collected
-    )
-    method = service.method[0]
-    assert method.input_type == ".test.v1.HelloRequest"
-    assert method.output_type == ""
+    with pytest.raises(MessagelessRpcMethodError) as raised:
+        build_service_descriptor(
+            NoResponseService, "test.v1", "NoResponseService", collected
+        )
+    assert raised.value.method_name == "NoResponseService.fire_and_forget"
+
+
+def test_build_file_descriptor_missing_response_expect_messageless_error() -> None:
+    """컨트롤러 등록 경로에서도 메시지 없는 rpc가 기동 전에 차단되는지 검증한다."""
+
+    @GrpcController(package="test.v1")
+    class ProbeService:
+        """Controller registered with a void-return rpc."""
+
+        @rpc()
+        async def ping(self) -> None:
+            """RPC declaring neither a request nor a response model."""
+            ...
+
+    with pytest.raises(MessagelessRpcMethodError) as raised:
+        build_file_descriptor(ProbeService)
+    assert raised.value.method_name == "ProbeService.ping"
 
 
 def test_build_service_descriptor_skips_non_rpc_methods() -> None:

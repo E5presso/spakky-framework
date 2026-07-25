@@ -91,6 +91,18 @@ def test_rpc_streaming_hint_without_type_arg_returns_none() -> None:
     assert annotation.response_type is HelloResponse
 
 
+def test_rpc_void_return_hint_expect_response_type_none() -> None:
+    """A ``-> None`` hint should report an absent response model, not NoneType."""
+
+    @rpc()
+    async def ping(self: object, request: HelloRequest) -> None:
+        """Ping without a response model."""
+        ...
+
+    annotation = Rpc.get(ping)
+    assert annotation.response_type is None
+
+
 def test_rpc_extracts_request_type_from_hints() -> None:
     """@rpc() should auto-extract request type from type hints."""
 

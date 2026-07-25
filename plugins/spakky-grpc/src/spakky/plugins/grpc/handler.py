@@ -21,7 +21,10 @@ import grpc
 import grpc.aio
 from spakky.plugins.grpc.codec import basemodel_to_protobuf, protobuf_to_basemodel
 from spakky.plugins.grpc.decorators.rpc import Rpc, RpcMethodType
-from spakky.plugins.grpc.error import UnsupportedResponseTypeError
+from spakky.plugins.grpc.error import (
+    MessagelessRpcMethodError,
+    UnsupportedResponseTypeError,
+)
 from spakky.plugins.grpc.auth import seed_grpc_auth_context
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 
@@ -100,7 +103,15 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
     # ------------------------------------------------------------------
 
     def _build_handlers(self) -> None:
-        """Pre-build ``RpcMethodHandler`` for every ``@rpc`` method."""
+        """Pre-build ``RpcMethodHandler`` for every ``@rpc`` method.
+
+        Raises:
+            MessagelessRpcMethodError: If an ``@rpc`` method declares no
+                request or no response model. ``build_file_descriptor`` rejects
+                the same declaration before a handler is ever built for a
+                registered controller; repeating the check here keeps the
+                invariant true for handlers constructed directly.
+        """
         for method_name, method in getmembers(
             self._controller_type, predicate=isfunction
         ):
@@ -108,15 +119,21 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             if rpc_annotation is None:
                 continue
 
+            request_type = rpc_annotation.request_type
+            response_type = rpc_annotation.response_type
+            if request_type is None or response_type is None:
+                raise MessagelessRpcMethodError(
+                    f"{self._controller_type.__name__}.{method_name}"
+                )
+
             full_method = f"/{self._full_service_name}/{method_name}"
-            request_deserializer = self._make_deserializer(rpc_annotation.request_type)
-            response_serializer = self._make_serializer(rpc_annotation.response_type)
             handler = self._make_rpc_method_handler(
                 full_method=full_method,
                 method_name=method_name,
-                rpc_annotation=rpc_annotation,
-                request_deserializer=request_deserializer,
-                response_serializer=response_serializer,
+                method_type=rpc_annotation.method_type,
+                request_type=request_type,
+                request_deserializer=self._make_deserializer(request_type),
+                response_serializer=self._make_serializer(response_type),
             )
             self._handlers[full_method] = handler
             logger.debug(
@@ -129,23 +146,22 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         *,
         full_method: str,
         method_name: str,
-        rpc_annotation: Rpc,
-        request_deserializer: Callable[[bytes], object] | None,
-        response_serializer: Callable[[object], bytes] | None,
+        method_type: RpcMethodType,
+        request_type: type[BaseModel],
+        request_deserializer: Callable[[bytes], object],
+        response_serializer: Callable[[object], bytes],
     ) -> grpc.RpcMethodHandler:
         """Create a ``grpc.RpcMethodHandler`` for a single ``@rpc`` method."""
-        method_type = rpc_annotation.method_type
-
         if method_type is RpcMethodType.UNARY:
             return grpc.unary_unary_rpc_method_handler(
-                self._make_unary_behavior(full_method, method_name, rpc_annotation),
+                self._make_unary_behavior(full_method, method_name, request_type),
                 request_deserializer=request_deserializer,
                 response_serializer=response_serializer,
             )
         if method_type is RpcMethodType.SERVER_STREAMING:
             return grpc.unary_stream_rpc_method_handler(
                 self._make_server_streaming_behavior(
-                    full_method, method_name, rpc_annotation
+                    full_method, method_name, request_type
                 ),
                 request_deserializer=request_deserializer,
                 response_serializer=response_serializer,
@@ -153,16 +169,14 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         if method_type is RpcMethodType.CLIENT_STREAMING:
             return grpc.stream_unary_rpc_method_handler(
                 self._make_client_streaming_behavior(
-                    full_method, method_name, rpc_annotation
+                    full_method, method_name, request_type
                 ),
                 request_deserializer=request_deserializer,
                 response_serializer=response_serializer,
             )
         # BIDI_STREAMING
         return grpc.stream_stream_rpc_method_handler(
-            self._make_bidi_streaming_behavior(
-                full_method, method_name, rpc_annotation
-            ),
+            self._make_bidi_streaming_behavior(full_method, method_name, request_type),
             request_deserializer=request_deserializer,
             response_serializer=response_serializer,
         )
@@ -173,10 +187,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         self,
         full_method: str,
         method_name: str,
-        rpc_annotation: Rpc,
+        request_type: type[BaseModel],
     ) -> Callable[..., object]:
         """Build an async unary-unary handler."""
-        request_type = rpc_annotation.request_type
 
         async def _behavior(
             request: object,
@@ -192,8 +205,6 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)  # RPC handler method lookup
-            if request_type is None:
-                return await handler_method()
             domain_request = (
                 protobuf_to_basemodel(request, request_type)
                 if isinstance(request, Message)
@@ -207,10 +218,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         self,
         full_method: str,
         method_name: str,
-        rpc_annotation: Rpc,
+        request_type: type[BaseModel],
     ) -> Callable[..., AsyncIterator[object]]:
         """Build an async unary-stream (server streaming) handler."""
-        request_type = rpc_annotation.request_type
 
         async def _behavior(
             request: object,
@@ -226,10 +236,6 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
             instance = self._container.get(self._controller_type)
             # framework 내부 디스패치: @rpc 등록 메서드명을 런타임에 조회
             handler_method = getattr(instance, method_name)  # RPC handler method lookup
-            if request_type is None:
-                async for item in handler_method():
-                    yield item
-                return
             domain_request = (
                 protobuf_to_basemodel(request, request_type)
                 if isinstance(request, Message)
@@ -244,10 +250,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         self,
         full_method: str,
         method_name: str,
-        rpc_annotation: Rpc,
+        request_type: type[BaseModel],
     ) -> Callable[..., object]:
         """Build an async stream-unary (client streaming) handler."""
-        request_type = rpc_annotation.request_type
 
         async def _behavior(
             request_iterator: AsyncIterator[object],
@@ -266,7 +271,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:
-                    if request_type is not None and isinstance(request, Message):
+                    if isinstance(request, Message):
                         yield protobuf_to_basemodel(request, request_type)
                     else:
                         yield request
@@ -279,10 +284,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
         self,
         full_method: str,
         method_name: str,
-        rpc_annotation: Rpc,
+        request_type: type[BaseModel],
     ) -> Callable[..., AsyncIterator[object]]:
         """Build an async stream-stream (bidirectional streaming) handler."""
-        request_type = rpc_annotation.request_type
 
         async def _behavior(
             request_iterator: AsyncIterator[object],
@@ -301,7 +305,7 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
             async def _convert_stream() -> AsyncIterator[object]:
                 async for request in request_iterator:
-                    if request_type is not None and isinstance(request, Message):
+                    if isinstance(request, Message):
                         yield protobuf_to_basemodel(request, request_type)
                     else:
                         yield request
@@ -315,12 +319,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_deserializer(
         self,
-        request_type: type[BaseModel] | None,
-    ) -> Callable[[bytes], object] | None:
+        request_type: type[BaseModel],
+    ) -> Callable[[bytes], object]:
         """Build a bytes → protobuf Message deserializer."""
-        if request_type is None:
-            return None
-
         full_name = (
             f"{self._full_service_name.rsplit('.', 1)[0]}.{request_type.__name__}"
         )
@@ -335,12 +336,9 @@ class GrpcServiceHandler(grpc.GenericRpcHandler):
 
     def _make_serializer(
         self,
-        response_type: type[BaseModel] | None,
-    ) -> Callable[[object], bytes] | None:
+        response_type: type[BaseModel],
+    ) -> Callable[[object], bytes]:
         """Build a ``BaseModel``/``Message`` → bytes serializer."""
-        if response_type is None:
-            return None
-
         full_name = (
             f"{self._full_service_name.rsplit('.', 1)[0]}.{response_type.__name__}"
         )

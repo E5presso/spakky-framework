@@ -119,6 +119,8 @@ class UserServiceController:
         return GetUserResponse(user_id=user.uid, name=user.name)
 ```
 
+protobuf는 모든 method에 input/output 메시지 타입을 요구하므로 request 모델(첫 번째 인자)과 response 모델(반환 타입)을 모두 선언해야 합니다. 둘 중 하나라도 빠지면 컨트롤러 등록 시점에 `MessagelessRpcMethodError`가 발생하며, 에러의 `method_name`에 `컨트롤러명.메서드명`이 담깁니다.
+
 ### RpcMethodType
 
 | 값 | 설명 |
@@ -317,6 +319,7 @@ spakky-grpc-descriptor-snapshot apps | diff - descriptors.json
 | `UnsupportedFieldTypeError` | 지원하지 않는 protobuf 필드 타입 |
 | `DescriptorAlreadyRegisteredError` | 이미 등록된 descriptor 재등록 시도 |
 | `ProtoFieldNumberConflictError` | 명시 `ProtoField` 번호가 자동 부여 필드의 번호와 충돌 |
+| `MessagelessRpcMethodError` | `@rpc` 메서드가 request 또는 response 모델을 선언하지 않음 — 컨트롤러 등록 시점과 클라이언트 호출 생성 시점 모두에서 발생 |
 
 ### 전송 보안 설정 에러
 
@@ -331,7 +334,6 @@ spakky-grpc-descriptor-snapshot apps | diff - descriptors.json
 |------|------|
 | `NotAnRpcMethodError` | `@rpc`가 없는 메서드로 호출을 만들려 함 |
 | `RpcMethodTypeMismatchError` | 선언된 스트리밍 패턴과 다른 호출 형태를 요청 |
-| `MessagelessRpcMethodError` | `@rpc` 메서드가 request 또는 response 모델을 선언하지 않음 |
 
 ---
 
