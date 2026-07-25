@@ -17,10 +17,11 @@ class SampleIntegrationEvent(AbstractIntegrationEvent):
 
 
 class RecordingTransport(IEventTransport):
-    """Transport that records sent events."""
+    """Transport that records sent events and flush calls."""
 
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes, dict[str, str]]] = []
+        self.flush_count: int = 0
 
     def send(
         self,
@@ -31,12 +32,16 @@ class RecordingTransport(IEventTransport):
     ) -> None:
         self.sent.append((event_name, payload, headers))
 
+    def flush(self) -> None:
+        self.flush_count += 1
+
 
 class AsyncRecordingTransport(IAsyncEventTransport):
-    """Async transport that records sent events."""
+    """Async transport that records sent events and flush calls."""
 
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes, dict[str, str]]] = []
+        self.flush_count: int = 0
 
     async def send(
         self,
@@ -46,6 +51,9 @@ class AsyncRecordingTransport(IAsyncEventTransport):
         partition_key: str | None = None,
     ) -> None:
         self.sent.append((event_name, payload, headers))
+
+    async def flush(self) -> None:
+        self.flush_count += 1
 
 
 def test_direct_event_bus_send_single_expect_transport_called() -> None:
@@ -104,3 +112,28 @@ async def test_async_direct_event_bus_send_same_type_twice_expect_adapter_cached
     assert len(transport.sent) == 2
     assert SampleIntegrationEvent in bus._adapters
     assert len(bus._adapters) == 1
+
+
+def test_direct_event_bus_send_expect_transport_flushed_once_per_event() -> None:
+    """DirectEventBus.send가 발행 1건마다 transport.flush를 한 번 호출함을 검증한다."""
+    transport = RecordingTransport()
+    bus = DirectEventBus(transport, W3CTracePropagator())
+
+    bus.send(SampleIntegrationEvent(message="first"))
+    bus.send(SampleIntegrationEvent(message="second"))
+
+    assert transport.flush_count == 2
+
+
+@pytest.mark.asyncio
+async def test_async_direct_event_bus_send_expect_transport_flushed_once_per_event() -> (
+    None
+):
+    """AsyncDirectEventBus.send가 발행 1건마다 transport.flush를 한 번 호출함을 검증한다."""
+    transport = AsyncRecordingTransport()
+    bus = AsyncDirectEventBus(transport, W3CTracePropagator())
+
+    await bus.send(SampleIntegrationEvent(message="first"))
+    await bus.send(SampleIntegrationEvent(message="second"))
+
+    assert transport.flush_count == 2

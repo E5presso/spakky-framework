@@ -31,6 +31,9 @@ class InMemorySyncTransport(IEventTransport):
     ) -> None:
         self.sent.append((event_name, payload, headers))
 
+    def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
+
 
 class InMemoryAsyncTransport(IAsyncEventTransport):
     def __init__(self) -> None:
@@ -44,6 +47,9 @@ class InMemoryAsyncTransport(IAsyncEventTransport):
         partition_key: str | None = None,
     ) -> None:
         self.sent.append((event_name, payload, headers))
+
+    async def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
 
 
 def test_direct_event_bus_send_delegates_to_transport() -> None:

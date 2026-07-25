@@ -65,9 +65,11 @@ export SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT="10.0"
 | `consumer_configuration_dict` | `confluent_kafka.Consumer`, `AIOConsumer` | `enable.auto.commit=false` | offset이 핸들러 결과에 따라서만 전진 |
 | `connection_configuration_dict` | `AdminClient` 및 위 3종의 공통 기반 | `client.id`, `bootstrap.servers`, SASL/TLS | 클러스터 접속 정보만 담음 |
 
-`AsyncKafkaEventTransport.send`는 호출마다 producer를 새로 만들어 닫으므로, 비동기 발행
-경로의 멱등 보장 범위는 그 한 번의 `send`가 내부적으로 재시도하는 구간까지입니다. 서로
-다른 `send` 호출 사이의 파티션 내 순서는 보장하지 않습니다.
+`AsyncKafkaEventTransport`는 producer를 애플리케이션 수명 동안 하나로 유지하므로, 멱등
+producer의 시퀀스 번호가 그 수명 내내 이어집니다. 따라서 위 `enable_idempotence` 설정이
+서로 다른 `send` 호출 사이에서도 중복 발행과 파티션 내 재정렬을 막습니다. 발행마다
+producer를 새로 만들면 시퀀스가 초기화되어 이 보장이 성립하지 않습니다 — 자세한 수명주기는
+아래 "Producer 수명주기"를 참고하십시오.
 
 Consumer는 등록된 핸들러가 끝난 뒤 그 메시지를 처리 완료로 볼지 다시 받을지 결정합니다.
 `MessageOutcome`이 그 두 결정을 나타냅니다.
@@ -212,6 +214,16 @@ dead-letter 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배�
 
 dead-letter topic은 consumer `initialize` 시점에 구독 topic과 함께 생성됩니다.
 
+## Producer 수명주기
+
+- 두 transport 모두 producer를 하나만 두고 재사용합니다. 비동기 transport는 `IAsyncService`로 등록되어 애플리케이션이 서비스를 시작할 때 `AIOKafkaProducer`를 열고 종료할 때 닫습니다. 시작 시점에 브로커에 연결하지 못하면 `app.start()`가 실패합니다.
+- `send()`는 레코드를 producer에 넘기고 broker 응답을 기다리지 않으므로 연속 발행이 한 배치로 묶입니다. 배치 끝에서 호출하는 `flush()`가 배치를 내보내고 결과를 확정합니다. `DirectEventBus`는 발행 1건마다, outbox relay는 배치 1개마다 `flush()`를 호출합니다.
+- 비동기 `flush()`는 브로커가 거부한 레코드의 예외를 그대로 올립니다. 동기 `flush()`는 confluent-kafka 계약상 거부를 예외로 올리지 않고 delivery 콜백 로그로 남깁니다.
+- 비동기 `flush()`가 확정하는 대상은 **그 발행자가 넘긴 레코드**입니다. 여러 발행자가 같은 transport Pod를 동시에 쓰더라도 한 발행자의 flush가 다른 발행자의 거부를 대신 받거나 삼키지 않습니다. 따라서 한 배치의 `send`와 `flush`는 같은 실행 문맥(asyncio 태스크)에서 호출해야 하며, event bus와 outbox relay가 그렇게 호출합니다.
+- 애플리케이션이 transport를 시작하기 전이나 종료한 뒤의 비동기 발행은 `EventTransportNotRunningError`로 거부됩니다. outbox relay는 이 에러를 전달 실패와 구분하여 retry count를 올리지 않고 배치를 그대로 남깁니다.
+- aiokafka는 producer를 생성한 event loop에 묶으므로, 다른 loop(HTTP 요청 핸들러·테스트)에서 발행하면 transport가 producer의 loop로 호출을 넘깁니다.
+- dead-letter 발행은 consumer가 자기 producer로 수행하므로 위 수명주기와 무관합니다.
+
 ## 주요 기능
 
 - **자동 topic 생성**: 이벤트 타입 이름을 기준으로 topic 생성 (dead-letter topic 포함)
@@ -229,7 +241,7 @@ dead-letter topic은 consumer `initialize` 시점에 구독 topic과 함께 생�
 | 컴포넌트 | 설명 |
 |-----------|-------------|
 | `KafkaEventTransport` | 동기 event transport(`IEventTransport`) |
-| `AsyncKafkaEventTransport` | 비동기 event transport(`IAsyncEventTransport`) |
+| `AsyncKafkaEventTransport` | 비동기 event transport(`IAsyncEventTransport`, `IAsyncService`) |
 | `KafkaEventConsumer` | 동기 event consumer(background service) |
 | `AsyncKafkaEventConsumer` | 비동기 event consumer(background service) |
 | `KafkaConnectionConfig` | 환경변수 기반 설정 |

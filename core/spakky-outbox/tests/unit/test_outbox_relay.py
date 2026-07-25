@@ -10,6 +10,7 @@ import pytest
 from pydantic import TypeAdapter
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.event.error import EventTransportNotRunningError
 from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
 
 from spakky.outbox.common.config import OutboxConfig
@@ -33,6 +34,7 @@ class SpySyncTransport(IEventTransport):
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes]] = []
         self.partition_keys: list[str | None] = []
+        self.flush_marks: list[int] = []
 
     def send(
         self,
@@ -44,6 +46,9 @@ class SpySyncTransport(IEventTransport):
         self.sent.append((event_name, payload))
         self.partition_keys.append(partition_key)
 
+    def flush(self) -> None:
+        self.flush_marks.append(len(self.sent))
+
 
 class FailingSyncTransport(IEventTransport):
     def send(
@@ -54,6 +59,37 @@ class FailingSyncTransport(IEventTransport):
         partition_key: str | None = None,
     ) -> None:
         raise ConnectionError("Transport unavailable")
+
+    def flush(self) -> None:
+        """Never reached: send fails before the batch is flushed."""
+
+
+class FailingFlushSyncTransport(IEventTransport):
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        """Accept the payload; the failure happens when the batch is flushed."""
+
+    def flush(self) -> None:
+        raise ConnectionError("Broker unreachable")
+
+
+class StoppedSyncTransport(IEventTransport):
+    def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        raise EventTransportNotRunningError
+
+    def flush(self) -> None:
+        """Never reached: the transport refuses the batch at the first send."""
 
 
 class InMemorySyncOutboxStorage(IOutboxStorage):
@@ -86,6 +122,7 @@ class SpyAsyncTransport(IAsyncEventTransport):
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes]] = []
         self.partition_keys: list[str | None] = []
+        self.flush_marks: list[int] = []
 
     async def send(
         self,
@@ -97,6 +134,9 @@ class SpyAsyncTransport(IAsyncEventTransport):
         self.sent.append((event_name, payload))
         self.partition_keys.append(partition_key)
 
+    async def flush(self) -> None:
+        self.flush_marks.append(len(self.sent))
+
 
 class FailingAsyncTransport(IAsyncEventTransport):
     async def send(
@@ -107,6 +147,37 @@ class FailingAsyncTransport(IAsyncEventTransport):
         partition_key: str | None = None,
     ) -> None:
         raise ConnectionError("Transport unavailable")
+
+    async def flush(self) -> None:
+        """Never reached: send fails before the batch is flushed."""
+
+
+class FailingFlushAsyncTransport(IAsyncEventTransport):
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        """Accept the payload; the failure happens when the batch is flushed."""
+
+    async def flush(self) -> None:
+        raise ConnectionError("Broker unreachable")
+
+
+class StoppedAsyncTransport(IAsyncEventTransport):
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        raise EventTransportNotRunningError
+
+    async def flush(self) -> None:
+        """Never reached: the transport refuses the batch at the first send."""
 
 
 class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
@@ -184,6 +255,62 @@ def test_relay_batch_publishes_raw_payload_to_transport() -> None:
     assert message.id in storage.published_ids
 
 
+def test_relay_batch_with_three_messages_expect_single_flush_after_last_send() -> None:
+    """배치 전체를 보낸 뒤 flush를 한 번만 호출하고 그 후 발행 완료로 표시한다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(3)
+    ]
+
+    storage = InMemorySyncOutboxStorage(pending=messages)
+    transport = SpySyncTransport()
+    config = _make_config()
+
+    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay._relay_batch()
+
+    assert transport.flush_marks == [3]
+    assert storage.published_ids == [message.id for message in messages]
+
+
+def test_relay_batch_flush_failure_expect_batch_left_pending_without_retry_charge() -> (
+    None
+):
+    """배치 flush가 실패하면 발행 완료로 표시하지 않고 retry count도 올리지 않는다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(2)
+    ]
+
+    storage = InMemorySyncOutboxStorage(pending=messages)
+    config = _make_config()
+
+    relay = OutboxRelayBackgroundService(storage, FailingFlushSyncTransport(), config)
+    relay._relay_batch()
+
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
+
+
+def test_relay_batch_transport_stopped_expect_batch_left_pending_without_retry_charge() -> (
+    None
+):
+    """종료로 transport가 닫히면 배치를 그대로 두고 retry count를 올리지 않는다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(3)
+    ]
+
+    storage = InMemorySyncOutboxStorage(pending=messages)
+    config = _make_config()
+
+    relay = OutboxRelayBackgroundService(storage, StoppedSyncTransport(), config)
+    relay._relay_batch()
+
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
+
+
 def test_relay_batch_increments_retry_on_transport_failure() -> None:
     """Transport 전송 실패 시 _relay_batch가 retry count를 증가시키는지 검증한다."""
     event = RelayTestIntegrationEvent(order_id="ORD-FAIL")
@@ -234,6 +361,69 @@ async def test_async_relay_batch_publishes_raw_payload_to_transport() -> None:
     assert event_name == "RelayTestIntegrationEvent"
     assert payload == message.payload
     assert message.id in storage.published_ids
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_with_three_messages_expect_single_flush_after_last_send() -> (
+    None
+):
+    """배치 전체를 보낸 뒤 flush를 한 번만 호출하고 그 후 발행 완료로 표시한다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(3)
+    ]
+
+    storage = InMemoryAsyncOutboxStorage(pending=messages)
+    transport = SpyAsyncTransport()
+    config = _make_config()
+
+    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    await relay._relay_batch()
+
+    assert transport.flush_marks == [3]
+    assert storage.published_ids == [message.id for message in messages]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_flush_failure_expect_batch_left_pending_without_retry_charge() -> (
+    None
+):
+    """배치 flush가 실패하면 발행 완료로 표시하지 않고 retry count도 올리지 않는다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(2)
+    ]
+
+    storage = InMemoryAsyncOutboxStorage(pending=messages)
+    config = _make_config()
+
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, FailingFlushAsyncTransport(), config
+    )
+    await relay._relay_batch()
+
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_transport_stopped_expect_batch_left_pending_without_retry_charge() -> (
+    None
+):
+    """종료로 transport가 닫히면 배치를 그대로 두고 retry count를 올리지 않는다."""
+    messages = [
+        _make_message(RelayTestIntegrationEvent(order_id=f"ORD-{index}"))
+        for index in range(3)
+    ]
+
+    storage = InMemoryAsyncOutboxStorage(pending=messages)
+    config = _make_config()
+
+    relay = AsyncOutboxRelayBackgroundService(storage, StoppedAsyncTransport(), config)
+    await relay._relay_batch()
+
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
 
 
 @pytest.mark.asyncio

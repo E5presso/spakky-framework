@@ -80,6 +80,10 @@ class RabbitMQEventTransport(IEventTransport):
         channel.close()
         connection.close()
 
+    @override
+    def flush(self) -> None:
+        """Return immediately: send() publishes and closes its own connection."""
+
 
 @Pod()
 class AsyncRabbitMQEventTransport(IAsyncEventTransport):
@@ -141,3 +145,7 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
                 routing_key=event_name,
             )
             await channel.close()
+
+    @override
+    async def flush(self) -> None:
+        """Return immediately: send() publishes and closes its own connection."""

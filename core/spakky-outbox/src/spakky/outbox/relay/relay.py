@@ -2,12 +2,14 @@
 
 import logging
 from asyncio import wait_for
+from uuid import UUID
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
+from spakky.event.error import EventTransportNotRunningError
 from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
 from typing import override
 
@@ -58,6 +60,7 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
             self._config.batch_size,
             self._config.max_retry_count,
         )
+        relayed_message_ids: list[UUID] = []
         for message in messages:
             try:
                 self._transport.send(
@@ -66,13 +69,38 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
                     message.headers,
                     message.partition_key,
                 )
-                self._storage.mark_published(message.id)
+            except EventTransportNotRunningError:
+                # Application shutdown closed the transport. The batch is left
+                # untouched: a shutdown is nobody's delivery failure, and
+                # charging retries here would exhaust healthy messages.
+                logger.info(
+                    "Transport stopped while relaying; deferring %d outbox messages",
+                    len(messages) - len(relayed_message_ids),
+                )
+                return
             except Exception:
                 logger.exception(
                     "Failed to relay outbox message %s",
                     message.id,
                 )
                 self._storage.increment_retry(message.id)
+                continue
+            relayed_message_ids.append(message.id)
+        if not relayed_message_ids:
+            return
+        # The batch is marked published only after flush() returns, so a batch
+        # that never left the client stays pending. Retry counts are not charged
+        # here: a flush failure belongs to the transport, not to any one message.
+        try:
+            self._transport.flush()
+        except Exception:
+            logger.exception(
+                "Failed to flush %d relayed outbox messages",
+                len(relayed_message_ids),
+            )
+            return
+        for message_id in relayed_message_ids:
+            self._storage.mark_published(message_id)
 
 
 @Pod()
@@ -123,6 +151,7 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
             self._config.batch_size,
             self._config.max_retry_count,
         )
+        relayed_message_ids: list[UUID] = []
         for message in messages:
             try:
                 await self._transport.send(
@@ -131,10 +160,35 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
                     message.headers,
                     message.partition_key,
                 )
-                await self._storage.mark_published(message.id)
+            except EventTransportNotRunningError:
+                # Application shutdown closed the transport. The batch is left
+                # untouched: a shutdown is nobody's delivery failure, and
+                # charging retries here would exhaust healthy messages.
+                logger.info(
+                    "Transport stopped while relaying; deferring %d outbox messages",
+                    len(messages) - len(relayed_message_ids),
+                )
+                return
             except Exception:
                 logger.exception(
                     "Failed to relay outbox message %s",
                     message.id,
                 )
                 await self._storage.increment_retry(message.id)
+                continue
+            relayed_message_ids.append(message.id)
+        if not relayed_message_ids:
+            return
+        # The batch is marked published only after flush() returns, so a batch
+        # that never left the client stays pending. Retry counts are not charged
+        # here: a flush failure belongs to the transport, not to any one message.
+        try:
+            await self._transport.flush()
+        except Exception:
+            logger.exception(
+                "Failed to flush %d relayed outbox messages",
+                len(relayed_message_ids),
+            )
+            return
+        for message_id in relayed_message_ids:
+            await self._storage.mark_published(message_id)

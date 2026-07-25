@@ -71,6 +71,7 @@ def test_synchronous_event(app: SpakkyApplication) -> None:
     event2 = SampleEvent(message="Goodbye, World!")
     transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event1), {})
     transport.send("SampleEvent", _sample_event_type_adapter.dump_json(event2), {})
+    transport.flush()
     wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -89,6 +90,7 @@ async def test_asynchronous_event(app: SpakkyApplication) -> None:
     await transport.send(
         "SampleEvent", _sample_event_type_adapter.dump_json(event2), {}
     )
+    await transport.flush()
     await async_wait_for_count(handler, initial_count + 2)
     assert handler.count == initial_count + 2
 
@@ -170,6 +172,7 @@ def test_synchronous_handler_failure_expect_dead_letter_record(
     payload = TypeAdapter(FailingEvent).dump_json(event)
 
     transport.send("FailingEvent", payload, {})
+    transport.flush()
 
     record = read_dead_letter_record("FailingEvent.dlt")
     assert record.value() == payload
@@ -192,6 +195,7 @@ async def test_asynchronous_handler_failure_expect_dead_letter_record(
     payload = TypeAdapter(AsyncFailingEvent).dump_json(event)
 
     await transport.send("AsyncFailingEvent", payload, {})
+    await transport.flush()
 
     record = read_dead_letter_record("AsyncFailingEvent.dlt")
     assert record.value() == payload

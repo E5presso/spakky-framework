@@ -11,6 +11,8 @@
 2. Integration Event 발행 시 `KafkaEventTransport`가 Kafka 토픽으로 전송
 3. `KafkaEventConsumer`가 백그라운드 서비스로 토픽을 소비하며 핸들러에 dispatch
 
+Transport는 producer를 발행마다 새로 만들지 않고 하나를 재사용합니다. 비동기 transport는 애플리케이션이 서비스를 시작할 때 producer를 열고 종료할 때 닫으므로, 브로커 연결과 메타데이터 조회가 발행마다 반복되지 않고 producer 단위 설정(배치·멱등 발행)이 수명 내내 유지됩니다. 시작 시점에 브로커에 연결하지 못하면 `app.start()`가 실패하며, 애플리케이션 수명 밖의 발행은 `EventTransportNotRunningError`로 거부됩니다.
+
 ---
 
 ## 설정
@@ -146,7 +148,7 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
 !!! warning "파티션 키만으로는 순서가 완결되지 않습니다"
     파티션 키는 "같은 키가 같은 파티션으로 간다"만 보장합니다. 같은 파티션 안의 상대 순서는 아래 세 경로에서 여전히 뒤집힐 수 있습니다.
 
-    - **producer 재시도**: producer 멱등(idempotence)이 꺼져 있으면 재시도가 순서를 뒤집습니다. 현재 `KafkaConnectionConfig`는 `enable.idempotence`·`acks`·`max.in.flight.requests.per.connection`을 노출하지 않으므로 이 설정을 프레임워크에서 조정할 수 없습니다 — 설정 표면 추가는 #493에서 다룹니다.
+    - **producer 재시도**: 프레임워크가 `enable.idempotence=true`를 고정하고 transport가 producer를 애플리케이션 수명 동안 하나로 유지하므로, 그 수명 안의 재시도는 파티션 내 순서를 뒤집지 않습니다. 다만 프로세스가 재시작하면 새 producer 세션이 시작되어 이전 세션과의 상대 순서까지는 보장하지 않습니다.
     - **Outbox 릴레이의 개별 메시지 재시도**: `OutboxRelayBackgroundService`는 메시지 전송이 실패하면 재시도 횟수만 올리고 **다음 메시지로 넘어갑니다.** 같은 키의 후속 메시지가 먼저 발행되고 실패한 메시지는 다음 폴링에서 재전송되므로 순서가 뒤집힙니다.
     - **릴레이 다중 인스턴스**: `fetch_pending()`의 `SELECT ... FOR UPDATE SKIP LOCKED`는 같은 키의 연속 메시지가 서로 다른 배치로 나뉘어 병렬 발행되는 것을 막지 않습니다.
 
@@ -231,7 +233,7 @@ dead-letter 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배�
 | Producer (이벤트 발행 + dead-letter 발행) | `enable.idempotence=true`, `acks=all` | 한 producer 세션의 재시도가 중복 발행이나 파티션 내 순서 역전을 만들지 않고, 승인된 이벤트가 파티션 리더 장애에도 남습니다 |
 | Consumer | `enable.auto.commit=false` | offset이 핸들러 실행 전에 전진하지 않습니다 |
 
-`AsyncKafkaEventTransport`는 `send` 호출마다 `AIOKafkaProducer`를 새로 만들어 닫으므로, 멱등 보장은 그 한 번의 `send`가 내부적으로 재시도하는 범위까지입니다. 서로 다른 `send` 호출 사이의 파티션 내 순서는 보장되지 않습니다.
+`AsyncKafkaEventTransport`는 `AIOKafkaProducer`를 애플리케이션 수명 동안 하나로 유지하므로, 멱등 producer의 시퀀스 번호가 그 수명 내내 이어집니다. 서로 다른 `send` 호출 사이에서도 중복 발행과 파티션 내 순서 역전이 막힙니다 — 멱등 시퀀스는 producer 인스턴스에 묶여 있어, 발행마다 producer를 새로 만들면 이 보장이 성립하지 않습니다.
 
 Consumer는 핸들러가 끝난 뒤, 그 메시지를 처리 완료로 볼지 다시 받을지 결정합니다.
 

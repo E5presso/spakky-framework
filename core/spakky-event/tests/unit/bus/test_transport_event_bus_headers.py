@@ -51,6 +51,9 @@ class RecordingTransport(IEventTransport):
     ) -> None:
         self.sent.append((event_name, payload, headers))
 
+    def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
+
 
 class AsyncRecordingTransport(IAsyncEventTransport):
     """Async transport that records sent events with headers."""
@@ -66,6 +69,9 @@ class AsyncRecordingTransport(IAsyncEventTransport):
         partition_key: str | None = None,
     ) -> None:
         self.sent.append((event_name, payload, headers))
+
+    async def flush(self) -> None:
+        """Nothing is buffered, so flushing is immediate."""
 
 
 class FakePropagator(ITracePropagator):

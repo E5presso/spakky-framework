@@ -13,6 +13,7 @@ from spakky.event.error import (
     AbstractSpakkyEventError,
     AuthSnapshotPropagationContextUnavailableError,
     AuthSnapshotPropagationSignerUnavailableError,
+    EventTransportNotRunningError,
     InvalidMessageError,
 )
 from spakky.event.event_consumer import (
@@ -76,6 +77,7 @@ __all__ = [
     "AbstractSpakkyEventError",
     "AuthSnapshotPropagationContextUnavailableError",
     "AuthSnapshotPropagationSignerUnavailableError",
+    "EventTransportNotRunningError",
     "InvalidMessageError",
 ]
 
