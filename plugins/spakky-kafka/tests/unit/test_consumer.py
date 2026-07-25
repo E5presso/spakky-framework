@@ -116,7 +116,7 @@ def test_sync_consumer_init_expect_success(
     assert consumer.type_lookup == {}
     assert consumer.type_adapters == {}
     assert consumer.handlers == {}
-    mock_admin_cls.assert_called_once_with(config.configuration_dict)
+    mock_admin_cls.assert_called_once_with(config.connection_configuration_dict)
     mock_consumer_cls.assert_called_once()
 
 
@@ -506,12 +506,13 @@ def test_async_consumer_init_expect_success(
 ) -> None:
     """비동기 AsyncKafkaEventConsumer가 올바르게 초기화되는지 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
 
     assert consumer.config is config
     assert consumer.type_lookup == {}
     assert consumer.type_adapters == {}
     assert consumer.handlers == {}
-    mock_admin_cls.assert_called_once_with(config.configuration_dict)
+    mock_admin_cls.assert_called_once_with(config.connection_configuration_dict)
 
 
 @patch("spakky.plugins.kafka.event.consumer.AdminClient")
@@ -521,6 +522,7 @@ def test_async_consumer_register_expect_handler_stored(
 ) -> None:
     """비동기 consumer의 register가 핸들러를 올바르게 저장하는지 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     handler = AsyncMock()
 
     consumer.register(SampleEvent, handler)
@@ -538,6 +540,7 @@ def test_async_consumer_register_custom_event_name_expect_topic_lookup(
 ) -> None:
     """Async custom event_name 등록도 outbound topic identity를 사용한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     handler = AsyncMock()
 
     consumer.register(RenamedEvent, handler)
@@ -553,6 +556,7 @@ def test_async_consumer_register_multiple_handlers_expect_all_stored(
 ) -> None:
     """비동기 consumer에 동일 이벤트에 복수 핸들러 등록이 가능한지 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     handler1 = AsyncMock()
     handler2 = AsyncMock()
 
@@ -570,6 +574,7 @@ def test_async_consumer_register_auth_boundary_expect_handler_marked(
     """Async consumer records auth-aware endpoints for header delivery."""
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     handler = AsyncMock()
 
     consumer.register(SampleEvent, handler)
@@ -588,6 +593,7 @@ async def test_async_consumer_auth_boundary_handler_receives_headers(
     """Auth-aware async endpoints receive Kafka headers from consumer."""
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     captured_headers: list[dict[str, str] | None] = []
 
     async def handler(
@@ -619,6 +625,7 @@ def test_async_consumer_create_topics_expect_topics_created(
     mock_admin_cls.return_value = mock_admin
 
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer._create_topics(["topic1"])
 
     mock_admin.create_topics.assert_called_once()
@@ -644,6 +651,7 @@ async def test_async_consumer_initialize_async_expect_subscribe(
     mock_aio_consumer_cls.return_value = mock_aio_consumer
 
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer.register(SampleEvent, AsyncMock())
 
     await consumer.initialize_async()
@@ -669,6 +677,7 @@ async def test_async_consumer_initialize_async_expect_dead_letter_topic_created(
     mock_aio_consumer_cls.return_value = AsyncMock()
 
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer.register(SampleEvent, AsyncMock())
 
     await consumer.initialize_async()
@@ -697,6 +706,7 @@ async def test_async_consumer_initialize_custom_event_name_expect_subscribe_to_e
     mock_aio_consumer_cls.return_value = mock_aio_consumer
 
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer.register(RenamedEvent, AsyncMock())
 
     await consumer.initialize_async()
@@ -777,6 +787,7 @@ async def test_async_consumer_route_with_traceparent_expect_child_context_set(
 ) -> None:
     """비동기 consumer에서 traceparent 헤더가 있으면 child TraceContext가 활성화됨을 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer.set_propagator(W3CTracePropagator())
 
     captured_ctx: list[TraceContext | None] = []
@@ -843,6 +854,7 @@ async def test_async_consumer_route_without_propagator_expect_no_trace_context(
 ) -> None:
     """비동기 consumer에서 propagator 미설정 시 TraceContext가 설정되지 않음을 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
 
     captured_ctx: list[TraceContext | None] = []
 
@@ -905,6 +917,7 @@ async def test_async_consumer_route_with_none_headers_expect_new_root_trace(
 ) -> None:
     """비동기 consumer에서 headers가 None이면 new root TraceContext가 생성됨을 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer.set_propagator(W3CTracePropagator())
 
     captured_ctx: list[TraceContext | None] = []
@@ -968,6 +981,7 @@ async def test_async_consumer_route_with_empty_headers_expect_new_root_trace(
 ) -> None:
     """비동기 consumer에서 headers가 빈 리스트이면 new root TraceContext가 생성됨을 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer.set_propagator(W3CTracePropagator())
 
     captured_ctx: list[TraceContext | None] = []
@@ -1024,6 +1038,7 @@ async def test_async_consumer_route_trace_context_cleared_after_handler(
 ) -> None:
     """비동기 consumer에서 핸들러 완료 후 TraceContext가 정리됨을 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
     consumer.set_propagator(W3CTracePropagator())
     consumer.register(SampleEvent, AsyncMock())
 
@@ -1080,6 +1095,7 @@ async def test_async_consumer_route_handler_exception_expect_trace_context_clear
     """비동기 consumer에서 핸들러 예외 시에도 TraceContext가 정리됨을 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
     consumer.set_propagator(W3CTracePropagator())
 
     async def raising_handler(event: SampleEvent) -> None:
@@ -1164,6 +1180,7 @@ def test_async_consumer_to_string_headers_with_bytes_expect_decoded(
 ) -> None:
     """비동기 consumer의 _to_string_headers가 bytes 값을 문자열로 디코딩하는지 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
 
     result = consumer._to_string_headers(
         [
@@ -1182,6 +1199,7 @@ def test_async_consumer_to_string_headers_with_mixed_values_expect_str_and_bytes
 ) -> None:
     """비동기 consumer의 _to_string_headers가 str, bytes, None 혼합 값을 올바르게 처리하는지 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
 
     result = consumer._to_string_headers(
         [
@@ -1201,6 +1219,7 @@ def test_async_consumer_to_string_headers_with_none_expect_empty(
 ) -> None:
     """비동기 consumer의 _to_string_headers가 None 입력에 빈 dict를 반환하는지 검증한다."""
     consumer = AsyncKafkaEventConsumer(config)
+    consumer.consumer = AsyncMock()
 
     result = consumer._to_string_headers(None)
 
@@ -1433,6 +1452,7 @@ async def test_async_consumer_route_undeserializable_message_expect_dead_letter_
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
     handler = AsyncMock()
     consumer.register(SampleEvent, handler)
     incoming_message.value.return_value = b"not-an-event"
@@ -1459,6 +1479,7 @@ async def test_async_consumer_route_failing_handler_expect_dead_letter_with_orig
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
     consumer.register(SampleEvent, async_failing_handler)
 
     await consumer._route_event_handler(incoming_message)
@@ -1484,6 +1505,7 @@ async def test_async_consumer_route_rejected_dead_letter_expect_error_logged(
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
     consumer.producer.send_and_wait.side_effect = KafkaTimeoutError(
         "broker unreachable"
     )
@@ -1508,6 +1530,7 @@ async def test_async_consumer_route_failing_handler_with_retries_expect_retried_
         config.model_copy(update={"max_handler_retries": 2})
     )
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
     attempts: list[SampleEvent] = []
 
     async def counting_failing_handler(event: SampleEvent) -> None:
@@ -1533,6 +1556,7 @@ async def test_async_consumer_route_successful_handler_expect_no_dead_letter(
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
     consumer.register(SampleEvent, AsyncMock())
 
     await consumer._route_event_handler(incoming_message)
@@ -1551,6 +1575,7 @@ async def test_async_consumer_auth_deny_expect_no_dead_letter(
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
 
     async def denying_handler(event: SampleEvent) -> None:
         del event
@@ -1574,6 +1599,7 @@ async def test_async_consumer_provider_unavailable_expect_propagated(
     del mock_admin_cls
     consumer = AsyncKafkaEventConsumer(config)
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
 
     async def unavailable_handler(event: SampleEvent) -> None:
         del event
@@ -1648,6 +1674,7 @@ async def test_async_consumer_route_unconfirmed_dead_letter_expect_duplicate_war
         config.model_copy(update={"dead_letter_delivery_timeout": 0.01})
     )
     consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
 
     async def never_confirming_send(**kwargs: Any) -> None:
         del kwargs
@@ -1661,3 +1688,342 @@ async def test_async_consumer_route_unconfirmed_dead_letter_expect_duplicate_war
 
     assert "unconfirmed after" in caplog.text
     assert "may still be delivered" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Offset commit policy — at-least-once delivery
+# ---------------------------------------------------------------------------
+
+
+def accepted_commit() -> list[MagicMock]:
+    """Commit result stub in which every partition was accepted."""
+    position = MagicMock()
+    position.error = None
+    return [position]
+
+
+def rejected_commit() -> list[MagicMock]:
+    """Commit result stub in which the broker refused one partition."""
+    position = MagicMock()
+    position.topic = "SampleEvent"
+    position.partition = 3
+    position.error = KafkaError(KafkaError.REBALANCE_IN_PROGRESS)
+    return [position]
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_successful_handler_expect_offset_committed(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+) -> None:
+    """핸들러가 성공하면 그 메시지의 offset을 동기 커밋한다."""
+    del mock_admin_cls
+    inner_consumer = MagicMock()
+    inner_consumer.commit.return_value = accepted_commit()
+    mock_consumer_cls.return_value = inner_consumer
+
+    consumer = KafkaEventConsumer(config)
+    consumer.producer = delivering_producer()
+    consumer.register(SampleEvent, MagicMock())
+
+    consumer._route_event_handler(incoming_message)
+
+    inner_consumer.commit.assert_called_once_with(
+        message=incoming_message, asynchronous=False
+    )
+    inner_consumer.seek.assert_not_called()
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_dead_lettered_failure_expect_offset_committed(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+) -> None:
+    """dead-letter 발행이 성공하면 실패한 메시지의 offset을 커밋해 파티션을 진행시킨다."""
+    del mock_admin_cls
+    inner_consumer = MagicMock()
+    inner_consumer.commit.return_value = accepted_commit()
+    mock_consumer_cls.return_value = inner_consumer
+
+    consumer = KafkaEventConsumer(config)
+    consumer.producer = delivering_producer()
+    consumer.register(SampleEvent, failing_handler)
+
+    consumer._route_event_handler(incoming_message)
+
+    inner_consumer.commit.assert_called_once()
+    inner_consumer.seek.assert_not_called()
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_undelivered_dead_letter_expect_position_rewound(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+) -> None:
+    """dead-letter 발행이 실패하면 커밋하지 않고 소비 위치를 되감아 원본을 지킨다."""
+    del mock_admin_cls
+    inner_consumer = MagicMock()
+    mock_consumer_cls.return_value = inner_consumer
+
+    consumer = KafkaEventConsumer(config)
+    consumer.producer = MagicMock()
+    consumer.producer.flush.return_value = 1
+    consumer.register(SampleEvent, failing_handler)
+
+    consumer._route_event_handler(incoming_message)
+
+    inner_consumer.commit.assert_not_called()
+    rewound = inner_consumer.seek.call_args[0][0]
+    assert rewound.topic == "SampleEvent"
+    assert rewound.partition == 3
+    assert rewound.offset == 42
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_commit_failure_expect_poll_loop_survives(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """커밋이 KafkaException으로 실패해도 예외가 poll 루프를 죽이지 않는다."""
+    del mock_admin_cls
+    inner_consumer = MagicMock()
+    inner_consumer.commit.side_effect = KafkaException("broker unreachable")
+    mock_consumer_cls.return_value = inner_consumer
+
+    consumer = KafkaEventConsumer(config)
+    consumer.producer = delivering_producer()
+    consumer.register(SampleEvent, MagicMock())
+
+    with caplog.at_level(logging.ERROR):
+        consumer._route_event_handler(incoming_message)
+
+    assert "Offset commit failed for event type SampleEvent" in caplog.text
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_commit_rejected_partition_expect_error_logged(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """파티션별 커밋 거부는 예외가 아닌 반환값으로 오므로 로그로 드러낸다."""
+    del mock_admin_cls
+    inner_consumer = MagicMock()
+    inner_consumer.commit.return_value = rejected_commit()
+    mock_consumer_cls.return_value = inner_consumer
+
+    consumer = KafkaEventConsumer(config)
+    consumer.producer = delivering_producer()
+    consumer.register(SampleEvent, MagicMock())
+
+    with caplog.at_level(logging.ERROR):
+        consumer._route_event_handler(incoming_message)
+
+    assert "Offset commit rejected for SampleEvent [3]" in caplog.text
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_rewind_failure_expect_poll_loop_survives(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """되감기가 실패하면 재처리 불가 사실을 로그로 남기고 루프를 지킨다."""
+    del mock_admin_cls
+    inner_consumer = MagicMock()
+    inner_consumer.seek.side_effect = KafkaException("partition not assigned")
+    mock_consumer_cls.return_value = inner_consumer
+
+    consumer = KafkaEventConsumer(config)
+    consumer.producer = MagicMock()
+    consumer.producer.flush.return_value = 1
+    consumer.register(SampleEvent, failing_handler)
+
+    with caplog.at_level(logging.ERROR):
+        consumer._route_event_handler(incoming_message)
+
+    assert "is not retryable" in caplog.text
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_successful_handler_expect_offset_committed(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+) -> None:
+    """비동기 핸들러가 성공하면 그 메시지의 offset을 커밋한다."""
+    del mock_admin_cls
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
+    consumer.consumer.commit.return_value = accepted_commit()
+    consumer.register(SampleEvent, AsyncMock())
+
+    await consumer._route_event_handler(incoming_message)
+
+    consumer.consumer.commit.assert_awaited_once_with(
+        message=incoming_message, asynchronous=False
+    )
+    consumer.consumer.seek.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_unconfirmed_dead_letter_expect_position_rewound(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+) -> None:
+    """dead-letter 확인이 불가하면 커밋하지 않고 소비 위치를 되감아 원본을 지킨다."""
+    del mock_admin_cls
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.producer = AsyncMock()
+    consumer.producer.send_and_wait.side_effect = KafkaTimeoutError(
+        "broker unreachable"
+    )
+    consumer.consumer = AsyncMock()
+    consumer.register(SampleEvent, async_failing_handler)
+
+    await consumer._route_event_handler(incoming_message)
+
+    consumer.consumer.commit.assert_not_awaited()
+    rewound = consumer.consumer.seek.await_args[0][0]
+    assert rewound.topic == "SampleEvent"
+    assert rewound.partition == 3
+    assert rewound.offset == 42
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_commit_failure_expect_polling_task_survives(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """비동기 커밋이 KafkaException으로 실패해도 polling 태스크가 죽지 않는다."""
+    del mock_admin_cls
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
+    consumer.consumer.commit.side_effect = KafkaException("broker unreachable")
+    consumer.register(SampleEvent, AsyncMock())
+
+    with caplog.at_level(logging.ERROR):
+        await consumer._route_event_handler(incoming_message)
+
+    assert "Offset commit failed for event type SampleEvent" in caplog.text
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_commit_rejected_partition_expect_error_logged(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """비동기 consumer도 파티션별 커밋 거부를 로그로 드러낸다."""
+    del mock_admin_cls
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
+    consumer.consumer.commit.return_value = rejected_commit()
+    consumer.register(SampleEvent, AsyncMock())
+
+    with caplog.at_level(logging.ERROR):
+        await consumer._route_event_handler(incoming_message)
+
+    assert "Offset commit rejected for SampleEvent [3]" in caplog.text
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_rewind_failure_expect_polling_task_survives(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """비동기 되감기 실패도 로그로 남기고 polling 태스크를 지킨다."""
+    del mock_admin_cls
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.producer = AsyncMock()
+    consumer.producer.send_and_wait.side_effect = KafkaTimeoutError(
+        "broker unreachable"
+    )
+    consumer.consumer = AsyncMock()
+    consumer.consumer.seek.side_effect = KafkaException("partition not assigned")
+    consumer.register(SampleEvent, async_failing_handler)
+
+    with caplog.at_level(logging.ERROR):
+        await consumer._route_event_handler(incoming_message)
+
+    assert "is not retryable" in caplog.text
+
+
+@patch("spakky.plugins.kafka.event.consumer.Consumer")
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+def test_sync_consumer_empty_message_expect_offset_committed_without_dead_letter(
+    mock_admin_cls: MagicMock,
+    mock_consumer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+) -> None:
+    """본문 없는 메시지는 처리할 대상도 보낼 대상도 없으므로 커밋만 한다."""
+    del mock_admin_cls
+    inner_consumer = MagicMock()
+    inner_consumer.commit.return_value = accepted_commit()
+    mock_consumer_cls.return_value = inner_consumer
+    incoming_message.value.return_value = None
+
+    consumer = KafkaEventConsumer(config)
+    consumer.producer = delivering_producer()
+    consumer.register(SampleEvent, MagicMock())
+
+    consumer._route_event_handler(incoming_message)
+
+    inner_consumer.commit.assert_called_once()
+    consumer.producer.produce.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.consumer.AdminClient")
+async def test_async_consumer_empty_message_expect_offset_committed_without_dead_letter(
+    mock_admin_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    incoming_message: MagicMock,
+) -> None:
+    """비동기 consumer도 본문 없는 메시지를 커밋만 하고 dead-letter로 보내지 않는다."""
+    del mock_admin_cls
+    incoming_message.value.return_value = None
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.producer = AsyncMock()
+    consumer.consumer = AsyncMock()
+    consumer.consumer.commit.return_value = accepted_commit()
+    consumer.register(SampleEvent, AsyncMock())
+
+    await consumer._route_event_handler(incoming_message)
+
+    consumer.consumer.commit.assert_awaited_once()
+    consumer.producer.send_and_wait.assert_not_awaited()

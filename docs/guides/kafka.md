@@ -149,6 +149,7 @@ sequenceDiagram
 | topic 생성 | 없으면 `number_of_partitions`, `replication_factor`로 생성 (dead-letter 토픽 포함) |
 | offset reset | `SPAKKY_KAFKA__AUTO_OFFSET_RESET` (`earliest`/`latest`/`none`) |
 | 처리 실패 | `<topic>` + `dead_letter_topic_suffix` 토픽으로 전달 |
+| offset 커밋 | 자동 커밋 없음. 실패가 dead-letter에 저장된 뒤에만 consumer가 직접 커밋 |
 
 `spakky-outbox`를 함께 로드하면 `OutboxEventBus` / `AsyncOutboxEventBus`가 기본 bus를 대체하므로 이벤트는 Kafka에 즉시 produce되지 않고 Outbox 테이블에 저장됩니다. Relay가 재시도 가능한 방식으로 Kafka transport를 호출하므로, 주문 생성 같은 DB 변경과 Kafka 발행을 원자적으로 묶어야 할 때 기본 선택은 Outbox 조합입니다.
 
@@ -177,6 +178,52 @@ dead-letter 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배�
 `max_handler_retries`를 0보다 크게 설정하면 dead-letter로 보내기 전에 같은 메시지로 핸들러를 그 횟수만큼 다시 호출합니다. 재호출은 해당 이벤트에 등록된 모든 핸들러를 다시 실행하므로, 이 값을 올리려면 핸들러가 멱등해야 합니다. 역직렬화 실패는 같은 본문으로 다시 시도해도 결과가 같으므로 이 설정과 무관하게 즉시 dead-letter로 보냅니다.
 
 지연 재시도 토픽 계층은 두지 않습니다. 메시지를 다른 토픽으로 옮기는 순간 그 aggregate의 파티션 내 순서가 깨지기 때문입니다.
+
+---
+
+## 전달 의미와 핸들러 멱등성
+
+전달 의미는 **at-least-once**입니다. 같은 이벤트가 두 번 이상 핸들러에 전달될 수 있으므로 핸들러는 멱등해야 합니다.
+
+`KafkaConnectionConfig`가 producer 설정과 consumer 설정을 분리하고, 각각의 기본값을 프레임워크가 고정합니다. 환경변수로 바꾸는 항목이 아닙니다.
+
+| 대상 | 고정 설정 | 이유 |
+|------|----------|------|
+| Producer (이벤트 발행 + dead-letter 발행) | `enable.idempotence=true`, `acks=all` | 한 producer 세션의 재시도가 중복 발행이나 파티션 내 순서 역전을 만들지 않고, 승인된 이벤트가 파티션 리더 장애에도 남습니다 |
+| Consumer | `enable.auto.commit=false` | offset이 핸들러 실행 전에 전진하지 않습니다 |
+
+`AsyncKafkaEventTransport`는 `send` 호출마다 `AIOKafkaProducer`를 새로 만들어 닫으므로, 멱등 보장은 그 한 번의 `send`가 내부적으로 재시도하는 범위까지입니다. 서로 다른 `send` 호출 사이의 파티션 내 순서는 보장되지 않습니다.
+
+Consumer는 핸들러가 끝난 뒤, 그 메시지를 처리 완료로 볼지 다시 받을지 결정합니다.
+
+| 핸들러 결과 | offset | 이후 동작 |
+|------------|--------|----------|
+| 성공 | 커밋 | 다음 메시지로 진행 |
+| 실패 → dead-letter 발행 성공 | 커밋 | 실패가 `.dlt` 토픽에 남았으므로 파티션이 막히지 않습니다 |
+| 실패 → dead-letter 발행 실패·미확인 | 커밋 안 함 + 그 메시지로 `seek` 되감기 | 다음 poll이 같은 메시지를 다시 전달합니다 |
+| AuthContext DENY / snapshot CHALLENGE | 커밋 | 재시도해도 같은 결정이므로 파티션을 막지 않음 |
+| 검증 provider 장애 | 커밋 안 함 | 예외를 전파하여 consumer 루프를 중단합니다. 재시작하면 그 메시지부터 다시 처리합니다 |
+
+**offset은 실패가 다른 곳에 저장된 뒤에만 전진합니다.** dead-letter 발행이 실패했는데 커밋해 버리면 그 이벤트의 마지막 사본이 사라지므로, 발행 실패는 커밋 대신 되감기로 이어집니다.
+
+커밋을 건너뛰는 것만으로는 재처리가 성립하지 않습니다. `enable.auto.commit=false`는 브로커 커밋만 끄고, consumer의 소비 위치는 poll마다 전진합니다. 되감지 않으면 뒤따르는 메시지의 성공 커밋이 실패한 메시지의 offset을 지나쳐 버리고, 그 메시지는 rebalance나 재시작으로도 돌아오지 않습니다.
+
+멱등성은 보통 이벤트 식별자로 확보합니다. 이미 처리한 `AbstractIntegrationEvent`의 `event_id`를 저장해 두고 중복 수신을 건너뛰거나, 핸들러의 DB 반영을 upsert로 작성합니다.
+
+```python
+@EventHandler()
+class OrderEventHandler:
+    def __init__(self, repository: ProcessedEventRepository) -> None:
+        self._repository = repository
+
+    @on_event(OrderPlacedEvent)
+    async def on_order_placed(self, event: OrderPlacedEvent) -> None:
+        if await self._repository.exists(event.event_id):
+            return
+        await self._repository.save(event.event_id)
+```
+
+메시지 단위 동기 커밋은 브로커 왕복을 한 번 추가합니다. 처리량이 커밋 지연에 지배되면 파티션 수를 늘려 consumer를 병렬화합니다.
 
 ---
 
