@@ -22,6 +22,11 @@ class OutboxMessageTable(AbstractTable):
     event_name: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     headers: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    # NULL carries the domain meaning "no key" — the broker spreads such
+    # messages round-robin. Adding this column to an already-deployed table
+    # still requires an explicit migration: see the schema upgrade section of
+    # docs/guides/outbox.md.
+    partition_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

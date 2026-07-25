@@ -82,6 +82,7 @@ class InMemoryEventTransport(IEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         pass
 
@@ -95,6 +96,7 @@ class InMemoryAsyncEventTransport(IAsyncEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         pass
 

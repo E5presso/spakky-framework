@@ -128,6 +128,7 @@ class AsyncUserService:
 - **Background service 패턴**: consumer polling을 background service로 실행
 - **Pydantic 직렬화**: 이벤트를 Pydantic으로 직렬화/역직렬화
 - **Exchange 라우팅**: pub/sub 메시지 패턴을 위한 선택적 exchange
+- **파티션 키 미사용**: `AbstractIntegrationEvent.partition_key`는 transport 인터페이스 계약상 전달되지만 RabbitMQ 라우팅에는 **사용되지 않습니다**. RabbitMQ에는 파티션 개념이 없고 단일 queue는 이미 FIFO 순서이므로, 이 값을 오버라이드해도 발행 결과가 달라지지 않습니다
 - **SSL 지원**: AMQPS protocol 기반 보안 연결
 - **분산 트레이싱**: 서비스 간 trace 전파를 위한 `spakky-tracing` 통합
 - **인증/인가 보호 경계**: signed `AuthContextSnapshot` 검증 및 protected handler fail-closed 처리

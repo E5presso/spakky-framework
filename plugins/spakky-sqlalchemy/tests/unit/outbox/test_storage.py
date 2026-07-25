@@ -319,3 +319,133 @@ async def test_async_storage_increment_retry_increases_count() -> None:
 
     mock_session.execute.assert_awaited_once()
     mock_session.commit.assert_awaited_once()
+
+
+# --- partition key round-trip ---
+
+
+def test_sync_storage_save_writes_partition_key_to_row() -> None:
+    """save()가 메시지의 partition_key를 테이블 row에 기록하는지 검증한다."""
+    mock_session_manager = MagicMock(spec=SessionManager)
+    mock_connection_manager = MagicMock(spec=ConnectionManager)
+    mock_connection_manager.connection = MagicMock()
+    mock_session = MagicMock()
+    mock_session_manager.session = mock_session
+
+    storage = SqlAlchemyOutboxStorage(
+        mock_session_manager, mock_connection_manager, config=None
+    )
+
+    storage.save(
+        OutboxMessage(
+            id=uuid4(),
+            event_name="test.event",
+            payload=b"test payload",
+            headers={},
+            partition_key="ORD-901",
+            created_at=datetime.now(UTC),
+        )
+    )
+
+    assert mock_session.add.call_args.args[0].partition_key == "ORD-901"
+
+
+def test_sync_storage_fetch_pending_reads_partition_key_from_row() -> None:
+    """fetch_pending()이 row의 partition_key를 OutboxMessage로 옮기는지 검증한다."""
+    mock_session_manager = MagicMock(spec=SessionManager)
+    mock_connection_manager = MagicMock(spec=ConnectionManager)
+    mock_connection_manager.connection = MagicMock()
+
+    storage = SqlAlchemyOutboxStorage(
+        mock_session_manager, mock_connection_manager, config=None
+    )
+
+    mock_session = MagicMock()
+    mock_result = MagicMock()
+    mock_row = MagicMock(spec=OutboxMessageTable)
+    mock_row.id = uuid4()
+    mock_row.event_name = "test.event"
+    mock_row.payload = b"payload"
+    mock_row.headers = {}
+    mock_row.partition_key = "ORD-902"
+    mock_row.created_at = datetime.now(UTC)
+    mock_row.published_at = None
+    mock_row.retry_count = 0
+    mock_row.claimed_at = None
+    mock_result.scalars.return_value.all.return_value = [mock_row]
+    mock_session.execute.return_value = mock_result
+
+    storage._session_factory = MagicMock(return_value=MagicMock())
+    storage._session_factory.return_value.__enter__ = MagicMock(
+        return_value=mock_session
+    )
+    storage._session_factory.return_value.__exit__ = MagicMock(return_value=None)
+
+    result = storage.fetch_pending(limit=10, max_retry=3)
+
+    assert result[0].partition_key == "ORD-902"
+
+
+@pytest.mark.asyncio
+async def test_async_storage_save_writes_partition_key_to_row() -> None:
+    """비동기 save()가 메시지의 partition_key를 테이블 row에 기록하는지 검증한다."""
+    mock_session_manager = MagicMock(spec=AsyncSessionManager)
+    mock_connection_manager = MagicMock(spec=AsyncConnectionManager)
+    mock_connection_manager.connection = MagicMock()
+    mock_session = MagicMock()
+    mock_session.flush = AsyncMock()
+    mock_session_manager.session = mock_session
+
+    storage = AsyncSqlAlchemyOutboxStorage(
+        mock_session_manager, mock_connection_manager, config=None
+    )
+
+    await storage.save(
+        OutboxMessage(
+            id=uuid4(),
+            event_name="test.event",
+            payload=b"test payload",
+            headers={},
+            partition_key="ORD-903",
+            created_at=datetime.now(UTC),
+        )
+    )
+
+    assert mock_session.add.call_args.args[0].partition_key == "ORD-903"
+
+
+@pytest.mark.asyncio
+async def test_async_storage_fetch_pending_reads_partition_key_from_row() -> None:
+    """비동기 fetch_pending()이 row의 partition_key를 옮기는지 검증한다."""
+    mock_session_manager = MagicMock(spec=AsyncSessionManager)
+    mock_connection_manager = MagicMock(spec=AsyncConnectionManager)
+    mock_connection_manager.connection = MagicMock()
+
+    storage = AsyncSqlAlchemyOutboxStorage(
+        mock_session_manager, mock_connection_manager, config=None
+    )
+
+    mock_session = MagicMock()
+    mock_result = MagicMock()
+    mock_row = MagicMock(spec=OutboxMessageTable)
+    mock_row.id = uuid4()
+    mock_row.event_name = "test.event"
+    mock_row.payload = b"payload"
+    mock_row.headers = {}
+    mock_row.partition_key = "ORD-904"
+    mock_row.created_at = datetime.now(UTC)
+    mock_row.published_at = None
+    mock_row.retry_count = 0
+    mock_row.claimed_at = None
+    mock_result.scalars.return_value.all.return_value = [mock_row]
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.commit = AsyncMock()
+
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+    storage._session_factory = MagicMock(return_value=mock_context)
+
+    result = await storage.fetch_pending(limit=10, max_retry=3)
+
+    assert result[0].partition_key == "ORD-904"

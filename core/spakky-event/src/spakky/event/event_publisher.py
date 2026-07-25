@@ -56,8 +56,17 @@ class IEventTransport(ABC):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
-        """Send a serialized event payload to the message broker."""
+        """Send a serialized event payload to the message broker.
+
+        Args:
+            event_name: Destination topic / routing key.
+            payload: Pre-serialized event bytes.
+            headers: Metadata headers for trace and auth propagation.
+            partition_key: Key pinning the payload to one broker partition.
+                None spreads payloads round-robin.
+        """
         ...
 
 
@@ -70,6 +79,15 @@ class IAsyncEventTransport(ABC):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
-        """Send a serialized event payload to the message broker."""
+        """Send a serialized event payload to the message broker.
+
+        Args:
+            event_name: Destination topic / routing key.
+            payload: Pre-serialized event bytes.
+            headers: Metadata headers for trace and auth propagation.
+            partition_key: Key pinning the payload to one broker partition.
+                None spreads payloads round-robin.
+        """
         ...

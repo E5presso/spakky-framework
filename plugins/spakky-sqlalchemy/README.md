@@ -253,6 +253,21 @@ from spakky.plugins.sqlalchemy.outbox.storage import AsyncSqlAlchemyOutboxStorag
 storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
 ```
 
+### 스키마 업그레이드 — `partition_key` 컬럼 추가
+
+`OutboxMessageTable`은 migration용 metadata만 제공하고 운영 스키마 적용은 사용자
+migration이 소유합니다. 이미 `spakky_event_outbox`가 배포된 환경을 이 버전으로
+올릴 때는 아래 DDL을 직접 실행해야 합니다.
+
+```sql
+ALTER TABLE spakky_event_outbox ADD COLUMN partition_key TEXT NULL;
+```
+
+미적용 시 `save()`의 INSERT가 비즈니스 트랜잭션과 함께 롤백되고, 릴레이의
+`fetch_pending()` SELECT 실패는 재시도 `try` 블록 밖이라 릴레이 백그라운드
+서비스가 종료됩니다. 증상과 배경은 Outbox 가이드(`docs/guides/outbox.md`)를
+참고하십시오.
+
 ## Agent Persistence Contribution
 
 `spakky-agent`의 durable state, signal, evidence repository는 production

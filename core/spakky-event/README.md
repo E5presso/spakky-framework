@@ -135,7 +135,7 @@ app = (
 
 ### 전파 metadata
 
-`DirectEventBus`와 `AsyncDirectEventBus`는 `IEventTransport.send(event_name, payload, headers)` public signature를 유지하면서 outbound header를 구성합니다.
+`DirectEventBus`와 `AsyncDirectEventBus`는 `IEventTransport.send(event_name, payload, headers, partition_key)` public signature로 outbound header를 구성하고, 이벤트가 선언한 partition key를 그대로 넘깁니다.
 
 | metadata | 조건 | 설명 |
 |----------|------|------|

@@ -148,4 +148,14 @@ class AbstractIntegrationEvent(AbstractEvent, ABC):
     to communicate significant domain changes.
     """
 
-    ...
+    @property
+    def partition_key(self) -> str | None:
+        """Get the key that pins this event to a single broker partition.
+
+        Returns:
+            None by default, which lets the broker spread events round-robin.
+            Override to return a stable value (typically the aggregate id) so
+            that every event of the same aggregate lands on one partition and
+            keeps its relative publication order.
+        """
+        return None

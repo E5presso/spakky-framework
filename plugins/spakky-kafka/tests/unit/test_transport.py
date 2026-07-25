@@ -133,6 +133,7 @@ def test_sync_transport_send_expect_produce_and_flush(
     mock_producer.produce.assert_called_once_with(
         topic="TestEvent",
         value=b'{"key": "value"}',
+        key=None,
         headers={},
         callback=transport._message_delivery_report,
     )
@@ -181,6 +182,7 @@ async def test_async_transport_send_expect_produce_and_flush(
     mock_producer.send_and_wait.assert_awaited_once_with(
         topic="TestEvent",
         value=b'{"key": "value"}',
+        key=None,
         headers=[("traceparent", b"00-abc-def-01")],
     )
     mock_producer.stop.assert_awaited_once()
@@ -224,4 +226,58 @@ async def test_async_transport_send_with_sasl_config_expect_security_kwargs(
         sasl_mechanism="PLAIN",
         sasl_plain_username="api-key",
         sasl_plain_password="api-secret",
+    )
+
+
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_send_with_partition_key_expect_encoded_key(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """동기 transport가 partition_key를 bytes key로 인코딩해 produce하는지 검증한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = set()
+    mock_admin_cls.return_value = mock_admin
+
+    mock_producer = MagicMock()
+    mock_producer_cls.return_value = mock_producer
+
+    transport = KafkaEventTransport(config)
+    transport.send("TestEvent", b"{}", {}, "ORD-42")
+
+    mock_producer.produce.assert_called_once_with(
+        topic="TestEvent",
+        value=b"{}",
+        key=b"ORD-42",
+        headers={},
+        callback=transport._message_delivery_report,
+    )
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+async def test_async_transport_send_with_partition_key_expect_encoded_key(
+    mock_admin_cls: MagicMock,
+    mock_aio_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 transport가 partition_key를 bytes key로 인코딩해 전송하는지 검증한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = set()
+    mock_admin_cls.return_value = mock_admin
+
+    mock_producer = AsyncMock()
+    mock_aio_producer_cls.return_value = mock_producer
+
+    transport = AsyncKafkaEventTransport(config)
+    await transport.send("TestEvent", b"{}", {}, "ORD-43")
+
+    mock_producer.send_and_wait.assert_awaited_once_with(
+        topic="TestEvent",
+        value=b"{}",
+        key=b"ORD-43",
+        headers=[],
     )
