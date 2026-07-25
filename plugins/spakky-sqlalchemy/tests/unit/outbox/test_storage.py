@@ -102,6 +102,8 @@ def test_sync_storage_fetch_pending_returns_claimed_messages() -> None:
     mock_row.published_at = None
     mock_row.retry_count = 0
     mock_row.claimed_at = None
+    mock_row.abandoned_at = None
+    mock_row.partition_key = None
     mock_result.scalars.return_value.all.return_value = [mock_row]
     mock_session.execute.return_value = mock_result
 
@@ -117,6 +119,81 @@ def test_sync_storage_fetch_pending_returns_claimed_messages() -> None:
     assert len(result) == 1
     assert result[0].event_name == "test.event"
     mock_session.commit.assert_called_once()
+
+
+def _mock_pending_row(partition_key: str | None) -> MagicMock:
+    """Build a pending outbox row stub carrying the given partition key."""
+    row = MagicMock(spec=OutboxMessageTable)
+    row.id = uuid4()
+    row.event_name = "test.event"
+    row.payload = b"payload"
+    row.headers = {}
+    row.created_at = datetime.now(UTC)
+    row.published_at = None
+    row.retry_count = 0
+    row.claimed_at = None
+    row.abandoned_at = None
+    row.partition_key = partition_key
+    return row
+
+
+def test_sync_storage_fetch_pending_key_headed_elsewhere_expect_not_claimed() -> None:
+    """키의 선두 메시지를 다른 릴레이가 잡고 있으면 후속을 claim하지 않는지 검증한다."""
+    storage = SqlAlchemyOutboxStorage(
+        MagicMock(spec=SessionManager), MagicMock(spec=ConnectionManager), config=None
+    )
+
+    tail_row = _mock_pending_row(partition_key="ORD")
+    candidates_result = MagicMock()
+    candidates_result.scalars.return_value.all.return_value = [tail_row]
+    heads_result = MagicMock()
+    heads_result.all.return_value = [("ORD", uuid4())]
+
+    mock_session = MagicMock()
+    mock_session.execute.side_effect = [candidates_result, heads_result]
+    storage._session_factory = MagicMock(return_value=MagicMock())
+    storage._session_factory.return_value.__enter__ = MagicMock(
+        return_value=mock_session
+    )
+    storage._session_factory.return_value.__exit__ = MagicMock(return_value=None)
+
+    result = storage.fetch_pending(limit=10, max_retry=3)
+
+    assert result == []
+    assert mock_session.execute.call_count == 2
+    mock_session.commit.assert_called_once()
+
+
+def test_sync_storage_fetch_pending_key_head_locked_expect_claimed() -> None:
+    """키의 선두 메시지를 직접 잡았으면 그 키의 메시지를 claim하는지 검증한다."""
+    storage = SqlAlchemyOutboxStorage(
+        MagicMock(spec=SessionManager), MagicMock(spec=ConnectionManager), config=None
+    )
+
+    head_row = _mock_pending_row(partition_key="ORD")
+    candidates_result = MagicMock()
+    candidates_result.scalars.return_value.all.return_value = [head_row]
+    heads_result = MagicMock()
+    heads_result.all.return_value = [("ORD", head_row.id)]
+    claimed_result = MagicMock()
+    claimed_result.scalars.return_value.all.return_value = [head_row]
+
+    mock_session = MagicMock()
+    mock_session.execute.side_effect = [
+        candidates_result,
+        heads_result,
+        claimed_result,
+    ]
+    storage._session_factory = MagicMock(return_value=MagicMock())
+    storage._session_factory.return_value.__enter__ = MagicMock(
+        return_value=mock_session
+    )
+    storage._session_factory.return_value.__exit__ = MagicMock(return_value=None)
+
+    result = storage.fetch_pending(limit=10, max_retry=3)
+
+    assert [message.id for message in result] == [head_row.id]
+    assert result[0].partition_key == "ORD"
 
 
 def test_sync_storage_mark_published_updates_timestamp() -> None:
@@ -250,6 +327,8 @@ async def test_async_storage_fetch_pending_returns_claimed_messages() -> None:
     mock_row.published_at = None
     mock_row.retry_count = 0
     mock_row.claimed_at = None
+    mock_row.abandoned_at = None
+    mock_row.partition_key = None
     mock_result.scalars.return_value.all.return_value = [mock_row]
     mock_session.execute = AsyncMock(return_value=mock_result)
     mock_session.commit = AsyncMock()
@@ -265,6 +344,71 @@ async def test_async_storage_fetch_pending_returns_claimed_messages() -> None:
     assert len(result) == 1
     assert result[0].event_name == "test.event"
     mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_storage_fetch_pending_key_headed_elsewhere_expect_not_claimed() -> (
+    None
+):
+    """키의 선두 메시지를 다른 릴레이가 잡고 있으면 후속을 claim하지 않는지 검증한다."""
+    storage = AsyncSqlAlchemyOutboxStorage(
+        MagicMock(spec=AsyncSessionManager),
+        MagicMock(spec=AsyncConnectionManager),
+        config=None,
+    )
+
+    tail_row = _mock_pending_row(partition_key="ORD")
+    candidates_result = MagicMock()
+    candidates_result.scalars.return_value.all.return_value = [tail_row]
+    heads_result = MagicMock()
+    heads_result.all.return_value = [("ORD", uuid4())]
+
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock(side_effect=[candidates_result, heads_result])
+    mock_session.commit = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+    storage._session_factory = MagicMock(return_value=mock_context)
+
+    result = await storage.fetch_pending(limit=10, max_retry=3)
+
+    assert result == []
+    assert mock_session.execute.await_count == 2
+    mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_storage_fetch_pending_key_head_locked_expect_claimed() -> None:
+    """키의 선두 메시지를 직접 잡았으면 그 키의 메시지를 claim하는지 검증한다."""
+    storage = AsyncSqlAlchemyOutboxStorage(
+        MagicMock(spec=AsyncSessionManager),
+        MagicMock(spec=AsyncConnectionManager),
+        config=None,
+    )
+
+    head_row = _mock_pending_row(partition_key="ORD")
+    candidates_result = MagicMock()
+    candidates_result.scalars.return_value.all.return_value = [head_row]
+    heads_result = MagicMock()
+    heads_result.all.return_value = [("ORD", head_row.id)]
+    claimed_result = MagicMock()
+    claimed_result.scalars.return_value.all.return_value = [head_row]
+
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock(
+        side_effect=[candidates_result, heads_result, claimed_result]
+    )
+    mock_session.commit = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+    storage._session_factory = MagicMock(return_value=mock_context)
+
+    result = await storage.fetch_pending(limit=10, max_retry=3)
+
+    assert [message.id for message in result] == [head_row.id]
+    assert result[0].partition_key == "ORD"
 
 
 @pytest.mark.asyncio
@@ -449,3 +593,45 @@ async def test_async_storage_fetch_pending_reads_partition_key_from_row() -> Non
     result = await storage.fetch_pending(limit=10, max_retry=3)
 
     assert result[0].partition_key == "ORD-904"
+
+
+def test_sync_storage_mark_abandoned_updates_timestamp() -> None:
+    """mark_abandoned()가 abandoned_at을 기록하는지 검증한다."""
+    storage = SqlAlchemyOutboxStorage(
+        MagicMock(spec=SessionManager), MagicMock(spec=ConnectionManager), config=None
+    )
+
+    mock_session = MagicMock()
+    storage._session_factory = MagicMock(return_value=MagicMock())
+    storage._session_factory.return_value.__enter__ = MagicMock(
+        return_value=mock_session
+    )
+    storage._session_factory.return_value.__exit__ = MagicMock(return_value=None)
+
+    storage.mark_abandoned(uuid4())
+
+    mock_session.execute.assert_called_once()
+    mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_storage_mark_abandoned_updates_timestamp() -> None:
+    """mark_abandoned()가 abandoned_at을 기록하는지 검증한다."""
+    storage = AsyncSqlAlchemyOutboxStorage(
+        MagicMock(spec=AsyncSessionManager),
+        MagicMock(spec=AsyncConnectionManager),
+        config=None,
+    )
+
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock()
+    mock_session.commit = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+    storage._session_factory = MagicMock(return_value=mock_context)
+
+    await storage.mark_abandoned(uuid4())
+
+    mock_session.execute.assert_awaited_once()
+    mock_session.commit.assert_awaited_once()

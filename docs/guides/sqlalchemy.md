@@ -371,6 +371,12 @@ from spakky.plugins.sqlalchemy.outbox.storage import AsyncSqlAlchemyOutboxStorag
 storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
 ```
 
+`fetch_pending()`은 미전송 메시지를 `SELECT ... FOR UPDATE SKIP LOCKED`로 claim합니다.
+릴레이를 두 개 이상 띄우려면 이 구문을 지원하는 백엔드(PostgreSQL 9.5+, MySQL 8.0+)를
+써야 합니다. 지원하지 않는 백엔드에서는 릴레이를 단일 인스턴스로 운영하세요 — 그러지
+않으면 같은 메시지를 여러 인스턴스가 동시에 발행합니다. claim 쿼리 자체는 특정 방언
+전용 구문(`DISTINCT ON` 등)을 쓰지 않으므로 같은 결과를 어느 백엔드에서나 냅니다.
+
 ---
 
 ## 선택 기준

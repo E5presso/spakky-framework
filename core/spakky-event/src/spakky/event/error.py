@@ -36,6 +36,23 @@ class EventTransportNotRunningError(AbstractSpakkyEventError):
     message = "Event transport is not running"
 
 
+class EventDeliveryRejectedError(AbstractSpakkyEventError):
+    """Raised by flush() when the broker refused records it was confirming.
+
+    Clients that report a rejection through a delivery callback rather than
+    through the publish call raise this from flush(), so a caller that batches
+    records still learns that the batch did not arrive.
+    """
+
+    message = "Broker rejected event delivery"
+
+    reasons: list[str]
+
+    def __init__(self, reasons: list[str]) -> None:
+        self.reasons = reasons
+        super().__init__()
+
+
 class UnknownEventTypeError(AbstractSpakkyEventError):
     """Raised when an event type is neither domain nor integration."""
 

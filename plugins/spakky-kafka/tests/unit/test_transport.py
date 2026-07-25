@@ -19,7 +19,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiokafka.structs import RecordMetadata, TopicPartition
-from spakky.event.error import EventTransportNotRunningError
+from confluent_kafka import KafkaError
+from spakky.event.error import (
+    EventDeliveryRejectedError,
+    EventTransportNotRunningError,
+)
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 from spakky.plugins.kafka.event.transport import (
@@ -328,7 +332,7 @@ async def test_async_transport_flush_rejected_record_expect_broker_error_raised(
     mock_aio_producer_cls: MagicMock,
     config: KafkaConnectionConfig,
 ) -> None:
-    """broker가 거부한 레코드가 있으면 배치 끝 flush가 그 실패를 올리는지 검증한다."""
+    """broker가 거부한 레코드를 flush가 EventDeliveryRejectedError로 올리는지 검증한다."""
     mock_admin = MagicMock()
     mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
     mock_admin_cls.return_value = mock_admin
@@ -345,8 +349,10 @@ async def test_async_transport_flush_rejected_record_expect_broker_error_raised(
     await transport.send("TestEvent", b"{}", {})
     await transport.send("TestEvent", b"{}", {})
 
-    with pytest.raises(ConnectionError):
+    with pytest.raises(EventDeliveryRejectedError) as rejection:
         await transport.flush()
+
+    assert rejection.value.reasons == ["Broker rejected the record"]
 
 
 @pytest.mark.asyncio
@@ -390,7 +396,7 @@ async def test_async_transport_concurrent_publishers_expect_rejection_to_its_own
         healthy_publisher_flushed.set()
 
     healthy_publisher = create_task(publish_healthy_record())
-    with pytest.raises(ConnectionError):
+    with pytest.raises(EventDeliveryRejectedError):
         await publish_rejected_record()
     await healthy_publisher
 
@@ -635,3 +641,46 @@ def test_async_transport_set_stop_event_expect_no_producer_interaction(
     transport = AsyncKafkaEventTransport(config)
 
     assert transport.set_stop_event(locks.Event()) is None
+
+
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_flush_rejected_record_expect_broker_error_raised(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """delivery callback이 받은 거부를 flush가 예외로 올리는지 검증한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    mock_producer_cls.return_value = MagicMock()
+
+    transport = KafkaEventTransport(config)
+    transport.send("TestEvent", b"{}", {})
+    transport._message_delivery_report(MagicMock(spec=KafkaError), MagicMock())
+
+    with pytest.raises(EventDeliveryRejectedError):
+        transport.flush()
+
+
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_flush_after_rejection_expect_next_batch_unaffected(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """거부를 한 번 올린 뒤 다음 배치의 flush가 다시 실패하지 않는지 검증한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    mock_producer_cls.return_value = MagicMock()
+
+    transport = KafkaEventTransport(config)
+    transport._message_delivery_report(MagicMock(spec=KafkaError), MagicMock())
+    with pytest.raises(EventDeliveryRejectedError):
+        transport.flush()
+
+    transport.send("TestEvent", b"{}", {})
+    transport.flush()

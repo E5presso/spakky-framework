@@ -35,6 +35,14 @@ class OutboxMessageTable(AbstractTable):
     claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Set when the relay exhausted the retry budget without publishing. The row
+    # then leaves the pending queue so its partition key stops waiting on it,
+    # and stays readable for the operator. Adding this column to an
+    # already-deployed table requires an explicit migration: see the schema
+    # upgrade section of docs/guides/outbox.md.
+    abandoned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         Index("ix_spakky_event_outbox_pending", "published_at", "created_at"),

@@ -20,6 +20,8 @@ pip install spakky-outbox "spakky-sqlalchemy[outbox]"
 - **자동 relay**: background relay가 이벤트를 외부 transport(Kafka, RabbitMQ)로 발행
 - **재시도 지원**: 실패 메시지를 설정 가능한 한도 내에서 재시도
 - **다중 인스턴스 안전성**: 원자적 claim으로 중복 발행 방지
+- **파티션 키 단위 순서 보전**: 파티션 키를 통째로 claim하고, 전송이 실패한 키의 후속 메시지를 보류
+- **발행 포기 상태**: 재시도를 소진한 메시지를 `abandoned` 처리하여 키가 무기한 막히지 않게 함
 
 ## 사용법
 
@@ -108,13 +110,21 @@ class MyCustomStorage(IAsyncOutboxStorage):
         ...
 
     async def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
-        # pending message를 atomic claim 후 반환
+        # pending message를 atomic claim 후 반환.
+        # 파티션 키가 있는 메시지는 그 키에서 아직 발행되지도 포기되지도 않은
+        # 가장 오래된 메시지를 함께 claim할 때만 넘긴다 — 그러지 않으면 릴레이
+        # 인스턴스 둘이 같은 키를 병렬 발행하여 키가 보장하려던 순서를 잃는다.
         ...
 
     async def mark_published(self, message_id: UUID) -> None:
         ...
 
     async def increment_retry(self, message_id: UUID) -> None:
+        ...
+
+    async def mark_abandoned(self, message_id: UUID) -> None:
+        # 재시도를 소진한 메시지를 발행 대기열에서 빼되 레코드는 남긴다.
+        # 이 상태가 없으면 그 메시지가 같은 키의 후속 메시지를 영구히 막는다.
         ...
 ```
 
