@@ -817,7 +817,7 @@ flowchart TD
   - `AbstractDomainEvent` → `EventMediator` (인프로세스 dispatch)
   - `AbstractIntegrationEvent` → `IEventBus` (외부 전송)
 - **EventBus** (`IEventBus`): `send(event: AbstractIntegrationEvent)` — Integration Event 발행 진입점, Outbox seam 역할. `DirectEventBus` / `AsyncDirectEventBus`는 기존 tracing header를 보존하고, `SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`와 request-scope `AuthContext`가 있으면 raw bearer token 대신 signed `AuthContextSnapshot` envelope를 `spakky.auth.context_snapshot` metadata로 주입합니다.
-- **EventTransport** (`IEventTransport`): `send(event: AbstractIntegrationEvent)` — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현)
+- **EventTransport** (`IEventTransport`): `send(event_name, payload, headers, partition_key)` — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현). `partition_key`가 `None`이면 브로커가 라운드로빈으로 분산합니다.
 - **Dispatcher**: `dispatch(event)` — 등록된 핸들러에 인프로세스 전달
 - **Consumer**: `register(event_type, handler)` — 이벤트 타입과 콜백 연결
 

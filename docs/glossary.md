@@ -545,6 +545,16 @@ Integration Event 전송을 2단 인터페이스로 분리:
 - **EventBus** (`IEventBus`) — Integration Event 발행 진입점. Outbox seam 역할
 - **EventTransport** (`IEventTransport`) — 실제 메시지 브로커 전송 (Kafka/RabbitMQ 구현)
 
+### 파티션 키 (partition key)
+
+Integration Event가 어느 브로커 파티션으로 갈지 결정하는 값입니다. `AbstractIntegrationEvent.partition_key` property로 노출되며, 기본값 `None`은 "키 없음"을 의미하여 브로커가 라운드로빈으로 분산합니다.
+
+같은 파티션 키를 가진 이벤트는 항상 같은 파티션으로 갑니다 — Kafka가 보장하는 순서는 파티션 안에서만 성립하므로, 파티션 키는 순서 보장의 **전제 조건**입니다. 보통 aggregate id를 키로 사용합니다.
+
+다만 파티션 키만으로 순서가 완결되지는 않습니다. producer 재시도, Outbox 릴레이의 개별 메시지 재시도, 릴레이 다중 인스턴스는 같은 파티션 안에서도 상대 순서를 뒤집을 수 있습니다 — 상세는 [Kafka 가이드](guides/kafka.md)의 파티션 키 절 참조.
+
+전달 경로: 이벤트 → `IEventBus` → (`OutboxMessage.partition_key` 컬럼 경유) → `IEventTransport.send(..., partition_key=...)` → Kafka `produce(key=...)`. RabbitMQ transport는 파티션 개념이 없어 이 값을 라우팅에 사용하지 않습니다.
+
 ---
 
 ## 태스크 시스템 (spakky-task)

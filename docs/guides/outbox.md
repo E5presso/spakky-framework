@@ -181,10 +181,30 @@ from spakky.outbox.common.message import OutboxMessage
 | `event_name` | `str` | 이벤트 이름 (라우팅 키) |
 | `payload` | `bytes` | 직렬화된 이벤트 데이터 |
 | `headers` | `dict[str, str]` | 메타데이터 헤더 (트레이스 전파 등) |
+| `partition_key` | `str \| None` | 브로커 파티션을 고정하는 키. bus가 이벤트의 `partition_key`를 그대로 옮기며, `None`이면 라운드로빈 분산 |
 | `created_at` | `datetime` | 생성 시각 |
 | `published_at` | `datetime \| None` | 전송 완료 시각 |
 | `retry_count` | `int` | 재시도 횟수 |
 | `claimed_at` | `datetime \| None` | 잠금 시각 |
+
+---
+
+## 스키마 업그레이드 — `partition_key` 컬럼 추가
+
+`spakky-sqlalchemy`의 `OutboxMessageTable`은 migration용 table metadata만 제공하고, 운영 스키마 적용은 사용자 migration이 소유합니다(`SchemaRegistry`). 따라서 이미 `spakky_event_outbox` 테이블이 배포된 환경을 이 버전으로 올릴 때는 컬럼 추가 DDL을 직접 실행해야 합니다.
+
+```sql
+ALTER TABLE spakky_event_outbox ADD COLUMN partition_key TEXT NULL;
+```
+
+DDL을 실행하지 않은 채 배포하면 다음 두 곳이 깨집니다.
+
+| 위치 | 증상 |
+|------|------|
+| `IOutboxStorage.save()` | 존재하지 않는 컬럼을 참조하는 INSERT가 실패합니다. `save()`는 비즈니스 트랜잭션 안에서 호출되므로 **이벤트를 발행하는 모든 UseCase가 함께 롤백됩니다.** |
+| `OutboxRelayBackgroundService` | `fetch_pending()`의 SELECT가 실패하고, 이 예외는 릴레이의 재시도 `try` 블록 밖에서 발생하므로 **릴레이 백그라운드 서비스가 종료됩니다.** |
+
+컬럼의 `NULL` 허용은 "파티션 키 없음"(라운드로빈 발행)이라는 도메인 값을 표현하기 위한 것이며, 마이그레이션을 대신하지 않습니다. 기존 row는 DDL 적용 후 `partition_key`가 `NULL`이 되어 이전과 동일하게 라운드로빈으로 발행됩니다.
 
 ---
 

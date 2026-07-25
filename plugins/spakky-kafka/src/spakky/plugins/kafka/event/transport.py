@@ -64,6 +64,7 @@ class KafkaEventTransport(IEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         """Send a pre-serialized event payload to Kafka.
 
@@ -71,11 +72,14 @@ class KafkaEventTransport(IEventTransport):
             event_name: Topic name (typically the event class name).
             payload: Pre-serialized JSON bytes.
             headers: Metadata headers for trace propagation.
+            partition_key: Key routing the message to one partition. None lets
+                Kafka assign partitions round-robin.
         """
         self._create_topic(topic=event_name)
         self.producer.produce(
             topic=event_name,
             value=payload,
+            key=partition_key.encode() if partition_key is not None else None,
             headers=dict(headers),
             callback=self._message_delivery_report,
         )
@@ -117,6 +121,7 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         """Asynchronously send a pre-serialized event payload to Kafka.
 
@@ -124,6 +129,8 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             event_name: Topic name (typically the event class name).
             payload: Pre-serialized JSON bytes.
             headers: Metadata headers for trace propagation.
+            partition_key: Key routing the message to one partition. None lets
+                Kafka assign partitions round-robin.
         """
         self._create_topic(topic=event_name)
         producer = AIOKafkaProducer(**self.config.async_producer_configuration_dict)
@@ -132,6 +139,7 @@ class AsyncKafkaEventTransport(IAsyncEventTransport):
             await producer.send_and_wait(
                 topic=event_name,
                 value=payload,
+                key=partition_key.encode() if partition_key is not None else None,
                 headers=[(k, v.encode()) for k, v in headers.items()],
             )
         finally:

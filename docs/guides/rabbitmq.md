@@ -117,6 +117,9 @@ class OrderEventHandler:
 
 큐 이름은 이벤트 인스턴스의 `event_name`과 같은 값으로 자동 결정됩니다. 기본값은 이벤트 클래스명(예: `OrderPlacedEvent`)이며, custom `event_name` property를 오버라이드하면 발행 routing key와 소비 queue 이름이 함께 그 값을 사용합니다.
 
+!!! note "`partition_key`는 RabbitMQ 라우팅에 사용되지 않습니다"
+    `AbstractIntegrationEvent.partition_key`는 `IEventTransport` 계약의 일부라 RabbitMQ transport에도 전달되지만, RabbitMQ에는 파티션 개념이 없고 단일 queue는 이미 FIFO 순서이므로 **라우팅에 반영되지 않습니다.** 이 값을 오버라이드해도 exchange·routing key·발행 결과는 그대로이며, 경고나 예외도 발생하지 않습니다. 파티션 키로 순서를 제어하려면 Kafka transport를 사용하십시오.
+
 ---
 
 ## 운영 흐름

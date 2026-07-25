@@ -27,6 +27,7 @@ class InMemorySyncTransport(IEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         self.sent.append((event_name, payload, headers))
 
@@ -40,6 +41,7 @@ class InMemoryAsyncTransport(IAsyncEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         self.sent.append((event_name, payload, headers))
 

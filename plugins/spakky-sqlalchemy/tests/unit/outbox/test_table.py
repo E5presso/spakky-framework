@@ -23,3 +23,9 @@ def test_outbox_message_table_inherits_abstract_table() -> None:
     assert issubclass(OutboxMessageTable, AbstractTable)
     assert Table.get(OutboxMessageTable).domain is None
     assert Table.get(OutboxMessageTable).table is OutboxMessageTable
+
+
+def test_outbox_message_table_partition_key_is_nullable() -> None:
+    """partition_key 컬럼이 nullable이어서 기존 레코드가 그대로 읽히는지 검증한다."""
+    assert isinstance(OutboxMessageTable.__table__, SQLAlchemyTable)
+    assert OutboxMessageTable.__table__.columns["partition_key"].nullable is True

@@ -17,6 +17,7 @@ class StubTransport(IEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         self.called = True
         self.last_headers = headers
@@ -34,6 +35,7 @@ class AsyncStubTransport(IAsyncEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         self.called = True
         self.last_headers = headers

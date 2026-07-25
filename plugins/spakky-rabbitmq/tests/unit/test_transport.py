@@ -142,3 +142,63 @@ async def test_async_transport_send_with_exchange_name_expect_exchange_declared(
     mock_channel.declare_queue.assert_called_once_with("test_event", durable=True)
     mock_queue.bind.assert_called_once_with(mock_exchange, "test_event")
     mock_exchange.publish.assert_called_once()
+
+
+def test_sync_transport_send_with_partition_key_expect_routing_unchanged() -> None:
+    """partition_key를 받아도 RabbitMQ 발행 인자가 달라지지 않음을 검증한다."""
+    config = MagicMock(spec=RabbitMQConnectionConfig)
+    config.connection_string = "amqp://test:test@localhost:5672/"
+    config.exchange_name = None
+
+    transport = RabbitMQEventTransport(config)
+
+    mock_channel = MagicMock()
+    mock_connection = MagicMock()
+    mock_connection.channel.return_value = mock_channel
+
+    with patch(
+        "spakky.plugins.rabbitmq.event.transport.BlockingConnection",
+        return_value=mock_connection,
+    ):
+        transport.send("test_event", b'{"key": "value"}', {}, "ORD-1")
+
+    mock_channel.basic_publish.assert_called_once_with(
+        "",
+        "test_event",
+        b'{"key": "value"}',
+        properties=BasicProperties(headers={}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_async_transport_send_with_partition_key_expect_routing_unchanged() -> (
+    None
+):
+    """비동기 경로에서 partition_key가 라우팅 키를 바꾸지 않음을 검증한다."""
+    config = MagicMock(spec=RabbitMQConnectionConfig)
+    config.connection_string = "amqp://test:test@localhost:5672/"
+    config.exchange_name = None
+
+    transport = AsyncRabbitMQEventTransport(config)
+
+    mock_default_exchange = AsyncMock()
+    mock_channel = AsyncMock()
+    mock_channel.default_exchange = mock_default_exchange
+    mock_channel.declare_queue = AsyncMock()
+    mock_channel.close = AsyncMock()
+
+    mock_connection = AsyncMock()
+    mock_connection.channel = AsyncMock(return_value=mock_channel)
+    mock_connection.__aenter__ = AsyncMock(return_value=mock_connection)
+    mock_connection.__aexit__ = AsyncMock(return_value=None)
+
+    with patch(
+        "spakky.plugins.rabbitmq.event.transport.connect_robust",
+        new_callable=AsyncMock,
+        return_value=mock_connection,
+    ):
+        await transport.send("test_event", b'{"key": "value"}', {}, "ORD-1")
+
+    assert mock_default_exchange.publish.call_args.kwargs == {
+        "routing_key": "test_event"
+    }

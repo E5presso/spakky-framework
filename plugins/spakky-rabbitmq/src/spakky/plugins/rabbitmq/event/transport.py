@@ -50,6 +50,7 @@ class RabbitMQEventTransport(IEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         """Send a pre-serialized event payload to RabbitMQ.
 
@@ -60,6 +61,9 @@ class RabbitMQEventTransport(IEventTransport):
             event_name: Routing key / queue name for the event.
             payload: Pre-serialized JSON bytes.
             headers: Metadata headers for trace propagation.
+            partition_key: Accepted for transport interface parity and not used
+                for routing — RabbitMQ has no partitions and a single queue is
+                already FIFO ordered, so there is nothing to pin the payload to.
         """
         connection = BlockingConnection(URLParameters(self.connection_string))
         channel = connection.channel()
@@ -107,6 +111,7 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         """Send a pre-serialized event payload to RabbitMQ asynchronously.
 
@@ -117,6 +122,9 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
             event_name: Routing key / queue name for the event.
             payload: Pre-serialized JSON bytes.
             headers: Metadata headers for trace propagation.
+            partition_key: Accepted for transport interface parity and not used
+                for routing — RabbitMQ has no partitions and a single queue is
+                already FIFO ordered, so there is nothing to pin the payload to.
         """
         async with await connect_robust(self.connection_string) as connection:
             channel = await connection.channel()

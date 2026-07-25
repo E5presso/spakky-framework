@@ -53,6 +53,7 @@ class OutboxEventBus(IEventBus):
             payload=adapter.dump_json(event),
             headers=headers,
             created_at=datetime.now(UTC),
+            partition_key=event.partition_key,
         )
         self._storage.save(message)
 
@@ -94,5 +95,6 @@ class AsyncOutboxEventBus(IAsyncEventBus):
             payload=adapter.dump_json(event),
             headers=headers,
             created_at=datetime.now(UTC),
+            partition_key=event.partition_key,
         )
         await self._storage.save(message)

@@ -289,3 +289,61 @@ async def test_async_send_stores_signed_snapshot_metadata_in_headers() -> None:
     assert AUTH_CONTEXT_SNAPSHOT_METADATA_KEY in headers
     assert "authorization" not in headers
     assert all("raw-token" not in value for value in headers.values())
+
+
+# ── partition key propagation ──
+
+
+@immutable
+class OrderShippedIntegrationEvent(AbstractIntegrationEvent):
+    """Integration event that pins its records to the order it belongs to."""
+
+    order_id: str
+
+    @property
+    @override
+    def partition_key(self) -> str | None:
+        """Return the order id so every record of one order shares a partition."""
+        return self.order_id
+
+
+def test_send_stores_partition_key_from_event() -> None:
+    """OutboxEventBus.send가 이벤트의 partition_key를 OutboxMessage에 기록하는지 검증한다."""
+    storage = InMemorySyncOutboxStorage()
+    bus = OutboxEventBus(storage, W3CTracePropagator())
+
+    bus.send(OrderShippedIntegrationEvent(order_id="ORD-777"))
+
+    assert storage.saved[0].partition_key == "ORD-777"
+
+
+def test_send_stores_none_partition_key_when_event_declares_none() -> None:
+    """partition_key를 오버라이드하지 않은 이벤트는 None으로 저장되는지 검증한다."""
+    storage = InMemorySyncOutboxStorage()
+    bus = OutboxEventBus(storage, W3CTracePropagator())
+
+    bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-778", amount=100))
+
+    assert storage.saved[0].partition_key is None
+
+
+@pytest.mark.asyncio
+async def test_async_send_stores_partition_key_from_event() -> None:
+    """AsyncOutboxEventBus.send가 이벤트의 partition_key를 기록하는지 검증한다."""
+    storage = InMemoryAsyncOutboxStorage()
+    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
+
+    await bus.send(OrderShippedIntegrationEvent(order_id="ORD-888"))
+
+    assert storage.saved[0].partition_key == "ORD-888"
+
+
+@pytest.mark.asyncio
+async def test_async_send_stores_none_partition_key_when_event_declares_none() -> None:
+    """비동기 경로에서 partition_key 미선언 이벤트가 None으로 저장되는지 검증한다."""
+    storage = InMemoryAsyncOutboxStorage()
+    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
+
+    await bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-889", amount=100))
+
+    assert storage.saved[0].partition_key is None

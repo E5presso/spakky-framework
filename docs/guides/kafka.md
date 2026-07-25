@@ -116,6 +116,44 @@ class OrderEventHandler:
 
 ---
 
+## 파티션 키로 순서 보장하기
+
+Kafka가 보장하는 순서는 파티션 안에서만 성립합니다. 파티션이 2개 이상인 토픽에서 같은 주문의 생성/취소 이벤트가 서로 다른 파티션으로 흩어지면, 소비자는 생성보다 취소를 먼저 볼 수 있습니다.
+
+`AbstractIntegrationEvent.partition_key`를 오버라이드하면 같은 키를 가진 이벤트가 항상 같은 파티션으로 갑니다. 보통 aggregate id를 키로 씁니다. 파티션 키는 순서 보장의 **전제 조건**이며, 그것만으로 순서가 완결되지는 않습니다(아래 주의 참조).
+
+```python
+from spakky.core.common.mutability import immutable
+from spakky.domain.models.event import AbstractIntegrationEvent
+from typing import override
+
+
+@immutable
+class OrderPlacedEvent(AbstractIntegrationEvent):
+    order_id: str
+    total_amount: int
+
+    @property
+    @override
+    def partition_key(self) -> str | None:
+        return self.order_id
+```
+
+기본값은 `None`이고, 이때 Kafka는 지금까지와 동일하게 라운드로빈으로 파티션을 배정합니다. 즉 `partition_key`를 선언하지 않은 기존 이벤트의 동작은 바뀌지 않습니다.
+
+`spakky-outbox`를 함께 쓰면 bus가 이벤트의 `partition_key`를 Outbox 레코드의 `partition_key` 컬럼에 저장하고, Relay가 그 값을 그대로 Kafka transport에 넘깁니다.
+
+!!! warning "파티션 키만으로는 순서가 완결되지 않습니다"
+    파티션 키는 "같은 키가 같은 파티션으로 간다"만 보장합니다. 같은 파티션 안의 상대 순서는 아래 세 경로에서 여전히 뒤집힐 수 있습니다.
+
+    - **producer 재시도**: producer 멱등(idempotence)이 꺼져 있으면 재시도가 순서를 뒤집습니다. 현재 `KafkaConnectionConfig`는 `enable.idempotence`·`acks`·`max.in.flight.requests.per.connection`을 노출하지 않으므로 이 설정을 프레임워크에서 조정할 수 없습니다 — 설정 표면 추가는 #493에서 다룹니다.
+    - **Outbox 릴레이의 개별 메시지 재시도**: `OutboxRelayBackgroundService`는 메시지 전송이 실패하면 재시도 횟수만 올리고 **다음 메시지로 넘어갑니다.** 같은 키의 후속 메시지가 먼저 발행되고 실패한 메시지는 다음 폴링에서 재전송되므로 순서가 뒤집힙니다.
+    - **릴레이 다중 인스턴스**: `fetch_pending()`의 `SELECT ... FOR UPDATE SKIP LOCKED`는 같은 키의 연속 메시지가 서로 다른 배치로 나뉘어 병렬 발행되는 것을 막지 않습니다.
+
+    Outbox 경로에서 키 단위 순서가 요구사항이면 위 릴레이 동작을 먼저 확인하십시오.
+
+---
+
 ## 운영 흐름
 
 `IAsyncEventPublisher.publish()`는 Integration Event를 `IAsyncEventBus`로 넘기고, `AsyncDirectEventBus`가 이벤트를 JSON bytes로 직렬화한 뒤 `AsyncKafkaEventTransport`에 전달합니다. Kafka transport는 이벤트 이름을 topic으로 사용하고 trace header를 Kafka headers로 보냅니다.
@@ -132,7 +170,7 @@ sequenceDiagram
 
     UseCase->>Publisher: publish(OrderPlacedEvent)
     Publisher->>Bus: send(integration_event)
-    Bus->>Transport: send(event_name, json_payload, trace_headers)
+    Bus->>Transport: send(event_name, json_payload, trace_headers, partition_key)
     Transport->>Broker: produce topic=OrderPlacedEvent
     Consumer->>Broker: poll topic=OrderPlacedEvent
     Consumer->>Handler: on_order_placed(event)
@@ -145,6 +183,7 @@ sequenceDiagram
 | topic | `AbstractIntegrationEvent.event_name` 값, 기본은 클래스명 |
 | payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
 | headers | `ITracePropagator.inject()`가 넣은 trace header |
+| partition key | `AbstractIntegrationEvent.partition_key` 값, 기본은 `None`(라운드로빈) |
 | consumer group | `SPAKKY_KAFKA__GROUP_ID` |
 | topic 생성 | 없으면 `number_of_partitions`, `replication_factor`로 생성 (dead-letter 토픽 포함) |
 | offset reset | `SPAKKY_KAFKA__AUTO_OFFSET_RESET` (`earliest`/`latest`/`none`) |

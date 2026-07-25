@@ -17,3 +17,7 @@ class OutboxMessage:
     published_at: datetime | None = field(default=None)
     retry_count: int = field(default=0)
     claimed_at: datetime | None = field(default=None)
+    # Appended last so existing positional construction by out-of-tree
+    # IOutboxStorage implementations keeps binding to the same fields.
+    partition_key: str | None = field(default=None)
+    """Key pinning the message to one broker partition. None spreads round-robin."""

@@ -53,6 +53,7 @@ class DirectEventBus(IEventBus):
             event.event_name,
             adapter.dump_json(event),
             headers,
+            event.partition_key,
         )
 
 
@@ -93,4 +94,5 @@ class AsyncDirectEventBus(IAsyncEventBus):
             event.event_name,
             adapter.dump_json(event),
             headers,
+            event.partition_key,
         )

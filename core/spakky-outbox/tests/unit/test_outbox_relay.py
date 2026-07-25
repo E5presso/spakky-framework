@@ -32,14 +32,17 @@ class RelayTestIntegrationEvent(AbstractIntegrationEvent):
 class SpySyncTransport(IEventTransport):
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes]] = []
+        self.partition_keys: list[str | None] = []
 
     def send(
         self,
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         self.sent.append((event_name, payload))
+        self.partition_keys.append(partition_key)
 
 
 class FailingSyncTransport(IEventTransport):
@@ -48,6 +51,7 @@ class FailingSyncTransport(IEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         raise ConnectionError("Transport unavailable")
 
@@ -81,14 +85,17 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
 class SpyAsyncTransport(IAsyncEventTransport):
     def __init__(self) -> None:
         self.sent: list[tuple[str, bytes]] = []
+        self.partition_keys: list[str | None] = []
 
     async def send(
         self,
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         self.sent.append((event_name, payload))
+        self.partition_keys.append(partition_key)
 
 
 class FailingAsyncTransport(IAsyncEventTransport):
@@ -97,6 +104,7 @@ class FailingAsyncTransport(IAsyncEventTransport):
         event_name: str,
         payload: bytes,
         headers: dict[str, str],
+        partition_key: str | None = None,
     ) -> None:
         raise ConnectionError("Transport unavailable")
 
@@ -127,13 +135,17 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
 # ── Common helpers ──
 
 
-def _make_message(event: AbstractIntegrationEvent) -> OutboxMessage:
+def _make_message(
+    event: AbstractIntegrationEvent,
+    partition_key: str | None = None,
+) -> OutboxMessage:
     adapter: TypeAdapter[AbstractIntegrationEvent] = TypeAdapter(type(event))
     return OutboxMessage(
         id=uuid4(),
         event_name=event.event_name,
         payload=adapter.dump_json(event),
         headers={"traceparent": "00-abc123-def456-01"},
+        partition_key=partition_key,
         created_at=datetime.now(UTC),
     )
 
@@ -377,3 +389,76 @@ async def test_async_relay_run_async_exits_immediately_when_already_stopped() ->
     await relay.run_async()
 
     assert len(transport.sent) == 0
+
+
+# ── partition key propagation tests ──
+
+
+def test_relay_batch_forwards_stored_partition_key_to_transport() -> None:
+    """_relay_batch가 저장된 partition_key를 Transport에 그대로 전달하는지 검증한다."""
+    message = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-100"),
+        partition_key="ORD-100",
+    )
+
+    transport = SpySyncTransport()
+    relay = OutboxRelayBackgroundService(
+        InMemorySyncOutboxStorage(pending=[message]),
+        transport,
+        _make_config(),
+    )
+    relay._relay_batch()
+
+    assert transport.partition_keys == ["ORD-100"]
+
+
+def test_relay_batch_forwards_none_when_message_has_no_partition_key() -> None:
+    """partition_key가 없는 메시지는 Transport에 None으로 전달되는지 검증한다."""
+    message = _make_message(RelayTestIntegrationEvent(order_id="ORD-101"))
+
+    transport = SpySyncTransport()
+    relay = OutboxRelayBackgroundService(
+        InMemorySyncOutboxStorage(pending=[message]),
+        transport,
+        _make_config(),
+    )
+    relay._relay_batch()
+
+    assert transport.partition_keys == [None]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_forwards_stored_partition_key_to_transport() -> None:
+    """비동기 _relay_batch가 저장된 partition_key를 Transport에 전달하는지 검증한다."""
+    message = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-200"),
+        partition_key="ORD-200",
+    )
+
+    transport = SpyAsyncTransport()
+    relay = AsyncOutboxRelayBackgroundService(
+        InMemoryAsyncOutboxStorage(pending=[message]),
+        transport,
+        _make_config(),
+    )
+    await relay._relay_batch()
+
+    assert transport.partition_keys == ["ORD-200"]
+
+
+@pytest.mark.asyncio
+async def test_async_relay_batch_forwards_none_when_message_has_no_partition_key() -> (
+    None
+):
+    """비동기 경로에서 partition_key 없는 메시지가 None으로 전달되는지 검증한다."""
+    message = _make_message(RelayTestIntegrationEvent(order_id="ORD-201"))
+
+    transport = SpyAsyncTransport()
+    relay = AsyncOutboxRelayBackgroundService(
+        InMemoryAsyncOutboxStorage(pending=[message]),
+        transport,
+        _make_config(),
+    )
+    await relay._relay_batch()
+
+    assert transport.partition_keys == [None]

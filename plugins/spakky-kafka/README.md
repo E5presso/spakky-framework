@@ -167,6 +167,7 @@ dead-letter topic은 consumer `initialize` 시점에 구독 topic과 함께 생�
 
 - **자동 topic 생성**: 이벤트 타입 이름을 기준으로 topic 생성 (dead-letter topic 포함)
 - **Dead-letter 경로**: 처리 실패 메시지를 원본 좌표·예외 header와 함께 `.dlt` topic으로 전달
+- **파티션 키 라우팅**: `AbstractIntegrationEvent.partition_key`를 오버라이드하면 같은 키의 이벤트가 같은 파티션으로 가서 순서가 유지됩니다. 기본값 `None`은 라운드로빈 분산
 - **동기/비동기 지원**: 동기 및 비동기 publisher/consumer 모두 지원
 - **Background service 패턴**: consumer polling을 background service로 실행
 - **Pydantic 직렬화**: 이벤트를 Pydantic으로 직렬화/역직렬화
