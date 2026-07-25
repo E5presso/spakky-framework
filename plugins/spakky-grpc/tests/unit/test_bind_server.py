@@ -75,7 +75,7 @@ async def test_bind_server_with_spec_pod_expect_service_wrapping_spec_added_to_c
     built_server.start = AsyncMock()
     spec = MagicMock(spec=GrpcServerSpec)
     spec.bind_addresses = ["127.0.0.1:50051"]
-    spec.build = MagicMock(return_value=built_server)
+    spec.build_async = AsyncMock(return_value=built_server)
 
     result = harness.processor.post_process(spec)
 
@@ -88,7 +88,7 @@ async def test_bind_server_with_spec_pod_expect_service_wrapping_spec_added_to_c
     # the exact spec we passed in — proving the processor wrapped it
     # correctly without inspecting private attributes.
     await service_arg.start_async()
-    spec.build.assert_called_once()
+    spec.build_async.assert_called_once()
     built_server.start.assert_awaited_once()
 
 
@@ -97,12 +97,12 @@ async def test_grpc_server_service_start_async_expect_build_and_start() -> None:
     spec = MagicMock(spec=GrpcServerSpec)
     built_server = MagicMock(spec=grpc.aio.Server)
     built_server.start = AsyncMock()
-    spec.build = MagicMock(return_value=built_server)
+    spec.build_async = AsyncMock(return_value=built_server)
     service = GrpcServerService(spec)
 
     await service.start_async()
 
-    spec.build.assert_called_once()
+    spec.build_async.assert_called_once()
     built_server.start.assert_awaited_once()
 
 
@@ -113,7 +113,7 @@ async def test_grpc_server_service_stop_async_without_start_expect_noop() -> Non
 
     await service.stop_async()
 
-    spec.build.assert_not_called()
+    spec.build_async.assert_not_called()
 
 
 async def test_grpc_server_service_stop_async_after_start_expect_graceful_stop() -> (
@@ -124,7 +124,7 @@ async def test_grpc_server_service_stop_async_after_start_expect_graceful_stop()
     built_server = MagicMock(spec=grpc.aio.Server)
     built_server.start = AsyncMock()
     built_server.stop = AsyncMock()
-    spec.build = MagicMock(return_value=built_server)
+    spec.build_async = AsyncMock(return_value=built_server)
     service = GrpcServerService(spec)
     await service.start_async()
 
@@ -141,7 +141,7 @@ async def test_grpc_server_service_stop_async_twice_expect_single_graceful_stop(
     built_server = MagicMock(spec=grpc.aio.Server)
     built_server.start = AsyncMock()
     built_server.stop = AsyncMock()
-    spec.build = MagicMock(return_value=built_server)
+    spec.build_async = AsyncMock(return_value=built_server)
     service = GrpcServerService(spec)
     await service.start_async()
 

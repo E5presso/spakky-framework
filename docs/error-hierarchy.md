@@ -741,7 +741,7 @@ from spakky.saga.error import (
 
 ### spakky-grpc
 
-gRPC 통합 관련 에러입니다. gRPC 상태 코드 매핑 에러와 스키마 에러로 나뉩니다.
+gRPC 통합 관련 에러입니다. gRPC 상태 코드 매핑 에러, 스키마 에러, 전송 보안 설정 에러, 클라이언트 호출 에러로 나뉩니다.
 
 ```python
 from spakky.plugins.grpc.error import (
@@ -761,6 +761,11 @@ from spakky.plugins.grpc.error import (
     ProtoFieldNumberConflictError,
     InvalidProtoFieldNumberError,
     DuplicateProtoFieldNumberError,
+    IncompleteTlsCredentialsError,
+    MissingClientCertificateAuthorityError,
+    NotAnRpcMethodError,
+    RpcMethodTypeMismatchError,
+    MessagelessRpcMethodError,
 )
 ```
 
@@ -788,6 +793,21 @@ from spakky.plugins.grpc.error import (
 | `ProtoFieldNumberConflictError`       | 명시 `ProtoField` 번호가 자동 부여 필드의 번호와 충돌 |
 | `InvalidProtoFieldNumberError`        | 명시 `ProtoField(number=...)`가 protobuf 유효 범위 밖이거나 reserved band에 있음 |
 | `DuplicateProtoFieldNumberError`      | 같은 message 안에서 두 필드가 같은 명시 `ProtoField` 번호를 사용 |
+
+**전송 보안 설정 에러:**
+
+| 에러                                     | 설명                                       |
+| ---------------------------------------- | ------------------------------------------ |
+| `IncompleteTlsCredentialsError`          | TLS 설정에 인증서 체인과 개인키 중 한쪽만 존재 |
+| `MissingClientCertificateAuthorityError` | 클라이언트 인증서 검증을 요구했으나 client CA 파일이 없음 |
+
+**클라이언트 호출 에러:**
+
+| 에러                          | 설명                                       |
+| ----------------------------- | ------------------------------------------ |
+| `NotAnRpcMethodError`         | `@rpc`가 붙지 않은 메서드로 호출을 만들려 함 |
+| `RpcMethodTypeMismatchError`  | 메서드가 선언한 스트리밍 패턴과 다른 호출 형태를 요청 |
+| `MessagelessRpcMethodError`   | `@rpc` 메서드가 request 또는 response 모델을 선언하지 않음 |
 
 ### spakky-openfga
 

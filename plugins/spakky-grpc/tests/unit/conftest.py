@@ -1,5 +1,6 @@
 """Shared fixtures for gRPC PostProcessor and handler tests."""
 
+from pathlib import Path
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock
 
@@ -62,3 +63,18 @@ def server() -> AsyncMock:
     mock = AsyncMock(spec=grpc.aio.Server)
     mock.add_generic_rpc_handlers = MagicMock()
     return mock
+
+
+@pytest.fixture
+def tls_key_pair(tmp_path: Path) -> tuple[Path, Path]:
+    """Write placeholder PEM files for a certificate chain and private key.
+
+    ``grpc.ssl_server_credentials`` stores the bytes without parsing them, so
+    unit tests that only assert on wiring do not need real key material; the
+    live TLS handshake is covered by the integration suite.
+    """
+    certificate_chain_file = tmp_path / "server.crt"
+    private_key_file = tmp_path / "server.key"
+    certificate_chain_file.write_bytes(b"-----BEGIN CERTIFICATE-----\n")
+    private_key_file.write_bytes(b"-----BEGIN PRIVATE KEY-----\n")
+    return certificate_chain_file, private_key_file

@@ -9,7 +9,7 @@ from spakky.core.application.application import SpakkyApplication
 
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.server_spec import GrpcServerSpec
-from tests.integration._client import deserializer_for, serializer_for
+from spakky.plugins.grpc.codec import deserializer_for, serializer_for
 from tests.integration.apps.echo import (
     EchoReply,
     EchoRequest,

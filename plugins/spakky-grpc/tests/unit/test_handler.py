@@ -24,11 +24,8 @@ from typing import override
 from spakky.plugins.grpc.annotations.field import ProtoField
 from spakky.plugins.grpc.decorators.rpc import RpcMethodType, rpc
 from spakky.plugins.grpc.error import Unavailable, UnsupportedResponseTypeError
-from spakky.plugins.grpc.handler import (
-    GrpcServiceHandler,
-    _basemodel_to_protobuf,
-    _protobuf_to_basemodel,
-)
+from spakky.plugins.grpc.codec import basemodel_to_protobuf, protobuf_to_basemodel
+from spakky.plugins.grpc.handler import GrpcServiceHandler
 from spakky.plugins.grpc.schema.descriptor_builder import build_file_descriptor
 from spakky.plugins.grpc.schema.registry import DescriptorRegistry
 from spakky.plugins.grpc.stereotypes.grpc_controller import GrpcController
@@ -554,7 +551,7 @@ def test_basemodel_to_protobuf_with_nested_and_repeated() -> None:
     msg_class = registry.get_message_class("nested.v1.OuterMsg")
 
     src = OuterMsg(inner=InnerMsg(text="hi"), tags=["a", "b"])
-    proto = _basemodel_to_protobuf(src, msg_class)
+    proto = basemodel_to_protobuf(src, msg_class)
 
     payload = json_format.MessageToJson(proto, preserving_proto_field_name=True)
     restored = OuterMsg.model_validate_json(payload)
@@ -572,7 +569,7 @@ def test_protobuf_to_basemodel_with_nested() -> None:
         msg_class(),
     )
 
-    result = _protobuf_to_basemodel(proto, OuterMsg)
+    result = protobuf_to_basemodel(proto, OuterMsg)
     assert isinstance(result, OuterMsg)
     assert result.inner.text == "world"
     assert result.tags == ["x"]
@@ -584,12 +581,12 @@ def test_basemodel_to_protobuf_roundtrip_simple() -> None:
     msg_class = registry.get_message_class("handler.v1.PingReply")
 
     original = PingReply(value="roundtrip")
-    proto = _basemodel_to_protobuf(original, msg_class)
+    proto = basemodel_to_protobuf(original, msg_class)
     raw = proto.SerializeToString()
 
     restored_proto = msg_class()
     restored_proto.ParseFromString(raw)
-    result = _protobuf_to_basemodel(restored_proto, PingReply)
+    result = protobuf_to_basemodel(restored_proto, PingReply)
     assert isinstance(result, PingReply)
     assert result.value == "roundtrip"
 
@@ -624,7 +621,7 @@ def test_protobuf_to_basemodel_optional_field_unset_expect_none() -> None:
     # nickname is NOT set — json_format omits it; pydantic defaults to None.
     proto = json_format.Parse('{"name":"test"}', msg_class())
 
-    result = _protobuf_to_basemodel(proto, OptionalMsg)
+    result = protobuf_to_basemodel(proto, OptionalMsg)
     assert isinstance(result, OptionalMsg)
     assert result.name == "test"
     assert result.nickname is None
@@ -637,7 +634,7 @@ def test_protobuf_to_basemodel_optional_field_set_expect_value() -> None:
 
     proto = json_format.Parse('{"name":"test","nickname":"nick"}', msg_class())
 
-    result = _protobuf_to_basemodel(proto, OptionalMsg)
+    result = protobuf_to_basemodel(proto, OptionalMsg)
     assert isinstance(result, OptionalMsg)
     assert result.name == "test"
     assert result.nickname == "nick"
@@ -650,7 +647,7 @@ def test_protobuf_to_basemodel_optional_field_set_to_default_expect_default() ->
 
     proto = json_format.Parse('{"name":"test","nickname":""}', msg_class())
 
-    result = _protobuf_to_basemodel(proto, OptionalMsg)
+    result = protobuf_to_basemodel(proto, OptionalMsg)
     assert isinstance(result, OptionalMsg)
     assert result.nickname == ""
 
@@ -661,10 +658,10 @@ def test_basemodel_to_protobuf_optional_none_roundtrip() -> None:
     msg_class = registry.get_message_class("optional.v1.OptionalMsg")
 
     original = OptionalMsg(name="alice", nickname=None)
-    proto = _basemodel_to_protobuf(original, msg_class)
+    proto = basemodel_to_protobuf(original, msg_class)
     assert proto.HasField("nickname") is False
 
-    restored = _protobuf_to_basemodel(proto, OptionalMsg)
+    restored = protobuf_to_basemodel(proto, OptionalMsg)
     assert restored.name == "alice"
     assert restored.nickname is None
 
@@ -702,9 +699,9 @@ def test_basemodel_to_protobuf_repeated_message_expect_converted() -> None:
     msg_class = registry.get_message_class("repeated.v1.ContainerMsg")
 
     src = ContainerMsg(items=[ItemMsg(label="a"), ItemMsg(label="b")])
-    proto = _basemodel_to_protobuf(src, msg_class)
+    proto = basemodel_to_protobuf(src, msg_class)
 
-    restored = _protobuf_to_basemodel(proto, ContainerMsg)
+    restored = protobuf_to_basemodel(proto, ContainerMsg)
     assert len(restored.items) == 2
     assert restored.items[0].label == "a"
     assert restored.items[1].label == "b"
@@ -716,12 +713,12 @@ def test_roundtrip_repeated_message_field() -> None:
     msg_class = registry.get_message_class("repeated.v1.ContainerMsg")
 
     original = ContainerMsg(items=[ItemMsg(label="one"), ItemMsg(label="two")])
-    proto = _basemodel_to_protobuf(original, msg_class)
+    proto = basemodel_to_protobuf(original, msg_class)
     raw = proto.SerializeToString()
 
     restored_proto = msg_class()
     restored_proto.ParseFromString(raw)
-    result = _protobuf_to_basemodel(restored_proto, ContainerMsg)
+    result = protobuf_to_basemodel(restored_proto, ContainerMsg)
     assert isinstance(result, ContainerMsg)
     assert len(result.items) == 2
     assert result.items[0].label == "one"

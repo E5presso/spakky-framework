@@ -4,10 +4,13 @@ Provides base error classes, gRPC status-mapped errors, and schema errors.
 """
 
 from abc import ABC
+from pathlib import Path
 from typing import ClassVar
 
 import grpc
 from spakky.core.common.error import AbstractSpakkyFrameworkError
+
+from spakky.plugins.grpc.decorators.rpc import RpcMethodType
 
 
 class AbstractSpakkyGrpcError(AbstractSpakkyFrameworkError, ABC):
@@ -189,3 +192,99 @@ class DuplicateProtoFieldNumberError(AbstractSpakkyGrpcError):
         self.first_field_name = first_field_name
         self.second_field_name = second_field_name
         self.number = number
+
+
+class IncompleteTlsCredentialsError(AbstractSpakkyGrpcError):
+    """Raised when TLS is configured with only one half of the key pair.
+
+    Terminating TLS needs both the server certificate chain and the matching
+    private key. Configuring one without the other would otherwise fall back
+    to a plaintext listener, silently downgrading transport security on a
+    deployment that asked for TLS.
+    """
+
+    message = "TLS requires both a certificate chain file and a private key file"
+
+    def __init__(
+        self,
+        certificate_chain_file: Path | None,
+        private_key_file: Path | None,
+    ) -> None:
+        super().__init__()
+        self.certificate_chain_file = certificate_chain_file
+        self.private_key_file = private_key_file
+
+
+class MissingClientCertificateAuthorityError(AbstractSpakkyGrpcError):
+    """Raised when mutual TLS is requested without a client CA to verify against.
+
+    ``require_client_auth`` makes the server reject peers whose certificate is
+    not signed by a trusted authority. Without a client CA file there is no
+    authority to check against, so the setting could not be honoured.
+    """
+
+    message = "Client certificate authentication requires a client CA file"
+
+
+class NotAnRpcMethodError(AbstractSpakkyGrpcError):
+    """Raised when a client callable is built from a method without ``@rpc``."""
+
+    message = "Method is not decorated with @rpc"
+
+    def __init__(self, method_name: str) -> None:
+        super().__init__()
+        self.method_name = method_name
+
+
+class RpcMethodTypeMismatchError(AbstractSpakkyGrpcError):
+    """Raised when a client callable is built for the wrong streaming pattern.
+
+    Each ``GrpcClient`` factory produces a multicallable of one specific gRPC
+    streaming shape. Building a unary callable for a server-streaming method
+    would otherwise fail deep inside the transport with an opaque error.
+    """
+
+    message = "RPC method streaming pattern does not match the requested callable"
+
+    def __init__(
+        self,
+        method_name: str,
+        expected: RpcMethodType,
+        actual: RpcMethodType,
+    ) -> None:
+        super().__init__()
+        self.method_name = method_name
+        self.expected = expected
+        self.actual = actual
+
+
+class MessagelessRpcMethodError(AbstractSpakkyGrpcError):
+    """Raised when an ``@rpc`` method declares no request or no response model.
+
+    protobuf requires every method to name an input and an output message, so a
+    method missing either cannot be addressed over the wire. Reporting it here
+    names the offending method instead of surfacing an opaque descriptor-pool
+    rejection about an unresolvable empty type name.
+    """
+
+    message = "RPC method must declare both a request and a response model"
+
+    def __init__(self, method_name: str) -> None:
+        super().__init__()
+        self.method_name = method_name
+
+
+class NoControllerFoundError(AbstractSpakkyGrpcError):
+    """Raised when a descriptor snapshot is requested for modules with no controller.
+
+    An empty snapshot looks like a valid baseline: committing it and comparing
+    later runs against it passes forever, so the wire layout the snapshot exists
+    to protect goes unguarded. Naming the scanned modules instead points at the
+    usual cause, a wrong module path on the command line.
+    """
+
+    message = "No @GrpcController was found in the given modules"
+
+    def __init__(self, module_names: tuple[str, ...]) -> None:
+        super().__init__()
+        self.module_names = module_names

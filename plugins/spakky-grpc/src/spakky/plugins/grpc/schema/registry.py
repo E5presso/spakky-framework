@@ -29,6 +29,17 @@ class DescriptorRegistry:
     def __init__(self, pool: DescriptorPool | None = None) -> None:
         self.pool: DescriptorPool = pool or DescriptorPool()
         self._registered_files: set[str] = set()
+        self._service_names: set[str] = set()
+
+    @property
+    def service_names(self) -> tuple[str, ...]:
+        """Fully-qualified names of every service registered so far, sorted.
+
+        Server reflection advertises exactly this list, so it is read at
+        server-build time rather than captured earlier: controllers keep
+        registering while post-processing runs.
+        """
+        return tuple(sorted(self._service_names))
 
     def register(self, file_proto: FileDescriptorProto) -> FileDescriptor:
         """Register a FileDescriptorProto in the pool.
@@ -47,6 +58,9 @@ class DescriptorRegistry:
             raise DescriptorAlreadyRegisteredError(file_proto.name)
 
         self._registered_files.add(file_proto.name)
+        self._service_names.update(
+            f"{file_proto.package}.{service.name}" for service in file_proto.service
+        )
         serialized = file_proto.SerializeToString()
         self.pool.AddSerializedFile(serialized)
         return self.pool.FindFileByName(file_proto.name)

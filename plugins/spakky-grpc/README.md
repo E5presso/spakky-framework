@@ -11,7 +11,7 @@ pydantic `BaseModel`로 메시지를 선언하고 `@GrpcController` + `@rpc` 데
 pip install spakky-grpc
 ```
 
-의존성: `grpcio`, `protobuf`, `pydantic>=2.4`, `pydantic-settings`, `spakky`, `spakky-auth`, `spakky-tracing`.
+의존성: `grpcio`, `grpcio-health-checking`, `grpcio-reflection`, `protobuf`, `pydantic>=2.4`, `pydantic-settings`, `spakky`, `spakky-auth`, `spakky-tracing`.
 
 ## 빠른 시작
 
@@ -55,7 +55,110 @@ app = (
 app.start()  # 서버가 별도 이벤트 루프 스레드에서 구동됩니다
 ```
 
-플러그인은 `GrpcConfig`, `GrpcServerSpec`, `DescriptorRegistry`를 기본 Pod로 등록합니다. `GrpcServerSpec`는 핸들러·인터셉터·바인드 주소를 누적합니다. 실제 `grpc.aio.Server`는 `ApplicationContext`의 이벤트 루프 스레드에서 `spec.build()`로 생성되므로 `grpc.aio` 내부 Future가 올바른 루프에 바인딩됩니다. `SPAKKY_GRPC_BIND_ADDRESSES`가 비어 있으면 listener를 열지 않습니다.
+플러그인은 `GrpcConfig`, `GrpcServerSpec`, `DescriptorRegistry`, 그리고 헬스체크 servicer를 기본 Pod로 등록합니다. `GrpcServerSpec`는 핸들러·인터셉터·바인드 대상·채널 옵션·표준 서비스 등록 콜백을 누적합니다. 실제 `grpc.aio.Server`는 `ApplicationContext`의 이벤트 루프 스레드에서 `spec.build_async()`로 생성되므로 `grpc.aio` 내부 Future가 올바른 루프에 바인딩됩니다. `SPAKKY_GRPC_BIND_ADDRESSES`가 비어 있으면 listener를 열지 않습니다.
+
+## 설정
+
+모든 값은 `SPAKKY_GRPC_` 접두사 환경변수로 주입합니다.
+
+| 환경변수 | 타입 | 기본값 | 역할 |
+|---|---|---|---|
+| `SPAKKY_GRPC_BIND_ADDRESSES` | `tuple[str, ...]` | `()` | listener 주소 목록 (`host:port`) |
+| `SPAKKY_GRPC_SERVER_OPTIONS` | `dict[str, int \| str]` | `{}` | `grpc.aio.server(options=...)`로 그대로 전달되는 채널 인자 |
+| `SPAKKY_GRPC_TLS_CERTIFICATE_CHAIN_FILE` | `Path \| None` | `None` | 서버 인증서 체인 PEM 파일 |
+| `SPAKKY_GRPC_TLS_PRIVATE_KEY_FILE` | `Path \| None` | `None` | 인증서 체인에 대응하는 개인키 PEM 파일 |
+| `SPAKKY_GRPC_TLS_CLIENT_CA_FILE` | `Path \| None` | `None` | 클라이언트 인증서를 서명한 CA PEM 파일 (mTLS) |
+| `SPAKKY_GRPC_REQUIRE_CLIENT_AUTH` | `bool` | `false` | 클라이언트 인증서 제시 강제 여부 |
+| `SPAKKY_GRPC_HEALTH_SERVICE_ENABLED` | `bool` | `true` | `grpc.health.v1.Health` 서비스 노출 여부 |
+| `SPAKKY_GRPC_REFLECTION_SERVICE_ENABLED` | `bool` | `true` | 서버 리플렉션 서비스 노출 여부 |
+
+### 전송 보안 (TLS·mTLS)
+
+인증서 체인과 개인키를 지정하면 `BIND_ADDRESSES`의 모든 주소가 `add_secure_port`로 바인딩됩니다. 둘 중 하나만 지정하면 평문으로 조용히 내려가지 않고 `IncompleteTlsCredentialsError`로 기동에 실패합니다.
+
+```bash
+export SPAKKY_GRPC_BIND_ADDRESSES='["0.0.0.0:50051"]'
+export SPAKKY_GRPC_TLS_CERTIFICATE_CHAIN_FILE=/etc/tls/server.crt
+export SPAKKY_GRPC_TLS_PRIVATE_KEY_FILE=/etc/tls/server.key
+# 상호 TLS까지 요구할 때
+export SPAKKY_GRPC_TLS_CLIENT_CA_FILE=/etc/tls/ca.crt
+export SPAKKY_GRPC_REQUIRE_CLIENT_AUTH=true
+```
+
+`REQUIRE_CLIENT_AUTH=true`인데 CA 파일이 없으면 `MissingClientCertificateAuthorityError`로 실패합니다 — 검증할 신뢰 기관이 없는 상태로 mTLS를 켠 것으로 간주합니다.
+
+### 서버 옵션
+
+`SERVER_OPTIONS`는 gRPC 채널 인자를 그대로 받습니다. 플러그인이 개별 항목을 열거하지 않으므로 keepalive·최대 메시지 크기·최대 연결 수명을 모두 이 한 곳에서 조정합니다.
+
+```bash
+export SPAKKY_GRPC_SERVER_OPTIONS='{
+  "grpc.keepalive_time_ms": 30000,
+  "grpc.max_receive_message_length": 8388608,
+  "grpc.max_connection_age_ms": 600000
+}'
+```
+
+## 표준 서비스
+
+| 서비스 | 설정 키 | 용도 |
+|---|---|---|
+| `grpc.health.v1.Health` | `HEALTH_SERVICE_ENABLED` | Kubernetes gRPC 네이티브 프로브 |
+| `grpc.reflection.v1alpha.ServerReflection` | `REFLECTION_SERVICE_ENABLED` | 실행 중인 서버의 서비스·메시지 조회 |
+
+두 서비스의 스키마는 플러그인 자체 `DescriptorRegistry`에 함께 등록되므로, 리플렉션이 목록에 올린 서비스는 모두 `describe`도 가능합니다.
+
+헬스 상태를 직접 조작하려면 `grpc_health_servicer` Pod를 주입합니다.
+
+```python
+from grpc_health.v1 import health, health_pb2
+
+
+class DatabaseProbe:
+    def __init__(self, servicer: health.aio.HealthServicer) -> None:
+        self.servicer = servicer
+
+    async def mark_unavailable(self) -> None:
+        await self.servicer.set(
+            "example.hello.HelloController",
+            health_pb2.HealthCheckResponse.NOT_SERVING,
+        )
+```
+
+## 클라이언트 헬퍼
+
+필드 번호가 필드 **이름**에서 도출되므로, 호출자가 메시지 모델을 따로 베껴 두면 이름 한 글자 차이로 와이어가 갈라집니다. `GrpcClient`는 서버가 등록하는 것과 같은 컨트롤러 클래스에서 descriptor를 만들고, 호출할 메서드도 문자열이 아니라 **메서드 참조**로 지정합니다.
+
+```python
+import grpc.aio
+from spakky.plugins.grpc.client import GrpcClient
+
+channel = grpc.aio.insecure_channel("127.0.0.1:50051")
+client = GrpcClient(channel, HelloController)
+
+reply = await client.unary_unary(HelloController.say_hello)(HelloRequest(name="spakky"))
+```
+
+| 메서드 | 대상 `RpcMethodType` |
+|---|---|
+| `unary_unary` | `UNARY` |
+| `unary_stream` | `SERVER_STREAMING` |
+| `stream_unary` | `CLIENT_STREAMING` |
+| `stream_stream` | `BIDI_STREAMING` |
+
+선언과 다른 패턴을 요청하면 호출 전에 `RpcMethodTypeMismatchError`, `@rpc`가 없는 메서드를 넘기면 `NotAnRpcMethodError`로 실패합니다. 서버와 같은 프로세스에서 호출한다면 `registry` 인자로 서버의 `DescriptorRegistry`를 공유해 descriptor 재컴파일을 생략할 수 있습니다.
+
+## descriptor 스냅샷 명령
+
+`spakky-grpc-descriptor-snapshot` 명령은 컨트롤러에서 생성되는 와이어 배치(메시지 → 필드 이름 → 번호·타입)를 결정론적 JSON으로 출력합니다. 스냅샷을 저장소에 커밋해 두면 필드 이름 변경 같은 와이어 파손을 CI에서 diff로 잡을 수 있습니다.
+
+```bash
+spakky-grpc-descriptor-snapshot apps > descriptors.json
+# CI 게이트
+spakky-grpc-descriptor-snapshot apps | diff - descriptors.json
+```
+
+인자는 `@GrpcController`가 선언된 모듈 또는 패키지의 점 표기 경로입니다. 패키지를 넘기면 하위 모듈까지 훑습니다. 명령은 실행 디렉터리를 `sys.path`에 추가하므로 프로젝트 루트에서 그대로 호출합니다.
 
 ## 타입 매핑
 
@@ -174,7 +277,7 @@ app.load_plugins(include={
 |---|---|---|
 | 0 | `RegisterServicesPostProcessor` | `@GrpcController` → generic handler를 `GrpcServerSpec`에 추가 |
 | 1 | `AddInterceptorsPostProcessor` | 에러/트레이싱 인터셉터를 `GrpcServerSpec`에 추가 |
-| 2 | `BindServerPostProcessor` | `GrpcServerService`를 `ApplicationContext`에 등록 (start_async에서 `spec.build()`) |
+| 2 | `BindServerPostProcessor` | `GrpcServerService`를 `ApplicationContext`에 등록 (start_async에서 `spec.build_async()`) |
 
 ## 개발 검증
 
