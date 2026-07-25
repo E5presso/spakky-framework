@@ -578,7 +578,7 @@ async def smoke_a2a_grpc() -> None:
             version="1.0.0",
         )
     )
-    server = spec.build()
+    server = await spec.build_async()
     await server.start()
     channel = grpc.aio.insecure_channel(f"127.0.0.1:{spec.bound_ports[0]}")
     try:
