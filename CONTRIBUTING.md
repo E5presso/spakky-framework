@@ -98,6 +98,8 @@ uv run pre-commit run --all-files --hook-stage pre-push
 ```mermaid
 flowchart TD
     commit[git commit]
+    commit --> pythonharness[python-harness-rules]
+    commit --> reviewcontract[review-delegate-context-contract]
     commit --> precommit[monorepo-pre-commit]
     commit --> commitizen[commitizen message validation]
     precommit --> changed[Each changed sub-project]
@@ -122,8 +124,16 @@ entry: bash -c 'if [ -d "core/spakky" ]; then cd core/spakky; fi && uv run pyref
 
 pre-commit 설정에는 다음 항목이 포함됩니다.
 
+- **Python harness hook**: Python 코드에서 하네스가 금지한 정적 패턴을 검증합니다.
+- **Review delegation contract hook**: `.agents/skills/review-code/SKILL.md`의 `review-persona-contract` marker 안에 선언된 다섯 persona를 정본으로 삼습니다. 14개 카테고리 행이 각각 정본 persona 하나만 참조하는지, 각 persona가 인용하는 `.agents/rules/*.md`가 존재하는지, autopilot의 `review-delegate-persona-source` marker가 이 정본을 중복 없이 참조하는지 검증합니다.
 - **Monorepo hook**: 변경 파일에 대해 하위 프로젝트별 검사를 실행합니다.
 - **Commitizen**: commit message가 Conventional Commits format을 따르는지 검증합니다.
+
+Review delegation 계약과 변형 fixture만 독립 실행하려면 repository root에서 다음 명령을 사용합니다.
+
+```bash
+.agents/skills/autopilot/scripts/test_review_delegate_context_contract.sh
+```
 
 ### Style guide
 
