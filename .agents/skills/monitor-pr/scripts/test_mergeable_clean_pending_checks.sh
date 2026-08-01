@@ -108,7 +108,8 @@ EOF_SLEEP
   local TEST_WATCH_SH="$TMPDIR/watch_under_test.sh"
   grep -v '^export PATH="/opt/homebrew/bin' "$WATCH_SH" > "$TEST_WATCH_SH"
 
-  PATH="$TMPDIR/bin:/usr/bin:/bin" \
+  MONITOR_PR_SCRIPTS_DIR="$SCRIPT_DIR" \
+    PATH="$TMPDIR/bin:/usr/bin:/bin" \
     REPO=E5presso/spakky-framework \
     PR_NUMBER=99999 \
     PREV_STATE_FILE="$TMPDIR/prev_state.json" \

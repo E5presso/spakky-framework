@@ -111,7 +111,8 @@ EOF_SLEEP
   # watch.sh 무한 루프이므로 timeout 으로 강제 종료. heartbeat threshold=6 cycle 도달 시
   # EVENT reason=heartbeat emit → exit 0. 태그 부재 case 에서 bot-stuck 미송신을 검증할 때
   # heartbeat 가 정상 경로가 된다.
-  PATH="$TMPDIR/bin:/usr/bin:/bin" \
+  MONITOR_PR_SCRIPTS_DIR="$SCRIPT_DIR" \
+    PATH="$TMPDIR/bin:/usr/bin:/bin" \
     REPO=E5presso/spakky-framework \
     PR_NUMBER=99999 \
     PREV_STATE_FILE="$TMPDIR/prev_state.json" \

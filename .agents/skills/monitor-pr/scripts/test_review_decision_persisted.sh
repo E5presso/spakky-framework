@@ -109,7 +109,8 @@ EOF_SLEEP
   grep -v '^export PATH="/opt/homebrew/bin' "$WATCH_SH" > "$TEST_WATCH_SH"
 
   # PREV_REVIEW_DECISION 을 전달하지 않는다 — reviewDecision baseline 은 PREV_STATE_FILE 에서만 로드됨을 검증.
-  PATH="$TMPDIR/bin:/usr/bin:/bin" \
+  MONITOR_PR_SCRIPTS_DIR="$SCRIPT_DIR" \
+    PATH="$TMPDIR/bin:/usr/bin:/bin" \
     REPO=E5presso/spakky-framework \
     PR_NUMBER=99999 \
     PREV_STATE_FILE="$TMPDIR/prev_state.json" \

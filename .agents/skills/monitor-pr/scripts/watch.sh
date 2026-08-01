@@ -101,6 +101,10 @@ fi
 : "${REPO:?REPO env required}"
 : "${PR_NUMBER:?PR_NUMBER env required}"
 
+monitor_pr_scripts_dir="${MONITOR_PR_SCRIPTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+# shellcheck source=comment_filters.sh
+source "$monitor_pr_scripts_dir/comment_filters.sh"
+
 prev_state_file="${PREV_STATE_FILE:-}"
 interrupt_file="${INTERRUPT_FILE:-}"
 
@@ -259,11 +263,11 @@ while true; do
     --argjson ch1 "$ch1_raw" \
     --argjson ch2 "$ch2_raw" \
     --argjson ch3 "$ch3_raw" \
-    --arg review_decision "$review_decision" '
+    --arg review_decision "$review_decision" "${INFORMATIONAL_BOT_FILTER}"'
     {
-      ch1: ($ch1 | map({(.id|tostring): (.updated_at // .created_at)}) | add // {}),
-      ch2: ($ch2 | map({(.id|tostring): (.updated_at // .created_at)}) | add // {}),
-      ch3: ($ch3 | map({(.id|tostring): (.submitted_at // "")}) | add // {}),
+      ch1: ($ch1 | map(select(informational_bot | not) | {(.id|tostring): (.updated_at // .created_at)}) | add // {}),
+      ch2: ($ch2 | map(select(informational_bot | not) | {(.id|tostring): (.updated_at // .created_at)}) | add // {}),
+      ch3: ($ch3 | map(select(informational_bot | not) | {(.id|tostring): (.submitted_at // "")}) | add // {}),
       reviewDecision: $review_decision
     }
   ')
