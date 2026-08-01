@@ -300,5 +300,5 @@ flowchart TD
 ## 더 볼 곳
 
 - [사가 오케스트레이션](saga.md): Saga를 처음 정의하는 기본 흐름입니다.
-- [Transactional Outbox](outbox.md): Integration Event 전달 보장을 다룹니다.
+- [Transactional Outbox](outbox.md): Integration Event의 원자적 기록과 Relay retry/abandon 경계를 다룹니다.
 - [spakky-saga API Reference](../api/core/spakky-saga.md): 상세 class와 함수 signature를 확인합니다.

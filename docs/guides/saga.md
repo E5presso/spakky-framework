@@ -345,4 +345,4 @@ Controller가 없는 환경(워커, CLI 등)에서도 패턴은 동일합니다.
 - [사가 심화](saga-advanced.md) — DSL, 에러 전략, 타임아웃, Semantic Lock
 - [도메인 모델링](domain-modeling.md) — Aggregate Root, Entity, Domain Event
 - [이벤트 시스템](events.md) — 도메인/통합 이벤트 발행
-- [Transactional Outbox](outbox.md) — at-least-once 전달 보장
+- [Transactional Outbox](outbox.md) — 원자적 기록과 성공 전달 경로의 at-least-once 의미

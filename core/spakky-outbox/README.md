@@ -18,9 +18,9 @@ pip install spakky-outbox "spakky-sqlalchemy[outbox]"
 
 - **트랜잭셔널 Outbox**: 이벤트를 비즈니스 데이터와 원자적으로 저장
 - **자동 relay**: background relay가 이벤트를 외부 transport(Kafka, RabbitMQ)로 발행
-- **재시도 지원**: transport가 개별 레코드의 거부를 확정한 경우에만 설정 가능한 한도 내에서 재시도하며, transport 자체 장애는 메시지별 retry 예산을 소모하지 않음
+- **재시도 지원**: transport가 영구적이고 특정 레코드에 귀속되는 거부를 확정한 경우에만 설정 가능한 한도 내에서 재시도하며, connection·timeout·queue 등 transport 자체 장애는 메시지별 retry 예산을 소모하지 않음
 - **다중 인스턴스 안전성**: 원자적 claim으로 중복 발행 방지
-- **파티션 키 단위 순서 보전**: 파티션 키를 통째로 claim하고, 전송이 실패한 키의 후속 메시지를 보류
+- **파티션 키 단위 순서 보전**: 파티션 키를 통째로 claim하고, 영구 거부되어 재시도 대기 중인 키의 후속 메시지를 보류
 - **발행 포기 상태**: 재시도를 소진한 메시지를 `abandoned` 처리하여 키가 무기한 막히지 않게 함
 
 ## 사용법
