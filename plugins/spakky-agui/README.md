@@ -36,13 +36,22 @@ durable Agent 실행(state·signal·evidence repository)과 모델 어댑터(`IA
 
 ## 동작 구조
 
-```
-AgentRunner.run_events() → 중립 AgentEvent  (런너가 native로 방출)
-중립 AgentEvent  ──(AgUiProjector)──▶  AG-UI BaseEvent
-AG-UI BaseEvent  ──(EventEncoder)──▶  "data: {...}\n\n" SSE 프레임
-                                      또는 "{...}\n" HTTP streaming chunk
-                                      또는 WebSocket text message
-                                      또는 stdout "{...}\n" stdio payload
+```mermaid
+graph LR
+    runner["AgentRunner.run_events()"]:::core -->|"native 방출"| neutral["중립 AgentEvent"]:::core
+    neutral --> projector["AgUiProjector"]:::plugin
+    projector --> event["AG-UI BaseEvent"]:::external
+    event --> encoder["EventEncoder"]:::external
+    encoder --> frame["인코딩된 AG-UI 프레임"]:::plugin
+    frame --> sse["SSE data frame"]:::external
+    frame --> websocket["WebSocket text message"]:::external
+    frame --> payload["sse_frame_payload()"]:::plugin
+    payload --> http["HTTP streaming JSON-line chunk"]:::external
+    payload --> stdio["stdio JSON-line payload"]:::external
+
+    classDef core fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+    classDef plugin fill:#FFF3E0,stroke:#EF6C00,color:#E65100
+    classDef external fill:#ECEFF1,stroke:#546E7A,color:#263238
 ```
 
 - **`AgentRunner.run_events()`**: 런너가 중립 `AgentEvent` taxonomy를 native로 방출하는
