@@ -224,6 +224,8 @@ claude bot이 동일 review id `R1`의 본문을 새 푸시 시 in-place로 재�
 
 `watch.sh`는 기본적으로 `REQUIRE_REVIEW_BOT_HEAD_EVAL=1`로 동작한다. 즉 GitHub가 `mergeState in (CLEAN, UNSTABLE)`이고 CI가 green이어도, `REVIEW_BOT_LOGINS` 대상 봇이 현재 HEAD를 평가했다는 증거가 없으면 `DONE reason=mergeable-clean`을 emit하지 않고 계속 대기한다. Codex-gated auto merge를 끄고 싶을 때만 명시적으로 `REQUIRE_REVIEW_BOT_HEAD_EVAL=0`을 전달한다.
 
+`reviewDecision=CHANGES_REQUESTED`이면 평가 완료 증거가 있거나 `REQUIRE_REVIEW_BOT_HEAD_EVAL=0`이어도 `mergeable-clean`을 emit하지 않는다. GitHub가 일시적으로 `mergeState=CLEAN|UNSTABLE`을 함께 노출하더라도 `DONE reason=awaiting-human-review`로 종료하여 변경 요청이 Phase 7 자동 병합으로 넘어가지 않게 한다.
+
 평가 완료 증거는 configured review bot 중 어느 하나가 남긴 다음 신호 중 하나다:
 
 - CH2 issue comment가 HEAD commit 시점 이후에 작성됨
@@ -393,6 +395,6 @@ SendMessage(
 
 ## 종료 조건
 
-`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0` + review bot HEAD 평가 완료 → Phase 7 전환. GitHub Copilot/Codex code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다.
+`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0` + review bot HEAD 평가 완료 + `reviewDecision != CHANGES_REQUESTED` → Phase 7 전환. GitHub Copilot/Codex code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다.
 
 $ARGUMENTS

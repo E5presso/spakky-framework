@@ -80,7 +80,8 @@
 #   bot_evaluated_head 의 두 경로 (OR): (1) latest_bot_ch2_date > head_commit_date (CH2 issue comment),
 #   (2) configured bot의 review가 head_oid에 anchor되고 state가 APPROVED/COMMENTED/CHANGES_REQUESTED (CH3).
 #   AND 조건: (a) pending_checks == 0, (b) failed_checks == 0, (c) mergeState in {BLOCKED, BEHIND}
-#   (DIRTY 제외 — DIRTY 는 EVENT 로 별도 분기), (d) reviewDecision != APPROVED, (e) bot_evaluated_head == 1.
+#   또는 reviewDecision == CHANGES_REQUESTED인 CLEAN/UNSTABLE (DIRTY는 EVENT), (d) reviewDecision != APPROVED,
+#   (e) bot_evaluated_head == 1.
 #   분기 위치: 모든 EVENT 분기 이후 (변화 있으면 EVENT 우선) + heartbeat 직전 (변화 없음 path 에서 즉시 종료).
 #
 # 매 30초 cycle마다 stderr에 1줄 진행 로그를 출력한다 (살아있음 가시성):
@@ -309,12 +310,13 @@ while true; do
     exit 0
   fi
 
-  # 종료 조건 2: CLEAN/UNSTABLE + CI green + review bot HEAD 평가 완료
+  # 종료 조건 2: CLEAN/UNSTABLE + CI green + review bot HEAD 평가 완료 + 변경 요청 없음
   # Codex/Copilot review bots often submit COMMENTED reviews instead of formal APPROVED.
   if { [ "${REQUIRE_REVIEW_BOT_HEAD_EVAL:-1}" = "0" ] || [ "$bot_evaluated_head" = "1" ]; } \
      && { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
      && [ "$pending_checks" = "0" ] \
-     && [ "$failed_checks" = "0" ]; then
+     && [ "$failed_checks" = "0" ] \
+     && [ "$review_decision" != "CHANGES_REQUESTED" ]; then
     persist_state
     snapshot_and_emit "DONE" "mergeable-clean"
     exit 0
@@ -369,8 +371,8 @@ while true; do
   # bot_evaluated_head 의 의의: review bot 은 자동 승인 비적격 판정 시 두 경로로 의견을 남길 수 있다 —
   # (1) CH2 issue comment 로 "팀원 리뷰 필요" 의견 (HEAD commit 이후 created_at),
   # (2) CH3 reviews API 로 APPROVED/COMMENTED/CHANGES_REQUESTED 리뷰 (commit_id == HEAD).
-  # 둘 중 어느 경로든 봇은 현재 HEAD 를 평가했지만 의도적으로 승인하지 않은 것이므로 stuck 이 아니다 —
-  # 빈 커밋 retrigger 는 동일 판정을 재발행할 뿐이며 폴링/크레딧만 소진한다.
+  # 둘 중 어느 경로든 봇은 현재 HEAD를 평가했으므로 stuck이 아니다. human review가 남았거나 변경 요청이
+  # 있으면 빈 커밋 retrigger는 동일 판정만 재발행하고 polling/credit만 소진한다.
   #
   # (f) auto-approvable 태그의 의의: pr-review SKILL.md 가 AE6/AE7 또는 전 파일 AE1–AE5 매칭 시
   # `gh pr edit --add-label "auto-approvable"` 로 자동 부여한다. 태그가 없으면 봇 자동 승인 비적격이며
@@ -393,7 +395,10 @@ while true; do
   # 본 DONE 이 송신된다 (heartbeat 누적 직전).
   if [ "$pending_checks" = "0" ] \
      && [ "$failed_checks" = "0" ] \
-     && { [ "$merge_state" = "BLOCKED" ] || [ "$merge_state" = "BEHIND" ]; } \
+     && { [ "$merge_state" = "BLOCKED" ] \
+       || [ "$merge_state" = "BEHIND" ] \
+       || { { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
+         && [ "$review_decision" = "CHANGES_REQUESTED" ]; }; } \
      && [ "$review_decision" != "APPROVED" ] \
      && [ "$bot_evaluated_head" = "1" ]; then
     persist_state

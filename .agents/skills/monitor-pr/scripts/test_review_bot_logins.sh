@@ -115,6 +115,7 @@ run_case "configured-preserves-default" "review-app[bot]" "claude[bot]" ch3 COMM
 run_case "configured-commented" "  review-app[bot]  " "review-app[bot]" ch3 COMMENTED CLEAN REVIEW_REQUIRED mergeable-clean
 run_case "configured-approved" "review-app[bot]" "review-app[bot]" ch3 APPROVED CLEAN APPROVED mergeable-clean
 run_case "configured-changes-requested" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED BLOCKED CHANGES_REQUESTED awaiting-human-review
+run_case "configured-changes-requested-clean" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED CLEAN CHANGES_REQUESTED awaiting-human-review
 run_case "configured-ch2" "review-app[bot]" "review-app[bot]" ch2 COMMENTED BLOCKED REVIEW_REQUIRED awaiting-human-review
 run_case "ch3-exact-login-match" "review-app[bot]" "review-app[bot]-shadow" ch3 COMMENTED BLOCKED REVIEW_REQUIRED heartbeat
 run_case "ch2-exact-login-match" "review-app[bot]" "review-app[bot]-shadow" ch2 COMMENTED BLOCKED REVIEW_REQUIRED heartbeat
