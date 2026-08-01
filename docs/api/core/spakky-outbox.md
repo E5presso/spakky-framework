@@ -1,8 +1,8 @@
 # spakky-outbox
 
-> `spakky-outbox`는 Integration Event를 transaction 바깥으로 안전하게 전달하기 위한 Outbox 계약을 제공합니다.
+> `spakky-outbox`는 Integration Event를 비즈니스 데이터와 같은 transaction에 원자적으로 기록하고 별도 Relay로 전송하기 위한 계약을 제공합니다. 브로커가 수락 가능한 레코드는 확인될 때까지 재전송되지만, 영구적인 레코드 귀속 거부는 retry 소진 후 성공 전달 없이 abandoned 처리될 수 있습니다.
 
-Outbox 패턴 — 이벤트 발행 보장
+Outbox 패턴 — 원자적 기록과 Relay 상태 계약
 
 ## 플러그인 진입점
 

@@ -157,14 +157,15 @@ from spakky.outbox.bus.outbox_event_bus import OutboxEventBus, AsyncOutboxEventB
 
 백그라운드 서비스로 실행되며, Outbox 테이블에서 미전송 메시지를 주기적으로 가져와 `IEventTransport`로 전송합니다.
 
-한 번 가져온 배치는 전부 `send`한 뒤 `flush`를 한 번만 호출하고, flush가 성공한 다음에 발행 완료로 표시합니다.
+Relay는 claim한 메시지를 순서대로 `send()`하되, 직접 거부되거나 파티션 키 보류로 건너뛴 메시지는 배치 확정 대상에서 제외합니다. Transport에 실제로 넘긴 레코드 집합만 `flush()` 한 번으로 확정하고, 성공하면 그 레코드들을 각각 발행 완료로 표시합니다. 따라서 한 번 claim한 전체가 하나의 성공/실패 단위가 되는 것은 아닙니다.
 
 - `send()` 또는 1건 재확인이 영구적인 레코드 귀속 거부인 `EventDeliveryRejectedError`를 올린 경우에만 그 레코드의 retry count를 올립니다. 남은 예산이 없으면 `mark_abandoned()`로 발행 대기열에서 제외합니다.
-- 배치 `flush`가 실패하면 어느 메시지의 잘못인지 그 자리에서는 가릴 수 없으므로, 릴레이가 **같은 배치를 메시지 1건씩 다시 `send` + `flush`** 하여 브로커의 판정을 메시지에 귀속시킵니다. 이미 배치에서 전달된 레코드가 재확인 과정에서 다시 전달될 수 있으므로 소비자 멱등성이 전제입니다(at-least-once).
+- 배치 `flush`가 실패하면 어느 메시지의 잘못인지 그 자리에서는 가릴 수 없으므로, 릴레이가 앞선 `send()`에 성공해 Transport에 넘긴 레코드만 **1건씩 다시 `send` + `flush`** 하여 브로커의 판정을 귀속시킵니다. 재확인에 성공한 레코드는 즉시 발행 완료로 표시하고 다음 레코드로 진행하므로, 이 경로는 전체 배치가 아니라 레코드별로 부분 확정될 수 있습니다. 이미 배치에서 전달된 레코드가 재확인 과정에서 다시 전달될 수 있으므로 소비자 멱등성이 전제입니다(at-least-once).
 - 재확인에서 브로커가 **그 레코드를 영구 거부**하면(`EventDeliveryRejectedError`) 그 메시지만 retry count를 올리고 자기 파티션 키를 보류합니다. 재시도해도 같은 결과가 나올 메시지이므로 예산을 소모시켜 결국 발행 포기에 도달하게 하는 것이 맞습니다.
-- 최초 `send`나 재확인이 연결 끊김·타임아웃·queue 포화·그 밖의 transport 장애로 실패하면 transport는 원래 예외 타입을 유지합니다. Relay는 처리를 멈추고 배치를 DB에서 미발행 상태로 남기며 retry count와 abandoned 상태를 바꾸지 않습니다. 브로커가 앞선 레코드를 이미 받았을 가능성은 남아 있어, 다음 claim의 재전송은 중복을 만들 수 있습니다. 이것이 at-least-once 전달에서 소비자 멱등성이 필요한 이유입니다.
-- 재확인은 실패 경로에서만 일어납니다. 정상 경로는 종전대로 배치 1개당 `flush` 1회이므로 처리량이 바뀌지 않습니다.
-- 애플리케이션 종료로 transport가 닫히면(`EventTransportNotRunningError`) 남은 배치를 그대로 두고 릴레이를 멈춥니다. 종료는 전달 실패가 아니므로 retry count를 소모하지 않습니다.
+- 최초 `send`가 연결 끊김·타임아웃·queue 포화·그 밖의 transport 장애로 실패하면 transport는 원래 예외 타입을 유지하고 Relay는 그 자리에서 처리를 멈춥니다. 이 장애 전에 독립적으로 거부 처리된 레코드를 제외한 미확정 레코드는 DB에 남으며, transport 장애 자체는 retry count나 abandoned 상태를 바꾸지 않습니다.
+- 1건씩 재확인하던 중 transport 장애가 나면, 그 전에 성공한 레코드의 발행 완료와 이미 확정된 레코드 거부의 retry/abandon 갱신은 유지됩니다. 장애가 난 현재 레코드와 아직 방문하지 않은 레코드는 미확정으로 남고, 이 transport 장애 때문에 예산을 쓰지는 않습니다. 브로커가 앞선 레코드를 이미 받았을 가능성은 남아 있어 다음 claim의 재전송은 중복을 만들 수 있습니다. 이것이 at-least-once 전달에서 소비자 멱등성이 필요한 이유입니다.
+- 재확인은 실패 경로에서만 일어납니다. 정상 경로는 claim한 메시지 중 Transport에 넘긴 레코드 집합당 `flush` 1회이므로 처리량이 바뀌지 않습니다.
+- 애플리케이션 종료로 transport가 닫히면(`EventTransportNotRunningError`) 미확정 레코드를 그대로 두고 릴레이를 멈춥니다. 종료는 전달 실패가 아니므로 retry count를 소모하지 않습니다.
 
 ```python
 from spakky.outbox.relay.relay import (

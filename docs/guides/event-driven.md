@@ -15,10 +15,10 @@
 | 컴포넌트 | 책임 | 경계 |
 | --- | --- | --- |
 | 이벤트 시스템 | 상태 변경을 이벤트로 발행하고 핸들러로 처리 | 같은 프로세스 안(DomainEvent) + 외부 발행 진입점(IntegrationEvent) |
-| Outbox | Integration Event를 DB 트랜잭션과 원자적으로 묶어 at-least-once 전달 보장 | 발행 시점 ↔ 브로커 전송 시점 분리 |
+| Outbox | Integration Event를 DB 트랜잭션과 원자적으로 기록하고, 브로커가 수락 가능한 레코드를 확인될 때까지 재전송 | 발행 시점 ↔ 브로커 전송 시점 분리 |
 | 사가 | 여러 서비스/트랜잭션에 걸친 흐름을 보상 기반으로 오케스트레이션 | 복수 UseCase 호출 + 실패 시 역순 보상 |
 
-이벤트 시스템은 "무엇이 일어났는가"를 알리고, Outbox는 그 알림이 "유실 없이" 외부로 나가도록 보장하며, 사가는 여러 단계의 흐름이 "전부 성공하거나 전부 되돌려지도록" 조율합니다.
+이벤트 시스템은 "무엇이 일어났는가"를 알리고, Outbox는 그 알림을 비즈니스 데이터와 원자적으로 기록한 뒤 별도 Relay로 전송하며, 사가는 여러 단계의 보상 흐름을 조율합니다. Outbox의 성공 전달 경로는 중복 가능한 at-least-once 의미를 갖지만, 영구적인 레코드 귀속 거부는 retry 소진 후 abandoned 처리되어 성공 전달이 0회일 수 있습니다.
 
 ### 발행에서 전송, 보상까지의 전체 그림
 
@@ -235,13 +235,13 @@ sequenceDiagram
 
 ### Outbox 전송 시점
 
-UseCase가 발행한 Integration Event는 트랜잭션 commit 시점에 Outbox 테이블에 남고, 실제 브로커 전송은 `OutboxRelayBackgroundService`가 폴링으로 따로 처리합니다. 발행 트랜잭션과 전송이 분리돼 있어 at-least-once가 보장됩니다. 폴링 주기·배치 크기·재시도 설정과 전송 상태 전이 도식은 [Transactional Outbox](outbox.md)의 "폴링 → 전송 흐름"에서 다룹니다.
+UseCase가 발행한 Integration Event는 트랜잭션 commit 시점에 Outbox 테이블에 남고, 실제 브로커 전송은 `OutboxRelayBackgroundService`가 폴링으로 따로 처리합니다. 브로커가 수락 가능한 레코드는 확인될 때까지 재전송되므로 성공 전달 경로는 중복 가능한 at-least-once 의미를 갖습니다. 영구적인 레코드 귀속 거부만 retry/abandon 예산을 쓰며, 연결·timeout·queue·그 밖의 transport 장애는 원래 예외 타입을 유지하고 예산을 소모하지 않습니다. 폴링 주기·배치 크기·재시도 설정과 전송 상태 전이 도식은 [Transactional Outbox](outbox.md)의 "폴링 → 전송 흐름"에서 다룹니다.
 
 ---
 
 ## 다음 단계
 
 - [이벤트 시스템](events.md) — DomainEvent/IntegrationEvent 발행과 핸들러 등록
-- [Transactional Outbox](outbox.md) — at-least-once 전달 보장과 Relay 설정
+- [Transactional Outbox](outbox.md) — 원자적 기록, 성공 전달 경로의 at-least-once 의미, Relay retry/abandon 경계
 - [사가 오케스트레이션](saga.md) — 보상 기반 분산 트랜잭션 정의
 - [사가 심화](saga-advanced.md) — DSL, 에러 전략, 타임아웃, Semantic Lock
