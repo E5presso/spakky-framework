@@ -129,6 +129,7 @@ run_case "configured-approved" "review-app[bot]" "review-app[bot]" ch3 APPROVED 
 run_case "configured-changes-requested" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED BLOCKED CHANGES_REQUESTED awaiting-human-review
 run_case "configured-changes-requested-clean" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED CLEAN CHANGES_REQUESTED awaiting-human-review
 run_case "disabled-bot-gate-changes-requested-clean" "" "" none CHANGES_REQUESTED CLEAN CHANGES_REQUESTED awaiting-human-review 0
+run_case "disabled-bot-gate-changes-requested-unstable" "" "" none CHANGES_REQUESTED UNSTABLE CHANGES_REQUESTED awaiting-human-review 0
 run_case "labeled-changes-requested-blocked" "" "" none CHANGES_REQUESTED BLOCKED CHANGES_REQUESTED awaiting-human-review 1 1
 run_case "labeled-changes-requested-behind" "" "" none CHANGES_REQUESTED BEHIND CHANGES_REQUESTED awaiting-human-review 1 1
 run_case "blocked-review-required-needs-bot-evidence" "" "" none COMMENTED BLOCKED REVIEW_REQUIRED heartbeat
