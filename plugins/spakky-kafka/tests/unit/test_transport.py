@@ -18,8 +18,13 @@ from collections.abc import Generator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from aiokafka.errors import (
+    KafkaConnectionError,
+    KafkaTimeoutError,
+    MessageSizeTooLargeError,
+)
 from aiokafka.structs import RecordMetadata, TopicPartition
-from confluent_kafka import KafkaError
+from confluent_kafka import KafkaError, KafkaException
 from spakky.event.error import (
     EventDeliveryRejectedError,
     EventTransportNotRunningError,
@@ -195,6 +200,69 @@ def test_sync_transport_send_expect_produce_without_flush(
 
 @patch("spakky.plugins.kafka.event.transport.Producer")
 @patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_send_message_too_large_expect_delivery_rejection(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """메시지 크기 거부는 해당 레코드의 EventDeliveryRejectedError로 변환한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    kafka_error = KafkaError(KafkaError.MSG_SIZE_TOO_LARGE)
+    mock_producer_cls.return_value.produce.side_effect = KafkaException(kafka_error)
+
+    transport = KafkaEventTransport(config)
+
+    with pytest.raises(EventDeliveryRejectedError) as rejection:
+        transport.send("TestEvent", b"{}", {})
+
+    assert rejection.value.reasons == [str(kafka_error)]
+
+
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_send_queue_full_expect_buffer_error_propagated(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """로컬 producer 큐 포화는 레코드 거부로 변환하지 않는다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    mock_producer_cls.return_value.produce.side_effect = BufferError("Queue full")
+
+    transport = KafkaEventTransport(config)
+
+    with pytest.raises(BufferError, match="Queue full"):
+        transport.send("TestEvent", b"{}", {})
+
+
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_send_kafka_transport_error_expect_original_error_propagated(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """레코드 크기와 무관한 Kafka 장애는 원래 transport 예외를 유지한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    kafka_exception = KafkaException(KafkaError(KafkaError.BROKER_NOT_AVAILABLE))
+    mock_producer_cls.return_value.produce.side_effect = kafka_exception
+
+    transport = KafkaEventTransport(config)
+
+    with pytest.raises(KafkaException) as raised:
+        transport.send("TestEvent", b"{}", {})
+
+    assert raised.value is kafka_exception
+
+
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
 def test_sync_transport_batch_expect_single_flush_for_two_sends(
     mock_admin_cls: MagicMock,
     mock_producer_cls: MagicMock,
@@ -295,6 +363,65 @@ async def test_async_transport_send_expect_record_handed_to_started_producer(
 @pytest.mark.asyncio
 @patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
 @patch("spakky.plugins.kafka.event.transport.AdminClient")
+async def test_async_transport_send_message_too_large_expect_delivery_rejection(
+    mock_admin_cls: MagicMock,
+    mock_aio_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 producer의 동기 레코드 크기 거부도 공통 예외로 변환한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    rejection = MessageSizeTooLargeError("Message exceeds max_request_size")
+    mock_producer = AsyncMock()
+    mock_producer.send.side_effect = rejection
+    mock_aio_producer_cls.return_value = mock_producer
+
+    transport = AsyncKafkaEventTransport(config)
+    await transport.start_async()
+
+    with pytest.raises(EventDeliveryRejectedError) as raised:
+        await transport.send("TestEvent", b"{}", {})
+
+    assert raised.value.reasons == [str(rejection)]
+    assert _claimed_deliveries() == []
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+async def test_async_transport_send_transport_failures_expect_original_without_pending(
+    mock_admin_cls: MagicMock,
+    mock_aio_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """연결·timeout send 장애는 원래 객체를 유지하고 delivery로 등록하지 않는다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    mock_producer = AsyncMock()
+    mock_aio_producer_cls.return_value = mock_producer
+
+    transport = AsyncKafkaEventTransport(config)
+    await transport.start_async()
+
+    transport_failures = (
+        KafkaConnectionError("Connection lost"),
+        KafkaTimeoutError("Request timed out"),
+    )
+    for transport_failure in transport_failures:
+        mock_producer.send.side_effect = transport_failure
+
+        with pytest.raises((KafkaConnectionError, KafkaTimeoutError)) as raised:
+            await transport.send("TestEvent", b"{}", {})
+
+        assert raised.value is transport_failure
+        assert _claimed_deliveries() == []
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
 async def test_async_transport_send_expect_no_broker_wait_before_flush(
     mock_admin_cls: MagicMock,
     mock_aio_producer_cls: MagicMock,
@@ -337,9 +464,10 @@ async def test_async_transport_flush_rejected_record_expect_broker_error_raised(
     mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
     mock_admin_cls.return_value = mock_admin
 
+    record_rejection = MessageSizeTooLargeError("Message exceeds max_request_size")
     mock_producer = AsyncMock()
     mock_producer.send.side_effect = [
-        _rejected_record(ConnectionError("Broker rejected the record")),
+        _rejected_record(record_rejection),
         _delivered_record(),
     ]
     mock_aio_producer_cls.return_value = mock_producer
@@ -352,7 +480,80 @@ async def test_async_transport_flush_rejected_record_expect_broker_error_raised(
     with pytest.raises(EventDeliveryRejectedError) as rejection:
         await transport.flush()
 
-    assert rejection.value.reasons == ["Broker rejected the record"]
+    assert rejection.value.reasons == [str(record_rejection)]
+
+
+@pytest.mark.asyncio
+@patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+async def test_async_transport_flush_transport_failure_expect_original_error_propagated(
+    mock_admin_cls: MagicMock,
+    mock_aio_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """delivery future의 연결 장애는 레코드 거부로 변환하지 않는다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    transport_failure = KafkaConnectionError("Connection lost")
+
+    mock_producer = AsyncMock()
+    mock_producer.send.return_value = _rejected_record(transport_failure)
+    mock_aio_producer_cls.return_value = mock_producer
+
+    transport = AsyncKafkaEventTransport(config)
+    await transport.start_async()
+    await transport.send("TestEvent", b"{}", {})
+
+    with pytest.raises(KafkaConnectionError) as raised:
+        await transport.flush()
+
+    assert raised.value is transport_failure
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transport_first", [False, True])
+@patch("spakky.plugins.kafka.event.transport.AIOKafkaProducer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+async def test_async_transport_flush_mixed_failures_expect_transport_failure_first(
+    mock_admin_cls: MagicMock,
+    mock_aio_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    *,
+    transport_first: bool,
+) -> None:
+    """혼합 delivery 실패는 순서와 무관하게 transport 장애를 우선 보존한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    record_rejection = MessageSizeTooLargeError("Message exceeds max_request_size")
+    transport_failure = KafkaConnectionError("Connection lost")
+    failures = (
+        (transport_failure, record_rejection)
+        if transport_first
+        else (record_rejection, transport_failure)
+    )
+
+    mock_producer = AsyncMock()
+    mock_producer.send.side_effect = [_rejected_record(failure) for failure in failures]
+    mock_aio_producer_cls.return_value = mock_producer
+
+    transport = AsyncKafkaEventTransport(config)
+    await transport.start_async()
+    await transport.send("TestEvent", b"{}", {})
+    await transport.send("TestEvent", b"{}", {})
+
+    with pytest.raises(KafkaConnectionError) as raised:
+        await transport.flush()
+
+    assert raised.value is transport_failure
+    assert _claimed_deliveries() == []
+
+    mock_producer.send.side_effect = None
+    mock_producer.send.return_value = _delivered_record()
+    await transport.send("TestEvent", b"{}", {})
+    await transport.flush()
+    assert _claimed_deliveries() == []
 
 
 @pytest.mark.asyncio
@@ -380,7 +581,7 @@ async def test_async_transport_concurrent_publishers_expect_rejection_to_its_own
     async def publish_rejected_record() -> None:
         """발행자 A: 거부될 레코드를 보내고, 동시 발행자가 flush를 마친 뒤 flush한다."""
         mock_producer.send.return_value = _rejected_record(
-            ConnectionError("Broker rejected the record")
+            MessageSizeTooLargeError("Message exceeds max_request_size")
         )
         await transport.send("TestEvent", b'{"sender": "rejected"}', {})
         rejected_publisher_started.set()
@@ -440,7 +641,7 @@ async def test_async_transport_stop_async_with_rejected_record_expect_producer_c
     mock_admin_cls.return_value = mock_admin
     mock_producer = AsyncMock()
     mock_producer.send.return_value = _rejected_record(
-        ConnectionError("Broker rejected the record")
+        MessageSizeTooLargeError("Message exceeds max_request_size")
     )
     mock_aio_producer_cls.return_value = mock_producer
 
@@ -658,10 +859,75 @@ def test_sync_transport_flush_rejected_record_expect_broker_error_raised(
 
     transport = KafkaEventTransport(config)
     transport.send("TestEvent", b"{}", {})
-    transport._message_delivery_report(MagicMock(spec=KafkaError), MagicMock())
+    transport._message_delivery_report(
+        KafkaError(KafkaError.MSG_SIZE_TOO_LARGE), MagicMock()
+    )
 
     with pytest.raises(EventDeliveryRejectedError):
         transport.flush()
+
+
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_flush_transport_failure_expect_kafka_error_propagated(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+) -> None:
+    """delivery callback의 transport 장애는 원래 KafkaError를 보존한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    mock_producer_cls.return_value = MagicMock()
+    transport_failure = KafkaError(KafkaError._TRANSPORT)
+
+    transport = KafkaEventTransport(config)
+    transport._message_delivery_report(transport_failure, MagicMock())
+
+    with pytest.raises(KafkaException) as raised:
+        transport.flush()
+
+    assert raised.value.args[0] is transport_failure
+
+    transport.flush()
+
+
+@pytest.mark.parametrize(
+    "error_codes",
+    [
+        (KafkaError.MSG_SIZE_TOO_LARGE, KafkaError._TRANSPORT),
+        (KafkaError._TRANSPORT, KafkaError.MSG_SIZE_TOO_LARGE),
+    ],
+)
+@patch("spakky.plugins.kafka.event.transport.Producer")
+@patch("spakky.plugins.kafka.event.transport.AdminClient")
+def test_sync_transport_flush_mixed_failures_expect_transport_failure_first(
+    mock_admin_cls: MagicMock,
+    mock_producer_cls: MagicMock,
+    config: KafkaConnectionConfig,
+    error_codes: tuple[int, int],
+) -> None:
+    """혼합 callback 실패는 순서와 무관하게 transport 장애를 우선 보존한다."""
+    mock_admin = MagicMock()
+    mock_admin.list_topics.return_value.topics.keys.return_value = {"TestEvent"}
+    mock_admin_cls.return_value = mock_admin
+    mock_producer_cls.return_value = MagicMock()
+    delivery_errors = [KafkaError(code) for code in error_codes]
+    transport_failure = next(
+        error for error in delivery_errors if error.code() == KafkaError._TRANSPORT
+    )
+
+    transport = KafkaEventTransport(config)
+    for delivery_error in delivery_errors:
+        transport._message_delivery_report(delivery_error, MagicMock())
+
+    with pytest.raises(KafkaException) as raised:
+        transport.flush()
+
+    assert raised.value.args[0] is transport_failure
+
+    transport.send("TestEvent", b"{}", {})
+    transport.flush()
 
 
 @patch("spakky.plugins.kafka.event.transport.Producer")
@@ -678,7 +944,9 @@ def test_sync_transport_flush_after_rejection_expect_next_batch_unaffected(
     mock_producer_cls.return_value = MagicMock()
 
     transport = KafkaEventTransport(config)
-    transport._message_delivery_report(MagicMock(spec=KafkaError), MagicMock())
+    transport._message_delivery_report(
+        KafkaError(KafkaError.MSG_SIZE_TOO_LARGE), MagicMock()
+    )
     with pytest.raises(EventDeliveryRejectedError):
         transport.flush()
 

@@ -551,7 +551,7 @@ Integration Event가 어느 브로커 파티션으로 갈지 결정하는 값입
 
 같은 파티션 키를 가진 이벤트는 항상 같은 파티션으로 갑니다 — Kafka가 보장하는 순서는 파티션 안에서만 성립하므로, 파티션 키는 순서 보장의 **전제 조건**입니다. 보통 aggregate id를 키로 사용합니다.
 
-Outbox를 경유하는 경로에서는 릴레이가 키 단위 순서를 함께 지킵니다. 전송이 실패한 키는 그 메시지가 발행될 때까지 후속 메시지를 보류하고, `fetch_pending`이 키를 통째로 claim하여 여러 릴레이 인스턴스가 같은 키를 병렬 발행하지 않습니다. 재시도를 소진한 메시지는 발행 포기(abandoned) 처리되어 키를 다시 열어 줍니다 — 상세와 그 대가는 [Kafka 가이드](guides/kafka.md)의 파티션 키 절 참조.
+Outbox를 경유하는 경로에서는 릴레이가 키 단위 순서를 함께 지킵니다. Transport가 영구적이고 특정 레코드에 귀속 가능한 거부를 `EventDeliveryRejectedError`로 확정하면 그 키의 후속 메시지를 보류하고 retry 예산을 쓰지만, 연결·timeout·queue·그 밖의 transport 장애는 원래 예외 타입을 유지하며 그 장애 자체로 예산을 소모하지 않습니다. `fetch_pending`은 키를 통째로 claim하여 여러 릴레이 인스턴스가 같은 키를 병렬 발행하지 않으며, 영구 레코드 귀속 거부로 retry를 소진한 메시지는 발행 포기(abandoned) 처리되어 키를 다시 열어 줍니다 — 상세와 그 대가는 [Kafka 가이드](guides/kafka.md)의 파티션 키 절 참조.
 
 전달 경로: 이벤트 → `IEventBus` → (`OutboxMessage.partition_key` 컬럼 경유) → `IEventTransport.send(..., partition_key=...)` → Kafka `produce(key=...)`. RabbitMQ transport는 파티션 개념이 없어 이 값을 라우팅에 사용하지 않습니다.
 
@@ -680,7 +680,7 @@ Repository 저장 경로에서 AggregateRoot 참조를 수집하는 컴포넌트
 
 ### OutboxEventBus
 
-`@Primary`로 기본 `IEventBus`를 대체하여, Integration Event를 브로커 대신 Outbox 테이블에 저장합니다. 비즈니스 데이터와 같은 트랜잭션 내에서 원자적으로 기록되므로 at-least-once 전달을 보장합니다.
+`@Primary`로 기본 `IEventBus`를 대체하여, Integration Event를 브로커 대신 Outbox 테이블에 저장합니다. 비즈니스 데이터와 같은 트랜잭션 내에서 원자적으로 기록하고, 브로커가 수락 가능한 레코드는 확인될 때까지 재전송하므로 성공 전달 경로는 중복 가능한 at-least-once 의미를 갖습니다. 영구 레코드 귀속 거부는 retry 소진 후 abandoned 처리되어 성공 전달이 0회일 수 있습니다.
 
 ```python
 from spakky.outbox.bus.outbox_event_bus import OutboxEventBus, AsyncOutboxEventBus
@@ -688,7 +688,7 @@ from spakky.outbox.bus.outbox_event_bus import OutboxEventBus, AsyncOutboxEventB
 
 ### OutboxMessage
 
-영속성에 독립적인 Outbox 메시지 모델. `id`, `event_name`, `payload`, `headers`, `created_at`, `published_at`, `retry_count`, `claimed_at` 필드를 가집니다.
+영속성에 독립적인 Outbox 메시지 모델. `id`, `event_name`, `payload`, `headers`, `partition_key`, `created_at`, `published_at`, `retry_count`, `claimed_at`, `abandoned_at` 필드를 가집니다.
 
 ```python
 from spakky.outbox.common.message import OutboxMessage

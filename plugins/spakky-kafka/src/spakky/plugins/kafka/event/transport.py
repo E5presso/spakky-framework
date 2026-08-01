@@ -14,8 +14,9 @@ from threading import Event
 from typing import Any
 
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import MessageSizeTooLargeError
 from aiokafka.structs import RecordMetadata
-from confluent_kafka import KafkaError, Message, Producer
+from confluent_kafka import KafkaError, KafkaException, Message, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 from typing import override
 
@@ -62,7 +63,7 @@ class KafkaEventTransport(IEventTransport, IService):
     config: KafkaConnectionConfig
     admin: AdminClient
     producer: Producer
-    _delivery_rejections: list[str]
+    _delivery_errors: list[KafkaError]
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the Kafka producer with connection config."""
@@ -72,7 +73,7 @@ class KafkaEventTransport(IEventTransport, IService):
             self.config.producer_configuration_dict,
             logger=logger,
         )
-        self._delivery_rejections = []
+        self._delivery_errors = []
 
     def _create_topic(self, topic: str) -> None:
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
@@ -95,10 +96,10 @@ class KafkaEventTransport(IEventTransport, IService):
     ) -> None:
         if error is not None:
             logger.error(f"Message delivery failed: {error}")
-            # confluent_kafka reports a rejection only here. Keeping it lets
-            # flush() fail, so the caller does not record an undelivered record
-            # as published.
-            self._delivery_rejections.append(str(error))
+            # confluent_kafka reports both record rejections and transport
+            # failures here. Keep the KafkaError so flush() can preserve that
+            # distinction instead of charging every failure to the record.
+            self._delivery_errors.append(error)
         else:
             logger.info(
                 f"Message delivered to {message.topic()} [{message.partition()}] at offset {message.offset()}"
@@ -136,35 +137,61 @@ class KafkaEventTransport(IEventTransport, IService):
             headers: Metadata headers for trace propagation.
             partition_key: Key routing the message to one partition. None lets
                 Kafka assign partitions round-robin.
+
+        Raises:
+            EventDeliveryRejectedError: The producer rejected this record as too
+                large.
+            BufferError: The local producer queue is full.
+            KafkaException: A different synchronous Kafka failure occurred.
         """
         self._create_topic(topic=event_name)
-        self.producer.produce(
-            topic=event_name,
-            value=payload,
-            key=partition_key.encode() if partition_key is not None else None,
-            headers=dict(headers),
-            callback=self._message_delivery_report,
-        )
+        try:
+            self.producer.produce(
+                topic=event_name,
+                value=payload,
+                key=partition_key.encode() if partition_key is not None else None,
+                headers=dict(headers),
+                callback=self._message_delivery_report,
+            )
+        except KafkaException as error:
+            rejected_records = [
+                reason
+                for reason in error.args
+                if isinstance(reason, KafkaError)
+                and reason.code() == KafkaError.MSG_SIZE_TOO_LARGE
+            ]
+            if not rejected_records:
+                raise
+            raise EventDeliveryRejectedError(
+                [str(reason) for reason in rejected_records]
+            ) from error
         self.producer.poll(0)
 
     @override
     def flush(self) -> None:
         """Block until the producer has sent every queued record.
 
-        Rejections collected by the delivery callback are raised here as
-        `EventDeliveryRejectedError`. Without this the caller would treat a
-        refused record as delivered — the outbox relay would mark it published
-        and the event would be lost with no trace beyond a log line.
+        A message-size rejection collected by the delivery callback is raised as
+        `EventDeliveryRejectedError`. Other callback errors remain transport-wide
+        `KafkaException` failures, so callers do not charge them to a record.
 
         Raises:
-            EventDeliveryRejectedError: The broker refused at least one record.
+            EventDeliveryRejectedError: The broker refused a record as too large.
+            KafkaException: Delivery failed for a transport-wide Kafka error.
         """
         self.producer.flush()
-        if not self._delivery_rejections:
+        if not self._delivery_errors:
             return
-        rejections = self._delivery_rejections
-        self._delivery_rejections = []
-        raise EventDeliveryRejectedError(rejections)
+        delivery_errors = self._delivery_errors
+        self._delivery_errors = []
+        transport_errors = [
+            error
+            for error in delivery_errors
+            if error.code() != KafkaError.MSG_SIZE_TOO_LARGE
+        ]
+        if transport_errors:
+            raise KafkaException(transport_errors[0])
+        raise EventDeliveryRejectedError([str(error) for error in delivery_errors])
 
 
 @immutable
@@ -275,25 +302,33 @@ class AsyncKafkaEventTransport(IAsyncEventTransport, IAsyncService):
         the record rather than to whoever happened to flush first.
 
         A failure of the flush itself propagates as it comes: the client could
-        not talk to the broker, which is no single record's fault. A failure
-        carried by a record's own delivery future is that record's verdict and
-        is raised as `EventDeliveryRejectedError`, so a caller can tell the two
-        apart and only spend a retry budget on the second.
+        not talk to the broker, which is no single record's fault. A delivery
+        future's `MessageSizeTooLargeError` is attributable to its record and is
+        raised as `EventDeliveryRejectedError`; every other future failure keeps
+        its original type as a transport-wide failure.
 
         Raises:
-            EventDeliveryRejectedError: The broker refused at least one record.
+            EventDeliveryRejectedError: The broker refused at least one record
+                as too large.
         """
         await producer.flush()
         outcomes = await gather(*deliveries, return_exceptions=True)
         # Every outcome is retrieved before raising, so a second rejected record
         # does not linger as an unretrieved exception.
-        refusals = [
+        failures = [
             outcome for outcome in outcomes if isinstance(outcome, BaseException)
         ]
-        if not refusals:
+        if not failures:
             return
-        raise EventDeliveryRejectedError([str(refusal) for refusal in refusals]) from (
-            refusals[0]
+        transport_failures = [
+            failure
+            for failure in failures
+            if not isinstance(failure, MessageSizeTooLargeError)
+        ]
+        if transport_failures:
+            raise transport_failures[0]
+        raise EventDeliveryRejectedError([str(failure) for failure in failures]) from (
+            failures[0]
         )
 
     @override
@@ -361,11 +396,15 @@ class AsyncKafkaEventTransport(IAsyncEventTransport, IAsyncService):
         Raises:
             EventTransportNotRunningError: When the application has not started
                 the transport's producer, or has already stopped it.
+            EventDeliveryRejectedError: The producer rejected this record as too
+                large.
+            aiokafka.errors.KafkaError: Any producer failure not attributable to
+                this record's size, propagated without conversion.
         """
         self._create_topic(topic=event_name)
         running = self._running_producer
-        self._record_delivery(
-            await self._on_producer_loop(
+        try:
+            delivery = await self._on_producer_loop(
                 running.producer.send(
                     topic=event_name,
                     value=payload,
@@ -374,7 +413,9 @@ class AsyncKafkaEventTransport(IAsyncEventTransport, IAsyncService):
                 ),
                 running.loop,
             )
-        )
+        except MessageSizeTooLargeError as error:
+            raise EventDeliveryRejectedError([str(error)]) from error
+        self._record_delivery(delivery)
 
     @override
     async def flush(self) -> None:
@@ -383,7 +424,9 @@ class AsyncKafkaEventTransport(IAsyncEventTransport, IAsyncService):
         Raises:
             EventTransportNotRunningError: When the application has not started
                 the transport's producer, or has already stopped it.
-            KafkaError: When the broker rejected one of this publisher's records.
+            EventDeliveryRejectedError: When the broker rejected one or more of
+                this publisher's records as too large. Any other delivery failure
+                keeps its original exception type.
         """
         running = self._running_producer
         await self._on_producer_loop(

@@ -110,7 +110,7 @@ class SelectivelyFailingSyncTransport(IEventTransport):
         partition_key: str | None = None,
     ) -> None:
         if payload in self.rejected_payloads:
-            raise ConnectionError("Transport rejected the message")
+            raise EventDeliveryRejectedError(["Transport rejected the message"])
         self.sent_payloads.append(payload)
 
     def flush(self) -> None:
@@ -271,7 +271,7 @@ class SelectivelyFailingAsyncTransport(IAsyncEventTransport):
         partition_key: str | None = None,
     ) -> None:
         if payload in self.rejected_payloads:
-            raise ConnectionError("Transport rejected the message")
+            raise EventDeliveryRejectedError(["Transport rejected the message"])
         self.sent_payloads.append(payload)
 
     async def flush(self) -> None:
@@ -463,8 +463,10 @@ def test_relay_batch_transport_stopped_expect_batch_left_pending_without_retry_c
     assert storage.retried_ids == []
 
 
-def test_relay_batch_increments_retry_on_transport_failure() -> None:
-    """Transport 전송 실패 시 _relay_batch가 retry count를 증가시키는지 검증한다."""
+def test_relay_batch_transport_failure_expect_message_left_pending_without_retry() -> (
+    None
+):
+    """Transport 전송 장애는 메시지 retry 예산을 소모하지 않는다."""
     event = RelayTestIntegrationEvent(order_id="ORD-FAIL")
     message = _make_message(event)
 
@@ -475,8 +477,9 @@ def test_relay_batch_increments_retry_on_transport_failure() -> None:
     relay = OutboxRelayBackgroundService(storage, transport, config)
     relay._relay_batch()
 
-    assert len(storage.published_ids) == 0
-    assert message.id in storage.retried_ids
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
+    assert storage.abandoned_ids == []
 
 
 def test_relay_batch_partition_key_after_failure_expect_rest_of_key_held_back() -> None:
@@ -755,8 +758,10 @@ async def test_async_relay_batch_transport_stopped_expect_batch_left_pending_wit
 
 
 @pytest.mark.asyncio
-async def test_async_relay_batch_increments_retry_on_transport_failure() -> None:
-    """Transport 전송 실패 시 _relay_batch가 retry count를 증가시키는지 검증한다."""
+async def test_async_relay_batch_transport_failure_expect_message_left_pending_without_retry() -> (
+    None
+):
+    """비동기 Transport 전송 장애는 메시지 retry 예산을 소모하지 않는다."""
     event = RelayTestIntegrationEvent(order_id="ORD-FAIL")
     message = _make_message(event)
 
@@ -767,8 +772,9 @@ async def test_async_relay_batch_increments_retry_on_transport_failure() -> None
     relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
     await relay._relay_batch()
 
-    assert len(storage.published_ids) == 0
-    assert message.id in storage.retried_ids
+    assert storage.published_ids == []
+    assert storage.retried_ids == []
+    assert storage.abandoned_ids == []
 
 
 @pytest.mark.asyncio

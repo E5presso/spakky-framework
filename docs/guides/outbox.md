@@ -1,8 +1,8 @@
 # Transactional Outbox
 
-> `spakky-outbox`로 transaction 이후 Integration Event를 at-least-once로 전달하는 흐름을, 개념과 사용법으로 나누어 설명합니다.
+> `spakky-outbox`로 transaction 이후 Integration Event를 확인 전까지 재전송하는 at-least-once 흐름과, 영구 거부된 레코드를 발행 포기하는 경계를 설명합니다.
 
-`spakky-outbox`는 Transactional Outbox 패턴을 구현하여 Integration Event의 at-least-once 전달을 보장합니다. events·outbox·saga가 함께 동작하는 전체 그림은 [이벤트 기반 아키텍처 통합 가이드](event-driven.md)를 참고하세요.
+`spakky-outbox`는 Transactional Outbox 패턴으로 비즈니스 변경과 Integration Event 기록을 원자적으로 묶습니다. 브로커가 수락 가능한 레코드는 확인될 때까지 재전송하므로 성공 전달 경로는 중복 가능한 at-least-once 의미를 갖지만, 영구적인 레코드 귀속 거부는 retry 예산을 소진하면 abandoned 처리되어 성공 전달이 0회일 수 있습니다. events·outbox·saga가 함께 동작하는 전체 그림은 [이벤트 기반 아키텍처 통합 가이드](event-driven.md)를 참고하세요.
 
 ---
 
@@ -20,11 +20,11 @@ Outbox는 이벤트를 **비즈니스 데이터와 같은 DB 트랜잭션 안에
 2. Integration Event 발행 시 메시지 브로커 대신 Outbox 테이블에 저장합니다 (트랜잭션 내).
 3. `OutboxRelayBackgroundService`가 주기적으로 Outbox 테이블을 폴링합니다.
 4. 미전송 메시지를 `IEventTransport`(Kafka/RabbitMQ)를 통해 실제 전송합니다.
-5. 전송 성공 시 메시지를 published 처리, 실패 시 재시도 카운트를 증가시킵니다. 실패한 메시지에 파티션 키가 있으면 같은 배치에 있는 그 키의 후속 메시지를 보류하고, `max_retry_count`를 소진하면 그 메시지를 발행 포기(abandoned) 처리하여 키를 다시 진행시킵니다.
+5. 전송 성공 시 메시지를 published 처리합니다. Transport가 영구적이고 특정 레코드에 귀속 가능한 거부를 `EventDeliveryRejectedError`로 확정한 경우에만 그 메시지의 retry count를 증가시키고, `max_retry_count`를 소진하면 발행 포기(abandoned) 처리합니다. 연결 끊김·타임아웃·queue 포화·그 밖의 transport 장애는 원래 예외 타입을 유지하며, Relay는 그 예외 때문에 retry/abandon 예산을 쓰지 않습니다. 배치 `flush()` 실패는 1건씩 재확인하고, 최초 `send()`나 1건 재확인의 transport 장애는 미확정 메시지를 그대로 남깁니다.
 
 ### 폴링 → 전송 흐름
 
-발행 측(UseCase 트랜잭션)과 전송 측(Relay 폴링)이 시간적으로 분리됩니다. Relay는 `fetch_pending`으로 미전송 메시지를 원자적으로 claim한 뒤 전송하고, 성공·실패에 따라 상태를 갱신합니다. 파티션 키가 있는 메시지는 키 단위로 claim·발행되어 상대 순서가 보전됩니다 — [Kafka 가이드](kafka.md)의 파티션 키 절 참조.
+발행 측(UseCase 트랜잭션)과 전송 측(Relay 폴링)이 시간적으로 분리됩니다. Relay는 `fetch_pending`으로 미전송 메시지를 원자적으로 claim한 뒤 전송하고, 배치 확정 성공·영구 레코드 귀속 거부·transport 장애를 구분해 상태를 갱신합니다. 파티션 키가 있는 메시지는 키 단위로 claim·발행되어 상대 순서가 보전됩니다 — [Kafka 가이드](kafka.md)의 파티션 키 절 참조.
 
 ```mermaid
 sequenceDiagram
@@ -41,12 +41,14 @@ sequenceDiagram
   loop polling_interval_seconds 주기
     Relay->>Storage: fetch_pending(batch_size, max_retry)
     Storage-->>Relay: 미전송 메시지 (claim)
-    Relay->>Transport: send(event_name, payload, headers)
-    alt 전송 성공
-      Transport->>Broker: 메시지 전달
+    Relay->>Transport: send(...) 후 배치 끝 flush()
+    alt 배치 확정 성공
+      Transport->>Broker: 메시지 전달 확정
       Relay->>Storage: mark_published(id)
-    else 전송 실패
-      Relay->>Storage: increment_retry(id)
+    else EventDeliveryRejectedError (영구 레코드 귀속 거부)
+      Relay->>Storage: increment_retry(id) 또는 mark_abandoned(id)
+    else transport 장애 (원래 예외 타입 유지)
+      Note over Relay,Storage: 이 장애로 retry/abandon 예산을 쓰지 않음
     end
   end
 ```
@@ -57,15 +59,16 @@ sequenceDiagram
 stateDiagram-v2
   [*] --> Pending: save (트랜잭션 commit)
   Pending --> Claimed: fetch_pending (claimed_at 기록)
-  Claimed --> Published: 전송 성공 → mark_published
-  Claimed --> Pending: 전송 실패 → increment_retry
-  Claimed --> Abandoned: 마지막 재시도까지 실패 → mark_abandoned
+  Claimed --> Published: 배치 확정 성공 → mark_published
+  Claimed --> Claimed: 영구 레코드 귀속 거부 → increment_retry
+  Claimed --> Abandoned: 영구 레코드 귀속 거부 + retry 소진 → mark_abandoned
+  Claimed --> Claimed: transport 장애 → 상태·retry 불변
   Claimed --> Pending: claim_timeout 초과 (크래시 복구)
   Published --> [*]
   Abandoned --> [*]
 ```
 
-`Abandoned`는 `max_retry_count`를 소진하고도 전송되지 못한 메시지의 종착 상태입니다. 이 상태로 넘기지 않으면 메시지가 조회 대상에서만 빠진 채 "가장 오래된 미발행 메시지"로 남아 같은 파티션 키의 후속 메시지를 영구히 막습니다. `abandoned_at`이 찍힌 row는 발행 대기열을 떠나므로 그 키가 다시 진행하며, row 자체는 남아 있어 운영자가 무엇이 버려졌는지 조회할 수 있습니다.
+`Abandoned`는 영구적이고 개별 레코드에 귀속된 거부가 반복되어 `max_retry_count`를 소진한 메시지의 종착 상태입니다. Transport 전체 장애는 이 상태로 전이시키지 않습니다. 레코드 거부를 소진 뒤에도 그대로 두면 메시지가 조회 대상에서만 빠진 채 "가장 오래된 미발행 메시지"로 남아 같은 파티션 키의 후속 메시지를 영구히 막습니다. `abandoned_at`이 찍힌 row는 발행 대기열을 떠나므로 그 키가 다시 진행하며, row 자체는 남아 있어 운영자가 성공 전달 0회로 끝난 메시지를 조회할 수 있습니다.
 
 ```sql
 SELECT id, event_name, partition_key, retry_count, abandoned_at
@@ -115,7 +118,7 @@ export SPAKKY_OUTBOX__CLAIM_TIMEOUT_SECONDS=300.0
 |------|---------|--------|------|
 | `polling_interval_seconds` | `SPAKKY_OUTBOX__POLLING_INTERVAL_SECONDS` | `1.0` | 폴링 주기 (초) |
 | `batch_size` | `SPAKKY_OUTBOX__BATCH_SIZE` | `100` | 배치당 처리 메시지 수 |
-| `max_retry_count` | `SPAKKY_OUTBOX__MAX_RETRY_COUNT` | `5` | 최대 재시도 횟수. 소진 시 메시지를 발행 포기 처리 |
+| `max_retry_count` | `SPAKKY_OUTBOX__MAX_RETRY_COUNT` | `5` | 영구 레코드 귀속 거부의 최대 retry 횟수. 소진 시 발행 포기하며 transport 장애에는 소모하지 않음 |
 | `claim_timeout_seconds` | `SPAKKY_OUTBOX__CLAIM_TIMEOUT_SECONDS` | `300.0` | 메시지 잠금 타임아웃 (초) |
 
 ### 이벤트 발행
@@ -156,10 +159,10 @@ from spakky.outbox.bus.outbox_event_bus import OutboxEventBus, AsyncOutboxEventB
 
 한 번 가져온 배치는 전부 `send`한 뒤 `flush`를 한 번만 호출하고, flush가 성공한 다음에 발행 완료로 표시합니다.
 
-- 개별 메시지의 `send`가 실패하면 그 메시지의 retry count만 올립니다.
+- `send()` 또는 1건 재확인이 영구적인 레코드 귀속 거부인 `EventDeliveryRejectedError`를 올린 경우에만 그 레코드의 retry count를 올립니다. 남은 예산이 없으면 `mark_abandoned()`로 발행 대기열에서 제외합니다.
 - 배치 `flush`가 실패하면 어느 메시지의 잘못인지 그 자리에서는 가릴 수 없으므로, 릴레이가 **같은 배치를 메시지 1건씩 다시 `send` + `flush`** 하여 브로커의 판정을 메시지에 귀속시킵니다. 이미 배치에서 전달된 레코드가 재확인 과정에서 다시 전달될 수 있으므로 소비자 멱등성이 전제입니다(at-least-once).
-- 재확인에서 브로커가 **그 레코드를 거부**하면(`EventDeliveryRejectedError`) 그 메시지만 retry count를 올리고 자기 파티션 키를 보류합니다. 재시도해도 같은 결과가 나올 메시지이므로 예산을 소모시켜 결국 발행 포기에 도달하게 하는 것이 맞습니다.
-- 재확인이 **브로커에 닿지 못해서**(연결 끊김·타임아웃) 실패하면 재확인을 멈추고 남은 배치를 미발행으로 남깁니다. retry count를 올리지 않습니다 — 장애는 어느 메시지의 잘못도 아니므로, 여기서 예산을 물리면 멀쩡한 메시지가 발행 포기로 버려집니다. 애플리케이션 종료로 transport가 닫힌 경우도 같습니다.
+- 재확인에서 브로커가 **그 레코드를 영구 거부**하면(`EventDeliveryRejectedError`) 그 메시지만 retry count를 올리고 자기 파티션 키를 보류합니다. 재시도해도 같은 결과가 나올 메시지이므로 예산을 소모시켜 결국 발행 포기에 도달하게 하는 것이 맞습니다.
+- 최초 `send`나 재확인이 연결 끊김·타임아웃·queue 포화·그 밖의 transport 장애로 실패하면 transport는 원래 예외 타입을 유지합니다. Relay는 처리를 멈추고 배치를 DB에서 미발행 상태로 남기며 retry count와 abandoned 상태를 바꾸지 않습니다. 브로커가 앞선 레코드를 이미 받았을 가능성은 남아 있어, 다음 claim의 재전송은 중복을 만들 수 있습니다. 이것이 at-least-once 전달에서 소비자 멱등성이 필요한 이유입니다.
 - 재확인은 실패 경로에서만 일어납니다. 정상 경로는 종전대로 배치 1개당 `flush` 1회이므로 처리량이 바뀌지 않습니다.
 - 애플리케이션 종료로 transport가 닫히면(`EventTransportNotRunningError`) 남은 배치를 그대로 두고 릴레이를 멈춥니다. 종료는 전달 실패가 아니므로 retry count를 소모하지 않습니다.
 
