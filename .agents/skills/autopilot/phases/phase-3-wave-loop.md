@@ -80,7 +80,7 @@ process-ticket SKILL.md "서브에이전트 반환 형식 (강제)" 정규형. 1
 ```
 ^status: (merged|awaiting-review|failed)$
 ^pr: (#\d+ \(https?://[^)]+\)|none)$
-^issue: [A-Z]+-\d+$
+^issue: #\d+$
 ```
 
 미준수 → §3-6 fallback. 파싱 직후 `status == merged`인 ID를 `merged_children`에 누적한다 (Phase 6 부모 자동 Done 입력).
