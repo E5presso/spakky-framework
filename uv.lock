@@ -238,9 +238,9 @@ name = "aiologic"
 version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sniffio", marker = "python_full_version < '3.13'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
-    { name = "wrapt", marker = "python_full_version < '3.13'" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+    { name = "wrapt" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/53/a7/809482759f40079f4c4328c7318bf569ae25d457f5017aad30a1b9aafedc/aiologic-0.17.0.tar.gz", hash = "sha256:65aa058e858c94cd208badb188e7f00b54dcabb3ba85b34f794db98074d108b9", size = 251625, upload-time = "2026-06-14T12:24:35.367Z" }
 wheels = [
@@ -906,8 +906,8 @@ name = "culsans"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiologic", marker = "python_full_version < '3.13'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "aiologic" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d9/e3/49afa1bc180e0d28008ec6bcdf82a4072d1c7a41032b5b759b60814ca4b0/culsans-0.11.0.tar.gz", hash = "sha256:0b43d0d05dce6106293d114c86e3fb4bfc63088cfe8ff08ed3fe36891447fe33", size = 107546, upload-time = "2025-12-31T23:15:38.196Z" }
 wheels = [
@@ -3214,7 +3214,7 @@ wheels = [
 
 [[package]]
 name = "spakky"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky" }
 dependencies = [
     { name = "uuid7" },
@@ -3525,7 +3525,7 @@ provides-extras = ["minimal", "domain", "data", "event", "task", "agent-core", "
 
 [[package]]
 name = "spakky-a2a"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-a2a" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
@@ -3568,7 +3568,7 @@ dev = [
 
 [[package]]
 name = "spakky-actuator"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-actuator" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -3583,7 +3583,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-agent"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-agent" }
 dependencies = [
     { name = "spakky" },
@@ -3606,7 +3606,7 @@ dev = [
 
 [[package]]
 name = "spakky-agui"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-agui" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -3627,7 +3627,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-auth"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-auth" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -3642,7 +3642,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-cache"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-cache" }
 dependencies = [
     { name = "spakky" },
@@ -3653,7 +3653,7 @@ requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-celery"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-celery" }
 dependencies = [
     { name = "celery" },
@@ -3692,7 +3692,7 @@ dev = [
 
 [[package]]
 name = "spakky-cryptography"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-cryptography" }
 dependencies = [
     { name = "argon2-cffi" },
@@ -3715,7 +3715,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-data"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-data" }
 dependencies = [
     { name = "spakky-domain" },
@@ -3726,7 +3726,7 @@ requires-dist = [{ name = "spakky-domain", editable = "core/spakky-domain" }]
 
 [[package]]
 name = "spakky-domain"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-domain" }
 dependencies = [
     { name = "spakky" },
@@ -3737,7 +3737,7 @@ requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-event"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-event" }
 dependencies = [
     { name = "pydantic" },
@@ -3758,7 +3758,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-fastapi"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-fastapi" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
@@ -3785,7 +3785,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-framework"
-version = "7.2.0"
+version = "8.0.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -3830,7 +3830,7 @@ dev = [
 
 [[package]]
 name = "spakky-grpc"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-grpc" }
 dependencies = [
     { name = "grpcio" },
@@ -3877,7 +3877,7 @@ dev = [
 
 [[package]]
 name = "spakky-kafka"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-kafka" }
 dependencies = [
     { name = "aiokafka" },
@@ -3914,7 +3914,7 @@ dev = [
 
 [[package]]
 name = "spakky-logging"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-logging" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -3929,7 +3929,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-mcp"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-mcp" }
 dependencies = [
     { name = "httpx" },
@@ -3950,7 +3950,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-oidc"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-oidc" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -3969,7 +3969,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-openfga"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-openfga" }
 dependencies = [
     { name = "openfga-sdk" },
@@ -3988,7 +3988,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-opentelemetry"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-opentelemetry" }
 dependencies = [
     { name = "opentelemetry-api" },
@@ -4034,7 +4034,7 @@ dev = [
 
 [[package]]
 name = "spakky-outbox"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-outbox" }
 dependencies = [
     { name = "pydantic" },
@@ -4053,7 +4053,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-policy"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-policy" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4080,7 +4080,7 @@ dev = [{ name = "types-pyyaml", specifier = ">=6.0.12.20260518" }]
 
 [[package]]
 name = "spakky-rabbitmq"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-rabbitmq" }
 dependencies = [
     { name = "aio-pika" },
@@ -4121,7 +4121,7 @@ dev = [
 
 [[package]]
 name = "spakky-redis"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-redis" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4148,7 +4148,7 @@ dev = [{ name = "fakeredis", specifier = ">=2.32.1" }]
 
 [[package]]
 name = "spakky-saga"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-saga" }
 dependencies = [
     { name = "spakky" },
@@ -4165,7 +4165,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-sqlalchemy"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-sqlalchemy" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4215,7 +4215,7 @@ dev = [
 
 [[package]]
 name = "spakky-task"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-task" }
 dependencies = [
     { name = "spakky" },
@@ -4234,7 +4234,7 @@ dev = [{ name = "spakky-auth", editable = "core/spakky-auth" }]
 
 [[package]]
 name = "spakky-tracing"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "core/spakky-tracing" }
 dependencies = [
     { name = "spakky" },
@@ -4245,7 +4245,7 @@ requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-typer"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-typer" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4266,7 +4266,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-vllm"
-version = "7.2.0"
+version = "8.0.0"
 source = { editable = "plugins/spakky-vllm" }
 dependencies = [
     { name = "httpx" },

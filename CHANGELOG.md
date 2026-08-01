@@ -1,3 +1,37 @@
+## v8.0.0 (2026-08-01)
+
+### BREAKING CHANGE
+
+- delivery moves from at-most-once to at-least-once, so the
+same event can reach a handler more than once and handlers must be
+idempotent. `KafkaConnectionConfig.configuration_dict` is replaced by the
+four purpose-specific properties.
+- `GrpcServerSpec.build()`가 `build_async()` 코루틴으로
+바뀐다. 표준 서비스 등록 콜백이 serving 이벤트 루프에서 헬스 상태를
+보고해야 하므로 registrar가 awaitable이 되었다.
+
+### Feat
+
+- add exact-head review fast path (#527) (#528)
+- **domain,event,outbox,kafka,sqlalchemy**: route integration event partition key to broker (#492) (#504)
+- **grpc**: add TLS, server options, health, reflection and client helper (#497) (#500)
+
+### Fix
+
+- **harness**: define sync-docs delivery contract (#524) (#525)
+- **harness**: honor configured review bot logins (#516) (#521)
+- **harness**: align terminal return issue identifiers (#523)
+- **outbox**: distinguish record rejection from transport failure (#513) (#519)
+- **harness**: align review delegate persona context (#514) (#518)
+- **harness**: filter informational monitor cache updates (#515)
+- **outbox,sqlalchemy**: 릴레이가 파티션 키 단위 순서를 보전하도록 수정 (#502) (#510)
+- stop excluding real code from the coverage gate (#507) (#511)
+- **harness**: align pyrefly invocation form with actual pre-commit configs (#509)
+- **grpc**: reject messageless @rpc declarations at controller registration (#508)
+- **kafka**: keep one async producer for the application lifetime (#495) (#505)
+- **kafka**: make event delivery at-least-once (#493) (#503)
+- **kafka**: route failed messages to a dead-letter topic (#494) (#501)
+
 ## v7.2.0 (2026-06-29)
 
 ### Feat
