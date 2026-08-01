@@ -100,6 +100,8 @@ flowchart TD
     commit[git commit]
     commit --> pythonharness[python-harness-rules]
     commit --> reviewcontract[review-delegate-context-contract]
+    commit --> receiptcontract[review-receipt-contract]
+    commit --> publicationcontract[review-receipt-publication-contract]
     commit --> syncdocscontract[sync-docs-delivery-contract]
     commit --> terminal[terminal-return-issue-contract]
     commit --> precommit[monorepo-pre-commit]
@@ -127,7 +129,9 @@ entry: bash -c 'if [ -d "core/spakky" ]; then cd core/spakky; fi && uv run pyref
 pre-commit 설정에는 다음 항목이 포함됩니다.
 
 - **Python harness hook**: Python 코드에서 하네스가 금지한 정적 패턴을 검증합니다.
-- **Review delegation contract hook**: `.agents/skills/review-code/SKILL.md`의 `review-persona-contract` marker 안에 선언된 다섯 persona를 정본으로 삼습니다. 14개 카테고리 행이 각각 정본 persona 하나만 참조하는지, 각 persona가 인용하는 `.agents/rules/*.md`가 존재하는지, autopilot의 `review-delegate-persona-source` marker가 이 정본을 중복 없이 참조하는지 검증합니다.
+- **Review delegation contract hook**: `.agents/skills/review-code/SKILL.md`의 `review-persona-contract` marker 안에 선언된 다섯 persona를 정본으로 삼습니다. 14개 카테고리와 deterministic zero-file short circuit을 검증하고, Phase 5에서는 runtime canonical stable owner·immutable implementer·reviewer provenance, authorized resume sender binding, `final-review-delegate`/`final-review-result`의 head·base·diff·criteria·reviewer 결속, publication-aware autopilot resume 계약을 함께 검사합니다.
+- **Review receipt contract hook**: offline fixture의 issue body 정규화와 `.agents/review-criteria-policy.json` source 기반 frozen criteria manifest, `origin/develop` merge-base와 exact binary diff SHA-256에 결속된 full C01–C14 receipt, non-publishable delta validator의 fail-closed 불변식을 검사합니다. Blocker reproduction은 `{command, head_sha, exit_code, output_digest}` 구조를 지키며, `build-full`은 configured remote와 `origin`의 actual push endpoints를 bounded read-back해 exact HEAD가 이미 push된 경우 실패합니다. Phase 5 crash contract는 PASS/BLOCK build 직후 `cleanup-inputs`, PR adopt/create 후 metadata convergence, stored `published`의 live publisher 재검증을 실행 fixture로 검사합니다. Production Phase 5는 GitHub에서 read-back한 live issue body를 사용합니다.
+- **Review receipt publication contract hook**: 명시적 process state publication이 head·issue·PR drift에서 mutation 없이 실패하고, creator role이 `admin|maintain`인 exact-body comment → label → commit-point 재검증 → trusted status 순서와 idempotent partial repair를 지키는지 검사합니다.
 - **Sync-docs delivery contract hook**: 기본 sync-docs가 현재 feature worktree의 코드 PR에 문서를 포함하고, Autopilot Phase 5의 marker 호출만 전용 워크트리부터 PR 반환까지 책임지는지 mutation fixture로 검사합니다.
 - **Terminal-return issue contract**: terminal 반환의 GitHub 이슈 식별자를 `issue: #N`으로 고정하고, `process-ticket`과 `autopilot`의 정규식이 같은 정상·비정상 fixture를 판정하는지 검사합니다.
 - **Monorepo hook**: 변경 파일에 대해 하위 프로젝트별 검사를 실행합니다.
@@ -138,6 +142,15 @@ Review delegation 계약과 변형 fixture만 독립 실행하려면 repository 
 ```bash
 .agents/skills/autopilot/scripts/test_review_delegate_context_contract.sh
 ```
+
+Exact-head review receipt와 publication 계약은 repository root에서 각각 독립 실행할 수 있습니다.
+
+```bash
+uv run python .agents/skills/process-ticket/scripts/check_review_receipt_contract.py
+uv run python .agents/skills/pr-review/scripts/check_publish_final_review_contract.py
+```
+
+GitHub Actions의 `Harness Contracts` job은 PR의 package 변경 감지 결과와 무관하게 위 두 계약, Python harness 규칙, review delegation 계약, AI approval trust gate를 항상 실행합니다.
 
 ### Style guide
 

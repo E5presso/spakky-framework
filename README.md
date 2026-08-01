@@ -195,7 +195,9 @@ uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 
 ### PR 코드 리뷰 자동 승인
 
-메인테이너는 PR push 후 로컬 에이전트 세션에서 `/pr-review <PR_NUMBER>`를 실행해 열린 PR의 diff를 검토하고, 결과 verdict를 PR 코멘트와 head commit의 `ai-review` status로 발행합니다. 본인 PR은 GitHub 정책상 직접 approve할 수 없으므로, `ai-review=success`가 신뢰 게이트를 통과하면 GitHub Actions의 `github-actions[bot]`가 대신 formal Approve를 남깁니다.
+메인테이너가 직접 실행하는 `/pr-review <PR_NUMBER>`는 기존처럼 열린 PR의 diff를 격리 컨텍스트에서 새로 검토하고, 세 verdict 중 하나를 PR 코멘트와 head commit의 `ai-review` status로 발행합니다. 본인 PR은 GitHub 정책상 직접 approve할 수 없으므로, `ai-review=success`가 신뢰 게이트를 통과하면 GitHub Actions의 `github-actions[bot]`가 대신 formal Approve를 남깁니다.
+
+`/process-ticket`은 중복 PR 리뷰를 만들지 않는 별도 경로를 사용합니다. Commit 후 push 전에 runtime이 기록한 owner·implementer와 다른 독립 reviewer가 clean committed HEAD의 C01–C14를 전부 재검증하고, reviewer result의 `head_sha`·`criteria_digest`·`reviewer`를 process state provenance에 결속해 full PASS receipt를 만듭니다. `build-full`은 local remote ref와 configured upstream 또는 `origin`의 live heads를 bounded read-back해 exact HEAD가 이미 push된 경우 실패하며, blocker는 command·head·exit code·output digest가 포함된 재현 증거를 요구합니다. Push·PR identity read-back 후 `/pr-review <PR_NUMBER> --process-state <PATH>`가 그 exact-head receipt만 검증·게시합니다. 이 모드는 명시적으로만 선택되며 receipt가 없거나 stale·BLOCK·delta이면 fresh review로 fallback하지 않습니다. 첫 rollout에서 delta receipt는 validator 계약만 제공하고 publication에는 사용할 수 없습니다. 이 경로와 process state schema는 저장소 내부 에이전트 하네스 계약이며 프레임워크의 public API가 아닙니다.
 
 | Verdict | `ai-review` status | 봇 승인 |
 |---------|--------------------|---------|
@@ -203,7 +205,7 @@ uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 | `CHANGES_REQUESTED` | `failure` | 승인 없음 |
 | `HUMAN_REVIEW` | `pending` | 승인 없음 |
 
-승인 트리거는 commit status뿐입니다. PR 코멘트의 verdict marker와 `auto-approvable` 라벨은 정보·복구용이며, `.github/workflows/ai-review.yml`은 승인 직전에 GitHub API로 head SHA, fork 여부, status creator 권한을 다시 확인합니다. `ai-review`는 develop branch protection의 required status check로 강제하지 않고, 기존 "승인 1개" 요건을 충족하는 자동 승인 신호로만 사용합니다.
+승인 트리거는 commit status뿐입니다. PR 코멘트의 verdict marker와 `auto-approvable` 라벨은 정보·복구용이며, `.github/workflows/ai-review.yml`은 승인 직전에 GitHub API로 head SHA, fork 여부, status creator 권한을 다시 확인합니다. Receipt publisher도 creator role이 `admin|maintain`인 exact-body comment를 read-back하고 label을 확인한 뒤 issue·PR commit-point와 receipt의 `origin/develop` merge-base/exact diff SHA-256을 재검증하며 trusted `ai-review=success` status를 마지막에 게시합니다. `publication.state`는 힌트이므로 autopilot resume은 stored `published`도 publisher를 재실행해 live comment·label·status를 다시 확인한 뒤에만 monitor·merge를 재개합니다. `ai-review`는 develop branch protection의 required status check로 강제하지 않고, 기존 "승인 1개" 요건을 충족하는 자동 승인 신호로만 사용합니다.
 
 ### 테스트 실행
 

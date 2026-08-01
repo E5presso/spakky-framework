@@ -24,17 +24,15 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 
 ### 핵심 워크플로우
 
-```
-기획: /plan-issues → 11섹션 SDD spec + Phase 3.5 cold-session 시뮬레이션 → GitHub Issues 생성
-스펙 감사: /audit-spec → fresh-slate 8축 재감사 (수렴 3회 상한)
-개발: /process-ticket <이슈번호> → 분석 → 계획 → 워크트리 → 구현 → 검증 → 4.5 acceptance-grep → PR → 병합
-대량 개발: /autopilot <마일스톤번호> → DAG wave-loop 병렬 처리 → meta-detection (S1-S6)
-디버깅: /investigate <증상 또는 이슈번호> → 재현 → 원인 격리 → 수정 후보
-검증: /check [패키지] → format → lint → type → test (커버리지 100%)
-하네스 진화: /evaluate-harness (선언-실행 단절 감지) → /optimize-harness (5-test) → /promote-memory (메모리 승격)
-```
+- **기획**: `/plan-issues`는 11섹션 SDD spec과 Phase 3.5 cold-session 시뮬레이션을 거쳐 GitHub Issues를 생성한다.
+- **스펙 감사**: `/audit-spec`는 fresh-slate 8축 재감사를 수렴 3회 상한으로 수행한다.
+- **개발**: `/process-ticket <이슈번호>`는 분석, 계획, 워크트리, 구현, 검증, Phase 4.5 acceptance-grep, commit, provenance-bound 독립 exact-head C01–C14 final review와 receipt build, push/PR, receipt publication, 병합 순으로 진행한다.
+- **대량 개발**: `/autopilot <마일스톤번호>`는 DAG wave-loop 병렬 처리와 meta-detection(S1–S6)을 수행한다.
+- **디버깅**: `/investigate <증상 또는 이슈번호>`는 재현한 뒤 원인을 격리하고 수정 후보를 도출한다.
+- **검증**: `/check [패키지]`는 format, lint, type, test를 순서대로 수행하고 커버리지 100%를 확인한다.
+- **하네스 진화**: `/evaluate-harness`로 선언-실행 단절을 감지하고, `/optimize-harness`의 5-test를 거쳐 `/promote-memory`로 메모리를 승격한다.
 
-- `/review-code`는 변경 diff의 결함 의문점을 생성하는 동료 리뷰 스킬이고, `/pr-review`는 열린 PR에 verdict 코멘트와 `ai-review` commit status를 발행하는 자동 승인 신호 스킬이다. 빌트인 `/code-review`(cloud)는 외부 GitHub 코드 리뷰 표면이며 스킬 맵 등재 대상이 아니다.
+- `/review-code`는 변경 diff의 결함 의문점을 생성하는 동료 리뷰 스킬이다. `/pr-review <PR>`는 열린 PR을 fresh review해 세 verdict 중 하나를 발행하고, `/pr-review <PR> --process-state <PATH>`는 `/process-ticket`이 clean committed HEAD에서 만든 full PASS receipt만 검증·게시한다. 명시적 receipt 모드는 실패해도 fresh review로 fallback하지 않는다. 빌트인 `/code-review`(cloud)는 외부 GitHub 코드 리뷰 표면이며 스킬 맵 등재 대상이 아니다.
 - **이슈 작업은 `/process-ticket`으로 시작한다.** 직접 코딩하지 않는다.
 - **마일스톤 단위 작업은 `/autopilot`으로 시작한다.** 단일 이슈는 `/process-ticket`.
 - **버그 조사는 `/investigate`로 시작한다.** 가설 없이 코드를 수정하지 않는다.
@@ -126,7 +124,7 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 - 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
 - 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
 - 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
-- verdict 기반 봇 자동 승인은 `/pr-review`가 PR head commit에 `ai-review=success` status를 게시하고 `.github/workflows/ai-review.yml`이 같은 repo head, stale SHA 없음, status creator role `admin|maintain`을 GitHub API로 재검증할 때만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트·라벨은 승인 트리거가 아니며, `ai-review`는 required status check로 강제하지 않고 기존 branch protection 승인 요건을 충족하는 신호로만 사용한다.
+- verdict 기반 봇 자동 승인은 `/pr-review`가 PR head commit에 `ai-review=success` status를 게시하고 `.github/workflows/ai-review.yml`이 같은 repo head, stale SHA 없음, status creator role `admin|maintain`을 GitHub API로 재검증할 때만 `github-actions[bot]` formal Approve를 남긴다. `/process-ticket` publication은 runtime canonical `owner`·immutable `implementer`와 다른 reviewer가 exact committed HEAD의 C01–C14를 14/14 재검증한 full PASS receipt만 허용하며 delta receipt는 게시하지 않는다. Receipt와 reviewer result는 `head_sha`·`origin/develop` merge-base `base_sha`·exact binary diff `diff_sha256`·`criteria_digest`·canonical reviewer가 정확히 결속되어야 하고, blocker 재현은 `{command, head_sha, exit_code, output_digest}` 구조로 남기며, `build-full`은 actual push endpoint의 exact HEAD push 전에만 실행한다. Publisher는 creator role이 `admin|maintain`인 exact-body comment를 read-back하고 label을 확인한 뒤 issue·PR commit-point와 local exact diff를 재검증하고 trusted status를 마지막에 게시한다. `publication.state`는 힌트이며 autopilot resume은 stored `published`도 publisher를 재실행해 live comment·label·status를 다시 확인한 뒤에만 monitor·merge로 진행한다. PR 코멘트·라벨은 승인 트리거가 아니며, `ai-review`는 required status check로 강제하지 않고 기존 branch protection 승인 요건을 충족하는 신호로만 사용한다.
 
 ### 코딩 규칙 정본
 

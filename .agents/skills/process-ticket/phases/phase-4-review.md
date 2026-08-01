@@ -29,6 +29,29 @@
 
 ## 4-1. 구현
 
+- 첫 edit 전 SKILL.md `review-identity-producer-contract`에 따라 실제 편집 주체를 확정한다. process owner가 직접 편집하면 `.owner`를, 별도 구현 agent를 spawn하면 orchestration runtime spawn result의 canonical identity를 `IMPLEMENTER_ID`로 materialize한다. agent 출력 문자열·표시명·사용자 입력은 사용하지 않는다.
+- implementation mutation owner는 첫 mutation부터 ticket 종료까지 하나의 immutable identity로 고정한다. 다른 agent는 조사·제안만 하고 기록된 implementer가 모든 파일 mutation을 적용한다. 첫 mutation 후 implementer handoff·state identity 덮어쓰기·동시 복수 편집 주체는 금지한다.
+- 편집 전 owner·implementer를 체크포인트한다. `implementer`가 없을 때만 최초 값을 기록하고, resume에서는 기존 값과 runtime identity가 byte-for-byte 같을 때만 통과한다. A→B identity overwrite는 mutation 전에 fail-closed한다:
+
+  ```bash
+  test -n "$IMPLEMENTER_ID"
+  ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  jq -e '.owner | strings | select(length > 0)' \
+    "$WORKTREE_ABS/.process-state.json" >/dev/null
+  jq --arg i "$IMPLEMENTER_ID" --arg t "$ts" '
+    if has("implementer") then
+      if ((.implementer | type) == "string" and .implementer == $i) then .
+      else error("immutable implementer mismatch")
+      end
+    else .implementer = $i
+    end
+    | .updated_at = $t
+  ' "$WORKTREE_ABS/.process-state.json" \
+    > "$WORKTREE_ABS/.process-state.json.tmp"
+  mv "$WORKTREE_ABS/.process-state.json.tmp" "$WORKTREE_ABS/.process-state.json"
+  ```
+
+  이 checkpoint 없이 Phase 5로 진입하지 않는다.
 - 서브에이전트 워크플로(AGENTS.md 참조)에 따라 구현한다.
 - 한 번에 하나의 작업 단위씩 진행한다.
 
