@@ -1146,7 +1146,7 @@ flowchart TD
 |---------|------|
 | `IOutboxStorage` / `IAsyncOutboxStorage` | 아웃박스 메시지 저장소 포트. 파티션 키를 통째로 claim하고, 재시도를 소진한 메시지를 발행 포기(abandoned) 상태로 분리 |
 | `OutboxEventBus` / `AsyncOutboxEventBus` | `@Primary`로 `DirectEventBus`를 교체하는 EventBus seam. 저장되는 Outbox headers에는 tracing metadata와 signed `AuthContextSnapshot` metadata가 함께 보존되며 raw bearer token은 저장하지 않음 |
-| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (polling → 배치 `IEventTransport.send()` → 배치 끝 `flush()` → 발행 완료 표시). 전송이 실패한 파티션 키는 그 배치의 후속 메시지를 보류하여 키 단위 순서를 보전하고, 재시도를 소진한 메시지는 발행 포기 처리하여 키를 다시 진행 |
+| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (polling → 배치 `IEventTransport.send()` → 배치 끝 `flush()` → 발행 완료 표시). transport가 개별 레코드의 거부를 확정한 경우에만 retry 예산을 소모하고, transport 자체 장애에는 배치를 미발행으로 보존한다. 거부된 파티션 키는 그 배치의 후속 메시지를 보류하여 키 단위 순서를 보전하고, 재시도를 소진한 메시지는 발행 포기 처리하여 키를 다시 진행 |
 | `OutboxConfig` | 환경변수 기반 설정 (polling interval, batch size, retry 등) |
 | `OutboxMessage` | 아웃박스 메시지 모델 |
 

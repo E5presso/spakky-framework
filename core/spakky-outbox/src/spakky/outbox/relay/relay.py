@@ -153,10 +153,19 @@ class OutboxRelayBackgroundService(AbstractBackgroundService):
                     len(messages) - len(relayed),
                 )
                 return
-            except Exception:
-                logger.exception("Failed to relay outbox message %s", message.id)
+            except EventDeliveryRejectedError:
+                logger.exception("Transport rejected outbox message %s", message.id)
                 self.__register_refusal(message, halted_partition_keys)
                 continue
+            except Exception:
+                # A transport-wide failure is not attributable to this record.
+                # Preserve the whole batch without charging any message's retry
+                # budget, just as the one-at-a-time confirmation path does.
+                logger.exception(
+                    "Transport failed while relaying outbox message %s",
+                    message.id,
+                )
+                return
             relayed.append(message)
         if not relayed:
             return
@@ -313,10 +322,19 @@ class AsyncOutboxRelayBackgroundService(AbstractAsyncBackgroundService):
                     len(messages) - len(relayed),
                 )
                 return
-            except Exception:
-                logger.exception("Failed to relay outbox message %s", message.id)
+            except EventDeliveryRejectedError:
+                logger.exception("Transport rejected outbox message %s", message.id)
                 await self.__register_refusal(message, halted_partition_keys)
                 continue
+            except Exception:
+                # A transport-wide failure is not attributable to this record.
+                # Preserve the whole batch without charging any message's retry
+                # budget, just as the one-at-a-time confirmation path does.
+                logger.exception(
+                    "Transport failed while relaying outbox message %s",
+                    message.id,
+                )
+                return
             relayed.append(message)
         if not relayed:
             return

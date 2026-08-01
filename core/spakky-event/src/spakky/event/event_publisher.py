@@ -65,6 +65,11 @@ class IEventTransport(ABC):
     ) -> None:
         """Hand a serialized event payload to the broker client for delivery.
 
+        A permanent rejection attributable to this record must be reported as
+        `EventDeliveryRejectedError`. A connection, timeout, queue, or other
+        transport-wide failure keeps the client exception's original type so a
+        caller does not spend this record's retry budget.
+
         Args:
             event_name: Destination topic / routing key.
             payload: Pre-serialized event bytes.
@@ -73,6 +78,8 @@ class IEventTransport(ABC):
                 None spreads payloads round-robin.
 
         Raises:
+            EventDeliveryRejectedError: When the transport permanently rejects
+                this specific record.
             EventTransportNotRunningError: When the transport's broker client is
                 not open, which happens outside the application lifecycle.
         """
@@ -87,6 +94,15 @@ class IEventTransport(ABC):
         delivery callback collects it and raises here — a caller that batches
         records has no other moment to learn that the batch did not arrive, and
         would otherwise record undelivered events as published.
+
+        Implementations must preserve the same failure taxonomy as send(): only
+        a permanent record-specific rejection becomes
+        `EventDeliveryRejectedError`; transport-wide failures retain the broker
+        client's original exception type.
+
+        Raises:
+            EventDeliveryRejectedError: When one or more records are permanently
+                rejected for a record-specific cause.
         """
         ...
 
@@ -111,6 +127,11 @@ class IAsyncEventTransport(ABC):
     ) -> None:
         """Hand a serialized event payload to the broker client for delivery.
 
+        A permanent rejection attributable to this record must be reported as
+        `EventDeliveryRejectedError`. A connection, timeout, queue, or other
+        transport-wide failure keeps the client exception's original type so a
+        caller does not spend this record's retry budget.
+
         Args:
             event_name: Destination topic / routing key.
             payload: Pre-serialized event bytes.
@@ -119,6 +140,8 @@ class IAsyncEventTransport(ABC):
                 None spreads payloads round-robin.
 
         Raises:
+            EventDeliveryRejectedError: When the transport permanently rejects
+                this specific record.
             EventTransportNotRunningError: When the transport's broker client is
                 not open, which happens outside the application lifecycle.
         """
@@ -133,5 +156,14 @@ class IAsyncEventTransport(ABC):
         delivery callback collects it and raises here — a caller that batches
         records has no other moment to learn that the batch did not arrive, and
         would otherwise record undelivered events as published.
+
+        Implementations must preserve the same failure taxonomy as send(): only
+        a permanent record-specific rejection becomes
+        `EventDeliveryRejectedError`; transport-wide failures retain the broker
+        client's original exception type.
+
+        Raises:
+            EventDeliveryRejectedError: When one or more records are permanently
+                rejected for a record-specific cause.
         """
         ...

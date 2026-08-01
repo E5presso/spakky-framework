@@ -218,7 +218,7 @@ dead-letter topic은 consumer `initialize` 시점에 구독 topic과 함께 생�
 
 - 두 transport 모두 producer를 하나만 두고 재사용합니다. 비동기 transport는 `IAsyncService`로 등록되어 애플리케이션이 서비스를 시작할 때 `AIOKafkaProducer`를 열고 종료할 때 닫습니다. 시작 시점에 브로커에 연결하지 못하면 `app.start()`가 실패합니다.
 - `send()`는 레코드를 producer에 넘기고 broker 응답을 기다리지 않으므로 연속 발행이 한 배치로 묶입니다. 배치 끝에서 호출하는 `flush()`가 배치를 내보내고 결과를 확정합니다. `DirectEventBus`는 발행 1건마다, outbox relay는 배치 1개마다 `flush()`를 호출합니다.
-- 비동기 `flush()`는 브로커가 거부한 레코드의 예외를 그대로 올립니다. 동기 `flush()`는 confluent-kafka가 delivery 콜백으로만 알려 주는 거부를 모아 `EventDeliveryRejectedError`로 올립니다 — 그러지 않으면 거부된 레코드를 호출자가 발행 완료로 기록합니다.
+- 동기·비동기 `send()`는 producer가 즉시 보고한 레코드 크기 거부를 `EventDeliveryRejectedError`로 올립니다. 동기 경로의 로컬 producer 큐 포화(`BufferError`)와 그 밖의 Kafka 장애는 transport 장애로 그대로 전파합니다. 비동기 `flush()`는 브로커가 거부한 레코드의 예외를 같은 공통 예외로 올리고, 동기 `flush()`도 delivery 콜백으로 알려진 거부를 모아 올립니다 — 그러지 않으면 거부된 레코드를 호출자가 발행 완료로 기록하거나, transport 장애가 무고한 레코드의 retry 예산을 소모합니다.
 - 비동기 `flush()`가 확정하는 대상은 **그 발행자가 넘긴 레코드**입니다. 여러 발행자가 같은 transport Pod를 동시에 쓰더라도 한 발행자의 flush가 다른 발행자의 거부를 대신 받거나 삼키지 않습니다. 따라서 한 배치의 `send`와 `flush`는 같은 실행 문맥(asyncio 태스크)에서 호출해야 하며, event bus와 outbox relay가 그렇게 호출합니다.
 - 애플리케이션이 transport를 시작하기 전이나 종료한 뒤의 비동기 발행은 `EventTransportNotRunningError`로 거부됩니다. outbox relay는 이 에러를 전달 실패와 구분하여 retry count를 올리지 않고 배치를 그대로 남깁니다.
 - aiokafka는 producer를 생성한 event loop에 묶으므로, 다른 loop(HTTP 요청 핸들러·테스트)에서 발행하면 transport가 producer의 loop로 호출을 넘깁니다.

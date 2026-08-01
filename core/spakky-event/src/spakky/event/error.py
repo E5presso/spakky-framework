@@ -37,11 +37,11 @@ class EventTransportNotRunningError(AbstractSpakkyEventError):
 
 
 class EventDeliveryRejectedError(AbstractSpakkyEventError):
-    """Raised by flush() when the broker refused records it was confirming.
+    """Raised when a transport attributes a permanent rejection to a record.
 
-    Clients that report a rejection through a delivery callback rather than
-    through the publish call raise this from flush(), so a caller that batches
-    records still learns that the batch did not arrive.
+    A client may report the rejection synchronously from send() or later through
+    a delivery callback consumed by flush(). Both paths use this error so callers
+    can distinguish record-specific failure from a transport-wide outage.
     """
 
     message = "Broker rejected event delivery"
