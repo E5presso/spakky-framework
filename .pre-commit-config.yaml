@@ -19,6 +19,15 @@ repos:
         verbose: true
         stages: [pre-commit]
 
+      - id: sync-docs-delivery-contract
+        name: Validate sync-docs delivery contract
+        entry: .agents/skills/autopilot/scripts/test_sync_docs_delivery_contract.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+        stages: [pre-commit]
+
       - id: terminal-return-issue-contract
         name: Validate terminal-return issue contract
         entry: uv run python .agents/skills/process-ticket/scripts/check_terminal_return_issue_contract.py
