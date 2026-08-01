@@ -30,12 +30,16 @@ if ! command -v gh >/dev/null 2>&1; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=comment_filters.sh
+source "$script_dir/comment_filters.sh"
+
 # REVIEW_NOISE_FILTER: APPROVED는 ceremonial. 본문 비어있는 COMMENTED/REQUESTED_CHANGES는
 # 개별 인라인 코멘트의 container 역할만 하므로 CH1에서 이미 집계됨 — CH3에서 중복 제외.
-ACTIONABLE_COMMENT_FILTER='
+ACTIONABLE_COMMENT_FILTER="${INFORMATIONAL_BOT_FILTER}"'
   def actionable_comment:
     (((.body // "") | test("<!-- [a-zA-Z0-9_-]*linkback -->")) | not)
-    and (((.user.login // "") | test("^(codecov|linear)(\\[bot\\])?$")) | not);
+    and (informational_bot | not);
 
   def review_noise:
     select(.state != "APPROVED") | select((.body // "") | length > 0);
