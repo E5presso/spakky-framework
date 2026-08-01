@@ -140,17 +140,20 @@ Review 프롬프트에는 반드시 다음을 포함한다: Write 결과를 신�
 
 <!-- sync-docs-delivery-contract:start -->
 
-라우터는 Write/Review 수렴 결과의 게시까지 소유한다. 호출자는 아래 전달 결과를 재작업하지 않는다.
+기본 호출은 현재 feature worktree에서 문서를 갱신하고 호출자의 코드 PR에 함께 전달한다. Autopilot Phase 5만 명시적인 caller marker로 독립 전달을 요청하며, 그때 라우터가 게시까지 소유한다.
 
-- delivery-workspace: dedicated-worktree — 문서 수정 전에 `origin/develop` 기준 전용 브랜치와 워크트리를 만들고, 모든 Write/Review 파일 작업을 그 경로에 한정한다.
-- delivery-commit: required-when-updated — 검증을 통과한 문서 변경이 있으면 변경 파일만 commit한다.
-- delivery-push: verified-remote-head — commit을 push하고 로컬 HEAD와 원격 브랜치 HEAD가 같은지 확인한다.
-- delivery-pr: required-when-updated — push된 브랜치로 문서 PR을 만들고 URL을 보존한다.
-- delivery-merge: gated-squash — CI와 리뷰 게이트가 준비된 PR만 squash merge하고 전용 워크트리를 정리한다. `--auto`와 `--admin`은 사용하지 않는다.
+- delivery-default: current-feature-worktree-same-pr — caller marker가 없으면 현재 feature worktree에서 Write/Review를 수행하고, 별도 commit·push·PR·merge 없이 호출자가 같은 코드 PR에 포함한다.
+- delivery-scope: autopilot-phase-5-standalone — 독립 전달 소유권은 Autopilot Phase 5 호출에만 적용한다.
+- delivery-activation: `delivery-mode: standalone` — 이 caller marker가 있는 호출만 아래 standalone 책임을 활성화한다.
+- standalone-workspace: dedicated-worktree — 문서 수정 전에 `origin/develop` 기준 전용 브랜치와 워크트리를 만들고, 모든 Write/Review 파일 작업을 그 경로에 한정한다.
+- standalone-commit: required-when-updated — 검증을 통과한 문서 변경이 있으면 변경 파일만 commit한다.
+- standalone-push: verified-remote-head — commit을 push하고 로컬 HEAD와 원격 브랜치 HEAD가 같은지 확인한다.
+- standalone-pr: required-when-updated — push된 브랜치로 문서 PR을 만들고 URL을 보존한다.
+- standalone-merge: gated-squash — CI와 리뷰 게이트가 준비된 PR만 squash merge하고 전용 워크트리를 정리한다. `--auto`와 `--admin`은 사용하지 않는다.
 - result-updated: `updated: <N>개` 다음 줄부터 갱신 경로를 기록한다.
-- result-pr-merged: `pr: <URL>` — 문서 PR을 머지했으면 그 URL을 반환한다.
-- result-pr-none: `pr: none` — 동기화 대상이 없으면 반환한다.
-- result-pr-unmerged: `pr: <URL> (미머지 — <사유>)` — 게이트를 통과하지 못해 PR이 열려 있으면 URL과 미머지 사유를 반환한다.
+- standalone-result-pr-merged: `pr: <URL>` — 문서 PR을 머지했으면 그 URL을 반환한다.
+- standalone-result-pr-none: `pr: none` — 동기화 대상이 없으면 반환한다.
+- standalone-result-pr-unmerged: `pr: <URL> (미머지 — <사유>)` — 게이트를 통과하지 못해 PR이 열려 있으면 URL과 미머지 사유를 반환한다.
 
 <!-- sync-docs-delivery-contract:end -->
 

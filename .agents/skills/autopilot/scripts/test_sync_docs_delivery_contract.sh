@@ -32,6 +32,10 @@ validate_contract() {
     printf 'sync-docs delivery contract: Phase 5 must preserve the unmerged result syntax\n' >&2
     failures=$((failures + 1))
   fi
+  if [ "$(grep -Fc 'delivery-mode: standalone' "$phase" || true)" -ne 1 ]; then
+    printf 'sync-docs delivery contract: Phase 5 must set the standalone caller marker once\n' >&2
+    failures=$((failures + 1))
+  fi
 
   contract="$root/.agents/skills/$pointer"
   if [ -z "$pointer" ] || [ ! -f "$contract" ]; then
@@ -52,15 +56,18 @@ validate_contract() {
   ' "$contract")"
 
   for required_line in \
-    '- delivery-workspace: dedicated-worktree' \
-    '- delivery-commit: required-when-updated' \
-    '- delivery-push: verified-remote-head' \
-    '- delivery-pr: required-when-updated' \
-    '- delivery-merge: gated-squash' \
+    '- delivery-default: current-feature-worktree-same-pr' \
+    '- delivery-scope: autopilot-phase-5-standalone' \
+    '- delivery-activation: `delivery-mode: standalone`' \
+    '- standalone-workspace: dedicated-worktree' \
+    '- standalone-commit: required-when-updated' \
+    '- standalone-push: verified-remote-head' \
+    '- standalone-pr: required-when-updated' \
+    '- standalone-merge: gated-squash' \
     '- result-updated: `updated: <N>개`' \
-    '- result-pr-merged: `pr: <URL>`' \
-    '- result-pr-none: `pr: none`' \
-    '- result-pr-unmerged: `pr: <URL> (미머지 — <사유>)`'; do
+    '- standalone-result-pr-merged: `pr: <URL>`' \
+    '- standalone-result-pr-none: `pr: none`' \
+    '- standalone-result-pr-unmerged: `pr: <URL> (미머지 — <사유>)`'; do
     if ! printf '%s\n' "$contract_block" | grep -Fq -- "$required_line"; then
       printf 'sync-docs delivery contract: missing responsibility: %s\n' "$required_line" >&2
       failures=$((failures + 1))
@@ -96,7 +103,7 @@ if validate_contract "$missing_pointer_fixture" >/dev/null 2>&1; then
 fi
 
 missing_delivery_fixture="$(make_fixture missing-delivery)"
-sed -i.bak '/^- delivery-workspace: dedicated-worktree/d' \
+sed -i.bak '/^- standalone-workspace: dedicated-worktree/d' \
   "$missing_delivery_fixture/.agents/skills/sync-docs/SKILL.md"
 rm "$missing_delivery_fixture/.agents/skills/sync-docs/SKILL.md.bak"
 if validate_contract "$missing_delivery_fixture" >/dev/null 2>&1; then
@@ -105,7 +112,7 @@ if validate_contract "$missing_delivery_fixture" >/dev/null 2>&1; then
 fi
 
 missing_result_fixture="$(make_fixture missing-result)"
-sed -i.bak '/^- result-pr-/d' \
+sed -i.bak '/^- standalone-result-pr-/d' \
   "$missing_result_fixture/.agents/skills/sync-docs/SKILL.md"
 rm "$missing_result_fixture/.agents/skills/sync-docs/SKILL.md.bak"
 if validate_contract "$missing_result_fixture" >/dev/null 2>&1; then
@@ -114,11 +121,38 @@ if validate_contract "$missing_result_fixture" >/dev/null 2>&1; then
 fi
 
 missing_unmerged_fixture="$(make_fixture missing-unmerged-result)"
-sed -i.bak '/^- result-pr-unmerged:/d' \
+sed -i.bak '/^- standalone-result-pr-unmerged:/d' \
   "$missing_unmerged_fixture/.agents/skills/sync-docs/SKILL.md"
 rm "$missing_unmerged_fixture/.agents/skills/sync-docs/SKILL.md.bak"
 if validate_contract "$missing_unmerged_fixture" >/dev/null 2>&1; then
   echo 'unmerged pr result mutation unexpectedly passed' >&2
+  exit 1
+fi
+
+missing_scope_fixture="$(make_fixture missing-standalone-scope)"
+sed -i.bak '/^- delivery-scope: autopilot-phase-5-standalone/d' \
+  "$missing_scope_fixture/.agents/skills/sync-docs/SKILL.md"
+rm "$missing_scope_fixture/.agents/skills/sync-docs/SKILL.md.bak"
+if validate_contract "$missing_scope_fixture" >/dev/null 2>&1; then
+  echo 'standalone delivery scope mutation unexpectedly passed' >&2
+  exit 1
+fi
+
+missing_default_fixture="$(make_fixture missing-default-boundary)"
+sed -i.bak '/^- delivery-default: current-feature-worktree-same-pr/d' \
+  "$missing_default_fixture/.agents/skills/sync-docs/SKILL.md"
+rm "$missing_default_fixture/.agents/skills/sync-docs/SKILL.md.bak"
+if validate_contract "$missing_default_fixture" >/dev/null 2>&1; then
+  echo 'default same-PR boundary mutation unexpectedly passed' >&2
+  exit 1
+fi
+
+missing_marker_fixture="$(make_fixture missing-caller-marker)"
+sed -i.bak 's/delivery-mode: standalone/delivery-mode: omitted/' \
+  "$missing_marker_fixture/.agents/skills/autopilot/phases/phase-5-sync-docs.md"
+rm "$missing_marker_fixture/.agents/skills/autopilot/phases/phase-5-sync-docs.md.bak"
+if validate_contract "$missing_marker_fixture" >/dev/null 2>&1; then
+  echo 'standalone caller marker mutation unexpectedly passed' >&2
   exit 1
 fi
 
