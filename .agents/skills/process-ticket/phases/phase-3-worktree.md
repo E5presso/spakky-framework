@@ -14,12 +14,15 @@
 3. 반환된 `WORKTREE_ABS`를 후속 모든 도구 호출의 절대경로로 사용한다. sub-agent 프롬프트는 이 절대경로를 인자로 받아 자기 워크트리만 인지한다.
 4. **Bash·git·파일 도구 호출 컨벤션 (모든 후속 phase 의무)**: `.agents/rules/worktree-isolation.md` §3 컨벤션 의무.
 5. **생성 확인 후에만** Phase 4로 진행한다. `git -C "$WORKTREE_ABS" rev-parse --show-toplevel`이 `$WORKTREE_ABS`와 일치하지 않으면 즉시 중단하고 사용자에게 보고한다.
-6. **체크포인트 초기화** — 워크트리 루트(`$WORKTREE_ABS/.process-state.json`)에 메타 필드를 채운다 (SKILL.md "상태 핸드오프" 참조):
+6. **체크포인트 초기화 + owner binding** — SKILL.md `review-identity-producer-contract`에 따라 orchestration runtime이 제공한 canonical current-agent identity를 `PROCESS_OWNER_ID`에 먼저 materialize한다. 빈 값·출력 본문·사용자 입력에서 추정한 값은 금지하고 runtime binding 부재 시 fail-closed한다. 워크트리 루트(`$WORKTREE_ABS/.process-state.json`)에 owner와 메타 필드를 함께 채운다:
    ```bash
+   test -n "$PROCESS_OWNER_ID"
    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-   cat > "$WORKTREE_ABS/.process-state.json" <<EOF
-   {"issue_number": "{ISSUE-NUMBER}", "worktree": "$WORKTREE_ABS", "updated_at": "$ts"}
-   EOF
+   jq -n --argjson n "$ISSUE_NUMBER" --arg w "$WORKTREE_ABS" \
+     --arg o "$PROCESS_OWNER_ID" --arg t "$ts" \
+     '{issue_number: $n, worktree: $w, owner: $o, review_fast_path: {schema_version: 1, mode: "exact-head-receipt"}, updated_at: $t}' \
+     > "$WORKTREE_ABS/.process-state.json.tmp"
+   mv "$WORKTREE_ABS/.process-state.json.tmp" "$WORKTREE_ABS/.process-state.json"
    ```
 7. **이슈/프로젝트 상태 갱신 (명시적 호출 — silent 누락 금지)** — 서브에이전트로 `/update-project-status {ISSUE-NUMBER} In Progress` 실행. 결과 stdout 1줄을 반드시 회수한다:
    - 성공(`이슈 ... 상태 -> In Progress`) 출력 확인 시 진행.

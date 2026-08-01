@@ -12,6 +12,17 @@ user-invocable: true
 
 `/review-code`는 **단일 서브에이전트**가 14개 카테고리를 전부 순회한다. `personas/*.md` 5개 파일이 카테고리 인덱스이고, 충돌 시 `.agents/rules/*.md`가 SSOT다.
 
+### committed-head final receipt 모드
+
+`/process-ticket` Phase 5는 commit 후 push 전에 이 스킬의 같은 C01–C14 기준을 독립 reviewer에게 한 번 더 적용한다. 이 모드는 PR publication이 재사용할 exact-head 증거를 만드는 최종 외부 게이트다.
+
+- 입력은 exact commit SHA, live issue body, `.agents/review-criteria-policy.json`으로 만든 frozen manifest, manifest source 전문, base 대비 committed diff다.
+- reviewer는 owner와 implementer 양쪽과 다른 격리 identity여야 한다. self-review와 in-context fallback은 publishable receipt를 만들 수 없다.
+- Phase 4의 질문·응답·verdict는 상속하지 않는다. C01–C14 각 row를 current HEAD에서 전부 `reverified`하고 evidence path와 impact reason을 남긴다.
+- 출력은 `PASS` 또는 `BLOCK` 하나다. `PASS`는 blocker 0건이어야 한다. blocker는 current-head observation, `{command, head_sha, exit_code, output_digest}` reproduction, expected/actual, acceptance 또는 merge 영향, concrete impact, unique stable/root-cause key를 모두 포함한다.
+- 결과 JSON은 orchestration runtime이 주입한 canonical `reviewer`, exact `head_sha`, frozen `criteria_digest`를 포함한다. `review_receipt.py build-full`은 이 세 필드를 process state의 `owner`·`implementer`·`final_review_delegate` provenance와 결속하고 category coverage, digest, key uniqueness를 검증한 뒤 `.process-state.json.final_local_review`에 기록한다. 검증 실패를 free-form verdict나 PR fresh review로 대체하지 않는다.
+- descendant delta의 inherited row는 validator 연구 계약일 뿐 이 모드의 final receipt에는 허용하지 않는다.
+
 ## 운영 모델
 
 | 요소 | 규칙 |

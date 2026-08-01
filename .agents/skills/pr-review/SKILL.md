@@ -1,22 +1,54 @@
 ---
 name: pr-review
-description: PR diff를 격리 subagent로 검토하여 verdict를 산출하고 한국어 요약 코멘트와 ai-review commit status를 게시합니다.
-argument-hint: "[pr-number]"
+description: PR을 fresh review하거나 process-ticket의 exact-head 독립 리뷰 receipt를 검증해 ai-review 신호를 게시합니다.
+argument-hint: "[pr-number] [--process-state <path>]"
 user-invocable: true
 ---
 
 # PR Review — AI 판정 기반 PR 리뷰 신호 발행
 
-열린 PR의 diff를 기존 결함 분류 정본으로 검토하여 정확히 하나의 verdict를 만들고, PR에 한국어 요약 코멘트 1개와 head commit의 `ai-review` status를 게시한다.
+열린 PR에 한국어 verdict 코멘트와 head commit의 `ai-review` status를 게시한다. 기본 호출은 기존처럼 PR diff를 독립적으로 fresh review한다. `/process-ticket`만 명시적인 `--process-state` 모드로 committed HEAD의 독립 리뷰 receipt를 검증하고, 같은 diff를 다시 리뷰하지 않고 publication surface만 수렴시킨다.
+
+## 실행 모드
+
+<!-- pr-review-mode-contract:start -->
+| 호출 | 동작 |
+|------|------|
+| `/pr-review <PR>` (`--process-state` 없음) | 기존 호환 모드. §1~§7의 격리 subagent fresh review와 `AUTO_APPROVE` / `CHANGES_REQUESTED` / `HUMAN_REVIEW` 세 verdict를 그대로 실행한다. |
+| `/pr-review <PR> --process-state <PATH>` | 자동 publication 모드. 새 reviewer를 호출하지 않고 process state의 full exact-head PASS receipt만 게시한다. |
+
+실행 첫 단계에서 토큰화된 인자를 `resolve_review_mode.py`에 각각의 argv로 전달해 두 경로 중 하나를 결정한다. 문자열 재파싱이나 `eval`은 금지한다. `mode=manual-fresh`면 §1~§7을 실행하고, `mode=receipt-publication`이면 해석된 PR·state 경로로 아래 publisher만 실행한 뒤 종료한다. malformed·ambiguous 인자는 두 경로 모두 실행하지 않고 실패한다.
+
+`--process-state`가 명시된 receipt가 없거나 malformed·stale·BLOCK·delta이면 GitHub mutation 전에 실패하며, 기본 fresh review로 fallback하지 않는다.
+<!-- pr-review-mode-contract:end -->
+
+```bash
+# 스킬 runtime이 이미 토큰화한 invocation의 각 token을 별도 argv로 전달한다.
+# manual-fresh examples: no argv, 또는 PR argv 하나
+uv run python .agents/skills/pr-review/scripts/resolve_review_mode.py
+uv run python .agents/skills/pr-review/scripts/resolve_review_mode.py 99
+
+# receipt-publication: resolver 출력에서 publisher 입력을 반드시 재수화한다.
+MODE_JSON=$(uv run python .agents/skills/pr-review/scripts/resolve_review_mode.py \
+  99 --process-state /absolute/worktree/.process-state.json)
+test "$(printf '%s' "$MODE_JSON" | jq -er '.mode')" = "receipt-publication"
+RESOLVED_PR=$(printf '%s' "$MODE_JSON" | jq -er '.pr_reference')
+RESOLVED_STATE=$(printf '%s' "$MODE_JSON" | jq -er '.process_state')
+uv run python .agents/skills/pr-review/scripts/publish_final_review.py \
+  --pr "$RESOLVED_PR" \
+  --process-state "$RESOLVED_STATE"
+```
+
+publisher는 dirty worktree, local/commit/push/upstream/stored/live PR head 또는 live issue digest 불일치를 모두 preflight에서 차단한다. 통과한 경우에만 exact-head marker comment와 `auto-approvable` 라벨을 read-back하고, issue·PR commit-point를 다시 확인한 뒤 trusted `ai-review=success` status를 마지막에 게시한다. 재실행은 전체 pagination의 immutable ID로 live surface를 판정해 누락된 surface만 복구한다.
 
 ## 도메인 계약
 
-- **입력**: PR 번호. 생략하면 현재 브랜치의 PR 번호를 `gh pr view`로 동적 해석한다.
+- **입력**: PR 번호와 선택적인 `--process-state <PATH>`. PR 번호 생략은 manual-fresh mode에서만 현재 브랜치의 PR을 `gh pr view`로 동적 해석한다. receipt-publication mode는 process-ticket이 준 exact PR 번호와 state 경로 모두를 필수로 받는다.
 - **출력**:
-  - PR 일반 코멘트 1개. 본문은 리뷰 subagent가 작성한 한국어 요약을 그대로 게시한다.
-  - head commit `ai-review` status 1개.
-  - `AUTO_APPROVE`일 때 monitor-pr bot-stuck 복구용 `auto-approvable` 라벨 1개. 이 라벨은 승인 트리거가 아니라 polling 복구 신호다.
-- **verdict enum**: `AUTO_APPROVE` / `CHANGES_REQUESTED` / `HUMAN_REVIEW`.
+  - 기본 fresh mode는 실행마다 reviewer의 한국어 요약 코멘트와 verdict status를 게시한다.
+  - receipt mode는 exact-head marker comment, `auto-approvable` 라벨, trusted `ai-review=success`를 live read-back한다. 이미 존재하면 재사용하므로 재실행 mutation은 0건일 수 있다.
+- **verdict enum (fresh mode)**: `AUTO_APPROVE` / `CHANGES_REQUESTED` / `HUMAN_REVIEW`.
+- **receipt mode verdict**: publishable full PASS만 `AUTO_APPROVE=success`로 발행한다. BLOCK·delta·invalid receipt는 발행하지 않는다.
 - **status 매핑**:
   - `AUTO_APPROVE` → `success`
   - `CHANGES_REQUESTED` → `failure`
@@ -272,6 +304,8 @@ comment: <COMMENT_URL>
 
 ## 규칙
 
+- `--process-state`는 명시적 선택만 허용한다. state 파일을 자동 탐지하거나 receipt 실패를 fresh review로 대체하지 않는다.
+- automatic publication은 full final receipt의 C01–C14 14/14 reverified·inherited 0만 허용한다. delta receipt는 validator 입력일 뿐 첫 rollout의 publication 증거가 아니다.
 - 리뷰 코멘트는 한국어로 작성한다.
 - P0/P1 결함이 하나라도 있으면 `AUTO_APPROVE` 금지. `CHANGES_REQUESTED`를 사용한다.
 - 결함이 없어도 자동 승인이 부적절하거나 불확실하면 `HUMAN_REVIEW`를 사용한다.
