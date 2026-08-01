@@ -21,6 +21,9 @@
 #     — 메인 세션이 모니터링 중 호출자에게 SendMessage 로 지시를 보낼 때 그 직후 쓰는 sentinel 파일 경로
 #       (관례상 워크트리 루트의 .monitor-interrupt). 매 cycle sleep 직후 존재를 확인하여, 있으면 삭제 후
 #       EVENT reason=interrupt 로 즉시 종료한다. 미지정 시 본 경로 비활성. 상세는 아래 "interrupt:" 주석.
+#   REVIEW_BOT_LOGINS
+#     — 기본 review bot login 목록에 추가할 GitHub login의 콤마 구분 목록. 공백·빈 항목은 제거하며
+#       CH2/CH3 작성자의 login 전체 문자열이 목록 항목과 정확히 일치할 때만 신뢰한다.
 #
 # 출력 형식 (마지막 1회만 출력 후 종료):
 #   - 종료 조건 도달:
@@ -59,9 +62,10 @@
 # 호출자(에이전트)는 이 값을 `collect_comments.sh`의 `STALE_HANDLED_IDS` 환경변수로 그대로 전달하여
 # 해당 id의 기존 reply 마커를 무효화하고 변경된 본문을 재수집·재triage한다.
 #
-# bot-stuck: claude bot이 마지막 리뷰 이후 신규 커밋이 없어 재리뷰를 트리거하지 않는 정체 상태.
+# bot-stuck: review bot이 마지막 리뷰 이후 신규 커밋이 없어 재리뷰를 트리거하지 않는 정체 상태.
 #   AND 조건: (a) 모든 CI check가 COMPLETED (PENDING/IN_PROGRESS 0건), (b) mergeState != CLEAN,
-#   (c) reviewDecision != APPROVED, (d) latest claude[bot] review.commit.oid != HEAD oid (또는 review 부재),
+#   (c) reviewDecision not in {APPROVED, CHANGES_REQUESTED},
+#   (d) latest configured review bot review.commit.oid != HEAD oid (또는 review 부재),
 #   (e) bot_evaluated_head == 0 (봇이 HEAD 를 평가하지 않았다), (f) PR labels 에 "auto-approvable" 포함.
 #   호출자는 빈 커밋 push로 새 commit hash를 만들어 봇 재리뷰 + CI 재실행을 유도한다 (SKILL.md 참조).
 #   상한 1회는 호출자가 .process-state.json으로 누적·검사한다 (스크립트는 무상태).
@@ -71,13 +75,15 @@
 #   의미한다. 태그가 없는 PR 은 휴먼 리뷰가 정상 경로이므로 stuck 으로 간주하지 않는다 (retrigger 시도가
 #   휴먼 리뷰 대기 PR 에서 무의미한 빈 커밋만 누적시키는 회귀 차단).
 #
-# awaiting-human-review (terminal DONE): claude bot 이 HEAD 를 평가했고 의도적으로 승인하지 않은 상태.
-#   봇 재평가 트리거가 부재하므로 polling 누적이 무의미하다 — DONE 으로 종료하여 호출자(서브에이전트)가
+# awaiting-human-review (terminal DONE): formal CHANGES_REQUESTED가 있거나 configured review bot이 HEAD를
+#   평가했지만 human review/approval이 남은 상태. polling만으로 해소되지 않으므로 DONE으로 종료하여 호출자가
 #   status=awaiting-review 로 보고 후 turn 종료.
 #   bot_evaluated_head 의 두 경로 (OR): (1) latest_bot_ch2_date > head_commit_date (CH2 issue comment),
-#   (2) latest_bot_review_oid == head_oid AND latest_bot_review_state == "COMMENTED" (CH3 reviews API).
-#   AND 조건: (a) pending_checks == 0, (b) failed_checks == 0, (c) mergeState in {BLOCKED, BEHIND}
-#   (DIRTY 제외 — DIRTY 는 EVENT 로 별도 분기), (d) reviewDecision != APPROVED, (e) bot_evaluated_head == 1.
+#   (2) configured bot의 review가 head_oid에 anchor되고 state가 APPROVED/COMMENTED/CHANGES_REQUESTED (CH3).
+#   공통 조건: pending_checks == 0, failed_checks == 0. 이후 두 경로 중 하나면 종료한다.
+#   (1) reviewDecision == CHANGES_REQUESTED이고 mergeState in {CLEAN, UNSTABLE, BLOCKED, BEHIND}.
+#       formal 변경 요청 자체가 증거이므로 bot_evaluated_head와 무관하다.
+#   (2) mergeState in {BLOCKED, BEHIND}, reviewDecision != APPROVED, bot_evaluated_head == 1.
 #   분기 위치: 모든 EVENT 분기 이후 (변화 있으면 EVENT 우선) + heartbeat 직전 (변화 없음 path 에서 즉시 종료).
 #
 # 매 30초 cycle마다 stderr에 1줄 진행 로그를 출력한다 (살아있음 가시성):
@@ -104,6 +110,13 @@ fi
 monitor_pr_scripts_dir="${MONITOR_PR_SCRIPTS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 # shellcheck source=comment_filters.sh
 source "$monitor_pr_scripts_dir/comment_filters.sh"
+
+# Keep the documented defaults and extend them with exact GitHub login names.
+review_bot_logins=$(jq -cn --arg configured "${REVIEW_BOT_LOGINS:-}" '
+  (["claude[bot]", "codex[bot]", "chatgpt-codex-connector[bot]"]
+    + ($configured | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))))
+  | unique
+')
 
 prev_state_file="${PREV_STATE_FILE:-}"
 interrupt_file="${INTERRUPT_FILE:-}"
@@ -223,34 +236,39 @@ while true; do
   pending_checks=$(echo "$latest_checks" | jq '[.[] | select(.status != "COMPLETED" and .status != null)] | length')
   has_auto_approvable=$(echo "$snapshot" | jq '[.labels // [] | .[] | select(.name == "auto-approvable")] | length > 0')
 
-  # latest claude[bot] review의 commit.oid / state (없으면 빈 문자열)
-  latest_bot_review_oid=$(echo "$ch3_raw" \
-    | jq -r '[.[] | select(.user.login == "claude[bot]")] | sort_by(.submitted_at) | last | .commit_id // ""' 2>/dev/null || echo "")
-  latest_bot_review_state=$(echo "$ch3_raw" \
-    | jq -r '[.[] | select(.user.login == "claude[bot]")] | sort_by(.submitted_at) | last | .state // ""' 2>/dev/null || echo "")
+  # latest configured review bot review의 commit.oid / state (없으면 빈 문자열)
+  bot_reviews=$(echo "$ch3_raw" \
+    | jq -c --argjson logins "$review_bot_logins" \
+      '[.[] | select(.user.login as $login | $logins | index($login))]' 2>/dev/null || echo '[]')
+  latest_bot_review_oid=$(echo "$bot_reviews" \
+    | jq -r 'sort_by(.submitted_at) | last | .commit_id // ""' 2>/dev/null || echo "")
+  bot_review_evaluated_head=$(echo "$bot_reviews" \
+    | jq -r --arg head_oid "$head_oid" \
+      '[.[] | select(.commit_id == $head_oid and (.state == "APPROVED" or .state == "COMMENTED" or .state == "CHANGES_REQUESTED"))] | length > 0' \
+      2>/dev/null || echo "false")
 
-  # HEAD commit의 committedDate (없으면 빈 문자열) — claude[bot] 평가 시점 비교용
+  # HEAD commit의 committedDate (없으면 빈 문자열) — review bot 평가 시점 비교용
   head_commit_date=$(gh api "repos/$REPO/commits/$head_oid" \
     --jq '.commit.committer.date // ""' 2>/dev/null || echo "")
 
-  # latest claude[bot] CH2 issue comment의 created_at (없으면 빈 문자열).
-  # claude[bot]이 자동 승인 비적격 판정 시 formal review 대신 issue comment 로 의견을 남기는 경로 —
+  # latest configured review bot CH2 issue comment의 created_at (없으면 빈 문자열).
+  # review bot이 자동 승인 비적격 판정 시 formal review 대신 issue comment 로 의견을 남기는 경로 —
   # 이 코멘트가 HEAD 이후에 작성되었다면 봇은 현재 HEAD를 평가한 것으로 간주.
-  # claude[bot] edits its CH2 summary comment in-place on re-review: created_at stays at first-post time
+  # A review bot can edit its CH2 summary comment in-place on re-review: created_at stays at first-post time
   # while updated_at advances. Use max(created_at, updated_at) so an in-place re-review counts as the
   # bot having evaluated the current HEAD — otherwise condition (e) misclassifies awaiting-human-review
   # as bot-stuck and can trigger a credit-burning empty-commit retrigger.
   latest_bot_ch2_date=$(echo "$ch2_raw" \
-    | jq -r '[.[] | select(.user.login == "claude[bot]") | (if (.updated_at // "") > (.created_at // "") then .updated_at else .created_at end)] | sort | last // ""' 2>/dev/null || echo "")
+    | jq -r --argjson logins "$review_bot_logins" \
+      '[.[] | select(.user.login as $login | $logins | index($login)) | (if (.updated_at // "") > (.created_at // "") then .updated_at else .created_at end)] | sort | last // ""' \
+      2>/dev/null || echo "")
 
   bot_evaluated_head=0
   if [ -n "$latest_bot_ch2_date" ] && [ -n "$head_commit_date" ] \
      && [ "$latest_bot_ch2_date" \> "$head_commit_date" ]; then
     bot_evaluated_head=1
   fi
-  if [ -n "$latest_bot_review_oid" ] \
-     && [ "$latest_bot_review_oid" = "$head_oid" ] \
-     && [ "$latest_bot_review_state" = "COMMENTED" ]; then
+  if [ "$bot_review_evaluated_head" = "true" ]; then
     bot_evaluated_head=1
   fi
 
@@ -294,12 +312,13 @@ while true; do
     exit 0
   fi
 
-  # 종료 조건 2: CLEAN/UNSTABLE + CI green + review bot HEAD 평가 완료
+  # 종료 조건 2: CLEAN/UNSTABLE + CI green + review bot HEAD 평가 완료 + 변경 요청 없음
   # Codex/Copilot review bots often submit COMMENTED reviews instead of formal APPROVED.
   if { [ "${REQUIRE_REVIEW_BOT_HEAD_EVAL:-1}" = "0" ] || [ "$bot_evaluated_head" = "1" ]; } \
      && { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
      && [ "$pending_checks" = "0" ] \
-     && [ "$failed_checks" = "0" ]; then
+     && [ "$failed_checks" = "0" ] \
+     && [ "$review_decision" != "CHANGES_REQUESTED" ]; then
     persist_state
     snapshot_and_emit "DONE" "mergeable-clean"
     exit 0
@@ -345,17 +364,18 @@ while true; do
     exit 0
   fi
 
-  # 이벤트 5: bot-stuck — claude bot이 신규 커밋을 인식하지 않아 재리뷰 트리거가 누락된 정체 상태.
-  # (a) CI 전부 COMPLETED, (b) mergeState != CLEAN, (c) reviewDecision != APPROVED,
-  # (d) latest claude[bot] review.commit_id != HEAD oid (또는 review 부재),
+  # 이벤트 5: bot-stuck — review bot이 신규 커밋을 인식하지 않아 재리뷰 트리거가 누락된 정체 상태.
+  # (a) CI 전부 COMPLETED, (b) mergeState != CLEAN,
+  # (c) reviewDecision not in {APPROVED, CHANGES_REQUESTED},
+  # (d) latest configured review bot review.commit_id != HEAD oid (또는 review 부재),
   # (e) 동시에 봇이 HEAD 를 평가하지 않았다 (bot_evaluated_head=0),
   # (f) PR labels 에 "auto-approvable" 포함 (휴먼 리뷰 대기 PR 회복 시도 차단).
   #
-  # bot_evaluated_head 의 의의: claude bot 은 자동 승인 비적격 판정 시 두 경로로 의견을 남길 수 있다 —
+  # bot_evaluated_head 의 의의: review bot 은 자동 승인 비적격 판정 시 두 경로로 의견을 남길 수 있다 —
   # (1) CH2 issue comment 로 "팀원 리뷰 필요" 의견 (HEAD commit 이후 created_at),
-  # (2) CH3 reviews API 로 state=COMMENTED 리뷰 (commit_id == HEAD, APPROVED 아님).
-  # 둘 중 어느 경로든 봇은 현재 HEAD 를 평가했지만 의도적으로 승인하지 않은 것이므로 stuck 이 아니다 —
-  # 빈 커밋 retrigger 는 동일 판정을 재발행할 뿐이며 폴링/크레딧만 소진한다.
+  # (2) CH3 reviews API 로 APPROVED/COMMENTED/CHANGES_REQUESTED 리뷰 (commit_id == HEAD).
+  # 둘 중 어느 경로든 봇은 현재 HEAD를 평가했으므로 stuck이 아니다. human review가 남았거나 변경 요청이
+  # 있으면 빈 커밋 retrigger는 동일 판정만 재발행하고 polling/credit만 소진한다.
   #
   # (f) auto-approvable 태그의 의의: pr-review SKILL.md 가 AE6/AE7 또는 전 파일 AE1–AE5 매칭 시
   # `gh pr edit --add-label "auto-approvable"` 로 자동 부여한다. 태그가 없으면 봇 자동 승인 비적격이며
@@ -363,6 +383,7 @@ while true; do
   if [ "$pending_checks" = "0" ] \
      && [ "$merge_state" != "CLEAN" ] \
      && [ "$review_decision" != "APPROVED" ] \
+     && [ "$review_decision" != "CHANGES_REQUESTED" ] \
      && [ "$latest_bot_review_oid" != "$head_oid" ] \
      && [ "$bot_evaluated_head" = "0" ] \
      && [ "$has_auto_approvable" = "true" ]; then
@@ -370,16 +391,24 @@ while true; do
     exit 0
   fi
 
-  # 종료 조건 3: awaiting-human-review — 봇이 HEAD 를 평가했으나 review submission 대신 CH2 코멘트로
-  # 휴먼 리뷰 의견을 남긴 상태. bot_evaluated_head=1 가드로 bot-stuck EVENT 가 의도적으로 미송신되는
-  # 케이스에서, 추가 polling 은 봇 재평가 트리거 부재 + 휴먼 리뷰만 남음 = 무의미 — DONE 으로 종료한다.
+  # 종료 조건 3: awaiting-human-review — formal CHANGES_REQUESTED가 있거나, configured review bot이 HEAD를
+  # 평가했지만 PR에는 human review가 남은 상태. 변경 요청은 bot gate 설정과 무관한 차단 증거이며,
+  # 나머지 경로는 bot_evaluated_head=1로 bot-stuck EVENT가 의도적으로 미송신된 경우다.
+  # 추가 polling만으로 formal 변경 요청이나 human review가 해소되지 않으므로 DONE으로 종료한다.
   # 본 분기는 모든 EVENT 분기 이후에 위치하므로 변화가 있으면 EVENT 가 먼저 종료, 변화 없음 path 에서만
   # 본 DONE 이 송신된다 (heartbeat 누적 직전).
   if [ "$pending_checks" = "0" ] \
      && [ "$failed_checks" = "0" ] \
-     && { [ "$merge_state" = "BLOCKED" ] || [ "$merge_state" = "BEHIND" ]; } \
-     && [ "$review_decision" != "APPROVED" ] \
-     && [ "$bot_evaluated_head" = "1" ]; then
+     && { \
+       { [ "$review_decision" = "CHANGES_REQUESTED" ] \
+         && { [ "$merge_state" = "CLEAN" ] \
+           || [ "$merge_state" = "UNSTABLE" ] \
+           || [ "$merge_state" = "BLOCKED" ] \
+           || [ "$merge_state" = "BEHIND" ]; }; } \
+       || { { [ "$merge_state" = "BLOCKED" ] || [ "$merge_state" = "BEHIND" ]; } \
+         && [ "$review_decision" != "APPROVED" ] \
+         && [ "$bot_evaluated_head" = "1" ]; }; \
+     }; then
     persist_state
     snapshot_and_emit "DONE" "awaiting-human-review"
     exit 0
