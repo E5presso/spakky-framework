@@ -53,7 +53,7 @@ sub-agent로 실행 중이면(team_name 발급) **이 시점에 SKILL.md "서브
 
 근거 (순서): 반환은 cleanup 완료에 논리적으로 무관 (cleanup은 idempotent + sub-agent 경로에서 메인 소유) — 핸드오프 왕복 뒤에 두면 단일 실패점.
 
-- 반환 정규형의 `status` / `pr` / `ticket` / `acceptance_check` / `issue_status` / `spawned` / `gaps_detected` / `gaps_dispatched` 라인을 모두 포함한다. `issue_status`는 §3-bis에서 실제 조회한 statusType을 그대로 반영한다.
+- 반환 정규형의 `status` / `pr` / `issue` / `acceptance_check` / `issue_status` / `spawned` / `gaps_detected` / `gaps_dispatched` 라인을 모두 포함한다. `issue_status`는 §3-bis에서 실제 조회한 statusType을 그대로 반영한다.
 - terminal 반환 emit 후에도 turn을 종료하지 않는다 — §5~§8을 이어서 수행한다. §5 워크트리 정리 핸드오프의 메인 회신(`worktree-removed`) 수신까지 마친 뒤에 turn을 종료한다.
 - 사용자 직접 호출(메인이 곧 사용자 채널)에서는 별도 정규형 emit 대신 §8 최종 완료 보고가 동등 역할을 한다 — 본 §4를 건너뛰고 §5로 진행한다.
 

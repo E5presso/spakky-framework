@@ -421,7 +421,7 @@ turn 종료 직전, sub-agent는 다음을 자가검사한다 — 본 검사는 
 ```
 ^status: (merged|awaiting-review|failed)$
 ^pr: (#\d+ \(https?://[^)]+\)|none)$
-^issue: [A-Z]+-\d+$
+^issue: #\d+$
 ^acceptance_check: (PASS|partial|missing)$
 ^issue_status: (Done|InReview|InProgress|Backlog|Cancelled)$
 ^spawned: ([A-Z]+-\d+(,[A-Z]+-\d+)*|none)$
