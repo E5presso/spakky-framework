@@ -37,6 +37,10 @@ run_case() {
       ch3_json="[{\"id\":301,\"user\":{\"login\":\"$author_login\"},\"submitted_at\":\"$review_date\",\"commit_id\":\"$head_oid\",\"state\":\"$review_state\",\"body\":\"reviewed\"}]"
       prev_ch3="{\"301\":\"$review_date\"}"
       ;;
+    ch3_mixed_heads)
+      ch3_json="[{\"id\":301,\"user\":{\"login\":\"review-app-a[bot]\"},\"submitted_at\":\"2026-01-01T01:00:00Z\",\"commit_id\":\"$head_oid\",\"state\":\"COMMENTED\",\"body\":\"reviewed head\"},{\"id\":302,\"user\":{\"login\":\"review-app-b[bot]\"},\"submitted_at\":\"2026-01-01T02:00:00Z\",\"commit_id\":\"stale123\",\"state\":\"COMMENTED\",\"body\":\"reviewed stale head\"}]"
+      prev_ch3='{"301":"2026-01-01T01:00:00Z","302":"2026-01-01T02:00:00Z"}'
+      ;;
     none) ;;
   esac
 
@@ -125,7 +129,10 @@ EOF_STATE
 run_case "default-commented" "" "claude[bot]" ch3 COMMENTED CLEAN REVIEW_REQUIRED mergeable-clean
 run_case "configured-preserves-default" "review-app[bot]" "claude[bot]" ch3 COMMENTED CLEAN REVIEW_REQUIRED mergeable-clean
 run_case "configured-commented" "  review-app[bot]  " "review-app[bot]" ch3 COMMENTED CLEAN REVIEW_REQUIRED mergeable-clean
+run_case "configured-list-second-login" "review-app-a[bot],review-app-b[bot]" "review-app-b[bot]" ch3 COMMENTED CLEAN REVIEW_REQUIRED mergeable-clean
+run_case "configured-multiple-bots-any-exact-head" "review-app-a[bot],review-app-b[bot]" "" ch3_mixed_heads COMMENTED CLEAN REVIEW_REQUIRED mergeable-clean
 run_case "configured-approved" "review-app[bot]" "review-app[bot]" ch3 APPROVED CLEAN APPROVED mergeable-clean
+run_case "configured-changes-requested-state" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED CLEAN REVIEW_REQUIRED mergeable-clean
 run_case "configured-changes-requested" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED BLOCKED CHANGES_REQUESTED awaiting-human-review
 run_case "configured-changes-requested-clean" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED CLEAN CHANGES_REQUESTED awaiting-human-review
 run_case "disabled-bot-gate-changes-requested-clean" "" "" none CHANGES_REQUESTED CLEAN CHANGES_REQUESTED awaiting-human-review 0
