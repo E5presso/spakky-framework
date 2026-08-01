@@ -26,9 +26,19 @@ rules/에 신규 금지·안티패턴·시그널이 추가되면 persona 인덱�
 
 ## 실행 흐름
 
+### 리뷰 persona 계약
+
+<!-- review-persona-contract:start -->
+- `personas/architecture.md`
+- `personas/type.md`
+- `personas/naming.md`
+- `personas/simplicity.md`
+- `personas/test-coverage.md`
+<!-- review-persona-contract:end -->
+
 1. `git diff` (또는 `git diff --cached`)로 변경 사항을 확인한다.
 2. **단일 리뷰 서브에이전트 1개를 opus로 디스패치**한다. 디스패치 시 아래를 전달한다:
-   - `personas/architecture.md`, `personas/type.md`, `personas/naming.md`, `personas/simplicity.md`, `personas/test-coverage.md` 5개 파일 경로 — 서브에이전트가 모두 읽어 14 카테고리 체크리스트로 사용한다.
+   - `review-persona-contract` marker가 선언한 5개 파일 경로 — 서브에이전트가 모두 읽어 14 카테고리 체크리스트로 사용한다.
    - diff 전체.
    - 이슈 맥락(목표·수용 기준·제약 사항).
 3. 서브에이전트는 14 카테고리를 순회하며 Critical / Warning으로 분류된 의문점 리스트를 반환한다. 탐지 시그널에 매치되지 않은 카테고리는 "통과"로 명시한다. Info 섹션은 생성하지 않는다.

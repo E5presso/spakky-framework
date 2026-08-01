@@ -10,6 +10,15 @@ repos:
         verbose: true
         stages: [pre-commit]
 
+      - id: review-delegate-context-contract
+        name: Validate review-delegate context contract
+        entry: .agents/skills/autopilot/scripts/test_review_delegate_context_contract.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+        verbose: true
+        stages: [pre-commit]
+
       - id: monorepo-pre-commit
         name: Run pre-commit on changed sub-projects
         entry: uv run python scripts/run_subproject_precommit.py
