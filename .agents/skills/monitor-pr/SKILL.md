@@ -29,7 +29,7 @@ PR 번호를 받아 고정 30초 polling으로 상태를 감시하고 분기 처
 - `reason=merged` → Phase 8 cleanup 1회 실행 후 turn 종료.
 - `reason=mergeable-clean` → Phase 7 머지 게이트로 전환. 호출자가 `process-ticket --auto-merge` 또는 autopilot 하위 실행이면 같은 turn 안에서 Phase 8 squash merge + cleanup까지 계속 수행하고, `phase7_ready`만 기록한 채 turn을 종료하지 않는다. 직접 호출 기본 모드에서만 merge 승인 질의로 멈춘다.
 - `reason=closed-without-merge` → 결과 보고 (`status: failed`, `failed_reason: PR closed without merge`) 후 turn 종료.
-- `reason=awaiting-human-review` → 결과 보고 (`status: awaiting-review`, `pending_human_comments: <configured bot CH2/CH3 평가 참조>`) 후 turn 종료. configured review bot 중 하나가 post-HEAD CH2 comment 또는 exact-head `APPROVED`/`COMMENTED`/`CHANGES_REQUESTED` CH3 review로 HEAD를 평가했지만 PR이 여전히 human review를 요구하는 상태이므로, 추가 polling은 봇 재평가 트리거 부재로 무의미하다 — 휴먼 리뷰어가 응답할 때까지 본 PR의 자동 진행은 정지한다.
+- `reason=awaiting-human-review` → 결과 보고 (`status: awaiting-review`, `pending_human_comments: <formal CHANGES_REQUESTED 또는 configured bot CH2/CH3 평가 참조>`) 후 turn 종료. formal `CHANGES_REQUESTED`가 남아 있거나 configured review bot 중 하나가 post-HEAD CH2 comment 또는 exact-head `APPROVED`/`COMMENTED`/`CHANGES_REQUESTED` CH3 review로 HEAD를 평가했지만 PR이 여전히 human review를 요구하는 상태다. 추가 polling만으로 해소되지 않으므로 변경 요청 또는 휴먼 리뷰 응답이 올 때까지 본 PR의 자동 진행은 정지한다.
 
 "안전을 위해 한 번 더 polling" / "mergeStateStatus 재검증" / "다음 cycle에 변화가 있는지" 류 추가 호출은 머지 후 dead time을 누적시키며 본 절이 명시적으로 차단한다 — 추가 cycle은 §"이벤트 분기"의 EVENT consumer 루프 안에서만 의미가 있다.
 
@@ -224,7 +224,7 @@ claude bot이 동일 review id `R1`의 본문을 새 푸시 시 in-place로 재�
 
 `watch.sh`는 기본적으로 `REQUIRE_REVIEW_BOT_HEAD_EVAL=1`로 동작한다. 즉 GitHub가 `mergeState in (CLEAN, UNSTABLE)`이고 CI가 green이어도, `REVIEW_BOT_LOGINS` 대상 봇이 현재 HEAD를 평가했다는 증거가 없으면 `DONE reason=mergeable-clean`을 emit하지 않고 계속 대기한다. Codex-gated auto merge를 끄고 싶을 때만 명시적으로 `REQUIRE_REVIEW_BOT_HEAD_EVAL=0`을 전달한다.
 
-`reviewDecision=CHANGES_REQUESTED`이면 평가 완료 증거가 있거나 `REQUIRE_REVIEW_BOT_HEAD_EVAL=0`이어도 `mergeable-clean`을 emit하지 않는다. GitHub가 일시적으로 `mergeState=CLEAN|UNSTABLE`을 함께 노출하더라도 `DONE reason=awaiting-human-review`로 종료하여 변경 요청이 Phase 7 자동 병합으로 넘어가지 않게 한다.
+`reviewDecision=CHANGES_REQUESTED`이면 configured bot 평가 증거의 유무나 `REQUIRE_REVIEW_BOT_HEAD_EVAL` 값과 관계없이 `mergeable-clean`을 emit하지 않는다. formal 변경 요청 자체를 사람 검토가 남았다는 충분한 증거로 사용한다. GitHub가 일시적으로 `mergeState=CLEAN|UNSTABLE`을 함께 노출하더라도 `DONE reason=awaiting-human-review`로 종료하여 변경 요청이 Phase 7 자동 병합으로 넘어가지 않게 한다.
 
 평가 완료 증거는 configured review bot 중 어느 하나가 남긴 다음 신호 중 하나다:
 
@@ -235,7 +235,7 @@ claude bot이 동일 review id `R1`의 본문을 새 푸시 시 in-place로 재�
 
 (a) 모든 CI check가 COMPLETED (PENDING/IN_PROGRESS 0건)
 (b) `mergeStateStatus != CLEAN`
-(c) `reviewDecision != APPROVED`
+(c) `reviewDecision`이 `APPROVED`도 `CHANGES_REQUESTED`도 아님
 (d) latest configured review bot review의 `commit_id != HEAD oid` (또는 configured review bot review 부재)
 (e) `bot_evaluated_head == 0`: configured review bot 누구도 post-HEAD CH2 issue comment를 남기지 않았고, configured review bot 누구에게도 exact-head `APPROVED`/`COMMENTED`/`CHANGES_REQUESTED` CH3 review가 없다
 (f) PR labels에 `auto-approvable`이 포함되어 있다
@@ -246,11 +246,13 @@ claude bot이 동일 review id `R1`의 본문을 새 푸시 시 in-place로 재�
 
 CH2 issue comment와 CH3 review의 작성자는 모두 GitHub login 전체 문자열이 대상 집합의 한 항목과 정확히 일치할 때만 review bot으로 신뢰한다. prefix·suffix·부분 문자열 일치는 허용하지 않는다. `bot_evaluated_head`는 대상 집합 중 어느 한 bot이라도 post-HEAD CH2 issue comment를 남겼거나, 현재 HEAD commit에 anchor된 state `APPROVED`, `COMMENTED`, `CHANGES_REQUESTED` 중 하나의 CH3 review를 남기면 true다.
 
-이 계약의 회귀 검증은 `.agents/skills/monitor-pr/scripts/test_review_bot_logins.sh`가 담당한다. 기본 집합 보존, `REVIEW_BOT_LOGINS` 추가·공백 정규화, CH2/CH3 exact login 매칭, CH3 세 state의 분기를 함께 검증한다.
+이 계약의 회귀 검증은 `.agents/skills/monitor-pr/scripts/test_review_bot_logins.sh`가 담당한다. 기본 집합 보존, `REVIEW_BOT_LOGINS` 추가·공백 정규화, CH2/CH3 exact login 매칭, CH3 세 state의 분기, bot gate 비활성 상태의 formal 변경 요청 차단, `auto-approvable` 라벨보다 formal 변경 요청 우선 처리, BLOCKED/BEHIND 무증거 대기를 함께 검증한다.
 
 **(e)의 의의 (회귀 차단)**: configured review bot은 자동 승인 비적격 판정을 post-HEAD CH2 issue comment 또는 exact-head CH3 review로 남길 수 있다. 여러 bot 중 하나라도 현재 HEAD를 평가했다면 휴먼 리뷰어 응답을 기다려야 한다. (d)의 latest review만으로 판정하면 다른 configured bot의 유효한 평가를 놓쳐 stuck으로 잘못 분류되고, 빈 커밋 retrigger가 동일 판정만 재발행하면서 polling·credit을 소진한다 — (e)가 모든 configured bot의 두 채널을 함께 검사해 이 회귀를 차단한다.
 
 **(f)의 의의 (회귀 차단)**: `auto-approvable` 라벨은 `/pr-review`가 `AUTO_APPROVE` 판정일 때만 부여하고 다른 verdict에서는 제거하는 복구 허용 신호다. 라벨이 없는 PR은 자동 승인 비적격 또는 사람 검토 대기가 정상 경로이므로 `bot-stuck` retrigger를 보내지 않는다. 이 라벨은 승인 트리거가 아니며, 승인 트리거는 `ai-review` commit status다.
+
+formal `CHANGES_REQUESTED`는 bot 평가 증거와 `auto-approvable` 라벨보다 우선하는 사람 검토 신호다. 따라서 라벨이 남아 있고 configured bot의 HEAD 평가 증거가 없어도 `bot-stuck`으로 재트리거하지 않고 `awaiting-human-review`로 종료한다.
 
 **핸들러**: 빈 커밋 + push로 새 commit hash 생성 → 봇 재리뷰 + CI 재실행 유도.
 
@@ -395,6 +397,6 @@ SendMessage(
 
 ## 종료 조건
 
-`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0` + review bot HEAD 평가 완료 + `reviewDecision != CHANGES_REQUESTED` → Phase 7 전환. GitHub Copilot/Codex code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다.
+`mergeState in (CLEAN, UNSTABLE)` + `pendingChecks=0` + `failedChecks=0` + (`REQUIRE_REVIEW_BOT_HEAD_EVAL=0` 또는 review bot HEAD 평가 완료) + `reviewDecision != CHANGES_REQUESTED` → Phase 7 전환. GitHub Copilot/Codex code review는 formal Approve를 남기지 않으므로 `reviewDecision=APPROVED`를 요구하지 않는다. 실제 branch protection상 human approval이 필수라면 GitHub가 `mergeState=BLOCKED`로 노출한다.
 
 $ARGUMENTS

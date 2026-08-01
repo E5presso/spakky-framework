@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# REVIEW_BOT_LOGINS regression coverage for the CH2/CH3 exact-head gates.
+# REVIEW_BOT_LOGINS and negative-review regression coverage for the bot-head gates.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -8,7 +8,9 @@ watch_sh="$script_dir/watch.sh"
 run_case() {
   local case_name="$1" configured_logins="$2" author_login="$3" channel="$4"
   local review_state="$5" merge_state="$6" review_decision="$7" expected_reason="$8"
-  local tmp_dir head_oid head_commit_date review_date ch2_json ch3_json prev_ch2 prev_ch3
+  local require_bot_head_eval="${9:-1}"
+  local has_auto_approvable="${10:-0}"
+  local tmp_dir head_oid head_commit_date review_date ch2_json ch3_json prev_ch2 prev_ch3 labels_json
 
   tmp_dir="$(mktemp -d)"
   # shellcheck disable=SC2064
@@ -20,14 +22,23 @@ run_case() {
   ch3_json='[]'
   prev_ch2='{}'
   prev_ch3='{}'
+  labels_json='[]'
 
-  if [ "$channel" = "ch2" ]; then
-    ch2_json="[{\"id\":201,\"user\":{\"login\":\"$author_login\"},\"created_at\":\"$review_date\",\"updated_at\":\"$review_date\",\"body\":\"reviewed\"}]"
-    prev_ch2="{\"201\":\"$review_date\"}"
-  else
-    ch3_json="[{\"id\":301,\"user\":{\"login\":\"$author_login\"},\"submitted_at\":\"$review_date\",\"commit_id\":\"$head_oid\",\"state\":\"$review_state\",\"body\":\"reviewed\"}]"
-    prev_ch3="{\"301\":\"$review_date\"}"
+  if [ "$has_auto_approvable" = "1" ]; then
+    labels_json='[{"name":"auto-approvable"}]'
   fi
+
+  case "$channel" in
+    ch2)
+      ch2_json="[{\"id\":201,\"user\":{\"login\":\"$author_login\"},\"created_at\":\"$review_date\",\"updated_at\":\"$review_date\",\"body\":\"reviewed\"}]"
+      prev_ch2="{\"201\":\"$review_date\"}"
+      ;;
+    ch3)
+      ch3_json="[{\"id\":301,\"user\":{\"login\":\"$author_login\"},\"submitted_at\":\"$review_date\",\"commit_id\":\"$head_oid\",\"state\":\"$review_state\",\"body\":\"reviewed\"}]"
+      prev_ch3="{\"301\":\"$review_date\"}"
+      ;;
+    none) ;;
+  esac
 
   mkdir -p "$tmp_dir/bin"
   cat > "$tmp_dir/bin/gh" <<EOF_GH
@@ -47,7 +58,7 @@ if [ "\$cmd" = "pr" ] && [ "\${1:-}" = "view" ]; then
   "comments": [],
   "state": "OPEN",
   "headRefOid": "$head_oid",
-  "labels": []
+  "labels": $labels_json
 }
 EOJSON
   exit 0
@@ -96,6 +107,7 @@ EOF_STATE
   MONITOR_PR_SCRIPTS_DIR="$script_dir" \
     PATH="$tmp_dir/bin:/usr/bin:/bin" \
     REVIEW_BOT_LOGINS="$configured_logins" \
+    REQUIRE_REVIEW_BOT_HEAD_EVAL="$require_bot_head_eval" \
     REPO=E5presso/spakky-framework \
     PR_NUMBER=99999 \
     PREV_STATE_FILE="$tmp_dir/prev_state.json" \
@@ -116,6 +128,11 @@ run_case "configured-commented" "  review-app[bot]  " "review-app[bot]" ch3 COMM
 run_case "configured-approved" "review-app[bot]" "review-app[bot]" ch3 APPROVED CLEAN APPROVED mergeable-clean
 run_case "configured-changes-requested" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED BLOCKED CHANGES_REQUESTED awaiting-human-review
 run_case "configured-changes-requested-clean" "review-app[bot]" "review-app[bot]" ch3 CHANGES_REQUESTED CLEAN CHANGES_REQUESTED awaiting-human-review
+run_case "disabled-bot-gate-changes-requested-clean" "" "" none CHANGES_REQUESTED CLEAN CHANGES_REQUESTED awaiting-human-review 0
+run_case "labeled-changes-requested-blocked" "" "" none CHANGES_REQUESTED BLOCKED CHANGES_REQUESTED awaiting-human-review 1 1
+run_case "labeled-changes-requested-behind" "" "" none CHANGES_REQUESTED BEHIND CHANGES_REQUESTED awaiting-human-review 1 1
+run_case "blocked-review-required-needs-bot-evidence" "" "" none COMMENTED BLOCKED REVIEW_REQUIRED heartbeat
+run_case "behind-review-required-needs-bot-evidence" "" "" none COMMENTED BEHIND REVIEW_REQUIRED heartbeat
 run_case "configured-ch2" "review-app[bot]" "review-app[bot]" ch2 COMMENTED BLOCKED REVIEW_REQUIRED awaiting-human-review
 run_case "ch3-exact-login-match" "review-app[bot]" "review-app[bot]-shadow" ch3 COMMENTED BLOCKED REVIEW_REQUIRED heartbeat
 run_case "ch2-exact-login-match" "review-app[bot]" "review-app[bot]-shadow" ch2 COMMENTED BLOCKED REVIEW_REQUIRED heartbeat

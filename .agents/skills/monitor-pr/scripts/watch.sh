@@ -64,7 +64,8 @@
 #
 # bot-stuck: review bot이 마지막 리뷰 이후 신규 커밋이 없어 재리뷰를 트리거하지 않는 정체 상태.
 #   AND 조건: (a) 모든 CI check가 COMPLETED (PENDING/IN_PROGRESS 0건), (b) mergeState != CLEAN,
-#   (c) reviewDecision != APPROVED, (d) latest configured review bot review.commit.oid != HEAD oid (또는 review 부재),
+#   (c) reviewDecision not in {APPROVED, CHANGES_REQUESTED},
+#   (d) latest configured review bot review.commit.oid != HEAD oid (또는 review 부재),
 #   (e) bot_evaluated_head == 0 (봇이 HEAD 를 평가하지 않았다), (f) PR labels 에 "auto-approvable" 포함.
 #   호출자는 빈 커밋 push로 새 commit hash를 만들어 봇 재리뷰 + CI 재실행을 유도한다 (SKILL.md 참조).
 #   상한 1회는 호출자가 .process-state.json으로 누적·검사한다 (스크립트는 무상태).
@@ -74,14 +75,15 @@
 #   의미한다. 태그가 없는 PR 은 휴먼 리뷰가 정상 경로이므로 stuck 으로 간주하지 않는다 (retrigger 시도가
 #   휴먼 리뷰 대기 PR 에서 무의미한 빈 커밋만 누적시키는 회귀 차단).
 #
-# awaiting-human-review (terminal DONE): configured review bot이 HEAD를 평가했지만 human review/approval이 남은 상태.
-#   봇 재평가 트리거가 부재하므로 polling 누적이 무의미하다 — DONE 으로 종료하여 호출자(서브에이전트)가
+# awaiting-human-review (terminal DONE): formal CHANGES_REQUESTED가 있거나 configured review bot이 HEAD를
+#   평가했지만 human review/approval이 남은 상태. polling만으로 해소되지 않으므로 DONE으로 종료하여 호출자가
 #   status=awaiting-review 로 보고 후 turn 종료.
 #   bot_evaluated_head 의 두 경로 (OR): (1) latest_bot_ch2_date > head_commit_date (CH2 issue comment),
 #   (2) configured bot의 review가 head_oid에 anchor되고 state가 APPROVED/COMMENTED/CHANGES_REQUESTED (CH3).
-#   AND 조건: (a) pending_checks == 0, (b) failed_checks == 0, (c) mergeState in {BLOCKED, BEHIND}
-#   또는 reviewDecision == CHANGES_REQUESTED인 CLEAN/UNSTABLE (DIRTY는 EVENT), (d) reviewDecision != APPROVED,
-#   (e) bot_evaluated_head == 1.
+#   공통 조건: pending_checks == 0, failed_checks == 0. 이후 두 경로 중 하나면 종료한다.
+#   (1) reviewDecision == CHANGES_REQUESTED이고 mergeState in {CLEAN, UNSTABLE, BLOCKED, BEHIND}.
+#       formal 변경 요청 자체가 증거이므로 bot_evaluated_head와 무관하다.
+#   (2) mergeState in {BLOCKED, BEHIND}, reviewDecision != APPROVED, bot_evaluated_head == 1.
 #   분기 위치: 모든 EVENT 분기 이후 (변화 있으면 EVENT 우선) + heartbeat 직전 (변화 없음 path 에서 즉시 종료).
 #
 # 매 30초 cycle마다 stderr에 1줄 진행 로그를 출력한다 (살아있음 가시성):
@@ -363,7 +365,8 @@ while true; do
   fi
 
   # 이벤트 5: bot-stuck — review bot이 신규 커밋을 인식하지 않아 재리뷰 트리거가 누락된 정체 상태.
-  # (a) CI 전부 COMPLETED, (b) mergeState != CLEAN, (c) reviewDecision != APPROVED,
+  # (a) CI 전부 COMPLETED, (b) mergeState != CLEAN,
+  # (c) reviewDecision not in {APPROVED, CHANGES_REQUESTED},
   # (d) latest configured review bot review.commit_id != HEAD oid (또는 review 부재),
   # (e) 동시에 봇이 HEAD 를 평가하지 않았다 (bot_evaluated_head=0),
   # (f) PR labels 에 "auto-approvable" 포함 (휴먼 리뷰 대기 PR 회복 시도 차단).
@@ -380,6 +383,7 @@ while true; do
   if [ "$pending_checks" = "0" ] \
      && [ "$merge_state" != "CLEAN" ] \
      && [ "$review_decision" != "APPROVED" ] \
+     && [ "$review_decision" != "CHANGES_REQUESTED" ] \
      && [ "$latest_bot_review_oid" != "$head_oid" ] \
      && [ "$bot_evaluated_head" = "0" ] \
      && [ "$has_auto_approvable" = "true" ]; then
@@ -387,20 +391,24 @@ while true; do
     exit 0
   fi
 
-  # 종료 조건 3: awaiting-human-review — configured review bot 중 하나가 post-HEAD CH2 comment 또는
-  # exact-head APPROVED/COMMENTED/CHANGES_REQUESTED CH3 review로 HEAD를 평가했지만, PR에는 human review가
-  # 남은 상태. bot_evaluated_head=1 가드로 bot-stuck EVENT가 의도적으로 미송신되는 케이스에서,
-  # 추가 polling은 봇 재평가 트리거 부재 + human review만 남음 = 무의미 — DONE으로 종료한다.
+  # 종료 조건 3: awaiting-human-review — formal CHANGES_REQUESTED가 있거나, configured review bot이 HEAD를
+  # 평가했지만 PR에는 human review가 남은 상태. 변경 요청은 bot gate 설정과 무관한 차단 증거이며,
+  # 나머지 경로는 bot_evaluated_head=1로 bot-stuck EVENT가 의도적으로 미송신된 경우다.
+  # 추가 polling만으로 formal 변경 요청이나 human review가 해소되지 않으므로 DONE으로 종료한다.
   # 본 분기는 모든 EVENT 분기 이후에 위치하므로 변화가 있으면 EVENT 가 먼저 종료, 변화 없음 path 에서만
   # 본 DONE 이 송신된다 (heartbeat 누적 직전).
   if [ "$pending_checks" = "0" ] \
      && [ "$failed_checks" = "0" ] \
-     && { [ "$merge_state" = "BLOCKED" ] \
-       || [ "$merge_state" = "BEHIND" ] \
-       || { { [ "$merge_state" = "CLEAN" ] || [ "$merge_state" = "UNSTABLE" ]; } \
-         && [ "$review_decision" = "CHANGES_REQUESTED" ]; }; } \
-     && [ "$review_decision" != "APPROVED" ] \
-     && [ "$bot_evaluated_head" = "1" ]; then
+     && { \
+       { [ "$review_decision" = "CHANGES_REQUESTED" ] \
+         && { [ "$merge_state" = "CLEAN" ] \
+           || [ "$merge_state" = "UNSTABLE" ] \
+           || [ "$merge_state" = "BLOCKED" ] \
+           || [ "$merge_state" = "BEHIND" ]; }; } \
+       || { { [ "$merge_state" = "BLOCKED" ] || [ "$merge_state" = "BEHIND" ]; } \
+         && [ "$review_decision" != "APPROVED" ] \
+         && [ "$bot_evaluated_head" = "1" ]; }; \
+     }; then
     persist_state
     snapshot_and_emit "DONE" "awaiting-human-review"
     exit 0
