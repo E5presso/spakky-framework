@@ -1,6 +1,6 @@
 [project]
 name = "spakky-typer"
-version = "8.0.0"
+version = "8.1.0"
 description = "Typer CLI plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,9 +8,9 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
   "pydantic-settings>=2.13.1",
-  "spakky>=8.0.0",
-  "spakky-actuator>=8.0.0",
-  "spakky-auth>=8.0.0",
+  "spakky>=8.1.0",
+  "spakky-actuator>=8.1.0",
+  "spakky-auth>=8.1.0",
   "typer>=0.24.1",
 ]
 

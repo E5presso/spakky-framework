@@ -1,6 +1,6 @@
 [project]
 name = "spakky-a2a"
-version = "8.0.0"
+version = "8.1.0"
 description = "A2A (Agent2Agent) protocol server plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,8 +11,8 @@ dependencies = [
     "grpcio>=1.68.0",
     "pydantic>=2.4",
     "pydantic-settings>=2.13.1",
-    "spakky>=8.0.0",
-    "spakky-agent>=8.0.0",
+    "spakky>=8.1.0",
+    "spakky-agent>=8.1.0",
 ]
 
 [project.entry-points."spakky.plugins"]

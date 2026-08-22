@@ -1,3 +1,9 @@
+## v8.1.0 (2026-08-22)
+
+### Feat
+
+- **llm**: add multi-provider SDK adapters
+
 ## v8.0.0 (2026-08-01)
 
 ### BREAKING CHANGE
