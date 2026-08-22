@@ -38,13 +38,11 @@ class AgUiPendingApprovalError(AbstractAgUiError):
 
 
 class AgUiRunResolutionError(AbstractAgUiError):
-    """Raised when an SSE request references a run the driver cannot resolve.
+    """Raised when a shared AG-UI request cannot resolve to a runnable core run.
 
-    The endpoint maps an AG-UI ``RunAgentInput`` to a core run, then asks the
-    run-driver factory to build a driver for it. This error is raised when the
-    factory cannot produce a runner for the requested agent/run — for example,
-    the AG-UI input omits the last user message the core run requires to seed a
-    model request.
+    SSE, HTTP streaming, WebSocket, and stdio use the same inbound mapper. This
+    error covers invalid shared request content as well as a driver factory that
+    cannot produce a runner for the requested agent/run.
     """
 
     message = "AG-UI run request could not be resolved to a runnable agent run"

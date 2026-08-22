@@ -2,7 +2,7 @@
 
 > `spakky-agui`는 `spakky-agent`를 위한 공식 AG-UI (Agent User Interaction) protocol adapter plugin입니다.
 > 선언형 `@Agent` 실행 스트림을 AG-UI 이벤트로 투영(project)하여 SSE (Server-Sent Events),
-> HTTP streaming, WebSocket, CLI stdio로 노출하고, deferred-tool 방식의 HITL (Human-in-the-loop) 승인 흐름을 지원합니다.
+> HTTP streaming, WebSocket, CLI stdio로 노출하고 typed multimodal inbound와 deferred-tool 방식의 HITL (Human-in-the-loop) 승인 흐름을 지원합니다.
 
 ## 언제 필요한가
 
@@ -21,6 +21,8 @@ pip install spakky-agui
 durable Agent 실행(state·signal·evidence repository)과 모델 어댑터(`IAgentModel`)는
 별도 provider가 제공합니다. `spakky-agui`는 inbound SSE/HTTP streaming/WebSocket/stdio
 프로토콜 어댑터만 제공합니다.
+
+Production dependency는 core `spakky`/`spakky-agent`, `ag-ui-protocol`, `fastapi[standard]`, `pydantic-settings`입니다. 다른 Spakky plugin을 직접 import하지 않으며 model/persistence 선택을 대신하지 않습니다.
 
 ## 설정
 
@@ -145,10 +147,18 @@ server를 고르면 AG-UI `forwardedProps.mcp`가 core `RunAgentInput.metadata["
 `spakky-mcp`가 그 run에만 toolset을 합류시킵니다.
 
 Inbound mapping은 `runId` → `state_id`, `threadId` → `conversation_id`, optional
-`parentRunId` → `parent_run_id`, 마지막 nonblank text user message → `instruction` 순서입니다.
-Non-text user content는 현재 `ModelMessage` content part로 변환하지 않고 이전 text user message를
-계속 찾습니다. `forwardedProps.metadata`의 JSON object를 run metadata로 먼저 복사한 뒤 explicit
-`forwardedProps.mcp`가 `metadata["mcp"]`를 설정하므로 같은 key가 충돌하면 explicit `mcp`가 우선합니다.
+`parentRunId` → `parent_run_id`, **가장 최근 user message**의 nonblank text fragments → `instruction`,
+typed image/audio/video/document parts → ordered `RunAgentInput.attachments` 순서입니다. Plain string
+content는 기존 text-only shortcut을 유지합니다. Multipart message의 text fragment는 순서대로 newline으로
+합치며 media만 있고 instruction이 없거나 최신 plain user text가 blank이면 이전 message로 fallback하지 않고
+`AgUiRunResolutionError`입니다. `forwardedProps.metadata`의 JSON object를 run metadata로 먼저 복사한 뒤
+explicit `forwardedProps.mcp`가 `metadata["mcp"]`를 설정하므로 같은 key가 충돌하면 explicit `mcp`가 우선합니다.
+
+AG-UI typed media의 URL source는 `mimeType`이 필수이고 data source는 strict base64로 decode합니다.
+Deprecated `BinaryInputContent`, unknown content/source, invalid MIME/URI/base64는 core runner 전에 거부합니다.
+한 message의 default bound는 media 16개와 decoded inline bytes 합계 20 MiB이며 provenance는
+`ag-ui:{message.id}`로 고정합니다. URI mapping 자체는 DNS나 fetch를 실행하지 않고 `spakky-llm`의
+provider-bound `ILLMMediaUriPolicy`가 실제 model/cache 전에 network authority를 검증합니다.
 
 Run별 model 선택은 `forwardedProps.modelSelection` 안의 `modelRef` 하나로 전달합니다. 이 값은
 operator가 공개한 case-sensitive opaque catalog key이며 `/`를 provider/model 구분자로 해석하지
@@ -161,7 +171,23 @@ operator가 공개한 case-sensitive opaque catalog key이며 `/`를 provider/mo
   "threadId": "conv-1",
   "runId": "run-1",
   "state": null,
-  "messages": [{"id": "u1", "role": "user", "content": "check the issue"}],
+  "messages": [
+    {
+      "id": "u1",
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "check the issue"},
+        {
+          "type": "image",
+          "source": {
+            "type": "url",
+            "value": "https://assets.example.test/error.png",
+            "mimeType": "image/png"
+          }
+        }
+      ]
+    }
+  ],
   "tools": [],
   "context": [],
   "forwardedProps": {
@@ -178,7 +204,7 @@ WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 AG-UI
 `RunAgentInput` JSON을 text/JSON message로 보내고, 실행 이벤트를 AG-UI encoded text
 message로 순서대로 받습니다. 같은 연결에서 후속 `RunAgentInput`을 보내 승인 결정
 (`forwardedProps.approvalDecision` 또는 deferred tool-result message)을 전달할 수 있습니다.
-SSE/HTTP/WebSocket/stdio 입력 경계는 AG-UI `threadId`·`runId`·마지막 user text·approval
+SSE/HTTP/WebSocket/stdio 입력 경계는 AG-UI `threadId`·`runId`·마지막 user text/media·approval
 resume 여부와 optional logical `modelRef`를 core `RunAgentInput`으로 변환합니다. 중립 `RunPausedEvent`나 delegated child
 event의 attribution은 core에 남지만, wire-level `parentRunId`는 `RUN_STARTED` projection에서
 `AgentEventAttribution.parent_run_id`를 사용합니다. 다른 event의 attribution·arbitrary metadata를

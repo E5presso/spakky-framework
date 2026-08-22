@@ -23,11 +23,13 @@ Google Gen AI SDK는 같은 GenerateContent surface에서 Gemini Developer API�
 
 `LlmConfig`는 다음 세 축을 operator configuration으로 소유합니다.
 
-- `profiles: dict[str, LlmProfile]`: provider id, `LlmProviderApi`, endpoint, credential, header, timeout/retry, stream policy와 backend dialect 같은 **연결·backend·auth** 설정
-- `models: dict[str, LlmModelRoute]`: profile 이름, 실제 provider model id, `ModelCapability`, model별 vLLM `chat_template_kwargs`
+- `profiles: dict[str, LlmProfile]`: provider id, `LlmProviderApi`, endpoint, credential, header, timeout/SDK retry, stream policy와 backend dialect 같은 **연결·backend·auth** 설정; ADR-0021이 profile-scoped resilience를 추가함
+- `models: dict[str, LlmModelRoute]`: profile 이름, 실제 provider model id, `ModelCapability`, model별 vLLM `chat_template_kwargs`; ADR-0021이 explicit fallback/cache policy를 추가함
 - `default_model: str`: caller가 selection을 생략했을 때 사용할 logical model ref
 
 `LlmProfile`에는 model id나 capability alias를 두지 않습니다. `LlmModelRoute`에는 endpoint, API key, header 같은 연결 권한을 두지 않습니다. Operator용 profile 이름은 `google-vertex`, `openrouter`, `anthropic`, `vllm-local`처럼 backend 또는 연결 역할을 설명하는 중립 이름을 사용합니다. 환경을 이름에 박은 `*-prod` 관례는 요구하지 않습니다. 배포 환경 차이는 외부 설정 source가 같은 중립 key에 주입하는 값으로 표현합니다.
+
+[ADR-0021](0021-multimodal-model-content-and-llm-execution-policy.md)은 이 ownership을 유지하면서 profile에 connection-scoped resilience, route에 explicit fallback/cache policy를 추가하고 multimodal capability 집행을 구체화합니다. Profile/route 분리와 opaque caller selection은 대체하지 않습니다.
 
 예를 들어 operator는 다음처럼 topology를 구성할 수 있습니다.
 
@@ -126,7 +128,7 @@ Catalog membership은 connection/routing allowlist이지 caller authorization이
 
 `LlmModelRoute.capability`는 `supports_reasoning`, `context_window_tokens`, `supports_token_counting`, `input_modalities`, `output_modalities`, `supports_tools`, `supports_structured_output`을 보존합니다. Context window는 양수여야 하고 input/output modality set은 비어 있을 수 없습니다. 기본 `assistant/default` vLLM route는 text-in/text-out과 tools·structured output support를 선언하고 나머지는 base capability 기본값을 유지합니다.
 
-`LlmAgentModel.capability`는 default route의 값을, `capability_for(ModelSelection(...))`는 선택된 route의 값을 재구성 없이 반환합니다. Google은 `supports_reasoning=true`일 때 thought part를 SDK에 요청합니다. OpenAI-compatible·Anthropic adapter는 provider가 반환한 reasoning/thinking extension의 노출만 이 capability로 gate합니다. Provider adapter의 vLLM model별 extension도 profile-level 추정이 아니라 selected route option을 사용합니다. Capability는 실제 지원을 operator가 선언하는 queryable 계약이며, adapter가 provider 이름으로 임의 추론하지 않습니다. 이 결정만으로 모든 capability에 대한 runner preflight enforcement가 추가되는 것은 아닙니다. 현재 core `ModelMessage.content`가 `str`이므로 non-text content part는 아직 표현하지 못합니다.
+`LlmAgentModel.capability`는 default route의 값을, `capability_for(ModelSelection(...))`는 선택된 primary route의 값을 반환합니다. Google은 `supports_reasoning=true`일 때 thought part를 SDK에 요청합니다. OpenAI-compatible·Anthropic adapter는 provider가 반환한 reasoning/thinking extension의 노출만 이 capability로 gate합니다. Provider adapter의 vLLM model별 extension도 profile-level 추정이 아니라 selected route option을 사용합니다. Capability는 실제 지원을 operator가 선언하는 queryable 계약이며, adapter가 provider 이름으로 임의 추론하지 않습니다. ADR-0021은 core content를 text/image/audio/video/document input part로 확장하고 실제 request modality를 reachable route와 provider I/O 전에 대조하는 부분에서 이 초기 제한을 대체합니다.
 
 ### 4. Google backend와 credential source를 명시합니다
 
@@ -208,9 +210,11 @@ Terminal event/response는 여기에 `finish_reason`을 추가할 수 있고, pr
 - Catalog membership은 caller별 route ACL (Access Control List)을 대신하지 않습니다.
 - Provider SDK transport ownership, tool-call approval/dispatch authority, terminal reason allowlist와 portable JSON Schema validation은 ADR-0015 결정을 그대로 유지합니다.
 - ADR-0015의 profile/provider/raw-model caller selection, profile-owned model/capability, Developer-API-only Google backend 부분만 이 ADR이 대체합니다.
+- ADR-0021은 multimodal content, media URI authority와 explicit fallback/cache/resilience/checkpoint 의미만 추가하며 이 ADR의 catalog key, connection/model ownership과 provider resolution은 유지합니다.
 
 ## 참고 자료
 
 - [ADR-0015: Multi-provider LLM official SDK adapters](0015-multi-provider-llm-official-sdk-adapters.md)
+- [ADR-0021: Multimodal model content와 explicit LLM execution policy](0021-multimodal-model-content-and-llm-execution-policy.md)
 - [`spakky-llm` API](../api/plugins/spakky-llm.md)
 - [`spakky-agent` API](../api/core/spakky-agent.md)

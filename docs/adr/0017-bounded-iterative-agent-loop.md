@@ -32,12 +32,13 @@ spec = AgentExecutionSpec(
         max_steps=8,
         max_tool_calls=32,
         max_tokens=None,
+        max_cost=None,
         timeout_seconds=None,
     ),
 )
 ```
 
-`max_steps`와 `max_tool_calls`는 각각 8과 32의 positive default를 갖습니다. `max_tokens`와 `timeout_seconds`는 `None`이면 비활성이고 설정할 때는 positive여야 합니다. Limit error는 counters(`model_steps`, `tool_calls`, `total_tokens`)와 resolve된 route metadata를 함께 운반합니다.
+`max_steps`와 `max_tool_calls`는 각각 8과 32의 positive default를 갖습니다. `max_tokens`와 `timeout_seconds`는 `None`이면 비활성이고 설정할 때는 positive여야 합니다. [ADR-0020](0020-agent-memory-evaluation-cost-telemetry.md)은 이 limit surface에 `max_cost: Decimal | None = None`을 추가해 이 ADR을 부분 보완합니다. `max_cost`는 `None`이면 비활성이고 설정할 때 positive finite `Decimal`이어야 합니다. Limit error는 counters(`model_steps`, `tool_calls`, `total_tokens`)와 resolve된 route metadata를 함께 운반하며 cost 경계는 exact accumulated cost/pricing identity도 보존합니다.
 
 ### 2. Streaming과 guarded-complete는 같은 loop로 합류합니다
 
@@ -99,6 +100,8 @@ Approval id는 state id, stable call id와 **full SHA-256 argument digest**로 �
 
 Durable checkpoint는 transcript, accumulated assistant text, committed tool names, step/tool/token counters, seen call ids, approved call fingerprints, pending calls와 route metadata를 보존합니다. Fresh process/runner의 `resume=True`는 checkpoint를 strict typed parsing하고 pending batch가 있으면 첫 model request를 replay하지 않습니다. Resume invocation은 counters/history를 이어받되 optional wall-clock deadline은 새 invocation 시작 시 다시 계산합니다. Decode failure와 structurally valid checkpoint의 invalid restored batch는 모두 `agent_checkpoint_invalid`로 terminalize합니다.
 
+ADR-0021은 이 durable 의미를 유지하면서 monotonic revision의 `CHECKPOINT` evidence, raw shape/fingerprint predecode 검증, multimodal initial-input fingerprint와 post-provider billable failure counter 저장을 추가합니다. 이전 valid checkpoint replay나 media decode/DNS 이전 tamper rejection은 그 ADR이 이 section을 amend합니다.
+
 Model call, approval wait, tool call 전후에 `AgentActionBoundaryCheckpoint` evidence를 append합니다. Incomplete non-idempotent/unknown tool boundary는 restart에서 자동 retry하지 않고 `RECOVERY_REQUIRES_HITL`로 pause합니다. 승인 후 dispatch crash가 발생한 unchanged pending call은 persisted approved call id와 checkpoint를 사용해 같은 approval을 반복 요구하지 않을 수 있습니다. Corrupted checkpoint root/field는 silent restart 대신 `AgentDefinitionError`로 실패합니다.
 
 ### 6. Limit과 cancellation timing을 명시합니다
@@ -108,9 +111,12 @@ Model call, approval wait, tool call 전후에 `AgentActionBoundaryCheckpoint` e
 | `max_steps` | 각 model request 직전 | `step_count >= max_steps`이면 request 없이 `agent_max_steps_exceeded` |
 | `max_tool_calls` | batch validation 후 approval/dispatch 전 | committed count + batch size가 초과하면 어떤 call도 실행하지 않고 `agent_max_tool_calls_exceeded` |
 | `max_tokens` | terminal model response의 usage를 누적한 직후 | 누적값이 limit보다 크면 `agent_max_tokens_exceeded`; total usage가 없으면 `agent_usage_unavailable` |
+| `max_cost` | 다음 request 전 pricing과 기존 total 확인; terminal route/usage의 exact cost 누적 직후 | pricing/price/usage가 없으면 `agent_cost_unavailable`; pre-request total이 limit 이상이거나 response 후 total이 limit보다 크면 `agent_max_cost_exceeded` |
 | `timeout_seconds` | invocation 시작의 monotonic deadline을 model/async-tool await에 적용 | async deadline 도달 시 `agent_timeout`; sync batch는 dispatch 전 `agent_sync_tool_timeout_unenforceable` |
 
 Token check는 response 이후이므로 초과를 보고한 model response 자체는 이미 소비됐을 수 있습니다. 그러나 그 response의 tool batch, 다음 model request와 success final은 실행하지 않습니다. `max_tokens`가 비활성일 때도 provider가 준 `total_tokens`는 counters에 누적합니다.
+
+`max_cost`가 있는데 `ModelPricingCatalog`이 없으면 첫 model request 전 `agent_cost_unavailable`입니다. Pricing을 주입하면 cost limit가 없어도 every terminal model step을 계산하며 route `model_ref`, input/output usage 또는 matching operator price가 없으면 같은 code로 fail closed합니다. Resume 또는 이전 step의 cumulative cost가 limit 이상이면 다음 request를 보내지 않습니다. 새 response가 cumulative cost를 limit보다 크게 만들면 그 response는 이미 billable일 수 있지만 tool batch, 다음 request와 success final은 차단합니다. Pricing mapping, cache-token rate, exact calculation과 resume 재계산은 ADR-0020이 소유합니다.
 
 Tool descriptor의 local timeout과 run deadline이 모두 있으면 async tool에는 더 이른 deadline을 사용합니다. Active run deadline 또는 tool timeout 아래 in-process sync callable은 안전하게 preempt할 수 없으므로 runner가 실행·중단을 거짓 주장하지 않습니다. Batch authorization 전에 sync callable을 발견하면 **batch 0-dispatch**로 `agent_sync_tool_timeout_unenforceable`을 반환합니다. Timeout durable state는 `FAILED`/`TIMED_OUT`/`TIMEOUT`으로 materialize합니다. Cancellation은 durable loop 시작, model event tick, authority 완료 후 첫 dispatch 전, 각 tool 전후에 poll합니다. Tool callable이 return한 직후 cancel이 관찰되면 result/evidence commit, 다음 model과 final을 막습니다. `run_events()`의 cancel은 위치와 무관하게 `cancelled` code, reason message, state/signal id와 optional requester metadata의 canonical shape를 사용합니다.
 
@@ -181,8 +187,8 @@ Tool은 DB, filesystem, network, remote agent 등 서로 다른 system을 호출
 ### 중립적
 
 - Custom `execute()` escape hatch는 유지하지만 iterative model/tool wiring은 더 이상 그 사용 이유가 아닙니다.
-- `AgentExecutionLimits`는 runner execution budget이며 provider price/cost catalog가 아닙니다.
-- Current model message content는 여전히 text 중심이며 multimodal content-part 확장은 별도 결정입니다.
+- `AgentExecutionLimits.max_cost`는 runner budget이고 provider price를 내장하지 않습니다. Exact cost의 operator mapping과 resume identity는 ADR-0020의 `ModelPricingCatalog`이 소유합니다.
+- 이 ADR 당시의 text 중심 model-message 제한은 [ADR-0021](0021-multimodal-model-content-and-llm-execution-policy.md)이 portable multimodal input으로 대체합니다. Loop authority와 text-only generated output 의미는 유지됩니다.
 - ADR-0013의 loop ownership/protocol boundary, ADR-0015의 official SDK/tool authority와 ADR-0016의 model catalog 결정은 계속 유지됩니다.
 
 ## 참고 자료
@@ -190,5 +196,6 @@ Tool은 DB, filesystem, network, remote agent 등 서로 다른 system을 호출
 - [ADR-0013: 선언형 Agent loop ownership](0013-declarative-agent-loop-ownership.md)
 - [ADR-0015: Multi-provider LLM official SDK adapters](0015-multi-provider-llm-official-sdk-adapters.md)
 - [ADR-0016: Operator-owned model catalog](0016-operator-owned-model-catalog.md)
+- [ADR-0021: Multimodal model content와 explicit LLM execution policy](0021-multimodal-model-content-and-llm-execution-policy.md)
 - [Pydantic AI — Usage limits](https://ai.pydantic.dev/agent/#usage-limits)
 - [Pydantic AI `UsageLimits` source](https://github.com/pydantic/pydantic-ai/blob/main/pydantic_ai_slim/pydantic_ai/usage.py)

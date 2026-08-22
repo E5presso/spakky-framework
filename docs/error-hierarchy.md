@@ -28,6 +28,7 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyOutboxError
   AbstractSpakkyFrameworkError --> AbstractSpakkySagaError
   AbstractSpakkyFrameworkError --> AbstractSpakkyAgentError
+  AbstractSpakkyFrameworkError --> AbstractAgentModelError
   AbstractSpakkyFrameworkError --> AbstractAgUiError
   AbstractSpakkyFrameworkError --> AbstractSpakkyA2AError
   AbstractSpakkyFrameworkError --> AbstractMcpError
@@ -39,7 +40,6 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyLoggingError
   AbstractSpakkyFrameworkError --> AbstractSpakkyOidcError
   AbstractSpakkyFrameworkError --> AbstractOpenFgaError
-  AbstractSpakkyFrameworkError --> AbstractLlmError
   AbstractSpakkyFrameworkError --> CryptographyErrors[spakky-cryptography concrete errors]
   AbstractSpakkyFrameworkError --> CommonErrors[common concrete errors]
   AbstractSpakkyFrameworkError --> PolicyDocumentError
@@ -122,15 +122,22 @@ flowchart TD
   AbstractSpakkyOidcError --> OidcTokenValidationError
   AbstractOpenFgaError --> OpenFgaProviderUnavailableError
   AbstractOpenFgaError --> OpenFgaReferenceMappingError
+  AbstractAgentModelError --> AbstractLlmError
   AbstractLlmError --> LlmConfigurationError
   AbstractLlmError --> LlmModelSelectionError
   AbstractLlmError --> LlmProviderUnavailableError
   AbstractLlmError --> LlmStreamingDisabledError
   AbstractLlmError --> LlmTransportError
   AbstractLlmError --> LlmTimeoutError
+  AbstractLlmError --> LlmRateLimitError
+  AbstractLlmError --> LlmConcurrencyLimitError
+  AbstractLlmError --> LlmCircuitOpenError
   AbstractLlmError --> LlmResponseError
   AbstractLlmError --> LlmModelRefusalError
+  AbstractLlmError --> LlmCapabilityError
   AbstractLlmError --> LlmUnsupportedFeatureError
+  AbstractLlmError --> LlmCacheConfigurationError
+  AbstractLlmError --> LlmPlatformBoundaryError
   PolicyDocumentError --> PolicyDocumentLoadError
   PolicyDocumentError --> PolicyDocumentValidationError
   PolicyDocumentError --> PolicyEvaluationError
@@ -487,18 +494,20 @@ from spakky.agent.error import (
     AgentMemoryError,
 )
 from spakky.agent.cost import AgentPricingError
+from spakky.agent.interfaces.model import AbstractAgentModelError
 from spakky.agent.telemetry import AgentTelemetryError
 ```
 
 | 에러                                    | 설명                                      | 상속                       |
 | --------------------------------------- | ----------------------------------------- | -------------------------- |
 | `AbstractSpakkyAgentError`              | agent 에러 기반 클래스                    | `AbstractSpakkyFrameworkError` |
+| `AbstractAgentModelError`               | billable usage/routing receipt를 붙일 수 있는 model failure base | `AbstractSpakkyFrameworkError` |
 | `AgentDefinitionError`                  | `@Agent`/`@agent_tool` 정의 계약 오류     | `AbstractSpakkyAgentError` |
 | `AgentToolBindingError`                 | model tool-call payload를 Python signature에 bind할 수 없음 | `AbstractSpakkyAgentError` |
 | `AgentToolDispatchError`                | model tool call이 등록되지 않은 tool을 가리키거나 dispatch할 수 없음 | `AbstractSpakkyAgentError` |
 | `AgentBootstrapError`                   | agent bootstrap 검증 실패                 | `AbstractSpakkyAgentError` |
 | `AgentPersistenceConfigurationError`     | durable agent persistence contribution 누락 | `AgentBootstrapError`      |
-| `AgentModelConfigurationError`          | 필요한 model adapter 등록 누락            | `AgentBootstrapError`      |
+| `AgentModelConfigurationError`          | 필요한 model adapter 등록 또는 requested input capability 누락 | `AgentBootstrapError`      |
 | `AgentOutputGuardError`                 | streaming output guard가 unsafe exposure를 감지 | `AbstractSpakkyAgentError` |
 | `AgentRetrievalError`                   | retrieval 입력·hit·scope·provenance가 안전한 계약을 충족하지 않음 | `AbstractSpakkyAgentError` |
 | `AgentMemoryError`                      | memory runtime query/filter/store result/scope가 유효하지 않음 | `AbstractSpakkyAgentError` |
@@ -524,9 +533,9 @@ top-level에 두는 사용도 허용하지 않으며 timeout은
 | `agent_checkpoint_invalid` | resume checkpoint restore/revalidation | checkpoint field나 restored pending batch가 유효하지 않음 |
 | `agent_max_steps_exceeded` | 다음 model request 직전 | 누적 model step 한도 도달 |
 | `agent_max_tool_calls_exceeded` | whole batch dispatch 직전 | batch를 추가하면 실제 tool-call 한도 초과 |
-| `agent_max_tokens_exceeded` | terminal usage 누적 직후 | provider total-token 누적값이 budget 초과 |
+| `agent_max_tokens_exceeded` | terminal usage 또는 다음 model preflight | 누적값이 초과했거나 continuation 전에 이미 budget 소진 |
 | `agent_usage_unavailable` | token budget이 켜진 model step 종료 | provider가 `total_tokens`를 제공하지 않아 budget을 집행할 수 없음 |
-| `agent_max_cost_exceeded` | terminal step cost 누적 직후 | cumulative exact cost가 `max_cost` 초과 |
+| `agent_max_cost_exceeded` | terminal cost 또는 다음 model preflight | cumulative cost가 초과했거나 continuation 전에 이미 budget 소진 |
 | `agent_cost_unavailable` | model preflight 또는 terminal usage pricing | pricing 누락, unknown logical ref, input/output usage 누락·불일치로 cost를 계산할 수 없음 |
 | `agent_timeout` | model 또는 async tool await | enforceable run/tool deadline 초과 |
 | `agent_sync_tool_timeout_unenforceable` | batch authority 전 | deadline이 있는 batch에 preempt할 수 없는 in-process sync tool이 있어 0개 dispatch |
@@ -580,6 +589,17 @@ correlation, score와 strict output은 `AgentDefinitionError`이며 별도 runti
 `IAgentTelemetry.record()` 구현이 예외를 내면 runner는 `AgentTelemetryError`를 raise합니다.
 Telemetry는 실행 결과를 바꾸는 fallback 경로가 아니므로 이 오류를 success/final로
 정규화하지 않습니다.
+
+Multimodal part의 malformed MIME/source/URI/aggregate budget은 construction에서
+`AgentDefinitionError`입니다. Fixed `IAgentModel`이 required input modality를 지원하지 않으면
+provider I/O 전에 `AgentModelConfigurationError`이고 runner에서는
+`agent_model_execution_failed`입니다. Catalog-aware `LlmAgentModel`은 아래
+`LlmCapabilityError`와 explicit fallback 규칙을 사용합니다.
+
+Durable state checkpoint는 append-only `CHECKPOINT` evidence의 latest revision, JSON shape와
+fingerprint를 media decode 전에 검증합니다. Missing/duplicate/old replay/tampered checkpoint,
+initial-history evidence mismatch와 restored pending batch 오류는 모두
+`agent_checkpoint_invalid`입니다.
 
 ---
 
@@ -942,13 +962,24 @@ configured API adapter 누락, client endpoint/API key/credential 구성 또는 
 `LlmModelSelectionError`, `stream()`에서는 code가 `llm_model_selection_invalid`인 terminal
 model error로 표면화됩니다.
 
+`AbstractLlmError`는 core `AbstractAgentModelError`를 상속합니다. 따라서 provider success 뒤
+cache store failure처럼 usage가 이미 발생한 오류는 billable `ModelUsage`와 routing receipt를
+runner에 전달할 수 있습니다.
+
 ```python
 from spakky.plugins.llm.error import (
     AbstractLlmError,
+    LlmCacheConfigurationError,
+    LlmCapabilityError,
+    LlmCircuitOpenError,
+    LlmConcurrencyLimitError,
     LlmConfigurationError,
+    LlmFailureClass,
     LlmModelRefusalError,
     LlmModelSelectionError,
+    LlmPlatformBoundaryError,
     LlmProviderUnavailableError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmStreamingDisabledError,
     LlmTimeoutError,
@@ -961,14 +992,37 @@ from spakky.plugins.llm.error import (
 | --- | --- | --- | --- |
 | `AbstractLlmError` | — | — | LLM routing과 provider adapter 에러의 공통 기반 클래스 |
 | `LlmConfigurationError` | `llm_configuration_invalid` | `false` | provider registry, SDK client endpoint/API key/credential 또는 explicit Google embedding route/input 구성이 유효하지 않음 |
+| `LlmCacheConfigurationError` | `llm_cache_invalid` | `false` | enabled cache mode의 backend/scope, lookup/store/result가 유효하지 않음 |
 | `LlmModelSelectionError` | `llm_model_selection_invalid` | `false` | 요청한 `model_ref`를 operator catalog에서 해석할 수 없음 |
 | `LlmProviderUnavailableError` | `llm_provider_unavailable` | `false` | 선택한 API family의 SDK adapter가 등록되지 않음 |
 | `LlmStreamingDisabledError` | `llm_streaming_disabled` | `false` | 선택한 profile이 streaming을 허용하지 않음 |
 | `LlmTransportError` | `llm_transport_error` | `true` | SDK가 provider endpoint에 도달하지 못했거나 재시도 가능한 상태 오류를 받음 |
 | `LlmTimeoutError` | `llm_timeout` | `true` | provider SDK 요청 timeout |
+| `LlmRateLimitError` | `llm_rate_limited` | `true` | provider 또는 local profile rate gate가 attempt를 거부 |
+| `LlmConcurrencyLimitError` | `llm_concurrency_limited` | `true` | profile in-flight gate의 permit/queue timeout 실패 |
+| `LlmCircuitOpenError` | `llm_circuit_open` | `true` | open/half-open circuit가 provider 전 attempt를 거부 |
 | `LlmResponseError` | `llm_response_error` | `false` | provider response, JSON, tool history, schema 또는 Google embedding vector count/dimension/truncation 검증 실패 |
 | `LlmModelRefusalError` | `model_refusal` | `false` | provider가 refusal 또는 content filter를 보고함 |
+| `LlmCapabilityError` | `llm_capability_insufficient` | `false` | reachable route가 requested modality/tool/structured output을 지원하지 않음 |
 | `LlmUnsupportedFeatureError` | `llm_feature_unsupported` | `false` | 선택한 provider가 요청 기능을 충족할 수 없음 |
+| `LlmPlatformBoundaryError` | — | — | explicit batch/file/native-tool payload가 유효하지 않음; interactive stream 밖의 direct port error |
+
+`LlmFailureClass`는 fallback/retry/circuit의 provider-neutral allowlist입니다.
+
+| class | 의미 |
+| --- | --- |
+| `CONFIGURATION`, `SELECTION` | config/route 선택 오류 |
+| `PROVIDER_UNAVAILABLE`, `STREAMING_DISABLED` | adapter 또는 stream 비가용 |
+| `TRANSPORT`, `TIMEOUT` | 연결과 deadline 실패 |
+| `RATE_LIMIT`, `CONCURRENCY`, `CIRCUIT_OPEN` | provider/local resilience gate |
+| `RESPONSE`, `REFUSAL` | invalid response 또는 model refusal |
+| `CAPABILITY`, `UNSUPPORTED` | route capability/provider feature 부족 |
+| `CACHE` | cache configuration/lookup/store/result 실패 |
+
+Fallback과 retry는 이 class가 route/profile에 명시된 경우에만 동작합니다. Streaming은 partial
+event가 나온 뒤 retry/fallback하지 않습니다. Provider success 뒤 cache store failure는
+`AbstractAgentModelError`의 usage/routing receipt를 보존하고 fallback을 억제하므로 runner가
+billable token/cost/evidence를 잃지 않습니다.
 
 ### spakky-agui
 
@@ -990,7 +1044,7 @@ from spakky.plugins.agui.error import (
 | `AgUiApprovalDecodeError` | resume input의 approval decision payload가 없거나 유효하지 않음 | `AbstractAgUiError` |
 | `AgUiEndpointConflictError` | 여러 AG-UI agent가 같은 transport path를 claim함 | `AbstractAgUiError` |
 | `AgUiPendingApprovalError` | approval pause metadata가 불완전하거나, `approval_id=None`인 auth/user-input pause를 현재 deferred approval로 투영할 수 없음 | `AbstractAgUiError` |
-| `AgUiRunResolutionError` | AG-UI run request를 실행 가능한 agent run으로 해석할 수 없음 | `AbstractAgUiError` |
+| `AgUiRunResolutionError` | AG-UI run/modelRef/text/media source/MIME/base64/budget를 core input으로 안전하게 해석할 수 없음 | `AbstractAgUiError` |
 
 ### spakky-a2a
 
@@ -1017,7 +1071,7 @@ from spakky.plugins.a2a.error import (
 | `A2AAgentServerNotRegisteredError` | 요청한 agent name으로 등록된 A2A server가 없음 | `AbstractSpakkyA2AError` |
 | `A2AAgentCardDerivationError` | `@Agent` 선언에서 AgentCard를 파생할 수 없음 | `AbstractSpakkyA2AError` |
 | `A2AEndpointConflictError` | 여러 A2A agent가 같은 ASGI mount path를 claim함 | `AbstractSpakkyA2AError` |
-| `A2ARunResolutionError` | inbound A2A request의 run 설정을 실행 가능한 agent run으로 해석할 수 없음 | `AbstractSpakkyA2AError` |
+| `A2ARunResolutionError` | inbound A2A text/modelRef/raw·URL media/MIME/budget를 core run으로 안전하게 해석할 수 없음 | `AbstractSpakkyA2AError` |
 | `UnsupportedAgentEventError` | `AgentEvent` kind를 A2A task event로 투영할 수 없음 | `AbstractSpakkyA2AError` |
 | `UnsupportedFinalOutputError` | final output을 A2A part로 투영할 수 없음 | `AbstractSpakkyA2AError` |
 | `InvalidApprovalDecisionError` | inbound approval-decision data part가 알려진 `ApprovalDecision` 값이 아님 | `AbstractSpakkyA2AError` |

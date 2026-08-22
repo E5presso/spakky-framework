@@ -1,7 +1,7 @@
 # spakky-llm
 
-> `spakky-llm`은 `spakky-agent`의 `IAgentModel` port를 OpenAI-compatible, Anthropic, Gemini Developer API, Vertex AI에 연결하고, explicit Google route에서 optional `ITextEmbedding` adapter를 제공하는 outbound plugin입니다.
-> Caller는 logical `model_ref`만 선택하고, operator가 model catalog와 connection profile로 실제 provider topology를 소유합니다.
+> `spakky-llm`은 `spakky-agent`의 multimodal `IAgentModel` port를 OpenAI-compatible, Anthropic, Gemini Developer API, Vertex AI에 연결하고 explicit Google route에서 optional `ITextEmbedding` adapter를 제공하는 outbound plugin입니다.
+> Caller는 logical `model_ref`만 선택하고, operator가 model catalog, connection profile, media URI authority와 명시적 fallback/cache/resilience policy를 소유합니다.
 
 ## 설치
 
@@ -53,9 +53,13 @@ classDiagram
     IAgentModel <|.. LlmAgentModel
     LlmAgentModel --> LlmConfig
     LlmAgentModel --> ILLMProvider
+    LlmAgentModel --> ILLMMediaUriPolicy
+    LlmAgentModel --> ILLMResponseCache
+    LlmAgentModel --> LlmResilienceController
     ILLMProvider <|.. OpenAIChatProvider
     ILLMProvider <|.. AnthropicMessagesProvider
     ILLMProvider <|.. GoogleGenerateContentProvider
+    ILLMMediaUriPolicy <|.. PublicLlmMediaUriPolicy
     ITextEmbedding <|.. GoogleTextEmbedding
     ILLMProvider --> LlmJsonCodec
     GoogleTextEmbedding --> LlmConfig
@@ -66,17 +70,20 @@ classDiagram
 
 | 구성요소 | 책임 |
 |----------|------|
-| `LlmAgentModel` | `model_ref`를 exact catalog route로 해석하고 단일 `IAgentModel` binding을 제공 |
+| `LlmAgentModel` | request snapshot을 exact catalog route에 결속하고 media policy → cache → profile resilience → provider → explicit fallback을 조정 |
 | `LlmConfig` | `default_model`, operator-owned `models`, `profiles`의 참조 정합성 검증 |
-| `LlmProfile` | provider API, endpoint, auth, header, timeout/retry, streaming과 dialect 같은 연결 설정 |
-| `LlmModelRoute` | profile 참조, physical model id, capability, model별 vLLM option |
+| `LlmProfile` | provider API, endpoint, auth, header, SDK retry, streaming, dialect와 retry/concurrency/rate/circuit policy |
+| `LlmModelRoute` | profile 참조, physical model id, capability, vLLM option, ordered fallback allowlist와 cache policy |
+| `ILLMMediaUriPolicy` | provider/cache 전에 remote media URI를 비동기로 검증하는 교체 가능한 authority; 기본은 `PublicLlmMediaUriPolicy` |
+| `ILLMResponseCache`, `ILLMCacheScopeResolver` | exact/semantic complete-response cache backend와 trusted tenant/safety partition port; production default 없음 |
+| `ILLMBatchProvider`, `ILLMFileProvider`, `ILLMNativeToolProvider` | interactive inference와 분리된 optional batch/file/native web·file-search port; 자동 주입·실행 없음 |
 | `OpenAIChatProvider` | 공식 `openai` SDK로 standard OpenAI-compatible API와 vLLM dialect 처리 |
 | `AnthropicMessagesProvider` | 공식 `anthropic` SDK로 native Messages API 처리 |
 | `GoogleGenerateContentProvider` | 공식 `google-genai` SDK로 Gemini Developer API와 Vertex AI 처리 |
 | `GoogleTextEmbedding` | explicit `LlmConfig` Google route를 snapshot해 async text embedding batch를 `EmbeddingVector`로 정규화 |
 | `LlmJsonCodec` | structured output과 tool argument를 portable JSON Schema subset으로 검증 |
 
-Plugin entry point는 세 first-party SDK adapter와 router를 등록하고 `IAgentModel`을 `LlmAgentModel`에 binding합니다. `GoogleTextEmbedding`은 route/backend 선택이 필요한 explicit opt-in이므로 entry point가 Pod로 등록하거나 `ITextEmbedding`에 bind하지 않습니다. Root package `spakky.plugins.llm`은 plugin identity인 `PLUGIN_NAME`만 export합니다. 구현 타입이 필요하면 `spakky.plugins.llm.config`, `spakky.plugins.llm.model`, `spakky.plugins.llm.provider`, `spakky.plugins.llm.providers.openai`, `spakky.plugins.llm.providers.anthropic`, `spakky.plugins.llm.providers.google`의 명시적 모듈 경로를 사용합니다.
+Plugin entry point는 세 first-party SDK adapter와 router를 등록하고 `IAgentModel`을 `LlmAgentModel`에 binding합니다. `GoogleTextEmbedding`, cache backend/scope resolver, optional platform port와 custom media policy는 application authority가 필요한 explicit opt-in이므로 자동 등록하지 않습니다. Root package `spakky.plugins.llm`은 plugin identity인 `PLUGIN_NAME`만 export합니다. 구현 타입이 필요하면 `spakky.plugins.llm.config`, `spakky.plugins.llm.model`, `spakky.plugins.llm.provider`, `spakky.plugins.llm.cache`, `spakky.plugins.llm.media`, `spakky.plugins.llm.resilience`, `spakky.plugins.llm.providers.openai`, `spakky.plugins.llm.providers.anthropic`, `spakky.plugins.llm.providers.google`의 명시적 모듈 경로를 사용합니다.
 
 ## Operator model catalog
 
@@ -195,6 +202,7 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 | `stream_timeout_seconds` | `300.0` | stream request timeout |
 | `max_retries` | `0` | provider SDK retry 횟수 |
 | `stream_enabled` | `true` | profile의 streaming 허용 여부 |
+| `resilience` | disabled `LlmResiliencePolicy()` | profile-scoped orchestration retry, concurrency, rate와 circuit policy |
 | `openai_dialect` | `standard` | `standard` 또는 `vllm` |
 | `google_credential_strategy` | `None` | `api-key`, `adc`, `service-account-file` 중 explicit Google auth source |
 | `google_project`, `google_location` | `None` | Vertex AI project/location |
@@ -210,10 +218,41 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 | `model` | 필수 | SDK에 전달할 physical model id |
 | `capability` | `ModelCapability()` | route의 queryable model 능력 |
 | `chat_template_kwargs` | `{}` | vLLM dialect에서만 허용되는 model별 option |
+| `fallbacks` | `()` | 현재 route failure에서만 고려할 ordered logical model refs |
+| `fallback_on` | empty set | fallback edge를 열 explicit `LlmFailureClass` allowlist |
+| `cache` | disabled `LlmCachePolicy()` | route별 exact/semantic complete-response cache policy |
 
 `ModelCapability`은 `supports_reasoning`, `context_window_tokens`, `supports_token_counting`, `input_modalities`, `output_modalities`, `supports_tools`, `supports_structured_output`을 선언합니다. Base capability의 input/output modality는 text이며 비어 있을 수 없고, context window는 지정한다면 양수여야 합니다. `spakky-llm` default route만 tools와 structured output을 true로 덮어씁니다. Router의 `capability`는 default route를, `capability_for(selection)`은 exact selected route를 반환합니다.
 
-Capability는 provider 이름에서 추측하지 않습니다. Operator가 실제 deployment 지원과 맞게 선언하고 acceptance test로 확인해야 합니다. Google은 selected route의 `supports_reasoning`이 true일 때 `ThinkingConfig(include_thoughts=True)`를 요청합니다. OpenAI-compatible·Anthropic adapter는 provider가 반환한 reasoning/thinking extension의 노출만 같은 capability로 gate하며 generic thought request를 추가하지 않습니다. `AgentExecutionSpec.output_type`을 선언한 run은 runner가 selected route의 `supports_structured_output`을 provider request 전에 검사하지만, 나머지 모든 modality/tool capability가 일괄적으로 자동 집행된다는 뜻은 아닙니다. 또한 `ModelMessage.content`가 현재 `str`이므로 image/audio/video/document content part는 아직 이 plugin의 request mapping으로 보낼 수 없습니다.
+Capability는 provider 이름에서 추측하지 않습니다. Operator가 실제 deployment 지원과 맞게 선언하고 acceptance test로 확인해야 합니다. Google은 selected route의 `supports_reasoning`이 true일 때 `ThinkingConfig(include_thoughts=True)`를 요청합니다. OpenAI-compatible·Anthropic adapter는 provider가 반환한 reasoning/thinking extension의 노출만 같은 capability로 gate하며 generic thought request를 추가하지 않습니다. `AgentExecutionSpec.output_type`을 선언한 run은 runner가 selected route의 `supports_structured_output`을 provider request 전에 검사하고, `ModelRequest`가 실제 포함한 `TEXT`/`IMAGE`/`AUDIO`/`VIDEO`/`DOCUMENT` input modality도 reachable route capability와 provider I/O 전에 대조합니다. Provider별 MIME/source 제한은 이 generic capability보다 좁을 수 있으므로 adapter가 별도로 fail closed합니다.
+
+## Multimodal request와 URI authority
+
+Core `ModelMessage.content`는 기존 plain `str` 또는 ordered `TextPart`/`ImagePart`/`AudioPart`/`VideoPart`/`DocumentPart` sequence입니다. `RunAgentInput.attachments`는 instruction을 첫 `TextPart`로 유지하면서 media를 순서대로 붙입니다. `LlmAgentModel.complete()`와 `stream()`은 진입 즉시 `ModelRequest.snapshot()`을 만들어 capability, media policy, cache key/semantic input, provider와 cache store가 같은 immutable request를 관찰하게 합니다. Request 전체에서 media는 기본 16개, inline bytes 합계 20 MiB이고 part별 custom limit가 있으면 가장 작은 limit를 적용합니다.
+
+```python
+from spakky.agent import ModelCapability, ModelModality
+from spakky.plugins.llm.config import LlmModelRoute
+
+vision_route = LlmModelRoute(
+    profile="google-vertex",
+    model="publishers/google/models/gemini-2.5-pro",
+    capability=ModelCapability(
+        input_modalities=frozenset({ModelModality.TEXT, ModelModality.IMAGE}),
+    ),
+)
+```
+
+URI part 생성은 syntax/scheme/explicit host/literal-address만 검증하는 side-effect-free 작업입니다. Default `PublicLlmMediaUriPolicy(timeout_seconds=2.0)`는 각 candidate의 provider/cache 전에 ordinary HTTP(S) hostname을 `asyncio.to_thread()`에서 resolve하고 timeout과 public-address 조건을 집행합니다. 다음 authority는 DNS를 생략합니다.
+
+- `MediaSafetyLimits.allowed_uri_hosts`에 exact 등록된 host: application이 private gateway를 명시적으로 소유합니다.
+- `.test` hostname: deterministic local/CI SDK fake mapping을 허용합니다.
+- custom allowed scheme: DNS 의미가 framework에 없으므로 application/provider authority에 남깁니다.
+- IP literal: core value validation에서 이미 public 또는 explicit host-authorized 조건을 통과했습니다.
+
+이 default가 맞지 않으면 `ILLMMediaUriPolicy.validate(target, request)` 구현을 `LlmAgentModel`에 주입합니다. DNS failure·timeout·private resolution은 `LlmConfigurationError`로 정규화되고, route가 `CONFIGURATION` failure fallback을 명시한 경우에만 다음 candidate를 검토합니다. URI를 framework가 fetch하거나 cache에 body로 materialize하지 않습니다.
+
+Provider mapping은 user content에만 media를 허용하고 system/evidence/assistant/tool history의 media를 text로 손실 변환하지 않습니다. OpenAI-compatible adapter는 supported image URI/inline, inline MP3/WAV audio와 filename이 있는 inline PDF/text document를 매핑하며 video를 거부합니다. Anthropic은 supported image URI/inline, PDF URI/inline과 inline UTF-8 plain-text document를 매핑하고 audio/video를 거부합니다. Google은 operator-declared modality의 URI/bytes를 SDK `Part.from_uri()`/`from_bytes()`로 보냅니다. 세 adapter 모두 capability·MIME/source mismatch를 SDK 호출 전에 실패시키며 common generated-media output contract는 제공하지 않습니다.
 
 ## Caller model selection
 
@@ -306,12 +345,78 @@ Catalog는 다음 오류를 설정 또는 routing 경계에서 거부합니다.
 - request metadata의 endpoint, credential, header, profile 또는 physical model override
 - Google backend/auth field의 누락·혼합
 - non-vLLM profile의 vLLM route option
+- fallback refs/allowlist 불균형, missing/self/duplicate ref와 graph cycle
+- orchestration retry와 SDK retry의 동시 활성화
+- enabled cache mode의 backend/scope resolver 누락 또는 mode 중복
 
 `ILLMProvider.apis`는 구현이 담당하는 `LlmProviderApi` 집합이고, generic `is_default` property는 replaceable default 여부입니다. First-party OpenAI/Anthropic/Google adapter는 `is_default=True`; custom 구현은 override하지 않으면 false입니다.
 
 `LlmAgentModel`은 주입된 `tuple[ILLMProvider, ...]`를 API family별 registry로 만듭니다. API마다 non-default custom 구현이 정확히 하나면 같은 API를 claim하는 first-party default 대신 선택됩니다. Non-default가 둘 이상이면 ambiguity error이고, custom이 없으면 default가 정확히 하나여야 합니다. Empty `apis`와 configured profile API의 구현 누락도 `LlmConfigurationError`입니다. 한 adapter가 여러 API family를 명시하는 것은 허용하므로 `GoogleGenerateContentProvider`가 Developer API와 Vertex AI를 함께 담당합니다. 이 선택은 hardcoded first-party class 검사나 등록 순서, provider 문자열이 아니라 `apis`/`is_default` contract만 사용합니다.
 
 새 OpenAI-compatible vendor는 standard profile의 endpoint/auth/header를 추가하는 것으로 확장합니다. 새로운 native wire protocol은 `LlmProviderApi` entry와 그 API를 claim하는 `ILLMProvider` 구현을 함께 추가해야 하며, free-form `provider` 문자열만으로 arbitrary native adapter를 활성화하지 않습니다.
+
+## Explicit fallback과 profile resilience
+
+Fallback은 global provider 순회가 아니라 **요청에서 선택한 current route가 여는 edge**입니다. `fallbacks`와 `fallback_on`은 함께 설정해야 하고 ref는 unique·existing·non-self여야 하며 전체 graph cycle은 config 생성 시 거부합니다. 실행은 primary부터 route가 선언한 순서의 depth-first candidate로 진행하지만, 각 실패에서 그 candidate route의 `fallback_on`이 현재 `LlmFailureClass`를 허용할 때만 다음 edge를 엽니다. Capability fallback도 `CAPABILITY`를 명시한 reachable edge만 request 전 탐색합니다.
+
+```python
+from spakky.plugins.llm.cache import LlmCacheMode, LlmCachePolicy
+from spakky.plugins.llm.config import (
+    GoogleCredentialStrategy,
+    LlmModelRoute,
+    LlmProfile,
+    LlmProviderApi,
+)
+from spakky.plugins.llm.error import LlmFailureClass
+from spakky.plugins.llm.resilience import LlmRetryPolicy, LlmResiliencePolicy
+
+primary = LlmModelRoute(
+    profile="google-vertex",
+    model="publishers/google/models/gemini-2.5-pro",
+    fallbacks=("support/secondary",),
+    fallback_on=frozenset(
+        {
+            LlmFailureClass.TIMEOUT,
+            LlmFailureClass.TRANSPORT,
+            LlmFailureClass.CAPABILITY,
+            LlmFailureClass.CACHE,
+        }
+    ),
+    cache=LlmCachePolicy(mode=LlmCacheMode.EXACT),
+)
+
+vertex_profile = LlmProfile(
+    provider="google",
+    api=LlmProviderApi.GOOGLE_VERTEX,
+    google_credential_strategy=GoogleCredentialStrategy.ADC,
+    google_project="project-id",
+    google_location="us-central1",
+    resilience=LlmResiliencePolicy(
+        retry=LlmRetryPolicy(
+            max_attempts=3,
+            failure_classes=frozenset(
+                {LlmFailureClass.TIMEOUT, LlmFailureClass.TRANSPORT}
+            ),
+        ),
+    ),
+)
+```
+
+Profile resilience는 Spring-style opt-in입니다. Default retry는 `max_attempts=1`, concurrency는 `max_in_flight=None`, rate limit는 `requests_per_period=None`, circuit는 `failure_threshold=None`라서 동작을 바꾸지 않습니다. Retry를 켜면 failure class를 명시해야 하고 최대 10 attempts이며 provider `Retry-After` 또는 bounded deterministic exponential delay를 사용합니다. Concurrency/rate/circuit도 configured profile별 state로 동작하고 각 거부를 `CONCURRENCY`/`RATE_LIMIT`/`CIRCUIT_OPEN`으로 분류합니다. SDK `max_retries>0`와 orchestration `max_attempts>1`은 중복 소유를 막기 위해 함께 사용할 수 없습니다.
+
+Retry는 한 candidate 안에서 먼저 소진하고 그 뒤에만 fallback을 검토합니다. Streaming은 첫 event를 caller에게 내보내기 전까지만 retry/fallback할 수 있으며 하나라도 emit한 뒤 실패하면 같은 candidate를 replay하지 않고 `ERROR`와 `DONE`으로 닫습니다. 선택·attempt·retry·fallback·circuit evidence는 routing metadata에 남고 credential은 포함하지 않습니다.
+
+## Explicit response cache
+
+`LlmCachePolicy` default는 `mode=disabled`, `ttl_seconds=300.0`, `namespace="spakky-llm:v1"`입니다. `exact` 또는 `semantic`을 고르면 application은 그 mode를 구현하는 `ILLMResponseCache` **정확히 하나**와 `ILLMCacheScopeResolver`를 제공해야 합니다. Missing/duplicate backend, disabled-mode backend나 resolver 누락은 construction에서 `LlmCacheConfigurationError`이며 production in-memory fallback은 없습니다. Resolver는 arbitrary request metadata key를 신뢰하지 않고 authoritative `LlmCacheScope(tenant_scope, safety_scope)`를 반환해야 합니다.
+
+`LlmCacheKeyBuilder` exact digest는 namespace/scope, resolved route·connection, ordered guarded message fingerprint, context manifest/digest ref, tool/schema, sampling과 structured-output shape를 결속합니다. Text, inline bytes, URI와 arbitrary metadata body는 key에 raw로 넣지 않고 SHA-256으로 결속합니다. Semantic mode만 별도 `semantic_input`에 ordered text와 media MIME+digest descriptor를 전달하므로 semantic backend는 model input을 관찰하는 명시적 trust boundary입니다. `ModelRequest.snapshot()` 하나에서 key와 provider request를 만들기 때문에 caller의 mutable object가 lookup과 provider/store 사이에서 drift하지 않습니다.
+
+Cache는 `complete()`의 complete·tool-free response만 저장하고 stream은 `cache_state=bypassed_streaming`으로 우회합니다. Hit는 provider call 없이 저장 당시 usage를 metadata evidence로 남기되 current usage는 zero로 반환합니다. Lookup failure가 다음 logical route로 넘어가려면 current route가 `LlmFailureClass.CACHE`를 허용해야 합니다. 반대로 provider 성공 뒤 store가 실패하면 billable model을 retry/fallback하지 않고 `fallback_suppressed="provider_success"`로 실패하며, usage와 routing receipt를 `AbstractAgentModelError`에 붙입니다. Core runner는 그 receipt를 cost/counter/MODEL evidence/checkpoint에 기록하므로 resume이 billable call을 재실행하지 않습니다.
+
+## Optional provider-native platform ports
+
+Batch inference는 `ILLMBatchProvider`의 `submit_batch()`/`batch_status()`/`batch_results()`, provider file lifecycle은 `ILLMFileProvider.upload_file()`/`delete_file()`, native web/file search는 `ILLMNativeToolProvider.invoke_native_tool()`로 분리합니다. 이 포트는 interactive `ModelRequest`, core `agent_tool` catalog와 다른 explicit application boundary입니다. First-party plugin entry point는 구현을 자동 등록하지 않고 file을 prompt에 주입하거나 native search를 model 대신 실행하지 않습니다. 현재 공통 interactive response는 text/structured/tool output만 유지합니다.
 
 ## Routing metadata
 
@@ -325,6 +430,8 @@ First-party adapter가 생성하는 `ModelResponse`, `ModelStreamEvent`, `ModelT
 | `model` | SDK에 전달한 physical model id |
 
 Terminal response/event는 `finish_reason`을 추가하며 provider에 따라 `response_id`, `response_model`, reasoning 또는 thought signature가 추가될 수 있습니다. Unknown ref는 default route를 선택한 것처럼 꾸미지 않고 요청된 `model_ref`만 error metadata에 남깁니다. Credential과 header는 metadata에 포함하지 않습니다.
+
+Router terminal metadata는 여기에 `attempted_model_ref`/`attempted_profile`/`attempted_provider`, ordered `attempts`, `attempt_ordinal`, `retry_count`, SDK/orchestration retry 설정, `fallback_used`/`fallback_from`, `circuit_state`, `cache_mode`/`cache_state`와 ordered `cache_selections`를 더합니다. Capability/media/cache 단계처럼 provider 호출이 없던 candidate는 `actual_attempt=false`로 구분해 actual ordinal을 부풀리지 않습니다. Partial stream 뒤 failure는 `partial_stream_emitted=true`로 남기며 replay하지 않습니다.
 
 ### Usage와 operator cost input
 
@@ -450,7 +557,7 @@ uv run pyrefly check src tests --min-severity warn --no-progress-bar --output-fo
 uv run pytest
 ```
 
-Unit/acceptance test는 provider SDK client/response와 Google credential resolver를 deterministic test double로 주입합니다. 실제 OpenRouter·Anthropic·Google account나 commercial credential 없이 routing, SDK argument mapping, explicit Vertex endpoint/auth strategy와 lifecycle을 검증하지만 live provider availability나 IAM authorization을 증명하지 않습니다.
+Unit/acceptance test는 provider SDK client/response, DNS resolver 동작과 Google credential resolver를 deterministic test double로 격리합니다. 실제 OpenRouter·Anthropic·Google account나 commercial credential 없이 routing, multimodal mapping, media URI policy, cache/resilience, explicit Vertex endpoint/auth strategy와 lifecycle을 검증하지만 live provider availability나 IAM authorization을 증명하지 않습니다.
 
 ## 관련 결정
 
@@ -459,6 +566,7 @@ Unit/acceptance test는 provider SDK client/response와 Google credential resolv
 - [ADR-0018: Typed agent output과 composed execution context](../../docs/adr/0018-typed-agent-output-and-context.md)
 - [ADR-0019: Minimal retrieval runtime](../../docs/adr/0019-minimal-retrieval-runtime.md)
 - [ADR-0020: Semantic memory, evaluation, pricing과 Agent telemetry](../../docs/adr/0020-agent-memory-evaluation-cost-telemetry.md)
+- [ADR-0021: Multimodal model content와 explicit LLM execution policy](../../docs/adr/0021-multimodal-model-content-and-llm-execution-policy.md)
 
 ## 라이선스
 

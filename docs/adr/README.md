@@ -35,11 +35,12 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 | [ADR-0013](0013-declarative-agent-loop-ownership.md) | 선언형 Agent — 루프 소유·프로토콜 중립 코어 (one-request 제한은 ADR-0017이 대체) | Accepted | 2026-06-24 |
 | [ADR-0014](0014-ai-pr-review-auto-approval-policy.md) | AI PR 리뷰 자동 승인 정책 — provenance-bound exact-head receipt와 봇 formal Approve | Accepted | 2026-06-26 |
 | [ADR-0015](0015-multi-provider-llm-official-sdk-adapters.md) | Multi-provider LLM official SDK adapters — provider-native SDK 경계 (routing 일부는 ADR-0016이 대체) | Accepted | 2026-08-22 |
-| [ADR-0016](0016-operator-owned-model-catalog.md) | Operator-owned model catalog — opaque `model_ref`, route capability, explicit Gemini/Vertex backend | Accepted | 2026-08-22 |
-| [ADR-0017](0017-bounded-iterative-agent-loop.md) | Bounded iterative model/tool loop — limits, batch authority, continuation, durable resume | Accepted | 2026-08-23 |
+| [ADR-0016](0016-operator-owned-model-catalog.md) | Operator-owned model catalog — opaque `model_ref`, route capability; multimodal/execution policy는 ADR-0021이 확장 | Accepted | 2026-08-22 |
+| [ADR-0017](0017-bounded-iterative-agent-loop.md) | Bounded iterative model/tool loop — cost limit는 ADR-0020, content/checkpoint는 ADR-0021이 확장 | Accepted | 2026-08-23 |
 | [ADR-0018](0018-typed-agent-output-and-context.md) | Typed agent output과 composed execution context — strict materialization, static/dynamic context, safe resume identity | Accepted | 2026-08-23 |
 | [ADR-0019](0019-minimal-retrieval-runtime.md) | Minimal retrieval runtime — one `IRetriever`, classic context, agentic tool, optional vector/reranker seams | Accepted | 2026-08-23 |
 | [ADR-0020](0020-agent-memory-evaluation-cost-telemetry.md) | Semantic memory, evaluation, pricing과 Agent telemetry — transcript separation, exact cost, body-free OTel bridge | Accepted | 2026-08-23 |
+| [ADR-0021](0021-multimodal-model-content-and-llm-execution-policy.md) | Multimodal model content와 explicit LLM execution policy — media authority, fallback/cache/resilience, durable identity | Accepted | 2026-08-23 |
 
 ## 새 ADR 작성 가이드
 

@@ -1,7 +1,7 @@
 # spakky-a2a
 
 > `spakky-a2a`는 `spakky-agent`를 A2A (Agent2Agent) protocol server와 원격 teammate delegation으로 노출하는 adapter plugin입니다.
-> Spakky `@Agent`를 A2A server로 공개하고, agent spec/tool catalog/teammates에서 AgentCard를 유도하며, 공식 `a2a-sdk` client 위에 core `IAgentDelegate` port를 구현합니다.
+> Spakky `@Agent`를 multimodal A2A server로 공개하고, agent spec/tool catalog/teammates에서 AgentCard를 유도하며, 공식 `a2a-sdk` client 위에 core `IAgentDelegate` port를 구현합니다.
 
 ## 설치
 
@@ -10,6 +10,8 @@ pip install spakky-a2a
 ```
 
 실행 가능한 agent에는 별도 `IAgentModel` provider가 필요합니다. Durable run 또는 HITL resume을 사용하면 `spakky-sqlalchemy[agent]` 같은 provider가 공급하는 `spakky-agent` persistence repository도 필요합니다.
+
+Production dependency는 core `spakky`/`spakky-agent`, `a2a-sdk[http-server]`, `grpcio`, `pydantic`, `pydantic-settings`입니다. 다른 Spakky plugin을 직접 import하지 않으며 `spakky-grpc`가 함께 로드될 때만 contribution seam으로 gRPC handler를 등록합니다.
 
 ## 설정
 
@@ -92,7 +94,9 @@ lower-level escape hatch입니다. 일반 애플리케이션은 `@A2ACompatible`
 
 ## 실행별 입력
 
-Executor는 A2A inbound message의 task id를 `RunAgentInput.state_id`로, context id를 `conversation_id`로 사용합니다. A2A inbound에는 core `parent_run_id`를 채우는 별도 mapping이 없습니다. Message data part의 canonical `modelSelection`은 `RunAgentInput.model_selection`으로, `mcp`와 `metadata` object는 `RunAgentInput.metadata`로 전달됩니다.
+Executor는 A2A inbound message의 task id를 `RunAgentInput.state_id`로, context id를 `conversation_id`로 사용합니다. A2A inbound에는 core `parent_run_id`를 채우는 별도 mapping이 없습니다. Nonblank text는 `instruction`, `Part.raw`/`Part.url`의 image/audio/video/document MIME family는 ordered `RunAgentInput.attachments`가 됩니다. Message data part의 canonical `modelSelection`은 `RunAgentInput.model_selection`으로, `mcp`와 `metadata` object는 `RunAgentInput.metadata`로 전달되지만 data part 자체를 media attachment로 해석하지 않습니다.
+
+Raw media는 immutable bytes, URL media는 remote URI로 보존하고 provenance는 `a2a:{message_id}`입니다. Document MIME은 optional `filename`도 전달합니다. Default는 media 16개와 raw bytes 합계 20 MiB이며 missing/unknown MIME family, blank raw/URL, invalid URI와 media-only non-resume request는 `A2ARunResolutionError`입니다. Approval-only resume만 internal nonblank resume marker를 사용할 수 있습니다. URI value construction은 DNS/fetch를 실행하지 않고, 실제 model/cache 이전 network authority는 `spakky-llm`의 `ILLMMediaUriPolicy`가 소유합니다.
 
 Model-selection object에는 `modelRef` 하나만 허용합니다. 이 값은 operator가 공개한 case-sensitive opaque catalog key이며 `/`를 provider/model 구분자로 분해하지 않습니다. Profile, provider, physical model, endpoint와 credential은 A2A caller surface가 아닙니다. Executor는 모든 data part를 scan하고 legacy outer `model_selection`, canonical selector 둘 이상, `provider`, `profile`, `model`, inner `model_ref`, unknown sibling key를 발견하면 첫 값을 채택하지 않고 fail closed합니다.
 
@@ -113,6 +117,8 @@ generic metadata의 동명 key보다 우선하고, 서로 다른 part 사이에�
 현재 A2A data part는 core `AgentContext`를 직렬화하는 inbound contract가 아닙니다. Request-scoped typed context가 필요하면 application boundary가 `RunAgentInput(context=AgentContext(...))`를 구성하거나 agent에 optional `IAgentContextProvider`를 constructor-inject해야 합니다. A2A `metadata`/`mcp`를 context pack이나 provenance로 자동 승격시키지 않습니다.
 
 Approval resume은 data part의 `approval_id`, `decision`을 `APPROVAL_DECISION` signal로 변환합니다.
+
+Executor는 approval payload, task/conversation id, instruction, 모든 media part, 모든 data part의 model selector, run metadata와 최종 `RunAgentInput`을 먼저 완전히 검증합니다. 그 뒤에만 Task를 생성/재사용하고 working 상태로 전이하며 approval signal을 append합니다. 따라서 뒤쪽 invalid media나 duplicate selector가 앞의 valid value를 가린 경우에도 Task enqueue/status change/signal append가 일어나지 않습니다.
 
 ## 원격 Teammate 위임
 

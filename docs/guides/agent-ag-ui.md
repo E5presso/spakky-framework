@@ -133,6 +133,56 @@ selection metadata는 wire 선택 필드가 아닙니다. Catalog 등록 형식�
 }
 ```
 
+### Multimodal user message
+
+Latest user message는 text와 typed media parts를 함께 보낼 수 있습니다. URL source에는
+`mimeType`이 필요하고 inline data는 strict base64입니다.
+
+```json
+{
+  "threadId": "conv-1",
+  "runId": "run-1",
+  "state": null,
+  "messages": [
+    {
+      "id": "u1",
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "차트와 보고서를 비교해 주세요."},
+        {
+          "type": "image",
+          "source": {
+            "type": "url",
+            "value": "https://cdn.example.com/chart.png",
+            "mimeType": "image/png"
+          }
+        },
+        {
+          "type": "document",
+          "source": {
+            "type": "data",
+            "value": "JVBERi0xLjQ=",
+            "mimeType": "application/pdf"
+          }
+        }
+      ]
+    }
+  ],
+  "tools": [],
+  "context": [],
+  "forwardedProps": {
+    "modelSelection": {"modelRef": "support/vision"}
+  }
+}
+```
+
+Adapter는 nonblank text fragments를 newline으로 합치고 media 순서를
+`RunAgentInput.attachments`에 보존합니다. Media-only message, missing MIME, invalid base64,
+deprecated binary part, media 16개 초과 또는 decoded inline 합계 20 MiB 초과는
+`AgUiRunResolutionError`입니다. URL factory는 network I/O를 하지 않고 provider-bound DNS
+safety는 `spakky-llm`에서 cache/provider 호출 전에 적용됩니다. Generated non-text output의
+공통 AG-UI mapping은 아직 없습니다.
+
 활성 `IAgentModel`이 catalog-aware `LlmAgentModel`일 때 `modelSelection`이 없으면 그
 router의 `default_model`을 사용합니다. Object가 아니거나,
 `modelRef`가 blank/non-string이거나, legacy `provider`/`profile`/`model`을 포함하거나,

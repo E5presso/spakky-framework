@@ -282,7 +282,8 @@ runner가 optional `ITaskStore`에서 `effective_conversation_id`로 persisted h
 `AgentExecutionSpec.limits`에 들어가는 bounded runner 계약입니다. 기본 model step은 8,
 실제 tool call은 32이며 token/cost/time budget은 opt-in입니다. Step limit은 다음 model request
 전에, tool limit은 whole batch dispatch 전에, token limit은 provider total usage를 누적한
-뒤, cost limit은 operator pricing으로 terminal step cost를 누적한 뒤, timeout은
+뒤와 다음 request preflight에, cost limit은 operator pricing으로 terminal step cost를 누적한
+뒤와 다음 request preflight에, timeout은
 model/async-tool await에 집행됩니다. `max_cost`는 positive finite `Decimal`이며 pricing이
 없거나 usage/ref를 exact하게 계산할 수 없으면 fail closed합니다. Deadline이 있는 in-process sync tool은
 preempt할 수 없어 batch 전체가 실행 전에 `agent_sync_tool_timeout_unenforceable`로
@@ -374,6 +375,14 @@ content에서 재계산하지는 않습니다.
 arguments의 full SHA-256입니다. Checkpoint는 `approved_call_fingerprints`를 보존하며
 pending argument가 달라지면 기존 승인을 재사용하지 않습니다. `MODIFY`는 새 payload로
 fingerprint와 assistant tool-call history를 함께 갱신합니다.
+
+### CHECKPOINT evidence
+
+Durable runner가 raw state checkpoint를 저장할 때마다 append하는
+`AgentEvidenceKind.CHECKPOINT` revision입니다. Revision, model step, history length, JSON shape
+size와 SHA-256 fingerprint만 담고 inline media body는 복제하지 않습니다. Resume은 latest
+revision과 raw checkpoint를 media decode 전에 대조하고, initial message/media limits는 모든
+completed `MODEL` evidence의 input fingerprint에도 결속합니다.
 
 ### Tool continuation group
 
@@ -476,6 +485,13 @@ history를 다음 model request에 넣어 반복하고, tool call이 없는 step
 [AI Agent 개발](guides/agents.md), catalog 사용법은
 [LLM 모델 라우팅](guides/llm-routing.md)을 확인하세요.
 
+### AbstractAgentModelError
+
+Provider success 뒤 cache store처럼 후속 framework 단계가 실패해도 billable usage를 잃지
+않도록 `ModelUsage`와 privacy-safe model metadata receipt를 붙일 수 있는 core model-error
+base입니다. `AbstractLlmError`가 이를 상속하며 runner는 receipt를 token/cost/evidence에
+반영한 뒤 terminal error로 끝냅니다.
+
 ### Logical model ref { #logical-model-ref }
 
 `support/primary`처럼 caller가 선택하는 operator-owned opaque key입니다. Case-sensitive이며
@@ -490,6 +506,18 @@ history를 다음 model request에 넣어 반복하고, tool call이 없는 step
 selection metadata는 이 계약에 속하지 않습니다. Blank ref는 core에서, unknown ref는
 catalog-aware router에서 fail closed합니다.
 
+### ModelContent part / attachment
+
+`ModelMessage`의 provider-neutral multimodal input입니다. `ModelMessage.user("text")`는 기존
+text shortcut이고 multipart content는 ordered `TextPart`, `ImagePart`, `AudioPart`,
+`VideoPart`, `DocumentPart` tuple입니다. `RunAgentInput.attachments`는 instruction text 뒤에
+붙을 immutable non-text tuple이며 기존 positional fields 뒤에 추가됐습니다.
+
+Media는 remote URI 또는 inline bytes 중 하나와 explicit MIME type을 가집니다. Default
+`MediaSafetyLimits`는 HTTPS, media 16개, aggregate inline 20 MiB입니다. URI construction은
+network I/O를 하지 않고 `spakky-llm` media policy가 provider/cache 전 DNS authority를
+검증합니다. Generated non-text output의 공통 contract는 아직 없습니다.
+
 ### LlmProfile
 
 `spakky-llm` 운영자가 소유하는 connection/backend/auth 설정입니다. Provider 진단 표식,
@@ -501,6 +529,34 @@ stream 허용 여부를 담습니다. 실제 model ID와 `ModelCapability`은 �
 Logical model ref를 `LlmProfile`, physical provider model ID, `ModelCapability`에 연결하는
 strict catalog entry입니다. vLLM의 model별 `chat_template_kwargs`도 route가 소유합니다.
 Route와 profile을 교체해도 caller의 logical ref는 유지할 수 있습니다.
+
+### LLM fallback / resilience
+
+`LlmModelRoute.fallbacks`와 `fallback_on`이 정의하는 ordered logical-ref graph, 그리고
+`LlmProfile.resilience`의 retry/concurrency/rate/circuit policy입니다. 모두 default disabled이고
+failure class가 explicit edge/policy에 있을 때만 다음 attempt를 허용합니다. Attempt, selected
+route, failure와 circuit state는 metadata/evidence/trace에 남습니다.
+
+### LLM response cache
+
+Route `LlmCachePolicy`가 명시적으로 켜는 complete-only `EXACT`/`SEMANTIC` cache입니다.
+Matching `ILLMResponseCache`와 trusted `ILLMCacheScopeResolver` 없이는 시작하지 않습니다.
+Streaming과 tool-call response는 bypass하고 provider success 뒤 store failure는 billable
+fallback을 금지합니다. Cache key는 body를 hash하며 semantic input의 privacy는 backend가
+소유합니다.
+
+### LLM media URI policy
+
+`ILLMMediaUriPolicy`는 provider-bound remote media URI를 cache/provider I/O 전에 async
+검증하는 replaceable port입니다. Default `PublicLlmMediaUriPolicy`는 DNS timeout과 모든
+resolved address의 public 여부를 확인합니다. Part의 explicit `allowed_uri_hosts`는 operator
+authority이며 일반 request metadata가 늘릴 수 없습니다.
+
+### LLM optional platform ports
+
+`ILLMBatchProvider`, `ILLMFileProvider`, `ILLMNativeToolProvider`는 interactive
+`ModelRequest`/Agent tool catalog와 분리된 batch, explicit file lifecycle, provider-native
+`WEB_SEARCH`/`FILE_SEARCH` port입니다. 자동 submit/upload/injection/execution은 없습니다.
 
 ### Gemini Developer API
 

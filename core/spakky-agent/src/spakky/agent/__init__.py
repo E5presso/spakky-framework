@@ -2,6 +2,15 @@
 
 from spakky.core.application.plugin import Plugin
 
+from spakky.agent.content import (
+    DEFAULT_MEDIA_SAFETY_LIMITS,
+    AudioPart,
+    DocumentPart,
+    ImagePart,
+    MediaSafetyLimits,
+    TextPart,
+    VideoPart,
+)
 from spakky.agent.error import (
     AbstractSpakkyAgentError,
     AgentBootstrapError,
@@ -174,6 +183,7 @@ from spakky.agent.interfaces.repository import (
 )
 from spakky.agent.interfaces.task_store import ConversationTurn, ITaskStore
 from spakky.agent.interfaces.model import (
+    AbstractAgentModelError,
     IAgentModel,
     JsonSchemaConstraint,
     ModelCapability,
@@ -304,6 +314,7 @@ __all__ = [
     "ITaskStore",
     "ConversationTurn",
     "AbstractSpakkyAgentError",
+    "AbstractAgentModelError",
     "Agent",
     "AgentContext",
     "AgentApprovalBoundaryKind",
@@ -399,6 +410,7 @@ __all__ = [
     "AgentYieldPayload",
     "Approval",
     "ApprovalDecision",
+    "AudioPart",
     "Cancel",
     "CitationEvaluator",
     "ContextDigest",
@@ -429,6 +441,8 @@ __all__ = [
     "DelegationReturnPolicy",
     "DelegationToolResult",
     "DEFAULT_APPROVAL_DECISIONS",
+    "DEFAULT_MEDIA_SAFETY_LIMITS",
+    "DocumentPart",
     "Error",
     "DataAccess",
     "DataSensitivity",
@@ -440,11 +454,13 @@ __all__ = [
     "Externality",
     "Final",
     "Idempotency",
+    "ImagePart",
     "JsonObject",
     "JsonPrimitive",
     "JsonSchemaConstraint",
     "JsonValue",
     "MaskingPolicy",
+    "MediaSafetyLimits",
     "MemoryEntry",
     "MemoryKind",
     "MemoryRetriever",
@@ -497,6 +513,7 @@ __all__ = [
     "StructuredOutputSpec",
     "StructuredOutputEvaluator",
     "TextDelta",
+    "TextPart",
     "Token",
     "Tool",
     "TimeoutPolicy",
@@ -510,6 +527,7 @@ __all__ = [
     "ToolRiskAxis",
     "ToolTraceEvaluator",
     "VectorRetriever",
+    "VideoPart",
     "bind_agent_tool_invocation",
     "begin_agent_cancellation",
     "complete_agent_cancellation",

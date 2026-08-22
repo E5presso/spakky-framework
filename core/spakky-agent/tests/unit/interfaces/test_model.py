@@ -1,13 +1,16 @@
 """Tests for agent model interface contracts."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import fields
-from typing import override
+from typing import cast, override
 
 import pytest
 
 from spakky.agent import (
+    AbstractAgentModelError,
     AgentDefinitionError,
+    AgentModelConfigurationError,
+    AudioPart,
     ContextDigest,
     ContextExposurePolicy,
     ContextFreshness,
@@ -17,9 +20,13 @@ from spakky.agent import (
     ContextPackRole,
     ContextSensitivity,
     ContextTokenBudget,
+    DocumentPart,
     EvidenceExposurePolicy,
     IAgentModel,
+    ImagePart,
+    JsonObject,
     JsonSchemaConstraint,
+    JsonValue,
     MaskingPolicy,
     ModelCapability,
     ModelError,
@@ -34,6 +41,7 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolChoice,
     ModelToolSpec,
+    ModelUsage,
     PII,
     RedactionPolicy,
     SamplingOptions,
@@ -42,7 +50,9 @@ from spakky.agent import (
     SensitiveFieldDescriptor,
     StreamingOptions,
     StructuredOutputSpec,
+    TextPart,
     ToolCallingSpec,
+    VideoPart,
 )
 
 
@@ -93,6 +103,12 @@ class FakeAgentModel(IAgentModel):
         return self._events()
 
 
+class FakeModelReceiptError(AbstractAgentModelError):
+    """Concrete core receipt error for boundary validation."""
+
+    message = "fake model receipt error"
+
+
 def test_model_request_expect_provider_neutral_structured_output_contract() -> None:
     """ModelRequest가 JSON schema 기반 structured output spec을 보존한다."""
     constraint = JsonSchemaConstraint(schema={"type": "object"})
@@ -111,7 +127,7 @@ def test_model_request_expect_provider_neutral_structured_output_contract() -> N
 
     assert request.messages[0].role == ModelMessageRole.USER
     assert request.structured_output is not None
-    assert request.structured_output.constraint is constraint
+    assert request.structured_output.constraint == constraint
     assert request.tool_calling is not None
     assert request.tool_calling.tools == (tool,)
     assert request.tool_calling.choice == ModelToolChoice.REQUIRED
@@ -119,6 +135,306 @@ def test_model_request_expect_provider_neutral_structured_output_contract() -> N
     assert request.sampling.max_tokens == 64
     assert request.streaming.include_usage is True
     assert request.streaming.include_progress is False
+
+
+def test_model_request_deep_snapshots_every_mutable_input_alias() -> None:
+    """Async adapters observe one request snapshot even if caller containers mutate."""
+    message_metadata: dict[str, JsonValue] = {"nested": {"value": "original"}}
+    message = ModelMessage.user("original", metadata=message_metadata)
+    messages = [message]
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": {"answer": {"enum": ["original"]}},
+    }
+    tool_metadata: dict[str, JsonValue] = {"owner": ["original"]}
+    tool = ModelToolSpec(
+        name="search",
+        parameters=JsonSchemaConstraint(schema=schema),
+        metadata=tool_metadata,
+    )
+    tools = [tool]
+    pack_metadata: dict[str, JsonValue] = {"scope": ["original"]}
+    pack = ContextPack(
+        id="pack-1",
+        content="context",
+        source="test",
+        role=ContextPackRole.EVIDENCE,
+        metadata=pack_metadata,
+    )
+    context = [pack]
+    entry_metadata: dict[str, JsonValue] = {"entry": ["original"]}
+    entries = [
+        ContextManifestEntry(
+            pack_id="pack-1",
+            source="test",
+            role=ContextPackRole.EVIDENCE,
+            origin_ref="origin-1",
+            metadata=entry_metadata,
+        )
+    ]
+    evidence_refs = ["evidence-1"]
+    manifest_metadata: dict[str, JsonValue] = {"manifest": ["original"]}
+    manifest = ContextManifest(
+        id="manifest-1",
+        entries=entries,
+        evidence_refs=evidence_refs,
+        metadata=manifest_metadata,
+    )
+    derived_pack_ids = ["pack-1"]
+    digest_metadata: dict[str, JsonValue] = {"digest": ["original"]}
+    digest = ContextDigest(
+        id="digest-1",
+        context_identity="ctx-1",
+        source_manifest_ref="manifest-1",
+        digest="sha256:one",
+        derived_from_pack_ids=derived_pack_ids,
+        metadata=digest_metadata,
+    )
+    request_metadata: dict[str, JsonValue] = {"request": ["original"]}
+    request = ModelRequest(
+        messages=messages,
+        context=context,
+        context_manifest=manifest,
+        context_digest=digest,
+        structured_output=StructuredOutputSpec(JsonSchemaConstraint(schema=schema)),
+        tool_calling=ToolCallingSpec(tools=tools),
+        metadata=request_metadata,
+    )
+    snapshot = request.snapshot()
+
+    messages[0] = ModelMessage.user("tampered")
+    cast(dict[str, JsonValue], message_metadata["nested"])["value"] = "tampered"
+    properties = cast(dict[str, JsonValue], schema["properties"])
+    answer = cast(dict[str, JsonValue], properties["answer"])
+    cast(list[str], answer["enum"])[0] = "tampered"
+    cast(list[str], tool_metadata["owner"])[0] = "tampered"
+    tools.clear()
+    cast(list[str], pack_metadata["scope"])[0] = "tampered"
+    context.clear()
+    cast(list[str], entry_metadata["entry"])[0] = "tampered"
+    entries.clear()
+    evidence_refs.clear()
+    cast(list[str], manifest_metadata["manifest"])[0] = "tampered"
+    derived_pack_ids.clear()
+    cast(list[str], digest_metadata["digest"])[0] = "tampered"
+    cast(list[str], request_metadata["request"])[0] = "tampered"
+
+    assert snapshot.messages[0].content == "original"
+    assert snapshot.messages[0].metadata["nested"] == {"value": "original"}
+    assert snapshot.tool_calling is not None
+    assert snapshot.tool_calling.tools[0].metadata["owner"] == ["original"]
+    assert snapshot.tool_calling.tools[0].parameters.schema["properties"] == {
+        "answer": {"enum": ["original"]}
+    }
+    assert snapshot.context[0].metadata["scope"] == ["original"]
+    assert snapshot.context_manifest is not None
+    assert snapshot.context_manifest.entries[0].metadata["entry"] == ["original"]
+    assert snapshot.context_manifest.evidence_refs == ("evidence-1",)
+    assert snapshot.context_manifest.metadata["manifest"] == ["original"]
+    assert snapshot.context_digest is not None
+    assert snapshot.context_digest.derived_from_pack_ids == ("pack-1",)
+    assert snapshot.context_digest.metadata["digest"] == ["original"]
+    assert snapshot.metadata["request"] == ["original"]
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: ToolCallingSpec(tools=cast(Sequence[ModelToolSpec], "bad")),
+        lambda: ToolCallingSpec(tools=cast(Sequence[ModelToolSpec], (object(),))),
+        lambda: ModelRequest(messages=cast(Sequence[ModelMessage], "bad")),
+        lambda: ModelRequest(messages=cast(Sequence[ModelMessage], (object(),))),
+        lambda: ModelRequest(messages=(), context=cast(Sequence[ContextPack], "bad")),
+        lambda: ModelRequest(
+            messages=(), context=cast(Sequence[ContextPack], (object(),))
+        ),
+        lambda: ModelRequest(
+            messages=(), context_manifest=cast(ContextManifest, object())
+        ),
+        lambda: ModelRequest(messages=(), context_digest=cast(ContextDigest, object())),
+        lambda: ModelRequest(
+            messages=(), structured_output=cast(StructuredOutputSpec, object())
+        ),
+        lambda: ModelRequest(messages=(), tool_calling=cast(ToolCallingSpec, object())),
+        lambda: ModelMessage.user("x", metadata=cast(JsonObject, {1: "x"})),
+        lambda: ModelMessage.user("x", metadata=cast(JsonObject, {"x": float("inf")})),
+        lambda: ModelMessage.user("x", metadata=cast(JsonObject, {"x": object()})),
+        lambda: ModelMessage.user("x", metadata=cast(JsonObject, [])),
+        lambda: ModelRequest(
+            messages=(),
+            context_manifest=ContextManifest(
+                id="m",
+                entries=cast(Sequence[ContextManifestEntry], "bad"),
+            ),
+        ),
+        lambda: ModelRequest(
+            messages=(),
+            context_manifest=ContextManifest(
+                id="m",
+                entries=cast(Sequence[ContextManifestEntry], (object(),)),
+            ),
+        ),
+        lambda: ModelRequest(
+            messages=(),
+            context_manifest=ContextManifest(
+                id="m",
+                entries=(),
+                evidence_refs=cast(Sequence[str], "bad"),
+            ),
+        ),
+        lambda: ModelRequest(
+            messages=(),
+            context_digest=ContextDigest(
+                id="d",
+                context_identity="c",
+                source_manifest_ref="m",
+                digest="sha256:d",
+                derived_from_pack_ids=cast(Sequence[str], "bad"),
+            ),
+        ),
+    ],
+)
+def test_model_request_snapshot_rejects_malformed_aliases(
+    factory: Callable[[], object],
+) -> None:
+    """Malformed mutable boundaries never survive into an adapter request."""
+    with pytest.raises(AgentDefinitionError):
+        factory()
+
+
+def test_model_request_snapshot_rejects_recursive_metadata() -> None:
+    """Recursive JSON aliases fail with the core's typed definition error."""
+    recursive: dict[str, JsonValue] = {}
+    recursive["self"] = recursive
+
+    with pytest.raises(AgentDefinitionError):
+        ModelMessage.user("x", metadata=recursive)
+
+
+def test_model_error_receipt_rejects_invalid_usage() -> None:
+    """Only the provider-neutral ModelUsage contract can become billable evidence."""
+    error = FakeModelReceiptError()
+
+    with pytest.raises(AgentDefinitionError):
+        error.attach_model_receipt(cast(ModelUsage, object()), {})
+
+
+@pytest.mark.parametrize("field", ["entries", "evidence_refs", "digest_refs"])
+def test_model_request_snapshot_revalidates_corrupted_context_objects(
+    field: str,
+) -> None:
+    """Object-level mutation cannot bypass deep request snapshot validation."""
+    manifest = ContextManifest(id="manifest", entries=())
+    digest = ContextDigest(
+        id="digest",
+        context_identity="context",
+        source_manifest_ref="manifest",
+        digest="sha256:digest",
+    )
+    if field == "entries":
+        object.__setattr__(manifest, "entries", "bad")
+    elif field == "evidence_refs":
+        object.__setattr__(manifest, "evidence_refs", "bad")
+    else:
+        object.__setattr__(digest, "derived_from_pack_ids", "bad")
+    with pytest.raises(AgentDefinitionError):
+        ModelRequest(
+            messages=(),
+            context_manifest=manifest,
+            context_digest=digest,
+        )
+
+
+def test_model_message_user_expect_preserves_plain_text_convenience() -> None:
+    """Canonical plain strings remain the shortest intentional message DX."""
+    message = ModelMessage.user("텍스트만", metadata={"source": "caller"})
+
+    assert message == ModelMessage(
+        role=ModelMessageRole.USER,
+        content="텍스트만",
+        metadata={"source": "caller"},
+    )
+
+
+def test_model_request_multimodal_content_expect_derives_input_modalities() -> None:
+    """Provider preflight can derive every actual request modality without SDK calls."""
+    request = ModelRequest(
+        messages=(
+            ModelMessage(
+                role=ModelMessageRole.USER,
+                content=(
+                    TextPart("explain"),
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                    AudioPart.from_bytes(b"audio", media_type="audio/mpeg"),
+                    VideoPart.from_bytes(b"video", media_type="video/mp4"),
+                    DocumentPart.from_bytes(
+                        b"document",
+                        media_type="application/pdf",
+                        filename="report.pdf",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert request.required_input_modalities() == frozenset(ModelModality)
+
+
+def test_model_request_enforces_media_budget_across_message_history() -> None:
+    """Many individually valid messages cannot exceed one provider-bound media cap."""
+    messages = tuple(
+        ModelMessage.user(
+            (
+                ImagePart.from_uri(
+                    f"https://assets.example.test/{index}.png",
+                    media_type="image/png",
+                ),
+            )
+        )
+        for index in range(17)
+    )
+
+    with pytest.raises(AgentDefinitionError, match="too many"):
+        ModelRequest(messages=messages)
+
+
+def test_model_message_invalid_role_expect_definition_error() -> None:
+    """A runtime caller cannot inject a role outside the portable enum."""
+    with pytest.raises(AgentDefinitionError):
+        ModelMessage(role=cast(ModelMessageRole, "user"), content="text")
+
+
+def test_agent_model_validate_request_expect_input_capability_preflight() -> None:
+    """Fixed models reject missing input modalities before their SDK boundary."""
+    image_request = ModelRequest(
+        messages=(
+            ModelMessage.user(
+                (
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                )
+            ),
+        )
+    )
+    capable = FakeAgentModel(
+        ModelCapability(input_modalities=frozenset({ModelModality.IMAGE}))
+    )
+
+    capable.validate_request(image_request)
+    FakeAgentModel().validate_request(
+        ModelRequest(messages=(ModelMessage.user("text"),))
+    )
+    with pytest.raises(AgentModelConfigurationError):
+        FakeAgentModel().validate_request(image_request)
+    with pytest.raises(AgentDefinitionError):
+        capable.validate_request(cast(ModelRequest, object()))
+    with pytest.raises(AgentModelConfigurationError):
+        FakeAgentModel(cast(ModelCapability, object())).validate_request(image_request)
 
 
 def test_model_request_expect_carries_run_model_selection() -> None:
@@ -213,8 +529,8 @@ def test_model_request_expect_assembles_typed_context_packs_as_messages() -> Non
             },
         ),
     )
-    assert request.context_manifest is manifest
-    assert request.context_digest is digest
+    assert request.context_manifest == manifest
+    assert request.context_digest == digest
 
 
 def test_model_request_expect_guards_sensitive_context_before_assembly() -> None:
@@ -249,6 +565,7 @@ def test_model_request_expect_guards_sensitive_context_before_assembly() -> None
     )
 
     assert assembled[1].content == "[SECRET]"
+    assert isinstance(assembled[2].content, str)
     assert assembled[2].content.startswith("[HASHED:email:")
     assert "owner@example.com" not in assembled[2].content
     assert "sensitive_fields" not in assembled[1].metadata

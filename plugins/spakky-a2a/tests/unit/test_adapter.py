@@ -15,6 +15,14 @@ from a2a.types import (
 )
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
+from spakky.agent import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
+    MediaSafetyLimits,
+    VideoPart,
+)
+from spakky.plugins.a2a.executor import adapter as adapter_module
 from spakky.agent.execution import (
     Agent,
     AgentExecutionSpec,
@@ -107,6 +115,170 @@ def test_inbound_approval_absent_without_message() -> None:
     )
 
     assert executor._inbound_approval(context) is None
+
+
+def test_a2a_multimodal_parts_map_to_core_attachments() -> None:
+    """A2A raw and URL media preserve MIME, bytes, URI, and message provenance."""
+    executor, _ = _durable_executor()
+    context = _context(
+        [
+            Part(text="inspect"),
+            Part(raw=b"image", media_type="image/png"),
+            Part(raw=b"audio", media_type="audio/mpeg"),
+            Part(url="https://assets.example.test/video.mp4", media_type="video/mp4"),
+            Part(
+                raw=b"pdf",
+                media_type="application/pdf",
+                filename="inline.pdf",
+            ),
+            Part(
+                url="https://assets.example.test/report.pdf",
+                media_type="application/pdf",
+                filename="report.pdf",
+            ),
+            _data_part({"metadata": {"tenant": "acme"}}),
+        ]
+    )
+
+    attachments = executor._attachments(context)
+
+    assert attachments == (
+        ImagePart.from_bytes(
+            b"image",
+            media_type="image/png",
+            source="a2a:m1",
+        ),
+        AudioPart.from_bytes(
+            b"audio",
+            media_type="audio/mpeg",
+            source="a2a:m1",
+        ),
+        VideoPart.from_uri(
+            "https://assets.example.test/video.mp4",
+            media_type="video/mp4",
+            source="a2a:m1",
+        ),
+        DocumentPart.from_bytes(
+            b"pdf",
+            media_type="application/pdf",
+            filename="inline.pdf",
+            source="a2a:m1",
+        ),
+        DocumentPart.from_uri(
+            "https://assets.example.test/report.pdf",
+            media_type="application/pdf",
+            filename="report.pdf",
+            source="a2a:m1",
+        ),
+    )
+
+
+def test_a2a_attachments_without_message_expect_empty() -> None:
+    """A request context without a message carries no invented media."""
+    executor, _ = _durable_executor()
+    context = RequestContext(
+        call_context=ServerCallContext(),
+        task_id="t1",
+        context_id="c1",
+    )
+
+    assert executor._attachments(context) == ()
+
+
+def test_a2a_attachments_enforce_aggregate_media_budget() -> None:
+    """Many individually valid raw parts cannot bypass the core message limit."""
+    executor, _ = _durable_executor()
+    parts = [Part(raw=b"x", media_type="image/png") for _ in range(17)]
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._attachments(_context(parts))
+
+
+def test_a2a_attachment_count_stops_before_seventeenth_uri_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The count gate rejects a URL flood before constructing its excess part."""
+    constructions: list[str] = []
+    original = ImagePart.from_uri
+
+    def construct(
+        cls: type[ImagePart],
+        uri: str,
+        *,
+        media_type: str,
+        source: str | None = None,
+    ) -> ImagePart:
+        _ = cls
+        constructions.append(uri)
+        return original(uri, media_type=media_type, source=source)
+
+    monkeypatch.setattr(ImagePart, "from_uri", classmethod(construct))
+    executor, _ = _durable_executor()
+    parts = [
+        Part(
+            url=f"https://assets.example.test/{index}.png",
+            media_type="image/png",
+        )
+        for index in range(17)
+    ]
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._attachments(_context(parts))
+
+    assert len(constructions) == 16
+
+
+def test_a2a_attachments_reject_total_inline_bytes_before_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Aggregate raw bytes are bounded before allocating a core media part."""
+    monkeypatch.setattr(
+        adapter_module,
+        "DEFAULT_MEDIA_SAFETY_LIMITS",
+        MediaSafetyLimits(max_inline_bytes=3),
+    )
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._attachments(_context([Part(raw=b"four", media_type="image/png")]))
+
+
+def test_a2a_unknown_protobuf_content_kind_expect_typed_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A future unrecognized Part oneof fails instead of disappearing."""
+    executor, _ = _durable_executor()
+    monkeypatch.setattr(Part, "WhichOneof", lambda self, name: "future")
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._attachments(_context([Part(raw=b"image", media_type="image/png")]))
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        Part(raw=b"body", media_type=""),
+        Part(raw=b"", media_type="image/png"),
+        Part(url="file:///tmp/private", media_type="image/png"),
+        Part(raw=b"body", media_type="chemical/x-test"),
+    ],
+)
+def test_a2a_multimodal_parts_reject_invalid_sources(part: Part) -> None:
+    """Missing MIME, empty bytes, local URI, and unknown families fail closed."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._attachments(_context([Part(text="inspect"), part]))
+
+
+def test_a2a_instruction_requires_text_except_approval_resume() -> None:
+    """Media-only requests do not receive an invented prompt."""
+    executor, _ = _durable_executor()
+    context = _context([Part(raw=b"image", media_type="image/png")])
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._instruction(context)
+    assert executor._instruction(context, resume=True) == "resume"
 
 
 def test_inbound_approval_absent_without_data_part() -> None:
@@ -305,6 +477,25 @@ def test_append_approval_signal_without_repository_raises() -> None:
 
     with pytest.raises(InvalidApprovalDecisionError):
         executor._append_approval_signal("t1", approval)
+
+
+async def test_invalid_approval_request_has_no_signal_or_task_side_effect(
+    queue: RecordingEventQueue,
+) -> None:
+    """Full inbound validation precedes approval authority and task transitions."""
+    executor, signals = _durable_executor()
+    context = _context(
+        [
+            _data_part({"approval_id": "a1", "decision": "approve"}),
+            Part(raw=b"invalid", media_type="chemical/x-test"),
+        ]
+    )
+
+    with pytest.raises(A2ARunResolutionError):
+        await executor.execute(context, queue)
+
+    assert signals.appended() == ()
+    assert queue.events == []
 
 
 async def test_cancel_without_repository_publishes_canceled(

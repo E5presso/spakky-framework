@@ -1,8 +1,18 @@
 """Tests for the RunAgentInput inbound run contract."""
 
+from typing import cast
+
 import pytest
 
-from spakky.agent import ModelMessage, ModelMessageRole, ModelSelection, RunAgentInput
+from spakky.agent import (
+    ImagePart,
+    MediaSafetyLimits,
+    ModelMessage,
+    ModelMessageRole,
+    ModelSelection,
+    RunAgentInput,
+    TextPart,
+)
 from spakky.agent.error import AgentDefinitionError
 
 
@@ -72,6 +82,65 @@ def test_run_agent_input_expect_defaults_message_history_empty() -> None:
     run_input = RunAgentInput(state_id="run-1", instruction="do it")
 
     assert run_input.message_history == ()
+
+
+def test_run_agent_input_preserves_pre_multimodal_positional_order() -> None:
+    """Appending attachments does not reinterpret the legacy sixth positional field."""
+    history = (ModelMessage.user("prior"),)
+
+    run_input = RunAgentInput("run-1", "do it", None, None, False, history)
+
+    assert run_input.message_history == history
+    assert run_input.attachments == ()
+
+
+def test_run_agent_input_builds_text_only_or_attached_user_message() -> None:
+    """The text shortcut stays simple while attachments become ordered content."""
+    plain = RunAgentInput(state_id="plain", instruction="describe")
+    image = ImagePart.from_bytes(b"image", media_type="image/png")
+    attached = RunAgentInput(
+        state_id="attached",
+        instruction="describe",
+        attachments=(image,),
+    )
+
+    assert plain.user_message() == ModelMessage.user("describe")
+    assert attached.user_message() == ModelMessage.user((TextPart("describe"), image))
+
+
+@pytest.mark.parametrize(
+    "attachments",
+    [
+        cast(
+            tuple[ImagePart, ...], [ImagePart.from_bytes(b"x", media_type="image/png")]
+        ),
+        cast(tuple[ImagePart, ...], (TextPart("not media"),)),
+    ],
+)
+def test_run_agent_input_rejects_mutable_or_non_media_attachments(
+    attachments: tuple[ImagePart, ...],
+) -> None:
+    """Inbound attachments are an immutable media-only boundary."""
+    with pytest.raises(AgentDefinitionError):
+        RunAgentInput(
+            state_id="invalid-attachments",
+            instruction="describe",
+            attachments=attachments,
+        )
+
+
+def test_run_agent_input_rejects_aggregate_attachment_budget() -> None:
+    """The inbound boundary rejects an oversized attachment set immediately."""
+    limits = MediaSafetyLimits(max_inline_bytes=3, max_media_parts=1)
+    first = ImagePart.from_bytes(b"ab", media_type="image/png", limits=limits)
+    second = ImagePart.from_bytes(b"c", media_type="image/png", limits=limits)
+
+    with pytest.raises(AgentDefinitionError, match="too many"):
+        RunAgentInput(
+            state_id="too-many",
+            instruction="describe",
+            attachments=(first, second),
+        )
 
 
 def test_run_agent_input_expect_client_injected_history_carried() -> None:

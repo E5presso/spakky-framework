@@ -255,6 +255,10 @@ Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE` batch를 내보내�
 7. 전체 batch가 끝나면 assistant tool-call turn과 모든 `TOOL` result를 담은 다음
    `ModelRequest`를 실행합니다.
 
+`seen_call_ids` 예약과 model의 assistant text/tool-call history 반영은 candidate batch 전체
+검증과 tool-limit 검사가 성공한 뒤에만 일어납니다. 따라서 mixed-invalid batch나 limit
+초과가 부분 상태를 남기지 않습니다.
+
 Provider stream이 fine-grained `TOOL_CALL_START`/`TOOL_CALL_END` 없이 terminal
 `TOOL_CALL_CANDIDATE`만 내는 경우, `run_events()`는 candidate correlation ID를 기준으로
 빠진 `ToolCallStartEvent`와 `ToolCallEndEvent`를 합성합니다. Provider가 이미 한쪽 또는
@@ -323,9 +327,30 @@ incomplete non-idempotent tool boundary는 자동 재실행하지 않고
 `RECOVERY_REQUIRES_HITL`로 pause합니다. 이미 승인된 call도 ID와 argument가 같은 pending
 retry에만 approval을 재사용합니다.
 
-Checkpoint root/history/counter/call metadata가 malformed이거나 restored pending batch가
-현재 catalog/signature로 다시 검증되지 않으면 input부터 조용히 재시작하지 않고
-`agent_checkpoint_invalid`로 failed terminal을 만듭니다.
+Raw `runner_checkpoint`를 저장할 때마다 runner는 별도 append-only `CHECKPOINT` evidence
+revision을 추가합니다. 이 receipt는 revision, step, history length, JSON shape size와
+checkpoint SHA-256 fingerprint만 담습니다. Resume은 repository 반환 순서가 아니라 가장
+큰 revision을 정본으로 선택하고, older matching revision replay와 missing/duplicate revision을
+거부합니다.
+
+Checkpoint shape/fingerprint는 history의 inline media base64를 decode하거나 URI를 다시
+구성하기 **전에** 검증됩니다. 그 뒤 initial history length와 content/media safety limit까지
+포함한 input fingerprint를 completed `MODEL` evidence 전부와 대조합니다. 따라서 checkpoint가
+더 큰 byte/part limit을 스스로 부여하거나 URI/body를 바꾸거나 evidence coverage를 빼도
+provider/DNS 단계 전에 `agent_checkpoint_invalid`입니다. Restored pending batch도 현재
+catalog/signature로 다시 검증합니다.
+
+Checkpoint는 원 실행의 `conversation_id`, `user_turn`, 그리고 server-side transcript를
+append할지 나타내는 `persist_session_turn`도 같은 fingerprint에 결속합니다. Resume 호출에
+`instruction="resume"` 같은 protocol marker가 들어와도 성공 또는 실패 뒤 `ITaskStore`에
+저장되는 사용자 turn은 marker가 아니라 원 질문입니다. Resume의 conversation이 달라지거나
+checkpoint에서 이 필드를 바꾸면 pending action 전에 fail closed합니다.
+
+Inline media bytes는 raw state checkpoint에 base64로 들어가므로 repository 접근과 retention은
+애플리케이션 책임입니다. CHECKPOINT evidence에는 body가 들어가지 않습니다. Compaction이
+multimodal history를 요약할 때도 raw bytes를 secondary model prompt에 복사하지 않고 text와
+`[media attachments: N]` marker만 사용합니다. Existing token/cost counter와 pricing evidence
+검증은 같은 resume 경계에서 유지됩니다.
 
 Signal은 실행 중 Agent에게 들어오는 외부 입력입니다.
 
@@ -479,14 +504,16 @@ spec = AgentExecutionSpec(
 | --- | --- | --- |
 | `max_steps` | 다음 `ModelRequest`를 보내기 직전 | `agent_max_steps_exceeded` |
 | `max_tool_calls` | 검증된 candidate batch 전체를 dispatch하기 직전 | `agent_max_tool_calls_exceeded` |
-| `max_tokens` | 각 model step의 terminal provider usage를 누적한 직후 | `agent_max_tokens_exceeded` |
-| `max_cost` | operator pricing으로 step cost를 누적한 직후 | `agent_max_cost_exceeded` |
+| `max_tokens` | terminal usage 누적 직후와 다음 model request preflight | `agent_max_tokens_exceeded` |
+| `max_cost` | terminal step cost 누적 직후와 다음 model request preflight | `agent_max_cost_exceeded` |
 | `timeout_seconds` | model과 async tool await를 감싸는 invocation wall-clock deadline | `agent_timeout` |
 
 Token budget은 prompt 길이 추정치가 아니라 provider가 보고한 `ModelUsage.total_tokens`를
 step마다 누적합니다. `max_tokens`를 설정했는데 어떤 terminal step에서도 total usage를
 받지 못하면 안전하게 계속할 수 없으므로 `agent_usage_unavailable`로 종료합니다. Token
-budget과 batch tool limit은 해당 step의 tool dispatch보다 먼저 적용됩니다.
+budget과 batch tool limit은 해당 step의 tool dispatch보다 먼저 적용됩니다. Restored
+`total_tokens >= max_tokens`와 `total_cost >= max_cost`는 다음 model request preflight에서
+이미 소진된 budget으로 거부됩니다.
 
 Cost budget은 `ModelPricingCatalog`가 주입된 경우에만 집행할 수 있습니다. `max_cost`만
 선언하고 pricing이 없거나 logical model ref/rate/input-output usage가 불완전하면

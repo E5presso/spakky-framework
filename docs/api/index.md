@@ -14,7 +14,7 @@
 - [spakky-data](core/spakky-data.md) — Repository, Transaction 추상화
 - [spakky-event](core/spakky-event.md) — 인프로세스 이벤트
 - [spakky-task](core/spakky-task.md) — 태스크 추상화
-- [spakky-agent](core/spakky-agent.md) — runner, typed output/context, retrieval/memory, evaluation, pricing/telemetry 계약
+- [spakky-agent](core/spakky-agent.md) — runner, multimodal content/checkpoint, retrieval/memory, evaluation, pricing/telemetry 계약
 - [spakky-tracing](core/spakky-tracing.md) — 분산 트레이싱 추상화
 - [spakky-outbox](core/spakky-outbox.md) — Outbox 패턴
 - [spakky-saga](core/spakky-saga.md) — 사가 오케스트레이션
@@ -37,7 +37,7 @@
 - [spakky-opentelemetry](plugins/spakky-opentelemetry.md) — TraceContext propagation과 privacy-safe Agent span 브릿지
 - [spakky-grpc](plugins/spakky-grpc.md) — gRPC 통합
 - [spakky-redis](plugins/spakky-redis.md) — Redis 캐시 백엔드
-- [spakky-llm](plugins/spakky-llm.md) — logical model routing, cache-aware usage, OpenAI/Anthropic/Google/vLLM과 Google embedding
-- [spakky-agui](plugins/spakky-agui.md) — AG-UI SSE/HTTP streaming/WebSocket/stdio 어댑터
-- [spakky-a2a](plugins/spakky-a2a.md) — A2A AgentCard, task, delegation 어댑터
+- [spakky-llm](plugins/spakky-llm.md) — logical routing, fallback/resilience/cache/media safety, provider/platform ports와 Google embedding
+- [spakky-agui](plugins/spakky-agui.md) — AG-UI multimodal inbound와 SSE/HTTP/WebSocket/stdio 어댑터
+- [spakky-a2a](plugins/spakky-a2a.md) — A2A multimodal inbound, AgentCard, task, delegation 어댑터
 - [spakky-mcp](plugins/spakky-mcp.md) — 외부 MCP 서버 도구를 Agent run에 lazy search/call 도구로 연결하는 어댑터

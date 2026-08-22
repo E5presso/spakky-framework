@@ -158,6 +158,39 @@ A2A inbound data part를 core `AgentContext`로 자동 승격하는 wire 계약�
 Protocol-exposed Agent의 typed dynamic context는 constructor-injected
 `IAgentContextProvider`를 사용합니다.
 
+## Multimodal inbound message
+
+A2A text와 raw/URL media parts는 한 message에서 함께 보낼 수 있습니다. Python SDK에서의
+최소 shape는 다음과 같습니다.
+
+```python
+from a2a.types import Part
+
+
+parts = (
+    Part(text="차트와 보고서를 비교해 주세요."),
+    Part(
+        url="https://cdn.example.com/chart.png",
+        media_type="image/png",
+    ),
+    Part(
+        raw=b"%PDF-1.4",
+        media_type="application/pdf",
+        filename="report.pdf",
+    ),
+)
+```
+
+Executor는 text를 instruction으로, raw/URL part를 ordered
+`RunAgentInput.attachments`로 매핑합니다. Data part는 model selection/metadata/MCP/approval
+용도이며 attachment로 해석하지 않습니다. 일반 run에는 nonblank text가 필요하고
+approval-only resume만 `"resume"` marker를 사용합니다.
+
+MIME family가 image/audio/video/application-or-text 중 하나여야 하며 empty raw bytes, local
+URI, unknown part, media 16개 초과와 inline 합계 20 MiB 초과는
+`A2ARunResolutionError`입니다. Document filename과 message-ID provenance는 보존됩니다.
+Generated non-text output의 공통 A2A artifact contract는 아직 없습니다.
+
 승인 재개는 inbound A2A data part에 `approval_id`와 `decision`을 담아 보냅니다. executor는 이를 `APPROVAL_DECISION` signal로 append하고 `RunAgentInput(resume=True)`로 runner를 재개합니다.
 현재 A2A ingress는 `modified_payload`를 signal로 전달하지 않으므로 argument-bearing
 `MODIFY`는 지원하지 않습니다. A2A client는 `APPROVE`, `REJECT`, `DEFER`, `CANCEL`을

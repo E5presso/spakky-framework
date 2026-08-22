@@ -1,10 +1,12 @@
 """Anthropic Messages adapter backed by the official async Python SDK."""
 
+from base64 import b64encode
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from json import JSONDecodeError, dumps
+from math import isfinite
 from os import environ
-from typing import override
+from typing import Literal, override
 
 from anthropic import (
     APIConnectionError,
@@ -17,6 +19,9 @@ from anthropic import (
     omit,
 )
 from anthropic.types import (
+    Base64ImageSourceParam,
+    DocumentBlockParam,
+    ImageBlockParam,
     JSONOutputFormatParam,
     Message,
     MessageParam,
@@ -33,6 +38,9 @@ from anthropic.types import (
     Usage,
 )
 from spakky.agent import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
     JsonSchemaConstraint,
     JsonValue,
     ModelMessage,
@@ -44,6 +52,13 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolChoice,
     ModelUsage,
+    TextPart,
+    VideoPart,
+)
+from spakky.agent.content import (
+    ModelContentPart,
+    model_content_parts,
+    model_content_text,
 )
 from spakky.core.pod.annotations.pod import Pod
 
@@ -58,9 +73,11 @@ from spakky.plugins.llm.error import (
     LlmConfigurationError,
     LlmModelRefusalError,
     LlmProviderUnavailableError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmTimeoutError,
     LlmTransportError,
+    LlmUnsupportedFeatureError,
 )
 from spakky.plugins.llm.provider import (
     ILLMProvider,
@@ -72,6 +89,14 @@ from spakky.plugins.llm.provider import (
 )
 
 type _AnthropicHistoryBlock = TextBlockParam | ToolUseBlockParam | ToolResultBlockParam
+type _AnthropicInputBlock = TextBlockParam | ImageBlockParam | DocumentBlockParam
+type _AnthropicImageMime = Literal["image/gif", "image/jpeg", "image/png", "image/webp"]
+_ANTHROPIC_IMAGE_MIME_TYPES: dict[str, _AnthropicImageMime] = {
+    "image/gif": "image/gif",
+    "image/jpeg": "image/jpeg",
+    "image/png": "image/png",
+    "image/webp": "image/webp",
+}
 _SUCCESS_STOP_REASONS = frozenset(
     {
         "end_turn",
@@ -119,6 +144,7 @@ class AnthropicMessagesProvider(ILLMProvider):
         request: ModelRequest,
     ) -> ModelResponse:
         """Return one provider-neutral completion through ``AsyncAnthropic``."""
+        self._ensure_supported_request(target, request)
         messages, system = self._history(request)
         constraints = self.__codec.tool_constraints(request.tool_calling)
         try:
@@ -196,6 +222,7 @@ class AnthropicMessagesProvider(ILLMProvider):
         target: LlmModelTarget,
         request: ModelRequest,
     ) -> AsyncIterator[ModelStreamEvent]:
+        self._ensure_supported_request(target, request)
         finish_reason: str | None = None
         usage: ModelUsage | None = None
         completed_tool_count = 0
@@ -370,10 +397,12 @@ class AnthropicMessagesProvider(ILLMProvider):
         system: list[TextBlockParam] = []
         for message in request.assemble_messages():
             if message.role is ModelMessageRole.SYSTEM:
-                system.append({"type": "text", "text": message.content})
+                system.append({"type": "text", "text": self._non_media_text(message)})
                 continue
             if message.role in (ModelMessageRole.USER, ModelMessageRole.EVIDENCE):
-                messages.append({"role": "user", "content": message.content})
+                messages.append(
+                    {"role": "user", "content": self._user_content(message)}
+                )
                 continue
             if message.role is ModelMessageRole.ASSISTANT:
                 messages.append(self._assistant_message(message))
@@ -381,15 +410,99 @@ class AnthropicMessagesProvider(ILLMProvider):
             messages.append(self._tool_result_message(message))
         return tuple(messages), tuple(system) if len(system) > 0 else omit
 
+    def _ensure_supported_request(
+        self,
+        target: LlmModelTarget,
+        request: ModelRequest,
+    ) -> None:
+        required = request.required_input_modalities()
+        if not required <= target.route.capability.input_modalities:
+            raise LlmUnsupportedFeatureError
+
+    def _user_content(
+        self, message: ModelMessage
+    ) -> str | tuple[_AnthropicInputBlock, ...]:
+        if isinstance(message.content, str):
+            return message.content
+        return tuple(
+            self._content_block(part) for part in model_content_parts(message.content)
+        )
+
+    def _non_media_text(self, message: ModelMessage) -> str:
+        if not isinstance(message.content, str) and any(
+            not isinstance(part, TextPart)
+            for part in model_content_parts(message.content)
+        ):
+            raise LlmUnsupportedFeatureError
+        return model_content_text(message.content)
+
+    def _content_block(self, part: ModelContentPart) -> _AnthropicInputBlock:
+        if isinstance(part, TextPart):
+            return {"type": "text", "text": part.text}
+        if isinstance(part, ImagePart):
+            media_type = _ANTHROPIC_IMAGE_MIME_TYPES.get(part.media_type)
+            if media_type is None:
+                raise LlmUnsupportedFeatureError
+            if part.uri is not None:
+                return {"type": "image", "source": {"type": "url", "url": part.uri}}
+            if part.data is None:
+                raise LlmResponseError
+            source: Base64ImageSourceParam = {
+                "type": "base64",
+                "media_type": media_type,
+                "data": b64encode(part.data).decode("ascii"),
+            }
+            return {
+                "type": "image",
+                "source": source,
+            }
+        if isinstance(part, DocumentPart):
+            if part.uri is not None:
+                if part.media_type != "application/pdf":
+                    raise LlmUnsupportedFeatureError
+                return {
+                    "type": "document",
+                    "source": {"type": "url", "url": part.uri},
+                }
+            if part.data is None:
+                raise LlmResponseError
+            if part.media_type == "application/pdf":
+                return {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": b64encode(part.data).decode("ascii"),
+                    },
+                }
+            if part.media_type != "text/plain":
+                raise LlmUnsupportedFeatureError
+            try:
+                text = part.data.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise LlmResponseError from error
+            return {
+                "type": "document",
+                "source": {
+                    "type": "text",
+                    "media_type": "text/plain",
+                    "data": text,
+                },
+            }
+        if isinstance(part, AudioPart | VideoPart):
+            raise LlmUnsupportedFeatureError
+        raise LlmResponseError
+
     def _assistant_message(self, message: ModelMessage) -> MessageParam:
+        text = self._non_media_text(message)
         raw_tool_calls = message.metadata.get("tool_calls")
         if raw_tool_calls is None:
-            return {"role": "assistant", "content": message.content}
+            return {"role": "assistant", "content": text}
         if not isinstance(raw_tool_calls, Sequence) or isinstance(raw_tool_calls, str):
             raise LlmResponseError
         blocks: list[_AnthropicHistoryBlock] = []
-        if message.content != "":
-            blocks.append({"type": "text", "text": message.content})
+        if text != "":
+            blocks.append({"type": "text", "text": text})
         for raw_tool_call in raw_tool_calls:
             if not isinstance(raw_tool_call, Mapping):
                 raise LlmResponseError
@@ -408,7 +521,7 @@ class AnthropicMessagesProvider(ILLMProvider):
             )
         return {
             "role": "assistant",
-            "content": blocks if len(blocks) > 0 else message.content,
+            "content": blocks if len(blocks) > 0 else text,
         }
 
     def _tool_result_message(self, message: ModelMessage) -> MessageParam:
@@ -417,7 +530,7 @@ class AnthropicMessagesProvider(ILLMProvider):
         result: ToolResultBlockParam = {
             "type": "tool_result",
             "tool_use_id": call_id,
-            "content": message.content,
+            "content": self._non_media_text(message),
         }
         return {"role": "user", "content": (result,)}
 
@@ -616,10 +729,27 @@ class AnthropicMessagesProvider(ILLMProvider):
         if isinstance(error, APIStatusError):
             if error.status_code in (408, 504):
                 return LlmTimeoutError()
-            if error.status_code == 429 or error.status_code >= 500:
+            if error.status_code == 429:
+                return LlmRateLimitError(
+                    retry_after_seconds=self._retry_after_seconds(
+                        error.response.headers.get("retry-after")
+                    )
+                )
+            if error.status_code >= 500:
                 return LlmTransportError()
             return LlmResponseError()
         return LlmResponseError()
+
+    def _retry_after_seconds(self, value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            seconds = float(value)
+        except ValueError:
+            return None
+        if not isfinite(seconds) or seconds < 0:
+            return None
+        return seconds
 
     def _metadata(self, target: LlmModelTarget) -> dict[str, JsonValue]:
         return dict(routing_metadata(target))

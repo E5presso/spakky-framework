@@ -25,6 +25,7 @@ from spakky.plugins.llm.error import (
     AbstractLlmError,
     LlmConfigurationError,
     LlmResponseError,
+    LlmRateLimitError,
     LlmTimeoutError,
     LlmTransportError,
 )
@@ -304,7 +305,7 @@ async def test_google_embedding_rejects_invalid_request_contracts(
 @pytest.mark.parametrize(
     ("provider_error", "expected_error"),
     [
-        (errors.ClientError(429, {"message": "rate limited"}), LlmTransportError),
+        (errors.ClientError(429, {"message": "rate limited"}), LlmRateLimitError),
         (TypeError("malformed"), LlmResponseError),
         (httpx.InvalidURL("invalid"), LlmConfigurationError),
         (httpx.ReadTimeout("slow"), LlmTimeoutError),
@@ -327,10 +328,12 @@ async def test_google_embedding_normalizes_sdk_failures(
             "_client",
             return_value=client,
         ),
-        pytest.raises(expected_error),
+        pytest.raises(expected_error) as raised,
     ):
         await embedding.embed(("query",), EmbeddingPurpose.QUERY)
     assert client.closed
+    if expected_error is LlmRateLimitError:
+        assert raised.value.retry_after_seconds is None
 
 
 @pytest.mark.parametrize(

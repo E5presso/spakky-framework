@@ -22,6 +22,9 @@ from anthropic.lib.streaming import MessageStreamEvent
 from anthropic.types import Message, StopReason
 from pydantic import SecretStr, TypeAdapter
 from spakky.agent import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
     JsonObject,
     JsonSchemaConstraint,
     KeepRecentMessagesCompactionStrategy,
@@ -29,6 +32,7 @@ from spakky.agent import (
     ModelMessageRole,
     ModelCapability,
     ModelRequest,
+    ModelModality,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolCall,
@@ -38,7 +42,9 @@ from spakky.agent import (
     SamplingOptions,
     StreamingOptions,
     StructuredOutputSpec,
+    TextPart,
     ToolCallingSpec,
+    VideoPart,
 )
 
 from spakky.plugins.llm.config import LlmModelRoute, LlmProfile, LlmProviderApi
@@ -47,13 +53,16 @@ from spakky.plugins.llm.error import (
     LlmConfigurationError,
     LlmModelRefusalError,
     LlmProviderUnavailableError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmTimeoutError,
     LlmTransportError,
+    LlmUnsupportedFeatureError,
 )
 from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers import anthropic as provider_module
 from spakky.plugins.llm.providers.anthropic import AnthropicMessagesProvider
+from spakky.agent.content import ModelContentPart
 
 
 async def test_compacted_tool_group_maps_to_complete_anthropic_native_history() -> None:
@@ -154,6 +163,7 @@ def _target(
     api: LlmProviderApi = LlmProviderApi.ANTHROPIC_MESSAGES,
     supports_reasoning: bool = False,
     base_url: str | None = "https://anthropic.example",
+    input_modalities: frozenset[ModelModality] = frozenset({ModelModality.TEXT}),
 ) -> LlmModelTarget:
     profile = (
         LlmProfile(
@@ -185,7 +195,10 @@ def _target(
         route=LlmModelRoute(
             profile="anthropic",
             model="claude-selected",
-            capability=ModelCapability(supports_reasoning=supports_reasoning),
+            capability=ModelCapability(
+                supports_reasoning=supports_reasoning,
+                input_modalities=input_modalities,
+            ),
         ),
     )
 
@@ -230,6 +243,232 @@ def _message(
 
 def _event(value: JsonObject) -> MessageStreamEvent:
     return _STREAM_EVENT_ADAPTER.validate_python(value)
+
+
+def test_anthropic_multimodal_history_expect_exact_native_content_blocks() -> None:
+    """Installed Messages types receive exact image/document URI/bytes blocks."""
+    request = ModelRequest(
+        messages=(
+            ModelMessage.user(
+                (
+                    TextPart("inspect"),
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                    ImagePart.from_bytes(b"image", media_type="image/png"),
+                    DocumentPart.from_uri(
+                        "https://assets.example.test/report.pdf",
+                        media_type="application/pdf",
+                        filename="report.pdf",
+                    ),
+                    DocumentPart.from_bytes(
+                        b"pdf",
+                        media_type="application/pdf",
+                        filename="inline.pdf",
+                    ),
+                    DocumentPart.from_bytes(
+                        "plain text".encode(),
+                        media_type="text/plain",
+                        filename="notes.txt",
+                    ),
+                )
+            ),
+        )
+    )
+
+    messages, system = AnthropicMessagesProvider()._history(request)
+
+    assert system is omit
+    assert messages == (
+        {
+            "role": "user",
+            "content": (
+                {"type": "text", "text": "inspect"},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "url",
+                        "url": "https://assets.example.test/chart.png",
+                    },
+                },
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": "aW1hZ2U=",
+                    },
+                },
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "url",
+                        "url": "https://assets.example.test/report.pdf",
+                    },
+                },
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "application/pdf",
+                        "data": "cGRm",
+                    },
+                },
+                {
+                    "type": "document",
+                    "source": {
+                        "type": "text",
+                        "media_type": "text/plain",
+                        "data": "plain text",
+                    },
+                },
+            ),
+        },
+    )
+
+
+@pytest.mark.parametrize("operation", ["complete", "stream"])
+async def test_anthropic_capability_mismatch_expect_no_sdk_call(operation: str) -> None:
+    """Route input capability mismatch prevents all Anthropic client creation."""
+    request = ModelRequest(
+        messages=(
+            ModelMessage.user(
+                (
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                )
+            ),
+        )
+    )
+    constructor = MagicMock()
+    provider = AnthropicMessagesProvider()
+
+    with (
+        patch.object(provider_module, "AsyncAnthropic", constructor),
+        pytest.raises(LlmUnsupportedFeatureError),
+    ):
+        if operation == "complete":
+            await provider.complete(_target(), request)
+        else:
+            _ = [event async for event in provider.stream(_target(), request)]
+
+    constructor.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("part", "error_type"),
+    [
+        (
+            AudioPart.from_bytes(b"audio", media_type="audio/mpeg"),
+            LlmUnsupportedFeatureError,
+        ),
+        (
+            VideoPart.from_bytes(b"video", media_type="video/mp4"),
+            LlmUnsupportedFeatureError,
+        ),
+        (
+            ImagePart.from_bytes(b"svg", media_type="image/svg+xml"),
+            LlmUnsupportedFeatureError,
+        ),
+        (
+            DocumentPart.from_uri(
+                "https://assets.example.test/notes.txt",
+                media_type="text/plain",
+                filename="notes.txt",
+            ),
+            LlmUnsupportedFeatureError,
+        ),
+        (
+            DocumentPart.from_bytes(
+                b"json",
+                media_type="application/json",
+                filename="data.json",
+            ),
+            LlmUnsupportedFeatureError,
+        ),
+        (
+            DocumentPart.from_bytes(
+                b"\xff",
+                media_type="text/plain",
+                filename="bad.txt",
+            ),
+            LlmResponseError,
+        ),
+    ],
+)
+async def test_anthropic_unsupported_media_expect_no_sdk_call(
+    part: AudioPart | DocumentPart | ImagePart | VideoPart,
+    error_type: type[AbstractLlmError],
+) -> None:
+    """Audio/video and unsupported image/document forms fail before SDK calls."""
+    constructor = MagicMock()
+    with (
+        patch.object(provider_module, "AsyncAnthropic", constructor),
+        pytest.raises(error_type),
+    ):
+        await AnthropicMessagesProvider().complete(
+            _target(input_modalities=frozenset(ModelModality)),
+            ModelRequest(messages=(ModelMessage.user((part,)),)),
+        )
+
+    constructor.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        ModelMessage(
+            ModelMessageRole.SYSTEM,
+            (ImagePart.from_bytes(b"image", media_type="image/png"),),
+        ),
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            (ImagePart.from_bytes(b"image", media_type="image/png"),),
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            (DocumentPart.from_bytes(b"pdf", media_type="application/pdf"),),
+            metadata={"call_id": "call-1", "tool_name": "read"},
+        ),
+    ],
+)
+async def test_anthropic_non_user_media_expect_no_sdk_call(
+    message: ModelMessage,
+) -> None:
+    """System, assistant, and tool media history remains fail-closed."""
+    constructor = MagicMock()
+    with (
+        patch.object(provider_module, "AsyncAnthropic", constructor),
+        pytest.raises(LlmUnsupportedFeatureError),
+    ):
+        await AnthropicMessagesProvider().complete(
+            _target(input_modalities=frozenset(ModelModality)),
+            ModelRequest(messages=(message,)),
+        )
+
+    constructor.assert_not_called()
+
+
+def test_anthropic_corrupted_portable_part_expect_response_error() -> None:
+    """Impossible missing-byte and unknown part states remain fail-closed."""
+    parts: tuple[ImagePart | DocumentPart, ...] = (
+        ImagePart.from_bytes(b"image", media_type="image/png"),
+        DocumentPart.from_bytes(
+            b"pdf",
+            media_type="application/pdf",
+            filename="report.pdf",
+        ),
+    )
+    provider = AnthropicMessagesProvider()
+    for part in parts:
+        object.__setattr__(part, "data", None)
+        with pytest.raises(LlmResponseError):
+            provider._content_block(part)
+    with pytest.raises(LlmResponseError):
+        provider._content_block(cast(ModelContentPart, object()))
 
 
 def _client_for_complete(
@@ -971,7 +1210,7 @@ async def test_complete_non_json_tool_input_expect_response_error() -> None:
         (_status_error(400), LlmResponseError),
         (_status_error(408), LlmTimeoutError),
         (_status_error(504), LlmTimeoutError),
-        (_status_error(429), LlmTransportError),
+        (_status_error(429), LlmRateLimitError),
         (_status_error(500), LlmTransportError),
         (
             APIError("generic SDK failure", _sdk_request(), body=None),
@@ -993,6 +1232,35 @@ async def test_complete_sdk_failure_expect_generic_llm_error(
         await AnthropicMessagesProvider().complete(_target(), _request())
 
     assert raised.value.__cause__ is sdk_error
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2.25", 2.25),
+        (None, None),
+        ("invalid", None),
+        ("-1", None),
+        ("nan", None),
+        ("inf", None),
+    ],
+)
+def test_anthropic_rate_limit_retry_after_expect_safe_optional_seconds(
+    value: str | None,
+    expected: float | None,
+) -> None:
+    """429 preserves only finite nonnegative Retry-After delta seconds."""
+    headers = {} if value is None else {"Retry-After": value}
+    sdk_error = APIStatusError(
+        "rate limited",
+        response=httpx2.Response(429, headers=headers, request=_sdk_request()),
+        body={"error": {}},
+    )
+
+    error = AnthropicMessagesProvider()._provider_error(sdk_error)
+
+    assert isinstance(error, LlmRateLimitError)
+    assert error.retry_after_seconds == expected
 
 
 async def test_complete_wrong_target_api_expect_provider_unavailable() -> None:

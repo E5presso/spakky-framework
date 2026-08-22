@@ -285,6 +285,62 @@ JSON Schema를 요청합니다. Final step의 structured payload가 선언 타�
 같은 값을 JSON-safe object로 보냅니다. `output_type`을 선언하지 않은 기존 Agent는 계속
 `AgentRunResult`를 반환하며 protocol terminal에 임의의 output을 추가하지 않습니다.
 
+## Multimodal user input
+
+Text-only message는 기존처럼 가장 짧게 만듭니다. Image를 함께 보낼 때만 ordered content
+parts를 사용합니다.
+
+```python
+from spakky.agent import (
+    ImagePart,
+    MediaSafetyLimits,
+    ModelMessage,
+    ModelMessageRole,
+    RunAgentInput,
+    TextPart,
+)
+
+
+text_only = ModelMessage.user("텍스트만")
+image = ImagePart.from_uri(
+    "https://cdn.example.com/chart.png",
+    media_type="image/png",
+    limits=MediaSafetyLimits(
+        allowed_uri_hosts=frozenset({"cdn.example.com"})
+    ),
+)
+with_image = ModelMessage(
+    role=ModelMessageRole.USER,
+    content=(
+        TextPart("설명"),
+        image,
+    ),
+)
+run_input = RunAgentInput(
+    state_id="run-42",
+    instruction="차트를 설명해 주세요.",
+    attachments=(image,),
+)
+```
+
+Runner-backed Agent에는 `RunAgentInput.attachments`를 keyword로 전달합니다.
+`attachments`는 기존 positional field 뒤에 추가됐으므로 이전 생성 순서는 유지되지만,
+새 코드는 의미가 드러나는 keyword를 사용합니다. Runner는 instruction을 첫 `TextPart`로,
+attachments를 그 뒤의 immutable parts로 보존합니다.
+
+Portable input part는 `TextPart`, `ImagePart`, `AudioPart`, `VideoPart`, `DocumentPart`입니다.
+Media는 `from_bytes()`의 inline bytes 또는 `from_uri()`의 remote URI 중 정확히 하나를
+가집니다. 기본 aggregate limit은 media 16개와 inline bytes 합계 20 MiB이며 개별 part의
+`MediaSafetyLimits`로 더 좁힐 수 있습니다. URI factory는 network I/O를 하지 않습니다.
+Default `spakky-llm` media policy가 cache lookup과 provider I/O보다 먼저 async DNS와 public
+address를 검증하고, explicit `allowed_uri_hosts`는 operator가 부여한 exact authority입니다.
+
+선택 route의 `ModelCapability.input_modalities`가 실제 요청의 모든 modality를 지원해야
+합니다. Provider/model별 지원을 문자열에서 추론하지 않습니다. 현재 공통 contract는
+multimodal **input**만 다루며 generated image/audio/video 같은 non-text output을
+표준화하지 않습니다. Route, provider encoding과 URI policy는
+[LLM 모델 라우팅](llm-routing.md)을 확인하세요.
+
 ## Static typed context
 
 한 run에 고정된 context는 prompt 문자열에 이어 붙이지 말고 `RunAgentInput.context`에

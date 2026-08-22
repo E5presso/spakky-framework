@@ -77,7 +77,6 @@ config = LlmConfig(
             provider="anthropic",
             api=LlmProviderApi.ANTHROPIC_MESSAGES,
             api_key=SecretStr(environ["ANTHROPIC_API_KEY"]),
-            max_retries=2,
         ),
     },
     models={
@@ -110,7 +109,6 @@ export SPAKKY_LLM__DEFAULT_MODEL='support/primary'
 export SPAKKY_LLM__PROFILES__MANAGED_TEXT__PROVIDER='anthropic'
 export SPAKKY_LLM__PROFILES__MANAGED_TEXT__API='anthropic-messages'
 export SPAKKY_LLM__PROFILES__MANAGED_TEXT__API_KEY="$ANTHROPIC_API_KEY"
-export SPAKKY_LLM__PROFILES__MANAGED_TEXT__MAX_RETRIES='2'
 export SPAKKY_LLM__MODELS='{"support/primary":{"profile":"managed_text","model":"claude-opus-4-1","capability":{"supports_reasoning":true,"supports_tools":true,"supports_structured_output":true}}}'
 ```
 
@@ -135,6 +133,137 @@ Nested environment map segment는 case-insensitive settings source를 거치며 
 prefixed key를 읽거나 감사하지 않습니다. Environment JSON을 사용하는 경로에서는
 logical ref 중복뿐 아니라 route 내부 중복 key도 모든 depth에서 거부하며
 last-key-wins로 처리하지 않습니다.
+
+## Ordered fallback과 profile resilience
+
+Fallback은 provider 이름에서 추론하지 않습니다. 각 route가 ordered logical refs와 허용할
+`LlmFailureClass`를 함께 선언합니다. Retry, concurrency, rate limit, circuit breaker도
+connection profile의 `LlmResiliencePolicy`를 명시할 때만 켜집니다.
+
+```python
+from spakky.plugins.llm.cache import LlmCacheMode, LlmCachePolicy
+from spakky.plugins.llm.config import LlmModelRoute
+from spakky.plugins.llm.error import LlmFailureClass
+from spakky.plugins.llm.resilience import (
+    LlmCircuitBreakerPolicy,
+    LlmConcurrencyPolicy,
+    LlmRateLimitPolicy,
+    LlmResiliencePolicy,
+    LlmRetryPolicy,
+)
+
+
+profile_resilience = LlmResiliencePolicy(
+    retry=LlmRetryPolicy(
+        max_attempts=2,
+        backoff_seconds=0.25,
+        max_backoff_seconds=2.0,
+        failure_classes=frozenset(
+            {LlmFailureClass.TIMEOUT, LlmFailureClass.TRANSPORT}
+        ),
+    ),
+    concurrency=LlmConcurrencyPolicy(
+        max_in_flight=8,
+        queue_timeout_seconds=0.5,
+    ),
+    rate_limit=LlmRateLimitPolicy(
+        requests_per_period=20,
+        period_seconds=1.0,
+        max_wait_seconds=0.2,
+    ),
+    circuit=LlmCircuitBreakerPolicy(
+        failure_threshold=3,
+        recovery_timeout_seconds=30.0,
+    ),
+)
+primary_route = LlmModelRoute(
+    profile="managed_text",
+    model="primary-model",
+    fallbacks=("support/secondary",),
+    fallback_on=frozenset(
+        {
+            LlmFailureClass.TIMEOUT,
+            LlmFailureClass.TRANSPORT,
+            LlmFailureClass.CAPABILITY,
+            LlmFailureClass.CACHE,
+        }
+    ),
+    cache=LlmCachePolicy(mode=LlmCacheMode.EXACT, ttl_seconds=60.0),
+)
+secondary_route = LlmModelRoute(
+    profile="secondary_connection",
+    model="secondary-model",
+)
+```
+
+`profile_resilience`는 해당 `LlmProfile(resilience=profile_resilience)`에 넣습니다. 모든 default는
+disabled입니다: retry는 `max_attempts=1`, concurrency/rate/circuit limit은 `None`, cache는
+`DISABLED`, route fallback은 empty입니다. Official SDK의 `max_retries>0`와 orchestration
+`max_attempts>1`을 동시에 켜 attempt 수를 곱할 수 없습니다.
+
+한 profile의 retry를 소진한 뒤에만 현재 route가 그 failure class에 허용한 fallback edge로
+이동합니다. Missing/self/cyclic fallback과 refs/allowlist 중 한쪽만 선언한 route는 config
+생성에서 실패합니다. Streaming retry/fallback은 provider event를 하나도 내보내지 않은
+실패에만 가능하며 partial stream 뒤에는 다른 billable attempt를 시작하지 않습니다.
+
+Response/error metadata의 `attempts`, attempted route, ordinal, retry count, fallback source,
+failure class, circuit/cache state가 진단 정본입니다. Runner는 nested attempt evidence를
+durable model evidence에 남기고 telemetry에는 scalar summary만 보냅니다.
+
+## Explicit complete-response cache
+
+`LlmCacheMode.EXACT`와 `SEMANTIC`은 application이 같은 mode의 `ILLMResponseCache`와
+trusted `ILLMCacheScopeResolver`를 제공할 때만 쓸 수 있습니다. Enabled route가 필요한
+backend 또는 resolver 없이 `LlmAgentModel`을 만들면 `LlmCacheConfigurationError`입니다.
+Scope의 tenant/safety partition은 arbitrary `ModelRequest.metadata` key가 아니라 resolver의
+authority입니다.
+
+Cache는 `complete()`의 tool-free response에만 적용됩니다. Streaming은 항상
+`bypassed_streaming`, tool-call response는 store/replay하지 않습니다. EXACT key는 route,
+connection, sampling, guarded message/context, tool/schema와 media source/body hash를 묶고 raw
+body를 key에 노출하지 않습니다. SEMANTIC backend는 별도의 ordered text/digest
+`semantic_input`을 받으므로 그 입력의 보존·접근 정책은 backend 운영자가 소유합니다.
+
+Media URI authority는 cache lookup보다 먼저 다시 검증됩니다. Cache lookup failure도 현재
+route가 `LlmFailureClass.CACHE` edge를 선언한 경우에만 fallback할 수 있습니다. 반대로
+provider success 뒤 cache store가 실패하면 이미 billable 호출이 생겼으므로 fallback을
+금지합니다. Typed model error에 usage/routing receipt를 붙여 runner가 token/cost/evidence를
+보존한 뒤 종료합니다. Cache hit은 current invocation usage를 0으로 반환하면서 saved usage와
+선택 evidence를 metadata에 남깁니다.
+
+## Multimodal route와 URI authority
+
+Core `ImagePart.from_uri()` 같은 factory는 network I/O를 하지 않습니다. `LlmAgentModel`의
+default `PublicLlmMediaUriPolicy`가 각 candidate route에서 cache lookup과 provider I/O보다
+먼저 hostname을 off-loop로 resolve하고 timeout/non-public address를
+`LlmConfigurationError`로 거부합니다. `ILLMMediaUriPolicy` 구현을 constructor-inject해 이
+경계를 교체할 수 있습니다.
+
+Part의 `MediaSafetyLimits.allowed_uri_hosts`는 operator가 부여한 exact host authority이므로
+default public-DNS resolution을 생략합니다. 일반 caller metadata나 model ref는 이 allowlist를
+늘릴 수 없습니다. Route의 `ModelCapability.input_modalities`가 text/image/audio/video/document
+요청 전체를 지원해야 하고, provider adapter의 MIME/source encoding이 더 좁으면
+`LlmUnsupportedFeatureError`입니다. Capability failure fallback도 route가
+`LlmFailureClass.CAPABILITY`를 명시했을 때만 허용됩니다.
+
+OpenAI, Anthropic, Gemini Developer API, Vertex adapter는 지원하는 input part를 native SDK
+shape로 변환합니다. 공통 `ModelResponse.content`는 아직 text이고 generated non-text output
+contract는 없습니다. 가장 짧은 content/attachment 예제는 [AI Agent 개발](agents.md)을
+확인하세요.
+
+## Optional platform ports
+
+Interactive `ModelRequest`와 Agent tool catalog 밖의 provider 기능은 별도 opt-in port입니다.
+
+| Port | Explicit request | 자동으로 하지 않는 일 |
+| --- | --- | --- |
+| `ILLMBatchProvider` | `LlmBatchRequest` submit/status/results | interactive call batching |
+| `ILLMFileProvider` | `LlmFileUpload` upload/delete | upload 또는 prompt injection |
+| `ILLMNativeToolProvider` | `WEB_SEARCH`/`FILE_SEARCH` invocation | Agent tool 등록·자동 실행 |
+
+Core plugin은 payload/port만 제공하며 first-party interactive adapter가 이 기능을 암묵적으로
+실행하지 않습니다. Application/provider integration이 구현을 명시적으로 선택합니다.
+Malformed boundary 값은 `LlmPlatformBoundaryError`입니다.
 
 ## Provider 연결 recipe
 

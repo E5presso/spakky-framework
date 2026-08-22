@@ -9,6 +9,7 @@ from typing import TypedDict, cast, override
 import pytest
 from pydantic import BaseModel
 import spakky.agent.runner as runner_module
+from spakky.agent.content import model_content_text
 
 from spakky.agent import (
     Agent,
@@ -50,6 +51,7 @@ from spakky.agent import (
     ICompactionStrategy,
     Idempotency,
     ITaskStore,
+    ImagePart,
     JsonObject,
     JsonValue,
     AgentCompactionPolicy,
@@ -60,6 +62,7 @@ from spakky.agent import (
     ModelError,
     ModelMessage,
     ModelMessageRole,
+    ModelModality,
     ModelRequest,
     ModelResponse,
     ModelSelection,
@@ -491,6 +494,29 @@ class StepLimitedProbeAgent(_EchoToolAgentBase):
 )
 class ToolLimitedProbeAgent(_EchoToolAgentBase):
     """Stateless tool agent allowing only one actual dispatch."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="durable_tool_limited_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        limits=AgentExecutionLimits(max_tool_calls=1),
+    )
+)
+class DurableToolLimitedProbeAgent(_EchoToolAgentBase):
+    """Durable tool-limit fixture proving atomic call-id reservation."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        super().__init__(model)
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
 
 
 @Agent(
@@ -1606,7 +1632,7 @@ async def test_agent_runner_expect_model_selection_used_for_capability() -> None
         )
     )
 
-    assert model.capability_selections == [selection]
+    assert model.capability_selections == [selection, selection]
     assert any(
         isinstance(item.payload, Token) and item.payload.text == "thinking"
         for item in items
@@ -2237,7 +2263,7 @@ def _user_and_assistant_contents(
 ) -> list[tuple[ModelMessageRole, str]]:
     """Return the non-system messages the runner sent, in order."""
     return [
-        (message.role, message.content)
+        (message.role, model_content_text(message.content))
         for message in request.messages
         if message.role is not ModelMessageRole.SYSTEM
     ]
@@ -2457,6 +2483,200 @@ class DurableSessionAgent:
     def echo_write(self, value: str) -> EchoRecord:
         """Echo a value back after approval."""
         return EchoRecord(value=value)
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_failed_model_fragment_does_not_pollute_resumed_session(
+    surface: str,
+) -> None:
+    """Only a fully validated model step commits assistant text to TaskStore."""
+    state_id = f"failed-fragment-{surface}"
+    conversation_id = f"conversation-{surface}"
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="failed-fragment",
+                ),
+                _tool_event("missing.tool", {}, "missing-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="valid",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    store = FakeTaskStore()
+    first_runner = AgentRunner.for_agent_instance(
+        DurableSessionAgent(model, states, signals, evidence, store)
+    )
+    first_command = RunAgentInput(
+        state_id=state_id,
+        conversation_id=conversation_id,
+        instruction="answer",
+    )
+    if surface == "events":
+        first = [event async for event in first_runner.run_events(first_command)]
+        terminal = first[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_tool_batch_invalid"
+    else:
+        first_yields = await _collect(first_runner.run(first_command))
+        terminal = first_yields[-1].payload
+        assert isinstance(terminal, Error)
+        assert terminal.code == "agent_tool_batch_invalid"
+    resumed_runner = AgentRunner.for_agent_instance(
+        DurableSessionAgent(model, states, signals, evidence, store)
+    )
+    resume = RunAgentInput(
+        state_id=state_id,
+        conversation_id=conversation_id,
+        instruction="resume",
+        resume=True,
+    )
+
+    if surface == "events":
+        resumed = [event async for event in resumed_runner.run_events(resume)]
+        assert isinstance(resumed[-1], RunFinishedEvent)
+        assert resumed[-1].error is None
+    else:
+        resumed_yields = await _collect(resumed_runner.run(resume))
+        assert resumed_yields[-1].kind is AgentYieldKind.FINAL
+    history = store.load_history(conversation_id)
+    assert [(turn.role, turn.content) for turn in history] == [
+        (ModelMessageRole.USER, "answer"),
+        (ModelMessageRole.ASSISTANT, "valid"),
+    ]
+    assistants = [
+        turn.content for turn in history if turn.role is ModelMessageRole.ASSISTANT
+    ]
+    assert assistants == ["valid"]
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_invalid_batch_does_not_reserve_provider_call_id_across_resume(
+    surface: str,
+) -> None:
+    """A failed descriptor lookup cannot poison a corrected call using the same id."""
+    state_id = f"call-id-rollback-{surface}"
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("missing.tool", {}, "same-id"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                _tool_event("echo.read", {"value": "valid"}, "same-id"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    first_runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    first_command = RunAgentInput(state_id=state_id, instruction="run")
+    if surface == "events":
+        first = [event async for event in first_runner.run_events(first_command)]
+        first_terminal = first[-1]
+        assert isinstance(first_terminal, RunFinishedEvent)
+        assert first_terminal.error is not None
+        assert first_terminal.error["code"] == "agent_tool_batch_invalid"
+    else:
+        first_yields = await _collect(first_runner.run(first_command))
+        first_error = first_yields[-1].payload
+        assert isinstance(first_error, Error)
+        assert first_error.code == "agent_tool_batch_invalid"
+    checkpoint = states.get(state_id).metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, Mapping)
+    assert checkpoint["seen_call_ids"] == []
+    resumed_runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    resume = RunAgentInput(state_id=state_id, instruction="resume", resume=True)
+
+    if surface == "events":
+        resumed = [event async for event in resumed_runner.run_events(resume)]
+        assert any(isinstance(event, ToolCallResultEvent) for event in resumed)
+        terminal = resumed[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is None
+    else:
+        resumed_yields = await _collect(resumed_runner.run(resume))
+        assert any(isinstance(item.payload, Tool) for item in resumed_yields)
+        assert resumed_yields[-1].kind is AgentYieldKind.FINAL
+    assert len(model.requests) == 3
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_tool_limit_failure_does_not_reserve_batch_call_ids(
+    surface: str,
+) -> None:
+    """An oversized valid batch cannot poison a smaller resumed batch's call id."""
+    state_id = f"tool-limit-call-id-{surface}"
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.read", {"value": "a"}, "a"),
+                _tool_event("echo.read", {"value": "b"}, "b"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                _tool_event("echo.read", {"value": "a"}, "a"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    first_runner = AgentRunner.for_agent_instance(
+        DurableToolLimitedProbeAgent(model, states, signals, evidence)
+    )
+    command = RunAgentInput(state_id=state_id, instruction="run")
+    if surface == "events":
+        first = [event async for event in first_runner.run_events(command)]
+        terminal = first[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_max_tool_calls_exceeded"
+    else:
+        first_yields = await _collect(first_runner.run(command))
+        error = first_yields[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == "agent_max_tool_calls_exceeded"
+    checkpoint = states.get(state_id).metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, Mapping)
+    assert checkpoint["seen_call_ids"] == []
+    resumed_runner = AgentRunner.for_agent_instance(
+        DurableToolLimitedProbeAgent(model, states, signals, evidence)
+    )
+    resume = RunAgentInput(state_id=state_id, instruction="resume", resume=True)
+
+    if surface == "events":
+        resumed = [event async for event in resumed_runner.run_events(resume)]
+        assert any(isinstance(event, ToolCallResultEvent) for event in resumed)
+        terminal = resumed[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is None
+    else:
+        resumed_yields = await _collect(resumed_runner.run(resume))
+        assert any(isinstance(item.payload, Tool) for item in resumed_yields)
+        assert resumed_yields[-1].kind is AgentYieldKind.FINAL
+    assert len(model.requests) == 3
 
 
 async def _run_session_events(
@@ -3410,6 +3630,56 @@ class CompactingProbeAgent:
         self._model = model
 
 
+@Agent(
+    spec=AgentExecutionSpec(
+        name="durable_compacting_probe",
+        accepted_signals=DURABLE_SPEC.accepted_signals,
+        recovery=DURABLE_SPEC.recovery,
+        compaction=AgentCompactionPolicy(
+            strategies=(KeepRecentMessagesCompactionStrategy(max_messages=1),),
+            trigger_token_threshold=4,
+        ),
+    )
+)
+class DurableCompactingProbeAgent:
+    """Durable approval probe combining compaction with inherited tool contracts."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="echo.write",
+        description="Write echo requiring approval.",
+        effects=ToolEffects.write_state(),
+        idempotency=Idempotency.CONDITIONALLY_IDEMPOTENT,
+        evidence=EvidenceCapture.STRUCTURED,
+        approval=ToolApprovalRequirement.REQUIRED,
+    )
+    def echo_write(self, value: str) -> EchoRecord:
+        """Echo a value back after approval."""
+        return EchoRecord(value=value)
+
+
+class MultimodalCompactingModel(ScriptedRoundModel):
+    """Scripted durable model accepting image-bearing compacted input."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability(
+            input_modalities=frozenset({ModelModality.TEXT, ModelModality.IMAGE})
+        )
+
+
 def _long_history() -> tuple[ModelMessage, ...]:
     """History whose estimated tokens exceed the probe's threshold of 4."""
     return (
@@ -3438,6 +3708,74 @@ async def test_agent_runner_expect_compaction_applies_when_threshold_tripped() -
         (ModelMessageRole.USER, "z" * 40),
         (ModelMessageRole.USER, "latest"),
     ]
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_durable_compaction_multimodal_approval_resumes_from_fresh_runner(
+    surface: str,
+) -> None:
+    """Checkpoint evidence binds compacted media state without blocking valid resume."""
+    state_id = f"compacted-media-{surface}"
+    model = MultimodalCompactingModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "draft"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    first_runner = AgentRunner.for_agent_instance(
+        DurableCompactingProbeAgent(model, states, signals, evidence)
+    )
+    command = RunAgentInput(
+        state_id=state_id,
+        instruction="latest",
+        message_history=_long_history(),
+        attachments=(ImagePart.from_bytes(b"image", media_type="image/png"),),
+    )
+    if surface == "events":
+        paused_items: Sequence[AgentYield[object] | AgentEvent] = [
+            event async for event in first_runner.run_events(command)
+        ]
+        pause = paused_items[-1]
+        assert isinstance(pause, RunPausedEvent)
+        assert pause.approval_id is not None
+        approval_id = pause.approval_id
+    else:
+        paused_items = await _collect(first_runner.run(command))
+        approval = next(
+            item.payload
+            for item in paused_items
+            if isinstance(item, AgentYield) and isinstance(item.payload, Approval)
+        )
+        approval_id = approval.id
+    checkpoint = states.get(state_id).metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, Mapping)
+    history = checkpoint["history"]
+    assert isinstance(history, Sequence)
+    assert len(history) < len(_long_history()) + 2
+    assert AgentEvidenceKind.CHECKPOINT in {
+        artifact.kind for artifact in evidence.list_by_state(state_id)
+    }
+    signals.append(_approval_signal(state_id, approval_id, "approve"))
+    resumed_runner = AgentRunner.for_agent_instance(
+        DurableCompactingProbeAgent(model, states, signals, evidence)
+    )
+    resume = RunAgentInput(state_id=state_id, instruction="resume", resume=True)
+
+    if surface == "events":
+        resumed = [event async for event in resumed_runner.run_events(resume)]
+        terminal = resumed[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is None
+    else:
+        resumed_yields = await _collect(resumed_runner.run(resume))
+        assert resumed_yields[-1].kind is AgentYieldKind.FINAL
+    assert len(model.requests) == 2
 
 
 async def test_agent_runner_expect_compaction_skipped_below_threshold() -> None:
@@ -4511,14 +4849,10 @@ async def test_iterative_resume_rejects_tampered_approved_pending_arguments(
         evidence,
     )
 
-    approval = next(
-        item.payload for item in resumed if isinstance(item.payload, Approval)
-    )
-    assert approval.id == _approval_request_id(
-        state_id,
-        "write-1",
-        {"value": "tampered"},
-    )
+    error = resumed[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_checkpoint_invalid"
+    assert not any(isinstance(item.payload, Approval) for item in resumed)
     assert not any(isinstance(item.payload, Tool) for item in resumed)
     assert AgentEvidenceKind.TOOL not in {
         item.kind for item in evidence.list_by_state(state_id)
@@ -5646,7 +5980,7 @@ async def test_agent_runner_resume_requires_identical_static_context_resupply(
     )
     checkpoint = states.get(state_id).metadata[RUNNER_CHECKPOINT_METADATA_KEY]
     assert isinstance(checkpoint, Mapping)
-    assert "static-resume" not in repr(checkpoint)
+    assert "context_pack_id" not in repr(checkpoint)
     assert "static-content-1" not in repr(checkpoint)
     assert "static_context_fingerprint" in checkpoint
     signals.append(_approval_signal(state_id, approval.id, "approve"))

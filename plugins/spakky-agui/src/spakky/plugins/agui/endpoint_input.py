@@ -1,12 +1,35 @@
 """AG-UI inbound request mapping shared by HTTP, WebSocket, and drivers."""
 
+from base64 import b64decode
+from binascii import Error as Base64Error
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
-from ag_ui.core import RunAgentInput as AgUiRunAgentInput
+from ag_ui.core import (
+    AudioInputContent,
+    BinaryInputContent,
+    DocumentInputContent,
+    ImageInputContent,
+    InputContentDataSource,
+    InputContentUrlSource,
+    RunAgentInput as AgUiRunAgentInput,
+    TextInputContent,
+    VideoInputContent,
+)
 
-from spakky.agent import JsonObject, JsonValue, ModelSelection, RunAgentInput
+from spakky.agent import (
+    AudioPart,
+    AgentDefinitionError,
+    DEFAULT_MEDIA_SAFETY_LIMITS,
+    DocumentPart,
+    ImagePart,
+    JsonObject,
+    JsonValue,
+    ModelSelection,
+    RunAgentInput,
+    VideoPart,
+)
 
 from spakky.plugins.agui.error import AgUiRunResolutionError
 from spakky.plugins.agui.hitl import carries_approval_decision
@@ -35,16 +58,27 @@ class AgUiInboundRun:
     core_input: RunAgentInput
 
 
+type _Attachment = ImagePart | AudioPart | VideoPart | DocumentPart
+
+
+@dataclass(frozen=True, slots=True)
+class _UserInput:
+    instruction: str
+    attachments: tuple[_Attachment, ...] = ()
+
+
 def to_core_input(ag_ui_input: AgUiRunAgentInput) -> RunAgentInput:
     """Map an AG-UI run input onto the neutral core run input."""
     resume = carries_approval_decision(ag_ui_input)
     forwarded = _forwarded_props(ag_ui_input)
+    user_input = _user_input_for(ag_ui_input, resume)
     return RunAgentInput(
         state_id=ag_ui_input.run_id,
-        instruction=_instruction_for(ag_ui_input, resume),
+        instruction=user_input.instruction,
         conversation_id=ag_ui_input.thread_id,
         parent_run_id=ag_ui_input.parent_run_id,
         resume=resume,
+        attachments=user_input.attachments,
         model_selection=_model_selection_from_forwarded(forwarded),
         metadata=_metadata_from_forwarded(forwarded),
     )
@@ -58,25 +92,91 @@ def inbound_run(ag_ui_input: AgUiRunAgentInput) -> AgUiInboundRun:
     )
 
 
-def _last_user_text(ag_ui_input: AgUiRunAgentInput) -> str:
-    """Return the most recent user message text seeding the model request."""
+def _last_user_input(ag_ui_input: AgUiRunAgentInput) -> _UserInput:
+    """Return the latest user text and every typed media attachment."""
     for message in reversed(ag_ui_input.messages):
         if message.role != "user":
             continue
         content = message.content
         if isinstance(content, str) and content.strip():
-            return content
+            return _UserInput(content)
+        if isinstance(content, str):
+            raise AgUiRunResolutionError("AG-UI user message text cannot be blank")
+        texts: list[str] = []
+        attachments: list[_Attachment] = []
+        for part in content:
+            if isinstance(part, TextInputContent):
+                if part.text.strip():
+                    texts.append(part.text)
+                continue
+            if len(attachments) >= DEFAULT_MEDIA_SAFETY_LIMITS.max_media_parts:
+                raise AgUiRunResolutionError("AG-UI message has too many media parts")
+            attachments.append(_attachment(part, message.id))
+            total_inline_bytes = sum(
+                0 if attachment.size is None else attachment.size
+                for attachment in attachments
+            )
+            if total_inline_bytes > DEFAULT_MEDIA_SAFETY_LIMITS.max_inline_bytes:
+                raise AgUiRunResolutionError(
+                    "AG-UI message exceeds the total inline media limit"
+                )
+        instruction = "\n".join(texts)
+        if not instruction.strip():
+            raise AgUiRunResolutionError(
+                "AG-UI multimodal user message requires a text instruction"
+            )
+        return _UserInput(instruction, tuple(attachments))
     raise AgUiRunResolutionError
 
 
-def _instruction_for(ag_ui_input: AgUiRunAgentInput, resume: bool) -> str:
-    """Return the core instruction while allowing approval-only resume frames."""
+def _user_input_for(ag_ui_input: AgUiRunAgentInput, resume: bool) -> _UserInput:
+    """Return core user input while allowing approval-only resume frames."""
+    if resume and not any(message.role == "user" for message in ag_ui_input.messages):
+        return _UserInput(RESUME_APPROVAL_INSTRUCTION)
+    return _last_user_input(ag_ui_input)
+
+
+def _attachment(part: object, message_id: str) -> _Attachment:
+    if isinstance(part, BinaryInputContent):
+        raise AgUiRunResolutionError("AG-UI deprecated binary content is not accepted")
+    media_class: type[ImagePart | AudioPart | VideoPart | DocumentPart]
+    if isinstance(part, ImageInputContent):
+        media_class = ImagePart
+    elif isinstance(part, AudioInputContent):
+        media_class = AudioPart
+    elif isinstance(part, VideoInputContent):
+        media_class = VideoPart
+    elif isinstance(part, DocumentInputContent):
+        media_class = DocumentPart
+    else:
+        raise AgUiRunResolutionError("AG-UI user content part is unsupported")
+    source = part.source
+    provenance = f"ag-ui:{message_id}"
+    if isinstance(source, InputContentUrlSource):
+        if source.mime_type is None:
+            raise AgUiRunResolutionError("AG-UI media URL requires mimeType")
+        try:
+            return media_class.from_uri(
+                source.value,
+                media_type=source.mime_type,
+                source=provenance,
+            )
+        except AgentDefinitionError as error:
+            raise AgUiRunResolutionError("AG-UI media URL is invalid") from error
+    if not isinstance(source, InputContentDataSource):
+        raise AgUiRunResolutionError("AG-UI media source is invalid")
+    max_encoded_size = ((DEFAULT_MEDIA_SAFETY_LIMITS.max_inline_bytes + 2) // 3) * 4
+    if len(source.value) > max_encoded_size:
+        raise AgUiRunResolutionError("AG-UI inline media exceeds its encoded limit")
     try:
-        return _last_user_text(ag_ui_input)
-    except AgUiRunResolutionError:
-        if resume:
-            return RESUME_APPROVAL_INSTRUCTION
-        raise
+        data = b64decode(source.value, validate=True)
+        return media_class.from_bytes(
+            data,
+            media_type=source.mime_type,
+            source=provenance,
+        )
+    except (Base64Error, ValueError, AgentDefinitionError) as error:
+        raise AgUiRunResolutionError("AG-UI media data is invalid") from error
 
 
 def _forwarded_props(

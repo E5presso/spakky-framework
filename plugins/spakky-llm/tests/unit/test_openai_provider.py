@@ -19,6 +19,9 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from pydantic import BaseModel, Field, SecretStr
 from pytest import MonkeyPatch
 from spakky.agent import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
     JsonSchemaConstraint,
     JsonValue,
     KeepRecentMessagesCompactionStrategy,
@@ -26,6 +29,7 @@ from spakky.agent import (
     ModelMessageRole,
     ModelCapability,
     ModelRequest,
+    ModelModality,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolChoice,
@@ -34,7 +38,9 @@ from spakky.agent import (
     SamplingOptions,
     StreamingOptions,
     StructuredOutputSpec,
+    TextPart,
     ToolCallingSpec,
+    VideoPart,
 )
 
 from spakky.plugins.llm.config import (
@@ -46,6 +52,7 @@ from spakky.plugins.llm.config import (
 from spakky.plugins.llm.error import (
     LlmConfigurationError,
     LlmModelRefusalError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmTimeoutError,
     LlmTransportError,
@@ -55,6 +62,7 @@ from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers import openai as openai_module
 from spakky.plugins.llm.providers.openai import OpenAIChatProvider
 from spakky.agent.structured_output import _structured_output_contract
+from spakky.agent.content import ModelContentPart
 
 
 class _OpenAINestedValue(BaseModel):
@@ -318,6 +326,7 @@ def _target(
     api_key: SecretStr | None = SecretStr("secret"),
     base_url: str | None = "http://localhost:8000/v1",
     supports_reasoning: bool = False,
+    input_modalities: frozenset[ModelModality] = frozenset({ModelModality.TEXT}),
     include_vllm_extensions: bool = True,
 ) -> LlmModelTarget:
     return LlmModelTarget(
@@ -337,7 +346,10 @@ def _target(
         route=LlmModelRoute(
             profile="vllm-local",
             model="selected-model",
-            capability=ModelCapability(supports_reasoning=supports_reasoning),
+            capability=ModelCapability(
+                supports_reasoning=supports_reasoning,
+                input_modalities=input_modalities,
+            ),
             chat_template_kwargs=(
                 {"enable_thinking": True}
                 if dialect == OpenAICompatibleDialect.VLLM and include_vllm_extensions
@@ -386,6 +398,184 @@ def _completion(
             },
         }
     )
+
+
+async def test_openai_multimodal_complete_expect_exact_native_content_parts() -> None:
+    """URI/bytes content maps to installed Chat Completions part shapes exactly."""
+    _FakeCompletions.completion = _completion()
+    request = ModelRequest(
+        messages=(
+            ModelMessage(
+                ModelMessageRole.USER,
+                (
+                    TextPart("inspect"),
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                    ImagePart.from_bytes(b"image", media_type="image/png"),
+                    AudioPart.from_bytes(b"audio", media_type="audio/mpeg"),
+                    DocumentPart.from_bytes(
+                        b"pdf",
+                        media_type="application/pdf",
+                        filename="report.pdf",
+                    ),
+                ),
+            ),
+        ),
+    )
+    target = _target(
+        input_modalities=frozenset(
+            {
+                ModelModality.TEXT,
+                ModelModality.IMAGE,
+                ModelModality.AUDIO,
+                ModelModality.DOCUMENT,
+            }
+        )
+    )
+
+    await OpenAIChatProvider().complete(target, request)
+
+    messages = cast(
+        Sequence[Mapping[str, object]], _FakeCompletions.calls[0]["messages"]
+    )
+    content = cast(Sequence[Mapping[str, object]], messages[0]["content"])
+    assert content == [
+        {"type": "text", "text": "inspect"},
+        {
+            "type": "image_url",
+            "image_url": {"url": "https://assets.example.test/chart.png"},
+        },
+        {
+            "type": "image_url",
+            "image_url": {"url": "data:image/png;base64,aW1hZ2U="},
+        },
+        {
+            "type": "input_audio",
+            "input_audio": {"data": "YXVkaW8=", "format": "mp3"},
+        },
+        {
+            "type": "file",
+            "file": {"file_data": "cGRm", "filename": "report.pdf"},
+        },
+    ]
+
+
+@pytest.mark.parametrize("operation", ["complete", "stream"])
+async def test_openai_capability_mismatch_expect_no_sdk_call(operation: str) -> None:
+    """Route modality mismatch fails before constructing the OpenAI SDK client."""
+    request = ModelRequest(
+        messages=(
+            ModelMessage.user(
+                (
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                )
+            ),
+        )
+    )
+    provider = OpenAIChatProvider()
+
+    with pytest.raises(LlmUnsupportedFeatureError):
+        if operation == "complete":
+            await provider.complete(_target(), request)
+        else:
+            _ = [event async for event in provider.stream(_target(), request)]
+
+    assert _FakeAsyncOpenAI.init_calls == []
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        AudioPart.from_uri(
+            "https://assets.example.test/audio.mp3",
+            media_type="audio/mpeg",
+        ),
+        DocumentPart.from_uri(
+            "https://assets.example.test/report.pdf",
+            media_type="application/pdf",
+            filename="report.pdf",
+        ),
+        DocumentPart.from_bytes(b"pdf", media_type="application/pdf"),
+        VideoPart.from_bytes(b"video", media_type="video/mp4"),
+        ImagePart.from_bytes(b"svg", media_type="image/svg+xml"),
+        AudioPart.from_bytes(b"ogg", media_type="audio/ogg"),
+        DocumentPart.from_bytes(
+            b"json",
+            media_type="application/json",
+            filename="data.json",
+        ),
+    ],
+)
+async def test_openai_unsupported_representation_expect_no_sdk_call(
+    part: AudioPart | DocumentPart | ImagePart | VideoPart,
+) -> None:
+    """Unsupported URI/MIME/video/file shapes fail before client construction."""
+    request = ModelRequest(messages=(ModelMessage.user((part,)),))
+    target = _target(input_modalities=frozenset(ModelModality))
+
+    with pytest.raises(LlmUnsupportedFeatureError):
+        await OpenAIChatProvider().complete(target, request)
+
+    assert _FakeAsyncOpenAI.init_calls == []
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        ModelMessage(
+            ModelMessageRole.SYSTEM,
+            (
+                ImagePart.from_uri(
+                    "https://assets.example.test/image.png",
+                    media_type="image/png",
+                ),
+            ),
+        ),
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            (ImagePart.from_bytes(b"image", media_type="image/png"),),
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            (ImagePart.from_bytes(b"image", media_type="image/png"),),
+            metadata={"call_id": "call-1", "tool_name": "vision"},
+        ),
+    ],
+)
+async def test_openai_non_user_media_expect_no_sdk_call(message: ModelMessage) -> None:
+    """System, assistant, and tool media history is not silently reinterpreted."""
+    with pytest.raises(LlmUnsupportedFeatureError):
+        await OpenAIChatProvider().complete(
+            _target(input_modalities=frozenset(ModelModality)),
+            ModelRequest(messages=(message,)),
+        )
+
+    assert _FakeAsyncOpenAI.init_calls == []
+
+
+def test_openai_corrupted_portable_part_expect_response_error() -> None:
+    """Impossible missing-byte and unknown part states remain fail-closed."""
+    parts: tuple[ImagePart | AudioPart | DocumentPart, ...] = (
+        ImagePart.from_bytes(b"image", media_type="image/png"),
+        AudioPart.from_bytes(b"audio", media_type="audio/mpeg"),
+        DocumentPart.from_bytes(
+            b"pdf",
+            media_type="application/pdf",
+            filename="report.pdf",
+        ),
+    )
+    provider = OpenAIChatProvider()
+    for part in parts:
+        object.__setattr__(part, "data", None)
+        with pytest.raises(LlmResponseError):
+            provider._content_part(part)
+    with pytest.raises(LlmResponseError):
+        provider._content_part(cast(ModelContentPart, object()))
 
 
 def _chunk(
@@ -887,7 +1077,7 @@ async def test_stream_validates_every_tool_before_first_candidate() -> None:
                 ),
                 body=None,
             ),
-            LlmTransportError,
+            LlmRateLimitError,
         ),
         (
             APIStatusError(
@@ -935,6 +1125,39 @@ async def test_complete_normalizes_official_sdk_failures(
             _target(),
             ModelRequest(messages=(ModelMessage(ModelMessageRole.USER, "hello"),)),
         )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1.5", 1.5),
+        (None, None),
+        ("invalid", None),
+        ("-1", None),
+        ("nan", None),
+        ("inf", None),
+    ],
+)
+def test_openai_rate_limit_retry_after_expect_safe_optional_seconds(
+    value: str | None,
+    expected: float | None,
+) -> None:
+    """429 is distinct from transport and malformed Retry-After is omitted."""
+    headers = {} if value is None else {"Retry-After": value}
+    sdk_error = APIStatusError(
+        "rate limited",
+        response=httpx2.Response(
+            429,
+            headers=headers,
+            request=httpx2.Request("POST", "https://api.openai.com"),
+        ),
+        body=None,
+    )
+
+    error = OpenAIChatProvider()._normalized_sdk_error(sdk_error)
+
+    assert isinstance(error, LlmRateLimitError)
+    assert error.retry_after_seconds == expected
 
 
 async def test_stream_normalizes_iteration_sdk_failure() -> None:

@@ -1,10 +1,12 @@
 """OpenAI SDK adapter for standard and vLLM chat-completions profiles."""
 
+from base64 import b64encode
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from json import JSONDecodeError, dumps
+from math import isfinite
 from os import environ
-from typing import override
+from typing import Literal, override
 
 from openai import (
     APIConnectionError,
@@ -20,6 +22,7 @@ from openai.types.chat import (
     ChatCompletion,
     ChatCompletionAssistantMessageParam,
     ChatCompletionChunk,
+    ChatCompletionContentPartParam,
     ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageFunctionToolCallParam,
     ChatCompletionMessageParam,
@@ -37,6 +40,9 @@ from openai.types.shared_params.response_format_json_schema import (
     ResponseFormatJSONSchema,
 )
 from spakky.agent import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
     JsonObject,
     JsonSchemaConstraint,
     JsonValue,
@@ -49,6 +55,13 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolChoice,
     ModelUsage,
+    TextPart,
+    VideoPart,
+)
+from spakky.agent.content import (
+    ModelContentPart,
+    model_content_parts,
+    model_content_text,
 )
 from spakky.core.pod.annotations.pod import Pod
 
@@ -62,6 +75,7 @@ from spakky.plugins.llm.error import (
     AbstractLlmError,
     LlmConfigurationError,
     LlmModelRefusalError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmTimeoutError,
     LlmTransportError,
@@ -77,6 +91,14 @@ from spakky.plugins.llm.provider import (
 )
 
 _SUCCESS_FINISH_REASONS = frozenset({"stop", "length", "tool_calls"})
+_OPENAI_IMAGE_MIME_TYPES = frozenset(
+    {"image/gif", "image/jpeg", "image/png", "image/webp"}
+)
+_OPENAI_AUDIO_FORMATS: dict[str, Literal["mp3", "wav"]] = {
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+}
+_OPENAI_DOCUMENT_MIME_TYPES = frozenset({"application/pdf", "text/plain"})
 
 
 @dataclass(slots=True)
@@ -118,11 +140,13 @@ class OpenAIChatProvider(ILLMProvider):
         request: ModelRequest,
     ) -> ModelResponse:
         """Return one normalized completion through the official async SDK."""
+        self._ensure_supported_request(target, request)
+        messages = self._messages(request)
         try:
             async with self._client(target) as client:
                 completion = await client.chat.completions.create(
                     model=target.model,
-                    messages=self._messages(request),
+                    messages=messages,
                     stream=False,
                     temperature=self._optional_number(request.sampling.temperature),
                     top_p=self._optional_number(request.sampling.top_p),
@@ -157,6 +181,8 @@ class OpenAIChatProvider(ILLMProvider):
         target: LlmModelTarget,
         request: ModelRequest,
     ) -> AsyncIterator[ModelStreamEvent]:
+        self._ensure_supported_request(target, request)
+        messages = self._messages(request)
         constraints = self.__codec.tool_constraints(request.tool_calling)
         buffers: dict[int, _ToolCallBuffer] = {}
         structured_fragments: list[str] = []
@@ -166,7 +192,7 @@ class OpenAIChatProvider(ILLMProvider):
             async with self._client(target) as client:
                 stream = await client.chat.completions.create(
                     model=target.model,
-                    messages=self._messages(request),
+                    messages=messages,
                     stream=True,
                     stream_options=self._stream_options(request),
                     temperature=self._optional_number(request.sampling.temperature),
@@ -331,23 +357,32 @@ class OpenAIChatProvider(ILLMProvider):
     def _messages(self, request: ModelRequest) -> list[ChatCompletionMessageParam]:
         return [self._message(message) for message in request.assemble_messages()]
 
+    def _ensure_supported_request(
+        self,
+        target: LlmModelTarget,
+        request: ModelRequest,
+    ) -> None:
+        required = request.required_input_modalities()
+        if not required <= target.route.capability.input_modalities:
+            raise LlmUnsupportedFeatureError
+
     def _message(self, message: ModelMessage) -> ChatCompletionMessageParam:
         if message.role == ModelMessageRole.SYSTEM:
             system: ChatCompletionSystemMessageParam = {
                 "role": "system",
-                "content": message.content,
+                "content": self._non_media_text(message),
             }
             return system
         if message.role in (ModelMessageRole.USER, ModelMessageRole.EVIDENCE):
             user: ChatCompletionUserMessageParam = {
                 "role": "user",
-                "content": message.content,
+                "content": self._user_content(message),
             }
             return user
         if message.role == ModelMessageRole.ASSISTANT:
             assistant: ChatCompletionAssistantMessageParam = {
                 "role": "assistant",
-                "content": message.content,
+                "content": self._non_media_text(message),
             }
             tool_calls = self._history_tool_calls(message.metadata)
             if tool_calls is not None:
@@ -358,10 +393,74 @@ class OpenAIChatProvider(ILLMProvider):
             raise LlmResponseError
         tool: ChatCompletionToolMessageParam = {
             "role": "tool",
-            "content": message.content,
+            "content": self._non_media_text(message),
             "tool_call_id": call_id,
         }
         return tool
+
+    def _user_content(
+        self,
+        message: ModelMessage,
+    ) -> str | list[ChatCompletionContentPartParam]:
+        if isinstance(message.content, str):
+            return message.content
+        return [
+            self._content_part(part) for part in model_content_parts(message.content)
+        ]
+
+    def _non_media_text(self, message: ModelMessage) -> str:
+        if not isinstance(message.content, str) and any(
+            not isinstance(part, TextPart)
+            for part in model_content_parts(message.content)
+        ):
+            raise LlmUnsupportedFeatureError
+        return model_content_text(message.content)
+
+    def _content_part(self, part: ModelContentPart) -> ChatCompletionContentPartParam:
+        if isinstance(part, TextPart):
+            return {"type": "text", "text": part.text}
+        if isinstance(part, ImagePart):
+            if part.media_type not in _OPENAI_IMAGE_MIME_TYPES:
+                raise LlmUnsupportedFeatureError
+            image_url = part.uri
+            if image_url is None:
+                if part.data is None:
+                    raise LlmResponseError
+                encoded = b64encode(part.data).decode("ascii")
+                image_url = f"data:{part.media_type};base64,{encoded}"
+            return {"type": "image_url", "image_url": {"url": image_url}}
+        if isinstance(part, AudioPart):
+            audio_format = _OPENAI_AUDIO_FORMATS.get(part.media_type)
+            if part.uri is not None or audio_format is None:
+                raise LlmUnsupportedFeatureError
+            if part.data is None:
+                raise LlmResponseError
+            return {
+                "type": "input_audio",
+                "input_audio": {
+                    "data": b64encode(part.data).decode("ascii"),
+                    "format": audio_format,
+                },
+            }
+        if isinstance(part, DocumentPart):
+            if (
+                part.uri is not None
+                or part.media_type not in _OPENAI_DOCUMENT_MIME_TYPES
+                or part.filename is None
+            ):
+                raise LlmUnsupportedFeatureError
+            if part.data is None:
+                raise LlmResponseError
+            return {
+                "type": "file",
+                "file": {
+                    "file_data": b64encode(part.data).decode("ascii"),
+                    "filename": part.filename,
+                },
+            }
+        if isinstance(part, VideoPart):
+            raise LlmUnsupportedFeatureError
+        raise LlmResponseError
 
     def _history_tool_calls(
         self,
@@ -703,6 +802,23 @@ class OpenAIChatProvider(ILLMProvider):
         if isinstance(error, APIStatusError):
             if error.status_code in (408, 504):
                 return LlmTimeoutError()
-            if error.status_code == 429 or error.status_code >= 500:
+            if error.status_code == 429:
+                return LlmRateLimitError(
+                    retry_after_seconds=self._retry_after_seconds(
+                        error.response.headers.get("retry-after")
+                    )
+                )
+            if error.status_code >= 500:
                 return LlmTransportError()
         return LlmResponseError()
+
+    def _retry_after_seconds(self, value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            seconds = float(value)
+        except ValueError:
+            return None
+        if not isfinite(seconds) or seconds < 0:
+            return None
+        return seconds

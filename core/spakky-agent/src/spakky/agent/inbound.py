@@ -21,6 +21,14 @@ non-blockingly rather than reading a decision off the inbound contract.
 
 from dataclasses import dataclass, field
 
+from spakky.agent.content import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
+    TextPart,
+    VideoPart,
+    model_content_parts,
+)
 from spakky.agent.context import AgentContext
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.interfaces.model import ModelMessage, ModelSelection
@@ -40,6 +48,7 @@ class RunAgentInput:
     model_selection: ModelSelection | None = None
     context: AgentContext = field(default_factory=AgentContext)
     metadata: JsonObject = field(default_factory=dict)
+    attachments: tuple[ImagePart | AudioPart | VideoPart | DocumentPart, ...] = ()
 
     def __post_init__(self) -> None:
         """Reject inbound input that cannot correlate a run or seed a request."""
@@ -53,6 +62,23 @@ class RunAgentInput:
             )
         if self.parent_run_id is not None and not self.parent_run_id.strip():
             raise AgentDefinitionError("Run agent input parent run id cannot be blank")
+        if not isinstance(self.attachments, tuple) or any(
+            not isinstance(
+                attachment,
+                ImagePart | AudioPart | VideoPart | DocumentPart,
+            )
+            for attachment in self.attachments
+        ):
+            raise AgentDefinitionError(
+                "Run agent input attachments must be an immutable media tuple"
+            )
+        model_content_parts((TextPart(self.instruction), *self.attachments))
+
+    def user_message(self) -> ModelMessage:
+        """Build the canonical user message, preserving the text-only shortcut."""
+        if not self.attachments:
+            return ModelMessage.user(self.instruction)
+        return ModelMessage.user((TextPart(self.instruction), *self.attachments))
 
     @property
     def effective_conversation_id(self) -> str:

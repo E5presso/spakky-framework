@@ -214,8 +214,10 @@ class _AcceptanceProvider(ILLMProvider):
         request: ModelRequest,
     ) -> ModelResponse:
         self.targets.append(target)
+        content = request.messages[0].content
+        assert isinstance(content, str)
         return ModelResponse(
-            content=request.messages[0].content,
+            content=content,
             metadata=routing_metadata(target),
         )
 
@@ -268,7 +270,7 @@ async def test_plugin_acceptance_routes_default_vllm_through_openai_sdk() -> Non
 
     assert response.content == "official SDK boundary"
     assert response.usage.total_tokens == 5
-    assert response.metadata == {
+    expected_metadata = {
         "model_ref": "assistant/default",
         "profile": "vllm-local",
         "provider": "vllm",
@@ -277,6 +279,10 @@ async def test_plugin_acceptance_routes_default_vllm_through_openai_sdk() -> Non
         "response_id": "chatcmpl-acceptance",
         "response_model": "served-model",
     }
+    assert all(
+        response.metadata[key] == value for key, value in expected_metadata.items()
+    )
+    assert response.metadata["attempt_ordinal"] == 1
     assert completions.request is not None
     assert completions.request["model"] == "default"
     constructor.assert_called_once_with(
@@ -405,12 +411,16 @@ async def test_catalog_acceptance_routes_vertex_openrouter_vllm_and_anthropic() 
                 model_selection=ModelSelection(model_ref=model_ref),
             )
         )
-        assert response.metadata == {
+        expected_metadata = {
             "model_ref": model_ref,
             "profile": profile,
             "provider": provider,
             "model": physical_model,
         }
+        assert all(
+            response.metadata[key] == value for key, value in expected_metadata.items()
+        )
+        assert response.metadata["attempt_ordinal"] == 1
 
     assert google.targets[0].model_ref == "support/primary"
     assert openai.targets[0].model == "moonshotai/kimi-k2"
@@ -490,13 +500,17 @@ async def test_anthropic_logical_route_crosses_native_messages_sdk_boundary() ->
 
     assert sdk.messages.create.await_args.kwargs["model"] == "claude-opus-4-1"
     assert response.content == "anthropic acceptance"
-    assert response.metadata == {
+    expected_metadata = {
         "model_ref": "analysis/primary",
         "profile": "anthropic",
         "provider": "anthropic",
         "model": "claude-opus-4-1",
         "finish_reason": "end_turn",
     }
+    assert all(
+        response.metadata[key] == value for key, value in expected_metadata.items()
+    )
+    assert response.metadata["attempt_ordinal"] == 1
 
 
 async def test_vertex_logical_route_crosses_explicit_adc_sdk_boundary() -> None:
@@ -550,10 +564,14 @@ async def test_vertex_logical_route_crosses_explicit_adc_sdk_boundary() -> None:
     http_options = kwargs["http_options"]
     assert isinstance(http_options, google_types.HttpOptions)
     assert http_options.base_url == "https://us-central1-aiplatform.googleapis.com/"
-    assert response.metadata == {
+    expected_metadata = {
         "model_ref": "support/primary",
         "profile": "google-vertex",
         "provider": "google",
         "model": "publishers/google/models/gemini-2.5-pro",
         "finish_reason": "STOP",
     }
+    assert all(
+        response.metadata[key] == value for key, value in expected_metadata.items()
+    )
+    assert response.metadata["attempt_ordinal"] == 1

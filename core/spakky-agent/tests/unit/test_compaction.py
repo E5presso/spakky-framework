@@ -7,11 +7,13 @@ import pytest
 
 from spakky.agent import (
     AgentDefinitionError,
+    ImagePart,
     IAgentModel,
     KeepRecentMessagesCompactionStrategy,
     ProviderManagedCompactionStrategy,
     SummarizeOldTurnsCompactionStrategy,
     TrimToolResultsCompactionStrategy,
+    TextPart,
 )
 from spakky.agent.compaction import (
     DEFAULT_SUMMARY_INSTRUCTION,
@@ -174,6 +176,21 @@ async def test_trim_tool_results_expect_leaves_within_budget_tool_messages() -> 
     assert compacted == history
 
 
+async def test_trim_tool_results_rejects_non_text_tool_content() -> None:
+    """Tool correlation content cannot be reinterpreted as media during trimming."""
+    message = ModelMessage(
+        ModelMessageRole.TOOL,
+        (ImagePart.from_bytes(b"image", media_type="image/png"),),
+    )
+
+    with pytest.raises(AgentDefinitionError, match="must be text"):
+        await TrimToolResultsCompactionStrategy(max_characters=8).compact(
+            (message,),
+            _NO_USAGE,
+            _NO_CAPABILITY,
+        )
+
+
 async def test_trim_tool_results_preserves_call_correlation_metadata() -> None:
     """Trimming changes result content only and keeps the tool group correlated."""
     group = _tool_group()
@@ -244,6 +261,31 @@ async def test_summarize_expect_feeds_only_old_turns_to_secondary_model() -> Non
     assert request.messages[1] == ModelMessage(
         ModelMessageRole.USER, "user: old ask\nassistant: old reply"
     )
+
+
+async def test_summarize_multimodal_history_uses_bounded_media_marker() -> None:
+    """Summarization sees attachment presence without inline media bytes."""
+    raw = b"private-image-body"
+    history = (
+        ModelMessage.user(
+            (
+                TextPart("inspect"),
+                ImagePart.from_bytes(raw, media_type="image/png"),
+            )
+        ),
+        _assistant("old reply"),
+        _user("recent ask"),
+    )
+    model = SummarizingModel(summary="briefing")
+
+    await SummarizeOldTurnsCompactionStrategy(
+        model=model,
+        keep_recent=1,
+    ).compact(history, _NO_USAGE, model.capability)
+
+    prompt = model.requests[0].messages[1].content
+    assert prompt == "user: inspect [media attachments: 1]\nassistant: old reply"
+    assert raw.decode() not in prompt
 
 
 async def test_summarize_expect_skips_model_call_when_within_recent_window() -> None:

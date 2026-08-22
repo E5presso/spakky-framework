@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from contextlib import aclosing
 from copy import deepcopy
 from json import JSONDecodeError
+from math import isfinite
 from re import fullmatch
 from typing import Never, override
 
@@ -21,6 +22,7 @@ from google.genai import errors, types
 from google.oauth2 import service_account
 from pydantic import ValidationError
 from spakky.agent import (
+    AgentDefinitionError,
     AgentRetrievalError,
     EmbeddingPurpose,
     EmbeddingVector,
@@ -37,8 +39,10 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolChoice,
     ModelUsage,
+    TextPart,
     ToolCallingSpec,
 )
+from spakky.agent.content import model_content_parts, model_content_text
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.llm.codec import LlmJsonCodec
@@ -56,9 +60,11 @@ from spakky.plugins.llm.error import (
     LlmConfigurationError,
     LlmModelRefusalError,
     LlmProviderUnavailableError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmTimeoutError,
     LlmTransportError,
+    LlmUnsupportedFeatureError,
 )
 from spakky.plugins.llm.provider import (
     ILLMProvider,
@@ -122,6 +128,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
         request: ModelRequest,
     ) -> ModelResponse:
         """Return one Gemini response through the official async SDK client."""
+        self._ensure_supported_request(target, request)
         constraints = self.__codec.tool_constraints(request.tool_calling)
         contents = self._contents(request)
         config = self._generate_config(target, request)
@@ -174,6 +181,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
         target: LlmModelTarget,
         request: ModelRequest,
     ) -> AsyncIterator[ModelStreamEvent]:
+        self._ensure_supported_request(target, request)
         constraints = self.__codec.tool_constraints(request.tool_calling)
         contents = self._contents(request)
         config = self._generate_config(target, request)
@@ -397,7 +405,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
         request: ModelRequest,
     ) -> types.GenerateContentConfig:
         system_parts = [
-            types.Part.from_text(text=message.content)
+            types.Part.from_text(text=self._non_media_text(message))
             for message in request.assemble_messages()
             if message.role is ModelMessageRole.SYSTEM
         ]
@@ -440,6 +448,15 @@ class GoogleGenerateContentProvider(ILLMProvider):
             contents.append(self._content(message))
         return contents
 
+    def _ensure_supported_request(
+        self,
+        target: LlmModelTarget,
+        request: ModelRequest,
+    ) -> None:
+        required = request.required_input_modalities()
+        if not required <= target.route.capability.input_modalities:
+            raise LlmUnsupportedFeatureError
+
     def _content(self, message: ModelMessage) -> types.Content:
         if message.role is ModelMessageRole.ASSISTANT:
             parts = self._assistant_parts(message)
@@ -452,7 +469,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
             response = types.FunctionResponse(
                 id=call_id,
                 name=tool_name,
-                response={"output": message.content},
+                response={"output": self._non_media_text(message)},
             )
             return types.Content(
                 role="user",
@@ -460,16 +477,55 @@ class GoogleGenerateContentProvider(ILLMProvider):
             )
         return types.Content(
             role="user",
-            parts=[types.Part.from_text(text=message.content)],
+            parts=self._input_parts(message),
         )
+
+    def _input_parts(self, message: ModelMessage) -> list[types.Part]:
+        if isinstance(message.content, str):
+            return [types.Part.from_text(text=message.content)]
+        parts: list[types.Part] = []
+        try:
+            portable_parts = model_content_parts(message.content)
+        except AgentDefinitionError as error:
+            raise LlmResponseError from error
+        for part in portable_parts:
+            if isinstance(part, TextPart):
+                parts.append(types.Part.from_text(text=part.text))
+                continue
+            if part.uri is not None:
+                parts.append(
+                    types.Part.from_uri(
+                        file_uri=part.uri,
+                        mime_type=part.media_type,
+                    )
+                )
+                continue
+            if part.data is None:
+                raise LlmResponseError
+            parts.append(
+                types.Part.from_bytes(
+                    data=part.data,
+                    mime_type=part.media_type,
+                )
+            )
+        return parts
+
+    def _non_media_text(self, message: ModelMessage) -> str:
+        if not isinstance(message.content, str) and any(
+            not isinstance(part, TextPart)
+            for part in model_content_parts(message.content)
+        ):
+            raise LlmUnsupportedFeatureError
+        return model_content_text(message.content)
 
     def _assistant_parts(self, message: ModelMessage) -> list[types.Part]:
         parts: list[types.Part] = []
+        text = self._non_media_text(message)
         raw_tool_calls = message.metadata.get("tool_calls")
-        if message.content != "" or raw_tool_calls is None:
+        if text != "" or raw_tool_calls is None:
             parts.append(
                 types.Part(
-                    text=message.content,
+                    text=text,
                     thought_signature=self._thought_signature(
                         message.metadata.get("thought_signature")
                     ),
@@ -715,9 +771,28 @@ class GoogleGenerateContentProvider(ILLMProvider):
     def _raise_api_error(self, error: errors.APIError) -> Never:
         if error.code in (408, 504):
             raise LlmTimeoutError from error
-        if error.code == 429 or error.code >= 500:
+        if error.code == 429:
+            raise LlmRateLimitError(
+                retry_after_seconds=self._retry_after_seconds(error)
+            ) from error
+        if error.code >= 500:
             raise LlmTransportError from error
         raise LlmResponseError from error
+
+    def _retry_after_seconds(self, error: errors.APIError) -> float | None:
+        response = error.response
+        if not isinstance(response, httpx.Response):
+            return None
+        value = response.headers.get("retry-after")
+        if value is None:
+            return None
+        try:
+            seconds = float(value)
+        except ValueError:
+            return None
+        if not isfinite(seconds) or seconds < 0:
+            return None
+        return seconds
 
 
 class GoogleTextEmbedding(ITextEmbedding):

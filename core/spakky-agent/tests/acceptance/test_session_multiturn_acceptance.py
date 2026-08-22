@@ -34,6 +34,7 @@ from spakky.agent import (
     ModelStreamEventKind,
     RunAgentInput,
 )
+from spakky.agent.content import model_content_text
 from spakky.agent.main import initialize
 
 
@@ -135,7 +136,7 @@ async def _drain(stream: AsyncIterator[AgentYield[object]]) -> None:
 
 def _dialogue(request: ModelRequest) -> list[tuple[ModelMessageRole, str]]:
     return [
-        (message.role, message.content)
+        (message.role, model_content_text(message.content))
         for message in request.messages
         if message.role is not ModelMessageRole.SYSTEM
     ]

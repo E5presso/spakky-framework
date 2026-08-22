@@ -1,6 +1,6 @@
 """Acceptance-level tests for Agent cost budgets and privacy-safe telemetry."""
 
-from collections.abc import AsyncGenerator, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from dataclasses import replace
 from decimal import Decimal
 from typing import cast, override
@@ -9,6 +9,7 @@ import pytest
 
 import spakky.agent.runner as runner_module
 from spakky.agent import (
+    AbstractAgentModelError,
     Agent,
     AgentExecutionLimits,
     AgentExecutionSpec,
@@ -28,13 +29,18 @@ from spakky.agent import (
     IAgentTelemetry,
     IRetriever,
     JsonObject,
+    JsonValue,
     ModelPrice,
+    ModelCapability,
+    ModelRequest,
+    ModelResponse,
     ModelPricingCatalog,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelUsage,
     RetrievalContext,
     RetrievalHit,
+    RecoveryStrategy,
     RunAgentInput,
     Tool,
 )
@@ -70,6 +76,64 @@ class RecordingTelemetry(IAgentTelemetry):
         if self.fail:
             raise RuntimeError("telemetry sink failed")
         self.records.append(span)
+
+
+class ReceiptModelError(AbstractAgentModelError):
+    """Typed post-provider failure carrying known billable model usage."""
+
+    message = "post-provider operation failed"
+
+
+class ReceiptFailingModel(IAgentModel):
+    """Model that succeeds upstream, then raises with a billable receipt."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @staticmethod
+    def _failure() -> ReceiptModelError:
+        error = ReceiptModelError()
+        error.attach_model_receipt(
+            ModelUsage(input_tokens=10, output_tokens=2, total_tokens=12),
+            {
+                "model_ref": "model/logical",
+                "profile": "primary",
+                "provider": "test",
+                "model": "physical",
+                "cache_state": "failed",
+            },
+        )
+        return error
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        _ = request
+        raise self._failure()
+
+    async def _events(self) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(kind=ModelStreamEventKind.PROGRESS)
+        raise self._failure()
+
+    @override
+    def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        _ = request
+        return self._events()
+
+
+class ReceiptThenDoneModel(ReceiptFailingModel):
+    """First call fails after billing; resumed call succeeds with new usage."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def _events(self) -> AsyncIterator[ModelStreamEvent]:
+        self.calls += 1
+        if self.calls == 1:
+            yield ModelStreamEvent(kind=ModelStreamEventKind.PROGRESS)
+            raise self._failure()
+        yield _done(usage=ModelUsage(input_tokens=10, output_tokens=2, total_tokens=12))
 
 
 class StaticRetriever(IRetriever):
@@ -140,6 +204,289 @@ class CostLimitedAgent:
 
     def __init__(self, model: IAgentModel) -> None:
         self._model = model
+
+
+class _ReceiptBudgetPorts:
+    """Undecorated durable port holder reused by exhausted-budget fixtures."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="receipt_cost_budget",
+        accepted_signals=(AgentSignalKind.RESUME,),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        limits=AgentExecutionLimits(max_cost=Decimal("0.000010")),
+    )
+)
+class ReceiptCostBudgetAgent(_ReceiptBudgetPorts):
+    """Durable fixture whose first billable error exhausts its cost budget."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="receipt_token_budget",
+        accepted_signals=(AgentSignalKind.RESUME,),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        limits=AgentExecutionLimits(max_tokens=10),
+    )
+)
+class ReceiptTokenBudgetAgent(_ReceiptBudgetPorts):
+    """Durable fixture whose first billable error exhausts its token budget."""
+
+
+async def test_model_receipt_error_complete_surface_remains_typed() -> None:
+    """The provider-neutral error itself preserves its known usage receipt."""
+    model = ReceiptFailingModel()
+
+    with pytest.raises(ReceiptModelError) as raised:
+        await model.complete(ModelRequest(messages=()))
+
+    assert raised.value.model_usage == ModelUsage(
+        input_tokens=10,
+        output_tokens=2,
+        total_tokens=12,
+    )
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_agent_runner_accounts_post_provider_failure_receipt(
+    surface: str,
+) -> None:
+    """Both runner surfaces persist billable usage/cost before terminal failure."""
+    state_id = f"billable-model-error-{surface}"
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    telemetry = RecordingTelemetry()
+    target = ProbeAgent(
+        ReceiptFailingModel(),
+        states,
+        FakeSignalRepository(()),
+        evidence,
+    )
+    runner = (
+        AgentRunner.for_agent_instance(target)
+        .with_pricing(_pricing())
+        .with_telemetry(telemetry)
+    )
+    command = RunAgentInput(state_id=state_id, instruction="answer")
+
+    if surface == "events":
+        results: Sequence[AgentYield[object] | runner_module.AgentEvent] = [
+            event async for event in runner.run_events(command)
+        ]
+        terminal = results[-1]
+        assert isinstance(terminal, runner_module.RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.metadata["total_cost"] == "0.000014"
+    else:
+        results = await _collect(runner.run(command))
+        terminal = results[-1]
+        assert isinstance(terminal, AgentYield)
+        assert isinstance(terminal.payload, Error)
+        assert terminal.payload.metadata["total_cost"] == "0.000014"
+    assert states.get(state_id).status is AgentStatus.FAILED
+    model_evidence = next(
+        item
+        for item in evidence.list_by_state(state_id)
+        if item.kind is AgentEvidenceKind.MODEL
+    )
+    decision = cast(Mapping[str, JsonValue], model_evidence.payload["decision"])
+    usage = cast(Mapping[str, JsonValue], decision["usage"])
+    assert usage["total_tokens"] == 12
+    cost = cast(Mapping[str, JsonValue], decision["limits"])
+    assert cost["total_cost"] == "0.000014"
+    model_span = next(
+        item for item in telemetry.records if item.kind is AgentSpanKind.MODEL
+    )
+    assert model_span.attributes["gen_ai.usage.total_tokens"] == 12
+    assert model_span.attributes["gen_ai.usage.cost"] == "0.000014"
+
+
+async def test_stateless_runner_accounts_post_provider_failure_receipt() -> None:
+    """Receipt accounting does not depend on a durable evidence repository."""
+    runner = AgentRunner.for_agent_instance(
+        StatelessProbeAgent(ReceiptFailingModel())
+    ).with_pricing(_pricing())
+
+    items = await _collect(
+        runner.run(RunAgentInput(state_id="stateless-receipt", instruction="answer"))
+    )
+
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.metadata["total_cost"] == "0.000014"
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_receipt_failure_checkpoint_preserves_cost_across_fresh_resume(
+    surface: str,
+) -> None:
+    """A billed failed step resumes at the next step with cumulative exact cost."""
+    state_id = f"receipt-resume-{surface}"
+    model = ReceiptThenDoneModel()
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    first_runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    ).with_pricing(_pricing())
+    command = RunAgentInput(state_id=state_id, instruction="answer")
+    if surface == "events":
+        first: Sequence[AgentYield[object] | runner_module.AgentEvent] = [
+            event async for event in first_runner.run_events(command)
+        ]
+        assert isinstance(first[-1], runner_module.RunFinishedEvent)
+    else:
+        first = await _collect(first_runner.run(command))
+        assert isinstance(first[-1], AgentYield)
+        assert isinstance(first[-1].payload, Error)
+    assert states.get(state_id).metadata.get("runner_checkpoint") is not None
+    resumed_runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    ).with_pricing(_pricing())
+    resume = RunAgentInput(state_id=state_id, instruction="resume", resume=True)
+
+    if surface == "events":
+        resumed = [event async for event in resumed_runner.run_events(resume)]
+        terminal = resumed[-1]
+        assert isinstance(terminal, runner_module.RunFinishedEvent)
+        assert terminal.error is None
+        assert terminal.metadata["total_cost"] == "0.000028"
+    else:
+        resumed_yields = await _collect(resumed_runner.run(resume))
+        final = resumed_yields[-1].payload
+        assert isinstance(final, Final)
+        assert final.metadata["total_cost"] == "0.000028"
+    model_steps = [
+        cast(Mapping[str, JsonValue], item.payload["decision"])["step"]
+        for item in evidence.list_by_state(state_id)
+        if item.kind is AgentEvidenceKind.MODEL
+    ]
+    assert model_steps == [1, 2]
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+@pytest.mark.parametrize(
+    ("agent_type", "expected_code"),
+    [
+        (ReceiptCostBudgetAgent, "agent_max_cost_exceeded"),
+        (ReceiptTokenBudgetAgent, "agent_max_tokens_exceeded"),
+    ],
+)
+async def test_exhausted_receipt_budget_blocks_resumed_provider_io(
+    surface: str,
+    agent_type: type[_ReceiptBudgetPorts],
+    expected_code: str,
+) -> None:
+    """A restored exhausted cost or token counter terminates before another call."""
+    state_id = f"exhausted-{expected_code}-{surface}"
+    model = ReceiptThenDoneModel()
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    first_runner = AgentRunner.for_agent_instance(
+        agent_type(model, states, signals, evidence)
+    ).with_pricing(_pricing())
+    command = RunAgentInput(state_id=state_id, instruction="answer")
+    if surface == "events":
+        first: Sequence[AgentYield[object] | runner_module.AgentEvent] = [
+            event async for event in first_runner.run_events(command)
+        ]
+        first_terminal = first[-1]
+        assert isinstance(first_terminal, runner_module.RunFinishedEvent)
+        assert first_terminal.error is not None
+        assert first_terminal.error["code"] == expected_code
+    else:
+        first = await _collect(first_runner.run(command))
+        first_terminal = first[-1]
+        assert isinstance(first_terminal, AgentYield)
+        assert isinstance(first_terminal.payload, Error)
+        assert first_terminal.payload.code == expected_code
+    resumed_runner = AgentRunner.for_agent_instance(
+        agent_type(model, states, signals, evidence)
+    ).with_pricing(_pricing())
+    resume = RunAgentInput(state_id=state_id, instruction="resume", resume=True)
+
+    if surface == "events":
+        resumed = [event async for event in resumed_runner.run_events(resume)]
+        terminal = resumed[-1]
+        assert isinstance(terminal, runner_module.RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == expected_code
+    else:
+        resumed_yields = await _collect(resumed_runner.run(resume))
+        terminal = resumed_yields[-1]
+        assert isinstance(terminal.payload, Error)
+        assert terminal.payload.code == expected_code
+    assert model.calls == 1
+    model_steps = [
+        cast(Mapping[str, JsonValue], item.payload["decision"])["step"]
+        for item in evidence.list_by_state(state_id)
+        if item.kind is AgentEvidenceKind.MODEL
+    ]
+    assert model_steps == [1]
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_done_usage_limit_checkpoint_blocks_resumed_provider_io(
+    surface: str,
+) -> None:
+    """Ordinary DONE usage errors persist counters before a fresh resume."""
+    state_id = f"done-usage-exhausted-{surface}"
+    model = ScriptedRoundModel(
+        (
+            (_done(usage=ModelUsage(input_tokens=10, total_tokens=12)),),
+            (_done(usage=ModelUsage(total_tokens=1)),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    first_runner = AgentRunner.for_agent_instance(
+        ReceiptTokenBudgetAgent(model, states, signals, evidence)
+    )
+    command = RunAgentInput(state_id=state_id, instruction="answer")
+    if surface == "events":
+        first = [event async for event in first_runner.run_events(command)]
+        first_terminal = first[-1]
+        assert isinstance(first_terminal, runner_module.RunFinishedEvent)
+        assert first_terminal.error is not None
+        assert first_terminal.error["code"] == "agent_max_tokens_exceeded"
+    else:
+        first_yields = await _collect(first_runner.run(command))
+        first_error = first_yields[-1].payload
+        assert isinstance(first_error, Error)
+        assert first_error.code == "agent_max_tokens_exceeded"
+    assert states.get(state_id).metadata.get("runner_checkpoint") is not None
+    resumed_runner = AgentRunner.for_agent_instance(
+        ReceiptTokenBudgetAgent(model, states, signals, evidence)
+    )
+    resume = RunAgentInput(state_id=state_id, instruction="resume", resume=True)
+
+    if surface == "events":
+        resumed = [event async for event in resumed_runner.run_events(resume)]
+        terminal = resumed[-1]
+        assert isinstance(terminal, runner_module.RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_max_tokens_exceeded"
+    else:
+        resumed_yields = await _collect(resumed_runner.run(resume))
+        terminal = resumed_yields[-1].payload
+        assert isinstance(terminal, Error)
+        assert terminal.code == "agent_max_tokens_exceeded"
+    assert len(model.requests) == 1
 
 
 async def test_agent_runner_calculates_cost_and_records_safe_model_and_run_spans() -> (
@@ -840,6 +1187,78 @@ async def test_agent_runner_records_model_error_span() -> None:
     assert telemetry.records[-1].status is AgentSpanStatus.ERROR
 
 
+async def test_agent_runner_keeps_nested_resilience_evidence_out_of_span_attributes() -> (
+    None
+):
+    """Attempt details stay durable while telemetry receives scalar summaries only."""
+    metadata: JsonObject = {
+        "model_ref": "fallback/model",
+        "profile": "fallback-profile",
+        "provider": "openai",
+        "model": "physical-model",
+        "attempted_model_ref": "fallback/model",
+        "attempted_profile": "fallback-profile",
+        "attempted_provider": "openai",
+        "attempt_ordinal": 2,
+        "attempts": (
+            {"model_ref": "primary/model", "failure_class": "timeout"},
+            {"model_ref": "fallback/model", "state": "success"},
+        ),
+        "fallback_used": True,
+        "fallback_from": "primary/model",
+        "retry_count": 1,
+        "circuit_state": "closed",
+        "cache_state": "miss",
+        "cache_mode": "exact",
+        "cache_selections": ({"state": "miss"},),
+        "cache_saved_input_tokens": 10,
+        "cache_saved_output_tokens": 2,
+        "cache_saved_total_tokens": 12,
+    }
+    telemetry = RecordingTelemetry()
+    evidence = FakeEvidenceRepository()
+    target = ProbeAgent(
+        ScriptedRoundModel(
+            (
+                (
+                    ModelStreamEvent(
+                        kind=ModelStreamEventKind.DONE,
+                        metadata=metadata,
+                    ),
+                ),
+            )
+        ),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        evidence,
+    )
+
+    await _collect(
+        AgentRunner.for_agent_instance(target)
+        .with_telemetry(telemetry)
+        .run(RunAgentInput(state_id="resilience-evidence", instruction="answer"))
+    )
+
+    model_span = next(
+        record for record in telemetry.records if record.kind is AgentSpanKind.MODEL
+    )
+    assert model_span.attributes["fallback_used"] is True
+    assert model_span.attributes["retry_count"] == 1
+    assert model_span.attributes["cache_state"] == "miss"
+    assert model_span.attributes["cache_saved_total_tokens"] == 12
+    assert "attempts" not in model_span.attributes
+    assert "cache_selections" not in model_span.attributes
+    model_evidence = next(
+        item
+        for item in evidence.list_by_state("resilience-evidence")
+        if item.kind is AgentEvidenceKind.MODEL
+    )
+    decision = cast(Mapping[str, JsonValue], model_evidence.payload["decision"])
+    routing = cast(Mapping[str, JsonValue], decision["routing"])
+    assert routing["attempts"] == metadata["attempts"]
+    assert routing["cache_selections"] == metadata["cache_selections"]
+
+
 async def test_agent_runner_telemetry_failure_is_typed() -> None:
     """Observer failure never becomes an untyped backend exception."""
     runner = AgentRunner.for_agent_instance(
@@ -1050,6 +1469,53 @@ def test_agent_runner_rejects_untrusted_model_cost_evidence(
 
     with pytest.raises(AgentDefinitionError):
         runner._validate_restored_pricing(state_id, context)
+
+
+def test_agent_runner_rejects_pricing_catalog_and_total_mismatch() -> None:
+    """Catalog identity and recomputed total are independently enforced on resume."""
+    state_id = "pricing-cross-check"
+    evidence = FakeEvidenceRepository()
+    evidence.append(
+        AgentEvidence(
+            id="model-1",
+            agent_state_id=state_id,
+            kind=AgentEvidenceKind.MODEL,
+            payload={
+                "model": "physical",
+                "decision": {
+                    "step": 1,
+                    "routing": {"model_ref": "model/logical"},
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                },
+            },
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(
+            ScriptedRoundModel(()),
+            FakeStateRepository(),
+            FakeSignalRepository(()),
+            evidence,
+        )
+    ).with_pricing(_pricing())
+    wrong_catalog = runner_module._ExecutionContext(
+        state_id=state_id,
+        history=[],
+        step_count=1,
+        total_cost=Decimal("0.000003"),
+        pricing_version="wrong",
+        cost_currency="USD",
+    )
+    wrong_total = replace(
+        wrong_catalog,
+        total_cost=Decimal("0.000004"),
+        pricing_version="prices-v1",
+    )
+
+    with pytest.raises(AgentDefinitionError, match="catalog"):
+        runner._validate_restored_pricing(state_id, wrong_catalog)
+    with pytest.raises(AgentDefinitionError, match="does not match"):
+        runner._validate_restored_pricing(state_id, wrong_total)
 
 
 def test_runner_observability_helpers_filter_untyped_cost_metadata() -> None:

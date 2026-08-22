@@ -244,3 +244,4 @@ nav:
       - ADR-0018 Typed agent output과 composed execution context: adr/0018-typed-agent-output-and-context.md
       - ADR-0019 Minimal retrieval runtime: adr/0019-minimal-retrieval-runtime.md
       - ADR-0020 Semantic memory, evaluation, pricing과 Agent telemetry: adr/0020-agent-memory-evaluation-cost-telemetry.md
+      - ADR-0021 Multimodal model content와 explicit LLM execution policy: adr/0021-multimodal-model-content-and-llm-execution-policy.md

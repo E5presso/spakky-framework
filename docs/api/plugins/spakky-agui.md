@@ -26,6 +26,19 @@ Well-formed unknown ref는 shape parser exception이 아닙니다. Catalog-aware
 `RUN_ERROR`로 표면화합니다. Catalog 등록과 default 선택은
 [LLM 모델 라우팅](../../guides/llm-routing.md)을 확인하세요.
 
+## Multimodal inbound
+
+Latest AG-UI user message의 content가 typed parts이면 nonblank text fragments를 newline으로
+합쳐 `RunAgentInput.instruction`으로, image/audio/video/document parts를 ordered
+`attachments` tuple로 매핑합니다. URL source는 `value`와 `mimeType`, data source는 strict
+base64 `value`와 MIME type이 필요합니다. Deprecated binary, media-only message, missing MIME,
+invalid URI/base64는 `AgUiRunResolutionError`입니다.
+
+Default aggregate bound는 media 16개와 decoded inline bytes 20 MiB입니다. URL construction은
+network I/O를 하지 않으며 provider-bound async DNS safety는 `spakky-llm` policy가 수행합니다.
+Attachment provenance는 AG-UI message ID에 결속됩니다. Multimodal content를 사용해도 model
+선택 shape는 계속 `forwardedProps.modelSelection.modelRef` 하나뿐입니다.
+
 `RUN_PAUSED`를 deferred `hitl_approval` tool로 바꾸는 경로는 non-null
 `approval_id`가 있는 approval-required pause만 지원합니다. Authentication/user-input
 pause처럼 `approval_id=None`이면 `AgUiPendingApprovalError`이며 현재 별도 AG-UI pause
@@ -79,6 +92,10 @@ Protocol-native AG-UI `context` 배열은 현재 core `RunAgentInput.context`로
       show_root_heading: false
 
 ::: spakky.plugins.agui.endpoint
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.agui.endpoint_input
     options:
       show_root_heading: false
 

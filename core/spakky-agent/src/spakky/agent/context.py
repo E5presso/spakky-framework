@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import StrEnum
@@ -204,6 +205,8 @@ class ContextPack:
     def __post_init__(self) -> None:
         _require_non_blank(self.id, "Context pack id")
         _require_non_blank(self.source, "Context pack source")
+        object.__setattr__(self, "sensitive_fields", tuple(self.sensitive_fields))
+        object.__setattr__(self, "metadata", deepcopy(dict(self.metadata)))
 
     def guarded_content(
         self,
@@ -274,6 +277,8 @@ class ContextManifestEntry:
         _require_non_blank(self.origin_ref, "Context manifest origin ref")
         _require_optional_non_blank(self.evidence_ref, "Context manifest evidence ref")
         _require_optional_non_blank(self.digest_ref, "Context manifest digest ref")
+        object.__setattr__(self, "sensitive_fields", tuple(self.sensitive_fields))
+        object.__setattr__(self, "metadata", deepcopy(dict(self.metadata)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,8 +295,23 @@ class ContextManifest:
     def __post_init__(self) -> None:
         _require_non_blank(self.id, "Context manifest id")
         _require_optional_non_blank(self.origin_ref, "Context manifest origin ref")
+        if not isinstance(self.entries, Sequence) or isinstance(
+            self.entries,
+            str | bytes | bytearray,
+        ):
+            raise AgentDefinitionError("Context manifest entries must be a sequence")
+        if not isinstance(self.evidence_refs, Sequence) or isinstance(
+            self.evidence_refs,
+            str | bytes | bytearray,
+        ):
+            raise AgentDefinitionError(
+                "Context manifest evidence refs must be a sequence"
+            )
         for evidence_ref in self.evidence_refs:
             _require_non_blank(evidence_ref, "Context manifest evidence ref")
+        object.__setattr__(self, "entries", tuple(self.entries))
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+        object.__setattr__(self, "metadata", deepcopy(dict(self.metadata)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,6 +334,11 @@ class ContextDigest:
         _require_non_blank(self.context_identity, "Context digest identity")
         _require_non_blank(self.source_manifest_ref, "Context digest manifest ref")
         _require_non_blank(self.digest, "Context digest value")
+        if not isinstance(self.derived_from_pack_ids, Sequence) or isinstance(
+            self.derived_from_pack_ids,
+            str | bytes | bytearray,
+        ):
+            raise AgentDefinitionError("Context digest pack refs must be a sequence")
         for pack_id in self.derived_from_pack_ids:
             _require_non_blank(pack_id, "Context digest pack id")
         _require_optional_non_blank(
@@ -321,6 +346,12 @@ class ContextDigest:
             "Context digest compression evidence ref",
         )
         _require_optional_non_blank(self.algorithm, "Context digest algorithm")
+        object.__setattr__(
+            self,
+            "derived_from_pack_ids",
+            tuple(self.derived_from_pack_ids),
+        )
+        object.__setattr__(self, "metadata", deepcopy(dict(self.metadata)))
 
 
 @dataclass(frozen=True, slots=True)

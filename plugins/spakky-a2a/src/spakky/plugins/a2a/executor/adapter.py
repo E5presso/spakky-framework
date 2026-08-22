@@ -22,6 +22,14 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import Part, Task, TaskState, TaskStatus
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
+from spakky.agent import (
+    AgentDefinitionError,
+    AudioPart,
+    DEFAULT_MEDIA_SAFETY_LIMITS,
+    DocumentPart,
+    ImagePart,
+    VideoPart,
+)
 from spakky.agent.event import AgentEvent
 from spakky.agent.execution import AgentSignalKind
 from spakky.agent.inbound import RunAgentInput
@@ -66,6 +74,9 @@ class _InboundApproval:
     decision: ApprovalDecision
 
 
+type _Attachment = ImagePart | AudioPart | VideoPart | DocumentPart
+
+
 class SpakkyAgentExecutor(AgentExecutor):
     """Bridges A2A request execution onto the spakky agent event stream."""
 
@@ -85,20 +96,28 @@ class SpakkyAgentExecutor(AgentExecutor):
 
     @override
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        task = await self._ensure_task(context, event_queue)
-        updater = TaskUpdater(event_queue, task.id, task.context_id)
-        await updater.start_work()
         approval = self._inbound_approval(context)
-        if approval is not None:
-            self._append_approval_signal(task.id, approval)
+        current_task = context.current_task
+        state_id = (
+            current_task.id if current_task is not None else context.task_id or ""
+        )
+        conversation_id = (
+            current_task.context_id if current_task is not None else context.context_id
+        )
         run_input = RunAgentInput(
-            state_id=task.id,
-            instruction=self._instruction(context),
-            conversation_id=context.context_id,
+            state_id=state_id,
+            instruction=self._instruction(context, approval is not None),
+            conversation_id=conversation_id,
             resume=approval is not None,
+            attachments=self._attachments(context),
             model_selection=self._model_selection(context),
             metadata=self._run_metadata(context),
         )
+        task = await self._ensure_task(context, event_queue)
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
+        await updater.start_work()
+        if approval is not None:
+            self._append_approval_signal(task.id, approval)
         outcome: RunOutcome | None = None
         async for event in self._run_events(run_input):
             projected = await self._projector.project(event, updater)
@@ -189,14 +208,82 @@ class SpakkyAgentExecutor(AgentExecutor):
         return task
 
     @staticmethod
-    def _instruction(context: RequestContext) -> str:
+    def _instruction(context: RequestContext, resume: bool = False) -> str:
         """Return the inbound user text, defaulting to a resume marker.
 
         A2A resume turns may carry only an approval data part with no text, but
         ``RunAgentInput`` rejects a blank instruction, so a non-blank marker seeds
         the resumed run whose real continuation comes from the durable signal.
         """
-        return context.get_user_input() or "resume"
+        instruction = context.get_user_input()
+        if instruction.strip():
+            return instruction
+        if resume:
+            return "resume"
+        raise A2ARunResolutionError("message.text")
+
+    @staticmethod
+    def _attachments(context: RequestContext) -> tuple[_Attachment, ...]:
+        """Map A2A raw/URL parts without interpreting structured data parts."""
+        message = context.message
+        if message is None:
+            return ()
+        attachments: list[_Attachment] = []
+        total_inline_bytes = 0
+        provenance = f"a2a:{message.message_id}"
+        for part in message.parts:
+            content_kind = part.WhichOneof("content")
+            if content_kind in (None, "text", "data"):
+                continue
+            if len(attachments) >= DEFAULT_MEDIA_SAFETY_LIMITS.max_media_parts:
+                raise A2ARunResolutionError("message.parts")
+            if content_kind == "raw":
+                total_inline_bytes += len(part.raw)
+                if total_inline_bytes > DEFAULT_MEDIA_SAFETY_LIMITS.max_inline_bytes:
+                    raise A2ARunResolutionError("message.parts")
+            media_class = _media_class(part.media_type)
+            try:
+                if content_kind == "raw":
+                    if media_class is DocumentPart:
+                        attachments.append(
+                            DocumentPart.from_bytes(
+                                part.raw,
+                                media_type=part.media_type,
+                                filename=part.filename or None,
+                                source=provenance,
+                            )
+                        )
+                    else:
+                        attachments.append(
+                            media_class.from_bytes(
+                                part.raw,
+                                media_type=part.media_type,
+                                source=provenance,
+                            )
+                        )
+                elif content_kind == "url":
+                    if media_class is DocumentPart:
+                        attachments.append(
+                            DocumentPart.from_uri(
+                                part.url,
+                                media_type=part.media_type,
+                                filename=part.filename or None,
+                                source=provenance,
+                            )
+                        )
+                    else:
+                        attachments.append(
+                            media_class.from_uri(
+                                part.url,
+                                media_type=part.media_type,
+                                source=provenance,
+                            )
+                        )
+                else:
+                    raise A2ARunResolutionError("message.parts")
+            except AgentDefinitionError as error:
+                raise A2ARunResolutionError("message.parts") from error
+        return tuple(attachments)
 
     def _inbound_approval(
         self,
@@ -333,3 +420,16 @@ def _data_part(payload: JsonObject) -> Part:
     value = Value()
     ParseDict(dict(payload), value)
     return Part(data=value)
+
+
+def _media_class(media_type: str) -> type[_Attachment]:
+    """Choose one portable media part from an explicit MIME family."""
+    if media_type.startswith("image/"):
+        return ImagePart
+    if media_type.startswith("audio/"):
+        return AudioPart
+    if media_type.startswith("video/"):
+        return VideoPart
+    if media_type.startswith(("application/", "text/")):
+        return DocumentPart
+    raise A2ARunResolutionError("message.parts.media_type")

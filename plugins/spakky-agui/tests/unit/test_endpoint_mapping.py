@@ -1,18 +1,31 @@
 """Tests for the AG-UI -> core RunAgentInput mapping at the endpoint boundary."""
 
+from base64 import b64encode
 from collections.abc import AsyncIterator
 from typing import cast
 
-from ag_ui.core import RunAgentInput as AgUiRunAgentInput
+from ag_ui.core import (
+    ImageInputContent,
+    RunAgentInput as AgUiRunAgentInput,
+)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pytest import mark, raises
+from pytest import MonkeyPatch, mark, raises
 
+from spakky.agent import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
+    MediaSafetyLimits,
+    VideoPart,
+)
 from spakky.agent.inbound import RunAgentInput
 from spakky.plugins.agui.config import AgUiConfig
 from spakky.plugins.agui.endpoint import add_agui_endpoint, _to_core_input
+from spakky.plugins.agui import endpoint_input as endpoint_input_module
 from spakky.plugins.agui.endpoint_input import (
     RESUME_APPROVAL_INSTRUCTION,
+    _attachment,
     inbound_run,
 )
 from spakky.plugins.agui.error import AgUiRunResolutionError
@@ -214,8 +227,9 @@ def test_to_core_input_without_parent_run_id_sets_none() -> None:
     assert core.parent_run_id is None
 
 
-def test_to_core_input_skips_non_text_user_message() -> None:
-    """가장 최근 user 메시지의 content가 텍스트가 아니면 그 앞의 텍스트로 fallback한다."""
+def test_to_core_input_maps_latest_multimodal_user_message() -> None:
+    """Latest AG-UI text and typed media sources become ordered core attachments."""
+    audio = b"audio-bytes"
     core = _to_core_input(
         _ag_ui_input(
             [
@@ -223,13 +237,122 @@ def test_to_core_input_skips_non_text_user_message() -> None:
                 {
                     "id": "u2",
                     "role": "user",
-                    "content": [{"type": "text", "text": "multimodal"}],
+                    "content": [
+                        {"type": "text", "text": "inspect"},
+                        {"type": "text", "text": "these files"},
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "url",
+                                "value": "https://assets.example.test/image.png",
+                                "mimeType": "image/png",
+                            },
+                        },
+                        {
+                            "type": "audio",
+                            "source": {
+                                "type": "data",
+                                "value": b64encode(audio).decode("ascii"),
+                                "mimeType": "audio/mpeg",
+                            },
+                        },
+                        {
+                            "type": "video",
+                            "source": {
+                                "type": "url",
+                                "value": "https://assets.example.test/video.mp4",
+                                "mimeType": "video/mp4",
+                            },
+                        },
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "url",
+                                "value": "https://assets.example.test/report.pdf",
+                                "mimeType": "application/pdf",
+                            },
+                        },
+                    ],
                 },
             ]
         )
     )
 
-    assert core.instruction == "earlier text"
+    assert core.instruction == "inspect\nthese files"
+    assert core.attachments == (
+        ImagePart.from_uri(
+            "https://assets.example.test/image.png",
+            media_type="image/png",
+            source="ag-ui:u2",
+        ),
+        AudioPart.from_bytes(
+            audio,
+            media_type="audio/mpeg",
+            source="ag-ui:u2",
+        ),
+        VideoPart.from_uri(
+            "https://assets.example.test/video.mp4",
+            media_type="video/mp4",
+            source="ag-ui:u2",
+        ),
+        DocumentPart.from_uri(
+            "https://assets.example.test/report.pdf",
+            media_type="application/pdf",
+            source="ag-ui:u2",
+        ),
+    )
+
+
+@mark.parametrize(
+    "content",
+    [
+        [
+            {"type": "text", "text": "inspect"},
+            {
+                "type": "image",
+                "source": {
+                    "type": "url",
+                    "value": "https://assets.example.test/image.png",
+                },
+            },
+        ],
+        [
+            {"type": "text", "text": "inspect"},
+            {
+                "type": "audio",
+                "source": {
+                    "type": "data",
+                    "value": "not-base64",
+                    "mimeType": "audio/mpeg",
+                },
+            },
+        ],
+        [
+            {
+                "type": "image",
+                "source": {
+                    "type": "url",
+                    "value": "https://assets.example.test/image.png",
+                    "mimeType": "image/png",
+                },
+            },
+        ],
+        [
+            {
+                "type": "binary",
+                "mimeType": "image/png",
+                "url": "https://assets.example.test/image.png",
+            },
+            {"type": "text", "text": "inspect"},
+        ],
+    ],
+)
+def test_to_core_input_rejects_invalid_multimodal_content(
+    content: list[dict[str, object]],
+) -> None:
+    """Missing MIME, invalid base64, media-only, and deprecated binary fail loud."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(_ag_ui_input([{"id": "u1", "role": "user", "content": content}]))
 
 
 def test_to_core_input_without_user_message_raises() -> None:
@@ -237,6 +360,140 @@ def test_to_core_input_without_user_message_raises() -> None:
     with raises(AgUiRunResolutionError):
         _to_core_input(
             _ag_ui_input([{"id": "a1", "role": "assistant", "content": "ack"}])
+        )
+
+
+def test_to_core_input_rejects_blank_plain_user_message() -> None:
+    """A blank latest plain user message cannot fall back to older text."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [
+                    {"id": "old", "role": "user", "content": "older"},
+                    {"id": "blank", "role": "user", "content": " "},
+                ]
+            )
+        )
+
+
+def test_to_core_input_ignores_blank_text_fragment_inside_valid_message() -> None:
+    """Blank fragments are omitted when another fragment supplies instruction text."""
+    core = _to_core_input(
+        _ag_ui_input(
+            [
+                {
+                    "id": "u1",
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": " "},
+                        {"type": "text", "text": "inspect"},
+                    ],
+                }
+            ]
+        )
+    )
+
+    assert core.instruction == "inspect"
+
+
+def test_attachment_defensive_boundary_rejects_unknown_part_or_source() -> None:
+    """Type-corrupted AG-UI content never reaches core media factories."""
+    with raises(AgUiRunResolutionError):
+        _attachment(object(), "u1")
+    corrupted = ImageInputContent.model_construct(source=object())
+    with raises(AgUiRunResolutionError):
+        _attachment(corrupted, "u1")
+
+
+def test_to_core_input_rejects_disallowed_remote_media_uri() -> None:
+    """Core URI safety errors are normalized at the AG-UI boundary."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [
+                    {
+                        "id": "u1",
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "inspect"},
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "url",
+                                    "value": "file:///tmp/private.png",
+                                    "mimeType": "image/png",
+                                },
+                            },
+                        ],
+                    }
+                ]
+            )
+        )
+
+
+def test_to_core_input_enforces_total_attachment_count() -> None:
+    """Many URI parts cannot bypass the message-level attachment bound."""
+    content: list[dict[str, object]] = [{"type": "text", "text": "inspect"}]
+    content.extend(
+        {
+            "type": "image",
+            "source": {
+                "type": "url",
+                "value": f"https://assets.example.test/{index}.png",
+                "mimeType": "image/png",
+            },
+        }
+        for index in range(17)
+    )
+
+    with raises(AgUiRunResolutionError, match="too many"):
+        _to_core_input(_ag_ui_input([{"id": "u1", "role": "user", "content": content}]))
+
+
+def test_to_core_input_enforces_encoded_and_total_inline_budget(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Encoded input is bounded before decode and accumulated after each part."""
+    limits = MediaSafetyLimits(max_inline_bytes=3, max_media_parts=4)
+    monkeypatch.setattr(
+        endpoint_input_module,
+        "DEFAULT_MEDIA_SAFETY_LIMITS",
+        limits,
+    )
+    oversized = [
+        {"type": "text", "text": "inspect"},
+        {
+            "type": "image",
+            "source": {
+                "type": "data",
+                "value": "A" * 8,
+                "mimeType": "image/png",
+            },
+        },
+    ]
+    with raises(AgUiRunResolutionError, match="encoded"):
+        _to_core_input(
+            _ag_ui_input([{"id": "u1", "role": "user", "content": oversized}])
+        )
+
+    encoded = b64encode(b"ab").decode("ascii")
+    accumulated = [
+        {"type": "text", "text": "inspect"},
+        *(
+            {
+                "type": "image",
+                "source": {
+                    "type": "data",
+                    "value": encoded,
+                    "mimeType": "image/png",
+                },
+            }
+            for _ in range(2)
+        ),
+    ]
+    with raises(AgUiRunResolutionError, match="total inline"):
+        _to_core_input(
+            _ag_ui_input([{"id": "u1", "role": "user", "content": accumulated}])
         )
 
 

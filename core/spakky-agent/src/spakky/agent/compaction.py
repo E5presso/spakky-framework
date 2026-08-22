@@ -22,6 +22,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.content import TextPart, model_content_parts, model_content_text
 from spakky.agent.interfaces.model import (
     IAgentModel,
     ModelCapability,
@@ -126,6 +127,8 @@ class TrimToolResultsCompactionStrategy(ICompactionStrategy):
     def _trim(self, message: ModelMessage) -> ModelMessage:
         if message.role is not ModelMessageRole.TOOL:
             return message
+        if not isinstance(message.content, str):
+            raise AgentDefinitionError("Tool-result content must be text")
         if len(message.content) <= self.max_characters:
             return message
         return ModelMessage(
@@ -197,7 +200,7 @@ class SummarizeOldTurnsCompactionStrategy(ICompactionStrategy):
 
     def _summary_request(self, older: tuple[ModelMessage, ...]) -> ModelRequest:
         transcript = "\n".join(
-            f"{message.role.value}: {message.content}" for message in older
+            f"{message.role.value}: {_summary_content(message)}" for message in older
         )
         return ModelRequest(
             messages=(
@@ -213,6 +216,17 @@ class SummarizeOldTurnsCompactionStrategy(ICompactionStrategy):
             content=content,
             metadata={SUMMARY_MESSAGE_METADATA_KEY: SUMMARY_MESSAGE_METADATA_VALUE},
         )
+
+
+def _summary_content(message: ModelMessage) -> str:
+    """Render text plus bounded media markers without embedding raw media bytes."""
+    text = model_content_text(message.content)
+    parts = model_content_parts(message.content)
+    media_count = sum(not isinstance(part, TextPart) for part in parts)
+    if media_count == 0:
+        return text
+    marker = f"[media attachments: {media_count}]"
+    return marker if text == "" else f"{text} {marker}"
 
 
 def validate_tool_call_groups(

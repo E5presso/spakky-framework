@@ -358,9 +358,11 @@ Pricing이 있는데 routed logical ref가 없거나 unknown이거나 `input_tok
 `output_tokens`가 없거나 cache usage가 input usage보다 크면 해당 model call 뒤
 `agent_cost_unavailable`로 종료하며 tool이나 public final로 진행하지 않습니다.
 
-Step cost를 누적한 결과가 `max_cost`보다 클 때 `agent_max_cost_exceeded`입니다. 정확히 같은
-값은 허용됩니다. Final/event/error metadata에는 cumulative `total_cost`, currency,
-pricing version이 남고 step metadata에는 해당 `ModelCost`가 남습니다.
+Step cost를 누적한 결과가 `max_cost`보다 크면 즉시 `agent_max_cost_exceeded`입니다. 정확히
+같은 값으로 final에 도달하는 것은 허용하지만 tool continuation이 다음 model request를
+필요로 하면 preflight가 `total_cost >= max_cost`를 exhausted budget으로 거부합니다.
+Final/event/error metadata에는 cumulative `total_cost`, currency, pricing version이 남고 step
+metadata에는 해당 `ModelCost`가 남습니다.
 
 Durable checkpoint는 cumulative cost와 pricing fingerprint/version/currency를 함께
 저장합니다. Resume에는 같은 pricing fingerprint와 exact version/currency가 필요하며 다른

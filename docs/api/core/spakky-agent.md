@@ -11,7 +11,7 @@ pip install spakky-agent
 ```
 
 `spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `RunAgentInput`, `AgentRunner`,
-`AgentEvent`, `AgentYield`, retrieval/memory, offline evaluation, pricing/telemetry, tool
+`AgentEvent`, `AgentYield`, multimodal content, retrieval/memory, offline evaluation, pricing/telemetry, tool
 dispatch, context compaction, state/signal/evidence repository port, task store,
 safety/recovery/delegation 타입 같은 public contract를
 소유합니다. 이 패키지는 의도적으로 LLM provider SDK, SQLAlchemy, FastAPI, Typer,
@@ -33,8 +33,8 @@ valid terminal step에서 `FINAL` 또는 `RUN_FINISHED`를 정확히 한 번 방
 | --- | --- | --- |
 | `max_steps` | `8` | 다음 model request 직전 |
 | `max_tool_calls` | `32` | candidate batch 전체 dispatch 직전 |
-| `max_tokens` | `None` | 각 terminal provider usage 누적 직후 |
-| `max_cost` | `None` | pricing이 계산한 각 terminal model step cost 누적 직후 |
+| `max_tokens` | `None` | terminal usage 누적 직후와 다음 request preflight |
+| `max_cost` | `None` | terminal step cost 누적 직후와 다음 request preflight |
 | `timeout_seconds` | `None` | model과 async tool await의 invocation deadline |
 
 `AgentExecutionSpec.timeout_seconds` alias는 없습니다. `max_tokens`가 설정됐지만 provider가
@@ -97,6 +97,31 @@ adapter는 opaque ref를 operator catalog에서 해석합니다.
 text output만 지원하고 나머지 optional capability는 꺼진 상태입니다. Logical route
 구성과 protocol별 wire shape는 [LLM 모델 라우팅](../../guides/llm-routing.md)을
 확인하세요.
+
+`AbstractAgentModelError`는 provider가 이미 성공해 billable usage가 생긴 뒤 cache store 같은
+framework 단계가 실패했을 때 `ModelUsage`와 privacy-safe routing receipt를 붙일 수 있는
+model-error base입니다. Runner는 이 receipt를 token/cost counter와 `MODEL` evidence에 먼저
+반영한 뒤 terminal error로 끝냅니다.
+
+## Multimodal content
+
+`ModelMessage.content`는 legacy `str` 또는 ordered `TextPart`/`ImagePart`/`AudioPart`/
+`VideoPart`/`DocumentPart` sequence입니다. Text-only DX는 `ModelMessage.user("text")`이고,
+runner inbound는 `RunAgentInput(..., attachments=(image,))`를 사용합니다. Attachment field는
+기존 positional order 뒤에 추가됐으며 기본값은 empty tuple입니다.
+
+Media part는 `from_bytes()`와 `from_uri()` 중 하나로 만들고 explicit MIME type을 요구합니다.
+`MediaSafetyLimits` 기본값은 HTTPS URI, aggregate media 16개, inline bytes 합계 20 MiB입니다.
+URI construction은 network I/O를 하지 않고 local literal/host/scheme shape만 검증합니다.
+Provider I/O 전 DNS authority는 `spakky-llm`의 replaceable media policy가 소유합니다.
+
+`ModelRequest.__post_init__()`은 outer `messages`/`context` sequence를 tuple로 고정하고 request
+metadata를 defensive snapshot하며 aggregate media budget을 검증합니다. Async adapter 경계의
+`ModelRequest.snapshot()`이 nested message/context/manifest/digest/tool/schema/metadata 전체를
+defensive deep snapshot합니다. Request는 실제 content에서 required input modality를 계산하고,
+`IAgentModel.validate_request()`는 unsupported modality를 provider I/O 전에 거부합니다. 현재
+`ModelResponse.content`는 text이며 generated non-text output의 공통 contract는 없습니다. 사용
+예는 [AI Agent 개발](../../guides/agents.md)을 확인하세요.
 
 ## Typed structured output
 
@@ -229,9 +254,37 @@ retrieval query/content, tool arguments/results는 core record에 넣지 않습�
 `AgentTelemetryError`입니다. 전체 사용법과 실패 경계는
 [Agent Memory, Evaluation, Cost와 Telemetry](../../guides/agent-operations.md)를 확인하세요.
 
+## Durable checkpoint evidence
+
+Durable runner는 state metadata의 raw checkpoint를 저장할 때마다 append-only
+`AgentEvidenceKind.CHECKPOINT` revision을 추가합니다. Evidence에는 revision, model step,
+history length, JSON shape size와 SHA-256 fingerprint가 들어가며 inline media body 자체를
+복제하지 않습니다. Resume은 repository 반환 순서와 무관하게 가장 큰 revision을 선택하고
+checkpoint revision/shape/fingerprint를 **media base64 decode와 URI reconstruction보다 먼저**
+검증합니다. Older matching revision replay, missing/duplicate revision과 tampered body/limit/URI는
+`agent_checkpoint_invalid`입니다.
+
+Initial user history와 media safety limits는 `MODEL` evidence의 history length/input
+fingerprint에도 결속됩니다. Resume은 모든 completed model step의 evidence coverage와 같은
+fingerprint를 요구합니다. Compaction summary는 raw media bytes 대신 bounded
+`[media attachments: N]` marker만 사용하고, checkpoint의 token/cost counters는 기존
+usage/pricing evidence로 재검증됩니다. Raw checkpoint에는 inline media가 base64로 들어가므로
+state repository의 접근·보존 정책은 애플리케이션이 소유합니다.
+
+Checkpoint fingerprint는 원 `conversation_id`, `user_turn`, `persist_session_turn`도 포함합니다.
+Resume 호출의 임시 instruction은 restored history와 `ITaskStore` transcript를 바꾸지 않으며,
+성공 또는 실패 뒤 server-side transcript에는 원 사용자 turn이 저장됩니다. Conversation이나
+checkpoint-bound field가 달라지면 pending action 전에 `agent_checkpoint_invalid`입니다.
+
 ## Public API
 
 ::: spakky.agent
+    options:
+      show_root_heading: false
+
+## Content
+
+::: spakky.agent.content
     options:
       show_root_heading: false
 

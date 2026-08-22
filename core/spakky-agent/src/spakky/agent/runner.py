@@ -30,6 +30,7 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from inspect import iscoroutinefunction, signature
 from json import dumps
+from math import isfinite
 from time import time_ns
 from types import FunctionType
 
@@ -49,6 +50,11 @@ from spakky.agent.cancellation import (
     run_agent_cancellation_cleanup,
 )
 from spakky.agent.compaction import validate_tool_call_groups
+from spakky.agent.content import (
+    model_content_size,
+    restore_model_content,
+    serialize_model_content,
+)
 from spakky.agent.cost import AgentPricingError, ModelCost, ModelPricingCatalog
 from spakky.agent.context import (
     AgentContext,
@@ -91,6 +97,7 @@ from spakky.agent.execution import Agent, RecoveryStrategy, StreamingExposureMod
 from spakky.agent.hooks import AgentSignalHookDescriptor
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.interfaces.model import (
+    AbstractAgentModelError,
     IAgentModel,
     JsonSchemaConstraint,
     ModelCapability,
@@ -178,7 +185,7 @@ an approximate trigger is sufficient.
 
 def _estimate_token_count(history: tuple[ModelMessage, ...]) -> int:
     """Estimate the token cost of a history from its transcript length."""
-    characters = sum(len(message.content) for message in history)
+    characters = sum(model_content_size(message.content) for message in history)
     return characters // ESTIMATED_CHARACTERS_PER_TOKEN
 
 
@@ -282,6 +289,12 @@ class _ExecutionContext:
     final_output: object | None = None
     final_output_json: JsonValue = None
     static_context_fingerprint: str | None = None
+    initial_history_length: int = 0
+    input_fingerprint: str | None = None
+    checkpoint_revision: int = 0
+    conversation_id: str = ""
+    user_turn: str = ""
+    persist_session_turn: bool = True
 
     @property
     def counters(self) -> JsonObject:
@@ -716,11 +729,10 @@ class AgentRunner:
                 )
                 return
             except AbstractSpakkyFrameworkError as framework_error:
-                error = _framework_error(
-                    MODEL_EXECUTION_ERROR_CODE,
-                    "Agent model execution failed",
-                    framework_error,
+                error = self._framework_model_error(
+                    state,
                     context,
+                    framework_error,
                 )
                 self._fail_execution(state, error)
                 metadata = {**context.counters, **context.route_metadata}
@@ -777,9 +789,7 @@ class AgentRunner:
             if state is not None:
                 self._complete_state(state.id, context)
             self._persist_turns(
-                run_input,
-                context.assistant_text,
-                context.final_output_json,
+                context,
             )
             yield RunFinishedEvent(
                 attribution,
@@ -811,7 +821,7 @@ class AgentRunner:
                     metadata=event.metadata,
                 )
             case ModelStreamEventKind.REASONING_DELTA:
-                if self._model_capability(run_input).supports_reasoning:
+                if self._reasoning_event_allowed(run_input):
                     yield ReasoningDeltaEvent(
                         attribution,
                         reasoning_id=cursor.reasoning_id,
@@ -882,18 +892,15 @@ class AgentRunner:
         context: _ExecutionContext,
     ) -> None:
         current = self._states_required().get(state_id)
-        self._states_required().save(
+        completed = self._states_required().save(
             replace(
                 current,
                 status=AgentStatus.COMPLETED,
                 transition=AgentStateTransition.COMPLETED,
                 current_activity="run completed",
-                metadata={
-                    **current.metadata,
-                    RUNNER_CHECKPOINT_METADATA_KEY: _context_metadata(context),
-                },
             )
         )
+        self._save_context(completed, context)
 
     async def _run_stateless(
         self,
@@ -1031,7 +1038,7 @@ class AgentRunner:
                         )
                     elif (
                         event.kind is ModelStreamEventKind.REASONING_DELTA
-                        and self._model_capability(run_input).supports_reasoning
+                        and self._reasoning_event_allowed(run_input)
                     ):
                         yield _token(event.reasoning_delta or "", event.metadata)
                     if accumulator.error is not None:
@@ -1042,11 +1049,10 @@ class AgentRunner:
             except AbstractSpakkyFrameworkError as framework_error:
                 yield self._fail_on_model_error(
                     state,
-                    _framework_error(
-                        MODEL_EXECUTION_ERROR_CODE,
-                        "Agent model execution failed",
-                        framework_error,
+                    self._framework_model_error(
+                        state,
                         context,
+                        framework_error,
                     ),
                 )
                 return
@@ -1075,9 +1081,7 @@ class AgentRunner:
             if state is not None:
                 self._complete_state(state.id, context)
             self._persist_turns(
-                run_input,
-                context.assistant_text,
-                context.final_output_json,
+                context,
             )
             yield self._final_yield(
                 run_input.state_id,
@@ -1113,11 +1117,17 @@ class AgentRunner:
             if checkpoint is not None:
                 if not isinstance(checkpoint, Mapping):
                     raise AgentDefinitionError("Agent runner checkpoint is invalid")
+                self._validate_restored_checkpoint(state.id, checkpoint)
                 context = self._context_from_checkpoint(run_input.state_id, checkpoint)
                 if context.static_context_fingerprint != static_fingerprint:
                     raise AgentDefinitionError(
                         "Agent resume static context does not match its checkpoint"
                     )
+                if context.conversation_id != run_input.effective_conversation_id:
+                    raise AgentDefinitionError(
+                        "Agent resume conversation does not match its checkpoint"
+                    )
+                self._validate_restored_input(state.id, context)
                 if context.pricing_fingerprint != pricing_fingerprint:
                     raise AgentDefinitionError(
                         "Agent resume pricing does not match its checkpoint"
@@ -1127,7 +1137,8 @@ class AgentRunner:
                 context.restored_from_checkpoint = True
                 return context
         history = list(self._resolve_history(run_input))
-        history.append(ModelMessage(ModelMessageRole.USER, run_input.instruction))
+        history.append(run_input.user_message())
+        initial_history = tuple(history)
         return _ExecutionContext(
             state_id=run_input.state_id,
             history=history,
@@ -1137,6 +1148,11 @@ class AgentRunner:
             pricing_fingerprint=pricing_fingerprint,
             pricing_version=None if self.pricing is None else self.pricing.version,
             cost_currency=None if self.pricing is None else self.pricing.currency,
+            initial_history_length=len(initial_history),
+            input_fingerprint=_history_fingerprint(initial_history),
+            conversation_id=run_input.effective_conversation_id,
+            user_turn=run_input.instruction,
+            persist_session_turn=not bool(run_input.message_history),
         )
 
     async def _model_events(
@@ -1165,6 +1181,11 @@ class AgentRunner:
         except TimeoutError:
             error_code = LIMIT_TIMEOUT_CODE
             raise
+        except AbstractAgentModelError as error:
+            usage = error.model_usage
+            routing.update(_routing_metadata(error.model_metadata))
+            error_code = MODEL_EXECUTION_ERROR_CODE
+            raise
         except AbstractSpakkyFrameworkError:
             error_code = MODEL_EXECUTION_ERROR_CODE
             raise
@@ -1174,7 +1195,7 @@ class AgentRunner:
         finally:
             attributes: dict[str, JsonValue] = {
                 "agent.model.step": context.step_count,
-                **routing,
+                **_telemetry_routing_attributes(routing),
             }
             if usage is not None:
                 for key, value in _usage_attributes(usage).items():
@@ -1230,6 +1251,7 @@ class AgentRunner:
             tuple(context.history),
             agent_context,
         )
+        self.model.validate_request(request)
         if (
             self.agent.spec.streaming_exposure_mode
             is StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED
@@ -1532,59 +1554,67 @@ class AgentRunner:
     ) -> ModelError | None:
         """Apply usage limits, validate a whole candidate batch, and checkpoint."""
         context.route_metadata.update(_routing_metadata(accumulator.metadata))
-        if accumulator.error is not None:
-            return replace(
-                accumulator.error,
-                metadata={
-                    **accumulator.error.metadata,
-                    **self._step_metadata(context, accumulator),
-                },
-            )
-        if accumulator.terminal_count != 1:
-            return ModelError(
-                code="agent_model_terminal_invalid",
-                message="Agent model step requires exactly one terminal DONE event",
-                metadata=self._step_metadata(context, accumulator),
-            )
         usage_error = self._record_usage(context, accumulator.usage)
         if usage_error is not None:
-            usage_error = replace(
+            return self._finalize_model_step_error(
+                state,
+                context,
+                accumulator,
                 usage_error,
-                metadata={
-                    **usage_error.metadata,
-                    **self._step_metadata(context, accumulator),
-                },
             )
-            if state is not None:
-                self._append_model_evidence(
-                    state.id,
-                    context,
-                    accumulator,
-                    error=usage_error,
-                )
-            return usage_error
+        if accumulator.error is not None:
+            return self._finalize_model_step_error(
+                state,
+                context,
+                accumulator,
+                accumulator.error,
+            )
+        if accumulator.terminal_count != 1:
+            return self._finalize_model_step_error(
+                state,
+                context,
+                accumulator,
+                ModelError(
+                    code="agent_model_terminal_invalid",
+                    message="Agent model step requires exactly one terminal DONE event",
+                ),
+            )
         content = "".join(accumulator.content)
-        context.assistant_text.extend(accumulator.content)
         output_type = self.agent.spec.output_type
         if output_type is not None:
             if accumulator.candidates and accumulator.structured_outputs:
-                return _limit_error(
-                    "agent_structured_output_ambiguous",
-                    "Model step returned structured output with tool calls",
+                return self._finalize_model_step_error(
+                    state,
                     context,
+                    accumulator,
+                    _limit_error(
+                        "agent_structured_output_ambiguous",
+                        "Model step returned structured output with tool calls",
+                        context,
+                    ),
                 )
             if not accumulator.candidates:
                 if len(accumulator.structured_outputs) == 0:
-                    return _limit_error(
-                        "agent_structured_output_missing",
-                        "Final model step did not return structured output",
+                    return self._finalize_model_step_error(
+                        state,
                         context,
+                        accumulator,
+                        _limit_error(
+                            "agent_structured_output_missing",
+                            "Final model step did not return structured output",
+                            context,
+                        ),
                     )
                 if len(accumulator.structured_outputs) != 1:
-                    return _limit_error(
-                        "agent_structured_output_ambiguous",
-                        "Final model step returned multiple structured outputs",
+                    return self._finalize_model_step_error(
+                        state,
                         context,
+                        accumulator,
+                        _limit_error(
+                            "agent_structured_output_ambiguous",
+                            "Final model step returned multiple structured outputs",
+                            context,
+                        ),
                     )
                 contract = _structured_output_contract(output_type)
                 try:
@@ -1593,10 +1623,15 @@ class AgentRunner:
                     )
                     final_output_json = contract.dump(final_output)
                 except AgentDefinitionError:
-                    return _limit_error(
-                        "agent_structured_output_invalid",
-                        "Final structured output does not match the declared type",
+                    return self._finalize_model_step_error(
+                        state,
                         context,
+                        accumulator,
+                        _limit_error(
+                            "agent_structured_output_invalid",
+                            "Final structured output does not match the declared type",
+                            context,
+                        ),
                     )
                 context.final_output = final_output
                 context.final_output_json = final_output_json
@@ -1608,14 +1643,24 @@ class AgentRunner:
                     reserve=True,
                 )
             except AbstractSpakkyAgentError as error:
-                return ModelError(
-                    code="agent_tool_batch_invalid",
-                    message=error.message,
-                    metadata={**context.counters, **context.route_metadata},
+                return self._finalize_model_step_error(
+                    state,
+                    context,
+                    accumulator,
+                    ModelError(
+                        code="agent_tool_batch_invalid",
+                        message=error.message,
+                    ),
                 )
             tool_limit_error = self._before_tool_batch_limit(context, len(prepared))
             if tool_limit_error is not None:
-                return tool_limit_error
+                return self._finalize_model_step_error(
+                    state,
+                    context,
+                    accumulator,
+                    tool_limit_error,
+                )
+            context.seen_call_ids.update(_call_id(item.call) for item in prepared)
             context.pending_calls = [item.call for item in prepared]
             context.history.append(
                 _assistant_tool_message(
@@ -1624,11 +1669,35 @@ class AgentRunner:
                     context.route_metadata,
                 )
             )
-            self._save_context(state, context)
+        context.assistant_text.extend(accumulator.content)
         if state is not None:
             self._append_model_evidence(state.id, context, accumulator)
+            if context.pending_calls:
+                self._save_context(state, context)
         _ = run_input
         return None
+
+    def _finalize_model_step_error(
+        self,
+        state: AgentState | None,
+        context: _ExecutionContext,
+        accumulator: _ModelStepAccumulator,
+        error: ModelError,
+    ) -> ModelError:
+        """Persist any billed model step before returning its terminal error."""
+        terminal = replace(
+            error,
+            metadata={**error.metadata, **self._step_metadata(context, accumulator)},
+        )
+        if state is not None:
+            self._append_model_evidence(
+                state.id,
+                context,
+                accumulator,
+                error=terminal,
+            )
+            self._save_context(state, context)
+        return terminal
 
     def _prepare_batch(
         self,
@@ -1683,8 +1752,6 @@ class AgentRunner:
                 raise AgentToolDispatchError("Agent tool call id was already used")
             batch_ids.add(call_id)
             normalized.append(replace(call, call_id=call_id))
-        if reserve:
-            context.seen_call_ids.update(batch_ids)
         return tuple(normalized)
 
     def _authorize_pending_batch(
@@ -2047,6 +2114,22 @@ class AgentRunner:
                 "Agent model-step limit exceeded",
                 context,
             )
+        if limits.max_tokens is not None and context.total_tokens >= limits.max_tokens:
+            return _limit_error(
+                LIMIT_MAX_TOKENS_CODE,
+                "Agent token limit has already been exhausted",
+                context,
+            )
+        if (
+            limits.max_cost is not None
+            and context.total_cost is not None
+            and context.total_cost >= limits.max_cost
+        ):
+            return _limit_error(
+                LIMIT_MAX_COST_CODE,
+                "Agent cost limit has already been exhausted",
+                context,
+            )
         if limits.max_cost is not None and self.pricing is None:
             return _limit_error(
                 LIMIT_COST_UNAVAILABLE_CODE,
@@ -2055,6 +2138,7 @@ class AgentRunner:
             )
         if (
             self.agent.spec.output_type is not None
+            and type(self.model).validate_request is IAgentModel.validate_request
             and not self._model_capability(run_input).supports_structured_output
         ):
             return _limit_error(
@@ -2102,6 +2186,48 @@ class AgentRunner:
                 context,
             )
         return None
+
+    def _framework_model_error(
+        self,
+        state: AgentState | None,
+        context: _ExecutionContext,
+        framework_error: AbstractSpakkyFrameworkError,
+    ) -> ModelError:
+        """Account for a model receipt attached to a post-provider framework error."""
+        if isinstance(framework_error, AbstractAgentModelError):
+            context.route_metadata.update(
+                _routing_metadata(framework_error.model_metadata)
+            )
+        error = _framework_error(
+            MODEL_EXECUTION_ERROR_CODE,
+            "Agent model execution failed",
+            framework_error,
+            context,
+        )
+        if (
+            not isinstance(framework_error, AbstractAgentModelError)
+            or framework_error.model_usage is None
+        ):
+            return error
+        accumulator = _ModelStepAccumulator(
+            usage=framework_error.model_usage,
+            metadata=dict(framework_error.model_metadata),
+        )
+        usage_error = self._record_usage(context, accumulator.usage)
+        terminal = usage_error if usage_error is not None else error
+        terminal = replace(
+            terminal,
+            metadata={**terminal.metadata, **self._step_metadata(context, accumulator)},
+        )
+        if state is not None:
+            self._append_model_evidence(
+                state.id,
+                context,
+                accumulator,
+                error=terminal,
+            )
+            self._save_context(state, context)
+        return terminal
 
     def _record_cost(
         self,
@@ -2188,6 +2314,116 @@ class AgentRunner:
             raise AgentDefinitionError(
                 "Agent resume cost does not match model evidence"
             )
+
+    def _validate_restored_input(
+        self,
+        state_id: str,
+        context: _ExecutionContext,
+    ) -> None:
+        """Bind persisted initial messages and media limits to MODEL evidence."""
+        observed: set[tuple[int, str]] = set()
+        observed_steps: set[int] = set()
+        for evidence in self._evidence_required().list_by_state(state_id):
+            if evidence.kind is not AgentEvidenceKind.MODEL:
+                continue
+            decision = evidence.payload.get("decision")
+            if not isinstance(decision, Mapping):
+                raise AgentDefinitionError("Agent model input evidence is invalid")
+            length = decision.get("initial_history_length")
+            fingerprint = decision.get("input_fingerprint")
+            step = decision.get("step")
+            if (
+                isinstance(length, bool)
+                or not isinstance(length, int)
+                or length <= 0
+                or not isinstance(fingerprint, str)
+                or not fingerprint.strip()
+                or isinstance(step, bool)
+                or not isinstance(step, int)
+                or step <= 0
+                or step in observed_steps
+            ):
+                raise AgentDefinitionError("Agent model input evidence is invalid")
+            observed.add((length, fingerprint))
+            observed_steps.add(step)
+        if len(observed) != 1 or observed_steps != set(
+            range(1, context.step_count + 1)
+        ):
+            raise AgentDefinitionError("Agent model input evidence is inconsistent")
+        evidence_length, evidence_fingerprint = next(iter(observed))
+        if (
+            context.initial_history_length != evidence_length
+            or context.input_fingerprint != evidence_fingerprint
+        ):
+            raise AgentDefinitionError(
+                "Agent resume input does not match model evidence"
+            )
+
+    def _validate_restored_checkpoint(
+        self,
+        state_id: str,
+        checkpoint: Mapping[str, JsonValue],
+    ) -> None:
+        """Verify raw checkpoint JSON before media decode or URI resolution."""
+        artifacts = tuple(
+            evidence
+            for evidence in self._evidence_required().list_by_state(state_id)
+            if evidence.kind is AgentEvidenceKind.CHECKPOINT
+        )
+        if not artifacts:
+            raise AgentDefinitionError("Agent checkpoint evidence is missing")
+        by_revision: dict[int, AgentEvidence] = {}
+        for artifact in artifacts:
+            revision = artifact.payload.get("revision")
+            if (
+                isinstance(revision, bool)
+                or not isinstance(revision, int)
+                or revision <= 0
+                or revision in by_revision
+            ):
+                raise AgentDefinitionError("Agent checkpoint revision is invalid")
+            by_revision[revision] = artifact
+        checkpoint_revision = checkpoint.get("checkpoint_revision")
+        latest_revision = max(by_revision)
+        if (
+            isinstance(checkpoint_revision, bool)
+            or not isinstance(checkpoint_revision, int)
+            or checkpoint_revision != latest_revision
+        ):
+            raise AgentDefinitionError(
+                "Agent checkpoint revision does not match evidence"
+            )
+        payload = by_revision[latest_revision].payload
+        fingerprint = payload.get("fingerprint")
+        shape_size = payload.get("shape_size")
+        history_length = payload.get("history_length")
+        step = payload.get("step")
+        raw_history = checkpoint.get("history")
+        checkpoint_step = checkpoint.get("step_count")
+        if (
+            not isinstance(fingerprint, str)
+            or not fingerprint.strip()
+            or isinstance(shape_size, bool)
+            or not isinstance(shape_size, int)
+            or shape_size <= 0
+            or isinstance(history_length, bool)
+            or not isinstance(history_length, int)
+            or history_length <= 0
+            or isinstance(step, bool)
+            or not isinstance(step, int)
+            or step <= 0
+            or not isinstance(raw_history, Sequence)
+            or isinstance(raw_history, str | bytes | bytearray)
+            or isinstance(checkpoint_step, bool)
+            or not isinstance(checkpoint_step, int)
+        ):
+            raise AgentDefinitionError("Agent checkpoint evidence is invalid")
+        if history_length != len(raw_history) or step != checkpoint_step:
+            raise AgentDefinitionError("Agent checkpoint evidence is inconsistent")
+        if _checkpoint_shape_size(checkpoint) != shape_size:
+            raise AgentDefinitionError("Agent checkpoint shape does not match evidence")
+        if _json_fingerprint(checkpoint) != fingerprint:
+            raise AgentDefinitionError("Agent checkpoint does not match evidence")
 
     def _timeout_error(self, context: _ExecutionContext) -> ModelError:
         return _limit_error(
@@ -2382,14 +2618,32 @@ class AgentRunner:
         if state is None:
             return
         current = self._states_required().get(state.id)
+        context.checkpoint_revision += 1
+        checkpoint = _context_metadata(context)
         self._states_required().save(
             replace(
                 current,
                 metadata={
                     **current.metadata,
-                    RUNNER_CHECKPOINT_METADATA_KEY: _context_metadata(context),
+                    RUNNER_CHECKPOINT_METADATA_KEY: checkpoint,
                 },
             )
+        )
+        fingerprint = _json_fingerprint(checkpoint)
+        self._append_candidate(
+            state.id,
+            AgentEvidenceCandidate(
+                kind=AgentEvidenceKind.CHECKPOINT,
+                payload={
+                    "revision": context.checkpoint_revision,
+                    "step": context.step_count,
+                    "history_length": len(context.history),
+                    "shape_size": _checkpoint_shape_size(checkpoint),
+                    "fingerprint": fingerprint,
+                },
+                summary=f"checkpoint-{context.step_count} saved",
+                digest=fingerprint,
+            ),
         )
 
     def _context_from_checkpoint(
@@ -2417,12 +2671,23 @@ class AgentRunner:
             or (pricing_fingerprint is None) != (cost_currency is None)
         ):
             raise AgentDefinitionError("Agent runner checkpoint pricing is invalid")
+        history = [
+            _message_from_metadata(value)
+            for value in _mapping_sequence(checkpoint, "history")
+        ]
+        initial_history_length = _integer_metadata(
+            checkpoint,
+            "initial_history_length",
+        )
+        input_fingerprint = _optional_checkpoint_text(
+            checkpoint,
+            "input_fingerprint",
+        )
+        if initial_history_length <= 0 or input_fingerprint is None:
+            raise AgentDefinitionError("Agent runner checkpoint input is invalid")
         return _ExecutionContext(
             state_id=state_id,
-            history=[
-                _message_from_metadata(value)
-                for value in _mapping_sequence(checkpoint, "history")
-            ],
+            history=history,
             assistant_text=list(_string_sequence(checkpoint, "assistant_text")),
             tool_calls=list(_string_sequence(checkpoint, "tool_calls")),
             step_count=_integer_metadata(checkpoint, "step_count"),
@@ -2442,6 +2707,21 @@ class AgentRunner:
             pricing_fingerprint=pricing_fingerprint,
             pricing_version=pricing_version,
             cost_currency=cost_currency,
+            initial_history_length=initial_history_length,
+            input_fingerprint=input_fingerprint,
+            checkpoint_revision=_integer_metadata(
+                checkpoint,
+                "checkpoint_revision",
+            ),
+            conversation_id=_required_checkpoint_text(
+                checkpoint,
+                "conversation_id",
+            ),
+            user_turn=_required_checkpoint_text(checkpoint, "user_turn"),
+            persist_session_turn=_boolean_metadata(
+                checkpoint,
+                "persist_session_turn",
+            ),
         )
 
     def _append_model_evidence(
@@ -2464,6 +2744,8 @@ class AgentRunner:
                     "usage": self._step_metadata(context, accumulator).get("usage"),
                     "routing": dict(context.route_metadata),
                     "limits": context.counters,
+                    "initial_history_length": context.initial_history_length,
+                    "input_fingerprint": context.input_fingerprint,
                     "error": None if error is None else _model_error_json(error),
                 },
                 summary=f"model-{context.step_count} completed",
@@ -2705,11 +2987,15 @@ class AgentRunner:
         """Return capability for this run's selected model."""
         return self.model.capability_for(run_input.model_selection)
 
+    def _reasoning_event_allowed(self, run_input: RunAgentInput) -> bool:
+        """Trust fallback-aware adapters; gate legacy fixed adapters by capability."""
+        if type(self.model).validate_request is not IAgentModel.validate_request:
+            return True
+        return self._model_capability(run_input).supports_reasoning
+
     def _persist_turns(
         self,
-        run_input: RunAgentInput,
-        assistant_text: Sequence[str],
-        structured_output: JsonValue,
+        context: _ExecutionContext,
     ) -> None:
         """Append this run's user and assistant turns to the persisted session.
 
@@ -2720,24 +3006,24 @@ class AgentRunner:
         A run that produced no assistant text persists only the user turn, so the
         next turn still sees this instruction.
         """
-        if self.task_store is None or run_input.message_history:
+        if self.task_store is None or not context.persist_session_turn:
             return
-        reply = "".join(assistant_text)
+        reply = "".join(context.assistant_text)
         if (
             not reply.strip()
             and self.agent.spec.output_type is not None
-            and structured_output is not None
+            and context.final_output_json is not None
         ):
             reply = dumps(
-                structured_output,
+                context.final_output_json,
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=False,
             )
-        turns = [ConversationTurn(ModelMessageRole.USER, run_input.instruction)]
+        turns = [ConversationTurn(ModelMessageRole.USER, context.user_turn)]
         if reply.strip():
             turns.append(ConversationTurn(ModelMessageRole.ASSISTANT, reply))
-        self.task_store.append_turns(run_input.effective_conversation_id, turns)
+        self.task_store.append_turns(context.conversation_id, turns)
 
     def _final_yield(
         self,
@@ -3360,8 +3646,62 @@ def _approval_unavailable_error(context: _ExecutionContext) -> ModelError:
 def _routing_metadata(metadata: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
     return {
         key: value
-        for key in ("model_ref", "profile", "provider", "model")
+        for key in (
+            "model_ref",
+            "profile",
+            "provider",
+            "model",
+            "attempted_model_ref",
+            "attempted_profile",
+            "attempted_provider",
+            "attempt_ordinal",
+            "attempts",
+            "fallback_used",
+            "fallback_from",
+            "retry_count",
+            "retry_after_seconds",
+            "failure_class",
+            "circuit_state",
+            "cache_state",
+            "cache_mode",
+            "cache_selections",
+            "cache_saved_input_tokens",
+            "cache_saved_output_tokens",
+            "cache_saved_total_tokens",
+        )
         if (value := metadata.get(key)) is not None
+    }
+
+
+def _telemetry_routing_attributes(
+    routing: Mapping[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """Keep resilience summaries scalar while nested attempt evidence stays durable."""
+    keys = (
+        "model_ref",
+        "profile",
+        "provider",
+        "model",
+        "attempted_model_ref",
+        "attempted_profile",
+        "attempted_provider",
+        "attempt_ordinal",
+        "fallback_used",
+        "fallback_from",
+        "retry_count",
+        "retry_after_seconds",
+        "failure_class",
+        "circuit_state",
+        "cache_state",
+        "cache_mode",
+        "cache_saved_input_tokens",
+        "cache_saved_output_tokens",
+        "cache_saved_total_tokens",
+    )
+    return {
+        key: value
+        for key in keys
+        if isinstance((value := routing.get(key)), str | bool | int | float)
     }
 
 
@@ -3479,6 +3819,12 @@ def _context_metadata(context: _ExecutionContext) -> JsonObject:
         "pending_calls": [_call_metadata(call) for call in context.pending_calls],
         "route_metadata": context.route_metadata,
         "static_context_fingerprint": context.static_context_fingerprint,
+        "initial_history_length": context.initial_history_length,
+        "input_fingerprint": context.input_fingerprint,
+        "checkpoint_revision": context.checkpoint_revision,
+        "conversation_id": context.conversation_id,
+        "user_turn": context.user_turn,
+        "persist_session_turn": context.persist_session_turn,
     }
 
 
@@ -3509,16 +3855,105 @@ def _telemetry_cost_attributes(metadata: Mapping[str, JsonValue]) -> JsonObject:
 def _message_metadata(message: ModelMessage) -> JsonObject:
     return {
         "role": message.role.value,
-        "content": message.content,
+        "content": serialize_model_content(message.content),
         "metadata": message.metadata,
     }
+
+
+def _history_fingerprint(history: Sequence[ModelMessage]) -> str:
+    """Hash the immutable initial transcript, media body, limits, and metadata."""
+    try:
+        payload = tuple(
+            {
+                "role": message.role.value,
+                "content": _fingerprint_json_value(
+                    serialize_model_content(message.content)
+                ),
+                "metadata": _fingerprint_json_value(message.metadata),
+            }
+            for message in history
+        )
+    except RecursionError as error:
+        raise AgentDefinitionError("Agent model input is not finite JSON") from error
+    return _json_fingerprint(payload)
+
+
+def _json_fingerprint(value: object) -> str:
+    """Hash one finite JSON value in deterministic canonical form."""
+    try:
+        encoded = dumps(
+            _fingerprint_json_value(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode()
+    except (RecursionError, TypeError, ValueError) as error:
+        raise AgentDefinitionError("Agent JSON fingerprint input is invalid") from error
+    return sha256(encoded).hexdigest()
+
+
+def _checkpoint_shape_size(value: object) -> int:
+    """Measure JSON shape without decoding media or copying large scalar bodies."""
+    try:
+        return _json_shape_size(value)
+    except RecursionError as error:
+        raise AgentDefinitionError(
+            "Agent checkpoint JSON cannot be recursive"
+        ) from error
+
+
+def _json_shape_size(value: object) -> int:
+    if value is None or isinstance(value, bool | int):
+        return 1
+    if isinstance(value, str):
+        return len(value) + 1
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise AgentDefinitionError("Agent checkpoint JSON must be finite")
+        return 1
+    if isinstance(value, Mapping):
+        size = 1
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise AgentDefinitionError("Agent checkpoint JSON key is invalid")
+            size += len(key) + _json_shape_size(item)
+        return size
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        str | bytes | bytearray,
+    ):
+        return 1 + sum(_json_shape_size(item) for item in value)
+    raise AgentDefinitionError("Agent checkpoint value is not JSON serializable")
+
+
+def _fingerprint_json_value(value: object) -> JsonValue:
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise AgentDefinitionError("Agent model input is not finite JSON")
+        return value
+    if isinstance(value, Mapping):
+        result: dict[str, JsonValue] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise AgentDefinitionError("Agent model input JSON key is invalid")
+            result[key] = _fingerprint_json_value(item)
+        return result
+    if isinstance(value, Sequence) and not isinstance(
+        value,
+        str | bytes | bytearray,
+    ):
+        return tuple(_fingerprint_json_value(item) for item in value)
+    raise AgentDefinitionError("Agent model input is not JSON serializable")
 
 
 def _message_from_metadata(value: Mapping[str, JsonValue]) -> ModelMessage:
     role = value.get("role")
     content = value.get("content")
     metadata = value.get("metadata", {})
-    if not isinstance(role, str) or not isinstance(content, str):
+    if not isinstance(role, str):
         raise AgentDefinitionError("Agent runner checkpoint message is invalid")
     if not isinstance(metadata, Mapping):
         raise AgentDefinitionError("Agent runner checkpoint metadata is invalid")
@@ -3526,7 +3961,11 @@ def _message_from_metadata(value: Mapping[str, JsonValue]) -> ModelMessage:
         message_role = ModelMessageRole(role)
     except ValueError as error:
         raise AgentDefinitionError("Agent runner checkpoint role is invalid") from error
-    return ModelMessage(message_role, content, metadata=dict(metadata))
+    return ModelMessage(
+        message_role,
+        restore_model_content(content),
+        metadata=dict(metadata),
+    )
 
 
 def _call_metadata(call: ModelToolCall) -> JsonObject:
@@ -3610,6 +4049,23 @@ def _optional_checkpoint_text(
         return None
     if not isinstance(value, str) or not value.strip():
         raise AgentDefinitionError("Agent runner checkpoint text is invalid")
+    return value
+
+
+def _required_checkpoint_text(
+    mapping: Mapping[str, JsonValue],
+    key: str,
+) -> str:
+    value = _optional_checkpoint_text(mapping, key)
+    if value is None:
+        raise AgentDefinitionError("Agent runner checkpoint text is required")
+    return value
+
+
+def _boolean_metadata(mapping: Mapping[str, JsonValue], key: str) -> bool:
+    value = mapping.get(key)
+    if not isinstance(value, bool):
+        raise AgentDefinitionError("Agent runner checkpoint boolean is invalid")
     return value
 
 

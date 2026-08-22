@@ -4,10 +4,26 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import cast
+from math import isfinite
+from typing import Self, cast
 
-from spakky.agent.context import ContextDigest, ContextManifest, ContextPack
-from spakky.agent.error import AgentDefinitionError
+from spakky.agent.content import (
+    AudioPart,
+    DocumentPart,
+    ImagePart,
+    ModelContent,
+    TextPart,
+    VideoPart,
+    model_content_parts,
+    validate_model_content_budget,
+)
+from spakky.agent.context import (
+    ContextDigest,
+    ContextManifest,
+    ContextManifestEntry,
+    ContextPack,
+)
+from spakky.agent.error import AgentDefinitionError, AgentModelConfigurationError
 from spakky.agent.safety import (
     ContextExposurePolicy,
     EvidenceExposurePolicy,
@@ -15,6 +31,7 @@ from spakky.agent.safety import (
     guard_json_value,
 )
 from spakky.agent.types import JsonObject, JsonValue
+from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
 class ModelMessageRole(StrEnum):
@@ -32,8 +49,31 @@ class ModelMessage:
     """Provider-neutral model message."""
 
     role: ModelMessageRole
-    content: str
+    content: ModelContent
     metadata: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Snapshot multipart content while preserving canonical plain strings."""
+        if not isinstance(self.role, ModelMessageRole):
+            raise AgentDefinitionError("Model message role is invalid")
+        object.__setattr__(self, "metadata", _snapshot_json_object(self.metadata))
+        if isinstance(self.content, str):
+            return
+        object.__setattr__(self, "content", model_content_parts(self.content))
+
+    @classmethod
+    def user(
+        cls,
+        content: ModelContent,
+        *,
+        metadata: JsonObject | None = None,
+    ) -> Self:
+        """Create a user message through the shortest canonical DX."""
+        return cls(
+            role=ModelMessageRole.USER,
+            content=content,
+            metadata={} if metadata is None else metadata,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +109,10 @@ class ModelToolSpec:
     description: str | None = None
     metadata: JsonObject = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Deep-freeze tool metadata before provider or cache observation."""
+        object.__setattr__(self, "metadata", _snapshot_json_object(self.metadata))
+
 
 @dataclass(frozen=True, slots=True)
 class ToolCallingSpec:
@@ -76,6 +120,18 @@ class ToolCallingSpec:
 
     tools: Sequence[ModelToolSpec]
     choice: ModelToolChoice = ModelToolChoice.AUTO
+
+    def __post_init__(self) -> None:
+        """Snapshot the ordered tool catalog supplied by a mutable caller."""
+        if not isinstance(self.tools, Sequence) or isinstance(
+            self.tools,
+            str | bytes | bytearray,
+        ):
+            raise AgentDefinitionError("Model tool catalog must be a sequence")
+        tools = tuple(self.tools)
+        if any(not isinstance(tool, ModelToolSpec) for tool in tools):
+            raise AgentDefinitionError("Model tool catalog contains an invalid tool")
+        object.__setattr__(self, "tools", tools)
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +178,74 @@ class ModelRequest:
     model_selection: ModelSelection | None = None
     metadata: JsonObject = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        """Deep-snapshot every mutable request input before async adapter work."""
+        if not isinstance(self.messages, Sequence) or isinstance(
+            self.messages,
+            str | bytes | bytearray,
+        ):
+            raise AgentDefinitionError("Model request messages must be a sequence")
+        messages = tuple(self.messages)
+        if any(not isinstance(message, ModelMessage) for message in messages):
+            raise AgentDefinitionError("Model request contains an invalid message")
+        validate_model_content_budget(tuple(message.content for message in messages))
+        if not isinstance(self.context, Sequence) or isinstance(
+            self.context,
+            str | bytes | bytearray,
+        ):
+            raise AgentDefinitionError("Model request context must be a sequence")
+        context = tuple(self.context)
+        if any(not isinstance(pack, ContextPack) for pack in context):
+            raise AgentDefinitionError("Model request contains an invalid context pack")
+        object.__setattr__(self, "messages", messages)
+        object.__setattr__(self, "context", context)
+        if self.context_manifest is not None:
+            if not isinstance(self.context_manifest, ContextManifest):
+                raise AgentDefinitionError("Model request context manifest is invalid")
+            _snapshot_context_manifest(self.context_manifest)
+        if self.context_digest is not None:
+            if not isinstance(self.context_digest, ContextDigest):
+                raise AgentDefinitionError("Model request context digest is invalid")
+            _snapshot_context_digest(self.context_digest)
+        if self.structured_output is not None:
+            if not isinstance(self.structured_output, StructuredOutputSpec):
+                raise AgentDefinitionError("Model structured output spec is invalid")
+        if self.tool_calling is not None:
+            if not isinstance(self.tool_calling, ToolCallingSpec):
+                raise AgentDefinitionError("Model tool calling spec is invalid")
+        object.__setattr__(self, "metadata", _snapshot_json_object(self.metadata))
+
+    def snapshot(self) -> "ModelRequest":
+        """Return a deep request copy shared across one async adapter invocation."""
+        return ModelRequest(
+            messages=tuple(replace(message) for message in self.messages),
+            context=tuple(_snapshot_context_pack(pack) for pack in self.context),
+            context_manifest=(
+                None
+                if self.context_manifest is None
+                else _snapshot_context_manifest(self.context_manifest)
+            ),
+            context_digest=(
+                None
+                if self.context_digest is None
+                else _snapshot_context_digest(self.context_digest)
+            ),
+            structured_output=(
+                None
+                if self.structured_output is None
+                else _snapshot_structured_output(self.structured_output)
+            ),
+            tool_calling=(
+                None
+                if self.tool_calling is None
+                else _snapshot_tool_calling(self.tool_calling)
+            ),
+            sampling=self.sampling,
+            streaming=self.streaming,
+            model_selection=self.model_selection,
+            metadata=_snapshot_json_object(self.metadata),
+        )
+
     def assemble_messages(
         self,
         policy: ContextExposurePolicy | None = None,
@@ -138,6 +262,24 @@ class ModelRequest:
         )
         return (*self.messages, *context_messages)
 
+    def required_input_modalities(self) -> frozenset["ModelModality"]:
+        """Derive every modality present in provider-bound message content."""
+        modality_by_type = {
+            TextPart: ModelModality.TEXT,
+            ImagePart: ModelModality.IMAGE,
+            AudioPart: ModelModality.AUDIO,
+            VideoPart: ModelModality.VIDEO,
+            DocumentPart: ModelModality.DOCUMENT,
+        }
+        modalities: set[ModelModality] = set()
+        for message in self.assemble_messages():
+            if isinstance(message.content, str):
+                modalities.add(ModelModality.TEXT)
+                continue
+            for part in model_content_parts(message.content):
+                modalities.add(modality_by_type[type(part)])
+        return frozenset(modalities)
+
 
 @dataclass(frozen=True, slots=True)
 class ModelUsage:
@@ -150,6 +292,29 @@ class ModelUsage:
     cache_write_input_tokens: int | None = None
     cache_write_5m_input_tokens: int | None = None
     cache_write_1h_input_tokens: int | None = None
+
+
+class AbstractAgentModelError(AbstractSpakkyFrameworkError, ABC):
+    """Model failure that can carry a privacy-safe billable invocation receipt."""
+
+    model_usage: ModelUsage | None
+    model_metadata: JsonObject
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.model_usage = None
+        self.model_metadata = {}
+
+    def attach_model_receipt(
+        self,
+        usage: ModelUsage,
+        metadata: JsonObject,
+    ) -> None:
+        """Attach known usage/routing after provider success but before later failure."""
+        if not isinstance(usage, ModelUsage):
+            raise AgentDefinitionError("Agent model failure usage is invalid")
+        self.model_usage = usage
+        self.model_metadata = _snapshot_json_object(metadata)
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,6 +528,117 @@ class ModelModality(StrEnum):
     DOCUMENT = "document"
 
 
+def _snapshot_context_pack(pack: ContextPack) -> ContextPack:
+    return replace(
+        pack,
+        sensitive_fields=tuple(pack.sensitive_fields),
+        metadata=_snapshot_json_object(pack.metadata),
+    )
+
+
+def _snapshot_context_manifest(manifest: ContextManifest) -> ContextManifest:
+    if not isinstance(manifest.entries, Sequence) or isinstance(
+        manifest.entries,
+        str | bytes | bytearray,
+    ):
+        raise AgentDefinitionError("Model context manifest entries are invalid")
+    entries = tuple(manifest.entries)
+    if any(not isinstance(entry, ContextManifestEntry) for entry in entries):
+        raise AgentDefinitionError("Model context manifest entry is invalid")
+    if not isinstance(manifest.evidence_refs, Sequence) or isinstance(
+        manifest.evidence_refs,
+        str | bytes | bytearray,
+    ):
+        raise AgentDefinitionError("Model context manifest evidence refs are invalid")
+    return replace(
+        manifest,
+        entries=tuple(
+            replace(
+                entry,
+                sensitive_fields=tuple(entry.sensitive_fields),
+                metadata=_snapshot_json_object(entry.metadata),
+            )
+            for entry in entries
+        ),
+        evidence_refs=tuple(manifest.evidence_refs),
+        metadata=_snapshot_json_object(manifest.metadata),
+    )
+
+
+def _snapshot_context_digest(digest: ContextDigest) -> ContextDigest:
+    if not isinstance(digest.derived_from_pack_ids, Sequence) or isinstance(
+        digest.derived_from_pack_ids,
+        str | bytes | bytearray,
+    ):
+        raise AgentDefinitionError("Model context digest pack refs are invalid")
+    return replace(
+        digest,
+        derived_from_pack_ids=tuple(digest.derived_from_pack_ids),
+        metadata=_snapshot_json_object(digest.metadata),
+    )
+
+
+def _snapshot_structured_output(spec: StructuredOutputSpec) -> StructuredOutputSpec:
+    return replace(
+        spec,
+        constraint=replace(
+            spec.constraint,
+            schema=_snapshot_json_object(spec.constraint.schema),
+        ),
+    )
+
+
+def _snapshot_tool_calling(spec: ToolCallingSpec) -> ToolCallingSpec:
+    return replace(
+        spec,
+        tools=tuple(
+            replace(
+                tool,
+                parameters=replace(
+                    tool.parameters,
+                    schema=_snapshot_json_object(tool.parameters.schema),
+                ),
+                metadata=_snapshot_json_object(tool.metadata),
+            )
+            for tool in spec.tools
+        ),
+    )
+
+
+def _snapshot_json_object(value: object) -> JsonObject:
+    snapshot = _snapshot_json(value)
+    if not isinstance(snapshot, Mapping):
+        raise AgentDefinitionError("Model JSON object is invalid")
+    return snapshot
+
+
+def _snapshot_json(value: object) -> JsonValue:
+    try:
+        return _freeze_json(value)
+    except RecursionError as error:
+        raise AgentDefinitionError("Model JSON value cannot be recursive") from error
+
+
+def _freeze_json(value: object) -> JsonValue:
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise AgentDefinitionError("Model JSON number must be finite")
+        return value
+    if isinstance(value, Mapping):
+        frozen: dict[str, JsonValue] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise AgentDefinitionError("Model JSON object key must be text")
+            frozen[key] = _freeze_json(item)
+        return frozen
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        items = [_freeze_json(item) for item in value]
+        return tuple(items) if isinstance(value, tuple) else items
+    raise AgentDefinitionError("Model JSON value is invalid")
+
+
 @dataclass(frozen=True, slots=True)
 class ModelCapability:
     """Provider-neutral declaration of a model backend's queryable abilities.
@@ -404,6 +680,20 @@ class IAgentModel(ABC):
         """
         _ = selection
         return self.capability
+
+    def validate_request(self, request: ModelRequest) -> None:
+        """Fail before provider I/O when this model cannot honor the request."""
+        if not isinstance(request, ModelRequest):
+            raise AgentDefinitionError("Agent model request is invalid")
+        capability = self.capability_for(request.model_selection)
+        if not isinstance(capability, ModelCapability):
+            raise AgentModelConfigurationError(
+                "Agent model capability descriptor is invalid"
+            )
+        if not request.required_input_modalities() <= capability.input_modalities:
+            raise AgentModelConfigurationError(
+                "Agent model does not support every requested input modality"
+            )
 
     @abstractmethod
     async def complete(self, request: ModelRequest) -> ModelResponse:

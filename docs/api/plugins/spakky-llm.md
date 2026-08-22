@@ -50,8 +50,10 @@ tool call이 없는 step에서 final을 한 번 방출합니다.
 
 `LlmConfig`는 Spring Boot-style replaceability를 위해 선택과 연결을 분리합니다. 바로
 실행 가능한 local 기본값이 있지만, 운영자는 typed configuration으로 catalog 전체를
-교체할 수 있습니다. 잘못된 override는 SDK ambient inference로 우회하지 않고 시작
-단계에서 실패합니다.
+교체할 수 있습니다. Catalog 내부 정합성과 unknown field는 `LlmConfig` 생성·startup에서
+거부하고, standard OpenAI/Anthropic API key와 vLLM `base_url` 같은 provider-client 전용
+필수값은 첫 client 생성 전에 fail closed합니다. 어느 경로도 SDK ambient inference로
+조용히 우회하지 않습니다.
 
 ### `LlmConfig`
 
@@ -79,6 +81,7 @@ tool call이 없는 step에서 final을 한 번 방출합니다.
 | `stream_timeout_seconds` | `float` | `300.0` | streaming 요청 timeout, `0`보다 커야 함 |
 | `max_retries` | `int` | `0` | 공식 SDK retry 횟수, 음수 불가 |
 | `stream_enabled` | `bool` | `true` | 해당 profile의 streaming 허용 여부 |
+| `resilience` | `LlmResiliencePolicy` | 모두 disabled | orchestration retry/concurrency/rate/circuit policy |
 | `openai_dialect` | `OpenAICompatibleDialect` | `"standard"` | OpenAI 표준 또는 vLLM extension 선택 |
 | `google_credential_strategy` | `GoogleCredentialStrategy \| None` | `None` | Google API key, ADC, service-account-file 중 명시 선택 |
 | `google_project` | `str \| None` | `None` | Vertex AI project |
@@ -98,6 +101,9 @@ Profile은 connection/backend/auth만 담습니다. 실제 model ID와 capabilit
 | `model` | `str` | 필수 | provider SDK에 전달할 physical model ID |
 | `capability` | `ModelCapability` | text-only 기본 capability | 선택 모델의 정확한 기능 선언 |
 | `chat_template_kwargs` | `dict[str, LlmScalar]` | `{}` | vLLM route 전용 model option |
+| `fallbacks` | `tuple[str, ...]` | `()` | ordered logical fallback refs |
+| `fallback_on` | `frozenset[LlmFailureClass]` | empty | 이 route가 fallback할 failure allowlist |
+| `cache` | `LlmCachePolicy` | `DISABLED` | complete-response cache mode/TTL/namespace |
 
 `chat_template_kwargs`의 문자열 `true`/`false`는 boolean으로 정규화되며 vLLM dialect
 profile을 가리키는 route에서만 허용됩니다. 실제 model ID는 `/`를 포함해도 분해하지
@@ -115,9 +121,11 @@ profile을 가리키는 route에서만 허용됩니다. 실제 model ID는 `/`�
 | `supports_structured_output` | `false` | structured output 지원 선언 |
 
 Capability는 provider나 model 문자열에서 추론하지 않습니다. `LlmAgentModel.capability`은
-default route의 값을, `capability_for(selection)`은 선택 route의 값을 그대로 반환합니다.
-현재 `ModelMessage.content`는 text이므로 modality descriptor가 곧 multimodal payload
-encoding 지원을 뜻하지는 않습니다.
+default route의 값을, `capability_for(selection)`은 선택 primary route의 값을 반환합니다.
+실제 `ModelRequest`는 text/image/audio/video/document parts에서 required input modalities를
+계산하고 fallback-aware `validate_request()`가 explicitly reachable candidate 중 하나라도
+충족하는지 provider I/O 전에 확인합니다. Provider MIME/source encoding은 route descriptor보다
+더 좁을 수 있으며 이때 `LlmUnsupportedFeatureError`입니다. 공통 output은 현재 text입니다.
 
 ### 연결 설정의 fail-closed 경계 { #llm-connection-boundary }
 
@@ -288,6 +296,49 @@ standard OpenAI/Anthropic API key, vLLM explicit base URL, Google credential loa
 endpoint 구성은 선택 route의 `complete()`/`stream()` client construction에서
 `LlmConfigurationError`로 검증됩니다.
 
+### Ordered fallback과 resilience
+
+`LlmModelRoute.fallbacks`와 `fallback_on`은 함께 비어 있거나 함께 선언되어야 합니다.
+Unknown/self/duplicate/cyclic ref는 `LlmConfig` 생성에서 거부됩니다. 한 route의 profile retry가
+끝난 뒤 현재 failure class가 allowlist에 있을 때만 ordered fallback으로 이동합니다.
+Capability, cache, timeout, transport도 자동 fallback하지 않고 각각 enum을 명시해야 합니다.
+
+`LlmProfile.resilience`의 retry/concurrency/rate/circuit은 모두 default disabled입니다.
+Orchestration retry를 켜면 failure class와 attempt bound가 필요하며 SDK `max_retries>0`와
+동시에 켤 수 없습니다. Streaming은 provider event 방출 전 failure만 retry/fallback하고,
+partial stream 뒤에는 추가 billable attempt를 시작하지 않습니다.
+
+Attempted/selected route, attempt ordinal, failure class, retry delay/count, fallback source,
+circuit state는 response/error metadata에 남습니다. Runner는 nested `attempts`와 cache
+selection을 durable evidence에, scalar summary만 telemetry attributes에 보존합니다.
+
+### Complete-response cache와 media URI policy
+
+`LlmCachePolicy.mode`는 `DISABLED`, `EXACT`, `SEMANTIC`이고 default는 disabled입니다. Enabled
+mode마다 같은 mode의 `ILLMResponseCache` exactly one과 trusted `ILLMCacheScopeResolver`가
+필요합니다. Scope resolver의 tenant/safety partition만 authority이며 arbitrary request
+metadata가 cache partition을 선택하지 않습니다.
+
+Cache는 `complete()` tool-free response 전용입니다. Stream과 tool-call response를
+lookup/store/replay하지 않습니다. Media URI는 cache lookup 전에도 default
+`PublicLlmMediaUriPolicy`가 async DNS timeout/public-address 검증을 수행합니다.
+`ILLMMediaUriPolicy`로 교체할 수 있고 part의 explicit `allowed_uri_hosts`는 operator authority로
+DNS lookup을 생략합니다.
+
+Lookup failure는 current route가 `LlmFailureClass.CACHE` fallback edge를 명시한 경우에만 다음
+route로 갑니다. Provider success 뒤 store failure는 fallback을 금지하고
+`AbstractAgentModelError` receipt에 usage/routing을 붙입니다. Runner가 billable token/cost와
+evidence를 보존한 뒤 terminal error로 끝냅니다. Cache hit은 current usage 0과 saved-usage
+metadata를 반환합니다.
+
+### Optional platform ports
+
+`ILLMBatchProvider`, `ILLMFileProvider`, `ILLMNativeToolProvider`는 interactive
+`ILLMProvider.complete/stream`과 별개입니다. Batch submit/status/results, explicit file
+upload/delete, provider-native `WEB_SEARCH`/`FILE_SEARCH`를 application이 직접 호출할 때만
+사용합니다. 자동 batching/upload/prompt injection/native-tool execution은 없으며 malformed
+payload는 `LlmPlatformBoundaryError`입니다.
+
 공식 SDK가 인증, retry, typed response, provider stream parsing을 소유합니다. Spakky는
 `ModelRequest` mapping, `ModelResponse`와 `ModelStreamEvent` 정규화, portable JSON
 Schema 검증, 오류 분류를 소유합니다. 이 패키지는 raw HTTP request나 SSE parser를
@@ -335,6 +386,22 @@ model ref로 cost를 계산합니다. Pricing과 cost budget은
 
 Google adapter는 SDK의 automatic function calling을 명시적으로 끕니다. 따라서
 세 adapter 모두 tool을 실행하지 않고 검증된 후보만 runner에 전달합니다.
+
+### Multimodal provider encoding
+
+Portable media는 user message input에서만 native SDK shape로 변환됩니다. System,
+assistant와 tool history는 text-only입니다.
+
+| Adapter | Image | Audio / Video | Document |
+| --- | --- | --- | --- |
+| OpenAI Chat Completions | URI 또는 inline | audio inline / video 미지원 | inline + filename, MIME allowlist |
+| Anthropic Messages | URI 또는 inline | 둘 다 미지원 | PDF URI/inline, UTF-8 text inline |
+| Google GenerateContent | URI 또는 inline | URI 또는 inline | URI 또는 inline |
+
+이 표는 adapter encoding surface이고 physical model support를 대신하지 않습니다. Route
+`input_modalities`가 먼저 모든 part를 허용해야 하며 adapter MIME/source 제약까지 통과하지
+못하면 `LlmUnsupportedFeatureError`입니다. Generated non-text output은 공통 contract가
+없습니다.
 
 Anthropic adapter는 `messages.create()`나 `messages.stream()`에 SDK `thinking` 요청
 파라미터를 보내지 않습니다. Provider stream에 `thinking` event가 들어온 경우에만
@@ -583,7 +650,7 @@ argument delta, tool candidate, structured output, usage, terminal event를
 ## 함께 보기
 
 - [LLM 모델 라우팅](../../guides/llm-routing.md): logical ref, profile, route, Google credential recipe를 확인합니다.
-- [AI Agent 개발](../../guides/agents.md): bounded iterative runner와 선언형 tool 사용법을 확인합니다.
+- [AI Agent 개발](../../guides/agents.md): multimodal input, bounded runner와 선언형 tool 사용법을 확인합니다.
 - [AI Agent 심화](../../guides/agents-advanced.md): tool dispatch, approval, evidence 흐름을 확인합니다.
 - [IAgentModel 용어](../../glossary.md#iagentmodel): core outbound port와 provider plugin 관계를 확인합니다.
 
@@ -605,6 +672,20 @@ root alias로 재노출하지 않으므로 아래 실제 모듈에서 import합�
       show_root_heading: false
 
 ::: spakky.plugins.llm.provider
+    options:
+      show_root_heading: false
+
+## Cache와 runtime policy
+
+::: spakky.plugins.llm.cache
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.llm.resilience
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.llm.media
     options:
       show_root_heading: false
 

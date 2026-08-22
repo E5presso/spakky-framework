@@ -33,6 +33,7 @@ class AgentEvidenceKind(StrEnum):
     CONTEXT_OPTIMIZATION = "context_optimization"
     EVALUATION = "evaluation"
     SIGNAL = "signal"
+    CHECKPOINT = "checkpoint"
     APPROVAL = "approval"
     CANCELLATION = "cancellation"
     DELEGATION = "delegation"

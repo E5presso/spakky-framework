@@ -17,17 +17,21 @@ from google.genai import errors, types
 from pydantic import SecretStr
 from spakky.agent import (
     Agent,
+    AudioPart,
+    DocumentPart,
     AgentExecutionSpec,
     AgentRunner,
     AgentYieldKind,
     IAgentModel,
     Idempotency,
+    ImagePart,
     JsonObject,
     JsonSchemaConstraint,
     KeepRecentMessagesCompactionStrategy,
     ModelCapability,
     ModelMessage,
     ModelMessageRole,
+    ModelModality,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -40,9 +44,11 @@ from spakky.agent import (
     RunAgentInput,
     StreamingOptions,
     StructuredOutputSpec,
+    TextPart,
     ToolCallingSpec,
     ToolApprovalRequirement,
     ToolEffects,
+    VideoPart,
     agent_tool,
 )
 
@@ -57,9 +63,11 @@ from spakky.plugins.llm.error import (
     LlmConfigurationError,
     LlmModelRefusalError,
     LlmProviderUnavailableError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmTimeoutError,
     LlmTransportError,
+    LlmUnsupportedFeatureError,
 )
 from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers.google import GoogleGenerateContentProvider
@@ -194,6 +202,7 @@ def _target(
     project: str | None = None,
     location: str | None = None,
     service_account_file: str | None = None,
+    input_modalities: frozenset[ModelModality] = frozenset({ModelModality.TEXT}),
 ) -> LlmModelTarget:
     strategy = credential_strategy
     if strategy is None and api == LlmProviderApi.GOOGLE_GEMINI_DEVELOPER:
@@ -225,7 +234,10 @@ def _target(
         route=LlmModelRoute(
             profile=profile_name,
             model="gemini-2.5-pro",
-            capability=ModelCapability(supports_reasoning=include_thoughts),
+            capability=ModelCapability(
+                supports_reasoning=include_thoughts,
+                input_modalities=input_modalities,
+            ),
         ),
     )
 
@@ -244,6 +256,131 @@ def _request(
         sampling=SamplingOptions(temperature=0.2, top_p=0.8, max_tokens=512),
         streaming=StreamingOptions(include_usage=include_usage),
     )
+
+
+def test_google_multimodal_contents_expect_exact_native_parts() -> None:
+    """Google receives URI/bytes image, audio, video, and document Parts exactly."""
+    request = _request(
+        messages=(
+            ModelMessage.user(
+                (
+                    TextPart("inspect"),
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                    ImagePart.from_bytes(b"image", media_type="image/png"),
+                    AudioPart.from_uri(
+                        "https://assets.example.test/audio.mp3",
+                        media_type="audio/mpeg",
+                    ),
+                    VideoPart.from_bytes(b"video", media_type="video/mp4"),
+                    DocumentPart.from_bytes(
+                        b"pdf",
+                        media_type="application/pdf",
+                        filename="report.pdf",
+                    ),
+                )
+            ),
+        )
+    )
+
+    contents = GoogleGenerateContentProvider()._contents(request)
+
+    assert len(contents) == 1
+    parts = contents[0].parts
+    assert parts is not None
+    assert parts[0].text == "inspect"
+    assert parts[1].file_data is not None
+    assert parts[1].file_data.file_uri == "https://assets.example.test/chart.png"
+    assert parts[1].file_data.mime_type == "image/png"
+    assert parts[2].inline_data is not None
+    assert parts[2].inline_data.data == b"image"
+    assert parts[2].inline_data.mime_type == "image/png"
+    assert parts[3].file_data is not None
+    assert parts[3].file_data.file_uri == "https://assets.example.test/audio.mp3"
+    assert parts[3].file_data.mime_type == "audio/mpeg"
+    assert parts[4].inline_data is not None
+    assert parts[4].inline_data.data == b"video"
+    assert parts[4].inline_data.mime_type == "video/mp4"
+    assert parts[5].inline_data is not None
+    assert parts[5].inline_data.data == b"pdf"
+    assert parts[5].inline_data.mime_type == "application/pdf"
+
+
+@pytest.mark.parametrize("operation", ["complete", "stream"])
+async def test_google_capability_mismatch_expect_no_sdk_call(operation: str) -> None:
+    """Route modality mismatch fails before constructing a Google SDK client."""
+    request = _request(
+        messages=(
+            ModelMessage.user(
+                (
+                    ImagePart.from_uri(
+                        "https://assets.example.test/chart.png",
+                        media_type="image/png",
+                    ),
+                )
+            ),
+        )
+    )
+    provider = GoogleGenerateContentProvider()
+
+    with (
+        patch("spakky.plugins.llm.providers.google.genai.Client") as constructor,
+        pytest.raises(LlmUnsupportedFeatureError),
+    ):
+        if operation == "complete":
+            await provider.complete(_target(), request)
+        else:
+            _ = [event async for event in provider.stream(_target(), request)]
+
+    constructor.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        ModelMessage(
+            ModelMessageRole.SYSTEM,
+            (ImagePart.from_bytes(b"image", media_type="image/png"),),
+        ),
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            (AudioPart.from_bytes(b"audio", media_type="audio/mpeg"),),
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            (DocumentPart.from_bytes(b"pdf", media_type="application/pdf"),),
+            metadata={"call_id": "call-1", "tool_name": "read"},
+        ),
+    ],
+)
+async def test_google_non_user_media_expect_no_sdk_call(message: ModelMessage) -> None:
+    """System, assistant, and tool media history remains fail-closed."""
+    with (
+        patch("spakky.plugins.llm.providers.google.genai.Client") as constructor,
+        pytest.raises(LlmUnsupportedFeatureError),
+    ):
+        await GoogleGenerateContentProvider().complete(
+            _target(input_modalities=frozenset(ModelModality)),
+            _request(messages=(message,)),
+        )
+
+    constructor.assert_not_called()
+
+
+def test_google_corrupted_portable_part_expect_response_error() -> None:
+    """Impossible missing-byte and unknown part states remain fail-closed."""
+    part = ImagePart.from_bytes(b"image", media_type="image/png")
+    object.__setattr__(part, "data", None)
+    provider = GoogleGenerateContentProvider()
+
+    with pytest.raises(LlmResponseError):
+        provider._input_parts(ModelMessage.user((part,)))
+    message = ModelMessage.user((TextPart("valid"),))
+    object.__setattr__(message, "content", (object(),))
+    with pytest.raises(LlmResponseError):
+        provider._input_parts(message)
 
 
 def _tool_calling(
@@ -1058,7 +1195,7 @@ async def test_complete_requires_api_key_and_normalizes_client_configuration() -
         (errors.ClientError(408, {"message": "timeout"}), LlmTimeoutError),
         (
             errors.ClientError(429, {"message": "rate limited"}),
-            LlmTransportError,
+            LlmRateLimitError,
         ),
         (
             errors.ServerError(503, {"message": "unavailable"}),
@@ -1082,6 +1219,46 @@ async def test_complete_normalizes_google_api_errors(
         pytest.raises(expected_error),
     ):
         await GoogleGenerateContentProvider().complete(_target(), _request())
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("3.5", 3.5),
+        (None, None),
+        ("invalid", None),
+        ("-1", None),
+        ("nan", None),
+        ("inf", None),
+    ],
+)
+def test_google_rate_limit_retry_after_expect_safe_optional_seconds(
+    value: str | None,
+    expected: float | None,
+) -> None:
+    """Google httpx 429 headers map to typed retry timing without raw leakage."""
+    headers = {} if value is None else {"Retry-After": value}
+    response = httpx.Response(
+        429,
+        headers=headers,
+        request=httpx.Request("POST", "https://google.example.test"),
+    )
+    sdk_error = errors.ClientError(429, {"message": "rate limited"}, response)
+
+    with pytest.raises(LlmRateLimitError) as raised:
+        GoogleGenerateContentProvider()._raise_api_error(sdk_error)
+
+    assert raised.value.retry_after_seconds == expected
+
+
+def test_google_rate_limit_without_httpx_response_expect_no_retry_after() -> None:
+    """A Google response shape without typed headers cannot invent retry timing."""
+    sdk_error = errors.ClientError(429, {"message": "rate limited"})
+
+    with pytest.raises(LlmRateLimitError) as raised:
+        GoogleGenerateContentProvider()._raise_api_error(sdk_error)
+
+    assert raised.value.retry_after_seconds is None
 
 
 @pytest.mark.parametrize(

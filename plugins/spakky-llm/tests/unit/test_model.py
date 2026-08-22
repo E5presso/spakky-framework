@@ -1,11 +1,14 @@
 """Tests for operator-catalog LLM routing."""
 
 from collections.abc import AsyncIterator
-from typing import override
+from math import inf
+from typing import cast, override
 
 import pytest
 from pydantic import SecretStr
 from spakky.agent import (
+    JsonObject,
+    JsonValue,
     ModelCapability,
     ModelMessage,
     ModelMessageRole,
@@ -28,10 +31,15 @@ from spakky.plugins.llm.config import (
 )
 from spakky.plugins.llm.error import (
     AbstractLlmError,
+    LlmCacheConfigurationError,
+    LlmCapabilityError,
+    LlmCircuitOpenError,
+    LlmConcurrencyLimitError,
     LlmConfigurationError,
     LlmModelRefusalError,
     LlmModelSelectionError,
     LlmProviderUnavailableError,
+    LlmRateLimitError,
     LlmResponseError,
     LlmStreamingDisabledError,
     LlmTimeoutError,
@@ -455,7 +463,10 @@ async def test_stream_passes_events_and_normalizes_resolved_failure() -> None:
     provider.stream_error = LlmTimeoutError()
     failure = [event async for event in model.stream(_request())]
 
-    assert success == [token]
+    assert len(success) == 1
+    assert success[0].kind is ModelStreamEventKind.TOKEN_DELTA
+    assert success[0].token_delta == "hi"
+    assert success[0].metadata["attempted_model_ref"] == "assistant/default"
     assert [event.kind for event in failure] == [
         ModelStreamEventKind.ERROR,
         ModelStreamEventKind.DONE,
@@ -463,12 +474,9 @@ async def test_stream_passes_events_and_normalizes_resolved_failure() -> None:
     assert failure[0].error is not None
     assert failure[0].error.code == "llm_timeout"
     assert failure[0].error.retryable is True
-    assert failure[0].metadata == {
-        "model_ref": "assistant/default",
-        "profile": "vllm-local",
-        "provider": "vllm",
-        "model": "default",
-    }
+    assert failure[0].metadata["model_ref"] == "assistant/default"
+    assert failure[0].metadata["failure_class"] == "timeout"
+    assert failure[0].metadata["cache_state"] == "bypassed_streaming"
 
 
 async def test_stream_disabled_is_terminal_with_resolved_route_evidence() -> None:
@@ -503,10 +511,15 @@ async def test_stream_unknown_ref_does_not_fabricate_default_route_evidence() ->
         ModelStreamEventKind.ERROR,
         ModelStreamEventKind.DONE,
     ]
-    assert events[0].metadata == {"model_ref": "missing/route"}
+    expected = {
+        "model_ref": "missing/route",
+        "failure_class": "selection",
+        "cache_state": "bypassed_streaming",
+    }
+    assert events[0].metadata == expected
     assert events[0].error is not None
-    assert events[0].error.metadata == {"model_ref": "missing/route"}
-    assert events[1].metadata == {"model_ref": "missing/route"}
+    assert events[0].error.metadata == expected
+    assert events[1].metadata == expected
 
 
 @pytest.mark.parametrize(
@@ -514,6 +527,9 @@ async def test_stream_unknown_ref_does_not_fabricate_default_route_evidence() ->
     [
         (LlmTimeoutError(), "llm_timeout", True),
         (LlmTransportError(), "llm_transport_error", True),
+        (LlmRateLimitError(), "llm_rate_limited", True),
+        (LlmConcurrencyLimitError(), "llm_concurrency_limited", True),
+        (LlmCircuitOpenError(), "llm_circuit_open", True),
         (LlmStreamingDisabledError(), "llm_streaming_disabled", False),
         (LlmModelSelectionError(), "llm_model_selection_invalid", False),
         (LlmProviderUnavailableError(), "llm_provider_unavailable", False),
@@ -521,6 +537,8 @@ async def test_stream_unknown_ref_does_not_fabricate_default_route_evidence() ->
         (LlmModelRefusalError(), "model_refusal", False),
         (LlmResponseError(), "llm_response_error", False),
         (LlmConfigurationError(), "llm_configuration_invalid", False),
+        (LlmCacheConfigurationError(), "llm_cache_invalid", False),
+        (LlmCapabilityError(), "llm_capability_insufficient", False),
         (UnknownLlmError(), "llm_response_error", False),
     ],
 )
@@ -546,7 +564,61 @@ def test_provider_errors_have_stable_codes_and_routing_evidence(
         "profile": "vllm-local",
         "provider": "vllm",
         "model": "default",
+        "failure_class": error.failure_class.value,
     }
+
+
+def test_provider_error_retry_after_expect_typed_metadata_preserved() -> None:
+    """Retry-After survives the provider-neutral public error projection."""
+    target = LlmModelTarget(
+        model_ref="assistant/default",
+        profile_name="vllm-local",
+        profile=_vllm_profile(),
+        route=LlmModelRoute(profile="vllm-local", model="default"),
+    )
+
+    normalized = to_model_error(
+        LlmRateLimitError(retry_after_seconds=3.5),
+        target,
+    )
+
+    assert normalized.metadata["retry_after_seconds"] == 3.5
+
+
+def test_provider_error_details_expect_deep_snapshot_and_safe_annotation() -> None:
+    """Recovery evidence cannot change through caller-owned nested JSON aliases."""
+    nested: dict[str, JsonValue] = {"values": [1, 2]}
+    details: dict[str, JsonValue] = {"nested": nested}
+    error = LlmTimeoutError(details=details)
+    nested["values"] = [9]
+    annotation: dict[str, JsonValue] = {"attempts": [{"state": "failed"}]}
+    error.annotate(annotation)
+    cast(list[JsonValue], annotation["attempts"])[0] = {"state": "tampered"}
+
+    assert error.details == {
+        "nested": {"values": (1, 2)},
+        "attempts": ({"state": "failed"},),
+    }
+
+
+def test_provider_error_details_expect_invalid_or_recursive_json_rejected() -> None:
+    """Nonfinite, non-JSON, invalid-key, and cyclic details fail typed."""
+    cyclic: list[object] = []
+    cyclic.append(cyclic)
+    invalid = (
+        cast(JsonObject, {"value": inf}),
+        cast(JsonObject, {"value": object()}),
+        cast(JsonObject, {1: "value"}),
+        cast(JsonObject, {"value": cyclic}),
+    )
+
+    for details in invalid:
+        with pytest.raises(LlmConfigurationError):
+            LlmTimeoutError(details=details)
+
+    annotated = LlmTimeoutError()
+    with pytest.raises(LlmConfigurationError):
+        annotated.annotate(cast(JsonObject, {"value": cyclic}))
 
 
 def test_provider_event_helpers_preserve_terminal_metadata() -> None:
@@ -568,6 +640,7 @@ def test_provider_event_helpers_preserve_terminal_metadata() -> None:
         "profile": "vllm-local",
         "provider": "vllm",
         "model": "default",
+        "failure_class": "response",
     }
     assert done.kind == ModelStreamEventKind.DONE
     assert done.usage == usage

@@ -24,6 +24,19 @@ field는 `A2ARunResolutionError`입니다. Well-formed unknown ref는 shape pars
 표면화됩니다. Catalog 등록과 default 선택은
 [LLM 모델 라우팅](../../guides/llm-routing.md)을 확인하세요.
 
+## Multimodal inbound
+
+A2A executor는 inbound message의 text를 `RunAgentInput.instruction`으로 사용하고 raw/URL
+parts를 MIME family에 따라 `ImagePart`, `AudioPart`, `VideoPart`, `DocumentPart` attachment로
+매핑합니다. Raw bytes와 URL은 provider I/O 전에 core safety contract를 통과하고 document
+filename은 있을 때 보존됩니다. Data parts는 attachment로 해석하지 않습니다.
+
+일반 run은 nonblank text가 필요하고 approval-only resume만 `"resume"` marker를 사용합니다.
+Default aggregate bound는 media 16개와 inline bytes 20 MiB입니다. Unknown content kind,
+empty bytes, missing/unsupported MIME, local URI와 bound 초과는 `A2ARunResolutionError`입니다.
+Attachment provenance는 A2A message ID에 결속되며 model selection은 별도 data part의
+`modelSelection.modelRef` exact shape를 유지합니다.
+
 Inbound `metadata`는 얕게 합쳐지고 top-level `mcp`는 같은 metadata key를 씁니다. 같은
 data part에서는 top-level `mcp`가 `metadata.mcp`를 덮어쓰고 여러 part에서는 뒤 값이
 앞 값을 덮어쓰므로 두 입력 경로를 혼용하지 않습니다. Remote delegation은 text와

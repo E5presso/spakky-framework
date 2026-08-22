@@ -41,7 +41,9 @@ from spakky.plugins.llm.constants import (
     DEFAULT_LLM_STREAM_TIMEOUT_SECONDS,
     SPAKKY_LLM_CONFIG_ENV_PREFIX,
 )
-from spakky.plugins.llm.error import LlmConfigurationError
+from spakky.plugins.llm.cache import LlmCachePolicy
+from spakky.plugins.llm.error import LlmConfigurationError, LlmFailureClass
+from spakky.plugins.llm.resilience import LlmResiliencePolicy
 
 type LlmScalar = bool | int | float | str
 
@@ -264,6 +266,7 @@ class LlmProfile(BaseModel):
     )
     max_retries: int = Field(default=DEFAULT_LLM_MAX_RETRIES, ge=0)
     stream_enabled: bool = True
+    resilience: LlmResiliencePolicy = Field(default_factory=LlmResiliencePolicy)
     openai_dialect: OpenAICompatibleDialect = OpenAICompatibleDialect.STANDARD
     google_credential_strategy: GoogleCredentialStrategy | None = None
     google_project: str | None = None
@@ -326,6 +329,11 @@ class LlmProfile(BaseModel):
 
     @model_validator(mode="after")
     def _validate_api_specific_options(self) -> "LlmProfile":
+        if self.max_retries > 0 and self.resilience.retry.max_attempts > 1:
+            raise PydanticCustomError(
+                "llm_retry_owner",
+                "SDK and orchestration retries cannot both be enabled",
+            )
         if (
             self.api != LlmProviderApi.OPENAI_CHAT_COMPLETIONS
             and self.openai_dialect != OpenAICompatibleDialect.STANDARD
@@ -423,6 +431,9 @@ class LlmModelRoute(BaseModel):
     model: str = Field(min_length=1, strict=True)
     capability: ModelCapability = Field(default_factory=ModelCapability)
     chat_template_kwargs: dict[str, LlmScalar] = Field(default_factory=dict)
+    fallbacks: tuple[str, ...] = ()
+    fallback_on: frozenset[LlmFailureClass] = frozenset()
+    cache: LlmCachePolicy = Field(default_factory=LlmCachePolicy)
 
     @field_validator("profile")
     @classmethod
@@ -458,6 +469,24 @@ class LlmModelRoute(BaseModel):
                 normalized[key] = item
         return normalized
 
+    @field_validator("fallbacks")
+    @classmethod
+    def _normalize_fallbacks(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized: list[str] = []
+        for model_ref in value:
+            key = _normalized_catalog_key(
+                model_ref,
+                "llm_model_route_fallback",
+                "LLM fallback model ref cannot be blank",
+            )
+            if key in normalized:
+                raise PydanticCustomError(
+                    "llm_model_route_fallback_duplicate",
+                    "LLM fallback model refs must be unique",
+                )
+            normalized.append(key)
+        return tuple(normalized)
+
     @model_validator(mode="after")
     def _validate_capability(self) -> "LlmModelRoute":
         context_window = self.capability.context_window_tokens
@@ -473,6 +502,11 @@ class LlmModelRoute(BaseModel):
             raise PydanticCustomError(
                 "llm_model_route_modalities",
                 "LLM model routes require input and output modalities",
+            )
+        if (len(self.fallbacks) == 0) != (len(self.fallback_on) == 0):
+            raise PydanticCustomError(
+                "llm_model_route_fallback_policy",
+                "Fallback refs and failure allowlist must be configured together",
             )
         return self
 
@@ -631,7 +665,7 @@ class LlmConfig(BaseSettings):
                 "llm_default_model_missing",
                 "Default LLM model ref must exist in models",
             )
-        for route in self.models.values():
+        for model_ref, route in self.models.items():
             profile = self.profiles.get(route.profile)
             if profile is None:
                 raise PydanticCustomError(
@@ -646,7 +680,40 @@ class LlmConfig(BaseSettings):
                     "llm_model_route_chat_template",
                     "Chat template kwargs require a vLLM connection profile",
                 )
+            for fallback_ref in route.fallbacks:
+                if fallback_ref == model_ref:
+                    raise PydanticCustomError(
+                        "llm_model_route_fallback_self",
+                        "LLM model route cannot fallback to itself",
+                    )
+                if fallback_ref not in self.models:
+                    raise PydanticCustomError(
+                        "llm_model_route_fallback_missing",
+                        "Every LLM fallback ref must exist in models",
+                    )
+        self._validate_fallback_cycles()
         return self
+
+    def _validate_fallback_cycles(self) -> None:
+        visited: set[str] = set()
+        active: set[str] = set()
+
+        def visit(model_ref: str) -> None:
+            if model_ref in active:
+                raise PydanticCustomError(
+                    "llm_model_route_fallback_cycle",
+                    "LLM fallback graph cannot contain cycles",
+                )
+            if model_ref in visited:
+                return
+            active.add(model_ref)
+            for fallback_ref in self.models[model_ref].fallbacks:
+                visit(fallback_ref)
+            active.remove(model_ref)
+            visited.add(model_ref)
+
+        for model_ref in self.models:
+            visit(model_ref)
 
     def __init__(
         self,
