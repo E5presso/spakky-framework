@@ -2,9 +2,10 @@
 
 SPAKKY_LLM_CONFIG_ENV_PREFIX = "SPAKKY_LLM__"
 
-DEFAULT_LLM_PROFILE = "default"
+DEFAULT_LLM_PROFILE = "vllm-local"
+DEFAULT_LLM_MODEL_REF = "assistant/default"
 DEFAULT_LLM_PROVIDER = "vllm"
-DEFAULT_LLM_MODEL = "default"
+DEFAULT_LLM_PROVIDER_MODEL = "default"
 DEFAULT_LLM_BASE_URL = "http://127.0.0.1:8000/v1"
 DEFAULT_LLM_API_KEY = "EMPTY"
 DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 30.0
@@ -14,4 +15,5 @@ DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
 
 OFFICIAL_OPENAI_BASE_URL = "https://api.openai.com/v1"
 OFFICIAL_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
-OFFICIAL_GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/"
+OFFICIAL_GEMINI_DEVELOPER_BASE_URL = "https://generativelanguage.googleapis.com/"
+OFFICIAL_VERTEX_GLOBAL_BASE_URL = "https://aiplatform.googleapis.com/"

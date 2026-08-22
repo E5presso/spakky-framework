@@ -18,6 +18,33 @@ AG-UI, A2A, MCP를 import하지 않습니다. 운영에서 durable execution을 
 contribution의 repository 구현이 필요하며, 운영용 in-memory fallback은 제공하지
 않습니다.
 
+## Model selection과 capability
+
+Core의 run-scoped 선택 계약은 logical ref 하나뿐입니다.
+
+```python
+from spakky.agent import ModelSelection, RunAgentInput
+
+
+run_input = RunAgentInput(
+    state_id="run-42",
+    instruction="요청을 분류해 주세요.",
+    model_selection=ModelSelection(model_ref="support/primary"),
+)
+```
+
+`ModelSelection`은 frozen dataclass이며 필수 `model_ref: str` 외에 provider, profile,
+physical model, metadata field를 두지 않습니다. Blank ref는 `AgentDefinitionError`입니다.
+Runner는 selection을 `ModelRequest`와 `IAgentModel.capability_for()`에 전달합니다. 고정
+model adapter는 같은 capability를 반환할 수 있고, `spakky-llm` 같은 catalog-aware
+adapter는 opaque ref를 operator catalog에서 해석합니다.
+
+`ModelCapability`은 reasoning, context window, token counting, input/output
+`ModelModality`, tools, structured output 지원 여부를 표현합니다. 기본값은 text input과
+text output만 지원하고 나머지 optional capability는 꺼진 상태입니다. Logical route
+구성과 protocol별 wire shape는 [LLM 모델 라우팅](../../guides/llm-routing.md)을
+확인하세요.
+
 ## Public API
 
 ::: spakky.agent

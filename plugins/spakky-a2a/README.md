@@ -92,15 +92,23 @@ lower-level escape hatch입니다. 일반 애플리케이션은 `@A2ACompatible`
 
 ## 실행별 입력
 
-Executor는 A2A inbound message의 task id를 `RunAgentInput.state_id`로, context id를 `conversation_id`로 사용합니다. Message data part에 `modelSelection` 또는 `model_selection`을 넣으면 `RunAgentInput.model_selection`으로 전달되고, `mcp`와 `metadata` object는 `RunAgentInput.metadata`로 전달됩니다.
+Executor는 A2A inbound message의 task id를 `RunAgentInput.state_id`로, context id를 `conversation_id`로 사용합니다. A2A inbound에는 core `parent_run_id`를 채우는 별도 mapping이 없습니다. Message data part의 canonical `modelSelection`은 `RunAgentInput.model_selection`으로, `mcp`와 `metadata` object는 `RunAgentInput.metadata`로 전달됩니다.
+
+Model-selection object에는 `modelRef` 하나만 허용합니다. 이 값은 operator가 공개한 case-sensitive opaque catalog key이며 `/`를 provider/model 구분자로 분해하지 않습니다. Profile, provider, physical model, endpoint와 credential은 A2A caller surface가 아닙니다. Executor는 모든 data part를 scan하고 legacy outer `model_selection`, canonical selector 둘 이상, `provider`, `profile`, `model`, inner `model_ref`, unknown sibling key를 발견하면 첫 값을 채택하지 않고 fail closed합니다.
 
 ```json
 {
-  "modelSelection": {"provider": "openrouter", "model": "anthropic/claude-sonnet-4.5"},
+  "modelSelection": {"modelRef": "support/primary"},
   "mcp": {"servers": ["github"]},
   "metadata": {"tenant": "acme"}
 }
 ```
+
+Run metadata도 모든 data part를 순서대로 scan합니다. 각 `metadata` object는 기존 key에 update되고
+각 explicit `mcp` object는 `metadata["mcp"]`에 저장되므로 같은 data part에서는 explicit `mcp`가
+generic metadata의 동명 key보다 우선하고, 서로 다른 part 사이에서는 뒤에서 처리된 값이 앞 값을
+덮어씁니다. 이 merge는 model routing authority가 아니며 endpoint/credential/physical model을 바꾸지
+못합니다.
 
 Approval resume은 data part의 `approval_id`, `decision`을 `APPROVAL_DECISION` signal로 변환합니다.
 
@@ -129,7 +137,21 @@ class Orchestrator:
         self.delegate = delegate
 ```
 
-원격 delegation은 SDK client로 `message/send`를 보내고 remote task stream을 추적한 뒤, child task/message/artifact update를 parent run id를 보존한 Spakky protocol-neutral event stream으로 되돌립니다.
+원격 delegation은 SDK client로 `message/send`를 보내고 remote task stream을 추적한 뒤, child task/message/artifact update를 `parent_run_id`가 설정된 Spakky protocol-neutral event stream으로 되돌립니다. 이는 parent agent 내부 attribution이며 A2A server projector가 별도 parent Task를 자동 생성하거나 모든 event에 parent id를 직렬화한다는 뜻은 아닙니다.
+
+## Event projection
+
+`SpakkyAgentExecutor`는 inbound task id/context id로 하나의 `TaskUpdater`를 bind한 뒤 core
+`AgentEvent`를 A2A task update로 변환합니다. `RUN_STARTED`는 working transition, step/tool lifecycle은
+status metadata, message/reasoning delta는 agent message, tool result와 artifact는 A2A artifact,
+state snapshot/delta는 data part로 투영됩니다. `RUN_FINISHED`는 projector가 `RunOutcome`으로 반환하고
+executor가 stream 종료 후 complete/failed terminal transition을 한 번 적용하며, `RUN_PAUSED`는 즉시
+input-required/auth-required 상태로 변환합니다.
+
+이 projection은 중립 event와 A2A event의 1:1 복사가 아닙니다. `AgentEventAttribution`과 arbitrary
+event metadata 전체를 wire에 반복 직렬화하지 않고, 위 event별 field만 사용합니다. 예를 들어 message
+id는 A2A message metadata, tool call name/id/phase는 status metadata, tool result는 artifact data part로
+각기 다른 protocol 위치에 배치됩니다.
 
 ## REST HTTP+JSON Transport
 

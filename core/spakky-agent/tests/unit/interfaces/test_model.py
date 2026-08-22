@@ -1,6 +1,7 @@
 """Tests for agent model interface contracts."""
 
 from collections.abc import AsyncIterator
+from dataclasses import fields
 from typing import override
 
 import pytest
@@ -24,6 +25,7 @@ from spakky.agent import (
     ModelError,
     ModelMessage,
     ModelMessageRole,
+    ModelModality,
     ModelRequest,
     ModelResponse,
     ModelSelection,
@@ -120,25 +122,29 @@ def test_model_request_expect_provider_neutral_structured_output_contract() -> N
 
 
 def test_model_request_expect_carries_run_model_selection() -> None:
-    """ModelRequest는 provider/model/profile 선택을 typed field로 보존한다."""
-    selection = ModelSelection(
-        provider="openrouter",
-        model="anthropic/claude-sonnet-4.5",
-        profile="coding",
-        metadata={"tier": "paid"},
-    )
+    """ModelRequest는 opaque model_ref 선택을 typed field로 보존한다."""
+    selection = ModelSelection(model_ref="support/primary")
     request = ModelRequest(
         messages=(ModelMessage(ModelMessageRole.USER, "hello"),),
         model_selection=selection,
     )
 
     assert request.model_selection is selection
+    assert selection.model_ref == "support/primary"
+    assert tuple(field.name for field in fields(ModelSelection)) == ("model_ref",)
+
+
+def test_model_selection_expect_preserves_opaque_ref_with_multiple_slashes() -> None:
+    """model_ref 내부 slash는 provider/profile/model 문법으로 해석하지 않는다."""
+    selection = ModelSelection(model_ref="router/team/model/version")
+
+    assert selection.model_ref == "router/team/model/version"
 
 
 def test_model_selection_expect_rejects_blank_fields() -> None:
-    """빈 provider/model/profile 값은 adapter까지 내려가기 전에 거부된다."""
+    """빈 model_ref 값은 adapter까지 내려가기 전에 거부된다."""
     with pytest.raises(AgentDefinitionError):
-        ModelSelection(provider=" ")
+        ModelSelection(model_ref=" ")
 
 
 def test_model_request_expect_assembles_typed_context_packs_as_messages() -> None:
@@ -509,21 +515,50 @@ class ReasoningFreeModel(IAgentModel):
 
 
 def test_model_capability_expect_queryable_before_run() -> None:
-    """런타임 전 capability descriptor로 reasoning·context_window·token counting을 조회한다."""
+    """런타임 전 route capability 전체를 조회한다."""
     capability = ReasoningCapableModel().capability
 
     assert capability.supports_reasoning is True
     assert capability.context_window_tokens == 128_000
     assert capability.supports_token_counting is True
+    assert capability.input_modalities == frozenset({ModelModality.TEXT})
+    assert capability.output_modalities == frozenset({ModelModality.TEXT})
+    assert capability.supports_tools is False
+    assert capability.supports_structured_output is False
 
 
 def test_model_capability_expect_default_descriptor_declares_no_extras() -> None:
-    """기본 capability descriptor는 reasoning·token counting 미지원, context window 미선언이다."""
+    """기본 capability는 text-only이며 선택 기능을 안전하게 비활성화한다."""
     capability = ModelCapability()
 
     assert capability.supports_reasoning is False
     assert capability.context_window_tokens is None
     assert capability.supports_token_counting is False
+    assert capability.input_modalities == frozenset({ModelModality.TEXT})
+    assert capability.output_modalities == frozenset({ModelModality.TEXT})
+    assert capability.supports_tools is False
+    assert capability.supports_structured_output is False
+
+
+def test_model_capability_expect_declares_multimodal_route_features() -> None:
+    """모델 route가 modality와 tool·structured-output 지원을 명시한다."""
+    capability = ModelCapability(
+        input_modalities=frozenset(
+            {ModelModality.TEXT, ModelModality.IMAGE, ModelModality.DOCUMENT}
+        ),
+        output_modalities=frozenset({ModelModality.TEXT, ModelModality.AUDIO}),
+        supports_tools=True,
+        supports_structured_output=True,
+    )
+
+    assert capability.input_modalities == frozenset(
+        {ModelModality.TEXT, ModelModality.IMAGE, ModelModality.DOCUMENT}
+    )
+    assert capability.output_modalities == frozenset(
+        {ModelModality.TEXT, ModelModality.AUDIO}
+    )
+    assert capability.supports_tools is True
+    assert capability.supports_structured_output is True
 
 
 @pytest.mark.asyncio

@@ -73,6 +73,7 @@ from spakky.plugins.llm.provider import (
     done_event,
     ensure_terminal_tool_choice,
     ensure_tool_call_allowed,
+    routing_metadata,
 )
 
 _SUCCESS_FINISH_REASONS = frozenset({"stop", "length", "tool_calls"})
@@ -100,9 +101,15 @@ class OpenAIChatProvider(ILLMProvider):
 
     @property
     @override
-    def api(self) -> LlmProviderApi:
+    def apis(self) -> frozenset[LlmProviderApi]:
         """Return the OpenAI chat-completions API family."""
-        return LlmProviderApi.OPENAI_CHAT_COMPLETIONS
+        return frozenset({LlmProviderApi.OPENAI_CHAT_COMPLETIONS})
+
+    @property
+    @override
+    def is_default(self) -> bool:
+        """Mark the first-party OpenAI adapter as replaceable default."""
+        return True
 
     @override
     async def complete(
@@ -295,7 +302,7 @@ class OpenAIChatProvider(ILLMProvider):
 
     def _client(self, target: LlmModelTarget) -> AsyncOpenAI:
         profile = target.profile
-        if profile.api != self.api:
+        if profile.api not in self.apis:
             raise LlmUnsupportedFeatureError
         if "OPENAI_CUSTOM_HEADERS" in environ:
             raise LlmConfigurationError
@@ -447,8 +454,8 @@ class OpenAIChatProvider(ILLMProvider):
         if profile.openai_dialect != OpenAICompatibleDialect.VLLM:
             return None
         extra: dict[str, object] = {}
-        if len(profile.chat_template_kwargs) > 0:
-            extra["chat_template_kwargs"] = dict(profile.chat_template_kwargs)
+        if len(target.route.chat_template_kwargs) > 0:
+            extra["chat_template_kwargs"] = dict(target.route.chat_template_kwargs)
         if request.structured_output is not None:
             extra["structured_outputs"] = {
                 "json": self._schema(request.structured_output.constraint.schema)
@@ -495,7 +502,7 @@ class OpenAIChatProvider(ILLMProvider):
             {
                 "finish_reason": choice.finish_reason,
                 "response_id": completion.id,
-                "model": completion.model,
+                "response_model": completion.model,
             }
         )
         reasoning = self._reasoning_delta(target, message.model_extra)
@@ -566,7 +573,7 @@ class OpenAIChatProvider(ILLMProvider):
         target: LlmModelTarget,
         extra: dict[str, object] | None,
     ) -> str | None:
-        if not target.profile.supports_reasoning or extra is None:
+        if not target.route.capability.supports_reasoning or extra is None:
             return None
         reasoning = extra.get("reasoning_content")
         if reasoning is None:
@@ -633,10 +640,7 @@ class OpenAIChatProvider(ILLMProvider):
         return {key: value for key, value in schema.items()}
 
     def _metadata(self, target: LlmModelTarget) -> dict[str, JsonValue]:
-        return {
-            "provider": target.profile.provider,
-            "profile": target.profile_name,
-        }
+        return dict(routing_metadata(target))
 
     def _normalized_sdk_error(self, error: APIError) -> AbstractLlmError:
         if isinstance(error, APITimeoutError):

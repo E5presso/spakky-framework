@@ -12,13 +12,13 @@ class AbstractLlmError(AbstractSpakkyFrameworkError, ABC):
 
 
 class LlmConfigurationError(AbstractLlmError):
-    """Raised when configured profiles cannot form a valid provider registry."""
+    """Raised when the model catalog or provider registry is invalid."""
 
     message = "LLM provider configuration is invalid"
 
 
 class LlmModelSelectionError(AbstractLlmError):
-    """Raised when a request does not resolve to one allowlisted profile."""
+    """Raised when a request does not resolve to one catalog model ref."""
 
     message = "LLM model selection is invalid"
 

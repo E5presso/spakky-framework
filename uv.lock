@@ -4104,6 +4104,7 @@ version = "8.1.0"
 source = { editable = "plugins/spakky-llm" }
 dependencies = [
     { name = "anthropic" },
+    { name = "google-auth" },
     { name = "google-genai" },
     { name = "httpx" },
     { name = "openai" },
@@ -4115,6 +4116,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=1.0.0" },
+    { name = "google-auth", specifier = ">=2.56.3" },
     { name = "google-genai", specifier = ">=2.19.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "openai", specifier = ">=3.3.1" },

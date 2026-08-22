@@ -22,6 +22,7 @@ from spakky.agent import (
     JsonValue,
     ModelMessage,
     ModelMessageRole,
+    ModelCapability,
     ModelRequest,
     ModelStreamEvent,
     ModelStreamEventKind,
@@ -34,6 +35,7 @@ from spakky.agent import (
 )
 
 from spakky.plugins.llm.config import (
+    LlmModelRoute,
     LlmProfile,
     LlmProviderApi,
     OpenAICompatibleDialect,
@@ -165,14 +167,14 @@ def _schema() -> dict[str, JsonValue]:
 
 def _foreign_target() -> LlmModelTarget:
     return LlmModelTarget(
+        model_ref="support/foreign",
         profile_name="foreign",
         profile=LlmProfile.model_construct(
             provider="anthropic",
             api=LlmProviderApi.ANTHROPIC_MESSAGES,
-            model="claude",
             openai_dialect=OpenAICompatibleDialect.STANDARD,
         ),
-        model="claude",
+        route=LlmModelRoute(profile="foreign", model="claude"),
     )
 
 
@@ -198,28 +200,32 @@ def _target(
     api_key: SecretStr | None = SecretStr("secret"),
     base_url: str | None = "http://localhost:8000/v1",
     supports_reasoning: bool = False,
+    include_vllm_extensions: bool = True,
 ) -> LlmModelTarget:
     return LlmModelTarget(
-        profile_name="local",
+        model_ref="support/primary",
+        profile_name="vllm-local",
         profile=LlmProfile(
             provider="openai",
             api=api,
-            model="configured-model",
             api_key=api_key,
             base_url=base_url,
             openai_dialect=dialect,
-            chat_template_kwargs=(
-                {"enable_thinking": True}
-                if dialect == OpenAICompatibleDialect.VLLM
-                else {}
-            ),
-            supports_reasoning=supports_reasoning,
             request_timeout_seconds=11,
             stream_timeout_seconds=22,
             max_retries=3,
             headers={"X-Tenant": "tenant-a"},
         ),
-        model="selected-model",
+        route=LlmModelRoute(
+            profile="vllm-local",
+            model="selected-model",
+            capability=ModelCapability(supports_reasoning=supports_reasoning),
+            chat_template_kwargs=(
+                {"enable_thinking": True}
+                if dialect == OpenAICompatibleDialect.VLLM and include_vllm_extensions
+                else {}
+            ),
+        ),
     )
 
 
@@ -335,11 +341,13 @@ async def test_complete_maps_allowlisted_vllm_profile_and_structured_request() -
     assert response.usage.output_tokens == 4
     assert response.usage.total_tokens == 7
     assert response.metadata == {
+        "model_ref": "support/primary",
         "provider": "openai",
-        "profile": "local",
+        "profile": "vllm-local",
         "finish_reason": "stop",
         "response_id": "chatcmpl-1",
-        "model": "served-model",
+        "model": "selected-model",
+        "response_model": "served-model",
     }
     assert _FakeAsyncOpenAI.init_calls == [
         {
@@ -470,8 +478,10 @@ async def test_complete_maps_function_tool_call_without_executing_it() -> None:
     assert response.tool_calls[0].arguments == {"city": "Seoul"}
     assert response.tool_calls[0].call_id == "call-1"
     assert response.tool_calls[0].metadata == {
+        "model_ref": "support/primary",
         "provider": "openai",
-        "profile": "local",
+        "profile": "vllm-local",
+        "model": "selected-model",
         "provider_arguments": '{"city":"Seoul"}',
     }
 
@@ -564,8 +574,10 @@ async def test_stream_maps_text_reasoning_structured_output_and_usage() -> None:
     assert events[-1].usage is not None
     assert events[-1].usage.total_tokens == 11
     assert events[-1].metadata == {
+        "model_ref": "support/primary",
         "provider": "openai",
-        "profile": "local",
+        "profile": "vllm-local",
+        "model": "selected-model",
         "finish_reason": "stop",
     }
     assert _FakeCompletions.calls[0]["stream_options"] == {"include_usage": True}
@@ -1130,8 +1142,7 @@ async def test_complete_rejects_empty_declared_tool_catalog() -> None:
 async def test_complete_vllm_without_extensions_omits_extra_body() -> None:
     """A plain vLLM request does not send an empty provider extension object."""
     _FakeCompletions.completion = _completion()
-    target = _target()
-    target.profile.chat_template_kwargs.clear()
+    target = _target(include_vllm_extensions=False)
 
     await OpenAIChatProvider().complete(
         target,

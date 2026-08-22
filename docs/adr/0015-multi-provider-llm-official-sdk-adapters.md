@@ -6,6 +6,8 @@ status: accepted
 
 # ADR-0015: Multi-provider LLM official SDK adapters
 
+> **부분 대체**: §2의 profile-owned model/capability와 §4의 caller profile/provider/raw-model 선택 및 Gemini Developer API 전용 Google backend 결정은 [ADR-0016](0016-operator-owned-model-catalog.md)이 대체합니다. Package rename, provider 공식 SDK와 transport lifecycle, tool authority, terminal validation, portable schema 결정은 계속 Accepted입니다.
+>
 > vLLM 전용 adapter package를 provider-neutral `spakky-llm`으로 교체하고, operator가 허용한 profile을 provider 공식 SDK adapter에 연결합니다.
 > Core `IAgentModel` 계약과 Agent tool-call 승인·dispatch authority는 유지하며 LangChain이나 Pydantic AI를 runtime dependency로 추가하지 않습니다.
 
@@ -27,9 +29,9 @@ status: accepted
 
 ### 2. Model, Provider, Profile 책임을 분리합니다
 
-- `LlmAgentModel`은 유일한 `IAgentModel` binding으로서 `ModelSelection`을 profile로 해석하고 provider adapter로 routing합니다.
-- `ILLMProvider` 구현은 하나의 provider API family를 Spakky의 `ModelRequest`, `ModelResponse`, `ModelStreamEvent` 의미로 mapping합니다.
-- `LlmProfile`은 provider id, API family, model 기본값, base URL, API key, header, timeout/retry, capability와 dialect option을 보관합니다.
+- `LlmAgentModel`을 유일한 `IAgentModel` binding으로 두고, 선택된 target을 provider adapter로 routing합니다.
+- `ILLMProvider` 구현은 하나 이상의 명시적 provider API family를 Spakky의 `ModelRequest`, `ModelResponse`, `ModelStreamEvent` 의미로 mapping합니다.
+- 이 ADR이 처음 채택한 `LlmProfile`은 provider id, API family, model 기본값, base URL, API key, header, timeout/retry, capability와 dialect option을 함께 보관했습니다. **Model 기본값과 capability를 profile에 둔 부분, `ModelSelection`을 profile/provider/raw model로 해석한 부분은 ADR-0016이 대체했습니다.** 현재 profile은 연결·backend·auth만 소유하고, `LlmModelRoute`가 physical model과 capability를 소유하며 caller는 opaque `model_ref`만 전달합니다.
 
 이 구조는 Pydantic AI가 분리한 Model/Provider/Profile 책임과 LangChain의 provider별 integration package에서 유용한 경계를 참고한 것입니다. Spakky는 이미 `IAgentModel`, message/tool/schema/event contract와 single-pass Agent execution orchestration을 소유하므로 두 framework를 runtime dependency로 추가하지 않고 경계만 적용합니다.
 
@@ -43,15 +45,15 @@ Framework adapter는 SDK의 typed response와 stream을 provider-neutral contrac
 
 OpenAI와 Anthropic async client는 request/stream context가 끝날 때 닫습니다. Google SDK가 async client와 주입된 transport를 닫은 뒤 adapter는 이를 소유한 root sync `Client`도 `finally`에서 닫아 성공, provider error, transport error, stream 종료가 같은 lifecycle 경계를 따르게 합니다. Google complete/stream에서 `httpx.InvalidURL`과 `httpx.UnsupportedProtocol`은 `LlmConfigurationError`, timeout은 `LlmTimeoutError`, 나머지 transport failure는 `LlmTransportError`로 정규화합니다.
 
-HTTP status 200은 그 자체로 성공이 아닙니다. OpenAI, Anthropic, Google adapter는 공식 SDK의 JSON decode, typed response validation, adapter mapping 과정에서 malformed success payload를 발견하면 `LlmResponseError`로 정규화합니다. OpenAI stream에서 usage opt-out을 요청하면 SDK `stream_options`에 usage를 요청하지 않고 unsolicited usage chunk도 무시합니다. Google thought part는 profile의 `include_thoughts` opt-in에서만 요청하고 reasoning event로 게시합니다.
+HTTP status 200은 그 자체로 성공이 아닙니다. OpenAI, Anthropic, Google adapter는 공식 SDK의 JSON decode, typed response validation, adapter mapping 과정에서 malformed success payload를 발견하면 `LlmResponseError`로 정규화합니다. OpenAI stream에서 usage opt-out을 요청하면 SDK `stream_options`에 usage를 요청하지 않고 unsolicited usage chunk도 무시합니다. Google thought part는 선택된 `LlmModelRoute.capability.supports_reasoning`이 true일 때만 요청하고 reasoning event로 게시합니다.
 
 ### 4. 연결 권한은 operator-owned profile에 고정합니다
 
-`LlmConfig.profiles`는 배포 설정으로 등록한 allowlist입니다. 외부 `ModelSelection`은 profile을 선택하거나, 정확히 하나의 profile과 일치하는 provider를 선택하거나, 선택된 profile의 model id만 덮어쓸 수 있습니다.
+`LlmConfig.profiles`는 배포 설정으로 등록한 connection allowlist입니다. 이 연결 권한 원칙은 유지하지만, caller가 profile/provider/raw model을 선택하던 초기 규칙은 ADR-0016이 대체합니다. 현재 `LlmConfig.models`가 logical `model_ref`를 profile과 physical model에 연결하고, 외부 `ModelSelection`은 catalog의 opaque `model_ref` 하나만 선택합니다.
 
-Request metadata는 `base_url`, API key, header를 변경하지 못합니다. 따라서 AG-UI/A2A 같은 inbound adapter가 전달한 selection metadata가 임의 endpoint 접속이나 credential 치환으로 이어지지 않습니다. 알 수 없는 최상위 `SPAKKY_LLM__...` key, nested profile field, API/dialect 조합은 설정 검증 단계에서 거부합니다.
+Request metadata는 `base_url`, API key, header, profile 또는 physical model을 변경하지 못합니다. 따라서 AG-UI/A2A 같은 inbound adapter가 전달한 metadata가 임의 endpoint 접속이나 credential 치환으로 이어지지 않습니다. Environment가 effective config field를 공급하는 구성에서는 알 수 없는 최상위 `SPAKKY_LLM__...` key, nested profile/model field, API/dialect 조합을 설정 검증 단계에서 거부합니다. 세 config field를 모두 constructor에 명시한 경우에는 같은 prefixed environment source 자체를 effective config에 사용하지 않습니다.
 
-Standard OpenAI, Anthropic, Google profile의 `base_url=None`은 SDK ambient endpoint 선택에 위임하지 않습니다. Adapter가 각 공식 endpoint를 명시적으로 전달하고 Google은 Developer API mode인 `vertexai=False`를 고정합니다. OpenAI client의 organization, project, admin key, webhook secret은 explicit empty value로 전달합니다. `OPENAI_CUSTOM_HEADERS`와 `ANTHROPIC_CUSTOM_HEADERS`가 환경에 존재하면 client 생성을 거부하고, 추가 header는 profile만 권한을 갖습니다.
+Standard OpenAI, Anthropic과 Gemini Developer API profile의 `base_url=None`은 SDK ambient endpoint 선택에 위임하지 않습니다. Adapter가 각 공식 endpoint를 명시적으로 전달합니다. Google backend를 Developer API로만 고정한 부분은 ADR-0016이 대체하며, 현재 `google-gemini-developer`는 explicit API key와 `enterprise=False`, `google-vertex`는 explicit project/location 및 ADC 또는 service-account strategy와 `enterprise=True`를 사용합니다. Vertex profile `base_url`이 없으면 adapter가 global, `us`/`eu` multi-region, 또는 일반 regional endpoint를 설치 SDK의 endpoint 규칙과 동일하게 `HttpOptions`에 explicit 전달해 `GOOGLE_VERTEX_BASE_URL` inference를 차단하고, profile `base_url`이 있으면 그 값이 우선합니다. OpenAI client의 organization, project, admin key, webhook secret은 explicit empty value로 전달합니다. `OPENAI_CUSTOM_HEADERS`와 `ANTHROPIC_CUSTOM_HEADERS`가 환경에 존재하면 client 생성을 거부하고, 추가 header는 profile만 권한을 갖습니다.
 
 ### 5. Tool-call approval과 dispatch authority를 provider SDK에 넘기지 않습니다
 
@@ -101,7 +103,7 @@ Pydantic AI의 Model/Provider/Profile 분리와 provider normalization은 목표
 
 - vLLM을 계속 local 기본 profile로 사용할 수 있으면서 package 책임은 특정 server에 고정되지 않습니다.
 - Provider SDK가 HTTP lifecycle과 typed API surface를 담당하고 Spakky adapter는 semantic normalization에 집중합니다.
-- 하나의 allowlisted router가 request별 provider/model 선택과 capability 조회를 일관되게 처리합니다.
+- 하나의 allowlisted router가 request별 opaque `model_ref` 선택과 route capability 조회를 일관되게 처리합니다.
 - Connection authority와 tool-call 승인·dispatch authority가 외부 request 및 provider SDK로 새지 않습니다.
 - SDK ambient endpoint, connection metadata, custom header가 operator-owned profile을 우회하지 못합니다.
 - Provider client와 structured JSON validation이 성공·실패 모두에서 fail-closed lifecycle을 유지합니다.
@@ -113,7 +115,7 @@ Pydantic AI의 Model/Provider/Profile 분리와 provider normalization은 목표
 
 - Package 설치 시 OpenAI, Anthropic, Google SDK를 모두 의존성으로 가져옵니다.
 - Provider SDK API와 provider response 차이를 각 adapter가 계속 추적해야 합니다.
-- Profile의 API family, capability, dialect option을 operator가 정확히 선언해야 합니다.
+- Profile의 API family와 dialect, model route의 capability를 operator가 정확히 선언해야 합니다.
 - Portable JSON Schema subset 밖의 schema는 provider가 수용하더라도 Spakky validation에서 거부될 수 있습니다.
 - Google SDK의 `HttpOptions.async_client_args` transport injection contract를 추적해야 합니다.
 - Stream tool event 일부가 terminal validation까지 buffer되므로 즉시 event forwarding보다 지연과 메모리 사용이 늘어날 수 있습니다.
@@ -125,9 +127,11 @@ Pydantic AI의 Model/Provider/Profile 분리와 provider normalization은 목표
 - ADR-0009의 Agentic Hexagonal Architecture 전체는 계속 Accepted입니다. 그중 `plugins/spakky-vllm` package와 vLLM 전용 adapter로 한정한 결정만 이 ADR이 대체합니다.
 - vLLM in-process Python engine은 여전히 범위 밖이며 OpenAI-compatible server로 연결합니다.
 - 새로운 provider API family는 `ILLMProvider` 구현과 `LlmProviderApi` entry를 추가해 확장합니다.
+- Profile/provider/raw-model caller selection, profile-owned model/capability와 Developer-API-only Google backend는 ADR-0016이 대체합니다.
 
 ## 참고 자료
 
 - [ADR-0009: Agentic Hexagonal Architecture](0009-agentic-hexagonal-architecture.md)
 - [ADR-0013: 선언형 Agent loop ownership](0013-declarative-agent-loop-ownership.md)
+- [ADR-0016: Operator-owned model catalog와 opaque model routing](0016-operator-owned-model-catalog.md)
 - [`spakky-llm` API](../api/plugins/spakky-llm.md)

@@ -43,10 +43,10 @@ APPROVAL_DECISION_PART_KEY = "decision"
 """Inbound data-part key carrying the chosen approval decision value."""
 
 MODEL_SELECTION_PART_KEY = "modelSelection"
-"""Inbound data-part key carrying a run-scoped provider/model selector."""
+"""Inbound data-part key carrying a run-scoped model catalog reference."""
 
-MODEL_SELECTION_SNAKE_PART_KEY = "model_selection"
-"""Snake-case model selection key accepted for non-JavaScript A2A clients."""
+MODEL_REF_SELECTION_KEY = "modelRef"
+"""Canonical model-selection key carrying the opaque model catalog reference."""
 
 RUN_METADATA_PART_KEY = "metadata"
 """Inbound data-part key carrying extra core RunAgentInput metadata."""
@@ -219,26 +219,26 @@ class SpakkyAgentExecutor(AgentExecutor):
         return None
 
     def _model_selection(self, context: RequestContext) -> ModelSelection | None:
-        """Extract a run-scoped model selector from inbound A2A data parts."""
+        """Extract one canonical run-scoped selector across all A2A data parts."""
+        resolved: ModelSelection | None = None
         for data in self._data_part_payloads(context):
-            value = data.get(MODEL_SELECTION_PART_KEY)
-            if value is None:
-                value = data.get(MODEL_SELECTION_SNAKE_PART_KEY)
-            if value is None:
+            if "model_selection" in data:
+                raise A2ARunResolutionError(MODEL_SELECTION_PART_KEY)
+            if MODEL_SELECTION_PART_KEY not in data:
                 continue
+            if resolved is not None:
+                raise A2ARunResolutionError(MODEL_SELECTION_PART_KEY)
+            value = data[MODEL_SELECTION_PART_KEY]
             if not isinstance(value, Mapping):
                 raise A2ARunResolutionError(MODEL_SELECTION_PART_KEY)
             selection = cast(Mapping[str, object], value)
-            return ModelSelection(
-                provider=self._optional_text(selection.get("provider"), "provider"),
-                model=self._optional_text(selection.get("model"), "model"),
-                profile=self._optional_text(selection.get("profile"), "profile"),
-                metadata=self._json_object(
-                    selection.get("metadata"),
-                    "modelSelection.metadata",
-                ),
-            )
-        return None
+            if set(selection) != {MODEL_REF_SELECTION_KEY}:
+                raise A2ARunResolutionError(MODEL_SELECTION_PART_KEY)
+            model_ref = selection[MODEL_REF_SELECTION_KEY]
+            if not isinstance(model_ref, str) or not model_ref.strip():
+                raise A2ARunResolutionError("modelSelection.modelRef")
+            resolved = ModelSelection(model_ref=model_ref)
+        return resolved
 
     def _run_metadata(self, context: RequestContext) -> JsonObject:
         """Extract generic run metadata and runtime MCP selectors from A2A data."""
@@ -267,19 +267,8 @@ class SpakkyAgentExecutor(AgentExecutor):
         return tuple(payloads)
 
     @staticmethod
-    def _optional_text(value: object, field: str) -> str | None:
-        """Decode optional model selector text from an A2A data part."""
-        if value is None:
-            return None
-        if not isinstance(value, str) or not value.strip():
-            raise A2ARunResolutionError(field)
-        return value
-
-    @staticmethod
     def _json_object(value: object, field: str) -> JsonObject:
         """Decode a JSON object from an A2A data part."""
-        if value is None:
-            return {}
         if not isinstance(value, Mapping):
             raise A2ARunResolutionError(field)
         return {

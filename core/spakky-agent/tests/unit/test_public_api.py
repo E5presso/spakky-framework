@@ -74,6 +74,7 @@ from spakky.agent import (
     MaskingPolicy,
     ModelCapability,
     ModelError,
+    ModelModality,
     ModelRequest,
     ModelResponse,
     ModelSelection,
@@ -312,6 +313,7 @@ def test_public_api_expect_exports_required_agent_surface() -> None:
 def test_public_api_expect_exports_model_contract_types() -> None:
     """IAgentModel이 사용하는 provider-neutral request/response 타입을 노출한다."""
     assert ModelCapability is agent_api.ModelCapability
+    assert ModelModality is agent_api.ModelModality
     assert ModelRequest is agent_api.ModelRequest
     assert ModelResponse is agent_api.ModelResponse
     assert ModelSelection is agent_api.ModelSelection

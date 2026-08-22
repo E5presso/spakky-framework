@@ -49,7 +49,10 @@ from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.llm.codec import LlmJsonCodec
 from spakky.plugins.llm.config import LlmProviderApi
-from spakky.plugins.llm.constants import OFFICIAL_ANTHROPIC_BASE_URL
+from spakky.plugins.llm.constants import (
+    DEFAULT_ANTHROPIC_MAX_TOKENS,
+    OFFICIAL_ANTHROPIC_BASE_URL,
+)
 from spakky.plugins.llm.error import (
     AbstractLlmError,
     LlmConfigurationError,
@@ -65,6 +68,7 @@ from spakky.plugins.llm.provider import (
     done_event,
     ensure_terminal_tool_choice,
     ensure_tool_call_allowed,
+    routing_metadata,
 )
 
 type _AnthropicHistoryBlock = TextBlockParam | ToolUseBlockParam | ToolResultBlockParam
@@ -98,9 +102,15 @@ class AnthropicMessagesProvider(ILLMProvider):
 
     @property
     @override
-    def api(self) -> LlmProviderApi:
+    def apis(self) -> frozenset[LlmProviderApi]:
         """Return the native Anthropic Messages API family."""
-        return LlmProviderApi.ANTHROPIC_MESSAGES
+        return frozenset({LlmProviderApi.ANTHROPIC_MESSAGES})
+
+    @property
+    @override
+    def is_default(self) -> bool:
+        """Mark the first-party Anthropic adapter as replaceable default."""
+        return True
 
     @override
     async def complete(
@@ -221,7 +231,7 @@ class AnthropicMessagesProvider(ILLMProvider):
                                 metadata=self._metadata(target),
                             )
                         elif event.type == "thinking":
-                            if target.profile.supports_reasoning:
+                            if target.route.capability.supports_reasoning:
                                 yield ModelStreamEvent(
                                     kind=ModelStreamEventKind.REASONING_DELTA,
                                     reasoning_delta=event.thinking,
@@ -336,7 +346,7 @@ class AnthropicMessagesProvider(ILLMProvider):
         timeout_seconds: float,
     ) -> AsyncAnthropic:
         profile = target.profile
-        if profile.api is not self.api:
+        if profile.api not in self.apis:
             raise LlmProviderUnavailableError
         if "ANTHROPIC_CUSTOM_HEADERS" in environ:
             raise LlmConfigurationError
@@ -469,7 +479,7 @@ class AnthropicMessagesProvider(ILLMProvider):
     def _max_tokens(self, target: LlmModelTarget, request: ModelRequest) -> int:
         if request.sampling.max_tokens is not None:
             return request.sampling.max_tokens
-        return target.profile.anthropic_max_tokens
+        return DEFAULT_ANTHROPIC_MAX_TOKENS
 
     def _text_content(self, message: Message) -> str:
         fragments: list[str] = []
@@ -593,10 +603,7 @@ class AnthropicMessagesProvider(ILLMProvider):
         return LlmResponseError()
 
     def _metadata(self, target: LlmModelTarget) -> dict[str, JsonValue]:
-        return {
-            "provider": target.profile.provider,
-            "profile": target.profile_name,
-        }
+        return dict(routing_metadata(target))
 
     def _sdk_json_object(
         self,

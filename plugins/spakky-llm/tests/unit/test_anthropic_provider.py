@@ -25,6 +25,7 @@ from spakky.agent import (
     JsonSchemaConstraint,
     ModelMessage,
     ModelMessageRole,
+    ModelCapability,
     ModelRequest,
     ModelStreamEvent,
     ModelStreamEventKind,
@@ -37,7 +38,7 @@ from spakky.agent import (
     ToolCallingSpec,
 )
 
-from spakky.plugins.llm.config import LlmProfile, LlmProviderApi
+from spakky.plugins.llm.config import LlmModelRoute, LlmProfile, LlmProviderApi
 from spakky.plugins.llm.error import (
     AbstractLlmError,
     LlmConfigurationError,
@@ -114,24 +115,38 @@ def _target(
     supports_reasoning: bool = False,
     base_url: str | None = "https://anthropic.example",
 ) -> LlmModelTarget:
-    profile_values: dict[str, object] = {
-        "provider": "anthropic",
-        "api": api,
-        "model": "claude-profile-default",
-        "base_url": base_url,
-        "api_key": SecretStr("profile-secret"),
-        "headers": {"x-tenant": "spakky"},
-        "request_timeout_seconds": 12.0,
-        "stream_timeout_seconds": 34.0,
-        "max_retries": 1,
-        "supports_reasoning": supports_reasoning,
-    }
-    if api is LlmProviderApi.ANTHROPIC_MESSAGES:
-        profile_values["anthropic_max_tokens"] = 2048
+    profile = (
+        LlmProfile(
+            provider="anthropic",
+            api=api,
+            base_url=base_url,
+            api_key=SecretStr("profile-secret"),
+            headers={"x-tenant": "spakky"},
+            request_timeout_seconds=12.0,
+            stream_timeout_seconds=34.0,
+            max_retries=1,
+        )
+        if api is LlmProviderApi.ANTHROPIC_MESSAGES
+        else LlmProfile.model_construct(
+            provider="anthropic",
+            api=api,
+            base_url=base_url,
+            api_key=SecretStr("profile-secret"),
+            headers={"x-tenant": "spakky"},
+            request_timeout_seconds=12.0,
+            stream_timeout_seconds=34.0,
+            max_retries=1,
+        )
+    )
     return LlmModelTarget(
-        profile_name="prod-claude",
-        profile=LlmProfile.model_validate(profile_values),
-        model="claude-selected",
+        model_ref="analysis/primary",
+        profile_name="anthropic",
+        profile=profile,
+        route=LlmModelRoute(
+            profile="anthropic",
+            model="claude-selected",
+            capability=ModelCapability(supports_reasoning=supports_reasoning),
+        ),
     )
 
 
@@ -215,7 +230,9 @@ def _status_error(status_code: int) -> APIStatusError:
 
 def test_api_expect_anthropic_messages_family() -> None:
     """Provider registry key는 Anthropic native Messages API를 선언한다."""
-    assert AnthropicMessagesProvider().api is LlmProviderApi.ANTHROPIC_MESSAGES
+    assert AnthropicMessagesProvider().apis == frozenset(
+        {LlmProviderApi.ANTHROPIC_MESSAGES}
+    )
 
 
 async def test_complete_maps_full_request_and_response_expect_native_sdk_types() -> (
@@ -376,16 +393,20 @@ async def test_complete_maps_full_request_and_response_expect_native_sdk_types()
     }
     assert response.tool_calls[0].call_id == "call-1"
     assert response.tool_calls[0].metadata == {
+        "model_ref": "analysis/primary",
         "provider": "anthropic",
-        "profile": "prod-claude",
+        "profile": "anthropic",
+        "model": "claude-selected",
         "provider_arguments": '{"query":"spakky","tags":["agent"]}',
     }
     assert response.usage.input_tokens == 6
     assert response.usage.output_tokens == 4
     assert response.usage.total_tokens == 10
     assert response.metadata == {
+        "model_ref": "analysis/primary",
         "provider": "anthropic",
-        "profile": "prod-claude",
+        "profile": "anthropic",
+        "model": "claude-selected",
         "finish_reason": "tool_use",
     }
 
@@ -400,7 +421,7 @@ async def test_complete_with_minimal_request_expect_omitted_optional_arguments()
         response = await AnthropicMessagesProvider().complete(_target(), _request())
 
     arguments = client.messages.create.await_args.kwargs
-    assert arguments["max_tokens"] == 2048
+    assert arguments["max_tokens"] == 4096
     assert arguments["messages"] == ({"role": "user", "content": "Hello"},)
     assert arguments["system"] is omit
     assert arguments["tool_choice"] is omit
@@ -895,7 +916,7 @@ async def test_complete_wrong_target_api_expect_provider_unavailable() -> None:
         pytest.raises(LlmProviderUnavailableError),
     ):
         await AnthropicMessagesProvider().complete(
-            _target(api=LlmProviderApi.GOOGLE_GENERATE_CONTENT),
+            _target(api=LlmProviderApi.GOOGLE_GEMINI_DEVELOPER),
             _request(),
         )
 
@@ -1034,8 +1055,10 @@ async def test_stream_maps_text_reasoning_tool_structured_usage_expect_done() ->
     assert mapped[8].usage is not None
     assert mapped[8].usage.total_tokens == 11
     assert mapped[8].metadata == {
+        "model_ref": "analysis/primary",
         "provider": "anthropic",
-        "profile": "prod-claude",
+        "profile": "anthropic",
+        "model": "claude-selected",
         "finish_reason": "tool_use",
     }
     assert all(event.metadata.get("provider") == "anthropic" for event in mapped)

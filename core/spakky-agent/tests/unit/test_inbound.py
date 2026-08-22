@@ -33,7 +33,7 @@ def test_run_agent_input_expect_resume_flag_carried() -> None:
 
 def test_run_agent_input_expect_model_selection_carried() -> None:
     """요청별 model selection은 inbound contract에 typed field로 보존된다."""
-    selection = ModelSelection(provider="openrouter", model="anthropic/claude")
+    selection = ModelSelection(model_ref="support/primary")
     run_input = RunAgentInput(
         state_id="run-1",
         instruction="do it",

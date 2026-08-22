@@ -110,30 +110,37 @@ AG-UI annotation에는 MCP 서버명을 굽지 않습니다. 서비스나 사용
 server를 고르면 AG-UI `forwardedProps.mcp`가 core `RunAgentInput.metadata["mcp"]`로 변환되고,
 `spakky-mcp`가 그 run에만 toolset을 합류시킵니다.
 
-아래 OpenRouter 선택은 operator가 먼저 `openrouter` profile과 provider를
-`SPAKKY_LLM__PROFILES__OPENROUTER__...` 환경변수로 등록한 경우에만 유효합니다.
-`model`은 그 profile의 base URL, API key, headers를 그대로 둔 채 model id만
-덮어씁니다. 연결 등록 형식은
-[spakky-llm Profile 설정](../api/plugins/spakky-llm.md#llm-profile-configuration)을
-확인하세요.
+모델을 고를 때는 operator가 `LlmConfig.models`에 등록한 opaque logical ref만
+전달합니다. AG-UI wire shape는 `forwardedProps.modelSelection.modelRef`이며 내부
+object는 정확히 `modelRef` 하나만 가져야 합니다. Provider, profile, physical model,
+selection metadata는 wire 선택 필드가 아닙니다. Catalog 등록 형식은
+[LLM 모델 라우팅](llm-routing.md)을 확인하세요.
 
 ```json
 {
   "threadId": "conv-1",
   "runId": "run-1",
+  "state": null,
   "messages": [{"id": "u1", "role": "user", "content": "check the issue"}],
   "tools": [],
   "context": [],
   "forwardedProps": {
     "modelSelection": {
-      "profile": "openrouter",
-      "provider": "openrouter",
-      "model": "anthropic/claude-sonnet"
+      "modelRef": "support/primary"
     },
     "mcp": {"servers": ["github"]}
   }
 }
 ```
+
+활성 `IAgentModel`이 catalog-aware `LlmAgentModel`일 때 `modelSelection`이 없으면 그
+router의 `default_model`을 사용합니다. Object가 아니거나,
+`modelRef`가 blank/non-string이거나, legacy `provider`/`profile`/`model`을 포함하거나,
+알 수 없는 nested field가 있으면 `AgUiRunResolutionError`로 거부합니다. Well-formed하지만
+catalog에 없는 ref는 protocol shape 오류가 아닙니다. `LlmAgentModel.stream()`이
+`llm_model_selection_invalid` model error를 내고 runner가 terminal run error로 바꾸므로,
+AG-UI에는 같은 code의 `RUN_ERROR`로 표면화됩니다. `/`는 provider 구분자로 해석되지
+않습니다.
 
 SSE 클라이언트는 `POST /agui` body로 AG-UI `RunAgentInput`을 보내고 `text/event-stream`
 응답을 받습니다. HTTP streaming 클라이언트는 `POST /agui/stream` body로 같은 입력을 보내고
@@ -169,7 +176,7 @@ FastAPI SSE/HTTP/WebSocket 노출은 `@AGUICompatible` 선언만 사용합니다
 | `TOOL_CALL_END` | `TOOL_CALL_END` |
 | `TOOL_CALL_RESULT` | `TOOL_CALL_RESULT` |
 | `RUN_STARTED` | `RUN_STARTED` |
-| `RUN_PAUSED` | `hitl_approval` deferred `TOOL_CALL_*` frame |
+| approval ID가 있는 `RUN_PAUSED` | `hitl_approval` deferred `TOOL_CALL_*` frame |
 | `RUN_FINISHED` | `RUN_FINISHED` 또는 `RUN_ERROR` |
 | `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED` |
 | `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (설정 게이트) |
@@ -183,6 +190,12 @@ call**로 표면화됩니다. core runner는 승인 필요 도구에서 멈출 �
 projector는 이 pause를 `TOOL_CALL_START`/`TOOL_CALL_ARGS`/`TOOL_CALL_END` 프레임으로 바꿉니다.
 결과 프레임은 일부러 보내지 않습니다.
 
+이 projection은 approval-required pause에만 동작합니다. `RunPausedEvent.approval_id`가
+`None`인 authentication-required 또는 일반 user-input pause는 deferred approval로
+추측하지 않고 `AgUiPendingApprovalError`를 발생시킵니다. 현재 AG-UI adapter에는 이 두
+pause 종류를 위한 별도 wire mapping이 없으므로, 그런 run을 AG-UI에 노출하려면 먼저
+protocol-specific mapping을 확장해야 합니다.
+
 1. 런너가 승인 필요 도구에서 멈추면 `run_events()`가 `RunPausedEvent`를 내보냅니다.
    `AgUiProjector`는 이를 `hitl_approval` deferred tool frame으로 투영합니다.
 2. 클라이언트가 사람의 결정을 수집해 다음 `RunAgentInput`에 담아 다시 전송합니다 (SSE에서는
@@ -194,16 +207,18 @@ projector는 이 pause를 `TOOL_CALL_START`/`TOOL_CALL_ARGS`/`TOOL_CALL_END` 프
    signal로 적재하면 런너가 `run_events()`를 다시 돌며 재개합니다. `APPROVE`/`MODIFY`는
    도구를 진행시키고, `REJECT`는 종료로 이어집니다.
 
-## 매핑 충실도
+## 매핑 충실도와 제한
 
-도구·메시지·실행 이벤트 매핑은 `run_events()`를 통해 **완전 무손실(lossless)**입니다. 런너가
-메시지/추론 delta, 도구 호출 `start`/`args-delta`/`end`/`result` 생명주기, run/step 경계를
-각각 별개의 중립 `AgentEvent`로 native 방출하므로, 어댑터는 거친 yield를 재구성하지 않고
-1:1로 투영합니다(과거 `AgentYield → AgentEvent` bridge는 제거되었습니다). reasoning을
-지원하지 않는 모델에서는 `REASONING_DELTA`가 생략되고(graceful degrade), 현재 single-pass model stream이
-생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/`ARTIFACT`는 live 런에서 방출되지 않지만
-projector는 taxonomy 완전성을 위해 이들 종류도 계속 처리합니다. `parentRunId`는 `RunAgentInput.parent_run_id`가
-전달된 실행에서만 `RUN_STARTED`에 포함됩니다.
+`run_events()`는 protocol adapter가 coarse `AgentYield`를 역추론하지 않도록 세분화된
+source event를 제공합니다. 그렇다고 AG-UI projection이 무손실 또는 1:1인 것은 아닙니다.
+하나의 message/reasoning delta가 start/content/end lifecycle로 확장될 수 있고, 빈 delta는
+생략되며, stream 종료 시 열려 있는 frame은 `finish()`가 닫습니다. `RUN_FINISHED`는
+성공 시 `metadata["output"]`만 result로 사용하고 오류는 code/message만 전달합니다.
+
+Reasoning을 지원하지 않는 선택 route에서는 `REASONING_DELTA`가 생략됩니다. State
+snapshot은 설정 gate를 따르고, artifact는 native artifact event가 없어 `CUSTOM`으로
+변환됩니다. 앞 절처럼 approval이 아닌 pause는 현재 projection할 수 없습니다.
+`parentRunId`는 `RunAgentInput.parent_run_id`가 전달된 실행의 `RUN_STARTED`에만 포함됩니다.
 
 ## API Reference
 

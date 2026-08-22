@@ -6,7 +6,7 @@ from typing import cast
 from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pytest import raises
+from pytest import mark, raises
 
 from spakky.agent.inbound import RunAgentInput
 from spakky.plugins.agui.config import AgUiConfig
@@ -76,12 +76,7 @@ def test_to_core_input_forwards_model_selection_and_mcp_metadata() -> None:
         _ag_ui_input(
             [{"id": "u1", "role": "user", "content": "hi"}],
             forwarded={
-                "modelSelection": {
-                    "provider": "openrouter",
-                    "model": "anthropic/claude-sonnet-4.5",
-                    "profile": "coding",
-                    "metadata": {"tier": "paid"},
-                },
+                "modelSelection": {"modelRef": "support/primary"},
                 "mcp": {"servers": ["github"]},
                 "metadata": {"tenant": "acme"},
             },
@@ -89,10 +84,7 @@ def test_to_core_input_forwards_model_selection_and_mcp_metadata() -> None:
     )
 
     assert core.model_selection is not None
-    assert core.model_selection.provider == "openrouter"
-    assert core.model_selection.model == "anthropic/claude-sonnet-4.5"
-    assert core.model_selection.profile == "coding"
-    assert core.model_selection.metadata == {"tier": "paid"}
+    assert core.model_selection.model_ref == "support/primary"
     assert core.metadata == {
         "tenant": "acme",
         "mcp": {"servers": ["github"]},
@@ -131,39 +123,75 @@ def test_to_core_input_allows_forwarded_metadata_without_model_selection() -> No
     assert core.metadata == {"tenant": "acme"}
 
 
-def test_to_core_input_rejects_non_object_model_selection() -> None:
+def test_to_core_input_allows_mcp_without_run_metadata() -> None:
+    """run metadata 없이 mcp만 전달해도 MCP selector를 승격한다."""
+    core = _to_core_input(
+        _ag_ui_input(
+            [{"id": "u1", "role": "user", "content": "hi"}],
+            forwarded={"mcp": {"servers": ["github"]}},
+        )
+    )
+
+    assert core.metadata == {"mcp": {"servers": ["github"]}}
+
+
+@mark.parametrize("selection", ["openai:gpt", None, ["support/primary"]])
+def test_to_core_input_rejects_non_object_model_selection(selection: object) -> None:
     """modelSelection이 객체가 아니면 typed run selection으로 해석하지 않는다."""
     with raises(AgUiRunResolutionError):
         _to_core_input(
             _ag_ui_input(
                 [{"id": "u1", "role": "user", "content": "hi"}],
-                forwarded={"modelSelection": "openai:gpt"},
+                forwarded={"modelSelection": selection},
             )
         )
 
 
-def test_to_core_input_allows_partial_model_selection() -> None:
-    """modelSelection의 optional field는 생략 가능하다."""
-    core = _to_core_input(
-        _ag_ui_input(
-            [{"id": "u1", "role": "user", "content": "hi"}],
-            forwarded={"modelSelection": {"provider": "openai"}},
-        )
-    )
-
-    assert core.model_selection is not None
-    assert core.model_selection.provider == "openai"
-    assert core.model_selection.model is None
-    assert core.model_selection.metadata == {}
-
-
-def test_to_core_input_rejects_blank_model_selection_text() -> None:
-    """modelSelection 문자열 필드는 공백일 수 없다."""
+def test_to_core_input_rejects_model_selection_without_model_ref() -> None:
+    """modelSelection object가 있으면 modelRef를 반드시 포함해야 한다."""
     with raises(AgUiRunResolutionError):
         _to_core_input(
             _ag_ui_input(
                 [{"id": "u1", "role": "user", "content": "hi"}],
-                forwarded={"modelSelection": {"provider": " "}},
+                forwarded={"modelSelection": {}},
+            )
+        )
+
+
+@mark.parametrize("model_ref", ["", " ", 1, None])
+def test_to_core_input_rejects_invalid_model_ref(model_ref: object) -> None:
+    """modelRef는 nonblank string이어야 한다."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [{"id": "u1", "role": "user", "content": "hi"}],
+                forwarded={"modelSelection": {"modelRef": model_ref}},
+            )
+        )
+
+
+@mark.parametrize(
+    "selection",
+    [
+        {"provider": "openrouter"},
+        {"model": "anthropic/claude"},
+        {"profile": "support"},
+        {"metadata": {"tier": "paid"}},
+        {"unknown": "value"},
+        {"model_ref": "support/primary"},
+        {"modelRef": "support/primary", "provider": "openrouter"},
+        {"modelRef": "support/primary", "unknown": "value"},
+    ],
+)
+def test_to_core_input_rejects_noncanonical_model_selection_keys(
+    selection: dict[str, object],
+) -> None:
+    """modelSelection은 modelRef 외의 legacy 또는 unknown key를 거부한다."""
+    with raises(AgUiRunResolutionError):
+        _to_core_input(
+            _ag_ui_input(
+                [{"id": "u1", "role": "user", "content": "hi"}],
+                forwarded={"modelSelection": selection},
             )
         )
 

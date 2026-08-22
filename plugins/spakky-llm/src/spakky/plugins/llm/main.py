@@ -11,7 +11,7 @@ from spakky.plugins.llm.providers.openai import OpenAIChatProvider
 
 
 def initialize(app: SpakkyApplication) -> None:
-    """Register allowlisted profiles, native SDK adapters, and the model router."""
+    """Register replaceable first-party SDK defaults and the catalog router."""
     app.add(LlmConfig)
     app.add(OpenAIChatProvider)
     app.add(AnthropicMessagesProvider)

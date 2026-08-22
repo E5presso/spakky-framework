@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from spakky.agent import (
+    JsonObject,
     ModelError,
     ModelRequest,
     ModelResponse,
@@ -14,7 +15,7 @@ from spakky.agent import (
     ModelUsage,
 )
 
-from spakky.plugins.llm.config import LlmProfile, LlmProviderApi
+from spakky.plugins.llm.config import LlmModelRoute, LlmProfile, LlmProviderApi
 from spakky.plugins.llm.error import (
     AbstractLlmError,
     LlmConfigurationError,
@@ -31,11 +32,17 @@ from spakky.plugins.llm.error import (
 
 @dataclass(frozen=True, slots=True)
 class LlmModelTarget:
-    """One request resolved against an operator-owned profile."""
+    """One opaque model ref resolved against the operator-owned catalog."""
 
+    model_ref: str
     profile_name: str
     profile: LlmProfile
-    model: str
+    route: LlmModelRoute
+
+    @property
+    def model(self) -> str:
+        """Return the physical provider model from the resolved route."""
+        return self.route.model
 
 
 class ILLMProvider(ABC):
@@ -43,9 +50,14 @@ class ILLMProvider(ABC):
 
     @property
     @abstractmethod
-    def api(self) -> LlmProviderApi:
-        """Return the API family implemented by this adapter."""
+    def apis(self) -> frozenset[LlmProviderApi]:
+        """Return every API family implemented by this adapter."""
         ...
+
+    @property
+    def is_default(self) -> bool:
+        """Return whether this is a replaceable first-party default adapter."""
+        return False
 
     @abstractmethod
     async def complete(
@@ -89,6 +101,16 @@ def ensure_terminal_tool_choice(
         raise LlmResponseError
 
 
+def routing_metadata(target: LlmModelTarget) -> JsonObject:
+    """Return privacy-safe evidence for the exact resolved catalog route."""
+    return {
+        "model_ref": target.model_ref,
+        "profile": target.profile_name,
+        "provider": target.profile.provider,
+        "model": target.model,
+    }
+
+
 def to_model_error(error: AbstractLlmError, target: LlmModelTarget) -> ModelError:
     """Normalize one adapter exception for the public streaming error channel."""
     code = "llm_response_error"
@@ -117,10 +139,7 @@ def to_model_error(error: AbstractLlmError, target: LlmModelTarget) -> ModelErro
         code=code,
         message=error.message,
         retryable=retryable,
-        metadata={
-            "provider": target.profile.provider,
-            "profile": target.profile_name,
-        },
+        metadata=routing_metadata(target),
     )
 
 
@@ -132,6 +151,7 @@ def error_event(
     return ModelStreamEvent(
         kind=ModelStreamEventKind.ERROR,
         error=to_model_error(error, target),
+        metadata=routing_metadata(target),
     )
 
 
@@ -144,9 +164,5 @@ def done_event(
     return ModelStreamEvent(
         kind=ModelStreamEventKind.DONE,
         usage=usage,
-        metadata={
-            "provider": target.profile.provider,
-            "profile": target.profile_name,
-            "finish_reason": finish_reason,
-        },
+        metadata={**routing_metadata(target), "finish_reason": finish_reason},
     )

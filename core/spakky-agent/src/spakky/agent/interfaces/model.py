@@ -97,27 +97,14 @@ class StreamingOptions:
 
 @dataclass(frozen=True, slots=True)
 class ModelSelection:
-    """Provider/model selector carried by one Agent run.
+    """Opaque operator-catalog model reference carried by one Agent run."""
 
-    A service may let a user choose OpenAI, Anthropic, Vertex, OpenRouter, vLLM,
-    or another provider per run. The selector is intentionally provider-neutral:
-    concrete adapters or routing models decide which values they accept.
-    """
-
-    provider: str | None = None
-    model: str | None = None
-    profile: str | None = None
-    metadata: JsonObject = field(default_factory=dict)
+    model_ref: str
 
     def __post_init__(self) -> None:
-        """Reject blank selector fields before they reach provider adapters."""
-        for label, value in (
-            ("provider", self.provider),
-            ("model", self.model),
-            ("profile", self.profile),
-        ):
-            if value is not None and not value.strip():
-                raise AgentDefinitionError(f"Model selection {label} cannot be blank")
+        """Reject blank catalog references before they reach routing adapters."""
+        if self.model_ref.strip() == "":
+            raise AgentDefinitionError("Model selection model_ref cannot be blank")
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,21 +349,34 @@ class ModelStreamEvent:
         )
 
 
+class ModelModality(StrEnum):
+    """Portable input and output modalities declared by one model route."""
+
+    TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
+    DOCUMENT = "document"
+
+
 @dataclass(frozen=True, slots=True)
 class ModelCapability:
     """Provider-neutral declaration of a model backend's queryable abilities.
 
     The agent runner consults this descriptor before a run to adjust behaviour
-    without invoking the backend. ``supports_reasoning`` gates whether the runner
-    expects ``REASONING_DELTA`` events; when False the adapter omits them rather
-    than failing (graceful degrade). ``context_window_tokens`` is ``None`` when the
-    backend does not declare a fixed limit. ``supports_token_counting`` declares
-    whether the backend can report token accounting for a request before sending it.
+    without invoking the backend. Input/output modalities default to text only,
+    while tool calling and structured output default to unsupported. Reasoning,
+    context-window size, and token-counting support remain explicit so routing
+    adapters can expose the exact abilities of each logical model route.
     """
 
     supports_reasoning: bool = False
     context_window_tokens: int | None = None
     supports_token_counting: bool = False
+    input_modalities: frozenset[ModelModality] = frozenset({ModelModality.TEXT})
+    output_modalities: frozenset[ModelModality] = frozenset({ModelModality.TEXT})
+    supports_tools: bool = False
+    supports_structured_output: bool = False
 
 
 class IAgentModel(ABC):

@@ -4,6 +4,32 @@
 
 서버 경로는 공식 `a2a-sdk` request handler와 task store를 사용하며, 실행은 `IAgentRunnerFactory`가 여는 runner의 `AgentEvent` stream을 A2A task/message/artifact update로 투영합니다. `@A2ACompatible @Agent`는 registry에 등록되고 ASGI host Pod가 있으면 JSON-RPC/REST endpoint가 자동 mount됩니다. `spakky-grpc`의 `GrpcServerSpec`가 있으면 gRPC handler도 선언형으로 등록됩니다.
 
+## Model selection data part
+
+A2A message data part는 canonical `modelSelection` container만 허용하며, 내부 object는
+camelCase `modelRef` 하나만 가집니다.
+
+```json
+{
+  "modelSelection": {
+    "modelRef": "support/primary"
+  }
+}
+```
+
+Legacy `model_selection`, 한 message의 여러 data part에 중복된 selector,
+blank/non-string ref, `model_ref`, legacy provider/profile/raw model/selection metadata
+field는 `A2ARunResolutionError`입니다. Well-formed unknown ref는 shape parser exception이
+아니며 `LlmAgentModel`의 `llm_model_selection_invalid` terminal error가 A2A failed task로
+표면화됩니다. Catalog 등록과 default 선택은
+[LLM 모델 라우팅](../../guides/llm-routing.md)을 확인하세요.
+
+Inbound `metadata`는 얕게 합쳐지고 top-level `mcp`는 같은 metadata key를 씁니다. 같은
+data part에서는 top-level `mcp`가 `metadata.mcp`를 덮어쓰고 여러 part에서는 뒤 값이
+앞 값을 덮어쓰므로 두 입력 경로를 혼용하지 않습니다. Remote delegation은 text와
+working/completed/failed 상태 중심의 축약 mapping이며 모든 remote part/state를 1:1로
+보존하지 않습니다.
+
 ## Public API
 
 ::: spakky.plugins.a2a

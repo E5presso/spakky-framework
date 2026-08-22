@@ -1,12 +1,12 @@
 # spakky-llm
 
 > `spakky-llm`은 `spakky-agent`의 `IAgentModel`을 OpenAI Chat Completions,
-> Anthropic Messages, Google GenerateContent API에 연결하는 다중 provider 플러그인입니다.
+> Anthropic Messages, Gemini Developer API, Vertex AI에 연결하는 model catalog 플러그인입니다.
 
-애플리케이션은 provider 연결 정보를 요청 metadata로 넘기지 않고 운영자가 등록한
-`LlmProfile` allowlist에서 profile을 선택합니다. 기본 profile은 공식 OpenAI Python
-SDK가 `http://127.0.0.1:8000/v1`의 로컬 vLLM OpenAI-compatible API를 호출하도록
-구성됩니다.
+호출자는 `ModelSelection(model_ref=...)`로 논리 모델 하나만 선택합니다. 운영자가
+`LlmModelRoute`에서 실제 provider model과 capability를, `LlmProfile`에서
+endpoint/auth/backend를 소유합니다. 기본 catalog는 공식 OpenAI Python SDK가
+`http://127.0.0.1:8000/v1`의 로컬 vLLM OpenAI-compatible API를 호출하도록 구성됩니다.
 
 ## 설치와 로드
 
@@ -35,40 +35,39 @@ model = app.container.get(type_=IAgentModel)
 ```
 
 플러그인은 `LlmConfig`, `OpenAIChatProvider`, `AnthropicMessagesProvider`,
-`GoogleGenerateContentProvider`, `LlmAgentModel`을 등록하고
+두 Google backend를 구현하는 `GoogleGenerateContentProvider`, `LlmAgentModel`을 등록하고
 `IAgentModel -> LlmAgentModel` binding을 설정합니다. Adapter가 도구를 실행하지는
 않습니다. 모델이 낸 `ModelToolCall` 후보를 검증해 반환하고, `spakky-agent` runner가
 한 provider stream 안에서 candidate를 승인·dispatch한 뒤 result/evidence/terminal을
 방출합니다. 표준 runner는 tool result를 model에 재주입하거나 같은 invocation에서
 model을 다시 호출하지 않습니다.
 
-## Profile 설정 { #llm-profile-configuration }
+## Model catalog와 profile 설정 { #llm-profile-configuration }
 
-`LlmConfig`는 `SPAKKY_LLM__` 접두사와 `__` 중첩 구분자를 사용합니다.
-`default_profile`은 trim 이후 비어 있을 수 없고 반드시 `profiles`에 존재해야 합니다.
-Profile 이름도 trim 이후 비어 있거나 중복될 수 없으며 profile 목록은 하나 이상이어야
-합니다. `LlmConfig`와 `LlmProfile` 모두 알 수 없는 필드를 `extra="forbid"`로
-거부하므로 연결 설정 오타가 SDK 기본 host로 우회되지 않습니다.
+`LlmConfig`는 Spring Boot-style replaceability를 위해 선택과 연결을 분리합니다. 바로
+실행 가능한 local 기본값이 있지만, 운영자는 typed configuration으로 catalog 전체를
+교체할 수 있습니다. 잘못된 override는 SDK ambient inference로 우회하지 않고 시작
+단계에서 실패합니다.
 
 ### `LlmConfig`
 
 | 필드 | 타입 | 기본값 | 의미 |
 | --- | --- | --- | --- |
-| `default_profile` | `str` | `"default"` | 요청이 profile을 지정하지 않을 때 쓸 allowlist key |
-| `profiles` | `dict[str, LlmProfile]` | 로컬 vLLM profile | 운영자가 허용한 provider 연결 목록 |
+| `default_model` | `str` | `"assistant/default"` | 선택이 없을 때 사용할 opaque model ref |
+| `profiles` | `dict[str, LlmProfile]` | local vLLM 연결 | endpoint/auth/backend catalog |
+| `models` | `dict[str, LlmModelRoute]` | `assistant/default` route | logical ref에서 실제 target으로 가는 catalog |
 
-기본 `default` profile은 `provider="vllm"`,
-`api="openai-chat-completions"`, `model="default"`,
+기본 route는 `assistant/default -> vllm-local / default`입니다. `vllm-local` profile은
+`provider="vllm"`, `api="openai-chat-completions"`,
 `base_url="http://127.0.0.1:8000/v1"`, `api_key="EMPTY"`,
-`openai_dialect="vllm"`입니다.
+`openai_dialect="vllm"`이고, route는 tools와 structured output capability를 선언합니다.
 
 ### `LlmProfile`
 
 | 필드 | 타입 | 기본값 | 의미 |
 | --- | --- | --- | --- |
-| `provider` | `str` | 필수 | `ModelSelection.provider`와 대조할 운영자 소유 식별자 |
+| `provider` | `str` | 필수 | routing metadata에 남길 운영자 소유 식별자 |
 | `api` | `LlmProviderApi` | 필수 | 사용할 공식 SDK API family |
-| `model` | `str` | 필수 | profile의 기본 model id |
 | `base_url` | `str \| None` | `None` | SDK endpoint override |
 | `api_key` | `SecretStr \| None` | `None` | SDK client 생성 경계에서만 꺼내는 secret |
 | `headers` | `dict[str, str]` | `{}` | SDK client의 default headers |
@@ -76,101 +75,160 @@ Profile 이름도 trim 이후 비어 있거나 중복될 수 없으며 profile �
 | `stream_timeout_seconds` | `float` | `300.0` | streaming 요청 timeout, `0`보다 커야 함 |
 | `max_retries` | `int` | `0` | 공식 SDK retry 횟수, 음수 불가 |
 | `stream_enabled` | `bool` | `true` | 해당 profile의 streaming 허용 여부 |
-| `context_window_tokens` | `int \| None` | `None` | `ModelCapability`로 노출할 context window |
-| `supports_reasoning` | `bool` | `false` | reasoning channel 지원 선언 |
-| `supports_token_counting` | `bool` | `false` | 호출 전 token counting 지원 선언 |
 | `openai_dialect` | `OpenAICompatibleDialect` | `"standard"` | OpenAI 표준 또는 vLLM extension 선택 |
-| `chat_template_kwargs` | `dict[str, LlmScalar]` | `{}` | vLLM `chat_template_kwargs`; 문자열 boolean은 정규화 |
-| `include_thoughts` | `bool` | `false` | Google thinking part를 reasoning event로 포함 |
-| `anthropic_max_tokens` | `int` | `4096` | Anthropic 요청의 기본 `max_tokens` |
+| `google_credential_strategy` | `GoogleCredentialStrategy \| None` | `None` | Google API key, ADC, service-account-file 중 명시 선택 |
+| `google_project` | `str \| None` | `None` | Vertex AI project |
+| `google_location` | `str \| None` | `None` | Vertex AI location |
+| `google_service_account_file` | `Path \| None` | `None` | 명시적으로 mount한 service-account JSON 경로 |
 
-`openai_dialect="vllm"`과 `chat_template_kwargs`는
-`api="openai-chat-completions"`에서만 사용할 수 있습니다.
-`chat_template_kwargs`는 vLLM dialect에서만 허용됩니다. `include_thoughts=true`는
-`api="google-generate-content"`이면서 `supports_reasoning=true`인 profile에서만
-유효합니다. `anthropic_max_tokens`를 명시하는 경우 API는
-`anthropic-messages`여야 합니다. `provider`, `model`, non-null `base_url`은 trim되고
-빈 문자열이면 거부됩니다.
+Profile은 connection/backend/auth만 담습니다. 실제 model ID와 capability는 profile에
+호환 alias로 남아 있지 않습니다. `openai_dialect="vllm"`은
+`api="openai-chat-completions"`에서만 사용할 수 있습니다. `provider`, non-null
+`base_url`, Google project/location은 trim되고 빈 문자열이면 거부됩니다.
+
+### `LlmModelRoute`
+
+| 필드 | 타입 | 기본값 | 의미 |
+| --- | --- | --- | --- |
+| `profile` | `str` | 필수 | `profiles`의 exact key |
+| `model` | `str` | 필수 | provider SDK에 전달할 physical model ID |
+| `capability` | `ModelCapability` | text-only 기본 capability | 선택 모델의 정확한 기능 선언 |
+| `chat_template_kwargs` | `dict[str, LlmScalar]` | `{}` | vLLM route 전용 model option |
+
+`chat_template_kwargs`의 문자열 `true`/`false`는 boolean으로 정규화되며 vLLM dialect
+profile을 가리키는 route에서만 허용됩니다. 실제 model ID는 `/`를 포함해도 분해하지
+않습니다.
+
+### Route capability
+
+| 필드 | 기본값 | 검증/의미 |
+| --- | --- | --- |
+| `supports_reasoning` | `false` | reasoning channel 지원 선언 |
+| `context_window_tokens` | `None` | 값이 있으면 양수여야 함 |
+| `supports_token_counting` | `false` | 호출 전 token counting 지원 선언 |
+| `input_modalities` / `output_modalities` | text only | 둘 다 비어 있을 수 없음 |
+| `supports_tools` | `false` | tool calling 지원 선언 |
+| `supports_structured_output` | `false` | structured output 지원 선언 |
+
+Capability는 provider나 model 문자열에서 추론하지 않습니다. `LlmAgentModel.capability`은
+default route의 값을, `capability_for(selection)`은 선택 route의 값을 그대로 반환합니다.
+현재 `ModelMessage.content`는 text이므로 modality descriptor가 곧 multimodal payload
+encoding 지원을 뜻하지는 않습니다.
 
 ### 연결 설정의 fail-closed 경계 { #llm-connection-boundary }
 
-`SPAKKY_LLM__`로 시작하지만 `default_profile`이나 `profiles`가 아닌 top-level
-환경변수는 `LlmConfig` 생성 시 거부됩니다. 따라서
-`SPAKKY_LLM__PROFILSE__...` 같은 오타가 기본 연결로 조용히 우회하지 않습니다.
-Profile 내부의 알 수 없는 필드도 `extra="forbid"` 검증에 실패합니다.
+Environment source를 사용하는 field가 하나라도 있으면 `SPAKKY_LLM__`로 시작하지만
+`default_model`, `profiles`, `models`가 아닌 top-level 환경변수를 `LlmConfig` 생성 시
+거부합니다. 따라서 legacy `SPAKKY_LLM__DEFAULT_PROFILE`이나
+`SPAKKY_LLM__PROFILSE__...` 같은 오타가 기본 연결로 조용히 우회하지 않습니다. Profile과
+route 내부의 알 수 없는 필드도 `extra="forbid"` 검증에 실패합니다.
 
-Standard API profile에서 `base_url=None`이면 adapter가 아래 공식 endpoint를 SDK에
-명시적으로 전달합니다. `OPENAI_BASE_URL`과 `ANTHROPIC_BASE_URL` 같은 SDK ambient
-환경변수는 이 선택을 바꾸지 못하며, `GOOGLE_GENAI_USE_VERTEXAI`도 Google profile을
-Vertex AI로 전환하지 못합니다.
+Profile/model ref는 trim 이후 nonblank·unique여야 하고 catalog는 각각 하나 이상의
+항목을 가져야 합니다. `default_model`이 `models`에 없거나 route의 profile이
+`profiles`에 없으면 시작할 수 없습니다. Key는 trim 이외의 canonicalization을 하지 않는
+case-sensitive opaque 문자열이며 `/`를 parsing하지 않습니다.
+
+Explicit constructor field는 같은 field의 environment 값을 JSON decode 전에 mask합니다.
+세 field를 모두 직접 주면 environment catalog와 unrelated prefixed key를 읽거나 감사하지
+않습니다. 일부만 직접 주면 그 field만 mask하고 나머지 environment field와 unknown
+top-level key 검사를 계속 수행합니다. Raw `PROFILES`/`MODELS` JSON은 object key 중복을
+nested object까지 거부하며 standard JSON last-key-wins를 사용하지 않습니다.
+
+Nested environment variable의 map segment는 case-insensitive source에서 소문자로
+정규화됩니다. 예를 들어 `PROFILES__MANAGED_TEXT__...`는 `managed_text` key입니다. Case를
+보존해야 하는 opaque key는 전체 JSON object나 direct Python mapping으로 전달합니다.
+
+Standard API profile에서 `base_url=None`이면 adapter가 아래 공식 endpoint 또는
+명시 backend mode를 SDK에 전달합니다. `OPENAI_BASE_URL`과 `ANTHROPIC_BASE_URL` 같은
+SDK ambient 환경변수는 이 선택을 바꾸지 못합니다. Google backend도 API family와
+credential strategy에서 명시적으로 정해집니다.
 
 | API family | `base_url=None`일 때 endpoint | 추가 경계 |
 | --- | --- | --- |
-| OpenAI Chat Completions | `https://api.openai.com/v1` | standard dialect에만 적용; vLLM은 명시 `base_url` 필수 |
+| OpenAI Chat Completions | `https://api.openai.com/v1` | standard/OpenRouter는 profile API key 필수; vLLM은 명시 `base_url` 필수 |
 | Anthropic Messages | `https://api.anthropic.com` | profile API key 필수 |
-| Google GenerateContent | `https://generativelanguage.googleapis.com/` | `vertexai=False`로 Developer API 사용 |
+| Gemini Developer API | `https://generativelanguage.googleapis.com/` | explicit API-key strategy와 SDK Developer API mode |
+| Vertex AI | `global`: `https://aiplatform.googleapis.com/`; `us`/`eu`: `https://aiplatform.{location}.rep.googleapis.com/`; 그 밖의 region: `https://{location}-aiplatform.googleapis.com/` | explicit ADC 또는 service-account-file과 SDK enterprise mode |
+
+Gemini Developer API는 Google의 공식 제품명이며 개발 환경을 뜻하지 않습니다. 운영
+서비스도 이 backend를 선택할 수 있지만 API key는 배포 runtime secret으로 profile에
+주입해야 합니다. Vertex AI는 별도 `google-vertex` API family이며 project와 location을
+항상 명시합니다. ADC를 선택하면 `google.auth.default()`에서 credential만 발견하고,
+service-account-file을 선택하면 지정 파일만 읽으며 ADC로 fallback하지 않습니다.
+`GOOGLE_GENAI_USE_VERTEXAI`, `GOOGLE_GENAI_USE_ENTERPRISE`, ambient project/location/API
+key가 이 선택을 바꾸지 못합니다. Vertex adapter도 official regional/global URL을
+`HttpOptions.base_url`에 명시하므로 `GOOGLE_VERTEX_BASE_URL`과
+`GOOGLE_GEMINI_BASE_URL`은 적용되지 않습니다. Operator가 `LlmProfile.base_url`을 직접
+설정한 경우에만 official Vertex endpoint를 override합니다. `google_location`은 lowercase
+endpoint-safe identifier여야 합니다.
+
+Profile 이름은 접근 경계가 아닙니다. `adc`를 선택하면 개발자 workstation의 ADC
+identity도 IAM 권한이 있는 project에 접근할 수 있습니다. Credential source를 지정
+파일에 고정하려면 `service-account-file`을 사용하며 이 전략은 ADC로 fallback하지
+않습니다. `-prod` 같은 이름은 framework가 특별하게 해석하지 않습니다.
 
 Operator가 추가하는 custom header의 유일한 입력은 `LlmProfile.headers`입니다.
 `OPENAI_CUSTOM_HEADERS`나 `ANTHROPIC_CUSTOM_HEADERS`가 process 환경에 존재하면 해당
 adapter는 ambient header를 섞지 않고 `LlmConfigurationError`로 거부합니다. 요청의
-`ModelSelection.metadata`도 endpoint, credential, header 설정에는 사용되지 않습니다.
+`RunAgentInput.metadata`나 `ModelRequest.metadata`도 endpoint, credential, physical
+model, header 설정에는 사용되지 않습니다.
 
 ## 중첩 환경 변수 예시
 
-다음은 OpenAI 표준 API를 기본 profile로 등록하는 예입니다. 중첩 변수로
-`profiles`를 제공하면 기본 factory profile을 대체하므로 `DEFAULT_PROFILE`도 같은
-allowlist key를 가리켜야 합니다.
+다음은 Anthropic 연결을 `support/primary` logical ref 뒤에 두는 예입니다. Profile은
+환경변수 중첩 key로, `/`가 들어간 model catalog는 JSON object로 전달합니다.
 
 ```bash
-export SPAKKY_LLM__DEFAULT_PROFILE=openai
-export SPAKKY_LLM__PROFILES__OPENAI__PROVIDER=openai
-export SPAKKY_LLM__PROFILES__OPENAI__API=openai-chat-completions
-export SPAKKY_LLM__PROFILES__OPENAI__MODEL=gpt-5.5
-export SPAKKY_LLM__PROFILES__OPENAI__API_KEY="$OPENAI_API_KEY"
-export SPAKKY_LLM__PROFILES__OPENAI__MAX_RETRIES=2
+export SPAKKY_LLM__DEFAULT_MODEL='support/primary'
+export SPAKKY_LLM__PROFILES__MANAGED_TEXT__PROVIDER='anthropic'
+export SPAKKY_LLM__PROFILES__MANAGED_TEXT__API='anthropic-messages'
+export SPAKKY_LLM__PROFILES__MANAGED_TEXT__API_KEY="$ANTHROPIC_API_KEY"
+export SPAKKY_LLM__PROFILES__MANAGED_TEXT__MAX_RETRIES='2'
+export SPAKKY_LLM__MODELS='{"support/primary":{"profile":"managed_text","model":"claude-opus-4-1","capability":{"supports_reasoning":true,"supports_tools":true,"supports_structured_output":true}}}'
 ```
 
-Anthropic Messages profile은 API family와 `anthropic_max_tokens`를 함께 지정합니다.
+같은 catalog를 Python에서 직접 생성할 때의 full example과 Google/OpenRouter/vLLM recipe는
+[LLM 모델 라우팅](../../guides/llm-routing.md)을 확인하세요.
+
+## Google credential 환경 설정
+
+아래 명령은 credential별 profile fragment입니다. 독립적인 설정으로 사용할 때는 앞 절처럼
+matching `DEFAULT_MODEL`과 `MODELS` route도 함께 선언해야 합니다. Gemini Developer API는
+API key와 전략을 함께 선언합니다.
 
 ```bash
-export SPAKKY_LLM__DEFAULT_PROFILE=claude
-export SPAKKY_LLM__PROFILES__CLAUDE__PROVIDER=anthropic
-export SPAKKY_LLM__PROFILES__CLAUDE__API=anthropic-messages
-export SPAKKY_LLM__PROFILES__CLAUDE__MODEL=claude-opus-4-1
-export SPAKKY_LLM__PROFILES__CLAUDE__API_KEY="$ANTHROPIC_API_KEY"
-export SPAKKY_LLM__PROFILES__CLAUDE__ANTHROPIC_MAX_TOKENS=4096
+export SPAKKY_LLM__PROFILES__PUBLIC_GOOGLE_API__PROVIDER='google'
+export SPAKKY_LLM__PROFILES__PUBLIC_GOOGLE_API__API='google-gemini-developer'
+export SPAKKY_LLM__PROFILES__PUBLIC_GOOGLE_API__API_KEY="$GEMINI_API_KEY"
+export SPAKKY_LLM__PROFILES__PUBLIC_GOOGLE_API__GOOGLE_CREDENTIAL_STRATEGY='api-key'
 ```
 
-Google GenerateContent에서 thought stream을 쓰려면 두 capability flag를 함께
-설정합니다.
+Vertex AI에서 ADC를 명시적으로 선택하는 경우 project와 location도 profile에 둡니다.
 
 ```bash
-export SPAKKY_LLM__DEFAULT_PROFILE=gemini
-export SPAKKY_LLM__PROFILES__GEMINI__PROVIDER=google
-export SPAKKY_LLM__PROFILES__GEMINI__API=google-generate-content
-export SPAKKY_LLM__PROFILES__GEMINI__MODEL=gemini-2.5-pro
-export SPAKKY_LLM__PROFILES__GEMINI__API_KEY="$GOOGLE_API_KEY"
-export SPAKKY_LLM__PROFILES__GEMINI__SUPPORTS_REASONING=true
-export SPAKKY_LLM__PROFILES__GEMINI__INCLUDE_THOUGHTS=true
+export SPAKKY_LLM__PROFILES__CLOUD_ENTERPRISE__PROVIDER='google'
+export SPAKKY_LLM__PROFILES__CLOUD_ENTERPRISE__API='google-vertex'
+export SPAKKY_LLM__PROFILES__CLOUD_ENTERPRISE__GOOGLE_CREDENTIAL_STRATEGY='adc'
+export SPAKKY_LLM__PROFILES__CLOUD_ENTERPRISE__GOOGLE_PROJECT='my-google-cloud-project'
+export SPAKKY_LLM__PROFILES__CLOUD_ENTERPRISE__GOOGLE_LOCATION='us-central1'
 ```
 
-로컬 vLLM의 model과 chat template만 바꾸는 경우에도 완전한 profile을 등록합니다.
+Service-account-file 전략은 `GOOGLE_SERVICE_ACCOUNT_FILE` field도 함께 요구합니다.
 
 ```bash
-export SPAKKY_LLM__DEFAULT_PROFILE=local
-export SPAKKY_LLM__PROFILES__LOCAL__PROVIDER=vllm
-export SPAKKY_LLM__PROFILES__LOCAL__API=openai-chat-completions
-export SPAKKY_LLM__PROFILES__LOCAL__MODEL=Qwen/Qwen3-8B
-export SPAKKY_LLM__PROFILES__LOCAL__BASE_URL=http://127.0.0.1:8000/v1
-export SPAKKY_LLM__PROFILES__LOCAL__API_KEY=EMPTY
-export SPAKKY_LLM__PROFILES__LOCAL__OPENAI_DIALECT=vllm
-export SPAKKY_LLM__PROFILES__LOCAL__CHAT_TEMPLATE_KWARGS__ENABLE_THINKING=false
+export SPAKKY_LLM__PROFILES__CLOUD_ENTERPRISE__GOOGLE_CREDENTIAL_STRATEGY='service-account-file'
+export SPAKKY_LLM__PROFILES__CLOUD_ENTERPRISE__GOOGLE_SERVICE_ACCOUNT_FILE='/var/run/secrets/google/service-account.json'
 ```
+
+Production credential은 배포 runtime secret 또는 workload identity가 공급합니다. Local/CI
+acceptance는 공식 SDK client를 deterministic fake로 대체할 수 있으므로 상용 provider
+계정 없이 model ref, credential mode, project/location, routing metadata를 검증할 수 있습니다.
 
 ## 요청별 모델 선택
 
-`ModelSelection`은 profile, provider, model만 고릅니다. `metadata`에 `base_url`,
-API key, headers를 넣어도 `LlmAgentModel`은 연결 설정으로 사용하지 않습니다.
+`ModelSelection`의 공개 필드는 필수 `model_ref: str` 하나뿐입니다. 활성 model이
+`LlmAgentModel`일 때 선택을 생략하면 그 router의 `default_model`이 사용됩니다. 다른
+`IAgentModel` 구현에는 자체 selection/default 정책이 있을 수 있습니다.
 
 ```python
 from spakky.agent import ModelSelection, RunAgentInput
@@ -178,19 +236,23 @@ from spakky.agent import ModelSelection, RunAgentInput
 run_input = RunAgentInput(
     state_id="run-42",
     instruction="변경 사항을 요약해 주세요.",
-    model_selection=ModelSelection(
-        profile="claude",
-        provider="anthropic",
-        model="claude-opus-4-1",
-    ),
+    model_selection=ModelSelection(model_ref="support/primary"),
 )
 ```
 
-`profile`이 있으면 정확한 allowlist entry를 선택합니다. `profile` 없이
-`provider`만 주면 그 provider 이름을 가진 profile이 정확히 하나일 때만 선택됩니다.
-`provider`가 선택된 profile의 값과 다르거나 profile이 없거나 모호하면
-`LlmModelSelectionError`입니다. `model`은 선택한 profile의 연결 정보를 유지한 채
-요청 model id만 덮어씁니다.
+Blank ref는 core에서 거부됩니다. Unknown ref는 direct `complete()`에서
+`LlmModelSelectionError`지만 `stream()`에서는 `llm_model_selection_invalid` `ERROR`와
+terminal `DONE`으로 표면화됩니다. Protocol shape parser exception은 아닙니다. Slash는
+provider/ref 구분자로 parsing되지 않으며 case-sensitive exact key로 lookup합니다.
+`provider`, `profile`, raw `model`, selection `metadata`를 받던 legacy 생성 형태는
+지원되지 않습니다. Generic request metadata에 같은 이름의 값을 넣어도 catalog routing
+authority가 되지 않습니다.
+
+Resolved direct response와 terminal model stream event에는 공통으로
+`model_ref`, `profile`, `provider`, `model`이 들어갑니다. Provider가 finish reason이나
+response ID를 추가할 수 있지만 credential, endpoint, header는 포함하지 않습니다.
+Unknown ref의 stream error는 선택되지 않은 default target을 꾸며 내지 않고 요청받은
+`model_ref`만 metadata에 남깁니다.
 
 ## Provider 경계와 기능
 
@@ -198,7 +260,29 @@ run_input = RunAgentInput(
 | --- | --- | --- |
 | `openai-chat-completions` | `AsyncOpenAI` | OpenAI standard와 vLLM extension |
 | `anthropic-messages` | `AsyncAnthropic` | native Messages, tool-use block, JSON output format |
-| `google-generate-content` | `google.genai.Client` | native GenerateContent, function calling, thinking part |
+| `google-gemini-developer` | `google.genai.Client` | API key 기반 Developer API mode |
+| `google-vertex` | `google.genai.Client` | ADC/service-account 기반 enterprise mode |
+
+OpenRouter는 `openai-chat-completions`와 standard dialect를 사용하는 명시적 custom
+endpoint입니다. Provider-specific semantics가 없는 현재 surface에는 별도 OpenRouter
+dialect를 만들지 않습니다. OpenAI official/compatible standard profile은 API key가
+필수입니다. vLLM만 `OpenAICompatibleDialect.VLLM`을 선택하며, 이 dialect에서 key를
+생략한 경우에만 SDK용 non-secret `not-required` sentinel을 사용합니다.
+
+### Provider registry와 custom adapter
+
+`ILLMProvider.is_default`는 first-party default와 application replacement를 구분합니다.
+공식 OpenAI, Anthropic, Google adapter는 `True`, custom provider의 기본값은 `False`입니다.
+`LlmAgentModel` 생성 시 API family별로 exactly one custom implementation이 있으면 같은
+API의 default를 교체합니다. Custom이 둘 이상이면 ambiguous configuration이며,
+custom이 없을 때 default가 정확히 하나가 아니어도 `LlmConfigurationError`입니다.
+Configured profile이 요구하는 API가 최종 registry에 없을 때도 bootstrap이 실패합니다.
+일반 plugin lifecycle에서는 이 검증이 `app.start()`에서 발생합니다.
+
+Field/catalog reference는 그보다 앞선 `LlmConfig` 생성 시 Pydantic이 검증합니다. 반면
+standard OpenAI/Anthropic API key, vLLM explicit base URL, Google credential load와 client
+endpoint 구성은 선택 route의 `complete()`/`stream()` client construction에서
+`LlmConfigurationError`로 검증됩니다.
 
 공식 SDK가 인증, retry, typed response, provider stream parsing을 소유합니다. Spakky는
 `ModelRequest` mapping, `ModelResponse`와 `ModelStreamEvent` 정규화, portable JSON
@@ -208,9 +292,10 @@ transport를 주입하고, 그 transport가 노출하는 configuration/timeout/t
 공통 LLM error로 정규화하는 경계로 제한됩니다.
 
 세 adapter 모두 complete/stream, portable sampling, function tools,
-structured JSON output, usage mapping을 지원합니다. `supports_reasoning`은 provider가
-반환한 reasoning channel의 노출을 선언하는 capability이며 모든 SDK에 reasoning 요청을
-켜는 공통 switch가 아닙니다. vLLM dialect만
+structured JSON output, usage mapping 경계를 구현합니다. 실제 논리 모델별 지원 범위는
+route의 `ModelCapability`가 선언합니다. `supports_reasoning`은 OpenAI/Anthropic에서
+반환된 reasoning channel을 노출하고 Google에서는 `ThinkingConfig(include_thoughts=True)`를
+요청합니다. vLLM dialect만
 `chat_template_kwargs`와 `structured_outputs.json`을 `extra_body`에 추가하며,
 OpenAI standard에는 표준 `response_format`만 사용합니다.
 
@@ -224,16 +309,16 @@ OpenAI standard에는 표준 `response_format`만 사용합니다.
 | --- | --- | --- | --- |
 | OpenAI Chat Completions | capability가 켜지면 complete metadata와 stream delta | complete 및 요청 시 stream terminal usage | start, args delta, end, candidate |
 | Anthropic Messages | 반환된 thinking event를 capability가 켜진 경우에만 stream delta로 전달 | complete 및 요청 시 final-message usage | start, args delta, end, candidate |
-| Google GenerateContent | `include_thoughts`가 켜지면 thought stream delta | complete 및 요청 시 chunk usage | 완성된 candidate |
+| Google GenerateContent | route reasoning capability가 켜지면 thought stream delta | complete 및 요청 시 chunk usage | 완성된 candidate |
 
 Google adapter는 SDK의 automatic function calling을 명시적으로 끕니다. 따라서
 세 adapter 모두 tool을 실행하지 않고 검증된 후보만 runner에 전달합니다.
 
 Anthropic adapter는 `messages.create()`나 `messages.stream()`에 SDK `thinking` 요청
 파라미터를 보내지 않습니다. Provider stream에 `thinking` event가 들어온 경우에만
-`supports_reasoning=true`인 profile에서 `REASONING_DELTA`로 통과시키며,
+route가 `supports_reasoning=true`를 선언한 경우 `REASONING_DELTA`로 통과시키며,
 non-streaming response의 thinking/redacted-thinking block은 visible content에 포함하지
-않습니다. Google의 `include_thoughts=true`는 이와 달리 SDK
+않습니다. Google은 같은 route capability가 켜진 경우 SDK
 `ThinkingConfig(include_thoughts=True)`를 전송합니다.
 
 ### Tool 호출 권한과 원자적 stream 경계
@@ -303,12 +388,11 @@ Google adapter는 typed candidate의 terminal finish reason을 명시적인 allo
 decode 또는 schema 검증에 실패하면 최종 결과는 여전히 `LlmResponseError`이고
 `STRUCTURED_OUTPUT`이나 tool candidate를 방출하지 않습니다.
 
-`include_thoughts`의 기본값은 `false`이며 이때 Google 요청에 `thinking_config`를
-보내지 않습니다. `supports_reasoning=true`인 Google profile에서
-`include_thoughts=true`를 함께 설정한 경우에만
-`ThinkingConfig(include_thoughts=True)`를 보내고 반환된 thought part를
-`REASONING_DELTA`로 노출합니다. Automatic function calling은 이 설정과 무관하게
-항상 꺼져 있으며 adapter가 tool을 직접 실행하지 않습니다.
+Route의 `supports_reasoning` 기본값은 `false`이며 이때 Google 요청에
+`thinking_config`를 보내지 않습니다. 선택한 Google route가
+`supports_reasoning=true`를 선언한 경우에만 `ThinkingConfig(include_thoughts=True)`를
+보내고 반환된 thought part를 `REASONING_DELTA`로 노출합니다. Automatic function
+calling은 이 설정과 무관하게 항상 꺼져 있으며 adapter가 tool을 직접 실행하지 않습니다.
 
 ### SDK success payload와 OpenAI usage opt-out
 
@@ -422,6 +506,7 @@ argument delta, tool candidate, structured output, usage, terminal event를
 
 ## 함께 보기
 
+- [LLM 모델 라우팅](../../guides/llm-routing.md): logical ref, profile, route, Google credential recipe를 확인합니다.
 - [AI Agent 개발](../../guides/agents.md): single-pass runner와 custom `execute()` 경계를 확인합니다.
 - [AI Agent 심화](../../guides/agents-advanced.md): tool dispatch, approval, evidence 흐름을 확인합니다.
 - [IAgentModel 용어](../../glossary.md#iagentmodel): core outbound port와 provider plugin 관계를 확인합니다.

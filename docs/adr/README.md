@@ -34,7 +34,8 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 | [ADR-0012](0012-contribution-routing-policy.md) | Contribution 라우팅 정책 — 복수 contribution 탐지와 선택 정책 | Proposed | 2026-05-10 |
 | [ADR-0013](0013-declarative-agent-loop-ownership.md) | 선언형 Agent — 프레임워크 루프 소유·프로토콜 중립 코어·AG-UI/A2A/MCP 어댑터 | Accepted | 2026-06-24 |
 | [ADR-0014](0014-ai-pr-review-auto-approval-policy.md) | AI PR 리뷰 자동 승인 정책 — provenance-bound exact-head receipt와 봇 formal Approve | Accepted | 2026-06-26 |
-| [ADR-0015](0015-multi-provider-llm-official-sdk-adapters.md) | Multi-provider LLM official SDK adapters — allowlisted profile router와 provider-native SDK 경계 | Accepted | 2026-08-22 |
+| [ADR-0015](0015-multi-provider-llm-official-sdk-adapters.md) | Multi-provider LLM official SDK adapters — provider-native SDK 경계 (routing 일부는 ADR-0016이 대체) | Accepted | 2026-08-22 |
+| [ADR-0016](0016-operator-owned-model-catalog.md) | Operator-owned model catalog — opaque `model_ref`, route capability, explicit Gemini/Vertex backend | Accepted | 2026-08-22 |
 
 ## 새 ADR 작성 가이드
 

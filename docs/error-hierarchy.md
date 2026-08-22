@@ -839,9 +839,21 @@ from spakky.plugins.openfga.error import (
 
 ### spakky-llm { #spakky-llm-errors }
 
-다중 provider LLM routing과 공식 SDK adapter 관련 에러입니다. `complete()`는 이
+Logical model catalog routing과 공식 SDK adapter 관련 에러입니다. `complete()`는 이
 typed error를 호출자에게 전달하고, `stream()`은 `ModelError`가 든 `ERROR` event와
 terminal `DONE` event로 정규화합니다.
+
+두 검증 층을 구분합니다. `LlmConfig`, `LlmProfile`, `LlmModelRoute`의 field, catalog
+reference, extra field 검증은 Pydantic `ValidationError`입니다. Raw environment JSON decode
+실패는 `pydantic-settings`의 `SettingsError`이며 duplicate JSON key의
+`PydanticCustomError`가 cause로 연결됩니다. 이들은 아직 runtime provider adapter를 만든
+뒤의 `AbstractLlmError` stream normalization 단계가 아닙니다.
+
+`LlmConfigurationError`는 유효한 typed config 이후의 provider registry ambiguity,
+configured API adapter 누락, client endpoint/API key/credential 구성 또는 credential load
+실패 같은 runtime/bootstrap 경계입니다. Unknown model ref는 direct `complete()`에서는
+`LlmModelSelectionError`, `stream()`에서는 code가 `llm_model_selection_invalid`인 terminal
+model error로 표면화됩니다.
 
 ```python
 from spakky.plugins.llm.error import (
@@ -861,8 +873,8 @@ from spakky.plugins.llm.error import (
 | 에러 | stream code | retryable | 설명 |
 | --- | --- | --- | --- |
 | `AbstractLlmError` | — | — | LLM routing과 provider adapter 에러의 공통 기반 클래스 |
-| `LlmConfigurationError` | `llm_configuration_invalid` | `false` | profile과 provider registry 설정이 유효하지 않음 |
-| `LlmModelSelectionError` | `llm_model_selection_invalid` | `false` | 요청을 허용된 profile로 해석할 수 없음 |
+| `LlmConfigurationError` | `llm_configuration_invalid` | `false` | provider registry, SDK client endpoint/API key 또는 credential runtime 구성이 유효하지 않음 |
+| `LlmModelSelectionError` | `llm_model_selection_invalid` | `false` | 요청한 `model_ref`를 operator catalog에서 해석할 수 없음 |
 | `LlmProviderUnavailableError` | `llm_provider_unavailable` | `false` | 선택한 API family의 SDK adapter가 등록되지 않음 |
 | `LlmStreamingDisabledError` | `llm_streaming_disabled` | `false` | 선택한 profile이 streaming을 허용하지 않음 |
 | `LlmTransportError` | `llm_transport_error` | `true` | SDK가 provider endpoint에 도달하지 못했거나 재시도 가능한 상태 오류를 받음 |
@@ -890,7 +902,7 @@ from spakky.plugins.agui.error import (
 | `AbstractAgUiError` | AG-UI adapter 에러 기반 클래스 | `AbstractSpakkyFrameworkError` |
 | `AgUiApprovalDecodeError` | resume input의 approval decision payload가 없거나 유효하지 않음 | `AbstractAgUiError` |
 | `AgUiEndpointConflictError` | 여러 AG-UI agent가 같은 transport path를 claim함 | `AbstractAgUiError` |
-| `AgUiPendingApprovalError` | paused approval state 또는 `RunPausedEvent`가 approval id, prompt, decision 목록을 제공하지 못함 | `AbstractAgUiError` |
+| `AgUiPendingApprovalError` | approval pause metadata가 불완전하거나, `approval_id=None`인 auth/user-input pause를 현재 deferred approval로 투영할 수 없음 | `AbstractAgUiError` |
 | `AgUiRunResolutionError` | AG-UI run request를 실행 가능한 agent run으로 해석할 수 없음 | `AbstractAgUiError` |
 
 ### spakky-a2a

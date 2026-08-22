@@ -5,11 +5,19 @@ from binascii import Error as Base64Error
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from contextlib import aclosing
 from json import JSONDecodeError
+from re import fullmatch
 from typing import Never, override
 
 import httpx
+import google.auth
 from google import genai
+from google.auth.credentials import Credentials
+from google.auth.exceptions import (
+    GoogleAuthError,
+    TransportError as GoogleAuthTransportError,
+)
 from google.genai import errors, types
+from google.oauth2 import service_account
 from pydantic import ValidationError
 from spakky.agent import (
     JsonObject,
@@ -29,8 +37,15 @@ from spakky.agent import (
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.llm.codec import LlmJsonCodec
-from spakky.plugins.llm.config import LlmProviderApi
-from spakky.plugins.llm.constants import OFFICIAL_GOOGLE_BASE_URL
+from spakky.plugins.llm.config import (
+    GoogleCredentialStrategy,
+    LlmProfile,
+    LlmProviderApi,
+)
+from spakky.plugins.llm.constants import (
+    OFFICIAL_GEMINI_DEVELOPER_BASE_URL,
+    OFFICIAL_VERTEX_GLOBAL_BASE_URL,
+)
 from spakky.plugins.llm.error import (
     LlmConfigurationError,
     LlmModelRefusalError,
@@ -45,9 +60,12 @@ from spakky.plugins.llm.provider import (
     done_event,
     ensure_terminal_tool_choice,
     ensure_tool_call_allowed,
+    routing_metadata,
 )
 
 _MILLISECONDS_PER_SECOND = 1_000
+_GOOGLE_CLOUD_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
+_VERTEX_MULTI_REGIONAL_LOCATIONS = frozenset({"us", "eu"})
 _SUCCESS_FINISH_REASONS = frozenset({"STOP", "MAX_TOKENS"})
 _REFUSAL_FINISH_REASONS = frozenset(
     {
@@ -76,9 +94,20 @@ class GoogleGenerateContentProvider(ILLMProvider):
 
     @property
     @override
-    def api(self) -> LlmProviderApi:
-        """Return the native Google GenerateContent API family."""
-        return LlmProviderApi.GOOGLE_GENERATE_CONTENT
+    def apis(self) -> frozenset[LlmProviderApi]:
+        """Return both Google GenerateContent connection backends."""
+        return frozenset(
+            {
+                LlmProviderApi.GOOGLE_GEMINI_DEVELOPER,
+                LlmProviderApi.GOOGLE_VERTEX,
+            }
+        )
+
+    @property
+    @override
+    def is_default(self) -> bool:
+        """Mark the first-party Google adapter as replaceable default."""
+        return True
 
     @override
     async def complete(
@@ -117,6 +146,10 @@ class GoogleGenerateContentProvider(ILLMProvider):
             raise LlmTimeoutError from error
         except httpx.RequestError as error:
             raise LlmTransportError from error
+        except GoogleAuthTransportError as error:
+            raise LlmTransportError from error
+        except GoogleAuthError as error:
+            raise LlmConfigurationError from error
         finally:
             client.close()
         return self._response(target, request, response, constraints)
@@ -231,6 +264,10 @@ class GoogleGenerateContentProvider(ILLMProvider):
             raise LlmTimeoutError from error
         except httpx.RequestError as error:
             raise LlmTransportError from error
+        except GoogleAuthTransportError as error:
+            raise LlmTransportError from error
+        except GoogleAuthError as error:
+            raise LlmConfigurationError from error
 
     async def _part_events(
         self,
@@ -246,7 +283,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
             metadata = self._part_metadata(target, part)
             if part.text is not None and part.text != "":
                 if part.thought is True:
-                    if target.profile.include_thoughts:
+                    if target.route.capability.supports_reasoning:
                         yield ModelStreamEvent(
                             kind=ModelStreamEventKind.REASONING_DELTA,
                             reasoning_delta=part.text,
@@ -275,27 +312,78 @@ class GoogleGenerateContentProvider(ILLMProvider):
         *,
         timeout_seconds: float,
     ) -> genai.Client:
-        if target.profile.api is not self.api:
+        if target.profile.api not in self.apis:
             raise LlmProviderUnavailableError
-        api_key = target.profile.api_key_value()
-        if api_key is None:
-            raise LlmConfigurationError
+        profile = target.profile
+        http_options = self._http_options(profile, timeout_seconds)
         try:
+            if profile.api == LlmProviderApi.GOOGLE_GEMINI_DEVELOPER:
+                api_key = profile.api_key_value()
+                if api_key is None:
+                    raise LlmConfigurationError
+                return genai.Client(
+                    enterprise=False,
+                    api_key=api_key,
+                    http_options=http_options,
+                )
+            credentials = self._vertex_credentials(profile)
             return genai.Client(
-                api_key=api_key,
-                vertexai=False,
-                http_options=types.HttpOptions(
-                    base_url=target.profile.base_url or OFFICIAL_GOOGLE_BASE_URL,
-                    headers=dict(target.profile.headers),
-                    timeout=int(timeout_seconds * _MILLISECONDS_PER_SECOND),
-                    async_client_args={"transport": httpx.AsyncHTTPTransport()},
-                    retry_options=types.HttpRetryOptions(
-                        attempts=target.profile.max_retries + 1,
-                    ),
-                ),
+                enterprise=True,
+                credentials=credentials,
+                project=profile.google_project,
+                location=profile.google_location,
+                http_options=http_options,
             )
-        except ValueError as error:
+        except (GoogleAuthError, OSError, ValueError) as error:
             raise LlmConfigurationError from error
+
+    def _http_options(
+        self,
+        profile: LlmProfile,
+        timeout_seconds: float,
+    ) -> types.HttpOptions:
+        base_url = profile.base_url
+        if base_url is None:
+            if profile.api == LlmProviderApi.GOOGLE_GEMINI_DEVELOPER:
+                base_url = OFFICIAL_GEMINI_DEVELOPER_BASE_URL
+            else:
+                base_url = self._vertex_base_url(profile.google_location)
+        return types.HttpOptions(
+            base_url=base_url,
+            headers=dict(profile.headers),
+            timeout=int(timeout_seconds * _MILLISECONDS_PER_SECOND),
+            async_client_args={"transport": httpx.AsyncHTTPTransport()},
+            retry_options=types.HttpRetryOptions(
+                attempts=profile.max_retries + 1,
+            ),
+        )
+
+    def _vertex_base_url(self, location: str | None) -> str:
+        if location is None or fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", location) is None:
+            raise LlmConfigurationError
+        if location == "global":
+            return OFFICIAL_VERTEX_GLOBAL_BASE_URL
+        if location in _VERTEX_MULTI_REGIONAL_LOCATIONS:
+            return f"https://aiplatform.{location}.rep.googleapis.com/"
+        return f"https://{location}-aiplatform.googleapis.com/"
+
+    def _vertex_credentials(self, profile: LlmProfile) -> Credentials:
+        strategy = profile.google_credential_strategy
+        try:
+            if strategy == GoogleCredentialStrategy.ADC:
+                credentials, _ = google.auth.default(scopes=(_GOOGLE_CLOUD_SCOPE,))
+                return credentials
+            if strategy == GoogleCredentialStrategy.SERVICE_ACCOUNT_FILE:
+                credential_file = profile.google_service_account_file
+                if credential_file is None:
+                    raise LlmConfigurationError
+                return service_account.Credentials.from_service_account_file(
+                    str(credential_file),
+                    scopes=(_GOOGLE_CLOUD_SCOPE,),
+                )
+        except (GoogleAuthError, OSError, ValueError) as error:
+            raise LlmConfigurationError from error
+        raise LlmConfigurationError
 
     def _generate_config(
         self,
@@ -333,7 +421,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
             ),
             thinking_config=(
                 types.ThinkingConfig(include_thoughts=True)
-                if target.profile.include_thoughts
+                if target.route.capability.supports_reasoning
                 else None
             ),
         )
@@ -564,10 +652,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
         )
 
     def _metadata(self, target: LlmModelTarget) -> JsonObject:
-        return {
-            "provider": target.profile.provider,
-            "profile": target.profile_name,
-        }
+        return routing_metadata(target)
 
     def _part_metadata(
         self,

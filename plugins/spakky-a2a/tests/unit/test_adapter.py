@@ -132,12 +132,7 @@ def test_model_selection_parsed_from_data_part() -> None:
         [
             _data_part(
                 {
-                    "modelSelection": {
-                        "provider": "openrouter",
-                        "model": "anthropic/claude-sonnet-4.5",
-                        "profile": "coding",
-                        "metadata": {"tier": "paid"},
-                    }
+                    "modelSelection": {"modelRef": "support/primary"},
                 }
             )
         ]
@@ -146,10 +141,17 @@ def test_model_selection_parsed_from_data_part() -> None:
     selection = executor._model_selection(context)
 
     assert selection is not None
-    assert selection.provider == "openrouter"
-    assert selection.model == "anthropic/claude-sonnet-4.5"
-    assert selection.profile == "coding"
-    assert selection.metadata == {"tier": "paid"}
+    assert selection.model_ref == "support/primary"
+
+
+def test_model_selection_rejects_legacy_snake_case_container_alias() -> None:
+    """A2A outer selector는 modelSelection만 허용하고 legacy alias를 거부한다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._model_selection(
+            _context([_data_part({"model_selection": {"modelRef": "support/primary"}})])
+        )
 
 
 def test_run_metadata_parsed_from_data_part() -> None:
@@ -172,47 +174,89 @@ def test_run_metadata_parsed_from_data_part() -> None:
     }
 
 
-def test_model_selection_rejects_malformed_data_part() -> None:
+@pytest.mark.parametrize("selection", ["bad", None, ["support/primary"]])
+def test_model_selection_rejects_malformed_data_part(selection: object) -> None:
     """modelSelection이 객체가 아니면 run resolution 오류로 실패한다."""
     executor, _ = _durable_executor()
 
     with pytest.raises(A2ARunResolutionError):
-        executor._model_selection(_context([_data_part({"modelSelection": "bad"})]))
+        executor._model_selection(_context([_data_part({"modelSelection": selection})]))
 
 
-def test_model_selection_allows_missing_optional_fields() -> None:
-    """modelSelection의 optional field는 생략 가능하다."""
-    executor, _ = _durable_executor()
-
-    selection = executor._model_selection(
-        _context([_data_part({"modelSelection": {}})])
-    )
-
-    assert selection is not None
-    assert selection.provider is None
-    assert selection.model is None
-    assert selection.profile is None
-    assert selection.metadata == {}
-
-
-def test_model_selection_rejects_blank_text_field() -> None:
-    """공백 modelSelection 문자열 필드는 run resolution 오류다."""
+def test_model_selection_rejects_canonical_and_legacy_containers() -> None:
+    """Canonical selector와 legacy container가 함께 있어도 fail closed 된다."""
     executor, _ = _durable_executor()
 
     with pytest.raises(A2ARunResolutionError):
         executor._model_selection(
-            _context([_data_part({"modelSelection": {"provider": " "}})])
+            _context(
+                [
+                    _data_part(
+                        {
+                            "modelSelection": {"modelRef": "support/primary"},
+                            "model_selection": {"modelRef": "support/secondary"},
+                        }
+                    )
+                ]
+            )
         )
 
 
-def test_model_selection_rejects_non_object_metadata() -> None:
-    """modelSelection.metadata는 object여야 한다."""
+def test_model_selection_rejects_duplicate_selectors_across_data_parts() -> None:
+    """여러 A2A data part에 selector가 있으면 첫 값 반환 없이 거부한다."""
     executor, _ = _durable_executor()
 
     with pytest.raises(A2ARunResolutionError):
         executor._model_selection(
-            _context([_data_part({"modelSelection": {"metadata": "bad"}})])
+            _context(
+                [
+                    _data_part({"modelSelection": {"modelRef": "support/primary"}}),
+                    _data_part({"modelSelection": {"modelRef": "support/secondary"}}),
+                ]
+            )
         )
+
+
+def test_model_selection_rejects_missing_model_ref() -> None:
+    """modelSelection object가 있으면 modelRef를 반드시 포함해야 한다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._model_selection(_context([_data_part({"modelSelection": {}})]))
+
+
+@pytest.mark.parametrize("model_ref", ["", " ", 1, None])
+def test_model_selection_rejects_invalid_model_ref(model_ref: object) -> None:
+    """modelRef는 nonblank string이어야 한다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._model_selection(
+            _context([_data_part({"modelSelection": {"modelRef": model_ref}})])
+        )
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"provider": "openrouter"},
+        {"model": "anthropic/claude"},
+        {"profile": "support"},
+        {"metadata": {"tier": "paid"}},
+        {"unknown": "value"},
+        {"model_ref": "support/primary"},
+        {"modelRef": "support/primary", "provider": "openrouter"},
+        {"modelRef": "support/primary", "unknown": "value"},
+    ],
+)
+def test_model_selection_rejects_noncanonical_keys(
+    selection: dict[str, object],
+) -> None:
+    """modelSelection은 modelRef 외의 legacy 또는 unknown key를 거부한다."""
+    executor, _ = _durable_executor()
+
+    with pytest.raises(A2ARunResolutionError):
+        executor._model_selection(_context([_data_part({"modelSelection": selection})]))
 
 
 def test_run_metadata_rejects_non_object_metadata_part() -> None:

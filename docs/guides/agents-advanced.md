@@ -394,17 +394,17 @@ Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 hi
 
 `RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `model_selection`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
 
-`model_selection`은 요청별 profile/provider/model 선택입니다. Agent class는 특정 모델
-이름을 소유하지 않고 `IAgentModel` port만 주입받습니다. 서비스 boundary가 사용자
-선택을 `RunAgentInput.model_selection`으로 전달하면 runner는 같은 값을
+`model_selection`은 요청별 opaque logical model ref 선택입니다. Agent class는 특정
+provider나 실제 model 이름을 소유하지 않고 `IAgentModel` port만 주입받습니다. 서비스
+boundary가 `RunAgentInput.model_selection`으로 선택을 전달하면 runner는 같은 값을
 `ModelRequest.model_selection`에 실어 adapter/router로 넘기고, reasoning gate와
 compaction은 `IAgentModel.capability_for(selection)`을 조회합니다.
 
-`spakky-llm`을 설치하면 하나의 `LlmAgentModel`이 이 routing model 역할을 합니다.
-`profile`은 운영자가 `SPAKKY_LLM__PROFILES`에 등록한 연결이어야 하고, 함께 지정한
-`provider`는 그 profile의 식별자와 일치해야 합니다. `model`은 선택한 profile의
-base URL, API key, headers를 유지한 채 요청 model id만 덮어씁니다. 요청 metadata로
-연결 정보를 주입하거나 바꿀 수는 없습니다.
+`spakky-llm`을 설치하면 하나의 `LlmAgentModel`이 catalog-aware routing model 역할을
+합니다. Caller가 전달하는 값은 `ModelSelection.model_ref` 하나입니다. 운영자는
+`LlmConfig.models`에서 ref를 `LlmModelRoute`에, route를 connection-only
+`LlmConfig.profiles`에 연결합니다. Profile, provider, physical model, base URL, API key,
+headers는 caller selection이나 request metadata로 덮어쓸 수 없습니다.
 
 ```python
 from spakky.agent import ModelSelection, RunAgentInput
@@ -412,25 +412,30 @@ from spakky.agent import ModelSelection, RunAgentInput
 run_input = RunAgentInput(
     state_id="run-42",
     instruction="릴리스 위험을 검토해 주세요.",
-    model_selection=ModelSelection(
-        profile="claude",
-        provider="anthropic",
-        model="claude-opus-4-1",
-    ),
+    model_selection=ModelSelection(model_ref="analysis/deep"),
 )
 ```
 
-`LlmAgentModel`은 profile의 `api`에 따라 OpenAI Chat Completions, Anthropic Messages,
-Google GenerateContent 공식 SDK adapter 중 하나를 선택합니다. 여러 개의 독립적인
+`LlmAgentModel`은 route가 참조한 profile의 `api`에 따라 OpenAI Chat Completions,
+Anthropic Messages, Gemini Developer API, Vertex AI 공식 SDK adapter 중 하나를
+선택합니다. Model ref는 trim 이외 canonicalization이나 `/` parsing을 하지 않는
+case-sensitive key이며 unknown ref는 raw provider model로 fallback하지 않습니다.
+Selection을 생략했을 때 `LlmConfig.default_model`을 적용하는 것도 활성 model이
+`LlmAgentModel`인 경로의 동작입니다. 다른 `IAgentModel` 구현은 자체 selection/default
+정책을 가질 수 있습니다.
+여러 개의 독립적인
 `IAgentModel` 구현 자체를 run마다 교체해야 하는 애플리케이션만
 `IAgentModelResolver`를 별도로 등록합니다. 일반적인 provider 전환에는 resolver를
 추가하지 않습니다.
 
 | Inbound | 모델 선택 전달 |
 |---------|----------------|
-| Python/custom boundary | `RunAgentInput(model_selection=ModelSelection(...))` |
-| AG-UI | `forwardedProps.modelSelection` |
-| A2A | message data part의 `modelSelection` 또는 `model_selection` |
+| Python/custom boundary | `ModelSelection(model_ref="analysis/deep")` |
+| AG-UI | `forwardedProps.modelSelection.modelRef` |
+| A2A | data part의 `modelSelection.modelRef` |
+
+Wire object도 `modelRef` 외 nested field를 허용하지 않습니다. Direct catalog 구성,
+환경변수, capability와 provider recipe는 [LLM 모델 라우팅](llm-routing.md)을 확인하세요.
 
 멀티턴 history는 두 경로 중 하나로만 들어옵니다.
 
@@ -525,13 +530,17 @@ SSE는 단방향 server-to-client stream입니다. 사용자의 새 메시지나
 
 ## Protocol event stream
 
-`AgentRunner`는 같은 orchestration을 두 stream으로 제공합니다. `run()`은 Spakky-native inbound adapter가 소비하는 `AgentYield`를 내보내고, `run_events()`는 AG-UI/A2A 같은 protocol adapter가 손실 없이 투영하는 `AgentEvent` taxonomy를 내보냅니다.
+`AgentRunner`는 같은 orchestration을 두 stream으로 제공합니다. `run()`은 Spakky-native
+inbound adapter가 소비하는 `AgentYield`를 내보내고, `run_events()`는 AG-UI/A2A 같은
+protocol adapter가 각 wire contract에 맞게 투영할 수 있는 세분화된 `AgentEvent`
+taxonomy를 내보냅니다. Target protocol의 framing·상태·필드가 다르므로 이 변환을
+무손실 또는 1:1이라고 가정하지 않습니다.
 
 현재 Spakky 상태를 정확히 말하면 다음과 같습니다.
 
 - `AgentYield` 자체는 AG-UI 또는 A2A event가 아닙니다.
 - `AgentEventAttribution`은 `agent_id`, `run_id`, `conversation_id`, optional `parent_run_id`를 모든 이벤트에 싣습니다.
-- `RunPausedEvent`는 approval/auth/user-input pause를 중립 이벤트로 표현하고, adapter가 AG-UI deferred tool 또는 A2A `input-required`/`auth-required` 상태로 투영합니다.
+- `RunPausedEvent`는 approval/auth/user-input pause를 중립 이벤트로 표현합니다. A2A는 auth를 `auth-required`, 그 밖의 pause를 `input-required`로 투영합니다. AG-UI는 non-null `approval_id`가 있는 approval pause만 deferred tool로 투영하며 다른 pause는 현재 `AgUiPendingApprovalError`입니다.
 - `spakky-agui`는 `AgentEvent`를 AG-UI `BaseEvent`로 투영하고 FastAPI SSE, HTTP streaming, WebSocket, stdio 경계를 제공합니다.
 - `spakky-a2a`는 `AgentEvent`를 A2A task/message/artifact update로 투영하고 AgentCard, JSON-RPC, HTTP+JSON REST, gRPC transport를 제공합니다.
 - `spakky-mcp`는 `AgentEvent` stream을 소비하지 않습니다. 외부 MCP server tool을 직접 전부 노출하지 않고 `mcp_search_tools`와 `mcp_call_tool`만 `AgentToolCatalog`에 병합합니다.
@@ -590,7 +599,8 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 execution으로 연결한 runnable demo입니다.
 - [spakky-agent API Reference](../api/core/spakky-agent.md): public class와 helper의 상세 signature를 확인합니다.
-- [spakky-llm API Reference](../api/plugins/spakky-llm.md): allowlisted profile routing과 OpenAI, Anthropic, Google SDK adapter를 확인합니다.
+- [LLM 모델 라우팅](llm-routing.md): opaque model ref, connection profile, model route, Google credential 전략을 확인합니다.
+- [spakky-llm API Reference](../api/plugins/spakky-llm.md): catalog validation과 OpenAI, Anthropic, Google SDK adapter를 확인합니다.
 - [spakky-agui API Reference](../api/plugins/spakky-agui.md): AG-UI endpoint, projector, HITL helpers를 확인합니다.
 - [spakky-a2a API Reference](../api/plugins/spakky-a2a.md): A2A server, transport, delegation API를 확인합니다.
 - [spakky-mcp API Reference](../api/plugins/spakky-mcp.md): 외부 MCP 서버 연결, runtime server resolution, lazy MCP tool API를 확인합니다.

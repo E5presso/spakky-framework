@@ -2,13 +2,18 @@
 
 > `spakky-agent`으로 LLM 실행과 도구 호출을 Spakky 애플리케이션 안에 넣는 채널입니다. Agent는 외부 런타임이 아니라 하나의 애플리케이션 컴포넌트로 다뤄집니다.
 
-처음이라면 [AI Agent 개발](../guides/agents.md)로 시작하세요. 운영형 Agent로 확장할 때 필요한 도구·승인·durable 실행은 [AI Agent 심화](../guides/agents-advanced.md)에서 다룹니다. AG-UI·A2A stream adapter와 MCP tool adapter는 **어댑터** 항목에서 이어집니다.
+처음이라면 [AI Agent 개발](../guides/agents.md)로 시작하세요. 실제 provider를 제품 코드와
+분리하려면 [LLM 모델 라우팅](../guides/llm-routing.md)에서 logical ref와 connection
+profile을 구성하세요. 운영형 Agent로 확장할 때 필요한 도구·승인·durable 실행은
+[AI Agent 심화](../guides/agents-advanced.md)에서 다룹니다. AG-UI·A2A stream adapter와
+MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 
 ## 기초
 
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
 | [AI Agent 개발](../guides/agents.md) | `@Agent`·`RunAgentInput`·`AgentYield`로 Agent 만들기 |
+| [LLM 모델 라우팅](../guides/llm-routing.md) | opaque model ref를 provider profile과 route에 연결하기 |
 | [CodeAssistant 에이전트 예제](../guides/agent-code-assistant.md) | 실제 Agent 흐름을 예제로 따라가기 |
 
 ## 심화
@@ -32,6 +37,7 @@
 | 문서 | 무엇을 확인하나요 |
 | --- | --- |
 | [spakky-agent](../api/core/spakky-agent.md) | `AgentRunner`, `RunAgentInput`, `AgentEvent`, `AgentYield`, tool/repository/compaction 계약 |
+| [spakky-llm](../api/plugins/spakky-llm.md) | logical model catalog, provider 연결, credential와 오류 계약 |
 | [spakky-agui](../api/plugins/spakky-agui.md) | AG-UI endpoint, projector, HITL, stdio helpers |
 | [spakky-a2a](../api/plugins/spakky-a2a.md) | A2A AgentCard, server builder, executor, REST/gRPC transport, delegation |
 | [spakky-mcp](../api/plugins/spakky-mcp.md) | 외부 MCP 서버 연결, runtime server resolution, lazy MCP tool search/call |

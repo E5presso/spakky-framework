@@ -299,16 +299,57 @@ protocol-neutral event union입니다. `MessageDeltaEvent`, `ReasoningDeltaEvent
 ### IAgentModel { #iagentmodel }
 
 `spakky-agent`가 소유하는 model outbound port입니다. `spakky-llm`은 이 port를
-구현하는 공식 provider plugin으로, allowlisted profile을 OpenAI Chat Completions,
-Anthropic Messages, Google GenerateContent SDK adapter에 라우팅합니다. vLLM은
-OpenAI-compatible dialect로 지원됩니다. Provider 응답과 stream은 공통
+구현하는 공식 provider plugin으로, operator-owned logical model catalog를 OpenAI Chat
+Completions, Anthropic Messages, Gemini Developer API, Vertex AI SDK adapter에
+라우팅합니다. OpenRouter는 standard OpenAI-compatible connection으로, vLLM은 명시적
+vLLM dialect로 지원됩니다. Provider 응답과 stream은 공통
 `ModelResponse`와 `ModelStreamEvent`로 정규화됩니다.
 
 표준 Agent runner는 invocation마다 `IAgentModel.stream()`을 한 번 순회하고 tool
 candidate를 dispatch한 뒤 종료합니다. Tool result 재주입과 반복 model 호출이 필요한
 multi-step 흐름은 custom `execute()`에서 구성합니다. 사용법은
-[AI Agent 개발](guides/agents.md), profile과 provider API는
-[spakky-llm API Reference](api/plugins/spakky-llm.md)를 확인하세요.
+[AI Agent 개발](guides/agents.md), catalog 사용법은
+[LLM 모델 라우팅](guides/llm-routing.md)을 확인하세요.
+
+### Logical model ref { #logical-model-ref }
+
+`support/primary`처럼 caller가 선택하는 operator-owned opaque key입니다. Case-sensitive이며
+앞뒤 공백 외에는 canonicalization하지 않고 `/`도 provider 구분자로 해석하지 않습니다.
+실제 provider, connection profile, physical model ID를 caller 계약에서 분리해 route 교체
+시 Agent 코드를 유지합니다.
+
+### ModelSelection
+
+한 run에서 logical model ref를 지목하는 core frozen dataclass입니다. 공개 필드는 필수
+`model_ref: str` 하나뿐입니다. Provider, profile, raw model, endpoint, credential,
+selection metadata는 이 계약에 속하지 않습니다. Blank ref는 core에서, unknown ref는
+catalog-aware router에서 fail closed합니다.
+
+### LlmProfile
+
+`spakky-llm` 운영자가 소유하는 connection/backend/auth 설정입니다. Provider 진단 표식,
+API family, base URL, API key 또는 Google credential strategy, headers, timeout, retry,
+stream 허용 여부를 담습니다. 실제 model ID와 `ModelCapability`은 담지 않습니다.
+
+### LlmModelRoute
+
+Logical model ref를 `LlmProfile`, physical provider model ID, `ModelCapability`에 연결하는
+strict catalog entry입니다. vLLM의 model별 `chat_template_kwargs`도 route가 소유합니다.
+Route와 profile을 교체해도 caller의 logical ref는 유지할 수 있습니다.
+
+### Gemini Developer API
+
+API key로 인증하는 Google의 공식 Gemini API 제품명입니다. “Developer”는 개발 환경이나
+무료·비상용 endpoint라는 뜻이 아닙니다. `spakky-llm`에서는
+`LlmProviderApi.GOOGLE_GEMINI_DEVELOPER`와 explicit `API_KEY` credential strategy로
+선택합니다.
+
+### Vertex AI
+
+Google Cloud project/location과 ADC (Application Default Credentials) 또는 명시적인
+service-account 파일을 사용하는 별도 Google backend입니다. 설치된 Google Gen AI SDK의
+enterprise mode로 연결하며, profile 이름이 아니라 credential identity와 IAM이 실제 접근
+권한을 결정합니다.
 
 ### Agent Persistence Contribution
 
@@ -330,7 +371,9 @@ teammate는 `card_url="https://.../.well-known/agent-card.json"`로 선언합니
 `AgentEvent`를 AG-UI `BaseEvent`로 투영하고, FastAPI SSE endpoint(`add_agui_endpoint`),
 HTTP streaming endpoint(`add_agui_http_stream_endpoint`), WebSocket endpoint
 (`add_agui_websocket_endpoint`), stdio helper를 제공합니다. AG-UI에는 전용 approval
-event가 없으므로 `RunPausedEvent`는 `hitl_approval` deferred tool call로 표현됩니다.
+event가 없으므로 non-null approval ID가 있는 approval-required `RunPausedEvent`만
+`hitl_approval` deferred tool call로 표현됩니다. Authentication/user-input pause처럼
+`approval_id=None`인 event는 현재 `AgUiPendingApprovalError`입니다.
 
 ### A2A Adapter
 

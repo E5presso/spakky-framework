@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "anthropic>=1.0.0",
+    "google-auth>=2.56.3",
     "google-genai>=2.19.0",
     "httpx>=0.28.1",
     "openai>=3.3.1",

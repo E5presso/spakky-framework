@@ -6,11 +6,18 @@ from unittest.mock import patch
 
 import httpx
 import pytest
+from google.auth.credentials import AnonymousCredentials
+from google.auth.exceptions import (
+    DefaultCredentialsError,
+    RefreshError,
+    TransportError as GoogleAuthTransportError,
+)
 from google.genai import errors, types
 from pydantic import SecretStr
 from spakky.agent import (
     JsonObject,
     JsonSchemaConstraint,
+    ModelCapability,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
@@ -24,7 +31,12 @@ from spakky.agent import (
     ToolCallingSpec,
 )
 
-from spakky.plugins.llm.config import LlmProfile, LlmProviderApi
+from spakky.plugins.llm.config import (
+    GoogleCredentialStrategy,
+    LlmModelRoute,
+    LlmProfile,
+    LlmProviderApi,
+)
 from spakky.plugins.llm.error import (
     AbstractLlmError,
     LlmConfigurationError,
@@ -127,24 +139,44 @@ def _target(
     include_thoughts: bool = False,
     max_retries: int = 2,
     base_url: str | None = "https://gemini.example.test",
-    api: LlmProviderApi = LlmProviderApi.GOOGLE_GENERATE_CONTENT,
+    api: LlmProviderApi = LlmProviderApi.GOOGLE_GEMINI_DEVELOPER,
+    credential_strategy: GoogleCredentialStrategy | None = None,
+    project: str | None = None,
+    location: str | None = None,
+    service_account_file: str | None = None,
 ) -> LlmModelTarget:
+    strategy = credential_strategy
+    if strategy is None and api == LlmProviderApi.GOOGLE_GEMINI_DEVELOPER:
+        strategy = GoogleCredentialStrategy.API_KEY
+    if strategy is None and api == LlmProviderApi.GOOGLE_VERTEX:
+        strategy = GoogleCredentialStrategy.ADC
+    profile = LlmProfile.model_construct(
+        provider="google",
+        api=api,
+        base_url=base_url,
+        api_key=SecretStr(api_key) if api_key is not None else None,
+        headers={"x-tenant": "spakky"},
+        request_timeout_seconds=12.5,
+        stream_timeout_seconds=45.0,
+        max_retries=max_retries,
+        stream_enabled=True,
+        google_credential_strategy=strategy,
+        google_project=project,
+        google_location=location,
+        google_service_account_file=service_account_file,
+    )
+    profile_name = (
+        "google-vertex" if api == LlmProviderApi.GOOGLE_VERTEX else "google-developer"
+    )
     return LlmModelTarget(
-        profile_name="gemini",
-        profile=LlmProfile(
-            provider="google",
-            api=api,
-            model="gemini-2.5-flash",
-            base_url=base_url,
-            api_key=SecretStr(api_key) if api_key is not None else None,
-            headers={"x-tenant": "spakky"},
-            request_timeout_seconds=12.5,
-            stream_timeout_seconds=45.0,
-            max_retries=max_retries,
-            supports_reasoning=include_thoughts,
-            include_thoughts=include_thoughts,
+        model_ref="support/primary",
+        profile_name=profile_name,
+        profile=profile,
+        route=LlmModelRoute(
+            profile=profile_name,
+            model="gemini-2.5-pro",
+            capability=ModelCapability(supports_reasoning=include_thoughts),
         ),
-        model="gemini-2.5-pro",
     )
 
 
@@ -238,7 +270,12 @@ def test_api_expect_google_generate_content_family() -> None:
     """Provider registry key is the native Google GenerateContent API."""
     provider = GoogleGenerateContentProvider()
 
-    assert provider.api is LlmProviderApi.GOOGLE_GENERATE_CONTENT
+    assert provider.apis == frozenset(
+        {
+            LlmProviderApi.GOOGLE_GEMINI_DEVELOPER,
+            LlmProviderApi.GOOGLE_VERTEX,
+        }
+    )
 
 
 @pytest.mark.parametrize("operation", ["complete", "stream"])
@@ -349,8 +386,10 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
     assert result.usage.output_tokens == 7
     assert result.usage.total_tokens == 21
     assert result.metadata == {
+        "model_ref": "support/primary",
         "provider": "google",
-        "profile": "gemini",
+        "profile": "google-developer",
+        "model": "gemini-2.5-pro",
         "finish_reason": "STOP",
     }
     assert result.tool_calls[0].name == "search"
@@ -360,8 +399,10 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
         "tags": ("agent",),
     }
     assert result.tool_calls[0].metadata == {
+        "model_ref": "support/primary",
         "provider": "google",
-        "profile": "gemini",
+        "profile": "google-developer",
+        "model": "gemini-2.5-pro",
         "thought_signature": b64encode(call_signature).decode("ascii"),
     }
     assert client.aio.entered is True
@@ -419,7 +460,7 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
     client_factory.assert_called_once()
     client_kwargs = client_factory.call_args.kwargs
     assert client_kwargs["api_key"] == "google-key"
-    assert client_kwargs["vertexai"] is False
+    assert client_kwargs["enterprise"] is False
     http_options = client_kwargs["http_options"]
     assert isinstance(http_options, types.HttpOptions)
     assert http_options.base_url == "https://gemini.example.test"
@@ -437,6 +478,13 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
 async def test_google_profile_fences_ambient_vertex_and_endpoint(monkeypatch) -> None:
     """Ambient Google mode cannot redirect a Developer API profile to Vertex."""
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "ambient-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "ambient-location")
+    monkeypatch.setenv("GOOGLE_API_KEY", "ambient-google-key")
+    monkeypatch.setenv("GEMINI_API_KEY", "ambient-gemini-key")
+    monkeypatch.setenv("GOOGLE_GEMINI_BASE_URL", "https://ambient.invalid/")
+    monkeypatch.setenv("GOOGLE_VERTEX_BASE_URL", "https://ambient-vertex.invalid/")
 
     client = GoogleGenerateContentProvider()._client(
         _target(base_url=None),
@@ -444,6 +492,7 @@ async def test_google_profile_fences_ambient_vertex_and_endpoint(monkeypatch) ->
     )
     try:
         assert client.vertexai is False
+        assert client._api_client.api_key == "google-key"
         assert (
             client._api_client._http_options.base_url
             == "https://generativelanguage.googleapis.com/"
@@ -452,6 +501,269 @@ async def test_google_profile_fences_ambient_vertex_and_endpoint(monkeypatch) ->
     finally:
         await client.aio.aclose()
         client.close()
+
+
+def test_vertex_adc_uses_only_explicit_mode_coordinates_and_selected_credentials(
+    monkeypatch,
+) -> None:
+    """Explicit ADC selection ignores ambient backend/project/location routing values."""
+    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "false")
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "false")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "ambient-project")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "ambient-location")
+    monkeypatch.setenv("GOOGLE_API_KEY", "ambient-key")
+    credentials = AnonymousCredentials()
+    client = _RecordingClient(_RecordingModels())
+    target = _target(
+        api=LlmProviderApi.GOOGLE_VERTEX,
+        api_key=None,
+        base_url=None,
+        project="configured-project",
+        location="us-central1",
+    )
+
+    with (
+        patch(
+            "spakky.plugins.llm.providers.google.google.auth.default",
+            return_value=(credentials, "ambient-discovered-project"),
+        ) as adc,
+        patch(
+            "spakky.plugins.llm.providers.google.genai.Client",
+            return_value=client,
+        ) as constructor,
+    ):
+        result = GoogleGenerateContentProvider()._client(
+            target,
+            timeout_seconds=12.5,
+        )
+
+    assert result is client
+    adc.assert_called_once_with(
+        scopes=("https://www.googleapis.com/auth/cloud-platform",)
+    )
+    kwargs = constructor.call_args.kwargs
+    assert kwargs["enterprise"] is True
+    assert kwargs["credentials"] is credentials
+    assert kwargs["project"] == "configured-project"
+    assert kwargs["location"] == "us-central1"
+    assert "api_key" not in kwargs
+    http_options = kwargs["http_options"]
+    assert isinstance(http_options, types.HttpOptions)
+    assert http_options.base_url == "https://us-central1-aiplatform.googleapis.com/"
+
+
+def test_vertex_service_account_loads_only_configured_file() -> None:
+    """Service-account strategy never falls back to ADC or an ambient credential path."""
+    credentials = AnonymousCredentials()
+    client = _RecordingClient(_RecordingModels())
+    target = _target(
+        api=LlmProviderApi.GOOGLE_VERTEX,
+        api_key=None,
+        base_url=None,
+        credential_strategy=GoogleCredentialStrategy.SERVICE_ACCOUNT_FILE,
+        project="configured-project",
+        location="europe-west4",
+        service_account_file="/mounted/configured-service-account.json",
+    )
+
+    with (
+        patch("spakky.plugins.llm.providers.google.google.auth.default") as adc,
+        patch(
+            "spakky.plugins.llm.providers.google.service_account.Credentials.from_service_account_file",
+            return_value=credentials,
+        ) as loader,
+        patch(
+            "spakky.plugins.llm.providers.google.genai.Client",
+            return_value=client,
+        ) as constructor,
+    ):
+        result = GoogleGenerateContentProvider()._client(
+            target,
+            timeout_seconds=45.0,
+        )
+
+    assert result is client
+    adc.assert_not_called()
+    loader.assert_called_once_with(
+        "/mounted/configured-service-account.json",
+        scopes=("https://www.googleapis.com/auth/cloud-platform",),
+    )
+    kwargs = constructor.call_args.kwargs
+    assert kwargs["enterprise"] is True
+    assert kwargs["credentials"] is credentials
+    assert kwargs["project"] == "configured-project"
+    assert kwargs["location"] == "europe-west4"
+    http_options = kwargs["http_options"]
+    assert isinstance(http_options, types.HttpOptions)
+    assert http_options.base_url == "https://europe-west4-aiplatform.googleapis.com/"
+
+
+@pytest.mark.parametrize(
+    ("location", "expected_base_url"),
+    [
+        ("global", "https://aiplatform.googleapis.com/"),
+        ("us", "https://aiplatform.us.rep.googleapis.com/"),
+        ("eu", "https://aiplatform.eu.rep.googleapis.com/"),
+        ("asia-northeast3", "https://asia-northeast3-aiplatform.googleapis.com/"),
+    ],
+)
+async def test_vertex_endpoint_is_explicit_and_ambient_base_url_cannot_override(
+    monkeypatch,
+    location: str,
+    expected_base_url: str,
+) -> None:
+    """Regional/global Vertex endpoints are explicit before SDK env resolution."""
+    monkeypatch.setenv("GOOGLE_VERTEX_BASE_URL", "https://ambient.invalid/")
+    monkeypatch.setenv("GOOGLE_GEMINI_BASE_URL", "https://ambient-gemini.invalid/")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "ambient-location")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "ambient-project")
+    credentials = AnonymousCredentials()
+    target = _target(
+        api=LlmProviderApi.GOOGLE_VERTEX,
+        api_key=None,
+        base_url=None,
+        project="configured-project",
+        location=location,
+    )
+
+    with patch(
+        "spakky.plugins.llm.providers.google.google.auth.default",
+        return_value=(credentials, "ambient-project"),
+    ):
+        client = GoogleGenerateContentProvider()._client(
+            target,
+            timeout_seconds=12.5,
+        )
+    try:
+        assert client.vertexai is True
+        assert client._api_client._http_options.base_url == expected_base_url
+    finally:
+        await client.aio.aclose()
+        client.close()
+
+
+def test_vertex_custom_base_url_wins_over_official_endpoint() -> None:
+    """Operator-owned custom Vertex endpoint remains higher priority than location."""
+    profile = _target(
+        api=LlmProviderApi.GOOGLE_VERTEX,
+        api_key=None,
+        base_url="https://vertex-proxy.example/v1",
+        project="configured-project",
+        location="us-central1",
+    ).profile
+
+    options = GoogleGenerateContentProvider()._http_options(profile, 12.5)
+
+    assert options.base_url == "https://vertex-proxy.example/v1"
+
+
+@pytest.mark.parametrize("location", [None, "us-central1/evil"])
+def test_vertex_endpoint_defensively_rejects_unsafe_constructed_locations(
+    location: str | None,
+) -> None:
+    """Bypassed profile validation cannot inject a Vertex endpoint hostname."""
+    with pytest.raises(LlmConfigurationError):
+        GoogleGenerateContentProvider()._vertex_base_url(location)
+
+
+@pytest.mark.parametrize(
+    "credential_error",
+    [
+        DefaultCredentialsError("missing ADC"),
+        OSError("unreadable service account"),
+        ValueError("malformed service account"),
+    ],
+)
+def test_vertex_credential_loading_failures_are_configuration_errors(
+    credential_error: Exception,
+) -> None:
+    """ADC/file discovery and parse errors never escape the plugin error boundary."""
+    provider = GoogleGenerateContentProvider()
+    if isinstance(credential_error, DefaultCredentialsError):
+        target = _target(
+            api=LlmProviderApi.GOOGLE_VERTEX,
+            api_key=None,
+            project="configured-project",
+            location="us-central1",
+        )
+        patcher = patch(
+            "spakky.plugins.llm.providers.google.google.auth.default",
+            side_effect=credential_error,
+        )
+    else:
+        target = _target(
+            api=LlmProviderApi.GOOGLE_VERTEX,
+            api_key=None,
+            credential_strategy=GoogleCredentialStrategy.SERVICE_ACCOUNT_FILE,
+            project="configured-project",
+            location="us-central1",
+            service_account_file="/mounted/google.json",
+        )
+        patcher = patch(
+            "spakky.plugins.llm.providers.google.service_account.Credentials.from_service_account_file",
+            side_effect=credential_error,
+        )
+
+    with patcher, pytest.raises(LlmConfigurationError):
+        provider._client(target, timeout_seconds=12.5)
+
+
+@pytest.mark.parametrize(
+    ("strategy", "service_account_file"),
+    [
+        (GoogleCredentialStrategy.SERVICE_ACCOUNT_FILE, None),
+        (GoogleCredentialStrategy.API_KEY, None),
+    ],
+)
+def test_vertex_credentials_defensively_reject_invalid_constructed_profiles(
+    strategy: GoogleCredentialStrategy,
+    service_account_file: str | None,
+) -> None:
+    """Bypassed profile validation cannot trigger credential fallback."""
+    profile = LlmProfile.model_construct(
+        provider="google",
+        api=LlmProviderApi.GOOGLE_VERTEX,
+        google_credential_strategy=strategy,
+        google_project="configured-project",
+        google_location="us-central1",
+        google_service_account_file=service_account_file,
+    )
+
+    with pytest.raises(LlmConfigurationError):
+        GoogleGenerateContentProvider()._vertex_credentials(profile)
+
+
+@pytest.mark.parametrize(
+    ("auth_error", "expected_error"),
+    [
+        (GoogleAuthTransportError("offline"), LlmTransportError),
+        (RefreshError("invalid credential"), LlmConfigurationError),
+    ],
+)
+@pytest.mark.parametrize("operation", ["complete", "stream"])
+async def test_google_auth_request_failures_are_normalized(
+    auth_error: Exception,
+    expected_error: type[AbstractLlmError],
+    operation: str,
+) -> None:
+    """Credential refresh and transport failures stay in the typed LLM boundary."""
+    models = (
+        _RecordingModels(complete_error=auth_error)
+        if operation == "complete"
+        else _RecordingModels(stream_start_error=auth_error)
+    )
+
+    with (
+        patch(
+            "spakky.plugins.llm.providers.google.genai.Client",
+            return_value=_RecordingClient(models),
+        ),
+        pytest.raises(expected_error),
+    ):
+        if operation == "complete":
+            await GoogleGenerateContentProvider().complete(_target(), _request())
+        else:
+            await _collect(GoogleGenerateContentProvider(), _target(), _request())
 
 
 def test_google_provider_rejects_foreign_api_profiles() -> None:
@@ -1112,8 +1424,10 @@ async def test_stream_maps_reasoning_text_tool_structured_usage_and_signature() 
     assert done.usage.output_tokens == 4
     assert done.usage.total_tokens == 10
     assert done.metadata == {
+        "model_ref": "support/primary",
         "provider": "google",
-        "profile": "gemini",
+        "profile": "google-developer",
+        "model": "gemini-2.5-pro",
         "finish_reason": "STOP",
     }
     assert client.aio.entered is True

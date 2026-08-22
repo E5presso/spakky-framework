@@ -105,7 +105,7 @@ flowchart LR
 | HTTP API를 FastAPI 위에 올리기 | [FastAPI 통합](guides/fastapi.md) |
 | 데이터베이스와 트랜잭션 붙이기 | [데이터베이스](guides/sqlalchemy.md) |
 | 인증/인가 요구사항을 특정 provider에 묶이지 않게 선언하기 | [인증/인가](guides/security.md) |
-| 긴 실행, 도구 호출, 승인 흐름이 있는 Agent 만들기 | [AI Agent 개발](guides/agents.md), [AI Agent 심화](guides/agents-advanced.md), [AG-UI](guides/agent-ag-ui.md), [A2A](guides/agent-a2a.md), [MCP](guides/agent-mcp.md) |
+| 긴 실행, 모델 라우팅, 도구 호출, 승인 흐름이 있는 Agent 만들기 | [AI Agent 개발](guides/agents.md), [LLM 모델 라우팅](guides/llm-routing.md), [AI Agent 심화](guides/agents-advanced.md), [AG-UI](guides/agent-ag-ui.md), [A2A](guides/agent-a2a.md), [MCP](guides/agent-mcp.md) |
 
 ## 다음 단계
 

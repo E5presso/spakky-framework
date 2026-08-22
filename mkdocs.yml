@@ -171,6 +171,7 @@ nav:
       - 개요: sections/agent.md
       - 기초:
           - AI Agent 개발: guides/agents.md
+          - LLM 모델 라우팅: guides/llm-routing.md
           - CodeAssistant 에이전트 예제: guides/agent-code-assistant.md
       - 심화:
           - AI Agent 심화: guides/agents-advanced.md
@@ -236,3 +237,4 @@ nav:
       - ADR-0013 선언형 Agent 루프 소유·프로토콜 중립: adr/0013-declarative-agent-loop-ownership.md
       - ADR-0014 AI PR 리뷰 자동 승인 정책: adr/0014-ai-pr-review-auto-approval-policy.md
       - ADR-0015 Multi-provider LLM official SDK adapters: adr/0015-multi-provider-llm-official-sdk-adapters.md
+      - ADR-0016 Operator-owned model catalog와 opaque model routing: adr/0016-operator-owned-model-catalog.md

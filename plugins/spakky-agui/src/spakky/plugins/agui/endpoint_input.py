@@ -15,7 +15,10 @@ RESUME_APPROVAL_INSTRUCTION = "Resume the pending approval decision."
 """Instruction seed used when an AG-UI resume frame carries no user text."""
 
 MODEL_SELECTION_FORWARDED_KEY = "modelSelection"
-"""forwardedProps key carrying a run-scoped provider/model selector."""
+"""forwardedProps key carrying a run-scoped model catalog reference."""
+
+MODEL_REF_SELECTION_KEY = "modelRef"
+"""Canonical modelSelection key carrying the opaque model catalog reference."""
 
 RUN_METADATA_FORWARDED_KEY = "metadata"
 """forwardedProps key carrying extra core RunAgentInput metadata."""
@@ -93,18 +96,20 @@ def _model_selection_from_forwarded(
     """Decode forwardedProps.modelSelection into the typed run selector."""
     if forwarded is None:
         return None
-    value = forwarded.get(MODEL_SELECTION_FORWARDED_KEY)
-    if value is None:
+    if MODEL_SELECTION_FORWARDED_KEY not in forwarded:
         return None
+    value = forwarded[MODEL_SELECTION_FORWARDED_KEY]
     if not isinstance(value, Mapping):
         raise AgUiRunResolutionError("AG-UI modelSelection must be an object")
     selection = cast(Mapping[str, object], value)
-    return ModelSelection(
-        provider=_optional_text(selection.get("provider"), "provider"),
-        model=_optional_text(selection.get("model"), "model"),
-        profile=_optional_text(selection.get("profile"), "profile"),
-        metadata=_json_object(selection.get("metadata"), "modelSelection.metadata"),
-    )
+    if set(selection) != {MODEL_REF_SELECTION_KEY}:
+        raise AgUiRunResolutionError(
+            "AG-UI modelSelection must contain exactly modelRef"
+        )
+    model_ref = selection[MODEL_REF_SELECTION_KEY]
+    if not isinstance(model_ref, str) or not model_ref.strip():
+        raise AgUiRunResolutionError("AG-UI modelSelection.modelRef is invalid")
+    return ModelSelection(model_ref=model_ref)
 
 
 def _metadata_from_forwarded(
@@ -123,19 +128,8 @@ def _metadata_from_forwarded(
     return metadata
 
 
-def _optional_text(value: object, field: str) -> str | None:
-    """Decode optional model selector text."""
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise AgUiRunResolutionError(f"AG-UI modelSelection.{field} is invalid")
-    return value
-
-
 def _json_object(value: object, field: str) -> JsonObject:
     """Decode a JSON object supplied by forwardedProps."""
-    if value is None:
-        return {}
     if not isinstance(value, Mapping):
         raise AgUiRunResolutionError(f"AG-UI forwardedProps.{field} must be an object")
     return {

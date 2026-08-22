@@ -353,33 +353,33 @@ app = (
 model = app.container.get(type_=IAgentModel)
 ```
 
-`spakky-llm`은 `SPAKKY_LLM__` 접두사의 중첩 환경변수로 operator-owned
-profile allowlist를 구성합니다. 예를 들어 Anthropic profile 하나를 기본값으로
-등록하려면 다음처럼 설정합니다.
+`spakky-llm`은 `SPAKKY_LLM__` 접두사의 중첩 환경변수로 operator-owned connection
+profile과 logical model catalog를 구성합니다. Agent 코드는 provider 이름이나 실제
+model ID를 알지 않고 `support/primary` 같은 안정된 ref만 사용합니다.
 
 ```bash
-export SPAKKY_LLM__DEFAULT_PROFILE=claude
-export SPAKKY_LLM__PROFILES__CLAUDE__PROVIDER=anthropic
-export SPAKKY_LLM__PROFILES__CLAUDE__API=anthropic-messages
-export SPAKKY_LLM__PROFILES__CLAUDE__MODEL=claude-opus-4-1
-export SPAKKY_LLM__PROFILES__CLAUDE__API_KEY="$ANTHROPIC_API_KEY"
+export SPAKKY_LLM__DEFAULT_MODEL='support/primary'
+export SPAKKY_LLM__PROFILES__MANAGED_TEXT__PROVIDER='anthropic'
+export SPAKKY_LLM__PROFILES__MANAGED_TEXT__API='anthropic-messages'
+export SPAKKY_LLM__PROFILES__MANAGED_TEXT__API_KEY="$ANTHROPIC_API_KEY"
+export SPAKKY_LLM__MODELS='{"support/primary":{"profile":"managed_text","model":"claude-opus-4-1","capability":{"supports_tools":true,"supports_structured_output":true}}}'
 ```
 
-연결 설정은 fail closed합니다. 알 수 없는 top-level `SPAKKY_LLM__` key와 profile
-필드는 시작 단계에서 거부됩니다. Standard OpenAI, Anthropic, Google profile의
-`base_url`을 생략하면 adapter가 코드에 고정된 각 공식 endpoint를 사용하므로
-`OPENAI_BASE_URL`이나 `ANTHROPIC_BASE_URL`이 연결을 바꾸지 못합니다. Google client는
-`vertexai=False`로 생성되어 `GOOGLE_GENAI_USE_VERTEXAI`도 적용되지 않습니다. Custom
-header는 profile의 `headers`로만 등록하며,
+연결 설정은 fail closed합니다. 알 수 없는 top-level `SPAKKY_LLM__` key, profile,
+route field는 시작 단계에서 거부됩니다. Standard OpenAI와 Anthropic profile의
+`base_url`을 생략하면 adapter가 코드에 고정된 공식 endpoint를 사용하므로
+SDK ambient endpoint가 연결을 바꾸지 못합니다. Gemini Developer API와 Vertex AI도
+서로 다른 API family와 credential strategy로 명시합니다. Custom header는 profile의
+`headers`로만 등록하며,
 `OPENAI_CUSTOM_HEADERS` 또는 `ANTHROPIC_CUSTOM_HEADERS`가 process 환경에 있으면
 configuration error로 중단합니다. 세부 endpoint와 검증 규칙은
 [LLM 연결 설정 경계](../api/plugins/spakky-llm.md#llm-connection-boundary)를 확인하세요.
 
-`ModelSelection`은 등록된 profile과 일치하는 provider를 선택하고, 필요하면 그
-profile의 연결 정보를 유지한 채 model id만 요청별로 덮어씁니다. 요청 metadata는
-`base_url`, API key, headers를 바꿀 수 없습니다. 자세한 전체 profile 필드와
-OpenAI, Anthropic, Google, vLLM 예시는
-[spakky-llm API Reference](../api/plugins/spakky-llm.md#llm-profile-configuration)를 확인하세요.
+`ModelSelection`은 `model_ref` 하나만 받습니다. Router는 이 opaque key를 operator
+catalog에서 exact lookup하며 `/`를 provider 구분자로 해석하거나 raw model로 fallback하지
+않습니다. 요청 metadata는 profile, physical model, base URL, API key, headers를 바꿀 수
+없습니다. Direct construction, environment 설정, OpenRouter, vLLM, Anthropic, Gemini
+Developer API, Vertex AI recipe는 [LLM 모델 라우팅](llm-routing.md)을 확인하세요.
 
 플러그인은 `LlmConfig`, 세 공식 SDK provider adapter, `LlmAgentModel`을 등록하고
 `IAgentModel -> LlmAgentModel` binding을 설정합니다. SDK가 인증, retry, typed
@@ -455,7 +455,14 @@ Pydantic AI와 공유하는 것은 선언형 tool catalog라는 개발 경험입
 도구·model·repository는 **생성자 DI**로 주입합니다. 표준 runner는 tool result를
 model에 재주입하지 않으므로 multi-step 응답 생성은 custom `execute()`의 책임입니다.
 
-AG-UI나 A2A처럼 protocol fidelity가 필요한 adapter를 직접 만들 때는 coarse한 `AgentYield`를 재해석하지 말고 `IAgentRunnerFactory.open_runner(agent, run_input=run_input)`으로 request-scoped runner를 열고 `runner.run_events(run_input)`을 사용합니다. 이 factory 경로를 거쳐야 `spakky-mcp`의 외부 MCP tool 합류, 인증 세션 수명주기, `IAgentModelResolver` 기반 runtime model routing이 모두 적용됩니다. `AgentEvent`는 message/reasoning delta, tool call start/args/end/result, run/step boundary, pause, state, artifact를 분리해 내보내므로 adapter가 wire protocol 이벤트로 1:1 투영할 수 있습니다.
+AG-UI나 A2A처럼 protocol adapter를 직접 만들 때는 coarse한 `AgentYield`를 재해석하지
+말고 `IAgentRunnerFactory.open_runner(agent, run_input=run_input)`으로 request-scoped
+runner를 열고 `runner.run_events(run_input)`을 사용합니다. 이 factory 경로를 거쳐야
+`spakky-mcp`의 외부 MCP tool 합류, 인증 세션 수명주기, `IAgentModelResolver` 기반
+runtime model routing이 모두 적용됩니다. `AgentEvent`는 message/reasoning delta, tool
+call lifecycle, run/step boundary, pause, state, artifact를 분리해 제공하지만, 각 adapter는
+대상 protocol의 framing과 상태 모델에 맞춰 event를 확장·축약하거나 지원하지 않는
+필드를 생략할 수 있습니다.
 
 ```python
 from spakky.agent import IAgentRunnerFactory, RunAgentInput
@@ -503,11 +510,22 @@ flowchart LR
 외부 MCP 서버를 Agent가 소비하게 만들 때는 Agent annotation을 추가하지 않습니다. 외부 서버는 `spakky-mcp`의 `McpConfig.servers` 또는 `RunAgentInput.metadata["mcp"]["servers"]`에서 선택하고, 플러그인이 run마다 lazy `mcp_search_tools`/`mcp_call_tool` 도구를 catalog에 합류시킵니다.
 
 모델도 Agent class에 이름을 굽지 않습니다. Agent는 `IAgentModel` port만 주입받고,
-사용자나 서비스가 profile/provider/model을 고르는 경우
-`RunAgentInput.model_selection`으로 전달합니다. Runner는 이를
-`ModelRequest.model_selection`에 싣고, `spakky-llm`의 `LlmAgentModel`은 허용된
-profile과 API family를 골라 OpenAI Chat Completions, Anthropic Messages 또는
-Google GenerateContent adapter로 라우팅합니다.
+서비스가 operator catalog의 논리 모델을 고르면 다음처럼 전달합니다.
+
+```python
+from spakky.agent import ModelSelection, RunAgentInput
+
+
+run_input = RunAgentInput(
+    state_id="run-42",
+    instruction="고객 문의를 분류해 주세요.",
+    model_selection=ModelSelection(model_ref="support/primary"),
+)
+```
+
+Runner는 이 값을 `ModelRequest.model_selection`에 싣고, catalog-aware
+`LlmAgentModel`이 route와 connection profile을 해석해 OpenAI Chat Completions,
+Anthropic Messages, Gemini Developer API 또는 Vertex AI adapter로 라우팅합니다.
 
 Protocol marker는 아래 순서를 문서화된 표준으로 사용합니다. Python decorator는 아래에서 위로 적용되므로 `@Agent`가 class에 가장 가까이 놓이고, protocol marker가 같은 class 위에 metadata를 덧붙입니다.
 

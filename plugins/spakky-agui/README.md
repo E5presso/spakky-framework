@@ -56,7 +56,8 @@ graph LR
 
 - **`AgentRunner.run_events()`**: 런너가 중립 `AgentEvent` taxonomy를 native로 방출하는
   스트림입니다. 메시지/추론 delta, 도구 호출 `start`/`args-delta`/`end`/`result` 생명주기,
-  run/step 경계를 각각 별개 이벤트로 내보내므로, 어댑터는 별도 재구성 없이 1:1로 투영합니다.
+  run/step 경계를 각각 별개 이벤트로 내보냅니다. AG-UI는 이 source event를 그대로 복사하지 않고
+  protocol이 요구하는 START/CONTENT/END frame으로 조립하거나 protocol에 없는 metadata를 생략합니다.
 - **`AgUiProjector`**: 중립 이벤트의 delta를 AG-UI의 START/CONTENT/END 프레이밍으로
   투영하는 상태 기계입니다. 열린 message/reasoning/tool 프레임을 추적하고, 스트림이
   중간에 끊겨도 `finish()`가 열린 프레임을 닫아 와이어 형식을 보존합니다.
@@ -131,6 +132,18 @@ class Researcher:
 server를 고르면 AG-UI `forwardedProps.mcp`가 core `RunAgentInput.metadata["mcp"]`로 변환되고,
 `spakky-mcp`가 그 run에만 toolset을 합류시킵니다.
 
+Inbound mapping은 `runId` → `state_id`, `threadId` → `conversation_id`, optional
+`parentRunId` → `parent_run_id`, 마지막 nonblank text user message → `instruction` 순서입니다.
+Non-text user content는 현재 `ModelMessage` content part로 변환하지 않고 이전 text user message를
+계속 찾습니다. `forwardedProps.metadata`의 JSON object를 run metadata로 먼저 복사한 뒤 explicit
+`forwardedProps.mcp`가 `metadata["mcp"]`를 설정하므로 같은 key가 충돌하면 explicit `mcp`가 우선합니다.
+
+Run별 model 선택은 `forwardedProps.modelSelection` 안의 `modelRef` 하나로 전달합니다. 이 값은
+operator가 공개한 case-sensitive opaque catalog key이며 `/`를 provider/model 구분자로 해석하지
+않습니다. Profile, provider, physical model, endpoint나 credential은 AG-UI caller surface가
+아닙니다. `provider`, `profile`, `model`, `metadata` 같은 legacy/unknown sibling key가
+`modelSelection`에 있으면 request resolution이 fail closed합니다.
+
 ```json
 {
   "threadId": "conv-1",
@@ -139,7 +152,7 @@ server를 고르면 AG-UI `forwardedProps.mcp`가 core `RunAgentInput.metadata["
   "tools": [],
   "context": [],
   "forwardedProps": {
-    "modelSelection": {"provider": "openrouter", "model": "anthropic/claude-sonnet"},
+    "modelSelection": {"modelRef": "support/primary"},
     "mcp": {"servers": ["github"]}
   }
 }
@@ -153,9 +166,10 @@ WebSocket 클라이언트는 `/agui/ws`에 연결한 뒤 같은 AG-UI
 message로 순서대로 받습니다. 같은 연결에서 후속 `RunAgentInput`을 보내 승인 결정
 (`forwardedProps.approvalDecision` 또는 deferred tool-result message)을 전달할 수 있습니다.
 SSE/HTTP/WebSocket/stdio 입력 경계는 AG-UI `threadId`·`runId`·마지막 user text·approval
-resume 여부를 core `RunAgentInput`으로 변환합니다. 중립 `RunPausedEvent`나 delegated child
-event처럼 runner가 이미 `parent_run_id`를 가진 이벤트를 내보내면 projector는 이를 AG-UI
-`parentRunId`로 그대로 투영합니다.
+resume 여부와 optional logical `modelRef`를 core `RunAgentInput`으로 변환합니다. 중립 `RunPausedEvent`나 delegated child
+event의 attribution은 core에 남지만, wire-level `parentRunId`는 `RUN_STARTED` projection에서
+`AgentEventAttribution.parent_run_id`를 사용합니다. 다른 event의 attribution·arbitrary metadata를
+모든 AG-UI payload에 반복해서 복사하지 않습니다.
 
 CLI stdio 경계는 아직 host command가 필요하므로 lower-level `AgUiStdioCommand`를 사용합니다.
 입력은 `RunAgentInput` JSON 문서를 stdin 또는 문자열 인자로 받고 stdout에 AG-UI event payload를
@@ -187,13 +201,15 @@ approval id, tool call id, allowed decisions를 담고 있으므로 어댑터가
 
 ## 매핑 충실도
 
-도구·메시지·실행 이벤트 매핑은 `run_events()`를 통해 **완전 무손실(lossless)**입니다. 런너가
-메시지/추론 delta, 도구 호출 `start`/`args-delta`/`end`/`result` 생명주기, run/step 경계를
-각각 별개의 중립 `AgentEvent`로 native 방출하므로, 어댑터는 거친 yield를 재구성하지 않고
-1:1로 투영합니다. `run_events()`는 reasoning을 지원하지 않는 모델에서는 `REASONING_DELTA`를
-생략하며(graceful degrade), 현재 모델 루프가 생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/
-`ARTIFACT`는 live 런에서 방출되지 않습니다. projector는 taxonomy 완전성을 위해 이들 종류도
-계속 처리합니다.
+매핑은 protocol 의미를 보존하는 **명시적 projection**이지 event-by-event byte-for-byte 복사가
+아닙니다. 한 `MESSAGE_DELTA`가 message START+CONTENT를 열 수 있고 빈 content/args delta는 AG-UI
+제약 때문에 생략합니다. Stream 종료 시 열린 message/reasoning/tool frame은 `finish()`가 END로
+닫고, artifact는 native type이 없어 `CUSTOM(name="artifact")`로 변환합니다. State snapshot은
+`emit_state_snapshot=true`일 때만 방출하며 arbitrary neutral event metadata는 종류별로 필요한 값만
+옮깁니다. `RUN_STARTED`는 thread/run/parent attribution을, successful `RUN_FINISHED`는 thread/run과
+`metadata["output"]`을 사용합니다. `run_events()`는 reasoning을 지원하지 않는 route에서는
+`REASONING_DELTA`를 생략하고, 현재 모델 루프가 생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/
+`ARTIFACT`도 live 런에 나타나지 않지만 projector는 taxonomy coverage를 위해 처리합니다.
 
 ## 개발 검증
 

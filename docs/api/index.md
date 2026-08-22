@@ -37,7 +37,7 @@
 - [spakky-opentelemetry](plugins/spakky-opentelemetry.md) — OpenTelemetry 브릿지
 - [spakky-grpc](plugins/spakky-grpc.md) — gRPC 통합
 - [spakky-redis](plugins/spakky-redis.md) — Redis 캐시 백엔드
-- [spakky-llm](plugins/spakky-llm.md) — OpenAI, Anthropic, Google 및 vLLM 모델 어댑터
+- [spakky-llm](plugins/spakky-llm.md) — logical model catalog와 OpenAI, Anthropic, Gemini Developer API, Vertex AI, vLLM 어댑터
 - [spakky-agui](plugins/spakky-agui.md) — AG-UI SSE/HTTP streaming/WebSocket/stdio 어댑터
 - [spakky-a2a](plugins/spakky-a2a.md) — A2A AgentCard, task, delegation 어댑터
 - [spakky-mcp](plugins/spakky-mcp.md) — 외부 MCP 서버 도구를 Agent run에 lazy search/call 도구로 연결하는 어댑터

@@ -699,7 +699,7 @@ async def test_agent_runner_expect_reasoning_surfaced_when_capability_present() 
 
 async def test_agent_runner_expect_model_selection_passed_to_model_request() -> None:
     """RunAgentInput.model_selection은 ModelRequest.model_selection으로 전달된다."""
-    selection = ModelSelection(provider="openrouter", model="anthropic/claude")
+    selection = ModelSelection(model_ref="support/primary")
     model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
 
     await _collect(
@@ -718,7 +718,7 @@ async def test_agent_runner_expect_model_selection_passed_to_model_request() -> 
 
 async def test_agent_runner_expect_model_selection_used_for_capability() -> None:
     """Runner capability gating consults capability_for() with the run selector."""
-    selection = ModelSelection(provider="openrouter", model="anthropic/claude")
+    selection = ModelSelection(model_ref="support/primary")
     model = _SelectionAwareReasoningModel(
         (
             ModelStreamEvent(
