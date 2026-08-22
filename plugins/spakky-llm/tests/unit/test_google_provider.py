@@ -2,6 +2,7 @@
 
 from base64 import b64encode
 from collections.abc import AsyncIterator
+from typing import override
 from unittest.mock import patch
 
 import httpx
@@ -15,20 +16,34 @@ from google.auth.exceptions import (
 from google.genai import errors, types
 from pydantic import SecretStr
 from spakky.agent import (
+    Agent,
+    AgentExecutionSpec,
+    AgentRunner,
+    AgentYieldKind,
+    IAgentModel,
+    Idempotency,
     JsonObject,
     JsonSchemaConstraint,
+    KeepRecentMessagesCompactionStrategy,
     ModelCapability,
     ModelMessage,
     ModelMessageRole,
     ModelRequest,
+    ModelResponse,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolChoice,
+    ModelToolCall,
     ModelToolSpec,
+    ModelUsage,
     SamplingOptions,
+    RunAgentInput,
     StreamingOptions,
     StructuredOutputSpec,
     ToolCallingSpec,
+    ToolApprovalRequirement,
+    ToolEffects,
+    agent_tool,
 )
 
 from spakky.plugins.llm.config import (
@@ -48,6 +63,41 @@ from spakky.plugins.llm.error import (
 )
 from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers.google import GoogleGenerateContentProvider
+
+
+async def test_compacted_tool_group_maps_to_complete_google_native_history() -> None:
+    """KeepRecent(max_messages=1) preserves Google function call/response pairs."""
+    group = (
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            "",
+            metadata={
+                "tool_calls": (
+                    {"id": "call-1", "name": "search", "arguments": {"q": "x"}},
+                )
+            },
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            "result",
+            metadata={"call_id": "call-1", "tool_name": "search"},
+        ),
+    )
+    compacted = await KeepRecentMessagesCompactionStrategy(max_messages=1).compact(
+        (ModelMessage(ModelMessageRole.USER, "old"), *group),
+        ModelUsage(),
+        ModelCapability(),
+    )
+
+    native = GoogleGenerateContentProvider()._contents(ModelRequest(messages=compacted))
+
+    assert [content.role for content in native] == ["model", "user"]
+    assert native[0].parts is not None
+    assert native[0].parts[0].function_call is not None
+    assert native[0].parts[0].function_call.id == "call-1"
+    assert native[1].parts is not None
+    assert native[1].parts[0].function_response is not None
+    assert native[1].parts[0].function_response.id == "call-1"
 
 
 class _RecordingModels:
@@ -407,6 +457,7 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
     }
     assert client.aio.entered is True
     assert client.aio.closed is True
+
     assert client.closed is True
     assert models.model == "gemini-2.5-pro"
     assert isinstance(models.contents, list)
@@ -473,6 +524,91 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
     )
     assert http_options.retry_options is not None
     assert http_options.retry_options.attempts == 3
+
+
+class _RoundTripGoogleModel(IAgentModel):
+    """Runner-facing Google probe that inspects the next native request parts."""
+
+    def __init__(self, signature: str) -> None:
+        self.signature = signature
+        self.requests: list[ModelRequest] = []
+        self.restored_signature: bytes | None = None
+        self.provider = GoogleGenerateContentProvider()
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability(supports_tools=True)
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        return ModelResponse(content="unused")
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                tool_call=ModelToolCall(
+                    name="search",
+                    arguments={"query": "spakky"},
+                    call_id="google-call-1",
+                    metadata={"thought_signature": self.signature},
+                ),
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
+        contents = self.provider._contents(request)
+        assistant = next(content for content in contents if content.role == "model")
+        assert assistant.parts is not None
+        tool_part = next(
+            part for part in assistant.parts if part.function_call is not None
+        )
+        self.restored_signature = tool_part.thought_signature
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.TOKEN_DELTA,
+            token_delta="grounded",
+        )
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+
+@Agent(spec=AgentExecutionSpec(name="google_round_trip"))
+class _GoogleRoundTripAgent:
+    """Stateless tool agent used for Google thought-signature continuation."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+    @agent_tool(
+        schema_name="search",
+        effects=ToolEffects.read_only(),
+        idempotency=Idempotency.IDEMPOTENT,
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def search(self, query: str) -> str:
+        return f"result:{query}"
+
+
+async def test_runner_google_thought_signature_round_trips_to_next_native_part() -> (
+    None
+):
+    """Runner assistant history restores Google thought_signature on the next request."""
+    signature_bytes = b"google-round-trip-signature"
+    signature = b64encode(signature_bytes).decode("ascii")
+    model = _RoundTripGoogleModel(signature)
+    runner = AgentRunner.for_agent_instance(_GoogleRoundTripAgent(model))
+
+    items = [
+        item
+        async for item in runner.run(
+            RunAgentInput(state_id="google-round-trip", instruction="search")
+        )
+    ]
+
+    assert model.restored_signature == signature_bytes
+    assert len(model.requests) == 2
+    assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 1
 
 
 async def test_google_profile_fences_ambient_vertex_and_endpoint(monkeypatch) -> None:

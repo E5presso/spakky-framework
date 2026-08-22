@@ -4,12 +4,11 @@
 
 Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플리케이션 컴포넌트입니다. 일반 `@UseCase`처럼 생성자 주입을 받고, native adapter에는 `AgentYield` stream을, AG-UI/A2A 같은 protocol adapter에는 `AgentRunner.run_events()`의 `AgentEvent` stream을 제공합니다.
 
-핵심은 **표준 실행의 범위**입니다. [ADR-0013](../adr/0013-declarative-agent-loop-ownership.md)에
-따라 runner-backed 경로는 한 provider stream을 소비하고, 그 stream에서 나온 tool
-candidate를 승인·dispatch한 뒤 result, evidence, terminal output을 방출합니다. 실행한
-tool result를 새 `ModelRequest`에 넣거나 같은 invocation에서 model을 다시 호출하지는
-않습니다. model → tool → model 형태의 multi-step orchestration이 필요하면 custom
-`execute()`를 작성해야 합니다.
+핵심은 **표준 실행의 범위**입니다. Runner-backed 경로는 model response의 전체 tool
+batch를 먼저 검증하고 authority/approval gate를 모두 통과시킨 뒤 tool을 순서대로
+dispatch합니다. 이어서 assistant tool-call history와 `TOOL` result history를 다음
+`ModelRequest`에 넣어 model을 다시 호출하고, tool call이 없는 model step에서 final을
+정확히 한 번 방출합니다. 이 bounded iterative loop는 framework가 소유합니다.
 
 이 문서는 **기초 문서**입니다. 목표는 "파일을 만들고, 애플리케이션을 시작하고, Agent를 한 번 실행한다"입니다. Runner 내부 구조, approval resume 알고리즘, protocol event fidelity 같은 원리는 [AI Agent 심화](agents-advanced.md)에서 설명합니다.
 
@@ -21,12 +20,12 @@ tool result를 새 `ModelRequest`에 넣거나 같은 invocation에서 model을 
 | `RunAgentInput` | runner-backed Agent 실행을 시작하거나 재개하는 inbound contract입니다. |
 | `@agent_tool` | model이 호출할 수 있는 Python 도구를 선언합니다. |
 | `AgentYield` | Spakky-native HTTP, WebSocket, CLI adapter가 받을 실행 이벤트입니다. |
-| `AgentEvent` | AG-UI, A2A 같은 protocol adapter가 손실 없이 투영하는 중립 이벤트입니다. |
+| `AgentEvent` | AG-UI, A2A 같은 protocol adapter가 각 wire contract에 맞게 투영하는 중립 이벤트입니다. |
 
 `@Agent`가 도구만 선언하고 `execute()` 본문을 작성하지 않으면 프레임워크가 이
-single-pass 실행을 `execute()`로 자동 제공합니다. Pydantic AI에서 참고한 부분은
-tool 선언과 실행 배관을 Agent class 밖에 둔다는 개발 경험이며, 같은 invocation의
-반복 model/tool semantics까지 같다는 뜻은 아닙니다.
+iterative 실행을 `execute()`로 자동 제공합니다. Agent class는 tool과 business limit를
+선언하고 runner가 model/tool continuation, authority, checkpoint, terminal uniqueness를
+집행합니다.
 
 선언형 시그널 훅(`@on_signal`), approval, durable repository, context compaction, teammate, AG-UI/A2A/MCP 어댑터는 [AI Agent 심화](agents-advanced.md)에서 다룹니다. 실제 CodeAssistant 흐름을 보고 싶다면 [CodeAssistant 에이전트 예제](agent-code-assistant.md)를 이어서 보세요.
 
@@ -67,8 +66,8 @@ pip install spakky-agent spakky-llm spakky-agui spakky-a2a spakky-mcp "spakky-sq
 
 Agent는 transport를 직접 알지 않습니다. HTTP, WebSocket, CLI adapter는 container에서 Agent를 꺼내 `AgentYield`를 native 응답으로 바꾸고, AG-UI/A2A protocol adapter는 같은 runner의 `AgentEvent`를 각 프로토콜 이벤트로 투영합니다.
 
-중요한 방향은 아래와 같습니다. **Adapter가 Agent를 호출**하고, **runner가
-single-pass model/tool orchestration을 소유**합니다. Agent class는 runner가 사용할
+중요한 방향은 아래와 같습니다. **Adapter가 Agent를 호출**하고, **runner가 bounded
+iterative model/tool orchestration을 소유**합니다. Agent class는 runner가 사용할
 spec, tool catalog, signal hook, DI dependency를 담는 애플리케이션 component입니다.
 
 ```mermaid
@@ -79,15 +78,28 @@ flowchart TD
   AgentInstance --> Metadata["@Agent spec + @agent_tool catalog + @on_signal hooks"]
   Metadata --> Runner[AgentRunner]
   Input --> Runner
-  Runner --> Model[IAgentModel]
-  Runner --> Tools[AgentToolDispatcher]
+  Runner --> Model["IAgentModel: model-N"]
+  Model --> Batch["전체 tool batch 검증 + authority"]
+  Batch --> Tools["AgentToolDispatcher: tool-N"]
   Tools --> Ports[생성자 주입 port / repository / 외부 MCP tool]
+  Tools --> History["ASSISTANT tool-call + TOOL result history"]
+  History --> Runner
+  Batch --> Final[tool call 없는 step의 final]
   Runner --> Yield[AgentYield stream]
   Runner --> Event[AgentEvent stream]
   Yield --> Native[Spakky-native HTTP / WebSocket / CLI]
   Event --> Protocol[AG-UI / A2A projector]
   Native --> Client
   Protocol --> Client
+
+  classDef inbound fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+  classDef runner fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+  classDef action fill:#FFF3E0,stroke:#EF6C00,color:#E65100
+  classDef output fill:#ECEFF1,stroke:#546E7A,color:#263238
+  class Client,Adapter,Input,AgentInstance inbound
+  class Metadata,Runner,History runner
+  class Model,Batch,Tools,Ports action
+  class Final,Yield,Event,Native,Protocol output
 ```
 
 ## 처음 실행하는 파일 구조
@@ -218,7 +230,7 @@ class SimpleAgent:
 
 | mode | 언제 쓰나 | 생성자에 필요한 것 | 생략하면 |
 |------|-----------|-------------------|----------|
-| Custom `execute()` | 직접 stream을 만들거나 multi-step model/tool orchestration이 필요할 때 | 실행에 필요한 일반 Pod와 model/tool port | `execute()`가 없으면 single-pass runner-backed mode로 해석됩니다. |
+| Custom `execute()` | 표준 iterative loop와 다른 business orchestration이나 transport-independent yield를 직접 소유해야 할 때 | 실행에 필요한 일반 Pod와 port | `execute()`가 없으면 bounded iterative runner-backed mode가 합성됩니다. |
 | Runner-backed tool Agent | `execute()`를 생략하고 model이 `@agent_tool`을 호출하게 할 때 | `IAgentModel`과 tool이 사용할 app port | `IAgentModel`이 없으면 runner가 model 요청을 만들 수 없습니다. |
 | Durable runner-backed Agent | approval, cancel, resume, action-boundary recovery가 필요할 때 | `IAgentModel`, `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository` | repository provider가 없으면 bootstrap에서 실패해야 합니다. |
 | Protocol-exposed Agent | AG-UI/A2A 같은 inbound protocol로 Agent를 실행할 때 | 위 mode의 의존성 + host Pod(FastAPI/Starlette 등) | protocol marker를 빼면 Agent는 내부 component로만 남습니다. MCP는 Agent annotation이 아니라 run metadata로 외부 서버를 붙입니다. |
@@ -238,7 +250,7 @@ Runner-backed mode에서 runner는 생성자 parameter 이름이 아니라 **typ
 | `accepted_signals` | 실행 중 user message, approval decision, cancel, resume 등을 받을 때 | signal queue를 소비하지 않는 stateless 경로가 됩니다. |
 | `recovery` | action boundary resume/retry/skip 판단이 필요할 때 | 재시작 후 이어가기 계획을 만들지 않습니다. |
 | `streaming_exposure_mode` | protocol adapter가 token streaming을 얼마나 보수적으로 노출할지 정할 때 | `BALANCED`가 사용됩니다. |
-| `limits` / `timeout_seconds` | 실행 제한을 spec에 남길 때 | runner/provider 기본값에 의존합니다. |
+| `limits` | model step, 실제 tool call, 누적 provider token usage, wall-clock 실행 시간을 제한할 때 | `max_steps=8`, `max_tool_calls=32`, token/time 제한 없음이 사용됩니다. |
 | `teammates` / `delegation_allowed` | local/remote Agent에게 일을 위임할 때 | delegation tool이 만들어지지 않습니다. |
 | `compaction` | 긴 멀티턴 history를 압축해야 할 때 | context가 길어져도 압축 전략을 적용하지 않습니다. |
 | `metadata` | adapter나 운영 도구가 읽을 작은 문자열 metadata가 필요할 때 | 추가 metadata가 없습니다. |
@@ -388,17 +400,17 @@ JSON/tool 검증을 맡습니다. Adapter는 tool을 실행하지 않으며 runn
 stream의 candidate 승인과 dispatch를 담당합니다.
 테스트에서는 network가 없는 scripted `IAgentModel` fake를 만들어 token이나 tool event를 원하는 순서로 내보내면 됩니다.
 
-## 선언형 Agent: single-pass 실행 맡기기
+## 선언형 Agent: iterative 실행 맡기기
 
-앞의 예제는 `execute()` 본문을 직접 작성했습니다. 한 번의 model stream에서 나온
-tool candidate를 승인·실행하고 결과를 외부에 내보내는 정도라면 본문을 생략할 수
-있습니다. `@Agent`가 도구만 선언하면 runner는 model request 한 번, stream 소비,
-candidate dispatch, result/evidence/final 방출로 이어지는 single-pass `execute()`를
-합성합니다.
+앞의 예제는 `execute()` 본문을 직접 작성했습니다. 표준 model/tool continuation을
+사용한다면 본문을 생략하세요. `@Agent`가 spec과 도구를 선언하면 runner가 반복 model
+step, whole-batch validation/authority, 순차 tool dispatch, tool-result history 재주입,
+다음 model step, final까지 이어지는 `execute()`를 합성합니다.
 
 ```python
 from spakky.agent import (
     Agent,
+    AgentExecutionLimits,
     AgentExecutionSpec,
     EvidenceCapture,
     IAgentModel,
@@ -407,6 +419,13 @@ from spakky.agent import (
     ToolEffects,
     agent_tool,
 )
+from spakky.core.pod.annotations.pod import Pod
+
+
+@Pod()
+class NoteStore:
+    def read(self, topic: str) -> str:
+        return f"note:{topic}"
 
 
 @Agent(
@@ -414,6 +433,12 @@ from spakky.agent import (
         name="note_agent",
         objective="read and write notes for a topic",
         instructions="Use the declared tools to manage the user's notes.",
+        limits=AgentExecutionLimits(
+            max_steps=8,
+            max_tool_calls=32,
+            max_tokens=100_000,
+            timeout_seconds=300.0,
+        ),
     )
 )
 class NoteAgent:
@@ -429,12 +454,18 @@ class NoteAgent:
         evidence=EvidenceCapture.STRUCTURED,
         approval=ToolApprovalRequirement.NOT_REQUIRED,
     )
-    def read_note(self, topic: str) -> str:
+    async def read_note(self, topic: str) -> str:
         return self._notes.read(topic)
 ```
 
 `NoteAgent`에는 `execute()`가 없습니다. Runner가 spec(`instructions`), 생성자에
-주입된 `IAgentModel`, `@agent_tool` catalog로부터 single-pass 실행을 합성합니다.
+주입된 `IAgentModel`, `@agent_tool` catalog와 `limits`로부터 bounded iterative 실행을
+합성합니다. `max_steps=8`, `max_tool_calls=32`는 원래 기본값이고, 예제는 provider usage와
+wall-clock budget도 함께 켰습니다. `timeout_seconds`는 `AgentExecutionSpec`의 direct
+field나 alias가 아니며 모든 실행 제한은 `limits=AgentExecutionLimits(...)` 한 곳에 둡니다.
+예제의 `read_note()`가 `async def`인 이유도 이 deadline을 실제로 집행하기 위해서입니다.
+Deadline이 있는 batch에 in-process sync tool이 들어가면 runner는 중단 가능한 것처럼
+가장하지 않고 전체 batch를 실행 전에 `agent_sync_tool_timeout_unenforceable`로 거부합니다.
 호출 입력은 `RunAgentInput`입니다.
 
 ```python
@@ -450,10 +481,11 @@ async for item in agent.execute(
         return item.payload.output  # 타입은 AgentRunResult
 ```
 
-Pydantic AI와 공유하는 것은 선언형 tool catalog라는 개발 경험입니다. Spakky에서는
-`@Agent(spec=...)`, `@agent_tool`, runner-backed `execute(RunAgentInput)`를 사용하고,
-도구·model·repository는 **생성자 DI**로 주입합니다. 표준 runner는 tool result를
-model에 재주입하지 않으므로 multi-step 응답 생성은 custom `execute()`의 책임입니다.
+Spakky에서는 `@Agent(spec=...)`, `@agent_tool`, runner-backed
+`execute(RunAgentInput)`을 사용하고 도구·model·repository는 **생성자 DI**로 주입합니다.
+표준 runner가 tool-call assistant turn과 `TOOL` result를 provider-neutral history로 만든
+뒤 다음 model request를 소유하므로, 일반적인 multi-round tool use를 위해 custom
+`execute()`를 작성하지 않습니다.
 
 AG-UI나 A2A처럼 protocol adapter를 직접 만들 때는 coarse한 `AgentYield`를 재해석하지
 말고 `IAgentRunnerFactory.open_runner(agent, run_input=run_input)`으로 request-scoped
@@ -545,7 +577,7 @@ class Assistant:
 
 1. `@Agent` class에 `@agent_tool` 하나를 선언하고 `execute()`는 생략한다 (runner가 자동 제공).
 2. container에서 resolve해 `RunAgentInput`으로 호출하고 `AgentYieldKind.FINAL`을 확인한다.
-3. `IAgentModel`을 생성자로 받아 single-pass model stream과 tool candidate를 처리한다.
+3. `IAgentModel`을 생성자로 받아 bounded model/tool loop와 final을 실행한다.
 4. write/network/destructive tool을 추가하고 approval event를 처리한다.
 5. 실행 중 시그널 반응이 필요하면 `@on_signal` 훅을 선언한다.
 6. durable 실행이 필요해지면 state/signal/evidence repository를 붙인다.

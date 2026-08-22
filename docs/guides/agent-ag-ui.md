@@ -10,10 +10,10 @@ SSE, HTTP streaming, WebSocket, stdio로 노출합니다. 승인이 필요한 �
 
 ## 1. `@Agent` 선언
 
-선언형 Agent는 spec과 `@agent_tool` 메서드만 선언하면 프레임워크가 한 provider
-stream의 candidate approval/dispatch와 terminal 방출까지 single-pass 실행으로
-제공합니다. Tool result를 model에 재주입하는 multi-step 흐름은 custom `execute()`가
-필요합니다. 자세한 경계는 [AI Agent 심화](agents-advanced.md)를 확인하세요.
+선언형 Agent는 spec과 `@agent_tool` 메서드만 선언하면 프레임워크가 bounded iterative
+model/tool 실행을 제공합니다. Tool result는 다음 model request에 재주입되고 AG-UI는
+각 `model-N`/`tool-N` step과 마지막 `RUN_FINISHED`를 같은 run stream에 투영합니다.
+자세한 경계는 [AI Agent 심화](agents-advanced.md)를 확인하세요.
 
 ```python
 from spakky.agent import (
@@ -183,6 +183,13 @@ FastAPI SSE/HTTP/WebSocket 노출은 `@AGUICompatible` 선언만 사용합니다
 | `STATE_DELTA` | `STATE_DELTA` |
 | `ARTIFACT` | `CUSTOM` (name=`artifact`) |
 
+Provider가 candidate만 보내고 fine-grained tool frame을 생략하면 core runner가 없는
+`TOOL_CALL_START`/`TOOL_CALL_END`만 합성하므로 AG-UI에서도 balanced tool lifecycle을
+받습니다. 이미 provider가 보낸 frame은 중복하지 않습니다. Signal hook이나 기본 user
+message 처리의 `Progress`는 core에서 `ArtifactEvent(name="signal_progress")`가 된 뒤 AG-UI
+`CUSTOM` artifact로 투영됩니다. Non-Progress hook yield는
+`agent_signal_projection_unsupported` `RUN_ERROR`입니다.
+
 ## 4. deferred-tool HITL 흐름
 
 AG-UI에는 1급 승인 이벤트가 없습니다. 승인 요청은 `hitl_approval` 도구의 **deferred tool
@@ -212,13 +219,23 @@ protocol-specific mapping을 확장해야 합니다.
 `run_events()`는 protocol adapter가 coarse `AgentYield`를 역추론하지 않도록 세분화된
 source event를 제공합니다. 그렇다고 AG-UI projection이 무손실 또는 1:1인 것은 아닙니다.
 하나의 message/reasoning delta가 start/content/end lifecycle로 확장될 수 있고, 빈 delta는
-생략되며, stream 종료 시 열려 있는 frame은 `finish()`가 닫습니다. `RUN_FINISHED`는
+생략됩니다. 각 `STEP_FINISHED` 앞에서 projector가 열린 text/reasoning/tool frame을 먼저
+닫으므로 `model-1`과 `model-2`의 message lifecycle이 섞이지 않습니다. Stream 종료 시
+남은 frame은 `finish()`가 닫습니다. `RUN_FINISHED`는
 성공 시 `metadata["output"]`만 result로 사용하고 오류는 code/message만 전달합니다.
+
+예를 들어 tool round 하나는 `model-1` message frame → `model-1` step finish →
+`tool-1` result → `model-2` message frame → `model-2` step finish → 단일
+`RUN_FINISHED` 순서입니다. Message ID도 각각
+`{run_id}:model-1:message`, `{run_id}:model-2:message`로 분리됩니다.
 
 Reasoning을 지원하지 않는 선택 route에서는 `REASONING_DELTA`가 생략됩니다. State
 snapshot은 설정 gate를 따르고, artifact는 native artifact event가 없어 `CUSTOM`으로
 변환됩니다. 앞 절처럼 approval이 아닌 pause는 현재 projection할 수 없습니다.
 `parentRunId`는 `RunAgentInput.parent_run_id`가 전달된 실행의 `RUN_STARTED`에만 포함됩니다.
+Canonical cancel signal은 `code="cancelled"`와 `state`, `signal_id`, optional
+`requested_by` metadata를 가진
+`RUN_ERROR` 하나로 끝나며 success `RUN_FINISHED`를 추가하지 않습니다.
 
 ## API Reference
 

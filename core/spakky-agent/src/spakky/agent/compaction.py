@@ -18,6 +18,7 @@ strategies is just each applied to the previous one's output.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from spakky.agent.error import AgentDefinitionError
@@ -88,8 +89,9 @@ class KeepRecentMessagesCompactionStrategy(ICompactionStrategy):
         usage: ModelUsage,
         capability: ModelCapability,
     ) -> tuple[ModelMessage, ...]:
-        """Keep only the last ``max_messages`` messages of the history."""
-        return history[-self.max_messages :]
+        """Keep the recent window without splitting a tool invocation group."""
+        start = _recent_group_start(history, self.max_messages)
+        return history[start:]
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,10 +187,11 @@ class SummarizeOldTurnsCompactionStrategy(ICompactionStrategy):
         capability: ModelCapability,
     ) -> tuple[ModelMessage, ...]:
         """Summarize turns older than ``keep_recent`` ahead of the recent tail."""
-        if len(history) <= self.keep_recent:
+        start = _recent_group_start(history, self.keep_recent)
+        if start == 0:
             return history
-        older = history[: len(history) - self.keep_recent]
-        recent = history[len(history) - self.keep_recent :]
+        older = history[:start]
+        recent = history[start:]
         summary = await self.model.complete(self._summary_request(older))
         return (self._summary_message(summary.content), *recent)
 
@@ -210,3 +213,86 @@ class SummarizeOldTurnsCompactionStrategy(ICompactionStrategy):
             content=content,
             metadata={SUMMARY_MESSAGE_METADATA_KEY: SUMMARY_MESSAGE_METADATA_VALUE},
         )
+
+
+def validate_tool_call_groups(
+    history: tuple[ModelMessage, ...],
+) -> tuple[ModelMessage, ...]:
+    """Reject orphaned or incomplete assistant/tool correlation groups."""
+    _history_groups(history)
+    return history
+
+
+def _recent_group_start(
+    history: tuple[ModelMessage, ...],
+    max_messages: int,
+) -> int:
+    groups = _history_groups(history)
+    kept_messages = 0
+    group_index = len(groups)
+    while group_index > 0 and kept_messages < max_messages:
+        group_index -= 1
+        kept_messages += len(groups[group_index])
+    return sum(len(group) for group in groups[:group_index])
+
+
+def _history_groups(
+    history: tuple[ModelMessage, ...],
+) -> tuple[tuple[ModelMessage, ...], ...]:
+    groups: list[tuple[ModelMessage, ...]] = []
+    index = 0
+    while index < len(history):
+        message = history[index]
+        if message.role is ModelMessageRole.TOOL:
+            raise AgentDefinitionError("Compaction produced an orphan tool result")
+        raw_calls = message.metadata.get("tool_calls")
+        if message.role is not ModelMessageRole.ASSISTANT or raw_calls is None:
+            groups.append((message,))
+            index += 1
+            continue
+        call_ids = _assistant_tool_call_ids(raw_calls)
+        if len(call_ids) == 0:
+            groups.append((message,))
+            index += 1
+            continue
+        group = [message]
+        expected = set(call_ids)
+        observed: set[str] = set()
+        index += 1
+        while index < len(history) and history[index].role is ModelMessageRole.TOOL:
+            result = history[index]
+            call_id = _tool_result_call_id(result)
+            if call_id not in expected or call_id in observed:
+                raise AgentDefinitionError(
+                    "Compaction tool result correlation is invalid"
+                )
+            observed.add(call_id)
+            group.append(result)
+            index += 1
+        if observed != expected:
+            raise AgentDefinitionError("Compaction removed a required tool result")
+        groups.append(tuple(group))
+    return tuple(groups)
+
+
+def _assistant_tool_call_ids(value: object) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise AgentDefinitionError("Compaction assistant tool calls are invalid")
+    call_ids: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            raise AgentDefinitionError("Compaction assistant tool call is invalid")
+        call_id = item.get("id")
+        if not isinstance(call_id, str) or not call_id.strip():
+            raise AgentDefinitionError("Compaction assistant call id is invalid")
+        if call_id in call_ids:
+            raise AgentDefinitionError("Compaction assistant call ids must be unique")
+        call_ids.append(call_id)
+    return tuple(call_ids)
+
+
+def _tool_result_call_id(message: ModelMessage) -> str:
+    call_id = message.metadata.get("call_id")
+    if not isinstance(call_id, str) or not call_id.strip():
+        raise AgentDefinitionError("Compaction tool result call id is invalid")
+    return call_id

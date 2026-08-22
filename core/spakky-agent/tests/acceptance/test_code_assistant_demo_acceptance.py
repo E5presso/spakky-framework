@@ -30,6 +30,7 @@ from tests.unit.test_code_assistant_demo import (
     FakeStateRepository,
     FakeWorkspace,
     RecordingModel,
+    _approval_request_id,
     _approval_signal,
     _cancel_signal,
     _tool_call,
@@ -45,8 +46,18 @@ async def test_code_assistant_acceptance_expect_streaming_approval_signal_eviden
     signals = FakeSignalRepository(
         (
             _user_signal("run-1", "prefer the smaller patch"),
-            _approval_signal("run-1", "approval:run-1:workspace.write"),
-            _approval_signal("run-1", "approval:run-1:shell.command"),
+            _approval_signal(
+                "run-1",
+                _approval_request_id(
+                    "run-1",
+                    "write-1",
+                    {"path": "notes.md", "content": "approved"},
+                ),
+            ),
+            _approval_signal(
+                "run-1",
+                _approval_request_id("run-1", "shell-1", {"command": "printf ok"}),
+            ),
         )
     )
     evidence = FakeEvidenceRepository()

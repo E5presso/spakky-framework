@@ -78,10 +78,10 @@ graph LR
 | `RUN_STARTED` | `RUN_STARTED` (`threadId`=conversation, `runId`, `parentRunId`=neutral `parent_run_id`가 있을 때) |
 | `RUN_PAUSED` | 열린 프레임 닫기 → 승인 pause는 `hitl_approval` deferred tool `TOOL_CALL_START`/`ARGS`/`END` |
 | `RUN_FINISHED` | 열린 프레임 닫기 → `RUN_FINISHED` 또는 `RUN_ERROR` |
-| `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED` |
+| `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED`; finish 전에 해당 step의 열린 message/reasoning/tool frame 닫기 |
 | `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (`emit_state_snapshot=true`일 때만) |
 | `STATE_DELTA` | `STATE_DELTA` (JSON Patch) |
-| `ARTIFACT` | `CUSTOM` (name=`artifact`) — AG-UI에 native artifact 이벤트가 없음 |
+| `ARTIFACT` | `CUSTOM` (name=`artifact`) — content에 neutral artifact id/name/content; signal Progress는 artifact name=`signal_progress` |
 
 ## 사용법
 
@@ -148,6 +148,7 @@ operator가 공개한 case-sensitive opaque catalog key이며 `/`를 provider/mo
 {
   "threadId": "conv-1",
   "runId": "run-1",
+  "state": null,
   "messages": [{"id": "u1", "role": "user", "content": "check the issue"}],
   "tools": [],
   "context": [],
@@ -195,9 +196,10 @@ approval id, tool call id, allowed decisions를 담고 있으므로 어댑터가
    `{"request_id": "<approval id>", "decision": "approve|reject|modify|defer|cancel"}` 형태여야 하며,
    `modified_payload`와 `comment`를 선택적으로 포함할 수 있습니다.
 4. `ingest_decision`이 그 결정을 디코딩하여 durable signal queue에 `APPROVAL_DECISION`
-   signal로 적재하면, 런너가 `run_events()`를 다시 돌며 멈췄던 지점을 재개합니다 — APPROVE는
-   도구 결과와 `RUN_FINISHED`로, REJECT는 terminal error가 있는 runner 종료를 거쳐 AG-UI
-   `RUN_ERROR`로 투영됩니다.
+   signal로 적재하면, fresh runner가 persisted iterative checkpoint의 pending batch를 복원해 첫 model
+   step을 replay하지 않고 멈췄던 지점을 재개합니다. APPROVE/MODIFY는 tool을 실행하고 TOOL result
+   history를 붙여 다음 model step으로 이어지며, REJECT는 dispatch 없이 terminal error가 있는 runner
+   종료를 거쳐 AG-UI `RUN_ERROR`로 투영됩니다.
 
 ## 매핑 충실도
 
@@ -210,6 +212,28 @@ approval id, tool call id, allowed decisions를 담고 있으므로 어댑터가
 `metadata["output"]`을 사용합니다. `run_events()`는 reasoning을 지원하지 않는 route에서는
 `REASONING_DELTA`를 생략하고, 현재 모델 루프가 생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/
 `ARTIFACT`도 live 런에 나타나지 않지만 projector는 taxonomy coverage를 위해 처리합니다.
+
+Bounded iterative run에서는 `model-1`, `tool-1`, `model-2`처럼 step이 반복됩니다. Projector는
+각 neutral `STEP_FINISHED`를 AG-UI로 내보내기 전에 그 step에서 열린 text/reasoning/tool frame을
+먼저 닫으므로 message id와 frame이 다음 model/tool step으로 새지 않습니다. 각 model step은
+`{run_id}:model-{N}:message`/`reasoning` id를 사용합니다. `NO_STREAM_UNTIL_FINAL_GUARDED` agent는
+model `complete()`가 끝난 뒤에만 해당 step의 normalized frames를 내보내지만 tool continuation과
+후속 model step은 streaming path와 같은 방식으로 반복됩니다.
+
+Provider stream이 `TOOL_CALL_CANDIDATE`만 내는 경우 core cursor가 같은 call id의 neutral START와
+END를 한 번씩 합성하므로 AG-UI에도 START → END → RESULT가 정확히 한 세트만 나타납니다. 이미
+provider START/END를 받은 side는 candidate에서 다시 만들지 않습니다.
+
+Default USER_MESSAGE와 STEERING hook의 `Progress`는 core `run_events()`에서
+`ArtifactEvent(name="signal_progress")`로 변환되고 AG-UI에서는 artifact `CUSTOM` event로
+표면화됩니다. Hook이 Token/Tool 등 neutral projection을 정의하지 않은 yield를 내면 임의 frame으로
+바꾸거나 drop하지 않고 `agent_signal_projection_unsupported` RUN_ERROR로 닫습니다. Model/tool/
+checkpoint/approval framework failure도 각각의 typed runner code로 `RUN_ERROR`에 전달됩니다.
+
+Cancellation signal은 도착 위치와 관계없이 core의 canonical `cancelled` error(code, reason message,
+state/signal id, optional requester metadata)로 들어오고 projector가 code/message를 한 번의 `RUN_ERROR`로
+옮깁니다. Neutral cancel metadata 전체를 AG-UI error frame에 반복하지 않습니다. 이는 AG-UI transport
+자체의 disconnect가 in-process sync callable을 preempt한다는 뜻도 아닙니다.
 
 ## 개발 검증
 

@@ -1,9 +1,11 @@
 # ADR-0013: 선언형 Agent — 프레임워크 루프 소유·프로토콜 중립 코어·AG-UI/A2A/MCP 어댑터
 
+> **부분 대체**: 본 ADR의 framework loop ownership과 protocol-neutral adapter 경계는 계속 Accepted입니다. §1·§9·결과·검증 기준에 있던 one-request model/tool 제한과 custom `execute()` 요구는 [ADR-0017](0017-bounded-iterative-agent-loop.md)의 bounded iterative loop가 대체합니다.
+
 - **상태**: Accepted
 - **날짜**: 2026-06-24
 - **선행**: [ADR-0009 Agentic Hexagonal Architecture](0009-agentic-hexagonal-architecture.md)
-- **대체**: 해당 없음
+- **부분 대체**: [ADR-0017 Bounded iterative model/tool loop](0017-bounded-iterative-agent-loop.md)
 
 ## 맥락 (Context)
 
@@ -16,7 +18,7 @@
 
 ADR-0009는 이 두 결정을 명시적으로 닫지 않았다 (`spakky-agent-mcp`/`spakky-agent-a2a`를 "첫 마일스톤 범위 밖"으로만 표기). 본 ADR은 그 공백을 닫고, 후속 구현 그룹(C·D·E·F)이 따르는 단일 근거를 박제한다. 이 ADR은 ADR-0009를 대체하지 않고 그 위에 선언형 실행 모델과 프로토콜 경계를 얹는다.
 
-비교 기준점은 pydantic-ai다. pydantic-ai는 `Agent` 객체가 실행 루프를 소유하고(`agent.run()`/`run_stream()`), tool은 `@agent.tool` 데코레이터로 선언하며, model은 생성자/실행 인자로 주입하고, 외부 프로토콜은 `pydantic_ai.ui.ag_ui`(AG-UI 어댑터)와 `fasta2a`(A2A 어댑터)로 코어 밖에서 normalize한다. 코어 자체는 어떤 UI/transport 프로토콜에도 의존하지 않는다. 본 ADR이 참조하는 범위는 개발자가 model stream 소비와 tool dispatch 배관을 직접 작성하지 않는 ownership boundary이며, pydantic-ai의 다단계 model/tool 반복 의미 전체를 구현한다는 뜻은 아니다.
+비교 기준점은 pydantic-ai다. pydantic-ai는 `Agent` 객체가 실행 루프를 소유하고(`agent.run()`/`run_stream()`), tool은 `@agent.tool` 데코레이터로 선언하며, model은 생성자/실행 인자로 주입하고, 외부 프로토콜은 `pydantic_ai.ui.ag_ui`(AG-UI 어댑터)와 `fasta2a`(A2A 어댑터)로 코어 밖에서 normalize한다. 코어 자체는 어떤 UI/transport 프로토콜에도 의존하지 않는다. 본 ADR은 개발자가 model stream 소비와 tool dispatch 배관을 직접 작성하지 않는 ownership boundary를 채택했습니다. Bounded iterative model/tool와 UsageLimits 비교는 후속 ADR-0017이 구체화합니다.
 
 ## 결정 동인 (Decision Drivers)
 
@@ -71,13 +73,13 @@ ADR-0009는 이 두 결정을 명시적으로 닫지 않았다 (`spakky-agent-mc
 
 ### 1. 프레임워크가 표준 실행 orchestration을 소유한다 (설정 선언형)
 
-현재 표준 경로는 한 번의 model stream request를 열고, 그 stream에서 나온 tool-call candidate를 승인·dispatch하여 result/evidence로 방출한 뒤 terminal state와 final output으로 닫는다. 이 model stream 소비와 tool dispatch orchestration은 framework runner가 소유하며, 개발자는 `@Agent` spec으로 **무엇을** 실행할지만 선언한다 (어떤 model, 어떤 tool, 어떤 정책).
+표준 경로의 model stream 소비와 tool dispatch orchestration은 framework runner가 소유하며, 개발자는 `@Agent` spec으로 **무엇을** 실행할지만 선언한다(어떤 model, 어떤 tool, 어떤 정책). 이 ownership 결정은 유지됩니다.
 
-현재 runner는 실행된 tool result를 assistant/tool history가 포함된 새 `ModelRequest`에 재주입하거나 같은 `run()`/`run_events()` invocation에서 model을 다시 호출하지 않는다. 따라서 model → tool → model로 이어지는 single-invocation multi-step loop는 표준 경로의 일부가 아니며, 필요한 경우 custom `execute()`가 직접 orchestration해야 한다.
+후속 ADR-0017에 따라 현재 runner는 terminal model response의 candidate batch를 전체 검증·승인한 뒤 tool을 순서대로 dispatch하고, assistant tool-call와 TOOL result history를 다음 `ModelRequest`에 재주입해 bounded model → tool → model loop를 같은 invocation에서 반복합니다.
 
-- `execute()` 인터페이스는 유지한다 — `@Agent`는 ADR-0009대로 `@UseCase`와 동격인 호출 가능한 application component다. 다만 개발자가 `execute()` 본문에 model stream/tool dispatch 배관을 직접 작성하는 대신, runner가 spec과 DI graph로부터 single-pass 표준 실행 orchestration을 **자동 제공**한다. Tool result 재주입이나 반복 model 호출 같은 커스텀 제어가 필요할 때는 `execute()` 본문을 직접 작성한다.
+- `execute()` 인터페이스는 유지한다 — `@Agent`는 ADR-0009대로 `@UseCase`와 동격인 호출 가능한 application component다. 개발자가 `execute()` 본문에 model stream/tool dispatch 배관을 직접 작성하는 대신 runner가 spec과 DI graph로부터 bounded iterative orchestration을 **자동 제공**한다. 표준 contract 밖의 제어가 필요할 때만 custom `execute()`를 작성한다.
 - 의존성은 ADR-0009대로 생성자 DI로 주입한다. model(`IAgentModel`), tool(`@agent_tool`로 노출된 capability), outbound port는 생성자 인자다. `@Agent` spec은 이 의존성을 다시 선언하지 않는다.
-- 이 DX는 pydantic-ai의 ownership boundary를 참조한다 — 개발자는 비즈니스 의도(model·tool·정책)만 선언하고, 현재 single-pass 실행 orchestration은 프레임워크가 제공한다.
+- 이 DX는 pydantic-ai의 ownership boundary를 참조한다 — 개발자는 비즈니스 의도(model·tool·정책·limits)만 선언하고 실행 orchestration은 프레임워크가 제공한다.
 
 ### 2. 프로토콜 중립 코어 + 어댑터 분리 (대안 γ)
 
@@ -104,6 +106,8 @@ ADR-0009는 이 두 결정을 명시적으로 닫지 않았다 (`spakky-agent-mc
 - conversation id — 멀티턴 대화 식별자.
 
 이 taxonomy는 AG-UI `BaseEvent`로 어댑터에서 매핑 가능하되, A2A/MCP로도 매핑 가능하도록 어느 프로토콜에도 종속되지 않는다. ADR-0009의 public `AgentYield` vocabulary(`Token`/`Progress`/`Tool`/`Evidence`/`Approval`/`Final`/`Error`/`Cancel`)는 본 taxonomy로 일반화·정렬되며, 후속 구현 그룹이 정확한 매핑을 확정한다.
+
+현재 `run_events()`는 signal hook의 `Progress`를 `ArtifactEvent(name="signal_progress")`로 중립화합니다. 다른 `AgentYield` shape를 임의 event로 추측하지 않고 `agent_signal_projection_unsupported`로 fail closed합니다. `run()`의 public yield와 neutral event surface가 지원 shape를 달리할 수 있다는 점은 protocol adapter가 명시적으로 처리합니다.
 
 ### 4. ModelCapability descriptor + IAgentModel 스트림 계약 확장
 
@@ -139,6 +143,7 @@ context 압축은 교체 가능한(pluggable) `CompactionStrategy` 포트로 모
 - 프레임워크는 내장(built-in) 기본 전략을 제공한다.
 - compaction은 `@Agent` spec에 선언하고 실행 orchestration이 model request 전에 자동 적용한다 — 개발자가 `execute()` 본문에서 직접 호출하지 않는다.
 - ADR-0009 `ContextDigest`(압축 결과를 derived evidence로 append) 모델과 정렬한다 — compaction은 raw evidence를 대체하지 않는다.
+- Assistant tool-call와 그 call id들의 TOOL result를 correlation group으로 취급하며 built-in 전략과 custom 전략 결과를 매 단계 검증한다. Group을 자른 history는 provider request 전에 실패한다.
 
 ### 8. teammate (팀 모드) — `@Agent` spec 선언 + A2A 위임
 
@@ -155,7 +160,7 @@ multi-agent 팀 모드(teammate)는 `@Agent` spec으로 선언한다.
 프레임워크 소유:
 
 - building blocks (ADR-0009 model/tool/state/signal/evidence/delegation 등)
-- single-pass 실행 orchestration (본 ADR 결정 1)
+- bounded iterative 실행 orchestration (본 ADR 결정 1, 세부 의미는 ADR-0017)
 - 프로토콜 어댑터 (본 ADR 결정 2)
 - 인터페이스/계약 (`@Agent` spec, 이벤트 taxonomy, port)
 
@@ -178,7 +183,7 @@ v6.10.0 minor 릴리스로 출시한다. 현재 production 소비자가 없으�
 
 ### 부정적
 
-- 프레임워크가 single-pass 표준 orchestration을 소유하므로, tool result 재주입과 같은 invocation의 반복 model 호출을 포함한 multi-step 제어는 본문 직접 작성이라는 escape hatch가 필요하다.
+- 프레임워크가 bounded iterative orchestration과 limits·approval·checkpoint를 소유하므로 runner 구현의 복잡성과 검증 표면이 커집니다.
 - 중립 이벤트 taxonomy ↔ 세 프로토콜 매핑을 어댑터마다 정확히 정의해야 하며, taxonomy 누락은 특정 프로토콜에서 표현 불가로 드러난다.
 - ADR-0009의 명령형 `execute()` 예시와 하드 브레이크가 발생한다 — 마이그레이션 가이드가 필요하다 (현재 고객 없음으로 비용 수용).
 
@@ -191,7 +196,7 @@ v6.10.0 minor 릴리스로 출시한다. 현재 production 소비자가 없으�
 
 - `core/spakky-agent`는 `ag_ui`·`a2a-python`·MCP 라이브러리에 직접 의존하지 않는다.
 - AG-UI / A2A / MCP 어댑터가 각각 독립 어댑터로 분리되어 해당 프로토콜 라이브러리에만 의존한다.
-- `@Agent` spec 선언만으로 `ModelRequest` 한 번의 stream 소비, tool candidate 승인·dispatch, terminal output까지의 single-pass 실행이 동작한다.
+- `@Agent` spec 선언만으로 bounded model/tool rounds, tool result continuation, limit enforcement와 terminal output까지 동작한다.
 - HITL 도구 승인이 단일 pause → 승인요청 → resume으로 동작하고, AG-UI deferred tool과 A2A `input-required`로 각각 투영된다.
 - 영속 세션과 클라이언트 주입 이력 두 경로 모두로 멀티턴이 동작한다.
 - `CompactionStrategy` 포트가 교체 가능하고 내장 전략이 spec 선언으로 자동 적용된다.
@@ -208,3 +213,4 @@ v6.10.0 minor 릴리스로 출시한다. 현재 production 소비자가 없으�
 - [Pydantic AI — AG-UI Adapter (`pydantic_ai.ui.ag_ui`)](https://pydantic.dev/docs/ai/api/pydantic-ai/ag_ui)
 - [Pydantic AI — Deferred Tools / Human-in-the-Loop Approval](https://pydantic.dev/docs/ai/tools-toolsets/deferred-tools)
 - [Pydantic AI — Message History Processors (`compact_messages`)](https://pydantic.dev/docs/ai/api/models/base)
+- [ADR-0017: Bounded iterative model/tool loop](0017-bounded-iterative-agent-loop.md)

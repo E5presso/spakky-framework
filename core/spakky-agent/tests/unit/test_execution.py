@@ -1,6 +1,7 @@
 """Tests for agent execution contracts."""
 
 from collections.abc import AsyncGenerator, Generator
+from dataclasses import fields
 
 import pytest
 import tests.fixtures.future_agent_app as future_agent_app
@@ -41,8 +42,11 @@ def test_agent_execution_spec_expect_defaults_are_non_durable_and_balanced() -> 
     assert spec.output_type is None
     assert spec.recovery == RecoveryStrategy.NONE
     assert spec.streaming_exposure_mode == StreamingExposureMode.BALANCED
-    assert spec.timeout_seconds is None
     assert spec.limits == AgentExecutionLimits()
+    assert spec.limits.max_steps == 8
+    assert spec.limits.max_tool_calls == 32
+    assert spec.limits.max_tokens is None
+    assert spec.limits.timeout_seconds is None
     assert spec.teammates == ()
     assert spec.compaction is None
     assert spec.delegation_allowed is False
@@ -81,16 +85,49 @@ def test_agent_execution_spec_expect_accepts_adr_signal_vocabulary() -> None:
     assert spec.recovery == RecoveryStrategy.ACTION_BOUNDARY
 
 
-def test_agent_execution_spec_expect_rejects_non_positive_timeout() -> None:
-    """bootstrap 전 definition 단계에서 잘못된 timeout을 custom error로 거부한다."""
-    with pytest.raises(AgentDefinitionError):
-        AgentExecutionSpec(timeout_seconds=0)
+def test_agent_execution_spec_expect_has_no_legacy_timeout_alias() -> None:
+    """실행 timeout은 limits 한 곳에만 있고 spec alias는 존재하지 않는다."""
+    assert "timeout_seconds" not in {
+        descriptor.name for descriptor in fields(AgentExecutionSpec)
+    }
 
 
 def test_agent_execution_limits_expect_rejects_non_positive_timeout() -> None:
     """limits가 잘못된 실행 경계를 custom error로 거부한다."""
     with pytest.raises(AgentDefinitionError):
         AgentExecutionLimits(timeout_seconds=0)
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        AgentExecutionLimits(max_steps=1),
+        AgentExecutionLimits(max_tool_calls=1),
+        AgentExecutionLimits(max_tokens=1),
+    ],
+)
+def test_agent_execution_limits_expect_accepts_positive_bounds(
+    limits: AgentExecutionLimits,
+) -> None:
+    """모델 step, 실제 tool dispatch, provider usage 예산을 선언한다."""
+    assert limits.max_steps > 0
+    assert limits.max_tool_calls > 0
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"max_steps": 0},
+        {"max_tool_calls": 0},
+        {"max_tokens": 0},
+    ],
+)
+def test_agent_execution_limits_expect_rejects_non_positive_counts(
+    values: dict[str, int],
+) -> None:
+    """모든 count/token limit은 양수여야 한다."""
+    with pytest.raises(AgentDefinitionError):
+        AgentExecutionLimits(**values)
 
 
 def test_agent_expect_is_pod_stereotype_with_execution_spec_metadata() -> None:
@@ -221,15 +258,6 @@ def test_agent_execution_spec_expect_rejects_blank_objective() -> None:
     """objective는 공백 문자열일 수 없다."""
     with pytest.raises(AgentDefinitionError):
         AgentExecutionSpec(objective=" ")
-
-
-def test_agent_execution_spec_expect_rejects_conflicting_timeout_declarations() -> None:
-    """legacy timeout과 limits timeout이 동시에 다르면 거부한다."""
-    with pytest.raises(AgentDefinitionError):
-        AgentExecutionSpec(
-            timeout_seconds=10,
-            limits=AgentExecutionLimits(timeout_seconds=20),
-        )
 
 
 def test_agent_expect_rejects_non_class_target() -> None:

@@ -38,9 +38,9 @@ model = app.container.get(type_=IAgentModel)
 두 Google backend를 구현하는 `GoogleGenerateContentProvider`, `LlmAgentModel`을 등록하고
 `IAgentModel -> LlmAgentModel` binding을 설정합니다. Adapter가 도구를 실행하지는
 않습니다. 모델이 낸 `ModelToolCall` 후보를 검증해 반환하고, `spakky-agent` runner가
-한 provider stream 안에서 candidate를 승인·dispatch한 뒤 result/evidence/terminal을
-방출합니다. 표준 runner는 tool result를 model에 재주입하거나 같은 invocation에서
-model을 다시 호출하지 않습니다.
+candidate batch 전체를 다시 검증·승인한 뒤 순서대로 dispatch합니다. Runner는 assistant
+tool-call turn과 `TOOL` result를 다음 `ModelRequest`에 넣어 model/tool loop를 이어가고,
+tool call이 없는 step에서 final을 한 번 방출합니다.
 
 ## Model catalog와 profile 설정 { #llm-profile-configuration }
 
@@ -354,8 +354,10 @@ Streaming에서는 text/reasoning delta와 provider별 tool framing event가 먼
 방출합니다. 따라서 side effect 권한은 candidate 경계에서 검증 전 0개, 검증 후
 유효한 batch로 열립니다. 앞선 token이나 framing delta가 있었더라도 terminal 검증이
 실패하면 candidate는 하나도 방출되지 않습니다. 표준 `AgentRunner`는 이 candidate를
-승인·dispatch하지만 tool result를 같은 invocation의 model에 재주입하거나 model을
-다시 호출하지 않는 single-pass 실행이라는 제한은 그대로입니다.
+whole-batch catalog/binding/authority gate로 다시 검증합니다. Gate를 모두 통과하면 실제
+tool은 순차 dispatch되고 result는 `TOOL` history로 다음 model step에 전달됩니다. Batch
+사전검증은 0-dispatch 원자성을 제공하지만 여러 tool의 side effect를 하나의 transaction으로
+묶지는 않습니다.
 
 ### OpenAI와 Anthropic terminal reason
 
@@ -458,7 +460,9 @@ JSON을 decode하고 schema 검증합니다. 따라서 앞선 `TOKEN_DELTA`가 �
 
 ## Tool history
 
-이전 tool turn을 직접 `ModelMessage`로 조립한다면 `TOOL` message metadata에는
+표준 `AgentRunner`는 각 round의 assistant tool-call turn과 `TOOL` result history를
+자동으로 조립합니다. `IAgentModel`을 runner 없이 직접 호출해 이전 tool turn을
+`ModelMessage`로 조립한다면 `TOOL` message metadata에는
 `call_id`와 `tool_name`을 넣습니다. 앞선 `ASSISTANT` message metadata의
 `tool_calls`는 `id`, `name`, `arguments`를 가진 entry 목록입니다.
 
@@ -507,7 +511,7 @@ argument delta, tool candidate, structured output, usage, terminal event를
 ## 함께 보기
 
 - [LLM 모델 라우팅](../../guides/llm-routing.md): logical ref, profile, route, Google credential recipe를 확인합니다.
-- [AI Agent 개발](../../guides/agents.md): single-pass runner와 custom `execute()` 경계를 확인합니다.
+- [AI Agent 개발](../../guides/agents.md): bounded iterative runner와 선언형 tool 사용법을 확인합니다.
 - [AI Agent 심화](../../guides/agents-advanced.md): tool dispatch, approval, evidence 흐름을 확인합니다.
 - [IAgentModel 용어](../../glossary.md#iagentmodel): core outbound port와 provider plugin 관계를 확인합니다.
 

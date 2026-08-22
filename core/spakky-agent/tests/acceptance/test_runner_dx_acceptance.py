@@ -23,7 +23,6 @@ from spakky.agent import (
     Agent,
     AgentEvidence,
     AgentEvidenceKind,
-    AgentExecutionLimits,
     AgentExecutionSpec,
     AgentSignal,
     AgentSignalKind,
@@ -51,6 +50,7 @@ from spakky.agent import (
 )
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.main import initialize
+from spakky.agent.runner import _arguments_digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +70,6 @@ class NoteResult:
             AgentSignalKind.CANCEL,
         ),
         recovery=RecoveryStrategy.ACTION_BOUNDARY,
-        limits=AgentExecutionLimits(timeout_seconds=600),
     )
 )
 class DeclarativeAssistant:
@@ -127,13 +126,14 @@ async def test_declaration_only_agent_runs_tools_hitl_and_termination() -> None:
     signals = app.container.get(IAgentSignalRepository)
     states = app.container.get(IAgentStateRepository)
     evidence = app.container.get(IAgentEvidenceRepository)
+    approval_id = "approval:run-1:write-1:" + _arguments_digest({"topic": "agents"})
     signals.append(
         AgentSignal(
-            id="approval:run-1:note.write",
+            id=approval_id,
             agent_state_id="run-1",
             kind=AgentSignalKind.APPROVAL_DECISION,
             payload={
-                "request_id": "approval:run-1:note.write",
+                "request_id": approval_id,
                 "decision": ApprovalDecision.APPROVE.value,
             },
         )
@@ -176,6 +176,9 @@ async def test_declaration_only_agent_runs_tools_hitl_and_termination() -> None:
 class ScriptedModel(IAgentModel):
     """Scripted model streaming a token, two tool calls, then done."""
 
+    def __init__(self) -> None:
+        self._request_count = 0
+
     @property
     @override
     def capability(self) -> ModelCapability:
@@ -187,6 +190,14 @@ class ScriptedModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        if self._request_count > 0:
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA,
+                token_delta="done",
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
+        self._request_count += 1
         yield ModelStreamEvent(
             kind=ModelStreamEventKind.TOKEN_DELTA,
             token_delta="planning",

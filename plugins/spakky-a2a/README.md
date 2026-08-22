@@ -148,10 +148,26 @@ state snapshot/delta는 data part로 투영됩니다. `RUN_FINISHED`는 projecto
 executor가 stream 종료 후 complete/failed terminal transition을 한 번 적용하며, `RUN_PAUSED`는 즉시
 input-required/auth-required 상태로 변환합니다.
 
+Bounded iterative runner의 `model-1`, `tool-1`, `model-2`, … step은 각각 A2A working status metadata로
+표면화됩니다. Tool result artifact 뒤 다음 model step이 같은 Task/context에서 이어지고 terminal
+model step 뒤 executor가 complete를 한 번만 적용합니다. Candidate batch가 invalid·limit 초과·approval
+rejected이면 tool prefix artifact를 만들지 않고 failed outcome으로 닫습니다. Tool은 승인 뒤 순서대로
+실행되므로 앞 tool의 외부 side effect를 뒤 tool failure 시 rollback하는 transaction 의미는 없습니다.
+
 이 projection은 중립 event와 A2A event의 1:1 복사가 아닙니다. `AgentEventAttribution`과 arbitrary
 event metadata 전체를 wire에 반복 직렬화하지 않고, 위 event별 field만 사용합니다. 예를 들어 message
 id는 A2A message metadata, tool call name/id/phase는 status metadata, tool result는 artifact data part로
 각기 다른 protocol 위치에 배치됩니다.
+
+Candidate-only provider lifecycle은 core가 missing START/END를 한 번씩 합성하므로 A2A status metadata도
+중복 없이 start/end/result 순서를 관찰합니다. Default USER_MESSAGE와 STEERING hook의 Progress는
+`signal_progress` neutral artifact가 되어 A2A artifact로 추가됩니다. Neutral projection을 정의하지 않은
+signal-hook yield는 `agent_signal_projection_unsupported`, model/tool/checkpoint/approval framework failure는
+각 typed runner code를 가진 failed Task data part로 fail closed합니다.
+
+Active deadline이 있는 in-process sync tool batch는 tool artifact나 side effect를 만들기 전에
+`agent_sync_tool_timeout_unenforceable`로 실패합니다. 실제 timeout cancellation은 async tool에만 적용되며
+A2A request cancellation이 이미 실행 중인 sync Python callable을 preempt한다고 주장하지 않습니다.
 
 ## REST HTTP+JSON Transport
 
@@ -171,7 +187,19 @@ REST request/response body는 A2A SDK protobuf JSON encoding을 사용합니다.
 
 `SpakkyAgentExecutor`는 core `AgentRunner.run_events()` stream을 소비합니다. Approval/auth pause는 successful terminal `RunFinishedEvent`가 아니라 protocol-neutral `RunPausedEvent`로 들어옵니다. A2A projector는 `reason=approval_required`를 `TASK_STATE_INPUT_REQUIRED`로 매핑하고 approval id와 allowed decisions를 data part에 포함합니다. `reason=auth_required`는 `TASK_STATE_AUTH_REQUIRED`로 매핑하므로, run stream이 끝난 뒤 durable `state.reason`을 다시 조회하지 않아도 auth-required 상태를 표현할 수 있습니다.
 
+Core CANCEL signal은 어느 poll point에서든 canonical `cancelled` error shape로 `RunFinishedEvent`에 실리고
+executor가 failed Task message + data part로 투영합니다. 별도의 A2A `tasks/cancel` operation은 durable
+CANCEL signal을 enqueue한 뒤 caller가 기다리는 A2A Task를 즉시 canceled 상태로 갱신하는 transport
+동작이므로 두 표면을 같은 terminal projection으로 혼동하지 않습니다.
+
 Approval resume은 `approval_id`와 `decision`을 가진 inbound A2A data part로 전달됩니다. Executor는 `APPROVAL_DECISION` signal을 append하고 같은 task id로 `RunAgentInput(resume=True)`를 다시 실행합니다.
+
+Fresh resume runner는 state checkpoint의 pending batch/history/counters를 복원하므로 최초 model step을
+다시 호출하지 않습니다. `approve`는 original arguments를 dispatch하고 TOOL continuation 뒤 다음
+model step으로 진행합니다. `defer`는 input-required 상태를 유지하며 `reject`/`cancel`은 tool을 실행하지
+않습니다. Core runner는 `MODIFY`의 `modified_payload`를 signature에 다시 bind하는 계약을 갖지만,
+현재 A2A `_InboundApproval` mapping은 `approval_id`와 `decision`만 signal에 전달하므로 argument-bearing
+MODIFY payload를 이 boundary에서 지원한다고 간주해서는 안 됩니다.
 
 ## Task Store
 

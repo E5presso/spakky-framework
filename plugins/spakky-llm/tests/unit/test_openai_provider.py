@@ -1,8 +1,9 @@
 """Unit tests for the official OpenAI chat-completions provider."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping, Sequence
 from functools import partial
 from types import TracebackType
+from typing import cast
 
 import httpx2
 import pytest
@@ -20,6 +21,7 @@ from pytest import MonkeyPatch
 from spakky.agent import (
     JsonSchemaConstraint,
     JsonValue,
+    KeepRecentMessagesCompactionStrategy,
     ModelMessage,
     ModelMessageRole,
     ModelCapability,
@@ -28,6 +30,7 @@ from spakky.agent import (
     ModelStreamEventKind,
     ModelToolChoice,
     ModelToolSpec,
+    ModelUsage,
     SamplingOptions,
     StreamingOptions,
     StructuredOutputSpec,
@@ -51,6 +54,40 @@ from spakky.plugins.llm.error import (
 from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers import openai as openai_module
 from spakky.plugins.llm.providers.openai import OpenAIChatProvider
+
+
+async def test_compacted_tool_group_maps_to_complete_openai_native_history() -> None:
+    """KeepRecent(max_messages=1) preserves assistant/tool OpenAI correlation."""
+    group = (
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            "calling",
+            metadata={
+                "tool_calls": (
+                    {"id": "call-1", "name": "lookup", "arguments": {"q": "x"}},
+                )
+            },
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            "result",
+            metadata={"call_id": "call-1", "tool_name": "lookup"},
+        ),
+    )
+    compacted = await KeepRecentMessagesCompactionStrategy(max_messages=1).compact(
+        (ModelMessage(ModelMessageRole.USER, "old"), *group),
+        ModelUsage(),
+        ModelCapability(),
+    )
+
+    native = OpenAIChatProvider()._messages(ModelRequest(messages=compacted))
+
+    assert [message["role"] for message in native] == ["assistant", "tool"]
+    assistant = cast(Mapping[str, object], native[0])
+    calls = cast(Sequence[Mapping[str, object]], assistant["tool_calls"])
+    tool = cast(Mapping[str, object], native[1])
+    assert calls[0]["id"] == "call-1"
+    assert tool["tool_call_id"] == "call-1"
 
 
 class _FakeAsyncStream:

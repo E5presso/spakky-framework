@@ -1,19 +1,26 @@
 """Tests for the framework-owned AgentRunner execution loop."""
 
-from collections.abc import AsyncIterator, Mapping, Sequence
-from dataclasses import dataclass
+from asyncio import Event
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+from dataclasses import dataclass, replace
+from time import sleep
 from typing import cast, override
 
 import pytest
 from pydantic import BaseModel
+import spakky.agent.runner as runner_module
 
 from spakky.agent import (
     Agent,
+    AgentApprovalPlan,
+    AgentApprovalPlanAction,
     AgentEvidenceKind,
+    AgentExecutionLimits,
     AgentExecutionSpec,
     AgentTeammate,
     AgentRunner,
     AgentRunResult,
+    AgentSignal,
     AgentSignalKind,
     AgentState,
     AgentStateReason,
@@ -24,12 +31,14 @@ from spakky.agent import (
     AgentYield,
     AgentYieldKind,
     Approval,
+    ArtifactEvent,
     Cancel,
     ConversationTurn,
     Error,
     EvidenceCapture,
     Final,
     IAgentModel,
+    ICompactionStrategy,
     Idempotency,
     ITaskStore,
     JsonObject,
@@ -48,15 +57,20 @@ from spakky.agent import (
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolCall,
+    ModelUsage,
     Progress,
     RecoveryStrategy,
+    StreamingExposureMode,
     Token,
+    TimeoutPolicy,
     Tool,
     ToolApprovalRequirement,
     ToolEffects,
     agent_tool,
+    on_signal,
 )
 from spakky.agent.error import (
+    AgentDefinitionError,
     AgentModelConfigurationError,
     AgentPersistenceConfigurationError,
     AgentToolDispatchError,
@@ -78,6 +92,11 @@ from spakky.agent.event import (
     ToolCallStartEvent,
 )
 from spakky.agent.inbound import RunAgentInput
+from spakky.agent.runner import (
+    RUNNER_CHECKPOINT_METADATA_KEY,
+    _arguments_digest,
+    _history_with_approved_call,
+)
 from tests.unit.test_event import _to_a2a, _to_ag_ui
 from tests.unit.test_code_assistant_demo import (
     FakeEvidenceRepository,
@@ -202,6 +221,544 @@ class ToollessProbeAgent:
         self._model = model
 
 
+class ScriptedRoundModel(IAgentModel):
+    """Model whose consecutive requests consume explicit stream rounds."""
+
+    def __init__(self, rounds: Sequence[Sequence[ModelStreamEvent]]) -> None:
+        self._rounds = tuple(tuple(round_) for round_ in rounds)
+        self.requests: list[ModelRequest] = []
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        raise AgentDefinitionError("Scripted stream model does not complete")
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        index = len(self.requests)
+        self.requests.append(request)
+        round_ = self._rounds[index] if index < len(self._rounds) else ()
+        for event in round_:
+            yield event
+
+
+class ScriptedCompleteModel(IAgentModel):
+    """Non-stream model whose responses drive guarded iterative execution."""
+
+    def __init__(self, responses: Sequence[ModelResponse]) -> None:
+        self._responses = tuple(responses)
+        self.requests: list[ModelRequest] = []
+        self.stream_calls = 0
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        index = len(self.requests)
+        self.requests.append(request)
+        return self._responses[index]
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        self.stream_calls += 1
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+
+class HangingModel(IAgentModel):
+    """Model that never produces its first stream item."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        await Event().wait()
+        return ModelResponse(content="unreachable")
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        await Event().wait()
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+
+class FrameworkFailingModel(IAgentModel):
+    """Model port raising a typed framework failure from both SDK surfaces."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        raise AgentDefinitionError("framework complete failure")
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        raise AgentDefinitionError("framework stream failure")
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+
+class _EchoToolAgentBase:
+    """Undecorated reusable echo tool surface for limits-mode agents."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+    @agent_tool(
+        schema_name="echo.read",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def echo_read(self, value: str) -> EchoRecord:
+        return EchoRecord(value=value)
+
+
+class _ModelOnlyAgentBase:
+    """Undecorated model-only constructor shared by limit fixtures."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="guarded_complete_probe",
+        streaming_exposure_mode=StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED,
+    )
+)
+class GuardedCompleteProbeAgent(_EchoToolAgentBase):
+    """Stateless tool agent forcing the non-stream complete model path."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="step_limited_probe",
+        limits=AgentExecutionLimits(max_steps=2),
+    )
+)
+class StepLimitedProbeAgent(_EchoToolAgentBase):
+    """Stateless tool agent with two allowed model iterations."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="tool_limited_probe",
+        limits=AgentExecutionLimits(max_tool_calls=1),
+    )
+)
+class ToolLimitedProbeAgent(_EchoToolAgentBase):
+    """Stateless tool agent allowing only one actual dispatch."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="token_limited_probe",
+        limits=AgentExecutionLimits(max_tokens=5),
+    )
+)
+class TokenLimitedProbeAgent(_ModelOnlyAgentBase):
+    """Stateless model agent requiring reliable cumulative usage."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="durable_token_limited_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        limits=AgentExecutionLimits(max_tokens=5),
+    )
+)
+class DurableTokenLimitedProbeAgent:
+    """Durable token-limit target for routing/evidence terminal assertions."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="timeout_probe",
+        limits=AgentExecutionLimits(timeout_seconds=0.05),
+    )
+)
+class TimeoutProbeAgent(_ModelOnlyAgentBase):
+    """Stateless agent enforcing a model wall-clock deadline."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="durable_timeout_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        limits=AgentExecutionLimits(timeout_seconds=0.05),
+    )
+)
+class DurableTimeoutProbeAgent:
+    """Durable agent with a hanging async tool."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="wait.forever",
+        effects=ToolEffects.read_only(),
+        timeout=TimeoutPolicy(seconds=0.2),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    async def wait_forever(self) -> str:
+        await Event().wait()
+        return "unreachable"
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="sync_timeout_probe",
+        limits=AgentExecutionLimits(timeout_seconds=0.05),
+    )
+)
+class SyncTimeoutProbeAgent:
+    """Sync tool target proving an active deadline fails before invocation."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+        self.called = False
+
+    @agent_tool(
+        schema_name="sync.sleep",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def sleep_sync(self) -> str:
+        sleep(0.2)
+        self.called = True
+        return "slept"
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="durable_guarded_framework_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        streaming_exposure_mode=StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED,
+    )
+)
+class DurableGuardedFrameworkProbeAgent:
+    """Durable guarded model target for complete() terminal normalization."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="framework_failing_tool_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class FrameworkFailingToolProbeAgent:
+    """Durable tool target raising or returning a non-JSON framework result."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="framework.raise",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def raise_framework(self) -> str:
+        raise AgentDefinitionError("tool framework failure")
+
+    @agent_tool(
+        schema_name="framework.bad_result",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def bad_result(self) -> str:
+        return cast(str, {"not-json"})
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="unsupported_signal_projection_probe",
+        accepted_signals=(AgentSignalKind.STEERING_INSTRUCTION,),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class UnsupportedSignalProjectionProbeAgent:
+    """Signal hook intentionally yielding a non-projectable public token."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @on_signal(AgentSignalKind.STEERING_INSTRUCTION)
+    async def on_steering(
+        self,
+        signal: AgentSignal,
+    ) -> AsyncGenerator[AgentYield[object], None]:
+        yield AgentYield(
+            kind=AgentYieldKind.TOKEN,
+            payload=Token(
+                "unsupported signal token", metadata={"signal_id": signal.id}
+            ),
+        )
+
+    @agent_tool(
+        schema_name="unsupported.signal_after",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def signal_after(self, state_id: str) -> str:
+        self._signals.append(
+            AgentSignal(
+                id=f"steer:{state_id}",
+                agent_state_id=state_id,
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={"instruction": "token"},
+            )
+        )
+        return "queued"
+
+
+@Agent(spec=AgentExecutionSpec(name="batch_probe"))
+class BatchProbeAgent:
+    """Stateful test target proving invalid batches dispatch no prefix calls."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+        self.dispatched: list[str] = []
+
+    @agent_tool(
+        schema_name="batch.record",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def record(self, value: str) -> str:
+        self.dispatched.append(value)
+        return value
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="non_idempotent_crash_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class NonIdempotentCrashProbeAgent:
+    """Durable non-idempotent tool target for incomplete-boundary restart tests."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+        self.dispatched = 0
+
+    @agent_tool(
+        schema_name="external.write",
+        effects=ToolEffects.external_side_effect(),
+        idempotency=Idempotency.NON_IDEMPOTENT,
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def external_write(self, value: str) -> str:
+        self.dispatched += 1
+        return value
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="cancel_during_tool_probe",
+        accepted_signals=(AgentSignalKind.CANCEL,),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class CancelDuringToolProbeAgent:
+    """Tool target that queues cancellation before returning its result."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="cancel.after",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def cancel_after(self) -> str:
+        self._signals.append(
+            AgentSignal(
+                id="cancel:during-tool",
+                agent_state_id="cancel-tool",
+                kind=AgentSignalKind.CANCEL,
+                payload={
+                    "reason": "cancel after dispatch",
+                    "requested_by": "tester",
+                },
+            )
+        )
+        return "cancelled"
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="signal_during_tool_probe",
+        accepted_signals=(AgentSignalKind.USER_MESSAGE,),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class SignalDuringToolProbeAgent:
+    """Tool fixture queues a non-terminal signal at the post-dispatch boundary."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="signal.after",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def signal_after(self, state_id: str) -> str:
+        self._signals.append(
+            AgentSignal(
+                id=f"user:{state_id}",
+                agent_state_id=state_id,
+                kind=AgentSignalKind.USER_MESSAGE,
+                payload={"message": "after tool"},
+            )
+        )
+        return "signalled"
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="lifecycle_mutating_tool_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class LifecycleMutatingToolProbeAgent:
+    """Tool fixture simulating an external lifecycle failure during dispatch."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="lifecycle.fail",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def fail_state(self, state_id: str) -> str:
+        current = self._states.get(state_id)
+        self._states.save(
+            replace(
+                current,
+                status=AgentStatus.FAILED,
+                transition=AgentStateTransition.FAILED,
+                reason=AgentStateReason.EXECUTION_FAILED,
+                current_activity="external lifecycle failure",
+            )
+        )
+        return "failed"
+
+
+@Agent(spec=AgentExecutionSpec(name="tool_policy_timeout_probe"))
+class ToolPolicyTimeoutProbeAgent(_ModelOnlyAgentBase):
+    """Stateless agent whose tool-specific timeout is the only deadline."""
+
+    @agent_tool(
+        schema_name="wait.policy",
+        effects=ToolEffects.read_only(),
+        timeout=TimeoutPolicy(seconds=0.05),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    async def wait_policy(self) -> str:
+        await Event().wait()
+        return "unreachable"
+
+
 def _invoke_execute(
     agent: object,
     run_input: RunAgentInput,
@@ -246,7 +803,6 @@ def _tool_event(
 
 
 def _approval_signal(state_id: str, request_id: str, decision: str):
-    from spakky.agent import AgentSignal
 
     return AgentSignal(
         id=request_id,
@@ -254,6 +810,15 @@ def _approval_signal(state_id: str, request_id: str, decision: str):
         kind=AgentSignalKind.APPROVAL_DECISION,
         payload={"request_id": request_id, "decision": decision},
     )
+
+
+def _approval_request_id(
+    state_id: str,
+    call_id: str,
+    arguments: JsonObject,
+) -> str:
+
+    return f"approval:{state_id}:{call_id}:{_arguments_digest(arguments)}"
 
 
 async def test_agent_runner_expect_auto_provided_execute_runs_tools_and_final() -> None:
@@ -301,7 +866,13 @@ async def test_agent_runner_expect_approval_pause_then_signal_resume_dispatches(
     states = FakeStateRepository()
     evidence = FakeEvidenceRepository()
     signals = FakeSignalRepository(
-        (_approval_signal("run-1", "approval:run-1:echo.write", "approve"),)
+        (
+            _approval_signal(
+                "run-1",
+                _approval_request_id("run-1", "write-1", {"value": "draft"}),
+                "approve",
+            ),
+        )
     )
 
     items = await _run_durable(
@@ -324,7 +895,6 @@ async def test_agent_runner_expect_approval_skips_unrelated_and_mismatched_signa
     None
 ):
     """승인 대기 큐의 무관 signal과 다른 request_id 결정은 건너뛰고 일치 결정만 쓴다."""
-    from spakky.agent import AgentSignal
 
     model = RecordingModel(
         (
@@ -342,7 +912,11 @@ async def test_agent_runner_expect_approval_skips_unrelated_and_mismatched_signa
                 payload={},
             ),
             _approval_signal("run-1", "approval:run-1:other.tool", "approve"),
-            _approval_signal("run-1", "approval:run-1:echo.write", "approve"),
+            _approval_signal(
+                "run-1",
+                _approval_request_id("run-1", "write-1", {"value": "draft"}),
+                "approve",
+            ),
         )
     )
 
@@ -362,7 +936,6 @@ async def test_agent_runner_expect_cancel_without_requested_by_omits_attribution
     None
 ):
     """requested_by가 없는 cancel signal은 Cancel.requested_by를 None으로 둔다."""
-    from spakky.agent import AgentSignal
 
     states = FakeStateRepository()
     signals = FakeSignalRepository(
@@ -399,7 +972,13 @@ async def test_agent_runner_expect_approval_reject_stops_without_final() -> None
     )
     states = FakeStateRepository()
     signals = FakeSignalRepository(
-        (_approval_signal("run-1", "approval:run-1:echo.write", "reject"),)
+        (
+            _approval_signal(
+                "run-1",
+                _approval_request_id("run-1", "write-1", {"value": "draft"}),
+                "reject",
+            ),
+        )
     )
 
     items = await _run_durable(
@@ -477,10 +1056,13 @@ async def test_agent_runner_expect_approval_context_overrides_pause_request(
     ]
     assert len(approval_payloads) == 1
     approval = approval_payloads[0]
+
     assert approval.prompt == "Approve external target: draft"
     assert approval.metadata["action_ref"] == "external.echo:draft"
     approval_tool_metadata = cast(JsonObject, approval.metadata["metadata"])
-    assert approval_tool_metadata["metadata"] == {"target": "draft"}
+    nested_metadata = cast(JsonObject, approval_tool_metadata["metadata"])
+    assert nested_metadata["target"] == "draft"
+    assert nested_metadata["arguments_digest"] == _arguments_digest({"value": "draft"})
     assert states.get("run-1").metadata["approval"] == approval.metadata
 
 
@@ -519,8 +1101,6 @@ async def test_agent_runner_expect_cancel_signal_pre_loop_terminates() -> None:
     """모델 루프 전 CANCEL signal은 CANCELLED와 cancellation evidence로 끝난다."""
     states = FakeStateRepository()
     evidence = FakeEvidenceRepository()
-
-    from spakky.agent import AgentSignal
 
     signals = FakeSignalRepository(
         (
@@ -569,7 +1149,6 @@ async def test_agent_runner_expect_cancel_signal_mid_stream_terminates() -> None
 
 async def test_agent_runner_expect_user_message_signal_consumed_as_progress() -> None:
     """USER_MESSAGE signal은 progress와 evaluation evidence로 소비된다."""
-    from spakky.agent import AgentSignal
 
     states = FakeStateRepository()
     evidence = FakeEvidenceRepository()
@@ -608,6 +1187,93 @@ async def test_agent_runner_expect_user_message_signal_consumed_as_progress() ->
     assert AgentEvidenceKind.EVALUATION in {
         artifact.kind for artifact in evidence.list_by_state("run-1")
     }
+
+    event_states = FakeStateRepository()
+    event_evidence = FakeEvidenceRepository()
+    event_signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="user:event-run",
+                agent_state_id="event-run",
+                kind=AgentSignalKind.USER_MESSAGE,
+                payload={"message": "keep event parity"},
+            ),
+        )
+    )
+    event_model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    events = await _run_events_durable(
+        event_model,
+        RunAgentInput(state_id="event-run", instruction="hello"),
+        event_states,
+        event_signals,
+        event_evidence,
+    )
+    progress = next(event for event in events if isinstance(event, ArtifactEvent))
+    assert progress.content == {
+        "kind": AgentYieldKind.PROGRESS.value,
+        "message": "user message consumed",
+        "current_step": "signal",
+        "metadata": {"signal_id": "user:event-run"},
+    }
+    assert event_signals.list_pending("event-run") == ()
+
+
+@pytest.mark.parametrize("during_tool", [False, True])
+async def test_agent_runner_events_fail_closed_for_unsupported_signal_yield(
+    during_tool: bool,
+) -> None:
+    """A hook shape with no neutral projection becomes one typed terminal event."""
+    state_id = f"unsupported-signal-event-{during_tool}"
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(
+        ()
+        if during_tool
+        else (
+            AgentSignal(
+                id="steer:unsupported",
+                agent_state_id=state_id,
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={"instruction": "token"},
+            ),
+        )
+    )
+    evidence = FakeEvidenceRepository()
+    model = RecordingModel(
+        (
+            _tool_event(
+                "unsupported.signal_after",
+                {"state_id": state_id},
+                "signal-1",
+            ),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+        if during_tool
+        else (ModelStreamEvent(kind=ModelStreamEventKind.DONE),)
+    )
+    target = UnsupportedSignalProjectionProbeAgent(
+        model,
+        states,
+        signals,
+        evidence,
+    )
+
+    events = [
+        event
+        async for event in AgentRunner.for_agent_instance(target).run_events(
+            RunAgentInput(state_id=state_id, instruction="steer")
+        )
+    ]
+
+    terminal = [event for event in events if isinstance(event, RunFinishedEvent)]
+    assert len(terminal) == 1
+    assert terminal[0].error is not None
+    assert terminal[0].error["code"] == "agent_signal_projection_unsupported"
+    assert states.get(state_id).status is AgentStatus.FAILED
+    assert signals.list_pending(state_id) == ()
+    assert AgentEvidenceKind.EVALUATION in {
+        item.kind for item in evidence.list_by_state(state_id)
+    }
+    assert len(model.requests) == 1
 
 
 async def test_agent_runner_expect_resume_emits_skip_completed_progress() -> None:
@@ -1038,7 +1704,6 @@ class _CancelInjectingModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
-        from spakky.agent import AgentSignal
 
         self._signals.append(
             AgentSignal(
@@ -1410,10 +2075,14 @@ async def test_agent_runner_events_expect_error_run_does_not_persist_session() -
                 kind=ModelStreamEventKind.ERROR,
                 error=ModelError(code="boom", message="provider failed"),
             ),
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.MESSAGE_DELTA,
+                message_delta="must not be exposed",
+            ),
         )
     )
 
-    await _run_session_events(
+    events = await _run_session_events(
         model,
         store,
         RunAgentInput(
@@ -1424,6 +2093,7 @@ async def test_agent_runner_events_expect_error_run_does_not_persist_session() -
     )
 
     assert store.load_history("thread-7") == ()
+    assert not any(isinstance(event, MessageDeltaEvent) for event in events)
 
 
 async def test_agent_runner_events_expect_client_history_session_not_persisted() -> (
@@ -1456,7 +2126,6 @@ async def test_agent_runner_events_expect_client_history_session_not_persisted()
 
 async def test_agent_runner_events_expect_cancelled_session_not_persisted() -> None:
     """run_events CANCEL 경로는 대화 turn을 영속하지 않는다."""
-    from spakky.agent import AgentSignal
 
     store = FakeTaskStore()
     signals = FakeSignalRepository(
@@ -1793,12 +2462,21 @@ async def test_agent_runner_events_expect_model_error_emits_run_error() -> None:
 
     finished = events[-1]
     assert isinstance(finished, RunFinishedEvent)
-    assert finished.error == {"code": "boom", "message": "provider failed"}
+    assert finished.error == {
+        "code": "boom",
+        "message": "provider failed",
+        "retryable": False,
+        "metadata": {
+            "model_steps": 1,
+            "tool_calls": 0,
+            "total_tokens": 0,
+            "usage": {},
+        },
+    }
 
 
 async def test_agent_runner_events_expect_cancel_signal_pre_loop_terminates() -> None:
     """run_events 경로도 모델 호출 전 CANCEL signal을 terminal error로 방출한다."""
-    from spakky.agent import AgentSignal
 
     states = FakeStateRepository()
     signals = FakeSignalRepository(
@@ -1825,7 +2503,14 @@ async def test_agent_runner_events_expect_cancel_signal_pre_loop_terminates() ->
     finished = events[1]
     assert isinstance(finished, RunFinishedEvent)
     assert finished.error is not None
-    assert finished.error["code"] == "cancelled"
+    assert finished.error == {
+        "code": "cancelled",
+        "message": "stop",
+        "metadata": {
+            "state": AgentStatus.CANCELLED.value,
+            "signal_id": "cancel:run-1",
+        },
+    }
     assert states.get("run-1").status is AgentStatus.CANCELLED
 
 
@@ -1882,7 +2567,9 @@ async def test_agent_runner_events_expect_approval_gate_blocks_result_emission()
     assert isinstance(pause, RunPausedEvent)
     assert pause.reason is AgentStateReason.APPROVAL_REQUIRED
     assert pause.prompt == "Approve tool invocation: echo_write"
-    assert pause.approval_id == "approval:run-1:echo.write"
+    assert pause.approval_id == _approval_request_id(
+        "run-1", "write-1", {"value": "draft"}
+    )
     assert pause.tool_call_id == "write-1"
     assert pause.allowed_decisions == ("approve", "reject", "modify", "defer", "cancel")
     paused = states.get("run-1")
@@ -1899,7 +2586,13 @@ async def test_agent_runner_events_expect_approved_tool_emits_result() -> None:
         )
     )
     signals = FakeSignalRepository(
-        (_approval_signal("run-1", "approval:run-1:echo.write", "approve"),)
+        (
+            _approval_signal(
+                "run-1",
+                _approval_request_id("run-1", "write-1", {"value": "draft"}),
+                "approve",
+            ),
+        )
     )
 
     events = await _run_events_durable(
@@ -1925,7 +2618,13 @@ async def test_agent_runner_events_expect_rejected_approval_emits_error_finish()
         )
     )
     signals = FakeSignalRepository(
-        (_approval_signal("run-1", "approval:run-1:echo.write", "reject"),)
+        (
+            _approval_signal(
+                "run-1",
+                _approval_request_id("run-1", "write-1", {"value": "draft"}),
+                "reject",
+            ),
+        )
     )
 
     events = await _run_events_durable(
@@ -2112,7 +2811,16 @@ async def test_agent_runner_events_expect_cancel_signal_mid_stream_terminates() 
     finished = events[-1]
     assert isinstance(finished, RunFinishedEvent)
     assert finished.error is not None
-    assert finished.error["code"] == "cancelled"
+    assert finished.error == {
+        "code": "cancelled",
+        "message": "mid",
+        "metadata": {
+            "state": AgentStatus.CANCELLED.value,
+            "signal_id": "cancel:run-1",
+            "requested_by": "tester",
+        },
+    }
+    assert sum(isinstance(event, RunFinishedEvent) for event in events) == 1
     assert not any(isinstance(event, RunPausedEvent) for event in events)
 
 
@@ -2136,8 +2844,8 @@ async def test_agent_runner_events_expect_stateless_agent_emits_events() -> None
     assert isinstance(events[-1], RunFinishedEvent)
 
 
-async def test_agent_runner_events_expect_missing_call_id_uses_name_fallback() -> None:
-    """call_id가 없는 도구 호출도 이름 기반 fallback id로 lifecycle을 연결한다."""
+async def test_agent_runner_events_expect_missing_call_id_uses_step_index() -> None:
+    """call_id가 없는 호출은 model step과 batch index로 unique하게 연결된다."""
     handle = ModelToolCall(name="echo.read", arguments={"value": "hi"}, call_id=None)
     model = RecordingModel(
         (
@@ -2161,7 +2869,7 @@ async def test_agent_runner_events_expect_missing_call_id_uses_name_fallback() -
 
     start = next(event for event in events if isinstance(event, ToolCallStartEvent))
     result = next(event for event in events if isinstance(event, ToolCallResultEvent))
-    assert start.call_id == result.call_id == "call:echo.read"
+    assert start.call_id == result.call_id == "run-1:model-1:call-1"
 
 
 async def test_agent_runner_events_expect_fine_grained_tool_events_without_payload() -> (
@@ -2294,7 +3002,27 @@ async def test_agent_runner_expect_compaction_chain_applies_in_declared_order() 
                 instruction="latest",
                 message_history=(
                     ModelMessage(ModelMessageRole.USER, "u" * 40),
-                    ModelMessage(ModelMessageRole.TOOL, "0123456789"),
+                    ModelMessage(
+                        ModelMessageRole.ASSISTANT,
+                        "calling",
+                        metadata={
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "name": "echo.read",
+                                    "arguments": {"value": "x"},
+                                }
+                            ]
+                        },
+                    ),
+                    ModelMessage(
+                        ModelMessageRole.TOOL,
+                        "0123456789",
+                        metadata={
+                            "call_id": "call-1",
+                            "tool_name": "echo.read",
+                        },
+                    ),
                     ModelMessage(ModelMessageRole.ASSISTANT, "a" * 40),
                 ),
             ),
@@ -2302,6 +3030,7 @@ async def test_agent_runner_expect_compaction_chain_applies_in_declared_order() 
     )
 
     assert _user_and_assistant_contents(model.requests[0]) == [
+        (ModelMessageRole.ASSISTANT, "calling"),
         (ModelMessageRole.TOOL, "0123"),
         (ModelMessageRole.ASSISTANT, "a" * 40),
         (ModelMessageRole.USER, "latest"),
@@ -2319,6 +3048,35 @@ async def test_agent_runner_expect_compaction_chain_applies_in_declared_order() 
 )
 class EventCompactingProbeAgent:
     """Compacting agent exercised through the neutral event stream."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+
+class OrphaningCompactionStrategy(ICompactionStrategy):
+    """Invalid custom strategy that drops the assistant side of a tool group."""
+
+    @override
+    async def compact(
+        self,
+        history: tuple[ModelMessage, ...],
+        usage: ModelUsage,
+        capability: ModelCapability,
+    ) -> tuple[ModelMessage, ...]:
+        return (history[-1],)
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="orphaning_compaction_probe",
+        compaction=AgentCompactionPolicy(
+            strategies=(OrphaningCompactionStrategy(),),
+            trigger_token_threshold=1,
+        ),
+    )
+)
+class OrphaningCompactionProbeAgent:
+    """Runner target proving custom compaction output is validated per stage."""
 
     def __init__(self, model: IAgentModel) -> None:
         self._model = model
@@ -2344,6 +3102,47 @@ async def test_agent_runner_expect_event_stream_also_compacts_history() -> None:
         (ModelMessageRole.USER, "z" * 40),
         (ModelMessageRole.USER, "latest"),
     ]
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_agent_runner_rejects_custom_compaction_orphan_before_provider(
+    surface: str,
+) -> None:
+    """Every custom strategy result is validated before a provider request."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    runner = AgentRunner.for_agent_instance(OrphaningCompactionProbeAgent(model))
+    history = (
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            "calling",
+            metadata={
+                "tool_calls": [{"id": "call-1", "name": "echo.read", "arguments": {}}]
+            },
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            "result",
+            metadata={"call_id": "call-1", "tool_name": "echo.read"},
+        ),
+    )
+    command = RunAgentInput(
+        state_id=f"orphan-{surface}",
+        instruction="latest",
+        message_history=history,
+    )
+
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_model_execution_failed"
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == "agent_model_execution_failed"
+    assert model.requests == []
 
 
 async def test_agent_runner_expect_summarize_strategy_uses_injected_model() -> None:
@@ -2380,3 +3179,1730 @@ async def test_agent_runner_expect_summarize_strategy_uses_injected_model() -> N
     assert seeded[0] == (ModelMessageRole.EVIDENCE, "recorded")
     assert seeded[-2] == (ModelMessageRole.USER, "z" * 40)
     assert seeded[-1] == (ModelMessageRole.USER, "latest")
+
+
+async def test_iterative_runner_tool_once_then_final_continues_model_history() -> None:
+    """한 tool round 뒤 TOOL history를 포함해 다음 model step에서 final을 만든다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.read", {"value": "one"}, "call-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOKEN_DELTA,
+                    token_delta="finished",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(state_id="iter-1", instruction="echo"),
+        )
+    )
+
+    assert len(model.requests) == 2
+    assert sum(item.kind is AgentYieldKind.TOOL for item in items) == 1
+    assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 1
+    continued = model.requests[1].messages
+    assistant = next(
+        message for message in continued if message.role is ModelMessageRole.ASSISTANT
+    )
+    tool = next(
+        message for message in continued if message.role is ModelMessageRole.TOOL
+    )
+    assert assistant.metadata["tool_calls"] == [
+        {
+            "id": "call-1",
+            "name": "echo.read",
+            "arguments": {"value": "one"},
+        }
+    ]
+    assert tool.metadata == {"call_id": "call-1", "tool_name": "echo.read"}
+
+
+async def test_iterative_runner_preserves_multiple_round_and_batch_order() -> None:
+    """여러 model round와 한 response의 복수 calls가 선언 순서대로 이어진다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.read", {"value": "a"}, "a-1"),
+                _tool_event("echo.read", {"value": "b"}, "b-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                _tool_event("echo.read", {"value": "c"}, "c-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="done",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(state_id="iter-2", instruction="echo three"),
+        )
+    )
+
+    tools = [item.payload for item in items if isinstance(item.payload, Tool)]
+    assert [tool.arguments["value"] for tool in tools] == ["a", "b", "c"]
+    assert len(model.requests) == 3
+    assert [
+        message.metadata["call_id"]
+        for message in model.requests[2].messages
+        if message.role is ModelMessageRole.TOOL
+    ] == ["a-1", "b-1", "c-1"]
+
+
+async def test_iterative_runner_invalid_batch_dispatches_nothing() -> None:
+    """Batch 하나가 unregistered이면 valid prefix도 실제 실행하지 않는다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("batch.record", {"value": "must-not-run"}, "valid-1"),
+                _tool_event("missing.tool", {}, "invalid-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    agent = BatchProbeAgent(model)
+
+    items = await _collect(
+        _invoke_execute(
+            agent,
+            RunAgentInput(state_id="batch-invalid", instruction="record"),
+        )
+    )
+
+    assert agent.dispatched == []
+    assert not any(item.kind is AgentYieldKind.TOOL for item in items)
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_tool_batch_invalid"
+
+
+async def test_iterative_runner_missing_ids_are_unique_within_same_name_batch() -> None:
+    """동일-name calls도 step/index correlation으로 history와 results가 분리된다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                    tool_call=ModelToolCall("echo.read", {"value": "a"}),
+                ),
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                    tool_call=ModelToolCall("echo.read", {"value": "b"}),
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(state_id="missing-ids", instruction="echo"),
+        )
+    )
+
+    calls = [item.payload for item in items if isinstance(item.payload, Tool)]
+    assert [call.call_id for call in calls] == [
+        "missing-ids:model-1:call-1",
+        "missing-ids:model-1:call-2",
+    ]
+
+
+async def test_iterative_runner_approval_pause_resume_continues_without_model_replay() -> (
+    None
+):
+    """Fresh runner는 pending batch를 복원·승인·dispatch한 뒤 다음 model로 간다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "draft"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOKEN_DELTA,
+                    token_delta="published",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+
+    paused = await _run_durable(
+        model,
+        RunAgentInput(state_id="resume-1", instruction="write"),
+        states,
+        signals,
+        evidence,
+    )
+    approval = next(
+        item.payload for item in paused if isinstance(item.payload, Approval)
+    )
+    assert states.get("resume-1").input_ref == "write"
+    assert len(model.requests) == 1
+    signals.append(_approval_signal("resume-1", approval.id, "approve"))
+
+    resumed = await _run_durable(
+        model,
+        RunAgentInput(state_id="resume-1", instruction="write", resume=True),
+        states,
+        signals,
+        evidence,
+    )
+
+    assert any(isinstance(item.payload, Tool) for item in resumed)
+    assert resumed[-1].kind is AgentYieldKind.FINAL
+    assert len(model.requests) == 2
+    assert any(
+        message.role is ModelMessageRole.TOOL for message in model.requests[1].messages
+    )
+
+
+async def test_iterative_runner_modify_dispatches_only_approved_arguments() -> None:
+    """MODIFY decision은 original args가 아니라 검증된 modified payload를 실행한다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                    tool_call=ModelToolCall(
+                        "echo.write",
+                        {"value": "raw"},
+                        "write-1",
+                        metadata={"thought_signature": "provider-signature"},
+                    ),
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    request_id = _approval_request_id("modify-1", "write-1", {"value": "raw"})
+    signal = _approval_signal("modify-1", request_id, "modify")
+    signal = replace(
+        signal,
+        payload={
+            **signal.payload,
+            "modified_payload": {"value": "approved"},
+        },
+    )
+
+    items = await _run_durable(
+        model,
+        RunAgentInput(state_id="modify-1", instruction="write"),
+        FakeStateRepository(),
+        FakeSignalRepository((signal,)),
+        FakeEvidenceRepository(),
+    )
+
+    tool = next(item.payload for item in items if isinstance(item.payload, Tool))
+    assert tool.arguments == {"value": "approved"}
+    assert tool.result == {"value": "approved"}
+    assistant = next(
+        message
+        for message in model.requests[1].messages
+        if message.role is ModelMessageRole.ASSISTANT
+    )
+    assert assistant.metadata["tool_calls"] == [
+        {
+            "thought_signature": "provider-signature",
+            "id": "write-1",
+            "name": "echo.write",
+            "arguments": {"value": "approved"},
+        }
+    ]
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_invalid_modified_approval_is_typed_and_dispatches_nothing(
+    surface: str,
+) -> None:
+    """A MODIFY payload that cannot bind fails as agent_approval_invalid."""
+    state_id = f"invalid-modify-{surface}"
+    request_id = _approval_request_id(state_id, "write-1", {"value": "raw"})
+    signal = replace(
+        _approval_signal(state_id, request_id, "modify"),
+        payload={
+            "request_id": request_id,
+            "decision": "modify",
+            "modified_payload": {"unknown": "value"},
+        },
+    )
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "raw"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    target = ProbeAgent(model, states, FakeSignalRepository((signal,)), evidence)
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=state_id, instruction="modify")
+
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_approval_invalid"
+        assert not any(isinstance(event, ToolCallResultEvent) for event in events)
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == "agent_approval_invalid"
+        assert not any(isinstance(item.payload, Tool) for item in items)
+    assert states.get(state_id).status is AgentStatus.FAILED
+    assert AgentEvidenceKind.TOOL not in {
+        item.kind for item in evidence.list_by_state(state_id)
+    }
+
+
+async def test_iterative_malformed_approval_signal_is_typed() -> None:
+    """A matching approval signal with an invalid decision cannot escape the loop."""
+    state_id = "malformed-approval-signal"
+    request_id = _approval_request_id(state_id, "write-1", {"value": "raw"})
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "raw"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    items = await _run_durable(
+        model,
+        RunAgentInput(state_id=state_id, instruction="write"),
+        states,
+        FakeSignalRepository((_approval_signal(state_id, request_id, "unsupported"),)),
+        FakeEvidenceRepository(),
+    )
+
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_approval_invalid"
+    assert states.get(state_id).status is AgentStatus.FAILED
+
+
+@pytest.mark.parametrize(
+    ("agent_type", "expected_code"),
+    [
+        (StepLimitedProbeAgent, "agent_max_steps_exceeded"),
+        (ToolLimitedProbeAgent, "agent_max_tool_calls_exceeded"),
+    ],
+)
+async def test_iterative_runner_enforces_step_and_atomic_tool_limits(
+    agent_type: type[_EchoToolAgentBase],
+    expected_code: str,
+) -> None:
+    """Step는 request 전에, tool limit은 batch 전체 dispatch 전에 집행된다."""
+    rounds = (
+        (
+            _tool_event("echo.read", {"value": "a"}, "a-1"),
+            _tool_event("echo.read", {"value": "b"}, "b-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        ),
+        (
+            _tool_event("echo.read", {"value": "c"}, "c-1"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        ),
+    )
+    model = ScriptedRoundModel(rounds)
+
+    items = await _collect(
+        _invoke_execute(
+            agent_type(model),
+            RunAgentInput(state_id=expected_code, instruction="loop"),
+        )
+    )
+
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == expected_code
+    if expected_code == "agent_max_tool_calls_exceeded":
+        assert not any(isinstance(item.payload, Tool) for item in items)
+        assert len(model.requests) == 1
+    else:
+        assert len(model.requests) == 2
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected_code"),
+    [
+        (ModelUsage(total_tokens=6), "agent_max_tokens_exceeded"),
+        (None, "agent_usage_unavailable"),
+    ],
+)
+async def test_iterative_runner_enforces_provider_usage_budget(
+    usage: ModelUsage | None,
+    expected_code: str,
+) -> None:
+    """Token budget는 response usage 뒤 검사하고 missing usage는 fail closed 한다."""
+    model = ScriptedRoundModel(
+        ((ModelStreamEvent(kind=ModelStreamEventKind.DONE, usage=usage),),)
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            TokenLimitedProbeAgent(model),
+            RunAgentInput(state_id=expected_code, instruction="budget"),
+        )
+    )
+
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == expected_code
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+@pytest.mark.parametrize(
+    ("usage", "expected_code", "expected_total"),
+    [
+        (ModelUsage(total_tokens=6), "agent_max_tokens_exceeded", 6),
+        (None, "agent_usage_unavailable", 0),
+    ],
+)
+async def test_iterative_usage_limit_terminal_preserves_route_and_evidence(
+    surface: str,
+    usage: ModelUsage | None,
+    expected_code: str,
+    expected_total: int,
+) -> None:
+    """Usage failures retain current routing, counters, usage, and model evidence."""
+    state_id = f"usage-evidence-{surface}-{expected_code}"
+    route: JsonObject = {
+        "model_ref": "support/primary",
+        "profile": "vllm-local",
+        "provider": "openai",
+        "model": "served-model",
+    }
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.DONE,
+                    usage=usage,
+                    metadata=route,
+                ),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    target = DurableTokenLimitedProbeAgent(
+        model,
+        states,
+        FakeSignalRepository(()),
+        evidence,
+    )
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=state_id, instruction="budget")
+
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        terminal_metadata = terminal.error["metadata"]
+        assert isinstance(terminal_metadata, Mapping)
+        assert terminal.error["code"] == expected_code
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == expected_code
+        terminal_metadata = error.metadata
+    assert {key: terminal_metadata[key] for key in route} == route
+    assert terminal_metadata["model_steps"] == 1
+    assert terminal_metadata["total_tokens"] == expected_total
+    usage_metadata = terminal_metadata["usage"]
+    assert isinstance(usage_metadata, Mapping)
+    assert usage_metadata.get("total_tokens") == (
+        None if usage is None else usage.total_tokens
+    )
+    model_evidence = next(
+        item
+        for item in evidence.list_by_state(state_id)
+        if item.kind is AgentEvidenceKind.MODEL
+    )
+    decision = cast(Mapping[str, JsonValue], model_evidence.payload["decision"])
+    assert decision["routing"] == route
+    error_evidence = cast(Mapping[str, JsonValue], decision["error"])
+    assert error_evidence["code"] == expected_code
+    assert states.get(state_id).status is AgentStatus.FAILED
+
+
+async def test_iterative_runner_timeout_stops_hanging_model_and_durable_tool() -> None:
+    """Wall-clock timeout은 hanging model과 async tool을 typed terminal로 중단한다."""
+    stateless = await _collect(
+        _invoke_execute(
+            TimeoutProbeAgent(HangingModel()),
+            RunAgentInput(state_id="timeout-model", instruction="wait"),
+        )
+    )
+    stateless_error = stateless[-1].payload
+    assert isinstance(stateless_error, Error)
+    assert stateless_error.code == "agent_timeout"
+
+    states = FakeStateRepository()
+    durable_agent = DurableTimeoutProbeAgent(
+        ScriptedRoundModel(
+            (
+                (
+                    _tool_event("wait.forever", {}, "wait-1"),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                ),
+            )
+        ),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    durable = await _collect(
+        _invoke_execute(
+            durable_agent,
+            RunAgentInput(state_id="timeout-tool", instruction="wait"),
+        )
+    )
+    durable_error = durable[-1].payload
+    assert isinstance(durable_error, Error)
+    assert durable_error.code == "agent_timeout"
+    assert states.get("timeout-tool").status is AgentStatus.FAILED
+    assert states.get("timeout-tool").transition is AgentStateTransition.TIMED_OUT
+    assert states.get("timeout-tool").reason is AgentStateReason.TIMEOUT
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_sync_tool_with_deadline_fails_before_dispatch(
+    surface: str,
+) -> None:
+    """In-process sync sleep cannot claim enforceable timeout and never executes."""
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("sync.sleep", {}, "sleep-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    target = SyncTimeoutProbeAgent(model)
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=f"sync-timeout-{surface}", instruction="sleep")
+
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_sync_tool_timeout_unenforceable"
+        assert not any(isinstance(event, ToolCallResultEvent) for event in events)
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == "agent_sync_tool_timeout_unenforceable"
+        assert not any(isinstance(item.payload, Tool) for item in items)
+    assert target.called is False
+
+
+async def test_guarded_complete_path_uses_same_iterative_tool_semantics() -> None:
+    """NO_STREAM mode는 complete response tool batch 뒤 complete를 재호출한다."""
+    model = ScriptedCompleteModel(
+        (
+            ModelResponse(
+                content="calling",
+                tool_calls=(
+                    ModelToolCall("echo.read", {"value": "complete"}, "complete-1"),
+                ),
+            ),
+            ModelResponse(content="guarded final"),
+        )
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            GuardedCompleteProbeAgent(model),
+            RunAgentInput(state_id="complete-path", instruction="echo"),
+        )
+    )
+
+    assert len(model.requests) == 2
+    assert model.stream_calls == 0
+    assert sum(item.kind is AgentYieldKind.TOOL for item in items) == 1
+    assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 1
+    assert any(
+        message.role is ModelMessageRole.TOOL for message in model.requests[1].messages
+    )
+
+
+@pytest.mark.parametrize("terminal_count", [0, 2])
+async def test_iterative_runner_requires_exactly_one_done_and_one_final(
+    terminal_count: int,
+) -> None:
+    """Missing/duplicate DONE는 success final을 만들지 않는다."""
+    round_ = (
+        ModelStreamEvent(kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="partial"),
+        *(
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            for _ in range(terminal_count)
+        ),
+    )
+    items = await _collect(
+        _invoke_execute(
+            ToollessProbeAgent(ScriptedRoundModel((round_,))),
+            RunAgentInput(state_id=f"terminal-{terminal_count}", instruction="x"),
+        )
+    )
+
+    assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 0
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_model_terminal_invalid"
+
+
+async def test_iterative_run_events_have_unique_step_and_final_boundaries() -> None:
+    """반복 model/tool steps는 unique ids와 한 RunFinished만 방출한다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="planning",
+                ),
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                    tool_call=ModelToolCall("echo.read", {"value": "x"}),
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="final",
+                ),
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.DONE,
+                    usage=ModelUsage(total_tokens=3),
+                ),
+            ),
+        )
+    )
+
+    events = await _run_events_durable(
+        model,
+        RunAgentInput(state_id="events-iter", instruction="x"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    started = [
+        event.step_name for event in events if isinstance(event, StepStartedEvent)
+    ]
+    finished = [
+        event.step_name for event in events if isinstance(event, StepFinishedEvent)
+    ]
+    message_ids = {
+        event.message_id for event in events if isinstance(event, MessageDeltaEvent)
+    }
+    assert started == ["model-1", "tool-1", "model-2"]
+    assert finished == started
+    assert message_ids == {
+        "events-iter:model-1:message",
+        "events-iter:model-2:message",
+    }
+    assert sum(isinstance(event, RunFinishedEvent) for event in events) == 1
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_restart_requires_hitl_for_incomplete_non_idempotent_tool(
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+) -> None:
+    """Fresh runner never retries an incomplete non-idempotent tool boundary."""
+    state_id = f"crash-{surface}"
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("external.write", {"value": "x"}, "external-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    first = NonIdempotentCrashProbeAgent(model, states, signals, evidence)
+
+    async def crash_dispatch(
+        self: AgentRunner,
+        call: ModelToolCall,
+        attribution: AgentEventAttribution,
+    ) -> object:
+        raise RuntimeError("simulated crash window")
+
+    monkeypatch.setattr(AgentRunner, "_dispatch", crash_dispatch)
+    with pytest.raises(RuntimeError):
+        await _collect(
+            _invoke_execute(
+                first,
+                RunAgentInput(state_id=state_id, instruction="write"),
+            )
+        )
+    monkeypatch.undo()
+
+    restarted = NonIdempotentCrashProbeAgent(model, states, signals, evidence)
+    command = RunAgentInput(state_id=state_id, instruction="write", resume=True)
+    if surface == "events":
+        events = [
+            event
+            async for event in AgentRunner.for_agent_instance(restarted).run_events(
+                command
+            )
+        ]
+        assert isinstance(events[-1], RunPausedEvent)
+        assert events[-1].reason is AgentStateReason.RECOVERY_REQUIRES_HITL
+    else:
+        items = await _collect(_invoke_execute(restarted, command))
+        progress = items[-1].payload
+        assert isinstance(progress, Progress)
+        assert progress.message == "resume action: require_hitl"
+    assert restarted.dispatched == 0
+    assert len(model.requests) == 1
+
+
+async def test_iterative_restart_reuses_call_bound_approval_after_dispatch_crash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A persisted approval authorizes only its unchanged pending retry call."""
+    state_id = "approved-crash"
+    arguments: dict[str, JsonValue] = {"value": "approved"}
+    request_id = _approval_request_id(state_id, "write-1", arguments)
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", arguments, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository((_approval_signal(state_id, request_id, "approve"),))
+    evidence = FakeEvidenceRepository()
+    first = ProbeAgent(model, states, signals, evidence)
+
+    async def crash_dispatch(
+        self: AgentRunner,
+        call: ModelToolCall,
+        attribution: AgentEventAttribution,
+    ) -> object:
+        raise RuntimeError("simulated approved dispatch crash")
+
+    monkeypatch.setattr(AgentRunner, "_dispatch", crash_dispatch)
+    with pytest.raises(RuntimeError):
+        await _collect(
+            _invoke_execute(
+                first,
+                RunAgentInput(state_id=state_id, instruction="write"),
+            )
+        )
+    monkeypatch.undo()
+
+    restarted = ProbeAgent(model, states, signals, evidence)
+    resumed = await _collect(
+        _invoke_execute(
+            restarted,
+            RunAgentInput(state_id=state_id, instruction="write", resume=True),
+        )
+    )
+
+    assert not any(isinstance(item.payload, Approval) for item in resumed)
+    assert any(isinstance(item.payload, Tool) for item in resumed)
+    assert resumed[-1].kind is AgentYieldKind.FINAL
+    assert len(model.requests) == 2
+
+
+async def test_iterative_resume_rejects_tampered_approved_pending_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Changing only persisted pending args invalidates the approval fingerprint."""
+    state_id = "approved-tamper"
+    original_arguments: dict[str, JsonValue] = {"value": "approved"}
+    request_id = _approval_request_id(state_id, "write-1", original_arguments)
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", original_arguments, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository((_approval_signal(state_id, request_id, "approve"),))
+    evidence = FakeEvidenceRepository()
+    first = ProbeAgent(model, states, signals, evidence)
+
+    async def crash_dispatch(
+        self: AgentRunner,
+        call: ModelToolCall,
+        attribution: AgentEventAttribution,
+    ) -> object:
+        raise RuntimeError("simulated approved dispatch crash")
+
+    monkeypatch.setattr(AgentRunner, "_dispatch", crash_dispatch)
+    with pytest.raises(RuntimeError):
+        await _collect(
+            _invoke_execute(
+                first,
+                RunAgentInput(state_id=state_id, instruction="write"),
+            )
+        )
+    monkeypatch.undo()
+
+    current = states.get(state_id)
+    checkpoint = cast(
+        JsonObject,
+        current.metadata[RUNNER_CHECKPOINT_METADATA_KEY],
+    )
+    pending = cast(Sequence[JsonValue], checkpoint["pending_calls"])
+    persisted_call = cast(Mapping[str, JsonValue], pending[0])
+    tampered_checkpoint: JsonObject = {
+        **checkpoint,
+        "pending_calls": [
+            {**persisted_call, "arguments": {"value": "tampered"}},
+            *pending[1:],
+        ],
+    }
+    states.save(
+        replace(
+            current,
+            metadata={
+                **current.metadata,
+                RUNNER_CHECKPOINT_METADATA_KEY: tampered_checkpoint,
+            },
+        )
+    )
+
+    resumed = await _run_durable(
+        model,
+        RunAgentInput(state_id=state_id, instruction="write", resume=True),
+        states,
+        signals,
+        evidence,
+    )
+
+    approval = next(
+        item.payload for item in resumed if isinstance(item.payload, Approval)
+    )
+    assert approval.id == _approval_request_id(
+        state_id,
+        "write-1",
+        {"value": "tampered"},
+    )
+    assert not any(isinstance(item.payload, Tool) for item in resumed)
+    assert AgentEvidenceKind.TOOL not in {
+        item.kind for item in evidence.list_by_state(state_id)
+    }
+    assert len(model.requests) == 1
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_restored_pending_validation_failure_is_typed(
+    surface: str,
+) -> None:
+    """A structurally valid checkpoint with an unknown pending tool fails closed."""
+    state_id = f"invalid-pending-{surface}"
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "draft"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    paused = await _run_durable(
+        model,
+        RunAgentInput(state_id=state_id, instruction="write"),
+        states,
+        signals,
+        evidence,
+    )
+    assert any(isinstance(item.payload, Approval) for item in paused)
+    current = states.get(state_id)
+    checkpoint = cast(JsonObject, current.metadata[RUNNER_CHECKPOINT_METADATA_KEY])
+    pending = cast(Sequence[JsonValue], checkpoint["pending_calls"])
+    persisted_call = cast(Mapping[str, JsonValue], pending[0])
+    invalid_checkpoint: JsonObject = {
+        **checkpoint,
+        "pending_calls": [{**persisted_call, "name": "missing.tool"}],
+    }
+    states.save(
+        replace(
+            current,
+            metadata={
+                **current.metadata,
+                RUNNER_CHECKPOINT_METADATA_KEY: invalid_checkpoint,
+            },
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    command = RunAgentInput(state_id=state_id, instruction="write", resume=True)
+
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_checkpoint_invalid"
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == "agent_checkpoint_invalid"
+    assert states.get(state_id).status is AgentStatus.FAILED
+    assert AgentEvidenceKind.TOOL not in {
+        item.kind for item in evidence.list_by_state(state_id)
+    }
+    assert len(model.requests) == 1
+
+
+async def test_iterative_multi_approval_batch_progresses_across_resumes() -> None:
+    """Each approved fingerprint persists while the whole batch remains atomic."""
+    state_id = "multi-approval"
+    first_arguments: dict[str, JsonValue] = {"value": "first"}
+    second_arguments: dict[str, JsonValue] = {"value": "second"}
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", first_arguments, "write-1"),
+                _tool_event("echo.write", second_arguments, "write-2"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+
+    first_pause = await _run_durable(
+        model,
+        RunAgentInput(state_id=state_id, instruction="write twice"),
+        states,
+        signals,
+        evidence,
+    )
+    first_approval = next(
+        item.payload for item in first_pause if isinstance(item.payload, Approval)
+    )
+    signals.append(_approval_signal(state_id, first_approval.id, "approve"))
+
+    second_pause = await _run_durable(
+        model,
+        RunAgentInput(
+            state_id=state_id,
+            instruction="write twice",
+            resume=True,
+        ),
+        states,
+        signals,
+        evidence,
+    )
+    second_approval = [
+        item.payload for item in second_pause if isinstance(item.payload, Approval)
+    ][-1]
+    assert second_approval.id == _approval_request_id(
+        state_id,
+        "write-2",
+        second_arguments,
+    )
+    assert not any(
+        isinstance(item.payload, Tool) for item in first_pause + second_pause
+    )
+    signals.append(_approval_signal(state_id, second_approval.id, "approve"))
+
+    completed = await _run_durable(
+        model,
+        RunAgentInput(
+            state_id=state_id,
+            instruction="write twice",
+            resume=True,
+        ),
+        states,
+        signals,
+        evidence,
+    )
+
+    assert [
+        item.payload.arguments["value"]
+        for item in completed
+        if isinstance(item.payload, Tool)
+    ] == ["first", "second"]
+    assert completed[-1].kind is AgentYieldKind.FINAL
+    assert len(model.requests) == 2
+
+
+async def test_iterative_malformed_approval_plan_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An incomplete authority plan cannot reach tool dispatch."""
+    monkeypatch.setattr(
+        runner_module,
+        "plan_agent_tool_approval",
+        lambda **_kwargs: AgentApprovalPlan(
+            action=AgentApprovalPlanAction.WAIT_FOR_APPROVAL
+        ),
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "x"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    items = await _run_durable(
+        model,
+        RunAgentInput(state_id="invalid-approval-plan", instruction="write"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_approval_invalid"
+    assert not any(isinstance(item.payload, Tool) for item in items)
+
+
+async def test_iterative_cancellation_after_tool_prevents_result_and_final() -> None:
+    """Tool return 직후 cancel poll은 result commit과 next model을 중단한다."""
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    agent = CancelDuringToolProbeAgent(
+        ScriptedRoundModel(
+            (
+                (
+                    _tool_event("cancel.after", {}, "cancel-call"),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                ),
+            )
+        ),
+        states,
+        signals,
+        FakeEvidenceRepository(),
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            agent,
+            RunAgentInput(state_id="cancel-tool", instruction="cancel"),
+        )
+    )
+
+    assert any(isinstance(item.payload, Cancel) for item in items)
+    assert not any(isinstance(item.payload, Tool) for item in items)
+    assert not any(item.kind is AgentYieldKind.FINAL for item in items)
+    assert states.get("cancel-tool").status is AgentStatus.CANCELLED
+
+    event_states = FakeStateRepository()
+    event_signals = FakeSignalRepository(())
+    event_agent = CancelDuringToolProbeAgent(
+        ScriptedRoundModel(
+            (
+                (
+                    _tool_event("cancel.after", {}, "cancel-event-call"),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                ),
+            )
+        ),
+        event_states,
+        event_signals,
+        FakeEvidenceRepository(),
+    )
+    events = [
+        event
+        async for event in AgentRunner.for_agent_instance(event_agent).run_events(
+            RunAgentInput(state_id="cancel-tool", instruction="cancel")
+        )
+    ]
+    assert isinstance(events[-1], RunFinishedEvent)
+    assert events[-1].error == {
+        "code": "cancelled",
+        "message": "cancel after dispatch",
+        "metadata": {
+            "state": AgentStatus.CANCELLED.value,
+            "signal_id": "cancel:during-tool",
+            "requested_by": "tester",
+        },
+    }
+    assert sum(isinstance(event, RunFinishedEvent) for event in events) == 1
+    assert not any(isinstance(event, ToolCallResultEvent) for event in events)
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_signal_arriving_during_tool_has_surface_parity(
+    surface: str,
+) -> None:
+    """Post-tool safe boundary consumes and exposes the same USER_MESSAGE signal."""
+    state_id = f"signal-tool-{surface}"
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("signal.after", {"state_id": state_id}, "signal-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    target = SignalDuringToolProbeAgent(model, states, signals, evidence)
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=state_id, instruction="signal")
+
+    if surface == "events":
+        outputs: Sequence[AgentEvent | AgentYield[object]] = [
+            event async for event in runner.run_events(command)
+        ]
+        progress_index = next(
+            index
+            for index, item in enumerate(outputs)
+            if isinstance(item, ArtifactEvent) and item.name == "signal_progress"
+        )
+        result_index = next(
+            index
+            for index, item in enumerate(outputs)
+            if isinstance(item, ToolCallResultEvent)
+        )
+    else:
+        outputs = await _collect(runner.run(command))
+        progress_index = next(
+            index
+            for index, item in enumerate(outputs)
+            if isinstance(item, AgentYield)
+            and isinstance(item.payload, Progress)
+            and item.payload.current_step == "signal"
+        )
+        result_index = next(
+            index
+            for index, item in enumerate(outputs)
+            if isinstance(item, AgentYield) and isinstance(item.payload, Tool)
+        )
+    assert progress_index < result_index
+    assert signals.list_pending(state_id) == ()
+    assert AgentEvidenceKind.EVALUATION in {
+        item.kind for item in evidence.list_by_state(state_id)
+    }
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_cancellation_before_first_batch_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+) -> None:
+    """A cancel arriving after authority validation still prevents all dispatch."""
+    state_id = f"cancel-before-{surface}"
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.read", {"value": "x"}, "read-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    target = ProbeAgent(model, states, signals, FakeEvidenceRepository())
+    original = AgentRunner._authorize_pending_batch
+
+    def authorize_and_cancel(
+        self: AgentRunner,
+        state: AgentState | None,
+        context: runner_module._ExecutionContext,
+    ) -> runner_module._AuthorizationResult:
+        outcome = original(self, state, context)
+        signals.append(
+            AgentSignal(
+                id=f"cancel:{surface}",
+                agent_state_id=state_id,
+                kind=AgentSignalKind.CANCEL,
+                payload={"reason": "cancel before dispatch"},
+            )
+        )
+        return outcome
+
+    monkeypatch.setattr(AgentRunner, "_authorize_pending_batch", authorize_and_cancel)
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=state_id, instruction="cancel")
+    if surface == "events":
+        outputs: Sequence[AgentEvent | AgentYield[object]] = [
+            event async for event in runner.run_events(command)
+        ]
+        assert isinstance(outputs[-1], RunFinishedEvent)
+    else:
+        outputs = await _collect(runner.run(command))
+        assert any(
+            isinstance(item, AgentYield) and isinstance(item.payload, Cancel)
+            for item in outputs
+        )
+    assert not any(isinstance(item, ToolCallResultEvent) for item in outputs)
+    assert states.get(state_id).status is AgentStatus.CANCELLED
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_tool_lifecycle_failure_stops_before_next_model(
+    surface: str,
+) -> None:
+    """A non-active durable state observed after dispatch terminates the loop."""
+    state_id = f"tool-state-failed-{surface}"
+    states = FakeStateRepository()
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("lifecycle.fail", {"state_id": state_id}, "fail-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    agent = LifecycleMutatingToolProbeAgent(
+        model,
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    runner = AgentRunner.for_agent_instance(agent)
+    command = RunAgentInput(state_id=state_id, instruction="fail")
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == AgentStateReason.EXECUTION_FAILED.value
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == AgentStateReason.EXECUTION_FAILED.value
+    assert len(model.requests) == 1
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+@pytest.mark.parametrize("guarded", [False, True])
+async def test_iterative_framework_model_errors_are_typed_terminals(
+    surface: str,
+    guarded: bool,
+) -> None:
+    """Framework failures from stream/complete become one durable typed terminal."""
+    state_id = f"framework-model-{surface}-{guarded}"
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    model = FrameworkFailingModel()
+    target: object = (
+        DurableGuardedFrameworkProbeAgent(model, states, signals, evidence)
+        if guarded
+        else ProbeAgent(model, states, signals, evidence)
+    )
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=state_id, instruction="fail")
+
+    if surface == "events":
+        outputs = [event async for event in runner.run_events(command)]
+        terminal = [event for event in outputs if isinstance(event, RunFinishedEvent)]
+        assert len(terminal) == 1
+        assert terminal[0].error is not None
+        assert terminal[0].error["code"] == "agent_model_execution_failed"
+    else:
+        items = await _collect(runner.run(command))
+        terminal_items = [item for item in items if item.kind is AgentYieldKind.ERROR]
+        assert len(terminal_items) == 1
+        error = terminal_items[0].payload
+        assert isinstance(error, Error)
+        assert error.code == "agent_model_execution_failed"
+        assert not any(item.kind is AgentYieldKind.FINAL for item in items)
+    assert states.get(state_id).status is AgentStatus.FAILED
+    assert states.get(state_id).reason is AgentStateReason.EXECUTION_FAILED
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+@pytest.mark.parametrize("tool_name", ["framework.raise", "framework.bad_result"])
+async def test_iterative_framework_tool_errors_are_typed_terminals(
+    surface: str,
+    tool_name: str,
+) -> None:
+    """Tool invocation and result serialization failures never escape generators."""
+    state_id = f"framework-tool-{surface}-{tool_name}"
+    states = FakeStateRepository()
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event(tool_name, {}, "tool-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    target = FrameworkFailingToolProbeAgent(
+        model,
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=state_id, instruction="fail")
+
+    if surface == "events":
+        outputs = [event async for event in runner.run_events(command)]
+        terminal = [event for event in outputs if isinstance(event, RunFinishedEvent)]
+        assert len(terminal) == 1
+        assert terminal[0].error is not None
+        assert terminal[0].error["code"] == "agent_tool_execution_failed"
+    else:
+        items = await _collect(runner.run(command))
+        errors = [item.payload for item in items if isinstance(item.payload, Error)]
+        assert len(errors) == 1
+        assert errors[0].code == "agent_tool_execution_failed"
+        assert not any(item.kind is AgentYieldKind.FINAL for item in items)
+    assert states.get(state_id).status is AgentStatus.FAILED
+    assert states.get(state_id).reason is AgentStateReason.EXECUTION_FAILED
+
+
+async def test_iterative_run_events_stateless_approval_fails_closed() -> None:
+    """Durable authority port가 없는 event path는 risky tool을 실행하지 않는다."""
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "x"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    target = ProbeAgent(
+        model,
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    runner = AgentRunner(agent=Agent.get(ProbeAgent), target=target, model=model)
+
+    events = [
+        event
+        async for event in runner.run_events(
+            RunAgentInput(state_id="stateless-approval", instruction="write")
+        )
+    ]
+
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error is not None
+    assert finished.error["code"] == "agent_approval_unavailable"
+    assert not any(isinstance(event, ToolCallResultEvent) for event in events)
+
+
+async def test_iterative_run_events_enforces_model_timeout_and_step_limit() -> None:
+    """Neutral event path도 timeout과 next-request step limit을 terminalize한다."""
+    timeout_events = [
+        event
+        async for event in AgentRunner.for_agent_instance(
+            TimeoutProbeAgent(HangingModel())
+        ).run_events(RunAgentInput(state_id="event-timeout", instruction="wait"))
+    ]
+    timeout_finished = timeout_events[-1]
+    assert isinstance(timeout_finished, RunFinishedEvent)
+    assert timeout_finished.error is not None
+    assert timeout_finished.error["code"] == "agent_timeout"
+
+    step_model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.read", {"value": "a"}, "a"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                _tool_event("echo.read", {"value": "b"}, "b"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    step_events = [
+        event
+        async for event in AgentRunner.for_agent_instance(
+            StepLimitedProbeAgent(step_model)
+        ).run_events(RunAgentInput(state_id="event-step", instruction="loop"))
+    ]
+    step_finished = step_events[-1]
+    assert isinstance(step_finished, RunFinishedEvent)
+    assert step_finished.error is not None
+    assert step_finished.error["code"] == "agent_max_steps_exceeded"
+
+
+async def test_iterative_tool_policy_timeout_without_run_deadline() -> None:
+    """Tool-specific deadline also cancels a hanging async dispatch."""
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("wait.policy", {}, "wait-policy"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    items = await _collect(
+        _invoke_execute(
+            ToolPolicyTimeoutProbeAgent(model),
+            RunAgentInput(state_id="tool-policy-timeout", instruction="wait"),
+        )
+    )
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_timeout"
+
+    event_model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("wait.policy", {}, "wait-policy-event"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    events = [
+        event
+        async for event in AgentRunner.for_agent_instance(
+            ToolPolicyTimeoutProbeAgent(event_model)
+        ).run_events(
+            RunAgentInput(state_id="tool-policy-event-timeout", instruction="wait")
+        )
+    ]
+    finished = events[-1]
+    assert isinstance(finished, RunFinishedEvent)
+    assert finished.error is not None
+    assert finished.error["code"] == "agent_timeout"
+
+
+@pytest.mark.parametrize(
+    "calls",
+    [
+        (
+            ModelToolCall("echo.read", {"value": "a"}, "duplicate"),
+            ModelToolCall("echo.read", {"value": "b"}, "duplicate"),
+        ),
+        (ModelToolCall("echo.read", {"value": "a"}, " "),),
+    ],
+)
+async def test_iterative_runner_rejects_blank_or_duplicate_call_ids(
+    calls: tuple[ModelToolCall, ...],
+) -> None:
+    """Provider correlation ids are nonblank and unique before dispatch."""
+    round_ = tuple(
+        ModelStreamEvent(
+            kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+            tool_call=call,
+        )
+        for call in calls
+    ) + (ModelStreamEvent(kind=ModelStreamEventKind.DONE),)
+    items = await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(ScriptedRoundModel((round_,))),
+            RunAgentInput(state_id="bad-call-ids", instruction="x"),
+        )
+    )
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_tool_batch_invalid"
+
+
+async def test_guarded_complete_structured_output_uses_one_final() -> None:
+    """Complete structured payload channel does not duplicate the public final."""
+    model = ScriptedCompleteModel(
+        (ModelResponse(content="", structured_output={"ok": True}),)
+    )
+    items = await _collect(
+        _invoke_execute(
+            GuardedCompleteProbeAgent(model),
+            RunAgentInput(state_id="complete-structured", instruction="x"),
+        )
+    )
+    assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 1
+
+
+async def test_iterative_resume_without_checkpoint_starts_from_input() -> None:
+    """A legacy active state with no loop checkpoint resumes without replay data."""
+    state_id = "resume-without-checkpoint"
+    states = FakeStateRepository()
+    states.save(
+        AgentState(
+            id=state_id,
+            agent_type="runner_probe",
+            status=AgentStatus.ACTIVE,
+            transition=AgentStateTransition.RUNNING,
+        )
+    )
+    model = ScriptedRoundModel(((ModelStreamEvent(kind=ModelStreamEventKind.DONE),),))
+
+    items = await _run_durable(
+        model,
+        RunAgentInput(state_id=state_id, instruction="resume", resume=True),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert items[-1].kind is AgentYieldKind.FINAL
+    assert len(model.requests) == 1
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+async def test_iterative_resume_rejects_non_mapping_checkpoint(surface: str) -> None:
+    """A malformed checkpoint root cannot silently restart and replay actions."""
+    state_id = "invalid-checkpoint-root"
+    states = FakeStateRepository()
+    states.save(
+        AgentState(
+            id=state_id,
+            agent_type="runner_probe",
+            status=AgentStatus.ACTIVE,
+            metadata={RUNNER_CHECKPOINT_METADATA_KEY: []},
+        )
+    )
+    agent = ProbeAgent(
+        ScriptedRoundModel(()),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    runner = AgentRunner.for_agent_instance(agent)
+    command = RunAgentInput(state_id=state_id, instruction="resume", resume=True)
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == "agent_checkpoint_invalid"
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == "agent_checkpoint_invalid"
+    assert states.get(state_id).status is AgentStatus.FAILED
+    assert states.get(state_id).reason is AgentStateReason.EXECUTION_FAILED
+
+
+@pytest.mark.parametrize(
+    ("key", "invalid_value"),
+    [
+        ("history", "not-a-sequence"),
+        ("history", ["not-a-message"]),
+        ("history", [{"role": 1, "content": "x", "metadata": {}}]),
+        ("history", [{"role": "user", "content": "x", "metadata": []}]),
+        ("history", [{"role": "invalid", "content": "x", "metadata": {}}]),
+        ("assistant_text", {}),
+        ("assistant_text", [1]),
+        ("pending_calls", [{"name": 1, "arguments": {}}]),
+        (
+            "pending_calls",
+            [{"name": "echo.read", "arguments": {}, "call_id": 1}],
+        ),
+        (
+            "pending_calls",
+            [{"name": "echo.read", "arguments": {}, "metadata": []}],
+        ),
+        ("route_metadata", []),
+        ("step_count", True),
+    ],
+)
+async def test_iterative_resume_rejects_corrupted_checkpoint_fields(
+    key: str,
+    invalid_value: JsonValue,
+) -> None:
+    """Each persisted transcript/counter field is typed before resume execution."""
+    state_id = f"invalid-checkpoint-{key}"
+    checkpoint: dict[str, JsonValue] = {
+        "history": [{"role": "user", "content": "x", "metadata": {}}],
+        "assistant_text": [],
+        "tool_calls": [],
+        "step_count": 0,
+        "tool_call_count": 0,
+        "total_tokens": 0,
+        "seen_call_ids": [],
+        "approved_call_fingerprints": [],
+        "pending_calls": [],
+        "route_metadata": {},
+    }
+    checkpoint[key] = invalid_value
+    states = FakeStateRepository()
+    states.save(
+        AgentState(
+            id=state_id,
+            agent_type="runner_probe",
+            status=AgentStatus.ACTIVE,
+            metadata={RUNNER_CHECKPOINT_METADATA_KEY: checkpoint},
+        )
+    )
+    agent = ProbeAgent(
+        ScriptedRoundModel(()),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    items = await _collect(
+        _invoke_execute(
+            agent,
+            RunAgentInput(state_id=state_id, instruction="resume", resume=True),
+        )
+    )
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_checkpoint_invalid"
+    assert states.get(state_id).status is AgentStatus.FAILED
+
+
+@pytest.mark.parametrize(
+    "status",
+    [AgentStatus.INTERRUPTED, AgentStatus.FAILED],
+)
+async def test_iterative_model_step_observes_external_terminal_state(
+    monkeypatch: pytest.MonkeyPatch,
+    status: AgentStatus,
+) -> None:
+    """A durable state transition at the model boundary stops success finalization."""
+    original = AgentRunner._finish_model_step
+
+    def finish_and_transition(
+        self: AgentRunner,
+        run_input: RunAgentInput,
+        state: AgentState | None,
+        context: runner_module._ExecutionContext,
+        accumulator: runner_module._ModelStepAccumulator,
+    ) -> ModelError | None:
+        error = original(self, run_input, state, context, accumulator)
+        if state is not None:
+            current = self._states_required().get(state.id)
+            self._states_required().save(
+                replace(
+                    current,
+                    status=status,
+                    transition=(
+                        AgentStateTransition.INTERRUPTED
+                        if status is AgentStatus.INTERRUPTED
+                        else AgentStateTransition.FAILED
+                    ),
+                    reason=(
+                        AgentStateReason.USER_INTERRUPTED
+                        if status is AgentStatus.INTERRUPTED
+                        else AgentStateReason.EXECUTION_FAILED
+                    ),
+                    current_activity="external model-boundary transition",
+                )
+            )
+        return error
+
+    monkeypatch.setattr(AgentRunner, "_finish_model_step", finish_and_transition)
+    items = await _run_durable(
+        ScriptedRoundModel(((ModelStreamEvent(kind=ModelStreamEventKind.DONE),),)),
+        RunAgentInput(state_id=f"model-state-{status.value}", instruction="stop"),
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+
+    assert not any(item.kind is AgentYieldKind.FINAL for item in items)
+    assert any(item.kind is AgentYieldKind.ERROR for item in items) is (
+        status is AgentStatus.FAILED
+    )
+
+
+async def test_iterative_event_cursor_correlates_missing_start_id() -> None:
+    """Missing provider start/id still correlates args and end within one model step."""
+    call = ModelToolCall("echo.read", {"value": "x"})
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_ARGS_DELTA,
+                    tool_call=call,
+                    tool_call_args_delta='{"value":"x"}',
+                ),
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_END,
+                    tool_call=call,
+                ),
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                    tool_call=call,
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    events = [
+        event
+        async for event in AgentRunner.for_agent_instance(
+            StatelessProbeAgent(model)
+        ).run_events(RunAgentInput(state_id="cursor-missing", instruction="x"))
+    ]
+    args = next(event for event in events if isinstance(event, ToolCallArgsDeltaEvent))
+    end = next(event for event in events if isinstance(event, ToolCallEndEvent))
+    result = next(event for event in events if isinstance(event, ToolCallResultEvent))
+    assert (
+        args.call_id == end.call_id == result.call_id == "cursor-missing:model-1:call-1"
+    )
+
+
+def test_iterative_arguments_digest_rejects_non_json_values() -> None:
+    """Approval identity cannot be computed from non-deterministic arguments."""
+    with pytest.raises(AgentDefinitionError, match="deterministic JSON"):
+        _arguments_digest(cast(JsonObject, {"invalid": object()}))
+
+
+def test_iterative_approved_call_requires_corresponding_assistant_history() -> None:
+    """Approval modification cannot update an unrelated assistant call envelope."""
+    history = (
+        ModelMessage(ModelMessageRole.USER, "before"),
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            "calling",
+            metadata={
+                "tool_calls": [{"id": "other", "name": "echo.write", "arguments": {}}]
+            },
+        ),
+    )
+    with pytest.raises(AgentDefinitionError, match="missing the approved tool call"):
+        _history_with_approved_call(
+            history,
+            ModelToolCall("echo.write", {"value": "approved"}, "write-1"),
+        )

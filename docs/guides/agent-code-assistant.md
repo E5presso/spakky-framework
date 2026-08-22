@@ -7,8 +7,9 @@
 `CodeAssistant`가 생성자 주입으로 model, workspace, shell, git,
 state/signal/evidence repository를 받고 외부 동작을 `@agent_tool`로 노출하는
 선언형 흐름을 보여줍니다. `CodeAssistant`에는 `execute()` 본문이 없으며 runner는
-한 provider stream의 tool candidate를 승인·dispatch하고 result/evidence/terminal을
-방출합니다. Tool result 재주입이나 같은 invocation의 model 재호출은 하지 않습니다.
+model이 낸 tool batch를 검증·승인·dispatch하고 `TOOL` result를 다음 model request에
+재주입합니다. 이 과정을 반복해 tool call이 없는 model step에서 final을 한 번
+방출합니다.
 
 ## 무엇을 검증하나
 
@@ -19,6 +20,7 @@ state/signal/evidence repository를 받고 외부 동작을 `@agent_tool`로 노
 - `shell.command`
 - `git.status`, `git.diff`, `git.apply`
 - `IAgentModel.stream()` 기반 provider-neutral token/tool-call stream
+- assistant tool-call/`TOOL` result history를 잇는 multi-round model continuation
 - 위험한 작업 앞에서 멈추는 approval wait와 `AgentSignalKind.APPROVAL_DECISION`
 - 실행 중 `AgentSignalKind.USER_MESSAGE` 소비
 - append-only `AgentEvidence`
@@ -83,7 +85,7 @@ contribution을 사용해야 합니다.
 
 가장 작은 선언형 `@Agent` 형태는 다음 예시와 같습니다. 도구만 선언하고
 `execute()`를 생략하면, 파일로 저장해 애플리케이션 scan 대상에 포함했을 때
-`CodeAssistant`는 일반 UseCase처럼 container에서 resolve되고 runner가 single-pass
+`CodeAssistant`는 일반 UseCase처럼 container에서 resolve되고 runner가 bounded iterative
 표준 실행을 `execute()`로 제공합니다.
 
 아래 snippet은 핵심 모양만 보여줍니다. 실제로 실행하려면 `IWorkspacePort`와 `WorkspaceReadResult`도 같은 모듈에 정의하거나 import해야 하며, 앱에서는 `IWorkspacePort` 구현체를 `@Pod`로 등록해야 합니다.
@@ -230,23 +232,10 @@ python main.py agents code --state-id run-1 --instruction "inspect and edit" --r
 
 읽기 도구(`workspace.read`, `workspace.search`, `git.status`, `git.diff`)는 approval 없이 진행됩니다. 쓰기 또는 side effect 도구(`workspace.write`, `shell.command`, `git.apply`)는 `plan_agent_tool_approval()` 결과에 따라 `AgentYieldKind.APPROVAL`을 먼저 내보냅니다.
 
-approval decision은 durable signal queue에 append되어야 합니다.
-
-```python
-from spakky.agent import AgentSignal, AgentSignalKind, ApprovalDecision
-
-signals.append(
-    AgentSignal(
-        id="approval:run-1:workspace.write",
-        agent_state_id="run-1",
-        kind=AgentSignalKind.APPROVAL_DECISION,
-        payload={
-            "request_id": "approval:run-1:workspace.write",
-            "decision": ApprovalDecision.APPROVE.value,
-        },
-    )
-)
-```
+Approval decision은 durable signal queue에 append되어야 합니다. `request_id`는 tool
+이름으로 재구성하지 말고 실제 `AgentYieldKind.APPROVAL` payload의 `Approval.id`를 그대로
+사용합니다. Signal 작성 예시는 [AI Agent 심화](agents-advanced.md#approval-signal-cancel)를
+확인하세요.
 
 restart 후에는 저장된 `AgentState`, pending `AgentSignal`, append-only `AgentEvidence`를 사용해 `plan_agent_resume()`이 다음 action을 결정합니다. 완료된 boundary는 `skip_completed`, incomplete idempotent boundary는 `retry`, 불확실하거나 approval wait 중인 boundary는 `require_hitl`로 정리됩니다.
 
@@ -280,6 +269,6 @@ model = app.container.get(type_=IAgentModel)
 이 model을 `CodeAssistant` 생성자에 주입하면 `IAgentModel.stream()`에서 provider
 SDK stream이 공통 `ModelStreamEvent`로 변환되어 demo Agent에 들어옵니다. Adapter는
 tool 후보를 검증할 뿐 직접 실행하지 않으며, CodeAssistant runner가 candidate
-approval/dispatch와 result/evidence/terminal 방출을 담당합니다. 실행한 tool result로
-모델 답변을 다시 생성해야 하는 제품 흐름은 custom `execute()`에서 다음
-`ModelRequest`와 model 호출을 명시적으로 조립해야 합니다.
+approval/dispatch와 result/evidence를 담당합니다. 실행한 tool result는 assistant
+tool-call turn 및 `TOOL` message로 다음 `ModelRequest`에 들어가며, 후속 model step이 최종
+답변을 생성합니다.

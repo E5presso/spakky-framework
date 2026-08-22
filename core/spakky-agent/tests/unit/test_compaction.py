@@ -17,6 +17,7 @@ from spakky.agent.compaction import (
     DEFAULT_SUMMARY_INSTRUCTION,
     SUMMARY_MESSAGE_METADATA_KEY,
     SUMMARY_MESSAGE_METADATA_VALUE,
+    validate_tool_call_groups,
 )
 from spakky.agent.interfaces.model import (
     ModelCapability,
@@ -65,6 +66,31 @@ def _tool(content: str) -> ModelMessage:
     return ModelMessage(ModelMessageRole.TOOL, content)
 
 
+def _tool_group() -> tuple[ModelMessage, ...]:
+    return (
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            "calling",
+            metadata={
+                "tool_calls": [
+                    {"id": "call-1", "name": "lookup", "arguments": {"q": "a"}},
+                    {"id": "call-2", "name": "lookup", "arguments": {"q": "b"}},
+                ]
+            },
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            "first result",
+            metadata={"call_id": "call-1", "tool_name": "lookup"},
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            "second result",
+            metadata={"call_id": "call-2", "tool_name": "lookup"},
+        ),
+    )
+
+
 _NO_USAGE = ModelUsage()
 _NO_CAPABILITY = ModelCapability()
 
@@ -87,6 +113,33 @@ async def test_keep_recent_expect_passes_short_history_through() -> None:
     compacted = await strategy.compact(history, _NO_USAGE, _NO_CAPABILITY)
 
     assert compacted == history
+
+
+async def test_keep_recent_preserves_latest_tool_group_beyond_message_window() -> None:
+    """max_messages=1 still retains the complete latest assistant/tool group."""
+    group = _tool_group()
+    history = (_user("old"), *group)
+
+    compacted = await KeepRecentMessagesCompactionStrategy(max_messages=1).compact(
+        history,
+        _NO_USAGE,
+        _NO_CAPABILITY,
+    )
+
+    assert compacted == group
+    assert validate_tool_call_groups(compacted) == group
+
+
+def test_compaction_validation_accepts_assistant_with_empty_tool_call_list() -> None:
+    """An explicitly empty assistant tool-call envelope is an ordinary message."""
+    history = (
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            "no call",
+            metadata={"tool_calls": []},
+        ),
+    )
+    assert validate_tool_call_groups(history) == history
 
 
 def test_keep_recent_expect_rejects_non_positive_window() -> None:
@@ -119,6 +172,21 @@ async def test_trim_tool_results_expect_leaves_within_budget_tool_messages() -> 
     compacted = await strategy.compact(history, _NO_USAGE, _NO_CAPABILITY)
 
     assert compacted == history
+
+
+async def test_trim_tool_results_preserves_call_correlation_metadata() -> None:
+    """Trimming changes result content only and keeps the tool group correlated."""
+    group = _tool_group()
+
+    compacted = await TrimToolResultsCompactionStrategy(max_characters=5).compact(
+        group,
+        _NO_USAGE,
+        _NO_CAPABILITY,
+    )
+
+    assert compacted[1].content == "first"
+    assert compacted[2].content == "secon"
+    assert validate_tool_call_groups(compacted) == compacted
 
 
 def test_trim_tool_results_expect_rejects_non_positive_budget() -> None:
@@ -188,6 +256,94 @@ async def test_summarize_expect_skips_model_call_when_within_recent_window() -> 
 
     assert compacted == history
     assert model.requests == []
+
+
+async def test_summarize_preserves_latest_tool_group_with_keep_recent_one() -> None:
+    """Summary splitting never sends half of the latest continuation group."""
+    group = _tool_group()
+    model = SummarizingModel(summary="old briefing")
+
+    compacted = await SummarizeOldTurnsCompactionStrategy(
+        model=model,
+        keep_recent=1,
+    ).compact(
+        (_user("old ask"), *group),
+        _NO_USAGE,
+        model.capability,
+    )
+
+    assert compacted[1:] == group
+    assert model.requests[0].messages[1].content == "user: old ask"
+    assert validate_tool_call_groups(compacted) == compacted
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        (
+            ModelMessage(
+                ModelMessageRole.TOOL,
+                "orphan",
+                metadata={"call_id": "call-1"},
+            ),
+        ),
+        (_tool_group()[0], _tool_group()[1]),
+        (
+            ModelMessage(
+                ModelMessageRole.ASSISTANT,
+                "calling",
+                metadata={"tool_calls": "invalid"},
+            ),
+        ),
+        (
+            ModelMessage(
+                ModelMessageRole.ASSISTANT,
+                "calling",
+                metadata={"tool_calls": [1]},
+            ),
+        ),
+        (
+            ModelMessage(
+                ModelMessageRole.ASSISTANT,
+                "calling",
+                metadata={"tool_calls": [{"id": " "}]},
+            ),
+        ),
+        (
+            ModelMessage(
+                ModelMessageRole.ASSISTANT,
+                "calling",
+                metadata={"tool_calls": [{"id": "same"}, {"id": "same"}]},
+            ),
+        ),
+        (
+            ModelMessage(
+                ModelMessageRole.ASSISTANT,
+                "calling",
+                metadata={"tool_calls": [{"id": "call-1"}]},
+            ),
+            ModelMessage(
+                ModelMessageRole.TOOL,
+                "wrong",
+                metadata={"call_id": "call-2"},
+            ),
+        ),
+        (
+            ModelMessage(
+                ModelMessageRole.ASSISTANT,
+                "calling",
+                metadata={"tool_calls": [{"id": "call-1"}]},
+            ),
+            ModelMessage(ModelMessageRole.TOOL, "missing id"),
+        ),
+    ],
+)
+def test_compaction_validation_rejects_orphan_or_missing_results(
+    history: tuple[ModelMessage, ...],
+) -> None:
+    """Provider-bound history cannot contain orphan or incomplete tool groups."""
+    with pytest.raises(AgentDefinitionError):
+        validate_tool_call_groups(history)
 
 
 async def test_summarize_expect_honors_custom_instruction() -> None:

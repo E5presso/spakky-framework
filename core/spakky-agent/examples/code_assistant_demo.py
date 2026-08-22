@@ -18,7 +18,6 @@ from spakky.agent import (
     IAgentSignalRepository,
     IAgentStateRepository,
     Agent,
-    AgentExecutionLimits,
     AgentExecutionSpec,
     AgentSignal,
     AgentSignalKind,
@@ -239,7 +238,6 @@ class GitCliAdapter(IGitPort):
             AgentSignalKind.STEERING_INSTRUCTION,
         ),
         recovery=RecoveryStrategy.ACTION_BOUNDARY,
-        limits=AgentExecutionLimits(timeout_seconds=600),
         delegation_allowed=True,
         metadata={"demo": "framework-building-block"},
     )

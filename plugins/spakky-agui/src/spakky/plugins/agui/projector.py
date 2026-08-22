@@ -286,7 +286,9 @@ class AgUiProjector:
     def _project_step_finished(
         self, event: NeutralStepFinishedEvent
     ) -> list[BaseEvent]:
-        return [StepFinishedEvent(step_name=event.step_name)]
+        events = self._close_open_frames()
+        events.append(StepFinishedEvent(step_name=event.step_name))
+        return events
 
     def _project_state_snapshot(
         self, event: NeutralStateSnapshotEvent

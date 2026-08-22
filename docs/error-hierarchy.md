@@ -494,6 +494,39 @@ from spakky.agent.error import (
 
 `AgentToolBindingError`는 tool callable 실행 전에 발생하므로, schema에 없는 인자·필수 인자 누락·positional/keyword 중복 같은 잘못된 model payload가 side effect를 만들기 전에 차단됩니다.
 
+`AgentExecutionLimits`의 0 이하 값과 `timeout_seconds`를 `AgentExecutionSpec` top-level에
+두는 사용은 definition contract 오류입니다. Timeout은
+`AgentExecutionSpec.limits.timeout_seconds`에만 둡니다.
+
+다음 값은 Python exception class가 아니라 iterative runner가 public `ERROR` yield 또는
+`RunFinishedEvent.error`에 싣는 terminal code입니다.
+
+| code | 검사 시점 | 의미 |
+| --- | --- | --- |
+| `agent_tool_batch_invalid` | terminal model batch 전체 사전검증 | call 하나라도 catalog/ID/signature/approval-plan 계약을 위반해 0개 dispatch |
+| `agent_model_terminal_invalid` | model step 종료 | terminal `DONE`이 정확히 하나가 아님 |
+| `agent_model_execution_failed` | model/compaction framework 경계 | stream/complete 또는 history compaction의 typed framework failure |
+| `agent_tool_execution_failed` | tool invoke/result commit | tool의 typed framework failure 또는 result JSON serialization 실패 |
+| `agent_checkpoint_invalid` | resume checkpoint restore/revalidation | checkpoint field나 restored pending batch가 유효하지 않음 |
+| `agent_max_steps_exceeded` | 다음 model request 직전 | 누적 model step 한도 도달 |
+| `agent_max_tool_calls_exceeded` | whole batch dispatch 직전 | batch를 추가하면 실제 tool-call 한도 초과 |
+| `agent_max_tokens_exceeded` | terminal usage 누적 직후 | provider total-token 누적값이 budget 초과 |
+| `agent_usage_unavailable` | token budget이 켜진 model step 종료 | provider가 `total_tokens`를 제공하지 않아 budget을 집행할 수 없음 |
+| `agent_timeout` | model 또는 async tool await | enforceable run/tool deadline 초과 |
+| `agent_sync_tool_timeout_unenforceable` | batch authority 전 | deadline이 있는 batch에 preempt할 수 없는 in-process sync tool이 있어 0개 dispatch |
+| `agent_approval_invalid` | authority/decision/MODIFY 검증 | malformed approval, modified bind 실패 또는 assistant history mismatch로 dispatch 불가 |
+| `agent_approval_unavailable` | approval-required batch의 stateless 경로 | durable state/signal/evidence authority가 없어 dispatch 불가 |
+| `agent_signal_projection_unsupported` | `run_events()` signal projection | hook이 neutral event로 지원하지 않는 non-Progress yield shape를 반환 |
+| `cancelled` | model/tool 사이의 cancel poll | continuation과 public final 없이 cancellation lifecycle 종료 |
+
+Provider `ModelError`도 code/message/retryable/metadata를 유지한 채 runner terminal error가
+되며 다음 model step이나 public final로 진행하지 않습니다.
+
+Token budget terminal은 현재 step의 route, usage, 누적 counter를 error metadata와 durable
+model evidence에 함께 남깁니다. Canonical event-surface cancel은 code/message와
+`state="cancelled"`, `signal_id`, optional `requested_by` metadata를 가진 정확히 하나의
+`RunFinishedEvent.error`입니다.
+
 ---
 
 ## 플러그인 에러

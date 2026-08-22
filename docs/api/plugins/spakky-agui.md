@@ -32,6 +32,16 @@ pause처럼 `approval_id=None`이면 `AgUiPendingApprovalError`이며 현재 별
 mapping은 없습니다. Event projection은 protocol-specific framing과 필드 선택을 수행하므로
 무손실 또는 1:1 변환으로 간주하지 않습니다.
 
+Iterative run에서는 model step마다 별도 message/reasoning ID를 사용합니다.
+`STEP_FINISHED`를 투영하기 전에 열린 AG-UI text/reasoning/tool frame을 닫아 다음
+`model-N` frame과 섞이지 않게 하며, 여러 model/tool step 뒤에도 terminal
+`RUN_FINISHED`/`RUN_ERROR`는 한 번만 방출합니다.
+
+Candidate-only model event에는 core runner가 missing tool START/END만 합성합니다. Signal
+`Progress`는 `signal_progress` artifact를 거쳐 AG-UI `CUSTOM`이 되며 unsupported hook
+yield는 `agent_signal_projection_unsupported` `RUN_ERROR`입니다. Canonical cancel도
+`code="cancelled"` `RUN_ERROR` 하나이며 success terminal을 추가하지 않습니다.
+
 ## Public API
 
 ::: spakky.plugins.agui

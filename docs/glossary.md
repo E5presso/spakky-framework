@@ -261,7 +261,7 @@ model/workspace/shell/git/repository 같은 outbound port를 주입받습니다.
 
 `@Agent`가 `execute()`를 직접 선언하면 `AgentYield` stream 계약을 검증합니다.
 `execute()`를 생략하면 framework runner가 `RunAgentInput`을 받는 runner-backed
-`execute()`를 합성합니다. FastAPI WebSocket, CLI, SSE 같은 Spakky-native inbound
+`execute()`를 합성하고 bounded model/tool loop를 소유합니다. FastAPI WebSocket, CLI, SSE 같은 Spakky-native inbound
 adapter는 `AgentYield`를 transport별 payload로 변환하고, protocol adapter는
 `AgentRunner.run_events()`의 `AgentEvent`를 사용합니다.
 
@@ -275,6 +275,30 @@ inbound contract입니다. `state_id`는 run/state id, `instruction`은 이번 m
 
 `message_history`가 있으면 caller가 history를 직접 제공하는 stateless 경로이고, 없으면
 runner가 optional `ITaskStore`에서 `effective_conversation_id`로 persisted history를 읽습니다.
+
+### AgentExecutionLimits
+
+`AgentExecutionSpec.limits`에 들어가는 bounded runner 계약입니다. 기본 model step은 8,
+실제 tool call은 32이며 token/time budget은 opt-in입니다. Step limit은 다음 model request
+전에, tool limit은 whole batch dispatch 전에, token limit은 provider total usage를 누적한
+뒤, timeout은 model/async-tool await에 집행됩니다. Deadline이 있는 in-process sync tool은
+preempt할 수 없어 batch 전체가 실행 전에 `agent_sync_tool_timeout_unenforceable`로
+거부됩니다. `AgentExecutionSpec.timeout_seconds` direct field나 alias는 없습니다.
+
+### Approval fingerprint
+
+승인 재사용을 exact tool payload에 묶는
+`approval:{state_id}:{call_id}:{digest}` identifier입니다. `digest`는 canonical JSON
+arguments의 full SHA-256입니다. Checkpoint는 `approved_call_fingerprints`를 보존하며
+pending argument가 달라지면 기존 승인을 재사용하지 않습니다. `MODIFY`는 새 payload로
+fingerprint와 assistant tool-call history를 함께 갱신합니다.
+
+### Tool continuation group
+
+Tool calls를 가진 하나의 `ASSISTANT` message와 그 call ID 각각에 대응하는 연속 `TOOL`
+result message 전체입니다. Compaction은 이 group을 분리할 수 없습니다. Runner는 custom
+strategy를 포함해 각 compaction 단계 뒤 correlation을 검증하고 orphan/missing result를
+provider request 전에 fail closed합니다.
 
 ### ITaskStore
 
@@ -296,6 +320,10 @@ protocol-neutral event union입니다. `MessageDeltaEvent`, `ReasoningDeltaEvent
 통해 어떤 agent/run/conversation에서 나왔는지 보존합니다. AG-UI는 이를 `runId`와
 `threadId`로, A2A는 task id와 context id로 투영합니다.
 
+Provider가 `TOOL_CALL_CANDIDATE`만 보내면 runner는 없는 START/END frame만 합성합니다.
+`run_events()`에서 signal hook의 `Progress`는 `signal_progress` `ArtifactEvent`가 되며,
+지원하지 않는 hook yield shape는 `agent_signal_projection_unsupported` terminal입니다.
+
 ### IAgentModel { #iagentmodel }
 
 `spakky-agent`가 소유하는 model outbound port입니다. `spakky-llm`은 이 port를
@@ -305,9 +333,10 @@ Completions, Anthropic Messages, Gemini Developer API, Vertex AI SDK adapter에
 vLLM dialect로 지원됩니다. Provider 응답과 stream은 공통
 `ModelResponse`와 `ModelStreamEvent`로 정규화됩니다.
 
-표준 Agent runner는 invocation마다 `IAgentModel.stream()`을 한 번 순회하고 tool
-candidate를 dispatch한 뒤 종료합니다. Tool result 재주입과 반복 model 호출이 필요한
-multi-step 흐름은 custom `execute()`에서 구성합니다. 사용법은
+표준 Agent runner는 `IAgentModel.stream()` 또는 guarded `complete()`에서 whole tool
+batch를 받은 뒤 검증·승인·순차 dispatch합니다. Assistant tool-call 및 `TOOL` result
+history를 다음 model request에 넣어 반복하고, tool call이 없는 step에서 final을 한 번
+만듭니다. 사용법은
 [AI Agent 개발](guides/agents.md), catalog 사용법은
 [LLM 모델 라우팅](guides/llm-routing.md)을 확인하세요.
 

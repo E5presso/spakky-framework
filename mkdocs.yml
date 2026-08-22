@@ -238,3 +238,4 @@ nav:
       - ADR-0014 AI PR 리뷰 자동 승인 정책: adr/0014-ai-pr-review-auto-approval-policy.md
       - ADR-0015 Multi-provider LLM official SDK adapters: adr/0015-multi-provider-llm-official-sdk-adapters.md
       - ADR-0016 Operator-owned model catalog와 opaque model routing: adr/0016-operator-owned-model-catalog.md
+      - ADR-0017 Bounded iterative model/tool loop: adr/0017-bounded-iterative-agent-loop.md

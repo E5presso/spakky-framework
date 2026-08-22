@@ -301,13 +301,23 @@ First-party adapter가 생성하는 `ModelResponse`, `ModelStreamEvent`, `ModelT
 
 Terminal response/event는 `finish_reason`을 추가하며 provider에 따라 `response_id`, `response_model`, reasoning 또는 thought signature가 추가될 수 있습니다. Unknown ref는 default route를 선택한 것처럼 꾸미지 않고 요청된 `model_ref`만 error metadata에 남깁니다. Credential과 header는 metadata에 포함하지 않습니다.
 
+### Iterative continuation history
+
+`AgentRunner`는 validated model tool batch를 assistant history로 보존하고 각 실행 결과를 `TOOL` message로 추가한 뒤 같은 logical route로 다음 model step을 요청합니다. Assistant message의 `metadata["tool_calls"]`에는 call id, name, arguments와 adapter가 붙인 provider metadata가 함께 들어가고, `TOOL` message는 `call_id`와 `tool_name`으로 결과를 correlate합니다.
+
+OpenAI adapter는 이를 assistant `tool_calls`와 `role="tool"` history로, Anthropic adapter는 `tool_use`/`tool_result` content block으로, Google adapter는 `FunctionCall`/`FunctionResponse` part로 복원합니다. Google function-call part의 base64 `thought_signature`는 `ModelToolCall.metadata` → assistant history → 다음 native `types.Part.thought_signature` 경로로 round-trip합니다. Physical route evidence도 assistant history와 step/evidence metadata에 유지되며 credential/header는 들어가지 않습니다.
+
+Streaming model step과 `NO_STREAM_UNTIL_FINAL_GUARDED` complete step은 같은 continuation contract를 사용합니다. Complete response의 tool calls는 runner가 START/END/CANDIDATE/DONE event로 normalize한 뒤 streaming path와 동일하게 batch validation·approval·dispatch됩니다. Google처럼 candidate만 제공하는 stream은 runner가 missing START/END만 합성하고, OpenAI/Anthropic처럼 lifecycle side를 이미 제공한 stream은 중복 frame을 만들지 않습니다.
+
+Provider request 직전 history는 assistant tool-call envelope와 모든 correlated TOOL result가 완전한 group인지 검사됩니다. Built-in compaction은 group 경계를 보존하고 custom compaction output도 strategy 단계마다 재검증되므로 orphan/missing/duplicate call-result history를 native SDK에 넘기지 않습니다. Invalid group은 provider 호출 전 `agent_model_execution_failed`로 terminalize됩니다.
+
 ## Tool authority와 terminal validation
 
 Provider가 tool call을 반환했다는 사실만으로 실행 권한이 생기지 않습니다. Request에 `ToolCallingSpec.tools` catalog가 선언되어 있어야 하며, provider가 반환한 모든 tool name과 arguments가 그 catalog schema를 통과해야 합니다. Catalog가 없거나 비어 있거나 catalog에 없는 tool이면 거부합니다. `ModelToolChoice.NONE`은 call 1개 이상을, `ModelToolChoice.REQUIRED`는 call 0개를 각각 `LlmResponseError`로 처리합니다.
 
 OpenAI는 tool call 유무와 terminal `finish_reason=tool_calls`가 서로 일치해야 하고, Anthropic은 같은 규칙을 `stop_reason=tool_use`에 적용합니다. 세 provider의 성공 stream은 terminal reason이 반드시 있어야 하며, EOF까지 reason이 없으면 partial output을 `DONE`으로 게시하지 않습니다.
 
-`TOOL_CALL_CANDIDATE`는 `AgentRunner`가 approval/dispatch를 시작할 수 있는 side-effect authority gate입니다. 모든 provider는 terminal/refusal 상태, 전체 tool batch, tool choice와 provider terminal consistency, structured output을 먼저 검증한 뒤 candidate를 게시합니다. Batch 중 하나라도 invalid하면 앞선 valid call도 candidate가 되지 않습니다. OpenAI는 candidate 이전의 informational `TOOL_CALL_START`/`TOOL_CALL_ARGS_DELTA`는 stream할 수 있지만 `TOOL_CALL_END`와 candidate는 검증 완료까지 보류합니다. Anthropic은 `START`/`ARGS_DELTA`/`END`/candidate 전체를, Google은 candidate를 terminal 검증 전까지 buffer합니다.
+`TOOL_CALL_CANDIDATE`는 `AgentRunner`가 batch authority 검증을 시작할 수 있는 side-effect 경계입니다. 모든 provider는 terminal/refusal 상태, provider-level 전체 tool batch, tool choice와 provider terminal consistency, structured output을 먼저 검증한 뒤 candidate를 게시합니다. Batch 중 하나라도 provider contract에서 invalid하면 앞선 valid call도 candidate가 되지 않습니다. Runner는 candidate batch 전체의 registered descriptor, stable/unique call id, Python argument binding, approval plan과 tool budget을 다시 prevalidate하고 모든 approval gate를 통과한 뒤 첫 tool을 dispatch합니다. Provider-level validation과 runner authority validation은 서로 대체하지 않습니다. OpenAI는 candidate 이전의 informational `TOOL_CALL_START`/`TOOL_CALL_ARGS_DELTA`는 stream할 수 있지만 `TOOL_CALL_END`와 candidate는 검증 완료까지 보류합니다. Anthropic은 `START`/`ARGS_DELTA`/`END`/candidate 전체를, Google은 candidate를 terminal 검증 전까지 buffer합니다.
 
 SDK의 terminal literal type을 success allowlist로 간주하지 않습니다.
 

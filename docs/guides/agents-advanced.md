@@ -6,43 +6,49 @@
 
 기초 문서가 "무엇을 작성해야 실행되는가"를 다룬다면, 이 문서는 "왜 그렇게 나뉘어 있고 어떤 경계가 원리를 지키는가"를 다룹니다. 세 가지 원칙이 전체 설계를 묶습니다.
 
-1. Runner가 single-pass 표준 orchestration을 소유하고, Agent class는 선언을 소유합니다.
+1. Runner가 bounded iterative orchestration을 소유하고, Agent class는 선언을 소유합니다.
 2. 위험한 side effect는 approval/evidence/action boundary 뒤에서만 실행됩니다.
 3. 외부 protocol은 core event를 재해석하지 않고 `AgentEvent`를 각 wire event로 투영합니다.
 
-## 원리: 선언은 Agent, single-pass 실행은 Runner
+## 원리: 선언은 Agent, iterative 실행은 Runner
 
 Runner-backed Agent에서 개발자는 표준 배관을 직접 쓰지 않습니다. `@Agent` spec,
-`@agent_tool`, `@on_signal`, 생성자 주입 port를 선언하면 runner가 provider stream
-하나를 소비하고 candidate approval/dispatch, signal polling, evidence와 terminal
-event 방출을 수행합니다.
+`@agent_tool`, `@on_signal`, 생성자 주입 port를 선언하면 runner가 model/tool loop,
+whole-batch validation과 authority, signal polling, evidence, checkpoint, terminal
+uniqueness를 집행합니다.
 
 ```mermaid
-sequenceDiagram
-  participant Adapter as Inbound adapter
-  participant Agent as @Agent instance
-  participant Runner as AgentRunner
-  participant Model as IAgentModel
-  participant Tools as AgentToolDispatcher
-  participant Repo as State/Signal/Evidence repositories
+flowchart TD
+  Adapter[Inbound adapter] --> Runner[AgentRunner]
+  Runner --> Model["IAgentModel: model-N"]
+  Model --> Terminal["terminal response + usage + routing"]
+  Terminal --> Validate["전체 candidate batch 검증 + authority"]
+  Validate -->|tool call 없음| Final[FINAL exactly once]
+  Validate -->|승인 필요| Pause[approval pause + durable checkpoint]
+  Pause --> Signal[APPROVAL_DECISION]
+  Signal --> Validate
+  Validate -->|승인 완료| Tools["순차 dispatch: tool-N"]
+  Tools --> Evidence[evidence + action boundary]
+  Evidence --> History["ASSISTANT tool-call + TOOL result history"]
+  History --> Model
+  Runner --> Repo[State / Signal / Evidence repositories]
 
-  Adapter->>Agent: execute(RunAgentInput)
-  Agent->>Runner: synthesized runner-backed execute()
-  Runner->>Repo: load state, pending signals, evidence
-  Runner->>Model: stream(ModelRequest + tool schemas)
-  Model-->>Runner: token deltas / tool call candidates / done
-  Runner-->>Adapter: AgentYield TOKEN/PROGRESS
-  Runner->>Tools: dispatch approved tool call
-  Tools-->>Runner: typed result
-  Runner->>Repo: append evidence and state boundary
-  Runner-->>Adapter: AgentYield TOOL / FINAL / APPROVAL / ERROR
+  classDef inbound fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+  classDef loop fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+  classDef gate fill:#FFF3E0,stroke:#EF6C00,color:#E65100
+  classDef terminal fill:#ECEFF1,stroke:#546E7A,color:#263238
+  class Adapter inbound
+  class Runner,Model,History loop
+  class Terminal,Validate,Pause,Signal,Tools,Evidence,Repo gate
+  class Final terminal
 ```
 
 이 구조의 이점은 표준 실행 정책이 한 곳에 있다는 점입니다. Approval, signal
 polling, evidence append, recovery, compaction을 각 Agent가 제각각 구현하지 않고
-runner가 일관되게 적용합니다. 다만 runner는 tool result를 새 model request에
-재주입하지 않습니다. 같은 invocation에서 model을 다시 호출해야 하면 custom
-`execute()`로 multi-step orchestration을 작성합니다.
+runner가 일관되게 적용합니다. Runner는 model이 낸 assistant tool-call turn과 실제
+`TOOL` result를 provider-neutral history에 추가하고, 같은 invocation의 다음 model
+step을 호출합니다. Tool call이 없는 valid terminal step에서만 public final을 한 번
+방출합니다.
 
 ## 원리: 도구 호출은 계약, side effect는 경계
 
@@ -50,18 +56,30 @@ runner가 일관되게 적용합니다. 다만 runner는 tool result를 새 mode
 
 ```mermaid
 flowchart TD
-  Candidate[Model tool call candidate] --> Lookup[AgentToolCatalog lookup]
-  Lookup --> Approval{approval required?}
-  Approval -- no --> Bind[Bind JSON payload to Python signature]
-  Approval -- yes --> Pause[RunPaused / AgentYield APPROVAL]
+  Candidate[Model tool-call batch] --> Validate["전체 catalog / ID / bind / approval-plan 검증"]
+  Validate --> Limit{batch 전체가 tool limit 안인가?}
+  Limit -- no --> Fail[terminal error / 0 dispatch]
+  Limit -- yes --> Approval{모든 authority gate 통과?}
+  Approval -- no --> Pause[RunPaused / AgentYield APPROVAL]
   Pause --> Decision[APPROVAL_DECISION signal]
   Decision --> Approved{approved?}
-  Approved -- no --> Finish[terminal result or rejection]
-  Approved -- yes --> Bind
-  Bind --> Dispatch[AgentToolDispatcher invokes method]
+  Approved -- no --> Fail
+  Approved -- modify --> Rebind[modified payload 재검증]
+  Approved -- yes --> Dispatch[AgentToolDispatcher 순차 실행]
+  Rebind --> Dispatch
+  Approval -- yes --> Dispatch
   Dispatch --> Evidence[Append AgentEvidence]
-  Evidence --> Result[Emit TOOL result and evidence]
-  Result --> Terminal[Emit terminal output]
+  Evidence --> History[ASSISTANT tool-call + TOOL result history]
+  History --> Next[다음 model step]
+
+  classDef model fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+  classDef gate fill:#FFF3E0,stroke:#EF6C00,color:#E65100
+  classDef action fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+  classDef stop fill:#FFEBEE,stroke:#C62828,color:#B71C1C
+  class Candidate model
+  class Validate,Limit,Approval,Pause,Decision,Approved,Rebind gate
+  class Dispatch,Evidence,History,Next action
+  class Fail stop
 ```
 
 읽기 tool은 `ToolEffects.read_only()`와 `approval=NOT_REQUIRED`로 의도를 분명히 합니다. 쓰기, shell, 외부 API, patch 적용처럼 상태를 바꾸는 tool은 approval을 명시하거나 기본 `DERIVED` 판정에 맡깁니다. Evidence는 append-only라서 나중에 resume/retry를 판단할 때 "무엇을 이미 실행했는가"를 재구성할 수 있습니다.
@@ -98,6 +116,7 @@ from spakky.agent import (
     Agent,
     AgentExecutionSpec,
     EvidenceCapture,
+    IAgentModel,
     Idempotency,
     ToolApprovalRequirement,
     ToolEffects,
@@ -123,7 +142,8 @@ class IWorkspacePort(ABC):
 
 @Agent(spec=AgentExecutionSpec(name="code_assistant", objective="inspect files"))
 class CodeAssistant:
-    def __init__(self, workspace: IWorkspacePort) -> None:
+    def __init__(self, model: IAgentModel, workspace: IWorkspacePort) -> None:
+        self._model = model
         self._workspace = workspace
 
     @agent_tool(
@@ -213,59 +233,92 @@ request = ModelRequest(
 )
 ```
 
-Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE`를 내보내면 **runner가**
-현재 provider stream 안에서 다음 순서를 자동으로 수행합니다.
+Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE` batch를 내보내면 **runner가**
+다음 순서를 자동으로 수행합니다.
 
-1. `call.name`으로 `AgentToolCatalog`에서 descriptor를 찾습니다.
-2. `plan_agent_tool_approval()`로 approval이 필요한지 판단합니다.
-3. 필요하면 `AgentYieldKind.APPROVAL`을 yield하고 decision signal을 기다립니다 (HITL pause → resume).
-4. 승인되었거나 approval이 필요 없으면 `descriptor.bind_invocation(call.arguments)`로 argument를 검증합니다.
-5. Python method를 호출합니다.
-6. result를 `AgentYieldKind.TOOL`과 append-only evidence로 남깁니다.
+1. Provider call ID를 nonblank·unique 값으로 정규화합니다. Missing ID는
+   `{state_id}:model-{N}:call-{index}`로 만듭니다.
+2. Batch의 모든 call에 대해 catalog lookup, Python signature bind, approval plan과
+   arguments digest를 검증합니다.
+3. Batch 전체를 추가해도 `max_tool_calls`를 넘지 않는지 확인합니다.
+4. 모든 approval/authority gate를 통과시킵니다. 하나라도 invalid이면 실제 tool은 0개
+   dispatch됩니다.
+5. Authority가 모두 열린 뒤 선언 순서대로 `AgentToolDispatcher`를 호출합니다.
+6. 각 성공 result를 append-only evidence와 `TOOL` message로 commit합니다.
+7. 전체 batch가 끝나면 assistant tool-call turn과 모든 `TOOL` result를 담은 다음
+   `ModelRequest`를 실행합니다.
 
-`bind_invocation()`은 model payload가 Python signature와 맞는지 검사합니다. 필수 인자 누락, 알 수 없는 인자, 중복 인자는 tool method가 실행되기 전에 `AgentToolBindingError`로 실패합니다. 이 전체 dispatch는 `AgentToolDispatcher`가 담당하며, 외부 MCP 도구도 같은 `AgentToolCatalog`로 정규화되어 동일 경로로 호출됩니다.
+Provider stream이 fine-grained `TOOL_CALL_START`/`TOOL_CALL_END` 없이 terminal
+`TOOL_CALL_CANDIDATE`만 내는 경우, `run_events()`는 candidate correlation ID를 기준으로
+빠진 `ToolCallStartEvent`와 `ToolCallEndEvent`를 합성합니다. Provider가 이미 한쪽 또는
+양쪽 frame을 보냈다면 없는 쪽만 만들며 중복 frame은 만들지 않습니다. 이 framing은
+protocol lifecycle을 완성할 뿐 dispatch authority가 아니며 terminal batch 검증 실패 시
+tool result는 나오지 않습니다.
 
-같은 dispatch 단계를 명시적으로 제어해야 할 때의 핵심 모양은 다음과 같습니다.
-Tool result를 다음 model request에 넣는 multi-step 흐름이라면 이 dispatch 뒤에 새
-`ModelRequest`를 만드는 custom `execute()` orchestration도 직접 작성해야 합니다.
-
-```python
-from spakky.agent import Agent, AgentYield, plan_agent_tool_approval
-
-descriptor = Agent.get(CodeAssistant).tool_catalog.by_schema_name(call.name)
-approval = plan_agent_tool_approval(
-    descriptor=descriptor,
-    approval_id=f"approval:{state.id}:{call.name}",
-    agent_state_id=state.id,
-    agent_type="CodeAssistant",
-    call_id=call.call_id,
-)
-if approval.requires_approval and approval.yield_item is not None:
-    yield AgentYield(kind=approval.yield_item.kind, payload=approval.yield_item.payload)
-    return
-bound = descriptor.bind_invocation(call.arguments)
-result = descriptor.callable(self, *bound.args, **bound.kwargs)
-```
+이 원자성은 **검증과 dispatch 진입 여부**에 대한 것입니다. 실제 tool 실행은 순차이며
+cross-tool transaction이 아닙니다. 첫 tool의 side effect가 완료된 뒤 둘째 tool이 실패하거나
+cancel되면 runner가 첫 side effect를 rollback하지 않습니다. 그런 business transaction이
+필요하면 tool 자체가 transaction/compensation port를 소유해야 합니다.
 
 ## Approval, signal, cancel
 
 Approval은 모든 tool 앞에서 묻는 기능이 아닙니다. Tool metadata에서 risk를 계산하고, side effect가 있는 boundary에서만 approval request를 만듭니다.
 
 ```python
-from spakky.agent import AgentSignal, AgentSignalKind, ApprovalDecision
-
-signals.append(
-    AgentSignal(
-        id="approval:run-1:workspace.write",
-        agent_state_id="run-1",
-        kind=AgentSignalKind.APPROVAL_DECISION,
-        payload={
-            "request_id": "approval:run-1:workspace.write",
-            "decision": ApprovalDecision.APPROVE.value,
-        },
-    )
+from spakky.agent import (
+    AgentSignal,
+    AgentSignalKind,
+    Approval,
+    ApprovalDecision,
+    IAgentSignalRepository,
 )
+
+
+def queue_approval(
+    signals: IAgentSignalRepository,
+    state_id: str,
+    approval: Approval,
+) -> None:
+    signals.append(
+        AgentSignal(
+            id=f"decision:{approval.id}",
+            agent_state_id=state_id,
+            kind=AgentSignalKind.APPROVAL_DECISION,
+            payload={
+                "request_id": approval.id,
+                "decision": ApprovalDecision.APPROVE.value,
+            },
+        )
+    )
 ```
+
+Runner는 pause 전에 assistant tool-call history, pending batch, counters, route metadata,
+`approved_call_fingerprints`를 `runner_checkpoint`에 저장합니다. Fingerprint는
+`state_id`, call ID, canonical JSON argument의 full SHA-256 digest에 결속된 approval
+ID `approval:{state_id}:{call_id}:{digest}`입니다. Client가 같은 `state_id`에 decision
+signal을 append하고 새 `RunAgentInput(resume=True)` invocation을 열면 fresh runner가
+checkpoint를 복원합니다. 이미 끝난 model step을 replay하지 않고 pending batch의 approval,
+dispatch, `TOOL` history, 다음 model step부터 이어갑니다.
+
+`MODIFY`는 `modified_payload`를 원래 call argument 대신 사용하며 Python signature에 다시
+bind한 뒤 그 값만 dispatch합니다. Pending call뿐 아니라 provider metadata를 보존한
+assistant `tool_calls` history의 arguments도 최종 승인 payload로 교체하므로 다음 model은
+실제로 실행된 argument를 봅니다. Assistant envelope에서 해당 call을 찾을 수 없거나
+modified payload가 bind되지 않으면 `agent_approval_invalid`로 0 dispatch 종료합니다.
+
+승인 뒤에는 최종 approved call로 fingerprint를 다시 계산합니다. Resume 시 pending
+argument만 변조하면 fingerprint가 일치하지 않아 기존 승인을 재사용하지 않고 변경된
+payload용 새 approval에서 다시 pause합니다. `REJECT`/`CANCEL`은 final 없이 terminal
+error/cancel로 끝나고 `DEFER`는 pause를 유지합니다.
+
+Model/tool/approval 전후 action-boundary checkpoint는 evidence로 남습니다. Crash 뒤
+incomplete non-idempotent tool boundary는 자동 재실행하지 않고
+`RECOVERY_REQUIRES_HITL`로 pause합니다. 이미 승인된 call도 ID와 argument가 같은 pending
+retry에만 approval을 재사용합니다.
+
+Checkpoint root/history/counter/call metadata가 malformed이거나 restored pending batch가
+현재 catalog/signature로 다시 검증되지 않으면 input부터 조용히 재시작하지 않고
+`agent_checkpoint_invalid`로 failed terminal을 만듭니다.
 
 Signal은 실행 중 Agent에게 들어오는 외부 입력입니다.
 
@@ -282,6 +335,24 @@ Signal은 실행 중 Agent에게 들어오는 외부 입력입니다.
 Durable repository를 쓰는 경우 orchestration은 safe boundary에서 `consume_pending_agent_signals()`를 호출합니다. 이 helper는 pending queue를 append order로 읽고, 현재 Agent가 받아들일 수 있는 prefix만 consumed 처리합니다.
 
 Cancel은 바로 terminal state로 덮어쓰는 flag가 아닙니다. 일반적인 흐름은 `begin_agent_cancellation()`으로 state를 `CANCELLING`으로 만들고, model stream/tool/delegate cleanup hook을 실행한 뒤 `complete_agent_cancellation()`으로 끝냅니다.
+
+Runner는 model step 사이, model event마다, authority 뒤 첫 dispatch 전, 각 tool 전후에 cancel
+signal을 확인합니다. 첫 dispatch 전 cancel이면 batch는 0개 실행됩니다. Tool callable이
+return한 직후 cancel이면 result/evidence/history/final을 commit하지 않지만, callable 내부의
+side effect 자체를 rollback하지는 않습니다. Provider `ERROR`나 malformed terminal
+(`DONE`이 정확히 하나가 아님)은 state를 failed로 끝내고 다음 model step과 public final을
+방출하지 않습니다.
+
+Model stream/guarded complete/compaction에서 발생한 typed framework failure는
+`agent_model_execution_failed`, tool invocation이나 result serialization의 typed framework
+failure는 `agent_tool_execution_failed` terminal로 정규화됩니다. 두 surface 모두 예외를
+success나 partial final로 바꾸지 않습니다.
+
+Canonical cancel은 `run()`에서 `AgentYieldKind.CANCEL`로 나오며 reason, optional
+`requested_by`, `state="cancelled"`, `signal_id`를 보존하고 `FINAL`을 내지 않습니다.
+`run_events()`에서는 정확히 하나의 `RunFinishedEvent.error`가
+`code="cancelled"`, 같은 message/metadata shape를 가집니다. AG-UI는 이를 `RUN_ERROR`,
+A2A는 failed task로 투영합니다.
 
 ## 선언형 시그널 훅: `@on_signal`
 
@@ -340,6 +411,13 @@ class SteerableAgent:
 
 pydantic-ai의 `@agent.instructions`/event handler 데코레이터처럼, `@on_signal`은 비즈니스 반응만 선언하고 폴링·소비·evidence 기록은 runner가 담당합니다.
 
+두 public surface의 signal 표현은 다릅니다. `run()`은 hook이 yield한 `AgentYield`를 그대로
+전달합니다. `run_events()`는 `Progress` payload만 neutral `ArtifactEvent`로 바꾸며
+`name="signal_progress"`, message/current step/metadata를 content에 보존합니다. AG-UI는 이
+artifact를 `CUSTOM`, A2A는 artifact update로 투영합니다. Hook이 `Token`, `Tool`, `Final`
+등 지원되지 않는 shape를 yield하면 signal/evidence를 이미 소비한 뒤
+`agent_signal_projection_unsupported` terminal error로 fail closed합니다.
+
 ## Durable 실행과 repository
 
 짧은 Agent는 repository 없이도 동작할 수 있습니다. 하지만 다음 중 하나를 쓰면 durable path입니다.
@@ -375,9 +453,61 @@ spec = AgentExecutionSpec(
         AgentSignalKind.APPROVAL_DECISION,
         AgentSignalKind.CANCEL,
     ),
-    limits=AgentExecutionLimits(timeout_seconds=300),
+    limits=AgentExecutionLimits(
+        max_steps=8,
+        max_tool_calls=32,
+        max_tokens=100_000,
+        timeout_seconds=300.0,
+    ),
 )
 ```
+
+`AgentExecutionLimits()`의 기본값은 `max_steps=8`, `max_tool_calls=32`,
+`max_tokens=None`, `timeout_seconds=None`입니다. Count/token/time 값은 설정한다면 모두
+양수여야 합니다. `AgentExecutionSpec.timeout_seconds` field나 compatibility alias는 없으며
+반드시 `limits` 안에 둡니다.
+
+| 제한 | 집행 시점 | terminal code |
+| --- | --- | --- |
+| `max_steps` | 다음 `ModelRequest`를 보내기 직전 | `agent_max_steps_exceeded` |
+| `max_tool_calls` | 검증된 candidate batch 전체를 dispatch하기 직전 | `agent_max_tool_calls_exceeded` |
+| `max_tokens` | 각 model step의 terminal provider usage를 누적한 직후 | `agent_max_tokens_exceeded` |
+| `timeout_seconds` | model과 async tool await를 감싸는 invocation wall-clock deadline | `agent_timeout` |
+
+Token budget은 prompt 길이 추정치가 아니라 provider가 보고한 `ModelUsage.total_tokens`를
+step마다 누적합니다. `max_tokens`를 설정했는데 어떤 terminal step에서도 total usage를
+받지 못하면 안전하게 계속할 수 없으므로 `agent_usage_unavailable`로 종료합니다. Token
+budget과 batch tool limit은 해당 step의 tool dispatch보다 먼저 적용됩니다.
+
+`agent_max_tokens_exceeded`와 `agent_usage_unavailable`도 단순 counter만 남기지 않습니다.
+Terminal metadata는 해당 step이 제공한 actual route, per-step usage, 누적 counter를
+보존하고 durable run은 같은 routing/usage/limit snapshot과 typed error를 model-decision
+evidence에 append한 뒤 failed state로 끝납니다.
+
+Run timeout은 model stream의 다음 event, guarded `complete()`, async tool await에 실제로
+적용됩니다. Async tool 자체의 `TimeoutPolicy`도 있으면 run deadline과 tool deadline 중
+이른 쪽을 사용합니다. Fresh `resume=True` invocation은 checkpoint의 step/tool/token
+counter를 복원하면서 새 invocation deadline을 시작합니다.
+
+In-process sync callable은 event loop 안에서 실행되므로 실행 중 deadline으로 preempt할 수
+없습니다. Run deadline 또는 해당 tool의 `TimeoutPolicy`가 있는 batch에 sync tool이 하나라도
+포함되면 runner는 authority/dispatch 전에 batch 전체를
+`agent_sync_tool_timeout_unenforceable`로 0 dispatch 종료합니다. Deadline이 전혀 없는 sync
+tool은 순차 실행할 수 있지만 runtime timeout 보장은 없습니다. Deadline이 필요한 tool은
+`async def`로 작성하거나 timeout을 집행하는 외부 worker/transport port 뒤에 둡니다.
+
+## Streaming과 guarded complete
+
+기본 `LOW_LATENCY`/`BALANCED`/`STRICT` 계열은 각 model step에서
+`IAgentModel.stream()`을 소비합니다. Streaming provider는 step마다 정확히 하나의 terminal
+`DONE`을 내야 하며 0개 또는 2개 이상이면 `agent_model_terminal_invalid`입니다.
+
+`StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED`는 각 step에서
+`IAgentModel.complete()`를 호출합니다. Runner가 `ModelResponse`의 content, tool calls,
+structured output, usage를 같은 internal event shape로 정규화하므로 whole-batch validation,
+approval, 순차 dispatch, history continuation, limit, final uniqueness는 streaming path와
+동일합니다. Tool call이 있으면 guarded complete도 다음 model step으로 이어지고,
+structured payload가 있어도 public final은 한 번만 방출됩니다.
 
 Restart 후에는 `plan_agent_resume(state, evidence, pending_signals)`가 다음 동작을 결정합니다.
 
@@ -475,12 +605,21 @@ spec = AgentExecutionSpec(
 
 | 전략 | 압축 방식 |
 |------|-----------|
-| `KeepRecentMessagesCompactionStrategy` | 가장 오래된 메시지를 버리고 최근 N개만 유지 (가장 저렴) |
-| `TrimToolResultsCompactionStrategy` | 오래된 tool result 본문을 잘라 토큰을 줄임 |
-| `SummarizeOldTurnsCompactionStrategy` | 보조 model 호출로 오래된 turn을 요약 (가장 풍부) |
+| `KeepRecentMessagesCompactionStrategy` | 최근 N개 경계를 기준으로 하되 latest ASSISTANT tool-call과 상관된 모든 TOOL result group을 통째로 유지 |
+| `TrimToolResultsCompactionStrategy` | TOOL 본문만 자르고 call ID/tool name correlation metadata는 보존 |
+| `SummarizeOldTurnsCompactionStrategy` | complete ASSISTANT+TOOL group을 쪼개지 않는 경계에서 오래된 turn만 보조 model로 요약 |
 | `ProviderManagedCompactionStrategy` | history를 그대로 두고 provider가 압축을 소유 (no-op 명시) |
 
-`ICompactionStrategy`를 직접 구현해 커스텀 전략을 주입할 수도 있습니다. 압축은 ADR-0009 `ContextDigest` 모델과 정렬되어 raw evidence를 대체하지 않고 derived 결과로 표현됩니다.
+Tool-call assistant message와 그 call ID를 가진 모든 연속 `TOOL` result는 하나의
+continuation group입니다. `max_messages=1`이어도 최신 group이 여러 message라면 group
+전체를 유지하므로 결과 개수가 설정값을 넘을 수 있습니다.
+
+Runner는 compaction 전 history와 chain의 **각 strategy 출력 직후**를 검증합니다. Orphan
+`TOOL`, assistant call의 missing result, unknown/duplicate/mismatched call ID를 발견하면
+조용히 버리거나 수선하지 않고 provider request 전에 `agent_model_execution_failed`로
+종료합니다. 따라서 custom `ICompactionStrategy`도 ASSISTANT+TOOL group을 통째로
+보존해야 하며 invalid output은 fail closed합니다. 압축은 raw evidence를 대체하지 않고
+derived context view만 만듭니다.
 
 pydantic-ai의 message history processor / `compact_messages` capability와 같은 자리를 `ICompactionStrategy` 포트가 채웁니다.
 
@@ -545,6 +684,22 @@ taxonomy를 내보냅니다. Target protocol의 framing·상태·필드가 다�
 - `spakky-a2a`는 `AgentEvent`를 A2A task/message/artifact update로 투영하고 AgentCard, JSON-RPC, HTTP+JSON REST, gRPC transport를 제공합니다.
 - `spakky-mcp`는 `AgentEvent` stream을 소비하지 않습니다. 외부 MCP server tool을 직접 전부 노출하지 않고 `mcp_search_tools`와 `mcp_call_tool`만 `AgentToolCatalog`에 병합합니다.
 
+Iterative loop의 step과 correlation ID는 실제 action에 맞춰 증가합니다.
+
+- Model request는 `model-1`, `model-2`, … step으로 열리고 각 step은 matching
+  `STEP_STARTED`/`STEP_FINISHED`를 가집니다.
+- 실제 tool dispatch는 누적 순서대로 `tool-1`, `tool-2`, … step입니다.
+- Message/reasoning ID는 `{state_id}:model-{N}:message|reasoning`이라 model round 사이에서
+  겹치지 않습니다.
+- Provider call ID가 없으면 `{state_id}:model-{N}:call-{batch_index}`를 만들고, provider가
+  준 ID는 nonblank이며 run 전체에서 재사용되지 않아야 합니다.
+- Core `StepFinishedEvent.metadata`에는 누적 `model_steps`, 실제 완료된 `tool_calls`, 누적
+  `total_tokens`, provider event가 제공한 actual route의
+  `model_ref`/`profile`/`provider`/`model`, 해당 step의
+  input/output/total usage가 포함됩니다. Durable model-decision evidence도 같은 routing,
+  usage, counter snapshot을 남깁니다. 현재 AG-UI/A2A projector는 이 metadata 전체를
+  wire에 보존하지 않으므로 core event/evidence가 진단 정본입니다.
+
 수동 adapter를 직접 작성할 때는 `AgentYieldKind`를 AG-UI로 재구성하지 말고 다음 `AgentEvent` mapping을 기준으로 삼습니다.
 
 | 중립 `AgentEvent` | 주 사용처 |
@@ -581,7 +736,8 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 
 ## 운영 체크리스트
 
-- 한 번의 provider stream과 tool dispatch면 `execute()` 본문을 생략하고 runner-backed single-pass 실행을 사용합니다. Multi-step model/tool 호출은 custom `execute()`로 작성하고 input과 return/yield type을 모두 annotate합니다.
+- 일반적인 multi-round model/tool continuation은 `execute()` 본문을 생략하고 bounded iterative runner에 맡깁니다. 표준 loop와 다른 business orchestration을 직접 소유해야 할 때만 custom `execute()`의 input과 return/yield type을 모두 annotate합니다.
+- `AgentExecutionSpec.limits`에 model/tool/token/time budget을 두고 direct timeout alias를 만들지 않습니다.
 - Agent가 provider SDK, DB client, HTTP framework를 직접 import하지 않고 port/interface에 의존합니다.
 - Model backend는 `IAgentModel` adapter 뒤에 있습니다.
 - 모든 model-callable capability는 `@agent_tool`로 선언되어 schema, risk, idempotency, evidence metadata가 있습니다.

@@ -60,6 +60,7 @@ class ScriptedModel(IAgentModel):
 
     def __init__(self, events: Sequence[ModelStreamEvent]) -> None:
         self._events = tuple(events)
+        self._request_counts: dict[str, int] = {}
 
     @property
     @override
@@ -72,6 +73,17 @@ class ScriptedModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        state_id = request.metadata.get("state_id")
+        run_key = state_id if isinstance(state_id, str) else "default"
+        count = self._request_counts.get(run_key, 0)
+        self._request_counts[run_key] = count + 1
+        if count > 0 and any(
+            event.kind is ModelStreamEventKind.TOOL_CALL_CANDIDATE
+            for event in self._events
+        ):
+            yield _token("completed")
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
         for event in self._events:
             yield event
 
@@ -143,13 +155,20 @@ def rpc_url() -> str:
 @pytest.fixture
 def token_events() -> tuple[ModelStreamEvent, ...]:
     """A simple run streaming one token then terminating to a final output."""
-    return (_token("hello "), _token("world"))
+    return (
+        _token("hello "),
+        _token("world"),
+        ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+    )
 
 
 @pytest.fixture
 def approval_events() -> tuple[ModelStreamEvent, ...]:
     """A run whose write tool requires approval, pausing for input."""
-    return (_tool("write_note"),)
+    return (
+        _tool("write_note"),
+        ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+    )
 
 
 def make_client(app: Starlette) -> httpx.AsyncClient:

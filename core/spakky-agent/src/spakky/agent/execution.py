@@ -41,10 +41,19 @@ class StreamingExposureMode(StrEnum):
 class AgentExecutionLimits:
     """Bounded execution limits declared outside infrastructure capabilities."""
 
+    max_steps: int = 8
+    max_tool_calls: int = 32
+    max_tokens: int | None = None
     timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
         """Reject limits that would fail later at bootstrap."""
+        if self.max_steps <= 0:
+            raise AgentDefinitionError("Agent model-step limit must be positive")
+        if self.max_tool_calls <= 0:
+            raise AgentDefinitionError("Agent tool-call limit must be positive")
+        if self.max_tokens is not None and self.max_tokens <= 0:
+            raise AgentDefinitionError("Agent token limit must be positive")
         if self.timeout_seconds is not None and self.timeout_seconds <= 0:
             raise AgentDefinitionError("Agent timeout limit must be positive")
 
@@ -118,7 +127,6 @@ class AgentExecutionSpec:
     accepted_signals: tuple[AgentSignalKind, ...] = ()
     recovery: RecoveryStrategy = RecoveryStrategy.NONE
     streaming_exposure_mode: StreamingExposureMode = StreamingExposureMode.BALANCED
-    timeout_seconds: float | None = None
     limits: AgentExecutionLimits = field(default_factory=AgentExecutionLimits)
     teammates: tuple[AgentTeammate, ...] = ()
     compaction: AgentCompactionPolicy | None = None
@@ -135,14 +143,6 @@ class AgentExecutionSpec:
             raise AgentDefinitionError("Agent instructions cannot be blank")
         if self.output_type is not None and not isclass(self.output_type):
             raise AgentDefinitionError("Agent output type must be a class")
-        if self.timeout_seconds is not None and self.timeout_seconds <= 0:
-            raise AgentDefinitionError("Agent timeout must be positive")
-        if (
-            self.timeout_seconds is not None
-            and self.limits.timeout_seconds is not None
-            and self.timeout_seconds != self.limits.timeout_seconds
-        ):
-            raise AgentDefinitionError("Agent timeout declarations must match")
         teammate_names = [teammate.name for teammate in self.teammates]
         if len(set(teammate_names)) != len(teammate_names):
             raise AgentDefinitionError("Agent teammate names must be unique")

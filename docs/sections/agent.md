@@ -12,7 +12,7 @@ MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
-| [AI Agent 개발](../guides/agents.md) | `@Agent`·`RunAgentInput`·`AgentYield`로 Agent 만들기 |
+| [AI Agent 개발](../guides/agents.md) | `@Agent`·bounded iterative model/tool loop·`RunAgentInput`으로 Agent 만들기 |
 | [LLM 모델 라우팅](../guides/llm-routing.md) | opaque model ref를 provider profile과 route에 연결하기 |
 | [CodeAssistant 에이전트 예제](../guides/agent-code-assistant.md) | 실제 Agent 흐름을 예제로 따라가기 |
 
@@ -20,7 +20,7 @@ MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
-| [AI Agent 심화](../guides/agents-advanced.md) | tool catalog·approval·durable 실행·transport adapter |
+| [AI Agent 심화](../guides/agents-advanced.md) | whole-batch authority·실행 limit·approval/resume·durable/protocol 경계 |
 
 ## 어댑터
 

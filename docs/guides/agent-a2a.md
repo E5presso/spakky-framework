@@ -134,7 +134,24 @@ A2A executor는 inbound task id를 core `RunAgentInput.state_id`로 사용하고
 `RUN_FINISHED`는 projector가 즉시 terminal update를 내지 않고 executor가 stream을 모두
 drain한 뒤 한 번만 complete/failed로 reconcile합니다.
 
+Iterative run의 `model-1`, `tool-1`, `model-2` 같은 step boundary는 순서대로 A2A
+`working` update에 들어갑니다. 첫 model이 tool을 요청하면 result artifact를 추가한 뒤
+다음 model step의 message/status update가 이어지고, 전체 loop가 final에 도달한 뒤에만
+executor가 task를 한 번 `completed`로 바꿉니다. 중간 model step의 `DONE`은 A2A task
+terminal이 아닙니다.
+
+Candidate-only model event는 core runner가 missing START/END frame만 합성하므로 A2A에는
+call start/end working metadata가 순서대로 나타납니다. Signal `Progress`는
+`ArtifactEvent(name="signal_progress")`를 거쳐 A2A artifact가 되며 unsupported hook yield는
+`agent_signal_projection_unsupported` failed task입니다. Run 안에서 소비한 canonical cancel
+signal도 `code="cancelled"` error data와 함께 failed task로 끝납니다. 이것은 A2A protocol의
+별도 cancel operation이 task를 canceled state로 바꾸는 경로와 구분합니다.
+
 승인 재개는 inbound A2A data part에 `approval_id`와 `decision`을 담아 보냅니다. executor는 이를 `APPROVAL_DECISION` signal로 append하고 `RunAgentInput(resume=True)`로 runner를 재개합니다.
+현재 A2A ingress는 `modified_payload`를 signal로 전달하지 않으므로 argument-bearing
+`MODIFY`는 지원하지 않습니다. A2A client는 `APPROVE`, `REJECT`, `DEFER`, `CANCEL`을
+사용하고, payload 수정 승인이 필요하면 `modified_payload`를 보존하는 다른 inbound
+adapter를 사용해야 합니다.
 
 A2A client가 logical model이나 MCP 서버 선택을 함께 전달해야 하면 message data part를
 사용합니다. Executor는 canonical `modelSelection`을 `RunAgentInput.model_selection`으로,

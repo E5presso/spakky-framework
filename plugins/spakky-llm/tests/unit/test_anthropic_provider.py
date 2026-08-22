@@ -1,9 +1,10 @@
 """Tests for the native Anthropic Messages provider adapter."""
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import replace
 from functools import partial
 from types import TracebackType
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx2
@@ -23,6 +24,7 @@ from pydantic import SecretStr, TypeAdapter
 from spakky.agent import (
     JsonObject,
     JsonSchemaConstraint,
+    KeepRecentMessagesCompactionStrategy,
     ModelMessage,
     ModelMessageRole,
     ModelCapability,
@@ -32,6 +34,7 @@ from spakky.agent import (
     ModelToolCall,
     ModelToolChoice,
     ModelToolSpec,
+    ModelUsage,
     SamplingOptions,
     StreamingOptions,
     StructuredOutputSpec,
@@ -51,6 +54,43 @@ from spakky.plugins.llm.error import (
 from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers import anthropic as provider_module
 from spakky.plugins.llm.providers.anthropic import AnthropicMessagesProvider
+
+
+async def test_compacted_tool_group_maps_to_complete_anthropic_native_history() -> None:
+    """KeepRecent(max_messages=1) preserves Anthropic tool_use/tool_result pairs."""
+    group = (
+        ModelMessage(
+            ModelMessageRole.ASSISTANT,
+            "",
+            metadata={
+                "tool_calls": (
+                    {"id": "call-1", "name": "search", "arguments": {"q": "x"}},
+                )
+            },
+        ),
+        ModelMessage(
+            ModelMessageRole.TOOL,
+            "result",
+            metadata={"call_id": "call-1", "tool_name": "search"},
+        ),
+    )
+    compacted = await KeepRecentMessagesCompactionStrategy(max_messages=1).compact(
+        (ModelMessage(ModelMessageRole.USER, "old"), *group),
+        ModelUsage(),
+        ModelCapability(),
+    )
+
+    native, system = AnthropicMessagesProvider()._history(
+        ModelRequest(messages=compacted)
+    )
+
+    assert system is omit
+    assert native[0]["role"] == "assistant"
+    assistant_content = cast(Sequence[Mapping[str, object]], native[0]["content"])
+    tool_content = cast(Sequence[Mapping[str, object]], native[1]["content"])
+    assert assistant_content[0]["id"] == "call-1"
+    assert tool_content[0]["tool_use_id"] == "call-1"
+
 
 _STREAM_EVENT_ADAPTER = TypeAdapter(MessageStreamEvent)
 

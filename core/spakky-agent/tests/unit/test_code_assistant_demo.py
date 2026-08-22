@@ -38,6 +38,7 @@ from spakky.agent import (
     Evidence,
     Final,
     IAgentModel,
+    JsonObject,
     JsonValue,
     ModelCapability,
     ModelError,
@@ -121,9 +122,24 @@ async def test_code_assistant_demo_expect_runs_end_to_end_building_block_scenari
     signals = FakeSignalRepository(
         (
             _user_signal("run-1", "please keep the diff small"),
-            _approval_signal("run-1", "approval:run-1:workspace.write"),
-            _approval_signal("run-1", "approval:run-1:shell.command"),
-            _approval_signal("run-1", "approval:run-1:git.apply"),
+            _approval_signal(
+                "run-1",
+                _approval_request_id(
+                    "run-1",
+                    "write-1",
+                    {"path": "notes.md", "content": "approved write"},
+                ),
+            ),
+            _approval_signal(
+                "run-1",
+                _approval_request_id("run-1", "shell-1", {"command": "printf ok"}),
+            ),
+            _approval_signal(
+                "run-1",
+                _approval_request_id(
+                    "run-1", "apply-1", {"patch": "diff --git a/x b/x"}
+                ),
+            ),
         )
     )
     evidence = FakeEvidenceRepository()
@@ -257,7 +273,13 @@ async def test_code_assistant_demo_expect_model_stream_error_fails_state() -> No
     assert isinstance(error_payload, Error)
     assert error_payload.code == "rate_limited"
     assert error_payload.retryable is True
-    assert error_payload.metadata == {"provider": "test"}
+    assert error_payload.metadata == {
+        "provider": "test",
+        "model_steps": 1,
+        "tool_calls": 0,
+        "total_tokens": 0,
+        "usage": {},
+    }
     assert states.get("error-run").status is AgentStatus.FAILED
 
 
@@ -360,6 +382,7 @@ class RecordingModel(IAgentModel):
     def __init__(self, events: Sequence[ModelStreamEvent]) -> None:
         self._events = tuple(events)
         self.requests: list[ModelRequest] = []
+        self._request_counts: dict[str, int] = {}
 
     @property
     @override
@@ -374,6 +397,16 @@ class RecordingModel(IAgentModel):
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         self.requests.append(request)
+        state_id = request.metadata.get("state_id")
+        run_key = state_id if isinstance(state_id, str) else "default"
+        request_count = self._request_counts.get(run_key, 0)
+        self._request_counts[run_key] = request_count + 1
+        if request_count > 0 and any(
+            event.kind is ModelStreamEventKind.TOOL_CALL_CANDIDATE
+            for event in self._events
+        ):
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
         for event in self._events:
             yield event
 
@@ -572,6 +605,16 @@ def _approval_signal(state_id: str, request_id: str) -> AgentSignal:
             "decision": ApprovalDecision.APPROVE.value,
         },
     )
+
+
+def _approval_request_id(
+    state_id: str,
+    call_id: str,
+    arguments: JsonObject,
+) -> str:
+    from spakky.agent.runner import _arguments_digest
+
+    return f"approval:{state_id}:{call_id}:{_arguments_digest(arguments)}"
 
 
 def _cancel_signal(state_id: str) -> AgentSignal:

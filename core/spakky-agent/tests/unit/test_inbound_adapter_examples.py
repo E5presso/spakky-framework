@@ -30,6 +30,7 @@ from tests.unit.test_code_assistant_demo import (
     FakeStateRepository,
     FakeWorkspace,
     RecordingModel,
+    _approval_request_id,
     _tool_call,
 )
 
@@ -41,6 +42,11 @@ async def test_fastapi_websocket_example_expect_streams_agent_yields_and_appends
     signals = FakeSignalRepository(())
     container = RecordingContainer(_code_assistant(signals), signals)
     socket = RecordingWebSocket(())
+    approval_id = _approval_request_id(
+        "ws-run",
+        "write-1",
+        {"path": "notes.md", "content": "approved"},
+    )
 
     await stream_code_assistant_to_websocket(
         container,
@@ -49,7 +55,7 @@ async def test_fastapi_websocket_example_expect_streams_agent_yields_and_appends
         inbound_signals=(
             {
                 "kind": "approval_decision",
-                "request_id": "approval:ws-run:workspace.write",
+                "request_id": approval_id,
                 "decision": "approve",
             },
         ),
@@ -72,12 +78,17 @@ async def test_typer_cli_example_expect_stdout_streaming_and_stdin_user_signal_a
     signals = FakeSignalRepository(())
     container = RecordingContainer(_code_assistant(signals), signals)
     stdout = StringIO()
+    approval_id = _approval_request_id(
+        "cli-run",
+        "write-1",
+        {"path": "notes.md", "content": "approved"},
+    )
     stdin = StringIO(
         "".join(
             (
                 '{"kind":"user_message","message":"keep it small"}\n',
                 '{"kind":"approval_decision",'
-                '"request_id":"approval:cli-run:workspace.write",'
+                f'"request_id":"{approval_id}",'
                 '"decision":"approve"}\n',
             )
         )

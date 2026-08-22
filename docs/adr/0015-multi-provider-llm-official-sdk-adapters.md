@@ -6,7 +6,7 @@ status: accepted
 
 # ADR-0015: Multi-provider LLM official SDK adapters
 
-> **부분 대체**: §2의 profile-owned model/capability와 §4의 caller profile/provider/raw-model 선택 및 Gemini Developer API 전용 Google backend 결정은 [ADR-0016](0016-operator-owned-model-catalog.md)이 대체합니다. Package rename, provider 공식 SDK와 transport lifecycle, tool authority, terminal validation, portable schema 결정은 계속 Accepted입니다.
+> **부분 대체**: §2의 profile-owned model/capability와 §4의 caller profile/provider/raw-model 선택 및 Gemini Developer API 전용 Google backend 결정은 [ADR-0016](0016-operator-owned-model-catalog.md)이 대체합니다. §5의 one-request runner 제한은 [ADR-0017](0017-bounded-iterative-agent-loop.md)이 대체합니다. Package rename, provider 공식 SDK와 transport lifecycle, tool authority, terminal validation, portable schema 결정은 계속 Accepted입니다.
 >
 > vLLM 전용 adapter package를 provider-neutral `spakky-llm`으로 교체하고, operator가 허용한 profile을 provider 공식 SDK adapter에 연결합니다.
 > Core `IAgentModel` 계약과 Agent tool-call 승인·dispatch authority는 유지하며 LangChain이나 Pydantic AI를 runtime dependency로 추가하지 않습니다.
@@ -33,7 +33,7 @@ status: accepted
 - `ILLMProvider` 구현은 하나 이상의 명시적 provider API family를 Spakky의 `ModelRequest`, `ModelResponse`, `ModelStreamEvent` 의미로 mapping합니다.
 - 이 ADR이 처음 채택한 `LlmProfile`은 provider id, API family, model 기본값, base URL, API key, header, timeout/retry, capability와 dialect option을 함께 보관했습니다. **Model 기본값과 capability를 profile에 둔 부분, `ModelSelection`을 profile/provider/raw model로 해석한 부분은 ADR-0016이 대체했습니다.** 현재 profile은 연결·backend·auth만 소유하고, `LlmModelRoute`가 physical model과 capability를 소유하며 caller는 opaque `model_ref`만 전달합니다.
 
-이 구조는 Pydantic AI가 분리한 Model/Provider/Profile 책임과 LangChain의 provider별 integration package에서 유용한 경계를 참고한 것입니다. Spakky는 이미 `IAgentModel`, message/tool/schema/event contract와 single-pass Agent execution orchestration을 소유하므로 두 framework를 runtime dependency로 추가하지 않고 경계만 적용합니다.
+이 구조는 Pydantic AI가 분리한 Model/Provider/Profile 책임과 LangChain의 provider별 integration package에서 유용한 경계를 참고한 것입니다. Spakky는 이미 `IAgentModel`, message/tool/schema/event contract와 framework-owned Agent execution orchestration을 소유하므로 두 framework를 runtime dependency로 추가하지 않고 경계만 적용합니다.
 
 ### 3. Transport는 provider 공식 SDK에 위임합니다
 
@@ -63,6 +63,8 @@ Provider response에 tool call이 있어도 request가 `ToolCallingSpec.tools` c
 
 `TOOL_CALL_CANDIDATE`를 side-effect authority gate로 취급합니다. Adapter는 terminal/refusal, 전체 tool batch, tool choice와 terminal reason consistency, structured output validation을 모두 마친 뒤에만 candidate를 게시합니다. 한 batch의 call 하나가 invalid하면 앞선 valid call도 candidate로 공개하지 않습니다. OpenAI는 terminal 전 informational `TOOL_CALL_START`/`TOOL_CALL_ARGS_DELTA`를 허용하되 `TOOL_CALL_END`와 candidate는 보류합니다. Anthropic은 모든 tool lifecycle event를, Google은 candidate를 terminal 검증까지 buffer합니다.
 
+Provider가 candidate-only lifecycle을 내면 ADR-0017 runner가 missing neutral START/END만 합성하고 이미 관찰한 frame side는 중복하지 않습니다. 이는 provider authority를 넓히지 않고 AG-UI/A2A에 stable call lifecycle을 제공하는 projection 규칙입니다.
+
 Terminal reason은 provider SDK의 literal type이 아니라 adapter의 explicit allowlist로 판정합니다.
 
 - OpenAI success는 `stop`, `length`, `tool_calls`입니다. `content_filter`와 non-empty message/delta refusal은 model refusal이고, `null`, legacy `function_call`, unknown reason은 malformed response입니다.
@@ -71,7 +73,7 @@ Terminal reason은 provider SDK의 literal type이 아니라 adapter의 explicit
 
 현재 설치된 OpenAI·Anthropic SDK는 response model을 loose-construct하여 schema에 없는 future terminal literal도 typed object에 보존할 수 있습니다. 따라서 SDK decode/validation 성공을 terminal success로 간주하지 않고, 새 reason은 의미를 검토해 allowlist에 명시하기 전까지 `LlmResponseError`로 fail closed합니다. Token/context limit 계열 success terminal도 structured output terminal validation을 생략하지 않습니다.
 
-현재 표준 runner는 invocation마다 provider stream 하나를 소비한 뒤 terminal output으로 닫습니다. 실행된 tool result를 새 `ModelRequest`에 재주입하거나 같은 `run()`/`run_events()` invocation에서 model을 재호출하는 multi-step loop는 제공하지 않습니다.
+Provider adapter는 assistant tool-call와 TOOL result history를 native SDK message로 복원하는 책임을 유지합니다. Runner가 이 history를 이용해 bounded iterative model/tool loop를 수행하는 현재 의미는 ADR-0017이 정본입니다.
 
 ### 6. Structured JSON은 portable schema subset에서 fail closed합니다
 
@@ -134,4 +136,5 @@ Pydantic AI의 Model/Provider/Profile 분리와 provider normalization은 목표
 - [ADR-0009: Agentic Hexagonal Architecture](0009-agentic-hexagonal-architecture.md)
 - [ADR-0013: 선언형 Agent loop ownership](0013-declarative-agent-loop-ownership.md)
 - [ADR-0016: Operator-owned model catalog와 opaque model routing](0016-operator-owned-model-catalog.md)
+- [ADR-0017: Bounded iterative model/tool loop](0017-bounded-iterative-agent-loop.md)
 - [`spakky-llm` API](../api/plugins/spakky-llm.md)

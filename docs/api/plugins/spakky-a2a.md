@@ -30,6 +30,20 @@ data part에서는 top-level `mcp`가 `metadata.mcp`를 덮어쓰고 여러 part
 working/completed/failed 상태 중심의 축약 mapping이며 모든 remote part/state를 1:1로
 보존하지 않습니다.
 
+Local iterative run의 `model-N`/`tool-N` step은 ordered working status와 result artifact로
+이어집니다. Model step의 provider `DONE`은 task terminal이 아니며, executor가 전체
+runner stream을 drain한 뒤 A2A complete/failed를 한 번만 reconcile합니다.
+
+Candidate-only tool call은 core가 missing START/END만 합성해 working metadata로 투영합니다.
+Signal `Progress`는 `signal_progress` artifact가 되고 unsupported signal yield는
+`agent_signal_projection_unsupported` failed task입니다. In-run canonical cancel도
+`cancelled` failed task이며 별도 A2A cancel operation의 canceled state와는 다른 경로입니다.
+
+Approval resume data part는 현재 `approval_id`와 `decision`만 core signal로 옮깁니다.
+`modified_payload`는 전달하지 않으므로 argument-bearing `MODIFY`는 A2A ingress에서
+지원하지 않습니다. Core runner의 MODIFY 기능이 A2A wire에서도 자동 제공된다고 가정하면
+안 됩니다.
+
 ## Public API
 
 ::: spakky.plugins.a2a

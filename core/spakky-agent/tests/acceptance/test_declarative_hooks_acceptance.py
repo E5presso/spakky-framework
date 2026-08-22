@@ -23,9 +23,9 @@ from spakky.agent import (
     IAgentSignalRepository,
     IAgentStateRepository,
     Agent,
+    AgentRunner,
     AgentEvidence,
     AgentEvidenceKind,
-    AgentExecutionLimits,
     AgentExecutionSpec,
     AgentSignal,
     AgentSignalKind,
@@ -35,6 +35,7 @@ from spakky.agent import (
     AgentYieldKind,
     Approval,
     ApprovalDecision,
+    ArtifactEvent,
     EvidenceCapture,
     Final,
     Idempotency,
@@ -55,6 +56,7 @@ from spakky.agent import (
 )
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.main import initialize
+from spakky.agent.runner import _arguments_digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,7 +77,6 @@ class NoteResult:
             AgentSignalKind.STEERING_INSTRUCTION,
         ),
         recovery=RecoveryStrategy.ACTION_BOUNDARY,
-        limits=AgentExecutionLimits(timeout_seconds=600),
     )
 )
 class SteeringAssistant:
@@ -149,13 +150,14 @@ async def test_declarative_steering_hook_runs_tools_hitl_and_termination() -> No
     signals = app.container.get(IAgentSignalRepository)
     states = app.container.get(IAgentStateRepository)
     evidence = app.container.get(IAgentEvidenceRepository)
+    approval_id = "approval:run-1:write-1:" + _arguments_digest({"topic": "agents"})
     signals.append(
         AgentSignal(
-            id="approval:run-1:note.write",
+            id=approval_id,
             agent_state_id="run-1",
             kind=AgentSignalKind.APPROVAL_DECISION,
             payload={
-                "request_id": "approval:run-1:note.write",
+                "request_id": approval_id,
                 "decision": ApprovalDecision.APPROVE.value,
             },
         )
@@ -208,12 +210,42 @@ async def test_declarative_steering_hook_runs_tools_hitl_and_termination() -> No
     }
     final = items[-1].payload
     assert isinstance(final, Final)
+
+    signals.append(
+        AgentSignal(
+            id="steer:run-2",
+            agent_state_id="run-2",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload={"instruction": "show event parity"},
+        )
+    )
+    events = [
+        event
+        async for event in AgentRunner.for_agent_instance(assistant).run_events(
+            RunAgentInput(state_id="run-2", instruction="observe steering")
+        )
+    ]
+    progress = next(event for event in events if isinstance(event, ArtifactEvent))
+    assert progress.name == "signal_progress"
+    assert progress.content == {
+        "kind": AgentYieldKind.PROGRESS.value,
+        "message": "steering instruction: show event parity",
+        "current_step": "steering",
+        "metadata": {"signal_id": "steer:run-2"},
+    }
+    assert signals.list_pending("run-2") == ()
+    assert AgentEvidenceKind.EVALUATION in {
+        artifact.kind for artifact in evidence.list_by_state("run-2")
+    }
     app.stop()
 
 
 @Pod()
 class ScriptedModel(IAgentModel):
     """Scripted model streaming a token, two tool calls, then done."""
+
+    def __init__(self) -> None:
+        self._request_count = 0
 
     @property
     @override
@@ -226,6 +258,14 @@ class ScriptedModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        if self._request_count > 0:
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA,
+                token_delta="done",
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
+        self._request_count += 1
         yield ModelStreamEvent(
             kind=ModelStreamEventKind.TOKEN_DELTA,
             token_delta="planning",
