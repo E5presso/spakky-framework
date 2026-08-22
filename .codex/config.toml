@@ -10,8 +10,7 @@ multi_agent_v2 = true
 
 [agents]
 enabled = true
-# 동시성은 목표 수가 아니라 주 스레드를 제외한 열린 하위 스레드의 안전 상한입니다.
-max_concurrent_threads_per_session = 25
+max_concurrent_threads_per_session = 10
 
 [shell_environment_policy]
 inherit = "core"
