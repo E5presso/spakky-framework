@@ -435,13 +435,19 @@ class OpenAIChatProvider(ILLMProvider):
     ) -> ResponseFormatJSONSchema | Omit:
         if request.structured_output is None:
             return omit
+        constraint = request.structured_output.constraint
+        schema = (
+            self._strict_response_schema(constraint.schema)
+            if constraint.strict
+            else constraint.schema
+        )
         return {
             "type": "json_schema",
             "json_schema": {
                 "name": request.structured_output.output_type_name
                 or "structured_output",
-                "schema": self._schema(request.structured_output.constraint.schema),
-                "strict": request.structured_output.constraint.strict,
+                "schema": self._schema(schema),
+                "strict": constraint.strict,
             },
         }
 
@@ -638,6 +644,42 @@ class OpenAIChatProvider(ILLMProvider):
 
     def _schema(self, schema: Mapping[str, JsonValue]) -> dict[str, object]:
         return {key: value for key, value in schema.items()}
+
+    def _strict_response_schema(
+        self,
+        schema: Mapping[str, JsonValue],
+    ) -> JsonObject:
+        result: dict[str, JsonValue] = {}
+        for key, value in schema.items():
+            if key == "properties" and isinstance(value, Mapping):
+                result[key] = {
+                    name: self._strict_response_schema(property_schema)
+                    if isinstance(property_schema, Mapping)
+                    else property_schema
+                    for name, property_schema in value.items()
+                }
+            elif key in ("anyOf", "prefixItems") and isinstance(value, Sequence):
+                result[key] = tuple(
+                    self._strict_response_schema(item)
+                    if isinstance(item, Mapping)
+                    else item
+                    for item in value
+                )
+            elif key in ("items", "additionalProperties") and isinstance(
+                value, Mapping
+            ):
+                result[key] = self._strict_response_schema(value)
+            else:
+                result[key] = value
+        if result.get("type") == "object":
+            properties = result.get("properties", {})
+            if not isinstance(properties, Mapping):
+                raise LlmResponseError
+            if isinstance(result.get("additionalProperties"), Mapping):
+                raise LlmUnsupportedFeatureError
+            result["required"] = tuple(properties)
+            result["additionalProperties"] = False
+        return result
 
     def _metadata(self, target: LlmModelTarget) -> dict[str, JsonValue]:
         return dict(routing_metadata(target))

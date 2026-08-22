@@ -94,6 +94,62 @@ text output만 지원하고 나머지 optional capability는 꺼진 상태입니
 구성과 protocol별 wire shape는 [LLM 모델 라우팅](../../guides/llm-routing.md)을
 확인하세요.
 
+## Typed structured output
+
+`AgentExecutionSpec.output_type`은 Pydantic `BaseModel`, 표준 dataclass, `TypedDict` class를
+지원합니다. Declaration 단계에서 portable closed JSON Schema를 만들 수 없는 class,
+external/recursive reference, unsupported keyword, non-finite JSON은 `AgentDefinitionError`로
+거부됩니다. 내부 schema builder는 공개 API가 아니며 사용자는 `output_type`만 선언합니다.
+
+Runner는 selected model의 `supports_structured_output`을 provider 호출 전에 확인합니다.
+Final structured payload는 strict type/no-extra/no-coercion으로 materialize되며 text JSON
+fallback은 없습니다. `run()`은 typed object를, `run_events()`는 JSON-safe `output`과
+`output_type` metadata를 반환합니다. AG-UI는 JSON result, A2A는 output type 이름의 final
+data artifact로 투영합니다.
+
+| terminal code | 의미 |
+| --- | --- |
+| `agent_structured_output_unsupported` | 선택 model capability가 structured output을 지원하지 않음 |
+| `agent_structured_output_missing` | Tool call 없는 final step에 structured payload가 없음 |
+| `agent_structured_output_ambiguous` | Payload가 여러 개이거나 한 step에 tool batch와 함께 존재 |
+| `agent_structured_output_invalid` | Type/schema/extra/missing/serialization shape 검증 실패 |
+
+`output_type=None`이면 기존 `AgentRunResult`가 유지됩니다. Event metadata에는 `output`을
+추가하지 않으므로 AG-UI result는 `None`, A2A final output artifact는 없음이 정본입니다.
+
+## Static/dynamic typed context
+
+`RunAgentInput.context`는 `AgentContext(packs, manifest, digest)` static envelope입니다.
+`ContextPack`은 ID/content/source/role, sensitivity, freshness/relevance와
+`ContextTokenBudget`을 가집니다. Runner는 pack을 `ModelRequest.context`에 넣고 raw prompt
+concatenation 대신 `ModelRequest.assemble_messages()` 경계에서 guarded evidence message로
+조립합니다.
+
+Dynamic context는 constructor-injected `IAgentContextProvider` 하나가
+`provide(run_input, model_step)` async port로 제공합니다. `refresh_context_each_step=False`는
+한 invocation에서 첫 결과를 cache하고, `True`는 1-based model step마다 다시 호출합니다.
+Fresh resume은 raw provider context cache를 checkpoint하지 않고 provider를 다시 호출합니다.
+
+Durable checkpoint는 raw static context 대신 prepared static context fingerprint만 저장합니다.
+Static context를 사용하던 run의 resume caller는 동일 `RunAgentInput.context`를 다시 제공해야
+하며 model-bound prepared fingerprint가 다른 missing/different/additive context는
+`agent_checkpoint_invalid`로 pending replay 전에 거부됩니다. Dynamic provider context는
+resume에서 다시 취득합니다.
+
+Static/dynamic pack ID는 전체에서 unique해야 합니다. Manifest는 모든 pack을 같은
+순서·ID/source/role로 정확히 덮고 digest는 manifest와 전체 pack ID 순서를 덮어야 합니다.
+Dynamic provider return 또는 model-step combination의 partial digest/incomplete/conflicting
+provenance는 provider request 전에 `agent_model_execution_failed`; provider deadline 초과는
+`agent_timeout`입니다.
+Runner는 digest linkage/coverage만 검증하며 declared digest value를 content에서 재계산하지
+않습니다.
+
+Model-safe preparation은 REDACTED content, sensitive-field guard, deterministic token-budget
+truncation을 적용하고 raw metadata/descriptors 및 digest summary를 제거합니다. Durable
+context evidence도 raw content를 저장하지 않고 pack/provenance/budget/digest metadata만
+남깁니다. Evidence의 combined context fingerprint는 같은 model step의 동일 context를
+deduplicate하고 변경된 context를 별개로 구분합니다.
+
 ## Public API
 
 ::: spakky.agent

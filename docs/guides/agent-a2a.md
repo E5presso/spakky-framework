@@ -147,6 +147,17 @@ call start/end working metadata가 순서대로 나타납니다. Signal `Progres
 signal도 `code="cancelled"` error data와 함께 failed task로 끝납니다. 이것은 A2A protocol의
 별도 cancel operation이 task를 canceled state로 바꾸는 경로와 구분합니다.
 
+Declared `output_type`이 성공하면 A2A projector는 JSON-safe final output을 data part로
+가진 artifact를 먼저 추가합니다. Artifact name은 declared type 이름이고 그 뒤 executor가
+task를 complete합니다. `output_type=None`인 기존 Agent는 core terminal에 `output` key가
+없으므로 final output artifact를 만들지 않습니다.
+Structured capability/missing/ambiguous/invalid terminal은 output artifact 없이 해당 error
+data를 가진 failed task입니다.
+
+A2A inbound data part를 core `AgentContext`로 자동 승격하는 wire 계약은 현재 없습니다.
+Protocol-exposed Agent의 typed dynamic context는 constructor-injected
+`IAgentContextProvider`를 사용합니다.
+
 승인 재개는 inbound A2A data part에 `approval_id`와 `decision`을 담아 보냅니다. executor는 이를 `APPROVAL_DECISION` signal로 append하고 `RunAgentInput(resume=True)`로 runner를 재개합니다.
 현재 A2A ingress는 `modified_payload`를 signal로 전달하지 않으므로 argument-bearing
 `MODIFY`는 지원하지 않습니다. A2A client는 `APPROVE`, `REJECT`, `DEFER`, `CANCEL`을

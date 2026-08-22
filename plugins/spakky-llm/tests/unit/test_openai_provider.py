@@ -16,7 +16,7 @@ from openai import (
     omit,
 )
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
-from pydantic import SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pytest import MonkeyPatch
 from spakky.agent import (
     JsonSchemaConstraint,
@@ -54,6 +54,87 @@ from spakky.plugins.llm.error import (
 from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers import openai as openai_module
 from spakky.plugins.llm.providers.openai import OpenAIChatProvider
+from spakky.agent.structured_output import _structured_output_contract
+
+
+class _OpenAINestedValue(BaseModel):
+    value: int
+    note: str = "nested-default"
+
+
+class _OpenAIDefaultAnswer(BaseModel):
+    nested: _OpenAINestedValue
+    summary: str = "default-summary"
+    values: list[int] = Field(default_factory=list)
+    pair: tuple[int, str] = (1, "x")
+    choice: str | None = None
+
+
+def test_openai_wire_schema_requires_all_nested_properties_without_mutating_core() -> (
+    None
+):
+    """OpenAI strict wire copy requires defaults while core omission stays valid."""
+    contract = _structured_output_contract(_OpenAIDefaultAnswer)
+    response_format = OpenAIChatProvider()._response_format(
+        ModelRequest(messages=(), structured_output=contract.spec)
+    )
+    assert response_format is not omit
+    response_mapping = cast(Mapping[str, object], response_format)
+    json_schema = cast(Mapping[str, object], response_mapping["json_schema"])
+    wire = cast(Mapping[str, object], json_schema["schema"])
+    properties = cast(Mapping[str, object], wire["properties"])
+    nested = cast(Mapping[str, object], properties["nested"])
+
+    assert contract.spec.constraint.schema["required"] == ("nested",)
+    assert wire["required"] == (
+        "nested",
+        "summary",
+        "values",
+        "pair",
+        "choice",
+    )
+    assert wire["additionalProperties"] is False
+    assert nested["required"] == ("value", "note")
+    assert nested["additionalProperties"] is False
+
+
+def test_openai_strict_wire_rejects_invalid_object_properties_shape() -> None:
+    with pytest.raises(LlmResponseError):
+        OpenAIChatProvider()._strict_response_schema(
+            {"type": "object", "properties": "invalid"}
+        )
+
+
+def test_openai_strict_wire_rejects_open_ended_mapping_schema() -> None:
+    """Strict adaptation fails instead of weakening typed arbitrary-key mappings."""
+    with pytest.raises(LlmUnsupportedFeatureError):
+        OpenAIChatProvider()._strict_response_schema(
+            {"type": "object", "additionalProperties": {"type": "integer"}}
+        )
+
+
+def test_openai_non_strict_wire_schema_preserves_optional_properties() -> None:
+    """Required-all adaptation is applied only when the declared constraint is strict."""
+    schema = {
+        "type": "object",
+        "properties": {"required": {"type": "string"}, "optional": {"type": "string"}},
+        "required": ("required",),
+        "additionalProperties": False,
+    }
+    response_format = OpenAIChatProvider()._response_format(
+        ModelRequest(
+            messages=(),
+            structured_output=StructuredOutputSpec(
+                JsonSchemaConstraint(schema=schema, strict=False),
+                "LooseAnswer",
+            ),
+        )
+    )
+    assert response_format is not omit
+    response_mapping = cast(Mapping[str, object], response_format)
+    json_schema = cast(Mapping[str, object], response_mapping["json_schema"])
+    assert json_schema["schema"] == schema
+    assert json_schema["strict"] is False
 
 
 async def test_compacted_tool_group_maps_to_complete_openai_native_history() -> None:
@@ -441,7 +522,7 @@ async def test_complete_maps_allowlisted_vllm_profile_and_structured_request() -
         "type": "json_schema",
         "json_schema": {
             "name": "Answer",
-            "schema": _schema(),
+            "schema": {**_schema(), "required": ("answer",)},
             "strict": True,
         },
     }

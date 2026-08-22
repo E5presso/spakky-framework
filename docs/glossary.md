@@ -275,6 +275,7 @@ inbound contract입니다. `state_id`는 run/state id, `instruction`은 이번 m
 
 `message_history`가 있으면 caller가 history를 직접 제공하는 stateless 경로이고, 없으면
 runner가 optional `ITaskStore`에서 `effective_conversation_id`로 persisted history를 읽습니다.
+`context`는 static `AgentContext`이며 기본값은 empty envelope입니다.
 
 ### AgentExecutionLimits
 
@@ -284,6 +285,55 @@ runner가 optional `ITaskStore`에서 `effective_conversation_id`로 persisted h
 뒤, timeout은 model/async-tool await에 집행됩니다. Deadline이 있는 in-process sync tool은
 preempt할 수 없어 batch 전체가 실행 전에 `agent_sync_tool_timeout_unenforceable`로
 거부됩니다. `AgentExecutionSpec.timeout_seconds` direct field나 alias는 없습니다.
+
+### Typed structured output
+
+`AgentExecutionSpec.output_type`으로 선언하는 final result 계약입니다. 지원 class는 Pydantic
+`BaseModel`, dataclass, `TypedDict`이며 runner가 strict closed JSON Schema를 model에 보내고
+provider JSON을 실제 declared type으로 materialize합니다. Native `run()`은 typed value,
+`run_events()`와 AG-UI/A2A는 JSON-safe value를 사용합니다. Text JSON fallback, coercion,
+extra key와 silent key loss는 허용하지 않습니다.
+
+### AgentContext
+
+`RunAgentInput.context`와 `IAgentContextProvider`가 공유하는 typed model-input envelope입니다.
+`packs`, optional `manifest`, optional `digest`를 가지며 static pack이 dynamic pack보다 먼저
+결합됩니다. Manifest와 digest는 pack 전체 provenance를 정확히 덮어야 합니다.
+
+### ContextPack
+
+ID, content, source, semantic role, freshness/relevance, token budget, sensitivity를 가진 한 context
+단위입니다. Runner는 raw prompt concatenation 대신 `ModelRequest.context`에 pack을 전달하고
+guarded evidence message로 조립합니다. Token budget truncation과 redaction은 caller object를
+mutate하지 않는 prepared copy에 적용됩니다.
+
+### IAgentContextProvider
+
+Agent constructor에 주입하는 optional async context port입니다.
+`provide(run_input, model_step)`에서 `AgentContext`를 반환합니다.
+`refresh_context_each_step=False`면 invocation 첫 결과를 재사용하고 `True`면 model step마다
+호출합니다. Raw provider context는 checkpoint하지 않으므로 fresh resume에서는 provider를
+다시 호출합니다.
+
+Durable resume은 raw static context도 저장하지 않고 prepared static context fingerprint만
+checkpoint합니다. Static context를 사용했던 caller는 resume에 동일 context를 다시 보내야
+하며 model-bound prepared fingerprint가 다른 missing/different/additive context는
+`agent_checkpoint_invalid`입니다.
+
+### ContextManifest / ContextDigest
+
+`ContextManifest`는 pack ID/source/role과 origin/evidence/digest reference를 순서대로
+기록하는 provenance envelope입니다. `ContextDigest`는 정확히 그 manifest와 전체 pack ID
+순서에서 파생된 digest입니다. Incomplete coverage, conflicting entry, duplicate pack ID,
+static/dynamic 일부만 덮는 partial digest는 fail closed합니다. Evidence에는 raw context나
+digest summary가 아니라 이 provenance와 digest value만 남깁니다. Combined context
+fingerprint는 evidence의 correlation digest로서 같은 step의 동일 context를 deduplicate하고
+변경된 context를 구분합니다. `CONTEXT`/`CONTEXT_MANIFEST` evidence의 digest는 이
+fingerprint이고, `CONTEXT_DIGEST` evidence는 declared digest를 유지하면서 payload의
+`context_fingerprint`로 결속됩니다.
+
+Runner가 검증하는 것은 manifest reference와 pack coverage이며 declared digest value를 raw
+content에서 재계산하지는 않습니다.
 
 ### Approval fingerprint
 

@@ -505,7 +505,7 @@ from spakky.agent.error import (
 | --- | --- | --- |
 | `agent_tool_batch_invalid` | terminal model batch 전체 사전검증 | call 하나라도 catalog/ID/signature/approval-plan 계약을 위반해 0개 dispatch |
 | `agent_model_terminal_invalid` | model step 종료 | terminal `DONE`이 정확히 하나가 아님 |
-| `agent_model_execution_failed` | model/compaction framework 경계 | stream/complete 또는 history compaction의 typed framework failure |
+| `agent_model_execution_failed` | model/context/compaction framework 경계 | stream/complete, context provider/provenance 또는 history compaction failure |
 | `agent_tool_execution_failed` | tool invoke/result commit | tool의 typed framework failure 또는 result JSON serialization 실패 |
 | `agent_checkpoint_invalid` | resume checkpoint restore/revalidation | checkpoint field나 restored pending batch가 유효하지 않음 |
 | `agent_max_steps_exceeded` | 다음 model request 직전 | 누적 model step 한도 도달 |
@@ -517,6 +517,10 @@ from spakky.agent.error import (
 | `agent_approval_invalid` | authority/decision/MODIFY 검증 | malformed approval, modified bind 실패 또는 assistant history mismatch로 dispatch 불가 |
 | `agent_approval_unavailable` | approval-required batch의 stateless 경로 | durable state/signal/evidence authority가 없어 dispatch 불가 |
 | `agent_signal_projection_unsupported` | `run_events()` signal projection | hook이 neutral event로 지원하지 않는 non-Progress yield shape를 반환 |
+| `agent_structured_output_unsupported` | model request 전 capability preflight | selected model이 declared structured output을 지원하지 않음 |
+| `agent_structured_output_missing` | tool call 없는 final model step | declared output의 structured payload가 없음; text JSON fallback 금지 |
+| `agent_structured_output_ambiguous` | terminal model step | structured payload가 여러 개이거나 tool candidate와 함께 존재 |
+| `agent_structured_output_invalid` | strict materialization | extra/missing/wrong type, coercion 또는 JSON shape/serialization 불일치 |
 | `cancelled` | model/tool 사이의 cancel poll | continuation과 public final 없이 cancellation lifecycle 종료 |
 
 Provider `ModelError`도 code/message/retryable/metadata를 유지한 채 runner terminal error가
@@ -526,6 +530,12 @@ Token budget terminal은 현재 step의 route, usage, 누적 counter를 error me
 model evidence에 함께 남깁니다. Canonical event-surface cancel은 code/message와
 `state="cancelled"`, `signal_id`, optional `requested_by` metadata를 가진 정확히 하나의
 `RunFinishedEvent.error`입니다.
+
+Unsupported/nonportable `output_type`은 `@Agent` declaration에서 `AgentDefinitionError`입니다.
+Context provider failure/invalid return 또는 model-step context combination failure는 provider
+request 전에 `agent_model_execution_failed`, context provider deadline은 `agent_timeout`으로
+terminalize됩니다. Durable resume의 static-context fingerprint mismatch는
+`agent_checkpoint_invalid`입니다.
 
 ---
 

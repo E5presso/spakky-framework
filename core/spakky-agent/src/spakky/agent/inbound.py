@@ -21,6 +21,7 @@ non-blockingly rather than reading a decision off the inbound contract.
 
 from dataclasses import dataclass, field
 
+from spakky.agent.context import AgentContext
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.interfaces.model import ModelMessage, ModelSelection
 from spakky.agent.types import JsonObject
@@ -37,6 +38,7 @@ class RunAgentInput:
     resume: bool = False
     message_history: tuple[ModelMessage, ...] = ()
     model_selection: ModelSelection | None = None
+    context: AgentContext = field(default_factory=AgentContext)
     metadata: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:

@@ -210,7 +210,7 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 
 `ModelCapability`은 `supports_reasoning`, `context_window_tokens`, `supports_token_counting`, `input_modalities`, `output_modalities`, `supports_tools`, `supports_structured_output`을 선언합니다. Base capability의 input/output modality는 text이며 비어 있을 수 없고, context window는 지정한다면 양수여야 합니다. `spakky-llm` default route만 tools와 structured output을 true로 덮어씁니다. Router의 `capability`는 default route를, `capability_for(selection)`은 exact selected route를 반환합니다.
 
-Capability는 provider 이름에서 추측하지 않습니다. Operator가 실제 deployment 지원과 맞게 선언하고 acceptance test로 확인해야 합니다. Google은 selected route의 `supports_reasoning`이 true일 때 `ThinkingConfig(include_thoughts=True)`를 요청합니다. OpenAI-compatible·Anthropic adapter는 provider가 반환한 reasoning/thinking extension의 노출만 같은 capability로 gate하며 generic thought request를 추가하지 않습니다. 현재 capability surface는 queryable declaration이며 모든 modality/tool/structured-output field를 runner가 자동 preflight 집행한다는 뜻은 아닙니다. 또한 `ModelMessage.content`가 현재 `str`이므로 image/audio/video/document content part는 아직 이 plugin의 request mapping으로 보낼 수 없습니다.
+Capability는 provider 이름에서 추측하지 않습니다. Operator가 실제 deployment 지원과 맞게 선언하고 acceptance test로 확인해야 합니다. Google은 selected route의 `supports_reasoning`이 true일 때 `ThinkingConfig(include_thoughts=True)`를 요청합니다. OpenAI-compatible·Anthropic adapter는 provider가 반환한 reasoning/thinking extension의 노출만 같은 capability로 gate하며 generic thought request를 추가하지 않습니다. `AgentExecutionSpec.output_type`을 선언한 run은 runner가 selected route의 `supports_structured_output`을 provider request 전에 검사하지만, 나머지 모든 modality/tool capability가 일괄적으로 자동 집행된다는 뜻은 아닙니다. 또한 `ModelMessage.content`가 현재 `str`이므로 image/audio/video/document content part는 아직 이 plugin의 request mapping으로 보낼 수 없습니다.
 
 ## Caller model selection
 
@@ -311,6 +311,35 @@ Streaming model step과 `NO_STREAM_UNTIL_FINAL_GUARDED` complete step은 같은 
 
 Provider request 직전 history는 assistant tool-call envelope와 모든 correlated TOOL result가 완전한 group인지 검사됩니다. Built-in compaction은 group 경계를 보존하고 custom compaction output도 strategy 단계마다 재검증되므로 orphan/missing/duplicate call-result history를 native SDK에 넘기지 않습니다. Invalid group은 provider 호출 전 `agent_model_execution_failed`로 terminalize됩니다.
 
+## 선언형 structured output
+
+Application의 권장 surface는 raw schema를 model adapter에 직접 넘기는 방식이 아니라 `AgentExecutionSpec(output_type=Answer)`입니다. Core가 Pydantic `BaseModel`, 표준 `dataclass`, `TypedDict`에서 alias-aware·strict portable schema를 생성하고, `LlmAgentModel`은 이를 selected route와 결속해 provider adapter에 전달합니다. Agent code는 provider별 response-format object나 schema compiler를 알 필요가 없습니다.
+
+```python
+from pydantic import BaseModel
+
+from spakky.agent import Agent, AgentExecutionSpec, IAgentModel
+
+
+class Answer(BaseModel):
+    answer: str
+    confidence: float
+
+
+@Agent(spec=AgentExecutionSpec(name="support_agent", output_type=Answer))
+class SupportAgent:
+    def __init__(self, model: IAgentModel) -> None:
+        self.model = model
+```
+
+Provider mapping은 core schema 의미를 유지하되 wire 형식은 각 SDK에 맞춰집니다.
+
+- OpenAI-compatible standard mode는 `response_format={type: "json_schema", ...}`를 사용합니다. Strict request에서는 core schema를 mutate하지 않는 wire copy를 만들고, 모든 nested object의 property를 `required`로 만들며 `additionalProperties=false`를 적용합니다. 따라서 Python default를 생략할 수 있는 core contract은 그대로지만 OpenAI wire는 해당 property도 생성하도록 요청합니다. Arbitrary-key object처럼 `additionalProperties` 자체가 schema인 strict shape는 제약을 약화하지 않고 `LlmUnsupportedFeatureError`로 거부합니다.
+- Anthropic은 Messages `output_config.format` JSON Schema로, Google은 `response_mime_type="application/json"` + `response_json_schema`로 매핑합니다.
+- vLLM dialect는 같은 OpenAI SDK request와 함께 `extra_body.structured_outputs.json`에 core schema를 전달합니다. 이 extension은 standard dialect로 유출되지 않습니다.
+
+세 adapter는 완료·stream 모두에서 provider JSON을 `LlmJsonCodec`의 portable schema로 먼저 검증한 후 `ModelResponse.structured_output` 또는 `ModelStreamEventKind.STRUCTURED_OUTPUT`으로 게시합니다. Runner는 이 값을 선언한 Python 타입으로 다시 strict materialization하므로, provider schema validation과 application type materialization은 서로 대체하지 않습니다. Text JSON fallback, coercion, extra-key drop, truncated/partial structured stream은 success final로 올라오지 않습니다.
+
 ## Tool authority와 terminal validation
 
 Provider가 tool call을 반환했다는 사실만으로 실행 권한이 생기지 않습니다. Request에 `ToolCallingSpec.tools` catalog가 선언되어 있어야 하며, provider가 반환한 모든 tool name과 arguments가 그 catalog schema를 통과해야 합니다. Catalog가 없거나 비어 있거나 catalog에 없는 tool이면 거부합니다. `ModelToolChoice.NONE`은 call 1개 이상을, `ModelToolChoice.REQUIRED`는 call 0개를 각각 `LlmResponseError`로 처리합니다.
@@ -390,6 +419,7 @@ Unit/acceptance test는 provider SDK client/response와 Google credential resolv
 
 - [ADR-0015: Multi-provider LLM official SDK adapters](../../docs/adr/0015-multi-provider-llm-official-sdk-adapters.md)
 - [ADR-0016: Operator-owned model catalog와 opaque model routing](../../docs/adr/0016-operator-owned-model-catalog.md)
+- [ADR-0018: Typed agent output과 composed execution context](../../docs/adr/0018-typed-agent-output-and-context.md)
 
 ## 라이선스
 

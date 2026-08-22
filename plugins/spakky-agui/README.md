@@ -77,7 +77,7 @@ graph LR
 | `TOOL_CALL_RESULT` | `TOOL_CALL_RESULT` (`content`는 result의 JSON 텍스트) |
 | `RUN_STARTED` | `RUN_STARTED` (`threadId`=conversation, `runId`, `parentRunId`=neutral `parent_run_id`가 있을 때) |
 | `RUN_PAUSED` | 열린 프레임 닫기 → 승인 pause는 `hitl_approval` deferred tool `TOOL_CALL_START`/`ARGS`/`END` |
-| `RUN_FINISHED` | 열린 프레임 닫기 → `RUN_FINISHED` 또는 `RUN_ERROR` |
+| `RUN_FINISHED` | 열린 프레임 닫기 → `RUN_FINISHED` 또는 `RUN_ERROR`; typed success의 JSON-safe `metadata.output`은 `result` |
 | `STEP_STARTED`/`STEP_FINISHED` | `STEP_STARTED`/`STEP_FINISHED`; finish 전에 해당 step의 열린 message/reasoning/tool frame 닫기 |
 | `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (`emit_state_snapshot=true`일 때만) |
 | `STATE_DELTA` | `STATE_DELTA` (JSON Patch) |
@@ -91,6 +91,7 @@ graph LR
 
 ```python
 from fastapi import FastAPI
+from pydantic import BaseModel
 from spakky.agent import Agent, AgentExecutionSpec, IAgentModel
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -103,8 +104,19 @@ def fastapi_app() -> FastAPI:
     return FastAPI()
 
 
+class Answer(BaseModel):
+    answer: str
+    confidence: float
+
+
 @AGUICompatible()
-@Agent(spec=AgentExecutionSpec(name="assistant", objective="answer with tools"))
+@Agent(
+    spec=AgentExecutionSpec(
+        name="assistant",
+        objective="answer with tools",
+        output_type=Answer,
+    )
+)
 class Assistant:
     def __init__(self, model: IAgentModel) -> None:
         self._model = model
@@ -171,6 +183,10 @@ resume 여부와 optional logical `modelRef`를 core `RunAgentInput`으로 변�
 event의 attribution은 core에 남지만, wire-level `parentRunId`는 `RUN_STARTED` projection에서
 `AgentEventAttribution.parent_run_id`를 사용합니다. 다른 event의 attribution·arbitrary metadata를
 모든 AG-UI payload에 반복해서 복사하지 않습니다.
+
+현재 AG-UI inbound의 `context` array를 core `AgentContext`로 재구성하는 mapping은 없습니다. Request-scoped typed context가 필요하면 application service가 `RunAgentInput(context=AgentContext(...))`를 구성하거나 agent에 optional `IAgentContextProvider`를 constructor-inject해야 합니다. AG-UI transport metadata를 context 내용이나 provenance로 자동 승격시키지 않습니다.
+
+`output_type`을 선언한 agent가 성공하면 core `RunFinishedEvent.metadata["output"]`의 JSON-safe 값을 AG-UI `RUN_FINISHED.result`로 옮깁니다. 프로토콜은 Python `Answer` 인스턴스 자체나 `output_type` 이름을 복제하지 않고 JSON result만 전송합니다. Typed output이 missing·ambiguous·invalid하거나 selected route가 지원하지 않으면 `RUN_FINISHED` success를 만들지 않고 해당 `agent_structured_output_*` code의 `RUN_ERROR`로 닫힙니다. `output_type`을 선언하지 않은 기존 agent는 `result=null`인 종료를 유지합니다.
 
 CLI stdio 경계는 아직 host command가 필요하므로 lower-level `AgUiStdioCommand`를 사용합니다.
 입력은 `RunAgentInput` JSON 문서를 stdin 또는 문자열 인자로 받고 stdout에 AG-UI event payload를

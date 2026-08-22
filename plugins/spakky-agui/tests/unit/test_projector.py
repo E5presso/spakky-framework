@@ -374,7 +374,9 @@ def test_run_finished_success_emits_run_finished_with_result() -> None:
 
     events = projector.project(
         NeutralRunFinishedEvent(
-            attribution=_attribution(), error=None, metadata={"output": {"a": 1}}
+            attribution=_attribution(),
+            error=None,
+            metadata={"output": {"a": 1}, "output_type": "Answer"},
         )
     )
 
@@ -382,6 +384,7 @@ def test_run_finished_success_emits_run_finished_with_result() -> None:
     assert finished.thread_id == "conv-1"
     assert finished.run_id == "run-1"
     assert finished.result == {"a": 1}
+    assert '"result":{"a":1}' in EventEncoder().encode(finished)
 
 
 def test_run_finished_closes_open_message_before_terminal() -> None:

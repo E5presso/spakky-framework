@@ -42,6 +42,16 @@ Candidate-only model event에는 core runner가 missing tool START/END만 합성
 yield는 `agent_signal_projection_unsupported` `RUN_ERROR`입니다. Canonical cancel도
 `code="cancelled"` `RUN_ERROR` 하나이며 success terminal을 추가하지 않습니다.
 
+Declared `output_type` final은 core가 만든 JSON-safe `output`을 AG-UI
+`RUN_FINISHED.result`로 사용합니다. `output_type=None`이면 result는 `null`이며 기존
+no-output Agent의 wire shape를 임의로 바꾸지 않습니다.
+Structured-output terminal error는 result 대신 해당 `agent_structured_output_*` code의
+`RUN_ERROR`입니다.
+
+Protocol-native AG-UI `context` 배열은 현재 core `RunAgentInput.context`로 승격하지
+않습니다. Exposed Agent의 typed dynamic context는 injected `IAgentContextProvider` 경로를
+사용합니다.
+
 ## Public API
 
 ::: spakky.plugins.agui

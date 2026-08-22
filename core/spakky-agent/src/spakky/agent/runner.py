@@ -45,6 +45,13 @@ from spakky.agent.cancellation import (
     run_agent_cancellation_cleanup,
 )
 from spakky.agent.compaction import validate_tool_call_groups
+from spakky.agent.context import (
+    AgentContext,
+    IAgentContextProvider,
+    _agent_context_fingerprint,
+    combine_agent_contexts,
+    prepare_agent_context,
+)
 from spakky.agent.delegation import DelegationToolResult
 from spakky.agent.dispatcher import AgentToolDispatcher
 from spakky.agent.error import (
@@ -116,6 +123,7 @@ from spakky.agent.state import (
     AgentStateTransition,
     AgentStatus,
 )
+from spakky.agent.structured_output import _structured_output_contract
 from spakky.agent.tooling import (
     AgentToolDescriptor,
     AgentToolRuntimeContext,
@@ -199,6 +207,7 @@ class _ModelStepAccumulator:
 
     content: list[str] = field(default_factory=list)
     candidates: list[ModelToolCall] = field(default_factory=list)
+    structured_outputs: list[JsonValue] = field(default_factory=list)
     usage: ModelUsage | None = None
     metadata: dict[str, JsonValue] = field(default_factory=dict)
     error: ModelError | None = None
@@ -217,6 +226,8 @@ class _ModelStepAccumulator:
             self.candidates.append(event.tool_call)
         elif event.kind is ModelStreamEventKind.ERROR and event.error is not None:
             self.error = event.error
+        elif event.kind is ModelStreamEventKind.STRUCTURED_OUTPUT:
+            self.structured_outputs.append(event.structured_output)
         elif event.kind is ModelStreamEventKind.DONE:
             self.terminal_count += 1
         if event.usage is not None:
@@ -243,6 +254,11 @@ class _ExecutionContext:
     restored_from_checkpoint: bool = False
     terminal_error: ModelError | None = None
     event_cancel_error: JsonObject | None = None
+    provider_context: AgentContext | None = None
+    context_evidence_steps: set[int] = field(default_factory=set)
+    final_output: object | None = None
+    final_output_json: JsonValue = None
+    static_context_fingerprint: str | None = None
 
     @property
     def counters(self) -> JsonObject:
@@ -283,6 +299,7 @@ class AgentRunner:
     # caller then carries history inline via RunAgentInput.message_history or runs
     # single-turn (ADR-0013 §6).
     task_store: ITaskStore | None = None
+    context_provider: IAgentContextProvider | None = None
 
     @classmethod
     def for_agent_instance(cls, instance: object) -> "AgentRunner":
@@ -304,6 +321,7 @@ class AgentRunner:
         signals = cls._resolve_optional(attributes, IAgentSignalRepository)
         evidence = cls._resolve_optional(attributes, IAgentEvidenceRepository)
         task_store = cls._resolve_optional(attributes, ITaskStore)
+        context_provider = cls._resolve_optional(attributes, IAgentContextProvider)
         runner = cls(
             agent=agent,
             target=instance,
@@ -312,6 +330,7 @@ class AgentRunner:
             signals=signals,
             evidence=evidence,
             task_store=task_store,
+            context_provider=context_provider,
         )
         runner._require_durable_ports()
         return runner
@@ -437,7 +456,7 @@ class AgentRunner:
                         )
                         return
                 continue
-            limit_error = self._before_model_limit(context)
+            limit_error = self._before_model_limit(run_input, context)
             if limit_error is not None:
                 self._fail_execution(state, limit_error)
                 yield RunFinishedEvent(
@@ -463,6 +482,7 @@ class AgentRunner:
             try:
                 async for event in self._model_events(
                     run_input,
+                    state,
                     context,
                 ):
                     cancel = await self._poll_cancel(state)
@@ -583,8 +603,15 @@ class AgentRunner:
                 continue
             if state is not None:
                 self._complete_state(state.id, context)
-            self._persist_turns(run_input, context.assistant_text)
-            yield RunFinishedEvent(attribution, metadata=step_metadata)
+            self._persist_turns(
+                run_input,
+                context.assistant_text,
+                context.final_output_json,
+            )
+            yield RunFinishedEvent(
+                attribution,
+                metadata=self._final_event_metadata(step_metadata, context),
+            )
             return
 
     async def _project_model_event(
@@ -798,7 +825,7 @@ class AgentRunner:
                         yield _error_yield(_state_model_error(current))
                         return
                 continue
-            limit_error = self._before_model_limit(context)
+            limit_error = self._before_model_limit(run_input, context)
             if limit_error is not None:
                 yield self._fail_on_model_error(state, limit_error)
                 return
@@ -812,7 +839,7 @@ class AgentRunner:
                     _before_model(self._model_action_id(context.step_count)),
                 )
             try:
-                async for event in self._model_events(run_input, context):
+                async for event in self._model_events(run_input, state, context):
                     cancel = await self._poll_cancel(state)
                     if cancel is not None:
                         yield cancel
@@ -874,10 +901,15 @@ class AgentRunner:
                 continue
             if state is not None:
                 self._complete_state(state.id, context)
-            self._persist_turns(run_input, context.assistant_text)
+            self._persist_turns(
+                run_input,
+                context.assistant_text,
+                context.final_output_json,
+            )
             yield self._final_yield(
                 run_input.state_id,
                 context.tool_calls,
+                context.final_output,
                 evidence_count=(
                     self._evidence_count(run_input.state_id) if state is not None else 0
                 ),
@@ -896,12 +928,21 @@ class AgentRunner:
             if timeout_seconds is not None
             else None
         )
+        static_context = combine_agent_contexts(
+            prepare_agent_context(run_input.context),
+            None,
+        )
+        static_fingerprint = _agent_context_fingerprint(static_context)
         if state is not None and run_input.resume:
             checkpoint = state.metadata.get(RUNNER_CHECKPOINT_METADATA_KEY)
             if checkpoint is not None:
                 if not isinstance(checkpoint, Mapping):
                     raise AgentDefinitionError("Agent runner checkpoint is invalid")
                 context = self._context_from_checkpoint(run_input.state_id, checkpoint)
+                if context.static_context_fingerprint != static_fingerprint:
+                    raise AgentDefinitionError(
+                        "Agent resume static context does not match its checkpoint"
+                    )
                 context.deadline = deadline
                 context.restored_from_checkpoint = True
                 return context
@@ -911,11 +952,13 @@ class AgentRunner:
             state_id=run_input.state_id,
             history=history,
             deadline=deadline,
+            static_context_fingerprint=static_fingerprint,
         )
 
     async def _model_events(
         self,
         run_input: RunAgentInput,
+        state: AgentState | None,
         context: _ExecutionContext,
     ) -> AsyncGenerator[ModelStreamEvent, None]:
         """Yield one model step from streaming or guarded complete execution."""
@@ -933,7 +976,12 @@ class AgentRunner:
                     run_input.model_selection,
                 )
             )
-        request = self._model_request(run_input, tuple(context.history))
+        agent_context = await self._context_for_step(run_input, state, context)
+        request = self._model_request(
+            run_input,
+            tuple(context.history),
+            agent_context,
+        )
         if (
             self.agent.spec.streaming_exposure_mode
             is StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED
@@ -955,6 +1003,185 @@ class AgentRunner:
             except StopAsyncIteration:
                 return
             yield event
+
+    async def _context_for_step(
+        self,
+        run_input: RunAgentInput,
+        state: AgentState | None,
+        context: _ExecutionContext,
+    ) -> AgentContext:
+        dynamic: AgentContext | None = None
+        if self.context_provider is not None:
+            if (
+                self.agent.spec.refresh_context_each_step
+                or context.provider_context is None
+            ):
+                try:
+                    provided = await self._await_with_deadline(
+                        self.context_provider.provide(run_input, context.step_count),
+                        context.deadline,
+                    )
+                except TimeoutError:
+                    raise
+                except AbstractSpakkyFrameworkError:
+                    raise
+                except Exception as error:
+                    raise AgentDefinitionError(
+                        "Agent context provider failed"
+                    ) from error
+                if not isinstance(provided, AgentContext):
+                    raise AgentDefinitionError(
+                        "Agent context provider returned an invalid value"
+                    )
+                context.provider_context = provided
+            dynamic = context.provider_context
+        prepared_static = prepare_agent_context(run_input.context)
+        prepared_dynamic = None if dynamic is None else prepare_agent_context(dynamic)
+        prepared = combine_agent_contexts(prepared_static, prepared_dynamic)
+        context_fingerprint = _agent_context_fingerprint(prepared)
+        if (
+            state is not None
+            and context.step_count not in context.context_evidence_steps
+            and context_fingerprint is not None
+            and (
+                prepared.packs
+                or prepared.manifest is not None
+                or prepared.digest is not None
+            )
+        ):
+            self._append_context_evidence(
+                state.id,
+                context.step_count,
+                prepared,
+                context_fingerprint,
+            )
+            context.context_evidence_steps.add(context.step_count)
+        return prepared
+
+    def _append_context_evidence(
+        self,
+        state_id: str,
+        model_step: int,
+        context: AgentContext,
+        context_fingerprint: str,
+    ) -> None:
+        existing = self._evidence_required().list_by_state(state_id)
+        existing_keys = {
+            (
+                item.kind,
+                item.payload.get("model_step"),
+                item.payload.get("context_fingerprint"),
+            )
+            for item in existing
+        }
+        manifest_ref = context.manifest.id if context.manifest is not None else None
+        packs = tuple(
+            {
+                "id": pack.id,
+                "source": pack.source,
+                "role": pack.role.value,
+                "sensitivity": pack.sensitivity.value,
+                "freshness": pack.freshness.value,
+                "relevance": pack.relevance,
+                "budget": {
+                    "max_tokens": pack.token_budget.max_tokens,
+                    "estimated_tokens": pack.token_budget.estimated_tokens,
+                    "reserved_output_tokens": pack.token_budget.reserved_output_tokens,
+                },
+            }
+            for pack in context.packs
+        )
+        if (
+            packs
+            and (
+                AgentEvidenceKind.CONTEXT,
+                model_step,
+                context_fingerprint,
+            )
+            not in existing_keys
+        ):
+            self._append_candidate(
+                state_id,
+                AgentEvidenceCandidate(
+                    kind=AgentEvidenceKind.CONTEXT,
+                    payload={
+                        "model_step": model_step,
+                        "context_fingerprint": context_fingerprint,
+                        "packs": packs,
+                    },
+                    digest=context_fingerprint,
+                    manifest_ref=manifest_ref,
+                ),
+            )
+        manifest = context.manifest
+        if (
+            manifest is not None
+            and (
+                AgentEvidenceKind.CONTEXT_MANIFEST,
+                model_step,
+                context_fingerprint,
+            )
+            not in existing_keys
+        ):
+            self._append_candidate(
+                state_id,
+                AgentEvidenceCandidate(
+                    kind=AgentEvidenceKind.CONTEXT_MANIFEST,
+                    payload={
+                        "model_step": model_step,
+                        "context_fingerprint": context_fingerprint,
+                        "id": manifest.id,
+                        "origin_ref": manifest.origin_ref,
+                        "evidence_refs": tuple(manifest.evidence_refs),
+                        "component_manifest_refs": manifest.metadata.get(
+                            "component_manifest_refs",
+                            (),
+                        ),
+                        "entries": tuple(
+                            {
+                                "pack_id": entry.pack_id,
+                                "source": entry.source,
+                                "role": entry.role.value,
+                                "origin_ref": entry.origin_ref,
+                                "evidence_ref": entry.evidence_ref,
+                                "digest_ref": entry.digest_ref,
+                            }
+                            for entry in manifest.entries
+                        ),
+                    },
+                    digest=context_fingerprint,
+                    manifest_ref=manifest.id,
+                ),
+            )
+        digest = context.digest
+        if (
+            digest is not None
+            and (
+                AgentEvidenceKind.CONTEXT_DIGEST,
+                model_step,
+                context_fingerprint,
+            )
+            not in existing_keys
+        ):
+            self._append_candidate(
+                state_id,
+                AgentEvidenceCandidate(
+                    kind=AgentEvidenceKind.CONTEXT_DIGEST,
+                    payload={
+                        "model_step": model_step,
+                        "context_fingerprint": context_fingerprint,
+                        "id": digest.id,
+                        "context_identity": digest.context_identity,
+                        "source_manifest_ref": digest.source_manifest_ref,
+                        "derived_from_pack_ids": tuple(digest.derived_from_pack_ids),
+                        "algorithm": digest.algorithm,
+                        "compression_evidence_ref": digest.compression_evidence_ref,
+                        "context_digest": digest.digest,
+                    },
+                    digest=digest.digest,
+                    manifest_ref=manifest.id if manifest is not None else None,
+                ),
+            )
 
     async def _response_events(
         self,
@@ -1054,6 +1281,41 @@ class AgentRunner:
             return usage_error
         content = "".join(accumulator.content)
         context.assistant_text.extend(accumulator.content)
+        output_type = self.agent.spec.output_type
+        if output_type is not None:
+            if accumulator.candidates and accumulator.structured_outputs:
+                return _limit_error(
+                    "agent_structured_output_ambiguous",
+                    "Model step returned structured output with tool calls",
+                    context,
+                )
+            if not accumulator.candidates:
+                if len(accumulator.structured_outputs) == 0:
+                    return _limit_error(
+                        "agent_structured_output_missing",
+                        "Final model step did not return structured output",
+                        context,
+                    )
+                if len(accumulator.structured_outputs) != 1:
+                    return _limit_error(
+                        "agent_structured_output_ambiguous",
+                        "Final model step returned multiple structured outputs",
+                        context,
+                    )
+                contract = _structured_output_contract(output_type)
+                try:
+                    final_output = contract.materialize(
+                        accumulator.structured_outputs[0]
+                    )
+                    final_output_json = contract.dump(final_output)
+                except AgentDefinitionError:
+                    return _limit_error(
+                        "agent_structured_output_invalid",
+                        "Final structured output does not match the declared type",
+                        context,
+                    )
+                context.final_output = final_output
+                context.final_output_json = final_output_json
         if accumulator.candidates:
             try:
                 prepared = self._prepare_batch(
@@ -1478,12 +1740,25 @@ class AgentRunner:
             self._append_boundary(state.id, _after_tool(item.descriptor, item.call))
         return result, evidence
 
-    def _before_model_limit(self, context: _ExecutionContext) -> ModelError | None:
+    def _before_model_limit(
+        self,
+        run_input: RunAgentInput,
+        context: _ExecutionContext,
+    ) -> ModelError | None:
         limits = self.agent.spec.limits
         if context.step_count >= limits.max_steps:
             return _limit_error(
                 LIMIT_MAX_STEPS_CODE,
                 "Agent model-step limit exceeded",
+                context,
+            )
+        if (
+            self.agent.spec.output_type is not None
+            and not self._model_capability(run_input).supports_structured_output
+        ):
+            return _limit_error(
+                "agent_structured_output_unsupported",
+                "Selected model does not support structured output",
                 context,
             )
         return None
@@ -1649,6 +1924,13 @@ class AgentRunner:
         state_id: str,
         checkpoint: Mapping[str, JsonValue],
     ) -> _ExecutionContext:
+        static_fingerprint = checkpoint.get("static_context_fingerprint")
+        if static_fingerprint is not None and (
+            not isinstance(static_fingerprint, str) or not static_fingerprint.strip()
+        ):
+            raise AgentDefinitionError(
+                "Agent runner checkpoint context fingerprint is invalid"
+            )
         return _ExecutionContext(
             state_id=state_id,
             history=[
@@ -1669,6 +1951,7 @@ class AgentRunner:
                 for value in _mapping_sequence(checkpoint, "pending_calls")
             ],
             route_metadata=dict(_mapping_metadata(checkpoint, "route_metadata")),
+            static_context_fingerprint=static_fingerprint,
         )
 
     def _append_model_evidence(
@@ -1816,6 +2099,7 @@ class AgentRunner:
         self,
         run_input: RunAgentInput,
         history: tuple[ModelMessage, ...],
+        agent_context: AgentContext,
     ) -> ModelRequest:
         tools = tuple(
             ModelToolSpec(
@@ -1829,6 +2113,11 @@ class AgentRunner:
         tool_calling = (
             ToolCallingSpec(tools=tools, choice=ModelToolChoice.AUTO) if tools else None
         )
+        structured_output = (
+            _structured_output_contract(self.agent.spec.output_type).spec
+            if self.agent.spec.output_type is not None
+            else None
+        )
         return ModelRequest(
             messages=(
                 ModelMessage(
@@ -1837,6 +2126,10 @@ class AgentRunner:
                 ),
                 *history,
             ),
+            context=agent_context.packs,
+            context_manifest=agent_context.manifest,
+            context_digest=agent_context.digest,
+            structured_output=structured_output,
             tool_calling=tool_calling,
             sampling=DEFAULT_SAMPLING,
             model_selection=run_input.model_selection,
@@ -1898,6 +2191,7 @@ class AgentRunner:
         self,
         run_input: RunAgentInput,
         assistant_text: Sequence[str],
+        structured_output: JsonValue,
     ) -> None:
         """Append this run's user and assistant turns to the persisted session.
 
@@ -1911,6 +2205,17 @@ class AgentRunner:
         if self.task_store is None or run_input.message_history:
             return
         reply = "".join(assistant_text)
+        if (
+            not reply.strip()
+            and self.agent.spec.output_type is not None
+            and structured_output is not None
+        ):
+            reply = dumps(
+                structured_output,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
         turns = [ConversationTurn(ModelMessageRole.USER, run_input.instruction)]
         if reply.strip():
             turns.append(ConversationTurn(ModelMessageRole.ASSISTANT, reply))
@@ -1920,16 +2225,20 @@ class AgentRunner:
         self,
         state_id: str,
         tool_calls: Sequence[str],
+        structured_output: object | None,
         *,
         evidence_count: int,
     ) -> AgentYield[object]:
         output_type = self.agent.spec.output_type
-        result = AgentRunResult(
-            state_id=state_id,
-            status=AgentStatus.COMPLETED.value,
-            tool_calls=tuple(tool_calls),
-            evidence_count=evidence_count,
-        )
+        if output_type is None:
+            result: object = AgentRunResult(
+                state_id=state_id,
+                status=AgentStatus.COMPLETED.value,
+                tool_calls=tuple(tool_calls),
+                evidence_count=evidence_count,
+            )
+        else:
+            result = structured_output
         return AgentYield(
             kind=AgentYieldKind.FINAL,
             payload=Final(
@@ -1941,6 +2250,20 @@ class AgentRunner:
                 },
             ),
         )
+
+    def _final_event_metadata(
+        self,
+        step_metadata: JsonObject,
+        context: _ExecutionContext,
+    ) -> JsonObject:
+        output_type = self.agent.spec.output_type
+        if output_type is None:
+            return step_metadata
+        return {
+            **step_metadata,
+            "output": context.final_output_json,
+            "output_type": output_type.__name__,
+        }
 
     async def _consume_cancel(self, state: AgentState) -> AgentYield[object] | None:
         for signal in self._signals_required().list_pending(state.id):
@@ -2576,6 +2899,7 @@ def _context_metadata(context: _ExecutionContext) -> JsonObject:
         "approved_call_fingerprints": sorted(context.approved_call_fingerprints),
         "pending_calls": [_call_metadata(call) for call in context.pending_calls],
         "route_metadata": context.route_metadata,
+        "static_context_fingerprint": context.static_context_fingerprint,
     }
 
 

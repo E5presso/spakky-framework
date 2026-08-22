@@ -246,14 +246,79 @@ Runner-backed mode에서 runner는 생성자 parameter 이름이 아니라 **typ
 | `name` | 로그, registry, protocol adapter에서 안정적인 Agent 이름이 필요할 때 | class name 기반 fallback이 쓰입니다. |
 | `objective` | AgentCard, 설명, model-facing 목적이 필요할 때 | 설명이 빈약해지고 일부 adapter metadata가 약해집니다. |
 | `instructions` | runner-backed model request에 기본 system 지시를 주고 싶을 때 | 사용자의 `RunAgentInput.instruction`과 tool schema 중심으로 요청을 만듭니다. |
-| `output_type` | 최종 output을 특정 타입으로 구조화해야 할 때 | `AgentRunResult` 같은 기본 결과가 반환됩니다. |
+| `output_type` | 최종 output을 Pydantic `BaseModel`, dataclass, `TypedDict`로 materialize할 때 | 기존 `AgentRunResult` 결과가 반환됩니다. |
 | `accepted_signals` | 실행 중 user message, approval decision, cancel, resume 등을 받을 때 | signal queue를 소비하지 않는 stateless 경로가 됩니다. |
 | `recovery` | action boundary resume/retry/skip 판단이 필요할 때 | 재시작 후 이어가기 계획을 만들지 않습니다. |
 | `streaming_exposure_mode` | protocol adapter가 token streaming을 얼마나 보수적으로 노출할지 정할 때 | `BALANCED`가 사용됩니다. |
 | `limits` | model step, 실제 tool call, 누적 provider token usage, wall-clock 실행 시간을 제한할 때 | `max_steps=8`, `max_tool_calls=32`, token/time 제한 없음이 사용됩니다. |
 | `teammates` / `delegation_allowed` | local/remote Agent에게 일을 위임할 때 | delegation tool이 만들어지지 않습니다. |
 | `compaction` | 긴 멀티턴 history를 압축해야 할 때 | context가 길어져도 압축 전략을 적용하지 않습니다. |
+| `refresh_context_each_step` | 주입된 `IAgentContextProvider`를 model step마다 다시 호출할 때 | 한 invocation의 첫 model step에서 받은 context를 재사용합니다. |
 | `metadata` | adapter나 운영 도구가 읽을 작은 문자열 metadata가 필요할 때 | 추가 metadata가 없습니다. |
+
+## Typed structured output
+
+가장 간단한 typed final은 `output_type`에 Pydantic model을 선언하는 것입니다.
+
+```python
+from pydantic import BaseModel
+from spakky.agent import AgentExecutionSpec
+
+
+class SupportAnswer(BaseModel):
+    answer: str
+    confidence: float
+
+
+spec = AgentExecutionSpec(
+    name="support_agent",
+    output_type=SupportAnswer,
+)
+```
+
+Runner는 선택 model의 structured-output capability를 provider 호출 전에 확인하고, strict
+JSON Schema를 요청합니다. Final step의 structured payload가 선언 타입과 정확히 맞으면
+`run()`의 `Final.output`은 `SupportAnswer` instance입니다. `run_events()`와 AG-UI/A2A에는
+같은 값을 JSON-safe object로 보냅니다. `output_type`을 선언하지 않은 기존 Agent는 계속
+`AgentRunResult`를 반환하며 protocol terminal에 임의의 output을 추가하지 않습니다.
+
+## Static typed context
+
+한 run에 고정된 context는 prompt 문자열에 이어 붙이지 말고 `RunAgentInput.context`에
+`AgentContext`로 전달합니다.
+
+```python
+from spakky.agent import (
+    AgentContext,
+    ContextPack,
+    ContextPackRole,
+    ContextTokenBudget,
+    RunAgentInput,
+)
+
+
+run_input = RunAgentInput(
+    state_id="run-42",
+    instruction="현재 상태를 요약해 주세요.",
+    context=AgentContext(
+        packs=(
+            ContextPack(
+                id="case-state",
+                content="priority=high; owner=team-a",
+                source="inbound:case-state",
+                role=ContextPackRole.STATE,
+                token_budget=ContextTokenBudget(max_tokens=64),
+            ),
+        ),
+    ),
+)
+```
+
+Runner는 pack을 `ModelRequest.context`로 전달하고 manifest가 없으면 pack ID/source/role을
+정확히 덮는 manifest를 합성합니다. Context는 `ModelRequest.messages`에 raw 문자열로
+concatenate되지 않으며 provider adapter가 `assemble_messages()` 경계에서 guarded evidence
+message로 조립합니다. Dynamic refresh와 provenance/privacy 규칙은
+[AI Agent 심화](agents-advanced.md)를 확인하세요.
 
 ## 응답으로 바꾸기
 

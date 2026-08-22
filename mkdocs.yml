@@ -239,3 +239,4 @@ nav:
       - ADR-0015 Multi-provider LLM official SDK adapters: adr/0015-multi-provider-llm-official-sdk-adapters.md
       - ADR-0016 Operator-owned model catalog와 opaque model routing: adr/0016-operator-owned-model-catalog.md
       - ADR-0017 Bounded iterative model/tool loop: adr/0017-bounded-iterative-agent-loop.md
+      - ADR-0018 Typed agent output과 composed execution context: adr/0018-typed-agent-output-and-context.md

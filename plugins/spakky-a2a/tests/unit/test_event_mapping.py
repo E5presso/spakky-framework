@@ -67,6 +67,25 @@ async def test_run_finished_success_returns_outcome_without_error(
     assert outcome == RunOutcome(error=None)
 
 
+async def test_run_finished_structured_output_adds_typed_json_artifact(
+    queue: RecordingEventQueue,
+    updater: TaskUpdater,
+) -> None:
+    """Structured final metadata maps to one named A2A data artifact."""
+    outcome = await _project(
+        RunFinishedEvent(
+            ATTRIBUTION,
+            metadata={"output": {"answer": "ok"}, "output_type": "Answer"},
+        ),
+        updater,
+    )
+
+    assert outcome == RunOutcome(error=None)
+    artifact = queue.artifact_updates()[0].artifact
+    assert artifact.name == "Answer"
+    assert MessageToDict(artifact.parts[0].data) == {"answer": "ok"}
+
+
 async def test_run_finished_error_returns_outcome_with_error(
     updater: TaskUpdater,
 ) -> None:

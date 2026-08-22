@@ -3,6 +3,7 @@
 from math import inf, nan
 
 import pytest
+from pydantic import BaseModel
 from spakky.agent import (
     JsonSchemaConstraint,
     JsonValue,
@@ -12,6 +13,29 @@ from spakky.agent import (
 
 from spakky.plugins.llm.codec import LlmJsonCodec
 from spakky.plugins.llm.error import LlmResponseError
+from spakky.agent.structured_output import _structured_output_contract
+
+
+class _NestedCodecValue(BaseModel):
+    value: int
+
+
+class _NestedCodecAnswer(BaseModel):
+    nested: _NestedCodecValue
+
+
+def test_codec_accepts_inlined_nested_contract_and_rejects_all_extras() -> None:
+    """Core normalized nested schemas stay inside the portable codec subset."""
+    constraint = _structured_output_contract(_NestedCodecAnswer).spec.constraint
+    codec = LlmJsonCodec()
+
+    assert codec.decode_value('{"nested":{"value":1}}', constraint) == {
+        "nested": {"value": 1}
+    }
+    with pytest.raises(LlmResponseError):
+        codec.decode_value('{"nested":{"value":1,"extra":true}}', constraint)
+    with pytest.raises(LlmResponseError):
+        codec.decode_value('{"nested":{"value":1},"extra":true}', constraint)
 
 
 def test_codec_decodes_json_objects_and_structured_values() -> None:

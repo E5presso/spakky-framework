@@ -458,6 +458,24 @@ JSON을 decode하고 schema 검증합니다. 따라서 앞선 `TOKEN_DELTA`가 �
 유효한 전체 JSON이 아니면 `STRUCTURED_OUTPUT` event를 내지 않고
 `LlmResponseError`로 종료합니다.
 
+### Agent `output_type`과 OpenAI strict wire
+
+`AgentExecutionSpec.output_type`이 있으면 runner가 만든 strict portable schema가 selected
+provider의 `ModelRequest.structured_output`으로 전달됩니다. OpenAI strict JSON Schema
+wire는 모든 object property를 recursive하게 `required`에 넣고
+`additionalProperties=false`로 닫아야 합니다. `OpenAIChatProvider`는 core schema를 mutate하지
+않고 wire copy에만 이 normalization을 적용합니다.
+
+따라서 default가 있는 BaseModel/dataclass field는 core materializer에서 생략 가능하지만
+OpenAI strict wire 응답에는 포함됩니다. Arbitrary-key mapping처럼
+`additionalProperties` 자체가 nested schema인 open-ended object는 OpenAI strict wire로
+약화해 보내지 않고 `LlmUnsupportedFeatureError`입니다. Non-strict low-level request는 이
+required-all normalization을 적용하지 않지만, Agent `output_type` 계약은 항상 strict입니다.
+
+Provider JSON은 adapter codec 검증 뒤 runner에서 다시 declared class로 exact
+materialization됩니다. OpenAI/Anthropic/Google 어느 경로도 text JSON을 structured payload로
+추측하지 않습니다.
+
 ## Tool history
 
 표준 `AgentRunner`는 각 round의 assistant tool-call turn과 `TOOL` result history를

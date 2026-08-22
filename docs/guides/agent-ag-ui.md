@@ -237,6 +237,17 @@ Canonical cancel signal은 `code="cancelled"`와 `state`, `signal_id`, optional
 `requested_by` metadata를 가진
 `RUN_ERROR` 하나로 끝나며 success `RUN_FINISHED`를 추가하지 않습니다.
 
+Agent가 `output_type`을 선언하면 core `RunFinishedEvent.metadata["output"]`의 JSON-safe
+materialized value가 AG-UI `RUN_FINISHED.result`가 됩니다. Python BaseModel/dataclass
+instance 자체를 wire에 넣지는 않습니다. `output_type`이 없는 기존 Agent는 core event에
+`output` key가 없으므로 AG-UI result도 `null`로 유지됩니다.
+Structured capability/missing/ambiguous/invalid terminal은 result로 내보내지 않고 해당
+`agent_structured_output_*` code의 `RUN_ERROR`입니다.
+
+AG-UI request의 protocol-native `context` 배열은 현재 core `AgentContext`로 자동 매핑되지
+않습니다. Typed dynamic context가 필요한 exposed Agent는 constructor-injected
+`IAgentContextProvider`를 사용합니다.
+
 ## API Reference
 
 - [spakky-agui API Reference](../api/plugins/spakky-agui.md): endpoint, transport, projector, HITL helper 시그니처를 확인합니다.

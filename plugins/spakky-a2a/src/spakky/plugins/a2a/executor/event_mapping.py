@@ -79,7 +79,10 @@ class AgentEventProjector:
             case AgentEventKind.RUN_STARTED:
                 await updater.start_work()
             case AgentEventKind.RUN_FINISHED:
-                return RunOutcome(error=_as(event, RunFinishedEvent).error)
+                finished = _as(event, RunFinishedEvent)
+                if finished.error is None and "output" in finished.metadata:
+                    await self._project_final_output(finished, updater)
+                return RunOutcome(error=finished.error)
             case AgentEventKind.RUN_PAUSED:
                 await self._project_run_paused(_as(event, RunPausedEvent), updater)
                 return RunOutcome(error=None, paused=True)
@@ -194,6 +197,18 @@ class AgentEventProjector:
             else _data_part_from_value(artifact.content)
         )
         await updater.add_artifact([part], name=name)
+
+    @staticmethod
+    async def _project_final_output(
+        event: RunFinishedEvent,
+        updater: TaskUpdater,
+    ) -> None:
+        output_type = event.metadata.get("output_type")
+        name = output_type if isinstance(output_type, str) else "output"
+        await updater.add_artifact(
+            [_data_part_from_value(event.metadata["output"])],
+            name=name,
+        )
 
     @staticmethod
     async def _project_state_snapshot(event: AgentEvent, updater: TaskUpdater) -> None:

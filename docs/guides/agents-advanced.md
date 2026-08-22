@@ -509,6 +509,79 @@ approval, 순차 dispatch, history continuation, limit, final uniqueness는 stre
 동일합니다. Tool call이 있으면 guarded complete도 다음 model step으로 이어지고,
 structured payload가 있어도 public final은 한 번만 방출됩니다.
 
+## Typed structured output
+
+지원하는 public `output_type`은 Pydantic `BaseModel`, 표준 dataclass, `TypedDict`입니다.
+
+```python
+from dataclasses import dataclass
+from typing import NotRequired, TypedDict
+
+from pydantic import BaseModel
+from spakky.agent import AgentExecutionSpec
+
+
+class ModelAnswer(BaseModel):
+    answer: str
+    confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class DataclassAnswer:
+    answer: str
+    confidence: float = 1.0
+
+
+class TypedAnswer(TypedDict):
+    answer: str
+    confidence: NotRequired[float]
+
+
+supported_specs = (
+    AgentExecutionSpec(output_type=ModelAnswer),
+    AgentExecutionSpec(output_type=DataclassAnswer),
+    AgentExecutionSpec(output_type=TypedAnswer),
+)
+```
+
+`BaseModel`과 dataclass는 해당 instance로, `TypedDict`는 runtime `dict`로 materialize됩니다.
+Schema와 materializer는 strict입니다. String-to-number coercion, extra key, missing required
+key, non-finite JSON, serializer key loss, text JSON fallback을 허용하지 않습니다. Alias는
+schema/request/materialization/event JSON에서 일관되게 사용합니다.
+
+Declaration 단계에서 local schema reference는 inline되고 모든 object는
+`additionalProperties=false`인 closed shape가 됩니다. External reference, recursive cycle,
+portable allowlist 밖 keyword(예: date/time `format`), arbitrary class처럼 portable JSON
+Schema로 표현할 수 없는 타입은 `AgentDefinitionError`입니다. Nested list/tuple과 closed
+object는 지원하지만 provider wire가 더 좁은 경우 adapter가 fail closed할 수 있습니다.
+
+선택 model이 `supports_structured_output=false`이면 provider를 호출하기 전에
+`agent_structured_output_unsupported`입니다. Intermediate tool-only step은 허용되지만 한
+step에 structured payload와 tool candidate가 함께 있으면
+`agent_structured_output_ambiguous`로 tool 0개 dispatch됩니다. Tool call이 없는 final
+step에서는 structured payload가 정확히 하나 필요합니다.
+
+| 실패 | terminal code |
+| --- | --- |
+| Final step에 structured payload 없음 또는 text JSON만 있음 | `agent_structured_output_missing` |
+| Structured payload가 여러 개이거나 tool batch와 함께 존재 | `agent_structured_output_ambiguous` |
+| 선언 타입과 불일치, extra/missing/wrong type, JSON shape 손실 | `agent_structured_output_invalid` |
+
+Surface별 final은 의도적으로 다릅니다.
+
+- `run()` / synthesized `execute()`의 `Final.output`: 실제 `BaseModel`/dataclass/TypedDict 값
+- `run_events()`의 `RunFinishedEvent.metadata`: JSON-safe `output`과 `output_type`
+- AG-UI `RUN_FINISHED.result`: JSON-safe output
+- A2A: `output_type` 이름의 final data artifact를 추가한 뒤 task complete
+
+Server-side `ITaskStore`가 있고 assistant text가 비어 있는 structured-only final이면 다음
+turn을 위해 JSON-safe output을 canonical compact JSON 문자열의 assistant turn으로 한 번
+저장합니다.
+
+`output_type=None`인 기존 경로는 regression 없이 유지됩니다. `run()`은
+`AgentRunResult`를 반환하고, `run_events()`는 `output` key를 만들지 않으며, AG-UI result는
+`None`, A2A는 final output artifact를 추가하지 않습니다.
+
 Restart 후에는 `plan_agent_resume(state, evidence, pending_signals)`가 다음 동작을 결정합니다.
 
 | 상황 | resume action |
@@ -522,7 +595,7 @@ Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 hi
 
 ## 멀티턴 대화와 TaskStore
 
-`RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `model_selection`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
+`RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `model_selection`, static `context`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
 
 `model_selection`은 요청별 opaque logical model ref 선택입니다. Agent class는 특정
 provider나 실제 model 이름을 소유하지 않고 `IAgentModel` port만 주입받습니다. 서비스
@@ -575,6 +648,122 @@ Wire object도 `modelRef` 외 nested field를 허용하지 않습니다. Direct 
 | `ITaskStore` | 서버가 conversation transcript를 보존할 때 | `effective_conversation_id`로 `ConversationTurn` 목록을 읽어 model message로 변환합니다. |
 
 둘 다 있으면 inline `message_history`가 우선합니다. `ITaskStore`는 `ConversationTurn(role, content, metadata)`를 저장하며, role은 `USER` 또는 `ASSISTANT`만 허용됩니다. A2A protocol `Task` snapshot 저장은 `spakky-a2a`의 `IA2ATaskRepository`와 `SpakkyA2ATaskStore`가 담당하므로 core transcript store와 별도로 구성합니다.
+
+## Static context와 dynamic context provider
+
+Static context는 `RunAgentInput.context`에 둡니다. 실행 중 application state를 다시 읽어야
+하면 `IAgentContextProvider` 구현을 Agent constructor에 주입합니다.
+
+```python
+from spakky.agent import (
+    Agent,
+    AgentContext,
+    AgentExecutionSpec,
+    ContextPack,
+    ContextPackRole,
+    IAgentContextProvider,
+    IAgentModel,
+    RunAgentInput,
+)
+from spakky.core.pod.annotations.pod import Pod
+
+
+@Pod()
+class RuntimeStateContext(IAgentContextProvider):
+    async def provide(
+        self,
+        run_input: RunAgentInput,
+        model_step: int,
+    ) -> AgentContext:
+        return AgentContext(
+            packs=(
+                ContextPack(
+                    id=f"runtime-state-{model_step}",
+                    content=f"run={run_input.state_id}; step={model_step}",
+                    source="application:runtime-state",
+                    role=ContextPackRole.STATE,
+                ),
+            )
+        )
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="contextual_agent",
+        refresh_context_each_step=True,
+    )
+)
+class ContextualAgent:
+    def __init__(
+        self,
+        model: IAgentModel,
+        context_provider: IAgentContextProvider,
+    ) -> None:
+        self._model = model
+        self._context_provider = context_provider
+```
+
+Provider의 `provide(run_input, model_step)`은 async이고 model step은 1부터 시작합니다.
+Runner는 constructor attribute를 runtime type으로 찾아 provider 0개를 허용하고 1개를
+사용하며 2개 이상이면 `AgentModelConfigurationError`로 모호성을 거부합니다.
+`refresh_context_each_step=False`가 기본이며 한 invocation의 첫 model step에서 얻은 dynamic
+context를 뒤 step에서 재사용합니다. `True`이면 각 model step마다 다시 호출합니다. Fresh
+resume invocation은 raw dynamic context cache를 checkpoint에서 복원하지 않고 provider를
+다시 호출합니다.
+
+Durable run은 raw static context도 checkpoint하지 않고 model boundary를 실제로 통과한
+guarded/truncated static context의 SHA-256 fingerprint만 저장합니다. Static context가 있던
+run을 resume할 때 caller는 같은 model-bound prepared value가 되는 `RunAgentInput.context`를
+다시 제공해야 합니다. Context를 누락하거나 guarded/truncated content나 provenance를
+바꾸거나 pack을 더하면 fingerprint가 달라져
+`agent_checkpoint_invalid`로 fail closed하며 pending model/tool을 replay하지 않습니다.
+
+Static pack이 먼저, dynamic pack이 뒤에 결합됩니다. 전체 pack ID는 unique해야 합니다.
+Pack이 있는데 manifest가 없으면 runner가 pack 순서/ID/source/role을 정확히 덮는 manifest를
+결정적으로 합성합니다. Caller manifest가 있으면 entry 수와 순서, pack ID/source/role이
+모두 일치해야 합니다. Digest는 manifest ID와 전체 pack ID 순서를 정확히 덮어야 합니다.
+Static과 dynamic 양쪽이 content를 제공하는데 한쪽 digest만 있는 partial digest는 전체
+context digest로 승격하지 않고 fail closed합니다. Runner는 digest reference/coverage를
+검증하지만 declared digest value를 content에서 다시 계산하지는 않으므로 algorithm과
+digest value의 생성 책임은 context producer에게 있습니다.
+
+모든 prepared pack은 model message 관점에서는 `EVIDENCE` role로 조립되고 원래
+`ContextPackRole`은 message metadata의 `role`에 보존됩니다. 따라서 `SYSTEM` 같은 pack role이
+runner의 system instruction을 덮어쓰지는 않습니다.
+
+Provider가 `AgentContext`가 아닌 값을 반환하거나 dynamic context를 static context와
+결합하는 model-step validation이 실패하면 provider request 전에
+`agent_model_execution_failed`입니다. Provider가 run deadline을 넘기면
+`agent_timeout`입니다.
+
+현재 typed `AgentContext` inbound는 Python/custom `RunAgentInput.context`와 constructor
+provider 경로입니다. AG-UI의 protocol-native `context` 배열과 A2A data part를 core
+`AgentContext`로 자동 승격하지 않습니다. Protocol-exposed Agent의 dynamic application
+context는 injected provider를 사용하세요.
+
+## Context redaction, budget, evidence
+
+Runner는 caller object를 mutate하지 않고 model-safe copy를 준비합니다.
+
+- `ContextSensitivity.REDACTED` pack content는 `[REDACTED]`가 됩니다.
+- `SensitiveFieldDescriptor`는 `ContextExposurePolicy`에 따라 deterministic하게 guard됩니다.
+- `ContextTokenBudget.max_tokens`가 있으면 4 characters/token 상한을 사용합니다.
+  `estimated_tokens > max_tokens`이면 content 길이에 비례해 더 짧게 자릅니다.
+- Truncation metadata는 original/retained characters, estimated/max tokens만 담습니다.
+- Prepared pack은 raw pack metadata와 sensitive-field descriptor를 제거합니다.
+- Prepared manifest entry의 sensitive fields/metadata를 제거하고 digest summary/metadata도
+  model request와 evidence에 노출하지 않습니다.
+
+Durable path의 `CONTEXT`, `CONTEXT_MANIFEST`, `CONTEXT_DIGEST` evidence는 raw content를
+저장하지 않습니다. Pack ID/source/role/sensitivity/freshness/relevance/budget, manifest
+provenance ref, digest value와 algorithm처럼 재현에 필요한 metadata만 남깁니다. 실제로
+존재하는 manifest/digest kind만 append하고 같은 model step의 동일 provenance evidence는
+중복하지 않습니다. 각 evidence에는 privacy-safe combined context fingerprint가 결속되어
+같은 step retry의 context가 실제로 달라지면 별도 evidence로 구분됩니다. Raw static/dynamic
+context는 runner checkpoint에 저장하지 않습니다. Evidence의 `digest` correlation field는
+`CONTEXT`/`CONTEXT_MANIFEST`에서는 combined fingerprint입니다. `CONTEXT_DIGEST` evidence의
+`digest`는 caller가 선언한 `ContextDigest.digest`를 유지하고 payload의
+`context_fingerprint`로 같은 model-bound context에 결속합니다.
 
 ## Context compaction
 

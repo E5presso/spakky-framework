@@ -14,6 +14,7 @@ from spakky.agent.error import (
 )
 from spakky.agent.dispatcher import AgentToolDispatcher
 from spakky.agent.context import (
+    AgentContext,
     ContextDigest,
     ContextFreshness,
     ContextHealthSignal,
@@ -28,6 +29,7 @@ from spakky.agent.context import (
     ContextSensitivity,
     ContextTokenBudget,
     IAgentContextHandler,
+    IAgentContextProvider,
 )
 from spakky.agent.cancellation import (
     AgentCancellationCleanupCallable,
@@ -239,10 +241,12 @@ __all__ = [
     "IAgentSignalRepository",
     "IAgentStateRepository",
     "IAgentContextHandler",
+    "IAgentContextProvider",
     "ITaskStore",
     "ConversationTurn",
     "AbstractSpakkyAgentError",
     "Agent",
+    "AgentContext",
     "AgentApprovalBoundaryKind",
     "AgentApprovalDecisionOutcome",
     "AgentApprovalPlan",

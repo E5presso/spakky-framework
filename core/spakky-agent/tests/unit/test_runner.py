@@ -4,7 +4,7 @@ from asyncio import Event
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from time import sleep
-from typing import cast, override
+from typing import TypedDict, cast, override
 
 import pytest
 from pydantic import BaseModel
@@ -12,6 +12,7 @@ import spakky.agent.runner as runner_module
 
 from spakky.agent import (
     Agent,
+    AgentContext,
     AgentApprovalPlan,
     AgentApprovalPlanAction,
     AgentEvidenceKind,
@@ -19,7 +20,6 @@ from spakky.agent import (
     AgentExecutionSpec,
     AgentTeammate,
     AgentRunner,
-    AgentRunResult,
     AgentSignal,
     AgentSignalKind,
     AgentState,
@@ -34,9 +34,18 @@ from spakky.agent import (
     ArtifactEvent,
     Cancel,
     ConversationTurn,
+    ContextDigest,
+    ContextFreshness,
+    ContextManifest,
+    ContextManifestEntry,
+    ContextPack,
+    ContextPackRole,
+    ContextSensitivity,
+    ContextTokenBudget,
     Error,
     EvidenceCapture,
     Final,
+    IAgentContextProvider,
     IAgentModel,
     ICompactionStrategy,
     Idempotency,
@@ -60,6 +69,8 @@ from spakky.agent import (
     ModelUsage,
     Progress,
     RecoveryStrategy,
+    SecretField,
+    SensitiveFieldDescriptor,
     StreamingExposureMode,
     Token,
     TimeoutPolicy,
@@ -271,6 +282,30 @@ class ScriptedCompleteModel(IAgentModel):
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
 
+class StructuredRoundModel(ScriptedRoundModel):
+    """Scripted stream model advertising structured-output support."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability(supports_structured_output=True, supports_tools=True)
+
+
+class StructuredCompleteModel(ScriptedCompleteModel):
+    """Scripted complete model advertising structured-output support."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability(supports_structured_output=True, supports_tools=True)
+
+
+class EchoTypedDict(TypedDict):
+    """TypedDict structured final fixture."""
+
+    value: str
+
+
 class HangingModel(IAgentModel):
     """Model that never produces its first stream item."""
 
@@ -308,6 +343,62 @@ class FrameworkFailingModel(IAgentModel):
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
 
+class CrashThenDoneModel(IAgentModel):
+    """Unexpected first model crash followed by a successful same-step retry."""
+
+    def __init__(self) -> None:
+        self.requests: list[ModelRequest] = []
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        return ModelResponse(content="unused")
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        self.requests.append(request)
+        if len(self.requests) == 1:
+            raise RuntimeError("simulated model crash")
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+
+class RecordingContextProvider(IAgentContextProvider):
+    """Context provider recording 1-based model-step requests."""
+
+    def __init__(
+        self,
+        contexts: Sequence[AgentContext],
+        *,
+        error: Exception | None = None,
+        hang: bool = False,
+        sequential: bool = False,
+    ) -> None:
+        self._contexts = tuple(contexts)
+        self._error = error
+        self._hang = hang
+        self._sequential = sequential
+        self.calls: list[int] = []
+
+    @override
+    async def provide(
+        self,
+        run_input: RunAgentInput,
+        model_step: int,
+    ) -> AgentContext:
+        self.calls.append(model_step)
+        if self._hang:
+            await Event().wait()
+        if self._error is not None:
+            raise self._error
+        requested_index = len(self.calls) - 1 if self._sequential else model_step - 1
+        index = min(requested_index, len(self._contexts) - 1)
+        return self._contexts[index]
+
+
 class _EchoToolAgentBase:
     """Undecorated reusable echo tool surface for limits-mode agents."""
 
@@ -328,6 +419,48 @@ class _ModelOnlyAgentBase:
 
     def __init__(self, model: IAgentModel) -> None:
         self._model = model
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="structured_output_probe",
+        output_type=EchoResult,
+    )
+)
+class StructuredOutputProbeAgent(_ModelOnlyAgentBase):
+    """Streaming structured-output target without tools."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="structured_complete_probe",
+        output_type=EchoResult,
+        streaming_exposure_mode=StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED,
+    )
+)
+class StructuredCompleteProbeAgent(_ModelOnlyAgentBase):
+    """Complete-path structured-output target without tools."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="structured_tool_probe",
+        output_type=EchoResult,
+    )
+)
+class StructuredToolProbeAgent(_EchoToolAgentBase):
+    """Structured-output target used for tool ambiguity failures."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="structured_complete_tool_probe",
+        output_type=EchoResult,
+        streaming_exposure_mode=StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED,
+    )
+)
+class StructuredCompleteToolProbeAgent(_EchoToolAgentBase):
+    """Complete-path structured/tool ambiguity target."""
 
 
 @Agent(
@@ -391,6 +524,73 @@ class DurableTokenLimitedProbeAgent:
         self._states = states
         self._signals = signals
         self._evidence = evidence
+
+
+class _ContextProbeBase:
+    """Shared durable context-provider target with one continuation tool."""
+
+    def __init__(
+        self,
+        model: IAgentModel,
+        provider: IAgentContextProvider,
+        states: FakeStateRepository,
+        signals: FakeSignalRepository,
+        evidence: FakeEvidenceRepository,
+    ) -> None:
+        self._model = model
+        self._provider = provider
+        self._states = states
+        self._signals = signals
+        self._evidence = evidence
+
+    @agent_tool(
+        schema_name="context.echo",
+        effects=ToolEffects.read_only(),
+        approval=ToolApprovalRequirement.NOT_REQUIRED,
+    )
+    def context_echo(self, value: str) -> str:
+        return value
+
+    @agent_tool(
+        schema_name="context.write",
+        effects=ToolEffects.write_state(),
+        idempotency=Idempotency.CONDITIONALLY_IDEMPOTENT,
+        approval=ToolApprovalRequirement.REQUIRED,
+    )
+    def context_write(self, value: str) -> str:
+        return value
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="context_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
+class ContextProbeAgent(_ContextProbeBase):
+    """Caches dynamic context after its first model step."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="refreshing_context_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        refresh_context_each_step=True,
+    )
+)
+class RefreshingContextProbeAgent(_ContextProbeBase):
+    """Refreshes dynamic context for every model step."""
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="timeout_context_probe",
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+        limits=AgentExecutionLimits(timeout_seconds=0.05),
+    )
+)
+class TimeoutContextProbeAgent(_ContextProbeBase):
+    """Enforces the run deadline around a hanging context provider."""
 
 
 @Agent(
@@ -1618,15 +1818,55 @@ async def test_agent_runner_expect_nested_unknown_value_raises() -> None:
         _serialize_tool_result({"bad": object()})
 
 
-async def test_agent_runner_expect_output_type_recorded_in_final_metadata() -> None:
-    """spec.output_type가 선언되면 final metadata에 그 이름이 기록된다."""
+@pytest.mark.parametrize(
+    ("output_type", "expected_type"),
+    [
+        (EchoResult, EchoResult),
+        (EchoRecord, EchoRecord),
+        (EchoTypedDict, dict),
+    ],
+)
+@pytest.mark.parametrize("mode", ["stream", "complete"])
+async def test_agent_runner_materializes_declared_structured_output_type(
+    output_type: type[object],
+    expected_type: type[object],
+    mode: str,
+) -> None:
+    """Stream and complete paths return the exact declared supported output type."""
 
-    @Agent(spec=AgentExecutionSpec(name="typed_output", output_type=EchoResult))
+    exposure = (
+        StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED
+        if mode == "complete"
+        else StreamingExposureMode.BALANCED
+    )
+
+    @Agent(
+        spec=AgentExecutionSpec(
+            name=f"typed_output_{output_type.__name__}_{mode}",
+            output_type=output_type,
+            streaming_exposure_mode=exposure,
+        )
+    )
     class TypedOutputAgent:
         def __init__(self, model: IAgentModel) -> None:
             self._model = model
 
-    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    payload: JsonObject = {"value": "typed"}
+    model: IAgentModel = (
+        StructuredCompleteModel((ModelResponse(content="", structured_output=payload),))
+        if mode == "complete"
+        else StructuredRoundModel(
+            (
+                (
+                    ModelStreamEvent(
+                        kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                        structured_output=payload,
+                    ),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                ),
+            )
+        )
+    )
     agent = TypedOutputAgent(model)
     items = await _collect(
         _invoke_execute(agent, RunAgentInput(state_id="run-1", instruction="x"))
@@ -1634,8 +1874,215 @@ async def test_agent_runner_expect_output_type_recorded_in_final_metadata() -> N
 
     final = items[-1].payload
     assert isinstance(final, Final)
-    assert isinstance(final.output, AgentRunResult)
-    assert final.metadata["output_type"] == "EchoResult"
+    assert isinstance(final.output, expected_type)
+    assert final.metadata["output_type"] == output_type.__name__
+    request = cast(StructuredRoundModel | StructuredCompleteModel, model).requests[0]
+    assert request.structured_output is not None
+    assert request.structured_output.output_type_name == output_type.__name__
+    assert request.structured_output.constraint.schema["additionalProperties"] is False
+
+
+async def test_agent_runner_events_publish_json_safe_structured_final() -> None:
+    """Neutral final metadata carries JSON output and its declared type name."""
+    model = StructuredRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                    structured_output={"value": "typed"},
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    events = [
+        event
+        async for event in AgentRunner.for_agent_instance(
+            StructuredOutputProbeAgent(model)
+        ).run_events(RunAgentInput(state_id="structured-event", instruction="answer"))
+    ]
+
+    terminal = events[-1]
+    assert isinstance(terminal, RunFinishedEvent)
+    assert terminal.error is None
+    assert terminal.metadata["output"] == {"value": "typed"}
+    assert terminal.metadata["output_type"] == "EchoResult"
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+@pytest.mark.parametrize(
+    ("events", "expected_code"),
+    [
+        (
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+            "agent_structured_output_missing",
+        ),
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOKEN_DELTA,
+                    token_delta='{"value":"text-only"}',
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            "agent_structured_output_missing",
+        ),
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                    structured_output={"value": "one"},
+                ),
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                    structured_output={"value": "two"},
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            "agent_structured_output_ambiguous",
+        ),
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                    structured_output={"value": 1},
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            "agent_structured_output_invalid",
+        ),
+    ],
+)
+async def test_agent_runner_structured_stream_failures_are_typed(
+    surface: str,
+    events: tuple[ModelStreamEvent, ...],
+    expected_code: str,
+) -> None:
+    """Missing, text fallback, multiple, and invalid stream payloads fail closed."""
+    runner = AgentRunner.for_agent_instance(
+        StructuredOutputProbeAgent(StructuredRoundModel((events,)))
+    )
+    command = RunAgentInput(
+        state_id=f"structured-{surface}-{expected_code}",
+        instruction="answer",
+    )
+    if surface == "events":
+        output_events = [event async for event in runner.run_events(command)]
+        terminal = output_events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == expected_code
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == expected_code
+        assert not any(item.kind is AgentYieldKind.FINAL for item in items)
+
+
+async def test_agent_runner_complete_invalid_structured_output_is_typed() -> None:
+    """Guarded complete materialization uses the same strict invalid code."""
+    model = StructuredCompleteModel(
+        (ModelResponse(content="", structured_output={"value": 1}),)
+    )
+    items = await _collect(
+        AgentRunner.for_agent_instance(StructuredCompleteProbeAgent(model)).run(
+            RunAgentInput(state_id="complete-invalid", instruction="answer")
+        )
+    )
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_structured_output_invalid"
+
+
+@pytest.mark.parametrize("mode", ["stream", "complete"])
+async def test_agent_runner_rejects_structured_output_with_tool_calls(
+    mode: str,
+) -> None:
+    """A structured payload cannot authorize or coexist with a tool batch."""
+    call = ModelToolCall("echo.read", {"value": "x"}, "call-1")
+    model: IAgentModel = (
+        StructuredCompleteModel(
+            (
+                ModelResponse(
+                    content="",
+                    structured_output={"value": "typed"},
+                    tool_calls=(call,),
+                ),
+            )
+        )
+        if mode == "complete"
+        else StructuredRoundModel(
+            (
+                (
+                    ModelStreamEvent(
+                        kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                        structured_output={"value": "typed"},
+                    ),
+                    ModelStreamEvent(
+                        kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                        tool_call=call,
+                    ),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                ),
+            )
+        )
+    )
+    target = (
+        StructuredCompleteToolProbeAgent(model)
+        if mode == "complete"
+        else StructuredToolProbeAgent(model)
+    )
+    runner = AgentRunner.for_agent_instance(target)
+    items = await _collect(
+        runner.run(RunAgentInput(state_id=f"tool-ambiguous-{mode}", instruction="x"))
+    )
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_structured_output_ambiguous"
+    assert not any(isinstance(item.payload, Tool) for item in items)
+
+
+async def test_agent_runner_tool_step_can_precede_structured_final() -> None:
+    """Tool-only intermediate steps remain valid before one structured final step."""
+    model = StructuredRoundModel(
+        (
+            (
+                _tool_event("echo.read", {"value": "x"}, "call-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                    structured_output={"value": "typed"},
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    items = await _collect(
+        AgentRunner.for_agent_instance(StructuredToolProbeAgent(model)).run(
+            RunAgentInput(state_id="structured-after-tool", instruction="answer")
+        )
+    )
+    assert sum(isinstance(item.payload, Tool) for item in items) == 1
+    final = items[-1].payload
+    assert isinstance(final, Final)
+    assert final.output == EchoResult(value="typed")
+
+
+async def test_agent_runner_preflights_structured_output_capability() -> None:
+    """Unsupported selected model fails before stream/complete provider invocation."""
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    items = await _collect(
+        AgentRunner.for_agent_instance(StructuredOutputProbeAgent(model)).run(
+            RunAgentInput(state_id="structured-unsupported", instruction="answer")
+        )
+    )
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_structured_output_unsupported"
+    assert model.requests == []
 
 
 async def test_agent_runner_expect_default_output_type_metadata_none() -> None:
@@ -1765,6 +2212,20 @@ class FakeTaskStore(ITaskStore):
 @Agent(spec=AgentExecutionSpec(name="session_probe"))
 class SessionProbeAgent:
     """Stateless agent with a session store to exercise multi-turn history."""
+
+    def __init__(self, model: IAgentModel, task_store: ITaskStore) -> None:
+        self._model = model
+        self._task_store = task_store
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="structured_session_probe",
+        output_type=EchoResult,
+    )
+)
+class StructuredSessionProbeAgent:
+    """Structured-only final target carrying a server-side task store."""
 
     def __init__(self, model: IAgentModel, task_store: ITaskStore) -> None:
         self._model = model
@@ -2005,6 +2466,39 @@ async def _run_session_events(
 ) -> tuple[AgentEvent, ...]:
     runner = AgentRunner.for_agent_instance(SessionProbeAgent(model, store))
     return await _collect_events(runner.run_events(command))
+
+
+async def test_agent_runner_structured_only_final_persists_one_json_turn() -> None:
+    """Structured-only output persists deterministic JSON without duplicate turns."""
+    store = FakeTaskStore()
+    model = StructuredRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.STRUCTURED_OUTPUT,
+                    structured_output={"value": "typed"},
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(StructuredSessionProbeAgent(model, store))
+
+    items = await _collect(
+        runner.run(
+            RunAgentInput(
+                state_id="structured-session",
+                instruction="answer",
+                conversation_id="thread-structured",
+            )
+        )
+    )
+
+    assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 1
+    assert store.load_history("thread-structured") == (
+        ConversationTurn(ModelMessageRole.USER, "answer"),
+        ConversationTurn(ModelMessageRole.ASSISTANT, '{"value":"typed"}'),
+    )
 
 
 async def test_agent_runner_events_expect_session_history_persisted_like_run() -> None:
@@ -4741,6 +5235,7 @@ async def test_iterative_resume_rejects_non_mapping_checkpoint(surface: str) -> 
         ),
         ("route_metadata", []),
         ("step_count", True),
+        ("static_context_fingerprint", 1),
     ],
 )
 async def test_iterative_resume_rejects_corrupted_checkpoint_fields(
@@ -4906,3 +5401,613 @@ def test_iterative_approved_call_requires_corresponding_assistant_history() -> N
             history,
             ModelToolCall("echo.write", {"value": "approved"}, "write-1"),
         )
+
+
+async def test_agent_runner_wires_static_context_directly_into_model_request() -> None:
+    """Static inbound packs reach ModelRequest context without prompt concatenation."""
+    pack = ContextPack(
+        id="static-1",
+        content="static context",
+        source="input:test",
+        role=ContextPackRole.EVIDENCE,
+    )
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+
+    await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(
+                state_id="static-context",
+                instruction="answer",
+                context=AgentContext(packs=(pack,)),
+            ),
+        )
+    )
+
+    request = model.requests[0]
+    assert request.context == (pack,)
+    assert request.context_manifest is not None
+    assert request.context_manifest.entries[0].pack_id == "static-1"
+    assert all(message.content != "static context" for message in request.messages)
+
+
+@pytest.mark.parametrize(
+    ("agent_type", "expected_calls", "expected_second_pack"),
+    [
+        (ContextProbeAgent, [1], "dynamic-1"),
+        (RefreshingContextProbeAgent, [1, 2], "dynamic-2"),
+    ],
+)
+async def test_agent_runner_context_provider_cache_and_refresh_semantics(
+    agent_type: type[_ContextProbeBase],
+    expected_calls: list[int],
+    expected_second_pack: str,
+) -> None:
+    """Default context caches once; refresh_context_each_step calls every step."""
+    contexts = (
+        AgentContext(
+            packs=(
+                ContextPack(
+                    id="dynamic-1",
+                    content="first dynamic",
+                    source="provider:test",
+                    role=ContextPackRole.STATE,
+                ),
+            )
+        ),
+        AgentContext(
+            packs=(
+                ContextPack(
+                    id="dynamic-2",
+                    content="second dynamic",
+                    source="provider:test",
+                    role=ContextPackRole.STATE,
+                ),
+            )
+        ),
+    )
+    provider = RecordingContextProvider(contexts)
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("context.echo", {"value": "x"}, "context-call"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    target = agent_type(
+        model,
+        provider,
+        states,
+        FakeSignalRepository(()),
+        evidence,
+    )
+
+    items = await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(state_id="dynamic-context", instruction="answer")
+        )
+    )
+
+    assert items[-1].kind is AgentYieldKind.FINAL
+    assert provider.calls == expected_calls
+    assert model.requests[0].context[0].id == "dynamic-1"
+    assert model.requests[1].context[0].id == expected_second_pack
+    context_evidence = [
+        item
+        for item in evidence.list_by_state("dynamic-context")
+        if item.kind
+        in (
+            AgentEvidenceKind.CONTEXT,
+            AgentEvidenceKind.CONTEXT_MANIFEST,
+            AgentEvidenceKind.CONTEXT_DIGEST,
+        )
+    ]
+    assert len(context_evidence) == 4
+    assert all(item.summary is None for item in context_evidence)
+    assert all("first dynamic" not in repr(item.payload) for item in context_evidence)
+    assert all("second dynamic" not in repr(item.payload) for item in context_evidence)
+    assert not any(
+        item.kind is AgentEvidenceKind.CONTEXT_DIGEST for item in context_evidence
+    )
+
+
+async def test_agent_runner_fresh_resume_obtains_provider_context_again() -> None:
+    """A resumed invocation restores no raw context cache and calls step 2 anew."""
+    provider = RecordingContextProvider(
+        (
+            AgentContext(
+                packs=(
+                    ContextPack(
+                        "resume-context-1",
+                        "first",
+                        "provider",
+                        ContextPackRole.STATE,
+                    ),
+                )
+            ),
+            AgentContext(
+                packs=(
+                    ContextPack(
+                        "resume-context-2",
+                        "second",
+                        "provider",
+                        ContextPackRole.STATE,
+                    ),
+                )
+            ),
+        )
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("context.write", {"value": "x"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    target = ContextProbeAgent(model, provider, states, signals, evidence)
+
+    paused = await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(state_id="context-resume", instruction="write")
+        )
+    )
+    approval = next(
+        item.payload for item in paused if isinstance(item.payload, Approval)
+    )
+    checkpoint = states.get("context-resume").metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert "first" not in repr(checkpoint)
+    assert "resume-context-1" not in repr(checkpoint)
+    signals.append(_approval_signal("context-resume", approval.id, "approve"))
+    resumed = await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(
+                state_id="context-resume",
+                instruction="write",
+                resume=True,
+            )
+        )
+    )
+
+    assert resumed[-1].kind is AgentYieldKind.FINAL
+    assert provider.calls == [1, 2]
+    assert model.requests[1].context[0].id == "resume-context-2"
+    kinds = [
+        item.kind
+        for item in evidence.list_by_state("context-resume")
+        if item.kind in (AgentEvidenceKind.CONTEXT, AgentEvidenceKind.CONTEXT_MANIFEST)
+    ]
+    assert kinds.count(AgentEvidenceKind.CONTEXT) == 2
+    assert kinds.count(AgentEvidenceKind.CONTEXT_MANIFEST) == 2
+
+
+@pytest.mark.parametrize(
+    ("resupply", "surface"),
+    [
+        ("same", "run"),
+        ("missing", "run"),
+        ("different", "run"),
+        ("additive", "run"),
+        ("different", "events"),
+    ],
+)
+async def test_agent_runner_resume_requires_identical_static_context_resupply(
+    resupply: str,
+    surface: str,
+) -> None:
+    """Approval resume validates only a safe static-context fingerprint marker."""
+    original_pack = ContextPack(
+        "static-resume",
+        "static-content-1",
+        "caller",
+        ContextPackRole.TASK,
+    )
+    original_context = AgentContext(packs=(original_pack,))
+    provider = RecordingContextProvider((AgentContext(),))
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("context.write", {"value": "x"}, "write-1"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    state_id = f"static-resume-{resupply}-{surface}"
+    target = ContextProbeAgent(
+        model,
+        provider,
+        states,
+        signals,
+        FakeEvidenceRepository(),
+    )
+
+    paused = await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(
+                state_id=state_id,
+                instruction="write",
+                context=original_context,
+            )
+        )
+    )
+    approval = next(
+        item.payload for item in paused if isinstance(item.payload, Approval)
+    )
+    checkpoint = states.get(state_id).metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, Mapping)
+    assert "static-resume" not in repr(checkpoint)
+    assert "static-content-1" not in repr(checkpoint)
+    assert "static_context_fingerprint" in checkpoint
+    signals.append(_approval_signal(state_id, approval.id, "approve"))
+    resume_context = (
+        original_context
+        if resupply == "same"
+        else AgentContext()
+        if resupply == "missing"
+        else AgentContext(packs=(replace(original_pack, content="static-content-2"),))
+        if resupply == "different"
+        else AgentContext(
+            packs=(
+                original_pack,
+                ContextPack(
+                    "static-additive",
+                    "extra",
+                    "caller",
+                    ContextPackRole.TASK,
+                ),
+            )
+        )
+    )
+    command = RunAgentInput(
+        state_id=state_id,
+        instruction="write",
+        resume=True,
+        context=resume_context,
+    )
+    runner = AgentRunner.for_agent_instance(target)
+    resumed: Sequence[AgentYield[object] | AgentEvent] = (
+        [event async for event in runner.run_events(command)]
+        if surface == "events"
+        else await _collect(runner.run(command))
+    )
+
+    if resupply == "same":
+        terminal = resumed[-1]
+        assert isinstance(terminal, AgentYield)
+        assert terminal.kind is AgentYieldKind.FINAL
+        assert provider.calls == [1, 2]
+        assert [request.context[0].content for request in model.requests] == [
+            "static-content-1",
+            "static-content-1",
+        ]
+    else:
+        if surface == "events":
+            terminal = resumed[-1]
+            assert isinstance(terminal, RunFinishedEvent)
+            assert terminal.error is not None
+            assert terminal.error["code"] == "agent_checkpoint_invalid"
+        else:
+            terminal = resumed[-1]
+            assert isinstance(terminal, AgentYield)
+            error = terminal.payload
+            assert isinstance(error, Error)
+            assert error.code == "agent_checkpoint_invalid"
+        assert len(model.requests) == 1
+        assert not any(
+            isinstance(item, AgentYield) and isinstance(item.payload, Tool)
+            for item in resumed
+        )
+
+
+async def test_agent_runner_same_step_retry_deduplicates_context_evidence() -> None:
+    """Fresh retry reacquires context but does not duplicate safe step evidence."""
+    provider = RecordingContextProvider(
+        (
+            AgentContext(
+                packs=(
+                    ContextPack(
+                        "retry-context",
+                        "raw retry context",
+                        "provider",
+                        ContextPackRole.STATE,
+                    ),
+                )
+            ),
+        )
+    )
+    model = CrashThenDoneModel()
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    target = ContextProbeAgent(
+        model,
+        provider,
+        states,
+        FakeSignalRepository(()),
+        evidence,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated model crash"):
+        await _collect(
+            AgentRunner.for_agent_instance(target).run(
+                RunAgentInput(state_id="context-retry", instruction="answer")
+            )
+        )
+    resumed = await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(
+                state_id="context-retry",
+                instruction="answer",
+                resume=True,
+            )
+        )
+    )
+
+    assert resumed[-1].kind is AgentYieldKind.FINAL
+    assert provider.calls == [1, 1]
+    context_evidence = [
+        item.kind
+        for item in evidence.list_by_state("context-retry")
+        if item.kind in (AgentEvidenceKind.CONTEXT, AgentEvidenceKind.CONTEXT_MANIFEST)
+    ]
+    assert context_evidence == [
+        AgentEvidenceKind.CONTEXT,
+        AgentEvidenceKind.CONTEXT_MANIFEST,
+    ]
+
+
+async def test_agent_runner_same_step_changed_context_appends_new_safe_evidence() -> (
+    None
+):
+    """Changed model-bound content gets a new fingerprint and evidence set."""
+    provider = RecordingContextProvider(
+        (
+            AgentContext(
+                packs=(
+                    ContextPack(
+                        "retry-context",
+                        "content-1",
+                        "provider",
+                        ContextPackRole.STATE,
+                    ),
+                )
+            ),
+            AgentContext(
+                packs=(
+                    ContextPack(
+                        "retry-context",
+                        "content-2",
+                        "provider",
+                        ContextPackRole.STATE,
+                    ),
+                )
+            ),
+        ),
+        sequential=True,
+    )
+    model = CrashThenDoneModel()
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    target = ContextProbeAgent(
+        model,
+        provider,
+        states,
+        FakeSignalRepository(()),
+        evidence,
+    )
+
+    with pytest.raises(RuntimeError, match="simulated model crash"):
+        await _collect(
+            AgentRunner.for_agent_instance(target).run(
+                RunAgentInput(state_id="context-changed-retry", instruction="answer")
+            )
+        )
+    resumed = await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(
+                state_id="context-changed-retry",
+                instruction="answer",
+                resume=True,
+            )
+        )
+    )
+
+    assert resumed[-1].kind is AgentYieldKind.FINAL
+    assert [request.context[0].content for request in model.requests] == [
+        "content-1",
+        "content-2",
+    ]
+    artifacts = [
+        item
+        for item in evidence.list_by_state("context-changed-retry")
+        if item.kind in (AgentEvidenceKind.CONTEXT, AgentEvidenceKind.CONTEXT_MANIFEST)
+    ]
+    assert len(artifacts) == 4
+    assert len({item.digest for item in artifacts}) == 2
+    assert len({item.manifest_ref for item in artifacts}) == 2
+    assert "content-1" not in repr(artifacts)
+    assert "content-2" not in repr(artifacts)
+
+
+async def test_agent_runner_context_evidence_is_privacy_safe_and_exact() -> None:
+    """Durable context evidence exposes provenance only and real available kinds."""
+    pack = ContextPack(
+        "evidence-pack",
+        "raw secret context",
+        "source:private",
+        ContextPackRole.EVIDENCE,
+        freshness=ContextFreshness.CURRENT,
+        relevance=0.8,
+        sensitivity=ContextSensitivity.CONFIDENTIAL,
+        token_budget=ContextTokenBudget(max_tokens=8, estimated_tokens=4),
+        sensitive_fields=(SensitiveFieldDescriptor((), SecretField()),),
+        metadata={"raw_metadata": "must-not-leak"},
+    )
+    manifest = ContextManifest(
+        id="manifest-evidence",
+        entries=(
+            ContextManifestEntry(
+                pack_id=pack.id,
+                source=pack.source,
+                role=pack.role,
+                origin_ref="origin:safe",
+            ),
+        ),
+    )
+    digest = ContextDigest(
+        id="digest-evidence",
+        context_identity="run:evidence",
+        source_manifest_ref=manifest.id,
+        digest="sha256:safe",
+        derived_from_pack_ids=(pack.id,),
+        algorithm="sha256",
+        summary="raw digest summary must not leak",
+        metadata={"raw": "must-not-leak"},
+    )
+    provider = RecordingContextProvider((AgentContext(),))
+    states = FakeStateRepository()
+    evidence = FakeEvidenceRepository()
+    model = ScriptedRoundModel(((ModelStreamEvent(kind=ModelStreamEventKind.DONE),),))
+    target = ContextProbeAgent(
+        model,
+        provider,
+        states,
+        FakeSignalRepository(()),
+        evidence,
+    )
+
+    await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(
+                state_id="context-evidence",
+                instruction="answer",
+                context=AgentContext(
+                    packs=(pack,),
+                    manifest=manifest,
+                    digest=digest,
+                ),
+            )
+        )
+    )
+
+    artifacts = [
+        item
+        for item in evidence.list_by_state("context-evidence")
+        if item.kind
+        in (
+            AgentEvidenceKind.CONTEXT,
+            AgentEvidenceKind.CONTEXT_MANIFEST,
+            AgentEvidenceKind.CONTEXT_DIGEST,
+        )
+    ]
+    assert [item.kind for item in artifacts] == [
+        AgentEvidenceKind.CONTEXT,
+        AgentEvidenceKind.CONTEXT_MANIFEST,
+        AgentEvidenceKind.CONTEXT_DIGEST,
+    ]
+    serialized = repr([(item.payload, item.summary) for item in artifacts])
+    assert "raw secret context" not in serialized
+    assert "raw digest summary" not in serialized
+    assert "must-not-leak" not in serialized
+    assert all(item.summary is None for item in artifacts)
+    context_artifact, manifest_artifact, digest_artifact = artifacts
+    assert context_artifact.digest == manifest_artifact.digest
+    assert digest_artifact.digest == "sha256:safe"
+    assert digest_artifact.payload["context_fingerprint"] == context_artifact.digest
+    request = model.requests[0]
+    assert request.context[0].content == "[SECRET]"
+    assert request.context[0].metadata == {}
+    assert request.context_manifest is not None
+    assert request.context_manifest.metadata == {}
+    assert request.context_digest is not None
+    assert request.context_digest.summary is None
+    assert request.context_digest.metadata == {}
+
+
+@pytest.mark.parametrize("surface", ["run", "events"])
+@pytest.mark.parametrize("failure", ["error", "runtime", "timeout"])
+async def test_agent_runner_context_provider_failure_is_typed_on_both_surfaces(
+    surface: str,
+    failure: str,
+) -> None:
+    """Context provider errors and deadline expiry become one typed model terminal."""
+    state_id = f"context-{failure}-{surface}"
+    provider = RecordingContextProvider(
+        (AgentContext(),),
+        error=(
+            AgentDefinitionError("provider failed")
+            if failure == "error"
+            else RuntimeError("provider runtime failure")
+            if failure == "runtime"
+            else None
+        ),
+        hang=failure == "timeout",
+    )
+    model = ScriptedRoundModel(((ModelStreamEvent(kind=ModelStreamEventKind.DONE),),))
+    states = FakeStateRepository()
+    agent_type = TimeoutContextProbeAgent if failure == "timeout" else ContextProbeAgent
+    target = agent_type(
+        model,
+        provider,
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    runner = AgentRunner.for_agent_instance(target)
+    command = RunAgentInput(state_id=state_id, instruction="answer")
+    expected_code = (
+        "agent_timeout" if failure == "timeout" else "agent_model_execution_failed"
+    )
+
+    if surface == "events":
+        events = [event async for event in runner.run_events(command)]
+        terminal = events[-1]
+        assert isinstance(terminal, RunFinishedEvent)
+        assert terminal.error is not None
+        assert terminal.error["code"] == expected_code
+    else:
+        items = await _collect(runner.run(command))
+        error = items[-1].payload
+        assert isinstance(error, Error)
+        assert error.code == expected_code
+    assert states.get(state_id).status is AgentStatus.FAILED
+    assert model.requests == []
+
+
+async def test_agent_runner_context_provider_rejects_invalid_return_value() -> None:
+    class InvalidContextProvider(IAgentContextProvider):
+        @override
+        async def provide(
+            self,
+            run_input: RunAgentInput,
+            model_step: int,
+        ) -> AgentContext:
+            return cast(AgentContext, object())
+
+    model = ScriptedRoundModel(((ModelStreamEvent(kind=ModelStreamEventKind.DONE),),))
+    states = FakeStateRepository()
+    target = ContextProbeAgent(
+        model,
+        InvalidContextProvider(),
+        states,
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    items = await _collect(
+        AgentRunner.for_agent_instance(target).run(
+            RunAgentInput(state_id="invalid-provider-context", instruction="answer")
+        )
+    )
+    error = items[-1].payload
+    assert isinstance(error, Error)
+    assert error.code == "agent_model_execution_failed"

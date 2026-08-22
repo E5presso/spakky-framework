@@ -110,6 +110,8 @@ generic metadata의 동명 key보다 우선하고, 서로 다른 part 사이에�
 덮어씁니다. 이 merge는 model routing authority가 아니며 endpoint/credential/physical model을 바꾸지
 못합니다.
 
+현재 A2A data part는 core `AgentContext`를 직렬화하는 inbound contract가 아닙니다. Request-scoped typed context가 필요하면 application boundary가 `RunAgentInput(context=AgentContext(...))`를 구성하거나 agent에 optional `IAgentContextProvider`를 constructor-inject해야 합니다. A2A `metadata`/`mcp`를 context pack이나 provenance로 자동 승격시키지 않습니다.
+
 Approval resume은 data part의 `approval_id`, `decision`을 `APPROVAL_DECISION` signal로 변환합니다.
 
 ## 원격 Teammate 위임
@@ -147,6 +149,8 @@ status metadata, message/reasoning delta는 agent message, tool result와 artifa
 state snapshot/delta는 data part로 투영됩니다. `RUN_FINISHED`는 projector가 `RunOutcome`으로 반환하고
 executor가 stream 종료 후 complete/failed terminal transition을 한 번 적용하며, `RUN_PAUSED`는 즉시
 input-required/auth-required 상태로 변환합니다.
+
+`AgentExecutionSpec.output_type`을 선언한 agent의 success terminal은 JSON-safe `RunFinishedEvent.metadata["output"]`을 **A2A data part 하나**로 추가합니다. Artifact name은 core가 넘긴 `output_type` 이름(예: `Answer`)이고, executor의 complete transition은 그 뒤에 여전히 한 번만 적용됩니다. Python output instance나 class를 wire로 보내지는 않습니다. Typed output이 missing·ambiguous·invalid하거나 selected route가 지원하지 않으면 output artifact/complete를 만들지 않고 해당 `agent_structured_output_*` code를 가진 failed Task data part로 닫힙니다. `output_type`이 없는 기존 agent는 typed final artifact를 추가하지 않는 흐름을 유지합니다.
 
 Bounded iterative runner의 `model-1`, `tool-1`, `model-2`, … step은 각각 A2A working status metadata로
 표면화됩니다. Tool result artifact 뒤 다음 model step이 같은 Task/context에서 이어지고 terminal

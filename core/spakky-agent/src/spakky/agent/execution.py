@@ -13,6 +13,7 @@ from spakky.agent.delegation import build_teammate_tool_descriptors
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.hooks import AgentSignalHookCatalog, discover_agent_signal_hooks
 from spakky.agent.signal import AgentSignalKind
+from spakky.agent.structured_output import _structured_output_contract
 from spakky.agent.tooling import AgentToolCatalog, discover_agent_tools
 from spakky.core.pod.annotations.pod import Pod, PodType
 from spakky.core.pod.error import AbstractSpakkyPodError
@@ -130,6 +131,7 @@ class AgentExecutionSpec:
     limits: AgentExecutionLimits = field(default_factory=AgentExecutionLimits)
     teammates: tuple[AgentTeammate, ...] = ()
     compaction: AgentCompactionPolicy | None = None
+    refresh_context_each_step: bool = False
     delegation_allowed: bool = False
     metadata: dict[str, str] = field(default_factory=dict)
 
@@ -143,6 +145,8 @@ class AgentExecutionSpec:
             raise AgentDefinitionError("Agent instructions cannot be blank")
         if self.output_type is not None and not isclass(self.output_type):
             raise AgentDefinitionError("Agent output type must be a class")
+        if self.output_type is not None:
+            _structured_output_contract(self.output_type)
         teammate_names = [teammate.name for teammate in self.teammates]
         if len(set(teammate_names)) != len(teammate_names):
             raise AgentDefinitionError("Agent teammate names must be unique")
