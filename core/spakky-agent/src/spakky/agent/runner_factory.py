@@ -14,9 +14,11 @@ from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
 
+from spakky.agent.cost import ModelPricingCatalog
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.model_resolver import IAgentModelResolver
 from spakky.agent.runner import AgentRunner
+from spakky.agent.telemetry import IAgentTelemetry
 
 
 class IAgentRunnerFactory(ABC):
@@ -36,8 +38,15 @@ class IAgentRunnerFactory(ABC):
 class AgentRunnerFactory(IAgentRunnerFactory):
     """Default runner factory using the native framework-owned runner."""
 
-    def __init__(self, model_resolver: IAgentModelResolver | None = None) -> None:
+    def __init__(
+        self,
+        model_resolver: IAgentModelResolver | None = None,
+        telemetry: IAgentTelemetry | None = None,
+        pricing: ModelPricingCatalog | None = None,
+    ) -> None:
         self._model_resolver = model_resolver
+        self._telemetry = telemetry
+        self._pricing = pricing
 
     @override
     @asynccontextmanager
@@ -52,4 +61,8 @@ class AgentRunnerFactory(IAgentRunnerFactory):
             model = self._model_resolver.resolve_model(agent_instance, run_input)
             if model is not None:
                 runner = runner.with_model(model)
+        if self._telemetry is not None:
+            runner = runner.with_telemetry(self._telemetry)
+        if self._pricing is not None:
+            runner = runner.with_pricing(self._pricing)
         yield runner

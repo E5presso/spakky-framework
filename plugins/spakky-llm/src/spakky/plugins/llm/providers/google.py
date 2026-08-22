@@ -655,6 +655,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
             input_tokens=usage.prompt_token_count,
             output_tokens=usage.candidates_token_count,
             total_tokens=usage.total_token_count,
+            cached_input_tokens=usage.cached_content_token_count,
         )
 
     def _metadata(self, target: LlmModelTarget) -> JsonObject:
@@ -856,7 +857,7 @@ class GoogleTextEmbedding(ITextEmbedding):
             ):
                 raise LlmResponseError
             try:
-                vector = EmbeddingVector(tuple(float(value) for value in values))
+                vector = EmbeddingVector(tuple(values))
             except AgentRetrievalError as error:
                 raise LlmResponseError from error
             if (

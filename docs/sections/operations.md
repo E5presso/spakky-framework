@@ -11,3 +11,6 @@
 | [OpenTelemetry 통합](../guides/opentelemetry.md) | OpenTelemetry로 관측 데이터 내보내기 |
 | [Actuator 상태 확인](../guides/actuator.md) | 헬스 체크·상태 엔드포인트 노출하기 |
 | [애플리케이션 데이터 캐시](../guides/cache.md) | Redis 기반 캐시 붙이기 |
+
+Agent의 memory/evaluation/cost와 `IAgentTelemetry` 경계는 Agent 채널의
+[Agent 운영](../guides/agent-operations.md)에서 이어집니다.

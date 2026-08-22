@@ -1,8 +1,9 @@
 # OpenTelemetry 통합
 
-> Spakky tracing 추상화를 OpenTelemetry SDK와 OTLP exporter로 연결하는 방법을 설명합니다.
+> Spakky tracing 추상화와 privacy-safe Agent telemetry를 OpenTelemetry SDK에 연결하는 방법을 설명합니다.
 
-`spakky-opentelemetry`는 Spakky의 분산 트레이싱 추상화(`spakky-tracing`)를 OpenTelemetry SDK에 연결하는 브릿지 플러그인입니다.
+`spakky-opentelemetry`는 Spakky의 분산 트레이싱 추상화(`spakky-tracing`)와 core
+`IAgentTelemetry`를 OpenTelemetry SDK에 연결하는 브릿지 플러그인입니다.
 
 ---
 
@@ -13,7 +14,7 @@ Spakky의 트레이싱 아키텍처는 두 계층으로 나뉩니다:
 | 패키지 | 역할 |
 |--------|------|
 | `spakky-tracing` (Core) | `TraceContext`, `ITracePropagator` 추상화, `W3CTracePropagator` 기본 구현 |
-| `spakky-opentelemetry` (Plugin) | OpenTelemetry SDK `TracerProvider` 초기화, `W3CTracePropagator`를 `OTelTracePropagator`로 자동 교체 |
+| `spakky-opentelemetry` (Plugin) | SDK provider/exporter, propagator 교체, Agent telemetry binding |
 
 `spakky-tracing`만 사용하면 외부 의존성 없이 W3C traceparent 전파가 동작합니다.
 `spakky-opentelemetry`를 추가하면 OTLP exporter를 통해 Jaeger, Tempo 등 외부 백엔드로 트레이스를 전송할 수 있습니다.
@@ -47,6 +48,51 @@ app = (
 1. **`OpenTelemetryConfig`** --- 환경변수 기반 설정 (`@Configuration`)
 2. **`OTelSetupPostProcessor`** --- `TracerProvider` 초기화 및 propagator 교체 (`IPostProcessor`)
 3. **`LogContextBridge`** --- `spakky-logging`이 있을 때 trace context를 log context로 동기화
+4. **`OpenTelemetryAgentTelemetry`** --- `IAgentTelemetry`에 자동 bind되는 Agent span sink
+
+---
+
+## Agent telemetry binding
+
+플러그인의 `initialize()`는 `OpenTelemetryAgentTelemetry`를 Pod로 등록하고
+`IAgentTelemetry -> OpenTelemetryAgentTelemetry` binding을 추가합니다. 따라서
+`spakky-agent`도 로드한 application에서 `IAgentRunnerFactory`를 생성자 주입받아 여는 표준
+adapter 경로는 별도 sink 조립 없이 이 binding을 사용합니다. Direct `AgentRunner`는
+`with_telemetry()`를 사용하고, synthesized
+`agent.execute()` 경로에서 직접 관측하려면 Agent constructor에 `IAgentTelemetry`를
+주입합니다.
+
+Core가 보내는 operation mapping은 고정되어 있습니다.
+
+| `AgentSpanKind` | `gen_ai.operation.name` | OTel `SpanKind` |
+| --- | --- | --- |
+| `RUN` | `invoke_agent` | `INTERNAL` |
+| `MODEL` | `generate_content` | `CLIENT` |
+| `TOOL` | `execute_tool` | `INTERNAL` |
+| `RETRIEVAL` | `retrieval` | `CLIENT` |
+
+`AgentSpanRecord.started_at_ns`와 `ended_at_ns`는 OTel span에 exact nanosecond time으로
+전달됩니다. Ambient Spakky `TraceContext`가 있으면 `OTelContextConverter`가 non-recording
+parent span으로 변환해 같은 trace/span parent를 보존합니다. Spakky context가 없으면
+ambient OTel span을 추측하지 않고 root span을 만듭니다. Core `OK`/`ERROR` status는 OTel
+status로, error code는 `error.type`과 status description으로 매핑됩니다.
+
+Attributes는 scalar만 허용됩니다. Adapter는 caller가 넣어도 다음 raw body를 exporter로
+보내지 않습니다.
+
+- prompt, context, system instructions, input/output messages와 completion
+- retrieval query와 retrieved content
+- tool arguments와 tool result
+- caller가 덮어쓰려는 `gen_ai.operation.name`과 `error.type`
+
+남는 값은 agent/run ID, operation kind, route, usage/cost, tool identity, retrieval count와
+fixed scope 같은 correlation metadata입니다. Telemetry sink가 실패하면 runner는 untyped
+backend exception 대신 `AgentTelemetryError`를 raise합니다. Core 실행·cost와 함께 쓰는
+방법은 [Agent Memory, Evaluation, Cost와 Telemetry](agent-operations.md)를 확인하세요.
+
+이 binding은 새로운 network export 경로를 따로 만들지 않습니다. 아래
+`OpenTelemetryConfig`의 OTLP/console/none과 기존 endpoint/sample rate가 모든 span export를
+계속 소유합니다.
 
 ---
 
@@ -58,22 +104,21 @@ app = (
 from spakky.plugins.opentelemetry.config import OpenTelemetryConfig, ExporterType
 ```
 
-| 환경변수 | 필드 | 타입 | 기본값 | 설명 |
-|----------|------|------|--------|------|
-| `SPAKKY_OTEL_SERVICE_NAME` | `service_name` | `str` | `"spakky-service"` | OTel 리소스의 `service.name` |
-| `SPAKKY_OTEL_EXPORTER_TYPE` | `exporter_type` | `ExporterType` | `ExporterType.OTLP` | span exporter 유형 |
-| `SPAKKY_OTEL_EXPORTER_ENDPOINT` | `exporter_endpoint` | `str` | `"http://localhost:4317"` | OTLP collector gRPC 엔드포인트 |
-| `SPAKKY_OTEL_SAMPLE_RATE` | `sample_rate` | `float` (0.0~1.0) | `1.0` | 트레이스 샘플링 비율 |
+| 환경변수 | 필드 | 타입 / 기본값 | 설명 |
+|----------|------|---------------|------|
+| `SPAKKY_OTEL_SERVICE_NAME` | `service_name` | `str` / `"spakky-service"` | OTel 리소스의 `service.name` |
+| `SPAKKY_OTEL_EXPORTER_TYPE` | `exporter_type` | `ExporterType` / `OTLP` | span exporter 유형 |
+| `SPAKKY_OTEL_EXPORTER_ENDPOINT` | `exporter_endpoint` | `str` / `"http://localhost:4317"` | OTLP collector gRPC 엔드포인트 |
+| `SPAKKY_OTEL_SAMPLE_RATE` | `sample_rate` | `float` / `1.0` | 0.0~1.0 sampling rate |
 
 ### ExporterType
 
 ```python
 from spakky.plugins.opentelemetry.config import ExporterType
 
-class ExporterType(StrEnum):
-    OTLP = "otlp"       # OTLPSpanExporter (gRPC)
-    CONSOLE = "console"  # ConsoleSpanExporter (stdout)
-    NONE = "none"        # exporter 없음 (전파만 수행)
+
+exporter_values = tuple(option.value for option in ExporterType)
+assert exporter_values == ("otlp", "console", "none")
 ```
 
 ---

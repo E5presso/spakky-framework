@@ -216,6 +216,9 @@ Vector search나 reranking이 필요하면 Agent와 adapter 계약은 바꾸지 
 구현만 합성합니다. `ITextEmbedding`, `IVectorSearch`, `VectorRetriever`, optional
 `IReranker`/`RerankedRetriever`와 Google embedding 구성은
 [AI Agent 심화](agents-advanced.md#retrieval-extension-ports)에서 다룹니다.
+Tenant/user scope, TTL와 correction이 필요한 long-term memory는 같은 `IRetriever`를
+구현하는 `MemoryRetriever`를 사용하며
+[Agent Memory, Evaluation, Cost와 Telemetry](agent-operations.md)에서 구성합니다.
 
 Framework는 vector backend, 임시 fallback, index write API를 제공하지 않습니다.
 애플리케이션 또는 vendor가 기존 knowledge와 검색 index의 저장·갱신을 소유합니다.

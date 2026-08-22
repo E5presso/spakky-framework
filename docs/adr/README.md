@@ -39,6 +39,7 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 | [ADR-0017](0017-bounded-iterative-agent-loop.md) | Bounded iterative model/tool loop — limits, batch authority, continuation, durable resume | Accepted | 2026-08-23 |
 | [ADR-0018](0018-typed-agent-output-and-context.md) | Typed agent output과 composed execution context — strict materialization, static/dynamic context, safe resume identity | Accepted | 2026-08-23 |
 | [ADR-0019](0019-minimal-retrieval-runtime.md) | Minimal retrieval runtime — one `IRetriever`, classic context, agentic tool, optional vector/reranker seams | Accepted | 2026-08-23 |
+| [ADR-0020](0020-agent-memory-evaluation-cost-telemetry.md) | Semantic memory, evaluation, pricing과 Agent telemetry — transcript separation, exact cost, body-free OTel bridge | Accepted | 2026-08-23 |
 
 ## 새 ADR 작성 가이드
 

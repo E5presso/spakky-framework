@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import StrEnum
 from inspect import Parameter, Signature, getattr_static, isclass, signature
 from types import NoneType
@@ -45,6 +46,7 @@ class AgentExecutionLimits:
     max_steps: int = 8
     max_tool_calls: int = 32
     max_tokens: int | None = None
+    max_cost: Decimal | None = None
     timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
@@ -55,6 +57,12 @@ class AgentExecutionLimits:
             raise AgentDefinitionError("Agent tool-call limit must be positive")
         if self.max_tokens is not None and self.max_tokens <= 0:
             raise AgentDefinitionError("Agent token limit must be positive")
+        if self.max_cost is not None and (
+            not isinstance(self.max_cost, Decimal)
+            or not self.max_cost.is_finite()
+            or self.max_cost <= 0
+        ):
+            raise AgentDefinitionError("Agent cost limit must be a positive Decimal")
         if self.timeout_seconds is not None and self.timeout_seconds <= 0:
             raise AgentDefinitionError("Agent timeout limit must be positive")
 

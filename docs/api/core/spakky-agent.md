@@ -11,8 +11,9 @@ pip install spakky-agent
 ```
 
 `spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `RunAgentInput`, `AgentRunner`,
-`AgentEvent`, `AgentYield`, retrieval, tool dispatch, context compaction, state/signal/evidence
-repository port, task store, safety/recovery/delegation 타입 같은 public contract를
+`AgentEvent`, `AgentYield`, retrieval/memory, offline evaluation, pricing/telemetry, tool
+dispatch, context compaction, state/signal/evidence repository port, task store,
+safety/recovery/delegation 타입 같은 public contract를
 소유합니다. 이 패키지는 의도적으로 LLM provider SDK, SQLAlchemy, FastAPI, Typer,
 AG-UI, A2A, MCP를 import하지 않습니다. 운영에서 durable execution을 사용하려면 provider
 contribution의 repository 구현이 필요하며, 운영용 in-memory fallback은 제공하지
@@ -33,10 +34,13 @@ valid terminal step에서 `FINAL` 또는 `RUN_FINISHED`를 정확히 한 번 방
 | `max_steps` | `8` | 다음 model request 직전 |
 | `max_tool_calls` | `32` | candidate batch 전체 dispatch 직전 |
 | `max_tokens` | `None` | 각 terminal provider usage 누적 직후 |
+| `max_cost` | `None` | pricing이 계산한 각 terminal model step cost 누적 직후 |
 | `timeout_seconds` | `None` | model과 async tool await의 invocation deadline |
 
 `AgentExecutionSpec.timeout_seconds` alias는 없습니다. `max_tokens`가 설정됐지만 provider가
 `ModelUsage.total_tokens`를 주지 않으면 `agent_usage_unavailable`로 fail closed합니다.
+`max_cost`는 positive `Decimal`만 허용하며 operator `ModelPricingCatalog`가 없으면 첫 model
+request 전에 `agent_cost_unavailable`입니다.
 Streaming path와 `NO_STREAM_UNTIL_FINAL_GUARDED`의 `complete()` path는 같은 batch,
 authority, history, limit, terminal uniqueness 의미를 사용합니다.
 
@@ -186,6 +190,45 @@ in-memory fallback, index write API가 없습니다. 사용 흐름은
 [Agent RAG](../../guides/agent-rag.md), embedding route는
 [AI Agent 심화](../../guides/agents-advanced.md#retrieval-extension-ports)를 확인하세요.
 
+## Memory, evaluation, cost와 telemetry
+
+`ITaskStore`는 `USER`/`ASSISTANT` conversation transcript 전용입니다. Long-term memory는
+별도 `IMemoryStore`의 `save()`, `search()`, `delete()`와 immutable `MemoryEntry` revision을
+사용합니다. `MemoryRetriever`는 tenant/user/namespace와 `MemoryKind` tuple을 bind한
+`IRetriever`이며 expired entry, superseded revision과 store가 delete한 entry를 hit에서
+제외합니다. Duplicate/cross-scope/conflicting correction과 active correction cycle은
+`AgentMemoryError`입니다. Core에는 production memory backend가 없습니다.
+
+Offline evaluation은 `AgentEvaluationDataset(cases=tuple)`, case마다 정확히 하나인
+`AgentEvaluationSample` tuple, `AgentEvaluationSuite(evaluators=tuple)`을 명시적으로
+조합합니다. Built-in evaluator는 ordered tool trace, strict structured output, exact reference
+precision/recall, retrieval reference groundedness를 계산합니다. `ModelJudgeEvaluator`는
+injected `IModelJudge`만 사용하며 default judge가 없습니다. Report의 evidence candidate는
+metric/correlation만 가진 `AgentEvidenceKind.EVALUATION`이고 repository에 자동 append되지
+않습니다. `AgentEvidenceKind.SIGNAL`은 runner가 소비한 non-terminal inbound signal audit
+전용입니다. Case/sample의 structured JSON과 tool arguments/metadata는 construction 시 deep
+snapshot됩니다.
+
+`ModelPricingCatalog`는 opaque logical model ref별 `ModelPrice`를 보존하는 immutable
+versioned snapshot입니다. Per-million rate와 cost는 `Decimal`이며 optional cached/generic
+write rate는 input rate, TTL-specific write rate는 generic write rate로 fallback합니다.
+Pricing이 주입되면 `max_cost` 유무와 관계없이 매 terminal model step을 계산합니다. Routed
+ref/price/input-output usage가 없거나 total/TTL cache usage가
+inconsistent하거나 distinct TTL rate에 write category가 없으면 `agent_cost_unavailable`,
+cumulative amount가 limit보다 크면
+`agent_max_cost_exceeded`입니다. Checkpoint는 pricing fingerprint와 cumulative cost를 묶어
+changed pricing resume을 `agent_checkpoint_invalid`로 거부합니다. Resume은 completed step의
+`MODEL` evidence route/full usage로 cost를 재계산해 exact step coverage와 checkpoint total을
+대조합니다. Built-in price는 없습니다.
+
+`ModelUsage`는 `cached_input_tokens`, total `cache_write_input_tokens`, TTL별
+`cache_write_5m_input_tokens`/`cache_write_1h_input_tokens`도 표현합니다.
+`AgentSpanRecord`는 `RUN`, `MODEL`, `TOOL`, `RETRIEVAL`의 completed nanosecond interval과
+scalar metadata만 `IAgentTelemetry.record()`에 전달합니다. Prompt/context/completion,
+retrieval query/content, tool arguments/results는 core record에 넣지 않습니다. Sink failure는
+`AgentTelemetryError`입니다. 전체 사용법과 실패 경계는
+[Agent Memory, Evaluation, Cost와 Telemetry](../../guides/agent-operations.md)를 확인하세요.
+
 ## Public API
 
 ::: spakky.agent
@@ -253,6 +296,30 @@ in-memory fallback, index write API가 없습니다. 사용 흐름은
 ## Retrieval
 
 ::: spakky.agent.retrieval
+    options:
+      show_root_heading: false
+
+## Memory
+
+::: spakky.agent.memory
+    options:
+      show_root_heading: false
+
+## Evaluation
+
+::: spakky.agent.evaluation
+    options:
+      show_root_heading: false
+
+## Cost
+
+::: spakky.agent.cost
+    options:
+      show_root_heading: false
+
+## Telemetry
+
+::: spakky.agent.telemetry
     options:
       show_root_heading: false
 

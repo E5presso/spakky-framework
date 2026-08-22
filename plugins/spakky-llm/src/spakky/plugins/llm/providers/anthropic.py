@@ -529,6 +529,21 @@ class AnthropicMessagesProvider(ILLMProvider):
             raise LlmResponseError from error
 
     def _usage(self, usage: Usage) -> ModelUsage:
+        cache_write_5m_input_tokens: int | None = None
+        cache_write_1h_input_tokens: int | None = None
+        if (
+            usage.cache_creation_input_tokens is not None
+            and usage.cache_creation_input_tokens > 0
+            and usage.cache_creation is None
+        ):
+            raise LlmResponseError
+        if usage.cache_creation is not None:
+            cache_write_5m_input_tokens = usage.cache_creation.ephemeral_5m_input_tokens
+            cache_write_1h_input_tokens = usage.cache_creation.ephemeral_1h_input_tokens
+            if cache_write_5m_input_tokens + cache_write_1h_input_tokens != (
+                usage.cache_creation_input_tokens or 0
+            ):
+                raise LlmResponseError
         input_tokens = (
             usage.input_tokens
             + (usage.cache_creation_input_tokens or 0)
@@ -538,6 +553,10 @@ class AnthropicMessagesProvider(ILLMProvider):
             input_tokens=input_tokens,
             output_tokens=usage.output_tokens,
             total_tokens=input_tokens + usage.output_tokens,
+            cached_input_tokens=usage.cache_read_input_tokens,
+            cache_write_input_tokens=usage.cache_creation_input_tokens,
+            cache_write_5m_input_tokens=cache_write_5m_input_tokens,
+            cache_write_1h_input_tokens=cache_write_1h_input_tokens,
         )
 
     def _ensure_not_refused(self, message: Message) -> None:

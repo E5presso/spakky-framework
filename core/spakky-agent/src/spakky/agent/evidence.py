@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from math import isfinite
 
 from spakky.agent.context import (
     ContextHealthSignal,
@@ -31,6 +32,7 @@ class AgentEvidenceKind(StrEnum):
     CONTEXT_DIGEST = "context_digest"
     CONTEXT_OPTIMIZATION = "context_optimization"
     EVALUATION = "evaluation"
+    SIGNAL = "signal"
     APPROVAL = "approval"
     CANCELLATION = "cancellation"
     DELEGATION = "delegation"
@@ -152,6 +154,47 @@ class AgentEvidenceCandidate:
             digest=action.digest_ref,
             manifest_ref=action.manifest_ref,
             reference=action.result_evidence_ref,
+        )
+
+    @classmethod
+    def evaluation(
+        cls,
+        *,
+        evaluator: str,
+        metric: str,
+        passed: bool,
+        score: float,
+        case_ref: str,
+        sample_ref: str,
+    ) -> "AgentEvidenceCandidate":
+        """Create privacy-safe evidence for one offline evaluation metric."""
+        _require_non_blank(evaluator, "Agent evaluator name")
+        _require_non_blank(metric, "Agent evaluation metric")
+        _require_non_blank(case_ref, "Agent evaluation case reference")
+        _require_non_blank(sample_ref, "Agent evaluation sample reference")
+        if not isinstance(passed, bool):
+            raise AgentDefinitionError("Agent evaluation pass value must be boolean")
+        if (
+            isinstance(score, bool)
+            or not isinstance(score, int | float)
+            or not isfinite(score)
+            or not 0 <= score <= 1
+        ):
+            raise AgentDefinitionError(
+                "Agent evaluation score must be between zero and one"
+            )
+        return cls(
+            kind=AgentEvidenceKind.EVALUATION,
+            payload={
+                "evaluator": evaluator,
+                "metric": metric,
+                "passed": passed,
+                "score": float(score),
+                "case_ref": case_ref,
+                "sample_ref": sample_ref,
+            },
+            summary="offline agent evaluation result",
+            reference=case_ref,
         )
 
     def to_evidence(

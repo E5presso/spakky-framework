@@ -106,6 +106,7 @@ flowchart LR
 | 데이터베이스와 트랜잭션 붙이기 | [데이터베이스](guides/sqlalchemy.md) |
 | 인증/인가 요구사항을 특정 provider에 묶이지 않게 선언하기 | [인증/인가](guides/security.md) |
 | 기존 지식을 model context 또는 검색 tool로 연결하기 | [Agent RAG](guides/agent-rag.md) |
+| Agent memory, offline evaluation, cost budget과 telemetry 운영하기 | [Agent 운영](guides/agent-operations.md), [OpenTelemetry 통합](guides/opentelemetry.md) |
 | 긴 실행, 모델 라우팅, 도구 호출, 승인 흐름이 있는 Agent 만들기 | [AI Agent 개발](guides/agents.md), [LLM 모델 라우팅](guides/llm-routing.md), [AI Agent 심화](guides/agents-advanced.md), [AG-UI](guides/agent-ag-ui.md), [A2A](guides/agent-a2a.md), [MCP](guides/agent-mcp.md) |
 
 ## 다음 단계

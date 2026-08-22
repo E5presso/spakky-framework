@@ -1,6 +1,7 @@
 """Tests for request-scoped Agent runner assembly."""
 
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from typing import override
 
 from spakky.agent import (
@@ -9,7 +10,11 @@ from spakky.agent import (
     AgentRunnerFactory,
     IAgentModel,
     IAgentModelResolver,
+    IAgentTelemetry,
+    AgentSpanRecord,
     ModelCapability,
+    ModelPrice,
+    ModelPricingCatalog,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -54,6 +59,14 @@ class _Resolver(IAgentModelResolver):
         return self.selected
 
 
+class _Telemetry(IAgentTelemetry):
+    """No-op observer used to verify request-scoped factory wiring."""
+
+    @override
+    def record(self, span: AgentSpanRecord) -> None:
+        return None
+
+
 @Agent(spec=AgentExecutionSpec(name="model_switchable"))
 class _ModelSwitchableAgent:
     """Agent fixture with a fallback constructor-injected model."""
@@ -93,6 +106,23 @@ async def test_runner_factory_keeps_injected_model_when_resolver_returns_none() 
         run_input=RunAgentInput(state_id="run-2", instruction="answer"),
     ) as runner:
         assert runner.model is fallback
+
+
+async def test_runner_factory_injects_optional_telemetry_and_pricing() -> None:
+    """Factory-wide observability configuration is applied to every opened runner."""
+    telemetry = _Telemetry()
+    pricing = ModelPricingCatalog(
+        version="v1",
+        prices={"model": ModelPrice(Decimal("1"), Decimal("2"))},
+    )
+    factory = AgentRunnerFactory(telemetry=telemetry, pricing=pricing)
+
+    async with factory.open_runner(
+        _ModelSwitchableAgent(_Model("fallback")),
+        run_input=RunAgentInput(state_id="run-3", instruction="answer"),
+    ) as runner:
+        assert runner.telemetry is telemetry
+        assert runner.pricing is pricing
 
 
 async def _empty_stream() -> AsyncIterator[ModelStreamEvent]:

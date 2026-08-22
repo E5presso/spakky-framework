@@ -438,7 +438,7 @@ Durable path에서는 bootstrap이 다음 repository port를 요구합니다.
 |------------|-------------|
 | `IAgentStateRepository` | `AgentState`: 현재 status, transition, current activity, input ref |
 | `IAgentSignalRepository` | `AgentSignal`: user message, approval decision, cancel 같은 inbound queue |
-| `IAgentEvidenceRepository` | `AgentEvidence`: tool/model/context 판단 근거와 action-boundary checkpoint |
+| `IAgentEvidenceRepository` | `AgentEvidence`: tool/model/context/signal 판단 근거와 action-boundary checkpoint |
 
 운영에서는 `spakky-sqlalchemy[agent]` contribution을 사용합니다.
 
@@ -470,21 +470,31 @@ spec = AgentExecutionSpec(
 ```
 
 `AgentExecutionLimits()`의 기본값은 `max_steps=8`, `max_tool_calls=32`,
-`max_tokens=None`, `timeout_seconds=None`입니다. Count/token/time 값은 설정한다면 모두
-양수여야 합니다. `AgentExecutionSpec.timeout_seconds` field나 compatibility alias는 없으며
-반드시 `limits` 안에 둡니다.
+`max_tokens=None`, `max_cost=None`, `timeout_seconds=None`입니다. Count/token/time 값은
+설정한다면 양수여야 하고 cost는 positive finite `Decimal`이어야 합니다.
+`AgentExecutionSpec.timeout_seconds` field나 compatibility alias는 없으며 반드시 `limits`
+안에 둡니다.
 
 | 제한 | 집행 시점 | terminal code |
 | --- | --- | --- |
 | `max_steps` | 다음 `ModelRequest`를 보내기 직전 | `agent_max_steps_exceeded` |
 | `max_tool_calls` | 검증된 candidate batch 전체를 dispatch하기 직전 | `agent_max_tool_calls_exceeded` |
 | `max_tokens` | 각 model step의 terminal provider usage를 누적한 직후 | `agent_max_tokens_exceeded` |
+| `max_cost` | operator pricing으로 step cost를 누적한 직후 | `agent_max_cost_exceeded` |
 | `timeout_seconds` | model과 async tool await를 감싸는 invocation wall-clock deadline | `agent_timeout` |
 
 Token budget은 prompt 길이 추정치가 아니라 provider가 보고한 `ModelUsage.total_tokens`를
 step마다 누적합니다. `max_tokens`를 설정했는데 어떤 terminal step에서도 total usage를
 받지 못하면 안전하게 계속할 수 없으므로 `agent_usage_unavailable`로 종료합니다. Token
 budget과 batch tool limit은 해당 step의 tool dispatch보다 먼저 적용됩니다.
+
+Cost budget은 `ModelPricingCatalog`가 주입된 경우에만 집행할 수 있습니다. `max_cost`만
+선언하고 pricing이 없거나 logical model ref/rate/input-output usage가 불완전하면
+`agent_cost_unavailable`입니다. Cumulative cost와 pricing fingerprint는 checkpoint에
+결속되어 resume에서 다른 pricing으로 재해석할 수 없습니다. Resume은 completed step의
+`MODEL` evidence route/full usage로 cost를 재계산해 exact step coverage와 checkpoint total도
+검증합니다. Exact `Decimal` 구성과 cache usage는
+[Agent Memory, Evaluation, Cost와 Telemetry](agent-operations.md)를 확인하세요.
 
 `agent_max_tokens_exceeded`와 `agent_usage_unavailable`도 단순 counter만 남기지 않습니다.
 Terminal metadata는 해당 step이 제공한 actual route, per-step usage, 누적 counter를
@@ -598,7 +608,10 @@ Restart 후에는 `plan_agent_resume(state, evidence, pending_signals)`가 다�
 | non-idempotent/unknown action이 incomplete | 사람 확인 필요 |
 | approval wait 중 재시작 | approval decision을 기다림 |
 
-Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 history를 고치지 않고, redaction, correction, context digest 갱신도 새 evidence를 append하는 방식으로 표현합니다.
+Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 history를 고치지 않고,
+redaction, correction, context digest 갱신도 새 evidence를 append하는 방식으로 표현합니다.
+`SIGNAL` kind는 runner가 소비한 non-terminal inbound signal audit, `EVALUATION` kind는
+offline evaluator metric 전용이며 서로 대체하지 않습니다.
 
 ## 멀티턴 대화와 TaskStore
 
@@ -654,7 +667,11 @@ Wire object도 `modelRef` 외 nested field를 허용하지 않습니다. Direct 
 | `RunAgentInput.message_history` | 클라이언트가 이전 transcript를 매 요청에 실어 보낼 때 | inline history를 그대로 model request 앞에 붙입니다. |
 | `ITaskStore` | 서버가 conversation transcript를 보존할 때 | `effective_conversation_id`로 `ConversationTurn` 목록을 읽어 model message로 변환합니다. |
 
-둘 다 있으면 inline `message_history`가 우선합니다. `ITaskStore`는 `ConversationTurn(role, content, metadata)`를 저장하며, role은 `USER` 또는 `ASSISTANT`만 허용됩니다. A2A protocol `Task` snapshot 저장은 `spakky-a2a`의 `IA2ATaskRepository`와 `SpakkyA2ATaskStore`가 담당하므로 core transcript store와 별도로 구성합니다.
+둘 다 있으면 inline `message_history`가 우선합니다. `ITaskStore`는
+`ConversationTurn(role, content, metadata)`를 저장하며 role은 `USER` 또는 `ASSISTANT`만
+허용됩니다. 이것은 TTL/correction/user scope를 가진 long-term `IMemoryStore`가 아닙니다.
+A2A protocol `Task` snapshot 저장은 `spakky-a2a`의 `IA2ATaskRepository`와
+`SpakkyA2ATaskStore`가 담당하므로 core transcript store와 별도로 구성합니다.
 
 ## Static context와 dynamic context provider
 
@@ -1034,7 +1051,7 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 ## 운영 체크리스트
 
 - 일반적인 multi-round model/tool continuation은 `execute()` 본문을 생략하고 bounded iterative runner에 맡깁니다. 표준 loop와 다른 business orchestration을 직접 소유해야 할 때만 custom `execute()`의 input과 return/yield type을 모두 annotate합니다.
-- `AgentExecutionSpec.limits`에 model/tool/token/time budget을 두고 direct timeout alias를 만들지 않습니다.
+- `AgentExecutionSpec.limits`에 model/tool/token/cost/time budget을 두고 direct timeout alias를 만들지 않습니다.
 - Agent가 provider SDK, DB client, HTTP framework를 직접 import하지 않고 port/interface에 의존합니다.
 - Model backend는 `IAgentModel` adapter 뒤에 있습니다.
 - 모든 model-callable capability는 `@agent_tool`로 선언되어 schema, risk, idempotency, evidence metadata가 있습니다.
@@ -1051,6 +1068,7 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 ## 더 볼 곳
 
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 execution으로 연결한 runnable demo입니다.
+- [Agent Memory, Evaluation, Cost와 Telemetry](agent-operations.md): scoped memory, offline evaluator, pricing과 privacy-safe span을 구성합니다.
 - [spakky-agent API Reference](../api/core/spakky-agent.md): public class와 helper의 상세 signature를 확인합니다.
 - [LLM 모델 라우팅](llm-routing.md): opaque model ref, connection profile, model route, Google credential 전략을 확인합니다.
 - [spakky-llm API Reference](../api/plugins/spakky-llm.md): catalog validation과 OpenAI, Anthropic, Google SDK adapter를 확인합니다.

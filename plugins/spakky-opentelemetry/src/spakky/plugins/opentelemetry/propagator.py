@@ -5,8 +5,31 @@ from spakky.tracing.propagator import ITracePropagator
 from typing import override
 
 from opentelemetry import context, trace
-from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
+from opentelemetry.trace import (
+    NonRecordingSpan,
+    SpanContext,
+    TraceFlags,
+    TraceState,
+)
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+
+class OTelContextConverter:
+    """Convert Spakky trace state into an explicit OpenTelemetry parent context."""
+
+    _HEX_BASE = 16
+
+    @classmethod
+    def to_otel_context(cls, trace_context: TraceContext) -> context.Context:
+        """Build an OTel context containing a non-recording parent span."""
+        span_context = SpanContext(
+            trace_id=int(trace_context.trace_id, cls._HEX_BASE),
+            span_id=int(trace_context.span_id, cls._HEX_BASE),
+            is_remote=False,
+            trace_flags=TraceFlags(trace_context.trace_flags),
+            trace_state=TraceState(),
+        )
+        return trace.set_span_in_context(NonRecordingSpan(span_context))
 
 
 class OTelTracePropagator(ITracePropagator):
@@ -16,23 +39,10 @@ class OTelTracePropagator(ITracePropagator):
     Context system using NonRecordingSpan for lightweight propagation.
     """
 
-    _HEX_BASE = 16
     _propagator: TraceContextTextMapPropagator
 
     def __init__(self) -> None:
         self._propagator = TraceContextTextMapPropagator()
-
-    @classmethod
-    def _to_otel_context(cls, ctx: TraceContext) -> context.Context:
-        """Build an OTel Context containing a NonRecordingSpan from TraceContext."""
-        span_context = SpanContext(
-            trace_id=int(ctx.trace_id, cls._HEX_BASE),
-            span_id=int(ctx.span_id, cls._HEX_BASE),
-            is_remote=False,
-            trace_flags=TraceFlags(ctx.trace_flags),
-        )
-        span = NonRecordingSpan(span_context)
-        return trace.set_span_in_context(span)
 
     @override
     def inject(self, carrier: dict[str, str]) -> None:
@@ -47,7 +57,7 @@ class OTelTracePropagator(ITracePropagator):
         ctx = TraceContext.get()
         if ctx is None:
             return
-        otel_ctx = self._to_otel_context(ctx)
+        otel_ctx = OTelContextConverter.to_otel_context(ctx)
         self._propagator.inject(carrier, context=otel_ctx)
 
     @override

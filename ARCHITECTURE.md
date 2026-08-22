@@ -17,7 +17,7 @@
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
-| **Core** | `spakky-agent` | Agentic workflow·minimal retrieval 계약과 bounded model/tool loop (state/signal/evidence, model/tool/delegation, context/retriever) |
+| **Core** | `spakky-agent` | Agentic workflow runtime (model/tool/context/retrieval, scoped memory, offline evaluation, cost/telemetry contracts) |
 | **Core** | `spakky-actuator` | Actuator 상태/정보 계약 (Health, Readiness, Liveness, Info) |
 | **Core** | `spakky-cache` | 애플리케이션 데이터 캐시 계약 (CacheHit, CacheMiss, ICache) |
 | **Core** | `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, ITracePropagator, W3C Propagator) |
@@ -30,7 +30,7 @@
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox/Agent persistence contribution |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
 | **Plugin** | `spakky-logging` | 구조화 로깅, 컨텍스트 전파, @logged AOP Aspect |
-| **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator) |
+| **Plugin** | `spakky-opentelemetry` | OpenTelemetry SDK 브릿지 (TracerProvider, OTel Propagator, privacy-safe Agent telemetry) |
 | **Plugin** | `spakky-grpc` | gRPC 서비스 컨트롤러 통합 (code-first, 타입 안전 프로토콜 생성) |
 | **Plugin** | `spakky-redis` | Redis 기반 애플리케이션 데이터 캐시 backend |
 | **Plugin** | `spakky-cryptography` | 암호화 유틸리티와 Auth snapshot/password provider |
@@ -55,7 +55,7 @@ graph TD
         data["spakky-data<br/>Repository · Transaction"]
         event["spakky-event<br/>Publisher · Consumer · Aspect"]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
-        agent["spakky-agent<br/>AgentYield · Model/Tool · Context/Retrieval · Delegation"]
+        agent["spakky-agent<br/>Model/Tool · Context/Memory · Eval/Cost/Telemetry"]
         actuator["spakky-actuator<br/>Health · Readiness · Info"]
         cache["spakky-cache<br/>CacheHit · CacheMiss · ICache"]
         tracing["spakky-tracing<br/>TraceContext · Propagator"]
@@ -142,6 +142,7 @@ graph TD
     logging_pkg --> core
     otel --> core
     otel --> tracing
+    otel --> agent
     otel -.->|optional| logging_pkg
     fastapi --> core
     fastapi --> auth
@@ -202,8 +203,9 @@ graph TD
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-auth`와 `spakky-tracing`에도 의존 (auth snapshot + 컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
-- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, opaque model selector/capability/model port, tool binding, delegation, `IRetriever`·context/tool wrapper와 optional embedding/vector/reranker port를 제공하며 provider catalog·credential·SDK/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory retrieval/persistence fallback을 포함하지 않음
+- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` loop, state/signal/evidence, model/tool/context/retrieval, scoped memory, pure offline evaluation, operator pricing·telemetry port를 제공하며 credential·provider SDK/SQLAlchemy/FastAPI/Typer/OpenTelemetry dependency와 production in-memory retrieval/memory/persistence fallback, price 상수, hidden judge model을 포함하지 않음
 - **LLM 플러그인** (spakky-llm) → `spakky` + `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. Operator-owned logical model catalog가 connection profile을 거쳐 OpenAI-compatible(vLLM dialect 포함), Anthropic, Gemini Developer API, Vertex AI 공식 SDK adapter로 routing하며, explicit Google route용 `GoogleTextEmbedding`을 선택적으로 제공하되 `ITextEmbedding`에 auto-bind하지 않고 다른 plugin을 직접 import하지 않음
+- **OpenTelemetry 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing` + `spakky-agent`에 의존. W3C propagator를 OTel로 교체하고 `IAgentTelemetry`를 `OpenTelemetryAgentTelemetry`로 bind하며, `spakky-llm`과 다른 plugin을 import하지 않음 (`spakky-logging`은 optional extra)
 - **Agent protocol adapter 플러그인** (spakky-agui, spakky-a2a, spakky-mcp) → `spakky` + `spakky-agent`에 의존. AG-UI/A2A는 `AgentRunner.run_events()`의 중립 `AgentEvent` stream을 각 프로토콜로 투영하고, MCP는 외부 MCP server tools를 lazy search/call 도구로 Agent run에 합류시킨다. 이 어댑터들은 `spakky-fastapi`/`spakky-grpc` 같은 inbound framework plugin에 역의존하지 않고 필요한 외부 SDK/FastAPI/Starlette/gRPC/MCP 라이브러리를 직접 사용한다.
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
@@ -211,7 +213,7 @@ graph TD
 - **이벤트 코어** (spakky-event) → `spakky-domain` + `spakky-data` + `spakky-auth` + `spakky-tracing`에 의존
 - **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-auth` + `spakky-tracing`에 의존 (auth snapshot + 컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
-- **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-tracing`에 의존, `spakky-logging` optional
+- **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-agent` + `spakky-tracing`에 의존, `spakky-logging` optional
 - **사가 코어** (spakky-saga) → `spakky` + `spakky-domain` + `spakky-auth`에 의존
 - **gRPC 플러그인** (spakky-grpc) → `spakky` + `spakky-auth` + `spakky-tracing`에 의존 + `grpcio`, `grpcio-health-checking`, `grpcio-reflection`, `protobuf` 외부 의존성
 - **Redis 캐시 플러그인** (spakky-redis) → `spakky-cache` + `spakky-actuator`에 의존 + `redis`, `pydantic-settings` 외부 의존성
@@ -535,7 +537,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-cache` | `CacheAspect`, `AsyncCacheAspect` |
 | `spakky-celery` | `CeleryConfig`, `celery_app`(기존 Celery Pod가 없을 때), `CeleryPostProcessor`, `CeleryTaskDispatchAspect`, `AsyncCeleryTaskDispatchAspect` |
 | `spakky-tracing` | `W3CTracePropagator` |
-| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor`, `LogContextBridge` |
+| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor`, `LogContextBridge`, `OpenTelemetryAgentTelemetry`; `IAgentTelemetry` binding |
 | `spakky-saga` | (없음 — `@Saga`가 `@Pod` 기반이므로 Pod 스캔만으로 DI 컨테이너가 관리) |
 | `spakky-grpc` | `GrpcConfig`, `descriptor_registry`, `grpc_server_spec`, `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache`, `redis_cache_health_probe`, `redis_cache_metrics_info_contributor` |
@@ -549,7 +551,7 @@ spakky-data = "spakky.data.main:initialize"
 
 `spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다. `AgentExecutionSpec`은 `instructions`, `output_type`, `limits`, `teammates`, `compaction`, `delegation_allowed`, `metadata` 같은 실행 의미를 DI metadata로 보존하고, spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 `@Agent`가 `AgentRunner` 기반 bounded iterative orchestration을 `execute()`로 자동 바인딩합니다(ADR-0017). `AgentRunner`는 같은 orchestration 위에 inbound adapter용 public `AgentYield` stream(`run()`)과 protocol adapter용 중립 `AgentEvent` stream(`run_events()`)을 노출합니다. 후자는 message/reasoning delta, tool call lifecycle, run/step 경계를 분리하지만 외부 protocol과 event 개수·필드가 1:1이라는 뜻은 아닙니다. AG-UI는 lifecycle frame을 합성하고 A2A는 task status/message/artifact로 변환하며 protocol에 대응되지 않는 metadata는 생략할 수 있습니다(ADR-0013 §3).
 
-Core public API의 중심은 `AgentExecutionSpec`, `AgentExecutionLimits`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `IAgentModelResolver`, `ModelSelection`, `ModelCapability`/`ModelModality`, `@agent_tool`, `IAgentToolProvider`, `AgentRunner`/`AgentRunResult`, `RunAgentInput`, `AgentContext`/`IAgentContextProvider`, `IRetriever`/`RetrievalHit`/`RetrievalContext`/`RetrievalTool`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. `AgentExecutionLimits(max_steps=8, max_tool_calls=32, max_tokens=None, timeout_seconds=None)`가 표준 loop의 유일한 limit surface이며 `AgentExecutionSpec.timeout_seconds` alias는 없습니다. `RunAgentInput.parent_run_id`는 delegated child run을 parent run과 연결하는 중립 attribution이고, `ToolCallStartEvent.parent_message_id`와 `ToolCallResultEvent.message_id`는 adapter가 사용할 수 있는 중립 message link입니다. 모든 `AgentEvent`가 attribution과 metadata를 갖지만 AG-UI는 `RUN_STARTED`에서 thread/run/parent를 wire field로 옮기고, A2A server projector는 inbound task/context에 bind된 `TaskUpdater`를 사용하므로 neutral attribution·metadata 전체를 자동 직렬화하지 않습니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
+Core public API의 중심은 `AgentExecutionSpec`/`AgentExecutionLimits`, state/signal/evidence, model/tool/context/retrieval, `MemoryEntry`/`IMemoryStore`/`MemoryRetriever`, offline evaluation dataset/suite/evaluator, `ModelPricingCatalog`/`ModelCost`, `IAgentTelemetry`/`AgentSpanRecord`, delegation/safety/recovery contract입니다. `AgentExecutionLimits(max_steps=8, max_tool_calls=32, max_tokens=None, max_cost=None, timeout_seconds=None)`가 표준 loop의 유일한 limit surface이며 `max_cost`는 positive finite `Decimal`전용이고 `AgentExecutionSpec.timeout_seconds` alias는 없습니다. `RunAgentInput.parent_run_id`는 delegated child run을 parent run과 연결하는 중립 attribution이고, `ToolCallStartEvent.parent_message_id`와 `ToolCallResultEvent.message_id`는 adapter가 사용할 수 있는 중립 message link입니다. 모든 `AgentEvent`가 attribution과 metadata를 갖지만 protocol adapter가 전체를 wire에 복제하는 계약은 아닙니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals`에서 파생되고 state/signal/evidence repository 세 개를 bootstrap에서 검증합니다. Core는 production in-memory state/retrieval/memory fallback, provider price 상수, hidden evaluator model이나 telemetry SDK를 제공하지 않습니다.
 
 `AgentExecutionSpec.output_type` 선언은 Pydantic `BaseModel`, 표준 `dataclass`, `TypedDict`를 strict portable structured-output contract로 컴파일합니다. Local schema reference는 펼치고 object는 closed shape로 정규화하며 unsupported keyword·순환/외부 reference·non-finite JSON은 정의 시점에 거부합니다. Runner는 selected route의 `supports_structured_output`을 request 전에 확인하고, tool이 없는 final model step에서 하나의 structured payload만 strict materialization합니다. Missing, multiple, tool call과 동시 반환, coercion/extra-key/shape-loss는 각각 typed terminal로 fail closed합니다. `run()`은 선언한 Python 타입을 `Final.output`으로 반환하고 `run_events()`는 JSON-safe `output`과 `output_type`을 성공 terminal metadata에 넣습니다. `output_type=None`은 structured request를 생성하지 않고 기존 `AgentRunResult`를 반환합니다.
 
@@ -578,6 +580,14 @@ flowchart LR
 
 Vector와 reranking은 필요할 때만 `ITextEmbedding`/`EmbeddingPurpose`/`EmbeddingVector`/`IVectorSearch`/`VectorRetriever`, `IReranker`/`RerankedRetriever`를 조합하는 advanced seam입니다. Core는 production implementation이나 in-memory fallback을 자동 등록하지 않습니다. Existing knowledge base/index 수명주기는 application/vendor가 소유하고, vector backend을 하나로 고르지 않은 것은 이 retrieval runtime의 blocker가 아닙니다. `spakky-llm`의 `GoogleTextEmbedding`은 explicit Google route에서 생성할 수 있는 optional adapter이지 plugin이 `ITextEmbedding`에 auto-bind하는 default가 아닙니다. 결정 배경은 [ADR-0019](docs/adr/0019-minimal-retrieval-runtime.md)를 참조합니다.
 
+Conversation replay와 long-term memory는 소유권을 분리합니다. `ITaskStore`는 `conversation_id`별 user/assistant transcript만 append/load하고, `IMemoryStore`는 exact tenant+user+namespace의 immutable `MemoryEntry` revision을 save/search/delete합니다. `MemoryKind` 값은 semantic/episodic/user이고 entry는 aware created/expiry timestamp, content digest/revision과 optional `supersedes`를 보존합니다. `MemoryRetriever`는 `IRetriever`를 구현해 TTL-expired·superseded revision을 제거하고 store result의 exact scope/kind를 재검증하지만 production memory store를 추론하지 않습니다.
+
+Evaluation은 runtime loop와 분리된 pure offline contract입니다. `AgentEvaluationDataset` case와 explicit sample을 `AgentEvaluationSuite`가 dataset/evaluator order로 sequential pair하고 tool trace, strict structured output, citation precision/recall, retrieval-reference groundedness를 deterministic evaluator로 계산합니다. Model judge는 `ModelJudgeEvaluator`에 explicit `IModelJudge`를 넘긴 경우만 사용합니다. Metric evidence는 evaluator/metric/pass/score/case/sample ref만 `AgentEvidenceKind.EVALUATION`으로 남기고 inbound user/steering audit은 새 `SIGNAL` kind으로 분리합니다.
+
+`ModelPricingCatalog`은 operator가 제공하는 versioned immutable logical-model mapping이고 `ModelPrice`는 per-million input/output/cache-read/aggregate-write/5m-write/1h-write `Decimal` rate를 갖습니다. Optional rate는 상위 write 또는 input rate로 fallback하되, distinct 5m/1h rate가 있는 nonzero write에 category breakdown이 없거나 category 합과 aggregate가 다르면 fail closed합니다. Cached + aggregate write는 inclusive input을 넘지 못합니다. Runner는 pricing이 주입된 every terminal model step을 route `model_ref`와 usage로 계산하고 cumulative exact cost를 metadata/evidence/checkpoint에 문자열로 보존합니다. `max_cost`가 있는데 pricing이 없으면 request 전 `agent_cost_unavailable`, cumulative cost가 limit보다 크면 response 이후 `agent_max_cost_exceeded`이며 tool/final은 실행하지 않습니다. Resume는 pricing fingerprint/version/currency를 재검증하고 every append-only MODEL evidence의 route/usage로 cost를 재계산해 checkpoint total과 대조하므로 checkpoint 값만 신뢰하지 않습니다.
+
+`IAgentTelemetry`는 completed RUN/MODEL/TOOL/RETRIEVAL `AgentSpanRecord`를 받는 optional port입니다. Runner는 `time_ns()` timestamp와 scalar attributes만 사용하고 prompt/system instruction, context/retrieval query/body, tool argument/result를 보내지 않습니다. Model route/usage/cost, tool identity/kind, classic retrieval count/limit/bound scope, run outcome만 남기며 sink failure는 `AgentTelemetryError`로 fail closed합니다. `run()`/`run_events()`는 completed/failed/approval-paused/cancelled outcome의 actual accumulated cost를 같은 RUN span attributes로 남깁니다. `spakky-opentelemetry`는 이 port를 `OpenTelemetryAgentTelemetry`로 bind하되 Agent content나 LLM provider를 알지 못합니다. 이 memory/evaluation/pricing/telemetry 결정은 [ADR-0020](docs/adr/0020-agent-memory-evaluation-cost-telemetry.md)을 참조합니다.
+
 ```mermaid
 flowchart TD
     before["model limit gate"]:::gate --> model["model-N<br/>stream 또는 guarded complete"]:::model
@@ -601,11 +611,11 @@ flowchart TD
 
 Runner는 assistant tool-call message와 call-correlated `TOOL` result message를 history에 추가한 뒤 다음 model request를 실행합니다. `MODIFY`는 signature binding과 assistant envelope update를 임시 copy에서 함께 검증한 뒤 pending call/history를 atomic하게 교체합니다. Provider call metadata와 `model_ref`/profile/provider/model routing을 assistant history·step metadata·durable model evidence에 보존하며 Google thought signature도 다음 native request로 round-trip합니다. Usage failure도 route capture → usage/counter 계산 → error-bearing MODEL evidence → failed state 순서로 기록합니다. `run_events()`는 각 round를 unique `model-N`/`tool-N` step으로 나타내고 AG-UI projector는 `STEP_FINISHED` 전에 열린 message/reasoning/tool frame을 닫아 다음 step과 섞이지 않게 합니다.
 
-Limit timing은 의도적으로 분리됩니다. `max_steps`는 다음 request 전, `max_tool_calls`는 batch 전체 dispatch 전, `max_tokens`는 terminal response usage를 누적한 뒤 집행합니다. Token limit이 있는데 `usage.total_tokens`가 없으면 `agent_usage_unavailable`로 fail closed합니다. Optional wall-clock timeout은 invocation별 monotonic deadline으로 model/async-tool await를 감싸고 tool-local timeout과 겹치면 더 이른 deadline을 사용합니다. Active deadline 아래 in-process sync tool은 중단 가능하다고 주장하지 않고 approval/dispatch 전에 batch 전체를 `agent_sync_tool_timeout_unenforceable`로 차단합니다. Durable cancellation은 loop 시작, model event, batch dispatch와 tool 전후에 poll하고 `run_events()`에는 항상 canonical `cancelled` error shape를 냅니다.
+Limit timing은 의도적으로 분리됩니다. `max_steps`는 다음 request 전, `max_tool_calls`는 batch 전체 dispatch 전, `max_tokens`는 terminal response usage를 누적한 뒤 집행합니다. `max_cost`는 positive `Decimal`이며 pricing이 없으면 request 전, pricing이 있으면 terminal route/usage로 cumulative cost를 계산한 뒤 집행합니다. Pricing을 주입한 run은 limit가 없어도 missing price/route/input-output usage에 `agent_cost_unavailable`로 fail closed합니다. Token limit의 total usage가 없으면 `agent_usage_unavailable`입니다. Optional wall-clock timeout은 invocation별 monotonic deadline으로 model/async-tool await를 감싸고 tool-local timeout과 겹치면 더 이른 deadline을 사용합니다. Active deadline 아래 in-process sync tool은 중단 가능하다고 주장하지 않고 approval/dispatch 전에 batch 전체를 `agent_sync_tool_timeout_unenforceable`로 차단합니다. Durable cancellation은 loop 시작, model event, batch dispatch와 tool 전후에 poll하고 `run_events()`에는 항상 canonical `cancelled` error shape를 냅니다.
 
-Approval request와 checkpoint `approved_call_fingerprints`는 state/call id/**full SHA-256 arguments digest**에 결속되고 `MODIFY` payload는 signature와 assistant history에 다시 bind됩니다. Transcript, pending calls, counters, seen ids/fingerprints와 route metadata는 durable checkpoint에 저장됩니다. Tampered pending arguments는 기존 approval을 재사용하지 않습니다. Fresh resume은 첫 model을 replay하지 않고 pending batch를 복구하며 incomplete non-idempotent tool boundary는 자동 재실행 대신 HITL로 멈춥니다. Model/tool/approval 전후 boundary와 model/tool/approval 결과는 append-only evidence로 남습니다.
+Approval request와 checkpoint `approved_call_fingerprints`는 state/call id/**full SHA-256 arguments digest**에 결속되고 `MODIFY` payload는 signature와 assistant history에 다시 bind됩니다. Transcript, pending calls, counters, seen ids/fingerprints, route metadata와 pricing이 있는 경우 cumulative cost·pricing fingerprint/version/currency를 durable checkpoint에 저장합니다. Resume에서 pricing fingerprint가 다르거나 pricing field가 partial/malformed하면 `agent_checkpoint_invalid`입니다. Tampered pending arguments는 기존 approval을 재사용하지 않습니다. Fresh resume은 첫 model을 replay하지 않고 pending batch를 복구하며 incomplete non-idempotent tool boundary는 자동 재실행 대신 HITL로 멈춥니다. Model/tool/approval 전후 boundary와 model/tool/approval 결과는 append-only evidence로 남습니다.
 
-Runner는 initial history와 compaction chain의 각 built-in/custom strategy 결과에서 assistant tool-call + complete TOOL-result correlation group을 검증합니다. Orphan/missing/duplicate correlation은 provider request 전에 `agent_model_execution_failed`로 종료합니다. Framework model/tool/checkpoint/approval failure는 각각 `agent_model_execution_failed`, `agent_tool_execution_failed`, `agent_checkpoint_invalid`, `agent_approval_invalid`로, neutral signal projection 불능은 `agent_signal_projection_unsupported`로 정규화합니다. USER_MESSAGE fallback과 STEERING hook의 `Progress`는 `run_events()`에서 `signal_progress` `ArtifactEvent`가 되며 AG-UI/A2A artifact surface로 이어집니다.
+Runner는 initial history와 compaction chain의 각 built-in/custom strategy 결과에서 assistant tool-call + complete TOOL-result correlation group을 검증합니다. Orphan/missing/duplicate correlation은 provider request 전에 `agent_model_execution_failed`로 종료합니다. Framework model/tool/checkpoint/approval failure는 각각 `agent_model_execution_failed`, `agent_tool_execution_failed`, `agent_checkpoint_invalid`, `agent_approval_invalid`로, neutral signal projection 불능은 `agent_signal_projection_unsupported`로 정규화합니다. USER_MESSAGE fallback과 STEERING hook의 `Progress`는 `run_events()`에서 `signal_progress` `ArtifactEvent`가 됩니다. 이들 inbound audit evidence는 `AgentEvidenceKind.SIGNAL`이고 `EVALUATION`은 offline evaluator metric에만 쓰입니다.
 
 `AgentExecutionSpec.teammates`는 `AgentTeammate(pod=...)` 또는 `AgentTeammate(card_url=...)` 선언을 받아 `teammate.<name>.delegate` synthetic tool descriptor로 노출합니다. 로컬 teammate는 parent instance에 주입된 child `@Agent` Pod를 찾아 `AgentRunner.run_events()`로 in-process 실행하고, 원격 teammate는 parent에 주입된 `IAgentDelegate` port로 위임합니다. `spakky-a2a`의 `A2AAgentDelegate`는 이 원격 port의 공식 A2A 구현입니다.
 
@@ -616,6 +626,8 @@ Core `ModelSelection`은 `model_ref` 하나만 운반하고 whitespace-only만 �
 Model route의 capability는 reasoning, context window, token counting, input/output modality, tool calling, structured output을 보존합니다. `LlmAgentModel.capability`는 default route를, `capability_for(selection)`은 selected route를 그대로 반환합니다. `spakky-llm`의 기본 `assistant/default` vLLM route는 text-in/text-out, tools와 structured output 지원을 선언하고 나머지는 base `ModelCapability` 기본값을 유지합니다. Capability는 queryable declaration이고 `output_type`을 선언한 run은 `supports_structured_output`을 request 전에 집행하지만, 나머지 모든 capability field의 자동 집행을 의미하지는 않습니다. 현재 `ModelMessage.content`가 `str`이므로 image/audio/video/document content-part request는 아직 표현하지 못합니다. Provider 이름에서 capability를 추론하지 않습니다. Blank/duplicate catalog key, unknown default/route profile/request ref, invalid capability와 non-vLLM route의 vLLM option은 설정 또는 routing 경계에서 fail closed합니다.
 
 Provider adapter는 공식 `openai`, `anthropic`, `google-genai` SDK의 async request/streaming lifecycle을 사용해 structured output, tool-call candidate, reasoning delta와 usage를 provider-neutral `ModelResponse`/`ModelStreamEvent`로 정규화합니다. OpenAI와 Anthropic client는 async context로 닫습니다. Google은 `HttpOptions.async_client_args`에 `httpx.AsyncHTTPTransport`를 주입해 SDK async backend를 httpx로 고정하고 aiohttp fallback을 차단하며, SDK가 async client와 transport를 닫은 뒤 adapter가 root sync client도 `finally`에서 종료합니다. Complete/stream의 invalid URL·unsupported protocol, timeout, transport failure는 각각 `LlmConfigurationError`, `LlmTimeoutError`, `LlmTransportError`로 정규화합니다.
+
+Usage는 core `ModelUsage` input/output/total과 optional cached-input/aggregate-write/5m-write/1h-write field로 정규화합니다. OpenAI는 prompt details cached/write, Anthropic은 cache read/creation을 inclusive input에 포함하고 SDK `cache_creation` 5m/1h category를 보존합니다. Anthropic nonzero creation에 breakdown이 없거나 category 합이 aggregate와 다르면 `LlmResponseError`입니다. Google은 cached content token만 보존하고 cache-write field는 제공하지 않습니다. `spakky-llm`은 provider 요금 상수를 내장하지 않고 operator `ModelPricingCatalog`이 selected logical `model_ref`와 이 usage를 결합해 cost를 계산합니다.
 
 `LlmJsonCodec`은 value와 독립적으로 schema shape 전체를 먼저 재귀 검증하므로 사용되지 않은 branch의 unsupported validation keyword도 허용하지 않습니다. Non-finite number를 거부하고 boolean과 number를 구분하는 type-aware enum equality를 nested JSON에도 적용합니다. Portable subset 밖의 type, `anyOf`와 함께 선언된 지원 sibling constraint 위반, `prefixItems` 이후 금지된 tail을 거부하며, structured stream이 truncation으로 끝나도 누적 terminal JSON을 decode·validate합니다.
 
@@ -1420,11 +1432,15 @@ flowchart TD
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
 |---------|-------------|-----------|
 | `spakky-logging` | `LoggingConfig`, `LoggingSetupPostProcessor`, `LoggingAspect`, `AsyncLoggingAspect`, `LogContextBinder` | `pydantic-settings` |
-| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor`, `LogContextBridge` | `opentelemetry-api`, `opentelemetry-sdk`, `pydantic-settings` |
+| `spakky-opentelemetry` | `OpenTelemetryConfig`, `OTelSetupPostProcessor`, `LogContextBridge`, `OpenTelemetryAgentTelemetry` + `IAgentTelemetry` binding | `opentelemetry-api/sdk/exporter`, `pydantic-settings`, `spakky-tracing`, `spakky-agent`; logging extra는 optional |
 
 **OTel Propagator 교체 메커니즘:**
 
 `spakky-tracing`은 기본 `W3CTracePropagator`를 등록합니다. `spakky-opentelemetry`가 설치되면 `OTelSetupPostProcessor`(`@Order(0)`)가 Pod 후처리 시 `W3CTracePropagator` 인스턴스를 감지하여 `OTelTracePropagator`로 교체합니다. 동시에 OTel `TracerProvider`(exporter, sampler, resource)를 초기화합니다.
+
+`OpenTelemetryAgentTelemetry` 또한 plugin 초기화에서 `IAgentTelemetry`에 bind됩니다. RUN/MODEL/TOOL/RETRIEVAL을 각각 `invoke_agent`/`generate_content`/`execute_tool`/`retrieval`로 매핑하고 OTel span kind는 INTERNAL/CLIENT/INTERNAL/CLIENT입니다. Core record nanosecond timestamp를 `start_span(start_time=...)`/`end(end_time=...)`에 exact 전달하고 OK/ERROR status와 error code를 OTel status, `error.type`에 매핑합니다.
+
+Parent는 ambient `TraceContext`가 있으면 같은 trace/span id·flags의 non-recording parent로 구성하고, 없으면 explicit empty context로 root span을 만듭니다. Ambient OTel current span을 자동 상속하거나 completed Agent record 사이의 parent/child를 추론하지 않습니다. Scalar attributes만 전달하고 prompt/context/retrieval query·body/tool argument·result raw key를 denylist로 제거한 뒤 semantic operation/error attribute를 adapter가 고정합니다.
 
 **LogContextBridge:** `spakky-logging`이 함께 설치되면 `LogContextBridge.sync()`로 현재 `TraceContext`의 trace_id/span_id를 `LogContext`에 바인딩할 수 있습니다. optional dependency이므로 `spakky-logging` 미설치 시 no-op으로 동작합니다.
 
@@ -1504,6 +1520,7 @@ flowchart TD
 | [0017](docs/adr/0017-bounded-iterative-agent-loop.md) | Bounded iterative model/tool loop | Accepted |
 | [0018](docs/adr/0018-typed-agent-output-and-context.md) | Typed agent output과 composed execution context | Accepted |
 | [0019](docs/adr/0019-minimal-retrieval-runtime.md) | Minimal retrieval runtime | Accepted |
+| [0020](docs/adr/0020-agent-memory-evaluation-cost-telemetry.md) | Semantic memory, evaluation, pricing과 Agent telemetry | Accepted |
 
 ---
 

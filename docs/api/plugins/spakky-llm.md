@@ -315,6 +315,24 @@ OpenAI standard에는 표준 `response_format`만 사용합니다.
 | Anthropic Messages | 반환된 thinking event를 capability가 켜진 경우에만 stream delta로 전달 | complete 및 요청 시 final-message usage | start, args delta, end, candidate |
 | Google GenerateContent | route reasoning capability가 켜지면 thought stream delta | complete 및 요청 시 chunk usage | 완성된 candidate |
 
+`ModelUsage`는 total/input/output에 더해 cache-aware input과 optional cache-write TTL
+breakdown을 보존합니다.
+
+| Provider usage | cached input | total cache write | TTL breakdown |
+| --- | --- | --- | --- |
+| OpenAI `prompt_tokens_details` | `cached_tokens` | `cache_write_tokens` | `None` |
+| Anthropic `Usage` | `cache_read_input_tokens` | `cache_creation_input_tokens` | `cache_creation.ephemeral_5m_input_tokens` / `cache_creation.ephemeral_1h_input_tokens` |
+| Google usage metadata | `cached_content_token_count` | `None` | `None` |
+
+Anthropic의 `input_tokens`는 uncached input, cache creation, cache read를 합한 inclusive
+input입니다. OpenAI와 Google도 provider의 total input counter를 그대로 `input_tokens`로
+보존합니다. Anthropic TTL breakdown이 있으면 5-minute + 1-hour 합이
+`cache_creation_input_tokens`와 정확히 같아야 합니다. Nonzero cache creation에 breakdown이
+없거나 합이 다르면 `LlmResponseError`입니다.
+Adapter는 가격을 추론하지 않으며 core `ModelPricingCatalog`가 operator rate와 logical
+model ref로 cost를 계산합니다. Pricing과 cost budget은
+[Agent Memory, Evaluation, Cost와 Telemetry](../../guides/agent-operations.md)를 확인하세요.
+
 Google adapter는 SDK의 automatic function calling을 명시적으로 끕니다. 따라서
 세 adapter 모두 tool을 실행하지 않고 검증된 후보만 runner에 전달합니다.
 

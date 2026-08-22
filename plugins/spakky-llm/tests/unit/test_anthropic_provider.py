@@ -204,6 +204,7 @@ def _message(
     output_tokens: int = 2,
     cache_creation_input_tokens: int | None = None,
     cache_read_input_tokens: int | None = None,
+    cache_creation: JsonObject | None = None,
     stop_details: JsonObject | None = None,
 ) -> Message:
     return Message.model_validate(
@@ -221,6 +222,7 @@ def _message(
                 "output_tokens": output_tokens,
                 "cache_creation_input_tokens": cache_creation_input_tokens,
                 "cache_read_input_tokens": cache_read_input_tokens,
+                "cache_creation": cache_creation,
             },
         }
     )
@@ -358,6 +360,10 @@ async def test_complete_maps_full_request_and_response_expect_native_sdk_types()
         output_tokens=4,
         cache_creation_input_tokens=2,
         cache_read_input_tokens=1,
+        cache_creation={
+            "ephemeral_5m_input_tokens": 1,
+            "ephemeral_1h_input_tokens": 1,
+        },
     )
     client = _client_for_complete(sdk_message)
 
@@ -442,6 +448,10 @@ async def test_complete_maps_full_request_and_response_expect_native_sdk_types()
     assert response.usage.input_tokens == 6
     assert response.usage.output_tokens == 4
     assert response.usage.total_tokens == 10
+    assert response.usage.cached_input_tokens == 1
+    assert response.usage.cache_write_input_tokens == 2
+    assert response.usage.cache_write_5m_input_tokens == 1
+    assert response.usage.cache_write_1h_input_tokens == 1
     assert response.metadata == {
         "model_ref": "analysis/primary",
         "provider": "anthropic",
@@ -449,6 +459,44 @@ async def test_complete_maps_full_request_and_response_expect_native_sdk_types()
         "model": "claude-selected",
         "finish_reason": "tool_use",
     }
+
+
+def test_usage_preserves_cache_write_ttl_categories_and_rejects_mismatch() -> None:
+    """Five-minute and one-hour cache writes remain separately priceable."""
+    provider = AnthropicMessagesProvider()
+    usage = provider._usage(
+        _message(
+            input_tokens=3,
+            output_tokens=2,
+            cache_creation_input_tokens=5,
+            cache_creation={
+                "ephemeral_5m_input_tokens": 2,
+                "ephemeral_1h_input_tokens": 3,
+            },
+        ).usage
+    )
+
+    assert usage.cache_write_input_tokens == 5
+    assert usage.cache_write_5m_input_tokens == 2
+    assert usage.cache_write_1h_input_tokens == 3
+
+    with pytest.raises(LlmResponseError):
+        provider._usage(
+            _message(
+                cache_creation_input_tokens=5,
+                cache_creation={
+                    "ephemeral_5m_input_tokens": 1,
+                    "ephemeral_1h_input_tokens": 1,
+                },
+            ).usage
+        )
+    with pytest.raises(LlmResponseError):
+        provider._usage(
+            _message(
+                cache_creation_input_tokens=5,
+                cache_creation=None,
+            ).usage
+        )
 
 
 async def test_complete_with_minimal_request_expect_omitted_optional_arguments() -> (

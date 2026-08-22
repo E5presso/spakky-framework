@@ -81,6 +81,9 @@ flowchart TD
   AbstractSpakkyAgentError --> AgentBootstrapError
   AbstractSpakkyAgentError --> AgentOutputGuardError
   AbstractSpakkyAgentError --> AgentRetrievalError
+  AbstractSpakkyAgentError --> AgentMemoryError
+  AbstractSpakkyAgentError --> AgentPricingError
+  AbstractSpakkyAgentError --> AgentTelemetryError
   AgentBootstrapError --> AgentPersistenceConfigurationError
   AgentBootstrapError --> AgentModelConfigurationError
 
@@ -481,7 +484,10 @@ from spakky.agent.error import (
     AgentModelConfigurationError,
     AgentOutputGuardError,
     AgentRetrievalError,
+    AgentMemoryError,
 )
+from spakky.agent.cost import AgentPricingError
+from spakky.agent.telemetry import AgentTelemetryError
 ```
 
 | 에러                                    | 설명                                      | 상속                       |
@@ -495,11 +501,15 @@ from spakky.agent.error import (
 | `AgentModelConfigurationError`          | 필요한 model adapter 등록 누락            | `AgentBootstrapError`      |
 | `AgentOutputGuardError`                 | streaming output guard가 unsafe exposure를 감지 | `AbstractSpakkyAgentError` |
 | `AgentRetrievalError`                   | retrieval 입력·hit·scope·provenance가 안전한 계약을 충족하지 않음 | `AbstractSpakkyAgentError` |
+| `AgentMemoryError`                      | memory runtime query/filter/store result/scope가 유효하지 않음 | `AbstractSpakkyAgentError` |
+| `AgentPricingError`                     | price/cost/usage를 exact `Decimal` cost로 계산할 수 없음 | `AbstractSpakkyAgentError` |
+| `AgentTelemetryError`                   | injected telemetry sink가 completed span을 기록하지 못함 | `AbstractSpakkyAgentError` |
 
 `AgentToolBindingError`는 tool callable 실행 전에 발생하므로, schema에 없는 인자·필수 인자 누락·positional/keyword 중복 같은 잘못된 model payload가 side effect를 만들기 전에 차단됩니다.
 
-`AgentExecutionLimits`의 0 이하 값과 `timeout_seconds`를 `AgentExecutionSpec` top-level에
-두는 사용은 definition contract 오류입니다. Timeout은
+`AgentExecutionLimits`의 0 이하 count/token/time과 positive finite `Decimal`이 아닌
+`max_cost`는 definition contract 오류입니다. `timeout_seconds`를 `AgentExecutionSpec`
+top-level에 두는 사용도 허용하지 않으며 timeout은
 `AgentExecutionSpec.limits.timeout_seconds`에만 둡니다.
 
 다음 값은 Python exception class가 아니라 iterative runner가 public `ERROR` yield 또는
@@ -516,6 +526,8 @@ from spakky.agent.error import (
 | `agent_max_tool_calls_exceeded` | whole batch dispatch 직전 | batch를 추가하면 실제 tool-call 한도 초과 |
 | `agent_max_tokens_exceeded` | terminal usage 누적 직후 | provider total-token 누적값이 budget 초과 |
 | `agent_usage_unavailable` | token budget이 켜진 model step 종료 | provider가 `total_tokens`를 제공하지 않아 budget을 집행할 수 없음 |
+| `agent_max_cost_exceeded` | terminal step cost 누적 직후 | cumulative exact cost가 `max_cost` 초과 |
+| `agent_cost_unavailable` | model preflight 또는 terminal usage pricing | pricing 누락, unknown logical ref, input/output usage 누락·불일치로 cost를 계산할 수 없음 |
 | `agent_timeout` | model 또는 async tool await | enforceable run/tool deadline 초과 |
 | `agent_sync_tool_timeout_unenforceable` | batch authority 전 | deadline이 있는 batch에 preempt할 수 없는 in-process sync tool이 있어 0개 dispatch |
 | `agent_approval_invalid` | authority/decision/MODIFY 검증 | malformed approval, modified bind 실패 또는 assistant history mismatch로 dispatch 불가 |
@@ -549,6 +561,25 @@ terminalize됩니다. Durable resume의 static-context fingerprint mismatch는
 Python signature에 bind할 수 없는 shape는 callable 실행 전 `agent_tool_batch_invalid`이며
 batch 전체가 0-dispatch입니다. Bind는 되지만 query가 non-text/blank인 경우에는
 `RetrievalTool` 실행 경계의 `agent_tool_execution_failed`입니다.
+
+`MemoryEntry`와 `MemoryRetriever`의 잘못된 immutable definition/binding은
+`AgentDefinitionError`, bound retriever의 query/filter 또는 store가 반환한 scope/revision
+오류, conflicting correction과 active correction cycle은 `AgentMemoryError`입니다. Runner에서 memory를 `RetrievalContext`로 사용하면 runtime
+failure는 `agent_model_execution_failed`, `RetrievalTool`로 사용하면
+`agent_tool_execution_failed`입니다.
+
+`ModelPrice`, `ModelPricingCatalog`, `ModelCost`를 직접 구성·계산하는 오류는
+`AgentPricingError`입니다. Runner가 pricing을 적용하는 중 같은 문제가 나면 typed terminal
+`agent_cost_unavailable`로 변환합니다. Durable resume의 pricing fingerprint mismatch는
+`agent_checkpoint_invalid`입니다. Resume은 completed step의 `MODEL` evidence route/full usage로
+cost를 재계산하며 missing/duplicate/tampered evidence 또는 checkpoint total mismatch도 같은
+code입니다. Evaluation dataset/sample/evaluator/result의 잘못된 tuple,
+correlation, score와 strict output은 `AgentDefinitionError`이며 별도 runtime terminal code를
+만들지 않습니다.
+
+`IAgentTelemetry.record()` 구현이 예외를 내면 runner는 `AgentTelemetryError`를 raise합니다.
+Telemetry는 실행 결과를 바꾸는 fallback 경로가 아니므로 이 오류를 success/final로
+정규화하지 않습니다.
 
 ---
 

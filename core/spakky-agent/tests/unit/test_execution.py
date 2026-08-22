@@ -1,7 +1,8 @@
 """Tests for agent execution contracts."""
 
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from dataclasses import fields
+from decimal import Decimal
 
 import pytest
 import tests.fixtures.future_agent_app as future_agent_app
@@ -104,6 +105,7 @@ def test_agent_execution_limits_expect_rejects_non_positive_timeout() -> None:
         AgentExecutionLimits(max_steps=1),
         AgentExecutionLimits(max_tool_calls=1),
         AgentExecutionLimits(max_tokens=1),
+        AgentExecutionLimits(max_cost=Decimal("0.01")),
     ],
 )
 def test_agent_execution_limits_expect_accepts_positive_bounds(
@@ -115,19 +117,31 @@ def test_agent_execution_limits_expect_accepts_positive_bounds(
 
 
 @pytest.mark.parametrize(
-    "values",
+    "factory",
     [
-        {"max_steps": 0},
-        {"max_tool_calls": 0},
-        {"max_tokens": 0},
+        lambda: AgentExecutionLimits(max_steps=0),
+        lambda: AgentExecutionLimits(max_tool_calls=0),
+        lambda: AgentExecutionLimits(max_tokens=0),
     ],
 )
 def test_agent_execution_limits_expect_rejects_non_positive_counts(
-    values: dict[str, int],
+    factory: Callable[[], AgentExecutionLimits],
 ) -> None:
     """모든 count/token limit은 양수여야 한다."""
     with pytest.raises(AgentDefinitionError):
-        AgentExecutionLimits(**values)
+        factory()
+
+
+@pytest.mark.parametrize(
+    "max_cost",
+    [Decimal("0"), Decimal("-0.01"), Decimal("NaN"), Decimal("Infinity")],
+)
+def test_agent_execution_limits_expect_rejects_invalid_cost(
+    max_cost: Decimal,
+) -> None:
+    """Cost limits must be positive finite decimals."""
+    with pytest.raises(AgentDefinitionError):
+        AgentExecutionLimits(max_cost=max_cost)
 
 
 def test_agent_expect_is_pod_stereotype_with_execution_spec_metadata() -> None:

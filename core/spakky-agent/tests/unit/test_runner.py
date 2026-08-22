@@ -1384,7 +1384,7 @@ async def test_agent_runner_expect_user_message_signal_consumed_as_progress() ->
         and item.payload.current_step == "signal"
         for item in items
     )
-    assert AgentEvidenceKind.EVALUATION in {
+    assert AgentEvidenceKind.SIGNAL in {
         artifact.kind for artifact in evidence.list_by_state("run-1")
     }
 
@@ -1470,7 +1470,7 @@ async def test_agent_runner_events_fail_closed_for_unsupported_signal_yield(
     assert terminal[0].error["code"] == "agent_signal_projection_unsupported"
     assert states.get(state_id).status is AgentStatus.FAILED
     assert signals.list_pending(state_id) == ()
-    assert AgentEvidenceKind.EVALUATION in {
+    assert AgentEvidenceKind.SIGNAL in {
         item.kind for item in evidence.list_by_state(state_id)
     }
     assert len(model.requests) == 1
@@ -4817,7 +4817,7 @@ async def test_iterative_signal_arriving_during_tool_has_surface_parity(
         )
     assert progress_index < result_index
     assert signals.list_pending(state_id) == ()
-    assert AgentEvidenceKind.EVALUATION in {
+    assert AgentEvidenceKind.SIGNAL in {
         item.kind for item in evidence.list_by_state(state_id)
     }
 

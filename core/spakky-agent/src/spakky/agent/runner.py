@@ -26,9 +26,11 @@ from asyncio import TimeoutError, get_running_loop, timeout_at
 from collections.abc import AsyncGenerator, Awaitable, Mapping, Sequence
 from copy import copy
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from inspect import iscoroutinefunction, signature
 from json import dumps
+from time import time_ns
 from types import FunctionType
 
 from pydantic import BaseModel
@@ -47,6 +49,7 @@ from spakky.agent.cancellation import (
     run_agent_cancellation_cleanup,
 )
 from spakky.agent.compaction import validate_tool_call_groups
+from spakky.agent.cost import AgentPricingError, ModelCost, ModelPricingCatalog
 from spakky.agent.context import (
     AgentContext,
     IAgentContextProvider,
@@ -118,6 +121,7 @@ from spakky.agent.recovery import (
     AgentResumeAction,
     plan_agent_resume,
 )
+from spakky.agent.retrieval import RetrievalContext, RetrievalTool
 from spakky.agent.signal import AgentSignal, AgentSignalKind, ApprovalDecision
 from spakky.agent.state import (
     AgentState,
@@ -126,6 +130,13 @@ from spakky.agent.state import (
     AgentStatus,
 )
 from spakky.agent.structured_output import _structured_output_contract
+from spakky.agent.telemetry import (
+    AgentSpanKind,
+    AgentSpanRecord,
+    AgentSpanStatus,
+    AgentTelemetryError,
+    IAgentTelemetry,
+)
 from spakky.agent.tooling import (
     AgentToolDescriptor,
     AgentToolCatalog,
@@ -137,6 +148,7 @@ from spakky.agent.types import JsonObject, JsonValue
 from spakky.agent.yield_ import (
     AgentYield,
     AgentYieldKind,
+    Approval,
     Cancel,
     Error,
     Evidence,
@@ -187,6 +199,8 @@ LIMIT_MAX_STEPS_CODE = "agent_max_steps_exceeded"
 LIMIT_MAX_TOOL_CALLS_CODE = "agent_max_tool_calls_exceeded"
 LIMIT_MAX_TOKENS_CODE = "agent_max_tokens_exceeded"
 LIMIT_USAGE_UNAVAILABLE_CODE = "agent_usage_unavailable"
+LIMIT_MAX_COST_CODE = "agent_max_cost_exceeded"
+LIMIT_COST_UNAVAILABLE_CODE = "agent_cost_unavailable"
 LIMIT_TIMEOUT_CODE = "agent_timeout"
 MODEL_EXECUTION_ERROR_CODE = "agent_model_execution_failed"
 TOOL_EXECUTION_ERROR_CODE = "agent_tool_execution_failed"
@@ -250,6 +264,11 @@ class _ExecutionContext:
     step_count: int = 0
     tool_call_count: int = 0
     total_tokens: int = 0
+    total_cost: Decimal | None = None
+    last_step_cost: ModelCost | None = None
+    pricing_fingerprint: str | None = None
+    pricing_version: str | None = None
+    cost_currency: str | None = None
     seen_call_ids: set[str] = field(default_factory=set)
     approved_call_fingerprints: set[str] = field(default_factory=set)
     pending_calls: list[ModelToolCall] = field(default_factory=list)
@@ -266,11 +285,20 @@ class _ExecutionContext:
 
     @property
     def counters(self) -> JsonObject:
-        return {
+        counters: dict[str, JsonValue] = {
             "model_steps": self.step_count,
             "tool_calls": self.tool_call_count,
             "total_tokens": self.total_tokens,
         }
+        if self.total_cost is not None:
+            counters.update(
+                {
+                    "total_cost": str(self.total_cost),
+                    "cost_currency": self.cost_currency,
+                    "pricing_version": self.pricing_version,
+                }
+            )
+        return counters
 
 
 @dataclass(frozen=True, slots=True)
@@ -304,6 +332,8 @@ class AgentRunner:
     # single-turn (ADR-0013 §6).
     task_store: ITaskStore | None = None
     context_provider: IAgentContextProvider | None = None
+    pricing: ModelPricingCatalog | None = None
+    telemetry: IAgentTelemetry | None = None
 
     @classmethod
     def for_agent_instance(cls, instance: object) -> "AgentRunner":
@@ -326,6 +356,8 @@ class AgentRunner:
         evidence = cls._resolve_optional(attributes, IAgentEvidenceRepository)
         task_store = cls._resolve_optional(attributes, ITaskStore)
         context_provider = cls._resolve_optional(attributes, IAgentContextProvider)
+        pricing = cls._resolve_optional(attributes, ModelPricingCatalog)
+        telemetry = cls._resolve_optional(attributes, IAgentTelemetry)
         tool_providers = tuple(
             attribute
             for attribute in attributes
@@ -352,6 +384,8 @@ class AgentRunner:
             evidence=evidence,
             task_store=task_store,
             context_provider=context_provider,
+            pricing=pricing,
+            telemetry=telemetry,
         )
         runner._require_durable_ports()
         return runner
@@ -360,19 +394,137 @@ class AgentRunner:
         """Return a runner using a run-specific model adapter."""
         return replace(self, model=model)
 
+    def with_pricing(self, pricing: ModelPricingCatalog) -> "AgentRunner":
+        """Return a runner using a snapshot of operator-owned pricing."""
+        return replace(self, pricing=pricing)
+
+    def with_telemetry(self, telemetry: IAgentTelemetry) -> "AgentRunner":
+        """Return a runner emitting completed spans to one observer."""
+        return replace(self, telemetry=telemetry)
+
     async def run(
         self,
         run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentYield[object], None]:
         """Run one model-mediated agent loop, yielding the public stream."""
-        if self.states is None:
-            async for item in self._run_stateless(run_input):
+        started_at_ns = time_ns()
+        completed = False
+        outcome = "incomplete"
+        error_code: str | None = None
+        cost_attributes: dict[str, JsonValue] = {}
+        try:
+            stream = (
+                self._run_stateless(run_input)
+                if self.states is None
+                else self._run_durable(run_input, self.states)
+            )
+            async for item in stream:
+                if item.kind is AgentYieldKind.FINAL:
+                    completed = True
+                    outcome = "completed"
+                    if not isinstance(item.payload, Final):
+                        raise AgentDefinitionError(
+                            "Agent final yield contains an invalid payload"
+                        )
+                    cost_attributes.update(
+                        _telemetry_cost_attributes(item.payload.metadata)
+                    )
+                elif item.kind is AgentYieldKind.APPROVAL:
+                    completed = True
+                    outcome = "paused"
+                    if not isinstance(item.payload, Approval):
+                        raise AgentDefinitionError(
+                            "Agent approval yield contains an invalid payload"
+                        )
+                    cost_attributes.update(
+                        _telemetry_cost_attributes(item.payload.metadata)
+                    )
+                elif item.kind is AgentYieldKind.ERROR and isinstance(
+                    item.payload, Error
+                ):
+                    completed = True
+                    outcome = "failed"
+                    error_code = item.payload.code
+                    cost_attributes.update(
+                        _telemetry_cost_attributes(item.payload.metadata)
+                    )
+                elif item.kind is AgentYieldKind.CANCEL:
+                    completed = True
+                    outcome = "cancelled"
+                    error_code = "cancelled"
+                    if not isinstance(item.payload, Cancel):
+                        raise AgentDefinitionError(
+                            "Agent cancel yield contains an invalid payload"
+                        )
+                    cost_attributes.update(
+                        _telemetry_cost_attributes(item.payload.metadata)
+                    )
                 yield item
-            return
-        async for item in self._run_durable(run_input, self.states):
-            yield item
+        except Exception:
+            error_code = error_code or "agent_run_exception"
+            raise
+        finally:
+            self._record_span(
+                AgentSpanKind.RUN,
+                "agent.run",
+                started_at_ns,
+                run_input.state_id,
+                {
+                    "agent.conversation.id": run_input.effective_conversation_id,
+                    "agent.run.outcome": outcome,
+                    "agent.run.completed": completed,
+                    **cost_attributes,
+                },
+                error_code=error_code,
+            )
 
     async def run_events(
+        self,
+        run_input: RunAgentInput,
+    ) -> AsyncGenerator[AgentEvent, None]:
+        """Run the bounded loop while recording one privacy-safe run span."""
+        started_at_ns = time_ns()
+        completed = False
+        outcome = "incomplete"
+        error_code: str | None = None
+        cost_attributes: dict[str, JsonValue] = {}
+        try:
+            async for event in self._run_events_unobserved(run_input):
+                if isinstance(event, RunPausedEvent):
+                    completed = True
+                    outcome = "paused"
+                    cost_attributes.update(_telemetry_cost_attributes(event.metadata))
+                elif isinstance(event, RunFinishedEvent):
+                    completed = True
+                    cost_attributes.update(_telemetry_cost_attributes(event.metadata))
+                    if event.error is None:
+                        outcome = "completed"
+                    else:
+                        code = event.error.get("code")
+                        error_code = (
+                            code if isinstance(code, str) else "agent_run_failed"
+                        )
+                        outcome = "cancelled" if error_code == "cancelled" else "failed"
+                yield event
+        except Exception:
+            error_code = error_code or "agent_run_exception"
+            raise
+        finally:
+            self._record_span(
+                AgentSpanKind.RUN,
+                "agent.run",
+                started_at_ns,
+                run_input.state_id,
+                {
+                    "agent.conversation.id": run_input.effective_conversation_id,
+                    "agent.run.outcome": outcome,
+                    "agent.run.completed": completed,
+                    **cost_attributes,
+                },
+                error_code=error_code,
+            )
+
+    async def _run_events_unobserved(
         self,
         run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentEvent, None]:
@@ -931,6 +1083,7 @@ class AgentRunner:
                 run_input.state_id,
                 context.tool_calls,
                 context.final_output,
+                cost_metadata=_cost_metadata(context),
                 evidence_count=(
                     self._evidence_count(run_input.state_id) if state is not None else 0
                 ),
@@ -954,6 +1107,7 @@ class AgentRunner:
             None,
         )
         static_fingerprint = _agent_context_fingerprint(static_context)
+        pricing_fingerprint = None if self.pricing is None else self.pricing.fingerprint
         if state is not None and run_input.resume:
             checkpoint = state.metadata.get(RUNNER_CHECKPOINT_METADATA_KEY)
             if checkpoint is not None:
@@ -964,6 +1118,11 @@ class AgentRunner:
                     raise AgentDefinitionError(
                         "Agent resume static context does not match its checkpoint"
                     )
+                if context.pricing_fingerprint != pricing_fingerprint:
+                    raise AgentDefinitionError(
+                        "Agent resume pricing does not match its checkpoint"
+                    )
+                self._validate_restored_pricing(state.id, context)
                 context.deadline = deadline
                 context.restored_from_checkpoint = True
                 return context
@@ -974,9 +1133,77 @@ class AgentRunner:
             history=history,
             deadline=deadline,
             static_context_fingerprint=static_fingerprint,
+            total_cost=Decimal(0) if self.pricing is not None else None,
+            pricing_fingerprint=pricing_fingerprint,
+            pricing_version=None if self.pricing is None else self.pricing.version,
+            cost_currency=None if self.pricing is None else self.pricing.currency,
         )
 
     async def _model_events(
+        self,
+        run_input: RunAgentInput,
+        state: AgentState | None,
+        context: _ExecutionContext,
+    ) -> AsyncGenerator[ModelStreamEvent, None]:
+        """Yield one observed model step without exposing request content."""
+        started_at_ns = time_ns()
+        usage: ModelUsage | None = None
+        routing: dict[str, JsonValue] = {}
+        error_code: str | None = None
+        try:
+            async for event in self._model_events_unobserved(
+                run_input,
+                state,
+                context,
+            ):
+                if event.usage is not None:
+                    usage = event.usage
+                routing.update(_routing_metadata(event.metadata))
+                if event.error is not None:
+                    error_code = event.error.code
+                yield event
+        except TimeoutError:
+            error_code = LIMIT_TIMEOUT_CODE
+            raise
+        except AbstractSpakkyFrameworkError:
+            error_code = MODEL_EXECUTION_ERROR_CODE
+            raise
+        except Exception:
+            error_code = "agent_model_exception"
+            raise
+        finally:
+            attributes: dict[str, JsonValue] = {
+                "agent.model.step": context.step_count,
+                **routing,
+            }
+            if usage is not None:
+                for key, value in _usage_attributes(usage).items():
+                    attributes[key] = value
+                model_ref = routing.get("model_ref")
+                if self.pricing is not None and isinstance(model_ref, str):
+                    try:
+                        observed_cost = self.pricing.calculate(model_ref, usage)
+                    except AgentPricingError:
+                        attributes["gen_ai.usage.cost_available"] = False
+                    else:
+                        attributes["gen_ai.usage.cost_available"] = True
+                        attributes["gen_ai.usage.cost"] = str(observed_cost.amount)
+                        attributes["gen_ai.usage.cost_currency"] = (
+                            observed_cost.currency
+                        )
+                        attributes["gen_ai.usage.pricing_version"] = (
+                            observed_cost.pricing_version
+                        )
+            self._record_span(
+                AgentSpanKind.MODEL,
+                "agent.model",
+                started_at_ns,
+                run_input.state_id,
+                attributes,
+                error_code=error_code,
+            )
+
+    async def _model_events_unobserved(
         self,
         run_input: RunAgentInput,
         state: AgentState | None,
@@ -1037,23 +1264,54 @@ class AgentRunner:
                 self.agent.spec.refresh_context_each_step
                 or context.provider_context is None
             ):
+                retrieval_started_ns = time_ns()
                 try:
                     provided = await self._await_with_deadline(
                         self.context_provider.provide(run_input, context.step_count),
                         context.deadline,
                     )
                 except TimeoutError:
+                    self._record_retrieval_span(
+                        run_input,
+                        context,
+                        retrieval_started_ns,
+                        error_code=LIMIT_TIMEOUT_CODE,
+                    )
                     raise
                 except AbstractSpakkyFrameworkError:
+                    self._record_retrieval_span(
+                        run_input,
+                        context,
+                        retrieval_started_ns,
+                        error_code=MODEL_EXECUTION_ERROR_CODE,
+                    )
                     raise
                 except Exception as error:
+                    self._record_retrieval_span(
+                        run_input,
+                        context,
+                        retrieval_started_ns,
+                        error_code=MODEL_EXECUTION_ERROR_CODE,
+                    )
                     raise AgentDefinitionError(
                         "Agent context provider failed"
                     ) from error
                 if not isinstance(provided, AgentContext):
+                    self._record_retrieval_span(
+                        run_input,
+                        context,
+                        retrieval_started_ns,
+                        error_code=MODEL_EXECUTION_ERROR_CODE,
+                    )
                     raise AgentDefinitionError(
                         "Agent context provider returned an invalid value"
                     )
+                self._record_retrieval_span(
+                    run_input,
+                    context,
+                    retrieval_started_ns,
+                    hit_count=len(provided.packs),
+                )
                 context.provider_context = provided
             dynamic = context.provider_context
         prepared_static = prepare_agent_context(run_input.context)
@@ -1486,7 +1744,17 @@ class AgentRunner:
             )
             approval_item = AgentYield[object](
                 kind=yield_item.kind,
-                payload=yield_item.payload,
+                payload=(
+                    replace(
+                        yield_item.payload,
+                        metadata={
+                            **yield_item.payload.metadata,
+                            **_cost_metadata(context),
+                        },
+                    )
+                    if isinstance(yield_item.payload, Approval)
+                    else yield_item.payload
+                ),
             )
             approvals.append(approval_item)
             try:
@@ -1772,10 +2040,17 @@ class AgentRunner:
         context: _ExecutionContext,
     ) -> ModelError | None:
         limits = self.agent.spec.limits
+        context.last_step_cost = None
         if context.step_count >= limits.max_steps:
             return _limit_error(
                 LIMIT_MAX_STEPS_CODE,
                 "Agent model-step limit exceeded",
+                context,
+            )
+        if limits.max_cost is not None and self.pricing is None:
+            return _limit_error(
+                LIMIT_COST_UNAVAILABLE_CODE,
+                "Agent cost limit requires an operator pricing catalog",
                 context,
             )
         if (
@@ -1817,6 +2092,9 @@ class AgentRunner:
             )
         if total_tokens is not None:
             context.total_tokens += total_tokens
+        cost_error = self._record_cost(context, usage)
+        if cost_error is not None:
+            return cost_error
         if max_tokens is not None and context.total_tokens > max_tokens:
             return _limit_error(
                 LIMIT_MAX_TOKENS_CODE,
@@ -1824,6 +2102,92 @@ class AgentRunner:
                 context,
             )
         return None
+
+    def _record_cost(
+        self,
+        context: _ExecutionContext,
+        usage: ModelUsage | None,
+    ) -> ModelError | None:
+        if self.pricing is None:
+            return None
+        model_ref = context.route_metadata.get("model_ref")
+        if not isinstance(model_ref, str) or usage is None:
+            return _limit_error(
+                LIMIT_COST_UNAVAILABLE_CODE,
+                "Agent pricing requires routed model and token usage",
+                context,
+            )
+        try:
+            cost = self.pricing.calculate(model_ref, usage)
+        except AgentPricingError:
+            return _limit_error(
+                LIMIT_COST_UNAVAILABLE_CODE,
+                "Agent model cost could not be calculated",
+                context,
+            )
+        context.last_step_cost = cost
+        if context.total_cost is None:
+            context.total_cost = Decimal(0)
+        context.total_cost += cost.amount
+        max_cost = self.agent.spec.limits.max_cost
+        if max_cost is not None and context.total_cost > max_cost:
+            return _limit_error(
+                LIMIT_MAX_COST_CODE,
+                "Agent cost limit exceeded",
+                context,
+            )
+        return None
+
+    def _validate_restored_pricing(
+        self,
+        state_id: str,
+        context: _ExecutionContext,
+    ) -> None:
+        """Rebind checkpoint cost to the current catalog and model evidence."""
+        pricing = self.pricing
+        if pricing is None:
+            return
+        if (
+            context.pricing_version != pricing.version
+            or context.cost_currency != pricing.currency
+        ):
+            raise AgentDefinitionError(
+                "Agent resume pricing metadata does not match its catalog"
+            )
+        evidenced_costs: dict[int, Decimal] = {}
+        for evidence in self._evidence_required().list_by_state(state_id):
+            if evidence.kind is not AgentEvidenceKind.MODEL:
+                continue
+            decision = evidence.payload.get("decision")
+            if not isinstance(decision, Mapping):
+                raise AgentDefinitionError("Agent model cost evidence is invalid")
+            step = _evidence_step(decision)
+            if step in evidenced_costs or step > context.step_count:
+                raise AgentDefinitionError("Agent model cost evidence is invalid")
+            routing = decision.get("routing")
+            usage = decision.get("usage")
+            if not isinstance(routing, Mapping) or not isinstance(usage, Mapping):
+                raise AgentDefinitionError("Agent model cost evidence is invalid")
+            model_ref = routing.get("model_ref")
+            if not isinstance(model_ref, str) or not model_ref.strip():
+                raise AgentDefinitionError("Agent model cost evidence is invalid")
+            try:
+                evidenced_costs[step] = pricing.calculate(
+                    model_ref,
+                    _usage_from_evidence(usage),
+                ).amount
+            except AgentPricingError as error:
+                raise AgentDefinitionError(
+                    "Agent model cost evidence is invalid"
+                ) from error
+        expected_steps = set(range(1, context.step_count + 1))
+        if set(evidenced_costs) != expected_steps:
+            raise AgentDefinitionError("Agent model cost evidence is incomplete")
+        evidenced_total = sum(evidenced_costs.values(), start=Decimal(0))
+        if context.total_cost != evidenced_total:
+            raise AgentDefinitionError(
+                "Agent resume cost does not match model evidence"
+            )
 
     def _timeout_error(self, context: _ExecutionContext) -> ModelError:
         return _limit_error(
@@ -1861,12 +2225,95 @@ class AgentRunner:
                 "input_tokens": accumulator.usage.input_tokens,
                 "output_tokens": accumulator.usage.output_tokens,
                 "total_tokens": accumulator.usage.total_tokens,
+                "cached_input_tokens": accumulator.usage.cached_input_tokens,
+                "cache_write_input_tokens": (
+                    accumulator.usage.cache_write_input_tokens
+                ),
+                "cache_write_5m_input_tokens": (
+                    accumulator.usage.cache_write_5m_input_tokens
+                ),
+                "cache_write_1h_input_tokens": (
+                    accumulator.usage.cache_write_1h_input_tokens
+                ),
             }
-        return {
+        metadata: dict[str, JsonValue] = {
             **context.counters,
             **context.route_metadata,
             "usage": usage,
         }
+        if context.last_step_cost is not None:
+            metadata["cost"] = {
+                "amount": str(context.last_step_cost.amount),
+                "currency": context.last_step_cost.currency,
+                "pricing_version": context.last_step_cost.pricing_version,
+                "model_ref": context.last_step_cost.model_ref,
+            }
+        return metadata
+
+    def _record_span(
+        self,
+        kind: AgentSpanKind,
+        name: str,
+        started_at_ns: int,
+        state_id: str,
+        attributes: JsonObject,
+        *,
+        error_code: str | None = None,
+    ) -> None:
+        if self.telemetry is None:
+            return
+        safe_attributes: dict[str, JsonValue] = {
+            "agent.id": self._agent_type(),
+            "agent.run.id": state_id,
+            "agent.span.kind": kind.value,
+            **attributes,
+        }
+        record = AgentSpanRecord(
+            name=name,
+            kind=kind,
+            started_at_ns=started_at_ns,
+            ended_at_ns=time_ns(),
+            attributes=safe_attributes,
+            status=(
+                AgentSpanStatus.ERROR if error_code is not None else AgentSpanStatus.OK
+            ),
+            error_code=error_code,
+        )
+        try:
+            self.telemetry.record(record)
+        except Exception as error:
+            raise AgentTelemetryError from error
+
+    def _record_retrieval_span(
+        self,
+        run_input: RunAgentInput,
+        context: _ExecutionContext,
+        started_at_ns: int,
+        *,
+        hit_count: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        provider = self.context_provider
+        if not isinstance(provider, RetrievalContext):
+            return
+        attributes: dict[str, JsonValue] = {
+            "agent.model.step": context.step_count,
+            "retrieval.limit": provider.limit,
+        }
+        if hit_count is not None:
+            attributes["retrieval.hits"] = hit_count
+        if provider.tenant_id is not None:
+            attributes["retrieval.tenant.id"] = provider.tenant_id
+        if provider.namespace is not None:
+            attributes["retrieval.namespace"] = provider.namespace
+        self._record_span(
+            AgentSpanKind.RETRIEVAL,
+            "agent.retrieval",
+            started_at_ns,
+            run_input.state_id,
+            attributes,
+            error_code=error_code,
+        )
 
     async def _poll_cancel(
         self,
@@ -1957,6 +2404,19 @@ class AgentRunner:
             raise AgentDefinitionError(
                 "Agent runner checkpoint context fingerprint is invalid"
             )
+        pricing_fingerprint = _optional_checkpoint_text(
+            checkpoint,
+            "pricing_fingerprint",
+        )
+        pricing_version = _optional_checkpoint_text(checkpoint, "pricing_version")
+        cost_currency = _optional_checkpoint_text(checkpoint, "cost_currency")
+        total_cost = _optional_checkpoint_decimal(checkpoint, "total_cost")
+        if (
+            (pricing_fingerprint is None) != (total_cost is None)
+            or (pricing_fingerprint is None) != (pricing_version is None)
+            or (pricing_fingerprint is None) != (cost_currency is None)
+        ):
+            raise AgentDefinitionError("Agent runner checkpoint pricing is invalid")
         return _ExecutionContext(
             state_id=state_id,
             history=[
@@ -1978,6 +2438,10 @@ class AgentRunner:
             ],
             route_metadata=dict(_mapping_metadata(checkpoint, "route_metadata")),
             static_context_fingerprint=static_fingerprint,
+            total_cost=total_cost,
+            pricing_fingerprint=pricing_fingerprint,
+            pricing_version=pricing_version,
+            cost_currency=cost_currency,
         )
 
     def _append_model_evidence(
@@ -1998,7 +2462,7 @@ class AgentRunner:
                     "step": context.step_count,
                     "tool_calls": len(accumulator.candidates),
                     "usage": self._step_metadata(context, accumulator).get("usage"),
-                    "routing": context.route_metadata,
+                    "routing": dict(context.route_metadata),
                     "limits": context.counters,
                     "error": None if error is None else _model_error_json(error),
                 },
@@ -2020,6 +2484,7 @@ class AgentRunner:
         call: ModelToolCall,
         attribution: AgentEventAttribution,
     ) -> object:
+        started_at_ns = time_ns()
         dispatcher = AgentToolDispatcher(
             target=self.target,
             catalog=self.agent.tool_catalog,
@@ -2030,7 +2495,34 @@ class AgentRunner:
                 tool_name=call.name,
             ),
         )
-        return await dispatcher.dispatch(call)
+        descriptor = dispatcher.descriptor_for(call)
+        error_code: str | None = "agent_tool_interrupted"
+        try:
+            result = await dispatcher.dispatch(call)
+        except Exception:
+            error_code = TOOL_EXECUTION_ERROR_CODE
+            raise
+        else:
+            error_code = None
+            return result
+        finally:
+            self._record_span(
+                AgentSpanKind.TOOL,
+                "agent.tool",
+                started_at_ns,
+                attribution.run_id,
+                {
+                    "agent.conversation.id": attribution.conversation_id,
+                    "agent.tool.name": descriptor.schema.name,
+                    "agent.tool.identity": descriptor.identity.key,
+                    "agent.tool.kind": (
+                        "retrieval"
+                        if issubclass(descriptor.owner, RetrievalTool)
+                        else "function"
+                    ),
+                },
+                error_code=error_code,
+            )
 
     def _fail_on_model_error(
         self,
@@ -2253,6 +2745,7 @@ class AgentRunner:
         tool_calls: Sequence[str],
         structured_output: object | None,
         *,
+        cost_metadata: JsonObject,
         evidence_count: int,
     ) -> AgentYield[object]:
         output_type = self.agent.spec.output_type
@@ -2270,6 +2763,7 @@ class AgentRunner:
             payload=Final(
                 output=result,
                 metadata={
+                    **cost_metadata,
                     "output_type": output_type.__name__
                     if output_type is not None
                     else None,
@@ -2311,6 +2805,12 @@ class AgentRunner:
             completed = self._states_required().save(
                 complete_agent_cancellation(cancelling, report)
             )
+            checkpoint = state.metadata.get(RUNNER_CHECKPOINT_METADATA_KEY)
+            cost_metadata = (
+                _checkpoint_cost_metadata(checkpoint)
+                if isinstance(checkpoint, Mapping)
+                else {}
+            )
             return AgentYield(
                 kind=AgentYieldKind.CANCEL,
                 payload=Cancel(
@@ -2322,6 +2822,7 @@ class AgentRunner:
                     metadata={
                         "state": completed.status.value,
                         "signal_id": signal.id,
+                        **cost_metadata,
                     },
                 ),
             )
@@ -2379,7 +2880,7 @@ class AgentRunner:
         self._append_candidate(
             state.id,
             AgentEvidenceCandidate(
-                kind=AgentEvidenceKind.EVALUATION,
+                kind=AgentEvidenceKind.SIGNAL,
                 payload={"signal_id": signal.id, "payload": signal.payload},
                 summary=f"{signal.kind.value} signal hook handled",
             ),
@@ -2397,7 +2898,7 @@ class AgentRunner:
         self._append_candidate(
             state.id,
             AgentEvidenceCandidate(
-                kind=AgentEvidenceKind.EVALUATION,
+                kind=AgentEvidenceKind.SIGNAL,
                 payload={"signal_id": signal.id, "payload": signal.payload},
                 summary="user signal consumed",
             ),
@@ -2741,6 +3242,9 @@ def _run_paused_event(
         if tool_call_id is None and isinstance(nested, Mapping):
             tool_call_id = _optional_mapping_text(nested, "call_id")
         allowed_decisions = _string_tuple(approval.get("allowed_decisions"))
+    checkpoint = state.metadata.get(RUNNER_CHECKPOINT_METADATA_KEY)
+    if isinstance(checkpoint, Mapping):
+        event_metadata.update(_checkpoint_cost_metadata(checkpoint))
     return RunPausedEvent(
         attribution=attribution,
         reason=state.reason or AgentStateReason.USER_INTERRUPTED,
@@ -2751,6 +3255,15 @@ def _run_paused_event(
         allowed_decisions=allowed_decisions,
         metadata=event_metadata,
     )
+
+
+def _checkpoint_cost_metadata(checkpoint: Mapping[str, JsonValue]) -> JsonObject:
+    metadata: dict[str, JsonValue] = {}
+    for key in ("total_cost", "cost_currency", "pricing_version"):
+        value = checkpoint.get(key)
+        if isinstance(value, str):
+            metadata[key] = value
+    return metadata
 
 
 def _cancel_error(item: AgentYield[object]) -> JsonObject:
@@ -2852,6 +3365,19 @@ def _routing_metadata(metadata: Mapping[str, JsonValue]) -> dict[str, JsonValue]
     }
 
 
+def _usage_attributes(usage: ModelUsage) -> dict[str, JsonValue]:
+    values = {
+        "gen_ai.usage.input_tokens": usage.input_tokens,
+        "gen_ai.usage.output_tokens": usage.output_tokens,
+        "gen_ai.usage.total_tokens": usage.total_tokens,
+        "gen_ai.usage.cached_input_tokens": usage.cached_input_tokens,
+        "gen_ai.usage.cache_write_input_tokens": usage.cache_write_input_tokens,
+        "gen_ai.usage.cache_write_5m_input_tokens": (usage.cache_write_5m_input_tokens),
+        "gen_ai.usage.cache_write_1h_input_tokens": (usage.cache_write_1h_input_tokens),
+    }
+    return {key: value for key, value in values.items() if value is not None}
+
+
 def _assistant_tool_message(
     content: str,
     calls: Sequence[ModelToolCall],
@@ -2944,12 +3470,40 @@ def _context_metadata(context: _ExecutionContext) -> JsonObject:
         "step_count": context.step_count,
         "tool_call_count": context.tool_call_count,
         "total_tokens": context.total_tokens,
+        "total_cost": None if context.total_cost is None else str(context.total_cost),
+        "pricing_fingerprint": context.pricing_fingerprint,
+        "pricing_version": context.pricing_version,
+        "cost_currency": context.cost_currency,
         "seen_call_ids": sorted(context.seen_call_ids),
         "approved_call_fingerprints": sorted(context.approved_call_fingerprints),
         "pending_calls": [_call_metadata(call) for call in context.pending_calls],
         "route_metadata": context.route_metadata,
         "static_context_fingerprint": context.static_context_fingerprint,
     }
+
+
+def _cost_metadata(context: _ExecutionContext) -> JsonObject:
+    if context.total_cost is None:
+        return {}
+    return {
+        "total_cost": str(context.total_cost),
+        "cost_currency": context.cost_currency,
+        "pricing_version": context.pricing_version,
+    }
+
+
+def _telemetry_cost_attributes(metadata: Mapping[str, JsonValue]) -> JsonObject:
+    attributes: dict[str, JsonValue] = {}
+    total_cost = metadata.get("total_cost")
+    currency = metadata.get("cost_currency")
+    pricing_version = metadata.get("pricing_version")
+    if isinstance(total_cost, str):
+        attributes["gen_ai.usage.total_cost"] = total_cost
+    if isinstance(currency, str):
+        attributes["gen_ai.usage.cost_currency"] = currency
+    if isinstance(pricing_version, str):
+        attributes["gen_ai.usage.pricing_version"] = pricing_version
+    return attributes
 
 
 def _message_metadata(message: ModelMessage) -> JsonObject:
@@ -3044,6 +3598,81 @@ def _integer_metadata(mapping: Mapping[str, JsonValue], key: str) -> int:
     value = mapping.get(key, 0)
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise AgentDefinitionError("Agent runner checkpoint counter is invalid")
+    return value
+
+
+def _optional_checkpoint_text(
+    mapping: Mapping[str, JsonValue],
+    key: str,
+) -> str | None:
+    value = mapping.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise AgentDefinitionError("Agent runner checkpoint text is invalid")
+    return value
+
+
+def _optional_checkpoint_decimal(
+    mapping: Mapping[str, JsonValue],
+    key: str,
+) -> Decimal | None:
+    value = mapping.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AgentDefinitionError("Agent runner checkpoint decimal is invalid")
+    try:
+        parsed = Decimal(value)
+    except InvalidOperation as error:
+        raise AgentDefinitionError(
+            "Agent runner checkpoint decimal is invalid"
+        ) from error
+    if not parsed.is_finite() or parsed < 0:
+        raise AgentDefinitionError("Agent runner checkpoint decimal is invalid")
+    return parsed
+
+
+def _evidence_step(decision: Mapping[str, JsonValue]) -> int:
+    value = decision.get("step")
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise AgentDefinitionError("Agent model cost evidence step is invalid")
+    return value
+
+
+def _usage_from_evidence(usage: Mapping[str, JsonValue]) -> ModelUsage:
+    return ModelUsage(
+        input_tokens=_optional_evidence_token(usage, "input_tokens"),
+        output_tokens=_optional_evidence_token(usage, "output_tokens"),
+        total_tokens=_optional_evidence_token(usage, "total_tokens"),
+        cached_input_tokens=_optional_evidence_token(
+            usage,
+            "cached_input_tokens",
+        ),
+        cache_write_input_tokens=_optional_evidence_token(
+            usage,
+            "cache_write_input_tokens",
+        ),
+        cache_write_5m_input_tokens=_optional_evidence_token(
+            usage,
+            "cache_write_5m_input_tokens",
+        ),
+        cache_write_1h_input_tokens=_optional_evidence_token(
+            usage,
+            "cache_write_1h_input_tokens",
+        ),
+    )
+
+
+def _optional_evidence_token(
+    usage: Mapping[str, JsonValue],
+    key: str,
+) -> int | None:
+    value = usage.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise AgentDefinitionError("Agent model cost evidence usage is invalid")
     return value
 
 

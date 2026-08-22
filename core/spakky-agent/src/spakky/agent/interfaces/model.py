@@ -146,6 +146,10 @@ class ModelUsage:
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    cache_write_input_tokens: int | None = None
+    cache_write_5m_input_tokens: int | None = None
+    cache_write_1h_input_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

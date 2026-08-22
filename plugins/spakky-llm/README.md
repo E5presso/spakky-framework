@@ -326,6 +326,18 @@ First-party adapter가 생성하는 `ModelResponse`, `ModelStreamEvent`, `ModelT
 
 Terminal response/event는 `finish_reason`을 추가하며 provider에 따라 `response_id`, `response_model`, reasoning 또는 thought signature가 추가될 수 있습니다. Unknown ref는 default route를 선택한 것처럼 꾸미지 않고 요청된 `model_ref`만 error metadata에 남깁니다. Credential과 header는 metadata에 포함하지 않습니다.
 
+### Usage와 operator cost input
+
+`ModelUsage`는 `input_tokens`, `output_tokens`, `total_tokens`에 optional cached input, aggregate cache-write, 5-minute cache-write, 1-hour cache-write token을 더합니다. First-party adapter는 provider-native usage를 다음처럼 정규화합니다.
+
+| Provider | Input/total 의미 | Cache 매핑 |
+|----------|------------------|------------|
+| OpenAI-compatible | `prompt_tokens`, `completion_tokens`, `total_tokens` | prompt details `cached_tokens`, `cache_write_tokens` |
+| Anthropic | base input + cache creation + cache read를 inclusive input으로 합산, output과 total 재계산 | read, aggregate creation, `cache_creation` 5m/1h category; nonzero creation의 breakdown 누락 또는 category 합과 aggregate 불일치는 `LlmResponseError` |
+| Google | `prompt_token_count`, `candidates_token_count`, `total_token_count` | `cached_content_token_count`; cache-write는 없음 |
+
+`ModelPricingCatalog`은 `spakky-agent`의 operator-owned 계약이며 이 plugin은 provider price 상수를 내장하거나 model name에서 요금을 추론하지 않습니다. Pricing을 runner에 주입하면 selected route의 `model_ref`와 위 usage가 exact cost input이 됩니다. Streaming usage를 opt out하거나 provider가 필수 input/output usage를 주지 않으면 임의 가격 fallback 대신 runner가 `agent_cost_unavailable`로 fail closed합니다. Categorized cache-write를 가격에 쓰려면 `ModelPrice` 5m/1h rate를 operator가 명시합니다.
+
 ### Iterative continuation history
 
 `AgentRunner`는 validated model tool batch를 assistant history로 보존하고 각 실행 결과를 `TOOL` message로 추가한 뒤 같은 logical route로 다음 model step을 요청합니다. Assistant message의 `metadata["tool_calls"]`에는 call id, name, arguments와 adapter가 붙인 provider metadata가 함께 들어가고, `TOOL` message는 `call_id`와 `tool_name`으로 결과를 correlate합니다.
@@ -446,6 +458,7 @@ Unit/acceptance test는 provider SDK client/response와 Google credential resolv
 - [ADR-0016: Operator-owned model catalog와 opaque model routing](../../docs/adr/0016-operator-owned-model-catalog.md)
 - [ADR-0018: Typed agent output과 composed execution context](../../docs/adr/0018-typed-agent-output-and-context.md)
 - [ADR-0019: Minimal retrieval runtime](../../docs/adr/0019-minimal-retrieval-runtime.md)
+- [ADR-0020: Semantic memory, evaluation, pricing과 Agent telemetry](../../docs/adr/0020-agent-memory-evaluation-cost-telemetry.md)
 
 ## 라이선스
 

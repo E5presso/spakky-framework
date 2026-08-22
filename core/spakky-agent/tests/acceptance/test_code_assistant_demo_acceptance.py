@@ -102,7 +102,7 @@ async def test_code_assistant_acceptance_expect_streaming_approval_signal_eviden
     assert {artifact.kind for artifact in evidence.list_by_state("run-1")} >= {
         AgentEvidenceKind.ACTION_BOUNDARY,
         AgentEvidenceKind.APPROVAL,
-        AgentEvidenceKind.EVALUATION,
+        AgentEvidenceKind.SIGNAL,
         AgentEvidenceKind.TOOL,
     }
     assert _final_payload(items).output == AgentRunResult(

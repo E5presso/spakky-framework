@@ -387,6 +387,7 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
         usage_metadata=types.GenerateContentResponseUsageMetadata(
             prompt_token_count=11,
             candidates_token_count=7,
+            cached_content_token_count=2,
             thoughts_token_count=3,
             total_token_count=21,
         ),
@@ -435,6 +436,7 @@ async def test_complete_maps_native_request_response_and_metadata() -> None:
     assert result.usage.input_tokens == 11
     assert result.usage.output_tokens == 7
     assert result.usage.total_tokens == 21
+    assert result.usage.cached_input_tokens == 2
     assert result.metadata == {
         "model_ref": "support/primary",
         "provider": "google",

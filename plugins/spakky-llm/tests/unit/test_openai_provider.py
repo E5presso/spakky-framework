@@ -354,6 +354,7 @@ def _completion(
     refusal: str | None = None,
     tool_calls: list[dict[str, object]] | None = None,
     extra_message: dict[str, object] | None = None,
+    prompt_tokens_details: dict[str, int] | None = None,
 ) -> ChatCompletion:
     message: dict[str, object] = {
         "role": "assistant",
@@ -381,6 +382,7 @@ def _completion(
                 "prompt_tokens": 3,
                 "completion_tokens": 4,
                 "total_tokens": 7,
+                "prompt_tokens_details": prompt_tokens_details,
             },
         }
     )
@@ -415,7 +417,10 @@ def _chunk(
 
 async def test_complete_maps_allowlisted_vllm_profile_and_structured_request() -> None:
     """vLLM profile uses only profile credentials and emits its dialect extras."""
-    _FakeCompletions.completion = _completion(content='{"answer":"ok"}')
+    _FakeCompletions.completion = _completion(
+        content='{"answer":"ok"}',
+        prompt_tokens_details={"cached_tokens": 1, "cache_write_tokens": 2},
+    )
     request = ModelRequest(
         messages=(
             ModelMessage(ModelMessageRole.SYSTEM, "system"),
@@ -458,6 +463,8 @@ async def test_complete_maps_allowlisted_vllm_profile_and_structured_request() -
     assert response.usage.input_tokens == 3
     assert response.usage.output_tokens == 4
     assert response.usage.total_tokens == 7
+    assert response.usage.cached_input_tokens == 1
+    assert response.usage.cache_write_input_tokens == 2
     assert response.metadata == {
         "model_ref": "support/primary",
         "provider": "openai",

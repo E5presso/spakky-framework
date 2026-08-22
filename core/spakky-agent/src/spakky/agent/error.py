@@ -57,3 +57,9 @@ class AgentRetrievalError(AbstractSpakkyAgentError):
     """Raised when retrieval results cannot safely enter an agent run."""
 
     message = "Agent retrieval failed"
+
+
+class AgentMemoryError(AbstractSpakkyAgentError):
+    """Raised when long-term memory cannot safely cross its scoped boundary."""
+
+    message = "Agent memory operation failed"

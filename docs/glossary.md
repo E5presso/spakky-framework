@@ -280,9 +280,11 @@ runner가 optional `ITaskStore`에서 `effective_conversation_id`로 persisted h
 ### AgentExecutionLimits
 
 `AgentExecutionSpec.limits`에 들어가는 bounded runner 계약입니다. 기본 model step은 8,
-실제 tool call은 32이며 token/time budget은 opt-in입니다. Step limit은 다음 model request
+실제 tool call은 32이며 token/cost/time budget은 opt-in입니다. Step limit은 다음 model request
 전에, tool limit은 whole batch dispatch 전에, token limit은 provider total usage를 누적한
-뒤, timeout은 model/async-tool await에 집행됩니다. Deadline이 있는 in-process sync tool은
+뒤, cost limit은 operator pricing으로 terminal step cost를 누적한 뒤, timeout은
+model/async-tool await에 집행됩니다. `max_cost`는 positive finite `Decimal`이며 pricing이
+없거나 usage/ref를 exact하게 계산할 수 없으면 fail closed합니다. Deadline이 있는 in-process sync tool은
 preempt할 수 없어 batch 전체가 실행 전에 `agent_sync_tool_timeout_unenforceable`로
 거부됩니다. `AgentExecutionSpec.timeout_seconds` direct field나 alias는 없습니다.
 
@@ -386,7 +388,61 @@ provider request 전에 fail closed합니다.
 `conversation_id`로 저장하는 server-side session port입니다. `ConversationTurn`은 user
 또는 assistant 발화만 담고, 다음 run의 model request history로 재생됩니다. A2A protocol
 `Task` snapshot 저장은 `spakky-a2a`의 `IA2ATaskRepository`/`SpakkyA2ATaskStore`가 담당하므로
-core transcript store와 섞지 않습니다.
+core transcript store와 섞지 않습니다. TTL, correction과 tenant/user scope를 가진
+long-term memory는 `ITaskStore`가 아니라 `IMemoryStore`를 사용합니다.
+
+### MemoryEntry / IMemoryStore / MemoryRetriever
+
+`MemoryEntry`는 kind, content/provenance, exact tenant/user/namespace, timezone-aware creation과
+optional expiry, previous entry를 가리키는 `supersedes`를 가진 immutable long-term memory
+revision입니다. `IMemoryStore`는 `save()`, scoped `search()`, explicit `delete()`를 정의하는
+backend port이며 core production 구현은 없습니다.
+
+`MemoryRetriever`는 store와 tenant/user/namespace, allowed `MemoryKind` tuple을 bind해
+`IRetriever`로 노출합니다. Expired entry와 superseded target을 제거하고 cross-scope,
+duplicate, conflicting correction과 active correction cycle을 `AgentMemoryError`로 거부합니다. 기존
+`RetrievalContext` 또는 `RetrievalTool`로 감싸 model context/tool에 연결합니다.
+
+### AgentEvaluationSuite
+
+Explicit `AgentEvaluationDataset`의 각 `AgentEvaluationCase`를 정확히 하나의
+`AgentEvaluationSample`과 짝지어 evaluator tuple 순서로 offline 채점하는 aggregate입니다.
+Built-in evaluator는 ordered tool trace, strict structured output, reference precision/recall,
+retrieval reference groundedness를 제공합니다. `ModelJudgeEvaluator`는 application-owned
+`IModelJudge`만 사용하며 default judge가 없습니다.
+
+`AgentEvaluationReport.evidence_candidates()`가 만드는 `AgentEvidenceKind.EVALUATION`은
+metric/pass/score/case/sample correlation 전용입니다. `AgentEvidenceKind.SIGNAL`은 runner가
+소비한 non-terminal inbound signal audit이며 offline evaluation과 다른 kind입니다.
+Evaluation case/sample의 structured JSON과 tool arguments/metadata는 construction 시 deep
+snapshot됩니다.
+
+### ModelPricingCatalog / ModelCost
+
+Opaque logical model ref를 per-million-token `ModelPrice`에 연결하는 immutable versioned
+operator snapshot과 그 exact `Decimal` 계산 결과입니다. Cached/generic cache-write rate는
+없으면 input rate를, TTL-specific write rate는 없으면 generic write rate를 사용합니다.
+Built-in price는 없으며 `AgentExecutionLimits.max_cost`를
+사용할 때 pricing이 없거나 usage/ref가 불완전하면 fail closed합니다. Durable checkpoint는
+pricing fingerprint와 cumulative cost를 함께 보존하고, resume은 `MODEL` evidence의 exact
+route/full usage로 completed step cost를 재계산해 checkpoint total과 대조합니다.
+
+### ModelUsage cache fields
+
+`ModelUsage.cached_input_tokens`, total `cache_write_input_tokens`, TTL별
+`cache_write_5m_input_tokens`/`cache_write_1h_input_tokens`는 provider가 보고한 cache read와
+write input을 보존합니다. OpenAI, Anthropic, Google adapter가 official SDK usage를
+provider-neutral field로 매핑하고, pricing은 inclusive `input_tokens`에서 cached/total write를
+빼 regular input을 계산합니다. TTL breakdown이 있으면 5-minute + 1-hour 합이 total
+cache-write usage와 정확히 같아야 합니다. Distinct TTL price가 설정됐는데 nonzero write
+usage가 TTL별로 분류되지 않은 경우도 fail closed합니다.
+
+### IAgentTelemetry / AgentSpanRecord
+
+Runner가 완료한 `RUN`, `MODEL`, `TOOL`, `RETRIEVAL` interval을 관측 adapter에 전달하는 sync
+outbound port와 immutable record입니다. Record는 nanosecond timestamps, scalar correlation,
+OK/ERROR와 optional error code만 허용하며 prompt/context/completion, retrieval query/content,
+tool arguments/result를 포함하지 않습니다. Sink failure는 `AgentTelemetryError`입니다.
 
 ### AgentEvent
 
@@ -1242,6 +1298,17 @@ from spakky.plugins.opentelemetry.propagator import OTelTracePropagator
 | `exporter_type` | `SPAKKY_OTEL_EXPORTER_TYPE` | `ExporterType.OTLP` |
 | `exporter_endpoint` | `SPAKKY_OTEL_EXPORTER_ENDPOINT` | `"http://localhost:4317"` |
 | `sample_rate` | `SPAKKY_OTEL_SAMPLE_RATE` | `1.0` |
+
+### OpenTelemetryAgentTelemetry
+
+`spakky-opentelemetry`가 자동 등록하고 `IAgentTelemetry`에 bind하는 Agent span adapter입니다.
+Spakky `TraceContext` parent와 exact nanosecond interval을 보존하고 operation kind를
+`gen_ai.operation.name`과 OTel `SpanKind`로 매핑합니다. Raw-body denylist를 적용한 뒤 기존
+`OpenTelemetryConfig` exporter pipeline을 사용합니다.
+
+```python
+from spakky.plugins.opentelemetry.telemetry import OpenTelemetryAgentTelemetry
+```
 
 ### LogContextBridge
 

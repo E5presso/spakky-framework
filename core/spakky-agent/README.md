@@ -30,9 +30,9 @@ pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 
 ## 제공하는 public surface
 
-- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 실행 이름/목표(`name`, `objective`), system-level 지시문(`instructions`), 구조화 출력 타입(`output_type`), 수신 signal/recovery/streaming 선언(`accepted_signals`, `recovery`, `streaming_exposure_mode`), bounded execution(`limits`), 협력 agent(`teammates`), 컨텍스트 압축 정책(`compaction`), model step별 dynamic context 재조회 여부(`refresh_context_each_step`), 위임 허용 marker(`delegation_allowed`), 문자열 metadata(`metadata`)를 보존한다. `AgentExecutionLimits`는 `max_steps=8`, `max_tool_calls=32`, optional `max_tokens`, optional `timeout_seconds`를 한 곳에 모읍니다. `AgentExecutionSpec.timeout_seconds` alias는 없으며 unknown constructor argument로 실패한다. Limit과 name/objective/instructions는 양수/nonblank, `output_type`은 지원되는 class와 portable schema로 정의 시점에 검증되고, teammate name은 unique여야 한다. `execute()` 없이 spec + `@agent_tool` 메서드만 선언하면 프레임워크가 `AgentRunner` 기반 bounded iterative orchestration을 `execute()`로 자동 바인딩한다(ADR-0017). 개발자가 직접 `execute()`를 작성한 경우에는 건드리지 않는다.
-- `AgentRunner`, `AgentRunResult`: 프레임워크가 소유하는 bounded iterative model/tool orchestration. `AgentRunner.for_agent_instance(instance)`는 인스턴스에 주입된 속성을 타입 기반으로 탐색해 required `IAgentModel`과 optional `IAgentStateRepository`·`IAgentSignalRepository`·`IAgentEvidenceRepository`·`ITaskStore`·`IAgentContextProvider`, 그리고 모든 `IAgentToolProvider`를 resolve한다. Tool provider descriptor는 class-level catalog를 mutate하지 않고 runner별 `Agent` copy에 merge되며 identity/schema-name collision은 `AgentDefinitionError`로 실패한다. `run(run_input)`은 inbound adapter용 `AgentYield` stream을, `run_events(run_input)`은 protocol adapter용 중립 `AgentEvent` stream을 내보냅니다. 한 model step이 terminal validation을 통과해 tool batch를 내면 runner는 batch 전체의 descriptor·call id·argument binding·approval plan·tool budget을 dispatch 전에 검증하고, 모든 approval gate를 먼저 통과한 뒤 tool을 선언 순서대로 실행합니다. 각 result는 assistant tool-call history 뒤의 `ModelMessageRole.TOOL` message로 추가되고 다음 `ModelRequest`가 같은 invocation에서 이어집니다. Tool이 없는 terminal model step에서 final을 정확히 한 번 생성합니다. Durable 경로는 같은 loop에 state/signal/evidence, approval pause/resume와 action-boundary checkpoint를 더합니다. `AgentRunResult`는 spec이 `output_type`을 선언하지 않을 때 기본으로 반환되는 중립 종료 요약 dataclass(`state_id`, `status`, `tool_calls`, `evidence_count`)다.
-- `IAgentRunnerFactory`, `AgentRunnerFactory`: inbound adapter가 request/run scope runner를 여는 DI 포트와 기본 구현. 기본 구현은 `AgentRunner.for_agent_instance()`를 감싼다. MCP처럼 runner catalog나 외부 세션 수명주기를 확장하는 plugin은 이 port를 자체 구현으로 바인딩하고, AG-UI/A2A 같은 protocol adapter는 직접 `AgentRunner.for_agent_instance()`를 호출하지 않고 이 factory를 주입받아 실행한다.
+- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 실행 이름/목표(`name`, `objective`), system-level 지시문(`instructions`), 구조화 출력 타입(`output_type`), 수신 signal/recovery/streaming 선언(`accepted_signals`, `recovery`, `streaming_exposure_mode`), bounded execution(`limits`), 협력 agent(`teammates`), 컨텍스트 압축 정책(`compaction`), model step별 dynamic context 재조회 여부(`refresh_context_each_step`), 위임 허용 marker(`delegation_allowed`), 문자열 metadata(`metadata`)를 보존한다. `AgentExecutionLimits`는 `max_steps=8`, `max_tool_calls=32`, optional `max_tokens`, positive `Decimal` 전용 optional `max_cost`, optional `timeout_seconds`를 한 곳에 모읍니다. `AgentExecutionSpec.timeout_seconds` alias는 없으며 unknown constructor argument로 실패한다. Limit과 name/objective/instructions는 양수/nonblank, `output_type`은 지원되는 class와 portable schema로 정의 시점에 검증되고, teammate name은 unique여야 한다. `execute()` 없이 spec + `@agent_tool` 메서드만 선언하면 프레임워크가 `AgentRunner` 기반 bounded iterative orchestration을 `execute()`로 자동 바인딩한다(ADR-0017). 개발자가 직접 `execute()`를 작성한 경우에는 건드리지 않는다.
+- `AgentRunner`, `AgentRunResult`: 프레임워크가 소유하는 bounded iterative model/tool orchestration. `AgentRunner.for_agent_instance(instance)`는 인스턴스에 주입된 속성을 타입 기반으로 탐색해 required `IAgentModel`과 optional `IAgentStateRepository`·`IAgentSignalRepository`·`IAgentEvidenceRepository`·`ITaskStore`·`IAgentContextProvider`·`ModelPricingCatalog`·`IAgentTelemetry`, 그리고 모든 `IAgentToolProvider`를 resolve한다. Tool provider descriptor는 class-level catalog를 mutate하지 않고 runner별 `Agent` copy에 merge되며 identity/schema-name collision은 `AgentDefinitionError`로 실패한다. `with_model()`, `with_pricing()`, `with_telemetry()`는 request/factory scope override를 위한 immutable runner copy를 반환한다. `run(run_input)`은 inbound adapter용 `AgentYield` stream을, `run_events(run_input)`은 protocol adapter용 중립 `AgentEvent` stream을 내보냅니다. 한 model step이 terminal validation을 통과해 tool batch를 내면 runner는 batch 전체의 descriptor·call id·argument binding·approval plan·tool budget을 dispatch 전에 검증하고, 모든 approval gate를 먼저 통과한 뒤 tool을 선언 순서대로 실행합니다. 각 result는 assistant tool-call history 뒤의 `ModelMessageRole.TOOL` message로 추가되고 다음 `ModelRequest`가 같은 invocation에서 이어집니다. Tool이 없는 terminal model step에서 final을 정확히 한 번 생성합니다. Durable 경로는 같은 loop에 state/signal/evidence, approval pause/resume와 action-boundary checkpoint를 더합니다. `AgentRunResult`는 spec이 `output_type`을 선언하지 않을 때 기본으로 반환되는 중립 종료 요약 dataclass(`state_id`, `status`, `tool_calls`, `evidence_count`)다.
+- `IAgentRunnerFactory`, `AgentRunnerFactory`: inbound adapter가 request/run scope runner를 여는 DI 포트와 기본 구현. 기본 구현은 `AgentRunner.for_agent_instance()`를 감싸고 optional `model_resolver`, `telemetry`, `pricing`을 매 run에 적용한다. MCP처럼 runner catalog나 외부 세션 수명주기를 확장하는 plugin은 이 port를 자체 구현으로 바인딩하고, AG-UI/A2A 같은 protocol adapter는 직접 `AgentRunner.for_agent_instance()`를 호출하지 않고 이 factory를 주입받아 실행한다.
 - `RunAgentInput`: inbound run 계약. `state_id`(실행 상관 ID), `instruction`(모델 요청의 사용자 프롬프트), `conversation_id`(멀티턴 스레드 ID, 생략 시 `state_id`로 대체), `parent_run_id`(위임 child run이 parent run과 연결되는 중립 링크), `resume`(일시 중단된 실행 재개 여부), `message_history`(클라이언트가 주입한 이전 대화 이력 `tuple[ModelMessage, ...]`, ADR-0013 §6 client-injected history), `model_selection`(요청별 opaque logical model ref), `context`(요청이 소유하는 static `AgentContext`, 기본값은 empty), `metadata`(model request metadata에 병합되는 runner 레벨 부가 정보)를 담는다. `effective_conversation_id` property는 `conversation_id or state_id`를 반환한다. Runner는 `ModelRequest.metadata`를 `{"state_id": run_input.state_id, **run_input.metadata}` 순서로 구성하므로 현재 같은 이름의 caller metadata가 자동 `state_id`를 덮어쓴다. Approval decision은 이 계약이 아닌 signal repository를 통해 전달된다. Model selection은 run-scoped이며 transcript `ConversationTurn`에 저장·상속되지 않는다. 같은 conversation의 다음 turn이나 approval resume에서 selection을 생략하면 model adapter의 default가 다시 적용된다.
 - `AgentTeammate`: 이름과 로컬 Pod 타입(`pod`) 또는 원격 AgentCard http(s) URL(`card_url`) 중 정확히 하나를 선언하는 협력 agent 기술자. 둘 다 지정하거나 둘 다 생략하면 `AgentDefinitionError`. `@Agent`는 teammate마다 `teammate.<schema_token(name)>.delegate` synthetic tool descriptor를 생성하며, schema token은 teammate name의 앞뒤 공백을 제거한 뒤 `[a-zA-Z0-9_]`가 아닌 연속 문자를 단일 `_`로 치환하고, 앞뒤 `_`를 제거한 다음 소문자화한 값이다. 이 결과가 비면 `AgentDefinitionError`다. 로컬 teammate는 parent에 주입된 child Pod를 찾아 `AgentRunner.run_events()`로 in-process 실행하고, 원격 teammate는 parent에 주입된 `IAgentDelegate` port로 위임한다.
 - `ICompactionStrategy`: 교체 가능한 컨텍스트 압축 포트(`ABC`). `async compact(history: tuple[ModelMessage, ...], usage: ModelUsage, capability: ModelCapability) -> tuple[ModelMessage, ...]`를 구현하며, 이력을 더 짧은 이력으로 변환하는 순수 transform이다. pydantic-ai의 message history processor / `ProcessHistory` capability를 참조하되 usage·capability를 명시 파라미터로 받아 압축 강도를 조절한다(ADR-0013 §7).
@@ -50,24 +50,28 @@ pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 - `on_signal`, `discover_agent_signal_hooks`, `AgentSignalHookCatalog`: 선언형 시그널 훅(ADR-0013 §1). `@on_signal(kind)`는 `@agent_tool`과 같은 선언형 seam으로, `async def m(self, signal: AgentSignal) -> AsyncGenerator[AgentYield[object], None]` 메서드를 표시한다. `Agent` discovery가 같은 MRO walk로 훅을 수집하고 runner가 safe boundary에서 호출한다. `run()`은 hook yield를 public stream으로 내보내지만 `run_events()`는 `Progress`만 `ArtifactEvent(name="signal_progress")`로 중립화할 수 있습니다. `Token`/`Tool` 등 다른 hook yield shape는 조용히 drop하지 않고 `agent_signal_projection_unsupported`로 fail closed합니다. `CANCEL`·`APPROVAL_DECISION`은 runner 전용 단계가 처리하고, hook이 없는 `USER_MESSAGE`는 built-in Progress로 소비되어 event surface에서는 같은 Artifact로 나타납니다. 계약 위반(비 async generator, `signal: AgentSignal` 외 인자, `AgentYield` 외 yield 타입)은 정의 시점에 `AgentDefinitionError`로 거부된다.
 - `AgentApprovalRequest`, `plan_agent_tool_approval`, `parse_agent_approval_decision_signal`: 위험 boundary에서만 HITL approval을 요구하고 decision signal을 typed state target으로 해석하는 helper
 - `begin_agent_cancellation`, `run_agent_cancellation_cleanup`, `complete_agent_cancellation`: cancel signal을 `CANCELLING`으로 materialize하고 model stream/tool/delegate cleanup hook 결과를 evidence와 terminal state에 반영하는 helper
-- `AgentEvidence`: tool/model/context 판단 근거를 위한 append-only artifact
-- `AgentEvidenceCandidate`: tool result와 model/tool decision을 append-only evidence 후보로 변환하는 contract
+- `AgentEvidence`, `AgentEvidenceKind`: tool/model/context/signal/evaluation 근거를 위한 append-only artifact와 typed vocabulary. Inbound user/steering audit은 `SIGNAL`, offline evaluator metric만 `EVALUATION`을 사용하여 runtime signal과 quality result를 섞지 않는다.
+- `AgentEvidenceCandidate`: tool/model/context decision과 privacy-safe offline evaluation metric을 append-only evidence 후보로 변환하는 contract
 - `AgentActionBoundaryCheckpoint`, `plan_agent_resume`: model call, tool call, approval wait 전후 checkpoint evidence와 restart/resume 결정 helper
 - `DelegationPacket`, `DelegationResult`, `IAgentDelegate`: 다른 `@Agent` component로 작업을 위임하고 parent evidence/stream에 결과를 연결하는 계약
 - `AgentContext`, `ContextPack`, `ContextManifest`, `ContextDigest`, `IAgentContextProvider`: run-scoped static context와 optional dynamic context를 같은 typed envelope로 구성하고 model input·provenance evidence로 연결하는 contract. Provider signature는 `async provide(run_input: RunAgentInput, model_step: int) -> AgentContext`이며 step은 1부터 시작한다.
 - `IRetriever`, `RetrievalHit`, `RetrievalContext`, `RetrievalTool`, `AgentRetrievalError`: 하나의 async text retrieval port와 결과/provenance value, classic context wrapper, agentic read-only tool wrapper, strict boundary error. `RetrievalContext`는 `IAgentContextProvider`, `RetrievalTool`은 `IAgentToolProvider`를 구현하므로 별도 RAG package나 runner가 필요하지 않다.
 - `ITextEmbedding`, `EmbeddingPurpose`, `EmbeddingVector`, `IVectorSearch`, `VectorRetriever`: query text를 정확히 하나의 `EmbeddingVector`로 만든 뒤 교체 가능한 vector-search port로 위임하는 advanced composition. `EmbeddingPurpose`는 `QUERY`/`DOCUMENT`를 구분하고 vector는 nonempty finite numeric tuple과 `dimension` property를 갖는다.
 - `IReranker`, `RerankedRetriever`: 기존 `IRetriever` 결과를 재정렬하는 advanced decorator. Reranker는 existing hit를 새로 만들거나 provenance field를 바꾸지 못하고 `rerank_score`만 갱신할 수 있다.
+- `MemoryEntry`, `MemoryKind`, `IMemoryStore`, `MemoryRetriever`, `AgentMemoryError`: conversation transcript와 분리된 long-term semantic/episodic/user memory의 immutable revision, exact tenant+user+namespace store port, `IRetriever` adapter와 strict runtime error. Core는 production memory store를 등록하지 않는다.
+- `AgentEvaluationDataset`, `AgentEvaluationCase`, `AgentEvaluationSample`, `AgentEvaluationResult`, `AgentEvaluationReport`, `AgentEvaluationSuite`, `IAgentEvaluator`: explicit offline case/sample을 deterministic dataset/evaluator order로 평가하는 pure contract. Built-in은 `ToolTraceEvaluator`, `StructuredOutputEvaluator`, `CitationEvaluator`, `RetrievalGroundednessEvaluator`이고 `ModelJudgeEvaluator`는 required `IModelJudge`를 직접 받는다.
+- `ModelPrice`, `ModelPricingCatalog`, `ModelCost`, `AgentPricingError`: opaque logical model ref별 per-million `Decimal` rate, immutable versioned operator mapping, exact step cost와 pricing failure. Built-in provider price 상수는 없다.
+- `IAgentTelemetry`, `AgentSpanRecord`, `AgentSpanKind`, `AgentSpanStatus`, `AgentTelemetryError`: completed RUN/MODEL/TOOL/RETRIEVAL operation의 nanosecond timestamp, scalar-only attributes와 typed outcome를 받는 optional privacy-safe telemetry port. Prompt/context/query/tool argument·result body는 record contract에 넣지 않는다.
 - `ContextHealthSignal`, `ContextRotSymptom`, `ContextOptimizationAction`: context rot 관찰 결과와 압축/refresh/delegation/slice drop action metadata
 - `SensitiveField`, `SecretField`, `CredentialRef`, `SecretRef`, `ContextExposurePolicy`, `EvidenceExposurePolicy`: `typing.Annotated` 민감 metadata와 deterministic guard 정책
 - `StreamingSensitivePattern`, `StreamingRedactionPolicy`, `StreamingRedactionSession`: chunk boundary를 가로지르는 sensitive output pattern을 bounded buffer로 redaction하고 final audit evidence/error를 생성하는 streaming guard 계약
 - `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`: persistence provider가 구현하는 core port
-- `ITaskStore`, `ConversationTurn`: 멀티턴 대화 이력을 `conversation_id`로 영속하는 server-side session 계약(ADR-0013 §6). `load_history(conversation_id)`로 이전 transcript를 조회하고 `append_turns(conversation_id, turns)`로 user/assistant turn을 누적한다. `conversation_id`는 AG-UI `threadId`와 A2A `contextId`로 투영될 수 있는 프로토콜 중립 키입니다. 단, A2A protocol `Task` snapshot 영속은 `spakky-a2a`의 `IA2ATaskRepository`/`SpakkyA2ATaskStore` 책임이고 core `ITaskStore`와 분리됩니다. `ConversationTurn`은 transcript 단위(user/assistant role + content)이며 history 재생 시 `as_model_message()`로 model 요청 메시지로 투영된다. `AgentRunner`는 `message_history`가 주입되면 그 이력을 우선해 시드하고(stateless, store 미기록), 아니면 store의 영속 이력을 시드한 뒤 완료 시 turn을 기록한다 — 두 경로는 run마다 상호 배타적이다.
+- `ITaskStore`, `ConversationTurn`: 멀티턴 대화 이력을 `conversation_id`로 영속하는 server-side session 계약(ADR-0013 §6). `ConversationTurn`은 **user/assistant transcript만** 담으며 semantic/episodic/user memory, TTL, correction, delete를 소유하지 않는다. `load_history(conversation_id)`로 이전 transcript를 조회하고 `append_turns(conversation_id, turns)`로 turn을 누적한다. `conversation_id`는 AG-UI `threadId`와 A2A `contextId`로 투영될 수 있는 프로토콜 중립 키입니다. 단, A2A protocol `Task` snapshot 영속은 `spakky-a2a`의 `IA2ATaskRepository`/`SpakkyA2ATaskStore` 책임이고 core `ITaskStore`와 분리됩니다. `AgentRunner`는 `message_history`가 주입되면 그 이력을 우선해 시드하고(stateless, store 미기록), 아니면 store의 영속 이력을 시드한 뒤 완료 시 turn을 기록한다 — 두 경로는 run마다 상호 배타적이다.
 - `IAgentModel`: vLLM, OpenRouter, Anthropic, Vertex, OpenAI 같은 model backend나 router가 구현하는 outbound port. `capability` property로 기본 backend 능력을 런타임 전에 노출하고, run별 선택을 지원하는 adapter/router는 `capability_for(selection)`로 exact selected route의 능력을 반환한다. Fixed-model adapter는 기본 구현을 상속해 selection을 무시하고 자신의 `capability`를 반환할 수 있다.
 - `IAgentModelResolver`: 전체 `RunAgentInput`을 보고 request scope에서 사용할 `IAgentModel` 구현 자체를 선택하는 optional extension port. 하나의 router 내부 logical route 선택과는 별도 경계이며, 기본 `AgentRunnerFactory`는 resolver가 없으면 agent에 주입된 model을 사용한다.
 - `ModelCapability`, `ModelModality`: reasoning, context window, token counting, input/output modality, tool calling, structured output 지원 여부를 run 이전에 조회하는 provider-neutral descriptor. Modality 값은 `TEXT`, `IMAGE`, `AUDIO`, `VIDEO`, `DOCUMENT`이며 base descriptor의 input/output 기본값은 text-only, 나머지 optional capability 기본값은 false다. `output_type`을 선언한 run은 선택된 route의 `supports_structured_output`을 model request 전에 검사하지만, 나머지 모든 field가 일괄적으로 자동 집행된다는 뜻은 아니다. 현재 `ModelMessage.content`는 `str`이므로 image/audio/video/document content-part payload는 아직 core request contract로 표현할 수 없다. Router는 provider 이름으로 capability를 추론하지 않고 선택된 route 선언을 보존한다.
 - `ModelSelection`: `model_ref: str` 하나만 갖는 run-scoped logical model selector. Core는 whitespace-only 값을 거부하지만 nonblank 원문을 trim하거나 provider/profile/model로 분해하지 않는다. `spakky-llm` router가 앞뒤 공백만 제거한 case-sensitive opaque key를 operator catalog와 exact match하며 raw physical model fallback을 제공하지 않는다. Agent class는 실제 profile/model 이름을 소유하지 않고 AG-UI/A2A/service boundary는 이 selector를 `RunAgentInput.model_selection`으로 전달한다.
-- `ModelRequest`, `ModelResponse`, `ModelStreamEvent`: provider-neutral model 호출/응답/stream 계약. Runner는 같은 `ModelSelection` 객체를 `RunAgentInput.model_selection`에서 `ModelRequest.model_selection`과 `capability_for(selection)`으로 전달해 실행 route와 capability 조회를 결속한다. Selector를 request metadata로 복제하지 않는다.
+- `ModelRequest`, `ModelResponse`, `ModelStreamEvent`, `ModelUsage`: provider-neutral model 호출/응답/stream과 usage 계약. `ModelUsage`는 input/output/total에 optional cached input, aggregate cache-write, 5-minute cache-write, 1-hour cache-write token을 보존한다. Runner는 같은 `ModelSelection` 객체를 `RunAgentInput.model_selection`에서 `ModelRequest.model_selection`과 `capability_for(selection)`으로 전달해 실행 route와 capability 조회를 결속한다. Selector를 request metadata로 복제하지 않는다.
 - `ToolCallingSpec`, `ModelToolSpec`, `ModelToolCall`: model-facing tool call 요청과 후보 결과
 - `agent_tool`, `IAgentToolProvider`, `AgentToolBoundInvocation`, `AgentToolBindingError`, `ToolEffects`, `ToolRisk`, `ToolApprovalRequirement`, `ToolResumeMetadata`, `EvidenceCapture`: 정적 method tool과 injected component tool catalog, binding, risk, approval, idempotency, evidence capture metadata
 - `AgentToolDispatcher`, `AgentToolDispatchError`: model tool-call을 카탈로그 descriptor로 조회·자동 바인딩·실행하는 디스패치 building block과 미등록 도구 에러
@@ -76,7 +80,7 @@ pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 
 Core package는 `spakky` core에만 의존합니다. vLLM, SQLAlchemy, FastAPI, Typer 같은 infrastructure dependency를 직접 import하지 않습니다.
 
-운영용 persistence fallback도 제공하지 않습니다. State, signal, evidence repository 구현은 SQLAlchemy 등 provider plugin의 feature contribution으로 등록되어야 하며, 누락 시 bootstrap 단계에서 custom error로 실패해야 합니다.
+운영용 persistence fallback도 제공하지 않습니다. State, signal, evidence repository 구현은 SQLAlchemy 등 provider plugin의 feature contribution으로 등록되어야 하며, 누락 시 bootstrap 단계에서 custom error로 실패해야 합니다. `IMemoryStore`도 production/in-memory 기본 구현이 없으며 application/vendor가 명시적으로 제공합니다. Core는 provider price 상수, hidden evaluator model, OpenTelemetry SDK adapter를 포함하지 않습니다.
 
 Durable 실행 경로는 `AgentExecutionSpec.recovery == RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생됩니다. 이 경우 bootstrap은 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증하고, 누락 시 필요한 repository type과 설치해야 할 `spakky-sqlalchemy[agent]` / `spakky.contributions.spakky.agent` provider contribution을 error message에 포함합니다. 운영용 in-memory repository fallback은 없습니다.
 
@@ -305,15 +309,18 @@ flowchart TD
 | `max_steps` | `8` | 다음 model request 직전; 이미 실행한 model step 수가 한도 이상이면 request하지 않음 |
 | `max_tool_calls` | `32` | validated candidate batch 전체를 dispatch하기 전; 현재 완료 수 + batch 크기가 한도를 넘으면 batch를 하나도 실행하지 않음 |
 | `max_tokens` | `None` | 각 terminal model response의 `usage.total_tokens`를 누적한 직후; 초과 response는 이미 소비됐지만 tool dispatch·다음 request·success final은 막음 |
+| `max_cost` | `None` | terminal usage/route로 exact step cost를 누적한 직후; positive finite `Decimal`만 허용하고 누적 cost가 한도보다 크면 tool/final 전 차단 |
 | `timeout_seconds` | `None` | invocation마다 monotonic deadline을 만들고 model await와 **async tool** await에 적용; tool 자체 timeout과 둘 다 있으면 더 이른 deadline 사용 |
 
 `max_tokens`를 설정했는데 provider가 terminal `total_tokens`를 주지 않으면 `agent_usage_unavailable`로 fail closed합니다. Runner는 response route metadata를 먼저 고정하고 usage/counters를 계산한 뒤 usage error를 구성하며, durable path에서는 그 error를 포함한 MODEL evidence를 append한 다음 state를 실패시킵니다. 누적값이 limit보다 **클 때** `agent_max_tokens_exceeded`, 다음 request가 step budget을 넘길 때 `agent_max_steps_exceeded`, candidate batch가 tool budget을 넘길 때 `agent_max_tool_calls_exceeded`, async model/tool deadline은 `agent_timeout`으로 종료합니다. Resume invocation은 checkpoint counter/history를 복원하지만 wall-clock deadline은 그 resume에 대해 새로 계산합니다.
+
+`max_cost`가 있는데 `ModelPricingCatalog`이 없으면 첫 model request 전 `agent_cost_unavailable`입니다. Pricing을 주입하면 cost limit가 없어도 every model step을 계산하므로 route `model_ref`, input/output usage, matching price 중 하나라도 없거나 cache token이 input token을 넘으면 `agent_cost_unavailable`로 fail closed합니다. Optional cache read/write rate가 없으면 input rate를 사용하고 `Decimal` per-million 계산 결과를 step metadata에 `cost`, final/event metadata에 `total_cost`/currency/pricing version으로 문자열 보존합니다.
 
 Active run deadline 또는 tool-local timeout이 있는 batch에 in-process sync callable이 하나라도 있으면 runner는 그 callable을 실행하거나 중단할 수 있다고 가장하지 않습니다. Approval과 dispatch 전에 batch 전체를 0건 차단하고 `agent_sync_tool_timeout_unenforceable`로 종료합니다. 실제 await cancellation/timeout은 async tool에만 적용됩니다. Deadline 없이 sync tool을 허용하는 기존 실행 경로는 유지됩니다.
 
 ### Approval, cancellation, checkpoint
 
-Approval request id는 state id, stable call id와 **full SHA-256 argument digest**에 결속됩니다. Checkpoint key는 `approved_call_fingerprints`이며 approved fingerprint도 최종 approved arguments의 full digest를 사용합니다. Pending arguments만 변조하면 기존 approval과 일치하지 않아 새 approval을 요구합니다. Pending batch와 transcript/counters/seen ids/fingerprints/route metadata는 state의 `runner_checkpoint`에 저장됩니다. Fresh runner의 `resume=True`는 첫 model step을 replay하지 않고 pending batch를 복원합니다. Matching signal의 `APPROVE`는 원래 call을, `MODIFY`는 modified payload를 tool signature에 다시 bind하고 assistant history까지 atomic하게 갱신한 뒤 실행합니다. `DEFER`는 pause를 유지하고 `REJECT`/`CANCEL`은 dispatch 없이 typed terminal state로 갑니다. Durable authority port가 없는 stateless run에서 approval-required tool은 `agent_approval_unavailable`로 실패합니다.
+Approval request id는 state id, stable call id와 **full SHA-256 argument digest**에 결속됩니다. Checkpoint key는 `approved_call_fingerprints`이며 approved fingerprint도 최종 approved arguments의 full digest를 사용합니다. Pending arguments만 변조하면 기존 approval과 일치하지 않아 새 approval을 요구합니다. Pending batch와 transcript/counters/seen ids/fingerprints/route metadata는 state의 `runner_checkpoint`에 저장됩니다. Pricing이 있으면 cumulative exact `total_cost`, pricing fingerprint/version/currency도 같이 저장하되 resume은 append-only MODEL evidence의 every step route/usage로 cost를 재계산해 checkpoint total과 대조합니다. Pricing identity, evidence coverage 또는 total이 다르면 `agent_checkpoint_invalid`입니다. Fresh runner의 `resume=True`는 첫 model step을 replay하지 않고 pending batch를 복원합니다. Matching signal의 `APPROVE`는 원래 call을, `MODIFY`는 modified payload를 tool signature에 다시 bind하고 assistant history까지 atomic하게 갱신한 뒤 실행합니다. `DEFER`는 pause를 유지하고 `REJECT`/`CANCEL`은 dispatch 없이 typed terminal state로 갑니다. Durable authority port가 없는 stateless run에서 approval-required tool은 `agent_approval_unavailable`로 실패합니다.
 
 Model, approval wait, tool 전후 action-boundary evidence를 남깁니다. Incomplete non-idempotent tool boundary는 fresh restart에서 자동 재실행하지 않고 `RECOVERY_REQUIRES_HITL`로 pause합니다. 승인 후 dispatch crash의 unchanged pending call은 persisted approval/checkpoint를 사용해 다시 승인받지 않고 resume할 수 있습니다. Cancellation은 loop 시작, model event tick, batch dispatch 전, 각 tool 전후에 poll하며 tool return 직후 cancel도 result commit·다음 model·final을 막습니다.
 
@@ -325,6 +332,8 @@ Model, approval wait, tool 전후 action-boundary evidence를 남깁니다. Inco
 | `agent_tool_execution_failed` | native/injected tool invocation(`RetrievalTool` 포함) 또는 result serialization의 framework error |
 | `agent_checkpoint_invalid` | checkpoint decode 또는 restored pending batch 검증 실패 |
 | `agent_approval_invalid` | malformed approval plan/signal, invalid MODIFY binding/history update |
+| `agent_cost_unavailable` | pricing 누락, routed model/usage/price/cache-token 불일치로 exact cost 계산 불가 |
+| `agent_max_cost_exceeded` | terminal response 이후 cumulative `Decimal` cost가 `max_cost`보다 큼 |
 | `agent_signal_projection_unsupported` | `run_events()`가 neutral event로 표현할 수 없는 signal-hook yield |
 | `agent_sync_tool_timeout_unenforceable` | active deadline 아래 in-process sync tool이 있는 batch |
 
@@ -532,6 +541,111 @@ Evidence와 model output/stream boundary도 같은 descriptor를 재사용합니
 
 Streaming output은 `StreamingRedactionSession`으로 bounded buffering을 적용할 수 있습니다. Adapter나 agent orchestration은 `StreamingSensitivePattern`을 제공하고 `StreamingRedactionPolicy(buffer_size=..., emit_chunk_size=...)`로 redaction correctness와 latency tradeoff를 조절합니다. Session은 `push()`에서 안전하게 확정된 prefix만 반환하고 `finish()`에서 aggregate final audit을 항상 실행합니다. Audit이 raw 후보를 발견하면 기본값은 `AgentOutputGuardError` raise이며, `StreamingGuardFailureMode.EMIT_ERROR`를 선택한 경우에는 stream consumer가 `StreamingRedactionAudit.to_evidence_payload()`와 error payload를 append-only evidence / `AgentYieldKind.ERROR`로 남길 수 있습니다. Core는 heuristic PII detector를 내장하지 않으며, detector나 concrete pattern selection은 extension/adapter가 담당합니다.
 
+## Long-term memory와 conversation history
+
+`ITaskStore`는 `conversation_id`별 user/assistant transcript 재생만 소유합니다. Long-term memory는 `IMemoryStore`와 `MemoryEntry`로 분리하며 transcript를 memory record로 자동 승격하지 않습니다.
+
+| 경계 | `ITaskStore` | `IMemoryStore` |
+|------|--------------|----------------|
+| 식별자 | `conversation_id` | exact tenant + user + namespace + entry id |
+| 내용 | user/assistant `ConversationTurn` | `SEMANTIC`/`EPISODIC`/`USER` `MemoryEntry` |
+| 수명주기 | append/load transcript | immutable revision, optional TTL, explicit save/delete |
+| 정정 | transcript append | 새 entry의 `supersedes` link; 이전 revision mutate 없음 |
+
+```python
+from spakky.agent import MemoryKind, MemoryRetriever, RetrievalContext
+
+memory_retriever = MemoryRetriever(
+    memory_store,
+    tenant_id="tenant-42",
+    user_id="user-7",
+    namespace="support",
+    kinds=(MemoryKind.SEMANTIC, MemoryKind.USER),
+)
+memory_context = RetrievalContext(
+    memory_retriever,
+    tenant_id="tenant-42",
+    namespace="support",
+)
+```
+
+`MemoryEntry`는 frozen dataclass이며 nonblank content/source/revision/content digest, timezone-aware `created_at`, optional later `expires_at`, optional non-self `supersedes`를 요구합니다. `ttl`은 expiry-created 차이고 `is_expired(at)`은 timezone-aware 시점에서 판정합니다. `IMemoryStore.search()`는 explicit delete된 entry를 반환하지 않아야 하고 `MemoryRetriever`는 expired revision, superseded target을 제거합니다. 같은 target을 정정하는 active revision이 복수거나 active correction graph에 cycle이 있으면 `AgentMemoryError`입니다.
+
+`MemoryRetriever`는 `IRetriever`를 구현하되 user scope를 constructor에 고정합니다. 호출자가 넘긴 tenant/namespace가 binding과 exact match해야 하고 store result의 tenant/user/namespace/kind도 모두 같아야 합니다. Filters는 finite JSON copy만 store로 넘어갑니다. Core는 production `IMemoryStore`나 auto in-memory fallback을 제공하지 않습니다.
+
+이 memory seam은 `spakky-agent`에 있고 별도 memory plugin을 만들지 않습니다. Store implementation만 application/vendor가 `IMemoryStore`로 주입합니다.
+
+## Pure offline evaluation
+
+Evaluation은 runner 내부의 hidden quality gate가 아니라 explicit dataset/sample을 소비하는 offline API입니다. `AgentEvaluationSuite` 순서는 dataset case order × evaluator declaration order로 deterministic하고, samples는 case를 exactly once 커버해야 합니다.
+
+Case/sample은 construction 시 structured JSON, tool-call arguments/metadata를 recursive immutable snapshot으로 고정합니다. Caller가 원본 nested mapping/list를 뒤에 변경해도 이미 정의된 expected/observed value가 바뀌지 않습니다.
+
+```python
+from spakky.agent import (
+    AgentEvaluationSuite,
+    CitationEvaluator,
+    RetrievalGroundednessEvaluator,
+    StructuredOutputEvaluator,
+    ToolTraceEvaluator,
+)
+
+suite = AgentEvaluationSuite(
+    (
+        ToolTraceEvaluator(),
+        StructuredOutputEvaluator(),
+        CitationEvaluator(),
+        RetrievalGroundednessEvaluator(),
+    )
+)
+report = await suite.evaluate(dataset, samples)
+```
+
+`ToolTraceEvaluator`는 call id/metadata는 제외하고 tool name + arguments + order를 exact 비교합니다. `StructuredOutputEvaluator`는 Wave 3의 strict materializer를 재사용해 BaseModel/dataclass/TypedDict shape와 optional expected JSON을 검증합니다. `CitationEvaluator`는 reference precision/recall을 분리하고 `RetrievalGroundednessEvaluator`는 cited ref가 sample의 retrieved ref에 있는 비율만 계산하며 raw context를 읽지 않습니다. 모든 score/threshold는 finite `0..1`입니다.
+
+`AgentEvaluationReport.passed`는 모든 metric pass, `score`는 명시된 result의 unweighted mean입니다. `evidence_candidates()`는 evaluator/metric/pass/score/case/sample ref만 `AgentEvidenceKind.EVALUATION`으로 반환하고 raw prompt/context/output을 넣지 않습니다. Runtime inbound signal audit은 `AgentEvidenceKind.SIGNAL`이며 `EVALUATION`을 재사용하지 않습니다.
+
+Model judge가 필요할 때만 `ModelJudgeEvaluator(judge: IModelJudge, metric="model_judge", minimum_score=0.5, evaluator_name="model_judge")`를 만듭니다. Core는 judge model/provider를 자동 선택하거나 network call을 추론하지 않습니다.
+
+## Operator pricing과 privacy-safe telemetry
+
+`ModelPricingCatalog`은 operator가 공개한 opaque logical `model_ref`별 `ModelPrice`를 version/currency와 함께 주입하는 immutable mapping입니다. 요금은 per-million input/output `Decimal`이고 cache-read/aggregate cache-write/5-minute cache-write/1-hour cache-write rate는 optional입니다. 세분 cache-write rate는 aggregate cache-write rate, 그것도 없으면 input rate로 fallback합니다.
+
+```python
+from decimal import Decimal
+
+from spakky.agent import (
+    AgentExecutionLimits,
+    ModelPrice,
+    ModelPricingCatalog,
+)
+
+pricing = ModelPricingCatalog(
+    version="prices-2026-08-23",
+    prices={
+        "support/primary": ModelPrice(
+            input_per_million=Decimal("2.0"),
+            output_per_million=Decimal("8.0"),
+            cached_input_per_million=Decimal("0.5"),
+            cache_write_input_per_million=Decimal("2.5"),
+            cache_write_5m_input_per_million=Decimal("2.0"),
+            cache_write_1h_input_per_million=Decimal("3.0"),
+        )
+    },
+)
+limits = AgentExecutionLimits(max_cost=Decimal("0.10"))
+```
+
+`ModelPricingCatalog.calculate()`는 `ModelUsage.input_tokens`/`output_tokens`를 필수로 사용하고 cached + aggregate cache-write input이 inclusive input을 넘지 못하게 합니다. 5m/1h category가 하나라도 보고되면 두 합은 aggregate cache-write token과 exact match해야 합니다. Operator가 distinct 5m/1h rate를 설정했는데 nonzero cache write가 aggregate로만 보고되면 임의 분배하지 않고 `AgentPricingError`입니다. Fingerprint는 version, currency, 모든 ordered rate와 operator metadata에 결속됩니다. Built-in price 상수나 provider-name fallback은 없습니다.
+
+`AgentRunner`/`AgentRunnerFactory`는 `ModelPricingCatalog`과 `IAgentTelemetry`를 optional로 받습니다. Pricing이 있으면 every model step의 exact cost를 누적하고 durable checkpoint에 total/fingerprint/version/currency를 저장합니다. Resume는 checkpoint total만 신뢰하지 않고 append-only MODEL evidence의 every step `model_ref`/usage를 current exact catalog로 재계산해 checkpoint total과 대조합니다. Pricing fingerprint/version/currency mismatch, missing/duplicate/invalid step evidence, recomputed total mismatch는 모두 `agent_checkpoint_invalid`입니다.
+
+`IAgentTelemetry.record(AgentSpanRecord)`는 completed RUN/MODEL/TOOL/RETRIEVAL record를 동기적으로 받습니다. Core runner는 `time_ns()`로 exact start/end를 남기고 attributes를 scalar `str|bool|int|finite float`로 한정합니다. Run/conversation id, operation kind/outcome, model route·usage·cost, tool name/identity/kind, classic retrieval limit/hit count·bound scope만 포함하고 prompt, system instruction, context/query content, tool arguments/results는 기록하지 않습니다. `RetrievalContext`는 RETRIEVAL span을 내고 agentic `RetrievalTool`은 TOOL span의 `agent.tool.kind="retrieval"`로 구분됩니다. Sink failure는 silent drop하지 않고 `AgentTelemetryError`로 fail closed합니다.
+
+`run()`과 `run_events()`는 completed/failed/approval-paused/cancelled 결과의 RUN span outcome과 실제 accumulated cost attributes를 같게 남깁니다. Cost-limit failure response와 approval pause도 이미 사용한 amount/currency/pricing version을 누락하지 않습니다.
+
+Core는 telemetry backend을 제공하지 않습니다. `spakky-opentelemetry`를 로드하면 `OpenTelemetryAgentTelemetry`가 `IAgentTelemetry`에 bind되며, 해당 plugin의 exact parent/status/operation 매핑은 그 package README와 [ADR-0020](../../docs/adr/0020-agent-memory-evaluation-cost-telemetry.md)을 참조합니다.
+
 ## 개발 검증
 
 패키지 단위 검증은 해당 패키지 디렉토리에서 실행합니다.
@@ -539,7 +653,7 @@ Streaming output은 `StreamingRedactionSession`으로 bounded buffering을 적�
 ```bash
 uv run ruff format .
 uv run ruff check .
-uv run pyrefly check
+uv run pyrefly check src tests --min-severity warn --no-progress-bar --output-format min-text
 uv run pytest
 ```
 

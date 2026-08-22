@@ -176,6 +176,7 @@ nav:
           - CodeAssistant 에이전트 예제: guides/agent-code-assistant.md
       - 심화:
           - AI Agent 심화: guides/agents-advanced.md
+          - Agent 운영: guides/agent-operations.md
       - 프로토콜 어댑터:
           - AG-UI 어댑터: guides/agent-ag-ui.md
           - A2A 어댑터: guides/agent-a2a.md
@@ -242,3 +243,4 @@ nav:
       - ADR-0017 Bounded iterative model/tool loop: adr/0017-bounded-iterative-agent-loop.md
       - ADR-0018 Typed agent output과 composed execution context: adr/0018-typed-agent-output-and-context.md
       - ADR-0019 Minimal retrieval runtime: adr/0019-minimal-retrieval-runtime.md
+      - ADR-0020 Semantic memory, evaluation, pricing과 Agent telemetry: adr/0020-agent-memory-evaluation-cost-telemetry.md

@@ -8,6 +8,8 @@ profile을 구성하세요. 운영형 Agent로 확장할 때 필요한 도구·�
 [AI Agent 심화](../guides/agents-advanced.md)에서 다룹니다. 기존 지식을 model context나
 검색 tool로 연결하려면 [Agent RAG](../guides/agent-rag.md)를 선택하세요. AG-UI·A2A stream adapter와
 MCP tool adapter는 **어댑터** 항목에서 이어집니다.
+장기 memory, offline evaluation, cost budget과 privacy-safe telemetry는
+[Agent 운영](../guides/agent-operations.md)에서 묶어 설명합니다.
 
 ## 기초
 
@@ -23,6 +25,7 @@ MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
 | [AI Agent 심화](../guides/agents-advanced.md) | whole-batch authority·structured materialization·context provenance/privacy·durable/protocol 경계 |
+| [Agent 운영](../guides/agent-operations.md) | scoped memory·offline evaluation·pricing/cost·Agent telemetry 구성 |
 
 ## 어댑터
 
@@ -38,8 +41,8 @@ MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 
 | 문서 | 무엇을 확인하나요 |
 | --- | --- |
-| [spakky-agent](../api/core/spakky-agent.md) | `AgentRunner`, retrieval, context, tool/repository/compaction 계약 |
-| [spakky-llm](../api/plugins/spakky-llm.md) | logical model catalog, provider 연결, Google embedding과 오류 계약 |
+| [spakky-agent](../api/core/spakky-agent.md) | runner, retrieval/memory, evaluation, pricing/telemetry와 durable 계약 |
+| [spakky-llm](../api/plugins/spakky-llm.md) | logical model routing, provider usage/cache와 Google embedding 계약 |
 | [spakky-agui](../api/plugins/spakky-agui.md) | AG-UI endpoint, projector, HITL, stdio helpers |
 | [spakky-a2a](../api/plugins/spakky-a2a.md) | A2A AgentCard, server builder, executor, REST/gRPC transport, delegation |
 | [spakky-mcp](../api/plugins/spakky-mcp.md) | 외부 MCP 서버 연결, runtime server resolution, lazy MCP tool search/call |

@@ -29,6 +29,8 @@ iterative 실행을 `execute()`로 자동 제공합니다. Agent class는 tool�
 
 선언형 시그널 훅(`@on_signal`), approval, durable repository, context compaction, teammate, AG-UI/A2A/MCP 어댑터는 [AI Agent 심화](agents-advanced.md)에서 다룹니다. 실제 CodeAssistant 흐름을 보고 싶다면 [CodeAssistant 에이전트 예제](agent-code-assistant.md)를 이어서 보세요.
 기존 지식 검색을 model context 또는 tool로 연결하려면 [Agent RAG](agent-rag.md)를 사용하세요.
+장기 memory, offline evaluation, cost budget과 telemetry는
+[Agent Memory, Evaluation, Cost와 Telemetry](agent-operations.md)에서 이어집니다.
 
 ## 언제 Agent를 쓰나요?
 
@@ -251,7 +253,7 @@ Runner-backed mode에서 runner는 생성자 parameter 이름이 아니라 **typ
 | `accepted_signals` | 실행 중 user message, approval decision, cancel, resume 등을 받을 때 | signal queue를 소비하지 않는 stateless 경로가 됩니다. |
 | `recovery` | action boundary resume/retry/skip 판단이 필요할 때 | 재시작 후 이어가기 계획을 만들지 않습니다. |
 | `streaming_exposure_mode` | protocol adapter가 token streaming을 얼마나 보수적으로 노출할지 정할 때 | `BALANCED`가 사용됩니다. |
-| `limits` | model step, 실제 tool call, 누적 provider token usage, wall-clock 실행 시간을 제한할 때 | `max_steps=8`, `max_tool_calls=32`, token/time 제한 없음이 사용됩니다. |
+| `limits` | model step, 실제 tool call, 누적 token/cost, wall-clock 실행 시간을 제한할 때 | `max_steps=8`, `max_tool_calls=32`, token/cost/time 제한 없음이 사용됩니다. |
 | `teammates` / `delegation_allowed` | local/remote Agent에게 일을 위임할 때 | delegation tool이 만들어지지 않습니다. |
 | `compaction` | 긴 멀티턴 history를 압축해야 할 때 | context가 길어져도 압축 전략을 적용하지 않습니다. |
 | `refresh_context_each_step` | 주입된 `IAgentContextProvider`를 model step마다 다시 호출할 때 | 한 invocation의 첫 model step에서 받은 context를 재사용합니다. |
@@ -595,15 +597,15 @@ flowchart LR
   MCP --> Catalog
 ```
 
-| annotation | 붙이는 곳 | 목적 | 언제 쓰나 | 안 쓰면 |
-|------------|-----------|------|-----------|---------|
-| `@Agent(spec=...)` | class | class를 Agent Pod로 등록하고 실행 spec, tool catalog, signal hook catalog를 검증합니다. | Agent workflow가 필요할 때 항상 사용합니다. | protocol tag나 tool이 있어도 DI container가 Agent로 실행하지 않습니다. |
-| `@agent_tool(...)` | Agent method | model-callable tool schema와 risk/evidence/approval metadata를 붙입니다. | runner-backed Agent에서 모델이 Python 기능을 호출해야 할 때 사용합니다. | 해당 method는 일반 method일 뿐 model tool catalog에 들어가지 않습니다. |
-| `@on_signal(kind)` | Agent async generator method | 특정 `AgentSignalKind`를 runner poll 지점에서 처리합니다. | 실행 중 steering/user message/external event에 커스텀 반응해야 할 때 사용합니다. | runner 기본 처리만 사용하거나 해당 signal을 소비하지 않습니다. |
-| `@AGUICompatible(...)` | `@Agent` class | Agent run을 AG-UI SSE/HTTP streaming/WebSocket route로 노출할 metadata를 붙입니다. | AG-UI 호환 UI에 실시간 실행 이벤트를 보낼 때 사용합니다. | Agent는 내부 실행 가능하지만 AG-UI route에 자동 등록되지 않습니다. |
-| `@A2ACompatible(...)` | `@Agent` class | AgentCard, JSON-RPC/REST/gRPC A2A transport metadata를 붙입니다. | 다른 Agent가 표준 A2A protocol로 호출해야 할 때 사용합니다. | AgentCard와 A2A endpoint가 자동 생성되지 않습니다. |
-| `@Pod()` | class 또는 factory function | 일반 DI component를 등록합니다. | Agent가 사용할 service, port adapter, host app을 등록할 때 사용합니다. | 생성자 주입 대상으로 resolve되지 않습니다. |
-| `@Configuration` | class | 설정 객체를 container에 등록합니다. | 환경변수 기반 설정을 주입해야 할 때 사용합니다. | config provider가 자동 등록되지 않습니다. |
+| annotation | 붙이는 곳 | 목적과 사용 시점 | 안 쓰면 |
+|------------|-----------|------------------|---------|
+| `@Agent(spec=...)` | class | Agent Pod를 등록하고 spec/tool/signal catalog를 검증할 때 항상 사용합니다. | protocol tag나 tool이 있어도 Agent로 실행하지 않습니다. |
+| `@agent_tool(...)` | Agent method | Runner-backed Agent에 model-callable schema와 risk/evidence/approval metadata를 붙입니다. | 일반 method일 뿐 tool catalog에 들어가지 않습니다. |
+| `@on_signal(kind)` | Agent async generator method | Steering/user message/external event에 custom 반응을 선언합니다. | runner 기본 처리만 쓰거나 signal을 소비하지 않습니다. |
+| `@AGUICompatible(...)` | `@Agent` class | Agent run을 AG-UI route로 노출합니다. | 내부 실행은 가능하지만 AG-UI route에 등록되지 않습니다. |
+| `@A2ACompatible(...)` | `@Agent` class | AgentCard와 A2A transport metadata를 선언합니다. | AgentCard와 A2A endpoint를 만들지 않습니다. |
+| `@Pod()` | class 또는 factory function | Agent가 주입받을 service, port adapter, host app을 등록합니다. | 생성자 주입 대상으로 resolve되지 않습니다. |
+| `@Configuration` | class | 환경변수 기반 설정 객체를 container에 등록합니다. | config provider가 자동 등록되지 않습니다. |
 
 외부 MCP 서버를 Agent가 소비하게 만들 때는 Agent annotation을 추가하지 않습니다. 외부 서버는 `spakky-mcp`의 `McpConfig.servers` 또는 `RunAgentInput.metadata["mcp"]["servers"]`에서 선택하고, 플러그인이 run마다 lazy `mcp_search_tools`/`mcp_call_tool` 도구를 catalog에 합류시킵니다.
 
@@ -652,6 +654,7 @@ class Assistant:
 ## 더 볼 곳
 
 - [Agent RAG](agent-rag.md): 같은 `IRetriever`를 classic context 또는 agentic tool로 주입합니다.
+- [Agent Memory, Evaluation, Cost와 Telemetry](agent-operations.md): 장기 memory와 offline eval, operator price, privacy-safe span을 구성합니다.
 - [AI Agent 심화](agents-advanced.md): tool catalog, approval, durable repository, protocol event stream을 다룹니다.
 - [AG-UI 어댑터](agent-ag-ui.md), [A2A 어댑터](agent-a2a.md), [MCP 어댑터](agent-mcp.md): 외부 프로토콜별 endpoint와 transport wiring을 확인합니다.
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 흐름으로 연결합니다.

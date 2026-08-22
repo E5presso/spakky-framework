@@ -205,7 +205,7 @@ async def test_declarative_steering_hook_runs_tools_hitl_and_termination() -> No
     assert {artifact.kind for artifact in evidence.list_by_state("run-1")} >= {
         AgentEvidenceKind.ACTION_BOUNDARY,
         AgentEvidenceKind.APPROVAL,
-        AgentEvidenceKind.EVALUATION,
+        AgentEvidenceKind.SIGNAL,
         AgentEvidenceKind.TOOL,
     }
     final = items[-1].payload
@@ -234,7 +234,7 @@ async def test_declarative_steering_hook_runs_tools_hitl_and_termination() -> No
         "metadata": {"signal_id": "steer:run-2"},
     }
     assert signals.list_pending("run-2") == ()
-    assert AgentEvidenceKind.EVALUATION in {
+    assert AgentEvidenceKind.SIGNAL in {
         artifact.kind for artifact in evidence.list_by_state("run-2")
     }
     app.stop()

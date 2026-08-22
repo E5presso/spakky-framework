@@ -603,10 +603,19 @@ class OpenAIChatProvider(ILLMProvider):
     def _usage(self, usage: CompletionUsage | None) -> ModelUsage:
         if usage is None:
             return ModelUsage()
+        prompt_details = usage.prompt_tokens_details
         return ModelUsage(
             input_tokens=usage.prompt_tokens,
             output_tokens=usage.completion_tokens,
             total_tokens=usage.total_tokens,
+            cached_input_tokens=(
+                prompt_details.cached_tokens if prompt_details is not None else None
+            ),
+            cache_write_input_tokens=(
+                prompt_details.cache_write_tokens
+                if prompt_details is not None
+                else None
+            ),
         )
 
     def _legacy_max_tokens(
