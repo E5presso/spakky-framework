@@ -2,7 +2,13 @@
 
 > `spakky-agent`의 tool, approval, evidence, state/signal repository를 하나의 실행 흐름으로 연결하는 심화 예제입니다.
 
-이 문서는 [AI Agent 개발](agents.md)과 [AI Agent 심화](agents-advanced.md)를 읽은 뒤 보는 실행 가능한 예제입니다. `core/spakky-agent/examples/code_assistant_demo.py`는 `CodeAssistant`가 생성자 주입으로 model, workspace, shell, git, state/signal/evidence repository를 받고, 외부 세계 동작을 `@agent_tool` 메서드로 노출하는 **선언형** 흐름을 보여줍니다. `CodeAssistant`에는 `execute()` 본문이 없습니다 — model 호출 → tool 호출 → 승인 → evidence → 종료 루프는 프레임워크 runner가 spec과 `@agent_tool` 카탈로그로부터 자동 제공합니다 (ADR-0013 §1). 시그널 반응이 필요한 지점은 `@on_signal` 훅으로 선언합니다.
+이 문서는 [AI Agent 개발](agents.md)과 [AI Agent 심화](agents-advanced.md)를 읽은
+뒤 보는 실행 가능한 예제입니다. `core/spakky-agent/examples/code_assistant_demo.py`는
+`CodeAssistant`가 생성자 주입으로 model, workspace, shell, git,
+state/signal/evidence repository를 받고 외부 동작을 `@agent_tool`로 노출하는
+선언형 흐름을 보여줍니다. `CodeAssistant`에는 `execute()` 본문이 없으며 runner는
+한 provider stream의 tool candidate를 승인·dispatch하고 result/evidence/terminal을
+방출합니다. Tool result 재주입이나 같은 invocation의 model 재호출은 하지 않습니다.
 
 ## 무엇을 검증하나
 
@@ -12,7 +18,7 @@
 - `workspace.read`, `workspace.search`, `workspace.write`
 - `shell.command`
 - `git.status`, `git.diff`, `git.apply`
-- `IAgentModel.stream()` 기반 vLLM-compatible token/tool-call stream
+- `IAgentModel.stream()` 기반 provider-neutral token/tool-call stream
 - 위험한 작업 앞에서 멈추는 approval wait와 `AgentSignalKind.APPROVAL_DECISION`
 - 실행 중 `AgentSignalKind.USER_MESSAGE` 소비
 - append-only `AgentEvidence`
@@ -51,7 +57,7 @@ flowchart TD
 | `ShellCommandResult`, `GitCommandResult` | `code_assistant_demo.py` dataclass | shell/git tool 결과 payload |
 | `IWorkspacePort`, `IShellPort`, `IGitPort` | `code_assistant_demo.py` interface | Agent가 외부 세계를 직접 import하지 않게 하는 port |
 | `LocalWorkspaceAdapter`, `SubprocessShellAdapter`, `GitCliAdapter` | `code_assistant_demo.py` adapter | demo용 실제 adapter. 운영에서는 Pod로 등록해 주입합니다. |
-| `StaticModel` | `code_assistant_demo.py` fake model | smoke/test에서 vLLM 없이 runner를 움직이는 scripted model |
+| `StaticModel` | `code_assistant_demo.py` fake model | smoke/test에서 외부 LLM 없이 runner를 움직이는 scripted model |
 | `FakeStateRepository`, `FakeSignalRepository`, `FakeEvidenceRepository` | `tests/unit/test_code_assistant_demo.py` test double | acceptance test용 in-memory repository |
 | `CodeAssistantWebSocketController`, `CodeAssistantCliController` | `inbound_adapter_examples.py` | 기존 FastAPI/Typer plugin으로 Agent stream을 노출하는 adapter 예제 |
 
@@ -70,12 +76,15 @@ cd core/spakky-agent
 uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-cov
 ```
 
-이 테스트는 scripted `IAgentModel` stream을 사용하므로 로컬 vLLM 서버가 없어도 실행됩니다.
+이 테스트는 scripted `IAgentModel` stream을 사용하므로 실제 LLM provider가 없어도 실행됩니다.
 테스트 double repository는 예제와 테스트를 위한 것이며, 운영 durable 실행에는
 `spakky-sqlalchemy[agent]`가 제공하는 `spakky.contributions.spakky.agent`
 contribution을 사용해야 합니다.
 
-가장 작은 선언형 `@Agent` 형태는 다음 예시와 같습니다. 도구만 선언하고 `execute()`를 생략하면, 파일로 저장해 애플리케이션 scan 대상에 포함했을 때 `CodeAssistant`는 일반 UseCase처럼 container에서 resolve되고, runner가 표준 실행 루프를 `execute()`로 제공합니다.
+가장 작은 선언형 `@Agent` 형태는 다음 예시와 같습니다. 도구만 선언하고
+`execute()`를 생략하면, 파일로 저장해 애플리케이션 scan 대상에 포함했을 때
+`CodeAssistant`는 일반 UseCase처럼 container에서 resolve되고 runner가 single-pass
+표준 실행을 `execute()`로 제공합니다.
 
 아래 snippet은 핵심 모양만 보여줍니다. 실제로 실행하려면 `IWorkspacePort`와 `WorkspaceReadResult`도 같은 모듈에 정의하거나 import해야 하며, 앱에서는 `IWorkspacePort` 구현체를 `@Pod`로 등록해야 합니다.
 
@@ -118,7 +127,7 @@ class CodeAssistant:
 
 | Pod/interface | test에서는 | 운영 앱에서는 |
 |---------------|------------|---------------|
-| `IAgentModel` | `StaticModel` 또는 scripted fake를 직접 전달 | `spakky-vllm`의 `VllmAgentModel` 또는 다른 model adapter |
+| `IAgentModel` | `StaticModel` 또는 scripted fake를 직접 전달 | `spakky-llm`의 `LlmAgentModel` 또는 다른 model adapter |
 | `IWorkspacePort` | `FakeWorkspace` | workspace root를 제한하는 `LocalWorkspaceAdapter` Pod |
 | `IShellPort` | `FakeShell` | cwd를 제한하는 `SubprocessShellAdapter` Pod |
 | `IGitPort` | `FakeGit` | shell port를 사용하는 `GitCliAdapter` Pod |
@@ -131,7 +140,7 @@ class CodeAssistant:
 ```python
 import spakky.agent
 import spakky.plugins.fastapi
-import spakky.plugins.vllm
+import spakky.plugins.llm
 import my_code_app
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -141,7 +150,7 @@ application = (
     .load_plugins(
         include={
             spakky.agent.PLUGIN_NAME,
-            spakky.plugins.vllm.PLUGIN_NAME,
+            spakky.plugins.llm.PLUGIN_NAME,
             spakky.plugins.fastapi.PLUGIN_NAME,
         }
     )
@@ -164,7 +173,10 @@ print(agent.spec.name)
 print([descriptor.schema.name for descriptor in agent.tool_catalog.descriptors])
 ```
 
-`CodeAssistant`는 model backend를 직접 고르지 않습니다. 생성자에 `IAgentModel`을 받으므로 테스트에서는 scripted model을, 로컬 smoke에서는 `plugins/spakky-vllm`의 `VllmAgentModel`을 주입할 수 있습니다. 이 의존 방향 덕분에 `spakky-agent` core는 vLLM이나 SQLAlchemy를 import하지 않습니다.
+`CodeAssistant`는 model backend를 직접 고르지 않습니다. 생성자에 `IAgentModel`을
+받으므로 테스트에서는 scripted model을, 실제 앱에서는 `spakky-llm`의
+`LlmAgentModel`을 주입할 수 있습니다. 이 의존 방향 덕분에 `spakky-agent` core는
+provider SDK나 SQLAlchemy를 import하지 않습니다.
 
 ## 실행 collector
 
@@ -238,9 +250,11 @@ signals.append(
 
 restart 후에는 저장된 `AgentState`, pending `AgentSignal`, append-only `AgentEvidence`를 사용해 `plan_agent_resume()`이 다음 action을 결정합니다. 완료된 boundary는 `skip_completed`, incomplete idempotent boundary는 `retry`, 불확실하거나 approval wait 중인 boundary는 `require_hitl`로 정리됩니다.
 
-## 실제 vLLM 연결
+## 실제 LLM 연결
 
-로컬 vLLM 서버 연결은 core demo가 아니라 `spakky-vllm` plugin이 담당합니다.
+Provider 연결은 core demo가 아니라 `spakky-llm` plugin이 담당합니다. 별도 설정이
+없으면 공식 OpenAI SDK adapter가 `http://127.0.0.1:8000/v1`의 로컬 vLLM
+OpenAI-compatible API를 사용합니다.
 
 ```python
 from spakky.agent import IAgentModel
@@ -253,7 +267,7 @@ app = (
     .load_plugins(
         include={
             Plugin(name="spakky-agent"),
-            Plugin(name="spakky-vllm"),
+            Plugin(name="spakky-llm"),
         }
     )
     .start()
@@ -261,5 +275,11 @@ app = (
 model = app.container.get(type_=IAgentModel)
 ```
 
-`spakky-vllm` 플러그인은 `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 설정합니다.
-이 model을 `CodeAssistant` 생성자에 주입하면 `IAgentModel.stream()`에서 vLLM OpenAI-compatible SSE가 공통 `ModelStreamEvent`로 변환되어 demo Agent에 들어옵니다.
+`spakky-llm` 플러그인은 `LlmConfig`, OpenAI/Anthropic/Google 공식 SDK adapter,
+`LlmAgentModel`을 등록하고 `IAgentModel -> LlmAgentModel` binding을 설정합니다.
+이 model을 `CodeAssistant` 생성자에 주입하면 `IAgentModel.stream()`에서 provider
+SDK stream이 공통 `ModelStreamEvent`로 변환되어 demo Agent에 들어옵니다. Adapter는
+tool 후보를 검증할 뿐 직접 실행하지 않으며, CodeAssistant runner가 candidate
+approval/dispatch와 result/evidence/terminal 방출을 담당합니다. 실행한 tool result로
+모델 답변을 다시 생성해야 하는 제품 흐름은 custom `execute()`에서 다음
+`ModelRequest`와 model 호출을 명시적으로 조립해야 합니다.

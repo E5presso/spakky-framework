@@ -13,8 +13,8 @@ pip install spakky-agent
 `spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `RunAgentInput`, `AgentRunner`,
 `AgentEvent`, `AgentYield`, tool dispatch, context compaction, state/signal/evidence
 repository port, task store, safety/recovery/delegation 타입 같은 public contract를
-소유합니다. 이 패키지는 의도적으로 vLLM, SQLAlchemy, FastAPI, Typer, AG-UI, A2A,
-MCP를 import하지 않습니다. 운영에서 durable execution을 사용하려면 provider
+소유합니다. 이 패키지는 의도적으로 LLM provider SDK, SQLAlchemy, FastAPI, Typer,
+AG-UI, A2A, MCP를 import하지 않습니다. 운영에서 durable execution을 사용하려면 provider
 contribution의 repository 구현이 필요하며, 운영용 in-memory fallback은 제공하지
 않습니다.
 

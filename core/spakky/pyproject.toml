@@ -38,7 +38,7 @@ celery = ["spakky-celery>=8.0.0"]
 opentelemetry = ["spakky-opentelemetry>=8.0.0"]
 grpc = ["spakky-grpc>=8.0.0"]
 redis = ["spakky-redis>=8.0.0"]
-vllm = ["spakky-vllm>=8.0.0"]
+llm = ["spakky-llm>=8.0.0"]
 mcp = ["spakky-mcp>=8.0.0"]
 saga = ["spakky-saga>=8.0.0"]
 web = [
@@ -99,7 +99,7 @@ cache-app = [
 ]
 agent = [
     "spakky-agent>=8.0.0",
-    "spakky[vllm]>=6.5.0",
+    "spakky[llm]>=8.0.0",
     "spakky[mcp]>=6.5.0",
     "spakky[agui]>=6.5.0",
     "spakky[a2a]>=6.5.0",
@@ -139,7 +139,7 @@ full = [
     "spakky[redis]>=6.5.0",
     "spakky[sqlalchemy]>=6.5.0",
     "spakky[typer]>=6.5.0",
-    "spakky[vllm]>=6.5.0",
+    "spakky[llm]>=8.0.0",
 ]
 
 [build-system]

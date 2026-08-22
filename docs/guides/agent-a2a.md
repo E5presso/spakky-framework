@@ -133,6 +133,14 @@ A2A executor는 inbound task id를 core `RunAgentInput.state_id`로 사용하고
 
 A2A client가 사용자별 model/provider 선택이나 MCP 서버 선택을 함께 전달해야 하면 message data part를 사용합니다. Executor는 `modelSelection` 또는 `model_selection`을 `RunAgentInput.model_selection`으로, `metadata`와 `mcp` object를 `RunAgentInput.metadata`로 변환합니다.
 
+아래 `coding`/`openrouter` 선택은 operator가 먼저
+`SPAKKY_LLM__PROFILES__CODING__...` 환경변수로 해당 profile과 provider 연결을
+등록한 경우에만 유효합니다. 요청의 `model`은 `coding` profile 안에서 model id만
+덮어쓰며, `metadata`는 base URL, API key, headers를 변경하지 않습니다. Profile
+등록 형식은
+[spakky-llm Profile 설정](../api/plugins/spakky-llm.md#llm-profile-configuration)을
+확인하세요.
+
 ```json
 {
   "modelSelection": {

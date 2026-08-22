@@ -37,7 +37,7 @@
 | **Plugin** | `spakky-openfga` | OpenFGA 관계 검사 AuthZ provider |
 | **Plugin** | `spakky-oidc` | OIDC/OAuth bearer credential 인증 provider |
 | **Plugin** | `spakky-policy` | YAML/TOML/JSON policy document 기반 AuthZ evaluator |
-| **Plugin** | `spakky-vllm` | vLLM OpenAI-compatible `IAgentModel` adapter |
+| **Plugin** | `spakky-llm` | OpenAI-compatible(vLLM dialect 포함), Anthropic, Google `IAgentModel` adapter |
 | **Plugin** | `spakky-agui` | AG-UI protocol adapter (SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
 | **Plugin** | `spakky-a2a` | A2A server/delegation adapter (AgentCard, JSON-RPC, REST, gRPC, remote teammate delegate) |
 | **Plugin** | `spakky-mcp` | 외부 MCP 서버 도구를 Agent run에 lazy search/call 도구로 연결하는 client adapter |
@@ -82,6 +82,10 @@ graph TD
             otel[spakky-opentelemetry]
         end
 
+        subgraph model_plugins ["Model"]
+            llm[spakky-llm]
+        end
+
         subgraph ui ["UI & Utility"]
             fastapi[spakky-fastapi]
             typer[spakky-typer]
@@ -91,7 +95,6 @@ graph TD
             openfga[spakky-openfga]
             oidc[spakky-oidc]
             policy[spakky-policy]
-            vllm[spakky-vllm]
             agui[spakky-agui]
             a2a[spakky-a2a]
             mcp[spakky-mcp]
@@ -152,8 +155,8 @@ graph TD
     grpc --> tracing
     redis --> cache
     redis --> actuator
-    vllm --> core
-    vllm --> agent
+    llm --> core
+    llm --> agent
     agui --> core
     agui --> agent
     a2a --> core
@@ -177,6 +180,7 @@ graph TD
     style celery_plugin fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style logging_pkg fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style otel fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style llm fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style fastapi fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style typer fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style cryptography fill:#f5f5f5,stroke:#9e9e9e,color:#424242
@@ -198,8 +202,8 @@ graph TD
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-auth`와 `spakky-tracing`에도 의존 (auth snapshot + 컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
-- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, model port, tool binding, delegation 계약을 제공하며 vLLM/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
-- **vLLM 플러그인** (spakky-vllm) → `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. vLLM OpenAI-compatible HTTP/SSE mapping만 담당하고 core 또는 inbound adapter를 역참조하지 않음
+- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, model port, tool binding, delegation 계약을 제공하며 provider SDK/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
+- **LLM 플러그인** (spakky-llm) → `spakky` + `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. Allowlisted profile router가 OpenAI-compatible(vLLM dialect 포함), Anthropic, Google API를 공식 SDK adapter에 연결하며 다른 plugin을 직접 import하지 않음
 - **Agent protocol adapter 플러그인** (spakky-agui, spakky-a2a, spakky-mcp) → `spakky` + `spakky-agent`에 의존. AG-UI/A2A는 `AgentRunner.run_events()`의 중립 `AgentEvent` stream을 각 프로토콜로 투영하고, MCP는 외부 MCP server tools를 lazy search/call 도구로 Agent run에 합류시킨다. 이 어댑터들은 `spakky-fastapi`/`spakky-grpc` 같은 inbound framework plugin에 역의존하지 않고 필요한 외부 SDK/FastAPI/Starlette/gRPC/MCP 라이브러리를 직접 사용한다.
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
@@ -535,7 +539,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-saga` | (없음 — `@Saga`가 `@Pod` 기반이므로 Pod 스캔만으로 DI 컨테이너가 관리) |
 | `spakky-grpc` | `GrpcConfig`, `descriptor_registry`, `grpc_server_spec`, `RegisterServicesPostProcessor`, `AddInterceptorsPostProcessor`, `BindServerPostProcessor` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache`, `redis_cache_health_probe`, `redis_cache_metrics_info_contributor` |
-| `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` |
+| `spakky-llm` | `LlmConfig`, `OpenAIChatProvider`, `AnthropicMessagesProvider`, `GoogleGenerateContentProvider`, `LlmAgentModel` |
 | `spakky-agent` | `AgentBootstrapValidationPostProcessor` |
 | `spakky-agui` | `AgUiConfig` |
 | `spakky-a2a` | `A2AConfig`, `A2AAgentRegistry`, `A2AAgentServerSpec`, `RegisterA2AAgentServersPostProcessor`, `MountA2AASGIPostProcessor`, `RegisterA2AGRPCPostProcessor` |
@@ -543,13 +547,27 @@ spakky-data = "spakky.data.main:initialize"
 
 ### Agentic workflow layer
 
-`spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다. `AgentExecutionSpec`은 `instructions`, `output_type`, `teammates`, `compaction`, `delegation_allowed`, `metadata` 같은 실행 의미를 DI metadata로 보존하고, spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 `@Agent`가 `AgentRunner` 기반 표준 실행 루프를 `execute()`로 자동 바인딩한다(ADR-0013 §1). `AgentRunner`는 같은 orchestration 위에 두 stream을 노출합니다 — inbound adapter가 소비하는 public `AgentYield` stream(`run()`)과 AG-UI·A2A 어댑터가 무손실로 투영하는 프로토콜 중립 `AgentEvent` stream(`run_events()`). 후자는 message/reasoning delta와 tool call `start`·`args-delta`·`end`·`result` lifecycle, run/step 경계를 구분된 이벤트로 방출해 어댑터가 거친 framing을 합성하지 않고 1:1로 매핑하게 합니다(ADR-0013 §3).
+`spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다. `AgentExecutionSpec`은 `instructions`, `output_type`, `teammates`, `compaction`, `delegation_allowed`, `metadata` 같은 실행 의미를 DI metadata로 보존하고, spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 `@Agent`가 `AgentRunner` 기반 single-pass 표준 orchestration을 `execute()`로 자동 바인딩한다(ADR-0013 §1). `AgentRunner`는 같은 orchestration 위에 두 stream을 노출합니다 — inbound adapter가 소비하는 public `AgentYield` stream(`run()`)과 AG-UI·A2A 어댑터가 무손실로 투영하는 프로토콜 중립 `AgentEvent` stream(`run_events()`). 후자는 message/reasoning delta와 tool call `start`·`args-delta`·`end`·`result` lifecycle, run/step 경계를 구분된 이벤트로 방출해 어댑터가 거친 framing을 합성하지 않고 1:1로 매핑하게 합니다(ADR-0013 §3).
 
 Core public API의 중심은 `AgentExecutionSpec`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `@agent_tool`, `AgentRunner`/`AgentRunResult`, `RunAgentInput`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. `RunAgentInput.parent_run_id`는 delegated child run을 parent run과 연결하는 중립 attribution이고, `ToolCallStartEvent.parent_message_id`와 `ToolCallResultEvent.message_id`는 AG-UI 같은 어댑터가 tool-call frame을 lossless하게 재구성하는 메시지 링크입니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
 
 `AgentExecutionSpec.teammates`는 `AgentTeammate(pod=...)` 또는 `AgentTeammate(card_url=...)` 선언을 받아 `teammate.<name>.delegate` synthetic tool descriptor로 노출합니다. 로컬 teammate는 parent instance에 주입된 child `@Agent` Pod를 찾아 `AgentRunner.run_events()`로 in-process 실행하고, 원격 teammate는 parent에 주입된 `IAgentDelegate` port로 위임합니다. `spakky-a2a`의 `A2AAgentDelegate`는 이 원격 port의 공식 A2A 구현입니다.
 
-`spakky-vllm`은 첫 공식 model provider plugin입니다. `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 추가합니다. 이 패키지는 OpenAI-compatible vLLM `/v1/chat/completions` 요청, SSE stream, structured output, tool-call JSON validation을 provider-neutral `ModelResponse`/`ModelStreamEvent`로 변환하며, `spakky-agent` core와 inbound adapter package를 역참조하지 않습니다.
+`spakky-llm`은 `LlmConfig`의 operator-owned profile을 `LlmAgentModel`이 해석하고, 선택된 `LlmProviderApi`에 따라 `OpenAIChatProvider`, `AnthropicMessagesProvider`, `GoogleGenerateContentProvider`로 위임하는 model provider plugin입니다. Entry point는 세 provider와 router를 등록하고 `IAgentModel -> LlmAgentModel` binding 하나만 추가합니다. OpenAI-compatible endpoint는 표준 dialect와 vLLM dialect를 구분하며, Anthropic과 Google은 각 native API를 사용합니다.
+
+Provider adapter는 공식 `openai`, `anthropic`, `google-genai` SDK의 async request/streaming lifecycle을 사용해 structured output, tool-call candidate, reasoning delta와 usage를 provider-neutral `ModelResponse`/`ModelStreamEvent`로 정규화합니다. OpenAI와 Anthropic client는 async context로 닫습니다. Google은 `HttpOptions.async_client_args`에 `httpx.AsyncHTTPTransport`를 주입해 SDK async backend를 httpx로 고정하고 aiohttp fallback을 차단하며, SDK가 async client와 transport를 닫은 뒤 adapter가 root sync client도 `finally`에서 종료합니다. Complete/stream의 invalid URL·unsupported protocol, timeout, transport failure는 각각 `LlmConfigurationError`, `LlmTimeoutError`, `LlmTransportError`로 정규화합니다.
+
+`LlmJsonCodec`은 value와 독립적으로 schema shape 전체를 먼저 재귀 검증하므로 사용되지 않은 branch의 unsupported validation keyword도 허용하지 않습니다. Non-finite number를 거부하고 boolean과 number를 구분하는 type-aware enum equality를 nested JSON에도 적용합니다. Portable subset 밖의 type, `anyOf`와 함께 선언된 지원 sibling constraint 위반, `prefixItems` 이후 금지된 tail을 거부하며, structured stream이 truncation으로 끝나도 누적 terminal JSON을 decode·validate합니다.
+
+Provider tool call은 request-declared catalog에 있는 name/schema만 허용합니다. `NONE`은 call을 금지하고 `REQUIRED`는 하나 이상을 요구하며, OpenAI의 `tool_calls`와 Anthropic의 `tool_use` terminal reason은 실제 call 유무와 일치해야 합니다. 모든 성공 stream은 terminal reason을 요구합니다. 세 adapter는 terminal/refusal, 전체 tool batch, choice/reason consistency, structured output을 모두 검증하기 전에는 side-effect authority인 `TOOL_CALL_CANDIDATE`를 게시하지 않습니다. OpenAI는 informational `START`/`ARGS_DELTA`만 먼저 stream할 수 있고 `END`/candidate를 보류하며, Anthropic은 모든 tool lifecycle event를, Google은 candidate를 terminal까지 buffer합니다.
+
+Terminal reason은 SDK literal type이 아니라 adapter의 explicit allowlist로 판정합니다. OpenAI success는 `stop`/`length`/`tool_calls`, refusal은 `content_filter` 또는 non-empty message/delta refusal이며, `null`/legacy `function_call`/unknown reason은 `LlmResponseError`입니다. Anthropic success는 `end_turn`/`max_tokens`/`stop_sequence`/`tool_use`/`model_context_window_exceeded`, refusal은 `refusal` 또는 non-null `stop_details`이며, `null`/`pause_turn`/unknown reason은 `LlmResponseError`입니다. Google은 `STOP`/`MAX_TOKENS`만 success로 인정하고 `LANGUAGE`/`NO_IMAGE`와 safety·recitation·blocklist·content 계열은 refusal, 나머지는 malformed response로 처리합니다.
+
+설치된 OpenAI·Anthropic SDK는 unknown terminal literal도 typed response object로 loose-construct할 수 있으므로 SDK validation 성공만으로 provider success를 추론하지 않습니다. 새 terminal reason은 adapter allowlist에 의미를 명시적으로 반영하기 전까지 fail closed합니다. Google thought part는 `include_thoughts` profile opt-in일 때만 요청·게시합니다. OpenAI는 usage opt-out이면 SDK usage 요청을 생략하고 unsolicited usage도 무시합니다. 세 SDK의 malformed HTTP 200 payload와 decode/typed-response validation failure는 모두 `LlmResponseError`로 정규화합니다.
+
+연결은 반드시 등록된 profile로 해석합니다. `LlmConfig`는 알 수 없는 최상위 `SPAKKY_LLM__...` key와 nested profile field를 모두 거부합니다. Standard OpenAI, Anthropic, Google profile의 `base_url=None`은 SDK ambient endpoint를 사용하지 않고 코드에 고정된 공식 endpoint를 전달하며, Google Developer API mode는 `vertexai=False`로 고정합니다. OpenAI organization/project/admin/webhook ambient 값은 explicit empty 값으로 차단하고, `OPENAI_CUSTOM_HEADERS`와 `ANTHROPIC_CUSTOM_HEADERS`가 존재하면 설정 오류로 처리하여 header 권한을 profile에 한정합니다.
+
+Nonblank `ModelSelection.model`은 선택된 profile의 동일한 base URL·API key·header 연결 안에서 model id를 덮어쓸 수 있으므로 model id 자체는 allowlist가 아닙니다. Request metadata로 연결 정보를 덮어쓸 수는 없습니다. SDK의 automatic tool execution은 사용하지 않고 검증된 candidate의 승인·dispatch와 result/evidence 방출은 `AgentRunner`가 소유합니다. 현재 표준 runner는 invocation마다 provider stream 하나를 terminal로 닫으며 tool result를 새 `ModelRequest`에 재주입하거나 같은 `run()`/`run_events()` invocation에서 model을 재호출하지 않습니다. 이 plugin은 core 또는 inbound adapter 외 다른 plugin을 역참조하지 않습니다. 결정 배경은 [ADR-0015](docs/adr/0015-multi-provider-llm-official-sdk-adapters.md)를 참조합니다.
 
 `spakky-sqlalchemy`는 ADR-0010 feature contribution 정책에 따라 Agent persistence를 기여합니다. `spakky.contributions.spakky.agent` entry point는 `spakky-agent` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 base plugin 이후 로드되어 `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`과 세 repository Pod을 등록합니다. Signal은 `consumed_at`으로 pending queue를 구분하고, Evidence repository는 append/read만 노출해 append-only contract를 유지합니다. 별도 `spakky-agent-sqlalchemy` plugin은 만들지 않습니다.
 
@@ -1319,7 +1337,8 @@ flowchart TD
 | `spakky-oidc` | `OidcAuthenticationProvider`; `spakky.contributions.spakky.auth` contribution으로 bearer authentication capability 선언 | `pyjwt[crypto]`, `spakky-auth` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async), `RedisCacheHealthProbe`, `RedisCacheMetricsInfoContributor` | `redis`, `pydantic-settings`, `spakky-cache`, `spakky-actuator` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` | `openfga-sdk`, `pydantic-settings`, `spakky-auth` |
-| `spakky-vllm` | `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel` | `httpx`, `pydantic-settings`, `spakky-agent` |
+| `spakky-llm` | `LlmConfig`, `LlmAgentModel`, OpenAI/Anthropic/Google SDK provider | `openai`, `anthropic`, `google-genai`, `httpx`, `pydantic-settings`, `spakky-agent` |
+
 ### 태스크 플러그인
 
 | 플러그인 | 등록 컴포넌트 | 외부 의존성 |
@@ -1401,6 +1420,24 @@ flowchart TD
 ## Architecture Decision Records
 
 주요 아키텍처 의사결정은 [docs/adr/](docs/adr/README.md)에 ADR(Architecture Decision Record)로 관리합니다.
+
+| ADR | 결정 | 상태 |
+|-----|------|------|
+| [0001](docs/adr/0001-event-system-redesign.md) | 이벤트 시스템 재설계 | Accepted |
+| [0002](docs/adr/0002-outbox-plugin-architecture.md) | Outbox plugin architecture | Accepted |
+| [0003](docs/adr/0003-task-schedule-decorator-split.md) | `@task`/`@schedule` 분리 | Accepted |
+| [0004](docs/adr/0004-distributed-tracing-architecture.md) | 분산 tracing architecture | Accepted |
+| [0005](docs/adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md) | Outbox SQLAlchemy 구현 통합 | Accepted |
+| [0006](docs/adr/0006-move-outbox-to-core.md) | `spakky-outbox` core 승격 | Accepted |
+| [0007](docs/adr/0007-spakky-saga-plan.md) | Saga orchestration core | Accepted |
+| [0008](docs/adr/0008-type-safety-hardening.md) | Type safety hardening | Accepted |
+| [0009](docs/adr/0009-agentic-hexagonal-architecture.md) | Agentic Hexagonal Architecture | Accepted |
+| [0010](docs/adr/0010-feature-contribution-policy.md) | Feature contribution policy | Accepted |
+| [0011](docs/adr/0011-auth-contribution-routing-boundary.md) | Auth contribution routing boundary | Proposed |
+| [0012](docs/adr/0012-contribution-routing-policy.md) | Contribution routing policy | Proposed |
+| [0013](docs/adr/0013-declarative-agent-loop-ownership.md) | 선언형 Agent loop ownership | Accepted |
+| [0014](docs/adr/0014-ai-pr-review-auto-approval-policy.md) | AI PR review auto-approval policy | Accepted |
+| [0015](docs/adr/0015-multi-provider-llm-official-sdk-adapters.md) | Multi-provider LLM official SDK adapters | Accepted |
 
 ---
 

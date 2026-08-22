@@ -1,20 +1,23 @@
 [project]
-name = "spakky-vllm"
+name = "spakky-llm"
 version = "8.0.0"
-description = "vLLM OpenAI-compatible model adapter plugin for Spakky Agent"
+description = "Multi-provider LLM adapter plugin for Spakky Agent"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
+    "anthropic>=1.0.0",
+    "google-genai>=2.19.0",
     "httpx>=0.28.1",
+    "openai>=3.3.1",
     "pydantic-settings>=2.13.1",
     "spakky>=8.0.0",
     "spakky-agent>=8.0.0",
 ]
 
 [project.entry-points."spakky.plugins"]
-spakky-vllm = "spakky.plugins.vllm.main:initialize"
+spakky-llm = "spakky.plugins.llm.main:initialize"
 
 [build-system]
 requires = ["uv_build>=0.10.10,<0.12.0"]
@@ -22,7 +25,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = "src"
-module-name = "spakky.plugins.vllm"
+module-name = "spakky.plugins.llm"
 
 [tool.pyrefly]
 python-version = "3.12"
@@ -61,7 +64,7 @@ addopts = """
 spec_test_format = "{result} {docstring_summary}"
 
 [tool.coverage.run]
-include = ["src/spakky/plugins/vllm/**/*.py"]
+include = ["src/spakky/plugins/llm/**/*.py"]
 branch = true
 
 [tool.coverage.report]

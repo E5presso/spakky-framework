@@ -15,7 +15,7 @@ pip install spakky
 pip install "spakky[recommended]"              # FastAPI + SQLAlchemy + 운영 기본기
 pip install "spakky[web]"                      # FastAPI 중심 HTTP 서비스
 pip install "spakky[events-kafka]"             # Kafka 이벤트 서비스
-pip install "spakky[agent]"                    # Agent core + vLLM + AG-UI/A2A/MCP + SQLAlchemy persistence
+pip install "spakky[agent]"                    # Agent core + multi-provider LLM + AG-UI/A2A/MCP + SQLAlchemy persistence
 pip install "spakky[security]"                 # Auth core + cryptography/OIDC/policy/OpenFGA providers
 pip install "spakky[cache-app]"                # Cache core + Redis backend
 pip install "spakky[full]"                     # 모든 공식 통합
@@ -435,10 +435,10 @@ count와 skip reason이 기록됩니다.
 | [`spakky-openfga`](https://pypi.org/project/spakky-openfga/) | OpenFGA 관계 검사 AuthZ provider |
 | [`spakky-policy`](https://pypi.org/project/spakky-policy/) | Policy document 기반 AuthZ evaluator |
 | [`spakky-opentelemetry`](https://pypi.org/project/spakky-opentelemetry/) | OpenTelemetry SDK bridge |
-| [`spakky-vllm`](https://pypi.org/project/spakky-vllm/) | vLLM OpenAI-compatible Agent model adapter |
+| [`spakky-llm`](https://pypi.org/project/spakky-llm/) | OpenAI-compatible(vLLM dialect 포함), Anthropic, Google Agent model adapter |
 | [`spakky-agui`](https://pypi.org/project/spakky-agui/) | AG-UI protocol adapter |
 | [`spakky-a2a`](https://pypi.org/project/spakky-a2a/) | A2A AgentCard/server transport와 remote teammate delegation adapter |
-| [`spakky-mcp`](https://pypi.org/project/spakky-mcp/) | MCP client/server adapter |
+| [`spakky-mcp`](https://pypi.org/project/spakky-mcp/) | 외부 MCP server tool을 Agent run에 연결하는 MCP client adapter |
 
 ## 코어 모듈
 

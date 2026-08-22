@@ -109,8 +109,8 @@
 			"path": "plugins/spakky-redis",
 		},
 		{
-			"name": "plugins.vllm",
-			"path": "plugins/spakky-vllm",
+			"name": "plugins.llm",
+			"path": "plugins/spakky-llm",
 		},
 		{
 			"name": "plugins.oidc",
@@ -239,7 +239,7 @@
 			"opentelemetry",
 			"grpc",
 			"redis",
-			"vllm",
+			"llm",
 			"oidc",
 			"policy",
 			"agui",

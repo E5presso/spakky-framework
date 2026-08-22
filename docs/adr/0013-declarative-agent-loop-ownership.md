@@ -16,11 +16,11 @@
 
 ADR-0009는 이 두 결정을 명시적으로 닫지 않았다 (`spakky-agent-mcp`/`spakky-agent-a2a`를 "첫 마일스톤 범위 밖"으로만 표기). 본 ADR은 그 공백을 닫고, 후속 구현 그룹(C·D·E·F)이 따르는 단일 근거를 박제한다. 이 ADR은 ADR-0009를 대체하지 않고 그 위에 선언형 실행 모델과 프로토콜 경계를 얹는다.
 
-비교 기준점은 pydantic-ai다. pydantic-ai는 `Agent` 객체가 실행 루프를 소유하고(`agent.run()`/`run_stream()`), tool은 `@agent.tool` 데코레이터로 선언하며, model은 생성자/실행 인자로 주입하고, 외부 프로토콜은 `pydantic_ai.ui.ag_ui`(AG-UI 어댑터)와 `fasta2a`(A2A 어댑터)로 코어 밖에서 normalize한다. 코어 자체는 어떤 UI/transport 프로토콜에도 의존하지 않는다. 이 DX(개발자가 비즈니스 로직만 선언하고 루프·프로토콜은 프레임워크가 제공)가 본 ADR이 정렬하려는 목표다.
+비교 기준점은 pydantic-ai다. pydantic-ai는 `Agent` 객체가 실행 루프를 소유하고(`agent.run()`/`run_stream()`), tool은 `@agent.tool` 데코레이터로 선언하며, model은 생성자/실행 인자로 주입하고, 외부 프로토콜은 `pydantic_ai.ui.ag_ui`(AG-UI 어댑터)와 `fasta2a`(A2A 어댑터)로 코어 밖에서 normalize한다. 코어 자체는 어떤 UI/transport 프로토콜에도 의존하지 않는다. 본 ADR이 참조하는 범위는 개발자가 model stream 소비와 tool dispatch 배관을 직접 작성하지 않는 ownership boundary이며, pydantic-ai의 다단계 model/tool 반복 의미 전체를 구현한다는 뜻은 아니다.
 
 ## 결정 동인 (Decision Drivers)
 
-- 개발자가 작성하는 코드의 비율을 비즈니스 의도(어떤 tool·어떤 model·어떤 정책)로 최대화하고, 반복적인 model-loop 배관 코드를 0에 수렴시킨다.
+- 개발자가 작성하는 코드의 비율을 비즈니스 의도(어떤 tool·어떤 model·어떤 정책)로 최대화하고, model stream 소비와 tool dispatch 배관 코드를 0에 수렴시킨다.
 - ADR-0009가 확정한 `@Agent`/`@UseCase` 동격성, 생성자 DI 의존성 주입, hexagonal 레이어 경계를 깨지 않는다.
 - 외부 프로토콜이 하나가 아니다 — AG-UI(클라이언트↔에이전트 UI streaming), A2A(에이전트↔에이전트 위임), MCP(에이전트↔외부 tool/server)는 서로 다른 계층의 서로 다른 계약이다. 코어가 어느 하나를 직접 채택하면 나머지 둘이 종속·왜곡된다.
 - 코어는 외부 프로토콜 라이브러리에 의존하지 않는다 (ADR-0009 검증 기준 "`core/spakky-agent`는 외부 protocol server에 직접 의존하지 않는다"의 연장).
@@ -65,17 +65,19 @@ ADR-0009는 이 두 결정을 명시적으로 닫지 않았다 (`spakky-agent-mc
 - 코어 비의존을 유지하여 ADR-0009 검증 기준과 일관된다. 프로토콜 라이브러리 버전 변경은 해당 어댑터에 격리된다.
 - pydantic-ai 선례(`ui.ag_ui` 어댑터 + `fasta2a`)와 정확히 일치한다 — 검증된 산업 패턴이다.
 
-실행 루프 소유 축에서는 ADR-0009의 명령형 `execute()` 본문 작성 방식과, 프레임워크가 루프를 소유하고 개발자는 설정만 선언하는 방식을 비교했다. 후자를 채택한다 (아래 "결정" 참조). 명령형 방식은 개발자가 `model.stream()` 소비·tool invoke·approval 분기를 매번 재작성하게 하여 배관 코드 중복과 HITL/compaction/recovery 처리의 비일관을 낳는다.
+실행 orchestration 소유 축에서는 ADR-0009의 명령형 `execute()` 본문 작성 방식과, 프레임워크가 표준 model stream/tool dispatch 경로를 소유하고 개발자는 설정만 선언하는 방식을 비교했다. 후자를 채택한다 (아래 "결정" 참조). 명령형 방식은 개발자가 `model.stream()` 소비·tool invoke·approval 분기를 매번 재작성하게 하여 배관 코드 중복과 HITL/compaction/recovery 처리의 비일관을 낳는다.
 
 ## 결정 (Decision)
 
-### 1. 프레임워크가 실행 루프를 완전 소유한다 (설정 선언형)
+### 1. 프레임워크가 표준 실행 orchestration을 소유한다 (설정 선언형)
 
-agent 실행 루프(model 호출 → tool call 추출 → tool invoke → 결과 주입 → 종료 판정 반복)는 프레임워크 runner가 소유한다. 개발자는 루프 본문을 작성하지 않고, `@Agent` spec으로 **무엇을** 실행할지만 선언한다 (어떤 model, 어떤 tool, 어떤 정책).
+현재 표준 경로는 한 번의 model stream request를 열고, 그 stream에서 나온 tool-call candidate를 승인·dispatch하여 result/evidence로 방출한 뒤 terminal state와 final output으로 닫는다. 이 model stream 소비와 tool dispatch orchestration은 framework runner가 소유하며, 개발자는 `@Agent` spec으로 **무엇을** 실행할지만 선언한다 (어떤 model, 어떤 tool, 어떤 정책).
 
-- `execute()` 인터페이스는 유지한다 — `@Agent`는 ADR-0009대로 `@UseCase`와 동격인 호출 가능한 application component다. 다만 개발자가 `execute()` 본문에 model-loop를 직접 작성하는 대신, runner가 spec과 DI graph로부터 표준 실행 루프를 **자동 제공**한다. 개발자가 model-mediated orchestration의 기본 흐름을 넘어서는 커스텀 제어가 필요할 때만 본문을 직접 작성한다.
+현재 runner는 실행된 tool result를 assistant/tool history가 포함된 새 `ModelRequest`에 재주입하거나 같은 `run()`/`run_events()` invocation에서 model을 다시 호출하지 않는다. 따라서 model → tool → model로 이어지는 single-invocation multi-step loop는 표준 경로의 일부가 아니며, 필요한 경우 custom `execute()`가 직접 orchestration해야 한다.
+
+- `execute()` 인터페이스는 유지한다 — `@Agent`는 ADR-0009대로 `@UseCase`와 동격인 호출 가능한 application component다. 다만 개발자가 `execute()` 본문에 model stream/tool dispatch 배관을 직접 작성하는 대신, runner가 spec과 DI graph로부터 single-pass 표준 실행 orchestration을 **자동 제공**한다. Tool result 재주입이나 반복 model 호출 같은 커스텀 제어가 필요할 때는 `execute()` 본문을 직접 작성한다.
 - 의존성은 ADR-0009대로 생성자 DI로 주입한다. model(`IAgentModel`), tool(`@agent_tool`로 노출된 capability), outbound port는 생성자 인자다. `@Agent` spec은 이 의존성을 다시 선언하지 않는다.
-- 이 DX는 pydantic-ai를 참조한다 — 개발자는 비즈니스 의도(model·tool·정책)만 선언하고, 루프 실행은 프레임워크가 제공한다.
+- 이 DX는 pydantic-ai의 ownership boundary를 참조한다 — 개발자는 비즈니스 의도(model·tool·정책)만 선언하고, 현재 single-pass 실행 orchestration은 프레임워크가 제공한다.
 
 ### 2. 프로토콜 중립 코어 + 어댑터 분리 (대안 γ)
 
@@ -114,7 +116,7 @@ model backend마다 지원 능력이 다르므로(reasoning 지원 여부, conte
 
 도구 승인(HITL)은 ADR-0009 `INTERRUPTED(reason=APPROVAL_REQUIRED)` 모델 위에서 **단일 pause → 승인요청 → resume 흐름**으로 통일한다.
 
-- 실행 루프가 승인 필요 action에서 일시정지(pause)하고, caller에게 승인요청을 노출한 뒤, 승인 signal 수신 시 resume한다.
+- 실행 orchestration이 승인 필요 action에서 일시정지(pause)하고, caller에게 승인요청을 노출한 뒤, 승인 signal 수신 시 resume한다.
 - AG-UI 어댑터는 이를 deferred tool / `RunAgentInput`(승인 결과를 다음 run 입력으로 주입)으로 노출한다 — pydantic-ai deferred tool approval 선례.
 - A2A 어댑터는 이를 `input-required` Task 상태로 노출한다.
 
@@ -135,7 +137,7 @@ context 압축은 교체 가능한(pluggable) `CompactionStrategy` 포트로 모
 
 - 포트 형태는 pydantic-ai의 message history processor / `ProcessHistory` capability(`compact_messages`)를 참조한다.
 - 프레임워크는 내장(built-in) 기본 전략을 제공한다.
-- compaction은 `@Agent` spec에 선언하고 실행 루프가 자동 적용한다 — 개발자가 루프 본문에서 직접 호출하지 않는다.
+- compaction은 `@Agent` spec에 선언하고 실행 orchestration이 model request 전에 자동 적용한다 — 개발자가 `execute()` 본문에서 직접 호출하지 않는다.
 - ADR-0009 `ContextDigest`(압축 결과를 derived evidence로 append) 모델과 정렬한다 — compaction은 raw evidence를 대체하지 않는다.
 
 ### 8. teammate (팀 모드) — `@Agent` spec 선언 + A2A 위임
@@ -153,7 +155,7 @@ multi-agent 팀 모드(teammate)는 `@Agent` spec으로 선언한다.
 프레임워크 소유:
 
 - building blocks (ADR-0009 model/tool/state/signal/evidence/delegation 등)
-- 실행 루프 (본 ADR 결정 1)
+- single-pass 실행 orchestration (본 ADR 결정 1)
 - 프로토콜 어댑터 (본 ADR 결정 2)
 - 인터페이스/계약 (`@Agent` spec, 이벤트 taxonomy, port)
 
@@ -169,14 +171,14 @@ v6.10.0 minor 릴리스로 출시한다. 현재 production 소비자가 없으�
 
 ### 긍정적
 
-- 개발자는 model-loop 배관 코드를 작성하지 않고 `@Agent` spec으로 비즈니스 의도만 선언한다 — pydantic-ai 수준의 DX.
-- HITL·세션·compaction이 실행 루프에서 일관 처리되어 재현·복구 가능성이 어댑터/프로토콜 전반에서 균일해진다.
+- 개발자는 model stream 소비와 tool dispatch 배관 코드를 작성하지 않고 `@Agent` spec으로 비즈니스 의도만 선언한다.
+- HITL·세션·compaction이 표준 실행 orchestration에서 일관 처리되어 재현·복구 가능성이 어댑터/프로토콜 전반에서 균일해진다.
 - 코어 비의존이 유지되어 AG-UI·A2A·MCP 스펙 변경이 어댑터에 격리된다. 새 프로토콜 추가는 새 어댑터 추가일 뿐 코어를 건드리지 않는다.
 - ADR-0009 building block(state/signal/evidence/delegation/contribution persistence)을 그대로 재사용하며 그 위에 선언형 실행과 프로토콜 경계를 얹는다.
 
 ### 부정적
 
-- 프레임워크가 루프를 소유하므로, model-mediated orchestration의 표준 흐름을 벗어나는 커스텀 제어는 spec 확장 또는 본문 직접 작성이라는 별도 escape hatch가 필요하다 — escape hatch 설계 실수가 표현력을 제약할 수 있다.
+- 프레임워크가 single-pass 표준 orchestration을 소유하므로, tool result 재주입과 같은 invocation의 반복 model 호출을 포함한 multi-step 제어는 본문 직접 작성이라는 escape hatch가 필요하다.
 - 중립 이벤트 taxonomy ↔ 세 프로토콜 매핑을 어댑터마다 정확히 정의해야 하며, taxonomy 누락은 특정 프로토콜에서 표현 불가로 드러난다.
 - ADR-0009의 명령형 `execute()` 예시와 하드 브레이크가 발생한다 — 마이그레이션 가이드가 필요하다 (현재 고객 없음으로 비용 수용).
 
@@ -189,7 +191,7 @@ v6.10.0 minor 릴리스로 출시한다. 현재 production 소비자가 없으�
 
 - `core/spakky-agent`는 `ag_ui`·`a2a-python`·MCP 라이브러리에 직접 의존하지 않는다.
 - AG-UI / A2A / MCP 어댑터가 각각 독립 어댑터로 분리되어 해당 프로토콜 라이브러리에만 의존한다.
-- `@Agent` spec 선언만으로(루프 본문 직접 작성 없이) model-mediated 실행이 동작한다.
+- `@Agent` spec 선언만으로 `ModelRequest` 한 번의 stream 소비, tool candidate 승인·dispatch, terminal output까지의 single-pass 실행이 동작한다.
 - HITL 도구 승인이 단일 pause → 승인요청 → resume으로 동작하고, AG-UI deferred tool과 A2A `input-required`로 각각 투영된다.
 - 영속 세션과 클라이언트 주입 이력 두 경로 모두로 멀티턴이 동작한다.
 - `CompactionStrategy` 포트가 교체 가능하고 내장 전략이 spec 선언으로 자동 적용된다.

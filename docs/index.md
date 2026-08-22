@@ -49,7 +49,7 @@ Extra는 두 층으로 나뉩니다. `minimal`, `recommended`, `full`은 설치 
 | 메시징과 워크플로우 | `spakky-celery`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-outbox`, `spakky-saga` |
 | 인증/인가 | `spakky-auth`, `spakky-cryptography`, `spakky-oidc`, `spakky-policy`, `spakky-openfga` |
 | 운영 | `spakky-logging`, `spakky-tracing`, `spakky-opentelemetry`, `spakky-actuator`, `spakky-cache`, `spakky-redis` |
-| Agent | `spakky-agent`, `spakky-vllm`, `spakky-agui`, `spakky-a2a`, `spakky-mcp` |
+| Agent | `spakky-agent`, `spakky-llm`, `spakky-agui`, `spakky-a2a`, `spakky-mcp` |
 
 애플리케이션 패키지에 Pod를 하나 만들고 스캔합니다.
 

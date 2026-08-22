@@ -4,7 +4,12 @@
 
 Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플리케이션 컴포넌트입니다. 일반 `@UseCase`처럼 생성자 주입을 받고, native adapter에는 `AgentYield` stream을, AG-UI/A2A 같은 protocol adapter에는 `AgentRunner.run_events()`의 `AgentEvent` stream을 제공합니다.
 
-핵심은 **누가 실행 루프를 소유하는가**입니다. [ADR-0013](../adr/0013-declarative-agent-loop-ownership.md)에 따라 model 호출 → tool 호출 추출 → tool 실행 → 결과 주입 → 종료 판정으로 이어지는 반복 루프는 **프레임워크 runner가 소유**합니다. 개발자는 루프 본문을 작성하지 않고 `@Agent` spec으로 **무엇을** 실행할지(어떤 model, 어떤 tool, 어떤 정책)만 선언합니다. 이 개발 경험(DX)은 pydantic-ai를 참조합니다 — pydantic-ai에서 `agent.run()`이 루프를 소유하고 개발자는 `@agent.tool`로 도구만 선언하듯이, Spakky에서는 runner가 루프를 소유하고 개발자는 `@agent_tool`(도구)과 `@on_signal`(시그널 반응)만 선언합니다.
+핵심은 **표준 실행의 범위**입니다. [ADR-0013](../adr/0013-declarative-agent-loop-ownership.md)에
+따라 runner-backed 경로는 한 provider stream을 소비하고, 그 stream에서 나온 tool
+candidate를 승인·dispatch한 뒤 result, evidence, terminal output을 방출합니다. 실행한
+tool result를 새 `ModelRequest`에 넣거나 같은 invocation에서 model을 다시 호출하지는
+않습니다. model → tool → model 형태의 multi-step orchestration이 필요하면 custom
+`execute()`를 작성해야 합니다.
 
 이 문서는 **기초 문서**입니다. 목표는 "파일을 만들고, 애플리케이션을 시작하고, Agent를 한 번 실행한다"입니다. Runner 내부 구조, approval resume 알고리즘, protocol event fidelity 같은 원리는 [AI Agent 심화](agents-advanced.md)에서 설명합니다.
 
@@ -18,7 +23,10 @@ Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플�
 | `AgentYield` | Spakky-native HTTP, WebSocket, CLI adapter가 받을 실행 이벤트입니다. |
 | `AgentEvent` | AG-UI, A2A 같은 protocol adapter가 손실 없이 투영하는 중립 이벤트입니다. |
 
-`@Agent`가 도구만 선언하고 `execute()` 본문을 작성하지 않으면, 프레임워크가 표준 실행 루프를 `execute()`로 자동 제공합니다. model-mediated orchestration의 기본 흐름을 벗어나는 커스텀 제어가 필요할 때만 `execute()` 본문을 직접 작성합니다.
+`@Agent`가 도구만 선언하고 `execute()` 본문을 작성하지 않으면 프레임워크가 이
+single-pass 실행을 `execute()`로 자동 제공합니다. Pydantic AI에서 참고한 부분은
+tool 선언과 실행 배관을 Agent class 밖에 둔다는 개발 경험이며, 같은 invocation의
+반복 model/tool semantics까지 같다는 뜻은 아닙니다.
 
 선언형 시그널 훅(`@on_signal`), approval, durable repository, context compaction, teammate, AG-UI/A2A/MCP 어댑터는 [AI Agent 심화](agents-advanced.md)에서 다룹니다. 실제 CodeAssistant 흐름을 보고 싶다면 [CodeAssistant 에이전트 예제](agent-code-assistant.md)를 이어서 보세요.
 
@@ -42,7 +50,8 @@ Spakky에서 Agent는 특별한 외부 런타임이 아니라 하나의 애플�
 pip install spakky-agent
 ```
 
-Agent core, vLLM model adapter, AG-UI/A2A/MCP protocol adapter, SQLAlchemy provider까지 함께 쓰려면 다음처럼 설치합니다.
+Agent core, 다중 provider LLM adapter, AG-UI/A2A/MCP protocol adapter,
+SQLAlchemy provider까지 함께 쓰려면 다음처럼 설치합니다.
 
 ```bash
 pip install "spakky[agent]"
@@ -51,14 +60,16 @@ pip install "spakky[agent]"
 직접 조합하고 싶다면 필요한 축만 나눠 설치할 수 있습니다.
 
 ```bash
-pip install spakky-agent spakky-vllm spakky-agui spakky-a2a spakky-mcp "spakky-sqlalchemy[agent]"
+pip install spakky-agent spakky-llm spakky-agui spakky-a2a spakky-mcp "spakky-sqlalchemy[agent]"
 ```
 
 ## 실행 흐름
 
 Agent는 transport를 직접 알지 않습니다. HTTP, WebSocket, CLI adapter는 container에서 Agent를 꺼내 `AgentYield`를 native 응답으로 바꾸고, AG-UI/A2A protocol adapter는 같은 runner의 `AgentEvent`를 각 프로토콜 이벤트로 투영합니다.
 
-중요한 방향은 아래와 같습니다. **Adapter가 Agent를 호출**하고, **runner가 model/tool loop를 소유**합니다. Agent class는 model과 tool을 직접 돌리는 "프로세스"가 아니라, runner가 사용할 spec, tool catalog, signal hook, DI dependency를 담은 애플리케이션 component입니다.
+중요한 방향은 아래와 같습니다. **Adapter가 Agent를 호출**하고, **runner가
+single-pass model/tool orchestration을 소유**합니다. Agent class는 runner가 사용할
+spec, tool catalog, signal hook, DI dependency를 담는 애플리케이션 component입니다.
 
 ```mermaid
 flowchart TD
@@ -83,13 +94,11 @@ flowchart TD
 
 가장 작은 Agent 애플리케이션은 아래 두 파일이면 됩니다. 이 예제는 LLM runner를 쓰지 않고 `execute()`를 직접 구현합니다. 먼저 "Agent도 일반 Pod처럼 scan되고 resolve된다"는 감각을 잡기 위한 시작점입니다.
 
-```text
-my_agent_app/
-  my_app/
-    __init__.py
-    agents.py
-  main.py
-```
+| 경로 | 역할 |
+| --- | --- |
+| `my_agent_app/my_app/__init__.py` | scan할 application package 표시 |
+| `my_agent_app/my_app/agents.py` | `@Agent`와 주입할 Pod 선언 |
+| `my_agent_app/main.py` | `SpakkyApplication` 조립과 시작 |
 
 `my_app/agents.py`:
 
@@ -201,7 +210,7 @@ class SimpleAgent:
 | `execute(command: str)` | Agent 실행 entrypoint입니다. 인자는 type annotation이 필요합니다. |
 | `AgentYieldKind.FINAL` | 실행이 끝났음을 adapter에게 알립니다. |
 
-직접 `execute()`를 선언하면 bootstrap 시점에 계약이 검증됩니다. parameter annotation이 없거나, `*args`/`**kwargs`를 쓰거나, generator가 `AgentYield`가 아닌 값을 yield하도록 annotation하면 definition error가 납니다. `execute()`를 생략하면 `@Agent`가 `RunAgentInput`을 받는 runner-backed `execute()`를 합성하므로 직접 루프를 작성할 필요가 없습니다.
+직접 `execute()`를 선언하면 bootstrap 시점에 계약이 검증됩니다. parameter annotation이 없거나, `*args`/`**kwargs`를 쓰거나, generator가 `AgentYield`가 아닌 값을 yield하도록 annotation하면 definition error가 납니다. `execute()`를 생략하면 `@Agent`가 `RunAgentInput`을 받는 runner-backed `execute()`를 합성합니다.
 
 ## 실행 방식별 필수 의존성
 
@@ -209,7 +218,7 @@ class SimpleAgent:
 
 | mode | 언제 쓰나 | 생성자에 필요한 것 | 생략하면 |
 |------|-----------|-------------------|----------|
-| Custom `execute()` | LLM loop 없이 직접 stream을 만들 때 | 실행에 필요한 일반 Pod만 주입 | `execute()`가 없으면 runner-backed mode로 해석됩니다. |
+| Custom `execute()` | 직접 stream을 만들거나 multi-step model/tool orchestration이 필요할 때 | 실행에 필요한 일반 Pod와 model/tool port | `execute()`가 없으면 single-pass runner-backed mode로 해석됩니다. |
 | Runner-backed tool Agent | `execute()`를 생략하고 model이 `@agent_tool`을 호출하게 할 때 | `IAgentModel`과 tool이 사용할 app port | `IAgentModel`이 없으면 runner가 model 요청을 만들 수 없습니다. |
 | Durable runner-backed Agent | approval, cancel, resume, action-boundary recovery가 필요할 때 | `IAgentModel`, `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository` | repository provider가 없으면 bootstrap에서 실패해야 합니다. |
 | Protocol-exposed Agent | AG-UI/A2A 같은 inbound protocol로 Agent를 실행할 때 | 위 mode의 의존성 + host Pod(FastAPI/Starlette 등) | protocol marker를 빼면 Agent는 내부 component로만 남습니다. MCP는 Agent annotation이 아니라 run metadata로 외부 서버를 붙입니다. |
@@ -224,7 +233,7 @@ Runner-backed mode에서 runner는 생성자 parameter 이름이 아니라 **typ
 |------|-----------|---------|
 | `name` | 로그, registry, protocol adapter에서 안정적인 Agent 이름이 필요할 때 | class name 기반 fallback이 쓰입니다. |
 | `objective` | AgentCard, 설명, model-facing 목적이 필요할 때 | 설명이 빈약해지고 일부 adapter metadata가 약해집니다. |
-| `instructions` | runner-backed model loop에 기본 system 지시를 주고 싶을 때 | 사용자의 `RunAgentInput.instruction`과 tool schema 중심으로 요청을 만듭니다. |
+| `instructions` | runner-backed model request에 기본 system 지시를 주고 싶을 때 | 사용자의 `RunAgentInput.instruction`과 tool schema 중심으로 요청을 만듭니다. |
 | `output_type` | 최종 output을 특정 타입으로 구조화해야 할 때 | `AgentRunResult` 같은 기본 결과가 반환됩니다. |
 | `accepted_signals` | 실행 중 user message, approval decision, cancel, resume 등을 받을 때 | signal queue를 소비하지 않는 stateless 경로가 됩니다. |
 | `recovery` | action boundary resume/retry/skip 판단이 필요할 때 | 재시작 후 이어가기 계획을 만들지 않습니다. |
@@ -322,7 +331,8 @@ class AnswerAgent:
                 )
 ```
 
-운영에서 vLLM을 쓰면 `spakky-vllm` adapter를 주입합니다.
+실제 LLM provider에 연결할 때는 `spakky-llm` adapter를 주입합니다. 별도 설정이
+없으면 공식 OpenAI SDK를 통해 로컬 vLLM OpenAI-compatible API를 사용합니다.
 
 ```python
 from spakky.agent import IAgentModel
@@ -335,7 +345,7 @@ app = (
     .load_plugins(
         include={
             Plugin(name="spakky-agent"),
-            Plugin(name="spakky-vllm"),
+            Plugin(name="spakky-llm"),
         }
     )
     .start()
@@ -343,25 +353,48 @@ app = (
 model = app.container.get(type_=IAgentModel)
 ```
 
-`spakky-vllm`은 `SPAKKY_VLLM__` 접두사의 환경변수를 읽습니다.
+`spakky-llm`은 `SPAKKY_LLM__` 접두사의 중첩 환경변수로 operator-owned
+profile allowlist를 구성합니다. 예를 들어 Anthropic profile 하나를 기본값으로
+등록하려면 다음처럼 설정합니다.
 
-| 환경변수 | 의미 | 기본값 |
-| --- | --- | --- |
-| `SPAKKY_VLLM__ENDPOINT_URL` | OpenAI-compatible vLLM base URL | `http://127.0.0.1:8000/v1` |
-| `SPAKKY_VLLM__MODEL` | chat completions 요청에 넘길 model id | `default` |
-| `SPAKKY_VLLM__REQUEST_TIMEOUT_SECONDS` | non-streaming 요청 timeout | `30.0` |
-| `SPAKKY_VLLM__STREAM_TIMEOUT_SECONDS` | streaming 요청 timeout | `300.0` |
-| `SPAKKY_VLLM__STREAM_ENABLED` | streaming surface 사용 가능 여부 | `true` |
-| `SPAKKY_VLLM__CONTEXT_WINDOW_TOKENS` | 운영자가 선언한 context window token 수 | 미설정 |
-| `SPAKKY_VLLM__SUPPORTS_REASONING` | reasoning delta를 surface할지 여부 | `false` |
-| `SPAKKY_VLLM__CHAT_TEMPLATE_KWARGS` | vLLM chat template kwargs JSON/object | `{}` |
+```bash
+export SPAKKY_LLM__DEFAULT_PROFILE=claude
+export SPAKKY_LLM__PROFILES__CLAUDE__PROVIDER=anthropic
+export SPAKKY_LLM__PROFILES__CLAUDE__API=anthropic-messages
+export SPAKKY_LLM__PROFILES__CLAUDE__MODEL=claude-opus-4-1
+export SPAKKY_LLM__PROFILES__CLAUDE__API_KEY="$ANTHROPIC_API_KEY"
+```
 
-`spakky-vllm` 플러그인은 `VllmConfig`, `HttpxVllmChatClient`, `VllmAgentModel`을 등록하고 `IAgentModel -> VllmAgentModel` binding을 설정합니다.
+연결 설정은 fail closed합니다. 알 수 없는 top-level `SPAKKY_LLM__` key와 profile
+필드는 시작 단계에서 거부됩니다. Standard OpenAI, Anthropic, Google profile의
+`base_url`을 생략하면 adapter가 코드에 고정된 각 공식 endpoint를 사용하므로
+`OPENAI_BASE_URL`이나 `ANTHROPIC_BASE_URL`이 연결을 바꾸지 못합니다. Google client는
+`vertexai=False`로 생성되어 `GOOGLE_GENAI_USE_VERTEXAI`도 적용되지 않습니다. Custom
+header는 profile의 `headers`로만 등록하며,
+`OPENAI_CUSTOM_HEADERS` 또는 `ANTHROPIC_CUSTOM_HEADERS`가 process 환경에 있으면
+configuration error로 중단합니다. 세부 endpoint와 검증 규칙은
+[LLM 연결 설정 경계](../api/plugins/spakky-llm.md#llm-connection-boundary)를 확인하세요.
+
+`ModelSelection`은 등록된 profile과 일치하는 provider를 선택하고, 필요하면 그
+profile의 연결 정보를 유지한 채 model id만 요청별로 덮어씁니다. 요청 metadata는
+`base_url`, API key, headers를 바꿀 수 없습니다. 자세한 전체 profile 필드와
+OpenAI, Anthropic, Google, vLLM 예시는
+[spakky-llm API Reference](../api/plugins/spakky-llm.md#llm-profile-configuration)를 확인하세요.
+
+플러그인은 `LlmConfig`, 세 공식 SDK provider adapter, `LlmAgentModel`을 등록하고
+`IAgentModel -> LlmAgentModel` binding을 설정합니다. SDK가 인증, retry, typed
+response와 stream parsing을 맡고, Spakky는 provider-neutral response/event 변환과
+JSON/tool 검증을 맡습니다. Adapter는 tool을 실행하지 않으며 runner가 현재 provider
+stream의 candidate 승인과 dispatch를 담당합니다.
 테스트에서는 network가 없는 scripted `IAgentModel` fake를 만들어 token이나 tool event를 원하는 순서로 내보내면 됩니다.
 
-## 선언형 Agent: 루프를 프레임워크에 맡기기
+## 선언형 Agent: single-pass 실행 맡기기
 
-앞의 예제는 `execute()` 본문을 직접 작성했습니다. 도구를 호출하는 Agent라면 보통 그럴 필요가 없습니다. `@Agent`가 도구만 선언하고 `execute()`를 생략하면, 프레임워크 runner가 model 호출 → tool 호출 → 결과 주입 → 종료 판정 루프를 `execute()`로 자동 제공합니다.
+앞의 예제는 `execute()` 본문을 직접 작성했습니다. 한 번의 model stream에서 나온
+tool candidate를 승인·실행하고 결과를 외부에 내보내는 정도라면 본문을 생략할 수
+있습니다. `@Agent`가 도구만 선언하면 runner는 model request 한 번, stream 소비,
+candidate dispatch, result/evidence/final 방출로 이어지는 single-pass `execute()`를
+합성합니다.
 
 ```python
 from spakky.agent import (
@@ -400,7 +433,9 @@ class NoteAgent:
         return self._notes.read(topic)
 ```
 
-`NoteAgent`에는 `execute()`가 없습니다. runner가 spec(`instructions`)과 생성자에 주입된 `IAgentModel`, 그리고 `@agent_tool` 카탈로그로부터 표준 루프를 합성합니다. 호출 입력은 `RunAgentInput`입니다.
+`NoteAgent`에는 `execute()`가 없습니다. Runner가 spec(`instructions`), 생성자에
+주입된 `IAgentModel`, `@agent_tool` catalog로부터 single-pass 실행을 합성합니다.
+호출 입력은 `RunAgentInput`입니다.
 
 ```python
 from spakky.agent import AgentYieldKind, RunAgentInput
@@ -415,7 +450,10 @@ async for item in agent.execute(
         return item.payload.output  # 타입은 AgentRunResult
 ```
 
-pydantic-ai의 `Agent(..., output_type=...)` + `@agent.tool` + `agent.run()` 조합과 같은 자리를 Spakky에서는 `@Agent(spec=...)` + `@agent_tool` + runner-backed `execute(RunAgentInput)`가 채웁니다. 차이는 도구·model·repository가 모두 **생성자 DI**로 주입된다는 점입니다 — spec은 의존성을 다시 선언하지 않습니다.
+Pydantic AI와 공유하는 것은 선언형 tool catalog라는 개발 경험입니다. Spakky에서는
+`@Agent(spec=...)`, `@agent_tool`, runner-backed `execute(RunAgentInput)`를 사용하고,
+도구·model·repository는 **생성자 DI**로 주입합니다. 표준 runner는 tool result를
+model에 재주입하지 않으므로 multi-step 응답 생성은 custom `execute()`의 책임입니다.
 
 AG-UI나 A2A처럼 protocol fidelity가 필요한 adapter를 직접 만들 때는 coarse한 `AgentYield`를 재해석하지 말고 `IAgentRunnerFactory.open_runner(agent, run_input=run_input)`으로 request-scoped runner를 열고 `runner.run_events(run_input)`을 사용합니다. 이 factory 경로를 거쳐야 `spakky-mcp`의 외부 MCP tool 합류, 인증 세션 수명주기, `IAgentModelResolver` 기반 runtime model routing이 모두 적용됩니다. `AgentEvent`는 message/reasoning delta, tool call start/args/end/result, run/step boundary, pause, state, artifact를 분리해 내보내므로 adapter가 wire protocol 이벤트로 1:1 투영할 수 있습니다.
 
@@ -464,7 +502,12 @@ flowchart LR
 
 외부 MCP 서버를 Agent가 소비하게 만들 때는 Agent annotation을 추가하지 않습니다. 외부 서버는 `spakky-mcp`의 `McpConfig.servers` 또는 `RunAgentInput.metadata["mcp"]["servers"]`에서 선택하고, 플러그인이 run마다 lazy `mcp_search_tools`/`mcp_call_tool` 도구를 catalog에 합류시킵니다.
 
-모델도 Agent class에 이름을 굽지 않습니다. Agent는 `IAgentModel` port만 주입받고, 사용자나 서비스가 provider/model을 고르는 경우 `RunAgentInput.model_selection`으로 전달합니다. Runner는 이를 `ModelRequest.model_selection`에 실어 vLLM, OpenRouter, Anthropic, Vertex, OpenAI 같은 adapter/router가 해석하게 합니다.
+모델도 Agent class에 이름을 굽지 않습니다. Agent는 `IAgentModel` port만 주입받고,
+사용자나 서비스가 profile/provider/model을 고르는 경우
+`RunAgentInput.model_selection`으로 전달합니다. Runner는 이를
+`ModelRequest.model_selection`에 싣고, `spakky-llm`의 `LlmAgentModel`은 허용된
+profile과 API family를 골라 OpenAI Chat Completions, Anthropic Messages 또는
+Google GenerateContent adapter로 라우팅합니다.
 
 Protocol marker는 아래 순서를 문서화된 표준으로 사용합니다. Python decorator는 아래에서 위로 적용되므로 `@Agent`가 class에 가장 가까이 놓이고, protocol marker가 같은 class 위에 metadata를 덧붙입니다.
 
@@ -484,7 +527,7 @@ class Assistant:
 
 1. `@Agent` class에 `@agent_tool` 하나를 선언하고 `execute()`는 생략한다 (runner가 자동 제공).
 2. container에서 resolve해 `RunAgentInput`으로 호출하고 `AgentYieldKind.FINAL`을 확인한다.
-3. `IAgentModel`을 생성자로 받아 model-mediated tool 호출 루프를 돌린다.
+3. `IAgentModel`을 생성자로 받아 single-pass model stream과 tool candidate를 처리한다.
 4. write/network/destructive tool을 추가하고 approval event를 처리한다.
 5. 실행 중 시그널 반응이 필요하면 `@on_signal` 훅을 선언한다.
 6. durable 실행이 필요해지면 state/signal/evidence repository를 붙인다.

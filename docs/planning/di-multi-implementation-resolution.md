@@ -1,27 +1,33 @@
-# DI Multi-Implementation Resolution Milestone Draft
+# DI Multi-Implementation Resolution Historical Design
 
-- **상태**: Draft
+> 복수 Pod 후보 선택과 collection injection을 구현하기 위해 작성했던 설계 기록입니다.
+> 현재 사용법은 [의존성 주입 가이드](../guides/dependency-injection.md)를 따르세요.
+
+- **상태**: Implemented / Archived
 - **작성일**: 2026-05-04
-- **대상 마일스톤 제안명**: DI Multi-Implementation Resolution
-- **후속 의존**: Agentic Hexagonal Architecture plugin family
+- **현행 구현 확인일**: 2026-08-22
+- **대상 마일스톤명**: DI Multi-Implementation Resolution
+- **구현 활용 사례**: `spakky-llm`의 복수 `ILLMProvider` 주입
 
 ## 1. 비즈니스 의도
 
-Spakky Framework는 plugin entry point를 통해 설치된 플러그인을 자동 활성화한다. 이 모델은 사용자가 설치한 기능을 별도 `app.use()` 없이 활용하게 하는 장점이 있지만, 하나의 interface/port에 대응하는 여러 구현체가 동시에 설치될 때 DI resolution이 불안정해지는 문제가 있다.
+Spakky Framework는 plugin entry point를 통해 설치된 플러그인을 자동 활성화한다. 이 모델은 사용자가 설치한 기능을 별도 `app.use()` 없이 활용하게 하는 장점이 있지만, 하나의 interface/port에 대응하는 여러 구현체가 동시에 설치될 때 명시적인 DI resolution 규칙이 필요했다.
 
-Agent runtime 논의에서 이 문제가 명확히 드러났다. 예를 들어 `spakky-langgraph`와 `spakky-pydantic-ai`가 모두 `IAgentExecutionEngine`을 제공하거나, `spakky-vllm`과 API provider plugin이 모두 `IChatModel`을 제공하면 현재 DI semantics만으로는 안전한 선택이 어렵다.
+Agent runtime 논의에서 이 문제가 명확히 드러났다. 예를 들어 `spakky-langgraph`와 `spakky-pydantic-ai`가 모두 `IAgentExecutionEngine`을 제공하거나, `spakky-llm` 안의 여러 `ILLMProvider` 구현이 함께 등록되면 현재 DI semantics만으로는 안전한 선택이 어렵다.
 
-이 마일스톤의 목적은 agent plugin family의 선행 기반으로, Spakky DI 컨테이너가 복수 구현체를 안정적으로 등록, 조회, 주입, 진단할 수 있게 만드는 것이다.
+이 마일스톤은 agent plugin family의 선행 기반으로, Spakky DI 컨테이너가 복수 구현체를 안정적으로 등록, 조회, 주입, 진단할 수 있게 만들었다. 아래 요구사항과 작업 분해는 구현 당시의 설계·수용 기준을 보존한 기록이며 현재 backlog가 아니다.
 
-## 2. 현재 코드 근거
+## 2. 구현 결과와 현재 코드 근거
 
 확인한 코드:
 
 - `core/spakky/src/spakky/core/application/application.py`
 - `core/spakky/src/spakky/core/application/application_context.py`
+- `core/spakky/src/spakky/core/pod/binding.py`
 - `core/spakky/src/spakky/core/pod/annotations/primary.py`
 - `core/spakky/src/spakky/core/pod/annotations/qualifier.py`
 - `core/spakky/src/spakky/core/pod/interfaces/container.py`
+- `plugins/spakky-llm/src/spakky/plugins/llm/model.py`
 - `docs/plugin-api.md`
 
 현재 동작:
@@ -29,10 +35,16 @@ Agent runtime 논의에서 이 문제가 명확히 드러났다. 예를 들어 `
 - `SpakkyApplication.load_plugins(include=None)`는 `spakky.plugins` entry point를 전부 로드한다.
 - `include`가 지정되면 예외적으로 특정 plugin만 로드한다.
 - `ApplicationContext`는 `__type_cache: dict[type, set[Pod]]`로 타입별 후보를 관리한다.
-- 후보가 하나면 바로 선택한다.
-- 후보가 여러 개면 `Qualifier`, dependency parameter name, `@Primary`로 좁힌다.
-- `@Primary`와 `Qualifier`는 이미 존재하지만, collection injection과 설정 기반 binding은 없다.
-- 복수 후보가 있는데 단수 주입이 명시적으로 결정되지 않는 경우의 사용자 진단이 충분하지 않다.
+- 단수 주입은 `Qualifier` 또는 명시 Pod 이름, `PodBinding`, 단일 후보,
+  `@Primary`, legacy dependency parameter name 순서로 후보를 결정한다.
+- 복수 후보를 하나로 결정할 수 없으면 `NoUniquePodError`가 후보와 resolution
+  hint를 포함해 발생한다.
+- `ApplicationContext.bind()`, `bind_to_type()`, `bind_to_name()`으로 명시적인
+  interface-to-implementation binding을 등록할 수 있다.
+- `list[T]`, `tuple[T, ...]`, `dict[str, T]` collection injection이 구현되어
+  있으며 후보는 Pod 이름 순서로 정렬된다. `dict`의 key도 Pod 이름이다.
+- `LlmAgentModel`은 `tuple[ILLMProvider, ...]`를 실제로 주입받아 provider API별
+  registry를 구성한다.
 
 ## 3. 사용자 시나리오
 
@@ -83,20 +95,12 @@ Then 해당 이름의 execution engine이 선택된다.
 - **Binding policy**: 특정 requested type 또는 qualifier에 대해 선택할 Pod를 명시하는 설정
 - **Ambiguity diagnostic**: resolution 실패 원인과 해결 방법을 담은 구조화된 오류 정보
 
-계약 방향:
+구현한 주입 형태는 다음과 같다.
 
-```text
-Single injection
-  T
-  Optional[T]
-  Annotated[T, Qualifier(...)]
-  named binding
-
-Collection injection
-  list[T]
-  tuple[T, ...]
-  dict[str, T]
-```
+| 구분 | 지원 형태 |
+| ---- | --------- |
+| 단수 주입 | `T`, `Optional[T]`, `Annotated[T, Qualifier(...)]`, named binding |
+| Collection 주입 | `list[T]`, `tuple[T, ...]`, `dict[str, T]` |
 
 ## 6. 도메인 규칙
 
@@ -144,7 +148,7 @@ Agent 마일스톤과의 상호작용:
 - `app.use()` 형태의 plugin manual activation API 도입
 - plugin installation resolver 또는 package manager 구현
 - agent runtime 구현
-- LangGraph/Pydantic AI/vLLM plugin 구현
+- `spakky-llm` provider SDK adapter 구현
 - SaaS hosted runtime 구현
 - 기존 plugin entry point 방식 교체
 
@@ -161,7 +165,7 @@ Agent 마일스톤과의 상호작용:
 - **SC-9**: 기존 plugin 자동 활성화 문서는 유지되고, multi-implementation 선택 방식이 문서에 추가된다.
 - **SC-10**: agent adapter 예시 시나리오에서 `langgraph`와 `pydantic-ai` 후보가 동시에 있어도 명시 binding으로 하나를 선택할 수 있다.
 
-## 11. 분해 초안
+## 11. 구현 작업 분해 기록
 
 ### T1. DI resolution semantics 확정 및 오류 진단 설계
 
@@ -254,11 +258,7 @@ graph TD
     T5 --> T6
 ```
 
-Critical path:
-
-```text
-T1 -> T2 -> T3 -> T5 -> T6
-```
+당시 critical path는 T1, T2, T3, T5, T6 순서였다.
 
 Parallel candidates:
 
@@ -285,21 +285,24 @@ T3는 central change이므로 단독 처리해야 한다.
 - plugin activation 모델은 실제 코드와 문서에 맞춰 `load_plugins()` 자동 로드 모델로 정정했다.
 - Core 구현체 금지 원칙을 반영했다.
 - `parameter name 자동 매칭`은 유지하되 명시 선택보다 낮은 legacy convenience로 분류했다.
-- 다만 `Binding policy API`의 구체 사용자 표면은 후속 스펙에서 확정해야 한다.
+- `PodBinding`과 `ApplicationContext.bind()`, `bind_to_type()`, `bind_to_name()`으로
+  binding policy의 사용자 표면을 구현했다.
+- `ApplicationContext`의 collection resolution과 `LlmAgentModel`의 tuple 주입을
+  현재 코드에서 다시 확인했다.
 
-## 15. 확정된 추가 결정
+## 15. 구현에 반영된 선택 우선순위
 
 ### Parameter name 자동 매칭
 
 `parameter name 자동 매칭`은 backward compatibility를 위해 유지한다. 다만 복수 구현체 환경에서 암묵적 선택이 `@Primary` 또는 명시 binding을 덮어쓰면 예측 가능성이 떨어지므로, 우선순위를 낮춘다.
 
-우선순위:
+현재 구현의 우선순위:
 
-1. `Qualifier` 또는 명시 name
-2. 설정 기반 binding
-3. 정확히 하나의 `@Primary`
-4. legacy parameter name 자동 매칭
-5. 후보가 정확히 1개
+1. `Qualifier` 또는 `get(type_, name=...)`의 명시 Pod name
+2. `PodBinding`
+3. 후보가 정확히 1개
+4. 정확히 하나의 `@Primary`
+5. legacy dependency parameter name 자동 매칭
 6. ambiguity error
 
 문서에서는 parameter name 자동 매칭을 legacy convenience로 설명하고, 신규 코드는 `Qualifier`, 명시 name, 또는 binding policy를 사용하도록 유도한다.

@@ -39,7 +39,7 @@ flowchart TD
   AbstractSpakkyFrameworkError --> AbstractSpakkyLoggingError
   AbstractSpakkyFrameworkError --> AbstractSpakkyOidcError
   AbstractSpakkyFrameworkError --> AbstractOpenFgaError
-  AbstractSpakkyFrameworkError --> AbstractVllmError
+  AbstractSpakkyFrameworkError --> AbstractLlmError
   AbstractSpakkyFrameworkError --> CryptographyErrors[spakky-cryptography concrete errors]
   AbstractSpakkyFrameworkError --> CommonErrors[common concrete errors]
   AbstractSpakkyFrameworkError --> PolicyDocumentError
@@ -109,6 +109,7 @@ flowchart TD
   AbstractSpakkySqlAlchemyError --> AbstractSpakkySqlAlchemyPersistencyError
   AbstractSpakkySqlAlchemyPersistencyError --> AgentPersistenceRowNotFoundError
   AbstractSpakkyGrpcError --> AbstractGrpcStatusError
+  AbstractSpakkyGrpcError --> NoControllerFoundError
   AbstractSpakkyActuatorError --> CannotEvaluateAsyncExtensionSynchronouslyError
   AbstractSpakkyOidcError --> OidcDiscoveryError
   AbstractSpakkyOidcError --> OidcJwksError
@@ -116,14 +117,15 @@ flowchart TD
   AbstractSpakkyOidcError --> OidcTokenValidationError
   AbstractOpenFgaError --> OpenFgaProviderUnavailableError
   AbstractOpenFgaError --> OpenFgaReferenceMappingError
-  AbstractVllmError --> VllmTransportError
-  AbstractVllmError --> VllmTimeoutError
-  AbstractVllmError --> VllmResponseError
-  AbstractVllmError --> VllmConstrainedDecodingUnsupportedError
-  AbstractVllmError --> VllmStreamingDisabledError
-  AbstractVllmError --> VllmModelRefusalError
-  AbstractVllmError --> VllmModelSelectionError
-  AbstractVllmError --> VllmStreamingNotImplementedError
+  AbstractLlmError --> LlmConfigurationError
+  AbstractLlmError --> LlmModelSelectionError
+  AbstractLlmError --> LlmProviderUnavailableError
+  AbstractLlmError --> LlmStreamingDisabledError
+  AbstractLlmError --> LlmTransportError
+  AbstractLlmError --> LlmTimeoutError
+  AbstractLlmError --> LlmResponseError
+  AbstractLlmError --> LlmModelRefusalError
+  AbstractLlmError --> LlmUnsupportedFeatureError
   PolicyDocumentError --> PolicyDocumentLoadError
   PolicyDocumentError --> PolicyDocumentValidationError
   PolicyDocumentError --> PolicyEvaluationError
@@ -770,6 +772,7 @@ from spakky.plugins.grpc.error import (
     NotAnRpcMethodError,
     RpcMethodTypeMismatchError,
     MessagelessRpcMethodError,
+    NoControllerFoundError,
 )
 ```
 
@@ -798,6 +801,7 @@ from spakky.plugins.grpc.error import (
 | `InvalidProtoFieldNumberError`        | 명시 `ProtoField(number=...)`가 protobuf 유효 범위 밖이거나 reserved band에 있음 |
 | `DuplicateProtoFieldNumberError`      | 같은 message 안에서 두 필드가 같은 명시 `ProtoField` 번호를 사용 |
 | `MessagelessRpcMethodError`           | `@rpc` 메서드가 request 또는 response 모델을 선언하지 않음. protobuf는 모든 method에 input/output 메시지를 요구하므로 컨트롤러 등록 시점(`build_service_descriptor`)에 차단되며, 클라이언트 호출 생성 시점에도 같은 에러가 발생 |
+| `NoControllerFoundError`              | descriptor snapshot 대상 module에서 `@GrpcController`를 하나도 찾지 못함 |
 
 **전송 보안 설정 에러:**
 
@@ -833,35 +837,39 @@ from spakky.plugins.openfga.error import (
 | `OpenFgaProviderUnavailableError` | OpenFGA check provider 호출 실패 또는 비가용 상태 |
 | `OpenFgaReferenceMappingError` | canonical auth ref를 OpenFGA user/object/relation으로 변환할 수 없음 |
 
-### spakky-vllm
+### spakky-llm { #spakky-llm-errors }
 
-vLLM OpenAI-compatible model adapter 관련 에러입니다. Provider 응답은 `spakky-agent`의 `ModelError`/stream event로 변환되기 전에 이 계층에서 정규화됩니다.
+다중 provider LLM routing과 공식 SDK adapter 관련 에러입니다. `complete()`는 이
+typed error를 호출자에게 전달하고, `stream()`은 `ModelError`가 든 `ERROR` event와
+terminal `DONE` event로 정규화합니다.
 
 ```python
-from spakky.plugins.vllm.error import (
-    AbstractVllmError,
-    VllmConstrainedDecodingUnsupportedError,
-    VllmModelRefusalError,
-    VllmModelSelectionError,
-    VllmResponseError,
-    VllmStreamingDisabledError,
-    VllmStreamingNotImplementedError,
-    VllmTimeoutError,
-    VllmTransportError,
+from spakky.plugins.llm.error import (
+    AbstractLlmError,
+    LlmConfigurationError,
+    LlmModelRefusalError,
+    LlmModelSelectionError,
+    LlmProviderUnavailableError,
+    LlmResponseError,
+    LlmStreamingDisabledError,
+    LlmTimeoutError,
+    LlmTransportError,
+    LlmUnsupportedFeatureError,
 )
 ```
 
-| 에러 | 설명 |
-| ---- | ---- |
-| `AbstractVllmError` | vLLM adapter 에러 기반 클래스 |
-| `VllmTransportError` | OpenAI-compatible endpoint 요청 실패 |
-| `VllmTimeoutError` | vLLM 요청 타임아웃 |
-| `VllmResponseError` | provider 응답을 Spakky model contract로 매핑할 수 없음 |
-| `VllmConstrainedDecodingUnsupportedError` | 요청된 tool constraint를 vLLM이 강제할 수 없음 |
-| `VllmStreamingDisabledError` | plugin 설정에서 streaming이 비활성화됨 |
-| `VllmModelRefusalError` | 모델이 정상 completion 생성을 거부함 |
-| `VllmModelSelectionError` | run이 vLLM adapter 범위 밖의 model을 선택함 |
-| `VllmStreamingNotImplementedError` | pre-streaming adapter 실패 호환 alias |
+| 에러 | stream code | retryable | 설명 |
+| --- | --- | --- | --- |
+| `AbstractLlmError` | — | — | LLM routing과 provider adapter 에러의 공통 기반 클래스 |
+| `LlmConfigurationError` | `llm_configuration_invalid` | `false` | profile과 provider registry 설정이 유효하지 않음 |
+| `LlmModelSelectionError` | `llm_model_selection_invalid` | `false` | 요청을 허용된 profile로 해석할 수 없음 |
+| `LlmProviderUnavailableError` | `llm_provider_unavailable` | `false` | 선택한 API family의 SDK adapter가 등록되지 않음 |
+| `LlmStreamingDisabledError` | `llm_streaming_disabled` | `false` | 선택한 profile이 streaming을 허용하지 않음 |
+| `LlmTransportError` | `llm_transport_error` | `true` | SDK가 provider endpoint에 도달하지 못했거나 재시도 가능한 상태 오류를 받음 |
+| `LlmTimeoutError` | `llm_timeout` | `true` | provider SDK 요청 timeout |
+| `LlmResponseError` | `llm_response_error` | `false` | provider response, JSON, tool history 또는 schema 검증 실패 |
+| `LlmModelRefusalError` | `model_refusal` | `false` | provider가 refusal 또는 content filter를 보고함 |
+| `LlmUnsupportedFeatureError` | `llm_feature_unsupported` | `false` | 선택한 provider가 요청 기능을 충족할 수 없음 |
 
 ### spakky-agui
 

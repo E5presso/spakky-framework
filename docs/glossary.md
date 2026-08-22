@@ -296,11 +296,19 @@ protocol-neutral event union입니다. `MessageDeltaEvent`, `ReasoningDeltaEvent
 통해 어떤 agent/run/conversation에서 나왔는지 보존합니다. AG-UI는 이를 `runId`와
 `threadId`로, A2A는 task id와 context id로 투영합니다.
 
-### IAgentModel
+### IAgentModel { #iagentmodel }
 
-`spakky-agent`가 소유하는 model outbound port입니다. `spakky-vllm`은 이 port의 첫
-공식 provider plugin으로, OpenAI-compatible vLLM HTTP/SSE 응답을 공통
-`ModelResponse`와 `ModelStreamEvent`로 변환합니다.
+`spakky-agent`가 소유하는 model outbound port입니다. `spakky-llm`은 이 port를
+구현하는 공식 provider plugin으로, allowlisted profile을 OpenAI Chat Completions,
+Anthropic Messages, Google GenerateContent SDK adapter에 라우팅합니다. vLLM은
+OpenAI-compatible dialect로 지원됩니다. Provider 응답과 stream은 공통
+`ModelResponse`와 `ModelStreamEvent`로 정규화됩니다.
+
+표준 Agent runner는 invocation마다 `IAgentModel.stream()`을 한 번 순회하고 tool
+candidate를 dispatch한 뒤 종료합니다. Tool result 재주입과 반복 model 호출이 필요한
+multi-step 흐름은 custom `execute()`에서 구성합니다. 사용법은
+[AI Agent 개발](guides/agents.md), profile과 provider API는
+[spakky-llm API Reference](api/plugins/spakky-llm.md)를 확인하세요.
 
 ### Agent Persistence Contribution
 

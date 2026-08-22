@@ -6,7 +6,7 @@
 ## 언제 필요한가
 
 - agentic workflow를 Spakky DI/hexagonal architecture 안에서 표현하려는 경우
-- spec과 `@agent_tool` 메서드만 선언하고 프레임워크가 표준 실행 루프(`execute()`)를 자동 제공하게 하려는 경우
+- spec과 `@agent_tool` 메서드만 선언하고 프레임워크가 single-pass 표준 실행 orchestration(`execute()`)을 자동 제공하게 하려는 경우
 - `AgentYield` stream을 FastAPI, WebSocket, CLI 같은 inbound adapter가 직접 소비하게 하려는 경우
 - model adapter를 `IAgentModel` outbound port로 구현하려는 경우
 - long-running execution의 state, signal, evidence 계약을 plugin contribution으로 구현하려는 경우
@@ -19,18 +19,18 @@ Core contract만 사용할 때는 `spakky-agent`를 설치합니다.
 pip install spakky-agent
 ```
 
-로컬 vLLM model adapter와 SQLAlchemy durable repository를 함께 쓰는 일반적인 ADR-0009 조합은 다음처럼 설치합니다.
+multi-provider model adapter와 SQLAlchemy durable repository를 함께 쓰는 일반적인 조합은 다음처럼 설치합니다.
 
 ```bash
-pip install spakky-agent spakky-vllm "spakky-sqlalchemy[agent]"
+pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 ```
 
 `spakky-agent`는 public API와 bootstrap validation만 제공합니다. Production state/signal/evidence repository는 `spakky.contributions.spakky.agent` provider contribution으로 들어와야 하며, 운영용 in-memory persistence fallback은 없습니다.
 
 ## 제공하는 public surface
 
-- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 실행 이름/목표(`name`, `objective`), system-level 지시문(`instructions`), 구조화 출력 타입(`output_type`), 수신 signal/recovery/streaming/timeout 선언(`accepted_signals`, `recovery`, `streaming_exposure_mode`, `timeout_seconds`, `limits`), 협력 agent(`teammates`), 컨텍스트 압축 정책(`compaction`), 위임 허용 marker(`delegation_allowed`), 문자열 metadata(`metadata`)를 보존한다. 공백 name/objective/instructions, non-class `output_type`, 중복 teammate 이름, 모순되는 timeout 선언은 `AgentDefinitionError`로 거부된다. `execute()` 없이 spec + `@agent_tool` 메서드만 선언하면 프레임워크가 `AgentRunner` 기반 표준 루프를 `execute()`로 자동 바인딩한다(ADR-0013 §1). 개발자가 직접 `execute()`를 작성한 경우에는 건드리지 않는다.
-- `AgentRunner`, `AgentRunResult`: 프레임워크가 소유하는 표준 실행 루프. `AgentRunner.for_agent_instance(instance)`는 인스턴스에 주입된 속성을 타입 기반으로 탐색해 `IAgentModel`·`IAgentStateRepository`·`IAgentSignalRepository`·`IAgentEvidenceRepository`를 resolve한다. 같은 orchestration 위에 두 stream을 노출한다 — `run(run_input)`은 inbound adapter가 직접 소비하는 public `AsyncGenerator[AgentYield[object], None]`을, `run_events(run_input)`은 AG-UI·A2A 어댑터가 무손실로 투영하는 프로토콜 중립 `AsyncGenerator[AgentEvent, None]`을 yield한다. `run_events()`는 모델 스트림의 message/reasoning delta와 tool call `start`·`args-delta`·`end`·`result` lifecycle을 구분된 `AgentEvent`로 방출하고, 루프 경계를 `RunStartedEvent`/`StepStartedEvent`/`StepFinishedEvent`/`RunPausedEvent`/`RunFinishedEvent`로 감싼다(ADR-0013 §3). 승인·auth 인터럽트는 성공 종료가 아니라 `RunPausedEvent`로 방출된다. `accepted_signals`/`RecoveryStrategy.ACTION_BOUNDARY` 선언이 없는 stateless agent는 model → tool → final의 단순 경로를 실행하고, durable agent는 state 전이·signal 소비·HITL pause→approval→resume 흐름·action boundary checkpoint까지 모두 처리한다. 두 stream 모두 durable approval gating과 evidence persistence를 공유한다. `AgentRunResult`는 spec이 `output_type`을 선언하지 않을 때 기본으로 반환되는 중립 종료 요약 dataclass(`state_id`, `status`, `tool_calls`, `evidence_count`)다.
+- `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 실행 이름/목표(`name`, `objective`), system-level 지시문(`instructions`), 구조화 출력 타입(`output_type`), 수신 signal/recovery/streaming/timeout 선언(`accepted_signals`, `recovery`, `streaming_exposure_mode`, `timeout_seconds`, `limits`), 협력 agent(`teammates`), 컨텍스트 압축 정책(`compaction`), 위임 허용 marker(`delegation_allowed`), 문자열 metadata(`metadata`)를 보존한다. 공백 name/objective/instructions, non-class `output_type`, 중복 teammate 이름, 모순되는 timeout 선언은 `AgentDefinitionError`로 거부된다. `execute()` 없이 spec + `@agent_tool` 메서드만 선언하면 프레임워크가 `AgentRunner` 기반 single-pass 표준 orchestration을 `execute()`로 자동 바인딩한다(ADR-0013 §1). 개발자가 직접 `execute()`를 작성한 경우에는 건드리지 않는다.
+- `AgentRunner`, `AgentRunResult`: 프레임워크가 소유하는 single-pass 표준 execution orchestration. `AgentRunner.for_agent_instance(instance)`는 인스턴스에 주입된 속성을 타입 기반으로 탐색해 `IAgentModel`·`IAgentStateRepository`·`IAgentSignalRepository`·`IAgentEvidenceRepository`를 resolve한다. 같은 orchestration 위에 두 stream을 노출한다 — `run(run_input)`은 inbound adapter가 직접 소비하는 public `AsyncGenerator[AgentYield[object], None]`을, `run_events(run_input)`은 AG-UI·A2A 어댑터가 무손실로 투영하는 프로토콜 중립 `AsyncGenerator[AgentEvent, None]`을 yield한다. `run_events()`는 모델 스트림의 message/reasoning delta와 tool call `start`·`args-delta`·`end`·`result` lifecycle을 구분된 `AgentEvent`로 방출하고, run/step 경계를 `RunStartedEvent`/`StepStartedEvent`/`StepFinishedEvent`/`RunPausedEvent`/`RunFinishedEvent`로 감싼다(ADR-0013 §3). 승인·auth 인터럽트는 성공 종료가 아니라 `RunPausedEvent`로 방출된다. Stateless agent는 한 번의 model stream을 소비하면서 tool candidate를 dispatch한 뒤 final로 닫고, durable agent는 같은 single-pass 경로에 state 전이·signal 소비·HITL pause→approval→resume·action boundary checkpoint를 추가한다. 두 stream 모두 durable approval gating과 evidence persistence를 공유하지만, tool result를 새 `ModelRequest`에 재주입해 같은 `run()`/`run_events()` invocation에서 model을 다시 호출하지 않는다. `AgentRunResult`는 spec이 `output_type`을 선언하지 않을 때 기본으로 반환되는 중립 종료 요약 dataclass(`state_id`, `status`, `tool_calls`, `evidence_count`)다.
 - `IAgentRunnerFactory`, `AgentRunnerFactory`: inbound adapter가 request/run scope runner를 여는 DI 포트와 기본 구현. 기본 구현은 `AgentRunner.for_agent_instance()`를 감싼다. MCP처럼 runner catalog나 외부 세션 수명주기를 확장하는 plugin은 이 port를 자체 구현으로 바인딩하고, AG-UI/A2A 같은 protocol adapter는 직접 `AgentRunner.for_agent_instance()`를 호출하지 않고 이 factory를 주입받아 실행한다.
 - `RunAgentInput`: inbound run 계약. `state_id`(실행 상관 ID), `instruction`(모델 요청의 사용자 프롬프트), `conversation_id`(멀티턴 스레드 ID, 생략 시 `state_id`로 대체), `parent_run_id`(위임 child run이 parent run과 연결되는 중립 링크), `resume`(일시 중단된 실행 재개 여부), `message_history`(클라이언트가 주입한 이전 대화 이력 `tuple[ModelMessage, ...]`, ADR-0013 §6 client-injected history), `model_selection`(요청별 provider/model/profile 선택), `metadata`(model request metadata에 병합되는 runner 레벨 부가 정보)를 담는다. `effective_conversation_id` property는 `conversation_id or state_id`를 반환한다. approval decision은 이 계약이 아닌 signal repository를 통해 전달된다.
 - `AgentTeammate`: 이름과 로컬 Pod 타입(`pod`) 또는 원격 AgentCard http(s) URL(`card_url`) 중 정확히 하나를 선언하는 협력 agent 기술자. 둘 다 지정하거나 둘 다 생략하면 `AgentDefinitionError`. `@Agent`는 teammate마다 `teammate.<schema_token(name)>.delegate` synthetic tool descriptor를 생성하며, schema token은 teammate name의 앞뒤 공백을 제거한 뒤 `[a-zA-Z0-9_]`가 아닌 연속 문자를 단일 `_`로 치환하고, 앞뒤 `_`를 제거한 다음 소문자화한 값이다. 이 결과가 비면 `AgentDefinitionError`다. 로컬 teammate는 parent에 주입된 child Pod를 찾아 `AgentRunner.run_events()`로 in-process 실행하고, 원격 teammate는 parent에 주입된 `IAgentDelegate` port로 위임한다.
@@ -75,13 +75,13 @@ Core package는 `spakky` core에만 의존합니다. vLLM, SQLAlchemy, FastAPI, 
 
 Durable 실행 경로는 `AgentExecutionSpec.recovery == RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생됩니다. 이 경우 bootstrap은 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증하고, 누락 시 필요한 repository type과 설치해야 할 `spakky-sqlalchemy[agent]` / `spakky.contributions.spakky.agent` provider contribution을 error message에 포함합니다. 운영용 in-memory repository fallback은 없습니다.
 
-`AgentEvidenceRepository`의 agent-facing interface는 append/read 계열만 노출합니다. Redaction, correction, context digest 갱신은 기존 evidence를 수정하지 않고 새 evidence를 append하는 방식으로 표현합니다.
+`IAgentEvidenceRepository`의 agent-facing interface는 append/read 계열만 노출합니다. Redaction, correction, context digest 갱신은 기존 evidence를 수정하지 않고 새 evidence를 append하는 방식으로 표현합니다.
 
 ## 사용 예시
 
-### 선언형 — 프레임워크 제공 루프 (권장)
+### 선언형 — 프레임워크 제공 orchestration (권장)
 
-spec과 `@agent_tool` 메서드만 작성하면 `@Agent`가 `AgentRunner` 기반 표준 루프를 `execute()`로 자동 바인딩합니다. `RunAgentInput`을 인자로 받아 `AgentYield` 스트림을 내보내는 표준 루프가 model → tool dispatch → HITL pause/resume → state 전이 → final 까지 처리합니다.
+spec과 `@agent_tool` 메서드만 작성하면 `@Agent`가 `AgentRunner` 기반 single-pass 표준 orchestration을 `execute()`로 자동 바인딩합니다. `RunAgentInput`을 인자로 받아 `AgentYield` 스트림을 내보내며, 한 번의 model stream에서 tool candidate를 승인·dispatch하고 state/HITL 경계를 처리한 뒤 final로 닫습니다. Tool result 재주입과 같은 invocation의 반복 model 호출이 필요하면 custom `execute()`를 작성해야 합니다.
 
 ```python
 from spakky.agent import (
@@ -106,7 +106,7 @@ class FileAgent:
     async def read_file(self, path: str) -> str:
         with open(path) as f:
             return f.read()
-    # execute()를 작성하지 않으면 AgentRunner 기반 표준 루프가 자동으로 제공된다.
+    # execute()를 작성하지 않으면 AgentRunner 기반 single-pass orchestration이 제공된다.
 ```
 
 호출 측은 `RunAgentInput`을 구성해 `execute()`를 호출합니다.
@@ -209,7 +209,7 @@ class CodeAssistant:
         )
 ```
 
-`@Agent`는 `@Pod` 계열 stereotype이므로 application scan과 constructor DI에 참여합니다. spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 프레임워크가 `AgentRunner` 기반 표준 루프를 `execute()`로 자동 바인딩합니다(ADR-0013 §1). 커스텀 제어가 필요한 경우에만 `execute()`를 직접 작성하며, 이 경우 자동 바인딩은 적용되지 않습니다. `execute()`는 `Generator[AgentYield[T], None, None]` 또는 `AsyncGenerator[AgentYield[T], None]`로 typed stream item을 yield할 수 있고, non-generator 반환형은 streaming 없는 직접 결과 계약으로 취급됩니다. Inbound adapter가 SSE/WebSocket/CLI처럼 진행 상태를 즉시 내보내야 한다면 `AgentYield` generator 계약을 사용해야 합니다.
+`@Agent`는 `@Pod` 계열 stereotype이므로 application scan과 constructor DI에 참여합니다. spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 프레임워크가 `AgentRunner` 기반 single-pass 표준 orchestration을 `execute()`로 자동 바인딩합니다(ADR-0013 §1). Tool result 재주입이나 반복 model 호출 같은 커스텀 제어가 필요한 경우에는 `execute()`를 직접 작성하며, 이 경우 자동 바인딩은 적용되지 않습니다. `execute()`는 `Generator[AgentYield[T], None, None]` 또는 `AsyncGenerator[AgentYield[T], None]`로 typed stream item을 yield할 수 있고, non-generator 반환형은 streaming 없는 직접 결과 계약으로 취급됩니다. Inbound adapter가 SSE/WebSocket/CLI처럼 진행 상태를 즉시 내보내야 한다면 `AgentYield` generator 계약을 사용해야 합니다.
 
 `AgentYieldKind`의 public status vocabulary는 `token`, `progress`, `tool`, `evidence`, `approval`, `final`, `error`, `cancel`입니다. 각 item의 payload는 `Token`, `Progress`, `Tool`, `Evidence`, `Approval`, `Final[T]`, `Error`, `Cancel` value object로 구분되므로 inbound adapter는 별도 stream projector 없이 generator를 직접 순회해 transport별 이벤트로 바꿀 수 있습니다.
 
@@ -289,7 +289,7 @@ async def run_shell(command: str) -> dict[str, str]:
 
 `descriptor.metadata.risk`는 read/write/side-effect/destructive/network 축을 typed enum으로 노출합니다. `descriptor.metadata.requires_approval_candidate`는 HITL 후보 여부를 계산하지만, `ToolApprovalRequirement.NOT_REQUIRED`를 명시한 tool까지 approval을 강제하지 않습니다. `descriptor.metadata.resume`은 완료된 action boundary를 재실행하지 않고, incomplete idempotent action은 retry 후보로, non-idempotent/unknown action은 approval 후보로 분류합니다.
 
-`IAgentModel.stream()`은 model adapter가 message delta(`MESSAGE_DELTA`), reasoning delta(`REASONING_DELTA`), tool-call 경계(`TOOL_CALL_START`/`TOOL_CALL_END`)와 tool-call argument delta(`TOOL_CALL_ARGS_DELTA`), 그리고 기존 token delta, tool-call candidate, structured output, error, done을 `ModelStreamEventKind`로 구분해 내보내는 계약입니다. Reasoning을 지원하지 않는 backend는 `capability.supports_reasoning`이 `False`이며 `REASONING_DELTA` 이벤트를 에러 없이 생략합니다(graceful degrade) — 호출자는 `IAgentModel.capability`로 이를 run 이전에 판별합니다. 실제 vLLM/OpenAI-compatible HTTP 연결은 `plugins/spakky-vllm` 같은 outbound adapter가 담당하며, core package에는 production model implementation을 넣지 않습니다.
+`IAgentModel.stream()`은 model adapter가 message delta(`MESSAGE_DELTA`), reasoning delta(`REASONING_DELTA`), tool-call 경계(`TOOL_CALL_START`/`TOOL_CALL_END`)와 tool-call argument delta(`TOOL_CALL_ARGS_DELTA`), 그리고 기존 token delta, tool-call candidate, structured output, error, done을 `ModelStreamEventKind`로 구분해 내보내는 계약입니다. Reasoning을 지원하지 않는 backend는 `capability.supports_reasoning`이 `False`이며 `REASONING_DELTA` 이벤트를 에러 없이 생략합니다(graceful degrade) — 호출자는 `IAgentModel.capability`로 이를 run 이전에 판별합니다. 실제 provider 연결은 `plugins/spakky-llm`의 allowlisted profile router와 공식 SDK adapter가 담당하며, core package에는 provider 구현을 넣지 않습니다.
 
 ## CodeAssistant demo
 
@@ -297,7 +297,7 @@ async def run_shell(command: str) -> dict[str, str]:
 
 노출되는 tool schema는 `workspace.read`, `workspace.search`, `workspace.write`, `shell.command`, `git.status`, `git.diff`, `git.apply`입니다. 읽기 도구는 approval 없이 진행하고, workspace write/shell/git apply처럼 side effect가 있는 도구는 `plan_agent_tool_approval()`로 `AgentYieldKind.APPROVAL`을 먼저 내보냅니다. 실행 중 user message, approval decision, cancel signal은 repository에서 non-blocking으로 소비되며, action-boundary checkpoint evidence는 restart/resume 판단에 사용됩니다.
 
-테스트는 scripted `IAgentModel`로 vLLM-compatible token/tool-call stream을 모사합니다. 실제 로컬 vLLM 연결은 core 예제가 아니라 `plugins/spakky-vllm`의 `VllmAgentModel`을 생성자에 주입해서 구성합니다. 운영 persistence fallback은 제공하지 않으며, durable 실행에는 SQLAlchemy contribution 같은 실제 repository provider가 필요합니다.
+테스트는 scripted `IAgentModel`로 provider-neutral token/tool-call stream을 모사합니다. 실제 provider 연결은 core 예제가 아니라 `plugins/spakky-llm`이 `IAgentModel`에 binding하는 `LlmAgentModel`로 구성합니다. 운영 persistence fallback은 제공하지 않으며, durable 실행에는 SQLAlchemy contribution 같은 실제 repository provider가 필요합니다.
 
 `examples/inbound_adapter_examples.py`는 `spakky-fastapi`의 `@ApiController`/`@websocket`과 `spakky-typer`의 `@CliController`/`@command`로 `CodeAssistant.execute()` stream을 노출하는 app-level wiring을 보여줍니다. 두 adapter 모두 container에서 `CodeAssistant`를 UseCase처럼 resolve하고 `AgentYield`를 transport event로 변환하며, approval/user input은 `IAgentSignalRepository.append()`로 추가합니다. 이 예제는 기존 plugin building block 조합이며 `spakky-agent-fastapi`나 `spakky-agent-typer` 패키지를 만들지 않습니다.
 

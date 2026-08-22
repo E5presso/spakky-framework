@@ -10,8 +10,10 @@ SSE, HTTP streaming, WebSocket, stdio로 노출합니다. 승인이 필요한 �
 
 ## 1. `@Agent` 선언
 
-선언형 Agent는 spec과 `@agent_tool` 메서드만 선언하면 프레임워크가 실행 루프를 제공합니다
-(자세한 내용은 [AI Agent 심화](agents-advanced.md)).
+선언형 Agent는 spec과 `@agent_tool` 메서드만 선언하면 프레임워크가 한 provider
+stream의 candidate approval/dispatch와 terminal 방출까지 single-pass 실행으로
+제공합니다. Tool result를 model에 재주입하는 multi-step 흐름은 custom `execute()`가
+필요합니다. 자세한 경계는 [AI Agent 심화](agents-advanced.md)를 확인하세요.
 
 ```python
 from spakky.agent import (
@@ -108,6 +110,13 @@ AG-UI annotation에는 MCP 서버명을 굽지 않습니다. 서비스나 사용
 server를 고르면 AG-UI `forwardedProps.mcp`가 core `RunAgentInput.metadata["mcp"]`로 변환되고,
 `spakky-mcp`가 그 run에만 toolset을 합류시킵니다.
 
+아래 OpenRouter 선택은 operator가 먼저 `openrouter` profile과 provider를
+`SPAKKY_LLM__PROFILES__OPENROUTER__...` 환경변수로 등록한 경우에만 유효합니다.
+`model`은 그 profile의 base URL, API key, headers를 그대로 둔 채 model id만
+덮어씁니다. 연결 등록 형식은
+[spakky-llm Profile 설정](../api/plugins/spakky-llm.md#llm-profile-configuration)을
+확인하세요.
+
 ```json
 {
   "threadId": "conv-1",
@@ -116,7 +125,11 @@ server를 고르면 AG-UI `forwardedProps.mcp`가 core `RunAgentInput.metadata["
   "tools": [],
   "context": [],
   "forwardedProps": {
-    "modelSelection": {"provider": "openrouter", "model": "anthropic/claude-sonnet"},
+    "modelSelection": {
+      "profile": "openrouter",
+      "provider": "openrouter",
+      "model": "anthropic/claude-sonnet"
+    },
     "mcp": {"servers": ["github"]}
   }
 }
@@ -187,7 +200,7 @@ projector는 이 pause를 `TOOL_CALL_START`/`TOOL_CALL_ARGS`/`TOOL_CALL_END` 프
 메시지/추론 delta, 도구 호출 `start`/`args-delta`/`end`/`result` 생명주기, run/step 경계를
 각각 별개의 중립 `AgentEvent`로 native 방출하므로, 어댑터는 거친 yield를 재구성하지 않고
 1:1로 투영합니다(과거 `AgentYield → AgentEvent` bridge는 제거되었습니다). reasoning을
-지원하지 않는 모델에서는 `REASONING_DELTA`가 생략되고(graceful degrade), 현재 모델 루프가
+지원하지 않는 모델에서는 `REASONING_DELTA`가 생략되고(graceful degrade), 현재 single-pass model stream이
 생성하지 않는 `STATE_SNAPSHOT`/`STATE_DELTA`/`ARTIFACT`는 live 런에서 방출되지 않지만
 projector는 taxonomy 완전성을 위해 이들 종류도 계속 처리합니다. `parentRunId`는 `RunAgentInput.parent_run_id`가
 전달된 실행에서만 `RUN_STARTED`에 포함됩니다.

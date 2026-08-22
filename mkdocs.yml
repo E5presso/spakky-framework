@@ -97,7 +97,7 @@ plugins:
             - plugins/spakky-opentelemetry/src
             - plugins/spakky-grpc/src
             - plugins/spakky-redis/src
-            - plugins/spakky-vllm/src
+            - plugins/spakky-llm/src
             - plugins/spakky-agui/src
             - plugins/spakky-a2a/src
             - plugins/spakky-mcp/src
@@ -215,7 +215,7 @@ nav:
           - spakky-opentelemetry: api/plugins/spakky-opentelemetry.md
           - spakky-grpc: api/plugins/spakky-grpc.md
           - spakky-redis: api/plugins/spakky-redis.md
-          - spakky-vllm: api/plugins/spakky-vllm.md
+          - spakky-llm: api/plugins/spakky-llm.md
           - spakky-agui: api/plugins/spakky-agui.md
           - spakky-a2a: api/plugins/spakky-a2a.md
           - spakky-mcp: api/plugins/spakky-mcp.md
@@ -235,3 +235,4 @@ nav:
       - ADR-0012 Contribution 라우팅 정책: adr/0012-contribution-routing-policy.md
       - ADR-0013 선언형 Agent 루프 소유·프로토콜 중립: adr/0013-declarative-agent-loop-ownership.md
       - ADR-0014 AI PR 리뷰 자동 승인 정책: adr/0014-ai-pr-review-auto-approval-policy.md
+      - ADR-0015 Multi-provider LLM official SDK adapters: adr/0015-multi-provider-llm-official-sdk-adapters.md

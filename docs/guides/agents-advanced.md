@@ -6,13 +6,16 @@
 
 기초 문서가 "무엇을 작성해야 실행되는가"를 다룬다면, 이 문서는 "왜 그렇게 나뉘어 있고 어떤 경계가 원리를 지키는가"를 다룹니다. 세 가지 원칙이 전체 설계를 묶습니다.
 
-1. Runner가 loop를 소유하고, Agent class는 선언을 소유합니다.
+1. Runner가 single-pass 표준 orchestration을 소유하고, Agent class는 선언을 소유합니다.
 2. 위험한 side effect는 approval/evidence/action boundary 뒤에서만 실행됩니다.
 3. 외부 protocol은 core event를 재해석하지 않고 `AgentEvent`를 각 wire event로 투영합니다.
 
-## 원리: 선언은 Agent, 반복은 Runner
+## 원리: 선언은 Agent, single-pass 실행은 Runner
 
-Runner-backed Agent에서 개발자는 `execute()` 루프를 쓰지 않습니다. `@Agent` spec, `@agent_tool`, `@on_signal`, 생성자 주입 port를 선언하면 runner가 그 선언을 읽어 model/tool/signal loop를 수행합니다.
+Runner-backed Agent에서 개발자는 표준 배관을 직접 쓰지 않습니다. `@Agent` spec,
+`@agent_tool`, `@on_signal`, 생성자 주입 port를 선언하면 runner가 provider stream
+하나를 소비하고 candidate approval/dispatch, signal polling, evidence와 terminal
+event 방출을 수행합니다.
 
 ```mermaid
 sequenceDiagram
@@ -35,7 +38,11 @@ sequenceDiagram
   Runner-->>Adapter: AgentYield TOOL / FINAL / APPROVAL / ERROR
 ```
 
-이 구조의 이점은 loop 정책이 한 곳에 있다는 점입니다. Approval, signal polling, evidence append, retry/resume, compaction을 각 Agent가 제각각 구현하지 않고 runner가 일관되게 적용합니다. 커스텀 `execute()`는 이 표준 loop를 벗어나야 할 때의 escape hatch입니다.
+이 구조의 이점은 표준 실행 정책이 한 곳에 있다는 점입니다. Approval, signal
+polling, evidence append, recovery, compaction을 각 Agent가 제각각 구현하지 않고
+runner가 일관되게 적용합니다. 다만 runner는 tool result를 새 model request에
+재주입하지 않습니다. 같은 invocation에서 model을 다시 호출해야 하면 custom
+`execute()`로 multi-step orchestration을 작성합니다.
 
 ## 원리: 도구 호출은 계약, side effect는 경계
 
@@ -53,7 +60,8 @@ flowchart TD
   Approved -- yes --> Bind
   Bind --> Dispatch[AgentToolDispatcher invokes method]
   Dispatch --> Evidence[Append AgentEvidence]
-  Evidence --> Continue[Inject tool result into next model request]
+  Evidence --> Result[Emit TOOL result and evidence]
+  Result --> Terminal[Emit terminal output]
 ```
 
 읽기 tool은 `ToolEffects.read_only()`와 `approval=NOT_REQUIRED`로 의도를 분명히 합니다. 쓰기, shell, 외부 API, patch 적용처럼 상태를 바꾸는 tool은 approval을 명시하거나 기본 `DERIVED` 판정에 맡깁니다. Evidence는 append-only라서 나중에 resume/retry를 판단할 때 "무엇을 이미 실행했는가"를 재구성할 수 있습니다.
@@ -205,7 +213,8 @@ request = ModelRequest(
 )
 ```
 
-Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE`를 내보내면, **runner가** 다음 순서를 자동으로 수행합니다 (개발자가 루프 본문에 작성하지 않습니다, ADR-0013 §1).
+Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE`를 내보내면 **runner가**
+현재 provider stream 안에서 다음 순서를 자동으로 수행합니다.
 
 1. `call.name`으로 `AgentToolCatalog`에서 descriptor를 찾습니다.
 2. `plan_agent_tool_approval()`로 approval이 필요한지 판단합니다.
@@ -216,7 +225,9 @@ Model adapter가 `ModelStreamEventKind.TOOL_CALL_CANDIDATE`를 내보내면, **r
 
 `bind_invocation()`은 model payload가 Python signature와 맞는지 검사합니다. 필수 인자 누락, 알 수 없는 인자, 중복 인자는 tool method가 실행되기 전에 `AgentToolBindingError`로 실패합니다. 이 전체 dispatch는 `AgentToolDispatcher`가 담당하며, 외부 MCP 도구도 같은 `AgentToolCatalog`로 정규화되어 동일 경로로 호출됩니다.
 
-루프 본문을 직접 들여다보고 싶다면 동일 단계를 명시적으로 작성한 코드는 다음과 같습니다 — 커스텀 제어가 필요할 때만 `execute()` 본문으로 옮깁니다.
+같은 dispatch 단계를 명시적으로 제어해야 할 때의 핵심 모양은 다음과 같습니다.
+Tool result를 다음 model request에 넣는 multi-step 흐름이라면 이 dispatch 뒤에 새
+`ModelRequest`를 만드는 custom `execute()` orchestration도 직접 작성해야 합니다.
 
 ```python
 from spakky.agent import Agent, AgentYield, plan_agent_tool_approval
@@ -274,7 +285,7 @@ Cancel은 바로 terminal state로 덮어쓰는 flag가 아닙니다. 일반적�
 
 ## 선언형 시그널 훅: `@on_signal`
 
-`CANCEL`과 `APPROVAL_DECISION`은 runner가 전용 단계에서 처리하지만, 그 외 시그널(`USER_MESSAGE`·`STEERING_INSTRUCTION`·`EXTERNAL_EVENT`·`SCHEDULER_WAKE_UP` 등)에 **커스텀 반응**을 붙이고 싶을 때 `@on_signal`을 씁니다. 이것은 `@agent_tool`과 같은 선언형 seam입니다 — `execute()` 루프를 작성하지 않고, 시그널 종류별 핸들러만 선언하면 runner가 해당 시그널을 소비하는 poll 지점에서 자동 호출합니다.
+`CANCEL`과 `APPROVAL_DECISION`은 runner가 전용 단계에서 처리하지만, 그 외 시그널(`USER_MESSAGE`·`STEERING_INSTRUCTION`·`EXTERNAL_EVENT`·`SCHEDULER_WAKE_UP` 등)에 **커스텀 반응**을 붙이고 싶을 때 `@on_signal`을 씁니다. 이것은 `@agent_tool`과 같은 선언형 seam입니다. 시그널 종류별 핸들러만 선언하면 runner가 해당 시그널을 소비하는 poll 지점에서 자동 호출합니다.
 
 ```python
 from collections.abc import AsyncGenerator
@@ -383,47 +394,37 @@ Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 hi
 
 `RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `model_selection`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
 
-`model_selection`은 요청별 provider/model/profile 선택입니다. Agent class는 특정 모델 이름을 소유하지 않고 `IAgentModel` port만 주입받습니다. 서비스 boundary가 사용자 선택을 `RunAgentInput.model_selection`으로 전달하면 runner는 같은 값을 `ModelRequest.model_selection`에 실어 adapter/router로 넘기고, reasoning gate와 compaction은 `IAgentModel.capability_for(selection)`을 조회합니다. vLLM 단일 adapter는 `provider in (None, "vllm")`만 수용하고, OpenRouter/Anthropic/Vertex/OpenAI 같은 multi-provider 지원은 router adapter가 이 selector를 해석하는 방식으로 확장합니다.
+`model_selection`은 요청별 profile/provider/model 선택입니다. Agent class는 특정 모델
+이름을 소유하지 않고 `IAgentModel` port만 주입받습니다. 서비스 boundary가 사용자
+선택을 `RunAgentInput.model_selection`으로 전달하면 runner는 같은 값을
+`ModelRequest.model_selection`에 실어 adapter/router로 넘기고, reasoning gate와
+compaction은 `IAgentModel.capability_for(selection)`을 조회합니다.
 
-런타임 모델 선택을 서비스에서 지원하려면 `IAgentModelResolver`를 Pod로 등록하고 `AgentRunnerFactory`에 주입되게 합니다. Resolver가 `None`을 반환하면 agent 생성자에 이미 주입된 기본 `IAgentModel`을 그대로 사용합니다. 특정 provider/model/profile을 처리할 수 있으면 그 run에 사용할 model adapter를 반환합니다.
+`spakky-llm`을 설치하면 하나의 `LlmAgentModel`이 이 routing model 역할을 합니다.
+`profile`은 운영자가 `SPAKKY_LLM__PROFILES`에 등록한 연결이어야 하고, 함께 지정한
+`provider`는 그 profile의 식별자와 일치해야 합니다. `model`은 선택한 profile의
+base URL, API key, headers를 유지한 채 요청 model id만 덮어씁니다. 요청 metadata로
+연결 정보를 주입하거나 바꿀 수는 없습니다.
 
 ```python
-from typing import override
+from spakky.agent import ModelSelection, RunAgentInput
 
-from spakky.agent import IAgentModel, IAgentModelResolver, RunAgentInput
-from spakky.core.pod.annotations.pod import Pod
-
-
-@Pod()
-class ModelRouter(IAgentModelResolver):
-    def __init__(
-        self,
-        openai_model: OpenAIModelAdapter,
-        anthropic_model: AnthropicModelAdapter,
-        openrouter_model: OpenRouterModelAdapter,
-    ) -> None:
-        self._models: dict[str, IAgentModel] = {
-            "openai": openai_model,
-            "anthropic": anthropic_model,
-            "openrouter": openrouter_model,
-        }
-
-    @override
-    def resolve_model(
-        self,
-        agent_instance: object,
-        run_input: RunAgentInput | None = None,
-    ) -> IAgentModel | None:
-        _ = agent_instance
-        if run_input is None or run_input.model_selection is None:
-            return None
-        provider = run_input.model_selection.provider
-        if provider is None:
-            return None
-        return self._models.get(provider)
+run_input = RunAgentInput(
+    state_id="run-42",
+    instruction="릴리스 위험을 검토해 주세요.",
+    model_selection=ModelSelection(
+        profile="claude",
+        provider="anthropic",
+        model="claude-opus-4-1",
+    ),
+)
 ```
 
-각 adapter는 `ModelRequest.model_selection.model`을 provider의 실제 model id로 해석합니다. 예를 들어 OpenRouter adapter는 `anthropic/claude-sonnet-4.5` 같은 provider-qualified model id를 그대로 보낼 수 있고, Anthropic/OpenAI 전용 adapter는 자기 provider만 허용하도록 검증할 수 있습니다. Router adapter를 하나의 `IAgentModel` 구현으로 만들 수도 있습니다. 그 경우 `complete()`/`stream()` 안에서 `request.model_selection`을 읽어 provider SDK를 선택하고, `capability_for(selection)`도 provider별 context window와 reasoning 지원 여부를 반환해야 합니다.
+`LlmAgentModel`은 profile의 `api`에 따라 OpenAI Chat Completions, Anthropic Messages,
+Google GenerateContent 공식 SDK adapter 중 하나를 선택합니다. 여러 개의 독립적인
+`IAgentModel` 구현 자체를 run마다 교체해야 하는 애플리케이션만
+`IAgentModelResolver`를 별도로 등록합니다. 일반적인 provider 전환에는 resolver를
+추가하지 않습니다.
 
 | Inbound | 모델 선택 전달 |
 |---------|----------------|
@@ -442,7 +443,7 @@ class ModelRouter(IAgentModelResolver):
 
 ## Context compaction
 
-긴 멀티턴 대화는 결국 model backend의 context window를 넘습니다. 압축할지 여부(언제)는 runner가 소유하고, 압축하는 방법(어떻게)은 교체 가능한 `ICompactionStrategy` 포트가 담당합니다 (ADR-0013 §7). `@Agent` spec에 `AgentCompactionPolicy`를 선언하면 runner가 각 model 요청 직전, 누적 토큰 추정치가 임계값을 넘었을 때 선언된 전략 chain을 history에 적용합니다 — 개발자가 루프 본문에서 직접 호출하지 않습니다.
+긴 멀티턴 대화는 결국 model backend의 context window를 넘습니다. 압축할지 여부(언제)는 runner가 소유하고, 압축하는 방법(어떻게)은 교체 가능한 `ICompactionStrategy` 포트가 담당합니다 (ADR-0013 §7). `@Agent` spec에 `AgentCompactionPolicy`를 선언하면 runner가 model 요청 직전, 누적 토큰 추정치가 임계값을 넘었을 때 선언된 전략 chain을 history에 적용합니다.
 
 ```python
 from spakky.agent import (
@@ -567,15 +568,15 @@ cd core/spakky-agent
 uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-cov
 ```
 
-이 테스트는 실제 vLLM server 없이 scripted model stream으로 CodeAssistant 흐름을 검증합니다.
+이 테스트는 실제 LLM provider 없이 scripted model stream으로 CodeAssistant 흐름을 검증합니다.
 
 ## 운영 체크리스트
 
-- 가능한 한 `execute()` 본문을 생략하고 runner-backed 루프를 사용합니다. 커스텀 `execute()`를 직접 쓸 때만 input과 return/yield type을 모두 annotate합니다.
+- 한 번의 provider stream과 tool dispatch면 `execute()` 본문을 생략하고 runner-backed single-pass 실행을 사용합니다. Multi-step model/tool 호출은 custom `execute()`로 작성하고 input과 return/yield type을 모두 annotate합니다.
 - Agent가 provider SDK, DB client, HTTP framework를 직접 import하지 않고 port/interface에 의존합니다.
 - Model backend는 `IAgentModel` adapter 뒤에 있습니다.
 - 모든 model-callable capability는 `@agent_tool`로 선언되어 schema, risk, idempotency, evidence metadata가 있습니다.
-- 실행 중 시그널 반응은 `@on_signal` 훅으로 선언하고 루프 본문에 폴링 코드를 작성하지 않습니다.
+- 실행 중 시그널 반응은 `@on_signal` 훅으로 선언하고 custom orchestration에 중복 polling 코드를 작성하지 않습니다.
 - Write/network/destructive tool은 approval path가 있습니다.
 - 긴 멀티턴 Agent는 `AgentCompactionPolicy`를 spec에 선언합니다.
 - Durable path를 쓰면 state/signal/evidence repository contribution이 등록되어 있습니다.
@@ -589,7 +590,7 @@ uv run pytest tests/acceptance/test_code_assistant_demo_acceptance.py -q --no-co
 
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 execution으로 연결한 runnable demo입니다.
 - [spakky-agent API Reference](../api/core/spakky-agent.md): public class와 helper의 상세 signature를 확인합니다.
-- [spakky-vllm API Reference](../api/plugins/spakky-vllm.md): OpenAI-compatible vLLM model adapter를 확인합니다.
+- [spakky-llm API Reference](../api/plugins/spakky-llm.md): allowlisted profile routing과 OpenAI, Anthropic, Google SDK adapter를 확인합니다.
 - [spakky-agui API Reference](../api/plugins/spakky-agui.md): AG-UI endpoint, projector, HITL helpers를 확인합니다.
 - [spakky-a2a API Reference](../api/plugins/spakky-a2a.md): A2A server, transport, delegation API를 확인합니다.
 - [spakky-mcp API Reference](../api/plugins/spakky-mcp.md): 외부 MCP 서버 연결, runtime server resolution, lazy MCP tool API를 확인합니다.

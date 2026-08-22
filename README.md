@@ -93,7 +93,7 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 | **`spakky-openfga`** | OpenFGA 기반 관계 검사 AuthZ 제공자 |
 | **`spakky-sqlalchemy`** | [SQLAlchemy](https://www.sqlalchemy.org/) ORM 데이터베이스 통합 |
 | **`spakky-typer`** | [Typer](https://typer.tiangolo.com/) 기반 CLI 애플리케이션 지원 |
-| **`spakky-vllm`** | 로컬 vLLM OpenAI-compatible endpoint를 위한 `IAgentModel` adapter |
+| **`spakky-llm`** | OpenAI-compatible(vLLM dialect 포함), Anthropic, Google API를 공식 SDK로 연결하는 `IAgentModel` adapter |
 | **`spakky-agui`** | AG-UI protocol adapter(SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
 | **`spakky-a2a`** | A2A AgentCard/server transport와 remote teammate delegation adapter |
 | **`spakky-mcp`** | 외부 MCP server tools를 Agent run에 lazy search/call 도구로 연결하는 adapter |

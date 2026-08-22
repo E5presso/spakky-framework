@@ -1,5 +1,7 @@
 # ADR-0009: Agentic Hexagonal Architecture
 
+> **부분 대체**: `plugins/spakky-vllm` package와 vLLM 전용 adapter로 한정한 결정은 [ADR-0015](0015-multi-provider-llm-official-sdk-adapters.md)가 대체합니다. `IAgentModel`, Agent workflow, persistence와 protocol 경계를 포함한 나머지 결정은 계속 Accepted입니다.
+
 - **상태**: Accepted
 - **날짜**: 2026-05-04
 - **갱신**: 2026-05-06
@@ -44,7 +46,7 @@ ADR-0009 마일스톤은 다음을 하나의 완성 단위로 구현한다.
 |------|------|
 | `core/spakky-agent` | `@Agent` stereotype, execution spec, state/signal/evidence contract, `AgentYield`, model/tool/schema/safety/recovery building block |
 | `plugins/spakky-vllm` | 첫 공식 `IAgentModel` 구현. 로컬 vLLM OpenAI-compatible HTTP server에 연결 |
-| `plugins/spakky-sqlalchemy` contribution | `spakky-agent`의 `AgentStateRepository`, `AgentSignalRepository`, `AgentEvidenceRepository` 구현 기여 |
+| `plugins/spakky-sqlalchemy` contribution | `spakky-agent`의 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository` 구현 기여 |
 
 명시적으로 만들지 않는다.
 
@@ -84,8 +86,8 @@ CLI / FastAPI / WebSocket inbound adapter
 - `@agent_tool`: workspace, file, shell, git, search 같은 기능을 typed tool로 노출한다.
 - `AgentYield`: 생성 중인 텍스트, 중간 메시지, evidence, approval, final output을 caller에게 streaming한다.
 - `AgentSignal`: 실행 중 사용자 지시, 승인, 취소를 agent state에 전달한다.
-- `AgentStateRepository`: long-running 실행 상태를 노출하고 recovery 기준으로 사용한다.
-- `AgentEvidenceRepository`: tool/model/context 판단 근거와 context manifest/digest를 저장한다.
+- `IAgentStateRepository`: long-running 실행 상태를 노출하고 recovery 기준으로 사용한다.
+- `IAgentEvidenceRepository`: tool/model/context 판단 근거와 context manifest/digest를 저장한다.
 
 따라서 Claude Code-like assistant는 다음과 같은 application code가 된다.
 
@@ -206,7 +208,7 @@ async def code_agent_socket(ws: WebSocket, command: CodeTask):
         await ws.send_json(AgentYieldJsonEncoder.encode(item))
 ```
 
-사용자가 실행 중 추가 지시를 보내거나 승인을 결정하면 inbound adapter는 `AgentSignalRepository`에 signal을 append한다. Scheduler/application orchestration은 safe boundary에서 signal을 반영한다. 이때 agent business logic은 여전히 `CodeAssistant.execute()`이고, persistence, signal, evidence, recovery는 framework building block이 보조한다.
+사용자가 실행 중 추가 지시를 보내거나 승인을 결정하면 inbound adapter는 `IAgentSignalRepository`에 signal을 append한다. Scheduler/application orchestration은 safe boundary에서 signal을 반영한다. 이때 agent business logic은 여전히 `CodeAssistant.execute()`이고, persistence, signal, evidence, recovery는 framework building block이 보조한다.
 
 완성된 마일스톤의 데모는 다음을 보여야 한다.
 
@@ -346,8 +348,8 @@ class ResolveSupportTicket:
 이 속성들은 독립 옵션이 아니라 다른 계약에서 파생된다.
 
 - Streaming은 `execute()` 반환형이 `Generator[AgentYield[T], None, None]` 또는 `AsyncGenerator[AgentYield[T], None]`인지로 판정한다.
-- Interaction은 `accepted_signals`와 `AgentSignalRepository` 활성화 여부로 판정한다.
-- Durability는 `AgentStateRepository`, `AgentSignalRepository`, `AgentEvidenceRepository` contribution이 필요한 실행 경로에서 요구된다.
+- Interaction은 `accepted_signals`와 `IAgentSignalRepository` 활성화 여부로 판정한다.
+- Durability는 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository` contribution이 필요한 실행 경로에서 요구된다.
 - Resumability는 `recovery` strategy가 action-boundary recovery를 요구할 때 파생된다.
 
 Bootstrap은 `@Agent` metadata, `execute()` signature, DI graph, contribution registry를 함께 검증한다. 필요한 repository/model/tool contribution이 없으면 startup fail한다. Silent fallback은 허용하지 않는다.
@@ -434,21 +436,21 @@ Inbound adapter는 `AgentYield`를 직접 소비해 SSE, WebSocket, CLI stdout, 
 
 Core public persistence port는 다음 세 가지로 제한한다.
 
-- `AgentStateRepository`
-- `AgentSignalRepository`
-- `AgentEvidenceRepository`
+- `IAgentStateRepository`
+- `IAgentSignalRepository`
+- `IAgentEvidenceRepository`
 
 Production in-memory 구현은 제공하지 않는다. Test double/fake는 테스트 코드에만 존재할 수 있다.
 
-### `AgentStateRepository`
+### `IAgentStateRepository`
 
 `AgentState` 저장, 조회, materialized update를 담당한다.
 
-### `AgentSignalRepository`
+### `IAgentSignalRepository`
 
 `AgentSignal` append/consume을 담당한다. 실행 중 사용자 입력, approval decision, cancel/resume은 durable inbound queue로 취급한다.
 
-### `AgentEvidenceRepository`
+### `IAgentEvidenceRepository`
 
 `AgentEvidence`, context digest, context manifest, tool/model result evidence를 저장한다. Evidence는 append-only artifact다. Update/delete는 agent-facing interface에 제공하지 않는다.
 
@@ -468,9 +470,9 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 
 Contribution은 다음 구현을 등록한다.
 
-- SQLAlchemy `AgentStateRepository`
-- SQLAlchemy `AgentSignalRepository`
-- SQLAlchemy `AgentEvidenceRepository`
+- `SqlAlchemyAgentStateRepository`
+- `SqlAlchemyAgentSignalRepository`
+- `SqlAlchemyAgentEvidenceRepository`
 
 `spakky-sqlalchemy` base plugin은 `spakky-agent` 설치 여부를 직접 감지하지 않는다. `spakky-agent` feature와 SQLAlchemy provider가 함께 active일 때 contribution loader가 lazy-load한다.
 
@@ -798,7 +800,7 @@ Core는 과도한 policy object 대신 명확한 handler 개입 지점을 제공
 8. vLLM structured output/constrained decoding으로 tool arguments를 생성하고 `*args`/`**kwargs`로 호출한다.
 9. Schema-incompatible tool signature는 startup early fail한다.
 10. Tool result evidence capture policy가 동작한다.
-11. `AgentStateRepository`, `AgentSignalRepository`, `AgentEvidenceRepository`가 SQLAlchemy contribution으로 제공된다.
+11. `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`가 SQLAlchemy contribution으로 제공된다.
 12. Production in-memory persistence 없이 local app이 SQLAlchemy contribution으로 실행된다.
 13. Approval required action에서 state가 `INTERRUPTED`로 전환되고 signal로 승인/거절/수정 후 이어간다.
 14. Cancel signal이 `CANCELLING`/`CANCELLED`로 전환된다.
@@ -893,7 +895,7 @@ Pydantic AI 또는 LangGraph를 reference runtime으로 선택하고 Spakky wrap
 - Core에는 production in-memory repository 구현이 없다.
 - `plugins/spakky-vllm`이 local vLLM OpenAI-compatible server에 대해 complete/stream을 검증한다.
 - `@agent_tool` signature schema extraction과 early fail이 테스트된다.
-- `AgentStateRepository`, `AgentSignalRepository`, `AgentEvidenceRepository` SQLAlchemy contribution이 로드된다.
+- `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository` contribution이 로드된다.
 - Approval, cancel, restart/resume, non-idempotent recovery HITL이 통과한다.
 - Annotated sensitive metadata와 secret exclusion guard가 테스트된다.
 - `AgentYield` async generator를 inbound adapter가 streaming response로 서빙하는 예제가 동작한다.
