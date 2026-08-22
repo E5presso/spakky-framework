@@ -9,6 +9,7 @@
 - spec과 `@agent_tool` 메서드만 선언하고 프레임워크가 bounded iterative model/tool orchestration(`execute()`)을 자동 제공하게 하려는 경우
 - `AgentYield` stream을 FastAPI, WebSocket, CLI 같은 inbound adapter가 직접 소비하게 하려는 경우
 - model adapter를 `IAgentModel` outbound port로 구현하려는 경우
+- 기존 scoped retrieval implementation을 pre-model context 또는 model-callable read-only tool로 재사용하려는 경우
 - long-running execution의 state, signal, evidence 계약을 plugin contribution으로 구현하려는 경우
 
 ## 설치
@@ -30,7 +31,7 @@ pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 ## 제공하는 public surface
 
 - `Agent`, `AgentExecutionSpec`, `AgentExecutionLimits`: `@UseCase`와 동격인 Pod stereotype과 보조 실행 의미. `AgentExecutionSpec`은 실행 이름/목표(`name`, `objective`), system-level 지시문(`instructions`), 구조화 출력 타입(`output_type`), 수신 signal/recovery/streaming 선언(`accepted_signals`, `recovery`, `streaming_exposure_mode`), bounded execution(`limits`), 협력 agent(`teammates`), 컨텍스트 압축 정책(`compaction`), model step별 dynamic context 재조회 여부(`refresh_context_each_step`), 위임 허용 marker(`delegation_allowed`), 문자열 metadata(`metadata`)를 보존한다. `AgentExecutionLimits`는 `max_steps=8`, `max_tool_calls=32`, optional `max_tokens`, optional `timeout_seconds`를 한 곳에 모읍니다. `AgentExecutionSpec.timeout_seconds` alias는 없으며 unknown constructor argument로 실패한다. Limit과 name/objective/instructions는 양수/nonblank, `output_type`은 지원되는 class와 portable schema로 정의 시점에 검증되고, teammate name은 unique여야 한다. `execute()` 없이 spec + `@agent_tool` 메서드만 선언하면 프레임워크가 `AgentRunner` 기반 bounded iterative orchestration을 `execute()`로 자동 바인딩한다(ADR-0017). 개발자가 직접 `execute()`를 작성한 경우에는 건드리지 않는다.
-- `AgentRunner`, `AgentRunResult`: 프레임워크가 소유하는 bounded iterative model/tool orchestration. `AgentRunner.for_agent_instance(instance)`는 인스턴스에 주입된 속성을 타입 기반으로 탐색해 required `IAgentModel`과 optional `IAgentStateRepository`·`IAgentSignalRepository`·`IAgentEvidenceRepository`·`ITaskStore`·`IAgentContextProvider`를 resolve한다. `run(run_input)`은 inbound adapter용 `AgentYield` stream을, `run_events(run_input)`은 protocol adapter용 중립 `AgentEvent` stream을 내보냅니다. 한 model step이 terminal validation을 통과해 tool batch를 내면 runner는 batch 전체의 descriptor·call id·argument binding·approval plan·tool budget을 dispatch 전에 검증하고, 모든 approval gate를 먼저 통과한 뒤 tool을 선언 순서대로 실행합니다. 각 result는 assistant tool-call history 뒤의 `ModelMessageRole.TOOL` message로 추가되고 다음 `ModelRequest`가 같은 invocation에서 이어집니다. Tool이 없는 terminal model step에서 final을 정확히 한 번 생성합니다. Durable 경로는 같은 loop에 state/signal/evidence, approval pause/resume와 action-boundary checkpoint를 더합니다. `AgentRunResult`는 spec이 `output_type`을 선언하지 않을 때 기본으로 반환되는 중립 종료 요약 dataclass(`state_id`, `status`, `tool_calls`, `evidence_count`)다.
+- `AgentRunner`, `AgentRunResult`: 프레임워크가 소유하는 bounded iterative model/tool orchestration. `AgentRunner.for_agent_instance(instance)`는 인스턴스에 주입된 속성을 타입 기반으로 탐색해 required `IAgentModel`과 optional `IAgentStateRepository`·`IAgentSignalRepository`·`IAgentEvidenceRepository`·`ITaskStore`·`IAgentContextProvider`, 그리고 모든 `IAgentToolProvider`를 resolve한다. Tool provider descriptor는 class-level catalog를 mutate하지 않고 runner별 `Agent` copy에 merge되며 identity/schema-name collision은 `AgentDefinitionError`로 실패한다. `run(run_input)`은 inbound adapter용 `AgentYield` stream을, `run_events(run_input)`은 protocol adapter용 중립 `AgentEvent` stream을 내보냅니다. 한 model step이 terminal validation을 통과해 tool batch를 내면 runner는 batch 전체의 descriptor·call id·argument binding·approval plan·tool budget을 dispatch 전에 검증하고, 모든 approval gate를 먼저 통과한 뒤 tool을 선언 순서대로 실행합니다. 각 result는 assistant tool-call history 뒤의 `ModelMessageRole.TOOL` message로 추가되고 다음 `ModelRequest`가 같은 invocation에서 이어집니다. Tool이 없는 terminal model step에서 final을 정확히 한 번 생성합니다. Durable 경로는 같은 loop에 state/signal/evidence, approval pause/resume와 action-boundary checkpoint를 더합니다. `AgentRunResult`는 spec이 `output_type`을 선언하지 않을 때 기본으로 반환되는 중립 종료 요약 dataclass(`state_id`, `status`, `tool_calls`, `evidence_count`)다.
 - `IAgentRunnerFactory`, `AgentRunnerFactory`: inbound adapter가 request/run scope runner를 여는 DI 포트와 기본 구현. 기본 구현은 `AgentRunner.for_agent_instance()`를 감싼다. MCP처럼 runner catalog나 외부 세션 수명주기를 확장하는 plugin은 이 port를 자체 구현으로 바인딩하고, AG-UI/A2A 같은 protocol adapter는 직접 `AgentRunner.for_agent_instance()`를 호출하지 않고 이 factory를 주입받아 실행한다.
 - `RunAgentInput`: inbound run 계약. `state_id`(실행 상관 ID), `instruction`(모델 요청의 사용자 프롬프트), `conversation_id`(멀티턴 스레드 ID, 생략 시 `state_id`로 대체), `parent_run_id`(위임 child run이 parent run과 연결되는 중립 링크), `resume`(일시 중단된 실행 재개 여부), `message_history`(클라이언트가 주입한 이전 대화 이력 `tuple[ModelMessage, ...]`, ADR-0013 §6 client-injected history), `model_selection`(요청별 opaque logical model ref), `context`(요청이 소유하는 static `AgentContext`, 기본값은 empty), `metadata`(model request metadata에 병합되는 runner 레벨 부가 정보)를 담는다. `effective_conversation_id` property는 `conversation_id or state_id`를 반환한다. Runner는 `ModelRequest.metadata`를 `{"state_id": run_input.state_id, **run_input.metadata}` 순서로 구성하므로 현재 같은 이름의 caller metadata가 자동 `state_id`를 덮어쓴다. Approval decision은 이 계약이 아닌 signal repository를 통해 전달된다. Model selection은 run-scoped이며 transcript `ConversationTurn`에 저장·상속되지 않는다. 같은 conversation의 다음 turn이나 approval resume에서 selection을 생략하면 model adapter의 default가 다시 적용된다.
 - `AgentTeammate`: 이름과 로컬 Pod 타입(`pod`) 또는 원격 AgentCard http(s) URL(`card_url`) 중 정확히 하나를 선언하는 협력 agent 기술자. 둘 다 지정하거나 둘 다 생략하면 `AgentDefinitionError`. `@Agent`는 teammate마다 `teammate.<schema_token(name)>.delegate` synthetic tool descriptor를 생성하며, schema token은 teammate name의 앞뒤 공백을 제거한 뒤 `[a-zA-Z0-9_]`가 아닌 연속 문자를 단일 `_`로 치환하고, 앞뒤 `_`를 제거한 다음 소문자화한 값이다. 이 결과가 비면 `AgentDefinitionError`다. 로컬 teammate는 parent에 주입된 child Pod를 찾아 `AgentRunner.run_events()`로 in-process 실행하고, 원격 teammate는 parent에 주입된 `IAgentDelegate` port로 위임한다.
@@ -54,6 +55,9 @@ pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 - `AgentActionBoundaryCheckpoint`, `plan_agent_resume`: model call, tool call, approval wait 전후 checkpoint evidence와 restart/resume 결정 helper
 - `DelegationPacket`, `DelegationResult`, `IAgentDelegate`: 다른 `@Agent` component로 작업을 위임하고 parent evidence/stream에 결과를 연결하는 계약
 - `AgentContext`, `ContextPack`, `ContextManifest`, `ContextDigest`, `IAgentContextProvider`: run-scoped static context와 optional dynamic context를 같은 typed envelope로 구성하고 model input·provenance evidence로 연결하는 contract. Provider signature는 `async provide(run_input: RunAgentInput, model_step: int) -> AgentContext`이며 step은 1부터 시작한다.
+- `IRetriever`, `RetrievalHit`, `RetrievalContext`, `RetrievalTool`, `AgentRetrievalError`: 하나의 async text retrieval port와 결과/provenance value, classic context wrapper, agentic read-only tool wrapper, strict boundary error. `RetrievalContext`는 `IAgentContextProvider`, `RetrievalTool`은 `IAgentToolProvider`를 구현하므로 별도 RAG package나 runner가 필요하지 않다.
+- `ITextEmbedding`, `EmbeddingPurpose`, `EmbeddingVector`, `IVectorSearch`, `VectorRetriever`: query text를 정확히 하나의 `EmbeddingVector`로 만든 뒤 교체 가능한 vector-search port로 위임하는 advanced composition. `EmbeddingPurpose`는 `QUERY`/`DOCUMENT`를 구분하고 vector는 nonempty finite numeric tuple과 `dimension` property를 갖는다.
+- `IReranker`, `RerankedRetriever`: 기존 `IRetriever` 결과를 재정렬하는 advanced decorator. Reranker는 existing hit를 새로 만들거나 provenance field를 바꾸지 못하고 `rerank_score`만 갱신할 수 있다.
 - `ContextHealthSignal`, `ContextRotSymptom`, `ContextOptimizationAction`: context rot 관찰 결과와 압축/refresh/delegation/slice drop action metadata
 - `SensitiveField`, `SecretField`, `CredentialRef`, `SecretRef`, `ContextExposurePolicy`, `EvidenceExposurePolicy`: `typing.Annotated` 민감 metadata와 deterministic guard 정책
 - `StreamingSensitivePattern`, `StreamingRedactionPolicy`, `StreamingRedactionSession`: chunk boundary를 가로지르는 sensitive output pattern을 bounded buffer로 redaction하고 final audit evidence/error를 생성하는 streaming guard 계약
@@ -65,7 +69,7 @@ pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 - `ModelSelection`: `model_ref: str` 하나만 갖는 run-scoped logical model selector. Core는 whitespace-only 값을 거부하지만 nonblank 원문을 trim하거나 provider/profile/model로 분해하지 않는다. `spakky-llm` router가 앞뒤 공백만 제거한 case-sensitive opaque key를 operator catalog와 exact match하며 raw physical model fallback을 제공하지 않는다. Agent class는 실제 profile/model 이름을 소유하지 않고 AG-UI/A2A/service boundary는 이 selector를 `RunAgentInput.model_selection`으로 전달한다.
 - `ModelRequest`, `ModelResponse`, `ModelStreamEvent`: provider-neutral model 호출/응답/stream 계약. Runner는 같은 `ModelSelection` 객체를 `RunAgentInput.model_selection`에서 `ModelRequest.model_selection`과 `capability_for(selection)`으로 전달해 실행 route와 capability 조회를 결속한다. Selector를 request metadata로 복제하지 않는다.
 - `ToolCallingSpec`, `ModelToolSpec`, `ModelToolCall`: model-facing tool call 요청과 후보 결과
-- `agent_tool`, `AgentToolBoundInvocation`, `AgentToolBindingError`, `ToolEffects`, `ToolRisk`, `ToolApprovalRequirement`, `ToolResumeMetadata`, `EvidenceCapture`: tool binding, risk, approval, idempotency, evidence capture metadata
+- `agent_tool`, `IAgentToolProvider`, `AgentToolBoundInvocation`, `AgentToolBindingError`, `ToolEffects`, `ToolRisk`, `ToolApprovalRequirement`, `ToolResumeMetadata`, `EvidenceCapture`: 정적 method tool과 injected component tool catalog, binding, risk, approval, idempotency, evidence capture metadata
 - `AgentToolDispatcher`, `AgentToolDispatchError`: model tool-call을 카탈로그 descriptor로 조회·자동 바인딩·실행하는 디스패치 building block과 미등록 도구 에러
 
 ## 의존성 경계
@@ -207,6 +211,65 @@ Public `run()`의 `Final.output`은 실제 `Answer` 객체가 되고, protocol-n
 
 Static `RunAgentInput.context`는 모든 model step에 사용됩니다. Provider가 주입되면 기본 `refresh_context_each_step=False`에서는 **runner invocation당 첫 model step에 한 번** 호출하고 결과를 후속 step에 cache합니다. `True`면 1-based model step마다 다시 호출합니다. Durable checkpoint는 raw static/dynamic context를 저장하지 않고, guard·budget 적용을 마친 static context의 deterministic SHA-256 `static_context_fingerprint`만 저장합니다. 따라서 context가 있던 run을 `resume=True`로 재개할 때 caller는 **같은 prepared static identity를 만드는 `AgentContext`를 다시 제공**해야 하며 missing·changed·additive context는 model/tool dispatch 전 `agent_checkpoint_invalid`로 fail closed합니다. Dynamic provider context는 새 invocation의 복원된 step에서 다시 조회합니다. Provider error/invalid return은 model request 전 `agent_model_execution_failed`, active deadline 초과는 `agent_timeout`으로 닫힙니다.
 
+### Retrieval — 하나의 port, 두 execution mode
+
+Minimal retrieval surface는 `IRetriever` 구현 하나입니다. Classic mode는 `RetrievalContext`로 감싸 model 호출 전 `AgentContext`를 만들고, agentic mode는 같은 구현을 `RetrievalTool`로 감싸 model이 필요할 때 `query` 하나로 호출하게 합니다. 별도 package/plugin은 없고 두 wrapper는 `spakky-agent`에 있습니다.
+
+```python
+from spakky.agent import (
+    Agent,
+    AgentExecutionSpec,
+    IAgentModel,
+    IRetriever,
+    RetrievalContext,
+    RetrievalTool,
+)
+
+
+retrieval_context = RetrievalContext(
+    retriever,
+    limit=5,
+    max_context_tokens=2048,
+    tenant_id="tenant-42",
+    namespace="support",
+    filters={"locale": "ko-KR"},
+)
+retrieval_tool = RetrievalTool(
+    retriever,
+    name="search",
+    limit=5,
+    tenant_id="tenant-42",
+    namespace="support",
+    filters={"locale": "ko-KR"},
+)
+
+
+@Agent(spec=AgentExecutionSpec(name="classic_support", output_type=Answer))
+class ClassicSupport:
+    def __init__(self, model: IAgentModel, retrieval: RetrievalContext) -> None:
+        self.model = model
+        self.retrieval = retrieval
+
+
+@Agent(spec=AgentExecutionSpec(name="agentic_support", output_type=Answer))
+class AgenticSupport:
+    def __init__(self, model: IAgentModel, retrieval: RetrievalTool) -> None:
+        self.model = model
+        self.retrieval = retrieval
+```
+
+`RetrievalContext` default는 `limit=5`, `max_context_tokens=2048`, `allow_empty=False`입니다. Query는 `RunAgentInput.instruction`이고, default context-provider 의미에서 invocation의 첫 model request 전에 한 번 retrieval합니다. Empty hit는 model을 호출하지 않고 `AgentRetrievalError`로 fail closed하며, 의도적으로 context 없이 계속할 때만 `allow_empty=True`를 선택합니다. Runner surface에서 retrieval failure는 model request 전 `agent_model_execution_failed`로 정규화됩니다.
+
+Tenant, namespace와 filters는 wrapper 생성 시 고정됩니다. Filters는 finite JSON으로 deep snapshot되고 각 호출에 copy로 전달됩니다. Bound tenant/namespace의 hit는 정확히 같은 scope여야 하고, unbound wrapper는 unscoped hit만 받습니다. 모델이 tenant/namespace/filter를 tool argument로 바꾸지 못하므로 application authority가 선택한 retrieval 경계가 run 중에 확장되지 않습니다.
+
+`RetrievalHit`는 nonblank single-line id/source, nonblank content, finite score, optional digest/revision/scope/span을 보존합니다. Wrapper는 result sequence, hit type, id uniqueness, scope를 검증한 뒤 주어진 order의 앞 `limit`개만 사용합니다. Retrieval component에 직접 도달한 malformed query/hit/runtime result는 raw Python error로 새지 않고 `AgentRetrievalError`로 닫힙니다. Model이 `RetrievalTool` schema와 다른 non-string query를 내면 `_retrieval_query` runtime validator가 retriever 호출 전 `AgentRetrievalError`로 거부하고 runner는 `agent_tool_execution_failed`로 정규화합니다. Missing/extra argument는 그보다 앞선 tool batch signature binding에서 거부됩니다.
+
+Classic wrapper는 hit를 deterministic framed `ContextPack`/`ContextManifest`로 변환합니다. 모든 pack은 shared token budget을 순서대로 소모하고, content가 긴 현재 hit는 잘리며 budget이 다하면 뒤 hit는 선택되지 않습니다. Hit id/score/rerank score/digest/revision/scope/span만 reserved `metadata["retrieval"]`로 형태 검증 후 model request·context evidence에 남고 arbitrary `RetrievalHit.metadata`는 사용하지 않습니다. Raw hit content는 model pack에만 들어가고 durable context evidence payload에는 들어가지 않습니다.
+
+Agentic wrapper는 `search(query: str)` 하나만 노출하는 read-only·idempotent·approval-not-required tool입니다. 그러나 등록 충돌, batch prevalidation, `max_tool_calls`, timeout/cancellation, structured tool evidence와 continuation은 모두 기존 runner 권한을 그대로 통과합니다. Tool result에서 arbitrary hit metadata는 제거되지만 typed provenance와 **raw hit content는 모델이 읽어야 하므로** assistant tool-call 뒤 `TOOL` history에 추가되고 durable run이면 evidence·checkpoint에도 들어갑니다. 이는 context path의 raw-content omission과 다른, 기존 tool-result 영속 의미입니다. Empty agentic result는 empty list로 tool history에 남고 model이 후속 step을 결정합니다.
+
+Vector/reranking이 필요할 때만 advanced composition을 사용합니다. `VectorRetriever(ITextEmbedding, IVectorSearch)`는 query 하나를 `EmbeddingPurpose.QUERY`로 embed하고 exact one-vector result를 search port에 넘깁니다. `RerankedRetriever(IRetriever, IReranker)`는 validated base hits를 재정렬하되 id/provenance를 바꾸거나 새 hit를 만들 수 없습니다. Core는 production `IRetriever`, `ITextEmbedding`, `IVectorSearch`, `IReranker` 또는 in-memory fallback을 자동 등록하지 않으며, 기존 knowledge base와 index 생성·갱신·삭제 수명주기는 application/vendor 책임입니다. Vector backend을 선택하지 않은 것은 이 minimal retrieval runtime의 blocker가 아닙니다.
+
 ### Bounded iterative model/tool loop
 
 ```mermaid
@@ -258,8 +321,8 @@ Model, approval wait, tool 전후 action-boundary evidence를 남깁니다. Inco
 
 | Code | Fail-closed 경계 |
 |------|------------------|
-| `agent_model_execution_failed` | stream/complete 또는 compaction에서 발생한 framework error |
-| `agent_tool_execution_failed` | tool invocation 또는 result serialization의 framework error |
+| `agent_model_execution_failed` | stream/complete, compaction, context provider/classic retrieval에서 발생한 framework error |
+| `agent_tool_execution_failed` | native/injected tool invocation(`RetrievalTool` 포함) 또는 result serialization의 framework error |
 | `agent_checkpoint_invalid` | checkpoint decode 또는 restored pending batch 검증 실패 |
 | `agent_approval_invalid` | malformed approval plan/signal, invalid MODIFY binding/history update |
 | `agent_signal_projection_unsupported` | `run_events()`가 neutral event로 표현할 수 없는 signal-hook yield |
@@ -455,11 +518,11 @@ Model input context는 raw 문자열을 이어 붙인 prompt snapshot이 아니�
 
 Caller static envelope는 `RunAgentInput.context`로, runtime dynamic envelope는 optional constructor-injected `IAgentContextProvider` 포트로 받습니다. Runner는 static packs 뒤에 dynamic packs를 붙이고 전체 id uniqueness과 manifest의 exact ordered coverage를 검증합니다. Manifest를 생략한 nonempty envelope는 deterministic manifest를 얻습니다. 두 nonempty envelope가 각자 manifest를 갖으면 entries/evidence ref를 static-first로 이어 붙이고 `component_manifest_refs`를 갖는 composite manifest를 만듭니다. 한 component에만 결속된 digest가 있는 상태에서 두 envelope를 합치면 전체를 커버한다고 가장하지 않고 `AgentDefinitionError`로 fail closed합니다.
 
-Model boundary 직전 preparation은 caller 객체를 mutate하지 않는 copy에서 일어납니다. `ContextSensitivity.REDACTED`는 content 전체를 `[REDACTED]`로 바꾸고 `sensitive_fields`는 deterministic replacement를 적용한 뒤 descriptor를 제거합니다. `max_tokens`는 기본 4 characters/token cap을 두고, `estimated_tokens > max_tokens`면 입력 길이에 비례한 더 작은 cap을 적용합니다. 잘린 pack에는 framework-generated `context_truncation` metadata만 남고 caller pack metadata는 제거됩니다. Manifest entry의 sensitive descriptor/metadata와 digest summary/metadata도 제거되며, composite manifest의 `component_manifest_refs`만 유지됩니다.
+Model boundary 직전 preparation은 caller 객체를 mutate하지 않는 copy에서 일어납니다. `ContextSensitivity.REDACTED`는 content 전체를 `[REDACTED]`로 바꾸고 `sensitive_fields`는 deterministic replacement를 적용한 뒤 descriptor를 제거합니다. `max_tokens`는 기본 4 characters/token cap을 두고, `estimated_tokens > max_tokens`면 입력 길이에 비례한 더 작은 cap을 적용합니다. Caller pack metadata는 기본적으로 제거하되 reserved `retrieval` object가 exact allowlist·type·framing 검증을 통과하면 그 object만 보존합니다. 잘린 pack은 이 safe metadata와 framework-generated `context_truncation`을 같이 갖을 수 있습니다. Manifest entry의 sensitive descriptor/metadata와 digest summary/metadata는 제거되며, composite manifest의 `component_manifest_refs`만 유지됩니다.
 
 `ModelRequest.assemble_messages()`는 기존 `messages`와 준비된 packs를 provider-neutral `ModelMessage` tuple로 조립하는 hook입니다. First-party LLM adapter는 이 hook을 사용하여 각 pack을 evidence-role message로 매핑합니다. Raw caller metadata나 descriptor를 다시 복구하지 않으며, `REDACTED` 외의 sensitivity label만으로 content를 자동 숨긴다고 가정하지도 않습니다. 민감한 부분은 `sensitive_fields`로 정확히 표시하거나 pack 전체를 `REDACTED`로 분류해야 합니다.
 
-Durable runner는 raw context를 checkpoint에 넣지 않습니다. Static context는 model-bound safe form의 deterministic SHA-256 fingerprint만 `static_context_fingerprint`로 저장하므로 resume caller가 같은 prepared identity를 만드는 `AgentContext`를 다시 제공해야 합니다. Missing·changed·additive static context는 checkpoint mismatch로 거부되고 dynamic provider는 resume/retry invocation에서 재호출됩니다. Durable `CONTEXT`/`CONTEXT_MANIFEST`/`CONTEXT_DIGEST` evidence는 model step과 **전체 prepared context fingerprint**에 결속됩니다. 같은 step의 같은 context는 retry에서 중복 append하지 않지만, 같은 step이라도 model-bound context가 바뀌면 새 fingerprint와 evidence set을 남깁니다. Evidence payload는 content·digest summary·raw metadata를 넣지 않지만 pack id/source/role, 공개 상태·예산 메타데이터, manifest/digest reference는 남깁니다. 따라서 이 식별자와 reference에 secret을 넣지 않아야 합니다.
+Durable runner는 raw context를 checkpoint에 넣지 않습니다. Static context는 model-bound safe form의 deterministic SHA-256 fingerprint만 `static_context_fingerprint`로 저장하므로 resume caller가 같은 prepared identity를 만드는 `AgentContext`를 다시 제공해야 합니다. Missing·changed·additive static context는 checkpoint mismatch로 거부되고 dynamic provider는 resume/retry invocation에서 재호출됩니다. Durable `CONTEXT`/`CONTEXT_MANIFEST`/`CONTEXT_DIGEST` evidence는 model step과 **전체 prepared context fingerprint**에 결속됩니다. 같은 step의 같은 context는 retry에서 중복 append하지 않지만, 같은 step이라도 model-bound context가 바뀌면 새 fingerprint와 evidence set을 남깁니다. Evidence payload는 content·digest summary·arbitrary metadata를 넣지 않지만 pack id/source/role, 공개 상태·예산, framework-validated `retrieval` metadata, manifest/digest reference는 남깁니다. 따라서 이 식별자와 reference에 secret을 넣지 않아야 합니다.
 
 Context rot은 prompt injection detector가 아니라 quality/budget metadata입니다. `ContextHealthSignal`은 `stale`, `contradictory`, `low_relevance`, `over_budget`, `polluted` 증상을 pack/manifest/evidence reference와 함께 표현하고, `IAgentContextHandler`는 이 signal에서 `ContextOptimizationAction`을 선택합니다. Action kind는 `compression`, `retrieval_refresh`, `delegation`, `context_slice_drop`입니다.
 

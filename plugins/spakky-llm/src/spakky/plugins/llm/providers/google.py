@@ -4,6 +4,7 @@ from base64 import b64decode, b64encode
 from binascii import Error as Base64Error
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
 from contextlib import aclosing
+from copy import deepcopy
 from json import JSONDecodeError
 from re import fullmatch
 from typing import Never, override
@@ -20,6 +21,10 @@ from google.genai import errors, types
 from google.oauth2 import service_account
 from pydantic import ValidationError
 from spakky.agent import (
+    AgentRetrievalError,
+    EmbeddingPurpose,
+    EmbeddingVector,
+    ITextEmbedding,
     JsonObject,
     JsonSchemaConstraint,
     JsonValue,
@@ -39,6 +44,7 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.plugins.llm.codec import LlmJsonCodec
 from spakky.plugins.llm.config import (
     GoogleCredentialStrategy,
+    LlmConfig,
     LlmProfile,
     LlmProviderApi,
 )
@@ -711,3 +717,154 @@ class GoogleGenerateContentProvider(ILLMProvider):
         if error.code == 429 or error.code >= 500:
             raise LlmTransportError from error
         raise LlmResponseError from error
+
+
+class GoogleTextEmbedding(ITextEmbedding):
+    """Embed text through an explicit operator-owned Google model route."""
+
+    def __init__(
+        self,
+        target: LlmModelTarget,
+        *,
+        output_dimensionality: int | None = None,
+    ) -> None:
+        if (
+            not isinstance(target.model_ref, str)
+            or not target.model_ref.strip()
+            or not isinstance(target.profile_name, str)
+            or not target.profile_name.strip()
+            or not isinstance(target.model, str)
+            or not target.model.strip()
+            or target.route.profile != target.profile_name
+        ):
+            raise LlmConfigurationError
+        if target.profile.api not in (
+            LlmProviderApi.GOOGLE_GEMINI_DEVELOPER,
+            LlmProviderApi.GOOGLE_VERTEX,
+        ):
+            raise LlmConfigurationError
+        if output_dimensionality is not None and (
+            isinstance(output_dimensionality, bool)
+            or not isinstance(output_dimensionality, int)
+            or output_dimensionality <= 0
+        ):
+            raise LlmConfigurationError
+        self._target = deepcopy(target)
+        self._output_dimensionality = output_dimensionality
+        self._transport = GoogleGenerateContentProvider()
+
+    @classmethod
+    def from_config(
+        cls,
+        config: LlmConfig,
+        model_ref: str,
+        *,
+        output_dimensionality: int | None = None,
+    ) -> "GoogleTextEmbedding":
+        """Resolve and snapshot one opaque embedding route from an LLM catalog."""
+        if not isinstance(model_ref, str):
+            raise LlmConfigurationError
+        normalized_ref = model_ref.strip()
+        if not normalized_ref:
+            raise LlmConfigurationError
+        route = config.models.get(normalized_ref)
+        if route is None:
+            raise LlmConfigurationError
+        profile = config.profiles.get(route.profile)
+        if profile is None:
+            raise LlmConfigurationError
+        return cls(
+            LlmModelTarget(
+                model_ref=normalized_ref,
+                profile_name=route.profile,
+                profile=profile,
+                route=route,
+            ),
+            output_dimensionality=output_dimensionality,
+        )
+
+    @override
+    async def embed(
+        self,
+        texts: Sequence[str],
+        purpose: EmbeddingPurpose,
+    ) -> Sequence[EmbeddingVector]:
+        """Return one validated vector per input without silent truncation."""
+        if isinstance(texts, str | bytes) or not texts:
+            raise LlmConfigurationError
+        inputs = tuple(texts)
+        if any(not isinstance(text, str) or not text.strip() for text in inputs):
+            raise LlmConfigurationError
+        task_type = {
+            EmbeddingPurpose.QUERY: "RETRIEVAL_QUERY",
+            EmbeddingPurpose.DOCUMENT: "RETRIEVAL_DOCUMENT",
+        }.get(purpose)
+        if task_type is None:
+            raise LlmConfigurationError
+        client = self._transport._client(
+            self._target,
+            timeout_seconds=self._target.profile.request_timeout_seconds,
+        )
+        try:
+            async with client.aio as async_client:
+                response = await async_client.models.embed_content(
+                    model=self._target.model,
+                    contents=list(inputs),
+                    config=types.EmbedContentConfig(
+                        task_type=task_type,
+                        output_dimensionality=self._output_dimensionality,
+                    ),
+                )
+        except errors.APIError as error:
+            self._transport._raise_api_error(error)
+        except (
+            errors.UnknownApiResponseError,
+            JSONDecodeError,
+            TypeError,
+            ValidationError,
+            httpx.DecodingError,
+            AgentRetrievalError,
+        ) as error:
+            raise LlmResponseError from error
+        except (httpx.InvalidURL, httpx.UnsupportedProtocol) as error:
+            raise LlmConfigurationError from error
+        except httpx.TimeoutException as error:
+            raise LlmTimeoutError from error
+        except httpx.RequestError as error:
+            raise LlmTransportError from error
+        except GoogleAuthTransportError as error:
+            raise LlmTransportError from error
+        except GoogleAuthError as error:
+            raise LlmConfigurationError from error
+        finally:
+            client.close()
+        if not isinstance(response, types.EmbedContentResponse):
+            raise LlmResponseError
+        embeddings = response.embeddings
+        if embeddings is None or len(embeddings) != len(inputs):
+            raise LlmResponseError
+        vectors: list[EmbeddingVector] = []
+        for embedding in embeddings:
+            if not isinstance(embedding, types.ContentEmbedding):
+                raise LlmResponseError
+            if embedding.statistics is not None and embedding.statistics.truncated:
+                raise LlmResponseError
+            values = embedding.values
+            if values is None or any(
+                not isinstance(value, int | float) or isinstance(value, bool)
+                for value in values
+            ):
+                raise LlmResponseError
+            try:
+                vector = EmbeddingVector(tuple(float(value) for value in values))
+            except AgentRetrievalError as error:
+                raise LlmResponseError from error
+            if (
+                self._output_dimensionality is not None
+                and vector.dimension != self._output_dimensionality
+            ):
+                raise LlmResponseError
+            if vectors and vector.dimension != vectors[0].dimension:
+                raise LlmResponseError
+            vectors.append(vector)
+        return tuple(vectors)

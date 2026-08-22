@@ -11,7 +11,7 @@ pip install spakky-agent
 ```
 
 `spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `RunAgentInput`, `AgentRunner`,
-`AgentEvent`, `AgentYield`, tool dispatch, context compaction, state/signal/evidence
+`AgentEvent`, `AgentYield`, retrieval, tool dispatch, context compaction, state/signal/evidence
 repository port, task store, safety/recovery/delegation 타입 같은 public contract를
 소유합니다. 이 패키지는 의도적으로 LLM provider SDK, SQLAlchemy, FastAPI, Typer,
 AG-UI, A2A, MCP를 import하지 않습니다. 운영에서 durable execution을 사용하려면 provider
@@ -145,10 +145,46 @@ Runner는 digest linkage/coverage만 검증하며 declared digest value를 conte
 않습니다.
 
 Model-safe preparation은 REDACTED content, sensitive-field guard, deterministic token-budget
-truncation을 적용하고 raw metadata/descriptors 및 digest summary를 제거합니다. Durable
-context evidence도 raw content를 저장하지 않고 pack/provenance/budget/digest metadata만
-남깁니다. Evidence의 combined context fingerprint는 같은 model step의 동일 context를
-deduplicate하고 변경된 context를 별개로 구분합니다.
+truncation을 적용하고 arbitrary metadata/descriptors 및 digest summary를 제거합니다. 유일한
+예외는 exact key/type allowlist를 통과한 framework `retrieval` block이며 unknown key나
+malformed value가 있으면 block 전체를 제거합니다. Durable context evidence도 raw content를
+저장하지 않고 pack/provenance/budget/digest와 검증된 retrieval reference만 남깁니다.
+Evidence의 combined context fingerprint는 같은 model step의 동일 context를 deduplicate하고
+변경된 context를 별개로 구분합니다.
+
+## RAG retrieval contracts
+
+RAG는 `IRetriever` 결과를 model 호출 전에 `RetrievalContext`로 넣는 경로이고, agentic
+RAG는 같은 port를 `RetrievalTool`로 model-callable tool에 넣는 경로입니다. 기본
+retrieval API는 `IRetriever`, `RetrievalHit`, `RetrievalContext`, `RetrievalTool`입니다.
+
+`RetrievalContext`는 `limit=5`, `max_context_tokens=2048`, `allow_empty=False`가 기본입니다.
+`RunAgentInput.instruction`을 query로 사용하고 ordered hit를 JSON source frame이 앞선
+budgeted evidence pack과 manifest로 변환합니다. 빈 결과는 direct 경계에서
+`AgentRetrievalError`, runner에서는 provider request 전 `agent_model_execution_failed`입니다.
+`allow_empty=True`만 empty context로 계속 진행합니다.
+
+`RetrievalTool`은 `name="search"`, `limit=5`가 기본인 injected `IAgentToolProvider`입니다.
+Model-facing schema에는 `query` 하나만 있고 tenant/namespace/filter는 adapter 생성 시
+고정됩니다. Result는 ordinary `TOOL` history로 다음 model step에 들어가며 tool 실행의
+typed failure는 `agent_tool_execution_failed`입니다. 이 경로의 raw hit content는 normal tool
+history/evidence/checkpoint 의미를 따르며 classic context budget/redaction을 자동 적용하지
+않습니다. 두 adapter 모두 arbitrary `RetrievalHit.metadata`를 model/evidence result에
+복사하지 않습니다.
+
+Runner는 일반 `IAgentToolProvider`도 provider instance에 method를 bind해 per-run catalog에
+합치고 shared `@Agent` catalog는 mutate하지 않습니다. Wrong owner, already-bound callable,
+duplicate schema name은 model request 전에 `AgentDefinitionError`입니다.
+
+Unscoped adapter는 unscoped hit만 허용하고, tenant/namespace를 명시하면 반환 hit도 exact
+scope여야 합니다. JSON이 아닌 filter, duplicate ID, blank framing field, non-finite score,
+malformed span과 wrong result type은 `AgentRetrievalError`로 fail closed합니다.
+
+Vector 확장은 `ITextEmbedding` + `IVectorSearch` + `VectorRetriever`, optional
+`IReranker` + `RerankedRetriever`의 replaceable port 조합입니다. Core에는 vector backend,
+in-memory fallback, index write API가 없습니다. 사용 흐름은
+[Agent RAG](../../guides/agent-rag.md), embedding route는
+[AI Agent 심화](../../guides/agents-advanced.md#retrieval-extension-ports)를 확인하세요.
 
 ## Public API
 
@@ -211,6 +247,12 @@ deduplicate하고 변경된 context를 별개로 구분합니다.
 ## Context
 
 ::: spakky.agent.context
+    options:
+      show_root_heading: false
+
+## Retrieval
+
+::: spakky.agent.retrieval
     options:
       show_root_heading: false
 

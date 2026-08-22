@@ -195,6 +195,13 @@ def workspace_write(self, path: str, content: str) -> WorkspaceWriteResult:
 
 `@Agent` metadata에는 발견된 tool catalog가 들어 있습니다.
 
+재사용 가능한 tool component는 `IAgentToolProvider`를 구현해 Agent constructor에 주입할 수
+있습니다. Runner는 provider instance의 `self`/`cls` method에 descriptor를 bind한 뒤 해당
+run의 catalog에 합치며 shared `@Agent` metadata는 mutate하지 않습니다. Descriptor owner가
+provider instance와 다르거나 이미 bound된 callable을 주거나 schema name이 기존 tool과
+겹치면 model request 전에 `AgentDefinitionError`로 fail closed합니다. `RetrievalTool`이 이
+경계를 사용하는 기본 provider입니다.
+
 ```python
 from spakky.agent import Agent
 
@@ -750,7 +757,10 @@ Runner는 caller object를 mutate하지 않고 model-safe copy를 준비합니�
 - `ContextTokenBudget.max_tokens`가 있으면 4 characters/token 상한을 사용합니다.
   `estimated_tokens > max_tokens`이면 content 길이에 비례해 더 짧게 자릅니다.
 - Truncation metadata는 original/retained characters, estimated/max tokens만 담습니다.
-- Prepared pack은 raw pack metadata와 sensitive-field descriptor를 제거합니다.
+- Prepared pack은 arbitrary pack metadata와 sensitive-field descriptor를 제거합니다. 예외는
+  framework가 만드는 `retrieval` block 하나뿐입니다. 이 block은 `id`, score,
+  digest/revision, tenant/namespace, span offset만 허용하며 unknown key나 잘못된 type이
+  하나라도 있으면 block 전체를 제거합니다.
 - Prepared manifest entry의 sensitive fields/metadata를 제거하고 digest summary/metadata도
   model request와 evidence에 노출하지 않습니다.
 
@@ -764,6 +774,104 @@ context는 runner checkpoint에 저장하지 않습니다. Evidence의 `digest` 
 `CONTEXT`/`CONTEXT_MANIFEST`에서는 combined fingerprint입니다. `CONTEXT_DIGEST` evidence의
 `digest`는 caller가 선언한 `ContextDigest.digest`를 유지하고 payload의
 `context_fingerprint`로 같은 model-bound context에 결속합니다.
+
+## Retrieval extension ports { #retrieval-extension-ports }
+
+기본 사용법은 [Agent RAG](agent-rag.md)의 네 계약으로 충분합니다. Classic RAG는 같은
+`IRetriever`를 `RetrievalContext`로 model 호출 전에 넣고, agentic RAG는
+`RetrievalTool`로 model-callable tool에 넣습니다. Vector search가 필요한 애플리케이션만
+아래 port를 조합합니다.
+
+| 계약 | 책임 |
+| --- | --- |
+| `ITextEmbedding` | text batch를 `EmbeddingVector`로 변환 |
+| `IVectorSearch` | query vector와 고정 scope로 기존 index 검색 |
+| `VectorRetriever` | query embedding 한 건과 vector search를 `IRetriever`로 합성 |
+| `IReranker` | 기존 hit를 재정렬하고 `rerank_score`만 갱신 |
+| `RerankedRetriever` | base retriever 뒤에 optional reranking 적용 |
+
+`VectorRetriever`는 query를 정확히 한 건의 batch로 embed하고 vector가 정확히 하나
+돌아오는지 검증합니다. `RerankedRetriever`는 hit를 재정렬하거나 일부를 제외할 수 있지만,
+새 hit를 만들거나 ID/content/source/scope/provenance를 바꿀 수 없습니다.
+
+Google embedding을 쓰려면 chat catalog와 분리된 operator configuration에서 route를
+명시적으로 snapshot합니다. 아래 `embedding_config`의 logical ref는 chat
+`RunAgentInput.model_selection`에 노출하기 위한 값이 아닙니다.
+
+```python
+from os import environ
+
+from pydantic import SecretStr
+
+from spakky.plugins.llm.config import (
+    GoogleCredentialStrategy,
+    LlmConfig,
+    LlmModelRoute,
+    LlmProfile,
+    LlmProviderApi,
+)
+from spakky.plugins.llm.providers.google import GoogleTextEmbedding
+
+
+embedding_config = LlmConfig(
+    default_model="embedding/support",
+    profiles={
+        "google-embedding": LlmProfile(
+            provider="google",
+            api=LlmProviderApi.GOOGLE_GEMINI_DEVELOPER,
+            api_key=SecretStr(environ["GOOGLE_API_KEY"]),
+            google_credential_strategy=GoogleCredentialStrategy.API_KEY,
+        )
+    },
+    models={
+        "embedding/support": LlmModelRoute(
+            profile="google-embedding",
+            model="gemini-embedding-001",
+        )
+    },
+)
+
+embedding = GoogleTextEmbedding.from_config(
+    embedding_config,
+    "embedding/support",
+    output_dimensionality=768,
+)
+```
+
+`GoogleTextEmbedding`은 installed official Google Gen AI SDK를 사용합니다. Gemini Developer
+API는 API key mode, Vertex AI는 explicit project/location과 ADC 또는 service-account-file
+mode를 사용하며 endpoint/credential 규칙은 chat adapter와 같습니다. 입력 batch가 비거나
+blank text가 있거나 `output_dimensionality`가 양수가 아니면 `LlmConfigurationError`, SDK
+payload가 잘렸거나 vector 수·차원이 맞지 않으면 `LlmResponseError`입니다.
+
+Embedding adapter와 retrieval 합성 class는 자동 Pod 등록되지 않습니다. 애플리케이션이
+factory로 원하는 구현만 등록하고, application/vendor가 `IVectorSearch` 구현과 이미 만들어진
+knowledge/index의 write lifecycle을 소유합니다. Framework는 vector backend, 임시 in-memory
+fallback, index write API를 제공하지 않습니다.
+
+```python
+from spakky.agent import (
+    IReranker,
+    ITextEmbedding,
+    IVectorSearch,
+    RerankedRetriever,
+    VectorRetriever,
+)
+
+
+def build_vector_retriever(
+    embedding: ITextEmbedding,
+    vector_search: IVectorSearch,
+) -> VectorRetriever:
+    return VectorRetriever(embedding=embedding, vector_search=vector_search)
+
+
+def add_reranking(
+    retriever: VectorRetriever,
+    reranker: IReranker,
+) -> RerankedRetriever:
+    return RerankedRetriever(retriever=retriever, reranker=reranker)
+```
 
 ## Context compaction
 

@@ -320,6 +320,36 @@ checkpoint합니다. Static context를 사용했던 caller는 resume에 동일 c
 하며 model-bound prepared fingerprint가 다른 missing/different/additive context는
 `agent_checkpoint_invalid`입니다.
 
+### RAG
+
+RAG (Retrieval-Augmented Generation)는 model request 전에 관련 정보를 검색해
+`AgentContext`에 evidence로 넣는 실행 형태입니다. Spakky에서는 application-owned
+`IRetriever`가 `RetrievalHit`를 반환하고 constructor-injected `RetrievalContext`가 이를
+JSON source frame, 총 token budget, manifest를 가진 context pack으로 바꿉니다. 기본값은
+`limit=5`, `max_context_tokens=2048`, `allow_empty=False`입니다.
+
+### Agentic RAG
+
+같은 `IRetriever`를 constructor-injected `RetrievalTool`로 제공해 model이 필요할 때
+`search(query=...)`를 선택하는 실행 형태입니다. Model에는 query만 보이고 tenant,
+namespace, filters는 adapter에 고정됩니다. Result content는 일반 `TOOL` history/evidence
+의미를 따르므로 classic context budget이나 redaction이 자동 적용되지 않습니다.
+
+### IRetriever / RetrievalHit
+
+`IRetriever.retrieve(query, *, limit, tenant_id, namespace, filters)`는 classic RAG와
+agentic RAG가 공유하는 async 검색 port입니다. `RetrievalHit`는 ID, model-facing content,
+source, optional score/rerank score, digest/revision, scope와 span을 담습니다. Bound scope와
+반환 hit가 exact match해야 하며 duplicate ID나 malformed provenance는
+`AgentRetrievalError`입니다.
+
+`RetrievalHit.metadata`의 arbitrary 값은 model context, tool result, durable context
+evidence에 전달되지 않습니다. Context preparation이 보존할 수 있는 metadata는 framework의
+strictly validated `retrieval` block뿐이며 unknown key나 malformed field가 있으면 block
+전체를 제거합니다. 별도 RAG plugin은 없습니다. Vector 확장은 `ITextEmbedding`,
+`IVectorSearch`, `VectorRetriever`와 optional `IReranker`/`RerankedRetriever`를 조합하지만,
+framework는 vector backend나 index write API를 제공하지 않습니다.
+
 ### ContextManifest / ContextDigest
 
 `ContextManifest`는 pack ID/source/role과 origin/evidence/digest reference를 순서대로

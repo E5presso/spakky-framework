@@ -77,8 +77,10 @@ flowchart TD
 
   AbstractSpakkyAgentError --> AgentDefinitionError
   AbstractSpakkyAgentError --> AgentToolBindingError
+  AbstractSpakkyAgentError --> AgentToolDispatchError
   AbstractSpakkyAgentError --> AgentBootstrapError
   AbstractSpakkyAgentError --> AgentOutputGuardError
+  AbstractSpakkyAgentError --> AgentRetrievalError
   AgentBootstrapError --> AgentPersistenceConfigurationError
   AgentBootstrapError --> AgentModelConfigurationError
 
@@ -478,6 +480,7 @@ from spakky.agent.error import (
     AgentPersistenceConfigurationError,
     AgentModelConfigurationError,
     AgentOutputGuardError,
+    AgentRetrievalError,
 )
 ```
 
@@ -491,6 +494,7 @@ from spakky.agent.error import (
 | `AgentPersistenceConfigurationError`     | durable agent persistence contribution 누락 | `AgentBootstrapError`      |
 | `AgentModelConfigurationError`          | 필요한 model adapter 등록 누락            | `AgentBootstrapError`      |
 | `AgentOutputGuardError`                 | streaming output guard가 unsafe exposure를 감지 | `AbstractSpakkyAgentError` |
+| `AgentRetrievalError`                   | retrieval 입력·hit·scope·provenance가 안전한 계약을 충족하지 않음 | `AbstractSpakkyAgentError` |
 
 `AgentToolBindingError`는 tool callable 실행 전에 발생하므로, schema에 없는 인자·필수 인자 누락·positional/keyword 중복 같은 잘못된 model payload가 side effect를 만들기 전에 차단됩니다.
 
@@ -536,6 +540,15 @@ Context provider failure/invalid return 또는 model-step context combination fa
 request 전에 `agent_model_execution_failed`, context provider deadline은 `agent_timeout`으로
 terminalize됩니다. Durable resume의 static-context fingerprint mismatch는
 `agent_checkpoint_invalid`입니다.
+
+`RetrievalHit`, `RetrievalContext`, `RetrievalTool`, vector/reranking port를 직접 구성하거나
+호출할 때의 blank/invalid/scope mismatch/duplicate failure는 `AgentRetrievalError`입니다.
+같은 오류가 runner의 injected `RetrievalContext`에서 발생하면 provider request 전
+`agent_model_execution_failed`, injected `RetrievalTool` 실행 중 발생하면
+`agent_tool_execution_failed`로 정규화됩니다. Model arguments의 missing/extra field처럼
+Python signature에 bind할 수 없는 shape는 callable 실행 전 `agent_tool_batch_invalid`이며
+batch 전체가 0-dispatch입니다. Bind는 되지만 query가 non-text/blank인 경우에는
+`RetrievalTool` 실행 경계의 `agent_tool_execution_failed`입니다.
 
 ---
 
@@ -916,13 +929,13 @@ from spakky.plugins.llm.error import (
 | 에러 | stream code | retryable | 설명 |
 | --- | --- | --- | --- |
 | `AbstractLlmError` | — | — | LLM routing과 provider adapter 에러의 공통 기반 클래스 |
-| `LlmConfigurationError` | `llm_configuration_invalid` | `false` | provider registry, SDK client endpoint/API key 또는 credential runtime 구성이 유효하지 않음 |
+| `LlmConfigurationError` | `llm_configuration_invalid` | `false` | provider registry, SDK client endpoint/API key/credential 또는 explicit Google embedding route/input 구성이 유효하지 않음 |
 | `LlmModelSelectionError` | `llm_model_selection_invalid` | `false` | 요청한 `model_ref`를 operator catalog에서 해석할 수 없음 |
 | `LlmProviderUnavailableError` | `llm_provider_unavailable` | `false` | 선택한 API family의 SDK adapter가 등록되지 않음 |
 | `LlmStreamingDisabledError` | `llm_streaming_disabled` | `false` | 선택한 profile이 streaming을 허용하지 않음 |
 | `LlmTransportError` | `llm_transport_error` | `true` | SDK가 provider endpoint에 도달하지 못했거나 재시도 가능한 상태 오류를 받음 |
 | `LlmTimeoutError` | `llm_timeout` | `true` | provider SDK 요청 timeout |
-| `LlmResponseError` | `llm_response_error` | `false` | provider response, JSON, tool history 또는 schema 검증 실패 |
+| `LlmResponseError` | `llm_response_error` | `false` | provider response, JSON, tool history, schema 또는 Google embedding vector count/dimension/truncation 검증 실패 |
 | `LlmModelRefusalError` | `model_refusal` | `false` | provider가 refusal 또는 content filter를 보고함 |
 | `LlmUnsupportedFeatureError` | `llm_feature_unsupported` | `false` | 선택한 provider가 요청 기능을 충족할 수 없음 |
 

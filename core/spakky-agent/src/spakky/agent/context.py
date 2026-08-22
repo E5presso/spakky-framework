@@ -7,6 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
 from json import dumps
+from math import isfinite
 from typing import TYPE_CHECKING, cast
 
 from spakky.agent.error import AgentDefinitionError
@@ -21,6 +22,19 @@ if TYPE_CHECKING:  # pragma: no cover - static-only circular import
     from spakky.agent.inbound import RunAgentInput
 
 _ESTIMATED_CHARACTERS_PER_TOKEN = 4
+_SAFE_RETRIEVAL_METADATA_KEYS = frozenset(
+    {
+        "id",
+        "score",
+        "rerank_score",
+        "content_digest",
+        "revision",
+        "tenant_id",
+        "namespace",
+        "start_offset",
+        "end_offset",
+    }
+)
 
 
 class ContextPackRole(StrEnum):
@@ -405,21 +419,33 @@ def _agent_context_fingerprint(context: AgentContext) -> str | None:
 
 def _prepare_pack(pack: ContextPack) -> ContextPack:
     guarded = pack.guarded_content()
+    safe_metadata = _safe_pack_metadata(pack.metadata)
     max_tokens = pack.token_budget.max_tokens
     if pack.sensitivity is ContextSensitivity.REDACTED or max_tokens is None:
-        return replace(pack, content=guarded, sensitive_fields=(), metadata={})
+        return replace(
+            pack,
+            content=guarded,
+            sensitive_fields=(),
+            metadata=safe_metadata,
+        )
     max_characters = max_tokens * _ESTIMATED_CHARACTERS_PER_TOKEN
     estimated_tokens = pack.token_budget.estimated_tokens
     if estimated_tokens is not None and estimated_tokens > max_tokens:
         proportional_characters = (len(guarded) * max_tokens) // estimated_tokens
         max_characters = min(max_characters, proportional_characters)
     if len(guarded) <= max_characters:
-        return replace(pack, content=guarded, sensitive_fields=(), metadata={})
+        return replace(
+            pack,
+            content=guarded,
+            sensitive_fields=(),
+            metadata=safe_metadata,
+        )
     return replace(
         pack,
         content=guarded[:max_characters],
         sensitive_fields=(),
         metadata={
+            **safe_metadata,
             "context_truncation": {
                 "truncated": True,
                 "original_characters": len(guarded),
@@ -429,6 +455,52 @@ def _prepare_pack(pack: ContextPack) -> ContextPack:
             },
         },
     )
+
+
+def _safe_pack_metadata(metadata: JsonObject) -> JsonObject:
+    retrieval = metadata.get("retrieval")
+    if not isinstance(retrieval, Mapping):
+        return {}
+    if any(key not in _SAFE_RETRIEVAL_METADATA_KEYS for key in retrieval):
+        return {}
+    identifier = retrieval.get("id")
+    if (
+        not isinstance(identifier, str)
+        or not identifier.strip()
+        or "\n" in identifier
+        or "\r" in identifier
+    ):
+        return {}
+    for key in ("content_digest", "revision", "tenant_id", "namespace"):
+        value = retrieval.get(key)
+        if value is not None and (
+            not isinstance(value, str)
+            or not value.strip()
+            or "\n" in value
+            or "\r" in value
+        ):
+            return {}
+    for key in ("score", "rerank_score"):
+        value = retrieval.get(key)
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not isfinite(value)
+        ):
+            return {}
+    for key in ("start_offset", "end_offset"):
+        value = retrieval.get(key)
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+        ):
+            return {}
+    start = retrieval.get("start_offset")
+    end = retrieval.get("end_offset")
+    if (start is None) != (end is None):
+        return {}
+    if isinstance(start, int) and isinstance(end, int) and end <= start:
+        return {}
+    return {"retrieval": dict(retrieval)}
 
 
 def _validated_envelope(

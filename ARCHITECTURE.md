@@ -17,7 +17,7 @@
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
 | **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
-| **Core** | `spakky-agent` | Agentic workflow 계약과 bounded model/tool loop (AgentExecutionSpec/Limits, state/signal/evidence, model/tool/delegation) |
+| **Core** | `spakky-agent` | Agentic workflow·minimal retrieval 계약과 bounded model/tool loop (state/signal/evidence, model/tool/delegation, context/retriever) |
 | **Core** | `spakky-actuator` | Actuator 상태/정보 계약 (Health, Readiness, Liveness, Info) |
 | **Core** | `spakky-cache` | 애플리케이션 데이터 캐시 계약 (CacheHit, CacheMiss, ICache) |
 | **Core** | `spakky-tracing` | 분산 트레이싱 추상화 (TraceContext, ITracePropagator, W3C Propagator) |
@@ -37,7 +37,7 @@
 | **Plugin** | `spakky-openfga` | OpenFGA 관계 검사 AuthZ provider |
 | **Plugin** | `spakky-oidc` | OIDC/OAuth bearer credential 인증 provider |
 | **Plugin** | `spakky-policy` | YAML/TOML/JSON policy document 기반 AuthZ evaluator |
-| **Plugin** | `spakky-llm` | Operator model catalog + OpenAI-compatible(vLLM 포함), Anthropic, Gemini Developer API, Vertex AI adapter |
+| **Plugin** | `spakky-llm` | Operator model catalog + OpenAI-compatible(vLLM 포함), Anthropic, Gemini Developer API, Vertex AI model adapter + explicit Google text embedding |
 | **Plugin** | `spakky-agui` | AG-UI protocol adapter (SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
 | **Plugin** | `spakky-a2a` | A2A server/delegation adapter (AgentCard, JSON-RPC, REST, gRPC, remote teammate delegate) |
 | **Plugin** | `spakky-mcp` | 외부 MCP 서버 도구를 Agent run에 lazy search/call 도구로 연결하는 client adapter |
@@ -55,7 +55,7 @@ graph TD
         data["spakky-data<br/>Repository · Transaction"]
         event["spakky-event<br/>Publisher · Consumer · Aspect"]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
-        agent["spakky-agent<br/>AgentYield · State · Signal · Model Port · Delegation"]
+        agent["spakky-agent<br/>AgentYield · Model/Tool · Context/Retrieval · Delegation"]
         actuator["spakky-actuator<br/>Health · Readiness · Info"]
         cache["spakky-cache<br/>CacheHit · CacheMiss · ICache"]
         tracing["spakky-tracing<br/>TraceContext · Propagator"]
@@ -202,8 +202,8 @@ graph TD
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-auth`와 `spakky-tracing`에도 의존 (auth snapshot + 컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
-- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, opaque model selector/capability/model port, tool binding, delegation 계약을 제공하며 provider catalog·credential·SDK/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory persistence fallback을 포함하지 않음
-- **LLM 플러그인** (spakky-llm) → `spakky` + `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. Operator-owned logical model catalog가 connection profile을 거쳐 OpenAI-compatible(vLLM dialect 포함), Anthropic, Gemini Developer API, Vertex AI 공식 SDK adapter로 routing하며 다른 plugin을 직접 import하지 않음
+- **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` stereotype, AgentYield, state/signal/evidence, opaque model selector/capability/model port, tool binding, delegation, `IRetriever`·context/tool wrapper와 optional embedding/vector/reranker port를 제공하며 provider catalog·credential·SDK/SQLAlchemy/FastAPI/Typer 같은 infrastructure dependency와 production in-memory retrieval/persistence fallback을 포함하지 않음
+- **LLM 플러그인** (spakky-llm) → `spakky` + `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. Operator-owned logical model catalog가 connection profile을 거쳐 OpenAI-compatible(vLLM dialect 포함), Anthropic, Gemini Developer API, Vertex AI 공식 SDK adapter로 routing하며, explicit Google route용 `GoogleTextEmbedding`을 선택적으로 제공하되 `ITextEmbedding`에 auto-bind하지 않고 다른 plugin을 직접 import하지 않음
 - **Agent protocol adapter 플러그인** (spakky-agui, spakky-a2a, spakky-mcp) → `spakky` + `spakky-agent`에 의존. AG-UI/A2A는 `AgentRunner.run_events()`의 중립 `AgentEvent` stream을 각 프로토콜로 투영하고, MCP는 외부 MCP server tools를 lazy search/call 도구로 Agent run에 합류시킨다. 이 어댑터들은 `spakky-fastapi`/`spakky-grpc` 같은 inbound framework plugin에 역의존하지 않고 필요한 외부 SDK/FastAPI/Starlette/gRPC/MCP 라이브러리를 직접 사용한다.
 - **Actuator 코어** (spakky-actuator) → `spakky` 코어에만 의존
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
@@ -549,13 +549,34 @@ spakky-data = "spakky.data.main:initialize"
 
 `spakky-agent`는 LLM SDK wrapper가 아니라 application layer building block입니다. `@Agent`는 `@UseCase`와 동격인 `@Pod` 계열 stereotype이고, inbound adapter는 `execute()`가 내보내는 `AgentYield` stream을 HTTP/WebSocket/CLI 이벤트로 변환합니다. Agent 내부의 비결정적 orchestration은 business workflow로 남고, 외부 세계 접근은 constructor DI로 받은 outbound port와 `@agent_tool` descriptor를 통해서만 표현합니다. `AgentExecutionSpec`은 `instructions`, `output_type`, `limits`, `teammates`, `compaction`, `delegation_allowed`, `metadata` 같은 실행 의미를 DI metadata로 보존하고, spec과 `@agent_tool` 메서드만 선언하고 `execute()`를 작성하지 않으면 `@Agent`가 `AgentRunner` 기반 bounded iterative orchestration을 `execute()`로 자동 바인딩합니다(ADR-0017). `AgentRunner`는 같은 orchestration 위에 inbound adapter용 public `AgentYield` stream(`run()`)과 protocol adapter용 중립 `AgentEvent` stream(`run_events()`)을 노출합니다. 후자는 message/reasoning delta, tool call lifecycle, run/step 경계를 분리하지만 외부 protocol과 event 개수·필드가 1:1이라는 뜻은 아닙니다. AG-UI는 lifecycle frame을 합성하고 A2A는 task status/message/artifact로 변환하며 protocol에 대응되지 않는 metadata는 생략할 수 있습니다(ADR-0013 §3).
 
-Core public API의 중심은 `AgentExecutionSpec`, `AgentExecutionLimits`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `IAgentModelResolver`, `ModelSelection`, `ModelCapability`/`ModelModality`, `@agent_tool`, `AgentRunner`/`AgentRunResult`, `RunAgentInput`, `AgentContext`/`IAgentContextProvider`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. `AgentExecutionLimits(max_steps=8, max_tool_calls=32, max_tokens=None, timeout_seconds=None)`가 표준 loop의 유일한 limit surface이며 `AgentExecutionSpec.timeout_seconds` alias는 없습니다. `RunAgentInput.parent_run_id`는 delegated child run을 parent run과 연결하는 중립 attribution이고, `ToolCallStartEvent.parent_message_id`와 `ToolCallResultEvent.message_id`는 adapter가 사용할 수 있는 중립 message link입니다. 모든 `AgentEvent`가 attribution과 metadata를 갖지만 AG-UI는 `RUN_STARTED`에서 thread/run/parent를 wire field로 옮기고, A2A server projector는 inbound task/context에 bind된 `TaskUpdater`를 사용하므로 neutral attribution·metadata 전체를 자동 직렬화하지 않습니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
+Core public API의 중심은 `AgentExecutionSpec`, `AgentExecutionLimits`, `AgentYield`, `AgentState`, `AgentSignal`, `AgentEvidence`, `IAgentModel`, `IAgentModelResolver`, `ModelSelection`, `ModelCapability`/`ModelModality`, `@agent_tool`, `IAgentToolProvider`, `AgentRunner`/`AgentRunResult`, `RunAgentInput`, `AgentContext`/`IAgentContextProvider`, `IRetriever`/`RetrievalHit`/`RetrievalContext`/`RetrievalTool`, `DelegationPacket`/`IAgentDelegate`, context/safety/recovery contract입니다. `AgentExecutionLimits(max_steps=8, max_tool_calls=32, max_tokens=None, timeout_seconds=None)`가 표준 loop의 유일한 limit surface이며 `AgentExecutionSpec.timeout_seconds` alias는 없습니다. `RunAgentInput.parent_run_id`는 delegated child run을 parent run과 연결하는 중립 attribution이고, `ToolCallStartEvent.parent_message_id`와 `ToolCallResultEvent.message_id`는 adapter가 사용할 수 있는 중립 message link입니다. 모든 `AgentEvent`가 attribution과 metadata를 갖지만 AG-UI는 `RUN_STARTED`에서 thread/run/parent를 wire field로 옮기고, A2A server projector는 inbound task/context에 bind된 `TaskUpdater`를 사용하므로 neutral attribution·metadata 전체를 자동 직렬화하지 않습니다. Durable 실행은 `RecoveryStrategy.ACTION_BOUNDARY` 또는 `accepted_signals` 선언에서 파생되며, bootstrap 단계에서 `IAgentStateRepository`, `IAgentSignalRepository`, `IAgentEvidenceRepository`가 모두 등록되어 있는지 검증합니다. Core는 production in-memory repository fallback을 제공하지 않습니다.
 
 `AgentExecutionSpec.output_type` 선언은 Pydantic `BaseModel`, 표준 `dataclass`, `TypedDict`를 strict portable structured-output contract로 컴파일합니다. Local schema reference는 펼치고 object는 closed shape로 정규화하며 unsupported keyword·순환/외부 reference·non-finite JSON은 정의 시점에 거부합니다. Runner는 selected route의 `supports_structured_output`을 request 전에 확인하고, tool이 없는 final model step에서 하나의 structured payload만 strict materialization합니다. Missing, multiple, tool call과 동시 반환, coercion/extra-key/shape-loss는 각각 typed terminal로 fail closed합니다. `run()`은 선언한 Python 타입을 `Final.output`으로 반환하고 `run_events()`는 JSON-safe `output`과 `output_type`을 성공 terminal metadata에 넣습니다. `output_type=None`은 structured request를 생성하지 않고 기존 `AgentRunResult`를 반환합니다.
 
 `RunAgentInput.context` 정적 envelope과 constructor-injected optional `IAgentContextProvider` 동적 envelope는 model step에서 static-first 순서로 결합됩니다. Pack id는 전체에서 unique해야 하고 manifest는 pack 순서·id·source·role을 정확히 커버해야 하며 digest는 같은 manifest와 모든 pack id를 순서대로 커버해야 합니다. 두 envelope가 각자 manifest를 갖으면 component reference를 남긴 composite manifest를 만들지만 한쪽만 커버하는 digest를 전체 digest로 승격시키지 않고 fail closed합니다. Default는 invocation의 첫 provider result를 후속 model step에 cache하고 `refresh_context_each_step=True`는 1-based step마다 provider를 다시 호출합니다. Durable resume은 raw context를 checkpoint하지 않고 prepared static context의 `static_context_fingerprint`만 보존하므로 caller가 같은 prepared static identity를 만드는 envelope를 다시 넘겨야 합니다. Missing·changed·additive static context는 `agent_checkpoint_invalid`, dynamic context는 fresh provider call로 처리합니다.
 
-Model에 넘기기 전에 context content는 sensitive-field descriptor와 `REDACTED` marker로 deterministic guard되고 pack token budget으로 잘립니다. Raw pack metadata/sensitive descriptor, manifest entry metadata, digest summary/metadata는 downstream request·durable evidence에 복제하지 않고 framework-generated truncation metadata와 composite manifest reference만 유지할 수 있습니다. Durable evidence는 실제로 있는 `CONTEXT`, `CONTEXT_MANIFEST`, `CONTEXT_DIGEST` provenance만 model step과 전체 prepared-context fingerprint에 결속해 append하고 raw content를 저장하지 않습니다. 같은 step의 같은 fingerprint는 retry에서 deduplicate하지만 context가 바뀌면 새 evidence set을 남깁니다. 식별자·origin/evidence/digest reference는 의도적으로 남으므로 secret을 사용하지 않아야 합니다.
+Model에 넘기기 전에 context content는 sensitive-field descriptor와 `REDACTED` marker로 deterministic guard되고 pack token budget으로 잘립니다. Arbitrary pack metadata/sensitive descriptor, manifest entry metadata, digest summary/metadata는 downstream request·durable evidence에 복제하지 않고 framework-generated truncation metadata, composite manifest reference, exact allowlist/type/framing을 통과한 reserved `retrieval` metadata만 유지할 수 있습니다. Durable evidence는 실제로 있는 `CONTEXT`, `CONTEXT_MANIFEST`, `CONTEXT_DIGEST` provenance만 model step과 전체 prepared-context fingerprint에 결속해 append하고 raw content를 저장하지 않습니다. 같은 step의 같은 fingerprint는 retry에서 deduplicate하지만 context가 바뀌면 새 evidence set을 남깁니다. 식별자·origin/evidence/digest reference는 의도적으로 남으므로 secret을 사용하지 않아야 합니다.
+
+Minimal retrieval runtime은 `spakky-agent`의 application port로 유지하며 별도 package/plugin을 만들지 않습니다. `IRetriever.retrieve(query, *, limit, tenant_id, namespace, filters)`는 ordered `RetrievalHit` sequence를 반환하고, `RetrievalContext`는 이를 pre-model `AgentContext`로, `RetrievalTool`은 같은 port를 model-callable read-only tool로 변환합니다. Tenant/namespace/filters는 wrapper 생성 시 고정하고 model-facing tool에는 query만 노출합니다. Bound scope는 exact match만, unbound wrapper는 unscoped hit만 받고 malformed/duplicate/cross-scope result는 `AgentRetrievalError`로 fail closed합니다. Classic empty result의 default는 failure이며 `allow_empty=True`만 empty context를 허용합니다.
+
+```mermaid
+flowchart LR
+    retriever["IRetriever<br/>application/vendor implementation"]:::port --> classic["RetrievalContext<br/>IAgentContextProvider"]:::adapter
+    retriever --> agentic["RetrievalTool<br/>IAgentToolProvider"]:::adapter
+    classic --> context["budgeted AgentContext<br/>before model"]:::core
+    agentic --> tool["read-only tool<br/>model decides when"]:::core
+    context --> runner["AgentRunner"]:::runner
+    tool --> runner
+
+    classDef port fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+    classDef adapter fill:#FFF3E0,stroke:#EF6C00,color:#E65100
+    classDef core fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+    classDef runner fill:#ECEFF1,stroke:#546E7A,color:#263238
+```
+
+`IAgentToolProvider`는 retrieval에 고정된 특수 케이스가 아닙니다. Runner는 agent instance에 주입된 모든 provider catalog를 class-level `Agent.tool_catalog`을 변경하지 않는 runner-local copy에 merge합니다. Provider descriptor의 normal instance method는 provider instance에 bind되고 native `@agent_tool`은 agent instance에 bind됩니다. Merge 후도 기존 schema-name/identity uniqueness, batch authority, approval, limits, timeout/cancellation, tool result/evidence/checkpoint 의미를 적용합니다. `RetrievalTool` result의 typed provenance와 raw hit content는 모델 후속 판단을 위해 `TOOL` history에 들어가며 durable run에서는 기존 tool semantics대로 evidence/checkpoint에도 영속됩니다. Arbitrary `RetrievalHit.metadata`는 이 결과에 포함하지 않습니다.
+
+Vector와 reranking은 필요할 때만 `ITextEmbedding`/`EmbeddingPurpose`/`EmbeddingVector`/`IVectorSearch`/`VectorRetriever`, `IReranker`/`RerankedRetriever`를 조합하는 advanced seam입니다. Core는 production implementation이나 in-memory fallback을 자동 등록하지 않습니다. Existing knowledge base/index 수명주기는 application/vendor가 소유하고, vector backend을 하나로 고르지 않은 것은 이 retrieval runtime의 blocker가 아닙니다. `spakky-llm`의 `GoogleTextEmbedding`은 explicit Google route에서 생성할 수 있는 optional adapter이지 plugin이 `ITextEmbedding`에 auto-bind하는 default가 아닙니다. 결정 배경은 [ADR-0019](docs/adr/0019-minimal-retrieval-runtime.md)를 참조합니다.
 
 ```mermaid
 flowchart TD
@@ -1378,7 +1399,7 @@ flowchart TD
 | `spakky-oidc` | `OidcAuthenticationProvider`; `spakky.contributions.spakky.auth` contribution으로 bearer authentication capability 선언 | `pyjwt[crypto]`, `spakky-auth` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async), `RedisCacheHealthProbe`, `RedisCacheMetricsInfoContributor` | `redis`, `pydantic-settings`, `spakky-cache`, `spakky-actuator` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` | `openfga-sdk`, `pydantic-settings`, `spakky-auth` |
-| `spakky-llm` | `LlmConfig`, `LlmAgentModel`, OpenAI/Anthropic/Google SDK provider | `openai`, `anthropic`, `google-genai`, `google-auth`, `httpx`, `pydantic-settings`, `spakky-agent` |
+| `spakky-llm` | `LlmConfig`, `LlmAgentModel`, OpenAI/Anthropic/Google SDK provider, explicit `GoogleTextEmbedding` | `openai`, `anthropic`, `google-genai`, `google-auth`, `httpx`, `pydantic-settings`, `spakky-agent` |
 
 ### 태스크 플러그인
 
@@ -1482,6 +1503,7 @@ flowchart TD
 | [0016](docs/adr/0016-operator-owned-model-catalog.md) | Operator-owned model catalog와 opaque model routing | Accepted |
 | [0017](docs/adr/0017-bounded-iterative-agent-loop.md) | Bounded iterative model/tool loop | Accepted |
 | [0018](docs/adr/0018-typed-agent-output-and-context.md) | Typed agent output과 composed execution context | Accepted |
+| [0019](docs/adr/0019-minimal-retrieval-runtime.md) | Minimal retrieval runtime | Accepted |
 
 ---
 

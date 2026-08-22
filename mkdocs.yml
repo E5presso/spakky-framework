@@ -172,6 +172,7 @@ nav:
       - 기초:
           - AI Agent 개발: guides/agents.md
           - LLM 모델 라우팅: guides/llm-routing.md
+          - Agent RAG: guides/agent-rag.md
           - CodeAssistant 에이전트 예제: guides/agent-code-assistant.md
       - 심화:
           - AI Agent 심화: guides/agents-advanced.md
@@ -240,3 +241,4 @@ nav:
       - ADR-0016 Operator-owned model catalog와 opaque model routing: adr/0016-operator-owned-model-catalog.md
       - ADR-0017 Bounded iterative model/tool loop: adr/0017-bounded-iterative-agent-loop.md
       - ADR-0018 Typed agent output과 composed execution context: adr/0018-typed-agent-output-and-context.md
+      - ADR-0019 Minimal retrieval runtime: adr/0019-minimal-retrieval-runtime.md

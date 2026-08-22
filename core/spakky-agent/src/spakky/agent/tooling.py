@@ -1,6 +1,7 @@
 """Agent tool descriptor discovery contracts."""
 
 import typing
+from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import MISSING, Field, dataclass, field, is_dataclass
 from enum import Enum, StrEnum
@@ -452,6 +453,16 @@ class AgentToolCatalog:
             if descriptor.schema.name == schema_name:
                 return descriptor
         raise AgentDefinitionError("Agent tool schema name is not registered")
+
+
+class IAgentToolProvider(ABC):
+    """Injected component contributing a deterministic agent tool catalog."""
+
+    @property
+    @abstractmethod
+    def tool_catalog(self) -> AgentToolCatalog:
+        """Return tools contributed by this component."""
+        ...
 
 
 def agent_tool(

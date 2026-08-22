@@ -28,6 +28,7 @@ iterative 실행을 `execute()`로 자동 제공합니다. Agent class는 tool�
 집행합니다.
 
 선언형 시그널 훅(`@on_signal`), approval, durable repository, context compaction, teammate, AG-UI/A2A/MCP 어댑터는 [AI Agent 심화](agents-advanced.md)에서 다룹니다. 실제 CodeAssistant 흐름을 보고 싶다면 [CodeAssistant 에이전트 예제](agent-code-assistant.md)를 이어서 보세요.
+기존 지식 검색을 model context 또는 tool로 연결하려면 [Agent RAG](agent-rag.md)를 사용하세요.
 
 ## 언제 Agent를 쓰나요?
 
@@ -650,6 +651,7 @@ class Assistant:
 
 ## 더 볼 곳
 
+- [Agent RAG](agent-rag.md): 같은 `IRetriever`를 classic context 또는 agentic tool로 주입합니다.
 - [AI Agent 심화](agents-advanced.md): tool catalog, approval, durable repository, protocol event stream을 다룹니다.
 - [AG-UI 어댑터](agent-ag-ui.md), [A2A 어댑터](agent-a2a.md), [MCP 어댑터](agent-mcp.md): 외부 프로토콜별 endpoint와 transport wiring을 확인합니다.
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 흐름으로 연결합니다.

@@ -24,10 +24,12 @@ reasoning capability (graceful degrade, ADR-0013 §4).
 
 from asyncio import TimeoutError, get_running_loop, timeout_at
 from collections.abc import AsyncGenerator, Awaitable, Mapping, Sequence
+from copy import copy
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from hashlib import sha256
-from inspect import iscoroutinefunction
+from inspect import iscoroutinefunction, signature
 from json import dumps
+from types import FunctionType
 
 from pydantic import BaseModel
 
@@ -126,7 +128,9 @@ from spakky.agent.state import (
 from spakky.agent.structured_output import _structured_output_contract
 from spakky.agent.tooling import (
     AgentToolDescriptor,
+    AgentToolCatalog,
     AgentToolRuntimeContext,
+    IAgentToolProvider,
     Idempotency,
 )
 from spakky.agent.types import JsonObject, JsonValue
@@ -322,8 +326,25 @@ class AgentRunner:
         evidence = cls._resolve_optional(attributes, IAgentEvidenceRepository)
         task_store = cls._resolve_optional(attributes, ITaskStore)
         context_provider = cls._resolve_optional(attributes, IAgentContextProvider)
+        tool_providers = tuple(
+            attribute
+            for attribute in attributes
+            if isinstance(attribute, IAgentToolProvider)
+        )
+        merged_catalog = AgentToolCatalog(
+            descriptors=(
+                *agent.tool_catalog.descriptors,
+                *(
+                    descriptor
+                    for provider in tool_providers
+                    for descriptor in _bound_tool_provider_descriptors(provider)
+                ),
+            )
+        )
+        runner_agent = copy(agent)
+        runner_agent.tool_catalog = merged_catalog
         runner = cls(
-            agent=agent,
+            agent=runner_agent,
             target=instance,
             model=model,
             states=states,
@@ -1088,6 +1109,11 @@ class AgentRunner:
                     "estimated_tokens": pack.token_budget.estimated_tokens,
                     "reserved_output_tokens": pack.token_budget.reserved_output_tokens,
                 },
+                **(
+                    {"retrieval": pack.metadata["retrieval"]}
+                    if "retrieval" in pack.metadata
+                    else {}
+                ),
             }
             for pack in context.packs
         )
@@ -2673,6 +2699,29 @@ def _signal_yield_event(
         },
         metadata=payload.metadata,
     )
+
+
+def _bound_tool_provider_descriptors(
+    provider: IAgentToolProvider,
+) -> tuple[AgentToolDescriptor, ...]:
+    bound: list[AgentToolDescriptor] = []
+    for descriptor in provider.tool_catalog.descriptors:
+        if not isinstance(provider, descriptor.owner):
+            raise AgentDefinitionError(
+                "Injected tool descriptor owner does not match its provider"
+            )
+        callable_ = descriptor.callable
+        if not isinstance(callable_, FunctionType):
+            raise AgentDefinitionError(
+                "Injected tool callable must be an unbound function"
+            )
+        parameters = tuple(signature(callable_).parameters.values())
+        if parameters and parameters[0].name == "self":
+            callable_ = callable_.__get__(provider, type(provider))
+        elif parameters and parameters[0].name == "cls":
+            callable_ = callable_.__get__(type(provider), type(provider))
+        bound.append(replace(descriptor, callable=callable_))
+    return tuple(bound)
 
 
 def _run_paused_event(

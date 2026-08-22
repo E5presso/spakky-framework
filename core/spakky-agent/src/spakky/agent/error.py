@@ -51,3 +51,9 @@ class AgentOutputGuardError(AbstractSpakkyAgentError):
     """Raised when an output guard detects unsafe streaming exposure."""
 
     message = "Agent output guard failed"
+
+
+class AgentRetrievalError(AbstractSpakkyAgentError):
+    """Raised when retrieval results cannot safely enter an agent run."""
+
+    message = "Agent retrieval failed"

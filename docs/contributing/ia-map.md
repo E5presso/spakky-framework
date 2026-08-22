@@ -18,7 +18,7 @@
 | 메시징과 워크플로우 | `sections/messaging.md` | Celery, RabbitMQ, Kafka, Outbox, 사가 | 사가 심화 |
 | 보안 | `sections/security.md` | 보안 | 보안 심화, 인증/인가 전환, 마일스톤 스펙 |
 | 운영 | `sections/operations.md` | 로깅, 트레이싱, OpenTelemetry, Actuator, 캐시 | — |
-| Agent | `sections/agent.md` | AI Agent 개발, LLM 모델 라우팅, CodeAssistant 예제 | AI Agent 심화 (+ 프로토콜 어댑터: AG-UI·A2A·MCP) |
+| Agent | `sections/agent.md` | AI Agent 개발, LLM 모델 라우팅, Agent RAG, CodeAssistant 예제 | AI Agent 심화 (+ 프로토콜 어댑터: AG-UI·A2A·MCP) |
 
 ## 기존 페이지의 새 위치 (이동 계획)
 
@@ -57,6 +57,7 @@
 | `guides/cache.md` | 가이드 > 운영 | 운영 > 기초 |
 | `guides/agents.md` | 가이드 > Agent | Agent > 기초 |
 | `guides/llm-routing.md` | 신규 | Agent > 기초 |
+| `guides/agent-rag.md` | 신규 | Agent > 기초 |
 | `guides/agent-code-assistant.md` | 가이드 > Agent | Agent > 기초 |
 | `guides/agents-advanced.md` | 심화 가이드 | Agent > 심화 |
 | `plugin-api.md` | 심화 가이드 | 참조 |
@@ -77,3 +78,4 @@
 | `guides/agent-a2a.md` | Agent > 프로토콜 어댑터 | 작성 완료 |
 | `guides/agent-mcp.md` | Agent > 프로토콜 어댑터 | 작성 완료 |
 | `guides/llm-routing.md` | Agent > 기초 | 작성 완료 |
+| `guides/agent-rag.md` | Agent > 기초 | 작성 완료 |

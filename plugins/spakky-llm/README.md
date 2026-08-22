@@ -1,6 +1,6 @@
 # spakky-llm
 
-> `spakky-llm`은 `spakky-agent`의 `IAgentModel` port를 OpenAI-compatible, Anthropic, Gemini Developer API, Vertex AI에 연결하는 outbound adapter plugin입니다.
+> `spakky-llm`은 `spakky-agent`의 `IAgentModel` port를 OpenAI-compatible, Anthropic, Gemini Developer API, Vertex AI에 연결하고, explicit Google route에서 optional `ITextEmbedding` adapter를 제공하는 outbound plugin입니다.
 > Caller는 logical `model_ref`만 선택하고, operator가 model catalog와 connection profile로 실제 provider topology를 소유합니다.
 
 ## 설치
@@ -15,7 +15,7 @@ Agent 전체 조합은 root extra로 설치할 수 있습니다.
 pip install "spakky[agent]"
 ```
 
-`spakky-llm`은 model adapter만 제공합니다. Durable Agent 실행에는 `spakky-sqlalchemy[agent]` 같은 persistence contribution도 필요합니다.
+`spakky-llm`은 model adapter와 explicit opt-in Google text-embedding adapter만 제공합니다. Retrieval/vector backend이나 durable persistence를 제공하지 않으므로, durable Agent 실행에는 `spakky-sqlalchemy[agent]` 같은 persistence contribution이 별도로 필요합니다.
 
 ## DX 경계
 
@@ -56,7 +56,9 @@ classDiagram
     ILLMProvider <|.. OpenAIChatProvider
     ILLMProvider <|.. AnthropicMessagesProvider
     ILLMProvider <|.. GoogleGenerateContentProvider
+    ITextEmbedding <|.. GoogleTextEmbedding
     ILLMProvider --> LlmJsonCodec
+    GoogleTextEmbedding --> LlmConfig
     LlmConfig *-- LlmProfile
     LlmConfig *-- LlmModelRoute
     LlmModelRoute *-- ModelCapability
@@ -71,9 +73,10 @@ classDiagram
 | `OpenAIChatProvider` | 공식 `openai` SDK로 standard OpenAI-compatible API와 vLLM dialect 처리 |
 | `AnthropicMessagesProvider` | 공식 `anthropic` SDK로 native Messages API 처리 |
 | `GoogleGenerateContentProvider` | 공식 `google-genai` SDK로 Gemini Developer API와 Vertex AI 처리 |
+| `GoogleTextEmbedding` | explicit `LlmConfig` Google route를 snapshot해 async text embedding batch를 `EmbeddingVector`로 정규화 |
 | `LlmJsonCodec` | structured output과 tool argument를 portable JSON Schema subset으로 검증 |
 
-Plugin entry point는 세 first-party SDK adapter와 router를 등록하고 `IAgentModel`을 `LlmAgentModel`에 binding합니다. Root package `spakky.plugins.llm`은 plugin identity인 `PLUGIN_NAME`만 export합니다. 구현 타입이 필요하면 `spakky.plugins.llm.config`, `spakky.plugins.llm.model`, `spakky.plugins.llm.provider`, `spakky.plugins.llm.providers.openai`, `spakky.plugins.llm.providers.anthropic`, `spakky.plugins.llm.providers.google`의 명시적 모듈 경로를 사용합니다.
+Plugin entry point는 세 first-party SDK adapter와 router를 등록하고 `IAgentModel`을 `LlmAgentModel`에 binding합니다. `GoogleTextEmbedding`은 route/backend 선택이 필요한 explicit opt-in이므로 entry point가 Pod로 등록하거나 `ITextEmbedding`에 bind하지 않습니다. Root package `spakky.plugins.llm`은 plugin identity인 `PLUGIN_NAME`만 export합니다. 구현 타입이 필요하면 `spakky.plugins.llm.config`, `spakky.plugins.llm.model`, `spakky.plugins.llm.provider`, `spakky.plugins.llm.providers.openai`, `spakky.plugins.llm.providers.anthropic`, `spakky.plugins.llm.providers.google`의 명시적 모듈 경로를 사용합니다.
 
 ## Operator model catalog
 
@@ -259,6 +262,28 @@ ADC가 개발자 workstation credential을 발견할 수는 있지만 그 사실
 
 Gemini Developer API는 `base_url`이 없으면 `https://generativelanguage.googleapis.com/`를 명시적으로 사용합니다. Vertex AI는 profile의 `base_url`이 있으면 그 값을 그대로 우선합니다. 없으면 `google_location="global"`은 `https://aiplatform.googleapis.com/`, multi-region `us`와 `eu`는 각각 `https://aiplatform.us.rep.googleapis.com/`와 `https://aiplatform.eu.rep.googleapis.com/`, 그 밖의 lowercase endpoint-safe region은 `https://{location}-aiplatform.googleapis.com/`로 변환해 `HttpOptions.base_url`에 명시합니다. 따라서 SDK ambient `GOOGLE_VERTEX_BASE_URL`은 Vertex endpoint를 바꾸지 못합니다. Project/location/credential과 `enterprise=True`도 SDK에 explicit 전달하며 caller metadata는 이 값을 바꿀 수 없습니다.
 
+### Google text embedding — explicit opt-in
+
+`GoogleTextEmbedding`은 `spakky.plugins.llm.providers.google`에 있는 `ITextEmbedding` 구현입니다. Operator가 먼저 existing `LlmConfig.profiles`/`models`에 Google embedding route를 명시하고 application이 logical ref를 직접 resolve해 생성합니다.
+
+```python
+from spakky.agent import VectorRetriever
+from spakky.plugins.llm.providers.google import GoogleTextEmbedding
+
+embedding = GoogleTextEmbedding.from_config(
+    config,
+    "embedding/default",
+    output_dimensionality=768,
+)
+retriever = VectorRetriever(embedding, vector_search)
+```
+
+`from_config()`는 앞뒤 공백을 제거한 opaque model ref를 exact lookup하고 route/profile을 deep snapshot합니다. Route는 `google-gemini-developer` 또는 `google-vertex` API여야 하며 physical model id는 SDK `model`에 그대로 전달됩니다. Developer API key와 Vertex project/location/ADC/service-account 의미, explicit endpoint와 timeout은 위의 같은 profile 경계를 재사용합니다.
+
+Installed `google-genai==2.19.0`의 `client.aio.models.embed_content()`를 사용해 nonblank text batch를 한 요청으로 보냅니다. `EmbeddingPurpose.QUERY`는 `RETRIEVAL_QUERY`, `EmbeddingPurpose.DOCUMENT`는 `RETRIEVAL_DOCUMENT`로 매핑하고 optional positive `output_dimensionality`를 `EmbedContentConfig`에 전달합니다. Adapter는 response count가 input count와 정확히 같은지, values가 nonempty finite number인지, batch 내 dimension이 일정한지, explicit dimension과 일치하는지를 검증하고 `EmbeddingVector(normalized=False)`를 반환합니다. SDK가 truncated statistics를 보고하면 silent acceptance 대신 `LlmResponseError`입니다. Client lifecycle과 configuration/timeout/transport/malformed-response error normalization도 generate-content adapter와 같은 경계를 씁니다.
+
+이 adapter는 plugin entry point에서 auto-register/bind되지 않습니다. Operator가 어느 route를 embedding에 쓸지, 어느 `IVectorSearch`와 조합할지를 명시해야 하며 `spakky-llm`은 vector backend나 production in-memory fallback을 선택하지 않습니다. Existing knowledge base/index 수명주기는 application/vendor 책임입니다.
+
 ### OpenRouter와 vLLM
 
 OpenRouter는 `provider="openrouter"`, `api=openai-chat-completions`, `openai_dialect=standard`, explicit OpenRouter base URL과 credential을 가진 일반 OpenAI-compatible profile로 구성합니다. Provider-specific payload semantics가 실제로 필요해질 때만 새 `ILLMProvider` 또는 explicit dialect를 추가합니다.
@@ -420,6 +445,7 @@ Unit/acceptance test는 provider SDK client/response와 Google credential resolv
 - [ADR-0015: Multi-provider LLM official SDK adapters](../../docs/adr/0015-multi-provider-llm-official-sdk-adapters.md)
 - [ADR-0016: Operator-owned model catalog와 opaque model routing](../../docs/adr/0016-operator-owned-model-catalog.md)
 - [ADR-0018: Typed agent output과 composed execution context](../../docs/adr/0018-typed-agent-output-and-context.md)
+- [ADR-0019: Minimal retrieval runtime](../../docs/adr/0019-minimal-retrieval-runtime.md)
 
 ## 라이선스
 

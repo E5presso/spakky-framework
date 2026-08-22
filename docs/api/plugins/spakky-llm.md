@@ -1,7 +1,8 @@
 # spakky-llm
 
 > `spakky-llm`은 `spakky-agent`의 `IAgentModel`을 OpenAI Chat Completions,
-> Anthropic Messages, Gemini Developer API, Vertex AI에 연결하는 model catalog 플러그인입니다.
+> Anthropic Messages, Gemini Developer API, Vertex AI에 연결하고 explicit Google text
+> embedding adapter를 제공하는 model catalog 플러그인입니다.
 
 호출자는 `ModelSelection(model_ref=...)`로 논리 모델 하나만 선택합니다. 운영자가
 `LlmModelRoute`에서 실제 provider model과 capability를, `LlmProfile`에서
@@ -41,6 +42,9 @@ model = app.container.get(type_=IAgentModel)
 candidate batch 전체를 다시 검증·승인한 뒤 순서대로 dispatch합니다. Runner는 assistant
 tool-call turn과 `TOOL` result를 다음 `ModelRequest`에 넣어 model/tool loop를 이어가고,
 tool call이 없는 step에서 final을 한 번 방출합니다.
+
+`GoogleTextEmbedding`은 자동 등록하지 않습니다. Retrieval에 필요한 애플리케이션만
+별도 operator embedding config로 직접 만들고 factory를 통해 주입합니다.
 
 ## Model catalog와 profile 설정 { #llm-profile-configuration }
 
@@ -432,6 +436,38 @@ Complete와 stream setup/iteration은 같은 오류 경계를 사용합니다.
 | `httpx.TimeoutException`, Google API 408/504 | `LlmTimeoutError` | 요청 또는 stream timeout |
 | `httpx.TransportError`, Google API 429 또는 5xx(504 제외) | `LlmTransportError` | 연결 또는 재시도 가능한 provider 실패 |
 | 그 밖의 Google API 오류 | `LlmResponseError` | provider가 요청이나 response를 수용하지 못함 |
+
+### Google text embedding
+
+`GoogleTextEmbedding`은 core `ITextEmbedding`의 explicit adapter이며 chat
+`LlmAgentModel`과 별도 객체입니다. 실제 import 경로는 다음과 같습니다.
+
+```python
+from spakky.plugins.llm.providers.google import GoogleTextEmbedding
+```
+
+권장 생성 경계는
+`GoogleTextEmbedding.from_config(config, model_ref, *, output_dimensionality=None)`입니다.
+이 factory는 `LlmConfig.models[model_ref]`와 연결 profile을 snapshot하므로 이후 caller가
+catalog dictionary를 바꾸어도 이미 만들어진 embedding target은 바뀌지 않습니다. Chat
+selection의 `default_model`을 추론하지 않고 embedding용 logical ref를 항상 명시합니다.
+
+`LlmProviderApi.GOOGLE_GEMINI_DEVELOPER`와 `GOOGLE_VERTEX`만 허용합니다. 전자는 API key,
+후자는 project/location과 ADC 또는 service-account-file을 요구하며 installed official
+Google Gen AI SDK의 `models.embed_content()`를 사용합니다. Custom `base_url`이 없으면 chat
+adapter와 동일한 official Developer 또는 regional/global Vertex endpoint를 사용합니다.
+
+`embed(texts, purpose)`는 입력 순서를 보존하며 input마다 vector 하나를 요구합니다.
+`output_dimensionality`를 주면 각 vector가 그 positive dimension과 정확히 같아야 합니다.
+SDK가 truncation을 보고하거나 vector count/dimension이 다르거나 non-finite/잘못된 payload를
+반환하면 silent 보정 없이 `LlmResponseError`입니다. Empty batch, blank text, 잘못된 purpose,
+non-positive dimension과 Google이 아닌 route는 `LlmConfigurationError`; timeout과 transport
+실패는 기존 `LlmTimeoutError`/`LlmTransportError` 경계를 그대로 사용합니다.
+
+이 adapter는 vector search나 index write를 제공하지 않습니다. `IVectorSearch` 구현과
+기존 knowledge/index lifecycle은 application/vendor가 소유하며, core `VectorRetriever`가
+query embedding과 검색을 합성합니다. 별도 구성 예는
+[AI Agent 심화](../../guides/agents-advanced.md#retrieval-extension-ports)를 확인하세요.
 
 ### Portable JSON Schema 검증
 

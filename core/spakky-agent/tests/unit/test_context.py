@@ -27,6 +27,7 @@ from spakky.agent import (
     ContextTokenBudget,
     Evidence,
     IAgentContextHandler,
+    JsonValue,
 )
 from spakky.agent.context import combine_agent_contexts, prepare_agent_context
 
@@ -448,3 +449,32 @@ def test_context_fingerprint_rejects_nonfinite_model_bound_metadata() -> None:
     )
     with pytest.raises(AgentDefinitionError, match="identity is not deterministic"):
         combine_agent_contexts(AgentContext(packs=(pack,)), None)
+
+
+@pytest.mark.parametrize(
+    "retrieval",
+    [
+        {"id": "hit", "unknown": "value"},
+        {"id": " "},
+        {"id": "hit\nframe"},
+        {"id": "hit", "revision": "bad\rref"},
+        {"id": "hit", "score": True},
+        {"id": "hit", "score": nan},
+        {"id": "hit", "start_offset": True, "end_offset": 2},
+        {"id": "hit", "start_offset": -1, "end_offset": 2},
+        {"id": "hit", "start_offset": 1},
+        {"id": "hit", "start_offset": 2, "end_offset": 1},
+    ],
+)
+def test_context_prepare_drops_spoofed_reserved_retrieval_metadata(
+    retrieval: dict[str, JsonValue],
+) -> None:
+    pack = ContextPack(
+        "pack",
+        "content",
+        "source",
+        ContextPackRole.EVIDENCE,
+        metadata={"retrieval": retrieval},
+    )
+    prepared = prepare_agent_context(AgentContext(packs=(pack,)))
+    assert prepared.packs[0].metadata == {}
