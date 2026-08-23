@@ -231,7 +231,7 @@ provider success 뒤 cache store가 실패하면 이미 billable 호출이 생�
 보존한 뒤 종료합니다. Cache hit은 current invocation usage를 0으로 반환하면서 saved usage와
 선택 evidence를 metadata에 남깁니다.
 
-## Multimodal route와 URI authority
+## Multimodal route와 URI authority { #multimodal-route-uri-authority }
 
 Core `ImagePart.from_uri()` 같은 factory는 network I/O를 하지 않습니다. `LlmAgentModel`의
 default `PublicLlmMediaUriPolicy`가 각 candidate route에서 cache lookup과 provider I/O보다
@@ -491,9 +491,11 @@ support_route = LlmModelRoute(
 `LlmAgentModel.capability`은 default route의 선언을 반환하고,
 `capability_for(ModelSelection(...))`은 선택한 route의 정확한 선언을 반환합니다. 이 값은
 자동 탐지 결과가 아니므로 operator가 실제 모델과 endpoint의 지원 범위에 맞게 유지해야
-합니다. Capability descriptor만으로 새 payload encoding이 생기지는 않습니다. 현재
-`ModelMessage.content`는 text 계약이므로 image/audio/document 전달은 별도 portable
-content-part 계약이 추가되기 전까지 사용할 수 없습니다.
+합니다. Capability descriptor만으로 provider payload encoding이 생기지는 않습니다.
+Core의 portable input은 `TextPart`, `ImagePart`, `AudioPart`, `VideoPart`, `DocumentPart`이며,
+선택 route의 `input_modalities`와 실제 provider adapter가 요청 part를 모두 지원해야 합니다.
+가장 작은 attachment 예제와 URI 검증 경계는 앞의
+[Multimodal route와 URI authority](#multimodal-route-uri-authority)를 확인하세요.
 
 ## 실행에서 모델 선택하기
 

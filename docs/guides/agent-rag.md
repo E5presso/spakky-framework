@@ -87,7 +87,12 @@ def support_context(retriever: SupportRetriever) -> RetrievalContext:
     )
 
 
-@Agent(spec=AgentExecutionSpec(name="support_classic"))
+@Agent(
+    spec=AgentExecutionSpec(
+        name="support_classic",
+        instructions="검색 context에 있는 근거만 사용해 답하세요.",
+    )
+)
 class SupportClassicAgent:
     def __init__(
         self,
@@ -109,7 +114,12 @@ def support_search(retriever: SupportRetriever) -> RetrievalTool:
     )
 
 
-@Agent(spec=AgentExecutionSpec(name="support_agentic"))
+@Agent(
+    spec=AgentExecutionSpec(
+        name="support_agentic",
+        instructions="답변에 근거가 필요하면 search tool을 먼저 사용하세요.",
+    )
+)
 class SupportAgenticAgent:
     def __init__(
         self,
@@ -130,6 +140,82 @@ Classic 경로는 `RunAgentInput.instruction` 전체를 query로 사용합니다
 재사용하고, spec을 `True`로 설정한 Agent만 model step마다 다시 조회합니다. Agentic
 경로의 tool schema에는 `query: str` 하나만 노출됩니다. Tool 이름이 Agent의 다른 tool과
 겹치면 runner 구성 시 fail closed하므로 애플리케이션 안에서 고유한 이름을 사용합니다.
+
+## 실제 애플리케이션에서 실행하기
+
+위 코드를 `my_app/rag.py`에 두었다고 가정하면, 다음 `main.py`가 plugin load, component
+scan, Agent resolve, model 선택과 결과 수집까지 잇는 최소 실행 파일입니다. 이 예제는
+[LLM 모델 라우팅](llm-routing.md)의 `support/primary` catalog가 환경변수 또는 Python
+설정으로 구성되어 있다고 가정합니다.
+
+```python
+import asyncio
+
+import my_app
+import spakky.agent
+import spakky.plugins.llm
+from my_app.rag import SupportAgenticAgent, SupportClassicAgent
+from spakky.agent import AgentYieldKind, ModelSelection, RunAgentInput
+from spakky.core.application.application import SpakkyApplication
+from spakky.core.application.application_context import ApplicationContext
+
+
+async def main() -> None:
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .load_plugins(
+            include={
+                spakky.agent.PLUGIN_NAME,
+                spakky.plugins.llm.PLUGIN_NAME,
+            }
+        )
+        .scan(my_app)
+        .start()
+    )
+
+    classic = app.container.get(type_=SupportClassicAgent)
+    classic_text: list[str] = []
+    async for item in classic.execute(
+        RunAgentInput(
+            state_id="classic-1",
+            instruction="환불은 언제까지 신청할 수 있나요?",
+            model_selection=ModelSelection(model_ref="support/primary"),
+        )
+    ):
+        if item.kind is AgentYieldKind.TOKEN:
+            classic_text.append(item.payload.text)
+    print("classic:", "".join(classic_text))
+
+    agentic = app.container.get(type_=SupportAgenticAgent)
+    agentic_text: list[str] = []
+    async for item in agentic.execute(
+        RunAgentInput(
+            state_id="agentic-1",
+            instruction="FAQ를 검색해서 환불 기한을 알려주세요.",
+            model_selection=ModelSelection(model_ref="support/primary"),
+        )
+    ):
+        if item.kind is AgentYieldKind.TOOL:
+            print("tool:", item.payload.name, item.payload.result)
+        elif item.kind is AgentYieldKind.TOKEN:
+            agentic_text.append(item.payload.text)
+    print("agentic:", "".join(agentic_text))
+
+
+asyncio.run(main())
+```
+
+Classic Agent에서는 runner가 첫 model request 전에 `SupportRetriever.retrieve()`를 한 번
+호출하고, 반환한 hit를 `ModelRequest.context`에 넣습니다. 따라서 일반적으로 `TOOL` yield가
+없습니다. Agentic Agent에서는 model이 `search`를 선택한 경우에만 `TOOL` yield가 생기고,
+그 JSON 결과가 다음 model step의 history가 됩니다. `instructions`는 model에게 검색 시점을
+안내하지만 강제 게이트는 아닙니다. 반드시 매 요청마다 검색해야 한다면 Agentic 경로가
+아니라 Classic `RetrievalContext`를 선택합니다.
+
+`Final.output`은 `output_type`을 선언하지 않은 runner-backed Agent에서 실행 요약
+`AgentRunResult`입니다. 실제 자연어 답변은 위 예제처럼 `TOKEN` yield를 모으거나 AG-UI/A2A
+message delta를 그대로 client에 전달합니다. Typed final object가 필요하면
+[AI Agent 개발](agents.md#typed-structured-output)의 `output_type`을 함께 사용합니다.
 
 ## Classic RAG: 검색 결과를 context로 넣기
 
