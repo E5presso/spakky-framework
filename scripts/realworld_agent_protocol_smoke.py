@@ -9,6 +9,7 @@ import json
 import socket
 import sys
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import override
 
@@ -32,17 +33,29 @@ from fastapi import FastAPI
 from google.protobuf.message import Message as ProtobufMessage
 from spakky.agent import (
     Agent,
+    AgentEvidence,
     AgentExecutionSpec,
     AgentRunner,
+    AgentSignal,
+    AgentSignalKind,
+    AgentState,
+    AgentStatus,
+    ApprovalDecision,
     EvidenceCapture,
+    IAgentEvidenceRepository,
+    IAgentSignalRepository,
+    IAgentStateRepository,
     Idempotency,
     ModelCapability,
+    ModelMessageRole,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
     ModelStreamEventKind,
     ModelToolCall,
+    RecoveryStrategy,
     RunAgentInput,
+    RunPausedEvent,
     ToolApprovalRequirement,
     ToolEffects,
     agent_tool,
@@ -111,6 +124,13 @@ class ToolModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        if any(message.role is ModelMessageRole.TOOL for message in request.messages):
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA,
+                token_delta="lookup complete",
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
         yield ModelStreamEvent(
             kind=ModelStreamEventKind.TOKEN_DELTA,
             token_delta="checking",
@@ -151,6 +171,13 @@ class McpToolModel(IAgentModel):
         ):
             msg = "MCP lazy tools were not exposed to the model request"
             raise RuntimeError(msg)
+        if any(message.role is ModelMessageRole.TOOL for message in request.messages):
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA,
+                token_delta="weather checked",
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
         yield ModelStreamEvent(
             kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
             tool_call=ModelToolCall(
@@ -173,12 +200,125 @@ class McpToolModel(IAgentModel):
         yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
 
-@Agent(spec=AgentExecutionSpec(name="smoke_mcp_agent", objective="use MCP tools"))
+class SmokeControlRepository(IAgentStateRepository, IAgentSignalRepository):
+    """In-memory state and signal ports for the approval/resume smoke flow."""
+
+    def __init__(self) -> None:
+        self._states: dict[str, AgentState] = {}
+        self._signals: list[AgentSignal] = []
+        self._consumed: set[str] = set()
+
+    @override
+    def get(self, state_id: str) -> AgentState:
+        state = self.get_or_none(state_id)
+        if state is None:
+            msg = f"Missing smoke state: {state_id}"
+            raise RuntimeError(msg)
+        return state
+
+    @override
+    def get_or_none(self, state_id: str) -> AgentState | None:
+        return self._states.get(state_id)
+
+    @override
+    def save(self, state: AgentState) -> AgentState:
+        self._states[state.id] = state
+        return state
+
+    @override
+    def list_by_status(self, status: AgentStatus) -> Sequence[AgentState]:
+        return tuple(state for state in self._states.values() if state.status is status)
+
+    @override
+    def list_resume_candidates(self) -> Sequence[AgentState]:
+        return tuple(
+            state
+            for state in self._states.values()
+            if state.status in (AgentStatus.ACTIVE, AgentStatus.INTERRUPTED)
+        )
+
+    @override
+    def append(self, signal: AgentSignal) -> AgentSignal:
+        self._signals.append(signal)
+        return signal
+
+    @override
+    def list_pending(self, state_id: str) -> Sequence[AgentSignal]:
+        return tuple(
+            signal
+            for signal in self._signals
+            if signal.agent_state_id == state_id and signal.id not in self._consumed
+        )
+
+    @override
+    def mark_consumed(self, signal_id: str) -> AgentSignal:
+        for signal in self._signals:
+            if signal.id == signal_id:
+                self._consumed.add(signal_id)
+                return signal
+        msg = f"Missing smoke signal: {signal_id}"
+        raise RuntimeError(msg)
+
+
+class SmokeEvidenceRepository(IAgentEvidenceRepository):
+    """In-memory evidence port for the approval/resume smoke flow."""
+
+    def __init__(self) -> None:
+        self._evidence: dict[str, AgentEvidence] = {}
+
+    @override
+    def append(self, evidence: AgentEvidence) -> AgentEvidence:
+        self._evidence[evidence.id] = evidence
+        return evidence
+
+    @override
+    def get(self, evidence_id: str) -> AgentEvidence:
+        evidence = self._evidence.get(evidence_id)
+        if evidence is None:
+            msg = f"Missing smoke evidence: {evidence_id}"
+            raise RuntimeError(msg)
+        return evidence
+
+    @override
+    def list_by_state(self, state_id: str) -> Sequence[AgentEvidence]:
+        return tuple(
+            evidence
+            for evidence in self._evidence.values()
+            if evidence.agent_state_id == state_id
+        )
+
+    @override
+    def list_by_manifest_ref(self, manifest_ref: str) -> Sequence[AgentEvidence]:
+        return tuple(
+            evidence
+            for evidence in self._evidence.values()
+            if evidence.manifest_ref == manifest_ref
+        )
+
+
+@Agent(
+    spec=AgentExecutionSpec(
+        name="smoke_mcp_agent",
+        objective="use MCP tools",
+        accepted_signals=(
+            AgentSignalKind.APPROVAL_DECISION,
+            AgentSignalKind.RESUME,
+        ),
+        recovery=RecoveryStrategy.ACTION_BOUNDARY,
+    )
+)
 class McpSmokeAgent:
     """Agent with no native tools; MCP tools are supplied at runtime."""
 
-    def __init__(self, model: IAgentModel) -> None:
+    def __init__(
+        self,
+        model: IAgentModel,
+        control: SmokeControlRepository,
+        evidence: SmokeEvidenceRepository,
+    ) -> None:
         self._model = model
+        self._control = control
+        self._evidence = evidence
 
 
 @Agent(spec=AgentExecutionSpec(name="smoke_agui_agent", objective="serve AG-UI"))
@@ -285,12 +425,39 @@ async def smoke_mcp_agent() -> None:
         instruction="Use the weather MCP server.",
         metadata={"mcp": {"servers": ["weather"]}},
     )
-    agent = McpSmokeAgent(McpToolModel())
+    control = SmokeControlRepository()
+    agent = McpSmokeAgent(McpToolModel(), control, SmokeEvidenceRepository())
 
     async with client.open_runner(agent, run_input=run_input) as runner:
-        events = [event async for event in runner.run_events(run_input)]
+        initial_events = [event async for event in runner.run_events(run_input)]
+        paused = next(
+            (event for event in initial_events if isinstance(event, RunPausedEvent)),
+            None,
+        )
+        if paused is None or paused.approval_id is None:
+            msg = "MCP call did not pause for explicit approval"
+            raise RuntimeError(msg)
+        if any(isinstance(event, ToolCallResultEvent) for event in initial_events):
+            msg = "MCP tool batch executed before approval"
+            raise RuntimeError(msg)
+        control.append(
+            AgentSignal(
+                id=f"decision:{paused.approval_id}",
+                agent_state_id=run_input.state_id,
+                kind=AgentSignalKind.APPROVAL_DECISION,
+                payload={
+                    "request_id": paused.approval_id,
+                    "decision": ApprovalDecision.APPROVE.value,
+                },
+            )
+        )
+        resumed_events = [
+            event async for event in runner.run_events(replace(run_input, resume=True))
+        ]
 
-    results = [event for event in events if isinstance(event, ToolCallResultEvent)]
+    results = [
+        event for event in resumed_events if isinstance(event, ToolCallResultEvent)
+    ]
     if len(results) != 2:
         msg = f"Expected 2 MCP tool results, got {len(results)}"
         raise RuntimeError(msg)
