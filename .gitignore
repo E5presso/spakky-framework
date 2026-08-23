@@ -1,6 +1,9 @@
 # test automation
 build/reports/**
 
+# Graphify generated graph, reports, visualization, and incremental state
+graphify-out/
+
 # claude worktrees
 .claude/worktrees/
 
