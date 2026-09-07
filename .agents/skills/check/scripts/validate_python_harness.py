@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import ast
+import base64
+import binascii
+import json
 from pathlib import Path
+from pathlib import PurePosixPath
+import shutil
+import subprocess
 import sys
 import tomllib
 
@@ -261,13 +267,119 @@ def iter_python_files(root: Path) -> list[Path]:
     )
 
 
+def verified_neurath_owned_python_files(workspace_root: Path) -> set[Path]:
+    """Return exact installed-provider snapshots outside project policy ownership."""
+    workspace_root = workspace_root.resolve()
+    state_path = workspace_root / ".neurath" / "install.json"
+    if _path_has_symlink(workspace_root, PurePosixPath(".neurath/install.json")):
+        return set()
+    if not state_path.is_file():
+        return set()
+    try:
+        state = json.loads(state_path.read_text())
+    except (OSError, ValueError):
+        return set()
+    if not isinstance(state, dict) or state.get("schema") != 1:
+        return set()
+    distribution = state.get("distribution")
+    if (
+        not isinstance(distribution, str)
+        or len(distribution) != 64
+        or any(character not in "0123456789abcdef" for character in distribution)
+    ):
+        return set()
+    owned = state.get("owned")
+    if not isinstance(owned, dict):
+        return set()
+    if not _neurath_installation_integrity_passes(workspace_root):
+        return set()
+
+    verified: set[Path] = set()
+    skill_root = (workspace_root / ".agents" / "skills").resolve()
+    for relative, record in owned.items():
+        if not isinstance(relative, str) or not isinstance(record, dict):
+            continue
+        path = PurePosixPath(relative)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or path.parts[:2] != (".agents", "skills")
+            or path.suffix != ".py"
+        ):
+            continue
+        if _path_has_symlink(workspace_root, path):
+            continue
+        installed = record.get("installed")
+        if (
+            not isinstance(installed, dict)
+            or installed.get("kind") != "file"
+            or not isinstance(installed.get("data"), str)
+        ):
+            continue
+        candidate = workspace_root.joinpath(*path.parts)
+        if candidate.is_symlink() or not candidate.is_file():
+            continue
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(skill_root):
+            continue
+        try:
+            expected = base64.b64decode(installed["data"], validate=True)
+            current = candidate.read_bytes()
+        except (OSError, ValueError, binascii.Error):
+            continue
+        if current == expected:
+            verified.add(resolved)
+    return verified
+
+
+def _path_has_symlink(root: Path, path: PurePosixPath) -> bool:
+    current = root
+    for part in path.parts:
+        current /= part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _neurath_installation_integrity_passes(workspace_root: Path) -> bool:
+    command = shutil.which("neurath")
+    if command is None:
+        return False
+    executable = Path(command).resolve()
+    if executable.is_relative_to(workspace_root):
+        return False
+    try:
+        process = subprocess.run(
+            [command, "--root", str(workspace_root), "doctor"],
+            cwd=workspace_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        report = json.loads(process.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return False
+    return (
+        process.returncode == 0
+        and isinstance(report, dict)
+        and isinstance(report.get("distribution"), dict)
+        and isinstance(report.get("placement"), dict)
+        and report["distribution"].get("status") == "passed"
+        and report["placement"].get("status") == "passed"
+    )
+
+
 def validate(paths: list[Path]) -> list[HarnessViolation]:
     violations: list[HarnessViolation] = []
     workspace_root = find_workspace_root(Path.cwd().resolve())
+    provider_owned = verified_neurath_owned_python_files(workspace_root)
     violations.extend(validate_packaging_metadata(workspace_root))
     for root in paths:
         for path in iter_python_files(root):
             resolved_path = path.resolve()
+            if resolved_path in provider_owned:
+                continue
             visitor = PythonHarnessVisitor(resolved_path, workspace_root)
             source = resolved_path.read_text()
             if resolved_path.name != "validate_python_harness.py":
@@ -294,7 +406,22 @@ def validate(paths: list[Path]) -> list[HarnessViolation]:
                                 "opt-out comments require an inline reason after ' - '",
                             )
                         )
-            visitor.visit(ast.parse(source, filename=str(resolved_path)))
+            try:
+                parsed = ast.parse(
+                    source,
+                    filename=str(resolved_path),
+                    feature_version=(3, 12),
+                )
+            except SyntaxError as error:
+                violations.append(
+                    HarnessViolation(
+                        resolved_path,
+                        error.lineno or 1,
+                        f"Python syntax is invalid for project runtime: {error.msg}",
+                    )
+                )
+                continue
+            visitor.visit(parsed)
             violations.extend(visitor.violations)
     return violations
 

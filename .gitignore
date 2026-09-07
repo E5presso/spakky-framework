@@ -411,3 +411,22 @@ sw.*
 #.idea/
 
 # End of https://www.toptal.com/developers/gitignore/api/python,node
+
+# Neurath local installation outputs. Recreate them with scripts/setup_neurath.sh.
+/.agents/skills/neurath-*/
+/.mcp.json
+/.neurath/install.json
+/.neurath/local/
+/.neurath/policy.md
+/.neurath/profile.json
+/.neurath/reference/
+/.neurath/rules/
+/.neurath/run
+
+# <!-- neurath:managed -->
+.agents/runs/
+.agents/worktrees/
+.neurath/local/
+.neurath/install.json
+.neurath/*plan*.json
+# <!-- /neurath:managed -->

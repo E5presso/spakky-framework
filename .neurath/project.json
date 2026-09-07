@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "documents": {
+    "intent": "README.md",
+    "glossary": "docs/glossary.md",
+    "decisions": "docs/adr/"
+  },
+  "verification": {
+    "check": {
+      "argv": [
+        "uv",
+        "run",
+        "pre-commit",
+        "run",
+        "--all-files"
+      ],
+      "cwd": ".",
+      "success_codes": [
+        0
+      ],
+      "timeout_seconds": 1800
+    }
+  }
+}

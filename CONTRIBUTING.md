@@ -37,8 +37,29 @@
    > | ------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
    > | `uv sync --all-packages --all-extras` | **루트 디렉토리**        | 모든 workspace package와 optional dependency를 설치합니다. 여러 패키지를 함께 개발할 때 사용합니다.                            |
    > | `uv sync --all-extras`                | **하위 패키지 디렉토리** | 현재 패키지와 해당 optional dependency만 설치합니다. 단일 플러그인에서 작업할 때 사용합니다(예: `cd plugins/spakky-fastapi`). |
+
    >
    > `--all-packages` flag는 모든 monorepo package를 포함해야 하는 workspace root에서만 필요합니다. 하위 패키지로 `cd`하면 그 패키지가 context가 되므로 `--all-extras`만으로 충분합니다.
+
+### Neurath 로컬 하네스 설치
+
+Neurath를 사용하는 에이전트 개발 환경은 저장소에 고정된 설치 스크립트로 준비합니다. 스크립트는
+공개 Neurath commit을 별도 임시 clone에서 확인하고 `neurath-` 접두어로 설치하므로 기존
+프로젝트 스킬 이름을 덮어쓰지 않습니다.
+
+```bash
+# 변경 예정 경로와 로컬 진단만 확인
+./scripts/setup_neurath.sh --dry-run --json
+
+# 현재 clone에 설치
+./scripts/setup_neurath.sh --json
+```
+
+설치 뒤에는 `.neurath/run doctor --protocol`과 `.neurath/run verify check`를 실행합니다.
+생성된 provider 스킬, runtime launcher, MCP 설정과 설치·실행 이력은 로컬 상태이므로 Git에
+추적하지 않습니다. `.neurath/project.json`만 프로젝트 문서 경로와 검증 명령의 portable
+binding으로 추적합니다. Codex에서는 `/hooks`에서 새 Neurath 훅을 직접 검토하고 신뢰해야
+하며, 설치 스크립트는 훅 신뢰를 자동 승인하거나 우회하지 않습니다.
 
 ### 하위 프로젝트 독립 열기
 
