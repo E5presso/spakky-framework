@@ -152,3 +152,10 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 |------|------|
 | `pythonpath = "src/spakky/..."` | 모노레포 패키지별 테스트 경로 |
 | `BaseSettings.__init__(self)` 오버라이드 | `@Configuration` 데코레이터 호환 |
+
+<!-- neurath:managed -->
+## Neurath
+
+Read `.neurath/policy.md` and `.neurath/project.json` for the generic profile.
+Use the `neurath-` skills in `.agents/skills`; use the named MCP task tools. Consult `.neurath/policy.md` for explicit native execution exceptions.
+<!-- /neurath:managed -->

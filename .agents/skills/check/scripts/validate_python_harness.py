@@ -5,10 +5,13 @@ from __future__ import annotations
 import ast
 import base64
 import binascii
+from contextlib import closing
+import hashlib
 import json
 from pathlib import Path
 from pathlib import PurePosixPath
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tomllib
@@ -277,7 +280,9 @@ def verified_neurath_owned_python_files(workspace_root: Path) -> set[Path]:
         return set()
     try:
         state = json.loads(state_path.read_text())
-    except (OSError, ValueError):
+        if isinstance(state, dict) and state.get("schema") == 2:
+            state = _read_shared_installation_state(workspace_root, state)
+    except (OSError, ValueError, sqlite3.Error, subprocess.CalledProcessError):
         return set()
     if not isinstance(state, dict) or state.get("schema") != 1:
         return set()
@@ -330,6 +335,50 @@ def verified_neurath_owned_python_files(workspace_root: Path) -> set[Path]:
         if current == expected:
             verified.add(resolved)
     return verified
+
+
+def _read_shared_installation_state(root: Path, reference: dict) -> dict:
+    """Read the exact root's canonical installation and validate its projection."""
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    common = Path(result.stdout.strip()).resolve()
+    control = common.parent if common.name == ".git" else common
+    database = control / ".neurath/local/runtime.sqlite3"
+    if not database.resolve().is_relative_to(control):
+        raise ValueError("installation database escaped the control root")
+    with closing(
+        sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)
+    ) as connection:
+        row = connection.execute(
+            "SELECT digest,payload FROM installation_states WHERE root=?", (str(root),)
+        ).fetchone()
+    if row is None:
+        raise ValueError("canonical installation state is missing")
+    state = json.loads(row[1])
+    payload = json.dumps(
+        state, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    digest = hashlib.sha256(payload.encode()).hexdigest()
+    expected = {
+        "schema": 2,
+        "authority": "reference-only",
+        "state_ref": "sqlite:installation-state:" + digest,
+        "digest": digest,
+    }
+    if not isinstance(state, dict) or row[0] != digest or reference != expected:
+        raise ValueError("installation state reference mismatch")
+    return state
 
 
 def _path_has_symlink(root: Path, path: PurePosixPath) -> bool:

@@ -5,6 +5,9 @@ from __future__ import annotations
 import base64
 from importlib.util import module_from_spec, spec_from_file_location
 import json
+import hashlib
+import sqlite3
+import subprocess
 from pathlib import Path
 
 
@@ -42,6 +45,60 @@ def _owned_state(root: Path, relative: str, content: bytes) -> None:
     path.write_text(json.dumps(state))
 
 
+def test_shared_sqlite_projection_requires_matching_root_and_digest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = _workspace(tmp_path).resolve()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    relative = ".agents/skills/neurath-watch-pr/scripts/provider.py"
+    source = root / relative
+    source.parent.mkdir(parents=True)
+    source.write_text("provider = True\n")
+    _owned_state(root, relative, source.read_bytes())
+    state_path = root / ".neurath/install.json"
+    state = json.loads(state_path.read_text())
+    payload = json.dumps(
+        state, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    digest = hashlib.sha256(payload.encode()).hexdigest()
+    database = root / ".neurath/local/runtime.sqlite3"
+    database.parent.mkdir()
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE installation_states(root TEXT, digest TEXT, payload TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO installation_states VALUES(?,?,?)",
+            (str(root), digest, payload),
+        )
+    state_path.write_text(
+        json.dumps(
+            {
+                "schema": 2,
+                "authority": "reference-only",
+                "state_ref": "sqlite:installation-state:" + digest,
+                "digest": digest,
+            }
+        )
+    )
+    monkeypatch.setattr(
+        VALIDATOR, "_neurath_installation_integrity_passes", lambda _root: True
+    )
+    before = database.read_bytes()
+    assert source in VALIDATOR.verified_neurath_owned_python_files(root)
+    assert before == database.read_bytes()
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE installation_states SET root=?", (str(root / "other"),)
+        )
+    assert VALIDATOR.verified_neurath_owned_python_files(root) == set()
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE installation_states SET root=?,payload='{}'", (str(root),)
+        )
+    assert VALIDATOR.verified_neurath_owned_python_files(root) == set()
+
+
 def test_verified_provider_file_requires_exact_owned_snapshot(
     tmp_path: Path,
     monkeypatch,
@@ -63,9 +120,7 @@ def test_verified_provider_file_requires_exact_owned_snapshot(
 
     assert provider.resolve() in verified
     provider.write_bytes(content + b"# locally modified\n")
-    assert provider.resolve() not in VALIDATOR.verified_neurath_owned_python_files(
-        root
-    )
+    assert provider.resolve() not in VALIDATOR.verified_neurath_owned_python_files(root)
 
 
 def test_validate_skips_exact_provider_snapshot_but_not_prefix_only(

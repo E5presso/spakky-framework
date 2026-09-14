@@ -2,7 +2,7 @@
 set -eu
 
 NEURATH_SETUP_REPOSITORY="https://github.com/E5presso/neurath.git"
-NEURATH_SETUP_COMMIT="322249e21eebb78d19fed9586f08d767b951fe68"
+NEURATH_SETUP_COMMIT="243400e58ca74c7fd79bcdd86b488953fa743b97"
 NEURATH_SETUP_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 NEURATH_SETUP_TMP=$(mktemp -d "${TMPDIR:-/tmp}/spakky-neurath-setup.XXXXXX")
 
@@ -21,6 +21,13 @@ if [ "$resolved_commit" != "$NEURATH_SETUP_COMMIT" ]; then
     "$NEURATH_SETUP_COMMIT" "$resolved_commit" >&2
   exit 1
 fi
+
+# Preserve existing local settings. Seed only missing files from project defaults.
+for config in .codex/config.toml .codex/hooks.json .claude/settings.json; do
+  if [ ! -e "$NEURATH_SETUP_ROOT/$config" ] && [ ! -L "$NEURATH_SETUP_ROOT/$config" ]; then
+    cp "$NEURATH_SETUP_ROOT/${config%.*}.example.${config##*.}" "$NEURATH_SETUP_ROOT/$config"
+  fi
+done
 
 "$NEURATH_SETUP_TMP/source/setup" \
   "$NEURATH_SETUP_ROOT" \
