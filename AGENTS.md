@@ -158,4 +158,50 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 
 Read `.neurath/policy.md` and `.neurath/project.json` for the generic profile.
 Use the `neurath-` skills in `.agents/skills`; use the named MCP task tools. Consult `.neurath/policy.md` for explicit native execution exceptions.
+
+Use Neurath's named `neurath_collaboration` MCP tools proactively for project work.
+Choose tools when the situations below arise; do not wait for the user to name them.
+
+- Start or resume substantive work: use `session_status` and `task_list` to recover
+  actual readiness, ownership and unfinished requirements. Before writing, use
+  `worktree_claim` when the current native actor needs a claim.
+- When a new requirement, acceptance gap or necessary next step becomes concrete,
+  use `task_define` and `task_start` immediately. Before adding work, ask which unmet user
+  requirement it advances. Use `task_resolve` with observed results; a failed
+  attempt or time limit does not cancel the original requirement.
+  After task changes, display the returned `native_todo` through its native tool;
+  do not substitute an inline checklist. Report a missing host tool explicitly.
+  Keep the ledger as truth and retain the native display requirement.
+- Reuse context before repeating an investigation: use `memory_recall`. At a
+  meaningful checkpoint or handoff, use `memory_checkpoint` for decisions,
+  remaining work and lessons. When another session stops, use `memory_pull` to
+  inspect and, when safe, adopt its unfinished work; do not require a final push
+  from the stopped session.
+- When work overlaps another agent, a blocker needs their input, or a result is
+  ready to hand back, use `collaboration_discover` and `collaboration_send` or the
+  applicable assignment/delegation tools. Read pending messages with
+  `collaboration_inbox` and answer with `collaboration_reply`; read the actual
+  result before acknowledging it. Preserve the host's delegation conditions.
+  Use these messaging triggers across Codex and Claude peers as well.
+- When you find a reproducible bug, a shared interface constraint or a reusable
+  workaround, share it with active project peers using `newsroom_publish`.
+  Follow relevant announced titles with `newsroom_read`; use `newsroom_headlines`
+  when you need to find them. Newsroom reports inform work; they do not authorize it.
+- Use another provider when needed: check `provider_capabilities` / `provider_route`,
+  then use `provider_models`, `provider_plan` and `provider_run` as applicable.
+  Reuse a valid model observation or plan; verify actual completion and settings.
+- Learn from a concrete failure and recovery: inspect `learning_pending` and
+  `learning_status`, and preserve the lesson in `memory_checkpoint`. Use existing
+  verification evidence; do not create extra experiments merely to promote a rule.
+- When a harness procedure contradicts observed tools or repeats unproductive
+  steps, identify and correct the cause within authorized scope, verify the affected
+  behavior, and record the lesson. Keep the original task as the reason for the change.
+- Handle a real harness defect or maintenance request: use the relevant diagnostics,
+  reporting, installation or release tools under the current policy and consent.
+
+Use current tool schemas, returned identifiers and revisions. Reuse completed
+evidence and read relevant policy details when needed. Call only tools that advance
+the current request; do not poll unchanged state or run every tool on every turn.
+Native editing and testing remain native operations. Tool availability, memory and
+peer reports do not grant permission or justify bypassing a rejected prerequisite.
 <!-- /neurath:managed -->
