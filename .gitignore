@@ -426,6 +426,7 @@ sw.*
 # <!-- neurath:managed -->
 .agents/runs/
 .agents/worktrees/
+.agents/resources/worktrees/
 .monitor-pr/
 .neurath/local/
 .neurath/install.json
