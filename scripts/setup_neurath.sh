@@ -2,7 +2,7 @@
 set -eu
 
 NEURATH_SETUP_REPOSITORY="https://github.com/E5presso/neurath.git"
-NEURATH_SETUP_COMMIT="dd05ed0009b4618a19affcf5803d2177674379e9"
+NEURATH_SETUP_COMMIT="10c88a3114358d8664a20dc8a40423b58030991b"
 NEURATH_SETUP_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 NEURATH_SETUP_TMP=$(mktemp -d "${TMPDIR:-/tmp}/spakky-neurath-setup.XXXXXX")
 
