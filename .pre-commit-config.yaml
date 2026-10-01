@@ -3,61 +3,7 @@ repos:
     hooks:
       - id: python-harness-rules
         name: Validate Python harness rules
-        entry: uv run python .agents/skills/check/scripts/validate_python_harness.py core plugins .agents scripts
-        language: system
-        pass_filenames: false
-        always_run: true
-        verbose: true
-        stages: [pre-commit]
-
-      - id: review-delegate-context-contract
-        name: Validate review-delegate context contract
-        entry: .agents/skills/autopilot/scripts/test_review_delegate_context_contract.sh
-        language: system
-        pass_filenames: false
-        always_run: true
-        verbose: true
-        stages: [pre-commit]
-
-      - id: sync-docs-delivery-contract
-        name: Validate sync-docs delivery contract
-        entry: .agents/skills/autopilot/scripts/test_sync_docs_delivery_contract.sh
-        language: system
-        pass_filenames: false
-        always_run: true
-        verbose: true
-        stages: [pre-commit]
-
-      - id: terminal-return-issue-contract
-        name: Validate terminal-return issue contract
-        entry: uv run python .agents/skills/process-ticket/scripts/check_terminal_return_issue_contract.py
-        language: system
-        pass_filenames: false
-        always_run: true
-        verbose: true
-        stages: [pre-commit]
-
-      - id: review-receipt-contract
-        name: Validate exact-head review receipt contract
-        entry: uv run python .agents/skills/process-ticket/scripts/check_review_receipt_contract.py
-        language: system
-        pass_filenames: false
-        always_run: true
-        verbose: true
-        stages: [pre-commit]
-
-      - id: review-receipt-publication-contract
-        name: Validate exact-head review receipt publication contract
-        entry: uv run python .agents/skills/pr-review/scripts/check_publish_final_review_contract.py
-        language: system
-        pass_filenames: false
-        always_run: true
-        verbose: true
-        stages: [pre-commit]
-
-      - id: phase5-resume-contract
-        name: Validate Phase 5 crash-window resume contract
-        entry: uv run python .agents/skills/process-ticket/scripts/check_phase5_resume_contract.py
+        entry: uv run python scripts/validate_python_harness.py core plugins .agents scripts
         language: system
         pass_filenames: false
         always_run: true

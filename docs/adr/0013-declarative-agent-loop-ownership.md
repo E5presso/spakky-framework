@@ -50,7 +50,7 @@ ADR-0009는 이 두 결정을 명시적으로 닫지 않았다 (`spakky-agent-mc
 기각 이유:
 
 - 세 프로토콜은 변환 모양이 근본적으로 다르다 (AG-UI=outbound event stream, A2A=Task 상태 머신 + AgentCard discovery, MCP=tool descriptor 정규화). 단일 mapper는 세 변환의 공약수가 거의 없는 god-object가 되거나, 내부적으로 다시 세 갈래로 분기하여 어댑터 분리와 동형이 된다.
-- mapper가 코어와 어댑터 사이의 불필요한 pass-through 레이어가 된다 (`behavioral-guidelines.md` §2 "필요 없는 wrapper/resolve 레이어 제거" 위반). 어댑터가 코어 이벤트를 직접 소비하면 되는데 중간 계약을 하나 더 만든다.
+- mapper가 코어와 어댑터 사이의 불필요한 pass-through 레이어가 된다. 어댑터가 코어 이벤트를 직접 소비하면 되는데 중간 계약을 하나 더 만든다.
 - pydantic-ai 선례와 어긋난다 — pydantic-ai는 중간 mapper 없이 `ui.ag_ui` 어댑터와 `fasta2a` 어댑터가 코어 message/event를 직접 소비한다.
 
 ### 대안 γ: 프로토콜 중립 코어 + 프로토콜별 어댑터 분리 (채택)

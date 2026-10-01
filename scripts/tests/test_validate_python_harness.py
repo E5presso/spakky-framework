@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).parents[1] / "scripts" / "validate_python_harness.py"
+MODULE_PATH = Path(__file__).parents[1] / "validate_python_harness.py"
 SPEC = spec_from_file_location("validate_python_harness", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 VALIDATOR = module_from_spec(SPEC)
@@ -43,6 +43,32 @@ def _owned_state(root: Path, relative: str, content: bytes) -> None:
     path = root / ".neurath" / "install.json"
     path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(state))
+
+
+def test_installation_integrity_uses_project_local_launcher(tmp_path: Path) -> None:
+    root = _workspace(tmp_path)
+    launcher = root / ".neurath" / "run"
+    launcher.parent.mkdir()
+    launcher.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' '{\"distribution\":{\"status\":\"passed\"},"
+        "\"placement\":{\"status\":\"passed\"}}'\n"
+    )
+    launcher.chmod(0o755)
+
+    assert VALIDATOR._neurath_installation_integrity_passes(root)
+
+
+def test_installation_integrity_rejects_symlinked_launcher(tmp_path: Path) -> None:
+    root = _workspace(tmp_path)
+    external = tmp_path / "external-neurath"
+    external.write_text("#!/bin/sh\nexit 0\n")
+    external.chmod(0o755)
+    launcher = root / ".neurath" / "run"
+    launcher.parent.mkdir()
+    launcher.symlink_to(external)
+
+    assert not VALIDATOR._neurath_installation_integrity_passes(root)
 
 
 def test_shared_sqlite_projection_requires_matching_root_and_digest(

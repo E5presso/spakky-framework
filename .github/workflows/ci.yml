@@ -10,8 +10,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  harness-contracts:
-    name: Harness Contracts
+  repository-contracts:
+    name: Repository Contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,20 +24,8 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Validate exact-head review receipt
-        run: uv run python .agents/skills/process-ticket/scripts/check_review_receipt_contract.py
-
-      - name: Validate Phase 5 crash-window resume
-        run: uv run python .agents/skills/process-ticket/scripts/check_phase5_resume_contract.py
-
-      - name: Validate exact-head review publication
-        run: uv run python .agents/skills/pr-review/scripts/check_publish_final_review_contract.py
-
       - name: Validate Python harness rules
-        run: uv run python .agents/skills/check/scripts/validate_python_harness.py core plugins .agents scripts
-
-      - name: Validate review delegation context
-        run: .agents/skills/autopilot/scripts/test_review_delegate_context_contract.sh
+        run: uv run python scripts/validate_python_harness.py core plugins .agents scripts
 
       - name: Validate AI review approval trust gate
         run: .github/scripts/test_ai_review_auto_approve.sh

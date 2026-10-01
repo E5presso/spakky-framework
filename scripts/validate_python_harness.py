@@ -10,7 +10,6 @@ import hashlib
 import json
 from pathlib import Path
 from pathlib import PurePosixPath
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -391,15 +390,13 @@ def _path_has_symlink(root: Path, path: PurePosixPath) -> bool:
 
 
 def _neurath_installation_integrity_passes(workspace_root: Path) -> bool:
-    command = shutil.which("neurath")
-    if command is None:
-        return False
-    executable = Path(command).resolve()
-    if executable.is_relative_to(workspace_root):
+    relative = PurePosixPath(".neurath/run")
+    command = workspace_root / ".neurath" / "run"
+    if _path_has_symlink(workspace_root, relative) or not command.is_file():
         return False
     try:
         process = subprocess.run(
-            [command, "--root", str(workspace_root), "doctor"],
+            [str(command), "doctor"],
             cwd=workspace_root,
             capture_output=True,
             text=True,

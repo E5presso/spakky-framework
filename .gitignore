@@ -423,6 +423,11 @@ sw.*
 /.neurath/rules/
 /.neurath/run
 
+# Installed host configuration stays local; tracked examples preserve project defaults.
+/.codex/config.toml
+/.codex/hooks.json
+/.claude/settings.json
+
 # <!-- neurath:managed -->
 .agents/runs/
 .agents/worktrees/
@@ -432,8 +437,3 @@ sw.*
 .neurath/install.json
 .neurath/*plan*.json
 # <!-- /neurath:managed -->
-
-# Installed host configuration stays local; tracked examples preserve project defaults.
-/.codex/config.toml
-/.codex/hooks.json
-/.claude/settings.json

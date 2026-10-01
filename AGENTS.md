@@ -2,7 +2,7 @@
 
 > 코딩 스타일 → [CONTRIBUTING.md](CONTRIBUTING.md) | 아키텍처 → [ARCHITECTURE.md](ARCHITECTURE.md) | ADR → [docs/adr/](docs/adr/README.md) | 예제 → [README.md](README.md)
 
-Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `.agents/skills/`입니다. Claude Code는 `CLAUDE.md`, `.claude/skills`, `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
+프로젝트 코딩·도메인·테스트 규칙의 SSOT는 이 파일과 `.agents/rules/`입니다. 실행·오케스트레이션 하네스는 아래 managed Neurath 섹션과 설치된 `.agents/skills/neurath-*`만 사용합니다. Claude Code는 `CLAUDE.md`, `.claude/skills`, `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
 
 ## Overview
 
@@ -10,34 +10,11 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 - **Workspace packages**: 패키지 목록의 SSOT는 `pyproject.toml` `[tool.uv.workspace].members`. 역할 설명은 각 패키지 `README.md`와 `pyproject.toml` description에서 확인한다.
 - **Dependency direction**: `.agents/rules/monorepo.md` 의존 방향 매트릭스
 
-## 스킬 & 워크플로우
+## 실행 하네스
 
-### 스킬 맵
-
-| 카테고리 | 사용자 호출 | 내부 전용 |
-|---------|-----------|----------|
-| **plan** | `/plan-issues`, `/audit-spec`, `/impact-analysis` | — |
-| **build** | `/autopilot`, `/process-ticket`, `/create-package`, `/checkpoint` | `/commit`, `/create-worktree` |
-| **verify** | `/check`, `/improve-coverage`, `/review-code`, `/pr-review`, `/investigate`, `/property-test`, `/dependency-audit`, `/refactor-code` | — |
-| **ship** | — | `/create-pr`, `/triage-comments`, `/monitor-pr`, `/update-project-status` |
-| **meta** | `/onboarding`, `/update-dependencies`, `/sync-docs`, `/evaluate-harness`, `/optimize-harness`, `/promote-memory` | `/sync-dev-docs`, `/sync-user-docs` |
-
-### 핵심 워크플로우
-
-- **기획**: `/plan-issues`는 11섹션 SDD spec과 Phase 3.5 cold-session 시뮬레이션을 거쳐 GitHub Issues를 생성한다.
-- **스펙 감사**: `/audit-spec`는 fresh-slate 8축 재감사를 수렴 3회 상한으로 수행한다.
-- **개발**: `/process-ticket <이슈번호>`는 분석, 계획, 워크트리, 구현, 검증, Phase 4.5 acceptance-grep, commit, provenance-bound 독립 exact-head C01–C14 final review와 receipt build, push/PR, receipt publication, 병합 순으로 진행한다.
-- **대량 개발**: `/autopilot <마일스톤번호>`는 DAG wave-loop 병렬 처리와 meta-detection(S1–S6)을 수행한다.
-- **디버깅**: `/investigate <증상 또는 이슈번호>`는 재현한 뒤 원인을 격리하고 수정 후보를 도출한다.
-- **검증**: `/check [패키지]`는 format, lint, type, test를 순서대로 수행하고 커버리지 100%를 확인한다.
-- **하네스 진화**: `/evaluate-harness`로 선언-실행 단절을 감지하고, `/optimize-harness`의 5-test를 거쳐 `/promote-memory`로 메모리를 승격한다.
-
-- `/review-code`는 변경 diff의 결함 의문점을 생성하는 동료 리뷰 스킬이다. `/pr-review <PR>`는 열린 PR을 fresh review해 세 verdict 중 하나를 발행하고, `/pr-review <PR> --process-state <PATH>`는 `/process-ticket`이 clean committed HEAD에서 만든 full PASS receipt만 검증·게시한다. 명시적 receipt 모드는 실패해도 fresh review로 fallback하지 않는다. 빌트인 `/code-review`(cloud)는 외부 GitHub 코드 리뷰 표면이며 스킬 맵 등재 대상이 아니다.
-- **이슈 작업은 `/process-ticket`으로 시작한다.** 직접 코딩하지 않는다.
-- **마일스톤 단위 작업은 `/autopilot`으로 시작한다.** 단일 이슈는 `/process-ticket`.
-- **버그 조사는 `/investigate`로 시작한다.** 가설 없이 코드를 수정하지 않는다.
-- **코드 변경 후 문서 동기화는 `/sync-docs`로 수행한다.**
-- **하네스 변경 후 `/evaluate-harness`로 회귀 검증.** 5-test 게이트는 `/optimize-harness`.
+- 이슈·마일스톤·디버깅·리뷰·문서 동기화 lifecycle은 설치된 Neurath 스킬과 named MCP task tools로만 수행한다.
+- 프로젝트는 별도의 repo-owned agent skill/workflow를 유지하지 않는다. 제품 검증 명령과 코딩 규칙은 아래 정본을 그대로 따른다.
+- 구체적인 실행 순서, 소유권, 검증, 협업 및 복구 규칙은 `.neurath/policy.md`와 아래 managed Neurath 섹션을 따른다.
 
 ## Documentation Maintenance Rules
 
@@ -48,15 +25,6 @@ Codex 표준 에이전트 하네스의 SSOT는 이 파일과 `.agents/rules/`, `
 - **Sub-package READMEs**: `core/*/README.md`, `plugins/*/README.md` 항상 확인/업데이트
 - **Priority**: Code > `CONTRIBUTING.md` > this file > `README.md`. 불일치 시 문서 수정
 - **Verification**: 파일 경로, 클래스/함수명, 시그니처, import 경로, 환경변수 — 실제 코드로 검증
-
-## 서브에이전트 활용
-
-서브에이전트 바이어스 원칙은 `.agents/rules/behavioral-guidelines.md` §5 참조. 모노레포 특성상 패키지별 병렬 작업에 특히 유효합니다.
-
-### 주의사항
-
-- 같은 파일을 동시에 수정하는 서브에이전트는 금지 (충돌)
-- `worktree` 격리 모드는 파일 수정이 필요한 독립 작업에 활용
 
 ## 절대 금지 사항
 
@@ -124,13 +92,12 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 - 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
 - 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
 - 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
-- verdict 기반 봇 자동 승인은 `/pr-review`가 PR head commit에 `ai-review=success` status를 게시하고 `.github/workflows/ai-review.yml`이 같은 repo head, stale SHA 없음, status creator role `admin|maintain`을 GitHub API로 재검증할 때만 `github-actions[bot]` formal Approve를 남긴다. `/process-ticket` publication은 runtime canonical `owner`·immutable `implementer`와 다른 reviewer가 exact committed HEAD의 C01–C14를 14/14 재검증한 full PASS receipt만 허용하며 delta receipt는 게시하지 않는다. Receipt와 reviewer result는 `head_sha`·`origin/develop` merge-base `base_sha`·exact binary diff `diff_sha256`·`criteria_digest`·canonical reviewer가 정확히 결속되어야 하고, blocker 재현은 `{command, head_sha, exit_code, output_digest}` 구조로 남기며, `build-full`은 actual push endpoint의 exact HEAD push 전에만 실행한다. Publisher는 creator role이 `admin|maintain`인 exact-body comment를 read-back하고 label을 확인한 뒤 issue·PR commit-point와 local exact diff를 재검증하고 trusted status를 마지막에 게시한다. `publication.state`는 힌트이며 autopilot resume은 stored `published`도 publisher를 재실행해 live comment·label·status를 다시 확인한 뒤에만 monitor·merge로 진행한다. PR 코멘트·라벨은 승인 트리거가 아니며, `ai-review`는 required status check로 강제하지 않고 기존 branch protection 승인 요건을 충족하는 신호로만 사용한다.
+- `/neurath-review-code`와 source workflow의 `final-local-review`가 exact committed HEAD의 독립 품질 판정을 소유한다. `/neurath-review-pr`는 리뷰를 새로 수행하지 않고, required source workflow에서 소비된 C01–C14 14/14·blocker 0·PASS matrix가 local commit·push·PR head와 모두 일치할 때만 `AUTO_APPROVE` comment와 `ai-review=success`를 게시한다. 검증 실패, stale head, dirty worktree, fork/draft PR에서는 아무 신호도 게시하지 않는다. `.github/workflows/ai-review.yml`은 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다.
 
 ### 코딩 규칙 정본
 
 | 영역 | 정본 | 비고 |
 |------|------|------|
-| **에이전트 헌장** | `.agents/rules/charter.md` | 정책→비즈니스→코드 위계, 3-축 정렬, 7차원 품질 바, 외부 게이트 |
 | Python 코딩 표준 | `.agents/rules/python-code.md` | 타입, 에러, 네이밍, import |
 | 타입 규율 | `.agents/rules/type-discipline.md` | 의미의 부호화, BaseModel 우선, Optional 의미 |
 | 테스트 규칙 | `.agents/rules/test-writing.md` | 함수 기반, fixture, 네이밍 |
@@ -138,11 +105,8 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 | AOP Aspect | `.agents/rules/aspect.md` | 동기/비동기 쌍, pointcut |
 | 플러그인 개발 | `.agents/rules/plugin.md` | 구조, main.py, entry-point |
 | 모노레포 구조 | `.agents/rules/monorepo.md` | 패키지별 실행, 의존 방향 |
-| 행동 원칙 | `.agents/rules/behavioral-guidelines.md` | Karpathy 4원칙, Simplicity 시그널, 자가 질의 검사 |
 | 의존성 관리 | `.agents/rules/dependencies.md` | PyPI 버전 조회, 내부 의존성 |
 | 리뷰 휴리스틱 | `.agents/rules/review-heuristics.md` | 14개 카테고리 ↔ 심각도 ↔ SSOT 매핑 |
-| 하네스 작성 | `.agents/rules/harness-writing.md` | 5-Test 게이트, 토큰=비용, 역사 박제 금지 |
-| 스킬 작성 | `.agents/rules/write-skill.md` | 워크트리 격리, 스크립트 테스트 의무 |
 
 ### 프로젝트 특수 컨벤션
 
