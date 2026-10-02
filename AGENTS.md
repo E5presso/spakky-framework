@@ -2,7 +2,7 @@
 
 > 코딩 스타일 → [CONTRIBUTING.md](CONTRIBUTING.md) | 아키텍처 → [ARCHITECTURE.md](ARCHITECTURE.md) | ADR → [docs/adr/](docs/adr/README.md) | 예제 → [README.md](README.md)
 
-프로젝트 코딩·도메인·테스트 규칙의 SSOT는 이 파일과 `.agents/rules/`입니다. 실행·오케스트레이션 하네스는 아래 managed Neurath 섹션과 설치된 `.agents/skills/neurath-*`만 사용합니다. Claude Code는 `CLAUDE.md`, `.claude/skills`, `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
+프로젝트 코딩·도메인·테스트 규칙의 SSOT는 이 파일과 `.agents/rules/`입니다. 실행·오케스트레이션 하네스는 아래 managed Neurath 섹션과 설치된 `.agents/skills/*`만 사용합니다. Claude Code는 `CLAUDE.md`, `.claude/skills`, `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
 
 ## Overview
 
@@ -92,7 +92,7 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 - 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
 - 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
 - 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
-- `/neurath-review-code`와 source workflow의 `final-local-review`가 exact committed HEAD의 독립 품질 판정을 소유한다. `/neurath-review-pr`는 리뷰를 새로 수행하지 않고, required source workflow에서 소비된 C01–C14 14/14·blocker 0·PASS matrix가 local commit·push·PR head와 모두 일치할 때만 `AUTO_APPROVE` comment와 `ai-review=success`를 게시한다. 검증 실패, stale head, dirty worktree, fork/draft PR에서는 아무 신호도 게시하지 않는다. `.github/workflows/ai-review.yml`은 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다.
+- `/review-code`와 source workflow의 `final-local-review`가 exact committed HEAD의 독립 품질 판정을 소유한다. `/review-pr`는 리뷰를 새로 수행하지 않고, required source workflow에서 소비된 C01–C14 14/14·blocker 0·PASS matrix가 local commit·push·PR head와 모두 일치할 때만 `AUTO_APPROVE` comment와 `ai-review=success`를 게시한다. 검증 실패, stale head, dirty worktree, fork/draft PR에서는 아무 신호도 게시하지 않는다. `.github/workflows/ai-review.yml`은 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다.
 
 ### 코딩 규칙 정본
 
@@ -121,7 +121,7 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 ## Neurath
 
 Read `.neurath/policy.md` and `.neurath/project.json` for the generic profile.
-Use the `neurath-` skills in `.agents/skills`; use the named MCP task tools. Consult `.neurath/policy.md` for explicit native execution exceptions.
+Use the skills in `.agents/skills`; use the named MCP task tools. Consult `.neurath/policy.md` for explicit native execution exceptions.
 
 Use Neurath's named `neurath_collaboration` MCP tools proactively for project work.
 Choose tools when the situations below arise; do not wait for the user to name them.

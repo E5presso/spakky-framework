@@ -23,7 +23,7 @@ paths:
 
 > 모든 코드베이스는 저마다의 레거시를 갖고 있으며, 이를 꾸준히 개선하는 것은 개발자의 책무다. 이미 그런 스타일의 코드가 있었다고 해서 새 코드도 그렇게 써도 된다는 의미는 아니다.
 
-새 코드는 `python-code.md` "최신 문법" / `type-discipline.md` 같은 **대원칙 SSOT**를 따른다. 같은 파일·도메인 안에 신구 스타일이 혼재하면 새 코드는 신스타일로 통일하고, 레거시 정리가 필요하면 `/neurath-plan`으로 후속 work item을 분리한다.
+새 코드는 `python-code.md` "최신 문법" / `type-discipline.md` 같은 **대원칙 SSOT**를 따른다. 같은 파일·도메인 안에 신구 스타일이 혼재하면 새 코드는 신스타일로 통일하고, 레거시 정리가 필요하면 `/plan`으로 후속 work item을 분리한다.
 
 시그널: 새 코드에 `List[T]`/`Dict[K,V]`/`Optional[T]` 답습, `from __future__ import annotations` 답습, `TypeVar` 명시 선언 (PEP 695로 풀릴 케이스), 구식 isinstance 체인 (match/case로 풀릴 케이스).
 
@@ -60,7 +60,7 @@ paths:
 
 **도메인 완전성 > YAGNI (You Aren't Gonna Need It):**
 - 기본 상태 필드(예: AggregateRoot 기본 상태, lineage summary)는 "현재 호출자가 안 쓴다"는 이유로 응답에서 빼지 않음.
-- 스펙 자체가 누락된 케이스 발견 시 지금 수정 제안하고, 범위 밖이면 `/neurath-plan`으로 명시적인 후속 work item을 만든다.
+- 스펙 자체가 누락된 케이스 발견 시 지금 수정 제안하고, 범위 밖이면 `/plan`으로 명시적인 후속 work item을 만든다.
 
 **판단 기준:** 일반화는 (1) 기존 호출자를 깨지 않고 (2) 복수 미래 호출자가 도메인상 자명할 때만. 불확실하면 하지 않음.
 

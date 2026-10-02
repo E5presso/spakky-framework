@@ -31,5 +31,4 @@ done
 
 "$NEURATH_SETUP_TMP/source/setup" \
   "$NEURATH_SETUP_ROOT" \
-  --skill-prefix neurath- \
   "$@"

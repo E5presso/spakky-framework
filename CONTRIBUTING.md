@@ -44,7 +44,7 @@
 ### Neurath 로컬 하네스 설치
 
 Neurath를 사용하는 에이전트 개발 환경은 저장소에 고정된 설치 스크립트로 준비합니다. 스크립트는
-공개 Neurath commit을 별도 임시 clone에서 확인하고 `neurath-` 접두어로 설치합니다. 저장소는
+공개 Neurath commit을 별도 임시 clone에서 확인하고 접두어 없이 설치합니다. 저장소는
 별도의 repo-owned agent workflow를 유지하지 않으며, 실행·오케스트레이션은 이 Neurath 설치만 사용합니다.
 
 ```bash

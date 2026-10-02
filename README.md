@@ -195,16 +195,16 @@ uv run pre-commit install -t pre-commit -t commit-msg -t pre-push
 
 ### PR 코드 리뷰 자동 승인
 
-`/neurath-review-code`와 source workflow의 `final-local-review`가 exact committed head의 독립 품질 판정을 먼저 완료합니다. `/neurath-review-pr`는 품질 리뷰를 새로 수행하지 않고, 그 source workflow에서 소비된 C01–C14 14/14·blocker 0·PASS 결과만 PR 코멘트와 head commit의 `ai-review=success` status로 게시합니다. 본인 PR은 GitHub 정책상 직접 approve할 수 없으므로, 이 신호가 신뢰 게이트를 통과하면 GitHub Actions의 `github-actions[bot]`가 대신 formal Approve를 남깁니다.
+`/review-code`와 source workflow의 `final-local-review`가 exact committed head의 독립 품질 판정을 먼저 완료합니다. `/review-pr`는 품질 리뷰를 새로 수행하지 않고, 그 source workflow에서 소비된 C01–C14 14/14·blocker 0·PASS 결과만 PR 코멘트와 head commit의 `ai-review=success` status로 게시합니다. 본인 PR은 GitHub 정책상 직접 approve할 수 없으므로, 이 신호가 신뢰 게이트를 통과하면 GitHub Actions의 `github-actions[bot]`가 대신 formal Approve를 남깁니다.
 
-`/neurath-implement-issue`는 구현자와 다른 독립 reviewer가 clean committed HEAD의 C01–C14를 재검증한 full PASS receipt만 게시 경로로 전달합니다. Receipt가 없거나 stale·BLOCK·delta이면 fresh review로 조용히 대체하지 않습니다. 이 실행 상태와 receipt schema는 설치된 Neurath가 소유하며 프레임워크의 public API가 아닙니다.
+`/implement-issue`는 구현자와 다른 독립 reviewer가 clean committed HEAD의 C01–C14를 재검증한 full PASS receipt만 게시 경로로 전달합니다. Receipt가 없거나 stale·BLOCK·delta이면 fresh review로 조용히 대체하지 않습니다. 이 실행 상태와 receipt schema는 설치된 Neurath가 소유하며 프레임워크의 public API가 아닙니다.
 
 | 게시 결과 | `ai-review` status | 봇 승인 |
 |----------|--------------------|---------|
 | 검증된 `AUTO_APPROVE` | `success` | 같은 repo PR head, stale SHA 없음, status creator role `admin`/`maintain`일 때 승인 |
 | 검증 실패·blocker·stale evidence | 게시하지 않음 | 승인 없음 |
 
-승인 트리거는 commit status뿐입니다. PR 코멘트의 verdict marker는 사람이 읽는 정보 표면이며, `.github/workflows/ai-review.yml`은 승인 직전에 GitHub API로 head SHA, fork 여부, status creator 권한을 다시 확인합니다. Publisher도 local/remote/PR/review matrix가 같은 exact head인지 다시 검증한 뒤 trusted `ai-review=success` status를 게시합니다. `/neurath-autopilot` resume도 저장된 상태만 믿지 않고 live publisher를 다시 확인합니다. `ai-review`는 develop branch protection의 required status check로 강제하지 않고, 기존 "승인 1개" 요건을 충족하는 자동 승인 신호로만 사용합니다.
+승인 트리거는 commit status뿐입니다. PR 코멘트의 verdict marker는 사람이 읽는 정보 표면이며, `.github/workflows/ai-review.yml`은 승인 직전에 GitHub API로 head SHA, fork 여부, status creator 권한을 다시 확인합니다. Publisher도 local/remote/PR/review matrix가 같은 exact head인지 다시 검증한 뒤 trusted `ai-review=success` status를 게시합니다. `/autopilot` resume도 저장된 상태만 믿지 않고 live publisher를 다시 확인합니다. `ai-review`는 develop branch protection의 required status check로 강제하지 않고, 기존 "승인 1개" 요건을 충족하는 자동 승인 신호로만 사용합니다.
 
 ### 테스트 실행
 

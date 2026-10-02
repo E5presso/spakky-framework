@@ -413,7 +413,39 @@ sw.*
 # End of https://www.toptal.com/developers/gitignore/api/python,node
 
 # Neurath local installation outputs. Recreate them with scripts/setup_neurath.sh.
-/.agents/skills/neurath-*/
+/.agents/skills/audit-deps/
+/.agents/skills/autopilot/
+/.agents/skills/checkpoint/
+/.agents/skills/commit/
+/.agents/skills/create-issue/
+/.agents/skills/create-pr/
+/.agents/skills/create-worktree/
+/.agents/skills/debug/
+/.agents/skills/design-ui/
+/.agents/skills/dev-docs/
+/.agents/skills/explain-code/
+/.agents/skills/finish-session/
+/.agents/skills/graphify/
+/.agents/skills/implement-issue/
+/.agents/skills/implement-ui/
+/.agents/skills/memory-to-rules/
+/.agents/skills/optimize-harness/
+/.agents/skills/plan/
+/.agents/skills/pr-feedback/
+/.agents/skills/qa/
+/.agents/skills/reconnect-host/
+/.agents/skills/review-code/
+/.agents/skills/review-pr/
+/.agents/skills/review-spec/
+/.agents/skills/review-ui/
+/.agents/skills/sync-design/
+/.agents/skills/sync-docs/
+/.agents/skills/test-harness/
+/.agents/skills/update-deps/
+/.agents/skills/update-neurath/
+/.agents/skills/update-status/
+/.agents/skills/user-docs/
+/.agents/skills/watch-pr/
 /.mcp.json
 /.neurath/install.json
 /.neurath/local/
