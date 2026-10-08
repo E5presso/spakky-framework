@@ -44,22 +44,29 @@
 ### Neurath 로컬 하네스 설치
 
 Neurath를 사용하는 에이전트 개발 환경은 저장소에 고정된 설치 스크립트로 준비합니다. 스크립트는
-공개 Neurath commit을 별도 임시 clone에서 확인하고 접두어 없이 설치합니다. 저장소는
-별도의 repo-owned agent workflow를 유지하지 않으며, 실행·오케스트레이션은 이 Neurath 설치만 사용합니다.
+공개 Neurath 0.3.1 wheel의 SHA-256을 검증하고 프로젝트 로컬 Python 3.14 환경에 설치합니다.
+프레임워크의 Python 3.12+ 환경과 하네스 환경은 별개입니다. 같은 버전·wheel hash가 이미
+설치돼 있으면 재설치하지 않습니다. 저장소는 별도의 repo-owned agent workflow를 유지하지 않습니다.
 
 ```bash
-# 변경 예정 경로와 로컬 진단만 확인
-./scripts/setup_neurath.sh --dry-run --json
-
-# 현재 clone에 설치
-./scripts/setup_neurath.sh --json
+# 현재 clone에 설치하거나 동일 wheel 설치 여부 확인
+./scripts/setup_neurath.sh
 ```
 
-설치 뒤에는 `.neurath/run doctor --protocol`과 `.neurath/run verify check`를 실행합니다.
-생성된 provider 스킬, runtime launcher, MCP 설정과 설치·실행 이력은 로컬 상태이므로 Git에
-추적하지 않습니다. `.neurath/project.json`만 프로젝트 문서 경로와 검증 명령의 portable
-binding으로 추적합니다. Codex에서는 `/hooks`에서 새 Neurath 훅을 직접 검토하고 신뢰해야
-하며, 설치 스크립트는 훅 신뢰를 자동 승인하거나 우회하지 않습니다.
+설치 receipt는 `.neurath/install.json`, launcher는 `.neurath/run`, 새 DB는
+`.neurath/local/neurath.sqlite3`입니다. 설치 후 Codex의 `/hooks`에서 변경된 훅을 직접
+검토·신뢰하고 새 MCP 연결의 `session_get`으로 실행 버전과 설치 wheel hash를 확인합니다.
+설치 receipt만으로 실제 호스트 활성화를 판단하지 않습니다. MCP 서버 이름은 `neurath`이며,
+작업·근거·소유권은 `task_*`, `evidence_*`, `lease_*` 도구를 사용합니다.
+
+구형 `.neurath/local/runtime.sqlite3`의 이전은 설치와 별도입니다. 원본을 SQLite backup API로
+보존한 뒤 `neurath.migration.import_legacy`로 새 DB에 명시적으로 가져오고, 저장된 archive를
+`verify_archive`로 다시 읽어 검증합니다. 미완료 요구와 원래 소유 출처를 보존하며 구형 claim이나
+승인 근거를 새 권위로 바꾸지 않습니다. 구형 DB만 있는 프로젝트에서는 스크립트가 설치를 중단합니다.
+
+runtime launcher, MCP 설정, 설치·실행 이력과 백업은 로컬 상태이므로 Git에 추적하지 않습니다.
+`.neurath/project.json`은 프로젝트 문서 경로와 검증 명령의 portable binding입니다.
+설치 스크립트는 훅 신뢰를 자동 승인하거나 우회하지 않습니다.
 
 ### 하위 프로젝트 독립 열기
 

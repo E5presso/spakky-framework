@@ -5,6 +5,18 @@
 - **대체**: 해당 없음
 - **관련**: [ADR-0013](0013-declarative-agent-loop-ownership.md), GitHub Issues #448, #449, #450
 
+## 현재 설치의 지원 범위 (2026-10-08)
+
+Neurath 0.3.1 전환 후 이 ADR의 구형 `/review-pr`, `/implement-issue`, `/autopilot`,
+`final-local-review` receipt publisher는 현재 설치에 포함되지 않는다. 아래 publisher·스킬
+설명과 경로는 이전 구현의 설계 기록이다. 구형 관리 자산은 로컬 복구 백업에 보존한다.
+현재 MCP는 작업·단계·근거·위임·lease를 관리하며, 해당 기록만으로 GitHub 승인 status를
+게시하지 않는다. 검증된 publisher가 없는 동안 PR 승인은 사람의 GitHub review로 처리한다.
+
+`.github/workflows/ai-review.yml`과 `.github/scripts/ai_review_auto_approve.sh`의
+GitHub status 신뢰 게이트는 계속 유지한다. 이 전환은 branch protection이나
+`ai-review` status의 권한·SHA 검증 조건을 변경하지 않는다.
+
 ## 맥락 (Context)
 
 `develop` branch protection은 PR당 formal approval 1개를 요구한다. 하지만 현재 운영 흐름은 메인테이너 1인이 주로 PR을 작성하고 검토하므로, 같은 사용자가 자기 PR을 approve할 수 없다는 GitHub 정책 때문에 매 PR마다 사람 승인 대기 또는 admin merge가 필요했다.

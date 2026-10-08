@@ -2,7 +2,7 @@
 
 > 코딩 스타일 → [CONTRIBUTING.md](CONTRIBUTING.md) | 아키텍처 → [ARCHITECTURE.md](ARCHITECTURE.md) | ADR → [docs/adr/](docs/adr/README.md) | 예제 → [README.md](README.md)
 
-프로젝트 코딩·도메인·테스트 규칙의 SSOT는 이 파일과 `.agents/rules/`입니다. 실행·오케스트레이션 하네스는 아래 managed Neurath 섹션과 설치된 `.agents/skills/*`만 사용합니다. Claude Code는 `CLAUDE.md`, `.claude/skills`, `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
+프로젝트 코딩·도메인·테스트 규칙의 SSOT는 이 파일과 `.agents/rules/`입니다. 실행·오케스트레이션은 아래 managed Neurath 섹션과 설치된 `neurath` MCP를 사용합니다. Claude Code는 `CLAUDE.md`와 `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
 
 ## Overview
 
@@ -12,7 +12,7 @@
 
 ## 실행 하네스
 
-- 이슈·마일스톤·디버깅·리뷰·문서 동기화 lifecycle은 설치된 Neurath 스킬과 named MCP task tools로만 수행한다.
+- 이슈·마일스톤·디버깅·리뷰·문서 동기화 lifecycle은 설치된 Neurath의 named MCP task tools와 native host tools로 수행한다.
 - 프로젝트는 별도의 repo-owned agent skill/workflow를 유지하지 않는다. 제품 검증 명령과 코딩 규칙은 아래 정본을 그대로 따른다.
 - 구체적인 실행 순서, 소유권, 검증, 협업 및 복구 규칙은 `.neurath/policy.md`와 아래 managed Neurath 섹션을 따른다.
 
@@ -92,7 +92,7 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 - 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
 - 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
 - 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
-- `/review-code`와 source workflow의 `final-local-review`가 exact committed HEAD의 독립 품질 판정을 소유한다. `/review-pr`는 리뷰를 새로 수행하지 않고, required source workflow에서 소비된 C01–C14 14/14·blocker 0·PASS matrix가 local commit·push·PR head와 모두 일치할 때만 `AUTO_APPROVE` comment와 `ai-review=success`를 게시한다. 검증 실패, stale head, dirty worktree, fork/draft PR에서는 아무 신호도 게시하지 않는다. `.github/workflows/ai-review.yml`은 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다.
+- 현재 Neurath 0.3.1은 task·phase·evidence·delegation·lease MCP를 제공하며 구형 `/review-pr`와 `final-local-review` GitHub publisher는 제공하지 않는다. 독립 리뷰 결과는 실제 source와 committed HEAD에 결속해 기록하며, 설치에 없는 publisher나 receipt 검증을 실행한 것으로 주장하지 않는다. `.github/workflows/ai-review.yml`의 GitHub 승인 게이트는 유지한다. 이 workflow는 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다. 검증된 publisher가 없는 동안에는 사람의 GitHub review로 승인 요건을 충족한다.
 
 ### 코딩 규칙 정본
 
@@ -120,61 +120,10 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 <!-- neurath:managed -->
 ## Neurath
 
-Read `.neurath/policy.md` and `.neurath/project.json` for the generic profile.
-Use the skills in `.agents/skills`; use the named MCP task tools. Consult `.neurath/policy.md` for explicit native execution exceptions.
-
-Use Neurath's named `neurath_collaboration` MCP tools proactively for project work.
-Choose tools when the situations below arise; do not wait for the user to name them.
-
-- Start or resume substantive work: use `session_status` and `task_list` to recover
-  actual readiness, ownership and unfinished requirements. Before writing, use
-  `worktree_claim` when the current native actor needs a claim.
-- On a claim conflict, use `worktree_inspect` and host tools to read the owning session,
-  even if idle. Send an authorized message for finish-session or safe handoff. Verify
-  release before reclaiming; never force-reclaim.
-- When a new requirement, acceptance gap or necessary next step becomes concrete,
-  use `task_define` and `task_start` immediately. Before adding work, ask which unmet user
-  requirement it advances. Use `task_resolve` with observed results; a failed
-  attempt or time limit does not cancel the original requirement.
-  After task changes, display the returned `native_todo` through its native tool;
-  keep concrete work and native TODO current without user reminders, including
-  during bypass. Reconcile the ledger after recovery before reporting progress.
-  do not substitute an inline checklist. Report a missing host tool explicitly.
-  Keep the ledger as truth and retain the native display requirement.
-- Reuse context before repeating an investigation: use `memory_recall`. At a
-  meaningful checkpoint or handoff, use `memory_checkpoint` for decisions,
-  remaining work and lessons. When another session stops, use `memory_pull` to
-  inspect and, when safe, adopt its unfinished work; do not require a final push
-  from the stopped session.
-- For overlap, blockers or handoff, use `collaboration_discover` and
-  `collaboration_send` or assignment tools across Codex and Claude. Use
-  `collaboration_inbox`/`collaboration_reply`; read results before acknowledging.
-  Preserve delegation conditions. Pull-only delivery does not wake the peer.
-- When you find a reproducible bug, a shared interface constraint or a reusable
-  workaround, share it with active project peers using `newsroom_publish`.
-  Follow relevant announced titles with `newsroom_read`; use `newsroom_headlines`
-  when you need to find them. Newsroom reports inform work; they do not authorize it.
-- Use another provider when needed: check `provider_capabilities` / `provider_route`,
-  then use `provider_models`, `provider_plan` and `provider_run` as applicable.
-  Reuse a valid model observation or plan; verify actual completion and settings.
-- Learn from a concrete failure and recovery: inspect `learning_pending` and
-  `learning_status`, and preserve the lesson in `memory_checkpoint`. Use existing
-  verification evidence; do not create extra experiments merely to promote a rule.
-- When a harness procedure contradicts observed tools or repeats unproductive
-  steps, assess whether Neurath itself is malfunctioning. On detecting a Neurath
-  malfunction, autonomously call harness_bypass(enabled=true) without asking the
-  user for permission. This applies to any harness malfunction, not only Stop loops.
-  Do not wait for a test, task registration, report or repeated user intervention
-  before containing it. Tell the user what happened, preserve unfinished work,
-  correct the cause within authorized scope, and restore with enabled=false once
-  normal operation is verified. Host security and user instructions still apply.
-- Handle a real harness defect or maintenance request: use the relevant diagnostics,
-  reporting, installation or release tools under the current policy and consent.
-
-Use current tool schemas, returned identifiers and revisions. Reuse completed
-evidence and read relevant policy details when needed. Call only tools that advance
-the current request; do not poll unchanged state or run every tool on every turn.
-Native editing and testing remain native operations. Tool availability, memory and
-peer reports do not grant permission to bypass host security or user restrictions.
-The autonomous Neurath malfunction bypass above is an explicit local recovery rule.
+Use MCP server `neurath`. Read `.neurath/policy.md`.
+Inspect `session.get` and `task.list`; preserve unfinished user requirements.
+Register the requested outcome with `task.create`, then start it with `task.activate`.
+Use ordered phases and criterion-specific evidence; delegation reports need owner acceptance.
+Use `lease.acquire` and `lease.release` for writer ownership, native tools for actual execution.
+Recover with `harness_bypass(enabled=true)` when the harness malfunctions, then restore it after verification.
 <!-- /neurath:managed -->
