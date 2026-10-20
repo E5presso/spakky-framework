@@ -29,7 +29,7 @@ from spakky.plugins.sqlalchemy.persistency.transaction import (
 
 _ENV_KEYS = (
     "SPAKKY_SQLALCHEMY__CONNECTION_STRING",
-    "SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE",
+    "SPAKKY_DATA__SUPPORT_ASYNC_MODE",
 )
 
 
@@ -62,7 +62,7 @@ def test_initialize_with_async_support_expect_all_pods_registered(
     mock_app: MagicMock,
 ) -> None:
     """support_async_mode가 True일 때 모든 Pod(동기+비동기)이 등록되는지 검증한다."""
-    os.environ["SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE"] = "true"
+    os.environ["SPAKKY_DATA__SUPPORT_ASYNC_MODE"] = "true"
 
     initialize(mock_app)
 
@@ -82,7 +82,7 @@ def test_initialize_without_async_support_expect_sync_pods_only(
     mock_app: MagicMock,
 ) -> None:
     """support_async_mode가 False일 때 동기 Pod만 등록되는지 검증한다."""
-    os.environ["SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE"] = "false"
+    os.environ["SPAKKY_DATA__SUPPORT_ASYNC_MODE"] = "false"
 
     initialize(mock_app)
 
@@ -103,7 +103,7 @@ def test_initialize_default_async_mode_expect_async_pods_registered(
 ) -> None:
     """기본값(support_async_mode=True)일 때 비동기 Pod이 등록되는지 검증한다."""
     # Remove the key if it exists to use default
-    os.environ.pop("SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE", None)
+    os.environ.pop("SPAKKY_DATA__SUPPORT_ASYNC_MODE", None)
 
     initialize(mock_app)
 

@@ -18,6 +18,17 @@ pip install spakky-data
 > `spakky-data`는 core 추상화 패키지입니다. SQLAlchemy engine/session/table mapping
 > 구현체가 필요하면 `spakky-sqlalchemy`를 함께 설치하세요.
 
+## 공통 실행 모드 설정
+
+`spakky.data.config.DataConfig`가 `SPAKKY_DATA__SUPPORT_ASYNC_MODE`를 읽습니다.
+기본값은 `true`이며, `false`이면 Data는 동기 `TransactionalAspect`만 등록합니다.
+SQLAlchemy 등 영속성 구현 플러그인도 같은 설정으로 비동기 Pod 등록을 제어합니다.
+따라서 동기 전용 드라이버를 사용하는 앱은 비동기 transaction provider 없이 시작할 수 있습니다.
+비동기 트랜잭션을 사용하는 앱은 이 값을 `true`로 두고 비동기 provider를 제공해야 합니다.
+
+이전 `SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE`는 제거됐습니다. 기존 설정은
+`SPAKKY_DATA__SUPPORT_ASYNC_MODE`로 변경하세요. 두 변수의 우선순위나 호환 별칭은 없습니다.
+
 ## 설계 원칙
 
 ### Repository는 영속화 전용
@@ -63,7 +74,7 @@ pip install spakky-data spakky-sqlalchemy
 
 ```bash
 export SPAKKY_SQLALCHEMY__CONNECTION_STRING="postgresql+psycopg://user:pass@localhost/app"
-export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
+export SPAKKY_DATA__SUPPORT_ASYNC_MODE="true"
 ```
 
 흐름은 다음 순서로 구성합니다.

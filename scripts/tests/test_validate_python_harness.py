@@ -51,8 +51,8 @@ def test_installation_integrity_uses_project_local_launcher(tmp_path: Path) -> N
     launcher.parent.mkdir()
     launcher.write_text(
         "#!/bin/sh\n"
-        "printf '%s\\n' '{\"distribution\":{\"status\":\"passed\"},"
-        "\"placement\":{\"status\":\"passed\"}}'\n"
+        'printf \'%s\\n\' \'{"distribution":{"status":"passed"},'
+        '"placement":{"status":"passed"}}\'\n'
     )
     launcher.chmod(0o755)
 

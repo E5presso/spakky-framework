@@ -1,4 +1,5 @@
 from spakky.core.application.application import SpakkyApplication
+from spakky.data.config import DataConfig
 
 from spakky.plugins.sqlalchemy.common.config import SQLAlchemyConnectionConfig
 from spakky.plugins.sqlalchemy.orm.schema_registry import SchemaRegistry
@@ -21,12 +22,12 @@ def initialize(app: SpakkyApplication) -> None:
 
     Registers SQLAlchemy configuration, schema registry, session managers,
     and transaction handlers. Async Pods are only registered when
-    support_async_mode is True in the configuration.
+    DataConfig.support_async_mode is True.
 
     Args:
         app: The Spakky application instance.
     """
-    config = SQLAlchemyConnectionConfig()
+    config = DataConfig()
 
     app.add(SQLAlchemyConnectionConfig)
     app.add(SchemaRegistry)

@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -3984,11 +3984,15 @@ name = "spakky-data"
 version = "8.1.0"
 source = { editable = "core/spakky-data" }
 dependencies = [
+    { name = "pydantic-settings" },
     { name = "spakky-domain" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky-domain", editable = "core/spakky-domain" }]
+requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.14.2" },
+    { name = "spakky-domain", editable = "core/spakky-domain" },
+]
 
 [[package]]
 name = "spakky-domain"

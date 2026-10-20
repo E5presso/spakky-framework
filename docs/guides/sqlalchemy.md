@@ -40,13 +40,14 @@ pip install "spakky[database-postgres]"
 
 ## 설정
 
-`spakky-sqlalchemy`는 `SPAKKY_SQLALCHEMY__` 접두사의 환경변수를 읽습니다.
+연결·세션·풀 설정은 `SQLAlchemyConnectionConfig`가 `SPAKKY_SQLALCHEMY__` 접두사로 읽습니다.
+비동기 지원 여부는 상위 `spakky-data`의 `DataConfig`가 소유하는 공통 설정입니다.
 
 ```bash
 export SPAKKY_SQLALCHEMY__CONNECTION_STRING="postgresql+psycopg://user:pass@localhost/mydb"
 export SPAKKY_SQLALCHEMY__ECHO="false"
 export SPAKKY_SQLALCHEMY__AUTOCOMMIT="true"
-export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
+export SPAKKY_DATA__SUPPORT_ASYNC_MODE="true"
 ```
 
 주요 설정은 다음과 같습니다. 전체 field는 [`spakky-sqlalchemy` API Reference](../api/plugins/spakky-sqlalchemy.md)의 `SQLAlchemyConnectionConfig`를 기준으로 확인합니다.
@@ -64,7 +65,7 @@ export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
 | `SPAKKY_SQLALCHEMY__SESSION_AUTOFLUSH` | query 전 pending change flush | `true` |
 | `SPAKKY_SQLALCHEMY__SESSION_EXPIRE_ON_COMMIT` | commit 후 ORM object expire | `true` |
 | `SPAKKY_SQLALCHEMY__AUTOCOMMIT` | transaction context 종료 시 자동 commit | `true` |
-| `SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE` | async session/transaction Pod 등록 여부 | `true` |
+| `SPAKKY_DATA__SUPPORT_ASYNC_MODE` | Data Aspect와 provider의 공통 비동기 지원 여부 | `true` |
 
 `postgresql+psycopg://` URL은 `psycopg` driver가 필요합니다. `spakky[database]`와
 `spakky[sqlalchemy]`는 특정 DB driver를 강제로 설치하지 않습니다. PostgreSQL을 쓴다면
@@ -87,10 +88,12 @@ app = (
 )
 ```
 
-`SUPPORT_ASYNC_MODE=false`로 설정하면 `AsyncConnectionManager`, `AsyncSessionManager`,
+`SPAKKY_DATA__SUPPORT_ASYNC_MODE=false`이면 Data의 `AsyncTransactionalAspect`와
+SQLAlchemy의 `AsyncConnectionManager`, `AsyncSessionManager`,
 `AsyncTransaction`, `AsyncSqlAlchemyOutboxStorage`가 등록되지 않습니다. async driver를
 쓰지 않는 서비스에서는 false로 둘 수 있고, async Repository를 쓰는 서비스에서는 true가
-필요합니다.
+필요합니다. 이전 `SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE`는 제거됐으므로
+기존 배포 환경변수도 Data의 공통 변수로 변경해야 합니다.
 
 ---
 

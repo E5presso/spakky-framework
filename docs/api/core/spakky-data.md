@@ -17,6 +17,12 @@ Repository, Transaction 추상화 — 데이터 접근 계층
     options:
       show_root_heading: false
 
+## 공통 설정
+
+::: spakky.data.config
+    options:
+      show_root_heading: false
+
 ## 스테레오타입
 
 ::: spakky.data.stereotype.repository

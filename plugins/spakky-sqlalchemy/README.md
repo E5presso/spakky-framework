@@ -48,8 +48,12 @@ export SPAKKY_SQLALCHEMY__SESSION_EXPIRE_ON_COMMIT="true"
 export SPAKKY_SQLALCHEMY__AUTOCOMMIT="true"
 
 # 비동기 지원(선택)
-export SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE="true"
+export SPAKKY_DATA__SUPPORT_ASYNC_MODE="true"
 ```
+
+비동기 지원 여부는 `spakky.data.config.DataConfig`의 공통 설정입니다.
+SQLAlchemy는 이 설정에 맞춰 비동기 연결·세션·트랜잭션과 Outbox 구현을 등록합니다.
+이전 `SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE`는 제거됐으므로 위 Data 변수로 변경하세요.
 
 `postgresql+psycopg://` connection string은 `psycopg` driver가 필요합니다.
 `spakky[database-postgres]`를 쓰거나 프로젝트 의존성에 `psycopg[binary]`를 직접 추가하세요.

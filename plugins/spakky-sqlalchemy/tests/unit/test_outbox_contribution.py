@@ -15,7 +15,7 @@ from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
 
 _ENV_KEYS = (
     "SPAKKY_SQLALCHEMY__CONNECTION_STRING",
-    "SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE",
+    "SPAKKY_DATA__SUPPORT_ASYNC_MODE",
 )
 
 
@@ -44,7 +44,7 @@ def test_outbox_contribution_with_async_support_expect_all_pods_registered(
     mock_app: MagicMock,
 ) -> None:
     """support_async_mode가 True일 때 outbox 동기+비동기 Pod 등록을 검증한다."""
-    os.environ["SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE"] = "true"
+    os.environ["SPAKKY_DATA__SUPPORT_ASYNC_MODE"] = "true"
 
     initialize(mock_app)
 
@@ -59,7 +59,7 @@ def test_outbox_contribution_without_async_support_expect_sync_pods_only(
     mock_app: MagicMock,
 ) -> None:
     """support_async_mode가 False일 때 outbox 동기 Pod만 등록되는지 검증한다."""
-    os.environ["SPAKKY_SQLALCHEMY__SUPPORT_ASYNC_MODE"] = "false"
+    os.environ["SPAKKY_DATA__SUPPORT_ASYNC_MODE"] = "false"
 
     initialize(mock_app)
 

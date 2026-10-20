@@ -87,11 +87,11 @@ ADR-0002 그대로. `spakky-outbox-sqlalchemy`를 독립 패키지로 유지.
 
    `spakky-outbox`의 plugin name은 Python entry point group segment에서 `spakky.outbox`로 정규화되므로 canonical contribution group은 `spakky.contributions.spakky.outbox`다.
 
-3. **Contribution initialize**: outbox Pod 등록은 contribution module에만 위치한다.
+3. **Contribution initialize**: outbox Pod 등록은 contribution module에만 위치한다. 비동기 지원은 `spakky.data.config.DataConfig`의 공통 설정을 따른다.
 
 ```python
 def initialize(app: SpakkyApplication) -> None:
-    config = SQLAlchemyConnectionConfig()
+    config = DataConfig()
 
     app.add(OutboxMessageTable)
     app.add(SqlAlchemyOutboxStorage)
