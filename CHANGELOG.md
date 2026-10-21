@@ -1,3 +1,20 @@
+## v8.2.0 (2026-10-21)
+
+### Feat
+
+- **agent**: add multimodal resilient model platform
+- **agent**: add memory, evaluation, cost, and telemetry
+- **agent**: add composable retrieval runtime
+- **agent**: wire typed output and context
+- **agent**: add bounded iterative tool loop
+- **llm**: add operator model catalog and Vertex routing
+
+### Fix
+
+- **event**: 커밋 후 후속 작업 발행과 요청별 저장 상태 격리
+- **data**: 비동기 지원 설정을 Data 계층으로 통합
+- **agent**: align protocol smoke with iterative tool loop
+
 ## v8.1.0 (2026-08-22)
 
 ### Feat
