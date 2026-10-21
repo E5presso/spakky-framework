@@ -229,3 +229,7 @@ uv run pytest
 ## 라이선스
 
 MIT License
+
+### 수집 목록의 실행 격리
+
+`AggregateCollector`의 수집 목록은 Python 실행 컨텍스트별로 분리됩니다. Singleton Repository나 Aspect가 동일한 collector를 주입받아도 동시 비동기 요청의 목록은 섞이지 않습니다. 수집된 이벤트의 발행 및 종료 정리는 `spakky-event`의 트랜잭션 이벤트 Aspect가 담당합니다.

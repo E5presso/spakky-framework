@@ -229,3 +229,9 @@ uv run pytest
 ## 라이선스
 
 MIT License
+
+### 인프로세스 이벤트와 후속 작업
+
+Domain Event만 사용하는 앱은 외부 transport 없이 기동할 수 있습니다. Integration Event를 발행할 때는 실제 transport 플러그인이 필요하며, 없으면 `IntegrationEventTransportUnavailableError`가 발생합니다.
+
+트랜잭션 이벤트 Aspect는 커밋과 세션 정리가 끝난 뒤 이벤트를 발행합니다. 발행할 배치와 collector를 먼저 분리하므로 핸들러가 새 `@transactional` 유스케이스를 호출해도 부모 이벤트를 재발행하지 않습니다. 커밋 실패 시 이벤트는 발행하지 않습니다. 인프로세스 이벤트는 영속 메시지 큐를 대신하지 않습니다.

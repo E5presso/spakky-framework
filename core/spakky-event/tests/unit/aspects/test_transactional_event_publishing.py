@@ -328,3 +328,177 @@ async def test_async_aspect_publishes_multiple_events_from_multiple_aggregates()
     assert event2.username == "bob"
     assert all(len(user.events) == 0 for user in results)  # All events cleared
     assert len(collector.all()) == 0  # Collector cleared
+
+
+def test_followup_transaction_does_not_republish_parent_events() -> None:
+    """핸들러의 후속 트랜잭션은 이미 발행 중인 부모 이벤트를 다시 수집하지 않는다."""
+    collector = AggregateCollector()
+    observed = []
+
+    class Publisher(IEventPublisher):
+        def publish(self, event: AbstractEvent) -> None:
+            assert isinstance(event, User.Created)
+            observed.append(event.username)
+            if event.username == "parent":
+                collector.collect(User.create("child"))
+                aspect.after_returning(None)
+
+    aspect = TransactionalEventPublishingAspect(collector, Publisher())
+    parent = User.create("parent")
+    collector.collect(parent)
+    collector.collect(parent)
+    aspect.after_returning(None)
+    assert observed == ["parent", "child"]
+    assert collector.all() == []
+    assert parent.events == []
+
+
+@pytest.mark.asyncio
+async def test_async_followup_transaction_does_not_republish_parent_events() -> None:
+    """비동기 후속 트랜잭션도 부모 이벤트를 중복 발행하지 않는다."""
+    collector = AggregateCollector()
+    observed = []
+
+    class Publisher(IAsyncEventPublisher):
+        async def publish(self, event: AbstractEvent) -> None:
+            assert isinstance(event, User.Created)
+            observed.append(event.username)
+            if event.username == "parent":
+                collector.collect(User.create("child"))
+                await aspect.after_returning_async(None)
+
+    aspect = AsyncTransactionalEventPublishingAspect(collector, Publisher())
+    parent = User.create("parent")
+    collector.collect(parent)
+    collector.collect(parent)
+    await aspect.after_returning_async(None)
+    assert observed == ["parent", "child"]
+    assert collector.all() == []
+    assert parent.events == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_commit", [False, True])
+async def test_events_are_published_after_commit_and_disposal(
+    fail_commit: bool,
+) -> None:
+    """후속 핸들러를 실행하기 전에 최초 트랜잭션의 commit과 dispose를 끝낸다."""
+    observed = []
+
+    @Pod()
+    class Transaction(AbstractAsyncTransaction):
+        async def initialize(self) -> None:
+            observed.append("open")
+
+        async def dispose(self) -> None:
+            observed.append("dispose")
+
+        async def commit(self) -> None:
+            observed.append("commit")
+            if fail_commit:
+                raise RuntimeError("commit failed")
+
+        async def rollback(self) -> None:
+            observed.append("rollback")
+
+    @Pod()
+    class Publisher(IAsyncEventPublisher):
+        async def publish(self, event: AbstractEvent) -> None:
+            observed.append("event")
+
+    @UseCase()
+    class CreateUseCase:
+        def __init__(self, collector: AggregateCollector) -> None:
+            self.collector = collector
+
+        @Transactional()
+        async def run(self) -> None:
+            self.collector.collect(User.create("parent"))
+
+    context = ApplicationContext()
+    for component in (
+        Transaction,
+        Publisher,
+        CreateUseCase,
+        AggregateCollector,
+        AsyncTransactionalAspect,
+        AsyncTransactionalEventPublishingAspect,
+    ):
+        context.add(component)
+    context.start()
+    try:
+        if fail_commit:
+            with pytest.raises(RuntimeError, match="commit failed"):
+                await context.get(CreateUseCase).run()
+        else:
+            await context.get(CreateUseCase).run()
+    finally:
+        context.stop()
+    assert observed == (
+        ["open", "commit", "rollback", "dispose"]
+        if fail_commit
+        else ["open", "commit", "dispose", "event"]
+    )
+
+
+@pytest.mark.parametrize("fail_commit", [False, True])
+def test_sync_events_are_published_after_commit_and_disposal(
+    fail_commit: bool,
+) -> None:
+    """후속 핸들러를 실행하기 전에 최초 트랜잭션의 commit과 dispose를 끝낸다."""
+    observed = []
+
+    @Pod()
+    class Transaction(AbstractTransaction):
+        def initialize(self) -> None:
+            observed.append("open")
+
+        def dispose(self) -> None:
+            observed.append("dispose")
+
+        def commit(self) -> None:
+            observed.append("commit")
+            if fail_commit:
+                raise RuntimeError("commit failed")
+
+        def rollback(self) -> None:
+            observed.append("rollback")
+
+    @Pod()
+    class Publisher(IEventPublisher):
+        def publish(self, event: AbstractEvent) -> None:
+            observed.append("event")
+
+    @UseCase()
+    class CreateUseCase:
+        def __init__(self, collector: AggregateCollector) -> None:
+            self.collector = collector
+
+        @Transactional()
+        def run(self) -> None:
+            self.collector.collect(User.create("parent"))
+
+    context = ApplicationContext()
+    for component in (
+        Transaction,
+        Publisher,
+        CreateUseCase,
+        AggregateCollector,
+        TransactionalAspect,
+        TransactionalEventPublishingAspect,
+    ):
+        context.add(component)
+    context.start()
+    try:
+        if fail_commit:
+            with pytest.raises(RuntimeError, match="commit failed"):
+                context.get(CreateUseCase).run()
+        else:
+            context.get(CreateUseCase).run()
+    finally:
+        context.stop()
+    assert observed == (
+        ["open", "commit", "rollback", "dispose"]
+        if fail_commit
+        else ["open", "commit", "dispose", "event"]
+    )

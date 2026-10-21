@@ -26,7 +26,6 @@ from spakky.event import (
     IAsyncEventConsumer,
     IEventConsumer,
 )
-from spakky.event.event_publisher import IAsyncEventTransport, IEventTransport
 from tests.integration import apps
 from tests.integration.apps.handlers.event_recorder import EventRecorder
 
@@ -73,42 +72,6 @@ class InMemoryAsyncTransaction(AbstractAsyncTransaction):
         pass
 
 
-@Pod()
-class InMemoryEventTransport(IEventTransport):
-    """In-memory synchronous event transport for testing."""
-
-    def send(
-        self,
-        event_name: str,
-        payload: bytes,
-        headers: dict[str, str],
-        partition_key: str | None = None,
-    ) -> None:
-        pass
-
-    def flush(self) -> None:
-        """No-op flush."""
-        pass
-
-
-@Pod()
-class InMemoryAsyncEventTransport(IAsyncEventTransport):
-    """In-memory asynchronous event transport for testing."""
-
-    async def send(
-        self,
-        event_name: str,
-        payload: bytes,
-        headers: dict[str, str],
-        partition_key: str | None = None,
-    ) -> None:
-        pass
-
-    async def flush(self) -> None:
-        """No-op flush."""
-        pass
-
-
 @pytest.fixture(name="app", scope="module")
 def app_fixture() -> Generator[SpakkyApplication, Any, None]:
     """Create SpakkyApplication with full event publishing infrastructure.
@@ -129,8 +92,6 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
         SpakkyApplication(ApplicationContext())
         .add(InMemoryTransaction)
         .add(InMemoryAsyncTransaction)
-        .add(InMemoryEventTransport)
-        .add(InMemoryAsyncEventTransport)
         .load_plugins(
             include={
                 spakky.event.PLUGIN_NAME,

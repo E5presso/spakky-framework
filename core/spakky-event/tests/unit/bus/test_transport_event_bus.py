@@ -137,3 +137,24 @@ async def test_async_direct_event_bus_send_expect_transport_flushed_once_per_eve
     await bus.send(SampleIntegrationEvent(message="second"))
 
     assert transport.flush_count == 2
+
+
+def test_domain_only_bus_rejects_integration_publish_without_transport() -> None:
+    """브로커가 없는 구성은 기동 가능하되 통합 이벤트를 성공으로 처리하지 않는다."""
+    from spakky.event.error import IntegrationEventTransportUnavailableError
+
+    bus = DirectEventBus(None, W3CTracePropagator())
+    with pytest.raises(IntegrationEventTransportUnavailableError):
+        bus.send(SampleIntegrationEvent(message="requires transport"))
+
+
+@pytest.mark.asyncio
+async def test_async_domain_only_bus_rejects_integration_publish_without_transport() -> (
+    None
+):
+    """비동기 통합 이벤트도 실제 transport가 없으면 명시적으로 실패한다."""
+    from spakky.event.error import IntegrationEventTransportUnavailableError
+
+    bus = AsyncDirectEventBus(None, W3CTracePropagator())
+    with pytest.raises(IntegrationEventTransportUnavailableError):
+        await bus.send(SampleIntegrationEvent(message="requires transport"))

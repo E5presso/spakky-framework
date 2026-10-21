@@ -17,7 +17,7 @@ from spakky.event.event_publisher import (
 )
 
 
-@Order(1)
+@Order(0)
 @AsyncAspect()
 class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
     _collector: AggregateCollector
@@ -35,10 +35,16 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
     @override
     async def after_returning_async(self, result: Any) -> None:
         """Publish domain events from collected aggregates after successful commit."""
+        events = {
+            event.event_id: event
+            for aggregate in self._collector.all()
+            for event in aggregate.events
+        }
         for aggregate in self._collector.all():
-            for event in aggregate.events:
-                await self._publisher.publish(event)
             aggregate.clear_events()
+        self._collector.clear()
+        for event in events.values():
+            await self._publisher.publish(event)
 
     @After(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
     @override
@@ -47,7 +53,7 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
         self._collector.clear()
 
 
-@Order(1)
+@Order(0)
 @Aspect()
 class TransactionalEventPublishingAspect(IAspect):
     _collector: AggregateCollector
@@ -65,10 +71,16 @@ class TransactionalEventPublishingAspect(IAspect):
     @override
     def after_returning(self, result: Any) -> None:
         """Publish domain events from collected aggregates after successful commit."""
+        events = {
+            event.event_id: event
+            for aggregate in self._collector.all()
+            for event in aggregate.events
+        }
         for aggregate in self._collector.all():
-            for event in aggregate.events:
-                self._publisher.publish(event)
             aggregate.clear_events()
+        self._collector.clear()
+        for event in events.values():
+            self._publisher.publish(event)
 
     @After(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
     @override

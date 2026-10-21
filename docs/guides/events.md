@@ -182,3 +182,9 @@ app = (
 - [이벤트 기반 아키텍처 통합 가이드](event-driven.md) — events·outbox·saga를 함께 쓰는 분산 워크플로우
 - [이벤트 시스템 심화](../event-system.md) — 이벤트 정의, AggregateRoot 이벤트 수집, 인터페이스 구조
 - [Transactional Outbox](outbox.md) — Integration Event의 원자적 기록과 성공 전달 경로의 at-least-once 의미
+
+## 인프로세스 전용 구성과 후속 트랜잭션
+
+Domain Event 처리에는 RabbitMQ/Kafka transport가 필요하지 않습니다. Integration Event를 외부로 발행할 때 transport를 설치하지 않았다면 `IntegrationEventTransportUnavailableError`로 거절합니다.
+
+트랜잭션 이벤트 발행 Aspect의 Order는 0, TransactionalAspect의 Order는 1입니다. 이벤트 Aspect가 트랜잭션 실행을 감싸므로 commit 및 dispose 이후에만 성공 이벤트를 전달합니다. 수집 목록과 이벤트 배치를 분리한 뒤 핸들러를 호출하여 후속 유스케이스가 부모 이벤트를 재발행하지 않도록 합니다.

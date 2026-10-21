@@ -36,8 +36,7 @@ class SessionManager(IApplicationContextAware):
 
     _application_context: IApplicationContext
     _engine: Engine
-    _scoped_session: scoped_session[Session]
-    _current_session: Session | None
+    _scoped_session: scoped_session[Session] | None
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -53,24 +52,24 @@ class SessionManager(IApplicationContextAware):
     def __init__(self, connection_manager: ConnectionManager) -> None:
         """Initialize with engine from connection manager."""
         self._engine = connection_manager.connection
-        self._current_session = None
+        self._scoped_session = None
 
     @property
     def session(self) -> Session:
-        if self._current_session is None:
+        if self._scoped_session is None or not self._scoped_session.registry.has():
             raise SessionNotInitializedError()
-        return self._current_session
+        return self._scoped_session()
 
     def open(self) -> None:
         """Open a new scoped session."""
-        self._current_session = self._scoped_session()
+        if self._scoped_session is None:
+            raise SessionNotInitializedError()
+        self._scoped_session()
 
     def close(self) -> None:
         """Close the current session and remove the scoped session."""
-        if self._current_session is not None:
-            self._current_session.close()
-        self._scoped_session.remove()
-        self._current_session = None
+        if self._scoped_session is not None:
+            self._scoped_session.remove()
 
 
 @Pod()
@@ -79,8 +78,7 @@ class AsyncSessionManager(IApplicationContextAware):
 
     _application_context: IApplicationContext
     _engine: AsyncEngine
-    _scoped_session: async_scoped_session[AsyncSession]
-    _current_session: AsyncSession | None
+    _scoped_session: async_scoped_session[AsyncSession] | None
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -96,21 +94,21 @@ class AsyncSessionManager(IApplicationContextAware):
     def __init__(self, connection_manager: AsyncConnectionManager) -> None:
         """Initialize with engine from async connection manager."""
         self._engine = connection_manager.connection
-        self._current_session = None
+        self._scoped_session = None
 
     @property
     def session(self) -> AsyncSession:
-        if self._current_session is None:
+        if self._scoped_session is None or not self._scoped_session.registry.has():
             raise SessionNotInitializedError()
-        return self._current_session
+        return self._scoped_session()
 
     async def open(self) -> None:
         """Open a new scoped async session."""
-        self._current_session = self._scoped_session()
+        if self._scoped_session is None:
+            raise SessionNotInitializedError()
+        self._scoped_session()
 
     async def close(self) -> None:
         """Close the current session and remove the scoped async session."""
-        if self._current_session is not None:
-            await self._current_session.close()
-        await self._scoped_session.remove()
-        self._current_session = None
+        if self._scoped_session is not None:
+            await self._scoped_session.remove()

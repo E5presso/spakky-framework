@@ -369,3 +369,7 @@ uv run pytest
 ## 라이선스
 
 MIT License
+
+### 컨텍스트별 세션 수명
+
+SessionManager와 AsyncSessionManager는 현재 ApplicationContext ID의 scoped session을 사용합니다. 다른 컨텍스트의 open/close가 원래 컨텍스트의 세션을 덮어쓰거나 종료하지 않습니다. 각 작업은 트랜잭션 경계에서 세션을 열고 닫으며, 열린 세션이 없을 때 session 접근은 SessionNotInitializedError를 발생시킵니다.

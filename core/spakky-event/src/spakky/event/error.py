@@ -13,6 +13,12 @@ class InvalidMessageError(AbstractSpakkyEventError):
     message = "Invalid or malformed message received"
 
 
+class IntegrationEventTransportUnavailableError(AbstractSpakkyEventError):
+    """Raised when integration events are published without a broker transport."""
+
+    message = "Integration event publishing requires an event transport plugin"
+
+
 class AuthSnapshotPropagationSignerUnavailableError(AbstractSpakkyEventError):
     """Raised when signed snapshot propagation lacks a signer provider."""
 

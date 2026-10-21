@@ -39,7 +39,7 @@ def transactional[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     return Transactional()(func)
 
 
-@Order(0)
+@Order(1)
 @AsyncAspect()
 class AsyncTransactionalAspect(IAsyncAspect):
     """Aspect for managing transactions in async methods.
@@ -62,7 +62,7 @@ class AsyncTransactionalAspect(IAsyncAspect):
             return await joinpoint(*args, **kwargs)
 
 
-@Order(0)
+@Order(1)
 @Aspect()
 class TransactionalAspect(IAspect):
     """Aspect for managing transactions in sync methods.

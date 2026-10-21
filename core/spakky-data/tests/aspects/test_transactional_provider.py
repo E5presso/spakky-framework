@@ -160,3 +160,33 @@ def test_data_plugin_sync_collector_expect_clear_and_context_isolation(
         assert first.all() == [aggregate]
     finally:
         application.stop()
+
+
+@pytest.mark.asyncio
+async def test_injected_collector_isolates_simultaneous_async_transactions() -> None:
+    """같은 주입 객체를 공유해도 동시 실행의 aggregate 목록은 서로 섞이지 않는다."""
+    import asyncio
+
+    collector = AggregateCollector()
+    ready = asyncio.Event()
+    release = asyncio.Event()
+    first = MagicMock(spec=AbstractAggregateRoot)
+    second = MagicMock(spec=AbstractAggregateRoot)
+
+    async def collect_first() -> None:
+        collector.collect(first)
+        ready.set()
+        await release.wait()
+        assert collector.all() == [first]
+        collector.clear()
+
+    async def collect_second() -> None:
+        await ready.wait()
+        assert collector.all() == []
+        collector.collect(second)
+        assert collector.all() == [second]
+        collector.clear()
+        release.set()
+
+    await asyncio.gather(collect_first(), collect_second())
+    assert collector.all() == []

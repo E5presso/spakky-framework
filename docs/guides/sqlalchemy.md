@@ -391,3 +391,7 @@ storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
 | 외부 REST/gRPC/legacy system 조회 | `spakky-data` External Proxy |
 | 여러 Aggregate와 외부 시스템을 잇는 장기 흐름 | Saga UseCase |
 | 이벤트와 DB 변경의 원자적 저장 | `spakky-outbox` + `spakky-sqlalchemy` |
+
+## 같은 앱의 여러 요청
+
+세션 매니저는 현재 ApplicationContext ID의 scoped registry에서 세션을 조회합니다. 요청 어댑터가 컨텍스트를 구분하면 동일 매니저를 공유해도 다른 요청의 close가 현재 요청의 세션을 닫지 않습니다. 유스케이스의 `@transactional`이 세션을 열고 닫으며, 사용한 비동기 엔진은 연결을 사용한 이벤트 루프에서 dispose합니다.

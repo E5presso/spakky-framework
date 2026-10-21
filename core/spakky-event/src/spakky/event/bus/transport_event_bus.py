@@ -8,6 +8,7 @@ from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.tracing.propagator import ITracePropagator
 
 from spakky.event.auth_propagation import AuthContextSnapshotHeaderInjector
+from spakky.event.error import IntegrationEventTransportUnavailableError
 from spakky.event.event_publisher import (
     IAsyncEventBus,
     IAsyncEventTransport,
@@ -20,14 +21,14 @@ from spakky.event.event_publisher import (
 class DirectEventBus(IEventBus):
     """Synchronous event bus that serializes and delegates to IEventTransport."""
 
-    _transport: IEventTransport
+    _transport: IEventTransport | None
     _propagator: ITracePropagator
     _auth_snapshot_headers: AuthContextSnapshotHeaderInjector
     _adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(
         self,
-        transport: IEventTransport,
+        transport: IEventTransport | None,
         propagator: ITracePropagator,
         auth_snapshot_headers: AuthContextSnapshotHeaderInjector | None = None,
     ) -> None:
@@ -46,6 +47,8 @@ class DirectEventBus(IEventBus):
         A direct publish is a batch of one, so the transport is flushed before
         returning and the caller gets the same delivery guarantee as before.
         """
+        if self._transport is None:
+            raise IntegrationEventTransportUnavailableError()
         event_type = type(event)
         if event_type not in self._adapters:
             self._adapters[event_type] = TypeAdapter(event_type)
@@ -66,14 +69,14 @@ class DirectEventBus(IEventBus):
 class AsyncDirectEventBus(IAsyncEventBus):
     """Asynchronous event bus that serializes and delegates to IAsyncEventTransport."""
 
-    _transport: IAsyncEventTransport
+    _transport: IAsyncEventTransport | None
     _propagator: ITracePropagator
     _auth_snapshot_headers: AuthContextSnapshotHeaderInjector
     _adapters: dict[type, TypeAdapter[AbstractIntegrationEvent]]
 
     def __init__(
         self,
-        transport: IAsyncEventTransport,
+        transport: IAsyncEventTransport | None,
         propagator: ITracePropagator,
         auth_snapshot_headers: AuthContextSnapshotHeaderInjector | None = None,
     ) -> None:
@@ -92,6 +95,8 @@ class AsyncDirectEventBus(IAsyncEventBus):
         A direct publish is a batch of one, so the transport is flushed before
         returning and the caller gets the same delivery guarantee as before.
         """
+        if self._transport is None:
+            raise IntegrationEventTransportUnavailableError()
         event_type = type(event)
         if event_type not in self._adapters:
             self._adapters[event_type] = TypeAdapter(event_type)

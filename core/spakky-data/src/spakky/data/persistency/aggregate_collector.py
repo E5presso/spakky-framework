@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from contextvars import ContextVar
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
@@ -6,12 +7,12 @@ from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 @Pod(scope=Pod.Scope.CONTEXT)
 class AggregateCollector:
-    """Context-scoped collector for tracking aggregates saved in a transaction."""
+    """Context-scoped collector with execution-local aggregate buffers."""
 
-    _aggregates: list[AbstractAggregateRoot]
+    _aggregates: ContextVar[tuple[AbstractAggregateRoot, ...]]
 
     def __init__(self) -> None:
-        self._aggregates = []
+        self._aggregates = ContextVar("spakky_collected_aggregates", default=())
 
     def collect(self, aggregate: AbstractAggregateRoot) -> None:
         """Track an aggregate that was saved during the transaction.
@@ -28,7 +29,7 @@ class AggregateCollector:
             >>> user = User.create(name="Alice")
             >>> collector.collect(user)
         """
-        self._aggregates.append(aggregate)
+        self._aggregates.set((*self._aggregates.get(), aggregate))
 
     def all(self) -> Sequence[AbstractAggregateRoot]:
         """Get all tracked aggregates.
@@ -48,7 +49,7 @@ class AggregateCollector:
             >>> len(aggregates)
             1
         """
-        return list(self._aggregates)
+        return list(self._aggregates.get())
 
     def clear(self) -> None:
         """Clear all tracked aggregates.
@@ -65,4 +66,4 @@ class AggregateCollector:
             >>> len(collector.get_all())
             0
         """
-        self._aggregates.clear()
+        self._aggregates.set(())
