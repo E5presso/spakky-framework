@@ -92,7 +92,7 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 - 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
 - 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
 - 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
-- 현재 Neurath 0.4.0은 task·workflow·collaboration·memory·maintenance CLI를 제공한다. 구형 MCP·`/review-pr`·`final-local-review` publisher를 호출하지 않는다. 독립 리뷰 결과는 실제 source와 committed HEAD에 결속해 기록하며, 설치에 없는 publisher나 receipt 검증을 실행한 것으로 주장하지 않는다. `.github/workflows/ai-review.yml`의 GitHub 승인 게이트는 유지한다. 이 workflow는 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다. 검증된 publisher가 없는 동안에는 사람의 GitHub review로 승인 요건을 충족한다.
+- 현재 Neurath 0.4.1은 task·workflow·collaboration·memory·maintenance CLI를 제공한다. 구형 MCP·`/review-pr`·`final-local-review` publisher를 호출하지 않는다. 독립 리뷰 결과는 실제 source와 committed HEAD에 결속해 기록하며, 설치에 없는 publisher나 receipt 검증을 실행한 것으로 주장하지 않는다. `.github/workflows/ai-review.yml`의 GitHub 승인 게이트는 유지한다. 이 workflow는 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다. 검증된 publisher가 없는 동안에는 사람의 GitHub review로 승인 요건을 충족한다.
 
 ### 코딩 규칙 정본
 

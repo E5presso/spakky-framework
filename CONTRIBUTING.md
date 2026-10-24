@@ -44,7 +44,7 @@
 ### Neurath 로컬 하네스 설치
 
 Neurath를 사용하는 에이전트 개발 환경은 저장소에 고정된 설치 스크립트로 준비합니다. 스크립트는
-공개 Neurath 0.4.0 wheel의 SHA-256과 source commit을 검증하고 공식 `distribution prepare/plan/apply`로 설치합니다.
+공개 Neurath 0.4.1 wheel의 SHA-256과 source commit을 검증하고 공식 `distribution prepare/plan/apply`로 설치합니다.
 프레임워크의 Python 3.12+ 환경과 고정 하네스 환경은 별개입니다. 같은 artifact와 관리 파일이 일치하면 읽기 검증 후 재사용합니다.
 저장소는 별도의 repo-owned agent workflow나 공급자 API를 만들지 않습니다.
 
