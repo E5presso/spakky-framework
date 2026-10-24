@@ -469,3 +469,28 @@ sw.*
 .neurath/install.json
 .neurath/*plan*.json
 # <!-- /neurath:managed -->
+
+# Neurath 0.4 generated host runtime and private restoration copies
+/.codex/neurath/
+/.claude/neurath/
+/.codex/*.before-*
+/.claude/*.before-*
+/.mcp.json.before-*
+/AGENTS.md.before-*
+/CLAUDE.md.before-*
+/.agents/skills/define-spec/SKILL.md
+/.agents/skills/implement-spec/SKILL.md
+/.claude/skills/define-spec/SKILL.md
+/.claude/skills/implement-spec/SKILL.md
+/.claude/skills/autopilot/SKILL.md
+/.claude/skills/review-spec/SKILL.md
+/.claude/skills/review-code/SKILL.md
+/.claude/skills/qa/SKILL.md
+/.claude/skills/debug/SKILL.md
+/.claude/skills/design-ui/SKILL.md
+/.claude/skills/review-ui/SKILL.md
+/.claude/skills/sync-design/SKILL.md
+/.claude/skills/sync-docs/SKILL.md
+/.claude/skills/pr-feedback/SKILL.md
+/.claude/skills/finish-session/SKILL.md
+/.claude/skills/update-neurath/SKILL.md

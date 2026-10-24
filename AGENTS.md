@@ -2,7 +2,7 @@
 
 > 코딩 스타일 → [CONTRIBUTING.md](CONTRIBUTING.md) | 아키텍처 → [ARCHITECTURE.md](ARCHITECTURE.md) | ADR → [docs/adr/](docs/adr/README.md) | 예제 → [README.md](README.md)
 
-프로젝트 코딩·도메인·테스트 규칙의 SSOT는 이 파일과 `.agents/rules/`입니다. 실행·오케스트레이션은 아래 managed Neurath 섹션과 설치된 `neurath` MCP를 사용합니다. Claude Code는 `CLAUDE.md`와 `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
+프로젝트 코딩·도메인·테스트 규칙의 SSOT는 이 파일과 `.agents/rules/`입니다. 실행·오케스트레이션은 아래 managed Neurath 섹션의 현재 host guide와 설치된 `neurath` CLI를 사용합니다. Claude Code는 `CLAUDE.md`와 `.claude/rules` symlink adapter로 같은 정본을 참조합니다.
 
 ## Overview
 
@@ -12,9 +12,9 @@
 
 ## 실행 하네스
 
-- 이슈·마일스톤·디버깅·리뷰·문서 동기화 lifecycle은 설치된 Neurath의 named MCP task tools와 native host tools로 수행한다.
+- 이슈·마일스톤·디버깅·리뷰·문서 동기화 lifecycle은 설치된 Neurath의 task/workflow CLI와 native host tools로 수행한다. 기존 task/run을 재사용하고 단순 대화에 절차를 강제하지 않는다.
 - 프로젝트는 별도의 repo-owned agent skill/workflow를 유지하지 않는다. 제품 검증 명령과 코딩 규칙은 아래 정본을 그대로 따른다.
-- 구체적인 실행 순서, 소유권, 검증, 협업 및 복구 규칙은 `.neurath/policy.md`와 아래 managed Neurath 섹션을 따른다.
+- 구체적인 실행 순서, 소유권, 검증, 협업 및 복구 규칙은 아래 managed Neurath 섹션에서 현재 host guide를 먼저 읽고 따른다. 구형 MCP·`.neurath/run`·lease 도구를 재시도하거나 과거 소유권을 현재 권한으로 승격하지 않는다.
 
 ## Documentation Maintenance Rules
 
@@ -92,7 +92,7 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 - 코드 변경이 문서와 불일치하면 관련 Markdown 동기화 누락을 지적한다. 특히 public API, 환경변수, 패키지 README, `ARCHITECTURE.md`, `CONTRIBUTING.md` 불일치를 확인한다.
 - 단순 취향, 네이밍 선호, 포맷터가 처리할 내용, 현재 PR이 만들지 않은 pre-existing 문제는 리뷰를 남기지 않는다. 단, 새 변경이 기존 문제를 활성화하거나 악화하면 지적한다.
 - 제안은 최소 수정 단위로 작성한다. 리팩터링 제안은 실제 결함을 제거하거나 중복된 위험을 줄일 때만 남긴다.
-- 현재 Neurath 0.3.1은 task·phase·evidence·delegation·lease MCP를 제공하며 구형 `/review-pr`와 `final-local-review` GitHub publisher는 제공하지 않는다. 독립 리뷰 결과는 실제 source와 committed HEAD에 결속해 기록하며, 설치에 없는 publisher나 receipt 검증을 실행한 것으로 주장하지 않는다. `.github/workflows/ai-review.yml`의 GitHub 승인 게이트는 유지한다. 이 workflow는 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다. 검증된 publisher가 없는 동안에는 사람의 GitHub review로 승인 요건을 충족한다.
+- 현재 Neurath 0.4.0은 task·workflow·collaboration·memory·maintenance CLI를 제공한다. 구형 MCP·`/review-pr`·`final-local-review` publisher를 호출하지 않는다. 독립 리뷰 결과는 실제 source와 committed HEAD에 결속해 기록하며, 설치에 없는 publisher나 receipt 검증을 실행한 것으로 주장하지 않는다. `.github/workflows/ai-review.yml`의 GitHub 승인 게이트는 유지한다. 이 workflow는 same-repo exact head와 status creator role `admin|maintain`을 재검증한 뒤에만 `github-actions[bot]` formal Approve를 남긴다. PR 코멘트는 승인 트리거가 아니며, `ai-review`는 required status check가 아니라 기존 branch protection 승인 요건을 충족하는 신호다. 검증된 publisher가 없는 동안에는 사람의 GitHub review로 승인 요건을 충족한다.
 
 ### 코딩 규칙 정본
 
@@ -117,13 +117,11 @@ Codex GitHub code review는 본 섹션을 우선 적용한다. 리뷰는 사소�
 | `pythonpath = "src/spakky/..."` | 모노레포 패키지별 테스트 경로 |
 | `BaseSettings.__init__(self)` 오버라이드 | `@Configuration` 데코레이터 호환 |
 
-<!-- neurath:managed -->
-## Neurath
+<!-- neurath:begin -->
+# Neurath host guides
 
-Use MCP server `neurath`. Read `.neurath/policy.md`.
-Inspect `session.get` and `task.list`; preserve unfinished user requirements.
-Register the requested outcome with `task.create`, then start it with `task.activate`.
-Use ordered phases and criterion-specific evidence; delegation reports need owner acceptance.
-Use `lease.acquire` and `lease.release` for writer ownership, native tools for actual execution.
-Recover with `harness_bypass(enabled=true)` when the harness malfunctions, then restore it after verification.
-<!-- /neurath:managed -->
+Read only the guide for the host running this conversation. Follow existing user/project instructions. Each guide contains that host's installed CLI, skill selection, and recovery instructions; do not use another host's wrapper or infer a new session identity.
+
+- codex: [Read the codex CLI and skills guide](<.codex/neurath/guide.md>).
+- claude: [Read the claude CLI and skills guide](<.claude/neurath/guide.md>).
+<!-- neurath:end -->

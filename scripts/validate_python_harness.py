@@ -390,30 +390,58 @@ def _path_has_symlink(root: Path, path: PurePosixPath) -> bool:
 
 
 def _neurath_installation_integrity_passes(workspace_root: Path) -> bool:
-    relative = PurePosixPath(".neurath/run")
-    command = workspace_root / ".neurath" / "run"
-    if _path_has_symlink(workspace_root, relative) or not command.is_file():
-        return False
-    try:
-        process = subprocess.run(
-            [str(command), "doctor"],
-            cwd=workspace_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-        report = json.loads(process.stdout)
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        return False
-    return (
-        process.returncode == 0
-        and isinstance(report, dict)
-        and isinstance(report.get("distribution"), dict)
-        and isinstance(report.get("placement"), dict)
-        and report["distribution"].get("status") == "passed"
-        and report["placement"].get("status") == "passed"
-    )
+    """Use current host CLI verification without retrying a historical MCP launcher."""
+    for host in (".codex", ".claude"):
+        relative = PurePosixPath(host) / "neurath" / "neurath"
+        receipt_relative = PurePosixPath(host) / "neurath" / "distribution.json"
+        command = workspace_root.joinpath(*relative.parts)
+        receipt = workspace_root.joinpath(*receipt_relative.parts)
+        if (
+            _path_has_symlink(workspace_root, relative)
+            or _path_has_symlink(workspace_root, receipt_relative)
+            or not command.is_file()
+            or not receipt.is_file()
+        ):
+            return False
+        try:
+            state = json.loads(receipt.read_text())
+            process = subprocess.run(
+                [str(command), "distribution", "verify"],
+                cwd=workspace_root,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            report = json.loads(process.stdout)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return False
+        if (
+            process.returncode != 0
+            or not isinstance(state, dict)
+            or not isinstance(report, dict)
+            or report.get("guide_matches") is not True
+        ):
+            return False
+        for field in ("package_sha256", "guide_sha256"):
+            digest = state.get(field)
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+                or report.get(field) != digest
+            ):
+                return False
+        provenance = state.get("provenance")
+        actual = report.get("provenance")
+        if (
+            not isinstance(provenance, dict)
+            or not isinstance(actual, dict)
+            or not provenance.get("source_commit")
+            or actual.get("source_commit") != provenance["source_commit"]
+        ):
+            return False
+    return True
 
 
 def validate(paths: list[Path]) -> list[HarnessViolation]:

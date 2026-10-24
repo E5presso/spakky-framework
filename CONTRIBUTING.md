@@ -44,29 +44,32 @@
 ### Neurath 로컬 하네스 설치
 
 Neurath를 사용하는 에이전트 개발 환경은 저장소에 고정된 설치 스크립트로 준비합니다. 스크립트는
-공개 Neurath 0.3.1 wheel의 SHA-256을 검증하고 프로젝트 로컬 Python 3.14 환경에 설치합니다.
-프레임워크의 Python 3.12+ 환경과 하네스 환경은 별개입니다. 같은 버전·wheel hash가 이미
-설치돼 있으면 재설치하지 않습니다. 저장소는 별도의 repo-owned agent workflow를 유지하지 않습니다.
+공개 Neurath 0.4.0 wheel의 SHA-256과 source commit을 검증하고 공식 `distribution prepare/plan/apply`로 설치합니다.
+프레임워크의 Python 3.12+ 환경과 고정 하네스 환경은 별개입니다. 같은 artifact와 관리 파일이 일치하면 읽기 검증 후 재사용합니다.
+저장소는 별도의 repo-owned agent workflow나 공급자 API를 만들지 않습니다.
 
 ```bash
-# 현재 clone에 설치하거나 동일 wheel 설치 여부 확인
 ./scripts/setup_neurath.sh
 ```
 
-설치 receipt는 `.neurath/install.json`, launcher는 `.neurath/run`, 새 DB는
-`.neurath/local/neurath.sqlite3`입니다. 설치 후 Codex의 `/hooks`에서 변경된 훅을 직접
-검토·신뢰하고 새 MCP 연결의 `session_get`으로 실행 버전과 설치 wheel hash를 확인합니다.
-설치 receipt만으로 실제 호스트 활성화를 판단하지 않습니다. MCP 서버 이름은 `neurath`이며,
-작업·근거·소유권은 `task_*`, `evidence_*`, `lease_*` 도구를 사용합니다.
+Codex·Claude의 실제 명령과 guide는 각각 `.codex/neurath/`·`.claude/neurath/`에 있으며 같은 사용자 단위
+`$XDG_DATA_HOME/neurath/core.sqlite3`(기본 `~/.local/share/neurath/core.sqlite3`)와 고정 후보를 사용합니다.
+현재 host guide의 실제 명령으로 `maintenance version`, `distribution verify`, `distribution guide`를 읽습니다.
+공유 AGENTS/CLAUDE에는 상대 guide 링크만 두며 사용자 정책·외부 MCP·기존 설정을 보존합니다.
 
-구형 `.neurath/local/runtime.sqlite3`의 이전은 설치와 별도입니다. 원본을 SQLite backup API로
-보존한 뒤 `neurath.migration.import_legacy`로 새 DB에 명시적으로 가져오고, 저장된 archive를
-`verify_archive`로 다시 읽어 검증합니다. 미완료 요구와 원래 소유 출처를 보존하며 구형 claim이나
-승인 근거를 새 권위로 바꾸지 않습니다. 구형 DB만 있는 프로젝트에서는 스크립트가 설치를 중단합니다.
+원본 modern/runtime DB는 공식 `migration inspect/prepare/read`로 보존·조회하고 실제 writer 관찰 뒤 `migration fence`로 옛 경로를 전환합니다.
+미완료 요구와 역사 소유권은 유지하며 현재 신원·권한이나 성공으로 승격하지 않습니다. 기존 공유 core를 재초기화하거나 덮어쓰지 않습니다.
+복구는 공식 `migration recover`로 새 목적지에 만들며 이미 기록된 다른 프로젝트 자료도 보존합니다.
 
-runtime launcher, MCP 설정, 설치·실행 이력과 백업은 로컬 상태이므로 Git에 추적하지 않습니다.
-`.neurath/project.json`은 프로젝트 문서 경로와 검증 명령의 portable binding입니다.
-설치 스크립트는 훅 신뢰를 자동 승인하거나 우회하지 않습니다.
+설치기는 존재하지 않는 예제 설정을 복사해 native allow-list·모델·신뢰를 자동 변경하지 않습니다.
+파일 적용, 실제 CLI 호출, guide 읽기와 호스트 신뢰·dispatch·모델 전달은 별도 확인입니다.
+설치 receipt만으로 native 활성화를 주장하지 않으며 앱 재시작·우회·신원 조작을 하지 않습니다.
+구형 MCP·`.neurath/run`·`configure`·`doctor`·lease 호출을 현재 사용법으로 다시 시도하지 않습니다.
+
+Host private runtime/guide·builtin SKILL·설정 백업은 Git에 추적하지 않습니다.
+`.neurath/project.json`의 프로젝트 문서·검증 binding은 유지합니다. Python harness의 기존 코딩·레이어 검사는 그대로이며,
+공급자 무결성 확인에 필요한 부분만 공식 `distribution verify` 결과를 재사용합니다.
+Graphify와 native finish-session은 실제 후속 실행 결과로 따로 확인합니다.
 
 ### 하위 프로젝트 독립 열기
 

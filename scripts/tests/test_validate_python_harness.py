@@ -45,30 +45,80 @@ def _owned_state(root: Path, relative: str, content: bytes) -> None:
     path.write_text(json.dumps(state))
 
 
-def test_installation_integrity_uses_project_local_launcher(tmp_path: Path) -> None:
-    root = _workspace(tmp_path)
-    launcher = root / ".neurath" / "run"
-    launcher.parent.mkdir()
-    launcher.write_text(
-        "#!/bin/sh\n"
-        'printf \'%s\\n\' \'{"distribution":{"status":"passed"},'
-        '"placement":{"status":"passed"}}\'\n'
-    )
-    launcher.chmod(0o755)
+def _current_cli_installation(root: Path) -> None:
+    """Create two local CLI fixtures that expose only official verification JSON."""
+    state = {
+        "version": "0.4.0",
+        "wheel_sha256": "a" * 64,
+        "package_sha256": "b" * 64,
+        "guide_sha256": "c" * 64,
+        "provenance": {"source_commit": "d" * 40},
+    }
+    report = {
+        "guide_matches": True,
+        "package_sha256": state["package_sha256"],
+        "guide_sha256": state["guide_sha256"],
+        "provenance": state["provenance"],
+    }
+    for host in (".codex", ".claude"):
+        directory = root / host / "neurath"
+        directory.mkdir(parents=True)
+        (directory / "distribution.json").write_text(json.dumps(state))
+        launcher = directory / "neurath"
+        launcher.write_text(
+            '#!/bin/sh\n[ "$*" = "distribution verify" ] || exit 2\nprintf \'%s\\n\' \''
+            + json.dumps(report)
+            + "'\n"
+        )
+        launcher.chmod(0o755)
 
+
+def test_installation_integrity_current_cli_expect_verified_artifacts(
+    tmp_path: Path,
+) -> None:
+    """Both current host CLIs must match their exact installed artifacts."""
+    root = _workspace(tmp_path)
+    _current_cli_installation(root)
     assert VALIDATOR._neurath_installation_integrity_passes(root)
 
 
-def test_installation_integrity_rejects_symlinked_launcher(tmp_path: Path) -> None:
+def test_installation_integrity_symlinked_cli_expect_rejection(tmp_path: Path) -> None:
+    """An external launcher cannot claim the local installed CLI boundary."""
     root = _workspace(tmp_path)
+    _current_cli_installation(root)
+    launcher = root / ".codex/neurath/neurath"
     external = tmp_path / "external-neurath"
-    external.write_text("#!/bin/sh\nexit 0\n")
-    external.chmod(0o755)
-    launcher = root / ".neurath" / "run"
-    launcher.parent.mkdir()
+    launcher.rename(external)
     launcher.symlink_to(external)
-
     assert not VALIDATOR._neurath_installation_integrity_passes(root)
+
+
+def test_installation_integrity_changed_artifact_expect_rejection(
+    tmp_path: Path,
+) -> None:
+    """A matching version alone cannot hide different package content."""
+    root = _workspace(tmp_path)
+    _current_cli_installation(root)
+    path = root / ".claude/neurath/distribution.json"
+    state = json.loads(path.read_text())
+    state["package_sha256"] = "f" * 64
+    path.write_text(json.dumps(state))
+    assert not VALIDATOR._neurath_installation_integrity_passes(root)
+
+
+def test_installation_integrity_missing_host_expect_no_legacy_retry(
+    tmp_path: Path,
+) -> None:
+    """A missing current installation never retries the retained old run path."""
+    root = _workspace(tmp_path)
+    _current_cli_installation(root)
+    (root / ".claude/neurath/neurath").unlink()
+    legacy = root / ".neurath/run"
+    legacy.parent.mkdir()
+    legacy.write_text("#!/bin/sh\ntouch legacy-executed\n")
+    legacy.chmod(0o755)
+    assert not VALIDATOR._neurath_installation_integrity_passes(root)
+    assert not (root / "legacy-executed").exists()
 
 
 def test_shared_sqlite_projection_requires_matching_root_and_digest(
