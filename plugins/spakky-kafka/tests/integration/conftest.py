@@ -27,7 +27,9 @@ def port_fixture() -> int:
 def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]:
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test"
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = f"localhost:{port}"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = environ.get(
+        "SPAKKY_TEST_KAFKA_BOOTSTRAP_SERVERS", f"localhost:{port}"
+    )
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}AUTO_OFFSET_RESET"] = (
         AutoOffsetResetType.EARLIEST.value
     )
@@ -39,6 +41,9 @@ def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]
 def kafka_container(
     port: int, environment_variables: None
 ) -> Generator[None, None, None]:
+    if environ.get("SPAKKY_TEST_KAFKA_BOOTSTRAP_SERVERS"):
+        yield
+        return
     bootstrap_servers = environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"]
 
     container = (

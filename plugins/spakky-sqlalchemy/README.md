@@ -39,6 +39,7 @@ export SPAKKY_SQLALCHEMY__POOL_MAX_OVERFLOW="10"
 export SPAKKY_SQLALCHEMY__POOL_TIMEOUT="30.0"
 export SPAKKY_SQLALCHEMY__POOL_RECYCLE="-1"
 export SPAKKY_SQLALCHEMY__POOL_PRE_PING="false"
+export SPAKKY_SQLALCHEMY__ASYNC_POOL_MODE="queue" # queue(default) 또는 null
 
 # Session option(선택)
 export SPAKKY_SQLALCHEMY__SESSION_AUTOFLUSH="true"
@@ -373,3 +374,28 @@ MIT License
 ### 컨텍스트별 세션 수명
 
 SessionManager와 AsyncSessionManager는 현재 ApplicationContext ID의 scoped session을 사용합니다. 다른 컨텍스트의 open/close가 원래 컨텍스트의 세션을 덮어쓰거나 종료하지 않습니다. 각 작업은 트랜잭션 경계에서 세션을 열고 닫으며, 열린 세션이 없을 때 session 접근은 SessionNotInitializedError를 발생시킵니다.
+
+## 여러 event loop에서 비동기 엔진 사용
+
+HTTP와 ApplicationContext background service처럼 같은 `AsyncConnectionManager`를
+서로 다른 event loop가 사용하면 `SPAKKY_SQLALCHEMY__ASYNC_POOL_MODE=null`을
+설정합니다. SQLAlchemy `NullPool`은 checkout마다 연결을 만들고 반환 시 닫으므로
+loop에 귀속된 연결과 asyncio queue를 공유하지 않습니다. 기본 `queue` 모드는
+단일 loop용 기존 bounded pool 동작을 유지합니다. `null` 모드에서는
+`POOL_SIZE`, `POOL_MAX_OVERFLOW`, `POOL_TIMEOUT`이 비동기 엔진에 적용되지 않습니다.
+동시 연결 상한은 서버 또는 외부 pooler에서 제한하고, 연결 생성 비용을 고려해야 합니다.
+동기 `ConnectionManager`의 pool 설정은 변경되지 않습니다.
+
+`null` 모드의 `AsyncConnectionManager`는 framework service 시작 때 한 번 연결해
+SQLAlchemy dialect의 최초 연결 초기화를 마칩니다. 이 초기화도 asyncio lock을
+사용하므로 여러 loop에서 첫 연결을 동시에 시작하기 전에 끝나야 합니다. 직접 manager를
+구성하는 코드도 `await manager.start_async()`를 먼저 호출합니다. 종료 hook은 NullPool을
+정리합니다. 기본 `queue` 모드는 기존처럼 실제 사용 loop에서 `dispose()`를 호출합니다.
+
+### 별도 동기 driver URL
+
+`SPAKKY_SQLALCHEMY__SYNC_CONNECTION_STRING`은 `ConnectionManager`에만 적용하는
+선택 설정입니다. 생략하면 기존 `CONNECTION_STRING`을 그대로 사용합니다. PostgreSQL
+`postgresql+psycopg`처럼 하나의 driver가 양쪽 실행 모드를 지원하면 추가 설정이 필요
+없습니다. SQLite에서는 base URL을 `sqlite+aiosqlite:///...`, sync URL을 같은 파일의
+`sqlite+pysqlite:///...`로 지정해 async 업무와 sync runner/relay를 함께 사용할 수 있습니다.

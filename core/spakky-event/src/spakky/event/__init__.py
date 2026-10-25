@@ -14,6 +14,8 @@ from spakky.event.error import (
     AuthSnapshotPropagationContextUnavailableError,
     AuthSnapshotPropagationSignerUnavailableError,
     EventDeliveryRejectedError,
+    EventDeferredError,
+    InvalidEventDeferralError,
     EventTransportNotRunningError,
     InvalidMessageError,
 )
@@ -79,6 +81,8 @@ __all__ = [
     "AuthSnapshotPropagationContextUnavailableError",
     "AuthSnapshotPropagationSignerUnavailableError",
     "EventDeliveryRejectedError",
+    "EventDeferredError",
+    "InvalidEventDeferralError",
     "EventTransportNotRunningError",
     "InvalidMessageError",
 ]

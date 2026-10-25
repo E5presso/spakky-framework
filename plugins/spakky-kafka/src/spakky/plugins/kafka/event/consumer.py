@@ -1,5 +1,6 @@
 from asyncio import wait_for
 from enum import StrEnum
+from time import monotonic
 from logging import getLogger
 from typing import Any, cast
 
@@ -27,6 +28,7 @@ from spakky.core.service.background import (
     AbstractBackgroundService,
 )
 from spakky.domain.models.event import AbstractEvent
+from spakky.event.error import EventDeferredError
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
@@ -98,6 +100,7 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         self.type_lookup = {}
         self.type_adapters = {}
         self.handlers = {}
+        self._deferred: dict[tuple[str, int], tuple[TopicPartition, float]] = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
         self.admin = AdminClient(self.config.connection_configuration_dict)
@@ -338,6 +341,8 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             try:
                 self._invoke_handlers(event_type, event_data, headers)
                 return MessageOutcome.PROCESSED
+            except EventDeferredError:
+                raise
             except (
                 AuthVerificationProviderUnavailableError,
                 AuthRequirementProviderUnavailableError,
@@ -372,6 +377,10 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
         ):
             logger.warning("Received message with no topic, partition or offset.")
             return
+        if (topic, partition) in self._deferred:
+            # A prefetched record can arrive after pause. The saved rewind offset
+            # remains authoritative, so never dispatch or commit past it.
+            return
         event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
             logger.warning(f"Received message for unknown event type: {topic}")
@@ -391,9 +400,52 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
                     MessageOutcome.RETRYABLE
                 ):  # pragma: no branch - 전수 분기, 미매치 불가
                     self._rewind_to(TopicPartition(topic, partition, offset))
+        except EventDeferredError as error:
+            self._defer(TopicPartition(topic, partition, offset), error.retry_after)
         finally:
             if self._propagator is not None:
                 TraceContext.clear()
+
+    def _clear_deferred(
+        self, consumer: Consumer, partitions: list[TopicPartition]
+    ) -> None:
+        """Forget local timers on assignment, revocation or lost ownership.
+
+        librdkafka retains its default assignment handling; this callback does
+        not commit, assign or unassign. A new owner starts at the broker offset.
+        """
+        for position in partitions:
+            self._deferred.pop((position.topic, position.partition), None)
+
+    def _defer(self, position: TopicPartition, delay: float) -> None:
+        """Fence this partition before trying to pause and rewind it."""
+        self._deferred[(position.topic, position.partition)] = (
+            position,
+            monotonic() + delay,
+        )
+        try:
+            self.consumer.pause([position])
+            self.consumer.seek(position)
+        except KafkaException as error:
+            # Keep the fence even if ownership is changing. Poll delivers the
+            # rebalance callback; a due retry rechecks seek before resuming.
+            logger.warning("Cannot pause deferred partition %s: %s", position, error)
+
+    def _resume_deferred(self) -> None:
+        """Retry due partitions without sleeping in a handler or blocking poll."""
+        now = monotonic()
+        for key, (position, deadline) in list(self._deferred.items()):
+            if deadline > now:
+                continue
+            try:
+                self.consumer.seek(position)
+                self.consumer.resume([position])
+            except KafkaException as error:
+                logger.warning(
+                    "Cannot resume deferred partition %s: %s", position, error
+                )
+                continue
+            del self._deferred[key]
 
     @override
     def register[EventT_contra: AbstractEvent](
@@ -421,16 +473,23 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             topics=topics
             + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
         )
-        self.consumer.subscribe(topics=topics)
+        if topics:
+            self.consumer.subscribe(
+                topics=topics,
+                on_assign=self._clear_deferred,
+                on_revoke=self._clear_deferred,
+                on_lost=self._clear_deferred,
+            )
 
     @override
     def run(self) -> None:
         """Poll Kafka for messages and route them to registered handlers."""
         while not self._stop_event.is_set():
+            self._resume_deferred()
             message: Message | None = self.consumer.poll(
                 timeout=self.config.poll_timeout
             )
-            if message is None:
+            if message is None or self._stop_event.is_set():
                 continue
             self._route_event_handler(message)
 
@@ -468,6 +527,7 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         self.type_lookup = {}
         self.type_adapters = {}
         self.handlers = {}
+        self._deferred: dict[tuple[str, int], tuple[TopicPartition, float]] = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
         self.admin = AdminClient(self.config.connection_configuration_dict)
@@ -700,6 +760,8 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             try:
                 await self._invoke_handlers(event_type, event_data, headers)
                 return MessageOutcome.PROCESSED
+            except EventDeferredError:
+                raise
             except (
                 AuthVerificationProviderUnavailableError,
                 AuthRequirementProviderUnavailableError,
@@ -736,6 +798,10 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
         ):
             logger.warning("Received message with no topic, partition or offset.")
             return
+        if (topic, partition) in self._deferred:
+            # A prefetched record can arrive after pause. The saved rewind offset
+            # remains authoritative, so never dispatch or commit past it.
+            return
         event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
         if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
             logger.warning(f"Received message for unknown event type: {topic}")
@@ -757,9 +823,54 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
                     MessageOutcome.RETRYABLE
                 ):  # pragma: no branch - 전수 분기, 미매치 불가
                     await self._rewind_to(TopicPartition(topic, partition, offset))
+        except EventDeferredError as error:
+            await self._defer(
+                TopicPartition(topic, partition, offset), error.retry_after
+            )
         finally:
             if self._propagator is not None:
                 TraceContext.clear()
+
+    async def _clear_deferred(
+        self, consumer: AIOConsumer, partitions: list[TopicPartition]
+    ) -> None:
+        """Forget local timers on assignment, revocation or lost ownership.
+
+        librdkafka retains its default assignment handling; this callback does
+        not commit, assign or unassign. A new owner starts at the broker offset.
+        """
+        for position in partitions:
+            self._deferred.pop((position.topic, position.partition), None)
+
+    async def _defer(self, position: TopicPartition, delay: float) -> None:
+        """Fence this partition before trying to pause and rewind it."""
+        self._deferred[(position.topic, position.partition)] = (
+            position,
+            monotonic() + delay,
+        )
+        try:
+            await self.consumer.pause([position])
+            await self.consumer.seek(position)
+        except KafkaException as error:
+            # Keep the fence even if ownership is changing. Poll delivers the
+            # rebalance callback; a due retry rechecks seek before resuming.
+            logger.warning("Cannot pause deferred partition %s: %s", position, error)
+
+    async def _resume_deferred(self) -> None:
+        """Retry due partitions without sleeping in a handler or blocking poll."""
+        now = monotonic()
+        for key, (position, deadline) in list(self._deferred.items()):
+            if deadline > now:
+                continue
+            try:
+                await self.consumer.seek(position)
+                await self.consumer.resume([position])
+            except KafkaException as error:
+                logger.warning(
+                    "Cannot resume deferred partition %s: %s", position, error
+                )
+                continue
+            del self._deferred[key]
 
     @override
     def register[EventT_contra: AbstractEvent](
@@ -791,16 +902,23 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             topics=topics
             + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
         )
-        await self.consumer.subscribe(topics=topics)
+        if topics:
+            await self.consumer.subscribe(
+                topics=topics,
+                on_assign=self._clear_deferred,
+                on_revoke=self._clear_deferred,
+                on_lost=self._clear_deferred,
+            )
 
     @override
     async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
         """Poll Kafka asynchronously for messages and route them to handlers."""
         while not self._stop_event.is_set():
+            await self._resume_deferred()
             message: Message | None = await self.consumer.poll(
                 timeout=self.config.poll_timeout
             )
-            if message is None:
+            if message is None or self._stop_event.is_set():
                 continue
             await self._route_event_handler(message)
 

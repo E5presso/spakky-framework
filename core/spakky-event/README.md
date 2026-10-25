@@ -235,3 +235,22 @@ MIT License
 Domain Event만 사용하는 앱은 외부 transport 없이 기동할 수 있습니다. Integration Event를 발행할 때는 실제 transport 플러그인이 필요하며, 없으면 `IntegrationEventTransportUnavailableError`가 발생합니다.
 
 트랜잭션 이벤트 Aspect는 커밋과 세션 정리가 끝난 뒤 이벤트를 발행합니다. 발행할 배치와 collector를 먼저 분리하므로 핸들러가 새 `@transactional` 유스케이스를 호출해도 부모 이벤트를 재발행하지 않습니다. 커밋 실패 시 이벤트는 발행하지 않습니다. 인프로세스 이벤트는 영속 메시지 큐를 대신하지 않습니다.
+
+### Transport 플러그인과 handler 등록
+
+core의 `EventHandlerRegistrationPostProcessor`는 domain event handler를 자신의
+`EventMediator`/`AsyncEventMediator`에 등록합니다. Kafka 등의 transport consumer가
+같은 컨테이너에 있어도 generic consumer 포트의 구현 후보와 충돌하지 않으며,
+integration handler의 등록은 해당 transport 플러그인의 post-processor가 소유합니다.
+
+### 소비 유예 계약
+
+`from spakky.event import EventDeferredError`로 효과를 만들기 전의 일시적 처리 유예를
+표현합니다. `EventDeferredError(retry_after=1.0)`의 지연은 유한한 양수 초이며 잘못된
+값은 `InvalidEventDeferralError`입니다. handler의 트랜잭션은 예외가 consumer에
+도달하기 전에 rollback되어야 합니다. 앞서 실행된 handler는 멱등이어야 합니다.
+
+지원하는 broker consumer는 이를 업무 실패/DLT와 구분하고 commit 없이 재전달합니다.
+현재 Kafka plugin은 partition pause/rewind와 지속적인 poll로 이 계약을 구현합니다.
+직접 in-process event dispatch는 broker 재전달을 만들지 않고 호출자에게 예외를
+전파합니다. 유예가 이미 시작한 handler의 장기 작업을 취소하는 기능은 아닙니다.
