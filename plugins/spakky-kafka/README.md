@@ -296,3 +296,29 @@ handler를 등록합니다. core event post-processor의 `EventMediator`와 동�
 존재해도 generic `IEventConsumer` 선택이 충돌하지 않으며, domain event는 계속
 in-process mediator에서 처리합니다. 애플리케이션이 generic consumer를 Kafka로
 전역 바인딩해 domain event를 broker로 넘기는 우회는 필요하지 않습니다.
+
+### 일시적인 소비 유예
+
+외부 유지보수 fence처럼 아직 처리하면 안 되는 상태는 handler 실패와 구분할 수 있습니다.
+효과를 만들기 전에 (또는 트랜잭션이 rollback되도록) `spakky.event.EventDeferredError`
+를 발생시키면 Kafka consumer는 해당 partition을 원래 offset으로 되돌리고 잠시 멈춥니다.
+`retry_after`는 초 단위의 유한한 양수이며 기본값은 `1.0`입니다.
+
+```python
+from spakky.event import EventDeferredError
+
+if maintenance_pending:
+    raise EventDeferredError(retry_after=1.0)
+```
+
+유예는 handler 실패 재시도 예산이나 DLT를 사용하지 않고 offset을 commit하지 않습니다.
+다른 partition과 rebalance callback을 위한 poll은 계속됩니다. 재시도 시 원래 offset을
+다시 확인하며, revoke/lost/새 assignment에는 이전 소유자의 timer를 버립니다. 종료는
+유예 만료나 외부 fence 해제를 기다리지 않으므로 다음 consumer가 미확인 offset부터
+재전달받습니다. 이미 실행된 다른 handler는 다시 실행될 수 있어 멱등이어야 합니다.
+이 계약은 handler 내부의 긴 작업이나 무한 대기를 중단시키지는 않습니다. 그런 작업을
+유예로 표현하려면 먼저 반환/rollback해야 합니다.
+
+실제 Kafka 회귀는 poll 제한을 6초로 낮추고 35초 이상 유예하는 동안 독립 partition,
+재할당, 종료, 재시작 후 원래 순서의 전달과 commit을 검사합니다. 기존 broker를 사용하는
+경우 테스트 전용 `SPAKKY_TEST_KAFKA_BOOTSTRAP_SERVERS`를 지정할 수 있습니다.

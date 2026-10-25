@@ -1,4 +1,5 @@
 from abc import ABC
+from math import isfinite
 
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
@@ -68,4 +69,29 @@ class UnknownEventTypeError(AbstractSpakkyEventError):
 
     def __init__(self, event_type: type) -> None:
         self.event_type = event_type
+        super().__init__()
+
+
+class InvalidEventDeferralError(AbstractSpakkyEventError):
+    """Raised when a deferral delay is not finite and strictly positive."""
+
+    message = "Event deferral requires a finite positive retry delay"
+
+
+class EventDeferredError(AbstractSpakkyEventError):
+    """Defer delivery without counting a handler failure or acknowledging it.
+
+    Raise before effects, or let a transaction roll back before this reaches the
+    consumer. Earlier handlers may run again and must remain idempotent. Broker
+    consumers supporting deferral retry after the delay while continuing to poll.
+    Direct in-process dispatch propagates the error to its caller.
+    """
+
+    message = "Event delivery is temporarily deferred"
+    retry_after: float
+
+    def __init__(self, retry_after: float = 1.0) -> None:
+        if not isfinite(retry_after) or retry_after <= 0:
+            raise InvalidEventDeferralError()
+        self.retry_after = retry_after
         super().__init__()
