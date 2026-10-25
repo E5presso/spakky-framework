@@ -10,9 +10,9 @@ from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.domain.models.event import AbstractDomainEvent, AbstractEvent
 
-from spakky.event.event_consumer import (
-    IAsyncEventConsumer,
-    IEventConsumer,
+from spakky.event.mediator.domain_event_mediator import (
+    AsyncEventMediator,
+    EventMediator,
 )
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 
@@ -38,8 +38,8 @@ class EventHandlerRegistrationPostProcessor(IPostProcessor, IContainerAware):
         if not EventHandler.exists(pod_type):
             return pod
 
-        sync_consumer = self.__container.get(IEventConsumer)
-        async_consumer = self.__container.get(IAsyncEventConsumer)
+        sync_consumer = self.__container.get(EventMediator)
+        async_consumer = self.__container.get(AsyncEventMediator)
 
         for name, method in getmembers(pod, predicate=ismethod):
             route = EventRoute[AbstractEvent].get_or_none(method)

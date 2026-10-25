@@ -32,6 +32,41 @@ from spakky.plugins.kafka.event.consumer import (
 )
 
 
+def test_sync_consumer_without_handlers_expect_no_empty_subscription(
+    config: KafkaConnectionConfig,
+) -> None:
+    """발행 전용 또는 async 전용 앱의 빈 동기 소비자는 잘못된 구독을 만들지 않는다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer") as inner,
+        patch("spakky.plugins.kafka.event.consumer.Producer"),
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+    ):
+        consumer = KafkaEventConsumer(config)
+        consumer.initialize()
+        inner.return_value.subscribe.assert_not_called()
+        consumer.dispose()
+        inner.return_value.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_without_handlers_expect_no_empty_subscription(
+    config: KafkaConnectionConfig,
+) -> None:
+    """발행 전용 또는 sync 전용 앱의 빈 비동기 소비자도 정상 종료할 수 있다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.AIOConsumer") as inner,
+        patch("spakky.plugins.kafka.event.consumer.AIOKafkaProducer") as producer,
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+    ):
+        inner.return_value = AsyncMock()
+        producer.return_value = AsyncMock()
+        consumer = AsyncKafkaEventConsumer(config)
+        await consumer.initialize_async()
+        inner.return_value.subscribe.assert_not_awaited()
+        await consumer.dispose_async()
+        inner.return_value.close.assert_awaited_once()
+
+
 @immutable
 class SampleEvent(AbstractIntegrationEvent):
     """Test integration event."""

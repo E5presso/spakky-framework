@@ -5,6 +5,9 @@ including environment variable loading and configuration dictionary generation.
 """
 
 from os import environ
+from ssl import CERT_REQUIRED, SSLContext, SSLError
+from unittest.mock import MagicMock, patch
+from pathlib import Path
 from typing import Any
 from collections.abc import Generator
 
@@ -29,6 +32,9 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_MECHANISM",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_USERNAME",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SASL_PASSWORD",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SSL_CA_LOCATION",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SSL_CERTIFICATE_LOCATION",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SSL_KEY_LOCATION",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}NUMBER_OF_PARTITIONS",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}REPLICATION_FACTOR",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}AUTO_OFFSET_RESET",
@@ -197,7 +203,12 @@ def test_kafka_config_async_producer_configuration_dict_with_sasl(
 
     config = KafkaConnectionConfig()
 
-    assert config.async_producer_configuration_dict == {
+    result = config.async_producer_configuration_dict
+    context = result.pop("ssl_context")
+    assert isinstance(context, SSLContext)
+    assert context.check_hostname
+    assert context.verify_mode == CERT_REQUIRED
+    assert result == {
         "bootstrap_servers": "secure:9093",
         "client_id": "secure-client",
         "enable_idempotence": True,
@@ -312,3 +323,81 @@ def test_auto_offset_reset_enum_values() -> None:
     assert AutoOffsetResetType.EARLIEST.value == "earliest"
     assert AutoOffsetResetType.LATEST.value == "latest"
     assert AutoOffsetResetType.NONE.value == "none"
+
+
+def test_tls_configuration_expect_both_client_backends_use_ca_and_identity(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """librdkafka와 aiokafka 모두 같은 CA·인증서·키를 사용하며 서버 검증을 유지한다."""
+    for key, value in {
+        "GROUP_ID": "tls",
+        "CLIENT_ID": "tls",
+        "BOOTSTRAP_SERVERS": "broker:9093",
+        "SECURITY_PROTOCOL": "SSL",
+        "SSL_CA_LOCATION": "/tls/ca.crt",
+        "SSL_CERTIFICATE_LOCATION": "/tls/user.crt",
+        "SSL_KEY_LOCATION": "/tls/user.key",
+    }.items():
+        monkeypatch.setenv(SPAKKY_KAFKA_CONFIG_ENV_PREFIX + key, value)
+    config = KafkaConnectionConfig()
+    native = config.connection_configuration_dict
+    assert native["ssl.ca.location"] == "/tls/ca.crt"
+    assert native["ssl.certificate.location"] == "/tls/user.crt"
+    assert native["ssl.key.location"] == "/tls/user.key"
+    context = MagicMock(spec=SSLContext)
+    with patch(
+        "spakky.plugins.kafka.common.config.create_default_context",
+        return_value=context,
+    ) as create:
+        assert config.async_producer_configuration_dict["ssl_context"] is context
+    create.assert_called_once_with(cafile="/tls/ca.crt")
+    context.load_cert_chain.assert_called_once_with(
+        certfile="/tls/user.crt", keyfile="/tls/user.key"
+    )
+
+
+@pytest.mark.parametrize(
+    "certificate,key,protocol",
+    [("cert", "", "SSL"), ("", "key", "SSL"), ("cert", "key", "PLAINTEXT")],
+)
+def test_tls_partial_or_plaintext_configuration_expect_rejected(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    certificate: str,
+    key: str,
+    protocol: str,
+) -> None:
+    """불완전한 client 자격증명과 plaintext로의 잘못된 전환은 설정 단계에서 거부한다."""
+    for name, value in {
+        "GROUP_ID": "tls",
+        "CLIENT_ID": "tls",
+        "BOOTSTRAP_SERVERS": "broker:9093",
+        "SECURITY_PROTOCOL": protocol,
+        "SSL_CERTIFICATE_LOCATION": certificate,
+        "SSL_KEY_LOCATION": key,
+    }.items():
+        monkeypatch.setenv(SPAKKY_KAFKA_CONFIG_ENV_PREFIX + name, value)
+    with pytest.raises(ValidationError):
+        KafkaConnectionConfig()
+
+
+def test_tls_invalid_ca_expect_no_plaintext_fallback(
+    clean_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """잘못된 CA 파일은 SSL context 구성을 실패시키고 암호화를 끄지 않는다."""
+    path = tmp_path / "invalid-ca.pem"
+    path.write_text("not a certificate")
+    for name, value in {
+        "GROUP_ID": "tls",
+        "CLIENT_ID": "tls",
+        "BOOTSTRAP_SERVERS": "broker:9093",
+        "SECURITY_PROTOCOL": "SSL",
+        "SSL_CA_LOCATION": str(path),
+    }.items():
+        monkeypatch.setenv(SPAKKY_KAFKA_CONFIG_ENV_PREFIX + name, value)
+    config = KafkaConnectionConfig()
+    with pytest.raises(SSLError, match="certificate"):
+        _ = config.async_producer_configuration_dict

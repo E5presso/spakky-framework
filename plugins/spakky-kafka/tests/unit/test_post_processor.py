@@ -4,7 +4,7 @@ Tests that the Kafka PostProcessor only registers IntegrationEvent handlers
 and correctly ignores DomainEvent handlers.
 """
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from typing import override
 
@@ -31,6 +31,10 @@ from spakky.event.event_consumer import (
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 from spakky.plugins.kafka.post_processor import KafkaPostProcessor
+from spakky.plugins.kafka.event.consumer import (
+    AsyncKafkaEventConsumer,
+    KafkaEventConsumer,
+)
 
 
 class RecordingSnapshotVerifier(IAuthContextSnapshotVerifier):
@@ -78,9 +82,9 @@ def test_kafka_post_processor_registers_integration_event_expect_success() -> No
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -119,9 +123,9 @@ def test_kafka_post_processor_registers_async_integration_event_expect_success()
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -163,9 +167,9 @@ def test_kafka_post_processor_ignores_domain_event_expect_no_registration() -> N
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -205,9 +209,9 @@ def test_kafka_post_processor_mixed_events_expect_only_integration_registered() 
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -253,9 +257,9 @@ def test_kafka_post_processor_sync_endpoint_invocation_expect_handler_called() -
     mock_container = Mock()
 
     def get_mock(t: type) -> object:
-        if t == IEventConsumer:
+        if t == KafkaEventConsumer:
             return mock_consumer
-        if t == IAsyncEventConsumer:
+        if t == AsyncKafkaEventConsumer:
             return mock_async_consumer
         if t is type(handler_instance):
             return handler_instance
@@ -318,9 +322,9 @@ def test_kafka_post_processor_seeds_auth_after_context_clear() -> None:
     mock_container = Mock()
 
     def get_mock(t: type) -> object:
-        if t == IEventConsumer:
+        if t == KafkaEventConsumer:
             return mock_consumer
-        if t == IAsyncEventConsumer:
+        if t == AsyncKafkaEventConsumer:
             return mock_async_consumer
         if t is type(handler_instance):
             return handler_instance
@@ -367,9 +371,9 @@ def test_kafka_post_processor_protected_missing_snapshot_skips_handler() -> None
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else handler_instance
         if t is type(handler_instance)
         else None
@@ -415,9 +419,9 @@ async def test_kafka_post_processor_async_protected_missing_snapshot_skips_handl
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else handler_instance
         if t is type(handler_instance)
         else None
@@ -464,9 +468,9 @@ async def test_kafka_post_processor_async_endpoint_invocation_expect_handler_cal
     mock_container = Mock()
 
     def get_mock(t: type) -> object:
-        if t == IEventConsumer:
+        if t == KafkaEventConsumer:
             return mock_consumer
-        if t == IAsyncEventConsumer:
+        if t == AsyncKafkaEventConsumer:
             return mock_async_consumer
         if t is type(handler_instance):
             return handler_instance
@@ -518,9 +522,9 @@ def test_kafka_post_processor_non_event_handler_class_expect_early_return() -> N
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -561,9 +565,9 @@ def test_kafka_post_processor_handler_with_non_decorated_method_expect_skip() ->
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -607,9 +611,9 @@ def test_kafka_post_processor_with_tracing_available_expect_propagator_injected(
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -641,9 +645,9 @@ def test_kafka_post_processor_without_tracing_expect_no_propagator_injected() ->
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -678,9 +682,9 @@ def test_kafka_post_processor_with_tracing_but_no_set_propagator_expect_skipped(
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == KafkaEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncKafkaEventConsumer
         else None
     )
 
@@ -696,3 +700,67 @@ def test_kafka_post_processor_with_tracing_but_no_set_propagator_expect_skipped(
 
     assert not hasattr(mock_consumer, "set_propagator")
     assert not hasattr(mock_async_consumer, "set_propagator")
+
+
+@pytest.mark.asyncio
+async def test_combined_domain_and_kafka_handlers_expect_independent_native_routes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """동일 컨테이너의 domain·integration handler는 모호한 generic consumer 없이 분리된다."""
+    from spakky.event.mediator.domain_event_mediator import (
+        EventMediator,
+        AsyncEventMediator,
+    )
+    from spakky.event.post_processor import EventHandlerRegistrationPostProcessor
+    from spakky.plugins.kafka.common.config import KafkaConnectionConfig
+
+    for name, value in {
+        "GROUP_ID": "routing",
+        "CLIENT_ID": "routing",
+        "BOOTSTRAP_SERVERS": "localhost:9092",
+    }.items():
+        monkeypatch.setenv("SPAKKY_KAFKA__" + name, value)
+    seen: list[str] = []
+
+    @EventHandler()
+    class MixedHandler:
+        @on_event(SampleDomainEvent)
+        def domain(self, event: SampleDomainEvent) -> None:
+            seen.append("domain:" + event.message)
+
+        @on_event(SampleIntegrationEvent)
+        async def integration(self, event: SampleIntegrationEvent) -> None:
+            seen.append("integration:" + event.message)
+
+    context = ApplicationContext()
+    for pod in (
+        EventMediator,
+        AsyncEventMediator,
+        KafkaConnectionConfig,
+        KafkaEventConsumer,
+        AsyncKafkaEventConsumer,
+        EventHandlerRegistrationPostProcessor,
+        KafkaPostProcessor,
+        MixedHandler,
+    ):
+        context.add(pod)
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer"),
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+        patch.object(KafkaEventConsumer, "start"),
+        patch.object(KafkaEventConsumer, "stop"),
+        patch.object(AsyncKafkaEventConsumer, "start_async", new_callable=AsyncMock),
+        patch.object(AsyncKafkaEventConsumer, "stop_async", new_callable=AsyncMock),
+    ):
+        context.start()
+        try:
+            context.get(EventMediator).dispatch(SampleDomainEvent(message="local"))
+            kafka = context.get(AsyncKafkaEventConsumer)
+            assert SampleDomainEvent not in kafka.handlers
+            assert len(kafka.handlers[SampleIntegrationEvent]) == 1
+            await kafka.handlers[SampleIntegrationEvent][0](
+                SampleIntegrationEvent(message="remote")
+            )
+            assert seen == ["domain:local", "integration:remote"]
+        finally:
+            context.stop()

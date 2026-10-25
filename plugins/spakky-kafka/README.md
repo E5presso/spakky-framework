@@ -264,3 +264,35 @@ uv run pytest
 ## 라이선스
 
 MIT License
+
+### 구독 핸들러가 없는 실행 모드
+
+플러그인은 동기·비동기 소비자를 함께 등록합니다. 한쪽에 등록된 핸들러가 없으면
+빈 topic 목록을 Kafka에 구독하지 않습니다. 따라서 발행 전용, 동기 전용, 비동기 전용
+애플리케이션도 기본 플러그인의 시작·종료 수명을 그대로 사용할 수 있습니다.
+
+### TLS 신뢰 및 client 인증서
+
+자체 CA와 TLS client 인증서를 쓰는 listener에는 다음 파일 설정을 사용합니다.
+
+```bash
+export SPAKKY_KAFKA__SECURITY_PROTOCOL="SSL"
+export SPAKKY_KAFKA__SSL_CA_LOCATION="/run/kafka-ca/ca.crt"
+export SPAKKY_KAFKA__SSL_CERTIFICATE_LOCATION="/run/kafka-client/user.crt"
+export SPAKKY_KAFKA__SSL_KEY_LOCATION="/run/kafka-client/user.key"
+```
+
+동기 admin/producer/consumer에는 librdkafka의 `ssl.*.location`으로 전달하고,
+비동기 producer와 DLT producer에는 검증을 켠 Python `SSLContext`를 전달합니다.
+인증서와 키는 함께 지정해야 하며 TLS 파일을 `PLAINTEXT` 경로에 지정하면 설정을
+거부합니다. CA 또는 키 파일의 읽기·검증 실패는 전파되며 평문으로 전환하지 않습니다.
+CA 파일을 생략한 `SSL`/`SASL_SSL`은 시스템 신뢰 저장소와 호스트 이름 검증을 사용합니다.
+비밀 파일 교체 뒤에는 서비스 lifecycle을 재시작해 새 context를 읽습니다.
+
+### Domain handler와 integration handler의 등록 경계
+
+Kafka post-processor는 `KafkaEventConsumer`/`AsyncKafkaEventConsumer`에 integration
+handler를 등록합니다. core event post-processor의 `EventMediator`와 동일 컨테이너에
+존재해도 generic `IEventConsumer` 선택이 충돌하지 않으며, domain event는 계속
+in-process mediator에서 처리합니다. 애플리케이션이 generic consumer를 Kafka로
+전역 바인딩해 domain event를 broker로 넘기는 우회는 필요하지 않습니다.

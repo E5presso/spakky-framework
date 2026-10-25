@@ -13,6 +13,10 @@ from spakky.domain.models.event import (
 )
 
 from spakky.event.event_consumer import IAsyncEventConsumer, IEventConsumer
+from spakky.event.mediator.domain_event_mediator import (
+    AsyncEventMediator,
+    EventMediator,
+)
 from spakky.event.post_processor import EventHandlerRegistrationPostProcessor
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
@@ -90,9 +94,9 @@ class InMemoryContainer(IContainer):
         name: str | None = None,
     ) -> T:
         """Get consumer based on type."""
-        if type_ is IEventConsumer:
+        if type_ is EventMediator:
             return self._sync_consumer  # type: ignore[return-value] - fake container returns requested interface
-        if type_ is IAsyncEventConsumer:
+        if type_ is AsyncEventMediator:
             return self._async_consumer  # type: ignore[return-value] - fake container returns requested interface
         raise ValueError(f"Unexpected type: {type_}")
 

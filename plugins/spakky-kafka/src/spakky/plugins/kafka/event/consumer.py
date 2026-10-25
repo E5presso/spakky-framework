@@ -421,7 +421,8 @@ class KafkaEventConsumer(IEventConsumer, AbstractBackgroundService):
             topics=topics
             + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
         )
-        self.consumer.subscribe(topics=topics)
+        if topics:
+            self.consumer.subscribe(topics=topics)
 
     @override
     def run(self) -> None:
@@ -791,7 +792,8 @@ class AsyncKafkaEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundServic
             topics=topics
             + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
         )
-        await self.consumer.subscribe(topics=topics)
+        if topics:
+            await self.consumer.subscribe(topics=topics)
 
     @override
     async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
