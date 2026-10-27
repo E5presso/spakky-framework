@@ -985,6 +985,8 @@ class AgentRunner:
                     event.tool_call
                 )
                 metadata = {**event.metadata, **event.tool_call.metadata}
+                if "input_revision" in event.metadata:
+                    metadata["input_revision"] = event.metadata["input_revision"]
                 if start_needed:
                     yield ToolCallStartEvent(
                         attribution,

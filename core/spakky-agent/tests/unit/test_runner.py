@@ -7736,6 +7736,16 @@ async def test_agent_runner_steering_queued_old_delta_expect_captured_generation
         (
             (
                 ModelStreamEvent(
+                    kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+                    tool_call=ModelToolCall(
+                        "echo.read",
+                        {"value": "obsolete"},
+                        "queued-old-call",
+                        metadata={"input_revision": 888},
+                    ),
+                    metadata={"input_revision": 999},
+                ),
+                ModelStreamEvent(
                     kind=ModelStreamEventKind.MESSAGE_DELTA,
                     message_delta="queued old",
                     metadata={"input_revision": 999},
@@ -7776,6 +7786,13 @@ async def test_agent_runner_steering_queued_old_delta_expect_captured_generation
                     },
                 )
             )
+    old_tool_frames = [
+        item
+        for item in queued
+        if isinstance(item, ToolCallStartEvent) or isinstance(item, ToolCallEndEvent)
+    ]
+    assert old_tool_frames
+    assert all(item.metadata["input_revision"] == 0 for item in old_tool_frames)
     old, current = [item for item in queued if isinstance(item, MessageDeltaEvent)]
     assert old.metadata["input_revision"] == 0
     assert current.metadata["input_revision"] == 1
