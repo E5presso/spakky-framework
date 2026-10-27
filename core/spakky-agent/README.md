@@ -694,3 +694,100 @@ uv run pytest
 ## 라이선스
 
 MIT License
+
+### Revisioned steering during an active run
+
+Declare `AgentSignalKind.STEERING_INSTRUCTION` in `accepted_signals` and append
+an `AgentSignal` to the running state's signal repository. For revisioned input,
+serialize the public `AgentSteeringUpdate` contract into `payload`:
+
+```python
+from spakky.agent import AgentSignal, AgentSignalKind, AgentSteeringUpdate
+
+update = AgentSteeringUpdate(
+    input_id="conversation-id:utterance-id",
+    revision=2,
+    content="Use the revised request",
+    final=True,
+    retain=True,
+)
+signals.append(AgentSignal(
+    id="unique-delivery-id",
+    agent_state_id=running_state_id,
+    kind=AgentSignalKind.STEERING_INSTRUCTION,
+    payload=update.model_dump(mode="json"),
+))
+```
+
+An input ID identifies one logical input, independently of the delivery ID.
+Newer revisions replace that input's actual model message; other input IDs
+remain in history. Older revisions and identical duplicate revisions are
+idempotent. Conflicting content at the same revision fails closed. Send a newer
+revision with `withdrawn=True` to remove an ambient or rejected observation;
+the revision tombstone remains so a delayed delivery cannot resurrect it.
+
+The framework observes the durable queue while awaiting model events, cancels
+an obsolete model iteration, awaits the provider task's cleanup, closes an
+asynchronous generator stream, and continues the same run with the revised
+history. Provider adapters must propagate cancellation and await their remote
+cancellation acknowledgement before cleanup returns. Cleanup errors propagate;
+a replacement request cannot claim that a remote request stopped merely because
+local cancellation was requested. Custom async iterators must release their
+resources when the pending `__anext__` task is cancelled. Execution limits keep
+their declared optional values; steering adds no step, tool, queue or run cap.
+
+A `final=False` observation may inform model reasoning but cannot dispatch a
+tool batch or complete the run. A final revision or withdrawal invalidates that
+provisional generation before another model request. A revision at a tool
+boundary abandons remaining undispatched calls with correlated TOOL messages
+whose result is `{"status":"not_executed","reason":"input_revised"}`.
+Committed tool results, call IDs, approvals and counters remain in history;
+executed effects are not replayed or represented as rolled back.
+
+Accepted revisions emit `Progress(current_step="steering")` with
+`input_revision`, `input_id`, `revision`, `final`, `withdrawn` and
+`invalidate_output=True` in metadata. `run_events()` exposes that Progress as
+its existing `ArtifactEvent(name="signal_progress")` projection. Consumers
+should clear obsolete rendered text, candidate output and queued speech at
+this event. The next provider request and every provider event include
+`metadata["input_revision"]`, captured immutably for that model iteration,
+including revision zero for steering-enabled agents. Queued old text/reasoning
+events keep their old revision after a newer input is consumed. Standard AG-UI
+text frames use the existing unique message ID per model step; its standard
+projection does not carry neutral metadata. An ordered wire consumer binds each
+message ID to the latest `signal_progress` revision at message start and retains
+that binding when filtering delayed synthesis/audio. No new wire event is added.
+This metadata is a generation fence; the application still owns speaker,
+addressedness, consent and current tool authorization.
+
+`retain` defaults to `False`. Provisional input is never retained in runner
+checkpoint messages, even when `retain=True`; only final retained input is
+eligible for raw checkpoint storage. Other input is stored as a revision/hash
+tombstone, with raw content omitted. Fresh resume gates tools and final output
+until the source rehydrates that input with its identical revision and content,
+or sends a newer final revision/withdrawal. Identical rehydration restores the
+blank checkpoint message at its original history position, preserving generation,
+pending approval and call correlation; it does not invalidate unchanged intent.
+Replay the authoritative volatile input map before each fresh resume. The built-in revisioned path does
+not invoke legacy signal hooks or write raw SIGNAL evidence. The application
+owns the signal repository's persistence policy and the retention of derived
+MODEL evidence, assistant output, TOOL arguments/results and other run records.
+`retain=False` only filters the steering input payload from runner checkpoints;
+it does not sanitize information derived from that input in other outputs.
+Route all such storage to RAM when the complete interaction must be volatile; use a volatile signal queue for ephemeral observations.
+Steering does not retroactively make a durable run or its external tool effects
+volatile. Legacy steering payloads without `input_id` keep their hook contract.
+
+For a run created solely from provisional input, pass
+`RunAgentInput(..., steering_input_required=True)`. The placeholder instruction
+cannot authorize tool dispatch or final publication before the first finalized
+input. After at least one keyed input was observed, withdrawal of every input
+ends the run through the cancellation control surface:
+`Cancel(reason="input_withdrawn")`, with `control_outcome="input_withdrawn"` and
+`code="agent_input_withdrawn"` in metadata. The event surface uses the normal
+`RunFinishedEvent.error.code="cancelled"` envelope and preserves those metadata.
+The durable lifecycle is `CANCELLED`, reason `INPUT_WITHDRAWN`; this is a
+controlled withdrawal, not a model/service health failure or task success.
+Consumers suppress user-facing answers and queued speech for this outcome.
+The default flag is `False`: withdrawal then removes only that keyed input and
+the original valid goal continues. Resume must preserve the original flag.

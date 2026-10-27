@@ -275,6 +275,7 @@ async def test_code_assistant_demo_expect_model_stream_error_fails_state() -> No
     assert error_payload.retryable is True
     assert error_payload.metadata == {
         "provider": "test",
+        "input_revision": 0,
         "model_steps": 1,
         "tool_calls": 0,
         "total_tokens": 0,

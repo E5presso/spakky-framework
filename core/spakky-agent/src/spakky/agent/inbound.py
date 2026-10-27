@@ -49,6 +49,7 @@ class RunAgentInput:
     context: AgentContext = field(default_factory=AgentContext)
     metadata: JsonObject = field(default_factory=dict)
     attachments: tuple[ImagePart | AudioPart | VideoPart | DocumentPart, ...] = ()
+    steering_input_required: bool = False
 
     def __post_init__(self) -> None:
         """Reject inbound input that cannot correlate a run or seed a request."""

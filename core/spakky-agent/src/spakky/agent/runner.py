@@ -22,7 +22,16 @@ the neutral taxonomy; ``REASONING_DELTA`` is omitted when the model declares no
 reasoning capability (graceful degrade, ADR-0013 §4).
 """
 
-from asyncio import TimeoutError, get_running_loop, timeout_at
+from asyncio import (
+    CancelledError,
+    TimeoutError,
+    ensure_future,
+    get_running_loop,
+    timeout_at,
+    wait,
+    sleep,
+)
+from contextlib import suppress
 from collections.abc import AsyncGenerator, Awaitable, Mapping, Sequence
 from copy import copy
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
@@ -34,7 +43,7 @@ from math import isfinite
 from time import time_ns
 from types import FunctionType
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from spakky.agent.approval import (
     AgentApprovalDecisionOutcome,
@@ -129,7 +138,12 @@ from spakky.agent.recovery import (
     plan_agent_resume,
 )
 from spakky.agent.retrieval import RetrievalContext, RetrievalTool
-from spakky.agent.signal import AgentSignal, AgentSignalKind, ApprovalDecision
+from spakky.agent.signal import (
+    AgentSignal,
+    AgentSignalKind,
+    AgentSteeringUpdate,
+    ApprovalDecision,
+)
 from spakky.agent.state import (
     AgentState,
     AgentStateReason,
@@ -260,12 +274,26 @@ class _ModelStepAccumulator:
         self.metadata.update(event.metadata)
 
 
+STEERING_POLL_SECONDS = 0.01
+"""Observation interval for durable input revisions; not an execution timeout."""
+
+
+class _SteeringRestart(Exception):
+    """Internal control transfer after a model generation becomes obsolete."""
+
+
 @dataclass(slots=True)
 class _ExecutionContext:
     """Mutable counters, transcript, and pending batch for one runner invocation."""
 
     state_id: str
+    steering: dict[str, AgentSteeringUpdate] = field(default_factory=dict, init=False)
+    steering_notifications: list[Progress] = field(default_factory=list, init=False)
+    input_revision: int = field(default=0, init=False)
+    steering_rehydration: dict[str, str] = field(default_factory=dict, init=False)
     history: list[ModelMessage]
+    steering_input_required: bool = False
+    steering_enabled: bool = False
     assistant_text: list[str] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     step_count: int = 0
@@ -311,6 +339,8 @@ class _ExecutionContext:
                     "pricing_version": self.pricing_version,
                 }
             )
+        if self.steering_enabled:
+            counters["input_revision"] = self.input_revision
         return counters
 
 
@@ -577,11 +607,61 @@ class AgentRunner:
             )
             return
         while True:
+            try:
+                self._apply_steering(state, context)
+                if context.steering_rehydration:
+                    yield _progress_event(
+                        Progress(
+                            message="awaiting input rehydration",
+                            current_step="steering_wait",
+                        ),
+                        attribution,
+                    )
+                    while context.steering_rehydration and not any(
+                        signal.kind is AgentSignalKind.CANCEL
+                        for signal in self._signals_required().list_pending(
+                            context.state_id
+                        )
+                    ):
+                        await self._await_with_deadline(
+                            sleep(STEERING_POLL_SECONDS), context.deadline
+                        )
+                        self._apply_steering(state, context)
+                    continue
+            except TimeoutError:
+                failure = self._timeout_error(context)
+                self._fail_execution(state, failure)
+                yield RunFinishedEvent(
+                    attribution,
+                    error=_model_error_json(failure),
+                    metadata=context.counters,
+                )
+                return
+            except AbstractSpakkyFrameworkError as error:
+                failure = self._framework_model_error(state, context, error)
+                self._fail_execution(state, failure)
+                yield RunFinishedEvent(
+                    attribution,
+                    error=_model_error_json(failure),
+                    metadata=context.counters,
+                )
+                return
+            for notification in context.steering_notifications:
+                yield _progress_event(notification, attribution)
+            context.steering_notifications.clear()
             cancel = await self._poll_cancel(state)
             if cancel is not None:
                 yield RunFinishedEvent(
                     attribution,
                     error=_cancel_error(cancel),
+                    metadata=context.counters,
+                )
+                return
+            withdrawn = self._withdrawn_input_cancel(state, context)
+            if withdrawn is not None:
+                yield RunFinishedEvent(
+                    attribution,
+                    error=_cancel_error(withdrawn),
                     metadata=context.counters,
                 )
                 return
@@ -714,6 +794,51 @@ class AgentRunner:
                         yield item
                     if accumulator.error is not None:
                         break
+                revised = self._apply_steering(state, context)
+                if (
+                    not revised
+                    and self._provisional_steering(context)
+                    and accumulator.error is None
+                ):
+                    yield _progress_event(
+                        Progress(
+                            message="awaiting finalized input",
+                            current_step="steering_wait",
+                        ),
+                        attribution,
+                    )
+                while (
+                    not revised
+                    and self._provisional_steering(context)
+                    and accumulator.error is None
+                ):
+                    if state is not None and any(
+                        signal.kind is AgentSignalKind.CANCEL
+                        for signal in self._signals_required().list_pending(state.id)
+                    ):
+                        raise _SteeringRestart()
+                    await self._await_with_deadline(
+                        sleep(STEERING_POLL_SECONDS), context.deadline
+                    )
+                    revised = self._apply_steering(state, context)
+                if revised:
+                    raise _SteeringRestart()
+            except _SteeringRestart:
+                superseded_error = self._supersede_model_step(
+                    self._states_required().get(context.state_id), context, accumulator
+                )
+                yield StepFinishedEvent(
+                    attribution, step_name=step_name, metadata=context.counters
+                )
+                if superseded_error is not None:
+                    self._fail_execution(state, superseded_error)
+                    yield RunFinishedEvent(
+                        attribution,
+                        error=_model_error_json(superseded_error),
+                        metadata=context.counters,
+                    )
+                    return
+                continue
             except TimeoutError:
                 error = self._timeout_error(context)
                 self._fail_execution(state, error)
@@ -784,6 +909,8 @@ class AgentRunner:
                             metadata=step_metadata,
                         )
                     return
+            if self._apply_steering(state, context):
+                continue
             if context.pending_calls:
                 continue
             if state is not None:
@@ -969,9 +1096,39 @@ class AgentRunner:
     ) -> AsyncGenerator[AgentYield[object], None]:
         """Run the shared bounded model/batch loop for the public yield surface."""
         while True:
+            try:
+                self._apply_steering(state, context)
+                if context.steering_rehydration:
+                    yield _progress("awaiting input rehydration", "steering_wait")
+                    while context.steering_rehydration and not any(
+                        signal.kind is AgentSignalKind.CANCEL
+                        for signal in self._signals_required().list_pending(
+                            context.state_id
+                        )
+                    ):
+                        await self._await_with_deadline(
+                            sleep(STEERING_POLL_SECONDS), context.deadline
+                        )
+                        self._apply_steering(state, context)
+                    continue
+            except TimeoutError:
+                yield self._fail_on_model_error(state, self._timeout_error(context))
+                return
+            except AbstractSpakkyFrameworkError as error:
+                yield self._fail_on_model_error(
+                    state, self._framework_model_error(state, context, error)
+                )
+                return
+            for notification in context.steering_notifications:
+                yield AgentYield(kind=AgentYieldKind.PROGRESS, payload=notification)
+            context.steering_notifications.clear()
             cancel = await self._poll_cancel(state)
             if cancel is not None:
                 yield cancel
+                return
+            withdrawn = self._withdrawn_input_cancel(state, context)
+            if withdrawn is not None:
+                yield withdrawn
                 return
             if context.pending_calls:
                 authorization = self._authorize_pending_batch(state, context)
@@ -1043,6 +1200,37 @@ class AgentRunner:
                         yield _token(event.reasoning_delta or "", event.metadata)
                     if accumulator.error is not None:
                         break
+                revised = self._apply_steering(state, context)
+                if (
+                    not revised
+                    and self._provisional_steering(context)
+                    and accumulator.error is None
+                ):
+                    yield _progress("awaiting finalized input", "steering_wait")
+                while (
+                    not revised
+                    and self._provisional_steering(context)
+                    and accumulator.error is None
+                ):
+                    if state is not None and any(
+                        signal.kind is AgentSignalKind.CANCEL
+                        for signal in self._signals_required().list_pending(state.id)
+                    ):
+                        raise _SteeringRestart()
+                    await self._await_with_deadline(
+                        sleep(STEERING_POLL_SECONDS), context.deadline
+                    )
+                    revised = self._apply_steering(state, context)
+                if revised:
+                    raise _SteeringRestart()
+            except _SteeringRestart:
+                superseded_error = self._supersede_model_step(
+                    self._states_required().get(context.state_id), context, accumulator
+                )
+                if superseded_error is not None:
+                    yield self._fail_on_model_error(state, superseded_error)
+                    return
+                continue
             except TimeoutError:
                 yield self._fail_on_model_error(state, self._timeout_error(context))
                 return
@@ -1087,7 +1275,14 @@ class AgentRunner:
                 run_input.state_id,
                 context.tool_calls,
                 context.final_output,
-                cost_metadata=_cost_metadata(context),
+                cost_metadata={
+                    **_cost_metadata(context),
+                    **(
+                        {"input_revision": context.input_revision}
+                        if context.steering_enabled
+                        else {}
+                    ),
+                },
                 evidence_count=(
                     self._evidence_count(run_input.state_id) if state is not None else 0
                 ),
@@ -1123,6 +1318,10 @@ class AgentRunner:
                     raise AgentDefinitionError(
                         "Agent resume static context does not match its checkpoint"
                     )
+                if context.steering_input_required != run_input.steering_input_required:
+                    raise AgentDefinitionError(
+                        "Agent resume steering requirement does not match its checkpoint"
+                    )
                 if context.conversation_id != run_input.effective_conversation_id:
                     raise AgentDefinitionError(
                         "Agent resume conversation does not match its checkpoint"
@@ -1133,6 +1332,10 @@ class AgentRunner:
                         "Agent resume pricing does not match its checkpoint"
                     )
                 self._validate_restored_pricing(state.id, context)
+                context.steering_enabled = (
+                    AgentSignalKind.STEERING_INSTRUCTION
+                    in self.agent.spec.accepted_signals
+                )
                 context.deadline = deadline
                 context.restored_from_checkpoint = True
                 return context
@@ -1142,6 +1345,9 @@ class AgentRunner:
         return _ExecutionContext(
             state_id=run_input.state_id,
             history=history,
+            steering_input_required=run_input.steering_input_required,
+            steering_enabled=AgentSignalKind.STEERING_INSTRUCTION
+            in self.agent.spec.accepted_signals,
             deadline=deadline,
             static_context_fingerprint=static_fingerprint,
             total_cost=Decimal(0) if self.pricing is not None else None,
@@ -1245,34 +1451,282 @@ class AgentRunner:
                     run_input.model_selection,
                 )
             )
+        self._apply_steering(state, context)
+        iteration_revision = context.input_revision
+        steering_enabled = (
+            AgentSignalKind.STEERING_INSTRUCTION in self.agent.spec.accepted_signals
+        )
         agent_context = await self._context_for_step(run_input, state, context)
         request = self._model_request(
             run_input,
             tuple(context.history),
             agent_context,
         )
+        if steering_enabled:
+            request = replace(
+                request,
+                metadata={**request.metadata, "input_revision": iteration_revision},
+            )
         self.model.validate_request(request)
         if (
             self.agent.spec.streaming_exposure_mode
             is StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED
         ):
-            response = await self._await_with_deadline(
+            response = await self._await_steerable(
                 self.model.complete(request),
-                context.deadline,
+                state,
+                context,
             )
             async for event in self._response_events(response, context):
-                yield event
-            return
-        iterator = self.model.stream(request).__aiter__()
-        while True:
-            try:
-                event = await self._await_with_deadline(
-                    anext(iterator),
-                    context.deadline,
+                yield (
+                    replace(
+                        event,
+                        metadata={
+                            **event.metadata,
+                            "input_revision": iteration_revision,
+                        },
+                    )
+                    if steering_enabled
+                    else event
                 )
-            except StopAsyncIteration:
-                return
-            yield event
+            return
+        iterator = self.model.stream(request)
+        try:
+            while True:
+                try:
+                    event = await self._await_steerable(anext(iterator), state, context)
+                except StopAsyncIteration:
+                    return
+                yield (
+                    replace(
+                        event,
+                        metadata={
+                            **event.metadata,
+                            "input_revision": iteration_revision,
+                        },
+                    )
+                    if steering_enabled
+                    else event
+                )
+        finally:
+            if isinstance(iterator, AsyncGenerator):
+                await iterator.aclose()
+
+    def _apply_steering(
+        self, state: AgentState | None, context: _ExecutionContext
+    ) -> bool:
+        """Consume revisioned steering before exposing a candidate or effect."""
+        if (
+            state is None
+            or AgentSignalKind.STEERING_INSTRUCTION
+            not in self.agent.spec.accepted_signals
+        ):
+            return False
+        changed = False
+        for signal in self._signals_required().list_pending(state.id):
+            if signal.kind is not AgentSignalKind.STEERING_INSTRUCTION:
+                continue
+            # Legacy hook-only steering retains its established contract.
+            if "input_id" not in signal.payload:
+                continue
+            try:
+                update = AgentSteeringUpdate.model_validate(signal.payload)
+            except ValidationError as error:
+                raise AgentDefinitionError(
+                    "Agent steering update is invalid"
+                ) from error
+            previous = context.steering.get(update.input_id)
+            if previous is not None and update.revision <= previous.revision:
+                expected = context.steering_rehydration.get(update.input_id)
+                rehydrating = (
+                    update.revision == previous.revision
+                    and expected == _json_fingerprint(update.model_dump(mode="json"))
+                )
+                if (
+                    update.revision == previous.revision
+                    and update != previous
+                    and not rehydrating
+                ):
+                    raise AgentDefinitionError("Agent steering revision conflicts")
+                if rehydrating:
+                    context.steering_rehydration.pop(update.input_id)
+                    context.steering[update.input_id] = update
+                    context.history = [
+                        replace(message, content=update.content)
+                        if message.metadata.get("steering_input_id") == update.input_id
+                        else message
+                        for message in context.history
+                    ]
+                    self._signals_required().mark_consumed(signal.id)
+                    self._save_context(state, context)
+                    continue
+                self._signals_required().mark_consumed(signal.id)
+                continue
+            context.steering_rehydration.pop(update.input_id, None)
+            self._discard_obsolete_batch(context)
+            context.assistant_text.clear()
+            context.final_output = None
+            context.final_output_json = None
+            context.steering[update.input_id] = update
+            context.input_revision += 1
+            context.steering_notifications.append(
+                Progress(
+                    message=f"input revised: {context.input_revision}",
+                    current_step="steering",
+                    metadata={
+                        "input_revision": context.input_revision,
+                        "input_id": update.input_id,
+                        "revision": update.revision,
+                        "final": update.final,
+                        "withdrawn": update.withdrawn,
+                        "invalidate_output": True,
+                    },
+                )
+            )
+            context.history = [
+                message
+                for message in context.history
+                if message.metadata.get("steering_input_id") != update.input_id
+            ]
+            if not update.withdrawn:
+                context.history.append(
+                    ModelMessage(
+                        ModelMessageRole.USER,
+                        update.content,
+                        metadata={
+                            "steering_input_id": update.input_id,
+                            "steering_revision": update.revision,
+                            "steering_final": update.final,
+                            "steering_retain": update.final and update.retain,
+                        },
+                    )
+                )
+            self._signals_required().mark_consumed(signal.id)
+            changed = True
+        if changed:
+            self._save_context(state, context)
+        return changed
+
+    def _discard_obsolete_batch(self, context: _ExecutionContext) -> None:
+        """Close unexecuted call correlations without inventing effect receipts."""
+        if context.pending_calls:
+            current = self._states_required().get(context.state_id)
+            recovery = plan_agent_resume(
+                current, self._evidence_required().list_by_state(context.state_id)
+            )
+            boundary = recovery.boundary
+            if (
+                boundary is not None
+                and boundary.action_kind is AgentActionKind.APPROVAL_WAIT
+            ):
+                self._append_boundary(
+                    context.state_id,
+                    AgentActionBoundaryCheckpoint.after_approval_wait(
+                        boundary.action_id,
+                        metadata={"outcome": "input_revised", "executed": False},
+                    ),
+                )
+                self._states_required().save(
+                    replace(
+                        current,
+                        metadata={
+                            key: value
+                            for key, value in current.metadata.items()
+                            if key != "approval"
+                        },
+                    )
+                )
+        for call in context.pending_calls:
+            context.history.append(
+                _tool_result_message(
+                    call,
+                    {
+                        "status": "not_executed",
+                        "reason": "input_revised",
+                    },
+                )
+            )
+        context.pending_calls.clear()
+
+    def _withdrawn_input_cancel(
+        self, state: AgentState | None, context: _ExecutionContext
+    ) -> AgentYield[object] | None:
+        """End an input-only run when every actually observed input was withdrawn."""
+        if (
+            not context.steering_input_required
+            or not context.steering
+            or not all(item.withdrawn for item in context.steering.values())
+        ):
+            return None
+        current = self._states_required().get(context.state_id)
+        self._states_required().save(
+            replace(
+                current,
+                status=AgentStatus.CANCELLED,
+                transition=AgentStateTransition.CANCELLED,
+                reason=AgentStateReason.INPUT_WITHDRAWN,
+                current_activity="input withdrawn",
+            )
+        )
+        self._save_context(state, context)
+        return AgentYield(
+            kind=AgentYieldKind.CANCEL,
+            payload=Cancel(
+                reason="input_withdrawn",
+                metadata={
+                    **context.counters,
+                    "control_outcome": "input_withdrawn",
+                    "code": "agent_input_withdrawn",
+                },
+            ),
+        )
+
+    def _provisional_steering(self, context: _ExecutionContext) -> bool:
+        return (
+            (
+                context.steering_input_required
+                and not any(
+                    item.final and not item.withdrawn
+                    for item in context.steering.values()
+                )
+            )
+            or bool(context.steering_rehydration)
+            or any(
+                not item.final and not item.withdrawn
+                for item in context.steering.values()
+            )
+        )
+
+    async def _await_steerable[_SteeringResult](
+        self,
+        operation: Awaitable[_SteeringResult],
+        state: AgentState | None,
+        context: _ExecutionContext,
+    ) -> _SteeringResult:
+        """Invalidate blocked requests and await provider cleanup before continuation."""
+        task = ensure_future(self._await_with_deadline(operation, context.deadline))
+        try:
+            while True:
+                if self._apply_steering(state, context):
+                    raise _SteeringRestart()
+                if state is not None and any(
+                    signal.kind is AgentSignalKind.CANCEL
+                    for signal in self._signals_required().list_pending(state.id)
+                ):
+                    raise _SteeringRestart()
+                done, _ = await wait((task,), timeout=STEERING_POLL_SECONDS)
+                if done:
+                    if self._apply_steering(state, context):
+                        raise _SteeringRestart()
+                    return task.result()
+        finally:
+            if not task.done():
+                task.cancel()
+            if not task.done():
+                with suppress(CancelledError):
+                    await task
+            elif not task.cancelled():
+                task.exception()
 
     async def _context_for_step(
         self,
@@ -1544,6 +1998,26 @@ class AgentRunner:
             return await awaitable
         async with timeout_at(deadline):
             return await awaitable
+
+    def _supersede_model_step(
+        self,
+        state: AgentState,
+        context: _ExecutionContext,
+        accumulator: _ModelStepAccumulator,
+    ) -> ModelError | None:
+        """Keep billable usage and close action evidence without authorizing old output."""
+        context.route_metadata.update(_routing_metadata(accumulator.metadata))
+        error = (
+            self._record_usage(context, accumulator.usage)
+            if accumulator.usage is not None
+            else None
+        )
+        self._append_boundary(
+            state.id, _after_model(self._model_action_id(context.step_count))
+        )
+        self._append_model_evidence(state.id, context, accumulator, error=error)
+        self._save_context(state, context)
+        return error
 
     def _finish_model_step(
         self,
@@ -1925,6 +2399,8 @@ class AgentRunner:
     ) -> AsyncGenerator[AgentYield[object], None]:
         """Dispatch an authorized batch in order and extend continuation history."""
         for item in prepared:
+            if self._apply_steering(state, context):
+                return
             cancel = await self._poll_cancel(state)
             if cancel is not None:
                 yield cancel
@@ -1933,6 +2409,8 @@ class AgentRunner:
                 f"dispatching tool: {item.call.name}",
                 f"tool-{context.tool_call_count + 1}",
             )
+            if self._apply_steering(state, context):
+                return
             if state is not None:
                 self._append_boundary(
                     state.id, _before_tool(item.descriptor, item.call)
@@ -1986,6 +2464,8 @@ class AgentRunner:
     ) -> AsyncGenerator[AgentEvent, None]:
         """Dispatch an authorized batch with actual tool action step boundaries."""
         for item in prepared:
+            if self._apply_steering(state, context):
+                return
             step_name = f"tool-{context.tool_call_count + 1}"
             yield StepStartedEvent(attribution, step_name, metadata=context.counters)
             cancel = await self._poll_cancel(state)
@@ -1995,6 +2475,11 @@ class AgentRunner:
                     attribution,
                     step_name,
                     metadata=context.counters,
+                )
+                return
+            if self._apply_steering(state, context):
+                yield StepFinishedEvent(
+                    attribution, step_name, metadata=context.counters
                 )
                 return
             if state is not None:
@@ -2641,7 +3126,7 @@ class AgentRunner:
                 payload={
                     "revision": context.checkpoint_revision,
                     "step": context.step_count,
-                    "history_length": len(context.history),
+                    "history_length": len(_mapping_sequence(checkpoint, "history")),
                     "shape_size": _checkpoint_shape_size(checkpoint),
                     "fingerprint": fingerprint,
                 },
@@ -2689,9 +3174,14 @@ class AgentRunner:
         )
         if initial_history_length <= 0 or input_fingerprint is None:
             raise AgentDefinitionError("Agent runner checkpoint input is invalid")
-        return _ExecutionContext(
+        context = _ExecutionContext(
             state_id=state_id,
             history=history,
+            steering_input_required=_boolean_metadata(
+                checkpoint, "steering_input_required"
+            )
+            if "steering_input_required" in checkpoint
+            else False,
             assistant_text=list(_string_sequence(checkpoint, "assistant_text")),
             tool_calls=list(_string_sequence(checkpoint, "tool_calls")),
             step_count=_integer_metadata(checkpoint, "step_count"),
@@ -2727,6 +3217,39 @@ class AgentRunner:
                 "persist_session_turn",
             ),
         )
+        raw_steering = checkpoint.get("steering", [])
+        if not isinstance(raw_steering, list):
+            raise AgentDefinitionError("Agent checkpoint steering is invalid")
+        try:
+            updates = [
+                AgentSteeringUpdate.model_validate(item) for item in raw_steering
+            ]
+        except ValidationError as error:
+            raise AgentDefinitionError(
+                "Agent checkpoint steering is invalid"
+            ) from error
+        if len({item.input_id for item in updates}) != len(updates):
+            raise AgentDefinitionError("Agent checkpoint steering input repeats")
+        context.steering = {item.input_id: item for item in updates}
+        raw_rehydration = checkpoint.get("steering_rehydration", {})
+        if not isinstance(raw_rehydration, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in raw_rehydration.items()
+        ):
+            raise AgentDefinitionError(
+                "Agent checkpoint steering rehydration is invalid"
+            )
+        context.steering_rehydration = {
+            key: value
+            for key, value in raw_rehydration.items()
+            if isinstance(value, str)
+        }
+        context.input_revision = (
+            _integer_metadata(checkpoint, "input_revision")
+            if "input_revision" in checkpoint
+            else 0
+        )
+        return context
 
     def _append_model_evidence(
         self,
@@ -3024,6 +3547,10 @@ class AgentRunner:
                 separators=(",", ":"),
                 ensure_ascii=False,
             )
+        if any(
+            not item.withdrawn and not item.retain for item in context.steering.values()
+        ):
+            return
         turns = [ConversationTurn(ModelMessageRole.USER, context.user_turn)]
         if reply.strip():
             turns.append(ConversationTurn(ModelMessageRole.ASSISTANT, reply))
@@ -3136,6 +3663,13 @@ class AgentRunner:
             if signal.kind in (
                 AgentSignalKind.CANCEL,
                 AgentSignalKind.APPROVAL_DECISION,
+            ):
+                continue
+            if (
+                signal.kind is AgentSignalKind.STEERING_INSTRUCTION
+                and AgentSignalKind.STEERING_INSTRUCTION
+                in self.agent.spec.accepted_signals
+                and "input_id" in signal.payload
             ):
                 continue
             hooks = self.agent.signal_hook_catalog.hooks_for(signal.kind)
@@ -3475,6 +4009,12 @@ def _signal_yield_event(
             message="Agent signal hook yielded an unsupported event shape",
             metadata={"yield_kind": item.kind.value},
         )
+    return _progress_event(payload, attribution)
+
+
+def _progress_event(
+    payload: Progress, attribution: AgentEventAttribution
+) -> ArtifactEvent:
     identity = sha256(
         f"{payload.current_step or ''}:{payload.message}".encode()
     ).hexdigest()
@@ -3483,7 +4023,7 @@ def _signal_yield_event(
         artifact_id=f"{attribution.run_id}:signal-progress:{identity}",
         name="signal_progress",
         content={
-            "kind": item.kind.value,
+            "kind": AgentYieldKind.PROGRESS.value,
             "message": payload.message,
             "current_step": payload.current_step,
             "metadata": payload.metadata,
@@ -3808,7 +4348,15 @@ def _arguments_digest(arguments: JsonObject) -> str:
 
 def _context_metadata(context: _ExecutionContext) -> JsonObject:
     return {
-        "history": [_message_metadata(message) for message in context.history],
+        "history": [
+            _message_metadata(
+                replace(message, content="")
+                if "steering_input_id" in message.metadata
+                and message.metadata.get("steering_retain") is not True
+                else message
+            )
+            for message in context.history
+        ],
         "assistant_text": list(context.assistant_text),
         "tool_calls": list(context.tool_calls),
         "step_count": context.step_count,
@@ -3820,6 +4368,21 @@ def _context_metadata(context: _ExecutionContext) -> JsonObject:
         "cost_currency": context.cost_currency,
         "seen_call_ids": sorted(context.seen_call_ids),
         "approved_call_fingerprints": sorted(context.approved_call_fingerprints),
+        "steering": [
+            {
+                **item.model_dump(mode="json"),
+                "content": item.content if item.final and item.retain else "",
+            }
+            for item in context.steering.values()
+        ],
+        "steering_rehydration": {
+            item.input_id: context.steering_rehydration.get(
+                item.input_id, _json_fingerprint(item.model_dump(mode="json"))
+            )
+            for item in context.steering.values()
+            if not item.withdrawn and not (item.final and item.retain)
+        },
+        "input_revision": context.input_revision,
         "pending_calls": [_call_metadata(call) for call in context.pending_calls],
         "route_metadata": context.route_metadata,
         "static_context_fingerprint": context.static_context_fingerprint,
@@ -3829,6 +4392,7 @@ def _context_metadata(context: _ExecutionContext) -> JsonObject:
         "conversation_id": context.conversation_id,
         "user_turn": context.user_turn,
         "persist_session_turn": context.persist_session_turn,
+        "steering_input_required": context.steering_input_required,
     }
 
 

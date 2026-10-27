@@ -697,10 +697,20 @@ class IAgentModel(ABC):
 
     @abstractmethod
     async def complete(self, request: ModelRequest) -> ModelResponse:
-        """Return a complete model response for the request."""
+        """Return a complete response, awaiting resource cleanup on cancellation.
+
+        Remote adapters must await cancellation acknowledgement before returning
+        from cancellation cleanup; failures must propagate to stop continuation.
+        """
         ...
 
     @abstractmethod
     def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
-        """Return provider-neutral stream events for the request."""
+        """Return provider-neutral events with deterministic cancellation cleanup.
+
+        The runner cancels and awaits pending iteration on a revised input and
+        explicitly closes async generators. Custom iterators must release their
+        resources on cancellation of ``__anext__``. Remote cancellation must be
+        acknowledged before cleanup returns; unconfirmed cleanup must propagate.
+        """
         ...

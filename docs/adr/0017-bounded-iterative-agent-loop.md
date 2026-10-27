@@ -147,6 +147,50 @@ Provider-bound history는 assistant `tool_calls` envelope와 그 call id 각각�
 
 Runner는 compaction 전 input history와 **각 built-in/custom strategy 결과**를 모두 `validate_tool_call_groups()`로 검사합니다. Custom strategy가 group을 깨면 provider request를 보내지 않고 `agent_model_execution_failed`로 닫습니다.
 
+### 10. Revisioned steering invalidates one generation and preserves the run
+
+`AgentSteeringUpdate(input_id, revision, content, final, withdrawn=False, retain=False)`
+is the typed payload of `STEERING_INSTRUCTION`; the built-in path is opt-in
+through `accepted_signals`. A newer revision replaces only
+its keyed input message; distinct inputs survive, old/exact duplicates are
+idempotent, conflicting equal revisions fail closed, and withdrawal keeps a
+revision tombstone. Legacy hook payloads without `input_id` remain unchanged.
+
+The runner polls the pending repository during blocked model awaits, cancels and
+awaits provider cleanup, explicitly closes async-generator streams and only then
+starts a replacement model iteration in the same run. Cleanup failure blocks
+continuation. Provider adapters own actual remote cancellation acknowledgement.
+A provisional input may inform reasoning, but tool dispatch and final output
+wait for finalization/withdrawal. Revisions after tool-start or model-step-end
+are checked again before effects/final delivery. Undispatched calls receive
+correlated `not_executed/input_revised` TOOL results; already committed results,
+counters, approval fingerprints and effect receipts are preserved. Observed
+billable usage of a discarded generation remains accounted and evidenced.
+
+Accepted revisions project sanitized `steering` Progress with a monotonic
+`input_revision` and `invalidate_output=True`; event adapters use the existing
+`signal_progress` artifact shape. Applications clear obsolete output/speech and
+continue to own speaker, addressedness, consent and tool authorization.
+
+Only `final=True, retain=True` input content is eligible for raw checkpoint
+storage. Provisional/ephemeral input is omitted from checkpoint messages and
+replaced with a hash/revision tombstone. Fresh resume cannot authorize tools or
+final output until the source rehydrates identical input or supplies a newer
+final revision/withdrawal. The built-in path writes no raw SIGNAL evidence;
+application signal queues and derived tool/model evidence retain their own
+persistence policy. This does not turn a durable run or executed effects into
+volatile state. See the package README for the executable public example.
+
+An input-only placeholder run opts in with
+`RunAgentInput.steering_input_required=True`. Before any input arrives it cannot
+dispatch tools or publish final output. Once every actually observed input was
+withdrawn, it ends through `Cancel(reason="input_withdrawn")`, metadata
+`control_outcome="input_withdrawn"`, `code="agent_input_withdrawn"`; the event
+surface preserves the normal `cancelled` envelope and those metadata. Durable
+state is `CANCELLED` with reason `INPUT_WITHDRAWN`, a control outcome rather than
+model/service failure or task success. The default `False` preserves continuation
+of an existing original goal. Resume must retain the original flag.
+
 ## 대안 (Alternatives)
 
 ### 대안 A: One-request loop를 유지하고 custom `execute()`에 반복을 맡깁니다

@@ -43,6 +43,7 @@ class AgentStateReason(StrEnum):
     AUTH_REQUIRED = "auth_required"
     EXECUTION_FAILED = "execution_failed"
     USER_INTERRUPTED = "user_interrupted"
+    INPUT_WITHDRAWN = "input_withdrawn"
     TIMEOUT = "timeout"
     CANCELLATION_REQUESTED = "cancellation_requested"
     CANCELLATION_CLEANUP_FAILED = "cancellation_cleanup_failed"

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from spakky.agent.types import JsonObject
 
 
@@ -39,3 +41,19 @@ class AgentSignal:
     kind: AgentSignalKind
     payload: JsonObject = field(default_factory=dict)
     created_at: datetime | None = None
+
+
+class AgentSteeringUpdate(BaseModel):
+    """Revisioned input; provisional observations grant no tool/final authority.
+
+    input_id is caller-owned and scoped to a conversation/utterance. Withdrawal
+    removes that input while retaining its revision tombstone for idempotence.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+    input_id: str = Field(min_length=1)
+    revision: int = Field(ge=0)
+    content: str
+    final: bool
+    withdrawn: bool = False
+    retain: bool = False

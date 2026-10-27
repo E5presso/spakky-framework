@@ -2,6 +2,7 @@
 
 from asyncio import Event
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping, Sequence
+from copy import copy
 from dataclasses import dataclass, replace
 from time import sleep
 from typing import TypedDict, cast, override
@@ -123,6 +124,7 @@ DURABLE_SPEC = AgentExecutionSpec(
     name="runner_probe",
     accepted_signals=(
         AgentSignalKind.USER_MESSAGE,
+        AgentSignalKind.STEERING_INSTRUCTION,
         AgentSignalKind.APPROVAL_DECISION,
         AgentSignalKind.CANCEL,
         AgentSignalKind.RESUME,
@@ -3181,6 +3183,7 @@ async def test_agent_runner_events_expect_model_error_emits_run_error() -> None:
         "message": "provider failed",
         "retryable": False,
         "metadata": {
+            "input_revision": 0,
             "model_steps": 1,
             "tool_calls": 0,
             "total_tokens": 0,
@@ -6379,3 +6382,1472 @@ async def test_agent_runner_context_provider_rejects_invalid_return_value() -> N
     error = items[-1].payload
     assert isinstance(error, Error)
     assert error.code == "agent_model_execution_failed"
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_blocked_model_expect_cleanup_then_revised_request(
+    events_surface: bool,
+) -> None:
+    """Steering interrupts a blocked provider, awaits cleanup, then revises real history."""
+    from asyncio import create_task, wait_for
+
+    states = FakeStateRepository()
+    signals = FakeSignalRepository(())
+    evidence = FakeEvidenceRepository()
+    entered, cleanup, release = Event(), Event(), Event()
+    requests: list[ModelRequest] = []
+
+    class SteeringModel(RecordingModel):
+        @override
+        async def stream(
+            self, request: ModelRequest
+        ) -> AsyncIterator[ModelStreamEvent]:
+            requests.append(request)
+            if len(requests) == 1:
+                entered.set()
+                try:
+                    await Event().wait()
+                finally:
+                    cleanup.set()
+                    await release.wait()
+            else:
+                yield ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA, message_delta="revised"
+                )
+                yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+    collect = _run_events_durable if events_surface else _run_durable
+    task = create_task(
+        collect(
+            SteeringModel(()),
+            RunAgentInput(state_id="run-1", instruction="original"),
+            states,
+            signals,
+            evidence,
+        )
+    )
+    await wait_for(entered.wait(), 1)
+    signals.append(
+        AgentSignal(
+            id="steer-1",
+            agent_state_id="run-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload={
+                "input_id": "session:utterance",
+                "revision": 1,
+                "content": "corrected",
+                "final": True,
+            },
+        )
+    )
+    await wait_for(cleanup.wait(), 1)
+    assert len(requests) == 1
+    release.set()
+    result = await wait_for(task, 1)
+    assert len(requests) == 2
+    assert requests[1].messages[-1].content == "corrected"
+    assert signals.list_pending("run-1") == ()
+    assert states.get("run-1").status is AgentStatus.COMPLETED
+    if events_surface:
+        assert any(
+            isinstance(item, ArtifactEvent)
+            and isinstance(item.content, dict)
+            and isinstance(item.content.get("metadata"), dict)
+            and item.content["metadata"].get("invalidate_output")
+            for item in result
+        )
+    else:
+        assert any(
+            isinstance(item, AgentYield)
+            and isinstance(item.payload, Progress)
+            and item.payload.metadata.get("invalidate_output")
+            for item in result
+        )
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_provisional_expect_no_tools_until_final(
+    events_surface: bool,
+) -> None:
+    """A completed provisional tool candidate is superseded by final input before dispatch."""
+    from asyncio import create_task, wait_for
+
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    provisional_done = Event()
+    requests: list[ModelRequest] = []
+
+    class ProvisionalModel(RecordingModel):
+        @override
+        async def stream(
+            self, request: ModelRequest
+        ) -> AsyncIterator[ModelStreamEvent]:
+            requests.append(request)
+            if len(requests) == 1:
+                yield _tool_event("echo.read", {"value": "obsolete"}, "obsolete-call")
+                yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+                provisional_done.set()
+            else:
+                yield ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA, message_delta="finalized"
+                )
+                yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+
+    signals.append(
+        AgentSignal(
+            id="partial",
+            agent_state_id="run-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload={
+                "input_id": "session:utterance",
+                "revision": 1,
+                "content": "partial",
+                "final": False,
+            },
+        )
+    )
+    collect = _run_events_durable if events_surface else _run_durable
+    task = create_task(
+        collect(
+            ProvisionalModel(()),
+            RunAgentInput(state_id="run-1", instruction="original"),
+            states,
+            signals,
+            evidence,
+        )
+    )
+    await wait_for(provisional_done.wait(), 1)
+    assert not any(
+        item.kind is AgentEvidenceKind.TOOL and "result" in item.payload
+        for item in evidence.list_by_state("run-1")
+    ), [item.payload for item in evidence.list_by_state("run-1")]
+    signals.append(
+        AgentSignal(
+            id="final",
+            agent_state_id="run-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload={
+                "input_id": "session:utterance",
+                "revision": 2,
+                "content": "final input",
+                "final": True,
+            },
+        )
+    )
+    await wait_for(task, 1)
+    assert len(requests) == 2
+    assert [
+        message.content
+        for message in requests[1].messages
+        if message.metadata.get("steering_input_id")
+    ] == ["final input"]
+    assert not any(
+        item.kind is AgentEvidenceKind.TOOL and "result" in item.payload
+        for item in evidence.list_by_state("run-1")
+    ), [item.payload for item in evidence.list_by_state("run-1")]
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_revisions_expect_idempotence_and_withdrawal(
+    events_surface: bool,
+) -> None:
+    """Distinct utterances survive replacement and stale/duplicate delivery; withdrawal removes only its input."""
+    from spakky.agent import AgentSteeringUpdate
+
+    updates = (
+        AgentSteeringUpdate(input_id="a", revision=1, content="early", final=False),
+        AgentSteeringUpdate(
+            input_id="b", revision=1, content="other", final=True, retain=True
+        ),
+        AgentSteeringUpdate(
+            input_id="a", revision=2, content="corrected", final=True, retain=True
+        ),
+        AgentSteeringUpdate(
+            input_id="a", revision=2, content="corrected", final=True, retain=True
+        ),
+        AgentSteeringUpdate(input_id="a", revision=0, content="stale", final=True),
+        AgentSteeringUpdate(
+            input_id="b", revision=2, content="", final=True, withdrawn=True
+        ),
+    )
+    signals = FakeSignalRepository(
+        tuple(
+            AgentSignal(
+                id=f"revision-{index}",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload=update.model_dump(mode="json"),
+            )
+            for index, update in enumerate(updates)
+        )
+    )
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    collect = _run_events_durable if events_surface else _run_durable
+    await collect(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        evidence,
+    )
+    assert [
+        message.content
+        for message in model.requests[0].messages
+        if message.metadata.get("steering_input_id")
+    ] == ["corrected"]
+    assert model.requests[0].metadata["input_revision"] == 4
+    assert signals.list_pending("run-1") == ()
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+@pytest.mark.parametrize(
+    "bad_update",
+    [
+        {"input_id": "a", "revision": -1, "content": "invalid", "final": True},
+        {"input_id": "a", "revision": 1, "content": "conflict", "final": True},
+    ],
+)
+async def test_agent_runner_steering_invalid_expect_no_model_request(
+    events_surface: bool, bad_update: JsonObject
+) -> None:
+    """Malformed or conflicting equal revisions terminate without a provider request."""
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="one",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "first",
+                    "final": True,
+                },
+            ),
+            AgentSignal(
+                id="two",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload=bad_update,
+            ),
+        )
+    )
+    model = RecordingModel(())
+    states = FakeStateRepository()
+    collect = _run_events_durable if events_surface else _run_durable
+    result = await collect(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        FakeEvidenceRepository(),
+    )
+    assert model.requests == []
+    assert states.get("run-1").status is AgentStatus.FAILED
+    assert result
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_at_tool_boundary_expect_no_effect_and_valid_history(
+    events_surface: bool,
+) -> None:
+    """A revision after a visible tool-start aborts undispatched candidates with correlated nonexecution results."""
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    model = RecordingModel(
+        (
+            _tool_event("echo.read", {"value": "obsolete"}, "obsolete"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    agent = ProbeAgent(model, states, signals, evidence)
+    runner = AgentRunner.for_agent_instance(agent)
+    stream = (
+        runner.run_events(RunAgentInput(state_id="run-1", instruction="original"))
+        if events_surface
+        else runner.run(RunAgentInput(state_id="run-1", instruction="original"))
+    )
+    revised = False
+    async for item in stream:
+        is_tool_start = (
+            isinstance(item, StepStartedEvent)
+            and item.step_name == "tool-1"
+            or isinstance(item, AgentYield)
+            and isinstance(item.payload, Progress)
+            and item.payload.current_step == "tool-1"
+        )
+        if is_tool_start and not revised:
+            revised = True
+            signals.append(
+                AgentSignal(
+                    id="boundary",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload={
+                        "input_id": "a",
+                        "revision": 1,
+                        "content": "new intent",
+                        "final": True,
+                        "retain": True,
+                    },
+                )
+            )
+    assert revised
+    assert len(model.requests) == 2
+    assert not any(
+        item.kind is AgentEvidenceKind.TOOL and "result" in item.payload
+        for item in evidence.list_by_state("run-1")
+    )
+    result_messages = [
+        message
+        for message in model.requests[-1].messages
+        if message.role is ModelMessageRole.TOOL
+    ]
+    assert len(result_messages) == 1
+    assert '"not_executed"' in str(result_messages[0].content)
+    assert result_messages[0].metadata["call_id"] == "obsolete"
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+@pytest.mark.parametrize("outcome", ["final", "cancel", "budget"])
+async def test_agent_runner_steering_wait_expect_final_cancel_or_usage_limit(
+    events_surface: bool, outcome: str
+) -> None:
+    """Completed provisional generations wait for authority and preserve billable usage even when discarded."""
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="partial",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "secret partial",
+                    "final": False,
+                },
+            ),
+        )
+    )
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA, message_delta="uncommitted"
+                ),
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.DONE, usage=ModelUsage(total_tokens=5)
+                ),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.DONE, usage=ModelUsage(total_tokens=1)
+                ),
+            ),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    if outcome == "budget":
+        agent = copy(runner.agent)
+        agent.spec = replace(agent.spec, limits=AgentExecutionLimits(max_tokens=1))
+        runner = replace(runner, agent=agent)
+    stream = (
+        runner.run_events(RunAgentInput(state_id="run-1", instruction="original"))
+        if events_surface
+        else runner.run(RunAgentInput(state_id="run-1", instruction="original"))
+    )
+    observed: list[object] = []
+    async for item in stream:
+        observed.append(item)
+        waiting = (
+            isinstance(item, ArtifactEvent)
+            and isinstance(item.content, dict)
+            and item.content.get("current_step") == "steering_wait"
+            or isinstance(item, AgentYield)
+            and isinstance(item.payload, Progress)
+            and item.payload.current_step == "steering_wait"
+        )
+        if waiting:
+            if outcome == "cancel":
+                signals.append(
+                    AgentSignal(
+                        id="stop",
+                        agent_state_id="run-1",
+                        kind=AgentSignalKind.CANCEL,
+                        payload={"reason": "stop"},
+                    )
+                )
+            else:
+                signals.append(
+                    AgentSignal(
+                        id="final",
+                        agent_state_id="run-1",
+                        kind=AgentSignalKind.STEERING_INSTRUCTION,
+                        payload={
+                            "input_id": "a",
+                            "revision": 2,
+                            "content": "final input",
+                            "final": True,
+                            "retain": True,
+                        },
+                    )
+                )
+    expected = (
+        AgentStatus.CANCELLED
+        if outcome == "cancel"
+        else AgentStatus.FAILED
+        if outcome == "budget"
+        else AgentStatus.COMPLETED
+    )
+    assert states.get("run-1").status is expected
+    assert len(model.requests) == (2 if outcome == "final" else 1)
+    assert "secret partial" not in str(states.get("run-1").metadata)
+    assert observed
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_resume_expect_ephemeral_rehydration_before_effect(
+    events_surface: bool,
+) -> None:
+    """Fresh resume retains a hash fence and rehydrates an ephemeral final revision without replaying pending effects."""
+    from spakky.agent import AgentSteeringUpdate
+
+    update = AgentSteeringUpdate(
+        input_id="a", revision=3, content="ephemeral final", final=True
+    )
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="input",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload=update.model_dump(mode="json"),
+            ),
+        )
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "draft"}, "write"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    paused = await _run_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        evidence,
+    )
+    assert isinstance(paused[-1].payload, Approval)
+    assert "ephemeral final" not in str(states.get("run-1").metadata)
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    store = FakeTaskStore()
+    runner = replace(runner, task_store=store)
+    stream = (
+        runner.run_events(
+            RunAgentInput(state_id="run-1", instruction="original", resume=True)
+        )
+        if events_surface
+        else runner.run(
+            RunAgentInput(state_id="run-1", instruction="original", resume=True)
+        )
+    )
+    rehydrated = False
+    async for item in stream:
+        waiting = (
+            isinstance(item, ArtifactEvent)
+            and isinstance(item.content, dict)
+            and item.content.get("current_step") == "steering_wait"
+            or isinstance(item, AgentYield)
+            and isinstance(item.payload, Progress)
+            and item.payload.current_step == "steering_wait"
+        )
+        if waiting:
+            signals.append(
+                AgentSignal(
+                    id="rehydrate",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload=update.model_dump(mode="json"),
+                )
+            )
+            rehydrated = True
+    assert rehydrated
+    assert len(model.requests) == 1
+    current = states.get("run-1")
+    current_approval = current.metadata["approval"]
+    assert isinstance(current_approval, dict)
+    assert current_approval["id"] == paused[-1].payload.id
+    signals.append(
+        AgentSignal(
+            id="rehydrate-again",
+            agent_state_id="run-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload=update.model_dump(mode="json"),
+        )
+    )
+    signals.append(_approval_signal("run-1", paused[-1].payload.id, "approve"))
+    if events_surface:
+        await _collect_events(
+            runner.run_events(
+                RunAgentInput(state_id="run-1", instruction="original", resume=True)
+            )
+        )
+    else:
+        await _collect(
+            runner.run(
+                RunAgentInput(state_id="run-1", instruction="original", resume=True)
+            )
+        )
+    assert states.get("run-1").status is AgentStatus.COMPLETED
+    assert len(model.requests) == 2
+    assert model.requests[-1].metadata["input_revision"] == 1
+    assert any(
+        message.content == "ephemeral final" for message in model.requests[-1].messages
+    )
+    assert store.load_history("run-1") == ()
+    assert (
+        len(
+            [
+                item
+                for item in evidence.list_by_state("run-1")
+                if item.kind is AgentEvidenceKind.TOOL and "result" in item.payload
+            ]
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_after_committed_tool_expect_receipt_preserved(
+    events_surface: bool,
+) -> None:
+    """Steering between ordered tools preserves the first actual result and cancels only undispatched work."""
+    states, evidence, signals = (
+        FakeStateRepository(),
+        FakeEvidenceRepository(),
+        FakeSignalRepository(()),
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.read", {"value": "committed"}, "first"),
+                _tool_event("echo.read", {"value": "obsolete"}, "second"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    stream = (
+        runner.run_events(RunAgentInput(state_id="run-1", instruction="original"))
+        if events_surface
+        else runner.run(RunAgentInput(state_id="run-1", instruction="original"))
+    )
+    async for item in stream:
+        committed = (
+            isinstance(item, ToolCallResultEvent)
+            or isinstance(item, AgentYield)
+            and isinstance(item.payload, Tool)
+        )
+        if committed:
+            signals.append(
+                AgentSignal(
+                    id="revise",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload={
+                        "input_id": "a",
+                        "revision": 1,
+                        "content": "changed after effect",
+                        "final": True,
+                        "retain": True,
+                    },
+                )
+            )
+    results = [
+        item
+        for item in evidence.list_by_state("run-1")
+        if item.kind is AgentEvidenceKind.TOOL and "result" in item.payload
+    ]
+    assert len(results) == 1
+    assert results[0].payload["result"] == {"value": "committed"}
+    tool_messages = [
+        message
+        for message in model.requests[-1].messages
+        if message.role is ModelMessageRole.TOOL
+    ]
+    assert [message.metadata["call_id"] for message in tool_messages] == [
+        "first",
+        "second",
+    ]
+    assert '"committed"' in str(tool_messages[0].content)
+    assert '"not_executed"' in str(tool_messages[1].content)
+
+
+@pytest.mark.parametrize(
+    "invalid_field,invalid_value",
+    [
+        ("steering", {}),
+        (
+            "steering",
+            [{"input_id": "a", "revision": -1, "content": "invalid", "final": True}],
+        ),
+        (
+            "steering",
+            [
+                {"input_id": "a", "revision": 1, "content": "one", "final": True},
+                {"input_id": "a", "revision": 2, "content": "two", "final": True},
+            ],
+        ),
+        ("steering_rehydration", []),
+        ("steering_rehydration", {"a": False}),
+    ],
+)
+async def test_agent_runner_steering_checkpoint_decoder_expect_corruption_rejected(
+    invalid_field: str, invalid_value: JsonValue
+) -> None:
+    """Typed checkpoint decoding rejects malformed revision/tombstone structures before restoring authority."""
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    await _run_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        evidence,
+    )
+    checkpoint = states.get("run-1").metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, dict)
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    with pytest.raises(AgentDefinitionError, match="steering"):
+        runner._context_from_checkpoint(
+            "run-1", {**checkpoint, invalid_field: invalid_value}
+        )
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+@pytest.mark.parametrize("cleanup_error", [False, True])
+async def test_agent_runner_steering_blocked_cancel_expect_cleanup_or_failure(
+    events_surface: bool, cleanup_error: bool
+) -> None:
+    """Cancellation interrupts a blocked provider and unconfirmed cleanup cannot be treated as a completed cancellation."""
+    from asyncio import create_task, wait_for
+
+    entered = Event()
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    cleaned: list[bool] = []
+
+    class BlockedModel(RecordingModel):
+        @override
+        async def stream(
+            self, request: ModelRequest
+        ) -> AsyncIterator[ModelStreamEvent]:
+            self.requests.append(request)
+            entered.set()
+            try:
+                await Event().wait()
+                yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            finally:
+                cleaned.append(True)
+                if cleanup_error:
+                    raise AgentDefinitionError("Remote cancellation unconfirmed")
+
+    model = BlockedModel(())
+    collect = _run_events_durable if events_surface else _run_durable
+    task = create_task(
+        collect(
+            model,
+            RunAgentInput(state_id="run-1", instruction="original"),
+            states,
+            signals,
+            evidence,
+        )
+    )
+    await wait_for(entered.wait(), 1)
+    signals.append(
+        AgentSignal(id="cancel", agent_state_id="run-1", kind=AgentSignalKind.CANCEL)
+    )
+    result = await wait_for(task, 1)
+    assert cleaned == [True]
+    assert len(model.requests) == 1
+    assert states.get("run-1").status is (
+        AgentStatus.FAILED if cleanup_error else AgentStatus.CANCELLED
+    )
+    assert result
+
+
+async def test_agent_runner_steering_final_frame_boundary_expect_obsolete_text_cleared() -> (
+    None
+):
+    """Input arriving after the last model step frame closes fences the old final and accumulated text."""
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="obsolete final",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="revised final",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    terminal: RunFinishedEvent | None = None
+    async for item in runner.run_events(
+        RunAgentInput(state_id="run-1", instruction="original")
+    ):
+        if isinstance(item, StepFinishedEvent) and item.step_name == "model-1":
+            signals.append(
+                AgentSignal(
+                    id="final-fence",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload={
+                        "input_id": "a",
+                        "revision": 1,
+                        "content": "revised",
+                        "final": True,
+                        "retain": True,
+                    },
+                )
+            )
+        if isinstance(item, RunFinishedEvent):
+            terminal = item
+    assert terminal is not None and terminal.error is None
+    assert len(model.requests) == 2
+    checkpoint = states.get("run-1").metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, dict)
+    assert checkpoint["assistant_text"] == ["revised final"]
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_received_inside_tool_expect_commit_before_revision(
+    events_surface: bool,
+) -> None:
+    """Input arriving inside an executing tool cannot suppress or replay that tool's actual result receipt."""
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    model = RecordingModel(
+        (
+            _tool_event("echo.read", {"value": "completed"}, "effect"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+
+    @Agent(spec=DURABLE_SPEC)
+    class InputDuringToolAgent:
+        def __init__(
+            self,
+            model: IAgentModel,
+            states: FakeStateRepository,
+            signals: FakeSignalRepository,
+            evidence: FakeEvidenceRepository,
+        ) -> None:
+            self._model = model
+            self._states = states
+            self._signals = signals
+            self._evidence = evidence
+
+        @agent_tool(
+            schema_name="echo.read",
+            effects=ToolEffects.read_only(),
+            idempotency=Idempotency.IDEMPOTENT,
+            evidence=EvidenceCapture.STRUCTURED,
+            approval=ToolApprovalRequirement.NOT_REQUIRED,
+        )
+        def echo_read(self, value: str) -> EchoRecord:
+            signals.append(
+                AgentSignal(
+                    id="during-effect",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload={
+                        "input_id": "a",
+                        "revision": 1,
+                        "content": "new input",
+                        "final": True,
+                        "retain": True,
+                    },
+                )
+            )
+            return EchoRecord(value=value)
+
+    runner = AgentRunner.for_agent_instance(
+        InputDuringToolAgent(model, states, signals, evidence)
+    )
+    if events_surface:
+        await _collect_events(
+            runner.run_events(RunAgentInput(state_id="run-1", instruction="original"))
+        )
+    else:
+        await _collect(
+            runner.run(RunAgentInput(state_id="run-1", instruction="original"))
+        )
+    results = [
+        item
+        for item in evidence.list_by_state("run-1")
+        if item.kind is AgentEvidenceKind.TOOL and "result" in item.payload
+    ]
+    assert len(results) == 1
+    assert results[0].payload["result"] == {"value": "completed"}
+    assert len(model.requests) == 2
+    assert model.requests[-1].messages[-1].content == "new input"
+    assert states.get("run-1").status is AgentStatus.COMPLETED
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_provisional_provider_failure_expect_immediate_failure(
+    events_surface: bool,
+) -> None:
+    """A provider failure is terminal even while provisional input is awaiting final authority."""
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="partial",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "partial",
+                    "final": False,
+                },
+            ),
+        )
+    )
+    model = RecordingModel(
+        (
+            ModelStreamEvent(
+                kind=ModelStreamEventKind.ERROR,
+                error=ModelError(code="provider-failed", message="unavailable"),
+            ),
+        )
+    )
+    states = FakeStateRepository()
+    collect = _run_events_durable if events_surface else _run_durable
+    result = await collect(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        FakeEvidenceRepository(),
+    )
+    assert states.get("run-1").status is AgentStatus.FAILED
+    assert len(model.requests) == 1
+    assert result
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_not_accepted_expect_history_unchanged(
+    events_surface: bool,
+) -> None:
+    """Revisioned steering cannot change model input unless the agent explicitly accepts its signal kind."""
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="unaccepted",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "unaccepted input",
+                    "final": True,
+                },
+            ),
+        )
+    )
+    model = RecordingModel((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    annotation = copy(runner.agent)
+    annotation.spec = replace(
+        annotation.spec, accepted_signals=(AgentSignalKind.USER_MESSAGE,)
+    )
+    runner = replace(runner, agent=annotation)
+    if events_surface:
+        await _collect_events(
+            runner.run_events(RunAgentInput(state_id="run-1", instruction="original"))
+        )
+    else:
+        await _collect(
+            runner.run(RunAgentInput(state_id="run-1", instruction="original"))
+        )
+    assert [
+        message.content
+        for message in model.requests[0].messages
+        if message.role is ModelMessageRole.USER
+    ] == ["original"]
+    assert [signal.id for signal in signals.list_pending("run-1")] == ["unaccepted"]
+    assert states.get("run-1").status is AgentStatus.COMPLETED
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_rehydration_hash_survives_unrelated_revision_and_restart(
+    events_surface: bool,
+) -> None:
+    """A second restart after saving unrelated steering preserves the original ephemeral input's rehydration digest."""
+    from spakky.agent import AgentSteeringUpdate
+
+    original = AgentSteeringUpdate(
+        input_id="a", revision=4, content="ephemeral original", final=True
+    )
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="original",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload=original.model_dump(mode="json"),
+            ),
+        )
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "draft"}, "write"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+        )
+    )
+    await _run_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        evidence,
+    )
+    checkpoint = states.get("run-1").metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, dict)
+    original_hashes = checkpoint["steering_rehydration"]
+    signals.append(
+        AgentSignal(
+            id="other",
+            agent_state_id="run-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload={
+                "input_id": "b",
+                "revision": 1,
+                "content": "other retained input",
+                "final": True,
+                "retain": True,
+            },
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    # Stop at the next visible preparation boundary, after the unrelated input's
+    # checkpoint is committed but before the next provider request starts.
+    intermediate = runner.run(
+        RunAgentInput(state_id="run-1", instruction="original", resume=True)
+    )
+    async for item in intermediate:
+        if (
+            isinstance(item.payload, Progress)
+            and item.payload.current_step == "steering_wait"
+        ):
+            break
+    await intermediate.aclose()
+    checkpoint = states.get("run-1").metadata[RUNNER_CHECKPOINT_METADATA_KEY]
+    assert isinstance(checkpoint, dict)
+    assert checkpoint["steering_rehydration"] == original_hashes
+    assert "ephemeral original" not in str(checkpoint)
+    signals.append(
+        AgentSignal(
+            id="rehydrate",
+            agent_state_id="run-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload=original.model_dump(mode="json"),
+        )
+    )
+    final_runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    if events_surface:
+        result = await _collect_events(
+            final_runner.run_events(
+                RunAgentInput(state_id="run-1", instruction="original", resume=True)
+            )
+        )
+    else:
+        result = await _collect(
+            final_runner.run(
+                RunAgentInput(state_id="run-1", instruction="original", resume=True)
+            )
+        )
+    assert states.get("run-1").status is AgentStatus.COMPLETED
+    assert any(
+        message.content == "ephemeral original"
+        for message in model.requests[-1].messages
+    )
+    assert any(
+        message.content == "other retained input"
+        for message in model.requests[-1].messages
+    )
+    assert result
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+@pytest.mark.parametrize("required", [False, True])
+async def test_agent_runner_steering_withdrawn_idle_input_expect_control_cancel_or_original_goal(
+    events_surface: bool, required: bool
+) -> None:
+    """Idle-only runs cancel silently on withdrawal while an existing original goal continues in the same run."""
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="partial",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "ambient partial",
+                    "final": False,
+                },
+            ),
+        )
+    )
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    model = ScriptedRoundModel(
+        (
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="original goal answer",
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    command = RunAgentInput(
+        state_id="run-1", instruction="original", steering_input_required=required
+    )
+    stream = runner.run_events(command) if events_surface else runner.run(command)
+    results: list[AgentYield[object] | AgentEvent] = []
+    async for item in stream:
+        results.append(item)
+        waiting = (
+            isinstance(item, ArtifactEvent)
+            and isinstance(item.content, dict)
+            and item.content.get("current_step") == "steering_wait"
+            or isinstance(item, AgentYield)
+            and isinstance(item.payload, Progress)
+            and item.payload.current_step == "steering_wait"
+        )
+        if waiting:
+            signals.append(
+                AgentSignal(
+                    id="withdraw",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload={
+                        "input_id": "a",
+                        "revision": 2,
+                        "content": "",
+                        "final": True,
+                        "withdrawn": True,
+                    },
+                )
+            )
+    state = states.get("run-1")
+    if required:
+        assert state.status is AgentStatus.CANCELLED
+        assert state.reason is AgentStateReason.INPUT_WITHDRAWN
+        assert len(model.requests) == 1
+        terminal = results[-1]
+        if isinstance(terminal, RunFinishedEvent):
+            assert terminal.error is not None
+            assert terminal.error["code"] == "cancelled"
+            metadata = terminal.error["metadata"]
+            assert isinstance(metadata, dict)
+            assert metadata["control_outcome"] == "input_withdrawn"
+        else:
+            assert isinstance(terminal, AgentYield) and isinstance(
+                terminal.payload, Cancel
+            )
+            assert terminal.payload.metadata["code"] == "agent_input_withdrawn"
+    else:
+        assert state.status is AgentStatus.COMPLETED
+        assert len(model.requests) == 2
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_required_before_first_input_expect_wait_then_real_input(
+    events_surface: bool,
+) -> None:
+    """An input-only run cannot publish the placeholder before its first actual finalized input arrives."""
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    model = ScriptedRoundModel(
+        (
+            (ModelStreamEvent(kind=ModelStreamEventKind.DONE),),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA, message_delta="real answer"
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    command = RunAgentInput(
+        state_id="run-1", instruction="placeholder", steering_input_required=True
+    )
+    stream = runner.run_events(command) if events_surface else runner.run(command)
+    waited = False
+    async for item in stream:
+        waiting = (
+            isinstance(item, ArtifactEvent)
+            and isinstance(item.content, dict)
+            and item.content.get("current_step") == "steering_wait"
+            or isinstance(item, AgentYield)
+            and isinstance(item.payload, Progress)
+            and item.payload.current_step == "steering_wait"
+        )
+        if waiting:
+            waited = True
+            signals.append(
+                AgentSignal(
+                    id="first",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload={
+                        "input_id": "a",
+                        "revision": 1,
+                        "content": "actual input",
+                        "final": True,
+                        "retain": True,
+                    },
+                )
+            )
+    assert waited
+    assert states.get("run-1").status is AgentStatus.COMPLETED
+    assert len(model.requests) == 2
+    assert model.requests[-1].messages[-1].content == "actual input"
+
+
+async def test_agent_runner_steering_resume_requirement_changed_expect_rejected() -> (
+    None
+):
+    """Resume cannot disable the original input-only authority requirement."""
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="final",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "final",
+                    "final": True,
+                    "retain": True,
+                },
+            ),
+        )
+    )
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    await _run_durable(
+        model,
+        RunAgentInput(
+            state_id="run-1", instruction="placeholder", steering_input_required=True
+        ),
+        states,
+        signals,
+        evidence,
+    )
+    result = await _run_durable(
+        model,
+        RunAgentInput(
+            state_id="run-1",
+            instruction="placeholder",
+            resume=True,
+            steering_input_required=False,
+        ),
+        states,
+        signals,
+        evidence,
+    )
+    assert isinstance(result[-1].payload, Error)
+    assert result[-1].payload.code == "agent_checkpoint_invalid"
+    assert len(model.requests) == 1
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_resumes_approval_pause_expect_fresh_plan_and_stale_approval_rejected(
+    events_surface: bool,
+) -> None:
+    """A revision resumes an approval-paused run without approving its obsolete tool, then binds new approval to fresh intent."""
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                _tool_event("echo.write", {"value": "obsolete"}, "old-call"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                _tool_event("echo.write", {"value": "revised"}, "new-call"),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    paused = await _run_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        evidence,
+    )
+    original_approval = paused[-1].payload
+    assert isinstance(original_approval, Approval)
+    signals.append(
+        AgentSignal(
+            id="correct-while-paused",
+            agent_state_id="run-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload={
+                "input_id": "a",
+                "revision": 1,
+                "content": "revised intent",
+                "final": True,
+                "retain": True,
+            },
+        )
+    )
+    collect = _run_events_durable if events_surface else _run_durable
+    await collect(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original", resume=True),
+        states,
+        signals,
+        evidence,
+    )
+    assert len(model.requests) == 2
+    assert model.requests[-1].messages[-1].content == "revised intent"
+    current = states.get("run-1")
+    approval = current.metadata["approval"]
+    assert isinstance(approval, dict)
+    assert approval["id"] != original_approval.id
+    assert "new-call" in str(approval["id"])
+    signals.append(_approval_signal("run-1", original_approval.id, "approve"))
+    await collect(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original", resume=True),
+        states,
+        signals,
+        evidence,
+    )
+    assert len(model.requests) == 2
+    assert not any(
+        item.kind is AgentEvidenceKind.TOOL and "result" in item.payload
+        for item in evidence.list_by_state("run-1")
+    )
+    assert states.get("run-1").status is AgentStatus.INTERRUPTED
+
+
+async def test_agent_runner_steering_queued_old_delta_expect_captured_generation() -> (
+    None
+):
+    """An already queued old delta retains its generation after invalidation and cannot masquerade as current output."""
+    states, signals, evidence = (
+        FakeStateRepository(),
+        FakeSignalRepository(()),
+        FakeEvidenceRepository(),
+    )
+    model = ScriptedRoundModel(
+        (
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="queued old",
+                    metadata={"input_revision": 999},
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+            (
+                ModelStreamEvent(
+                    kind=ModelStreamEventKind.MESSAGE_DELTA,
+                    message_delta="current",
+                    metadata={"input_revision": 999},
+                ),
+                ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+            ),
+        )
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    queued: list[AgentEvent] = []
+    async for item in runner.run_events(
+        RunAgentInput(state_id="run-1", instruction="original")
+    ):
+        queued.append(item)
+        if isinstance(item, MessageDeltaEvent) and item.delta == "queued old":
+            assert item.metadata["input_revision"] == 0
+            signals.append(
+                AgentSignal(
+                    id="revise",
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.STEERING_INSTRUCTION,
+                    payload={
+                        "input_id": "a",
+                        "revision": 1,
+                        "content": "new intent",
+                        "final": True,
+                        "retain": True,
+                    },
+                )
+            )
+    old, current = [item for item in queued if isinstance(item, MessageDeltaEvent)]
+    assert old.metadata["input_revision"] == 0
+    assert current.metadata["input_revision"] == 1
+    assert old.message_id != current.message_id
+    invalidation_index = next(
+        index
+        for index, item in enumerate(queued)
+        if isinstance(item, ArtifactEvent) and item.metadata.get("invalidate_output")
+    )
+    assert queued.index(old) < invalidation_index < queued.index(current)
+    final = queued[-1]
+    assert isinstance(final, RunFinishedEvent) and final.metadata["input_revision"] == 1
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_agent_runner_steering_rehydration_deadline_expect_typed_timeout(
+    events_surface: bool,
+) -> None:
+    """An optional invocation deadline still terminates a resume waiting for its ephemeral authority source."""
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="input",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "ephemeral",
+                    "final": True,
+                },
+            ),
+        )
+    )
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    await _run_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        evidence,
+    )
+    runner = AgentRunner.for_agent_instance(
+        ProbeAgent(model, states, signals, evidence)
+    )
+    annotation = copy(runner.agent)
+    annotation.spec = replace(
+        annotation.spec, limits=AgentExecutionLimits(timeout_seconds=0.01)
+    )
+    runner = replace(runner, agent=annotation)
+    if events_surface:
+        result = await _collect_events(
+            runner.run_events(
+                RunAgentInput(state_id="run-1", instruction="original", resume=True)
+            )
+        )
+        terminal = result[-1]
+        assert isinstance(terminal, RunFinishedEvent) and terminal.error is not None
+        assert terminal.error["code"] == "agent_timeout"
+    else:
+        result = await _collect(
+            runner.run(
+                RunAgentInput(state_id="run-1", instruction="original", resume=True)
+            )
+        )
+        terminal = result[-1].payload
+        assert isinstance(terminal, Error) and terminal.code == "agent_timeout"
+    assert states.get("run-1").reason is AgentStateReason.TIMEOUT
+    assert len(model.requests) == 1

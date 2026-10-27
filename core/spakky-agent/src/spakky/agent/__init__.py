@@ -205,7 +205,12 @@ from spakky.agent.interfaces.model import (
     StructuredOutputSpec,
     ToolCallingSpec,
 )
-from spakky.agent.signal import AgentSignal, AgentSignalKind, ApprovalDecision
+from spakky.agent.signal import (
+    AgentSteeringUpdate,
+    AgentSignal,
+    AgentSignalKind,
+    ApprovalDecision,
+)
 from spakky.agent.signal_consumption import (
     AgentSignalConsumptionBatch,
     AgentSignalPollPoint,
@@ -294,6 +299,7 @@ PLUGIN_NAME = Plugin(name="spakky-agent")
 """Plugin identifier for the Spakky Agent package."""
 
 __all__ = [
+    "AgentSteeringUpdate",
     "IAgentModel",
     "IAgentModelResolver",
     "IAgentRunnerFactory",
