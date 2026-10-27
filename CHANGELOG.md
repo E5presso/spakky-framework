@@ -1,3 +1,13 @@
+## v8.4.0 (2026-10-27)
+
+### Feat
+
+- **llm**: allow profiles without request timeouts
+
+### Fix
+
+- **agent**: declare structured output runtime dependency
+
 ## v8.3.0 (2026-10-27)
 
 ### Feat
