@@ -3852,6 +3852,7 @@ name = "spakky-agent"
 version = "8.3.0"
 source = { editable = "core/spakky-agent" }
 dependencies = [
+    { name = "pydantic" },
     { name = "spakky" },
 ]
 
@@ -3862,7 +3863,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "spakky", editable = "core/spakky" }]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.13.4" },
+    { name = "spakky", editable = "core/spakky" },
+]
 
 [package.metadata.requires-dev]
 dev = [

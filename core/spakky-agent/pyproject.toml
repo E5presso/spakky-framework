@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
-dependencies = ["spakky>=8.3.0"]
+dependencies = [
+    "pydantic>=2.13.4",
+    "spakky>=8.3.0",
+]
 
 [dependency-groups]
 dev = [

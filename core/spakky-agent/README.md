@@ -15,6 +15,7 @@
 ## 설치
 
 Core contract만 사용할 때는 `spakky-agent`를 설치합니다.
+공개 구조화 출력 계약에서 사용하는 Pydantic은 runtime 의존성으로 함께 설치됩니다.
 
 ```bash
 pip install spakky-agent
