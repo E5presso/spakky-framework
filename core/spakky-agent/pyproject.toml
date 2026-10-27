@@ -1,6 +1,6 @@
 [project]
 name = "spakky-agent"
-version = "8.4.0"
+version = "8.5.0"
 description = "Agentic hexagonal architecture contracts for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "pydantic>=2.13.4",
-    "spakky>=8.4.0",
+    "spakky>=8.5.0",
 ]
 
 [dependency-groups]

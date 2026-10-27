@@ -1,3 +1,14 @@
+## v8.5.0 (2026-10-27)
+
+### Feat
+
+- **agent**: support revisioned in-run steering
+
+### Fix
+
+- **agent**: preserve captured revision in tool candidate frames
+- **agui**: prevent integration tests from hanging on run errors
+
 ## v8.4.0 (2026-10-27)
 
 ### Feat
