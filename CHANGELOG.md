@@ -1,3 +1,9 @@
+## v8.3.0 (2026-10-27)
+
+### Feat
+
+- **agent**: allow unset execution step and tool limits
+
 ## v8.2.0 (2026-10-21)
 
 ### Feat
