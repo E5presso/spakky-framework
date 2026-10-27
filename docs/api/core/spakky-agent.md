@@ -31,8 +31,8 @@ valid terminal step에서 `FINAL` 또는 `RUN_FINISHED`를 정확히 한 번 방
 
 | 필드 | 기본값 | 집행 시점 |
 | --- | --- | --- |
-| `max_steps` | `8` | 다음 model request 직전 |
-| `max_tool_calls` | `32` | candidate batch 전체 dispatch 직전 |
+| `max_steps` | `None` | 다음 model request 직전 |
+| `max_tool_calls` | `None` | candidate batch 전체 dispatch 직전 |
 | `max_tokens` | `None` | terminal usage 누적 직후와 다음 request preflight |
 | `max_cost` | `None` | terminal step cost 누적 직후와 다음 request preflight |
 | `timeout_seconds` | `None` | model과 async tool await의 invocation deadline |

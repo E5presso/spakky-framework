@@ -2108,7 +2108,7 @@ class AgentRunner:
     ) -> ModelError | None:
         limits = self.agent.spec.limits
         context.last_step_cost = None
-        if context.step_count >= limits.max_steps:
+        if limits.max_steps is not None and context.step_count >= limits.max_steps:
             return _limit_error(
                 LIMIT_MAX_STEPS_CODE,
                 "Agent model-step limit exceeded",
@@ -2153,7 +2153,11 @@ class AgentRunner:
         context: _ExecutionContext,
         batch_size: int,
     ) -> ModelError | None:
-        if context.tool_call_count + batch_size > self.agent.spec.limits.max_tool_calls:
+        max_tool_calls = self.agent.spec.limits.max_tool_calls
+        if (
+            max_tool_calls is not None
+            and context.tool_call_count + batch_size > max_tool_calls
+        ):
             return _limit_error(
                 LIMIT_MAX_TOOL_CALLS_CODE,
                 "Agent tool-call limit exceeded",

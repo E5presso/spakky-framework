@@ -4562,15 +4562,23 @@ async def test_iterative_sync_tool_with_deadline_fails_before_dispatch(
     assert target.called is False
 
 
-async def test_guarded_complete_path_uses_same_iterative_tool_semantics() -> None:
+@pytest.mark.parametrize("tool_rounds", [1, 33])
+async def test_guarded_complete_path_uses_same_iterative_tool_semantics(
+    tool_rounds: int,
+) -> None:
     """NO_STREAM mode는 complete response tool batch 뒤 complete를 재호출한다."""
     model = ScriptedCompleteModel(
         (
-            ModelResponse(
-                content="calling",
-                tool_calls=(
-                    ModelToolCall("echo.read", {"value": "complete"}, "complete-1"),
-                ),
+            *(
+                ModelResponse(
+                    content="calling",
+                    tool_calls=(
+                        ModelToolCall(
+                            "echo.read", {"value": "complete"}, f"complete-{index}"
+                        ),
+                    ),
+                )
+                for index in range(tool_rounds)
             ),
             ModelResponse(content="guarded final"),
         )
@@ -4583,13 +4591,39 @@ async def test_guarded_complete_path_uses_same_iterative_tool_semantics() -> Non
         )
     )
 
-    assert len(model.requests) == 2
+    assert len(model.requests) == tool_rounds + 1
     assert model.stream_calls == 0
-    assert sum(item.kind is AgentYieldKind.TOOL for item in items) == 1
+    assert sum(item.kind is AgentYieldKind.TOOL for item in items) == tool_rounds
     assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 1
     assert any(
         message.role is ModelMessageRole.TOOL for message in model.requests[1].messages
     )
+
+
+async def test_iterative_runner_unset_limits_expect_continues_past_former_defaults() -> (
+    None
+):
+    """Unset budgets allow streaming execution beyond eight steps and 32 tools."""
+    rounds: list[tuple[ModelStreamEvent, ...]] = [
+        (
+            _tool_event("echo.read", {"value": str(index)}, f"read-{index}"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+        for index in range(33)
+    ]
+    rounds.append((ModelStreamEvent(kind=ModelStreamEventKind.DONE),))
+    model = ScriptedRoundModel(rounds)
+    items = await _collect(
+        _invoke_execute(
+            StatelessProbeAgent(model),
+            RunAgentInput(
+                state_id="unlimited-defaults", instruction="finish all reads"
+            ),
+        )
+    )
+    assert len(model.requests) == 34
+    assert sum(item.kind is AgentYieldKind.TOOL for item in items) == 33
+    assert items[-1].kind is AgentYieldKind.FINAL
 
 
 @pytest.mark.parametrize("terminal_count", [0, 2])

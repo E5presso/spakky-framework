@@ -253,7 +253,7 @@ Runner-backed mode에서 runner는 생성자 parameter 이름이 아니라 **typ
 | `accepted_signals` | 실행 중 user message, approval decision, cancel, resume 등을 받을 때 | signal queue를 소비하지 않는 stateless 경로가 됩니다. |
 | `recovery` | action boundary resume/retry/skip 판단이 필요할 때 | 재시작 후 이어가기 계획을 만들지 않습니다. |
 | `streaming_exposure_mode` | protocol adapter가 token streaming을 얼마나 보수적으로 노출할지 정할 때 | `BALANCED`가 사용됩니다. |
-| `limits` | model step, 실제 tool call, 누적 token/cost, wall-clock 실행 시간을 제한할 때 | `max_steps=8`, `max_tool_calls=32`, token/cost/time 제한 없음이 사용됩니다. |
+| `limits` | model step, 실제 tool call, 누적 token/cost, wall-clock 실행 시간을 제한할 때 | 모든 상한의 기본값은 `None`이며 해당 제한을 적용하지 않습니다. |
 | `teammates` / `delegation_allowed` | local/remote Agent에게 일을 위임할 때 | delegation tool이 만들어지지 않습니다. |
 | `compaction` | 긴 멀티턴 history를 압축해야 할 때 | context가 길어져도 압축 전략을 적용하지 않습니다. |
 | `refresh_context_each_step` | 주입된 `IAgentContextProvider`를 model step마다 다시 호출할 때 | 한 invocation의 첫 model step에서 받은 context를 재사용합니다. |
@@ -584,7 +584,7 @@ class NoteAgent:
 
 `NoteAgent`에는 `execute()`가 없습니다. Runner가 spec(`instructions`), 생성자에
 주입된 `IAgentModel`, `@agent_tool` catalog와 `limits`로부터 bounded iterative 실행을
-합성합니다. `max_steps=8`, `max_tool_calls=32`는 원래 기본값이고, 예제는 provider usage와
+합성합니다. `max_steps=8`, `max_tool_calls=32`는 이 예제에서 명시한 상한이며 기본값은 모두 `None`입니다. 예제는 provider usage와
 wall-clock budget도 함께 켰습니다. `timeout_seconds`는 `AgentExecutionSpec`의 direct
 field나 alias가 아니며 모든 실행 제한은 `limits=AgentExecutionLimits(...)` 한 곳에 둡니다.
 예제의 `read_note()`가 `async def`인 이유도 이 deadline을 실제로 집행하기 위해서입니다.

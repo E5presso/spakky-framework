@@ -494,7 +494,7 @@ spec = AgentExecutionSpec(
 )
 ```
 
-`AgentExecutionLimits()`의 기본값은 `max_steps=8`, `max_tool_calls=32`,
+`AgentExecutionLimits()`의 기본값은 `max_steps=None`, `max_tool_calls=None`,
 `max_tokens=None`, `max_cost=None`, `timeout_seconds=None`입니다. Count/token/time 값은
 설정한다면 양수여야 하고 cost는 positive finite `Decimal`이어야 합니다.
 `AgentExecutionSpec.timeout_seconds` field나 compatibility alias는 없으며 반드시 `limits`

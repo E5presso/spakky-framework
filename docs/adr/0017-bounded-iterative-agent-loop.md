@@ -13,7 +13,7 @@ status: accepted
 
 [ADR-0013](0013-declarative-agent-loop-ownership.md)은 개발자가 model stream과 tool dispatch 배관을 반복 작성하지 않도록 framework가 표준 loop를 소유한다고 결정했습니다. 초기 구현은 한 model request에서 나온 tool candidate를 실행한 뒤 result/evidence를 caller에게 내보내고 종료했습니다. Tool result를 model history로 돌려보내 최종 답을 생성하거나 여러 tool round를 이어 가려면 custom `execute()`가 필요했습니다.
 
-이 제한은 선언형 DX의 핵심을 application code로 다시 밀어냈습니다. Tool을 선택한 model이 그 결과를 관찰해 다음 판단을 내려야 하는 일반적인 agent workflow에서 caller가 반복 loop, transcript, provider correlation metadata, approval resume와 budget을 직접 구현해야 했습니다. Framework가 loop를 소유한다는 ADR-0013의 원칙을 실제 multi-round 실행 의미까지 확장하되 unbounded 반복과 authority 우회를 막아야 했습니다.
+이 제한은 선언형 DX의 핵심을 application code로 다시 밀어냈습니다. Tool을 선택한 model이 그 결과를 관찰해 다음 판단을 내려야 하는 일반적인 agent workflow에서 caller가 반복 loop, transcript, provider correlation metadata, approval resume와 budget을 직접 구현해야 했습니다. Framework가 loop를 소유한다는 ADR-0013의 원칙을 실제 multi-round 실행 의미까지 확장하되 애플리케이션이 선택한 실행 예산과 authority 경계를 보존해야 합니다. 제한 미지정 실행도 공식 계약으로 지원합니다.
 
 Pydantic AI의 `UsageLimits`는 비교 선례로만 사용했습니다. 현재 공식 문서는 request limit을 다음 model request 전에, tool-call limit을 batch 실행 전에, token limit을 provider response usage를 받은 뒤 검사한다고 설명합니다. Parallel tool batch가 limit을 넘으면 아무 tool도 실행하지 않는다는 점도 참고했습니다. Spakky의 field 이름, default, error, durable checkpoint와 execution timing은 아래 live source 계약이 독립적으로 정합니다.
 
@@ -38,7 +38,7 @@ spec = AgentExecutionSpec(
 )
 ```
 
-`max_steps`와 `max_tool_calls`는 각각 8과 32의 positive default를 갖습니다. `max_tokens`와 `timeout_seconds`는 `None`이면 비활성이고 설정할 때는 positive여야 합니다. [ADR-0020](0020-agent-memory-evaluation-cost-telemetry.md)은 이 limit surface에 `max_cost: Decimal | None = None`을 추가해 이 ADR을 부분 보완합니다. `max_cost`는 `None`이면 비활성이고 설정할 때 positive finite `Decimal`이어야 합니다. Limit error는 counters(`model_steps`, `tool_calls`, `total_tokens`)와 resolve된 route metadata를 함께 운반하며 cost 경계는 exact accumulated cost/pricing identity도 보존합니다.
+2026-10-27 사용자 정정에 따라 `max_steps`와 `max_tool_calls`는 `int | None = None`입니다. `None`이면 해당 상한을 적용하지 않고, 명시한 정수는 양수여야 합니다. 이전의 기본 8/32 강제 상한을 대체합니다. `max_tokens`와 `timeout_seconds`는 `None`이면 비활성이고 설정할 때는 positive여야 합니다. [ADR-0020](0020-agent-memory-evaluation-cost-telemetry.md)은 이 limit surface에 `max_cost: Decimal | None = None`을 추가해 이 ADR을 부분 보완합니다. `max_cost`는 `None`이면 비활성이고 설정할 때 positive finite `Decimal`이어야 합니다. Limit error는 counters(`model_steps`, `tool_calls`, `total_tokens`)와 resolve된 route metadata를 함께 운반하며 cost 경계는 exact accumulated cost/pricing identity도 보존합니다.
 
 ### 2. Streaming과 guarded-complete는 같은 loop로 합류합니다
 

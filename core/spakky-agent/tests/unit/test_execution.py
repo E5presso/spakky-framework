@@ -44,8 +44,8 @@ def test_agent_execution_spec_expect_defaults_are_non_durable_and_balanced() -> 
     assert spec.recovery == RecoveryStrategy.NONE
     assert spec.streaming_exposure_mode == StreamingExposureMode.BALANCED
     assert spec.limits == AgentExecutionLimits()
-    assert spec.limits.max_steps == 8
-    assert spec.limits.max_tool_calls == 32
+    assert spec.limits.max_steps is None
+    assert spec.limits.max_tool_calls is None
     assert spec.limits.max_tokens is None
     assert spec.limits.timeout_seconds is None
     assert spec.teammates == ()
@@ -112,8 +112,8 @@ def test_agent_execution_limits_expect_accepts_positive_bounds(
     limits: AgentExecutionLimits,
 ) -> None:
     """모델 step, 실제 tool dispatch, provider usage 예산을 선언한다."""
-    assert limits.max_steps > 0
-    assert limits.max_tool_calls > 0
+    assert limits.max_steps is None or limits.max_steps > 0
+    assert limits.max_tool_calls is None or limits.max_tool_calls > 0
 
 
 @pytest.mark.parametrize(

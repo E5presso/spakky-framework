@@ -41,19 +41,19 @@ class StreamingExposureMode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class AgentExecutionLimits:
-    """Bounded execution limits declared outside infrastructure capabilities."""
+    """Optional execution limits; None leaves the corresponding budget unset."""
 
-    max_steps: int = 8
-    max_tool_calls: int = 32
+    max_steps: int | None = None
+    max_tool_calls: int | None = None
     max_tokens: int | None = None
     max_cost: Decimal | None = None
     timeout_seconds: float | None = None
 
     def __post_init__(self) -> None:
         """Reject limits that would fail later at bootstrap."""
-        if self.max_steps <= 0:
+        if self.max_steps is not None and self.max_steps <= 0:
             raise AgentDefinitionError("Agent model-step limit must be positive")
-        if self.max_tool_calls <= 0:
+        if self.max_tool_calls is not None and self.max_tool_calls <= 0:
             raise AgentDefinitionError("Agent tool-call limit must be positive")
         if self.max_tokens is not None and self.max_tokens <= 0:
             raise AgentDefinitionError("Agent token limit must be positive")
