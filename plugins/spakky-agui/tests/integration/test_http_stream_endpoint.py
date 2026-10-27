@@ -16,6 +16,7 @@ from spakky.agent import (
     EvidenceCapture,
     Idempotency,
     ModelCapability,
+    ModelMessageRole,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -66,6 +67,13 @@ class _ScriptedModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        # The runner asks for a final answer after dispatching the tool result.
+        if any(message.role is ModelMessageRole.TOOL for message in request.messages):
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="finished"
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
         yield ModelStreamEvent(
             kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="hello"
         )

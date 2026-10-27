@@ -290,6 +290,19 @@ uv run pytest
 
 `pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
 
+CI의 통합 테스트와 전체 커버리지 검증도 같은 디렉토리에서 실행할 수 있습니다.
+
+```bash
+uv run pytest --with-integration -m integration --no-cov
+uv run pytest --with-integration --cov
+```
+
+도구 호출을 포함하는 테스트 모델은 request의 `TOOL` 결과를 받은 다음 최종 답변으로
+종료해야 합니다. 같은 call id를 다시 요청하면 runner가 `RUN_ERROR`로 종료하므로,
+WebSocket 테스트의 수신 루프는 `RUN_FINISHED`와 `RUN_ERROR`를 모두 종료 프레임으로
+처리합니다. 승인 재개 테스트는 응답의 `hitl_approval` deferred tool id를 그대로
+`toolCallId`와 `request_id`에 전달합니다.
+
 ## 라이선스
 
 MIT License

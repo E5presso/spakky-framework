@@ -16,6 +16,7 @@ from spakky.agent import (
     EvidenceCapture,
     Idempotency,
     ModelCapability,
+    ModelMessageRole,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -55,6 +56,9 @@ class WebSocketAssistant:
 
 
 class _ScriptedModel(IAgentModel):
+    def __init__(self, *, repeat_tool: bool = False) -> None:
+        self._repeat_tool = repeat_tool
+
     @property
     @override
     def capability(self) -> ModelCapability:
@@ -66,6 +70,15 @@ class _ScriptedModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        # The runner asks for a final answer after dispatching the tool result.
+        if not self._repeat_tool and any(
+            message.role is ModelMessageRole.TOOL for message in request.messages
+        ):
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="finished"
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
         yield ModelStreamEvent(
             kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="hello"
         )
@@ -83,10 +96,10 @@ class _StaticDriver:
         yield 'data: {"type":"RUN_FINISHED"}\n\n'
 
 
-def _build_runner_app() -> FastAPI:
+def _build_runner_app(*, repeat_tool: bool = False) -> FastAPI:
     app = FastAPI()
     config = AgUiConfig()
-    assistant = WebSocketAssistant(_ScriptedModel())
+    assistant = WebSocketAssistant(_ScriptedModel(repeat_tool=repeat_tool))
 
     def run_driver_factory(
         core_input: RunAgentInput,
@@ -156,25 +169,38 @@ def _event_type(frame: str) -> str:
     return str(loads(frame.removeprefix("data: ").strip())["type"])
 
 
-def _receive_until_finished(client: TestClient) -> list[str]:
+def _receive_until_terminal(client: TestClient) -> list[str]:
     frames: list[str] = []
     with client.websocket_connect("/agui/ws") as websocket:
         websocket.send_json(_run_agent_input())
         while True:
             frame = websocket.receive_text()
             frames.append(frame)
-            if _event_type(frame) == "RUN_FINISHED":
+            if _event_type(frame) in {"RUN_FINISHED", "RUN_ERROR"}:
                 return frames
 
 
 def test_websocket_endpoint_streams_encoded_frames_in_order() -> None:
     """WS /agui/ws가 AG-UI encoded frame을 순서대로 text message로 스트리밍한다."""
-    frames = _receive_until_finished(TestClient(_build_runner_app()))
+    frames = _receive_until_terminal(TestClient(_build_runner_app()))
 
     types = [_event_type(frame) for frame in frames]
     assert types[0] == "RUN_STARTED"
-    assert "TOOL_CALL_RESULT" in types
+    assert types.count("TOOL_CALL_RESULT") == 1
     assert types[-1] == "RUN_FINISHED"
+
+
+def test_websocket_endpoint_repeated_tool_call_expect_run_error() -> None:
+    """중복 도구 호출의 RUN_ERROR도 수신을 끝내어 열린 연결에서 무한 대기하지 않는다."""
+    frames = _receive_until_terminal(TestClient(_build_runner_app(repeat_tool=True)))
+
+    types = [_event_type(frame) for frame in frames]
+    assert types[0] == "RUN_STARTED"
+    assert types.count("TOOL_CALL_RESULT") == 1
+    assert types[-1] == "RUN_ERROR"
+    assert loads(frames[-1].removeprefix("data: ").strip())["code"] == (
+        "agent_tool_batch_invalid"
+    )
 
 
 def test_websocket_endpoint_accepts_followup_run_input_on_same_connection() -> None:

@@ -8,7 +8,7 @@ terminates without a tool result.
 """
 
 from collections.abc import AsyncIterator, Sequence
-from json import loads
+from json import dumps, loads
 from typing import override
 
 from ag_ui.core import RunAgentInput as AgUiRunAgentInput
@@ -28,6 +28,7 @@ from spakky.agent import (
     EvidenceCapture,
     Idempotency,
     ModelCapability,
+    ModelMessageRole,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -105,6 +106,13 @@ class _ScriptedModel(IAgentModel):
 
     @override
     async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        # The runner asks for a final answer after dispatching the tool result.
+        if any(message.role is ModelMessageRole.TOOL for message in request.messages):
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="finished"
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
         yield ModelStreamEvent(
             kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
             tool_call=ModelToolCall(
@@ -239,7 +247,7 @@ def _initial_input() -> dict[str, object]:
     }
 
 
-def _resume_input(decision: str) -> dict[str, object]:
+def _resume_input(decision: str, approval_id: str) -> dict[str, object]:
     return {
         "threadId": "conv-1",
         "runId": "run-1",
@@ -249,11 +257,8 @@ def _resume_input(decision: str) -> dict[str, object]:
             {
                 "id": "t1",
                 "role": "tool",
-                "toolCallId": "approval:run-1:note.write",
-                "content": (
-                    '{"request_id": "approval:run-1:note.write",'
-                    f' "decision": "{decision}"}}'
-                ),
+                "toolCallId": approval_id,
+                "content": dumps({"request_id": approval_id, "decision": decision}),
             },
         ],
         "tools": [],
@@ -265,6 +270,21 @@ def _resume_input(decision: str) -> dict[str, object]:
 def _types(text: str) -> list[str]:
     frames = [line for line in text.split("\n\n") if line.startswith("data: ")]
     return [loads(frame.removeprefix("data: ").strip())["type"] for frame in frames]
+
+
+def _approval_id(text: str) -> str:
+    """Use the deferred tool id emitted on the wire, as an AG-UI client would."""
+    events = [
+        loads(frame.removeprefix("data: ").strip())
+        for frame in text.split("\n\n")
+        if frame.startswith("data: ")
+    ]
+    return next(
+        str(event["toolCallId"])
+        for event in events
+        if event["type"] == "TOOL_CALL_START"
+        and event["toolCallName"] == "hitl_approval"
+    )
 
 
 def test_hitl_run1_surfaces_deferred_approval_then_pauses() -> None:
@@ -286,9 +306,10 @@ def test_hitl_resume_with_approve_writes_signal_and_streams_result() -> None:
     """run2 APPROVE가 signal을 적재하고 런너가 재개해 tool result+RUN_FINISHED를 흘린다."""
     signals = _MemorySignalRepository()
     client = TestClient(_build_app(signals))
-    client.post("/agui", json=_initial_input())
+    initial = client.post("/agui", json=_initial_input())
+    approval_id = _approval_id(initial.text)
 
-    response = client.post("/agui", json=_resume_input("approve"))
+    response = client.post("/agui", json=_resume_input("approve", approval_id))
     types = _types(response.text)
 
     approval_signals = [
@@ -296,7 +317,8 @@ def test_hitl_resume_with_approve_writes_signal_and_streams_result() -> None:
     ]
     assert len(approval_signals) == 1
     assert approval_signals[0].payload["decision"] == "approve"
-    assert "TOOL_CALL_RESULT" in types
+    assert approval_signals[0].payload["request_id"] == approval_id
+    assert types.count("TOOL_CALL_RESULT") == 1
     assert types[-1] == "RUN_FINISHED"
 
 
@@ -304,14 +326,16 @@ def test_hitl_resume_with_reject_terminates_without_tool_result() -> None:
     """run2 REJECT가 signal을 적재하고 도구 결과 없이 종단으로 끝난다."""
     signals = _MemorySignalRepository()
     client = TestClient(_build_app(signals))
-    client.post("/agui", json=_initial_input())
+    initial = client.post("/agui", json=_initial_input())
+    approval_id = _approval_id(initial.text)
 
-    response = client.post("/agui", json=_resume_input("reject"))
+    response = client.post("/agui", json=_resume_input("reject", approval_id))
     types = _types(response.text)
 
     approval_signals = [
         s for s in signals.all_appended() if s.kind is AgentSignalKind.APPROVAL_DECISION
     ]
     assert approval_signals[0].payload["decision"] == "reject"
+    assert approval_signals[0].payload["request_id"] == approval_id
     assert "TOOL_CALL_RESULT" not in types
     assert types[-1] == "RUN_ERROR"
