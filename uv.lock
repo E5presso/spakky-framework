@@ -3512,7 +3512,7 @@ wheels = [
 
 [[package]]
 name = "spakky"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky" }
 dependencies = [
     { name = "uuid7" },
@@ -3823,7 +3823,7 @@ provides-extras = ["minimal", "domain", "data", "event", "task", "agent-core", "
 
 [[package]]
 name = "spakky-a2a"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-a2a" }
 dependencies = [
     { name = "a2a-sdk", extra = ["http-server"] },
@@ -3866,7 +3866,7 @@ dev = [
 
 [[package]]
 name = "spakky-actuator"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-actuator" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -3881,7 +3881,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-agent"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-agent" }
 dependencies = [
     { name = "pydantic" },
@@ -3908,7 +3908,7 @@ dev = [
 
 [[package]]
 name = "spakky-agui"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-agui" }
 dependencies = [
     { name = "ag-ui-protocol" },
@@ -3929,7 +3929,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-auth"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-auth" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -3944,7 +3944,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-cache"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-cache" }
 dependencies = [
     { name = "spakky" },
@@ -3955,7 +3955,7 @@ requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-celery"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-celery" }
 dependencies = [
     { name = "celery" },
@@ -3994,7 +3994,7 @@ dev = [
 
 [[package]]
 name = "spakky-cryptography"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-cryptography" }
 dependencies = [
     { name = "argon2-cffi" },
@@ -4017,7 +4017,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-data"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-data" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4032,7 +4032,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-domain"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-domain" }
 dependencies = [
     { name = "spakky" },
@@ -4043,7 +4043,7 @@ requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-event"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-event" }
 dependencies = [
     { name = "pydantic" },
@@ -4064,7 +4064,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-fastapi"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-fastapi" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
@@ -4091,7 +4091,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-framework"
-version = "8.5.0"
+version = "8.5.1"
 source = { virtual = "." }
 
 [package.dev-dependencies]
@@ -4136,7 +4136,7 @@ dev = [
 
 [[package]]
 name = "spakky-grpc"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-grpc" }
 dependencies = [
     { name = "grpcio" },
@@ -4183,7 +4183,7 @@ dev = [
 
 [[package]]
 name = "spakky-kafka"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-kafka" }
 dependencies = [
     { name = "aiokafka" },
@@ -4220,7 +4220,7 @@ dev = [
 
 [[package]]
 name = "spakky-llm"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-llm" }
 dependencies = [
     { name = "anthropic" },
@@ -4247,7 +4247,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-logging"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-logging" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4262,7 +4262,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-mcp"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-mcp" }
 dependencies = [
     { name = "httpx" },
@@ -4283,7 +4283,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-oidc"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-oidc" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4302,7 +4302,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-openfga"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-openfga" }
 dependencies = [
     { name = "openfga-sdk" },
@@ -4321,7 +4321,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-opentelemetry"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-opentelemetry" }
 dependencies = [
     { name = "opentelemetry-api" },
@@ -4369,7 +4369,7 @@ dev = [
 
 [[package]]
 name = "spakky-outbox"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-outbox" }
 dependencies = [
     { name = "pydantic" },
@@ -4388,7 +4388,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-policy"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-policy" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4415,7 +4415,7 @@ dev = [{ name = "types-pyyaml", specifier = ">=6.0.12.20260518" }]
 
 [[package]]
 name = "spakky-rabbitmq"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-rabbitmq" }
 dependencies = [
     { name = "aio-pika" },
@@ -4456,7 +4456,7 @@ dev = [
 
 [[package]]
 name = "spakky-redis"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-redis" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4483,7 +4483,7 @@ dev = [{ name = "fakeredis", specifier = ">=2.32.1" }]
 
 [[package]]
 name = "spakky-saga"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-saga" }
 dependencies = [
     { name = "spakky" },
@@ -4500,7 +4500,7 @@ requires-dist = [
 
 [[package]]
 name = "spakky-sqlalchemy"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-sqlalchemy" }
 dependencies = [
     { name = "pydantic-settings" },
@@ -4550,7 +4550,7 @@ dev = [
 
 [[package]]
 name = "spakky-task"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-task" }
 dependencies = [
     { name = "spakky" },
@@ -4569,7 +4569,7 @@ dev = [{ name = "spakky-auth", editable = "core/spakky-auth" }]
 
 [[package]]
 name = "spakky-tracing"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "core/spakky-tracing" }
 dependencies = [
     { name = "spakky" },
@@ -4580,7 +4580,7 @@ requires-dist = [{ name = "spakky", editable = "core/spakky" }]
 
 [[package]]
 name = "spakky-typer"
-version = "8.5.0"
+version = "8.5.1"
 source = { editable = "plugins/spakky-typer" }
 dependencies = [
     { name = "pydantic-settings" },

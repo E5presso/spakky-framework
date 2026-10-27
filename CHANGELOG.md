@@ -1,3 +1,9 @@
+## v8.5.1 (2026-10-27)
+
+### Fix
+
+- **agent**: make per-step sampling explicit without default output cap
+
 ## v8.5.0 (2026-10-27)
 
 ### Feat
