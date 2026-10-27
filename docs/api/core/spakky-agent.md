@@ -10,6 +10,9 @@ Agentic Hexagonal Architecture의 core 계약입니다.
 pip install spakky-agent
 ```
 
+Structured output과 `AgentSteeringUpdate`의 검증에 사용하는 Pydantic은 런타임 의존성으로
+함께 설치됩니다. 이 public API를 import하기 위해 개발 의존성을 따로 설치할 필요가 없습니다.
+
 `spakky-agent`는 `@Agent`, `AgentExecutionSpec`, `RunAgentInput`, `AgentRunner`,
 `AgentEvent`, `AgentYield`, multimodal content, retrieval/memory, offline evaluation, pricing/telemetry, tool
 dispatch, context compaction, state/signal/evidence repository port, task store,
@@ -70,6 +73,51 @@ model evidence는 누적 model/tool/token counter, provider usage, 제공된 act
 
 Token budget failure도 현재 step의 route/usage/counters를 terminal metadata에 보존하고,
 durable path에서는 동일 snapshot과 typed error를 model-decision evidence로 남깁니다.
+
+## Revisioned steering
+
+`from spakky.agent import AgentSteeringUpdate`로 공개 입력 계약을 가져옵니다.
+`AgentSignal(kind=AgentSignalKind.STEERING_INSTRUCTION)`의 payload에
+`update.model_dump(mode="json")`을 넣습니다. Agent가 해당 signal kind를 허용하고
+state·signal·evidence repository를 사용해야 적용됩니다.
+
+| `AgentSteeringUpdate` 필드 | 타입 | 기본값 |
+| --- | --- | --- |
+| `input_id` | `str` | 필수, 최소 길이 1 |
+| `revision` | `int` | 필수, 0 이상 |
+| `content` | `str` | 필수 |
+| `final` | `bool` | 필수 |
+| `withdrawn` | `bool` | `False` |
+| `retain` | `bool` | `False` |
+
+계약은 frozen·strict이며 unknown field를 거부합니다. 같은 입력의 새 revision은
+history를 교체하고, 낮은 revision과 동일 중복은 다시 적용하지 않습니다. 동일 revision의
+상충 update는 `AgentDefinitionError`입니다. 철회는 입력 원문을 제거하되 revision
+tombstone을 보존합니다.
+
+Runner는 모델 응답 대기 중에도 변경을 확인하고 취소·cleanup 후 다음 모델 요청을
+시작합니다. `final=False` 입력이나 복원이 필요한 입력이 남아 있으면 도구와 final을
+보류합니다. 미실행 pending call은 `input_revised` 결과로 닫고 이미 실행한 효과와
+counter는 보존합니다. `Progress(current_step="steering")`의 `invalidate_output=True`는
+이전 출력 무효화 알림이며, event surface에서는 `signal_progress` artifact입니다.
+
+Steering-enabled 모델 요청과 provider event의 `metadata["input_revision"]`은 해당
+iteration 시작 시 고정합니다. 초기값은 `0`이고, queue에 남은 옛 delta나 합성된
+candidate-only tool START/END frame도 원래 값을 유지합니다. Tool-call metadata의
+동명 key는 runner가 고정한 revision보다 우선하지 않습니다.
+
+Checkpoint 원문은 `final=True, retain=True`인 입력에만 보존합니다. 나머지는
+revision/hash로 식별하고 fresh resume에서 동일 update 재전달 또는 새 final revision·철회를
+요구합니다. Revisioned 경로는 legacy hook과 raw SIGNAL evidence 기록을 거치지 않지만
+signal 저장소와 파생 결과의 보존 정책은 애플리케이션이 소유합니다.
+
+`RunAgentInput.steering_input_required: bool = False`를 `True`로 설정하면 최초 확정
+입력 전 도구·final을 허용하지 않습니다. 관찰한 모든 입력이 철회되면
+`Cancel(reason="input_withdrawn")`, metadata의 `control_outcome="input_withdrawn"`과
+`code="agent_input_withdrawn"`, state reason `AgentStateReason.INPUT_WITHDRAWN`을 사용합니다.
+Event surface는 `RunFinishedEvent.error.code="cancelled"`로 투영합니다. Resume에서는
+이 flag를 유지해야 합니다. 상세 예제와 저장·프로토콜 경계는
+[실행 중 지시 수정](../../guides/agent-steering.md)에 있습니다.
 
 ## Model selection과 capability
 
@@ -230,8 +278,9 @@ Offline evaluation은 `AgentEvaluationDataset(cases=tuple)`, case마다 정확�
 precision/recall, retrieval reference groundedness를 계산합니다. `ModelJudgeEvaluator`는
 injected `IModelJudge`만 사용하며 default judge가 없습니다. Report의 evidence candidate는
 metric/correlation만 가진 `AgentEvidenceKind.EVALUATION`이고 repository에 자동 append되지
-않습니다. `AgentEvidenceKind.SIGNAL`은 runner가 소비한 non-terminal inbound signal audit
-전용입니다. Case/sample의 structured JSON과 tool arguments/metadata는 construction 시 deep
+않습니다. `AgentEvidenceKind.SIGNAL`은 일반 non-terminal inbound signal audit
+전용이며 revisioned steering의 raw payload는 이 경로에 기록하지 않습니다.
+Case/sample의 structured JSON과 tool arguments/metadata는 construction 시 deep
 snapshot됩니다.
 
 `ModelPricingCatalog`는 opaque logical model ref별 `ModelPrice`를 보존하는 immutable

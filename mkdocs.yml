@@ -176,6 +176,7 @@ nav:
           - CodeAssistant 에이전트 예제: guides/agent-code-assistant.md
       - 심화:
           - AI Agent 심화: guides/agents-advanced.md
+          - 실행 중 지시 수정: guides/agent-steering.md
           - Agent 운영: guides/agent-operations.md
       - 프로토콜 어댑터:
           - AG-UI 어댑터: guides/agent-ag-ui.md

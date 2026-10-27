@@ -10,6 +10,8 @@ profile을 구성하세요. 운영형 Agent로 확장할 때 필요한 도구·�
 MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 장기 memory, offline evaluation, cost budget과 privacy-safe telemetry는
 [Agent 운영](../guides/agent-operations.md)에서 묶어 설명합니다.
+생성 중 사용자 입력을 수정하거나 음성 중간 결과를 확정·철회하려면
+[실행 중 지시 수정](../guides/agent-steering.md)을 확인하세요.
 
 ## 기초
 
@@ -25,6 +27,7 @@ MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
 | [AI Agent 심화](../guides/agents-advanced.md) | whole-batch authority·structured materialization·context provenance/privacy·durable/protocol 경계 |
+| [실행 중 지시 수정](../guides/agent-steering.md) | 입력 revision·잠정 입력·모델 취소·출력 무효화·비영속 입력 복원 |
 | [Agent 운영](../guides/agent-operations.md) | scoped memory·offline evaluation·pricing/cost·Agent telemetry 구성 |
 
 ## 어댑터

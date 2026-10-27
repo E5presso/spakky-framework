@@ -98,6 +98,46 @@ config = LlmConfig(
 `default_profile`, profile의 `model`, 요청별 provider/profile/raw model override는
 호환 alias로 남지 않습니다.
 
+## Profile timeout과 실행 제한 { #profile-timeouts }
+
+`LlmProfile.request_timeout_seconds`와 `stream_timeout_seconds`의 기본값은 모두
+`None`입니다. v8.4.0부터 기존 30초·300초의 기본 timeout을 적용하지 않습니다.
+생략하거나 JSON `null`로 지정하면 해당 profile timeout이 없고, 값을 지정할 때는
+양수여야 합니다. `0`을 무제한의 별칭으로 사용하지 않습니다.
+
+| 설정 | 범위 | 기본값 |
+| --- | --- | --- |
+| `LlmProfile.request_timeout_seconds` | provider의 non-streaming 요청 | `None` |
+| `LlmProfile.stream_timeout_seconds` | provider의 streaming 요청 | `None` |
+| `AgentExecutionLimits.timeout_seconds` | runner invocation의 model·async tool await | `None` |
+| `AgentExecutionLimits.max_steps` / `max_tool_calls` | 같은 run의 model step·tool batch 예산 | 모두 `None` |
+
+예를 들어 로컬 vLLM profile에 요청별 timeout을 적용하려면 다음처럼 명시합니다.
+60초와 180초는 이 예제에서 선택한 값입니다.
+
+```python
+from spakky.plugins.llm.config import (
+    LlmProfile,
+    LlmProviderApi,
+    OpenAICompatibleDialect,
+)
+
+profile = LlmProfile(
+    provider="vllm",
+    api=LlmProviderApi.OPENAI_CHAT_COMPLETIONS,
+    base_url="http://127.0.0.1:8000/v1",
+    openai_dialect=OpenAICompatibleDialect.VLLM,
+    request_timeout_seconds=60.0,
+    stream_timeout_seconds=180.0,
+)
+```
+
+Profile timeout을 생략해도 명시한 runner deadline은 계속 적용됩니다. 반대로 runner
+deadline을 생략해도 명시한 profile timeout은 남습니다. Runner의 deadline, token/cost
+예산과 동기 도구 제한은 [AI Agent 심화](agents-advanced.md)를 참고하세요. Timeout을
+생략하는 것은 진행 중 요청의 취소 계약을 없애는 설정이 아니며, steering에 필요한
+cleanup은 [실행 중 지시 수정](agent-steering.md)의 adapter 계약을 따릅니다.
+
 ## 환경변수로 구성하기
 
 `LlmConfig`는 `SPAKKY_LLM__` prefix와 `__` 중첩 구분자를 사용합니다. Profile처럼

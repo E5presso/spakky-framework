@@ -240,6 +240,32 @@ message 처리의 `Progress`는 core에서 `ArtifactEvent(name="signal_progress"
 `CUSTOM` artifact로 투영됩니다. Non-Progress hook yield는
 `agent_signal_projection_unsupported` `RUN_ERROR`입니다.
 
+### 실행 중 입력 revision과 출력 무효화
+
+Core의 `AgentSteeringUpdate`를 사용하는 Agent는 새 입력 revision 적용 시
+`Progress(current_step="steering", metadata={..., "invalidate_output": True})`를
+방출합니다. `run_events()`의 `signal_progress` artifact가 AG-UI에서는 다음 경로로
+노출됩니다.
+
+| Wire 필드 | 값 또는 의미 |
+| --- | --- |
+| `type` / `name` | `CUSTOM` / `artifact` |
+| `value.name` | `signal_progress` |
+| `value.content.current_step` | `steering` |
+| `value.content.metadata.input_revision` | run 전체 입력 세대 |
+| `value.content.metadata.invalidate_output` | `true`; 이전 화면 출력·답변 후보·대기 음성을 무효화 |
+
+표준 text frame은 neutral metadata를 복사하지 않습니다. `TEXT_MESSAGE_START`에서
+message ID를 당시 입력 세대와 연결하고 지연된 음성 합성 결과에도 그 연결을 유지하세요.
+Model step마다 고유한 message ID가 사용됩니다. Neutral stream의 옛 text/reasoning/tool
+candidate frame은 새 revision 이후에도 원래 세대를 유지하며, provider/tool metadata가
+runner의 `input_revision`을 덮어쓰지 못합니다.
+
+입력 수신 endpoint에서 실행 중인 state의 `IAgentSignalRepository`에 steering signal을
+추가하는 것은 host의 책임입니다. 현재 AG-UI inbound는 후속 run input을 revisioned
+steering으로 자동 변환하지 않습니다. 입력 확정·철회·재시작 시 복원과
+`steering_input_required`는 [실행 중 지시 수정](agent-steering.md)에 설명돼 있습니다.
+
 ## 4. deferred-tool HITL 흐름
 
 AG-UI에는 1급 승인 이벤트가 없습니다. 승인 요청은 `hitl_approval` 도구의 **deferred tool
@@ -283,9 +309,15 @@ Reasoning을 지원하지 않는 선택 route에서는 `REASONING_DELTA`가 생�
 snapshot은 설정 gate를 따르고, artifact는 native artifact event가 없어 `CUSTOM`으로
 변환됩니다. 앞 절처럼 approval이 아닌 pause는 현재 projection할 수 없습니다.
 `parentRunId`는 `RunAgentInput.parent_run_id`가 전달된 실행의 `RUN_STARTED`에만 포함됩니다.
-Canonical cancel signal은 `code="cancelled"`와 `state`, `signal_id`, optional
-`requested_by` metadata를 가진
-`RUN_ERROR` 하나로 끝나며 success `RUN_FINISHED`를 추가하지 않습니다.
+Canonical cancel은 core에서 `code="cancelled"`와 `state`, `signal_id`, optional
+`requested_by` metadata를 가집니다. AG-UI는 code/message를 `RUN_ERROR` 하나로 내보내며
+core metadata 전체를 복사하지 않습니다. Success `RUN_FINISHED`를 추가하지 않습니다.
+입력 철회로 종료한 run도 같은 취소 envelope를 사용하므로 상세 제어 사유가 필요한
+host는 중립 event의 `control_outcome="input_withdrawn"`을 함께 처리해야 합니다.
+
+WebSocket 소비자는 `RUN_FINISHED`와 `RUN_ERROR`를 모두 현재 run의 종료로 처리해야
+합니다. 연결 자체는 후속 입력을 받기 위해 열려 있을 수 있으므로 오류 이후 성공
+프레임만 기다리면 종료되지 않습니다.
 
 Agent가 `output_type`을 선언하면 core `RunFinishedEvent.metadata["output"]`의 JSON-safe
 materialized value가 AG-UI `RUN_FINISHED.result`가 됩니다. Python BaseModel/dataclass

@@ -93,6 +93,11 @@ Profile은 connection/backend/auth만 담습니다. 실제 model ID와 capabilit
 `api="openai-chat-completions"`에서만 사용할 수 있습니다. `provider`, non-null
 `base_url`, Google project/location은 trim되고 빈 문자열이면 거부됩니다.
 
+`request_timeout_seconds`와 `stream_timeout_seconds`는 생략하거나 `None`으로 지정하면
+profile timeout을 적용하지 않습니다. 이는 `AgentExecutionLimits.timeout_seconds`의
+runner deadline과 독립적입니다. 명시적으로 timeout을 설정하는 예제는
+[Profile timeout과 실행 제한](../../guides/llm-routing.md#profile-timeouts)을 참고하세요.
+
 ### `LlmModelRoute`
 
 | 필드 | 타입 | 기본값 | 의미 |

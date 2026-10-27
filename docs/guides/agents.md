@@ -262,6 +262,8 @@ Runner-backed mode에서 runner는 생성자 parameter 이름이 아니라 **typ
 ## Typed structured output
 
 가장 간단한 typed final은 `output_type`에 Pydantic model을 선언하는 것입니다.
+Pydantic은 `spakky-agent`의 런타임 의존성으로 함께 설치되므로 structured output을
+사용하기 위해 별도 extra나 개발 의존성을 설치할 필요가 없습니다.
 
 ```python
 from pydantic import BaseModel
@@ -703,7 +705,7 @@ class Assistant:
 2. container에서 resolve해 `RunAgentInput`으로 호출하고 `AgentYieldKind.FINAL`을 확인한다.
 3. `IAgentModel`을 생성자로 받아 bounded model/tool loop와 final을 실행한다.
 4. write/network/destructive tool을 추가하고 approval event를 처리한다.
-5. 실행 중 시그널 반응이 필요하면 `@on_signal` 훅을 선언한다.
+5. 실행 중 입력 교체·확정·철회는 `AgentSteeringUpdate`를 사용하고, 그 외 커스텀 시그널 반응은 `@on_signal` 훅을 선언한다.
 6. durable 실행이 필요해지면 state/signal/evidence repository를 붙인다.
 7. FastAPI, WebSocket, SSE, CLI adapter에서는 `AgentYield`를 native transport event로, AG-UI/A2A adapter에서는 `AgentEvent`를 protocol event로 변환한다.
 
@@ -712,6 +714,7 @@ class Assistant:
 - [Agent RAG](agent-rag.md): 같은 `IRetriever`를 classic context 또는 agentic tool로 주입합니다.
 - [Agent Memory, Evaluation, Cost와 Telemetry](agent-operations.md): 장기 memory와 offline eval, operator price, privacy-safe span을 구성합니다.
 - [AI Agent 심화](agents-advanced.md): tool catalog, approval, durable repository, protocol event stream을 다룹니다.
+- [실행 중 지시 수정](agent-steering.md): 같은 run에서 입력 revision을 반영하고 잠정 입력과 이전 출력의 권한을 관리합니다.
 - [AG-UI 어댑터](agent-ag-ui.md), [A2A 어댑터](agent-a2a.md), [MCP 어댑터](agent-mcp.md): 외부 프로토콜별 endpoint와 transport wiring을 확인합니다.
 - [CodeAssistant 에이전트 예제](agent-code-assistant.md): workspace/shell/git tool, approval, evidence, cancel/resume을 한 흐름으로 연결합니다.
 - [spakky-agent API Reference](../api/core/spakky-agent.md): public class와 helper의 상세 signature를 확인합니다.

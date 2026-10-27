@@ -364,7 +364,11 @@ Signal은 실행 중 Agent에게 들어오는 외부 입력입니다.
 | `EXTERNAL_EVENT` | 외부 시스템에서 들어온 event |
 | `SCHEDULER_WAKE_UP` | scheduler가 Agent를 깨움 |
 
-Durable repository를 쓰는 경우 orchestration은 safe boundary에서 `consume_pending_agent_signals()`를 호출합니다. 이 helper는 pending queue를 append order로 읽고, 현재 Agent가 받아들일 수 있는 prefix만 consumed 처리합니다.
+일반 signal 소비는 safe boundary에서 `consume_pending_agent_signals()`를 사용합니다.
+이 helper는 pending queue를 append order로 읽고, 현재 Agent가 받아들일 수 있는
+prefix만 consumed 처리합니다. `input_id`가 있는 `STEERING_INSTRUCTION`은 별도
+revisioned 경로가 모델 응답 대기 중에도 확인해 history와 출력 세대를 갱신합니다.
+이 경로의 입력 확정·철회와 저장 정책은 [실행 중 지시 수정](agent-steering.md)을 참고하세요.
 
 Cancel은 바로 terminal state로 덮어쓰는 flag가 아닙니다. 일반적인 흐름은 `begin_agent_cancellation()`으로 state를 `CANCELLING`으로 만들고, model stream/tool/delegate cleanup hook을 실행한 뒤 `complete_agent_cancellation()`으로 끝냅니다.
 
@@ -389,6 +393,11 @@ A2A는 failed task로 투영합니다.
 ## 선언형 시그널 훅: `@on_signal`
 
 `CANCEL`과 `APPROVAL_DECISION`은 runner가 전용 단계에서 처리하지만, 그 외 시그널(`USER_MESSAGE`·`STEERING_INSTRUCTION`·`EXTERNAL_EVENT`·`SCHEDULER_WAKE_UP` 등)에 **커스텀 반응**을 붙이고 싶을 때 `@on_signal`을 씁니다. 이것은 `@agent_tool`과 같은 선언형 seam입니다. 시그널 종류별 핸들러만 선언하면 runner가 해당 시그널을 소비하는 poll 지점에서 자동 호출합니다.
+
+단, `AgentSteeringUpdate`로 만든 `input_id`가 있는 steering payload는 runner의 전용
+revisioned 경로에서 처리하며 이 훅을 호출하지 않습니다. 아래 예제는 `input_id`가 없는
+기존 `instruction` payload를 받는 커스텀 훅입니다. 실제 모델 입력을 교체하고 이전
+generation을 취소하려면 [실행 중 지시 수정](agent-steering.md)의 typed 계약을 사용하세요.
 
 ```python
 from collections.abc import AsyncGenerator
@@ -497,6 +506,9 @@ spec = AgentExecutionSpec(
 `AgentExecutionLimits()`의 기본값은 `max_steps=None`, `max_tool_calls=None`,
 `max_tokens=None`, `max_cost=None`, `timeout_seconds=None`입니다. Count/token/time 값은
 설정한다면 양수여야 하고 cost는 positive finite `Decimal`이어야 합니다.
+`None`인 항목에는 상한을 적용하지 않습니다. 예제의 `max_steps=8`, `max_tool_calls=32`는
+애플리케이션이 선택한 값이며 기본 제한이 아닙니다. Provider 요청별 timeout은
+[LLM profile timeout](llm-routing.md#profile-timeouts)에서 별도로 설정합니다.
 `AgentExecutionSpec.timeout_seconds` field나 compatibility alias는 없으며 반드시 `limits`
 안에 둡니다.
 
@@ -637,12 +649,18 @@ Restart 후에는 `plan_agent_resume(state, evidence, pending_signals)`가 다�
 
 Evidence는 append-only입니다. Tool result를 수정하거나 삭제해서 history를 고치지 않고,
 redaction, correction, context digest 갱신도 새 evidence를 append하는 방식으로 표현합니다.
-`SIGNAL` kind는 runner가 소비한 non-terminal inbound signal audit, `EVALUATION` kind는
-offline evaluator metric 전용이며 서로 대체하지 않습니다.
+`SIGNAL` kind는 일반 non-terminal inbound signal audit, `EVALUATION` kind는
+offline evaluator metric 전용이며 서로 대체하지 않습니다. Revisioned steering은 원문
+`SIGNAL` evidence를 만들지 않으며 checkpoint의 원문 보존은 `final`·`retain`에 따릅니다.
+이는 signal 저장소나 파생 MODEL/TOOL 결과 전체를 비영속으로 만드는 설정은 아닙니다.
 
 ## 멀티턴 대화와 TaskStore
 
-`RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `model_selection`, static `context`, `metadata`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
+`RunAgentInput`은 한 실행을 식별하는 `state_id`, 모델 요청을 시작하는 `instruction`, optional `conversation_id`, `parent_run_id`, `resume`, `message_history`, `model_selection`, static `context`, `metadata`, `attachments`, `steering_input_required`를 받습니다. `conversation_id`를 생략하면 `effective_conversation_id`는 `state_id`가 되며, 이 값이 AG-UI의 `threadId`, A2A의 `contextId`, `ITaskStore`의 conversation key로 투영됩니다.
+
+`steering_input_required`의 기본값은 `False`입니다. 잠정 입력만으로 시작하는 run은
+`True`로 설정해 확정 입력 전 도구 실행·최종 응답을 보류하고, 모든 관찰 입력이 철회되면
+제어 취소로 종료합니다. Resume에서는 원래 flag를 유지해야 합니다.
 
 `model_selection`은 요청별 opaque logical model ref 선택입니다. Agent class는 특정
 provider나 실제 model 이름을 소유하지 않고 `IAgentModel` port만 주입받습니다. 서비스

@@ -280,9 +280,24 @@ fallback은 없습니다.
 `AgentEvaluationReport.evidence_candidates()`는 metric, pass, score, case/sample ref만 가진
 `AgentEvidenceKind.EVALUATION` candidate를 만듭니다. Repository append는 caller가
 결정하며 raw output, prompt, context를 자동 저장하지 않습니다. 반면
-`AgentEvidenceKind.SIGNAL`은 runner가 실제로 소비한 non-terminal inbound signal의 ID와
-payload를 남기는 runtime audit입니다. Evaluation evidence와 signal audit을 서로 대신해
-사용하지 마세요.
+`AgentEvidenceKind.SIGNAL`은 일반 non-terminal inbound signal의 ID와 payload를 남기는
+runtime audit입니다. `input_id`가 있는 revisioned steering은 이 raw SIGNAL evidence
+기록과 legacy hook을 거치지 않습니다. Evaluation evidence와 signal audit을 서로
+대신해 사용하지 마세요.
+
+### 지시 수정 입력의 보존 경계
+
+`AgentSteeringUpdate.retain=False`가 기본입니다. Runner checkpoint는 확정된
+`final=True, retain=True` 입력만 원문으로 저장하고, 나머지는 원문을 비운 message와
+revision/hash를 보존합니다. 재시작 후에는 입력 소유자가 동일 update를 다시 전달하거나
+더 높은 final revision·철회를 전달하기 전까지 도구 실행과 최종 응답을 보류합니다.
+
+Signal repository의 원본 payload와 파생 MODEL evidence, assistant 답변, TOOL
+인자·결과까지 이 flag가 정제하는 것은 아닙니다. 전체 상호작용이 휘발성이어야 한다면
+관련 저장소도 RAM에 두어야 합니다. 이미 발생한 외부 도구 효과도 소급 취소하지 않습니다.
+실행 중 `invalidate_output=True`를 받으면 렌더링한 이전 답변과 대기 중인 음성을
+무효화하고, 입력 철회에 따른 `control_outcome="input_withdrawn"`은 성공이나 모델 장애와
+구분해 집계하세요. 상세 계약은 [실행 중 지시 수정](agent-steering.md)에 있습니다.
 
 ## Logical model ref에 가격을 붙이기
 
