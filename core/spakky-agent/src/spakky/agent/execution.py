@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from spakky.agent.compaction import ICompactionStrategy
 from spakky.agent.delegation import build_teammate_tool_descriptors
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.interfaces.model import SamplingOptions
 from spakky.agent.hooks import AgentSignalHookCatalog, discover_agent_signal_hooks
 from spakky.agent.signal import AgentSignalKind
 from spakky.agent.structured_output import _structured_output_contract
@@ -142,6 +143,9 @@ class AgentExecutionSpec:
     refresh_context_each_step: bool = False
     delegation_allowed: bool = False
     metadata: dict[str, str] = field(default_factory=dict)
+    sampling: SamplingOptions = field(
+        default_factory=lambda: SamplingOptions(temperature=0.0)
+    )
 
     def __post_init__(self) -> None:
         """Reject execution specs that would fail later at bootstrap."""

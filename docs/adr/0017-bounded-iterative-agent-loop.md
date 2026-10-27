@@ -243,3 +243,13 @@ Tool은 DB, filesystem, network, remote agent 등 서로 다른 system을 호출
 - [ADR-0021: Multimodal model content와 explicit LLM execution policy](0021-multimodal-model-content-and-llm-execution-policy.md)
 - [Pydantic AI — Usage limits](https://ai.pydantic.dev/agent/#usage-limits)
 - [Pydantic AI `UsageLimits` source](https://github.com/pydantic/pydantic-ai/blob/main/pydantic_ai_slim/pydantic_ai/usage.py)
+
+## Per-step model sampling
+
+`AgentExecutionSpec.sampling` declares the portable model sampling options for
+every iteration. Its default keeps deterministic temperature `0.0` and leaves
+`max_tokens=None`; the runner does not impose an implicit output cap. Explicit
+positive output limits remain in force after tool calls and on complete and
+stream requests. Per-request sampling, cumulative `AgentExecutionLimits`, and
+physical model context capacity remain separate contracts. The provider
+continues to omit unset output-limit fields from its wire requests.

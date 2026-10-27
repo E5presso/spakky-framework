@@ -122,7 +122,6 @@ from spakky.agent.interfaces.model import (
     ModelToolChoice,
     ModelToolSpec,
     ModelUsage,
-    SamplingOptions,
     ToolCallingSpec,
 )
 from spakky.agent.interfaces.repository import (
@@ -182,9 +181,6 @@ from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 DEFAULT_SYSTEM_INSTRUCTION = "Use the declared tools to accomplish the objective."
 """Fallback system message when an agent spec declares no instructions."""
-
-DEFAULT_SAMPLING = SamplingOptions(temperature=0.0, max_tokens=512)
-"""Deterministic default sampling for the framework-owned model request."""
 
 ESTIMATED_CHARACTERS_PER_TOKEN = 4
 """Provider-neutral characters-per-token ratio for the compaction trigger estimate.
@@ -3460,7 +3456,7 @@ class AgentRunner:
             context_digest=agent_context.digest,
             structured_output=structured_output,
             tool_calling=tool_calling,
-            sampling=DEFAULT_SAMPLING,
+            sampling=self.agent.spec.sampling,
             model_selection=run_input.model_selection,
             metadata={"state_id": run_input.state_id, **run_input.metadata},
         )

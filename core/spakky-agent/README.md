@@ -791,3 +791,26 @@ controlled withdrawal, not a model/service health failure or task success.
 Consumers suppress user-facing answers and queued speech for this outcome.
 The default flag is `False`: withdrawal then removes only that keyed input and
 the original valid goal continues. Resume must preserve the original flag.
+
+### Model sampling and output limits
+
+`AgentExecutionSpec.sampling` controls the `SamplingOptions` sent on every model
+step, including steps after tool calls, in both streamed and guarded complete
+execution. The default is `SamplingOptions(temperature=0.0)`: `max_tokens=None`
+leaves the per-request output limit unset instead of imposing a hidden 512-token
+cap. Providers still enforce their physical context capacity and may apply their
+own defaults when an unset option is omitted from the wire request.
+
+```python
+from spakky.agent import AgentExecutionSpec, SamplingOptions
+
+spec = AgentExecutionSpec(
+    sampling=SamplingOptions(temperature=0.2, max_tokens=2048),
+)
+```
+
+An explicit output limit is preserved on every step. Set `max_tokens=None` to
+leave it unset. This sampling option is distinct from
+`AgentExecutionLimits.max_tokens`, which budgets cumulative reported usage for
+the run, and from `ModelCapability.context_window_tokens`, which describes the
+model's physical context capacity.

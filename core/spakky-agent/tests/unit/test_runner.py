@@ -73,6 +73,7 @@ from spakky.agent import (
     ModelUsage,
     Progress,
     RecoveryStrategy,
+    SamplingOptions,
     SecretField,
     SensitiveFieldDescriptor,
     StreamingExposureMode,
@@ -7868,3 +7869,76 @@ async def test_agent_runner_steering_rehydration_deadline_expect_typed_timeout(
         assert isinstance(terminal, Error) and terminal.code == "agent_timeout"
     assert states.get("run-1").reason is AgentStateReason.TIMEOUT
     assert len(model.requests) == 1
+
+
+@pytest.mark.parametrize("max_tokens", [None, 2048])
+@pytest.mark.parametrize("mode", ["stream", "complete"])
+async def test_agent_runner_sampling_survives_tool_rounds_expect_declared_output_limit(
+    max_tokens: int | None, mode: str
+) -> None:
+    """Explicit sampling survives tool execution in both model request paths."""
+    sampling = SamplingOptions(temperature=0.3, top_p=0.8, max_tokens=max_tokens)
+
+    @Agent(
+        spec=AgentExecutionSpec(
+            name=f"sampling_{mode}",
+            sampling=sampling,
+            streaming_exposure_mode=(
+                StreamingExposureMode.NO_STREAM_UNTIL_FINAL_GUARDED
+                if mode == "complete"
+                else StreamingExposureMode.BALANCED
+            ),
+        )
+    )
+    class SamplingAgent(_EchoToolAgentBase):
+        pass
+
+    call = ModelToolCall(
+        call_id="sample-tool", name="echo.read", arguments={"value": "x"}
+    )
+    model = (
+        ScriptedCompleteModel(
+            (
+                ModelResponse(content="", tool_calls=(call,)),
+                ModelResponse(content="done"),
+            )
+        )
+        if mode == "complete"
+        else ScriptedRoundModel(
+            (
+                (
+                    _tool_event("echo.read", {"value": "x"}, "sample-tool"),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                ),
+                (
+                    ModelStreamEvent(
+                        kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="done"
+                    ),
+                    ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+                ),
+            )
+        )
+    )
+    items = await _collect(
+        AgentRunner.for_agent_instance(SamplingAgent(model)).run(
+            RunAgentInput(state_id="sampling-run", instruction="use echo")
+        )
+    )
+    assert isinstance(items[-1].payload, Final)
+    assert len(model.requests) == 2
+    assert all(request.sampling == sampling for request in model.requests)
+    assert model.requests[1].messages[-1].role is ModelMessageRole.TOOL
+
+
+async def test_agent_runner_default_sampling_expect_no_artificial_output_limit() -> (
+    None
+):
+    """An unconfigured runner requests deterministic output without a token cap."""
+    model = ScriptedRoundModel(((ModelStreamEvent(kind=ModelStreamEventKind.DONE),),))
+    await _collect(
+        AgentRunner.for_agent_instance(ToollessProbeAgent(model)).run(
+            RunAgentInput(state_id="default-sampling", instruction="answer")
+        )
+    )
+    assert model.requests[0].sampling == SamplingOptions(temperature=0.0)
+    assert model.requests[0].sampling.max_tokens is None
