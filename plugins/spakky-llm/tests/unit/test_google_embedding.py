@@ -185,7 +185,7 @@ async def test_google_embedding_maps_batch_task_and_dimension(
     assert models.config.task_type == task_type
     assert models.config.output_dimensionality == 3
     assert client.aio.entered and client.aio.exited and client.closed
-    assert create_client.call_args.kwargs["timeout_seconds"] == 30.0
+    assert create_client.call_args.kwargs["timeout_seconds"] is None
 
 
 def test_google_embedding_catalog_snapshot_and_configuration_guards() -> None:

@@ -84,6 +84,8 @@ def test_config_defaults_to_neutral_local_vllm_route() -> None:
     assert profile.base_url == "http://127.0.0.1:8000/v1"
     assert profile.api_key_value() == "EMPTY"
     assert profile.openai_dialect == OpenAICompatibleDialect.VLLM
+    assert profile.request_timeout_seconds is None
+    assert profile.stream_timeout_seconds is None
 
 
 def test_config_supports_direct_construction_with_opaque_catalog() -> None:

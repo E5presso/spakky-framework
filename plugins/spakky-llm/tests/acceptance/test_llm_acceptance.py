@@ -292,7 +292,7 @@ async def test_plugin_acceptance_routes_default_vllm_through_openai_sdk() -> Non
         organization="",
         project="",
         webhook_secret="",
-        timeout=30.0,
+        timeout=None,
         max_retries=0,
         default_headers={},
     )

@@ -370,7 +370,7 @@ class AnthropicMessagesProvider(ILLMProvider):
     def _client(
         self,
         target: LlmModelTarget,
-        timeout_seconds: float,
+        timeout_seconds: float | None,
     ) -> AsyncAnthropic:
         profile = target.profile
         if profile.api not in self.apis:

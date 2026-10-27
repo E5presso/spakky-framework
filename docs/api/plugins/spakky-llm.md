@@ -77,8 +77,8 @@ tool call이 없는 step에서 final을 한 번 방출합니다.
 | `base_url` | `str \| None` | `None` | SDK endpoint override |
 | `api_key` | `SecretStr \| None` | `None` | SDK client 생성 경계에서만 꺼내는 secret |
 | `headers` | `dict[str, str]` | `{}` | SDK client의 default headers |
-| `request_timeout_seconds` | `float` | `30.0` | non-streaming 요청 timeout, `0`보다 커야 함 |
-| `stream_timeout_seconds` | `float` | `300.0` | streaming 요청 timeout, `0`보다 커야 함 |
+| `request_timeout_seconds` | `float \| None` | `None` | non-streaming 요청 timeout; `None`이면 제한 없음, 지정 시 양수 |
+| `stream_timeout_seconds` | `float \| None` | `None` | streaming 요청 timeout; `None`이면 제한 없음, 지정 시 양수 |
 | `max_retries` | `int` | `0` | 공식 SDK retry 횟수, 음수 불가 |
 | `stream_enabled` | `bool` | `true` | 해당 profile의 streaming 허용 여부 |
 | `resilience` | `LlmResiliencePolicy` | 모두 disabled | orchestration retry/concurrency/rate/circuit policy |

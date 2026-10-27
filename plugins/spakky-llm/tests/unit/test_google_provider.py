@@ -750,7 +750,10 @@ async def test_runner_google_thought_signature_round_trips_to_next_native_part()
     assert sum(item.kind is AgentYieldKind.FINAL for item in items) == 1
 
 
-async def test_google_profile_fences_ambient_vertex_and_endpoint(monkeypatch) -> None:
+@pytest.mark.parametrize("timeout_seconds", [12.5, None])
+async def test_google_profile_fences_ambient_vertex_and_endpoint(
+    monkeypatch, timeout_seconds: float | None
+) -> None:
     """Ambient Google mode cannot redirect a Developer API profile to Vertex."""
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
     monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
@@ -763,7 +766,7 @@ async def test_google_profile_fences_ambient_vertex_and_endpoint(monkeypatch) ->
 
     client = GoogleGenerateContentProvider()._client(
         _target(base_url=None),
-        timeout_seconds=12.5,
+        timeout_seconds=timeout_seconds,
     )
     try:
         assert client.vertexai is False
@@ -773,6 +776,9 @@ async def test_google_profile_fences_ambient_vertex_and_endpoint(monkeypatch) ->
             == "https://generativelanguage.googleapis.com/"
         )
         assert client._api_client._use_aiohttp() is False
+        assert client._api_client._http_options.timeout == (
+            12_500 if timeout_seconds is not None else None
+        )
     finally:
         await client.aio.aclose()
         client.close()

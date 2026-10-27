@@ -256,11 +256,11 @@ class LlmProfile(BaseModel):
     base_url: str | None = None
     api_key: SecretStr | None = None
     headers: dict[str, str] = Field(default_factory=dict)
-    request_timeout_seconds: float = Field(
+    request_timeout_seconds: float | None = Field(
         default=DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS,
         gt=0,
     )
-    stream_timeout_seconds: float = Field(
+    stream_timeout_seconds: float | None = Field(
         default=DEFAULT_LLM_STREAM_TIMEOUT_SECONDS,
         gt=0,
     )

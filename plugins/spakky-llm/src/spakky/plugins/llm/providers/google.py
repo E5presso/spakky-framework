@@ -324,7 +324,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
         self,
         target: LlmModelTarget,
         *,
-        timeout_seconds: float,
+        timeout_seconds: float | None,
     ) -> genai.Client:
         if target.profile.api not in self.apis:
             raise LlmProviderUnavailableError
@@ -354,7 +354,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
     def _http_options(
         self,
         profile: LlmProfile,
-        timeout_seconds: float,
+        timeout_seconds: float | None,
     ) -> types.HttpOptions:
         base_url = profile.base_url
         if base_url is None:
@@ -365,7 +365,11 @@ class GoogleGenerateContentProvider(ILLMProvider):
         return types.HttpOptions(
             base_url=base_url,
             headers=dict(profile.headers),
-            timeout=int(timeout_seconds * _MILLISECONDS_PER_SECOND),
+            timeout=(
+                int(timeout_seconds * _MILLISECONDS_PER_SECOND)
+                if timeout_seconds is not None
+                else None
+            ),
             async_client_args={"transport": httpx.AsyncHTTPTransport()},
             retry_options=types.HttpRetryOptions(
                 attempts=profile.max_retries + 1,

@@ -198,8 +198,8 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 | `provider` | 필수 | routing evidence용 provider id |
 | `api` | 필수 | provider adapter API family |
 | `base_url`, `api_key`, `headers` | `None`, `None`, `{}` | operator-owned endpoint, secret, 추가 header |
-| `request_timeout_seconds` | `30.0` | complete request timeout |
-| `stream_timeout_seconds` | `300.0` | stream request timeout |
+| `request_timeout_seconds` | `None` | complete request timeout; 미지정이면 제한 없음 |
+| `stream_timeout_seconds` | `None` | stream request timeout; 미지정이면 제한 없음 |
 | `max_retries` | `0` | provider SDK retry 횟수 |
 | `stream_enabled` | `true` | profile의 streaming 허용 여부 |
 | `resilience` | disabled `LlmResiliencePolicy()` | profile-scoped orchestration retry, concurrency, rate와 circuit policy |

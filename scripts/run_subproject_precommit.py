@@ -90,7 +90,7 @@ def run_precommit_for_package(pkg: PackageInfo) -> PrecommitResult:
         "pre-commit",
         "run",
         "--all-files",
-        "--color=always",
+        "--color=never",
     ]
 
     result: CapturedResult = run_captured(cmd, cwd=pkg.full_path)
@@ -279,7 +279,7 @@ def main(
                     "pre-commit",
                     "run",
                     "--all-files",
-                    "--color=always",
+                    "--color=never",
                 ]
                 exit_code = run_streaming(cmd, cwd=pkg.full_path)
 

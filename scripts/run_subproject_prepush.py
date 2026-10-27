@@ -95,7 +95,7 @@ def run_prepush_for_package(pkg: PackageInfo) -> PrepushResult:
         "--all-files",
         "-c",
         str(pkg.full_path / ".pre-commit-config.yaml"),
-        "--color=always",
+        "--color=never",
     ]
 
     result: CapturedResult = run_captured(cmd)
@@ -290,7 +290,7 @@ def main(
                     "--all-files",
                     "-c",
                     str(pkg.full_path / ".pre-commit-config.yaml"),
-                    "--color=always",
+                    "--color=never",
                 ]
                 exit_code = run_streaming(cmd)
 
