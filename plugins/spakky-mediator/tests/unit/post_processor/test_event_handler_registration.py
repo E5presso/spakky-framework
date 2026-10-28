@@ -12,8 +12,8 @@ from spakky.domain.models.event import (
     AbstractIntegrationEvent,
 )
 
-from spakky.event.event_consumer import IAsyncEventConsumer, IEventConsumer
-from spakky.event.post_processor import EventHandlerRegistrationPostProcessor
+from spakky.event.event_consumer import IAsyncDomainEventConsumer, IDomainEventConsumer
+from spakky.plugins.mediator.post_processor import EventHandlerRegistrationPostProcessor
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 
@@ -38,7 +38,7 @@ class NonDomainEvent(AbstractIntegrationEvent):
     data: str
 
 
-class InMemorySyncConsumer(IEventConsumer):
+class InMemorySyncConsumer(IDomainEventConsumer):
     """In-memory synchronous consumer for testing."""
 
     def __init__(self) -> None:
@@ -48,7 +48,7 @@ class InMemorySyncConsumer(IEventConsumer):
         self.registrations.append((event, handler))
 
 
-class InMemoryAsyncConsumer(IAsyncEventConsumer):
+class InMemoryAsyncConsumer(IAsyncDomainEventConsumer):
     """In-memory asynchronous consumer for testing."""
 
     def __init__(self) -> None:
@@ -63,8 +63,8 @@ class InMemoryContainer(IContainer):
 
     def __init__(
         self,
-        sync_consumer: IEventConsumer,
-        async_consumer: IAsyncEventConsumer,
+        sync_consumer: IDomainEventConsumer,
+        async_consumer: IAsyncDomainEventConsumer,
     ) -> None:
         self._sync_consumer = sync_consumer
         self._async_consumer = async_consumer
@@ -90,9 +90,9 @@ class InMemoryContainer(IContainer):
         name: str | None = None,
     ) -> T:
         """Get consumer based on type."""
-        if type_ is IEventConsumer:
+        if type_ is IDomainEventConsumer:
             return self._sync_consumer  # type: ignore[return-value] - fake container returns requested interface
-        if type_ is IAsyncEventConsumer:
+        if type_ is IAsyncDomainEventConsumer:
             return self._async_consumer  # type: ignore[return-value] - fake container returns requested interface
         raise ValueError(f"Unexpected type: {type_}")
 

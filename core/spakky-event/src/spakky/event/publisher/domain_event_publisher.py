@@ -14,7 +14,10 @@ from spakky.domain.models.event import (
     AbstractIntegrationEvent,
 )
 
-from spakky.event.error import UnknownEventTypeError
+from spakky.event.error import (
+    DomainEventDispatcherUnavailableError,
+    UnknownEventTypeError,
+)
 from spakky.event.event_dispatcher import (
     IAsyncEventDispatcher,
     IEventDispatcher,
@@ -31,12 +34,12 @@ from spakky.event.event_publisher import (
 class EventPublisher(IEventPublisher):
     """Routes events by type: domain events to dispatcher, integration events to bus."""
 
-    _dispatcher: IEventDispatcher
+    _dispatcher: IEventDispatcher | None
     _bus: IEventBus
 
     def __init__(
         self,
-        dispatcher: IEventDispatcher,
+        dispatcher: IEventDispatcher | None,
         bus: IEventBus,
     ) -> None:
         """Initialize with dispatcher and bus dependencies."""
@@ -48,6 +51,8 @@ class EventPublisher(IEventPublisher):
         """Route an event to the appropriate handler based on its type."""
         match event:
             case AbstractDomainEvent():
+                if self._dispatcher is None:
+                    raise DomainEventDispatcherUnavailableError()
                 self._dispatcher.dispatch(event)
             case AbstractIntegrationEvent():
                 self._bus.send(event)
@@ -59,12 +64,12 @@ class EventPublisher(IEventPublisher):
 class AsyncEventPublisher(IAsyncEventPublisher):
     """Async counterpart that routes events by type."""
 
-    _dispatcher: IAsyncEventDispatcher
+    _dispatcher: IAsyncEventDispatcher | None
     _bus: IAsyncEventBus
 
     def __init__(
         self,
-        dispatcher: IAsyncEventDispatcher,
+        dispatcher: IAsyncEventDispatcher | None,
         bus: IAsyncEventBus,
     ) -> None:
         """Initialize with async dispatcher and bus dependencies."""
@@ -76,6 +81,8 @@ class AsyncEventPublisher(IAsyncEventPublisher):
         """Route an event to the appropriate async handler based on its type."""
         match event:
             case AbstractDomainEvent():
+                if self._dispatcher is None:
+                    raise DomainEventDispatcherUnavailableError()
                 await self._dispatcher.dispatch(event)
             case AbstractIntegrationEvent():
                 await self._bus.send(event)

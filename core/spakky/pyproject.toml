@@ -33,6 +33,7 @@ fastapi = ["spakky-fastapi>=8.5.1"]
 typer = ["spakky-typer>=8.5.1"]
 rabbitmq = ["spakky-rabbitmq>=8.5.1"]
 kafka = ["spakky-kafka>=8.5.1"]
+mediator = ["spakky-mediator>=8.5.1"]
 sqlalchemy = ["spakky-sqlalchemy>=8.5.1"]
 celery = ["spakky-celery>=8.5.1"]
 opentelemetry = ["spakky-opentelemetry>=8.5.1"]
@@ -131,6 +132,7 @@ full = [
     "spakky[kafka]>=6.5.0",
     "spakky[logging]>=6.5.0",
     "spakky[mcp]>=6.5.0",
+    "spakky[mediator]>=8.5.1",
     "spakky[oidc]>=6.5.0",
     "spakky[openfga]>=6.5.0",
     "spakky[opentelemetry]>=6.5.0",

@@ -84,6 +84,7 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 |---------|--------------|
 | **`spakky-fastapi`** | REST API 구성을 위한 [FastAPI](https://fastapi.tiangolo.com/) 통합 |
 | **`spakky-grpc`** | RPC 서비스 구성을 위한 [gRPC](https://grpc.io/) 통합 |
+| **`spakky-mediator`** | 선택적인 인프로세스 domain event consumer·dispatcher |
 | **`spakky-kafka`** | [Apache Kafka](https://kafka.apache.org/) 기반 이벤트 주도 아키텍처 지원 |
 | **`spakky-rabbitmq`** | [RabbitMQ](https://www.rabbitmq.com/) 기반 이벤트 주도 아키텍처 지원 |
 | **`spakky-redis`** | 공유 애플리케이션 데이터 캐시를 위한 Redis 백엔드 |

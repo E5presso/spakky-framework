@@ -20,14 +20,15 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.domain.models.event import AbstractEvent, AbstractIntegrationEvent
-from spakky.event.event_consumer import (
-    IAsyncEventConsumer,
-    IEventConsumer,
-)
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 from spakky.plugins.rabbitmq.auth import RabbitMQAuthBoundary
 from spakky.tracing.propagator import ITracePropagator
 from typing import override
+
+from spakky.plugins.rabbitmq.event.consumer import (
+    RabbitMQEventConsumer,
+    AsyncRabbitMQEventConsumer,
+)
 
 logger = getLogger(__name__)
 
@@ -80,8 +81,8 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
         if not EventHandler.exists(pod):
             return pod
         handler: EventHandler = EventHandler.get(pod)
-        consumer = self.__container.get(IEventConsumer)
-        async_consumer = self.__container.get(IAsyncEventConsumer)
+        consumer = self.__container.get(RabbitMQEventConsumer)
+        async_consumer = self.__container.get(AsyncRabbitMQEventConsumer)
         auth_boundary = RabbitMQAuthBoundary(
             self.__application_context,
             self.__container.get_or_none(IAuthContextSnapshotVerifier),

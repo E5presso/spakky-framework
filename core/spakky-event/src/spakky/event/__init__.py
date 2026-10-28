@@ -16,10 +16,18 @@ from spakky.event.error import (
     EventDeliveryRejectedError,
     EventTransportNotRunningError,
     InvalidMessageError,
+    EventDeferredError,
+    InvalidEventDeferralError,
+    DomainEventDispatcherUnavailableError,
+    EventHandlerProviderUnavailableError,
 )
 from spakky.event.event_consumer import (
     IAsyncEventConsumer,
     IEventConsumer,
+    IDomainEventConsumer,
+    IAsyncDomainEventConsumer,
+    IIntegrationEventConsumer,
+    IAsyncIntegrationEventConsumer,
 )
 from spakky.event.event_dispatcher import (
     IAsyncEventDispatcher,
@@ -33,11 +41,6 @@ from spakky.event.event_publisher import (
     IEventPublisher,
     IEventTransport,
 )
-from spakky.event.mediator import (
-    AsyncEventMediator,
-    EventMediator,
-)
-from spakky.event.post_processor import EventHandlerRegistrationPostProcessor
 from spakky.event.publisher import (
     AsyncEventPublisher,
     EventPublisher,
@@ -56,12 +59,13 @@ __all__ = [
     # Consumer Interfaces
     "IAsyncEventConsumer",
     "IEventConsumer",
+    "IDomainEventConsumer",
+    "IAsyncDomainEventConsumer",
+    "IIntegrationEventConsumer",
+    "IAsyncIntegrationEventConsumer",
     # Dispatcher Interfaces
     "IAsyncEventDispatcher",
     "IEventDispatcher",
-    # Mediator Implementations
-    "AsyncEventMediator",
-    "EventMediator",
     # Publisher Implementations
     "AsyncEventPublisher",
     "EventPublisher",
@@ -69,8 +73,6 @@ __all__ = [
     "AuthContextSnapshotHeaderInjector",
     "AsyncDirectEventBus",
     "DirectEventBus",
-    # Post-Processors
-    "EventHandlerRegistrationPostProcessor",
     # Aspects
     "AsyncTransactionalEventPublishingAspect",
     "TransactionalEventPublishingAspect",
@@ -81,6 +83,10 @@ __all__ = [
     "EventDeliveryRejectedError",
     "EventTransportNotRunningError",
     "InvalidMessageError",
+    "EventDeferredError",
+    "InvalidEventDeferralError",
+    "DomainEventDispatcherUnavailableError",
+    "EventHandlerProviderUnavailableError",
 ]
 
 from spakky.core.application.plugin import Plugin

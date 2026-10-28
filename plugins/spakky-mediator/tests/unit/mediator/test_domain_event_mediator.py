@@ -4,7 +4,7 @@ import pytest
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent
 
-from spakky.event.mediator.domain_event_mediator import (
+from spakky.plugins.mediator.mediator import (
     AsyncEventMediator,
     EventMediator,
 )
@@ -224,3 +224,36 @@ async def test_async_mediator_handler_error_does_not_stop_other_handlers() -> No
 
     assert handler1_called
     assert handler2_called
+
+
+def test_local_deferral_expect_propagated_instead_of_silently_discarded() -> None:
+    """A deferred local operation must reach the caller's transaction for rollback/retry."""
+    from spakky.event import EventDeferredError
+
+    mediator = EventMediator()
+
+    def unavailable(event: UserCreatedEvent) -> None:
+        del event
+        raise EventDeferredError(retry_after=0.25)
+
+    mediator.register(UserCreatedEvent, unavailable)
+    with pytest.raises(EventDeferredError) as caught:
+        mediator.dispatch(UserCreatedEvent(user_id="123", username="owner"))
+    assert caught.value.retry_after == 0.25
+
+
+async def test_async_local_deferral_expect_propagated_instead_of_silently_discarded() -> (
+    None
+):
+    """Asynchronous dispatch preserves the same explicit deferred-delivery contract."""
+    from spakky.event import EventDeferredError
+
+    mediator = AsyncEventMediator()
+
+    async def unavailable(event: UserCreatedEvent) -> None:
+        del event
+        raise EventDeferredError(retry_after=0.25)
+
+    mediator.register(UserCreatedEvent, unavailable)
+    with pytest.raises(EventDeferredError):
+        await mediator.dispatch(UserCreatedEvent(user_id="123", username="owner"))

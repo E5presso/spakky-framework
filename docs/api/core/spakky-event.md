@@ -1,8 +1,8 @@
 # spakky-event
 
-> `spakky-event`는 이벤트 발행, 소비, dispatch, handler stereotype을 제공하는 core 패키지입니다.
+> `spakky-event`는 이벤트 계약, 발행, provider 검증, handler stereotype을 제공하는 core 패키지입니다.
 
-인프로세스 이벤트 시스템 — EventBus, EventTransport, EventMediator
+제공자 중립 이벤트 시스템 — EventBus, EventTransport 및 consumer/dispatcher 계약
 
 ## 플러그인 진입점
 
@@ -40,11 +40,9 @@
     options:
       show_root_heading: false
 
-## Mediator
+## 로컬 제공자
 
-::: spakky.event.mediator.domain_event_mediator
-    options:
-      show_root_heading: false
+로컬 구현은 별도 [spakky-mediator](../plugins/spakky-mediator.md) 플러그인이 소유합니다.
 
 ## Publisher
 

@@ -425,6 +425,7 @@ count와 skip reason이 기록됩니다.
 | [`spakky-grpc`](https://pypi.org/project/spakky-grpc/) | gRPC 서비스 컨트롤러 통합 |
 | [`spakky-typer`](https://pypi.org/project/spakky-typer/) | Typer CLI 통합 |
 | [`spakky-sqlalchemy`](https://pypi.org/project/spakky-sqlalchemy/) | SQLAlchemy ORM 통합 |
+| [`spakky-mediator`](https://pypi.org/project/spakky-mediator/) | Explicit in-process domain event dispatch |
 | [`spakky-kafka`](https://pypi.org/project/spakky-kafka/) | Apache Kafka event system |
 | [`spakky-rabbitmq`](https://pypi.org/project/spakky-rabbitmq/) | RabbitMQ event system |
 | [`spakky-redis`](https://pypi.org/project/spakky-redis/) | Redis cache backend |

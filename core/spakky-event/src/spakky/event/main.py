@@ -9,11 +9,7 @@ from spakky.event.bus.transport_event_bus import (
     DirectEventBus,
 )
 from spakky.event.auth_propagation import AuthContextSnapshotHeaderInjector
-from spakky.event.mediator.domain_event_mediator import (
-    AsyncEventMediator,
-    EventMediator,
-)
-from spakky.event.post_processor import EventHandlerRegistrationPostProcessor
+from spakky.event.post_processor import EventHandlerProviderValidationPostProcessor
 from spakky.event.publisher.domain_event_publisher import (
     AsyncEventPublisher,
     EventPublisher,
@@ -23,17 +19,15 @@ from spakky.event.publisher.domain_event_publisher import (
 def initialize(app: SpakkyApplication) -> None:
     """Initialize the spakky-event plugin.
 
-    Registers event mediators, publishers, buses, and post-processors.
+    Registers publishing contracts and validates declared handler providers.
     """
     app.add(AsyncTransactionalEventPublishingAspect)
     app.add(TransactionalEventPublishingAspect)
 
-    app.add(EventMediator)
-    app.add(AsyncEventMediator)
     app.add(EventPublisher)
     app.add(AsyncEventPublisher)
     app.add(AuthContextSnapshotHeaderInjector)
     app.add(DirectEventBus)
     app.add(AsyncDirectEventBus)
 
-    app.add(EventHandlerRegistrationPostProcessor)
+    app.add(EventHandlerProviderValidationPostProcessor)

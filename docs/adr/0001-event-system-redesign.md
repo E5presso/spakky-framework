@@ -3,6 +3,8 @@
 - **상태**: Accepted
 - **날짜**: 2026-03-06
 
+> 로컬 mediator의 기본 등록과 패키지 위치는 [ADR-0022](0022-optional-domain-event-mediator-provider.md)가 대체합니다. 이벤트 분류와 발행 진입점 결정은 유지됩니다.
+
 ## 맥락 (Context)
 
 현재 `spakky-event`는 세 가지 구조적 문제를 가지고 있다:

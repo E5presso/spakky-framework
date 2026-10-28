@@ -13,7 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aiokafka.errors import KafkaTimeoutError
-from confluent_kafka import KafkaError, KafkaException
+from confluent_kafka import KafkaError, KafkaException, TopicPartition
+from spakky.event import EventDeferredError
 from spakky.auth import (
     AUTH_CONTEXT_SNAPSHOT_HEADER_KEY,
     AuthRequirementDeniedError,
@@ -30,6 +31,42 @@ from spakky.plugins.kafka.event.consumer import (
     AsyncKafkaEventConsumer,
     KafkaEventConsumer,
 )
+
+
+def test_sync_consumer_without_handlers_expect_no_empty_subscription(
+    config: KafkaConnectionConfig,
+) -> None:
+    """발행 전용 또는 async 전용 앱의 빈 동기 소비자는 잘못된 구독을 만들지 않는다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer") as inner,
+        patch("spakky.plugins.kafka.event.consumer.Producer"),
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+    ):
+        consumer = KafkaEventConsumer(config)
+        consumer.initialize()
+        inner.return_value.subscribe.assert_not_called()
+        consumer.dispose()
+        inner.return_value.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_consumer_without_handlers_expect_no_empty_subscription(
+    config: KafkaConnectionConfig,
+) -> None:
+    """발행 전용 또는 sync 전용 앱의 빈 비동기 소비자도 정상 종료할 수 있다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.AIOConsumer") as inner,
+        patch("spakky.plugins.kafka.event.consumer.AIOKafkaProducer") as producer,
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+    ):
+        inner.return_value = AsyncMock()
+        producer.return_value = AsyncMock()
+        consumer = AsyncKafkaEventConsumer(config)
+        await consumer.initialize_async()
+        inner.return_value.subscribe.assert_not_awaited()
+        await consumer.dispose_async()
+        inner.assert_not_called()
+        producer.assert_not_called()
 
 
 @immutable
@@ -218,7 +255,12 @@ def test_sync_consumer_initialize_expect_subscribe(
 
     consumer.initialize()
 
-    mock_inner_consumer.subscribe.assert_called_once_with(topics=["SampleEvent"])
+    mock_inner_consumer.subscribe.assert_called_once_with(
+        topics=["SampleEvent"],
+        on_assign=consumer._clear_deferred,
+        on_revoke=consumer._clear_deferred,
+        on_lost=consumer._clear_deferred,
+    )
 
 
 @patch("spakky.plugins.kafka.event.consumer.Producer")
@@ -269,7 +311,10 @@ def test_sync_consumer_initialize_custom_event_name_expect_subscribe_to_event_na
     consumer.initialize()
 
     mock_inner_consumer.subscribe.assert_called_once_with(
-        topics=["external.renamed.v1"]
+        topics=["external.renamed.v1"],
+        on_assign=consumer._clear_deferred,
+        on_revoke=consumer._clear_deferred,
+        on_lost=consumer._clear_deferred,
     )
 
 
@@ -492,6 +537,7 @@ def test_sync_consumer_dispose_expect_producer_flushed_and_consumer_closed(
 
     consumer = KafkaEventConsumer(config)
     consumer.producer = MagicMock()
+    consumer.register(SampleEvent, MagicMock())
 
     consumer.dispose()
 
@@ -656,7 +702,12 @@ async def test_async_consumer_initialize_async_expect_subscribe(
 
     await consumer.initialize_async()
 
-    mock_aio_consumer.subscribe.assert_awaited_once_with(topics=["SampleEvent"])
+    mock_aio_consumer.subscribe.assert_awaited_once_with(
+        topics=["SampleEvent"],
+        on_assign=consumer._clear_deferred,
+        on_revoke=consumer._clear_deferred,
+        on_lost=consumer._clear_deferred,
+    )
 
 
 @pytest.mark.asyncio
@@ -711,7 +762,12 @@ async def test_async_consumer_initialize_custom_event_name_expect_subscribe_to_e
 
     await consumer.initialize_async()
 
-    mock_aio_consumer.subscribe.assert_awaited_once_with(topics=["external.renamed.v1"])
+    mock_aio_consumer.subscribe.assert_awaited_once_with(
+        topics=["external.renamed.v1"],
+        on_assign=consumer._clear_deferred,
+        on_revoke=consumer._clear_deferred,
+        on_lost=consumer._clear_deferred,
+    )
 
 
 @pytest.mark.asyncio
@@ -727,6 +783,7 @@ async def test_async_consumer_dispose_async_expect_producer_and_consumer_closed(
     consumer = AsyncKafkaEventConsumer(config)
     consumer.consumer = mock_aio_consumer
     consumer.producer = mock_aio_producer
+    consumer.register(SampleEvent, AsyncMock())
 
     await consumer.dispose_async()
 
@@ -2027,3 +2084,194 @@ async def test_async_consumer_empty_message_expect_offset_committed_without_dead
 
     consumer.consumer.commit.assert_awaited_once()
     consumer.producer.send_and_wait.assert_not_awaited()
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_deferred_handler_expect_partition_fenced_until_retry_without_dlt(
+    config: KafkaConnectionConfig, incoming_message: MagicMock, asynchronous: bool
+) -> None:
+    """복구 fence는 실패 예산을 쓰지 않으며 다음 offset도 처리하지 않는다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer"),
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+        patch(
+            "spakky.plugins.kafka.event.consumer.monotonic", return_value=10
+        ) as clock,
+    ):
+        consumer = (
+            AsyncKafkaEventConsumer(config)
+            if asynchronous
+            else KafkaEventConsumer(config)
+        )
+        inner = AsyncMock() if asynchronous else MagicMock()
+        consumer.consumer = inner
+        consumer.producer = AsyncMock() if asynchronous else MagicMock()
+        handler = (
+            AsyncMock(side_effect=EventDeferredError(5))
+            if asynchronous
+            else MagicMock(side_effect=EventDeferredError(5))
+        )
+        consumer.register(SampleEvent, handler)
+        consumer.set_propagator(W3CTracePropagator())
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._route_event_handler(incoming_message)
+        else:
+            consumer._route_event_handler(incoming_message)
+        assert handler.call_count == 1
+        assert TraceContext.get() is None
+        inner.pause.assert_called_once()
+        assert inner.seek.call_args.args[0].offset == 42
+        # A queued record delivered despite pause cannot overtake offset 42.
+        incoming_message.offset.return_value = 43
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._route_event_handler(incoming_message)
+            await consumer._resume_deferred()
+        else:
+            consumer._route_event_handler(incoming_message)
+            consumer._resume_deferred()
+        assert handler.call_count == 1
+        inner.resume.assert_not_called()
+        inner.commit.assert_not_called()
+        consumer.producer.produce.assert_not_called() if not asynchronous else consumer.producer.send_and_wait.assert_not_called()
+        clock.return_value = 15
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._resume_deferred()
+        else:
+            consumer._resume_deferred()
+        assert inner.seek.call_args.args[0].offset == 42
+        inner.resume.assert_called_once()
+        handler.side_effect = None
+        inner.commit.return_value = []
+        incoming_message.offset.return_value = 42
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._route_event_handler(incoming_message)
+        else:
+            consumer._route_event_handler(incoming_message)
+        assert handler.call_count == 2
+        inner.commit.assert_called_once_with(
+            message=incoming_message, asynchronous=False
+        )
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_deferred_rebalance_expect_revoked_timer_removed_without_commit(
+    config: KafkaConnectionConfig, incoming_message: MagicMock, asynchronous: bool
+) -> None:
+    """재할당된 partition에는 이전 소유자의 timer/offset을 적용하지 않는다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer"),
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+    ):
+        consumer = (
+            AsyncKafkaEventConsumer(config)
+            if asynchronous
+            else KafkaEventConsumer(config)
+        )
+        inner = AsyncMock() if asynchronous else MagicMock()
+        consumer.consumer = inner
+        position = TopicPartition("SampleEvent", 3, 42)
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._defer(position, 1000)
+        else:
+            consumer._defer(position, 1000)
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._clear_deferred(inner, [position])
+        else:
+            consumer._clear_deferred(inner, [position])
+        assert consumer._deferred == {}
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._resume_deferred()
+        else:
+            consumer._resume_deferred()
+        inner.resume.assert_not_called()
+        inner.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_deferred_client_error_expect_fence_retained_until_seek_and_resume_succeed(
+    config: KafkaConnectionConfig, asynchronous: bool
+) -> None:
+    """pause/seek 실패 중 다음 record를 건너뛰어 commit하지 않고 복구한다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer"),
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+        patch(
+            "spakky.plugins.kafka.event.consumer.monotonic", return_value=10
+        ) as clock,
+    ):
+        consumer = (
+            AsyncKafkaEventConsumer(config)
+            if asynchronous
+            else KafkaEventConsumer(config)
+        )
+        inner = AsyncMock() if asynchronous else MagicMock()
+        consumer.consumer = inner
+        inner.pause.side_effect = KafkaException(KafkaError(KafkaError._STATE))
+        position = TopicPartition("SampleEvent", 3, 42)
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._defer(position, 1)
+        else:
+            consumer._defer(position, 1)
+        clock.return_value = 12
+        inner.seek.side_effect = KafkaException(KafkaError(KafkaError._STATE))
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._resume_deferred()
+        else:
+            consumer._resume_deferred()
+        assert ("SampleEvent", 3) in consumer._deferred
+        inner.seek.side_effect = None
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer._resume_deferred()
+        else:
+            consumer._resume_deferred()
+        assert consumer._deferred == {}
+        inner.commit.assert_not_called()
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+async def test_deferred_shutdown_expect_poll_continues_and_no_handler_wait(
+    config: KafkaConnectionConfig, incoming_message: MagicMock, asynchronous: bool
+) -> None:
+    """장기 deferral에도 poll loop가 진행하고 stop 신호에 종료한다."""
+    from asyncio import Event
+
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer"),
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+    ):
+        consumer = (
+            AsyncKafkaEventConsumer(config)
+            if asynchronous
+            else KafkaEventConsumer(config)
+        )
+        inner = AsyncMock() if asynchronous else MagicMock()
+        consumer.consumer = inner
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            consumer._stop_event = Event()
+        else:
+            consumer._stop_event = threading.Event()
+        handler = (
+            AsyncMock(side_effect=EventDeferredError(1000))
+            if asynchronous
+            else MagicMock(side_effect=EventDeferredError(1000))
+        )
+        consumer.register(SampleEvent, handler)
+        polls = 0
+
+        def poll(timeout: float) -> MagicMock | None:
+            nonlocal polls
+            polls += 1
+            if polls == 1:
+                return incoming_message
+            if polls == 4:
+                consumer._stop_event.set()
+            return None
+
+        inner.poll.side_effect = poll
+        if isinstance(consumer, AsyncKafkaEventConsumer):
+            await consumer.run_async()
+        else:
+            consumer.run()
+        assert polls == 4
+        assert handler.call_count == 1
+        inner.commit.assert_not_called()

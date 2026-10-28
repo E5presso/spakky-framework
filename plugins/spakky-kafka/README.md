@@ -264,3 +264,74 @@ uv run pytest
 ## 라이선스
 
 MIT License
+
+### Event 코어와 로컬 Mediator의 조합
+
+`spakky-event`는 로컬 consumer를 자동 등록하지 않습니다. Kafka는 integration consumer
+역할을 제공하고 자신의 구체 consumer에만 handler를 등록합니다. 로컬 domain handler도
+필요하면 `spakky-mediator`를 명시적으로 설치·선택합니다. 동기 또는 비동기 handler가
+없는 consumer 모드는 빈 topic 구독과 dead-letter producer 생성을 생략하며 정상 종료합니다.
+
+실제 broker 테스트는 기본 testcontainers fixture 또는 명시적인
+`SPAKKY_KAFKA_TEST_BOOTSTRAP_SERVERS` 주소를 사용합니다. 이 옵션은 broker I/O를
+mock하지 않으며, 독립적인 테스트 broker의 전체 suite를 실행할 때 사용합니다.
+
+
+
+### 구독 핸들러가 없는 실행 모드
+
+플러그인은 동기·비동기 소비자를 함께 등록합니다. 한쪽에 등록된 핸들러가 없으면
+빈 topic 목록을 Kafka에 구독하지 않습니다. 따라서 발행 전용, 동기 전용, 비동기 전용
+애플리케이션도 기본 플러그인의 시작·종료 수명을 그대로 사용할 수 있습니다.
+
+### TLS 신뢰 및 client 인증서
+
+자체 CA와 TLS client 인증서를 쓰는 listener에는 다음 파일 설정을 사용합니다.
+
+```bash
+export SPAKKY_KAFKA__SECURITY_PROTOCOL="SSL"
+export SPAKKY_KAFKA__SSL_CA_LOCATION="/run/kafka-ca/ca.crt"
+export SPAKKY_KAFKA__SSL_CERTIFICATE_LOCATION="/run/kafka-client/user.crt"
+export SPAKKY_KAFKA__SSL_KEY_LOCATION="/run/kafka-client/user.key"
+```
+
+동기 admin/producer/consumer에는 librdkafka의 `ssl.*.location`으로 전달하고,
+비동기 producer와 DLT producer에는 검증을 켠 Python `SSLContext`를 전달합니다.
+인증서와 키는 함께 지정해야 하며 TLS 파일을 `PLAINTEXT` 경로에 지정하면 설정을
+거부합니다. CA 또는 키 파일의 읽기·검증 실패는 전파되며 평문으로 전환하지 않습니다.
+CA 파일을 생략한 `SSL`/`SASL_SSL`은 시스템 신뢰 저장소와 호스트 이름 검증을 사용합니다.
+비밀 파일 교체 뒤에는 서비스 lifecycle을 재시작해 새 context를 읽습니다.
+
+### Domain handler와 integration handler의 등록 경계
+
+Kafka post-processor는 `KafkaEventConsumer`/`AsyncKafkaEventConsumer`에 integration
+handler를 등록합니다. 명시적 mediator plugin의 `EventMediator`와 동일 컨테이너에
+존재해도 generic `IEventConsumer` 선택이 충돌하지 않으며, domain event는 계속
+in-process mediator에서 처리합니다. 애플리케이션이 generic consumer를 Kafka로
+전역 바인딩해 domain event를 broker로 넘기는 우회는 필요하지 않습니다.
+
+### 일시적인 소비 유예
+
+외부 유지보수 fence처럼 아직 처리하면 안 되는 상태는 handler 실패와 구분할 수 있습니다.
+효과를 만들기 전에 (또는 트랜잭션이 rollback되도록) `spakky.event.EventDeferredError`
+를 발생시키면 Kafka consumer는 해당 partition을 원래 offset으로 되돌리고 잠시 멈춥니다.
+`retry_after`는 초 단위의 유한한 양수이며 기본값은 `1.0`입니다.
+
+```python
+from spakky.event import EventDeferredError
+
+if maintenance_pending:
+    raise EventDeferredError(retry_after=1.0)
+```
+
+유예는 handler 실패 재시도 예산이나 DLT를 사용하지 않고 offset을 commit하지 않습니다.
+다른 partition과 rebalance callback을 위한 poll은 계속됩니다. 재시도 시 원래 offset을
+다시 확인하며, revoke/lost/새 assignment에는 이전 소유자의 timer를 버립니다. 종료는
+유예 만료나 외부 fence 해제를 기다리지 않으므로 다음 consumer가 미확인 offset부터
+재전달받습니다. 이미 실행된 다른 handler는 다시 실행될 수 있어 멱등이어야 합니다.
+이 계약은 handler 내부의 긴 작업이나 무한 대기를 중단시키지는 않습니다. 그런 작업을
+유예로 표현하려면 먼저 반환/rollback해야 합니다.
+
+실제 Kafka 회귀는 poll 제한을 6초로 낮추고 35초 이상 유예하는 동안 독립 partition,
+재할당, 종료, 재시작 후 원래 순서의 전달과 commit을 검사합니다. 기존 broker를 사용하는
+경우 테스트 전용 `SPAKKY_KAFKA_TEST_BOOTSTRAP_SERVERS`를 지정할 수 있습니다.

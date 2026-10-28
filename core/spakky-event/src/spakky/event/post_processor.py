@@ -1,66 +1,78 @@
-"""Event handler registration post-processor."""
+"""Fail startup when declared handlers lack an explicit consumer provider."""
 
 from inspect import getmembers, iscoroutinefunction, ismethod
-from logging import getLogger
 from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from spakky.domain.models.event import AbstractDomainEvent, AbstractEvent
+from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 
+from spakky.event.error import (
+    EventHandlerProviderUnavailableError,
+    UnknownEventTypeError,
+)
 from spakky.event.event_consumer import (
-    IAsyncEventConsumer,
-    IEventConsumer,
+    IAsyncDomainEventConsumer,
+    IAsyncIntegrationEventConsumer,
+    IDomainEventConsumer,
+    IIntegrationEventConsumer,
 )
 from spakky.event.stereotype.event_handler import EventHandler, EventRoute
 
-logger = getLogger(__name__)
-
 
 @Pod()
-class EventHandlerRegistrationPostProcessor(IPostProcessor, IContainerAware):
-    """Scans @EventHandler Pods and registers their @on_event methods with consumers."""
+class EventHandlerProviderValidationPostProcessor(IPostProcessor, IContainerAware):
+    """Validate domain/integration and sync/async capabilities without a hidden provider."""
 
-    __container: IContainer
+    _container: IContainer
 
     @override
     def set_container(self, container: IContainer) -> None:
-        """Receive the container reference via IContainerAware."""
-        self.__container = container
+        """Receive the provider-neutral registry for startup validation.
+
+        Args:
+            container: Registry containing only explicitly selected providers.
+        """
+        self._container = container
 
     @override
     def post_process(self, pod: object) -> object:
-        """Register event handler methods with the appropriate consumer."""
-        pod_type = type(pod)
+        """Fail deterministically when a declared handler would remain unregistered.
 
-        if not EventHandler.exists(pod_type):
+        Args:
+            pod: Constructed business or infrastructure Pod.
+
+        Returns:
+            The original Pod after validating all declared event routes.
+
+        Raises:
+            EventHandlerProviderUnavailableError: No provider supports the handler role.
+        """
+        if not EventHandler.exists(type(pod)):
             return pod
-
-        sync_consumer = self.__container.get(IEventConsumer)
-        async_consumer = self.__container.get(IAsyncEventConsumer)
-
         for name, method in getmembers(pod, predicate=ismethod):
-            route = EventRoute[AbstractEvent].get_or_none(method)
+            route = EventRoute.get_or_none(method)
             if route is None:
                 continue
-            if not issubclass(route.event_type, AbstractDomainEvent):
-                continue
-
-            event_type = route.event_type
-
-            if iscoroutinefunction(method):
-                async_consumer.register(event_type, method)
-                logger.debug(
-                    f"Registered async handler {pod_type.__name__}.{name} "
-                    f"for {event_type.__name__}"
+            asynchronous = iscoroutinefunction(method)
+            if issubclass(route.event_type, AbstractDomainEvent):
+                provider = (
+                    IAsyncDomainEventConsumer if asynchronous else IDomainEventConsumer
+                )
+            elif issubclass(route.event_type, AbstractIntegrationEvent):
+                provider = (
+                    IAsyncIntegrationEventConsumer
+                    if asynchronous
+                    else IIntegrationEventConsumer
                 )
             else:
-                sync_consumer.register(event_type, method)
-                logger.debug(
-                    f"Registered sync handler {pod_type.__name__}.{name} "
-                    f"for {event_type.__name__}"
+                raise UnknownEventTypeError(route.event_type)
+            if self._container.get_or_none(provider) is None:
+                raise EventHandlerProviderUnavailableError(
+                    f"{type(pod).__module__}.{type(pod).__qualname__}.{name}",
+                    route.event_type,
+                    provider,
                 )
-
         return pod

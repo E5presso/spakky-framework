@@ -11,11 +11,12 @@ from typing import Any, override
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractEvent
 
+from spakky.event.error import EventDeferredError
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
-    IAsyncEventConsumer,
-    IEventConsumer,
+    IAsyncDomainEventConsumer,
+    IDomainEventConsumer,
 )
 from spakky.event.event_dispatcher import (
     IAsyncEventDispatcher,
@@ -26,7 +27,7 @@ logger = getLogger(__name__)
 
 
 @Pod()
-class EventMediator(IEventConsumer, IEventDispatcher):
+class EventMediator(IDomainEventConsumer, IEventDispatcher):
     """In-process synchronous event mediator combining consumer and dispatcher roles."""
 
     _handlers: dict[
@@ -67,6 +68,8 @@ class EventMediator(IEventConsumer, IEventDispatcher):
         for handler in handlers:
             try:
                 handler(event)
+            except EventDeferredError:
+                raise
             except Exception as e:
                 logger.error(
                     f"Handler {handler} failed for {event_type.__name__}: {e}",
@@ -75,7 +78,7 @@ class EventMediator(IEventConsumer, IEventDispatcher):
 
 
 @Pod()
-class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
+class AsyncEventMediator(IAsyncDomainEventConsumer, IAsyncEventDispatcher):
     """In-process asynchronous event mediator combining consumer and dispatcher roles."""
 
     _handlers: dict[
@@ -116,6 +119,8 @@ class AsyncEventMediator(IAsyncEventConsumer, IAsyncEventDispatcher):
         for handler in handlers:
             try:
                 await handler(event)
+            except EventDeferredError:
+                raise
             except Exception as e:
                 logger.error(
                     f"Handler {handler} failed for {event_type.__name__}: {e}",

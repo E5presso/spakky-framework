@@ -1,4 +1,5 @@
 from abc import ABC
+from math import isfinite
 
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
@@ -68,4 +69,59 @@ class UnknownEventTypeError(AbstractSpakkyEventError):
 
     def __init__(self, event_type: type) -> None:
         self.event_type = event_type
+        super().__init__()
+
+
+class DomainEventDispatcherUnavailableError(AbstractSpakkyEventError):
+    """Raised when local domain publishing has no configured dispatcher provider."""
+
+    message = "Domain event publishing requires an in-process dispatcher provider"
+
+
+class EventHandlerProviderUnavailableError(AbstractSpakkyEventError):
+    """Raised at startup when a declared event handler has no matching consumer."""
+
+    message = "Declared event handler requires a matching event consumer provider"
+    handler: str
+    event_type: type
+    provider_type: type
+
+    def __init__(self, handler: str, event_type: type, provider_type: type) -> None:
+        """Keep the missing provider and affected handler in startup diagnostics.
+
+        Args:
+            handler: Fully qualified method declaring the unsupported handler.
+            event_type: Declared domain or integration event type.
+            provider_type: Required synchronous or asynchronous consumer role.
+        """
+        self.handler, self.event_type, self.provider_type = (
+            handler,
+            event_type,
+            provider_type,
+        )
+        super().__init__()
+
+
+class InvalidEventDeferralError(AbstractSpakkyEventError):
+    """Raised when a deferral delay is not finite and strictly positive."""
+
+    message = "Event deferral requires a finite positive retry delay"
+
+
+class EventDeferredError(AbstractSpakkyEventError):
+    """Defer delivery without counting a handler failure or acknowledging it.
+
+    Raise before effects, or let a transaction roll back before this reaches the
+    consumer. Earlier handlers may run again and must remain idempotent. Broker
+    consumers supporting deferral retry after the delay while continuing to poll.
+    Direct in-process dispatch propagates the error to its caller.
+    """
+
+    message = "Event delivery is temporarily deferred"
+    retry_after: float
+
+    def __init__(self, retry_after: float = 1.0) -> None:
+        if not isfinite(retry_after) or retry_after <= 0:
+            raise InvalidEventDeferralError()
+        self.retry_after = retry_after
         super().__init__()

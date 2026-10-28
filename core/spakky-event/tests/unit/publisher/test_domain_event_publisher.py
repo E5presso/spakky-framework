@@ -1,5 +1,7 @@
 """Tests for event publisher implementations (type-based router)."""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import (
@@ -122,3 +124,27 @@ async def test_async_publisher_routes_integration_event_to_bus() -> None:
     assert len(dispatcher.dispatched_events) == 0
     assert len(bus.sent_events) == 1
     assert bus.sent_events[0] is event
+
+
+def test_publish_domain_without_dispatcher_expect_explicit_configuration_error() -> (
+    None
+):
+    """Event-only applications cannot silently drop a local domain publish."""
+    from spakky.event.error import DomainEventDispatcherUnavailableError
+
+    with pytest.raises(DomainEventDispatcherUnavailableError):
+        EventPublisher(None, MagicMock()).publish(
+            SampleDomainEvent(data="missing local provider")
+        )
+
+
+async def test_publish_async_domain_without_dispatcher_expect_explicit_configuration_error() -> (
+    None
+):
+    """The missing local provider fails equally in async publishing."""
+    from spakky.event.error import DomainEventDispatcherUnavailableError
+
+    with pytest.raises(DomainEventDispatcherUnavailableError):
+        await AsyncEventPublisher(None, AsyncMock()).publish(
+            SampleDomainEvent(data="missing local provider")
+        )

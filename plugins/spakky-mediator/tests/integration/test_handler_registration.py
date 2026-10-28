@@ -6,10 +6,7 @@ appropriate domain event consumers when the application starts.
 
 from spakky.core.application.application import SpakkyApplication
 
-from spakky.event import (
-    AsyncEventMediator,
-    EventMediator,
-)
+from spakky.plugins.mediator.mediator import AsyncEventMediator, EventMediator
 from tests.integration.apps.models.order import Order
 
 

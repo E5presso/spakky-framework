@@ -165,3 +165,8 @@ uv run pytest
 ## 라이선스
 
 MIT License
+
+### 로컬 이벤트 제공자와 함께 사용하기
+
+RabbitMQ consumer는 integration 전용 역할을 제공하며 자신의 구체 consumer로 handler를
+등록합니다. 로컬 domain handler는 별도 `spakky-mediator` 플러그인을 명시적으로 선택합니다.
