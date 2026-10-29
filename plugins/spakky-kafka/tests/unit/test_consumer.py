@@ -6,6 +6,7 @@ for both synchronous and asynchronous Kafka event consumers.
 
 import logging
 import threading
+from asyncio import Event as AsyncEvent
 from asyncio import sleep
 from typing import Any, override
 from collections.abc import Generator
@@ -49,6 +50,27 @@ def test_sync_consumer_without_handlers_expect_no_empty_subscription(
         inner.return_value.close.assert_called_once()
 
 
+def test_sync_producer_only_run_expect_immediate_return_without_poll(
+    config: KafkaConnectionConfig,
+) -> None:
+    """발행 전용 소비자는 stop 요청 없이 run을 종료하고 broker를 poll하지 않는다."""
+    with (
+        patch("spakky.plugins.kafka.event.consumer.Consumer") as inner,
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+    ):
+        consumer = KafkaEventConsumer(config)
+        stop_event = threading.Event()
+        consumer.set_stop_event(stop_event)
+        inner.return_value.poll.side_effect = AssertionError(
+            "Producer-only consumer must never poll Kafka"
+        )
+
+        consumer.run()
+
+        assert not stop_event.is_set()
+        inner.return_value.poll.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_async_consumer_without_handlers_expect_no_empty_subscription(
     config: KafkaConnectionConfig,
@@ -64,6 +86,11 @@ async def test_async_consumer_without_handlers_expect_no_empty_subscription(
         consumer = AsyncKafkaEventConsumer(config)
         await consumer.initialize_async()
         inner.return_value.subscribe.assert_not_awaited()
+        stop_event = AsyncEvent()
+        consumer.set_stop_event(stop_event)
+        await consumer.run_async()
+        assert not stop_event.is_set()
+        inner.return_value.poll.assert_not_awaited()
         await consumer.dispose_async()
         inner.assert_not_called()
         producer.assert_not_called()
