@@ -1,15 +1,15 @@
 [project]
 name = "spakky-opentelemetry"
-version = "8.5.1"
+version = "9.0.0"
 description = "OpenTelemetry SDK bridge for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
-    "spakky>=8.5.1",
-    "spakky-agent>=8.5.1",
-    "spakky-tracing>=8.5.1",
+    "spakky>=9.0.0",
+    "spakky-agent>=9.0.0",
+    "spakky-tracing>=9.0.0",
     "opentelemetry-api>=1.20.0",
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-exporter-otlp>=1.20.0",

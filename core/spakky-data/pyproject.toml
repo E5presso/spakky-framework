@@ -1,13 +1,13 @@
 [project]
 name = "spakky-data"
-version = "8.5.1"
+version = "9.0.0"
 description = "Data access layer for Spakky Framework (Repository implementations, ORM integration)"
 readme = "README.md"
 authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 requires-python = ">=3.12"
 dependencies = [
     "pydantic-settings>=2.14.2",
-    "spakky-domain>=8.5.1",
+    "spakky-domain>=9.0.0",
 ]
 
 [project.entry-points."spakky.plugins"]

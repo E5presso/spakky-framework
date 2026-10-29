@@ -1,3 +1,13 @@
+## v9.0.0 (2026-10-29)
+
+### BREAKING CHANGE
+
+- local event consumption now requires explicitly installing and loading spakky-mediator; concrete mediator imports move to spakky.plugins.mediator.
+
+### Feat
+
+- **event**: extract the optional mediator provider (#547)
+
 ## v8.5.1 (2026-10-27)
 
 ### Fix
