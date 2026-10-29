@@ -29,6 +29,12 @@ jobs:
     name: Publish ${{ inputs.package }}
     runs-on: ubuntu-latest
     steps:
+      - name: Require main for publication
+        if: ${{ !inputs.dry_run && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Package publication is allowed only from main. Use dry_run for branch validation."
+          exit 1
+
       - uses: actions/checkout@v4
 
       - name: Install uv

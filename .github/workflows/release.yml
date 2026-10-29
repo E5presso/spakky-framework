@@ -24,6 +24,12 @@ jobs:
       released_version: ${{ steps.bump.outputs.released_version }}
       released_packages: ${{ steps.bump.outputs.released_packages }}
     steps:
+      - name: Require main for release publication
+        if: ${{ !inputs.dry_run && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::Release publication is allowed only from main."
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

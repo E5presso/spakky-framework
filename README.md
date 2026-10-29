@@ -167,6 +167,14 @@ print(user_service.get_user_name(1))
 
 ## 🛠 개발
 
+### 패키지 게시와 릴리스
+
+실제 PyPI 게시와 전체 릴리스는 `main`에서만 실행합니다. 다른 브랜치는
+`dry_run`으로 빌드만 검증할 수 있으며 실제 게시 요청은 workflow가 거부합니다.
+새 패키지는 PyPI에 `publish-package.yml` Trusted Publisher를 등록하고
+`main`에 병합한 뒤 `Publish Package`로 최초 게시합니다. 이후 생성된 프로젝트에
+`release.yml` Trusted Publisher를 등록하고 `Release`로 workspace 버전을 동기화합니다.
+
 이 프로젝트는 의존성 관리와 workspace 처리를 위해 `uv`를 사용합니다.
 
 ### 사전 준비
