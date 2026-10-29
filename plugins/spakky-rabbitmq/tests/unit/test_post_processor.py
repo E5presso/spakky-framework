@@ -4,6 +4,11 @@ Tests that the RabbitMQ PostProcessor only registers IntegrationEvent handlers
 and correctly ignores DomainEvent handlers.
 """
 
+from spakky.plugins.rabbitmq.event.consumer import (
+    RabbitMQEventConsumer,
+    AsyncRabbitMQEventConsumer,
+)
+
 from collections.abc import Callable
 from unittest.mock import Mock
 
@@ -89,9 +94,9 @@ def test_rabbitmq_post_processor_registers_integration_event_expect_success() ->
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 
@@ -130,9 +135,9 @@ def test_rabbitmq_post_processor_registers_async_integration_event_expect_succes
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 
@@ -174,9 +179,9 @@ def test_rabbitmq_post_processor_ignores_domain_event_expect_no_registration() -
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 
@@ -218,9 +223,9 @@ def test_rabbitmq_post_processor_mixed_events_expect_only_integration_registered
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 
@@ -278,9 +283,9 @@ def test_rabbitmq_post_processor_method_without_event_route_expect_skipped() -> 
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 
@@ -324,9 +329,9 @@ def test_rabbitmq_post_processor_sync_endpoint_invocation_expect_handler_called(
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else handler_instance
         if t == SampleEventHandler
         else None
@@ -387,9 +392,9 @@ def test_rabbitmq_post_processor_protected_sync_endpoint_seeds_auth_after_clear(
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else handler_instance
         if t == SampleEventHandler
         else None
@@ -447,9 +452,9 @@ async def test_rabbitmq_post_processor_async_endpoint_invocation_expect_handler_
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else handler_instance
         if t == SampleEventHandler
         else None
@@ -496,9 +501,9 @@ def test_rabbitmq_post_processor_with_tracing_available_expect_propagator_inject
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 
@@ -532,9 +537,9 @@ def test_rabbitmq_post_processor_without_tracing_expect_no_propagator_injected()
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 
@@ -569,9 +574,9 @@ def test_rabbitmq_post_processor_with_tracing_but_no_set_propagator_expect_skipp
     mock_container = Mock()
     mock_container.get.side_effect = lambda t: (
         mock_consumer
-        if t == IEventConsumer
+        if t == RabbitMQEventConsumer
         else mock_async_consumer
-        if t == IAsyncEventConsumer
+        if t == AsyncRabbitMQEventConsumer
         else None
     )
 

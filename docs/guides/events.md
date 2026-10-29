@@ -29,9 +29,9 @@ graph TD
   subgraph Framework[Spakky Framework]
     subgraph Core[코어]
       Publisher["IEventPublisher"]:::core
-      Mediator["EventMediator"]:::core
       Bus["IEventBus"]:::core
     end
+    Mediator["EventMediator (spakky-mediator)"]:::plugin
     Transport["EventTransport (플러그인)"]:::plugin
   end
 
@@ -158,6 +158,7 @@ publisher.publish(integration_event)  # RabbitMQ/Kafka로 전달
 import apps
 import spakky.data
 import spakky.event
+import spakky.plugins.mediator
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 
@@ -166,6 +167,7 @@ app = (
     .load_plugins(include={
         spakky.data.PLUGIN_NAME,
         spakky.event.PLUGIN_NAME,
+        spakky.plugins.mediator.PLUGIN_NAME,
     })
     .scan(apps)             # @EventHandler 자동 검색
     .start()                # EventHandler ↔ 이벤트 타입 자동 매핑
@@ -188,3 +190,24 @@ app = (
 Domain Event 처리에는 RabbitMQ/Kafka transport가 필요하지 않습니다. Integration Event를 외부로 발행할 때 transport를 설치하지 않았다면 `IntegrationEventTransportUnavailableError`로 거절합니다.
 
 트랜잭션 이벤트 발행 Aspect의 Order는 0, TransactionalAspect의 Order는 1입니다. 이벤트 Aspect가 트랜잭션 실행을 감싸므로 commit 및 dispose 이후에만 성공 이벤트를 전달합니다. 수집 목록과 이벤트 배치를 분리한 뒤 핸들러를 호출하여 후속 유스케이스가 부모 이벤트를 재발행하지 않도록 합니다.
+
+## 명시적인 이벤트 제공자 선택
+
+`spakky-event`는 이벤트 계약·발행·Aspect와 제공자 검증을 소유합니다. 로컬 domain
+consumer/dispatcher는 별도 `spakky-mediator` 플러그인을 설치하고 선택해야 합니다.
+Kafka/RabbitMQ만 사용하는 서비스에는 로컬 mediator가 자동으로 등록되지 않습니다.
+`spakky[event]`도 mediator를 숨겨 설치하지 않습니다.
+
+| 구성 | 가능한 동작 |
+| --- | --- |
+| event | 계약과 발행 진입점; 없는 제공자로의 발행은 명시적 오류 |
+| event + mediator | 동기·비동기 domain event 등록과 로컬 dispatch |
+| event + Kafka | 동기·비동기 integration event 발행·소비 |
+| event + mediator + Kafka | 두 이벤트 종류가 각 제공자로 독립적으로 전달됨 |
+
+선언한 handler의 동기/비동기 및 domain/integration 역할에 맞는 consumer가 없으면
+`EventHandlerProviderUnavailableError`로 기동을 실패시킵니다. domain 발행에 dispatcher가
+없으면 `DomainEventDispatcherUnavailableError`, integration 발행에 transport가 없으면
+`IntegrationEventTransportUnavailableError`를 발생시킵니다. 누락된 이벤트를 조용히 버리지 않습니다.
+
+구현 import 이전과 설치 예시는 [Mediator API](../api/plugins/spakky-mediator.md)를 참고하세요.

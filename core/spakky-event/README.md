@@ -127,11 +127,11 @@ app = (
 
 | 클래스 | 설명 |
 |-------|-------------|
-| `EventMediator` / `AsyncEventMediator` | Consumer와 Dispatcher를 결합한 in-process 구현체 |
+| `EventMediator` / `AsyncEventMediator` | 별도 `spakky-mediator` 플러그인이 제공하는 in-process Consumer/Dispatcher |
 | `EventPublisher` / `AsyncEventPublisher` | Type-based router(DomainEvent→Mediator, IntegrationEvent→EventBus) |
 | `DirectEventBus` / `AsyncDirectEventBus` | 기본 EventBus → EventTransport 위임 구현 |
 | `AuthContextSnapshotHeaderInjector` | Event/Outbox outbound header에 signed `AuthContextSnapshot` metadata를 주입하는 helper |
-| `EventHandlerRegistrationPostProcessor` | `@EventHandler` 메서드를 자동 등록 |
+| `EventHandlerRegistrationPostProcessor` | 별도 `spakky-mediator` 플러그인이 domain handler를 자동 등록 |
 
 ### 전파 metadata
 
@@ -235,3 +235,45 @@ MIT License
 Domain Event만 사용하는 앱은 외부 transport 없이 기동할 수 있습니다. Integration Event를 발행할 때는 실제 transport 플러그인이 필요하며, 없으면 `IntegrationEventTransportUnavailableError`가 발생합니다.
 
 트랜잭션 이벤트 Aspect는 커밋과 세션 정리가 끝난 뒤 이벤트를 발행합니다. 발행할 배치와 collector를 먼저 분리하므로 핸들러가 새 `@transactional` 유스케이스를 호출해도 부모 이벤트를 재발행하지 않습니다. 커밋 실패 시 이벤트는 발행하지 않습니다. 인프로세스 이벤트는 영속 메시지 큐를 대신하지 않습니다.
+
+## 명시적인 이벤트 제공자 선택
+
+`spakky-event`는 이벤트 계약·발행·Aspect와 제공자 검증을 소유합니다. 로컬 domain
+consumer/dispatcher는 별도 `spakky-mediator` 플러그인을 설치하고 선택해야 합니다.
+Kafka/RabbitMQ만 사용하는 서비스에는 로컬 mediator가 자동으로 등록되지 않습니다.
+`spakky[event]`도 mediator를 숨겨 설치하지 않습니다.
+
+| 구성 | 가능한 동작 |
+| --- | --- |
+| event | 계약과 발행 진입점; 없는 제공자로의 발행은 명시적 오류 |
+| event + mediator | 동기·비동기 domain event 등록과 로컬 dispatch |
+| event + Kafka | 동기·비동기 integration event 발행·소비 |
+| event + mediator + Kafka | 두 이벤트 종류가 각 제공자로 독립적으로 전달됨 |
+
+선언한 handler의 동기/비동기 및 domain/integration 역할에 맞는 consumer가 없으면
+`EventHandlerProviderUnavailableError`로 기동을 실패시킵니다. domain 발행에 dispatcher가
+없으면 `DomainEventDispatcherUnavailableError`, integration 발행에 transport가 없으면
+`IntegrationEventTransportUnavailableError`를 발생시킵니다. 누락된 이벤트를 조용히 버리지 않습니다.
+
+구현 import 이전과 설치 예시는 [Mediator API](../../plugins/spakky-mediator/README.md)를 참고하세요.
+
+
+
+### Transport 플러그인과 handler 등록
+
+`spakky-mediator`의 `EventHandlerRegistrationPostProcessor`는 domain event handler를
+자신의 `EventMediator`/`AsyncEventMediator`에 등록합니다. core는 제공자만 검증합니다. Kafka 등의 transport consumer가
+같은 컨테이너에 있어도 generic consumer 포트의 구현 후보와 충돌하지 않으며,
+integration handler의 등록은 해당 transport 플러그인의 post-processor가 소유합니다.
+
+### 소비 유예 계약
+
+`from spakky.event import EventDeferredError`로 효과를 만들기 전의 일시적 처리 유예를
+표현합니다. `EventDeferredError(retry_after=1.0)`의 지연은 유한한 양수 초이며 잘못된
+값은 `InvalidEventDeferralError`입니다. handler의 트랜잭션은 예외가 consumer에
+도달하기 전에 rollback되어야 합니다. 앞서 실행된 handler는 멱등이어야 합니다.
+
+지원하는 broker consumer는 이를 업무 실패/DLT와 구분하고 commit 없이 재전달합니다.
+현재 Kafka plugin은 partition pause/rewind와 지속적인 poll로 이 계약을 구현합니다.
+직접 in-process event dispatch는 broker 재전달을 만들지 않고 호출자에게 예외를
+전파합니다. 유예가 이미 시작한 handler의 장기 작업을 취소하는 기능은 아닙니다.

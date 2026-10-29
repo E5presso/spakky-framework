@@ -15,7 +15,7 @@
 | **Core** | `spakky-domain` | DDD 빌딩 블록 (Entity, AggregateRoot, ValueObject, Event, CQRS) |
 | **Core** | `spakky-auth` | Provider-neutral 인증/인가 package root와 feature entry point |
 | **Core** | `spakky-data` | 데이터 접근 추상화 (Repository, Transaction, AggregateCollector) |
-| **Core** | `spakky-event` | 인프로세스 이벤트 시스템 (Publisher, Consumer, EventHandler) |
+| **Core** | `spakky-event` | 제공자 중립 이벤트 계약·발행·handler 제공자 검증 |
 | **Core** | `spakky-task` | 태스크 큐 추상화 (@TaskHandler, @task, @schedule, Crontab) |
 | **Core** | `spakky-agent` | Agentic workflow runtime (multimodal model input, tool/context/retrieval, durable recovery, memory/evaluation/cost/telemetry contracts) |
 | **Core** | `spakky-actuator` | Actuator 상태/정보 계약 (Health, Readiness, Liveness, Info) |
@@ -26,6 +26,7 @@
 | **Plugin** | `spakky-fastapi` | FastAPI REST 컨트롤러 통합 |
 | **Plugin** | `spakky-typer` | Typer CLI 컨트롤러 통합 |
 | **Plugin** | `spakky-rabbitmq` | RabbitMQ 이벤트 브로커 통합 |
+| **Plugin** | `spakky-mediator` | 명시적인 인프로세스 domain consumer·dispatcher |
 | **Plugin** | `spakky-kafka` | Apache Kafka 이벤트 브로커 통합 |
 | **Plugin** | `spakky-sqlalchemy` | SQLAlchemy ORM 통합 + Outbox/Agent persistence contribution |
 | **Plugin** | `spakky-celery` | Celery 태스크 디스패치 및 스케줄 등록 |
@@ -53,7 +54,7 @@ graph TD
         domain["spakky-domain<br/>Entity · Event · CQRS"]
         auth["spakky-auth<br/>Auth root · Entry Point"]
         data["spakky-data<br/>Repository · Transaction"]
-        event["spakky-event<br/>Publisher · Consumer · Aspect"]
+        event["spakky-event<br/>Publisher · Contracts · Aspect"]
         task_pkg["spakky-task<br/>@task · @schedule · Crontab"]
         agent["spakky-agent<br/>Multimodal Model/Tool · Context/Memory · Recovery/Eval/Cost"]
         actuator["spakky-actuator<br/>Health · Readiness · Info"]
@@ -523,10 +524,11 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` |
 | `spakky-openfga` contribution for `spakky-auth` | `openfga_auth_provider_contribution` |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
-| `spakky-event` | `AsyncTransactionalEventPublishingAspect`, `TransactionalEventPublishingAspect`, `EventMediator`, `AsyncEventMediator`, `EventPublisher`, `AsyncEventPublisher`, `AuthContextSnapshotHeaderInjector`, `DirectEventBus`, `AsyncDirectEventBus`, `EventHandlerRegistrationPostProcessor` |
+| `spakky-event` | `AsyncTransactionalEventPublishingAspect`, `TransactionalEventPublishingAspect`, `EventPublisher`, `AsyncEventPublisher`, `AuthContextSnapshotHeaderInjector`, `DirectEventBus`, `AsyncDirectEventBus`, `EventHandlerProviderValidationPostProcessor` |
 | `spakky-fastapi` | `FastAPIConfig`, `fastapi_app`(기존 FastAPI Pod가 없을 때), `FastAPIActuatorConfig`, `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterActuatorPostProcessor`, `RegisterRoutesPostProcessor` |
 | `spakky-typer` | `typer_app`(기존 Typer Pod가 없을 때), `ActuatorTyperConfig`, `ActuatorTyperCommandPostProcessor`, `TyperCLIPostProcessor` |
 | `spakky-rabbitmq` | `RabbitMQConnectionConfig`, `RabbitMQPostProcessor`, `RabbitMQEventConsumer`, `RabbitMQEventTransport`, `AsyncRabbitMQEventConsumer`, `AsyncRabbitMQEventTransport` |
+| `spakky-mediator` | `EventMediator`, `AsyncEventMediator`, `EventHandlerRegistrationPostProcessor` |
 | `spakky-kafka` | `KafkaConnectionConfig`, `KafkaEventConsumer`, `KafkaEventTransport`, `AsyncKafkaEventConsumer`, `AsyncKafkaEventTransport`, `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, `ConnectionManager`, `SessionManager`, `Transaction`; async mode 활성화 시 `AsyncConnectionManager`, `AsyncSessionManager`, `AsyncTransaction` |
 | `spakky-sqlalchemy` contribution for `spakky-outbox` | `OutboxMessageTable`, `SqlAlchemyOutboxStorage`; async mode 활성화 시 `AsyncSqlAlchemyOutboxStorage` |
@@ -931,17 +933,19 @@ flowchart TD
 ```python
 @Pod()
 class AsyncEventPublisher(IAsyncEventPublisher):
-    _dispatcher: IAsyncEventDispatcher
+    _dispatcher: IAsyncEventDispatcher | None
     _bus: IAsyncEventBus
 
     async def publish(self, event: AbstractEvent) -> None:
         match event:
             case AbstractDomainEvent():
+                if self._dispatcher is None:
+                    raise DomainEventDispatcherUnavailableError()
                 await self._dispatcher.dispatch(event)
             case AbstractIntegrationEvent():
                 await self._bus.send(event)
             case _:
-                raise AssertionError(f"Unknown event type: {type(event)!r}")
+                raise UnknownEventTypeError(type(event))
 ```
 
 - **`IEventBus`는 필수 의존성**: `spakky-event` 플러그인이 `DirectEventBus`를 기본 등록하므로 항상 사용 가능
@@ -949,7 +953,7 @@ class AsyncEventPublisher(IAsyncEventPublisher):
 
 ### Mediator 패턴
 
-`EventMediator`가 Consumer + Dispatcher를 통합합니다.
+별도 `spakky-mediator` 플러그인의 `EventMediator`가 domain Consumer + Dispatcher를 통합합니다. 로컬 제공자는 명시적인 플러그인 선택 없이 등록되지 않습니다.
 
 - `_handlers: dict[type[AbstractEvent], list[callback]]`
 - **Resilient dispatch**: 핸들러 예외가 발생해도 나머지 핸들러는 계속 실행됩니다.
@@ -966,7 +970,7 @@ class UserEventHandler:
         ...
 ```
 
-`EventHandlerRegistrationPostProcessor`가 `@EventHandler` Pod를 스캔하여 `@on_event` 메서드를 Consumer에 자동 등록합니다.
+`spakky-mediator`의 `EventHandlerRegistrationPostProcessor`가 domain handler를 로컬 Consumer에 등록합니다. Kafka/RabbitMQ의 후처리기는 integration handler를 각 broker Consumer에 등록합니다.
 
 ### 트랜잭션-이벤트 통합
 
@@ -1011,7 +1015,7 @@ sequenceDiagram
 | **범위** | BC 내부 | BC 외부 (마이크로서비스 간) |
 | **발생** | Aggregate에서 | EventHandler에서 명시적 생성 |
 | **전달** | `EventMediator` (인프로세스) | `IEventBus` → Message Broker |
-| **패키지** | `spakky-event` | `spakky-event` + 트랜스포트 플러그인 |
+| **패키지** | `spakky-event` + `spakky-mediator` | `spakky-event` + 트랜스포트 플러그인 |
 | **Outbox** | 불필요 | `IEventBus` `@Primary` 교체로 opt-in |
 
 ### Domain → Integration Event 변환 흐름
@@ -1491,10 +1495,10 @@ Parent는 ambient `TraceContext`가 있으면 같은 trace/span id·flags의 non
 | Collector가 이벤트를 아나? | ❌ 모름 | Aggregate만 추적, SRP + 단방향 의존 |
 | Aspect 순서 | `@Order`로 제어 | Transaction(0) → Event(1) |
 | 발행 진입점 | `IEventPublisher` 단일 | 타입 기반 라우팅으로 Domain/Integration 통합 |
-| Domain Event 전달 | `EventMediator` 인프로세스 | Spring `@EventListener`, eShop `MediatR` 패턴 |
+| Domain Event 전달 | 명시적 `spakky-mediator`의 `EventMediator` | Spring `@EventListener`, eShop `MediatR` 패턴 |
 | Integration Event 전송 | `IEventBus` → `IEventTransport` 2단 분리 | eShop `IEventBus` 패턴, Outbox seam 확보, DI 경쟁 제거 |
 | Outbox 패턴 | `IEventBus` `@Primary` 교체, opt-in | 2단 인터페이스 분리로 PnP 달성, 강제 아닌 선택 |
-| Transport 미설치 시 | DI 해결 실패 (`IEventTransport` 미등록) | Fail Loudly — DI 시점에서 조기 실패 |
+| 제공자 미설치 시 | handler 선언은 기동 오류, 미지원 발행은 typed configuration 오류 | 누락과 조용한 이벤트 폐기 방지 |
 | Handler 실패 | 전체 롤백 | 트랜잭션 내 실행 → 데이터 일관성 보장 |
 
 ### 플러그인 시스템

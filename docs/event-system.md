@@ -151,10 +151,10 @@ graph LR
 
 ### Mediator
 
-Consumer(핸들러 등록)와 Dispatcher(이벤트 전달) 책임을 결합한 인프로세스 구현체입니다.
+명시적으로 선택하는 `spakky-mediator` 플러그인의 Consumer(핸들러 등록)와 Dispatcher(이벤트 전달) 구현체입니다. `spakky-event` 단독 설치는 이 제공자를 등록하지 않습니다.
 
 ```python
-from spakky.event.mediator import AsyncEventMediator
+from spakky.plugins.mediator.mediator import AsyncEventMediator
 
 # Mediator 생성 (보통 DI로 주입)
 mediator = AsyncEventMediator()

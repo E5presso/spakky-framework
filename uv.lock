@@ -28,6 +28,7 @@ members = [
     "spakky-llm",
     "spakky-logging",
     "spakky-mcp",
+    "spakky-mediator",
     "spakky-oidc",
     "spakky-openfga",
     "spakky-opentelemetry",
@@ -3620,6 +3621,7 @@ full = [
     { name = "spakky-llm" },
     { name = "spakky-logging" },
     { name = "spakky-mcp" },
+    { name = "spakky-mediator" },
     { name = "spakky-oidc" },
     { name = "spakky-openfga" },
     { name = "spakky-opentelemetry" },
@@ -3647,6 +3649,9 @@ logging = [
 ]
 mcp = [
     { name = "spakky-mcp" },
+]
+mediator = [
+    { name = "spakky-mediator" },
 ]
 observability = [
     { name = "spakky-actuator" },
@@ -3745,6 +3750,7 @@ requires-dist = [
     { name = "spakky", extras = ["logging"], marker = "extra == 'web'", editable = "core/spakky" },
     { name = "spakky", extras = ["mcp"], marker = "extra == 'agent'", editable = "core/spakky" },
     { name = "spakky", extras = ["mcp"], marker = "extra == 'full'", editable = "core/spakky" },
+    { name = "spakky", extras = ["mediator"], marker = "extra == 'full'", editable = "core/spakky" },
     { name = "spakky", extras = ["observability"], marker = "extra == 'recommended'", editable = "core/spakky" },
     { name = "spakky", extras = ["oidc"], marker = "extra == 'full'", editable = "core/spakky" },
     { name = "spakky", extras = ["oidc"], marker = "extra == 'security'", editable = "core/spakky" },
@@ -3798,6 +3804,7 @@ requires-dist = [
     { name = "spakky-llm", marker = "extra == 'llm'", editable = "plugins/spakky-llm" },
     { name = "spakky-logging", marker = "extra == 'logging'", editable = "plugins/spakky-logging" },
     { name = "spakky-mcp", marker = "extra == 'mcp'", editable = "plugins/spakky-mcp" },
+    { name = "spakky-mediator", marker = "extra == 'mediator'", editable = "plugins/spakky-mediator" },
     { name = "spakky-oidc", marker = "extra == 'oidc'", editable = "plugins/spakky-oidc" },
     { name = "spakky-openfga", marker = "extra == 'openfga'", editable = "plugins/spakky-openfga" },
     { name = "spakky-opentelemetry", marker = "extra == 'opentelemetry'", editable = "plugins/spakky-opentelemetry" },
@@ -3819,7 +3826,7 @@ requires-dist = [
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["minimal", "domain", "data", "event", "task", "agent-core", "agui", "a2a", "actuator", "cache-core", "tracing", "outbox", "auth", "logging", "cryptography", "oidc", "policy", "openfga", "fastapi", "typer", "rabbitmq", "kafka", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "llm", "mcp", "saga", "web", "cli", "database", "database-postgres", "events-rabbitmq", "events-kafka", "events-outbox-sqlalchemy", "event-driven", "worker", "security", "observability", "cache-app", "agent", "recommended", "full"]
+provides-extras = ["minimal", "domain", "data", "event", "task", "agent-core", "agui", "a2a", "actuator", "cache-core", "tracing", "outbox", "auth", "logging", "cryptography", "oidc", "policy", "openfga", "fastapi", "typer", "rabbitmq", "kafka", "mediator", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "llm", "mcp", "saga", "web", "cli", "database", "database-postgres", "events-rabbitmq", "events-kafka", "events-outbox-sqlalchemy", "event-driven", "worker", "security", "observability", "cache-app", "agent", "recommended", "full"]
 
 [[package]]
 name = "spakky-a2a"
@@ -4198,6 +4205,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest-integration-mark" },
+    { name = "spakky-mediator" },
     { name = "testcontainers" },
 ]
 
@@ -4215,6 +4223,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest-integration-mark", specifier = ">=0.2.0" },
+    { name = "spakky-mediator", editable = "plugins/spakky-mediator" },
     { name = "testcontainers", specifier = ">=4.14.2" },
 ]
 
@@ -4280,6 +4289,17 @@ requires-dist = [
     { name = "spakky", editable = "core/spakky" },
     { name = "spakky-agent", editable = "core/spakky-agent" },
 ]
+
+[[package]]
+name = "spakky-mediator"
+version = "8.5.1"
+source = { editable = "plugins/spakky-mediator" }
+dependencies = [
+    { name = "spakky-event" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "spakky-event", editable = "core/spakky-event" }]
 
 [[package]]
 name = "spakky-oidc"

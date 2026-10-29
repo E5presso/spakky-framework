@@ -20,12 +20,9 @@ from spakky.data.persistency.transaction import (
 )
 
 import spakky.event
-from spakky.event import (
-    AsyncEventMediator,
-    EventMediator,
-    IAsyncEventConsumer,
-    IEventConsumer,
-)
+import spakky.plugins.mediator
+from spakky.plugins.mediator.mediator import AsyncEventMediator, EventMediator
+from spakky.event.event_consumer import IAsyncDomainEventConsumer, IDomainEventConsumer
 from tests.integration import apps
 from tests.integration.apps.handlers.event_recorder import EventRecorder
 
@@ -95,6 +92,7 @@ def app_fixture() -> Generator[SpakkyApplication, Any, None]:
         .load_plugins(
             include={
                 spakky.event.PLUGIN_NAME,
+                spakky.plugins.mediator.PLUGIN_NAME,
                 spakky.data.PLUGIN_NAME,
                 spakky.tracing.PLUGIN_NAME,
             }
@@ -175,26 +173,26 @@ def async_mediator_fixture(app: SpakkyApplication) -> AsyncEventMediator:
 
 
 @pytest.fixture(name="sync_consumer", scope="module")
-def sync_consumer_fixture(app: SpakkyApplication) -> IEventConsumer:
-    """Get sync IEventConsumer from application container.
+def sync_consumer_fixture(app: SpakkyApplication) -> IDomainEventConsumer:
+    """Get sync IDomainEventConsumer from application container.
 
     Args:
         app: SpakkyApplication instance.
 
     Returns:
-        IEventConsumer instance (EventMediator).
+        IDomainEventConsumer instance (EventMediator).
     """
-    return app.container.get(type_=IEventConsumer)
+    return app.container.get(type_=IDomainEventConsumer)
 
 
 @pytest.fixture(name="async_consumer", scope="module")
-def async_consumer_fixture(app: SpakkyApplication) -> IAsyncEventConsumer:
-    """Get async IAsyncEventConsumer from application container.
+def async_consumer_fixture(app: SpakkyApplication) -> IAsyncDomainEventConsumer:
+    """Get async IAsyncDomainEventConsumer from application container.
 
     Args:
         app: SpakkyApplication instance.
 
     Returns:
-        IAsyncEventConsumer instance (AsyncEventMediator).
+        IAsyncDomainEventConsumer instance (AsyncEventMediator).
     """
-    return app.container.get(type_=IAsyncEventConsumer)
+    return app.container.get(type_=IAsyncDomainEventConsumer)

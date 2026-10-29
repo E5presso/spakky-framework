@@ -1,4 +1,4 @@
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
@@ -19,6 +19,13 @@ class SQLAlchemyConnectionConfig(BaseSettings):
     # --- Connection ---
     connection_string: str
     """SQLAlchemy database connection URL (e.g. postgresql+psycopg://user:pass@host/db)."""
+
+    sync_connection_string: str | None = None
+    """Optional synchronous driver URL for databases requiring separate drivers.
+
+    For example sqlite+aiosqlite for async access and sqlite+pysqlite for sync.
+    Omitted preserves the base connection_string for dual-mode drivers.
+    """
 
     # --- Engine ---
     echo: bool = False
@@ -51,6 +58,14 @@ class SQLAlchemyConnectionConfig(BaseSettings):
     pool_pre_ping: bool = DEFAULT_POOL_PRE_PING
     """If True, tests each connection for liveness before returning it from the pool.
     Prevents errors caused by connections dropped by the database server."""
+
+    async_pool_mode: Literal["queue", "null"] = "queue"
+    """Async pooling strategy. Use null when one engine serves multiple event loops.
+
+    NullPool never shares a connection or asyncio queue between loops. Queue
+    capacity settings are ignored in this mode; database/server limits still apply.
+    The synchronous connection manager retains its ordinary pool.
+    """
 
     # --- Session ---
     session_autoflush: bool = True

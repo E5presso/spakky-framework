@@ -52,6 +52,7 @@ version_files = [
   "plugins/spakky-openfga/pyproject.toml:version",
   "plugins/spakky-typer/pyproject.toml:version",
   "plugins/spakky-kafka/pyproject.toml:version",
+  "plugins/spakky-mediator/pyproject.toml:version",
   "plugins/spakky-sqlalchemy/pyproject.toml:version",
   "plugins/spakky-celery/pyproject.toml:version",
   "plugins/spakky-opentelemetry/pyproject.toml:version",
@@ -87,6 +88,7 @@ members = [
   "plugins/spakky-openfga",
   "plugins/spakky-typer",
   "plugins/spakky-kafka",
+  "plugins/spakky-mediator",
   "plugins/spakky-sqlalchemy",
   "plugins/spakky-celery",
   "plugins/spakky-opentelemetry",
@@ -113,6 +115,7 @@ spakky-cryptography = { workspace = true }
 spakky-openfga = { workspace = true }
 spakky-typer = { workspace = true }
 spakky-kafka = { workspace = true }
+spakky-mediator = { workspace = true }
 spakky-sqlalchemy = { workspace = true }
 spakky-outbox = { workspace = true }
 spakky-task = { workspace = true }

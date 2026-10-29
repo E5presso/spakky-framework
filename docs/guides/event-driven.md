@@ -37,10 +37,10 @@ graph TD
     subgraph Core[코어]
       Publisher["IAsyncEventPublisher"]:::core
       Bus["IAsyncEventBus<br/>(OutboxEventBus @Primary)"]:::core
-      Mediator["EventMediator"]:::core
       Relay["OutboxRelayBackgroundService"]:::core
     end
     subgraph Plugins[플러그인]
+      Mediator["EventMediator (spakky-mediator)"]:::plugin
       Storage["SqlAlchemyOutboxStorage"]:::plugin
       Transport["KafkaEventTransport"]:::plugin
     end
@@ -91,6 +91,7 @@ import spakky.outbox
 import spakky.saga
 import spakky.plugins.sqlalchemy  # Outbox storage 제공
 import spakky.plugins.kafka       # Transport 제공
+import spakky.plugins.mediator    # 로컬 domain dispatch가 필요한 경우 명시 선택
 import apps
 
 app = (
@@ -102,6 +103,7 @@ app = (
         spakky.saga.PLUGIN_NAME,
         spakky.plugins.sqlalchemy.PLUGIN_NAME,
         spakky.plugins.kafka.PLUGIN_NAME,
+        spakky.plugins.mediator.PLUGIN_NAME,
     })
     .scan(apps)
     .start()

@@ -15,7 +15,7 @@ from asyncio import (
 from threading import Event, Thread
 from typing import Any
 from collections.abc import Generator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from aiokafka.errors import (
@@ -772,6 +772,7 @@ async def test_async_transport_start_async_with_sasl_config_expect_security_kwar
         sasl_mechanism="PLAIN",
         sasl_plain_username="api-key",
         sasl_plain_password="api-secret",
+        ssl_context=ANY,
     )
 
 

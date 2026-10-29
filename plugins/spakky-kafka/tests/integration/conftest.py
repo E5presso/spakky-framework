@@ -18,16 +18,14 @@ from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 from tests import apps
 
 
-@pytest.fixture(name="port", scope="package")
-def port_fixture() -> int:
-    return 9093
-
-
 @pytest.fixture(name="environment_variables", scope="package", autouse=True)
-def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]:
+def setup_environment_variables_fixture() -> Generator[None, Any, None]:
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test"
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = f"localhost:{port}"
+    if bootstrap_servers := environ.get("SPAKKY_KAFKA_TEST_BOOTSTRAP_SERVERS"):
+        environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = (
+            bootstrap_servers
+        )
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}AUTO_OFFSET_RESET"] = (
         AutoOffsetResetType.EARLIEST.value
     )
@@ -36,19 +34,15 @@ def setup_environment_variables_fixture(port: int) -> Generator[None, Any, None]
 
 
 @pytest.fixture(scope="package", autouse=True)
-def kafka_container(
-    port: int, environment_variables: None
-) -> Generator[None, None, None]:
-    bootstrap_servers = environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"]
-
-    container = (
-        KafkaContainer(port=port)
-        .with_env("KAFKA_NODE_ID", "1")
-        .with_env("KAFKA_ADVERTISED_LISTENERS", bootstrap_servers)
-        .with_bind_ports(port, port)
-    )
-
-    with container:
+def kafka_container(environment_variables: None) -> Generator[None, None, None]:
+    """Each xdist worker owns a broker with a Docker-allocated host port."""
+    if environ.get("SPAKKY_KAFKA_TEST_BOOTSTRAP_SERVERS"):
+        yield
+        return
+    with KafkaContainer() as container:
+        environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = (
+            container.get_bootstrap_server()
+        )
         yield
 
 

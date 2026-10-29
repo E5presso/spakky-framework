@@ -789,7 +789,7 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
 
 | 구현체 | 역할 |
 |--------|------|
-| `EventMediator` | Consumer + Dispatcher 통합 (인프로세스) |
+| `EventMediator` | 명시적으로 선택한 `spakky-mediator` 플러그인의 Consumer + Dispatcher (인프로세스) |
 | `EventPublisher` | `match event:` 타입 라우터 |
 | `DirectEventBus` | 기본 EventBus → Transport 위임 |
 | `KafkaEventTransport` | Kafka Transport 구현 |
@@ -800,7 +800,7 @@ class OrderPlacedEvent(AbstractIntegrationEvent):
 - **Consumer** — 핸들러를 **등록**하는 인터페이스 (`register(event_type, callback)`)
 - **EventHandler** — 이벤트를 **처리**하는 클래스 스테레오타입 (`@EventHandler` + `@on_event`)
 
-`EventHandlerRegistrationPostProcessor`가 `@EventHandler` Pod를 스캔하여 `AbstractDomainEvent`를 받는 `@on_event` 메서드를 in-process Consumer에 자동 등록합니다. `AbstractIntegrationEvent`는 broker transport consumer 경로에서 처리합니다.
+`spakky-mediator` 플러그인의 `EventHandlerRegistrationPostProcessor`가 `@EventHandler` Pod를 스캔하여 `AbstractDomainEvent`를 받는 `@on_event` 메서드를 in-process Consumer에 자동 등록합니다. `AbstractIntegrationEvent`는 broker transport consumer 경로에서 처리합니다.
 
 ### EventPublisher
 

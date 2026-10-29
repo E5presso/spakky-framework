@@ -84,6 +84,7 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 |---------|--------------|
 | **`spakky-fastapi`** | REST API 구성을 위한 [FastAPI](https://fastapi.tiangolo.com/) 통합 |
 | **`spakky-grpc`** | RPC 서비스 구성을 위한 [gRPC](https://grpc.io/) 통합 |
+| **`spakky-mediator`** | 선택적인 인프로세스 domain event consumer·dispatcher |
 | **`spakky-kafka`** | [Apache Kafka](https://kafka.apache.org/) 기반 이벤트 주도 아키텍처 지원 |
 | **`spakky-rabbitmq`** | [RabbitMQ](https://www.rabbitmq.com/) 기반 이벤트 주도 아키텍처 지원 |
 | **`spakky-redis`** | 공유 애플리케이션 데이터 캐시를 위한 Redis 백엔드 |
@@ -165,6 +166,14 @@ print(user_service.get_user_name(1))
 > **📘 참고**: `scan()`을 인자 없이 호출하면 호출자의 패키지를 자동 감지해 스캔합니다. 애플리케이션 루트가 `sys.path`에 없을 수 있는 Docker 환경에서도 동작합니다.
 
 ## 🛠 개발
+
+### 패키지 게시와 릴리스
+
+실제 PyPI 게시와 전체 릴리스는 `main`에서만 실행합니다. 다른 브랜치는
+`dry_run`으로 빌드만 검증할 수 있으며 실제 게시 요청은 workflow가 거부합니다.
+새 패키지는 PyPI에 `publish-package.yml` Trusted Publisher를 등록하고
+`main`에 병합한 뒤 `Publish Package`로 최초 게시합니다. 이후 생성된 프로젝트에
+`release.yml` Trusted Publisher를 등록하고 `Release`로 workspace 버전을 동기화합니다.
 
 이 프로젝트는 의존성 관리와 workspace 처리를 위해 `uv`를 사용합니다.
 

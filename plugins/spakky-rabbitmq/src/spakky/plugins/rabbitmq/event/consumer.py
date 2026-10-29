@@ -30,8 +30,8 @@ from spakky.event.error import (
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
-    IAsyncEventConsumer,
-    IEventConsumer,
+    IAsyncIntegrationEventConsumer,
+    IIntegrationEventConsumer,
 )
 from spakky.auth import (
     AuthRequirementDeniedError,
@@ -51,15 +51,13 @@ from spakky.tracing.propagator import ITracePropagator
 
 
 def _event_routing_name(event: type[AbstractEvent]) -> str:
-    descriptor = event.__dict__.get("event_name")
-    if isinstance(descriptor, property):
-        probe = object.__new__(event)
-        return cast(str, descriptor.__get__(probe, event))
-    return event.__name__
+    """Read class-static routing identity through inherited property descriptors."""
+    probe = object.__new__(event)
+    return probe.event_name
 
 
 @Pod()
-class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
+class RabbitMQEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
     """Synchronous RabbitMQ event consumer.
 
     Runs as a background service that consumes integration events from RabbitMQ
@@ -285,7 +283,9 @@ class RabbitMQEventConsumer(IEventConsumer, AbstractBackgroundService):
 
 
 @Pod()
-class AsyncRabbitMQEventConsumer(IAsyncEventConsumer, AbstractAsyncBackgroundService):
+class AsyncRabbitMQEventConsumer(
+    IAsyncIntegrationEventConsumer, AbstractAsyncBackgroundService
+):
     """Asynchronous RabbitMQ event consumer.
 
     Runs as an async background service that consumes integration events from

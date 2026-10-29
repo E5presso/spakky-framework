@@ -39,3 +39,19 @@ class IAsyncEventConsumer(ABC):
     ) -> None:
         """Register an async handler callback for the given event type."""
         ...
+
+
+class IDomainEventConsumer(IEventConsumer, ABC):
+    """Synchronous provider that registers in-process domain event handlers."""
+
+
+class IAsyncDomainEventConsumer(IAsyncEventConsumer, ABC):
+    """Asynchronous provider that registers in-process domain event handlers."""
+
+
+class IIntegrationEventConsumer(IEventConsumer, ABC):
+    """Synchronous provider that registers external integration event handlers."""
+
+
+class IAsyncIntegrationEventConsumer(IAsyncEventConsumer, ABC):
+    """Asynchronous provider that registers external integration event handlers."""

@@ -42,6 +42,8 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 | [ADR-0020](0020-agent-memory-evaluation-cost-telemetry.md) | Semantic memory, evaluation, pricing과 Agent telemetry — transcript separation, exact cost, body-free OTel bridge | Accepted | 2026-08-23 |
 | [ADR-0021](0021-multimodal-model-content-and-llm-execution-policy.md) | Multimodal model content와 explicit LLM execution policy — media authority, fallback/cache/resilience, durable identity | Accepted | 2026-08-23 |
 
+| [ADR-0022](0022-optional-domain-event-mediator-provider.md) | 로컬 domain event mediator의 명시적 플러그인 분리 | Accepted | 2026-10-28 |
+
 ## 새 ADR 작성 가이드
 
 1. 다음 번호로 파일 생성: `NNNN-<slug>.md`

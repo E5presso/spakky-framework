@@ -5,9 +5,11 @@ bootstrap servers, consumer group, and security settings.
 """
 
 from enum import StrEnum
-from typing import Annotated, ClassVar
+from ssl import SSLContext, create_default_context
+from typing import Annotated, ClassVar, Self
 
-from pydantic import NonNegativeInt, PositiveFloat, StringConstraints
+from pydantic import NonNegativeInt, PositiveFloat, StringConstraints, model_validator
+from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
 
@@ -52,6 +54,31 @@ class KafkaConnectionConfig(BaseSettings):
 
     sasl_password: str | None = None
     """SASL password for Kafka authentication."""
+
+    ssl_ca_location: str | None = None
+    """PEM trust bundle; omitted uses the platform's default trust roots."""
+
+    ssl_certificate_location: str | None = None
+    """PEM client certificate for TLS authentication."""
+
+    ssl_key_location: str | None = None
+    """Unencrypted PEM client key mounted from the workload's secret."""
+
+    @model_validator(mode="after")
+    def validate_tls_files(self) -> Self:
+        """Reject partial client credentials and TLS files on a plaintext route."""
+        if bool(self.ssl_certificate_location) != bool(self.ssl_key_location):
+            raise PydanticCustomError(
+                "tls_client_pair",
+                "TLS client certificate and key must be configured together",
+            )
+        if (
+            self.ssl_ca_location or self.ssl_certificate_location
+        ) and self.security_protocol not in {"SSL", "SASL_SSL"}:
+            raise PydanticCustomError(
+                "tls_protocol", "TLS files require SSL or SASL_SSL security protocol"
+            )
+        return self
 
     number_of_partitions: int = 1
     """Default number of partitions for created topics."""
@@ -111,6 +138,12 @@ class KafkaConnectionConfig(BaseSettings):
             config["sasl.username"] = self.sasl_username
         if self.sasl_password:
             config["sasl.password"] = self.sasl_password
+        if self.ssl_ca_location:
+            config["ssl.ca.location"] = self.ssl_ca_location
+        if self.ssl_certificate_location:
+            config["ssl.certificate.location"] = self.ssl_certificate_location
+        if self.ssl_key_location:
+            config["ssl.key.location"] = self.ssl_key_location
         return config
 
     @property
@@ -146,14 +179,14 @@ class KafkaConnectionConfig(BaseSettings):
         }
 
     @property
-    def async_producer_configuration_dict(self) -> dict[str, str | bool]:
+    def async_producer_configuration_dict(self) -> dict[str, str | bool | SSLContext]:
         """The same producer guarantees expressed as `aiokafka` keyword names.
 
         `aiokafka` takes constructor keywords instead of a librdkafka property
         dictionary, so the key spelling differs while the delivery guarantee is
         identical to `producer_configuration_dict`.
         """
-        config: dict[str, str | bool] = {
+        config: dict[str, str | bool | SSLContext] = {
             "bootstrap_servers": self.bootstrap_servers,
             "client_id": self.client_id,
             "enable_idempotence": True,
@@ -167,4 +200,12 @@ class KafkaConnectionConfig(BaseSettings):
             config["sasl_plain_username"] = self.sasl_username
         if self.sasl_password:
             config["sasl_plain_password"] = self.sasl_password
+        if self.security_protocol in {"SSL", "SASL_SSL"}:
+            context = create_default_context(cafile=self.ssl_ca_location)
+            if self.ssl_certificate_location:
+                context.load_cert_chain(
+                    certfile=self.ssl_certificate_location,
+                    keyfile=self.ssl_key_location,
+                )
+            config["ssl_context"] = context
         return config

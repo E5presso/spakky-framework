@@ -20,6 +20,7 @@ dependencies = [
 dev = [
     "pytest-integration-mark>=0.2.0",
     "testcontainers>=4.14.2",
+    "spakky-mediator>=8.5.1",
 ]
 
 [project.entry-points."spakky.plugins"]
@@ -85,4 +86,5 @@ exclude_lines = [
 [tool.uv.sources]
 spakky-auth = { workspace = true }
 spakky-event = { workspace = true }
+spakky-mediator = { workspace = true }
 spakky-tracing = { workspace = true }
