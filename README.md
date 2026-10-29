@@ -69,7 +69,7 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 | **`spakky-domain`** | DDD 빌딩 블록(Entity, AggregateRoot, ValueObject, DomainEvent, CQRS) |
 | **`spakky-auth`** | Provider-neutral 인증/인가 semantic model, ABC port, AOP enforcement, capability startup validation |
 | **`spakky-data`** | 데이터 접근 추상화(Repository, Transaction, External Proxy) |
-| **`spakky-event`** | 이벤트 처리(IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
+| **`spakky-event`** | 이벤트 계약·발행·handler 제공자 검증(IEventPublisher, IEventBus, IEventTransport, @EventHandler) |
 | **`spakky-task`** | 태스크 큐 추상화(@TaskHandler, @task, @schedule, Crontab) |
 | **`spakky-agent`** | Agentic workflow core 계약(AgentExecutionSpec, AgentRunner, AgentEvent/Yield, State/Signal/Evidence, IAgentModel, delegation) |
 | **`spakky-actuator`** | 전송 계층 중립 health, readiness, liveness, info 계약 |
@@ -117,8 +117,11 @@ pip install spakky
 ```bash
 pip install "spakky[recommended]"              # FastAPI + SQLAlchemy + 운영 기본기
 pip install "spakky[events-rabbitmq]"          # RabbitMQ 이벤트 서비스
+pip install "spakky[mediator]"                 # 인프로세스 Domain Event 처리
 pip install "spakky[database-postgres]"        # SQLAlchemy + PostgreSQL driver
 ```
+
+9.0.0부터 로컬 Domain Event 처리는 `spakky-mediator` 플러그인이 제공합니다. `spakky[event]`와 브로커용 extra는 mediator를 포함하지 않으므로, 로컬 handler가 있으면 설치하고 플러그인 선택에 추가하세요. 구체 구현 import 변경은 [이벤트 9.0 마이그레이션](docs/guides/events-migration.md)을 참고하세요.
 
 Agentic workflow를 구성할 때는 core contract, model adapter, durable persistence provider를 명시적으로 설치합니다. 운영용 in-memory persistence fallback은 제공하지 않습니다.
 

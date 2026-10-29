@@ -65,6 +65,7 @@ graph TD
     end
 
     subgraph plugins ["Plugins"]
+        mediator["spakky-mediator<br/>Domain Consumer · Dispatcher"]
         subgraph persistence ["Persistence"]
             sqlalchemy[spakky-sqlalchemy]
         end
@@ -121,6 +122,7 @@ graph TD
     saga --> auth
 
     sqlalchemy --> data
+    mediator --> event
     sqlalchemy -. outbox contribution .-> outbox
     sqlalchemy -. agent persistence contribution .-> agent
     rabbitmq --> auth
@@ -177,6 +179,7 @@ graph TD
     style saga fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#e65100
 
     style sqlalchemy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style mediator fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style rabbitmq fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style kafka fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style celery_plugin fill:#f5f5f5,stroke:#9e9e9e,color:#424242
@@ -212,6 +215,7 @@ graph TD
 - **캐시 코어** (spakky-cache) → `spakky` 코어에만 의존
 - **트레이싱 코어** (spakky-tracing) → `spakky` 코어에만 의존
 - **이벤트 코어** (spakky-event) → `spakky-domain` + `spakky-data` + `spakky-auth` + `spakky-tracing`에 의존
+- **로컬 이벤트 제공자** (spakky-mediator) → `spakky-event`에 의존. 이벤트 코어는 mediator에 의존하지 않음
 - **태스크 플러그인** (spakky-celery) → `spakky-task` + `spakky-auth` + `spakky-tracing`에 의존 (auth snapshot + 컨텍스트 전파)
 - **로깅 플러그인** (spakky-logging) → `spakky` 코어에만 의존
 - **OTel 플러그인** (spakky-opentelemetry) → `spakky` + `spakky-agent` + `spakky-tracing`에 의존, `spakky-logging` optional
@@ -956,7 +960,11 @@ class AsyncEventPublisher(IAsyncEventPublisher):
 별도 `spakky-mediator` 플러그인의 `EventMediator`가 domain Consumer + Dispatcher를 통합합니다. 로컬 제공자는 명시적인 플러그인 선택 없이 등록되지 않습니다.
 
 - `_handlers: dict[type[AbstractEvent], list[callback]]`
-- **Resilient dispatch**: 핸들러 예외가 발생해도 나머지 핸들러는 계속 실행됩니다.
+- **Resilient dispatch**: 일반 핸들러 예외는 로그로 남기고 나머지 핸들러를 실행합니다. `EventDeferredError`는 호출자에게 전파하고 dispatch를 중단합니다.
+
+`EventMediator` / `AsyncEventMediator`는 `IDomainEventConsumer` / `IAsyncDomainEventConsumer`를 구현합니다. 브로커 consumer는 `IIntegrationEventConsumer` / `IAsyncIntegrationEventConsumer`를 구현하여 역할을 분리합니다. 두 제공자를 함께 로드한 앱에서 consumer를 직접 주입받을 때는 역할별 계약을 사용합니다.
+
+9.0.0의 설치·플러그인 선택·구체 구현 import 변경은 [이벤트 마이그레이션 가이드](docs/guides/events-migration.md)를 참고하세요.
 
 ### `@EventHandler`와 `@on_event`
 
@@ -971,6 +979,8 @@ class UserEventHandler:
 ```
 
 `spakky-mediator`의 `EventHandlerRegistrationPostProcessor`가 domain handler를 로컬 Consumer에 등록합니다. Kafka/RabbitMQ의 후처리기는 integration handler를 각 broker Consumer에 등록합니다.
+
+코어의 `EventHandlerProviderValidationPostProcessor`는 handler의 이벤트 종류·동기/비동기에 맞는 consumer를 검증합니다. 제공자가 없으면 `EventHandlerProviderUnavailableError`로 기동을 실패시킵니다. dispatcher 없이 Domain Event를 발행하면 `DomainEventDispatcherUnavailableError`, 기본 EventBus에서 transport 없이 Integration Event를 발행하면 `IntegrationEventTransportUnavailableError`입니다.
 
 ### 트랜잭션-이벤트 통합
 

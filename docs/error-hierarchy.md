@@ -358,8 +358,11 @@ from spakky.event.error import (
     AbstractSpakkyEventError,
     AuthSnapshotPropagationContextUnavailableError,
     AuthSnapshotPropagationSignerUnavailableError,
+    DomainEventDispatcherUnavailableError,
     EventDeliveryRejectedError,
+    EventHandlerProviderUnavailableError,
     EventTransportNotRunningError,
+    IntegrationEventTransportUnavailableError,
     InvalidMessageError,
     UnknownEventTypeError,
 )
@@ -369,6 +372,9 @@ from spakky.event.error import (
 | ---- | ---- |
 | `AuthSnapshotPropagationContextUnavailableError` | snapshot 전파가 활성화되었지만 `ApplicationContext`를 읽을 수 없음 |
 | `AuthSnapshotPropagationSignerUnavailableError` | snapshot 전파가 활성화되었지만 signer provider가 없음 |
+| `DomainEventDispatcherUnavailableError` | 로컬 dispatcher 없이 Domain Event 발행 |
+| `EventHandlerProviderUnavailableError` | 선언한 handler의 이벤트 종류·동기/비동기에 맞는 consumer가 없어 기동 실패 |
+| `IntegrationEventTransportUnavailableError` | 기본 EventBus에서 transport 없이 Integration Event 발행 |
 | `EventDeliveryRejectedError` | Transport가 영구적인 전달 거부를 특정 레코드에 귀속함. Outbox가 메시지별 retry/abandon 예산을 쓰는 경계 |
 | `EventTransportNotRunningError` | Transport가 애플리케이션 lifecycle 밖에서 사용됨. 레코드 전달 실패가 아니므로 Outbox retry 예산을 소모하지 않음 |
 | `InvalidMessageError` | 잘못된 메시지 형식 |

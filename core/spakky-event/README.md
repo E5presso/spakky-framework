@@ -1,12 +1,21 @@
 # Spakky Event
 
-> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 이벤트 처리 stereotype입니다.
+> [Spakky Framework](https://github.com/E5presso/spakky-framework)를 위한 이벤트 계약·발행·handler 제공자 검증 패키지입니다.
 
 ## 설치
 
 ```bash
 pip install spakky-event
 ```
+
+9.0.0부터 로컬 Domain Event consumer·dispatcher는 별도 `spakky-mediator` 플러그인이 제공합니다. 로컬 처리가 필요하면 다음 패키지도 설치하고 로드합니다. `spakky[event]`만 설치하면 mediator가 포함되지 않습니다.
+
+```bash
+pip install "spakky-mediator>=9.0.0"
+# 또는 pip install "spakky[mediator]>=9.0.0"
+```
+
+기존 앱의 플러그인 선택과 구체 구현 import 변경은 [이벤트 9.0 마이그레이션](../../docs/guides/events-migration.md)을 참고하세요.
 
 ## 주요 기능
 
@@ -121,6 +130,8 @@ app = (
 | `IEventBus` / `IAsyncEventBus` | Integration event send 진입점(Outbox 경계) |
 | `IEventTransport` / `IAsyncEventTransport` | 실제 message broker transport. `send`로 payload를 넘기고, 배치 끝에서 `flush`로 전송을 확정합니다. 영구적이고 특정 레코드에 귀속되는 거부만 `EventDeliveryRejectedError`로 통일하며, connection·timeout·queue 등 transport 전체 장애는 client 예외 타입을 보존합니다. 애플리케이션 수명 밖의 발행은 `EventTransportNotRunningError`로 거부됩니다 |
 | `IEventConsumer` / `IAsyncEventConsumer` | Handler callback 등록 |
+| `IDomainEventConsumer` / `IAsyncDomainEventConsumer` | 로컬 Domain Event handler 등록 역할 |
+| `IIntegrationEventConsumer` / `IAsyncIntegrationEventConsumer` | 브로커 Integration Event handler 등록 역할 |
 | `IEventDispatcher` / `IAsyncEventDispatcher` | In-process handler dispatch |
 
 ### 구현체
@@ -132,6 +143,7 @@ app = (
 | `DirectEventBus` / `AsyncDirectEventBus` | 기본 EventBus → EventTransport 위임 구현 |
 | `AuthContextSnapshotHeaderInjector` | Event/Outbox outbound header에 signed `AuthContextSnapshot` metadata를 주입하는 helper |
 | `EventHandlerRegistrationPostProcessor` | 별도 `spakky-mediator` 플러그인이 domain handler를 자동 등록 |
+| `EventHandlerProviderValidationPostProcessor` | 코어에서 handler 종류·동기/비동기에 맞는 consumer 제공자 검증 |
 
 ### 전파 metadata
 
@@ -161,36 +173,41 @@ app = (
 | `AuthSnapshotPropagationContextUnavailableError` | snapshot 전파가 활성화되었지만 `ApplicationContext`를 읽을 수 없을 때 발생 |
 | `AuthSnapshotPropagationSignerUnavailableError` | snapshot 전파가 활성화되었지만 signer provider가 없을 때 발생 |
 | `InvalidMessageError` | message가 malformed일 때 발생 |
+| `EventHandlerProviderUnavailableError` | 선언한 handler 역할의 consumer가 없어 기동 실패 |
+| `DomainEventDispatcherUnavailableError` | dispatcher 없이 Domain Event 발행 |
+| `IntegrationEventTransportUnavailableError` | 기본 EventBus에서 transport 없이 Integration Event 발행 |
 
 ## 관련 패키지
 
 | 패키지 | 설명 |
 |---------|-------------|
 | `spakky-domain` | DDD building block 포함 `AbstractEvent`, `AbstractDomainEvent`, `AbstractIntegrationEvent` |
+| `spakky-mediator` | 로컬 Domain Event consumer·dispatcher와 handler 자동 등록 |
 | `spakky-rabbitmq` | RabbitMQ transport(`RabbitMQEventTransport`) |
 | `spakky-kafka` | Kafka transport(`KafkaEventTransport`) |
 
 ## In-process 도메인 이벤트 발행
 
-bounded context 내부 이벤트(DomainEvents)에는 in-process publisher를 사용합니다.
+bounded context 내부 이벤트에는 `AbstractDomainEvent`를 정의하고 같은 publisher 진입점을 사용합니다. 위의 브로커 예제에 사용한 `UserCreatedEvent`는 Integration Event이므로 로컬 dispatch 대상이 아닙니다.
 
 ```python
-from spakky.core.application.application import SpakkyApplication
-from spakky.core.application.application_context import ApplicationContext
+from spakky.core.common.mutability import immutable
+from spakky.domain.models.event import AbstractDomainEvent
 from spakky.event import IAsyncEventPublisher
 
-# 애플리케이션 부트스트랩(load_plugins가 event component를 자동 등록)
-app = (
-    SpakkyApplication(ApplicationContext())
-    .load_plugins()
-    .scan()
-    .start()
-)
 
-# 컨테이너에서 publisher 조회
-publisher = app.container.get(IAsyncEventPublisher)
-await publisher.publish(UserCreatedEvent(user_id="123", email="test@example.com"))
+@immutable
+class UserCreated(AbstractDomainEvent):
+    user_id: str
+    email: str
+
+
+# event + mediator를 로드한 앱에서 주입받은 publisher 사용
+async def publish_user_created(publisher: IAsyncEventPublisher) -> None:
+    await publisher.publish(UserCreated(user_id="123", email="test@example.com"))
 ```
+
+애플리케이션 설정은 [이벤트 시스템 가이드](../../docs/guides/events.md#애플리케이션-설정)를 참고하세요.
 
 ### 아키텍처(ISP 준수)
 
@@ -226,10 +243,6 @@ uv run pytest
 
 `pytest`는 각 패키지 `pyproject.toml`의 coverage 설정을 사용합니다.
 
-## 라이선스
-
-MIT License
-
 ### 인프로세스 이벤트와 후속 작업
 
 Domain Event만 사용하는 앱은 외부 transport 없이 기동할 수 있습니다. Integration Event를 발행할 때는 실제 transport 플러그인이 필요하며, 없으면 `IntegrationEventTransportUnavailableError`가 발생합니다.
@@ -255,9 +268,7 @@ Kafka/RabbitMQ만 사용하는 서비스에는 로컬 mediator가 자동으로 �
 없으면 `DomainEventDispatcherUnavailableError`, integration 발행에 transport가 없으면
 `IntegrationEventTransportUnavailableError`를 발생시킵니다. 누락된 이벤트를 조용히 버리지 않습니다.
 
-구현 import 이전과 설치 예시는 [Mediator API](../../plugins/spakky-mediator/README.md)를 참고하세요.
-
-
+구현 import 이전과 설치 예시는 [Spakky Mediator README](../../plugins/spakky-mediator/README.md)를 참고하세요.
 
 ### Transport 플러그인과 handler 등록
 
@@ -277,3 +288,7 @@ integration handler의 등록은 해당 transport 플러그인의 post-processor
 현재 Kafka plugin은 partition pause/rewind와 지속적인 poll로 이 계약을 구현합니다.
 직접 in-process event dispatch는 broker 재전달을 만들지 않고 호출자에게 예외를
 전파합니다. 유예가 이미 시작한 handler의 장기 작업을 취소하는 기능은 아닙니다.
+
+## 라이선스
+
+MIT License

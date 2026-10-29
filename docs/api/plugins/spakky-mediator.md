@@ -23,6 +23,8 @@
 
 ## 이전
 
+9.0.0의 설치·부트스트랩·consumer 역할 변경은 [이벤트 9.0 마이그레이션](../../guides/events-migration.md)을 참고하세요.
+
 로컬 dispatch를 사용하는 앱은 `spakky-mediator` 또는 `spakky[mediator]`를 설치하고
 `Plugin(name="spakky-mediator")`를 명시적으로 선택합니다. 구체 구현 import는
 `spakky.plugins.mediator.mediator`와 `spakky.plugins.mediator.post_processor`로 옮깁니다.

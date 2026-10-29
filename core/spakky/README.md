@@ -15,6 +15,7 @@ pip install spakky
 pip install "spakky[recommended]"              # FastAPI + SQLAlchemy + 운영 기본기
 pip install "spakky[web]"                      # FastAPI 중심 HTTP 서비스
 pip install "spakky[events-kafka]"             # Kafka 이벤트 서비스
+pip install "spakky[mediator]"                 # 인프로세스 Domain Event 처리
 pip install "spakky[agent]"                    # Agent core + multi-provider LLM + AG-UI/A2A/MCP + SQLAlchemy persistence
 pip install "spakky[security]"                 # Auth core + cryptography/OIDC/policy/OpenFGA providers
 pip install "spakky[cache-app]"                # Cache core + Redis backend
@@ -22,6 +23,8 @@ pip install "spakky[full]"                     # 모든 공식 통합
 ```
 
 ## 주요 기능
+
+9.0.0부터 로컬 Domain Event consumer·dispatcher는 별도 `spakky-mediator` 플러그인입니다. `spakky[event]`와 브로커용 extra는 mediator를 포함하지 않습니다. 로컬 처리가 필요하면 `spakky[mediator]`를 설치하고 플러그인 선택에 추가하세요. `spakky[full]`에는 포함됩니다. 기존 앱의 import·부트스트랩 변경은 [이벤트 9.0 마이그레이션](../../docs/guides/events-migration.md)을 참고하세요.
 
 - **의존성 주입**: 생성자 주입 기반의 강력한 IoC 컨테이너
 - **관점 지향 프로그래밍**: `@Aspect`로 횡단 관심사를 처리합니다.

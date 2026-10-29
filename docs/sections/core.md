@@ -22,3 +22,4 @@
 | [DI & Pod 심화](../guides/dependency-injection-advanced.md) | 다중 구현 해소, 조건부 등록, 한정자 |
 | [AOP 가이드](../aop-guide.md) | Aspect·Pointcut·Advice 작성 상세 |
 | [이벤트 시스템(심화)](../event-system.md) | DomainEvent·IntegrationEvent·EventHandler 설계 |
+| [이벤트 9.0 마이그레이션](../guides/events-migration.md) | mediator 분리에 따른 설치·플러그인 선택·import 이전 |

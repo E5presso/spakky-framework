@@ -12,7 +12,7 @@
 - [spakky-domain](core/spakky-domain.md) — DDD 빌딩 블록
 - [spakky-auth](core/spakky-auth.md) — 인증/인가 공통 모델
 - [spakky-data](core/spakky-data.md) — Repository, Transaction 추상화
-- [spakky-event](core/spakky-event.md) — 인프로세스 이벤트
+- [spakky-event](core/spakky-event.md) — 이벤트 계약·발행·handler 제공자 검증
 - [spakky-task](core/spakky-task.md) — 태스크 추상화
 - [spakky-agent](core/spakky-agent.md) — runner, multimodal content/checkpoint, retrieval/memory, evaluation, pricing/telemetry 계약
 - [spakky-tracing](core/spakky-tracing.md) — 분산 트레이싱 추상화
@@ -32,6 +32,7 @@
 - [spakky-openfga](plugins/spakky-openfga.md) — OpenFGA 관계 검사 인가 provider
 - [spakky-typer](plugins/spakky-typer.md) — Typer CLI 통합
 - [spakky-kafka](plugins/spakky-kafka.md) — Kafka 통합
+- [spakky-mediator](plugins/spakky-mediator.md) — 선택적인 인프로세스 domain event consumer·dispatcher
 - [spakky-sqlalchemy](plugins/spakky-sqlalchemy.md) — SQLAlchemy 통합
 - [spakky-celery](plugins/spakky-celery.md) — Celery 통합
 - [spakky-opentelemetry](plugins/spakky-opentelemetry.md) — TraceContext propagation과 privacy-safe Agent span 브릿지

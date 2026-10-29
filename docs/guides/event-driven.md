@@ -82,6 +82,12 @@ graph TD
 
 세 컴포넌트를 함께 쓰려면 이벤트·Outbox 코어와 저장소·전송 플러그인을 함께 로드합니다. 사가는 `Pod` 스캔만으로 동작하므로 별도 post-processor가 없습니다.
 
+이 예제는 로컬 Domain Event도 처리하므로 `spakky-mediator`를 별도로 설치하고 선택합니다. `spakky[event-driven]`에는 mediator가 포함되지 않습니다. 8.x 앱의 변경 사항은 [이벤트 9.0 마이그레이션](events-migration.md)을 참고하세요.
+
+```bash
+uv add 'spakky[event-driven,mediator]>=9.0.0'
+```
+
 ```python
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
@@ -89,6 +95,7 @@ import spakky.data
 import spakky.event
 import spakky.outbox
 import spakky.saga
+import spakky.tracing
 import spakky.plugins.sqlalchemy  # Outbox storage 제공
 import spakky.plugins.kafka       # Transport 제공
 import spakky.plugins.mediator    # 로컬 domain dispatch가 필요한 경우 명시 선택
@@ -101,6 +108,7 @@ app = (
         spakky.event.PLUGIN_NAME,
         spakky.outbox.PLUGIN_NAME,
         spakky.saga.PLUGIN_NAME,
+        spakky.tracing.PLUGIN_NAME,
         spakky.plugins.sqlalchemy.PLUGIN_NAME,
         spakky.plugins.kafka.PLUGIN_NAME,
         spakky.plugins.mediator.PLUGIN_NAME,

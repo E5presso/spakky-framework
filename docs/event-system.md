@@ -14,8 +14,11 @@ Spakky 이벤트 시스템은 두 가지 이벤트 타입을 지원합니다:
 패키지 분리:
 
 - `spakky-domain` — 이벤트 모델 정의 (`AbstractDomainEvent`, `AbstractIntegrationEvent`)
-- `spakky-event` — 인프로세스 이벤트 처리 (Mediator, Publisher, Consumer)
+- `spakky-event` — 이벤트 계약·발행·Aspect·handler 제공자 검증
+- `spakky-mediator` — 선택적인 인프로세스 Domain Event consumer·dispatcher와 handler 자동 등록
 - `spakky-rabbitmq`, `spakky-kafka` — 분산 이벤트 브로커 통합
+
+9.0.0부터 로컬 처리는 mediator의 설치·선택이 필요합니다. 기존 앱의 설치·import·플러그인 선택 변경은 [이벤트 9.0 마이그레이션](guides/events-migration.md)을 참고하세요.
 
 ---
 
@@ -125,7 +128,7 @@ graph LR
     end
 
     subgraph "🔀 라우팅"
-        M["Mediator<br/>(Consumer + Dispatcher)"]
+        M["spakky-mediator<br/>(Domain Consumer + Dispatcher)"]
         B["EventBus<br/>(IEventBus)"]
     end
 
@@ -332,13 +335,13 @@ class PlaceOrderUseCase:
 
 > `RabbitMQEventTransport` / `AsyncRabbitMQEventTransport` (implements `IEventTransport` / `IAsyncEventTransport`)
 >
-> `RabbitMQEventConsumer` / `AsyncRabbitMQEventConsumer` (implements `IEventConsumer` / `IAsyncEventConsumer`)
+> `RabbitMQEventConsumer` / `AsyncRabbitMQEventConsumer` (implements `IIntegrationEventConsumer` / `IAsyncIntegrationEventConsumer`)
 
 ### Kafka (spakky-kafka)
 
 > `KafkaEventTransport` / `AsyncKafkaEventTransport` (implements `IEventTransport` / `IAsyncEventTransport`)
 >
-> `KafkaEventConsumer` / `AsyncKafkaEventConsumer` (implements `IEventConsumer` / `IAsyncEventConsumer`)
+> `KafkaEventConsumer` / `AsyncKafkaEventConsumer` (implements `IIntegrationEventConsumer` / `IAsyncIntegrationEventConsumer`)
 
 Publisher 코드는 브로커에 의존하지 않습니다. `IAsyncEventPublisher.publish()`를 통해 IntegrationEvent를 발행하면, DI로 주입된 `IAsyncEventBus` → `IAsyncEventTransport` 경로로 브로커에 전송됩니다.
 
@@ -348,13 +351,19 @@ Publisher 코드는 브로커에 의존하지 않습니다. `IAsyncEventPublishe
 
 ### Mediator의 핸들러 격리
 
-인프로세스 Mediator는 핸들러 실패 시에도 나머지 핸들러를 계속 실행합니다:
+인프로세스 Mediator는 일반 핸들러 예외를 로그로 남기고 나머지 핸들러를 계속 실행합니다:
 
 ```python
 # 핸들러 A 실행 → 성공
 # 핸들러 B 실행 → 실패 (로그 기록, 예외 전파하지 않음)
 # 핸들러 C 실행 → 계속 실행됨
 ```
+
+`EventDeferredError`는 예외입니다. mediator는 이를 호출자에게 전파하여 현재 dispatch를 중단합니다. 로컬 재전달 큐는 만들지 않습니다.
+
+### 제공자 누락
+
+`spakky-event`는 선언한 handler의 domain/integration 및 sync/async 역할에 맞는 consumer가 없으면 `EventHandlerProviderUnavailableError`로 기동을 실패시킵니다. dispatcher 없는 Domain Event 발행은 `DomainEventDispatcherUnavailableError`, 기본 EventBus에서 transport 없는 Integration Event 발행은 `IntegrationEventTransportUnavailableError`입니다.
 
 ### 재시도 전략
 

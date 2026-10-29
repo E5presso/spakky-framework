@@ -92,6 +92,7 @@ plugins:
             - plugins/spakky-policy/src
             - plugins/spakky-typer/src
             - plugins/spakky-kafka/src
+            - plugins/spakky-mediator/src
             - plugins/spakky-sqlalchemy/src
             - plugins/spakky-celery/src
             - plugins/spakky-opentelemetry/src
@@ -128,6 +129,7 @@ nav:
           - DI & Pod 심화: guides/dependency-injection-advanced.md
           - AOP 가이드: aop-guide.md
           - 이벤트 시스템 심화: event-system.md
+          - 이벤트 9.0 마이그레이션: guides/events-migration.md
   - 애플리케이션 경계:
       - 개요: sections/boundaries.md
       - 기초:

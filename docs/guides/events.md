@@ -4,6 +4,9 @@
 
 도메인 이벤트를 자동으로 발행하고 핸들러에서 처리하는 이벤트 기반 아키텍처를 구축합니다. events·outbox·saga가 하나의 분산 워크플로우로 맞물리는 전체 그림은 [이벤트 기반 아키텍처 통합 가이드](event-driven.md)를 참고하세요.
 
+!!! warning "9.0.0부터 로컬 이벤트 제공자 분리"
+    Domain Event를 로컬에서 처리하려면 `spakky-mediator`를 설치하고 로드해야 합니다. `spakky-event`와 `spakky[event]`는 로컬 제공자를 포함하지 않습니다. 기존 앱의 설치·플러그인 선택·import 변경은 [9.0 마이그레이션](events-migration.md)을 참고하세요.
+
 ---
 
 ## 개념
@@ -50,7 +53,7 @@ graph TD
   classDef external fill:#ECEFF1,stroke:#546E7A,color:#263238
 ```
 
-`@on_event` 핸들러는 `AbstractDomainEvent` 서브클래스에 대해서만 자동 등록됩니다. Integration Event는 핸들러 자동 등록 대상이 아니라, 브로커에서 수신해 transport consumer가 처리합니다.
+`@on_event` 핸들러는 이벤트 종류에 맞는 제공자가 자동 등록합니다. `spakky-mediator`는 `AbstractDomainEvent` 핸들러를 로컬 consumer에 등록하고, Kafka/RabbitMQ 플러그인은 `AbstractIntegrationEvent` 핸들러를 각 브로커 consumer에 등록합니다.
 
 ---
 
@@ -92,7 +95,7 @@ class AsyncOrderEventHandler:
 
 #### 같은 이벤트, 여러 핸들러
 
-하나의 Domain Event에 여러 핸들러를 등록할 수 있습니다. `@EventHandler` 자동 등록은 `AbstractDomainEvent` 서브클래스만 대상으로 하며, Integration Event는 bus/transport consumer 경로로 처리합니다.
+하나의 Domain Event에 여러 핸들러를 등록할 수 있습니다. `spakky-mediator`가 각 핸들러를 로컬 consumer에 등록합니다. Integration Event 핸들러의 자동 등록은 Kafka/RabbitMQ 플러그인이 담당합니다.
 
 ```python
 @EventHandler()
@@ -154,11 +157,20 @@ publisher.publish(integration_event)  # RabbitMQ/Kafka로 전달
 
 ### 애플리케이션 설정
 
+로컬 이벤트 제공자를 설치합니다.
+
+```bash
+uv add 'spakky[mediator]>=9.0.0'
+```
+
+아래는 트랜잭션 provider가 구성된 앱의 플러그인 선택 예시입니다. SQLAlchemy 등을 사용하면 해당 provider도 `include`에 유지합니다.
+
 ```python
 import apps
 import spakky.data
 import spakky.event
 import spakky.plugins.mediator
+import spakky.tracing
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
 
@@ -168,6 +180,7 @@ app = (
         spakky.data.PLUGIN_NAME,
         spakky.event.PLUGIN_NAME,
         spakky.plugins.mediator.PLUGIN_NAME,
+        spakky.tracing.PLUGIN_NAME,
     })
     .scan(apps)             # @EventHandler 자동 검색
     .start()                # EventHandler ↔ 이벤트 타입 자동 매핑
@@ -175,12 +188,13 @@ app = (
 ```
 
 !!! info "자동 등록"
-    `app.start()` 시점에 `EventHandlerRegistrationPostProcessor`가 `@EventHandler` 클래스를 스캔하여 `@on_event` 메서드를 Domain Event 타입별로 자동 등록합니다. `AbstractIntegrationEvent`는 자동 등록 대상이 아니라 broker consumer 경로에서 처리됩니다.
+    `app.start()` 시점에 `spakky-mediator`의 `EventHandlerRegistrationPostProcessor`가 Domain Event handler를 등록합니다. Integration Event handler는 선택한 Kafka/RabbitMQ 플러그인의 후처리기가 등록합니다. `spakky-event`의 `EventHandlerProviderValidationPostProcessor`는 각 handler에 맞는 제공자가 있는지 검증합니다.
 
 ---
 
 ## 다음 단계
 
+- [이벤트 9.0 마이그레이션](events-migration.md) — mediator 설치·선택, import와 consumer 역할 변경
 - [이벤트 기반 아키텍처 통합 가이드](event-driven.md) — events·outbox·saga를 함께 쓰는 분산 워크플로우
 - [이벤트 시스템 심화](../event-system.md) — 이벤트 정의, AggregateRoot 이벤트 수집, 인터페이스 구조
 - [Transactional Outbox](outbox.md) — Integration Event의 원자적 기록과 성공 전달 경로의 at-least-once 의미

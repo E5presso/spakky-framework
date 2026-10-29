@@ -13,7 +13,7 @@
 
 | 채널 | 랜딩 페이지 | 기초 | 심화 |
 | --- | --- | --- | --- |
-| 핵심 (Core) | `sections/core.md` | DI & Pod, AOP, 도메인 모델링, 이벤트 시스템, 태스크 & 스케줄링 | DI/IoC 컨테이너, DI & Pod 심화, AOP 가이드, 이벤트 시스템(심화) |
+| 핵심 (Core) | `sections/core.md` | DI & Pod, AOP, 도메인 모델링, 이벤트 시스템, 태스크 & 스케줄링 | DI/IoC 컨테이너, DI & Pod 심화, AOP 가이드, 이벤트 시스템(심화), 이벤트 9.0 마이그레이션 |
 | 애플리케이션 경계 | `sections/boundaries.md` | FastAPI, CLI(Typer), gRPC, 데이터베이스(SQLAlchemy) | gRPC 심화 |
 | 메시징과 워크플로우 | `sections/messaging.md` | Celery, RabbitMQ, Kafka, Outbox, 사가 | 사가 심화 |
 | 보안 | `sections/security.md` | 보안 | 보안 심화, 인증/인가 전환, 마일스톤 스펙 |
@@ -35,6 +35,7 @@
 | `guides/dependency-injection-advanced.md` | 심화 가이드 | 핵심 > 심화 |
 | `aop-guide.md` | 심화 가이드 | 핵심 > 심화 |
 | `event-system.md` | 심화 가이드 | 핵심 > 심화 |
+| `guides/events-migration.md` | 신규 | 핵심 > 심화 |
 | `guides/fastapi.md` | 가이드 > 애플리케이션 경계 | 애플리케이션 경계 > 기초 |
 | `guides/typer.md` | 가이드 > 애플리케이션 경계 | 애플리케이션 경계 > 기초 |
 | `guides/grpc.md` | 가이드 > 애플리케이션 경계 | 애플리케이션 경계 > 기초 |

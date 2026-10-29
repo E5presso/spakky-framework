@@ -46,7 +46,7 @@ Extra는 두 층으로 나뉩니다. `minimal`, `recommended`, `full`은 설치 
 | --- | --- |
 | 기본 컨테이너 | `spakky`, `spakky-domain`, `spakky-data`, `spakky-event`, `spakky-task` |
 | 애플리케이션 경계 | `spakky-fastapi`, `spakky-typer`, `spakky-grpc`, `spakky-sqlalchemy` |
-| 메시징과 워크플로우 | `spakky-celery`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-outbox`, `spakky-saga` |
+| 메시징과 워크플로우 | `spakky-mediator`, `spakky-celery`, `spakky-rabbitmq`, `spakky-kafka`, `spakky-outbox`, `spakky-saga` |
 | 인증/인가 | `spakky-auth`, `spakky-cryptography`, `spakky-oidc`, `spakky-policy`, `spakky-openfga` |
 | 운영 | `spakky-logging`, `spakky-tracing`, `spakky-opentelemetry`, `spakky-actuator`, `spakky-cache`, `spakky-redis` |
 | Agent | `spakky-agent`, `spakky-llm`, `spakky-agui`, `spakky-a2a`, `spakky-mcp` |
