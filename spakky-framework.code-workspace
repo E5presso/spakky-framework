@@ -131,6 +131,10 @@
 		{
 			"name": "plugins.mcp",
 			"path": "plugins/spakky-mcp",
+		},
+		{
+			"name": "plugins.mediator",
+			"path": "plugins/spakky-mediator",
 		}
 	],
 	"settings": {
@@ -244,7 +248,8 @@
 			"policy",
 			"agui",
 			"a2a",
-			"mcp"
+			"mcp",
+			"mediator"
 		],
 		"github-actions.workflows.pinned.workflows": [
 			"root/.github/workflows/release.yml",
