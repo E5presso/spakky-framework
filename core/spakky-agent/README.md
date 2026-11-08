@@ -707,18 +707,23 @@ A run subscribes first, replays unconsumed ledger rows exactly once, and then
 observes only its in-memory inbox, so a run without new signals issues no
 `list_pending()` calls. `InProcessAgentSignalMailbox` implements both ports, is
 registered by this package's `initialize()`, and is injected by
-`AgentRunnerFactory` (`AgentRunner.with_signal_mailbox()` for direct use). It
+`AgentRunnerFactory` (`AgentRunner.with_signal_mailbox()` for direct use). At
+bootstrap `AgentBootstrapValidationPostProcessor` also binds the container's
+mailbox to each `@Agent` metadata (`Agent.signal_mailbox`), so the declarative
+`execute()` and local delegation runners receive live signals too; a
+constructor-injected `IAgentSignalSubscriber` takes precedence. It
 accepts a producer on the run's own loop immediately and hands any other thread
-or loop over with `call_soon_threadsafe`. `spakky-sqlalchemy` publishes from the
-session's `after_commit` event and never after a rollback.
+or loop over with `call_soon_threadsafe`. `spakky-sqlalchemy` publishes only when the
+outermost transaction commits: a released savepoint waits for it, a rolled-back
+savepoint drops only its own rows, and rollback or `close()` drops the rest.
 
 `AgentSignal.lane` is `AgentSignalLane.CONTROL` for `CANCEL` or
 `priority=AgentSignalPriority.URGENT`, otherwise `AgentSignalLane.STEERING`.
 Control interrupts the in-flight model task at once; urgent steering is applied
 together with steering queued before it, in arrival order. Steering waits for a
 safe point: a finished model response or a tool boundary. `priority` is a live
-delivery hint and is not stored in the ledger row. A pending cancel leaves
-queued steering unconsumed in the ledger. Signals are acknowledged with
+delivery hint and is not stored in the ledger row. While a cancel is pending no
+safe point consumes steering, so queued steering stays unconsumed in the ledger. Signals are acknowledged with
 `mark_consumed()` only after they are applied. A closed mailbox or a signal for
 another state is rejected on the run loop; stale revisions and re-delivered
 consumed signals never apply again. Without a mailbox the runner re-reads the

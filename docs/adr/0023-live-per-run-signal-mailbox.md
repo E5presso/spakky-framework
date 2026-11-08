@@ -52,9 +52,11 @@ Temporal의 "시작 시 1회 재생 + 이후 이벤트 수신", Codex의 `input_
    `call_soon_threadsafe`로 실행 루프에 넘기고, 같은 루프의 생산자(예: 도구)는
    즉시 받아 다음 경계에서 보이게 한다. PostgreSQL `NOTIFY`나 Kafka 같은
    프로세스 간 전송은 같은 publisher 포트를 구현해 꽂을 수 있다(이번 범위 밖).
-2. **커밋 후 게시.** `SqlAlchemyAgentSignalRepository.append()`는 행을 staging하고,
-   주입된 publisher가 있으면 세션 `after_commit`에서만 게시한다. `after_rollback`은
-   staging을 버린다.
+2. **커밋 후 게시.** `SqlAlchemyAgentSignalRepository.append()`는 행을 쓴 트랜잭션
+   (또는 savepoint)에 묶어 staging한다. 주입된 publisher가 있으면 가장 바깥
+   트랜잭션이 커밋될 때만 게시한다. 해제된 savepoint의 행은 바깥 커밋을 기다리고,
+   savepoint 롤백은 그 안에서 쓴 행만 버리며, 바깥 롤백이나 `close()`는 남은 행을
+   모두 버린다.
 3. **두 차선.** `AgentSignal.lane`은 `CANCEL` kind이거나
    `priority=AgentSignalPriority.URGENT`이면 `CONTROL`, 나머지는 `STEERING`이다.
    - `CONTROL`: runner는 모델 작업 태스크와 메일박스 control 대기를
@@ -70,15 +72,19 @@ Temporal의 "시작 시 1회 재생 + 이후 이벤트 수신", Codex의 `input_
    실행 내 inbox의 메모리 조회이고, 입력 대기는 메일박스 도착을 기다린다.
 5. **계약.**
    - `mark_consumed`는 적용한 뒤에만 부른다.
-   - 취소가 대기 중이면 루프 시작에서 조향을 소비하지 않아, 대기 중 조향은 원장에
-     미소비로 남는다. 긴급 조향으로 중단하면 대기 조향도 재시작 단계에 주입된다.
+   - 취소가 대기 중이면 어느 안전 지점에서도 조향을 소비하지 않아, 대기 중 조향은
+     원장에 미소비로 남는다. 긴급 조향으로 중단하면 대기 조향도 재시작 단계에 주입된다.
    - 메일박스는 루프 위에서 `closed`·`state_id`를 확인한 뒤에만 받는다. 끝난 실행의
      구독은 닫혀 이후 게시를 받지 않는다. 지난 판본과 이미 소비한 신호의 재전달은
      기존 판본 규칙대로 재적용 없이 소비하거나 무시한다.
-6. **메일박스 없는 실행.** `AgentRunner.signal_mailbox`가 `None`이면 원장을 안전
-   지점에서만 다시 읽고(시간 기반 폴링 없음), 진행 중 작업은 끊지 못한다.
-   새 입력을 기다려야 하는 지점에서는 `AgentSignalMailboxConfigurationError`로
-   닫는다. `AgentRunnerFactory`는 DI의 기본 메일박스를 주입한다.
+6. **메일박스 결속.** `AgentRunnerFactory`는 DI의 기본 메일박스를 주입한다.
+   선언형 `execute()`와 로컬 위임은 factory를 거치지 않으므로,
+   `AgentBootstrapValidationPostProcessor`가 bootstrap 때 컨테이너의 메일박스를
+   `Agent.signal_mailbox`에 결속하고 `AgentRunner.for_agent_instance()`가 이를
+   사용한다. 생성자로 주입한 `IAgentSignalSubscriber`가 우선한다.
+   `AgentRunner.signal_mailbox`가 끝내 `None`이면 원장을 안전 지점에서만 다시
+   읽고(시간 기반 폴링 없음), 진행 중 작업은 끊지 못하며, 새 입력을 기다려야 하는
+   지점에서는 `AgentSignalMailboxConfigurationError`로 닫는다.
 
 ## 결과 (Consequences)
 

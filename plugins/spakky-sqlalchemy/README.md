@@ -306,9 +306,10 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 
 각 repository는 현재 SQLAlchemy transactional session을 사용합니다. Signal은
 `consumed_at`으로 pending queue를 구분하는 원장이며, `IAgentSignalPublisher`가
-주입되면(`spakky-agent`가 기본 `InProcessAgentSignalMailbox`를 등록) 세션의
-`after_commit`에서만 실행 중 Agent의 메일박스로 게시하고 `after_rollback`이면
-버립니다. `AgentSignal.priority`는 실시간 전달 힌트라 테이블에 저장하지 않습니다.
+주입되면(`spakky-agent`가 기본 `InProcessAgentSignalMailbox`를 등록) 가장 바깥
+트랜잭션이 커밋될 때만 실행 중 Agent의 메일박스로 게시합니다. 해제된 savepoint의
+행은 바깥 커밋을 기다리고, savepoint 롤백은 그 안의 행만, 바깥 롤백이나
+`close()`는 남은 행을 모두 버립니다. `AgentSignal.priority`는 실시간 전달 힌트라 테이블에 저장하지 않습니다.
  Evidence repository는 append/read
 메서드만 노출해 agent-facing append-only 계약을 유지합니다.
 

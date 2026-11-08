@@ -210,6 +210,68 @@ def test_agent_signal_repository_without_publisher_expect_ledger_only(
     assert [signal.id for signal in repository.list_pending("state-1")] == ["signal-1"]
 
 
+def test_agent_signal_repository_released_savepoint_expect_wait_for_outer_commit(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """savepoint를 해제해도 게시하지 않고, 바깥 트랜잭션 commit에서 한 번만 게시한다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    with session.begin():
+        with session.begin_nested():
+            repository.append(_urgent_signal("inner"))
+        assert publisher.published == []
+
+    assert [signal.id for signal in publisher.published] == ["inner"]
+
+
+def test_agent_signal_repository_released_savepoint_outer_rollback_expect_unpublished(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """해제된 savepoint의 신호도 바깥 rollback이면 게시하지 않는다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    session.begin()
+    with session.begin_nested():
+        repository.append(_urgent_signal("inner"))
+    session.rollback()
+
+    assert publisher.published == []
+
+
+def test_agent_signal_repository_savepoint_rollback_expect_outer_signal_kept(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """savepoint rollback은 그 안의 신호만 버리고 바깥 신호는 commit 후 게시한다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    session.begin()
+    repository.append(_urgent_signal("outer"))
+    savepoint = session.begin_nested()
+    repository.append(_urgent_signal("inner"))
+    savepoint.rollback()
+    session.commit()
+
+    assert [signal.id for signal in publisher.published] == ["outer"]
+
+
+def test_agent_signal_repository_closed_session_expect_staging_discarded(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """commit 없이 close한 세션의 신호는 같은 세션의 다음 commit에 섞이지 않는다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    repository.append(_urgent_signal("abandoned"))
+    session.close()
+    session.commit()
+
+    assert publisher.published == []
+    assert UNCOMMITTED_SIGNALS_KEY not in session.info
+
+
 def test_agent_signal_repository_mark_missing_expect_custom_error(
     session_manager: SessionManager,
 ) -> None:

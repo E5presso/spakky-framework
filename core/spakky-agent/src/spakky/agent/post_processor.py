@@ -13,6 +13,7 @@ from spakky.agent.error import (
     AgentPersistenceConfigurationError,
 )
 from spakky.agent.execution import Agent
+from spakky.agent.mailbox import IAgentSignalSubscriber
 
 
 @Pod()
@@ -41,7 +42,20 @@ class AgentBootstrapValidationPostProcessor(IPostProcessor, IContainerAware):
         except AgentDefinitionError as e:
             raise AgentBootstrapError("Agent bootstrap contract is invalid") from e
         self._validate_persistence_contributions(agent)
+        self._bind_signal_mailbox(agent)
         return pod
+
+    def _bind_signal_mailbox(self, agent: Agent) -> None:
+        """Bind the container's live mailbox so every runner path can wake.
+
+        Declarative ``execute()`` and local delegation build runners straight
+        from the agent instance rather than through ``AgentRunnerFactory``.
+        """
+        if self._container is None or not self._container.contains(
+            IAgentSignalSubscriber
+        ):
+            return
+        agent.signal_mailbox = self._container.get(IAgentSignalSubscriber)
 
     def _validate_persistence_contributions(self, agent: Agent) -> None:
         required_types = agent.required_persistence_repository_types()

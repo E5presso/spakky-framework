@@ -124,8 +124,8 @@ Signal repository의 행은 원장입니다. 실행 중인 Agent에는 실행별
 전달합니다. 실행은 시작·재개 때 원장의 미소비 신호를 1회 재생하고, 그 뒤로는
 원장을 다시 조회하지 않습니다. 생산자는 트랜잭션이 커밋된 뒤
 `IAgentSignalPublisher.publish()`로 알립니다. `spakky-sqlalchemy`의 signal
-repository는 세션 `after_commit`에서 자동으로 게시하고, 롤백이면 게시하지
-않습니다. 기본 구현 `InProcessAgentSignalMailbox`는 `spakky-agent` 플러그인이
+repository는 가장 바깥 트랜잭션이 커밋될 때 자동으로 게시하고, 롤백이나
+savepoint 롤백으로 사라진 행은 게시하지 않습니다. 기본 구현 `InProcessAgentSignalMailbox`는 `spakky-agent` 플러그인이
 등록하며, 다른 스레드나 이벤트 루프에서 게시해도 실행 루프로 안전하게 넘깁니다.
 직접 만든 저장소를 쓴다면 커밋 뒤 같은 publisher를 호출해야 실행 중 신호가
 전달됩니다.
@@ -154,9 +154,10 @@ signals.append(
 `priority`는 실시간 전달용 힌트이며 원장 행에 저장하지 않습니다. 재생되는
 신호는 실행 시작의 첫 안전 지점에서 적용되므로 끊을 진행 작업이 없습니다.
 긴급 조향으로 중단하면 그보다 먼저 쌓인 일반 조향도 도착 순서대로 함께
-주입합니다. 취소가 도착하면 대기 중 조향을 소비하지 않고 원장에 남깁니다.
-`AgentRunnerFactory`를 거치지 않고 메일박스 없이 만든 runner는 진행 중 작업을
-끊지 못하고, 새 입력을 기다려야 하는 지점에서
+주입합니다. 취소가 대기 중이면 어느 안전 지점에서도 조향을 소비하지 않고 원장에
+남깁니다. `AgentRunnerFactory`, 선언형 `execute()`, 로컬 위임은 bootstrap 때
+결속된 기본 메일박스를 사용합니다. DI 밖에서 메일박스 없이 만든 runner는 진행 중
+작업을 끊지 못하고, 새 입력을 기다려야 하는 지점에서
 `AgentSignalMailboxConfigurationError`로 실패합니다. 설계 근거는
 [ADR-0023](../adr/0023-live-per-run-signal-mailbox.md)에 있습니다.
 

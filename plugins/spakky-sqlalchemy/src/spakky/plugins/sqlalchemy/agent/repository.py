@@ -1,7 +1,7 @@
 """SQLAlchemy repository implementations for spakky-agent contracts."""
 
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Final, override
 
@@ -16,9 +16,12 @@ from spakky.agent.signal import AgentSignal
 from spakky.agent.state import AgentState, AgentStatus
 from spakky.core.pod.annotations.pod import Pod
 from sqlalchemy import event, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, SessionTransaction
 
-from spakky.plugins.sqlalchemy.agent.error import AgentPersistenceRowNotFoundError
+from spakky.plugins.sqlalchemy.agent.error import (
+    AgentPersistenceRowNotFoundError,
+    AgentSignalTransactionMissingError,
+)
 from spakky.plugins.sqlalchemy.agent.table import (
     AgentEvidenceTable,
     AgentSignalTable,
@@ -78,17 +81,37 @@ class SqlAlchemyAgentStateRepository(IAgentStateRepository):
 
 
 UNCOMMITTED_SIGNALS_KEY: Final = "spakky.agent.uncommitted_signals"
-"""``Session.info`` key holding signals appended in the open transaction."""
+"""``Session.info`` key holding signals appended in still-open transactions."""
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedSignal:
+    """A ledger row awaiting its outermost transaction's commit."""
+
+    transaction: SessionTransaction
+    publisher: IAgentSignalPublisher
+    signal: AgentSignal
+
+    def belongs_to(self, ended: SessionTransaction) -> bool:
+        """Return whether ``ended`` is this row's transaction or an ancestor."""
+        current: SessionTransaction | None = self.transaction
+        while current is not None:
+            if current is ended:
+                return True
+            current = current.parent
+        return False
 
 
 @Pod()
 class SqlAlchemyAgentSignalRepository(IAgentSignalRepository):
     """SQLAlchemy durable signal ledger that publishes rows after commit.
 
-    ``append`` only stages the ledger row. When a live publisher is wired, the
-    staged signals are published from the session's ``after_commit`` event and
-    discarded on ``after_rollback``, so a running agent is never woken for a
-    signal that did not durably commit.
+    ``append`` only stages the ledger row against the transaction (or
+    savepoint) that wrote it. When a live publisher is wired, staged signals are
+    published only when the outermost transaction commits. Rolling back a
+    savepoint discards just the rows written inside it, and ending the outermost
+    transaction without commit (rollback or ``close()``) discards the rest, so a
+    running agent is never woken for a signal that did not durably commit.
     """
 
     _session_manager: SessionManager
@@ -105,7 +128,8 @@ class SqlAlchemyAgentSignalRepository(IAgentSignalRepository):
         self._publisher = publisher
         # Bound once so SQLAlchemy can recognize an already registered listener.
         self._after_commit = self._publish_committed
-        self._after_rollback = self._discard_uncommitted
+        self._after_soft_rollback = self._discard_rolled_back
+        self._after_transaction_end = self._discard_unfinished
 
     @override
     def append(self, signal: AgentSignal) -> AgentSignal:
@@ -143,23 +167,41 @@ class SqlAlchemyAgentSignalRepository(IAgentSignalRepository):
         publisher: IAgentSignalPublisher,
         signal: AgentSignal,
     ) -> None:
+        transaction = session.get_nested_transaction() or session.get_transaction()
+        if transaction is None:  # pragma: no cover - flush() always begins one
+            raise AgentSignalTransactionMissingError(signal.id)
         if not event.contains(session, "after_commit", self._after_commit):
             event.listen(session, "after_commit", self._after_commit)
-            event.listen(session, "after_rollback", self._after_rollback)
-        staged: list[tuple[IAgentSignalPublisher, AgentSignal]] = (
-            session.info.setdefault(UNCOMMITTED_SIGNALS_KEY, [])
-        )
-        staged.append((publisher, signal))
+            event.listen(session, "after_soft_rollback", self._after_soft_rollback)
+            event.listen(session, "after_transaction_end", self._after_transaction_end)
+        self._staged(session).append(_StagedSignal(transaction, publisher, signal))
 
     def _publish_committed(self, session: Session) -> None:
-        staged: list[tuple[IAgentSignalPublisher, AgentSignal]] = session.info.pop(
-            UNCOMMITTED_SIGNALS_KEY, []
-        )
-        for publisher, signal in staged:
-            publisher.publish(signal)
+        # A released savepoint also emits after_commit; its rows wait for the
+        # outermost commit and are still discarded if an outer level rolls back.
+        if session.in_nested_transaction():
+            return
+        staged = session.info.pop(UNCOMMITTED_SIGNALS_KEY, [])
+        for item in staged:
+            item.publisher.publish(item.signal)
 
-    def _discard_uncommitted(self, session: Session) -> None:
-        session.info.pop(UNCOMMITTED_SIGNALS_KEY, None)
+    def _discard_rolled_back(
+        self, session: Session, previous_transaction: SessionTransaction
+    ) -> None:
+        staged = self._staged(session)
+        staged[:] = [
+            item for item in staged if not item.belongs_to(previous_transaction)
+        ]
+
+    def _discard_unfinished(
+        self, session: Session, transaction: SessionTransaction
+    ) -> None:
+        if transaction.parent is None:
+            session.info.pop(UNCOMMITTED_SIGNALS_KEY, None)
+
+    @staticmethod
+    def _staged(session: Session) -> list[_StagedSignal]:
+        return session.info.setdefault(UNCOMMITTED_SIGNALS_KEY, [])
 
 
 @Pod()

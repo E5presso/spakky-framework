@@ -9,6 +9,7 @@ from typing import override
 import pytest
 
 from spakky.agent import (
+    Agent,
     AgentEvent,
     AgentRunner,
     AgentSignal,
@@ -26,7 +27,9 @@ from spakky.agent import (
     ModelStreamEventKind,
     RunAgentInput,
     RunFinishedEvent,
+    InProcessAgentSignalMailbox,
     Token,
+    Tool,
 )
 from tests.unit.test_code_assistant_demo import (
     FakeEvidenceRepository,
@@ -34,7 +37,12 @@ from tests.unit.test_code_assistant_demo import (
     FakeStateRepository,
     RecordingModel,
 )
-from tests.unit.test_runner import DurableGuardedFrameworkProbeAgent, ProbeAgent
+from tests.unit.test_runner import (
+    DurableGuardedFrameworkProbeAgent,
+    ProbeAgent,
+    StatelessProbeAgent,
+    _tool_event,
+)
 
 YIELD_TO_LOOP_ROUNDS = 5
 """Loop turns granted to a delivered signal; scheduling only, never wall time."""
@@ -396,3 +404,44 @@ async def test_runner_mailbox_guarded_complete_cancel_between_events_expect_canc
     else:
         assert isinstance(terminal, AgentYield)
         assert terminal.kind is AgentYieldKind.CANCEL
+
+
+async def test_runner_cancel_at_tool_boundary_expect_queued_steering_unconsumed() -> (
+    None
+):
+    """A cancel pending at the next tool boundary never consumes queued steering first."""
+    states, signals, evidence = _repositories()
+    model = RecordingModel(
+        (
+            _tool_event("echo.read", {"value": "one"}, "call-1"),
+            _tool_event("echo.read", {"value": "two"}, "call-2"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    runner = _runner(model, states, signals, evidence)
+
+    async for item in runner.run(RunAgentInput(state_id="run-1", instruction="go")):
+        if isinstance(item.payload, Tool) and not signals.list_pending("run-1"):
+            signals.append(_steer("queued", "later idea"))
+            signals.append(
+                AgentSignal(
+                    id="stop", agent_state_id="run-1", kind=AgentSignalKind.CANCEL
+                )
+            )
+
+    assert states.get("run-1").status is AgentStatus.CANCELLED
+    assert [signal.id for signal in signals.list_pending("run-1")] == ["queued"]
+
+
+def test_runner_for_agent_instance_expect_bootstrap_bound_mailbox_fallback() -> None:
+    """An agent without an injected subscriber uses the mailbox bound at bootstrap."""
+    mailbox = InProcessAgentSignalMailbox()
+    metadata = Agent.get(StatelessProbeAgent)
+    previous = metadata.signal_mailbox
+    metadata.signal_mailbox = mailbox
+    try:
+        runner = AgentRunner.for_agent_instance(StatelessProbeAgent(RecordingModel(())))
+    finally:
+        metadata.signal_mailbox = previous
+
+    assert runner.signal_mailbox is mailbox

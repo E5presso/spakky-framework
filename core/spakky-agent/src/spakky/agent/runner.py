@@ -466,6 +466,8 @@ class AgentRunner:
         pricing = cls._resolve_optional(attributes, ModelPricingCatalog)
         telemetry = cls._resolve_optional(attributes, IAgentTelemetry)
         signal_mailbox = cls._resolve_optional(attributes, IAgentSignalSubscriber)
+        if signal_mailbox is None:
+            signal_mailbox = agent.signal_mailbox
         tool_providers = tuple(
             attribute
             for attribute in attributes
@@ -687,8 +689,7 @@ class AgentRunner:
             return
         while True:
             try:
-                if not self._cancelling(state):
-                    self._apply_steering(state, context)
+                self._apply_steering(state, context)
                 if context.steering_rehydration:
                     yield _progress_event(
                         Progress(
@@ -1178,8 +1179,7 @@ class AgentRunner:
         """Run the shared bounded model/batch loop for the public yield surface."""
         while True:
             try:
-                if not self._cancelling(state):
-                    self._apply_steering(state, context)
+                self._apply_steering(state, context)
                 if context.steering_rehydration:
                     yield _progress("awaiting input rehydration", "steering_wait")
                     while context.steering_rehydration and not self._cancel_pending(
@@ -1587,11 +1587,16 @@ class AgentRunner:
     def _apply_steering(
         self, state: AgentState | None, context: _ExecutionContext
     ) -> bool:
-        """Consume revisioned steering before exposing a candidate or effect."""
+        """Consume revisioned steering before exposing a candidate or effect.
+
+        A pending cancel suppresses consumption at every safe point, so queued
+        steering stays unconsumed in the ledger when the run is cancelled.
+        """
         if (
             state is None
             or AgentSignalKind.STEERING_INSTRUCTION
             not in self.agent.spec.accepted_signals
+            or self._cancel_pending(state.id)
         ):
             return False
         changed = False
@@ -1830,9 +1835,6 @@ class AgentRunner:
         ):
             return self._apply_steering(state, context)
         return False
-
-    def _cancelling(self, state: AgentState | None) -> bool:
-        return state is not None and self._cancel_pending(state.id)
 
     async def _context_for_step(
         self,

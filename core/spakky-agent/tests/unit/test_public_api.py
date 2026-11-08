@@ -404,6 +404,54 @@ def test_initialize_expect_registers_runner_factory_and_bootstrap_validation() -
     assert app.container.contains(AgentRunnerFactory) is True
     assert app.container.contains(AgentBootstrapValidationPostProcessor) is True
     assert app.container.contains(IAgentModel) is False
+    assert app.container.contains(agent_api.IAgentSignalSubscriber) is True
+    assert app.container.contains(agent_api.IAgentSignalPublisher) is True
+
+
+def test_agent_bootstrap_expect_container_signal_mailbox_bound_to_agent() -> None:
+    """bootstrap이 컨테이너의 실시간 메일박스를 선언형·위임 runner 경로에 결속한다."""
+
+    @Agent()
+    class MailboxBoundAgent:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=agent_api.AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    app = SpakkyApplication(ApplicationContext())
+    initialize(app)
+    app.add(MailboxBoundAgent)
+    app.start()
+
+    assert Agent.get(MailboxBoundAgent).signal_mailbox is app.container.get(
+        agent_api.IAgentSignalSubscriber
+    )
+
+
+def test_agent_bootstrap_without_signal_mailbox_expect_agent_left_unbound() -> None:
+    """메일박스가 등록되지 않은 컨테이너는 agent에 아무 메일박스도 결속하지 않는다."""
+
+    @Agent()
+    class MailboxlessAgent:
+        async def execute(
+            self,
+            command: str,
+        ) -> AsyncGenerator[AgentYield[Final[str]], None]:
+            yield AgentYield(
+                kind=agent_api.AgentYieldKind.FINAL,
+                payload=Final(output=command, metadata={}),
+            )
+
+    app = SpakkyApplication(ApplicationContext())
+    app.add(AgentBootstrapValidationPostProcessor)
+    app.add(MailboxlessAgent)
+    app.start()
+
+    assert Agent.get(MailboxlessAgent).signal_mailbox is None
 
 
 async def test_agent_expect_scans_resolves_and_invokes_like_usecase() -> None:
