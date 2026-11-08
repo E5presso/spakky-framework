@@ -31,6 +31,7 @@ from spakky.agent.content import (
 )
 from spakky.agent.context import AgentContext
 from spakky.agent.error import AgentDefinitionError
+from spakky.agent.extension import AgentRunExtension, validated_extensions
 from spakky.agent.interfaces.model import ModelMessage, ModelSelection
 from spakky.agent.types import JsonObject
 
@@ -50,6 +51,8 @@ class RunAgentInput:
     metadata: JsonObject = field(default_factory=dict)
     attachments: tuple[ImagePart | AudioPart | VideoPart | DocumentPart, ...] = ()
     steering_input_required: bool = False
+    extensions: tuple[AgentRunExtension, ...] = ()
+    """Typed application values copied into every model request of this run."""
 
     def __post_init__(self) -> None:
         """Reject inbound input that cannot correlate a run or seed a request."""
@@ -74,6 +77,7 @@ class RunAgentInput:
                 "Run agent input attachments must be an immutable media tuple"
             )
         model_content_parts((TextPart(self.instruction), *self.attachments))
+        object.__setattr__(self, "extensions", validated_extensions(self.extensions))
 
     def user_message(self) -> ModelMessage:
         """Build the canonical user message, preserving the text-only shortcut."""

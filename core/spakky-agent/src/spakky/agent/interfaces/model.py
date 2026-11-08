@@ -22,8 +22,10 @@ from spakky.agent.context import (
     ContextManifest,
     ContextManifestEntry,
     ContextPack,
+    ContextPlacement,
 )
 from spakky.agent.error import AgentDefinitionError, AgentModelConfigurationError
+from spakky.agent.extension import AgentRunExtension, validated_extensions
 from spakky.agent.safety import (
     ContextExposurePolicy,
     EvidenceExposurePolicy,
@@ -177,6 +179,8 @@ class ModelRequest:
     streaming: StreamingOptions = field(default_factory=StreamingOptions)
     model_selection: ModelSelection | None = None
     metadata: JsonObject = field(default_factory=dict)
+    extensions: tuple[AgentRunExtension, ...] = ()
+    """Typed application values carried with the run, one per extension type."""
 
     def __post_init__(self) -> None:
         """Deep-snapshot every mutable request input before async adapter work."""
@@ -214,6 +218,7 @@ class ModelRequest:
             if not isinstance(self.tool_calling, ToolCallingSpec):
                 raise AgentDefinitionError("Model tool calling spec is invalid")
         object.__setattr__(self, "metadata", _snapshot_json_object(self.metadata))
+        object.__setattr__(self, "extensions", validated_extensions(self.extensions))
 
     def snapshot(self) -> "ModelRequest":
         """Return a deep request copy shared across one async adapter invocation."""
@@ -244,23 +249,66 @@ class ModelRequest:
             streaming=self.streaming,
             model_selection=self.model_selection,
             metadata=_snapshot_json_object(self.metadata),
+            extensions=self.extensions,
         )
 
     def assemble_messages(
         self,
         policy: ContextExposurePolicy | None = None,
     ) -> tuple[ModelMessage, ...]:
-        """Assemble prompt messages from typed context packs without concatenation."""
+        """Assemble prompt messages from typed context packs without concatenation.
+
+        ``SYSTEM`` packs join the leading system message, ``PRELUDE`` packs come
+        before the conversation history and ``TRAILER`` packs come after it. Packs
+        that stay fixed for a run therefore keep the prompt prefix cacheable.
+        """
         exposure_policy = policy or ContextExposurePolicy()
-        context_messages = tuple(
-            ModelMessage(
-                role=ModelMessageRole.EVIDENCE,
-                content=pack.guarded_content(exposure_policy),
-                metadata=pack.message_metadata(exposure_policy),
-            )
-            for pack in self.context
+        lead = next(
+            (
+                index
+                for index, message in enumerate(self.messages)
+                if message.role is not ModelMessageRole.SYSTEM
+            ),
+            len(self.messages),
         )
-        return (*self.messages, *context_messages)
+        leading = list(self.messages[:lead])
+        system_text = tuple(
+            pack.guarded_content(exposure_policy)
+            for pack in self.context
+            if pack.placement is ContextPlacement.SYSTEM
+        )
+        if system_text:
+            if leading and isinstance(leading[-1].content, str):
+                last = leading[-1]
+                leading[-1] = replace(
+                    last, content="\n\n".join((last.content, *system_text))
+                )
+            else:
+                leading.append(
+                    ModelMessage(ModelMessageRole.SYSTEM, "\n\n".join(system_text))
+                )
+
+        def evidence(placement: ContextPlacement) -> tuple[ModelMessage, ...]:
+            return tuple(
+                ModelMessage(
+                    role=ModelMessageRole.EVIDENCE,
+                    content=pack.guarded_content(exposure_policy),
+                    metadata=pack.message_metadata(exposure_policy),
+                )
+                for pack in self.context
+                if pack.placement is placement
+            )
+
+        return (
+            *leading,
+            *evidence(ContextPlacement.PRELUDE),
+            *self.messages[lead:],
+            *evidence(ContextPlacement.TRAILER),
+        )
+
+    def extension[T: AgentRunExtension](self, kind: type[T]) -> T | None:
+        """Return this request's typed application extension of ``kind``."""
+        return next((item for item in self.extensions if isinstance(item, kind)), None)
 
     def required_input_modalities(self) -> frozenset["ModelModality"]:
         """Derive every modality present in provider-bound message content."""

@@ -29,6 +29,12 @@ class AgentToolDispatchError(AbstractSpakkyAgentError):
     message = "Agent tool call cannot be dispatched"
 
 
+class AgentEvidenceOriginQueryUnsupportedError(AbstractSpakkyAgentError):
+    """Raised when an evidence store has no index of context origin references."""
+
+    message = "Agent evidence store cannot query context origin references"
+
+
 class AgentBootstrapError(AbstractSpakkyAgentError):
     """Raised when agent bootstrap validation fails."""
 

@@ -1934,15 +1934,7 @@ class AgentRunner:
         context: AgentContext,
         context_fingerprint: str,
     ) -> None:
-        existing = self._evidence_required().list_by_state(state_id)
-        existing_keys = {
-            (
-                item.kind,
-                item.payload.get("model_step"),
-                item.payload.get("context_fingerprint"),
-            )
-            for item in existing
-        }
+        evidence = self._evidence_required()
         manifest_ref = context.manifest.id if context.manifest is not None else None
         packs = tuple(
             {
@@ -1965,14 +1957,8 @@ class AgentRunner:
             }
             for pack in context.packs
         )
-        if (
-            packs
-            and (
-                AgentEvidenceKind.CONTEXT,
-                model_step,
-                context_fingerprint,
-            )
-            not in existing_keys
+        if packs and not evidence.has_step_evidence(
+            state_id, AgentEvidenceKind.CONTEXT, model_step, context_fingerprint
         ):
             self._append_candidate(
                 state_id,
@@ -1985,17 +1971,15 @@ class AgentRunner:
                     },
                     digest=context_fingerprint,
                     manifest_ref=manifest_ref,
+                    model_step=model_step,
                 ),
             )
         manifest = context.manifest
-        if (
-            manifest is not None
-            and (
-                AgentEvidenceKind.CONTEXT_MANIFEST,
-                model_step,
-                context_fingerprint,
-            )
-            not in existing_keys
+        if manifest is not None and not evidence.has_step_evidence(
+            state_id,
+            AgentEvidenceKind.CONTEXT_MANIFEST,
+            model_step,
+            context_fingerprint,
         ):
             self._append_candidate(
                 state_id,
@@ -2025,17 +2009,27 @@ class AgentRunner:
                     },
                     digest=context_fingerprint,
                     manifest_ref=manifest.id,
+                    model_step=model_step,
+                    origin_refs=tuple(
+                        dict.fromkeys(
+                            (
+                                *(
+                                    (manifest.origin_ref,)
+                                    if manifest.origin_ref is not None
+                                    else ()
+                                ),
+                                *(entry.origin_ref for entry in manifest.entries),
+                            )
+                        )
+                    ),
                 ),
             )
         digest = context.digest
-        if (
-            digest is not None
-            and (
-                AgentEvidenceKind.CONTEXT_DIGEST,
-                model_step,
-                context_fingerprint,
-            )
-            not in existing_keys
+        if digest is not None and not evidence.has_step_evidence(
+            state_id,
+            AgentEvidenceKind.CONTEXT_DIGEST,
+            model_step,
+            digest.digest,
         ):
             self._append_candidate(
                 state_id,
@@ -2054,6 +2048,7 @@ class AgentRunner:
                     },
                     digest=digest.digest,
                     manifest_ref=manifest.id if manifest is not None else None,
+                    model_step=model_step,
                 ),
             )
 
@@ -3580,6 +3575,7 @@ class AgentRunner:
             sampling=self.agent.spec.sampling,
             model_selection=run_input.model_selection,
             metadata={"state_id": run_input.state_id, **run_input.metadata},
+            extensions=run_input.extensions,
         )
 
     def _resolve_history(self, run_input: RunAgentInput) -> tuple[ModelMessage, ...]:
@@ -3895,7 +3891,7 @@ class AgentRunner:
         )
 
     def _evidence_count(self, state_id: str) -> int:
-        return len(self._evidence_required().list_by_state(state_id))
+        return self._evidence_required().count_by_state(state_id)
 
     def _agent_type(self) -> str:
         return self.agent.spec.name or type(self.target).__name__

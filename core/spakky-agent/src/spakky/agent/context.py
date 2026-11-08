@@ -187,6 +187,24 @@ class IAgentContextHandler(ABC):
         ...
 
 
+class ContextPlacement(StrEnum):
+    """Where a context pack sits in the assembled model prompt.
+
+    A stable prompt prefix is what lets a provider reuse its prompt cache. Packs
+    that stay the same for a whole run belong before the conversation history;
+    packs that change each step belong after it.
+    """
+
+    SYSTEM = "system"
+    """Joined into the leading system section, after the agent instructions."""
+
+    PRELUDE = "prelude"
+    """A separate message after the system section and before the history."""
+
+    TRAILER = "trailer"
+    """A separate message after the history (the default)."""
+
+
 @dataclass(frozen=True, slots=True)
 class ContextPack:
     """LLM-facing context unit derived from state, signal, or evidence."""
@@ -201,6 +219,7 @@ class ContextPack:
     sensitivity: ContextSensitivity = ContextSensitivity.INTERNAL
     sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
     metadata: JsonObject = field(default_factory=dict)
+    placement: ContextPlacement = ContextPlacement.TRAILER
 
     def __post_init__(self) -> None:
         _require_non_blank(self.id, "Context pack id")
