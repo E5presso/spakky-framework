@@ -1,3 +1,16 @@
+## v10.0.0 (2026-11-08)
+
+### BREAKING CHANGE
+
+- spakky_agent_state.metadata, spakky_agent_signal.payload,
+spakky_agent_evidence.payload 열을 없앴습니다. 기존 DB는 값을
+spakky_agent_json_node로 옮기고 새 열(spakky_agent_evidence.model_step)과
+테이블(spakky_agent_evidence_origin, spakky_agent_json_node)을 만들어야 합니다.
+
+### Feat
+
+- **agent**: 문맥 배치·타입 확장을 추가하고 agent 문서를 JSON 열 대신 값 행으로 저장합니다 (#551)
+
 ## v9.1.1 (2026-11-08)
 
 ### Fix
