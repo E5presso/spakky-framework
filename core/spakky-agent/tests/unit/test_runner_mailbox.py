@@ -41,6 +41,7 @@ from tests.unit.test_runner import (
     DurableGuardedFrameworkProbeAgent,
     ProbeAgent,
     StatelessProbeAgent,
+    _run_durable,
     _tool_event,
 )
 
@@ -445,3 +446,59 @@ def test_runner_for_agent_instance_expect_bootstrap_bound_mailbox_fallback() -> 
         metadata.signal_mailbox = previous
 
     assert runner.signal_mailbox is mailbox
+
+
+@pytest.mark.parametrize("events_surface", [False, True])
+async def test_runner_cancel_during_rehydration_wait_expect_cancelled_not_spinning(
+    events_surface: bool,
+) -> None:
+    """A cancel pending while resume awaits input rehydration ends the run at once."""
+    states, evidence = FakeStateRepository(), FakeEvidenceRepository()
+    signals = FakeSignalRepository(
+        (
+            AgentSignal(
+                id="input",
+                agent_state_id="run-1",
+                kind=AgentSignalKind.STEERING_INSTRUCTION,
+                payload={
+                    "input_id": "a",
+                    "revision": 1,
+                    "content": "ephemeral",
+                    "final": True,
+                },
+            ),
+        )
+    )
+    model = RecordingModel(
+        (
+            _tool_event("echo.write", {"value": "draft"}, "write"),
+            ModelStreamEvent(kind=ModelStreamEventKind.DONE),
+        )
+    )
+    await _run_durable(
+        model,
+        RunAgentInput(state_id="run-1", instruction="original"),
+        states,
+        signals,
+        evidence,
+    )
+    signals.append(
+        AgentSignal(id="stop", agent_state_id="run-1", kind=AgentSignalKind.CANCEL)
+    )
+
+    items = await wait_for(
+        _drive(
+            _runner(model, states, signals, evidence),
+            RunAgentInput(state_id="run-1", instruction="original", resume=True),
+            events_surface,
+        ),
+        1,
+    )
+
+    assert states.get("run-1").status is AgentStatus.CANCELLED
+    terminal = items[-1]
+    if events_surface:
+        assert isinstance(terminal, RunFinishedEvent) and terminal.error is not None
+    else:
+        assert isinstance(terminal, AgentYield)
+        assert terminal.kind is AgentYieldKind.CANCEL

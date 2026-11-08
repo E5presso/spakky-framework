@@ -703,7 +703,10 @@ class AgentRunner:
                     ):
                         await self._await_signal_arrival(context)
                         self._apply_steering(state, context)
-                    continue
+                    # A pending cancel falls through to the cancel poll below instead
+                    # of re-entering the rehydration wait it can never satisfy.
+                    if not self._cancel_pending(context.state_id):
+                        continue
             except TimeoutError:
                 failure = self._timeout_error(context)
                 self._fail_execution(state, failure)
@@ -1187,7 +1190,10 @@ class AgentRunner:
                     ):
                         await self._await_signal_arrival(context)
                         self._apply_steering(state, context)
-                    continue
+                    # A pending cancel falls through to the cancel poll below instead
+                    # of re-entering the rehydration wait it can never satisfy.
+                    if not self._cancel_pending(context.state_id):
+                        continue
             except TimeoutError:
                 yield self._fail_on_model_error(state, self._timeout_error(context))
                 return

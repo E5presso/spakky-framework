@@ -433,7 +433,7 @@ def test_agent_bootstrap_expect_container_signal_mailbox_bound_to_agent() -> Non
 
 
 def test_agent_bootstrap_without_signal_mailbox_expect_agent_left_unbound() -> None:
-    """메일박스가 등록되지 않은 컨테이너는 agent에 아무 메일박스도 결속하지 않는다."""
+    """메일박스 없는 컨테이너는 이전 앱이 남긴 결속을 지우고 아무것도 결속하지 않는다."""
 
     @Agent()
     class MailboxlessAgent:
@@ -446,6 +446,7 @@ def test_agent_bootstrap_without_signal_mailbox_expect_agent_left_unbound() -> N
                 payload=Final(output=command, metadata={}),
             )
 
+    Agent.get(MailboxlessAgent).signal_mailbox = agent_api.InProcessAgentSignalMailbox()
     app = SpakkyApplication(ApplicationContext())
     app.add(AgentBootstrapValidationPostProcessor)
     app.add(MailboxlessAgent)

@@ -51,11 +51,14 @@ class AgentBootstrapValidationPostProcessor(IPostProcessor, IContainerAware):
         Declarative ``execute()`` and local delegation build runners straight
         from the agent instance rather than through ``AgentRunnerFactory``.
         """
-        if self._container is None or not self._container.contains(
-            IAgentSignalSubscriber
-        ):
-            return
-        agent.signal_mailbox = self._container.get(IAgentSignalSubscriber)
+        # Agent metadata is class-scoped, so every bootstrap overwrites it: an
+        # application without a mailbox must not inherit a previous app's one.
+        container = self._container
+        agent.signal_mailbox = (
+            container.get(IAgentSignalSubscriber)
+            if container is not None and container.contains(IAgentSignalSubscriber)
+            else None
+        )
 
     def _validate_persistence_contributions(self, agent: Agent) -> None:
         required_types = agent.required_persistence_repository_types()
