@@ -43,6 +43,7 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 | [ADR-0021](0021-multimodal-model-content-and-llm-execution-policy.md) | Multimodal model content와 explicit LLM execution policy — media authority, fallback/cache/resilience, durable identity | Accepted | 2026-08-23 |
 
 | [ADR-0022](0022-optional-domain-event-mediator-provider.md) | 로컬 domain event mediator의 명시적 플러그인 분리 | Accepted | 2026-10-28 |
+| [ADR-0023](0023-live-per-run-signal-mailbox.md) | 실행별 신호 메일박스와 control·steering 두 차선 — 커밋 후 게시, 시작 시 1회 재생, 폴링 제거 | Accepted | 2026-11-08 |
 
 ## 새 ADR 작성 가이드
 

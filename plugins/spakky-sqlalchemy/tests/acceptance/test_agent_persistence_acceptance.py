@@ -1,9 +1,11 @@
 """Acceptance tests for SQLAlchemy agent persistence contribution."""
 
+from asyncio import wait_for
 from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from threading import Thread
 from typing import cast
 
 import pytest
@@ -16,6 +18,7 @@ from spakky.agent import (
     AgentStateReason,
     AgentStateTransition,
     AgentStatus,
+    InProcessAgentSignalMailbox,
 )
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -144,6 +147,50 @@ def test_sqlalchemy_agent_contribution_acceptance_expect_restart_resume_state_si
         assert resumed.status is AgentStatus.ACTIVE
         assert signals.list_pending("run-1") == []
         assert states.list_resume_candidates() == [resumed]
+
+
+async def test_sqlalchemy_signal_committed_on_producer_thread_expect_run_mailbox_woken(
+    engine: Engine,
+) -> None:
+    """다른 스레드의 commit된 신호만 실행 메일박스를 깨우고, rollback은 깨우지 않는다."""
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    hub = InProcessAgentSignalMailbox()
+    mailbox = hub.subscribe("run-1")
+
+    def produce(signal_id: str, commit: bool) -> None:
+        with session_factory() as producer_session:
+            repository = SqlAlchemyAgentSignalRepository(
+                cast(SessionManager, _SessionManagerStub(session=producer_session)),
+                hub,
+            )
+            repository.append(
+                AgentSignal(
+                    id=signal_id,
+                    agent_state_id="run-1",
+                    kind=AgentSignalKind.CANCEL,
+                    created_at=datetime(2026, 5, 6, 4),
+                )
+            )
+            if commit:
+                producer_session.commit()
+            else:
+                producer_session.rollback()
+
+    rolled_back = Thread(target=produce, args=("rolled-back", False))
+    rolled_back.start()
+    rolled_back.join()
+    assert mailbox.drain() == ()
+
+    committed = Thread(target=produce, args=("committed", True))
+    committed.start()
+    await wait_for(mailbox.wait_control(), 1)
+    committed.join()
+
+    assert [signal.id for signal in mailbox.drain()] == ["committed"]
+    with session_factory() as reader:
+        _, signals, _ = _repositories(reader)
+        assert [signal.id for signal in signals.list_pending("run-1")] == ["committed"]
+    mailbox.close()
 
 
 def _repositories(

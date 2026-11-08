@@ -305,7 +305,11 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 - `spakky_agent_state`, `spakky_agent_signal`, `spakky_agent_evidence`
 
 각 repository는 현재 SQLAlchemy transactional session을 사용합니다. Signal은
-`consumed_at`으로 pending queue를 구분하고, Evidence repository는 append/read
+`consumed_at`으로 pending queue를 구분하는 원장이며, `IAgentSignalPublisher`가
+주입되면(`spakky-agent`가 기본 `InProcessAgentSignalMailbox`를 등록) 세션의
+`after_commit`에서만 실행 중 Agent의 메일박스로 게시하고 `after_rollback`이면
+버립니다. `AgentSignal.priority`는 실시간 전달 힌트라 테이블에 저장하지 않습니다.
+ Evidence repository는 append/read
 메서드만 노출해 agent-facing append-only 계약을 유지합니다.
 
 ## 주요 기능
@@ -335,7 +339,7 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 | `AsyncConnectionManager` | 비동기 SQLAlchemy engine lifecycle |
 | `SQLAlchemyConnectionConfig` | 환경변수 기반 설정 |
 | `SqlAlchemyAgentStateRepository` | `IAgentStateRepository`의 SQLAlchemy 구현 |
-| `SqlAlchemyAgentSignalRepository` | `IAgentSignalRepository`의 SQLAlchemy 구현. `consumed_at`으로 pending signal queue를 구분 |
+| `SqlAlchemyAgentSignalRepository` | `IAgentSignalRepository`의 SQLAlchemy 구현. `consumed_at`으로 pending signal queue를 구분하고, 주입된 `IAgentSignalPublisher`로 커밋 뒤에만 게시 |
 | `SqlAlchemyAgentEvidenceRepository` | `IAgentEvidenceRepository`의 SQLAlchemy 구현. append/read만 노출 |
 
 ## Repository 메서드

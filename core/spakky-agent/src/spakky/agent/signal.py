@@ -22,6 +22,30 @@ class AgentSignalKind(StrEnum):
     SCHEDULER_WAKE_UP = "scheduler_wake_up"
 
 
+class AgentSignalPriority(StrEnum):
+    """Producer-assigned urgency used only for live mailbox lane routing.
+
+    Priority is a delivery hint, not part of the durable ledger row. Replayed
+    signals are applied at the first safe boundary of a starting or resuming run,
+    where no in-flight work exists to interrupt.
+    """
+
+    NORMAL = "normal"
+    URGENT = "urgent"
+
+
+class AgentSignalLane(StrEnum):
+    """Live delivery lanes of a run mailbox.
+
+    ``CONTROL`` interrupts the in-flight model operation immediately (cancel and
+    urgent revisioned steering). ``STEERING`` waits in the run mailbox until the
+    next safe point, such as a finished model response or tool boundary.
+    """
+
+    CONTROL = "control"
+    STEERING = "steering"
+
+
 class ApprovalDecision(StrEnum):
     """Human-in-the-loop approval outcomes."""
 
@@ -41,6 +65,17 @@ class AgentSignal:
     kind: AgentSignalKind
     payload: JsonObject = field(default_factory=dict)
     created_at: datetime | None = None
+    priority: AgentSignalPriority = AgentSignalPriority.NORMAL
+
+    @property
+    def lane(self) -> AgentSignalLane:
+        """Return the live mailbox lane selected by kind and producer priority."""
+        if (
+            self.kind is AgentSignalKind.CANCEL
+            or self.priority is AgentSignalPriority.URGENT
+        ):
+            return AgentSignalLane.CONTROL
+        return AgentSignalLane.STEERING
 
 
 class AgentSteeringUpdate(BaseModel):

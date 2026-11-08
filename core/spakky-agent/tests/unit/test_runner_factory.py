@@ -12,6 +12,7 @@ from spakky.agent import (
     IAgentModelResolver,
     IAgentTelemetry,
     AgentSpanRecord,
+    InProcessAgentSignalMailbox,
     ModelCapability,
     ModelPrice,
     ModelPricingCatalog,
@@ -123,6 +124,41 @@ async def test_runner_factory_injects_optional_telemetry_and_pricing() -> None:
     ) as runner:
         assert runner.telemetry is telemetry
         assert runner.pricing is pricing
+
+
+async def test_runner_factory_wires_default_signal_mailbox() -> None:
+    """Factory supplies the DI signal mailbox to runners whose agent injected none."""
+    mailbox = InProcessAgentSignalMailbox()
+    factory = AgentRunnerFactory(signal_mailbox=mailbox)
+
+    async with factory.open_runner(
+        _ModelSwitchableAgent(_Model("fallback")),
+        run_input=RunAgentInput(state_id="run-4", instruction="answer"),
+    ) as runner:
+        assert runner.signal_mailbox is mailbox
+
+
+@Agent(spec=AgentExecutionSpec(name="mailbox_owning"))
+class _MailboxOwningAgent:
+    """Agent fixture injecting its own live signal mailbox port."""
+
+    def __init__(
+        self, model: IAgentModel, mailbox: InProcessAgentSignalMailbox
+    ) -> None:
+        self._model = model
+        self._mailbox = mailbox
+
+
+async def test_runner_factory_keeps_agent_injected_signal_mailbox() -> None:
+    """An agent-injected mailbox wins over the factory default mailbox."""
+    owned = InProcessAgentSignalMailbox()
+    factory = AgentRunnerFactory(signal_mailbox=InProcessAgentSignalMailbox())
+
+    async with factory.open_runner(
+        _MailboxOwningAgent(_Model("fallback"), owned),
+        run_input=RunAgentInput(state_id="run-5", instruction="answer"),
+    ) as runner:
+        assert runner.signal_mailbox is owned
 
 
 async def _empty_stream() -> AsyncIterator[ModelStreamEvent]:

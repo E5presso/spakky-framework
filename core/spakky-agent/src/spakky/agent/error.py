@@ -63,3 +63,15 @@ class AgentMemoryError(AbstractSpakkyAgentError):
     """Raised when long-term memory cannot safely cross its scoped boundary."""
 
     message = "Agent memory operation failed"
+
+
+class AgentSignalMailboxConfigurationError(AgentBootstrapError):
+    """Raised when a run must wait for live input but has no signal mailbox."""
+
+    message = "Agent signal mailbox is required to wait for live input"
+
+
+class AgentSignalInboxConflictError(AbstractSpakkyAgentError):
+    """Raised when one runner opens two live inboxes for the same agent state."""
+
+    message = "Agent state already has an open signal inbox on this runner"

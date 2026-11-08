@@ -95,8 +95,11 @@ history를 교체하고, 낮은 revision과 동일 중복은 다시 적용하지
 상충 update는 `AgentDefinitionError`입니다. 철회는 입력 원문을 제거하되 revision
 tombstone을 보존합니다.
 
-Runner는 모델 응답 대기 중에도 변경을 확인하고 취소·cleanup 후 다음 모델 요청을
-시작합니다. `final=False` 입력이나 복원이 필요한 입력이 남아 있으면 도구와 final을
+Runner는 모델 응답 대기 중 실행별 메일박스의 control 차선을 함께 기다립니다.
+`CANCEL`이나 `AgentSignal(priority=AgentSignalPriority.URGENT)` 변경은 진행 중 작업을
+취소·cleanup한 뒤 다음 단계로 넘어가고, 일반 변경은 응답이 끝난 안전 지점에서
+주입합니다. 실시간 전달 포트는 아래 Signal 절의 `spakky.agent.mailbox`와
+[ADR-0023](../../adr/0023-live-per-run-signal-mailbox.md)을 참조하세요. `final=False` 입력이나 복원이 필요한 입력이 남아 있으면 도구와 final을
 보류합니다. 미실행 pending call은 `input_revised` 결과로 닫고 이미 실행한 효과와
 counter는 보존합니다. `Progress(current_step="steering")`의 `invalidate_output=True`는
 이전 출력 무효화 알림이며, event surface에서는 `signal_progress` artifact입니다.
@@ -380,6 +383,10 @@ checkpoint-bound field가 달라지면 pending action 전에 `agent_checkpoint_i
       show_root_heading: false
 
 ::: spakky.agent.signal_consumption
+    options:
+      show_root_heading: false
+
+::: spakky.agent.mailbox
     options:
       show_root_heading: false
 
