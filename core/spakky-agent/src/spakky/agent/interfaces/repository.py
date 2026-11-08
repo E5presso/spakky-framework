@@ -3,7 +3,8 @@
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from spakky.agent.evidence import AgentEvidence
+from spakky.agent.error import AgentEvidenceOriginQueryUnsupportedError
+from spakky.agent.evidence import AgentEvidence, AgentEvidenceKind
 from spakky.agent.signal import AgentSignal
 from spakky.agent.state import AgentState, AgentStatus
 
@@ -78,3 +79,33 @@ class IAgentEvidenceRepository(ABC):
     def list_by_manifest_ref(self, manifest_ref: str) -> Sequence[AgentEvidence]:
         """Return evidence artifacts associated with a context manifest."""
         ...
+
+    def count_by_state(self, state_id: str) -> int:
+        """Return how many evidence artifacts an agent state has.
+
+        Durable stores override this with a count query so appending evidence
+        does not read every earlier artifact of the run.
+        """
+        return len(self.list_by_state(state_id))
+
+    def has_step_evidence(
+        self,
+        state_id: str,
+        kind: AgentEvidenceKind,
+        model_step: int,
+        digest: str,
+    ) -> bool:
+        """Return whether one step-scoped context artifact was already recorded."""
+        return any(
+            item.kind == kind
+            and item.model_step == model_step
+            and item.digest == digest
+            for item in self.list_by_state(state_id)
+        )
+
+    def list_by_origin_ref(self, origin_ref: str) -> Sequence[AgentEvidence]:
+        """Return context evidence whose model context used ``origin_ref``.
+
+        Stores without an origin index cannot answer this query.
+        """
+        raise AgentEvidenceOriginQueryUnsupportedError()

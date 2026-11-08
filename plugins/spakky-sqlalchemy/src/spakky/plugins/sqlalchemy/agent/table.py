@@ -13,10 +13,14 @@ from spakky.agent.state import (
     AgentStatus,
 )
 from spakky.agent.types import JsonObject
-from sqlalchemy import JSON, DateTime, Index, Integer, Text
+from sqlalchemy import DateTime, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from spakky.plugins.sqlalchemy.orm.table import AbstractMappableTable, Table
+from spakky.plugins.sqlalchemy.orm.table import (
+    AbstractMappableTable,
+    AbstractTable,
+    Table,
+)
 
 
 @Table()
@@ -38,9 +42,6 @@ class AgentStateTable(AbstractMappableTable[AgentState]):
     )
     last_event_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
     recovery_marker: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metadata_json: Mapped[JsonObject] = mapped_column(
-        "metadata", JSON, nullable=False, default=dict
-    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -67,12 +68,15 @@ class AgentStateTable(AbstractMappableTable[AgentState]):
             pending_signal_count=domain.pending_signal_count,
             last_event_cursor=domain.last_event_cursor,
             recovery_marker=domain.recovery_marker,
-            metadata_json=domain.metadata,
             created_at=domain.created_at,
             updated_at=domain.updated_at,
         )
 
     def to_domain(self) -> AgentState:
+        return self.restore({})
+
+    def restore(self, metadata: JsonObject) -> AgentState:
+        """Rebuild the state with its separately stored metadata document."""
         return AgentState(
             id=self.id,
             agent_type=self.agent_type,
@@ -87,7 +91,7 @@ class AgentStateTable(AbstractMappableTable[AgentState]):
             pending_signal_count=self.pending_signal_count,
             last_event_cursor=self.last_event_cursor,
             recovery_marker=self.recovery_marker,
-            metadata=self.metadata_json,
+            metadata=metadata,
             created_at=self.created_at,
             updated_at=self.updated_at,
         )
@@ -102,7 +106,6 @@ class AgentSignalTable(AbstractMappableTable[AgentSignal]):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     agent_state_id: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[JsonObject] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -125,16 +128,19 @@ class AgentSignalTable(AbstractMappableTable[AgentSignal]):
             id=domain.id,
             agent_state_id=domain.agent_state_id,
             kind=domain.kind.value,
-            payload=domain.payload,
             created_at=domain.created_at,
         )
 
     def to_domain(self) -> AgentSignal:
+        return self.restore({})
+
+    def restore(self, payload: JsonObject) -> AgentSignal:
+        """Rebuild the signal with its separately stored payload document."""
         return AgentSignal(
             id=self.id,
             agent_state_id=self.agent_state_id,
             kind=AgentSignalKind(self.kind),
-            payload=self.payload,
+            payload=payload,
             created_at=self.created_at,
         )
 
@@ -148,7 +154,7 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     agent_state_id: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[JsonObject] = mapped_column(JSON, nullable=False, default=dict)
+    model_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     digest: Mapped[str | None] = mapped_column(Text, nullable=True)
     manifest_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -160,6 +166,13 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
     __table_args__ = (
         Index("ix_spakky_agent_evidence_state", "agent_state_id", "created_at"),
         Index("ix_spakky_agent_evidence_manifest", "manifest_ref", "created_at"),
+        Index(
+            "ix_spakky_agent_evidence_step",
+            "agent_state_id",
+            "kind",
+            "model_step",
+            "digest",
+        ),
     )
 
     @classmethod
@@ -168,7 +181,7 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
             id=domain.id,
             agent_state_id=domain.agent_state_id,
             kind=domain.kind.value,
-            payload=domain.payload,
+            model_step=domain.model_step,
             summary=domain.summary,
             digest=domain.digest,
             manifest_ref=domain.manifest_ref,
@@ -177,14 +190,35 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
         )
 
     def to_domain(self) -> AgentEvidence:
+        return self.restore({}, ())
+
+    def restore(
+        self, payload: JsonObject, origin_refs: tuple[str, ...]
+    ) -> AgentEvidence:
+        """Rebuild the evidence with its payload document and origin index rows."""
         return AgentEvidence(
             id=self.id,
             agent_state_id=self.agent_state_id,
             kind=AgentEvidenceKind(self.kind),
-            payload=self.payload,
+            payload=payload,
+            model_step=self.model_step,
+            origin_refs=origin_refs,
             summary=self.summary,
             digest=self.digest,
             manifest_ref=self.manifest_ref,
             reference=self.reference,
             created_at=self.created_at,
         )
+
+
+@Table()
+class AgentEvidenceOriginTable(AbstractTable):
+    """Index from a context source reference to the evidence that used it."""
+
+    __tablename__ = "spakky_agent_evidence_origin"
+
+    evidence_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    origin_ref: Mapped[str] = mapped_column(Text, primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (Index("ix_spakky_agent_evidence_origin_ref", "origin_ref"),)

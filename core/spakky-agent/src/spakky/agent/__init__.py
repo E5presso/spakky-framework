@@ -26,6 +26,7 @@ from spakky.agent.error import (
     AgentToolDispatchError,
 )
 from spakky.agent.dispatcher import AgentToolDispatcher
+from spakky.agent.extension import AgentRunExtension
 from spakky.agent.context import (
     AgentContext,
     ContextDigest,
@@ -37,6 +38,7 @@ from spakky.agent.context import (
     ContextOptimizationActionKind,
     ContextOptimizationEvidenceStage,
     ContextPack,
+    ContextPlacement,
     ContextPackRole,
     ContextRotSymptom,
     ContextSensitivity,
@@ -309,6 +311,7 @@ PLUGIN_NAME = Plugin(name="spakky-agent")
 """Plugin identifier for the Spakky Agent package."""
 
 __all__ = [
+    "AgentRunExtension",
     "AgentSteeringUpdate",
     "IAgentModel",
     "IAgentModelResolver",
@@ -447,6 +450,7 @@ __all__ = [
     "ContextOptimizationActionKind",
     "ContextOptimizationEvidenceStage",
     "ContextPack",
+    "ContextPlacement",
     "ContextPackRole",
     "ContextRotSymptom",
     "ContextSensitivity",

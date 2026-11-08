@@ -54,6 +54,10 @@ class AgentEvidence:
     reference: str | None = None
     sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
     created_at: datetime | None = None
+    model_step: int | None = None
+    """Model step whose context this evidence records, for step-scoped kinds."""
+    origin_refs: tuple[str, ...] = ()
+    """Source references the recorded model context was built from."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +71,8 @@ class AgentEvidenceCandidate:
     manifest_ref: str | None = None
     reference: str | None = None
     sensitive_fields: tuple[SensitiveFieldDescriptor, ...] = ()
+    model_step: int | None = None
+    origin_refs: tuple[str, ...] = ()
 
     @classmethod
     def tool_result(
@@ -219,6 +225,8 @@ class AgentEvidenceCandidate:
             reference=self.reference,
             sensitive_fields=self.sensitive_fields,
             created_at=created_at,
+            model_step=self.model_step,
+            origin_refs=self.origin_refs,
         )
 
 
