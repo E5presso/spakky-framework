@@ -156,9 +156,10 @@ class AbstractValueObject(AbstractDomainModel, IEquatable, ICloneable, IDataclas
         # OrderedDict, defaultdict) keep their own __eq__/__hash__.
         rebuild: Callable[..., dict[object, object]] = type(value)
         if hasattr(type(value), "default_factory"):  # astuple's defaultdict rule
-            rebuilt = rebuild(getattr(value, "default_factory"))  # factory by name
-            rebuilt.update(pairs)
-            return rebuilt
+            return rebuild(
+                getattr(value, "default_factory"),  # defaultdict factory by name
+                dict(pairs),
+            )
         return rebuild(pairs)
 
     @staticmethod
