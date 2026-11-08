@@ -32,7 +32,13 @@ from asyncio import (
     wait,
 )
 from contextlib import contextmanager, suppress
-from collections.abc import AsyncGenerator, Awaitable, Iterator, Mapping, Sequence
+from collections.abc import (
+    AsyncGenerator,
+    Awaitable,
+    Generator,
+    Mapping,
+    Sequence,
+)
 from copy import copy
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from decimal import Decimal, InvalidOperation
@@ -3927,7 +3933,7 @@ class AgentRunner:
         return self.states
 
     @contextmanager
-    def _signal_inbox(self, state_id: str) -> Iterator[None]:
+    def _signal_inbox(self, state_id: str) -> Generator[None, None, None]:
         """Open the live inbox of one durable run and close it with the run.
 
         The mailbox subscription opens before the one-time ledger replay, so a
