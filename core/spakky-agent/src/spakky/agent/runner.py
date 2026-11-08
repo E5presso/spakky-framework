@@ -23,16 +23,22 @@ reasoning capability (graceful degrade, ADR-0013 §4).
 """
 
 from asyncio import (
+    FIRST_COMPLETED,
     CancelledError,
     TimeoutError,
     ensure_future,
     get_running_loop,
     timeout_at,
     wait,
-    sleep,
 )
-from contextlib import suppress
-from collections.abc import AsyncGenerator, Awaitable, Mapping, Sequence
+from contextlib import contextmanager, suppress
+from collections.abc import (
+    AsyncGenerator,
+    Awaitable,
+    Generator,
+    Mapping,
+    Sequence,
+)
 from copy import copy
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from decimal import Decimal, InvalidOperation
@@ -79,6 +85,8 @@ from spakky.agent.error import (
     AgentDefinitionError,
     AgentModelConfigurationError,
     AgentPersistenceConfigurationError,
+    AgentSignalInboxConflictError,
+    AgentSignalMailboxConfigurationError,
     AgentToolDispatchError,
 )
 from spakky.agent.event import (
@@ -130,6 +138,7 @@ from spakky.agent.interfaces.repository import (
     IAgentStateRepository,
 )
 from spakky.agent.interfaces.task_store import ConversationTurn, ITaskStore
+from spakky.agent.mailbox import AgentRunMailbox, IAgentSignalSubscriber
 from spakky.agent.recovery import (
     AgentActionBoundaryCheckpoint,
     AgentActionKind,
@@ -140,6 +149,7 @@ from spakky.agent.retrieval import RetrievalContext, RetrievalTool
 from spakky.agent.signal import (
     AgentSignal,
     AgentSignalKind,
+    AgentSignalLane,
     AgentSteeringUpdate,
     ApprovalDecision,
 )
@@ -270,8 +280,60 @@ class _ModelStepAccumulator:
         self.metadata.update(event.metadata)
 
 
-STEERING_POLL_SECONDS = 0.01
-"""Observation interval for durable input revisions; not an execution timeout."""
+@dataclass(slots=True)
+class _SignalInbox:
+    """In-memory view of one run's unconsumed signals.
+
+    With a live mailbox the durable ledger is read exactly once, when the run
+    opens its inbox; later observations drain only mailbox deliveries, so an
+    idle or busy run without new signals issues no ledger queries. Without a
+    mailbox the ledger is re-read at each safe-boundary observation (no timed
+    polling) and in-flight work cannot be interrupted.
+    """
+
+    state_id: str
+    repository: IAgentSignalRepository
+    mailbox: AgentRunMailbox | None
+    pending: dict[str, AgentSignal] = field(default_factory=dict)
+    consumed: set[str] = field(default_factory=set)
+    # fresh records an admission the current wait loop has not yet observed, so
+    # a boundary check that drained the mailbox cannot swallow a wake-up.
+    fresh: bool = False
+
+    def replay(self) -> None:
+        """Admit unconsumed ledger rows once at run start or resume."""
+        for signal in self.repository.list_pending(self.state_id):
+            self._admit(signal)
+
+    def signals(self) -> tuple[AgentSignal, ...]:
+        """Return unconsumed signals in ledger-then-arrival order."""
+        if self.mailbox is None:
+            return tuple(self.repository.list_pending(self.state_id))
+        for signal in self.mailbox.drain():
+            self._admit(signal)
+        return tuple(self.pending.values())
+
+    def consume(self, signal: AgentSignal) -> AgentSignal:
+        """Acknowledge an applied signal in the ledger, then forget it."""
+        consumed = self.repository.mark_consumed(signal.id)
+        self.pending.pop(signal.id, None)
+        self.consumed.add(signal.id)
+        return consumed
+
+    async def wait_for_arrival(self) -> None:
+        """Return once a signal arrived since the previous wait."""
+        if self.mailbox is None:
+            raise AgentSignalMailboxConfigurationError()
+        if not self.fresh:
+            await self.mailbox.wait()
+        self.fresh = False
+
+    def _admit(self, signal: AgentSignal) -> None:
+        if signal.agent_state_id != self.state_id or signal.id in self.consumed:
+            return
+        if signal.id not in self.pending:
+            self.pending[signal.id] = signal
+            self.fresh = True
 
 
 class _SteeringRestart(Exception):
@@ -373,6 +435,12 @@ class AgentRunner:
     context_provider: IAgentContextProvider | None = None
     pricing: ModelPricingCatalog | None = None
     telemetry: IAgentTelemetry | None = None
+    # signal_mailbox is None when no live delivery port is wired; the runner then
+    # observes the ledger only at safe boundaries and cannot wait for new input.
+    signal_mailbox: IAgentSignalSubscriber | None = None
+    _inboxes: dict[str, _SignalInbox] = field(
+        default_factory=dict, init=False, compare=False, repr=False
+    )
 
     @classmethod
     def for_agent_instance(cls, instance: object) -> "AgentRunner":
@@ -397,6 +465,9 @@ class AgentRunner:
         context_provider = cls._resolve_optional(attributes, IAgentContextProvider)
         pricing = cls._resolve_optional(attributes, ModelPricingCatalog)
         telemetry = cls._resolve_optional(attributes, IAgentTelemetry)
+        signal_mailbox = cls._resolve_optional(attributes, IAgentSignalSubscriber)
+        if signal_mailbox is None:
+            signal_mailbox = agent.signal_mailbox
         tool_providers = tuple(
             attribute
             for attribute in attributes
@@ -425,6 +496,7 @@ class AgentRunner:
             context_provider=context_provider,
             pricing=pricing,
             telemetry=telemetry,
+            signal_mailbox=signal_mailbox,
         )
         runner._require_durable_ports()
         return runner
@@ -440,6 +512,10 @@ class AgentRunner:
     def with_telemetry(self, telemetry: IAgentTelemetry) -> "AgentRunner":
         """Return a runner emitting completed spans to one observer."""
         return replace(self, telemetry=telemetry)
+
+    def with_signal_mailbox(self, mailbox: IAgentSignalSubscriber) -> "AgentRunner":
+        """Return a runner receiving live signals through one mailbox port."""
+        return replace(self, signal_mailbox=mailbox)
 
     async def run(
         self,
@@ -567,6 +643,15 @@ class AgentRunner:
         self,
         run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentEvent, None]:
+        """Run the event loop while this run's live signal inbox stays open."""
+        with self._signal_inbox(run_input.state_id):
+            async for event in self._run_events_session(run_input):
+                yield event
+
+    async def _run_events_session(
+        self,
+        run_input: RunAgentInput,
+    ) -> AsyncGenerator[AgentEvent, None]:
         """Run the bounded iterative loop as protocol-neutral lifecycle events."""
         attribution = self._event_attribution(run_input)
         state = (
@@ -613,17 +698,15 @@ class AgentRunner:
                         ),
                         attribution,
                     )
-                    while context.steering_rehydration and not any(
-                        signal.kind is AgentSignalKind.CANCEL
-                        for signal in self._signals_required().list_pending(
-                            context.state_id
-                        )
+                    while context.steering_rehydration and not self._cancel_pending(
+                        context.state_id
                     ):
-                        await self._await_with_deadline(
-                            sleep(STEERING_POLL_SECONDS), context.deadline
-                        )
+                        await self._await_signal_arrival(context)
                         self._apply_steering(state, context)
-                    continue
+                    # A pending cancel falls through to the cancel poll below instead
+                    # of re-entering the rehydration wait it can never satisfy.
+                    if not self._cancel_pending(context.state_id):
+                        continue
             except TimeoutError:
                 failure = self._timeout_error(context)
                 self._fail_execution(state, failure)
@@ -808,14 +891,9 @@ class AgentRunner:
                     and self._provisional_steering(context)
                     and accumulator.error is None
                 ):
-                    if state is not None and any(
-                        signal.kind is AgentSignalKind.CANCEL
-                        for signal in self._signals_required().list_pending(state.id)
-                    ):
+                    if state is not None and self._cancel_pending(state.id):
                         raise _SteeringRestart()
-                    await self._await_with_deadline(
-                        sleep(STEERING_POLL_SECONDS), context.deadline
-                    )
+                    await self._await_signal_arrival(context)
                     revised = self._apply_steering(state, context)
                 if revised:
                     raise _SteeringRestart()
@@ -1040,6 +1118,15 @@ class AgentRunner:
         run_input: RunAgentInput,
         states: IAgentStateRepository,
     ) -> AsyncGenerator[AgentYield[object], None]:
+        with self._signal_inbox(run_input.state_id):
+            async for item in self._run_durable_session(run_input, states):
+                yield item
+
+    async def _run_durable_session(
+        self,
+        run_input: RunAgentInput,
+        states: IAgentStateRepository,
+    ) -> AsyncGenerator[AgentYield[object], None]:
         state = self._ensure_active_state(run_input, states)
         try:
             context = await self._execution_context(run_input, state)
@@ -1075,7 +1162,7 @@ class AgentRunner:
         plan = plan_agent_resume(
             state,
             self._evidence_required().list_by_state(state.id),
-            self._signals_required().list_pending(state.id),
+            self._pending_signals(state.id),
         )
         if (
             plan.action is AgentResumeAction.REQUIRE_HITL
@@ -1098,17 +1185,15 @@ class AgentRunner:
                 self._apply_steering(state, context)
                 if context.steering_rehydration:
                     yield _progress("awaiting input rehydration", "steering_wait")
-                    while context.steering_rehydration and not any(
-                        signal.kind is AgentSignalKind.CANCEL
-                        for signal in self._signals_required().list_pending(
-                            context.state_id
-                        )
+                    while context.steering_rehydration and not self._cancel_pending(
+                        context.state_id
                     ):
-                        await self._await_with_deadline(
-                            sleep(STEERING_POLL_SECONDS), context.deadline
-                        )
+                        await self._await_signal_arrival(context)
                         self._apply_steering(state, context)
-                    continue
+                    # A pending cancel falls through to the cancel poll below instead
+                    # of re-entering the rehydration wait it can never satisfy.
+                    if not self._cancel_pending(context.state_id):
+                        continue
             except TimeoutError:
                 yield self._fail_on_model_error(state, self._timeout_error(context))
                 return
@@ -1210,14 +1295,9 @@ class AgentRunner:
                     and self._provisional_steering(context)
                     and accumulator.error is None
                 ):
-                    if state is not None and any(
-                        signal.kind is AgentSignalKind.CANCEL
-                        for signal in self._signals_required().list_pending(state.id)
-                    ):
+                    if state is not None and self._cancel_pending(state.id):
                         raise _SteeringRestart()
-                    await self._await_with_deadline(
-                        sleep(STEERING_POLL_SECONDS), context.deadline
-                    )
+                    await self._await_signal_arrival(context)
                     revised = self._apply_steering(state, context)
                 if revised:
                     raise _SteeringRestart()
@@ -1513,15 +1593,20 @@ class AgentRunner:
     def _apply_steering(
         self, state: AgentState | None, context: _ExecutionContext
     ) -> bool:
-        """Consume revisioned steering before exposing a candidate or effect."""
+        """Consume revisioned steering before exposing a candidate or effect.
+
+        A pending cancel suppresses consumption at every safe point, so queued
+        steering stays unconsumed in the ledger when the run is cancelled.
+        """
         if (
             state is None
             or AgentSignalKind.STEERING_INSTRUCTION
             not in self.agent.spec.accepted_signals
+            or self._cancel_pending(state.id)
         ):
             return False
         changed = False
-        for signal in self._signals_required().list_pending(state.id):
+        for signal in self._pending_signals(state.id):
             if signal.kind is not AgentSignalKind.STEERING_INSTRUCTION:
                 continue
             # Legacy hook-only steering retains its established contract.
@@ -1555,10 +1640,10 @@ class AgentRunner:
                         else message
                         for message in context.history
                     ]
-                    self._signals_required().mark_consumed(signal.id)
+                    self._consume_signal(signal)
                     self._save_context(state, context)
                     continue
-                self._signals_required().mark_consumed(signal.id)
+                self._consume_signal(signal)
                 continue
             context.steering_rehydration.pop(update.input_id, None)
             self._discard_obsolete_batch(context)
@@ -1599,7 +1684,7 @@ class AgentRunner:
                         },
                     )
                 )
-            self._signals_required().mark_consumed(signal.id)
+            self._consume_signal(signal)
             changed = True
         if changed:
             self._save_context(state, context)
@@ -1701,20 +1786,30 @@ class AgentRunner:
         state: AgentState | None,
         context: _ExecutionContext,
     ) -> _SteeringResult:
-        """Invalidate blocked requests and await provider cleanup before continuation."""
+        """Await one model operation that only the control lane may interrupt.
+
+        The operation and the run mailbox's control lane are awaited together.
+        Cancel or urgent revisioned steering cancels the in-flight task (closing
+        a provider stream) and restarts the step; ordinary steering stays queued
+        in the inbox until the response finishes at a safe point.
+        """
         task = ensure_future(self._await_with_deadline(operation, context.deadline))
         try:
             while True:
-                if self._apply_steering(state, context):
+                if self._control_pending(state, context):
                     raise _SteeringRestart()
-                if state is not None and any(
-                    signal.kind is AgentSignalKind.CANCEL
-                    for signal in self._signals_required().list_pending(state.id)
-                ):
-                    raise _SteeringRestart()
-                done, _ = await wait((task,), timeout=STEERING_POLL_SECONDS)
-                if done:
-                    if self._apply_steering(state, context):
+                mailbox = (
+                    None if state is None else self._inbox_required(state.id).mailbox
+                )
+                if mailbox is None:
+                    return await task
+                control = ensure_future(mailbox.wait_control())
+                try:
+                    done, _ = await wait((task, control), return_when=FIRST_COMPLETED)
+                finally:
+                    control.cancel()
+                if task in done:
+                    if self._control_pending(state, context):
                         raise _SteeringRestart()
                     return task.result()
         finally:
@@ -1725,6 +1820,27 @@ class AgentRunner:
                     await task
             elif not task.cancelled():
                 task.exception()
+
+    def _control_pending(
+        self, state: AgentState | None, context: _ExecutionContext
+    ) -> bool:
+        """Report whether a control-lane signal must interrupt in-flight work.
+
+        Urgent steering is applied together with steering queued before it, in
+        arrival order, so interrupting never reorders or drops earlier input.
+        """
+        if state is None:
+            return False
+        pending = self._pending_signals(state.id)
+        if any(signal.kind is AgentSignalKind.CANCEL for signal in pending):
+            return True
+        if any(
+            signal.kind is AgentSignalKind.STEERING_INSTRUCTION
+            and signal.lane is AgentSignalLane.CONTROL
+            for signal in pending
+        ):
+            return self._apply_steering(state, context)
+        return False
 
     async def _context_for_step(
         self,
@@ -3044,7 +3160,12 @@ class AgentRunner:
     ) -> AgentYield[object] | None:
         if state is None:
             return None
-        return await self._consume_cancel(self._states_required().get(state.id))
+        for signal in self._pending_signals(state.id):
+            if signal.kind is AgentSignalKind.CANCEL:
+                return await self._consume_cancel(
+                    self._states_required().get(state.id), signal
+                )
+        return None
 
     def _save_approval_pause(
         self,
@@ -3070,13 +3191,13 @@ class AgentRunner:
         state_id: str,
         request: AgentApprovalRequest,
     ) -> AgentApprovalDecisionOutcome | None:
-        for signal in self._signals_required().list_pending(state_id):
+        for signal in self._pending_signals(state_id):
             if signal.kind is not AgentSignalKind.APPROVAL_DECISION:
                 continue
             if _optional_signal_text(signal, "request_id") != request.id:
                 continue
             outcome = parse_agent_approval_decision_signal(signal, request=request)
-            self._signals_required().mark_consumed(signal.id)
+            self._consume_signal(signal)
             current = self._states_required().get(state_id)
             self._states_required().save(
                 materialize_agent_approval_decision_state(current, outcome)
@@ -3405,7 +3526,7 @@ class AgentRunner:
         plan = plan_agent_resume(
             state,
             self._evidence_required().list_by_state(state.id),
-            self._signals_required().list_pending(state.id),
+            self._pending_signals(state.id),
         )
         self._states_required().save(plan.state)
         return AgentYield(
@@ -3600,48 +3721,46 @@ class AgentRunner:
             "output_type": output_type.__name__,
         }
 
-    async def _consume_cancel(self, state: AgentState) -> AgentYield[object] | None:
-        for signal in self._signals_required().list_pending(state.id):
-            if signal.kind is not AgentSignalKind.CANCEL:
-                continue
-            self._signals_required().mark_consumed(signal.id)
-            cancelling = self._states_required().save(
-                begin_agent_cancellation(state, signal)
-            )
-            report = await run_agent_cancellation_cleanup(
-                state=cancelling,
-                signal=signal,
-                tasks=(),
-            )
-            self._append_candidate(
-                state.id,
-                report.to_evidence_candidate(summary="cancel cleanup completed"),
-            )
-            completed = self._states_required().save(
-                complete_agent_cancellation(cancelling, report)
-            )
-            checkpoint = state.metadata.get(RUNNER_CHECKPOINT_METADATA_KEY)
-            cost_metadata = (
-                _checkpoint_cost_metadata(checkpoint)
-                if isinstance(checkpoint, Mapping)
-                else {}
-            )
-            return AgentYield(
-                kind=AgentYieldKind.CANCEL,
-                payload=Cancel(
-                    reason=(
-                        _optional_signal_text(signal, "reason")
-                        or (completed.reason.value if completed.reason else None)
-                    ),
-                    requested_by=_optional_signal_text(signal, "requested_by"),
-                    metadata={
-                        "state": completed.status.value,
-                        "signal_id": signal.id,
-                        **cost_metadata,
-                    },
+    async def _consume_cancel(
+        self, state: AgentState, signal: AgentSignal
+    ) -> AgentYield[object]:
+        self._consume_signal(signal)
+        cancelling = self._states_required().save(
+            begin_agent_cancellation(state, signal)
+        )
+        report = await run_agent_cancellation_cleanup(
+            state=cancelling,
+            signal=signal,
+            tasks=(),
+        )
+        self._append_candidate(
+            state.id,
+            report.to_evidence_candidate(summary="cancel cleanup completed"),
+        )
+        completed = self._states_required().save(
+            complete_agent_cancellation(cancelling, report)
+        )
+        checkpoint = state.metadata.get(RUNNER_CHECKPOINT_METADATA_KEY)
+        cost_metadata = (
+            _checkpoint_cost_metadata(checkpoint)
+            if isinstance(checkpoint, Mapping)
+            else {}
+        )
+        return AgentYield(
+            kind=AgentYieldKind.CANCEL,
+            payload=Cancel(
+                reason=(
+                    _optional_signal_text(signal, "reason")
+                    or (completed.reason.value if completed.reason else None)
                 ),
-            )
-        return None
+                requested_by=_optional_signal_text(signal, "requested_by"),
+                metadata={
+                    "state": completed.status.value,
+                    "signal_id": signal.id,
+                    **cost_metadata,
+                },
+            ),
+        )
 
     async def _consume_inbound_signals(
         self,
@@ -3657,7 +3776,7 @@ class AgentRunner:
         message. Other kinds with no hook stay pending for a later boundary rather
         than being silently consumed without a handler.
         """
-        for signal in self._signals_required().list_pending(state.id):
+        for signal in self._pending_signals(state.id):
             if signal.kind in (
                 AgentSignalKind.CANCEL,
                 AgentSignalKind.APPROVAL_DECISION,
@@ -3698,7 +3817,7 @@ class AgentRunner:
         signal: AgentSignal,
         hooks: Sequence[AgentSignalHookDescriptor],
     ) -> AsyncGenerator[AgentYield[object], None]:
-        self._signals_required().mark_consumed(signal.id)
+        self._consume_signal(signal)
         self._append_candidate(
             state.id,
             AgentEvidenceCandidate(
@@ -3716,7 +3835,7 @@ class AgentRunner:
         state: AgentState,
         signal: AgentSignal,
     ) -> AgentYield[object]:
-        self._signals_required().mark_consumed(signal.id)
+        self._consume_signal(signal)
         self._append_candidate(
             state.id,
             AgentEvidenceCandidate(
@@ -3821,12 +3940,60 @@ class AgentRunner:
             )
         return self.states
 
-    def _signals_required(self) -> IAgentSignalRepository:
-        if self.signals is None:  # pragma: no cover - durable guard
+    @contextmanager
+    def _signal_inbox(self, state_id: str) -> Generator[None, None, None]:
+        """Open the live inbox of one durable run and close it with the run.
+
+        The mailbox subscription opens before the one-time ledger replay, so a
+        signal committed in between appears in both and is deduplicated by id.
+        """
+        if self.states is None or self.signals is None:
+            yield
+            return
+        if state_id in self._inboxes:
+            raise AgentSignalInboxConflictError()
+        mailbox = (
+            self.signal_mailbox.subscribe(state_id)
+            if self.signal_mailbox is not None
+            else None
+        )
+        inbox = _SignalInbox(state_id, self.signals, mailbox)
+        self._inboxes[state_id] = inbox
+        try:
+            if mailbox is not None:
+                inbox.replay()
+            yield
+        finally:
+            del self._inboxes[state_id]
+            if mailbox is not None:
+                mailbox.close()
+
+    def _inbox_required(self, state_id: str) -> _SignalInbox:
+        inbox = self._inboxes.get(state_id)
+        if inbox is None:  # pragma: no cover - durable entry points open inboxes
             raise AgentPersistenceConfigurationError(
-                "Agent run reached a durable path without a signal repository"
+                "Agent run reached a durable path without an open signal inbox"
             )
-        return self.signals
+        return inbox
+
+    def _pending_signals(self, state_id: str) -> tuple[AgentSignal, ...]:
+        return self._inbox_required(state_id).signals()
+
+    def _consume_signal(self, signal: AgentSignal) -> AgentSignal:
+        return self._inbox_required(signal.agent_state_id).consume(signal)
+
+    async def _await_signal_arrival(self, context: _ExecutionContext) -> None:
+        """Wait for any live delivery instead of re-reading the ledger."""
+        await self._await_with_deadline(
+            self._inbox_required(context.state_id).wait_for_arrival(),
+            context.deadline,
+        )
+
+    def _cancel_pending(self, state_id: str) -> bool:
+        return any(
+            signal.kind is AgentSignalKind.CANCEL
+            for signal in self._pending_signals(state_id)
+        )
 
     def _evidence_required(self) -> IAgentEvidenceRepository:
         if self.evidence is None:  # pragma: no cover - durable guard

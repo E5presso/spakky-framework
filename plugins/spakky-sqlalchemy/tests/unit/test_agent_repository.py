@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
+from typing import cast, override
 from collections.abc import Generator
 
 import pytest
@@ -11,14 +11,17 @@ from spakky.agent import (
     AgentEvidenceKind,
     AgentSignal,
     AgentSignalKind,
+    AgentSignalPriority,
     AgentState,
     AgentStatus,
+    IAgentSignalPublisher,
 )
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from spakky.plugins.sqlalchemy.agent.error import AgentPersistenceRowNotFoundError
 from spakky.plugins.sqlalchemy.agent.repository import (
+    UNCOMMITTED_SIGNALS_KEY,
     SqlAlchemyAgentEvidenceRepository,
     SqlAlchemyAgentSignalRepository,
     SqlAlchemyAgentStateRepository,
@@ -128,6 +131,145 @@ def test_agent_signal_repository_expect_append_pending_and_mark_consumed(
 
     assert consumed == first_signal
     assert repository.list_pending("state-1") == [second_signal]
+
+
+class RecordingPublisher(IAgentSignalPublisher):
+    """Live publisher double recording every delivered signal."""
+
+    def __init__(self) -> None:
+        self.published: list[AgentSignal] = []
+
+    @override
+    def publish(self, signal: AgentSignal) -> None:
+        self.published.append(signal)
+
+
+def _urgent_signal(signal_id: str) -> AgentSignal:
+    return AgentSignal(
+        id=signal_id,
+        agent_state_id="state-1",
+        kind=AgentSignalKind.STEERING_INSTRUCTION,
+        payload={"input_id": "a", "revision": 1, "content": "x", "final": True},
+        created_at=datetime(2026, 5, 6, 1),
+        priority=AgentSignalPriority.URGENT,
+    )
+
+
+def test_agent_signal_repository_commit_expect_publish_only_after_commit(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """append은 row만 staging하고 commit이 끝난 뒤에만 live publisher를 깨운다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    stored = repository.append(_urgent_signal("signal-1"))
+
+    assert stored.priority is AgentSignalPriority.URGENT
+    assert publisher.published == []
+    session.commit()
+    assert [signal.id for signal in publisher.published] == ["signal-1"]
+    assert publisher.published[0].priority is AgentSignalPriority.URGENT
+    assert UNCOMMITTED_SIGNALS_KEY not in session.info
+
+
+def test_agent_signal_repository_rollback_expect_never_published(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """rollback된 신호는 게시되지 않고 다음 commit에도 섞이지 않는다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    repository.append(_urgent_signal("rolled-back"))
+    session.rollback()
+    repository.append(_urgent_signal("committed"))
+    session.commit()
+    session.commit()
+
+    assert [signal.id for signal in publisher.published] == ["committed"]
+    assert repository.list_pending("state-1") == [
+        AgentSignal(
+            id="committed",
+            agent_state_id="state-1",
+            kind=AgentSignalKind.STEERING_INSTRUCTION,
+            payload={"input_id": "a", "revision": 1, "content": "x", "final": True},
+            created_at=datetime(2026, 5, 6, 1),
+        )
+    ]
+
+
+def test_agent_signal_repository_without_publisher_expect_ledger_only(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """publisher가 없으면 원장에만 기록하고 commit 대기 목록을 만들지 않는다."""
+    repository = SqlAlchemyAgentSignalRepository(session_manager)
+
+    repository.append(_urgent_signal("signal-1"))
+    session.commit()
+
+    assert UNCOMMITTED_SIGNALS_KEY not in session.info
+    assert [signal.id for signal in repository.list_pending("state-1")] == ["signal-1"]
+
+
+def test_agent_signal_repository_released_savepoint_expect_wait_for_outer_commit(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """savepoint를 해제해도 게시하지 않고, 바깥 트랜잭션 commit에서 한 번만 게시한다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    with session.begin():
+        with session.begin_nested():
+            repository.append(_urgent_signal("inner"))
+        assert publisher.published == []
+
+    assert [signal.id for signal in publisher.published] == ["inner"]
+
+
+def test_agent_signal_repository_released_savepoint_outer_rollback_expect_unpublished(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """해제된 savepoint의 신호도 바깥 rollback이면 게시하지 않는다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    session.begin()
+    with session.begin_nested():
+        repository.append(_urgent_signal("inner"))
+    session.rollback()
+
+    assert publisher.published == []
+
+
+def test_agent_signal_repository_savepoint_rollback_expect_outer_signal_kept(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """savepoint rollback은 그 안의 신호만 버리고 바깥 신호는 commit 후 게시한다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    session.begin()
+    repository.append(_urgent_signal("outer"))
+    savepoint = session.begin_nested()
+    repository.append(_urgent_signal("inner"))
+    savepoint.rollback()
+    session.commit()
+
+    assert [signal.id for signal in publisher.published] == ["outer"]
+
+
+def test_agent_signal_repository_closed_session_expect_staging_discarded(
+    session: Session, session_manager: SessionManager
+) -> None:
+    """commit 없이 close한 세션의 신호는 같은 세션의 다음 commit에 섞이지 않는다."""
+    publisher = RecordingPublisher()
+    repository = SqlAlchemyAgentSignalRepository(session_manager, publisher)
+
+    repository.append(_urgent_signal("abandoned"))
+    session.close()
+    session.commit()
+
+    assert publisher.published == []
+    assert UNCOMMITTED_SIGNALS_KEY not in session.info
 
 
 def test_agent_signal_repository_mark_missing_expect_custom_error(

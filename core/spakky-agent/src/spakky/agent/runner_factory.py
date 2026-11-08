@@ -16,6 +16,7 @@ from spakky.core.pod.annotations.pod import Pod
 
 from spakky.agent.cost import ModelPricingCatalog
 from spakky.agent.inbound import RunAgentInput
+from spakky.agent.mailbox import IAgentSignalSubscriber
 from spakky.agent.model_resolver import IAgentModelResolver
 from spakky.agent.runner import AgentRunner
 from spakky.agent.telemetry import IAgentTelemetry
@@ -43,10 +44,12 @@ class AgentRunnerFactory(IAgentRunnerFactory):
         model_resolver: IAgentModelResolver | None = None,
         telemetry: IAgentTelemetry | None = None,
         pricing: ModelPricingCatalog | None = None,
+        signal_mailbox: IAgentSignalSubscriber | None = None,
     ) -> None:
         self._model_resolver = model_resolver
         self._telemetry = telemetry
         self._pricing = pricing
+        self._signal_mailbox = signal_mailbox
 
     @override
     @asynccontextmanager
@@ -65,4 +68,6 @@ class AgentRunnerFactory(IAgentRunnerFactory):
             runner = runner.with_telemetry(self._telemetry)
         if self._pricing is not None:
             runner = runner.with_pricing(self._pricing)
+        if self._signal_mailbox is not None and runner.signal_mailbox is None:
+            runner = runner.with_signal_mailbox(self._signal_mailbox)
         yield runner

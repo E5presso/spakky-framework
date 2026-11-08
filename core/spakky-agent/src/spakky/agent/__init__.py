@@ -20,6 +20,8 @@ from spakky.agent.error import (
     AgentOutputGuardError,
     AgentPersistenceConfigurationError,
     AgentRetrievalError,
+    AgentSignalInboxConflictError,
+    AgentSignalMailboxConfigurationError,
     AgentToolBindingError,
     AgentToolDispatchError,
 )
@@ -205,10 +207,18 @@ from spakky.agent.interfaces.model import (
     StructuredOutputSpec,
     ToolCallingSpec,
 )
+from spakky.agent.mailbox import (
+    AgentRunMailbox,
+    IAgentSignalPublisher,
+    IAgentSignalSubscriber,
+    InProcessAgentSignalMailbox,
+)
 from spakky.agent.signal import (
     AgentSteeringUpdate,
     AgentSignal,
     AgentSignalKind,
+    AgentSignalLane,
+    AgentSignalPriority,
     ApprovalDecision,
 )
 from spakky.agent.signal_consumption import (
@@ -305,7 +315,10 @@ __all__ = [
     "IAgentRunnerFactory",
     "IAgentEvidenceRepository",
     "IAgentEvaluator",
+    "IAgentSignalPublisher",
     "IAgentSignalRepository",
+    "IAgentSignalSubscriber",
+    "InProcessAgentSignalMailbox",
     "IAgentStateRepository",
     "IAgentContextHandler",
     "IAgentContextProvider",
@@ -380,6 +393,7 @@ __all__ = [
     "AgentResumeAction",
     "AgentResumeBoundary",
     "AgentResumePlan",
+    "AgentRunMailbox",
     "AgentRunResult",
     "AgentRunner",
     "AgentRunnerFactory",
@@ -388,8 +402,12 @@ __all__ = [
     "AgentSignalHookCatalog",
     "AgentSignalHookDescriptor",
     "AgentSignalHookIdentity",
+    "AgentSignalInboxConflictError",
     "AgentSignalKind",
+    "AgentSignalLane",
+    "AgentSignalMailboxConfigurationError",
     "AgentSignalPollPoint",
+    "AgentSignalPriority",
     "AgentTeammate",
     "AgentToolBindingError",
     "AgentToolApprovalContext",

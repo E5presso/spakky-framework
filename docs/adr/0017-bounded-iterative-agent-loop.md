@@ -156,9 +156,12 @@ its keyed input message; distinct inputs survive, old/exact duplicates are
 idempotent, conflicting equal revisions fail closed, and withdrawal keeps a
 revision tombstone. Legacy hook payloads without `input_id` remain unchanged.
 
-The runner polls the pending repository during blocked model awaits, cancels and
+A control-lane signal (cancel or `AgentSignalPriority.URGENT` steering) delivered
+through the run mailbox interrupts a blocked model await; the runner cancels and
 awaits provider cleanup, explicitly closes async-generator streams and only then
-starts a replacement model iteration in the same run. Cleanup failure blocks
+starts a replacement model iteration in the same run. Ordinary steering waits in
+the mailbox until the response finishes. The original 10 ms repository polling is
+superseded by [ADR-0023](0023-live-per-run-signal-mailbox.md). Cleanup failure blocks
 continuation. Provider adapters own actual remote cancellation acknowledgement.
 A provisional input may inform reasoning, but tool dispatch and final output
 wait for finalization/withdrawal. Revisions after tool-start or model-step-end

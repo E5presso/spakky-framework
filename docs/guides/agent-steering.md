@@ -118,11 +118,55 @@ AG-UI의 후속 `RunAgentInput`은 현재 실행의 revisioned steering signal�
 철회해도 마지막 revision 정보는 tombstone으로 남습니다. 늦게 도착한 옛 revision이
 철회한 입력을 되살릴 수 없습니다. 다시 입력하려면 더 높은 revision을 사용합니다.
 
+## 실시간 전달과 두 차선
+
+Signal repository의 행은 원장입니다. 실행 중인 Agent에는 실행별 메일박스로
+전달합니다. 실행은 시작·재개 때 원장의 미소비 신호를 1회 재생하고, 그 뒤로는
+원장을 다시 조회하지 않습니다. 생산자는 트랜잭션이 커밋된 뒤
+`IAgentSignalPublisher.publish()`로 알립니다. `spakky-sqlalchemy`의 signal
+repository는 가장 바깥 트랜잭션이 커밋될 때 자동으로 게시하고, 롤백이나
+savepoint 롤백으로 사라진 행은 게시하지 않습니다. 기본 구현 `InProcessAgentSignalMailbox`는 `spakky-agent` 플러그인이
+등록하며, 다른 스레드나 이벤트 루프에서 게시해도 실행 루프로 안전하게 넘깁니다.
+직접 만든 저장소를 쓴다면 커밋 뒤 같은 publisher를 호출해야 실행 중 신호가
+전달됩니다.
+
+신호마다 차선이 정해집니다.
+
+| 차선 | 대상 | 동작 |
+| --- | --- | --- |
+| control | `CANCEL`, `priority=AgentSignalPriority.URGENT` | 진행 중인 모델 작업을 즉시 취소합니다. |
+| steering | 그 밖의 신호(기본 `NORMAL`) | 응답을 끊지 않고 모델 응답 종료·도구 경계에서 한꺼번에 주입합니다. |
+
+```python
+from spakky.agent import AgentSignal, AgentSignalKind, AgentSignalPriority
+
+signals.append(
+    AgentSignal(
+        id=delivery_id,
+        agent_state_id=state_id,
+        kind=AgentSignalKind.STEERING_INSTRUCTION,
+        payload=update.model_dump(mode="json"),
+        priority=AgentSignalPriority.URGENT,
+    )
+)
+```
+
+`priority`는 실시간 전달용 힌트이며 원장 행에 저장하지 않습니다. 재생되는
+신호는 실행 시작의 첫 안전 지점에서 적용되므로 끊을 진행 작업이 없습니다.
+긴급 조향으로 중단하면 그보다 먼저 쌓인 일반 조향도 도착 순서대로 함께
+주입합니다. 취소가 대기 중이면 어느 안전 지점에서도 조향을 소비하지 않고 원장에
+남깁니다. `AgentRunnerFactory`, 선언형 `execute()`, 로컬 위임은 bootstrap 때
+결속된 기본 메일박스를 사용합니다. DI 밖에서 메일박스 없이 만든 runner는 진행 중
+작업을 끊지 못하고, 새 입력을 기다려야 하는 지점에서
+`AgentSignalMailboxConfigurationError`로 실패합니다. 설계 근거는
+[ADR-0023](../adr/0023-live-per-run-signal-mailbox.md)에 있습니다.
+
 ## 진행 중인 모델 요청과 도구 호출
 
-Runner는 모델 이벤트를 기다리는 중에도 queue를 확인합니다. 새 revision이 있으면
-이전 모델 작업을 취소하고 cleanup이 끝날 때까지 기다린 뒤 같은 run의 다음 모델
-요청을 시작합니다. Async generator stream은 닫고, custom async iterator는 취소된
+Runner는 모델 작업과 메일박스의 control 차선을 함께 기다립니다. 긴급 revision이나
+취소가 오면 이전 모델 작업을 취소하고 cleanup이 끝날 때까지 기다린 뒤 같은 run의
+다음 단계로 넘어갑니다. 일반 revision은 응답이 끝난 뒤 그 생성을 무효화하고 다음
+모델 요청을 시작합니다. Async generator stream은 닫고, custom async iterator는 취소된
 `__anext__` 작업에서 자원을 해제해야 합니다. 원격 취소 확인과 cleanup 오류 전파는
 `IAgentModel` adapter의 책임입니다. 로컬 task 취소만으로 원격 실행 중단을 보장하지는
 않습니다.

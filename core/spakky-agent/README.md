@@ -49,6 +49,8 @@ pip install spakky-agent spakky-llm "spakky-sqlalchemy[agent]"
 - `AgentState`: long-running agent execution의 materialized lifecycle state
 - `AgentSignal`: 실행 중 들어오는 user message, approval, cancel 같은 inbound stimulus
 - `AgentSignalPollPoint`, `consume_pending_agent_signals`: safe boundary나 configured poll point에서 durable signal queue를 대기 없이 소비하는 helper
+- `IAgentSignalPublisher`, `IAgentSignalSubscriber`, `AgentRunMailbox`, `InProcessAgentSignalMailbox`: durable signal 원장과 분리된 실시간 전달 포트와 기본 in-process 구현. 생산자는 커밋 뒤 `publish(signal)`하고, runner는 `subscribe(state_id)`로 받은 실행별 메일박스를 기다린다(ADR-0023).
+- `AgentSignalPriority`, `AgentSignalLane`: `AgentSignal.priority`(기본 `NORMAL`)와 kind로 정하는 실시간 차선. `CANCEL`·`URGENT`는 `CONTROL`(진행 중 모델 작업 즉시 취소), 나머지는 `STEERING`(안전 지점에서 일괄 주입)
 - `on_signal`, `discover_agent_signal_hooks`, `AgentSignalHookCatalog`: 선언형 시그널 훅(ADR-0013 §1). `@on_signal(kind)`는 `@agent_tool`과 같은 선언형 seam으로, `async def m(self, signal: AgentSignal) -> AsyncGenerator[AgentYield[object], None]` 메서드를 표시한다. `Agent` discovery가 같은 MRO walk로 훅을 수집하고 runner가 safe boundary에서 호출한다. `run()`은 hook yield를 public stream으로 내보내지만 `run_events()`는 `Progress`만 `ArtifactEvent(name="signal_progress")`로 중립화할 수 있습니다. `Token`/`Tool` 등 다른 hook yield shape는 조용히 drop하지 않고 `agent_signal_projection_unsupported`로 fail closed합니다. `CANCEL`·`APPROVAL_DECISION`은 runner 전용 단계가 처리하고, hook이 없는 `USER_MESSAGE`는 built-in Progress로 소비되어 event surface에서는 같은 Artifact로 나타납니다. 계약 위반(비 async generator, `signal: AgentSignal` 외 인자, `AgentYield` 외 yield 타입)은 정의 시점에 `AgentDefinitionError`로 거부된다.
 - `AgentApprovalRequest`, `plan_agent_tool_approval`, `parse_agent_approval_decision_signal`: 위험 boundary에서만 HITL approval을 요구하고 decision signal을 typed state target으로 해석하는 helper
 - `begin_agent_cancellation`, `run_agent_cancellation_cleanup`, `complete_agent_cancellation`: cancel signal을 `CANCELLING`으로 materialize하고 model stream/tool/delegate cleanup hook 결과를 evidence와 terminal state에 반영하는 helper
@@ -354,7 +356,7 @@ Approval request id는 state id, stable call id와 **full SHA-256 argument diges
 
 Provider 호출은 성공했지만 downstream cache store 같은 post-provider 단계가 실패하면 `AbstractAgentModelError`의 usage/routing receipt를 runner가 먼저 반영합니다. Durable run은 이미 발생한 model usage·cost·counter와 terminal MODEL evidence를 저장하고 checkpoint를 갱신하므로, resume이 소진된 token/cost/step budget을 초기화하거나 이미 청구된 model call을 재실행하지 않습니다.
 
-Model, approval wait, tool 전후 action-boundary evidence를 남깁니다. Incomplete non-idempotent tool boundary는 fresh restart에서 자동 재실행하지 않고 `RECOVERY_REQUIRES_HITL`로 pause합니다. 승인 후 dispatch crash의 unchanged pending call은 persisted approval/checkpoint를 사용해 다시 승인받지 않고 resume할 수 있습니다. Cancellation은 loop 시작, model event tick, batch dispatch 전, 각 tool 전후에 poll하며 tool return 직후 cancel도 result commit·다음 model·final을 막습니다.
+Model, approval wait, tool 전후 action-boundary evidence를 남깁니다. Incomplete non-idempotent tool boundary는 fresh restart에서 자동 재실행하지 않고 `RECOVERY_REQUIRES_HITL`로 pause합니다. 승인 후 dispatch crash의 unchanged pending call은 persisted approval/checkpoint를 사용해 다시 승인받지 않고 resume할 수 있습니다. Cancellation은 loop 시작, model event tick, batch dispatch 전, 각 tool 전후에 실행 inbox를 확인하며 tool return 직후 cancel도 result commit·다음 model·final을 막습니다. 진행 중인 model await는 control 차선 도착 즉시 취소됩니다.
 
 ### Typed terminal codes
 
@@ -695,6 +697,39 @@ uv run pytest
 
 MIT License
 
+### Live signal mailbox
+
+The signal repository row is the durable ledger. Live delivery is separate: a
+producer calls `IAgentSignalPublisher.publish(signal)` only after its
+transaction commits, and a running agent receives it through the
+`AgentRunMailbox` it opened with `IAgentSignalSubscriber.subscribe(state_id)`.
+A run subscribes first, replays unconsumed ledger rows exactly once, and then
+observes only its in-memory inbox, so a run without new signals issues no
+`list_pending()` calls. `InProcessAgentSignalMailbox` implements both ports, is
+registered by this package's `initialize()`, and is injected by
+`AgentRunnerFactory` (`AgentRunner.with_signal_mailbox()` for direct use). At
+bootstrap `AgentBootstrapValidationPostProcessor` also binds the container's
+mailbox to each `@Agent` metadata (`Agent.signal_mailbox`), so the declarative
+`execute()` and local delegation runners receive live signals too; a
+constructor-injected `IAgentSignalSubscriber` takes precedence. It
+accepts a producer on the run's own loop immediately and hands any other thread
+or loop over with `call_soon_threadsafe`. `spakky-sqlalchemy` publishes only when the
+outermost transaction commits: a released savepoint waits for it, a rolled-back
+savepoint drops only its own rows, and rollback or `close()` drops the rest.
+
+`AgentSignal.lane` is `AgentSignalLane.CONTROL` for `CANCEL` or
+`priority=AgentSignalPriority.URGENT`, otherwise `AgentSignalLane.STEERING`.
+Control interrupts the in-flight model task at once; urgent steering is applied
+together with steering queued before it, in arrival order. Steering waits for a
+safe point: a finished model response or a tool boundary. `priority` is a live
+delivery hint and is not stored in the ledger row. While a cancel is pending no
+safe point consumes steering, so queued steering stays unconsumed in the ledger. Signals are acknowledged with
+`mark_consumed()` only after they are applied. A closed mailbox or a signal for
+another state is rejected on the run loop; stale revisions and re-delivered
+consumed signals never apply again. Without a mailbox the runner re-reads the
+ledger only at safe boundaries, cannot interrupt in-flight work, and fails with
+`AgentSignalMailboxConfigurationError` where it must wait for new input.
+
 ### Revisioned steering during an active run
 
 Declare `AgentSignalKind.STEERING_INSTRUCTION` in `accepted_signals` and append
@@ -726,10 +761,13 @@ idempotent. Conflicting content at the same revision fails closed. Send a newer
 revision with `withdrawn=True` to remove an ambient or rejected observation;
 the revision tombstone remains so a delayed delivery cannot resurrect it.
 
-The framework observes the durable queue while awaiting model events, cancels
-an obsolete model iteration, awaits the provider task's cleanup, closes an
-asynchronous generator stream, and continues the same run with the revised
-history. Provider adapters must propagate cancellation and await their remote
+Live delivery uses a per-run mailbox instead of re-reading the durable queue
+(see "Live signal mailbox" below). Ordinary steering waits until the current
+model response finishes, then invalidates that generation. Urgent steering
+(`priority=AgentSignalPriority.URGENT`) and cancel use the control lane: the
+framework cancels the obsolete model iteration, awaits the provider task's
+cleanup, closes an asynchronous generator stream, and continues the same run
+with the revised history. Provider adapters must propagate cancellation and await their remote
 cancellation acknowledgement before cleanup returns. Cleanup errors propagate;
 a replacement request cannot claim that a remote request stopped merely because
 local cancellation was requested. Custom async iterators must release their

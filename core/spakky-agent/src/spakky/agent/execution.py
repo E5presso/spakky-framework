@@ -13,6 +13,7 @@ from spakky.agent.compaction import ICompactionStrategy
 from spakky.agent.delegation import build_teammate_tool_descriptors
 from spakky.agent.error import AgentDefinitionError
 from spakky.agent.interfaces.model import SamplingOptions
+from spakky.agent.mailbox import IAgentSignalSubscriber
 from spakky.agent.hooks import AgentSignalHookCatalog, discover_agent_signal_hooks
 from spakky.agent.signal import AgentSignalKind
 from spakky.agent.structured_output import _structured_output_contract
@@ -177,6 +178,9 @@ class Agent(Pod):
         init=False,
         default_factory=AgentSignalHookCatalog,
     )
+    # signal_mailbox is None until application bootstrap binds the container's
+    # live mailbox; a constructor-injected IAgentSignalSubscriber still wins.
+    signal_mailbox: IAgentSignalSubscriber | None = field(init=False, default=None)
 
     def _initialize(self, obj: PodType) -> None:
         """Initialize Pod metadata and validate the Agent execute contract."""

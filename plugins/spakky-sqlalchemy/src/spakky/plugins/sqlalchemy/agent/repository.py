@@ -1,8 +1,9 @@
 """SQLAlchemy repository implementations for spakky-agent contracts."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import override
+from typing import Final, override
 
 from spakky.agent.evidence import AgentEvidence
 from spakky.agent.interfaces.repository import (
@@ -10,12 +11,17 @@ from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
     IAgentStateRepository,
 )
+from spakky.agent.mailbox import IAgentSignalPublisher
 from spakky.agent.signal import AgentSignal
 from spakky.agent.state import AgentState, AgentStatus
 from spakky.core.pod.annotations.pod import Pod
-from sqlalchemy import select
+from sqlalchemy import event, select
+from sqlalchemy.orm import Session, SessionTransaction
 
-from spakky.plugins.sqlalchemy.agent.error import AgentPersistenceRowNotFoundError
+from spakky.plugins.sqlalchemy.agent.error import (
+    AgentPersistenceRowNotFoundError,
+    AgentSignalTransactionMissingError,
+)
 from spakky.plugins.sqlalchemy.agent.table import (
     AgentEvidenceTable,
     AgentSignalTable,
@@ -74,21 +80,67 @@ class SqlAlchemyAgentStateRepository(IAgentStateRepository):
         return [row.to_domain() for row in rows]
 
 
+UNCOMMITTED_SIGNALS_KEY: Final = "spakky.agent.uncommitted_signals"
+"""``Session.info`` key holding signals appended in still-open transactions."""
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedSignal:
+    """A ledger row awaiting its outermost transaction's commit."""
+
+    transaction: SessionTransaction
+    publisher: IAgentSignalPublisher
+    signal: AgentSignal
+
+    def belongs_to(self, ended: SessionTransaction) -> bool:
+        """Return whether ``ended`` is this row's transaction or an ancestor."""
+        current: SessionTransaction | None = self.transaction
+        while current is not None:
+            if current is ended:
+                return True
+            current = current.parent
+        return False
+
+
 @Pod()
 class SqlAlchemyAgentSignalRepository(IAgentSignalRepository):
-    """SQLAlchemy durable inbound queue repository for agent signals."""
+    """SQLAlchemy durable signal ledger that publishes rows after commit.
+
+    ``append`` only stages the ledger row against the transaction (or
+    savepoint) that wrote it. When a live publisher is wired, staged signals are
+    published only when the outermost transaction commits. Rolling back a
+    savepoint discards just the rows written inside it, and ending the outermost
+    transaction without commit (rollback or ``close()``) discards the rest, so a
+    running agent is never woken for a signal that did not durably commit.
+    """
 
     _session_manager: SessionManager
+    # publisher is None when no live mailbox is wired; rows are then replayed
+    # only when a run starts or resumes.
+    _publisher: IAgentSignalPublisher | None
 
-    def __init__(self, session_manager: SessionManager) -> None:
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        publisher: IAgentSignalPublisher | None = None,
+    ) -> None:
         self._session_manager = session_manager
+        self._publisher = publisher
+        # Bound once so SQLAlchemy can recognize an already registered listener.
+        self._after_commit = self._publish_committed
+        self._after_soft_rollback = self._discard_rolled_back
+        self._after_transaction_end = self._discard_unfinished
 
     @override
     def append(self, signal: AgentSignal) -> AgentSignal:
+        session = self._session_manager.session
         row = AgentSignalTable.from_domain(signal)
-        self._session_manager.session.add(row)
-        self._session_manager.session.flush()
-        return row.to_domain()
+        session.add(row)
+        session.flush()
+        stored = replace(row.to_domain(), priority=signal.priority)
+        if self._publisher is not None:
+            self._stage_for_commit(session, self._publisher, stored)
+        return stored
 
     @override
     def list_pending(self, state_id: str) -> Sequence[AgentSignal]:
@@ -108,6 +160,48 @@ class SqlAlchemyAgentSignalRepository(IAgentSignalRepository):
         row.consumed_at = datetime.now(UTC)
         self._session_manager.session.flush()
         return row.to_domain()
+
+    def _stage_for_commit(
+        self,
+        session: Session,
+        publisher: IAgentSignalPublisher,
+        signal: AgentSignal,
+    ) -> None:
+        transaction = session.get_nested_transaction() or session.get_transaction()
+        if transaction is None:  # pragma: no cover - flush() always begins one
+            raise AgentSignalTransactionMissingError(signal.id)
+        if not event.contains(session, "after_commit", self._after_commit):
+            event.listen(session, "after_commit", self._after_commit)
+            event.listen(session, "after_soft_rollback", self._after_soft_rollback)
+            event.listen(session, "after_transaction_end", self._after_transaction_end)
+        self._staged(session).append(_StagedSignal(transaction, publisher, signal))
+
+    def _publish_committed(self, session: Session) -> None:
+        # A released savepoint also emits after_commit; its rows wait for the
+        # outermost commit and are still discarded if an outer level rolls back.
+        if session.in_nested_transaction():
+            return
+        staged = session.info.pop(UNCOMMITTED_SIGNALS_KEY, [])
+        for item in staged:
+            item.publisher.publish(item.signal)
+
+    def _discard_rolled_back(
+        self, session: Session, previous_transaction: SessionTransaction
+    ) -> None:
+        staged = self._staged(session)
+        staged[:] = [
+            item for item in staged if not item.belongs_to(previous_transaction)
+        ]
+
+    def _discard_unfinished(
+        self, session: Session, transaction: SessionTransaction
+    ) -> None:
+        if transaction.parent is None:
+            session.info.pop(UNCOMMITTED_SIGNALS_KEY, None)
+
+    @staticmethod
+    def _staged(session: Session) -> list[_StagedSignal]:
+        return session.info.setdefault(UNCOMMITTED_SIGNALS_KEY, [])
 
 
 @Pod()

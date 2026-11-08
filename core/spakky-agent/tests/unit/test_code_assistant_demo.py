@@ -18,8 +18,11 @@ from examples.code_assistant_demo import (
     collect_stream,
 )
 from spakky.agent import (
+    AgentRunMailbox,
     IAgentEvidenceRepository,
     IAgentSignalRepository,
+    IAgentSignalSubscriber,
+    InProcessAgentSignalMailbox,
     IAgentStateRepository,
     Agent,
     AgentEvidence,
@@ -512,20 +515,33 @@ class FakeStateRepository(IAgentStateRepository):
         )
 
 
-class FakeSignalRepository(IAgentSignalRepository):
-    """Signal repository test double."""
+class FakeSignalRepository(IAgentSignalRepository, IAgentSignalSubscriber):
+    """Signal ledger double whose every append commits and publishes at once.
+
+    It is also the live subscriber port, so an agent injected with it receives
+    appended signals through a real in-process run mailbox. ``list_pending_calls``
+    counts ledger reads so tests can prove an idle run issues none.
+    """
 
     def __init__(self, signals: Sequence[AgentSignal]) -> None:
         self._signals = tuple(signals)
         self._consumed: set[str] = set()
+        self.mailbox = InProcessAgentSignalMailbox()
+        self.list_pending_calls = 0
 
     @override
     def append(self, signal: AgentSignal) -> AgentSignal:
         self._signals = (*self._signals, signal)
+        self.mailbox.publish(signal)
         return signal
 
     @override
+    def subscribe(self, state_id: str) -> AgentRunMailbox:
+        return self.mailbox.subscribe(state_id)
+
+    @override
     def list_pending(self, state_id: str) -> Sequence[AgentSignal]:
+        self.list_pending_calls += 1
         return tuple(
             signal
             for signal in self._signals

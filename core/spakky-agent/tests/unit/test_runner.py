@@ -24,6 +24,7 @@ from spakky.agent import (
     AgentRunner,
     AgentSignal,
     AgentSignalKind,
+    AgentSignalPriority,
     AgentState,
     AgentStateReason,
     AgentStateTransition,
@@ -6389,7 +6390,7 @@ async def test_agent_runner_context_provider_rejects_invalid_return_value() -> N
 async def test_agent_runner_steering_blocked_model_expect_cleanup_then_revised_request(
     events_surface: bool,
 ) -> None:
-    """Steering interrupts a blocked provider, awaits cleanup, then revises real history."""
+    """Urgent steering interrupts a blocked provider, awaits cleanup, then revises real history."""
     from asyncio import create_task, wait_for
 
     states = FakeStateRepository()
@@ -6439,6 +6440,7 @@ async def test_agent_runner_steering_blocked_model_expect_cleanup_then_revised_r
                 "content": "corrected",
                 "final": True,
             },
+            priority=AgentSignalPriority.URGENT,
         )
     )
     await wait_for(cleanup.wait(), 1)
