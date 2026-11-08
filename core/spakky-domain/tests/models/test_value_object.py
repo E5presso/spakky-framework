@@ -1,7 +1,8 @@
 import copy
+from collections import OrderedDict, defaultdict
 from collections.abc import Sequence
 from dataclasses import astuple, dataclass
-from typing import NamedTuple
+from typing import NamedTuple, override
 
 import pytest
 from spakky.core.common.mutability import immutable
@@ -192,6 +193,47 @@ class _Pair(NamedTuple):
     right: int
 
 
+class _LooseCasePair(_Pair):
+    @override
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, tuple) and len(other) == len(self)
+
+    @override
+    def __hash__(self) -> int:
+        return hash(len(self))
+
+
+class _FrozenDict(dict[str, int]):
+    @override
+    def __hash__(self) -> int:
+        return hash(frozenset(self.items()))
+
+
+class _CaseInsensitiveTuple(tuple[str, ...]):
+    @override
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, tuple) and [item.lower() for item in self] == [
+            str(item).lower() for item in other
+        ]
+
+    @override
+    def __hash__(self) -> int:
+        return hash(tuple(item.lower() for item in self))
+
+
+class _HashableList(list[int]):
+    @override
+    def __hash__(self) -> int:
+        return hash(tuple(self))
+
+
+@immutable
+class _Tagged(AbstractValueObject):
+    meta: _FrozenDict
+    names: _CaseInsensitiveTuple
+    numbers: _HashableList
+
+
 _PARITY_CASES = [
     pytest.param(
         _Holder(value=_Money(amount=1, currency="KRW")),
@@ -244,6 +286,34 @@ _PARITY_CASES = [
         id="dict-different-values",
     ),
     pytest.param(
+        _Tagged(
+            meta=_FrozenDict(k=1),
+            names=_CaseInsensitiveTuple(("A",)),
+            numbers=_HashableList([1]),
+        ),
+        _Tagged(
+            meta=_FrozenDict(k=1),
+            names=_CaseInsensitiveTuple(("a",)),
+            numbers=_HashableList([1]),
+        ),
+        id="hashable-container-subclasses-with-own-eq",
+    ),
+    pytest.param(
+        _Basket(items=_LooseCasePair(left=1, right=2)),
+        _Basket(items=_LooseCasePair(left=3, right=4)),
+        id="namedtuple-subclass-with-own-eq",
+    ),
+    pytest.param(
+        _Labels(labels=OrderedDict([("a", 1), ("b", 2)])),
+        _Labels(labels=OrderedDict([("b", 2), ("a", 1)])),
+        id="ordered-dict-order",
+    ),
+    pytest.param(
+        _Labels(labels=defaultdict(int, {"a": _Money(amount=1, currency="KRW")})),
+        _Labels(labels={"a": _Money(amount=1, currency="KRW")}),
+        id="defaultdict-versus-dict",
+    ),
+    pytest.param(
         _PointHolder(point=frozenset({1, 2})),
         _PointHolder(point=frozenset({2, 1})),
         id="other-hashable-leaf",
@@ -285,6 +355,20 @@ def test_value_object_hash_expect_same_hashability_and_consistency(
         assert (outcome is TypeError) is (expected is TypeError)
     if left == right and _hash_outcome(left) is not TypeError:
         assert hash(left) == hash(right)
+
+
+def test_value_object_identity_leaf_expect_equal_to_itself_and_stable_hash() -> None:
+    """복사하지 않으므로 동일성 비교 객체를 담은 값 객체가 자기 자신과 같고 hash가 안정적이다.
+
+    기존 astuple은 이런 leaf를 깊은 복사해 같은 객체끼리도 다르다고 판단했다.
+    이는 의도한 동작 변경이다.
+    """
+    marker = object()
+    left = _PointHolder(point=marker)
+    right = _PointHolder(point=marker)
+
+    assert left == right
+    assert hash(left) == hash(right) == hash(left)
 
 
 def test_value_object_compare_and_hash_expect_no_deep_copy(

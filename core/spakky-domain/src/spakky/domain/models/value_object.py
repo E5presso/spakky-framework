@@ -5,13 +5,14 @@ compared by their attributes rather than identity.
 """
 
 from abc import ABC
+from collections.abc import Callable
 from dataclasses import fields, is_dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
-from functools import cache
 from typing import Final, Self, override
 from uuid import UUID
+from weakref import WeakKeyDictionary
 
 from spakky.core.common.interfaces.cloneable import ICloneable
 from spakky.core.common.interfaces.equatable import IEquatable
@@ -37,6 +38,9 @@ _SCALAR_TYPES: Final[frozenset[type]] = frozenset(
     | {date, datetime, time, timedelta}
 )
 """Leaf types that ``dataclasses.astuple`` would only copy, never restructure."""
+
+_FIELD_NAMES: Final[WeakKeyDictionary[type, tuple[str, ...]]] = WeakKeyDictionary()
+"""Per-dataclass field name cache used by value object comparison."""
 
 
 @immutable
@@ -89,19 +93,27 @@ class AbstractValueObject(AbstractDomainModel, IEquatable, ICloneable, IDataclas
     def _comparison_key(self) -> tuple[object, ...]:
         """Return this value object's field values as a structural tuple.
 
-        This matches ``dataclasses.astuple`` for equality and hashing (nested
-        dataclasses become tuples; list, tuple and dict containers keep their
-        type) but never deep-copies, so one comparison costs no object copies.
+        Containers and nested dataclasses are restructured exactly like
+        ``dataclasses.astuple`` (nested dataclasses become tuples; list, tuple,
+        namedtuple and dict values, subclasses included, are rebuilt with their
+        own type), so equality and hashing keep their meaning. Unlike
+        ``astuple`` no value is deep-copied: other leaf values are compared and
+        hashed as they are, so identity-compared objects held in a field now
+        compare equal to themselves and hash stably.
         """
         return AbstractValueObject._structural_tuple(
             self, AbstractValueObject._field_names(type(self))
         )
 
     @staticmethod
-    @cache
     def _field_names(dataclass_type: type) -> tuple[str, ...]:
-        # Field layout is fixed once a dataclass is created; cache it per type.
-        return tuple(field.name for field in fields(dataclass_type))
+        # Field layout is fixed once a dataclass is created; cache it per type
+        # with weak keys so dynamically created classes can still be collected.
+        names = _FIELD_NAMES.get(dataclass_type)
+        if names is None:
+            names = tuple(field.name for field in fields(dataclass_type))
+            _FIELD_NAMES[dataclass_type] = names
+        return names
 
     @staticmethod
     def _structural_tuple(
@@ -123,18 +135,45 @@ class AbstractValueObject(AbstractDomainModel, IEquatable, ICloneable, IDataclas
             return AbstractValueObject._structural_tuple(
                 value, AbstractValueObject._field_names(value_type)
             )
-        if isinstance(value, list):
-            return [AbstractValueObject._structural_value(item) for item in value]
-        if isinstance(value, tuple):
-            return tuple(AbstractValueObject._structural_value(item) for item in value)
         if isinstance(value, dict):
-            return {
-                AbstractValueObject._structural_value(
-                    key
-                ): AbstractValueObject._structural_value(item)
-                for key, item in value.items()
-            }
+            return AbstractValueObject._structural_mapping(value)
+        if isinstance(value, (list, tuple)):
+            return AbstractValueObject._structural_sequence(value)
         return value
+
+    @staticmethod
+    def _structural_mapping(value: dict[object, object]) -> object:
+        pairs = [
+            (
+                AbstractValueObject._structural_value(key),
+                AbstractValueObject._structural_value(item),
+            )
+            for key, item in value.items()
+        ]
+        if type(value) is dict:
+            return dict(pairs)
+        # Mirrors dataclasses._asdict_inner so subclasses (frozendict,
+        # OrderedDict, defaultdict) keep their own __eq__/__hash__.
+        rebuild: Callable[..., dict[object, object]] = type(value)
+        if hasattr(type(value), "default_factory"):  # astuple's defaultdict rule
+            rebuilt = rebuild(getattr(value, "default_factory"))  # factory by name
+            rebuilt.update(pairs)
+            return rebuilt
+        return rebuild(pairs)
+
+    @staticmethod
+    def _structural_sequence(value: list[object] | tuple[object, ...]) -> object:
+        items = [AbstractValueObject._structural_value(item) for item in value]
+        if type(value) is list:
+            return items
+        if type(value) is tuple:
+            return tuple(items)
+        # Mirrors dataclasses._asdict_inner: subclasses are rebuilt with their own
+        # type, namedtuples positionally.
+        rebuild: Callable[..., object] = type(value)
+        if isinstance(value, tuple) and hasattr(value, "_fields"):  # namedtuple rule
+            return rebuild(*items)
+        return rebuild(items)
 
     @override
     def __post_init__(self) -> None:
