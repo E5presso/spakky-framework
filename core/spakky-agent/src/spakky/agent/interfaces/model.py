@@ -278,10 +278,10 @@ class ModelRequest:
             if pack.placement is ContextPlacement.SYSTEM
         )
         if system_text:
-            if leading and isinstance(leading[-1].content, str):
-                last = leading[-1]
+            instructions = leading[-1].content if leading else None
+            if isinstance(instructions, str):
                 leading[-1] = replace(
-                    last, content="\n\n".join((last.content, *system_text))
+                    leading[-1], content="\n\n".join((instructions, *system_text))
                 )
             else:
                 leading.append(
