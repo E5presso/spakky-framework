@@ -1,3 +1,15 @@
+## v11.0.0 (2026-11-09)
+
+### BREAKING CHANGE
+
+- spakky_agent_state.metadata, spakky_agent_signal.payload,
+spakky_agent_evidence.payload JSON 열이 다시 필요하고 spakky_agent_json_node 표를
+쓰지 않습니다. 10.0.0을 적용한 서비스는 값 행을 이 열로 옮기는 migration이 필요합니다.
+
+### Feat
+
+- **agent**: agent 문서의 값 행 저장을 없애고 자유 형식 값을 JSON 열로 되돌립니다 (#552)
+
 ## v10.0.0 (2026-11-08)
 
 ### BREAKING CHANGE
