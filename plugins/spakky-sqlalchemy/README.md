@@ -303,14 +303,10 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 - `SqlAlchemyAgentSignalRepository`
 - `SqlAlchemyAgentEvidenceRepository`
 - `spakky_agent_state`, `spakky_agent_signal`, `spakky_agent_evidence`,
-  `spakky_agent_evidence_origin`, `spakky_agent_json_node`
+  `spakky_agent_evidence_origin`
 
-State metadata(runner checkpoint 포함), signal payload, evidence payload는 JSON 열이나
-JSON을 담은 Text 열에 저장하지 않습니다. 문서의 값 하나가 `spakky_agent_json_node`의 행
-하나이며, 행은 RFC 6901 JSON Pointer 경로·부모 경로·순서·타입과 타입별 값 열(`boolean`,
-`integer`, `number`, `text`)을 가집니다. 저장할 때는 바뀐 행만 갱신·추가·삭제하므로, 뒤에
-덧붙는 checkpoint history는 새 행만 씁니다. 문서 id는 `state:<id>:metadata`,
-`signal:<id>:payload`, `evidence:<id>:payload`입니다.
+State metadata(runner checkpoint 포함), signal payload, evidence payload는 형식이 자유로운
+값이므로 JSON 열에 저장합니다.
 
 Evidence의 `model_step`은 열로 저장해 같은 step의 context 근거를 색인으로 확인합니다
 (`has_step_evidence`). `count_by_state`는 개수 질의를 씁니다. Context manifest의

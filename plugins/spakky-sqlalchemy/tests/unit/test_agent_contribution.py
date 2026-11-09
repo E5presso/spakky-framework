@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock
 
-from spakky.plugins.sqlalchemy.agent.document import AgentJsonNodeTable
 from spakky.plugins.sqlalchemy.agent.repository import (
     SqlAlchemyAgentEvidenceRepository,
     SqlAlchemyAgentSignalRepository,
@@ -29,7 +28,6 @@ def test_agent_contribution_expect_tables_and_repositories_registered() -> None:
         AgentSignalTable,
         AgentEvidenceTable,
         AgentEvidenceOriginTable,
-        AgentJsonNodeTable,
         SqlAlchemyAgentStateRepository,
         SqlAlchemyAgentSignalRepository,
         SqlAlchemyAgentEvidenceRepository,
