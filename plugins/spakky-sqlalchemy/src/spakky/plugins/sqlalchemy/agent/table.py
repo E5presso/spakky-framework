@@ -13,7 +13,7 @@ from spakky.agent.state import (
     AgentStatus,
 )
 from spakky.agent.types import JsonObject
-from sqlalchemy import DateTime, Index, Integer, Text
+from sqlalchemy import JSON, DateTime, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from spakky.plugins.sqlalchemy.orm.table import (
@@ -42,6 +42,9 @@ class AgentStateTable(AbstractMappableTable[AgentState]):
     )
     last_event_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
     recovery_marker: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[JsonObject] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -68,15 +71,12 @@ class AgentStateTable(AbstractMappableTable[AgentState]):
             pending_signal_count=domain.pending_signal_count,
             last_event_cursor=domain.last_event_cursor,
             recovery_marker=domain.recovery_marker,
+            metadata_json=domain.metadata,
             created_at=domain.created_at,
             updated_at=domain.updated_at,
         )
 
     def to_domain(self) -> AgentState:
-        return self.restore({})
-
-    def restore(self, metadata: JsonObject) -> AgentState:
-        """Rebuild the state with its separately stored metadata document."""
         return AgentState(
             id=self.id,
             agent_type=self.agent_type,
@@ -91,7 +91,7 @@ class AgentStateTable(AbstractMappableTable[AgentState]):
             pending_signal_count=self.pending_signal_count,
             last_event_cursor=self.last_event_cursor,
             recovery_marker=self.recovery_marker,
-            metadata=metadata,
+            metadata=self.metadata_json,
             created_at=self.created_at,
             updated_at=self.updated_at,
         )
@@ -106,6 +106,7 @@ class AgentSignalTable(AbstractMappableTable[AgentSignal]):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     agent_state_id: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[JsonObject] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -128,19 +129,16 @@ class AgentSignalTable(AbstractMappableTable[AgentSignal]):
             id=domain.id,
             agent_state_id=domain.agent_state_id,
             kind=domain.kind.value,
+            payload=domain.payload,
             created_at=domain.created_at,
         )
 
     def to_domain(self) -> AgentSignal:
-        return self.restore({})
-
-    def restore(self, payload: JsonObject) -> AgentSignal:
-        """Rebuild the signal with its separately stored payload document."""
         return AgentSignal(
             id=self.id,
             agent_state_id=self.agent_state_id,
             kind=AgentSignalKind(self.kind),
-            payload=payload,
+            payload=self.payload,
             created_at=self.created_at,
         )
 
@@ -154,6 +152,7 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     agent_state_id: Mapped[str] = mapped_column(Text, nullable=False)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[JsonObject] = mapped_column(JSON, nullable=False, default=dict)
     model_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     digest: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -181,6 +180,7 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
             id=domain.id,
             agent_state_id=domain.agent_state_id,
             kind=domain.kind.value,
+            payload=domain.payload,
             model_step=domain.model_step,
             summary=domain.summary,
             digest=domain.digest,
@@ -190,17 +190,15 @@ class AgentEvidenceTable(AbstractMappableTable[AgentEvidence]):
         )
 
     def to_domain(self) -> AgentEvidence:
-        return self.restore({}, ())
+        return self.restore(())
 
-    def restore(
-        self, payload: JsonObject, origin_refs: tuple[str, ...]
-    ) -> AgentEvidence:
-        """Rebuild the evidence with its payload document and origin index rows."""
+    def restore(self, origin_refs: tuple[str, ...]) -> AgentEvidence:
+        """Rebuild the evidence with its origin index rows."""
         return AgentEvidence(
             id=self.id,
             agent_state_id=self.agent_state_id,
             kind=AgentEvidenceKind(self.kind),
-            payload=payload,
+            payload=self.payload,
             model_step=self.model_step,
             origin_refs=origin_refs,
             summary=self.summary,

@@ -2,7 +2,6 @@
 
 from spakky.core.application.application import SpakkyApplication
 
-from spakky.plugins.sqlalchemy.agent.document import AgentJsonNodeTable
 from spakky.plugins.sqlalchemy.agent.repository import (
     SqlAlchemyAgentEvidenceRepository,
     SqlAlchemyAgentSignalRepository,
@@ -22,7 +21,6 @@ def initialize(app: SpakkyApplication) -> None:
     app.add(AgentSignalTable)
     app.add(AgentEvidenceTable)
     app.add(AgentEvidenceOriginTable)
-    app.add(AgentJsonNodeTable)
     app.add(SqlAlchemyAgentStateRepository)
     app.add(SqlAlchemyAgentSignalRepository)
     app.add(SqlAlchemyAgentEvidenceRepository)
