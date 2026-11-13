@@ -8,12 +8,19 @@ from enum import StrEnum
 from ssl import SSLContext, create_default_context
 from typing import Annotated, ClassVar, Self
 
-from pydantic import NonNegativeInt, PositiveFloat, StringConstraints, model_validator
+from pydantic import PositiveFloat, StringConstraints, model_validator
 from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
+from spakky.event.delivery import RetryPolicy
+from spakky.event.subscription import SubscriberName
 
-from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
+from spakky.plugins.kafka.common.constants import (
+    REDRIVE_GROUP_SUFFIX,
+    SPAKKY_KAFKA_CONFIG_ENV_PREFIX,
+    KafkaGroupId,
+    KafkaTopic,
+)
 
 
 class AutoOffsetResetType(StrEnum):
@@ -80,6 +87,16 @@ class KafkaConnectionConfig(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_topic_suffixes(self) -> Self:
+        """Reject suffixes that would map retries and dead letters onto one topic."""
+        if self.retry_topic_suffix == self.dead_letter_topic_suffix:
+            raise PydanticCustomError(
+                "topic_suffix_collision",
+                "Retry and dead-letter topic suffixes must differ",
+            )
+        return self
+
     number_of_partitions: int = 1
     """Default number of partitions for created topics."""
 
@@ -99,12 +116,21 @@ class KafkaConnectionConfig(BaseSettings):
     republishing every failure back into the stream it came from, so it is rejected.
     """
 
-    max_handler_retries: NonNegativeInt = 0
-    """How many times a failed handler dispatch is retried before dead-lettering.
+    retry_topic_suffix: Annotated[str, StringConstraints(min_length=1)] = ".retry"
+    """Suffix appended to build the topic that holds messages waiting for a retry.
 
-    Retrying re-invokes every handler registered for the event, so handlers must
-    be idempotent when this is raised above zero. Deserialization failures never
-    succeed on retry and are dead-lettered immediately regardless of this value.
+    Only used when `retry.mode` is `delayed`. It must differ from
+    `dead_letter_topic_suffix`, otherwise a waiting retry and a dead letter
+    would share one topic.
+    """
+
+    retry: RetryPolicy = RetryPolicy()
+    """Retry limits, spacing and mode applied to every subscriber independently.
+
+    `max_attempts` counts the first delivery, so the default of 1 dead-letters a
+    failed message without retrying. A retry runs only the handlers that have
+    not succeeded yet. Payloads that cannot be deserialized and failures derived
+    from `AbstractNonRetryableEventError` are dead-lettered without retrying.
     """
 
     dead_letter_delivery_timeout: PositiveFloat = 10.0
@@ -114,8 +140,64 @@ class KafkaConnectionConfig(BaseSettings):
     outage would stall the poll loop until the client's own message timeout.
     """
 
+    redrive_timeout: PositiveFloat = 10.0
+    """Seconds a redrive waits for the broker without receiving a dead letter.
+
+    A redrive normally ends when it reaches the end offsets it observed at its
+    start; this bounds the call when the broker stops answering before that.
+    """
+
     def __init__(self) -> None:
         super().__init__()
+
+    def subscriber_group_id(self, subscriber: SubscriberName | None) -> KafkaGroupId:
+        """Return the consumer group one subscriber reads through.
+
+        Args:
+            subscriber: Subscriber name; None is the unnamed subscriber, which
+                keeps `group_id` itself.
+        """
+        if subscriber is None:
+            return self.group_id
+        return f"{self.group_id}.{subscriber}"
+
+    def redrive_group_id(self, subscriber: SubscriberName | None) -> KafkaGroupId:
+        """Return the group that tracks how far a subscriber's redrive has read."""
+        return f"{self.subscriber_group_id(subscriber)}{REDRIVE_GROUP_SUFFIX}"
+
+    def dead_letter_topic(
+        self, topic: KafkaTopic, subscriber: SubscriberName | None
+    ) -> KafkaTopic:
+        """Return the dead-letter topic of one subscriber for an event topic."""
+        if subscriber is None:
+            return f"{topic}{self.dead_letter_topic_suffix}"
+        return f"{topic}.{subscriber}{self.dead_letter_topic_suffix}"
+
+    def retry_topic(
+        self, topic: KafkaTopic, subscriber: SubscriberName | None
+    ) -> KafkaTopic:
+        """Return the topic holding one subscriber's delayed retries for an event topic."""
+        if subscriber is None:
+            return f"{topic}{self.retry_topic_suffix}"
+        return f"{topic}.{subscriber}{self.retry_topic_suffix}"
+
+    def subscriber_consumer_configuration(
+        self, subscriber: SubscriberName | None
+    ) -> dict[str, str | int | float | bool]:
+        """Consumer settings of one subscriber: the shared ones under its own group."""
+        return {
+            **self.consumer_configuration_dict,
+            "group.id": self.subscriber_group_id(subscriber),
+        }
+
+    def redrive_consumer_configuration(
+        self, subscriber: SubscriberName | None
+    ) -> dict[str, str | int | float | bool]:
+        """Consumer settings of a redrive: the shared ones under the redrive group."""
+        return {
+            **self.consumer_configuration_dict,
+            "group.id": self.redrive_group_id(subscriber),
+        }
 
     @property
     def connection_configuration_dict(self) -> dict[str, str | int | float | bool]:
@@ -167,7 +249,7 @@ class KafkaConnectionConfig(BaseSettings):
         """Consumer settings that tie the offset to the handler outcome.
 
         `enable.auto.commit=false` is what makes delivery at-least-once: the
-        offset advances only when `KafkaEventConsumer` commits it after the
+        offset advances only when the subscriber's worker commits it after the
         handlers finish, so a handler failure leaves the message to be
         redelivered instead of silently dropping it.
         """

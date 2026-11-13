@@ -62,8 +62,16 @@ export SPAKKY_KAFKA__POLL_TIMEOUT=1.0
 | `auto_offset_reset` | `SPAKKY_KAFKA__AUTO_OFFSET_RESET` | `earliest` | 오프셋 리셋 정책 |
 | `poll_timeout` | `SPAKKY_KAFKA__POLL_TIMEOUT` | `1.0` | 폴링 타임아웃 (초) |
 | `dead_letter_topic_suffix` | `SPAKKY_KAFKA__DEAD_LETTER_TOPIC_SUFFIX` | `.dlt` | 원본 토픽에 붙여 dead-letter 토픽 이름을 만드는 접미사 |
-| `max_handler_retries` | `SPAKKY_KAFKA__MAX_HANDLER_RETRIES` | `0` | dead-letter로 보내기 전 핸들러를 다시 호출하는 횟수 |
-| `dead_letter_delivery_timeout` | `SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT` | `10.0` | dead-letter 레코드 배달을 기다리는 최대 시간 (초) |
+| `retry_topic_suffix` | `SPAKKY_KAFKA__RETRY_TOPIC_SUFFIX` | `.retry` | retry 토픽 이름을 만드는 접미사 (`retry.mode=delayed`일 때만 사용, dead-letter 접미사와 달라야 함) |
+| `retry` | `SPAKKY_KAFKA__RETRY__*` | `max_attempts=1` | 구독자별 재시도 정책 — [재시도](#재시도) 참조 |
+| `dead_letter_delivery_timeout` | `SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT` | `10.0` | retry·dead-letter 레코드 배달을 기다리는 최대 시간 (초) |
+| `redrive_timeout` | `SPAKKY_KAFKA__REDRIVE_TIMEOUT` | `10.0` | redrive가 dead letter 없이 브로커를 기다리는 최대 시간 (초) |
+
+> **Breaking change**: `max_handler_retries`(`SPAKKY_KAFKA__MAX_HANDLER_RETRIES`)는
+> 제거되었습니다. 별칭은 없으며, 남아 있는 환경변수는 무시됩니다. 종전의
+> `max_handler_retries=N`은 `SPAKKY_KAFKA__RETRY__MAX_ATTEMPTS=N+1`에 해당합니다(시도
+> 횟수는 첫 전달을 포함). 또한 재시도는 이제 모든 핸들러가 아니라 실패한 핸들러만 다시
+> 실행합니다.
 
 ---
 
@@ -192,39 +200,164 @@ sequenceDiagram
 | payload | Pydantic `TypeAdapter`가 만든 JSON bytes |
 | headers | `ITracePropagator.inject()`가 넣은 trace header |
 | partition key | `AbstractIntegrationEvent.partition_key` 값, 기본은 `None`(라운드로빈) |
-| consumer group | `SPAKKY_KAFKA__GROUP_ID` |
-| topic 생성 | 없으면 `number_of_partitions`, `replication_factor`로 생성 (dead-letter 토픽 포함) |
+| consumer group | 이름 없는 구독자는 `SPAKKY_KAFKA__GROUP_ID`, 구독자 `s`는 `<group_id>.s` |
+| topic 생성 | 없으면 `number_of_partitions`, `replication_factor`로 생성 (구독자별 retry·dead-letter 토픽 포함) |
 | offset reset | `SPAKKY_KAFKA__AUTO_OFFSET_RESET` (`earliest`/`latest`/`none`) |
-| 처리 실패 | `<topic>` + `dead_letter_topic_suffix` 토픽으로 전달 |
-| offset 커밋 | 자동 커밋 없음. 실패가 dead-letter에 저장된 뒤에만 consumer가 직접 커밋 |
+| 처리 실패 | `retry` 정책에 따라 재시도한 뒤 구독자의 dead-letter 토픽으로 전달 |
+| offset 커밋 | 자동 커밋 없음. 구독자별로, 실패가 retry·dead-letter 토픽에 저장된 뒤에만 직접 커밋 |
 
 `spakky-outbox`를 함께 로드하면 `OutboxEventBus` / `AsyncOutboxEventBus`가 기본 bus를 대체하므로 이벤트는 Kafka에 즉시 produce되지 않고 Outbox 테이블에 저장됩니다. Relay는 Kafka transport가 영구적이고 특정 레코드에 귀속 가능한 거부를 `EventDeliveryRejectedError`로 보고한 경우에만 retry/abandon 예산을 씁니다. Transport 전체 장애 자체에는 예산을 쓰지 않으며, 배치 `flush()` 장애가 나면 Transport에 넘긴 레코드를 1건씩 재확인합니다. 재확인 성공·레코드 거부는 건별로 확정되므로 일부는 published 또는 retry/abandoned 상태가 될 수 있고, transport 장애가 난 현재 레코드와 아직 방문하지 않은 레코드는 미확정으로 남습니다. 주문 생성 같은 DB 변경과 Kafka 발행을 원자적으로 묶어야 할 때 기본 선택은 Outbox 조합입니다. 브로커가 수락 가능한 레코드는 장애 후 재전송으로 중복 전달될 수 있어 소비자가 멱등해야 하지만, 영구 거부 후 abandoned된 레코드는 성공 전달이 0회일 수 있습니다.
 
 ---
 
+## 구독자 (subscriber)
+
+구독자는 이벤트 스트림을 독립적으로 읽는 단위입니다. `@EventHandler(subscriber=...)`로
+이름을 주면 그 클래스의 integration handler는 그 구독자에 속합니다. 구독자마다 자기
+consumer group(=자기 offset), 자기 재시도 상태, 자기 dead-letter 토픽을 가지므로 한
+구독자의 실패나 지연이 다른 구독자에 영향을 주지 않습니다. 같은 구독자의 핸들러는 한
+메시지에 대해 함께 실행되며, 한 핸들러가 실패해도 나머지는 실행됩니다.
+
+```python
+from spakky.event.stereotype.event_handler import EventHandler, on_event
+
+@EventHandler(subscriber="billing")
+class BillingHandler:
+    @on_event(OrderPlacedEvent)
+    async def charge(self, event: OrderPlacedEvent) -> None: ...
+
+@EventHandler(subscriber="shipping")
+class ShippingHandler:
+    @on_event(OrderPlacedEvent)
+    async def ship(self, event: OrderPlacedEvent) -> None: ...
+```
+
+`subscriber`를 생략한 핸들러는 이름 없는 구독자에 속하며, 종전과 같은 group id와
+dead-letter 토픽을 씁니다. 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}` 형식이어야 합니다.
+
+| 자원 | 이름 없는 구독자 | 구독자 `s` |
+|------|------------------|------------|
+| consumer group | `<group_id>` | `<group_id>.s` |
+| dead-letter 토픽 | `<topic><dead_letter_topic_suffix>` (예: `OrderPlacedEvent.dlt`) | `<topic>.s<dead_letter_topic_suffix>` (예: `OrderPlacedEvent.billing.dlt`) |
+| retry 토픽 (`retry.mode=delayed`일 때만) | `<topic><retry_topic_suffix>` (예: `OrderPlacedEvent.retry`) | `<topic>.s<retry_topic_suffix>` (예: `OrderPlacedEvent.billing.retry`) |
+| redrive group | `<group_id>.redrive` | `<group_id>.s.redrive` |
+
+같은 이름을 `KafkaConnectionConfig.subscriber_group_id()` / `dead_letter_topic()` /
+`retry_topic()` / `redrive_group_id()`로 계산할 수 있습니다. 구독자의 토픽은 consumer
+시작 시 이벤트 토픽과 함께 자동 생성됩니다.
+
+운영 시 유의점:
+
+- 새 구독자는 커밋된 offset이 없는 새 consumer group이므로 `auto_offset_reset`
+  (`earliest`/`latest`/`none`)에 따라 읽기 시작합니다. 기존 핸들러에 `subscriber`를 새로
+  붙이는 것도 group이 바뀌는 것이므로 같은 규칙이 적용됩니다.
+- 구독자마다 consumer client 하나와 retry·dead-letter용 producer client 하나, 그리고 poll
+  루프 하나(동기는 스레드, 비동기는 asyncio 태스크)가 추가됩니다.
+- 핸들러 이름은 dead-letter 메타데이터와 멱등 키에 기록됩니다. 기본값은
+  `<클래스>.<메서드>`이며, 메서드 이름을 바꿀 가능성이 있으면
+  `@on_event(OrderPlacedEvent, name="charge")`로 고정합니다.
+- 한 구독자·이벤트 조합의 핸들러는 모두 동기이거나 모두 비동기여야 합니다.
+
+## 재시도
+
+`retry`(`spakky.event.delivery.RetryPolicy`)가 구독자마다 독립적으로 적용됩니다.
+
+| 필드 | 환경변수 | 기본값 | 설명 |
+|------|---------|--------|------|
+| `retry.max_attempts` | `SPAKKY_KAFKA__RETRY__MAX_ATTEMPTS` | `1` | 첫 전달을 포함한 총 시도 횟수. `1`이면 재시도 없이 dead-letter |
+| `retry.initial_interval` | `SPAKKY_KAFKA__RETRY__INITIAL_INTERVAL` | `0.0` | 두 번째 시도 전 대기 (초) |
+| `retry.multiplier` | `SPAKKY_KAFKA__RETRY__MULTIPLIER` | `2.0` | 실패할 때마다 대기에 곱하는 배수 |
+| `retry.max_interval` | `SPAKKY_KAFKA__RETRY__MAX_INTERVAL` | `60.0` | 대기 상한 (초) |
+| `retry.mode` | `SPAKKY_KAFKA__RETRY__MODE` | `blocking` | `blocking` 또는 `delayed` |
+
+재시도는 **아직 성공하지 못한 핸들러만** 다시 실행합니다. 역직렬화할 수 없는 본문과
+`AbstractNonRetryableEventError`를 상속한 실패는 남은 시도와 무관하게 바로 dead-letter로
+갑니다. `EventDeferredError`는 시도 횟수를 쓰지 않고 `retry_after`만큼 기다립니다.
+
+| 모드 | 동작 | 순서 | 재시도 상태 |
+|------|------|------|-------------|
+| `blocking` | offset을 커밋하지 않고 그 파티션을 대기 시간만큼 멈춘 뒤 같은 메시지를 다시 전달 | 파티션 내 순서 유지. 뒤 메시지는 기다림 | consumer 메모리 |
+| `delayed` | 원본 본문·key·헤더에 재시도 상태를 더해 구독자의 retry 토픽에 발행하고, 배달이 확인되면 원본 offset을 커밋. 같은 consumer가 retry 토픽도 읽으며, 때가 안 된 레코드는 그 retry 파티션만 멈춤 | 뒤 메시지가 먼저 처리됨 (순서 포기, 처리량 유지) | 레코드 헤더 |
+
+- `blocking` 모드의 재시도 상태는 메모리에만 있으므로, 프로세스가 죽거나 파티션이
+  재할당되면 그 메시지는 첫 시도로 다시 전달되고 이미 성공한 핸들러도 다시 실행됩니다.
+  핸들러에 `@Idempotent()`(`spakky.event.idempotency`)를 붙여 두면 이미 처리한 이벤트를
+  건너뜁니다.
+- `delayed` 모드의 retry 레코드는 `x-spakky-delivery-attempt`,
+  `x-spakky-delivery-pending-handlers`, `x-spakky-delivery-not-before`(실행 가능 시각,
+  epoch 초) 헤더와 원본 좌표 헤더를 싣습니다. retry 레코드 발행이 확인되지 않으면 원본을
+  커밋하지 않고 `blocking`과 같은 방식으로 제자리에서 기다립니다. 재시도는 예정 시각보다
+  늦어질 수는 있어도 빨라지지는 않습니다.
+- `delayed`에서 `blocking`으로 되돌리면 retry 토픽을 더 이상 읽지 않습니다. 전환 전에
+  retry 토픽이 비었는지 확인하십시오.
+
 ## 처리 실패 메시지 (dead-letter)
 
-핸들러가 실패하거나 메시지 본문이 이벤트 타입으로 역직렬화되지 않으면, Consumer는 그 메시지를 원본 토픽 이름에 `dead_letter_topic_suffix`(기본 `.dlt`)를 붙인 토픽으로 보냅니다. 예를 들어 `OrderPlacedEvent` 처리에 실패하면 `OrderPlacedEvent.dlt`로 전달됩니다. dead-letter 토픽은 `initialize` 시점에 구독 토픽과 함께 자동 생성됩니다.
-
-원본 본문과 key는 바이트 그대로 전달합니다. 원본 헤더는 consumer가 읽은 문자열 형태로 함께 실리므로, 값이 UTF-8 문자열이 아닌 헤더와 값이 없는 헤더는 옮겨지지 않습니다. 여기에 다음 헤더를 덧붙입니다. 재처리 도구는 본문을 열지 않고 이 헤더만으로 판단할 수 있습니다.
+시도 횟수를 다 쓴 메시지, 재시도로 고칠 수 없는 실패, 역직렬화할 수 없는 본문은 **그
+구독자의** dead-letter 토픽으로 갑니다. 다른 구독자의 진행과 dead-letter 토픽에는 영향이
+없습니다. 원본 본문과 key는 바이트 그대로 전달하고, 원본 헤더는 consumer가 읽은 문자열
+형태로 함께 싣습니다(값이 없거나 UTF-8 문자열이 아닌 헤더는 제외). 여기에 다음 헤더를
+덧붙입니다.
 
 | 헤더 | 값 |
 |------|-----|
-| `x-spakky-dead-letter-original-topic` | 원본 토픽 이름 |
-| `x-spakky-dead-letter-original-partition` | 원본 파티션 번호 |
-| `x-spakky-dead-letter-original-offset` | 원본 오프셋 |
-| `x-spakky-dead-letter-original-timestamp` | 원본 메시지 타임스탬프 |
-| `x-spakky-dead-letter-consumer-group` | 처리에 실패한 consumer group |
-| `x-spakky-dead-letter-exception-type` | 예외 클래스 이름 |
-| `x-spakky-dead-letter-exception-message` | 예외 메시지 |
+| `x-spakky-dead-letter-original-topic` / `-partition` / `-offset` / `-timestamp` | 이벤트 토픽에서의 원본 좌표 (retry 토픽을 거쳐도 유지) |
+| `x-spakky-dead-letter-consumer-group` | 포기한 구독자의 consumer group |
+| `x-spakky-dead-letter-exception-type` / `-exception-message` | 첫 번째 실패 핸들러의 예외 |
+| `x-spakky-dead-letter-original-destination` | 이벤트 이름(토픽) |
+| `x-spakky-dead-letter-subscriber` | 구독자 이름 (이름 없는 구독자는 빈 문자열) |
+| `x-spakky-dead-letter-failures` | 성공하지 못한 핸들러별 `handler`, `exception_type`, `exception_message`, `retryable`의 JSON 배열 |
+| `x-spakky-dead-letter-attempts` | 포기할 때까지의 시도 횟수 |
+| `x-spakky-dead-letter-failed-at` | 마지막 시도가 끝난 시각 (ISO 8601) |
 
-dead-letter 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배달을 기다립니다. 레코드가 크기 제한을 넘거나 producer 큐가 가득 찼거나 브로커가 거절하면 오류 로그를 남기고 consumer는 계속 폴링합니다 — 실패가 조용히 사라지지도, 소비가 멈추지도 않습니다.
+아래 다섯 헤더는 모든 브로커가 공통으로 쓰는 `spakky.event.delivery.DeadLetter`
+메타데이터이며 `DeadLetter.from_headers()`로 읽을 수 있습니다.
 
-비동기 consumer에서 시간 안에 배달 확인을 받지 못한 경우는 확정 실패와 구분해 "unconfirmed" 로그를 남깁니다. 이때 레코드는 producer 배치에 남아 나중에 실제로 배달될 수 있으므로, 그 로그만 근거로 수동 재발행하면 dead-letter 토픽에 중복이 생깁니다.
+retry·dead-letter 레코드 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배달을
+기다립니다. **offset은 그 레코드가 브로커에 도달한 것이 확인된 뒤에만 전진합니다.** 크기
+제한 초과·producer 큐 포화·브로커 거절·시간 초과는 오류 로그를 남기고, dead-letter는
+커밋 대신 그 메시지로 되감아 다시 받습니다. 비동기 경로에서 배달 확인이 시간 안에 오지
+않은 경우는 확정 실패와 구분해 "unconfirmed"로 기록합니다 — 그 레코드는 나중에 배달될 수
+있어 dead-letter 토픽에 중복이 생길 수 있습니다.
 
-`max_handler_retries`를 0보다 크게 설정하면 dead-letter로 보내기 전에 같은 메시지로 핸들러를 그 횟수만큼 다시 호출합니다. 재호출은 해당 이벤트에 등록된 모든 핸들러를 다시 실행하므로, 이 값을 올리려면 핸들러가 멱등해야 합니다. 역직렬화 실패는 같은 본문으로 다시 시도해도 결과가 같으므로 이 설정과 무관하게 즉시 dead-letter로 보냅니다.
+## Redrive
 
-지연 재시도 토픽 계층은 두지 않습니다. 메시지를 다른 토픽으로 옮기는 순간 그 aggregate의 파티션 내 순서가 깨지기 때문입니다.
+`KafkaEventConsumer`는 `IEventRedriver`를, `AsyncKafkaEventConsumer`는
+`IAsyncEventRedriver`(`spakky.event.redrive`)를 구현합니다. redrive는 dead letter를 **실패한
+구독자에게만**, 그리고 **실패로 기록된 핸들러에게만** 다시 전달합니다. 같은 이벤트의 다른
+구독자는 그 메시지를 다시 받지 않습니다.
+
+```python
+from spakky.event.redrive import IAsyncEventRedriver, RedriveResult
+
+@Pod()
+class BillingOperations:
+    def __init__(self, redriver: IAsyncEventRedriver) -> None:
+        self._redriver = redriver
+
+    async def redrive_billing(self) -> RedriveResult:
+        return await self._redriver.redrive(
+            OrderPlacedEvent, subscriber="billing", limit=100
+        )
+```
+
+- redrive는 구독자의 dead-letter 토픽을 전용 group(`<구독자 group>.redrive`)으로 읽으며,
+  **호출이 시작될 때의 끝 offset까지만** 읽습니다. `limit`은 이번 호출에서 가져갈 최대
+  건수입니다(`None`이면 시작 시점에 쌓여 있던 전부).
+- dead letter마다 한 번 시도합니다. 실패했던 핸들러가 모두 끝나면 그 레코드의 offset을
+  커밋해 소비 처리하고 `succeeded`로 셉니다.
+- 다시 실패하면 새 메타데이터(누적 시도 횟수, 이번에 실패한 핸들러)로 dead-letter 토픽
+  끝에 다시 발행한 뒤 원래 레코드의 offset을 커밋하고 `failed`로 셉니다. Kafka는 중간
+  레코드만 남겨 둘 수 없으므로, 이렇게 해야 뒤에 있는 dead letter를 계속 처리하면서도
+  실패한 것을 다음 redrive에 남길 수 있습니다. 재발행이 확인되지 않으면 커밋하지 않고 그
+  호출을 멈춥니다.
+- 새 메타데이터 헤더가 없는 예전 dead letter는 그 구독자의 모든 핸들러를 실행합니다.
+- 한 consumer의 redrive는 한 번에 하나씩 실행됩니다. 여러 프로세스에서 같은 구독자를
+  동시에 redrive하면 같은 dead letter가 두 번 전달될 수 있으므로 핸들러 멱등성이
+  전제입니다.
+- 브로커가 `redrive_timeout`(기본 10초) 동안 dead letter를 내주지 않으면 그때까지의
+  결과를 돌려주고 멈춥니다.
+- redrive 중 인증 provider 장애는 호출자에게 전파되고 그 dead letter는 커밋되지 않습니다.
 
 ---
 
@@ -241,21 +374,25 @@ dead-letter 발행은 `dead_letter_delivery_timeout`(기본 10초)까지만 배�
 
 `AsyncKafkaEventTransport`는 `AIOKafkaProducer`를 애플리케이션 수명 동안 하나로 유지하므로, 멱등 producer의 시퀀스 번호가 그 수명 내내 이어집니다. 서로 다른 `send` 호출 사이에서도 중복 발행과 파티션 내 순서 역전이 막힙니다 — 멱등 시퀀스는 producer 인스턴스에 묶여 있어, 발행마다 producer를 새로 만들면 이 보장이 성립하지 않습니다.
 
-Consumer는 핸들러가 끝난 뒤, 그 메시지를 처리 완료로 볼지 다시 받을지 결정합니다.
+Consumer는 구독자의 핸들러를 모두 실행한 뒤 그 결과(`spakky.event.delivery`의
+`DeliveryOutcome`)를 offset 동작으로 옮깁니다.
 
-| 핸들러 결과 | offset | 이후 동작 |
-|------------|--------|----------|
-| 성공 | 커밋 | 다음 메시지로 진행 |
-| 실패 → dead-letter 발행 성공 | 커밋 | 실패가 `.dlt` 토픽에 남았으므로 파티션이 막히지 않습니다 |
-| 실패 → dead-letter 발행 실패·미확인 | 커밋 안 함 + 그 메시지로 `seek` 되감기 | 다음 poll이 같은 메시지를 다시 전달합니다 |
-| AuthContext DENY / snapshot CHALLENGE | 커밋 | 재시도해도 같은 결정이므로 파티션을 막지 않음 |
-| 검증 provider 장애 | 커밋 안 함 | 예외를 전파하여 consumer 루프를 중단합니다. 재시작하면 그 메시지부터 다시 처리합니다 |
+| 전달 결과 | offset 처리 |
+|-----------|------------|
+| 모든 핸들러 성공 | 커밋 후 다음 메시지로 진행 |
+| 실패, 시도 남음 (`blocking`) | 커밋하지 않고 파티션을 멈춘 뒤 실패한 핸들러만 다시 전달 |
+| 실패, 시도 남음 (`delayed`) | retry 토픽 발행이 확인되면 커밋. 확인되지 않으면 `blocking`처럼 대기 |
+| 시도 소진·재시도 불가·역직렬화 실패 | 구독자의 dead-letter 토픽 발행이 확인되면 커밋. 확인되지 않으면 그 메시지로 `seek` 되감기 |
+| `EventDeferredError` | 커밋하지 않고 시도 횟수 없이 대기 |
+| AuthContext DENY / snapshot CHALLENGE | warning 로그 후 그 핸들러를 건너뜀. 재시도해도 같은 결정임 |
+| 본문 없는 메시지 | warning 로그 후 커밋. 처리할 대상이 없음 |
+| 검증 provider 장애 | 예외를 전파하여 그 구독자의 poll 루프를 중단. 커밋하지 않았으므로 재시작 시 그 메시지부터 다시 처리. 다른 구독자는 계속 진행 |
 
 **offset은 실패가 다른 곳에 저장된 뒤에만 전진합니다.** dead-letter 발행이 실패했는데 커밋해 버리면 그 이벤트의 마지막 사본이 사라지므로, 발행 실패는 커밋 대신 되감기로 이어집니다.
 
 커밋을 건너뛰는 것만으로는 재처리가 성립하지 않습니다. `enable.auto.commit=false`는 브로커 커밋만 끄고, consumer의 소비 위치는 poll마다 전진합니다. 되감지 않으면 뒤따르는 메시지의 성공 커밋이 실패한 메시지의 offset을 지나쳐 버리고, 그 메시지는 rebalance나 재시작으로도 돌아오지 않습니다.
 
-멱등성은 보통 이벤트 식별자로 확보합니다. 이미 처리한 `AbstractIntegrationEvent`의 `event_id`를 저장해 두고 중복 수신을 건너뛰거나, 핸들러의 DB 반영을 upsert로 작성합니다.
+멱등성은 `@Idempotent()`(`spakky.event.idempotency`)를 핸들러에 붙여 확보하거나, 이벤트 식별자로 직접 확보합니다. 이미 처리한 `AbstractIntegrationEvent`의 `event_id`를 저장해 두고 중복 수신을 건너뛰거나, 핸들러의 DB 반영을 upsert로 작성합니다.
 
 ```python
 @EventHandler()

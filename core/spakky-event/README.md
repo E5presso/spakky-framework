@@ -119,8 +119,9 @@ app = (
 
 | 데코레이터 | 설명 |
 |-----------|-------------|
-| `@EventHandler()` | 클래스를 event handler로 표시(`@Pod` 확장) |
-| `@on_event(EventType)` | 메서드를 특정 event type의 handler로 표시 |
+| `@EventHandler(subscriber=None)` | 클래스를 event handler로 표시(`@Pod` 확장). `subscriber`는 통합 이벤트를 독립적으로 읽는 구독자 이름 |
+| `@on_event(EventType, name=None)` | 메서드를 특정 event type의 handler로 표시. `name`은 dead-letter 메타데이터와 멱등 키에 쓰는 처리기 이름(기본 `<클래스>.<메서드>`) |
+| `@Idempotent()` / `@idempotent` | 통합 이벤트 handler가 같은 이벤트를 한 번만 처리하도록 표시 |
 
 ### 인터페이스
 
@@ -131,7 +132,9 @@ app = (
 | `IEventTransport` / `IAsyncEventTransport` | 실제 message broker transport. `send`로 payload를 넘기고, 배치 끝에서 `flush`로 전송을 확정합니다. 영구적이고 특정 레코드에 귀속되는 거부만 `EventDeliveryRejectedError`로 통일하며, connection·timeout·queue 등 transport 전체 장애는 client 예외 타입을 보존합니다. 애플리케이션 수명 밖의 발행은 `EventTransportNotRunningError`로 거부됩니다 |
 | `IEventConsumer` / `IAsyncEventConsumer` | Handler callback 등록 |
 | `IDomainEventConsumer` / `IAsyncDomainEventConsumer` | 로컬 Domain Event handler 등록 역할 |
-| `IIntegrationEventConsumer` / `IAsyncIntegrationEventConsumer` | 브로커 Integration Event handler 등록 역할 |
+| `IIntegrationEventConsumer` / `IAsyncIntegrationEventConsumer` | 브로커 Integration Event handler 등록 역할. `register(event, handler, *, subscriber=None, handler_name=None)`이며 구현체는 전달 계약을 따릅니다 |
+| `IEventRedriver` / `IAsyncEventRedriver` | 구독자의 dead-letter를 그 구독자의 실패한 처리기에만 다시 전달 |
+| `IProcessedEventStore` / `IAsyncProcessedEventStore` | 멱등 소비의 처리 기록 저장소 |
 | `IEventDispatcher` / `IAsyncEventDispatcher` | In-process handler dispatch |
 
 ### 구현체
@@ -282,12 +285,42 @@ integration handler의 등록은 해당 transport 플러그인의 post-processor
 `from spakky.event import EventDeferredError`로 효과를 만들기 전의 일시적 처리 유예를
 표현합니다. `EventDeferredError(retry_after=1.0)`의 지연은 유한한 양수 초이며 잘못된
 값은 `InvalidEventDeferralError`입니다. handler의 트랜잭션은 예외가 consumer에
-도달하기 전에 rollback되어야 합니다. 앞서 실행된 handler는 멱등이어야 합니다.
+도달하기 전에 rollback되어야 합니다. 같은 구독자의 다른 handler는 그대로 실행되고,
+재전달에서는 유예를 요청한 handler만 다시 실행됩니다.
 
-지원하는 broker consumer는 이를 업무 실패/DLT와 구분하고 commit 없이 재전달합니다.
-현재 Kafka plugin은 partition pause/rewind와 지속적인 poll로 이 계약을 구현합니다.
+전달 계약을 따르는 consumer는 이를 업무 실패/dead-letter와 구분하고, 시도 횟수를 세지 않은 채
+확인(ack/commit) 없이 재전달합니다. Kafka plugin은 partition pause/rewind와 지속적인 poll로 구현합니다.
 직접 in-process event dispatch는 broker 재전달을 만들지 않고 호출자에게 예외를
 전파합니다. 유예가 이미 시작한 handler의 장기 작업을 취소하는 기능은 아닙니다.
+
+## Integration Event 전달 계약
+
+통합 이벤트 소비자는 모두 `spakky.event.delivery`의 계약을 따릅니다. 자세한 설명과 예제는 [이벤트 시스템 가이드](../../docs/guides/events.md)에 있습니다.
+
+- **구독자**: `@EventHandler(subscriber="billing")`. 구독자마다 소비 위치, 재시도, dead-letter가 따로입니다.
+- **처리기 실행**: 한 처리기가 실패해도 나머지를 모두 실행하고, 재시도는 실패한 처리기만 다시 실행합니다.
+- **재시도**: `RetryPolicy(max_attempts, initial_interval, multiplier, max_interval, mode)`. `mode`는 `blocking`(순서 유지) 또는 `delayed`(지연 재시도)입니다. `AbstractNonRetryableEventError`와 역직렬화 실패는 재시도하지 않습니다.
+- **dead-letter**: 구독자마다 하나이며, `DeadLetter` 메타데이터를 `x-spakky-dead-letter-*` 헤더로 저장합니다.
+- **다시 넣기**: `IEventRedriver.redrive(event, subscriber=..., limit=...)`.
+- **멱등 소비**: `@Transactional()`과 `@Idempotent()`를 함께 선언하면 `(구독자, 처리기, event_id)` 기록이 처리기의 트랜잭션에 들어갑니다. SQLAlchemy 구현은 `spakky-sqlalchemy[event]`가 제공합니다.
+
+구현체를 만들 때는 `EventSubscriptions`와 `SubscriptionDelivery.deliver()`(비동기는 `AsyncEventSubscriptions`, `AsyncSubscriptionDelivery`)로 처리기를 실행하고, 반환된 `DeliveryCompleted | DeliveryRetry | DeliveryDeferred | DeliveryDeadLettered`를 브로커 동작으로 옮깁니다. 처리기 선언은 `EventHandler.routes()`로 클래스에서 읽습니다. 인스턴스는 AOP 프록시일 수 있어 bound method 검색으로는 처리기를 놓칩니다.
+
+### 메모리 구현체
+
+`spakky.event.memory`는 브로커 없이 같은 계약을 따르는 transport와 consumer입니다. 자동으로 등록되지 않으며 `spakky.event.memory.main.initialize(app)`로 켭니다.
+
+```python
+from spakky.event.memory.broker import InMemoryEventBroker
+from spakky.event.memory.main import initialize as initialize_memory_broker
+
+initialize_memory_broker(app)
+app.start()
+broker = app.container.get(InMemoryEventBroker)
+await broker.drain_async()
+```
+
+설정은 `SPAKKY_EVENT_MEMORY__RETRY__*`와 `SPAKKY_EVENT_MEMORY__POLL_INTERVAL`입니다. 인가가 필요한 처리기는 지원하지 않습니다.
 
 ## 라이선스
 

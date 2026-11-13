@@ -17,6 +17,7 @@ from spakky.event import EventDeferredError
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 from spakky.plugins.kafka.event.consumer import AsyncKafkaEventConsumer
+from spakky.plugins.kafka.event.worker import AsyncKafkaSubscriberWorker
 
 
 class ShortPollConfig(KafkaConnectionConfig):
@@ -32,17 +33,17 @@ class ShortPollConfig(KafkaConnectionConfig):
         }
 
 
-class ObservedConsumer(AsyncKafkaEventConsumer):
+class ObservedWorker(AsyncKafkaSubscriberWorker):
     """Observe real rebalance callbacks without replacing native lifecycle."""
 
     rebalances: int = 0
 
     @override
-    async def _clear_deferred(
+    async def _forget(
         self, consumer: AIOConsumer, partitions: list[TopicPartition]
     ) -> None:
         self.rebalances += 1
-        await super()._clear_deferred(consumer, partitions)
+        await super()._forget(consumer, partitions)
 
 
 async def eventually(
@@ -74,7 +75,6 @@ async def test_native_deferral_beyond_poll_limit_expect_no_commit_and_restart_re
     config.group_id = "deferred-" + uuid4().hex
     config.number_of_partitions = 3
     config.poll_timeout = 0.05
-    config.max_handler_retries = 0
     admin = AdminClient(config.connection_configuration_dict)
     for future in admin.create_topics(
         [NewTopic(topic, 3, 1), NewTopic(topic + ".dlt", 3, 1)]
@@ -94,9 +94,13 @@ async def test_native_deferral_beyond_poll_limit_expect_no_commit_and_restart_re
             raise EventDeferredError(retry_after=10)
         effects.append(event.value)
 
-    def make_consumer() -> ObservedConsumer:
-        consumer = ObservedConsumer(config)
+    workers: dict[AsyncKafkaEventConsumer, ObservedWorker] = {}
+
+    def make_consumer() -> AsyncKafkaEventConsumer:
+        consumer = AsyncKafkaEventConsumer(config)
         consumer.set_stop_event(asyncio.Event())
+        workers[consumer] = ObservedWorker(config, None, set())
+        consumer.workers[None] = workers[consumer]
         consumer.register(DeferredEvent, handler)
         return consumer
 
@@ -125,7 +129,7 @@ async def test_native_deferral_beyond_poll_limit_expect_no_commit_and_restart_re
     first = make_consumer()
     second = make_consumer()
     final = make_consumer()
-    active: list[ObservedConsumer] = []
+    active: list[AsyncKafkaEventConsumer] = []
     try:
         await first.start_async()
         active.append(first)
@@ -138,7 +142,7 @@ async def test_native_deferral_beyond_poll_limit_expect_no_commit_and_restart_re
             return effects == ["independent"]
 
         await eventually(independent_done)
-        baseline_rebalances = first.rebalances
+        baseline_rebalances = workers[first].rebalances
         # The gate remains closed for >5 times max.poll.interval.ms. No exact
         # timing threshold is used to infer group health: assignment and native
         # callback counts are checked below against actual broker state.
@@ -146,8 +150,8 @@ async def test_native_deferral_beyond_poll_limit_expect_no_commit_and_restart_re
             await asyncio.wait_for(release.wait(), 35)
         except TimeoutError:
             assert not release.is_set()
-        assert first.rebalances == baseline_rebalances
-        assert len(await first.consumer.assignment()) == 3
+        assert workers[first].rebalances == baseline_rebalances
+        assert len(await workers[first].consumer.assignment()) == 3
         assert effects == ["independent"]
         assert attempts["first"] >= 3
         assert attempts["second"] == 0
@@ -157,12 +161,12 @@ async def test_native_deferral_beyond_poll_limit_expect_no_commit_and_restart_re
         active.append(second)
 
         async def both_assigned() -> bool:
-            return bool(await first.consumer.assignment()) and bool(
-                await second.consumer.assignment()
+            return bool(await workers[first].consumer.assignment()) and bool(
+                await workers[second].consumer.assignment()
             )
 
         await eventually(both_assigned)
-        assert first.rebalances > baseline_rebalances
+        assert workers[first].rebalances > baseline_rebalances
         await no_commit_or_dlt()
         # Stop while still deferred, not after opening the gate. Native stop
         # must not wait for the retry deadline or application availability.

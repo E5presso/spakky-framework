@@ -30,10 +30,13 @@ class RabbitMQEventTransport(IEventTransport):
     Attributes:
         connection_string: AMQP connection string.
         exchange_name: Optional exchange name for routing.
+        declare_default_queue: Whether the queue named after the event is
+            declared (and bound) before publishing.
     """
 
     connection_string: str
     exchange_name: str | None
+    declare_default_queue: bool
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the synchronous RabbitMQ event transport.
@@ -43,6 +46,7 @@ class RabbitMQEventTransport(IEventTransport):
         """
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
+        self.declare_default_queue = config.declare_default_queue
 
     @override
     def send(
@@ -54,8 +58,10 @@ class RabbitMQEventTransport(IEventTransport):
     ) -> None:
         """Send a pre-serialized event payload to RabbitMQ.
 
-        Creates a new connection, sends the payload to the appropriate queue,
-        and closes the connection.
+        Creates a new connection, publishes the payload with the event name as
+        routing key, and closes the connection. Unless `declare_default_queue`
+        is turned off, the queue of the unnamed subscriber is declared first so
+        that the message is kept even before a consumer has started.
 
         Args:
             event_name: Routing key / queue name for the event.
@@ -67,10 +73,12 @@ class RabbitMQEventTransport(IEventTransport):
         """
         connection = BlockingConnection(URLParameters(self.connection_string))
         channel = connection.channel()
-        channel.queue_declare(event_name, durable=True)
         if self.exchange_name is not None:
             channel.exchange_declare(self.exchange_name)
-            channel.queue_bind(event_name, self.exchange_name, event_name)
+        if self.declare_default_queue:
+            channel.queue_declare(event_name, durable=True)
+            if self.exchange_name is not None:
+                channel.queue_bind(event_name, self.exchange_name, event_name)
         channel.basic_publish(
             self.exchange_name if self.exchange_name is not None else "",
             event_name,
@@ -95,10 +103,13 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
     Attributes:
         connection_string: AMQP connection string.
         exchange_name: Optional exchange name for routing.
+        declare_default_queue: Whether the queue named after the event is
+            declared (and bound) before publishing.
     """
 
     connection_string: str
     exchange_name: str | None
+    declare_default_queue: bool
 
     def __init__(self, config: RabbitMQConnectionConfig) -> None:
         """Initialize the asynchronous RabbitMQ event transport.
@@ -108,6 +119,7 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
         """
         self.connection_string = config.connection_string
         self.exchange_name = config.exchange_name
+        self.declare_default_queue = config.declare_default_queue
 
     @override
     async def send(
@@ -119,8 +131,11 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
     ) -> None:
         """Send a pre-serialized event payload to RabbitMQ asynchronously.
 
-        Creates a new robust connection, sends the payload to the appropriate
-        queue, and closes the connection.
+        Creates a new robust connection, publishes the payload with the event
+        name as routing key, and closes the connection. Unless
+        `declare_default_queue` is turned off, the queue of the unnamed
+        subscriber is declared first so that the message is kept even before a
+        consumer has started.
 
         Args:
             event_name: Routing key / queue name for the event.
@@ -137,9 +152,10 @@ class AsyncRabbitMQEventTransport(IAsyncEventTransport):
                 if self.exchange_name is not None
                 else channel.default_exchange
             )
-            queue = await channel.declare_queue(event_name, durable=True)
-            if self.exchange_name is not None:
-                await queue.bind(exchange, event_name)
+            if self.declare_default_queue:
+                queue = await channel.declare_queue(event_name, durable=True)
+                if self.exchange_name is not None:
+                    await queue.bind(exchange, event_name)
             await exchange.publish(
                 Message(body=payload, headers=dict(headers)),
                 routing_key=event_name,

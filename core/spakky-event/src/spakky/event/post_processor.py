@@ -1,6 +1,5 @@
 """Fail startup when declared handlers lack an explicit consumer provider."""
 
-from inspect import getmembers, iscoroutinefunction, ismethod
 from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
@@ -19,7 +18,8 @@ from spakky.event.event_consumer import (
     IDomainEventConsumer,
     IIntegrationEventConsumer,
 )
-from spakky.event.stereotype.event_handler import EventHandler, EventRoute
+from spakky.event.stereotype.event_handler import EventHandler
+from spakky.event.subscription import MixedSubscriptionModeError, SubscriberName
 
 
 @Pod()
@@ -27,6 +27,11 @@ class EventHandlerProviderValidationPostProcessor(IPostProcessor, IContainerAwar
     """Validate domain/integration and sync/async capabilities without a hidden provider."""
 
     _container: IContainer
+    _subscription_modes: dict[tuple[SubscriberName | None, type], bool]
+    """Whether each integration subscription seen so far is asynchronous."""
+
+    def __init__(self) -> None:
+        self._subscription_modes = {}
 
     @override
     def set_container(self, container: IContainer) -> None:
@@ -49,29 +54,37 @@ class EventHandlerProviderValidationPostProcessor(IPostProcessor, IContainerAwar
 
         Raises:
             EventHandlerProviderUnavailableError: No provider supports the handler role.
+            MixedSubscriptionModeError: One subscription mixes sync and async handlers.
         """
         if not EventHandler.exists(type(pod)):
             return pod
-        for name, method in getmembers(pod, predicate=ismethod):
-            route = EventRoute.get_or_none(method)
-            if route is None:
-                continue
-            asynchronous = iscoroutinefunction(method)
+        handler = EventHandler.get(type(pod))
+        for declared in handler.routes():
+            route = declared.route
             if issubclass(route.event_type, AbstractDomainEvent):
                 provider = (
-                    IAsyncDomainEventConsumer if asynchronous else IDomainEventConsumer
+                    IAsyncDomainEventConsumer
+                    if declared.asynchronous
+                    else IDomainEventConsumer
                 )
             elif issubclass(route.event_type, AbstractIntegrationEvent):
                 provider = (
                     IAsyncIntegrationEventConsumer
-                    if asynchronous
+                    if declared.asynchronous
                     else IIntegrationEventConsumer
                 )
+                subscription = (handler.subscriber, route.event_type)
+                known = self._subscription_modes.setdefault(
+                    subscription, declared.asynchronous
+                )
+                if known is not declared.asynchronous:
+                    raise MixedSubscriptionModeError(*subscription)
             else:
                 raise UnknownEventTypeError(route.event_type)
             if self._container.get_or_none(provider) is None:
                 raise EventHandlerProviderUnavailableError(
-                    f"{type(pod).__module__}.{type(pod).__qualname__}.{name}",
+                    f"{handler.type_.__module__}.{handler.type_.__qualname__}."
+                    f"{declared.method_name}",
                     route.event_type,
                     provider,
                 )

@@ -1,111 +1,77 @@
-from asyncio import wait_for
-from enum import StrEnum
-from time import monotonic
-from logging import getLogger
-from typing import Any, cast
+"""Kafka integration event consumers.
 
-from spakky.auth import (
-    AuthContextNotFoundError,
-    AuthRequirementDeniedError,
-    AuthRequirementProviderUnavailableError,
-    AuthVerificationProviderUnavailableError,
-)
-from aiokafka import AIOKafkaProducer
-from confluent_kafka import (
-    Consumer,
-    KafkaError,
-    KafkaException,
-    Message,
-    Producer,
-    TopicPartition,
-)
+The consumers implement the broker-neutral delivery contract of
+`spakky.event.delivery`. Every subscriber is served by its own worker (see
+`spakky.plugins.kafka.event.worker`), so each one reads through its own
+consumer group and keeps its own retries and dead-letter topic.
+"""
+
+from asyncio import Lock as AsyncLock
+from asyncio import create_task, gather, to_thread
+from logging import getLogger
+from threading import Lock, Thread
+from typing import Any, override
+
+from confluent_kafka import KafkaError, KafkaException
 from confluent_kafka.admin import AdminClient, NewTopic
-from confluent_kafka.aio import AIOConsumer
-from pydantic import TypeAdapter, ValidationError
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.service.background import (
     AbstractAsyncBackgroundService,
     AbstractBackgroundService,
 )
-from spakky.domain.models.event import AbstractEvent
-from spakky.event.error import EventDeferredError
+from spakky.domain.models.event import AbstractEvent, AbstractIntegrationEvent
+from spakky.event.delivery import (
+    AsyncEventSubscriptions,
+    EventRouting,
+    EventSubscriptions,
+)
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
     IAsyncIntegrationEventConsumer,
     IIntegrationEventConsumer,
 )
-from spakky.tracing.context import TraceContext
+from spakky.event.redrive import IAsyncEventRedriver, IEventRedriver, RedriveResult
+from spakky.event.subscription import HandlerName, SubscriberName
 from spakky.tracing.propagator import ITracePropagator
-from typing import override
 
-from spakky.plugins.kafka.auth import KAFKA_AUTH_HEADERS_PARAMETER
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
-from spakky.plugins.kafka.common.constants import DeadLetterHeaderKey
+from spakky.plugins.kafka.common.constants import KafkaTopic
+from spakky.plugins.kafka.event.worker import (
+    AsyncKafkaSubscriberWorker,
+    KafkaSubscriberWorker,
+)
 
 logger = getLogger(__name__)
 
 
-class MessageOutcome(StrEnum):
-    """What running the handlers settled about one consumed message.
-
-    The consumer turns this into the offset action that gives the delivery
-    guarantee: an offset must never move past a message whose failure is not
-    stored anywhere else.
-    """
-
-    PROCESSED = "processed"
-    """The consumer is done with the message and commits its offset.
-
-    Covers handler success, every failure a retry cannot fix (a refused auth
-    boundary, an empty message body), and a failure whose dead-letter record
-    reached the broker.
-    """
-
-    RETRYABLE = "retryable"
-    """The message is still the only copy of its own failure, so it comes back.
-
-    Reached when dead-lettering itself failed. The consumer rewinds its position
-    to the message instead of committing, and the next poll delivers it again.
-    """
-
-
-def _event_routing_name(event: type[AbstractEvent]) -> str:
-    """Read class-static routing identity through inherited property descriptors."""
-    probe = object.__new__(event)
-    return probe.event_name
-
-
 @Pod()
-class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
-    """Synchronous Kafka event consumer that polls messages and dispatches to handlers."""
+class KafkaEventConsumer(
+    IIntegrationEventConsumer, IEventRedriver, AbstractBackgroundService
+):
+    """Synchronous Kafka consumer that runs one worker thread per subscriber."""
 
     config: KafkaConnectionConfig
-    type_lookup: dict[str, type[AbstractEvent]]
-    type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
-    handlers: dict[type[AbstractEvent], list[EventHandlerCallback[Any]]]
     admin: AdminClient
-    consumer: Consumer
-    producer: Producer
-    """Dead-letter producer, bound by `initialize` for the service lifetime."""
+    subscriptions: EventSubscriptions
+    workers: dict[SubscriberName | None, KafkaSubscriberWorker]
+    """Worker of every subscriber with a registered handler; None is unnamed."""
+
     _propagator: ITracePropagator | None
+    # Any: handlers are registered per concrete event type.
     _auth_boundary_handlers: set[EventHandlerCallback[Any]]
+    _redrive_lock: Lock
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the Kafka consumer with connection config."""
         super().__init__()
         self.config = config
-        self.type_lookup = {}
-        self.type_adapters = {}
-        self.handlers = {}
-        self._deferred: dict[tuple[str, int], tuple[TopicPartition, float]] = {}
+        self.subscriptions = EventSubscriptions(config.retry)
+        self.workers = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
+        self._redrive_lock = Lock()
         self.admin = AdminClient(self.config.connection_configuration_dict)
-        self.consumer = Consumer(
-            self.config.consumer_configuration_dict,
-            logger=logger,
-        )
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
         """Set the trace propagator for extracting trace context from messages.
@@ -114,48 +80,23 @@ class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
             propagator: An ITracePropagator instance.
         """
         self._propagator = propagator
+        for worker in self.workers.values():
+            worker.propagator = propagator
 
     def register_auth_boundary(self, handler: EventHandlerCallback[Any]) -> None:
         """Mark a registered post-processor endpoint as Kafka auth-aware."""
         self._auth_boundary_handlers.add(handler)
 
-    @staticmethod
-    def _to_string_headers(
-        raw: dict[str, bytes | str | None]
-        | list[tuple[str, bytes | str | None]]
-        | None,
-    ) -> dict[str, str]:
-        """Convert Kafka message headers to a string-valued carrier dict.
+    def _create_topics(self, topics: list[KafkaTopic]) -> None:
+        """Create the topics that do not exist yet and wait for the broker.
 
-        Kafka headers may be a list of (key, value) tuples or a dict.
-        Values can be bytes, str, or None. This method decodes bytes and
-        keeps str values, skipping None.
-
-        Args:
-            raw: Raw Kafka headers, or None.
-
-        Returns:
-            A dict with string keys and string values.
+        A topic created concurrently by another consumer is not a failure.
         """
-        if raw is None:
-            return {}
-        items = raw.items() if isinstance(raw, dict) else raw
-        result: dict[str, str] = {}
-        for key, value in items:
-            if isinstance(value, str):
-                result[key] = value
-            elif isinstance(value, bytes):
-                result[key] = value.decode()
-        return result
-
-    def _create_topics(self, topics: list[str]) -> None:
-        if not topics:  # pragma: no cover - 등록된 핸들러 없을 때 조기 반환
-            return
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
         topics_to_create: set[str] = set(topics) - existing_topics
-        if not topics_to_create:  # pragma: no cover - 모든 토픽이 이미 존재
+        if not topics_to_create:
             return
-        self.admin.create_topics(
+        futures = self.admin.create_topics(
             [
                 NewTopic(
                     topic=topic,
@@ -165,375 +106,124 @@ class KafkaEventConsumer(IIntegrationEventConsumer, AbstractBackgroundService):
                 for topic in topics_to_create
             ]
         )
-
-    @staticmethod
-    def _dead_letter_delivery_report(
-        error: KafkaError | None,
-        message: Message,
-    ) -> None:
-        """Log the broker verdict on a dead-letter record.
-
-        `Producer.produce` only enqueues, so failures the broker decides —
-        authorization refusals and delivery timeouts — surface only here.
-        """
-        if error is not None:
-            logger.error(f"Dead-letter delivery failed for {message.topic()}: {error}")
-
-    def _send_to_dead_letter(
-        self,
-        topic: str,
-        message: Message,
-        headers: dict[str, str],
-        error: Exception,
-    ) -> bool:
-        """Forward a message the handlers could not process to its dead-letter topic.
-
-        The original body and key are forwarded unchanged and the decoded original
-        headers travel with them, so the record can be replayed from its own
-        coordinates.
-
-        Args:
-            topic: Topic the failed message was consumed from.
-            message: The Kafka message that could not be processed.
-            headers: Decoded headers of the original message.
-            error: Exception that ended the last processing attempt.
-
-        Returns:
-            Whether the dead-letter record reached the broker. `False` means the
-            failure is stored nowhere, so the caller must keep the original
-            message rather than commit its offset.
-        """
-        _, original_timestamp = message.timestamp()
-        dead_letter_headers: dict[str, bytes | str | None] = {
-            **headers,
-            DeadLetterHeaderKey.ORIGINAL_TOPIC.value: topic,
-            DeadLetterHeaderKey.ORIGINAL_PARTITION.value: str(message.partition()),
-            DeadLetterHeaderKey.ORIGINAL_OFFSET.value: str(message.offset()),
-            DeadLetterHeaderKey.ORIGINAL_TIMESTAMP.value: str(original_timestamp),
-            DeadLetterHeaderKey.CONSUMER_GROUP.value: self.config.group_id,
-            DeadLetterHeaderKey.EXCEPTION_TYPE.value: type(error).__name__,
-            DeadLetterHeaderKey.EXCEPTION_MESSAGE.value: str(error),
-        }
-        try:
-            self.producer.produce(
-                topic=f"{topic}{self.config.dead_letter_topic_suffix}",
-                value=message.value(),
-                key=message.key(),
-                headers=dead_letter_headers,
-                callback=self._dead_letter_delivery_report,
-            )
-        except (BufferError, KafkaException) as delivery_error:
-            # produce() rejects a record over `message.max.bytes` and a full local
-            # queue synchronously. This runs on the poll thread, so an escaping
-            # exception would kill consumption while stop() still looks clean.
-            logger.error(f"Dead-letter delivery failed for {topic}: {delivery_error}")
-            return False
-        undelivered = self.producer.flush(self.config.dead_letter_delivery_timeout)
-        if undelivered:
-            logger.error(
-                f"Dead-letter record for {topic} still unsent after "
-                f"{self.config.dead_letter_delivery_timeout}s"
-            )
-            return False
-        return True
-
-    def _invoke_handlers(
-        self,
-        event_type: type[AbstractEvent],
-        event_data: AbstractEvent,
-        headers: dict[str, str],
-    ) -> None:
-        for handler in self.handlers[event_type]:
-            if handler in self._auth_boundary_handlers:
-                handler(event_data, **{KAFKA_AUTH_HEADERS_PARAMETER: headers})
-                continue
-            handler(event_data)
-
-    def _dead_letter_outcome(
-        self,
-        topic: str,
-        message: Message,
-        headers: dict[str, str],
-        error: Exception,
-    ) -> MessageOutcome:
-        """Decide what happens to the offset of a message the handlers refused.
-
-        The offset may only advance once the failure is stored somewhere else. If
-        the dead-letter record never reached the broker, committing would destroy
-        the only remaining copy of the event, so the message is kept for another
-        attempt instead.
-        """
-        if self._send_to_dead_letter(topic, message, headers, error):
-            return MessageOutcome.PROCESSED
-        return MessageOutcome.RETRYABLE
-
-    def _commit_offset(self, message: Message) -> None:
-        """Advance the committed offset past `message`.
-
-        A commit can be rejected while the consumer group rebalances or the
-        broker is unreachable. Letting that escape would end the poll loop and
-        stop every subscription this consumer owns, so the rejection is logged
-        and the next processed message commits a higher offset in its place.
-        """
-        try:
-            committed = self.consumer.commit(message=message, asynchronous=False)
-        except KafkaException as error:
-            logger.error(
-                f"Offset commit failed for event type {message.topic()}: {error}"
-            )
-            return
-        for position in committed:
-            if position.error is not None:
-                logger.error(
-                    f"Offset commit rejected for {position.topic} "
-                    f"[{position.partition}]: {position.error}"
-                )
-
-    def _rewind_to(self, position: TopicPartition) -> None:
-        """Move the consume position back so the next poll returns that message.
-
-        Leaving the offset uncommitted is not enough on its own: the consumer's
-        in-memory position has already moved past the message, so the next
-        message that succeeds would commit an offset beyond the failed one and
-        the failure would never come back.
-        """
-        try:
-            self.consumer.seek(position)
-        except KafkaException as error:
-            logger.error(
-                f"Cannot rewind {position.topic} [{position.partition}] to offset "
-                f"{position.offset}, message is not retryable: {error}"
-            )
-
-    def _dispatch_to_handlers(
-        self,
-        message: Message,
-        topic: str,
-        event_type: type[AbstractEvent],
-        headers: dict[str, str],
-    ) -> MessageOutcome:
-        """Run every handler registered for one polled message.
-
-        Returns:
-            `PROCESSED` when the consumer is done with the message, `RETRYABLE`
-            when the message must be delivered again.
-
-        Raises:
-            AuthVerificationProviderUnavailableError: Snapshot verification is
-                unavailable, which is not a verdict about this message.
-            AuthRequirementProviderUnavailableError: Authorization data is
-                unavailable, which is not a verdict about this message.
-        """
-        event_message: bytes | None = message.value()
-        if event_message is None:
-            logger.warning(f"Received empty message for event type: {topic}")
-            return MessageOutcome.PROCESSED
-        try:
-            event_data = self.type_adapters[event_type].validate_json(event_message)
-        except ValidationError as error:
-            # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
-            logger.error(f"Cannot deserialize message from topic {topic}: {error}")
-            return self._dead_letter_outcome(topic, message, headers, error)
-        remaining_retries = self.config.max_handler_retries
-        while True:
+        for topic, future in futures.items():
             try:
-                self._invoke_handlers(event_type, event_data, headers)
-                return MessageOutcome.PROCESSED
-            except EventDeferredError:
-                raise
-            except (
-                AuthVerificationProviderUnavailableError,
-                AuthRequirementProviderUnavailableError,
-            ):
-                raise
-            except (AuthContextNotFoundError, AuthRequirementDeniedError) as error:
-                logger.warning(
-                    f"Auth boundary refused message for event type {topic}, "
-                    f"discarding it: {error}"
-                )
-                return MessageOutcome.PROCESSED
-            except Exception as error:
-                if remaining_retries == 0:
-                    logger.error(
-                        f"Error processing message for event type {topic}: {error}"
-                    )
-                    return self._dead_letter_outcome(topic, message, headers, error)
-                remaining_retries -= 1
-                logger.warning(
-                    f"Retrying message for event type {topic} after error: {error}"
-                )
-
-    def _route_event_handler(self, message: Message) -> None:
-        if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
-            logger.error(f"Consumer error: {message.error()}")
-            return
-        topic: str | None = message.topic()
-        partition: int | None = message.partition()
-        offset: int | None = message.offset()
-        if (  # pragma: no cover - Kafka 메시지 비정상 상태
-            topic is None or partition is None or offset is None
-        ):
-            logger.warning("Received message with no topic, partition or offset.")
-            return
-        if (topic, partition) in self._deferred:
-            # A prefetched record can arrive after pause. The saved rewind offset
-            # remains authoritative, so never dispatch or commit past it.
-            return
-        event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
-        if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
-            logger.warning(f"Received message for unknown event type: {topic}")
-            return
-        headers = self._to_string_headers(message.headers())
-        if self._propagator is not None:
-            carrier = headers
-            parent = self._propagator.extract(carrier)
-            ctx = parent.child() if parent is not None else TraceContext.new_root()
-            TraceContext.set(ctx)
-        try:
-            outcome = self._dispatch_to_handlers(message, topic, event_type, headers)
-            match outcome:
-                case MessageOutcome.PROCESSED:
-                    self._commit_offset(message)
-                case (
-                    MessageOutcome.RETRYABLE
-                ):  # pragma: no branch - 전수 분기, 미매치 불가
-                    self._rewind_to(TopicPartition(topic, partition, offset))
-        except EventDeferredError as error:
-            self._defer(TopicPartition(topic, partition, offset), error.retry_after)
-        finally:
-            if self._propagator is not None:
-                TraceContext.clear()
-
-    def _clear_deferred(
-        self, consumer: Consumer, partitions: list[TopicPartition]
-    ) -> None:
-        """Forget local timers on assignment, revocation or lost ownership.
-
-        librdkafka retains its default assignment handling; this callback does
-        not commit, assign or unassign. A new owner starts at the broker offset.
-        """
-        for position in partitions:
-            self._deferred.pop((position.topic, position.partition), None)
-
-    def _defer(self, position: TopicPartition, delay: float) -> None:
-        """Fence this partition before trying to pause and rewind it."""
-        self._deferred[(position.topic, position.partition)] = (
-            position,
-            monotonic() + delay,
-        )
-        try:
-            self.consumer.pause([position])
-            self.consumer.seek(position)
-        except KafkaException as error:
-            # Keep the fence even if ownership is changing. Poll delivers the
-            # rebalance callback; a due retry rechecks seek before resuming.
-            logger.warning("Cannot pause deferred partition %s: %s", position, error)
-
-    def _resume_deferred(self) -> None:
-        """Retry due partitions without sleeping in a handler or blocking poll."""
-        now = monotonic()
-        for key, (position, deadline) in list(self._deferred.items()):
-            if deadline > now:
-                continue
-            try:
-                self.consumer.seek(position)
-                self.consumer.resume([position])
+                future.result(self.config.dead_letter_delivery_timeout)
             except KafkaException as error:
-                logger.warning(
-                    "Cannot resume deferred partition %s: %s", position, error
-                )
-                continue
-            del self._deferred[key]
+                if error.args[0].code() != KafkaError.TOPIC_ALREADY_EXISTS:
+                    raise
+                logger.info(f"Topic {topic} was created concurrently")
 
     @override
     def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: EventHandlerCallback[EventT_contra],
+        *,
+        subscriber: SubscriberName | None = None,
+        handler_name: HandlerName | None = None,
     ) -> None:
-        """Register a handler for the given event type."""
-        if event not in self.handlers:
-            self.handlers[event] = []
-            self.type_adapters[event] = cast(
-                TypeAdapter[AbstractEvent], TypeAdapter(event)
+        """Register a handler in the subscription of `subscriber` for `event`."""
+        delivery = self.subscriptions.register(event, handler, subscriber, handler_name)
+        worker = self.workers.get(delivery.subscriber)
+        if worker is None:
+            worker = KafkaSubscriberWorker(
+                self.config, delivery.subscriber, self._auth_boundary_handlers
             )
-            self.type_lookup[_event_routing_name(event)] = event
-        self.handlers[event].append(handler)
+            worker.propagator = self._propagator
+            self.workers[delivery.subscriber] = worker
+        worker.add(delivery)
 
     @override
     def initialize(self) -> None:
-        """Create Kafka topics, open the dead-letter producer, and subscribe."""
-        if not self.handlers:
+        """Create every subscriber's topics and open every subscriber's clients."""
+        if not self.workers:
             return
-        topics: list[str] = [
-            _event_routing_name(event_type) for event_type in self.handlers.keys()
-        ]
-        self.producer = Producer(self.config.producer_configuration_dict, logger=logger)
         self._create_topics(
-            topics=topics
-            + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
+            [
+                topic
+                for worker in self.workers.values()
+                for topic in worker.managed_topics
+            ]
         )
-        self.consumer.subscribe(
-            topics=topics,
-            on_assign=self._clear_deferred,
-            on_revoke=self._clear_deferred,
-            on_lost=self._clear_deferred,
-        )
+        for worker in self.workers.values():
+            worker.open()
 
     @override
     def run(self) -> None:
-        """Poll Kafka for messages and route them to registered handlers."""
-        if not self.handlers:
-            return
-        while not self._stop_event.is_set():
-            self._resume_deferred()
-            message: Message | None = self.consumer.poll(
-                timeout=self.config.poll_timeout
+        """Run every subscriber's poll loop on its own thread until stopped.
+
+        A subscriber whose loop ends with an error leaves the others running.
+        """
+        threads = [
+            Thread(
+                target=worker.run,
+                args=(self._stop_event,),
+                daemon=True,
+                name=f"{type(self).__name__}[{worker.group_id}]",
             )
-            if message is None or self._stop_event.is_set():
-                continue
-            self._route_event_handler(message)
+            for worker in self.workers.values()
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
 
     @override
     def dispose(self) -> None:
-        """Flush pending dead-letter records and close the Kafka consumer.
+        """Flush pending records and close every subscriber's clients."""
+        for worker in self.workers.values():
+            worker.close()
 
-        The flush is bounded so an unreachable broker cannot block shutdown
-        forever; records still queued at that point are reported by the
-        delivery callback.
+    @override
+    def redrive(
+        self,
+        event: type[AbstractIntegrationEvent],
+        *,
+        subscriber: SubscriberName | None = None,
+        limit: int | None = None,
+    ) -> RedriveResult:
+        """Deliver dead letters of `subscriber` for `event` to their failed handlers.
+
+        Redrives of this consumer run one at a time, so two calls never read
+        the same dead letters.
+
+        Raises:
+            SubscriptionNotFoundError: Nothing is registered for the pair.
         """
-        if self.handlers:
-            self.producer.flush(self.config.dead_letter_delivery_timeout)
-        self.consumer.close()
+        delivery = self.subscriptions.get(subscriber, event)
+        with self._redrive_lock:
+            return self.workers[delivery.subscriber].redrive(
+                EventRouting.name_of(event), limit
+            )
 
 
 @Pod()
 class AsyncKafkaEventConsumer(
-    IAsyncIntegrationEventConsumer, AbstractAsyncBackgroundService
+    IAsyncIntegrationEventConsumer, IAsyncEventRedriver, AbstractAsyncBackgroundService
 ):
-    """Asynchronous Kafka event consumer that polls messages and dispatches to handlers."""
+    """Asynchronous Kafka consumer that runs one worker task per subscriber."""
 
     config: KafkaConnectionConfig
-    type_lookup: dict[str, type[AbstractEvent]]
-    type_adapters: dict[type[AbstractEvent], TypeAdapter[AbstractEvent]]
-    handlers: dict[type[AbstractEvent], list[AsyncEventHandlerCallback[Any]]]
     admin: AdminClient
-    consumer: AIOConsumer
-    producer: AIOKafkaProducer
-    """Dead-letter producer, bound by `initialize_async` for the service lifetime."""
+    subscriptions: AsyncEventSubscriptions
+    workers: dict[SubscriberName | None, AsyncKafkaSubscriberWorker]
+    """Worker of every subscriber with a registered handler; None is unnamed."""
+
     _propagator: ITracePropagator | None
+    # Any: handlers are registered per concrete event type.
     _auth_boundary_handlers: set[AsyncEventHandlerCallback[Any]]
+    _redrive_lock: AsyncLock
 
     def __init__(self, config: KafkaConnectionConfig) -> None:
         """Initialize the async Kafka consumer with connection config."""
         super().__init__()
         self.config = config
-        self.type_lookup = {}
-        self.type_adapters = {}
-        self.handlers = {}
-        self._deferred: dict[tuple[str, int], tuple[TopicPartition, float]] = {}
+        self.subscriptions = AsyncEventSubscriptions(config.retry)
+        self.workers = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
+        self._redrive_lock = AsyncLock()
         self.admin = AdminClient(self.config.connection_configuration_dict)
 
     def set_propagator(self, propagator: ITracePropagator) -> None:
@@ -543,48 +233,23 @@ class AsyncKafkaEventConsumer(
             propagator: An ITracePropagator instance.
         """
         self._propagator = propagator
+        for worker in self.workers.values():
+            worker.propagator = propagator
 
     def register_auth_boundary(self, handler: AsyncEventHandlerCallback[Any]) -> None:
         """Mark a registered post-processor endpoint as Kafka auth-aware."""
         self._auth_boundary_handlers.add(handler)
 
-    @staticmethod
-    def _to_string_headers(
-        raw: dict[str, bytes | str | None]
-        | list[tuple[str, bytes | str | None]]
-        | None,
-    ) -> dict[str, str]:
-        """Convert Kafka message headers to a string-valued carrier dict.
+    def _create_topics(self, topics: list[KafkaTopic]) -> None:
+        """Create the topics that do not exist yet and wait for the broker.
 
-        Kafka headers may be a list of (key, value) tuples or a dict.
-        Values can be bytes, str, or None. This method decodes bytes and
-        keeps str values, skipping None.
-
-        Args:
-            raw: Raw Kafka headers, or None.
-
-        Returns:
-            A dict with string keys and string values.
+        A topic created concurrently by another consumer is not a failure.
         """
-        if raw is None:
-            return {}
-        items = raw.items() if isinstance(raw, dict) else raw
-        result: dict[str, str] = {}
-        for key, value in items:
-            if isinstance(value, str):
-                result[key] = value
-            elif isinstance(value, bytes):
-                result[key] = value.decode()
-        return result
-
-    def _create_topics(self, topics: list[str]) -> None:
-        if not topics:  # pragma: no cover - 등록된 핸들러 없을 때 조기 반환
-            return
         existing_topics: set[str] = set(self.admin.list_topics().topics.keys())
         topics_to_create: set[str] = set(topics) - existing_topics
-        if not topics_to_create:  # pragma: no cover - 모든 토픽이 이미 존재
+        if not topics_to_create:
             return
-        self.admin.create_topics(
+        futures = self.admin.create_topics(
             [
                 NewTopic(
                     topic=topic,
@@ -594,345 +259,95 @@ class AsyncKafkaEventConsumer(
                 for topic in topics_to_create
             ]
         )
-
-    async def _send_to_dead_letter(
-        self,
-        topic: str,
-        message: Message,
-        headers: dict[str, str],
-        error: Exception,
-    ) -> bool:
-        """Forward a message the handlers could not process to its dead-letter topic.
-
-        The original body and key are forwarded unchanged and the decoded original
-        headers travel with them, so the record can be replayed from its own
-        coordinates. Delivery is awaited so a broker rejection is logged rather
-        than lost, and it is bounded so one unreachable broker cannot stall the
-        poll loop.
-
-        Args:
-            topic: Topic the failed message was consumed from.
-            message: The Kafka message that could not be processed.
-            headers: Decoded headers of the original message.
-            error: Exception that ended the last processing attempt.
-
-        Returns:
-            Whether the dead-letter record is confirmed at the broker. `False`
-            means the failure may be stored nowhere, so the caller must keep the
-            original message rather than commit its offset. An unconfirmed
-            timeout also reports `False`: keeping the message can duplicate the
-            dead-letter record, which is the recoverable direction.
-        """
-        _, original_timestamp = message.timestamp()
-        dead_letter_headers: dict[str, str] = {
-            **headers,
-            DeadLetterHeaderKey.ORIGINAL_TOPIC.value: topic,
-            DeadLetterHeaderKey.ORIGINAL_PARTITION.value: str(message.partition()),
-            DeadLetterHeaderKey.ORIGINAL_OFFSET.value: str(message.offset()),
-            DeadLetterHeaderKey.ORIGINAL_TIMESTAMP.value: str(original_timestamp),
-            DeadLetterHeaderKey.CONSUMER_GROUP.value: self.config.group_id,
-            DeadLetterHeaderKey.EXCEPTION_TYPE.value: type(error).__name__,
-            DeadLetterHeaderKey.EXCEPTION_MESSAGE.value: str(error),
-        }
-        try:
-            await wait_for(
-                self.producer.send_and_wait(
-                    topic=f"{topic}{self.config.dead_letter_topic_suffix}",
-                    value=message.value(),
-                    key=message.key(),
-                    headers=[
-                        (key, value.encode())
-                        for key, value in dead_letter_headers.items()
-                    ],
-                ),
-                timeout=self.config.dead_letter_delivery_timeout,
-            )
-        except TimeoutError:
-            # Only the confirmation wait is abandoned here — the record stays in the
-            # producer batch and may still reach the broker, so replaying it by hand
-            # can duplicate it. Reported apart from a confirmed refusal.
-            logger.error(
-                f"Dead-letter delivery for {topic} unconfirmed after "
-                f"{self.config.dead_letter_delivery_timeout}s; "
-                "it may still be delivered"
-            )
-            return False
-        except Exception as delivery_error:
-            logger.error(f"Dead-letter delivery failed for {topic}: {delivery_error}")
-            return False
-        return True
-
-    async def _invoke_handlers(
-        self,
-        event_type: type[AbstractEvent],
-        event_data: AbstractEvent,
-        headers: dict[str, str],
-    ) -> None:
-        for handler in self.handlers[event_type]:
-            if handler in self._auth_boundary_handlers:
-                await handler(event_data, **{KAFKA_AUTH_HEADERS_PARAMETER: headers})
-                continue
-            await handler(event_data)
-
-    async def _dead_letter_outcome(
-        self,
-        topic: str,
-        message: Message,
-        headers: dict[str, str],
-        error: Exception,
-    ) -> MessageOutcome:
-        """Decide what happens to the offset of a message the handlers refused.
-
-        The offset may only advance once the failure is stored somewhere else. If
-        the dead-letter record is not confirmed at the broker, committing would
-        destroy the only remaining copy of the event, so the message is kept for
-        another attempt instead.
-        """
-        if await self._send_to_dead_letter(topic, message, headers, error):
-            return MessageOutcome.PROCESSED
-        return MessageOutcome.RETRYABLE
-
-    async def _commit_offset(self, message: Message) -> None:
-        """Advance the committed offset past `message`.
-
-        A commit can be rejected while the consumer group rebalances or the
-        broker is unreachable. Letting that escape would end the polling task and
-        stop every subscription this consumer owns, so the rejection is logged
-        and the next processed message commits a higher offset in its place.
-        """
-        try:
-            committed = await self.consumer.commit(message=message, asynchronous=False)
-        except KafkaException as error:
-            logger.error(
-                f"Offset commit failed for event type {message.topic()}: {error}"
-            )
-            return
-        for position in committed:
-            if position.error is not None:
-                logger.error(
-                    f"Offset commit rejected for {position.topic} "
-                    f"[{position.partition}]: {position.error}"
-                )
-
-    async def _rewind_to(self, position: TopicPartition) -> None:
-        """Move the consume position back so the next poll returns that message.
-
-        Leaving the offset uncommitted is not enough on its own: the consumer's
-        in-memory position has already moved past the message, so the next
-        message that succeeds would commit an offset beyond the failed one and
-        the failure would never come back.
-        """
-        try:
-            await self.consumer.seek(position)
-        except KafkaException as error:
-            logger.error(
-                f"Cannot rewind {position.topic} [{position.partition}] to offset "
-                f"{position.offset}, message is not retryable: {error}"
-            )
-
-    async def _dispatch_to_handlers(
-        self,
-        message: Message,
-        topic: str,
-        event_type: type[AbstractEvent],
-        headers: dict[str, str],
-    ) -> MessageOutcome:
-        """Run every handler registered for one polled message.
-
-        Returns:
-            `PROCESSED` when the consumer is done with the message, `RETRYABLE`
-            when the message must be delivered again.
-
-        Raises:
-            AuthVerificationProviderUnavailableError: Snapshot verification is
-                unavailable, which is not a verdict about this message.
-            AuthRequirementProviderUnavailableError: Authorization data is
-                unavailable, which is not a verdict about this message.
-        """
-        event_message: bytes | None = message.value()
-        if event_message is None:
-            logger.warning(f"Received empty message for event type: {topic}")
-            return MessageOutcome.PROCESSED
-        try:
-            event_data = self.type_adapters[event_type].validate_json(event_message)
-        except ValidationError as error:
-            # 역직렬화 실패는 같은 본문으로 재시도해도 결과가 같으므로 즉시 보낸다.
-            logger.error(f"Cannot deserialize message from topic {topic}: {error}")
-            return await self._dead_letter_outcome(topic, message, headers, error)
-        remaining_retries = self.config.max_handler_retries
-        while True:
+        for topic, future in futures.items():
             try:
-                await self._invoke_handlers(event_type, event_data, headers)
-                return MessageOutcome.PROCESSED
-            except EventDeferredError:
-                raise
-            except (
-                AuthVerificationProviderUnavailableError,
-                AuthRequirementProviderUnavailableError,
-            ):
-                raise
-            except (AuthContextNotFoundError, AuthRequirementDeniedError) as error:
-                logger.warning(
-                    f"Auth boundary refused message for event type {topic}, "
-                    f"discarding it: {error}"
-                )
-                return MessageOutcome.PROCESSED
-            except Exception as error:
-                if remaining_retries == 0:
-                    logger.error(
-                        f"Error processing message for event type {topic}: {error}"
-                    )
-                    return await self._dead_letter_outcome(
-                        topic, message, headers, error
-                    )
-                remaining_retries -= 1
-                logger.warning(
-                    f"Retrying message for event type {topic} after error: {error}"
-                )
-
-    async def _route_event_handler(self, message: Message) -> None:
-        if message.error():  # pragma: no cover - Kafka 브로커 에러 콜백
-            logger.error(f"Consumer error: {message.error()}")
-            return
-        topic: str | None = message.topic()
-        partition: int | None = message.partition()
-        offset: int | None = message.offset()
-        if (  # pragma: no cover - Kafka 메시지 비정상 상태
-            topic is None or partition is None or offset is None
-        ):
-            logger.warning("Received message with no topic, partition or offset.")
-            return
-        if (topic, partition) in self._deferred:
-            # A prefetched record can arrive after pause. The saved rewind offset
-            # remains authoritative, so never dispatch or commit past it.
-            return
-        event_type: type[AbstractEvent] | None = self.type_lookup.get(topic)
-        if event_type is None:  # pragma: no cover - 미등록 이벤트 타입 수신 방어
-            logger.warning(f"Received message for unknown event type: {topic}")
-            return
-        headers = self._to_string_headers(message.headers())
-        if self._propagator is not None:
-            carrier = headers
-            parent = self._propagator.extract(carrier)
-            ctx = parent.child() if parent is not None else TraceContext.new_root()
-            TraceContext.set(ctx)
-        try:
-            outcome = await self._dispatch_to_handlers(
-                message, topic, event_type, headers
-            )
-            match outcome:
-                case MessageOutcome.PROCESSED:
-                    await self._commit_offset(message)
-                case (
-                    MessageOutcome.RETRYABLE
-                ):  # pragma: no branch - 전수 분기, 미매치 불가
-                    await self._rewind_to(TopicPartition(topic, partition, offset))
-        except EventDeferredError as error:
-            await self._defer(
-                TopicPartition(topic, partition, offset), error.retry_after
-            )
-        finally:
-            if self._propagator is not None:
-                TraceContext.clear()
-
-    async def _clear_deferred(
-        self, consumer: AIOConsumer, partitions: list[TopicPartition]
-    ) -> None:
-        """Forget local timers on assignment, revocation or lost ownership.
-
-        librdkafka retains its default assignment handling; this callback does
-        not commit, assign or unassign. A new owner starts at the broker offset.
-        """
-        for position in partitions:
-            self._deferred.pop((position.topic, position.partition), None)
-
-    async def _defer(self, position: TopicPartition, delay: float) -> None:
-        """Fence this partition before trying to pause and rewind it."""
-        self._deferred[(position.topic, position.partition)] = (
-            position,
-            monotonic() + delay,
-        )
-        try:
-            await self.consumer.pause([position])
-            await self.consumer.seek(position)
-        except KafkaException as error:
-            # Keep the fence even if ownership is changing. Poll delivers the
-            # rebalance callback; a due retry rechecks seek before resuming.
-            logger.warning("Cannot pause deferred partition %s: %s", position, error)
-
-    async def _resume_deferred(self) -> None:
-        """Retry due partitions without sleeping in a handler or blocking poll."""
-        now = monotonic()
-        for key, (position, deadline) in list(self._deferred.items()):
-            if deadline > now:
-                continue
-            try:
-                await self.consumer.seek(position)
-                await self.consumer.resume([position])
+                future.result(self.config.dead_letter_delivery_timeout)
             except KafkaException as error:
-                logger.warning(
-                    "Cannot resume deferred partition %s: %s", position, error
-                )
-                continue
-            del self._deferred[key]
+                if error.args[0].code() != KafkaError.TOPIC_ALREADY_EXISTS:
+                    raise
+                logger.info(f"Topic {topic} was created concurrently")
 
     @override
     def register[EventT_contra: AbstractEvent](
         self,
         event: type[EventT_contra],
         handler: AsyncEventHandlerCallback[EventT_contra],
+        *,
+        subscriber: SubscriberName | None = None,
+        handler_name: HandlerName | None = None,
     ) -> None:
-        """Register an async handler for the given event type."""
-        if event not in self.handlers:
-            self.handlers[event] = []
-            self.type_adapters[event] = cast(
-                TypeAdapter[AbstractEvent], TypeAdapter(event)
+        """Register an async handler in the subscription of `subscriber` for `event`."""
+        delivery = self.subscriptions.register(event, handler, subscriber, handler_name)
+        worker = self.workers.get(delivery.subscriber)
+        if worker is None:
+            worker = AsyncKafkaSubscriberWorker(
+                self.config, delivery.subscriber, self._auth_boundary_handlers
             )
-            self.type_lookup[_event_routing_name(event)] = event
-        self.handlers[event].append(handler)
+            worker.propagator = self._propagator
+            self.workers[delivery.subscriber] = worker
+        worker.add(delivery)
 
     @override
     async def initialize_async(self) -> None:
-        """Create Kafka topics, open the dead-letter producer, and subscribe."""
-        if not self.handlers:
+        """Create every subscriber's topics and open every subscriber's clients."""
+        if not self.workers:
             return
-        self.consumer = AIOConsumer(self.config.consumer_configuration_dict)
-        self.producer = AIOKafkaProducer(
-            **self.config.async_producer_configuration_dict
+        await to_thread(
+            self._create_topics,
+            [
+                topic
+                for worker in self.workers.values()
+                for topic in worker.managed_topics
+            ],
         )
-        await self.producer.start()
-        topics: list[str] = [
-            _event_routing_name(event_type) for event_type in self.handlers.keys()
-        ]
-        self._create_topics(
-            topics=topics
-            + [f"{topic}{self.config.dead_letter_topic_suffix}" for topic in topics]
-        )
-        await self.consumer.subscribe(
-            topics=topics,
-            on_assign=self._clear_deferred,
-            on_revoke=self._clear_deferred,
-            on_lost=self._clear_deferred,
-        )
+        for worker in self.workers.values():
+            await worker.open()
 
     @override
-    async def run_async(self) -> None:  # pragma: no cover - 별도 asyncio 태스크로 실행
-        """Poll Kafka asynchronously for messages and route them to handlers."""
-        if not self.handlers:
-            return
-        while not self._stop_event.is_set():
-            await self._resume_deferred()
-            message: Message | None = await self.consumer.poll(
-                timeout=self.config.poll_timeout
-            )
-            if message is None or self._stop_event.is_set():
-                continue
-            await self._route_event_handler(message)
+    async def run_async(self) -> None:
+        """Run every subscriber's poll loop as its own task until stopped.
+
+        A subscriber whose loop ends with an error leaves the others running;
+        the first such error is raised once every loop has ended.
+        """
+        results = await gather(
+            *(
+                create_task(
+                    worker.run(self._stop_event),
+                    name=f"{type(self).__name__}[{worker.group_id}]",
+                )
+                for worker in self.workers.values()
+            ),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
     @override
     async def dispose_async(self) -> None:
-        """Flush pending dead-letter records and close the async Kafka consumer."""
-        if not self.handlers:
-            return
-        await self.producer.stop()
-        await self.consumer.close()
+        """Flush pending records and close every subscriber's clients."""
+        for worker in self.workers.values():
+            await worker.close()
+
+    @override
+    async def redrive(
+        self,
+        event: type[AbstractIntegrationEvent],
+        *,
+        subscriber: SubscriberName | None = None,
+        limit: int | None = None,
+    ) -> RedriveResult:
+        """Deliver dead letters of `subscriber` for `event` to their failed handlers.
+
+        Redrives of this consumer run one at a time, so two calls never read
+        the same dead letters.
+
+        Raises:
+            SubscriptionNotFoundError: Nothing is registered for the pair.
+        """
+        delivery = self.subscriptions.get(subscriber, event)
+        async with self._redrive_lock:
+            return await self.workers[delivery.subscriber].redrive(
+                EventRouting.name_of(event), limit
+            )

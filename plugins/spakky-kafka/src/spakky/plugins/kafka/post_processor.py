@@ -1,5 +1,4 @@
 from functools import wraps
-from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
 from typing import Any
 
@@ -13,8 +12,8 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from spakky.domain.models.event import AbstractEvent, AbstractIntegrationEvent
-from spakky.event.stereotype.event_handler import EventHandler, EventRoute
+from spakky.domain.models.event import AbstractIntegrationEvent
+from spakky.event.stereotype.event_handler import EventHandler
 from spakky.tracing.propagator import ITracePropagator
 from typing import override
 
@@ -66,7 +65,7 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
     def post_process(self, pod: object) -> object:
         """Register event handlers from event handler classes.
 
-        Scans the event handler for methods decorated with @on_event and registers
+        Reads the @on_event methods declared on the handler class and registers
         them with the appropriate Kafka consumer (sync or async) based on
         whether the method is a coroutine function.
 
@@ -92,18 +91,20 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                 async_consumer, "set_propagator"
             ):  # 프레임워크 내부: consumer가 선택적 propagator를 지원하는지 확인
                 async_consumer.set_propagator(propagator)
-        for name, method in getmembers(pod, ismethod):
-            route: EventRoute[AbstractEvent] | None = EventRoute[
-                AbstractEvent
-            ].get_or_none(method)
-            if route is None:
-                continue
+        for declared in handler.routes():
+            route = declared.route
+            name = declared.method_name
             if not issubclass(route.event_type, AbstractIntegrationEvent):
                 continue
-
-            # pylint: disable=line-too-long
+            handler_name = declared.handler_name
+            # Read from the class: an advised Pod is an AOP proxy whose attributes
+            # are not bound methods, so scanning the instance would find nothing.
+            method = getattr(  # declared handler function lookup
+                handler.type_, name
+            )  # 프레임워크 내부: 선언된 처리기 함수의 메타데이터 조회
             logger.info(
-                f"[{type(self).__name__}] {route.event_type.__name__} -> {method.__qualname__}"
+                f"[{type(self).__name__}] {route.event_type.__name__} -> "
+                f"{method.__qualname__} (subscriber {handler.subscriber!r})"
             )
             auth_metadata = get_effective_auth_metadata(
                 method,
@@ -114,7 +115,7 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                 protected=auth_metadata.protected,
             )
 
-            if iscoroutinefunction(method):
+            if declared.asynchronous:
 
                 @wraps(method)
                 async def async_endpoint(
@@ -142,7 +143,12 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                     )  # 프레임워크 내부: 이벤트 핸들러 메서드 동적 디스패치
                     return await method_to_call(*args, **kwargs)
 
-                async_consumer.register(route.event_type, async_endpoint)
+                async_consumer.register(
+                    route.event_type,
+                    async_endpoint,
+                    subscriber=handler.subscriber,
+                    handler_name=handler_name,
+                )
                 if hasattr(  # optional auth-aware Kafka consumer bridge
                     async_consumer,
                     "register_auth_boundary",
@@ -176,7 +182,12 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                 )  # 프레임워크 내부: 이벤트 핸들러 메서드 동적 디스패치
                 return method_to_call(*args, **kwargs)
 
-            consumer.register(route.event_type, endpoint)
+            consumer.register(
+                route.event_type,
+                endpoint,
+                subscriber=handler.subscriber,
+                handler_name=handler_name,
+            )
             if hasattr(  # optional auth-aware Kafka consumer bridge
                 consumer,
                 "register_auth_boundary",

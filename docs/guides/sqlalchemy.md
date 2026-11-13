@@ -382,6 +382,50 @@ storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
 
 ---
 
+## Event Contribution (멱등 소비 저장소)
+
+`spakky-event`의 멱등 소비(`@Idempotent()`)가 쓰는 처리 기록 저장소를 SQLAlchemy로 제공합니다.
+
+```bash
+pip install "spakky-sqlalchemy[event]"
+```
+
+```toml
+[project.entry-points."spakky.contributions.spakky.event"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.event:initialize"
+```
+
+이 contribution은 `spakky-event` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 로드되어 다음을 등록합니다. 비동기 저장소는 `SPAKKY_DATA__SUPPORT_ASYNC_MODE`가 켜져 있을 때만 등록됩니다.
+
+| 구성 요소 | 역할 |
+| --- | --- |
+| `ProcessedEventTable` | `spakky_event_inbox` 테이블. 기본 키는 `(subscriber, handler, event_id)`이고 `processed_at`에 인덱스가 있습니다 |
+| `SqlAlchemyProcessedEventStore` | `IProcessedEventStore` 구현 |
+| `AsyncSqlAlchemyProcessedEventStore` | `IAsyncProcessedEventStore` 구현 |
+
+```python
+from spakky.data.aspects.transactional import Transactional
+from spakky.event.idempotency import Idempotent
+from spakky.event.stereotype.event_handler import EventHandler, on_event
+
+
+@EventHandler(subscriber="billing")
+class BillingHandler:
+    @on_event(OrderPlaced)
+    @Transactional()
+    @Idempotent()
+    async def charge(self, event: OrderPlaced) -> None: ...
+```
+
+- 저장소는 `@Transactional()`이 연 현재 세션으로 기록하므로, 처리 기록과 처리기의 업무 변경이 같은 트랜잭션에서 commit 또는 rollback됩니다. 트랜잭션 없이 호출하면 `SessionNotInitializedError`가 납니다.
+- 같은 이벤트가 동시에 두 번 전달되면 나중 쪽의 기록이 기본 키 충돌로 `DuplicateProcessedEventError`가 되고 그 트랜잭션은 롤백됩니다. 소비자가 재시도하면 커밋된 기록을 보고 건너뜁니다.
+- 테이블은 `SchemaRegistry` 메타데이터에 포함됩니다. 마이그레이션 도구를 쓴다면 `spakky_event_inbox` 테이블 생성을 마이그레이션에 추가하세요.
+- 오래된 기록은 트랜잭션 안에서 `store.purge(older_than)`으로 지웁니다. 보존 기간은 브로커가 같은 메시지를 다시 전달할 수 있는 기간보다 길게 잡습니다.
+
+자세한 전달 규칙은 [이벤트 시스템 — Integration Event 전달 계약](events.md#integration-event-전달-계약)을 참고하세요.
+
+---
+
 ## 선택 기준
 
 | 작업 | 권장 위치 |

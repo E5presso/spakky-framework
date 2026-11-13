@@ -15,11 +15,13 @@ dependencies = [
 [project.optional-dependencies]
 outbox = ["spakky-outbox>=6.5.0"]
 agent = ["spakky-agent>=6.5.0"]
+event = ["spakky-event>=11.1.0"]
 
 [dependency-groups]
 dev = [
     "spakky-agent>=6.5.0",
     "spakky-outbox>=6.5.0",
+    "spakky-event>=11.1.0",
     "testcontainers[postgres]>=4.14.2",
     "psycopg[binary]>=3.3.3",
     "greenlet>=3.3.2",
@@ -32,6 +34,9 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.main:initialize"
 
 [project.entry-points."spakky.contributions.spakky.outbox"]
 spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.outbox:initialize"
+
+[project.entry-points."spakky.contributions.spakky.event"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.event:initialize"
 
 [project.entry-points."spakky.contributions.spakky.agent"]
 spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
@@ -97,3 +102,4 @@ exclude_lines = [
 spakky-data = { workspace = true }
 spakky-outbox = { workspace = true }
 spakky-agent = { workspace = true }
+spakky-event = { workspace = true }
