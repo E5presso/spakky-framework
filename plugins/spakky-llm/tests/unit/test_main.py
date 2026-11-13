@@ -29,6 +29,7 @@ from spakky.plugins.llm.provider import (
 from spakky.plugins.llm.providers.anthropic import AnthropicMessagesProvider
 from spakky.plugins.llm.providers.google import GoogleGenerateContentProvider
 from spakky.plugins.llm.providers.openai import OpenAIChatProvider
+from spakky.plugins.llm.providers.openai_responses import OpenAIResponsesProvider
 
 
 class _RecordingOpenAIProvider(ILLMProvider):
@@ -86,6 +87,7 @@ def test_initialize_registers_router_and_all_native_sdk_adapters() -> None:
 
     assert app.container.contains(LlmConfig)
     assert app.container.contains(OpenAIChatProvider)
+    assert app.container.contains(OpenAIResponsesProvider)
     assert app.container.contains(AnthropicMessagesProvider)
     assert app.container.contains(GoogleGenerateContentProvider)
     assert app.container.contains(LlmAgentModel)

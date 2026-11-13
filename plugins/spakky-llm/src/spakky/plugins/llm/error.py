@@ -20,6 +20,8 @@ class LlmFailureClass(StrEnum):
     TRANSPORT = "transport"
     TIMEOUT = "timeout"
     RATE_LIMIT = "rate_limit"
+    QUOTA = "quota"
+    AUTHENTICATION = "authentication"
     CONCURRENCY = "concurrency"
     CIRCUIT_OPEN = "circuit_open"
     RESPONSE = "response"
@@ -109,6 +111,26 @@ class LlmRateLimitError(AbstractLlmError):
 
     message = "LLM provider rate limit was reached"
     failure_class = LlmFailureClass.RATE_LIMIT
+
+
+class LlmQuotaExhaustedError(AbstractLlmError):
+    """Raised when an account or plan allowance is spent and retrying cannot help."""
+
+    message = "LLM provider usage quota is exhausted"
+    failure_class = LlmFailureClass.QUOTA
+
+
+class LlmAuthenticationError(AbstractLlmError):
+    """Raised when a provider rejects the resolved credential."""
+
+    message = "LLM provider rejected the credential"
+    failure_class = LlmFailureClass.AUTHENTICATION
+
+
+class LlmStreamInterruptedError(LlmTransportError):
+    """Raised when a provider stream ends before its terminal event."""
+
+    message = "LLM provider stream ended before completion"
 
 
 class LlmConcurrencyLimitError(AbstractLlmError):

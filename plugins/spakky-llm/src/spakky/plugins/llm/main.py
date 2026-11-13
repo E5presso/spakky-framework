@@ -8,12 +8,14 @@ from spakky.plugins.llm.model import LlmAgentModel
 from spakky.plugins.llm.providers.anthropic import AnthropicMessagesProvider
 from spakky.plugins.llm.providers.google import GoogleGenerateContentProvider
 from spakky.plugins.llm.providers.openai import OpenAIChatProvider
+from spakky.plugins.llm.providers.openai_responses import OpenAIResponsesProvider
 
 
 def initialize(app: SpakkyApplication) -> None:
     """Register replaceable first-party SDK defaults and the catalog router."""
     app.add(LlmConfig)
     app.add(OpenAIChatProvider)
+    app.add(OpenAIResponsesProvider)
     app.add(AnthropicMessagesProvider)
     app.add(GoogleGenerateContentProvider)
     app.add(LlmAgentModel)
