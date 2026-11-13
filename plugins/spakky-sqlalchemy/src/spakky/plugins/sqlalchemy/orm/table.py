@@ -1,13 +1,17 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import ClassVar, Self, get_args, get_origin
+from typing import Any, ClassVar, Self, get_args, get_origin
 
 from spakky.core.common.mro import generic_mro
 from spakky.core.pod.annotations.tag import Tag
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
 from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, declared_attr
+
+VERSION_COLUMN_NAME = "version"
+"""Column name that carries `AbstractAggregateRoot.version` in a mapped table."""
 
 
 class AbstractTable(DeclarativeBase, AsyncAttrs):
@@ -29,6 +33,52 @@ class AbstractMappableTable[T](AbstractTable):
     """
 
     __abstract__ = True
+
+    @classmethod
+    def optimistic_lock_mapper_args(
+        cls,
+    ) -> dict[str, Any]:  # Any: SQLAlchemy mapper kwargs
+        """Build the mapper arguments that enable optimistic locking.
+
+        When the mapped domain type is an `AbstractAggregateRoot` and the table
+        has a `version` column, that column becomes the mapper's
+        `version_id_col`. The aggregate generates its own version, so
+        SQLAlchemy only compares the stored value
+        (`version_id_generator=False`) and never generates one.
+
+        Tables of child entities reached through relationships are left
+        unversioned: only the aggregate root passes through a repository,
+        which is where the loaded version is supplied.
+
+        A subclass that defines its own `__mapper_args__` replaces the default
+        as usual in SQLAlchemy declarative mapping.
+
+        Returns:
+            Mapper keyword arguments, empty when optimistic locking does not apply.
+        """
+        mappable = next(
+            (
+                type_
+                for type_ in generic_mro(cls)
+                if get_origin(type_) is AbstractMappableTable
+            ),
+            None,
+        )
+        domain: object = next(iter(get_args(mappable)), None)
+        if not isinstance(domain, type) or not issubclass(
+            domain, AbstractAggregateRoot
+        ):
+            return {}
+        version_column = cls.__table__.columns.get(VERSION_COLUMN_NAME)
+        if version_column is None:
+            return {}
+        return {"version_id_col": version_column, "version_id_generator": False}
+
+    # Any: same declaration as DeclarativeBase so subclasses may assign a dict.
+    # Evaluated per mapped subclass after its table is built.
+    __mapper_args__: Any = declared_attr.directive(
+        lambda cls: cls.optimistic_lock_mapper_args()
+    )
 
     @classmethod
     @abstractmethod

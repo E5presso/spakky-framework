@@ -727,6 +727,7 @@ classDiagram
 - `uid`, `version` (UUID v7), `created_at`, `updated_at` 필드
 - 동등성: `uid` 기반 (identity equality)
 - `__setattr__` 오버라이드: 유효성 검사 + `updated_at`/`version` 자동 갱신
+- `persisted_version`/`mark_persisted()`: 저장소에 있다고 알고 있는 version 추적(낙관적 lock 비교용, 저장소 구현이 사용)
 - 추상 메서드: `next_id()`
 - `validate()`는 기본 no-op virtual hook이며, 필요 시 재정의한다. `__post_init__()`에서 생성 직후 호출하고 변경 시에도 재검증
 

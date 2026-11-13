@@ -328,7 +328,7 @@ Evidence의 `model_step`은 열로 저장해 같은 step의 context 근거를 �
 - **Generic repository**: composite PK를 지원하는 사전 구성 CRUD operation
 - **동기/비동기 지원**: 동기 및 비동기 operation 모두 지원
 - **Scoped session**: thread/context-safe session 관리
-- **낙관적 lock**: 동시 update를 위한 내장 `VersionConflictError`
+- **낙관적 lock**: Aggregate table의 `version` column을 `version_id_col`로 자동 매핑하고, 동시 update·delete 충돌을 `VersionConflictError`로 보고
 - **Schema registry**: 중앙화된 table metadata 관리
 
 ## 구성 요소
@@ -366,6 +366,39 @@ Evidence의 `model_step`은 열로 저장해 같은 step의 context 근거를 �
 | `save_all(aggregates)` | 여러 aggregate 저장 |
 | `delete(aggregate)` | aggregate 삭제 |
 | `delete_all(aggregates)` | 여러 aggregate 삭제 |
+
+## 낙관적 lock
+
+`AbstractMappableTable[T]`의 `T`가 `AbstractAggregateRoot`이고 table에 `version` column이
+있으면, 그 column이 SQLAlchemy mapper의 `version_id_col`로 자동 설정됩니다
+(`version_id_generator=False`). 별도 설정은 필요 없습니다.
+
+Aggregate는 비즈니스 필드가 바뀔 때마다 `version`을 새로 만들고, 불러올 때의 version은
+`persisted_version`으로 기억합니다. Repository의 `save`/`save_all`/`delete`/`delete_all`은
+이 값을 사용합니다.
+
+1. `persisted_version`을 담은 table 객체로 `merge()`합니다. 저장된 행의 version과 다르면 여기서 충돌입니다.
+2. 병합된 객체에 Aggregate의 새 `version`을 기록하고 `flush()`합니다. `UPDATE ... WHERE version = <불러온 version>`이 0행이면 충돌입니다.
+3. 충돌은 `VersionConflictError`로 올라옵니다. 성공하면 `aggregate.mark_persisted()`가 호출되어 같은 인스턴스를 다시 변경·저장할 수 있습니다.
+
+```python
+from spakky.data.persistency.repository import VersionConflictError
+
+try:
+    await user_repo.save(user)
+except VersionConflictError:
+    ...  # 다시 조회해 재시도하거나 호출자에게 충돌을 알립니다
+```
+
+알아 둘 점:
+
+- `to_domain()`은 저장된 `version`을 그대로 생성자에 넘겨야 합니다. 넘기지 않으면 매번 새 version이 만들어져 모든 저장이 충돌합니다.
+- 조회하지 않고 이미 존재하는 `uid`로 새로 만든 Aggregate를 `save`하면 덮어쓰지 않고 `VersionConflictError`가 발생합니다.
+- `save_all`/`delete_all`의 일괄 `flush()`에서 난 충돌은 어느 행인지 SQLAlchemy가 알려 주지 않으므로, 오류 인자에 대상 `uid` 전체가 담깁니다.
+- `mark_persisted()`는 `flush()` 직후 호출됩니다. 이후 트랜잭션이 rollback되면 그 인스턴스는 버리고 다시 조회하세요.
+- 기존 table에 `version` column이 이미 있다면 schema migration은 필요 없습니다. mapper 설정만 달라지고 DDL은 같습니다. 달라지는 것은 동작입니다. 지금까지 조용히 덮어쓰던 동시 저장이 `VersionConflictError`가 됩니다.
+- column 이름이 `version`이 아니거나 Aggregate가 아닌 entity의 table(relationship으로 딸린 자식 table 포함)은 자동 대상이 아닙니다. 다른 column을 쓰려면 `__mapper_args__`에 `version_id_col`과 `version_id_generator=False`를 직접 지정합니다.
+- table에 `__mapper_args__`를 직접 정의하면 SQLAlchemy 규칙대로 기본값을 대체합니다. `__mapper_args__ = {}`는 검사를 끕니다. 다른 mapper 인자를 쓰면서 검사를 유지하려면 `"version_id_col": version, "version_id_generator": False`를 함께 넣습니다.
 
 ## 개발 검증
 
