@@ -38,6 +38,7 @@ body:
         - spakky-auth
         - spakky-cryptography
         - spakky-oidc
+        - spakky-oauth
         - spakky-policy
         - spakky-openfga
         - spakky-typer

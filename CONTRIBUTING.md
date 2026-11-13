@@ -453,7 +453,7 @@ versioning과 changelog 자동화를 위해 **Conventional Commits**를 사용�
 형식: `<type>(<scope>): <subject>`
 
 - **type**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- **scope**: `core`, `domain`, `auth`, `data`, `event`, `task`, `agent`, `actuator`, `cache`, `tracing`, `outbox`, `saga`, `fastapi`, `kafka`, `rabbitmq`, `redis`, `cryptography`, `openfga`, `oidc`, `policy`, `sqlalchemy`, `typer`, `celery`, `logging`, `opentelemetry`, `grpc`, `llm`, `agui`, `a2a`, `mcp`
+- **scope**: `core`, `domain`, `auth`, `data`, `event`, `task`, `agent`, `actuator`, `cache`, `tracing`, `outbox`, `saga`, `fastapi`, `kafka`, `rabbitmq`, `redis`, `cryptography`, `openfga`, `oidc`, `oauth`, `policy`, `sqlalchemy`, `typer`, `celery`, `logging`, `opentelemetry`, `grpc`, `llm`, `agui`, `a2a`, `mcp`
 
 예시:
 

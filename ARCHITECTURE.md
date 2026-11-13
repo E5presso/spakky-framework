@@ -37,6 +37,7 @@
 | **Plugin** | `spakky-cryptography` | 암호화 유틸리티와 Auth snapshot/password provider |
 | **Plugin** | `spakky-openfga` | OpenFGA 관계 검사 AuthZ provider |
 | **Plugin** | `spakky-oidc` | OIDC/OAuth bearer credential 인증 provider |
+| **Plugin** | `spakky-oauth` | 외부 API 호출용 OAuth 2.0 client (authorization code + PKCE, token 갱신·폐기) |
 | **Plugin** | `spakky-policy` | YAML/TOML/JSON policy document 기반 AuthZ evaluator |
 | **Plugin** | `spakky-llm` | Operator model catalog + multimodal official-SDK adapters + explicit fallback/cache/resilience/media URI policy + Google text embedding |
 | **Plugin** | `spakky-agui` | AG-UI protocol adapter (multimodal inbound, SSE, HTTP streaming, WebSocket, stdio, deferred-tool HITL) |
@@ -96,6 +97,7 @@ graph TD
             cryptography[spakky-cryptography]
             openfga[spakky-openfga]
             oidc[spakky-oidc]
+            oauth[spakky-oauth]
             policy[spakky-policy]
             agui["spakky-agui<br/>AG-UI · Multimodal inbound"]
             a2a["spakky-a2a<br/>A2A · Multimodal inbound"]
@@ -137,6 +139,7 @@ graph TD
     openfga --> auth
     oidc --> core
     oidc --> auth
+    oauth --> core
     policy --> core
     policy --> auth
     celery_plugin --> auth
@@ -191,6 +194,7 @@ graph TD
     style cryptography fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style openfga fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style oidc fill:#f5f5f5,stroke:#9e9e9e,color:#424242
+    style oauth fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style policy fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style grpc fill:#f5f5f5,stroke:#9e9e9e,color:#424242
     style agui fill:#f5f5f5,stroke:#9e9e9e,color:#424242
@@ -203,6 +207,7 @@ graph TD
 - **UI 플러그인** (fastapi, typer, grpc) → `spakky` 코어와 boundary auth/tracing/actuator 계약에 의존. inbound boundary에서 credential을 읽어 `AuthContext`를 request/context scope에 seed
 - **인증/인가 코어** (spakky-auth) → `spakky` 코어에만 의존. provider-neutral semantic model, ABC port, `AuthCapability`, `spakky.contributions.spakky.auth` contribution contract, AOP enforcement, feature-local capability startup validation을 제공
 - **Auth provider 플러그인** (spakky-cryptography, spakky-oidc, spakky-openfga, spakky-policy) → `spakky` + `spakky-auth`에 의존. snapshot/password, bearer authentication, relation check, policy/permission/role/scope capability를 `spakky.contributions.spakky.auth` contribution으로 등록
+- **OAuth client 플러그인** (spakky-oauth) → `spakky` 코어에만 의존. 나가는 호출용 token을 얻어 보관하며 `spakky-auth`의 inbound 인증 계약과 무관합니다. Token·authorization state 저장소는 application이 `IOAuthTokenStore`, `IOAuthAuthorizationStateStore` Pod로 제공합니다.
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록하며, Agent state/signal/evidence 저장소는 `spakky-agent`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.agent` contribution으로 등록
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-auth`와 `spakky-tracing`에도 의존 (auth snapshot + 컨텍스트 전파)
 - **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
@@ -525,6 +530,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-policy` contribution for `spakky-auth` | `policy_auth_provider_contribution` |
 | `spakky-oidc` | `OidcProviderConfig`, `OidcAuthenticationProvider` |
 | `spakky-oidc` contribution for `spakky-auth` | `oidc_auth_provider_contribution` |
+| `spakky-oauth` | `OAuthConfig`, `OAuthClient` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` |
 | `spakky-openfga` contribution for `spakky-auth` | `openfga_auth_provider_contribution` |
 | `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
@@ -1434,6 +1440,7 @@ flowchart TD
 | `spakky-cryptography` | `CryptographyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 snapshot sign/verify와 password hash/verify capability 선언 | `argon2-cffi`, `bcrypt`, `pycryptodome`, `spakky-auth` |
 | `spakky-policy` | `SpakkyPolicyAuthProvider`; `spakky.contributions.spakky.auth` contribution으로 policy/permission/role/scope capability 선언 | `pyyaml`, `spakky-auth` |
 | `spakky-oidc` | `OidcAuthenticationProvider`; `spakky.contributions.spakky.auth` contribution으로 bearer authentication capability 선언 | `pyjwt[crypto]`, `spakky-auth` |
+| `spakky-oauth` | `OAuthClient` (authorization code + PKCE, refresh, revoke); 저장소 port는 application이 구현 | `httpx`, `pydantic-settings` |
 | `spakky-redis` | `RedisCacheConfig`, `RedisCache` (sync+async), `RedisCacheHealthProbe`, `RedisCacheMetricsInfoContributor` | `redis`, `pydantic-settings`, `spakky-cache`, `spakky-actuator` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` | `openfga-sdk`, `pydantic-settings`, `spakky-auth` |
 | `spakky-llm` | `LlmConfig`, `LlmAgentModel`, OpenAI/Anthropic/Google SDK provider, explicit `GoogleTextEmbedding` | `openai`, `anthropic`, `google-genai`, `google-auth`, `httpx`, `pydantic-settings`, `spakky-agent` |

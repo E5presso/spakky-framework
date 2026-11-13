@@ -29,6 +29,7 @@
 - [spakky-cryptography](plugins/spakky-cryptography.md) — 암호화, auth snapshot, password 검증 provider
 - [spakky-policy](plugins/spakky-policy.md) — 정책 문서 기반 인가 평가기
 - [spakky-oidc](plugins/spakky-oidc.md) — OIDC/OAuth bearer 인증 provider
+- [spakky-oauth](plugins/spakky-oauth.md) — 외부 API 호출용 OAuth 2.0 client
 - [spakky-openfga](plugins/spakky-openfga.md) — OpenFGA 관계 검사 인가 provider
 - [spakky-typer](plugins/spakky-typer.md) — Typer CLI 통합
 - [spakky-kafka](plugins/spakky-kafka.md) — Kafka 통합

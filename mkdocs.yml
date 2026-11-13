@@ -89,6 +89,7 @@ plugins:
             - plugins/spakky-cryptography/src
             - plugins/spakky-openfga/src
             - plugins/spakky-oidc/src
+            - plugins/spakky-oauth/src
             - plugins/spakky-policy/src
             - plugins/spakky-typer/src
             - plugins/spakky-kafka/src
@@ -213,6 +214,7 @@ nav:
           - spakky-cryptography: api/plugins/spakky-cryptography.md
           - spakky-openfga: api/plugins/spakky-openfga.md
           - spakky-oidc: api/plugins/spakky-oidc.md
+          - spakky-oauth: api/plugins/spakky-oauth.md
           - spakky-policy: api/plugins/spakky-policy.md
           - spakky-typer: api/plugins/spakky-typer.md
           - spakky-kafka: api/plugins/spakky-kafka.md

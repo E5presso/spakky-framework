@@ -117,6 +117,10 @@
 			"path": "plugins/spakky-oidc",
 		},
 		{
+			"name": "plugins.oauth",
+			"path": "plugins/spakky-oauth",
+		},
+		{
 			"name": "plugins.policy",
 			"path": "plugins/spakky-policy",
 		},
@@ -245,6 +249,7 @@
 			"redis",
 			"llm",
 			"oidc",
+			"oauth",
 			"policy",
 			"agui",
 			"a2a",

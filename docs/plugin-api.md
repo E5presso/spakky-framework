@@ -178,6 +178,7 @@ Core 플러그인은 자동 로드되지 않습니다. 구현체 플러그인의
 | `spakky-cryptography` | 암복호화/해시/HMAC, AuthContextSnapshot 서명, 패스워드 해싱 제공자 |
 | `spakky-policy` | YAML/TOML/JSON 정책 문서와 RBAC/PBAC/ABAC AuthZ 평가기 |
 | `spakky-oidc`          | OIDC/OAuth bearer credential 검증 및 AuthContext 매핑 제공자 |
+| `spakky-oauth`         | 외부 API 호출용 OAuth 2.0 client (authorization code + PKCE, token 갱신·폐기) |
 | `spakky-openfga` | OpenFGA 관계 검사 AuthZ 제공자 |
 | `spakky-celery`        | Celery 태스크 디스패치 및 스케줄 등록 |
 | `spakky-logging`       | 구조화 로깅, @logged AOP Aspect       |

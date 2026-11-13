@@ -753,6 +753,36 @@ from spakky.plugins.oidc.error import (
 | `OidcCredentialError` | credential carrier가 bearer token으로 사용할 수 없음 |
 | `OidcTokenValidationError` | JWT signature, issuer, audience, 시간 claim 등 OIDC 검증 실패 |
 
+### spakky-oauth
+
+OAuth 2.0 client 관련 에러입니다. `OAuthClient`가 authorization 시작, code 교환, token 갱신과 폐기에서 올립니다.
+
+```python
+from spakky.plugins.oauth.error import (
+    AbstractSpakkyOAuthError,
+    OAuthAuthorizationRequestError,
+    OAuthAuthorizationRequiredError,
+    OAuthAuthorizationStateError,
+    OAuthClientNotConfiguredError,
+    OAuthRevocationError,
+    OAuthTokenEndpointError,
+    OAuthTokenResponseError,
+    OAuthTransportError,
+)
+```
+
+| 에러 | 설명 |
+| ---- | ---- |
+| `AbstractSpakkyOAuthError` | OAuth client 에러 기반 클래스 |
+| `OAuthClientNotConfiguredError` | 이름에 해당하는 client registration이 없음 |
+| `OAuthAuthorizationRequestError` | 요청별 parameter가 protocol field를 덮어쓰거나 `client_id` override가 비어 있음 |
+| `OAuthAuthorizationStateError` | callback `state`를 모르거나 이미 썼거나 만료됨 |
+| `OAuthAuthorizationRequiredError` | token이 없거나 server가 `invalid_grant`로 답해 다시 로그인해야 함 |
+| `OAuthTokenEndpointError` | token endpoint가 `invalid_grant`가 아닌 이유로 실패 |
+| `OAuthTokenResponseError` | token 응답이 사용할 수 있는 bearer token이 아님 |
+| `OAuthTransportError` | authorization server에 연결하지 못함 |
+| `OAuthRevocationError` | local token은 삭제했지만 server가 폐기를 확인하지 않음 |
+
 ### spakky-policy
 
 Policy document loader/evaluator 내부의 provider-local 입력 검증 예외입니다. 이 예외들은 `AbstractSpakkyFrameworkError`를 상속하는 `PolicyDocumentError` 계층이며, auth provider 경계에서는 `AuthorizationDecision.ERROR`로 매핑됩니다.

@@ -62,6 +62,7 @@ version_files = [
   "plugins/spakky-agui/pyproject.toml:version",
   "plugins/spakky-a2a/pyproject.toml:version",
   "plugins/spakky-oidc/pyproject.toml:version",
+  "plugins/spakky-oauth/pyproject.toml:version",
   "plugins/spakky-policy/pyproject.toml:version",
   "plugins/spakky-mcp/pyproject.toml:version",
 ]
@@ -98,6 +99,7 @@ members = [
   "plugins/spakky-agui",
   "plugins/spakky-a2a",
   "plugins/spakky-oidc",
+  "plugins/spakky-oauth",
   "plugins/spakky-policy",
   "plugins/spakky-mcp",
 ]
@@ -133,6 +135,7 @@ spakky-llm = { workspace = true }
 spakky-agui = { workspace = true }
 spakky-a2a = { workspace = true }
 spakky-oidc = { workspace = true }
+spakky-oauth = { workspace = true }
 spakky-policy = { workspace = true }
 spakky-mcp = { workspace = true }
 
