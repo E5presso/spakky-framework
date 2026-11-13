@@ -482,6 +482,37 @@ monorepo의 모든 package는 같은 version number를 공유합니다. 어떤 p
 | `feat:`                        | Minor | `3.2.0` → `3.3.0` |
 | `feat!:` or `BREAKING CHANGE:` | Major | `3.2.0` → `4.0.0` |
 
+### 새 패키지의 첫 릴리스
+
+PyPI trusted publishing은 PyPI 프로젝트와 workflow 파일 단위로 등록됩니다. 새 패키지는 PyPI에 프로젝트가 없으므로 `release.yml`이 바로 게시할 수 없습니다. 새 workspace 패키지를 추가한 PR이 `main`에 반영된 뒤 아래 순서를 따릅니다. 1번과 3번은 PyPI 계정 소유자가 직접 합니다.
+
+1.  **Pending publisher 등록**: [PyPI publishing 설정](https://pypi.org/manage/account/publishing/)에서 pending publisher를 추가합니다.
+
+    | 항목 | 값 |
+    | ---- | ---- |
+    | PyPI Project Name | 새 패키지 이름(예: `spakky-oauth`) |
+    | Owner | `E5presso` |
+    | Repository name | `spakky-framework` |
+    | Workflow name | `publish-package.yml` |
+    | Environment name | 비워 둠 |
+
+2.  **첫 게시**: `main`에서 `Publish Package` workflow(`publish-package.yml`)를 `package=<새 패키지 이름>`으로 실행합니다. 이때 게시되는 version은 bump 전의 현재 workspace version입니다.
+
+    ```bash
+    gh workflow run publish-package.yml --ref main -f package=spakky-<name> -f dry_run=false
+    ```
+
+3.  **`release.yml` publisher 추가**: 생성된 PyPI 프로젝트의 Publishing 설정에서 같은 Owner·Repository로 Workflow name이 `release.yml`인 publisher를 추가합니다.
+
+4.  **정식 릴리스**: `Release` workflow(`release.yml`)를 실행합니다. 모든 패키지가 다음 통합 version으로 함께 게시됩니다.
+
+    ```bash
+    gh workflow run release.yml --ref main -f dry_run=true   # 다음 version 확인
+    gh workflow run release.yml --ref main -f dry_run=false
+    ```
+
+3번을 건너뛰면 정식 릴리스에서 새 패키지의 게시 job만 실패합니다. 기존 패키지만 바뀐 릴리스에는 이 절차가 필요 없습니다.
+
 ## 🚀 Pull Request 절차
 
 1.  repository를 fork하고 `develop`에서 branch를 생성합니다.
