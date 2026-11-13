@@ -29,6 +29,7 @@ members = [
     "spakky-logging",
     "spakky-mcp",
     "spakky-mediator",
+    "spakky-oauth",
     "spakky-oidc",
     "spakky-openfga",
     "spakky-opentelemetry",
@@ -3653,6 +3654,9 @@ mcp = [
 mediator = [
     { name = "spakky-mediator" },
 ]
+oauth = [
+    { name = "spakky-oauth" },
+]
 observability = [
     { name = "spakky-actuator" },
     { name = "spakky-logging" },
@@ -3805,6 +3809,7 @@ requires-dist = [
     { name = "spakky-logging", marker = "extra == 'logging'", editable = "plugins/spakky-logging" },
     { name = "spakky-mcp", marker = "extra == 'mcp'", editable = "plugins/spakky-mcp" },
     { name = "spakky-mediator", marker = "extra == 'mediator'", editable = "plugins/spakky-mediator" },
+    { name = "spakky-oauth", marker = "extra == 'oauth'", editable = "plugins/spakky-oauth" },
     { name = "spakky-oidc", marker = "extra == 'oidc'", editable = "plugins/spakky-oidc" },
     { name = "spakky-openfga", marker = "extra == 'openfga'", editable = "plugins/spakky-openfga" },
     { name = "spakky-opentelemetry", marker = "extra == 'opentelemetry'", editable = "plugins/spakky-opentelemetry" },
@@ -3826,7 +3831,7 @@ requires-dist = [
     { name = "spakky-typer", marker = "extra == 'typer'", editable = "plugins/spakky-typer" },
     { name = "uuid7", specifier = ">=0.1.0" },
 ]
-provides-extras = ["minimal", "domain", "data", "event", "task", "agent-core", "agui", "a2a", "actuator", "cache-core", "tracing", "outbox", "auth", "logging", "cryptography", "oidc", "policy", "openfga", "fastapi", "typer", "rabbitmq", "kafka", "mediator", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "llm", "mcp", "saga", "web", "cli", "database", "database-postgres", "events-rabbitmq", "events-kafka", "events-outbox-sqlalchemy", "event-driven", "worker", "security", "observability", "cache-app", "agent", "recommended", "full"]
+provides-extras = ["minimal", "domain", "data", "event", "task", "agent-core", "agui", "a2a", "actuator", "cache-core", "tracing", "outbox", "auth", "logging", "cryptography", "oidc", "oauth", "policy", "openfga", "fastapi", "typer", "rabbitmq", "kafka", "mediator", "sqlalchemy", "celery", "opentelemetry", "grpc", "redis", "llm", "mcp", "saga", "web", "cli", "database", "database-postgres", "events-rabbitmq", "events-kafka", "events-outbox-sqlalchemy", "event-driven", "worker", "security", "observability", "cache-app", "agent", "recommended", "full"]
 
 [[package]]
 name = "spakky-a2a"
@@ -4300,6 +4305,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "spakky-event", editable = "core/spakky-event" }]
+
+[[package]]
+name = "spakky-oauth"
+version = "11.0.0"
+source = { editable = "plugins/spakky-oauth" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic-settings" },
+    { name = "spakky" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "spakky", editable = "core/spakky" },
+]
 
 [[package]]
 name = "spakky-oidc"

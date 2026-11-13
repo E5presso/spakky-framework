@@ -91,6 +91,7 @@ Spakky는 코어 프레임워크와 공식 플러그인을 함께 담은 모노�
 | **`spakky-cryptography`** | 암복호화, 해시/HMAC, 스냅샷 서명, 패스워드 해싱 제공자 |
 | **`spakky-policy`** | YAML/TOML/JSON 정책 문서와 RBAC/PBAC/ABAC AuthZ 평가기 |
 | **`spakky-oidc`** | OIDC/OAuth bearer credential 검증 및 AuthContext 매핑 제공자 |
+| **`spakky-oauth`** | 외부 API 호출용 OAuth 2.0 client (authorization code + PKCE, token 갱신·폐기) |
 | **`spakky-openfga`** | OpenFGA 기반 관계 검사 AuthZ 제공자 |
 | **`spakky-sqlalchemy`** | [SQLAlchemy](https://www.sqlalchemy.org/) ORM 데이터베이스 통합 |
 | **`spakky-typer`** | [Typer](https://typer.tiangolo.com/) 기반 CLI 애플리케이션 지원 |
