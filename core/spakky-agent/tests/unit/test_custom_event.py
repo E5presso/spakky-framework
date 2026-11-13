@@ -266,6 +266,37 @@ async def test_merge_consumer_task_cancelled_expect_source_cancelled() -> None:
     assert outcome == ["cleaned"]
 
 
+async def test_merge_consumer_cancelled_source_survives_expect_no_hang() -> None:
+    """취소를 삼키고 계속 yield하는 원본이어도 소비자 취소가 멈추지 않고 정리된다."""
+    started = Event()
+    never = Event()
+    outcome: list[str] = []
+
+    async def source() -> AsyncGenerator[AgentEvent, None]:
+        started.set()
+        try:
+            await never.wait()
+        except CancelledError:
+            outcome.append("swallowed")
+        try:
+            yield _STARTED
+            yield _STARTED
+        finally:
+            outcome.append("cleaned")
+
+    async def consume() -> None:
+        async for _ in AgentCustomEvents.merge(source(), _ATTRIBUTION):
+            pass
+
+    consumer = create_task(consume())
+    await started.wait()
+    consumer.cancel()
+
+    with pytest.raises(CancelledError):
+        await consumer
+    assert outcome == ["swallowed", "cleaned"]
+
+
 async def test_merge_closed_after_source_finished_expect_clean_close() -> None:
     """원본이 이미 끝난 뒤 남은 custom event에서 닫아도 조용히 정리된다."""
 

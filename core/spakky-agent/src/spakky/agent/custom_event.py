@@ -68,6 +68,11 @@ class _AgentCustomEventChannel:
         """Iterate the whole source in this one task, one item per consumer pull."""
         try:
             async for event in events:
+                if not self._open:
+                    # The consumer is gone. A source that survived the pump's
+                    # cancellation (a tool swallowed it, or failed during its
+                    # cleanup) must not wait on a queue nobody drains.
+                    break
                 self._queue.put_nowait(event)
                 # Backpressure: resume the source only once the consumer has
                 # taken everything queued so far and asked for more.
