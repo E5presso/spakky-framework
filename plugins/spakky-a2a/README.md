@@ -152,7 +152,9 @@ class Orchestrator:
 `SpakkyAgentExecutor`는 inbound task id/context id로 하나의 `TaskUpdater`를 bind한 뒤 core
 `AgentEvent`를 A2A task update로 변환합니다. `RUN_STARTED`는 working transition, step/tool lifecycle은
 status metadata, message/reasoning delta는 agent message, tool result와 artifact는 A2A artifact,
-state snapshot/delta는 data part로 투영됩니다. `RUN_FINISHED`는 projector가 `RunOutcome`으로 반환하고
+state snapshot/delta는 data part로 투영됩니다. Executor는 stream을 `AgentCustomEvents.merge()`로
+감싸므로 도구가 `AgentCustomEvents.emit(name, value)`로 넣은 `CUSTOM` 이벤트도 받습니다. 이 이벤트는
+value를 data part로 담은 working agent message가 되고 message metadata `custom_event`에 이름이 들어갑니다. `RUN_FINISHED`는 projector가 `RunOutcome`으로 반환하고
 executor가 stream 종료 후 complete/failed terminal transition을 한 번 적용하며, `RUN_PAUSED`는 즉시
 input-required/auth-required 상태로 변환합니다.
 

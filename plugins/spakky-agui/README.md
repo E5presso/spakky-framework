@@ -84,6 +84,23 @@ graph LR
 | `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (`emit_state_snapshot=true`일 때만) |
 | `STATE_DELTA` | `STATE_DELTA` (JSON Patch) |
 | `ARTIFACT` | `CUSTOM` (name=`artifact`) — content에 neutral artifact id/name/content; signal Progress는 artifact name=`signal_progress` |
+| `CUSTOM` | `CUSTOM` — 애플리케이션이 정한 name과 value 그대로. 열린 frame은 닫지 않음. name=`artifact`는 예약되어 `AgUiReservedCustomEventNameError` |
+
+### 애플리케이션 정의 이벤트
+
+`AgUiRunDriver`는 `runner.run_events()`를 `AgentCustomEvents.merge()`로 감쌉니다. 실행 중인 도구나 서비스가 `AgentCustomEvents.emit()`을 호출하면 SSE, HTTP streaming, WebSocket, stdio 어느 경로에서든 emit한 시점에 `CUSTOM` 프레임이 나갑니다.
+
+```python
+from spakky.agent import AgentCustomEvents
+
+AgentCustomEvents.emit("myapp.turn_part", {"index": 0, "text": "첫 번째 조각"})
+```
+
+```text
+data: {"type":"CUSTOM","name":"myapp.turn_part","value":{"index":0,"text":"첫 번째 조각"}}
+```
+
+이름에는 애플리케이션 접두사를 붙입니다. `artifact`는 중립 artifact 투영이 쓰는 이름이라 거부됩니다. Driver가 일찍 닫히면(클라이언트 연결 종료) 실행 스트림도 함께 취소됩니다.
 
 ## 사용법
 

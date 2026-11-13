@@ -52,3 +52,19 @@ class AgUiEndpointConflictError(AbstractAgUiError):
     """Raised when multiple AG-UI agents claim the same transport path."""
 
     message = "AG-UI endpoint path is claimed by more than one exposed agent"
+
+
+class AgUiReservedCustomEventNameError(AbstractAgUiError):
+    """Raised when an application custom event uses a name the adapter reserves.
+
+    The adapter projects neutral artifacts as ``CUSTOM`` events named
+    ``artifact``. An application event with the same name would be
+    indistinguishable from that envelope on the wire, so it is rejected instead
+    of relayed.
+    """
+
+    message = "AG-UI custom event name is reserved by the adapter"
+
+    def __init__(self, name: str) -> None:
+        super().__init__()
+        self.name = name

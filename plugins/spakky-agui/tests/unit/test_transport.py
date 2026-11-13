@@ -8,6 +8,7 @@ from ag_ui.core import RunAgentInput as AgUiRunAgentInput
 from ag_ui.encoder import EventEncoder
 from pytest import raises
 
+from spakky.agent.custom_event import AgentCustomEvents
 from spakky.agent.event import (
     AgentEvent,
     AgentEventAttribution,
@@ -64,7 +65,7 @@ class _ScriptedRunner:
 class _RunnerContext:
     def __init__(
         self,
-        runner: _ScriptedRunner | None = None,
+        runner: "_ScriptedRunner | _EmittingRunner | None" = None,
     ) -> None:
         self._runner = runner or _ScriptedRunner((), states=None)
 
@@ -324,3 +325,90 @@ async def test_managed_driver_ingests_resume_decision_before_streaming() -> None
 
 def _event_type(frame: str) -> str:
     return loads(frame.removeprefix("data: ").strip())["type"]
+
+
+class _EmittingRunner:
+    """Fake runner whose stream emits one custom event between two events."""
+
+    def __init__(self) -> None:
+        self.cleaned = False
+
+    async def run_events(
+        self, run_input: RunAgentInput
+    ) -> AsyncGenerator[AgentEvent, None]:
+        try:
+            yield RunStartedEvent(attribution=_ATTRIBUTION)
+            AgentCustomEvents.emit("myapp.turn_part", {"index": 0})
+            yield RunFinishedEvent(attribution=_ATTRIBUTION)
+        finally:
+            self.cleaned = True
+
+
+def _emitting_driver(runner: _EmittingRunner) -> AgUiRunDriver:
+    return AgUiRunDriver(
+        runner=cast(AgentRunner, runner),
+        run_input=_run_input(),
+        agent_id="assistant",
+        projector=AgUiProjector(AgUiConfig()),
+        encoder=EventEncoder(),
+    )
+
+
+async def test_driver_relays_custom_event_emitted_inside_run() -> None:
+    """run 안에서 emit된 custom event가 emit된 위치의 CUSTOM 프레임으로 나간다."""
+    frames = [
+        loads(frame.removeprefix("data: ").strip())
+        async for frame in _emitting_driver(_EmittingRunner())
+    ]
+
+    assert [frame["type"] for frame in frames] == [
+        "RUN_STARTED",
+        "CUSTOM",
+        "RUN_FINISHED",
+    ]
+    assert frames[1]["name"] == "myapp.turn_part"
+    assert frames[1]["value"] == {"index": 0}
+
+
+async def test_driver_closed_early_expect_run_stream_cleaned_up() -> None:
+    """클라이언트가 끊겨 driver가 일찍 닫히면 runner 스트림 정리가 즉시 실행된다."""
+    runner = _EmittingRunner()
+    frames = aiter(_emitting_driver(runner))
+    assert _event_type(await anext(frames)) == "RUN_STARTED"
+
+    await frames.aclose()
+
+    assert runner.cleaned is True
+
+
+async def test_managed_driver_closed_early_expect_run_stopped_before_runner_exit() -> (
+    None
+):
+    """managed driver가 일찍 닫히면 runner context가 닫히기 전에 run 스트림이 정리된다."""
+    runner = _EmittingRunner()
+    driver = AgUiManagedRunDriver(
+        runner_context=_RunnerContext(runner),
+        inbound=AgUiInboundRun(
+            core_input=_run_input(),
+            ag_ui_input=AgUiRunAgentInput.model_validate(
+                {
+                    "threadId": "conv-1",
+                    "runId": "run-1",
+                    "state": None,
+                    "messages": [],
+                    "tools": [],
+                    "context": [],
+                    "forwardedProps": None,
+                }
+            ),
+        ),
+        agent_id="assistant",
+        config=AgUiConfig(),
+        accept=None,
+    )
+    frames = aiter(driver)
+    assert _event_type(await anext(frames)) == "RUN_STARTED"
+
+    await frames.aclose()
+
+    assert runner.cleaned is True

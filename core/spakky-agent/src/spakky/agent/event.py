@@ -48,6 +48,7 @@ class AgentEventKind(StrEnum):
     STATE_SNAPSHOT = "state_snapshot"
     STATE_DELTA = "state_delta"
     ARTIFACT = "artifact"
+    CUSTOM = "custom"
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,6 +283,30 @@ class ArtifactEvent:
     kind: AgentEventKind = field(default=AgentEventKind.ARTIFACT, init=False)
 
 
+@dataclass(frozen=True, slots=True)
+class CustomEvent:
+    """An application-defined named event carrying a JSON value.
+
+    The framework assigns no meaning to ``name`` or ``value``: application code
+    running inside a run emits them through ``AgentCustomEvents`` and each
+    adapter relays them on its own protocol surface. Names should be namespaced
+    by the application (for example ``"myapp.turn_part"``) so they cannot collide
+    with names an adapter reserves for its own projections.
+    """
+
+    attribution: AgentEventAttribution
+    name: str
+    value: JsonValue
+    metadata: JsonObject = field(default_factory=dict)
+
+    kind: AgentEventKind = field(default=AgentEventKind.CUSTOM, init=False)
+
+    def __post_init__(self) -> None:
+        """Reject a custom event a client could not dispatch on."""
+        if not self.name.strip():
+            raise AgentDefinitionError("Agent custom event name cannot be blank")
+
+
 type AgentEvent = (
     MessageDeltaEvent
     | ReasoningDeltaEvent
@@ -297,6 +322,7 @@ type AgentEvent = (
     | StateSnapshotEvent
     | StateDeltaEvent
     | ArtifactEvent
+    | CustomEvent
 )
 """Discriminated union of every protocol-neutral agent event.
 

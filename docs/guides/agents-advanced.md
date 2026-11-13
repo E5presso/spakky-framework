@@ -1075,6 +1075,66 @@ Iterative loop의 step과 correlation ID는 실제 action에 맞춰 증가합니
 | `STEP_STARTED`, `STEP_FINISHED` | progress step status |
 | `STATE_SNAPSHOT`, `STATE_DELTA` | shared state projection |
 | `ARTIFACT` | protocol-specific artifact/custom event |
+| `CUSTOM` | 애플리케이션이 정한 이름과 JSON 값. AG-UI `CUSTOM`, A2A working message data part |
+
+### 애플리케이션 정의 이벤트 { #custom-events }
+
+`run_events()`가 내보내는 이벤트는 runner가 만든 것뿐입니다. 애플리케이션 코드가 자기
+이벤트를 같은 스트림에 넣으려면 `AgentCustomEvents`를 씁니다.
+
+| API | 역할 |
+| --- | --- |
+| `CustomEvent(attribution, name, value, metadata={})` | 중립 이벤트. `kind`는 `AgentEventKind.CUSTOM`이고 공백 `name`은 `AgentDefinitionError` |
+| `AgentCustomEvents.emit(name, value, *, metadata=None)` | 현재 실행의 스트림에 `CustomEvent`를 넣습니다. 듣는 스트림이 없으면 `AgentCustomEventChannelUnavailableError` |
+| `AgentCustomEvents.listening()` | 지금 context에서 emit이 전달되는지 여부 |
+| `AgentCustomEvents.merge(events, attribution)` | 원본 스트림에 emit된 이벤트를 끼워 넣은 스트림을 돌려주는 async generator |
+
+`spakky-agui`와 `spakky-a2a`는 `run_events()`를 이미 `merge()`로 감싸므로 도구에서는
+`emit()`만 호출하면 됩니다. 직접 adapter를 만들 때는 다음처럼 감쌉니다.
+
+```python
+from contextlib import aclosing
+
+from spakky.agent import AgentCustomEvents, AgentEventAttribution
+
+attribution = AgentEventAttribution(
+    agent_id="writer",
+    run_id=run_input.state_id,
+    conversation_id=run_input.effective_conversation_id,
+)
+async with aclosing(
+    AgentCustomEvents.merge(runner.run_events(run_input), attribution)
+) as events:
+    async for event in events:
+        await send(event)
+```
+
+`merge()`가 보장하는 동작은 다음과 같습니다.
+
+- **즉시 전달.** 원본이 다음 이벤트를 내기 전이라도(예: 오래 걸리는 도구 호출 중) emit된
+  이벤트는 바로 소비자에게 전달됩니다.
+- **순서.** 원본 이벤트는 원본 순서, emit된 이벤트는 emit 순서를 유지합니다.
+- **원본 실패.** 원본이 던진 예외는 그 전에 큐에 들어간 항목을 모두 전달한 뒤 소비자에게
+  전파됩니다.
+- **조기 종료.** 소비자가 스트림을 닫거나 취소되면 원본도 취소되고, 원본의 정리 코드가
+  끝난 뒤에 반환합니다. 남는 task가 없습니다. `async for`를 중간에 빠져나올 수 있는
+  곳에서는 위 예제처럼 `aclosing`으로 감싸 닫는 시점을 명시하세요.
+- **종료 직전 이벤트.** 원본이 끝날 때 아직 전달되지 않은 emit 이벤트도 스트림이 끝나기
+  전에 전달됩니다. 스트림이 끝난 뒤의 emit은 에러입니다.
+- **원본 진행 속도.** 원본은 소비자가 다음 항목을 요청한 뒤에만 한 단계 진행합니다.
+  `run_events()`를 직접 순회할 때와 같아서, 느린 클라이언트를 두고 실행이 앞서 나가지
+  않습니다.
+- **중첩.** `merge()` 안에서 다시 `merge()`를 돌리면 안쪽 원본의 emit은 안쪽 스트림으로
+  가고, 안쪽이 끝나면 바깥 스트림으로 돌아옵니다.
+
+`emit()`은 원본을 순회하는 task의 context에 묶인 채널을 찾습니다. 그 task에서 실행되는
+도구와 서비스, 거기서 만든 task, `asyncio.to_thread()`로 넘긴 동기 함수에서 호출할 수
+있습니다. 이벤트의 attribution은 `merge()`에 넘긴 값입니다. 로컬 teammate에게 위임한
+child run의 도구가 emit한 이벤트도 parent 스트림의 attribution을 가집니다.
+
+`AgentRunner.run_events()` 자체는 바뀌지 않았습니다. `merge()`로 감싸지 않은 스트림에는
+`CUSTOM` 이벤트가 나타나지 않습니다. 결정 배경은
+[ADR-0025](../adr/0025-application-custom-agent-events.md)에 있습니다.
 
 CopilotKit으로 붙일 때도 endpoint는 AG-UI `RunAgentInput` request/response를 구현해야 합니다. Spakky-native `AgentYield` JSON stream은 CopilotKit용 endpoint가 아니며, 기본 구현은 [AG-UI 어댑터](agent-ag-ui.md)를 사용합니다.
 

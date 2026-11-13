@@ -232,6 +232,7 @@ FastAPI SSE/HTTP/WebSocket 노출은 `@AGUICompatible` 선언만 사용합니다
 | `STATE_SNAPSHOT` | `STATE_SNAPSHOT` (설정 게이트) |
 | `STATE_DELTA` | `STATE_DELTA` |
 | `ARTIFACT` | `CUSTOM` (name=`artifact`) |
+| `CUSTOM` | `CUSTOM` (애플리케이션이 정한 name과 value 그대로) |
 
 Provider가 candidate만 보내고 fine-grained tool frame을 생략하면 core runner가 없는
 `TOOL_CALL_START`/`TOOL_CALL_END`만 합성하므로 AG-UI에서도 balanced tool lifecycle을
@@ -265,6 +266,70 @@ runner의 `input_revision`을 덮어쓰지 못합니다.
 추가하는 것은 host의 책임입니다. 현재 AG-UI inbound는 후속 run input을 revisioned
 steering으로 자동 변환하지 않습니다. 입력 확정·철회·재시작 시 복원과
 `steering_input_required`는 [실행 중 지시 수정](agent-steering.md)에 설명돼 있습니다.
+
+### 애플리케이션 정의 이벤트 { #custom-events }
+
+도구나 도구가 호출하는 서비스는 `AgentCustomEvents.emit()`으로 자기 이름의 이벤트를
+스트림에 넣을 수 있습니다. 진행 상황, 중간 결과, 화면 전용 데이터처럼 표준 AG-UI
+이벤트에 맞는 자리가 없는 값을 클라이언트로 보낼 때 씁니다.
+
+```python
+from spakky.agent import (
+    Agent,
+    AgentCustomEvents,
+    AgentExecutionSpec,
+    Idempotency,
+    ToolEffects,
+    agent_tool,
+)
+from spakky.agent.interfaces.model import IAgentModel
+
+
+@Agent(spec=AgentExecutionSpec(name="writer", objective="문서를 조각 단위로 작성한다"))
+class WriterAgent:
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+    @agent_tool(
+        schema_name="draft_section",
+        description="문서의 한 절을 작성한다.",
+        effects=ToolEffects.read_only(),
+        idempotency=Idempotency.IDEMPOTENT,
+    )
+    async def draft_section(self, title: str) -> str:
+        AgentCustomEvents.emit(
+            "myapp.turn_part",
+            {"index": 0, "text": "첫 번째 조각"},
+        )
+        return f"{title} 작성 완료"
+```
+
+클라이언트는 도구가 끝나기를 기다리지 않고 다음 프레임을 받습니다.
+
+```text
+data: {"type":"CUSTOM","name":"myapp.turn_part","value":{"index":0,"text":"첫 번째 조각"}}
+```
+
+- **위치.** 이벤트는 emit한 시점에 전달됩니다. 도구 실행 중에 emit하면 그 도구의
+  `TOOL_CALL_END`와 `TOOL_CALL_RESULT` 사이에 나옵니다. 한 코드 경로가 여러 번 emit하면
+  그 순서가 유지됩니다.
+- **열린 메시지.** `CUSTOM`은 artifact·state 이벤트와 같이 메시지 흐름 바깥의
+  이벤트입니다. Projector는 열린 text/reasoning/tool frame을 닫지 않고 그대로 둡니다.
+  도구가 진행 상황을 여러 번 보내도 assistant 메시지 하나가 여러 개로 쪼개지지 않습니다.
+- **이름.** `myapp.turn_part`처럼 애플리케이션 접두사를 붙이세요. `artifact`는 중립
+  artifact 투영에 쓰는 이름이라 사용할 수 없고, 이 이름으로 emit하면 projector가
+  `AgUiReservedCustomEventNameError`를 던져 스트림이 실패합니다. 공백 이름은
+  `AgentDefinitionError`입니다.
+- **값.** `value`는 JSON으로 직렬화할 수 있는 값이어야 하며 그대로 전달됩니다.
+  `metadata` 인자는 중립 `CustomEvent`에만 남고 AG-UI wire에는 실리지 않습니다.
+- **전송 경로.** SSE, HTTP streaming, WebSocket, stdio가 모두 같은 `AgUiRunDriver`를
+  순회하므로 네 경로에서 똑같이 동작합니다.
+- **스트림 밖.** 병합 스트림이 없는 곳(예: `runner.run()`을 직접 도는 코드, 실행이 끝난 뒤의
+  background task)에서 emit하면 `AgentCustomEventChannelUnavailableError`입니다. 양쪽에서
+  모두 도는 코드는 `AgentCustomEvents.listening()`을 먼저 확인합니다.
+
+동작 원리와 직접 adapter를 만들 때의 사용법은
+[AI Agent 심화](agents-advanced.md#custom-events)에 있습니다.
 
 ## 4. deferred-tool HITL 흐름
 
@@ -307,7 +372,8 @@ source event를 제공합니다. 그렇다고 AG-UI projection이 무손실 또�
 
 Reasoning을 지원하지 않는 선택 route에서는 `REASONING_DELTA`가 생략됩니다. State
 snapshot은 설정 gate를 따르고, artifact는 native artifact event가 없어 `CUSTOM`으로
-변환됩니다. 앞 절처럼 approval이 아닌 pause는 현재 projection할 수 없습니다.
+변환됩니다. 애플리케이션 정의 `CUSTOM` 이벤트는 name과 value만 전달하고 중립 metadata와
+attribution은 싣지 않습니다. 앞 절처럼 approval이 아닌 pause는 현재 projection할 수 없습니다.
 `parentRunId`는 `RunAgentInput.parent_run_id`가 전달된 실행의 `RUN_STARTED`에만 포함됩니다.
 Canonical cancel은 core에서 `code="cancelled"`와 `state`, `signal_id`, optional
 `requested_by` metadata를 가집니다. AG-UI는 code/message를 `RUN_ERROR` 하나로 내보내며

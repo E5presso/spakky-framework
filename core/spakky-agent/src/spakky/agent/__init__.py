@@ -11,7 +11,9 @@ from spakky.agent.content import (
     TextPart,
     VideoPart,
 )
+from spakky.agent.custom_event import AgentCustomEvents
 from spakky.agent.error import (
+    AgentCustomEventChannelUnavailableError,
     AbstractSpakkyAgentError,
     AgentBootstrapError,
     AgentDefinitionError,
@@ -89,6 +91,7 @@ from spakky.agent.event import (
     AgentEventAttribution,
     AgentEventKind,
     ArtifactEvent,
+    CustomEvent,
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
@@ -372,6 +375,9 @@ __all__ = [
     "AgentEvidenceCandidate",
     "AgentEvidenceKind",
     "ArtifactEvent",
+    "AgentCustomEventChannelUnavailableError",
+    "AgentCustomEvents",
+    "CustomEvent",
     "MessageDeltaEvent",
     "ReasoningDeltaEvent",
     "RunFinishedEvent",

@@ -1,5 +1,8 @@
 """Unit tests for the SpakkyAgentExecutor request/cancel branches."""
 
+from collections.abc import AsyncIterator
+from typing import override
+
 import pytest
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
@@ -12,10 +15,12 @@ from a2a.types import (
     Task,
     TaskState,
     TaskStatus,
+    TaskStatusUpdateEvent,
 )
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.struct_pb2 import Value
 from spakky.agent import (
+    AgentCustomEvents,
     AudioPart,
     DocumentPart,
     ImagePart,
@@ -29,7 +34,17 @@ from spakky.agent.execution import (
     AgentSignalKind,
     RecoveryStrategy,
 )
-from spakky.agent.interfaces.model import IAgentModel
+from spakky.agent.interfaces.model import (
+    IAgentModel,
+    ModelCapability,
+    ModelMessageRole,
+    ModelRequest,
+    ModelResponse,
+    ModelStreamEvent,
+    ModelStreamEventKind,
+    ModelToolCall,
+)
+from spakky.agent.tooling import Idempotency, ToolEffects, agent_tool
 from spakky.agent.signal import ApprovalDecision
 
 from spakky.plugins.a2a.error import A2ARunResolutionError, InvalidApprovalDecisionError
@@ -76,6 +91,54 @@ class _StatelessAgent:
 
     def __init__(self, model: IAgentModel) -> None:
         self._model = model
+
+
+@Agent(spec=AgentExecutionSpec(name="reporter"))
+class _ReportingAgent:
+    """Stateless agent whose tool reports progress as a custom event."""
+
+    def __init__(self, model: IAgentModel) -> None:
+        self._model = model
+
+    @agent_tool(
+        schema_name="collect",
+        description="Collect a topic and report progress.",
+        effects=ToolEffects.read_only(),
+        idempotency=Idempotency.IDEMPOTENT,
+    )
+    def collect(self, topic: str) -> str:
+        """Collect a topic, emitting one application-defined event."""
+        AgentCustomEvents.emit("myapp.turn_part", {"topic": topic})
+        return f"collected {topic}"
+
+
+class _ToolThenAnswerModel(IAgentModel):
+    """Model double requesting the collect tool once, then answering."""
+
+    @property
+    @override
+    def capability(self) -> ModelCapability:
+        return ModelCapability()
+
+    @override
+    async def complete(self, request: ModelRequest) -> ModelResponse:
+        return ModelResponse(content="scripted")
+
+    @override
+    async def stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
+        if any(message.role is ModelMessageRole.TOOL for message in request.messages):
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.TOKEN_DELTA, token_delta="done"
+            )
+            yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
+            return
+        yield ModelStreamEvent(
+            kind=ModelStreamEventKind.TOOL_CALL_CANDIDATE,
+            tool_call=ModelToolCall(
+                name="collect", arguments={"topic": "agents"}, call_id="call-1"
+            ),
+        )
+        yield ModelStreamEvent(kind=ModelStreamEventKind.DONE)
 
 
 def _data_part(payload: dict[str, object]) -> Part:
@@ -604,3 +667,28 @@ async def test_reconcile_terminal_leaves_projected_pause_untouched(
     )
 
     assert queue.status_updates() == []
+
+
+async def test_execute_tool_custom_event_expect_working_update_before_tool_result(
+    queue: RecordingEventQueue,
+) -> None:
+    """도구가 emit한 custom event가 tool result artifact보다 먼저 working update로 나간다."""
+    executor = SpakkyAgentExecutor(
+        _ReportingAgent(_ToolThenAnswerModel()), AgentEventProjector()
+    )
+
+    await executor.execute(_context([Part(text="collect agents")]), queue)
+
+    custom_index = next(
+        index
+        for index, event in enumerate(queue.events)
+        if isinstance(event, TaskStatusUpdateEvent)
+        and "custom_event" in event.status.message.metadata
+    )
+    custom = queue.events[custom_index]
+    assert isinstance(custom, TaskStatusUpdateEvent)
+    assert custom.status.state == TaskState.TASK_STATE_WORKING
+    assert custom.status.message.metadata["custom_event"] == "myapp.turn_part"
+    assert MessageToDict(custom.status.message.parts[0].data) == {"topic": "agents"}
+    assert custom_index < queue.events.index(queue.artifact_updates()[0])
+    assert queue.status_updates()[-1].status.state == TaskState.TASK_STATE_COMPLETED

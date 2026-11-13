@@ -10,6 +10,7 @@ from spakky.agent.event import (
     AgentEvent,
     AgentEventAttribution,
     ArtifactEvent,
+    CustomEvent,
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
@@ -312,6 +313,22 @@ async def test_state_snapshot_emits_working_with_snapshot_data(
     status = queue.status_updates()[0]
     assert status.status.message.metadata["state_snapshot"] is True
     assert MessageToDict(status.status.message.parts[0].data) == {"count": 3}
+
+
+async def test_custom_event_emits_working_with_named_value_data(
+    queue: RecordingEventQueue,
+    updater: TaskUpdater,
+) -> None:
+    """CUSTOM emits a working status with the value as data and the name as metadata."""
+    await _project(
+        CustomEvent(ATTRIBUTION, name="myapp.turn_part", value={"index": 0}),
+        updater,
+    )
+
+    status = queue.status_updates()[0]
+    assert status.status.state == TaskState.TASK_STATE_WORKING
+    assert status.status.message.metadata["custom_event"] == "myapp.turn_part"
+    assert MessageToDict(status.status.message.parts[0].data) == {"index": 0}
 
 
 async def test_state_delta_emits_working_with_patch_data(

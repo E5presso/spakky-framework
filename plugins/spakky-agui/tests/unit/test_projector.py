@@ -23,10 +23,12 @@ from ag_ui.core import (
     ToolCallStartEvent,
 )
 from ag_ui.encoder import EventEncoder
+from pytest import raises
 
 from spakky.agent.event import (
     AgentEventAttribution,
     ArtifactEvent,
+    CustomEvent as NeutralCustomEvent,
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent as NeutralRunFinishedEvent,
@@ -44,6 +46,7 @@ from spakky.agent.event import (
 from spakky.agent.state import AgentStateReason
 
 from spakky.plugins.agui.config import AgUiConfig
+from spakky.plugins.agui.error import AgUiReservedCustomEventNameError
 from spakky.plugins.agui.projector import AgUiProjector
 
 
@@ -573,3 +576,53 @@ def test_artifact_maps_to_custom_event() -> None:
         "name": "result",
         "content": {"k": "v"},
     }
+
+
+def test_custom_event_maps_to_named_custom_event() -> None:
+    """애플리케이션 CUSTOM 이벤트가 같은 name/value의 AG-UI CUSTOM으로 매핑된다."""
+    projector = _projector()
+
+    events = projector.project(
+        NeutralCustomEvent(
+            attribution=_attribution(),
+            name="myapp.turn_part",
+            value={"index": 0, "text": "첫 조각"},
+        )
+    )
+
+    assert len(events) == 1
+    assert isinstance(events[0], CustomEvent)
+    assert events[0].name == "myapp.turn_part"
+    assert events[0].value == {"index": 0, "text": "첫 조각"}
+
+
+def test_custom_event_mid_message_keeps_text_frame_open() -> None:
+    """메시지 도중의 CUSTOM 이벤트는 열린 text frame을 닫거나 쪼개지 않는다."""
+    projector = _projector()
+    projector.project(
+        MessageDeltaEvent(attribution=_attribution(), message_id="m1", delta="a")
+    )
+
+    custom = projector.project(
+        NeutralCustomEvent(attribution=_attribution(), name="myapp.tick", value=1)
+    )
+    continued = projector.project(
+        MessageDeltaEvent(attribution=_attribution(), message_id="m1", delta="b")
+    )
+
+    assert [type(event) for event in custom] == [CustomEvent]
+    # The same message continues: no second START, no END in between.
+    assert [type(event) for event in continued] == [TextMessageContentEvent]
+    assert [type(event) for event in projector.finish()] == [TextMessageEndEvent]
+
+
+def test_custom_event_named_artifact_expect_reserved_name_error() -> None:
+    """adapter가 artifact 투영에 쓰는 이름은 애플리케이션 이벤트에 쓸 수 없다."""
+    projector = _projector()
+
+    with raises(AgUiReservedCustomEventNameError) as raised:
+        projector.project(
+            NeutralCustomEvent(attribution=_attribution(), name="artifact", value={})
+        )
+
+    assert raised.value.name == "artifact"

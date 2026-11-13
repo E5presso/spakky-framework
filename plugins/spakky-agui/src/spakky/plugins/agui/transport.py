@@ -6,18 +6,25 @@ the lossless taxonomy AG-UI projects one-to-one (ADR-0013 §3) — runs each eve
 through the projector (``AgentEvent`` -> AG-UI ``BaseEvent``), and encodes each
 AG-UI event into an SSE ``data:`` frame.
 
+The driver wraps that stream with ``AgentCustomEvents.merge``, so application
+code running inside the run (a tool, or a service it calls) can emit its own
+named events and have them reach the client live, between the runner's events.
+Every transport (SSE, HTTP stream, WebSocket, stdio) iterates this driver, so
+all of them carry those events.
+
 ``run_events`` emits approval pauses as neutral ``RunPausedEvent`` items. The
 projector maps those directly into AG-UI's deferred-tool request idiom. After the
 stream ends the driver flushes the projector's open-frame closures so a stream
 the runner left mid-message is still well-formed on the wire.
 """
 
-from collections.abc import AsyncIterator
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncGenerator
+from contextlib import AbstractAsyncContextManager, aclosing
 
 from ag_ui.core import BaseEvent
 from ag_ui.encoder import EventEncoder
 
+from spakky.agent.custom_event import AgentCustomEvents
 from spakky.agent.event import (
     AgentEvent,
     AgentEventAttribution,
@@ -53,12 +60,21 @@ class AgUiRunDriver:
         self._projector = projector
         self._encoder = encoder
 
-    async def __aiter__(self) -> AsyncIterator[str]:
+    async def __aiter__(self) -> AsyncGenerator[str, None]:
         """Yield SSE frames for the full run, including the flush tail."""
-        # Phase 1: project every neutral runner event.
-        async for event in self._runner.run_events(self._run_input):
-            for frame in self._frames_for(event):
-                yield frame
+        # Phase 1: project every neutral runner event, interleaved live with
+        # the custom events application code emits during the run. ``aclosing``
+        # stops the run as soon as this stream is closed (client disconnect)
+        # instead of leaving it to garbage collection.
+        async with aclosing(
+            AgentCustomEvents.merge(
+                self._runner.run_events(self._run_input),
+                self._attribution,
+            )
+        ) as events:
+            async for event in events:
+                for frame in self._frames_for(event):
+                    yield frame
         # Phase 2: flush any projector frame left open by a truncated stream.
         for frame in self._encode(self._projector.finish()):
             yield frame
@@ -87,7 +103,7 @@ class AgUiManagedRunDriver:
         self._config = config
         self._accept = accept
 
-    async def __aiter__(self) -> AsyncIterator[str]:
+    async def __aiter__(self) -> AsyncGenerator[str, None]:
         """Yield frames while the runner factory context remains open."""
         async with self._runner_context as runner:
             if self._inbound.core_input.resume:
@@ -105,5 +121,8 @@ class AgUiManagedRunDriver:
                 projector=AgUiProjector(self._config),
                 encoder=EventEncoder(accept=self._accept or ""),
             )
-            async for frame in driver:
-                yield frame
+            # Close the inner stream before the runner context exits, so an
+            # early-closed request never leaves a run alive past its runner.
+            async with aclosing(aiter(driver)) as frames:
+                async for frame in frames:
+                    yield frame

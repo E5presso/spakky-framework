@@ -49,6 +49,9 @@ from spakky.agent.event import (
     ArtifactEvent as NeutralArtifactEvent,
 )
 from spakky.agent.event import (
+    CustomEvent as NeutralCustomEvent,
+)
+from spakky.agent.event import (
     MessageDeltaEvent as NeutralMessageDeltaEvent,
 )
 from spakky.agent.event import (
@@ -91,6 +94,7 @@ from spakky.agent.event import (
 from spakky.agent.types import JsonObject, JsonValue
 
 from spakky.plugins.agui.config import AgUiConfig
+from spakky.plugins.agui.error import AgUiReservedCustomEventNameError
 from spakky.plugins.agui.hitl import HITL_APPROVAL_TOOL_NAME, approval_from_pause
 from spakky.plugins.agui.serialization import dump_json
 
@@ -101,7 +105,11 @@ REASONING_ROLE = "reasoning"
 """AG-UI reasoning message role required by ``REASONING_MESSAGE_START``."""
 
 ARTIFACT_CUSTOM_EVENT_NAME = "artifact"
-"""``CustomEvent`` name carrying a neutral artifact (no native AG-UI artifact)."""
+"""``CustomEvent`` name carrying a neutral artifact (no native AG-UI artifact).
+
+The name is reserved: an application-defined custom event may not use it, so a
+client can always read ``CUSTOM(name="artifact")`` as the artifact envelope.
+"""
 
 
 class AgUiProjector:
@@ -149,8 +157,10 @@ class AgUiProjector:
                 return self._project_state_snapshot(event)
             case NeutralStateDeltaEvent():
                 return self._project_state_delta(event)
-            case NeutralArtifactEvent():  # pragma: no branch - exhaustive AgentEvent union
+            case NeutralArtifactEvent():
                 return self._project_artifact(event)
+            case NeutralCustomEvent():  # pragma: no branch - exhaustive AgentEvent union
+                return self._project_custom(event)
 
     def finish(self) -> list[BaseEvent]:
         """Flush any open message, reasoning, or tool frames as END events.
@@ -311,6 +321,15 @@ class AgUiProjector:
                 },
             )
         ]
+
+    def _project_custom(self, event: NeutralCustomEvent) -> list[BaseEvent]:
+        # Like artifacts and state events, an application event is out-of-band:
+        # it is relayed as-is and leaves open message/reasoning/tool frames
+        # alone, so a tool emitting progress never splits the assistant message
+        # it belongs to.
+        if event.name == ARTIFACT_CUSTOM_EVENT_NAME:
+            raise AgUiReservedCustomEventNameError(event.name)
+        return [CustomEvent(name=event.name, value=event.value)]
 
     def _open_text_message(self, message_id: str) -> list[BaseEvent]:
         if self._open_message_id == message_id:
