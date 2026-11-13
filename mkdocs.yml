@@ -158,6 +158,7 @@ nav:
       - 개요: sections/security.md
       - 기초:
           - 보안: guides/security.md
+          - OAuth client (외부 API 호출): guides/oauth-client.md
       - 심화:
           - 인증/인가 심화: guides/security-advanced.md
           - 인증/인가 전환: guides/auth-migration.md

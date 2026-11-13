@@ -179,6 +179,14 @@ provider에 묶이지 않는 인증 snapshot입니다. `spakky-cryptography`는 
 `AuthContext`로 옮깁니다. Browser login, callback, session route는 애플리케이션이나
 별도 서비스가 담당합니다.
 
+### OAuth Client
+
+`spakky-oauth`가 제공하는 OAuth 2.0 public client입니다. `OAuthClient`가 authorization
+code + PKCE로 token을 얻어 `(client, subject)`별로 저장하고, 만료 전에 갱신하고, 폐기합니다.
+`spakky-oidc`가 들어오는 bearer token을 검증하는 것과 반대로 나가는 호출에 쓸 token을
+다룹니다. 저장소(`IOAuthTokenStore`, `IOAuthAuthorizationStateStore`), 로그인·callback route와
+ID token 검증은 애플리케이션이 담당합니다. [OAuth client 가이드](guides/oauth-client.md)를 봅니다.
+
 ### OpenFGA Provider
 
 `spakky-openfga`가 제공하는 관계 기반 인가 provider입니다. `@require_relation` 같은
@@ -523,6 +531,21 @@ network I/O를 하지 않고 `spakky-llm` media policy가 provider/cache 전 DNS
 `spakky-llm` 운영자가 소유하는 connection/backend/auth 설정입니다. Provider 진단 표식,
 API family, base URL, API key 또는 Google credential strategy, headers, timeout, retry,
 stream 허용 여부를 담습니다. 실제 model ID와 `ModelCapability`은 담지 않습니다.
+
+### ILLMCredentialProvider
+
+`spakky-llm`이 고정 `api_key` 대신 호출 시점에 bearer token을 받는 port입니다. Profile의
+`credential_provider`가 Pod의 `name`을 가리키고, adapter는 attempt마다 `access_token()`을
+호출합니다. Provider가 HTTP 401로 거절하면 거절된 token을 넘겨 한 번 더 호출하고 요청을
+정확히 한 번 재시도합니다. 현재 `openai-responses` profile에서만 쓸 수 있습니다.
+
+### OpenAI Responses / ChatGPT dialect
+
+`LlmProviderApi.OPENAI_RESPONSES`는 OpenAI Responses API를 SSE stream으로 호출하는 API
+family입니다. `openai_dialect="chatgpt"`는 Sign in with ChatGPT token으로 ChatGPT 플랜
+사용량을 쓰는 경로이며, `system` message를 `developer` role로 보내고 `temperature`와 `top_p`를
+제거합니다. 사용량 소진은 `LlmQuotaExhaustedError`(`quota`, 재시도 불가)로 일시적 rate limit과
+구분됩니다.
 
 ### LlmModelRoute
 

@@ -91,6 +91,8 @@ OR/ANY 같은 복합 조건은 decorator 조합으로 표현하지 않습니다.
 
 `spakky-oidc`는 Bearer JWT를 검증하고 `AuthContext`로 매핑하는 authentication provider입니다. 이 플러그인은 inbound bearer token 인증에 집중합니다. Browser login, callback, session, refresh, logout route는 애플리케이션이나 별도 서비스에서 다룹니다.
 
+반대 방향, 즉 애플리케이션이 사용자를 대신해 외부 API를 부를 token을 얻는 일은 `spakky-oauth`가 맡습니다. [OAuth client (외부 API 호출)](oauth-client.md)을 봅니다.
+
 ```python
 from fastapi import FastAPI
 from spakky.auth import protected, require_scope

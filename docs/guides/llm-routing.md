@@ -373,7 +373,7 @@ vLLM에만 SDK 호출용 non-secret `not-required` sentinel을 사용하고, 기
 `EMPTY`를 명시합니다. Standard dialect에 `chat_template_kwargs`를 붙이면 설정 오류로
 중단됩니다.
 
-### OpenAI Responses API와 ChatGPT 로그인
+### OpenAI Responses API와 ChatGPT 로그인 { #openai-responses-chatgpt }
 
 `LlmProviderApi.OPENAI_RESPONSES`는 Responses API를 SSE streaming으로 호출합니다. API key로 쓰는
 경우 `standard` dialect와 `api_key`를, Sign in with ChatGPT token으로 쓰는 경우 `chatgpt`
@@ -401,9 +401,66 @@ builder_route = LlmModelRoute(
 )
 ```
 
+`model`은 로그인한 계정에서 쓸 수 있는 model ID를 넣습니다. `chatgpt` dialect는 `system`
+message를 `developer` role로 보내고 `temperature`와 `top_p`를 제거합니다. 이 두 parameter는
+ChatGPT 로그인 경로에서 HTTP 400으로 거절됩니다.
+
+#### Token을 호출 시점에 공급하기
+
 `credential_provider`는 application이 등록한 `ILLMCredentialProvider` Pod의 `name`입니다.
-`chatgpt` dialect가 바꾸는 요청 항목, credential 재시도, quota와 stream 중단 에러는
-[API reference](../api/plugins/spakky-llm.md#openai-responses-api와-chatgpt-로그인)를 봅니다.
+Adapter는 attempt마다 `access_token()`을 호출하고, provider가 HTTP 401로 거절하면 거절된
+token을 `rejected_token`에 담아 한 번 더 호출한 뒤 요청을 정확히 한 번 재시도합니다.
+
+Token을 얻고 갱신하는 일은 [`spakky-oauth`](oauth-client.md)에 맡길 수 있습니다. 두 플러그인은
+서로 import하지 않으므로 연결하는 Pod는 application이 씁니다.
+
+```python
+from typing import override
+
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.llm.provider import (
+    ILLMCredentialProvider,
+    LlmAccessToken,
+    LlmCredentialRequest,
+)
+from spakky.plugins.oauth.client import OAuthClient
+
+
+@Pod()
+class ChatGptCredentialProvider(ILLMCredentialProvider):
+    def __init__(self, oauth: OAuthClient) -> None:
+        self._oauth = oauth
+
+    @property
+    @override
+    def name(self) -> str:
+        return "chatgpt"
+
+    @override
+    async def access_token(self, credential: LlmCredentialRequest) -> LlmAccessToken:
+        user_id = str(credential.request.metadata["user_id"])
+        return await self._oauth.access_token(
+            "chatgpt",
+            user_id,
+            rejected_token=credential.rejected_token,
+        )
+```
+
+이 예시는 호출자가 `ModelRequest.metadata["user_id"]`에 주체를 넣는다고 가정합니다. 주체를
+어디서 읽을지는 application이 정합니다. 사용자가 아직 로그인하지 않았으면
+`OAuthAuthorizationRequiredError`가 그대로 호출자에게 전달됩니다.
+
+#### 실패 구분
+
+| 상황 | 에러 | 재시도 |
+| --- | --- | --- |
+| 계정·플랜 사용량 소진 | `LlmQuotaExhaustedError` | 불가. 사용자에게 안내 |
+| 일시적 요청 속도 제한 | `LlmRateLimitError` | 가능 |
+| Terminal event 없이 stream 종료 | `LlmStreamInterruptedError` | 가능 |
+| Credential 거절(한 번 갱신 뒤에도) | `LlmAuthenticationError` | 불가. 다시 로그인 |
+
+Dialect별 요청 차이 전체, 실제 계정으로 확인한 범위와 확인하지 못한 범위는
+[API reference](../api/plugins/spakky-llm.md#openai-responses-chatgpt)를 봅니다.
 
 ### Anthropic Messages
 

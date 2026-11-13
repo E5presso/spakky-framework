@@ -18,7 +18,7 @@ MCP tool adapter는 **어댑터** 항목에서 이어집니다.
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
 | [AI Agent 개발](../guides/agents.md) | `@Agent`·iterative loop·typed output/context·multimodal attachment로 Agent 만들기 |
-| [LLM 모델 라우팅](../guides/llm-routing.md) | opaque model ref, explicit fallback/resilience/cache/media policy 구성 |
+| [LLM 모델 라우팅](../guides/llm-routing.md) | opaque model ref, explicit fallback/resilience/cache/media policy 구성, OpenAI Responses API와 ChatGPT 로그인 |
 | [Agent RAG](../guides/agent-rag.md) | 하나의 `IRetriever`를 classic context 또는 agentic tool로 주입하기 |
 | [CodeAssistant 에이전트 예제](../guides/agent-code-assistant.md) | 실제 Agent 흐름을 예제로 따라가기 |
 
