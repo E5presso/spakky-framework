@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from spakky.agent import (
@@ -103,7 +103,7 @@ class LlmCredentialRequest:
     profile_name: str
     request: ModelRequest
     # None on the first attempt; the token the provider rejected on the one retry.
-    rejected_token: LlmAccessToken | None = None
+    rejected_token: LlmAccessToken | None = field(default=None, repr=False)
 
 
 class ILLMCredentialProvider(ABC):

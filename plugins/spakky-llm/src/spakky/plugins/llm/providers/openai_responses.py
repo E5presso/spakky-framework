@@ -9,7 +9,7 @@ from math import isfinite
 from os import environ
 from typing import Literal, override
 
-from httpx2 import TimeoutException, TransportError
+from httpx2 import DecodingError, TimeoutException, TransportError
 from openai import (
     APIConnectionError,
     APIError,
@@ -51,6 +51,7 @@ from openai.types.responses import (
     ToolParam,
 )
 from openai.types.responses.response_input_item_param import FunctionCallOutput
+from openai.types.responses.response_usage import InputTokensDetails
 from openai.types.shared_params import Reasoning
 from spakky.agent import (
     AudioPart,
@@ -299,13 +300,15 @@ class OpenAIResponsesProvider(ILLMProvider):
                 async for event in stream:
                     for model_event in self._event(target, request, event, turn):
                         yield model_event
+                    if turn.finish_reason is not None:
+                        break
         except APIError as error:
             raise self._normalized_sdk_error(error) from error
         except TimeoutException as error:
             raise LlmTimeoutError from error
         except TransportError as error:
             raise LlmStreamInterruptedError from error
-        except (JSONDecodeError, AttributeError, TypeError) as error:
+        except (DecodingError, JSONDecodeError, AttributeError, TypeError) as error:
             raise LlmResponseError from error
 
         if turn.finish_reason is None:
@@ -315,7 +318,7 @@ class OpenAIResponsesProvider(ILLMProvider):
             for index in sorted(turn.buffers)
         )
         ensure_terminal_tool_choice(request, len(turn.tool_calls))
-        if len(turn.tool_calls) > 0:
+        if len(turn.tool_calls) > 0 and turn.finish_reason == _FINISH_STOP:
             turn.finish_reason = _FINISH_TOOL_CALLS
         if request.structured_output is not None:
             turn.structured_output = self.__codec.decode_value(
@@ -822,12 +825,17 @@ class OpenAIResponsesProvider(ILLMProvider):
     def _usage(self, usage: ResponseUsage | None) -> ModelUsage:
         if usage is None:
             return ModelUsage()
+        # The SDK builds stream payloads without validation, so a compatible
+        # backend may omit the detail object the type declares as required.
+        details: InputTokensDetails | None = usage.input_tokens_details
         return ModelUsage(
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
             total_tokens=usage.total_tokens,
-            cached_input_tokens=usage.input_tokens_details.cached_tokens,
-            cache_write_input_tokens=usage.input_tokens_details.cache_write_tokens,
+            cached_input_tokens=details.cached_tokens if details is not None else None,
+            cache_write_input_tokens=(
+                details.cache_write_tokens if details is not None else None
+            ),
         )
 
     def _schema(self, schema: Mapping[str, JsonValue]) -> dict[str, object]:

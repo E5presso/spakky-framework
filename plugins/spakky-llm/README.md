@@ -356,7 +356,7 @@ SSE streaming으로 호출합니다. `complete()`도 같은 stream을 끝까지 
 | `openai_dialect` | 인증 | 요청 차이 |
 | --- | --- | --- |
 | `standard` | `api_key` 또는 `credential_provider` | `system` role, `temperature`/`top_p`/`max_output_tokens` 전달, flat function tool |
-| `chatgpt` | `credential_provider` | `system` message를 `developer` role로 전송, `temperature`/`top_p`/`max_output_tokens` 제거, function tool을 `functions` namespace tool 하나로 감싸고 history의 function call에 같은 namespace를 표기 |
+| `chatgpt` | 보통 `credential_provider` (token이 만료되므로) | `system` message를 `developer` role로 전송, `temperature`/`top_p`/`max_output_tokens` 제거, function tool을 `functions` namespace tool 하나로 감싸고 history의 function call에 같은 namespace를 표기 |
 
 `chatgpt` dialect는 Sign in with ChatGPT로 받은 token으로 ChatGPT 플랜 사용량을 쓰는 경로입니다.
 `chatgpt`는 `openai-responses`에서만, `vllm`은 `openai-chat-completions`에서만 허용됩니다.
@@ -447,6 +447,8 @@ Quota 소진은 기다려도 풀리지 않으므로 rate limit과 다른 failure
 `rate_limit`에 걸리지 않고, 필요하면 route `fallback_on`에 `quota`를 명시해 다른 model로 넘깁니다.
 `response.incomplete`는 `max_output_tokens` 사유만 `finish_reason="length"`인 성공으로 처리하고
 그 밖의 사유는 `LlmModelRefusalError`입니다.
+잘린 turn에 structured output을 요청했다면 불완전한 JSON이므로 `LlmResponseError`입니다.
+Terminal event를 받은 뒤의 연결 종료 오류는 무시합니다.
 
 ## Fail-closed routing과 확장
 

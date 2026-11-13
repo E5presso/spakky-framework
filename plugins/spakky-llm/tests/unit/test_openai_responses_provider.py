@@ -1614,3 +1614,96 @@ def test_new_failures_expect_stable_public_codes(
     assert model_error.code == code
     assert model_error.retryable is retryable
     assert to_model_error(LlmRateLimitError(), _target()).retryable is True
+
+
+def test_credential_request_repr_expect_rejected_token_hidden() -> None:
+    """A rejected bearer token never appears in the request's repr."""
+    credential = LlmCredentialRequest(
+        profile_name="openai-responses",
+        request=_request(),
+        rejected_token="rejected-secret",
+    )
+
+    assert "rejected-secret" not in repr(credential)
+
+
+async def test_connection_drop_after_terminal_event_expect_completed_turn(
+    wire: _Wire,
+) -> None:
+    """A completed turn is not turned into a retryable failure by a late drop."""
+    wire.replies = [
+        httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=_FailingByteStream(
+                _sse_bytes(_text_delta("done"), _completed()),
+                httpx2.ReadError("dropped"),
+            ),
+        )
+    ]
+
+    response = await OpenAIResponsesProvider().complete(_target(), _request())
+
+    assert response.content == "done"
+    assert response.metadata["finish_reason"] == "stop"
+
+
+async def test_undecodable_stream_body_expect_response_error(wire: _Wire) -> None:
+    """A body the transport cannot decode is a response failure, not a raw error."""
+    wire.replies = [
+        httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=_FailingByteStream(
+                _sse_bytes(_text_delta("partial")),
+                httpx2.DecodingError("bad encoding"),
+            ),
+        )
+    ]
+
+    with pytest.raises(LlmResponseError):
+        await OpenAIResponsesProvider().complete(_target(), _request())
+
+
+async def test_truncated_turn_with_tool_call_expect_length_finish_kept(
+    wire: _Wire,
+) -> None:
+    """Truncation stays visible even when a complete tool call came first."""
+    wire.replies = [
+        _sse(
+            _item_event("added", _function_item()),
+            _item_event("done", _function_item('{"city":"Seoul"}')),
+            {
+                "type": "response.incomplete",
+                "sequence_number": 9,
+                "response": _response(
+                    status="incomplete",
+                    incomplete_reason="max_output_tokens",
+                ),
+            },
+        )
+    ]
+
+    response = await OpenAIResponsesProvider().complete(
+        _target(),
+        _request(tool_calling=_tools()),
+    )
+
+    assert response.tool_calls[0].arguments == {"city": "Seoul"}
+    assert response.metadata["finish_reason"] == "length"
+
+
+async def test_usage_without_input_details_expect_totals_only(wire: _Wire) -> None:
+    """A backend that omits cache details still reports the token totals."""
+    completed = _completed()
+    usage = cast(
+        dict[str, object], cast(dict[str, object], completed["response"])["usage"]
+    )
+    del usage["input_tokens_details"]
+    wire.replies = [_sse(_text_delta("ok"), completed)]
+
+    response = await OpenAIResponsesProvider().complete(_target(), _request())
+
+    assert response.usage == ModelUsage(
+        input_tokens=7, output_tokens=5, total_tokens=12
+    )
