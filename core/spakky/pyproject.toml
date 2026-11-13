@@ -134,6 +134,7 @@ full = [
     "spakky[logging]>=6.5.0",
     "spakky[mcp]>=6.5.0",
     "spakky[mediator]>=8.5.1",
+    "spakky[oauth]>=11.1.0",
     "spakky[oidc]>=6.5.0",
     "spakky[openfga]>=6.5.0",
     "spakky[opentelemetry]>=6.5.0",

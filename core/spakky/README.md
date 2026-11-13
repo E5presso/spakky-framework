@@ -434,6 +434,7 @@ count와 skip reason이 기록됩니다.
 | [`spakky-redis`](https://pypi.org/project/spakky-redis/) | Redis cache backend |
 | [`spakky-cryptography`](https://pypi.org/project/spakky-cryptography/) | Snapshot sign/verify와 password hash/verify Auth provider |
 | [`spakky-oidc`](https://pypi.org/project/spakky-oidc/) | OIDC/OAuth bearer credential 인증 provider |
+| [`spakky-oauth`](https://pypi.org/project/spakky-oauth/) | 외부 API 호출용 OAuth 2.0 client (authorization code + PKCE, token 갱신·폐기) |
 | [`spakky-celery`](https://pypi.org/project/spakky-celery/) | Celery task dispatch |
 | [`spakky-logging`](https://pypi.org/project/spakky-logging/) | AOP 기반 구조화 로깅 |
 | [`spakky-openfga`](https://pypi.org/project/spakky-openfga/) | OpenFGA 관계 검사 AuthZ provider |

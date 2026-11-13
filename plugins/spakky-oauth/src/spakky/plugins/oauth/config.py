@@ -15,7 +15,7 @@ from spakky.plugins.oauth.constants import (
     SPAKKY_OAUTH_CONFIG_ENV_PREFIX,
 )
 
-_RESERVED_AUTHORIZATION_PARAMETERS = frozenset(
+RESERVED_AUTHORIZATION_PARAMETERS = frozenset(
     {
         "response_type",
         "client_id",
@@ -66,10 +66,10 @@ class OAuthClientRegistration(BaseModel):
         parts = urlsplit(value.strip())
         secure = parts.scheme == "https"
         loopback = parts.scheme == "http" and parts.hostname in _LOOPBACK_HOSTS
-        if parts.hostname is None or not (secure or loopback):
+        if parts.hostname is None or parts.fragment != "" or not (secure or loopback):
             raise PydanticCustomError(
                 "oauth_endpoint",
-                "OAuth endpoints must use https, or http on a loopback host",
+                "OAuth endpoints must use https (http on loopback) without a fragment",
             )
         return value.strip()
 
@@ -105,7 +105,7 @@ class OAuthClientRegistration(BaseModel):
         cls,
         value: dict[str, str],
     ) -> dict[str, str]:
-        if not _RESERVED_AUTHORIZATION_PARAMETERS.isdisjoint(value):
+        if not RESERVED_AUTHORIZATION_PARAMETERS.isdisjoint(value):
             raise PydanticCustomError(
                 "oauth_authorization_parameter",
                 "Extra authorization parameters cannot override protocol fields",

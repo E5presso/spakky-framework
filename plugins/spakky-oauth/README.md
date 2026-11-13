@@ -12,7 +12,7 @@
 - Callback code 교환과 token 저장
 - 만료 `refresh_leeway_seconds` 전 갱신, refresh token 회전 반영
 - 같은 주체의 동시 갱신을 하나로 묶는 process-local 잠금
-- 다른 instance가 먼저 회전한 token 재사용
+- 다른 instance가 먼저 회전해 저장한 token 재사용 (best-effort; 분산 잠금은 아님)
 - Revocation endpoint 호출과 local token 삭제
 
 ## 포함하지 않는 것
@@ -91,7 +91,11 @@ class DevStateStore(InMemoryOAuthAuthorizationStateStore): ...
 ```
 
 운영에서는 `IOAuthTokenStore`와 `IOAuthAuthorizationStateStore`를 database나 cache로 구현합니다.
-`OAuthTokenSet`의 token은 `SecretStr`입니다. 저장할 때 암호화는 저장소 구현의 책임입니다.
+In-memory 구현은 만료된 authorization을 지우지 않으므로 운영에 쓰지 않습니다.
+
+`OAuthTokenSet`과 `OAuthPendingAuthorization`의 token과 `code_verifier`는 `SecretStr`입니다.
+`model_dump_json()`은 이 값을 `**********`로 바꾸므로 그대로 저장하면 token을 잃습니다.
+저장소 구현은 `get_secret_value()`로 값을 꺼내 직접 직렬화하고, 암호화도 책임집니다.
 
 ## 사용법
 
@@ -110,6 +114,7 @@ async def login(oauth: OAuthClient, user_id: str) -> str:
 
 
 async def callback(oauth: OAuthClient, state: str, code: str) -> None:
+    # 먼저 state가 이 브라우저 session에서 시작한 값인지 대조합니다.
     result = await oauth.complete_authorization(state, code)
     # result.tokens.id_token과 result.nonce로 ID token을 검증합니다.
 
@@ -121,6 +126,11 @@ async def call_api(oauth: OAuthClient, user_id: str) -> str:
         # 다시 로그인이 필요합니다.
         raise
 ```
+
+**Callback은 반드시 로그인한 session에 묶습니다.** `begin_authorization()`이 돌려준 `state`를
+사용자의 브라우저 session에 저장하고, callback에서 받은 `state`가 그 값과 같은지 확인한 뒤
+`complete_authorization()`을 호출합니다. 이 확인이 없으면 공격자가 자기 주체로 시작한 URL을
+피해자에게 열게 해 피해자의 token을 공격자 주체 아래 저장할 수 있습니다.
 
 Resource server가 token을 401로 거절하면 그 token을 넘겨 한 번 갱신합니다.
 저장된 token이 이미 다른 token으로 바뀌었다면 갱신하지 않고 새 token을 돌려줍니다.
@@ -138,15 +148,18 @@ parameter는 `begin_authorization(..., parameters={...})`로 넘깁니다.
 | 에러 | 의미 |
 |------|------|
 | `OAuthClientNotConfiguredError` | 이름에 해당하는 registration이 없음 |
+| `OAuthAuthorizationRequestError` | 요청별 parameter가 protocol field를 덮어쓰거나 `client_id` override가 비어 있음 |
 | `OAuthAuthorizationStateError` | callback `state`를 모르거나 이미 썼거나 만료됨 |
 | `OAuthAuthorizationRequiredError` | token이 없거나 grant가 거절되어 다시 로그인해야 함 |
 | `OAuthTokenEndpointError` | token endpoint가 grant 거절이 아닌 이유로 실패 |
 | `OAuthTokenResponseError` | token 응답이 사용할 수 있는 bearer token이 아님 |
 | `OAuthTransportError` | authorization server에 연결하지 못함 |
-| `OAuthRevocationError` | local token은 삭제했지만 server가 폐기를 확인하지 않음 |
+| `OAuthRevocationError` | local token은 삭제했지만 server에 닿지 못했거나 server가 폐기를 확인하지 않음 |
 
-Refresh grant가 400 또는 401로 거절되면 저장된 token을 삭제하고
-`OAuthAuthorizationRequiredError`를 올립니다.
+Token endpoint가 `error="invalid_grant"`로 답한 경우에만 `OAuthAuthorizationRequiredError`를 올립니다.
+그 밖의 4xx/5xx는 `OAuthTokenEndpointError`입니다. 두 경우 모두 `access_token()`은 저장된 token을
+지우지 않습니다. 다른 instance가 방금 회전해 저장하려는 token을 지우지 않기 위해서입니다.
+다시 로그인시키기 전에 저장분을 비우려면 `revoke()`를 호출합니다.
 
 ## 라이선스
 

@@ -1,6 +1,6 @@
 """Tests for the OAuth 2.0 client flows over a fake authorization server."""
 
-from asyncio import gather
+from asyncio import gather, sleep
 from base64 import urlsafe_b64encode
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -17,6 +17,7 @@ from spakky.plugins.oauth.client import OAuthClient
 from spakky.plugins.oauth.config import OAuthClientRegistration, OAuthConfig
 from spakky.plugins.oauth.error import (
     AbstractSpakkyOAuthError,
+    OAuthAuthorizationRequestError,
     OAuthAuthorizationRequiredError,
     OAuthAuthorizationStateError,
     OAuthClientNotConfiguredError,
@@ -60,8 +61,10 @@ class _Server:
         self.timeouts.append(timeout)
         return httpx.AsyncClient(transport=httpx.MockTransport(self._handle))
 
-    def _handle(self, request: httpx.Request) -> httpx.Response:
+    async def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        # Yield once so concurrent callers really overlap on the subject lock.
+        await sleep(0)
         reply = self.replies.pop(0)
         if isinstance(reply, BaseException):
             raise reply
@@ -348,8 +351,10 @@ async def test_complete_authorization_with_unknown_state_expect_state_error(
         ),
         (
             httpx.Response(401, json={"error": "invalid_client"}),
-            OAuthAuthorizationRequiredError,
+            OAuthTokenEndpointError,
         ),
+        (httpx.Response(400, content=b"gateway error"), OAuthTokenEndpointError),
+        (httpx.Response(400, json=["invalid_grant"]), OAuthTokenEndpointError),
         (httpx.Response(503), OAuthTokenEndpointError),
         (httpx.Response(200, content=b"not-json"), OAuthTokenResponseError),
         (httpx.Response(200, content=b"\xff\xfe"), OAuthTokenResponseError),
@@ -361,6 +366,14 @@ async def test_complete_authorization_with_unknown_state_expect_state_error(
         (_token_reply(expires_in=True), OAuthTokenResponseError),
         (_token_reply(expires_in="soon"), OAuthTokenResponseError),
         (_token_reply(expires_in=-5), OAuthTokenResponseError),
+        (_token_reply(expires_in=1e300), OAuthTokenResponseError),
+        (
+            httpx.Response(
+                200,
+                content=b'{"access_token":"a","expires_in":Infinity}',
+            ),
+            OAuthTokenResponseError,
+        ),
         (_token_reply(refresh_token=" "), OAuthTokenResponseError),
         (_token_reply(id_token=7), OAuthTokenResponseError),
         (_token_reply(scope=["openid"]), OAuthTokenResponseError),
@@ -525,19 +538,33 @@ async def test_access_token_expired_without_refresh_token_expect_required(
 
 
 @pytest.mark.parametrize("status", [400, 401])
-async def test_access_token_with_rejected_grant_expect_tokens_removed(
+async def test_access_token_with_invalid_grant_expect_required_and_tokens_kept(
     server: _Server,
     status: int,
 ) -> None:
-    """A rejected refresh grant signs the subject out locally."""
+    """A dead refresh token requires sign-in; stored tokens are left for revoke."""
     harness = _Harness()
-    await harness.hold(expires_in=0)
+    held = await harness.hold(expires_in=0)
     server.replies = [httpx.Response(status, json={"error": "invalid_grant"})]
 
     with pytest.raises(OAuthAuthorizationRequiredError):
         await harness.client.access_token("example", "user-1")
 
-    assert await harness.tokens.load(_KEY) is None
+    assert await harness.tokens.load(_KEY) == held
+
+
+async def test_access_token_with_request_level_rejection_expect_tokens_kept(
+    server: _Server,
+) -> None:
+    """A 400 that is not invalid_grant never costs the subject its refresh token."""
+    harness = _Harness()
+    held = await harness.hold(expires_in=0)
+    server.replies = [httpx.Response(400, json={"error": "invalid_target"})]
+
+    with pytest.raises(OAuthTokenEndpointError):
+        await harness.client.access_token("example", "user-1")
+
+    assert await harness.tokens.load(_KEY) == held
 
 
 async def test_access_token_rotated_by_another_instance_expect_its_token(
@@ -571,7 +598,9 @@ async def test_access_token_rejected_with_expired_replacement_expect_required(
     with pytest.raises(OAuthAuthorizationRequiredError):
         await harness.client.access_token("example", "user-1")
 
-    assert await harness.tokens.load(_KEY) is None
+    stored = await harness.tokens.load(_KEY)
+    assert stored is not None
+    assert stored.access_token == SecretStr("access-7")
 
 
 async def test_access_token_signed_out_during_refresh_expect_not_restored(
@@ -669,7 +698,7 @@ async def test_revoke_without_tokens_expect_no_request(server: _Server) -> None:
     ("reply", "expected"),
     [
         (httpx.Response(503), OAuthRevocationError),
-        (httpx.ConnectError("refused"), OAuthTransportError),
+        (httpx.ConnectError("refused"), OAuthRevocationError),
     ],
 )
 async def test_revoke_unconfirmed_by_server_expect_error_after_local_removal(
@@ -692,3 +721,93 @@ async def test_revoke_for_unknown_client_expect_not_configured() -> None:
     """Revocation needs a configured registration."""
     with pytest.raises(OAuthClientNotConfiguredError):
         await _Harness().client.revoke("missing", "user-1")
+
+
+@pytest.mark.parametrize("name", ["state", "scope", "nonce", "redirect_uri"])
+async def test_begin_authorization_with_protocol_parameter_expect_request_error(
+    name: str,
+) -> None:
+    """Per-request parameters cannot replace fields the client controls."""
+    harness = _Harness()
+
+    with pytest.raises(OAuthAuthorizationRequestError):
+        await harness.client.begin_authorization(
+            "example",
+            "user-1",
+            _REDIRECT,
+            parameters={name: "attacker-chosen"},
+        )
+
+
+async def test_begin_authorization_with_blank_client_id_expect_request_error() -> None:
+    """A blank client id override is refused instead of sent."""
+    with pytest.raises(OAuthAuthorizationRequestError):
+        await _Harness().client.begin_authorization(
+            "example",
+            "user-1",
+            _REDIRECT,
+            client_id=" ",
+        )
+
+
+async def test_complete_authorization_with_blank_client_id_expect_state_kept(
+    server: _Server,
+) -> None:
+    """A blank callback client id is refused before the state is consumed."""
+    harness = _Harness()
+    request = await harness.client.begin_authorization("example", "user-1", _REDIRECT)
+
+    with pytest.raises(OAuthAuthorizationRequestError):
+        await harness.client.complete_authorization(
+            request.state,
+            "code-1",
+            client_id="",
+        )
+
+    assert await harness.states.take(request.state) is not None
+    assert server.requests == []
+
+
+async def test_access_token_with_non_ascii_rejected_token_expect_current_token(
+    server: _Server,
+) -> None:
+    """A rejected token that is not ASCII is compared, not crashed on."""
+    harness = _Harness()
+    await harness.hold()
+
+    token = await harness.client.access_token(
+        "example",
+        "user-1",
+        rejected_token="토큰",
+    )
+
+    assert token == "access-1"
+    assert server.requests == []
+
+
+async def test_refresh_with_string_lifetime_expect_expiry_parsed(
+    server: _Server,
+) -> None:
+    """Servers that send expires_in as a numeric string still rotate cleanly."""
+    harness = _Harness()
+    await harness.hold(expires_in=0)
+    server.replies = [_token_reply(expires_in="1800")]
+
+    await harness.client.access_token("example", "user-1")
+
+    stored = await harness.tokens.load(_KEY)
+    assert stored is not None
+    assert stored.expires_at == _NOW + timedelta(seconds=1800)
+    assert stored.refresh_token == SecretStr("refresh-2")
+
+
+async def test_token_endpoint_with_invalid_port_expect_transport_error() -> None:
+    """An endpoint httpx cannot address surfaces as a transport failure."""
+    registration = _registration().model_copy(
+        update={"token_endpoint": "https://auth.example.test:99999/token"}
+    )
+    harness = _Harness(registration)
+    await harness.hold(expires_in=0)
+
+    with pytest.raises(OAuthTransportError):
+        await harness.client.access_token("example", "user-1")

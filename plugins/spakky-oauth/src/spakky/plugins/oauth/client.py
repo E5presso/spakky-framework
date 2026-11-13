@@ -6,14 +6,20 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from hashlib import sha256
 from json import JSONDecodeError
+from math import isfinite
 from secrets import compare_digest, token_urlsafe
 from urllib.parse import urlencode
+from weakref import WeakValueDictionary
 
-from httpx import AsyncClient, HTTPError, Response
+from httpx import AsyncClient, HTTPError, InvalidURL, Response
 from pydantic import SecretStr
 from spakky.core.pod.annotations.pod import Pod
 
-from spakky.plugins.oauth.config import OAuthClientRegistration, OAuthConfig
+from spakky.plugins.oauth.config import (
+    RESERVED_AUTHORIZATION_PARAMETERS,
+    OAuthClientRegistration,
+    OAuthConfig,
+)
 from spakky.plugins.oauth.constants import (
     OAUTH_BEARER_TOKEN_TYPE,
     OAUTH_CODE_CHALLENGE_METHOD,
@@ -23,6 +29,7 @@ from spakky.plugins.oauth.constants import (
     OAUTH_STATE_BYTES,
 )
 from spakky.plugins.oauth.error import (
+    OAuthAuthorizationRequestError,
     OAuthAuthorizationRequiredError,
     OAuthAuthorizationStateError,
     OAuthClientNotConfiguredError,
@@ -53,8 +60,9 @@ from spakky.plugins.oauth.token import (
 )
 
 _HTTP_OK = 200
-_GRANT_REJECTED_STATUSES = frozenset({400, 401})
+_INVALID_GRANT = "invalid_grant"
 
+# Token endpoint JSON is untrusted input; every field is narrowed before use.
 type _TokenPayload = Mapping[str, object]
 
 
@@ -66,7 +74,7 @@ class OAuthClient:
     __tokens: IOAuthTokenStore
     __states: IOAuthAuthorizationStateStore
     __clock: IOAuthClock
-    __locks: dict[OAuthTokenKey, Lock]
+    __locks: WeakValueDictionary[OAuthTokenKey, Lock]
 
     def __init__(
         self,
@@ -79,7 +87,7 @@ class OAuthClient:
         self.__tokens = token_store
         self.__states = state_store
         self.__clock = clock if clock is not None else SystemOAuthClock()
-        self.__locks = {}
+        self.__locks = WeakValueDictionary()
 
     async def begin_authorization(
         self,
@@ -102,8 +110,17 @@ class OAuthClient:
 
         Returns:
             The authorization URL and the state value the callback must echo.
+
+        Raises:
+            OAuthAuthorizationRequestError: A request parameter overrides a
+                protocol field or the client id override is blank.
         """
         registration = self._registration(client)
+        extra = dict(parameters or {})
+        if not RESERVED_AUTHORIZATION_PARAMETERS.isdisjoint(extra):
+            raise OAuthAuthorizationRequestError
+        if client_id is not None and client_id.strip() == "":
+            raise OAuthAuthorizationRequestError
         state = token_urlsafe(OAUTH_STATE_BYTES)
         code_verifier = token_urlsafe(OAUTH_CODE_VERIFIER_BYTES)
         nonce = (
@@ -116,7 +133,7 @@ class OAuthClient:
         )
         query: dict[str, str] = {
             **registration.authorization_parameters,
-            **(parameters or {}),
+            **extra,
             "response_type": "code",
             "client_id": effective_client_id,
             "redirect_uri": redirect_uri,
@@ -166,8 +183,11 @@ class OAuthClient:
 
         Raises:
             OAuthAuthorizationStateError: The state is unknown, used, or expired.
+            OAuthAuthorizationRequestError: The client id override is blank.
             OAuthAuthorizationRequiredError: The server rejected the code.
         """
+        if client_id is not None and client_id.strip() == "":
+            raise OAuthAuthorizationRequestError
         pending = await self.__states.take(state)
         if pending is None or pending.expires_at <= self.__clock.now():
             raise OAuthAuthorizationStateError
@@ -184,7 +204,7 @@ class OAuthClient:
                 "redirect_uri": pending.redirect_uri,
             },
         )
-        if response.status_code in _GRANT_REJECTED_STATUSES:
+        if self._grant_rejected(response):
             raise OAuthAuthorizationRequiredError
         tokens = self._token_set(
             response,
@@ -220,7 +240,8 @@ class OAuthClient:
 
         Raises:
             OAuthAuthorizationRequiredError: The subject has no tokens, no
-                refresh token, or the refresh grant was rejected.
+                refresh token, or the refresh grant was rejected. Stored
+                tokens are kept; call ``revoke`` to clear them.
         """
         registration = self._registration(client)
         key = OAuthTokenKey(client=client, subject=subject)
@@ -229,8 +250,8 @@ class OAuthClient:
             if tokens is None:
                 raise OAuthAuthorizationRequiredError
             rejected = rejected_token is not None and compare_digest(
-                tokens.access_token.get_secret_value(),
-                rejected_token,
+                tokens.access_token.get_secret_value().encode(),
+                rejected_token.encode(),
             )
             if not rejected and self._usable(tokens):
                 return tokens.access_token.get_secret_value()
@@ -246,8 +267,8 @@ class OAuthClient:
                 },
             )
             latest = await self.__tokens.load(key)
-            if response.status_code in _GRANT_REJECTED_STATUSES:
-                return await self._rotated_elsewhere(key, tokens, latest)
+            if self._grant_rejected(response):
+                return self._rotated_elsewhere(tokens, latest)
             refreshed = self._token_set(
                 response,
                 client_id=tokens.client_id,
@@ -266,7 +287,8 @@ class OAuthClient:
         when the server cannot confirm revocation.
 
         Raises:
-            OAuthRevocationError: The server did not confirm revocation.
+            OAuthRevocationError: The server was unreachable or did not confirm
+                revocation.
         """
         registration = self._registration(client)
         key = OAuthTokenKey(client=client, subject=subject)
@@ -283,32 +305,48 @@ class OAuthClient:
             else:
                 token = tokens.access_token
                 hint = "access_token"
-            response = await self._post(
-                registration.revocation_endpoint,
-                {
-                    "token": token.get_secret_value(),
-                    "token_type_hint": hint,
-                    "client_id": tokens.client_id,
-                },
-            )
+            try:
+                response = await self._post(
+                    registration.revocation_endpoint,
+                    {
+                        "token": token.get_secret_value(),
+                        "token_type_hint": hint,
+                        "client_id": tokens.client_id,
+                    },
+                )
+            except OAuthTransportError as error:
+                raise OAuthRevocationError from error
             if response.status_code != _HTTP_OK:
                 raise OAuthRevocationError
 
-    async def _rotated_elsewhere(
+    def _rotated_elsewhere(
         self,
-        key: OAuthTokenKey,
         attempted: OAuthTokenSet,
         latest: OAuthTokenSet | None,
     ) -> OAuthAccessToken:
-        """Resolve a rejected refresh grant against what the store holds now."""
+        """Resolve a rejected refresh grant against what the store holds now.
+
+        Nothing is deleted here: another instance may be about to store the
+        tokens its own refresh just won, and removing them would sign the
+        subject out.
+        """
         if (
             latest is not None
             and latest.access_token != attempted.access_token
             and self._usable(latest)
         ):
             return latest.access_token.get_secret_value()
-        await self.__tokens.delete(key)
         raise OAuthAuthorizationRequiredError
+
+    def _grant_rejected(self, response: Response) -> bool:
+        """Return whether the server reported the grant itself as invalid."""
+        if response.status_code == _HTTP_OK:
+            return False
+        try:
+            payload: object = response.json()  # untrusted JSON narrowed below
+        except (JSONDecodeError, UnicodeDecodeError):
+            return False
+        return isinstance(payload, Mapping) and payload.get("error") == _INVALID_GRANT
 
     def _registration(self, client: OAuthClientName) -> OAuthClientRegistration:
         registration = self.__config.clients.get(client)
@@ -317,7 +355,12 @@ class OAuthClient:
         return registration
 
     def _lock(self, key: OAuthTokenKey) -> Lock:
-        return self.__locks.setdefault(key, Lock())
+        """Return the subject's lock; it is dropped once no caller holds it."""
+        lock = self.__locks.get(key)
+        if lock is None:
+            lock = Lock()
+            self.__locks[key] = lock
+        return lock
 
     def _usable(self, tokens: OAuthTokenSet) -> bool:
         if tokens.expires_at is None:
@@ -335,7 +378,7 @@ class OAuthClient:
                 timeout=self.__config.http_timeout_seconds
             ) as http_client:
                 return await http_client.post(url, data=dict(form))
-        except HTTPError as error:
+        except (HTTPError, InvalidURL) as error:
             raise OAuthTransportError from error
 
     def _token_set(
@@ -349,7 +392,7 @@ class OAuthClient:
         if response.status_code != _HTTP_OK:
             raise OAuthTokenEndpointError
         try:
-            payload: object = response.json()
+            payload: object = response.json()  # untrusted JSON narrowed below
         except (JSONDecodeError, UnicodeDecodeError) as error:
             raise OAuthTokenResponseError from error
         if not isinstance(payload, Mapping):
@@ -397,13 +440,22 @@ class OAuthClient:
         expires_in = payload.get("expires_in")
         if expires_in is None:
             return None
+        if isinstance(expires_in, str):
+            try:
+                expires_in = float(expires_in)
+            except ValueError as error:
+                raise OAuthTokenResponseError from error
         if (
             isinstance(expires_in, bool)
             or not isinstance(expires_in, int | float)
+            or not isfinite(expires_in)
             or expires_in <= 0
         ):
             raise OAuthTokenResponseError
-        return self.__clock.now() + timedelta(seconds=expires_in)
+        try:
+            return self.__clock.now() + timedelta(seconds=expires_in)
+        except OverflowError as error:
+            raise OAuthTokenResponseError from error
 
     def _scopes(
         self,

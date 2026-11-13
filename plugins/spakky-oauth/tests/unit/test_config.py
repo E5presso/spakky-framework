@@ -50,6 +50,10 @@ def test_registration_on_loopback_http_expect_accepted() -> None:
         ({"token_endpoint": "http://auth.example.test/token"}, "oauth_endpoint"),
         ({"authorization_endpoint": "https:///authorize"}, "oauth_endpoint"),
         ({"revocation_endpoint": "ftp://auth.example.test/revoke"}, "oauth_endpoint"),
+        (
+            {"authorization_endpoint": "https://auth.example.test/authorize#x"},
+            "oauth_endpoint",
+        ),
         ({"client_id": "  "}, "oauth_client_id"),
         ({"scopes": ["openid", "two words"]}, "oauth_scope"),
         ({"scopes": ["openid", " "]}, "oauth_scope"),

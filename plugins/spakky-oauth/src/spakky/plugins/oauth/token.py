@@ -52,19 +52,21 @@ class OAuthPendingAuthorization(BaseModel):
     expires_at: datetime
 
 
-@dataclass(frozen=True, slots=True)
-class OAuthAuthorizationRequest:
+class OAuthAuthorizationRequest(BaseModel):
     """Redirect target that starts one authorization-code flow."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     url: str
     state: OAuthState
 
 
-@dataclass(frozen=True, slots=True)
-class OAuthAuthorizationResult:
+class OAuthAuthorizationResult(BaseModel):
     """Tokens stored by a completed flow plus the nonce to check an ID token."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     key: OAuthTokenKey
     tokens: OAuthTokenSet
     # None when the request did not ask for an ID token.
-    nonce: str | None
+    nonce: str | None = None

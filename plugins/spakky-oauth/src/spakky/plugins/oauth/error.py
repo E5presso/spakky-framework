@@ -20,6 +20,13 @@ class OAuthClientNotConfiguredError(AbstractSpakkyOAuthError):
 
 
 @final
+class OAuthAuthorizationRequestError(AbstractSpakkyOAuthError):
+    """Raised when a caller's per-request authorization arguments are invalid."""
+
+    message = "OAuth authorization request arguments are invalid"
+
+
+@final
 class OAuthAuthorizationStateError(AbstractSpakkyOAuthError):
     """Raised when a callback state is unknown, already used, or expired."""
 
@@ -56,6 +63,6 @@ class OAuthTransportError(AbstractSpakkyOAuthError):
 
 @final
 class OAuthRevocationError(AbstractSpakkyOAuthError):
-    """Raised when local tokens were removed but remote revocation failed."""
+    """Raised when local tokens were removed but the server did not confirm it."""
 
     message = "OAuth token revocation was not confirmed by the server"
