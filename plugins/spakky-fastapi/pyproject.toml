@@ -1,6 +1,6 @@
 [project]
 name = "spakky-fastapi"
-version = "11.1.0"
+version = "12.0.0"
 description = "FastAPI plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -10,10 +10,10 @@ dependencies = [
     "fastapi[standard]>=0.135.3",
     "orjson>=3.11.8",
     "pydantic-settings>=2.13.1",
-    "spakky>=11.1.0",
-    "spakky-actuator>=11.1.0",
-    "spakky-auth>=11.1.0",
-    "spakky-tracing>=11.1.0",
+    "spakky>=12.0.0",
+    "spakky-actuator>=12.0.0",
+    "spakky-auth>=12.0.0",
+    "spakky-tracing>=12.0.0",
     "websockets>=16.0",
 ]
 

@@ -1,6 +1,6 @@
 [project]
 name = "spakky-oauth"
-version = "11.1.0"
+version = "12.0.0"
 description = "OAuth 2.0 client plugin for Spakky framework (authorization code + PKCE, token refresh)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,7 +9,7 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "httpx>=0.28.1",
     "pydantic-settings>=2.13.1",
-    "spakky>=11.1.0",
+    "spakky>=12.0.0",
 ]
 
 [project.entry-points."spakky.plugins"]

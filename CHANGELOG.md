@@ -1,3 +1,20 @@
+## v12.0.0 (2026-11-13)
+
+### BREAKING CHANGE
+
+- IIntegrationEventConsumer.register가 subscriber와
+handler_name 키워드 인자를 받습니다. Kafka 설정 max_handler_retries는
+retry(RetryPolicy)로, RabbitMQ 설정 malformed_payload_action은 제거되어
+역직렬화 실패가 dead-letter로 갑니다. 한 구독에 동기·비동기 처리기를 섞으면
+기동 시 MixedSubscriptionModeError가 납니다. RabbitMQ 소비자의 기본
+prefetch가 큐당 1이 됩니다.
+
+### Feat
+
+- **agent**: 애플리케이션 정의 custom event를 agent event stream에 추가합니다 (#559)
+- **event**: 구독자별 전달 계약, 멱등 소비, 메모리 구현체를 추가합니다 (#558)
+- 낙관적 lock 수정, SQLAlchemy ITaskStore, FastAPI @sse를 추가합니다 (#557)
+
 ## v11.1.0 (2026-11-13)
 
 ### Feat
