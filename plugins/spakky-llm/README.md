@@ -355,11 +355,25 @@ SSE streaming으로 호출합니다. `complete()`도 같은 stream을 끝까지 
 
 | `openai_dialect` | 인증 | 요청 차이 |
 | --- | --- | --- |
-| `standard` | `api_key` 또는 `credential_provider` | `system` role, `temperature`/`top_p`/`max_output_tokens` 전달, flat function tool |
-| `chatgpt` | 보통 `credential_provider` (token이 만료되므로) | `system` message를 `developer` role로 전송, `temperature`/`top_p`/`max_output_tokens` 제거, function tool을 `functions` namespace tool 하나로 감싸고 history의 function call에 같은 namespace를 표기 |
+| `standard` | `api_key` 또는 `credential_provider` | `system` role, `temperature`/`top_p` 전달 |
+| `chatgpt` | 보통 `credential_provider` (token이 만료되므로) | `system` message를 `developer` role로 전송, `temperature`/`top_p` 제거 |
 
 `chatgpt` dialect는 Sign in with ChatGPT로 받은 token으로 ChatGPT 플랜 사용량을 쓰는 경로입니다.
 `chatgpt`는 `openai-responses`에서만, `vllm`은 `openai-chat-completions`에서만 허용됩니다.
+`max_output_tokens`와 function tool은 두 dialect에서 같은 모양으로 전달됩니다.
+
+2026-11-13에 실제 ChatGPT 계정(`gpt-6.1-sol`)으로 확인한 범위입니다.
+
+| 항목 | 결과 |
+| --- | --- |
+| Text 응답과 usage | 동작 |
+| Function tool 호출과 tool 결과 왕복 | 동작 |
+| Structured output `strict=true` / `strict=false` | 둘 다 동작 |
+| `temperature`, `top_p` | HTTP 400 `Unsupported parameter`로 거절됨 |
+| `max_output_tokens`, `system` role | 받아들여짐 |
+| Reasoning summary delta | `reasoning.summary="auto"`를 보내도 delta가 오지 않음 |
+
+Quota 소진 code, HTTP 401 뒤 credential 재시도와 stream 중단은 실제 경로에서 재현하지 못했고 가짜 SSE 전송 테스트로만 검증했습니다.
 
 ```python
 from spakky.agent import ModelCapability
@@ -385,7 +399,7 @@ config = LlmConfig(
     models={
         "builder/primary": LlmModelRoute(
             profile="chatgpt",
-            model="gpt-5.5",
+            model="gpt-6.1-sol",
             reasoning_effort=LlmReasoningEffort.LOW,
             capability=ModelCapability(
                 supports_tools=True,

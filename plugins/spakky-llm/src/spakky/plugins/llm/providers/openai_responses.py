@@ -25,7 +25,6 @@ from openai import (
 from openai.types.responses import (
     EasyInputMessageParam,
     FunctionToolParam,
-    NamespaceToolParam,
     Response,
     ResponseCompletedEvent,
     ResponseErrorEvent,
@@ -124,8 +123,6 @@ _UNAUTHORIZED_STATUS = 401
 _RATE_LIMIT_STATUS = 429
 _TIMEOUT_STATUSES = frozenset({408, 504})
 _SERVER_ERROR_STATUS_FLOOR = 500
-_CHATGPT_TOOL_NAMESPACE = "functions"
-_CHATGPT_TOOL_NAMESPACE_DESCRIPTION = "Function tools provided by the application."
 _FINISH_STOP = "stop"
 _FINISH_LENGTH = "length"
 _FINISH_TOOL_CALLS = "tool_calls"
@@ -300,14 +297,16 @@ class OpenAIResponsesProvider(ILLMProvider):
                 async for event in stream:
                     for model_event in self._event(target, request, event, turn):
                         yield model_event
-                    if turn.finish_reason is not None:
-                        break
         except APIError as error:
             raise self._normalized_sdk_error(error) from error
         except TimeoutException as error:
-            raise LlmTimeoutError from error
+            # A turn whose terminal event already arrived is complete; a failure
+            # while the server closes the body must not make it retryable.
+            if turn.finish_reason is None:
+                raise LlmTimeoutError from error
         except TransportError as error:
-            raise LlmStreamInterruptedError from error
+            if turn.finish_reason is None:
+                raise LlmStreamInterruptedError from error
         except (DecodingError, JSONDecodeError, AttributeError, TypeError) as error:
             raise LlmResponseError from error
 
@@ -369,8 +368,8 @@ class OpenAIResponsesProvider(ILLMProvider):
             store=False,
             temperature=self._sampling_number(target, sampling.temperature),
             top_p=self._sampling_number(target, sampling.top_p),
-            max_output_tokens=self._max_output_tokens(target, request),
-            tools=self._tools(target, request),
+            max_output_tokens=self._max_output_tokens(request),
+            tools=self._tools(request),
             tool_choice=self._tool_choice(request),
             text=self._text(request),
             reasoning=self._reasoning(target),
@@ -583,7 +582,7 @@ class OpenAIResponsesProvider(ILLMProvider):
                     "content": text,
                 }
                 items.append(assistant)
-            items.extend(self._history_function_calls(target, message.metadata))
+            items.extend(self._history_function_calls(message.metadata))
             return items
         call_id = message.metadata.get("call_id")
         if not isinstance(call_id, str) or call_id.strip() == "":
@@ -652,7 +651,6 @@ class OpenAIResponsesProvider(ILLMProvider):
 
     def _history_function_calls(
         self,
-        target: LlmModelTarget,
         metadata: JsonObject,
     ) -> list[ResponseFunctionToolCallParam]:
         value = metadata.get("tool_calls")
@@ -681,14 +679,11 @@ class OpenAIResponsesProvider(ILLMProvider):
                 "name": name,
                 "arguments": encoded_arguments,
             }
-            if target.profile.openai_dialect == OpenAICompatibleDialect.CHATGPT:
-                call["namespace"] = _CHATGPT_TOOL_NAMESPACE
             calls.append(call)
         return calls
 
     def _tools(
         self,
-        target: LlmModelTarget,
         request: ModelRequest,
     ) -> list[ToolParam] | Omit:
         if request.tool_calling is None:
@@ -705,24 +700,7 @@ class OpenAIResponsesProvider(ILLMProvider):
             }
             for tool in request.tool_calling.tools
         ]
-        if target.profile.openai_dialect != OpenAICompatibleDialect.CHATGPT:
-            return [*functions]
-        namespace: NamespaceToolParam = {
-            "type": "namespace",
-            "name": _CHATGPT_TOOL_NAMESPACE,
-            "description": _CHATGPT_TOOL_NAMESPACE_DESCRIPTION,
-            "tools": [
-                {
-                    "type": "function",
-                    "name": function["name"],
-                    "description": function.get("description"),
-                    "parameters": function["parameters"],
-                    "strict": function["strict"],
-                }
-                for function in functions
-            ],
-        }
-        return [namespace]
+        return [*functions]
 
     def _tool_choice(
         self,
@@ -781,16 +759,10 @@ class OpenAIResponsesProvider(ILLMProvider):
 
     def _max_output_tokens(
         self,
-        target: LlmModelTarget,
         request: ModelRequest,
     ) -> int | Omit:
         max_tokens = request.sampling.max_tokens
-        if (
-            max_tokens is None
-            or target.profile.openai_dialect == OpenAICompatibleDialect.CHATGPT
-        ):
-            return omit
-        return max_tokens
+        return max_tokens if max_tokens is not None else omit
 
     def _tool_call(
         self,

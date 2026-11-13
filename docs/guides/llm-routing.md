@@ -396,7 +396,7 @@ chatgpt_profile = LlmProfile(
 )
 builder_route = LlmModelRoute(
     profile="chatgpt",
-    model="gpt-5.5",
+    model="gpt-6.1-sol",
     reasoning_effort=LlmReasoningEffort.LOW,
 )
 ```

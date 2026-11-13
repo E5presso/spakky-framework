@@ -448,7 +448,7 @@ async def test_stream_without_usage_request_expect_done_without_usage(
 
 
 async def test_chatgpt_dialect_expect_plan_request_shape(wire: _Wire) -> None:
-    """ChatGPT sign-in drops sampling, uses developer role, and namespaces tools."""
+    """ChatGPT sign-in drops temperature and top_p and uses the developer role."""
     wire.replies = [
         _sse(
             _item_event("added", _function_item()),
@@ -507,7 +507,7 @@ async def test_chatgpt_dialect_expect_plan_request_shape(wire: _Wire) -> None:
     body = wire.body()
     assert "temperature" not in body
     assert "top_p" not in body
-    assert "max_output_tokens" not in body
+    assert body["max_output_tokens"] == 64
     assert body["store"] is False
     assert body["tool_choice"] == "required"
     assert body["reasoning"] == {"effort": "low"}
@@ -519,19 +519,15 @@ async def test_chatgpt_dialect_expect_plan_request_shape(wire: _Wire) -> None:
             "call_id": "call-9",
             "name": "lookup_weather",
             "arguments": "{}",
-            "namespace": "functions",
         },
         {"type": "function_call_output", "call_id": "call-9", "output": "sunny"},
     ]
     tools = cast(Sequence[Mapping[str, object]], body["tools"])
     assert len(tools) == 1
-    assert tools[0]["type"] == "namespace"
-    assert tools[0]["name"] == "functions"
-    functions = cast(Sequence[Mapping[str, object]], tools[0]["tools"])
-    assert functions[0]["type"] == "function"
-    assert functions[0]["name"] == "lookup_weather"
-    assert functions[0]["description"] == "Look up weather"
-    assert functions[0]["strict"] is True
+    assert tools[0]["type"] == "function"
+    assert tools[0]["name"] == "lookup_weather"
+    assert tools[0]["description"] == "Look up weather"
+    assert tools[0]["strict"] is True
 
 
 @pytest.mark.parametrize(
@@ -1489,8 +1485,8 @@ def test_empty_tool_list_expect_response_error() -> None:
     object.__setattr__(request.tool_calling, "tools", ())
 
     with pytest.raises(LlmResponseError):
-        OpenAIResponsesProvider()._tools(_target(), request)
-    assert OpenAIResponsesProvider()._tools(_target(), _request()) is omit
+        OpenAIResponsesProvider()._tools(request)
+    assert OpenAIResponsesProvider()._tools(_request()) is omit
 
 
 async def test_function_call_done_without_added_expect_call_recovered(
@@ -1707,3 +1703,24 @@ async def test_usage_without_input_details_expect_totals_only(wire: _Wire) -> No
     assert response.usage == ModelUsage(
         input_tokens=7, output_tokens=5, total_tokens=12
     )
+
+
+async def test_read_timeout_after_terminal_event_expect_completed_turn(
+    wire: _Wire,
+) -> None:
+    """A stalled body close after the terminal event keeps the completed turn."""
+    wire.replies = [
+        httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=_FailingByteStream(
+                _sse_bytes(_text_delta("done"), _completed()),
+                httpx2.ReadTimeout("stalled"),
+            ),
+        )
+    ]
+
+    events = await _collect(OpenAIResponsesProvider(), _target(), _request())
+
+    assert events[-1].kind is ModelStreamEventKind.DONE
+    assert events[-1].metadata["finish_reason"] == "stop"
