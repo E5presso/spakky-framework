@@ -7,6 +7,7 @@
 | 문서 | 무엇을 배우나요 |
 | --- | --- |
 | [보안](../guides/security.md) | 인증/인가 요구사항을 provider 중립으로 선언하기 |
+| [OAuth client (외부 API 호출)](../guides/oauth-client.md) | 사용자를 대신해 외부 API를 부를 token을 얻고 갱신·폐기하기 |
 
 ## 심화
 

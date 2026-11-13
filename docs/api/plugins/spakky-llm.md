@@ -290,7 +290,7 @@ dialect를 만들지 않습니다. OpenAI official/compatible standard profile�
 필수입니다. vLLM만 `OpenAICompatibleDialect.VLLM`을 선택하며, 이 dialect에서 key를
 생략한 경우에만 SDK용 non-secret `not-required` sentinel을 사용합니다.
 
-### OpenAI Responses API와 ChatGPT 로그인
+### OpenAI Responses API와 ChatGPT 로그인 { #openai-responses-chatgpt }
 
 `api=openai-responses`는 `OpenAIResponsesProvider`가 OpenAI Responses API(`/v1/responses`)를
 SSE streaming으로 호출합니다. `complete()`도 같은 stream을 끝까지 읽어 하나의 `ModelResponse`로
