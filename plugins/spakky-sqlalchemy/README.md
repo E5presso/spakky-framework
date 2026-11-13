@@ -289,7 +289,8 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 ```
 
 `spakky-agent`와 `spakky-sqlalchemy` base plugin이 함께 active이면 contribution loader가
-`AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`과 세 repository 구현을 등록합니다.
+`AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`, `AgentConversationTurnTable`과
+세 repository 구현, `ITaskStore` 구현(`SqlAlchemyAgentTaskStore`)을 등록합니다.
 `AgentExecutionSpec(recovery=RecoveryStrategy.ACTION_BOUNDARY)` 또는 `accepted_signals`를
 사용하는 Agent는 bootstrap 시 `IAgentStateRepository`, `IAgentSignalRepository`,
 `IAgentEvidenceRepository`를 모두 요구하므로, 이 contribution이 누락되면 core가
@@ -302,8 +303,9 @@ spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.agent:initialize"
 - `SqlAlchemyAgentStateRepository`
 - `SqlAlchemyAgentSignalRepository`
 - `SqlAlchemyAgentEvidenceRepository`
+- `SqlAlchemyAgentTaskStore`
 - `spakky_agent_state`, `spakky_agent_signal`, `spakky_agent_evidence`,
-  `spakky_agent_evidence_origin`
+  `spakky_agent_evidence_origin`, `spakky_agent_conversation_turn`
 
 State metadata(runner checkpoint 포함), signal payload, evidence payload는 형식이 자유로운
 값이므로 JSON 열에 저장합니다.
@@ -321,6 +323,27 @@ Evidence의 `model_step`은 열로 저장해 같은 step의 context 근거를 �
 `close()`는 남은 행을 모두 버립니다. `AgentSignal.priority`는 실시간 전달 힌트라 테이블에 저장하지 않습니다.
  Evidence repository는 append/read
 메서드만 노출해 agent-facing append-only 계약을 유지합니다.
+
+`SqlAlchemyAgentTaskStore`는 `ITaskStore`(server-side 멀티턴 transcript)의 구현입니다.
+`append_turns(conversation_id, turns)`는 그 대화의 마지막 `position` 뒤에 turn을 순서대로
+추가하고, `load_history(conversation_id)`는 `position` 순서로 `ConversationTurn`을 돌려줍니다.
+`spakky_agent_conversation_turn`은 `(conversation_id, position)` unique 제약을 가지므로, 두
+writer가 같은 대화에 동시에 append하면 한쪽만 저장되고 다른 쪽은
+`AgentConversationAppendConflictError`로 실패합니다. turn이 조용히 뒤섞이거나 순서가 바뀌지
+않습니다. 실패한 쪽은 트랜잭션을 rollback하고 이력을 다시 읽어 재시도해야 합니다. 다른
+repository와 마찬가지로 현재 transactional session 안에서 호출합니다. Agent는 생성자에서
+`ITaskStore`를 주입받으면 됩니다.
+
+```python
+from spakky.agent import Agent, AgentExecutionSpec, IAgentModel, ITaskStore
+
+
+@Agent(spec=AgentExecutionSpec(name="assistant"))
+class Assistant:
+    def __init__(self, model: IAgentModel, task_store: ITaskStore) -> None:
+        self.model = model
+        self.task_store = task_store
+```
 
 ## 주요 기능
 
@@ -351,6 +374,7 @@ Evidence의 `model_step`은 열로 저장해 같은 step의 context 근거를 �
 | `SqlAlchemyAgentStateRepository` | `IAgentStateRepository`의 SQLAlchemy 구현 |
 | `SqlAlchemyAgentSignalRepository` | `IAgentSignalRepository`의 SQLAlchemy 구현. `consumed_at`으로 pending signal queue를 구분하고, 주입된 `IAgentSignalPublisher`로 커밋 뒤에만 게시 |
 | `SqlAlchemyAgentEvidenceRepository` | `IAgentEvidenceRepository`의 SQLAlchemy 구현. append/read만 노출 |
+| `SqlAlchemyAgentTaskStore` | `ITaskStore`의 SQLAlchemy 구현. 대화별 transcript를 `position` 순서로 append/조회 |
 
 ## Repository 메서드
 

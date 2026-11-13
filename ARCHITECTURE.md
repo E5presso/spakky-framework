@@ -542,7 +542,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-kafka` | `KafkaConnectionConfig`, `KafkaEventConsumer`, `KafkaEventTransport`, `AsyncKafkaEventConsumer`, `AsyncKafkaEventTransport`, `KafkaPostProcessor` |
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, `ConnectionManager`, `SessionManager`, `Transaction`; async mode 활성화 시 `AsyncConnectionManager`, `AsyncSessionManager`, `AsyncTransaction` |
 | `spakky-sqlalchemy` contribution for `spakky-outbox` | `OutboxMessageTable`, `SqlAlchemyOutboxStorage`; async mode 활성화 시 `AsyncSqlAlchemyOutboxStorage` |
-| `spakky-sqlalchemy` contribution for `spakky-agent` | `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`, `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository` |
+| `spakky-sqlalchemy` contribution for `spakky-agent` | `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`, `AgentConversationTurnTable`, `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`, `SqlAlchemyAgentTaskStore` |
 | `spakky-outbox` | `OutboxConfig`, `OutboxEventBus`, `AsyncOutboxEventBus`, `OutboxRelayBackgroundService`, `AsyncOutboxRelayBackgroundService` |
 | `spakky-task` | `DirectTaskExecutor`, `TaskRegistrationPostProcessor` |
 | `spakky-actuator` | `ActuatorConfig`, `ActuatorExtensionRegistry`, `_startup_report_info_contributor(app)`, `ActuatorExtensionPostProcessor`, `ActuatorAggregationService` |
@@ -1278,7 +1278,7 @@ flowchart TD
 
 `spakky-sqlalchemy`는 `spakky.contributions.spakky.outbox` entry point로 `SqlAlchemyOutboxStorage`와 `OutboxMessageTable`을 기여합니다. 이 contribution은 `spakky-outbox` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 base plugin 이후 로드됩니다. 커스텀 저장소는 `IAsyncOutboxStorage`를 구현합니다.
 
-Agent persistence도 같은 contribution 모델을 사용합니다. `spakky.contributions.spakky.agent` entry point는 `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`와 `spakky_agent_state`, `spakky_agent_signal`, `spakky_agent_evidence` table을 등록합니다. Durable `@Agent`는 이 repository port가 없으면 bootstrap에서 실패하며, 운영용 in-memory fallback은 없습니다.
+Agent persistence도 같은 contribution 모델을 사용합니다. `spakky.contributions.spakky.agent` entry point는 `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`, `SqlAlchemyAgentTaskStore`(`ITaskStore`)와 `spakky_agent_state`, `spakky_agent_signal`, `spakky_agent_evidence`, `spakky_agent_conversation_turn` table을 등록합니다. Durable `@Agent`는 이 repository port가 없으면 bootstrap에서 실패하며, 운영용 in-memory fallback은 없습니다.
 
 > **설계 배경**: [ADR-0002](docs/adr/0002-outbox-plugin-architecture.md), [ADR-0005](docs/adr/0005-merge-outbox-sqlalchemy-into-sqlalchemy.md), [ADR-0006](docs/adr/0006-move-outbox-to-core.md) 참조.
 
