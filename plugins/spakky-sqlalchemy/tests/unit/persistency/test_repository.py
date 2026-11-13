@@ -1401,3 +1401,47 @@ async def test_async_repository_save_all_unversioned_table_expect_current_versio
 
     merged: UnversionedSampleEntityTable = session.merge.call_args_list[0].args[0]
     assert merged.version == entity.version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_all_instance_listed_twice_expect_merged_once() -> (
+    None
+):
+    """Async save_all은 같은 인스턴스가 두 번 있어도 한 번만 merge하고 입력 길이만큼 결과를 돌려준다."""
+    entity, loaded_version = _loaded_then_renamed_entity()
+    merged_versions: list[UUID] = []
+
+    async def merge(table: SampleEntityTable) -> SampleEntityTable:
+        merged_versions.append(table.version)
+        return table
+
+    session = MagicMock()
+    session.merge = merge
+    session.flush = AsyncMock()
+
+    saved = await _async_repository(SampleEntityTable, session).save_all(
+        [entity, entity]
+    )
+
+    assert merged_versions == [loaded_version]
+    assert [item.uid for item in saved] == [entity.uid, entity.uid]
+    assert entity.persisted_version == entity.version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_delete_all_instance_listed_twice_expect_deleted_once() -> (
+    None
+):
+    """Async delete_all은 같은 인스턴스가 두 번 있어도 한 번만 삭제한다."""
+    entity, _ = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.delete = AsyncMock()
+    session.flush = AsyncMock()
+
+    deleted = await _async_repository(SampleEntityTable, session).delete_all(
+        [entity, entity]
+    )
+
+    assert session.delete.await_count == 1
+    assert [item.uid for item in deleted] == [entity.uid, entity.uid]

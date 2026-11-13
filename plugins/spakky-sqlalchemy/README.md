@@ -420,6 +420,9 @@ except VersionConflictError:
 - 조회하지 않고 이미 존재하는 `uid`로 새로 만든 Aggregate를 `save`하면 덮어쓰지 않고 `VersionConflictError`가 발생합니다.
 - `save_all`/`delete_all`의 일괄 `flush()`에서 난 충돌은 어느 행인지 SQLAlchemy가 알려 주지 않으므로, 오류 인자에 대상 `uid` 전체가 담깁니다.
 - `mark_persisted()`는 `flush()` 직후 호출됩니다. 이후 트랜잭션이 rollback되면 그 인스턴스는 버리고 다시 조회하세요.
+- 자동 잠금은 `version` 컬럼의 Python 타입이 `UUID`일 때만 적용됩니다. 문자열이나 정수 등 다른 타입의 `version` 컬럼은 프레임워크가 건드리지 않으며 잠금도 걸리지 않습니다. `version_id_col`과 SQLAlchemy의 `version_id_generator`를 직접 선언한 테이블은 SQLAlchemy의 동작을 그대로 따르고, 충돌은 똑같이 `VersionConflictError`로 보고됩니다.
+- `save_all()`과 `delete_all()`에 같은 인스턴스를 여러 번 넣으면 한 번만 처리합니다.
+- 조회한 뒤 변경한 집합체를 `dataclasses.replace()`로 복사하면 복사본은 읽어 온 버전을 잃습니다. 원래 인스턴스를 저장하거나 다시 조회하세요.
 - 기존 table에 `version` column이 이미 있다면 schema migration은 필요 없습니다. mapper 설정만 달라지고 DDL은 같습니다. 달라지는 것은 동작입니다. 지금까지 조용히 덮어쓰던 동시 저장이 `VersionConflictError`가 됩니다.
 - column 이름이 `version`이 아니거나 Aggregate가 아닌 entity의 table(relationship으로 딸린 자식 table 포함)은 자동 대상이 아닙니다. 다른 column을 쓰려면 `__mapper_args__`에 `version_id_col`과 `version_id_generator=False`를 직접 지정합니다.
 - table에 `__mapper_args__`를 직접 정의하면 SQLAlchemy 규칙대로 기본값을 대체합니다. `__mapper_args__ = {}`는 검사를 끕니다. 다른 mapper 인자를 쓰면서 검사를 유지하려면 `"version_id_col": version, "version_id_generator": False`를 함께 넣습니다.

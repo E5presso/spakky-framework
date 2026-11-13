@@ -30,6 +30,9 @@ from spakky.plugins.sqlalchemy.persistency.repository import AbstractGenericRepo
 from spakky.plugins.sqlalchemy.persistency.session_manager import SessionManager
 
 
+VERSION_TEXT_LENGTH = 36
+
+
 @mutable
 class Account(AbstractAggregateRoot[UUID]):
     """Aggregate whose balance is changed by competing use cases."""
@@ -101,6 +104,76 @@ class CounterTable(AbstractMappableTable[Counter]):
         return Counter(uid=self.uid, version=self.version, count=self.count)
 
 
+@mutable
+class Note(AbstractAggregateRoot[UUID]):
+    """Aggregate stored in a table that keeps the version as text."""
+
+    body: str
+
+    @classmethod
+    def next_id(cls) -> UUID:
+        return uuid7()
+
+
+@Table(Note)
+class NoteTable(AbstractMappableTable[Note]):
+    """Table whose `version` column is not UUID-typed, so it stays unversioned."""
+
+    __tablename__ = "optimistic_lock_notes"
+
+    uid: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
+    version: Mapped[str] = mapped_column(String(VERSION_TEXT_LENGTH), nullable=False)
+    body: Mapped[str] = mapped_column(String(), nullable=False)
+
+    @classmethod
+    def from_domain(cls, domain: Note) -> Self:
+        return cls(uid=domain.uid, version=str(domain.version), body=domain.body)
+
+    def to_domain(self) -> Note:
+        return Note(uid=self.uid, version=UUID(self.version), body=self.body)
+
+
+@mutable
+class Stock(AbstractAggregateRoot[UUID]):
+    """Aggregate whose table author manages an integer revision counter."""
+
+    revision: int | None = None  # None: not stored yet, SQLAlchemy assigns 1
+    quantity: int
+
+    @classmethod
+    def next_id(cls) -> UUID:
+        return uuid7()
+
+
+@Table(Stock)
+class StockTable(AbstractMappableTable[Stock]):
+    """Table with a user-declared `version_id_col` and SQLAlchemy's generator."""
+
+    __tablename__ = "optimistic_lock_stocks"
+
+    uid: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer(), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer(), nullable=False)
+
+    # Any: SQLAlchemy mapper kwargs
+    __mapper_args__: dict[str, Any] = {"version_id_col": revision}
+
+    @classmethod
+    def from_domain(cls, domain: Stock) -> Self:
+        return cls(uid=domain.uid, revision=domain.revision, quantity=domain.quantity)
+
+    def to_domain(self) -> Stock:
+        return Stock(uid=self.uid, revision=self.revision, quantity=self.quantity)
+
+
+class NoteRepository(AbstractGenericRepository[Note, UUID]):
+    """Repository under test for the text-versioned table."""
+
+
+class StockRepository(AbstractGenericRepository[Stock, UUID]):
+    """Repository under test for the user-managed revision table."""
+
+
 class AccountRepository(AbstractGenericRepository[Account, UUID]):
     """Repository under test for the versioned table."""
 
@@ -119,6 +192,8 @@ def engine_fixture(tmp_path: Path) -> Generator[Engine, None, None]:
         tables=[
             tables[AccountTable.__tablename__],
             tables[CounterTable.__tablename__],
+            tables[NoteTable.__tablename__],
+            tables[StockTable.__tablename__],
         ],
     )
     yield engine
@@ -136,6 +211,8 @@ def _schema_registry() -> SchemaRegistry:
     tables: dict[type, type[AbstractMappableTable[Any]]] = {
         Account: AccountTable,
         Counter: CounterTable,
+        Note: NoteTable,
+        Stock: StockTable,
     }
     registry.get_type.side_effect = tables.__getitem__
     registry.from_domain.side_effect = lambda domain: tables[type(domain)].from_domain(
@@ -152,6 +229,18 @@ def _accounts(session: Session) -> AccountRepository:
 
 def _counters(session: Session) -> CounterRepository:
     return CounterRepository(
+        _session_manager(session), _schema_registry(), AggregateCollector()
+    )
+
+
+def _notes(session: Session) -> NoteRepository:
+    return NoteRepository(
+        _session_manager(session), _schema_registry(), AggregateCollector()
+    )
+
+
+def _stocks(session: Session) -> StockRepository:
+    return StockRepository(
         _session_manager(session), _schema_registry(), AggregateCollector()
     )
 
@@ -539,3 +628,138 @@ def test_delete_all_racing_writer_between_compare_and_delete_expect_version_conf
         session.rollback()
 
     assert _stored_account(engine, uid).balance == 10
+
+
+def test_text_version_table_mapper_expect_no_version_check() -> None:
+    """version 컬럼이 UUID 타입이 아니면 version_id_col이 자동 설정되지 않는다."""
+    assert inspect(NoteTable).version_id_col is None
+
+
+def test_save_to_text_version_table_expect_insert_and_update_through_from_domain(
+    engine: Engine,
+) -> None:
+    """version을 문자열로 저장하는 테이블은 from_domain 변환값 그대로 INSERT·UPDATE된다."""
+    note = Note(uid=Note.next_id(), body="draft")
+    with Session(engine) as session, session.begin():
+        _notes(session).save(note)
+
+    with Session(engine) as session, session.begin():
+        repository = _notes(session)
+        loaded = repository.get(note.uid)
+        loaded.body = "final"
+        repository.save(loaded)
+
+    with Session(engine) as session:
+        stored = session.get(NoteTable, note.uid)
+        assert stored is not None
+        assert stored.body == "final"
+        assert stored.version == str(loaded.version)
+
+
+def test_save_stale_instance_to_text_version_table_expect_last_write_wins(
+    engine: Engine,
+) -> None:
+    """version 검사 대상이 아닌 테이블은 오래된 인스턴스 저장이 이전처럼 덮어쓴다."""
+    note = Note(uid=Note.next_id(), body="draft")
+    with Session(engine) as session, session.begin():
+        _notes(session).save(note)
+    with Session(engine) as session:
+        stale = _notes(session).get(note.uid)
+    with Session(engine) as session, session.begin():
+        repository = _notes(session)
+        winner = repository.get(note.uid)
+        winner.body = "winner"
+        repository.save(winner)
+
+    stale.body = "stale"
+    with Session(engine) as session, session.begin():
+        _notes(session).save(stale)
+
+    with Session(engine) as session:
+        stored = session.get(NoteTable, note.uid)
+        assert stored is not None
+        assert stored.body == "stale"
+
+
+def test_save_to_user_managed_revision_table_expect_sqlalchemy_generates_revision(
+    engine: Engine,
+) -> None:
+    """사용자가 선언한 정수 version_id_col은 SQLAlchemy generator가 증가시키고 repository는 건드리지 않는다."""
+    stock = Stock(uid=Stock.next_id(), quantity=10)
+    with Session(engine) as session, session.begin():
+        _stocks(session).save(stock)
+
+    with Session(engine) as session, session.begin():
+        repository = _stocks(session)
+        loaded = repository.get(stock.uid)
+        first_revision = loaded.revision
+        loaded.quantity = 7
+        saved = repository.save(loaded)
+
+    assert first_revision == 1
+    assert saved.revision == 2
+    assert saved.quantity == 7
+
+
+def test_save_stale_instance_to_user_managed_revision_table_expect_version_conflict(
+    engine: Engine,
+) -> None:
+    """사용자가 관리하는 version_id_col의 충돌도 VersionConflictError로 보고된다."""
+    stock = Stock(uid=Stock.next_id(), quantity=10)
+    with Session(engine) as session, session.begin():
+        _stocks(session).save(stock)
+    with Session(engine) as session:
+        stale = _stocks(session).get(stock.uid)
+    with Session(engine) as session, session.begin():
+        repository = _stocks(session)
+        winner = repository.get(stock.uid)
+        winner.quantity = 9
+        repository.save(winner)
+
+    stale.quantity = 1
+    with Session(engine) as session:
+        with pytest.raises(VersionConflictError):
+            _stocks(session).save(stale)
+
+    with Session(engine) as session:
+        stored = session.get(StockTable, stock.uid)
+        assert stored is not None
+        assert stored.quantity == 9
+
+
+def test_save_all_with_instance_listed_twice_expect_saved_once_without_conflict(
+    engine: Engine,
+) -> None:
+    """같은 인스턴스가 save_all 목록에 두 번 있어도 충돌 없이 한 번만 저장되고 결과 길이는 입력과 같다."""
+    first_uid = _open_account(engine).uid
+    second_uid = _open_account(engine).uid
+
+    with Session(engine) as session, session.begin():
+        repository = _accounts(session)
+        first = repository.get(first_uid)
+        second = repository.get(second_uid)
+        first.balance = 11
+        second.balance = 22
+        saved = repository.save_all([first, second, first])
+
+    assert [account.uid for account in saved] == [first_uid, second_uid, first_uid]
+    assert _stored_account(engine, first_uid).balance == 11
+    assert _stored_account(engine, first_uid).version == first.version
+    assert _stored_account(engine, second_uid).balance == 22
+
+
+def test_delete_all_with_instance_listed_twice_expect_deleted_once_without_conflict(
+    engine: Engine,
+) -> None:
+    """같은 인스턴스가 delete_all 목록에 두 번 있어도 충돌 없이 한 번만 삭제된다."""
+    uid = _open_account(engine).uid
+
+    with Session(engine) as session, session.begin():
+        repository = _accounts(session)
+        account = repository.get(uid)
+        account.balance = 0
+        deleted = repository.delete_all([account, account])
+
+    assert [item.uid for item in deleted] == [uid, uid]
+    with Session(engine) as session:
+        assert session.get(AccountTable, uid) is None

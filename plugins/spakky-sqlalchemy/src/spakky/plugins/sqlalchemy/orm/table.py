@@ -7,6 +7,9 @@ from spakky.core.pod.annotations.tag import Tag
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
+from uuid import UUID
+
+from sqlalchemy import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.orm import DeclarativeBase, declared_attr
 
@@ -41,7 +44,7 @@ class AbstractMappableTable[T](AbstractTable):
         """Build the mapper arguments that enable optimistic locking.
 
         When the mapped domain type is an `AbstractAggregateRoot` and the table
-        has a `version` column, that column becomes the mapper's
+        has a UUID-typed `version` column, that column becomes the mapper's
         `version_id_col`. The aggregate generates its own version, so
         SQLAlchemy only compares the stored value
         (`version_id_generator=False`) and never generates one.
@@ -70,9 +73,32 @@ class AbstractMappableTable[T](AbstractTable):
         ):
             return {}
         version_column = cls.__table__.columns.get(VERSION_COLUMN_NAME)
-        if version_column is None:
+        if version_column is None or not cls.stores_domain_version(version_column):
             return {}
         return {"version_id_col": version_column, "version_id_generator": False}
+
+    @staticmethod
+    def stores_domain_version(
+        column: ColumnElement[Any],  # Any: column value type is what is inspected
+    ) -> bool:
+        """Tell whether a column can hold `AbstractAggregateRoot.version` as is.
+
+        Only a column whose Python value type is `UUID` takes the aggregate's
+        version without the table's own `from_domain()` conversion. Any other
+        column (a string copy of the version, an integer revision counter, ...)
+        belongs to the table author and is never written by the framework.
+
+        Args:
+            column: Candidate version column.
+
+        Returns:
+            True if the column's Python type is `UUID`.
+        """
+        try:
+            return column.type.python_type is UUID
+        except NotImplementedError:
+            # The type does not declare a Python type, so it is not a UUID column.
+            return False
 
     # Any: same declaration as DeclarativeBase so subclasses may assign a dict.
     # Evaluated per mapped subclass after its table is built.

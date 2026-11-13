@@ -7,7 +7,8 @@ from spakky.core.common.mutability import mutable
 from spakky.core.utils.uuid import uuid7
 from spakky.domain.models import AbstractEntity
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
-from sqlalchemy import DateTime, String, Uuid, inspect
+from sqlalchemy import Column, DateTime, String, Uuid, inspect
+from sqlalchemy.types import UserDefinedType
 from sqlalchemy.orm import Mapped, mapped_column
 
 from spakky.plugins.sqlalchemy.orm.table import (
@@ -234,3 +235,21 @@ def test_mappable_table_with_own_versioned_mapper_args_expect_version_check_kept
     assert mapper.version_id_col is ParcelTable.__table__.c.version
     assert mapper.version_id_generator is False
     assert mapper.eager_defaults is True
+
+
+def test_stores_domain_version_with_type_without_python_type_expect_false() -> None:
+    """Python 타입을 선언하지 않은 사용자 정의 column 타입은 도메인 version column으로 보지 않는다."""
+
+    class OpaqueVersion(UserDefinedType[str]):
+        cache_ok = True
+
+    column: Column[str] = Column("version", OpaqueVersion())
+
+    assert AbstractMappableTable.stores_domain_version(column) is False
+
+
+def test_stores_domain_version_with_uuid_column_expect_true() -> None:
+    """UUID 타입 column은 도메인 version을 그대로 담을 수 있다."""
+    column: Column[UUID] = Column("version", Uuid())
+
+    assert AbstractMappableTable.stores_domain_version(column) is True

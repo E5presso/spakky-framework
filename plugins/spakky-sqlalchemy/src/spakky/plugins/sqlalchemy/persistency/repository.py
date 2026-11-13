@@ -129,19 +129,30 @@ class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, Aggregate
     def _version_attribute(
         self, table_type: type[AbstractMappableTable[AggregateRootT]]
     ) -> str | None:
-        """Return the ORM attribute mapped to `version_id_col`.
+        """Return the ORM attribute that carries the aggregate's own version.
+
+        The repository manages the version attribute only for the framework's
+        scheme: a UUID-typed `version_id_col` without a SQLAlchemy generator.
+        A table with no `version_id_col`, or with one the table author manages
+        (another type, or a SQLAlchemy `version_id_generator`), is left to
+        `from_domain()` and plain SQLAlchemy behaviour.
 
         Args:
             table_type: Table class registered for the aggregate.
 
         Returns:
-            Attribute name, or None when the table is not version-checked
-            (None means "optimistic locking does not apply to this table").
+            Attribute name, or None when the repository must not touch the
+            version attribute (None means "not the framework's version scheme").
         """
         mapper = inspect(table_type)
-        if mapper.version_id_col is None:
+        version_column = mapper.version_id_col
+        if (
+            version_column is None
+            or mapper.version_id_generator is not False
+            or not table_type.stores_domain_version(version_column)
+        ):
             return None
-        return mapper.get_property_by_column(mapper.version_id_col).key
+        return mapper.get_property_by_column(version_column).key
 
     def _table_at_persisted_version(
         self, aggregate: AggregateRootT, version_attribute: str | None
@@ -223,25 +234,30 @@ class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, Aggregate
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
         version_attribute = self._version_attribute(self._get_table_type())
-        tables: list[AbstractMappableTable[AggregateRootT]] = []
+        # Keyed by identity: an instance listed twice is written once.
+        merged_tables: dict[int, AbstractMappableTable[AggregateRootT]] = {}
+        saved: list[AggregateRootT] = []
         for aggregate in aggregates:
+            if id(aggregate) in merged_tables:
+                continue
             try:
                 table = self._table_at_persisted_version(aggregate, version_attribute)
                 merged = self._session_manager.session.merge(table)
                 if version_attribute is not None:
                     set_attribute(merged, version_attribute, aggregate.version)
-                tables.append(merged)
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
+            merged_tables[id(aggregate)] = merged
+            saved.append(aggregate)
         try:
             self._session_manager.session.flush()
         except StaleDataError:
             # The batched flush does not say which row was stale.
-            raise VersionConflictError([aggregate.uid for aggregate in aggregates])
-        for aggregate in aggregates:
+            raise VersionConflictError([aggregate.uid for aggregate in saved])
+        for aggregate in saved:
             aggregate.mark_persisted()
             self._aggregate_collector.collect(aggregate)
-        return [table.to_domain() for table in tables]
+        return [merged_tables[id(aggregate)].to_domain() for aggregate in aggregates]
 
     @override
     def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
@@ -261,23 +277,28 @@ class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, Aggregate
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
         version_attribute = self._version_attribute(self._get_table_type())
-        tables: list[AbstractMappableTable[AggregateRootT]] = []
+        # Keyed by identity: an instance listed twice is deleted once.
+        merged_tables: dict[int, AbstractMappableTable[AggregateRootT]] = {}
+        deleted: list[AggregateRootT] = []
         for aggregate in aggregates:
+            if id(aggregate) in merged_tables:
+                continue
             try:
                 table = self._table_at_persisted_version(aggregate, version_attribute)
                 merged = self._session_manager.session.merge(table)
                 self._session_manager.session.delete(merged)
-                tables.append(merged)
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
+            merged_tables[id(aggregate)] = merged
+            deleted.append(aggregate)
         try:
             self._session_manager.session.flush()
         except StaleDataError:
             # The batched flush does not say which row was stale.
-            raise VersionConflictError([aggregate.uid for aggregate in aggregates])
-        for aggregate in aggregates:
+            raise VersionConflictError([aggregate.uid for aggregate in deleted])
+        for aggregate in deleted:
             self._aggregate_collector.collect(aggregate)
-        return [table.to_domain() for table in tables]
+        return [merged_tables[id(aggregate)].to_domain() for aggregate in aggregates]
 
 
 class AbstractAsyncGenericRepository[
@@ -375,19 +396,30 @@ class AbstractAsyncGenericRepository[
     def _version_attribute(
         self, table_type: type[AbstractMappableTable[AggregateRootT]]
     ) -> str | None:
-        """Return the ORM attribute mapped to `version_id_col`.
+        """Return the ORM attribute that carries the aggregate's own version.
+
+        The repository manages the version attribute only for the framework's
+        scheme: a UUID-typed `version_id_col` without a SQLAlchemy generator.
+        A table with no `version_id_col`, or with one the table author manages
+        (another type, or a SQLAlchemy `version_id_generator`), is left to
+        `from_domain()` and plain SQLAlchemy behaviour.
 
         Args:
             table_type: Table class registered for the aggregate.
 
         Returns:
-            Attribute name, or None when the table is not version-checked
-            (None means "optimistic locking does not apply to this table").
+            Attribute name, or None when the repository must not touch the
+            version attribute (None means "not the framework's version scheme").
         """
         mapper = inspect(table_type)
-        if mapper.version_id_col is None:
+        version_column = mapper.version_id_col
+        if (
+            version_column is None
+            or mapper.version_id_generator is not False
+            or not table_type.stores_domain_version(version_column)
+        ):
             return None
-        return mapper.get_property_by_column(mapper.version_id_col).key
+        return mapper.get_property_by_column(version_column).key
 
     def _table_at_persisted_version(
         self, aggregate: AggregateRootT, version_attribute: str | None
@@ -481,25 +513,30 @@ class AbstractAsyncGenericRepository[
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
         version_attribute = self._version_attribute(self._get_table_type())
-        tables: list[AbstractMappableTable[AggregateRootT]] = []
+        # Keyed by identity: an instance listed twice is written once.
+        merged_tables: dict[int, AbstractMappableTable[AggregateRootT]] = {}
+        saved: list[AggregateRootT] = []
         for aggregate in aggregates:
+            if id(aggregate) in merged_tables:
+                continue
             try:
                 table = self._table_at_persisted_version(aggregate, version_attribute)
                 merged = await self._session_manager.session.merge(table)
                 if version_attribute is not None:
                     set_attribute(merged, version_attribute, aggregate.version)
-                tables.append(merged)
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
+            merged_tables[id(aggregate)] = merged
+            saved.append(aggregate)
         try:
             await self._session_manager.session.flush()
         except StaleDataError:
             # The batched flush does not say which row was stale.
-            raise VersionConflictError([aggregate.uid for aggregate in aggregates])
-        for aggregate in aggregates:
+            raise VersionConflictError([aggregate.uid for aggregate in saved])
+        for aggregate in saved:
             aggregate.mark_persisted()
             self._aggregate_collector.collect(aggregate)
-        return [table.to_domain() for table in tables]
+        return [merged_tables[id(aggregate)].to_domain() for aggregate in aggregates]
 
     @override
     async def delete(self, aggregate: AggregateRootT) -> AggregateRootT:
@@ -519,20 +556,25 @@ class AbstractAsyncGenericRepository[
         self, aggregates: Sequence[AggregateRootT]
     ) -> Sequence[AggregateRootT]:
         version_attribute = self._version_attribute(self._get_table_type())
-        tables: list[AbstractMappableTable[AggregateRootT]] = []
+        # Keyed by identity: an instance listed twice is deleted once.
+        merged_tables: dict[int, AbstractMappableTable[AggregateRootT]] = {}
+        deleted: list[AggregateRootT] = []
         for aggregate in aggregates:
+            if id(aggregate) in merged_tables:
+                continue
             try:
                 table = self._table_at_persisted_version(aggregate, version_attribute)
                 merged = await self._session_manager.session.merge(table)
                 await self._session_manager.session.delete(merged)
-                tables.append(merged)
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
+            merged_tables[id(aggregate)] = merged
+            deleted.append(aggregate)
         try:
             await self._session_manager.session.flush()
         except StaleDataError:
             # The batched flush does not say which row was stale.
-            raise VersionConflictError([aggregate.uid for aggregate in aggregates])
-        for aggregate in aggregates:
+            raise VersionConflictError([aggregate.uid for aggregate in deleted])
+        for aggregate in deleted:
             self._aggregate_collector.collect(aggregate)
-        return [table.to_domain() for table in tables]
+        return [merged_tables[id(aggregate)].to_domain() for aggregate in aggregates]
