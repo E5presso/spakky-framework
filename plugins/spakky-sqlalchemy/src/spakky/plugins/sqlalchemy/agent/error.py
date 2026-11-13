@@ -15,3 +15,9 @@ class AgentSignalTransactionMissingError(AbstractSpakkySqlAlchemyPersistencyErro
     """Raised when a staged agent signal has no transaction to commit with."""
 
     message = "Agent signal append has no open transaction"
+
+
+class AgentConversationAppendConflictError(AbstractSpakkySqlAlchemyPersistencyError):
+    """Raised when another writer appended to the same conversation first."""
+
+    message = "Agent conversation was appended to concurrently"

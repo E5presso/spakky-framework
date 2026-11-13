@@ -272,5 +272,6 @@ class FileController:
 | 커스텀 FastAPI 인스턴스 | [FastAPI 심화](fastapi-advanced.md#custom-instance) |
 | 미들웨어 순서·커스텀 에러 | [FastAPI 심화](fastapi-advanced.md#middleware-error) |
 | WebSocket | [FastAPI 심화](fastapi-advanced.md#websocket) |
+| Server-Sent Events(`@sse`) | [FastAPI 심화](fastapi-advanced.md#sse) |
 | 분산 트레이싱 자동 등록 | [FastAPI 심화](fastapi-advanced.md#tracing) |
 | Agent stream 노출 | [FastAPI 심화](fastapi-advanced.md#agent-stream) |

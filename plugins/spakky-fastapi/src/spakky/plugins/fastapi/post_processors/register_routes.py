@@ -6,8 +6,15 @@ classes, creating FastAPI endpoints with proper dependency injection.
 
 from dataclasses import asdict
 from functools import wraps
-from inspect import getmembers, isawaitable, signature
+from inspect import (
+    getmembers,
+    isasyncgenfunction,
+    isawaitable,
+    isgeneratorfunction,
+    signature,
+)
 from logging import getLogger
+from collections.abc import Callable
 from typing import Any, cast
 
 from spakky.auth import AbstractSpakkyAuthError
@@ -24,6 +31,7 @@ from typing import override
 
 from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import FastAPIError
+from fastapi.sse import EventSourceResponse
 from fastapi.utils import (
     create_model_field,  # type: ignore[import-untyped] - fastapi.utils 내부 모듈, 타입 스텁 미제공
 )
@@ -121,6 +129,19 @@ class RegisterRoutesPostProcessor(
                     route.name = " ".join([x.capitalize() for x in name.split("_")])
                 if route.description is None:
                     route.description = method.__doc__
+                # The Pod may be an AOP proxy whose attributes hide the
+                # generator nature, so the declaration on the class decides.
+                declared_method = getattr(  # route decorator method lookup
+                    controller.type_, name
+                )  # 프레임워크 내부: 컨트롤러 메서드 선언 조회
+                if issubclass(route.response_class, EventSourceResponse) and (
+                    isasyncgenfunction(declared_method)
+                    or isgeneratorfunction(declared_method)
+                ):
+                    self.__add_event_stream_route(
+                        router, controller, name, method, declared_method, route
+                    )
+                    continue
                 if route.response_model is None:
                     return_annotation: type | None = signature(method).return_annotation
                     if return_annotation is not None:
@@ -237,3 +258,78 @@ class RegisterRoutesPostProcessor(
         for fast_api in self.__fastapi_apps():
             fast_api.include_router(router)
         return pod
+
+    def __add_event_stream_route(
+        self,
+        router: APIRouter,
+        controller: ApiController,
+        name: str,
+        method: Callable[..., Any],  # Any: controller generator method signature
+        declared_method: Callable[..., Any],  # Any: same method as declared on class
+        route: Route,
+    ) -> None:
+        """Register a generator method as a native FastAPI SSE stream.
+
+        FastAPI recognizes a generator endpoint through `functools.wraps`
+        (`__wrapped__` is the generator function declared on the class) and calls it in the request handler before the response starts. The plain
+        function below therefore resolves the controller and authenticates
+        eagerly, so an auth failure is still an HTTP error response, and then
+        hands the generator itself to FastAPI, which encodes the events, sends
+        keep-alive comments and cancels the generator when the client leaves.
+
+        Args:
+            router: Router collecting the controller routes.
+            controller: Controller stereotype of the Pod being processed.
+            name: Attribute name of the generator method on the controller.
+            method: The generator method found on the controller Pod.
+            declared_method: The same method as declared on the controller class,
+                which FastAPI inspects to recognize a generator endpoint.
+            route: Route configuration whose response class is an SSE response.
+        """
+
+        @wraps(declared_method)
+        def event_stream_endpoint(
+            *args: Any,
+            method_name: str = name,
+            controller_type: type[object] = controller.type_,
+            context: IContainer = self.__container,
+            **kwargs: Any,
+        ) -> Any:
+            # Reset context so request-scoped Pods do not leak between
+            # consecutive FastAPI requests processed on the same worker.
+            self.__application_context.clear_context()
+            auth_request = kwargs.pop(HTTP_AUTH_REQUEST_PARAMETER)
+            controller_instance = context.get(controller_type)
+            method_to_call = getattr(  # sse decorator method lookup
+                controller_instance, method_name
+            )  # 프레임워크 내부: 컨트롤러 메서드 동적 디스패치
+            auth_boundary = FastAPIAuthBoundary(
+                context,
+                self.__application_context,
+            )
+            try:
+                auth_boundary.seed_http_auth_context(
+                    auth_request,
+                    method_to_call,
+                )
+                for request_name in auth_boundary.request_argument_names(
+                    method_to_call
+                ):
+                    kwargs[request_name] = auth_request
+                return method_to_call(*args, **kwargs)
+            except AbstractSpakkyAuthError as e:
+                auth_boundary.map_http_auth_error(e)
+
+        auth_boundary = FastAPIAuthBoundary(
+            self.__container,
+            self.__application_context,
+        )
+        event_stream_endpoint.__dict__["__signature__"] = (
+            auth_boundary.signature_with_request(method)
+        )
+        route_options = asdict(route)
+        if route.response_model is None:
+            # Left unset so FastAPI infers the stream item type from the
+            # generator's return annotation instead of disabling validation.
+            del route_options["response_model"]
+        router.add_api_route(endpoint=event_stream_endpoint, **route_options)

@@ -39,9 +39,13 @@ class AbstractEntity[EquatableT](AbstractDomainModel, IEquatable, ABC):
         "created_at",
         "updated_at",
         "_AbstractEntity__initialized",
+        "_AbstractEntity__persisted_version",
     }
 
     __initialized: bool = field(init=False, repr=False, default=False)
+    # None: `version` has not moved since construction or `mark_persisted()`,
+    # so the stored version is `version` itself.
+    __persisted_version: UUID | None = field(init=False, repr=False, default=None)
 
     uid: EquatableT
     """Unique identifier for this entity."""
@@ -64,6 +68,34 @@ class AbstractEntity[EquatableT](AbstractDomainModel, IEquatable, ABC):
             New unique identifier.
         """
         ...
+
+    @property
+    def persisted_version(self) -> UUID:
+        """Version this entity is known to have in its backing store.
+
+        Business-field changes keep regenerating `version`, while this value
+        stays at the version the entity was constructed with (the stored
+        version for an entity rebuilt from persistence) until
+        `mark_persisted()` is called. A repository compares this value with
+        the stored version to detect concurrent writes.
+
+        For an entity that has never been stored, this is simply its initial
+        version, which no stored record can match.
+
+        Returns:
+            The version that the last known stored state carries.
+        """
+        if self.__persisted_version is None:
+            return self.version
+        return self.__persisted_version
+
+    def mark_persisted(self) -> None:
+        """Record that the current `version` is now the stored version.
+
+        Repositories call this after a successful write so that the same
+        instance can be changed and saved again within one use case.
+        """
+        self.__persisted_version = None
 
     def validate(self) -> None:
         """Validate entity state.
@@ -124,7 +156,11 @@ class AbstractEntity[EquatableT](AbstractDomainModel, IEquatable, ABC):
             try:
                 self.validate()
                 # Auto-update metadata fields when business attributes change
+                if __name == "version" and self.__persisted_version is None:
+                    self.__persisted_version = __old
                 if __name not in self._AUTO_UPDATE_EXCLUDE_FIELDS:
+                    if self.__persisted_version is None:
+                        self.__persisted_version = self.version
                     super().__setattr__("updated_at", datetime.now(UTC))
                     super().__setattr__("version", uuid7())
             except:

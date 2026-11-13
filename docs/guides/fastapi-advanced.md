@@ -31,6 +31,8 @@ sequenceDiagram
 
 등록된 endpoint는 요청마다 `ApplicationContext.clear_context()`를 호출해 CONTEXT scope Pod가 이전 요청과 섞이지 않도록 정리하고, 컨테이너에서 컨트롤러 인스턴스를 다시 resolve해 실제 메서드를 호출합니다. `spakky-auth`를 함께 쓰면 이 경계에서 인증 컨텍스트를 seed하고, `AbstractSpakkyAuthError`를 HTTP 응답으로 매핑합니다.
 
+`response_class`가 `EventSourceResponse`이고 메서드가 generator이면 `response_model` 추론을 건너뛰고 [SSE stream](#sse)으로 등록합니다. 그 밖의 route 등록 방식은 달라지지 않습니다.
+
 ## 커스텀 FastAPI 인스턴스 { #custom-instance }
 
 기본 앱 대신 직접 만든 `FastAPI` 인스턴스를 쓰려면 플러그인 로드 전에 Pod로 등록합니다. 플러그인은 컨테이너에 이미 `FastAPI` Pod가 있으면 기본 앱을 중복 등록하지 않습니다.
@@ -106,6 +108,58 @@ class ChatController:
             message = await socket.receive_text()
             await socket.send_text(f"Echo: {message}")
 ```
+
+## Server-Sent Events { #sse }
+
+`@sse` 데코레이터는 컨트롤러의 generator 메서드를 `text/event-stream` 응답으로 등록합니다.
+인코딩·keep-alive·연결 종료 처리는 FastAPI의 `fastapi.sse`가 그대로 맡고, 새 의존성은 없습니다.
+
+```python
+from collections.abc import AsyncIterator
+
+from fastapi.sse import ServerSentEvent
+from pydantic import BaseModel
+from spakky.plugins.fastapi.routes import sse
+from spakky.plugins.fastapi.routes.route import HTTPMethod
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+
+
+class Progress(BaseModel):
+    percent: int
+
+
+class ExportRequest(BaseModel):
+    report_id: str
+
+
+@ApiController("/reports")
+class ReportController:
+    @sse("/{report_id}/progress")
+    async def progress(self, report_id: str) -> AsyncIterator[Progress]:
+        """GET /reports/{report_id}/progress"""
+        for percent in (25, 50, 100):
+            yield Progress(percent=percent)
+
+    @sse("/exports", methods=[HTTPMethod.POST])
+    async def export(self, body: ExportRequest) -> AsyncIterator[ServerSentEvent]:
+        """POST /reports/exports"""
+        yield ServerSentEvent(data={"report": body.report_id}, event="started", id="1")
+        yield ServerSentEvent(raw_data="done", event="finished", id="2")
+```
+
+- 기본 HTTP 메서드는 GET이고 `methods`로 바꿉니다.
+- `ServerSentEvent`를 yield하면 `event`/`id`/`retry`/`comment` 필드가 그대로 전송됩니다. `data`는 JSON으로 직렬화되고, `raw_data`는 그대로 `data:`에 들어갑니다.
+- 그 밖의 값(dict, Pydantic model 등)을 yield하면 JSON으로 직렬화되어 `data:` 이벤트가 됩니다.
+- 동기 generator도 쓸 수 있습니다. FastAPI가 thread pool에서 순회합니다.
+- 이벤트가 15초 동안 없으면 FastAPI가 `: ping` keep-alive comment를 보냅니다. client가 연결을 끊으면 generator가 취소되므로 정리 코드는 `try`/`finally`에 둡니다.
+- generator가 아닌 메서드에 `@sse`를 붙이면 `SseEndpointNotGeneratorError`가 발생합니다.
+- `@get("/path", response_class=EventSourceResponse)`처럼 verb 데코레이터에 `EventSourceResponse`를 지정한 generator 메서드도 같은 방식으로 등록됩니다.
+
+컨트롤러 resolve, context 초기화, `AuthContext` seeding, `Request` 주입은 일반 route와 같은 순서로
+**stream이 시작되기 전에** 실행됩니다. 따라서 `@protected` SSE 메서드에 credential이 없으면
+`200` stream이 아니라 `401` 응답이 나갑니다. 메서드 호출에 걸린 동기 aspect도 이 시점에 실행되며,
+aspect가 감싸는 것은 generator를 만드는 호출입니다. 이벤트를 하나씩 순회하는 동안에는 aspect가
+개입하지 않고, 본문 실행 중 발생한 예외는 이미 응답이 시작된 뒤이므로 HTTP 상태 코드로 바뀌지 않습니다.
 
 ## 분산 트레이싱 { #tracing }
 

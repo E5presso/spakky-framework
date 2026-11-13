@@ -1,7 +1,7 @@
 """FastAPI route decorators.
 
-Provides HTTP method decorators (@get, @post, @put, @delete, etc.) and
-@websocket decorator for marking controller methods as API endpoints.
+Provides HTTP method decorators (@get, @post, @put, @delete, etc.), the @sse
+stream decorator and the @websocket decorator for marking controller methods as API endpoints.
 """
 
 from .delete import delete
@@ -12,6 +12,7 @@ from .patch import patch
 from .post import post
 from .put import put
 from .route import route
+from .sse import sse
 from .websocket import websocket
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "post",
     "put",
     "route",
+    "sse",
     "websocket",
 ]

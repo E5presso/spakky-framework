@@ -5,6 +5,8 @@ from typing import Self
 
 from spakky.agent.evidence import AgentEvidence, AgentEvidenceKind
 from spakky.agent.execution import AgentSignalKind
+from spakky.agent.interfaces.model import ModelMessageRole
+from spakky.agent.interfaces.task_store import ConversationTurn
 from spakky.agent.signal import AgentSignal
 from spakky.agent.state import (
     AgentState,
@@ -13,7 +15,7 @@ from spakky.agent.state import (
     AgentStatus,
 )
 from spakky.agent.types import JsonObject
-from sqlalchemy import JSON, DateTime, Index, Integer, Text
+from sqlalchemy import JSON, DateTime, Index, Integer, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from spakky.plugins.sqlalchemy.orm.table import (
@@ -220,3 +222,43 @@ class AgentEvidenceOriginTable(AbstractTable):
     position: Mapped[int] = mapped_column(Integer, nullable=False)
 
     __table_args__ = (Index("ix_spakky_agent_evidence_origin_ref", "origin_ref"),)
+
+
+@Table()
+class AgentConversationTurnTable(AbstractTable):
+    """Append-only transcript table for server-side agent conversations.
+
+    A turn is identified inside its conversation by ``position``. The unique
+    constraint keeps two writers from storing the same position, so a transcript
+    can never be reordered or interleaved silently.
+    """
+
+    __tablename__ = "spakky_agent_conversation_turn"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[JsonObject] = mapped_column(
+        "metadata", JSON, nullable=False, default=dict
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "position",
+            name="uq_spakky_agent_conversation_turn_position",
+        ),
+    )
+
+    def to_turn(self) -> ConversationTurn:
+        """Rebuild the conversation turn stored in this row."""
+        return ConversationTurn(
+            role=ModelMessageRole(self.role),
+            content=self.content,
+            metadata=self.metadata_json,
+        )
