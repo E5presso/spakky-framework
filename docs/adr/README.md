@@ -44,6 +44,7 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 
 | [ADR-0022](0022-optional-domain-event-mediator-provider.md) | 로컬 domain event mediator의 명시적 플러그인 분리 | Accepted | 2026-10-28 |
 | [ADR-0023](0023-live-per-run-signal-mailbox.md) | 실행별 신호 메일박스와 control·steering 두 차선 — 커밋 후 게시, 시작 시 1회 재생, 폴링 제거 | Accepted | 2026-11-08 |
+| [ADR-0025](0025-application-custom-agent-events.md) | 애플리케이션 정의 Agent 이벤트 — 중립 `CustomEvent`, `ContextVar` 채널, adapter가 감싸는 병합 스트림 | Accepted | 2026-11-14 |
 
 ## 새 ADR 작성 가이드
 

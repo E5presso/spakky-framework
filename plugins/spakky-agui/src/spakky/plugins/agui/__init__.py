@@ -9,6 +9,7 @@ from spakky.plugins.agui.error import (
     AgUiApprovalDecodeError,
     AgUiEndpointConflictError,
     AgUiPendingApprovalError,
+    AgUiReservedCustomEventNameError,
     AgUiRunResolutionError,
 )
 from spakky.plugins.agui.hitl import (
@@ -45,6 +46,7 @@ __all__ = [
     "AgUiAgentRegistry",
     "AgUiPendingApprovalError",
     "AgUiProjector",
+    "AgUiReservedCustomEventNameError",
     "AgUiManagedRunDriver",
     "AgUiRunDriver",
     "AgUiStdioCommand",

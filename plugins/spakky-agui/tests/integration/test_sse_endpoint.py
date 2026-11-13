@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from spakky.agent import (
     Agent,
+    AgentCustomEvents,
     AgentExecutionSpec,
     AgentRunner,
     EvidenceCapture,
@@ -52,6 +53,7 @@ class SseAssistant:
     )
     def lookup(self, topic: str) -> str:
         """Look up a topic."""
+        AgentCustomEvents.emit("myapp.turn_part", {"topic": topic, "index": 0})
         return f"fact:{topic}"
 
 
@@ -133,6 +135,30 @@ def test_sse_endpoint_streams_event_stream_frames_in_order() -> None:
     types = [loads(frame.removeprefix("data: ").strip())["type"] for frame in frames]
     assert types[0] == "RUN_STARTED"
     assert "TOOL_CALL_RESULT" in types
+    assert types[-1] == "RUN_FINISHED"
+
+
+def test_sse_endpoint_streams_tool_emitted_custom_event_in_position() -> None:
+    """도구가 실행 중 emit한 이벤트가 그 도구 결과보다 앞선 CUSTOM 프레임으로 전달된다."""
+    client = TestClient(_build_app())
+
+    response = client.post("/agui", json=_run_agent_input())
+
+    frames = [
+        loads(line.removeprefix("data: ").strip())
+        for line in response.text.split("\n\n")
+        if line.startswith("data: ")
+    ]
+    types = [frame["type"] for frame in frames]
+    custom = next(frame for frame in frames if frame["type"] == "CUSTOM")
+    assert custom["name"] == "myapp.turn_part"
+    assert custom["value"] == {"topic": "agents", "index": 0}
+    assert types.count("CUSTOM") == 1
+    assert (
+        types.index("TOOL_CALL_END")
+        < types.index("CUSTOM")
+        < types.index("TOOL_CALL_RESULT")
+    )
     assert types[-1] == "RUN_FINISHED"
 
 

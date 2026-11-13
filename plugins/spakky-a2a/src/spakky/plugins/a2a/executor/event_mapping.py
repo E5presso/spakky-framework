@@ -23,6 +23,7 @@ from spakky.agent.event import (
     AgentEvent,
     AgentEventKind,
     ArtifactEvent,
+    CustomEvent,
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
@@ -40,6 +41,9 @@ from spakky.agent.types import JsonObject, JsonValue
 from spakky.agent.state import AgentStateReason
 
 from spakky.plugins.a2a.error import UnsupportedAgentEventError
+
+CUSTOM_EVENT_METADATA_KEY = "custom_event"
+"""Message metadata key carrying an application custom event's name."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +112,8 @@ class AgentEventProjector:
                 await self._project_tool_call_result(event, updater)
             case AgentEventKind.ARTIFACT:
                 await self._project_artifact(event, updater)
+            case AgentEventKind.CUSTOM:
+                await self._project_custom(event, updater)
             case AgentEventKind.STATE_SNAPSHOT:
                 await self._project_state_snapshot(event, updater)
             case AgentEventKind.STATE_DELTA:
@@ -229,6 +235,17 @@ class AgentEventProjector:
             updater.new_agent_message(
                 [_data_part_from_value(delta.patch)],
                 metadata={"state_delta": True},
+            ),
+        )
+
+    @staticmethod
+    async def _project_custom(event: AgentEvent, updater: TaskUpdater) -> None:
+        custom = _as(event, CustomEvent)
+        await updater.update_status(
+            TaskState.TASK_STATE_WORKING,
+            updater.new_agent_message(
+                [_data_part_from_value(custom.value)],
+                metadata={CUSTOM_EVENT_METADATA_KEY: custom.name},
             ),
         )
 

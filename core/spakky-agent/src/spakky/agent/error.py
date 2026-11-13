@@ -81,3 +81,9 @@ class AgentSignalInboxConflictError(AbstractSpakkyAgentError):
     """Raised when one runner opens two live inboxes for the same agent state."""
 
     message = "Agent state already has an open signal inbox on this runner"
+
+
+class AgentCustomEventChannelUnavailableError(AbstractSpakkyAgentError):
+    """Raised when a custom event is emitted where no merged stream is listening."""
+
+    message = "Agent custom event channel is not listening in this context"

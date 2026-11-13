@@ -353,6 +353,9 @@ def test_public_api_expect_exports_event_taxonomy_types() -> None:
         "StateSnapshotEvent",
         "StateDeltaEvent",
         "ArtifactEvent",
+        "CustomEvent",
+        "AgentCustomEvents",
+        "AgentCustomEventChannelUnavailableError",
     }
     assert event_exports <= set(agent_api.__all__)
 

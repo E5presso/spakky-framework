@@ -364,6 +364,10 @@ checkpoint-bound field가 달라지면 pending action 전에 `agent_checkpoint_i
     options:
       show_root_heading: false
 
+::: spakky.agent.custom_event
+    options:
+      show_root_heading: false
+
 ## Dispatcher
 
 ::: spakky.agent.dispatcher

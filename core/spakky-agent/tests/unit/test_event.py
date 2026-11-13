@@ -17,6 +17,7 @@ from spakky.agent.event import (
     AgentEventAttribution,
     AgentEventKind,
     ArtifactEvent,
+    CustomEvent,
     MessageDeltaEvent,
     ReasoningDeltaEvent,
     RunFinishedEvent,
@@ -91,6 +92,7 @@ def _every_event(attribution: AgentEventAttribution) -> tuple[AgentEvent, ...]:
             patch=[{"op": "replace", "path": "/document", "value": "final"}],
         ),
         ArtifactEvent(attribution, artifact_id="art-1", content={"url": "s3://x"}),
+        CustomEvent(attribution, name="myapp.turn_part", value={"index": 0}),
     )
 
 
@@ -276,6 +278,8 @@ def _to_ag_ui(event: AgentEvent) -> Mapping[str, JsonValue]:
                 "name": "artifact",
                 "value": {"artifactId": artifact_id, "content": content},
             }
+        case CustomEvent(name=name, value=value):
+            return {**base, "type": "CUSTOM", "name": name, "value": value}
 
 
 def test_ag_ui_mapping_expect_preserves_attribution_for_every_event() -> None:

@@ -253,4 +253,5 @@ nav:
       - ADR-0020 Semantic memory, evaluation, pricing과 Agent telemetry: adr/0020-agent-memory-evaluation-cost-telemetry.md
       - ADR-0022 Optional domain event mediator provider: adr/0022-optional-domain-event-mediator-provider.md
       - ADR-0023 Live per-run signal mailbox: adr/0023-live-per-run-signal-mailbox.md
+      - ADR-0025 애플리케이션 정의 Agent 이벤트: adr/0025-application-custom-agent-events.md
       - ADR-0021 Multimodal model content와 explicit LLM execution policy: adr/0021-multimodal-model-content-and-llm-execution-policy.md

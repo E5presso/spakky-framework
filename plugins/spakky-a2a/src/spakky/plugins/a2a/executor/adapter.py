@@ -13,6 +13,7 @@ success/failure after the stream drains.
 """
 
 from collections.abc import AsyncGenerator, Mapping, Sequence
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import cast, override
 
@@ -30,7 +31,8 @@ from spakky.agent import (
     ImagePart,
     VideoPart,
 )
-from spakky.agent.event import AgentEvent
+from spakky.agent.custom_event import AgentCustomEvents
+from spakky.agent.event import AgentEvent, AgentEventAttribution
 from spakky.agent.execution import AgentSignalKind
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.interfaces.model import ModelSelection
@@ -119,23 +121,39 @@ class SpakkyAgentExecutor(AgentExecutor):
         if approval is not None:
             self._append_approval_signal(task.id, approval)
         outcome: RunOutcome | None = None
-        async for event in self._run_events(run_input):
-            projected = await self._projector.project(event, updater)
-            if projected is not None:
-                outcome = projected
+        # ``aclosing`` stops the run when this request is cancelled mid-projection.
+        async with aclosing(self._run_events(run_input)) as events:
+            async for event in events:
+                projected = await self._projector.project(event, updater)
+                if projected is not None:
+                    outcome = projected
         await self._reconcile_terminal(task.id, outcome, updater)
 
     async def _run_events(
         self,
         run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentEvent, None]:
-        """Drive the runner's neutral event stream for one run."""
+        """Drive the runner's neutral event stream for one run.
+
+        The stream is merged with the run's custom event channel so application
+        code that emits through ``AgentCustomEvents`` works unchanged whichever
+        adapter serves the run.
+        """
         async with self._runner_factory.open_runner(
             self._agent,
             run_input=run_input,
         ) as runner:
-            async for event in runner.run_events(run_input):
-                yield event
+            attribution = AgentEventAttribution(
+                agent_id=runner.agent.spec.name or type(runner.target).__name__,
+                run_id=run_input.state_id,
+                conversation_id=run_input.effective_conversation_id,
+                parent_run_id=run_input.parent_run_id,
+            )
+            async with aclosing(
+                AgentCustomEvents.merge(runner.run_events(run_input), attribution)
+            ) as events:
+                async for event in events:
+                    yield event
 
     async def _reconcile_terminal(
         self,

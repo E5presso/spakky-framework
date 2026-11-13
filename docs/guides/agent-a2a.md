@@ -128,11 +128,18 @@ A2A executor는 inbound task id를 core `RunAgentInput.state_id`로 사용하고
 | `RUN_PAUSED` | `input-required` 또는 `auth-required` |
 | `RUN_FINISHED` | executor가 stream drain 후 complete 또는 failed로 reconcile |
 | `STATE_SNAPSHOT`, `STATE_DELTA`, `ARTIFACT` | data part 또는 artifact |
+| `CUSTOM` | working status message의 data part, message metadata `custom_event`에 이벤트 이름 |
 
 이 표는 semantic mapping이지 event-by-event 무손실 복제가 아닙니다. 여러 neutral event가
 같은 `working` status 형태로 축약될 수 있고 tool result는 artifact로 바뀌며,
 `RUN_FINISHED`는 projector가 즉시 terminal update를 내지 않고 executor가 stream을 모두
 drain한 뒤 한 번만 complete/failed로 reconcile합니다.
+
+Executor는 `run_events()`를 `AgentCustomEvents.merge()`로 감쌉니다. 도구가
+`AgentCustomEvents.emit("myapp.turn_part", {"index": 0})`를 호출하면 emit한 시점에
+`working` status update가 하나 나갑니다. Agent message의 data part가 `{"index": 0}`이고
+message metadata가 `{"custom_event": "myapp.turn_part"}`입니다. A2A에는 예약된 이벤트
+이름이 없습니다. 사용법은 [AI Agent 심화](agents-advanced.md#custom-events)를 봅니다.
 
 Iterative run의 `model-1`, `tool-1`, `model-2` 같은 step boundary는 순서대로 A2A
 `working` update에 들어갑니다. 첫 model이 tool을 요청하면 result artifact를 추가한 뒤
