@@ -456,7 +456,7 @@ class BillingHandler:
 ```
 
 - 저장소는 `@Transactional()`이 연 현재 세션으로 기록하므로, 처리 기록과 처리기의 업무 변경이 같은 트랜잭션에서 commit 또는 rollback됩니다. 트랜잭션 없이 호출하면 `SessionNotInitializedError`가 납니다.
-- 같은 이벤트가 동시에 두 번 전달되면 나중 쪽의 기록이 기본 키 충돌로 `DuplicateProcessedEventError`가 되고 그 트랜잭션은 롤백됩니다. 소비자가 재시도하면 커밋된 기록을 보고 건너뜁니다.
+- 같은 이벤트가 동시에 두 번 전달되면 나중 쪽의 기록이 기본 키 충돌로 `DuplicateProcessedEventError`가 되고 그 트랜잭션은 롤백됩니다. 이 오류는 유예(`EventDeferredError`)라서 시도 횟수를 세지 않고 다시 전달되며, 다시 전달된 쪽은 커밋된 기록을 보고 건너뜁니다.
 - 테이블은 `SchemaRegistry` 메타데이터에 포함됩니다. 마이그레이션 도구를 쓴다면 `spakky_event_inbox` 테이블 생성을 마이그레이션에 추가하세요.
 - 오래된 기록은 트랜잭션 안에서 `store.purge(older_than)`으로 지웁니다. 보존 기간은 브로커가 같은 메시지를 다시 전달할 수 있는 기간보다 길게 잡습니다.
 

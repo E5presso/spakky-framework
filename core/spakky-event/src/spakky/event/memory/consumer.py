@@ -79,6 +79,37 @@ class InMemorySettlement:
         )
 
     @staticmethod
+    def still_dead(
+        entry: InMemoryDeadLetter,
+        outcome: DeliveryRetry | DeliveryDeferred | DeliveryDeadLettered,
+    ) -> InMemoryDeadLetter:
+        """Keep a redriven dead letter, narrowed to the handlers that failed again.
+
+        Handlers that succeeded in this redrive leave the metadata, so the next
+        redrive does not run them a second time.
+        """
+        match outcome:
+            case DeliveryDeadLettered(dead_letter=dead_letter):
+                failures = dead_letter.failures
+            case DeliveryRetry(failures=retried):
+                failures = retried
+            case DeliveryDeferred(  # pragma: no branch - exhaustive outcome union
+                state=state
+            ):
+                failures = tuple(
+                    failure
+                    for failure in entry.dead_letter.failures
+                    if state.pending is None or failure.handler in state.pending
+                )
+        return entry.model_copy(
+            update={
+                "dead_letter": entry.dead_letter.model_copy(
+                    update={"failures": failures}
+                )
+            }
+        )
+
+    @staticmethod
     def apply(
         broker: InMemoryEventBroker,
         key: SubscriptionKey,
@@ -207,7 +238,9 @@ class InMemoryEventConsumer(
                 succeeded += 1
                 continue
             failed += 1
-            self._broker.add_dead_letter(key, entry)
+            self._broker.add_dead_letter(
+                key, InMemorySettlement.still_dead(entry, outcome)
+            )
         return RedriveResult(succeeded=succeeded, failed=failed)
 
     def _key(self, delivery: SubscriptionDelivery) -> SubscriptionKey:
@@ -229,16 +262,18 @@ class InMemoryEventConsumer(
                 if message is None:
                     continue
                 try:
-                    outcome = self._deliver(delivery, message)
-                except BaseException:
-                    # 판정 없이 끝난 전달은 메시지를 잃지 않도록 제자리에 되돌린다.
-                    self._broker.requeue_front(key, message)
-                    raise
+                    try:
+                        outcome = self._deliver(delivery, message)
+                    except BaseException:
+                        # 판정 없이 끝난 전달은 메시지를 잃지 않도록 제자리에 되돌린다.
+                        self._broker.requeue_front(key, message)
+                        raise
+                    InMemorySettlement.apply(
+                        self._broker, key, message, outcome, self._config.retry.mode
+                    )
                 finally:
-                    self._broker.done()
-                InMemorySettlement.apply(
-                    self._broker, key, message, outcome, self._config.retry.mode
-                )
+                    # 재투입까지 끝난 뒤에야 처리 중 표시를 푼다.
+                    self._broker.done(key)
                 delivered += 1
                 progressed = True
             if progressed:
@@ -357,7 +392,9 @@ class AsyncInMemoryEventConsumer(
                 succeeded += 1
                 continue
             failed += 1
-            self._broker.add_dead_letter(key, entry)
+            self._broker.add_dead_letter(
+                key, InMemorySettlement.still_dead(entry, outcome)
+            )
         return RedriveResult(succeeded=succeeded, failed=failed)
 
     def _key(self, delivery: AsyncSubscriptionDelivery) -> SubscriptionKey:
@@ -386,16 +423,18 @@ class AsyncInMemoryEventConsumer(
                 if message is None:
                     continue
                 try:
-                    outcome = await self._deliver_async(delivery, message)
-                except BaseException:
-                    # 판정 없이 끝난 전달은 메시지를 잃지 않도록 제자리에 되돌린다.
-                    self._broker.requeue_front(key, message)
-                    raise
+                    try:
+                        outcome = await self._deliver_async(delivery, message)
+                    except BaseException:
+                        # 판정 없이 끝난 전달은 메시지를 잃지 않도록 제자리에 되돌린다.
+                        self._broker.requeue_front(key, message)
+                        raise
+                    InMemorySettlement.apply(
+                        self._broker, key, message, outcome, self._config.retry.mode
+                    )
                 finally:
-                    self._broker.done()
-                InMemorySettlement.apply(
-                    self._broker, key, message, outcome, self._config.retry.mode
-                )
+                    # 재투입까지 끝난 뒤에야 처리 중 표시를 푼다.
+                    self._broker.done(key)
                 delivered += 1
                 progressed = True
             if progressed:

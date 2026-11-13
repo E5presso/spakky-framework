@@ -286,7 +286,8 @@ integration handler의 등록은 해당 transport 플러그인의 post-processor
 표현합니다. `EventDeferredError(retry_after=1.0)`의 지연은 유한한 양수 초이며 잘못된
 값은 `InvalidEventDeferralError`입니다. handler의 트랜잭션은 예외가 consumer에
 도달하기 전에 rollback되어야 합니다. 같은 구독자의 다른 handler는 그대로 실행되고,
-재전달에서는 유예를 요청한 handler만 다시 실행됩니다.
+재전달에서는 성공하지 못한 handler만 다시 실행됩니다. 같은 전달에서 다른 handler가
+재시도 불가 실패(`AbstractNonRetryableEventError`)를 내면 유예보다 dead-letter가 우선합니다.
 
 전달 계약을 따르는 consumer는 이를 업무 실패/dead-letter와 구분하고, 시도 횟수를 세지 않은 채
 확인(ack/commit) 없이 재전달합니다. Kafka plugin은 partition pause/rewind와 지속적인 poll로 구현합니다.

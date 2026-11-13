@@ -160,6 +160,7 @@ class ShippingHandler:
 - 큐·exchange·바인딩은 Consumer가 기동할 때 선언합니다. 이름 있는 구독자의 큐는 Consumer가 한 번 기동한 뒤부터 메시지를 받으므로, 발행 서비스보다 소비 서비스를 먼저 배포하세요.
 - 발행 Transport는 기본적으로 이벤트 이름 큐(이름 없는 구독자의 큐)를 선언하고 바인딩합니다. 어떤 이벤트의 소비자가 모두 이름 있는 구독자라면 이 큐에는 아무도 소비하지 않는 메시지가 쌓이므로, 발행 서비스에서 `SPAKKY_RABBITMQ__DECLARE_DEFAULT_QUEUE=false`로 끄세요. 이 값을 끄면 Transport는 큐를 만들지 않으므로, 소비 큐가 아직 없을 때 발행한 메시지는 브로커가 버립니다.
 - 한 구독(구독자와 이벤트 타입의 쌍)의 핸들러는 모두 동기이거나 모두 비동기여야 합니다. 동기·비동기 Consumer가 같은 큐를 나눠 소비하게 되기 때문입니다.
+- 구독자 이름 규칙과 예약어(`dlq`, `dlt`, `retry`, `redrive`는 쓸 수 없음)는 [Integration Event 전달 계약](events.md#integration-event-전달-계약)의 "구독자" 절을 따릅니다. 예약어 덕분에 구독자 큐 이름이 다른 구독자의 대기 큐·dead-letter 큐 이름과 겹치지 않습니다.
 - `<event_name>.<구독자>` 형태의 큐 이름이 다른 이벤트의 `event_name`과 겹치지 않도록 이벤트 이름을 정하세요.
 
 !!! note "`partition_key`는 RabbitMQ 라우팅에 사용되지 않습니다"
@@ -252,9 +253,11 @@ sequenceDiagram
 
 ### 재시도하지 않는 경우
 
-- `AbstractNonRetryableEventError`를 상속한 예외: 남은 횟수와 상관없이 바로 dead-letter 큐로 갑니다.
+- `AbstractNonRetryableEventError`를 상속한 예외: 남은 횟수와 상관없이 바로 dead-letter 큐로 갑니다. 같은 전달에서 다른 핸들러가 재시도 가능한 실패나 deferral을 냈더라도 마찬가지입니다.
 - 역직렬화할 수 없는 payload, 해석할 수 없는 재시도 상태 헤더: 핸들러를 호출하지 않고 바로 dead-letter 큐로 갑니다.
-- `EventDeferredError(retry_after)`: 시도 횟수를 세지 않고 `retry_after`만큼 기다렸다가 다시 전달합니다. `blocking`에서는 제자리에서, `delayed`에서는 대기 큐에서 기다립니다.
+- `EventDeferredError(retry_after)`: 시도 횟수를 세지 않고 `retry_after`만큼 기다렸다가 다시 전달합니다. `blocking`에서는 제자리에서, `delayed`에서는 대기 큐에서 기다립니다. 재시도 불가 실패가 없는 전달에서 핸들러 하나라도 deferral을 내면, 다른 핸들러의 재시도 가능한 실패가 있어도 전달 전체가 시도 횟수 없이 기다립니다.
+
+메시지 하나의 결과는 하나이므로, 핸들러 결과가 섞일 때의 우선순위(재시도 불가 실패 → deferral → 재시도)는 [Integration Event 전달 계약](events.md#integration-event-전달-계약)이 정합니다. 어느 경우든 아직 성공하지 못한 핸들러만 다음 전달에서 실행됩니다.
 
 ---
 
@@ -289,7 +292,8 @@ async def retry_billing(redriver: IAsyncEventRedriver) -> None:
 
 - 해당 구독(구독자와 이벤트 타입)의 핸들러가 등록된 애플리케이션에서 호출해야 합니다. 등록되지 않았으면 `SubscriptionNotFoundError`가 납니다.
 - 호출마다 전용 연결을 열어 dead-letter 큐에서 메시지를 꺼냅니다. `limit`을 생략하면 큐가 빌 때까지 꺼냅니다.
-- dead letter마다 한 번만 시도합니다(`retry` 설정을 적용하지 않습니다). 성공하면 큐에서 지우고, 다시 실패하면 호출이 끝날 때 원래 메타데이터 그대로 큐에 되돌립니다. 따라서 한 번의 호출에서 같은 메시지를 반복해서 받지 않습니다.
+- dead letter마다 한 번만 시도합니다(`retry` 설정을 적용하지 않습니다). 성공하면 큐에서 지웁니다. 다시 실패하면, 이번에도 성공하지 못한 핸들러만 남긴 메타데이터로 사본을 dead-letter 큐에 넣고(publisher confirm 후) 예전 메시지를 지웁니다. 그래서 이번 redrive에서 성공한 핸들러는 다음 redrive에서 다시 실행되지 않습니다. 사본이 확인되지 않으면 예전 메시지를 그대로 둡니다.
+- 사본은 큐에 있던 dead letter를 모두 꺼낸 뒤에 넣으므로, 한 번의 호출에서 같은 메시지를 반복해서 받지 않습니다.
 - 인증 provider 장애는 예외로 전파되며, 그때까지 꺼낸 미확인 메시지는 큐에 남습니다.
 
 ---

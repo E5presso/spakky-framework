@@ -16,6 +16,7 @@ from typing import Any, cast
 
 from aiokafka import AIOKafkaProducer
 from confluent_kafka import (
+    OFFSET_BEGINNING,
     Consumer,
     KafkaException,
     Message,
@@ -51,8 +52,15 @@ from spakky.tracing.context import TraceContext
 from spakky.tracing.propagator import ITracePropagator
 
 from spakky.plugins.kafka.auth import KAFKA_AUTH_HEADERS_PARAMETER
-from spakky.plugins.kafka.common.config import KafkaConnectionConfig
-from spakky.plugins.kafka.common.constants import KafkaGroupId, KafkaTopic
+from spakky.plugins.kafka.common.config import (
+    AutoOffsetResetType,
+    KafkaConnectionConfig,
+)
+from spakky.plugins.kafka.common.constants import (
+    ASSIGNMENT_OFFSET_LOOKUP_TIMEOUT,
+    KafkaGroupId,
+    KafkaTopic,
+)
 from spakky.plugins.kafka.event.records import (
     ConsumedRecord,
     KafkaDeadLetters,
@@ -150,7 +158,7 @@ class KafkaSubscriberWorker:
         self.producer = Producer(self.config.producer_configuration_dict, logger=logger)
         self.consumer.subscribe(
             topics=self.subscribed_topics,
-            on_assign=self._forget,
+            on_assign=self._on_assign,
             on_revoke=self._forget,
             on_lost=self._forget,
         )
@@ -556,6 +564,51 @@ class KafkaSubscriberWorker:
                 f"{position.offset}, message is not retryable: {error}"
             )
 
+    def _on_assign(self, consumer: Consumer, partitions: list[TopicPartition]) -> None:
+        """Forget stale state and never skip a retry record nobody consumed yet.
+
+        Retry topics are written only by this subscriber, so every record on a
+        retry partition without a committed offset is still waiting for it. The
+        user's `auto.offset.reset` must not decide about those: under `latest`
+        a retry published before a restart would be skipped, and under `none`
+        the partition could not start at all. Such partitions therefore start
+        at the beginning. Event topics keep following the configured policy.
+
+        The assignment is replaced with `assign`, which matches the eager
+        rebalance protocol of the default assignors this plugin configures.
+
+        Raises:
+            KafkaException: The committed offsets cannot be read. Starting
+                anyway could skip a waiting retry, so the poll loop ends.
+        """
+        self._forget(consumer, partitions)
+        if self.config.auto_offset_reset is AutoOffsetResetType.EARLIEST:
+            return
+        waiting = [
+            TopicPartition(position.topic, position.partition)
+            for position in partitions
+            if position.topic in self.retry_topics
+        ]
+        if not waiting:
+            return
+        unread = {
+            (position.topic, position.partition)
+            for position in consumer.committed(
+                waiting, timeout=ASSIGNMENT_OFFSET_LOOKUP_TIMEOUT
+            )
+            if position.offset < 0
+        }
+        if not unread:
+            return
+        consumer.assign(
+            [
+                TopicPartition(position.topic, position.partition, OFFSET_BEGINNING)
+                if (position.topic, position.partition) in unread
+                else position
+                for position in partitions
+            ]
+        )
+
     def _forget(self, consumer: Consumer, partitions: list[TopicPartition]) -> None:
         """Forget timers and retry state on assignment, revocation or lost ownership.
 
@@ -685,7 +738,7 @@ class AsyncKafkaSubscriberWorker:
         await self.producer.start()
         await self.consumer.subscribe(
             topics=self.subscribed_topics,
-            on_assign=self._forget,
+            on_assign=self._on_assign,
             on_revoke=self._forget,
             on_lost=self._forget,
         )
@@ -1098,6 +1151,54 @@ class AsyncKafkaSubscriberWorker:
                 f"Cannot rewind {position.topic} [{position.partition}] to offset "
                 f"{position.offset}, message is not retryable: {error}"
             )
+
+    async def _on_assign(
+        self, consumer: AIOConsumer, partitions: list[TopicPartition]
+    ) -> None:
+        """Forget stale state and never skip a retry record nobody consumed yet.
+
+        Retry topics are written only by this subscriber, so every record on a
+        retry partition without a committed offset is still waiting for it. The
+        user's `auto.offset.reset` must not decide about those: under `latest`
+        a retry published before a restart would be skipped, and under `none`
+        the partition could not start at all. Such partitions therefore start
+        at the beginning. Event topics keep following the configured policy.
+
+        The assignment is replaced with `assign`, which matches the eager
+        rebalance protocol of the default assignors this plugin configures.
+
+        Raises:
+            KafkaException: The committed offsets cannot be read. Starting
+                anyway could skip a waiting retry, so the poll loop ends.
+        """
+        await self._forget(consumer, partitions)
+        if self.config.auto_offset_reset is AutoOffsetResetType.EARLIEST:
+            return
+        waiting = [
+            TopicPartition(position.topic, position.partition)
+            for position in partitions
+            if position.topic in self.retry_topics
+        ]
+        if not waiting:
+            return
+        committed: list[TopicPartition] = await consumer.committed(
+            waiting, timeout=ASSIGNMENT_OFFSET_LOOKUP_TIMEOUT
+        )
+        unread = {
+            (position.topic, position.partition)
+            for position in committed
+            if position.offset < 0
+        }
+        if not unread:
+            return
+        await consumer.assign(
+            [
+                TopicPartition(position.topic, position.partition, OFFSET_BEGINNING)
+                if (position.topic, position.partition) in unread
+                else position
+                for position in partitions
+            ]
+        )
 
     async def _forget(
         self, consumer: AIOConsumer, partitions: list[TopicPartition]

@@ -118,6 +118,7 @@ class MailingHandler:
 - 구독자 큐는 Consumer가 기동할 때 선언·바인딩되므로, 소비 서비스를 발행 서비스보다 먼저 배포하세요.
 - 어떤 이벤트의 소비자가 모두 이름 있는 구독자라면, 발행 서비스에서 `SPAKKY_RABBITMQ__DECLARE_DEFAULT_QUEUE=false`로 이벤트 이름 큐 선언을 끄세요. 켜 두면 아무도 소비하지 않는 큐에 메시지가 쌓입니다.
 - 한 구독(구독자와 이벤트 타입의 쌍)의 핸들러는 모두 동기이거나 모두 비동기여야 합니다.
+- 구독자 이름 규칙과 예약어(`dlq`, `dlt`, `retry`, `redrive`)는 `docs/guides/events.md`의 "Integration Event 전달 계약"을 따릅니다.
 
 ### 재시도와 dead-letter
 
@@ -130,6 +131,7 @@ class MailingHandler:
 
 - `AbstractNonRetryableEventError`를 상속한 예외와 역직렬화할 수 없는 payload는 재시도 없이 dead-letter 큐로 갑니다.
 - `EventDeferredError(retry_after)`는 시도 횟수를 세지 않고 기다렸다가 다시 전달합니다.
+- 한 전달에서 핸들러 결과가 섞이면 재시도 불가 실패 → deferral → 재시도 순으로 하나의 결과가 정해집니다.
 - dead-letter·재시도 사본은 브로커의 publisher confirm을 받은 뒤에만 원본을 ack합니다. 확인되지 않으면 원본을 requeue합니다.
 - `delayed`의 대기 큐는 구독자마다 하나이고 메시지별 TTL을 씁니다. RabbitMQ는 큐의 맨 앞 메시지만 만료시키므로, 지연이 긴 메시지가 앞에 있으면 뒤의 메시지는 설정한 지연보다 더 기다릴 수 있습니다.
 
@@ -162,7 +164,7 @@ class BillingRecovery:
         print(result.succeeded, result.failed)
 ```
 
-성공한 dead letter는 큐에서 지워지고, 다시 실패한 것은 호출이 끝날 때 그대로 큐에 되돌려집니다. 호출마다 dead letter당 한 번만 시도합니다.
+성공한 dead letter는 큐에서 지워집니다. 다시 실패한 것은 이번에도 성공하지 못한 핸들러만 남긴 메타데이터로 교체되어, 이번에 성공한 핸들러는 다음 redrive에서 다시 실행되지 않습니다. 호출마다 dead letter당 한 번만 시도합니다.
 
 ### 비동기 변형
 

@@ -179,6 +179,11 @@ class AbstractWorkerHarness(ABC):
         ...
 
     @abstractmethod
+    def assigned(self, partitions: list[TopicPartition]) -> None:
+        """Fire the assignment callback for some partitions."""
+        ...
+
+    @abstractmethod
     def run(self, polled: list[MagicMock | None]) -> None:
         """Run the poll loop over the given poll results, then stop it."""
         ...
@@ -317,6 +322,10 @@ class SyncWorkerHarness(AbstractWorkerHarness):
     @override
     def forget(self, partitions: list[TopicPartition]) -> None:
         self.worker._forget(self.consumer, partitions)
+
+    @override
+    def assigned(self, partitions: list[TopicPartition]) -> None:
+        self.worker._on_assign(self.consumer, partitions)
 
     @override
     def run(self, polled: list[MagicMock | None]) -> None:
@@ -473,6 +482,10 @@ class AsyncWorkerHarness(AbstractWorkerHarness):
     @override
     def forget(self, partitions: list[TopicPartition]) -> None:
         asyncio.run(self.worker._forget(self.consumer, partitions))
+
+    @override
+    def assigned(self, partitions: list[TopicPartition]) -> None:
+        asyncio.run(self.worker._on_assign(self.consumer, partitions))
 
     @override
     def run(self, polled: list[MagicMock | None]) -> None:

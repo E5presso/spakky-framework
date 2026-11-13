@@ -10,7 +10,13 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
-from confluent_kafka import KafkaError, KafkaException, TopicPartition
+from confluent_kafka import (
+    OFFSET_BEGINNING,
+    OFFSET_INVALID,
+    KafkaError,
+    KafkaException,
+    TopicPartition,
+)
 from spakky.auth import (
     AuthRequirementDeniedError,
     AuthVerificationProviderUnavailableError,
@@ -31,7 +37,10 @@ from spakky.tracing.context import TraceContext
 from spakky.tracing.w3c_propagator import W3CTracePropagator
 
 from spakky.plugins.kafka.auth import KAFKA_AUTH_HEADERS_PARAMETER
-from spakky.plugins.kafka.common.config import KafkaConnectionConfig
+from spakky.plugins.kafka.common.config import (
+    AutoOffsetResetType,
+    KafkaConnectionConfig,
+)
 from spakky.plugins.kafka.common.constants import DeadLetterHeaderKey
 from tests.unit.conftest import HarnessFactory
 from tests.unit.harness import (
@@ -516,6 +525,116 @@ def test_worker_rebalance_of_other_partition_expect_retry_state_kept(
     harness.handle(make_message())
 
     assert calls == ["flaky", "steady", "flaky"]
+
+
+def test_worker_assignment_latest_reset_expect_unread_retry_partition_from_beginning(
+    make_harness: HarnessFactory, config: KafkaConnectionConfig
+) -> None:
+    """`latest` 정책에서도 커밋된 적 없는 retry 파티션은 처음부터 읽고 나머지는 그대로 둔다."""
+    config.auto_offset_reset = AutoOffsetResetType.LATEST
+    harness = make_harness(RetryPolicy(max_attempts=3, mode=RetryMode.DELAYED))
+    harness.add("first", MagicMock())
+    harness.consumer.committed.return_value = [
+        TopicPartition("SampleEvent.retry", 0, OFFSET_INVALID),
+        TopicPartition("SampleEvent.retry", 1, 7),
+    ]
+    event_partition = TopicPartition("SampleEvent", 0)
+    read_partition = TopicPartition("SampleEvent.retry", 1)
+
+    harness.assigned(
+        [event_partition, TopicPartition("SampleEvent.retry", 0), read_partition]
+    )
+
+    looked_up = harness.consumer.committed.call_args.args[0]
+    assert [(position.topic, position.partition) for position in looked_up] == [
+        ("SampleEvent.retry", 0),
+        ("SampleEvent.retry", 1),
+    ]
+    assignment = harness.consumer.assign.call_args.args[0]
+    assert assignment[0] is event_partition
+    assert (assignment[1].topic, assignment[1].partition, assignment[1].offset) == (
+        "SampleEvent.retry",
+        0,
+        OFFSET_BEGINNING,
+    )
+    assert assignment[2] is read_partition
+
+
+def test_worker_assignment_latest_reset_expect_committed_retry_partitions_untouched(
+    make_harness: HarnessFactory, config: KafkaConnectionConfig
+) -> None:
+    """retry 파티션에 커밋된 위치가 있으면 기본 할당을 바꾸지 않는다."""
+    config.auto_offset_reset = AutoOffsetResetType.LATEST
+    harness = make_harness(RetryPolicy(max_attempts=3, mode=RetryMode.DELAYED))
+    harness.add("first", MagicMock())
+    harness.consumer.committed.return_value = [
+        TopicPartition("SampleEvent.retry", 0, 3)
+    ]
+
+    harness.assigned([TopicPartition("SampleEvent.retry", 0)])
+
+    harness.consumer.committed.assert_called_once()
+    harness.consumer.assign.assert_not_called()
+
+
+def test_worker_assignment_without_retry_partitions_expect_no_offset_lookup(
+    make_harness: HarnessFactory, config: KafkaConnectionConfig
+) -> None:
+    """retry 파티션이 없는 할당은 커밋 위치를 조회하지 않고 사용자의 reset 정책을 따른다."""
+    config.auto_offset_reset = AutoOffsetResetType.LATEST
+    harness = make_harness(RetryPolicy(max_attempts=3, mode=RetryMode.DELAYED))
+    harness.add("first", MagicMock())
+
+    harness.assigned([TopicPartition("SampleEvent", 0)])
+
+    harness.consumer.committed.assert_not_called()
+    harness.consumer.assign.assert_not_called()
+
+
+def test_worker_assignment_earliest_reset_expect_no_offset_lookup(
+    make_harness: HarnessFactory,
+) -> None:
+    """`earliest` 정책은 이미 처음부터 읽으므로 retry 파티션도 따로 조회하지 않는다."""
+    harness = make_harness(RetryPolicy(max_attempts=3, mode=RetryMode.DELAYED))
+    harness.add("first", MagicMock())
+
+    harness.assigned([TopicPartition("SampleEvent.retry", 0)])
+
+    harness.consumer.committed.assert_not_called()
+    harness.consumer.assign.assert_not_called()
+
+
+def test_worker_assignment_offset_lookup_fails_expect_error_propagated_without_assign(
+    make_harness: HarnessFactory, config: KafkaConnectionConfig
+) -> None:
+    """커밋 위치를 읽지 못하면 retry를 건너뛸 수 있는 할당을 하지 않고 오류를 전파한다."""
+    config.auto_offset_reset = AutoOffsetResetType.NONE
+    harness = make_harness(RetryPolicy(max_attempts=3, mode=RetryMode.DELAYED))
+    harness.add("first", MagicMock())
+    harness.consumer.committed.side_effect = KafkaException(
+        KafkaError(KafkaError._TIMED_OUT)
+    )
+
+    with pytest.raises(KafkaException):
+        harness.assigned([TopicPartition("SampleEvent.retry", 0)])
+
+    harness.consumer.assign.assert_not_called()
+
+
+def test_worker_assignment_expect_wait_and_retry_state_of_assigned_partition_forgotten(
+    make_harness: HarnessFactory,
+) -> None:
+    """새로 할당받은 파티션의 이전 대기 상태는 버리고 첫 시도로 다시 전달한다."""
+    harness = make_harness(RetryPolicy(max_attempts=3, initial_interval=5.0))
+    handler = MagicMock(side_effect=RuntimeError("fails"))
+    harness.add("first", handler)
+    harness.handle(make_message())
+
+    harness.assigned([TopicPartition("SampleEvent", 3)])
+    harness.handle(make_message())
+
+    assert handler.call_count == 2
+    assert harness.published() == []
 
 
 def test_worker_delayed_retry_expect_retry_record_published_and_offset_committed(
@@ -1051,6 +1170,29 @@ def test_worker_redrive_legacy_dead_letter_expect_every_handler_run(
 
     assert run.result == RedriveResult(succeeded=1, failed=0)
     assert calls == ["first", "second"]
+
+
+def test_worker_redrive_handler_no_longer_registered_expect_dead_letter_kept_as_failed(
+    make_harness: HarnessFactory,
+) -> None:
+    """실패로 기록된 핸들러가 더 이상 없으면 dead letter를 성공으로 소비하지 않고 남긴다."""
+    harness = make_harness()
+    remaining = MagicMock()
+    harness.add("first", remaining)
+
+    run = harness.redrive(
+        [dead_letter(0, dead_letter_headers(pending=("renamed-away",)))], high=1
+    )
+
+    assert run.result == RedriveResult(succeeded=0, failed=1)
+    remaining.assert_not_called()
+    [record] = run.published
+    assert record.headers[DeadLetterHeaderKey.EXCEPTION_TYPE] == (
+        "EventHandlerNotRegisteredError"
+    )
+    assert DeadLetter.from_headers(record.headers).pending == frozenset(
+        {"renamed-away"}
+    )
 
 
 def test_worker_redrive_failing_again_expect_republished_to_dead_letter_then_committed(

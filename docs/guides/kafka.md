@@ -72,6 +72,10 @@ export SPAKKY_KAFKA__POLL_TIMEOUT=1.0
 > `max_handler_retries=N`은 `SPAKKY_KAFKA__RETRY__MAX_ATTEMPTS=N+1`에 해당합니다(시도
 > 횟수는 첫 전달을 포함). 또한 재시도는 이제 모든 핸들러가 아니라 실패한 핸들러만 다시
 > 실행합니다.
+>
+> **Breaking change**: 토픽 생성 오류를 더 이상 무시하지 않습니다. 필요한 토픽이 없고
+> `CreateTopics` 권한도 없으면 consumer 시작이 실패합니다 — [구독자](#구독자-subscriber)의
+> "토픽 생성 권한" 참조.
 
 ---
 
@@ -233,7 +237,9 @@ class ShippingHandler:
 ```
 
 `subscriber`를 생략한 핸들러는 이름 없는 구독자에 속하며, 종전과 같은 group id와
-dead-letter 토픽을 씁니다. 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}` 형식이어야 합니다.
+dead-letter 토픽을 씁니다. 구독자 이름 규칙(허용 문자, 예약된 이름)과 한 메시지에서 핸들러
+결과가 섞였을 때의 판정 순서는 모든 브로커에 공통이며
+[Integration Event 전달 계약](events.md#integration-event-전달-계약)을 따릅니다.
 
 | 자원 | 이름 없는 구독자 | 구독자 `s` |
 |------|------------------|------------|
@@ -257,6 +263,12 @@ dead-letter 토픽을 씁니다. 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}` 형�
   `<클래스>.<메서드>`이며, 메서드 이름을 바꿀 가능성이 있으면
   `@on_event(OrderPlacedEvent, name="charge")`로 고정합니다.
 - 한 구독자·이벤트 조합의 핸들러는 모두 동기이거나 모두 비동기여야 합니다.
+- **토픽 생성 권한**: consumer는 시작할 때 없는 토픽을 만들고 브로커의 응답을 기다립니다.
+  다른 consumer가 먼저 만든 경우(`TOPIC_ALREADY_EXISTS`)를 제외한 생성 오류는 시작을
+  실패시킵니다. `CreateTopics` 권한이 없는 클러스터에서는 `<topic>`,
+  `<topic>[.<subscriber>]<dead_letter_topic_suffix>`, 그리고 `delayed` 모드라면
+  `<topic>[.<subscriber>]<retry_topic_suffix>`를 미리 만들어 두어야 합니다. 필요한 토픽이
+  모두 있으면 생성을 요청하지 않습니다.
 
 ## 재시도
 
@@ -288,6 +300,13 @@ dead-letter 토픽을 씁니다. 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}` 형�
   epoch 초) 헤더와 원본 좌표 헤더를 싣습니다. retry 레코드 발행이 확인되지 않으면 원본을
   커밋하지 않고 `blocking`과 같은 방식으로 제자리에서 기다립니다. 재시도는 예정 시각보다
   늦어질 수는 있어도 빨라지지는 않습니다.
+- retry 토픽은 그 구독자만 쓰므로, 구독자의 group이 커밋한 offset이 없는 retry 파티션은
+  `auto_offset_reset`과 무관하게 **처음부터** 읽습니다. `latest`로 운영해도 재시작 전에
+  발행되고 아직 소비되지 않은 retry 레코드를 건너뛰지 않습니다. 이벤트 토픽은 계속
+  `auto_offset_reset`을 따릅니다. 이 판단을 위해 할당 시점에 커밋된 offset을 조회하며,
+  조회에 실패하면 그 구독자의 poll 루프를 오류로 끝냅니다(`earliest`에서는 조회하지
+  않습니다). `group_id`를 바꾸면 새 group은 retry 토픽에 남아 있는 레코드를 처음부터 다시
+  전달받습니다.
 - `delayed`에서 `blocking`으로 되돌리면 retry 토픽을 더 이상 읽지 않습니다. 전환 전에
   retry 토픽이 비었는지 확인하십시오.
 
@@ -342,7 +361,8 @@ class BillingOperations:
 ```
 
 - redrive는 구독자의 dead-letter 토픽을 전용 group(`<구독자 group>.redrive`)으로 읽으며,
-  **호출이 시작될 때의 끝 offset까지만** 읽습니다. `limit`은 이번 호출에서 가져갈 최대
+  그 group이 커밋한 offset(없으면 토픽의 처음)부터 **호출이 시작될 때의 끝 offset까지만**
+  읽습니다. `auto_offset_reset`의 영향을 받지 않습니다. `limit`은 이번 호출에서 가져갈 최대
   건수입니다(`None`이면 시작 시점에 쌓여 있던 전부).
 - dead letter마다 한 번 시도합니다. 실패했던 핸들러가 모두 끝나면 그 레코드의 offset을
   커밋해 소비 처리하고 `succeeded`로 셉니다.
@@ -352,6 +372,8 @@ class BillingOperations:
   실패한 것을 다음 redrive에 남길 수 있습니다. 재발행이 확인되지 않으면 커밋하지 않고 그
   호출을 멈춥니다.
 - 새 메타데이터 헤더가 없는 예전 dead letter는 그 구독자의 모든 핸들러를 실행합니다.
+- 실패로 기록된 핸들러가 더 이상 등록되어 있지 않으면(이름 변경·삭제) 그 dead letter는
+  성공으로 소비되지 않고 `failed`로 남습니다.
 - 한 consumer의 redrive는 한 번에 하나씩 실행됩니다. 여러 프로세스에서 같은 구독자를
   동시에 redrive하면 같은 dead letter가 두 번 전달될 수 있으므로 핸들러 멱등성이
   전제입니다.

@@ -254,17 +254,32 @@ def test_sync_delivery_deferral_expect_wait_without_counting_attempt() -> None:
     )
 
 
-def test_sync_delivery_deferral_with_failure_expect_retry_after_longer_wait() -> None:
-    """지연 요청과 실패가 섞이면 더 긴 대기 뒤 둘 다 다시 돈다."""
+def test_sync_delivery_deferral_with_failure_expect_wait_without_counting() -> None:
+    """지연 요청과 재시도 가능한 실패가 섞이면 시도 횟수를 세지 않고 함께 기다린다."""
     recorder = Recorder()
     recorder.errors["first"] = EventDeferredError(4.0)
     recorder.errors["second"] = RuntimeError("boom")
-    outcome = sync_delivery(
-        recorder, RetryPolicy(max_attempts=2, initial_interval=1.0)
-    ).deliver(OrderPlaced(order="o-1"))
-    assert isinstance(outcome, DeliveryRetry)
-    assert outcome.delay == 4.0
-    assert outcome.state.pending == frozenset({"first", "second"})
+    outcome = sync_delivery(recorder, RetryPolicy()).deliver(OrderPlaced(order="o-1"))
+    assert outcome == DeliveryDeferred(
+        state=DeliveryState(attempt=1, pending=frozenset({"first", "second"})),
+        retry_after=4.0,
+    )
+
+
+@pytest.mark.parametrize("sibling", [EventDeferredError(4.0), RuntimeError("boom")])
+def test_sync_delivery_non_retryable_with_sibling_expect_dead_letter_at_once(
+    sibling: Exception,
+) -> None:
+    """재시도 불가 실패가 있으면 다른 처리기의 지연·실패와 상관없이 바로 dead-letter다."""
+    recorder = Recorder()
+    recorder.errors["first"] = sibling
+    recorder.errors["second"] = PermanentFailure()
+    outcome = sync_delivery(recorder, RetryPolicy(max_attempts=5)).deliver(
+        OrderPlaced(order="o-1")
+    )
+    assert isinstance(outcome, DeliveryDeadLettered)
+    assert outcome.dead_letter.pending == frozenset({"first", "second"})
+    assert outcome.dead_letter.attempts == 1
 
 
 @pytest.mark.parametrize(
@@ -441,6 +456,15 @@ def test_event_routing_and_subscriber_key_expect_stable_names() -> None:
     assert SubscriberNames.key(None) == ""
     assert SubscriberNames.key("billing") == "billing"
     assert SubscriberNames.validate("billing-v2_a") == "billing-v2_a"
+
+
+@pytest.mark.parametrize("name", ["dlq", "dlt", "retry", "redrive", "DLQ"])
+def test_subscriber_name_reserved_for_broker_resources_expect_rejected(
+    name: str,
+) -> None:
+    """dead-letter·재시도 자원 접미사와 같은 구독자 이름은 거부한다."""
+    with pytest.raises(InvalidSubscriberNameError):
+        SubscriberNames.validate(name)
 
 
 async def test_delivery_pending_handler_missing_expect_dead_letter_not_completed() -> (

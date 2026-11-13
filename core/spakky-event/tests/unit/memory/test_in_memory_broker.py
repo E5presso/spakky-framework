@@ -611,7 +611,7 @@ async def test_drain_with_message_in_flight_expect_waits_until_settled(
 
     def settle(seconds: float) -> None:
         waits.append(seconds)
-        broker.done()
+        broker.done(("OrderPlaced", None))
 
     async def settle_async(seconds: float) -> None:
         settle(seconds)
@@ -621,7 +621,12 @@ async def test_drain_with_message_in_flight_expect_waits_until_settled(
 
     publish(broker, OrderPlaced(order="o-1"))
     assert broker.take(("OrderPlaced", None), 0.0, True) is not None
+    publish(broker, OrderPlaced(order="behind"))
+    assert broker.take(("OrderPlaced", None), 0.0, True) is None
+    assert broker.next_due_in([("OrderPlaced", None)], 0.0, True) is None
     assert broker.drain() == 0
+    assert broker.take(("OrderPlaced", None), 0.0, True) is not None
+    broker.done(("OrderPlaced", None))
 
     publish(broker, OrderPlaced(order="o-2"))
     assert broker.take(("OrderPlaced", None), 0.0, True) is not None
@@ -629,3 +634,51 @@ async def test_drain_with_message_in_flight_expect_waits_until_settled(
 
     assert waits == [broker_module.IN_FLIGHT_POLL_INTERVAL] * 2
     assert broker.idle
+
+
+def test_redrive_partial_failure_expect_dead_letter_narrowed_to_failed_handlers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """다시 넣기에서 성공한 처리기는 메타데이터에서 빠져 다음에 다시 실행되지 않는다."""
+    broker = InMemoryEventBroker()
+    consumer = InMemoryEventConsumer(broker, config(monkeypatch))
+    calls: list[str] = []
+    errors: dict[str, Exception] = {
+        "a": RuntimeError("a"),
+        "b": RuntimeError("b"),
+        "c": RuntimeError("c"),
+    }
+
+    def handler(name: str):
+        def handle(event: OrderPlaced) -> None:
+            calls.append(name)
+            if name in errors:
+                raise errors[name]
+
+        return handle
+
+    for name in ("a", "b", "c"):
+        consumer.register(OrderPlaced, handler(name), handler_name=name)
+    publish(broker, OrderPlaced(order="o-1"))
+    consumer.drain()
+
+    del errors["a"]
+    assert consumer.redrive(OrderPlaced).failed == 1
+    (entry,) = broker.dead_letters("OrderPlaced")
+    assert entry.dead_letter.pending == frozenset({"b", "c"})
+
+    errors["b"] = EventDeferredError(1.0)
+    del errors["c"]
+    calls.clear()
+    assert consumer.redrive(OrderPlaced).failed == 1
+    assert calls == ["b", "c"]
+    (entry,) = broker.dead_letters("OrderPlaced")
+    assert entry.dead_letter.pending == frozenset({"b"})
+
+    monkeypatch.setenv("SPAKKY_EVENT_MEMORY__RETRY__MAX_ATTEMPTS", "2")
+    retrying = InMemoryEventConsumer(broker, InMemoryEventConfig())
+    retrying.register(OrderPlaced, handler("b"), handler_name="b")
+    errors["b"] = RuntimeError("again")
+    assert retrying.redrive(OrderPlaced).failed == 1
+    (entry,) = broker.dead_letters("OrderPlaced")
+    assert entry.dead_letter.failures[0].exception_message == "again"

@@ -27,10 +27,21 @@ resource names, and a dot inside the name would make them ambiguous.
 """
 
 
+RESERVED_SUBSCRIBER_NAMES: Final = frozenset({"dlq", "dlt", "retry", "redrive"})
+"""Names brokers append to derive dead-letter, retry and redrive resources.
+
+A subscriber with one of these names would share a resource with the unnamed
+subscriber, e.g. its queue `<event>.dlq` is that subscriber's dead-letter queue.
+"""
+
+
 class InvalidSubscriberNameError(AbstractSpakkyEventError):
     """Raised when a subscriber name cannot be mapped onto broker resources."""
 
-    message = "Subscriber name must match [A-Za-z0-9][A-Za-z0-9_-]{0,62}"
+    message = (
+        "Subscriber name must match [A-Za-z0-9][A-Za-z0-9_-]{0,62} "
+        "and must not be dlq, dlt, retry or redrive"
+    )
     subscriber: SubscriberName
 
     def __init__(self, subscriber: SubscriberName) -> None:
@@ -85,11 +96,15 @@ class SubscriberNames:
             The same value once it is known to be usable.
 
         Raises:
-            InvalidSubscriberNameError: The name contains unsupported characters.
+            InvalidSubscriberNameError: The name has unsupported characters or is
+                reserved for derived broker resources.
         """
         if subscriber is None:
             return None
-        if SUBSCRIBER_NAME_PATTERN.fullmatch(subscriber) is None:
+        if (
+            SUBSCRIBER_NAME_PATTERN.fullmatch(subscriber) is None
+            or subscriber.lower() in RESERVED_SUBSCRIBER_NAMES
+        ):
             raise InvalidSubscriberNameError(subscriber)
         return subscriber
 

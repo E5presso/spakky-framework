@@ -253,26 +253,38 @@ async def test_failing_subscriber_expect_own_dead_letter_and_isolated_redrive(
     assert dead_letter.event_name == "PoisonEvent"
     assert dead_letter.subscriber == "broken"
     assert dead_letter.attempts == 1
-    assert [failure.handler for failure in dead_letter.failures] == [
-        "BrokenPoisonHandler.project"
-    ]
-    assert dead_letter.failures[0].exception_type == "BrokenProjectionError"
-    assert dead_letter.failures[0].retryable is True
+    assert dead_letter.pending == frozenset(
+        {"BrokenPoisonHandler.project", "BrokenPoisonHandler.index"}
+    )
+    assert {failure.exception_type for failure in dead_letter.failures} == {
+        "BrokenProjectionError"
+    }
+    assert all(failure.retryable for failure in dead_letter.failures)
     assert queue_depth(config, "PoisonEvent.audit.dlq") == 0
-
-    # 아직 고쳐지지 않았으면 redrive해도 dlq에 남는다.
-    still_failing = await redriver.redrive(PoisonEvent, subscriber="broken")
-    assert still_failing == RedriveResult(succeeded=0, failed=1)
-    assert broken.projection_calls == 2
     await async_wait_until(lambda: queue_depth(config, queues.dead_letter_queue) == 1)
 
-    broken.healthy = True
+    # 한 핸들러만 고쳐진 채 redrive하면 dlq에 남되, 다시 실패한 핸들러만 기록된다.
+    broken.index_healthy = True
+    partly_fixed = await redriver.redrive(PoisonEvent, subscriber="broken")
+    assert partly_fixed == RedriveResult(succeeded=0, failed=1)
+    assert broken.indexed == ["order"]
+    assert (broken.projection_calls, broken.index_calls) == (2, 2)
+    await async_wait_until(lambda: queue_depth(config, queues.dead_letter_queue) == 1)
+    assert peek_dead_letter(config, queues.dead_letter_queue).pending == frozenset(
+        {"BrokenPoisonHandler.project"}
+    )
+    await async_wait_until(lambda: queue_depth(config, queues.dead_letter_queue) == 1)
+
+    broken.projection_healthy = True
     redriven = await redriver.redrive(PoisonEvent, subscriber="broken")
 
     assert redriven == RedriveResult(succeeded=1, failed=0)
     assert broken.projected == ["order"]
     assert broken.projection_calls == 3
-    # 실패하지 않았던 핸들러와 다른 구독자는 다시 실행되지 않는다.
+    # 첫 redrive에서 성공한 핸들러는 두 번째 redrive에서 다시 실행되지 않는다.
+    assert broken.index_calls == 2
+    assert broken.indexed == ["order"]
+    # 처음부터 실패하지 않았던 핸들러와 다른 구독자도 다시 실행되지 않는다.
     assert broken.notified == ["order"]
     assert audit.messages == ["order"]
     assert queue_depth(config, queues.dead_letter_queue) == 0

@@ -220,7 +220,7 @@ class ShippingHandler:
 ```
 
 - `subscriber`를 생략하면 이름 없는 구독자입니다. 구현체의 기본 식별자(Kafka `group_id`, RabbitMQ의 이벤트 이름 큐)로 읽습니다.
-- 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}`만 허용합니다. 어기면 선언 시점에 `InvalidSubscriberNameError`가 납니다.
+- 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}`만 허용합니다. `dlq`, `dlt`, `retry`, `redrive`는 구현체가 dead-letter·재시도 자원 이름에 붙이는 접미사라서 쓸 수 없습니다. 어기면 선언 시점에 `InvalidSubscriberNameError`가 납니다.
 - Domain Event는 인프로세스로 전달되므로 `subscriber`를 쓰지 않습니다.
 - 한 구독(구독자와 이벤트 타입의 쌍)의 처리기는 모두 동기이거나 모두 비동기여야 합니다. 섞으면 기동 시 `MixedSubscriptionModeError`가 납니다. 동기·비동기 소비자가 같은 브로커 구독을 나눠 읽어 서로 메시지를 놓치기 때문입니다.
 
@@ -260,6 +260,12 @@ export SPAKKY_KAFKA__RETRY__MODE=delayed
 - 본문을 이벤트 타입으로 역직렬화할 수 없는 경우: 바로 dead-letter로 갑니다.
 - `EventDeferredError(retry_after)`: 시도 횟수를 세지 않고 기다렸다가 다시 전달합니다.
 - 인가 거부(`AuthContextNotFoundError`, `AuthRequirementDeniedError`): 그 처리기만 건너뜁니다. RabbitMQ는 인가 실패 시 동작을 설정으로 바꿀 수 있습니다([RabbitMQ 가이드](rabbitmq.md)).
+
+메시지 하나의 결과는 하나이므로, 한 구독자의 처리기들이 서로 다른 결과를 내면 다음 순서로 정합니다. 어느 경우든 성공하지 못한 처리기는 함께 남아 다음 전달이나 다시 넣기에서 실행됩니다.
+
+1. 재시도 불가 실패가 하나라도 있으면 바로 dead-letter입니다. 같은 전달에서 유예를 요청했거나 재시도 가능한 실패를 낸 처리기도 dead-letter 메타데이터에 함께 기록됩니다.
+2. 그렇지 않고 유예 요청이 있으면 전달 전체가 시도 횟수를 세지 않고 기다립니다. 재시도 가능한 실패를 낸 처리기도 함께 다시 실행됩니다.
+3. 그렇지 않으면 시도 횟수가 남은 동안 재시도하고, 다 쓰면 dead-letter입니다.
 
 dead-letter 메시지는 원래 본문과 헤더에 다음 헤더를 더해 저장합니다. `DeadLetter.from_headers()`로 복원할 수 있습니다.
 

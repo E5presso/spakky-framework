@@ -753,7 +753,7 @@ def test_sync_dispose_expect_channel_and_connection_closed(
 
 
 def dead_letter_message(
-    delivery_tag: int, pending: str = "flaky"
+    delivery_tag: int, *pending: str, body: bytes = BODY
 ) -> tuple[MagicMock, BasicProperties, bytes]:
     """Build what `basic_get` returns for one stored dead letter."""
     method_frame = MagicMock()
@@ -764,24 +764,23 @@ def dead_letter_message(
             "subscriber": "billing",
             "failures": [
                 {
-                    "handler": pending,
+                    "handler": handler,
                     "exception_type": "RuntimeError",
                     "exception_message": "boom",
                     "retryable": True,
                 }
+                for handler in pending or ("flaky",)
             ],
             "attempts": 1,
             "failed_at": "2026-01-01T00:00:00+00:00",
         }
     )
-    return method_frame, BasicProperties(headers=dead_letter.to_headers()), BODY
+    return method_frame, BasicProperties(headers=dead_letter.to_headers()), body
 
 
 def redrive_broker(*messages: tuple[MagicMock | None, object, object]) -> Broker:
     """Mock the dedicated connection a redrive opens."""
     broker = Broker()
-    broker.connection.channel.side_effect = None
-    broker.connection.channel.return_value = broker.channel
     broker.channel.basic_get.side_effect = list(messages)
     return broker
 
@@ -806,40 +805,171 @@ def test_sync_redrive_success_expect_only_failed_handler_runs_and_dead_letter_ac
     assert result == RedriveResult(succeeded=1, failed=0)
     flaky.assert_called_once()
     done.assert_not_called()
+    broker.publish_channel.confirm_delivery.assert_called_once_with()
     broker.channel.queue_declare.assert_called_once_with(
         "SampleIntegrationEvent.billing.dlq", durable=True
     )
     broker.channel.basic_get.assert_called_with("SampleIntegrationEvent.billing.dlq")
     broker.channel.basic_ack.assert_called_once_with(11)
     broker.channel.basic_nack.assert_not_called()
+    broker.publish_channel.basic_publish.assert_not_called()
     broker.connection.close.assert_called_once_with()
 
 
-def test_sync_redrive_failing_again_expect_dead_letter_returned_after_the_pass(
+def test_sync_redrive_partly_failing_again_expect_metadata_narrowed_to_failed_handler(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """다시 실패한 dead letter는 호출이 끝날 때 dlq로 되돌려 한 번만 전달된다."""
-    consumer = RabbitMQEventConsumer(make_config(monkeypatch, RETRY__MAX_ATTEMPTS="3"))
-    flaky = MagicMock(side_effect=[RuntimeError("still down"), None])
+    """redrive에서 일부만 성공하면, 다시 실패한 핸들러만 남긴 사본으로 dead letter를 바꾼다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
     consumer.register(
-        SampleIntegrationEvent, flaky, subscriber="billing", handler_name="flaky"
+        SampleIntegrationEvent, MagicMock(), subscriber="billing", handler_name="fixed"
+    )
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=RuntimeError("still down")),
+        subscriber="billing",
+        handler_name="broken",
     )
     broker = redrive_broker(
-        dead_letter_message(11), dead_letter_message(12), (None, None, None)
-    )
-    acked_before_return: list[int] = []
-    broker.channel.basic_ack.side_effect = lambda tag: acked_before_return.append(
-        broker.channel.basic_nack.call_count
+        dead_letter_message(11, "fixed", "broken"), (None, None, None)
     )
 
     with patch(CONNECTION, return_value=broker.connection):
         result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
 
+    assert result == RedriveResult(succeeded=0, failed=1)
+    queue, body, properties, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.billing.dlq"
+    assert body == BODY
+    assert properties.expiration is None
+    narrowed = DeadLetter.from_headers(headers)
+    assert narrowed.pending == frozenset({"broken"})
+    assert narrowed.failures[0].exception_message == "still down"
+    assert narrowed.subscriber == "billing"
+    # 사본이 확인된 뒤 예전 dead letter를 지운다.
+    broker.channel.basic_ack.assert_called_once_with(11)
+    broker.channel.basic_nack.assert_not_called()
+
+
+def test_sync_redrive_failing_again_expect_copy_published_only_after_the_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """다시 실패한 dead letter의 사본은 남은 것을 모두 꺼낸 뒤에 넣어, 한 호출에서 한 번만 전달된다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, RETRY__MAX_ATTEMPTS="3"))
+    flaky = MagicMock(side_effect=[RuntimeError("still down"), None])
+    consumer.register(
+        SampleIntegrationEvent, flaky, subscriber="billing", handler_name="flaky"
+    )
+    stored = iter(
+        [dead_letter_message(11), dead_letter_message(12), (None, None, None)]
+    )
+    published_before_drained: list[int] = []
+
+    def take(queue: str) -> tuple[MagicMock | None, object, object]:
+        published_before_drained.append(broker.publish_channel.basic_publish.call_count)
+        return next(stored)
+
+    broker = redrive_broker()
+    broker.channel.basic_get.side_effect = take
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
     assert result == RedriveResult(succeeded=1, failed=1)
-    broker.channel.basic_ack.assert_called_once_with(12)
+    assert published_before_drained == [0, 0, 0]
+    _, _, _, headers = broker.published()
+    assert DeadLetter.from_headers(headers).failures[0].exception_message == (
+        "still down"
+    )
+    assert [call.args[0] for call in broker.channel.basic_ack.call_args_list] == [
+        12,
+        11,
+    ]
+
+
+def test_sync_redrive_deferred_again_expect_original_failure_kept_for_deferred_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """redrive 중 미뤄진 핸들러는 원래 실패 기록 그대로 남고, 성공한 핸들러는 빠진다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent, MagicMock(), subscriber="billing", handler_name="fixed"
+    )
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=EventDeferredError(retry_after=5.0)),
+        subscriber="billing",
+        handler_name="waiting",
+    )
+    broker = redrive_broker(
+        dead_letter_message(11, "fixed", "waiting"), (None, None, None)
+    )
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=0, failed=1)
+    _, _, _, headers = broker.published()
+    assert DeadLetter.from_headers(headers).failures == (
+        HandlerFailure(
+            handler="waiting",
+            exception_type="RuntimeError",
+            exception_message="boom",
+            retryable=True,
+        ),
+    )
+    broker.connection.call_later.assert_not_called()
+
+
+def test_sync_redrive_malformed_payload_expect_only_pending_handlers_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """역직렬화할 수 없는 dead letter는 실패로 기록돼 있던 핸들러만 계속 실패로 남긴다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    flaky, done = MagicMock(), MagicMock()
+    consumer.register(
+        SampleIntegrationEvent, flaky, subscriber="billing", handler_name="flaky"
+    )
+    consumer.register(
+        SampleIntegrationEvent, done, subscriber="billing", handler_name="done"
+    )
+    broker = redrive_broker(
+        dead_letter_message(11, "flaky", body=b"not json"), (None, None, None)
+    )
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=0, failed=1)
+    flaky.assert_not_called()
+    done.assert_not_called()
+    _, body, _, headers = broker.published()
+    assert body == b"not json"
+    narrowed = DeadLetter.from_headers(headers)
+    assert narrowed.pending == frozenset({"flaky"})
+    assert narrowed.failures[0].exception_type == "ValidationError"
+
+
+def test_sync_redrive_copy_not_confirmed_expect_old_dead_letter_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """갱신한 사본을 브로커가 확인하지 않으면 예전 dead letter를 지우지 않고 되돌린다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=RuntimeError("still down")),
+        subscriber="billing",
+        handler_name="flaky",
+    )
+    broker = redrive_broker(dead_letter_message(11), (None, None, None))
+    broker.publish_channel.basic_publish.side_effect = NackError([])
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=0, failed=1)
+    broker.channel.basic_ack.assert_not_called()
     broker.channel.basic_nack.assert_called_once_with(11, requeue=True)
-    # 실패한 메시지는 뒤의 메시지를 모두 처리한 뒤에야 되돌린다.
-    assert acked_before_return == [0]
 
 
 def test_sync_redrive_with_limit_expect_no_more_dead_letters_taken(
@@ -859,17 +989,18 @@ def test_sync_redrive_with_limit_expect_no_more_dead_letters_taken(
     assert broker.channel.basic_get.call_count == 1
 
 
-def test_sync_redrive_without_metadata_expect_message_kept(
+def test_sync_redrive_without_metadata_expect_message_kept_unchanged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """dead-letter 메타데이터가 없는 메시지는 핸들러를 실행하지 않고 dlq에 남긴다."""
+    """dead-letter 메타데이터가 없는 메시지는 핸들러를 실행하지 않고 그대로 dlq에 남긴다."""
     consumer = RabbitMQEventConsumer(make_config(monkeypatch))
     handler = MagicMock()
     consumer.register(SampleIntegrationEvent, handler, subscriber="billing")
     method_frame = MagicMock()
     method_frame.delivery_tag = 11
     broker = redrive_broker(
-        (method_frame, BasicProperties(headers={}), BODY), (None, None, None)
+        (method_frame, BasicProperties(headers={"origin": "manual"}), BODY),
+        (None, None, None),
     )
 
     with patch(CONNECTION, return_value=broker.connection):
@@ -877,7 +1008,10 @@ def test_sync_redrive_without_metadata_expect_message_kept(
 
     assert result == RedriveResult(succeeded=0, failed=1)
     handler.assert_not_called()
-    broker.channel.basic_nack.assert_called_once_with(11, requeue=True)
+    queue, body, _, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.billing.dlq"
+    assert body == BODY
+    assert headers == {"origin": "manual"}
 
 
 def test_sync_redrive_unknown_subscription_expect_error(
@@ -911,4 +1045,5 @@ def test_sync_redrive_auth_provider_unavailable_expect_error_and_connection_clos
         consumer.redrive(SampleIntegrationEvent, subscriber="billing")
 
     broker.channel.basic_ack.assert_not_called()
+    broker.publish_channel.basic_publish.assert_not_called()
     broker.connection.close.assert_called_once_with()

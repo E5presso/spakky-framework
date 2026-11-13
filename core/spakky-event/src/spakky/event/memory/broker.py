@@ -62,6 +62,7 @@ class InMemoryEventBroker:
     _queues: dict[SubscriptionKey, deque[InMemoryMessage]]
     _dead_letters: dict[SubscriptionKey, list[InMemoryDeadLetter]]
     _in_flight: int
+    _busy: set[SubscriptionKey]
     _drains: list[Callable[[], int]]
     _async_drains: list[Callable[[], Awaitable[int]]]
 
@@ -71,6 +72,7 @@ class InMemoryEventBroker:
         self._queues = {}
         self._dead_letters = {}
         self._in_flight = 0
+        self._busy = set()
         self._drains = []
         self._async_drains = []
 
@@ -105,26 +107,32 @@ class InMemoryEventBroker:
             key: Queue to read.
             now: Current monotonic time.
             head_only: Only the oldest message may be taken, so a waiting retry
-                blocks the messages behind it and order is preserved.
+                blocks the messages behind it and order is preserved. The queue
+                then also stays closed to other consumers until `done`.
 
         Returns:
             A due message, counted as in flight until `done`, or None.
         """
         with self._lock:
+            if key in self._busy:
+                return None
             queue = self._queues[key]
             for index, message in enumerate(queue):
                 if message.not_before <= now:
                     del queue[index]
                     self._in_flight += 1
+                    if head_only:
+                        self._busy.add(key)
                     return message
                 if head_only:
                     return None
             return None
 
-    def done(self) -> None:
-        """Mark a taken message as settled."""
+    def done(self, key: SubscriptionKey) -> None:
+        """Mark a taken message as settled, after any requeue or dead-letter."""
         with self._lock:
             self._in_flight -= 1
+            self._busy.discard(key)
 
     def requeue_front(self, key: SubscriptionKey, message: InMemoryMessage) -> None:
         """Put a message back as the oldest one of its queue."""
@@ -145,7 +153,8 @@ class InMemoryEventBroker:
             keys: Queues to inspect.
             now: Current monotonic time.
             head_only: Only the oldest message of each queue can become
-                deliverable, matching `take`.
+                deliverable, matching `take`. Queues another consumer is
+                handling are skipped.
 
         Returns:
             None when the given queues are empty.
@@ -154,6 +163,7 @@ class InMemoryEventBroker:
             waits = [
                 max(message.not_before - now, 0.0)
                 for key in keys
+                if key not in self._busy
                 for message in (
                     list(self._queues[key])[:1] if head_only else self._queues[key]
                 )

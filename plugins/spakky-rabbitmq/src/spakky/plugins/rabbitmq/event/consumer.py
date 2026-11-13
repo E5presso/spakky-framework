@@ -258,6 +258,8 @@ class RabbitMQEventConsumer(
             return
         if isinstance(outcome, DeliveryDeadLettered):
             self._forward(
+                self.channel,
+                self.publish_channel,
                 delivery_tag,
                 queues.dead_letter_queue,
                 body,
@@ -270,6 +272,8 @@ class RabbitMQEventConsumer(
         )
         if self._retry.mode is RetryMode.DELAYED:
             self._forward(
+                self.channel,
+                self.publish_channel,
                 delivery_tag,
                 queues.retry_queue,
                 body,
@@ -373,6 +377,7 @@ class RabbitMQEventConsumer(
                         retryable=False,
                     )
                     for handler in delivery.handlers
+                    if state.pending is None or handler.name in state.pending
                 ),
                 attempts=state.attempt,
                 failed_at=datetime.now(UTC),
@@ -399,6 +404,8 @@ class RabbitMQEventConsumer(
 
     def _forward(
         self,
+        channel: BlockingChannel,
+        publish_channel: BlockingChannel,
         delivery_tag: int,
         queue: QueueName,
         body: bytes,
@@ -411,6 +418,8 @@ class RabbitMQEventConsumer(
         otherwise it is requeued so that it cannot be lost.
 
         Args:
+            channel: Channel the original message was received on.
+            publish_channel: Confirm-mode channel of the same connection.
             delivery_tag: Tag of the original message.
             queue: Retry or dead-letter queue receiving the copy.
             body: Serialized event payload.
@@ -419,7 +428,7 @@ class RabbitMQEventConsumer(
                 subscriber queue; None stores it without expiration.
         """
         try:
-            self.publish_channel.basic_publish(
+            publish_channel.basic_publish(
                 DEFAULT_EXCHANGE_NAME,
                 queue,
                 body,
@@ -439,9 +448,9 @@ class RabbitMQEventConsumer(
                 f"Broker did not confirm the copy for {queue}, requeueing the "
                 f"original message: {error}"
             )
-            self.channel.basic_nack(delivery_tag, requeue=True)
+            channel.basic_nack(delivery_tag, requeue=True)
             return
-        self.channel.basic_ack(delivery_tag)
+        channel.basic_ack(delivery_tag)
 
     def _auth_failure_action(
         self,
@@ -567,8 +576,10 @@ class RabbitMQEventConsumer(
 
         Opens a connection of its own, so it may be called from any thread
         while the consumer is running. A dead letter that fails again is held
-        until the call ends and then returned to the dead-letter queue, so each
-        one is delivered at most once per call.
+        until every stored one was taken, then replaced by a copy whose
+        metadata lists only the handlers that failed again, so a handler that
+        succeeded here is not run by the next redrive. Each dead letter is
+        delivered at most once per call.
 
         Raises:
             SubscriptionNotFoundError: Nothing is registered for the pair.
@@ -580,9 +591,11 @@ class RabbitMQEventConsumer(
         )
         try:
             channel = connection.channel()
+            publish_channel = connection.channel()
+            publish_channel.confirm_delivery()
             channel.queue_declare(queues.dead_letter_queue, durable=True)
             succeeded = 0
-            kept: list[int] = []
+            kept: list[tuple[int, bytes, dict[str, str]]] = []
             while limit is None or succeeded + len(kept) < limit:
                 method_frame, properties, body = channel.basic_get(
                     queues.dead_letter_queue
@@ -595,40 +608,65 @@ class RabbitMQEventConsumer(
                 ):
                     # 큐에 더 남은 dead letter가 없다.
                     break
-                carrier = self._to_string_headers(properties.headers)
-                if self._redrive(
-                    delivery,
-                    carrier,
-                    body,  # pyrefly: ignore[bad-argument-type] - pika-stubs types the body as str; pika returns bytes
-                ):
+                payload: bytes = body  # pyrefly: ignore[bad-assignment] - pika-stubs types the body as str; pika returns bytes
+                still_dead = self._redrive(
+                    delivery, self._to_string_headers(properties.headers), payload
+                )
+                if still_dead is None:
                     channel.basic_ack(method_frame.delivery_tag)
                     succeeded += 1
                     continue
-                # 바로 되돌리면 같은 메시지를 다시 받으므로 끝까지 쥐고 있는다.
-                kept.append(method_frame.delivery_tag)
-            for delivery_tag in kept:
-                channel.basic_nack(delivery_tag, requeue=True)
+                # 사본을 바로 넣으면 이 호출이 다시 꺼내게 되므로 끝까지 쥐고 있는다.
+                kept.append((method_frame.delivery_tag, payload, still_dead))
+            for delivery_tag, payload, headers in kept:
+                self._forward(
+                    channel,
+                    publish_channel,
+                    delivery_tag,
+                    queues.dead_letter_queue,
+                    payload,
+                    headers,
+                    None,
+                )
             return RedriveResult(succeeded=succeeded, failed=len(kept))
         finally:
             connection.close()
 
     def _redrive(
         self, delivery: SubscriptionDelivery, carrier: dict[str, str], body: bytes
-    ) -> bool:
+    ) -> dict[str, str] | None:
         """Deliver one dead letter to its failed handlers.
 
         Returns:
-            True when every failed handler completed.
+            None when every failed handler completed (nothing is left to
+            keep); otherwise the headers of the dead letter to keep, with its
+            metadata narrowed to the handlers that failed again.
         """
         try:
             dead_letter = DeadLetter.from_headers(carrier)
         except InvalidDeliveryHeaderError as error:
             logger.warning(f"Dead letter has no usable metadata, keeping it: {error}")
-            return False
+            return carrier
         outcome, _ = self._attempt(
             delivery, carrier, body, DeliveryState(pending=dead_letter.pending)
         )
-        return isinstance(outcome, DeliveryCompleted)
+        if isinstance(outcome, DeliveryCompleted):
+            return None
+        if isinstance(outcome, DeliveryDeadLettered):
+            failures = outcome.dead_letter.failures
+        elif isinstance(outcome, DeliveryRetry):
+            failures = outcome.failures
+        else:
+            pending = outcome.state.pending
+            failures = tuple(
+                failure
+                for failure in dead_letter.failures
+                if pending is None or failure.handler in pending
+            )
+        return {
+            **carrier,
+            **dead_letter.model_copy(update={"failures": failures}).to_headers(),
+        }
 
 
 @Pod()
@@ -760,6 +798,7 @@ class AsyncRabbitMQEventConsumer(
                 return
             if isinstance(outcome, DeliveryDeadLettered):
                 await self._forward(
+                    self.publish_channel,
                     message,
                     queues.dead_letter_queue,
                     {**carrier, **outcome.dead_letter.to_headers()},
@@ -773,6 +812,7 @@ class AsyncRabbitMQEventConsumer(
             )
             if self._retry.mode is RetryMode.DELAYED:
                 await self._forward(
+                    self.publish_channel,
                     message,
                     queues.retry_queue,
                     {**carrier, **outcome.state.to_headers()},
@@ -861,6 +901,7 @@ class AsyncRabbitMQEventConsumer(
                         retryable=False,
                     )
                     for handler in delivery.handlers
+                    if state.pending is None or handler.name in state.pending
                 ),
                 attempts=state.attempt,
                 failed_at=datetime.now(UTC),
@@ -887,6 +928,7 @@ class AsyncRabbitMQEventConsumer(
 
     async def _forward(
         self,
+        publish_channel: AbstractChannel,
         message: AbstractIncomingMessage,
         queue: QueueName,
         headers: dict[str, str],
@@ -898,6 +940,7 @@ class AsyncRabbitMQEventConsumer(
         otherwise it is requeued so that it cannot be lost.
 
         Args:
+            publish_channel: Confirm-mode channel the copy is published on.
             message: Original message.
             queue: Retry or dead-letter queue receiving the copy.
             headers: Headers of the copy, including retry or dead-letter state.
@@ -905,7 +948,7 @@ class AsyncRabbitMQEventConsumer(
                 subscriber queue; None stores it without expiration.
         """
         try:
-            await self.publish_channel.default_exchange.publish(
+            await publish_channel.default_exchange.publish(
                 Message(
                     body=message.body,
                     headers=dict(headers),
@@ -1032,8 +1075,10 @@ class AsyncRabbitMQEventConsumer(
         """Run the failed handlers of this subscriber's dead letters again.
 
         Opens a connection of its own. A dead letter that fails again is held
-        until the call ends and then returned to the dead-letter queue, so each
-        one is delivered at most once per call.
+        until every stored one was taken, then replaced by a copy whose
+        metadata lists only the handlers that failed again, so a handler that
+        succeeded here is not run by the next redrive. Each dead letter is
+        delivered at most once per call.
 
         Raises:
             SubscriptionNotFoundError: Nothing is registered for the pair.
@@ -1042,25 +1087,32 @@ class AsyncRabbitMQEventConsumer(
         queues = self._queues(delivery)
         async with await connect_robust(self.connection_string) as connection:
             channel = await connection.channel()
+            publish_channel = await connection.channel(on_return_raises=True)
             queue = await channel.declare_queue(queues.dead_letter_queue, durable=True)
             succeeded = 0
-            kept: list[AbstractIncomingMessage] = []
-            try:
-                while limit is None or succeeded + len(kept) < limit:
-                    message = await queue.get(fail=False)
-                    if message is None:
-                        # 큐에 더 남은 dead letter가 없다.
-                        break
-                    carrier = self._to_string_headers(message.headers)
-                    if await self._redrive(delivery, carrier, message.body):
-                        await message.ack()
-                        succeeded += 1
-                        continue
-                    # 바로 되돌리면 같은 메시지를 다시 받으므로 끝까지 쥐고 있는다.
-                    kept.append(message)
-            finally:
-                for message in kept:
-                    await message.nack(requeue=True)
+            kept: list[tuple[AbstractIncomingMessage, dict[str, str]]] = []
+            while limit is None or succeeded + len(kept) < limit:
+                message = await queue.get(fail=False)
+                if message is None:
+                    # 큐에 더 남은 dead letter가 없다.
+                    break
+                still_dead = await self._redrive(
+                    delivery, self._to_string_headers(message.headers), message.body
+                )
+                if still_dead is None:
+                    await message.ack()
+                    succeeded += 1
+                    continue
+                # 사본을 바로 넣으면 이 호출이 다시 꺼내게 되므로 끝까지 쥐고 있는다.
+                kept.append((message, still_dead))
+            for message, headers in kept:
+                await self._forward(
+                    publish_channel,
+                    message,
+                    queues.dead_letter_queue,
+                    headers,
+                    None,
+                )
             return RedriveResult(succeeded=succeeded, failed=len(kept))
 
     async def _redrive(
@@ -1068,18 +1120,36 @@ class AsyncRabbitMQEventConsumer(
         delivery: AsyncSubscriptionDelivery,
         carrier: dict[str, str],
         body: bytes,
-    ) -> bool:
+    ) -> dict[str, str] | None:
         """Deliver one dead letter to its failed handlers.
 
         Returns:
-            True when every failed handler completed.
+            None when every failed handler completed (nothing is left to
+            keep); otherwise the headers of the dead letter to keep, with its
+            metadata narrowed to the handlers that failed again.
         """
         try:
             dead_letter = DeadLetter.from_headers(carrier)
         except InvalidDeliveryHeaderError as error:
             logger.warning(f"Dead letter has no usable metadata, keeping it: {error}")
-            return False
+            return carrier
         outcome, _ = await self._attempt(
             delivery, carrier, body, DeliveryState(pending=dead_letter.pending)
         )
-        return isinstance(outcome, DeliveryCompleted)
+        if isinstance(outcome, DeliveryCompleted):
+            return None
+        if isinstance(outcome, DeliveryDeadLettered):
+            failures = outcome.dead_letter.failures
+        elif isinstance(outcome, DeliveryRetry):
+            failures = outcome.failures
+        else:
+            pending = outcome.state.pending
+            failures = tuple(
+                failure
+                for failure in dead_letter.failures
+                if pending is None or failure.handler in pending
+            )
+        return {
+            **carrier,
+            **dead_letter.model_copy(update={"failures": failures}).to_headers(),
+        }

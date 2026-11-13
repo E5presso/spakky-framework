@@ -7,9 +7,11 @@ RabbitMQ and the in-memory broker behave the same way:
 - a delivery is retried while a failed handler remains, and a retry runs only
   the handlers that have not succeeded yet; a pending handler that is no
   longer registered counts as a non-retryable failure, never as done;
-- retries are limited by `RetryPolicy`; a message that exhausts them, or whose
-  failures cannot be fixed by retrying, moves to the subscriber's dead-letter
+- retries are limited by `RetryPolicy`; a message that exhausts them, or that
+  has a failure retrying cannot fix, moves to the subscriber's dead-letter
   destination together with `DeadLetter` metadata;
+- a handler asking to wait (`EventDeferredError`) makes the delivery wait
+  without counting an attempt, unless another handler failed for good;
 - a dead letter is redriven to the subscriber it failed for, and to no other;
 - an unavailable auth provider is no verdict about the message: the error
   leaves `deliver`, and the adapter must keep the message unacknowledged.
@@ -376,24 +378,27 @@ class DeliveryAttempt:
         )
 
     def settle(self) -> DeliveryOutcome:
-        """Turn the tally into the outcome the broker adapter has to act on."""
+        """Turn the tally into the outcome the broker adapter has to act on.
+
+        One message gets one outcome, so mixed handler results follow a fixed
+        precedence: a non-retryable failure dead-letters the delivery at once,
+        otherwise a deferral makes the whole delivery wait without counting an
+        attempt, otherwise the failures are retried while attempts remain. In
+        every case the handlers that have not succeeded stay pending together.
+        """
         if not self.failures:
             return DeliveryCompleted()
         pending = frozenset(failure.handler for failure in self.failures)
-        if len(self.deferred) == len(self.failures):
+        fatal = any(not failure.retryable for failure in self.failures)
+        if self.deferred and not fatal:
             return DeliveryDeferred(
                 state=DeliveryState(attempt=self.state.attempt, pending=pending),
                 retry_after=self.retry_after,
             )
-        can_retry = self.state.attempt < self.policy.max_attempts and any(
-            failure.retryable for failure in self.failures
-        )
-        if can_retry:
+        if not fatal and self.state.attempt < self.policy.max_attempts:
             return DeliveryRetry(
                 state=DeliveryState(attempt=self.state.attempt + 1, pending=pending),
-                delay=max(
-                    self.policy.delay_after(self.state.attempt), self.retry_after
-                ),
+                delay=self.policy.delay_after(self.state.attempt),
                 failures=tuple(self.failures),
             )
         return DeliveryDeadLettered(

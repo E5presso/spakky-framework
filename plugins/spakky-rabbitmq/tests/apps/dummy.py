@@ -196,25 +196,38 @@ class BrokenProjectionError(Exception):
 
 @EventHandler(subscriber="broken")
 class BrokenPoisonHandler:
-    """Subscriber of PoisonEvent whose projection fails until healed."""
+    """Subscriber of PoisonEvent whose projection and index fail until healed."""
 
-    healthy: bool
+    projection_healthy: bool
+    index_healthy: bool
     projected: list[str]
     projection_calls: int
+    indexed: list[str]
+    index_calls: int
     notified: list[str]
 
     def __init__(self) -> None:
-        self.healthy = False
+        self.projection_healthy = False
+        self.index_healthy = False
         self.projected = []
         self.projection_calls = 0
+        self.indexed = []
+        self.index_calls = 0
         self.notified = []
 
     @on_event(PoisonEvent)
     async def project(self, event: PoisonEvent) -> None:
         self.projection_calls += 1
-        if not self.healthy:
+        if not self.projection_healthy:
             raise BrokenProjectionError("projection store is down")
         self.projected.append(event.message)
+
+    @on_event(PoisonEvent)
+    async def index(self, event: PoisonEvent) -> None:
+        self.index_calls += 1
+        if not self.index_healthy:
+            raise BrokenProjectionError("search index is down")
+        self.indexed.append(event.message)
 
     @on_event(PoisonEvent)
     async def notify(self, event: PoisonEvent) -> None:

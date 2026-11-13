@@ -13,12 +13,14 @@ import spakky.event
 import spakky.plugins.sqlalchemy
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+from spakky.event.error import EventDeferredError
 from spakky.event.idempotency import ProcessedEventKey
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from spakky.plugins.sqlalchemy.contributions.event import initialize
 from spakky.plugins.sqlalchemy.event.store import (
+    DUPLICATE_RECHECK_DELAY,
     AsyncSqlAlchemyProcessedEventStore,
     DuplicateProcessedEventError,
     SqlAlchemyProcessedEventStore,
@@ -147,6 +149,8 @@ def test_store_record_concurrent_duplicate_expect_second_rejected(
     with pytest.raises(DuplicateProcessedEventError) as caught:
         sync_store(session).record(first)
     assert caught.value.key == first
+    assert isinstance(caught.value, EventDeferredError)
+    assert caught.value.retry_after == DUPLICATE_RECHECK_DELAY
 
 
 def test_store_purge_expect_only_old_records_removed(session: Session) -> None:

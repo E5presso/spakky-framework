@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import override
 
 from spakky.core.pod.annotations.pod import Pod
-from spakky.event.error import AbstractSpakkyEventError
+from spakky.event.error import EventDeferredError
 from spakky.event.idempotency import (
     IAsyncProcessedEventStore,
     IProcessedEventStore,
@@ -20,12 +20,18 @@ from sqlalchemy import CursorResult, delete
 from sqlalchemy.exc import IntegrityError
 
 
-class DuplicateProcessedEventError(AbstractSpakkyEventError):
+DUPLICATE_RECHECK_DELAY = 1.0
+"""Seconds to wait before a delivery that lost a duplicate race is delivered again."""
+
+
+class DuplicateProcessedEventError(EventDeferredError):
     """Raised when another delivery recorded the same event concurrently.
 
-    The failed insert leaves the transaction unusable, so the handler call is
-    abandoned. The consumer retries it, and the retry finds the committed
-    record and skips the handler.
+    The failed insert leaves the transaction unusable, so this handler call is
+    abandoned. It is a deferral, not a failure: the consumer delivers the
+    message again without counting an attempt, and that delivery finds the
+    committed record and skips the handler. If the other delivery rolled back
+    instead, the redelivery processes the event normally.
     """
 
     message = "Event is already being processed by a concurrent delivery"
@@ -33,7 +39,7 @@ class DuplicateProcessedEventError(AbstractSpakkyEventError):
 
     def __init__(self, key: ProcessedEventKey) -> None:
         self.key = key
-        super().__init__()
+        super().__init__(DUPLICATE_RECHECK_DELAY)
 
 
 @Pod()

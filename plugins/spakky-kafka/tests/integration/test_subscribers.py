@@ -9,6 +9,7 @@ from typing import override
 from uuid import uuid4
 
 from confluent_kafka import Consumer, Message, Producer, TopicPartition
+from confluent_kafka.admin import AdminClient, NewTopic
 from pydantic import TypeAdapter
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
@@ -21,7 +22,10 @@ from spakky.event.delivery import (
 )
 from spakky.event.redrive import RedriveResult
 
-from spakky.plugins.kafka.common.config import KafkaConnectionConfig
+from spakky.plugins.kafka.common.config import (
+    AutoOffsetResetType,
+    KafkaConnectionConfig,
+)
 from spakky.plugins.kafka.common.constants import DeadLetterHeaderKey
 from spakky.plugins.kafka.event.consumer import (
     AsyncKafkaEventConsumer,
@@ -84,6 +88,18 @@ class DelayedRetryEvent(AbstractIntegrationEvent):
     @override
     def event_name(self) -> str:
         return f"test.subscribers.delayed.{RUN_ID}"
+
+
+@immutable
+class RestartedRetryEvent(AbstractIntegrationEvent):
+    """Event whose retry record waits across a consumer restart."""
+
+    value: str
+
+    @property
+    @override
+    def event_name(self) -> str:
+        return f"test.subscribers.restarted.{RUN_ID}"
 
 
 @immutable
@@ -594,3 +610,73 @@ def test_sync_blocking_retry_expect_only_failed_handler_reruns_in_order() -> Non
         assert end_offset(config, f"{topic}.dlt") == 0
     finally:
         consumer.stop()
+
+
+async def test_delayed_retry_restart_with_latest_reset_expect_waiting_retry_delivered() -> (
+    None
+):
+    """`auto_offset_reset=latest`여도 재시작 전에 쌓인 retry 레코드는 건너뛰지 않고 전달한다."""
+    config = make_config(
+        RetryPolicy(max_attempts=3, initial_interval=1.0, mode=RetryMode.DELAYED)
+    )
+    config.auto_offset_reset = AutoOffsetResetType.LATEST
+    topic = RestartedRetryEvent(value="probe").event_name
+    retry_topic = f"{topic}.retry"
+    admin = AdminClient(config.connection_configuration_dict)
+    for future in admin.create_topics(
+        [NewTopic(name, 1, 1) for name in (topic, retry_topic, f"{topic}.dlt")]
+    ).values():
+        await asyncio.to_thread(future.result, MAX_WAIT_TIME)
+    # 이벤트 토픽은 커밋된 위치에서 읽게 해, reset 정책이 retry 토픽에만 걸리게 한다.
+    seed = Consumer(config.consumer_configuration_dict)
+    try:
+        seed.commit(offsets=[TopicPartition(topic, 0, 0)], asynchronous=False)
+    finally:
+        seed.close()
+    calls: Counter[str] = Counter()
+
+    async def flaky(event: RestartedRetryEvent) -> None:
+        calls["flaky"] += 1
+        if calls["flaky"] == 1:
+            raise RuntimeError("first attempt fails")
+
+    def make_consumer() -> AsyncKafkaEventConsumer:
+        consumer = AsyncKafkaEventConsumer(config)
+        consumer.set_stop_event(asyncio.Event())
+        consumer.register(RestartedRetryEvent, flaky, handler_name="flaky")
+        return consumer
+
+    publish(config, [RestartedRetryEvent(value="only")])
+    before_restart = make_consumer()
+    await before_restart.start_async()
+    try:
+
+        async def retry_published() -> bool:
+            return await asyncio.to_thread(end_offset, config, retry_topic) == 1
+
+        await eventually(retry_published)
+    finally:
+        await before_restart.stop_async()
+    assert calls == {"flaky": 1}
+    assert (
+        await asyncio.to_thread(committed_offset, config, config.group_id, retry_topic)
+        < 0
+    )
+
+    after_restart = make_consumer()
+    await after_restart.start_async()
+    try:
+        await eventually(lambda: calls["flaky"] == 2)
+
+        async def retry_committed() -> bool:
+            return (
+                await asyncio.to_thread(
+                    committed_offset, config, config.group_id, retry_topic
+                )
+                == 1
+            )
+
+        await eventually(retry_committed)
+    finally:
+        await after_restart.stop_async()
+    assert await asyncio.to_thread(end_offset, config, f"{topic}.dlt") == 0

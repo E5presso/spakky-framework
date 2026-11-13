@@ -50,9 +50,9 @@
 
 대안 B를 채택한다.
 
-1. **구독자**: `@EventHandler(subscriber="billing")`. 구독자마다 소비 위치, 재시도 상태, dead-letter 목적지가 따로다. 이름이 없으면 구현체의 기본 식별자를 쓰는 이름 없는 구독자다. 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}`만 허용한다.
+1. **구독자**: `@EventHandler(subscriber="billing")`. 구독자마다 소비 위치, 재시도 상태, dead-letter 목적지가 따로다. 이름이 없으면 구현체의 기본 식별자를 쓰는 이름 없는 구독자다. 이름은 `[A-Za-z0-9][A-Za-z0-9_-]{0,62}`만 허용한다. 자원 접미사와 겹치는 `dlq`, `dlt`, `retry`, `redrive`는 쓸 수 없다.
 2. **처리기 실행**: 한 구독자 안에 같은 이벤트의 처리기를 여러 개 둘 수 있다. 한 처리기가 실패해도 나머지는 모두 실행한다. 실패가 남으면 전달을 재시도하고, 재시도는 아직 성공하지 못한 처리기만 실행한다.
-3. **재시도**: `RetryPolicy`(총 시도 횟수, 첫 간격, 배수, 간격 상한, 모드)를 구독자마다 독립적으로 적용한다. 모드 `BLOCKING`은 순서를 지키고, `DELAYED`는 순서를 포기하고 뒤 메시지를 먼저 처리한다. `AbstractNonRetryableEventError`와 역직렬화 실패는 재시도하지 않는다. `EventDeferredError`는 시도 횟수를 세지 않고 기다린다.
+3. **재시도**: `RetryPolicy`(총 시도 횟수, 첫 간격, 배수, 간격 상한, 모드)를 구독자마다 독립적으로 적용한다. 모드 `BLOCKING`은 순서를 지키고, `DELAYED`는 순서를 포기하고 뒤 메시지를 먼저 처리한다. `AbstractNonRetryableEventError`와 역직렬화 실패는 재시도하지 않는다. `EventDeferredError`는 시도 횟수를 세지 않고 기다린다. 한 전달에서 결과가 섞이면 재시도 불가 실패, 유예, 재시도 순으로 우선한다. 재시도 불가 실패가 있으면 바로 dead-letter이고, 그렇지 않고 유예가 있으면 전달 전체가 횟수를 세지 않고 기다린다.
 4. **dead-letter**: 구독자마다 하나다. 메시지는 `DeadLetter` 메타데이터(원래 목적지, 구독자, 실패한 처리기별 예외 종류와 메시지, 시도 횟수, 시각)를 헤더로 가진다.
 5. **다시 넣기**: `IEventRedriver.redrive(event, subscriber=..., limit=...)`는 실패한 구독자에게만, 실패한 처리기만 다시 실행한다.
 6. **멱등 소비**: `@Idempotent()`가 `(구독자, 처리기, event_id)`를 `IProcessedEventStore`에 기록한다. aspect는 `@Transactional` 안쪽(order 2)에서 실행되어 기록이 처리기의 트랜잭션에 들어간다. 구현은 `spakky-sqlalchemy[event]`의 `spakky_event_inbox` 테이블이다.
