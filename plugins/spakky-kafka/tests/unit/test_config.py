@@ -18,6 +18,8 @@ from spakky.plugins.kafka.common.config import (
     AutoOffsetResetType,
     KafkaConnectionConfig,
 )
+from spakky.event.delivery import RetryMode, RetryPolicy
+
 from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 
 
@@ -39,7 +41,13 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}REPLICATION_FACTOR",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}AUTO_OFFSET_RESET",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_TOPIC_SUFFIX",
-        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}MAX_HANDLER_RETRIES",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY_TOPIC_SUFFIX",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_ATTEMPTS",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__INITIAL_INTERVAL",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MULTIPLIER",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_INTERVAL",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MODE",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}REDRIVE_TIMEOUT",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_DELIVERY_TIMEOUT",
     ]
     original_values = {}
@@ -108,7 +116,11 @@ def test_kafka_config_default_values(clean_env: None) -> None:
     assert config.replication_factor == 1
     assert config.auto_offset_reset == AutoOffsetResetType.EARLIEST
     assert config.dead_letter_topic_suffix == ".dlt"
-    assert config.max_handler_retries == 0
+    assert config.retry_topic_suffix == ".retry"
+    assert config.retry == RetryPolicy()
+    assert config.retry.max_attempts == 1
+    assert config.retry.mode is RetryMode.BLOCKING
+    assert config.redrive_timeout == 10.0
     assert config.dead_letter_delivery_timeout == 10.0
 
 
@@ -272,30 +284,115 @@ def test_kafka_config_with_custom_partitions_and_replication(clean_env: None) ->
 
 
 def test_kafka_config_with_custom_dead_letter_settings(clean_env: None) -> None:
-    """dead-letter 접미사와 재시도 상한이 환경 변수에서 로드되는지 검증한다."""
+    """dead-letter 접미사와 retry 접미사가 환경 변수에서 로드되는지 검증한다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_TOPIC_SUFFIX"] = ".dead"
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}MAX_HANDLER_RETRIES"] = "3"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY_TOPIC_SUFFIX"] = ".again"
 
     config = KafkaConnectionConfig()
 
     assert config.dead_letter_topic_suffix == ".dead"
-    assert config.max_handler_retries == 3
+    assert config.retry_topic_suffix == ".again"
 
 
-def test_kafka_config_with_negative_max_handler_retries_expect_rejected(
+def test_kafka_config_with_retry_policy_environment_expect_nested_policy_loaded(
     clean_env: None,
 ) -> None:
-    """음수 재시도 상한은 무한 재시도를 만들므로 설정 로딩에서 거부된다."""
+    """재시도 정책은 중첩 구분자 환경 변수로 필드별 설정된다."""
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}MAX_HANDLER_RETRIES"] = "-1"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_ATTEMPTS"] = "5"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__INITIAL_INTERVAL"] = "0.5"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MULTIPLIER"] = "3"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_INTERVAL"] = "30"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MODE"] = "delayed"
+
+    config = KafkaConnectionConfig()
+
+    assert config.retry == RetryPolicy(
+        max_attempts=5,
+        initial_interval=0.5,
+        multiplier=3.0,
+        max_interval=30.0,
+        mode=RetryMode.DELAYED,
+    )
+
+
+def test_kafka_config_with_zero_max_attempts_expect_rejected(
+    clean_env: None,
+) -> None:
+    """첫 전달조차 허용하지 않는 시도 횟수는 설정 로딩에서 거부된다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_ATTEMPTS"] = "0"
 
     with pytest.raises(ValidationError):
         KafkaConnectionConfig()
+
+
+def test_kafka_config_with_same_retry_and_dead_letter_suffix_expect_rejected(
+    clean_env: None,
+) -> None:
+    """retry와 dead-letter 접미사가 같으면 두 토픽이 겹치므로 거부된다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY_TOPIC_SUFFIX"] = ".dlt"
+
+    with pytest.raises(ValidationError):
+        KafkaConnectionConfig()
+
+
+def test_kafka_config_unnamed_subscriber_expect_base_group_and_topic_names(
+    clean_env: None,
+) -> None:
+    """이름 없는 구독자는 기존 group id와 `<topic>.dlt`를 그대로 쓴다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "orders"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+
+    config = KafkaConnectionConfig()
+
+    assert config.subscriber_group_id(None) == "orders"
+    assert config.redrive_group_id(None) == "orders.redrive"
+    assert config.dead_letter_topic("OrderPlaced", None) == "OrderPlaced.dlt"
+    assert config.retry_topic("OrderPlaced", None) == "OrderPlaced.retry"
+    assert config.subscriber_consumer_configuration(None) == (
+        config.consumer_configuration_dict
+    )
+    assert config.redrive_consumer_configuration(None) == {
+        **config.consumer_configuration_dict,
+        "group.id": "orders.redrive",
+    }
+
+
+def test_kafka_config_named_subscriber_expect_own_group_and_topic_names(
+    clean_env: None,
+) -> None:
+    """이름 있는 구독자는 자기 consumer group과 retry·dead-letter 토픽을 가진다."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "orders"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+
+    config = KafkaConnectionConfig()
+
+    assert config.subscriber_group_id("billing") == "orders.billing"
+    assert config.redrive_group_id("billing") == "orders.billing.redrive"
+    assert config.dead_letter_topic("OrderPlaced", "billing") == (
+        "OrderPlaced.billing.dlt"
+    )
+    assert config.retry_topic("OrderPlaced", "billing") == "OrderPlaced.billing.retry"
+    assert config.subscriber_consumer_configuration("billing")["group.id"] == (
+        "orders.billing"
+    )
+    assert (
+        config.subscriber_consumer_configuration("billing")["enable.auto.commit"]
+        is False
+    )
 
 
 def test_kafka_config_with_empty_dead_letter_topic_suffix_expect_rejected(

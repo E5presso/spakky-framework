@@ -1,8 +1,34 @@
 """Spakky Event package - Event-driven architecture support."""
 
 from spakky.event.aspects import (
+    AsyncIdempotentAspect,
     AsyncTransactionalEventPublishingAspect,
+    IdempotentAspect,
     TransactionalEventPublishingAspect,
+)
+from spakky.event.delivery import (
+    DeadLetter,
+    DeadLetterHeader,
+    DeliveryHeader,
+    DeliveryState,
+    EventDeliveryContext,
+    HandlerFailure,
+    RetryMode,
+    RetryPolicy,
+)
+from spakky.event.idempotency import (
+    IAsyncProcessedEventStore,
+    Idempotent,
+    IProcessedEventStore,
+    ProcessedEventKey,
+    ProcessedEventStoreUnavailableError,
+    idempotent,
+)
+from spakky.event.redrive import IAsyncEventRedriver, IEventRedriver, RedriveResult
+from spakky.event.subscription import (
+    DuplicateEventHandlerNameError,
+    InvalidSubscriberNameError,
+    MixedSubscriptionModeError,
 )
 from spakky.event.bus import (
     AsyncDirectEventBus,
@@ -20,6 +46,10 @@ from spakky.event.error import (
     InvalidEventDeferralError,
     DomainEventDispatcherUnavailableError,
     EventHandlerProviderUnavailableError,
+    AbstractNonRetryableEventError,
+    EventDeliveryContextUnavailableError,
+    InvalidDeliveryHeaderError,
+    SubscriptionNotFoundError,
 )
 from spakky.event.event_consumer import (
     IAsyncEventConsumer,
@@ -76,6 +106,26 @@ __all__ = [
     # Aspects
     "AsyncTransactionalEventPublishingAspect",
     "TransactionalEventPublishingAspect",
+    "AsyncIdempotentAspect",
+    "IdempotentAspect",
+    # Delivery contract
+    "RetryMode",
+    "RetryPolicy",
+    "DeliveryHeader",
+    "DeliveryState",
+    "DeadLetter",
+    "DeadLetterHeader",
+    "HandlerFailure",
+    "EventDeliveryContext",
+    "IEventRedriver",
+    "IAsyncEventRedriver",
+    "RedriveResult",
+    # Idempotent consumption
+    "Idempotent",
+    "idempotent",
+    "ProcessedEventKey",
+    "IProcessedEventStore",
+    "IAsyncProcessedEventStore",
     # Errors
     "AbstractSpakkyEventError",
     "AuthSnapshotPropagationContextUnavailableError",
@@ -87,6 +137,14 @@ __all__ = [
     "InvalidEventDeferralError",
     "DomainEventDispatcherUnavailableError",
     "EventHandlerProviderUnavailableError",
+    "AbstractNonRetryableEventError",
+    "EventDeliveryContextUnavailableError",
+    "InvalidDeliveryHeaderError",
+    "SubscriptionNotFoundError",
+    "ProcessedEventStoreUnavailableError",
+    "DuplicateEventHandlerNameError",
+    "InvalidSubscriberNameError",
+    "MixedSubscriptionModeError",
 ]
 
 from spakky.core.application.plugin import Plugin

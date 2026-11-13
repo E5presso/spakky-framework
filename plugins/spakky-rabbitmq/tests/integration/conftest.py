@@ -7,6 +7,7 @@ from collections.abc import Generator
 import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
 from testcontainers.rabbitmq import (
     RabbitMqContainer,  # type: ignore[import-untyped]  # testcontainers lacks type stubs
 )
@@ -74,6 +75,8 @@ def get_app_fixture() -> Generator[SpakkyApplication, Any, None]:
         .load_plugins(
             include={
                 spakky.plugins.rabbitmq.PLUGIN_NAME,
+                # aspect가 적용된 handler(AOP proxy)의 등록을 검증하기 위해 로드한다.
+                Plugin(name="spakky-data"),
             }
         )
         .scan(apps)

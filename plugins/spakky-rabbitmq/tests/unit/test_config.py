@@ -9,6 +9,7 @@ from typing import Any
 from collections.abc import Generator
 
 import pytest
+from spakky.event.delivery import RetryMode, RetryPolicy
 
 from spakky.plugins.rabbitmq.common.config import (
     RabbitMQAuthFailureAction,
@@ -30,7 +31,12 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_CHALLENGE_ACTION",
         f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_DENY_ACTION",
         f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_ERROR_ACTION",
-        f"{RABBITMQ_CONFIG_ENV_PREFIX}MALFORMED_PAYLOAD_ACTION",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}DECLARE_DEFAULT_QUEUE",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MAX_ATTEMPTS",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__INITIAL_INTERVAL",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MULTIPLIER",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MAX_INTERVAL",
+        f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MODE",
     ]
     original_values = {}
     for key in keys_to_remove:
@@ -153,7 +159,6 @@ def test_rabbitmq_config_auth_failure_actions_default_avoid_poison_loop(
     assert config.auth_challenge_action is RabbitMQAuthFailureAction.ACK
     assert config.auth_deny_action is RabbitMQAuthFailureAction.ACK
     assert config.auth_error_action is RabbitMQAuthFailureAction.NACK_REQUEUE
-    assert config.malformed_payload_action is RabbitMQAuthFailureAction.ACK
 
 
 def test_rabbitmq_config_auth_failure_actions_load_from_environment(
@@ -168,14 +173,12 @@ def test_rabbitmq_config_auth_failure_actions_load_from_environment(
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_CHALLENGE_ACTION"] = "nack_drop"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_DENY_ACTION"] = "nack_drop"
     environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}AUTH_ERROR_ACTION"] = "nack_requeue"
-    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}MALFORMED_PAYLOAD_ACTION"] = "nack_drop"
 
     config = RabbitMQConnectionConfig()
 
     assert config.auth_challenge_action is RabbitMQAuthFailureAction.NACK_DROP
     assert config.auth_deny_action is RabbitMQAuthFailureAction.NACK_DROP
     assert config.auth_error_action is RabbitMQAuthFailureAction.NACK_REQUEUE
-    assert config.malformed_payload_action is RabbitMQAuthFailureAction.NACK_DROP
 
 
 def test_rabbitmq_config_env_prefix_is_correct() -> None:
@@ -183,3 +186,49 @@ def test_rabbitmq_config_env_prefix_is_correct() -> None:
     assert RABBITMQ_CONFIG_ENV_PREFIX == "SPAKKY_RABBITMQ__"
     assert RABBITMQ_CONFIG_ENV_PREFIX.startswith("SPAKKY_")
     assert RABBITMQ_CONFIG_ENV_PREFIX.endswith("__")
+
+
+def test_rabbitmq_config_delivery_defaults_expect_single_blocking_attempt(
+    clean_env: None,
+) -> None:
+    """재시도와 기본 큐 선언의 기본값이 기존 동작(1회 시도, 큐 선언)을 유지함을 검증한다."""
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "guest"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "guest"
+
+    config = RabbitMQConnectionConfig()
+
+    assert config.declare_default_queue is True
+    assert config.retry == RetryPolicy()
+    assert config.retry.max_attempts == 1
+    assert config.retry.mode is RetryMode.BLOCKING
+
+
+def test_rabbitmq_config_delivery_settings_load_from_environment(
+    clean_env: None,
+) -> None:
+    """중첩 구분자로 재시도 정책을, 단일 변수로 기본 큐 선언을 구성할 수 있음을 검증한다."""
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL"] = "false"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST"] = "localhost"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT"] = "5672"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}USER"] = "guest"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD"] = "guest"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}DECLARE_DEFAULT_QUEUE"] = "false"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MAX_ATTEMPTS"] = "5"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__INITIAL_INTERVAL"] = "0.5"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MULTIPLIER"] = "3"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MAX_INTERVAL"] = "30"
+    environ[f"{RABBITMQ_CONFIG_ENV_PREFIX}RETRY__MODE"] = "delayed"
+
+    config = RabbitMQConnectionConfig()
+
+    assert config.declare_default_queue is False
+    assert config.retry == RetryPolicy(
+        max_attempts=5,
+        initial_interval=0.5,
+        multiplier=3,
+        max_interval=30,
+        mode=RetryMode.DELAYED,
+    )

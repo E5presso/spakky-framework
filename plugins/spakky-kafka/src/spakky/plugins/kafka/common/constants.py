@@ -2,6 +2,18 @@ from enum import StrEnum
 
 SPAKKY_KAFKA_CONFIG_ENV_PREFIX = "SPAKKY_KAFKA__"
 
+REDRIVE_GROUP_SUFFIX = ".redrive"
+"""Suffix of the consumer group that tracks a subscriber's redrive position."""
+
+ASSIGNMENT_OFFSET_LOOKUP_TIMEOUT = 10.0
+"""Seconds an assignment waits for the committed offsets of its retry partitions."""
+
+type KafkaTopic = str
+"""Name of a Kafka topic."""
+
+type KafkaGroupId = str
+"""Identifier of a Kafka consumer group."""
+
 
 class DeadLetterHeaderKey(StrEnum):
     """Kafka header keys describing where a dead-lettered message came from.

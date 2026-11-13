@@ -9,6 +9,7 @@ from typing import ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
+from spakky.event.delivery import RetryPolicy
 
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
 
@@ -39,6 +40,8 @@ class RabbitMQConnectionConfig(BaseSettings):
         user: Username for authentication.
         password: Password for authentication.
         exchange_name: Optional exchange name for pub/sub routing.
+        declare_default_queue: Whether transports declare the unnamed queue.
+        retry: Retry policy applied to every subscriber independently.
     """
 
     model_config: ClassVar[SettingsConfigDict] = SettingsConfigDict(
@@ -63,7 +66,22 @@ class RabbitMQConnectionConfig(BaseSettings):
     """Password for RabbitMQ authentication."""
 
     exchange_name: str | None = None
-    """Optional exchange name for pub/sub message routing."""
+    """Optional exchange name for pub/sub message routing.
+
+    None publishes through the default exchange, which reaches only the queue
+    named after the event. Named subscribers require an exchange.
+    """
+
+    declare_default_queue: bool = True
+    """Whether transports declare (and bind) the queue named after the event.
+
+    That queue belongs to the unnamed subscriber. Turn it off when every
+    consumer of the published events is a named subscriber; otherwise the
+    queue would only accumulate messages nobody consumes.
+    """
+
+    retry: RetryPolicy = RetryPolicy()
+    """Retry limits, spacing and mode applied to each subscriber queue."""
 
     auth_challenge_action: RabbitMQAuthFailureAction = RabbitMQAuthFailureAction.ACK
     """Message action for missing, invalid, or expired snapshot decisions."""
@@ -75,9 +93,6 @@ class RabbitMQConnectionConfig(BaseSettings):
         RabbitMQAuthFailureAction.NACK_REQUEUE
     )
     """Message action for retryable provider ERROR decisions."""
-
-    malformed_payload_action: RabbitMQAuthFailureAction = RabbitMQAuthFailureAction.ACK
-    """Message action for malformed payloads that cannot be deserialized."""
 
     @property
     def protocol(self) -> str:

@@ -20,6 +20,18 @@ RabbitMQ 통합 — 이벤트 전송/수신
     options:
       show_root_heading: false
 
+## 구독자 큐 이름
+
+::: spakky.plugins.rabbitmq.event.topology
+    options:
+      show_root_heading: false
+
+## 에러
+
+::: spakky.plugins.rabbitmq.error
+    options:
+      show_root_heading: false
+
 ## 인증 Boundary
 
 ::: spakky.plugins.rabbitmq.auth

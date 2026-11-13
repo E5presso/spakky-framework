@@ -5,7 +5,6 @@ decorated classes, connecting them to RabbitMQ consumers with dependency injecti
 """
 
 from functools import wraps
-from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
 from typing import Any
 
@@ -20,7 +19,7 @@ from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from spakky.domain.models.event import AbstractEvent, AbstractIntegrationEvent
-from spakky.event.stereotype.event_handler import EventHandler, EventRoute
+from spakky.event.stereotype.event_handler import EventHandler
 from spakky.plugins.rabbitmq.auth import RabbitMQAuthBoundary
 from spakky.tracing.propagator import ITracePropagator
 from typing import override
@@ -68,9 +67,9 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
     def post_process(self, pod: object) -> object:
         """Register event handlers from event handler classes.
 
-        Scans the event handler for methods decorated with @event and registers
-        them with the appropriate RabbitMQ consumer (sync or async) based on
-        whether the method is a coroutine function.
+        Reads the @on_event methods declared on the event handler class, so
+        that handlers advised by an aspect (whose Pod is an AOP proxy) are
+        registered too, and registers each with the sync or async consumer.
 
         Args:
             pod: The Pod to process, potentially an event handler.
@@ -97,25 +96,29 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                 async_consumer, "set_propagator"
             ):
                 async_consumer.set_propagator(propagator)
-        for name, method in getmembers(pod, ismethod):
-            route: EventRoute[AbstractEvent] | None = EventRoute[
-                AbstractEvent
-            ].get_or_none(method)
-            if route is None:
-                continue
+        for declared in handler.routes():
+            route = declared.route
+            name = declared.method_name
             if not issubclass(route.event_type, AbstractIntegrationEvent):
                 continue
+            # 프레임워크 내부: 선언된 핸들러 함수의 메타데이터 조회. Pod 인스턴스는
+            # AOP proxy일 수 있어 클래스에서 읽는다.
+            method = getattr(  # declared handler function lookup
+                handler.type_, name
+            )
             auth_metadata = get_effective_auth_metadata(
                 method,
                 owner_type=handler.type_,
             )
 
+            handler_name = declared.handler_name
+
             # pylint: disable=line-too-long
             logger.info(
-                f"[{type(self).__name__}] {route.event_type.__name__} -> {method.__qualname__}"
+                f"[{type(self).__name__}] {route.event_type.__name__} -> {method.__qualname__} (subscriber {handler.subscriber!r})"
             )
 
-            if iscoroutinefunction(method):
+            if declared.asynchronous:
 
                 @wraps(method)
                 async def async_endpoint(
@@ -142,7 +145,12 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     )
                     return await method_to_call(*args, **kwargs)
 
-                async_consumer.register(route.event_type, async_endpoint)
+                async_consumer.register(
+                    route.event_type,
+                    async_endpoint,
+                    subscriber=handler.subscriber,
+                    handler_name=handler_name,
+                )
                 continue
 
             @wraps(method)
@@ -170,5 +178,10 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                 )
                 return method_to_call(*args, **kwargs)
 
-            consumer.register(route.event_type, endpoint)
+            consumer.register(
+                route.event_type,
+                endpoint,
+                subscriber=handler.subscriber,
+                handler_name=handler_name,
+            )
         return pod

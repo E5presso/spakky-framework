@@ -109,7 +109,7 @@ def test_multiple_handler_registration_sync(app: SpakkyApplication) -> None:
     consumer.register(DuplicateTestEvent, handler1)
     consumer.register(DuplicateTestEvent, handler2)
 
-    assert len(consumer.handlers[DuplicateTestEvent]) == 2
+    assert len(consumer.subscriptions.get(None, DuplicateTestEvent).handlers) == 2
 
 
 @pytest.mark.asyncio
@@ -127,7 +127,7 @@ async def test_multiple_handler_registration_async(app: SpakkyApplication) -> No
     consumer.register(DuplicateTestEvent, handler1)
     consumer.register(DuplicateTestEvent, handler2)
 
-    assert len(consumer.handlers[DuplicateTestEvent]) == 2
+    assert len(consumer.subscriptions.get(None, DuplicateTestEvent).handlers) == 2
 
 
 def decode_headers(record: Message) -> dict[str, str]:
