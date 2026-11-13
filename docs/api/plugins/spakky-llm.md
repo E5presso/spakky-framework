@@ -76,13 +76,14 @@ tool call이 없는 step에서 final을 한 번 방출합니다.
 | `api` | `LlmProviderApi` | 필수 | 사용할 공식 SDK API family |
 | `base_url` | `str \| None` | `None` | SDK endpoint override |
 | `api_key` | `SecretStr \| None` | `None` | SDK client 생성 경계에서만 꺼내는 secret |
+| `credential_provider` | `str \| None` | `None` | 호출 시점 token을 돌려주는 `ILLMCredentialProvider` 이름; `openai-responses` 전용, `api_key`와 배타 |
 | `headers` | `dict[str, str]` | `{}` | SDK client의 default headers |
 | `request_timeout_seconds` | `float \| None` | `None` | non-streaming 요청 timeout; `None`이면 제한 없음, 지정 시 양수 |
 | `stream_timeout_seconds` | `float \| None` | `None` | streaming 요청 timeout; `None`이면 제한 없음, 지정 시 양수 |
 | `max_retries` | `int` | `0` | 공식 SDK retry 횟수, 음수 불가 |
 | `stream_enabled` | `bool` | `true` | 해당 profile의 streaming 허용 여부 |
 | `resilience` | `LlmResiliencePolicy` | 모두 disabled | orchestration retry/concurrency/rate/circuit policy |
-| `openai_dialect` | `OpenAICompatibleDialect` | `"standard"` | OpenAI 표준 또는 vLLM extension 선택 |
+| `openai_dialect` | `OpenAICompatibleDialect` | `"standard"` | OpenAI 표준, vLLM extension 또는 ChatGPT 로그인 경로 선택 |
 | `google_credential_strategy` | `GoogleCredentialStrategy \| None` | `None` | Google API key, ADC, service-account-file 중 명시 선택 |
 | `google_project` | `str \| None` | `None` | Vertex AI project |
 | `google_location` | `str \| None` | `None` | Vertex AI location |
@@ -90,7 +91,8 @@ tool call이 없는 step에서 final을 한 번 방출합니다.
 
 Profile은 connection/backend/auth만 담습니다. 실제 model ID와 capability는 profile에
 호환 alias로 남아 있지 않습니다. `openai_dialect="vllm"`은
-`api="openai-chat-completions"`에서만 사용할 수 있습니다. `provider`, non-null
+`api="openai-chat-completions"`에서만, `openai_dialect="chatgpt"`는
+`api="openai-responses"`에서만 사용할 수 있습니다. `provider`, non-null
 `base_url`, Google project/location은 trim되고 빈 문자열이면 거부됩니다.
 
 `request_timeout_seconds`와 `stream_timeout_seconds`는 생략하거나 `None`으로 지정하면
@@ -106,6 +108,7 @@ runner deadline과 독립적입니다. 명시적으로 timeout을 설정하는 �
 | `model` | `str` | 필수 | provider SDK에 전달할 physical model ID |
 | `capability` | `ModelCapability` | text-only 기본 capability | 선택 모델의 정확한 기능 선언 |
 | `chat_template_kwargs` | `dict[str, LlmScalar]` | `{}` | vLLM route 전용 model option |
+| `reasoning_effort` | `LlmReasoningEffort \| None` | `None` | `openai-responses` route의 reasoning effort; `None`이면 provider 기본값 |
 | `fallbacks` | `tuple[str, ...]` | `()` | ordered logical fallback refs |
 | `fallback_on` | `frozenset[LlmFailureClass]` | empty | 이 route가 fallback할 failure allowlist |
 | `cache` | `LlmCachePolicy` | `DISABLED` | complete-response cache mode/TTL/namespace |
@@ -276,6 +279,7 @@ Unknown ref의 stream error는 선택되지 않은 default target을 꾸며 내�
 | API family | 공식 SDK adapter | dialect 또는 특징 |
 | --- | --- | --- |
 | `openai-chat-completions` | `AsyncOpenAI` | OpenAI standard와 vLLM extension |
+| `openai-responses` | `AsyncOpenAI` | Responses SSE stream; standard와 ChatGPT 로그인 dialect |
 | `anthropic-messages` | `AsyncAnthropic` | native Messages, tool-use block, JSON output format |
 | `google-gemini-developer` | `google.genai.Client` | API key 기반 Developer API mode |
 | `google-vertex` | `google.genai.Client` | ADC/service-account 기반 enterprise mode |
@@ -285,6 +289,134 @@ endpoint입니다. Provider-specific semantics가 없는 현재 surface에는 �
 dialect를 만들지 않습니다. OpenAI official/compatible standard profile은 API key가
 필수입니다. vLLM만 `OpenAICompatibleDialect.VLLM`을 선택하며, 이 dialect에서 key를
 생략한 경우에만 SDK용 non-secret `not-required` sentinel을 사용합니다.
+
+### OpenAI Responses API와 ChatGPT 로그인
+
+`api=openai-responses`는 `OpenAIResponsesProvider`가 OpenAI Responses API(`/v1/responses`)를
+SSE streaming으로 호출합니다. `complete()`도 같은 stream을 끝까지 읽어 하나의 `ModelResponse`로
+합칩니다. 요청은 항상 `stream=true`, `store=false`이며 대화 history 전체를 `input`으로 보냅니다.
+`previous_response_id`와 `metadata`는 사용하지 않습니다.
+
+| 기능 | Responses 매핑 |
+| --- | --- |
+| Function tool | `tools[].type="function"`, `tool_choice`는 `auto`/`none`/`required` |
+| Structured output | `text.format.type="json_schema"`; `strict`이면 모든 object를 required-all과 `additionalProperties=false`로 변환하고, 응답은 `LlmJsonCodec`이 다시 검증 |
+| Usage | terminal event의 `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cache_write_tokens` |
+| Reasoning | route의 `reasoning_effort`가 `reasoning.effort`로 전달됨; `supports_reasoning=True`이면 `reasoning.summary="auto"`를 요청하고 summary delta를 `REASONING_DELTA`로 전달 |
+| Multimodal input | user message의 text, image(URI 또는 inline), document(inline + filename); audio와 video는 `LlmUnsupportedFeatureError` |
+
+`openai_dialect`가 접근 경로를 고릅니다.
+
+| `openai_dialect` | 인증 | 요청 차이 |
+| --- | --- | --- |
+| `standard` | `api_key` 또는 `credential_provider` | `system` role, `temperature`/`top_p` 전달 |
+| `chatgpt` | 보통 `credential_provider` (token이 만료되므로) | `system` message를 `developer` role로 전송, `temperature`/`top_p` 제거 |
+
+`chatgpt` dialect는 Sign in with ChatGPT로 받은 token으로 ChatGPT 플랜 사용량을 쓰는 경로입니다.
+`chatgpt`는 `openai-responses`에서만, `vllm`은 `openai-chat-completions`에서만 허용됩니다.
+`max_output_tokens`와 function tool은 두 dialect에서 같은 모양으로 전달됩니다.
+
+2026-11-13에 실제 ChatGPT 계정(`gpt-6.1-sol`)으로 확인한 범위입니다.
+
+| 항목 | 결과 |
+| --- | --- |
+| Text 응답과 usage | 동작 |
+| Function tool 호출과 tool 결과 왕복 | 동작 |
+| Structured output `strict=true` / `strict=false` | 둘 다 동작 |
+| `temperature`, `top_p` | HTTP 400 `Unsupported parameter`로 거절됨 |
+| `max_output_tokens`, `system` role | 받아들여짐 |
+| Reasoning summary delta | `reasoning.summary="auto"`를 보내도 delta가 오지 않음 |
+
+Quota 소진 code, HTTP 401 뒤 credential 재시도와 stream 중단은 실제 경로에서 재현하지 못했고 가짜 SSE 전송 테스트로만 검증했습니다.
+
+```python
+from spakky.agent import ModelCapability
+from spakky.plugins.llm.config import (
+    LlmConfig,
+    LlmModelRoute,
+    LlmProfile,
+    LlmProviderApi,
+    LlmReasoningEffort,
+    OpenAICompatibleDialect,
+)
+
+config = LlmConfig(
+    default_model="builder/primary",
+    profiles={
+        "chatgpt": LlmProfile(
+            provider="openai",
+            api=LlmProviderApi.OPENAI_RESPONSES,
+            openai_dialect=OpenAICompatibleDialect.CHATGPT,
+            credential_provider="chatgpt",
+        ),
+    },
+    models={
+        "builder/primary": LlmModelRoute(
+            profile="chatgpt",
+            model="gpt-6.1-sol",
+            reasoning_effort=LlmReasoningEffort.LOW,
+            capability=ModelCapability(
+                supports_tools=True,
+                supports_structured_output=True,
+            ),
+        ),
+    },
+)
+```
+
+`model` 값은 예시입니다. 로그인한 계정에서 실제로 쓸 수 있는 model ID를 넣습니다.
+
+#### Call-time credential
+
+`credential_provider`는 고정 `api_key` 대신 호출 시점에 bearer token을 돌려주는
+`ILLMCredentialProvider` Pod의 `name`입니다. `api_key`와 함께 쓸 수 없고 현재
+`openai-responses` profile에서만 허용됩니다.
+
+```python
+from typing import override
+
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.llm.provider import (
+    ILLMCredentialProvider,
+    LlmAccessToken,
+    LlmCredentialRequest,
+)
+
+
+@Pod()
+class ChatGptCredentialProvider(ILLMCredentialProvider):
+    @property
+    @override
+    def name(self) -> str:
+        return "chatgpt"
+
+    @override
+    async def access_token(self, credential: LlmCredentialRequest) -> LlmAccessToken:
+        # credential.request로 호출 주체를 식별하고, 만료가 가까우면 갱신한 token을 돌려줍니다.
+        # credential.rejected_token이 있으면 provider가 그 token을 401로 거절한 직후입니다.
+        return await self._tokens.current(credential)
+```
+
+Adapter는 attempt마다 `access_token()`을 한 번 호출합니다. Provider가 HTTP 401로 거절하면
+거절된 token을 `rejected_token`에 담아 한 번 더 호출하고 요청을 정확히 한 번 재시도합니다.
+두 번째도 401이면 `LlmAuthenticationError`입니다. 이미 열린 stream은 재시도하지 않습니다.
+OAuth 로그인, token 저장과 갱신은 이 plugin에 없습니다. Application이 구현합니다.
+
+#### Quota와 stream 중단
+
+| 상황 | 에러 | failure class | retryable |
+| --- | --- | --- | --- |
+| 계정·플랜 사용량 소진 (`insufficient_quota`, `subscription_sharing_usage_limit_exceeded`, `subscription_sharing_usage_unavailable`) | `LlmQuotaExhaustedError` | `quota` | `false` |
+| 일시적 요청 속도 제한 (HTTP 429, `rate_limit_exceeded`) | `LlmRateLimitError` | `rate_limit` | `true` |
+| Terminal event 없이 stream 종료 또는 stream 중 연결 끊김 | `LlmStreamInterruptedError` | `transport` | `true` |
+| Credential 거절 (HTTP 401) | `LlmAuthenticationError` | `authentication` | `false` |
+
+Quota 소진은 기다려도 풀리지 않으므로 rate limit과 다른 failure class입니다. Retry policy의
+`rate_limit`에 걸리지 않고, 필요하면 route `fallback_on`에 `quota`를 명시해 다른 model로 넘깁니다.
+`response.incomplete`는 `max_output_tokens` 사유만 `finish_reason="length"`인 성공으로 처리하고
+그 밖의 사유는 `LlmModelRefusalError`입니다.
+잘린 turn에 structured output을 요청했다면 불완전한 JSON이므로 `LlmResponseError`입니다.
+Terminal event를 받은 뒤의 연결 종료 오류는 무시합니다.
 
 ### Provider registry와 custom adapter
 
@@ -707,6 +839,10 @@ root alias로 재노출하지 않으므로 아래 실제 모듈에서 import합�
 ## Provider adapter
 
 ::: spakky.plugins.llm.providers.openai
+    options:
+      show_root_heading: false
+
+::: spakky.plugins.llm.providers.openai_responses
     options:
       show_root_heading: false
 

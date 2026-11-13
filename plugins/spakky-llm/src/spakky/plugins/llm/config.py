@@ -226,6 +226,7 @@ class LlmProviderApi(StrEnum):
     """Native SDK surface used to reach one configured profile."""
 
     OPENAI_CHAT_COMPLETIONS = "openai-chat-completions"
+    OPENAI_RESPONSES = "openai-responses"
     ANTHROPIC_MESSAGES = "anthropic-messages"
     GOOGLE_GEMINI_DEVELOPER = "google-gemini-developer"
     GOOGLE_VERTEX = "google-vertex"
@@ -240,10 +241,29 @@ class GoogleCredentialStrategy(StrEnum):
 
 
 class OpenAICompatibleDialect(StrEnum):
-    """Known extensions layered on the OpenAI chat-completions protocol."""
+    """Known access paths layered on the OpenAI chat and Responses protocols."""
 
     STANDARD = "standard"
     VLLM = "vllm"
+    CHATGPT = "chatgpt"
+
+
+class LlmReasoningEffort(StrEnum):
+    """Reasoning effort requested from one OpenAI Responses model route."""
+
+    NONE = "none"
+    MINIMAL = "minimal"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
+
+
+_OPENAI_DIALECT_APIS: dict[OpenAICompatibleDialect, frozenset[LlmProviderApi]] = {
+    OpenAICompatibleDialect.VLLM: frozenset({LlmProviderApi.OPENAI_CHAT_COMPLETIONS}),
+    OpenAICompatibleDialect.CHATGPT: frozenset({LlmProviderApi.OPENAI_RESPONSES}),
+}
 
 
 class LlmProfile(BaseModel):
@@ -255,6 +275,8 @@ class LlmProfile(BaseModel):
     api: LlmProviderApi
     base_url: str | None = None
     api_key: SecretStr | None = None
+    # None means the profile authenticates with its static api_key.
+    credential_provider: str | None = None
     headers: dict[str, str] = Field(default_factory=dict)
     request_timeout_seconds: float | None = Field(
         default=DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS,
@@ -276,6 +298,7 @@ class LlmProfile(BaseModel):
     @field_validator(
         "provider",
         "base_url",
+        "credential_provider",
         "google_project",
         "google_location",
     )
@@ -334,14 +357,23 @@ class LlmProfile(BaseModel):
                 "llm_retry_owner",
                 "SDK and orchestration retries cannot both be enabled",
             )
-        if (
-            self.api != LlmProviderApi.OPENAI_CHAT_COMPLETIONS
-            and self.openai_dialect != OpenAICompatibleDialect.STANDARD
-        ):
+        dialect_apis = _OPENAI_DIALECT_APIS.get(self.openai_dialect)
+        if dialect_apis is not None and self.api not in dialect_apis:
             raise PydanticCustomError(
                 "llm_profile_dialect",
-                "OpenAI dialect requires the OpenAI chat API",
+                "OpenAI dialect is not available for the profile API",
             )
+        if self.credential_provider is not None:
+            if self.api != LlmProviderApi.OPENAI_RESPONSES:
+                raise PydanticCustomError(
+                    "llm_profile_credential_provider_api",
+                    "Credential providers require the OpenAI Responses API",
+                )
+            if self.api_key is not None:
+                raise PydanticCustomError(
+                    "llm_profile_credential_source",
+                    "API key and credential provider are mutually exclusive",
+                )
         if self.api == LlmProviderApi.GOOGLE_GEMINI_DEVELOPER:
             self._validate_gemini_developer_connection()
         elif self.api == LlmProviderApi.GOOGLE_VERTEX:
@@ -431,6 +463,8 @@ class LlmModelRoute(BaseModel):
     model: str = Field(min_length=1, strict=True)
     capability: ModelCapability = Field(default_factory=ModelCapability)
     chat_template_kwargs: dict[str, LlmScalar] = Field(default_factory=dict)
+    # None leaves the provider default reasoning effort untouched.
+    reasoning_effort: LlmReasoningEffort | None = None
     fallbacks: tuple[str, ...] = ()
     fallback_on: frozenset[LlmFailureClass] = frozenset()
     cache: LlmCachePolicy = Field(default_factory=LlmCachePolicy)
@@ -679,6 +713,14 @@ class LlmConfig(BaseSettings):
                 raise PydanticCustomError(
                     "llm_model_route_chat_template",
                     "Chat template kwargs require a vLLM connection profile",
+                )
+            if (
+                route.reasoning_effort is not None
+                and profile.api != LlmProviderApi.OPENAI_RESPONSES
+            ):
+                raise PydanticCustomError(
+                    "llm_model_route_reasoning_effort",
+                    "Reasoning effort requires an OpenAI Responses profile",
                 )
             for fallback_ref in route.fallbacks:
                 if fallback_ref == model_ref:

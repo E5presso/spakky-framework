@@ -373,6 +373,38 @@ vLLM에만 SDK 호출용 non-secret `not-required` sentinel을 사용하고, 기
 `EMPTY`를 명시합니다. Standard dialect에 `chat_template_kwargs`를 붙이면 설정 오류로
 중단됩니다.
 
+### OpenAI Responses API와 ChatGPT 로그인
+
+`LlmProviderApi.OPENAI_RESPONSES`는 Responses API를 SSE streaming으로 호출합니다. API key로 쓰는
+경우 `standard` dialect와 `api_key`를, Sign in with ChatGPT token으로 쓰는 경우 `chatgpt`
+dialect와 `credential_provider`를 지정합니다.
+
+```python
+from spakky.plugins.llm.config import (
+    LlmModelRoute,
+    LlmProfile,
+    LlmProviderApi,
+    LlmReasoningEffort,
+    OpenAICompatibleDialect,
+)
+
+chatgpt_profile = LlmProfile(
+    provider="openai",
+    api=LlmProviderApi.OPENAI_RESPONSES,
+    openai_dialect=OpenAICompatibleDialect.CHATGPT,
+    credential_provider="chatgpt",
+)
+builder_route = LlmModelRoute(
+    profile="chatgpt",
+    model="gpt-6.1-sol",
+    reasoning_effort=LlmReasoningEffort.LOW,
+)
+```
+
+`credential_provider`는 application이 등록한 `ILLMCredentialProvider` Pod의 `name`입니다.
+`chatgpt` dialect가 바꾸는 요청 항목, credential 재시도, quota와 stream 중단 에러는
+[API reference](../api/plugins/spakky-llm.md#openai-responses-api와-chatgpt-로그인)를 봅니다.
+
 ### Anthropic Messages
 
 Anthropic은 OpenAI compatibility layer가 아니라 native Messages adapter를 사용합니다.

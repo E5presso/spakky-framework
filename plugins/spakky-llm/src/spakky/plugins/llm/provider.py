@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Sequence
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from spakky.agent import (
@@ -21,6 +21,7 @@ from spakky.agent import (
 from spakky.plugins.llm.config import LlmModelRoute, LlmProfile, LlmProviderApi
 from spakky.plugins.llm.error import (
     AbstractLlmError,
+    LlmAuthenticationError,
     LlmConfigurationError,
     LlmCapabilityError,
     LlmCacheConfigurationError,
@@ -30,9 +31,11 @@ from spakky.plugins.llm.error import (
     LlmModelRefusalError,
     LlmModelSelectionError,
     LlmProviderUnavailableError,
+    LlmQuotaExhaustedError,
     LlmResponseError,
     LlmRateLimitError,
     LlmStreamingDisabledError,
+    LlmStreamInterruptedError,
     LlmTimeoutError,
     LlmTransportError,
     LlmUnsupportedFeatureError,
@@ -87,6 +90,34 @@ class ILLMProvider(ABC):
         request: ModelRequest,
     ) -> AsyncIterator[ModelStreamEvent]:
         """Return provider-neutral streaming events."""
+        ...
+
+
+type LlmAccessToken = str
+
+
+@dataclass(frozen=True, slots=True)
+class LlmCredentialRequest:
+    """One credential lookup for the caller behind a provider attempt."""
+
+    profile_name: str
+    request: ModelRequest
+    # None on the first attempt; the token the provider rejected on the one retry.
+    rejected_token: LlmAccessToken | None = field(default=None, repr=False)
+
+
+class ILLMCredentialProvider(ABC):
+    """Resolve a bearer credential at call time instead of a static API key."""
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Return the name profiles reference as ``credential_provider``."""
+        ...
+
+    @abstractmethod
+    async def access_token(self, credential: LlmCredentialRequest) -> LlmAccessToken:
+        """Return a currently valid token, refreshing a rejected or expiring one."""
         ...
 
 
@@ -313,10 +344,16 @@ def failure_code(error: AbstractLlmError) -> str:
     """Return the stable public code for one typed plugin failure."""
     if isinstance(error, LlmTimeoutError):
         return "llm_timeout"
+    if isinstance(error, LlmStreamInterruptedError):
+        return "llm_stream_interrupted"
     if isinstance(error, LlmTransportError):
         return "llm_transport_error"
     if isinstance(error, LlmRateLimitError):
         return "llm_rate_limited"
+    if isinstance(error, LlmQuotaExhaustedError):
+        return "llm_quota_exhausted"
+    if isinstance(error, LlmAuthenticationError):
+        return "llm_authentication_failed"
     if isinstance(error, LlmConcurrencyLimitError):
         return "llm_concurrency_limited"
     if isinstance(error, LlmCircuitOpenError):

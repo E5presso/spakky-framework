@@ -198,12 +198,13 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 | `provider` | 필수 | routing evidence용 provider id |
 | `api` | 필수 | provider adapter API family |
 | `base_url`, `api_key`, `headers` | `None`, `None`, `{}` | operator-owned endpoint, secret, 추가 header |
+| `credential_provider` | `None` | 호출 시점 token을 돌려주는 `ILLMCredentialProvider` 이름; `openai-responses` 전용, `api_key`와 배타 |
 | `request_timeout_seconds` | `None` | complete request timeout; 미지정이면 제한 없음 |
 | `stream_timeout_seconds` | `None` | stream request timeout; 미지정이면 제한 없음 |
 | `max_retries` | `0` | provider SDK retry 횟수 |
 | `stream_enabled` | `true` | profile의 streaming 허용 여부 |
 | `resilience` | disabled `LlmResiliencePolicy()` | profile-scoped orchestration retry, concurrency, rate와 circuit policy |
-| `openai_dialect` | `standard` | `standard` 또는 `vllm` |
+| `openai_dialect` | `standard` | `standard`, `vllm`(chat 전용) 또는 `chatgpt`(responses 전용) |
 | `google_credential_strategy` | `None` | `api-key`, `adc`, `service-account-file` 중 explicit Google auth source |
 | `google_project`, `google_location` | `None` | Vertex AI project/location |
 | `google_service_account_file` | `None` | mounted service-account file path |
@@ -218,6 +219,7 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 | `model` | 필수 | SDK에 전달할 physical model id |
 | `capability` | `ModelCapability()` | route의 queryable model 능력 |
 | `chat_template_kwargs` | `{}` | vLLM dialect에서만 허용되는 model별 option |
+| `reasoning_effort` | `None` | `openai-responses` route의 reasoning effort (`none`~`max`); `None`이면 provider 기본값 |
 | `fallbacks` | `()` | 현재 route failure에서만 고려할 ordered logical model refs |
 | `fallback_on` | empty set | fallback edge를 열 explicit `LlmFailureClass` allowlist |
 | `cache` | disabled `LlmCachePolicy()` | route별 exact/semantic complete-response cache policy |
@@ -281,6 +283,7 @@ Profile의 `api`가 실제 SDK surface를 선택합니다.
 | `api` 값 | SDK adapter | 적용 대상 |
 |----------|-------------|-----------|
 | `openai-chat-completions` | `OpenAIChatProvider` | OpenAI, OpenRouter, vLLM 등 OpenAI-compatible endpoint |
+| `openai-responses` | `OpenAIResponsesProvider` | OpenAI Responses API (API key 또는 ChatGPT 로그인 token) |
 | `anthropic-messages` | `AnthropicMessagesProvider` | Anthropic Messages API |
 | `google-gemini-developer` | `GoogleGenerateContentProvider` | Gemini Developer API + API key |
 | `google-vertex` | `GoogleGenerateContentProvider` | Vertex AI + project/location + Google credential |
@@ -332,6 +335,134 @@ vLLM은 같은 OpenAI SDK adapter를 사용하되 `openai_dialect=vllm`과 expli
 Official OpenAI와 OpenRouter 같은 standard profile은 API key가 필요합니다. vLLM dialect는 API key를 생략할 수 있으며 adapter가 ambient OpenAI key 대신 non-secret `not-required` sentinel을 SDK에 전달합니다. OpenRouter profile에서 `base_url`을 생략하면 provider label로 endpoint를 추론하지 않고 official OpenAI endpoint가 선택되므로 OpenRouter 구성에는 base URL을 반드시 명시합니다.
 
 Anthropic Messages 요청은 `SamplingOptions.max_tokens`가 있으면 그 값을 사용하고, 없으면 adapter 기본값 `4096`을 사용합니다. 현재 profile/route별 Anthropic default-output-token field는 없습니다.
+
+### OpenAI Responses API와 ChatGPT 로그인
+
+`api=openai-responses`는 `OpenAIResponsesProvider`가 OpenAI Responses API(`/v1/responses`)를
+SSE streaming으로 호출합니다. `complete()`도 같은 stream을 끝까지 읽어 하나의 `ModelResponse`로
+합칩니다. 요청은 항상 `stream=true`, `store=false`이며 대화 history 전체를 `input`으로 보냅니다.
+`previous_response_id`와 `metadata`는 사용하지 않습니다.
+
+| 기능 | Responses 매핑 |
+| --- | --- |
+| Function tool | `tools[].type="function"`, `tool_choice`는 `auto`/`none`/`required` |
+| Structured output | `text.format.type="json_schema"`; `strict`이면 모든 object를 required-all과 `additionalProperties=false`로 변환하고, 응답은 `LlmJsonCodec`이 다시 검증 |
+| Usage | terminal event의 `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cache_write_tokens` |
+| Reasoning | route의 `reasoning_effort`가 `reasoning.effort`로 전달됨; `supports_reasoning=True`이면 `reasoning.summary="auto"`를 요청하고 summary delta를 `REASONING_DELTA`로 전달 |
+| Multimodal input | user message의 text, image(URI 또는 inline), document(inline + filename); audio와 video는 `LlmUnsupportedFeatureError` |
+
+`openai_dialect`가 접근 경로를 고릅니다.
+
+| `openai_dialect` | 인증 | 요청 차이 |
+| --- | --- | --- |
+| `standard` | `api_key` 또는 `credential_provider` | `system` role, `temperature`/`top_p` 전달 |
+| `chatgpt` | 보통 `credential_provider` (token이 만료되므로) | `system` message를 `developer` role로 전송, `temperature`/`top_p` 제거 |
+
+`chatgpt` dialect는 Sign in with ChatGPT로 받은 token으로 ChatGPT 플랜 사용량을 쓰는 경로입니다.
+`chatgpt`는 `openai-responses`에서만, `vllm`은 `openai-chat-completions`에서만 허용됩니다.
+`max_output_tokens`와 function tool은 두 dialect에서 같은 모양으로 전달됩니다.
+
+2026-11-13에 실제 ChatGPT 계정(`gpt-6.1-sol`)으로 확인한 범위입니다.
+
+| 항목 | 결과 |
+| --- | --- |
+| Text 응답과 usage | 동작 |
+| Function tool 호출과 tool 결과 왕복 | 동작 |
+| Structured output `strict=true` / `strict=false` | 둘 다 동작 |
+| `temperature`, `top_p` | HTTP 400 `Unsupported parameter`로 거절됨 |
+| `max_output_tokens`, `system` role | 받아들여짐 |
+| Reasoning summary delta | `reasoning.summary="auto"`를 보내도 delta가 오지 않음 |
+
+Quota 소진 code, HTTP 401 뒤 credential 재시도와 stream 중단은 실제 경로에서 재현하지 못했고 가짜 SSE 전송 테스트로만 검증했습니다.
+
+```python
+from spakky.agent import ModelCapability
+from spakky.plugins.llm.config import (
+    LlmConfig,
+    LlmModelRoute,
+    LlmProfile,
+    LlmProviderApi,
+    LlmReasoningEffort,
+    OpenAICompatibleDialect,
+)
+
+config = LlmConfig(
+    default_model="builder/primary",
+    profiles={
+        "chatgpt": LlmProfile(
+            provider="openai",
+            api=LlmProviderApi.OPENAI_RESPONSES,
+            openai_dialect=OpenAICompatibleDialect.CHATGPT,
+            credential_provider="chatgpt",
+        ),
+    },
+    models={
+        "builder/primary": LlmModelRoute(
+            profile="chatgpt",
+            model="gpt-6.1-sol",
+            reasoning_effort=LlmReasoningEffort.LOW,
+            capability=ModelCapability(
+                supports_tools=True,
+                supports_structured_output=True,
+            ),
+        ),
+    },
+)
+```
+
+`model` 값은 예시입니다. 로그인한 계정에서 실제로 쓸 수 있는 model ID를 넣습니다.
+
+#### Call-time credential
+
+`credential_provider`는 고정 `api_key` 대신 호출 시점에 bearer token을 돌려주는
+`ILLMCredentialProvider` Pod의 `name`입니다. `api_key`와 함께 쓸 수 없고 현재
+`openai-responses` profile에서만 허용됩니다.
+
+```python
+from typing import override
+
+from spakky.core.pod.annotations.pod import Pod
+from spakky.plugins.llm.provider import (
+    ILLMCredentialProvider,
+    LlmAccessToken,
+    LlmCredentialRequest,
+)
+
+
+@Pod()
+class ChatGptCredentialProvider(ILLMCredentialProvider):
+    @property
+    @override
+    def name(self) -> str:
+        return "chatgpt"
+
+    @override
+    async def access_token(self, credential: LlmCredentialRequest) -> LlmAccessToken:
+        # credential.request로 호출 주체를 식별하고, 만료가 가까우면 갱신한 token을 돌려줍니다.
+        # credential.rejected_token이 있으면 provider가 그 token을 401로 거절한 직후입니다.
+        return await self._tokens.current(credential)
+```
+
+Adapter는 attempt마다 `access_token()`을 한 번 호출합니다. Provider가 HTTP 401로 거절하면
+거절된 token을 `rejected_token`에 담아 한 번 더 호출하고 요청을 정확히 한 번 재시도합니다.
+두 번째도 401이면 `LlmAuthenticationError`입니다. 이미 열린 stream은 재시도하지 않습니다.
+OAuth 로그인, token 저장과 갱신은 이 plugin에 없습니다. Application이 구현합니다.
+
+#### Quota와 stream 중단
+
+| 상황 | 에러 | failure class | retryable |
+| --- | --- | --- | --- |
+| 계정·플랜 사용량 소진 (`insufficient_quota`, `subscription_sharing_usage_limit_exceeded`, `subscription_sharing_usage_unavailable`) | `LlmQuotaExhaustedError` | `quota` | `false` |
+| 일시적 요청 속도 제한 (HTTP 429, `rate_limit_exceeded`) | `LlmRateLimitError` | `rate_limit` | `true` |
+| Terminal event 없이 stream 종료 또는 stream 중 연결 끊김 | `LlmStreamInterruptedError` | `transport` | `true` |
+| Credential 거절 (HTTP 401) | `LlmAuthenticationError` | `authentication` | `false` |
+
+Quota 소진은 기다려도 풀리지 않으므로 rate limit과 다른 failure class입니다. Retry policy의
+`rate_limit`에 걸리지 않고, 필요하면 route `fallback_on`에 `quota`를 명시해 다른 model로 넘깁니다.
+`response.incomplete`는 `max_output_tokens` 사유만 `finish_reason="length"`인 성공으로 처리하고
+그 밖의 사유는 `LlmModelRefusalError`입니다.
+잘린 turn에 structured output을 요청했다면 불완전한 JSON이므로 `LlmResponseError`입니다.
+Terminal event를 받은 뒤의 연결 종료 오류는 무시합니다.
 
 ## Fail-closed routing과 확장
 

@@ -130,6 +130,9 @@ flowchart TD
   AbstractLlmError --> LlmTransportError
   AbstractLlmError --> LlmTimeoutError
   AbstractLlmError --> LlmRateLimitError
+  AbstractLlmError --> LlmQuotaExhaustedError
+  AbstractLlmError --> LlmAuthenticationError
+  LlmTransportError --> LlmStreamInterruptedError
   AbstractLlmError --> LlmConcurrencyLimitError
   AbstractLlmError --> LlmCircuitOpenError
   AbstractLlmError --> LlmResponseError
@@ -975,6 +978,7 @@ runner에 전달할 수 있습니다.
 ```python
 from spakky.plugins.llm.error import (
     AbstractLlmError,
+    LlmAuthenticationError,
     LlmCacheConfigurationError,
     LlmCapabilityError,
     LlmCircuitOpenError,
@@ -985,8 +989,10 @@ from spakky.plugins.llm.error import (
     LlmModelSelectionError,
     LlmPlatformBoundaryError,
     LlmProviderUnavailableError,
+    LlmQuotaExhaustedError,
     LlmRateLimitError,
     LlmResponseError,
+    LlmStreamInterruptedError,
     LlmStreamingDisabledError,
     LlmTimeoutError,
     LlmTransportError,
@@ -1005,6 +1011,9 @@ from spakky.plugins.llm.error import (
 | `LlmTransportError` | `llm_transport_error` | `true` | SDK가 provider endpoint에 도달하지 못했거나 재시도 가능한 상태 오류를 받음 |
 | `LlmTimeoutError` | `llm_timeout` | `true` | provider SDK 요청 timeout |
 | `LlmRateLimitError` | `llm_rate_limited` | `true` | provider 또는 local profile rate gate가 attempt를 거부 |
+| `LlmQuotaExhaustedError` | `llm_quota_exhausted` | `false` | 계정 또는 플랜 사용량이 소진되어 재시도로 풀리지 않음 |
+| `LlmAuthenticationError` | `llm_authentication_failed` | `false` | provider가 credential을 거절함 (call-time credential은 한 번 갱신 후에도 거절) |
+| `LlmStreamInterruptedError` | `llm_stream_interrupted` | `true` | terminal event 전에 provider stream이 끝남; `LlmTransportError`의 하위 타입 |
 | `LlmConcurrencyLimitError` | `llm_concurrency_limited` | `true` | profile in-flight gate의 permit/queue timeout 실패 |
 | `LlmCircuitOpenError` | `llm_circuit_open` | `true` | open/half-open circuit가 provider 전 attempt를 거부 |
 | `LlmResponseError` | `llm_response_error` | `false` | provider response, JSON, tool history, schema 또는 Google embedding vector count/dimension/truncation 검증 실패 |
@@ -1021,6 +1030,7 @@ from spakky.plugins.llm.error import (
 | `PROVIDER_UNAVAILABLE`, `STREAMING_DISABLED` | adapter 또는 stream 비가용 |
 | `TRANSPORT`, `TIMEOUT` | 연결과 deadline 실패 |
 | `RATE_LIMIT`, `CONCURRENCY`, `CIRCUIT_OPEN` | provider/local resilience gate |
+| `QUOTA`, `AUTHENTICATION` | 사용량 소진 또는 credential 거절; 재시도로 풀리지 않음 |
 | `RESPONSE`, `REFUSAL` | invalid response 또는 model refusal |
 | `CAPABILITY`, `UNSUPPORTED` | route capability/provider feature 부족 |
 | `CACHE` | cache configuration/lookup/store/result 실패 |
