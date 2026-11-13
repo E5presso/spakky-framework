@@ -23,8 +23,9 @@ Agent state/signal/evidence persistence도 base plugin 본체가 아니라
 execution을 운영에서 사용하려면 `spakky-agent`와 `spakky-sqlalchemy[agent]`를
 함께 설치하고 두 plugin을 모두 active 상태로 로드해야 합니다. 이 contribution은
 `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`,
-`SqlAlchemyAgentEvidenceRepository`와 `AgentStateTable`, `AgentSignalTable`,
-`AgentEvidenceTable`을 등록합니다. 운영용 in-memory fallback은 제공하지 않습니다.
+`SqlAlchemyAgentEvidenceRepository`, `SqlAlchemyAgentTaskStore`(`ITaskStore`)와
+`AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`,
+`AgentConversationTurnTable`을 등록합니다. 운영용 in-memory fallback은 제공하지 않습니다.
 
 ## 메인
 

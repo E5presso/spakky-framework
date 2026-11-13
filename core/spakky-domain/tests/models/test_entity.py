@@ -1,3 +1,4 @@
+from dataclasses import field
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -334,3 +335,150 @@ def test_entity_auto_update_rollback_on_validation_failure() -> None:
     assert user.age == 30, "age should be rolled back"
     assert user.updated_at == original_updated_at, "updated_at should be rolled back"
     assert user.version == original_version, "version should be rolled back"
+
+
+def test_entity_persisted_version_of_new_entity_expect_initial_version() -> None:
+    """새로 만든 엔티티의 persisted_version은 생성 시점 version과 같음을 검증한다."""
+
+    @mutable
+    class User(AbstractEntity[UUID]):
+        name: str
+
+        @classmethod
+        def next_id(cls) -> UUID:
+            return uuid4()
+
+    user = User(uid=uuid4(), name="John")
+
+    assert user.persisted_version == user.version
+
+
+def test_entity_persisted_version_after_change_expect_loaded_version_kept() -> None:
+    """저장소에서 복원한 엔티티를 변경해도 persisted_version은 복원 시점 version을 유지함을 검증한다."""
+
+    @mutable
+    class User(AbstractEntity[UUID]):
+        name: str
+
+        @classmethod
+        def next_id(cls) -> UUID:
+            return uuid4()
+
+    stored_version = uuid4()
+    user = User(uid=uuid4(), version=stored_version, name="John")
+
+    user.name = "Jane"
+
+    assert user.version != stored_version
+    assert user.persisted_version == stored_version
+
+
+def test_entity_mark_persisted_expect_persisted_version_advanced_without_bump() -> None:
+    """mark_persisted가 persisted_version을 현재 version으로 옮기고 version·updated_at은 건드리지 않음을 검증한다."""
+
+    @mutable
+    class User(AbstractEntity[UUID]):
+        name: str
+
+        @classmethod
+        def next_id(cls) -> UUID:
+            return uuid4()
+
+    user = User(uid=uuid4(), name="John")
+    user.name = "Jane"
+    changed_version = user.version
+    changed_updated_at = user.updated_at
+
+    user.mark_persisted()
+
+    assert user.persisted_version == changed_version
+    assert user.version == changed_version
+    assert user.updated_at == changed_updated_at
+
+
+def test_entity_stored_version_tracking_expect_equality_and_repr_unaffected() -> None:
+    """저장 version 추적 상태가 달라도 동등성·해시·repr이 영향받지 않음을 검증한다."""
+
+    @mutable
+    class Member(AbstractEntity[UUID]):
+        name: str
+
+        @classmethod
+        def next_id(cls) -> UUID:
+            return uuid4()
+
+    uid = uuid4()
+    version = uuid4()
+    untouched = Member(uid=uid, version=version, name="John")
+    changed = Member(uid=uid, version=version, name="John")
+    changed.name = "Jane"
+    saved = Member(uid=uid, version=version, name="John")
+    saved.name = "Jane"
+    saved.mark_persisted()
+
+    assert untouched == changed == saved
+    assert hash(untouched) == hash(changed) == hash(saved)
+    assert "persisted_version" not in repr(saved)
+
+
+def test_entity_version_assigned_directly_expect_persisted_version_kept() -> None:
+    """version을 직접 대입해도 persisted_version은 저장소에서 복원한 version을 유지함을 검증한다."""
+
+    @mutable
+    class User(AbstractEntity[UUID]):
+        name: str
+
+        @classmethod
+        def next_id(cls) -> UUID:
+            return uuid4()
+
+    stored_version = uuid4()
+    user = User(uid=uuid4(), version=stored_version, name="John")
+
+    user.version = uuid4()
+    user.name = "Jane"
+
+    assert user.persisted_version == stored_version
+
+
+def test_entity_change_after_mark_persisted_expect_marked_version_kept() -> None:
+    """mark_persisted 이후의 변경은 표시 시점의 version을 persisted_version으로 유지함을 검증한다."""
+
+    @mutable
+    class User(AbstractEntity[UUID]):
+        name: str
+
+        @classmethod
+        def next_id(cls) -> UUID:
+            return uuid4()
+
+    user = User(uid=uuid4(), name="John")
+    user.name = "Jane"
+    user.mark_persisted()
+    saved_version = user.version
+
+    user.name = "Joan"
+
+    assert user.version != saved_version
+    assert user.persisted_version == saved_version
+
+
+def test_entity_with_own_post_init_expect_persisted_version_follows_version() -> None:
+    """__post_init__을 직접 정의해 초기화 훅을 거치지 않는 엔티티도 persisted_version을 제공함을 검증한다."""
+
+    @mutable
+    class Membership(AbstractEntity[tuple[UUID, UUID]]):
+        user_id: UUID
+        group_id: UUID
+        uid: tuple[UUID, UUID] = field(init=False)
+
+        def __post_init__(self) -> None:
+            self.uid = (self.user_id, self.group_id)
+
+        @classmethod
+        def next_id(cls) -> tuple[UUID, UUID]:
+            return (uuid4(), uuid4())
+
+    membership = Membership(user_id=uuid4(), group_id=uuid4())
+
+    assert membership.persisted_version == membership.version

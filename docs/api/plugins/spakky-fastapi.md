@@ -54,6 +54,10 @@ connection close로 처리됩니다.
     options:
       show_root_heading: false
 
+::: spakky.plugins.fastapi.routes.sse
+    options:
+      show_root_heading: false
+
 ## 미들웨어
 
 ::: spakky.plugins.fastapi.middlewares.error_handling

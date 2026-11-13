@@ -19,6 +19,7 @@ pip install spakky[fastapi]
 
 - **자동 route 등록**: `@ApiController` 클래스에서 route를 등록합니다.
 - **모든 HTTP 메서드**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, WebSocket
+- **Server-Sent Events**: generator 메서드를 `@sse`로 `text/event-stream` 응답으로 등록(FastAPI `fastapi.sse` 사용)
 - **OpenAPI 통합**: tag와 documentation 자동 설정
 - **에러 처리 middleware**: debug mode를 포함한 built-in exception handling
 - **Context 관리**: request-scoped 의존성 주입 지원
@@ -86,6 +87,38 @@ class MyController:
             data = await websocket.receive_text()
             await websocket.send_text(f"Echo: {data}")
 ```
+
+### Server-Sent Events
+
+`@sse`는 컨트롤러의 (async) generator 메서드를 `text/event-stream` 응답으로 등록합니다.
+FastAPI의 `fastapi.sse`를 그대로 사용하므로 keep-alive comment와 연결 종료 시 generator 취소는
+FastAPI가 처리합니다. 기본 HTTP 메서드는 GET이며 `methods`로 바꿀 수 있습니다.
+
+```python
+from collections.abc import AsyncIterator
+
+from fastapi.sse import ServerSentEvent
+from spakky.plugins.fastapi.routes import sse
+from spakky.plugins.fastapi.routes.route import HTTPMethod
+
+
+@ApiController("/jobs")
+class JobController:
+    @sse("/{job_id}/events")
+    async def events(self, job_id: str) -> AsyncIterator[ServerSentEvent]:
+        yield ServerSentEvent(data={"job": job_id}, event="started", id="1")
+        yield ServerSentEvent(data={"job": job_id}, event="finished", id="2")
+
+    @sse("/search", methods=[HTTPMethod.POST])
+    async def search(self, query: SearchRequest) -> AsyncIterator[SearchHit]:
+        for hit in find(query):
+            yield hit  # JSON으로 직렬화되어 data: 이벤트가 됩니다
+```
+
+컨트롤러 resolve, context 초기화, `AuthContext` seeding은 일반 route와 같고 stream이 시작되기
+전에 실행됩니다. 보호된 SSE 메서드에 credential이 없으면 stream 대신 `401`이 응답됩니다.
+generator가 아닌 메서드에 `@sse`를 붙이면 `SseEndpointNotGeneratorError`가 발생합니다.
+자세한 동작은 [FastAPI 심화 가이드](../../docs/guides/fastapi-advanced.md#sse)를 참고하세요.
 
 ### FastAPI 앱 접근
 
@@ -180,6 +213,7 @@ FastAPI wrapper가 Spakky request context를 clear한 뒤 credential 전달체�
 | `ApiController` | prefix와 tag를 가진 REST API controller용 stereotype |
 | `get`, `post`, `put`, etc. | HTTP method용 route decorator |
 | `websocket` | WebSocket endpoint decorator |
+| `sse` | generator 메서드를 Server-Sent Events stream으로 등록하는 decorator |
 | `ErrorHandlingMiddleware` | built-in exception handling middleware |
 | `TracingMiddleware` | trace context propagation middleware (`spakky-tracing` 필수 의존) |
 | `FastAPIConfig` | 플러그인 제공 기본 FastAPI 앱 설정 |
