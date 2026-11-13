@@ -445,16 +445,14 @@ class OAuthClient:
                 expires_in = float(expires_in)
             except ValueError as error:
                 raise OAuthTokenResponseError from error
-        if (
-            isinstance(expires_in, bool)
-            or not isinstance(expires_in, int | float)
-            or not isfinite(expires_in)
-            or expires_in <= 0
-        ):
+        if isinstance(expires_in, bool) or not isinstance(expires_in, int | float):
             raise OAuthTokenResponseError
         try:
+            if not isfinite(expires_in) or expires_in <= 0:
+                raise OAuthTokenResponseError
             return self.__clock.now() + timedelta(seconds=expires_in)
         except OverflowError as error:
+            # Integers beyond float range and lifetimes beyond datetime range.
             raise OAuthTokenResponseError from error
 
     def _scopes(

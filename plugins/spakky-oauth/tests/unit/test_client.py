@@ -367,6 +367,7 @@ async def test_complete_authorization_with_unknown_state_expect_state_error(
         (_token_reply(expires_in="soon"), OAuthTokenResponseError),
         (_token_reply(expires_in=-5), OAuthTokenResponseError),
         (_token_reply(expires_in=1e300), OAuthTokenResponseError),
+        (_token_reply(expires_in=10**400), OAuthTokenResponseError),
         (
             httpx.Response(
                 200,
