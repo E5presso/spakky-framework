@@ -1,3 +1,10 @@
+## v11.1.0 (2026-11-13)
+
+### Feat
+
+- **oauth**: OAuth 2.0 client 플러그인 spakky-oauth를 추가합니다 (#554)
+- **llm**: OpenAI Responses 공급자와 호출 시점 자격 증명 포트를 추가합니다 (#553)
+
 ## v11.0.0 (2026-11-09)
 
 ### BREAKING CHANGE
