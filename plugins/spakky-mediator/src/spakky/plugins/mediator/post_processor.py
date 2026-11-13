@@ -1,6 +1,5 @@
 """Event handler registration post-processor."""
 
-from inspect import getmembers, iscoroutinefunction, ismethod
 from logging import getLogger
 from typing import override
 
@@ -8,13 +7,13 @@ from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.aware.container_aware import IContainerAware
 from spakky.core.pod.interfaces.container import IContainer
 from spakky.core.pod.interfaces.post_processor import IPostProcessor
-from spakky.domain.models.event import AbstractDomainEvent, AbstractEvent
+from spakky.domain.models.event import AbstractDomainEvent
 
 from spakky.event.event_consumer import (
     IAsyncDomainEventConsumer,
     IDomainEventConsumer,
 )
-from spakky.event.stereotype.event_handler import EventHandler, EventRoute
+from spakky.event.stereotype.event_handler import EventHandler
 
 logger = getLogger(__name__)
 
@@ -41,16 +40,20 @@ class EventHandlerRegistrationPostProcessor(IPostProcessor, IContainerAware):
         sync_consumer = self.__container.get(IDomainEventConsumer)
         async_consumer = self.__container.get(IAsyncDomainEventConsumer)
 
-        for name, method in getmembers(pod, predicate=ismethod):
-            route = EventRoute[AbstractEvent].get_or_none(method)
-            if route is None:
-                continue
+        # Routes are read from the class: an advised Pod is an AOP proxy whose
+        # attributes are not bound methods, so scanning the instance would skip it.
+        for declared in EventHandler.get(pod_type).routes():
+            route = declared.route
+            name = declared.method_name
             if not issubclass(route.event_type, AbstractDomainEvent):
                 continue
+            method = getattr(  # event handler method lookup
+                pod, name
+            )  # 프레임워크 내부: 선언된 이름으로 (프록시된) 처리기 메서드를 찾는다
 
             event_type = route.event_type
 
-            if iscoroutinefunction(method):
+            if declared.asynchronous:
                 async_consumer.register(event_type, method)
                 logger.debug(
                     f"Registered async handler {pod_type.__name__}.{name} "

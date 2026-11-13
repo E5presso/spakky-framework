@@ -125,3 +125,49 @@ class EventDeferredError(AbstractSpakkyEventError):
             raise InvalidEventDeferralError()
         self.retry_after = retry_after
         super().__init__()
+
+
+class AbstractNonRetryableEventError(AbstractSpakkyEventError, ABC):
+    """Base for handler failures that another delivery attempt cannot fix.
+
+    A consumer skips the remaining retry attempts for such a failure and moves
+    the message to the subscriber's dead-letter destination.
+    """
+
+    ...
+
+
+class InvalidDeliveryHeaderError(AbstractSpakkyEventError):
+    """Raised when delivery or dead-letter headers cannot be decoded."""
+
+    message = "Delivery headers are missing or malformed"
+
+
+class EventDeliveryContextUnavailableError(AbstractSpakkyEventError):
+    """Raised when delivery metadata is read outside a consumer-driven handler call."""
+
+    message = "No integration event delivery is in progress"
+
+
+class SubscriptionNotFoundError(AbstractSpakkyEventError):
+    """Raised when no handler is registered for a subscriber and event type."""
+
+    message = "No subscription is registered for this subscriber and event"
+    subscriber: str | None
+    event_type: type
+
+    def __init__(self, subscriber: str | None, event_type: type) -> None:
+        self.subscriber = subscriber
+        self.event_type = event_type
+        super().__init__()
+
+
+class EventHandlerNotRegisteredError(AbstractNonRetryableEventError):
+    """Recorded when a delivery names a handler its subscription no longer has.
+
+    A retry or redrive carries the names of the handlers still to run. If one
+    was renamed or removed, completing the delivery would discard the message
+    without running anything, so it is kept as a failure instead.
+    """
+
+    message = "Pending handler is not registered for this subscription"

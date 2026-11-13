@@ -1,42 +1,66 @@
-"""Tests for RabbitMQ consumer error handling.
+"""Unit tests for the synchronous RabbitMQ consumer.
 
-This module tests the edge cases in RabbitMQ event consumers,
-particularly the InvalidMessageError conditions.
+The broker is replaced by mocks; every test drives the consumer through the
+callback it registers with `basic_consume`, exactly as pika would.
 """
 
-from os import environ
-from typing import Any, override
-from collections.abc import Generator
-from unittest.mock import AsyncMock, MagicMock
+from collections.abc import Callable
+from threading import Event
+from typing import override
+from unittest.mock import MagicMock, patch
 
 import pytest
+from pika.exceptions import NackError, UnroutableError
+from pika.spec import BasicProperties
 from spakky.auth import (
-    AuthRequirementDeniedError,
     AuthorizationDecision,
     AuthorizationReasonCode,
+    AuthRequirementDeniedError,
+    AuthVerificationProviderUnavailableError,
 )
+from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
-from spakky.event.error import InvalidMessageError
-
-from spakky.plugins.rabbitmq.common.config import (
-    RabbitMQAuthFailureAction,
-    RabbitMQConnectionConfig,
+from spakky.event.delivery import (
+    DeadLetter,
+    DeadLetterHeader,
+    DeliveryHeader,
+    DeliveryState,
+    EventDeliveryContext,
+    HandlerFailure,
 )
-from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
-from spakky.plugins.rabbitmq.event.consumer import (
-    AsyncRabbitMQEventConsumer,
-    RabbitMQEventConsumer,
+from spakky.event.error import (
+    AbstractNonRetryableEventError,
+    EventDeferredError,
+    InvalidMessageError,
+    SubscriptionNotFoundError,
 )
+from spakky.event.redrive import RedriveResult
 from spakky.tracing.context import TraceContext
 from spakky.tracing.w3c_propagator import W3CTracePropagator
 
+from spakky.plugins.rabbitmq.auth import current_rabbitmq_message_headers
+from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
+from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
+from spakky.plugins.rabbitmq.error import SubscriberExchangeRequiredError
+from spakky.plugins.rabbitmq.event.consumer import RabbitMQEventConsumer
 
+CONNECTION = "spakky.plugins.rabbitmq.event.consumer.BlockingConnection"
+BODY = b'{"data": "test"}'
+SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+SAMPLE_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+SAMPLE_SPAN_ID = "b7ad6b7169203331"
+
+type MessageCallback = Callable[[MagicMock, MagicMock, BasicProperties, bytes], None]
+
+
+@immutable
 class SampleIntegrationEvent(AbstractIntegrationEvent):
     """Sample integration event for testing."""
 
     data: str
 
 
+@immutable
 class RenamedIntegrationEvent(AbstractIntegrationEvent):
     """Integration event with custom outbound routing identity."""
 
@@ -48,979 +72,978 @@ class RenamedIntegrationEvent(AbstractIntegrationEvent):
         return "external.renamed.v1"
 
 
-@pytest.fixture(name="config")
-def config_fixture() -> Generator[RabbitMQConnectionConfig, Any, None]:
-    """Create a test RabbitMQ configuration from environment variables."""
-    env_vars = {
-        f"{RABBITMQ_CONFIG_ENV_PREFIX}USE_SSL": "false",
-        f"{RABBITMQ_CONFIG_ENV_PREFIX}HOST": "localhost",
-        f"{RABBITMQ_CONFIG_ENV_PREFIX}PORT": "5672",
-        f"{RABBITMQ_CONFIG_ENV_PREFIX}USER": "guest",
-        f"{RABBITMQ_CONFIG_ENV_PREFIX}PASSWORD": "guest",
-        f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME": "test_exchange",
+class PermanentFailureError(AbstractNonRetryableEventError):
+    """Handler failure another attempt cannot fix."""
+
+    message = "permanent failure"
+
+
+class Broker:
+    """Mocked connection and channels a started consumer talks to."""
+
+    connection: MagicMock
+    channel: MagicMock
+    publish_channel: MagicMock
+
+    def __init__(self) -> None:
+        self.connection = MagicMock()
+        self.channel = MagicMock()
+        self.publish_channel = MagicMock()
+        self.connection.channel.side_effect = [self.channel, self.publish_channel]
+
+    def callback(self, queue: str) -> MessageCallback:
+        """Return the callback the consumer registered for a queue."""
+        for call in self.channel.basic_consume.call_args_list:
+            if call.args[0] == queue:
+                return call.args[1]
+        raise LookupError(queue)
+
+    def deliver(
+        self,
+        queue: str,
+        *,
+        body: bytes = BODY,
+        headers: dict[str, object] | None = None,
+        delivery_tag: int = 7,
+    ) -> None:
+        """Hand one message to the consumer as pika would."""
+        method_frame = MagicMock()
+        method_frame.consumer_tag = "ctag"
+        method_frame.delivery_tag = delivery_tag
+        self.callback(queue)(
+            self.channel, method_frame, BasicProperties(headers=headers), body
+        )
+
+    def published(self) -> tuple[str, bytes, BasicProperties, dict[str, str]]:
+        """Return queue, body, properties and headers of the single forwarded copy."""
+        call = self.publish_channel.basic_publish.call_args
+        assert self.publish_channel.basic_publish.call_count == 1
+        assert call.args[0] == ""
+        assert call.kwargs["mandatory"] is True
+        properties: BasicProperties = call.kwargs["properties"]
+        return (
+            call.args[1],
+            call.args[2],
+            properties,
+            RabbitMQEventConsumer._to_string_headers(properties.headers),
+        )
+
+
+def make_config(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    exchange: str | None = "test_exchange",
+    **settings: str,
+) -> RabbitMQConnectionConfig:
+    """Build a config from environment variables, as an application would."""
+    values = {
+        "USE_SSL": "false",
+        "HOST": "localhost",
+        "PORT": "5672",
+        "USER": "guest",
+        "PASSWORD": "guest",
+        **settings,
     }
-    original = {k: environ.get(k) for k in env_vars}
-    for key, value in env_vars.items():
-        environ[key] = value
-    try:
-        yield RabbitMQConnectionConfig()
-    finally:
-        for key, value in original.items():
-            if value is None:
-                environ.pop(key, None)
-            else:
-                environ[key] = value
+    monkeypatch.delenv(f"{RABBITMQ_CONFIG_ENV_PREFIX}EXCHANGE_NAME", raising=False)
+    if exchange is not None:
+        values["EXCHANGE_NAME"] = exchange
+    for key, value in values.items():
+        monkeypatch.setenv(f"{RABBITMQ_CONFIG_ENV_PREFIX}{key}", value)
+    return RabbitMQConnectionConfig()
 
 
-def test_sync_consumer_route_event_handler_missing_consumer_tag_expect_error(
-    config: RabbitMQConnectionConfig,
+def start(consumer: RabbitMQEventConsumer) -> Broker:
+    """Initialize the consumer against a mocked broker."""
+    broker = Broker()
+    consumer.set_stop_event(Event())
+    with patch(CONNECTION, return_value=broker.connection):
+        consumer.initialize()
+    return broker
+
+
+def test_sync_initialize_unnamed_blocking_expect_event_queue_bound_with_prefetch(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """consumer_tag가 None일 때 InvalidMessageError가 발생함을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
+    """이름 없는 구독자는 이벤트 이름 큐를 쓰고 BLOCKING 모드에서 prefetch 1을 건다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
     consumer.register(SampleIntegrationEvent, MagicMock())
 
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = None
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    body = b'{"data": "test"}'
+    broker = start(consumer)
 
-    with pytest.raises(InvalidMessageError):
-        consumer._route_event_handler(channel, method_frame, properties, body)
+    broker.publish_channel.confirm_delivery.assert_called_once_with()
+    broker.channel.basic_qos.assert_called_once_with(prefetch_count=1)
+    broker.channel.exchange_declare.assert_called_once_with("test_exchange")
+    assert [call.args[0] for call in broker.channel.queue_declare.call_args_list] == [
+        "SampleIntegrationEvent",
+        "SampleIntegrationEvent.dlq",
+    ]
+    broker.channel.queue_bind.assert_called_once_with(
+        "SampleIntegrationEvent", "test_exchange", "SampleIntegrationEvent"
+    )
+    assert broker.channel.basic_consume.call_args.args[0] == "SampleIntegrationEvent"
 
 
-def test_sync_consumer_route_event_handler_missing_delivery_tag_expect_error(
-    config: RabbitMQConnectionConfig,
+def test_sync_initialize_named_delayed_expect_own_queue_and_wait_queue(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """delivery_tag가 None일 때 InvalidMessageError가 발생함을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
+    """이름 있는 구독자는 자신의 큐·dlq·대기 큐를 갖고 대기 큐는 자기 큐로만 되돌린다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, RETRY__MODE="delayed"))
+    consumer.register(RenamedIntegrationEvent, MagicMock(), subscriber="billing")
+
+    broker = start(consumer)
+
+    broker.channel.basic_qos.assert_not_called()
+    declared = {
+        call.args[0]: call.kwargs
+        for call in broker.channel.queue_declare.call_args_list
+    }
+    assert declared == {
+        "external.renamed.v1.billing": {"durable": True},
+        "external.renamed.v1.billing.dlq": {"durable": True},
+        "external.renamed.v1.billing.retry": {
+            "durable": True,
+            "arguments": {
+                "x-dead-letter-exchange": "",
+                "x-dead-letter-routing-key": "external.renamed.v1.billing",
+            },
+        },
+    }
+    broker.channel.queue_bind.assert_called_once_with(
+        "external.renamed.v1.billing", "test_exchange", "external.renamed.v1"
+    )
+
+
+def test_sync_initialize_without_exchange_expect_no_exchange_or_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """exchange가 없으면 기본 exchange에 맡기고 선언·바인딩을 하지 않는다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, exchange=None))
     consumer.register(SampleIntegrationEvent, MagicMock())
 
-    channel = MagicMock()
+    broker = start(consumer)
+
+    broker.channel.exchange_declare.assert_not_called()
+    broker.channel.queue_bind.assert_not_called()
+    assert broker.channel.basic_consume.call_count == 1
+
+
+def test_sync_register_named_subscriber_without_exchange_expect_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """exchange 없이 이름 있는 구독자를 등록하면 전용 에러로 실패한다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, exchange=None))
+
+    with pytest.raises(SubscriberExchangeRequiredError) as raised:
+        consumer.register(SampleIntegrationEvent, MagicMock(), subscriber="billing")
+
+    assert raised.value.subscriber == "billing"
+    assert raised.value.event_type is SampleIntegrationEvent
+
+
+@pytest.mark.parametrize(("consumer_tag", "delivery_tag"), [(None, 1), ("ctag", None)])
+def test_sync_message_without_tags_expect_invalid_message_error(
+    monkeypatch: pytest.MonkeyPatch,
+    consumer_tag: str | None,
+    delivery_tag: int | None,
+) -> None:
+    """consumer tag나 delivery tag가 없는 메시지는 InvalidMessageError로 거부한다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(SampleIntegrationEvent, MagicMock())
+    broker = start(consumer)
     method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = None
-    properties = MagicMock()
-    body = b'{"data": "test"}'
+    method_frame.consumer_tag = consumer_tag
+    method_frame.delivery_tag = delivery_tag
 
     with pytest.raises(InvalidMessageError):
-        consumer._route_event_handler(channel, method_frame, properties, body)
+        broker.callback("SampleIntegrationEvent")(
+            broker.channel, method_frame, BasicProperties(), BODY
+        )
 
 
-@pytest.mark.asyncio
-async def test_async_consumer_route_event_handler_missing_consumer_tag_expect_error(
-    config: RabbitMQConnectionConfig,
+def test_sync_message_all_handlers_succeed_expect_ack(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """비동기 consumer에서 consumer_tag가 None일 때 InvalidMessageError가 발생함을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.register(SampleIntegrationEvent, AsyncMock())
+    """모든 핸들러가 성공하면 메시지를 ack한다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    first, second = MagicMock(), MagicMock()
+    consumer.register(SampleIntegrationEvent, first)
+    consumer.register(SampleIntegrationEvent, second)
+    broker = start(consumer)
 
-    message = AsyncMock()
-    message.consumer_tag = None
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
+    broker.deliver("SampleIntegrationEvent")
 
-    with pytest.raises(InvalidMessageError):
-        await consumer._route_event_handler(message)
+    assert first.call_args.args[0].data == "test"
+    second.assert_called_once()
+    broker.channel.basic_ack.assert_called_once_with(7)
+    broker.publish_channel.basic_publish.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_async_consumer_route_event_handler_missing_delivery_tag_expect_error(
-    config: RabbitMQConnectionConfig,
+def test_sync_message_headers_expect_decoded_strings_visible_to_handler(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """비동기 consumer에서 delivery_tag가 None일 때 InvalidMessageError가 발생함을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.register(SampleIntegrationEvent, AsyncMock())
+    """bytes 헤더는 문자열로 풀리고 문자열이 아닌 값은 빠진 채 핸들러에 보인다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    seen: list[dict[str, str]] = []
+    consumer.register(
+        SampleIntegrationEvent,
+        lambda event: seen.append(dict(current_rabbitmq_message_headers())),
+    )
+    broker = start(consumer)
 
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = None
-    message.body = b'{"data": "test"}'
+    broker.deliver(
+        "SampleIntegrationEvent", headers={"text": "a", "raw": b"b", "count": 3}
+    )
 
-    with pytest.raises(InvalidMessageError):
-        await consumer._route_event_handler(message)
+    assert seen == [{"text": "a", "raw": "b"}]
+    assert current_rabbitmq_message_headers() == {}
 
 
-@pytest.mark.asyncio
-async def test_async_consumer_route_event_handler_success_expect_ack(
-    config: RabbitMQConnectionConfig,
+def test_sync_handler_failure_exhausted_expect_other_handler_runs_and_dead_letter(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """비동기 consumer가 메시지를 성공적으로 처리하면 ack를 호출함을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    handler = AsyncMock()
-    consumer.register(SampleIntegrationEvent, handler)
+    """한 핸들러가 실패해도 나머지는 실행되고, 소진된 메시지는 메타데이터와 함께 dlq로 간다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    failing = MagicMock(side_effect=RuntimeError("boom"))
+    healthy = MagicMock()
+    consumer.register(
+        SampleIntegrationEvent, failing, subscriber="billing", handler_name="failing"
+    )
+    consumer.register(
+        SampleIntegrationEvent, healthy, subscriber="billing", handler_name="healthy"
+    )
+    broker = start(consumer)
 
-    # Set up the type_lookup to map consumer_tag to event type
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+    broker.deliver("SampleIntegrationEvent.billing", headers={"traceparent": "t"})
 
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
+    healthy.assert_called_once()
+    queue, body, properties, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.billing.dlq"
+    assert body == BODY
+    assert properties.delivery_mode == 2
+    assert properties.expiration is None
+    assert headers["traceparent"] == "t"
+    dead_letter = DeadLetter.from_headers(headers)
+    assert dead_letter.event_name == "SampleIntegrationEvent"
+    assert dead_letter.subscriber == "billing"
+    assert dead_letter.attempts == 1
+    assert dead_letter.failures == (
+        HandlerFailure(
+            handler="failing",
+            exception_type="RuntimeError",
+            exception_message="boom",
+            retryable=True,
+        ),
+    )
+    broker.channel.basic_ack.assert_called_once_with(7)
 
-    await consumer._route_event_handler(message)
 
-    handler.assert_awaited_once()
-    message.ack.assert_awaited_once()
-
-
-def test_sync_consumer_route_event_handler_success_expect_ack(
-    config: RabbitMQConnectionConfig,
+@pytest.mark.parametrize(
+    "error", [UnroutableError([]), NackError([])], ids=["returned", "nacked"]
+)
+def test_sync_dead_letter_not_confirmed_expect_original_requeued(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    """동기 consumer가 메시지를 성공적으로 처리하면 ack를 호출함을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
+    """브로커가 dlq 사본을 확인하지 않으면 원본을 ack하지 않고 되돌린다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(SampleIntegrationEvent, MagicMock(side_effect=RuntimeError("x")))
+    broker = start(consumer)
+    broker.publish_channel.basic_publish.side_effect = error
+
+    broker.deliver("SampleIntegrationEvent")
+
+    broker.channel.basic_ack.assert_not_called()
+    broker.channel.basic_nack.assert_called_once_with(7, requeue=True)
+
+
+def test_sync_malformed_payload_expect_dead_letter_without_handler_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """역직렬화할 수 없는 payload는 재시도 없이 모든 핸들러를 실패로 기록해 dlq로 보낸다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, RETRY__MAX_ATTEMPTS="5"))
     handler = MagicMock()
-    consumer.register(SampleIntegrationEvent, handler)
+    consumer.register(SampleIntegrationEvent, handler, handler_name="only")
+    broker = start(consumer)
 
-    # Set up the type_lookup to map consumer_tag to event type
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {}
-    body = b'{"data": "test"}'
-
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    handler.assert_called_once()
-    channel.basic_ack.assert_called_once_with(123)
-
-
-def test_sync_consumer_malformed_payload_default_ack_expect_handler_not_called(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """Malformed payload는 기본 poison 정책에 따라 ack/drop되고 handler를 호출하지 않는다."""
-    consumer = RabbitMQEventConsumer(config)
-    handler = MagicMock()
-    consumer.register(SampleIntegrationEvent, handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {}
-
-    consumer._route_event_handler(channel, method_frame, properties, b'{"data":')
+    broker.deliver("SampleIntegrationEvent", body=b"not json")
 
     handler.assert_not_called()
-    channel.basic_ack.assert_called_once_with(123)
-    channel.basic_nack.assert_not_called()
+    queue, body, properties, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.dlq"
+    assert body == b"not json"
+    dead_letter = DeadLetter.from_headers(headers)
+    assert dead_letter.subscriber is None
+    assert dead_letter.attempts == 1
+    assert [failure.handler for failure in dead_letter.failures] == ["only"]
+    assert dead_letter.failures[0].exception_type == "ValidationError"
+    assert dead_letter.failures[0].retryable is False
+    broker.channel.basic_ack.assert_called_once_with(7)
 
 
-def test_sync_consumer_register_multiple_handlers_expect_all_called(
-    config: RabbitMQConnectionConfig,
+def test_sync_invalid_delivery_headers_expect_dead_letter(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """동일 이벤트에 복수 핸들러 등록 시 모두 호출됨을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-    handler1 = MagicMock()
-    handler2 = MagicMock()
-    consumer.register(SampleIntegrationEvent, handler1)
-    consumer.register(SampleIntegrationEvent, handler2)
-
-    assert len(consumer.handlers[SampleIntegrationEvent]) == 2
-
-    # Set up the type_lookup to map consumer_tag to event type
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {}
-    body = b'{"data": "test"}'
-
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    handler1.assert_called_once()
-    handler2.assert_called_once()
-    channel.basic_ack.assert_called_once_with(123)
-
-
-def test_sync_consumer_auth_challenge_default_ack_expect_handler_not_retried(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """CHALLENGE auth failure는 기본적으로 ack되어 poison-loop를 피한다."""
-    consumer = RabbitMQEventConsumer(config)
-
-    def handler(event: SampleIntegrationEvent) -> None:
-        raise AuthRequirementDeniedError(
-            AuthorizationDecision.challenge(AuthorizationReasonCode.SNAPSHOT_MISSING)
-        )
-
+    """재시도 상태 헤더를 읽을 수 없는 메시지는 처리하지 않고 dlq로 보낸다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    handler = MagicMock()
     consumer.register(SampleIntegrationEvent, handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
+    broker = start(consumer)
 
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {}
-    body = b'{"data": "test"}'
-
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    channel.basic_ack.assert_called_once_with(123)
-    channel.basic_nack.assert_not_called()
-
-
-def test_sync_consumer_auth_error_default_nack_requeue_expect_retry(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """ERROR auth failure는 기본적으로 nack requeue로 retryable transport 정책을 따른다."""
-    consumer = RabbitMQEventConsumer(config)
-
-    def handler(event: SampleIntegrationEvent) -> None:
-        raise AuthRequirementDeniedError(
-            AuthorizationDecision.error(
-                AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
-            )
-        )
-
-    consumer.register(SampleIntegrationEvent, handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {}
-    body = b'{"data": "test"}'
-
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    channel.basic_ack.assert_not_called()
-    channel.basic_nack.assert_called_once_with(123, requeue=True)
-
-
-def test_sync_consumer_auth_deny_configured_nack_drop_expect_drop(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """DENY auth failure는 설정된 nack-drop 정책을 적용한다."""
-    consumer = RabbitMQEventConsumer(config)
-    consumer._auth_deny_action = RabbitMQAuthFailureAction.NACK_DROP
-    channel = MagicMock()
-
-    consumer._handle_auth_failure(
-        channel,
-        123,
-        AuthRequirementDeniedError(
-            AuthorizationDecision.deny(AuthorizationReasonCode.POLICY_DENIED)
-        ),
+    broker.deliver(
+        "SampleIntegrationEvent", headers={DeliveryHeader.ATTEMPT.value: "many"}
     )
 
-    channel.basic_ack.assert_not_called()
-    channel.basic_nack.assert_called_once_with(123, requeue=False)
+    handler.assert_not_called()
+    queue, _, _, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.dlq"
+    dead_letter = DeadLetter.from_headers(headers)
+    assert dead_letter.failures[0].exception_type == "InvalidDeliveryHeaderError"
+    assert dead_letter.failures[0].retryable is False
 
 
-def test_sync_consumer_auth_decision_none_uses_error_policy(
-    config: RabbitMQConnectionConfig,
+def test_sync_non_retryable_failure_expect_dead_letter_on_first_attempt(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """decision 없는 auth failure는 ERROR 정책으로 처리한다."""
-    consumer = RabbitMQEventConsumer(config)
-
-    action = consumer._auth_failure_action(AuthRequirementDeniedError())
-
-    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
-
-
-def test_sync_consumer_auth_allow_decision_uses_error_policy(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """ALLOW decision이 예외로 들어온 불가능 상태는 ERROR 정책으로 처리한다."""
-    consumer = RabbitMQEventConsumer(config)
-
-    action = consumer._auth_failure_action(
-        AuthRequirementDeniedError(AuthorizationDecision.allow())
+    """재시도해도 고칠 수 없는 실패는 남은 시도를 건너뛰고 dlq로 간다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, RETRY__MAX_ATTEMPTS="3"))
+    consumer.register(
+        SampleIntegrationEvent, MagicMock(side_effect=PermanentFailureError())
     )
+    broker = start(consumer)
 
-    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
+    broker.deliver("SampleIntegrationEvent")
+
+    broker.connection.call_later.assert_not_called()
+    _, _, _, headers = broker.published()
+    dead_letter = DeadLetter.from_headers(headers)
+    assert dead_letter.attempts == 1
+    assert dead_letter.failures[0].retryable is False
 
 
-@pytest.mark.asyncio
-async def test_async_consumer_register_multiple_handlers_expect_all_called(
-    config: RabbitMQConnectionConfig,
+def test_sync_blocking_retry_expect_unacked_wait_then_only_failed_handler_reruns(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """비동기 consumer에서 동일 이벤트에 복수 핸들러 등록 시 모두 호출됨을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    handler1 = AsyncMock()
-    handler2 = AsyncMock()
-    consumer.register(SampleIntegrationEvent, handler1)
-    consumer.register(SampleIntegrationEvent, handler2)
-
-    assert len(consumer.handlers[SampleIntegrationEvent]) == 2
-
-    # Set up the type_lookup to map consumer_tag to event type
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-
-    await consumer._route_event_handler(message)
-
-    handler1.assert_awaited_once()
-    handler2.assert_awaited_once()
-    message.ack.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_malformed_payload_default_ack_expect_handler_not_called(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 malformed payload도 ack/drop되어 poison-loop를 만들지 않는다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    handler = AsyncMock()
-    consumer.register(SampleIntegrationEvent, handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data":'
-    message.headers = {}
-
-    await consumer._route_event_handler(message)
-
-    handler.assert_not_awaited()
-    message.ack.assert_awaited_once()
-    message.nack.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_auth_challenge_default_ack_expect_handler_not_retried(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 CHALLENGE auth failure는 기본적으로 ack되어 poison-loop를 피한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-
-    async def handler(event: SampleIntegrationEvent) -> None:
-        raise AuthRequirementDeniedError(
-            AuthorizationDecision.challenge(AuthorizationReasonCode.SNAPSHOT_INVALID)
-        )
-
-    consumer.register(SampleIntegrationEvent, handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-    message.headers = {}
-
-    await consumer._route_event_handler(message)
-
-    message.ack.assert_awaited_once()
-    message.nack.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_auth_error_default_nack_requeue_expect_retry(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 ERROR auth failure는 nack requeue로 retryable transport 정책을 따른다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-
-    async def handler(event: SampleIntegrationEvent) -> None:
-        raise AuthRequirementDeniedError(
-            AuthorizationDecision.error(
-                AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
-            )
-        )
-
-    consumer.register(SampleIntegrationEvent, handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-    message.headers = {}
-
-    await consumer._route_event_handler(message)
-
-    message.ack.assert_not_awaited()
-    message.nack.assert_awaited_once_with(requeue=True)
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_auth_deny_configured_nack_drop_expect_drop(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 DENY auth failure는 설정된 nack-drop 정책을 적용한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer._auth_deny_action = RabbitMQAuthFailureAction.NACK_DROP
-    message = AsyncMock()
-
-    await consumer._handle_auth_failure(
-        message,
-        AuthRequirementDeniedError(
-            AuthorizationDecision.deny(AuthorizationReasonCode.POLICY_DENIED)
-        ),
+    """BLOCKING 재시도는 ack 없이 기다렸다가 실패한 핸들러만 다음 시도로 다시 실행한다."""
+    consumer = RabbitMQEventConsumer(
+        make_config(monkeypatch, RETRY__MAX_ATTEMPTS="2", RETRY__INITIAL_INTERVAL="3")
     )
+    attempts: list[int] = []
 
-    message.ack.assert_not_awaited()
-    message.nack.assert_awaited_once_with(requeue=False)
+    def flaky(event: SampleIntegrationEvent) -> None:
+        attempts.append(EventDeliveryContext.current().attempt)
+        if len(attempts) == 1:
+            raise RuntimeError("not yet")
+
+    steady = MagicMock()
+    consumer.register(SampleIntegrationEvent, flaky, handler_name="flaky")
+    consumer.register(SampleIntegrationEvent, steady, handler_name="steady")
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent")
+
+    broker.channel.basic_ack.assert_not_called()
+    broker.channel.basic_nack.assert_not_called()
+    delay, redeliver = broker.connection.call_later.call_args.args
+    assert delay == 3.0
+    redeliver()
+    assert attempts == [1, 2]
+    steady.assert_called_once()
+    broker.channel.basic_ack.assert_called_once_with(7)
+    broker.publish_channel.basic_publish.assert_not_called()
 
 
-def test_async_consumer_auth_decision_none_uses_error_policy(
-    config: RabbitMQConnectionConfig,
+def test_sync_blocking_retry_stopped_before_wait_ends_expect_message_left_unacked(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """비동기 consumer도 decision 없는 auth failure를 ERROR 정책으로 처리한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-
-    action = consumer._auth_failure_action(AuthRequirementDeniedError())
-
-    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
-
-
-def test_async_consumer_auth_allow_decision_uses_error_policy(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 consumer도 ALLOW 예외 상태를 ERROR 정책으로 처리한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-
-    action = consumer._auth_failure_action(
-        AuthRequirementDeniedError(AuthorizationDecision.allow())
-    )
-
-    assert action is RabbitMQAuthFailureAction.NACK_REQUEUE
-
-
-def test_sync_consumer_check_if_event_set_when_set_expect_stop_consuming(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """stop_event가 설정되면 channel.stop_consuming이 호출됨을 검증한다."""
-    import threading
-
-    consumer = RabbitMQEventConsumer(config)
-    stop_event = threading.Event()
+    """대기 중 서비스가 멈추면 다시 실행하지 않고 메시지를 미확인 상태로 둔다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, RETRY__MAX_ATTEMPTS="2"))
+    handler = MagicMock(side_effect=RuntimeError("not yet"))
+    consumer.register(SampleIntegrationEvent, handler)
+    stop_event = Event()
+    broker = Broker()
     consumer.set_stop_event(stop_event)
-    consumer.channel = MagicMock()
-    consumer.connection = MagicMock()
+    with patch(CONNECTION, return_value=broker.connection):
+        consumer.initialize()
+    broker.deliver("SampleIntegrationEvent")
     stop_event.set()
 
-    consumer._check_if_event_set()
+    broker.connection.call_later.call_args.args[1]()
 
-    consumer.channel.stop_consuming.assert_called_once()
+    handler.assert_called_once()
+    broker.channel.basic_ack.assert_not_called()
+    broker.channel.basic_nack.assert_not_called()
 
 
-def test_sync_consumer_check_if_event_set_when_not_set_expect_callback_added(
-    config: RabbitMQConnectionConfig,
+def test_sync_deferred_handler_expect_wait_without_counting_attempt(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """stop_event가 설정되지 않았을 때 callback이 다시 등록됨을 검증한다."""
-    import threading
+    """EventDeferredError는 요청한 시간만큼 기다리고 시도 횟수를 늘리지 않는다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    attempts: list[int] = []
 
-    consumer = RabbitMQEventConsumer(config)
-    stop_event = threading.Event()
+    def deferring(event: SampleIntegrationEvent) -> None:
+        attempts.append(EventDeliveryContext.current().attempt)
+        if len(attempts) == 1:
+            raise EventDeferredError(retry_after=7.0)
+
+    consumer.register(SampleIntegrationEvent, deferring)
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent")
+
+    delay, redeliver = broker.connection.call_later.call_args.args
+    assert delay == 7.0
+    redeliver()
+    assert attempts == [1, 1]
+    broker.channel.basic_ack.assert_called_once_with(7)
+
+
+def test_sync_delayed_retry_expect_copy_with_state_in_wait_queue_then_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DELAYED 재시도는 상태 헤더와 만료 시간을 실은 사본을 대기 큐에 넣고 원본을 ack한다."""
+    consumer = RabbitMQEventConsumer(
+        make_config(
+            monkeypatch,
+            RETRY__MODE="delayed",
+            RETRY__MAX_ATTEMPTS="3",
+            RETRY__INITIAL_INTERVAL="1.5",
+        )
+    )
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=RuntimeError("not yet")),
+        subscriber="billing",
+        handler_name="flaky",
+    )
+    consumer.register(
+        SampleIntegrationEvent, MagicMock(), subscriber="billing", handler_name="ok"
+    )
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent.billing", headers={"traceparent": "t"})
+
+    queue, body, properties, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.billing.retry"
+    assert body == BODY
+    assert properties.expiration == "1500"
+    assert properties.delivery_mode == 2
+    assert headers["traceparent"] == "t"
+    assert DeliveryState.from_headers(headers) == DeliveryState(
+        attempt=2, pending=frozenset({"flaky"})
+    )
+    broker.connection.call_later.assert_not_called()
+    broker.channel.basic_ack.assert_called_once_with(7)
+
+
+def test_sync_retry_copy_exhausted_expect_only_pending_handler_runs_and_dead_letter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """대기 큐에서 돌아온 사본은 남은 핸들러만 실행하고, 소진되면 누적 시도 횟수로 dlq에 간다."""
+    consumer = RabbitMQEventConsumer(
+        make_config(monkeypatch, RETRY__MODE="delayed", RETRY__MAX_ATTEMPTS="2")
+    )
+    flaky = MagicMock(side_effect=RuntimeError("still down"))
+    done = MagicMock()
+    consumer.register(SampleIntegrationEvent, flaky, handler_name="flaky")
+    consumer.register(SampleIntegrationEvent, done, handler_name="done")
+    broker = start(consumer)
+
+    broker.deliver(
+        "SampleIntegrationEvent",
+        headers=dict(
+            DeliveryState(attempt=2, pending=frozenset({"flaky"})).to_headers()
+        ),
+    )
+
+    done.assert_not_called()
+    queue, _, _, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.dlq"
+    assert headers[DeadLetterHeader.ATTEMPTS.value] == "2"
+    assert DeadLetter.from_headers(headers).pending == frozenset({"flaky"})
+
+
+def test_sync_auth_challenge_default_expect_handler_skipped_and_ack(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CHALLENGE 거부는 기본 정책에서 해당 핸들러만 건너뛰고 메시지를 ack한다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    denied = MagicMock(
+        side_effect=AuthRequirementDeniedError(
+            AuthorizationDecision.challenge(AuthorizationReasonCode.SNAPSHOT_MISSING)
+        )
+    )
+    other = MagicMock()
+    consumer.register(SampleIntegrationEvent, denied)
+    consumer.register(SampleIntegrationEvent, other)
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent")
+
+    other.assert_called_once()
+    broker.channel.basic_ack.assert_called_once_with(7)
+    broker.channel.basic_nack.assert_not_called()
+
+
+def test_sync_auth_deny_with_nack_drop_expect_message_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """nack_drop 정책의 DENY는 메시지를 requeue 없이 거부한다."""
+    consumer = RabbitMQEventConsumer(
+        make_config(monkeypatch, AUTH_DENY_ACTION="nack_drop")
+    )
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(
+            side_effect=AuthRequirementDeniedError(
+                AuthorizationDecision.deny(AuthorizationReasonCode.POLICY_DENIED)
+            )
+        ),
+    )
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent")
+
+    broker.channel.basic_ack.assert_not_called()
+    broker.channel.basic_nack.assert_called_once_with(7, requeue=False)
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        AuthorizationDecision.error(
+            AuthorizationReasonCode.VERIFICATION_PROVIDER_UNAVAILABLE
+        ),
+        AuthorizationDecision.allow(),
+        None,
+    ],
+    ids=["error", "allow", "missing"],
+)
+def test_sync_auth_error_default_expect_requeue_and_later_handlers_not_run(
+    monkeypatch: pytest.MonkeyPatch, decision: AuthorizationDecision | None
+) -> None:
+    """ERROR로 취급되는 거부는 기본 정책에서 나머지 핸들러를 실행하지 않고 메시지를 되돌린다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    later = MagicMock()
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=AuthRequirementDeniedError(decision)),
+    )
+    consumer.register(SampleIntegrationEvent, later)
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent")
+
+    later.assert_not_called()
+    broker.channel.basic_ack.assert_not_called()
+    broker.channel.basic_nack.assert_called_once_with(7, requeue=True)
+    broker.publish_channel.basic_publish.assert_not_called()
+
+
+def test_sync_auth_provider_unavailable_expect_message_not_acknowledged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """인증 provider 장애는 메시지에 대한 판정이 아니므로 ack하지 않고 되돌린다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=AuthVerificationProviderUnavailableError()),
+    )
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent")
+
+    broker.channel.basic_ack.assert_not_called()
+    broker.channel.basic_nack.assert_called_once_with(7, requeue=True)
+
+
+def test_sync_message_with_traceparent_expect_child_context_then_cleared(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """traceparent 헤더가 있으면 child TraceContext로 실행하고 끝나면 지운다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.set_propagator(W3CTracePropagator())
+    captured: list[TraceContext | None] = []
+    consumer.register(
+        SampleIntegrationEvent, lambda event: captured.append(TraceContext.get())
+    )
+    broker = start(consumer)
+
+    broker.deliver(
+        "SampleIntegrationEvent", headers={"traceparent": SAMPLE_TRACEPARENT}
+    )
+
+    context = captured[0]
+    assert context is not None
+    assert context.trace_id == SAMPLE_TRACE_ID
+    assert context.parent_span_id == SAMPLE_SPAN_ID
+    assert TraceContext.get() is None
+
+
+def test_sync_message_without_traceparent_expect_new_root_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """propagator가 있는데 trace 헤더가 없으면 새 루트 TraceContext로 실행한다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.set_propagator(W3CTracePropagator())
+    captured: list[TraceContext | None] = []
+    consumer.register(
+        SampleIntegrationEvent, lambda event: captured.append(TraceContext.get())
+    )
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent")
+
+    context = captured[0]
+    assert context is not None
+    assert context.parent_span_id is None
+
+
+def test_sync_message_without_propagator_expect_no_trace_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """propagator가 없으면 trace 헤더가 있어도 TraceContext를 만들지 않는다."""
+    TraceContext.clear()
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    captured: list[TraceContext | None] = []
+    consumer.register(
+        SampleIntegrationEvent, lambda event: captured.append(TraceContext.get())
+    )
+    broker = start(consumer)
+
+    broker.deliver(
+        "SampleIntegrationEvent", headers={"traceparent": SAMPLE_TRACEPARENT}
+    )
+
+    assert captured == [None]
+
+
+def test_sync_run_expect_consuming_until_stop_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run은 소비를 시작하고, stop event가 설정된 뒤에만 소비를 멈춘다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    stop_event = Event()
+    broker = Broker()
     consumer.set_stop_event(stop_event)
-    consumer.channel = MagicMock()
-    consumer.connection = MagicMock()
-
-    consumer._check_if_event_set()
-
-    consumer.connection.add_callback_threadsafe.assert_called_once()
-
-
-def test_sync_consumer_initialize_expect_connection_and_channel_created(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """initialize가 connection과 channel을 생성하고 queue를 선언함을 검증한다."""
-    from unittest.mock import patch
-
-    consumer = RabbitMQEventConsumer(config)
-    consumer.register(SampleIntegrationEvent, MagicMock())
-
-    mock_channel = MagicMock()
-    mock_channel.basic_consume.return_value = "consumer_tag_1"
-    mock_connection = MagicMock()
-    mock_connection.channel.return_value = mock_channel
-
-    with patch(
-        "spakky.plugins.rabbitmq.event.consumer.BlockingConnection",
-        return_value=mock_connection,
-    ):
+    with patch(CONNECTION, return_value=broker.connection):
         consumer.initialize()
 
-    mock_channel.queue_declare.assert_called_once_with(
-        "SampleIntegrationEvent", durable=True
-    )
-    mock_channel.basic_consume.assert_called_once()
-    assert consumer.type_lookup["consumer_tag_1"] == SampleIntegrationEvent
+    consumer.run()
+    check = broker.connection.add_callback_threadsafe.call_args.args[0]
+    check()
+    broker.channel.stop_consuming.assert_not_called()
+    stop_event.set()
+    check()
+
+    broker.channel.start_consuming.assert_called_once_with()
+    broker.channel.stop_consuming.assert_called_once_with()
 
 
-def test_sync_consumer_initialize_custom_event_name_expect_queue_matches_routing(
-    config: RabbitMQConnectionConfig,
+def test_sync_dispose_expect_channel_and_connection_closed(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Custom event_name을 가진 consumer queue가 outbound routing key와 일치한다."""
-    from unittest.mock import patch
-
-    consumer = RabbitMQEventConsumer(config)
-    consumer.register(RenamedIntegrationEvent, MagicMock())
-
-    mock_channel = MagicMock()
-    mock_channel.basic_consume.return_value = "consumer_tag_1"
-    mock_connection = MagicMock()
-    mock_connection.channel.return_value = mock_channel
-
-    with patch(
-        "spakky.plugins.rabbitmq.event.consumer.BlockingConnection",
-        return_value=mock_connection,
-    ):
-        consumer.initialize()
-
-    mock_channel.queue_declare.assert_called_once_with(
-        "external.renamed.v1", durable=True
-    )
-    mock_channel.basic_consume.assert_called_once_with(
-        "external.renamed.v1",
-        consumer._route_event_handler,
-    )
-    assert consumer.type_lookup["consumer_tag_1"] == RenamedIntegrationEvent
-
-
-def test_sync_consumer_dispose_expect_channel_and_connection_closed(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """dispose가 channel과 connection을 닫음을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-    consumer.channel = MagicMock()
-    consumer.connection = MagicMock()
+    """dispose는 채널과 연결을 닫는다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    broker = start(consumer)
 
     consumer.dispose()
 
-    consumer.channel.close.assert_called_once()
-    consumer.connection.close.assert_called_once()
+    broker.channel.close.assert_called_once_with()
+    broker.connection.close.assert_called_once_with()
 
 
-def test_sync_consumer_run_expect_start_consuming_called(
-    config: RabbitMQConnectionConfig,
+def dead_letter_message(
+    delivery_tag: int, *pending: str, body: bytes = BODY
+) -> tuple[MagicMock, BasicProperties, bytes]:
+    """Build what `basic_get` returns for one stored dead letter."""
+    method_frame = MagicMock()
+    method_frame.delivery_tag = delivery_tag
+    dead_letter = DeadLetter.model_validate(
+        {
+            "event_name": "SampleIntegrationEvent",
+            "subscriber": "billing",
+            "failures": [
+                {
+                    "handler": handler,
+                    "exception_type": "RuntimeError",
+                    "exception_message": "boom",
+                    "retryable": True,
+                }
+                for handler in pending or ("flaky",)
+            ],
+            "attempts": 1,
+            "failed_at": "2026-01-01T00:00:00+00:00",
+        }
+    )
+    return method_frame, BasicProperties(headers=dead_letter.to_headers()), body
+
+
+def redrive_broker(*messages: tuple[MagicMock | None, object, object]) -> Broker:
+    """Mock the dedicated connection a redrive opens."""
+    broker = Broker()
+    broker.channel.basic_get.side_effect = list(messages)
+    return broker
+
+
+def test_sync_redrive_success_expect_only_failed_handler_runs_and_dead_letter_acked(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """run이 start_consuming을 호출함을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-    consumer.channel = MagicMock()
-    consumer.connection = MagicMock()
+    """redrive는 실패로 기록된 핸들러만 실행하고 성공한 dead letter를 지운다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    flaky, done = MagicMock(), MagicMock()
+    consumer.register(
+        SampleIntegrationEvent, flaky, subscriber="billing", handler_name="flaky"
+    )
+    consumer.register(
+        SampleIntegrationEvent, done, subscriber="billing", handler_name="done"
+    )
+    broker = redrive_broker(dead_letter_message(11), (None, None, None))
 
-    consumer.run()
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
 
-    consumer.connection.add_callback_threadsafe.assert_called_once()
-    consumer.channel.start_consuming.assert_called_once()
+    assert result == RedriveResult(succeeded=1, failed=0)
+    flaky.assert_called_once()
+    done.assert_not_called()
+    broker.publish_channel.confirm_delivery.assert_called_once_with()
+    broker.channel.queue_declare.assert_called_once_with(
+        "SampleIntegrationEvent.billing.dlq", durable=True
+    )
+    broker.channel.basic_get.assert_called_with("SampleIntegrationEvent.billing.dlq")
+    broker.channel.basic_ack.assert_called_once_with(11)
+    broker.channel.basic_nack.assert_not_called()
+    broker.publish_channel.basic_publish.assert_not_called()
+    broker.connection.close.assert_called_once_with()
 
 
-@pytest.mark.asyncio
-async def test_async_consumer_initialize_async_expect_connection_and_channel_created(
-    config: RabbitMQConnectionConfig,
+def test_sync_redrive_partly_failing_again_expect_metadata_narrowed_to_failed_handler(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """initialize_async가 connection과 channel을 생성함을 검증한다."""
-    from unittest.mock import patch
+    """redrive에서 일부만 성공하면, 다시 실패한 핸들러만 남긴 사본으로 dead letter를 바꾼다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent, MagicMock(), subscriber="billing", handler_name="fixed"
+    )
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=RuntimeError("still down")),
+        subscriber="billing",
+        handler_name="broken",
+    )
+    broker = redrive_broker(
+        dead_letter_message(11, "fixed", "broken"), (None, None, None)
+    )
 
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.register(SampleIntegrationEvent, AsyncMock())
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
 
-    mock_queue = AsyncMock()
-    mock_queue.consume.return_value = "consumer_tag_1"
-    mock_channel = AsyncMock()
-    mock_channel.declare_queue.return_value = mock_queue
-    mock_connection = AsyncMock()
-    mock_connection.channel.return_value = mock_channel
+    assert result == RedriveResult(succeeded=0, failed=1)
+    queue, body, properties, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.billing.dlq"
+    assert body == BODY
+    assert properties.expiration is None
+    narrowed = DeadLetter.from_headers(headers)
+    assert narrowed.pending == frozenset({"broken"})
+    assert narrowed.failures[0].exception_message == "still down"
+    assert narrowed.subscriber == "billing"
+    # 사본이 확인된 뒤 예전 dead letter를 지운다.
+    broker.channel.basic_ack.assert_called_once_with(11)
+    broker.channel.basic_nack.assert_not_called()
 
-    with patch(
-        "spakky.plugins.rabbitmq.event.consumer.connect_robust",
-        new_callable=AsyncMock,
-        return_value=mock_connection,
+
+def test_sync_redrive_failing_again_expect_copy_published_only_after_the_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """다시 실패한 dead letter의 사본은 남은 것을 모두 꺼낸 뒤에 넣어, 한 호출에서 한 번만 전달된다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch, RETRY__MAX_ATTEMPTS="3"))
+    flaky = MagicMock(side_effect=[RuntimeError("still down"), None])
+    consumer.register(
+        SampleIntegrationEvent, flaky, subscriber="billing", handler_name="flaky"
+    )
+    stored = iter(
+        [dead_letter_message(11), dead_letter_message(12), (None, None, None)]
+    )
+    published_before_drained: list[int] = []
+
+    def take(queue: str) -> tuple[MagicMock | None, object, object]:
+        published_before_drained.append(broker.publish_channel.basic_publish.call_count)
+        return next(stored)
+
+    broker = redrive_broker()
+    broker.channel.basic_get.side_effect = take
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=1, failed=1)
+    assert published_before_drained == [0, 0, 0]
+    _, _, _, headers = broker.published()
+    assert DeadLetter.from_headers(headers).failures[0].exception_message == (
+        "still down"
+    )
+    assert [call.args[0] for call in broker.channel.basic_ack.call_args_list] == [
+        12,
+        11,
+    ]
+
+
+def test_sync_redrive_deferred_again_expect_original_failure_kept_for_deferred_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """redrive 중 미뤄진 핸들러는 원래 실패 기록 그대로 남고, 성공한 핸들러는 빠진다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent, MagicMock(), subscriber="billing", handler_name="fixed"
+    )
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=EventDeferredError(retry_after=5.0)),
+        subscriber="billing",
+        handler_name="waiting",
+    )
+    broker = redrive_broker(
+        dead_letter_message(11, "fixed", "waiting"), (None, None, None)
+    )
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=0, failed=1)
+    _, _, _, headers = broker.published()
+    assert DeadLetter.from_headers(headers).failures == (
+        HandlerFailure(
+            handler="waiting",
+            exception_type="RuntimeError",
+            exception_message="boom",
+            retryable=True,
+        ),
+    )
+    broker.connection.call_later.assert_not_called()
+
+
+def test_sync_redrive_malformed_payload_expect_only_pending_handlers_recorded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """역직렬화할 수 없는 dead letter는 실패로 기록돼 있던 핸들러만 계속 실패로 남긴다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    flaky, done = MagicMock(), MagicMock()
+    consumer.register(
+        SampleIntegrationEvent, flaky, subscriber="billing", handler_name="flaky"
+    )
+    consumer.register(
+        SampleIntegrationEvent, done, subscriber="billing", handler_name="done"
+    )
+    broker = redrive_broker(
+        dead_letter_message(11, "flaky", body=b"not json"), (None, None, None)
+    )
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=0, failed=1)
+    flaky.assert_not_called()
+    done.assert_not_called()
+    _, body, _, headers = broker.published()
+    assert body == b"not json"
+    narrowed = DeadLetter.from_headers(headers)
+    assert narrowed.pending == frozenset({"flaky"})
+    assert narrowed.failures[0].exception_type == "ValidationError"
+
+
+def test_sync_redrive_copy_not_confirmed_expect_old_dead_letter_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """갱신한 사본을 브로커가 확인하지 않으면 예전 dead letter를 지우지 않고 되돌린다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=RuntimeError("still down")),
+        subscriber="billing",
+        handler_name="flaky",
+    )
+    broker = redrive_broker(dead_letter_message(11), (None, None, None))
+    broker.publish_channel.basic_publish.side_effect = NackError([])
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=0, failed=1)
+    broker.channel.basic_ack.assert_not_called()
+    broker.channel.basic_nack.assert_called_once_with(11, requeue=True)
+
+
+def test_sync_redrive_with_limit_expect_no_more_dead_letters_taken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """limit만큼만 dead letter를 꺼낸다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent, MagicMock(), subscriber="billing", handler_name="flaky"
+    )
+    broker = redrive_broker(dead_letter_message(11), dead_letter_message(12))
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing", limit=1)
+
+    assert result == RedriveResult(succeeded=1, failed=0)
+    assert broker.channel.basic_get.call_count == 1
+
+
+def test_sync_redrive_without_metadata_expect_message_kept_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """dead-letter 메타데이터가 없는 메시지는 핸들러를 실행하지 않고 그대로 dlq에 남긴다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    handler = MagicMock()
+    consumer.register(SampleIntegrationEvent, handler, subscriber="billing")
+    method_frame = MagicMock()
+    method_frame.delivery_tag = 11
+    broker = redrive_broker(
+        (method_frame, BasicProperties(headers={"origin": "manual"}), BODY),
+        (None, None, None),
+    )
+
+    with patch(CONNECTION, return_value=broker.connection):
+        result = consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    assert result == RedriveResult(succeeded=0, failed=1)
+    handler.assert_not_called()
+    queue, body, _, headers = broker.published()
+    assert queue == "SampleIntegrationEvent.billing.dlq"
+    assert body == BODY
+    assert headers == {"origin": "manual"}
+
+
+def test_sync_redrive_unknown_subscription_expect_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """등록되지 않은 구독자의 redrive는 SubscriptionNotFoundError로 실패한다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(SampleIntegrationEvent, MagicMock(), subscriber="billing")
+
+    with pytest.raises(SubscriptionNotFoundError):
+        consumer.redrive(SampleIntegrationEvent, subscriber="shipping")
+
+
+def test_sync_redrive_auth_provider_unavailable_expect_error_and_connection_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """redrive 중 인증 provider 장애는 그대로 전파되고, 연결을 닫아 메시지를 dlq에 남긴다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    consumer.register(
+        SampleIntegrationEvent,
+        MagicMock(side_effect=AuthVerificationProviderUnavailableError()),
+        subscriber="billing",
+        handler_name="flaky",
+    )
+    broker = redrive_broker(dead_letter_message(11))
+
+    with (
+        patch(CONNECTION, return_value=broker.connection),
+        pytest.raises(AuthVerificationProviderUnavailableError),
     ):
-        await consumer.initialize_async()
-
-    mock_channel.declare_queue.assert_called_once_with(
-        "SampleIntegrationEvent", durable=True
-    )
-    mock_queue.consume.assert_called_once()
-    assert consumer.type_lookup["consumer_tag_1"] == SampleIntegrationEvent
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_initialize_custom_event_name_expect_queue_matches_routing(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 consumer도 custom event_name queue를 선언한다."""
-    from unittest.mock import patch
-
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.register(RenamedIntegrationEvent, AsyncMock())
-
-    mock_queue = AsyncMock()
-    mock_queue.consume.return_value = "consumer_tag_1"
-    mock_channel = AsyncMock()
-    mock_channel.declare_queue.return_value = mock_queue
-    mock_connection = AsyncMock()
-    mock_connection.channel.return_value = mock_channel
-
-    with patch(
-        "spakky.plugins.rabbitmq.event.consumer.connect_robust",
-        new_callable=AsyncMock,
-        return_value=mock_connection,
-    ):
-        await consumer.initialize_async()
-
-    mock_channel.declare_queue.assert_awaited_once_with(
-        "external.renamed.v1", durable=True
-    )
-    mock_queue.consume.assert_awaited_once()
-    assert consumer.type_lookup["consumer_tag_1"] == RenamedIntegrationEvent
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_dispose_async_expect_channel_and_connection_closed(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """dispose_async가 channel과 connection을 닫음을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.channel = AsyncMock()
-    consumer.connection = AsyncMock()
-
-    await consumer.dispose_async()
-
-    consumer.channel.close.assert_awaited_once()
-    consumer.connection.close.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_run_async_expect_wait_for_stop_event(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """run_async가 stop_event를 대기함을 검증한다."""
-    import asyncio
-
-    consumer = AsyncRabbitMQEventConsumer(config)
-    stop_event = asyncio.Event()
-    consumer.set_stop_event(stop_event)
-
-    async def set_stop_after_delay() -> None:
-        await asyncio.sleep(0.01)
-        stop_event.set()
-
-    asyncio.create_task(set_stop_after_delay())
-    await consumer.run_async()
-
-    assert stop_event.is_set()
-
-
-# ---------------------------------------------------------------------------
-# Trace context extraction tests
-# ---------------------------------------------------------------------------
-
-SAMPLE_TRACEPARENT = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
-SAMPLE_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
-SAMPLE_SPAN_ID = "b7ad6b7169203331"
-
-
-def test_sync_consumer_route_with_traceparent_expect_child_context_set(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """traceparent 헤더가 있으면 child TraceContext가 활성화됨을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-
-    captured_ctx: list[TraceContext | None] = []
-
-    def capturing_handler(event: SampleIntegrationEvent) -> None:
-        captured_ctx.append(TraceContext.get())
-
-    consumer.register(SampleIntegrationEvent, capturing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
-    body = b'{"data": "test"}'
-
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    assert len(captured_ctx) == 1
-    ctx = captured_ctx[0]
-    assert ctx is not None
-    assert ctx.trace_id == SAMPLE_TRACE_ID
-    assert ctx.parent_span_id == SAMPLE_SPAN_ID
-    assert ctx.span_id != SAMPLE_SPAN_ID
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_route_with_traceparent_expect_child_context_set(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 consumer에서 traceparent 헤더가 있으면 child TraceContext가 활성화됨을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-
-    captured_ctx: list[TraceContext | None] = []
-
-    async def capturing_handler(event: SampleIntegrationEvent) -> None:
-        captured_ctx.append(TraceContext.get())
-
-    consumer.register(SampleIntegrationEvent, capturing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
-
-    await consumer._route_event_handler(message)
-
-    assert len(captured_ctx) == 1
-    ctx = captured_ctx[0]
-    assert ctx is not None
-    assert ctx.trace_id == SAMPLE_TRACE_ID
-    assert ctx.parent_span_id == SAMPLE_SPAN_ID
-    assert ctx.span_id != SAMPLE_SPAN_ID
-
-
-def test_sync_consumer_route_without_propagator_expect_no_trace_context(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """propagator 미설정 시 TraceContext가 설정되지 않음을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-
-    captured_ctx: list[TraceContext | None] = []
-
-    def capturing_handler(event: SampleIntegrationEvent) -> None:
-        captured_ctx.append(TraceContext.get())
-
-    consumer.register(SampleIntegrationEvent, capturing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
-    body = b'{"data": "test"}'
-
-    TraceContext.clear()
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    assert captured_ctx[0] is None
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_route_without_propagator_expect_no_trace_context(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 consumer에서 propagator 미설정 시 TraceContext가 설정되지 않음을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-
-    captured_ctx: list[TraceContext | None] = []
-
-    async def capturing_handler(event: SampleIntegrationEvent) -> None:
-        captured_ctx.append(TraceContext.get())
-
-    consumer.register(SampleIntegrationEvent, capturing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
-
-    TraceContext.clear()
-    await consumer._route_event_handler(message)
-
-    assert captured_ctx[0] is None
-
-
-def test_sync_consumer_route_without_traceparent_expect_new_root_trace(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """traceparent 헤더 없을 때 새 root trace가 생성됨을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-
-    captured_ctx: list[TraceContext | None] = []
-
-    def capturing_handler(event: SampleIntegrationEvent) -> None:
-        captured_ctx.append(TraceContext.get())
-
-    consumer.register(SampleIntegrationEvent, capturing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {}
-    body = b'{"data": "test"}'
-
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    ctx = captured_ctx[0]
-    assert ctx is not None
-    assert ctx.parent_span_id is None
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_route_without_traceparent_expect_new_root_trace(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 consumer에서 traceparent 헤더 없을 때 새 root trace가 생성됨을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-
-    captured_ctx: list[TraceContext | None] = []
-
-    async def capturing_handler(event: SampleIntegrationEvent) -> None:
-        captured_ctx.append(TraceContext.get())
-
-    consumer.register(SampleIntegrationEvent, capturing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-    message.headers = {}
-
-    await consumer._route_event_handler(message)
-
-    ctx = captured_ctx[0]
-    assert ctx is not None
-    assert ctx.parent_span_id is None
-
-
-def test_sync_consumer_route_trace_context_cleared_after_handler(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """핸들러 완료 후 TraceContext가 정리됨을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-    consumer.register(SampleIntegrationEvent, MagicMock())
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
-    body = b'{"data": "test"}'
-
-    consumer._route_event_handler(channel, method_frame, properties, body)
-
-    assert TraceContext.get() is None
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_route_trace_context_cleared_after_handler(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 consumer에서 핸들러 완료 후 TraceContext가 정리됨을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-    consumer.register(SampleIntegrationEvent, AsyncMock())
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
-
-    await consumer._route_event_handler(message)
-
-    assert TraceContext.get() is None
-
-
-def test_sync_consumer_route_handler_exception_expect_trace_context_cleared(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """핸들러 예외 발생 시에도 TraceContext가 정리됨을 검증한다."""
-    consumer = RabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-
-    def failing_handler(event: SampleIntegrationEvent) -> None:
-        raise RuntimeError("handler failed")
-
-    consumer.register(SampleIntegrationEvent, failing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    channel = MagicMock()
-    method_frame = MagicMock()
-    method_frame.consumer_tag = "test_tag"
-    method_frame.delivery_tag = 123
-    properties = MagicMock()
-    properties.headers = {"traceparent": SAMPLE_TRACEPARENT}
-    body = b'{"data": "test"}'
-
-    with pytest.raises(RuntimeError):
-        consumer._route_event_handler(channel, method_frame, properties, body)
-
-    assert TraceContext.get() is None
-
-
-@pytest.mark.asyncio
-async def test_async_consumer_route_handler_exception_expect_trace_context_cleared(
-    config: RabbitMQConnectionConfig,
-) -> None:
-    """비동기 consumer에서 핸들러 예외 발생 시에도 TraceContext가 정리됨을 검증한다."""
-    consumer = AsyncRabbitMQEventConsumer(config)
-    consumer.set_propagator(W3CTracePropagator())
-
-    async def failing_handler(event: SampleIntegrationEvent) -> None:
-        raise RuntimeError("handler failed")
-
-    consumer.register(SampleIntegrationEvent, failing_handler)
-    consumer.type_lookup["test_tag"] = SampleIntegrationEvent
-
-    message = AsyncMock()
-    message.consumer_tag = "test_tag"
-    message.delivery_tag = 123
-    message.body = b'{"data": "test"}'
-    message.headers = {"traceparent": SAMPLE_TRACEPARENT}
-
-    with pytest.raises(RuntimeError):
-        await consumer._route_event_handler(message)
-
-    assert TraceContext.get() is None
-
-
-def test_sync_consumer_to_string_headers_with_bytes_expect_decoded() -> None:
-    """AMQP headers의 bytes 값이 str로 디코딩됨을 검증한다."""
-    result = RabbitMQEventConsumer._to_string_headers(
-        {"traceparent": b"00-abc-def-01", "key": "value", "num": 42}
-    )
-    assert result == {"traceparent": "00-abc-def-01", "key": "value"}
-
-
-def test_sync_consumer_to_string_headers_with_none_expect_empty() -> None:
-    """headers가 None이면 빈 dict를 반환함을 검증한다."""
-    result = RabbitMQEventConsumer._to_string_headers(None)
-    assert result == {}
-
-
-def test_async_consumer_to_string_headers_with_bytes_expect_decoded() -> None:
-    """비동기 consumer에서 AMQP headers의 bytes 값이 str로 디코딩됨을 검증한다."""
-    result = AsyncRabbitMQEventConsumer._to_string_headers(
-        {"traceparent": b"00-abc-def-01", "key": "value", "num": 42}
-    )
-    assert result == {"traceparent": "00-abc-def-01", "key": "value"}
-
-
-def test_async_consumer_to_string_headers_with_none_expect_empty() -> None:
-    """비동기 consumer에서 headers가 None이면 빈 dict를 반환함을 검증한다."""
-    result = AsyncRabbitMQEventConsumer._to_string_headers(None)
-    assert result == {}
+        consumer.redrive(SampleIntegrationEvent, subscriber="billing")
+
+    broker.channel.basic_ack.assert_not_called()
+    broker.publish_channel.basic_publish.assert_not_called()
+    broker.connection.close.assert_called_once_with()

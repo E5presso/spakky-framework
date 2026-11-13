@@ -44,6 +44,23 @@ class User(AbstractEntity[UUID]):
             raise ValueError("Email is required")
 ```
 
+엔티티는 비즈니스 필드가 바뀔 때마다 `version`(UUID v7)과 `updated_at`을 스스로 갱신합니다.
+동시에 `persisted_version`에 "저장소에 있다고 알고 있는 version"을 기억합니다. 생성자에 넘긴
+`version`이 그대로 `persisted_version`이 되므로 저장소에서 복원한 엔티티는 저장된 version을,
+새 엔티티는 최초 version을 가집니다. 저장소 구현은 쓰기에 성공한 뒤 `mark_persisted()`를 호출해
+이 값을 현재 `version`으로 옮깁니다. 이 정보는 도메인 객체 안에만 있고, 낙관적 lock 비교는
+[spakky-sqlalchemy](../../plugins/spakky-sqlalchemy/README.md) 같은 저장소 구현이 수행합니다.
+
+```python
+user = User(uid=uid, version=stored_version, name="John", email="john@example.com")
+user.name = "Jane"
+
+user.version            # 새 UUID
+user.persisted_version  # stored_version
+user.mark_persisted()   # 저장소가 쓰기 성공 후 호출
+user.persisted_version  # user.version과 같음
+```
+
 ### 값 객체
 
 값 객체는 불변이며 속성 값으로 비교됩니다.

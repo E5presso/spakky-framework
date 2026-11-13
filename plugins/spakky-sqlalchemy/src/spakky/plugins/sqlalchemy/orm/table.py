@@ -1,13 +1,20 @@
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import ClassVar, Self, get_args, get_origin
+from typing import Any, ClassVar, Self, get_args, get_origin
 
 from spakky.core.common.mro import generic_mro
 from spakky.core.pod.annotations.tag import Tag
+from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 from spakky.plugins.sqlalchemy.orm.error import AbstractSpakkySqlAlchemyORMError
+from uuid import UUID
+
+from sqlalchemy import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, declared_attr
+
+VERSION_COLUMN_NAME = "version"
+"""Column name that carries `AbstractAggregateRoot.version` in a mapped table."""
 
 
 class AbstractTable(DeclarativeBase, AsyncAttrs):
@@ -29,6 +36,75 @@ class AbstractMappableTable[T](AbstractTable):
     """
 
     __abstract__ = True
+
+    @classmethod
+    def optimistic_lock_mapper_args(
+        cls,
+    ) -> dict[str, Any]:  # Any: SQLAlchemy mapper kwargs
+        """Build the mapper arguments that enable optimistic locking.
+
+        When the mapped domain type is an `AbstractAggregateRoot` and the table
+        has a UUID-typed `version` column, that column becomes the mapper's
+        `version_id_col`. The aggregate generates its own version, so
+        SQLAlchemy only compares the stored value
+        (`version_id_generator=False`) and never generates one.
+
+        Tables of child entities reached through relationships are left
+        unversioned: only the aggregate root passes through a repository,
+        which is where the loaded version is supplied.
+
+        A subclass that defines its own `__mapper_args__` replaces the default
+        as usual in SQLAlchemy declarative mapping.
+
+        Returns:
+            Mapper keyword arguments, empty when optimistic locking does not apply.
+        """
+        mappable = next(
+            (
+                type_
+                for type_ in generic_mro(cls)
+                if get_origin(type_) is AbstractMappableTable
+            ),
+            None,
+        )
+        domain: object = next(iter(get_args(mappable)), None)
+        if not isinstance(domain, type) or not issubclass(
+            domain, AbstractAggregateRoot
+        ):
+            return {}
+        version_column = cls.__table__.columns.get(VERSION_COLUMN_NAME)
+        if version_column is None or not cls.stores_domain_version(version_column):
+            return {}
+        return {"version_id_col": version_column, "version_id_generator": False}
+
+    @staticmethod
+    def stores_domain_version(
+        column: ColumnElement[Any],  # Any: column value type is what is inspected
+    ) -> bool:
+        """Tell whether a column can hold `AbstractAggregateRoot.version` as is.
+
+        Only a column whose Python value type is `UUID` takes the aggregate's
+        version without the table's own `from_domain()` conversion. Any other
+        column (a string copy of the version, an integer revision counter, ...)
+        belongs to the table author and is never written by the framework.
+
+        Args:
+            column: Candidate version column.
+
+        Returns:
+            True if the column's Python type is `UUID`.
+        """
+        try:
+            return column.type.python_type is UUID
+        except NotImplementedError:
+            # The type does not declare a Python type, so it is not a UUID column.
+            return False
+
+    # Any: same declaration as DeclarativeBase so subclasses may assign a dict.
+    # Evaluated per mapped subclass after its table is built.
+    __mapper_args__: Any = declared_attr.directive(
+        lambda cls: cls.optimistic_lock_mapper_args()
+    )
 
     @classmethod
     @abstractmethod

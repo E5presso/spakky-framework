@@ -480,7 +480,7 @@ Durable path에서는 bootstrap이 다음 repository port를 요구합니다.
 pip install "spakky-sqlalchemy[agent]"
 ```
 
-이 contribution은 `spakky.contributions.spakky.agent` entry point로 SQLAlchemy repository와 table을 등록합니다. 운영용 in-memory fallback은 없습니다. Repository가 없는데 durable path를 선언하면 bootstrap에서 fail-fast해야 합니다.
+이 contribution은 `spakky.contributions.spakky.agent` entry point로 SQLAlchemy repository와 table을 등록합니다. 멀티턴 transcript용 `ITaskStore` 구현(`SqlAlchemyAgentTaskStore`)도 같은 contribution에 들어 있습니다. 운영용 in-memory fallback은 없습니다. Repository가 없는데 durable path를 선언하면 bootstrap에서 fail-fast해야 합니다.
 
 ```python
 from spakky.agent import AgentExecutionLimits, AgentExecutionSpec, AgentSignalKind, RecoveryStrategy
@@ -717,6 +717,12 @@ Wire object도 `modelRef` 외 nested field를 허용하지 않습니다. Direct 
 허용됩니다. 이것은 TTL/correction/user scope를 가진 long-term `IMemoryStore`가 아닙니다.
 A2A protocol `Task` snapshot 저장은 `spakky-a2a`의 `IA2ATaskRepository`와
 `SpakkyA2ATaskStore`가 담당하므로 core transcript store와 별도로 구성합니다.
+
+`spakky-sqlalchemy[agent]` contribution은 `ITaskStore` 구현인 `SqlAlchemyAgentTaskStore`와
+`spakky_agent_conversation_turn` table을 함께 등록합니다. turn은 대화별 `position` 순서로
+저장·조회되고 `(conversation_id, position)` unique 제약이 걸려 있어, 같은 대화에 두 실행이
+동시에 append하면 한쪽은 `AgentConversationAppendConflictError`로 실패합니다. 다른 구현이
+필요하면 `ITaskStore`를 직접 구현해 Pod으로 등록합니다.
 
 ## Static context와 dynamic context provider
 

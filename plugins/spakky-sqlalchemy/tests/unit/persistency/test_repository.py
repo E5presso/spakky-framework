@@ -1,8 +1,8 @@
 """Unit tests for repository error conditions."""
 
 from datetime import datetime
-from typing import Self
-from unittest.mock import MagicMock, PropertyMock
+from typing import Any, Self
+from unittest.mock import AsyncMock, MagicMock, PropertyMock
 from uuid import UUID
 
 import pytest
@@ -130,6 +130,8 @@ def test_sync_repository_save_stale_data_expect_version_conflict_error() -> None
     """Sync save에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -156,6 +158,8 @@ def test_sync_repository_save_all_stale_data_expect_version_conflict_error() -> 
     """Sync save_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -182,6 +186,8 @@ def test_sync_repository_delete_stale_data_expect_version_conflict_error() -> No
     """Sync delete에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -208,6 +214,8 @@ def test_sync_repository_delete_all_stale_data_expect_version_conflict_error() -
     """Sync delete_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -238,6 +246,8 @@ async def test_async_repository_save_stale_data_expect_version_conflict_error() 
     """Async save에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -267,6 +277,8 @@ async def test_async_repository_save_all_stale_data_expect_version_conflict_erro
     """Async save_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -296,6 +308,8 @@ async def test_async_repository_delete_stale_data_expect_version_conflict_error(
     """Async delete에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -325,6 +339,8 @@ async def test_async_repository_delete_all_stale_data_expect_version_conflict_er
     """Async delete_all에서 StaleDataError 발생 시 VersionConflictError로 변환된다."""
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -354,6 +370,8 @@ def test_sync_repository_get_success_returns_entity() -> None:
     """Sync get이 entity를 성공적으로 반환하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -388,6 +406,8 @@ def test_sync_repository_get_not_found_raises_error() -> None:
 
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -409,6 +429,8 @@ def test_sync_repository_get_or_none_found_returns_entity() -> None:
     """Sync get_or_none이 존재하는 entity를 반환하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -440,6 +462,8 @@ def test_sync_repository_get_or_none_not_found_returns_none() -> None:
     """Sync get_or_none이 entity가 없을 때 None을 반환하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -461,6 +485,8 @@ def test_sync_repository_contains_true() -> None:
     """Sync contains가 entity가 있을 때 True를 반환하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -482,6 +508,8 @@ def test_sync_repository_contains_false() -> None:
     """Sync contains가 entity가 없을 때 False를 반환하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -503,6 +531,8 @@ def test_sync_repository_range_returns_entities() -> None:
     """Sync range가 여러 entity를 반환하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -519,8 +549,7 @@ def test_sync_repository_range_returns_entities() -> None:
     ]
     mock_tables = []
     for entity in entities:
-        mock_table = MagicMock(spec=SampleEntityTable)
-        mock_table.to_domain.return_value = entity
+        mock_table = SampleEntityTable.from_domain(entity)
         mock_tables.append(mock_table)
 
     mock_schema_registry.get_type.return_value = SampleEntityTable
@@ -544,6 +573,8 @@ def test_sync_repository_save_success() -> None:
     """Sync save가 성공적으로 entity를 저장하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -555,10 +586,9 @@ def test_sync_repository_save_success() -> None:
         updated_at=datetime.now(),
         name="test",
     )
-    mock_table = MagicMock(spec=SampleEntityTable)
-    mock_table.to_domain.return_value = entity
+    mock_table = SampleEntityTable.from_domain(entity)
 
-    mock_schema_registry.from_domain.return_value = mock_table
+    mock_schema_registry.from_domain.side_effect = [mock_table]
     mock_session.merge.return_value = mock_table
 
     repo = ValidSyncRepository(
@@ -576,6 +606,8 @@ def test_sync_repository_save_all_success() -> None:
     """Sync save_all이 성공적으로 여러 entity를 저장하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -592,8 +624,7 @@ def test_sync_repository_save_all_success() -> None:
     ]
     mock_tables = []
     for entity in entities:
-        mock_table = MagicMock(spec=SampleEntityTable)
-        mock_table.to_domain.return_value = entity
+        mock_table = SampleEntityTable.from_domain(entity)
         mock_tables.append(mock_table)
 
     mock_schema_registry.from_domain.side_effect = mock_tables
@@ -613,6 +644,8 @@ def test_sync_repository_delete_success() -> None:
     """Sync delete가 성공적으로 entity를 삭제하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -624,10 +657,9 @@ def test_sync_repository_delete_success() -> None:
         updated_at=datetime.now(),
         name="test",
     )
-    mock_table = MagicMock(spec=SampleEntityTable)
-    mock_table.to_domain.return_value = entity
+    mock_table = SampleEntityTable.from_domain(entity)
 
-    mock_schema_registry.from_domain.return_value = mock_table
+    mock_schema_registry.from_domain.side_effect = [mock_table]
     mock_session.merge.return_value = mock_table
 
     repo = ValidSyncRepository(
@@ -645,6 +677,8 @@ def test_sync_repository_delete_all_success() -> None:
     """Sync delete_all이 성공적으로 여러 entity를 삭제하는지 검증한다."""
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -661,8 +695,7 @@ def test_sync_repository_delete_all_success() -> None:
     ]
     mock_tables = []
     for entity in entities:
-        mock_table = MagicMock(spec=SampleEntityTable)
-        mock_table.to_domain.return_value = entity
+        mock_table = SampleEntityTable.from_domain(entity)
         mock_tables.append(mock_table)
 
     mock_schema_registry.from_domain.side_effect = mock_tables
@@ -689,6 +722,8 @@ async def test_async_repository_get_success_returns_entity() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -726,6 +761,8 @@ async def test_async_repository_get_not_found_raises_error() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -750,6 +787,8 @@ async def test_async_repository_get_or_none_found_returns_entity() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -784,6 +823,8 @@ async def test_async_repository_get_or_none_not_found_returns_none() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -808,6 +849,8 @@ async def test_async_repository_contains_true() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -832,6 +875,8 @@ async def test_async_repository_contains_false() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -856,6 +901,8 @@ async def test_async_repository_range_returns_entities() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -872,8 +919,7 @@ async def test_async_repository_range_returns_entities() -> None:
     ]
     mock_tables = []
     for entity in entities:
-        mock_table = MagicMock(spec=SampleEntityTable)
-        mock_table.to_domain.return_value = entity
+        mock_table = SampleEntityTable.from_domain(entity)
         mock_tables.append(mock_table)
 
     mock_schema_registry.get_type.return_value = SampleEntityTable
@@ -900,6 +946,8 @@ async def test_async_repository_save_success() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -911,10 +959,9 @@ async def test_async_repository_save_success() -> None:
         updated_at=datetime.now(),
         name="test",
     )
-    mock_table = MagicMock(spec=SampleEntityTable)
-    mock_table.to_domain.return_value = entity
+    mock_table = SampleEntityTable.from_domain(entity)
 
-    mock_schema_registry.from_domain.return_value = mock_table
+    mock_schema_registry.from_domain.side_effect = [mock_table]
     mock_session.merge = AsyncMock(return_value=mock_table)
     mock_session.flush = AsyncMock()
 
@@ -936,6 +983,8 @@ async def test_async_repository_save_all_success() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -952,8 +1001,7 @@ async def test_async_repository_save_all_success() -> None:
     ]
     mock_tables = []
     for entity in entities:
-        mock_table = MagicMock(spec=SampleEntityTable)
-        mock_table.to_domain.return_value = entity
+        mock_table = SampleEntityTable.from_domain(entity)
         mock_tables.append(mock_table)
 
     mock_schema_registry.from_domain.side_effect = mock_tables
@@ -977,6 +1025,8 @@ async def test_async_repository_delete_success() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -988,10 +1038,9 @@ async def test_async_repository_delete_success() -> None:
         updated_at=datetime.now(),
         name="test",
     )
-    mock_table = MagicMock(spec=SampleEntityTable)
-    mock_table.to_domain.return_value = entity
+    mock_table = SampleEntityTable.from_domain(entity)
 
-    mock_schema_registry.from_domain.return_value = mock_table
+    mock_schema_registry.from_domain.side_effect = [mock_table]
     mock_session.merge = AsyncMock(return_value=mock_table)
     mock_session.delete = AsyncMock()
     mock_session.flush = AsyncMock()
@@ -1014,6 +1063,8 @@ async def test_async_repository_delete_all_success() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
     mock_session = MagicMock()
     type(mock_session_manager).session = PropertyMock(return_value=mock_session)
@@ -1030,8 +1081,7 @@ async def test_async_repository_delete_all_success() -> None:
     ]
     mock_tables = []
     for entity in entities:
-        mock_table = MagicMock(spec=SampleEntityTable)
-        mock_table.to_domain.return_value = entity
+        mock_table = SampleEntityTable.from_domain(entity)
         mock_tables.append(mock_table)
 
     mock_schema_registry.from_domain.side_effect = mock_tables
@@ -1059,6 +1109,8 @@ def test_sync_repository_build_pk_condition_with_composite_pk() -> None:
 
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
 
     repo = ValidSyncRepository(
@@ -1084,6 +1136,8 @@ def test_sync_repository_build_pk_in_condition_with_composite_pk() -> None:
 
     mock_session_manager = MagicMock(spec=SessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
 
     repo = ValidSyncRepository(
@@ -1110,6 +1164,8 @@ async def test_async_repository_build_pk_condition_with_composite_pk() -> None:
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
 
     repo = ValidAsyncRepository(
@@ -1136,6 +1192,8 @@ async def test_async_repository_build_pk_in_condition_with_composite_pk() -> Non
 
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_schema_registry = MagicMock(spec=SchemaRegistry)
+    mock_schema_registry.get_type.return_value = SampleEntityTable
+    mock_schema_registry.from_domain.side_effect = SampleEntityTable.from_domain
     mock_aggregate_collector = MagicMock(spec=AggregateCollector)
 
     repo = ValidAsyncRepository(
@@ -1153,3 +1211,237 @@ async def test_async_repository_build_pk_in_condition_with_composite_pk() -> Non
     # tuple_ IN 조건이 올바르게 생성되었는지 확인
     assert condition is not None
     assert "(id1, id2) IN" in str(condition)
+
+
+# --- Optimistic locking details of the async repository ---
+
+
+@Table(SampleEntity)
+class UnversionedSampleEntityTable(AbstractMappableTable[SampleEntity]):
+    """Table that opts out of version checks with its own mapper args."""
+
+    __tablename__ = "test_unversioned_entities"
+    __mapper_args__: dict[str, Any] = {}  # Any: SQLAlchemy mapper kwargs
+
+    uid: Mapped[UUID] = mapped_column(Uuid(), primary_key=True)
+    version: Mapped[UUID] = mapped_column(Uuid(), nullable=False)
+    name: Mapped[str] = mapped_column(String(), nullable=False)
+
+    @classmethod
+    def from_domain(cls, domain: SampleEntity) -> Self:
+        return cls(uid=domain.uid, version=domain.version, name=domain.name)
+
+    def to_domain(self) -> SampleEntity:
+        return SampleEntity(uid=self.uid, version=self.version, name=self.name)
+
+
+def _async_repository(
+    table_type: type[AbstractMappableTable[SampleEntity]], session: MagicMock
+) -> ValidAsyncRepository:
+    session_manager = MagicMock(spec=AsyncSessionManager)
+    type(session_manager).session = PropertyMock(return_value=session)
+    schema_registry = MagicMock(spec=SchemaRegistry)
+    schema_registry.get_type.return_value = table_type
+    schema_registry.from_domain.side_effect = table_type.from_domain
+    return ValidAsyncRepository(
+        session_manager, schema_registry, MagicMock(spec=AggregateCollector)
+    )
+
+
+def _loaded_then_renamed_entity() -> tuple[SampleEntity, UUID]:
+    loaded_version = uuid7()
+    entity = SampleEntity(uid=uuid7(), version=loaded_version, name="before")
+    entity.name = "after"
+    return entity, loaded_version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_changed_entity_expect_merge_at_loaded_version() -> (
+    None
+):
+    """Async save는 불러온 version으로 merge한 뒤 새 version을 기록하고 persisted_version을 전진시킨다."""
+    entity, loaded_version = _loaded_then_renamed_entity()
+    merged_versions: list[UUID] = []
+    persistent = SampleEntityTable.from_domain(entity)
+
+    async def merge(table: SampleEntityTable) -> SampleEntityTable:
+        merged_versions.append(table.version)
+        persistent.version = table.version
+        return persistent
+
+    session = MagicMock()
+    session.merge = merge
+    session.flush = AsyncMock()
+
+    saved = await _async_repository(SampleEntityTable, session).save(entity)
+
+    assert merged_versions == [loaded_version]
+    assert persistent.version == entity.version
+    assert saved.version == entity.version
+    assert entity.persisted_version == entity.version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_all_changed_entity_expect_merge_at_loaded_version() -> (
+    None
+):
+    """Async save_all도 불러온 version으로 merge한 뒤 새 version을 기록한다."""
+    entity, loaded_version = _loaded_then_renamed_entity()
+    merged_versions: list[UUID] = []
+    persistent = SampleEntityTable.from_domain(entity)
+
+    async def merge(table: SampleEntityTable) -> SampleEntityTable:
+        merged_versions.append(table.version)
+        persistent.version = table.version
+        return persistent
+
+    session = MagicMock()
+    session.merge = merge
+    session.flush = AsyncMock()
+
+    await _async_repository(SampleEntityTable, session).save_all([entity])
+
+    assert merged_versions == [loaded_version]
+    assert persistent.version == entity.version
+    assert entity.persisted_version == entity.version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_delete_changed_entity_expect_merge_at_loaded_version() -> (
+    None
+):
+    """Async delete는 불러온 version으로 merge해 삭제 대상의 version을 비교한다."""
+    entity, loaded_version = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.delete = AsyncMock()
+    session.flush = AsyncMock()
+
+    await _async_repository(SampleEntityTable, session).delete(entity)
+
+    deleted: SampleEntityTable = session.delete.call_args_list[0].args[0]
+    assert deleted.version == loaded_version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_stale_at_flush_expect_persisted_version_kept() -> (
+    None
+):
+    """Async save의 flush에서 StaleDataError가 나면 VersionConflictError로 바뀌고 persisted_version은 그대로다."""
+    entity, loaded_version = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.flush = AsyncMock(side_effect=StaleDataError("0 rows matched"))
+
+    with pytest.raises(VersionConflictError):
+        await _async_repository(SampleEntityTable, session).save(entity)
+
+    assert entity.persisted_version == loaded_version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_all_stale_at_flush_expect_version_conflict_error() -> (
+    None
+):
+    """Async save_all의 일괄 flush에서 StaleDataError가 나면 VersionConflictError로 바뀐다."""
+    entity, loaded_version = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.flush = AsyncMock(side_effect=StaleDataError("0 rows matched"))
+
+    with pytest.raises(VersionConflictError):
+        await _async_repository(SampleEntityTable, session).save_all([entity])
+
+    assert entity.persisted_version == loaded_version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_delete_all_stale_at_flush_expect_version_conflict_error() -> (
+    None
+):
+    """Async delete_all의 일괄 flush에서 StaleDataError가 나면 VersionConflictError로 바뀐다."""
+    entity, _ = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.delete = AsyncMock()
+    session.flush = AsyncMock(side_effect=StaleDataError("0 rows matched"))
+
+    with pytest.raises(VersionConflictError):
+        await _async_repository(SampleEntityTable, session).delete_all([entity])
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_unversioned_table_expect_current_version_merged() -> (
+    None
+):
+    """version 검사를 끈 테이블은 Async save가 현재 version을 그대로 merge한다."""
+    entity, _ = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.flush = AsyncMock()
+
+    saved = await _async_repository(UnversionedSampleEntityTable, session).save(entity)
+
+    merged: UnversionedSampleEntityTable = session.merge.call_args_list[0].args[0]
+    assert merged.version == entity.version
+    assert saved.version == entity.version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_all_unversioned_table_expect_current_version_merged() -> (
+    None
+):
+    """version 검사를 끈 테이블은 Async save_all이 현재 version을 그대로 merge한다."""
+    entity, _ = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.flush = AsyncMock()
+
+    await _async_repository(UnversionedSampleEntityTable, session).save_all([entity])
+
+    merged: UnversionedSampleEntityTable = session.merge.call_args_list[0].args[0]
+    assert merged.version == entity.version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_save_all_instance_listed_twice_expect_merged_once() -> (
+    None
+):
+    """Async save_all은 같은 인스턴스가 두 번 있어도 한 번만 merge하고 입력 길이만큼 결과를 돌려준다."""
+    entity, loaded_version = _loaded_then_renamed_entity()
+    merged_versions: list[UUID] = []
+
+    async def merge(table: SampleEntityTable) -> SampleEntityTable:
+        merged_versions.append(table.version)
+        return table
+
+    session = MagicMock()
+    session.merge = merge
+    session.flush = AsyncMock()
+
+    saved = await _async_repository(SampleEntityTable, session).save_all(
+        [entity, entity]
+    )
+
+    assert merged_versions == [loaded_version]
+    assert [item.uid for item in saved] == [entity.uid, entity.uid]
+    assert entity.persisted_version == entity.version
+
+
+@pytest.mark.asyncio
+async def test_async_repository_delete_all_instance_listed_twice_expect_deleted_once() -> (
+    None
+):
+    """Async delete_all은 같은 인스턴스가 두 번 있어도 한 번만 삭제한다."""
+    entity, _ = _loaded_then_renamed_entity()
+    session = MagicMock()
+    session.merge = AsyncMock(side_effect=lambda table: table)
+    session.delete = AsyncMock()
+    session.flush = AsyncMock()
+
+    deleted = await _async_repository(SampleEntityTable, session).delete_all(
+        [entity, entity]
+    )
+
+    assert session.delete.await_count == 1
+    assert [item.uid for item in deleted] == [entity.uid, entity.uid]

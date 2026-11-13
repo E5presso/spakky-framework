@@ -237,6 +237,44 @@ Repository는 Aggregate 저장소 역할만 하고, 조회 모델은 QueryUseCas
 
 ---
 
+## 낙관적 lock
+
+`AbstractMappableTable[T]`의 `T`가 `AbstractAggregateRoot`이고 table에 `version` column이
+있으면, 그 column이 SQLAlchemy mapper의 `version_id_col`로 자동 설정됩니다
+(`version_id_generator=False`). 별도 설정은 필요 없습니다.
+
+Aggregate는 비즈니스 필드가 바뀔 때마다 `version`을 새로 만들고, 불러올 때의 version은
+`persisted_version`으로 기억합니다. Repository의 `save`/`save_all`/`delete`/`delete_all`은
+이 값을 사용합니다.
+
+1. `persisted_version`을 담은 table 객체로 `merge()`합니다. 저장된 행의 version과 다르면 여기서 충돌입니다.
+2. 병합된 객체에 Aggregate의 새 `version`을 기록하고 `flush()`합니다. `UPDATE ... WHERE version = <불러온 version>`이 0행이면 충돌입니다.
+3. 충돌은 `VersionConflictError`로 올라옵니다. 성공하면 `aggregate.mark_persisted()`가 호출되어 같은 인스턴스를 다시 변경·저장할 수 있습니다.
+
+```python
+from spakky.data.persistency.repository import VersionConflictError
+
+try:
+    await user_repo.save(user)
+except VersionConflictError:
+    ...  # 다시 조회해 재시도하거나 호출자에게 충돌을 알립니다
+```
+
+알아 둘 점:
+
+- `to_domain()`은 저장된 `version`을 그대로 생성자에 넘겨야 합니다. 넘기지 않으면 매번 새 version이 만들어져 모든 저장이 충돌합니다.
+- 조회하지 않고 이미 존재하는 `uid`로 새로 만든 Aggregate를 `save`하면 덮어쓰지 않고 `VersionConflictError`가 발생합니다.
+- `save_all`/`delete_all`의 일괄 `flush()`에서 난 충돌은 어느 행인지 SQLAlchemy가 알려 주지 않으므로, 오류 인자에 대상 `uid` 전체가 담깁니다.
+- `mark_persisted()`는 `flush()` 직후 호출됩니다. 이후 트랜잭션이 rollback되면 그 인스턴스는 버리고 다시 조회하세요.
+- 자동 잠금은 `version` 컬럼의 Python 타입이 `UUID`일 때만 적용됩니다. 문자열이나 정수 등 다른 타입의 `version` 컬럼은 프레임워크가 건드리지 않으며 잠금도 걸리지 않습니다. `version_id_col`과 SQLAlchemy의 `version_id_generator`를 직접 선언한 테이블은 SQLAlchemy의 동작을 그대로 따르고, 충돌은 똑같이 `VersionConflictError`로 보고됩니다.
+- `save_all()`과 `delete_all()`에 같은 인스턴스를 여러 번 넣으면 한 번만 처리합니다.
+- 조회한 뒤 변경한 집합체를 `dataclasses.replace()`로 복사하면 복사본은 읽어 온 버전을 잃습니다. 원래 인스턴스를 저장하거나 다시 조회하세요.
+- 기존 table에 `version` column이 이미 있다면 schema migration은 필요 없습니다. mapper 설정만 달라지고 DDL은 같습니다. 달라지는 것은 동작입니다. 지금까지 조용히 덮어쓰던 동시 저장이 `VersionConflictError`가 됩니다.
+- column 이름이 `version`이 아니거나 Aggregate가 아닌 entity의 table(relationship으로 딸린 자식 table 포함)은 자동 대상이 아닙니다. 다른 column을 쓰려면 `__mapper_args__`에 `version_id_col`과 `version_id_generator=False`를 직접 지정합니다.
+- table에 `__mapper_args__`를 직접 정의하면 SQLAlchemy 규칙대로 기본값을 대체합니다. `__mapper_args__ = {}`는 검사를 끕니다. 다른 mapper 인자를 쓰면서 검사를 유지하려면 `"version_id_col": version, "version_id_generator": False`를 함께 넣습니다.
+
+---
+
 ## Command UseCase와 트랜잭션
 
 `@Transactional()`은 메서드가 성공하면 commit하고 예외가 발생하면 rollback합니다. 비동기
@@ -379,6 +417,50 @@ storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
 써야 합니다. 지원하지 않는 백엔드에서는 릴레이를 단일 인스턴스로 운영하세요 — 그러지
 않으면 같은 메시지를 여러 인스턴스가 동시에 발행합니다. claim 쿼리 자체는 특정 방언
 전용 구문(`DISTINCT ON` 등)을 쓰지 않으므로 같은 결과를 어느 백엔드에서나 냅니다.
+
+---
+
+## Event Contribution (멱등 소비 저장소)
+
+`spakky-event`의 멱등 소비(`@Idempotent()`)가 쓰는 처리 기록 저장소를 SQLAlchemy로 제공합니다.
+
+```bash
+pip install "spakky-sqlalchemy[event]"
+```
+
+```toml
+[project.entry-points."spakky.contributions.spakky.event"]
+spakky-sqlalchemy = "spakky.plugins.sqlalchemy.contributions.event:initialize"
+```
+
+이 contribution은 `spakky-event` feature와 `spakky-sqlalchemy` provider가 모두 active일 때 로드되어 다음을 등록합니다. 비동기 저장소는 `SPAKKY_DATA__SUPPORT_ASYNC_MODE`가 켜져 있을 때만 등록됩니다.
+
+| 구성 요소 | 역할 |
+| --- | --- |
+| `ProcessedEventTable` | `spakky_event_inbox` 테이블. 기본 키는 `(subscriber, handler, event_id)`이고 `processed_at`에 인덱스가 있습니다 |
+| `SqlAlchemyProcessedEventStore` | `IProcessedEventStore` 구현 |
+| `AsyncSqlAlchemyProcessedEventStore` | `IAsyncProcessedEventStore` 구현 |
+
+```python
+from spakky.data.aspects.transactional import Transactional
+from spakky.event.idempotency import Idempotent
+from spakky.event.stereotype.event_handler import EventHandler, on_event
+
+
+@EventHandler(subscriber="billing")
+class BillingHandler:
+    @on_event(OrderPlaced)
+    @Transactional()
+    @Idempotent()
+    async def charge(self, event: OrderPlaced) -> None: ...
+```
+
+- 저장소는 `@Transactional()`이 연 현재 세션으로 기록하므로, 처리 기록과 처리기의 업무 변경이 같은 트랜잭션에서 commit 또는 rollback됩니다. 트랜잭션 없이 호출하면 `SessionNotInitializedError`가 납니다.
+- 같은 이벤트가 동시에 두 번 전달되면 나중 쪽의 기록이 기본 키 충돌로 `DuplicateProcessedEventError`가 되고 그 트랜잭션은 롤백됩니다. 이 오류는 유예(`EventDeferredError`)라서 시도 횟수를 세지 않고 다시 전달되며, 다시 전달된 쪽은 커밋된 기록을 보고 건너뜁니다.
+- 테이블은 `SchemaRegistry` 메타데이터에 포함됩니다. 마이그레이션 도구를 쓴다면 `spakky_event_inbox` 테이블 생성을 마이그레이션에 추가하세요.
+- 오래된 기록은 트랜잭션 안에서 `store.purge(older_than)`으로 지웁니다. 보존 기간은 브로커가 같은 메시지를 다시 전달할 수 있는 기간보다 길게 잡습니다.
+
+자세한 전달 규칙은 [이벤트 시스템 — Integration Event 전달 계약](events.md#integration-event-전달-계약)을 참고하세요.
 
 ---
 

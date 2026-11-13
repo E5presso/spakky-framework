@@ -10,7 +10,8 @@ from spakky.plugins.rabbitmq.event.consumer import (
 )
 
 from collections.abc import Callable
-from unittest.mock import Mock
+from inspect import ismethod
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from spakky.auth import (
@@ -22,7 +23,15 @@ from spakky.auth import (
     require_auth_context,
     require_scope,
 )
+from spakky.core.application.application import SpakkyApplication
 from spakky.core.application.application_context import ApplicationContext
+from spakky.core.application.plugin import Plugin
+from spakky.core.pod.annotations.pod import Pod
+from spakky.data.aspects.transactional import Transactional
+from spakky.data.persistency.transaction import (
+    AbstractAsyncTransaction,
+    AbstractTransaction,
+)
 from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 from spakky.event.event_consumer import (
@@ -318,7 +327,7 @@ def test_rabbitmq_post_processor_sync_endpoint_invocation_expect_handler_called(
 
     captured_endpoint = {"fn": None}
 
-    def capture_register(event_type: type, endpoint: Mock) -> None:
+    def capture_register(event_type: type, endpoint: Mock, **_: str | None) -> None:
         captured_endpoint["fn"] = endpoint
 
     mock_consumer = Mock(spec=IEventConsumer)
@@ -382,6 +391,7 @@ def test_rabbitmq_post_processor_protected_sync_endpoint_seeds_auth_after_clear(
     def capture_register(
         event_type: type[SampleIntegrationEvent],
         endpoint: Callable[[SampleIntegrationEvent], None],
+        **_: str | None,
     ) -> None:
         captured_endpoint["fn"] = endpoint
 
@@ -441,7 +451,7 @@ async def test_rabbitmq_post_processor_async_endpoint_invocation_expect_handler_
 
     captured_endpoint = {"fn": None}
 
-    def capture_register(event_type: type, endpoint: Mock) -> None:
+    def capture_register(event_type: type, endpoint: Mock, **_: str | None) -> None:
         captured_endpoint["fn"] = endpoint
 
     mock_consumer = Mock(spec=IEventConsumer)
@@ -593,3 +603,118 @@ def test_rabbitmq_post_processor_with_tracing_but_no_set_propagator_expect_skipp
 
     assert not hasattr(mock_consumer, "set_propagator")
     assert not hasattr(mock_async_consumer, "set_propagator")
+
+
+def test_rabbitmq_post_processor_named_subscriber_expect_subscriber_and_handler_names() -> (
+    None
+):
+    """구독자 이름과 핸들러 이름이 동기·비동기 consumer 등록에 그대로 전달됨을 검증한다."""
+
+    @EventHandler(subscriber="billing")
+    class BillingHandler:
+        @on_event(SampleIntegrationEvent, name="charge")
+        def charge(self, event: SampleIntegrationEvent) -> None:
+            return None
+
+    @EventHandler(subscriber="notification")
+    class NotificationHandler:
+        @on_event(SampleIntegrationEvent)
+        async def notify(self, event: SampleIntegrationEvent) -> None:
+            return None
+
+    mock_consumer = Mock(spec=IEventConsumer)
+    mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer if t == RabbitMQEventConsumer else mock_async_consumer
+    )
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
+    post_processor = RabbitMQPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    post_processor.post_process(BillingHandler())
+    post_processor.post_process(NotificationHandler())
+
+    assert mock_consumer.register.call_args.kwargs == {
+        "subscriber": "billing",
+        "handler_name": "charge",
+    }
+    assert mock_async_consumer.register.call_args.kwargs == {
+        "subscriber": "notification",
+        "handler_name": f"{NotificationHandler.__qualname__}.notify",
+    }
+
+
+@Pod()
+def transaction() -> AbstractTransaction:
+    """Transaction double so that TransactionalAspect really advises the handler."""
+    return MagicMock(spec=AbstractTransaction)
+
+
+@Pod()
+def async_transaction() -> AbstractAsyncTransaction:
+    """Async transaction double required by the async transactional aspect."""
+    return AsyncMock(spec=AbstractAsyncTransaction)
+
+
+def test_rabbitmq_post_processor_advised_handler_expect_registered_through_proxy() -> (
+    None
+):
+    """aspect가 적용돼 AOP proxy가 된 핸들러도 등록되고, 등록된 endpoint가 proxy를 거쳐 실행됨을 검증한다."""
+    seen: list[str] = []
+
+    @EventHandler(subscriber="billing")
+    class TransactionalBillingHandler:
+        @on_event(SampleIntegrationEvent)
+        @Transactional()
+        def charge(self, event: SampleIntegrationEvent) -> None:
+            seen.append(event.message)
+
+    app = (
+        SpakkyApplication(ApplicationContext())
+        .load_plugins(include={Plugin(name="spakky-data")})
+        .add(transaction)
+        .add(async_transaction)
+        .add(TransactionalBillingHandler)
+    )
+    app.start()
+    try:
+        proxied = app.container.get(TransactionalBillingHandler)
+        # proxy의 속성은 bound method가 아니어서 인스턴스 스캔으로는 찾을 수 없다.
+        assert not ismethod(proxied.charge)
+        mock_consumer = Mock(spec=IEventConsumer)
+        mock_async_consumer = Mock(spec=IAsyncEventConsumer)
+        mock_container = Mock()
+        mock_container.get.side_effect = lambda t: (
+            mock_consumer
+            if t == RabbitMQEventConsumer
+            else mock_async_consumer
+            if t == AsyncRabbitMQEventConsumer
+            else app.container.get(t)
+        )
+        mock_container.get_or_none.return_value = None
+        mock_context = Mock(spec=ApplicationContext)
+        mock_context.get_or_none.return_value = None
+        post_processor = RabbitMQPostProcessor()
+        post_processor.set_container(mock_container)
+        post_processor.set_application_context(mock_context)
+
+        post_processor.post_process(proxied)
+
+        mock_async_consumer.register.assert_not_called()
+        mock_consumer.register.assert_called_once()
+        assert mock_consumer.register.call_args.kwargs == {
+            "subscriber": "billing",
+            "handler_name": f"{TransactionalBillingHandler.__qualname__}.charge",
+        }
+        endpoint = mock_consumer.register.call_args.args[1]
+        endpoint(SampleIntegrationEvent(message="order"))
+        assert seen == ["order"]
+        # 트랜잭션 aspect가 실제로 핸들러를 감쌌다.
+        transaction_double = app.container.get(AbstractTransaction)
+        assert isinstance(transaction_double, MagicMock)
+        transaction_double.__enter__.assert_called_once()
+    finally:
+        app.stop()

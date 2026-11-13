@@ -13,13 +13,19 @@ Outbox storage/table은 base plugin 본체가 아니라
 contribution이 로드됩니다. 설치 시에는 `spakky-outbox`를 별도로 추가하거나
 `spakky-sqlalchemy[outbox]` extra를 사용하세요.
 
+멱등 소비의 처리 기록 저장소는 `spakky.contributions.spakky.event` contribution으로
+등록됩니다. `spakky-event`와 `spakky-sqlalchemy[event]`를 함께 설치하고 두 plugin을 모두
+active 상태로 로드하면 `ProcessedEventTable`(`spakky_event_inbox`)과
+`SqlAlchemyProcessedEventStore`, `AsyncSqlAlchemyProcessedEventStore`가 등록됩니다.
+
 Agent state/signal/evidence persistence도 base plugin 본체가 아니라
 `spakky.contributions.spakky.agent` contribution으로 등록됩니다. Durable `@Agent`
 execution을 운영에서 사용하려면 `spakky-agent`와 `spakky-sqlalchemy[agent]`를
 함께 설치하고 두 plugin을 모두 active 상태로 로드해야 합니다. 이 contribution은
 `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`,
-`SqlAlchemyAgentEvidenceRepository`와 `AgentStateTable`, `AgentSignalTable`,
-`AgentEvidenceTable`을 등록합니다. 운영용 in-memory fallback은 제공하지 않습니다.
+`SqlAlchemyAgentEvidenceRepository`, `SqlAlchemyAgentTaskStore`(`ITaskStore`)와
+`AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`,
+`AgentConversationTurnTable`을 등록합니다. 운영용 in-memory fallback은 제공하지 않습니다.
 
 ## 메인
 

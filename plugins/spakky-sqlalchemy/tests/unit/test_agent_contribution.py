@@ -3,11 +3,13 @@
 from unittest.mock import MagicMock
 
 from spakky.plugins.sqlalchemy.agent.repository import (
+    SqlAlchemyAgentTaskStore,
     SqlAlchemyAgentEvidenceRepository,
     SqlAlchemyAgentSignalRepository,
     SqlAlchemyAgentStateRepository,
 )
 from spakky.plugins.sqlalchemy.agent.table import (
+    AgentConversationTurnTable,
     AgentEvidenceOriginTable,
     AgentEvidenceTable,
     AgentSignalTable,
@@ -17,7 +19,7 @@ from spakky.plugins.sqlalchemy.contributions.agent import initialize
 
 
 def test_agent_contribution_expect_tables_and_repositories_registered() -> None:
-    """agent contribution이 state/signal/evidence table과 repository를 등록한다."""
+    """agent contribution이 state/signal/evidence/conversation table과 repository·task store를 등록한다."""
     app = MagicMock()
 
     initialize(app)
@@ -28,7 +30,9 @@ def test_agent_contribution_expect_tables_and_repositories_registered() -> None:
         AgentSignalTable,
         AgentEvidenceTable,
         AgentEvidenceOriginTable,
+        AgentConversationTurnTable,
         SqlAlchemyAgentStateRepository,
         SqlAlchemyAgentSignalRepository,
         SqlAlchemyAgentEvidenceRepository,
+        SqlAlchemyAgentTaskStore,
     ]

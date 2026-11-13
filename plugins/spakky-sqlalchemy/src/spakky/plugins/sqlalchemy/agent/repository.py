@@ -11,18 +11,23 @@ from spakky.agent.interfaces.repository import (
     IAgentSignalRepository,
     IAgentStateRepository,
 )
+from spakky.agent.interfaces.task_store import ConversationTurn, ITaskStore
 from spakky.agent.mailbox import IAgentSignalPublisher
 from spakky.agent.signal import AgentSignal
 from spakky.agent.state import AgentState, AgentStatus
 from spakky.core.pod.annotations.pod import Pod
+from spakky.core.utils.uuid import uuid7
 from sqlalchemy import event, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, SessionTransaction
 
 from spakky.plugins.sqlalchemy.agent.error import (
+    AgentConversationAppendConflictError,
     AgentPersistenceRowNotFoundError,
     AgentSignalTransactionMissingError,
 )
 from spakky.plugins.sqlalchemy.agent.table import (
+    AgentConversationTurnTable,
     AgentEvidenceOriginTable,
     AgentEvidenceTable,
     AgentSignalTable,
@@ -316,3 +321,61 @@ class SqlAlchemyAgentEvidenceRepository(IAgentEvidenceRepository):
             ):
                 origins.setdefault(origin.evidence_id, []).append(origin.origin_ref)
         return [row.restore(tuple(origins.get(row.id, ()))) for row in rows]
+
+
+@Pod()
+class SqlAlchemyAgentTaskStore(ITaskStore):
+    """SQLAlchemy conversation-history store keyed by ``conversation_id``.
+
+    Turns are appended after the last stored position of the conversation and
+    read back in that order. When two writers append to one conversation at the
+    same time, the unique ``(conversation_id, position)`` constraint lets only
+    one of them succeed; the other fails with
+    ``AgentConversationAppendConflictError`` instead of interleaving turns.
+    """
+
+    _session_manager: SessionManager
+
+    def __init__(self, session_manager: SessionManager) -> None:
+        self._session_manager = session_manager
+
+    @override
+    def load_history(self, conversation_id: str) -> Sequence[ConversationTurn]:
+        rows = self._session_manager.session.scalars(
+            select(AgentConversationTurnTable)
+            .where(AgentConversationTurnTable.conversation_id == conversation_id)
+            .order_by(AgentConversationTurnTable.position)
+        ).all()
+        return [row.to_turn() for row in rows]
+
+    @override
+    def append_turns(
+        self,
+        conversation_id: str,
+        turns: Sequence[ConversationTurn],
+    ) -> None:
+        session = self._session_manager.session
+        last_position = session.scalar(
+            select(func.max(AgentConversationTurnTable.position)).where(
+                AgentConversationTurnTable.conversation_id == conversation_id
+            )
+        )
+        # None: the conversation has no stored turn yet.
+        next_position = 0 if last_position is None else last_position + 1
+        created_at = datetime.now(UTC)
+        for offset, turn in enumerate(turns):
+            session.add(
+                AgentConversationTurnTable(
+                    id=str(uuid7()),
+                    conversation_id=conversation_id,
+                    position=next_position + offset,
+                    role=turn.role.value,
+                    content=turn.content,
+                    metadata_json=turn.metadata,
+                    created_at=created_at,
+                )
+            )
+        try:
+            session.flush()
+        except IntegrityError:
+            raise AgentConversationAppendConflictError(conversation_id)

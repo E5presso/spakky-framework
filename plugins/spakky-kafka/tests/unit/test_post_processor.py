@@ -9,7 +9,7 @@ from spakky.plugins.kafka.event.consumer import (
     AsyncKafkaEventConsumer,
 )
 
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from typing import override
 
@@ -28,6 +28,9 @@ from spakky.tracing.propagator import ITracePropagator
 import pytest
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.mutability import immutable
+from spakky.core.pod.annotations.pod import Pod
+from spakky.data.aspects.transactional import Transactional, TransactionalAspect
+from spakky.data.persistency.transaction import AbstractTransaction
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 from spakky.event.event_consumer import (
     IAsyncEventConsumer,
@@ -35,6 +38,8 @@ from spakky.event.event_consumer import (
 )
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
+from spakky.plugins.kafka.common.config import KafkaConnectionConfig
+from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX
 from spakky.plugins.kafka.post_processor import KafkaPostProcessor
 
 
@@ -701,3 +706,107 @@ def test_kafka_post_processor_with_tracing_but_no_set_propagator_expect_skipped(
 
     assert not hasattr(mock_consumer, "set_propagator")
     assert not hasattr(mock_async_consumer, "set_propagator")
+
+
+def test_kafka_post_processor_named_subscriber_expect_subscriber_and_handler_name_passed() -> (
+    None
+):
+    """구독자 이름과 핸들러 이름이 consumer 등록에 그대로 전달된다."""
+
+    @EventHandler(subscriber="billing")
+    class BillingHandler:
+        @on_event(SampleIntegrationEvent)
+        def charge(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+        @on_event(SampleIntegrationEvent, name="audit-trail")
+        async def audit(self, event: SampleIntegrationEvent) -> None:
+            pass
+
+    mock_consumer = Mock(spec=KafkaEventConsumer)
+    mock_async_consumer = Mock(spec=AsyncKafkaEventConsumer)
+    mock_container = Mock()
+    mock_container.get.side_effect = lambda t: (
+        mock_consumer if t == KafkaEventConsumer else mock_async_consumer
+    )
+    mock_context = Mock(spec=ApplicationContext)
+    mock_context.get_or_none.return_value = None
+    post_processor = KafkaPostProcessor()
+    post_processor.set_container(mock_container)
+    post_processor.set_application_context(mock_context)
+
+    post_processor.post_process(BillingHandler())
+
+    assert mock_consumer.register.call_args.kwargs == {
+        "subscriber": "billing",
+        "handler_name": (
+            "test_kafka_post_processor_named_subscriber_expect_subscriber_and_handler_name_passed"
+            ".<locals>.BillingHandler.charge"
+        ),
+    }
+    assert mock_async_consumer.register.call_args.kwargs == {
+        "subscriber": "billing",
+        "handler_name": "audit-trail",
+    }
+
+
+def test_kafka_post_processor_transactional_handler_expect_registered_and_run_in_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """@Transactional이 붙어 AOP 프록시가 된 처리기도 등록되고 트랜잭션 안에서 실행된다."""
+    log: list[str] = []
+
+    @Pod()
+    class RecordingTransaction(AbstractTransaction):
+        def initialize(self) -> None:
+            log.append("begin")
+
+        def dispose(self) -> None: ...
+
+        def commit(self) -> None:
+            log.append("commit")
+
+        def rollback(self) -> None:
+            log.append("rollback")
+
+    @EventHandler(subscriber="inventory")
+    class StockHandler:
+        @on_event(SampleIntegrationEvent)
+        @Transactional()
+        def reserve(self, event: SampleIntegrationEvent) -> None:
+            log.append(f"reserve:{event.message}")
+
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID", "test-group")
+    monkeypatch.setenv(f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID", "test-client")
+    monkeypatch.setenv(
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS", "localhost:9092"
+    )
+    context = ApplicationContext()
+    with (
+        patch("spakky.plugins.kafka.event.consumer.AdminClient"),
+        patch("spakky.plugins.kafka.event.worker.Consumer") as consumer_cls,
+        patch("spakky.plugins.kafka.event.worker.Producer"),
+    ):
+        consumer_cls.return_value.poll.return_value = None
+        for pod in (
+            RecordingTransaction,
+            TransactionalAspect,
+            KafkaConnectionConfig,
+            KafkaEventConsumer,
+            AsyncKafkaEventConsumer,
+            KafkaPostProcessor,
+            StockHandler,
+        ):
+            context.add(pod)
+        context.start()
+        try:
+            consumer = context.get(KafkaEventConsumer)
+            [registered] = consumer.subscriptions.get(
+                "inventory", SampleIntegrationEvent
+            ).handlers
+            registered.callback(SampleIntegrationEvent(message="sku-1"))
+        finally:
+            context.stop()
+
+    assert registered.name.endswith("StockHandler.reserve")
+    assert log == ["begin", "reserve:sku-1", "commit"]

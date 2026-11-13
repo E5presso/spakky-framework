@@ -3,11 +3,13 @@
 from spakky.core.application.application import SpakkyApplication
 
 from spakky.plugins.sqlalchemy.agent.repository import (
+    SqlAlchemyAgentTaskStore,
     SqlAlchemyAgentEvidenceRepository,
     SqlAlchemyAgentSignalRepository,
     SqlAlchemyAgentStateRepository,
 )
 from spakky.plugins.sqlalchemy.agent.table import (
+    AgentConversationTurnTable,
     AgentEvidenceOriginTable,
     AgentEvidenceTable,
     AgentSignalTable,
@@ -21,6 +23,8 @@ def initialize(app: SpakkyApplication) -> None:
     app.add(AgentSignalTable)
     app.add(AgentEvidenceTable)
     app.add(AgentEvidenceOriginTable)
+    app.add(AgentConversationTurnTable)
     app.add(SqlAlchemyAgentStateRepository)
     app.add(SqlAlchemyAgentSignalRepository)
     app.add(SqlAlchemyAgentEvidenceRepository)
+    app.add(SqlAlchemyAgentTaskStore)
