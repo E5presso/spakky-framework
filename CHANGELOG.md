@@ -1,3 +1,9 @@
+## v12.1.0 (2026-11-17)
+
+### Feat
+
+- 동적 tenant, 비동기 role checker, outbox purge, EntityAlreadyExistsError를 추가합니다 (#562)
+
 ## v12.0.0 (2026-11-13)
 
 ### BREAKING CHANGE
