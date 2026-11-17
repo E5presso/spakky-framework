@@ -190,6 +190,9 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
     def mark_abandoned(self, message_id: object) -> None:
         self.abandoned_ids.append(message_id)
 
+    def purge_published(self, older_than: object) -> int:
+        raise AssertionError("Not expected to be called")
+
 
 # ── Async test doubles ──
 
@@ -350,6 +353,9 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
 
     async def mark_abandoned(self, message_id: object) -> None:
         self.abandoned_ids.append(message_id)
+
+    async def purge_published(self, older_than: object) -> int:
+        raise AssertionError("Not expected to be called")
 
 
 # ── Common helpers ──

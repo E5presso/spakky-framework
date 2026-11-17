@@ -8,6 +8,7 @@ from spakky.auth import (
     MISSING_SNAPSHOT_DECISION,
     VERIFICATION_PROVIDER_UNAVAILABLE_DECISION,
     AuthContext,
+    AuthDynamicRef,
     AuthInvocation,
     AuthInvocationAttribute,
     AuthRequirement,
@@ -100,6 +101,13 @@ class SagaAuthExecutionContext:
     ) -> AuthorizationDecision:
         if requirement.kind is AuthRequirementKind.AUTHENTICATED:
             return AuthorizationDecision.allow()
+        tenant = requirement.tenant
+        if isinstance(tenant, AuthDynamicRef):
+            # A saga step has no inbound request to resolve the tenant from.
+            return AuthorizationDecision.deny(
+                AuthorizationReasonCode.DYNAMIC_REF_UNRESOLVED,
+                reason="Saga steps cannot resolve a dynamic tenant reference",
+            )
         if requirement.kind is AuthRequirementKind.PERMISSION:
             checker = self.permission_checker
             if checker is None:
@@ -109,7 +117,7 @@ class SagaAuthExecutionContext:
                     auth_context=auth_context,
                     permission=requirement.ref,
                     resource=requirement.resource,
-                    tenant=requirement.tenant,
+                    tenant=tenant,
                 )
             )
         if requirement.kind is AuthRequirementKind.POLICY:
@@ -125,7 +133,7 @@ class SagaAuthExecutionContext:
                     auth_context=auth_context,
                     resource=requirement.resource,
                     action=requirement.action,
-                    tenant=requirement.tenant,
+                    tenant=tenant,
                 )
             )
         if requirement.kind is AuthRequirementKind.RELATION:
@@ -137,7 +145,7 @@ class SagaAuthExecutionContext:
                     auth_context=auth_context,
                     relation=requirement.ref,
                     resource=requirement.resource,
-                    tenant=requirement.tenant,
+                    tenant=tenant,
                 )
             )
         if requirement.kind is AuthRequirementKind.ROLE:
@@ -148,7 +156,7 @@ class SagaAuthExecutionContext:
                 RoleCheckRequest(
                     auth_context=auth_context,
                     role=requirement.ref,
-                    tenant=requirement.tenant,
+                    tenant=tenant,
                 )
             )
         if requirement.kind is AuthRequirementKind.SCOPE:

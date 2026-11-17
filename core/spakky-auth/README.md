@@ -18,8 +18,8 @@ pip install spakky-auth
 - `AuthorizationDecision`, `AuthorizationDecisionState`, `AuthorizationReasonCode`: `ALLOW`, `CHALLENGE`, `DENY`, `ERROR` 판정 모델
 - `AuthContextSnapshot`: raw bearer token 대신 task/broker/saga 등으로 전파하는 signed snapshot envelope 계약
 - `AuthCapability`: authentication, policy evaluation, permission/role/scope/relation check, snapshot sign/verify, password hash/verify capability 선언
-- `IAuthenticationProvider`, `IAuthorizationPolicyEvaluator`, `IPermissionChecker`, `IRoleChecker`, `IScopeChecker`, `IRelationChecker`, `IAuthContextSnapshotSigner`, `IAuthContextSnapshotVerifier`, `IPasswordHasher`, `IPasswordVerifier`: ABC + `abstractmethod` 기반 public provider port
-- `AuthInvocation`, `AuthDynamicRef`, `IAuthInvocationResolver`: resource/action/tenant dynamic ref를 invocation에서 resolve하기 위한 provider-neutral 계약
+- `IAuthenticationProvider`, `IAuthorizationPolicyEvaluator`, `IPermissionChecker`, `IRoleChecker`, `IAsyncRoleChecker`, `IScopeChecker`, `IRelationChecker`, `IAuthContextSnapshotSigner`, `IAuthContextSnapshotVerifier`, `IPasswordHasher`, `IPasswordVerifier`: ABC + `abstractmethod` 기반 public provider port
+- `AuthInvocation`, `AuthDynamicRef`, `IAuthInvocationResolver`, `AuthInvocationAttributeResolver`, `store_auth_invocation`, `get_auth_invocation`: 요청에서 정해지는 tenant를 invocation에서 resolve하기 위한 provider-neutral 계약. 현재 aspect가 해석하는 dynamic ref는 tenant뿐입니다
 - `AuthProviderContribution`: `spakky.contributions.spakky.auth` feature-local contribution이 capability set을 선언하기 위한 metadata 계약
 - `AuthSnapshotPropagationConfig`: signed `AuthContextSnapshot` 전파 사용 여부를 선언하는 feature-local config
 - `public_access`, `protected`, `require_scope`, `require_role`, `require_permission`, `require_policy`, `require_relation`: class/function boundary에 public/protected auth metadata를 선언하는 Spakky-native decorator
@@ -47,6 +47,23 @@ class DocumentController:
 ```
 
 Stacked requirement는 canonical `AuthRequirement` tuple로 aggregate되며, exact duplicate는 제거됩니다. Class-level requirement와 method-level requirement는 AND semantics로 결합됩니다. `public_access`와 protected requirement가 effective metadata에서 동시에 관찰되면 `ConflictingAuthMetadataError`가 발생합니다. OR/ANY semantics는 decorator 조합이 아니라 후속 `spakky-policy` named policy로 표현합니다.
+
+### 요청에서 정해지는 tenant와 비동기 role checker
+
+```python
+from spakky.auth import AuthDynamicRef, require_role
+
+
+@require_role("member", tenant=AuthDynamicRef.tenant("http.header.x-workspace"))
+async def list_documents() -> list[str]:
+    return []
+```
+
+- `tenant`에 `AuthDynamicRef.tenant(expression)`을 넘기면 aspect가 인가 시점에 경계 어댑터가 저장한 `AuthInvocation`에서 tenant를 해석합니다. 기본 해석기 `AuthInvocationAttributeResolver`는 expression과 이름이 같은 invocation 속성의 문자열 값을 씁니다. `IAuthInvocationResolver` Pod를 등록하면 그 구현이 대신 쓰입니다.
+- 해석하지 못하면(저장된 invocation 없음, 속성 없음·빈 값, 다른 종류의 응답) checker를 부르지 않고 `AuthDynamicRefUnresolvedError`(`AuthRequirementDeniedError` 하위, `DENY / DYNAMIC_REF_UNRESOLVED`)로 실패합니다. tenant 자리에 `TENANT`가 아닌 dynamic ref를 선언하면 `InvalidAuthDynamicRefKindError`입니다.
+- `AsyncAuthorizationAspect`는 `IAsyncRoleChecker`가 등록되어 있으면 그것을 `await`하고, 없으면 `IRoleChecker`를 씁니다. `AuthorizationAspect`는 `IRoleChecker`만 씁니다.
+
+자세한 사용법은 [인증/인가 가이드](https://framework.spakky.com/guides/security/#dynamic-tenant)를 참고하세요.
 
 `AuthorizationAspect`와 `AsyncAuthorizationAspect`는 메서드 인자로 `AuthContext`를 요구하지 않습니다. 각 inbound adapter가 `ApplicationContext` request/context scope에 seed한 `AuthContext`를 `require_auth_context()`로 읽고, provider-neutral checker port decision이 `ALLOW`가 아니면 `AuthRequirementDeniedError`로 실패합니다. 이 오류는 non-ALLOW `AuthorizationDecision`을 `decision` 속성에 보존하므로 inbound adapter는 원래 reason code를 CLI/HTTP/gRPC 등 transport별 응답으로 매핑할 수 있습니다.
 

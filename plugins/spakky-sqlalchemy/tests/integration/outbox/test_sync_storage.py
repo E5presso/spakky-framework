@@ -1,12 +1,16 @@
 """Integration tests for SqlAlchemyOutboxStorage with PostgreSQL."""
 
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from spakky.core.application.application import SpakkyApplication
 from spakky.outbox.common.message import OutboxMessage
+from sqlalchemy import select
 
 from spakky.plugins.sqlalchemy.outbox.storage import SqlAlchemyOutboxStorage
+from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
+from spakky.plugins.sqlalchemy.persistency.connection_manager import ConnectionManager
 from spakky.plugins.sqlalchemy.persistency.transaction import Transaction
 
 
@@ -280,3 +284,51 @@ def test_fetch_pending_partition_key_head_abandoned_expect_tail_claimable(
     assert tail.id in {r.id for r in result}
 
     storage.mark_published(tail.id)
+
+
+def test_purge_published_expect_only_old_published_rows_deleted(
+    transaction: Transaction,
+    storage: SqlAlchemyOutboxStorage,
+    app: SpakkyApplication,
+    unique_id: str,
+) -> None:
+    """purge_published()는 기준 시각 전에 발행한 행만 지우고 미발행·포기·최근 발행 행은 남긴다."""
+    engine = app.container.get(type_=ConnectionManager).connection
+    old_published = _make_message(unique_id, event_name="OldPublished")
+    recent_published = _make_message(unique_id, event_name="RecentPublished")
+    pending = _make_message(unique_id, event_name="Pending")
+    abandoned = _make_message(unique_id, event_name="Abandoned")
+    with transaction:
+        for message in (old_published, recent_published, pending, abandoned):
+            storage.save(message)
+    storage.mark_abandoned(abandoned.id)
+    storage.mark_published(old_published.id)
+    with engine.connect() as connection:
+        published_at = connection.execute(
+            select(OutboxMessageTable.published_at).where(
+                OutboxMessageTable.id == old_published.id
+            )
+        ).scalar_one()
+    assert published_at is not None
+    older_than = published_at + timedelta(microseconds=1)
+    storage.mark_published(recent_published.id)
+
+    deleted = storage.purge_published(older_than)
+
+    with engine.connect() as connection:
+        remaining = set(
+            connection.execute(
+                select(OutboxMessageTable.id).where(
+                    OutboxMessageTable.id.in_(
+                        [
+                            old_published.id,
+                            recent_published.id,
+                            pending.id,
+                            abandoned.id,
+                        ]
+                    )
+                )
+            ).scalars()
+        )
+    assert deleted >= 1
+    assert remaining == {recent_published.id, pending.id, abandoned.id}

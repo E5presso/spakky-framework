@@ -205,6 +205,7 @@ FastAPI wrapper가 Spakky request context를 clear한 뒤 credential 전달체�
 - WebSocket은 `Authorization: Bearer <token>`과 `access_token=<token>` connection query를 지원합니다.
 - HTTP auth failure는 CHALLENGE 401, DENY 403, ERROR 500으로 매핑됩니다.
 - WebSocket auth failure는 보호된 handler 호출 전에 connection close로 처리됩니다.
+- 요청마다 `AuthInvocation`을 `ApplicationContext`에 저장합니다. 속성은 `handler`, `http.header.<소문자 이름>`, `http.path.<이름>`, `http.query.<이름>`이며 `authorization`·`cookie`·`proxy-authorization` 헤더와 `access_token` query는 담지 않습니다. `@require_role("member", tenant=AuthDynamicRef.tenant("http.header.x-workspace"))`처럼 요청에서 정해지는 tenant는 이 속성에서 해석되고, 해석하지 못하면 403입니다.
 
 ## 구성 요소
 

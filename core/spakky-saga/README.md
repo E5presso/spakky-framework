@@ -99,7 +99,7 @@ result = await saga.execute(
 )
 ```
 
-Protected step은 raw bearer token을 받지 않고 signed `AuthContextSnapshot` envelope를 검증합니다. missing, invalid, expired snapshot은 `CHALLENGE` decision으로 step failure가 되며, provider unavailable은 `ERROR` decision으로 기존 saga failure/compensation policy를 따릅니다.
+Protected step은 raw bearer token을 받지 않고 signed `AuthContextSnapshot` envelope를 검증합니다. missing, invalid, expired snapshot은 `CHALLENGE` decision으로 step failure가 되며, provider unavailable은 `ERROR` decision으로 기존 saga failure/compensation policy를 따릅니다. Saga step에는 inbound 요청이 없으므로 `AuthDynamicRef.tenant(...)`로 선언한 tenant는 해석할 수 없고 `DENY / DYNAMIC_REF_UNRESOLVED`로 step이 실패합니다.
 
 ### Builder 함수 대안
 

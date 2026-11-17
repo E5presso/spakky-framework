@@ -153,6 +153,19 @@ class IRoleChecker(ABC):
         ...
 
 
+class IAsyncRoleChecker(ABC):
+    """Provider-neutral role check port for checkers that await I/O.
+
+    AsyncAuthorizationAspect prefers this port over IRoleChecker, so a role
+    check that calls another service does not block the event loop.
+    """
+
+    @abstractmethod
+    async def check_role(self, request: RoleCheckRequest) -> AuthorizationDecision:
+        """Check whether a subject has a role."""
+        ...
+
+
 class IScopeChecker(ABC):
     """Provider-neutral scope check port."""
 

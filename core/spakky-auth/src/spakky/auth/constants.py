@@ -3,6 +3,9 @@
 AUTH_CONTEXT_CONTEXT_KEY = "spakky.auth.context"
 """ApplicationContext context value key for the current AuthContext."""
 
+AUTH_INVOCATION_CONTEXT_KEY = "spakky.auth.invocation"
+"""ApplicationContext context value key for the current AuthInvocation."""
+
 AUTH_CONTEXT_SNAPSHOT_METADATA_KEY = "spakky.auth.context_snapshot"
 """Transport metadata key for signed AuthContextSnapshot propagation."""
 

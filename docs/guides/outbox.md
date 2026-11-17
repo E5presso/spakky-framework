@@ -191,6 +191,17 @@ from spakky.outbox.ports.storage import IOutboxStorage, IAsyncOutboxStorage
 | `mark_published(message_id)` | 메시지를 전송 완료 처리 |
 | `increment_retry(message_id)` | 재시도 카운트 증가 |
 | `mark_abandoned(message_id)` | 재시도를 소진한 메시지를 발행 포기 처리 (발행 대기열에서 제외하되 레코드는 보존) |
+| `purge_published(older_than)` | `published_at`이 `older_than`보다 이른 발행 완료 메시지를 지우고 지운 수를 반환. 미발행·발행 포기 메시지는 남긴다 |
+
+발행을 마친 행은 릴레이가 지우지 않습니다. 주기 작업에서 `purge_published()`를 호출해 정리합니다.
+
+```python
+from datetime import UTC, datetime, timedelta
+
+deleted = await storage.purge_published(datetime.now(UTC) - timedelta(days=7))
+```
+
+SQLAlchemy 구현은 독립 세션에서 삭제하고 바로 commit하므로 호출 측 트랜잭션이 필요 없습니다. 발행에 실패해 대기 중인 행과 `abandoned_at`이 기록된 행은 기간과 관계없이 남습니다.
 
 #### OutboxMessage
 

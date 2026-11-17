@@ -5,9 +5,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from inspect import getmembers_static
 
-from spakky.auth.error import ConflictingAuthMetadataError
+from spakky.auth.error import (
+    ConflictingAuthMetadataError,
+    InvalidAuthDynamicRefKindError,
+)
 from spakky.auth.invocation import (
     AuthActionRef,
+    AuthDynamicRef,
+    AuthDynamicRefKind,
     AuthPermissionRef,
     AuthRelationRef,
     AuthResourceRef,
@@ -47,8 +52,20 @@ class AuthRequirement:
     action: AuthActionRef | None = None
     """Optional action reference for policy checks."""
 
-    tenant: AuthTenantRef | None = None
-    """Optional tenant reference for tenant-scoped checks."""
+    tenant: AuthTenantRef | AuthDynamicRef | None = None
+    """Optional tenant for tenant-scoped checks.
+
+    A str is a fixed tenant. An AuthDynamicRef is resolved from the invocation
+    at authorization time. None means the check is not tenant-scoped.
+    """
+
+    def __post_init__(self) -> None:
+        """Reject a dynamic tenant ref declared with another reference kind."""
+        if (
+            isinstance(self.tenant, AuthDynamicRef)
+            and self.tenant.kind is not AuthDynamicRefKind.TENANT
+        ):
+            raise InvalidAuthDynamicRefKindError()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -100,7 +117,7 @@ def require_permission[T: object](
     permission: AuthPermissionRef,
     *,
     resource: AuthResourceRef | None = None,
-    tenant: AuthTenantRef | None = None,
+    tenant: AuthTenantRef | AuthDynamicRef | None = None,
 ) -> Callable[[T], T]:
     """Require a permission decision for a class or method boundary."""
     return _requirement_decorator(
@@ -117,7 +134,7 @@ def require_policy[T: object](
     resource: AuthResourceRef,
     action: AuthActionRef,
     *,
-    tenant: AuthTenantRef | None = None,
+    tenant: AuthTenantRef | AuthDynamicRef | None = None,
 ) -> Callable[[T], T]:
     """Require a resource/action policy decision for a boundary."""
     return _requirement_decorator(
@@ -135,7 +152,7 @@ def require_relation[T: object](
     relation: AuthRelationRef,
     *,
     resource: AuthResourceRef,
-    tenant: AuthTenantRef | None = None,
+    tenant: AuthTenantRef | AuthDynamicRef | None = None,
 ) -> Callable[[T], T]:
     """Require a relationship decision for a resource boundary."""
     return _requirement_decorator(
@@ -151,7 +168,7 @@ def require_relation[T: object](
 def require_role[T: object](
     role: AuthRoleRef,
     *,
-    tenant: AuthTenantRef | None = None,
+    tenant: AuthTenantRef | AuthDynamicRef | None = None,
 ) -> Callable[[T], T]:
     """Require a role decision for a class or method boundary."""
     return _requirement_decorator(

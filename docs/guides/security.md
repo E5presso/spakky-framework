@@ -83,6 +83,81 @@ Class-level 요구사항과 method-level 요구사항은 모두 만족해야 합
 
 OR/ANY 같은 복합 조건은 decorator 조합으로 표현하지 않습니다. 그런 규칙은 `spakky-policy`의 named policy로 옮기세요.
 
+### 요청에서 정해지는 tenant { #dynamic-tenant }
+
+`tenant`에 고정 문자열 대신 `AuthDynamicRef.tenant(expression)`을 넘기면, 인가 시점에 현재 요청에서 tenant를 해석합니다. `@require_role`, `@require_permission`, `@require_policy`, `@require_relation`이 모두 받습니다.
+
+```python
+from spakky.auth import AuthDynamicRef, require_role
+from spakky.plugins.fastapi.routes import get
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+
+
+@ApiController("/documents")
+class DocumentController:
+    @get("")
+    @require_role("member", tenant=AuthDynamicRef.tenant("http.header.x-workspace"))
+    async def list_documents(self) -> list[str]:
+        return []
+```
+
+- 경계 어댑터가 호출 정보를 `AuthInvocation`으로 `ApplicationContext`에 저장하고(`store_auth_invocation`), `AuthorizationAspect`가 그 속성에서 값을 찾아 `RoleCheckRequest.tenant` 등에 넣습니다.
+- `spakky-fastapi`는 HTTP와 WebSocket 요청마다 다음 속성을 채웁니다. 헤더 이름은 소문자입니다. 같은 이름이 여러 번 오면 첫 값을 씁니다. `authorization`, `cookie`, `proxy-authorization` 헤더와 `access_token` query는 담지 않습니다.
+
+| 속성 이름 | 값 |
+| --- | --- |
+| `handler` | handler의 qualified name |
+| `http.header.<이름>` | 요청 헤더 |
+| `http.path.<이름>` | 경로 파라미터 |
+| `http.query.<이름>` | query 파라미터 |
+
+- 기본 해석기 `AuthInvocationAttributeResolver`는 expression과 이름이 같은 속성의 문자열 값을 그대로 씁니다. 다른 규칙이 필요하면 `IAuthInvocationResolver` 구현을 Pod로 등록합니다. 등록된 구현이 기본 해석기를 대신합니다.
+- 속성이 없거나 비어 있으면 checker를 부르지 않고 `AuthDynamicRefUnresolvedError`로 거부합니다. 이 오류는 `AuthRequirementDeniedError`의 하위 클래스이고 decision은 `DENY / DYNAMIC_REF_UNRESOLVED`입니다. FastAPI에서는 403입니다.
+- 요청이 없는 경계는 해석할 수 없어 거부합니다. `AuthInvocation`을 저장하는 어댑터는 현재 `spakky-fastapi`뿐입니다. saga step과 Celery worker task는 checker를 부르지 않고 `DENY / DYNAMIC_REF_UNRESOLVED`로 실패합니다.
+- 요청이 보낸 값은 호출자가 주장한 tenant일 뿐입니다. 그 tenant에 속하는지는 role checker가 확인해야 합니다.
+
+### 비동기 role checker { #async-role-checker }
+
+role 검사가 다른 서비스를 호출해야 하면 `IAsyncRoleChecker`를 구현합니다. `AsyncAuthorizationAspect`는 `IAsyncRoleChecker`가 등록되어 있으면 그것을 `await`하고, 없으면 동기 `IRoleChecker`를 씁니다. 동기 handler를 감싸는 `AuthorizationAspect`는 `IRoleChecker`만 씁니다.
+
+```python
+from typing import override
+
+from spakky.auth import (
+    AuthCapability,
+    AuthProviderContribution,
+    AuthorizationDecision,
+    AuthorizationReasonCode,
+    IAsyncRoleChecker,
+    RoleCheckRequest,
+)
+from spakky.core.pod.annotations.pod import Pod
+
+
+@Pod()
+class WorkspaceRoleChecker(IAsyncRoleChecker):
+    def __init__(self, memberships: IMembershipProxy) -> None:
+        self._memberships = memberships
+
+    @override
+    async def check_role(self, request: RoleCheckRequest) -> AuthorizationDecision:
+        if request.tenant is not None and await self._memberships.has_role(
+            request.auth_context.subject.id, request.tenant, request.role
+        ):
+            return AuthorizationDecision.allow()
+        return AuthorizationDecision.deny(AuthorizationReasonCode.INSUFFICIENT_ROLE)
+
+
+@Pod(name="workspace_auth_provider_contribution")
+def workspace_auth_provider_contribution() -> AuthProviderContribution:
+    return AuthProviderContribution(
+        provider_id="workspace",
+        capabilities=frozenset({AuthCapability.ROLE_CHECK}),
+    )
+```
+
+`IMembershipProxy`는 애플리케이션이 정의한 포트입니다. 직접 만든 checker도 시작 시 검증을 통과하려면 `ROLE_CHECK`를 선언한 `AuthProviderContribution`이 정확히 하나 있어야 합니다.
+
 ---
 
 ## Provider

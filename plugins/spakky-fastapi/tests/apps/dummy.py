@@ -4,10 +4,12 @@ from fastapi import Request, WebSocket
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel
 from spakky.auth import (
+    AuthDynamicRef,
     AuthRequirementDeniedError,
     ConflictingAuthMetadataError,
     protected,
     require_auth_context,
+    require_role,
 )
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.aware.application_context_aware import (
@@ -118,6 +120,23 @@ class DummyController(IApplicationContextAware):
     async def protected_dummy(self) -> dict[str, str]:
         auth_context = require_auth_context(self.__application_context)
         return {"subject": auth_context.subject.id, "issuer": auth_context.issuer}
+
+    @require_role("member", tenant=AuthDynamicRef.tenant("http.header.x-workspace"))
+    @get("/auth/workspace-member", response_class=PlainTextResponse)
+    async def workspace_member_dummy(self) -> str:
+        return "member"
+
+    @require_role("member", tenant=AuthDynamicRef.tenant("http.path.workspace_id"))
+    @get("/auth/workspaces/{workspace_id}", response_class=PlainTextResponse)
+    async def workspace_path_member_dummy(self, workspace_id: str) -> str:
+        return workspace_id
+
+    @require_role("member", tenant=AuthDynamicRef.tenant("http.query.workspace"))
+    @websocket("/ws-workspace-member")
+    async def websocket_workspace_member_dummy(self, socket: WebSocket) -> None:
+        await socket.accept()
+        await socket.send_text("member")
+        await socket.close()
 
     @protected
     @get("/auth/denied")

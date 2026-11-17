@@ -11,6 +11,18 @@ class EntityNotFoundError(AbstractSpakkyDomainError):
     message = "Entity not found by given id"
 
 
+class EntityAlreadyExistsError(AbstractSpakkyDomainError):
+    """Raised when saving a new aggregate collides with a stored unique key.
+
+    Another aggregate already holds the same identifier or another unique key,
+    typically because a concurrent transaction created it first. This is not a
+    version conflict: no stored row of this aggregate was changed. The caller
+    usually reads the existing aggregate instead of retrying the insert.
+    """
+
+    message = "Entity already exists with the same unique key"
+
+
 class VersionConflictError(AbstractSpakkyDomainError):
     """Raised when optimistic locking detects a version conflict during save."""
 

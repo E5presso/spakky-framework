@@ -19,7 +19,18 @@ from spakky.plugins.sqlalchemy.persistency.session_manager import (
     AsyncSessionManager,
     SessionManager,
 )
-from sqlalchemy import ColumnElement, Row, Select, and_, or_, select, tuple_, update
+from sqlalchemy import (
+    ColumnElement,
+    CursorResult,
+    Row,
+    Select,
+    and_,
+    delete,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session, aliased, sessionmaker
 
@@ -144,8 +155,8 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
     """Synchronous SQLAlchemy-based Outbox storage implementation.
 
     - save(): uses the current transactional session (same TX as business data).
-    - fetch_pending/mark_published/increment_retry/mark_abandoned: use
-      independent sessions.
+    - fetch_pending/mark_published/increment_retry/mark_abandoned/
+      purge_published: use independent sessions.
     """
 
     _session_manager: SessionManager
@@ -269,14 +280,36 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
             )
             session.commit()
 
+    @override
+    def purge_published(self, older_than: datetime) -> int:
+        """Delete published rows older than `older_than` in an independent session.
+
+        `published_at` is NULL for pending and abandoned rows, so they stay.
+        """
+        with self._session_factory() as session:
+            result = session.execute(
+                delete(OutboxMessageTable).where(
+                    OutboxMessageTable.published_at.is_not(None),
+                    OutboxMessageTable.published_at < older_than,
+                )
+            )
+            session.commit()
+            return self._deleted(result)
+
+    def _deleted(self, result: object) -> int:
+        # Only a DML result carries rowcount; execute() is declared wider than that.
+        if not isinstance(result, CursorResult):
+            return 0
+        return result.rowcount
+
 
 @Pod()
 class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
     """Asynchronous SQLAlchemy-based Outbox storage implementation.
 
     - save(): uses the current transactional session (same TX as business data).
-    - fetch_pending/mark_published/increment_retry/mark_abandoned: use
-      independent sessions.
+    - fetch_pending/mark_published/increment_retry/mark_abandoned/
+      purge_published: use independent sessions.
     """
 
     _session_manager: AsyncSessionManager
@@ -405,3 +438,25 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
                 .values(abandoned_at=datetime.now(UTC))
             )
             await session.commit()
+
+    @override
+    async def purge_published(self, older_than: datetime) -> int:
+        """Delete published rows older than `older_than` in an independent session.
+
+        `published_at` is NULL for pending and abandoned rows, so they stay.
+        """
+        async with self._session_factory() as session:
+            result = await session.execute(
+                delete(OutboxMessageTable).where(
+                    OutboxMessageTable.published_at.is_not(None),
+                    OutboxMessageTable.published_at < older_than,
+                )
+            )
+            await session.commit()
+            return self._deleted(result)
+
+    def _deleted(self, result: object) -> int:
+        # Only a DML result carries rowcount; execute() is declared wider than that.
+        if not isinstance(result, CursorResult):
+            return 0
+        return result.rowcount

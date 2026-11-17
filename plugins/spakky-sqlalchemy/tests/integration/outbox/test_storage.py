@@ -1,14 +1,19 @@
 """Integration tests for AsyncSqlAlchemyOutboxStorage with PostgreSQL."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from spakky.outbox.common.message import OutboxMessage
+from sqlalchemy import select
 
 from spakky.plugins.sqlalchemy.outbox.storage import (
     AsyncSqlAlchemyOutboxStorage,
+)
+from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
+from spakky.plugins.sqlalchemy.persistency.connection_manager import (
+    AsyncConnectionManager,
 )
 from spakky.plugins.sqlalchemy.persistency.transaction import AsyncTransaction
 
@@ -296,3 +301,55 @@ async def test_fetch_pending_partition_key_head_abandoned_expect_tail_claimable(
     assert tail.id in {r.id for r in result}
 
     await async_storage.mark_published(tail.id)
+
+
+@pytest.mark.asyncio
+async def test_purge_published_expect_only_old_published_rows_deleted(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    async_connection_manager: AsyncConnectionManager,
+    unique_id: str,
+) -> None:
+    """purge_published()는 기준 시각 전에 발행한 행만 지우고 미발행·포기·최근 발행 행은 남긴다."""
+    old_published = _make_message(unique_id, event_name="OldPublished")
+    recent_published = _make_message(unique_id, event_name="RecentPublished")
+    pending = _make_message(unique_id, event_name="Pending")
+    abandoned = _make_message(unique_id, event_name="Abandoned")
+    async with async_transaction:
+        for message in (old_published, recent_published, pending, abandoned):
+            await async_storage.save(message)
+    await async_storage.mark_abandoned(abandoned.id)
+    await async_storage.mark_published(old_published.id)
+    async with async_connection_manager.connection.connect() as connection:
+        published_at = (
+            await connection.execute(
+                select(OutboxMessageTable.published_at).where(
+                    OutboxMessageTable.id == old_published.id
+                )
+            )
+        ).scalar_one()
+    assert published_at is not None
+    older_than = published_at + timedelta(microseconds=1)
+    await async_storage.mark_published(recent_published.id)
+
+    deleted = await async_storage.purge_published(older_than)
+
+    async with async_connection_manager.connection.connect() as connection:
+        remaining = set(
+            (
+                await connection.execute(
+                    select(OutboxMessageTable.id).where(
+                        OutboxMessageTable.id.in_(
+                            [
+                                old_published.id,
+                                recent_published.id,
+                                pending.id,
+                                abandoned.id,
+                            ]
+                        )
+                    )
+                )
+            ).scalars()
+        )
+    assert deleted >= 1
+    assert remaining == {recent_published.id, pending.id, abandoned.id}

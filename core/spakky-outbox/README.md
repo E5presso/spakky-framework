@@ -126,6 +126,11 @@ class MyCustomStorage(IAsyncOutboxStorage):
         # 재시도를 소진한 메시지를 발행 대기열에서 빼되 레코드는 남긴다.
         # 이 상태가 없으면 그 메시지가 같은 키의 후속 메시지를 영구히 막는다.
         ...
+
+    async def purge_published(self, older_than: datetime) -> int:
+        # published_at이 older_than보다 이른 발행 완료 메시지만 지우고 지운 수를 반환한다.
+        # 미발행 메시지와 발행 포기 메시지는 지우지 않는다.
+        ...
 ```
 
 ## 개발 검증

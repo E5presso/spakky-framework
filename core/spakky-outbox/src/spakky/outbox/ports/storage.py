@@ -1,6 +1,7 @@
 """Outbox storage port."""
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from uuid import UUID
 
 from spakky.outbox.common.message import OutboxMessage
@@ -42,6 +43,23 @@ class IOutboxStorage(ABC):
         the operator has to be able to find what was dropped.
         """
 
+    @abstractmethod
+    def purge_published(self, older_than: datetime) -> int:
+        """Delete messages published before `older_than` and return how many.
+
+        Only published messages are removed. A message still awaiting delivery
+        and a message the relay abandoned both stay, whatever their age: the
+        first is still owed to the broker and the second is the operator's
+        record of what was dropped.
+
+        Args:
+            older_than: Messages whose `published_at` is earlier than this are
+                deleted. Use a timezone-aware datetime.
+
+        Returns:
+            Number of deleted messages.
+        """
+
 
 class IAsyncOutboxStorage(ABC):
     """Asynchronous outbox message storage abstraction."""
@@ -77,4 +95,21 @@ class IAsyncOutboxStorage(ABC):
         partition key never waits forever on a message that will not be retried
         again. An implementation must keep the record and the reason readable —
         the operator has to be able to find what was dropped.
+        """
+
+    @abstractmethod
+    async def purge_published(self, older_than: datetime) -> int:
+        """Delete messages published before `older_than` and return how many.
+
+        Only published messages are removed. A message still awaiting delivery
+        and a message the relay abandoned both stay, whatever their age: the
+        first is still owed to the broker and the second is the operator's
+        record of what was dropped.
+
+        Args:
+            older_than: Messages whose `published_at` is earlier than this are
+                deleted. Use a timezone-aware datetime.
+
+        Returns:
+            Number of deleted messages.
         """

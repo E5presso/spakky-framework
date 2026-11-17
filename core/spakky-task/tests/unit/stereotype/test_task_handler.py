@@ -2,7 +2,13 @@
 
 from dataclasses import dataclass
 
-from spakky.auth import protected, public_access, require_role, require_scope
+from spakky.auth import (
+    AuthDynamicRef,
+    protected,
+    public_access,
+    require_role,
+    require_scope,
+)
 from spakky.auth.metadata import (
     AuthRequirement,
     AuthRequirementKind,
@@ -152,6 +158,26 @@ def test_task_route_collects_protected_auth_metadata_without_auth_argument() -> 
         ("ROLE", "role:admin", "tenant:1"),
         ("SCOPE", "tasks:run", None),
     ]
+
+
+def test_task_route_with_dynamic_tenant_expect_flag_without_tenant_value() -> None:
+    """요청에서 정해지는 tenant는 문자열 tenant로 바꾸지 않고 dynamic_tenant로 표시한다."""
+
+    class WorkspaceTaskHandler:
+        @task
+        @require_role("member", tenant=AuthDynamicRef.tenant("http.header.x-workspace"))
+        def process(self) -> None:
+            return None
+
+    metadata = collect_task_auth_metadata(
+        WorkspaceTaskHandler().process,
+        owner_type=WorkspaceTaskHandler,
+    )
+
+    assert [
+        (item.kind, item.ref, item.tenant, item.dynamic_tenant)
+        for item in metadata.requirements
+    ] == [("ROLE", "member", None, True)]
 
 
 def test_task_route_collects_public_auth_metadata() -> None:

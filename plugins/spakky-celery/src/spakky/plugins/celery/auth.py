@@ -159,6 +159,12 @@ def _evaluate_requirement(
 ) -> AuthorizationDecision:
     if requirement.kind == "AUTHENTICATED":
         return AuthorizationDecision.allow()
+    if requirement.dynamic_tenant:
+        # A worker has no inbound request to resolve the tenant from.
+        return AuthorizationDecision.deny(
+            AuthorizationReasonCode.DYNAMIC_REF_UNRESOLVED,
+            reason="Celery tasks cannot resolve a dynamic tenant reference",
+        )
     if requirement.kind == "PERMISSION":
         if permission_checker is None:
             return _provider_unavailable_decision()

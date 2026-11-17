@@ -8,6 +8,7 @@ import pytest
 
 from spakky.auth import (
     AuthContext,
+    AuthDynamicRef,
     AuthInvocation,
     AuthRequirementDeniedError,
     AuthSubject,
@@ -172,6 +173,11 @@ async def _relation_protected_step(data: _AuthSagaData) -> None:
 @require_role("admin", tenant="tenant-a")
 async def _role_protected_step(data: _AuthSagaData) -> None:
     """Role-protected standalone step."""
+
+
+@require_role("admin", tenant=AuthDynamicRef.tenant("http.header.x-workspace"))
+async def _dynamic_tenant_protected_step(data: _AuthSagaData) -> None:
+    """Role-protected standalone step scoped to a request-resolved tenant."""
 
 
 _compensation_log: list[str] = []
@@ -426,6 +432,28 @@ async def test_missing_requirement_provider_expect_error_failure(
 
     assert result.status is SagaStatus.FAILED
     _assert_error_decision(result.error, AuthorizationDecisionState.ERROR)
+
+
+@pytest.mark.asyncio
+async def test_dynamic_tenant_requirement_expect_denied_without_calling_checker() -> (
+    None
+):
+    """saga step은 요청이 없어 동적 tenant를 해석할 수 없으므로 DENY로 실패한다."""
+    role_checker = _RoleChecker()
+    result = await saga_flow_run(
+        saga_flow(step(_dynamic_tenant_protected_step)),
+        _data(),
+        auth_context=SagaAuthExecutionContext(
+            snapshot_verifier=_SnapshotVerifier(),
+            role_checker=role_checker,
+        ),
+    )
+
+    assert result.status is SagaStatus.FAILED
+    _assert_error_decision(result.error, AuthorizationDecisionState.DENY)
+    error = _denied_error(result.error)
+    assert error.decision is not None
+    assert error.decision.reason_code is AuthorizationReasonCode.DYNAMIC_REF_UNRESOLVED
 
 
 @pytest.mark.asyncio

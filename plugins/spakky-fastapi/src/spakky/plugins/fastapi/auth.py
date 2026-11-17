@@ -3,6 +3,7 @@
 from inspect import Parameter, Signature, signature
 
 from fastapi import Request, WebSocket
+from starlette.requests import HTTPConnection
 
 from spakky.auth import (
     AbstractSpakkyAuthError,
@@ -20,6 +21,7 @@ from spakky.auth import (
     IAuthenticationProvider,
     get_effective_auth_metadata,
     store_auth_context,
+    store_auth_invocation,
 )
 from spakky.core.common.types import Func
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -39,6 +41,21 @@ WEBSOCKET_BOUNDARY = "WEBSOCKET"
 WEBSOCKET_AUTH_CHALLENGE_CLOSE_CODE = 1008
 WEBSOCKET_AUTH_ERROR_CLOSE_CODE = 1011
 
+HANDLER_ATTRIBUTE_NAME = "handler"
+"""AuthInvocation attribute carrying the handler's qualified name."""
+
+HTTP_HEADER_ATTRIBUTE_PREFIX = "http.header."
+"""AuthInvocation attribute prefix for request headers (lowercase names)."""
+
+HTTP_PATH_ATTRIBUTE_PREFIX = "http.path."
+"""AuthInvocation attribute prefix for matched path parameters."""
+
+HTTP_QUERY_ATTRIBUTE_PREFIX = "http.query."
+"""AuthInvocation attribute prefix for query parameters."""
+
+CREDENTIAL_HEADER_NAMES = frozenset({"authorization", "cookie", "proxy-authorization"})
+"""Headers kept out of AuthInvocation attributes because they carry credentials."""
+
 
 class FastAPIAuthBoundary:
     """Seed AuthContext and map auth failures at FastAPI boundaries."""
@@ -57,6 +74,8 @@ class FastAPIAuthBoundary:
     def seed_http_auth_context(self, request: Request, boundary: Func) -> None:
         """Authenticate an HTTP credential and seed AuthContext when present."""
         metadata = get_effective_auth_metadata(boundary)
+        invocation = self._http_invocation(request, boundary)
+        store_auth_invocation(self._application_context, invocation)
         credential = self._http_credential(request)
         if credential is None:
             if metadata.protected:
@@ -68,10 +87,7 @@ class FastAPIAuthBoundary:
                 raise AuthRequirementProviderUnavailableError()
             return
         try:
-            auth_context = provider.authenticate(
-                credential,
-                self._http_invocation(request, boundary),
-            )
+            auth_context = provider.authenticate(credential, invocation)
         except (AuthenticationError, CredentialCarrierError):
             if metadata.protected:
                 raise
@@ -85,6 +101,8 @@ class FastAPIAuthBoundary:
     ) -> None:
         """Authenticate a WebSocket credential and seed AuthContext when present."""
         metadata = get_effective_auth_metadata(boundary)
+        invocation = self._websocket_invocation(websocket, boundary)
+        store_auth_invocation(self._application_context, invocation)
         credential = self._websocket_credential(websocket)
         if credential is None:
             if metadata.protected:
@@ -96,10 +114,7 @@ class FastAPIAuthBoundary:
                 raise AuthRequirementProviderUnavailableError()
             return
         try:
-            auth_context = provider.authenticate(
-                credential,
-                self._websocket_invocation(websocket, boundary),
-            )
+            auth_context = provider.authenticate(credential, invocation)
         except (AuthenticationError, CredentialCarrierError):
             if metadata.protected:
                 raise
@@ -203,7 +218,7 @@ class FastAPIAuthBoundary:
         return AuthInvocation(
             boundary=HTTP_BOUNDARY,
             operation=f"{request.method} {request.url.path}",
-            attributes=self._invocation_attributes(boundary),
+            attributes=self._invocation_attributes(request, boundary),
         )
 
     def _websocket_invocation(
@@ -214,14 +229,51 @@ class FastAPIAuthBoundary:
         return AuthInvocation(
             boundary=WEBSOCKET_BOUNDARY,
             operation=websocket.url.path,
-            attributes=self._invocation_attributes(boundary),
+            attributes=self._invocation_attributes(websocket, boundary),
         )
 
     def _invocation_attributes(
         self,
+        connection: HTTPConnection,
         boundary: Func,
     ) -> tuple[AuthInvocationAttribute, ...]:
-        return (AuthInvocationAttribute(name="handler", value=boundary.__qualname__),)
+        """Describe the request to authentication providers and ref resolvers.
+
+        Headers carrying credentials are left out. When a header or query
+        parameter repeats, the first value is used.
+        """
+        attributes = [
+            AuthInvocationAttribute(
+                name=HANDLER_ATTRIBUTE_NAME,
+                value=boundary.__qualname__,
+            )
+        ]
+        for name in dict.fromkeys(connection.headers.keys()):
+            if name in CREDENTIAL_HEADER_NAMES:
+                continue
+            attributes.append(
+                AuthInvocationAttribute(
+                    name=f"{HTTP_HEADER_ATTRIBUTE_PREFIX}{name}",
+                    value=connection.headers.get(name),
+                )
+            )
+        for name, value in connection.path_params.items():
+            attributes.append(
+                AuthInvocationAttribute(
+                    name=f"{HTTP_PATH_ATTRIBUTE_PREFIX}{name}",
+                    value=str(value),
+                )
+            )
+        for name in dict.fromkeys(connection.query_params.keys()):
+            if name == WEBSOCKET_QUERY_TOKEN_NAME:
+                continue
+            attributes.append(
+                AuthInvocationAttribute(
+                    name=f"{HTTP_QUERY_ATTRIBUTE_PREFIX}{name}",
+                    value=connection.query_params.getlist(name)[0],
+                )
+            )
+        return tuple(attributes)
 
     def _signature_with_boundary_parameter(
         self,
