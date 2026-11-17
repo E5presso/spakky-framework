@@ -2,7 +2,7 @@
 
 from abc import ABC
 
-from spakky.auth.decision import AuthorizationDecision
+from spakky.auth.decision import AuthorizationDecision, AuthorizationReasonCode
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
 
@@ -63,6 +63,33 @@ class AuthRequirementDeniedError(AuthorizationError):
     def __init__(self, decision: AuthorizationDecision | None = None) -> None:
         self.decision = decision
         super().__init__()
+
+
+class AuthDynamicRefUnresolvedError(AuthRequirementDeniedError):
+    """Raised when a late-bound auth reference has no value for this invocation.
+
+    The requirement fails closed: a boundary that stores no AuthInvocation, an
+    absent or empty invocation attribute, and a resolver answering with another
+    reference kind all deny the call.
+    """
+
+    message = "Dynamic auth reference could not be resolved from the invocation"
+    expression: str
+
+    def __init__(self, expression: str) -> None:
+        self.expression = expression
+        super().__init__(
+            AuthorizationDecision.deny(
+                AuthorizationReasonCode.DYNAMIC_REF_UNRESOLVED,
+                reason=self.message,
+            )
+        )
+
+
+class InvalidAuthDynamicRefKindError(AuthorizationError):
+    """Raised when a dynamic ref of the wrong kind is declared for a field."""
+
+    message = "Dynamic auth reference kind does not match the requirement field"
 
 
 class AuthRequirementProviderUnavailableError(AuthorizationError):

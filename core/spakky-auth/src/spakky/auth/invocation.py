@@ -2,8 +2,11 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self
 
+from spakky.auth.constants import AUTH_INVOCATION_CONTEXT_KEY
 from spakky.auth.context import AuthSubject
+from spakky.core.pod.interfaces.application_context import IApplicationContext
 
 type AuthActionRef = str
 type AuthBoundaryRef = str
@@ -66,6 +69,11 @@ class AuthDynamicRef:
     expression: AuthDynamicRefExpression
     """Provider-neutral expression name understood by the resolver."""
 
+    @classmethod
+    def tenant(cls, expression: AuthDynamicRefExpression) -> Self:
+        """Create a tenant reference resolved from the invocation being authorized."""
+        return cls(kind=AuthDynamicRefKind.TENANT, expression=expression)
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ResolvedAuthReference:
@@ -76,3 +84,26 @@ class ResolvedAuthReference:
 
     value: AuthResolvedRef
     """Canonical resource, action, or tenant reference."""
+
+
+def store_auth_invocation(
+    application_context: IApplicationContext,
+    invocation: AuthInvocation,
+) -> None:
+    """Store the AuthInvocation being authorized in ApplicationContext values."""
+    application_context.set_context_value(AUTH_INVOCATION_CONTEXT_KEY, invocation)
+
+
+def get_auth_invocation(
+    application_context: IApplicationContext,
+) -> AuthInvocation | None:
+    """Load the AuthInvocation stored by the inbound boundary.
+
+    Returns:
+        The stored invocation, or None when the boundary stored none (None
+        means dynamic auth references cannot be resolved for this call).
+    """
+    value = application_context.get_context_value(AUTH_INVOCATION_CONTEXT_KEY)
+    if isinstance(value, AuthInvocation):
+        return value
+    return None

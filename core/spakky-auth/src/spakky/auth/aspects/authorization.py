@@ -7,6 +7,7 @@ from spakky.auth.context import AuthContext, require_auth_context
 from spakky.auth.decision import AuthorizationDecision, AuthorizationDecisionState
 from spakky.auth.error import (
     AuthContextNotFoundError,
+    AuthDynamicRefUnresolvedError,
     AuthRequirementDeniedError,
     AuthRequirementProviderUnavailableError,
 )
@@ -16,8 +17,15 @@ from spakky.auth.metadata import (
     get_effective_auth_metadata,
     has_auth_boundary_metadata,
 )
+from spakky.auth.invocation import (
+    AuthDynamicRef,
+    AuthTenantRef,
+    get_auth_invocation,
+)
 from spakky.auth.ports import (
     AuthorizationRequest,
+    IAsyncRoleChecker,
+    IAuthInvocationResolver,
     IAuthorizationPolicyEvaluator,
     IPermissionChecker,
     IRelationChecker,
@@ -28,6 +36,7 @@ from spakky.auth.ports import (
     RoleCheckRequest,
     ScopeCheckRequest,
 )
+from spakky.auth.resolver import AuthInvocationAttributeResolver
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
 from spakky.core.aop.pointcut import Around
@@ -37,6 +46,10 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 from spakky.core.pod.interfaces.application_context import IApplicationContext
+
+
+_DEFAULT_INVOCATION_RESOLVER = AuthInvocationAttributeResolver()
+"""Resolver used when the application registers no IAuthInvocationResolver."""
 
 
 def _matches_sync(boundary: Func) -> bool:
@@ -58,6 +71,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
     _relation_checker: IRelationChecker | None
     _role_checker: IRoleChecker | None
     _scope_checker: IScopeChecker | None
+    _invocation_resolver: IAuthInvocationResolver | None
 
     def __init__(
         self,
@@ -67,6 +81,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
         relation_checker: IRelationChecker | None = None,
         role_checker: IRoleChecker | None = None,
         scope_checker: IScopeChecker | None = None,
+        invocation_resolver: IAuthInvocationResolver | None = None,
     ) -> None:
         self._application_context = application_context
         self._authorization_policy_evaluator = authorization_policy_evaluator
@@ -74,6 +89,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
         self._relation_checker = relation_checker
         self._role_checker = role_checker
         self._scope_checker = scope_checker
+        self._invocation_resolver = invocation_resolver
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -113,7 +129,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
                     auth_context=auth_context,
                     permission=requirement.ref,
                     resource=requirement.resource,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.POLICY:
@@ -126,7 +142,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
                     auth_context=auth_context,
                     resource=requirement.resource,
                     action=requirement.action,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.RELATION:
@@ -137,7 +153,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
                     auth_context=auth_context,
                     relation=requirement.ref,
                     resource=requirement.resource,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.ROLE:
@@ -147,7 +163,7 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
                 RoleCheckRequest(
                     auth_context=auth_context,
                     role=requirement.ref,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.SCOPE:
@@ -157,6 +173,34 @@ class AuthorizationAspect(IAspect, IApplicationContextAware):
                 ScopeCheckRequest(auth_context=auth_context, scope=requirement.ref)
             )
         raise AuthRequirementProviderUnavailableError()  # pragma: no cover - exhaustive AuthRequirementKind guard
+
+    def _tenant(self, requirement: AuthRequirement) -> AuthTenantRef | None:
+        """Return the tenant a requirement is scoped to for the current invocation.
+
+        Returns:
+            The fixed or resolved tenant, or None when the requirement is not
+            tenant-scoped.
+
+        Raises:
+            AuthDynamicRefUnresolvedError: The tenant is late-bound and the
+                boundary stored no invocation, or the resolver answered with
+                another reference kind or an empty value.
+        """
+        tenant = requirement.tenant
+        if not isinstance(tenant, AuthDynamicRef):
+            return tenant
+        invocation = get_auth_invocation(self._required_application_context())
+        if invocation is None:
+            raise AuthDynamicRefUnresolvedError(tenant.expression)
+        resolver = (
+            self._invocation_resolver
+            if self._invocation_resolver is not None
+            else _DEFAULT_INVOCATION_RESOLVER
+        )
+        resolved = resolver.resolve_ref(invocation, tenant)
+        if resolved.kind is not tenant.kind or resolved.value == "":
+            raise AuthDynamicRefUnresolvedError(tenant.expression)
+        return resolved.value
 
     def _required_application_context(self) -> IApplicationContext:
         if self._application_context is None:
@@ -175,6 +219,8 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
     _relation_checker: IRelationChecker | None
     _role_checker: IRoleChecker | None
     _scope_checker: IScopeChecker | None
+    _invocation_resolver: IAuthInvocationResolver | None
+    _async_role_checker: IAsyncRoleChecker | None
 
     def __init__(
         self,
@@ -184,6 +230,8 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
         relation_checker: IRelationChecker | None = None,
         role_checker: IRoleChecker | None = None,
         scope_checker: IScopeChecker | None = None,
+        invocation_resolver: IAuthInvocationResolver | None = None,
+        async_role_checker: IAsyncRoleChecker | None = None,
     ) -> None:
         self._application_context = application_context
         self._authorization_policy_evaluator = authorization_policy_evaluator
@@ -191,6 +239,8 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
         self._relation_checker = relation_checker
         self._role_checker = role_checker
         self._scope_checker = scope_checker
+        self._invocation_resolver = invocation_resolver
+        self._async_role_checker = async_role_checker
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -210,10 +260,29 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
             return await joinpoint(*args, **kwargs)
         auth_context = require_auth_context(self._required_application_context())
         for requirement in metadata.requirements:
-            decision = self._evaluate_requirement(requirement, auth_context)
+            decision = await self._evaluate_requirement_async(requirement, auth_context)
             if decision.state is not AuthorizationDecisionState.ALLOW:
                 raise AuthRequirementDeniedError(decision)
         return await joinpoint(*args, **kwargs)
+
+    async def _evaluate_requirement_async(
+        self,
+        requirement: AuthRequirement,
+        auth_context: AuthContext,
+    ) -> AuthorizationDecision:
+        """Evaluate a requirement, awaiting the async role checker when present."""
+        if (
+            requirement.kind is AuthRequirementKind.ROLE
+            and self._async_role_checker is not None
+        ):
+            return await self._async_role_checker.check_role(
+                RoleCheckRequest(
+                    auth_context=auth_context,
+                    role=requirement.ref,
+                    tenant=self._tenant(requirement),
+                )
+            )
+        return self._evaluate_requirement(requirement, auth_context)
 
     def _evaluate_requirement(
         self,
@@ -230,7 +299,7 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
                     auth_context=auth_context,
                     permission=requirement.ref,
                     resource=requirement.resource,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.POLICY:
@@ -243,7 +312,7 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
                     auth_context=auth_context,
                     resource=requirement.resource,
                     action=requirement.action,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.RELATION:
@@ -254,7 +323,7 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
                     auth_context=auth_context,
                     relation=requirement.ref,
                     resource=requirement.resource,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.ROLE:
@@ -264,7 +333,7 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
                 RoleCheckRequest(
                     auth_context=auth_context,
                     role=requirement.ref,
-                    tenant=requirement.tenant,
+                    tenant=self._tenant(requirement),
                 )
             )
         if requirement.kind is AuthRequirementKind.SCOPE:
@@ -274,6 +343,34 @@ class AsyncAuthorizationAspect(IAsyncAspect, IApplicationContextAware):
                 ScopeCheckRequest(auth_context=auth_context, scope=requirement.ref)
             )
         raise AuthRequirementProviderUnavailableError()  # pragma: no cover - exhaustive AuthRequirementKind guard
+
+    def _tenant(self, requirement: AuthRequirement) -> AuthTenantRef | None:
+        """Return the tenant a requirement is scoped to for the current invocation.
+
+        Returns:
+            The fixed or resolved tenant, or None when the requirement is not
+            tenant-scoped.
+
+        Raises:
+            AuthDynamicRefUnresolvedError: The tenant is late-bound and the
+                boundary stored no invocation, or the resolver answered with
+                another reference kind or an empty value.
+        """
+        tenant = requirement.tenant
+        if not isinstance(tenant, AuthDynamicRef):
+            return tenant
+        invocation = get_auth_invocation(self._required_application_context())
+        if invocation is None:
+            raise AuthDynamicRefUnresolvedError(tenant.expression)
+        resolver = (
+            self._invocation_resolver
+            if self._invocation_resolver is not None
+            else _DEFAULT_INVOCATION_RESOLVER
+        )
+        resolved = resolver.resolve_ref(invocation, tenant)
+        if resolved.kind is not tenant.kind or resolved.value == "":
+            raise AuthDynamicRefUnresolvedError(tenant.expression)
+        return resolved.value
 
     def _required_application_context(self) -> IApplicationContext:
         if self._application_context is None:

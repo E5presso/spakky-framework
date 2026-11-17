@@ -2,6 +2,7 @@
 
 from spakky.auth.constants import (
     AUTH_CONTEXT_CONTEXT_KEY,
+    AUTH_INVOCATION_CONTEXT_KEY,
     AUTH_CONTEXT_SNAPSHOT_HEADER_KEY,
     AUTH_CONTEXT_SNAPSHOT_METADATA_KEY,
     AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
@@ -40,7 +41,9 @@ from spakky.auth.error import (
     AbstractSpakkyAuthError,
     AuthContextError,
     AuthContextNotFoundError,
+    AuthDynamicRefUnresolvedError,
     AuthRequirementDeniedError,
+    InvalidAuthDynamicRefKindError,
     AuthRequirementProviderUnavailableError,
     AuthContextSnapshotError,
     AuthVerificationProviderUnavailableError,
@@ -61,6 +64,8 @@ from spakky.auth.invocation import (
     AuthDynamicRefKind,
     AuthInvocation,
     AuthInvocationAttribute,
+    get_auth_invocation,
+    store_auth_invocation,
     AuthInvocationAttributeName,
     AuthInvocationAttributeValue,
     AuthInvocationOperationRef,
@@ -90,6 +95,7 @@ from spakky.auth.metadata import (
     require_role,
     require_scope,
 )
+from spakky.auth.resolver import AuthInvocationAttributeResolver
 from spakky.auth.ports import (
     AuthPasswordHash,
     AuthPasswordPlaintext,
@@ -103,6 +109,7 @@ from spakky.auth.ports import (
     IPasswordVerifier,
     IPermissionChecker,
     IRelationChecker,
+    IAsyncRoleChecker,
     IRoleChecker,
     IScopeChecker,
     PermissionCheckRequest,
@@ -129,6 +136,7 @@ PLUGIN_NAME = Plugin(name="spakky-auth")
 
 __all__ = [
     "AUTH_CONTEXT_CONTEXT_KEY",
+    "AUTH_INVOCATION_CONTEXT_KEY",
     "AUTH_CONTEXT_SNAPSHOT_HEADER_KEY",
     "AUTH_CONTEXT_SNAPSHOT_METADATA_KEY",
     "AUTH_CONTEXT_SNAPSHOT_SCHEMA_VERSION",
@@ -161,6 +169,7 @@ __all__ = [
     "AuthDynamicRefKind",
     "AuthInvocation",
     "AuthInvocationAttribute",
+    "AuthInvocationAttributeResolver",
     "AuthInvocationAttributeName",
     "AuthInvocationAttributeValue",
     "AuthInvocationOperationRef",
@@ -169,7 +178,9 @@ __all__ = [
     "AuthPermissionRef",
     "AuthProviderContribution",
     "AuthRequirement",
+    "AuthDynamicRefUnresolvedError",
     "AuthRequirementDeniedError",
+    "InvalidAuthDynamicRefKindError",
     "AuthRequirementKind",
     "AuthRequirementProviderUnavailableError",
     "AuthRelationRef",
@@ -208,6 +219,7 @@ __all__ = [
     "IPasswordVerifier",
     "IPermissionChecker",
     "IRelationChecker",
+    "IAsyncRoleChecker",
     "IRoleChecker",
     "IScopeChecker",
     "InvalidAuthContextSnapshotError",
@@ -232,5 +244,7 @@ __all__ = [
     "RoleCheckRequest",
     "ScopeCheckRequest",
     "SnapshotSignRequest",
+    "get_auth_invocation",
     "store_auth_context",
+    "store_auth_invocation",
 ]
