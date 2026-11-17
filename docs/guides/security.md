@@ -113,7 +113,7 @@ class DocumentController:
 
 - 기본 해석기 `AuthInvocationAttributeResolver`는 expression과 이름이 같은 속성의 문자열 값을 그대로 씁니다. 다른 규칙이 필요하면 `IAuthInvocationResolver` 구현을 Pod로 등록합니다. 등록된 구현이 기본 해석기를 대신합니다.
 - 속성이 없거나 비어 있으면 checker를 부르지 않고 `AuthDynamicRefUnresolvedError`로 거부합니다. 이 오류는 `AuthRequirementDeniedError`의 하위 클래스이고 decision은 `DENY / DYNAMIC_REF_UNRESOLVED`입니다. FastAPI에서는 403입니다.
-- 요청이 없는 경계는 해석할 수 없어 거부합니다. `AuthInvocation`을 저장하는 어댑터는 현재 `spakky-fastapi`뿐이며, saga step은 `DENY / DYNAMIC_REF_UNRESOLVED`로 실패합니다.
+- 요청이 없는 경계는 해석할 수 없어 거부합니다. `AuthInvocation`을 저장하는 어댑터는 현재 `spakky-fastapi`뿐입니다. saga step과 Celery worker task는 checker를 부르지 않고 `DENY / DYNAMIC_REF_UNRESOLVED`로 실패합니다.
 - 요청이 보낸 값은 호출자가 주장한 tenant일 뿐입니다. 그 tenant에 속하는지는 role checker가 확인해야 합니다.
 
 ### 비동기 role checker { #async-role-checker }

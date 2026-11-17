@@ -49,7 +49,14 @@ class TaskAuthRequirementMetadata:
     """Optional action reference for policy checks."""
 
     tenant: TaskAuthTenantRef | None = None
-    """Optional tenant reference for tenant-scoped checks."""
+    """Optional fixed tenant reference for tenant-scoped checks."""
+
+    dynamic_tenant: bool = False
+    """Whether the tenant is resolved from an inbound request at authorization time.
+
+    A task boundary has no such request, so an executor must deny a requirement
+    with this flag instead of checking it without a tenant.
+    """
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -169,12 +176,16 @@ def _task_auth_requirement_from_annotation(
     ref = requirement_data.get("ref")
     if kind is None or not isinstance(ref, str):
         return None
+    tenant = requirement_data.get("tenant")
+    # A structured tenant is a late-bound reference, not a tenant value.
+    dynamic_tenant = len(_dataclass_values(tenant)) > 0
     return TaskAuthRequirementMetadata(
         kind=str(kind),
         ref=ref,
         resource=_optional_str(requirement_data.get("resource")),
         action=_optional_str(requirement_data.get("action")),
-        tenant=_optional_str(requirement_data.get("tenant")),
+        tenant=None if dynamic_tenant else _optional_str(tenant),
+        dynamic_tenant=dynamic_tenant,
     )
 
 

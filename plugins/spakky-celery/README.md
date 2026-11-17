@@ -139,7 +139,7 @@ AOP aspect가 호출을 가로채 Celery로 자동 라우팅합니다.
 
 `SPAKKY_AUTH_SNAPSHOT_PROPAGATION_ENABLED=true`와 `IAuthContextSnapshotSigner` / `IAuthContextSnapshotVerifier` provider가 등록되어 있으면, `CeleryTaskDispatchAspect`와 `AsyncCeleryTaskDispatchAspect`는 현재 request/context scope의 `AuthContext`를 signed `AuthContextSnapshot`으로 직렬화해 Celery task header `spakky.auth.context_snapshot`에 저장합니다.
 
-Worker endpoint는 task 실행 시작 시 `ApplicationContext.clear_context()` 후 `spakky.plugins.celery.task_context`를 설정하고, 보호된 task metadata가 있으면 snapshot을 검증해 `AuthContext`를 다시 seed합니다. 이후 `@protected`, `@require_scope`, `@require_role`, `@require_permission`, `@require_policy`, `@require_relation` requirement를 worker boundary에서 fail-closed로 평가합니다.
+Worker endpoint는 task 실행 시작 시 `ApplicationContext.clear_context()` 후 `spakky.plugins.celery.task_context`를 설정하고, 보호된 task metadata가 있으면 snapshot을 검증해 `AuthContext`를 다시 seed합니다. 이후 `@protected`, `@require_scope`, `@require_role`, `@require_permission`, `@require_policy`, `@require_relation` requirement를 worker boundary에서 fail-closed로 평가합니다. Worker에는 inbound 요청이 없으므로 `AuthDynamicRef.tenant(...)`로 선언한 tenant는 해석할 수 없고, checker를 부르지 않고 `DENY / DYNAMIC_REF_UNRESOLVED`로 실패합니다.
 
 | 상황 | 결과 |
 |------|------|

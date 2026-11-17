@@ -356,3 +356,38 @@ def test_retryable_auth_failure_requires_error_decision() -> None:
         )
         is True
     )
+
+
+def test_seed_auth_dynamic_tenant_requirement_expect_denied_without_checker_call() -> (
+    None
+):
+    """worker는 요청이 없어 동적 tenant를 해석할 수 없으므로 checker를 부르지 않고 DENY한다."""
+    role_checker = MagicMock(spec=IRoleChecker)
+
+    with pytest.raises(AuthRequirementDeniedError) as excinfo:
+        seed_and_authorize_celery_task(
+            application_context=MagicMock(),
+            task_name="tasks.workspace",
+            headers={AUTH_CONTEXT_SNAPSHOT_METADATA_KEY: "snapshot-envelope"},
+            auth_metadata=TaskAuthMetadata(
+                requirements=(
+                    TaskAuthRequirementMetadata(
+                        kind="ROLE", ref="member", dynamic_tenant=True
+                    ),
+                )
+            ),
+            snapshot_verifier=SnapshotVerifier(),
+            authorization_policy_evaluator=None,
+            permission_checker=None,
+            relation_checker=None,
+            role_checker=role_checker,
+            scope_checker=None,
+        )
+
+    assert excinfo.value.decision is not None
+    assert excinfo.value.decision.state is AuthorizationDecisionState.DENY
+    assert (
+        excinfo.value.decision.reason_code
+        is AuthorizationReasonCode.DYNAMIC_REF_UNRESOLVED
+    )
+    role_checker.check_role.assert_not_called()
