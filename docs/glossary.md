@@ -993,7 +993,7 @@ from spakky.outbox.common.message import OutboxMessage
 
 Outbox 메시지의 CRUD를 담당하는 포트 인터페이스. `spakky-sqlalchemy`는
 `spakky.contributions.spakky.outbox` contribution으로 SQLAlchemy 구현체와 Outbox
-table을 제공합니다.
+table을 제공합니다. 발행을 마친 오래된 메시지는 `purge_published(older_than)`으로 지웁니다.
 
 ```python
 from spakky.outbox.ports.storage import IOutboxStorage, IAsyncOutboxStorage

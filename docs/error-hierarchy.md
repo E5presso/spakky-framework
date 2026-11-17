@@ -47,6 +47,7 @@ flowchart TD
   AbstractSpakkyDomainError --> AbstractDomainValidationError
   AbstractSpakkyDomainError --> EntityNotFoundError
   AbstractSpakkyDomainError --> VersionConflictError
+  AbstractSpakkyDomainError --> EntityAlreadyExistsError
   AbstractSpakkyDomainError --> CannotMonkeyPatchEntityError
   AbstractSpakkyDomainError --> UnhashableFieldTypeError
 
@@ -97,6 +98,8 @@ flowchart TD
   AuthorizationError --> ConflictingAuthMetadataError
   AuthorizationError --> AuthRequirementDeniedError
   AuthorizationError --> AuthRequirementProviderUnavailableError
+  AuthorizationError --> InvalidAuthDynamicRefKindError
+  AuthRequirementDeniedError --> AuthDynamicRefUnresolvedError
   AuthContextSnapshotError --> MissingAuthContextSnapshotError
   AuthContextSnapshotError --> InvalidAuthContextSnapshotError
   AuthContextSnapshotError --> ExpiredAuthContextSnapshotError
@@ -317,6 +320,8 @@ from spakky.auth.error import (
     AuthorizationError,
     ConflictingAuthMetadataError,
     AuthRequirementDeniedError,
+    AuthDynamicRefUnresolvedError,
+    InvalidAuthDynamicRefKindError,
     AuthRequirementProviderUnavailableError,
     AuthContextSnapshotError,
     MissingAuthContextSnapshotError,
@@ -341,6 +346,8 @@ from spakky.auth.startup import (
 | `AuthorizationError` | 인가 실패 기반 클래스 |
 | `ConflictingAuthMetadataError` | public marker와 protected requirement가 함께 유효함 |
 | `AuthRequirementDeniedError` | requirement decision이 `ALLOW`가 아니며 `decision`을 보존함 |
+| `AuthDynamicRefUnresolvedError` | 요청에서 정해지는 tenant를 해석하지 못함. `AuthRequirementDeniedError` 하위이며 `expression`을 보존함 |
+| `InvalidAuthDynamicRefKindError` | tenant 자리에 `TENANT`가 아닌 dynamic ref를 선언함 |
 | `AuthRequirementProviderUnavailableError` | 보호 requirement를 처리할 provider가 없음 |
 | `AuthContextSnapshotError` | snapshot 전파/검증 실패 기반 클래스 |
 | `MissingAuthContextSnapshotError` | snapshot metadata가 없음 |
@@ -391,7 +398,11 @@ from spakky.event.error import (
 
 ```python
 from spakky.data.persistency.error import AbstractSpakkyPersistencyError
-from spakky.data.persistency.repository import EntityNotFoundError, VersionConflictError
+from spakky.data.persistency.repository import (
+    EntityAlreadyExistsError,
+    EntityNotFoundError,
+    VersionConflictError,
+)
 from spakky.data.external.error import AbstractSpakkyExternalError
 ```
 
@@ -400,6 +411,7 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 | `AbstractSpakkyPersistencyError` | 영속성 에러 기반 클래스        | `AbstractSpakkyFrameworkError` |
 | `EntityNotFoundError`           | 엔티티 조회 실패               | `AbstractSpakkyDomainError`   |
 | `VersionConflictError`          | 낙관적 락 충돌                 | `AbstractSpakkyDomainError`   |
+| `EntityAlreadyExistsError`      | 새 Aggregate 저장이 이미 있는 유일 키와 충돌 | `AbstractSpakkyDomainError`   |
 | `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   | `AbstractSpakkyFrameworkError` |
 
 ---

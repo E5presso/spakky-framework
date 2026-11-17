@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from spakky.core.common.mro import generic_mro
 from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.repository import (
+    EntityAlreadyExistsError,
     EntityNotFoundError,
     IAsyncGenericRepository,
     IGenericRepository,
@@ -23,10 +24,22 @@ from spakky.plugins.sqlalchemy.persistency.session_manager import (
     SessionManager,
 )
 from sqlalchemy import ColumnElement, and_, select, tuple_
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy.exc import IntegrityError, NoResultFound
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm.attributes import set_attribute
 from sqlalchemy.orm.exc import StaleDataError
+
+
+POSTGRESQL_UNIQUE_VIOLATION_SQLSTATE = "23505"
+"""SQLSTATE PostgreSQL drivers report for a unique or primary key violation."""
+
+SQLITE_UNIQUE_VIOLATION_ERROR_NAMES = frozenset(
+    {"SQLITE_CONSTRAINT_UNIQUE", "SQLITE_CONSTRAINT_PRIMARYKEY"}
+)
+"""SQLite extended result code names for a unique or primary key violation."""
+
+INSERT_STATEMENT_PREFIX = "INSERT"
+"""Leading keyword of the SQL statements that create rows."""
 
 
 class CannotDetermineAggregateTypeError(AbstractSpakkySqlAlchemyPersistencyError):
@@ -167,6 +180,33 @@ class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, Aggregate
             set_attribute(table, version_attribute, aggregate.persisted_version)
         return table
 
+    def _is_insert_unique_violation(self, error: IntegrityError) -> bool:
+        """Tell whether an INSERT failed because a unique key is already taken.
+
+        Other integrity failures (foreign key, NOT NULL, check) and a unique
+        violation raised by an UPDATE are not "already exists" and stay as the
+        original `IntegrityError`. Recognised drivers: PostgreSQL drivers that
+        expose SQLSTATE as `sqlstate` or `pgcode`, and SQLite.
+        """
+        statement = error.statement
+        if statement is None or not statement.lstrip().upper().startswith(
+            INSERT_STATEMENT_PREFIX
+        ):
+            return False
+        driver_error = error.orig
+        # PEP 249 defines no common error-code attribute, so each driver's own
+        # attribute name is probed.
+        sqlstate = getattr(driver_error, "sqlstate", None)  # psycopg 3 SQLSTATE
+        if sqlstate is None:
+            sqlstate = getattr(driver_error, "pgcode", None)  # psycopg2 SQLSTATE
+        sqlite_error_name = getattr(  # sqlite3 extended result code name
+            driver_error, "sqlite_errorname", None
+        )
+        return (
+            sqlstate == POSTGRESQL_UNIQUE_VIOLATION_SQLSTATE
+            or sqlite_error_name in SQLITE_UNIQUE_VIOLATION_ERROR_NAMES
+        )
+
     @override
     def get(self, aggregate_id: AggregateIdT) -> AggregateRootT:
         try:
@@ -216,15 +256,22 @@ class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, Aggregate
 
     @override
     def save(self, aggregate: AggregateRootT) -> AggregateRootT:
+        # Set once merge() has queued this aggregate as a new row (an INSERT).
+        inserting = False
         try:
             version_attribute = self._version_attribute(self._get_table_type())
             table = self._table_at_persisted_version(aggregate, version_attribute)
             merged = self._session_manager.session.merge(table)
+            inserting = inspect(merged).pending
             if version_attribute is not None:
                 set_attribute(merged, version_attribute, aggregate.version)
             self._session_manager.session.flush()
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
+        except IntegrityError as error:
+            if inserting and self._is_insert_unique_violation(error):
+                raise EntityAlreadyExistsError(aggregate.uid) from error
+            raise
         aggregate.mark_persisted()
         self._aggregate_collector.collect(aggregate)
         return merged.to_domain()
@@ -237,16 +284,27 @@ class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, Aggregate
         # Keyed by identity: an instance listed twice is written once.
         merged_tables: dict[int, AbstractMappableTable[AggregateRootT]] = {}
         saved: list[AggregateRootT] = []
+        # Aggregates merge() queued as new rows (INSERTs), in call order.
+        inserting: list[AggregateRootT] = []
         for aggregate in aggregates:
             if id(aggregate) in merged_tables:
                 continue
             try:
                 table = self._table_at_persisted_version(aggregate, version_attribute)
+                # merge() autoflushes the rows queued by earlier iterations.
                 merged = self._session_manager.session.merge(table)
                 if version_attribute is not None:
                     set_attribute(merged, version_attribute, aggregate.version)
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
+            except IntegrityError as error:
+                if inserting and self._is_insert_unique_violation(error):
+                    raise EntityAlreadyExistsError(
+                        [inserted.uid for inserted in inserting]
+                    ) from error
+                raise
+            if inspect(merged).pending:
+                inserting.append(aggregate)
             merged_tables[id(aggregate)] = merged
             saved.append(aggregate)
         try:
@@ -254,6 +312,13 @@ class AbstractGenericRepository[AggregateRootT: AbstractAggregateRoot, Aggregate
         except StaleDataError:
             # The batched flush does not say which row was stale.
             raise VersionConflictError([aggregate.uid for aggregate in saved])
+        except IntegrityError as error:
+            # The batched flush does not say which new row collided.
+            if inserting and self._is_insert_unique_violation(error):
+                raise EntityAlreadyExistsError(
+                    [inserted.uid for inserted in inserting]
+                ) from error
+            raise
         for aggregate in saved:
             aggregate.mark_persisted()
             self._aggregate_collector.collect(aggregate)
@@ -434,6 +499,33 @@ class AbstractAsyncGenericRepository[
             set_attribute(table, version_attribute, aggregate.persisted_version)
         return table
 
+    def _is_insert_unique_violation(self, error: IntegrityError) -> bool:
+        """Tell whether an INSERT failed because a unique key is already taken.
+
+        Other integrity failures (foreign key, NOT NULL, check) and a unique
+        violation raised by an UPDATE are not "already exists" and stay as the
+        original `IntegrityError`. Recognised drivers: PostgreSQL drivers that
+        expose SQLSTATE as `sqlstate` or `pgcode`, and SQLite.
+        """
+        statement = error.statement
+        if statement is None or not statement.lstrip().upper().startswith(
+            INSERT_STATEMENT_PREFIX
+        ):
+            return False
+        driver_error = error.orig
+        # PEP 249 defines no common error-code attribute, so each driver's own
+        # attribute name is probed.
+        sqlstate = getattr(driver_error, "sqlstate", None)  # psycopg 3 SQLSTATE
+        if sqlstate is None:
+            sqlstate = getattr(driver_error, "pgcode", None)  # psycopg2 SQLSTATE
+        sqlite_error_name = getattr(  # sqlite3 extended result code name
+            driver_error, "sqlite_errorname", None
+        )
+        return (
+            sqlstate == POSTGRESQL_UNIQUE_VIOLATION_SQLSTATE
+            or sqlite_error_name in SQLITE_UNIQUE_VIOLATION_ERROR_NAMES
+        )
+
     @override
     async def get(self, aggregate_id: AggregateIdT) -> AggregateRootT:
         try:
@@ -495,15 +587,22 @@ class AbstractAsyncGenericRepository[
 
     @override
     async def save(self, aggregate: AggregateRootT) -> AggregateRootT:
+        # Set once merge() has queued this aggregate as a new row (an INSERT).
+        inserting = False
         try:
             version_attribute = self._version_attribute(self._get_table_type())
             table = self._table_at_persisted_version(aggregate, version_attribute)
             merged = await self._session_manager.session.merge(table)
+            inserting = inspect(merged).pending
             if version_attribute is not None:
                 set_attribute(merged, version_attribute, aggregate.version)
             await self._session_manager.session.flush()
         except StaleDataError:
             raise VersionConflictError(aggregate.uid, aggregate.version)
+        except IntegrityError as error:
+            if inserting and self._is_insert_unique_violation(error):
+                raise EntityAlreadyExistsError(aggregate.uid) from error
+            raise
         aggregate.mark_persisted()
         self._aggregate_collector.collect(aggregate)
         return merged.to_domain()
@@ -516,16 +615,27 @@ class AbstractAsyncGenericRepository[
         # Keyed by identity: an instance listed twice is written once.
         merged_tables: dict[int, AbstractMappableTable[AggregateRootT]] = {}
         saved: list[AggregateRootT] = []
+        # Aggregates merge() queued as new rows (INSERTs), in call order.
+        inserting: list[AggregateRootT] = []
         for aggregate in aggregates:
             if id(aggregate) in merged_tables:
                 continue
             try:
                 table = self._table_at_persisted_version(aggregate, version_attribute)
+                # merge() autoflushes the rows queued by earlier iterations.
                 merged = await self._session_manager.session.merge(table)
                 if version_attribute is not None:
                     set_attribute(merged, version_attribute, aggregate.version)
             except StaleDataError:
                 raise VersionConflictError(aggregate.uid, aggregate.version)
+            except IntegrityError as error:
+                if inserting and self._is_insert_unique_violation(error):
+                    raise EntityAlreadyExistsError(
+                        [inserted.uid for inserted in inserting]
+                    ) from error
+                raise
+            if inspect(merged).pending:
+                inserting.append(aggregate)
             merged_tables[id(aggregate)] = merged
             saved.append(aggregate)
         try:
@@ -533,6 +643,13 @@ class AbstractAsyncGenericRepository[
         except StaleDataError:
             # The batched flush does not say which row was stale.
             raise VersionConflictError([aggregate.uid for aggregate in saved])
+        except IntegrityError as error:
+            # The batched flush does not say which new row collided.
+            if inserting and self._is_insert_unique_violation(error):
+                raise EntityAlreadyExistsError(
+                    [inserted.uid for inserted in inserting]
+                ) from error
+            raise
         for aggregate in saved:
             aggregate.mark_persisted()
             self._aggregate_collector.collect(aggregate)

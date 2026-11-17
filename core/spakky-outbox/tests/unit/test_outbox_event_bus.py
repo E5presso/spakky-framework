@@ -59,6 +59,9 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
     def mark_abandoned(self, message_id: object) -> None:
         raise AssertionError("Not expected to be called")
 
+    def purge_published(self, older_than: object) -> int:
+        raise AssertionError("Not expected to be called")
+
 
 class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
     def __init__(self) -> None:
@@ -77,6 +80,9 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
         raise AssertionError("Not expected to be called")
 
     async def mark_abandoned(self, message_id: object) -> None:
+        raise AssertionError("Not expected to be called")
+
+    async def purge_published(self, older_than: object) -> int:
         raise AssertionError("Not expected to be called")
 
 

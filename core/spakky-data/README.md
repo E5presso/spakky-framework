@@ -190,6 +190,7 @@ class PaymentServiceProxy(IPaymentProxy):
 | `AbstractTransaction` | context manager를 가진 동기 transaction |
 | `AbstractAsyncTransaction` | context manager를 가진 비동기 transaction |
 | `EntityNotFoundError` | entity를 찾지 못했을 때 발생 |
+| `EntityAlreadyExistsError` | 새 aggregate 저장이 이미 있는 유일 키와 부딪혔을 때 발생. `VersionConflictError`와 별개 |
 
 ### 외부 연동
 

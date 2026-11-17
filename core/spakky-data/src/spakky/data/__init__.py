@@ -17,6 +17,7 @@ from spakky.data.external.proxy import IAsyncGenericProxy, IGenericProxy
 # Persistency
 from spakky.data.persistency.error import AbstractSpakkyPersistencyError
 from spakky.data.persistency.repository import (
+    EntityAlreadyExistsError,
     EntityNotFoundError,
     IGenericRepository,
 )
@@ -27,6 +28,7 @@ from spakky.data.persistency.transaction import (
 
 __all__ = [
     # Repository
+    "EntityAlreadyExistsError",
     "EntityNotFoundError",
     "IGenericRepository",
     # Transaction

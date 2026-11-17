@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from spakky.outbox.common.config import OutboxConfig
 from spakky.outbox.common.message import OutboxMessage
+from sqlalchemy import CursorResult
 
 from spakky.plugins.sqlalchemy.outbox.storage import (
     AsyncSqlAlchemyOutboxStorage,
@@ -635,3 +636,84 @@ async def test_async_storage_mark_abandoned_updates_timestamp() -> None:
 
     mock_session.execute.assert_awaited_once()
     mock_session.commit.assert_awaited_once()
+
+
+def test_sync_storage_purge_published_expect_deleted_row_count() -> None:
+    """purge_published()는 독립 세션에서 삭제를 커밋하고 삭제한 행 수를 돌려준다."""
+    storage = SqlAlchemyOutboxStorage(
+        MagicMock(spec=SessionManager), MagicMock(spec=ConnectionManager), config=None
+    )
+    mock_session = MagicMock()
+    mock_session.execute.return_value = MagicMock(spec=CursorResult, rowcount=3)
+    storage._session_factory = MagicMock(return_value=MagicMock())
+    storage._session_factory.return_value.__enter__ = MagicMock(
+        return_value=mock_session
+    )
+    storage._session_factory.return_value.__exit__ = MagicMock(return_value=None)
+
+    deleted = storage.purge_published(datetime(2026, 1, 1, tzinfo=UTC))
+
+    assert deleted == 3
+    statement = str(mock_session.execute.call_args.args[0])
+    assert statement.startswith("DELETE FROM spakky_event_outbox")
+    assert "published_at IS NOT NULL" in statement
+    mock_session.commit.assert_called_once()
+
+
+def test_sync_storage_purge_published_without_dml_result_expect_zero() -> None:
+    """실행 결과가 DML 결과가 아니면 삭제 수를 0으로 보고한다."""
+    storage = SqlAlchemyOutboxStorage(
+        MagicMock(spec=SessionManager), MagicMock(spec=ConnectionManager), config=None
+    )
+    mock_session = MagicMock()
+    mock_session.execute.return_value = object()
+    storage._session_factory = MagicMock(return_value=MagicMock())
+    storage._session_factory.return_value.__enter__ = MagicMock(
+        return_value=mock_session
+    )
+    storage._session_factory.return_value.__exit__ = MagicMock(return_value=None)
+
+    assert storage.purge_published(datetime(2026, 1, 1, tzinfo=UTC)) == 0
+
+
+@pytest.mark.asyncio
+async def test_async_storage_purge_published_expect_deleted_row_count() -> None:
+    """비동기 purge_published()도 삭제를 커밋하고 삭제한 행 수를 돌려준다."""
+    storage = AsyncSqlAlchemyOutboxStorage(
+        MagicMock(spec=AsyncSessionManager),
+        MagicMock(spec=AsyncConnectionManager),
+        config=None,
+    )
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock(
+        return_value=MagicMock(spec=CursorResult, rowcount=2)
+    )
+    mock_session.commit = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+    storage._session_factory = MagicMock(return_value=mock_context)
+
+    deleted = await storage.purge_published(datetime(2026, 1, 1, tzinfo=UTC))
+
+    assert deleted == 2
+    mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_storage_purge_published_without_dml_result_expect_zero() -> None:
+    """비동기 실행 결과가 DML 결과가 아니면 삭제 수를 0으로 보고한다."""
+    storage = AsyncSqlAlchemyOutboxStorage(
+        MagicMock(spec=AsyncSessionManager),
+        MagicMock(spec=AsyncConnectionManager),
+        config=None,
+    )
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock(return_value=object())
+    mock_session.commit = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+    storage._session_factory = MagicMock(return_value=mock_context)
+
+    assert await storage.purge_published(datetime(2026, 1, 1, tzinfo=UTC)) == 0

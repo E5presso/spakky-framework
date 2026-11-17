@@ -273,6 +273,29 @@ except VersionConflictError:
 - column 이름이 `version`이 아니거나 Aggregate가 아닌 entity의 table(relationship으로 딸린 자식 table 포함)은 자동 대상이 아닙니다. 다른 column을 쓰려면 `__mapper_args__`에 `version_id_col`과 `version_id_generator=False`를 직접 지정합니다.
 - table에 `__mapper_args__`를 직접 정의하면 SQLAlchemy 규칙대로 기본값을 대체합니다. `__mapper_args__ = {}`는 검사를 끕니다. 다른 mapper 인자를 쓰면서 검사를 유지하려면 `"version_id_col": version, "version_id_generator": False`를 함께 넣습니다.
 
+### 이미 있는 유일 키 { #entity-already-exists }
+
+새 Aggregate의 `INSERT`가 유일 제약(기본 키 포함)과 부딪히면 `save`/`save_all`은
+`EntityAlreadyExistsError`를 올립니다. 같은 유일 키의 Aggregate를 두 트랜잭션이 함께 만들 때
+늦은 쪽이 받는 오류입니다. `VersionConflictError`와는 별개 클래스입니다.
+
+```python
+from spakky.data import EntityAlreadyExistsError
+
+try:
+    async with transaction:
+        await user_repo.save(User.create(username="alice", ...))
+except EntityAlreadyExistsError:
+    async with transaction:
+        user = await user_repo.get_by_username("alice")  # 이미 있는 것을 읽습니다
+```
+
+- 오류 인자는 `save`에서는 그 Aggregate의 `uid`, `save_all`에서는 새로 넣으려던 Aggregate의 `uid` 목록입니다. 일괄 `flush()`는 어느 행이 부딪혔는지 알려 주지 않습니다. 원래 `IntegrityError`는 `__cause__`에 있습니다.
+- `flush()`가 실패한 트랜잭션은 더 쓸 수 없습니다. `VersionConflictError`와 마찬가지로 트랜잭션 경계 밖에서 받고, 새 트랜잭션에서 기존 Aggregate를 읽으세요.
+- 이미 저장된 행을 고치는 `UPDATE`의 유일 위반, 그리고 외래 키·NOT NULL·CHECK 위반은 바꾸지 않고 SQLAlchemy `IntegrityError` 그대로 올립니다.
+- 유일 위반 판별은 PostgreSQL(드라이버가 `sqlstate` 또는 `pgcode`로 주는 SQLSTATE `23505`)과 SQLite에서 동작합니다. psycopg 3과 SQLite로 검증했습니다. 그 밖의 백엔드에서는 `IntegrityError`가 그대로 올라옵니다.
+- 낙관적 lock이 켜진 table에서, 조회 시점에 이미 보이는 `uid`로 새 Aggregate를 저장하면 `INSERT`까지 가지 않고 위의 `VersionConflictError`가 납니다.
+
 ---
 
 ## Command UseCase와 트랜잭션
@@ -410,6 +433,16 @@ Outbox 메시지가 같은 DB transaction 안에서 commit 또는 rollback됩니
 from spakky.plugins.sqlalchemy.outbox.storage import AsyncSqlAlchemyOutboxStorage
 
 storage = app.container.get(type_=AsyncSqlAlchemyOutboxStorage)
+```
+
+발행을 마친 행은 `purge_published(older_than)`으로 정리합니다. `published_at`이 `older_than`보다
+이른 행만 지우고 지운 수를 반환합니다. 독립 세션에서 실행하고 바로 commit합니다. 미발행 행과
+발행 포기(`abandoned_at`) 행은 남습니다.
+
+```python
+from datetime import UTC, datetime, timedelta
+
+deleted = await storage.purge_published(datetime.now(UTC) - timedelta(days=7))
 ```
 
 `fetch_pending()`은 미전송 메시지를 `SELECT ... FOR UPDATE SKIP LOCKED`로 claim합니다.
