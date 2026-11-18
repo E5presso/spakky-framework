@@ -152,7 +152,7 @@ class ReportController:
 - 그 밖의 값(dict, Pydantic model 등)을 yield하면 JSON으로 직렬화되어 `data:` 이벤트가 됩니다.
 - 동기 generator도 쓸 수 있습니다. FastAPI가 thread pool에서 순회합니다.
 - 이벤트가 15초 동안 없으면 FastAPI가 `: ping` keep-alive comment를 보냅니다. client가 연결을 끊으면 generator가 취소되므로 정리 코드는 `try`/`finally`에 둡니다.
-- generator가 아닌 메서드에 `@sse`를 붙이면 `SseEndpointNotGeneratorError`가 발생합니다.
+- generator도 coroutine도 아닌 메서드에 `@sse`를 붙이면 `SseEndpointNotGeneratorError`가 발생합니다.
 - `@get("/path", response_class=EventSourceResponse)`처럼 verb 데코레이터에 `EventSourceResponse`를 지정한 generator 메서드도 같은 방식으로 등록됩니다.
 
 컨트롤러 resolve, context 초기화, `AuthContext` seeding, `Request` 주입은 일반 route와 같은 순서로
@@ -160,6 +160,53 @@ class ReportController:
 `200` stream이 아니라 `401` 응답이 나갑니다. 메서드 호출에 걸린 동기 aspect도 이 시점에 실행되며,
 aspect가 감싸는 것은 generator를 만드는 호출입니다. 이벤트를 하나씩 순회하는 동안에는 aspect가
 개입하지 않고, 본문 실행 중 발생한 예외는 이미 응답이 시작된 뒤이므로 HTTP 상태 코드로 바뀌지 않습니다.
+
+### stream을 열기 전에 판정하기 { #sse-open }
+
+stream을 열기 전에 조회나 권한 판정을 하고, 실패하면 HTTP 오류로 답해야 할 때는 `@sse` 메서드를
+async iterator를 돌려주는 coroutine으로 씁니다. 등록은 두 단계입니다.
+
+1. 응답이 시작되기 전에 coroutine을 `await`합니다. 이 호출은 FastAPI dependency로 실행되므로,
+   여기서 발생한 예외는 일반 route와 같은 HTTP 오류 응답이 됩니다(예: `NotFound`는 `404`).
+   컨트롤러 resolve, context 초기화, `AuthContext` seeding, `Request` 주입도 이 단계에서 일어나고,
+   비동기 aspect도 이 호출을 감쌉니다.
+2. coroutine이 돌려준 async iterator를 stream으로 보냅니다. 이벤트 인코딩, keep-alive, 연결 종료
+   시 취소는 generator 메서드와 같습니다. 돌려준 값이 async generator이면 stream이 끝나거나 client가
+   연결을 끊을 때 `aclose()`로 닫으므로 정리 코드는 그 generator의 `try`/`finally`에 둡니다.
+
+```python
+from collections.abc import AsyncIterator
+
+from fastapi.sse import ServerSentEvent
+from spakky.plugins.fastapi.error import NotFound
+from spakky.plugins.fastapi.routes import sse
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+
+
+class JobNotFound(NotFound):
+    message = "Job not found"
+
+
+@ApiController("/jobs")
+class JobController:
+    def __init__(self, jobs: JobService) -> None:
+        self.jobs = jobs
+
+    @sse("/{job_id}/events")
+    async def events(self, job_id: str) -> AsyncIterator[ServerSentEvent]:
+        job = await self.jobs.find(job_id)
+        if job is None:
+            raise JobNotFound(job_id)  # stream 대신 404
+
+        async def stream() -> AsyncIterator[ServerSentEvent]:
+            async for change in self.jobs.changes(job):
+                yield ServerSentEvent(data=change, id=str(change.seq))
+
+        return stream()
+```
+
+- coroutine이 async iterator가 아닌 값을 돌려주면 `SseStreamNotAsyncIterableError`(`500`)로 응답합니다.
+- 두 번째 단계에서 발생한 예외는 generator 메서드와 같이 HTTP 상태 코드로 바뀌지 않습니다.
 
 ## 분산 트레이싱 { #tracing }
 

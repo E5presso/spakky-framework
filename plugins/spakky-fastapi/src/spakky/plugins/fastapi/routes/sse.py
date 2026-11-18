@@ -2,22 +2,44 @@
 
 Provides the @sse decorator for marking controller generator methods as
 `text/event-stream` endpoints backed by FastAPI's native `fastapi.sse` support.
+A coroutine method that returns an async iterator opens the stream in two
+phases: the coroutine runs before the response starts, so its errors are
+ordinary HTTP error responses, and the returned iterator is then streamed.
 """
 
 from collections.abc import Callable, Sequence
-from inspect import isasyncgenfunction, isgeneratorfunction
-from typing import Any
+from dataclasses import dataclass
+from inspect import isasyncgenfunction, iscoroutinefunction, isgeneratorfunction
+from typing import Any, ClassVar
 
-from fastapi import params
+from spakky.core.common.annotation import FunctionAnnotation
+
+from fastapi import params, status
 from fastapi.sse import EventSourceResponse
 from spakky.plugins.fastapi.error import AbstractSpakkyFastAPIError
 from spakky.plugins.fastapi.routes.route import HTTPMethod, Route
 
 
 class SseEndpointNotGeneratorError(AbstractSpakkyFastAPIError):
-    """Raised when @sse decorates a method that is not a generator function."""
+    """Raised when @sse decorates a method that is neither a generator nor a coroutine."""
 
-    message = "The @sse decorator can only be used on generator methods."
+    message = "The @sse decorator can only be used on generator or coroutine methods."
+
+
+class SseStreamNotAsyncIterableError(AbstractSpakkyFastAPIError):
+    """Raised when a coroutine @sse method does not return an async iterator."""
+
+    status_code: ClassVar[int] = status.HTTP_500_INTERNAL_SERVER_ERROR
+    message = "A coroutine @sse method must return an async iterator."
+
+
+@dataclass
+class SseStreamOpener(FunctionAnnotation):
+    """Marks a coroutine @sse method whose awaited result is the event stream.
+
+    The route registration awaits the method before the response starts and
+    streams the async iterator it returns.
+    """
 
 
 def sse[T](
@@ -39,7 +61,10 @@ def sse[T](
     """Decorator to mark a controller generator method as an SSE stream.
 
     The decorated method must be an async generator (or a sync generator, which
-    FastAPI iterates in its thread pool). Each yielded `ServerSentEvent` is
+    FastAPI iterates in its thread pool), or a coroutine that returns an async
+    iterator. A coroutine runs before the response starts: an exception it
+    raises becomes the same HTTP error response as in a regular route, and the
+    returned iterator is then streamed. Each yielded `ServerSentEvent` is
     written with its `event`/`id`/`retry`/`comment` fields; any other yielded
     value is JSON-encoded into the `data:` field. Keep-alive comments and
     cancellation on client disconnect are handled by FastAPI.
@@ -64,14 +89,22 @@ def sse[T](
         A decorator function that attaches the SSE route configuration.
 
     Raises:
-        SseEndpointNotGeneratorError: If the method is not a generator function.
+        SseEndpointNotGeneratorError: If the method is neither a generator
+            function nor a coroutine function.
     """
 
     def wrapper(method: Callable[..., T]) -> Callable[..., T]:
         # object: inspected only, so the type guards do not narrow `method`.
         declared: object = method
-        if not isasyncgenfunction(declared) and not isgeneratorfunction(declared):
+        opens_stream = iscoroutinefunction(declared)
+        if not (
+            opens_stream
+            or isasyncgenfunction(declared)
+            or isgeneratorfunction(declared)
+        ):
             raise SseEndpointNotGeneratorError(method)
+        if opens_stream:
+            method = SseStreamOpener()(method)
         return Route(
             path=path,
             status_code=status_code,

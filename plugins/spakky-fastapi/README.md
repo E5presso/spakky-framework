@@ -117,7 +117,10 @@ class JobController:
 
 컨트롤러 resolve, context 초기화, `AuthContext` seeding은 일반 route와 같고 stream이 시작되기
 전에 실행됩니다. 보호된 SSE 메서드에 credential이 없으면 stream 대신 `401`이 응답됩니다.
-generator가 아닌 메서드에 `@sse`를 붙이면 `SseEndpointNotGeneratorError`가 발생합니다.
+stream을 열기 전에 판정하고 실패를 HTTP 오류로 답하려면, async iterator를 돌려주는 coroutine
+메서드에 `@sse`를 붙입니다. 응답이 시작되기 전에 coroutine을 `await`하므로 그 예외는 일반 route와
+같은 HTTP 오류 응답이 되고, 돌려준 async iterator가 stream으로 전송됩니다.
+generator도 coroutine도 아닌 메서드에 `@sse`를 붙이면 `SseEndpointNotGeneratorError`가 발생합니다.
 자세한 동작은 [FastAPI 심화 가이드](../../docs/guides/fastapi-advanced.md#sse)를 참고하세요.
 
 ### FastAPI 앱 접근
