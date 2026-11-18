@@ -185,13 +185,105 @@ def test_sse_route_openapi_expect_event_stream_response_and_route_name(
     )
 
 
-def test_sse_decorator_on_non_generator_method_expect_error() -> None:
-    """generator가 아닌 메서드에 @sse를 붙이면 등록 시점에 오류가 발생한다."""
+def test_sse_decorator_on_plain_function_expect_error() -> None:
+    """generator도 coroutine도 아닌 메서드에 @sse를 붙이면 등록 시점에 오류가 발생한다."""
     with pytest.raises(SseEndpointNotGeneratorError):
 
         @sse("/not-a-stream")
-        async def not_a_stream() -> dict[str, str]:
+        def not_a_stream() -> dict[str, str]:
             return {"kind": "plain"}
+
+
+def test_sse_coroutine_stream_expect_opened_before_events(
+    app: SpakkyApplication, api: FastAPI
+) -> None:
+    """coroutine @sse 메서드는 먼저 await되고, 돌려준 async iterator의 이벤트가 전송된다."""
+    with TestClient(api) as client:
+        response = client.get("/stream/rooms/lobby")
+        entries = list(app.container.get(type_=StreamJournal).entries)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(EVENT_STREAM)
+    assert response.text == (
+        'event: joined\ndata: {"room": "lobby"}\nid: 1\n\n'
+        'event: left\ndata: {"room": "lobby"}\nid: 2\n\n'
+    )
+    assert entries == ["opened lobby"]
+
+
+def test_sse_coroutine_stream_error_before_open_expect_http_error_response(
+    app: SpakkyApplication, api: FastAPI
+) -> None:
+    """coroutine @sse 메서드의 예외는 stream 대신 일반 route와 같은 HTTP 오류 응답이 된다."""
+    with TestClient(api) as client:
+        response = client.get("/stream/rooms/missing")
+        entries = list(app.container.get(type_=StreamJournal).entries)
+
+    assert response.status_code == 404
+    assert not response.headers["content-type"].startswith(EVENT_STREAM)
+    assert response.json()["message"] == "Room not found"
+    assert entries == []
+
+
+def test_sse_coroutine_stream_of_plain_async_iterator_expect_json_data_events(
+    api: FastAPI,
+) -> None:
+    """coroutine이 async generator가 아닌 async iterator를 돌려줘도 JSON data 이벤트로 전송된다."""
+    with TestClient(api) as client:
+        response = client.get("/stream/opened-ticks/2")
+
+    assert response.status_code == 200
+    assert _json_data_events(response.text) == [{"number": 2}, {"number": 1}]
+
+
+def test_sse_protected_coroutine_stream_with_bearer_expect_auth_context_and_request(
+    api: FastAPI,
+) -> None:
+    """보호된 coroutine @sse 메서드는 열 때 AuthContext와 Request를 받는다."""
+    with TestClient(api) as client:
+        response = client.get(
+            "/stream/opened-me", headers={"Authorization": "Bearer subject-2"}
+        )
+
+    assert response.status_code == 200
+    assert response.text == (
+        'data: {"subject": "subject-2", "path": "/stream/opened-me"}\n\n'
+    )
+
+
+def test_sse_protected_coroutine_stream_without_credential_expect_unauthorized(
+    api: FastAPI,
+) -> None:
+    """보호된 coroutine @sse 메서드에 credential이 없으면 stream 시작 전에 401로 응답한다."""
+    with TestClient(api) as client:
+        response = client.get("/stream/opened-me")
+
+    assert response.status_code == 401
+    assert not response.headers["content-type"].startswith(EVENT_STREAM)
+
+
+def test_sse_coroutine_stream_returning_non_iterator_expect_server_error(
+    api: FastAPI,
+) -> None:
+    """coroutine @sse 메서드가 async iterator가 아닌 값을 돌려주면 500으로 응답한다."""
+    with TestClient(api) as client:
+        response = client.get("/stream/not-iterable")
+
+    assert response.status_code == 500
+    assert not response.headers["content-type"].startswith(EVENT_STREAM)
+
+
+def test_sse_coroutine_stream_openapi_expect_event_stream_and_path_parameter(
+    api: FastAPI,
+) -> None:
+    """coroutine @sse route도 OpenAPI에 text/event-stream 응답과 경로 파라미터로 기록된다."""
+    room = api.openapi()["paths"]["/stream/rooms/{room}"]["get"]
+
+    assert EVENT_STREAM in room["responses"]["200"]["content"]
+    assert [parameter["name"] for parameter in room["parameters"]] == ["room"]
+    assert room["description"] == (
+        "Open a room stream after checking that the room exists."
+    )
 
 
 async def test_sse_stream_client_disconnect_expect_generator_closed(
@@ -236,3 +328,62 @@ async def test_sse_stream_client_disconnect_expect_generator_closed(
     bodies = [m["body"] for m in sent if m["type"] == "http.response.body"]
     assert bodies[0] == b'data: {"state": "started"}\n\n'
     assert app.container.get(type_=StreamJournal).entries == ["endless-closed"]
+
+
+async def test_sse_coroutine_stream_client_disconnect_expect_iterator_closed(
+    app: SpakkyApplication, api: FastAPI
+) -> None:
+    """client가 연결을 끊으면 coroutine이 돌려준 끝나지 않는 generator가 닫힌다."""
+    first_event_received = anyio.Event()
+    sent: list[MutableMapping[str, Any]] = []
+    request_delivered = False
+
+    async def receive() -> MutableMapping[str, Any]:
+        nonlocal request_delivered
+        if not request_delivered:
+            request_delivered = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        await first_event_received.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(message)
+        if message["type"] == "http.response.body" and message.get("body"):
+            first_event_received.set()
+
+    scope: dict[str, Any] = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/stream/opened-endless",
+        "raw_path": b"/stream/opened-endless",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [],
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+    }
+
+    with anyio.fail_after(5):
+        await api(scope, receive, send)
+
+    bodies = [m["body"] for m in sent if m["type"] == "http.response.body"]
+    assert bodies[0] == b'data: {"state": "started"}\n\n'
+    journal = app.container.get(type_=StreamJournal)
+    assert journal.entries == ["opened-endless-closed"]
+
+
+def test_sse_coroutine_stream_with_postponed_annotations_expect_body_and_openapi(
+    api: FastAPI,
+) -> None:
+    """postponed annotation 모듈의 coroutine @sse도 body를 받고 OpenAPI 문서를 만든다."""
+    with TestClient(api) as client:
+        response = client.post("/postponed/echo", json={"text": "hi"})
+
+    echo = api.openapi()["paths"]["/postponed/echo"]["post"]
+    assert response.status_code == 200
+    assert _json_data_events(response.text) == [{"text": "hi"}]
+    assert "requestBody" in echo
+    assert EVENT_STREAM in echo["responses"]["200"]["content"]

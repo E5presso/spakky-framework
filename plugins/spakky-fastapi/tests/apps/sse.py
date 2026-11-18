@@ -18,6 +18,7 @@ from spakky.core.pod.interfaces.aware.application_context_aware import (
     IApplicationContextAware,
 )
 
+from spakky.plugins.fastapi.error import NotFound
 from spakky.plugins.fastapi.routes import get, sse
 from spakky.plugins.fastapi.routes.route import HTTPMethod
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
@@ -29,6 +30,33 @@ class Tick(BaseModel):
 
 class Countdown(BaseModel):
     start: int
+
+
+class MissingRoom(NotFound):
+    """Raised before a room stream opens when the room does not exist."""
+
+    message = "Room not found"
+
+
+async def _room_events(room: str) -> AsyncIterator[ServerSentEvent]:
+    yield ServerSentEvent(data={"room": room}, event="joined", id="1")
+    yield ServerSentEvent(data={"room": room}, event="left", id="2")
+
+
+class _Countdown:
+    """Async iterator that is not an async generator."""
+
+    def __init__(self, start: int) -> None:
+        self.remaining = start
+
+    def __aiter__(self) -> "_Countdown":
+        return self
+
+    async def __anext__(self) -> Tick:
+        if self.remaining == 0:
+            raise StopAsyncIteration
+        self.remaining -= 1
+        return Tick(number=self.remaining + 1)
 
 
 @Pod()
@@ -124,3 +152,42 @@ class StreamController(IApplicationContextAware):
     @get("/declared", response_model=Tick, response_class=EventSourceResponse)
     async def declared(self) -> AsyncIterator[Tick]:
         yield Tick(number=9)
+
+    @sse("/rooms/{room}")
+    async def room(self, room: str) -> AsyncIterator[ServerSentEvent]:
+        """Open a room stream after checking that the room exists."""
+        if room == "missing":
+            raise MissingRoom(room)
+        self.__journal.entries.append(f"opened {room}")
+        return _room_events(room)
+
+    @sse("/opened-ticks/{count}")
+    async def opened_ticks(self, count: int) -> AsyncIterator[Tick]:
+        return _Countdown(count)
+
+    @protected
+    @sse("/opened-me")
+    async def opened_me(self, request: Request) -> AsyncIterator[dict[str, str]]:
+        auth_context = require_auth_context(self.__application_context)
+        subject = auth_context.subject.id
+
+        async def events() -> AsyncIterator[dict[str, str]]:
+            yield {"subject": subject, "path": request.url.path}
+
+        return events()
+
+    @sse("/not-iterable")
+    async def not_iterable(self) -> AsyncIterator[dict[str, str]]:
+        # The wrong return value is the case under test.
+        return {"kind": "plain"}  # type: ignore[return-value] - 잘못된 반환값을 검사하는 테스트
+
+    @sse("/opened-endless")
+    async def opened_endless(self) -> AsyncIterator[dict[str, str]]:
+        async def events() -> AsyncIterator[dict[str, str]]:
+            try:
+                yield {"state": "started"}
+                await anyio.sleep_forever()
+            finally:
+                self.__journal.entries.append("opened-endless-closed")
+
+        return events()
