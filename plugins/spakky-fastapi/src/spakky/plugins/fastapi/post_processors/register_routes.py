@@ -376,6 +376,9 @@ class RegisterRoutesPostProcessor(
             route: Route configuration whose response class is an SSE response.
         """
 
+        # wraps: FastAPI resolves string annotations with the globals of the
+        # unwrapped call, which must be the controller module.
+        @wraps(method)
         async def open_event_stream(
             *args: Any,
             method_name: str = name,
@@ -423,6 +426,7 @@ class RegisterRoutesPostProcessor(
             )
         )
 
+        @wraps(method)
         async def opened_event_stream_endpoint(
             **kwargs: AsyncIterator[Any],
         ) -> AsyncIterator[Any]:

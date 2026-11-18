@@ -111,7 +111,8 @@ class ChatController:
 
 ## Server-Sent Events { #sse }
 
-`@sse` 데코레이터는 컨트롤러의 generator 메서드를 `text/event-stream` 응답으로 등록합니다.
+`@sse` 데코레이터는 컨트롤러의 generator 메서드, 또는 async iterator를 돌려주는 coroutine 메서드를
+`text/event-stream` 응답으로 등록합니다.
 인코딩·keep-alive·연결 종료 처리는 FastAPI의 `fastapi.sse`가 그대로 맡고, 새 의존성은 없습니다.
 
 ```python

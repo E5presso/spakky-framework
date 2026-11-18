@@ -373,3 +373,17 @@ async def test_sse_coroutine_stream_client_disconnect_expect_iterator_closed(
     assert bodies[0] == b'data: {"state": "started"}\n\n'
     journal = app.container.get(type_=StreamJournal)
     assert journal.entries == ["opened-endless-closed"]
+
+
+def test_sse_coroutine_stream_with_postponed_annotations_expect_body_and_openapi(
+    api: FastAPI,
+) -> None:
+    """postponed annotation 모듈의 coroutine @sse도 body를 받고 OpenAPI 문서를 만든다."""
+    with TestClient(api) as client:
+        response = client.post("/postponed/echo", json={"text": "hi"})
+
+    echo = api.openapi()["paths"]["/postponed/echo"]["post"]
+    assert response.status_code == 200
+    assert _json_data_events(response.text) == [{"text": "hi"}]
+    assert "requestBody" in echo
+    assert EVENT_STREAM in echo["responses"]["200"]["content"]

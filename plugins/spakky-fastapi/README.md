@@ -19,7 +19,7 @@ pip install spakky[fastapi]
 
 - **자동 route 등록**: `@ApiController` 클래스에서 route를 등록합니다.
 - **모든 HTTP 메서드**: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, WebSocket
-- **Server-Sent Events**: generator 메서드를 `@sse`로 `text/event-stream` 응답으로 등록(FastAPI `fastapi.sse` 사용)
+- **Server-Sent Events**: generator 메서드나 async iterator를 돌려주는 coroutine 메서드를 `@sse`로 `text/event-stream` 응답으로 등록(FastAPI `fastapi.sse` 사용)
 - **OpenAPI 통합**: tag와 documentation 자동 설정
 - **에러 처리 middleware**: debug mode를 포함한 built-in exception handling
 - **Context 관리**: request-scoped 의존성 주입 지원
@@ -90,7 +90,8 @@ class MyController:
 
 ### Server-Sent Events
 
-`@sse`는 컨트롤러의 (async) generator 메서드를 `text/event-stream` 응답으로 등록합니다.
+`@sse`는 컨트롤러의 (async) generator 메서드를 `text/event-stream` 응답으로 등록합니다. async iterator를
+돌려주는 coroutine 메서드도 등록합니다(아래).
 FastAPI의 `fastapi.sse`를 그대로 사용하므로 keep-alive comment와 연결 종료 시 generator 취소는
 FastAPI가 처리합니다. 기본 HTTP 메서드는 GET이며 `methods`로 바꿀 수 있습니다.
 
@@ -217,7 +218,7 @@ FastAPI wrapper가 Spakky request context를 clear한 뒤 credential 전달체�
 | `ApiController` | prefix와 tag를 가진 REST API controller용 stereotype |
 | `get`, `post`, `put`, etc. | HTTP method용 route decorator |
 | `websocket` | WebSocket endpoint decorator |
-| `sse` | generator 메서드를 Server-Sent Events stream으로 등록하는 decorator |
+| `sse` | generator 메서드나 async iterator를 돌려주는 coroutine 메서드를 Server-Sent Events stream으로 등록하는 decorator |
 | `ErrorHandlingMiddleware` | built-in exception handling middleware |
 | `TracingMiddleware` | trace context propagation middleware (`spakky-tracing` 필수 의존) |
 | `FastAPIConfig` | 플러그인 제공 기본 FastAPI 앱 설정 |
