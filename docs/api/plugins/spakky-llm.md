@@ -579,6 +579,7 @@ assistant와 tool history는 text-only입니다.
 | Adapter | Image | Audio / Video | Document |
 | --- | --- | --- | --- |
 | OpenAI Chat Completions | URI 또는 inline | audio inline / video 미지원 | inline + filename, MIME allowlist |
+| OpenAI Responses | URI 또는 inline | 둘 다 미지원 | inline + filename, OpenAI File inputs 가이드의 MIME 목록(PDF, docx·xlsx·pptx 등 Office 문서, csv, 글과 코드) |
 | Anthropic Messages | URI 또는 inline | 둘 다 미지원 | PDF URI/inline, UTF-8 text inline |
 | Google GenerateContent | URI 또는 inline | URI 또는 inline | URI 또는 inline |
 

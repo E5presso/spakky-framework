@@ -396,7 +396,7 @@ SSE streaming으로 호출합니다. `complete()`도 같은 stream을 끝까지 
 | Structured output | `text.format.type="json_schema"`; `strict`이면 모든 object를 required-all과 `additionalProperties=false`로 변환하고, 응답은 `LlmJsonCodec`이 다시 검증 |
 | Usage | terminal event의 `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cache_write_tokens` |
 | Reasoning | route의 `reasoning_effort`가 `reasoning.effort`로 전달됨; `supports_reasoning=True`이면 `reasoning.summary="auto"`를 요청하고 summary delta를 `REASONING_DELTA`로 전달 |
-| Multimodal input | user message의 text, image(URI 또는 inline), document(inline + filename); audio와 video는 `LlmUnsupportedFeatureError` |
+| Multimodal input | user message의 text, image(URI 또는 inline), document(inline + filename, `input_file`); audio와 video는 `LlmUnsupportedFeatureError` |
 
 `openai_dialect`가 접근 경로를 고릅니다.
 
@@ -458,6 +458,30 @@ config = LlmConfig(
 ```
 
 `model` 값은 예시입니다. 로그인한 계정에서 실제로 쓸 수 있는 model ID를 넣습니다.
+
+#### 문서 입력(`input_file`)
+
+Responses adapter는 filename이 있는 inline `DocumentPart`를 `input_file`의 `file_data`(data URL)로
+보냅니다. 받는 MIME type은 OpenAI [File inputs](https://developers.openai.com/api/docs/guides/file-inputs)
+가이드의 전체 목록(2026-11-19 기준)입니다.
+
+| 분류 | 예 |
+| --- | --- |
+| PDF | `application/pdf` |
+| 문서 | docx, doc, rtf, odt, Pages, Google Docs |
+| 발표 자료 | pptx, ppt, Keynote, Google Slides |
+| 스프레드시트 | xlsx, xls, csv, tsv, Google Sheets |
+| 글과 코드 | `text/plain`, `text/markdown`, `application/json`, `text/html`, `text/x-python` 등 |
+
+목록에 없는 MIME type, URI document, filename이 없는 document는 요청 전에
+`LlmUnsupportedFeatureError`입니다. 가이드의 `message/rfc822`와 `text/x-R`은 `DocumentPart`가
+소문자 `application/*`·`text/*`만 받으므로 쓸 수 없습니다. 크기는 core의 media 한도(request 전체
+inline 20 MiB)가 먼저 막으며, OpenAI 한도(파일 하나와 요청 전체 각각 50 MB 미만)보다 작습니다.
+
+2026-11-19에 `chatgpt` dialect(ChatGPT 로그인 token, `https://chatgpt.com/backend-api/codex`)로
+실제 호출해 확인했습니다. docx 본문의 문장과 xlsx 셀의 숫자를 묻는 요청에 모델이 그 내용을
+그대로 답했습니다. API key(`standard` dialect) 경로는 이 확인에 쓸 key가 없어 실제 호출로
+확인하지 않았습니다.
 
 #### Call-time credential
 
