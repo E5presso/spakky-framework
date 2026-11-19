@@ -359,16 +359,21 @@ class CloseSessionUseCase:
     async def execute(self, session_id: UUID) -> None: ...
 ```
 
-- `SessionManager` / `AsyncSessionManager`는 실행 context(`ContextVar`)마다 session stack을 둡니다. `REQUIRES_NEW`는 새 session(새 DB 연결)을
-  위에 올리고, 끝나면 그 session만 commit 또는 rollback하고 닫은 뒤 바깥 session으로 돌아갑니다.
+- `SessionManager` / `AsyncSessionManager`는 실행 context(`ContextVar`)마다 session stack을 둡니다. 각 session은 자기
+  physical transaction에 묶입니다. `REQUIRES_NEW`는 새 session(새 DB 연결)을 위에 올리고, 끝나면 그 session만 commit 또는
+  rollback하고 닫은 뒤 바깥 session으로 돌아갑니다. 합친 scope는 합친 transaction의 session을 씁니다.
 - `asyncio.gather`/`create_task`로 만든 자식 task와 context를 복사한 thread는 바깥의 session stack을 이어받습니다.
   자식의 `REQUIRES_NEW`는 자식 context에만 쌓이므로 동시에 연 여러 `REQUIRES_NEW`가 서로의 session을 쓰거나 닫지 않습니다.
   자식의 `REQUIRED`는 바깥 session을 함께 쓰고, 자식의 실패는 바깥을 rollback-only로 만듭니다.
   session 하나는 동시 사용에 안전하지 않으므로 자식들이 동시에 DB를 쓰면 각자 `REQUIRES_NEW`를 쓰세요.
-- 바깥이 commit하고 닫은 session은 그 뒤에 도는 자식에게 내주지 않습니다. 기다리지 않고 띄운 자식 task가 바깥이
-  끝난 뒤 `@Transactional()`(`REQUIRED`)을 시작하면 새 session을 열어 자기 쓰기를 commit합니다.
-  바깥이 끝나기 전에 이미 합쳐져 있던 자식은 그 scope가 끝날 때 `TransactionAlreadyFinishedError`를 냅니다.
-  바깥보다 오래 걸릴 수 있는 자식은 `REQUIRES_NEW`로 두거나 바깥이 끝나기 전에 기다리세요.
+- transaction은 commit 또는 rollback을 마친 순간(session을 닫기 전) 끝납니다. 끝난 transaction의 session은 그 뒤에
+  누구에게도 내주지 않고, 아래 다른 transaction의 session으로 넘어가지도 않습니다(`TransactionAlreadyFinishedError`).
+  - 기다리지 않고 띄운 자식 task가 바깥이 끝난 뒤 `@Transactional()`(`REQUIRED`)을 시작하면 새 session을 열어 자기 쓰기를
+    commit합니다. 끝난 안쪽(`REQUIRES_NEW`) 아래에 살아 있는 바깥이 있으면 바깥에 합쳐 바깥 session을 쓰고, 그 aggregate도
+    바깥의 buffer에 들어가 바깥이 commit해야 발행됩니다.
+  - 끝나기 전에 이미 합쳐져 있던 자식은 그 뒤 session을 조회하면 `TransactionAlreadyFinishedError`를 받고, 그 scope가 끝날 때도
+    같은 오류를 냅니다. 그 쓰기는 어느 transaction에도 들어가지 않습니다.
+  - 바깥보다 오래 걸릴 수 있는 자식은 `REQUIRES_NEW`로 두거나 바깥이 끝나기 전에 기다리세요.
 - 안쪽은 바깥이 아직 commit하지 않은 변경을 보지 못합니다. 바깥이 잠근 행을 안쪽이 쓰면 서로 기다릴 수 있습니다(PostgreSQL 행 lock).
 - 연결을 둘 쓰므로 `pool_size`(기본 5)와 `pool_max_overflow`(기본 10)를 그만큼 고려합니다.
 - 도메인 이벤트는 실제로 commit한 physical transaction마다 그 뒤에 발행됩니다. 합쳐진 안쪽이 끝날 때는 발행하지 않습니다.

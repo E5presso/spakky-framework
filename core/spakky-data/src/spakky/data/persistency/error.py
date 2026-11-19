@@ -26,16 +26,18 @@ class TransactionNotActiveError(AbstractSpakkyPersistencyError):
 
 
 class TransactionAlreadyFinishedError(AbstractSpakkyPersistencyError):
-    """Raised when a joined scope exits after the transaction it joined finished.
+    """Raised when a scope uses or exits a transaction that already finished.
 
     A child task or thread that joined (``Propagation.REQUIRED``) a transaction
     of its parent can outlive the parent's scope. Once the scope that opened
-    the physical transaction has committed or rolled back and released it,
-    work done in the joined scope afterwards was not part of that transaction,
-    so the joined scope fails loudly instead of losing it silently.
+    the physical transaction has committed or rolled back, work done in the
+    joined scope afterwards cannot be part of that transaction. Resources bound
+    to the finished transaction (its session, its aggregate buffer) refuse to
+    be used instead of handing out another transaction's resource, and the
+    joined scope fails on exit instead of losing that work silently.
     """
 
-    message = "The transaction this scope joined had already finished before the scope exited."
+    message = "The transaction of this scope has already finished."
 
 
 class AggregateBufferNotOpenError(AbstractSpakkyPersistencyError):

@@ -354,3 +354,126 @@ async def test_async_transaction_exit_without_enter_expect_not_active_error() ->
 
     with pytest.raises(TransactionNotActiveError):
         await transaction.__aexit__(None, None, None)
+
+
+class BindingFailureError(Exception):
+    """자원을 열거나 묶는 일 자체가 실패하는 상황을 흉내 낸다."""
+
+
+class FailingInitializeTransaction(RecordingTransaction):
+    """initialize()가 실패하는 동기 구현."""
+
+    @override
+    def initialize(self) -> None:
+        raise BindingFailureError()
+
+
+class FailingJoinTransaction(RecordingTransaction):
+    """join()이 실패하는 동기 구현."""
+
+    @override
+    def join(self) -> None:
+        raise BindingFailureError()
+
+
+class AsyncFailingInitializeTransaction(AsyncRecordingTransaction):
+    """initialize()가 실패하는 비동기 구현."""
+
+    @override
+    async def initialize(self) -> None:
+        raise BindingFailureError()
+
+
+class AsyncFailingJoinTransaction(AsyncRecordingTransaction):
+    """join()이 실패하는 비동기 구현."""
+
+    @override
+    async def join(self) -> None:
+        raise BindingFailureError()
+
+
+def test_transaction_current_frame_without_scope_expect_not_active_error() -> None:
+    """열린 scope가 없으면 current_frame은 TransactionNotActiveError를 낸다."""
+    transaction = RecordingTransaction()
+
+    with pytest.raises(TransactionNotActiveError):
+        _ = transaction.current_frame
+
+
+def test_transaction_current_frame_inside_scopes_expect_owner_and_joined() -> None:
+    """current_frame은 scope가 transaction을 열었는지 합쳤는지와 그 transaction을 알려 준다."""
+    transaction = RecordingTransaction()
+
+    with transaction.scope():
+        outer = transaction.current_frame
+        with transaction.scope(Propagation.REQUIRED):
+            joined = transaction.current_frame
+
+    assert outer.owner is True
+    assert joined.owner is False
+    assert joined.transaction is outer.transaction
+    assert outer.transaction.finished is True
+
+
+def test_transaction_initialize_failure_expect_no_scope_left() -> None:
+    """initialize()가 실패하면 scope는 남지 않는다."""
+    transaction = FailingInitializeTransaction()
+
+    with pytest.raises(BindingFailureError):
+        with transaction.scope():
+            pass
+
+    assert transaction.is_active is False
+    with pytest.raises(TransactionNotActiveError):
+        _ = transaction.current_frame
+
+
+def test_transaction_join_failure_expect_outer_scope_restored() -> None:
+    """join()이 실패하면 합치려던 scope는 남지 않고 바깥 scope가 그대로 현재 scope다."""
+    transaction = FailingJoinTransaction()
+
+    with transaction.scope():
+        outer = transaction.current_frame
+        with pytest.raises(BindingFailureError):
+            with transaction.scope(Propagation.REQUIRED):
+                pass
+        assert transaction.current_frame is outer
+
+    assert transaction.events == ["open:1", "commit:1", "close:1"]
+
+
+async def test_async_transaction_current_frame_without_scope_expect_not_active() -> (
+    None
+):
+    """비동기에서도 열린 scope가 없으면 current_frame은 TransactionNotActiveError를 낸다."""
+    transaction = AsyncRecordingTransaction()
+
+    with pytest.raises(TransactionNotActiveError):
+        _ = transaction.current_frame
+
+
+async def test_async_transaction_initialize_failure_expect_no_scope_left() -> None:
+    """비동기 initialize()가 실패하면 scope는 남지 않는다."""
+    transaction = AsyncFailingInitializeTransaction()
+
+    with pytest.raises(BindingFailureError):
+        async with transaction.scope():
+            pass
+
+    assert transaction.is_active is False
+    with pytest.raises(TransactionNotActiveError):
+        _ = transaction.current_frame
+
+
+async def test_async_transaction_join_failure_expect_outer_scope_restored() -> None:
+    """비동기 join()이 실패하면 합치려던 scope는 남지 않고 바깥 scope가 그대로다."""
+    transaction = AsyncFailingJoinTransaction()
+
+    async with transaction.scope():
+        outer = transaction.current_frame
+        with pytest.raises(BindingFailureError):
+            async with transaction.scope(Propagation.REQUIRED):
+                pass
+        assert transaction.current_frame is outer
+
+    assert transaction.events == ["open:1", "commit:1", "close:1"]

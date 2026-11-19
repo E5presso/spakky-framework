@@ -188,16 +188,19 @@ async def record_audit(self, entry: AuditEntry) -> None: ...
   - 합쳐진 자식들은 바깥과 같은 session을 씁니다. SQLAlchemy session은 동시 사용에 안전하지 않으므로
     같은 session으로 동시에 DB를 쓰려면 자식마다 `REQUIRES_NEW`를 쓰세요.
 - 바깥보다 오래 사는 자식(기다리지 않고 띄운 `create_task`, 끝까지 기다리지 않는 thread)은 다음과 같이 동작합니다.
-  - 바깥 transaction이 끝난(commit·rollback 후 닫힌) 뒤에 자식이 `@Transactional`을 시작하면, 끝난 transaction에는
-    합치지 않습니다. 그 아래 아직 살아 있는 transaction이 있으면 거기에 합치고, 없으면 자기 transaction을 새로 열어
-    commit합니다. 자식이 모은 aggregate의 이벤트도 자식의 commit 뒤에 발행됩니다.
-  - 바깥이 끝나기 전에 자식이 이미 합쳐져 있었는데 바깥이 먼저 끝나면, 자식의 그 scope가 끝날 때
-    `TransactionAlreadyFinishedError`를 냅니다. 바깥이 commit한 뒤에 자식이 한 쓰기는 commit되지 않으므로
-    조용히 잃지 않고 실패로 알립니다. 바깥보다 오래 걸릴 수 있는 자식 작업은 `REQUIRES_NEW`로 두거나,
-    바깥이 끝나기 전에 기다리세요.
+  - transaction은 commit 또는 rollback을 마친 그 순간(session을 닫기 전) "끝남"이 됩니다. 그 뒤에 자식이
+    `@Transactional`을 시작하면 끝난 transaction에는 합치지 않습니다. 그 아래 아직 살아 있는 transaction이 있으면
+    거기에 합치고, 없으면 자기 transaction을 새로 열어 commit합니다. 이때 자식의 쓰기(session)와 aggregate(buffer)는
+    언제나 자식이 합친 그 transaction의 것이라서, 쓰기는 rollback됐는데 이벤트만 나가는 일이 없습니다.
+  - 바깥이 끝나기 전에 자식이 이미 합쳐져 있었는데 바깥이 먼저 끝나면, 자식은 그 뒤 쓰기(session 조회)와
+    aggregate 수집에서 `TransactionAlreadyFinishedError`를 받고, 그 scope가 끝날 때도 같은 오류를 냅니다.
+    아래의 다른 transaction의 session으로 넘어가 쓰지 않으므로, 실패한 자식의 쓰기가 다른 transaction과 함께
+    commit되지 않습니다. 바깥보다 오래 걸릴 수 있는 자식 작업은 `REQUIRES_NEW`로 두거나, 바깥이 끝나기 전에 기다리세요.
 
-`AggregateCollector`는 physical transaction(가장 바깥 또는 `REQUIRES_NEW`)마다 수집 buffer를 따로 둡니다.
-`@Transactional`은 physical transaction이 commit된 직후 그 buffer를 `drain_committed()`로 넘기고,
+`AggregateCollector`는 physical transaction(가장 바깥 또는 `REQUIRES_NEW`)마다 수집 buffer를 따로 두고, 그 buffer를
+transaction(`PhysicalTransaction`)에 묶습니다. `@Transactional`은 scope가 transaction을 열었는지 합쳤는지를
+scope 자신(`current_frame.owner`)에게서 받아, 연 경우 buffer를 열고(`begin_transaction`), 합친 경우 합친 transaction의
+buffer로 모읍니다(`join_transaction`). `@Transactional`은 physical transaction이 commit된 직후 그 buffer를 `drain_committed()`로 넘기고,
 `spakky-event`의 이벤트 발행 Aspect가 이를 꺼내 도메인 이벤트를 발행합니다. 그래서 합쳐진 안쪽이 끝날 때는
 발행하지 않고, 가장 바깥이 commit한 뒤에 한 번 발행합니다. `REQUIRES_NEW` 안쪽의 이벤트는 안쪽이 commit한 뒤에 발행됩니다.
 
@@ -209,11 +212,16 @@ async with transaction.scope():
         ...  # 별도 session, 별도 commit
 ```
 
-`AbstractTransaction` / `AbstractAsyncTransaction`을 직접 구현한다면 `initialize()`는 바깥 transaction을 유지한 채
-새 physical transaction을 열고, `dispose()`는 그것을 닫은 뒤 바깥으로 돌아가야 합니다. 현재 physical transaction의
-자원(session 등)은 요청 전체가 공유하는 상태가 아니라 `ContextVar` 같은 실행 context 지역 상태로 찾아야
-자식 task의 `REQUIRES_NEW`가 다른 task의 자원을 바꾸지 않습니다. 또 `dispose()`로 닫은 자원은 그것을 이어받은
-자식 context에도 더 내주지 않아야 합니다(예: 닫힘 표시를 공유 객체에 두고 건너뛰기).
+`AbstractTransaction` / `AbstractAsyncTransaction`을 직접 구현한다면 자원(session 등)을 physical transaction에 묶습니다.
+
+- `initialize()`: 바깥 transaction을 유지한 채 새 자원을 열어 `current_frame.transaction`(새 `PhysicalTransaction`)에 묶습니다.
+- `join()` / `leave()`: `REQUIRED` scope가 진행 중인 transaction에 합칠 때와 나갈 때 불립니다. `current_frame.transaction`이
+  합친 transaction이며, 안쪽이 이미 끝났다면 그 아래의 transaction일 수 있습니다. 기본 구현은 아무것도 하지 않습니다.
+- `dispose()`: `initialize()`가 연 자원을 닫고 바깥으로 돌아갑니다. `finished`가 켜진 뒤에 불립니다.
+- 자원은 요청 전체가 공유하는 상태가 아니라 `ContextVar` 같은 실행 context 지역 상태에 두어야 자식 task의
+  `REQUIRES_NEW`가 다른 task의 자원을 바꾸지 않습니다.
+- 지금 쓸 자원은 현재 scope가 속한 transaction의 자원입니다. 그 transaction이 `finished`이면 아래 자원으로 넘어가지 말고
+  `TransactionAlreadyFinishedError`를 내야 합니다. `finished`는 commit·rollback 직후, `dispose()` 전에 켜집니다.
 
 ### 외부 연동 Proxy 패턴
 
@@ -272,7 +280,7 @@ class PaymentServiceProxy(IPaymentProxy):
 |-------|-------------|
 | `AbstractSpakkyPersistencyError` | persistency operation 기반 error |
 | `TransactionRollbackOnlyError` | 안쪽 scope의 실패로 rollback만 가능해진 transaction을 바깥이 정상 종료하려 할 때 발생 |
-| `TransactionAlreadyFinishedError` | 합쳐진 scope(주로 자식 task·thread)가 끝나기 전에 그 transaction이 먼저 끝났을 때 발생 |
+| `TransactionAlreadyFinishedError` | 이미 commit·rollback된 transaction의 자원(session, aggregate buffer)을 쓰려 하거나, 합쳐진 scope(주로 자식 task·thread)가 끝나기 전에 그 transaction이 먼저 끝났을 때 발생 |
 | `TransactionNotActiveError` | 열린 scope 없이 transaction scope를 닫으려 할 때 발생 |
 | `AggregateBufferNotOpenError` | 열지 않은 collector buffer를 닫으려 할 때 발생 |
 | `AbstractSpakkyExternalError` | 외부 service operation 기반 error |

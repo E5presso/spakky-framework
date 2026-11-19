@@ -32,8 +32,18 @@ class Transaction(AbstractTransaction):
 
     @override
     def initialize(self) -> None:
-        """Open a new session on top of the session stack."""
-        self._session_manager.open()
+        """Open a new session bound to the new physical transaction."""
+        self._session_manager.open(self.current_frame.transaction)
+
+    @override
+    def join(self) -> None:
+        """Use the session of the joined physical transaction."""
+        self._session_manager.join(self.current_frame.transaction)
+
+    @override
+    def leave(self) -> None:
+        """Stop using the session of the joined physical transaction."""
+        self._session_manager.leave()
 
     @override
     def dispose(self) -> None:
@@ -72,8 +82,18 @@ class AsyncTransaction(AbstractAsyncTransaction):
 
     @override
     async def initialize(self) -> None:
-        """Open a new async session on top of the session stack."""
-        await self._session_manager.open()
+        """Open a new async session bound to the new physical transaction."""
+        await self._session_manager.open(self.current_frame.transaction)
+
+    @override
+    async def join(self) -> None:
+        """Use the async session of the joined physical transaction."""
+        await self._session_manager.join(self.current_frame.transaction)
+
+    @override
+    async def leave(self) -> None:
+        """Stop using the async session of the joined physical transaction."""
+        await self._session_manager.leave()
 
     @override
     async def dispose(self) -> None:

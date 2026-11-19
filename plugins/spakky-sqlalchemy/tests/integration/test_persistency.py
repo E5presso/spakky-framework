@@ -6,6 +6,7 @@ actual PostgreSQL database via testcontainers.
 
 import pytest
 from spakky.core.application.application import SpakkyApplication
+from spakky.data.persistency.transaction import PhysicalTransaction
 from sqlalchemy import text
 
 from spakky.plugins.sqlalchemy.persistency.connection_manager import ConnectionManager
@@ -40,7 +41,7 @@ async def test_async_session_manager_open_creates_session(
     """AsyncSessionManager.open()이 session을 생성하는지 검증한다."""
     session_manager: AsyncSessionManager = app.container.get(type_=AsyncSessionManager)
 
-    await session_manager.open()
+    await session_manager.open(PhysicalTransaction())
 
     session = session_manager.session
     assert session is not None
@@ -55,7 +56,7 @@ async def test_async_session_manager_close_invalidates_session(
     """AsyncSessionManager.close() 후 session 접근 시 에러를 발생시키는지 검증한다."""
     session_manager: AsyncSessionManager = app.container.get(type_=AsyncSessionManager)
 
-    await session_manager.open()
+    await session_manager.open(PhysicalTransaction())
     await session_manager.close()
 
     with pytest.raises(SessionNotInitializedError):
@@ -77,24 +78,26 @@ async def test_async_transaction_autocommit_enabled_by_default(
 async def test_async_transaction_initialize_and_dispose_lifecycle(
     async_transaction: AsyncTransaction,
 ) -> None:
-    """AsyncTransaction의 initialize/dispose 라이프사이클을 검증한다."""
-    await async_transaction.initialize()
+    """AsyncTransaction의 scope가 session을 열고 닫는 라이프사이클을 검증한다."""
+    async with async_transaction.scope():
+        session = async_transaction.session
 
-    # dispose는 예외 없이 실행되어야 함
-    await async_transaction.dispose()
+    assert session is not None
+    with pytest.raises(SessionNotInitializedError):
+        _ = async_transaction.session
 
 
 @pytest.mark.asyncio
 async def test_async_transaction_session_access_after_initialize(
     async_transaction: AsyncTransaction,
 ) -> None:
-    """AsyncTransaction.initialize() 후 session 접근이 가능한지 검증한다."""
-    await async_transaction.initialize()
+    """AsyncTransaction.initialize()가 연 session은 그 transaction의 scope에서 보인다."""
+    async with async_transaction.scope():
+        session = async_transaction.session
+        frame = async_transaction.current_frame
 
-    session = async_transaction.session
     assert session is not None
-
-    await async_transaction.dispose()
+    assert frame.owner is True
 
 
 @pytest.mark.asyncio
@@ -111,26 +114,24 @@ async def test_async_transaction_session_access_in_context_manager(
 async def test_async_transaction_commit_succeeds(
     async_transaction: AsyncTransaction,
 ) -> None:
-    """AsyncTransaction.commit()이 정상 동작하는지 검증한다."""
-    await async_transaction.initialize()
+    """AsyncTransaction.commit()이 scope 안에서 정상 동작하는지 검증한다."""
+    async with async_transaction.scope():
+        result = await async_transaction.session.execute(text("SELECT 1"))
+        await async_transaction.commit()
 
-    # commit은 예외 없이 실행되어야 함
-    await async_transaction.commit()
-
-    await async_transaction.dispose()
+    assert result.scalar_one() == 1
 
 
 @pytest.mark.asyncio
 async def test_async_transaction_rollback_succeeds(
     async_transaction: AsyncTransaction,
 ) -> None:
-    """AsyncTransaction.rollback()이 정상 동작하는지 검증한다."""
-    await async_transaction.initialize()
+    """AsyncTransaction.rollback()이 scope 안에서 정상 동작하는지 검증한다."""
+    async with async_transaction.scope():
+        result = await async_transaction.session.execute(text("SELECT 1"))
+        await async_transaction.rollback()
 
-    # rollback은 예외 없이 실행되어야 함
-    await async_transaction.rollback()
-
-    await async_transaction.dispose()
+    assert result.scalar_one() == 1
 
 
 @pytest.mark.asyncio
@@ -229,7 +230,7 @@ def test_sync_session_manager_open_creates_session(
     """SessionManager.open()이 session을 생성하는지 검증한다."""
     session_manager: SessionManager = app.container.get(type_=SessionManager)
 
-    session_manager.open()
+    session_manager.open(PhysicalTransaction())
 
     session = session_manager.session
     assert session is not None
@@ -243,7 +244,7 @@ def test_sync_session_manager_close_invalidates_session(
     """SessionManager.close() 후 session 접근 시 에러를 발생시키는지 검증한다."""
     session_manager: SessionManager = app.container.get(type_=SessionManager)
 
-    session_manager.open()
+    session_manager.open(PhysicalTransaction())
     session_manager.close()
 
     with pytest.raises(SessionNotInitializedError):
@@ -265,13 +266,12 @@ def test_sync_transaction_session_property(
 def test_sync_transaction_rollback_succeeds(
     transaction: Transaction,
 ) -> None:
-    """Transaction.rollback()이 정상 동작하는지 검증한다."""
-    transaction.initialize()
+    """Transaction.rollback()이 scope 안에서 정상 동작하는지 검증한다."""
+    with transaction.scope():
+        result = transaction.session.execute(text("SELECT 1"))
+        transaction.rollback()
 
-    # rollback은 예외 없이 실행되어야 함
-    transaction.rollback()
-
-    transaction.dispose()
+    assert result.scalar_one() == 1
 
 
 def test_sync_transaction_context_manager_rollbacks_on_exception(

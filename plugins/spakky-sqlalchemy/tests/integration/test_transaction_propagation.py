@@ -7,7 +7,10 @@ from contextvars import copy_context
 from uuid import UUID
 
 import pytest
-from spakky.data.persistency.error import TransactionRollbackOnlyError
+from spakky.data.persistency.error import (
+    TransactionAlreadyFinishedError,
+    TransactionRollbackOnlyError,
+)
 from spakky.data.persistency.transaction import Propagation
 from sqlalchemy import select
 
@@ -362,3 +365,73 @@ def test_sync_thread_after_outer_finished_expect_thread_write_committed(
 
     assert stored_sync(transaction, outer_user.uid)
     assert stored_sync(transaction, child_user.uid)
+
+
+@pytest.mark.asyncio
+async def test_async_child_joined_to_finished_inner_expect_write_not_in_outer(
+    schema_registry: SchemaRegistry,
+    async_transaction: AsyncTransaction,
+    unique_id: str,
+) -> None:
+    """안쪽 REQUIRES_NEW에 합친 자식 task가 안쪽이 끝난 뒤 쓰려 하면 거절되고, 바깥과 함께 commit되지 않는다."""
+    outer_user = new_user(f"late_outer_{unique_id}")
+    child_user = new_user(f"late_child_{unique_id}")
+    child_joined = asyncio.Event()
+    inner_finished = asyncio.Event()
+    refused: list[type[BaseException]] = []
+
+    async def child() -> None:
+        async with async_transaction.scope(Propagation.REQUIRED):
+            child_joined.set()
+            await inner_finished.wait()
+            with pytest.raises(TransactionAlreadyFinishedError) as raised:
+                async_transaction.session.add(schema_registry.from_domain(child_user))
+            refused.append(raised.type)
+
+    async with async_transaction.scope():
+        async_transaction.session.add(schema_registry.from_domain(outer_user))
+        async with async_transaction.scope(Propagation.REQUIRES_NEW):
+            task = asyncio.create_task(child())
+            await child_joined.wait()
+        inner_finished.set()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            await task
+
+    assert refused == [TransactionAlreadyFinishedError]
+    assert await stored(async_transaction, outer_user.uid)
+    assert not await stored(async_transaction, child_user.uid)
+
+
+def test_sync_thread_joined_to_finished_inner_expect_write_not_in_outer(
+    schema_registry: SchemaRegistry,
+    transaction: Transaction,
+    unique_id: str,
+) -> None:
+    """안쪽 REQUIRES_NEW에 합친 thread가 안쪽이 끝난 뒤 쓰려 하면 거절되고, 바깥과 함께 commit되지 않는다."""
+    outer_user = new_user(f"late_sync_outer_{unique_id}")
+    child_user = new_user(f"late_sync_child_{unique_id}")
+    child_joined = threading.Event()
+    inner_finished = threading.Event()
+    refused: list[type[BaseException]] = []
+
+    def child() -> None:
+        with transaction.scope(Propagation.REQUIRED):
+            child_joined.set()
+            inner_finished.wait()
+            with pytest.raises(TransactionAlreadyFinishedError) as raised:
+                transaction.session.add(schema_registry.from_domain(child_user))
+            refused.append(raised.type)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with transaction.scope():
+            transaction.session.add(schema_registry.from_domain(outer_user))
+            with transaction.scope(Propagation.REQUIRES_NEW):
+                future = executor.submit(copy_context().run, child)
+                child_joined.wait()
+            inner_finished.set()
+            with pytest.raises(TransactionAlreadyFinishedError):
+                future.result()
+
+    assert refused == [TransactionAlreadyFinishedError]
+    assert stored_sync(transaction, outer_user.uid)
+    assert not stored_sync(transaction, child_user.uid)

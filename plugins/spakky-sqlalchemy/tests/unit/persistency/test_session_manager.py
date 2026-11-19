@@ -9,9 +9,12 @@ from spakky.plugins.sqlalchemy.persistency.connection_manager import (
     AsyncConnectionManager,
     ConnectionManager,
 )
+from spakky.data.persistency.error import TransactionAlreadyFinishedError
+from spakky.data.persistency.transaction import PhysicalTransaction
 from spakky.plugins.sqlalchemy.persistency.session_manager import (
     AsyncSessionManager,
     SessionManager,
+    SessionNotBoundError,
     SessionNotInitializedError,
 )
 
@@ -70,7 +73,7 @@ def test_session_manager_open_creates_session() -> None:
 
     manager = SessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
-    manager.open()
+    manager.open(PhysicalTransaction())
 
     assert manager.session is not None
     manager.close()
@@ -90,7 +93,7 @@ def test_session_manager_close_removes_session() -> None:
 
     manager = SessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
-    manager.open()
+    manager.open(PhysicalTransaction())
     manager.close()
 
     with pytest.raises(SessionNotInitializedError):
@@ -128,7 +131,7 @@ def test_session_manager_session_property_returns_session() -> None:
 
     manager = SessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
-    manager.open()
+    manager.open(PhysicalTransaction())
 
     from sqlalchemy.orm import Session
 
@@ -194,7 +197,7 @@ async def test_async_session_manager_open_creates_session() -> None:
 
     manager = AsyncSessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
-    await manager.open()
+    await manager.open(PhysicalTransaction())
 
     assert manager.session is not None
     await manager.close()
@@ -213,7 +216,7 @@ async def test_async_session_manager_close_removes_session() -> None:
 
     manager = AsyncSessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
-    await manager.open()
+    await manager.open(PhysicalTransaction())
     await manager.close()
 
     with pytest.raises(SessionNotInitializedError):
@@ -249,7 +252,7 @@ async def test_async_session_manager_session_property_returns_session() -> None:
 
     manager = AsyncSessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
-    await manager.open()
+    await manager.open(PhysicalTransaction())
 
     # session property를 통해 접근해야 return 라인이 실행됨
     session = manager.session
@@ -261,7 +264,7 @@ def test_unbound_sync_session_rejects_open_and_accepts_cleanup() -> None:
     """컨텍스트 주입 전에는 열기를 거절하고 정리는 안전하게 끝낸다."""
     manager = SessionManager(MagicMock(spec=ConnectionManager))
     with pytest.raises(SessionNotInitializedError):
-        manager.open()
+        manager.open(PhysicalTransaction())
     manager.close()
 
 
@@ -270,7 +273,7 @@ async def test_unbound_async_session_rejects_open_and_accepts_cleanup() -> None:
     """비동기 매니저도 컨텍스트 주입 전 자원을 생성하지 않는다."""
     manager = AsyncSessionManager(MagicMock(spec=AsyncConnectionManager))
     with pytest.raises(SessionNotInitializedError):
-        await manager.open()
+        await manager.open(PhysicalTransaction())
     await manager.close()
 
 
@@ -285,11 +288,11 @@ def test_shared_sync_manager_keeps_overlapping_contexts_independent() -> None:
     manager = SessionManager(connection)
     context = ApplicationContext()
     manager.set_application_context(context)
-    manager.open()
+    manager.open(PhysicalTransaction())
     first = manager.session
     other = copy_context()
     other.run(context.clear_context)
-    other.run(manager.open)
+    other.run(manager.open, PhysicalTransaction())
     assert other.run(lambda: manager.session) is not first
     assert manager.session is first
     other.run(manager.close)
@@ -315,12 +318,12 @@ async def test_shared_async_manager_keeps_overlapping_contexts_independent() -> 
     manager = AsyncSessionManager(connection)
     context = ApplicationContext()
     manager.set_application_context(context)
-    await manager.open()
+    await manager.open(PhysicalTransaction())
     first = manager.session
 
     async def other_request() -> None:
         context.clear_context()
-        await manager.open()
+        await manager.open(PhysicalTransaction())
         assert manager.session is not first
         await manager.close()
         with pytest.raises(SessionNotInitializedError):
@@ -344,9 +347,9 @@ def test_sync_session_manager_nested_open_expect_stack_restores_outer() -> None:
     connection.connection = create_engine("sqlite:///:memory:")
     manager = SessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    manager.open()
+    manager.open(PhysicalTransaction())
     outer = manager.session
-    manager.open()
+    manager.open(PhysicalTransaction())
     inner = manager.session
 
     assert inner is not outer
@@ -370,9 +373,9 @@ async def test_async_session_manager_nested_open_expect_stack_restores_outer() -
     )
     manager = AsyncSessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    await manager.open()
+    await manager.open(PhysicalTransaction())
     outer = manager.session
-    await manager.open()
+    await manager.open(PhysicalTransaction())
     inner = manager.session
 
     assert inner is not outer
@@ -399,7 +402,7 @@ async def test_async_session_manager_concurrent_child_tasks_expect_own_sessions(
     )
     manager = AsyncSessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    await manager.open()
+    await manager.open(PhysicalTransaction())
     outer = manager.session
     a_opened = asyncio.Event()
     b_opened = asyncio.Event()
@@ -408,7 +411,7 @@ async def test_async_session_manager_concurrent_child_tasks_expect_own_sessions(
 
     async def a() -> None:
         inherited = manager.session
-        await manager.open()
+        await manager.open(PhysicalTransaction())
         mine = manager.session
         a_opened.set()
         await b_opened.wait()
@@ -419,7 +422,7 @@ async def test_async_session_manager_concurrent_child_tasks_expect_own_sessions(
     async def b() -> None:
         await a_opened.wait()
         inherited = manager.session
-        await manager.open()
+        await manager.open(PhysicalTransaction())
         mine = manager.session
         b_opened.set()
         await a_closed.wait()
@@ -453,14 +456,14 @@ def test_sync_session_manager_concurrent_threads_expect_own_sessions() -> None:
     connection.connection = create_engine("sqlite:///:memory:")
     manager = SessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    manager.open()
+    manager.open(PhysicalTransaction())
     outer = manager.session
     barrier = threading.Barrier(2)
     seen: dict[str, tuple[Session, Session, Session]] = {}
 
     def child(name: str) -> None:
         inherited = manager.session
-        manager.open()
+        manager.open(PhysicalTransaction())
         mine = manager.session
         barrier.wait()
         seen[name] = (inherited, mine, manager.session)
@@ -484,10 +487,10 @@ def test_sync_session_manager_concurrent_threads_expect_own_sessions() -> None:
 
 
 @pytest.mark.asyncio
-async def test_async_session_manager_child_task_after_close_expect_no_closed_session() -> (
+async def test_async_session_manager_child_task_after_finished_expect_refused_then_own() -> (
     None
 ):
-    """바깥이 닫은 session은 그 뒤에 도는 자식 task에 내주지 않고, 새로 연 session만 쓴다."""
+    """끝난 transaction의 session은 그 뒤에 도는 자식 task에 내주지 않고, 새로 연 session만 쓴다."""
     import asyncio
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from spakky.core.application.application_context import ApplicationContext
@@ -498,25 +501,27 @@ async def test_async_session_manager_child_task_after_close_expect_no_closed_ses
     )
     manager = AsyncSessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    outer_closed = asyncio.Event()
+    outer_tx = PhysicalTransaction()
+    outer_finished = asyncio.Event()
     seen: list[AsyncSession] = []
 
     async def child() -> None:
-        await outer_closed.wait()
-        with pytest.raises(SessionNotInitializedError):
+        await outer_finished.wait()
+        with pytest.raises(TransactionAlreadyFinishedError):
             _ = manager.session
-        await manager.open()
+        await manager.open(PhysicalTransaction())
         seen.append(manager.session)
         await manager.close()
-        with pytest.raises(SessionNotInitializedError):
+        with pytest.raises(TransactionAlreadyFinishedError):
             _ = manager.session
 
-    await manager.open()
+    await manager.open(outer_tx)
     outer = manager.session
     task = asyncio.create_task(child())
-    await manager.close()
-    outer_closed.set()
+    outer_tx.finished = True
+    outer_finished.set()
     await task
+    await manager.close()
 
     assert len(seen) == 1
     assert seen[0] is not outer
@@ -524,10 +529,10 @@ async def test_async_session_manager_child_task_after_close_expect_no_closed_ses
 
 
 @pytest.mark.asyncio
-async def test_async_session_manager_child_task_after_inner_close_expect_live_outer() -> (
+async def test_async_session_manager_child_task_after_inner_finished_expect_refused() -> (
     None
 ):
-    """닫힌 안쪽 session 아래에 살아 있는 바깥 session이 있으면 자식 task는 바깥을 쓴다."""
+    """끝난 안쪽 session 대신 아래 바깥 session을 내주지 않고, 바깥에 합쳐야만 바깥을 쓴다."""
     import asyncio
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from spakky.core.application.application_context import ApplicationContext
@@ -538,28 +543,82 @@ async def test_async_session_manager_child_task_after_inner_close_expect_live_ou
     )
     manager = AsyncSessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    inner_closed = asyncio.Event()
+    outer_tx = PhysicalTransaction()
+    inner_tx = PhysicalTransaction()
+    inner_finished = asyncio.Event()
     seen: list[AsyncSession] = []
 
     async def child() -> None:
-        await inner_closed.wait()
+        await inner_finished.wait()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            _ = manager.session
+        await manager.join(outer_tx)
         seen.append(manager.session)
+        await manager.leave()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            _ = manager.session
 
-    await manager.open()
+    await manager.open(outer_tx)
     outer = manager.session
-    await manager.open()
+    await manager.open(inner_tx)
     task = asyncio.create_task(child())
-    await manager.close()
-    inner_closed.set()
+    inner_tx.finished = True
+    inner_finished.set()
     await task
+    await manager.close()
 
     assert seen == [outer]
+    assert manager.session is outer
     await manager.close()
     await connection.connection.dispose()
 
 
-def test_sync_session_manager_thread_after_close_expect_no_closed_session() -> None:
-    """바깥이 닫은 session은 그 뒤에 도는 thread에 내주지 않고, 새로 연 session만 쓴다."""
+@pytest.mark.asyncio
+async def test_async_session_manager_join_unknown_transaction_expect_not_bound() -> (
+    None
+):
+    """이 context에 session이 없는 transaction에 합치려 하면 SessionNotBoundError가 난다."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=AsyncConnectionManager)
+    connection.connection = create_async_engine(
+        "postgresql+psycopg://unused:unused@localhost/unused"
+    )
+    manager = AsyncSessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    await manager.open(PhysicalTransaction())
+
+    with pytest.raises(SessionNotBoundError):
+        await manager.join(PhysicalTransaction())
+
+    await manager.close()
+    await connection.connection.dispose()
+
+
+@pytest.mark.asyncio
+async def test_async_session_manager_leave_without_session_expect_not_initialized() -> (
+    None
+):
+    """session이 없는데 leave()하면 SessionNotInitializedError가 난다."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=AsyncConnectionManager)
+    connection.connection = create_async_engine(
+        "postgresql+psycopg://unused:unused@localhost/unused"
+    )
+    manager = AsyncSessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+
+    with pytest.raises(SessionNotInitializedError):
+        await manager.leave()
+
+    await connection.connection.dispose()
+
+
+def test_sync_session_manager_thread_after_finished_expect_refused_then_own() -> None:
+    """끝난 transaction의 session은 그 뒤에 도는 thread에 내주지 않고, 새로 연 session만 쓴다."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
     from contextvars import copy_context
@@ -571,34 +630,36 @@ def test_sync_session_manager_thread_after_close_expect_no_closed_session() -> N
     connection.connection = create_engine("sqlite:///:memory:")
     manager = SessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    outer_closed = threading.Event()
+    outer_tx = PhysicalTransaction()
+    outer_finished = threading.Event()
     seen: list[Session] = []
 
     def child() -> None:
-        outer_closed.wait()
-        with pytest.raises(SessionNotInitializedError):
+        outer_finished.wait()
+        with pytest.raises(TransactionAlreadyFinishedError):
             _ = manager.session
-        manager.open()
+        manager.open(PhysicalTransaction())
         seen.append(manager.session)
         manager.close()
-        with pytest.raises(SessionNotInitializedError):
+        with pytest.raises(TransactionAlreadyFinishedError):
             _ = manager.session
 
-    manager.open()
+    manager.open(outer_tx)
     outer = manager.session
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(copy_context().run, child)
-        manager.close()
-        outer_closed.set()
+        outer_tx.finished = True
+        outer_finished.set()
         future.result()
+    manager.close()
 
     assert len(seen) == 1
     assert seen[0] is not outer
     connection.connection.dispose()
 
 
-def test_sync_session_manager_thread_after_inner_close_expect_live_outer() -> None:
-    """닫힌 안쪽 session 아래에 살아 있는 바깥 session이 있으면 thread는 바깥을 쓴다."""
+def test_sync_session_manager_thread_after_inner_finished_expect_refused() -> None:
+    """끝난 안쪽 session 대신 아래 바깥 session을 내주지 않고, 바깥에 합쳐야만 바깥을 쓴다."""
     import threading
     from concurrent.futures import ThreadPoolExecutor
     from contextvars import copy_context
@@ -610,22 +671,66 @@ def test_sync_session_manager_thread_after_inner_close_expect_live_outer() -> No
     connection.connection = create_engine("sqlite:///:memory:")
     manager = SessionManager(connection)
     manager.set_application_context(ApplicationContext())
-    inner_closed = threading.Event()
+    outer_tx = PhysicalTransaction()
+    inner_tx = PhysicalTransaction()
+    inner_finished = threading.Event()
     seen: list[Session] = []
 
     def child() -> None:
-        inner_closed.wait()
+        inner_finished.wait()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            _ = manager.session
+        manager.join(outer_tx)
         seen.append(manager.session)
+        manager.leave()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            _ = manager.session
 
-    manager.open()
+    manager.open(outer_tx)
     outer = manager.session
-    manager.open()
+    manager.open(inner_tx)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(copy_context().run, child)
-        manager.close()
-        inner_closed.set()
+        inner_tx.finished = True
+        inner_finished.set()
         future.result()
+    manager.close()
 
     assert seen == [outer]
+    assert manager.session is outer
     manager.close()
+    connection.connection.dispose()
+
+
+def test_sync_session_manager_join_unknown_transaction_expect_not_bound() -> None:
+    """이 context에 session이 없는 transaction에 합치려 하면 SessionNotBoundError가 난다."""
+    from sqlalchemy import create_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=ConnectionManager)
+    connection.connection = create_engine("sqlite:///:memory:")
+    manager = SessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    manager.open(PhysicalTransaction())
+
+    with pytest.raises(SessionNotBoundError):
+        manager.join(PhysicalTransaction())
+
+    manager.close()
+    connection.connection.dispose()
+
+
+def test_sync_session_manager_leave_without_session_expect_not_initialized() -> None:
+    """session이 없는데 leave()하면 SessionNotInitializedError가 난다."""
+    from sqlalchemy import create_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=ConnectionManager)
+    connection.connection = create_engine("sqlite:///:memory:")
+    manager = SessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+
+    with pytest.raises(SessionNotInitializedError):
+        manager.leave()
+
     connection.connection.dispose()

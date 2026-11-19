@@ -520,7 +520,7 @@ MIT License
 
 ### 컨텍스트별 세션 수명
 
-SessionManager와 AsyncSessionManager는 실행 context(`ContextVar`)마다 session stack을 둡니다. stack은 불변 tuple이라, 바깥 context를 이어받은 자식 task·thread는 바깥 session을 보되 자식이 open/close한 session은 자식 context에만 남습니다. 다른 요청이나 동시에 실행 중인 다른 task의 open/close가 현재 context의 세션을 덮어쓰거나 종료하지 않습니다. `open()`은 새 session을 stack 위에 올리고 `close()`는 맨 위 session을 닫은 뒤 그 아래 session으로 돌아가며, `session`은 항상 맨 위 session입니다. 바깥에 합쳐지는 `Propagation.REQUIRED` 중첩은 session을 새로 열지 않고, `Propagation.REQUIRES_NEW`만 새 session(새 DB 연결)을 엽니다. 열린 세션이 없을 때 session 접근은 SessionNotInitializedError를 발생시킵니다.
+SessionManager와 AsyncSessionManager는 실행 context(`ContextVar`)마다 session stack을 둡니다. stack은 불변 tuple이라, 바깥 context를 이어받은 자식 task·thread는 바깥 session을 보되 자식이 open/close한 session은 자식 context에만 남습니다. 다른 요청이나 동시에 실행 중인 다른 task의 open/close가 현재 context의 세션을 덮어쓰거나 종료하지 않습니다. 각 session은 자기 physical transaction(`PhysicalTransaction`)에 묶입니다. `open(transaction)`은 그 transaction의 새 session을 stack 위에 올리고 `close()`는 맨 위 session을 닫은 뒤 그 아래 session으로 돌아갑니다. 바깥에 합쳐지는 `Propagation.REQUIRED` 중첩은 session을 새로 열지 않고 `join(transaction)`으로 합친 transaction의 session을 올렸다가 `leave()`로 내리며, `Propagation.REQUIRES_NEW`만 새 session(새 DB 연결)을 엽니다. `session`은 맨 위 session, 곧 현재 scope가 속한 transaction의 session입니다. 그 transaction이 이미 commit·rollback되었으면 아래 session으로 넘어가지 않고 `TransactionAlreadyFinishedError`를 냅니다. 열린 세션이 없을 때 session 접근은 SessionNotInitializedError를 발생시킵니다.
 
 
 ```bash

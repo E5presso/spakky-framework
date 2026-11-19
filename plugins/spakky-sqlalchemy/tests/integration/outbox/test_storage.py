@@ -18,6 +18,10 @@ from spakky.plugins.sqlalchemy.persistency.connection_manager import (
 from spakky.plugins.sqlalchemy.persistency.transaction import AsyncTransaction
 
 
+class RollbackRequestedError(Exception):
+    """scope를 rollback으로 끝내기 위해 올리는 예외."""
+
+
 def _make_message(
     unique_id: str,
     event_name: str = "TestEvent",
@@ -163,10 +167,10 @@ async def test_rollback_does_not_persist_message(
     """트랜잭션 롤백 시 outbox 메시지가 영속화되지 않는지 검증한다."""
     message = _make_message(unique_id)
 
-    await async_transaction.initialize()
-    await async_storage.save(message)
-    await async_transaction.rollback()
-    await async_transaction.dispose()
+    with pytest.raises(RollbackRequestedError):
+        async with async_transaction.scope():
+            await async_storage.save(message)
+            raise RollbackRequestedError()
 
     result = await async_storage.fetch_pending(limit=100, max_retry=5)
     result_ids = [r.id for r in result]

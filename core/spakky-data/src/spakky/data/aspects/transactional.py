@@ -82,20 +82,32 @@ class AsyncTransactionalAspect(IAsyncAspect):
         self, joinpoint: AsyncFunc, *args: Any, **kwargs: Any
     ) -> Any:
         propagation = Transactional.get(joinpoint).propagation
-        if self._transaction.joins(propagation):
-            async with self._transaction.scope(propagation):
-                return await joinpoint(*args, **kwargs)
-        self._collector.begin_transaction()
+        owner = False
         try:
             async with self._transaction.scope(propagation):
-                result = await joinpoint(*args, **kwargs)
+                # The scope itself tells whether it opened the physical
+                # transaction or joined one, so the buffer always follows the
+                # transaction the scope actually belongs to.
+                frame = self._transaction.current_frame
+                owner = frame.owner
+                if owner:
+                    self._collector.begin_transaction(frame.transaction)
+                    result = await joinpoint(*args, **kwargs)
+                else:
+                    self._collector.join_transaction(frame.transaction)
+                    try:
+                        result = await joinpoint(*args, **kwargs)
+                    finally:
+                        self._collector.leave_transaction()
         except BaseException:
-            self._collector.discard_transaction()
+            if owner:
+                self._collector.discard_transaction()
             raise
-        # The physical transaction opened by this call has just finished:
-        # committed when autocommit is enabled. This is the single
-        # "after commit" point of @Transactional.
-        self._collector.commit_transaction()
+        if owner:
+            # The physical transaction opened by this call has just finished:
+            # committed when autocommit is enabled. This is the single
+            # "after commit" point of @Transactional.
+            self._collector.commit_transaction()
         return result
 
 
@@ -123,18 +135,30 @@ class TransactionalAspect(IAspect):
     @override
     def around(self, joinpoint: Func, *args: Any, **kwargs: Any) -> Any:
         propagation = Transactional.get(joinpoint).propagation
-        if self._transaction.joins(propagation):
-            with self._transaction.scope(propagation):
-                return joinpoint(*args, **kwargs)
-        self._collector.begin_transaction()
+        owner = False
         try:
             with self._transaction.scope(propagation):
-                result = joinpoint(*args, **kwargs)
+                # The scope itself tells whether it opened the physical
+                # transaction or joined one, so the buffer always follows the
+                # transaction the scope actually belongs to.
+                frame = self._transaction.current_frame
+                owner = frame.owner
+                if owner:
+                    self._collector.begin_transaction(frame.transaction)
+                    result = joinpoint(*args, **kwargs)
+                else:
+                    self._collector.join_transaction(frame.transaction)
+                    try:
+                        result = joinpoint(*args, **kwargs)
+                    finally:
+                        self._collector.leave_transaction()
         except BaseException:
-            self._collector.discard_transaction()
+            if owner:
+                self._collector.discard_transaction()
             raise
-        # The physical transaction opened by this call has just finished:
-        # committed when autocommit is enabled. This is the single
-        # "after commit" point of @Transactional.
-        self._collector.commit_transaction()
+        if owner:
+            # The physical transaction opened by this call has just finished:
+            # committed when autocommit is enabled. This is the single
+            # "after commit" point of @Transactional.
+            self._collector.commit_transaction()
         return result

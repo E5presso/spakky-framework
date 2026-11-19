@@ -26,7 +26,7 @@ class Propagation(StrEnum):
     """Always start a separate transaction that commits on its own."""
 
 
-@dataclass(slots=True)
+@dataclass(eq=False, slots=True)
 class PhysicalTransaction:
     """Shared, mutable state of one physical transaction.
 
@@ -35,17 +35,24 @@ class PhysicalTransaction:
     tasks or threads that inherited the execution context, refers to the same
     object, so a failure recorded by any of them is seen by the scope that
     opened it, and the end of the transaction is seen by all of them.
+
+    The object is compared by identity. Resources that belong to one physical
+    transaction (a session, an aggregate buffer) are bound to it and read its
+    ``finished`` flag, so they all stop being handed out at the same moment.
     """
 
     rollback_only: bool = False
     """True once a joined scope exited with an exception; commit is refused."""
 
     finished: bool = False
-    """True once the opening scope committed or rolled back and released it.
+    """True once the opening scope committed or rolled back.
 
-    A child task or thread that outlives the opening scope still holds frames
-    of this transaction in its copied context. They are skipped from then on:
-    new scopes never join a finished transaction.
+    Set right after the commit or rollback and before ``dispose()`` releases
+    the resource. A child task or thread that outlives the opening scope still
+    holds frames of this transaction in its copied context. From then on new
+    scopes skip it and never join it, and resources bound to it refuse to be
+    used, so nothing can be written to or collected for a transaction whose
+    outcome is already decided.
     """
 
 
@@ -87,10 +94,16 @@ class AbstractTransaction(IDisposable, ABC):
 
     A child that begins a scope after the transaction it inherited has
     finished does not join it: the scope joins the closest live transaction
-    below it or opens a new one. Implementations must likewise stop handing
-    out a resource once ``dispose()`` released it, even to copied contexts
-    that still hold it. A joined scope that is still open when the opening
-    scope finishes raises ``TransactionAlreadyFinishedError`` on exit.
+    below it or opens a new one. A joined scope that is still open when the
+    opening scope finishes raises ``TransactionAlreadyFinishedError`` on exit.
+
+    Implementations bind their resource to the physical transaction instead of
+    looking it up on their own: ``initialize()`` binds a new resource to
+    ``current_frame.transaction``, ``join()`` binds the current context to the
+    resource of the transaction it joined and ``leave()`` undoes that. The
+    resource of the current frame is the one to use. Once its transaction is
+    ``finished`` it must be refused with ``TransactionAlreadyFinishedError``
+    instead of falling back to a resource below it.
     """
 
     autocommit_enabled: bool
@@ -116,17 +129,21 @@ class AbstractTransaction(IDisposable, ABC):
         transaction = self._live_transaction()
         return transaction is not None and transaction.rollback_only
 
-    def joins(self, propagation: Propagation) -> bool:
-        """Tell whether a scope begun now would join the transaction in progress.
-
-        Args:
-            propagation: Propagation of the scope about to begin.
+    @property
+    def current_frame(self) -> TransactionFrame:
+        """The innermost open scope of the current execution context.
 
         Returns:
-            True when the scope would join, False when it would open a new
-            physical transaction.
+            The frame of that scope. Its ``owner`` tells whether the scope
+            opened the physical transaction or joined it.
+
+        Raises:
+            TransactionNotActiveError: No scope is open in this context.
         """
-        return propagation is Propagation.REQUIRED and self.is_active
+        frames = self._frames.get()
+        if not frames:
+            raise TransactionNotActiveError()
+        return frames[-1]
 
     @final
     def _live_transaction(self) -> PhysicalTransaction | None:
@@ -156,6 +173,8 @@ class AbstractTransaction(IDisposable, ABC):
             TransactionRollbackOnlyError: The opening scope finished normally
                 but a joined scope had failed, so the transaction was rolled
                 back.
+            TransactionAlreadyFinishedError: The scope joined a transaction
+                that finished before the scope exited.
         """
         self._begin(propagation)
         try:
@@ -186,9 +205,20 @@ class AbstractTransaction(IDisposable, ABC):
         joined = self._live_transaction()
         if propagation is Propagation.REQUIRED and joined is not None:
             self._frames.set((*frames, TransactionFrame(joined, owner=False)))
+            try:
+                self.join()
+            except BaseException:
+                self._frames.set(frames)
+                raise
             return
-        self.initialize()
-        self._frames.set((*frames, TransactionFrame(PhysicalTransaction(), owner=True)))
+        transaction = PhysicalTransaction()
+        self._frames.set((*frames, TransactionFrame(transaction, owner=True)))
+        try:
+            self.initialize()
+        except BaseException:
+            transaction.finished = True
+            self._frames.set(frames)
+            raise
 
     @final
     def _finish(self, error: BaseException | None) -> None:
@@ -198,51 +228,63 @@ class AbstractTransaction(IDisposable, ABC):
         top = frames[-1]
         self._frames.set(frames[:-1])
         if not top.owner:
+            self.leave()
             if top.transaction.finished:
                 raise TransactionAlreadyFinishedError()
             if error is not None:
                 top.transaction.rollback_only = True
             return
-        try:
-            self._complete(top.transaction, error)
-        finally:
-            # Marked only after dispose() so that a scope joining while the
-            # commit is still running sees a consistent resource, and is then
-            # reported by TransactionAlreadyFinishedError on exit.
-            top.transaction.finished = True
+        self._complete(top.transaction, error)
 
     @final
     def _complete(
         self, transaction: PhysicalTransaction, error: BaseException | None
     ) -> None:
-        if error is not None:
-            try:
-                self.rollback()
-            finally:
-                self.dispose()
-            return
-        if transaction.rollback_only:
-            try:
-                self.rollback()
-            finally:
-                self.dispose()
-            raise TransactionRollbackOnlyError()
         try:
-            if self.autocommit_enabled:
-                self.commit()
-        except BaseException:
-            self.rollback()
-            raise
+            if error is not None:
+                self.rollback()
+            elif transaction.rollback_only:
+                self.rollback()
+                raise TransactionRollbackOnlyError()
+            elif self.autocommit_enabled:
+                try:
+                    self.commit()
+                except BaseException:
+                    self.rollback()
+                    raise
         finally:
+            # The outcome is decided here. Marking it before dispose() closes
+            # the transaction for every context at once: a scope begun from
+            # now on skips it, and the resources bound to it refuse to be
+            # used, even while dispose() is still releasing them.
+            transaction.finished = True
             self.dispose()
 
     @abstractmethod
     def initialize(self) -> None:
         """Open a new physical transaction (e.g. open a session).
 
-        Called for the outermost scope and for every ``REQUIRES_NEW`` scope.
+        Called for the outermost scope and for every ``REQUIRES_NEW`` scope,
+        after its frame was pushed: ``current_frame.transaction`` is the new
+        physical transaction to bind the resource to.
         """
         ...
+
+    def join(self) -> None:
+        """Bind the current context to the resource of the joined transaction.
+
+        Called when a ``REQUIRED`` scope joins a transaction in progress, after
+        its frame was pushed: ``current_frame.transaction`` is the joined
+        transaction. It is below the innermost frame when the innermost one
+        has already finished. Implementations that keep no resource per
+        context leave this as it is.
+        """
+
+    def leave(self) -> None:
+        """Undo the binding made by ``join()`` when the joined scope exits.
+
+        Implementations that keep no resource per context leave this as it is.
+        """
 
     @abstractmethod
     def dispose(self) -> None:
@@ -280,10 +322,16 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
 
     A child that begins a scope after the transaction it inherited has
     finished does not join it: the scope joins the closest live transaction
-    below it or opens a new one. Implementations must likewise stop handing
-    out a resource once ``dispose()`` released it, even to copied contexts
-    that still hold it. A joined scope that is still open when the opening
-    scope finishes raises ``TransactionAlreadyFinishedError`` on exit.
+    below it or opens a new one. A joined scope that is still open when the
+    opening scope finishes raises ``TransactionAlreadyFinishedError`` on exit.
+
+    Implementations bind their resource to the physical transaction instead of
+    looking it up on their own: ``initialize()`` binds a new resource to
+    ``current_frame.transaction``, ``join()`` binds the current context to the
+    resource of the transaction it joined and ``leave()`` undoes that. The
+    resource of the current frame is the one to use. Once its transaction is
+    ``finished`` it must be refused with ``TransactionAlreadyFinishedError``
+    instead of falling back to a resource below it.
     """
 
     autocommit_enabled: bool
@@ -309,17 +357,21 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
         transaction = self._live_transaction()
         return transaction is not None and transaction.rollback_only
 
-    def joins(self, propagation: Propagation) -> bool:
-        """Tell whether a scope begun now would join the transaction in progress.
-
-        Args:
-            propagation: Propagation of the scope about to begin.
+    @property
+    def current_frame(self) -> TransactionFrame:
+        """The innermost open scope of the current execution context.
 
         Returns:
-            True when the scope would join, False when it would open a new
-            physical transaction.
+            The frame of that scope. Its ``owner`` tells whether the scope
+            opened the physical transaction or joined it.
+
+        Raises:
+            TransactionNotActiveError: No scope is open in this context.
         """
-        return propagation is Propagation.REQUIRED and self.is_active
+        frames = self._frames.get()
+        if not frames:
+            raise TransactionNotActiveError()
+        return frames[-1]
 
     @final
     def _live_transaction(self) -> PhysicalTransaction | None:
@@ -351,6 +403,8 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
             TransactionRollbackOnlyError: The opening scope finished normally
                 but a joined scope had failed, so the transaction was rolled
                 back.
+            TransactionAlreadyFinishedError: The scope joined a transaction
+                that finished before the scope exited.
         """
         await self._begin(propagation)
         try:
@@ -381,9 +435,20 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
         joined = self._live_transaction()
         if propagation is Propagation.REQUIRED and joined is not None:
             self._frames.set((*frames, TransactionFrame(joined, owner=False)))
+            try:
+                await self.join()
+            except BaseException:
+                self._frames.set(frames)
+                raise
             return
-        await self.initialize()
-        self._frames.set((*frames, TransactionFrame(PhysicalTransaction(), owner=True)))
+        transaction = PhysicalTransaction()
+        self._frames.set((*frames, TransactionFrame(transaction, owner=True)))
+        try:
+            await self.initialize()
+        except BaseException:
+            transaction.finished = True
+            self._frames.set(frames)
+            raise
 
     @final
     async def _finish(self, error: BaseException | None) -> None:
@@ -393,51 +458,63 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
         top = frames[-1]
         self._frames.set(frames[:-1])
         if not top.owner:
+            await self.leave()
             if top.transaction.finished:
                 raise TransactionAlreadyFinishedError()
             if error is not None:
                 top.transaction.rollback_only = True
             return
-        try:
-            await self._complete(top.transaction, error)
-        finally:
-            # Marked only after dispose() so that a scope joining while the
-            # commit is still running sees a consistent resource, and is then
-            # reported by TransactionAlreadyFinishedError on exit.
-            top.transaction.finished = True
+        await self._complete(top.transaction, error)
 
     @final
     async def _complete(
         self, transaction: PhysicalTransaction, error: BaseException | None
     ) -> None:
-        if error is not None:
-            try:
-                await self.rollback()
-            finally:
-                await self.dispose()
-            return
-        if transaction.rollback_only:
-            try:
-                await self.rollback()
-            finally:
-                await self.dispose()
-            raise TransactionRollbackOnlyError()
         try:
-            if self.autocommit_enabled:
-                await self.commit()
-        except BaseException:
-            await self.rollback()
-            raise
+            if error is not None:
+                await self.rollback()
+            elif transaction.rollback_only:
+                await self.rollback()
+                raise TransactionRollbackOnlyError()
+            elif self.autocommit_enabled:
+                try:
+                    await self.commit()
+                except BaseException:
+                    await self.rollback()
+                    raise
         finally:
+            # The outcome is decided here. Marking it before dispose() closes
+            # the transaction for every context at once: a scope begun from
+            # now on skips it, and the resources bound to it refuse to be
+            # used, even while dispose() is still releasing them.
+            transaction.finished = True
             await self.dispose()
 
     @abstractmethod
     async def initialize(self) -> None:
         """Open a new physical transaction (e.g. open a session).
 
-        Called for the outermost scope and for every ``REQUIRES_NEW`` scope.
+        Called for the outermost scope and for every ``REQUIRES_NEW`` scope,
+        after its frame was pushed: ``current_frame.transaction`` is the new
+        physical transaction to bind the resource to.
         """
         ...
+
+    async def join(self) -> None:
+        """Bind the current context to the resource of the joined transaction.
+
+        Called when a ``REQUIRED`` scope joins a transaction in progress, after
+        its frame was pushed: ``current_frame.transaction`` is the joined
+        transaction. It is below the innermost frame when the innermost one
+        has already finished. Implementations that keep no resource per
+        context leave this as it is.
+        """
+
+    async def leave(self) -> None:
+        """Undo the binding made by ``join()`` when the joined scope exits.
+
+        Implementations that keep no resource per context leave this as it is.
+        """
 
     @abstractmethod
     async def dispose(self) -> None:

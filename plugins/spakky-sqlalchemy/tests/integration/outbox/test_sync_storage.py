@@ -4,6 +4,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
 from spakky.core.application.application import SpakkyApplication
 from spakky.outbox.common.message import OutboxMessage
 from sqlalchemy import select
@@ -12,6 +13,10 @@ from spakky.plugins.sqlalchemy.outbox.storage import SqlAlchemyOutboxStorage
 from spakky.plugins.sqlalchemy.outbox.table import OutboxMessageTable
 from spakky.plugins.sqlalchemy.persistency.connection_manager import ConnectionManager
 from spakky.plugins.sqlalchemy.persistency.transaction import Transaction
+
+
+class RollbackRequestedError(Exception):
+    """scope를 rollback으로 끝내기 위해 올리는 예외."""
 
 
 def _make_message(
@@ -152,10 +157,10 @@ def test_rollback_does_not_persist_message(
     """트랜잭션 롤백 시 outbox 메시지가 영속화되지 않는지 검증한다."""
     message = _make_message(unique_id)
 
-    transaction.initialize()
-    storage.save(message)
-    transaction.rollback()
-    transaction.dispose()
+    with pytest.raises(RollbackRequestedError):
+        with transaction.scope():
+            storage.save(message)
+            raise RollbackRequestedError()
 
     result = storage.fetch_pending(limit=100, max_retry=5)
     result_ids = [r.id for r in result]

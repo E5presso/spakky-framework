@@ -7,6 +7,7 @@ from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
 from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.error import AggregateBufferNotOpenError
+from spakky.data.persistency.transaction import PhysicalTransaction
 
 
 def test_collector_nested_buffer_expect_isolated_from_outer() -> None:
@@ -15,9 +16,9 @@ def test_collector_nested_buffer_expect_isolated_from_outer() -> None:
     outer = MagicMock(spec=AbstractAggregateRoot)
     inner = MagicMock(spec=AbstractAggregateRoot)
 
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(outer)
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(inner)
     assert collector.all() == [inner]
 
@@ -32,7 +33,7 @@ def test_collector_commit_expect_drain_once() -> None:
     collector = AggregateCollector()
     aggregate = MagicMock(spec=AbstractAggregateRoot)
 
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(aggregate)
     collector.commit_transaction()
 
@@ -46,7 +47,7 @@ def test_collector_discard_expect_aggregates_dropped() -> None:
     collector = AggregateCollector()
     aggregate = MagicMock(spec=AbstractAggregateRoot)
 
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(aggregate)
     collector.discard_transaction()
 
@@ -68,3 +69,25 @@ def test_collector_discard_without_begin_expect_buffer_not_open_error() -> None:
 
     with pytest.raises(AggregateBufferNotOpenError):
         collector.discard_transaction()
+
+
+def test_collector_leave_without_join_expect_buffer_not_open_error() -> None:
+    """합친 적 없는 buffer에서 나가려 하면 AggregateBufferNotOpenError가 난다."""
+    collector = AggregateCollector()
+
+    with pytest.raises(AggregateBufferNotOpenError):
+        collector.leave_transaction()
+
+
+def test_collector_join_transaction_without_buffer_expect_enclosing_buffer() -> None:
+    """collector가 buffer를 열지 않은 transaction에 합치면 감싼 scope의 buffer에 모은다."""
+    collector = AggregateCollector()
+    aggregate = MagicMock(spec=AbstractAggregateRoot)
+    collector.begin_transaction(PhysicalTransaction())
+
+    collector.join_transaction(PhysicalTransaction())
+    collector.collect(aggregate)
+    collector.leave_transaction()
+    collector.commit_transaction()
+
+    assert collector.drain_committed() == [aggregate]

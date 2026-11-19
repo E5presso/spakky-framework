@@ -15,6 +15,7 @@ from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
+    PhysicalTransaction,
 )
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 from spakky.domain.models.event import AbstractDomainEvent, AbstractEvent
@@ -340,14 +341,14 @@ def test_followup_transaction_does_not_republish_parent_events() -> None:
             assert isinstance(event, User.Created)
             observed.append(event.username)
             if event.username == "parent":
-                collector.begin_transaction()
+                collector.begin_transaction(PhysicalTransaction())
                 collector.collect(User.create("child"))
                 collector.commit_transaction()
                 aspect.after_returning(None)
 
     aspect = TransactionalEventPublishingAspect(collector, Publisher())
     parent = User.create("parent")
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(parent)
     collector.collect(parent)
     collector.commit_transaction()
@@ -368,14 +369,14 @@ async def test_async_followup_transaction_does_not_republish_parent_events() -> 
             assert isinstance(event, User.Created)
             observed.append(event.username)
             if event.username == "parent":
-                collector.begin_transaction()
+                collector.begin_transaction(PhysicalTransaction())
                 collector.collect(User.create("child"))
                 collector.commit_transaction()
                 await aspect.after_returning_async(None)
 
     aspect = AsyncTransactionalEventPublishingAspect(collector, Publisher())
     parent = User.create("parent")
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(parent)
     collector.collect(parent)
     collector.commit_transaction()

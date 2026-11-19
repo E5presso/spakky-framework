@@ -30,7 +30,9 @@ from spakky.data.persistency.repository import (
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
+    PhysicalTransaction,
     Propagation,
+    TransactionFrame,
 )
 
 __all__ = [
@@ -41,7 +43,9 @@ __all__ = [
     # Transaction
     "AbstractAsyncTransaction",
     "AbstractTransaction",
+    "PhysicalTransaction",
     "Propagation",
+    "TransactionFrame",
     # Proxy
     "IAsyncGenericProxy",
     "IGenericProxy",

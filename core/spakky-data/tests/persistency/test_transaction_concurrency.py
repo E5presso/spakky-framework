@@ -2,7 +2,8 @@
 
 import asyncio
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass
 from itertools import count
@@ -12,6 +13,11 @@ from unittest.mock import MagicMock
 import pytest
 from spakky.domain.models.aggregate_root import AbstractAggregateRoot
 
+from spakky.data.aspects.transactional import (
+    AsyncTransactionalAspect,
+    Transactional,
+    TransactionalAspect,
+)
 from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.error import (
     AggregateBufferNotOpenError,
@@ -21,28 +27,31 @@ from spakky.data.persistency.error import (
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
+    PhysicalTransaction,
     Propagation,
 )
 
 
-@dataclass(slots=True)
+@dataclass(eq=False, slots=True)
 class Resource:
-    """physical transaction 하나의 자원. 닫힘 표시는 context 복사본끼리 공유된다."""
+    """physical transaction 하나의 자원. 그 transaction에 묶여 끝남을 함께 본다."""
 
     number: int
-    closed: bool = False
+    transaction: PhysicalTransaction
 
 
 class ContextLocalTransaction(AbstractTransaction):
     """physical transaction 자원(번호)을 실행 context마다 쌓는 기록용 구현.
 
-    실제 구현처럼 "지금 쓰는 자원"을 ContextVar의 불변 tuple에서 찾고,
-    이미 닫힌 자원은 건너뛴다.
+    실제 구현처럼 자원을 physical transaction에 묶는다. 자원 stack은 scope를
+    그대로 따라가서 합친 scope는 합친 transaction의 자원을 쓰고, 그
+    transaction이 끝났으면 아래 자원으로 넘어가지 않고 거절한다.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.events: list[str] = []
+        self.dispose_hook: Callable[[int], None] | None = None
         self._ids = count(1)
         self._resources: ContextVar[tuple[Resource, ...]] = ContextVar(
             "test_resources", default=()
@@ -51,32 +60,58 @@ class ContextLocalTransaction(AbstractTransaction):
 
     @property
     def current(self) -> int:
-        return [r for r in self._resources.get() if not r.closed][-1].number
+        top = self._resources.get()[-1]
+        if top.transaction.finished:
+            raise TransactionAlreadyFinishedError()
+        return top.number
+
+    def write(self) -> None:
+        """지금 scope의 자원에 쓰기를 기록한다."""
+        number = self.current
+        with self._lock:
+            self.events.append(f"write:{number}")
 
     @override
     def initialize(self) -> None:
         with self._lock:
-            resource = Resource(next(self._ids))
+            resource = Resource(next(self._ids), self.current_frame.transaction)
             self.events.append(f"open:{resource.number}")
         self._resources.set((*self._resources.get(), resource))
 
     @override
+    def join(self) -> None:
+        resources = self._resources.get()
+        joined = next(
+            r
+            for r in reversed(resources)
+            if r.transaction is self.current_frame.transaction
+        )
+        self._resources.set((*resources, joined))
+
+    @override
+    def leave(self) -> None:
+        self._resources.set(self._resources.get()[:-1])
+
+    @override
     def dispose(self) -> None:
         resources = self._resources.get()
+        if self.dispose_hook is not None:
+            self.dispose_hook(resources[-1].number)
         self._resources.set(resources[:-1])
-        resources[-1].closed = True
         with self._lock:
             self.events.append(f"close:{resources[-1].number}")
 
     @override
     def commit(self) -> None:
+        number = self.current
         with self._lock:
-            self.events.append(f"commit:{self.current}")
+            self.events.append(f"commit:{number}")
 
     @override
     def rollback(self) -> None:
+        number = self.current
         with self._lock:
-            self.events.append(f"rollback:{self.current}")
+            self.events.append(f"rollback:{number}")
 
 
 class AsyncContextLocalTransaction(AbstractAsyncTransaction):
@@ -85,6 +120,7 @@ class AsyncContextLocalTransaction(AbstractAsyncTransaction):
     def __init__(self) -> None:
         super().__init__()
         self.events: list[str] = []
+        self.dispose_hook: Callable[[int], Awaitable[None]] | None = None
         self._ids = count(1)
         self._resources: ContextVar[tuple[Resource, ...]] = ContextVar(
             "test_async_resources", default=()
@@ -92,19 +128,41 @@ class AsyncContextLocalTransaction(AbstractAsyncTransaction):
 
     @property
     def current(self) -> int:
-        return [r for r in self._resources.get() if not r.closed][-1].number
+        top = self._resources.get()[-1]
+        if top.transaction.finished:
+            raise TransactionAlreadyFinishedError()
+        return top.number
+
+    def write(self) -> None:
+        """지금 scope의 자원에 쓰기를 기록한다."""
+        self.events.append(f"write:{self.current}")
 
     @override
     async def initialize(self) -> None:
-        resource = Resource(next(self._ids))
+        resource = Resource(next(self._ids), self.current_frame.transaction)
         self.events.append(f"open:{resource.number}")
         self._resources.set((*self._resources.get(), resource))
 
     @override
+    async def join(self) -> None:
+        resources = self._resources.get()
+        joined = next(
+            r
+            for r in reversed(resources)
+            if r.transaction is self.current_frame.transaction
+        )
+        self._resources.set((*resources, joined))
+
+    @override
+    async def leave(self) -> None:
+        self._resources.set(self._resources.get()[:-1])
+
+    @override
     async def dispose(self) -> None:
         resources = self._resources.get()
+        if self.dispose_hook is not None:
+            await self.dispose_hook(resources[-1].number)
         self._resources.set(resources[:-1])
-        resources[-1].closed = True
         self.events.append(f"close:{resources[-1].number}")
 
     @override
@@ -293,7 +351,7 @@ async def test_collector_child_task_collect_expect_in_joined_buffer() -> None:
     async def child() -> None:
         collector.collect(inner)
 
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(outer)
     await asyncio.create_task(child())
     collector.commit_transaction()
@@ -308,12 +366,12 @@ async def test_collector_child_task_own_buffer_expect_isolated_from_parent() -> 
     inner = MagicMock(spec=AbstractAggregateRoot)
 
     async def child() -> list[AbstractAggregateRoot]:
-        collector.begin_transaction()
+        collector.begin_transaction(PhysicalTransaction())
         collector.collect(inner)
         collector.commit_transaction()
         return list(collector.drain_committed())
 
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     collector.collect(outer)
     child_committed = await asyncio.create_task(child())
     collector.commit_transaction()
@@ -328,20 +386,20 @@ async def test_async_child_task_begun_after_outer_finished_expect_own_transactio
     """바깥이 끝난 뒤 시작한 자식 task의 REQUIRED는 새 transaction을 열어 commit한다."""
     transaction = AsyncContextLocalTransaction()
     outer_finished = asyncio.Event()
-    seen: list[tuple[bool, bool, int]] = []
+    seen: list[tuple[bool, int]] = []
 
     async def child() -> None:
         await outer_finished.wait()
-        before = (transaction.is_active, transaction.joins(Propagation.REQUIRED))
+        before = transaction.is_active
         async with transaction.scope(Propagation.REQUIRED):
-            seen.append((*before, transaction.current))
+            seen.append((before, transaction.current))
 
     async with transaction.scope():
         task = asyncio.create_task(child())
     outer_finished.set()
     await task
 
-    assert seen == [(False, False, 2)]
+    assert seen == [(False, 2)]
     assert transaction.events == [
         "open:1",
         "commit:1",
@@ -462,13 +520,13 @@ def test_sync_thread_begun_after_outer_finished_expect_own_transaction() -> None
     """바깥이 끝난 뒤 시작한 thread의 REQUIRED는 새 transaction을 열어 commit한다."""
     transaction = ContextLocalTransaction()
     outer_finished = threading.Event()
-    seen: list[tuple[bool, bool, int]] = []
+    seen: list[tuple[bool, int]] = []
 
     def child() -> None:
         outer_finished.wait()
-        before = (transaction.is_active, transaction.joins(Propagation.REQUIRED))
+        before = transaction.is_active
         with transaction.scope(Propagation.REQUIRED):
-            seen.append((*before, transaction.current))
+            seen.append((before, transaction.current))
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         with transaction.scope():
@@ -476,7 +534,7 @@ def test_sync_thread_begun_after_outer_finished_expect_own_transaction() -> None
         outer_finished.set()
         future.result()
 
-    assert seen == [(False, False, 2)]
+    assert seen == [(False, 2)]
     assert transaction.events == [
         "open:1",
         "commit:1",
@@ -562,57 +620,90 @@ def test_sync_joined_thread_failing_after_outer_expect_already_finished() -> Non
     assert transaction.events == ["open:1", "commit:1", "close:1"]
 
 
-async def test_collector_child_task_after_outer_committed_expect_own_buffer() -> None:
-    """바깥 buffer가 commit된 뒤 시작한 자식 task는 그 buffer가 아닌 자기 buffer에 모은다."""
+async def test_collector_child_task_after_outer_finished_expect_refused_then_own() -> (
+    None
+):
+    """바깥이 끝난 뒤의 자식 task는 그 buffer에 모으지 못하고, 새로 연 buffer에 모은다."""
     collector = AggregateCollector()
+    outer_tx = PhysicalTransaction()
     outer = MagicMock(spec=AbstractAggregateRoot)
     inner = MagicMock(spec=AbstractAggregateRoot)
     outer_committed = asyncio.Event()
 
-    async def child() -> tuple[
-        list[AbstractAggregateRoot], list[AbstractAggregateRoot]
-    ]:
+    async def child() -> list[AbstractAggregateRoot]:
         await outer_committed.wait()
-        before = list(collector.all())
-        collector.begin_transaction()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            collector.collect(inner)
+        collector.begin_transaction(PhysicalTransaction())
         collector.collect(inner)
         collector.commit_transaction()
-        return before, list(collector.drain_committed())
+        return list(collector.drain_committed())
 
-    collector.begin_transaction()
+    collector.begin_transaction(outer_tx)
     collector.collect(outer)
     task = asyncio.create_task(child())
+    outer_tx.finished = True
     collector.commit_transaction()
     outer_committed.set()
 
-    assert await task == ([], [inner])
+    assert await task == [inner]
     assert collector.drain_committed() == [outer]
 
 
-async def test_collector_child_task_after_inner_committed_expect_live_outer_buffer() -> (
-    None
-):
-    """끝난 안쪽 buffer 아래에 살아 있는 바깥 buffer가 있으면 자식 task는 그 바깥에 모은다."""
+async def test_collector_child_task_after_inner_finished_expect_refused() -> None:
+    """끝난 안쪽 transaction의 buffer는 아래 buffer로 넘기지 않고 aggregate를 거절한다."""
     collector = AggregateCollector()
+    outer_tx = PhysicalTransaction()
+    inner_tx = PhysicalTransaction()
     outer = MagicMock(spec=AbstractAggregateRoot)
-    inner = MagicMock(spec=AbstractAggregateRoot)
     late = MagicMock(spec=AbstractAggregateRoot)
-    inner_committed = asyncio.Event()
+    inner_finished = asyncio.Event()
 
     async def child() -> None:
-        await inner_committed.wait()
-        collector.collect(late)
+        await inner_finished.wait()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            collector.collect(late)
 
-    collector.begin_transaction()
+    collector.begin_transaction(outer_tx)
     collector.collect(outer)
-    collector.begin_transaction()
-    collector.collect(inner)
+    collector.begin_transaction(inner_tx)
     task = asyncio.create_task(child())
+    inner_tx.finished = True
+    inner_finished.set()
+    await task
     collector.commit_transaction()
-    inner_committed.set()
+    collector.commit_transaction()
+
+    assert collector.drain_committed() == [outer]
+
+
+async def test_collector_child_task_joining_outer_after_inner_expect_outer_buffer() -> (
+    None
+):
+    """안쪽이 끝난 뒤 바깥에 합친 자식 task는 바깥 transaction의 buffer에 모은다."""
+    collector = AggregateCollector()
+    outer_tx = PhysicalTransaction()
+    inner_tx = PhysicalTransaction()
+    outer = MagicMock(spec=AbstractAggregateRoot)
+    late = MagicMock(spec=AbstractAggregateRoot)
+    inner_finished = asyncio.Event()
+
+    async def child() -> None:
+        await inner_finished.wait()
+        collector.join_transaction(outer_tx)
+        collector.collect(late)
+        collector.leave_transaction()
+
+    collector.begin_transaction(outer_tx)
+    collector.collect(outer)
+    collector.begin_transaction(inner_tx)
+    task = asyncio.create_task(child())
+    inner_tx.finished = True
+    collector.commit_transaction()
+    inner_finished.set()
     await task
 
-    assert collector.drain_committed() == [inner]
+    assert collector.drain_committed() == []
     collector.commit_transaction()
     assert collector.drain_committed() == [outer, late]
 
@@ -632,7 +723,7 @@ async def test_collector_child_task_close_inherited_closed_buffer_expect_error()
                 close()
             errors.append(raised.type)
 
-    collector.begin_transaction()
+    collector.begin_transaction(PhysicalTransaction())
     task = asyncio.create_task(child())
     collector.commit_transaction()
     outer_committed.set()
@@ -640,3 +731,221 @@ async def test_collector_child_task_close_inherited_closed_buffer_expect_error()
 
     assert errors == [AggregateBufferNotOpenError, AggregateBufferNotOpenError]
     assert collector.drain_committed() == []
+
+
+class OuterFailureError(Exception):
+    """바깥 use case에서 올라가는 업무 예외."""
+
+
+async def test_async_child_joining_while_inner_disposes_expect_outer_resource_and_buffer() -> (
+    None
+):
+    """안쪽 REQUIRES_NEW가 dispose하는 사이 시작한 자식 task는 바깥의 자원과 buffer를 함께 쓴다.
+
+    안쪽 commit 뒤에 나간 aggregate에 그 쓰기가 섞이지 않고, 바깥이 rollback되면
+    쓰기와 aggregate가 함께 사라진다.
+    """
+    transaction = AsyncContextLocalTransaction()
+    collector = AggregateCollector()
+    aspect = AsyncTransactionalAspect(transaction, collector)
+    child_aggregate = MagicMock(spec=AbstractAggregateRoot)
+    disposing = asyncio.Event()
+    child_done = asyncio.Event()
+    published: list[AbstractAggregateRoot] = []
+    tasks: list[asyncio.Task[None]] = []
+
+    async def hold_inner_dispose(number: int) -> None:
+        if number == 2:
+            disposing.set()
+            await child_done.wait()
+
+    transaction.dispose_hook = hold_inner_dispose
+
+    @Transactional()
+    async def child_write() -> None:
+        transaction.write()
+        collector.collect(child_aggregate)
+
+    async def child() -> None:
+        await disposing.wait()
+        await aspect.around_async(child_write)
+        child_done.set()
+
+    @Transactional(propagation=Propagation.REQUIRES_NEW)
+    async def inner() -> None:
+        tasks.append(asyncio.create_task(child()))
+
+    @Transactional()
+    async def outer() -> None:
+        await aspect.around_async(inner)
+        published.extend(collector.drain_committed())
+        await tasks[0]
+        raise OuterFailureError()
+
+    with pytest.raises(OuterFailureError):
+        await aspect.around_async(outer)
+
+    assert published == []
+    assert collector.drain_committed() == []
+    assert transaction.events == [
+        "open:1",
+        "open:2",
+        "commit:2",
+        "write:1",
+        "close:2",
+        "rollback:1",
+        "close:1",
+    ]
+
+
+async def test_async_child_joined_to_finished_inner_expect_write_refused() -> None:
+    """안쪽에 합친 자식 task는 안쪽이 끝난 뒤 바깥의 자원으로 넘어가 쓰지 않고 거절된다."""
+    transaction = AsyncContextLocalTransaction()
+    collector = AggregateCollector()
+    aspect = AsyncTransactionalAspect(transaction, collector)
+    child_aggregate = MagicMock(spec=AbstractAggregateRoot)
+    child_joined = asyncio.Event()
+    inner_finished = asyncio.Event()
+    refused: list[type[BaseException]] = []
+    tasks: list[asyncio.Task[None]] = []
+
+    @Transactional()
+    async def child_write() -> None:
+        child_joined.set()
+        await inner_finished.wait()
+        for write in (transaction.write, lambda: collector.collect(child_aggregate)):
+            with pytest.raises(TransactionAlreadyFinishedError) as raised:
+                write()
+            refused.append(raised.type)
+
+    @Transactional(propagation=Propagation.REQUIRES_NEW)
+    async def inner() -> None:
+        tasks.append(asyncio.create_task(aspect.around_async(child_write)))
+        await child_joined.wait()
+
+    @Transactional()
+    async def outer() -> None:
+        await aspect.around_async(inner)
+        inner_finished.set()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            await tasks[0]
+
+    await aspect.around_async(outer)
+
+    assert refused == [TransactionAlreadyFinishedError, TransactionAlreadyFinishedError]
+    assert collector.drain_committed() == []
+    assert transaction.events == [
+        "open:1",
+        "open:2",
+        "commit:2",
+        "close:2",
+        "commit:1",
+        "close:1",
+    ]
+
+
+def test_sync_thread_joining_while_inner_disposes_expect_outer_resource_and_buffer() -> (
+    None
+):
+    """안쪽 REQUIRES_NEW가 dispose하는 사이 시작한 thread는 바깥의 자원과 buffer를 함께 쓴다."""
+    transaction = ContextLocalTransaction()
+    collector = AggregateCollector()
+    aspect = TransactionalAspect(transaction, collector)
+    child_aggregate = MagicMock(spec=AbstractAggregateRoot)
+    disposing = threading.Event()
+    child_done = threading.Event()
+    published: list[AbstractAggregateRoot] = []
+    executor = ThreadPoolExecutor(max_workers=1)
+
+    def hold_inner_dispose(number: int) -> None:
+        if number == 2:
+            disposing.set()
+            child_done.wait()
+
+    transaction.dispose_hook = hold_inner_dispose
+
+    @Transactional()
+    def child_write() -> None:
+        transaction.write()
+        collector.collect(child_aggregate)
+
+    def child() -> None:
+        disposing.wait()
+        aspect.around(child_write)
+        child_done.set()
+
+    futures: list[Future[None]] = []
+
+    @Transactional(propagation=Propagation.REQUIRES_NEW)
+    def inner() -> None:
+        futures.append(executor.submit(copy_context().run, child))
+
+    @Transactional()
+    def outer() -> None:
+        aspect.around(inner)
+        published.extend(collector.drain_committed())
+        futures[0].result()
+        raise OuterFailureError()
+
+    with executor, pytest.raises(OuterFailureError):
+        aspect.around(outer)
+
+    assert published == []
+    assert collector.drain_committed() == []
+    assert transaction.events == [
+        "open:1",
+        "open:2",
+        "commit:2",
+        "write:1",
+        "close:2",
+        "rollback:1",
+        "close:1",
+    ]
+
+
+def test_sync_thread_joined_to_finished_inner_expect_write_refused() -> None:
+    """안쪽에 합친 thread는 안쪽이 끝난 뒤 바깥의 자원으로 넘어가 쓰지 않고 거절된다."""
+    transaction = ContextLocalTransaction()
+    collector = AggregateCollector()
+    aspect = TransactionalAspect(transaction, collector)
+    child_aggregate = MagicMock(spec=AbstractAggregateRoot)
+    child_joined = threading.Event()
+    inner_finished = threading.Event()
+    refused: list[type[BaseException]] = []
+    futures: list[Future[None]] = []
+    executor = ThreadPoolExecutor(max_workers=1)
+
+    @Transactional()
+    def child_write() -> None:
+        child_joined.set()
+        inner_finished.wait()
+        for write in (transaction.write, lambda: collector.collect(child_aggregate)):
+            with pytest.raises(TransactionAlreadyFinishedError) as raised:
+                write()
+            refused.append(raised.type)
+
+    @Transactional(propagation=Propagation.REQUIRES_NEW)
+    def inner() -> None:
+        futures.append(executor.submit(copy_context().run, aspect.around, child_write))
+        child_joined.wait()
+
+    @Transactional()
+    def outer() -> None:
+        aspect.around(inner)
+        inner_finished.set()
+        with pytest.raises(TransactionAlreadyFinishedError):
+            futures[0].result()
+
+    with executor:
+        aspect.around(outer)
+
+    assert refused == [TransactionAlreadyFinishedError, TransactionAlreadyFinishedError]
+    assert collector.drain_committed() == []
+    assert transaction.events == [
+        "open:1",
+        "open:2",
+        "commit:2",
+        "close:2",
+        "commit:1",
+        "close:1",
+    ]
