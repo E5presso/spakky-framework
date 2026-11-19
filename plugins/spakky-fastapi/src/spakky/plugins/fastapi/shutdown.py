@@ -104,10 +104,14 @@ class ServerShutdownSignal:
         constructs that span a ``yield`` in the stream (anyio cancel scopes and
         task groups, ``asyncio.timeout``, ``current_task()``-scoped sessions,
         context variable tokens) behave as they do without this guard. When
-        the signal fires while the task waits for the next item, only that
-        wait is cancelled; an item the stream still produces is dropped. The
-        stream is then closed, so a started generator's ``finally`` runs, and
-        this generator returns normally.
+        the signal fires while the task waits for the next item, that wait is
+        cancelled with an asyncio cancellation, which an anyio shield does not
+        stop: a shielded await or an ``anyio.to_thread.run_sync`` wait inside
+        the stream is interrupted too, while the worker thread keeps running.
+        An item the stream still produces is dropped. The stream is then
+        closed, so a started generator's ``finally`` runs, and this generator
+        returns normally. A cancellation requested by anyone else at the same
+        time is propagated, not swallowed.
 
         Args:
             stream: The event stream an @sse method produced.
@@ -138,13 +142,16 @@ class ServerShutdownSignal:
         self.__waiters[waiter] = loop
         try:
             while not self.__triggered:
+                cancellations_before = task.cancelling()
                 awaiting_item = True
                 try:
                     item = await anext(stream)
                 except StopAsyncIteration:
                     return
                 except CancelledError:
-                    if interrupted:
+                    # Swallow only this guard's own cancellation; one more
+                    # pending request came from someone else.
+                    if interrupted and task.cancelling() - 1 <= cancellations_before:
                         return
                     raise
                 finally:
@@ -254,5 +261,8 @@ class ShutdownSignalRelay:
             signal_number: The received signal.
             frame: The interrupted stack frame.
         """
-        self.__loop.call_soon_threadsafe(self.__shutdown.trigger)
-        self.__previous[Signals(signal_number)](signal_number, frame)
+        try:
+            self.__loop.call_soon_threadsafe(self.__shutdown.trigger)
+        finally:
+            # The server must still shut down if its loop is already closed.
+            self.__previous[Signals(signal_number)](signal_number, frame)

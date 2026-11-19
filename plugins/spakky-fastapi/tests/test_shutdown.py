@@ -2,8 +2,10 @@
 
 from asyncio import (
     CancelledError,
+    create_task,
     current_task,
     get_running_loop,
+    new_event_loop,
     sleep,
     timeout,
 )
@@ -578,3 +580,87 @@ async def test_stream_until_shutdown_outside_task_expect_error() -> None:
     await sleep(0)
 
     assert len(raised) == 1
+
+
+async def test_stream_until_shutdown_waiting_in_shield_expect_wait_interrupted() -> (
+    None
+):
+    """종료 신호는 asyncio 취소이므로 stream 안의 shield된 대기도 끊고 generator를 닫는다."""
+    shutdown = ServerShutdownSignal()
+    closed: list[str] = []
+    never_set = anyio.Event()
+
+    async def shielded() -> AsyncIterator[str]:
+        try:
+            yield "first"
+            with anyio.CancelScope(shield=True):
+                await never_set.wait()
+            yield "never"
+        finally:
+            closed.append("closed")
+
+    async def stop_soon() -> None:
+        await anyio.wait_all_tasks_blocked()
+        shutdown.trigger()
+
+    items: list[str] = []
+    with anyio.fail_after(5):
+        async with anyio.create_task_group() as group:
+            group.start_soon(stop_soon)
+            async for item in shutdown.stream_until_shutdown(shielded()):
+                items.append(item)
+
+    assert items == ["first"]
+    assert closed == ["closed"]
+
+
+async def test_stream_until_shutdown_cancelled_with_interrupt_expect_cancel_kept() -> (
+    None
+):
+    """종료 신호와 같은 순간에 들어온 다른 취소는 삼키지 않고 그대로 올린다."""
+    shutdown = ServerShutdownSignal()
+    first = anyio.Event()
+
+    async def endless() -> AsyncIterator[int]:
+        yield 1
+        await anyio.sleep_forever()
+
+    async def consume() -> None:
+        async for _ in shutdown.stream_until_shutdown(endless()):
+            first.set()
+
+    consumer = create_task(consume())
+    await first.wait()
+    await anyio.wait_all_tasks_blocked()
+    shutdown.trigger()
+    # Let the trigger release the waiter and run the guard's interrupt.
+    await sleep(0)
+    await sleep(0)
+    consumer.cancel()
+
+    with pytest.raises(CancelledError):
+        await consumer
+
+
+def test_relay_when_loop_closed_expect_server_handler_still_called() -> None:
+    """event loop가 이미 닫혀 신호를 전하지 못해도 서버의 handler는 불린다."""
+    calls: list[int] = []
+    loop = new_event_loop()
+    loop.close()
+
+    def server_handler(signal_number: int, frame: FrameType | None) -> None:
+        calls.append(signal_number)
+
+    previous = signal(SIGTERM, server_handler)
+    try:
+        relay = ShutdownSignalRelay(ServerShutdownSignal(), loop)
+        relay.install()
+        try:
+            with pytest.raises(RuntimeError):
+                relay.relay(SIGTERM, None)
+        finally:
+            relay.uninstall()
+    finally:
+        signal(SIGTERM, previous)
+
+    assert calls == [SIGTERM]
