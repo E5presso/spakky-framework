@@ -847,7 +847,8 @@ class AggregateCollector:
 
 - **CONTEXT 스코프 + ContextVar**: 요청/실행 컨텍스트 단위로 격리
 - **physical transaction 단위 buffer**: 가장 바깥 또는 `REQUIRES_NEW` transaction마다 buffer를 쌓는다. 합쳐진(`REQUIRED`) 안쪽은 바깥 buffer에 모은다
-- **buffer stack은 불변 tuple, buffer는 공유 list**: 자식 task·thread는 stack을 복사해 이어받으므로 합쳐진 자식이 모은 aggregate는 바깥 buffer에 들어가고, 자식이 연 buffer는 자식 context에만 남는다
+- **buffer stack은 불변 tuple, buffer는 공유 객체**: 자식 task·thread는 stack을 복사해 이어받으므로 합쳐진 자식이 모은 aggregate는 바깥 buffer에 들어가고, 자식이 연 buffer는 자식 context에만 남는다
+- **닫힌 buffer는 건너뛴다**: commit·discard된 buffer에는 닫힘 표시가 남는다. 바깥보다 오래 사는 자식은 이미 넘겨진 buffer가 아니라 그 아래 살아 있는 buffer(없으면 base buffer)에 모은다
 - `collect(aggregate)`: Repository에서 save 시 호출 (현재 buffer에 추가)
 - `all()` / `clear()`: 현재 buffer 조회 / 비우기
 - `begin_transaction()` / `commit_transaction()` / `discard_transaction()`: 트랜잭션 Aspect가 buffer를 열고, commit 뒤 발행 대기열로 넘기거나 rollback 시 버린다
@@ -862,7 +863,7 @@ flowchart TD
     tx["AbstractTransaction<br/>context manager"]
     scope["scope(propagation)"]
     frames["ContextVar frame stack (불변 tuple)<br/>frame = (PhysicalTransaction, owner)"]
-    physical["PhysicalTransaction<br/>(공유 가변: rollback_only)"]
+    physical["PhysicalTransaction<br/>(공유 가변: rollback_only, finished)"]
     enter["__enter__() = scope(REQUIRED)"]
     init["initialize()"]
     exit["__exit__()"]
@@ -889,6 +890,8 @@ flowchart TD
 - frame stack은 `ContextVar`의 불변 tuple이다. 자식 task·thread는 stack을 복사해 이어받는다.
 - 합쳐진 scope의 frame은 바깥 frame과 같은 `PhysicalTransaction` 객체를 가리킨다. 그래서 자식 task에서 합쳐진 scope의 실패도 바깥의 `rollback_only`에 남는다.
 - 자식이 연 `REQUIRES_NEW` frame과 그 자원(SQLAlchemy session stack도 `ContextVar`)은 자식 context에만 쌓인다.
+- 연 scope가 끝나면(commit·rollback·`dispose()` 뒤) `PhysicalTransaction.finished`가 켜진다. 바깥보다 오래 사는 자식의 복사본에 남은 frame은 건너뛰므로, 그 뒤 시작한 `REQUIRED`는 아래의 살아 있는 transaction에 합치거나 새로 연다. session stack도 닫힌 session을 건너뛴다.
+- 이미 합쳐진 scope가 끝나기 전에 transaction이 먼저 끝났으면 그 scope는 나갈 때 `TransactionAlreadyFinishedError`를 낸다. 바깥 commit 뒤의 쓰기를 조용히 잃지 않기 위해서다.
 
 ### External Proxy 패턴
 

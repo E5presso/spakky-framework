@@ -310,3 +310,55 @@ def test_sync_concurrent_requires_new_threads_expect_each_thread_commits_own(
     assert stored_sync(transaction, outer_user.uid)
     assert stored_sync(transaction, users["a"].uid)
     assert not stored_sync(transaction, users["b"].uid)
+
+
+@pytest.mark.asyncio
+async def test_async_child_task_after_outer_finished_expect_child_write_committed(
+    schema_registry: SchemaRegistry,
+    async_transaction: AsyncTransaction,
+    unique_id: str,
+) -> None:
+    """바깥이 끝난 뒤 도는 fire-and-forget 자식 task의 REQUIRED는 새 session으로 자기 쓰기를 commit한다."""
+    outer_user = new_user(f"ff_outer_{unique_id}")
+    child_user = new_user(f"ff_child_{unique_id}")
+    outer_finished = asyncio.Event()
+
+    async def child() -> None:
+        await outer_finished.wait()
+        async with async_transaction.scope(Propagation.REQUIRED):
+            async_transaction.session.add(schema_registry.from_domain(child_user))
+
+    async with async_transaction.scope():
+        async_transaction.session.add(schema_registry.from_domain(outer_user))
+        task = asyncio.create_task(child())
+    outer_finished.set()
+    await task
+
+    assert await stored(async_transaction, outer_user.uid)
+    assert await stored(async_transaction, child_user.uid)
+
+
+def test_sync_thread_after_outer_finished_expect_thread_write_committed(
+    schema_registry: SchemaRegistry,
+    transaction: Transaction,
+    unique_id: str,
+) -> None:
+    """바깥이 끝난 뒤 도는 thread의 REQUIRED는 새 session으로 자기 쓰기를 commit한다."""
+    outer_user = new_user(f"ff_sync_outer_{unique_id}")
+    child_user = new_user(f"ff_sync_child_{unique_id}")
+    outer_finished = threading.Event()
+
+    def child() -> None:
+        outer_finished.wait()
+        with transaction.scope(Propagation.REQUIRED):
+            transaction.session.add(schema_registry.from_domain(child_user))
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with transaction.scope():
+            transaction.session.add(schema_registry.from_domain(outer_user))
+            future = executor.submit(copy_context().run, child)
+        outer_finished.set()
+        future.result()
+
+    assert stored_sync(transaction, outer_user.uid)
+    assert stored_sync(transaction, child_user.uid)

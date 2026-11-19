@@ -481,3 +481,151 @@ def test_sync_session_manager_concurrent_threads_expect_own_sessions() -> None:
     with pytest.raises(SessionNotInitializedError):
         _ = manager.session
     connection.connection.dispose()
+
+
+@pytest.mark.asyncio
+async def test_async_session_manager_child_task_after_close_expect_no_closed_session() -> (
+    None
+):
+    """바깥이 닫은 session은 그 뒤에 도는 자식 task에 내주지 않고, 새로 연 session만 쓴다."""
+    import asyncio
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=AsyncConnectionManager)
+    connection.connection = create_async_engine(
+        "postgresql+psycopg://unused:unused@localhost/unused"
+    )
+    manager = AsyncSessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    outer_closed = asyncio.Event()
+    seen: list[AsyncSession] = []
+
+    async def child() -> None:
+        await outer_closed.wait()
+        with pytest.raises(SessionNotInitializedError):
+            _ = manager.session
+        await manager.open()
+        seen.append(manager.session)
+        await manager.close()
+        with pytest.raises(SessionNotInitializedError):
+            _ = manager.session
+
+    await manager.open()
+    outer = manager.session
+    task = asyncio.create_task(child())
+    await manager.close()
+    outer_closed.set()
+    await task
+
+    assert len(seen) == 1
+    assert seen[0] is not outer
+    await connection.connection.dispose()
+
+
+@pytest.mark.asyncio
+async def test_async_session_manager_child_task_after_inner_close_expect_live_outer() -> (
+    None
+):
+    """닫힌 안쪽 session 아래에 살아 있는 바깥 session이 있으면 자식 task는 바깥을 쓴다."""
+    import asyncio
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=AsyncConnectionManager)
+    connection.connection = create_async_engine(
+        "postgresql+psycopg://unused:unused@localhost/unused"
+    )
+    manager = AsyncSessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    inner_closed = asyncio.Event()
+    seen: list[AsyncSession] = []
+
+    async def child() -> None:
+        await inner_closed.wait()
+        seen.append(manager.session)
+
+    await manager.open()
+    outer = manager.session
+    await manager.open()
+    task = asyncio.create_task(child())
+    await manager.close()
+    inner_closed.set()
+    await task
+
+    assert seen == [outer]
+    await manager.close()
+    await connection.connection.dispose()
+
+
+def test_sync_session_manager_thread_after_close_expect_no_closed_session() -> None:
+    """바깥이 닫은 session은 그 뒤에 도는 thread에 내주지 않고, 새로 연 session만 쓴다."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=ConnectionManager)
+    connection.connection = create_engine("sqlite:///:memory:")
+    manager = SessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    outer_closed = threading.Event()
+    seen: list[Session] = []
+
+    def child() -> None:
+        outer_closed.wait()
+        with pytest.raises(SessionNotInitializedError):
+            _ = manager.session
+        manager.open()
+        seen.append(manager.session)
+        manager.close()
+        with pytest.raises(SessionNotInitializedError):
+            _ = manager.session
+
+    manager.open()
+    outer = manager.session
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(copy_context().run, child)
+        manager.close()
+        outer_closed.set()
+        future.result()
+
+    assert len(seen) == 1
+    assert seen[0] is not outer
+    connection.connection.dispose()
+
+
+def test_sync_session_manager_thread_after_inner_close_expect_live_outer() -> None:
+    """닫힌 안쪽 session 아래에 살아 있는 바깥 session이 있으면 thread는 바깥을 쓴다."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=ConnectionManager)
+    connection.connection = create_engine("sqlite:///:memory:")
+    manager = SessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    inner_closed = threading.Event()
+    seen: list[Session] = []
+
+    def child() -> None:
+        inner_closed.wait()
+        seen.append(manager.session)
+
+    manager.open()
+    outer = manager.session
+    manager.open()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(copy_context().run, child)
+        manager.close()
+        inner_closed.set()
+        future.result()
+
+    assert seen == [outer]
+    manager.close()
+    connection.connection.dispose()

@@ -250,7 +250,7 @@ uv run pytest
 
 Domain Event만 사용하는 앱은 외부 transport 없이 기동할 수 있습니다. Integration Event를 발행할 때는 실제 transport 플러그인이 필요하며, 없으면 `IntegrationEventTransportUnavailableError`가 발생합니다.
 
-트랜잭션 이벤트 Aspect는 커밋과 세션 정리가 끝난 뒤 이벤트를 발행합니다. 중첩된 `@Transactional` 호출에서 바깥에 합쳐진(`Propagation.REQUIRED`) 안쪽은 commit하지 않으므로 발행하지 않고, 가장 바깥이 commit한 뒤 안쪽에서 모은 이벤트까지 한 번 발행합니다. `Propagation.REQUIRES_NEW` 안쪽의 이벤트는 안쪽이 commit한 직후에 발행합니다. rollback만 가능해진 transaction(`TransactionRollbackOnlyError`)은 아무 이벤트도 발행하지 않습니다. 발행할 배치와 collector를 먼저 분리하므로 핸들러가 새 `@transactional` 유스케이스를 호출해도 부모 이벤트를 재발행하지 않습니다. 커밋 실패 시 이벤트는 발행하지 않습니다. 인프로세스 이벤트는 영속 메시지 큐를 대신하지 않습니다.
+트랜잭션 이벤트 Aspect는 커밋과 세션 정리가 끝난 뒤 이벤트를 발행합니다. 중첩된 `@Transactional` 호출에서 바깥에 합쳐진(`Propagation.REQUIRED`) 안쪽은 commit하지 않으므로 발행하지 않고, 가장 바깥이 commit한 뒤 안쪽에서 모은 이벤트까지 한 번 발행합니다. `Propagation.REQUIRES_NEW` 안쪽의 이벤트는 안쪽이 commit한 직후에 발행합니다. rollback만 가능해진 transaction(`TransactionRollbackOnlyError`)은 아무 이벤트도 발행하지 않습니다. 바깥이 끝난 뒤 시작한 자식 task의 `@Transactional`은 자기 transaction을 열어 commit하므로 그 이벤트도 자식의 commit 뒤에 발행됩니다. 발행할 배치와 collector를 먼저 분리하므로 핸들러가 새 `@transactional` 유스케이스를 호출해도 부모 이벤트를 재발행하지 않습니다. 커밋 실패 시 이벤트는 발행하지 않습니다. 인프로세스 이벤트는 영속 메시지 큐를 대신하지 않습니다.
 
 ## 명시적인 이벤트 제공자 선택
 

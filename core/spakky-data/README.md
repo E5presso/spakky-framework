@@ -187,6 +187,14 @@ async def record_audit(self, entry: AuditEntry) -> None: ...
   - 자식의 `REQUIRES_NEW`는 자식 context에만 쌓입니다. 동시에 연 여러 `REQUIRES_NEW`는 서로의 session을 쓰거나 닫지 않습니다.
   - 합쳐진 자식들은 바깥과 같은 session을 씁니다. SQLAlchemy session은 동시 사용에 안전하지 않으므로
     같은 session으로 동시에 DB를 쓰려면 자식마다 `REQUIRES_NEW`를 쓰세요.
+- 바깥보다 오래 사는 자식(기다리지 않고 띄운 `create_task`, 끝까지 기다리지 않는 thread)은 다음과 같이 동작합니다.
+  - 바깥 transaction이 끝난(commit·rollback 후 닫힌) 뒤에 자식이 `@Transactional`을 시작하면, 끝난 transaction에는
+    합치지 않습니다. 그 아래 아직 살아 있는 transaction이 있으면 거기에 합치고, 없으면 자기 transaction을 새로 열어
+    commit합니다. 자식이 모은 aggregate의 이벤트도 자식의 commit 뒤에 발행됩니다.
+  - 바깥이 끝나기 전에 자식이 이미 합쳐져 있었는데 바깥이 먼저 끝나면, 자식의 그 scope가 끝날 때
+    `TransactionAlreadyFinishedError`를 냅니다. 바깥이 commit한 뒤에 자식이 한 쓰기는 commit되지 않으므로
+    조용히 잃지 않고 실패로 알립니다. 바깥보다 오래 걸릴 수 있는 자식 작업은 `REQUIRES_NEW`로 두거나,
+    바깥이 끝나기 전에 기다리세요.
 
 `AggregateCollector`는 physical transaction(가장 바깥 또는 `REQUIRES_NEW`)마다 수집 buffer를 따로 둡니다.
 `@Transactional`은 physical transaction이 commit된 직후 그 buffer를 `drain_committed()`로 넘기고,
@@ -204,7 +212,8 @@ async with transaction.scope():
 `AbstractTransaction` / `AbstractAsyncTransaction`을 직접 구현한다면 `initialize()`는 바깥 transaction을 유지한 채
 새 physical transaction을 열고, `dispose()`는 그것을 닫은 뒤 바깥으로 돌아가야 합니다. 현재 physical transaction의
 자원(session 등)은 요청 전체가 공유하는 상태가 아니라 `ContextVar` 같은 실행 context 지역 상태로 찾아야
-자식 task의 `REQUIRES_NEW`가 다른 task의 자원을 바꾸지 않습니다.
+자식 task의 `REQUIRES_NEW`가 다른 task의 자원을 바꾸지 않습니다. 또 `dispose()`로 닫은 자원은 그것을 이어받은
+자식 context에도 더 내주지 않아야 합니다(예: 닫힘 표시를 공유 객체에 두고 건너뛰기).
 
 ### 외부 연동 Proxy 패턴
 
@@ -263,6 +272,7 @@ class PaymentServiceProxy(IPaymentProxy):
 |-------|-------------|
 | `AbstractSpakkyPersistencyError` | persistency operation 기반 error |
 | `TransactionRollbackOnlyError` | 안쪽 scope의 실패로 rollback만 가능해진 transaction을 바깥이 정상 종료하려 할 때 발생 |
+| `TransactionAlreadyFinishedError` | 합쳐진 scope(주로 자식 task·thread)가 끝나기 전에 그 transaction이 먼저 끝났을 때 발생 |
 | `TransactionNotActiveError` | 열린 scope 없이 transaction scope를 닫으려 할 때 발생 |
 | `AggregateBufferNotOpenError` | 열지 않은 collector buffer를 닫으려 할 때 발생 |
 | `AbstractSpakkyExternalError` | 외부 service operation 기반 error |

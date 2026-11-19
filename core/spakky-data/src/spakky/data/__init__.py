@@ -18,6 +18,7 @@ from spakky.data.external.proxy import IAsyncGenericProxy, IGenericProxy
 from spakky.data.persistency.error import (
     AbstractSpakkyPersistencyError,
     AggregateBufferNotOpenError,
+    TransactionAlreadyFinishedError,
     TransactionNotActiveError,
     TransactionRollbackOnlyError,
 )
@@ -48,6 +49,7 @@ __all__ = [
     "AbstractSpakkyExternalError",
     "AbstractSpakkyPersistencyError",
     "AggregateBufferNotOpenError",
+    "TransactionAlreadyFinishedError",
     "TransactionNotActiveError",
     "TransactionRollbackOnlyError",
 ]

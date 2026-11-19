@@ -365,6 +365,10 @@ class CloseSessionUseCase:
   자식의 `REQUIRES_NEW`는 자식 context에만 쌓이므로 동시에 연 여러 `REQUIRES_NEW`가 서로의 session을 쓰거나 닫지 않습니다.
   자식의 `REQUIRED`는 바깥 session을 함께 쓰고, 자식의 실패는 바깥을 rollback-only로 만듭니다.
   session 하나는 동시 사용에 안전하지 않으므로 자식들이 동시에 DB를 쓰면 각자 `REQUIRES_NEW`를 쓰세요.
+- 바깥이 commit하고 닫은 session은 그 뒤에 도는 자식에게 내주지 않습니다. 기다리지 않고 띄운 자식 task가 바깥이
+  끝난 뒤 `@Transactional()`(`REQUIRED`)을 시작하면 새 session을 열어 자기 쓰기를 commit합니다.
+  바깥이 끝나기 전에 이미 합쳐져 있던 자식은 그 scope가 끝날 때 `TransactionAlreadyFinishedError`를 냅니다.
+  바깥보다 오래 걸릴 수 있는 자식은 `REQUIRES_NEW`로 두거나 바깥이 끝나기 전에 기다리세요.
 - 안쪽은 바깥이 아직 commit하지 않은 변경을 보지 못합니다. 바깥이 잠근 행을 안쪽이 쓰면 서로 기다릴 수 있습니다(PostgreSQL 행 lock).
 - 연결을 둘 쓰므로 `pool_size`(기본 5)와 `pool_max_overflow`(기본 10)를 그만큼 고려합니다.
 - 도메인 이벤트는 실제로 commit한 physical transaction마다 그 뒤에 발행됩니다. 합쳐진 안쪽이 끝날 때는 발행하지 않습니다.

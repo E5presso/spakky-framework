@@ -1,4 +1,5 @@
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -27,6 +28,22 @@ class SessionNotInitializedError(AbstractSpakkySqlAlchemyPersistencyError):
     )
 
 
+@dataclass(slots=True)
+class SessionSlot[S: (Session, AsyncSession)]:
+    """One session on a context's session stack.
+
+    The slot object is shared by every execution context that copied the
+    stack, so closing it in the context that opened it is seen by child tasks
+    and threads that still hold it, and they stop using the session.
+    """
+
+    session: S
+    """The session of one physical transaction."""
+
+    closed: bool = False
+    """True once ``close()`` released the session; it is no longer handed out."""
+
+
 @Pod()
 class SessionManager(IApplicationContextAware):
     """Manages synchronous SQLAlchemy sessions per execution context.
@@ -40,12 +57,15 @@ class SessionManager(IApplicationContextAware):
     thread that copied the execution context starts from the parent's stack,
     so it sees the parent's session, but the sessions it opens and closes stay
     in its own context and never replace the session another task is using.
+    A session closed by the context that opened it is skipped even in copies
+    that still hold it, so a child that outlives its parent's transaction
+    never writes to a session that was already committed and closed.
     """
 
     _application_context: IApplicationContext
     _engine: Engine
     _session_factory: sessionmaker[Session] | None
-    _sessions: ContextVar[tuple[Session, ...]]
+    _sessions: ContextVar[tuple[SessionSlot[Session], ...]]
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -65,16 +85,18 @@ class SessionManager(IApplicationContextAware):
     def session(self) -> Session:
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        stack = self._sessions.get()
-        if not stack:
-            raise SessionNotInitializedError()
-        return stack[-1]
+        for slot in reversed(self._sessions.get()):
+            if not slot.closed:
+                return slot.session
+        raise SessionNotInitializedError()
 
     def open(self) -> None:
         """Open a new session on top of the current context's session stack."""
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        self._sessions.set((*self._sessions.get(), self._session_factory()))
+        self._sessions.set(
+            (*self._sessions.get(), SessionSlot(self._session_factory()))
+        )
 
     def close(self) -> None:
         """Close the top session of the current context and return to the one below."""
@@ -83,9 +105,10 @@ class SessionManager(IApplicationContextAware):
         stack = self._sessions.get()
         if not stack:
             return
-        session = stack[-1]
+        slot = stack[-1]
         self._sessions.set(stack[:-1])
-        session.close()
+        slot.closed = True
+        slot.session.close()
 
 
 @Pod()
@@ -101,12 +124,15 @@ class AsyncSessionManager(IApplicationContextAware):
     thread that copied the execution context starts from the parent's stack,
     so it sees the parent's session, but the sessions it opens and closes stay
     in its own context and never replace the session another task is using.
+    A session closed by the context that opened it is skipped even in copies
+    that still hold it, so a child that outlives its parent's transaction
+    never writes to a session that was already committed and closed.
     """
 
     _application_context: IApplicationContext
     _engine: AsyncEngine
     _session_factory: async_sessionmaker[AsyncSession] | None
-    _sessions: ContextVar[tuple[AsyncSession, ...]]
+    _sessions: ContextVar[tuple[SessionSlot[AsyncSession], ...]]
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -126,16 +152,18 @@ class AsyncSessionManager(IApplicationContextAware):
     def session(self) -> AsyncSession:
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        stack = self._sessions.get()
-        if not stack:
-            raise SessionNotInitializedError()
-        return stack[-1]
+        for slot in reversed(self._sessions.get()):
+            if not slot.closed:
+                return slot.session
+        raise SessionNotInitializedError()
 
     async def open(self) -> None:
         """Open a new async session on top of the current context's session stack."""
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        self._sessions.set((*self._sessions.get(), self._session_factory()))
+        self._sessions.set(
+            (*self._sessions.get(), SessionSlot(self._session_factory()))
+        )
 
     async def close(self) -> None:
         """Close the top async session of the current context and return to the one below."""
@@ -144,6 +172,7 @@ class AsyncSessionManager(IApplicationContextAware):
         stack = self._sessions.get()
         if not stack:
             return
-        session = stack[-1]
+        slot = stack[-1]
         self._sessions.set(stack[:-1])
-        await session.close()
+        slot.closed = True
+        await slot.session.close()

@@ -199,6 +199,20 @@ class OuterUseCase:
         await asyncio.gather(self.inner.joined_failing_async(), return_exceptions=True)
 
     @Transactional()
+    async def spawn_joined_async(
+        self, outer_done: asyncio.Event
+    ) -> asyncio.Task[list[AbstractAggregateRoot]]:
+        self.collector.collect(OUTER)
+        return asyncio.create_task(self.late_child_async(outer_done))
+
+    async def late_child_async(
+        self, outer_done: asyncio.Event
+    ) -> list[AbstractAggregateRoot]:
+        await outer_done.wait()
+        await self.inner.joined_async()
+        return list(self.collector.drain_committed())
+
+    @Transactional()
     async def swallow_separate_failure_async(self) -> None:
         self.collector.collect(OUTER)
         try:
@@ -415,3 +429,27 @@ async def test_async_transactional_joined_failure_in_child_task_expect_rollback_
         "close:1",
     ]
     assert collector.drain_committed() == []
+
+
+async def test_async_transactional_child_task_after_outer_expect_own_commit(
+    context: ApplicationContext,
+) -> None:
+    """바깥이 끝난 뒤 실행된 fire-and-forget 자식 task는 자기 transaction을 열어 commit한다."""
+    outer = context.get(type_=OuterUseCase)
+    collector = context.get(type_=AggregateCollector)
+    outer_done = asyncio.Event()
+
+    task = await outer.spawn_joined_async(outer_done)
+    outer_done.set()
+    child_committed = await task
+
+    assert context.get(type_=AsyncRecordingTransaction).events == [
+        "open:1",
+        "commit:1",
+        "close:1",
+        "open:2",
+        "commit:2",
+        "close:2",
+    ]
+    assert child_committed == [INNER]
+    assert collector.drain_committed() == [OUTER]

@@ -52,6 +52,7 @@ flowchart TD
   AbstractSpakkyDomainError --> UnhashableFieldTypeError
 
   AbstractSpakkyPersistencyError --> TransactionRollbackOnlyError
+  AbstractSpakkyPersistencyError --> TransactionAlreadyFinishedError
   AbstractSpakkyPersistencyError --> TransactionNotActiveError
   AbstractSpakkyPersistencyError --> AggregateBufferNotOpenError
 
@@ -404,6 +405,7 @@ from spakky.event.error import (
 from spakky.data.persistency.error import (
     AbstractSpakkyPersistencyError,
     AggregateBufferNotOpenError,
+    TransactionAlreadyFinishedError,
     TransactionNotActiveError,
     TransactionRollbackOnlyError,
 )
@@ -422,6 +424,7 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 | `VersionConflictError`          | 낙관적 락 충돌                 | `AbstractSpakkyDomainError`   |
 | `EntityAlreadyExistsError`      | 새 Aggregate 저장이 이미 있는 유일 키와 충돌 | `AbstractSpakkyDomainError`   |
 | `TransactionRollbackOnlyError`  | 합쳐진 안쪽 scope가 실패해 rollback만 가능해진 transaction을 바깥이 정상 종료하려 함 (rollback 후 발생) | `AbstractSpakkyPersistencyError` |
+| `TransactionAlreadyFinishedError` | 합쳐진 scope(주로 바깥보다 오래 사는 자식 task·thread)가 끝나기 전에 그 transaction이 먼저 commit·rollback되어 닫힘 | `AbstractSpakkyPersistencyError` |
 | `TransactionNotActiveError`     | 열린 scope 없이 transaction scope를 닫으려 함 | `AbstractSpakkyPersistencyError` |
 | `AggregateBufferNotOpenError`   | 열지 않은 `AggregateCollector` buffer를 닫으려 함 | `AbstractSpakkyPersistencyError` |
 | `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   | `AbstractSpakkyFrameworkError` |

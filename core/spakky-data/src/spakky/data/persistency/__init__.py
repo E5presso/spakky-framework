@@ -9,6 +9,7 @@ This module provides:
 from spakky.data.persistency.error import (
     AbstractSpakkyPersistencyError,
     AggregateBufferNotOpenError,
+    TransactionAlreadyFinishedError,
     TransactionNotActiveError,
     TransactionRollbackOnlyError,
 )
@@ -35,6 +36,7 @@ __all__ = [
     # Errors
     "AbstractSpakkyPersistencyError",
     "AggregateBufferNotOpenError",
+    "TransactionAlreadyFinishedError",
     "TransactionNotActiveError",
     "TransactionRollbackOnlyError",
 ]
