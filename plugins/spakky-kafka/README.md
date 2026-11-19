@@ -55,6 +55,7 @@ export SPAKKY_KAFKA__RETRY__INITIAL_INTERVAL="1.0"
 export SPAKKY_KAFKA__RETRY__MULTIPLIER="2.0"
 export SPAKKY_KAFKA__RETRY__MAX_INTERVAL="60.0"
 export SPAKKY_KAFKA__RETRY__MODE="blocking"
+export SPAKKY_KAFKA__SUBSCRIBER_RETRY='{"search-index": {"max_attempts": 5}}'
 export SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT="10.0"
 export SPAKKY_KAFKA__REDRIVE_TIMEOUT="10.0"
 ```
@@ -260,7 +261,7 @@ dead-letter 토픽을 씁니다. 구독자 이름 규칙(허용 문자, 예약�
 |------|------------------|------------|
 | consumer group | `<group_id>` | `<group_id>.s` |
 | dead-letter 토픽 | `<topic><dead_letter_topic_suffix>` (예: `OrderPlacedEvent.dlt`) | `<topic>.s<dead_letter_topic_suffix>` (예: `OrderPlacedEvent.billing.dlt`) |
-| retry 토픽 (`retry.mode=delayed`일 때만) | `<topic><retry_topic_suffix>` (예: `OrderPlacedEvent.retry`) | `<topic>.s<retry_topic_suffix>` (예: `OrderPlacedEvent.billing.retry`) |
+| retry 토픽 (그 구독자의 `mode`가 `delayed`일 때만) | `<topic><retry_topic_suffix>` (예: `OrderPlacedEvent.retry`) | `<topic>.s<retry_topic_suffix>` (예: `OrderPlacedEvent.billing.retry`) |
 | redrive group | `<group_id>.redrive` | `<group_id>.s.redrive` |
 
 같은 이름을 `KafkaConnectionConfig.subscriber_group_id()` / `dead_letter_topic()` /
@@ -287,7 +288,7 @@ dead-letter 토픽을 씁니다. 구독자 이름 규칙(허용 문자, 예약�
 
 ## 재시도
 
-`retry`(`spakky.event.delivery.RetryPolicy`)가 구독자마다 독립적으로 적용됩니다.
+`retry`(`spakky.event.retry.RetryPolicy`)가 구독자마다 독립적으로 적용됩니다.
 
 | 필드 | 환경변수 | 기본값 | 설명 |
 |------|---------|--------|------|
@@ -324,6 +325,49 @@ dead-letter 토픽을 씁니다. 구독자 이름 규칙(허용 문자, 예약�
   전달받습니다.
 - `delayed`에서 `blocking`으로 되돌리면 retry 토픽을 더 이상 읽지 않습니다. 전환 전에
   retry 토픽이 비었는지 확인하십시오.
+
+
+### 구독자마다 다른 재시도
+
+`retry`는 모든 구독자의 바탕입니다. 구독자마다 다른 재시도가 필요하면 코드에서
+`@EventHandler(retry=...)`로 선언하거나, 배포 설정의 `subscriber_retry`로 줍니다.
+한 구독자의 정책은 다음 순서로 **필드마다** 덮어 정합니다
+(`KafkaConnectionConfig.subscriber_retry_policy(subscriber, declared)`).
+
+1. `retry`(`SPAKKY_KAFKA__RETRY__*`)가 바탕입니다.
+2. 그 위에 `@EventHandler(retry=...)`가 **명시한 필드**를 덮습니다.
+3. 그 위에 `subscriber_retry[구독자 이름]`이 **명시한 필드**를 덮습니다.
+
+"명시한 필드"는 pydantic의 `model_fields_set`입니다. `RetryPolicy`의 모든 필드에
+기본값이 있으므로, 통째로 바꾸면 `max_attempts`만 준 설정이 `mode`를 `blocking`으로
+되돌립니다. 필드마다 덮기 때문에 코드에는 순서 요구(`mode`)만 적고 횟수와 간격은 배포
+설정에 둘 수 있습니다.
+
+```python
+from spakky.event.retry import RetryMode, RetryPolicy
+from spakky.event.stereotype.event_handler import EventHandler, on_event
+
+
+@EventHandler(subscriber="search-index", retry=RetryPolicy(mode=RetryMode.DELAYED))
+class SearchIndexHandler:
+    @on_event(OrderPlacedEvent)
+    async def index(self, event: OrderPlacedEvent) -> None: ...
+```
+
+```bash
+# 횟수와 간격은 배포 설정에서 준다. 이름 없는 구독자의 키는 "" 이다.
+export SPAKKY_KAFKA__SUBSCRIBER_RETRY='{"search-index": {"max_attempts": 5, "initial_interval": 1.0}}'
+```
+
+- 구독자 하나의 정책은 그 구독자의 모든 이벤트에 같습니다. 구독자마다 worker가 하나이기
+  때문입니다. retry 토픽도 그 구독자의 `mode`가 `delayed`일 때만 만들고 읽습니다.
+- 같은 구독자 이름의 클래스가 여럿이면 `retry`를 주지 않은 클래스는 그 구독자에 선언된
+  값을 따릅니다. 서로 다른 값을 선언하면 등록할 때
+  `ConflictingSubscriberRetryPolicyError`(`spakky.event.subscription`)로 실패합니다.
+- `subscriber_retry`는 JSON으로만 줍니다. `__`로 나눈 키
+  (`SPAKKY_KAFKA__SUBSCRIBER_RETRY__<이름>__...`)는 쓰지 않습니다. 구독자 이름이 될 수
+  없는 키는 설정을 읽을 때 거부됩니다.
+- `retry` 선언과 `subscriber_retry`를 모두 주지 않으면 모든 구독자가 `retry`를 씁니다.
 
 ## 처리 실패 메시지 (dead-letter)
 

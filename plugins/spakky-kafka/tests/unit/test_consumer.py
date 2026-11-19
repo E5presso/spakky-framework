@@ -12,10 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from confluent_kafka import KafkaError, KafkaException
-from spakky.event.delivery import RetryMode, RetryPolicy
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.error import SubscriptionNotFoundError
 from spakky.event.redrive import RedriveResult
 from spakky.event.subscription import (
+    ConflictingSubscriberRetryPolicyError,
     DuplicateEventHandlerNameError,
     InvalidSubscriberNameError,
 )
@@ -556,3 +557,91 @@ async def test_async_consumer_redrive_unregistered_subscription_expect_not_found
 
     with pytest.raises(SubscriptionNotFoundError):
         await consumer.redrive(SampleEvent)
+
+
+def test_sync_consumer_subscriber_delayed_retry_expect_retry_topics_for_that_subscriber_only(
+    config: KafkaConnectionConfig, admin: MagicMock
+) -> None:
+    """한 subscriber만 DELAYED를 선언하면 그 subscriber의 retry 토픽만 만든다."""
+    consumer = KafkaEventConsumer(config)
+    consumer.register(SampleEvent, MagicMock())
+    consumer.register(SampleEvent, MagicMock(), subscriber="billing")
+    consumer.register(
+        AnotherEvent,
+        MagicMock(),
+        subscriber="billing",
+        retry=RetryPolicy(mode=RetryMode.DELAYED),
+    )
+
+    with patch(f"{WORKER_MODULE}.Consumer"), patch(f"{WORKER_MODULE}.Producer"):
+        consumer.initialize()
+
+    assert created_topics(admin) == {
+        "SampleEvent",
+        "SampleEvent.dlt",
+        "SampleEvent.billing.dlt",
+        "SampleEvent.billing.retry",
+        "AnotherEvent",
+        "AnotherEvent.billing.dlt",
+        "AnotherEvent.billing.retry",
+    }
+
+
+def test_sync_consumer_subscriber_retry_expect_resolved_by_config_layers(
+    config: KafkaConnectionConfig,
+) -> None:
+    """subscriber의 policy는 config.retry, 선언, subscriber_retry 순으로 필드마다 덮인다."""
+    config.retry = RetryPolicy(max_attempts=2, initial_interval=0.5)
+    config.subscriber_retry = {"billing": RetryPolicy(max_attempts=6)}
+    consumer = KafkaEventConsumer(config)
+
+    consumer.register(
+        SampleEvent,
+        MagicMock(),
+        subscriber="billing",
+        retry=RetryPolicy(mode=RetryMode.DELAYED, max_attempts=3),
+    )
+    consumer.register(SampleEvent, MagicMock())
+
+    assert consumer.subscriptions.get("billing", SampleEvent).policy == RetryPolicy(
+        max_attempts=6, initial_interval=0.5, mode=RetryMode.DELAYED
+    )
+    assert consumer.subscriptions.get(None, SampleEvent).policy == config.retry
+
+
+def test_sync_consumer_conflicting_subscriber_retry_expect_rejected(
+    config: KafkaConnectionConfig,
+) -> None:
+    """같은 subscriber에 다른 retry를 선언하면 등록에서 실패한다."""
+    consumer = KafkaEventConsumer(config)
+    consumer.register(
+        SampleEvent,
+        MagicMock(),
+        subscriber="billing",
+        retry=RetryPolicy(mode=RetryMode.DELAYED),
+    )
+
+    with pytest.raises(ConflictingSubscriberRetryPolicyError):
+        consumer.register(
+            AnotherEvent,
+            MagicMock(),
+            subscriber="billing",
+            retry=RetryPolicy(mode=RetryMode.BLOCKING),
+        )
+
+
+def test_async_consumer_subscriber_retry_expect_resolved_by_config_layers(
+    config: KafkaConnectionConfig,
+) -> None:
+    """비동기 소비자도 subscriber_retry까지 필드마다 덮어 policy를 정한다."""
+    config.subscriber_retry = {"": RetryPolicy(max_attempts=4)}
+    consumer = AsyncKafkaEventConsumer(config)
+
+    consumer.register(
+        SampleEvent, AsyncMock(), retry=RetryPolicy(mode=RetryMode.DELAYED)
+    )
+
+    assert consumer.subscriptions.get(None, SampleEvent).policy == RetryPolicy(
+        max_attempts=4, mode=RetryMode.DELAYED
+    )
+    assert consumer.workers[None].retry_topics == {"SampleEvent.retry": "SampleEvent"}

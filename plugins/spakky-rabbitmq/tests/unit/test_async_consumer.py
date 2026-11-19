@@ -36,13 +36,17 @@ from spakky.event.error import (
     SubscriptionNotFoundError,
 )
 from spakky.event.redrive import RedriveResult
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.tracing.context import TraceContext
 from spakky.tracing.w3c_propagator import W3CTracePropagator
 
 from spakky.plugins.rabbitmq.auth import current_rabbitmq_message_headers
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
-from spakky.plugins.rabbitmq.error import SubscriberExchangeRequiredError
+from spakky.plugins.rabbitmq.error import (
+    SubscriberExchangeRequiredError,
+    SubscriberRetryModeUnsupportedError,
+)
 from spakky.plugins.rabbitmq.event.consumer import AsyncRabbitMQEventConsumer
 
 CONNECT = "spakky.plugins.rabbitmq.event.consumer.connect_robust"
@@ -1128,3 +1132,50 @@ async def test_async_redrive_auth_provider_unavailable_expect_error_and_nothing_
     interrupted.ack.assert_not_called()
     broker.publish_channel.default_exchange.publish.assert_not_called()
     broker.connection.__aexit__.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_async_register_subscriber_retry_expect_declared_attempts_for_that_subscriber(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """선언한 retry의 횟수는 그 subscriber에만 적용된다."""
+    consumer = AsyncRabbitMQEventConsumer(make_config(monkeypatch))
+    attempts: list[int] = []
+
+    async def flaky(event: SampleIntegrationEvent) -> None:
+        attempts.append(EventDeliveryContext.current().attempt)
+        if len(attempts) == 1:
+            raise RuntimeError("not yet")
+
+    consumer.register(
+        SampleIntegrationEvent,
+        flaky,
+        subscriber="billing",
+        handler_name="flaky",
+        retry=RetryPolicy(max_attempts=2),
+    )
+    broker = await start(consumer)
+
+    message = await broker.deliver("SampleIntegrationEvent.billing")
+
+    assert attempts == [1, 2]
+    message.ack.assert_awaited_once_with()
+    broker.publish_channel.default_exchange.publish.assert_not_called()
+
+
+def test_async_register_subscriber_retry_other_mode_expect_unsupported_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """consumer와 다른 retry mode를 선언하면 등록에서 실패한다."""
+    consumer = AsyncRabbitMQEventConsumer(
+        make_config(monkeypatch, RETRY__MODE="delayed")
+    )
+
+    with pytest.raises(SubscriberRetryModeUnsupportedError) as raised:
+        consumer.register(
+            SampleIntegrationEvent,
+            AsyncMock(),
+            retry=RetryPolicy(mode=RetryMode.BLOCKING),
+        )
+
+    assert raised.value.subscriber is None

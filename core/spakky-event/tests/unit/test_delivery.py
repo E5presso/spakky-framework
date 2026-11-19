@@ -27,10 +27,9 @@ from spakky.event.delivery import (
     EventRouting,
     EventSubscriptions,
     HandlerFailure,
-    RetryMode,
-    RetryPolicy,
     SubscriptionDelivery,
 )
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.error import (
     AbstractNonRetryableEventError,
     EventDeferredError,
@@ -39,6 +38,7 @@ from spakky.event.error import (
     SubscriptionNotFoundError,
 )
 from spakky.event.subscription import (
+    ConflictingSubscriberRetryPolicyError,
     DuplicateEventHandlerNameError,
     InvalidSubscriberNameError,
     SubscriberNames,
@@ -487,3 +487,220 @@ async def test_delivery_pending_handler_missing_expect_dead_letter_not_completed
         assert failure.handler == "renamed"
         assert failure.exception_type == "EventHandlerNotRegisteredError"
         assert failure.retryable is False
+
+
+@immutable
+class OrderShipped(AbstractIntegrationEvent):
+    """An order was shipped."""
+
+    order: str
+
+
+def test_event_subscriptions_without_retry_expect_consumer_policy() -> None:
+    """retry를 선언하지 않으면 모든 subscriber가 consumer의 policy를 쓴다."""
+    recorder = Recorder()
+    base = RetryPolicy(max_attempts=3)
+    subscriptions = EventSubscriptions(base)
+
+    billing = subscriptions.register(OrderPlaced, recorder.sync("a"), "billing")
+
+    assert billing.policy == base
+    assert subscriptions.policy_of("billing") == base
+
+
+def test_event_subscriptions_declared_retry_expect_fields_over_consumer_policy() -> (
+    None
+):
+    """선언한 retry는 명시한 필드만 consumer의 policy 위에 덮는다."""
+    recorder = Recorder()
+    subscriptions = EventSubscriptions(RetryPolicy(max_attempts=3))
+
+    billing = subscriptions.register(
+        OrderPlaced,
+        recorder.sync("a"),
+        "billing",
+        retry=RetryPolicy(mode=RetryMode.DELAYED),
+    )
+    unnamed = subscriptions.register(OrderPlaced, recorder.sync("b"))
+
+    assert billing.policy == RetryPolicy(max_attempts=3, mode=RetryMode.DELAYED)
+    assert unnamed.policy == RetryPolicy(max_attempts=3)
+
+
+def test_event_subscriptions_late_declaration_expect_earlier_subscriptions_follow() -> (
+    None
+):
+    """retry 없는 클래스가 먼저 등록돼도 그 subscriber의 선언을 따른다."""
+    recorder = Recorder()
+    subscriptions = EventSubscriptions(RetryPolicy())
+    placed = subscriptions.register(OrderPlaced, recorder.sync("a"), "billing")
+    other = subscriptions.register(OrderPlaced, recorder.sync("c"), "shipping")
+
+    shipped = subscriptions.register(
+        OrderShipped,
+        recorder.sync("b"),
+        "billing",
+        retry=RetryPolicy(max_attempts=4),
+    )
+
+    assert placed.policy.max_attempts == 4
+    assert shipped.policy.max_attempts == 4
+    assert other.policy.max_attempts == 1
+
+
+def test_event_subscriptions_same_declaration_twice_expect_accepted() -> None:
+    """같은 subscriber의 두 클래스가 같은 retry를 선언하면 받아들인다."""
+    recorder = Recorder()
+    subscriptions = EventSubscriptions(RetryPolicy())
+    subscriptions.register(
+        OrderPlaced, recorder.sync("a"), "billing", "a", RetryPolicy(max_attempts=2)
+    )
+
+    delivery = subscriptions.register(
+        OrderPlaced, recorder.sync("b"), "billing", "b", RetryPolicy(max_attempts=2)
+    )
+
+    assert delivery.policy.max_attempts == 2
+
+
+def test_event_subscriptions_conflicting_declaration_expect_error() -> None:
+    """같은 subscriber의 클래스들이 서로 다른 retry를 선언하면 등록에서 실패한다."""
+    recorder = Recorder()
+    subscriptions = EventSubscriptions(RetryPolicy())
+    subscriptions.register(
+        OrderPlaced, recorder.sync("a"), "billing", retry=RetryPolicy(max_attempts=2)
+    )
+
+    with pytest.raises(ConflictingSubscriberRetryPolicyError) as caught:
+        subscriptions.register(
+            OrderShipped,
+            recorder.sync("b"),
+            "billing",
+            retry=RetryPolicy(max_attempts=3),
+        )
+    assert caught.value.subscriber == "billing"
+
+
+def test_event_subscriptions_resolver_expect_used_for_every_subscriber() -> None:
+    """resolver를 주면 subscriber와 선언을 받아 policy를 정한다."""
+    recorder = Recorder()
+    seen: list[tuple[str | None, RetryPolicy | None]] = []
+
+    def resolve(subscriber: str | None, declared: RetryPolicy | None) -> RetryPolicy:
+        seen.append((subscriber, declared))
+        return RetryPolicy(max_attempts=9)
+
+    subscriptions = EventSubscriptions(RetryPolicy(), resolve)
+    declared = RetryPolicy(mode=RetryMode.DELAYED)
+
+    delivery = subscriptions.register(
+        OrderPlaced, recorder.sync("a"), "billing", retry=declared
+    )
+
+    assert delivery.policy.max_attempts == 9
+    assert ("billing", declared) in seen
+
+
+def test_event_subscriptions_invalid_subscriber_with_retry_expect_name_error() -> None:
+    """쓸 수 없는 subscriber 이름이면 retry를 기록하기 전에 거절한다."""
+    recorder = Recorder()
+    subscriptions = EventSubscriptions(RetryPolicy())
+
+    with pytest.raises(InvalidSubscriberNameError):
+        subscriptions.register(
+            OrderPlaced, recorder.sync("a"), "dlq", retry=RetryPolicy(max_attempts=2)
+        )
+    assert subscriptions.policy_of("dlq") == RetryPolicy()
+
+
+def test_async_event_subscriptions_declared_retry_expect_fields_over_consumer_policy() -> (
+    None
+):
+    """비동기 구독도 선언한 필드만 consumer의 policy 위에 덮는다."""
+    recorder = Recorder()
+    subscriptions = AsyncEventSubscriptions(RetryPolicy(max_attempts=3))
+
+    billing = subscriptions.register(
+        OrderPlaced,
+        recorder.asynchronous("a"),
+        "billing",
+        retry=RetryPolicy(mode=RetryMode.DELAYED),
+    )
+
+    assert billing.policy == RetryPolicy(max_attempts=3, mode=RetryMode.DELAYED)
+    assert subscriptions.policy_of(None) == RetryPolicy(max_attempts=3)
+
+
+def test_async_event_subscriptions_late_declaration_expect_earlier_subscriptions_follow() -> (
+    None
+):
+    """비동기 구독도 먼저 등록된 retry 없는 구독이 나중 선언을 따른다."""
+    recorder = Recorder()
+    subscriptions = AsyncEventSubscriptions(RetryPolicy())
+    placed = subscriptions.register(OrderPlaced, recorder.asynchronous("a"), "billing")
+    other = subscriptions.register(OrderPlaced, recorder.asynchronous("c"), "shipping")
+
+    subscriptions.register(
+        OrderShipped,
+        recorder.asynchronous("b"),
+        "billing",
+        retry=RetryPolicy(max_attempts=4),
+    )
+
+    assert placed.policy.max_attempts == 4
+    assert other.policy.max_attempts == 1
+
+
+def test_async_event_subscriptions_same_declaration_twice_expect_accepted() -> None:
+    """비동기 구독도 같은 선언의 반복은 받아들인다."""
+    recorder = Recorder()
+    subscriptions = AsyncEventSubscriptions(RetryPolicy())
+    subscriptions.register(
+        OrderPlaced,
+        recorder.asynchronous("a"),
+        "billing",
+        "a",
+        RetryPolicy(max_attempts=2),
+    )
+
+    delivery = subscriptions.register(
+        OrderPlaced,
+        recorder.asynchronous("b"),
+        "billing",
+        "b",
+        RetryPolicy(max_attempts=2),
+    )
+
+    assert delivery.policy.max_attempts == 2
+
+
+def test_async_event_subscriptions_conflicting_declaration_expect_error() -> None:
+    """비동기 구독도 서로 다른 선언이면 등록에서 실패한다."""
+    recorder = Recorder()
+    subscriptions = AsyncEventSubscriptions(RetryPolicy())
+    subscriptions.register(
+        OrderPlaced,
+        recorder.asynchronous("a"),
+        "billing",
+        retry=RetryPolicy(mode=RetryMode.DELAYED),
+    )
+
+    with pytest.raises(ConflictingSubscriberRetryPolicyError):
+        subscriptions.register(
+            OrderPlaced,
+            recorder.asynchronous("b"),
+            "billing",
+            retry=RetryPolicy(mode=RetryMode.BLOCKING),
+        )
+
+
+def test_async_event_subscriptions_resolver_expect_used() -> None:
+    """비동기 구독도 resolver가 policy를 정한다."""
+    recorder = Recorder()
+    subscriptions = AsyncEventSubscriptions(
+        RetryPolicy(), lambda subscriber, declared: RetryPolicy(max_attempts=9)
+    )
+
+    delivery = subscriptions.register(OrderPlaced, recorder.asynchronous("a"))
+
+    assert delivery.policy.max_attempts == 9

@@ -5,7 +5,7 @@ from os import environ
 from typing import Any
 
 import pytest
-from spakky.event.delivery import RetryPolicy
+from spakky.event.retry import RetryPolicy
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
 from spakky.plugins.kafka.common.constants import SPAKKY_KAFKA_CONFIG_ENV_PREFIX

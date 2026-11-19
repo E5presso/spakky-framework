@@ -254,6 +254,23 @@ export SPAKKY_KAFKA__RETRY__INITIAL_INTERVAL=1.0
 export SPAKKY_KAFKA__RETRY__MODE=delayed
 ```
 
+구독자마다 재시도를 다르게 하려면 `@EventHandler(retry=...)`로 선언합니다. 선언에서 **명시한 필드**(pydantic `model_fields_set`)만 구현체 설정의 `retry` 위에 덮습니다. 그래서 코드에는 순서 요구만 적고, 횟수와 간격은 배포 설정에 둘 수 있습니다.
+
+```python
+from spakky.event.retry import RetryMode, RetryPolicy
+
+
+@EventHandler(subscriber="search-index", retry=RetryPolicy(mode=RetryMode.DELAYED))
+class SearchIndexHandler:
+    @on_event(OrderPlaced)
+    async def index(self, event: OrderPlaced) -> None: ...
+```
+
+- 구독자 하나의 정책은 그 구독자의 모든 이벤트에 같습니다. 같은 구독자 이름의 클래스 가운데 `retry`를 주지 않은 클래스는 선언된 값을 따르고, 서로 다른 값을 선언하면 등록할 때 `ConflictingSubscriberRetryPolicyError`로 실패합니다.
+- Kafka는 배포 설정 `SPAKKY_KAFKA__SUBSCRIBER_RETRY`(JSON)로 구독자마다 한 번 더 덮을 수 있습니다([Kafka 가이드](kafka.md#구독자마다-다른-재시도)).
+- 메모리 구현체는 구독자마다 `mode`까지 따로 적용합니다. RabbitMQ는 횟수와 간격만 따로 적용하고, 설정과 다른 `mode`는 등록에서 거부합니다([RabbitMQ 가이드](rabbitmq.md#재시도)).
+- 아무것도 선언하지 않으면 모든 구독자가 설정의 `retry`를 씁니다.
+
 재시도하지 않는 경우는 다음과 같습니다.
 
 - `AbstractNonRetryableEventError`를 상속한 예외: 남은 횟수와 상관없이 바로 dead-letter로 갑니다.

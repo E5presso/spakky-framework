@@ -20,7 +20,7 @@ from spakky.data.persistency.transaction import (
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 from unittest.mock import AsyncMock, Mock
 
-from spakky.event.delivery import RetryMode
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.error import (
     AbstractNonRetryableEventError,
     EventDeferredError,
@@ -682,3 +682,109 @@ def test_redrive_partial_failure_expect_dead_letter_narrowed_to_failed_handlers(
     assert retrying.redrive(OrderPlaced).failed == 1
     (entry,) = broker.dead_letters("OrderPlaced")
     assert entry.dead_letter.failures[0].exception_message == "again"
+
+
+def test_sync_subscriber_retry_mode_expect_applied_per_subscriber(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """subscriber마다 선언한 재시도 mode가 그 subscriber에만 적용된다."""
+    broker = InMemoryEventBroker()
+    consumer = InMemoryEventConsumer(
+        broker, config(monkeypatch, max_attempts=2, interval=5.0)
+    )
+    calls: dict[str, list[str]] = {"ordered": [], "relaxed": []}
+
+    def handler(subscriber: str):
+        def handle(event: OrderPlaced) -> None:
+            calls[subscriber].append(event.order)
+            if calls[subscriber] == ["o-1"]:
+                raise RuntimeError("first attempt fails")
+
+        return handle
+
+    consumer.register(OrderPlaced, handler("ordered"), subscriber="ordered")
+    consumer.register(
+        OrderPlaced,
+        handler("relaxed"),
+        subscriber="relaxed",
+        retry=RetryPolicy(mode=RetryMode.DELAYED),
+    )
+    publish(broker, OrderPlaced(order="o-1"))
+    publish(broker, OrderPlaced(order="o-2"))
+
+    assert consumer.drain() == 6
+    assert calls["ordered"] == ["o-1", "o-1", "o-2"]
+    assert calls["relaxed"] == ["o-1", "o-2", "o-1"]
+
+
+async def test_async_subscriber_retry_mode_expect_applied_per_subscriber(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """비동기 소비자도 subscriber마다 선언한 재시도 mode를 따로 적용한다."""
+    broker = InMemoryEventBroker()
+    consumer = AsyncInMemoryEventConsumer(
+        broker,
+        config(monkeypatch, max_attempts=2, interval=5.0, mode=RetryMode.DELAYED),
+    )
+    calls: dict[str, list[str]] = {"ordered": [], "relaxed": []}
+
+    def handler(subscriber: str):
+        async def handle(event: OrderPlaced) -> None:
+            calls[subscriber].append(event.order)
+            if calls[subscriber] == ["o-1"]:
+                raise RuntimeError("first attempt fails")
+
+        return handle
+
+    consumer.register(
+        OrderPlaced,
+        handler("ordered"),
+        subscriber="ordered",
+        retry=RetryPolicy(mode=RetryMode.BLOCKING),
+    )
+    consumer.register(OrderPlaced, handler("relaxed"), subscriber="relaxed")
+    publish(broker, OrderPlaced(order="o-1"))
+    publish(broker, OrderPlaced(order="o-2"))
+
+    assert await consumer.drain_async() == 6
+    assert calls["ordered"] == ["o-1", "o-1", "o-2"]
+    assert calls["relaxed"] == ["o-1", "o-2", "o-1"]
+
+
+def test_event_handler_retry_expect_subscriber_retried_by_declared_policy(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """@EventHandler(retry=...)의 횟수로 그 subscriber만 다시 시도한다."""
+    config(monkeypatch)
+    calls: list[str] = []
+
+    @EventHandler(subscriber="billing", retry=RetryPolicy(max_attempts=3))
+    class Billing:
+        @on_event(OrderPlaced)
+        def charge(self, event: OrderPlaced) -> None:
+            calls.append("billing")
+            if calls.count("billing") < 3:
+                raise RuntimeError("fails twice")
+
+    @EventHandler(subscriber="shipping")
+    class Shipping:
+        @on_event(OrderPlaced)
+        def reserve(self, event: OrderPlaced) -> None:
+            calls.append("shipping")
+            raise RuntimeError("always fails")
+
+    app = build_app(Billing, Shipping)
+    app.start()
+    try:
+        broker = app.container.get(InMemoryEventBroker)
+        app.container.get(IEventPublisher).publish(OrderPlaced(order="o-1"))
+        broker.drain()
+        consumer = app.container.get(InMemoryEventConsumer)
+        billing_redrive = consumer.redrive(OrderPlaced, subscriber="billing")
+        shipping_redrive = consumer.redrive(OrderPlaced, subscriber="shipping")
+    finally:
+        app.stop()
+
+    assert calls.count("billing") == 3
+    assert billing_redrive == RedriveResult(succeeded=0, failed=0)
+    assert shipping_redrive == RedriveResult(succeeded=0, failed=1)

@@ -9,7 +9,7 @@ from typing import ClassVar
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
-from spakky.event.delivery import RetryPolicy
+from spakky.event.retry import RetryPolicy
 
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
 

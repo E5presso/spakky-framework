@@ -37,6 +37,7 @@ from spakky.event.event_consumer import (
     IAsyncEventConsumer,
     IEventConsumer,
 )
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
@@ -709,12 +710,13 @@ def test_kafka_post_processor_with_tracing_but_no_set_propagator_expect_skipped(
     assert not hasattr(mock_async_consumer, "set_propagator")
 
 
-def test_kafka_post_processor_named_subscriber_expect_subscriber_and_handler_name_passed() -> (
+def test_kafka_post_processor_named_subscriber_expect_subscriber_handler_name_and_retry_passed() -> (
     None
 ):
-    """구독자 이름과 핸들러 이름이 consumer 등록에 그대로 전달된다."""
+    """구독자 이름, 핸들러 이름, 선언한 retry가 consumer 등록에 그대로 전달된다."""
+    retry = RetryPolicy(mode=RetryMode.DELAYED)
 
-    @EventHandler(subscriber="billing")
+    @EventHandler(subscriber="billing", retry=retry)
     class BillingHandler:
         @on_event(SampleIntegrationEvent)
         def charge(self, event: SampleIntegrationEvent) -> None:
@@ -741,13 +743,15 @@ def test_kafka_post_processor_named_subscriber_expect_subscriber_and_handler_nam
     assert mock_consumer.register.call_args.kwargs == {
         "subscriber": "billing",
         "handler_name": (
-            "test_kafka_post_processor_named_subscriber_expect_subscriber_and_handler_name_passed"
+            "test_kafka_post_processor_named_subscriber_expect_subscriber_handler_name_and_retry_passed"
             ".<locals>.BillingHandler.charge"
         ),
+        "retry": retry,
     }
     assert mock_async_consumer.register.call_args.kwargs == {
         "subscriber": "billing",
         "handler_name": "audit-trail",
+        "retry": retry,
     }
 
 

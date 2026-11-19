@@ -13,9 +13,8 @@ from spakky.event.delivery import (
     DeliveryState,
     EventDeliveryContext,
     HandlerFailure,
-    RetryMode,
-    RetryPolicy,
 )
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.idempotency import (
     IAsyncProcessedEventStore,
     Idempotent,
@@ -26,6 +25,7 @@ from spakky.event.idempotency import (
 )
 from spakky.event.redrive import IAsyncEventRedriver, IEventRedriver, RedriveResult
 from spakky.event.subscription import (
+    ConflictingSubscriberRetryPolicyError,
     DuplicateEventHandlerNameError,
     InvalidSubscriberNameError,
     MixedSubscriptionModeError,
@@ -145,6 +145,7 @@ __all__ = [
     "DuplicateEventHandlerNameError",
     "InvalidSubscriberNameError",
     "MixedSubscriptionModeError",
+    "ConflictingSubscriberRetryPolicyError",
 ]
 
 from spakky.core.application.plugin import Plugin

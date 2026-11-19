@@ -29,9 +29,9 @@ from spakky.event.delivery import (
     EventRouting,
     EventSubscriptions,
     HandlerFailure,
-    RetryMode,
     SubscriptionDelivery,
 )
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
@@ -110,6 +110,28 @@ class InMemorySettlement:
         )
 
     @staticmethod
+    def next_due_in(
+        broker: InMemoryEventBroker,
+        queues: list[tuple[SubscriptionKey, RetryMode]],
+        now: float,
+    ) -> float | None:
+        """Return seconds until a message of any queue becomes deliverable.
+
+        Each subscriber has its own retry mode, so a blocking queue only offers
+        its oldest message while a delayed queue offers every message.
+
+        Returns:
+            None when every given queue is empty.
+        """
+        waits = [
+            wait
+            for key, mode in queues
+            if (wait := broker.next_due_in([key], now, mode is RetryMode.BLOCKING))
+            is not None
+        ]
+        return min(waits) if waits else None
+
+    @staticmethod
     def apply(
         broker: InMemoryEventBroker,
         key: SubscriptionKey,
@@ -176,10 +198,11 @@ class InMemoryEventConsumer(
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register a handler and bind its subscriber queue to the event."""
         delivery = self._subscriptions.register(
-            event, handler, subscriber, handler_name
+            event, handler, subscriber, handler_name, retry
         )
         if event not in self._adapters:
             # TypeAdapter is invariant; the registry is keyed by the concrete type.
@@ -252,13 +275,14 @@ class InMemoryEventConsumer(
 
     def _drain(self, wait: Callable[[float], bool]) -> int:
         """Deliver until the queues are empty or `wait` reports a stop request."""
-        head_only = self._config.retry.mode is RetryMode.BLOCKING
         delivered = 0
         while True:
             progressed = False
             for delivery in self._subscriptions:
                 key = self._key(delivery)
-                message = self._broker.take(key, monotonic(), head_only)
+                message = self._broker.take(
+                    key, monotonic(), delivery.policy.mode is RetryMode.BLOCKING
+                )
                 if message is None:
                     continue
                 try:
@@ -269,7 +293,7 @@ class InMemoryEventConsumer(
                         self._broker.requeue_front(key, message)
                         raise
                     InMemorySettlement.apply(
-                        self._broker, key, message, outcome, self._config.retry.mode
+                        self._broker, key, message, outcome, delivery.policy.mode
                     )
                 finally:
                     # 재투입까지 끝난 뒤에야 처리 중 표시를 푼다.
@@ -278,10 +302,13 @@ class InMemoryEventConsumer(
                 progressed = True
             if progressed:
                 continue
-            due_in = self._broker.next_due_in(
-                [self._key(delivery) for delivery in self._subscriptions],
+            due_in = InMemorySettlement.next_due_in(
+                self._broker,
+                [
+                    (self._key(delivery), delivery.policy.mode)
+                    for delivery in self._subscriptions
+                ],
                 monotonic(),
-                head_only,
             )
             if due_in is None or wait(due_in):
                 return delivered
@@ -330,10 +357,11 @@ class AsyncInMemoryEventConsumer(
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register an async handler and bind its subscriber queue to the event."""
         delivery = self._subscriptions.register(
-            event, handler, subscriber, handler_name
+            event, handler, subscriber, handler_name, retry
         )
         if event not in self._adapters:
             # TypeAdapter is invariant; the registry is keyed by the concrete type.
@@ -413,13 +441,14 @@ class AsyncInMemoryEventConsumer(
 
     async def _drain_async(self, wait: Callable[[float], Awaitable[bool]]) -> int:
         """Deliver until the queues are empty or `wait` reports a stop request."""
-        head_only = self._config.retry.mode is RetryMode.BLOCKING
         delivered = 0
         while True:
             progressed = False
             for delivery in self._subscriptions:
                 key = self._key(delivery)
-                message = self._broker.take(key, monotonic(), head_only)
+                message = self._broker.take(
+                    key, monotonic(), delivery.policy.mode is RetryMode.BLOCKING
+                )
                 if message is None:
                     continue
                 try:
@@ -430,7 +459,7 @@ class AsyncInMemoryEventConsumer(
                         self._broker.requeue_front(key, message)
                         raise
                     InMemorySettlement.apply(
-                        self._broker, key, message, outcome, self._config.retry.mode
+                        self._broker, key, message, outcome, delivery.policy.mode
                     )
                 finally:
                     # 재투입까지 끝난 뒤에야 처리 중 표시를 푼다.
@@ -439,10 +468,13 @@ class AsyncInMemoryEventConsumer(
                 progressed = True
             if progressed:
                 continue
-            due_in = self._broker.next_due_in(
-                [self._key(delivery) for delivery in self._subscriptions],
+            due_in = InMemorySettlement.next_due_in(
+                self._broker,
+                [
+                    (self._key(delivery), delivery.policy.mode)
+                    for delivery in self._subscriptions
+                ],
                 monotonic(),
-                head_only,
             )
             if due_in is None or await wait(due_in):
                 return delivered

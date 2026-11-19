@@ -50,7 +50,13 @@ from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
 )
+
+# RetryMode and RetryPolicy lived here before spakky.event.retry; the redundant
+# aliases keep ``from spakky.event.delivery import RetryMode`` working.
+from spakky.event.retry import RetryMode as RetryMode
+from spakky.event.retry import RetryPolicy as RetryPolicy
 from spakky.event.subscription import (
+    ConflictingSubscriberRetryPolicyError,
     DuplicateEventHandlerNameError,
     HandlerName,
     SubscriberName,
@@ -59,53 +65,16 @@ from spakky.event.subscription import (
 
 logger = getLogger(__name__)
 
+type RetryPolicyResolver = Callable[
+    [SubscriberName | None, RetryPolicy | None], RetryPolicy
+]
+"""Turns a subscriber and the retry its handlers declared into the policy it uses.
+
+The declared retry is None when no handler class of the subscriber declared one.
+"""
+
 type DeliveryHeaders = Mapping[str, str]
 """String-valued message headers as every broker adapter exposes them."""
-
-
-class RetryMode(StrEnum):
-    """How a failed delivery waits for its next attempt."""
-
-    BLOCKING = "blocking"
-    """Keep the message in place; later messages wait, so order is preserved."""
-
-    DELAYED = "delayed"
-    """Set the message aside and continue; throughput is kept, order is not."""
-
-
-class RetryPolicy(BaseModel):
-    """Retry limits and spacing applied to each subscriber independently."""
-
-    model_config = ConfigDict(frozen=True)
-
-    max_attempts: int = Field(default=1, ge=1)
-    """Total delivery attempts including the first one."""
-
-    initial_interval: float = Field(default=0.0, ge=0)
-    """Seconds to wait before the second attempt."""
-
-    multiplier: float = Field(default=2.0, ge=1)
-    """Growth factor applied to the interval after every failed attempt."""
-
-    max_interval: float = Field(default=60.0, ge=0)
-    """Upper bound for the wait between two attempts, in seconds."""
-
-    mode: RetryMode = RetryMode.BLOCKING
-    """Whether a waiting retry blocks later messages of the same stream."""
-
-    def delay_after(self, attempt: int) -> float:
-        """Return the wait that follows a failed attempt.
-
-        Args:
-            attempt: 1-based number of the attempt that just failed.
-
-        Returns:
-            Seconds to wait before the next attempt.
-        """
-        delay = min(self.initial_interval, self.max_interval)
-        for _ in range(attempt - 1):
-            delay = min(delay * self.multiplier, self.max_interval)
-        return delay
 
 
 class DeliveryHeader(StrEnum):
@@ -638,16 +607,66 @@ class AsyncSubscriptionDelivery:
 
 
 class EventSubscriptions:
-    """Sync subscriptions of one consumer, keyed by subscriber and event type."""
+    """Sync subscriptions of one consumer, keyed by subscriber and event type.
+
+    Every subscription of one subscriber shares that subscriber's retry policy,
+    because one worker serves all of its events.
+    """
 
     policy: RetryPolicy
+    """Consumer-wide retry every subscriber starts from."""
+
+    _resolver: RetryPolicyResolver
+    _declared: dict[SubscriberName | None, RetryPolicy]
+    """Retry each subscriber's handler classes declared; absent when none did."""
+
     _deliveries: dict[
         tuple[SubscriberName | None, type[AbstractEvent]], SubscriptionDelivery
     ]
 
-    def __init__(self, policy: RetryPolicy) -> None:
+    def __init__(
+        self, policy: RetryPolicy, resolver: RetryPolicyResolver | None = None
+    ) -> None:
+        """Create an empty registry.
+
+        Args:
+            policy: Consumer-wide retry every subscriber starts from.
+            resolver: Turns a subscriber and its declared retry into the policy
+                it uses. None overlays the declared retry on `policy`.
+        """
         self.policy = policy
+        self._resolver = resolver if resolver is not None else self._overlay_declared
+        self._declared = {}
         self._deliveries = {}
+
+    def _overlay_declared(
+        self, subscriber: SubscriberName | None, declared: RetryPolicy | None
+    ) -> RetryPolicy:
+        """Default resolver: the declared fields over the consumer-wide policy."""
+        return self.policy.overlay(declared)
+
+    def policy_of(self, subscriber: SubscriberName | None) -> RetryPolicy:
+        """Return the retry policy `subscriber` uses for every event it reads."""
+        return self._resolver(subscriber, self._declared.get(subscriber))
+
+    def _declare(self, subscriber: SubscriberName | None, retry: RetryPolicy) -> None:
+        """Record the retry a handler class of `subscriber` declared.
+
+        Raises:
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
+        """
+        known = self._declared.get(subscriber)
+        if known is not None:
+            if not known.declares_same(retry):
+                raise ConflictingSubscriberRetryPolicyError(subscriber)
+            return
+        self._declared[subscriber] = retry
+        # 먼저 등록된, retry를 선언하지 않은 클래스의 구독도 새 policy를 따른다.
+        policy = self.policy_of(subscriber)
+        for delivery in self._deliveries.values():
+            if delivery.subscriber == subscriber:
+                delivery.policy = policy
 
     def register(
         self,
@@ -655,6 +674,7 @@ class EventSubscriptions:
         handler: EventHandlerCallback[Any],
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> SubscriptionDelivery:
         """Add a handler to the subscription of `subscriber` for `event`.
 
@@ -664,14 +684,26 @@ class EventSubscriptions:
             subscriber: Subscriber the handler belongs to; None is unnamed.
             handler_name: Stable name inside the subscription. None derives a
                 positional name, which is not stable enough for idempotency.
+            retry: Retry the handler's class declared for its subscriber; None
+                follows whatever the subscriber's other classes declared.
 
         Returns:
             The subscription the handler was added to.
+
+        Raises:
+            InvalidSubscriberNameError: The subscriber name is unusable.
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
         """
+        SubscriberNames.validate(subscriber)
+        if retry is not None:
+            self._declare(subscriber, retry)
         key = (subscriber, event)
         delivery = self._deliveries.get(key)
         if delivery is None:
-            delivery = SubscriptionDelivery(event, subscriber, self.policy)
+            delivery = SubscriptionDelivery(
+                event, subscriber, self.policy_of(subscriber)
+            )
             self._deliveries[key] = delivery
         delivery.add(
             handler_name
@@ -702,16 +734,66 @@ class EventSubscriptions:
 
 
 class AsyncEventSubscriptions:
-    """Async subscriptions of one consumer, keyed by subscriber and event type."""
+    """Async subscriptions of one consumer, keyed by subscriber and event type.
+
+    Every subscription of one subscriber shares that subscriber's retry policy,
+    because one worker serves all of its events.
+    """
 
     policy: RetryPolicy
+    """Consumer-wide retry every subscriber starts from."""
+
+    _resolver: RetryPolicyResolver
+    _declared: dict[SubscriberName | None, RetryPolicy]
+    """Retry each subscriber's handler classes declared; absent when none did."""
+
     _deliveries: dict[
         tuple[SubscriberName | None, type[AbstractEvent]], AsyncSubscriptionDelivery
     ]
 
-    def __init__(self, policy: RetryPolicy) -> None:
+    def __init__(
+        self, policy: RetryPolicy, resolver: RetryPolicyResolver | None = None
+    ) -> None:
+        """Create an empty registry.
+
+        Args:
+            policy: Consumer-wide retry every subscriber starts from.
+            resolver: Turns a subscriber and its declared retry into the policy
+                it uses. None overlays the declared retry on `policy`.
+        """
         self.policy = policy
+        self._resolver = resolver if resolver is not None else self._overlay_declared
+        self._declared = {}
         self._deliveries = {}
+
+    def _overlay_declared(
+        self, subscriber: SubscriberName | None, declared: RetryPolicy | None
+    ) -> RetryPolicy:
+        """Default resolver: the declared fields over the consumer-wide policy."""
+        return self.policy.overlay(declared)
+
+    def policy_of(self, subscriber: SubscriberName | None) -> RetryPolicy:
+        """Return the retry policy `subscriber` uses for every event it reads."""
+        return self._resolver(subscriber, self._declared.get(subscriber))
+
+    def _declare(self, subscriber: SubscriberName | None, retry: RetryPolicy) -> None:
+        """Record the retry a handler class of `subscriber` declared.
+
+        Raises:
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
+        """
+        known = self._declared.get(subscriber)
+        if known is not None:
+            if not known.declares_same(retry):
+                raise ConflictingSubscriberRetryPolicyError(subscriber)
+            return
+        self._declared[subscriber] = retry
+        # 먼저 등록된, retry를 선언하지 않은 클래스의 구독도 새 policy를 따른다.
+        policy = self.policy_of(subscriber)
+        for delivery in self._deliveries.values():
+            if delivery.subscriber == subscriber:
+                delivery.policy = policy
 
     def register(
         self,
@@ -719,6 +801,7 @@ class AsyncEventSubscriptions:
         handler: AsyncEventHandlerCallback[Any],
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> AsyncSubscriptionDelivery:
         """Add a handler to the subscription of `subscriber` for `event`.
 
@@ -728,14 +811,26 @@ class AsyncEventSubscriptions:
             subscriber: Subscriber the handler belongs to; None is unnamed.
             handler_name: Stable name inside the subscription. None derives a
                 positional name, which is not stable enough for idempotency.
+            retry: Retry the handler's class declared for its subscriber; None
+                follows whatever the subscriber's other classes declared.
 
         Returns:
             The subscription the handler was added to.
+
+        Raises:
+            InvalidSubscriberNameError: The subscriber name is unusable.
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
         """
+        SubscriberNames.validate(subscriber)
+        if retry is not None:
+            self._declare(subscriber, retry)
         key = (subscriber, event)
         delivery = self._deliveries.get(key)
         if delivery is None:
-            delivery = AsyncSubscriptionDelivery(event, subscriber, self.policy)
+            delivery = AsyncSubscriptionDelivery(
+                event, subscriber, self.policy_of(subscriber)
+            )
             self._deliveries[key] = delivery
         delivery.add(
             handler_name

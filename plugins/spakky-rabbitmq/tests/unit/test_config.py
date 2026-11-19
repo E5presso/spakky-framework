@@ -9,7 +9,7 @@ from typing import Any
 from collections.abc import Generator
 
 import pytest
-from spakky.event.delivery import RetryMode, RetryPolicy
+from spakky.event.retry import RetryMode, RetryPolicy
 
 from spakky.plugins.rabbitmq.common.config import (
     RabbitMQAuthFailureAction,

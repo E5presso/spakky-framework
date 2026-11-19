@@ -26,9 +26,9 @@ from spakky.event.delivery import (
     DeliveryCompleted,
     DeliveryDeadLettered,
     DeliveryRetry,
-    RetryPolicy,
     SubscriptionDelivery,
 )
+from spakky.event.retry import RetryPolicy
 from spakky.event.error import EventDeliveryContextUnavailableError
 from spakky.event.idempotency import (
     IAsyncProcessedEventStore,

@@ -38,3 +38,20 @@ class RabbitMQAuthRequeueError(AuthRequirementProviderUnavailableError):
     """
 
     message = "Auth failure policy requeues the RabbitMQ message"
+
+
+class SubscriberRetryModeUnsupportedError(AbstractSpakkyRabbitMQError):
+    """Raised at startup when a subscriber needs a retry mode of its own.
+
+    A RabbitMQ consumer declares its queues and its prefetch limit for one
+    retry mode. A subscriber whose resolved retry mode differs from the
+    consumer's `retry.mode` cannot get the order guarantee it declared, so the
+    registration fails instead of silently using the consumer's mode.
+    """
+
+    message = "RabbitMQ consumers apply one retry mode to every subscriber"
+    subscriber: SubscriberName | None
+
+    def __init__(self, subscriber: SubscriberName | None) -> None:
+        self.subscriber = subscriber
+        super().__init__()

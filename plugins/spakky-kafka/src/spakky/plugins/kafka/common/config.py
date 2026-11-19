@@ -8,12 +8,17 @@ from enum import StrEnum
 from ssl import SSLContext, create_default_context
 from typing import Annotated, ClassVar, Self
 
-from pydantic import PositiveFloat, StringConstraints, model_validator
+from pydantic import PositiveFloat, StringConstraints, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
-from spakky.event.delivery import RetryPolicy
-from spakky.event.subscription import SubscriberName
+from spakky.event.retry import RetryPolicy
+from spakky.event.subscription import (
+    DEFAULT_SUBSCRIBER_KEY,
+    InvalidSubscriberNameError,
+    SubscriberName,
+    SubscriberNames,
+)
 
 from spakky.plugins.kafka.common.constants import (
     REDRIVE_GROUP_SUFFIX,
@@ -151,19 +156,48 @@ class KafkaConnectionConfig(BaseSettings):
     retry_topic_suffix: Annotated[str, StringConstraints(min_length=1)] = ".retry"
     """Suffix appended to build the topic that holds messages waiting for a retry.
 
-    Only used when `retry.mode` is `delayed`. It must differ from
+    Only used by subscribers whose retry mode is `delayed`. It must differ from
     `dead_letter_topic_suffix`, otherwise a waiting retry and a dead letter
     would share one topic.
     """
 
     retry: RetryPolicy = RetryPolicy()
-    """Retry limits, spacing and mode applied to every subscriber independently.
+    """Retry limits, spacing and mode every subscriber starts from.
 
-    `max_attempts` counts the first delivery, so the default of 1 dead-letters a
-    failed message without retrying. A retry runs only the handlers that have
-    not succeeded yet. Payloads that cannot be deserialized and failures derived
-    from `AbstractNonRetryableEventError` are dead-lettered without retrying.
+    Each subscriber applies it independently. `max_attempts` counts the first
+    delivery, so the default of 1 dead-letters a failed message without
+    retrying. A retry runs only the handlers that have not succeeded yet.
+    Payloads that cannot be deserialized and failures derived from
+    `AbstractNonRetryableEventError` are dead-lettered without retrying. See
+    `subscriber_retry_policy` for how one subscriber's policy is resolved.
     """
+
+    subscriber_retry: dict[SubscriberName, RetryPolicy] = {}
+    """Retry each named subscriber gets from deployment settings.
+
+    The key is the subscriber name; the unnamed subscriber's key is "". Only the
+    fields an entry sets explicitly apply. Give it as JSON, e.g.
+    `SPAKKY_KAFKA__SUBSCRIBER_RETRY='{"billing": {"max_attempts": 5}}'`.
+    """
+
+    @field_validator("subscriber_retry")
+    @classmethod
+    def validate_subscriber_retry_keys(
+        cls, value: dict[SubscriberName, RetryPolicy]
+    ) -> dict[SubscriberName, RetryPolicy]:
+        """Reject keys that no subscriber can be named."""
+        for subscriber in value:
+            if subscriber == DEFAULT_SUBSCRIBER_KEY:
+                continue
+            try:
+                SubscriberNames.validate(subscriber)
+            except InvalidSubscriberNameError as error:
+                raise PydanticCustomError(
+                    "subscriber_retry_key",
+                    "subscriber_retry key {subscriber} is not a valid subscriber name",
+                    {"subscriber": subscriber},
+                ) from error
+        return value
 
     dead_letter_delivery_timeout: PositiveFloat = 10.0
     """Seconds to wait for a dead-letter record to reach the broker.
@@ -212,6 +246,25 @@ class KafkaConnectionConfig(BaseSettings):
         if subscriber is None:
             return f"{topic}{self.retry_topic_suffix}"
         return f"{topic}.{subscriber}{self.retry_topic_suffix}"
+
+    def subscriber_retry_policy(
+        self, subscriber: SubscriberName | None, declared: RetryPolicy | None
+    ) -> RetryPolicy:
+        """Return the retry one subscriber uses for every event it reads.
+
+        Each layer overrides only the fields it sets explicitly:
+
+        1. `retry`, the consumer-wide policy;
+        2. `declared`, the retry its `@EventHandler` classes declared;
+        3. `subscriber_retry` of the subscriber, from deployment settings.
+
+        Args:
+            subscriber: Subscriber name; None is the unnamed subscriber.
+            declared: Retry declared in code; None when no class declared one.
+        """
+        return self.retry.overlay(declared).overlay(
+            self.subscriber_retry.get(SubscriberNames.key(subscriber))
+        )
 
     def subscriber_consumer_configuration(
         self, subscriber: SubscriberName | None

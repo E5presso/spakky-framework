@@ -150,6 +150,7 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                     async_endpoint,
                     subscriber=handler.subscriber,
                     handler_name=handler_name,
+                    retry=handler.retry,
                 )
                 continue
 
@@ -183,5 +184,6 @@ class RabbitMQPostProcessor(IPostProcessor, IContainerAware, IApplicationContext
                 endpoint,
                 subscriber=handler.subscriber,
                 handler_name=handler_name,
+                retry=handler.retry,
             )
         return pod
