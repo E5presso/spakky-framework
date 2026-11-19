@@ -682,6 +682,41 @@ async def test_stream_until_shutdown_when_user_scope_cancelled_with_interrupt_ex
     assert journal == ["first", "scope-exited", "closed"]
 
 
+async def test_stream_until_shutdown_when_stream_cleans_up_after_cancel_expect_cleanup_finished() -> (
+    None
+):
+    """취소를 받은 stream이 여러 loop turn에 걸쳐 정리하는 동안 다시 취소하지 않아 정리가 끝까지 실행된다."""
+    shutdown = ServerShutdownSignal()
+    journal: list[str] = []
+
+    async def cleaning() -> AsyncIterator[str]:
+        try:
+            yield "first"
+            await anyio.sleep_forever()
+        finally:
+            try:
+                for _ in range(3):
+                    await sleep(0)
+                journal.append("cleaned")
+            except CancelledError:
+                journal.append("cleanup-cut")
+                raise
+
+    async def consume() -> None:
+        async for item in shutdown.stream_until_shutdown(cleaning()):
+            journal.append(item)
+
+    consumer = create_task(consume())
+    await anyio.wait_all_tasks_blocked()
+    shutdown.trigger()
+
+    with anyio.fail_after(5):
+        await consumer
+
+    assert consumer.cancelling() == 0
+    assert journal == ["first", "cleaned"]
+
+
 def test_trigger_with_waiter_on_closed_loop_expect_other_waiters_released() -> None:
     """닫힌 event loop의 waiter가 있어도 trigger는 오류 없이 나머지 waiter를 깨운다."""
     shutdown = ServerShutdownSignal()

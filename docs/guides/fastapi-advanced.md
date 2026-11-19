@@ -231,10 +231,11 @@ lifespan 종료에서 stream을 멈추라고 알리면 이미 늦습니다.
 - async generator와 coroutine이 돌려준 async iterator는 응답을 보내는 task 안에서 그대로 돕니다.
   그래서 `yield`를 감싸는 anyio cancel scope·task group, `asyncio.timeout`, `current_task()`에 묶인
   session, context variable token이 신호가 없을 때와 같이 동작합니다. 신호가 켜졌을 때 stream이 다음
-  항목을 기다리는 중이면 그 대기만 취소하고, 항목을 보내는 중이면 그 항목을 보낸 뒤 멈춥니다. 대기 취소는
-  stream이 그 대기를 빠져나올 때까지 loop turn마다 다시 요청합니다(anyio가 자기 scope에 하는 방식과
-  같습니다). 그래서 stream 안의 cancel scope가 같은 순간에 취소를 흡수해도 stream이 열린 채 남지 않고,
-  stream이 취소를 잡은 뒤 하는 작업도 끊깁니다. 취소에
+  항목을 기다리는 중이면 그 대기만 취소하고, 항목을 보내는 중이면 그 항목을 보낸 뒤 멈춥니다. 그 순간 다른
+  취소가 이미 task를 깨운 상태면 두 취소가 하나로 합쳐져 stream에 닿으므로, task가 다시 기다리기 시작할 때
+  한 번 더 요청합니다. 그래서 stream 안의 cancel scope가 같은 순간에 자기 취소를 흡수해도 stream이 열린 채
+  남지 않습니다. 따로 닿은 취소는 다시 요청하지 않으므로, stream이 취소를 잡은 뒤 기다리는 정리 작업은
+  끝까지 실행됩니다. 취소에
   항목으로 답하는 stream이면 그 항목은 보내지 않습니다. 이어서 stream을 닫으므로 `finally`가 실행되고,
   응답은 오류 없이 끝납니다. client는 SSE의 `retry`에 따라 다시 연결해 다른 서버에 붙습니다.
 - 기다리던 대기를 끊는 것은 asyncio 취소라서 anyio shield도 막지 못합니다. stream이
