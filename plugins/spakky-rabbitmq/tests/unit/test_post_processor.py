@@ -715,6 +715,6 @@ def test_rabbitmq_post_processor_advised_handler_expect_registered_through_proxy
         # 트랜잭션 aspect가 실제로 핸들러를 감쌌다.
         transaction_double = app.container.get(AbstractTransaction)
         assert isinstance(transaction_double, MagicMock)
-        transaction_double.__enter__.assert_called_once()
+        transaction_double.scope.assert_called_once()
     finally:
         app.stop()

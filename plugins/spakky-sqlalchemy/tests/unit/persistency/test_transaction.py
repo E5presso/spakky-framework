@@ -40,15 +40,16 @@ def test_transaction_session_property_returns_session() -> None:
 
 
 def test_transaction_initialize_calls_open() -> None:
-    """initialize가 session_manager.open()을 호출하는지 검증한다."""
+    """initialize가 새 physical transaction에 묶은 session을 여는지 검증한다."""
     mock_config = MagicMock(spec=SQLAlchemyConnectionConfig)
     mock_config.autocommit = True
     mock_session_manager = MagicMock(spec=SessionManager)
 
     tx = Transaction(mock_config, mock_session_manager)
-    tx.initialize()
+    with tx.scope():
+        transaction = tx.current_frame.transaction
 
-    mock_session_manager.open.assert_called_once()
+    mock_session_manager.open.assert_called_once_with(transaction)
 
 
 def test_transaction_dispose_calls_close() -> None:
@@ -120,16 +121,19 @@ def test_async_transaction_session_property_returns_session() -> None:
 
 @pytest.mark.asyncio
 async def test_async_transaction_initialize_calls_open() -> None:
-    """initialize가 session_manager.open()을 호출하는지 검증한다."""
+    """initialize가 새 physical transaction에 묶은 session을 여는지 검증한다."""
     mock_config = MagicMock(spec=SQLAlchemyConnectionConfig)
     mock_config.autocommit = True
     mock_session_manager = MagicMock(spec=AsyncSessionManager)
     mock_session_manager.open = AsyncMock()
+    mock_session_manager.close = AsyncMock()
+    type(mock_session_manager).session = PropertyMock(return_value=AsyncMock())
 
     tx = AsyncTransaction(mock_config, mock_session_manager)
-    await tx.initialize()
+    async with tx.scope():
+        transaction = tx.current_frame.transaction
 
-    mock_session_manager.open.assert_awaited_once()
+    mock_session_manager.open.assert_awaited_once_with(transaction)
 
 
 @pytest.mark.asyncio
@@ -174,3 +178,39 @@ async def test_async_transaction_rollback_calls_session_rollback() -> None:
     await tx.rollback()
 
     mock_session.rollback.assert_awaited_once()
+
+
+def test_transaction_joined_scope_expect_session_of_joined_transaction() -> None:
+    """합친 scope는 합친 transaction의 session을 쓰고, 나가면 그 묶음을 푼다."""
+    mock_config = MagicMock(spec=SQLAlchemyConnectionConfig)
+    mock_config.autocommit = True
+    mock_session_manager = MagicMock(spec=SessionManager)
+
+    tx = Transaction(mock_config, mock_session_manager)
+    with tx.scope():
+        outer = tx.current_frame.transaction
+        with tx.scope():
+            mock_session_manager.join.assert_called_once_with(outer)
+        mock_session_manager.leave.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_async_transaction_joined_scope_expect_session_of_joined_transaction() -> (
+    None
+):
+    """비동기에서도 합친 scope는 합친 transaction의 session을 쓰고, 나가면 묶음을 푼다."""
+    mock_config = MagicMock(spec=SQLAlchemyConnectionConfig)
+    mock_config.autocommit = True
+    mock_session_manager = MagicMock(spec=AsyncSessionManager)
+    mock_session_manager.open = AsyncMock()
+    mock_session_manager.join = AsyncMock()
+    mock_session_manager.leave = AsyncMock()
+    mock_session_manager.close = AsyncMock()
+    type(mock_session_manager).session = PropertyMock(return_value=AsyncMock())
+
+    tx = AsyncTransaction(mock_config, mock_session_manager)
+    async with tx.scope():
+        outer = tx.current_frame.transaction
+        async with tx.scope():
+            mock_session_manager.join.assert_awaited_once_with(outer)
+        mock_session_manager.leave.assert_awaited_once_with()

@@ -32,12 +32,22 @@ class Transaction(AbstractTransaction):
 
     @override
     def initialize(self) -> None:
-        """Open a new session for this transaction scope."""
-        self._session_manager.open()
+        """Open a new session bound to the new physical transaction."""
+        self._session_manager.open(self.current_frame.transaction)
+
+    @override
+    def join(self) -> None:
+        """Use the session of the joined physical transaction."""
+        self._session_manager.join(self.current_frame.transaction)
+
+    @override
+    def leave(self) -> None:
+        """Stop using the session of the joined physical transaction."""
+        self._session_manager.leave()
 
     @override
     def dispose(self) -> None:
-        """Close the session after transaction completes."""
+        """Close the top session and return to the one below."""
         self._session_manager.close()
 
     @override
@@ -72,12 +82,22 @@ class AsyncTransaction(AbstractAsyncTransaction):
 
     @override
     async def initialize(self) -> None:
-        """Open a new async session for this transaction scope."""
-        await self._session_manager.open()
+        """Open a new async session bound to the new physical transaction."""
+        await self._session_manager.open(self.current_frame.transaction)
+
+    @override
+    async def join(self) -> None:
+        """Use the async session of the joined physical transaction."""
+        await self._session_manager.join(self.current_frame.transaction)
+
+    @override
+    async def leave(self) -> None:
+        """Stop using the async session of the joined physical transaction."""
+        await self._session_manager.leave()
 
     @override
     async def dispose(self) -> None:
-        """Close the async session after transaction completes."""
+        """Close the top async session and return to the one below."""
         await self._session_manager.close()
 
     @override

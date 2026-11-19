@@ -5,7 +5,7 @@ from typing import Any
 
 from spakky.core.aop.aspect import Aspect, AsyncAspect
 from spakky.core.aop.interfaces.aspect import IAspect, IAsyncAspect
-from spakky.core.aop.pointcut import After, AfterReturning
+from spakky.core.aop.pointcut import AfterReturning
 from spakky.core.pod.annotations.order import Order
 from spakky.data.aspects.transactional import Transactional
 from spakky.data.persistency.aggregate_collector import AggregateCollector
@@ -34,23 +34,21 @@ class AsyncTransactionalEventPublishingAspect(IAsyncAspect):
     @AfterReturning(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
     @override
     async def after_returning_async(self, result: Any) -> None:
-        """Publish domain events from collected aggregates after successful commit."""
+        """Publish domain events of the transactions this call committed.
+
+        A call that joined an outer transaction committed nothing, so it
+        publishes nothing; its events go out once the outermost call commits.
+        """
+        aggregates = self._collector.drain_committed()
         events = {
             event.event_id: event
-            for aggregate in self._collector.all()
+            for aggregate in aggregates
             for event in aggregate.events
         }
-        for aggregate in self._collector.all():
+        for aggregate in aggregates:
             aggregate.clear_events()
-        self._collector.clear()
         for event in events.values():
             await self._publisher.publish(event)
-
-    @After(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
-    @override
-    async def after_async(self) -> None:
-        """Clear the aggregate collector after transaction completion."""
-        self._collector.clear()
 
 
 @Order(0)
@@ -70,20 +68,18 @@ class TransactionalEventPublishingAspect(IAspect):
     @AfterReturning(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
     @override
     def after_returning(self, result: Any) -> None:
-        """Publish domain events from collected aggregates after successful commit."""
+        """Publish domain events of the transactions this call committed.
+
+        A call that joined an outer transaction committed nothing, so it
+        publishes nothing; its events go out once the outermost call commits.
+        """
+        aggregates = self._collector.drain_committed()
         events = {
             event.event_id: event
-            for aggregate in self._collector.all()
+            for aggregate in aggregates
             for event in aggregate.events
         }
-        for aggregate in self._collector.all():
+        for aggregate in aggregates:
             aggregate.clear_events()
-        self._collector.clear()
         for event in events.values():
             self._publisher.publish(event)
-
-    @After(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
-    @override
-    def after(self) -> None:
-        """Clear the aggregate collector after transaction completion."""
-        self._collector.clear()

@@ -8,6 +8,7 @@ import pytest
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.mutability import immutable
 from spakky.core.pod.annotations.pod import Pod
+from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.aspects.transactional import (
     AsyncTransactionalAspect,
     Transactional,
@@ -146,6 +147,7 @@ def sync_context(with_store: bool = True) -> ApplicationContext:
     if with_store:
         context.add(MemoryStore)
     context.add(Billing)
+    context.add(AggregateCollector)
     context.add(TransactionalAspect)
     context.add(IdempotentAspect)
     context.start()
@@ -158,6 +160,7 @@ def async_context(with_store: bool = True) -> ApplicationContext:
     if with_store:
         context.add(AsyncMemoryStore)
     context.add(AsyncBilling)
+    context.add(AggregateCollector)
     context.add(AsyncTransactionalAspect)
     context.add(AsyncIdempotentAspect)
     context.start()

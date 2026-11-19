@@ -15,7 +15,13 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 from spakky.data.external.proxy import IAsyncGenericProxy, IGenericProxy
 
 # Persistency
-from spakky.data.persistency.error import AbstractSpakkyPersistencyError
+from spakky.data.persistency.error import (
+    AbstractSpakkyPersistencyError,
+    AggregateBufferNotOpenError,
+    TransactionAlreadyFinishedError,
+    TransactionNotActiveError,
+    TransactionRollbackOnlyError,
+)
 from spakky.data.persistency.repository import (
     EntityAlreadyExistsError,
     EntityNotFoundError,
@@ -24,6 +30,9 @@ from spakky.data.persistency.repository import (
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
+    PhysicalTransaction,
+    Propagation,
+    TransactionFrame,
 )
 
 __all__ = [
@@ -34,12 +43,19 @@ __all__ = [
     # Transaction
     "AbstractAsyncTransaction",
     "AbstractTransaction",
+    "PhysicalTransaction",
+    "Propagation",
+    "TransactionFrame",
     # Proxy
     "IAsyncGenericProxy",
     "IGenericProxy",
     # Errors
     "AbstractSpakkyExternalError",
     "AbstractSpakkyPersistencyError",
+    "AggregateBufferNotOpenError",
+    "TransactionAlreadyFinishedError",
+    "TransactionNotActiveError",
+    "TransactionRollbackOnlyError",
 ]
 
 from spakky.core.application.plugin import Plugin

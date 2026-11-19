@@ -14,6 +14,7 @@ from spakky.data.aspects.transactional import (
     TransactionalAspect,
     transactional,
 )
+from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
@@ -49,6 +50,7 @@ def test_transactional_aspect_commits_on_success() -> None:
     context = ApplicationContext()
     context.add(InMemoryTransaction)
     context.add(SampleUseCase)
+    context.add(AggregateCollector)
     context.add(TransactionalAspect)
     context.start()
 
@@ -95,6 +97,7 @@ def test_transactional_aspect_rollbacks_on_error() -> None:
     context = ApplicationContext()
     context.add(InMemoryTransaction)
     context.add(SampleUseCase)
+    context.add(AggregateCollector)
     context.add(TransactionalAspect)
     context.start()
 
@@ -142,6 +145,7 @@ async def test_async_transactional_aspect_commits_on_success() -> None:
     context = ApplicationContext()
     context.add(AsyncInMemoryTransaction)
     context.add(SampleUseCase)
+    context.add(AggregateCollector)
     context.add(AsyncTransactionalAspect)
     context.start()
 
@@ -189,6 +193,7 @@ async def test_async_transactional_aspect_rollbacks_on_error() -> None:
     context = ApplicationContext()
     context.add(AsyncInMemoryTransaction)
     context.add(SampleUseCase)
+    context.add(AggregateCollector)
     context.add(AsyncTransactionalAspect)
     context.start()
 
@@ -262,6 +267,7 @@ def test_transactional_aspect_only_applies_to_annotated_methods() -> None:
     context = ApplicationContext()
     context.add(InMemoryTransaction)
     context.add(SampleUseCase)
+    context.add(AggregateCollector)
     context.add(TransactionalAspect)
     context.start()
 

@@ -51,6 +51,11 @@ flowchart TD
   AbstractSpakkyDomainError --> CannotMonkeyPatchEntityError
   AbstractSpakkyDomainError --> UnhashableFieldTypeError
 
+  AbstractSpakkyPersistencyError --> TransactionRollbackOnlyError
+  AbstractSpakkyPersistencyError --> TransactionAlreadyFinishedError
+  AbstractSpakkyPersistencyError --> TransactionNotActiveError
+  AbstractSpakkyPersistencyError --> AggregateBufferNotOpenError
+
   AbstractSpakkySagaError --> SagaFlowDefinitionError
   AbstractSpakkySagaError --> SagaCompensationFailedError
   AbstractSpakkySagaError --> SagaStepTimeoutError
@@ -398,7 +403,13 @@ from spakky.event.error import (
 데이터 접근 관련 에러입니다.
 
 ```python
-from spakky.data.persistency.error import AbstractSpakkyPersistencyError
+from spakky.data.persistency.error import (
+    AbstractSpakkyPersistencyError,
+    AggregateBufferNotOpenError,
+    TransactionAlreadyFinishedError,
+    TransactionNotActiveError,
+    TransactionRollbackOnlyError,
+)
 from spakky.data.persistency.repository import (
     EntityAlreadyExistsError,
     EntityNotFoundError,
@@ -413,6 +424,10 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 | `EntityNotFoundError`           | 엔티티 조회 실패               | `AbstractSpakkyDomainError`   |
 | `VersionConflictError`          | 낙관적 락 충돌                 | `AbstractSpakkyDomainError`   |
 | `EntityAlreadyExistsError`      | 새 Aggregate 저장이 이미 있는 유일 키와 충돌 | `AbstractSpakkyDomainError`   |
+| `TransactionRollbackOnlyError`  | 합쳐진 안쪽 scope가 실패해 rollback만 가능해진 transaction을 바깥이 정상 종료하려 함 (rollback 후 발생) | `AbstractSpakkyPersistencyError` |
+| `TransactionAlreadyFinishedError` | 이미 commit·rollback된 transaction의 session·aggregate buffer를 쓰려 하거나, 합쳐진 scope(주로 바깥보다 오래 사는 자식 task·thread)가 끝나기 전에 그 transaction이 먼저 끝남 | `AbstractSpakkyPersistencyError` |
+| `TransactionNotActiveError`     | 열린 scope 없이 transaction scope를 닫으려 함 | `AbstractSpakkyPersistencyError` |
+| `AggregateBufferNotOpenError`   | 열지 않은 `AggregateCollector` buffer를 닫으려 함 | `AbstractSpakkyPersistencyError` |
 | `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   | `AbstractSpakkyFrameworkError` |
 
 ---
@@ -696,6 +711,7 @@ from spakky.plugins.sqlalchemy.agent.error import AgentPersistenceRowNotFoundErr
 | `NoSchemaFoundFromDomainError`            | 도메인 타입에 대한 스키마 없음   | `AbstractSpakkySqlAlchemyORMError` |
 | `CannotDetermineAggregateTypeError`       | Aggregate 타입 추론 불가         | `AbstractSpakkySqlAlchemyPersistencyError` |
 | `SessionNotInitializedError`              | 세션 미초기화 상태에서 접근      | `AbstractSpakkySqlAlchemyPersistencyError` |
+| `SessionNotBoundError`                    | 이 context에 session이 없는 transaction에 합치려 함 | `AbstractSpakkySqlAlchemyPersistencyError` |
 | `AgentPersistenceRowNotFoundError`        | agent persistence row를 찾을 수 없음 | `AbstractSpakkySqlAlchemyPersistencyError` |
 
 ### spakky-celery

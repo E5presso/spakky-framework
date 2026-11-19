@@ -30,6 +30,7 @@ from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.mutability import immutable
 from spakky.core.pod.annotations.pod import Pod
 from spakky.data.aspects.transactional import Transactional, TransactionalAspect
+from spakky.data.persistency.aggregate_collector import AggregateCollector
 from spakky.data.persistency.transaction import AbstractTransaction
 from spakky.domain.models.event import AbstractDomainEvent, AbstractIntegrationEvent
 from spakky.event.event_consumer import (
@@ -790,6 +791,7 @@ def test_kafka_post_processor_transactional_handler_expect_registered_and_run_in
         consumer_cls.return_value.poll.return_value = None
         for pod in (
             RecordingTransaction,
+            AggregateCollector,
             TransactionalAspect,
             KafkaConnectionConfig,
             KafkaEventConsumer,
