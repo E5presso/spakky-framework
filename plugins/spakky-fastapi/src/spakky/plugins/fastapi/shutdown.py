@@ -119,7 +119,10 @@ class ServerShutdownSignal:
         When another cancellation has already woken the task at that moment,
         both reach the stream as one, so the guard asks again once the task
         waits again; a cancel scope in the stream that absorbs its own
-        cancellation then does not keep the stream open.
+        cancellation then does not keep the stream open. A cancellation that
+        reached the stream on its own is not repeated, so cleanup the stream
+        awaits after catching it runs to the end, except when the merged one
+        came from a scope outside the stream.
         An item the stream still produces is dropped. The stream is then
         closed, so a started generator's ``finally`` runs, and this generator
         returns normally. A cancellation requested by anyone else at the same
@@ -150,7 +153,7 @@ class ServerShutdownSignal:
             if not awaiting_item:
                 return
             interrupted = True
-            merged = _is_woken(task)
+            merged = _is_woken_by_cancel(task)
             # The task is suspended, not done, so the request is counted.
             task.cancel()
             requested += 1
@@ -232,22 +235,24 @@ class ServerShutdownSignal:
             waiter.set_result(None)
 
 
-def _is_woken(task: Task[object]) -> bool:
-    """Whether the task is already scheduled to resume.
+def _is_woken_by_cancel(task: Task[object]) -> bool:
+    """Whether another cancellation has already woken the suspended task.
 
     asyncio has no public API for this; anyio reads the same private task
-    state to decide whether a cancellation still has to be delivered.
+    state to decide whether a cancellation still has to be delivered. A task
+    woken by a result or resumed from a bare checkpoint is not counted: a
+    cancellation requested then still reaches it on its own.
 
     Args:
         task: A suspended task.
 
     Returns:
-        True when the task's next step is already scheduled, so a
-        cancellation requested now merges into it.
+        True when a pending cancellation will resume the task, so one
+        requested now reaches it merged with that one.
     """
     must_cancel: bool = task._must_cancel  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
     fut_waiter: Future[object] | None = task._fut_waiter  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
-    return must_cancel or fut_waiter is None or fut_waiter.done()
+    return must_cancel or (fut_waiter is not None and fut_waiter.cancelled())
 
 
 class ShutdownSignalRelay:
