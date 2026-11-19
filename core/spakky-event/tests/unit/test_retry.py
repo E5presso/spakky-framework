@@ -1,5 +1,6 @@
 """Field-wise overlay of retry policies declared at different layers."""
 
+from spakky.event import delivery
 from spakky.event.retry import RetryMode, RetryPolicy
 
 
@@ -51,3 +52,9 @@ def test_retry_policy_declares_same_expect_explicit_fields_compared() -> None:
     assert not mode_only.declares_same(
         RetryPolicy(mode=RetryMode.DELAYED, max_attempts=1)
     )
+
+
+def test_delivery_module_expect_legacy_retry_import_path() -> None:
+    """RetryMode and RetryPolicy stay importable from spakky.event.delivery."""
+    assert delivery.RetryMode is RetryMode
+    assert delivery.RetryPolicy is RetryPolicy

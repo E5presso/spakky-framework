@@ -50,7 +50,11 @@ from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
     EventHandlerCallback,
 )
-from spakky.event.retry import RetryPolicy
+
+# RetryMode and RetryPolicy lived here before spakky.event.retry; the redundant
+# aliases keep ``from spakky.event.delivery import RetryMode`` working.
+from spakky.event.retry import RetryMode as RetryMode
+from spakky.event.retry import RetryPolicy as RetryPolicy
 from spakky.event.subscription import (
     ConflictingSubscriberRetryPolicyError,
     DuplicateEventHandlerNameError,
