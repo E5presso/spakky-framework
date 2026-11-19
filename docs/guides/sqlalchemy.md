@@ -340,6 +340,31 @@ class TouchUserUseCase:
         return await self._user_repo.save(user)
 ```
 
+### 중첩된 UseCase 호출 (propagation)
+
+`@Transactional()` 메서드 안에서 다른 `@Transactional()` 메서드를 부르면 기본값
+`Propagation.REQUIRED`에 따라 안쪽이 바깥 트랜잭션에 합쳐집니다. 같은 session을 쓰고,
+commit과 session 닫기는 가장 바깥에서 한 번만 합니다. 안쪽에서 예외가 올라가면 전체가 rollback되며,
+바깥이 그 예외를 잡고 정상으로 끝나면 commit 대신 rollback한 뒤 `TransactionRollbackOnlyError`를 냅니다.
+
+안쪽을 바깥과 따로 commit해야 하면 `Propagation.REQUIRES_NEW`를 씁니다.
+
+```python
+from spakky.data.aspects.transactional import Propagation, Transactional
+
+
+@UseCase()
+class CloseSessionUseCase:
+    @Transactional(propagation=Propagation.REQUIRES_NEW)
+    async def execute(self, session_id: UUID) -> None: ...
+```
+
+- `SessionManager` / `AsyncSessionManager`는 컨텍스트마다 session stack을 둡니다. `REQUIRES_NEW`는 새 session(새 DB 연결)을
+  위에 올리고, 끝나면 그 session만 commit 또는 rollback하고 닫은 뒤 바깥 session으로 돌아갑니다.
+- 안쪽은 바깥이 아직 commit하지 않은 변경을 보지 못합니다. 바깥이 잠근 행을 안쪽이 쓰면 서로 기다릴 수 있습니다(PostgreSQL 행 lock).
+- 연결을 둘 쓰므로 `pool_size`(기본 5)와 `pool_max_overflow`(기본 10)를 그만큼 고려합니다.
+- 도메인 이벤트는 실제로 commit한 physical transaction마다 그 뒤에 발행됩니다. 합쳐진 안쪽이 끝날 때는 발행하지 않습니다.
+
 ---
 
 ## QueryUseCase에서 직접 조회

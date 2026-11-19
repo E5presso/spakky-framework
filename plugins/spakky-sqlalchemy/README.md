@@ -400,7 +400,7 @@ class Assistant:
 - **Domain-Table mapping**: domain model과 ORM table 간 양방향 변환
 - **Generic repository**: composite PK를 지원하는 사전 구성 CRUD operation
 - **동기/비동기 지원**: 동기 및 비동기 operation 모두 지원
-- **Scoped session**: thread/context-safe session 관리
+- **Scoped session**: thread/context-safe session 관리. 컨텍스트마다 session stack을 두어 `Propagation.REQUIRES_NEW` 중첩 transaction을 지원
 - **낙관적 lock**: Aggregate table의 `version` column을 `version_id_col`로 자동 매핑하고, 동시 update·delete 충돌을 `VersionConflictError`로 보고
 - **이미 있는 유일 키**: 새 Aggregate `INSERT`의 유일 위반을 `EntityAlreadyExistsError`로 보고
 - **Schema registry**: 중앙화된 table metadata 관리
@@ -520,7 +520,7 @@ MIT License
 
 ### 컨텍스트별 세션 수명
 
-SessionManager와 AsyncSessionManager는 현재 ApplicationContext ID의 scoped session을 사용합니다. 다른 컨텍스트의 open/close가 원래 컨텍스트의 세션을 덮어쓰거나 종료하지 않습니다. 각 작업은 트랜잭션 경계에서 세션을 열고 닫으며, 열린 세션이 없을 때 session 접근은 SessionNotInitializedError를 발생시킵니다.
+SessionManager와 AsyncSessionManager는 현재 ApplicationContext ID마다 session stack을 둡니다. 다른 컨텍스트의 open/close가 원래 컨텍스트의 세션을 덮어쓰거나 종료하지 않습니다. `open()`은 새 session을 stack 위에 올리고 `close()`는 맨 위 session을 닫은 뒤 그 아래 session으로 돌아가며, `session`은 항상 맨 위 session입니다. 바깥에 합쳐지는 `Propagation.REQUIRED` 중첩은 session을 새로 열지 않고, `Propagation.REQUIRES_NEW`만 새 session(새 DB 연결)을 엽니다. 열린 세션이 없을 때 session 접근은 SessionNotInitializedError를 발생시킵니다.
 
 
 ```bash

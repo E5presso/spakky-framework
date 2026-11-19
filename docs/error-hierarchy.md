@@ -51,6 +51,10 @@ flowchart TD
   AbstractSpakkyDomainError --> CannotMonkeyPatchEntityError
   AbstractSpakkyDomainError --> UnhashableFieldTypeError
 
+  AbstractSpakkyPersistencyError --> TransactionRollbackOnlyError
+  AbstractSpakkyPersistencyError --> TransactionNotActiveError
+  AbstractSpakkyPersistencyError --> AggregateBufferNotOpenError
+
   AbstractSpakkySagaError --> SagaFlowDefinitionError
   AbstractSpakkySagaError --> SagaCompensationFailedError
   AbstractSpakkySagaError --> SagaStepTimeoutError
@@ -397,7 +401,12 @@ from spakky.event.error import (
 데이터 접근 관련 에러입니다.
 
 ```python
-from spakky.data.persistency.error import AbstractSpakkyPersistencyError
+from spakky.data.persistency.error import (
+    AbstractSpakkyPersistencyError,
+    AggregateBufferNotOpenError,
+    TransactionNotActiveError,
+    TransactionRollbackOnlyError,
+)
 from spakky.data.persistency.repository import (
     EntityAlreadyExistsError,
     EntityNotFoundError,
@@ -412,6 +421,9 @@ from spakky.data.external.error import AbstractSpakkyExternalError
 | `EntityNotFoundError`           | 엔티티 조회 실패               | `AbstractSpakkyDomainError`   |
 | `VersionConflictError`          | 낙관적 락 충돌                 | `AbstractSpakkyDomainError`   |
 | `EntityAlreadyExistsError`      | 새 Aggregate 저장이 이미 있는 유일 키와 충돌 | `AbstractSpakkyDomainError`   |
+| `TransactionRollbackOnlyError`  | 합쳐진 안쪽 scope가 실패해 rollback만 가능해진 transaction을 바깥이 정상 종료하려 함 (rollback 후 발생) | `AbstractSpakkyPersistencyError` |
+| `TransactionNotActiveError`     | 열린 scope 없이 transaction scope를 닫으려 함 | `AbstractSpakkyPersistencyError` |
+| `AggregateBufferNotOpenError`   | 열지 않은 `AggregateCollector` buffer를 닫으려 함 | `AbstractSpakkyPersistencyError` |
 | `AbstractSpakkyExternalError`   | 외부 서비스 에러 기반 클래스   | `AbstractSpakkyFrameworkError` |
 
 ---

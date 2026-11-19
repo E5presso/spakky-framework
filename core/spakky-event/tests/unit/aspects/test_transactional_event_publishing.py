@@ -340,13 +340,17 @@ def test_followup_transaction_does_not_republish_parent_events() -> None:
             assert isinstance(event, User.Created)
             observed.append(event.username)
             if event.username == "parent":
+                collector.begin_transaction()
                 collector.collect(User.create("child"))
+                collector.commit_transaction()
                 aspect.after_returning(None)
 
     aspect = TransactionalEventPublishingAspect(collector, Publisher())
     parent = User.create("parent")
+    collector.begin_transaction()
     collector.collect(parent)
     collector.collect(parent)
+    collector.commit_transaction()
     aspect.after_returning(None)
     assert observed == ["parent", "child"]
     assert collector.all() == []
@@ -364,13 +368,17 @@ async def test_async_followup_transaction_does_not_republish_parent_events() -> 
             assert isinstance(event, User.Created)
             observed.append(event.username)
             if event.username == "parent":
+                collector.begin_transaction()
                 collector.collect(User.create("child"))
+                collector.commit_transaction()
                 await aspect.after_returning_async(None)
 
     aspect = AsyncTransactionalEventPublishingAspect(collector, Publisher())
     parent = User.create("parent")
+    collector.begin_transaction()
     collector.collect(parent)
     collector.collect(parent)
+    collector.commit_transaction()
     await aspect.after_returning_async(None)
     assert observed == ["parent", "child"]
     assert collector.all() == []

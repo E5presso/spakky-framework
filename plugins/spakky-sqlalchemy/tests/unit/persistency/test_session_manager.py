@@ -40,8 +40,8 @@ def test_session_manager_session_before_open_raises_error() -> None:
         _ = manager.session
 
 
-def test_session_manager_set_application_context_creates_scoped_session() -> None:
-    """set_application_context가 scoped_session을 생성하는지 검증한다."""
+def test_session_manager_set_application_context_creates_session_factory() -> None:
+    """set_application_context가 session factory를 만드는지 검증한다."""
     mock_connection_manager = MagicMock(spec=ConnectionManager)
     mock_engine = MagicMock()
     mock_connection_manager.connection = mock_engine
@@ -53,7 +53,7 @@ def test_session_manager_set_application_context_creates_scoped_session() -> Non
     manager = SessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
 
-    assert manager._scoped_session is not None
+    assert manager._session_factory is not None
 
 
 def test_session_manager_open_creates_session() -> None:
@@ -163,8 +163,10 @@ def test_async_session_manager_session_before_open_raises_error() -> None:
         _ = manager.session
 
 
-def test_async_session_manager_set_application_context_creates_scoped_session() -> None:
-    """set_application_context가 async_scoped_session을 생성하는지 검증한다."""
+def test_async_session_manager_set_application_context_creates_session_factory() -> (
+    None
+):
+    """set_application_context가 async session factory를 만드는지 검증한다."""
     mock_connection_manager = MagicMock(spec=AsyncConnectionManager)
     mock_engine = MagicMock()
     mock_connection_manager.connection = mock_engine
@@ -176,7 +178,7 @@ def test_async_session_manager_set_application_context_creates_scoped_session() 
     manager = AsyncSessionManager(mock_connection_manager)
     manager.set_application_context(mock_context)
 
-    assert manager._scoped_session is not None
+    assert manager._session_factory is not None
 
 
 @pytest.mark.asyncio
@@ -325,6 +327,55 @@ async def test_shared_async_manager_keeps_overlapping_contexts_independent() -> 
 
     await asyncio.create_task(other_request())
     assert manager.session is first
+    await manager.close()
+    with pytest.raises(SessionNotInitializedError):
+        _ = manager.session
+    await connection.connection.dispose()
+
+
+def test_sync_session_manager_nested_open_expect_stack_restores_outer() -> None:
+    """open()을 겹쳐 부르면 위의 새 session을 쓰고, close()하면 바깥 session으로 돌아간다."""
+    from sqlalchemy import create_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=ConnectionManager)
+    connection.connection = create_engine("sqlite:///:memory:")
+    manager = SessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    manager.open()
+    outer = manager.session
+    manager.open()
+    inner = manager.session
+
+    assert inner is not outer
+    manager.close()
+    assert manager.session is outer
+    manager.close()
+    with pytest.raises(SessionNotInitializedError):
+        _ = manager.session
+    connection.connection.dispose()
+
+
+@pytest.mark.asyncio
+async def test_async_session_manager_nested_open_expect_stack_restores_outer() -> None:
+    """비동기에서도 겹친 open()은 새 session을 쌓고, close()하면 바깥으로 돌아간다."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=AsyncConnectionManager)
+    connection.connection = create_async_engine(
+        "postgresql+psycopg://unused:unused@localhost/unused"
+    )
+    manager = AsyncSessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    await manager.open()
+    outer = manager.session
+    await manager.open()
+    inner = manager.session
+
+    assert inner is not outer
+    await manager.close()
+    assert manager.session is outer
     await manager.close()
     with pytest.raises(SessionNotInitializedError):
         _ = manager.session

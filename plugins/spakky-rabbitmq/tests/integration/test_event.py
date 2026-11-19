@@ -228,7 +228,7 @@ def test_named_subscribers_expect_each_receives_every_message(
     # billing 핸들러는 @Transactional이 적용된 AOP proxy인데도 등록되어 실행된다.
     transaction_double = app.container.get(AbstractTransaction)
     assert isinstance(transaction_double, MagicMock)
-    assert transaction_double.__enter__.call_count == 2
+    assert transaction_double.scope.call_count == 2
 
 
 @pytest.mark.asyncio

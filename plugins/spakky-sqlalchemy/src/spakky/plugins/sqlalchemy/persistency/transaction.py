@@ -32,12 +32,12 @@ class Transaction(AbstractTransaction):
 
     @override
     def initialize(self) -> None:
-        """Open a new session for this transaction scope."""
+        """Open a new session on top of the session stack."""
         self._session_manager.open()
 
     @override
     def dispose(self) -> None:
-        """Close the session after transaction completes."""
+        """Close the top session and return to the one below."""
         self._session_manager.close()
 
     @override
@@ -72,12 +72,12 @@ class AsyncTransaction(AbstractAsyncTransaction):
 
     @override
     async def initialize(self) -> None:
-        """Open a new async session for this transaction scope."""
+        """Open a new async session on top of the session stack."""
         await self._session_manager.open()
 
     @override
     async def dispose(self) -> None:
-        """Close the async session after transaction completes."""
+        """Close the top async session and return to the one below."""
         await self._session_manager.close()
 
     @override

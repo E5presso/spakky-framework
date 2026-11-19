@@ -804,8 +804,8 @@ class FindUserByEmailUseCase(IAsyncQueryUseCase[FindUserByEmailQuery, UserDTO]):
 
 | Aspect | @Order | 대상 |
 |--------|--------|------|
-| `AsyncTransactionalAspect` | 0 | `@Transactional` + `iscoroutinefunction` |
-| `TransactionalAspect` | 0 | `@Transactional` + sync |
+| `AsyncTransactionalAspect` | 1 | `@Transactional` + `iscoroutinefunction` |
+| `TransactionalAspect` | 1 | `@Transactional` + sync |
 
 ```python
 # 둘 다 동일한 @Transactional() 사용
@@ -817,6 +817,17 @@ def sync_method(self): ...
 @Transactional()
 async def async_method(self): ...
 ```
+
+`Transactional.propagation`(`Propagation.REQUIRED` 기본, `Propagation.REQUIRES_NEW`)이 중첩 호출을 정합니다.
+
+| Propagation | 바깥 transaction이 있을 때 |
+|-------------|---------------------------|
+| `REQUIRED` | 바깥에 합쳐진다. 같은 session, commit·닫기는 가장 바깥이 한 번. 안쪽 예외가 메서드 밖으로 나가면 rollback-only로 표시되고, 바깥이 정상 종료하면 rollback 후 `TransactionRollbackOnlyError` |
+| `REQUIRES_NEW` | 바깥을 두고 새 physical transaction을 연다(`initialize()`). 그것만 commit·rollback하고 `dispose()`로 바깥에 돌아간다 |
+
+트랜잭션 Aspect는 physical transaction을 여는 호출일 때만 `AggregateCollector` buffer를 열고,
+그 transaction이 끝나면(autocommit이면 실제 commit 직후) `commit_transaction()`으로 buffer를 발행 대기열로 넘깁니다.
+이 지점이 `@Transactional`의 단일한 "실제 commit 직후" 시점입니다(`spakky.data.aspects.transactional`의 `around`/`around_async`).
 
 ### Repository 인터페이스
 
@@ -834,10 +845,12 @@ class AggregateCollector:
     """트랜잭션 내에서 save()된 Aggregate를 추적합니다."""
 ```
 
-- **CONTEXT 스코프**: 요청/트랜잭션 단위로 격리
-- `collect(aggregate)`: Repository에서 save 시 호출
-- `all()`: 추적된 전체 Aggregate 조회
-- `clear()`: 트랜잭션 종료 시 정리
+- **CONTEXT 스코프 + ContextVar**: 요청/실행 컨텍스트 단위로 격리
+- **physical transaction 단위 buffer**: 가장 바깥 또는 `REQUIRES_NEW` transaction마다 buffer를 쌓는다. 합쳐진(`REQUIRED`) 안쪽은 바깥 buffer에 모은다
+- `collect(aggregate)`: Repository에서 save 시 호출 (현재 buffer에 추가)
+- `all()` / `clear()`: 현재 buffer 조회 / 비우기
+- `begin_transaction()` / `commit_transaction()` / `discard_transaction()`: 트랜잭션 Aspect가 buffer를 열고, commit 뒤 발행 대기열로 넘기거나 rollback 시 버린다
+- `drain_committed()`: commit된 aggregate를 꺼낸다 (이벤트 발행 Aspect가 호출)
 
 **핵심**: AggregateCollector는 **이벤트의 존재를 모릅니다**. Aggregate만 추적하며, 이벤트 추출은 `spakky-event`의 Aspect가 담당합니다.
 
@@ -846,7 +859,9 @@ class AggregateCollector:
 ```mermaid
 flowchart TD
     tx["AbstractTransaction<br/>context manager"]
-    enter["__enter__()"]
+    scope["scope(propagation)"]
+    frames["ContextVar frame stack<br/>(depth, rollback_only)"]
+    enter["__enter__() = scope(REQUIRED)"]
     init["initialize()"]
     exit["__exit__()"]
     commit["commit()"]
@@ -855,12 +870,15 @@ flowchart TD
     flag["autocommit_enabled 플래그"]
     async_tx["AbstractAsyncTransaction<br/>async context manager"]
 
+    tx --> scope
     tx --> enter
-    enter --> init
+    scope --> frames
+    enter --> frames
+    frames -->|"새 physical transaction"| init
     tx --> exit
-    exit --> commit
-    exit --> rollback
-    exit --> dispose
+    exit -->|"가장 바깥 scope"| commit
+    exit -->|"예외 또는 rollback_only"| rollback
+    exit -->|"가장 바깥 scope"| dispose
     flag --> exit
     async_tx --> tx
 ```
@@ -991,39 +1009,42 @@ class UserEventHandler:
 
 ### 트랜잭션-이벤트 통합
 
-`TransactionalEventPublishingAspect`가 `@Transactional` 메서드의 성공 후 이벤트를 자동 발행합니다.
+`TransactionalEventPublishingAspect`가 `@Transactional` 메서드가 연 physical transaction이 commit된 뒤 이벤트를 자동 발행합니다.
+바깥에 합쳐진 안쪽 호출은 commit하지 않으므로 발행하지 않고, 그 aggregate는 가장 바깥의 commit 뒤에 함께 발행됩니다.
 
 ```mermaid
 sequenceDiagram
     participant U as @Transactional method
-    participant TA as "TransactionalAspect<br/>@Order(0)"
-    participant EA as "TransactionalEventPublishingAspect<br/>@Order(1)"
+    participant EA as "TransactionalEventPublishingAspect<br/>@Order(0)"
+    participant TA as "TransactionalAspect<br/>@Order(1)"
     participant R as Repository
     participant C as AggregateCollector
     participant P as EventPublisher
     participant DB as Transaction
 
-    U->>TA: start
+    U->>EA: start
+    EA->>TA: proceed
+    TA->>C: begin_transaction()
     TA->>DB: BEGIN
-    TA->>EA: around
-    EA->>U: UseCase 로직 실행
+    TA->>U: UseCase 로직 실행
     U->>U: aggregate.add_event(...)
     U->>R: repository.save(aggregate)
     R->>C: collector.collect(aggregate)
 
     alt 정상 반환
-        EA->>C: all()
-        C-->>EA: Aggregate 목록
+        TA->>DB: COMMIT
+        TA->>C: commit_transaction()
+        EA->>C: drain_committed()
+        C-->>EA: commit된 Aggregate 목록
         EA->>P: publish(event)
         EA->>U: aggregate.clear_events()
-        TA->>DB: COMMIT
-    else 예외 발생
-        EA->>C: clear()
+    else 예외 발생 또는 rollback-only
         TA->>DB: ROLLBACK
+        TA->>C: discard_transaction()
     end
 ```
 
-**Handler 실패 = 전체 롤백 = 데이터 일관성 보장**
+**이벤트는 commit 뒤에 발행된다. rollback된 transaction의 이벤트는 발행되지 않는다.**
 
 ### DomainEvent vs IntegrationEvent
 

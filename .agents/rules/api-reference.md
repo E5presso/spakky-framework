@@ -43,7 +43,8 @@ paths:
 | Decorator / Class | Import Path | Purpose |
 |---|---|---|
 | `@Repository` | `spakky.data.stereotype.repository` | 데이터 접근 스테레오타입 |
-| `@Transactional()` | `spakky.data.aspects.transactional` | 트랜잭션 경계 어노테이션 |
+| `@Transactional(propagation=)` | `spakky.data.aspects.transactional` | 트랜잭션 경계 어노테이션 |
+| `Propagation` | `spakky.data.aspects.transactional` | 중첩 트랜잭션 동작 (`REQUIRED` 기본, `REQUIRES_NEW`) |
 | `IAsyncGenericRepository` | `spakky.data.persistency.repository` | 비동기 제네릭 리포지토리 |
 | `AbstractAsyncTransaction` / `AbstractTransaction` | `spakky.data.persistency.transaction` | 트랜잭션 추상화 |
 

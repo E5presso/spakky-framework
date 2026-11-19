@@ -12,7 +12,7 @@ pip install spakky-data
 ## 주요 기능
 
 - **Repository 패턴**: Aggregate 영속화를 위한 generic repository 인터페이스
-- **트랜잭션 관리**: autocommit을 지원하는 추상 transaction 클래스
+- **트랜잭션 관리**: autocommit과 중첩 transaction(`Propagation.REQUIRED`/`REQUIRES_NEW`)을 지원하는 추상 transaction 클래스
 - **External Proxy**: 데이터베이스가 아닌 외부 service/storage 데이터 접근용 proxy 패턴
 
 > `spakky-data`는 core 추상화 패키지입니다. SQLAlchemy engine/session/table mapping
@@ -151,6 +151,52 @@ async with transaction:
     # 성공 시 자동 commit, exception 발생 시 rollback
 ```
 
+### 중첩 transaction (propagation)
+
+`@Transactional()` 메서드가 다른 `@Transactional()` 메서드를 부르는 중첩 호출은
+`Propagation`으로 동작을 정합니다. 주지 않으면 `Propagation.REQUIRED`입니다.
+
+```python
+from spakky.data.aspects.transactional import Propagation, Transactional
+
+
+@Transactional()  # = Transactional(propagation=Propagation.REQUIRED)
+async def place_order(self, command: PlaceOrder) -> None: ...
+
+
+@Transactional(propagation=Propagation.REQUIRES_NEW)
+async def record_audit(self, entry: AuditEntry) -> None: ...
+```
+
+| Propagation | 바깥 transaction이 없을 때 | 바깥 transaction이 있을 때 |
+|-------------|---------------------------|---------------------------|
+| `REQUIRED` (기본) | 새로 열고, 끝나면 commit하고 닫는다 | 바깥에 합쳐진다. 같은 session을 쓰고 commit·닫기는 가장 바깥이 한 번 한다 |
+| `REQUIRES_NEW` | 새로 열고, 끝나면 commit하고 닫는다 | 바깥을 그대로 두고 새 transaction(새 연결)을 연다. 끝나면 그것만 commit·rollback하고 닫은 뒤 바깥으로 돌아간다 |
+
+- 합쳐진 안쪽에서 예외가 메서드 밖으로 나가면 그 transaction은 "rollback만 가능"으로 표시됩니다.
+  바깥이 예외를 잡고 정상으로 끝나도 commit하지 않고 rollback한 뒤 `TransactionRollbackOnlyError`를 냅니다.
+  바깥까지 예외가 올라가면 원래 예외로 끝납니다.
+- `REQUIRES_NEW` 안쪽은 바깥이 아직 commit하지 않은 변경을 보지 못하고, 바깥이 잠근 행을 쓰면 서로 기다릴 수 있습니다.
+  연결을 두 개 쓰므로 connection pool 크기를 그만큼 고려해야 합니다.
+- 읽기 전용 조회도 `REQUIRED`라면 바깥에 합쳐져 같은 session으로 바깥의 flush된 변경을 읽습니다.
+- `autocommit=False`이면 가장 바깥도 commit하지 않습니다.
+
+`AggregateCollector`는 physical transaction(가장 바깥 또는 `REQUIRES_NEW`)마다 수집 buffer를 따로 둡니다.
+`@Transactional`은 physical transaction이 commit된 직후 그 buffer를 `drain_committed()`로 넘기고,
+`spakky-event`의 이벤트 발행 Aspect가 이를 꺼내 도메인 이벤트를 발행합니다. 그래서 합쳐진 안쪽이 끝날 때는
+발행하지 않고, 가장 바깥이 commit한 뒤에 한 번 발행합니다. `REQUIRES_NEW` 안쪽의 이벤트는 안쪽이 commit한 뒤에 발행됩니다.
+
+직접 transaction을 다룰 때는 `scope()`로 propagation을 줄 수 있습니다. `async with transaction:`은 `scope(Propagation.REQUIRED)`와 같습니다.
+
+```python
+async with transaction.scope():
+    async with transaction.scope(Propagation.REQUIRES_NEW):
+        ...  # 별도 session, 별도 commit
+```
+
+`AbstractTransaction` / `AbstractAsyncTransaction`을 직접 구현한다면 `initialize()`는 바깥 transaction을 유지한 채
+새 physical transaction을 열고, `dispose()`는 그것을 닫은 뒤 바깥으로 돌아가야 합니다.
+
 ### 외부 연동 Proxy 패턴
 
 Proxy 인터페이스로 데이터베이스가 아닌 **외부 서비스**에 접근합니다.
@@ -189,6 +235,8 @@ class PaymentServiceProxy(IPaymentProxy):
 | `IAsyncGenericRepository` | 비동기 generic repository interface |
 | `AbstractTransaction` | context manager를 가진 동기 transaction |
 | `AbstractAsyncTransaction` | context manager를 가진 비동기 transaction |
+| `Propagation` | 중첩 transaction의 동작(`REQUIRED`, `REQUIRES_NEW`) |
+| `AggregateCollector` | physical transaction 단위로 저장된 aggregate를 모으는 collector |
 | `EntityNotFoundError` | entity를 찾지 못했을 때 발생 |
 | `EntityAlreadyExistsError` | 새 aggregate 저장이 이미 있는 유일 키와 부딪혔을 때 발생. `VersionConflictError`와 별개 |
 
@@ -205,6 +253,9 @@ class PaymentServiceProxy(IPaymentProxy):
 | 클래스 | 설명 |
 |-------|-------------|
 | `AbstractSpakkyPersistencyError` | persistency operation 기반 error |
+| `TransactionRollbackOnlyError` | 안쪽 scope의 실패로 rollback만 가능해진 transaction을 바깥이 정상 종료하려 할 때 발생 |
+| `TransactionNotActiveError` | 열린 scope 없이 transaction scope를 닫으려 할 때 발생 |
+| `AggregateBufferNotOpenError` | 열지 않은 collector buffer를 닫으려 할 때 발생 |
 | `AbstractSpakkyExternalError` | 외부 service operation 기반 error |
 
 ## 관련 패키지
@@ -233,4 +284,4 @@ MIT License
 
 ### 수집 목록의 실행 격리
 
-`AggregateCollector`의 수집 목록은 Python 실행 컨텍스트별로 분리됩니다. Singleton Repository나 Aspect가 동일한 collector를 주입받아도 동시 비동기 요청의 목록은 섞이지 않습니다. 수집된 이벤트의 발행 및 종료 정리는 `spakky-event`의 트랜잭션 이벤트 Aspect가 담당합니다.
+`AggregateCollector`의 수집 목록은 Python 실행 컨텍스트별로 분리됩니다. Singleton Repository나 Aspect가 동일한 collector를 주입받아도 동시 비동기 요청의 목록은 섞이지 않습니다. buffer를 열고 닫는 일은 `@Transactional` Aspect가, commit된 aggregate의 이벤트 발행은 `spakky-event`의 트랜잭션 이벤트 Aspect가 담당합니다.

@@ -6,7 +6,12 @@ This module provides:
 - Persistence-related errors
 """
 
-from spakky.data.persistency.error import AbstractSpakkyPersistencyError
+from spakky.data.persistency.error import (
+    AbstractSpakkyPersistencyError,
+    AggregateBufferNotOpenError,
+    TransactionNotActiveError,
+    TransactionRollbackOnlyError,
+)
 from spakky.data.persistency.repository import (
     EntityAlreadyExistsError,
     EntityNotFoundError,
@@ -15,6 +20,7 @@ from spakky.data.persistency.repository import (
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
+    Propagation,
 )
 
 __all__ = [
@@ -25,6 +31,10 @@ __all__ = [
     # Transaction
     "AbstractAsyncTransaction",
     "AbstractTransaction",
+    "Propagation",
     # Errors
     "AbstractSpakkyPersistencyError",
+    "AggregateBufferNotOpenError",
+    "TransactionNotActiveError",
+    "TransactionRollbackOnlyError",
 ]

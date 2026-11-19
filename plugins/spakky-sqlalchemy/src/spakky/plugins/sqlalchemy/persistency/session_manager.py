@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
 from spakky.core.pod.interfaces.aware.application_context_aware import (
@@ -13,13 +15,8 @@ from spakky.plugins.sqlalchemy.persistency.error import (
     AbstractSpakkySqlAlchemyPersistencyError,
 )
 from sqlalchemy import Engine
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_scoped_session,
-    async_sessionmaker,
-)
-from sqlalchemy.orm import Session, scoped_session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 
 class SessionNotInitializedError(AbstractSpakkySqlAlchemyPersistencyError):
@@ -32,83 +29,117 @@ class SessionNotInitializedError(AbstractSpakkySqlAlchemyPersistencyError):
 
 @Pod()
 class SessionManager(IApplicationContextAware):
-    """Manages scoped synchronous SQLAlchemy sessions."""
+    """Manages synchronous SQLAlchemy sessions per execution context.
+
+    Each context keeps a stack of sessions. ``open()`` pushes a new session
+    (a new physical transaction, e.g. ``Propagation.REQUIRES_NEW``) on top of
+    the current one and ``close()`` closes the top session and returns to the
+    one below. ``session`` always resolves to the top session.
+    """
 
     _application_context: IApplicationContext
     _engine: Engine
-    _scoped_session: scoped_session[Session] | None
+    _session_factory: sessionmaker[Session] | None
+    _sessions: dict[UUID, list[Session]]
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         self._application_context = application_context
-        self._scoped_session = scoped_session(
-            session_factory=sessionmaker(
-                bind=self._engine,
-                expire_on_commit=False,
-            ),
-            scopefunc=self._application_context.get_context_id,
+        self._session_factory = sessionmaker(
+            bind=self._engine,
+            expire_on_commit=False,
         )
 
     def __init__(self, connection_manager: ConnectionManager) -> None:
         """Initialize with engine from connection manager."""
         self._engine = connection_manager.connection
-        self._scoped_session = None
+        self._session_factory = None
+        self._sessions = {}
 
     @property
     def session(self) -> Session:
-        if self._scoped_session is None or not self._scoped_session.registry.has():
+        if self._session_factory is None:
             raise SessionNotInitializedError()
-        return self._scoped_session()
+        stack = self._sessions.get(self._application_context.get_context_id())
+        if not stack:
+            raise SessionNotInitializedError()
+        return stack[-1]
 
     def open(self) -> None:
-        """Open a new scoped session."""
-        if self._scoped_session is None:
+        """Open a new session on top of the current context's session stack."""
+        if self._session_factory is None:
             raise SessionNotInitializedError()
-        self._scoped_session()
+        context_id = self._application_context.get_context_id()
+        self._sessions.setdefault(context_id, []).append(self._session_factory())
 
     def close(self) -> None:
-        """Close the current session and remove the scoped session."""
-        if self._scoped_session is not None:
-            self._scoped_session.remove()
+        """Close the top session of the current context and return to the one below."""
+        if self._session_factory is None:
+            return
+        context_id = self._application_context.get_context_id()
+        stack = self._sessions.get(context_id)
+        if not stack:
+            return
+        session = stack.pop()
+        if not stack:
+            del self._sessions[context_id]
+        session.close()
 
 
 @Pod()
 class AsyncSessionManager(IApplicationContextAware):
-    """Manages scoped asynchronous SQLAlchemy sessions."""
+    """Manages asynchronous SQLAlchemy sessions per execution context.
+
+    Each context keeps a stack of sessions. ``open()`` pushes a new session
+    (a new physical transaction, e.g. ``Propagation.REQUIRES_NEW``) on top of
+    the current one and ``close()`` closes the top session and returns to the
+    one below. ``session`` always resolves to the top session.
+    """
 
     _application_context: IApplicationContext
     _engine: AsyncEngine
-    _scoped_session: async_scoped_session[AsyncSession] | None
+    _session_factory: async_sessionmaker[AsyncSession] | None
+    _sessions: dict[UUID, list[AsyncSession]]
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
         self._application_context = application_context
-        self._scoped_session = async_scoped_session(
-            session_factory=async_sessionmaker(
-                bind=self._engine,
-                expire_on_commit=False,
-            ),
-            scopefunc=self._application_context.get_context_id,
+        self._session_factory = async_sessionmaker(
+            bind=self._engine,
+            expire_on_commit=False,
         )
 
     def __init__(self, connection_manager: AsyncConnectionManager) -> None:
         """Initialize with engine from async connection manager."""
         self._engine = connection_manager.connection
-        self._scoped_session = None
+        self._session_factory = None
+        self._sessions = {}
 
     @property
     def session(self) -> AsyncSession:
-        if self._scoped_session is None or not self._scoped_session.registry.has():
+        if self._session_factory is None:
             raise SessionNotInitializedError()
-        return self._scoped_session()
+        stack = self._sessions.get(self._application_context.get_context_id())
+        if not stack:
+            raise SessionNotInitializedError()
+        return stack[-1]
 
     async def open(self) -> None:
-        """Open a new scoped async session."""
-        if self._scoped_session is None:
+        """Open a new async session on top of the current context's session stack."""
+        if self._session_factory is None:
             raise SessionNotInitializedError()
-        self._scoped_session()
+        context_id = self._application_context.get_context_id()
+        self._sessions.setdefault(context_id, []).append(self._session_factory())
 
     async def close(self) -> None:
-        """Close the current session and remove the scoped async session."""
-        if self._scoped_session is not None:
-            await self._scoped_session.remove()
+        """Close the top async session of the current context and return to the one below."""
+        if self._session_factory is None:
+            return
+        context_id = self._application_context.get_context_id()
+        stack = self._sessions.get(context_id)
+        if not stack:
+            return
+        session = stack.pop()
+        if not stack:
+            del self._sessions[context_id]
+        await session.close()

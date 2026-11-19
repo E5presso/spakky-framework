@@ -355,7 +355,7 @@ assert broker.dead_letters("OrderPlaced", "billing") == []
 
 Domain Event 처리에는 RabbitMQ/Kafka transport가 필요하지 않습니다. Integration Event를 외부로 발행할 때 transport를 설치하지 않았다면 `IntegrationEventTransportUnavailableError`로 거절합니다.
 
-트랜잭션 이벤트 발행 Aspect의 Order는 0, TransactionalAspect의 Order는 1입니다. 이벤트 Aspect가 트랜잭션 실행을 감싸므로 commit 및 dispose 이후에만 성공 이벤트를 전달합니다. 수집 목록과 이벤트 배치를 분리한 뒤 핸들러를 호출하여 후속 유스케이스가 부모 이벤트를 재발행하지 않도록 합니다.
+트랜잭션 이벤트 발행 Aspect의 Order는 0, TransactionalAspect의 Order는 1입니다. 이벤트 Aspect가 트랜잭션 실행을 감싸므로 commit 및 dispose 이후에만 성공 이벤트를 전달합니다. 수집 목록과 이벤트 배치를 분리한 뒤 핸들러를 호출하여 후속 유스케이스가 부모 이벤트를 재발행하지 않도록 합니다. 중첩된 `@Transactional` 호출에서는 실제로 commit한 physical transaction마다 그 뒤에 한 번 발행합니다. 바깥에 합쳐진(`Propagation.REQUIRED`) 안쪽은 발행하지 않고 가장 바깥의 commit 뒤에 함께 발행되며, `Propagation.REQUIRES_NEW` 안쪽은 자신이 commit한 직후 발행됩니다.
 
 ## 명시적인 이벤트 제공자 선택
 
