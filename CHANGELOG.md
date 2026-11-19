@@ -1,3 +1,11 @@
+## v13.1.0 (2026-11-19)
+
+### Feat
+
+- **fastapi**: 서버가 종료를 시작하면 열린 @sse stream을 정상으로 끝냅니다 (#581)
+- **llm**: Responses 공급자가 docx·xlsx 등 OpenAI input_file 문서 형식을 받습니다 (#580)
+- **oauth**: confidential client와 직접 저장한 token의 갱신·폐기를 지원합니다 (#579)
+
 ## v13.0.0 (2026-11-19)
 
 ### BREAKING CHANGE
