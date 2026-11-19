@@ -153,7 +153,7 @@ class ServerShutdownSignal:
             if not awaiting_item:
                 return
             interrupted = True
-            merged = _is_woken_by_cancel(task)
+            merged = self.__is_woken_by_cancel(task)
             # The task is suspended, not done, so the request is counted.
             task.cancel()
             requested += 1
@@ -230,29 +230,29 @@ class ServerShutdownSignal:
             if isinstance(iterator, Generator):
                 iterator.close()
 
+    @staticmethod
+    def __is_woken_by_cancel(task: Task[object]) -> bool:
+        """Whether another cancellation has already woken the suspended task.
+
+        asyncio has no public API for this; anyio reads the same private task
+        state to decide whether a cancellation still has to be delivered. A task
+        woken by a result or resumed from a bare checkpoint is not counted: a
+        cancellation requested then still reaches it on its own.
+
+        Args:
+            task: A suspended task.
+
+        Returns:
+            True when a pending cancellation will resume the task, so one
+            requested now reaches it merged with that one.
+        """
+        must_cancel: bool = task._must_cancel  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
+        fut_waiter: Future[object] | None = task._fut_waiter  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
+        return must_cancel or (fut_waiter is not None and fut_waiter.cancelled())
+
     def __release(self, waiter: Future[None]) -> None:
         if not waiter.done():
             waiter.set_result(None)
-
-
-def _is_woken_by_cancel(task: Task[object]) -> bool:
-    """Whether another cancellation has already woken the suspended task.
-
-    asyncio has no public API for this; anyio reads the same private task
-    state to decide whether a cancellation still has to be delivered. A task
-    woken by a result or resumed from a bare checkpoint is not counted: a
-    cancellation requested then still reaches it on its own.
-
-    Args:
-        task: A suspended task.
-
-    Returns:
-        True when a pending cancellation will resume the task, so one
-        requested now reaches it merged with that one.
-    """
-    must_cancel: bool = task._must_cancel  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
-    fut_waiter: Future[object] | None = task._fut_waiter  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
-    return must_cancel or (fut_waiter is not None and fut_waiter.cancelled())
 
 
 class ShutdownSignalRelay:
