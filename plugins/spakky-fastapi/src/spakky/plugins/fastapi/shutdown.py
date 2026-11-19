@@ -70,11 +70,16 @@ class ServerShutdownSignal:
         """Mark the server as shutting down and wake every waiter.
 
         Safe to call from any thread: each waiter is released on its own
-        event loop.
+        event loop. A waiter whose loop is already closed can never resume,
+        so it is skipped and the remaining waiters are still released.
         """
         self.__triggered = True
         for waiter, loop in tuple(self.__waiters.items()):
-            loop.call_soon_threadsafe(self.__release, waiter)
+            try:
+                loop.call_soon_threadsafe(self.__release, waiter)
+            except RuntimeError:
+                # call_soon_threadsafe raises RuntimeError only for a closed loop.
+                logger.debug("Shutdown waiter on a closed event loop is skipped")
 
     def reset(self) -> None:
         """Re-arm the signal when the server starts serving again."""
@@ -106,8 +111,14 @@ class ServerShutdownSignal:
         context variable tokens) behave as they do without this guard. When
         the signal fires while the task waits for the next item, that wait is
         cancelled with an asyncio cancellation, which an anyio shield does not
-        stop: a shielded await or an ``anyio.to_thread.run_sync`` wait inside
-        the stream is interrupted too, while the worker thread keeps running.
+        stop: a shielded await or an ``anyio.to_thread.run_sync`` or Starlette
+        ``run_in_threadpool`` wait inside the stream is interrupted too, while
+        the worker thread keeps running. The stream's ``finally`` therefore
+        must not close or change a resource the worker thread may still use.
+        The wait is cancelled again on every loop turn until the stream gives
+        it up, as anyio does for its own scopes, so a cancel scope in the
+        stream that absorbs one request does not keep the stream open, and
+        work the stream does after it catches the cancellation is cut too.
         An item the stream still produces is dropped. The stream is then
         closed, so a started generator's ``finally`` runs, and this generator
         returns normally. A cancellation requested by anyone else at the same
@@ -129,14 +140,23 @@ class ServerShutdownSignal:
         waiter: Future[None] = loop.create_future()
         awaiting_item = False
         interrupted = False
+        requested = 0
 
-        def interrupt(_: Future[None]) -> None:
+        def interrupt(_: Future[None] | None = None) -> None:
             # Runs on the task's loop while the task is suspended, so it is
             # suspended inside the stream exactly when awaiting_item is set.
-            nonlocal interrupted
-            if awaiting_item and not interrupted:
-                interrupted = True
-                task.cancel()
+            # A cancel scope in the stream may absorb the request when its own
+            # cancellation reaches the task in the same loop turn, so the
+            # request is repeated every turn until the task leaves the wait,
+            # as anyio does for its own scopes.
+            nonlocal interrupted, requested
+            if not awaiting_item:
+                return
+            interrupted = True
+            # The task is suspended, not done, so the request is counted.
+            task.cancel()
+            requested += 1
+            loop.call_soon(interrupt)
 
         waiter.add_done_callback(interrupt)
         self.__waiters[waiter] = loop
@@ -149,15 +169,18 @@ class ServerShutdownSignal:
                 except StopAsyncIteration:
                     return
                 except CancelledError:
-                    # Swallow only this guard's own cancellation; one more
-                    # pending request came from someone else.
-                    if interrupted and task.cancelling() - 1 <= cancellations_before:
+                    # Swallow only this guard's own cancellations; any more
+                    # pending requests came from someone else.
+                    if (
+                        interrupted
+                        and task.cancelling() - requested <= cancellations_before
+                    ):
                         return
                     raise
                 finally:
                     awaiting_item = False
-                    if interrupted:
-                        # Withdraw the cancellation this guard requested.
+                    # Withdraw every cancellation this guard requested.
+                    for _ in range(requested):
                         task.uncancel()
                 if interrupted:
                     return
@@ -211,8 +234,9 @@ class ShutdownSignalRelay:
     the Python-level SIGTERM/SIGINT handlers the server installed (uvicorn
     installs them before it starts the lifespan). Each signal first fires the
     shutdown signal on the server's event loop and then runs the server's
-    handler unchanged. Signals the server left at the default or ignored
-    disposition are not touched.
+    handler unchanged. Signals whose handler is ``SIG_DFL`` or ``SIG_IGN`` are
+    not touched; any callable handler is wrapped, including Python's
+    ``default_int_handler`` for SIGINT.
     """
 
     __shutdown: ServerShutdownSignal

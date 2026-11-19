@@ -642,6 +642,73 @@ async def test_stream_until_shutdown_cancelled_with_interrupt_expect_cancel_kept
         await consumer
 
 
+async def test_stream_until_shutdown_when_user_scope_cancelled_with_interrupt_expect_normal_end() -> (
+    None
+):
+    """stream의 cancel scope가 종료 신호와 같은 loop turn에 취소되어 그 취소를 흡수해도, 다시 요청해 정상으로 끝낸다."""
+    shutdown = ServerShutdownSignal()
+    scopes: list[anyio.CancelScope] = []
+    journal: list[str] = []
+
+    async def scoped() -> AsyncIterator[str]:
+        try:
+            yield "first"
+            with anyio.CancelScope() as scope:
+                scopes.append(scope)
+                await anyio.sleep_forever()
+            journal.append("scope-exited")
+            await anyio.sleep_forever()
+            yield "never"
+        finally:
+            journal.append("closed")
+
+    async def consume() -> None:
+        async for item in shutdown.stream_until_shutdown(scoped()):
+            journal.append(item)
+
+    consumer = create_task(consume())
+    await anyio.wait_all_tasks_blocked()
+    shutdown.trigger()
+    # The trigger releases the waiter on the next turn and the guard's
+    # interrupt runs one turn later; cancelling the scope right after the
+    # release delivers the scope's cancellation in that same turn, so the
+    # guard's first request lands on an already woken task.
+    get_running_loop().call_soon(scopes[0].cancel)
+
+    with anyio.fail_after(5):
+        await consumer
+
+    assert consumer.cancelling() == 0
+    assert journal == ["first", "scope-exited", "closed"]
+
+
+def test_trigger_with_waiter_on_closed_loop_expect_other_waiters_released() -> None:
+    """닫힌 event loop의 waiter가 있어도 trigger는 오류 없이 나머지 waiter를 깨운다."""
+    shutdown = ServerShutdownSignal()
+    closed_loop = new_event_loop()
+
+    async def start_waiting() -> None:
+        create_task(shutdown.wait())
+        await sleep(0)
+
+    closed_loop.run_until_complete(start_waiting())
+    closed_loop.close()
+
+    async def wait_for_trigger() -> bool:
+        waiting = create_task(shutdown.wait())
+        await sleep(0)
+        shutdown.trigger()
+        with anyio.fail_after(5):
+            await waiting
+        return shutdown.triggered
+
+    live_loop = new_event_loop()
+    try:
+        assert live_loop.run_until_complete(wait_for_trigger()) is True
+    finally:
+        live_loop.close()
+
+
 def test_relay_when_loop_closed_expect_server_handler_still_called() -> None:
     """event loop가 이미 닫혀 신호를 전하지 못해도 서버의 handler는 불린다."""
     calls: list[int] = []
