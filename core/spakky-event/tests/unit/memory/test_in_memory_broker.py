@@ -84,13 +84,19 @@ class Permanent(AbstractNonRetryableEventError):
 @Pod()
 def transaction() -> AbstractTransaction:
     """Transaction double required by the publishing aspects."""
-    return Mock(spec=AbstractTransaction)
+    double = Mock(spec=AbstractTransaction)
+    # Instance attribute: spec cannot see it, and the aspect reads it after commit.
+    double.autocommit_enabled = True
+    return double
 
 
 @Pod()
 def async_transaction() -> AbstractAsyncTransaction:
     """Async transaction double required by the publishing aspects."""
-    return AsyncMock(spec=AbstractAsyncTransaction)
+    double = AsyncMock(spec=AbstractAsyncTransaction)
+    # Instance attribute: spec cannot see it, and the aspect reads it after commit.
+    double.autocommit_enabled = True
+    return double
 
 
 @Pod()

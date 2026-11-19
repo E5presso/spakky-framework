@@ -138,13 +138,19 @@ class SyncRedriveEvent(AbstractIntegrationEvent):
 @Pod()
 def transaction() -> AbstractTransaction:
     """Transaction double so that TransactionalAspect really advises a handler."""
-    return MagicMock(spec=AbstractTransaction)
+    double = MagicMock(spec=AbstractTransaction)
+    # Instance attribute: spec cannot see it, and the aspect reads it after commit.
+    double.autocommit_enabled = True
+    return double
 
 
 @Pod()
 def async_transaction() -> AbstractAsyncTransaction:
     """Async transaction double required by the async transactional aspect."""
-    return AsyncMock(spec=AbstractAsyncTransaction)
+    double = AsyncMock(spec=AbstractAsyncTransaction)
+    # Instance attribute: spec cannot see it, and the aspect reads it after commit.
+    double.autocommit_enabled = True
+    return double
 
 
 @EventHandler(subscriber="billing")
