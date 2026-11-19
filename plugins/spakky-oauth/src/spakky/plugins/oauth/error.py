@@ -62,7 +62,8 @@ class OAuthTokenEndpointError(AbstractSpakkyOAuthError):
         status_code: OAuthHttpStatus,
         error: OAuthErrorCode | None = None,
     ) -> None:
-        super().__init__()
+        # Passed on so pickle and copy can rebuild the error from its args.
+        super().__init__(status_code, error)
         self.status_code = status_code
         self.error = error
 
@@ -99,7 +100,8 @@ class OAuthRevocationError(AbstractSpakkyOAuthError):
         status_code: OAuthHttpStatus | None = None,
         error: OAuthErrorCode | None = None,
     ) -> None:
-        super().__init__()
+        # Passed on so pickle and copy can rebuild the error from its args.
+        super().__init__(status_code, error)
         self.status_code = status_code
         self.error = error
 

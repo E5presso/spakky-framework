@@ -272,7 +272,9 @@ async def disconnect(oauth: OAuthClient, refresh_token: SecretStr) -> None:
 | `refresh_tokens(client, refresh_token, *, client_id=None) -> OAuthTokenSet` | refresh grant를 보내 새 token set을 돌려줍니다. Server가 refresh token을 회전하지 않으면 받은 refresh token을, scope를 알려주지 않으면 registration의 `scopes`를 넣습니다. |
 | `revoke_token(client, token, *, token_type_hint=None, client_id=None) -> None` | RFC 7009 폐기 요청을 보냅니다. `token_type_hint`(`OAuthTokenTypeHint.ACCESS_TOKEN`/`REFRESH_TOKEN`)가 `None`이면 hint를 보내지 않습니다. |
 
-`client_id`는 token이 registration과 다른 client id로 발급된 경우에만 넘깁니다. 거절 판정은 `access_token()`과 같습니다.
+`client_id`는 token이 registration과 다른 client id로 발급된 경우에만 넘깁니다. `invalid_grant`를 다시 로그인이 필요한 거절로 보는 기준은 `access_token()`과 같습니다. 다만 `refresh_tokens()`는 저장소를 읽지 않으므로, 다른 instance가 먼저 회전시킨 token으로 대신 답하지 않고 항상 오류를 냅니다.
+
+Server가 응답에서 `scope`를 생략하면 RFC 6749 section 6에 따라 원래 grant와 같은 scope라는 뜻이지만, `refresh_tokens()`는 원래 grant를 모르므로 registration의 `scopes`를 넣습니다. 원래 grant가 더 좁았다면 저장해 둔 scope를 그대로 쓰십시오.
 
 | Server 응답 | `refresh_tokens()` | `revoke_token()` |
 | --- | --- | --- |

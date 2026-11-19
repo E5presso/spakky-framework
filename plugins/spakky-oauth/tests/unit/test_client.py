@@ -1,6 +1,8 @@
 """Tests for the OAuth 2.0 client flows over a fake authorization server."""
 
 from asyncio import gather, sleep
+from copy import copy
+from pickle import dumps, loads
 from base64 import b64decode, urlsafe_b64encode
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -1166,3 +1168,22 @@ async def test_confidential_client_without_secret_expect_not_configured(
         )
 
     assert server.requests == []
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OAuthTokenEndpointError(400, "invalid_client"),
+        OAuthTokenEndpointError(503),
+        OAuthRevocationError(401, "invalid_client"),
+        OAuthRevocationError(),
+    ],
+)
+def test_structured_error_round_trip_expect_status_and_code_kept(
+    error: OAuthTokenEndpointError | OAuthRevocationError,
+) -> None:
+    """Errors crossing a process boundary keep their status and OAuth error code."""
+    for restored in (loads(dumps(error)), copy(error)):
+        assert type(restored) is type(error)
+        assert restored.status_code == error.status_code
+        assert restored.error == error.error
