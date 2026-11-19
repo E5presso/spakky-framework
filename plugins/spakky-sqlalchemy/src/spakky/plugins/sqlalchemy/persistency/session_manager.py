@@ -1,4 +1,4 @@
-from uuid import UUID
+from contextvars import ContextVar
 
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.interfaces.application_context import IApplicationContext
@@ -31,16 +31,21 @@ class SessionNotInitializedError(AbstractSpakkySqlAlchemyPersistencyError):
 class SessionManager(IApplicationContextAware):
     """Manages synchronous SQLAlchemy sessions per execution context.
 
-    Each context keeps a stack of sessions. ``open()`` pushes a new session
-    (a new physical transaction, e.g. ``Propagation.REQUIRES_NEW``) on top of
-    the current one and ``close()`` closes the top session and returns to the
-    one below. ``session`` always resolves to the top session.
+    Each execution context keeps a stack of sessions. ``open()`` pushes a new
+    session (a new physical transaction, e.g. ``Propagation.REQUIRES_NEW``) on
+    top of the current one and ``close()`` closes the top session and returns
+    to the one below. ``session`` always resolves to the top session.
+
+    The stack is an immutable tuple held in a ``ContextVar``. A child task or
+    thread that copied the execution context starts from the parent's stack,
+    so it sees the parent's session, but the sessions it opens and closes stay
+    in its own context and never replace the session another task is using.
     """
 
     _application_context: IApplicationContext
     _engine: Engine
     _session_factory: sessionmaker[Session] | None
-    _sessions: dict[UUID, list[Session]]
+    _sessions: ContextVar[tuple[Session, ...]]
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -54,13 +59,13 @@ class SessionManager(IApplicationContextAware):
         """Initialize with engine from connection manager."""
         self._engine = connection_manager.connection
         self._session_factory = None
-        self._sessions = {}
+        self._sessions = ContextVar("spakky_sqlalchemy_sessions", default=())
 
     @property
     def session(self) -> Session:
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        stack = self._sessions.get(self._application_context.get_context_id())
+        stack = self._sessions.get()
         if not stack:
             raise SessionNotInitializedError()
         return stack[-1]
@@ -69,20 +74,17 @@ class SessionManager(IApplicationContextAware):
         """Open a new session on top of the current context's session stack."""
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        context_id = self._application_context.get_context_id()
-        self._sessions.setdefault(context_id, []).append(self._session_factory())
+        self._sessions.set((*self._sessions.get(), self._session_factory()))
 
     def close(self) -> None:
         """Close the top session of the current context and return to the one below."""
         if self._session_factory is None:
             return
-        context_id = self._application_context.get_context_id()
-        stack = self._sessions.get(context_id)
+        stack = self._sessions.get()
         if not stack:
             return
-        session = stack.pop()
-        if not stack:
-            del self._sessions[context_id]
+        session = stack[-1]
+        self._sessions.set(stack[:-1])
         session.close()
 
 
@@ -90,16 +92,21 @@ class SessionManager(IApplicationContextAware):
 class AsyncSessionManager(IApplicationContextAware):
     """Manages asynchronous SQLAlchemy sessions per execution context.
 
-    Each context keeps a stack of sessions. ``open()`` pushes a new session
-    (a new physical transaction, e.g. ``Propagation.REQUIRES_NEW``) on top of
-    the current one and ``close()`` closes the top session and returns to the
-    one below. ``session`` always resolves to the top session.
+    Each execution context keeps a stack of sessions. ``open()`` pushes a new
+    session (a new physical transaction, e.g. ``Propagation.REQUIRES_NEW``) on
+    top of the current one and ``close()`` closes the top session and returns
+    to the one below. ``session`` always resolves to the top session.
+
+    The stack is an immutable tuple held in a ``ContextVar``. A child task or
+    thread that copied the execution context starts from the parent's stack,
+    so it sees the parent's session, but the sessions it opens and closes stay
+    in its own context and never replace the session another task is using.
     """
 
     _application_context: IApplicationContext
     _engine: AsyncEngine
     _session_factory: async_sessionmaker[AsyncSession] | None
-    _sessions: dict[UUID, list[AsyncSession]]
+    _sessions: ContextVar[tuple[AsyncSession, ...]]
 
     @override
     def set_application_context(self, application_context: IApplicationContext) -> None:
@@ -113,13 +120,13 @@ class AsyncSessionManager(IApplicationContextAware):
         """Initialize with engine from async connection manager."""
         self._engine = connection_manager.connection
         self._session_factory = None
-        self._sessions = {}
+        self._sessions = ContextVar("spakky_sqlalchemy_async_sessions", default=())
 
     @property
     def session(self) -> AsyncSession:
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        stack = self._sessions.get(self._application_context.get_context_id())
+        stack = self._sessions.get()
         if not stack:
             raise SessionNotInitializedError()
         return stack[-1]
@@ -128,18 +135,15 @@ class AsyncSessionManager(IApplicationContextAware):
         """Open a new async session on top of the current context's session stack."""
         if self._session_factory is None:
             raise SessionNotInitializedError()
-        context_id = self._application_context.get_context_id()
-        self._sessions.setdefault(context_id, []).append(self._session_factory())
+        self._sessions.set((*self._sessions.get(), self._session_factory()))
 
     async def close(self) -> None:
         """Close the top async session of the current context and return to the one below."""
         if self._session_factory is None:
             return
-        context_id = self._application_context.get_context_id()
-        stack = self._sessions.get(context_id)
+        stack = self._sessions.get()
         if not stack:
             return
-        session = stack.pop()
-        if not stack:
-            del self._sessions[context_id]
+        session = stack[-1]
+        self._sessions.set(stack[:-1])
         await session.close()

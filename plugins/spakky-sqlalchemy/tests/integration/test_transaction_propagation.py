@@ -1,5 +1,9 @@
 """실제 PostgreSQL에서 중첩된 transaction scope(propagation)의 commit·rollback을 검증한다."""
 
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from uuid import UUID
 
 import pytest
@@ -196,3 +200,113 @@ def test_sync_joined_failure_swallowed_expect_nothing_committed(
                 pass
 
     assert not stored_sync(transaction, outer_user.uid)
+
+
+@pytest.mark.asyncio
+async def test_async_concurrent_requires_new_expect_each_task_commits_own_session(
+    schema_registry: SchemaRegistry,
+    async_transaction: AsyncTransaction,
+    unique_id: str,
+) -> None:
+    """한 요청의 두 task가 동시에 연 REQUIRES_NEW는 각자의 session으로만 commit·rollback한다."""
+    outer_user = new_user(f"conc_outer_{unique_id}")
+    a_user = new_user(f"conc_a_{unique_id}")
+    b_user = new_user(f"conc_b_{unique_id}")
+    a_opened = asyncio.Event()
+    b_opened = asyncio.Event()
+    a_finished = asyncio.Event()
+
+    async def a() -> None:
+        async with async_transaction.scope(Propagation.REQUIRES_NEW):
+            mine = async_transaction.session
+            mine.add(schema_registry.from_domain(a_user))
+            await mine.flush()
+            a_opened.set()
+            await b_opened.wait()
+            assert async_transaction.session is mine
+        a_finished.set()
+
+    async def b() -> None:
+        await a_opened.wait()
+        async with async_transaction.scope(Propagation.REQUIRES_NEW):
+            mine = async_transaction.session
+            mine.add(schema_registry.from_domain(b_user))
+            await mine.flush()
+            b_opened.set()
+            await a_finished.wait()
+            assert async_transaction.session is mine
+            raise InnerFailureError()
+
+    async with async_transaction.scope():
+        outer_session = async_transaction.session
+        outer_session.add(schema_registry.from_domain(outer_user))
+        results = await asyncio.gather(a(), b(), return_exceptions=True)
+        assert results[0] is None
+        assert isinstance(results[1], InnerFailureError)
+        assert async_transaction.session is outer_session
+
+    assert await stored(async_transaction, outer_user.uid)
+    assert await stored(async_transaction, a_user.uid)
+    assert not await stored(async_transaction, b_user.uid)
+
+
+@pytest.mark.asyncio
+async def test_async_joined_failure_in_child_task_expect_nothing_committed(
+    schema_registry: SchemaRegistry,
+    async_transaction: AsyncTransaction,
+    unique_id: str,
+) -> None:
+    """gather로 부른 자식 task의 합쳐진 실패를 삼켜도 바깥은 commit하지 않는다."""
+    outer_user = new_user(f"child_ro_outer_{unique_id}")
+
+    async def child() -> None:
+        async with async_transaction.scope(Propagation.REQUIRED):
+            raise InnerFailureError()
+
+    with pytest.raises(TransactionRollbackOnlyError):
+        async with async_transaction.scope():
+            async_transaction.session.add(schema_registry.from_domain(outer_user))
+            await asyncio.gather(child(), return_exceptions=True)
+
+    assert not await stored(async_transaction, outer_user.uid)
+
+
+def test_sync_concurrent_requires_new_threads_expect_each_thread_commits_own(
+    schema_registry: SchemaRegistry,
+    transaction: Transaction,
+    unique_id: str,
+) -> None:
+    """context를 복사한 두 thread의 REQUIRES_NEW는 각자의 session으로만 commit·rollback한다."""
+    outer_user = new_user(f"sync_conc_outer_{unique_id}")
+    users = {
+        "a": new_user(f"sync_conc_a_{unique_id}"),
+        "b": new_user(f"sync_conc_b_{unique_id}"),
+    }
+    barrier = threading.Barrier(2)
+
+    def child(name: str) -> None:
+        with transaction.scope(Propagation.REQUIRES_NEW):
+            mine = transaction.session
+            mine.add(schema_registry.from_domain(users[name]))
+            mine.flush()
+            barrier.wait()
+            assert transaction.session is mine
+            barrier.wait()
+            if name == "b":
+                raise InnerFailureError()
+
+    with transaction.scope():
+        outer_session = transaction.session
+        outer_session.add(schema_registry.from_domain(outer_user))
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {
+                name: executor.submit(copy_context().run, child, name) for name in users
+            }
+            assert futures["a"].result() is None
+            with pytest.raises(InnerFailureError):
+                futures["b"].result()
+        assert transaction.session is outer_session
+
+    assert stored_sync(transaction, outer_user.uid)
+    assert stored_sync(transaction, users["a"].uid)
+    assert not stored_sync(transaction, users["b"].uid)

@@ -17,13 +17,19 @@ class AggregateCollector:
     the buffer of the transaction they joined. When a physical transaction
     commits, its buffer is handed over and stays available through
     ``drain_committed()`` until the domain events are published.
+
+    The stack of buffers is an immutable tuple in a ``ContextVar`` but each
+    buffer is a shared list: a child task or thread that inherited the
+    execution context collects into the buffer of the transaction it joined,
+    while a buffer it opens itself (``REQUIRES_NEW``) stays in its own context.
+    The first element is the base buffer used outside any transaction.
     """
 
-    _buffers: ContextVar[tuple[tuple[AbstractAggregateRoot, ...], ...]]
+    _buffers: ContextVar[tuple[list[AbstractAggregateRoot], ...]]
     _committed: ContextVar[tuple[AbstractAggregateRoot, ...]]
 
     def __init__(self) -> None:
-        self._buffers = ContextVar("spakky_collected_aggregates", default=((),))
+        self._buffers = ContextVar("spakky_collected_aggregates", default=())
         self._committed = ContextVar("spakky_committed_aggregates", default=())
 
     def collect(self, aggregate: AbstractAggregateRoot) -> None:
@@ -41,8 +47,7 @@ class AggregateCollector:
             >>> user = User.create(name="Alice")
             >>> collector.collect(user)
         """
-        buffers = self._buffers.get()
-        self._buffers.set((*buffers[:-1], (*buffers[-1], aggregate)))
+        self._current_buffers()[-1].append(aggregate)
 
     def all(self) -> Sequence[AbstractAggregateRoot]:
         """Get the aggregates tracked by the physical transaction in progress.
@@ -57,7 +62,7 @@ class AggregateCollector:
             >>> len(collector.all())
             1
         """
-        return list(self._buffers.get()[-1])
+        return list(self._current_buffers()[-1])
 
     def clear(self) -> None:
         """Clear the aggregates tracked by the physical transaction in progress.
@@ -70,12 +75,11 @@ class AggregateCollector:
             >>> len(collector.all())
             0
         """
-        buffers = self._buffers.get()
-        self._buffers.set((*buffers[:-1], ()))
+        self._current_buffers()[-1].clear()
 
     def begin_transaction(self) -> None:
         """Open an empty buffer for a new physical transaction."""
-        self._buffers.set((*self._buffers.get(), ()))
+        self._buffers.set((*self._current_buffers(), []))
 
     def commit_transaction(self) -> None:
         """Close the current buffer and hand its aggregates over for publishing.
@@ -108,8 +112,17 @@ class AggregateCollector:
         self._committed.set(())
         return committed
 
-    def _open_buffers(self) -> tuple[tuple[AbstractAggregateRoot, ...], ...]:
+    def _current_buffers(self) -> tuple[list[AbstractAggregateRoot], ...]:
         buffers = self._buffers.get()
+        if len(buffers) == 0:
+            # The base buffer is created per execution context on first use so
+            # that contexts never share a default list.
+            buffers = ([],)
+            self._buffers.set(buffers)
+        return buffers
+
+    def _open_buffers(self) -> tuple[list[AbstractAggregateRoot], ...]:
+        buffers = self._current_buffers()
         if len(buffers) == 1:
             raise AggregateBufferNotOpenError()
         return buffers

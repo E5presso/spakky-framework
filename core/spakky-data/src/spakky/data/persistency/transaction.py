@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 from types import TracebackType
 from typing import Self, final
@@ -25,19 +25,36 @@ class Propagation(StrEnum):
     """Always start a separate transaction that commits on its own."""
 
 
-@dataclass(frozen=True, slots=True)
-class TransactionFrame:
-    """State of one physical transaction in the current execution context.
+@dataclass(slots=True)
+class PhysicalTransaction:
+    """Shared, mutable state of one physical transaction.
 
     A physical transaction is the unit that is actually opened, committed or
-    rolled back. Joined scopes share the frame of the scope they joined.
+    rolled back. Every scope that joins it, including scopes running in child
+    tasks or threads that inherited the execution context, refers to the same
+    object, so a failure recorded by any of them is seen by the scope that
+    opened it.
     """
-
-    depth: int = 1
-    """Number of scopes currently participating (1 = only the opening scope)."""
 
     rollback_only: bool = False
     """True once a joined scope exited with an exception; commit is refused."""
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionFrame:
+    """One open transaction scope in the current execution context.
+
+    Frames are kept in an immutable tuple stored in a ``ContextVar``. A child
+    task or thread copies the tuple, so scopes it opens (``REQUIRES_NEW``)
+    stay in its own context, while scopes it joins still point at the shared
+    ``PhysicalTransaction`` of the parent.
+    """
+
+    transaction: PhysicalTransaction
+    """The physical transaction this scope belongs to."""
+
+    owner: bool
+    """True for the scope that opened the physical transaction."""
 
 
 class AbstractTransaction(IDisposable, ABC):
@@ -49,6 +66,14 @@ class AbstractTransaction(IDisposable, ABC):
     ``Propagation.REQUIRES_NEW`` always opens a separate physical transaction
     through ``initialize()``; implementations must keep the outer one intact
     and restore it in ``dispose()``.
+
+    A child task or thread that copied the execution context inherits the
+    open scopes. A ``REQUIRED`` scope it begins joins the parent's physical
+    transaction, and a failure there marks that transaction rollback-only for
+    the parent too. A ``REQUIRES_NEW`` scope it begins stays in its own
+    context, so implementations must keep the per-transaction resource (e.g.
+    the session) in execution-context-local state, not in state shared by
+    every task of a request.
     """
 
     autocommit_enabled: bool
@@ -72,7 +97,7 @@ class AbstractTransaction(IDisposable, ABC):
     def is_rollback_only(self) -> bool:
         """Whether the current physical transaction can only be rolled back."""
         frames = self._frames.get()
-        return len(frames) > 0 and frames[-1].rollback_only
+        return len(frames) > 0 and frames[-1].transaction.rollback_only
 
     def joins(self, propagation: Propagation) -> bool:
         """Tell whether a scope begun now would join the transaction in progress.
@@ -129,11 +154,12 @@ class AbstractTransaction(IDisposable, ABC):
     def _begin(self, propagation: Propagation) -> None:
         frames = self._frames.get()
         if self.joins(propagation):
-            top = frames[-1]
-            self._frames.set((*frames[:-1], replace(top, depth=top.depth + 1)))
+            self._frames.set(
+                (*frames, TransactionFrame(frames[-1].transaction, owner=False))
+            )
             return
         self.initialize()
-        self._frames.set((*frames, TransactionFrame()))
+        self._frames.set((*frames, TransactionFrame(PhysicalTransaction(), owner=True)))
 
     @final
     def _finish(self, error: BaseException | None) -> None:
@@ -141,26 +167,18 @@ class AbstractTransaction(IDisposable, ABC):
         if not frames:
             raise TransactionNotActiveError()
         top = frames[-1]
-        if top.depth > 1:
-            self._frames.set(
-                (
-                    *frames[:-1],
-                    replace(
-                        top,
-                        depth=top.depth - 1,
-                        rollback_only=top.rollback_only or error is not None,
-                    ),
-                )
-            )
-            return
         self._frames.set(frames[:-1])
+        if not top.owner:
+            if error is not None:
+                top.transaction.rollback_only = True
+            return
         if error is not None:
             try:
                 self.rollback()
             finally:
                 self.dispose()
             return
-        if top.rollback_only:
+        if top.transaction.rollback_only:
             try:
                 self.rollback()
             finally:
@@ -208,6 +226,14 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
     ``Propagation.REQUIRES_NEW`` always opens a separate physical transaction
     through ``initialize()``; implementations must keep the outer one intact
     and restore it in ``dispose()``.
+
+    A child task or thread that copied the execution context inherits the
+    open scopes. A ``REQUIRED`` scope it begins joins the parent's physical
+    transaction, and a failure there marks that transaction rollback-only for
+    the parent too. A ``REQUIRES_NEW`` scope it begins stays in its own
+    context, so implementations must keep the per-transaction resource (e.g.
+    the session) in execution-context-local state, not in state shared by
+    every task of a request.
     """
 
     autocommit_enabled: bool
@@ -231,7 +257,7 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
     def is_rollback_only(self) -> bool:
         """Whether the current physical transaction can only be rolled back."""
         frames = self._frames.get()
-        return len(frames) > 0 and frames[-1].rollback_only
+        return len(frames) > 0 and frames[-1].transaction.rollback_only
 
     def joins(self, propagation: Propagation) -> bool:
         """Tell whether a scope begun now would join the transaction in progress.
@@ -290,11 +316,12 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
     async def _begin(self, propagation: Propagation) -> None:
         frames = self._frames.get()
         if self.joins(propagation):
-            top = frames[-1]
-            self._frames.set((*frames[:-1], replace(top, depth=top.depth + 1)))
+            self._frames.set(
+                (*frames, TransactionFrame(frames[-1].transaction, owner=False))
+            )
             return
         await self.initialize()
-        self._frames.set((*frames, TransactionFrame()))
+        self._frames.set((*frames, TransactionFrame(PhysicalTransaction(), owner=True)))
 
     @final
     async def _finish(self, error: BaseException | None) -> None:
@@ -302,26 +329,18 @@ class AbstractAsyncTransaction(IAsyncDisposable, ABC):
         if not frames:
             raise TransactionNotActiveError()
         top = frames[-1]
-        if top.depth > 1:
-            self._frames.set(
-                (
-                    *frames[:-1],
-                    replace(
-                        top,
-                        depth=top.depth - 1,
-                        rollback_only=top.rollback_only or error is not None,
-                    ),
-                )
-            )
-            return
         self._frames.set(frames[:-1])
+        if not top.owner:
+            if error is not None:
+                top.transaction.rollback_only = True
+            return
         if error is not None:
             try:
                 await self.rollback()
             finally:
                 await self.dispose()
             return
-        if top.rollback_only:
+        if top.transaction.rollback_only:
             try:
                 await self.rollback()
             finally:

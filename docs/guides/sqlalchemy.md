@@ -359,8 +359,12 @@ class CloseSessionUseCase:
     async def execute(self, session_id: UUID) -> None: ...
 ```
 
-- `SessionManager` / `AsyncSessionManager`는 컨텍스트마다 session stack을 둡니다. `REQUIRES_NEW`는 새 session(새 DB 연결)을
+- `SessionManager` / `AsyncSessionManager`는 실행 context(`ContextVar`)마다 session stack을 둡니다. `REQUIRES_NEW`는 새 session(새 DB 연결)을
   위에 올리고, 끝나면 그 session만 commit 또는 rollback하고 닫은 뒤 바깥 session으로 돌아갑니다.
+- `asyncio.gather`/`create_task`로 만든 자식 task와 context를 복사한 thread는 바깥의 session stack을 이어받습니다.
+  자식의 `REQUIRES_NEW`는 자식 context에만 쌓이므로 동시에 연 여러 `REQUIRES_NEW`가 서로의 session을 쓰거나 닫지 않습니다.
+  자식의 `REQUIRED`는 바깥 session을 함께 쓰고, 자식의 실패는 바깥을 rollback-only로 만듭니다.
+  session 하나는 동시 사용에 안전하지 않으므로 자식들이 동시에 DB를 쓰면 각자 `REQUIRES_NEW`를 쓰세요.
 - 안쪽은 바깥이 아직 commit하지 않은 변경을 보지 못합니다. 바깥이 잠근 행을 안쪽이 쓰면 서로 기다릴 수 있습니다(PostgreSQL 행 lock).
 - 연결을 둘 쓰므로 `pool_size`(기본 5)와 `pool_max_overflow`(기본 10)를 그만큼 고려합니다.
 - 도메인 이벤트는 실제로 commit한 physical transaction마다 그 뒤에 발행됩니다. 합쳐진 안쪽이 끝날 때는 발행하지 않습니다.
@@ -534,4 +538,4 @@ class BillingHandler:
 
 ## 같은 앱의 여러 요청
 
-세션 매니저는 현재 ApplicationContext ID의 scoped registry에서 세션을 조회합니다. 요청 어댑터가 컨텍스트를 구분하면 동일 매니저를 공유해도 다른 요청의 close가 현재 요청의 세션을 닫지 않습니다. 유스케이스의 `@transactional`이 세션을 열고 닫으며, 사용한 비동기 엔진은 연결을 사용한 이벤트 루프에서 dispose합니다.
+세션 매니저는 현재 실행 context(`ContextVar`)의 session stack에서 세션을 조회합니다. 요청마다 task(또는 thread)가 따로 실행되므로 동일 매니저를 공유해도 다른 요청의 open/close가 현재 요청의 세션을 바꾸거나 닫지 않습니다. 유스케이스의 `@transactional`이 세션을 열고 닫으며, 사용한 비동기 엔진은 연결을 사용한 이벤트 루프에서 dispose합니다.

@@ -304,6 +304,7 @@ def test_shared_sync_manager_keeps_overlapping_contexts_independent() -> None:
 async def test_shared_async_manager_keeps_overlapping_contexts_independent() -> None:
     """비동기 요청 사이에서도 현재 컨텍스트의 세션만 조회·종료한다."""
     import asyncio
+    from contextvars import Context
     from sqlalchemy.ext.asyncio import create_async_engine
     from spakky.core.application.application_context import ApplicationContext
 
@@ -325,7 +326,8 @@ async def test_shared_async_manager_keeps_overlapping_contexts_independent() -> 
         with pytest.raises(SessionNotInitializedError):
             _ = manager.session
 
-    await asyncio.create_task(other_request())
+    # 다른 요청은 이 요청의 context를 이어받지 않은 별도 task다.
+    await asyncio.create_task(other_request(), context=Context())
     assert manager.session is first
     await manager.close()
     with pytest.raises(SessionNotInitializedError):
@@ -380,3 +382,102 @@ async def test_async_session_manager_nested_open_expect_stack_restores_outer() -
     with pytest.raises(SessionNotInitializedError):
         _ = manager.session
     await connection.connection.dispose()
+
+
+@pytest.mark.asyncio
+async def test_async_session_manager_concurrent_child_tasks_expect_own_sessions() -> (
+    None
+):
+    """같은 요청의 자식 task 둘이 동시에 open()해도 서로의 session을 쓰거나 닫지 않는다."""
+    import asyncio
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=AsyncConnectionManager)
+    connection.connection = create_async_engine(
+        "postgresql+psycopg://unused:unused@localhost/unused"
+    )
+    manager = AsyncSessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    await manager.open()
+    outer = manager.session
+    a_opened = asyncio.Event()
+    b_opened = asyncio.Event()
+    a_closed = asyncio.Event()
+    seen: dict[str, tuple[AsyncSession, AsyncSession, AsyncSession]] = {}
+
+    async def a() -> None:
+        inherited = manager.session
+        await manager.open()
+        mine = manager.session
+        a_opened.set()
+        await b_opened.wait()
+        seen["a"] = (inherited, mine, manager.session)
+        await manager.close()
+        a_closed.set()
+
+    async def b() -> None:
+        await a_opened.wait()
+        inherited = manager.session
+        await manager.open()
+        mine = manager.session
+        b_opened.set()
+        await a_closed.wait()
+        seen["b"] = (inherited, mine, manager.session)
+        await manager.close()
+
+    await asyncio.gather(a(), b())
+
+    assert seen["a"][0] is outer and seen["b"][0] is outer
+    assert seen["a"][1] is seen["a"][2]
+    assert seen["b"][1] is seen["b"][2]
+    assert seen["a"][1] is not seen["b"][1]
+    assert outer not in (seen["a"][1], seen["b"][1])
+    assert manager.session is outer
+    await manager.close()
+    with pytest.raises(SessionNotInitializedError):
+        _ = manager.session
+    await connection.connection.dispose()
+
+
+def test_sync_session_manager_concurrent_threads_expect_own_sessions() -> None:
+    """context를 복사한 thread 둘이 동시에 open()해도 각자의 session만 쓰고 닫는다."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from contextvars import copy_context
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from spakky.core.application.application_context import ApplicationContext
+
+    connection = MagicMock(spec=ConnectionManager)
+    connection.connection = create_engine("sqlite:///:memory:")
+    manager = SessionManager(connection)
+    manager.set_application_context(ApplicationContext())
+    manager.open()
+    outer = manager.session
+    barrier = threading.Barrier(2)
+    seen: dict[str, tuple[Session, Session, Session]] = {}
+
+    def child(name: str) -> None:
+        inherited = manager.session
+        manager.open()
+        mine = manager.session
+        barrier.wait()
+        seen[name] = (inherited, mine, manager.session)
+        barrier.wait()
+        manager.close()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(copy_context().run, child, name) for name in "ab"]
+        for future in futures:
+            future.result()
+
+    assert seen["a"][0] is outer and seen["b"][0] is outer
+    assert seen["a"][1] is seen["a"][2]
+    assert seen["b"][1] is seen["b"][2]
+    assert seen["a"][1] is not seen["b"][1]
+    assert manager.session is outer
+    manager.close()
+    with pytest.raises(SessionNotInitializedError):
+        _ = manager.session
+    connection.connection.dispose()

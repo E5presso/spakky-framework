@@ -847,6 +847,7 @@ class AggregateCollector:
 
 - **CONTEXT 스코프 + ContextVar**: 요청/실행 컨텍스트 단위로 격리
 - **physical transaction 단위 buffer**: 가장 바깥 또는 `REQUIRES_NEW` transaction마다 buffer를 쌓는다. 합쳐진(`REQUIRED`) 안쪽은 바깥 buffer에 모은다
+- **buffer stack은 불변 tuple, buffer는 공유 list**: 자식 task·thread는 stack을 복사해 이어받으므로 합쳐진 자식이 모은 aggregate는 바깥 buffer에 들어가고, 자식이 연 buffer는 자식 context에만 남는다
 - `collect(aggregate)`: Repository에서 save 시 호출 (현재 buffer에 추가)
 - `all()` / `clear()`: 현재 buffer 조회 / 비우기
 - `begin_transaction()` / `commit_transaction()` / `discard_transaction()`: 트랜잭션 Aspect가 buffer를 열고, commit 뒤 발행 대기열로 넘기거나 rollback 시 버린다
@@ -860,7 +861,8 @@ class AggregateCollector:
 flowchart TD
     tx["AbstractTransaction<br/>context manager"]
     scope["scope(propagation)"]
-    frames["ContextVar frame stack<br/>(depth, rollback_only)"]
+    frames["ContextVar frame stack (불변 tuple)<br/>frame = (PhysicalTransaction, owner)"]
+    physical["PhysicalTransaction<br/>(공유 가변: rollback_only)"]
     enter["__enter__() = scope(REQUIRED)"]
     init["initialize()"]
     exit["__exit__()"]
@@ -873,6 +875,7 @@ flowchart TD
     tx --> scope
     tx --> enter
     scope --> frames
+    frames --> physical
     enter --> frames
     frames -->|"새 physical transaction"| init
     tx --> exit
@@ -882,6 +885,10 @@ flowchart TD
     flag --> exit
     async_tx --> tx
 ```
+
+- frame stack은 `ContextVar`의 불변 tuple이다. 자식 task·thread는 stack을 복사해 이어받는다.
+- 합쳐진 scope의 frame은 바깥 frame과 같은 `PhysicalTransaction` 객체를 가리킨다. 그래서 자식 task에서 합쳐진 scope의 실패도 바깥의 `rollback_only`에 남는다.
+- 자식이 연 `REQUIRES_NEW` frame과 그 자원(SQLAlchemy session stack도 `ContextVar`)은 자식 context에만 쌓인다.
 
 ### External Proxy 패턴
 

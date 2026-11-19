@@ -180,6 +180,13 @@ async def record_audit(self, entry: AuditEntry) -> None: ...
   연결을 두 개 쓰므로 connection pool 크기를 그만큼 고려해야 합니다.
 - 읽기 전용 조회도 `REQUIRED`라면 바깥에 합쳐져 같은 session으로 바깥의 flush된 변경을 읽습니다.
 - `autocommit=False`이면 가장 바깥도 commit하지 않습니다.
+- transaction scope는 실행 context(`contextvars`)를 따라갑니다. `asyncio.gather`/`create_task`로 만든 자식 task나
+  `copy_context()`·`asyncio.to_thread`로 넘긴 thread는 바깥 scope를 이어받습니다.
+  - 자식의 `REQUIRED`는 바깥 physical transaction에 합쳐집니다. 자식이 예외로 끝나면 바깥이 그 예외를 삼켜도
+    바깥은 rollback하고 `TransactionRollbackOnlyError`를 냅니다. 자식이 모은 aggregate도 바깥 buffer에 들어갑니다.
+  - 자식의 `REQUIRES_NEW`는 자식 context에만 쌓입니다. 동시에 연 여러 `REQUIRES_NEW`는 서로의 session을 쓰거나 닫지 않습니다.
+  - 합쳐진 자식들은 바깥과 같은 session을 씁니다. SQLAlchemy session은 동시 사용에 안전하지 않으므로
+    같은 session으로 동시에 DB를 쓰려면 자식마다 `REQUIRES_NEW`를 쓰세요.
 
 `AggregateCollector`는 physical transaction(가장 바깥 또는 `REQUIRES_NEW`)마다 수집 buffer를 따로 둡니다.
 `@Transactional`은 physical transaction이 commit된 직후 그 buffer를 `drain_committed()`로 넘기고,
@@ -195,7 +202,9 @@ async with transaction.scope():
 ```
 
 `AbstractTransaction` / `AbstractAsyncTransaction`을 직접 구현한다면 `initialize()`는 바깥 transaction을 유지한 채
-새 physical transaction을 열고, `dispose()`는 그것을 닫은 뒤 바깥으로 돌아가야 합니다.
+새 physical transaction을 열고, `dispose()`는 그것을 닫은 뒤 바깥으로 돌아가야 합니다. 현재 physical transaction의
+자원(session 등)은 요청 전체가 공유하는 상태가 아니라 `ContextVar` 같은 실행 context 지역 상태로 찾아야
+자식 task의 `REQUIRES_NEW`가 다른 task의 자원을 바꾸지 않습니다.
 
 ### 외부 연동 Proxy 패턴
 

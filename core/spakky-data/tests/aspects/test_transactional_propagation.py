@@ -1,5 +1,6 @@
 """@Transactional 메서드의 중첩 호출(propagation)을 검증한다."""
 
+import asyncio
 from typing import override
 from unittest.mock import MagicMock
 
@@ -189,6 +190,15 @@ class OuterUseCase:
         self.committed_inside = list(self.collector.drain_committed())
 
     @Transactional()
+    async def gather_joined_async(self) -> None:
+        self.collector.collect(OUTER)
+        await asyncio.gather(self.inner.joined_async())
+
+    @Transactional()
+    async def gather_swallow_joined_failure_async(self) -> None:
+        await asyncio.gather(self.inner.joined_failing_async(), return_exceptions=True)
+
+    @Transactional()
     async def swallow_separate_failure_async(self) -> None:
         self.collector.collect(OUTER)
         try:
@@ -370,3 +380,38 @@ async def test_async_transactional_requires_new_failure_expect_outer_commits(
         "close:1",
     ]
     assert collector.drain_committed() == [OUTER]
+
+
+async def test_async_transactional_joined_in_child_task_expect_aggregates_committed(
+    context: ApplicationContext,
+) -> None:
+    """gather로 부른 자식 task가 합쳐지면 그 aggregate도 바깥 commit 뒤에 넘어간다."""
+    outer = context.get(type_=OuterUseCase)
+    collector = context.get(type_=AggregateCollector)
+
+    await outer.gather_joined_async()
+
+    assert context.get(type_=AsyncRecordingTransaction).events == [
+        "open:1",
+        "commit:1",
+        "close:1",
+    ]
+    assert collector.drain_committed() == [OUTER, INNER]
+
+
+async def test_async_transactional_joined_failure_in_child_task_expect_rollback_only(
+    context: ApplicationContext,
+) -> None:
+    """gather로 부른 자식 task의 합쳐진 실패를 삼켜도 바깥은 commit하지 않는다."""
+    outer = context.get(type_=OuterUseCase)
+    collector = context.get(type_=AggregateCollector)
+
+    with pytest.raises(TransactionRollbackOnlyError):
+        await outer.gather_swallow_joined_failure_async()
+
+    assert context.get(type_=AsyncRecordingTransaction).events == [
+        "open:1",
+        "rollback:1",
+        "close:1",
+    ]
+    assert collector.drain_committed() == []
