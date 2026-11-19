@@ -122,6 +122,9 @@ stream을 열기 전에 판정하고 실패를 HTTP 오류로 답하려면, asyn
 메서드에 `@sse`를 붙입니다. 응답이 시작되기 전에 coroutine을 `await`하므로 그 예외는 일반 route와
 같은 HTTP 오류 응답이 되고, 돌려준 async iterator가 stream으로 전송됩니다.
 generator도 coroutine도 아닌 메서드에 `@sse`를 붙이면 `SseEndpointNotGeneratorError`가 발생합니다.
+서버가 종료를 시작하면(SIGTERM·SIGINT) 열린 stream은 정상 종료로 끝나고 generator의 `finally`가
+실행되므로, client는 SSE의 다시 연결로 다른 서버에 붙습니다. 종료 시작은 `ServerShutdownSignal` Pod로도
+확인할 수 있습니다.
 자세한 동작은 [FastAPI 심화 가이드](../../docs/guides/fastapi-advanced.md#sse)를 참고하세요.
 
 ### FastAPI 앱 접근
@@ -219,6 +222,7 @@ FastAPI wrapper가 Spakky request context를 clear한 뒤 credential 전달체�
 | `get`, `post`, `put`, etc. | HTTP method용 route decorator |
 | `websocket` | WebSocket endpoint decorator |
 | `sse` | generator 메서드나 async iterator를 돌려주는 coroutine 메서드를 Server-Sent Events stream으로 등록하는 decorator |
+| `ServerShutdownSignal` | 서버가 종료를 시작하면 켜지는 신호. 켜지면 열린 `@sse` stream이 정상 종료로 끝남 |
 | `ErrorHandlingMiddleware` | built-in exception handling middleware |
 | `TracingMiddleware` | trace context propagation middleware (`spakky-tracing` 필수 의존) |
 | `FastAPIConfig` | 플러그인 제공 기본 FastAPI 앱 설정 |

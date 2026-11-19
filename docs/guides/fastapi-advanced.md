@@ -209,6 +209,65 @@ class JobController:
 - coroutine이 async iterator가 아닌 값을 돌려주면 `SseStreamNotAsyncIterableError`(`500`)로 응답합니다.
 - 두 번째 단계에서 발생한 예외는 generator 메서드와 같이 HTTP 상태 코드로 바뀌지 않습니다.
 
+### 서버 종료 때 stream 끝내기 { #sse-shutdown }
+
+uvicorn은 SIGTERM을 받으면 새 연결을 받지 않고, 열린 응답이 모두 끝나기를 기다린 **뒤에** ASGI
+lifespan 종료를 실행합니다. 스스로 끝나지 않는 stream은 그동안 프로세스를 붙잡고,
+`timeout_graceful_shutdown`이 없으면 끝없이, 있으면 그 시간이 지나 연결이 끊길 때까지 종료가 늦어집니다.
+lifespan 종료에서 stream을 멈추라고 알리면 이미 늦습니다.
+
+플러그인은 서버가 종료를 시작하는 순간 열린 `@sse` stream을 정상 종료로 끝냅니다. 사용자 코드에 바꿀
+것은 없습니다.
+
+- lifespan이 시작될 때, 서버가 설치한 Python 수준의 SIGTERM·SIGINT handler 앞에 `ShutdownSignalRelay`를
+  잇습니다. 신호가 오면 `ServerShutdownSignal`을 켠 뒤 서버의 handler를 그대로 부르므로 서버의
+  종료 절차는 바뀌지 않습니다. 서버가 handler를 두지 않은 신호(기본 동작·무시)는 건드리지 않고,
+  lifespan이 main thread가 아닌 곳에서 돌면 handler를 잇지 않습니다.
+- lifespan이 끝날 때도 `ServerShutdownSignal`을 켭니다. 신호를 잇지 못한 서버에서는 이 시점에 stream이
+  끝납니다. 신호는 다음 lifespan이 시작될 때까지 켜진 채로 남습니다. 그래서 lifespan을 한 번 돌린 같은
+  앱을 lifespan 없이 다시 쓰면(예: 테스트에서 `with` 없이 만든 `TestClient`) 새 stream이 이벤트 없이 바로
+  끝납니다. 테스트에서는 lifespan을 함께 돌리거나 `ServerShutdownSignal.reset()`을 부릅니다.
+- async generator와 coroutine이 돌려준 async iterator는 응답을 보내는 task 안에서 그대로 돕니다.
+  그래서 `yield`를 감싸는 anyio cancel scope·task group, `asyncio.timeout`, `current_task()`에 묶인
+  session, context variable token이 신호가 없을 때와 같이 동작합니다. 신호가 켜졌을 때 stream이 다음
+  항목을 기다리는 중이면 그 대기만 취소하고, 항목을 보내는 중이면 그 항목을 보낸 뒤 멈춥니다. 취소에
+  항목으로 답하는 stream이면 그 항목은 보내지 않습니다. 이어서 stream을 닫으므로 `finally`가 실행되고,
+  응답은 오류 없이 끝납니다. client는 SSE의 `retry`에 따라 다시 연결해 다른 서버에 붙습니다.
+- 기다리던 대기를 끊는 것은 asyncio 취소라서 anyio shield도 막지 못합니다. stream이
+  `anyio.CancelScope(shield=True)` 안이나 `anyio.to_thread.run_sync`를 기다리는 중이어도 끊기고,
+  worker thread는 하던 일을 계속하는 동안 `finally`가 먼저 실행됩니다. 종료 중에도 끝까지 마쳐야 하는
+  작업은 stream 밖(예: background service)에서 합니다. 같은 순간에 들어온 다른 취소(client 연결 끊김 등)는
+  삼키지 않고 그대로 전달합니다.
+- 동기 generator는 thread pool에서 돌아 중간에 끊을 수 없습니다. 다음 항목을 만들거나 요청할 때
+  신호를 확인하고 끝납니다. 오래 열어 둘 stream은 async generator로 씁니다.
+
+`ServerShutdownSignal`은 Pod이므로 컨트롤러나 서비스에 주입해 종료 시작을 직접 확인할 수 있습니다.
+`triggered`로 상태를 읽고, `await wait()`로 종료 시작을 기다립니다.
+
+```python
+from collections.abc import Iterator
+
+from spakky.plugins.fastapi.routes import sse
+from spakky.plugins.fastapi.shutdown import ServerShutdownSignal
+from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
+
+
+@ApiController("/exports")
+class ExportController:
+    def __init__(self, shutdown: ServerShutdownSignal) -> None:
+        self.shutdown = shutdown
+
+    @sse("/{export_id}/rows")
+    def rows(self, export_id: str) -> Iterator[ExportRow]:
+        for row in read_export(export_id):  # 동기 I/O
+            if self.shutdown.triggered:
+                break  # 종료가 시작되면 다음 행을 읽지 않는다
+            yield row
+```
+
+uvicorn을 쓴다면 `timeout_graceful_shutdown`도 함께 정해 둡니다. 신호를 잇지 못한 서버나 끝나지 않는
+동기 작업이 있어도 종료 시간이 이 값으로 묶입니다.
+
 ## 분산 트레이싱 { #tracing }
 
 `spakky-tracing`은 `spakky-fastapi`의 필수 의존성입니다. 컨테이너에 `ITracePropagator`가 등록되어 있으면 `AddBuiltInMiddlewaresPostProcessor`가 `get_or_none(ITracePropagator)`로 propagator를 조회해 `TracingMiddleware`를 자동 등록합니다.

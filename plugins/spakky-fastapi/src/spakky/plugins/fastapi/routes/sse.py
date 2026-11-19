@@ -67,7 +67,9 @@ def sse[T](
     returned iterator is then streamed. Each yielded `ServerSentEvent` is
     written with its `event`/`id`/`retry`/`comment` fields; any other yielded
     value is JSON-encoded into the `data:` field. Keep-alive comments and
-    cancellation on client disconnect are handled by FastAPI.
+    cancellation on client disconnect are handled by FastAPI. Once the server
+    starts shutting down (`ServerShutdownSignal`), the stream ends normally
+    and the generator is closed.
 
     Args:
         path: The URL path for this route.
