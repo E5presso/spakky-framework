@@ -11,6 +11,9 @@ from spakky.data.aspects.transactional import (
 from spakky.data.config import DataConfig
 from spakky.data.main import initialize
 from spakky.data.persistency.aggregate_collector import AggregateCollector
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 
 
 @pytest.mark.parametrize(
@@ -28,6 +31,7 @@ def test_initialize_common_mode_expect_matching_aspects(
     initialize(application)
     assert application.container.contains(DataConfig)
     assert application.container.contains(AggregateCollector)
+    assert application.container.contains(TransactionSynchronization)
     assert application.container.contains(TransactionalAspect)
     assert application.container.contains(AsyncTransactionalAspect) is enabled
     assert application.container.get(DataConfig).support_async_mode is enabled

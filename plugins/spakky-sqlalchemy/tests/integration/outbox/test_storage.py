@@ -208,6 +208,83 @@ async def test_fetch_pending_skips_recently_claimed_messages(
 
 
 @pytest.mark.asyncio
+async def test_release_claim_expect_message_claimable_again_without_timeout(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """전송에 실패해 claim을 풀면 claim timeout을 기다리지 않고 다음 읽기에서 다시 나간다."""
+    message = _make_message(unique_id)
+    async with async_transaction:
+        await async_storage.save(message)
+    [claimed] = [
+        r for r in await async_storage.fetch_pending(100, 5) if r.id == message.id
+    ]
+
+    await async_storage.release_claim(claimed)
+
+    assert message.id in {r.id for r in await async_storage.fetch_pending(100, 5)}
+    await async_storage.mark_published(message.id)
+
+
+@pytest.mark.asyncio
+async def test_release_claim_after_reclaim_by_other_relay_expect_newer_claim_kept(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    short_timeout_async_storage: AsyncSqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """claim timeout 뒤 다른 relay가 다시 claim한 메시지는 앞선 relay가 release해도 풀리지 않는다."""
+    message = _make_message(unique_id)
+    async with async_transaction:
+        await async_storage.save(message)
+    [stale] = [
+        r for r in await async_storage.fetch_pending(100, 5) if r.id == message.id
+    ]
+    await asyncio.sleep(0.01)
+    [newer] = [
+        r
+        for r in await short_timeout_async_storage.fetch_pending(100, 5)
+        if r.id == message.id
+    ]
+    assert newer.claimed_at != stale.claimed_at
+
+    await async_storage.release_claim(stale)
+
+    assert message.id not in {r.id for r in await async_storage.fetch_pending(100, 5)}
+    await async_storage.mark_published(message.id)
+
+
+@pytest.mark.asyncio
+async def test_release_claim_published_message_expect_row_untouched(
+    async_transaction: AsyncTransaction,
+    async_storage: AsyncSqlAlchemyOutboxStorage,
+    async_connection_manager: AsyncConnectionManager,
+    unique_id: str,
+) -> None:
+    """이미 발행된 메시지의 claim은 풀지 않는다."""
+    message = _make_message(unique_id)
+    async with async_transaction:
+        await async_storage.save(message)
+    [claimed] = [
+        r for r in await async_storage.fetch_pending(100, 5) if r.id == message.id
+    ]
+    await async_storage.mark_published(message.id)
+
+    await async_storage.release_claim(claimed)
+
+    async with async_connection_manager.connection.connect() as connection:
+        claimed_at = (
+            await connection.execute(
+                select(OutboxMessageTable.claimed_at).where(
+                    OutboxMessageTable.id == message.id
+                )
+            )
+        ).scalar_one()
+    assert claimed_at is not None
+
+
+@pytest.mark.asyncio
 async def test_fetch_pending_reclaims_timed_out_messages(
     async_transaction: AsyncTransaction,
     async_storage: AsyncSqlAlchemyOutboxStorage,

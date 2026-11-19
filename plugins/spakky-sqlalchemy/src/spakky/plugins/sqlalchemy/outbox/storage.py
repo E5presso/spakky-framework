@@ -156,7 +156,7 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
 
     - save(): uses the current transactional session (same TX as business data).
     - fetch_pending/mark_published/increment_retry/mark_abandoned/
-      purge_published: use independent sessions.
+      release_claim/purge_published: use independent sessions.
     """
 
     _session_manager: SessionManager
@@ -281,6 +281,24 @@ class SqlAlchemyOutboxStorage(IOutboxStorage):
             session.commit()
 
     @override
+    def release_claim(self, message: OutboxMessage) -> None:
+        """Clear this relay's claim of an unpublished message in an independent session.
+
+        The row is updated only while `claimed_at` still equals the claim that
+        `fetch_pending` returned, so a newer claim by another instance stays.
+        A published or abandoned row keeps its claim; it is not pending any more.
+        """
+        with self._session_factory() as session:
+            session.execute(
+                update(OutboxMessageTable)
+                .where(OutboxMessageTable.id == message.id)
+                .where(OutboxMessageTable.claimed_at == message.claimed_at)
+                .where(_awaiting_delivery(OutboxMessageTable))
+                .values(claimed_at=None)
+            )
+            session.commit()
+
+    @override
     def purge_published(self, older_than: datetime) -> int:
         """Delete published rows older than `older_than` in an independent session.
 
@@ -309,7 +327,7 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
 
     - save(): uses the current transactional session (same TX as business data).
     - fetch_pending/mark_published/increment_retry/mark_abandoned/
-      purge_published: use independent sessions.
+      release_claim/purge_published: use independent sessions.
     """
 
     _session_manager: AsyncSessionManager
@@ -436,6 +454,24 @@ class AsyncSqlAlchemyOutboxStorage(IAsyncOutboxStorage):
                 update(OutboxMessageTable)
                 .where(OutboxMessageTable.id == message_id)
                 .values(abandoned_at=datetime.now(UTC))
+            )
+            await session.commit()
+
+    @override
+    async def release_claim(self, message: OutboxMessage) -> None:
+        """Clear this relay's claim of an unpublished message in an independent session.
+
+        The row is updated only while `claimed_at` still equals the claim that
+        `fetch_pending` returned, so a newer claim by another instance stays.
+        A published or abandoned row keeps its claim; it is not pending any more.
+        """
+        async with self._session_factory() as session:
+            await session.execute(
+                update(OutboxMessageTable)
+                .where(OutboxMessageTable.id == message.id)
+                .where(OutboxMessageTable.claimed_at == message.claimed_at)
+                .where(_awaiting_delivery(OutboxMessageTable))
+                .values(claimed_at=None)
             )
             await session.commit()
 

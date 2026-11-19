@@ -17,6 +17,9 @@ from spakky.data.persistency.transaction import (
     AbstractTransaction,
     Propagation,
 )
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 
 __all__ = [
     "AsyncTransactionalAspect",
@@ -67,14 +70,17 @@ class AsyncTransactionalAspect(IAsyncAspect):
 
     _transaction: AbstractAsyncTransaction
     _collector: AggregateCollector
+    _synchronization: TransactionSynchronization
 
     def __init__(
         self,
         transaction: AbstractAsyncTransaction,
         collector: AggregateCollector,
+        synchronization: TransactionSynchronization,
     ) -> None:
         self._transaction = transaction
         self._collector = collector
+        self._synchronization = synchronization
 
     @Around(lambda x: Transactional.exists(x) and iscoroutinefunction(x))
     @override
@@ -92,22 +98,30 @@ class AsyncTransactionalAspect(IAsyncAspect):
                 owner = frame.owner
                 if owner:
                     self._collector.begin_transaction(frame.transaction)
+                    self._synchronization.begin_transaction(frame.transaction)
                     result = await joinpoint(*args, **kwargs)
                 else:
                     self._collector.join_transaction(frame.transaction)
+                    self._synchronization.join_transaction(frame.transaction)
                     try:
                         result = await joinpoint(*args, **kwargs)
                     finally:
                         self._collector.leave_transaction()
+                        self._synchronization.leave_transaction()
         except BaseException:
             if owner:
                 self._collector.discard_transaction()
+                self._synchronization.discard_transaction()
             raise
         if owner:
             # The physical transaction opened by this call has just finished:
             # committed when autocommit is enabled. This is the single
             # "after commit" point of @Transactional.
             self._collector.commit_transaction()
+            if self._transaction.autocommit_enabled:
+                self._synchronization.commit_transaction()
+            else:
+                self._synchronization.discard_transaction()
         return result
 
 
@@ -122,14 +136,17 @@ class TransactionalAspect(IAspect):
 
     _transaction: AbstractTransaction
     _collector: AggregateCollector
+    _synchronization: TransactionSynchronization
 
     def __init__(
         self,
         transaction: AbstractTransaction,
         collector: AggregateCollector,
+        synchronization: TransactionSynchronization,
     ) -> None:
         self._transaction = transaction
         self._collector = collector
+        self._synchronization = synchronization
 
     @Around(lambda x: Transactional.exists(x) and not iscoroutinefunction(x))
     @override
@@ -145,20 +162,28 @@ class TransactionalAspect(IAspect):
                 owner = frame.owner
                 if owner:
                     self._collector.begin_transaction(frame.transaction)
+                    self._synchronization.begin_transaction(frame.transaction)
                     result = joinpoint(*args, **kwargs)
                 else:
                     self._collector.join_transaction(frame.transaction)
+                    self._synchronization.join_transaction(frame.transaction)
                     try:
                         result = joinpoint(*args, **kwargs)
                     finally:
                         self._collector.leave_transaction()
+                        self._synchronization.leave_transaction()
         except BaseException:
             if owner:
                 self._collector.discard_transaction()
+                self._synchronization.discard_transaction()
             raise
         if owner:
             # The physical transaction opened by this call has just finished:
             # committed when autocommit is enabled. This is the single
             # "after commit" point of @Transactional.
             self._collector.commit_transaction()
+            if self._transaction.autocommit_enabled:
+                self._synchronization.commit_transaction()
+            else:
+                self._synchronization.discard_transaction()
         return result

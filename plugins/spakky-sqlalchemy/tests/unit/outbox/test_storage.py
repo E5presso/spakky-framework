@@ -23,6 +23,18 @@ from spakky.plugins.sqlalchemy.persistency.session_manager import (
     SessionManager,
 )
 
+
+def _claimed_message() -> OutboxMessage:
+    return OutboxMessage(
+        id=uuid4(),
+        event_name="TestEvent",
+        payload=b"{}",
+        headers={},
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        claimed_at=datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
+    )
+
+
 # --- Sync storage tests ---
 
 
@@ -635,6 +647,56 @@ async def test_async_storage_mark_abandoned_updates_timestamp() -> None:
     await storage.mark_abandoned(uuid4())
 
     mock_session.execute.assert_awaited_once()
+    mock_session.commit.assert_awaited_once()
+
+
+def test_sync_storage_release_claim_expect_claim_cleared_for_pending_row() -> None:
+    """release_claim()은 자기 claim이 남아 있는 발행 대기 행의 claimed_at만 비우고 독립 세션에서 commit한다."""
+    storage = SqlAlchemyOutboxStorage(
+        MagicMock(spec=SessionManager), MagicMock(spec=ConnectionManager), config=None
+    )
+    mock_session = MagicMock()
+    storage._session_factory = MagicMock(return_value=MagicMock())
+    storage._session_factory.return_value.__enter__ = MagicMock(
+        return_value=mock_session
+    )
+    storage._session_factory.return_value.__exit__ = MagicMock(return_value=None)
+
+    storage.release_claim(_claimed_message())
+
+    statement = str(mock_session.execute.call_args.args[0])
+    assert statement.startswith("UPDATE spakky_event_outbox SET claimed_at")
+    assert "spakky_event_outbox.claimed_at = " in statement
+    assert "published_at IS NULL" in statement
+    assert "abandoned_at IS NULL" in statement
+    mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_async_storage_release_claim_expect_claim_cleared_for_pending_row() -> (
+    None
+):
+    """비동기 release_claim()도 발행 대기 중인 행의 claimed_at만 비운다."""
+    storage = AsyncSqlAlchemyOutboxStorage(
+        MagicMock(spec=AsyncSessionManager),
+        MagicMock(spec=AsyncConnectionManager),
+        config=None,
+    )
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock()
+    mock_session.commit = AsyncMock()
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context.__aexit__ = AsyncMock(return_value=None)
+    storage._session_factory = MagicMock(return_value=mock_context)
+
+    await storage.release_claim(_claimed_message())
+
+    statement = str(mock_session.execute.call_args.args[0])
+    assert statement.startswith("UPDATE spakky_event_outbox SET claimed_at")
+    assert "spakky_event_outbox.claimed_at = " in statement
+    assert "published_at IS NULL" in statement
+    assert "abandoned_at IS NULL" in statement
     mock_session.commit.assert_awaited_once()
 
 

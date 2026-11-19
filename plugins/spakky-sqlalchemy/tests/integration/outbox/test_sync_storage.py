@@ -195,6 +195,71 @@ def test_fetch_pending_skips_recently_claimed_messages(
     assert message.id not in second_ids
 
 
+def test_release_claim_expect_message_claimable_again_without_timeout(
+    transaction: Transaction,
+    storage: SqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """전송에 실패해 claim을 풀면 claim timeout을 기다리지 않고 다음 읽기에서 다시 나간다."""
+    message = _make_message(unique_id)
+    with transaction:
+        storage.save(message)
+    [claimed] = [r for r in storage.fetch_pending(100, 5) if r.id == message.id]
+
+    storage.release_claim(claimed)
+
+    assert message.id in {r.id for r in storage.fetch_pending(100, 5)}
+    storage.mark_published(message.id)
+
+
+def test_release_claim_after_reclaim_by_other_relay_expect_newer_claim_kept(
+    transaction: Transaction,
+    storage: SqlAlchemyOutboxStorage,
+    short_timeout_storage: SqlAlchemyOutboxStorage,
+    unique_id: str,
+) -> None:
+    """claim timeout 뒤 다른 relay가 다시 claim한 메시지는 앞선 relay가 release해도 풀리지 않는다."""
+    message = _make_message(unique_id)
+    with transaction:
+        storage.save(message)
+    [stale] = [r for r in storage.fetch_pending(100, 5) if r.id == message.id]
+    time.sleep(0.01)
+    [newer] = [
+        r for r in short_timeout_storage.fetch_pending(100, 5) if r.id == message.id
+    ]
+    assert newer.claimed_at != stale.claimed_at
+
+    storage.release_claim(stale)
+
+    assert message.id not in {r.id for r in storage.fetch_pending(100, 5)}
+    storage.mark_published(message.id)
+
+
+def test_release_claim_published_message_expect_row_untouched(
+    transaction: Transaction,
+    storage: SqlAlchemyOutboxStorage,
+    app: SpakkyApplication,
+    unique_id: str,
+) -> None:
+    """이미 발행된 메시지의 claim은 풀지 않는다."""
+    engine = app.container.get(type_=ConnectionManager).connection
+    message = _make_message(unique_id)
+    with transaction:
+        storage.save(message)
+    [claimed] = [r for r in storage.fetch_pending(100, 5) if r.id == message.id]
+    storage.mark_published(message.id)
+
+    storage.release_claim(claimed)
+
+    with engine.connect() as connection:
+        claimed_at = connection.execute(
+            select(OutboxMessageTable.claimed_at).where(
+                OutboxMessageTable.id == message.id
+            )
+        ).scalar_one()
+    assert claimed_at is not None
+
+
 def test_fetch_pending_reclaims_timed_out_messages(
     transaction: Transaction,
     storage: SqlAlchemyOutboxStorage,

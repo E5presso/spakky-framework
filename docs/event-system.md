@@ -303,7 +303,7 @@ async def place_order(self, command: PlaceOrderCommand) -> Order:
 ### 해결: Outbox 테이블
 
 1. 이벤트를 DB 테이블에 트랜잭션 내에서 저장
-2. 백그라운드 워커가 테이블을 폴링하여 브로커에 발행
+2. 트랜잭션이 commit되면 백그라운드 워커가 바로 깨어나 브로커에 발행 (주기 읽기는 보내지 못한 메시지 복구용)
 3. 발행 성공 시 테이블에서 제거
 
 Spakky에서는 `AsyncOutboxEventBus`가 `@Primary`로 `IAsyncEventBus`를 교체하므로, 별도 코드 변경 없이 기존 `IAsyncEventPublisher.publish()` 호출이 자동으로 Outbox를 통해 저장됩니다.

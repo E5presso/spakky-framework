@@ -23,6 +23,7 @@ from spakky.outbox.relay.relay import (
     AsyncOutboxRelayBackgroundService,
     OutboxRelayBackgroundService,
 )
+from spakky.outbox.relay.wakeup import OutboxRelayWakeup
 
 
 @immutable
@@ -170,6 +171,7 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
         self.published_ids: list[object] = []
         self.retried_ids: list[object] = []
         self.abandoned_ids: list[object] = []
+        self.released_ids: list[object] = []
 
     def save(self, message: OutboxMessage) -> None:
         self.pending.append(message)
@@ -189,6 +191,9 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
 
     def mark_abandoned(self, message_id: object) -> None:
         self.abandoned_ids.append(message_id)
+
+    def release_claim(self, message: OutboxMessage) -> None:
+        self.released_ids.append(message.id)
 
     def purge_published(self, older_than: object) -> int:
         raise AssertionError("Not expected to be called")
@@ -334,6 +339,7 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
         self.published_ids: list[object] = []
         self.retried_ids: list[object] = []
         self.abandoned_ids: list[object] = []
+        self.released_ids: list[object] = []
 
     async def save(self, message: OutboxMessage) -> None:
         self.pending.append(message)
@@ -353,6 +359,9 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
 
     async def mark_abandoned(self, message_id: object) -> None:
         self.abandoned_ids.append(message_id)
+
+    async def release_claim(self, message: OutboxMessage) -> None:
+        self.released_ids.append(message.id)
 
     async def purge_published(self, older_than: object) -> int:
         raise AssertionError("Not expected to be called")
@@ -402,7 +411,9 @@ def test_relay_batch_publishes_raw_payload_to_transport() -> None:
     transport = SpySyncTransport()
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay = OutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert len(transport.sent) == 1
@@ -423,7 +434,9 @@ def test_relay_batch_with_three_messages_expect_single_flush_after_last_send() -
     transport = SpySyncTransport()
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay = OutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert transport.flush_marks == [3]
@@ -442,7 +455,9 @@ def test_relay_batch_broker_unreachable_expect_batch_left_pending_without_retry(
     storage = InMemorySyncOutboxStorage(pending=messages)
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, FailingFlushSyncTransport(), config)
+    relay = OutboxRelayBackgroundService(
+        storage, FailingFlushSyncTransport(), config, OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert storage.published_ids == []
@@ -462,7 +477,9 @@ def test_relay_batch_transport_stopped_expect_batch_left_pending_without_retry_c
     storage = InMemorySyncOutboxStorage(pending=messages)
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, StoppedSyncTransport(), config)
+    relay = OutboxRelayBackgroundService(
+        storage, StoppedSyncTransport(), config, OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert storage.published_ids == []
@@ -480,7 +497,9 @@ def test_relay_batch_transport_failure_expect_message_left_pending_without_retry
     transport = FailingSyncTransport()
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay = OutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert storage.published_ids == []
@@ -500,7 +519,9 @@ def test_relay_batch_partition_key_after_failure_expect_rest_of_key_held_back() 
     storage = InMemorySyncOutboxStorage(pending=[first, second])
     transport = SelectivelyFailingSyncTransport({first.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert transport.sent_payloads == []
@@ -520,7 +541,9 @@ def test_relay_batch_partition_key_failure_expect_other_keys_unaffected() -> Non
     storage = InMemorySyncOutboxStorage(pending=[failing, other_key])
     transport = SelectivelyFailingSyncTransport({failing.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert transport.sent_payloads == [other_key.payload]
@@ -535,7 +558,9 @@ def test_relay_batch_without_partition_key_expect_failure_skipped() -> None:
     storage = InMemorySyncOutboxStorage(pending=[failing, following])
     transport = SelectivelyFailingSyncTransport({failing.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert transport.sent_payloads == [following.payload]
@@ -554,7 +579,9 @@ def test_relay_batch_retry_budget_spent_expect_message_abandoned() -> None:
     storage = InMemorySyncOutboxStorage(pending=[message])
     transport = SelectivelyFailingSyncTransport({message.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert storage.abandoned_ids == [message.id]
@@ -576,7 +603,9 @@ def test_relay_batch_abandoned_message_expect_partition_key_released() -> None:
     storage = InMemorySyncOutboxStorage(pending=[exhausted, following])
     transport = SelectivelyFailingSyncTransport({exhausted.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert storage.abandoned_ids == [exhausted.id]
@@ -596,7 +625,9 @@ def test_relay_batch_flush_refusal_expect_rest_of_key_held_back() -> None:
     storage = InMemorySyncOutboxStorage(pending=[first, second])
     transport = RefusingOnFlushSyncTransport({first.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert transport.sent_payloads == []
@@ -616,7 +647,9 @@ def test_relay_batch_flush_refusal_expect_other_keys_published() -> None:
     storage = InMemorySyncOutboxStorage(pending=[refused, other_key])
     transport = RefusingOnFlushSyncTransport({refused.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert transport.sent_payloads == [other_key.payload]
@@ -638,7 +671,9 @@ def test_relay_batch_flush_refusal_with_budget_spent_expect_abandoned() -> None:
     storage = InMemorySyncOutboxStorage(pending=[exhausted, following])
     transport = RefusingOnFlushSyncTransport({exhausted.payload})
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert storage.abandoned_ids == [exhausted.id]
@@ -657,7 +692,9 @@ def test_relay_batch_shutdown_during_replay_expect_batch_left_pending() -> None:
     storage = InMemorySyncOutboxStorage(pending=messages)
     transport = StoppingDuringReplaySyncTransport()
 
-    relay = OutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = OutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     relay._relay_batch()
 
     assert storage.published_ids == []
@@ -671,7 +708,9 @@ def test_relay_run_stops_on_stop_event() -> None:
     transport = SpySyncTransport()
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay = OutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     stop_event = threading.Event()
     relay.set_stop_event(stop_event)
     stop_event.set()
@@ -691,7 +730,9 @@ async def test_async_relay_batch_publishes_raw_payload_to_transport() -> None:
     transport = SpyAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert len(transport.sent) == 1
@@ -715,7 +756,9 @@ async def test_async_relay_batch_with_three_messages_expect_single_flush_after_l
     transport = SpyAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert transport.flush_marks == [3]
@@ -734,7 +777,7 @@ async def test_async_relay_batch_broker_unreachable_expect_no_retry_charged() ->
     config = _make_config()
 
     relay = AsyncOutboxRelayBackgroundService(
-        storage, FailingFlushAsyncTransport(), config
+        storage, FailingFlushAsyncTransport(), config, OutboxRelayWakeup()
     )
     await relay._relay_batch()
 
@@ -756,7 +799,9 @@ async def test_async_relay_batch_transport_stopped_expect_batch_left_pending_wit
     storage = InMemoryAsyncOutboxStorage(pending=messages)
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, StoppedAsyncTransport(), config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, StoppedAsyncTransport(), config, OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert storage.published_ids == []
@@ -775,7 +820,9 @@ async def test_async_relay_batch_transport_failure_expect_message_left_pending_w
     transport = FailingAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert storage.published_ids == []
@@ -798,7 +845,9 @@ async def test_async_relay_batch_partition_key_after_failure_expect_key_held_bac
     storage = InMemoryAsyncOutboxStorage(pending=[first, second])
     transport = SelectivelyFailingAsyncTransport({first.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert transport.sent_payloads == []
@@ -821,7 +870,9 @@ async def test_async_relay_batch_partition_key_failure_expect_other_keys_unaffec
     storage = InMemoryAsyncOutboxStorage(pending=[failing, other_key])
     transport = SelectivelyFailingAsyncTransport({failing.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert transport.sent_payloads == [other_key.payload]
@@ -837,7 +888,9 @@ async def test_async_relay_batch_without_partition_key_expect_failure_skipped() 
     storage = InMemoryAsyncOutboxStorage(pending=[failing, following])
     transport = SelectivelyFailingAsyncTransport({failing.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert transport.sent_payloads == [following.payload]
@@ -857,7 +910,9 @@ async def test_async_relay_batch_retry_budget_spent_expect_message_abandoned() -
     storage = InMemoryAsyncOutboxStorage(pending=[message])
     transport = SelectivelyFailingAsyncTransport({message.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert storage.abandoned_ids == [message.id]
@@ -880,7 +935,9 @@ async def test_async_relay_batch_abandoned_expect_partition_key_released() -> No
     storage = InMemoryAsyncOutboxStorage(pending=[exhausted, following])
     transport = SelectivelyFailingAsyncTransport({exhausted.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert storage.abandoned_ids == [exhausted.id]
@@ -901,7 +958,9 @@ async def test_async_relay_batch_flush_refusal_expect_rest_of_key_held_back() ->
     storage = InMemoryAsyncOutboxStorage(pending=[first, second])
     transport = RefusingOnFlushAsyncTransport({first.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert transport.sent_payloads == []
@@ -922,7 +981,9 @@ async def test_async_relay_batch_flush_refusal_expect_other_keys_published() -> 
     storage = InMemoryAsyncOutboxStorage(pending=[refused, other_key])
     transport = RefusingOnFlushAsyncTransport({refused.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert transport.sent_payloads == [other_key.payload]
@@ -945,7 +1006,9 @@ async def test_async_relay_batch_flush_refusal_budget_spent_expect_abandoned() -
     storage = InMemoryAsyncOutboxStorage(pending=[exhausted, following])
     transport = RefusingOnFlushAsyncTransport({exhausted.payload})
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert storage.abandoned_ids == [exhausted.id]
@@ -967,7 +1030,9 @@ async def test_async_relay_batch_shutdown_during_replay_expect_batch_left_pendin
     storage = InMemoryAsyncOutboxStorage(pending=messages)
     transport = StoppingDuringReplayAsyncTransport()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, _make_config())
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, _make_config(), OutboxRelayWakeup()
+    )
     await relay._relay_batch()
 
     assert storage.published_ids == []
@@ -982,7 +1047,9 @@ async def test_async_relay_run_async_stops_on_stop_event() -> None:
     transport = SpyAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     stop_event = asyncio.Event()
     relay.set_stop_event(stop_event)
 
@@ -1004,7 +1071,9 @@ def test_relay_initialize_returns_none() -> None:
     transport = SpySyncTransport()
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay = OutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     assert relay.initialize() is None
 
 
@@ -1014,7 +1083,9 @@ def test_relay_dispose_returns_none() -> None:
     transport = SpySyncTransport()
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay = OutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     assert relay.dispose() is None
 
 
@@ -1025,7 +1096,9 @@ async def test_async_relay_initialize_async_returns_none() -> None:
     transport = SpyAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     assert await relay.initialize_async() is None
 
 
@@ -1036,7 +1109,9 @@ async def test_async_relay_dispose_async_returns_none() -> None:
     transport = SpyAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     assert await relay.dispose_async() is None
 
 
@@ -1059,7 +1134,9 @@ def test_relay_run_polls_batch_then_exits_when_stop_set_during_batch() -> None:
     transport = SpySyncTransport()
     config = _make_config()
 
-    relay = OutboxRelayBackgroundService(storage, transport, config)
+    relay = OutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     relay.set_stop_event(stop_event)
     relay.run()
 
@@ -1088,7 +1165,9 @@ async def test_async_relay_run_async_breaks_when_stop_event_set_during_batch() -
     transport = SpyAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     relay.set_stop_event(stop_event)
 
     await relay.run_async()
@@ -1103,7 +1182,9 @@ async def test_async_relay_run_async_exits_immediately_when_already_stopped() ->
     transport = SpyAsyncTransport()
     config = _make_config()
 
-    relay = AsyncOutboxRelayBackgroundService(storage, transport, config)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, transport, config, OutboxRelayWakeup()
+    )
     stop_event = asyncio.Event()
     stop_event.set()
     relay.set_stop_event(stop_event)
@@ -1128,6 +1209,7 @@ def test_relay_batch_forwards_stored_partition_key_to_transport() -> None:
         InMemorySyncOutboxStorage(pending=[message]),
         transport,
         _make_config(),
+        OutboxRelayWakeup(),
     )
     relay._relay_batch()
 
@@ -1143,6 +1225,7 @@ def test_relay_batch_forwards_none_when_message_has_no_partition_key() -> None:
         InMemorySyncOutboxStorage(pending=[message]),
         transport,
         _make_config(),
+        OutboxRelayWakeup(),
     )
     relay._relay_batch()
 
@@ -1162,6 +1245,7 @@ async def test_async_relay_batch_forwards_stored_partition_key_to_transport() ->
         InMemoryAsyncOutboxStorage(pending=[message]),
         transport,
         _make_config(),
+        OutboxRelayWakeup(),
     )
     await relay._relay_batch()
 
@@ -1180,7 +1264,374 @@ async def test_async_relay_batch_forwards_none_when_message_has_no_partition_key
         InMemoryAsyncOutboxStorage(pending=[message]),
         transport,
         _make_config(),
+        OutboxRelayWakeup(),
     )
     await relay._relay_batch()
 
     assert transport.partition_keys == [None]
+
+
+# ── Claim release on failed sends ──
+
+
+def test_relay_batch_transport_failure_expect_claims_released() -> None:
+    """Transport 장애로 못 보낸 메시지는 claim을 바로 풀어 다음 읽기에서 다시 나간다."""
+    first = _make_message(RelayTestIntegrationEvent(order_id="ORD-R1"))
+    second = _make_message(RelayTestIntegrationEvent(order_id="ORD-R2"))
+    storage = InMemorySyncOutboxStorage(pending=[first, second])
+
+    relay = OutboxRelayBackgroundService(
+        storage, FailingSyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+    relay._relay_batch()
+
+    assert storage.released_ids == [first.id, second.id]
+    assert storage.retried_ids == []
+
+
+def test_relay_batch_refusal_with_budget_left_expect_refused_and_held_back_released() -> (
+    None
+):
+    """거부된 메시지와 그 키에서 보류된 메시지는 claim이 풀리고, 발행된 메시지는 그대로다."""
+    refused = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    held_back = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+    published = _make_message(RelayTestIntegrationEvent(order_id="CART-1"))
+    storage = InMemorySyncOutboxStorage(pending=[refused, held_back, published])
+
+    relay = OutboxRelayBackgroundService(
+        storage,
+        SelectivelyFailingSyncTransport({refused.payload}),
+        _make_config(),
+        OutboxRelayWakeup(),
+    )
+    relay._relay_batch()
+
+    assert storage.published_ids == [published.id]
+    assert storage.retried_ids == [refused.id]
+    assert storage.released_ids == [refused.id, held_back.id]
+
+
+def test_relay_batch_abandoned_message_expect_claim_not_released() -> None:
+    """발행 포기한 메시지는 대기열을 떠났으므로 claim을 풀지 않는다."""
+    exhausted = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-X"), retry_count=2
+    )
+    storage = InMemorySyncOutboxStorage(pending=[exhausted])
+
+    relay = OutboxRelayBackgroundService(
+        storage,
+        SelectivelyFailingSyncTransport({exhausted.payload}),
+        _make_config(),
+        OutboxRelayWakeup(),
+    )
+    relay._relay_batch()
+
+    assert storage.abandoned_ids == [exhausted.id]
+    assert storage.released_ids == []
+
+
+def test_relay_batch_flush_failure_replay_outage_expect_unconfirmed_released() -> None:
+    """flush 실패 뒤 1건씩 재확인하다 transport 장애가 나면 미확정 메시지의 claim을 푼다."""
+    message = _make_message(RelayTestIntegrationEvent(order_id="ORD-F"))
+    storage = InMemorySyncOutboxStorage(pending=[message])
+
+    relay = OutboxRelayBackgroundService(
+        storage, FailingFlushSyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+    relay._relay_batch()
+
+    assert storage.published_ids == []
+    assert storage.released_ids == [message.id]
+
+
+async def test_async_relay_batch_transport_failure_expect_claims_released() -> None:
+    """비동기 Transport 장애로 못 보낸 메시지도 claim을 바로 푼다."""
+    first = _make_message(RelayTestIntegrationEvent(order_id="ORD-R1"))
+    second = _make_message(RelayTestIntegrationEvent(order_id="ORD-R2"))
+    storage = InMemoryAsyncOutboxStorage(pending=[first, second])
+
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, FailingAsyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+    await relay._relay_batch()
+
+    assert storage.released_ids == [first.id, second.id]
+    assert storage.retried_ids == []
+
+
+async def test_async_relay_batch_refusal_expect_refused_and_held_back_released() -> (
+    None
+):
+    """비동기에서도 거부·보류된 메시지만 claim이 풀린다."""
+    refused = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-1"), partition_key="ORD"
+    )
+    held_back = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-2"), partition_key="ORD"
+    )
+    published = _make_message(RelayTestIntegrationEvent(order_id="CART-1"))
+    storage = InMemoryAsyncOutboxStorage(pending=[refused, held_back, published])
+
+    relay = AsyncOutboxRelayBackgroundService(
+        storage,
+        SelectivelyFailingAsyncTransport({refused.payload}),
+        _make_config(),
+        OutboxRelayWakeup(),
+    )
+    await relay._relay_batch()
+
+    assert storage.published_ids == [published.id]
+    assert storage.retried_ids == [refused.id]
+    assert storage.released_ids == [refused.id, held_back.id]
+
+
+async def test_async_relay_batch_abandoned_message_expect_claim_not_released() -> None:
+    """비동기에서도 발행 포기한 메시지는 claim을 풀지 않는다."""
+    exhausted = _make_message(
+        RelayTestIntegrationEvent(order_id="ORD-X"), retry_count=2
+    )
+    storage = InMemoryAsyncOutboxStorage(pending=[exhausted])
+
+    relay = AsyncOutboxRelayBackgroundService(
+        storage,
+        SelectivelyFailingAsyncTransport({exhausted.payload}),
+        _make_config(),
+        OutboxRelayWakeup(),
+    )
+    await relay._relay_batch()
+
+    assert storage.abandoned_ids == [exhausted.id]
+    assert storage.released_ids == []
+
+
+class ReleaseFailingSyncStorage(InMemorySyncOutboxStorage):
+    """Storage whose database is gone by the time the relay releases claims."""
+
+    def release_claim(self, message: OutboxMessage) -> None:
+        raise ConnectionError("Database unavailable")
+
+
+class ReleaseFailingAsyncStorage(InMemoryAsyncOutboxStorage):
+    """Async storage whose database is gone by the time the relay releases claims."""
+
+    async def release_claim(self, message: OutboxMessage) -> None:
+        raise ConnectionError("Database unavailable")
+
+
+class CancelledAsyncTransport(IAsyncEventTransport):
+    """Transport whose send is interrupted by task cancellation."""
+
+    async def send(
+        self,
+        event_name: str,
+        payload: bytes,
+        headers: dict[str, str],
+        partition_key: str | None = None,
+    ) -> None:
+        raise asyncio.CancelledError
+
+    async def flush(self) -> None:
+        """Never reached: send is cancelled first."""
+
+
+def test_relay_batch_release_failure_expect_logged_without_raising(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """claim 해제가 실패해도 로그만 남기고, 풀지 못한 claim은 timeout 뒤에 풀린다."""
+    message = _make_message(RelayTestIntegrationEvent(order_id="ORD-RF"))
+    storage = ReleaseFailingSyncStorage(pending=[message])
+    relay = OutboxRelayBackgroundService(
+        storage, FailingSyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+
+    with caplog.at_level("ERROR"):
+        relay._relay_batch()
+
+    assert "Failed to release outbox claims" in caplog.text
+    assert storage.retried_ids == []
+
+
+async def test_async_relay_batch_release_failure_expect_cancellation_kept() -> None:
+    """claim 해제 오류가 읽기를 끝낸 취소를 가리지 않는다."""
+    message = _make_message(RelayTestIntegrationEvent(order_id="ORD-RC"))
+    storage = ReleaseFailingAsyncStorage(pending=[message])
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, CancelledAsyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await relay._relay_batch()
+
+
+async def test_async_relay_batch_release_failure_expect_logged_without_raising(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """비동기 claim 해제가 실패해도 로그만 남긴다."""
+    message = _make_message(RelayTestIntegrationEvent(order_id="ORD-RF"))
+    storage = ReleaseFailingAsyncStorage(pending=[message])
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, FailingAsyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+
+    with caplog.at_level("ERROR"):
+        await relay._relay_batch()
+
+    assert "Failed to release outbox claims" in caplog.text
+
+
+# ── Wake-up after commit and loop resilience ──
+
+
+class ReadCountingSyncStorage(InMemorySyncOutboxStorage):
+    """Counts reads and signals the n-th one; the first `failures` reads raise."""
+
+    def __init__(self, failures: int = 0) -> None:
+        super().__init__()
+        self.failures = failures
+        self.reads = 0
+        self.first_read = threading.Event()
+        self.second_read = threading.Event()
+
+    def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
+        self.reads += 1
+        if self.reads == 1:
+            self.first_read.set()
+        else:
+            self.second_read.set()
+        if self.reads <= self.failures:
+            raise ConnectionError("Database unavailable")
+        return []
+
+
+class ReadCountingAsyncStorage(InMemoryAsyncOutboxStorage):
+    """Counts reads and signals the n-th one; the first `failures` reads raise."""
+
+    def __init__(self, failures: int = 0) -> None:
+        super().__init__()
+        self.failures = failures
+        self.reads = 0
+        self.first_read = asyncio.Event()
+        self.second_read = asyncio.Event()
+
+    async def fetch_pending(self, limit: int, max_retry: int) -> list[OutboxMessage]:
+        self.reads += 1
+        if self.reads == 1:
+            self.first_read.set()
+        else:
+            self.second_read.set()
+        if self.reads <= self.failures:
+            raise ConnectionError("Database unavailable")
+        return []
+
+
+SIGNAL_TIMEOUT_SECONDS = 5.0
+"""Upper bound for waiting on a relay thread or task; never reached when passing."""
+
+LONG_POLLING_INTERVAL_SECONDS = 3600.0
+"""Polling interval long enough that only a wake-up can trigger a second read."""
+
+
+def _make_long_polling_config() -> OutboxConfig:
+    config = _make_config()
+    config.polling_interval_seconds = LONG_POLLING_INTERVAL_SECONDS
+    return config
+
+
+def test_relay_woken_after_commit_expect_reads_without_waiting_for_poll() -> None:
+    """commit 알림을 받으면 polling 주기를 기다리지 않고 바로 outbox를 읽는다."""
+    storage = ReadCountingSyncStorage()
+    wakeup = OutboxRelayWakeup()
+    relay = OutboxRelayBackgroundService(
+        storage, SpySyncTransport(), _make_long_polling_config(), wakeup
+    )
+    relay.set_stop_event(threading.Event())
+    relay.start()
+    try:
+        assert storage.first_read.wait(SIGNAL_TIMEOUT_SECONDS)
+
+        wakeup.notify()
+
+        assert storage.second_read.wait(SIGNAL_TIMEOUT_SECONDS)
+    finally:
+        relay.stop()
+    assert storage.reads == 2
+
+
+def test_relay_database_error_expect_logged_and_loop_continues(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """DB 오류가 나도 relay 루프가 끝나지 않고 로그를 남긴 뒤 다음 읽기를 한다."""
+    storage = ReadCountingSyncStorage(failures=1)
+    relay = OutboxRelayBackgroundService(
+        storage, SpySyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+    relay.set_stop_event(threading.Event())
+    with caplog.at_level("ERROR"):
+        relay.start()
+        try:
+            assert storage.second_read.wait(SIGNAL_TIMEOUT_SECONDS)
+        finally:
+            relay.stop()
+
+    assert "Outbox relay batch failed" in caplog.text
+
+
+async def test_async_relay_woken_from_other_thread_expect_reads_without_waiting() -> (
+    None
+):
+    """다른 스레드의 commit 알림으로도 비동기 relay가 polling을 기다리지 않고 읽는다."""
+    storage = ReadCountingAsyncStorage()
+    wakeup = OutboxRelayWakeup()
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, SpyAsyncTransport(), _make_long_polling_config(), wakeup
+    )
+    relay.set_stop_event(asyncio.Event())
+    await relay.start_async()
+    try:
+        await asyncio.wait_for(storage.first_read.wait(), SIGNAL_TIMEOUT_SECONDS)
+
+        await asyncio.to_thread(wakeup.notify)
+
+        await asyncio.wait_for(storage.second_read.wait(), SIGNAL_TIMEOUT_SECONDS)
+    finally:
+        await relay.stop_async()
+    assert storage.reads == 2
+
+
+async def test_async_relay_woken_after_stop_expect_ignored() -> None:
+    """멈춘 비동기 relay를 깨워도 오류 없이 무시된다."""
+    storage = ReadCountingAsyncStorage()
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, SpyAsyncTransport(), _make_long_polling_config(), OutboxRelayWakeup()
+    )
+    relay.set_stop_event(asyncio.Event())
+    await relay.start_async()
+    await asyncio.wait_for(storage.first_read.wait(), SIGNAL_TIMEOUT_SECONDS)
+    await relay.stop_async()
+
+    relay.wake()
+
+    assert storage.reads == 1
+
+
+async def test_async_relay_database_error_expect_logged_and_loop_continues(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """비동기 relay도 DB 오류 뒤에 끝나지 않고 다음 읽기를 한다."""
+    storage = ReadCountingAsyncStorage(failures=1)
+    relay = AsyncOutboxRelayBackgroundService(
+        storage, SpyAsyncTransport(), _make_config(), OutboxRelayWakeup()
+    )
+    relay.set_stop_event(asyncio.Event())
+    with caplog.at_level("ERROR"):
+        await relay.start_async()
+        try:
+            await asyncio.wait_for(storage.second_read.wait(), SIGNAL_TIMEOUT_SECONDS)
+        finally:
+            await relay.stop_async()
+
+    assert "Outbox relay batch failed" in caplog.text

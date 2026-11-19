@@ -6,6 +6,9 @@ from spakky.data.aspects.transactional import (
 )
 from spakky.data.config import DataConfig
 from spakky.data.persistency.aggregate_collector import AggregateCollector
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 
 
 def initialize(app: SpakkyApplication) -> None:
@@ -18,6 +21,7 @@ def initialize(app: SpakkyApplication) -> None:
     app.add(DataConfig)
     app.add(TransactionalAspect)
     app.add(AggregateCollector)
+    app.add(TransactionSynchronization)
 
     if config.support_async_mode:
         app.add(AsyncTransactionalAspect)

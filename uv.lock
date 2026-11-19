@@ -4420,6 +4420,7 @@ source = { editable = "core/spakky-outbox" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "spakky-data" },
     { name = "spakky-event" },
     { name = "spakky-tracing" },
 ]
@@ -4428,6 +4429,7 @@ dependencies = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
+    { name = "spakky-data", editable = "core/spakky-data" },
     { name = "spakky-event", editable = "core/spakky-event" },
     { name = "spakky-tracing", editable = "core/spakky-tracing" },
 ]

@@ -278,9 +278,13 @@ ALTER TABLE spakky_event_outbox ADD COLUMN partition_key TEXT NULL;
 ```
 
 미적용 시 `save()`의 INSERT가 비즈니스 트랜잭션과 함께 롤백되고, 릴레이의
-`fetch_pending()` SELECT 실패는 재시도 `try` 블록 밖이라 릴레이 백그라운드
-서비스가 종료됩니다. 증상과 배경은 Outbox 가이드(`docs/guides/outbox.md`)를
-참고하십시오.
+`fetch_pending()` SELECT가 매번 실패합니다. 릴레이는 오류를 로그에 남기고 계속
+돌지만 DDL을 적용하기 전까지 이벤트가 나가지 않습니다. 증상과 배경은 Outbox
+가이드(`docs/guides/outbox.md`)를 참고하십시오.
+
+`release_claim(message)`는 릴레이가 보내지 못한 메시지의 `claimed_at`을 독립
+세션에서 비웁니다. `fetch_pending`이 돌려준 `claimed_at`이 그대로일 때만 풀므로, claim timeout 뒤 다른 인스턴스가 다시 잡은 claim은 건드리지 않습니다. 발행 완료·발행 포기 행은 건드리지 않습니다. 그 메시지는
+`claim_timeout_seconds`를 기다리지 않고 다음 읽기에서 다시 나갑니다.
 
 ## Event Contribution (멱등 소비 저장소)
 

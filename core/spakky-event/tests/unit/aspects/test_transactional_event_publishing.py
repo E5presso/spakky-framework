@@ -12,6 +12,9 @@ from spakky.data.aspects.transactional import (
     TransactionalAspect,
 )
 from spakky.data.persistency.aggregate_collector import AggregateCollector
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
@@ -92,6 +95,7 @@ def test_sync_aspect_publishes_events_on_success() -> None:
     context.add(InMemoryTransaction)
     context.add(InMemoryDomainEventPublisher)
     context.add(AggregateCollector)
+    context.add(TransactionSynchronization)
     context.add(CreateUserUseCase)
     context.add(TransactionalAspect)
     context.add(TransactionalEventPublishingAspect)
@@ -145,6 +149,7 @@ def test_sync_aspect_does_not_publish_on_error() -> None:
     context.add(InMemoryTransaction)
     context.add(InMemoryDomainEventPublisher)
     context.add(AggregateCollector)
+    context.add(TransactionSynchronization)
     context.add(CreateUserUseCase)
     context.add(TransactionalAspect)
     context.add(TransactionalEventPublishingAspect)
@@ -196,6 +201,7 @@ async def test_async_aspect_publishes_events_on_success() -> None:
     context.add(AsyncInMemoryTransaction)
     context.add(AsyncInMemoryDomainEventPublisher)
     context.add(AggregateCollector)
+    context.add(TransactionSynchronization)
     context.add(CreateUserUseCase)
     context.add(AsyncTransactionalAspect)
     context.add(AsyncTransactionalEventPublishingAspect)
@@ -250,6 +256,7 @@ async def test_async_aspect_does_not_publish_on_error() -> None:
     context.add(AsyncInMemoryTransaction)
     context.add(AsyncInMemoryDomainEventPublisher)
     context.add(AggregateCollector)
+    context.add(TransactionSynchronization)
     context.add(CreateUserUseCase)
     context.add(AsyncTransactionalAspect)
     context.add(AsyncTransactionalEventPublishingAspect)
@@ -305,6 +312,7 @@ async def test_async_aspect_publishes_multiple_events_from_multiple_aggregates()
     context.add(AsyncInMemoryTransaction)
     context.add(AsyncInMemoryDomainEventPublisher)
     context.add(AggregateCollector)
+    context.add(TransactionSynchronization)
     context.add(CreateMultipleUsersUseCase)
     context.add(AsyncTransactionalAspect)
     context.add(AsyncTransactionalEventPublishingAspect)
@@ -430,6 +438,7 @@ async def test_events_are_published_after_commit_and_disposal(
         Publisher,
         CreateUseCase,
         AggregateCollector,
+        TransactionSynchronization,
         AsyncTransactionalAspect,
         AsyncTransactionalEventPublishingAspect,
     ):
@@ -493,6 +502,7 @@ def test_sync_events_are_published_after_commit_and_disposal(
         Publisher,
         CreateUseCase,
         AggregateCollector,
+        TransactionSynchronization,
         TransactionalAspect,
         TransactionalEventPublishingAspect,
     ):

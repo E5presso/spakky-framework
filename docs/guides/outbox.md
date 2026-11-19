@@ -12,19 +12,22 @@
 
 DB 트랜잭션을 commit한 뒤 별도로 브로커에 이벤트를 전송하면, 트랜잭션은 성공했는데 브로커 전송만 실패하는 순간 이벤트가 영구히 유실됩니다. 반대로 브로커 먼저 보내면 트랜잭션 rollback 시 "일어나지 않은 일"이 외부에 알려집니다. 두 저장소(DB·브로커)를 하나의 원자적 연산으로 묶을 수 없는 것이 이중 쓰기 문제입니다.
 
-Outbox는 이벤트를 **비즈니스 데이터와 같은 DB 트랜잭션 안에서 Outbox 테이블에 저장**하고, 브로커 전송은 별도 폴링 프로세스로 분리해 이 문제를 해결합니다. DB commit 하나에 비즈니스 변경과 이벤트가 함께 남으므로 유실 구간이 사라집니다.
+Outbox는 이벤트를 **비즈니스 데이터와 같은 DB 트랜잭션 안에서 Outbox 테이블에 저장**하고, 브로커 전송은 별도 릴레이로 분리해 이 문제를 해결합니다. DB commit 하나에 비즈니스 변경과 이벤트가 함께 남으므로 유실 구간이 사라집니다.
 
 ### 동작 원리
 
 1. `OutboxEventBus`가 `@Primary`로 기본 `IEventBus`를 대체합니다.
 2. Integration Event 발행 시 메시지 브로커 대신 Outbox 테이블에 저장합니다 (트랜잭션 내).
-3. `OutboxRelayBackgroundService`가 주기적으로 Outbox 테이블을 폴링합니다.
-4. 미전송 메시지를 `IEventTransport`(Kafka/RabbitMQ)를 통해 실제 전송합니다.
-5. 전송 성공 시 메시지를 published 처리합니다. Transport가 영구적이고 특정 레코드에 귀속 가능한 거부를 `EventDeliveryRejectedError`로 확정한 경우에만 그 메시지의 retry count를 증가시키고, `max_retry_count`를 소진하면 발행 포기(abandoned) 처리합니다. 연결 끊김·타임아웃·queue 포화·그 밖의 transport 장애는 원래 예외 타입을 유지하며, Relay는 그 예외 때문에 retry/abandon 예산을 쓰지 않습니다. 배치 `flush()` 실패는 1건씩 재확인하고, 최초 `send()`나 1건 재확인의 transport 장애는 미확정 메시지를 그대로 남깁니다.
+3. 그 트랜잭션이 실제로 commit되면 `OutboxRelayBackgroundService`가 바로 깨어나 Outbox 테이블을 읽습니다. rollback되었거나 commit하지 않은 트랜잭션(rollback-only, `autocommit=False`)은 릴레이를 깨우지 않습니다. `Propagation.REQUIRED`로 합쳐진 안쪽 호출은 가장 바깥 commit 뒤에, `REQUIRES_NEW` 안쪽 호출은 자기 commit 직후에 깨웁니다.
+4. 릴레이는 그와 별도로 `polling_interval_seconds`마다 테이블을 읽습니다. 이 주기 읽기는 앞선 읽기에서 보내지 못한 메시지, `@Transactional` 밖에서 저장된 메시지, 다른 인스턴스에서 commit된 메시지를 복구하는 경로입니다.
+5. 미전송 메시지를 `IEventTransport`(Kafka/RabbitMQ)를 통해 실제 전송합니다.
+6. 전송 성공 시 메시지를 published 처리합니다. Transport가 영구적이고 특정 레코드에 귀속 가능한 거부를 `EventDeliveryRejectedError`로 확정한 경우에만 그 메시지의 retry count를 증가시키고, `max_retry_count`를 소진하면 발행 포기(abandoned) 처리합니다. 연결 끊김·타임아웃·queue 포화·그 밖의 transport 장애는 원래 예외 타입을 유지하며, Relay는 그 예외 때문에 retry/abandon 예산을 쓰지 않습니다. 배치 `flush()` 실패는 1건씩 재확인하고, 최초 `send()`나 1건 재확인의 transport 장애는 미확정 메시지를 그대로 남깁니다.
+7. 한 번의 읽기에서 발행하지도 포기하지도 않은 메시지(거부되어 retry 예산이 남은 메시지, 파티션 키 보류로 건너뛴 메시지, transport 장애로 못 보낸 메시지)는 `release_claim()`으로 claim을 바로 풉니다. 이 메시지는 `claim_timeout_seconds`를 기다리지 않고 다음 읽기에서 다시 나갑니다.
+8. 읽기 도중 DB 오류 같은 예외가 나도 릴레이는 끝나지 않습니다. 오류를 로그에 남기고 다음 깨어남이나 다음 주기에 다시 읽습니다.
 
-### 폴링 → 전송 흐름
+### commit → 전송 흐름
 
-발행 측(UseCase 트랜잭션)과 전송 측(Relay 폴링)이 시간적으로 분리됩니다. Relay는 `fetch_pending`으로 미전송 메시지를 원자적으로 claim한 뒤 전송하고, 배치 확정 성공·영구 레코드 귀속 거부·transport 장애를 구분해 상태를 갱신합니다. 파티션 키가 있는 메시지는 키 단위로 claim·발행되어 상대 순서가 보전됩니다 — [Kafka 가이드](kafka.md)의 파티션 키 절 참조.
+발행 측(UseCase 트랜잭션)과 전송 측(Relay)이 분리되어 있고, commit이 릴레이를 깨워 둘 사이의 지연을 줄입니다. Relay는 `fetch_pending`으로 미전송 메시지를 원자적으로 claim한 뒤 전송하고, 배치 확정 성공·영구 레코드 귀속 거부·transport 장애를 구분해 상태를 갱신합니다. 파티션 키가 있는 메시지는 키 단위로 claim·발행되어 상대 순서가 보전됩니다 — [Kafka 가이드](kafka.md)의 파티션 키 절 참조.
 
 ```mermaid
 sequenceDiagram
@@ -38,7 +41,8 @@ sequenceDiagram
   UseCase->>Bus: publish(IntegrationEvent)
   Bus->>Storage: save(OutboxMessage)
   Note over UseCase,Storage: 같은 트랜잭션에서 commit
-  loop polling_interval_seconds 주기
+  UseCase-->>Relay: commit 직후 깨움 (rollback이면 깨우지 않음)
+  loop 깨어날 때마다, 그리고 polling_interval_seconds 주기 (복구)
     Relay->>Storage: fetch_pending(batch_size, max_retry)
     Storage-->>Relay: 미전송 메시지 (claim)
     Relay->>Transport: send(...) 후 배치 끝 flush()
@@ -50,19 +54,20 @@ sequenceDiagram
     else transport 장애 (원래 예외 타입 유지)
       Note over Relay,Storage: 이 장애로 retry/abandon 예산을 쓰지 않음
     end
+    Relay->>Storage: release_claim(message) — 발행·포기하지 않은 메시지
   end
 ```
 
-`OutboxMessage`는 이 흐름을 거치며 상태가 전이됩니다. `claimed_at`은 폴링이 메시지를 가져갈 때 잠금으로 찍히며, `claim_timeout_seconds`가 지나면 다른 폴링 사이클이 다시 claim할 수 있어(크래시 복구) 전송이 멈추지 않습니다.
+`OutboxMessage`는 이 흐름을 거치며 상태가 전이됩니다. `claimed_at`은 릴레이가 메시지를 가져갈 때 잠금으로 찍힙니다. 보내지 못한 메시지는 릴레이가 바로 claim을 풀고, 릴레이가 claim을 풀지 못하고 죽은 경우에는 `claim_timeout_seconds`가 지나면 다른 읽기가 다시 claim할 수 있어(크래시 복구) 전송이 멈추지 않습니다.
 
 ```mermaid
 stateDiagram-v2
   [*] --> Pending: save (트랜잭션 commit)
   Pending --> Claimed: fetch_pending (claimed_at 기록)
   Claimed --> Published: 배치 확정 성공 → mark_published
-  Claimed --> Claimed: 영구 레코드 귀속 거부 → increment_retry
+  Claimed --> Pending: 영구 레코드 귀속 거부 → increment_retry 후 release_claim
   Claimed --> Abandoned: 영구 레코드 귀속 거부 + retry 소진 → mark_abandoned
-  Claimed --> Claimed: transport 장애 → 상태·retry 불변
+  Claimed --> Pending: transport 장애·키 보류 → retry 불변, release_claim
   Claimed --> Pending: claim_timeout 초과 (크래시 복구)
   Published --> [*]
   Abandoned --> [*]
@@ -116,7 +121,7 @@ export SPAKKY_OUTBOX__CLAIM_TIMEOUT_SECONDS=300.0
 
 | 필드 | 환경변수 | 기본값 | 설명 |
 |------|---------|--------|------|
-| `polling_interval_seconds` | `SPAKKY_OUTBOX__POLLING_INTERVAL_SECONDS` | `1.0` | 폴링 주기 (초) |
+| `polling_interval_seconds` | `SPAKKY_OUTBOX__POLLING_INTERVAL_SECONDS` | `1.0` | 복구용 주기 읽기 간격 (초). commit된 메시지는 이 주기를 기다리지 않고 나가며, 이 주기는 보내지 못한 메시지를 다시 읽는 데 쓰인다 |
 | `batch_size` | `SPAKKY_OUTBOX__BATCH_SIZE` | `100` | 배치당 처리 메시지 수 |
 | `max_retry_count` | `SPAKKY_OUTBOX__MAX_RETRY_COUNT` | `5` | 영구 레코드 귀속 거부의 최대 retry 횟수. 소진 시 발행 포기하며 transport 장애에는 소모하지 않음 |
 | `claim_timeout_seconds` | `SPAKKY_OUTBOX__CLAIM_TIMEOUT_SECONDS` | `300.0` | 메시지 잠금 타임아웃 (초) |
@@ -140,7 +145,7 @@ class PlaceOrderUseCase:
         event = OrderPlacedEvent(order_id=order_id, total_amount=total)
         await self._publisher.publish(event)
         # → OutboxEventBus가 Outbox 테이블에 저장 (트랜잭션 내)
-        # → Relay가 주기적으로 Kafka/RabbitMQ로 전송
+        # → commit 직후 Relay가 깨어나 Kafka/RabbitMQ로 전송
 ```
 
 ### 핵심 컴포넌트
@@ -155,7 +160,7 @@ from spakky.outbox.bus.outbox_event_bus import OutboxEventBus, AsyncOutboxEventB
 
 #### OutboxRelayBackgroundService
 
-백그라운드 서비스로 실행되며, Outbox 테이블에서 미전송 메시지를 주기적으로 가져와 `IEventTransport`로 전송합니다.
+백그라운드 서비스로 실행되며, 메시지를 저장한 트랜잭션이 commit될 때와 `polling_interval_seconds`마다 Outbox 테이블에서 미전송 메시지를 가져와 `IEventTransport`로 전송합니다. commit 뒤 깨우기는 프레임워크 내부 장치(`spakky.data`의 `TransactionSynchronization`과 `OutboxRelayWakeup`)가 맡으므로 애플리케이션은 아무것도 호출하지 않습니다.
 
 Relay는 claim한 메시지를 순서대로 `send()`하되, 직접 거부되거나 파티션 키 보류로 건너뛴 메시지는 배치 확정 대상에서 제외합니다. Transport에 실제로 넘긴 레코드 집합만 `flush()` 한 번으로 확정하고, 성공하면 그 레코드들을 각각 발행 완료로 표시합니다. 따라서 한 번 claim한 전체가 하나의 성공/실패 단위가 되는 것은 아닙니다.
 
@@ -166,6 +171,8 @@ Relay는 claim한 메시지를 순서대로 `send()`하되, 직접 거부되거�
 - 1건씩 재확인하던 중 transport 장애가 나면, 그 전에 성공한 레코드의 발행 완료와 이미 확정된 레코드 거부의 retry/abandon 갱신은 유지됩니다. 장애가 난 현재 레코드와 아직 방문하지 않은 레코드는 미확정으로 남고, 이 transport 장애 때문에 예산을 쓰지는 않습니다. 브로커가 앞선 레코드를 이미 받았을 가능성은 남아 있어 다음 claim의 재전송은 중복을 만들 수 있습니다. 이것이 at-least-once 전달에서 소비자 멱등성이 필요한 이유입니다.
 - 재확인은 실패 경로에서만 일어납니다. 정상 경로는 claim한 메시지 중 Transport에 넘긴 레코드 집합당 `flush` 1회이므로 처리량이 바뀌지 않습니다.
 - 애플리케이션 종료로 transport가 닫히면(`EventTransportNotRunningError`) 미확정 레코드를 그대로 두고 릴레이를 멈춥니다. 종료는 전달 실패가 아니므로 retry count를 소모하지 않습니다.
+- 위의 어느 경로든 발행 완료나 발행 포기로 끝나지 않은 메시지는 그 읽기가 끝날 때 `release_claim()`으로 claim을 풉니다. claim timeout까지 묶이지 않고 다음 읽기에서 다시 나갑니다. claim 해제가 DB 오류로 실패하면 로그만 남기며, 그 claim은 `claim_timeout_seconds` 뒤에 풀립니다.
+- `fetch_pending()`·`mark_published()` 같은 저장소 호출이 DB 오류로 실패해도 릴레이 루프는 끝나지 않습니다. 오류를 로그에 남기고 다음 읽기에서 다시 시도합니다.
 
 ```python
 from spakky.outbox.relay.relay import (
@@ -191,6 +198,7 @@ from spakky.outbox.ports.storage import IOutboxStorage, IAsyncOutboxStorage
 | `mark_published(message_id)` | 메시지를 전송 완료 처리 |
 | `increment_retry(message_id)` | 재시도 카운트 증가 |
 | `mark_abandoned(message_id)` | 재시도를 소진한 메시지를 발행 포기 처리 (발행 대기열에서 제외하되 레코드는 보존) |
+| `release_claim(message)` | 보내지 못한 메시지의 claim을 풀어 다음 읽기에서 다시 나가게 한다. retry count는 그대로 두고, 발행 완료·발행 포기 메시지는 건드리지 않는다. `fetch_pending`이 돌려준 `message.claimed_at`이 저장된 claim과 같을 때만 풀어, claim timeout 뒤 다른 인스턴스가 다시 잡은 claim은 남긴다 |
 | `purge_published(older_than)` | `published_at`이 `older_than`보다 이른 발행 완료 메시지를 지우고 지운 수를 반환. 미발행·발행 포기 메시지는 남긴다 |
 
 발행을 마친 행은 릴레이가 지우지 않습니다. 주기 작업에서 `purge_published()`를 호출해 정리합니다.
@@ -240,7 +248,7 @@ DDL을 실행하지 않은 채 배포하면 다음 두 곳이 깨집니다.
 | 위치 | 증상 |
 |------|------|
 | `IOutboxStorage.save()` | 존재하지 않는 컬럼을 참조하는 INSERT가 실패합니다. `save()`는 비즈니스 트랜잭션 안에서 호출되므로 **이벤트를 발행하는 모든 UseCase가 함께 롤백됩니다.** |
-| `OutboxRelayBackgroundService` | `fetch_pending()`의 SELECT가 실패하고, 이 예외는 릴레이의 재시도 `try` 블록 밖에서 발생하므로 **릴레이 백그라운드 서비스가 종료됩니다.** |
+| `OutboxRelayBackgroundService` | `fetch_pending()`의 SELECT가 실패합니다. 릴레이는 오류를 로그에 남기고 계속 돌지만, DDL을 적용하기 전까지는 **매 읽기가 실패해 이벤트가 하나도 나가지 않습니다.** |
 
 두 컬럼의 `NULL` 허용은 각각 "파티션 키 없음"(라운드로빈 발행)과 "아직 발행 대기 중"이라는 도메인 값을 표현하기 위한 것이며, 마이그레이션을 대신하지 않습니다. 기존 row는 DDL 적용 후 `partition_key`와 `abandoned_at`이 `NULL`이 되어 이전과 동일하게 라운드로빈으로 발행 대기합니다.
 

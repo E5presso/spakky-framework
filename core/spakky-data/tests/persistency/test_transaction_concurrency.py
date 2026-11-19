@@ -24,6 +24,9 @@ from spakky.data.persistency.error import (
     TransactionAlreadyFinishedError,
     TransactionRollbackOnlyError,
 )
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
     AbstractTransaction,
@@ -747,7 +750,9 @@ async def test_async_child_joining_while_inner_disposes_expect_outer_resource_an
     """
     transaction = AsyncContextLocalTransaction()
     collector = AggregateCollector()
-    aspect = AsyncTransactionalAspect(transaction, collector)
+    aspect = AsyncTransactionalAspect(
+        transaction, collector, TransactionSynchronization()
+    )
     child_aggregate = MagicMock(spec=AbstractAggregateRoot)
     disposing = asyncio.Event()
     child_done = asyncio.Event()
@@ -802,7 +807,9 @@ async def test_async_child_joined_to_finished_inner_expect_write_refused() -> No
     """안쪽에 합친 자식 task는 안쪽이 끝난 뒤 바깥의 자원으로 넘어가 쓰지 않고 거절된다."""
     transaction = AsyncContextLocalTransaction()
     collector = AggregateCollector()
-    aspect = AsyncTransactionalAspect(transaction, collector)
+    aspect = AsyncTransactionalAspect(
+        transaction, collector, TransactionSynchronization()
+    )
     child_aggregate = MagicMock(spec=AbstractAggregateRoot)
     child_joined = asyncio.Event()
     inner_finished = asyncio.Event()
@@ -850,7 +857,7 @@ def test_sync_thread_joining_while_inner_disposes_expect_outer_resource_and_buff
     """안쪽 REQUIRES_NEW가 dispose하는 사이 시작한 thread는 바깥의 자원과 buffer를 함께 쓴다."""
     transaction = ContextLocalTransaction()
     collector = AggregateCollector()
-    aspect = TransactionalAspect(transaction, collector)
+    aspect = TransactionalAspect(transaction, collector, TransactionSynchronization())
     child_aggregate = MagicMock(spec=AbstractAggregateRoot)
     disposing = threading.Event()
     child_done = threading.Event()
@@ -907,7 +914,7 @@ def test_sync_thread_joined_to_finished_inner_expect_write_refused() -> None:
     """안쪽에 합친 thread는 안쪽이 끝난 뒤 바깥의 자원으로 넘어가 쓰지 않고 거절된다."""
     transaction = ContextLocalTransaction()
     collector = AggregateCollector()
-    aspect = TransactionalAspect(transaction, collector)
+    aspect = TransactionalAspect(transaction, collector, TransactionSynchronization())
     child_aggregate = MagicMock(spec=AbstractAggregateRoot)
     child_joined = threading.Event()
     inner_finished = threading.Event()

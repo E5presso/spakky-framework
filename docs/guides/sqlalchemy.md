@@ -489,6 +489,10 @@ deleted = await storage.purge_published(datetime.now(UTC) - timedelta(days=7))
 않으면 같은 메시지를 여러 인스턴스가 동시에 발행합니다. claim 쿼리 자체는 특정 방언
 전용 구문(`DISTINCT ON` 등)을 쓰지 않으므로 같은 결과를 어느 백엔드에서나 냅니다.
 
+`release_claim(message)`는 릴레이가 보내지 못한 메시지의 `claimed_at`을 독립 세션에서
+비웁니다. `fetch_pending`이 돌려준 `claimed_at`이 그대로일 때만 풀므로, claim timeout 뒤 다른 인스턴스가 다시 잡은 claim은 건드리지 않습니다. 발행 완료·발행 포기 행은 건드리지 않습니다. 그 메시지는 `claim_timeout_seconds`를
+기다리지 않고 다음 읽기에서 다시 claim됩니다.
+
 ---
 
 ## Event Contribution (멱등 소비 저장소)

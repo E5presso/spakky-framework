@@ -118,6 +118,7 @@ graph TD
     actuator --> core
     cache --> core
     outbox --> event
+    outbox --> data
     outbox --> tracing
     saga --> core
     saga --> domain
@@ -210,7 +211,7 @@ graph TD
 - **OAuth client 플러그인** (spakky-oauth) → `spakky` 코어에만 의존. 나가는 호출용 token을 얻어 보관하며 `spakky-auth`의 inbound 인증 계약과 무관합니다. Token·authorization state 저장소는 application이 `IOAuthTokenStore`, `IOAuthAuthorizationStateStore` Pod로 제공합니다.
 - **인프라 플러그인** (sqlalchemy) → `spakky-data`에 의존. Base plugin은 SQLAlchemy substrate를 등록하고, Outbox 저장소는 `spakky-outbox`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.outbox` contribution으로 등록하며, Agent state/signal/evidence 저장소는 `spakky-agent`가 함께 설치·활성화된 경우 `spakky.contributions.spakky.agent` contribution으로 등록
 - **트랜스포트 플러그인** (rabbitmq, kafka) → `spakky-event`까지 의존 (전체 코어 체인). `spakky-auth`와 `spakky-tracing`에도 의존 (auth snapshot + 컨텍스트 전파)
-- **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션)
+- **Outbox 코어** (spakky-outbox) → `spakky-event` + `spakky-data` + `spakky-tracing`에 의존 (추상화 + 오케스트레이션). `spakky-data`의 `TransactionSynchronization`으로 commit 직후 릴레이를 깨운다
 - **태스크 코어** (spakky-task) → `spakky` 코어에만 의존
 - **Agent 코어** (spakky-agent) → `spakky` 코어에만 의존. `@Agent` loop, state/signal/evidence, multimodal model input, tool/context/retrieval, durable checkpoint, scoped memory, pure offline evaluation, operator pricing·telemetry port를 제공하며 credential·provider SDK/SQLAlchemy/FastAPI/Typer/OpenTelemetry dependency와 production in-memory retrieval/memory/persistence fallback, price 상수, hidden judge model을 포함하지 않음
 - **LLM 플러그인** (spakky-llm) → `spakky` + `spakky-agent`에 의존하는 outbound `IAgentModel` adapter. Operator-owned logical model catalog가 connection profile을 거쳐 OpenAI-compatible(vLLM dialect 포함), Anthropic, Gemini Developer API, Vertex AI 공식 SDK adapter로 routing하며, provider-bound media URI policy와 explicit route fallback/cache·profile resilience를 조정함. Optional `GoogleTextEmbedding`·batch/file/native-tool port를 auto-bind하지 않고 다른 plugin을 직접 import하지 않음
@@ -533,7 +534,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-oauth` | `OAuthConfig`, `OAuthClient` |
 | `spakky-openfga` | `OpenFgaConfig`, `OpenFgaSdkCheckClient`, `OpenFgaAuthProvider` |
 | `spakky-openfga` contribution for `spakky-auth` | `openfga_auth_provider_contribution` |
-| `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector` |
+| `spakky-data` | `AsyncTransactionalAspect`, `TransactionalAspect`, `AggregateCollector`, `TransactionSynchronization` |
 | `spakky-event` | `AsyncTransactionalEventPublishingAspect`, `TransactionalEventPublishingAspect`, `EventPublisher`, `AsyncEventPublisher`, `AuthContextSnapshotHeaderInjector`, `DirectEventBus`, `AsyncDirectEventBus`, `EventHandlerProviderValidationPostProcessor` |
 | `spakky-fastapi` | `FastAPIConfig`, `fastapi_app`(기존 FastAPI Pod가 없을 때), `FastAPIActuatorConfig`, `BindLifespanPostProcessor`, `AddBuiltInMiddlewaresPostProcessor`, `RegisterActuatorPostProcessor`, `RegisterRoutesPostProcessor` |
 | `spakky-typer` | `typer_app`(기존 Typer Pod가 없을 때), `ActuatorTyperConfig`, `ActuatorTyperCommandPostProcessor`, `TyperCLIPostProcessor` |
@@ -543,7 +544,7 @@ spakky-data = "spakky.data.main:initialize"
 | `spakky-sqlalchemy` | `SQLAlchemyConnectionConfig`, `SchemaRegistry`, `ConnectionManager`, `SessionManager`, `Transaction`; async mode 활성화 시 `AsyncConnectionManager`, `AsyncSessionManager`, `AsyncTransaction` |
 | `spakky-sqlalchemy` contribution for `spakky-outbox` | `OutboxMessageTable`, `SqlAlchemyOutboxStorage`; async mode 활성화 시 `AsyncSqlAlchemyOutboxStorage` |
 | `spakky-sqlalchemy` contribution for `spakky-agent` | `AgentStateTable`, `AgentSignalTable`, `AgentEvidenceTable`, `AgentConversationTurnTable`, `SqlAlchemyAgentStateRepository`, `SqlAlchemyAgentSignalRepository`, `SqlAlchemyAgentEvidenceRepository`, `SqlAlchemyAgentTaskStore` |
-| `spakky-outbox` | `OutboxConfig`, `OutboxEventBus`, `AsyncOutboxEventBus`, `OutboxRelayBackgroundService`, `AsyncOutboxRelayBackgroundService` |
+| `spakky-outbox` | `OutboxConfig`, `OutboxRelayWakeup`, `OutboxEventBus`, `AsyncOutboxEventBus`, `OutboxRelayBackgroundService`, `AsyncOutboxRelayBackgroundService` |
 | `spakky-task` | `DirectTaskExecutor`, `TaskRegistrationPostProcessor` |
 | `spakky-actuator` | `ActuatorConfig`, `ActuatorExtensionRegistry`, `_startup_report_info_contributor(app)`, `ActuatorExtensionPostProcessor`, `ActuatorAggregationService` |
 | `spakky-cache` | `CacheAspect`, `AsyncCacheAspect` |
@@ -831,6 +832,11 @@ async def async_method(self): ...
 아니므로, 그 사이에 바깥이 끝나 buffer와 scope가 어긋나는 틈이 없습니다. 여는 호출은
 그 transaction이 끝나면(autocommit이면 실제 commit 직후) `commit_transaction()`으로 buffer를 발행 대기열로 넘깁니다.
 이 지점이 `@Transactional`의 단일한 "실제 commit 직후" 시점입니다(`spakky.data.aspects.transactional`의 `around`/`around_async`).
+같은 자리에서 Aspect는 `TransactionSynchronization`의 after-commit 작업을 돌립니다. 이 작업은 실제로 commit했을 때만 돌고,
+rollback·rollback-only·`autocommit=False`로 끝나면 버려집니다. 합쳐진(`REQUIRED`) 안쪽이 건 작업은 가장 바깥 commit 뒤에,
+`REQUIRES_NEW` 안쪽이 건 작업은 그 안쪽 commit 직후에 돕니다. 프레임워크 내부 장치용이며(예: Outbox 릴레이 깨우기) 애플리케이션은 호출하지 않습니다.
+작업 frame은 buffer와 같이 `PhysicalTransaction`에 묶여 같은 owner 판정으로 열리고 합쳐지며, 그 transaction이 `finished`가 되면
+더는 작업을 받지 않습니다(바깥보다 오래 사는 자식 task가 이미 돈 작업 목록에 붙지 않음).
 
 ### Repository 인터페이스
 
@@ -1121,7 +1127,7 @@ flowchart TD
 
 - **DirectEventBus**: 기본 `IEventBus` 구현. `IEventTransport`에 직접 위임
 - **OutboxEventBus**: Outbox 플러그인이 `@Primary`로 `IEventBus`를 교체
-- **OutboxRelay**: `IEventTransport`에 의존하여 실제 전송 (DI 경쟁 없음)
+- **OutboxRelay**: `IEventTransport`에 의존하여 실제 전송 (DI 경쟁 없음). 메시지를 저장한 transaction이 commit되면 바로 깨어나고, 주기 읽기는 복구용
 - **핵심**: `IEventBus`와 `IEventTransport`가 다른 인터페이스이므로 컨테이너의 DI 경쟁 없이 `@Primary` 하나로 PnP 달성
 
 ### 시퀀스 다이어그램
@@ -1279,7 +1285,7 @@ Python 네이티브 타입 기반 cron 명세입니다. 문자열 대신 `Weekda
 
 ## 아웃박스 레이어 (spakky-outbox)
 
-Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Primary`로 교체하여 이벤트를 트랜잭션 내에서 아웃박스에 저장하고, 백그라운드 릴레이가 외부 트랜스포트로 전송합니다.
+Transactional Outbox 패턴의 추상화를 제공합니다. `IEventBus`를 `@Primary`로 교체하여 이벤트를 트랜잭션 내에서 아웃박스에 저장하고, 백그라운드 릴레이가 외부 트랜스포트로 전송합니다. bus는 저장할 때 `TransactionSynchronization`에 after-commit 작업으로 `OutboxRelayWakeup.notify`를 걸어, 그 transaction이 실제로 commit되면 릴레이가 polling 주기를 기다리지 않고 읽습니다. `@Transactional` 밖에서 저장한 메시지와 보내지 못한 메시지는 `polling_interval_seconds` 주기 읽기가 복구합니다.
 
 ### PnP 아키텍처
 
@@ -1308,10 +1314,11 @@ flowchart TD
 
 | 컴포넌트 | 설명 |
 |---------|------|
-| `IOutboxStorage` / `IAsyncOutboxStorage` | 아웃박스 메시지 저장소 포트. 파티션 키를 통째로 claim하고, 재시도를 소진한 메시지를 발행 포기(abandoned) 상태로 분리 |
+| `IOutboxStorage` / `IAsyncOutboxStorage` | 아웃박스 메시지 저장소 포트. 파티션 키를 통째로 claim하고, 재시도를 소진한 메시지를 발행 포기(abandoned) 상태로 분리하며, 보내지 못한 메시지의 claim을 `release_claim()`으로 바로 푼다 |
 | `OutboxEventBus` / `AsyncOutboxEventBus` | `@Primary`로 `DirectEventBus`를 교체하는 EventBus seam. 저장되는 Outbox headers에는 tracing metadata와 signed `AuthContextSnapshot` metadata가 함께 보존되며 raw bearer token은 저장하지 않음 |
-| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (polling → 배치 `IEventTransport.send()` → 배치 끝 `flush()` → 발행 완료 표시). transport가 영구적이고 특정 레코드에 귀속되는 거부를 확정한 경우에만 retry 예산을 소모한다. connection·timeout·queue 등 transport 자체 장애는 retry/abandon 예산을 소모하지 않으며, 초기 `send()` 장애면 확인되지 않은 레코드를 pending으로 남긴다. 배치 `flush()` 장애 후 개별 재확인 중 transport 장애가 발생하면 그 전에 확정된 레코드만 published 처리하고 나머지를 pending으로 남긴다. 영구 거부된 파티션 키는 그 배치의 후속 메시지를 보류하여 키 단위 순서를 보전하고, 재시도를 소진한 메시지는 발행 포기 처리하여 키를 다시 진행 |
-| `OutboxConfig` | 환경변수 기반 설정 (polling interval, batch size, retry 등) |
+| `OutboxRelayWakeup` | bus가 commit 뒤 릴레이를 깨우는 내부 신호. 릴레이는 시작할 때 구독하고 멈출 때 해제 |
+| `OutboxRelayBackgroundService` / `AsyncOutboxRelayBackgroundService` | 백그라운드 릴레이 (commit 직후 깨어남 또는 복구용 주기 읽기 → 배치 `IEventTransport.send()` → 배치 끝 `flush()` → 발행 완료 표시). transport가 영구적이고 특정 레코드에 귀속되는 거부를 확정한 경우에만 retry 예산을 소모한다. connection·timeout·queue 등 transport 자체 장애는 retry/abandon 예산을 소모하지 않으며, 초기 `send()` 장애면 확인되지 않은 레코드를 pending으로 남긴다. 배치 `flush()` 장애 후 개별 재확인 중 transport 장애가 발생하면 그 전에 확정된 레코드만 published 처리하고 나머지를 pending으로 남긴다. 영구 거부된 파티션 키는 그 배치의 후속 메시지를 보류하여 키 단위 순서를 보전하고, 재시도를 소진한 메시지는 발행 포기 처리하여 키를 다시 진행. 한 읽기에서 발행·포기하지 않은 메시지는 `release_claim()`으로 claim을 풀고, 읽기 중 DB 오류는 로그만 남기고 루프를 계속 돈다 |
+| `OutboxConfig` | 환경변수 기반 설정 (복구용 polling interval, batch size, retry 등) |
 | `OutboxMessage` | 아웃박스 메시지 모델 |
 
 ### 저장소 구현

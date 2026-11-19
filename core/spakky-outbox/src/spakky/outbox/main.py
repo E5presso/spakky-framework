@@ -11,6 +11,7 @@ from spakky.outbox.relay.relay import (
     AsyncOutboxRelayBackgroundService,
     OutboxRelayBackgroundService,
 )
+from spakky.outbox.relay.wakeup import OutboxRelayWakeup
 
 
 def initialize(app: SpakkyApplication) -> None:
@@ -20,6 +21,7 @@ def initialize(app: SpakkyApplication) -> None:
         app: The Spakky application instance.
     """
     app.add(OutboxConfig)
+    app.add(OutboxRelayWakeup)
     app.add(OutboxEventBus)
     app.add(AsyncOutboxEventBus)
     app.add(OutboxRelayBackgroundService)
