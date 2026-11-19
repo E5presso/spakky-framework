@@ -18,6 +18,7 @@ from spakky.core.common.mutability import immutable
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.delivery import AsyncSubscriptionDelivery, SubscriptionDelivery
 from spakky.event.redrive import RedriveResult
+from spakky.event.retry import RetryPolicy
 from spakky.tracing.propagator import ITracePropagator
 
 from spakky.plugins.kafka.common.config import KafkaConnectionConfig
@@ -156,6 +157,13 @@ class AbstractWorkerHarness(ABC):
         auth_boundary: bool = False,
     ) -> None:
         """Register a handler body under a handler name."""
+        ...
+
+    @abstractmethod
+    def set_policy(
+        self, policy: RetryPolicy, event: type[AbstractIntegrationEvent] = SampleEvent
+    ) -> None:
+        """Change the retry policy of a registered subscription."""
         ...
 
     @abstractmethod
@@ -306,6 +314,12 @@ class SyncWorkerHarness(AbstractWorkerHarness):
         self.worker.add(self.deliveries[event])
         if auth_boundary:
             self.auth_boundary_handlers.add(handler)
+
+    @override
+    def set_policy(
+        self, policy: RetryPolicy, event: type[AbstractIntegrationEvent] = SampleEvent
+    ) -> None:
+        self.deliveries[event].policy = policy
 
     @override
     def set_propagator(self, propagator: ITracePropagator) -> None:
@@ -466,6 +480,12 @@ class AsyncWorkerHarness(AbstractWorkerHarness):
         self.worker.add(self.deliveries[event])
         if auth_boundary:
             self.auth_boundary_handlers.add(async_handler)
+
+    @override
+    def set_policy(
+        self, policy: RetryPolicy, event: type[AbstractIntegrationEvent] = SampleEvent
+    ) -> None:
+        self.deliveries[event].policy = policy
 
     @override
     def set_propagator(self, propagator: ITracePropagator) -> None:

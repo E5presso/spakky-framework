@@ -6,7 +6,7 @@ from pydantic import PositiveFloat
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
 
-from spakky.event.delivery import RetryPolicy
+from spakky.event.retry import RetryPolicy
 
 SPAKKY_EVENT_MEMORY_CONFIG_ENV_PREFIX = "SPAKKY_EVENT_MEMORY__"
 

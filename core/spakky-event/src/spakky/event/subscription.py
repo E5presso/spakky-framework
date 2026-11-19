@@ -82,6 +82,22 @@ class MixedSubscriptionModeError(AbstractSpakkyEventError):
         super().__init__()
 
 
+class ConflictingSubscriberRetryPolicyError(AbstractSpakkyEventError):
+    """Raised when handler classes of one subscriber declare different retries.
+
+    One worker serves every event of a subscriber, so the subscriber has one
+    retry policy. Classes that declare none follow the declared one; two
+    classes that declare different ones leave no single policy to apply.
+    """
+
+    message = "Handler classes of one subscriber declare different retry policies"
+    subscriber: SubscriberName | None
+
+    def __init__(self, subscriber: SubscriberName | None) -> None:
+        self.subscriber = subscriber
+        super().__init__()
+
+
 class SubscriberNames:
     """Validation and key mapping for subscriber names."""
 

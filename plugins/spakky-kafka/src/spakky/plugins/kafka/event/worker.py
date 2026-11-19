@@ -38,9 +38,9 @@ from spakky.event.delivery import (
     DeliveryState,
     EventRouting,
     RegisteredEventHandler,
-    RetryMode,
     SubscriptionDelivery,
 )
+from spakky.event.retry import RetryMode
 from spakky.event.error import InvalidDeliveryHeaderError, InvalidMessageError
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
@@ -86,8 +86,6 @@ class KafkaSubscriberWorker:
     """Subscriptions of this subscriber keyed by event topic."""
 
     adapters: dict[KafkaTopic, TypeAdapter[AbstractEvent]]
-    retry_topics: dict[KafkaTopic, KafkaTopic]
-    """Event topic of every retry topic this subscriber reads; empty unless delayed."""
 
     consumer: Consumer
     """Consumer client of this subscriber, bound by `open` for the service lifetime."""
@@ -114,7 +112,6 @@ class KafkaSubscriberWorker:
         self.group_id = config.subscriber_group_id(subscriber)
         self.deliveries = {}
         self.adapters = {}
-        self.retry_topics = {}
         self.propagator = None
         self._auth_boundary_handlers = auth_boundary_handlers
         self._fences = {}
@@ -130,8 +127,19 @@ class KafkaSubscriberWorker:
         self.adapters[topic] = cast(
             TypeAdapter[AbstractEvent], TypeAdapter(delivery.event_type)
         )
-        if self.config.retry.mode is RetryMode.DELAYED:
-            self.retry_topics[self.config.retry_topic(topic, self.subscriber)] = topic
+
+    @property
+    def retry_topics(self) -> dict[KafkaTopic, KafkaTopic]:
+        """Event topic of every retry topic this subscriber reads; empty unless delayed.
+
+        Read from the subscriptions instead of being fixed by `add`: a handler
+        class registered later may still declare the subscriber's retry mode.
+        """
+        return {
+            self.config.retry_topic(topic, self.subscriber): topic
+            for topic, delivery in self.deliveries.items()
+            if delivery.policy.mode is RetryMode.DELAYED
+        }
 
     @property
     def subscribed_topics(self) -> list[KafkaTopic]:
@@ -333,8 +341,9 @@ class KafkaSubscriberWorker:
             # A prefetched record can arrive after pause. The saved rewind offset
             # remains authoritative, so never dispatch or commit past it.
             return
-        carried = record.topic in self.retry_topics
-        origin = self.retry_topics.get(record.topic, record.topic)
+        retry_topics = self.retry_topics
+        carried = record.topic in retry_topics
+        origin = retry_topics.get(record.topic, record.topic)
         delivery = self.deliveries.get(origin)
         if delivery is None:
             logger.warning(f"Received message for unknown event type: {record.topic}")
@@ -457,7 +466,9 @@ class KafkaSubscriberWorker:
                 self._states[record.coordinates] = state
                 self._fence(record.position, retry_after)
             case DeliveryRetry(state=state, delay=delay):
-                if self.config.retry.mode is RetryMode.DELAYED and self._publish(
+                if self.deliveries[
+                    origin
+                ].policy.mode is RetryMode.DELAYED and self._publish(
                     self.producer,
                     self.config.retry_topic(origin, self.subscriber),
                     record,
@@ -664,8 +675,6 @@ class AsyncKafkaSubscriberWorker:
     """Subscriptions of this subscriber keyed by event topic."""
 
     adapters: dict[KafkaTopic, TypeAdapter[AbstractEvent]]
-    retry_topics: dict[KafkaTopic, KafkaTopic]
-    """Event topic of every retry topic this subscriber reads; empty unless delayed."""
 
     consumer: AIOConsumer
     """Consumer client of this subscriber, bound by `open` for the service lifetime."""
@@ -692,7 +701,6 @@ class AsyncKafkaSubscriberWorker:
         self.group_id = config.subscriber_group_id(subscriber)
         self.deliveries = {}
         self.adapters = {}
-        self.retry_topics = {}
         self.propagator = None
         self._auth_boundary_handlers = auth_boundary_handlers
         self._fences = {}
@@ -708,8 +716,19 @@ class AsyncKafkaSubscriberWorker:
         self.adapters[topic] = cast(
             TypeAdapter[AbstractEvent], TypeAdapter(delivery.event_type)
         )
-        if self.config.retry.mode is RetryMode.DELAYED:
-            self.retry_topics[self.config.retry_topic(topic, self.subscriber)] = topic
+
+    @property
+    def retry_topics(self) -> dict[KafkaTopic, KafkaTopic]:
+        """Event topic of every retry topic this subscriber reads; empty unless delayed.
+
+        Read from the subscriptions instead of being fixed by `add`: a handler
+        class registered later may still declare the subscriber's retry mode.
+        """
+        return {
+            self.config.retry_topic(topic, self.subscriber): topic
+            for topic, delivery in self.deliveries.items()
+            if delivery.policy.mode is RetryMode.DELAYED
+        }
 
     @property
     def subscribed_topics(self) -> list[KafkaTopic]:
@@ -914,8 +933,9 @@ class AsyncKafkaSubscriberWorker:
             # A prefetched record can arrive after pause. The saved rewind offset
             # remains authoritative, so never dispatch or commit past it.
             return
-        carried = record.topic in self.retry_topics
-        origin = self.retry_topics.get(record.topic, record.topic)
+        retry_topics = self.retry_topics
+        carried = record.topic in retry_topics
+        origin = retry_topics.get(record.topic, record.topic)
         delivery = self.deliveries.get(origin)
         if delivery is None:
             logger.warning(f"Received message for unknown event type: {record.topic}")
@@ -1041,7 +1061,9 @@ class AsyncKafkaSubscriberWorker:
                 self._states[record.coordinates] = state
                 await self._fence(record.position, retry_after)
             case DeliveryRetry(state=state, delay=delay):
-                if self.config.retry.mode is RetryMode.DELAYED and await self._publish(
+                if self.deliveries[
+                    origin
+                ].policy.mode is RetryMode.DELAYED and await self._publish(
                     self.producer,
                     self.config.retry_topic(origin, self.subscriber),
                     record,

@@ -3,7 +3,7 @@
 The consumers implement the broker-neutral delivery contract of
 `spakky.event.delivery`. Every subscriber is served by its own worker (see
 `spakky.plugins.kafka.event.worker`), so each one reads through its own
-consumer group and keeps its own retries and dead-letter topic.
+consumer group and keeps its own retry policy, retries and dead-letter topic.
 """
 
 from asyncio import Lock as AsyncLock
@@ -31,6 +31,7 @@ from spakky.event.event_consumer import (
     IAsyncIntegrationEventConsumer,
     IIntegrationEventConsumer,
 )
+from spakky.event.retry import RetryPolicy
 from spakky.event.redrive import IAsyncEventRedriver, IEventRedriver, RedriveResult
 from spakky.event.subscription import HandlerName, SubscriberName
 from spakky.tracing.propagator import ITracePropagator
@@ -66,7 +67,9 @@ class KafkaEventConsumer(
         """Initialize the Kafka consumer with connection config."""
         super().__init__()
         self.config = config
-        self.subscriptions = EventSubscriptions(config.retry)
+        self.subscriptions = EventSubscriptions(
+            config.retry, config.subscriber_retry_policy
+        )
         self.workers = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
@@ -122,9 +125,12 @@ class KafkaEventConsumer(
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register a handler in the subscription of `subscriber` for `event`."""
-        delivery = self.subscriptions.register(event, handler, subscriber, handler_name)
+        delivery = self.subscriptions.register(
+            event, handler, subscriber, handler_name, retry
+        )
         worker = self.workers.get(delivery.subscriber)
         if worker is None:
             worker = KafkaSubscriberWorker(
@@ -219,7 +225,9 @@ class AsyncKafkaEventConsumer(
         """Initialize the async Kafka consumer with connection config."""
         super().__init__()
         self.config = config
-        self.subscriptions = AsyncEventSubscriptions(config.retry)
+        self.subscriptions = AsyncEventSubscriptions(
+            config.retry, config.subscriber_retry_policy
+        )
         self.workers = {}
         self._propagator = None
         self._auth_boundary_handlers = set()
@@ -275,9 +283,12 @@ class AsyncKafkaEventConsumer(
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register an async handler in the subscription of `subscriber` for `event`."""
-        delivery = self.subscriptions.register(event, handler, subscriber, handler_name)
+        delivery = self.subscriptions.register(
+            event, handler, subscriber, handler_name, retry
+        )
         worker = self.workers.get(delivery.subscriber)
         if worker is None:
             worker = AsyncKafkaSubscriberWorker(

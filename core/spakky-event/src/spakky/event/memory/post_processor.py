@@ -112,6 +112,7 @@ class InMemoryEventPostProcessor(
                     async_endpoint,
                     subscriber=handler.subscriber,
                     handler_name=handler_name,
+                    retry=handler.retry,
                 )
                 continue
 
@@ -136,5 +137,6 @@ class InMemoryEventPostProcessor(
                 endpoint,
                 subscriber=handler.subscriber,
                 handler_name=handler_name,
+                retry=handler.retry,
             )
         return pod

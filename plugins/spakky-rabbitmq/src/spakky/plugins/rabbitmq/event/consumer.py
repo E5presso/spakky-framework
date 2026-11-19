@@ -57,10 +57,9 @@ from spakky.event.delivery import (
     EventSubscriptions,
     HandlerFailure,
     RegisteredEventHandler,
-    RetryMode,
-    RetryPolicy,
     SubscriptionDelivery,
 )
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.error import InvalidDeliveryHeaderError, InvalidMessageError
 from spakky.event.event_consumer import (
     AsyncEventHandlerCallback,
@@ -92,6 +91,7 @@ from spakky.plugins.rabbitmq.common.constants import (
 from spakky.plugins.rabbitmq.error import (
     RabbitMQAuthRequeueError,
     SubscriberExchangeRequiredError,
+    SubscriberRetryModeUnsupportedError,
 )
 from spakky.plugins.rabbitmq.event.topology import (
     QueueName,
@@ -479,6 +479,7 @@ class RabbitMQEventConsumer(
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register a handler in the subscription of `subscriber` for `event`.
 
@@ -488,14 +489,23 @@ class RabbitMQEventConsumer(
             subscriber: Independent subscriber the handler belongs to; None is
                 the unnamed subscriber consuming the queue named after the event.
             handler_name: Name unique within the subscription.
+            retry: Retry the handler's class declared for its subscriber. Its
+                attempt counts and intervals apply to that subscriber only; its
+                mode must match the consumer's `retry.mode`.
 
         Raises:
             SubscriberExchangeRequiredError: A named subscriber is registered
                 while no exchange is configured.
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
+            SubscriberRetryModeUnsupportedError: The subscriber's retry mode
+                differs from the consumer's `retry.mode`.
         """
         if subscriber is not None and self.exchange_name is None:
             raise SubscriberExchangeRequiredError(subscriber, event)
-        self._subscriptions.register(event, handler, subscriber, handler_name)
+        self._subscriptions.register(event, handler, subscriber, handler_name, retry)
+        if self._subscriptions.policy_of(subscriber).mode is not self._retry.mode:
+            raise SubscriberRetryModeUnsupportedError(subscriber)
         if event not in self._adapters:
             # TypeAdapter is invariant; the registry is keyed by the concrete type.
             self._adapters[event] = cast(TypeAdapter[AbstractEvent], TypeAdapter(event))
@@ -988,6 +998,7 @@ class AsyncRabbitMQEventConsumer(
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register an async handler in the subscription of `subscriber` for `event`.
 
@@ -997,14 +1008,23 @@ class AsyncRabbitMQEventConsumer(
             subscriber: Independent subscriber the handler belongs to; None is
                 the unnamed subscriber consuming the queue named after the event.
             handler_name: Name unique within the subscription.
+            retry: Retry the handler's class declared for its subscriber. Its
+                attempt counts and intervals apply to that subscriber only; its
+                mode must match the consumer's `retry.mode`.
 
         Raises:
             SubscriberExchangeRequiredError: A named subscriber is registered
                 while no exchange is configured.
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
+            SubscriberRetryModeUnsupportedError: The subscriber's retry mode
+                differs from the consumer's `retry.mode`.
         """
         if subscriber is not None and self.exchange_name is None:
             raise SubscriberExchangeRequiredError(subscriber, event)
-        self._subscriptions.register(event, handler, subscriber, handler_name)
+        self._subscriptions.register(event, handler, subscriber, handler_name, retry)
+        if self._subscriptions.policy_of(subscriber).mode is not self._retry.mode:
+            raise SubscriberRetryModeUnsupportedError(subscriber)
         if event not in self._adapters:
             # TypeAdapter is invariant; the registry is keyed by the concrete type.
             self._adapters[event] = cast(TypeAdapter[AbstractEvent], TypeAdapter(event))

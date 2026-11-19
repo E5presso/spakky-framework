@@ -35,13 +35,17 @@ from spakky.event.error import (
     SubscriptionNotFoundError,
 )
 from spakky.event.redrive import RedriveResult
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.tracing.context import TraceContext
 from spakky.tracing.w3c_propagator import W3CTracePropagator
 
 from spakky.plugins.rabbitmq.auth import current_rabbitmq_message_headers
 from spakky.plugins.rabbitmq.common.config import RabbitMQConnectionConfig
 from spakky.plugins.rabbitmq.common.constants import RABBITMQ_CONFIG_ENV_PREFIX
-from spakky.plugins.rabbitmq.error import SubscriberExchangeRequiredError
+from spakky.plugins.rabbitmq.error import (
+    SubscriberExchangeRequiredError,
+    SubscriberRetryModeUnsupportedError,
+)
 from spakky.plugins.rabbitmq.event.consumer import RabbitMQEventConsumer
 
 CONNECTION = "spakky.plugins.rabbitmq.event.consumer.BlockingConnection"
@@ -1047,3 +1051,43 @@ def test_sync_redrive_auth_provider_unavailable_expect_error_and_connection_clos
     broker.channel.basic_ack.assert_not_called()
     broker.publish_channel.basic_publish.assert_not_called()
     broker.connection.close.assert_called_once_with()
+
+
+def test_sync_register_subscriber_retry_expect_declared_attempts_for_that_subscriber(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """선언한 retry의 횟수와 간격은 그 subscriber에만 적용된다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+    failing = MagicMock(side_effect=RuntimeError("boom"))
+    consumer.register(
+        SampleIntegrationEvent,
+        failing,
+        subscriber="billing",
+        handler_name="failing",
+        retry=RetryPolicy(max_attempts=2, initial_interval=4.0),
+    )
+    broker = start(consumer)
+
+    broker.deliver("SampleIntegrationEvent.billing")
+
+    broker.channel.basic_ack.assert_not_called()
+    delay, _ = broker.connection.call_later.call_args.args
+    assert delay == 4.0
+    broker.publish_channel.basic_publish.assert_not_called()
+
+
+def test_sync_register_subscriber_retry_other_mode_expect_unsupported_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """consumer와 다른 retry mode를 선언하면 조용히 무시하지 않고 등록에서 실패한다."""
+    consumer = RabbitMQEventConsumer(make_config(monkeypatch))
+
+    with pytest.raises(SubscriberRetryModeUnsupportedError) as raised:
+        consumer.register(
+            SampleIntegrationEvent,
+            MagicMock(),
+            subscriber="billing",
+            retry=RetryPolicy(mode=RetryMode.DELAYED),
+        )
+
+    assert raised.value.subscriber == "billing"

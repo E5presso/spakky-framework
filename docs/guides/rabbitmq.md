@@ -229,6 +229,8 @@ sequenceDiagram
 
 `retry` 설정(`RetryPolicy`)은 구독자 큐마다 독립적으로 적용됩니다. 한 구독자 안에서 핸들러 하나가 실패해도 나머지는 모두 실행하고, 재시도는 아직 성공하지 못한 핸들러만 다시 실행합니다. 기본값은 `max_attempts=1`이라 재시도 없이 바로 dead-letter 큐로 갑니다.
 
+- `@EventHandler(retry=...)`로 구독자마다 재시도를 선언할 수 있습니다. 선언에서 명시한 필드만 `retry` 설정 위에 덮으므로, 횟수와 간격은 그 구독자에만 적용됩니다. 단 RabbitMQ Consumer는 큐 선언과 prefetch를 하나의 `retry.mode`로 정하므로, 구독자의 `mode`가 설정의 `retry.mode`와 다르면 등록할 때 `SubscriberRetryModeUnsupportedError`(`spakky.plugins.rabbitmq.error`)로 실패합니다. 같은 구독자의 클래스들이 서로 다른 `retry`를 선언하면 `ConflictingSubscriberRetryPolicyError`로 실패합니다.
+
 ### `blocking` — 순서 유지
 
 실패한 메시지를 ack하지 않은 채 `delay`만큼 기다렸다가 같은 메시지를 다시 전달합니다.

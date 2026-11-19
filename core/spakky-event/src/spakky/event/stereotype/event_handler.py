@@ -13,6 +13,7 @@ from spakky.core.common.annotation import FunctionAnnotation
 from spakky.core.pod.annotations.pod import Pod
 from spakky.domain.models.event import AbstractEvent
 
+from spakky.event.retry import RetryPolicy
 from spakky.event.subscription import HandlerName, SubscriberName, SubscriberNames
 
 type EventHandlerMethod[EventT_contra: AbstractEvent] = Callable[
@@ -117,7 +118,7 @@ class EventHandler(Pod):
     process domain events asynchronously.
 
     Example:
-        @EventHandler(subscriber="billing")
+        @EventHandler(subscriber="billing", retry=RetryPolicy(max_attempts=3))
         class BillingHandler:
             @on_event(OrderPlaced)
             async def charge(self, event: OrderPlaced) -> None: ...
@@ -130,6 +131,17 @@ class EventHandler(Pod):
     own consume position, retries and dead-letter destination. None keeps the
     handlers on the unnamed subscriber of the consumer. Domain events are
     dispatched in process and ignore this value.
+    """
+
+    retry: RetryPolicy | None = field(kw_only=True, default=None)
+    """Retry the subscriber of this class uses; None declares nothing.
+
+    Only the fields set explicitly override the consumer-wide policy, so
+    `RetryPolicy(mode=RetryMode.DELAYED)` keeps the attempt counts and intervals
+    of the deployment settings. The value covers every event of the subscriber:
+    classes of the same subscriber that declare none follow it, and two classes
+    that declare different values fail registration with
+    `ConflictingSubscriberRetryPolicyError`.
     """
 
     def __post_init__(self) -> None:

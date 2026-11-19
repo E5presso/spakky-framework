@@ -7,6 +7,7 @@ from typing import override
 
 from spakky.domain.models.event import AbstractEvent
 
+from spakky.event.retry import RetryPolicy
 from spakky.event.subscription import HandlerName, SubscriberName
 
 type EventHandlerCallback[EventT_contra: AbstractEvent] = Callable[
@@ -59,7 +60,7 @@ class IIntegrationEventConsumer(IEventConsumer, ABC):
     Every implementation follows the delivery contract in
     `spakky.event.delivery`: subscribers read independently, every handler of a
     subscriber runs even when another fails, failed handlers are retried under
-    the configured `RetryPolicy`, and exhausted messages move to the
+    the subscriber's `RetryPolicy`, and exhausted messages move to the
     subscriber's own dead-letter destination.
     """
 
@@ -72,6 +73,7 @@ class IIntegrationEventConsumer(IEventConsumer, ABC):
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register a handler in the subscription of `subscriber` for `event`.
 
@@ -83,6 +85,13 @@ class IIntegrationEventConsumer(IEventConsumer, ABC):
                 broker identity.
             handler_name: Name unique within the subscription; it is recorded in
                 dead-letter metadata and in the idempotency key.
+            retry: Retry the handler's class declared for its subscriber. Only
+                the fields it sets explicitly override the consumer-wide policy;
+                None follows what the subscriber's other classes declared.
+
+        Raises:
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
         """
         ...
 
@@ -102,6 +111,7 @@ class IAsyncIntegrationEventConsumer(IAsyncEventConsumer, ABC):
         *,
         subscriber: SubscriberName | None = None,
         handler_name: HandlerName | None = None,
+        retry: RetryPolicy | None = None,
     ) -> None:
         """Register an async handler in the subscription of `subscriber` for `event`.
 
@@ -113,5 +123,12 @@ class IAsyncIntegrationEventConsumer(IAsyncEventConsumer, ABC):
                 broker identity.
             handler_name: Name unique within the subscription; it is recorded in
                 dead-letter metadata and in the idempotency key.
+            retry: Retry the handler's class declared for its subscriber. Only
+                the fields it sets explicitly override the consumer-wide policy;
+                None follows what the subscriber's other classes declared.
+
+        Raises:
+            ConflictingSubscriberRetryPolicyError: Another handler class of the
+                subscriber declared a different retry.
         """
         ...

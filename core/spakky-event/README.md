@@ -300,12 +300,13 @@ integration handler의 등록은 해당 transport 플러그인의 post-processor
 
 - **구독자**: `@EventHandler(subscriber="billing")`. 구독자마다 소비 위치, 재시도, dead-letter가 따로입니다.
 - **처리기 실행**: 한 처리기가 실패해도 나머지를 모두 실행하고, 재시도는 실패한 처리기만 다시 실행합니다.
-- **재시도**: `RetryPolicy(max_attempts, initial_interval, multiplier, max_interval, mode)`. `mode`는 `blocking`(순서 유지) 또는 `delayed`(지연 재시도)입니다. `AbstractNonRetryableEventError`와 역직렬화 실패는 재시도하지 않습니다.
+- **재시도**: `RetryPolicy(max_attempts, initial_interval, multiplier, max_interval, mode)`(`spakky.event.retry`). `mode`는 `blocking`(순서 유지) 또는 `delayed`(지연 재시도)입니다. `AbstractNonRetryableEventError`와 역직렬화 실패는 재시도하지 않습니다.
+- **구독자별 재시도**: `@EventHandler(subscriber="billing", retry=RetryPolicy(mode=RetryMode.DELAYED))`. 명시한 필드만 구현체 설정의 `retry` 위에 덮습니다(`RetryPolicy.overlay`). 구독자의 모든 이벤트가 같은 정책을 쓰며, 같은 구독자의 클래스가 서로 다른 값을 선언하면 `ConflictingSubscriberRetryPolicyError`로 등록이 실패합니다.
 - **dead-letter**: 구독자마다 하나이며, `DeadLetter` 메타데이터를 `x-spakky-dead-letter-*` 헤더로 저장합니다.
 - **다시 넣기**: `IEventRedriver.redrive(event, subscriber=..., limit=...)`.
 - **멱등 소비**: `@Transactional()`과 `@Idempotent()`를 함께 선언하면 `(구독자, 처리기, event_id)` 기록이 처리기의 트랜잭션에 들어갑니다. SQLAlchemy 구현은 `spakky-sqlalchemy[event]`가 제공합니다.
 
-구현체를 만들 때는 `EventSubscriptions`와 `SubscriptionDelivery.deliver()`(비동기는 `AsyncEventSubscriptions`, `AsyncSubscriptionDelivery`)로 처리기를 실행하고, 반환된 `DeliveryCompleted | DeliveryRetry | DeliveryDeferred | DeliveryDeadLettered`를 브로커 동작으로 옮깁니다. 처리기 선언은 `EventHandler.routes()`로 클래스에서 읽습니다. 인스턴스는 AOP 프록시일 수 있어 bound method 검색으로는 처리기를 놓칩니다.
+구현체를 만들 때는 `EventSubscriptions`와 `SubscriptionDelivery.deliver()`(비동기는 `AsyncEventSubscriptions`, `AsyncSubscriptionDelivery`)로 처리기를 실행합니다. `register(..., retry=)`에 처리기 클래스의 선언을 넘기면 구독자의 정책이 `delivery.policy`에 정해지므로, 재시도 방식은 설정 대신 `delivery.policy.mode`로 고릅니다. 배포 설정으로 한 번 더 덮으려면 `EventSubscriptions(policy, resolver)`에 `(subscriber, declared) -> RetryPolicy` 함수를 넘깁니다. 그리고 반환된 `DeliveryCompleted | DeliveryRetry | DeliveryDeferred | DeliveryDeadLettered`를 브로커 동작으로 옮깁니다. 처리기 선언은 `EventHandler.routes()`로 클래스에서 읽습니다. 인스턴스는 AOP 프록시일 수 있어 bound method 검색으로는 처리기를 놓칩니다.
 
 ### 메모리 구현체
 

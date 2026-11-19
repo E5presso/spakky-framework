@@ -17,9 +17,8 @@ from spakky.event.delivery import (
     DeadLetter,
     DeliveryHeader,
     DeliveryState,
-    RetryMode,
-    RetryPolicy,
 )
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.redrive import RedriveResult
 
 from spakky.plugins.kafka.common.config import (
@@ -680,3 +679,87 @@ async def test_delayed_retry_restart_with_latest_reset_expect_waiting_retry_deli
     finally:
         await after_restart.stop_async()
     assert await asyncio.to_thread(end_offset, config, f"{topic}.dlt") == 0
+
+
+@immutable
+class SubscriberRetryEvent(AbstractIntegrationEvent):
+    """Event two subscribers retry under different policies."""
+
+    value: str
+
+    @property
+    @override
+    def event_name(self) -> str:
+        return f"test.subscribers.own-retry.{RUN_ID}"
+
+
+async def test_subscriber_retry_expect_each_subscriber_uses_its_own_policy() -> None:
+    """선언한 mode와 배포 설정의 횟수는 그 subscriber에만 적용되고, 다른 subscriber는 config.retry를 쓴다."""
+    config = make_config(RetryPolicy(max_attempts=1))
+    config.subscriber_retry = {
+        "relaxed": RetryPolicy(max_attempts=3, initial_interval=1.0)
+    }
+    topic = SubscriberRetryEvent(value="probe").event_name
+    calls: Counter[str] = Counter()
+    order: list[str] = []
+
+    async def relaxed(event: SubscriberRetryEvent) -> None:
+        calls[f"relaxed:{event.value}"] += 1
+        if event.value == "first" and calls["relaxed:first"] == 1:
+            raise RuntimeError("first attempt fails")
+        order.append(event.value)
+
+    async def strict(event: SubscriberRetryEvent) -> None:
+        calls[f"strict:{event.value}"] += 1
+        if event.value == "first":
+            raise RuntimeError("always fails")
+
+    consumer = AsyncKafkaEventConsumer(config)
+    consumer.set_stop_event(asyncio.Event())
+    consumer.register(
+        SubscriberRetryEvent,
+        relaxed,
+        subscriber="relaxed",
+        handler_name="relaxed",
+        retry=RetryPolicy(mode=RetryMode.DELAYED),
+    )
+    consumer.register(
+        SubscriberRetryEvent, strict, subscriber="strict", handler_name="strict"
+    )
+    await consumer.start_async()
+    try:
+        publish(
+            config,
+            [SubscriberRetryEvent(value="first"), SubscriberRetryEvent(value="second")],
+        )
+
+        await eventually(lambda: order == ["second", "first"])
+        await eventually(lambda: calls["strict:second"] == 1)
+
+        assert calls == {
+            "relaxed:first": 2,
+            "relaxed:second": 1,
+            "strict:first": 1,
+            "strict:second": 1,
+        }
+        assert (
+            await asyncio.to_thread(end_offset, config, f"{topic}.relaxed.retry") == 1
+        )
+        assert await asyncio.to_thread(end_offset, config, f"{topic}.relaxed.dlt") == 0
+
+        async def strict_dead_lettered() -> bool:
+            return (
+                await asyncio.to_thread(end_offset, config, f"{topic}.strict.dlt") == 1
+            )
+
+        await eventually(strict_dead_lettered)
+        topics = await asyncio.to_thread(
+            lambda: (
+                AdminClient(config.connection_configuration_dict)
+                .list_topics(timeout=MAX_WAIT_TIME)
+                .topics
+            )
+        )
+        assert f"{topic}.strict.retry" not in topics
+    finally:
+        await consumer.stop_async()

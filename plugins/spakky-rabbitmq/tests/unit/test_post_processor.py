@@ -38,6 +38,7 @@ from spakky.event.event_consumer import (
     IAsyncEventConsumer,
     IEventConsumer,
 )
+from spakky.event.retry import RetryPolicy
 from spakky.event.stereotype.event_handler import EventHandler, on_event
 from spakky.plugins.rabbitmq.auth import (
     reset_current_rabbitmq_message_headers,
@@ -608,9 +609,10 @@ def test_rabbitmq_post_processor_with_tracing_but_no_set_propagator_expect_skipp
 def test_rabbitmq_post_processor_named_subscriber_expect_subscriber_and_handler_names() -> (
     None
 ):
-    """구독자 이름과 핸들러 이름이 동기·비동기 consumer 등록에 그대로 전달됨을 검증한다."""
+    """구독자 이름, 핸들러 이름, 선언한 retry가 동기·비동기 consumer 등록에 그대로 전달됨을 검증한다."""
+    retry = RetryPolicy(max_attempts=3)
 
-    @EventHandler(subscriber="billing")
+    @EventHandler(subscriber="billing", retry=retry)
     class BillingHandler:
         @on_event(SampleIntegrationEvent, name="charge")
         def charge(self, event: SampleIntegrationEvent) -> None:
@@ -640,10 +642,12 @@ def test_rabbitmq_post_processor_named_subscriber_expect_subscriber_and_handler_
     assert mock_consumer.register.call_args.kwargs == {
         "subscriber": "billing",
         "handler_name": "charge",
+        "retry": retry,
     }
     assert mock_async_consumer.register.call_args.kwargs == {
         "subscriber": "notification",
         "handler_name": f"{NotificationHandler.__qualname__}.notify",
+        "retry": None,
     }
 
 
@@ -708,6 +712,7 @@ def test_rabbitmq_post_processor_advised_handler_expect_registered_through_proxy
         assert mock_consumer.register.call_args.kwargs == {
             "subscriber": "billing",
             "handler_name": f"{TransactionalBillingHandler.__qualname__}.charge",
+            "retry": None,
         }
         endpoint = mock_consumer.register.call_args.args[1]
         endpoint(SampleIntegrationEvent(message="order"))

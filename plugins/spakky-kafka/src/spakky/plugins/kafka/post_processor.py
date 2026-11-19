@@ -148,6 +148,7 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                     async_endpoint,
                     subscriber=handler.subscriber,
                     handler_name=handler_name,
+                    retry=handler.retry,
                 )
                 if hasattr(  # optional auth-aware Kafka consumer bridge
                     async_consumer,
@@ -187,6 +188,7 @@ class KafkaPostProcessor(IPostProcessor, IContainerAware, IApplicationContextAwa
                 endpoint,
                 subscriber=handler.subscriber,
                 handler_name=handler_name,
+                retry=handler.retry,
             )
             if hasattr(  # optional auth-aware Kafka consumer bridge
                 consumer,

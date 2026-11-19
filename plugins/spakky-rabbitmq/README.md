@@ -129,6 +129,7 @@ class MailingHandler:
 | `blocking` (기본) | 메시지를 ack하지 않은 채 기다렸다가 다시 전달합니다. 큐마다 prefetch 1을 설정해 구독자 큐 안의 순서를 지킵니다. 진행 상태는 프로세스 메모리에 있어, 재시작하면 첫 시도부터 다시 실행합니다 |
 | `delayed` | 재시도 상태를 헤더에 실은 사본을 `<소비 큐>.retry`에 넣고 원본을 ack합니다. 사본은 지연(TTL)이 지나면 그 구독자의 소비 큐로만 돌아옵니다. 순서는 보장하지 않습니다 |
 
+- `@EventHandler(retry=...)`로 구독자마다 재시도를 선언할 수 있습니다. 선언에서 명시한 필드만 `retry` 설정 위에 덮으므로, 횟수와 간격은 그 구독자에만 적용됩니다. 단 RabbitMQ Consumer는 큐 선언과 prefetch를 하나의 `retry.mode`로 정하므로, 구독자의 `mode`가 설정의 `retry.mode`와 다르면 등록할 때 `SubscriberRetryModeUnsupportedError`(`spakky.plugins.rabbitmq.error`)로 실패합니다. 같은 구독자의 클래스들이 서로 다른 `retry`를 선언하면 `ConflictingSubscriberRetryPolicyError`로 실패합니다.
 - `AbstractNonRetryableEventError`를 상속한 예외와 역직렬화할 수 없는 payload는 재시도 없이 dead-letter 큐로 갑니다.
 - `EventDeferredError(retry_after)`는 시도 횟수를 세지 않고 기다렸다가 다시 전달합니다.
 - 한 전달에서 핸들러 결과가 섞이면 재시도 불가 실패 → deferral → 재시도 순으로 하나의 결과가 정해집니다.

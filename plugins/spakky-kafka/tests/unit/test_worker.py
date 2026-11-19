@@ -28,9 +28,8 @@ from spakky.event.delivery import (
     DeliveryState,
     EventDeliveryContext,
     HandlerFailure,
-    RetryMode,
-    RetryPolicy,
 )
+from spakky.event.retry import RetryMode, RetryPolicy
 from spakky.event.error import AbstractNonRetryableEventError, EventDeferredError
 from spakky.event.redrive import RedriveResult
 from spakky.tracing.context import TraceContext
@@ -1408,3 +1407,24 @@ def test_async_worker_unconfirmed_delivery_expect_dead_letter_not_committed(
     assert "Delivery to SampleEvent.dlt unconfirmed after 0.01s" in caplog.text
     assert "it may still be delivered" in caplog.text
     assert harness.committed() == []
+
+
+def test_worker_subscription_policy_delayed_expect_retry_record_despite_blocking_config(
+    make_harness: HarnessFactory,
+) -> None:
+    """worker는 config.retry가 아니라 그 subscriber 구독의 policy mode를 따른다."""
+    harness = make_harness(
+        RetryPolicy(max_attempts=3, initial_interval=5.0), subscriber="billing"
+    )
+    harness.add("charge", fail)
+    # 나중에 등록된 클래스가 subscriber의 retry를 선언한 경우와 같다.
+    harness.set_policy(
+        RetryPolicy(max_attempts=3, initial_interval=5.0, mode=RetryMode.DELAYED)
+    )
+
+    harness.handle(make_message())
+
+    [record] = harness.published()
+    assert record.topic == "SampleEvent.billing.retry"
+    assert harness.committed() == [COMMITTED]
+    assert harness.paused() == []
