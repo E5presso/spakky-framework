@@ -49,6 +49,8 @@ def clean_environment_fixture() -> Generator[None, Any, None]:
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MODE",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}REDRIVE_TIMEOUT",
         f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}DEAD_LETTER_DELIVERY_TIMEOUT",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CONSUMER_OVERRIDES",
+        f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES",
     ]
     original_values = {}
     for key in keys_to_remove:
@@ -498,3 +500,193 @@ def test_tls_invalid_ca_expect_no_plaintext_fallback(
     config = KafkaConnectionConfig()
     with pytest.raises(SSLError, match="certificate"):
         _ = config.async_producer_configuration_dict
+
+
+def set_required_environment() -> None:
+    """Set the connection settings every configuration test needs."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "orders"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+
+
+def test_kafka_config_without_consumer_overrides_expect_unchanged_consumer_settings(
+    clean_env: None,
+) -> None:
+    """override를 주지 않으면 구독자와 redrive consumer 설정이 종전과 같다."""
+    set_required_environment()
+
+    config = KafkaConnectionConfig()
+
+    assert config.consumer_overrides == {}
+    assert config.subscriber_consumer_overrides == {}
+    assert config.subscriber_consumer_configuration("billing") == {
+        **config.consumer_configuration_dict,
+        "group.id": "orders.billing",
+    }
+    assert config.redrive_consumer_configuration("billing") == {
+        **config.consumer_configuration_dict,
+        "group.id": "orders.billing.redrive",
+    }
+
+
+def test_kafka_config_consumer_overrides_from_json_env_expect_applied_to_every_subscriber(
+    clean_env: None,
+) -> None:
+    """CONSUMER_OVERRIDES JSON 환경 변수는 값의 타입을 지켜 모든 구독자의 consumer에 실린다."""
+    set_required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CONSUMER_OVERRIDES"] = (
+        '{"max.poll.interval.ms": 900000, "session.timeout.ms": 45000,'
+        ' "check.crcs": true, "partition.assignment.strategy": "cooperative-sticky"}'
+    )
+
+    config = KafkaConnectionConfig()
+
+    expected_overrides: dict[str, str | int | float | bool] = {
+        "max.poll.interval.ms": 900000,
+        "session.timeout.ms": 45000,
+        "check.crcs": True,
+        "partition.assignment.strategy": "cooperative-sticky",
+    }
+    assert config.consumer_overrides == expected_overrides
+    assert config.consumer_overrides["check.crcs"] is True
+    for subscriber in (None, "billing", "shipping"):
+        settings = config.subscriber_consumer_configuration(subscriber)
+        assert settings.items() >= expected_overrides.items()
+        assert settings["group.id"] == config.subscriber_group_id(subscriber)
+        assert settings["enable.auto.commit"] is False
+
+
+def test_kafka_config_subscriber_consumer_overrides_from_json_env_expect_only_that_subscriber(
+    clean_env: None,
+) -> None:
+    """SUBSCRIBER_CONSUMER_OVERRIDES는 이름이 맞는 구독자의 consumer에만 실린다."""
+    set_required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES"] = (
+        '{"report-builder": {"max.poll.interval.ms": 900000}}'
+    )
+
+    config = KafkaConnectionConfig()
+
+    assert config.subscriber_consumer_overrides == {
+        "report-builder": {"max.poll.interval.ms": 900000}
+    }
+    report_settings = config.subscriber_consumer_configuration("report-builder")
+    assert report_settings["max.poll.interval.ms"] == 900000
+    assert report_settings["group.id"] == "orders.report-builder"
+    assert "max.poll.interval.ms" not in config.subscriber_consumer_configuration(
+        "billing"
+    )
+    assert "max.poll.interval.ms" not in config.subscriber_consumer_configuration(None)
+
+
+def test_kafka_config_subscriber_override_expect_wins_over_shared_override(
+    clean_env: None,
+) -> None:
+    """같은 키는 구독자 override가 공통 override를 덮고, 다른 키는 둘 다 남는다."""
+    set_required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CONSUMER_OVERRIDES"] = (
+        '{"max.poll.interval.ms": 600000, "fetch.min.bytes": 1024}'
+    )
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES"] = (
+        '{"report-builder": {"max.poll.interval.ms": 900000}}'
+    )
+
+    config = KafkaConnectionConfig()
+
+    report_settings = config.subscriber_consumer_configuration("report-builder")
+    assert report_settings["max.poll.interval.ms"] == 900000
+    assert report_settings["fetch.min.bytes"] == 1024
+    billing_settings = config.subscriber_consumer_configuration("billing")
+    assert billing_settings["max.poll.interval.ms"] == 600000
+
+
+def test_kafka_config_override_of_shared_consumer_setting_expect_wins_over_default(
+    clean_env: None,
+) -> None:
+    """override는 공통 consumer 설정 위에 덮이고, producer 설정에는 닿지 않는다."""
+    set_required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CONSUMER_OVERRIDES"] = (
+        '{"client.id": "shared-client"}'
+    )
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES"] = (
+        '{"billing": {"client.id": "billing-client"}}'
+    )
+
+    config = KafkaConnectionConfig()
+
+    assert config.subscriber_consumer_configuration(None)["client.id"] == (
+        "shared-client"
+    )
+    assert config.subscriber_consumer_configuration("billing")["client.id"] == (
+        "billing-client"
+    )
+    assert config.producer_configuration_dict["client.id"] == "test-client"
+
+
+def test_kafka_config_consumer_overrides_expect_applied_to_redrive_consumer(
+    clean_env: None,
+) -> None:
+    """redrive consumer도 공통·구독자 override를 받고 redrive group으로 읽는다."""
+    set_required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CONSUMER_OVERRIDES"] = (
+        '{"fetch.min.bytes": 1024}'
+    )
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES"] = (
+        '{"report-builder": {"max.poll.interval.ms": 900000}}'
+    )
+
+    config = KafkaConnectionConfig()
+
+    settings = config.redrive_consumer_configuration("report-builder")
+    assert settings["fetch.min.bytes"] == 1024
+    assert settings["max.poll.interval.ms"] == 900000
+    assert settings["group.id"] == "orders.report-builder.redrive"
+    assert settings["enable.auto.commit"] is False
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("group.id", '"other-group"'),
+        ("enable.auto.commit", "true"),
+        ("auto.offset.reset", '"latest"'),
+    ],
+)
+def test_kafka_config_consumer_overrides_with_reserved_key_expect_rejected(
+    clean_env: None, key: str, value: str
+) -> None:
+    """framework가 정하는 consumer 키를 공통 override로 주면 설정 로딩이 거부한다."""
+    set_required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CONSUMER_OVERRIDES"] = (
+        f'{{"{key}": {value}}}'
+    )
+
+    with pytest.raises(ValidationError) as error:
+        KafkaConnectionConfig()
+
+    assert error.value.errors()[0]["type"] == "reserved_consumer_override"
+    assert error.value.errors()[0]["ctx"] == {"key": key}
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("group.id", '"other-group"'),
+        ("enable.auto.commit", "true"),
+        ("auto.offset.reset", '"latest"'),
+    ],
+)
+def test_kafka_config_subscriber_consumer_overrides_with_reserved_key_expect_rejected(
+    clean_env: None, key: str, value: str
+) -> None:
+    """framework가 정하는 consumer 키를 구독자 override로 주어도 설정 로딩이 거부한다."""
+    set_required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES"] = (
+        f'{{"billing": {{"fetch.min.bytes": 1024, "{key}": {value}}}}}'
+    )
+
+    with pytest.raises(ValidationError) as error:
+        KafkaConnectionConfig()
+
+    assert error.value.errors()[0]["type"] == "reserved_consumer_override"
+    assert error.value.errors()[0]["ctx"] == {"key": key}

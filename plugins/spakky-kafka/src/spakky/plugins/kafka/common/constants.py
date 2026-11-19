@@ -14,6 +14,18 @@ type KafkaTopic = str
 type KafkaGroupId = str
 """Identifier of a Kafka consumer group."""
 
+type KafkaConsumerOverrides = dict[str, str | int | float | bool]
+"""librdkafka consumer properties, keyed by their librdkafka names."""
+
+RESERVED_CONSUMER_OVERRIDE_KEYS: frozenset[str] = frozenset(
+    {"group.id", "enable.auto.commit", "auto.offset.reset"}
+)
+"""Consumer properties the framework owns and deployment overrides may not set.
+
+`group.id` is derived per subscriber, `enable.auto.commit=false` is what makes
+delivery at-least-once, and `auto.offset.reset` already has its own field.
+"""
+
 
 class DeadLetterHeaderKey(StrEnum):
     """Kafka header keys describing where a dead-lettered message came from.
