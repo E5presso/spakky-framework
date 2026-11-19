@@ -1340,6 +1340,59 @@ async def test_multimodal_user_content_expect_responses_input_parts(
     ]
 
 
+@pytest.mark.parametrize(
+    ("media_type", "filename"),
+    [
+        (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "minutes.docx",
+        ),
+        (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "ledger.xlsx",
+        ),
+        ("application/msword", "minutes.doc"),
+        ("application/rtf", "minutes.rtf"),
+        ("application/vnd.oasis.opendocument.text", "minutes.odt"),
+        (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "deck.pptx",
+        ),
+        ("application/vnd.ms-powerpoint", "deck.ppt"),
+        ("application/vnd.ms-excel", "ledger.xls"),
+        ("text/csv", "ledger.csv"),
+        ("text/markdown", "notes.md"),
+        ("application/json", "data.json"),
+    ],
+)
+async def test_office_and_text_documents_expect_input_file(
+    wire: _Wire,
+    media_type: str,
+    filename: str,
+) -> None:
+    """Document formats the Responses API reads are sent as input_file data."""
+    wire.replies = [_sse(_text_delta("ok"), _completed())]
+    message = ModelMessage.user(
+        (
+            TextPart("summarize"),
+            DocumentPart.from_bytes(b"doc", media_type=media_type, filename=filename),
+        )
+    )
+
+    await OpenAIResponsesProvider().complete(
+        _target(input_modalities=frozenset(ModelModality)),
+        ModelRequest(messages=(message,)),
+    )
+
+    items = cast(Sequence[Mapping[str, object]], wire.body()["input"])
+    content = cast(Sequence[Mapping[str, object]], items[0]["content"])
+    assert content[1] == {
+        "type": "input_file",
+        "file_data": f"data:{media_type};base64,ZG9j",
+        "filename": filename,
+    }
+
+
 async def test_undeclared_input_modality_expect_no_http_call(wire: _Wire) -> None:
     """Media the route did not declare is rejected before any call."""
     request = ModelRequest(
@@ -1369,9 +1422,9 @@ async def test_undeclared_input_modality_expect_no_http_call(wire: _Wire) -> Non
         ),
         DocumentPart.from_bytes(b"pdf", media_type="application/pdf"),
         DocumentPart.from_bytes(
-            b"json",
-            media_type="application/json",
-            filename="data.json",
+            b"zip",
+            media_type="application/zip",
+            filename="bundle.zip",
         ),
     ],
 )
