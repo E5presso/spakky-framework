@@ -1,6 +1,6 @@
 # spakky-oauth
 
-OAuth 2.0 public client 플러그인 API입니다. Authorization code + PKCE, token 갱신과 폐기를 제공합니다.
+OAuth 2.0 client 플러그인 API입니다. Authorization code + PKCE, confidential client 인증, token 갱신과 폐기를 제공합니다.
 
 ::: spakky.plugins.oauth
     options:

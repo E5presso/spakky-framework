@@ -6,7 +6,11 @@ import pytest
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from spakky.plugins.oauth.config import OAuthClientRegistration, OAuthConfig
+from spakky.plugins.oauth.config import (
+    OAuthClientAuthMethod,
+    OAuthClientRegistration,
+    OAuthConfig,
+)
 
 
 def _values(**overrides: object) -> dict[str, object]:
@@ -33,6 +37,27 @@ def test_registration_expect_normalized_endpoints_and_defaults() -> None:
     assert registration.scopes == ()
     assert registration.authorization_parameters == {}
     assert registration.token_parameters == {}
+    assert registration.token_endpoint_auth_method == OAuthClientAuthMethod.NONE
+    assert registration.client_secret is None
+
+
+def test_confidential_registration_expect_secret_hidden_from_repr() -> None:
+    """A client secret is accepted with a client_secret_* method and never shown."""
+    registration = OAuthClientRegistration.model_validate(
+        _values(
+            token_endpoint_auth_method="client_secret_basic",
+            client_secret="very-secret-value",
+        )
+    )
+
+    assert (
+        registration.token_endpoint_auth_method
+        == OAuthClientAuthMethod.CLIENT_SECRET_BASIC
+    )
+    assert registration.client_secret is not None
+    assert registration.client_secret.get_secret_value() == "very-secret-value"
+    assert "very-secret-value" not in repr(registration)
+    assert "very-secret-value" not in str(registration.model_dump())
 
 
 def test_registration_on_loopback_http_expect_accepted() -> None:
@@ -63,7 +88,25 @@ def test_registration_on_loopback_http_expect_accepted() -> None:
             "oauth_authorization_parameter",
         ),
         ({"token_parameters": {"code_verifier": "fixed"}}, "oauth_token_parameter"),
-        ({"client_secret": "nope"}, "extra_forbidden"),
+        ({"client_name": "nope"}, "extra_forbidden"),
+        ({"client_secret": "secret"}, "oauth_client_authentication"),
+        (
+            {"token_endpoint_auth_method": "client_secret_basic"},
+            "oauth_client_authentication",
+        ),
+        (
+            {"token_endpoint_auth_method": "client_secret_post", "client_secret": " "},
+            "oauth_client_secret",
+        ),
+        (
+            {
+                "token_endpoint_auth_method": "client_secret_post",
+                "client_secret": "secret",
+                "token_parameters": {"client_secret": "other"},
+            },
+            "oauth_token_parameter",
+        ),
+        ({"token_endpoint_auth_method": "private_key_jwt"}, "enum"),
     ],
 )
 def test_invalid_registration_expect_validation_error(
@@ -94,6 +137,32 @@ def test_config_from_environment_expect_named_clients(monkeypatch: MonkeyPatch) 
     assert config.refresh_leeway_seconds == 30
     assert config.http_timeout_seconds == 20
     assert config.authorization_ttl_seconds == 600
+
+
+def test_config_from_environment_expect_confidential_client(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Operators can declare a confidential client and its secret in the environment."""
+    monkeypatch.setenv(
+        "SPAKKY_OAUTH__CLIENTS",
+        dumps(
+            {
+                "example": _values(
+                    token_endpoint_auth_method="client_secret_post",
+                    client_secret="env-secret",
+                )
+            }
+        ),
+    )
+
+    registration = OAuthConfig().clients["example"]
+
+    assert (
+        registration.token_endpoint_auth_method
+        == OAuthClientAuthMethod.CLIENT_SECRET_POST
+    )
+    assert registration.client_secret is not None
+    assert registration.client_secret.get_secret_value() == "env-secret"
 
 
 def test_config_without_environment_expect_no_clients(monkeypatch: MonkeyPatch) -> None:
