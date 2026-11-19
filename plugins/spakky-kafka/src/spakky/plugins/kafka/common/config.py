@@ -17,7 +17,9 @@ from spakky.event.subscription import SubscriberName
 
 from spakky.plugins.kafka.common.constants import (
     REDRIVE_GROUP_SUFFIX,
+    RESERVED_CONSUMER_OVERRIDE_KEYS,
     SPAKKY_KAFKA_CONFIG_ENV_PREFIX,
+    KafkaConsumerOverrides,
     KafkaGroupId,
     KafkaTopic,
 )
@@ -97,6 +99,22 @@ class KafkaConnectionConfig(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_consumer_overrides(self) -> Self:
+        """Reject overrides of the consumer properties the framework owns."""
+        for overrides in (
+            self.consumer_overrides,
+            *self.subscriber_consumer_overrides.values(),
+        ):
+            for key in overrides.keys() & RESERVED_CONSUMER_OVERRIDE_KEYS:
+                raise PydanticCustomError(
+                    "reserved_consumer_override",
+                    "Consumer property {key} is managed by the framework "
+                    "and cannot be overridden",
+                    {"key": key},
+                )
+        return self
+
     number_of_partitions: int = 1
     """Default number of partitions for created topics."""
 
@@ -108,6 +126,20 @@ class KafkaConnectionConfig(BaseSettings):
 
     poll_timeout: float = 1.0
     """Consumer poll timeout in seconds."""
+
+    consumer_overrides: KafkaConsumerOverrides = {}
+    """librdkafka properties added to the consumer of every subscriber.
+
+    For example `{"max.poll.interval.ms": 900000}`. They are also applied to
+    redrive consumers. `group.id`, `enable.auto.commit` and `auto.offset.reset`
+    are owned by the framework and rejected.
+    """
+
+    subscriber_consumer_overrides: dict[SubscriberName, KafkaConsumerOverrides] = {}
+    """librdkafka properties added to the consumer of one named subscriber only.
+
+    Applied on top of `consumer_overrides`, under the same reserved keys.
+    """
 
     dead_letter_topic_suffix: Annotated[str, StringConstraints(min_length=1)] = ".dlt"
     """Suffix appended to the original topic name to build its dead-letter topic.
@@ -184,20 +216,38 @@ class KafkaConnectionConfig(BaseSettings):
     def subscriber_consumer_configuration(
         self, subscriber: SubscriberName | None
     ) -> dict[str, str | int | float | bool]:
-        """Consumer settings of one subscriber: the shared ones under its own group."""
+        """Consumer settings of one subscriber under its own group.
+
+        The shared settings come first, then `consumer_overrides`, then the
+        subscriber's own overrides; `group.id` is set last.
+        """
         return {
-            **self.consumer_configuration_dict,
+            **self._overridden_consumer_configuration(subscriber),
             "group.id": self.subscriber_group_id(subscriber),
         }
 
     def redrive_consumer_configuration(
         self, subscriber: SubscriberName | None
     ) -> dict[str, str | int | float | bool]:
-        """Consumer settings of a redrive: the shared ones under the redrive group."""
+        """Consumer settings of one subscriber's redrive, under the redrive group."""
         return {
-            **self.consumer_configuration_dict,
+            **self._overridden_consumer_configuration(subscriber),
             "group.id": self.redrive_group_id(subscriber),
         }
+
+    def _overridden_consumer_configuration(
+        self, subscriber: SubscriberName | None
+    ) -> dict[str, str | int | float | bool]:
+        """Shared consumer settings with the deployment overrides of one subscriber.
+
+        Args:
+            subscriber: Subscriber name; None is the unnamed subscriber, which
+                only receives `consumer_overrides`.
+        """
+        config = {**self.consumer_configuration_dict, **self.consumer_overrides}
+        if subscriber is not None:
+            config.update(self.subscriber_consumer_overrides.get(subscriber, {}))
+        return config
 
     @property
     def connection_configuration_dict(self) -> dict[str, str | int | float | bool]:

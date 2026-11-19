@@ -66,6 +66,21 @@ export SPAKKY_KAFKA__POLL_TIMEOUT=1.0
 | `retry` | `SPAKKY_KAFKA__RETRY__*` | `max_attempts=1` | 구독자별 재시도 정책 — [재시도](#재시도) 참조 |
 | `dead_letter_delivery_timeout` | `SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT` | `10.0` | retry·dead-letter 레코드 배달을 기다리는 최대 시간 (초) |
 | `redrive_timeout` | `SPAKKY_KAFKA__REDRIVE_TIMEOUT` | `10.0` | redrive가 dead letter 없이 브로커를 기다리는 최대 시간 (초) |
+| `consumer_overrides` | `SPAKKY_KAFKA__CONSUMER_OVERRIDES` (JSON) | `{}` | 모든 구독자·redrive consumer에 덧붙이는 librdkafka 설정 |
+| `subscriber_consumer_overrides` | `SPAKKY_KAFKA__SUBSCRIBER_CONSUMER_OVERRIDES` (JSON) | `{}` | 구독자 이름별로 그 구독자의 consumer에만 덧붙이는 설정. `consumer_overrides` 위에 덮음 |
+
+### Consumer 설정 덧붙이기
+
+```bash
+export SPAKKY_KAFKA__CONSUMER_OVERRIDES='{"max.poll.interval.ms": 900000}'
+export SPAKKY_KAFKA__SUBSCRIBER_CONSUMER_OVERRIDES='{"report-builder": {"max.poll.interval.ms": 1800000}}'
+```
+
+구독자 consumer의 설정은 기본 consumer 설정 → `consumer_overrides` →
+`subscriber_consumer_overrides[구독자]` 순서로 합쳐지고, `group.id`는 마지막에 프레임워크가
+정합니다. redrive consumer도 같은 값을 받습니다. producer와 admin client에는 적용되지
+않습니다. `group.id`, `enable.auto.commit`, `auto.offset.reset`은 at-least-once 전달과
+구독자별 group의 전제라 설정 로딩에서 거부됩니다.
 
 > **Breaking change**: `max_handler_retries`(`SPAKKY_KAFKA__MAX_HANDLER_RETRIES`)는
 > 제거되었습니다. 별칭은 없으며, 남아 있는 환경변수는 무시됩니다. 종전의

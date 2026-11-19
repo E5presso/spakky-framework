@@ -59,6 +59,28 @@ export SPAKKY_KAFKA__DEAD_LETTER_DELIVERY_TIMEOUT="10.0"
 export SPAKKY_KAFKA__REDRIVE_TIMEOUT="10.0"
 ```
 
+### Consumer 설정 덧붙이기 (선택)
+
+`max.poll.interval.ms`처럼 프레임워크가 정하지 않는 librdkafka consumer 설정은 JSON
+환경변수로 덧붙입니다. 키는 librdkafka 이름이고 값은 문자열·정수·실수·불리언입니다.
+
+```bash
+# 모든 구독자의 consumer에 덧붙임
+export SPAKKY_KAFKA__CONSUMER_OVERRIDES='{"max.poll.interval.ms": 900000}'
+# 이름이 report-builder인 구독자의 consumer에만 덧붙임
+export SPAKKY_KAFKA__SUBSCRIBER_CONSUMER_OVERRIDES='{"report-builder": {"max.poll.interval.ms": 1800000}}'
+```
+
+구독자 consumer의 설정은 `consumer_configuration_dict` → `consumer_overrides` →
+`subscriber_consumer_overrides[구독자]` 순서로 덮어쓰고, `group.id`는 마지막에 프레임워크가
+정합니다. 이름 없는 구독자는 `consumer_overrides`만 받습니다. redrive consumer도 같은 값을
+받고 `group.id`만 redrive group으로 정해집니다. producer와 admin client에는 적용되지
+않습니다.
+
+`group.id`, `enable.auto.commit`, `auto.offset.reset`은 프레임워크가 동작의 전제로 쓰는
+값이라 어느 override에 넣어도 설정 로딩이 `ValidationError`(`reserved_consumer_override`)로
+거부합니다. `auto.offset.reset`은 `SPAKKY_KAFKA__AUTO_OFFSET_RESET`으로 정합니다.
+
 > **Breaking change**: `max_handler_retries`(`SPAKKY_KAFKA__MAX_HANDLER_RETRIES`)는
 > 제거되었습니다. 별칭은 없으며, 남아 있는 환경변수는 무시됩니다. 종전의
 > `max_handler_retries=N`은 `SPAKKY_KAFKA__RETRY__MAX_ATTEMPTS=N+1`에 해당합니다(시도
@@ -72,13 +94,14 @@ export SPAKKY_KAFKA__REDRIVE_TIMEOUT="10.0"
 ## 전달 의미 (at-least-once)
 
 `KafkaConnectionConfig`는 producer 설정과 consumer 설정을 분리하여 각각의 안전한
-기본값을 프레임워크가 고정합니다. 환경변수로 덮어쓸 수 있는 항목이 아닙니다.
+기본값을 프레임워크가 고정합니다. 환경변수로 덮어쓸 수 있는 항목이 아닙니다(consumer의
+그 밖의 설정은 [Consumer 설정 덧붙이기](#consumer-설정-덧붙이기-선택) 참조).
 
 | 속성 | 대상 | 고정 값 | 결과 |
 |------|------|--------|------|
 | `producer_configuration_dict` | `confluent_kafka.Producer` (이벤트 발행 + dead-letter 발행) | `enable.idempotence=true`, `acks=all` | 한 producer 세션의 재시도가 중복 발행·파티션 내 재정렬을 만들지 않고, 승인된 이벤트가 파티션 리더 장애를 견딤 |
 | `async_producer_configuration_dict` | `aiokafka.AIOKafkaProducer` | `enable_idempotence=True`, `acks="all"` | 같은 값을 aiokafka 키 이름으로 표현 |
-| `consumer_configuration_dict` | `confluent_kafka.Consumer`, `AIOConsumer` | `enable.auto.commit=false` | offset이 핸들러 결과에 따라서만 전진. 구독자별 `group.id`는 `subscriber_consumer_configuration()`이 덮어씀 |
+| `consumer_configuration_dict` | `confluent_kafka.Consumer`, `AIOConsumer` | `enable.auto.commit=false` | offset이 핸들러 결과에 따라서만 전진. 구독자별 `group.id`는 `subscriber_consumer_configuration()`이 덮어씀. 이 키와 `auto.offset.reset`은 override로 바꿀 수 없음 |
 | `connection_configuration_dict` | `AdminClient` 및 위 3종의 공통 기반 | `client.id`, `bootstrap.servers`, SASL/TLS | 클러스터 접속 정보만 담음 |
 
 `AsyncKafkaEventTransport`는 producer를 애플리케이션 수명 동안 하나로 유지하므로, 멱등
