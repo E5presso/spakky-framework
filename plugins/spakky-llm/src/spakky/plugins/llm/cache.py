@@ -158,8 +158,16 @@ class LlmCacheKeyBuilder:
         scope: LlmCacheScope,
         target: LlmModelTarget,
         request: ModelRequest,
+        *,
+        reasoning_effort_overridden: bool = False,
     ) -> LlmCacheLookup:
-        """Bind route, guarded content, tools, schema, sampling, and safety scope."""
+        """Bind route, guarded content, tools, schema, sampling, and safety scope.
+
+        ``reasoning_effort_overridden`` is true only when this request's
+        ``LlmRequestOptions`` replaced the route's reasoning effort. A catalog
+        reasoning effort was never part of the key, so keeping it out preserves
+        existing digests.
+        """
         assembled = request.assemble_messages()
         messages: list[JsonValue] = []
         semantic_input: list[str] = []
@@ -220,7 +228,7 @@ class LlmCacheKeyBuilder:
             ),
         }
         # Added only when set so that existing cache digests stay unchanged.
-        if target.route.reasoning_effort is not None:
+        if reasoning_effort_overridden and target.route.reasoning_effort is not None:
             route["reasoning_effort"] = target.route.reasoning_effort.value
         if len(target.route.extra_body) > 0:
             route["extra_body"] = cls._json_value(target.route.extra_body)

@@ -763,11 +763,18 @@ class LlmAgentModel(IAgentModel):
         )  # constructor invariant: every enabled mode requires a resolver
         backend = self.__cache_backends[policy.mode]
         try:
+            options = request.extension(LlmRequestOptions)
             query = LlmCacheKeyBuilder.build(
                 policy,
                 resolver.resolve(request),
                 target,
                 request,
+                reasoning_effort_overridden=(
+                    options is not None
+                    and options.reasoning_effort is not None
+                    and target.model_ref
+                    == self._requested_model_ref(request.model_selection)
+                ),
             )
             cached = await backend.lookup(query)
         except AbstractLlmError:

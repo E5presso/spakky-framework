@@ -19,7 +19,11 @@ from spakky.agent import (
 )
 
 from spakky.plugins.llm.cache import (
+    ILLMCacheScopeResolver,
+    ILLMResponseCache,
+    LlmCachedResponse,
     LlmCacheKeyBuilder,
+    LlmCacheLookup,
     LlmCacheMode,
     LlmCachePolicy,
     LlmCacheScope,
@@ -383,9 +387,29 @@ def test_cache_key_expect_extra_body_and_reasoning_effort_partition() -> None:
             route.model_copy(update={"reasoning_effort": LlmReasoningEffort.HIGH})
         ),
         request,
+        reasoning_effort_overridden=True,
     )
 
     assert len({base.key.digest, body.key.digest, effort.key.digest}) == 3
+
+
+def test_cache_key_catalog_reasoning_effort_expect_digest_unchanged() -> None:
+    """A catalog reasoning effort without a request override keeps the old key."""
+    policy = LlmCachePolicy(mode=LlmCacheMode.EXACT)
+    scope = LlmCacheScope("tenant-a", "redaction-v1")
+    request = _request("core", None)
+    route = LlmModelRoute(profile="local", model="local-model")
+    base = LlmCacheKeyBuilder.build(policy, scope, _cache_target(route), request)
+    catalog_effort = LlmCacheKeyBuilder.build(
+        policy,
+        scope,
+        _cache_target(
+            route.model_copy(update={"reasoning_effort": LlmReasoningEffort.HIGH})
+        ),
+        request,
+    )
+
+    assert catalog_effort.key.digest == base.key.digest
 
 
 def test_route_extra_body_reserved_key_expect_validation_error() -> None:
@@ -428,3 +452,74 @@ def test_chat_completions_credential_provider_expect_valid_profile() -> None:
 
     assert profile.credential_provider == "caller-token"
     assert profile.api_key is None
+
+
+class _LookupRecordingCache(ILLMResponseCache):
+    """Exact cache that never hits and records every lookup key."""
+
+    def __init__(self) -> None:
+        self.lookups: list[LlmCacheLookup] = []
+
+    @property
+    @override
+    def mode(self) -> LlmCacheMode:
+        return LlmCacheMode.EXACT
+
+    @override
+    async def lookup(self, query: LlmCacheLookup) -> LlmCachedResponse | None:
+        self.lookups.append(query)
+        return None
+
+    @override
+    async def store(
+        self,
+        query: LlmCacheLookup,
+        response: LlmCachedResponse,
+        *,
+        ttl_seconds: float,
+    ) -> None:
+        _ = (query, response, ttl_seconds)
+
+
+class _FixedScopeResolver(ILLMCacheScopeResolver):
+    @override
+    def resolve(self, request: ModelRequest) -> LlmCacheScope:
+        _ = request
+        return LlmCacheScope("tenant-a", "redaction-v1")
+
+
+async def test_cached_route_reasoning_effort_override_expect_only_override_partitions() -> (
+    None
+):
+    """Without options the catalog effort stays out of the key; an override enters it."""
+    config = _config()
+    policy = LlmCachePolicy(mode=LlmCacheMode.EXACT)
+    config.models["gpt"] = config.models["gpt"].model_copy(update={"cache": policy})
+    cache = _LookupRecordingCache()
+    chat, responses = _providers()
+    model = LlmAgentModel(
+        config,
+        (chat, responses),
+        response_caches=(cache,),
+        cache_scope_resolver=_FixedScopeResolver(),
+    )
+
+    await model.complete(_request("gpt", None))
+    await model.complete(
+        _request("gpt", LlmRequestOptions(reasoning_effort=LlmReasoningEffort.HIGH))
+    )
+
+    catalog_target = responses.targets[0]
+    without_effort = LlmCacheKeyBuilder.build(
+        policy,
+        LlmCacheScope("tenant-a", "redaction-v1"),
+        LlmModelTarget(
+            model_ref=catalog_target.model_ref,
+            profile_name=catalog_target.profile_name,
+            profile=catalog_target.profile,
+            route=catalog_target.route.model_copy(update={"reasoning_effort": None}),
+        ),
+        _request("gpt", None),
+    )
+    assert cache.lookups[0].key.digest == without_effort.key.digest
+    assert cache.lookups[1].key.digest != cache.lookups[0].key.digest
