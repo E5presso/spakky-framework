@@ -1,3 +1,35 @@
+## v13.0.0 (2026-11-19)
+
+### BREAKING CHANGE
+
+- IOutboxStorage와 IAsyncOutboxStorage에 abstract release_claim(message: OutboxMessage)가 추가되어, 저장소 밖의 custom storage 구현은 이 메서드를 구현해야 합니다. OutboxEventBus/AsyncOutboxEventBus 생성자는 propagator 다음 위치 인자로 synchronization과 wakeup을 받으므로, auth_snapshot_headers를 세 번째 위치 인자로 넘기던 코드는 바뀌어야 합니다. outbox relay 두 개는 마지막 인자로 wakeup을, TransactionalAspect/AsyncTransactionalAspect는 synchronization을 더 받습니다. 플러그인 initialize가 새 Pod를 등록하므로 플러그인으로 로딩하는 앱은 바뀌지 않습니다.
+- TransactionalAspect / AsyncTransactionalAspect 생성자가
+AggregateCollector를 필수로 받습니다(수동으로 aspect만 등록하던 컨텍스트는
+AggregateCollector도 등록해야 합니다). 이벤트 발행 aspect의 after /
+after_async advice가 제거되었습니다. AbstractTransaction의
+__enter__/__exit__, AbstractAsyncTransaction의 __aenter__/__aexit__가
+@final이 되어 하위 클래스가 재정의할 수 없습니다. SessionManager /
+AsyncSessionManager는 ApplicationContext ID가 아니라 실행 context
+(ContextVar)로 session을 찾습니다. context를 이어받지 않은 별도 task·thread는
+같은 context ID라도 session을 공유하지 않고, context를 이어받은 자식
+task·thread는 바깥 session을 봅니다.
+- SessionManager/AsyncSessionManager.open()이 묶을
+PhysicalTransaction을 받고, AggregateCollector.begin_transaction()이
+PhysicalTransaction을 받습니다. AbstractTransaction.joins()를 제거했습니다.
+initialize()는 scope 밖에서 직접 부를 수 없습니다(current_frame이 없음).
+끝난 transaction의 session·buffer는 dispose() 안에서도 쓸 수 없습니다.
+
+### Feat
+
+- **event**: subscriber마다 RetryPolicy를 줄 수 있게 합니다 (#572)
+- **data**: @Transactional에 중첩 transaction(propagation)을 추가합니다 (#571)
+- **kafka**: consumer 설정을 배포 설정으로 덧붙일 수 있게 합니다 (#569)
+- **llm**: 요청마다 모델·자격·추가 인자를 주고 지난 reasoning을 다시 싣습니다 (#570)
+
+### Fix
+
+- **outbox**: commit 직후 전송하고, relay 중단과 실패한 claim 묶임을 고칩니다 (#573)
+
 ## v12.2.0 (2026-11-18)
 
 ### Feat
