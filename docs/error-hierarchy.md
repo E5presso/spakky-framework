@@ -128,6 +128,7 @@ flowchart TD
   AbstractAgentModelError --> AbstractLlmError
   AbstractLlmError --> LlmConfigurationError
   AbstractLlmError --> LlmModelSelectionError
+  LlmModelSelectionError --> LlmRequestOptionsError
   AbstractLlmError --> LlmProviderUnavailableError
   AbstractLlmError --> LlmStreamingDisabledError
   AbstractLlmError --> LlmTransportError
@@ -1033,6 +1034,7 @@ from spakky.plugins.llm.error import (
     LlmProviderUnavailableError,
     LlmQuotaExhaustedError,
     LlmRateLimitError,
+    LlmRequestOptionsError,
     LlmResponseError,
     LlmStreamInterruptedError,
     LlmStreamingDisabledError,
@@ -1048,6 +1050,7 @@ from spakky.plugins.llm.error import (
 | `LlmConfigurationError` | `llm_configuration_invalid` | `false` | provider registry, SDK client endpoint/API key/credential 또는 explicit Google embedding route/input 구성이 유효하지 않음 |
 | `LlmCacheConfigurationError` | `llm_cache_invalid` | `false` | enabled cache mode의 backend/scope, lookup/store/result가 유효하지 않음 |
 | `LlmModelSelectionError` | `llm_model_selection_invalid` | `false` | 요청한 `model_ref`를 operator catalog에서 해석할 수 없음 |
+| `LlmRequestOptionsError` | `llm_model_selection_invalid` | `false` | `LlmRequestOptions`로 덮은 route가 `LlmModelRoute` 검증을 통과하지 못함(빈 model, 예약된 `extra_body` key, scalar/JSON이 아닌 값) |
 | `LlmProviderUnavailableError` | `llm_provider_unavailable` | `false` | 선택한 API family의 SDK adapter가 등록되지 않음 |
 | `LlmStreamingDisabledError` | `llm_streaming_disabled` | `false` | 선택한 profile이 streaming을 허용하지 않음 |
 | `LlmTransportError` | `llm_transport_error` | `true` | SDK가 provider endpoint에 도달하지 못했거나 재시도 가능한 상태 오류를 받음 |

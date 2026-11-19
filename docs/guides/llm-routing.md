@@ -370,8 +370,54 @@ local_route = LlmModelRoute(
 
 vLLM dialect는 명시 `base_url`이 필요하며 API key는 선택 사항입니다. Key를 생략한
 vLLM에만 SDK 호출용 non-secret `not-required` sentinel을 사용하고, 기본 local profile은
-`EMPTY`를 명시합니다. Standard dialect에 `chat_template_kwargs`를 붙이면 설정 오류로
+`EMPTY`를 명시합니다. Standard dialect에 `chat_template_kwargs`나 `extra_body`를 붙이면 설정 오류로
 중단됩니다.
+
+vLLM route가 `supports_reasoning=True`이면 assistant history의 `metadata["reasoning"]`(문자열)을 요청의 assistant message `reasoning_content`로 다시 싣습니다. 응답이 reasoning을 돌려주는 key와 같으므로 응답 metadata를 history에 그대로 옮기면 `reasoning_content`를 읽는 chat template이 지난 reasoning을 다시 렌더링할 수 있습니다. 값이 문자열이 아니면 `LlmResponseError`입니다. Standard dialect나 `supports_reasoning=False` route에서는 싣지 않습니다.
+
+### 요청마다 route 덮기 (`LlmRequestOptions`)
+
+`LlmRequestOptions`는 `AgentRunExtension`입니다. `ModelRequest.extensions`에 실으면
+`LlmAgentModel`이 `model_selection`으로 고른 route 하나를 그 요청에서만 덮습니다.
+
+| Field | 기본값 | 덮는 방식 |
+|-------|--------|-----------|
+| `model` | `None` | `route.model` 대신 쓸 provider model 이름; `None`이면 route 값 |
+| `chat_template_kwargs` | `{}` | `route.chat_template_kwargs` 위에 key마다 덮음 (vLLM dialect 전용) |
+| `reasoning_effort` | `None` | `route.reasoning_effort` 대신 씀; `None`이면 route 값 (`openai-responses` 전용) |
+| `extra_body` | `{}` | `route.extra_body` 위에 key마다 덮음 (vLLM dialect 전용) |
+
+```python
+from spakky.agent import ModelMessage, ModelMessageRole, ModelRequest, ModelSelection
+from spakky.plugins.llm.provider import LlmRequestOptions
+
+request = ModelRequest(
+    messages=(ModelMessage(ModelMessageRole.USER, "요약해 줘"),),
+    model_selection=ModelSelection("local/chat"),
+    extensions=(
+        LlmRequestOptions(
+            chat_template_kwargs={"enable_thinking": False},
+            extra_body={"add_generation_prompt": False, "continue_final_message": True},
+        ),
+    ),
+)
+```
+
+- 덮은 값은 `LlmModelRoute` 검증을 다시 거칩니다(`model` strip, 문자열 `"true"`/`"false"`의
+  boolean 정규화). 그래서 adapter, response cache key, 응답의 routing metadata가 모두 덮은
+  route를 봅니다. Capability는 원래 route의 것을 그대로 씁니다.
+- `fallbacks`의 route는 다른 model이므로 덮지 않습니다.
+- vLLM dialect가 아닌 profile에 `chat_template_kwargs`나 `extra_body`를, `openai-responses`가
+  아닌 profile에 `reasoning_effort`를 주면 `LlmUnsupportedFeatureError`입니다. Streaming에서는
+  `llm_feature_unsupported` error event로 끝납니다.
+- 빈 `model`, `extra_body`의 framework 예약 key(`chat_template_kwargs`, `structured_outputs`),
+  template scalar나 JSON이 아닌 값은 `LlmRequestOptionsError`(`LlmModelSelectionError`의 하위
+  타입)입니다.
+- 요청마다 다른 token은 이 extension이 아니라 `credential_provider`로 줍니다.
+  `LlmCredentialRequest.request`에 요청 전체가 들어오므로 application은 자기
+  `AgentRunExtension`을 거기서 읽어 token을 고를 수 있습니다.
+
+`LlmRequestOptions`를 싣지 않은 요청은 이전과 같습니다.
 
 ### OpenAI Responses API와 ChatGPT 로그인 { #openai-responses-chatgpt }
 
@@ -410,6 +456,7 @@ ChatGPT 로그인 경로에서 HTTP 400으로 거절됩니다.
 `credential_provider`는 application이 등록한 `ILLMCredentialProvider` Pod의 `name`입니다.
 Adapter는 attempt마다 `access_token()`을 호출하고, provider가 HTTP 401로 거절하면 거절된
 token을 `rejected_token`에 담아 한 번 더 호출한 뒤 요청을 정확히 한 번 재시도합니다.
+`openai-chat-completions` profile에서도 같은 방식으로 쓸 수 있습니다.
 
 Token을 얻고 갱신하는 일은 [`spakky-oauth`](oauth-client.md)에 맡길 수 있습니다. 두 플러그인은
 서로 import하지 않으므로 연결하는 Pod는 application이 씁니다.

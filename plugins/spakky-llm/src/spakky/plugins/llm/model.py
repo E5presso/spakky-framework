@@ -5,6 +5,8 @@ from copy import deepcopy
 from dataclasses import replace
 from typing import cast, override
 
+from pydantic import ValidationError
+
 from spakky.agent import (
     IAgentModel,
     JsonObject,
@@ -34,6 +36,7 @@ from spakky.plugins.llm.config import (
     LlmModelRoute,
     LlmProfile,
     LlmProviderApi,
+    OpenAICompatibleDialect,
 )
 from spakky.plugins.llm.error import (
     AbstractLlmError,
@@ -43,12 +46,15 @@ from spakky.plugins.llm.error import (
     LlmFailureClass,
     LlmModelSelectionError,
     LlmProviderUnavailableError,
+    LlmRequestOptionsError,
     LlmStreamingDisabledError,
+    LlmUnsupportedFeatureError,
 )
 from spakky.plugins.llm.media import ILLMMediaUriPolicy, PublicLlmMediaUriPolicy
 from spakky.plugins.llm.provider import (
     ILLMProvider,
     LlmModelTarget,
+    LlmRequestOptions,
     done_event,
     error_event,
     failure_code,
@@ -126,7 +132,7 @@ class LlmAgentModel(IAgentModel):
     @override
     def validate_request(self, request: ModelRequest) -> None:
         """Accept when any explicitly reachable candidate satisfies the request."""
-        root = self._resolve_target(request.model_selection)
+        root = self._request_target(request)
         candidates = (
             self._candidate_refs_for_failure(
                 root.model_ref,
@@ -136,7 +142,8 @@ class LlmAgentModel(IAgentModel):
             else (root.model_ref,)
         )
         for model_ref in candidates:
-            if len(self._capability_reasons(self._target(model_ref), request)) == 0:
+            target = self._candidate_target(root, model_ref)
+            if len(self._capability_reasons(target, request)) == 0:
                 return
         raise LlmCapabilityError
 
@@ -144,7 +151,7 @@ class LlmAgentModel(IAgentModel):
     async def complete(self, request: ModelRequest) -> ModelResponse:
         """Complete through bounded retries and explicitly ordered fallbacks."""
         request = request.snapshot()
-        root = self._resolve_target(request.model_selection)
+        root = self._request_target(request)
         candidates = self._candidate_refs(root.model_ref)
         attempts: list[_Evidence] = []
         cache_selections: list[_Evidence] = []
@@ -153,7 +160,7 @@ class LlmAgentModel(IAgentModel):
         last_error: AbstractLlmError | None = None
         last_target = root
         for model_ref in candidates:
-            target = self._target(model_ref)
+            target = self._candidate_target(root, model_ref)
             last_target = target
             capability_reasons = self._capability_reasons(target, request)
             if len(capability_reasons) > 0:
@@ -364,8 +371,8 @@ class LlmAgentModel(IAgentModel):
 
     async def _stream(self, request: ModelRequest) -> AsyncIterator[ModelStreamEvent]:
         try:
-            root = self._resolve_target(request.model_selection)
-        except LlmModelSelectionError as error:
+            root = self._request_target(request)
+        except (LlmModelSelectionError, LlmUnsupportedFeatureError) as error:
             model_ref = self._requested_model_ref(request.model_selection)
             metadata = {
                 "model_ref": model_ref,
@@ -375,7 +382,7 @@ class LlmAgentModel(IAgentModel):
             yield ModelStreamEvent(
                 kind=ModelStreamEventKind.ERROR,
                 error=ModelError(
-                    code="llm_model_selection_invalid",
+                    code=failure_code(error),
                     message=error.message,
                     metadata=metadata,
                 ),
@@ -401,7 +408,7 @@ class LlmAgentModel(IAgentModel):
         last_error: AbstractLlmError | None = None
         last_target = root
         for model_ref in candidates:
-            target = self._target(model_ref)
+            target = self._candidate_target(root, model_ref)
             last_target = target
             capability_reasons = self._capability_reasons(target, request)
             if len(capability_reasons) > 0:
@@ -562,6 +569,63 @@ class LlmAgentModel(IAgentModel):
     ) -> LlmModelTarget:
         return self._target(self._requested_model_ref(selection))
 
+    def _request_target(self, request: ModelRequest) -> LlmModelTarget:
+        """Resolve the selected route and apply this request's route overrides."""
+        target = self._resolve_target(request.model_selection)
+        options = request.extension(LlmRequestOptions)
+        if options is None:
+            return target
+        return self._overridden_target(target, options)
+
+    def _overridden_target(
+        self,
+        target: LlmModelTarget,
+        options: LlmRequestOptions,
+    ) -> LlmModelTarget:
+        profile = target.profile
+        if (
+            len(options.chat_template_kwargs) > 0 or len(options.extra_body) > 0
+        ) and profile.openai_dialect != OpenAICompatibleDialect.VLLM:
+            raise LlmUnsupportedFeatureError
+        if (
+            options.reasoning_effort is not None
+            and profile.api != LlmProviderApi.OPENAI_RESPONSES
+        ):
+            raise LlmUnsupportedFeatureError
+        route = target.route
+        try:
+            overridden = LlmModelRoute(
+                profile=route.profile,
+                model=route.model if options.model is None else options.model,
+                capability=route.capability,
+                chat_template_kwargs={
+                    **route.chat_template_kwargs,
+                    **options.chat_template_kwargs,
+                },
+                reasoning_effort=(
+                    route.reasoning_effort
+                    if options.reasoning_effort is None
+                    else options.reasoning_effort
+                ),
+                extra_body={**route.extra_body, **options.extra_body},
+                fallbacks=route.fallbacks,
+                fallback_on=route.fallback_on,
+                cache=route.cache,
+            )
+        except ValidationError as error:
+            raise LlmRequestOptionsError from error
+        return replace(target, route=overridden)
+
+    def _candidate_target(
+        self,
+        root: LlmModelTarget,
+        model_ref: str,
+    ) -> LlmModelTarget:
+        """Keep the overridden root route; fallbacks resolve their own routes."""
+        if model_ref == root.model_ref:
+            return root
+        return self._target(model_ref)
+
     def _requested_model_ref(self, selection: ModelSelection | None) -> str:
         if selection is None:
             return self.__default_model
@@ -699,11 +763,18 @@ class LlmAgentModel(IAgentModel):
         )  # constructor invariant: every enabled mode requires a resolver
         backend = self.__cache_backends[policy.mode]
         try:
+            options = request.extension(LlmRequestOptions)
             query = LlmCacheKeyBuilder.build(
                 policy,
                 resolver.resolve(request),
                 target,
                 request,
+                reasoning_effort_overridden=(
+                    options is not None
+                    and options.reasoning_effort is not None
+                    and target.model_ref
+                    == self._requested_model_ref(request.model_selection)
+                ),
             )
             cached = await backend.lookup(query)
         except AbstractLlmError:

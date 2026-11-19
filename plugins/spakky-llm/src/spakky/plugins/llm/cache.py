@@ -158,8 +158,16 @@ class LlmCacheKeyBuilder:
         scope: LlmCacheScope,
         target: LlmModelTarget,
         request: ModelRequest,
+        *,
+        reasoning_effort_overridden: bool = False,
     ) -> LlmCacheLookup:
-        """Bind route, guarded content, tools, schema, sampling, and safety scope."""
+        """Bind route, guarded content, tools, schema, sampling, and safety scope.
+
+        ``reasoning_effort_overridden`` is true only when this request's
+        ``LlmRequestOptions`` replaced the route's reasoning effort. A catalog
+        reasoning effort was never part of the key, so keeping it out preserves
+        existing digests.
+        """
         assembled = request.assemble_messages()
         messages: list[JsonValue] = []
         semantic_input: list[str] = []
@@ -175,56 +183,60 @@ class LlmCacheKeyBuilder:
                     "metadata_sha256": cls._hash_json(message.metadata),
                 }
             )
+        route: dict[str, JsonValue] = {
+            "model_ref": target.model_ref,
+            "profile": target.profile_name,
+            "provider": target.profile.provider,
+            "api": target.profile.api.value,
+            "model": target.model,
+            "capability": {
+                "supports_reasoning": target.route.capability.supports_reasoning,
+                "context_window_tokens": (
+                    target.route.capability.context_window_tokens
+                ),
+                "supports_token_counting": (
+                    target.route.capability.supports_token_counting
+                ),
+                "input_modalities": tuple(
+                    sorted(
+                        modality.value
+                        for modality in target.route.capability.input_modalities
+                    )
+                ),
+                "output_modalities": tuple(
+                    sorted(
+                        modality.value
+                        for modality in target.route.capability.output_modalities
+                    )
+                ),
+                "supports_tools": target.route.capability.supports_tools,
+                "supports_structured_output": (
+                    target.route.capability.supports_structured_output
+                ),
+            },
+            "chat_template_kwargs": cls._json_value(target.route.chat_template_kwargs),
+            "connection_sha256": cls._hash_json(
+                {
+                    "provider": target.profile.provider,
+                    "api": target.profile.api.value,
+                    "base_url": target.profile.base_url,
+                    "headers": target.profile.headers,
+                    "openai_dialect": target.profile.openai_dialect.value,
+                    "google_project": target.profile.google_project,
+                    "google_location": target.profile.google_location,
+                }
+            ),
+        }
+        # Added only when set so that existing cache digests stay unchanged.
+        if reasoning_effort_overridden and target.route.reasoning_effort is not None:
+            route["reasoning_effort"] = target.route.reasoning_effort.value
+        if len(target.route.extra_body) > 0:
+            route["extra_body"] = cls._json_value(target.route.extra_body)
         payload: dict[str, JsonValue] = {
             "namespace": policy.namespace,
             "tenant_scope": scope.tenant_scope,
             "safety_scope": scope.safety_scope,
-            "route": {
-                "model_ref": target.model_ref,
-                "profile": target.profile_name,
-                "provider": target.profile.provider,
-                "api": target.profile.api.value,
-                "model": target.model,
-                "capability": {
-                    "supports_reasoning": target.route.capability.supports_reasoning,
-                    "context_window_tokens": (
-                        target.route.capability.context_window_tokens
-                    ),
-                    "supports_token_counting": (
-                        target.route.capability.supports_token_counting
-                    ),
-                    "input_modalities": tuple(
-                        sorted(
-                            modality.value
-                            for modality in target.route.capability.input_modalities
-                        )
-                    ),
-                    "output_modalities": tuple(
-                        sorted(
-                            modality.value
-                            for modality in target.route.capability.output_modalities
-                        )
-                    ),
-                    "supports_tools": target.route.capability.supports_tools,
-                    "supports_structured_output": (
-                        target.route.capability.supports_structured_output
-                    ),
-                },
-                "chat_template_kwargs": cls._json_value(
-                    target.route.chat_template_kwargs
-                ),
-                "connection_sha256": cls._hash_json(
-                    {
-                        "provider": target.profile.provider,
-                        "api": target.profile.api.value,
-                        "base_url": target.profile.base_url,
-                        "headers": target.profile.headers,
-                        "openai_dialect": target.profile.openai_dialect.value,
-                        "google_project": target.profile.google_project,
-                        "google_location": target.profile.google_location,
-                    }
-                ),
-            },
+            "route": route,
             "messages": messages,
             "context_manifest_ref": (
                 request.context_manifest.id

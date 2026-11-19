@@ -537,7 +537,7 @@ stream 허용 여부를 담습니다. 실제 model ID와 `ModelCapability`은 �
 `spakky-llm`이 고정 `api_key` 대신 호출 시점에 bearer token을 받는 port입니다. Profile의
 `credential_provider`가 Pod의 `name`을 가리키고, adapter는 attempt마다 `access_token()`을
 호출합니다. Provider가 HTTP 401로 거절하면 거절된 token을 넘겨 한 번 더 호출하고 요청을
-정확히 한 번 재시도합니다. 현재 `openai-responses` profile에서만 쓸 수 있습니다.
+정확히 한 번 재시도합니다. `openai-chat-completions`와 `openai-responses` profile에서 쓸 수 있습니다.
 
 ### OpenAI Responses / ChatGPT dialect
 
@@ -550,8 +550,14 @@ family입니다. `openai_dialect="chatgpt"`는 Sign in with ChatGPT token으로 
 ### LlmModelRoute
 
 Logical model ref를 `LlmProfile`, physical provider model ID, `ModelCapability`에 연결하는
-strict catalog entry입니다. vLLM의 model별 `chat_template_kwargs`도 route가 소유합니다.
+strict catalog entry입니다. vLLM의 model별 `chat_template_kwargs`와 `extra_body`도 route가 소유합니다.
 Route와 profile을 교체해도 caller의 logical ref는 유지할 수 있습니다.
+
+### LlmRequestOptions
+
+`ModelRequest.extensions`에 싣는 `AgentRunExtension`입니다. `model_selection`이 고른 route 하나의
+`model`, `chat_template_kwargs`, `reasoning_effort`, `extra_body`를 그 요청에서만 덮고, 덮은 route는
+`LlmModelRoute` 검증을 다시 거칩니다. Fallback route는 덮지 않습니다.
 
 ### LLM fallback / resilience
 

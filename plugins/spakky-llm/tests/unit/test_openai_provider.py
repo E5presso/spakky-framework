@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator, Mapping, Sequence
 from functools import partial
 from types import TracebackType
-from typing import cast
+from typing import cast, override
 
 import httpx2
 import pytest
@@ -13,6 +13,7 @@ from openai import (
     APIStatusError,
     APITimeoutError,
     AsyncOpenAI as SdkAsyncOpenAI,
+    AuthenticationError,
     omit,
 )
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
@@ -50,6 +51,7 @@ from spakky.plugins.llm.config import (
     OpenAICompatibleDialect,
 )
 from spakky.plugins.llm.error import (
+    LlmAuthenticationError,
     LlmConfigurationError,
     LlmModelRefusalError,
     LlmRateLimitError,
@@ -58,7 +60,12 @@ from spakky.plugins.llm.error import (
     LlmTransportError,
     LlmUnsupportedFeatureError,
 )
-from spakky.plugins.llm.provider import LlmModelTarget
+from spakky.plugins.llm.provider import (
+    ILLMCredentialProvider,
+    LlmAccessToken,
+    LlmCredentialRequest,
+    LlmModelTarget,
+)
 from spakky.plugins.llm.providers import openai as openai_module
 from spakky.plugins.llm.providers.openai import OpenAIChatProvider
 from spakky.agent.structured_output import _structured_output_contract
@@ -169,7 +176,7 @@ async def test_compacted_tool_group_maps_to_complete_openai_native_history() -> 
         ModelCapability(),
     )
 
-    native = OpenAIChatProvider()._messages(ModelRequest(messages=compacted))
+    native = OpenAIChatProvider()._messages(_target(), ModelRequest(messages=compacted))
 
     assert [message["role"] for message in native] == ["assistant", "tool"]
     assistant = cast(Mapping[str, object], native[0])
@@ -220,12 +227,15 @@ class _FakeCompletions:
     error: BaseException | None = None
     stream_error: BaseException | None = None
     stream: _FakeAsyncStream | None = None
+    queued_errors: list[BaseException] = []
 
     async def create(
         self,
         **kwargs: object,
     ) -> ChatCompletion | _FakeAsyncStream:
         type(self).calls.append(kwargs)
+        if len(type(self).queued_errors) > 0:
+            raise type(self).queued_errors.pop(0)
         error = type(self).error
         if error is not None:
             raise error
@@ -275,6 +285,7 @@ def _fake_sdk(monkeypatch: MonkeyPatch) -> None:
     _FakeCompletions.error = None
     _FakeCompletions.stream_error = None
     _FakeCompletions.stream = None
+    _FakeCompletions.queued_errors = []
     _FakeAsyncOpenAI.init_calls = []
     _FakeAsyncOpenAI.entered = False
     _FakeAsyncOpenAI.exited = False
@@ -1282,7 +1293,8 @@ async def test_standard_profile_fences_ambient_openai_connection_metadata(
         _target(
             dialect=OpenAICompatibleDialect.STANDARD,
             base_url=None,
-        )
+        ),
+        "secret",
     )
     try:
         assert str(client.base_url) == "https://api.openai.com/v1/"
@@ -1369,7 +1381,7 @@ def test_openai_profile_rejects_ambient_custom_headers(
     monkeypatch.setenv("OPENAI_CUSTOM_HEADERS", "X-Ambient: injected")
 
     with pytest.raises(LlmConfigurationError):
-        OpenAIChatProvider()._client(_target())
+        OpenAIChatProvider()._client(_target(), "secret")
 
 
 @pytest.mark.parametrize(
@@ -1775,3 +1787,271 @@ async def test_complete_maps_server_error_and_generic_sdk_error() -> None:
     )
     with pytest.raises(LlmResponseError):
         await OpenAIChatProvider().complete(_target(), request)
+
+
+class _RecordingCredentialProvider(ILLMCredentialProvider):
+    """Hand out queued tokens and record every credential lookup."""
+
+    def __init__(self, tokens: list[str], name: str = "caller-token") -> None:
+        self.__tokens = tokens
+        self.__name = name
+        self.requests: list[LlmCredentialRequest] = []
+
+    @property
+    @override
+    def name(self) -> str:
+        return self.__name
+
+    @override
+    async def access_token(self, credential: LlmCredentialRequest) -> LlmAccessToken:
+        self.requests.append(credential)
+        return self.__tokens.pop(0)
+
+
+def _unauthorized() -> AuthenticationError:
+    return AuthenticationError(
+        "unauthorized",
+        response=httpx2.Response(
+            401,
+            request=httpx2.Request("POST", "https://api.openai.com"),
+        ),
+        body=None,
+    )
+
+
+def _credential_target() -> LlmModelTarget:
+    return LlmModelTarget(
+        model_ref="gpt/primary",
+        profile_name="gateway",
+        profile=LlmProfile(
+            provider="openai",
+            api=LlmProviderApi.OPENAI_CHAT_COMPLETIONS,
+            credential_provider="caller-token",
+        ),
+        route=LlmModelRoute(profile="gateway", model="gpt-selected"),
+    )
+
+
+def _hello() -> ModelRequest:
+    return ModelRequest(messages=(ModelMessage(ModelMessageRole.USER, "hello"),))
+
+
+async def test_chat_credential_provider_expect_call_time_token() -> None:
+    """A chat-completions profile asks its credential provider for each request's token."""
+    _FakeCompletions.completion = _completion()
+    credentials = _RecordingCredentialProvider(["token-1", "token-2"])
+    provider = OpenAIChatProvider((credentials,))
+    first = _hello()
+
+    await provider.complete(_credential_target(), first)
+    await provider.complete(_credential_target(), _hello())
+
+    assert [call["api_key"] for call in _FakeAsyncOpenAI.init_calls] == [
+        "token-1",
+        "token-2",
+    ]
+    assert credentials.requests[0].profile_name == "gateway"
+    assert credentials.requests[0].request is first
+    assert [item.rejected_token for item in credentials.requests] == [None, None]
+
+
+async def test_chat_rejected_credential_expect_one_refresh_and_retry() -> None:
+    """A 401 replaces the rejected token once and repeats the same SDK call."""
+    _FakeCompletions.completion = _completion()
+    _FakeCompletions.queued_errors = [_unauthorized()]
+    credentials = _RecordingCredentialProvider(["stale", "fresh"])
+
+    response = await OpenAIChatProvider((credentials,)).complete(
+        _credential_target(),
+        _hello(),
+    )
+
+    assert response.content == "ok"
+    assert [item.rejected_token for item in credentials.requests] == [None, "stale"]
+    assert [call["api_key"] for call in _FakeAsyncOpenAI.init_calls] == [
+        "stale",
+        "fresh",
+    ]
+    assert len(_FakeCompletions.calls) == 2
+
+
+async def test_chat_credential_rejected_twice_expect_no_third_attempt() -> None:
+    """The refreshed token is tried once; a second 401 is a credential failure."""
+    _FakeCompletions.queued_errors = [_unauthorized(), _unauthorized()]
+    credentials = _RecordingCredentialProvider(["stale", "fresh"])
+
+    with pytest.raises(LlmAuthenticationError):
+        await OpenAIChatProvider((credentials,)).complete(
+            _credential_target(),
+            _hello(),
+        )
+
+    assert len(credentials.requests) == 2
+    assert len(_FakeCompletions.calls) == 2
+
+
+async def test_chat_static_api_key_rejected_expect_no_retry() -> None:
+    """A static API key has nothing to refresh, so a 401 is not retried."""
+    _FakeCompletions.queued_errors = [_unauthorized()]
+
+    with pytest.raises(LlmResponseError):
+        await OpenAIChatProvider().complete(_target(), _hello())
+
+    assert len(_FakeCompletions.calls) == 1
+
+
+async def test_chat_stream_rejected_credential_expect_one_refresh_and_retry() -> None:
+    """Streaming opens the call again with the refreshed token after a 401."""
+    _FakeCompletions.queued_errors = [_unauthorized()]
+    _FakeCompletions.chunks = (
+        _chunk(delta={"content": "ok"}),
+        _chunk(finish_reason="stop"),
+    )
+    credentials = _RecordingCredentialProvider(["stale", "fresh"])
+
+    events = [
+        event
+        async for event in OpenAIChatProvider((credentials,)).stream(
+            _credential_target(),
+            _hello(),
+        )
+    ]
+
+    assert events[0].token_delta == "ok"
+    assert events[-1].kind is ModelStreamEventKind.DONE
+    assert [item.rejected_token for item in credentials.requests] == [None, "stale"]
+    assert _FakeAsyncOpenAI.init_calls[-1]["api_key"] == "fresh"
+
+
+async def test_chat_unregistered_credential_provider_expect_configuration_error() -> (
+    None
+):
+    """A profile naming a credential provider that is not registered fails closed."""
+    with pytest.raises(LlmConfigurationError):
+        await OpenAIChatProvider().complete(_credential_target(), _hello())
+
+    assert _FakeAsyncOpenAI.init_calls == []
+
+
+async def test_chat_blank_credential_token_expect_configuration_error() -> None:
+    """A blank token never reaches the SDK."""
+    credentials = _RecordingCredentialProvider(["  "])
+
+    with pytest.raises(LlmConfigurationError):
+        await OpenAIChatProvider((credentials,)).complete(
+            _credential_target(),
+            _hello(),
+        )
+
+    assert _FakeAsyncOpenAI.init_calls == []
+
+
+def test_chat_duplicate_credential_provider_names_expect_configuration_error() -> None:
+    """Credential providers are registered by unique name."""
+    with pytest.raises(LlmConfigurationError):
+        OpenAIChatProvider(
+            (
+                _RecordingCredentialProvider([]),
+                _RecordingCredentialProvider([]),
+            )
+        )
+
+
+async def test_chat_vllm_extra_body_expect_merged_with_framework_keys() -> None:
+    """Route extra_body travels beside the framework-owned vLLM request keys."""
+    _FakeCompletions.completion = _completion(content='{"answer":"ok"}')
+    base = _target()
+    target = LlmModelTarget(
+        model_ref=base.model_ref,
+        profile_name=base.profile_name,
+        profile=base.profile,
+        route=LlmModelRoute(
+            profile="vllm-local",
+            model="selected-model",
+            chat_template_kwargs={"enable_thinking": False},
+            extra_body={"add_generation_prompt": False, "top_k": 20},
+        ),
+    )
+
+    await OpenAIChatProvider().complete(
+        target,
+        ModelRequest(
+            messages=(ModelMessage(ModelMessageRole.USER, "question"),),
+            structured_output=StructuredOutputSpec(
+                constraint=JsonSchemaConstraint(schema=_schema())
+            ),
+        ),
+    )
+
+    assert _FakeCompletions.calls[0]["extra_body"] == {
+        "add_generation_prompt": False,
+        "top_k": 20,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "structured_outputs": {"json": _schema()},
+    }
+
+
+def _reasoning_history(reasoning: JsonValue) -> ModelRequest:
+    return ModelRequest(
+        messages=(
+            ModelMessage(ModelMessageRole.USER, "first"),
+            ModelMessage(
+                ModelMessageRole.ASSISTANT,
+                "answer",
+                metadata={"reasoning": reasoning},
+            ),
+            ModelMessage(ModelMessageRole.USER, "second"),
+        )
+    )
+
+
+def test_chat_vllm_reasoning_history_expect_reasoning_content_replayed() -> None:
+    """A vLLM reasoning route sends the previous turn's reasoning back to the template."""
+    native = OpenAIChatProvider()._messages(
+        _target(supports_reasoning=True),
+        _reasoning_history("previous thought"),
+    )
+
+    assert native[1] == {
+        "role": "assistant",
+        "content": "answer",
+        "reasoning_content": "previous thought",
+    }
+
+
+def test_chat_reasoning_history_without_reasoning_expect_unchanged_message() -> None:
+    """Assistant history without reasoning metadata keeps the old message shape."""
+    native = OpenAIChatProvider()._messages(
+        _target(supports_reasoning=True),
+        ModelRequest(messages=(ModelMessage(ModelMessageRole.ASSISTANT, "answer"),)),
+    )
+
+    assert native == [{"role": "assistant", "content": "answer"}]
+
+
+def test_chat_vllm_non_text_reasoning_history_expect_response_error() -> None:
+    """Reasoning history that is not text is rejected instead of being dropped."""
+    with pytest.raises(LlmResponseError):
+        OpenAIChatProvider()._messages(
+            _target(supports_reasoning=True),
+            _reasoning_history({"text": "previous thought"}),
+        )
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        _target(supports_reasoning=False),
+        _target(dialect=OpenAICompatibleDialect.STANDARD, supports_reasoning=True),
+    ],
+)
+def test_chat_reasoning_history_outside_vllm_reasoning_route_expect_not_sent(
+    target: LlmModelTarget,
+) -> None:
+    """Only a vLLM route that supports reasoning replays reasoning content."""
+    native = OpenAIChatProvider()._messages(
+        target,
+        _reasoning_history("previous thought"),
+    )
+
+    assert native[1] == {"role": "assistant", "content": "answer"}

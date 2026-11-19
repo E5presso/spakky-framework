@@ -78,6 +78,12 @@ class LlmModelSelectionError(AbstractLlmError):
     failure_class = LlmFailureClass.SELECTION
 
 
+class LlmRequestOptionsError(LlmModelSelectionError):
+    """Raised when per-request route overrides cannot form a valid route."""
+
+    message = "LLM request options are invalid"
+
+
 class LlmProviderUnavailableError(AbstractLlmError):
     """Raised when no native SDK adapter exists for a selected profile API."""
 

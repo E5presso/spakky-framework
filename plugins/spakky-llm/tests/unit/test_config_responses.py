@@ -72,8 +72,8 @@ def test_standard_responses_profile_expect_static_api_key() -> None:
         ),
         (
             {
-                "provider": "openai",
-                "api": "openai-chat-completions",
+                "provider": "anthropic",
+                "api": "anthropic-messages",
                 "credential_provider": "chatgpt",
             },
             "llm_profile_credential_provider_api",
