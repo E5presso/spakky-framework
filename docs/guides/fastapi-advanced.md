@@ -221,8 +221,9 @@ lifespan 종료에서 stream을 멈추라고 알리면 이미 늦습니다.
 
 - lifespan이 시작될 때, 서버가 설치한 Python 수준의 SIGTERM·SIGINT handler 앞에 `ShutdownSignalRelay`를
   잇습니다. 신호가 오면 `ServerShutdownSignal`을 켠 뒤 서버의 handler를 그대로 부르므로 서버의
-  종료 절차는 바뀌지 않습니다. 서버가 handler를 두지 않은 신호(기본 동작·무시)는 건드리지 않고,
-  lifespan이 main thread가 아닌 곳에서 돌면 handler를 잇지 않습니다.
+  종료 절차는 바뀌지 않습니다. handler가 `SIG_DFL`·`SIG_IGN`인 신호는 건드리지 않습니다. Python이
+  SIGINT에 기본으로 두는 `default_int_handler`처럼 호출할 수 있는 handler는 모두 잇습니다. lifespan이
+  main thread가 아닌 곳에서 돌면 handler를 잇지 않습니다.
 - lifespan이 끝날 때도 `ServerShutdownSignal`을 켭니다. 신호를 잇지 못한 서버에서는 이 시점에 stream이
   끝납니다. 신호는 다음 lifespan이 시작될 때까지 켜진 채로 남습니다. 그래서 lifespan을 한 번 돌린 같은
   앱을 lifespan 없이 다시 쓰면(예: 테스트에서 `with` 없이 만든 `TestClient`) 새 stream이 이벤트 없이 바로
@@ -230,13 +231,19 @@ lifespan 종료에서 stream을 멈추라고 알리면 이미 늦습니다.
 - async generator와 coroutine이 돌려준 async iterator는 응답을 보내는 task 안에서 그대로 돕니다.
   그래서 `yield`를 감싸는 anyio cancel scope·task group, `asyncio.timeout`, `current_task()`에 묶인
   session, context variable token이 신호가 없을 때와 같이 동작합니다. 신호가 켜졌을 때 stream이 다음
-  항목을 기다리는 중이면 그 대기만 취소하고, 항목을 보내는 중이면 그 항목을 보낸 뒤 멈춥니다. 취소에
+  항목을 기다리는 중이면 그 대기만 취소하고, 항목을 보내는 중이면 그 항목을 보낸 뒤 멈춥니다. 대기 취소는
+  한 번만 요청합니다. stream 안의 cancel scope가 같은 loop turn에 자기 취소를 받으면 그 scope가 이
+  취소까지 함께 흡수할 수 있습니다. 그 뒤 stream이 항목을 내지 않고 다시 기다리면, 다음 항목이 오거나
+  서버의 graceful shutdown 시간이 지날 때까지 열려 있습니다. scope가 끝난 뒤 바로 항목(예: heartbeat)을
+  내는 stream은 그 자리에서 끝납니다. 취소에
   항목으로 답하는 stream이면 그 항목은 보내지 않습니다. 이어서 stream을 닫으므로 `finally`가 실행되고,
   응답은 오류 없이 끝납니다. client는 SSE의 `retry`에 따라 다시 연결해 다른 서버에 붙습니다.
 - 기다리던 대기를 끊는 것은 asyncio 취소라서 anyio shield도 막지 못합니다. stream이
-  `anyio.CancelScope(shield=True)` 안이나 `anyio.to_thread.run_sync`를 기다리는 중이어도 끊기고,
-  worker thread는 하던 일을 계속하는 동안 `finally`가 먼저 실행됩니다. 종료 중에도 끝까지 마쳐야 하는
-  작업은 stream 밖(예: background service)에서 합니다. 같은 순간에 들어온 다른 취소(client 연결 끊김 등)는
+  `anyio.CancelScope(shield=True)` 안이나 `anyio.to_thread.run_sync`·Starlette `run_in_threadpool`을
+  기다리는 중이어도 끊기고, worker thread는 하던 일을 계속하는 동안 `finally`가 먼저 실행됩니다. 그래서
+  stream의 `finally`는 worker thread가 아직 쓰고 있을 수 있는 자원(DB session·connection, 파일, 공유
+  buffer 등)을 닫거나 바꾸면 안 됩니다. 그런 자원은 worker thread 쪽에서 정리합니다. 종료 중에도 끝까지
+  마쳐야 하는 작업은 stream 밖(예: background service)에서 합니다. 같은 순간에 들어온 다른 취소(client 연결 끊김 등)는
   삼키지 않고 그대로 전달합니다.
 - 동기 generator는 thread pool에서 돌아 중간에 끊을 수 없습니다. 다음 항목을 만들거나 요청할 때
   신호를 확인하고 끝납니다. 오래 열어 둘 stream은 async generator로 씁니다.

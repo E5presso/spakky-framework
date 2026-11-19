@@ -70,11 +70,16 @@ class ServerShutdownSignal:
         """Mark the server as shutting down and wake every waiter.
 
         Safe to call from any thread: each waiter is released on its own
-        event loop.
+        event loop. A waiter whose loop is already closed can never resume,
+        so it is skipped and the remaining waiters are still released.
         """
         self.__triggered = True
         for waiter, loop in tuple(self.__waiters.items()):
-            loop.call_soon_threadsafe(self.__release, waiter)
+            try:
+                loop.call_soon_threadsafe(self.__release, waiter)
+            except RuntimeError:
+                # call_soon_threadsafe raises RuntimeError only for a closed loop.
+                logger.debug("Shutdown waiter on a closed event loop is skipped")
 
     def reset(self) -> None:
         """Re-arm the signal when the server starts serving again."""
@@ -106,12 +111,20 @@ class ServerShutdownSignal:
         context variable tokens) behave as they do without this guard. When
         the signal fires while the task waits for the next item, that wait is
         cancelled with an asyncio cancellation, which an anyio shield does not
-        stop: a shielded await or an ``anyio.to_thread.run_sync`` wait inside
-        the stream is interrupted too, while the worker thread keeps running.
+        stop: a shielded await or an ``anyio.to_thread.run_sync`` or Starlette
+        ``run_in_threadpool`` wait inside the stream is interrupted too, while
+        the worker thread keeps running. The stream's ``finally`` therefore
+        must not close or change a resource the worker thread may still use.
         An item the stream still produces is dropped. The stream is then
         closed, so a started generator's ``finally`` runs, and this generator
         returns normally. A cancellation requested by anyone else at the same
         time is propagated, not swallowed.
+
+        The interrupt is requested once. When a cancel scope inside the stream
+        is cancelled in the same loop turn, the scope can absorb the interrupt
+        with its own cancellation; if the stream then waits again without
+        producing an item, it stays open until its next item or until the
+        server's graceful shutdown timeout.
 
         Args:
             stream: The event stream an @sse method produced.
@@ -211,8 +224,9 @@ class ShutdownSignalRelay:
     the Python-level SIGTERM/SIGINT handlers the server installed (uvicorn
     installs them before it starts the lifespan). Each signal first fires the
     shutdown signal on the server's event loop and then runs the server's
-    handler unchanged. Signals the server left at the default or ignored
-    disposition are not touched.
+    handler unchanged. Signals whose handler is ``SIG_DFL`` or ``SIG_IGN`` are
+    not touched; any callable handler is wrapped, including Python's
+    ``default_int_handler`` for SIGINT.
     """
 
     __shutdown: ServerShutdownSignal
