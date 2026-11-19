@@ -23,6 +23,7 @@ from spakky.plugins.fastapi.post_processors.register_actuator import (
 from spakky.plugins.fastapi.post_processors.register_routes import (
     RegisterRoutesPostProcessor,
 )
+from spakky.plugins.fastapi.shutdown import ServerShutdownSignal
 
 
 def _has_fastapi_pod(app: SpakkyApplication) -> bool:
@@ -58,6 +59,7 @@ def initialize(app: SpakkyApplication) -> None:
     if not _has_fastapi_pod(app):
         app.add(fastapi_app)
     app.add(FastAPIActuatorConfig)
+    app.add(ServerShutdownSignal)
     app.add(BindLifespanPostProcessor)
     app.add(AddBuiltInMiddlewaresPostProcessor)
     app.add(RegisterActuatorPostProcessor)

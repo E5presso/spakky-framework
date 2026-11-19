@@ -145,6 +145,16 @@ class StreamController(IApplicationContextAware):
         finally:
             self.__journal.entries.append("endless-closed")
 
+    @sse("/sync-endless")
+    def sync_endless(self) -> Iterator[dict[str, int]]:
+        number = 0
+        try:
+            while True:
+                yield {"number": number}
+                number += 1
+        finally:
+            self.__journal.entries.append("sync-endless-closed")
+
     @get("/native", response_class=EventSourceResponse)
     async def native(self) -> AsyncIterator[Tick]:
         yield Tick(number=7)

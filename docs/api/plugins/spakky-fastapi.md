@@ -58,6 +58,12 @@ connection close로 처리됩니다.
     options:
       show_root_heading: false
 
+## 서버 종료 신호
+
+::: spakky.plugins.fastapi.shutdown
+    options:
+      show_root_heading: false
+
 ## 미들웨어
 
 ::: spakky.plugins.fastapi.middlewares.error_handling

@@ -4,7 +4,7 @@ Automatically discovers and registers routes from @ApiController decorated
 classes, creating FastAPI endpoints with proper dependency injection.
 """
 
-from collections.abc import AsyncGenerator, AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import asdict
 from functools import wraps
@@ -48,6 +48,7 @@ from spakky.plugins.fastapi.routes.sse import (
     SseStreamOpener,
 )
 from spakky.plugins.fastapi.routes.websocket import WebSocketRoute
+from spakky.plugins.fastapi.shutdown import ServerShutdownSignal
 from spakky.plugins.fastapi.stereotypes.api_controller import ApiController
 
 logger = getLogger(__name__)
@@ -290,8 +291,10 @@ class RegisterRoutesPostProcessor(
         (`__wrapped__` is the generator function declared on the class) and calls it in the request handler before the response starts. The plain
         function below therefore resolves the controller and authenticates
         eagerly, so an auth failure is still an HTTP error response, and then
-        hands the generator itself to FastAPI, which encodes the events, sends
-        keep-alive comments and cancels the generator when the client leaves.
+        hands the generator, guarded by the `ServerShutdownSignal` so it ends
+        normally once the server starts shutting down, to FastAPI, which
+        encodes the events, sends keep-alive comments and cancels the
+        generator when the client leaves.
 
         Args:
             router: Router collecting the controller routes.
@@ -302,6 +305,10 @@ class RegisterRoutesPostProcessor(
                 which FastAPI inspects to recognize a generator endpoint.
             route: Route configuration whose response class is an SSE response.
         """
+
+        # FastAPI iterates an async generator in the event loop and a sync
+        # one in its thread pool, as the declared method decides.
+        streams_async = isasyncgenfunction(declared_method)
 
         @wraps(declared_method)
         def event_stream_endpoint(
@@ -332,7 +339,12 @@ class RegisterRoutesPostProcessor(
                     method_to_call
                 ):
                     kwargs[request_name] = auth_request
-                return method_to_call(*args, **kwargs)
+                events = method_to_call(*args, **kwargs)
+                # The stream ends normally once the server starts shutting down.
+                shutdown = context.get(ServerShutdownSignal)
+                if streams_async:
+                    return shutdown.stream_until_shutdown(events)
+                return shutdown.iterate_until_shutdown(events)
             except AbstractSpakkyAuthError as e:
                 auth_boundary.map_http_auth_error(e)
 
@@ -428,16 +440,16 @@ class RegisterRoutesPostProcessor(
 
         @wraps(method)
         async def opened_event_stream_endpoint(
+            context: IContainer = self.__container,
             **kwargs: AsyncIterator[Any],
         ) -> AsyncIterator[Any]:
             stream = kwargs[OPENED_STREAM_PARAMETER]
-            if isinstance(stream, AsyncGenerator):
-                async with aclosing(stream) as generator:
-                    async for item in generator:
-                        yield item
-                return
-            async for item in stream:
-                yield item
+            # The stream ends normally once the server starts shutting down;
+            # closing the guard closes an async generator stream as well.
+            shutdown = context.get(ServerShutdownSignal)
+            async with aclosing(shutdown.stream_until_shutdown(stream)) as events:
+                async for item in events:
+                    yield item
 
         opened_event_stream_endpoint.__dict__["__signature__"] = Signature(
             [

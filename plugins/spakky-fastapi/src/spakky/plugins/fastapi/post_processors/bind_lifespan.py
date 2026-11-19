@@ -5,6 +5,7 @@ is called when FastAPI shuts down, enabling graceful shutdown of
 background services like RabbitMQ consumers.
 """
 
+from asyncio import get_running_loop
 from contextlib import asynccontextmanager
 from typing import Any
 from collections.abc import AsyncGenerator, Mapping
@@ -19,6 +20,7 @@ from spakky.core.pod.interfaces.post_processor import IPostProcessor
 from typing import override
 
 from fastapi import FastAPI
+from spakky.plugins.fastapi.shutdown import ServerShutdownSignal, ShutdownSignalRelay
 
 
 @Order(0)
@@ -29,6 +31,11 @@ class BindLifespanPostProcessor(IPostProcessor, IApplicationContextAware):
     Wraps the FastAPI lifespan handler to ensure ApplicationContext.stop() is
     called when FastAPI shuts down. This enables graceful shutdown of all
     background services registered with the application context.
+
+    While the lifespan runs, the server's SIGTERM/SIGINT handlers are chained
+    to the `ServerShutdownSignal`, so open @sse streams end as soon as the
+    server starts shutting down. The signal also fires when the lifespan ends
+    and is re-armed when it starts again.
 
     User-defined lifespan handlers are preserved and executed normally.
     """
@@ -64,10 +71,18 @@ class BindLifespanPostProcessor(IPostProcessor, IApplicationContextAware):
         async def wrapped_lifespan(
             app: FastAPI,
         ) -> AsyncGenerator[Mapping[str, Any], None]:
+            shutdown = application_context.get(ServerShutdownSignal)
+            shutdown.reset()
+            relay = ShutdownSignalRelay(shutdown, get_running_loop())
+            relay.install()
             try:
                 async with original_lifespan(app) as state:
                     yield state if state is not None else {}
             finally:
+                # Streams still open at the lifespan shutdown end here when
+                # the server's signals could not be relayed.
+                shutdown.trigger()
+                relay.uninstall()
                 application_context.stop()
 
         pod.router.lifespan_context = wrapped_lifespan

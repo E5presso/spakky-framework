@@ -1,0 +1,230 @@
+"""Server shutdown signal that ends open Server-Sent Events streams.
+
+On SIGTERM uvicorn stops accepting connections and then waits for every open
+response to finish before it runs the ASGI lifespan shutdown. A stream that
+never ends by itself therefore holds the process until
+``timeout_graceful_shutdown`` cancels it, and the lifespan shutdown is too late
+to tell the stream to stop. `ShutdownSignalRelay` chains the server's own
+SIGTERM/SIGINT handlers while the application serves, so the signal fires as
+soon as the server starts shutting down, and every @sse stream registered by
+the plugin ends normally once it fires.
+"""
+
+from asyncio import (
+    FIRST_COMPLETED,
+    AbstractEventLoop,
+    Future,
+    Task,
+    create_task,
+    get_running_loop,
+    wait,
+)
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator, Iterator
+from contextvars import copy_context
+from logging import getLogger
+from signal import Signals, getsignal, signal
+from threading import current_thread, main_thread
+from types import FrameType
+
+from anyio import CancelScope
+from spakky.core.pod.annotations.pod import Pod
+
+logger = getLogger(__name__)
+
+SHUTDOWN_SIGNALS = (Signals.SIGTERM, Signals.SIGINT)
+"""Signals the server handles as a request to shut down gracefully."""
+
+type SignalHandler = Callable[[int, FrameType | None], object]
+"""A Python-level signal handler as `signal.signal` installs it."""
+
+
+@Pod()
+class ServerShutdownSignal:
+    """Fires once when the server starts shutting down.
+
+    The plugin fires it from the server's SIGTERM/SIGINT handling and again
+    from the lifespan shutdown, and re-arms it when the lifespan starts. A
+    controller can inject it to stop its own long-running work, and every
+    @sse stream ends normally once it fires, so the client reconnects with
+    the SSE retry to another server.
+    """
+
+    __triggered: bool
+    __waiters: dict[Future[None], AbstractEventLoop]
+
+    def __init__(self) -> None:
+        self.__triggered = False
+        self.__waiters = {}
+
+    @property
+    def triggered(self) -> bool:
+        """Whether the server has started shutting down."""
+        return self.__triggered
+
+    def trigger(self) -> None:
+        """Mark the server as shutting down and wake every waiter.
+
+        Safe to call from any thread: each waiter is released on its own
+        event loop.
+        """
+        self.__triggered = True
+        for waiter, loop in tuple(self.__waiters.items()):
+            loop.call_soon_threadsafe(self.__release, waiter)
+
+    def reset(self) -> None:
+        """Re-arm the signal when the server starts serving again."""
+        self.__triggered = False
+
+    async def wait(self) -> None:
+        """Return once the server has started shutting down."""
+        loop = get_running_loop()
+        waiter: Future[None] = loop.create_future()
+        # Registered before the flag is read, so a trigger from another
+        # thread between the two steps still releases this waiter.
+        self.__waiters[waiter] = loop
+        try:
+            if self.__triggered:
+                return
+            await waiter
+        finally:
+            del self.__waiters[waiter]
+
+    async def stream_until_shutdown[T](
+        self,
+        stream: AsyncIterator[T],
+    ) -> AsyncGenerator[T]:
+        """Yield the stream's items until it ends or the server shuts down.
+
+        Each item is awaited in a task that races the shutdown signal. Once
+        the signal fires, a pending item is cancelled (a ready one is
+        dropped) and the stream is closed, so a started generator's
+        ``finally`` runs, and this generator returns normally. Every item task runs in one copy of the caller's context, so
+        context variables the stream sets survive between items.
+
+        Args:
+            stream: The event stream an @sse method produced.
+
+        Yields:
+            The stream's items, in order.
+        """
+        context = copy_context()
+        stopping = create_task(self.wait())
+        pending: Task[T] | None = None
+        try:
+            while not self.__triggered:
+                pending = create_task(self.__next_item(stream), context=context)
+                await wait((pending, stopping), return_when=FIRST_COMPLETED)
+                if stopping.done():
+                    return
+                try:
+                    item = pending.result()
+                except StopAsyncIteration:
+                    return
+                pending = None
+                yield item
+        finally:
+            # Shielded: an anyio cancel scope keeps cancelling every await of
+            # a cancelled task, and the stream must still be closed.
+            with CancelScope(shield=True):
+                stopping.cancel()
+                await wait((stopping,))
+                if pending is not None and not pending.done():
+                    pending.cancel()
+                    await wait((pending,))
+                if isinstance(stream, AsyncGenerator):
+                    await stream.aclose()
+
+    def iterate_until_shutdown[T](self, iterator: Iterator[T]) -> Generator[T]:
+        """Yield the iterator's items until it ends or the server shuts down.
+
+        A sync @sse generator runs in a worker thread that cannot be
+        interrupted, so the signal is checked whenever the generator produces
+        an item or asks for the next one. The iterator is then closed, so a
+        generator's ``finally`` runs.
+
+        Args:
+            iterator: The event iterator a sync @sse method produced.
+
+        Yields:
+            The iterator's items, in order.
+        """
+        try:
+            while not self.__triggered:
+                try:
+                    item = next(iterator)
+                except StopIteration:
+                    return
+                if self.__triggered:
+                    return
+                yield item
+        finally:
+            if isinstance(iterator, Generator):
+                iterator.close()
+
+    async def __next_item[T](self, stream: AsyncIterator[T]) -> T:
+        return await anext(stream)
+
+    def __release(self, waiter: Future[None]) -> None:
+        if not waiter.done():
+            waiter.set_result(None)
+
+
+class ShutdownSignalRelay:
+    """Chains the server's shutdown signal handlers to a `ServerShutdownSignal`.
+
+    ASGI has no event for the start of a server shutdown, so the relay wraps
+    the Python-level SIGTERM/SIGINT handlers the server installed (uvicorn
+    installs them before it starts the lifespan). Each signal first fires the
+    shutdown signal on the server's event loop and then runs the server's
+    handler unchanged. Signals the server left at the default or ignored
+    disposition are not touched.
+    """
+
+    __shutdown: ServerShutdownSignal
+    __loop: AbstractEventLoop
+    __previous: dict[Signals, SignalHandler]
+
+    def __init__(
+        self,
+        shutdown: ServerShutdownSignal,
+        loop: AbstractEventLoop,
+    ) -> None:
+        self.__shutdown = shutdown
+        self.__loop = loop
+        self.__previous = {}
+
+    def install(self) -> None:
+        """Chain the server's handlers; only the main thread can do this."""
+        if current_thread() is not main_thread():
+            logger.debug(
+                "Shutdown signals are not relayed outside the main thread; "
+                "SSE streams end at the lifespan shutdown"
+            )
+            return
+        for signal_number in SHUTDOWN_SIGNALS:
+            previous = getsignal(signal_number)
+            if not callable(previous):
+                logger.debug(
+                    "No Python handler for %s; it is not relayed",
+                    signal_number.name,
+                )
+                continue
+            self.__previous[signal_number] = previous
+            signal(signal_number, self.relay)
+
+    def uninstall(self) -> None:
+        """Restore each handler this relay replaced and still owns."""
+        for signal_number, previous in self.__previous.items():
+            if getsignal(signal_number) == self.relay:
+                signal(signal_number, previous)
+        self.__previous.clear()
+
+    def relay(self, signal_number: int, frame: FrameType | None) -> None:
+        """Fire the shutdown signal, then run the server's own handler.
+
+        Args:
+            signal_number: The received signal.
+            frame: The interrupted stack frame.
+        """
+        self.__loop.call_soon_threadsafe(self.__shutdown.trigger)
+        self.__previous[Signals(signal_number)](signal_number, frame)
