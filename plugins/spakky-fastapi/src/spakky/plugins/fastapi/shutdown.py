@@ -11,16 +11,13 @@ the plugin ends normally once it fires.
 """
 
 from asyncio import (
-    FIRST_COMPLETED,
     AbstractEventLoop,
+    CancelledError,
     Future,
-    Task,
-    create_task,
+    current_task,
     get_running_loop,
-    wait,
 )
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Generator, Iterator
-from contextvars import copy_context
 from logging import getLogger
 from signal import Signals, getsignal, signal
 from threading import current_thread, main_thread
@@ -29,6 +26,8 @@ from types import FrameType
 from anyio import CancelScope
 from spakky.core.pod.annotations.pod import Pod
 
+from spakky.plugins.fastapi.error import AbstractSpakkyFastAPIError
+
 logger = getLogger(__name__)
 
 SHUTDOWN_SIGNALS = (Signals.SIGTERM, Signals.SIGINT)
@@ -36,6 +35,12 @@ SHUTDOWN_SIGNALS = (Signals.SIGTERM, Signals.SIGINT)
 
 type SignalHandler = Callable[[int, FrameType | None], object]
 """A Python-level signal handler as `signal.signal` installs it."""
+
+
+class ShutdownGuardOutsideTaskError(AbstractSpakkyFastAPIError):
+    """Raised when a stream guard is iterated outside an asyncio task."""
+
+    message = "A shutdown-guarded stream must be iterated inside an asyncio task."
 
 
 @Pod()
@@ -95,43 +100,69 @@ class ServerShutdownSignal:
     ) -> AsyncGenerator[T]:
         """Yield the stream's items until it ends or the server shuts down.
 
-        Each item is awaited in a task that races the shutdown signal. Once
-        the signal fires, a pending item is cancelled (a ready one is
-        dropped) and the stream is closed, so a started generator's
-        ``finally`` runs, and this generator returns normally. Every item task runs in one copy of the caller's context, so
-        context variables the stream sets survive between items.
+        The stream is driven in the consuming task itself, so task-bound
+        constructs that span a ``yield`` in the stream (anyio cancel scopes and
+        task groups, ``asyncio.timeout``, ``current_task()``-scoped sessions,
+        context variable tokens) behave as they do without this guard. When
+        the signal fires while the task waits for the next item, only that
+        wait is cancelled; an item the stream still produces is dropped. The
+        stream is then closed, so a started generator's ``finally`` runs, and
+        this generator returns normally.
 
         Args:
             stream: The event stream an @sse method produced.
 
         Yields:
             The stream's items, in order.
+
+        Raises:
+            ShutdownGuardOutsideTaskError: Iterated outside an asyncio task.
         """
-        context = copy_context()
-        stopping = create_task(self.wait())
-        pending: Task[T] | None = None
+        loop = get_running_loop()
+        task = current_task()
+        if task is None:
+            raise ShutdownGuardOutsideTaskError
+        waiter: Future[None] = loop.create_future()
+        awaiting_item = False
+        interrupted = False
+
+        def interrupt(_: Future[None]) -> None:
+            # Runs on the task's loop while the task is suspended, so it is
+            # suspended inside the stream exactly when awaiting_item is set.
+            nonlocal interrupted
+            if awaiting_item and not interrupted:
+                interrupted = True
+                task.cancel()
+
+        waiter.add_done_callback(interrupt)
+        self.__waiters[waiter] = loop
         try:
             while not self.__triggered:
-                pending = create_task(self.__next_item(stream), context=context)
-                await wait((pending, stopping), return_when=FIRST_COMPLETED)
-                if stopping.done():
-                    return
+                awaiting_item = True
                 try:
-                    item = pending.result()
+                    item = await anext(stream)
                 except StopAsyncIteration:
                     return
-                pending = None
+                except CancelledError:
+                    if interrupted:
+                        return
+                    raise
+                finally:
+                    awaiting_item = False
+                    if interrupted:
+                        # Withdraw the cancellation this guard requested.
+                        task.uncancel()
+                if interrupted:
+                    return
                 yield item
         finally:
-            # Shielded: an anyio cancel scope keeps cancelling every await of
-            # a cancelled task, and the stream must still be closed.
-            with CancelScope(shield=True):
-                stopping.cancel()
-                await wait((stopping,))
-                if pending is not None and not pending.done():
-                    pending.cancel()
-                    await wait((pending,))
-                if isinstance(stream, AsyncGenerator):
+            del self.__waiters[waiter]
+            waiter.remove_done_callback(interrupt)
+            waiter.cancel()
+            if isinstance(stream, AsyncGenerator):
+                # Shielded: an anyio cancel scope keeps cancelling every await
+                # of a cancelled task, and the stream must still be closed.
+                with CancelScope(shield=True):
                     await stream.aclose()
 
     def iterate_until_shutdown[T](self, iterator: Iterator[T]) -> Generator[T]:
@@ -160,9 +191,6 @@ class ServerShutdownSignal:
         finally:
             if isinstance(iterator, Generator):
                 iterator.close()
-
-    async def __next_item[T](self, stream: AsyncIterator[T]) -> T:
-        return await anext(stream)
 
     def __release(self, waiter: Future[None]) -> None:
         if not waiter.done():

@@ -225,9 +225,12 @@ lifespan 종료에서 stream을 멈추라고 알리면 이미 늦습니다.
   lifespan이 main thread가 아닌 곳에서 돌면 handler를 잇지 않습니다.
 - lifespan이 끝날 때도 `ServerShutdownSignal`을 켭니다. 신호를 잇지 못한 서버에서는 이 시점에 stream이
   끝납니다. 다음 lifespan이 시작되면 신호는 다시 꺼집니다.
-- 신호가 켜지면 async generator와 coroutine이 돌려준 async iterator는 기다리던 다음 항목을 취소하고
-  닫히므로 `finally`가 실행되고, 응답은 오류 없이 끝납니다. client는 SSE의 `retry`에 따라 다시
-  연결해 다른 서버에 붙습니다.
+- async generator와 coroutine이 돌려준 async iterator는 응답을 보내는 task 안에서 그대로 돕니다.
+  그래서 `yield`를 감싸는 anyio cancel scope·task group, `asyncio.timeout`, `current_task()`에 묶인
+  session, context variable token이 신호가 없을 때와 같이 동작합니다. 신호가 켜졌을 때 stream이 다음
+  항목을 기다리는 중이면 그 대기만 취소하고, 항목을 보내는 중이면 그 항목을 보낸 뒤 멈춥니다. 취소에
+  항목으로 답하는 stream이면 그 항목은 보내지 않습니다. 이어서 stream을 닫으므로 `finally`가 실행되고,
+  응답은 오류 없이 끝납니다. client는 SSE의 `retry`에 따라 다시 연결해 다른 서버에 붙습니다.
 - 동기 generator는 thread pool에서 돌아 중간에 끊을 수 없습니다. 다음 항목을 만들거나 요청할 때
   신호를 확인하고 끝납니다. 오래 열어 둘 stream은 async generator로 씁니다.
 

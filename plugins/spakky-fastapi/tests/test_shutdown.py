@@ -1,6 +1,13 @@
 """Server shutdown signal and the @sse streams it ends."""
 
-from asyncio import get_running_loop
+from asyncio import (
+    CancelledError,
+    current_task,
+    get_running_loop,
+    sleep,
+    timeout,
+)
+from contextvars import ContextVar
 from collections.abc import AsyncIterator, Iterator, MutableMapping
 from signal import SIG_DFL, SIGINT, SIGTERM, Signals, getsignal, signal
 from threading import Thread
@@ -16,6 +23,7 @@ from spakky.core.application.application import SpakkyApplication
 
 from spakky.plugins.fastapi.shutdown import (
     ServerShutdownSignal,
+    ShutdownGuardOutsideTaskError,
     ShutdownSignalRelay,
 )
 from tests.apps.sse import StreamJournal
@@ -397,3 +405,176 @@ async def test_relay_install_outside_main_thread_expect_handlers_untouched() -> 
     worker.join()
 
     assert getsignal(SIGTERM) is before
+
+
+_REQUEST_LABEL: ContextVar[str] = ContextVar("request_label", default="none")
+
+
+async def test_stream_until_shutdown_with_cancel_scope_across_yield_expect_items() -> (
+    None
+):
+    """stream이 yield를 감싸는 anyio cancel scope를 열어도 같은 task에서 돌아 정상으로 끝난다."""
+    shutdown = ServerShutdownSignal()
+
+    async def bounded() -> AsyncIterator[int]:
+        with anyio.move_on_after(60):
+            yield 1
+            yield 2
+
+    items = [item async for item in shutdown.stream_until_shutdown(bounded())]
+
+    assert items == [1, 2]
+
+
+async def test_stream_until_shutdown_with_asyncio_timeout_expect_timeout_honoured() -> (
+    None
+):
+    """yield를 감싸는 asyncio.timeout이 만료되면 stream이 그 시점에 스스로 끝낸다."""
+    shutdown = ServerShutdownSignal()
+
+    async def limited() -> AsyncIterator[str]:
+        try:
+            async with timeout(0.01):
+                yield "started"
+                await anyio.sleep_forever()
+        except TimeoutError:
+            yield "timed-out"
+
+    with anyio.fail_after(5):
+        items = [item async for item in shutdown.stream_until_shutdown(limited())]
+
+    assert items == ["started", "timed-out"]
+
+
+async def test_stream_until_shutdown_expect_stream_runs_in_consuming_task() -> None:
+    """stream의 모든 항목이 소비하는 task 안에서 만들어진다."""
+    shutdown = ServerShutdownSignal()
+    tasks: list[object] = []
+
+    async def numbers() -> AsyncIterator[int]:
+        for number in range(3):
+            tasks.append(current_task())
+            yield number
+
+    items = [item async for item in shutdown.stream_until_shutdown(numbers())]
+
+    assert items == [0, 1, 2]
+    assert tasks == [current_task()] * 3
+
+
+async def test_stream_until_shutdown_triggered_while_item_handled_expect_context_reset() -> (
+    None
+):
+    """항목을 처리하는 동안 종료가 시작되면, yield에 멈춘 generator가 같은 context에서 닫혀 token을 되돌린다."""
+    shutdown = ServerShutdownSignal()
+    closed: list[str] = []
+
+    async def labelled() -> AsyncIterator[str]:
+        token = _REQUEST_LABEL.set("request-1")
+        try:
+            yield _REQUEST_LABEL.get()
+            yield "never"
+        finally:
+            _REQUEST_LABEL.reset(token)
+            closed.append(_REQUEST_LABEL.get())
+
+    items: list[str] = []
+    async for item in shutdown.stream_until_shutdown(labelled()):
+        items.append(item)
+        shutdown.trigger()
+        # The consumer is still busy with the item (as when it sends it), so
+        # the signal is delivered while no item is awaited.
+        await sleep(0)
+        await sleep(0)
+
+    assert items == ["request-1"]
+    assert closed == ["none"]
+
+
+async def test_stream_until_shutdown_triggered_while_waiting_expect_normal_end() -> (
+    None
+):
+    """다음 항목을 기다리는 동안 종료가 시작되면 그 대기만 취소되고, 소비하는 task는 취소된 채로 남지 않는다."""
+    shutdown = ServerShutdownSignal()
+    closed: list[str] = []
+
+    async def endless() -> AsyncIterator[int]:
+        try:
+            yield 1
+            await anyio.sleep_forever()
+            yield 2
+        finally:
+            closed.append("closed")
+
+    async def stop_soon() -> None:
+        await anyio.wait_all_tasks_blocked()
+        shutdown.trigger()
+
+    items: list[int] = []
+    with anyio.fail_after(5):
+        async with anyio.create_task_group() as group:
+            group.start_soon(stop_soon)
+            async for item in shutdown.stream_until_shutdown(endless()):
+                items.append(item)
+    await sleep(0)
+
+    task = current_task()
+    assert task is not None
+    assert task.cancelling() == 0
+    assert items == [1]
+    assert closed == ["closed"]
+
+
+async def test_stream_until_shutdown_when_stream_answers_cancel_expect_item_dropped() -> (
+    None
+):
+    """취소에 항목으로 답하는 stream이면 그 항목은 버리고 정상으로 끝난다."""
+    shutdown = ServerShutdownSignal()
+
+    async def stubborn() -> AsyncIterator[str]:
+        yield "first"
+        try:
+            await anyio.sleep_forever()
+        except CancelledError:
+            yield "after-cancel"
+
+    async def stop_soon() -> None:
+        await anyio.wait_all_tasks_blocked()
+        shutdown.trigger()
+
+    items: list[str] = []
+    with anyio.fail_after(5):
+        async with anyio.create_task_group() as group:
+            group.start_soon(stop_soon)
+            async for item in shutdown.stream_until_shutdown(stubborn()):
+                items.append(item)
+
+    task = current_task()
+    assert task is not None
+    assert task.cancelling() == 0
+    assert items == ["first"]
+
+
+async def test_stream_until_shutdown_outside_task_expect_error() -> None:
+    """asyncio task 밖에서 돌리면 종료 신호로 끊을 대상이 없으므로 오류를 낸다."""
+    shutdown = ServerShutdownSignal()
+
+    async def numbers() -> AsyncIterator[int]:
+        yield 1
+
+    guarded = shutdown.stream_until_shutdown(numbers())
+    raised: list[BaseException] = []
+
+    def step_outside_task() -> None:
+        step = guarded.__anext__()
+        try:
+            step.send(None)
+        except ShutdownGuardOutsideTaskError as error:
+            raised.append(error)
+        finally:
+            step.close()
+
+    get_running_loop().call_soon(step_outside_task)
+    await sleep(0)
+
+    assert len(raised) == 1
