@@ -245,7 +245,7 @@ sequenceDiagram
 
 ### Outbox 전송 시점
 
-UseCase가 발행한 Integration Event는 트랜잭션 commit 시점에 Outbox 테이블에 남고, 실제 브로커 전송은 `OutboxRelayBackgroundService`가 폴링으로 따로 처리합니다. 브로커가 수락 가능한 레코드는 확인될 때까지 재전송되므로 성공 전달 경로는 중복 가능한 at-least-once 의미를 갖습니다. 영구적인 레코드 귀속 거부만 retry/abandon 예산을 쓰며, 연결·timeout·queue·그 밖의 transport 장애는 원래 예외 타입을 유지하고 예산을 소모하지 않습니다. 폴링 주기·배치 크기·재시도 설정과 전송 상태 전이 도식은 [Transactional Outbox](outbox.md)의 "폴링 → 전송 흐름"에서 다룹니다.
+UseCase가 발행한 Integration Event는 트랜잭션 commit 시점에 Outbox 테이블에 남고, 실제 브로커 전송은 `OutboxRelayBackgroundService`가 commit 직후 깨어나 따로 처리합니다. 브로커가 수락 가능한 레코드는 확인될 때까지 재전송되므로 성공 전달 경로는 중복 가능한 at-least-once 의미를 갖습니다. 영구적인 레코드 귀속 거부만 retry/abandon 예산을 쓰며, 연결·timeout·queue·그 밖의 transport 장애는 원래 예외 타입을 유지하고 예산을 소모하지 않습니다. 폴링 주기·배치 크기·재시도 설정과 전송 상태 전이 도식은 [Transactional Outbox](outbox.md)의 "폴링 → 전송 흐름"에서 다룹니다.
 
 ---
 

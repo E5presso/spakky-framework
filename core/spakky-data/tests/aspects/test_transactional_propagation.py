@@ -17,6 +17,9 @@ from spakky.data.aspects.transactional import (
     TransactionalAspect,
 )
 from spakky.data.persistency.aggregate_collector import AggregateCollector
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 from spakky.data.persistency.error import TransactionRollbackOnlyError
 from spakky.data.persistency.transaction import (
     AbstractAsyncTransaction,
@@ -228,6 +231,7 @@ def context_fixture() -> ApplicationContext:
     context.add(RecordingTransaction)
     context.add(AsyncRecordingTransaction)
     context.add(AggregateCollector)
+    context.add(TransactionSynchronization)
     context.add(InnerUseCase)
     context.add(OuterUseCase)
     context.add(TransactionalAspect)

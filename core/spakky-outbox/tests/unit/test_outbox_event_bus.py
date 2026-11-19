@@ -20,6 +20,10 @@ from spakky.auth import (
 )
 from spakky.core.application.application_context import ApplicationContext
 from spakky.core.common.mutability import immutable
+from spakky.data.persistency.transaction import PhysicalTransaction
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.tracing import W3CTracePropagator
 from spakky.tracing.context import TraceContext
@@ -32,6 +36,7 @@ from spakky.outbox.bus.outbox_event_bus import (
 )
 from spakky.outbox.common.message import OutboxMessage
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
+from spakky.outbox.relay.wakeup import OutboxRelayWakeup
 
 
 @immutable
@@ -59,6 +64,9 @@ class InMemorySyncOutboxStorage(IOutboxStorage):
     def mark_abandoned(self, message_id: object) -> None:
         raise AssertionError("Not expected to be called")
 
+    def release_claim(self, message: OutboxMessage) -> None:
+        raise AssertionError("Not expected to be called")
+
     def purge_published(self, older_than: object) -> int:
         raise AssertionError("Not expected to be called")
 
@@ -80,6 +88,9 @@ class InMemoryAsyncOutboxStorage(IAsyncOutboxStorage):
         raise AssertionError("Not expected to be called")
 
     async def mark_abandoned(self, message_id: object) -> None:
+        raise AssertionError("Not expected to be called")
+
+    async def release_claim(self, message: OutboxMessage) -> None:
         raise AssertionError("Not expected to be called")
 
     async def purge_published(self, older_than: object) -> int:
@@ -169,7 +180,9 @@ def _enabled_auth_headers(
 def test_send_stores_message_in_outbox_storage() -> None:
     """OutboxEventBus.send가 이벤트를 OutboxMessage로 변환하여 저장소에 저장하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage, W3CTracePropagator())
+    bus = OutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-001", amount=5000)
     bus.send(event)
@@ -185,7 +198,9 @@ def test_send_stores_message_in_outbox_storage() -> None:
 def test_send_serializes_event_payload_as_json() -> None:
     """OutboxEventBus.send가 이벤트 payload를 JSON bytes로 직렬화하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage, W3CTracePropagator())
+    bus = OutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-002", amount=3000)
     bus.send(event)
@@ -199,7 +214,9 @@ def test_send_serializes_event_payload_as_json() -> None:
 def test_send_generates_unique_message_ids() -> None:
     """OutboxEventBus.send가 각 메시지에 고유한 ID를 부여하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage, W3CTracePropagator())
+    bus = OutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     event1 = OrderConfirmedIntegrationEvent(order_id="ORD-A", amount=100)
     event2 = OrderConfirmedIntegrationEvent(order_id="ORD-B", amount=200)
@@ -217,6 +234,8 @@ def test_send_stores_signed_snapshot_metadata_in_headers() -> None:
     bus = OutboxEventBus(
         storage,
         BearerInjectingPropagator(),
+        TransactionSynchronization(),
+        OutboxRelayWakeup(),
         _enabled_auth_headers(signer),
     )
 
@@ -238,7 +257,9 @@ def test_send_stores_signed_snapshot_metadata_in_headers() -> None:
 async def test_async_send_stores_message_in_outbox_storage() -> None:
     """AsyncOutboxEventBus.send가 이벤트를 OutboxMessage로 변환하여 저장소에 저장하는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
+    bus = AsyncOutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-001", amount=5000)
     await bus.send(event)
@@ -255,7 +276,9 @@ async def test_async_send_stores_message_in_outbox_storage() -> None:
 async def test_async_send_serializes_event_payload_as_json() -> None:
     """AsyncOutboxEventBus.send가 이벤트 payload를 JSON bytes로 직렬화하는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
+    bus = AsyncOutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     event = OrderConfirmedIntegrationEvent(order_id="ORD-002", amount=3000)
     await bus.send(event)
@@ -270,7 +293,9 @@ async def test_async_send_serializes_event_payload_as_json() -> None:
 async def test_async_send_generates_unique_message_ids() -> None:
     """AsyncOutboxEventBus.send가 각 메시지에 고유한 ID를 부여하는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
+    bus = AsyncOutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     event1 = OrderConfirmedIntegrationEvent(order_id="ORD-A", amount=100)
     event2 = OrderConfirmedIntegrationEvent(order_id="ORD-B", amount=200)
@@ -289,6 +314,8 @@ async def test_async_send_stores_signed_snapshot_metadata_in_headers() -> None:
     bus = AsyncOutboxEventBus(
         storage,
         BearerInjectingPropagator(),
+        TransactionSynchronization(),
+        OutboxRelayWakeup(),
         _enabled_auth_headers(signer),
     )
 
@@ -322,7 +349,9 @@ class OrderShippedIntegrationEvent(AbstractIntegrationEvent):
 def test_send_stores_partition_key_from_event() -> None:
     """OutboxEventBus.send가 이벤트의 partition_key를 OutboxMessage에 기록하는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage, W3CTracePropagator())
+    bus = OutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     bus.send(OrderShippedIntegrationEvent(order_id="ORD-777"))
 
@@ -332,7 +361,9 @@ def test_send_stores_partition_key_from_event() -> None:
 def test_send_stores_none_partition_key_when_event_declares_none() -> None:
     """partition_key를 오버라이드하지 않은 이벤트는 None으로 저장되는지 검증한다."""
     storage = InMemorySyncOutboxStorage()
-    bus = OutboxEventBus(storage, W3CTracePropagator())
+    bus = OutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-778", amount=100))
 
@@ -343,7 +374,9 @@ def test_send_stores_none_partition_key_when_event_declares_none() -> None:
 async def test_async_send_stores_partition_key_from_event() -> None:
     """AsyncOutboxEventBus.send가 이벤트의 partition_key를 기록하는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
+    bus = AsyncOutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     await bus.send(OrderShippedIntegrationEvent(order_id="ORD-888"))
 
@@ -354,8 +387,103 @@ async def test_async_send_stores_partition_key_from_event() -> None:
 async def test_async_send_stores_none_partition_key_when_event_declares_none() -> None:
     """비동기 경로에서 partition_key 미선언 이벤트가 None으로 저장되는지 검증한다."""
     storage = InMemoryAsyncOutboxStorage()
-    bus = AsyncOutboxEventBus(storage, W3CTracePropagator())
+    bus = AsyncOutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), OutboxRelayWakeup()
+    )
 
     await bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-889", amount=100))
 
     assert storage.saved[0].partition_key is None
+
+
+# ── Relay wake-up after commit ──
+
+
+def test_send_in_transaction_expect_relay_woken_only_after_commit() -> None:
+    """transaction 안에서 저장한 메시지는 commit 뒤에 relay를 한 번 깨운다."""
+    synchronization = TransactionSynchronization()
+    wakeup = OutboxRelayWakeup()
+    woken: list[str] = []
+    wakeup.subscribe(lambda: woken.append("woken"))
+    bus = OutboxEventBus(
+        InMemorySyncOutboxStorage(), W3CTracePropagator(), synchronization, wakeup
+    )
+
+    synchronization.begin_transaction(PhysicalTransaction())
+    bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-W1", amount=1))
+    bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-W2", amount=2))
+    assert woken == []
+
+    synchronization.commit_transaction()
+
+    assert woken == ["woken"]
+
+
+def test_send_in_rolled_back_transaction_expect_relay_not_woken() -> None:
+    """rollback된 transaction에서 저장한 메시지는 relay를 깨우지 않는다."""
+    synchronization = TransactionSynchronization()
+    wakeup = OutboxRelayWakeup()
+    woken: list[str] = []
+    wakeup.subscribe(lambda: woken.append("woken"))
+    bus = OutboxEventBus(
+        InMemorySyncOutboxStorage(), W3CTracePropagator(), synchronization, wakeup
+    )
+
+    synchronization.begin_transaction(PhysicalTransaction())
+    bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-W3", amount=3))
+    synchronization.discard_transaction()
+
+    assert woken == []
+
+
+def test_send_outside_transaction_expect_stored_without_waking_relay() -> None:
+    """transaction 밖에서 저장한 메시지는 기다릴 commit이 없어 다음 polling에 맡긴다."""
+    storage = InMemorySyncOutboxStorage()
+    wakeup = OutboxRelayWakeup()
+    woken: list[str] = []
+    wakeup.subscribe(lambda: woken.append("woken"))
+    bus = OutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), wakeup
+    )
+
+    bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-W4", amount=4))
+
+    assert len(storage.saved) == 1
+    assert woken == []
+
+
+@pytest.mark.asyncio
+async def test_async_send_in_transaction_expect_relay_woken_only_after_commit() -> None:
+    """비동기 bus도 transaction commit 뒤에 relay를 깨운다."""
+    synchronization = TransactionSynchronization()
+    wakeup = OutboxRelayWakeup()
+    woken: list[str] = []
+    wakeup.subscribe(lambda: woken.append("woken"))
+    bus = AsyncOutboxEventBus(
+        InMemoryAsyncOutboxStorage(), W3CTracePropagator(), synchronization, wakeup
+    )
+
+    synchronization.begin_transaction(PhysicalTransaction())
+    await bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-W5", amount=5))
+    assert woken == []
+
+    synchronization.commit_transaction()
+
+    assert woken == ["woken"]
+
+
+@pytest.mark.asyncio
+async def test_async_send_outside_transaction_expect_relay_not_woken() -> None:
+    """비동기 bus도 transaction 밖에서는 relay를 깨우지 않는다."""
+    storage = InMemoryAsyncOutboxStorage()
+    wakeup = OutboxRelayWakeup()
+    woken: list[str] = []
+    wakeup.subscribe(lambda: woken.append("woken"))
+    bus = AsyncOutboxEventBus(
+        storage, W3CTracePropagator(), TransactionSynchronization(), wakeup
+    )
+
+    await bus.send(OrderConfirmedIntegrationEvent(order_id="ORD-W6", amount=6))
+
+    assert len(storage.saved) == 1
+    assert woken == []

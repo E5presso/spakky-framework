@@ -12,6 +12,7 @@ from spakky.data.persistency.error import (
     TransactionAlreadyFinishedError,
     TransactionNotActiveError,
     TransactionRollbackOnlyError,
+    TransactionSynchronizationNotOpenError,
 )
 from spakky.data.persistency.repository import (
     EntityAlreadyExistsError,
@@ -25,6 +26,10 @@ from spakky.data.persistency.transaction import (
     Propagation,
     TransactionFrame,
 )
+from spakky.data.persistency.transaction_synchronization import (
+    AfterCommitCallback,
+    TransactionSynchronization,
+)
 
 __all__ = [
     # Repository
@@ -37,10 +42,13 @@ __all__ = [
     "PhysicalTransaction",
     "Propagation",
     "TransactionFrame",
+    "AfterCommitCallback",
+    "TransactionSynchronization",
     # Errors
     "AbstractSpakkyPersistencyError",
     "AggregateBufferNotOpenError",
     "TransactionAlreadyFinishedError",
     "TransactionNotActiveError",
     "TransactionRollbackOnlyError",
+    "TransactionSynchronizationNotOpenError",
 ]

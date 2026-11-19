@@ -204,6 +204,13 @@ buffer로 모읍니다(`join_transaction`). `@Transactional`은 physical transac
 `spakky-event`의 이벤트 발행 Aspect가 이를 꺼내 도메인 이벤트를 발행합니다. 그래서 합쳐진 안쪽이 끝날 때는
 발행하지 않고, 가장 바깥이 commit한 뒤에 한 번 발행합니다. `REQUIRES_NEW` 안쪽의 이벤트는 안쪽이 commit한 뒤에 발행됩니다.
 
+`TransactionSynchronization`은 같은 physical transaction 단위로 after-commit 작업을 모읍니다. `@Transactional`은
+transaction이 실제로 commit된 직후에만 그 작업을 돌리고, rollback·rollback-only·`autocommit=False`로 끝나면 버립니다.
+프레임워크 내부 장치(예: `spakky-outbox`가 commit 뒤 릴레이를 깨우는 일)가 쓰며, 애플리케이션은 호출하지 않습니다.
+작업 frame은 buffer처럼 그 `PhysicalTransaction`에 묶이고, Aspect가 buffer를 열고 합치는 같은 판정(scope의 owner 여부)으로
+열고(`begin_transaction`) 합칩니다(`join_transaction` / `leave_transaction`). transaction 안에서 띄운 자식 task도 부모
+transaction에 작업을 걸지만, 그 transaction이 끝난 뒤(`PhysicalTransaction.finished`)에는 `is_active`가 `False`이고 작업을 걸 수 없습니다.
+
 직접 transaction을 다룰 때는 `scope()`로 propagation을 줄 수 있습니다. `async with transaction:`은 `scope(Propagation.REQUIRED)`와 같습니다.
 
 ```python
@@ -263,6 +270,8 @@ class PaymentServiceProxy(IPaymentProxy):
 | `AbstractAsyncTransaction` | context manager를 가진 비동기 transaction |
 | `Propagation` | 중첩 transaction의 동작(`REQUIRED`, `REQUIRES_NEW`) |
 | `AggregateCollector` | physical transaction 단위로 저장된 aggregate를 모으는 collector |
+| `TransactionSynchronization` | physical transaction이 실제로 commit된 뒤에 돌릴 작업(`AfterCommitCallback`)을 모으는 framework 내부 장치 |
+| `TransactionSynchronizationNotOpenError` | 열린 transaction 없이 after-commit 작업을 걸거나 닫으려 할 때 발생 |
 | `EntityNotFoundError` | entity를 찾지 못했을 때 발생 |
 | `EntityAlreadyExistsError` | 새 aggregate 저장이 이미 있는 유일 키와 부딪혔을 때 발생. `VersionConflictError`와 별개 |
 

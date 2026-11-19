@@ -44,6 +44,25 @@ class IOutboxStorage(ABC):
         """
 
     @abstractmethod
+    def release_claim(self, message: OutboxMessage) -> None:
+        """Give up this relay's claim on a message it did not publish.
+
+        Called when sending the message failed, so the next read can hand it
+        out again instead of waiting for `claim_timeout_seconds` to expire.
+        Only the claim is cleared: the retry count, a published message and an
+        abandoned message stay as they are.
+
+        The claim is released only while it is still the one `fetch_pending`
+        handed out, identified by `message.claimed_at`. A relay that stalled
+        past `claim_timeout_seconds` may find the message claimed again by
+        another instance; clearing that newer claim would let a third read
+        send it in parallel and break the partition key ordering.
+
+        Args:
+            message: The message as returned by `fetch_pending`.
+        """
+
+    @abstractmethod
     def purge_published(self, older_than: datetime) -> int:
         """Delete messages published before `older_than` and return how many.
 
@@ -95,6 +114,25 @@ class IAsyncOutboxStorage(ABC):
         partition key never waits forever on a message that will not be retried
         again. An implementation must keep the record and the reason readable —
         the operator has to be able to find what was dropped.
+        """
+
+    @abstractmethod
+    async def release_claim(self, message: OutboxMessage) -> None:
+        """Give up this relay's claim on a message it did not publish.
+
+        Called when sending the message failed, so the next read can hand it
+        out again instead of waiting for `claim_timeout_seconds` to expire.
+        Only the claim is cleared: the retry count, a published message and an
+        abandoned message stay as they are.
+
+        The claim is released only while it is still the one `fetch_pending`
+        handed out, identified by `message.claimed_at`. A relay that stalled
+        past `claim_timeout_seconds` may find the message claimed again by
+        another instance; clearing that newer claim would let a third read
+        send it in parallel and break the partition key ordering.
+
+        Args:
+            message: The message as returned by `fetch_pending`.
         """
 
     @abstractmethod

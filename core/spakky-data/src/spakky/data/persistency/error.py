@@ -44,3 +44,9 @@ class AggregateBufferNotOpenError(AbstractSpakkyPersistencyError):
     """Raised when a transaction buffer is closed that was never opened."""
 
     message = "No transaction buffer is open in the aggregate collector."
+
+
+class TransactionSynchronizationNotOpenError(AbstractSpakkyPersistencyError):
+    """Raised when after-commit work is used while no transaction is open."""
+
+    message = "No transaction is open in the transaction synchronization."

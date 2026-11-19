@@ -29,7 +29,7 @@ pyrefly는 경로 인자를 생략하면 git 무시 규칙을 적용하므로, �
 | `spakky-domain`, `spakky-tracing`, `spakky-task`, `spakky-auth`, `spakky-actuator`, `spakky-cache`, `spakky-agent` | `spakky` | 다른 core 확장 역방향 의존, plugin 의존 |
 | `spakky-data` | `spakky-domain` | infra/plugin 의존 |
 | `spakky-event` | `spakky-domain`, `spakky-data`, `spakky-auth`, `spakky-tracing` | outbox/saga/plugin 의존 |
-| `spakky-outbox` | `spakky-event`, `spakky-tracing` | saga/plugin 의존 |
+| `spakky-outbox` | `spakky-event`, `spakky-data`, `spakky-tracing` | saga/plugin 의존 |
 | `spakky-saga` | `spakky`, `spakky-domain`, `spakky-auth` | event/outbox/plugin 의존 |
 | `plugins/*` | 필요한 core 패키지 + 외부 SDK | 다른 plugin의 `src/` 직접 import, core로의 역방향 import |
 

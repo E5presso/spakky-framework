@@ -6,6 +6,9 @@ from uuid import uuid4
 from pydantic import TypeAdapter
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.pod.annotations.primary import Primary
+from spakky.data.persistency.transaction_synchronization import (
+    TransactionSynchronization,
+)
 from spakky.domain.models.event import AbstractIntegrationEvent
 from spakky.event.auth_propagation import AuthContextSnapshotHeaderInjector
 from spakky.event.event_publisher import IAsyncEventBus, IEventBus
@@ -14,6 +17,7 @@ from typing import override
 
 from spakky.outbox.common.message import OutboxMessage
 from spakky.outbox.ports.storage import IAsyncOutboxStorage, IOutboxStorage
+from spakky.outbox.relay.wakeup import OutboxRelayWakeup
 
 
 @Primary()
@@ -27,16 +31,22 @@ class OutboxEventBus(IEventBus):
 
     _storage: IOutboxStorage
     _propagator: ITracePropagator
+    _synchronization: TransactionSynchronization
+    _wakeup: OutboxRelayWakeup
     _auth_snapshot_headers: AuthContextSnapshotHeaderInjector
 
     def __init__(
         self,
         storage: IOutboxStorage,
         propagator: ITracePropagator,
+        synchronization: TransactionSynchronization,
+        wakeup: OutboxRelayWakeup,
         auth_snapshot_headers: AuthContextSnapshotHeaderInjector | None = None,
     ) -> None:
         self._storage = storage
         self._propagator = propagator
+        self._synchronization = synchronization
+        self._wakeup = wakeup
         self._auth_snapshot_headers = (
             auth_snapshot_headers or AuthContextSnapshotHeaderInjector()
         )
@@ -56,6 +66,17 @@ class OutboxEventBus(IEventBus):
             partition_key=event.partition_key,
         )
         self._storage.save(message)
+        self.__wake_relay_after_commit()
+
+    def __wake_relay_after_commit(self) -> None:
+        """Have the relays send this message as soon as its transaction commits.
+
+        Outside a `@Transactional` call there is no commit to wait for; the
+        message is then sent by the relay's next poll.
+        """
+        if not self._synchronization.is_active:
+            return
+        self._synchronization.register_after_commit(self._wakeup.notify)
 
 
 @Primary()
@@ -69,16 +90,22 @@ class AsyncOutboxEventBus(IAsyncEventBus):
 
     _storage: IAsyncOutboxStorage
     _propagator: ITracePropagator
+    _synchronization: TransactionSynchronization
+    _wakeup: OutboxRelayWakeup
     _auth_snapshot_headers: AuthContextSnapshotHeaderInjector
 
     def __init__(
         self,
         storage: IAsyncOutboxStorage,
         propagator: ITracePropagator,
+        synchronization: TransactionSynchronization,
+        wakeup: OutboxRelayWakeup,
         auth_snapshot_headers: AuthContextSnapshotHeaderInjector | None = None,
     ) -> None:
         self._storage = storage
         self._propagator = propagator
+        self._synchronization = synchronization
+        self._wakeup = wakeup
         self._auth_snapshot_headers = (
             auth_snapshot_headers or AuthContextSnapshotHeaderInjector()
         )
@@ -98,3 +125,14 @@ class AsyncOutboxEventBus(IAsyncEventBus):
             partition_key=event.partition_key,
         )
         await self._storage.save(message)
+        self.__wake_relay_after_commit()
+
+    def __wake_relay_after_commit(self) -> None:
+        """Have the relays send this message as soon as its transaction commits.
+
+        Outside a `@Transactional` call there is no commit to wait for; the
+        message is then sent by the relay's next poll.
+        """
+        if not self._synchronization.is_active:
+            return
+        self._synchronization.register_after_commit(self._wakeup.notify)

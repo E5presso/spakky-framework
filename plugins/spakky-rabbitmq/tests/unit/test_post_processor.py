@@ -654,7 +654,10 @@ def test_rabbitmq_post_processor_named_subscriber_expect_subscriber_and_handler_
 @Pod()
 def transaction() -> AbstractTransaction:
     """Transaction double so that TransactionalAspect really advises the handler."""
-    return MagicMock(spec=AbstractTransaction)
+    double = MagicMock(spec=AbstractTransaction)
+    # Instance attribute: spec cannot see it, and the aspect reads it after commit.
+    double.autocommit_enabled = True
+    return double
 
 
 @Pod()

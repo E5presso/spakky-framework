@@ -1007,7 +1007,7 @@ from spakky.outbox.ports.storage import IOutboxStorage, IAsyncOutboxStorage
 
 ### OutboxRelayBackgroundService
 
-백그라운드 서비스로 Outbox 테이블을 폴링하여 미전송 메시지를 `IEventTransport`로 전송합니다.
+백그라운드 서비스로, 메시지를 저장한 트랜잭션이 commit되면 바로 깨어나고 복구용으로 주기적으로도 Outbox 테이블을 읽어 미전송 메시지를 `IEventTransport`로 전송합니다.
 
 ---
 
