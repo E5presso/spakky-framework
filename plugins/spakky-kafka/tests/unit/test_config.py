@@ -510,13 +510,6 @@ def set_required_environment() -> None:
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
 
 
-def required_environment() -> None:
-    """Set the settings every Kafka configuration needs."""
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
-
-
 def test_kafka_config_without_consumer_overrides_expect_unchanged_consumer_settings(
     clean_env: None,
 ) -> None:
@@ -545,30 +538,6 @@ def test_kafka_config_consumer_overrides_from_json_env_expect_applied_to_every_s
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CONSUMER_OVERRIDES"] = (
         '{"max.poll.interval.ms": 900000, "session.timeout.ms": 45000,'
         ' "check.crcs": true, "partition.assignment.strategy": "cooperative-sticky"}'
-
-
-def test_kafka_config_without_subscriber_retry_expect_every_subscriber_uses_retry(
-    clean_env: None,
-) -> None:
-    """선언도 배포 설정도 없으면 모든 subscriber가 config.retry를 쓴다."""
-    required_environment()
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_ATTEMPTS"] = "3"
-
-    config = KafkaConnectionConfig()
-
-    assert config.subscriber_retry == {}
-    assert config.subscriber_retry_policy(None, None) == config.retry
-    assert config.subscriber_retry_policy("billing", None) == config.retry
-
-
-def test_kafka_config_subscriber_retry_json_expect_only_given_fields_applied(
-    clean_env: None,
-) -> None:
-    """JSON으로 준 subscriber_retry는 적은 필드만 덮고, mode는 코드의 선언을 지킨다."""
-    required_environment()
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_INTERVAL"] = "30"
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_RETRY"] = (
-        '{"billing-v2": {"max_attempts": 5, "initial_interval": 1.0}}'
     )
 
     config = KafkaConnectionConfig()
@@ -595,25 +564,6 @@ def test_kafka_config_subscriber_consumer_overrides_from_json_env_expect_only_th
     set_required_environment()
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES"] = (
         '{"report-builder": {"max.poll.interval.ms": 900000}}'
-
-
-    assert config.subscriber_retry_policy(
-        "billing-v2", RetryPolicy(mode=RetryMode.DELAYED, max_attempts=2)
-    ) == RetryPolicy(
-        max_attempts=5,
-        initial_interval=1.0,
-        max_interval=30.0,
-        mode=RetryMode.DELAYED,
-    )
-
-
-def test_kafka_config_subscriber_retry_expect_other_subscribers_unaffected(
-    clean_env: None,
-) -> None:
-    """한 subscriber의 배포 설정은 다른 subscriber와 이름 없는 subscriber에 닿지 않는다."""
-    required_environment()
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_RETRY"] = (
-        '{"billing": {"max_attempts": 5}}'
     )
 
     config = KafkaConnectionConfig()
@@ -640,19 +590,6 @@ def test_kafka_config_subscriber_override_expect_wins_over_shared_override(
     )
     environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_CONSUMER_OVERRIDES"] = (
         '{"report-builder": {"max.poll.interval.ms": 900000}}'
-
-
-    assert config.subscriber_retry_policy("shipping", None) == RetryPolicy()
-    assert config.subscriber_retry_policy(None, None) == RetryPolicy()
-
-
-def test_kafka_config_subscriber_retry_empty_key_expect_unnamed_subscriber(
-    clean_env: None,
-) -> None:
-    """빈 문자열 키는 이름 없는 subscriber의 배포 설정이다."""
-    required_environment()
-    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_RETRY"] = (
-        '{"": {"mode": "delayed"}}'
     )
 
     config = KafkaConnectionConfig()
@@ -755,6 +692,75 @@ def test_kafka_config_subscriber_consumer_overrides_with_reserved_key_expect_rej
     assert error.value.errors()[0]["type"] == "reserved_consumer_override"
     assert error.value.errors()[0]["ctx"] == {"key": key}
 
+
+def required_environment() -> None:
+    """Set the settings every Kafka configuration needs."""
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}GROUP_ID"] = "test-group"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}CLIENT_ID"] = "test-client"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}BOOTSTRAP_SERVERS"] = "localhost:9092"
+
+
+def test_kafka_config_without_subscriber_retry_expect_every_subscriber_uses_retry(
+    clean_env: None,
+) -> None:
+    """선언도 배포 설정도 없으면 모든 subscriber가 config.retry를 쓴다."""
+    required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_ATTEMPTS"] = "3"
+
+    config = KafkaConnectionConfig()
+
+    assert config.subscriber_retry == {}
+    assert config.subscriber_retry_policy(None, None) == config.retry
+    assert config.subscriber_retry_policy("billing", None) == config.retry
+
+
+def test_kafka_config_subscriber_retry_json_expect_only_given_fields_applied(
+    clean_env: None,
+) -> None:
+    """JSON으로 준 subscriber_retry는 적은 필드만 덮고, mode는 코드의 선언을 지킨다."""
+    required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}RETRY__MAX_INTERVAL"] = "30"
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_RETRY"] = (
+        '{"billing-v2": {"max_attempts": 5, "initial_interval": 1.0}}'
+    )
+
+    config = KafkaConnectionConfig()
+
+    assert config.subscriber_retry_policy(
+        "billing-v2", RetryPolicy(mode=RetryMode.DELAYED, max_attempts=2)
+    ) == RetryPolicy(
+        max_attempts=5,
+        initial_interval=1.0,
+        max_interval=30.0,
+        mode=RetryMode.DELAYED,
+    )
+
+
+def test_kafka_config_subscriber_retry_expect_other_subscribers_unaffected(
+    clean_env: None,
+) -> None:
+    """한 subscriber의 배포 설정은 다른 subscriber와 이름 없는 subscriber에 닿지 않는다."""
+    required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_RETRY"] = (
+        '{"billing": {"max_attempts": 5}}'
+    )
+
+    config = KafkaConnectionConfig()
+
+    assert config.subscriber_retry_policy("shipping", None) == RetryPolicy()
+    assert config.subscriber_retry_policy(None, None) == RetryPolicy()
+
+
+def test_kafka_config_subscriber_retry_empty_key_expect_unnamed_subscriber(
+    clean_env: None,
+) -> None:
+    """빈 문자열 키는 이름 없는 subscriber의 배포 설정이다."""
+    required_environment()
+    environ[f"{SPAKKY_KAFKA_CONFIG_ENV_PREFIX}SUBSCRIBER_RETRY"] = (
+        '{"": {"mode": "delayed"}}'
+    )
+
+    config = KafkaConnectionConfig()
 
     assert config.subscriber_retry_policy(None, None).mode is RetryMode.DELAYED
 
