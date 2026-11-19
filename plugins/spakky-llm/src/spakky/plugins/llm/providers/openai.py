@@ -1,7 +1,8 @@
 """OpenAI SDK adapter for standard and vLLM chat-completions profiles."""
 
 from base64 import b64encode
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from json import JSONDecodeError, dumps
 from math import isfinite
@@ -15,6 +16,8 @@ from openai import (
     APIStatusError,
     APITimeoutError,
     AsyncOpenAI,
+    AsyncStream,
+    AuthenticationError,
     Omit,
     omit,
 )
@@ -73,6 +76,7 @@ from spakky.plugins.llm.config import (
 from spakky.plugins.llm.constants import OFFICIAL_OPENAI_BASE_URL
 from spakky.plugins.llm.error import (
     AbstractLlmError,
+    LlmAuthenticationError,
     LlmConfigurationError,
     LlmModelRefusalError,
     LlmRateLimitError,
@@ -82,7 +86,10 @@ from spakky.plugins.llm.error import (
     LlmUnsupportedFeatureError,
 )
 from spakky.plugins.llm.provider import (
+    ILLMCredentialProvider,
     ILLMProvider,
+    LlmAccessToken,
+    LlmCredentialRequest,
     LlmModelTarget,
     done_event,
     ensure_terminal_tool_choice,
@@ -99,6 +106,13 @@ _OPENAI_AUDIO_FORMATS: dict[str, Literal["mp3", "wav"]] = {
     "audio/wav": "wav",
 }
 _OPENAI_DOCUMENT_MIME_TYPES = frozenset({"application/pdf", "text/plain"})
+_VLLM_UNAUTHENTICATED_API_KEY = "not-required"
+
+
+class _ReasoningAssistantMessageParam(ChatCompletionAssistantMessageParam, total=False):
+    """Assistant history message that also replays vLLM reasoning content."""
+
+    reasoning_content: str
 
 
 @dataclass(slots=True)
@@ -117,9 +131,19 @@ class OpenAIChatProvider(ILLMProvider):
     """Map OpenAI SDK chat completions onto the Spakky model contract."""
 
     __codec: LlmJsonCodec
+    __credential_providers: dict[str, ILLMCredentialProvider]
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        credential_providers: tuple[ILLMCredentialProvider, ...] = (),
+    ) -> None:
         self.__codec = LlmJsonCodec()
+        registry: dict[str, ILLMCredentialProvider] = {}
+        for credential_provider in credential_providers:
+            if credential_provider.name in registry:
+                raise LlmConfigurationError
+            registry[credential_provider.name] = credential_provider
+        self.__credential_providers = registry
 
     @property
     @override
@@ -141,23 +165,27 @@ class OpenAIChatProvider(ILLMProvider):
     ) -> ModelResponse:
         """Return one normalized completion through the official async SDK."""
         self._ensure_supported_request(target, request)
-        messages = self._messages(request)
+        messages = self._messages(target, request)
+
+        async def create(client: AsyncOpenAI) -> ChatCompletion:
+            return await client.chat.completions.create(
+                model=target.model,
+                messages=messages,
+                stream=False,
+                temperature=self._optional_number(request.sampling.temperature),
+                top_p=self._optional_number(request.sampling.top_p),
+                max_tokens=self._legacy_max_tokens(target, request),
+                max_completion_tokens=self._standard_max_tokens(target, request),
+                tools=self._tools(request),
+                tool_choice=self._tool_choice(request),
+                response_format=self._response_format(request),
+                extra_body=self._extra_body(target, request),
+                timeout=target.profile.request_timeout_seconds,
+            )
+
         try:
-            async with self._client(target) as client:
-                completion = await client.chat.completions.create(
-                    model=target.model,
-                    messages=messages,
-                    stream=False,
-                    temperature=self._optional_number(request.sampling.temperature),
-                    top_p=self._optional_number(request.sampling.top_p),
-                    max_tokens=self._legacy_max_tokens(target, request),
-                    max_completion_tokens=self._standard_max_tokens(target, request),
-                    tools=self._tools(request),
-                    tool_choice=self._tool_choice(request),
-                    response_format=self._response_format(request),
-                    extra_body=self._extra_body(target, request),
-                    timeout=target.profile.request_timeout_seconds,
-                )
+            async with AsyncExitStack() as stack:
+                completion = await self._authorized(stack, target, request, create)
         except APIError as error:
             raise self._normalized_sdk_error(error) from error
         except JSONDecodeError as error:
@@ -182,29 +210,33 @@ class OpenAIChatProvider(ILLMProvider):
         request: ModelRequest,
     ) -> AsyncIterator[ModelStreamEvent]:
         self._ensure_supported_request(target, request)
-        messages = self._messages(request)
+        messages = self._messages(target, request)
         constraints = self.__codec.tool_constraints(request.tool_calling)
         buffers: dict[int, _ToolCallBuffer] = {}
         structured_fragments: list[str] = []
         finish_reason: str | None = None
         usage: ModelUsage | None = None
+
+        async def create(client: AsyncOpenAI) -> AsyncStream[ChatCompletionChunk]:
+            return await client.chat.completions.create(
+                model=target.model,
+                messages=messages,
+                stream=True,
+                stream_options=self._stream_options(request),
+                temperature=self._optional_number(request.sampling.temperature),
+                top_p=self._optional_number(request.sampling.top_p),
+                max_tokens=self._legacy_max_tokens(target, request),
+                max_completion_tokens=self._standard_max_tokens(target, request),
+                tools=self._tools(request),
+                tool_choice=self._tool_choice(request),
+                response_format=self._response_format(request),
+                extra_body=self._extra_body(target, request),
+                timeout=target.profile.stream_timeout_seconds,
+            )
+
         try:
-            async with self._client(target) as client:
-                stream = await client.chat.completions.create(
-                    model=target.model,
-                    messages=messages,
-                    stream=True,
-                    stream_options=self._stream_options(request),
-                    temperature=self._optional_number(request.sampling.temperature),
-                    top_p=self._optional_number(request.sampling.top_p),
-                    max_tokens=self._legacy_max_tokens(target, request),
-                    max_completion_tokens=self._standard_max_tokens(target, request),
-                    tools=self._tools(request),
-                    tool_choice=self._tool_choice(request),
-                    response_format=self._response_format(request),
-                    extra_body=self._extra_body(target, request),
-                    timeout=target.profile.stream_timeout_seconds,
-                )
+            async with AsyncExitStack() as stack:
+                stream = await self._authorized(stack, target, request, create)
                 async with stream:
                     async for chunk in stream:
                         if request.streaming.include_usage and chunk.usage is not None:
@@ -326,7 +358,75 @@ class OpenAIChatProvider(ILLMProvider):
                     metadata=self._metadata(target),
                 )
 
-    def _client(self, target: LlmModelTarget) -> AsyncOpenAI:
+    async def _authorized[T](
+        self,
+        stack: AsyncExitStack,
+        target: LlmModelTarget,
+        request: ModelRequest,
+        create: Callable[[AsyncOpenAI], Awaitable[T]],
+    ) -> T:
+        """Call the SDK, replacing a rejected dynamic credential once."""
+        self._ensure_client_profile(target)
+        credential_provider = self._credential_provider(target)
+        token = await self._access_token(target, request, credential_provider, None)
+        client = await stack.enter_async_context(self._client(target, token))
+        try:
+            return await create(client)
+        except AuthenticationError:
+            if credential_provider is None:
+                raise
+            token = await self._access_token(
+                target,
+                request,
+                credential_provider,
+                token,
+            )
+            client = await stack.enter_async_context(self._client(target, token))
+            try:
+                return await create(client)
+            except AuthenticationError as error:
+                # Static-key profiles keep their old mapping; a refreshed token that is
+                # rejected again is a credential failure like the Responses adapter's.
+                raise LlmAuthenticationError from error
+
+    def _credential_provider(
+        self,
+        target: LlmModelTarget,
+    ) -> ILLMCredentialProvider | None:
+        name = target.profile.credential_provider
+        if name is None:
+            return None
+        credential_provider = self.__credential_providers.get(name)
+        if credential_provider is None:
+            raise LlmConfigurationError
+        return credential_provider
+
+    async def _access_token(
+        self,
+        target: LlmModelTarget,
+        request: ModelRequest,
+        credential_provider: ILLMCredentialProvider | None,
+        rejected_token: LlmAccessToken | None,
+    ) -> LlmAccessToken:
+        if credential_provider is None:
+            api_key = target.profile.api_key_value()
+            if api_key is not None:
+                return api_key
+            if target.profile.openai_dialect != OpenAICompatibleDialect.VLLM:
+                raise LlmConfigurationError
+            return _VLLM_UNAUTHENTICATED_API_KEY
+        token = await credential_provider.access_token(
+            LlmCredentialRequest(
+                profile_name=target.profile_name,
+                request=request,
+                rejected_token=rejected_token,
+            )
+        )
+        if token.strip() == "":
+            raise LlmConfigurationError
+        return token
+
+    def _ensure_client_profile(self, target: LlmModelTarget) -> None:
         profile = target.profile
         if profile.api not in self.apis:
             raise LlmUnsupportedFeatureError
@@ -337,13 +437,12 @@ class OpenAIChatProvider(ILLMProvider):
             and profile.base_url is None
         ):
             raise LlmConfigurationError
-        api_key = profile.api_key_value()
-        if api_key is None:
-            if profile.openai_dialect != OpenAICompatibleDialect.VLLM:
-                raise LlmConfigurationError
-            api_key = "not-required"
+
+    def _client(self, target: LlmModelTarget, token: LlmAccessToken) -> AsyncOpenAI:
+        self._ensure_client_profile(target)
+        profile = target.profile
         return AsyncOpenAI(
-            api_key=api_key,
+            api_key=token,
             admin_api_key="",
             base_url=profile.base_url or OFFICIAL_OPENAI_BASE_URL,
             organization="",
@@ -354,8 +453,19 @@ class OpenAIChatProvider(ILLMProvider):
             default_headers=dict(profile.headers),
         )
 
-    def _messages(self, request: ModelRequest) -> list[ChatCompletionMessageParam]:
-        return [self._message(message) for message in request.assemble_messages()]
+    def _messages(
+        self,
+        target: LlmModelTarget,
+        request: ModelRequest,
+    ) -> list[ChatCompletionMessageParam]:
+        replay_reasoning = (
+            target.profile.openai_dialect == OpenAICompatibleDialect.VLLM
+            and target.route.capability.supports_reasoning
+        )
+        return [
+            self._message(message, replay_reasoning)
+            for message in request.assemble_messages()
+        ]
 
     def _ensure_supported_request(
         self,
@@ -366,7 +476,11 @@ class OpenAIChatProvider(ILLMProvider):
         if not required <= target.route.capability.input_modalities:
             raise LlmUnsupportedFeatureError
 
-    def _message(self, message: ModelMessage) -> ChatCompletionMessageParam:
+    def _message(
+        self,
+        message: ModelMessage,
+        replay_reasoning: bool,
+    ) -> ChatCompletionMessageParam:
         if message.role == ModelMessageRole.SYSTEM:
             system: ChatCompletionSystemMessageParam = {
                 "role": "system",
@@ -380,13 +494,17 @@ class OpenAIChatProvider(ILLMProvider):
             }
             return user
         if message.role == ModelMessageRole.ASSISTANT:
-            assistant: ChatCompletionAssistantMessageParam = {
+            assistant: _ReasoningAssistantMessageParam = {
                 "role": "assistant",
                 "content": self._non_media_text(message),
             }
             tool_calls = self._history_tool_calls(message.metadata)
             if tool_calls is not None:
                 assistant["tool_calls"] = tool_calls
+            if replay_reasoning:
+                reasoning = self._history_reasoning(message.metadata)
+                if reasoning is not None:
+                    assistant["reasoning_content"] = reasoning
             return assistant
         call_id = message.metadata.get("call_id")
         if not isinstance(call_id, str) or call_id.strip() == "":
@@ -460,6 +578,13 @@ class OpenAIChatProvider(ILLMProvider):
             }
         if isinstance(part, VideoPart):
             raise LlmUnsupportedFeatureError
+        raise LlmResponseError
+
+    def _history_reasoning(self, metadata: JsonObject) -> str | None:
+        """Return the reasoning a previous response put in ``metadata["reasoning"]``."""
+        value = metadata.get("reasoning")
+        if value is None or isinstance(value, str):
+            return value
         raise LlmResponseError
 
     def _history_tool_calls(
@@ -558,7 +683,7 @@ class OpenAIChatProvider(ILLMProvider):
         profile = target.profile
         if profile.openai_dialect != OpenAICompatibleDialect.VLLM:
             return None
-        extra: dict[str, object] = {}
+        extra: dict[str, object] = dict(target.route.extra_body)
         if len(target.route.chat_template_kwargs) > 0:
             extra["chat_template_kwargs"] = dict(target.route.chat_template_kwargs)
         if request.structured_output is not None:

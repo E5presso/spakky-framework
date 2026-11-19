@@ -1,12 +1,14 @@
 """Provider adapter contract and resolved model target."""
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
+from math import isfinite
 
 from spakky.agent import (
+    AgentRunExtension,
     JsonObject,
     JsonValue,
     ModelError,
@@ -18,7 +20,13 @@ from spakky.agent import (
     ModelUsage,
 )
 
-from spakky.plugins.llm.config import LlmModelRoute, LlmProfile, LlmProviderApi
+from spakky.plugins.llm.config import (
+    LlmModelRoute,
+    LlmProfile,
+    LlmProviderApi,
+    LlmReasoningEffort,
+    LlmScalar,
+)
 from spakky.plugins.llm.error import (
     AbstractLlmError,
     LlmAuthenticationError,
@@ -32,6 +40,7 @@ from spakky.plugins.llm.error import (
     LlmModelSelectionError,
     LlmProviderUnavailableError,
     LlmQuotaExhaustedError,
+    LlmRequestOptionsError,
     LlmResponseError,
     LlmRateLimitError,
     LlmStreamingDisabledError,
@@ -58,6 +67,68 @@ class LlmModelTarget:
     def model(self) -> str:
         """Return the physical provider model from the resolved route."""
         return self.route.model
+
+
+@dataclass(frozen=True, slots=True)
+class LlmRequestOptions(AgentRunExtension):
+    """Override the selected route's values for one model request.
+
+    Attach it to ``ModelRequest.extensions``. Only the route chosen by
+    ``model_selection`` is overridden; fallback routes keep their own values.
+    The overridden route is validated again with ``LlmModelRoute`` rules.
+    """
+
+    model: str | None = None
+    """Provider model name used instead of ``route.model``; None keeps the route's."""
+
+    chat_template_kwargs: Mapping[str, LlmScalar] = field(default_factory=dict)
+    """Keys merged over ``route.chat_template_kwargs`` (vLLM dialect only)."""
+
+    reasoning_effort: LlmReasoningEffort | None = None
+    """Effort used instead of ``route.reasoning_effort``; None keeps the route's."""
+
+    extra_body: Mapping[str, JsonValue] = field(default_factory=dict)
+    """Keys merged over ``route.extra_body`` (vLLM dialect only)."""
+
+    def __post_init__(self) -> None:
+        if self.model is not None and not isinstance(self.model, str):
+            raise LlmRequestOptionsError
+        if self.reasoning_effort is not None and not isinstance(
+            self.reasoning_effort,
+            LlmReasoningEffort,
+        ):
+            raise LlmRequestOptionsError
+        if not isinstance(self.chat_template_kwargs, Mapping):
+            raise LlmRequestOptionsError
+        kwargs: dict[str, LlmScalar] = {}
+        for key, value in self.chat_template_kwargs.items():
+            if not isinstance(key, str) or not isinstance(
+                value,
+                bool | int | float | str,
+            ):
+                raise LlmRequestOptionsError
+            if isinstance(value, float) and not isfinite(value):
+                raise LlmRequestOptionsError
+            kwargs[key] = value
+        object.__setattr__(self, "chat_template_kwargs", kwargs)
+        try:
+            extra_body = _snapshot_json_object(self.extra_body)
+        except (LlmConfigurationError, RecursionError) as error:
+            raise LlmRequestOptionsError from error
+        object.__setattr__(self, "extra_body", self._plain_object(extra_body))
+
+    @classmethod
+    def _plain_object(cls, value: JsonObject) -> dict[str, JsonValue]:
+        """Copy a validated snapshot into plain containers that deepcopy accepts."""
+        return {key: cls._plain_value(item) for key, item in value.items()}
+
+    @classmethod
+    def _plain_value(cls, value: JsonValue) -> JsonValue:
+        if isinstance(value, Mapping):
+            return cls._plain_object(value)
+        if isinstance(value, Sequence) and not isinstance(value, str):
+            return tuple(cls._plain_value(item) for item in value)
+        return value
 
 
 class ILLMProvider(ABC):

@@ -47,6 +47,11 @@ from spakky.plugins.llm.resilience import LlmResiliencePolicy
 
 type LlmScalar = bool | int | float | str
 
+LLM_RESERVED_EXTRA_BODY_KEYS: frozenset[str] = frozenset(
+    {"chat_template_kwargs", "structured_outputs"}
+)
+"""Request body keys the chat-completions adapter owns and extra_body cannot set."""
+
 
 def _reject_duplicate_json_object(
     pairs: list[tuple[str, JsonValue]],
@@ -266,6 +271,11 @@ _OPENAI_DIALECT_APIS: dict[OpenAICompatibleDialect, frozenset[LlmProviderApi]] =
 }
 
 
+_CREDENTIAL_PROVIDER_APIS: frozenset[LlmProviderApi] = frozenset(
+    {LlmProviderApi.OPENAI_CHAT_COMPLETIONS, LlmProviderApi.OPENAI_RESPONSES}
+)
+
+
 class LlmProfile(BaseModel):
     """Operator-owned connection, backend, and authentication configuration."""
 
@@ -364,10 +374,10 @@ class LlmProfile(BaseModel):
                 "OpenAI dialect is not available for the profile API",
             )
         if self.credential_provider is not None:
-            if self.api != LlmProviderApi.OPENAI_RESPONSES:
+            if self.api not in _CREDENTIAL_PROVIDER_APIS:
                 raise PydanticCustomError(
                     "llm_profile_credential_provider_api",
-                    "Credential providers require the OpenAI Responses API",
+                    "Credential providers require an OpenAI chat or Responses API",
                 )
             if self.api_key is not None:
                 raise PydanticCustomError(
@@ -465,6 +475,7 @@ class LlmModelRoute(BaseModel):
     chat_template_kwargs: dict[str, LlmScalar] = Field(default_factory=dict)
     # None leaves the provider default reasoning effort untouched.
     reasoning_effort: LlmReasoningEffort | None = None
+    extra_body: dict[str, JsonValue] = Field(default_factory=dict)
     fallbacks: tuple[str, ...] = ()
     fallback_on: frozenset[LlmFailureClass] = frozenset()
     cache: LlmCachePolicy = Field(default_factory=LlmCachePolicy)
@@ -502,6 +513,19 @@ class LlmModelRoute(BaseModel):
             else:
                 normalized[key] = item
         return normalized
+
+    @field_validator("extra_body")
+    @classmethod
+    def _reject_reserved_extra_body_keys(
+        cls,
+        value: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]:
+        if not LLM_RESERVED_EXTRA_BODY_KEYS.isdisjoint(value):
+            raise PydanticCustomError(
+                "llm_model_route_extra_body_reserved",
+                "LLM extra body cannot set framework-owned request keys",
+            )
+        return value
 
     @field_validator("fallbacks")
     @classmethod
@@ -713,6 +737,14 @@ class LlmConfig(BaseSettings):
                 raise PydanticCustomError(
                     "llm_model_route_chat_template",
                     "Chat template kwargs require a vLLM connection profile",
+                )
+            if (
+                len(route.extra_body) > 0
+                and profile.openai_dialect != OpenAICompatibleDialect.VLLM
+            ):
+                raise PydanticCustomError(
+                    "llm_model_route_extra_body",
+                    "Extra request body requires a vLLM connection profile",
                 )
             if (
                 route.reasoning_effort is not None

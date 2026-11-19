@@ -198,7 +198,7 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 | `provider` | 필수 | routing evidence용 provider id |
 | `api` | 필수 | provider adapter API family |
 | `base_url`, `api_key`, `headers` | `None`, `None`, `{}` | operator-owned endpoint, secret, 추가 header |
-| `credential_provider` | `None` | 호출 시점 token을 돌려주는 `ILLMCredentialProvider` 이름; `openai-responses` 전용, `api_key`와 배타 |
+| `credential_provider` | `None` | 호출 시점 token을 돌려주는 `ILLMCredentialProvider` 이름; `openai-chat-completions`와 `openai-responses` 전용, `api_key`와 배타 |
 | `request_timeout_seconds` | `None` | complete request timeout; 미지정이면 제한 없음 |
 | `stream_timeout_seconds` | `None` | stream request timeout; 미지정이면 제한 없음 |
 | `max_retries` | `0` | provider SDK retry 횟수 |
@@ -220,6 +220,7 @@ Direct constructor 인자는 같은 field의 environment/dotenv 값보다 우선
 | `capability` | `ModelCapability()` | route의 queryable model 능력 |
 | `chat_template_kwargs` | `{}` | vLLM dialect에서만 허용되는 model별 option |
 | `reasoning_effort` | `None` | `openai-responses` route의 reasoning effort (`none`~`max`); `None`이면 provider 기본값 |
+| `extra_body` | `{}` | vLLM dialect에서만 허용되는 추가 request body; `chat_template_kwargs`, `structured_outputs` key는 쓸 수 없음 |
 | `fallbacks` | `()` | 현재 route failure에서만 고려할 ordered logical model refs |
 | `fallback_on` | empty set | fallback edge를 열 explicit `LlmFailureClass` allowlist |
 | `cache` | disabled `LlmCachePolicy()` | route별 exact/semantic complete-response cache policy |
@@ -330,11 +331,57 @@ Installed `google-genai==2.19.0`의 `client.aio.models.embed_content()`를 사�
 
 OpenRouter는 `provider="openrouter"`, `api=openai-chat-completions`, `openai_dialect=standard`, explicit OpenRouter base URL과 credential을 가진 일반 OpenAI-compatible profile로 구성합니다. Provider-specific payload semantics가 실제로 필요해질 때만 새 `ILLMProvider` 또는 explicit dialect를 추가합니다.
 
-vLLM은 같은 OpenAI SDK adapter를 사용하되 `openai_dialect=vllm`과 explicit `base_url`을 요구합니다. `chat_template_kwargs`와 vLLM structured-output extension은 vLLM route에서만 `extra_body`로 전달됩니다. Standard OpenAI-compatible profile에 `chat_template_kwargs`가 연결되면 `LlmConfig`가 거부합니다.
+vLLM은 같은 OpenAI SDK adapter를 사용하되 `openai_dialect=vllm`과 explicit `base_url`을 요구합니다. Route의 `extra_body`, `chat_template_kwargs`와 vLLM structured-output extension은 vLLM route에서만 SDK `extra_body`로 전달됩니다. Standard OpenAI-compatible profile에 `chat_template_kwargs`나 `extra_body`가 연결되면 `LlmConfig`가 거부합니다.
+
+vLLM route가 `supports_reasoning=True`이면 assistant history의 `metadata["reasoning"]`(문자열)을 요청의 assistant message `reasoning_content`로 다시 싣습니다. 응답이 reasoning을 돌려주는 key와 같으므로 응답 metadata를 history에 그대로 옮기면 `reasoning_content`를 읽는 chat template이 지난 reasoning을 다시 렌더링할 수 있습니다. 값이 문자열이 아니면 `LlmResponseError`입니다. Standard dialect나 `supports_reasoning=False` route에서는 싣지 않습니다.
 
 Official OpenAI와 OpenRouter 같은 standard profile은 API key가 필요합니다. vLLM dialect는 API key를 생략할 수 있으며 adapter가 ambient OpenAI key 대신 non-secret `not-required` sentinel을 SDK에 전달합니다. OpenRouter profile에서 `base_url`을 생략하면 provider label로 endpoint를 추론하지 않고 official OpenAI endpoint가 선택되므로 OpenRouter 구성에는 base URL을 반드시 명시합니다.
 
 Anthropic Messages 요청은 `SamplingOptions.max_tokens`가 있으면 그 값을 사용하고, 없으면 adapter 기본값 `4096`을 사용합니다. 현재 profile/route별 Anthropic default-output-token field는 없습니다.
+
+### 요청마다 route 덮기 (`LlmRequestOptions`)
+
+`LlmRequestOptions`는 `AgentRunExtension`입니다. `ModelRequest.extensions`에 실으면
+`LlmAgentModel`이 `model_selection`으로 고른 route 하나를 그 요청에서만 덮습니다.
+
+| Field | 기본값 | 덮는 방식 |
+|-------|--------|-----------|
+| `model` | `None` | `route.model` 대신 쓸 provider model 이름; `None`이면 route 값 |
+| `chat_template_kwargs` | `{}` | `route.chat_template_kwargs` 위에 key마다 덮음 (vLLM dialect 전용) |
+| `reasoning_effort` | `None` | `route.reasoning_effort` 대신 씀; `None`이면 route 값 (`openai-responses` 전용) |
+| `extra_body` | `{}` | `route.extra_body` 위에 key마다 덮음 (vLLM dialect 전용) |
+
+```python
+from spakky.agent import ModelMessage, ModelMessageRole, ModelRequest, ModelSelection
+from spakky.plugins.llm.provider import LlmRequestOptions
+
+request = ModelRequest(
+    messages=(ModelMessage(ModelMessageRole.USER, "요약해 줘"),),
+    model_selection=ModelSelection("local/chat"),
+    extensions=(
+        LlmRequestOptions(
+            chat_template_kwargs={"enable_thinking": False},
+            extra_body={"add_generation_prompt": False, "continue_final_message": True},
+        ),
+    ),
+)
+```
+
+- 덮은 값은 `LlmModelRoute` 검증을 다시 거칩니다(`model` strip, 문자열 `"true"`/`"false"`의
+  boolean 정규화). 그래서 adapter, response cache key, 응답의 routing metadata가 모두 덮은
+  route를 봅니다. Capability는 원래 route의 것을 그대로 씁니다.
+- `fallbacks`의 route는 다른 model이므로 덮지 않습니다.
+- vLLM dialect가 아닌 profile에 `chat_template_kwargs`나 `extra_body`를, `openai-responses`가
+  아닌 profile에 `reasoning_effort`를 주면 `LlmUnsupportedFeatureError`입니다. Streaming에서는
+  `llm_feature_unsupported` error event로 끝납니다.
+- 빈 `model`, `extra_body`의 framework 예약 key(`chat_template_kwargs`, `structured_outputs`),
+  template scalar나 JSON이 아닌 값은 `LlmRequestOptionsError`(`LlmModelSelectionError`의 하위
+  타입)입니다.
+- 요청마다 다른 token은 이 extension이 아니라 `credential_provider`로 줍니다.
+  `LlmCredentialRequest.request`에 요청 전체가 들어오므로 application은 자기
+  `AgentRunExtension`을 거기서 읽어 token을 고를 수 있습니다.
+
+`LlmRequestOptions`를 싣지 않은 요청은 이전과 같습니다.
 
 ### OpenAI Responses API와 ChatGPT 로그인
 
@@ -415,8 +462,8 @@ config = LlmConfig(
 #### Call-time credential
 
 `credential_provider`는 고정 `api_key` 대신 호출 시점에 bearer token을 돌려주는
-`ILLMCredentialProvider` Pod의 `name`입니다. `api_key`와 함께 쓸 수 없고 현재
-`openai-responses` profile에서만 허용됩니다.
+`ILLMCredentialProvider` Pod의 `name`입니다. `api_key`와 함께 쓸 수 없고
+`openai-chat-completions`와 `openai-responses` profile에서 허용됩니다.
 
 ```python
 from typing import override
@@ -446,6 +493,8 @@ class ChatGptCredentialProvider(ILLMCredentialProvider):
 Adapter는 attempt마다 `access_token()`을 한 번 호출합니다. Provider가 HTTP 401로 거절하면
 거절된 token을 `rejected_token`에 담아 한 번 더 호출하고 요청을 정확히 한 번 재시도합니다.
 두 번째도 401이면 `LlmAuthenticationError`입니다. 이미 열린 stream은 재시도하지 않습니다.
+Chat Completions adapter도 `credential_provider` profile에서 같은 방식으로 동작합니다. 고정
+`api_key` profile의 401은 이전처럼 한 번만 시도하고 `LlmResponseError`로 정규화합니다.
 OAuth 로그인, token 저장과 갱신은 이 plugin에 없습니다. Application이 구현합니다.
 
 #### Quota와 stream 중단
