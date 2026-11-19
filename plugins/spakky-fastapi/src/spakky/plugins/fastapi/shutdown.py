@@ -14,7 +14,6 @@ from asyncio import (
     AbstractEventLoop,
     CancelledError,
     Future,
-    Task,
     current_task,
     get_running_loop,
 )
@@ -116,17 +115,16 @@ class ServerShutdownSignal:
         ``run_in_threadpool`` wait inside the stream is interrupted too, while
         the worker thread keeps running. The stream's ``finally`` therefore
         must not close or change a resource the worker thread may still use.
-        When another cancellation has already woken the task at that moment,
-        both reach the stream as one, so the guard asks again once the task
-        waits again; a cancel scope in the stream that absorbs its own
-        cancellation then does not keep the stream open. A cancellation that
-        reached the stream on its own is not repeated, so cleanup the stream
-        awaits after catching it runs to the end, except when the merged one
-        came from a scope outside the stream.
         An item the stream still produces is dropped. The stream is then
         closed, so a started generator's ``finally`` runs, and this generator
         returns normally. A cancellation requested by anyone else at the same
         time is propagated, not swallowed.
+
+        The interrupt is requested once. When a cancel scope inside the stream
+        is cancelled in the same loop turn, the scope can absorb the interrupt
+        with its own cancellation; if the stream then waits again without
+        producing an item, it stays open until its next item or until the
+        server's graceful shutdown timeout.
 
         Args:
             stream: The event stream an @sse method produced.
@@ -144,27 +142,14 @@ class ServerShutdownSignal:
         waiter: Future[None] = loop.create_future()
         awaiting_item = False
         interrupted = False
-        requested = 0
 
-        def interrupt(_: Future[None] | None = None) -> None:
+        def interrupt(_: Future[None]) -> None:
             # Runs on the task's loop while the task is suspended, so it is
             # suspended inside the stream exactly when awaiting_item is set.
-            nonlocal interrupted, requested
-            if not awaiting_item:
-                return
-            interrupted = True
-            merged = self.__is_woken_by_cancel(task)
-            # The task is suspended, not done, so the request is counted.
-            task.cancel()
-            requested += 1
-            if merged:
-                # Another cancellation already woke the task, so both reach
-                # the stream as one, and a cancel scope in the stream that
-                # catches its own cancellation absorbs this one too. Ask
-                # again once the task waits again; a request that reached the
-                # stream on its own is not repeated, so cleanup the stream
-                # awaits after catching it runs to the end.
-                loop.call_soon(interrupt)
+            nonlocal interrupted
+            if awaiting_item and not interrupted:
+                interrupted = True
+                task.cancel()
 
         waiter.add_done_callback(interrupt)
         self.__waiters[waiter] = loop
@@ -177,18 +162,15 @@ class ServerShutdownSignal:
                 except StopAsyncIteration:
                     return
                 except CancelledError:
-                    # Swallow only this guard's own cancellations; any more
-                    # pending requests came from someone else.
-                    if (
-                        interrupted
-                        and task.cancelling() - requested <= cancellations_before
-                    ):
+                    # Swallow only this guard's own cancellation; one more
+                    # pending request came from someone else.
+                    if interrupted and task.cancelling() - 1 <= cancellations_before:
                         return
                     raise
                 finally:
                     awaiting_item = False
-                    # Withdraw every cancellation this guard requested.
-                    for _ in range(requested):
+                    if interrupted:
+                        # Withdraw the cancellation this guard requested.
                         task.uncancel()
                 if interrupted:
                     return
@@ -229,26 +211,6 @@ class ServerShutdownSignal:
         finally:
             if isinstance(iterator, Generator):
                 iterator.close()
-
-    @staticmethod
-    def __is_woken_by_cancel(task: Task[object]) -> bool:
-        """Whether another cancellation has already woken the suspended task.
-
-        asyncio has no public API for this; anyio reads the same private task
-        state to decide whether a cancellation still has to be delivered. A task
-        woken by a result or resumed from a bare checkpoint is not counted: a
-        cancellation requested then still reaches it on its own.
-
-        Args:
-            task: A suspended task.
-
-        Returns:
-            True when a pending cancellation will resume the task, so one
-            requested now reaches it merged with that one.
-        """
-        must_cancel: bool = task._must_cancel  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
-        fut_waiter: Future[object] | None = task._fut_waiter  # type: ignore[attr-defined] - private asyncio Task state, read as anyio does
-        return must_cancel or (fut_waiter is not None and fut_waiter.cancelled())
 
     def __release(self, waiter: Future[None]) -> None:
         if not waiter.done():

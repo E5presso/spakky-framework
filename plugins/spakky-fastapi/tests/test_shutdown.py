@@ -642,46 +642,6 @@ async def test_stream_until_shutdown_cancelled_with_interrupt_expect_cancel_kept
         await consumer
 
 
-async def test_stream_until_shutdown_when_user_scope_cancelled_with_interrupt_expect_normal_end() -> (
-    None
-):
-    """stream의 cancel scope가 종료 신호와 같은 loop turn에 취소되어 그 취소를 흡수해도, 다시 요청해 정상으로 끝낸다."""
-    shutdown = ServerShutdownSignal()
-    scopes: list[anyio.CancelScope] = []
-    journal: list[str] = []
-
-    async def scoped() -> AsyncIterator[str]:
-        try:
-            yield "first"
-            with anyio.CancelScope() as scope:
-                scopes.append(scope)
-                await anyio.sleep_forever()
-            journal.append("scope-exited")
-            await anyio.sleep_forever()
-            yield "never"
-        finally:
-            journal.append("closed")
-
-    async def consume() -> None:
-        async for item in shutdown.stream_until_shutdown(scoped()):
-            journal.append(item)
-
-    consumer = create_task(consume())
-    await anyio.wait_all_tasks_blocked()
-    shutdown.trigger()
-    # The trigger releases the waiter on the next turn and the guard's
-    # interrupt runs one turn later; cancelling the scope right after the
-    # release delivers the scope's cancellation in that same turn, so the
-    # guard's first request lands on an already woken task.
-    get_running_loop().call_soon(scopes[0].cancel)
-
-    with anyio.fail_after(5):
-        await consumer
-
-    assert consumer.cancelling() == 0
-    assert journal == ["first", "scope-exited", "closed"]
-
-
 async def test_stream_until_shutdown_when_stream_cleans_up_after_cancel_expect_cleanup_finished() -> (
     None
 ):
