@@ -5,6 +5,8 @@ from typing import final
 
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
+from spakky.plugins.oauth.token import OAuthErrorCode, OAuthHttpStatus
+
 
 class AbstractSpakkyOAuthError(AbstractSpakkyFrameworkError, ABC):
     """Base class for spakky-oauth client errors."""
@@ -42,9 +44,27 @@ class OAuthAuthorizationRequiredError(AbstractSpakkyOAuthError):
 
 @final
 class OAuthTokenEndpointError(AbstractSpakkyOAuthError):
-    """Raised when the token endpoint rejects a request for a non-grant reason."""
+    """Raised when the token endpoint rejects a request for a non-grant reason.
+
+    Carries only the HTTP status and the RFC 6749 section 5.2 ``error`` code so
+    callers can tell configuration errors from transient server failures. The
+    response body and request secrets are never kept.
+    """
 
     message = "OAuth token endpoint rejected the request"
+
+    status_code: OAuthHttpStatus
+    # None when the response body was not a JSON object with a string error.
+    error: OAuthErrorCode | None
+
+    def __init__(
+        self,
+        status_code: OAuthHttpStatus,
+        error: OAuthErrorCode | None = None,
+    ) -> None:
+        super().__init__()
+        self.status_code = status_code
+        self.error = error
 
 
 @final
@@ -63,6 +83,29 @@ class OAuthTransportError(AbstractSpakkyOAuthError):
 
 @final
 class OAuthRevocationError(AbstractSpakkyOAuthError):
-    """Raised when local tokens were removed but the server did not confirm it."""
+    """Raised when the revocation endpoint did not confirm a revocation.
+
+    ``status_code`` is None when the server could not be reached; ``error`` is
+    None when the response carried no RFC 6749 section 5.2 ``error`` code.
+    """
 
     message = "OAuth token revocation was not confirmed by the server"
+
+    status_code: OAuthHttpStatus | None
+    error: OAuthErrorCode | None
+
+    def __init__(
+        self,
+        status_code: OAuthHttpStatus | None = None,
+        error: OAuthErrorCode | None = None,
+    ) -> None:
+        super().__init__()
+        self.status_code = status_code
+        self.error = error
+
+
+@final
+class OAuthRevocationNotSupportedError(AbstractSpakkyOAuthError):
+    """Raised when a token is revoked through a registration without an endpoint."""
+
+    message = "OAuth client registration has no revocation endpoint"

@@ -181,8 +181,9 @@ provider에 묶이지 않는 인증 snapshot입니다. `spakky-cryptography`는 
 
 ### OAuth Client
 
-`spakky-oauth`가 제공하는 OAuth 2.0 public client입니다. `OAuthClient`가 authorization
+`spakky-oauth`가 제공하는 OAuth 2.0 client입니다(public·confidential). `OAuthClient`가 authorization
 code + PKCE로 token을 얻어 `(client, subject)`별로 저장하고, 만료 전에 갱신하고, 폐기합니다.
+애플리케이션이 직접 저장한 token도 `refresh_tokens()`·`revoke_token()`으로 갱신·폐기합니다.
 `spakky-oidc`가 들어오는 bearer token을 검증하는 것과 반대로 나가는 호출에 쓸 token을
 다룹니다. 저장소(`IOAuthTokenStore`, `IOAuthAuthorizationStateStore`), 로그인·callback route와
 ID token 검증은 애플리케이션이 담당합니다. [OAuth client 가이드](guides/oauth-client.md)를 봅니다.

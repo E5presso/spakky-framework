@@ -84,17 +84,36 @@ class InMemoryOAuthTokenStore(IOAuthTokenStore):
 
 
 class InMemoryOAuthAuthorizationStateStore(IOAuthAuthorizationStateStore):
-    """Process-local state store; callbacks must reach the process that started them."""
+    """Process-local state store; callbacks must reach the process that started them.
+
+    Authorizations whose ``expires_at`` has passed are dropped on every
+    ``save`` and ``take``, so sign-ins abandoned before their callback do not
+    accumulate for the life of the process.
+    """
 
     __pending: dict[OAuthState, OAuthPendingAuthorization]
+    __clock: IOAuthClock
 
-    def __init__(self) -> None:
+    def __init__(self, clock: IOAuthClock | None = None) -> None:
         self.__pending = {}
+        self.__clock = clock if clock is not None else SystemOAuthClock()
 
     @override
     async def save(self, state: OAuthState, pending: OAuthPendingAuthorization) -> None:
+        self._purge_expired()
         self.__pending[state] = pending
 
     @override
     async def take(self, state: OAuthState) -> OAuthPendingAuthorization | None:
+        self._purge_expired()
         return self.__pending.pop(state, None)
+
+    def _purge_expired(self) -> None:
+        now = self.__clock.now()
+        expired = [
+            state
+            for state, pending in self.__pending.items()
+            if pending.expires_at <= now
+        ]
+        for state in expired:
+            del self.__pending[state]

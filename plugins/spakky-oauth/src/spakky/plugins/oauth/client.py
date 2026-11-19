@@ -1,14 +1,14 @@
-"""OAuth 2.0 public client: authorization code with PKCE, refresh, and revocation."""
+"""OAuth 2.0 client: authorization code with PKCE, refresh, and revocation."""
 
 from asyncio import Lock
-from base64 import urlsafe_b64encode
+from base64 import b64encode, urlsafe_b64encode
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 from hashlib import sha256
 from json import JSONDecodeError
 from math import isfinite
 from secrets import compare_digest, token_urlsafe
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from weakref import WeakValueDictionary
 
 from httpx import AsyncClient, HTTPError, InvalidURL, Response
@@ -17,6 +17,7 @@ from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.oauth.config import (
     RESERVED_AUTHORIZATION_PARAMETERS,
+    OAuthClientAuthMethod,
     OAuthClientRegistration,
     OAuthConfig,
 )
@@ -34,6 +35,7 @@ from spakky.plugins.oauth.error import (
     OAuthAuthorizationStateError,
     OAuthClientNotConfiguredError,
     OAuthRevocationError,
+    OAuthRevocationNotSupportedError,
     OAuthTokenEndpointError,
     OAuthTokenResponseError,
     OAuthTransportError,
@@ -51,12 +53,14 @@ from spakky.plugins.oauth.token import (
     OAuthAuthorizationResult,
     OAuthClientId,
     OAuthClientName,
+    OAuthErrorCode,
     OAuthPendingAuthorization,
     OAuthRedirectUri,
     OAuthState,
     OAuthSubject,
     OAuthTokenKey,
     OAuthTokenSet,
+    OAuthTokenTypeHint,
 )
 
 _HTTP_OK = 200
@@ -68,7 +72,11 @@ type _TokenPayload = Mapping[str, object]
 
 @Pod()
 class OAuthClient:
-    """Obtain, refresh, and revoke tokens for application subjects."""
+    """Obtain, refresh, and revoke tokens for application subjects.
+
+    Registrations may be public clients or confidential clients that
+    authenticate with ``client_secret_basic`` or ``client_secret_post``.
+    """
 
     __config: OAuthConfig
     __tokens: IOAuthTokenStore
@@ -194,15 +202,16 @@ class OAuthClient:
         registration = self._registration(pending.key.client)
         effective_client_id = client_id if client_id is not None else pending.client_id
         response = await self._post(
+            registration,
             registration.token_endpoint,
             {
                 **registration.token_parameters,
                 "grant_type": "authorization_code",
-                "client_id": effective_client_id,
                 "code": code,
                 "code_verifier": pending.code_verifier.get_secret_value(),
                 "redirect_uri": pending.redirect_uri,
             },
+            client_id=effective_client_id,
         )
         if self._grant_rejected(response):
             raise OAuthAuthorizationRequiredError
@@ -210,7 +219,8 @@ class OAuthClient:
             response,
             client_id=effective_client_id,
             default_scopes=registration.scopes,
-            previous=None,
+            previous_refresh_token=None,
+            previous_id_token=None,
         )
         async with self._lock(pending.key):
             await self.__tokens.save(pending.key, tokens)
@@ -258,13 +268,14 @@ class OAuthClient:
             if tokens.refresh_token is None:
                 raise OAuthAuthorizationRequiredError
             response = await self._post(
+                registration,
                 registration.token_endpoint,
                 {
                     **registration.token_parameters,
                     "grant_type": "refresh_token",
-                    "client_id": tokens.client_id,
                     "refresh_token": tokens.refresh_token.get_secret_value(),
                 },
+                client_id=tokens.client_id,
             )
             latest = await self.__tokens.load(key)
             if self._grant_rejected(response):
@@ -273,7 +284,8 @@ class OAuthClient:
                 response,
                 client_id=tokens.client_id,
                 default_scopes=tokens.scopes,
-                previous=tokens,
+                previous_refresh_token=tokens.refresh_token,
+                previous_id_token=tokens.id_token,
             )
             if latest is None:
                 raise OAuthAuthorizationRequiredError
@@ -301,23 +313,149 @@ class OAuthClient:
                 return
             if tokens.refresh_token is not None:
                 token = tokens.refresh_token
-                hint = "refresh_token"
+                hint = OAuthTokenTypeHint.REFRESH_TOKEN
             else:
                 token = tokens.access_token
-                hint = "access_token"
-            try:
-                response = await self._post(
-                    registration.revocation_endpoint,
-                    {
-                        "token": token.get_secret_value(),
-                        "token_type_hint": hint,
-                        "client_id": tokens.client_id,
-                    },
-                )
-            except OAuthTransportError as error:
-                raise OAuthRevocationError from error
-            if response.status_code != _HTTP_OK:
-                raise OAuthRevocationError
+                hint = OAuthTokenTypeHint.ACCESS_TOKEN
+            await self._revoke_at(
+                registration,
+                registration.revocation_endpoint,
+                token,
+                hint,
+                client_id=tokens.client_id,
+            )
+
+    async def refresh_tokens(
+        self,
+        client: OAuthClientName,
+        refresh_token: SecretStr,
+        *,
+        client_id: OAuthClientId | None = None,
+    ) -> OAuthTokenSet:
+        """Run a refresh grant for a refresh token the caller stores itself.
+
+        The plugin's token store is neither read nor written, so an
+        application that keeps tokens in its own storage can refresh them with
+        the registration's client authentication.
+
+        Args:
+            client: Name of the configured registration.
+            refresh_token: The refresh token to exchange.
+            client_id: Client id the tokens were issued to, when it differs
+                from the registered one.
+
+        Returns:
+            The new token set. When the server does not rotate the refresh
+            token, the given one is kept; when it reports no scope, the
+            registration's scopes are used.
+
+        Raises:
+            OAuthAuthorizationRequestError: The refresh token or client id
+                override is blank.
+            OAuthAuthorizationRequiredError: The server rejected the grant
+                (``invalid_grant``); the subject must sign in again.
+            OAuthTokenEndpointError: The server rejected the request for any
+                other reason; it carries the HTTP status and ``error`` code.
+            OAuthTokenResponseError: The response is not a usable token set.
+            OAuthTransportError: The server could not be reached.
+        """
+        registration = self._registration(client)
+        if refresh_token.get_secret_value().strip() == "":
+            raise OAuthAuthorizationRequestError
+        if client_id is not None and client_id.strip() == "":
+            raise OAuthAuthorizationRequestError
+        effective_client_id = (
+            client_id if client_id is not None else registration.client_id
+        )
+        response = await self._post(
+            registration,
+            registration.token_endpoint,
+            {
+                **registration.token_parameters,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token.get_secret_value(),
+            },
+            client_id=effective_client_id,
+        )
+        if self._grant_rejected(response):
+            raise OAuthAuthorizationRequiredError
+        return self._token_set(
+            response,
+            client_id=effective_client_id,
+            default_scopes=registration.scopes,
+            previous_refresh_token=refresh_token,
+            previous_id_token=None,
+        )
+
+    async def revoke_token(
+        self,
+        client: OAuthClientName,
+        token: SecretStr,
+        *,
+        token_type_hint: OAuthTokenTypeHint | None = None,
+        client_id: OAuthClientId | None = None,
+    ) -> None:
+        """Revoke a token the caller stores itself (RFC 7009).
+
+        The plugin's token store is neither read nor written.
+
+        Args:
+            client: Name of the configured registration.
+            token: The access or refresh token to revoke.
+            token_type_hint: Which kind of token ``token`` is; None sends no
+                hint and lets the server search all token types.
+            client_id: Client id the token was issued to, when it differs
+                from the registered one.
+
+        Raises:
+            OAuthAuthorizationRequestError: The token or client id override
+                is blank.
+            OAuthRevocationNotSupportedError: The registration has no
+                revocation endpoint.
+            OAuthRevocationError: The server was unreachable or did not
+                answer 200; it carries the HTTP status and ``error`` code.
+        """
+        registration = self._registration(client)
+        if token.get_secret_value().strip() == "":
+            raise OAuthAuthorizationRequestError
+        if client_id is not None and client_id.strip() == "":
+            raise OAuthAuthorizationRequestError
+        if registration.revocation_endpoint is None:
+            raise OAuthRevocationNotSupportedError
+        await self._revoke_at(
+            registration,
+            registration.revocation_endpoint,
+            token,
+            token_type_hint,
+            client_id=client_id if client_id is not None else registration.client_id,
+        )
+
+    async def _revoke_at(
+        self,
+        registration: OAuthClientRegistration,
+        endpoint: str,
+        token: SecretStr,
+        hint: OAuthTokenTypeHint | None,
+        *,
+        client_id: OAuthClientId,
+    ) -> None:
+        form = {"token": token.get_secret_value()}
+        if hint is not None:
+            form["token_type_hint"] = hint.value
+        try:
+            response = await self._post(
+                registration,
+                endpoint,
+                form,
+                client_id=client_id,
+            )
+        except OAuthTransportError as error:
+            raise OAuthRevocationError from error
+        if response.status_code != _HTTP_OK:
+            raise OAuthRevocationError(
+                response.status_code,
+                self._error_code(response),
+            )
 
     def _rotated_elsewhere(
         self,
@@ -342,11 +480,21 @@ class OAuthClient:
         """Return whether the server reported the grant itself as invalid."""
         if response.status_code == _HTTP_OK:
             return False
+        return self._error_code(response) == _INVALID_GRANT
+
+    def _error_code(self, response: Response) -> OAuthErrorCode | None:
+        """Return the RFC 6749 section 5.2 ``error`` value of an error response.
+
+        Returns None when the body is not a JSON object with a string ``error``.
+        """
         try:
             payload: object = response.json()  # untrusted JSON narrowed below
         except (JSONDecodeError, UnicodeDecodeError):
-            return False
-        return isinstance(payload, Mapping) and payload.get("error") == _INVALID_GRANT
+            return None
+        if not isinstance(payload, Mapping):
+            return None
+        error = payload.get("error")
+        return error if isinstance(error, str) else None
 
     def _registration(self, client: OAuthClientName) -> OAuthClientRegistration:
         registration = self.__config.clients.get(client)
@@ -372,14 +520,51 @@ class OAuthClient:
         digest = sha256(code_verifier.encode("ascii")).digest()
         return urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
-    async def _post(self, url: str, form: Mapping[str, str]) -> Response:
+    async def _post(
+        self,
+        registration: OAuthClientRegistration,
+        url: str,
+        form: Mapping[str, str],
+        *,
+        client_id: OAuthClientId,
+    ) -> Response:
+        """POST a form, authenticating as the registration's client."""
+        data = dict(form)
+        headers: dict[str, str] = {}
+        match registration.token_endpoint_auth_method:
+            case OAuthClientAuthMethod.NONE:
+                data["client_id"] = client_id
+            case OAuthClientAuthMethod.CLIENT_SECRET_POST:
+                data["client_id"] = client_id
+                data["client_secret"] = self._client_secret(registration)
+            case (
+                OAuthClientAuthMethod.CLIENT_SECRET_BASIC
+            ):  # pragma: no branch - exhaustive StrEnum
+                headers["Authorization"] = self._basic_credentials(
+                    client_id,
+                    self._client_secret(registration),
+                )
         try:
             async with AsyncClient(
                 timeout=self.__config.http_timeout_seconds
             ) as http_client:
-                return await http_client.post(url, data=dict(form))
+                return await http_client.post(url, data=data, headers=headers)
         except (HTTPError, InvalidURL) as error:
             raise OAuthTransportError from error
+
+    def _client_secret(self, registration: OAuthClientRegistration) -> str:
+        # The registration validator guarantees a secret for client_secret_*.
+        if registration.client_secret is None:
+            raise OAuthClientNotConfiguredError
+        return registration.client_secret.get_secret_value()
+
+    def _basic_credentials(self, client_id: OAuthClientId, secret: str) -> str:
+        """Build the RFC 6749 section 2.3.1 Basic header value.
+
+        Both parts are form-urlencoded before being joined and base64-encoded.
+        """
+        user_pass = f"{quote(client_id, safe='')}:{quote(secret, safe='')}"
+        return f"Basic {b64encode(user_pass.encode()).decode('ascii')}"
 
     def _token_set(
         self,
@@ -387,10 +572,14 @@ class OAuthClient:
         *,
         client_id: OAuthClientId,
         default_scopes: tuple[str, ...],
-        previous: OAuthTokenSet | None,
+        previous_refresh_token: SecretStr | None,
+        previous_id_token: SecretStr | None,
     ) -> OAuthTokenSet:
         if response.status_code != _HTTP_OK:
-            raise OAuthTokenEndpointError
+            raise OAuthTokenEndpointError(
+                response.status_code,
+                self._error_code(response),
+            )
         try:
             payload: object = response.json()  # untrusted JSON narrowed below
         except (JSONDecodeError, UnicodeDecodeError) as error:
@@ -412,13 +601,9 @@ class OAuthClient:
             refresh_token=self._rotated_secret(
                 payload,
                 "refresh_token",
-                previous.refresh_token if previous is not None else None,
+                previous_refresh_token,
             ),
-            id_token=self._rotated_secret(
-                payload,
-                "id_token",
-                previous.id_token if previous is not None else None,
-            ),
+            id_token=self._rotated_secret(payload, "id_token", previous_id_token),
             expires_at=self._expires_at(payload),
             scopes=self._scopes(payload, default_scopes),
         )

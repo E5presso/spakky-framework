@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 
@@ -12,6 +13,16 @@ type OAuthAuthorizationCode = str
 type OAuthRedirectUri = str
 type OAuthClientId = str
 type OAuthAccessToken = str
+type OAuthHttpStatus = int
+# RFC 6749 section 5.2 error code, such as "invalid_grant" or "invalid_client".
+type OAuthErrorCode = str
+
+
+class OAuthTokenTypeHint(StrEnum):
+    """RFC 7009 ``token_type_hint`` values for a revocation request."""
+
+    ACCESS_TOKEN = "access_token"
+    REFRESH_TOKEN = "refresh_token"
 
 
 @dataclass(frozen=True, slots=True)

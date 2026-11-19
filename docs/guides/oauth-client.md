@@ -2,7 +2,7 @@
 
 > `spakky-oauth`로 사용자를 대신해 외부 API를 부를 token을 얻고, 갱신하고, 폐기하는 방법을 설명합니다.
 
-`spakky-oauth`는 OAuth 2.0 public client입니다. Authorization code + PKCE로 사용자의 승인을 받아 token을 저장하고, 만료 전에 갱신합니다.
+`spakky-oauth`는 OAuth 2.0 client입니다. Authorization code + PKCE로 사용자의 승인을 받아 token을 저장하고, 만료 전에 갱신합니다. Public client와, client secret으로 인증하는 confidential client를 모두 다룹니다.
 
 [`spakky-oidc`](security.md#oidc)와 방향이 반대입니다.
 
@@ -50,7 +50,7 @@ app = (
 )
 ```
 
-In-memory 저장소는 개발과 테스트용입니다. Process가 재시작하면 token이 사라지고 만료된 authorization을 지우지 않습니다. 운영 저장소는 [저장소 구현](#token-stores)을 봅니다.
+In-memory 저장소는 개발과 테스트용입니다. Process가 재시작하면 token이 사라집니다. `InMemoryOAuthAuthorizationStateStore`는 `save()`와 `take()` 때마다 `expires_at`이 지난 authorization을 지우므로, callback 없이 버려진 로그인이 쌓이지 않습니다. 만료 시각은 생성자에 넘긴 `IOAuthClock`(기본 `SystemOAuthClock`)으로 판단합니다. 운영 저장소는 [저장소 구현](#token-stores)을 봅니다.
 
 ## Client 등록
 
@@ -74,10 +74,12 @@ export SPAKKY_OAUTH__CLIENTS='{
 | `authorization_endpoint` | 필수 | 사용자를 보낼 authorization URL |
 | `token_endpoint` | 필수 | code 교환과 refresh endpoint |
 | `revocation_endpoint` | `None` | 없으면 `revoke()`는 local token만 삭제 |
-| `client_id` | 필수 | public client id |
+| `client_id` | 필수 | client id |
 | `scopes` | `()` | 요청할 scope |
 | `authorization_parameters` | `{}` | authorization 요청에 더할 parameter |
 | `token_parameters` | `{}` | code 교환과 refresh 요청에 더할 parameter |
+| `token_endpoint_auth_method` | `none` | token·revocation 요청의 client 인증. `none`, `client_secret_basic`, `client_secret_post` |
+| `client_secret` | `None` | confidential client의 secret(`SecretStr`). `client_secret_*` 방식에서만, 그때는 반드시 지정 |
 
 | `OAuthConfig` field | 기본값 | 책임 |
 | --- | --- | --- |
@@ -87,6 +89,34 @@ export SPAKKY_OAUTH__CLIENTS='{
 | `authorization_ttl_seconds` | `600.0` | 시작한 authorization이 callback을 기다리는 시간 |
 
 Endpoint는 `https`여야 하고 loopback host에 한해 `http`를 허용합니다. Fragment가 있는 endpoint와, `client_id`·`state`·`code_verifier` 같은 protocol field를 덮어쓰는 추가 parameter는 거절합니다.
+
+## Confidential client
+
+Client secret을 받은 registration은 `token_endpoint_auth_method`와 `client_secret`을 함께 지정합니다.
+두 방식은 RFC 6749 section 2.3.1을 따릅니다.
+
+| `token_endpoint_auth_method` | 요청에 싣는 것 |
+| --- | --- |
+| `none` (기본) | form의 `client_id` |
+| `client_secret_basic` | `Authorization: Basic` header. `client_id`와 secret을 각각 form-urlencode한 뒤 `:`로 이어 base64로 인코딩합니다. form에는 `client_id`를 넣지 않습니다. |
+| `client_secret_post` | form의 `client_id`와 `client_secret` |
+
+이 인증은 code 교환, refresh, revocation 요청 모두에 붙습니다. `client_secret`은 `SecretStr`이라
+`repr()`, 로그, `model_dump()`에 값이 나오지 않습니다. Secret 없이 `client_secret_*`을 고르거나,
+`none`인데 secret을 주거나, `token_parameters`에 `client_secret`을 넣으면 구성 단계에서 거절합니다.
+
+```bash
+export SPAKKY_OAUTH__CLIENTS='{
+  "calendar": {
+    "authorization_endpoint": "https://auth.example.test/authorize",
+    "token_endpoint": "https://auth.example.test/token",
+    "revocation_endpoint": "https://auth.example.test/revoke",
+    "client_id": "calendar-sync",
+    "token_endpoint_auth_method": "client_secret_basic",
+    "client_secret": "<secret>"
+  }
+}'
+```
 
 ## 로그인 흐름
 
@@ -186,8 +216,10 @@ token = await oauth.access_token("example", user_id, rejected_token=token)
 | Server 응답 | 결과 | 저장된 token |
 | --- | --- | --- |
 | `error="invalid_grant"` | `OAuthAuthorizationRequiredError` | 유지 |
-| 그 밖의 4xx/5xx | `OAuthTokenEndpointError` | 유지 |
+| 그 밖의 4xx/5xx | `OAuthTokenEndpointError` (`status_code`, `error`) | 유지 |
 | 연결 실패 | `OAuthTransportError` | 유지 |
+
+`OAuthTokenEndpointError`의 `status_code`와 `error`로 설정 오류(예: 400·401 `invalid_client`)와 일시적 장애(5xx)를 구별해 기록할 수 있습니다. 응답 본문 전체나 요청의 비밀 값은 담지 않습니다.
 
 `access_token()`은 어떤 경우에도 저장된 token을 지우지 않습니다. 설정 실수나 일시적 장애로 사용자가 로그아웃되지 않게 하고, 다른 instance가 방금 갱신해 저장하려는 token을 지우지 않기 위해서입니다. 다시 로그인시키기 전에 저장분을 비우려면 `revoke()`를 호출합니다.
 
@@ -198,6 +230,59 @@ await oauth.revoke("example", user_id)
 ```
 
 `revoke()`는 local token을 먼저 지우고 `revocation_endpoint`에 폐기를 요청합니다. Server에 닿지 못했거나 server가 확인하지 않으면 `OAuthRevocationError`를 올리지만, 이 시점에 사용자는 이미 애플리케이션에서 연결 해제된 상태입니다.
+
+## 직접 저장한 token의 갱신과 폐기 { #caller-stored-tokens }
+
+Token을 플러그인의 `IOAuthTokenStore`가 아니라 애플리케이션의 aggregate에 저장하는 경우,
+아래 두 메서드는 저장소를 읽지도 쓰지도 않고 받은 token으로만 일합니다. Registration의 client 인증이 그대로 붙습니다.
+
+```python
+from pydantic import SecretStr
+
+from spakky.plugins.oauth.client import OAuthClient
+from spakky.plugins.oauth.error import (
+    OAuthAuthorizationRequiredError,
+    OAuthTokenEndpointError,
+)
+from spakky.plugins.oauth.token import OAuthTokenTypeHint
+
+
+async def renew(oauth: OAuthClient, refresh_token: SecretStr) -> None:
+    try:
+        tokens = await oauth.refresh_tokens("calendar", refresh_token)
+    except OAuthAuthorizationRequiredError:
+        ...  # invalid_grant: 사용자가 다시 연결해야 합니다.
+    except OAuthTokenEndpointError as error:
+        # error.status_code, error.error("invalid_client" 등)로 원인을 구별합니다.
+        ...
+    else:
+        ...  # tokens(OAuthTokenSet)를 aggregate에 암호화해 저장합니다.
+
+
+async def disconnect(oauth: OAuthClient, refresh_token: SecretStr) -> None:
+    await oauth.revoke_token(
+        "calendar",
+        refresh_token,
+        token_type_hint=OAuthTokenTypeHint.REFRESH_TOKEN,
+    )
+```
+
+| 메서드 | 동작 |
+| --- | --- |
+| `refresh_tokens(client, refresh_token, *, client_id=None) -> OAuthTokenSet` | refresh grant를 보내 새 token set을 돌려줍니다. Server가 refresh token을 회전하지 않으면 받은 refresh token을, scope를 알려주지 않으면 registration의 `scopes`를 넣습니다. |
+| `revoke_token(client, token, *, token_type_hint=None, client_id=None) -> None` | RFC 7009 폐기 요청을 보냅니다. `token_type_hint`(`OAuthTokenTypeHint.ACCESS_TOKEN`/`REFRESH_TOKEN`)가 `None`이면 hint를 보내지 않습니다. |
+
+`client_id`는 token이 registration과 다른 client id로 발급된 경우에만 넘깁니다. 거절 판정은 `access_token()`과 같습니다.
+
+| Server 응답 | `refresh_tokens()` | `revoke_token()` |
+| --- | --- | --- |
+| 200 | `OAuthTokenSet` | 성공 |
+| `error="invalid_grant"` | `OAuthAuthorizationRequiredError` | `OAuthRevocationError(status_code, "invalid_grant")` |
+| 그 밖의 4xx/5xx | `OAuthTokenEndpointError(status_code, error)` | `OAuthRevocationError(status_code, error)` |
+| 연결 실패 | `OAuthTransportError` | `OAuthRevocationError(None, None)` |
+
+`revocation_endpoint`가 없는 registration으로 `revoke_token()`을 부르면 `OAuthRevocationNotSupportedError`입니다.
+빈 token이나 빈 `client_id` override는 요청 전에 `OAuthAuthorizationRequestError`입니다.
 
 ## 저장소 구현 { #token-stores }
 
@@ -225,16 +310,17 @@ await oauth.revoke("example", user_id)
 | `OAuthAuthorizationRequestError` | 요청별 parameter가 protocol field를 덮어쓰거나 `client_id` override가 비어 있음 |
 | `OAuthAuthorizationStateError` | callback `state`를 모르거나 이미 썼거나 만료됨 |
 | `OAuthAuthorizationRequiredError` | token이 없거나 server가 `invalid_grant`로 답해 다시 로그인해야 함 |
-| `OAuthTokenEndpointError` | token endpoint가 `invalid_grant`가 아닌 이유로 실패 |
+| `OAuthTokenEndpointError` | token endpoint가 `invalid_grant`가 아닌 이유로 실패. `status_code`(HTTP 상태)와 `error`(RFC 6749 §5.2 `error`, 본문이 JSON 객체가 아니거나 문자열 `error`가 없으면 `None`)를 가짐 |
 | `OAuthTokenResponseError` | token 응답이 사용할 수 있는 bearer token이 아님 |
 | `OAuthTransportError` | authorization server에 연결하지 못함 |
-| `OAuthRevocationError` | local token은 삭제했지만 server가 폐기를 확인하지 않음 |
+| `OAuthRevocationError` | server에 닿지 못했거나 server가 폐기를 확인하지 않음. `status_code`(연결 실패면 `None`)와 `error`를 가짐. `revoke()`에서는 local token을 이미 삭제한 뒤임 |
+| `OAuthRevocationNotSupportedError` | `revocation_endpoint`가 없는 registration으로 `revoke_token()`을 부름 |
 
 ## 범위 밖
 
 - 로그인·callback HTTP route
 - ID token 서명·claim 검증
-- Confidential client 인증(`client_secret`), device code, client credentials grant
+- `private_key_jwt` 등 secret 외의 client 인증, device code, client credentials grant
 - Process 간 분산 잠금
 
 ## 함께 보기

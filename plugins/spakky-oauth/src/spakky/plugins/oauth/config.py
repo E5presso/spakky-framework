@@ -1,9 +1,17 @@
 """Configuration for operator-owned OAuth 2.0 client registrations."""
 
-from typing import ClassVar
+from enum import StrEnum
+from typing import ClassVar, Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from spakky.core.stereotype.configuration import Configuration
@@ -38,10 +46,32 @@ _RESERVED_TOKEN_PARAMETERS = frozenset(
     }
 )
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+_CLIENT_SECRET_PARAMETER = "client_secret"
+
+
+class OAuthClientAuthMethod(StrEnum):
+    """How the client authenticates to the token and revocation endpoints.
+
+    Values follow the RFC 7591 ``token_endpoint_auth_method`` names.
+    """
+
+    NONE = "none"
+    """Public client: only ``client_id`` is sent (RFC 6749 section 2.1)."""
+
+    CLIENT_SECRET_BASIC = "client_secret_basic"
+    """HTTP Basic authentication with the client secret (RFC 6749 section 2.3.1)."""
+
+    CLIENT_SECRET_POST = "client_secret_post"
+    """``client_id`` and ``client_secret`` in the form body (RFC 6749 section 2.3.1)."""
 
 
 class OAuthClientRegistration(BaseModel):
-    """One public-client registration at an OAuth 2.0 authorization server."""
+    """One client registration at an OAuth 2.0 authorization server.
+
+    A public client leaves ``token_endpoint_auth_method`` at ``none``. A
+    confidential client sets it to ``client_secret_basic`` or
+    ``client_secret_post`` together with ``client_secret``.
+    """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -53,6 +83,9 @@ class OAuthClientRegistration(BaseModel):
     scopes: tuple[str, ...] = ()
     authorization_parameters: dict[str, str] = Field(default_factory=dict)
     token_parameters: dict[str, str] = Field(default_factory=dict)
+    token_endpoint_auth_method: OAuthClientAuthMethod = OAuthClientAuthMethod.NONE
+    # None for a public client; required by the client_secret_* methods.
+    client_secret: SecretStr | None = None
 
     @field_validator(
         "authorization_endpoint",
@@ -121,6 +154,32 @@ class OAuthClientRegistration(BaseModel):
                 "Extra token parameters cannot override protocol fields",
             )
         return value
+
+    @field_validator("client_secret")
+    @classmethod
+    def _validate_client_secret(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and value.get_secret_value().strip() == "":
+            raise PydanticCustomError(
+                "oauth_client_secret",
+                "OAuth client secret cannot be blank",
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _validate_client_authentication(self) -> Self:
+        confidential = self.token_endpoint_auth_method != OAuthClientAuthMethod.NONE
+        if confidential != (self.client_secret is not None):
+            raise PydanticCustomError(
+                "oauth_client_authentication",
+                "OAuth client secret must be set exactly when a client_secret_* "
+                "token endpoint auth method is used",
+            )
+        if confidential and _CLIENT_SECRET_PARAMETER in self.token_parameters:
+            raise PydanticCustomError(
+                "oauth_token_parameter",
+                "Extra token parameters cannot carry the client secret",
+            )
+        return self
 
 
 @Configuration()

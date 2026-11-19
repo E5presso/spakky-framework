@@ -794,6 +794,7 @@ from spakky.plugins.oauth.error import (
     OAuthAuthorizationStateError,
     OAuthClientNotConfiguredError,
     OAuthRevocationError,
+    OAuthRevocationNotSupportedError,
     OAuthTokenEndpointError,
     OAuthTokenResponseError,
     OAuthTransportError,
@@ -807,10 +808,11 @@ from spakky.plugins.oauth.error import (
 | `OAuthAuthorizationRequestError` | 요청별 parameter가 protocol field를 덮어쓰거나 `client_id` override가 비어 있음 |
 | `OAuthAuthorizationStateError` | callback `state`를 모르거나 이미 썼거나 만료됨 |
 | `OAuthAuthorizationRequiredError` | token이 없거나 server가 `invalid_grant`로 답해 다시 로그인해야 함 |
-| `OAuthTokenEndpointError` | token endpoint가 `invalid_grant`가 아닌 이유로 실패 |
+| `OAuthTokenEndpointError` | token endpoint가 `invalid_grant`가 아닌 이유로 실패. `status_code`(HTTP 상태)와 `error`(RFC 6749 §5.2 `error`, 본문이 JSON 객체가 아니거나 문자열 `error`가 없으면 `None`)를 가짐 |
 | `OAuthTokenResponseError` | token 응답이 사용할 수 있는 bearer token이 아님 |
 | `OAuthTransportError` | authorization server에 연결하지 못함 |
-| `OAuthRevocationError` | local token은 삭제했지만 server가 폐기를 확인하지 않음 |
+| `OAuthRevocationError` | server에 닿지 못했거나 server가 폐기를 확인하지 않음. `status_code`(연결 실패면 `None`)와 `error`를 가짐. `revoke()`에서는 local token을 이미 삭제한 뒤임 |
+| `OAuthRevocationNotSupportedError` | `revocation_endpoint`가 없는 registration으로 `revoke_token()`을 부름 |
 
 ### spakky-policy
 
