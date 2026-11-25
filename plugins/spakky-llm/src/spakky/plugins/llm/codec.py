@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 from json import JSONDecodeError, loads
 from math import isfinite
-from typing import Never
+from typing import Never, TypeGuard
 
 from spakky.agent import (
     JsonObject,
@@ -44,6 +44,32 @@ _SUPPORTED_SCHEMA_KEYWORDS = frozenset(
 )
 _OBJECT_SCHEMA_KEYWORDS = frozenset({"additionalProperties", "properties", "required"})
 _ARRAY_SCHEMA_KEYWORDS = frozenset({"items", "maxItems", "minItems", "prefixItems"})
+_SCHEMA_KEYWORD_DETAIL = "schema_keyword"
+"""Error detail key naming the JSON Schema keyword that was rejected."""
+_SCHEMA_REASON_DETAIL = "reason"
+"""Error detail key naming why the JSON Schema keyword was rejected."""
+
+
+def schema_type_names(schema: Mapping[str, JsonValue]) -> tuple[str, ...]:
+    """Return the type names a schema's ``type`` keyword lists, without validation.
+
+    JSON Schema 2020-12 lets ``type`` be one string or an array of strings.
+    Provider wire transforms use this to see whether a schema admits a type
+    before :class:`LlmJsonCodec` validates the full shape.
+
+    Args:
+        schema: A JSON Schema object.
+
+    Returns:
+        The string entries of ``type`` in declaration order, or an empty tuple
+        when ``type`` is absent or is neither a string nor an array.
+    """
+    value = schema.get("type")
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, Sequence):
+        return tuple(item for item in value if isinstance(item, str))
+    return ()
 
 
 class LlmJsonCodec:
@@ -149,91 +175,161 @@ class LlmJsonCodec:
         enum_values = schema.get("enum")
         if enum_values is not None:
             self._validate_enum(value, self._sequence(enum_values))
-        schema_type = self._optional_string(schema.get("type"))
-        if schema_type is None:
+        schema_types = self._schema_types(schema)
+        if schema_types is None:
             return
-        if schema_type == "object":
+        if "object" in schema_types and isinstance(value, Mapping):
             self._validate_object(value, schema)
             return
-        if schema_type == "array":
+        if "array" in schema_types and self._is_array(value):
             self._validate_array(value, schema)
             return
-        if schema_type == "string" and not isinstance(value, str):
+        if not any(self._matches_type(value, name) for name in schema_types):
             raise LlmResponseError
-        if schema_type == "integer" and (
-            not isinstance(value, int) or isinstance(value, bool)
-        ):
-            raise LlmResponseError
-        if schema_type == "number" and (
-            not isinstance(value, int | float)
-            or isinstance(value, bool)
-            or (isinstance(value, float) and not isfinite(value))
-        ):
-            raise LlmResponseError
-        if schema_type == "boolean" and not isinstance(value, bool):
-            raise LlmResponseError
-        if schema_type == "null" and value is not None:
-            raise LlmResponseError
+
+    def _matches_type(self, value: JsonValue, type_name: str) -> bool:
+        if type_name == "object":
+            return isinstance(value, Mapping)
+        if type_name == "array":
+            return self._is_array(value)
+        if type_name == "string":
+            return isinstance(value, str)
+        if type_name == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if type_name == "number":
+            return (
+                isinstance(value, int | float)
+                and not isinstance(value, bool)
+                and (not isinstance(value, float) or isfinite(value))
+            )
+        if type_name == "boolean":
+            return isinstance(value, bool)
+        return value is None
+
+    def _is_array(self, value: JsonValue) -> TypeGuard[Sequence[JsonValue]]:
+        return isinstance(value, Sequence) and not isinstance(value, str)
 
     def _validate_schema_shape(self, schema: JsonObject) -> None:
         for keyword in schema:
             if keyword not in _SUPPORTED_SCHEMA_KEYWORDS:
-                raise LlmResponseError
-        schema_type = self._optional_string(schema.get("type"))
-        if "type" in schema and schema_type is None:
-            raise LlmResponseError
-        if schema_type is not None and schema_type not in _SUPPORTED_SCHEMA_TYPES:
-            raise LlmResponseError
+                raise self._shape_error(keyword, "unsupported_keyword")
+        schema_types = self._schema_types(schema)
         schema_keywords = frozenset(schema)
-        if schema_keywords & _OBJECT_SCHEMA_KEYWORDS and schema_type != "object":
-            raise LlmResponseError
-        if schema_keywords & _ARRAY_SCHEMA_KEYWORDS and schema_type != "array":
-            raise LlmResponseError
+        object_keywords = schema_keywords & _OBJECT_SCHEMA_KEYWORDS
+        if object_keywords and (schema_types is None or "object" not in schema_types):
+            raise self._shape_error(min(object_keywords), "requires_object_type")
+        array_keywords = schema_keywords & _ARRAY_SCHEMA_KEYWORDS
+        if array_keywords and (schema_types is None or "array" not in schema_types):
+            raise self._shape_error(min(array_keywords), "requires_array_type")
 
         if "anyOf" in schema:
-            alternatives = schema["anyOf"]
-            alternative_schemas = self._sequence(alternatives)
+            alternative_schemas = self._shape_sequence("anyOf", schema["anyOf"])
             if len(alternative_schemas) == 0:
-                raise LlmResponseError
+                raise self._shape_error("anyOf", "empty_list")
             for alternative in alternative_schemas:
-                self._validate_schema_shape(self.to_object(alternative))
+                self._validate_schema_shape(self._shape_object("anyOf", alternative))
 
         if "enum" in schema:
-            enum_values = self._sequence(schema["enum"])
+            enum_values = self._shape_sequence("enum", schema["enum"])
             if len(enum_values) == 0:
-                raise LlmResponseError
+                raise self._shape_error("enum", "empty_list")
 
         if "properties" in schema:
-            properties = schema["properties"]
-            for property_schema in self.to_object(properties).values():
-                self._validate_schema_shape(self.to_object(property_schema))
+            properties = self._shape_object("properties", schema["properties"])
+            for property_schema in properties.values():
+                self._validate_schema_shape(
+                    self._shape_object("properties", property_schema)
+                )
 
         if "required" in schema:
-            self._required_names(schema["required"])
+            try:
+                self._required_names(schema["required"])
+            except LlmResponseError as error:
+                raise self._shape_error("required", "invalid_value") from error
 
         if "additionalProperties" in schema:
             additional_properties = schema["additionalProperties"]
             if additional_properties is not True and additional_properties is not False:
-                self._validate_schema_shape(self.to_object(additional_properties))
+                self._validate_schema_shape(
+                    self._shape_object("additionalProperties", additional_properties)
+                )
 
         if "prefixItems" in schema:
-            prefix_items = schema["prefixItems"]
-            for item_schema in self._sequence(prefix_items):
-                self._validate_schema_shape(self.to_object(item_schema))
+            for item_schema in self._shape_sequence(
+                "prefixItems", schema["prefixItems"]
+            ):
+                self._validate_schema_shape(
+                    self._shape_object("prefixItems", item_schema)
+                )
 
         if "items" in schema:
             item_schema = schema["items"]
             if item_schema is not True and item_schema is not False:
-                self._validate_schema_shape(self.to_object(item_schema))
+                self._validate_schema_shape(self._shape_object("items", item_schema))
 
-        min_items = self._optional_nonnegative_int(schema.get("minItems"))
-        max_items = self._optional_nonnegative_int(schema.get("maxItems"))
-        if "minItems" in schema and min_items is None:
-            raise LlmResponseError
-        if "maxItems" in schema and max_items is None:
-            raise LlmResponseError
+        min_items = self._shape_item_count(schema, "minItems")
+        max_items = self._shape_item_count(schema, "maxItems")
         if min_items is not None and max_items is not None and min_items > max_items:
-            raise LlmResponseError
+            raise self._shape_error("minItems", "exceeds_max_items")
+
+    def _schema_types(self, schema: Mapping[str, JsonValue]) -> tuple[str, ...] | None:
+        """Read ``type`` as JSON Schema 2020-12 defines it: a string or a unique array."""
+        if "type" not in schema:
+            return None
+        value = schema["type"]
+        if isinstance(value, str):
+            names: tuple[str, ...] = (value,)
+        elif self._is_array(value):
+            names = self._type_names(self._sequence(value))
+        else:
+            raise self._shape_error("type", "invalid_value")
+        for name in names:
+            if name not in _SUPPORTED_SCHEMA_TYPES:
+                raise self._shape_error("type", "unsupported_type")
+        return names
+
+    def _type_names(self, values: Sequence[JsonValue]) -> tuple[str, ...]:
+        if len(values) == 0:
+            raise self._shape_error("type", "empty_list")
+        names: list[str] = []
+        for value in values:
+            if not isinstance(value, str):
+                raise self._shape_error("type", "invalid_value")
+            if value in names:
+                raise self._shape_error("type", "duplicate_type")
+            names.append(value)
+        return tuple(names)
+
+    def _shape_error(self, keyword: str, reason: str) -> LlmResponseError:
+        """Name the rejected keyword and reason without copying schema values."""
+        return LlmResponseError(
+            details={
+                _SCHEMA_KEYWORD_DETAIL: keyword,
+                _SCHEMA_REASON_DETAIL: reason,
+            }
+        )
+
+    def _shape_sequence(self, keyword: str, value: JsonValue) -> Sequence[JsonValue]:
+        if not self._is_array(value):
+            raise self._shape_error(keyword, "invalid_value")
+        return self._sequence(value)
+
+    def _shape_object(self, keyword: str, value: JsonValue) -> JsonObject:
+        if not isinstance(value, Mapping):
+            raise self._shape_error(keyword, "invalid_value")
+        return self.to_object(value)
+
+    def _shape_item_count(
+        self,
+        schema: Mapping[str, JsonValue],
+        keyword: str,
+    ) -> int | None:
+        if keyword not in schema:
+            return None
+        value = schema[keyword]
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise self._shape_error(keyword, "invalid_value")
+        return value
 
     def _loads(self, text: str) -> object:
         try:
@@ -291,11 +387,9 @@ class LlmJsonCodec:
 
     def _validate_object(
         self,
-        value: JsonValue,
+        value: Mapping[str, JsonValue],
         schema: Mapping[str, JsonValue],
     ) -> None:
-        if not isinstance(value, Mapping):
-            raise LlmResponseError
         required = self._required_names(schema.get("required", ()))
         for required_key in required:
             if required_key not in value:
@@ -322,15 +416,13 @@ class LlmJsonCodec:
 
     def _validate_array(
         self,
-        value: JsonValue,
+        value: Sequence[JsonValue],
         schema: Mapping[str, JsonValue],
     ) -> None:
-        if not isinstance(value, Sequence) or isinstance(value, str):
-            raise LlmResponseError
-        min_items = self._optional_nonnegative_int(schema.get("minItems"))
+        min_items = self._item_count(schema.get("minItems"))
         if min_items is not None and len(value) < min_items:
             raise LlmResponseError
-        max_items = self._optional_nonnegative_int(schema.get("maxItems"))
+        max_items = self._item_count(schema.get("maxItems"))
         if max_items is not None and len(value) > max_items:
             raise LlmResponseError
         prefix_items = schema.get("prefixItems")
@@ -373,16 +465,6 @@ class LlmJsonCodec:
             names.append(name)
         return tuple(names)
 
-    def _optional_string(self, value: JsonValue | None) -> str | None:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise LlmResponseError
-        return value
-
-    def _optional_nonnegative_int(self, value: JsonValue | None) -> int | None:
-        if value is None:
-            return None
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            raise LlmResponseError
-        return value
+    def _item_count(self, value: JsonValue | None) -> int | None:
+        """Read an item bound that schema shape validation already accepted."""
+        return value if isinstance(value, int) else None

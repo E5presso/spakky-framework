@@ -68,7 +68,7 @@ from spakky.agent.content import (
 )
 from spakky.core.pod.annotations.pod import Pod
 
-from spakky.plugins.llm.codec import LlmJsonCodec
+from spakky.plugins.llm.codec import LlmJsonCodec, schema_type_names
 from spakky.plugins.llm.config import (
     LlmProviderApi,
     OpenAICompatibleDialect,
@@ -904,7 +904,7 @@ class OpenAIChatProvider(ILLMProvider):
                 result[key] = self._strict_response_schema(value)
             else:
                 result[key] = value
-        if result.get("type") == "object":
+        if "object" in schema_type_names(result):
             properties = result.get("properties", {})
             if not isinstance(properties, Mapping):
                 raise LlmResponseError

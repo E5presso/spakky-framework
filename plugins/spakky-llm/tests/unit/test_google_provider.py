@@ -26,6 +26,7 @@ from spakky.agent import (
     Idempotency,
     ImagePart,
     JsonObject,
+    JsonValue,
     JsonSchemaConstraint,
     KeepRecentMessagesCompactionStrategy,
     ModelCapability,
@@ -2078,3 +2079,134 @@ async def test_stream_normalizes_sdk_and_transport_failures(
 
     assert client.aio.entered is True
     assert client.aio.closed is True
+
+
+def test_google_wire_schema_keeps_nullable_type_array() -> None:
+    """Gemini documents ``type`` arrays of one type plus null, so they stay."""
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": {
+            "note": {"type": ["string", "null"], "description": "Optional note"},
+        },
+        "required": ("note",),
+    }
+
+    assert GoogleGenerateContentProvider()._wire_schema(schema) == schema
+
+
+def test_google_wire_schema_splits_multi_type_array_into_any_of() -> None:
+    """Two or more non-null types become ``anyOf`` with type-scoped keywords."""
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": {
+            "value": {
+                "type": ["object", "array", "string", "null"],
+                "title": "Value",
+                "description": "Any supported shape",
+                "properties": {"id": {"type": ["integer", "string"]}},
+                "required": ("id",),
+                "items": {"type": "string"},
+                "maxItems": 3,
+                "enum": ({"id": 1}, ("a",), "a", None),
+            },
+            "pair": {
+                "type": "array",
+                "prefixItems": ({"type": ["integer", "string"]}, True),
+                "items": False,
+            },
+            "extra": {
+                "type": "object",
+                "additionalProperties": {"type": ["number", "boolean"]},
+            },
+            "choice": {"anyOf": ({"type": ["integer", "boolean"]}, True)},
+        },
+    }
+    enum = ({"id": 1}, ("a",), "a", None)
+
+    wire = GoogleGenerateContentProvider()._wire_schema(schema)
+
+    assert wire == {
+        "type": "object",
+        "properties": {
+            "value": {
+                "title": "Value",
+                "description": "Any supported shape",
+                "anyOf": (
+                    {
+                        "type": "object",
+                        "enum": enum,
+                        "properties": {
+                            "id": {
+                                "anyOf": (
+                                    {"type": "integer"},
+                                    {"type": "string"},
+                                )
+                            }
+                        },
+                        "required": ("id",),
+                    },
+                    {
+                        "type": "array",
+                        "enum": enum,
+                        "items": {"type": "string"},
+                        "maxItems": 3,
+                    },
+                    {"type": "string", "enum": enum},
+                    {"type": "null", "enum": enum},
+                ),
+            },
+            "pair": {
+                "type": "array",
+                "prefixItems": (
+                    {"anyOf": ({"type": "integer"}, {"type": "string"})},
+                    True,
+                ),
+                "items": False,
+            },
+            "extra": {
+                "type": "object",
+                "additionalProperties": {
+                    "anyOf": ({"type": "number"}, {"type": "boolean"})
+                },
+            },
+            "choice": {
+                "anyOf": (
+                    {"anyOf": ({"type": "integer"}, {"type": "boolean"})},
+                    True,
+                )
+            },
+        },
+    }
+
+
+def test_google_request_sends_converted_type_unions() -> None:
+    """Response and function parameter schemas both use the Gemini wire form."""
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": {"id": {"type": ["integer", "string"]}},
+    }
+    wire = {
+        "type": "object",
+        "properties": {"id": {"anyOf": ({"type": "integer"}, {"type": "string"})}},
+    }
+    request = ModelRequest(
+        messages=(),
+        structured_output=StructuredOutputSpec(JsonSchemaConstraint(schema=schema)),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="lookup",
+                    parameters=JsonSchemaConstraint(schema=schema),
+                ),
+            )
+        ),
+    )
+
+    config = GoogleGenerateContentProvider()._generate_config(_target(), request)
+
+    assert config.response_json_schema == wire
+    assert config.tools is not None
+    tool = config.tools[0]
+    assert isinstance(tool, types.Tool)
+    assert tool.function_declarations is not None
+    assert tool.function_declarations[0].parameters_json_schema == wire

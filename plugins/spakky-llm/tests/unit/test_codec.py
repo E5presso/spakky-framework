@@ -11,7 +11,7 @@ from spakky.agent import (
     ToolCallingSpec,
 )
 
-from spakky.plugins.llm.codec import LlmJsonCodec
+from spakky.plugins.llm.codec import LlmJsonCodec, schema_type_names
 from spakky.plugins.llm.error import LlmResponseError
 from spakky.agent.structured_output import _structured_output_contract
 
@@ -296,3 +296,175 @@ def test_codec_rejects_schema_violations(
     """Schema mismatches and malformed portable schemas fail closed."""
     with pytest.raises(LlmResponseError):
         LlmJsonCodec().validate(value, schema)
+
+
+_NULLABLE_NAME = {"type": ["string", "null"]}
+_NULLABLE_PROFILE = {
+    "type": ["object", "null"],
+    "properties": {"name": _NULLABLE_NAME},
+    "required": ["name"],
+    "additionalProperties": False,
+}
+_NULLABLE_TAGS = {
+    "type": ["array", "null"],
+    "items": {"type": ["string", "integer"]},
+    "maxItems": 2,
+}
+
+
+@pytest.mark.parametrize(
+    ("value", "schema"),
+    [
+        ("ok", {"type": ["string", "null"]}),
+        (None, {"type": ["string", "null"]}),
+        (2, {"type": ["integer", "string"]}),
+        (2.5, {"type": ["number"]}),
+        (True, {"type": ["boolean", "null"]}),
+        ({"name": "x"}, _NULLABLE_PROFILE),
+        ({"name": None}, _NULLABLE_PROFILE),
+        (None, _NULLABLE_PROFILE),
+        (["a", 1], _NULLABLE_TAGS),
+        (None, _NULLABLE_TAGS),
+        ("a", {"type": ["string", "null"], "enum": ["a", None]}),
+        (None, {"type": ["string", "null"], "enum": ["a", None]}),
+        (
+            {"profile": None, "tags": ["a"]},
+            {
+                "type": "object",
+                "properties": {"profile": _NULLABLE_PROFILE, "tags": _NULLABLE_TAGS},
+            },
+        ),
+        (
+            {"profile": {"name": None}},
+            {
+                "anyOf": [
+                    {"type": "string"},
+                    {
+                        "type": ["object", "null"],
+                        "properties": {"profile": _NULLABLE_PROFILE},
+                    },
+                ]
+            },
+        ),
+    ],
+)
+def test_codec_accepts_type_union_value_of_any_listed_type(
+    value: JsonValue,
+    schema: dict[str, JsonValue],
+) -> None:
+    """A ``type`` array accepts a value whose JSON type is any listed type."""
+    LlmJsonCodec().validate(value, schema)
+
+
+@pytest.mark.parametrize(
+    ("value", "schema"),
+    [
+        (1, {"type": ["string", "null"]}),
+        (True, {"type": ["integer", "number"]}),
+        ("x", {"type": ["object", "null"]}),
+        ({"name": 1}, _NULLABLE_PROFILE),
+        ({}, _NULLABLE_PROFILE),
+        ({"name": "x", "extra": True}, _NULLABLE_PROFILE),
+        ("a", _NULLABLE_TAGS),
+        ([True], _NULLABLE_TAGS),
+        (["a", "b", "c"], _NULLABLE_TAGS),
+        ("b", {"type": ["string", "null"], "enum": ["a", None]}),
+        (
+            {"profile": {"name": 1}},
+            {"type": "object", "properties": {"profile": _NULLABLE_PROFILE}},
+        ),
+    ],
+)
+def test_codec_rejects_value_outside_type_union(
+    value: JsonValue,
+    schema: dict[str, JsonValue],
+) -> None:
+    """A value outside every listed type, or failing its type's keywords, fails."""
+    with pytest.raises(LlmResponseError):
+        LlmJsonCodec().validate(value, schema)
+
+
+@pytest.mark.parametrize(
+    ("schema", "keyword", "reason"),
+    [
+        ({"type": []}, "type", "empty_list"),
+        ({"type": ["string", "string"]}, "type", "duplicate_type"),
+        ({"type": ["string", 1]}, "type", "invalid_value"),
+        ({"type": ["string", "date"]}, "type", "unsupported_type"),
+        ({"type": "date"}, "type", "unsupported_type"),
+        ({"type": None}, "type", "invalid_value"),
+        ({"type": {"kind": "string"}}, "type", "invalid_value"),
+        (
+            {"type": ["string", "null"], "properties": {}},
+            "properties",
+            "requires_object_type",
+        ),
+        ({"type": ["string", "null"], "items": True}, "items", "requires_array_type"),
+        ({"required": []}, "required", "requires_object_type"),
+        ({"minItems": 1}, "minItems", "requires_array_type"),
+        ({"type": "string", "pattern": "^a"}, "pattern", "unsupported_keyword"),
+        ({"anyOf": "invalid"}, "anyOf", "invalid_value"),
+        ({"anyOf": ["invalid"]}, "anyOf", "invalid_value"),
+        ({"anyOf": []}, "anyOf", "empty_list"),
+        ({"enum": "a"}, "enum", "invalid_value"),
+        ({"enum": []}, "enum", "empty_list"),
+        ({"type": "object", "properties": []}, "properties", "invalid_value"),
+        (
+            {"type": "object", "properties": {"x": "invalid"}},
+            "properties",
+            "invalid_value",
+        ),
+        ({"type": "object", "required": ["x", "x"]}, "required", "invalid_value"),
+        (
+            {"type": "object", "additionalProperties": None},
+            "additionalProperties",
+            "invalid_value",
+        ),
+        ({"type": "array", "prefixItems": "invalid"}, "prefixItems", "invalid_value"),
+        ({"type": "array", "prefixItems": ["invalid"]}, "prefixItems", "invalid_value"),
+        ({"type": "array", "items": None}, "items", "invalid_value"),
+        ({"type": "array", "minItems": True}, "minItems", "invalid_value"),
+        ({"type": "array", "maxItems": -1}, "maxItems", "invalid_value"),
+        (
+            {"type": "array", "minItems": 2, "maxItems": 1},
+            "minItems",
+            "exceeds_max_items",
+        ),
+        (
+            {
+                "type": "object",
+                "properties": {"inner": {"type": ["array", "array"]}},
+            },
+            "type",
+            "duplicate_type",
+        ),
+    ],
+)
+def test_codec_rejected_schema_shape_names_keyword_and_reason(
+    schema: dict[str, JsonValue],
+    keyword: str,
+    reason: str,
+) -> None:
+    """A rejected schema shape names the keyword and reason, not schema values."""
+    with pytest.raises(LlmResponseError) as raised:
+        LlmJsonCodec().validate(None, schema)
+
+    assert raised.value.details == {"schema_keyword": keyword, "reason": reason}
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        ({"type": "object"}, ("object",)),
+        ({"type": ["object", "null"]}, ("object", "null")),
+        ({"type": ("array", 1)}, ("array",)),
+        ({}, ()),
+        ({"type": None}, ()),
+    ],
+)
+def test_schema_type_names_reads_type_without_validation(
+    schema: dict[str, JsonValue],
+    expected: tuple[str, ...],
+) -> None:
+    """Wire transforms read the listed type names in declaration order."""
+    assert schema_type_names(schema) == expected
