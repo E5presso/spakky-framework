@@ -30,7 +30,9 @@ _REFERENCE_KEYWORD = "$ref"
 _NAME_MAP_KEYWORDS = frozenset(
     {
         "$defs",
+        "$vocabulary",
         "definitions",
+        "dependencies",
         "dependentRequired",
         "dependentSchemas",
         "patternProperties",

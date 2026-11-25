@@ -269,7 +269,10 @@ def _normalize_reference(
         if key not in _ANNOTATION_KEYWORDS
     }
     if assertions:
-        return {**annotations, **assertions, "allOf": (target,)}
+        sibling_all_of = assertions.get("allOf", ())
+        if not isinstance(sibling_all_of, Sequence) or isinstance(sibling_all_of, str):
+            raise AgentDefinitionError("Agent structured output allOf is invalid")
+        return {**annotations, **assertions, "allOf": (target, *sibling_all_of)}
     return {**target, **annotations}
 
 

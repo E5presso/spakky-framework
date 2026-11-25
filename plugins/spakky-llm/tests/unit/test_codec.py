@@ -455,6 +455,8 @@ def test_codec_accepts_json_schema_2020_12_keywords_expect_valid(
         ({"properties": {"secret-name": 5}}, "properties", "invalid_schema"),
         ({"properties": {"secret-name": {"type": 5}}}, "type", "invalid_schema"),
         ({"$defs": {"secret-name": {"minimum": "x"}}}, "minimum", "invalid_schema"),
+        ({"dependencies": {"secret-name": 5}}, "dependencies", "invalid_schema"),
+        ({"$vocabulary": {"secret-name": 1}}, "$vocabulary", "invalid_schema"),
         ({"required": ["x", "x"]}, "required", "invalid_schema"),
         ({"minItems": -1}, "minItems", "invalid_schema"),
         ({"pattern": "(unclosed"}, "pattern", "invalid_schema"),

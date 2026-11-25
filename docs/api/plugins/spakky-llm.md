@@ -771,8 +771,8 @@ schema를 바꾸지 않고 provider가 문서에서 받는 범위의 wire 사본
 
 | Provider | Strict wire | Strict로 보낼 수 없을 때 |
 |---|---|---|
-| OpenAI Chat·Responses | `not`, `dependentRequired`를 빼고 `oneOf`를 `anyOf`로 씁니다. 모든 object를 닫고 모든 property를 `required`에 넣습니다. | `allOf`, `if`/`then`/`else`, `dependentSchemas`, `additionalProperties` schema, object가 아닌 root, root `anyOf`: 원래 schema를 `strict: false`로 보냅니다. |
-| Anthropic | 숫자·문자열 길이 제약, `minItems` 0·1 밖의 배열 제약, `not`, scalar가 아닌 `enum`·`const`를 빼고 `minItems`는 1로 줄입니다. `oneOf`는 `anyOf`로, `type`·`properties` 옆의 `anyOf`는 각 branch로 옮깁니다. 모든 object를 닫습니다. | 재귀 schema, `additionalProperties` schema, 옮길 수 없는 `anyOf`: tool은 `strict: false`로, structured output은 `output_config` 없이 schema를 담은 system 지시문으로 요청합니다. |
+| OpenAI Chat·Responses | `not`, `dependentRequired`를 빼고 `oneOf`를 `anyOf`로 씁니다. 모든 object를 닫고 모든 property를 `required`에 넣습니다. | `allOf`, `if`/`then`/`else`, `dependentSchemas`, `additionalProperties` schema, object가 아닌 root, root `anyOf`, `properties` 옆에서 닫으면 그 property를 막게 되는 object `anyOf` branch, `$defs` 한 항목보다 깊은 `$ref`: 원래 schema를 `strict: false`로 보냅니다. |
+| Anthropic | 숫자·문자열 길이 제약, `minItems` 0·1 밖의 배열 제약, `not`, scalar가 아닌 `enum`·`const`를 빼고 `minItems`는 1로 줄입니다. `oneOf`는 `anyOf`로, `type`·`properties` 옆의 `anyOf`는 각 branch로 옮깁니다. 모든 object를 닫습니다. | 재귀 schema, `additionalProperties` schema, 옮길 수 없는 `anyOf`, 닫으면 뜻이 좁아지는 `allOf`·`if`/`then`/`else`·`dependentSchemas`, `$defs` 한 항목보다 깊은 `$ref`: tool은 `strict: false`로, structured output은 `output_config` 없이 schema를 담은 system 지시문으로 요청합니다. |
 | Google Gemini | 문서의 keyword와 `anyOf`·`$ref`·`$defs`만 남기고 나머지를 뺍니다. `const`는 값 하나의 `enum`으로, `oneOf`는 `anyOf`로, null이 아닌 type이 둘 이상인 `type` 배열은 `anyOf`로 씁니다. | 없음 |
 | vLLM | 원래 schema를 `structured_outputs.json`으로 보냅니다. | — |
 

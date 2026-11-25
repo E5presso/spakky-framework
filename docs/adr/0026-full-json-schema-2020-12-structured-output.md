@@ -75,12 +75,12 @@ MIT 라이선스의 Rust 구현과 Python binding입니다. 같은 1305개를 �
 
 ### 4. 공급자에게는 문서가 받는 범위로 보냅니다
 
-`spakky.plugins.llm.schema_wire`가 공급자별 wire 사본을 만듭니다. 사본은 원래 스키마와 뜻이 같거나 더 넓습니다(키워드를 빼면 받는 값이 늘어납니다). 프레임워크는 모델 출력을 원래 스키마 전체로 검증합니다.
+`spakky.plugins.llm.schema_wire`가 공급자별 wire 사본을 만듭니다. 사본은 원래 스키마와 뜻이 같거나 더 넓습니다(키워드를 빼면 받는 값이 늘어납니다). 프레임워크는 모델 출력을 원래 스키마 전체로 검증합니다. 키워드를 뺄 때 그 결과를 읽는 키워드(`patternProperties`를 읽는 `additionalProperties`, 옆 applicator를 읽는 `unevaluated*`)도 함께 뺍니다. 공급자가 object를 닫기를 요구할 때, 닫으면 원래 스키마가 받는 값을 막게 되는 조합(`allOf`의 object branch, `properties` 옆의 object `anyOf` branch, `if`/`then`/`else`)은 strict로 보내지 않습니다.
 
 | 공급자 | 근거 문서(2026-11-25 확인) | strict wire | strict로 보낼 수 없을 때 |
 |---|---|---|---|
-| OpenAI Chat·Responses | https://developers.openai.com/api/docs/guides/structured-outputs | `not`, `dependentRequired`를 빼고 `oneOf`를 `anyOf`로 씁니다. 모든 object를 닫고 모든 property를 `required`에 넣습니다. | `allOf`, `if`/`then`/`else`, `dependentSchemas`, `additionalProperties` 스키마, object가 아닌 루트, 루트 `anyOf`: 원래 스키마를 `strict: false`로 보냅니다(구조화 출력과 도구 모두). |
-| Anthropic | https://platform.claude.com/docs/en/build-with-claude/structured-outputs | 숫자·문자열 길이 제약과 `minItems` 0·1 밖의 배열 제약, `not`, 스칼라가 아닌 `enum`·`const`를 빼고, `minItems`는 1로 줄입니다. `oneOf`는 `anyOf`로, `type`·`properties` 옆의 `anyOf`는 각 branch로 옮깁니다. 모든 object를 닫습니다. | 재귀 스키마, `additionalProperties` 스키마, 옮길 수 없는 `anyOf`: 도구는 `strict: false`로, 구조화 출력은 `output_config` 없이 스키마를 담은 system 지시문으로 요청합니다. |
+| OpenAI Chat·Responses | https://developers.openai.com/api/docs/guides/structured-outputs | `not`, `dependentRequired`를 빼고 `oneOf`를 `anyOf`로 씁니다. 모든 object를 닫고 모든 property를 `required`에 넣습니다. | `allOf`, `if`/`then`/`else`, `dependentSchemas`, `additionalProperties` 스키마, object가 아닌 루트, 루트 `anyOf`, `properties` 옆에서 닫으면 그 property를 막게 되는 object `anyOf` branch, `$defs` 한 항목보다 깊은 `$ref`: 원래 스키마를 `strict: false`로 보냅니다(구조화 출력과 도구 모두). |
+| Anthropic | https://platform.claude.com/docs/en/build-with-claude/structured-outputs | 숫자·문자열 길이 제약과 `minItems` 0·1 밖의 배열 제약, `not`, 스칼라가 아닌 `enum`·`const`를 빼고, `minItems`는 1로 줄입니다. `oneOf`는 `anyOf`로, `type`·`properties` 옆의 `anyOf`는 각 branch로 옮깁니다. 모든 object를 닫습니다. | 재귀 스키마, `additionalProperties` 스키마, 옮길 수 없는 `anyOf`, 닫으면 뜻이 좁아지는 `allOf`·`if`/`then`/`else`·`dependentSchemas`, `$defs` 한 항목보다 깊은 `$ref`: 도구는 `strict: false`로, 구조화 출력은 `output_config` 없이 스키마를 담은 system 지시문으로 요청합니다. |
 | Google Gemini | https://ai.google.dev/gemini-api/docs/structured-output | 문서에 있는 키워드와 예시에 쓰인 `anyOf`, `$ref`, `$defs`만 남기고 나머지를 뺍니다. `const`는 값 하나의 `enum`으로, `oneOf`는 `anyOf`로 씁니다. null이 아닌 type이 둘 이상인 `type` 배열은 `anyOf`로 나눕니다(#584). | 없음. 키워드를 빼면 항상 보낼 수 있습니다. |
 | vLLM(OpenAI-compatible) | 확인하지 못함 | 원래 스키마를 `structured_outputs.json`에 그대로 보냅니다. | — |
 

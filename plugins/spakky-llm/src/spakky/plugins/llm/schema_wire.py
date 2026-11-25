@@ -60,6 +60,28 @@ _ANNOTATION_KEYWORDS = frozenset(
 """Keywords that describe a schema and never change which values it accepts."""
 _ROOT_ONLY_KEYWORDS = frozenset({"$defs", "$id", "$schema", "definitions"})
 """Keywords that must stay on the schema that holds them."""
+_EVALUATION_KEYWORDS = frozenset(
+    {
+        "$dynamicRef",
+        "$ref",
+        "additionalProperties",
+        "allOf",
+        "anyOf",
+        "contains",
+        "dependentSchemas",
+        "else",
+        "if",
+        "items",
+        "oneOf",
+        "patternProperties",
+        "prefixItems",
+        "properties",
+        "then",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+    }
+)
+"""Keywords whose results ``unevaluatedProperties`` and ``unevaluatedItems`` read."""
 _LOCAL_DEFINITION_PREFIX = "#/$defs/"
 """Reference prefix of a local ``$defs`` entry."""
 _ROOT_REFERENCE = "#"
@@ -146,7 +168,7 @@ _ANTHROPIC_STRICT = _Dialect(
         }
     ),
     keep=None,
-    reject=frozenset(),
+    reject=frozenset({"allOf", "dependentSchemas", "else", "if", "then"}),
     close_objects=True,
     require_all_properties=False,
     scalar_enums_only=True,
@@ -265,22 +287,27 @@ def _project(value: JsonValue, dialect: _Dialect) -> JsonValue:
 
 def _project_object(schema: Mapping[str, JsonValue], dialect: _Dialect) -> JsonObject:
     result: dict[str, JsonValue] = {}
+    taken: set[str] = set()
     for key, value in schema.items():
         if key in dialect.reject:
             raise _UnrepresentableSchemaError
-        if key in dialect.drop:
-            continue
         wire_key = "anyOf" if key == "oneOf" else key
-        if dialect.keep is not None and wire_key not in dialect.keep:
-            if not (key == "const" and dialect.const_as_enum):
-                continue
-        if wire_key in result:
+        if (
+            key in dialect.drop
+            or wire_key in result
+            or (
+                dialect.keep is not None
+                and wire_key not in dialect.keep
+                and not (key == "const" and dialect.const_as_enum)
+            )
+        ):
             continue
         if key == "$ref":
-            if _is_local_reference(value):
-                result[key] = value
-            elif not dialect.drop_foreign_references:
+            if not _is_local_reference(value):
+                if dialect.drop_foreign_references:
+                    continue
                 raise _UnrepresentableSchemaError
+            result[key] = value
         elif key in _SINGLE_SUBSCHEMA_KEYWORDS:
             result[wire_key] = _project(value, dialect)
         elif key in _SUBSCHEMA_LIST_KEYWORDS:
@@ -291,10 +318,12 @@ def _project_object(schema: Mapping[str, JsonValue], dialect: _Dialect) -> JsonO
             result["enum"] = (value,)
         else:
             result[key] = value
+        taken.add(key)
     if dialect.scalar_enums_only:
         for key in ("enum", "const"):
             if key in result and not _scalar_data(result[key], key):
                 del result[key]
+    _keep_dependent_keywords_wide(result, frozenset(schema) - taken)
     min_items = result.get("minItems")
     if (
         dialect.max_min_items is not None
@@ -302,11 +331,47 @@ def _project_object(schema: Mapping[str, JsonValue], dialect: _Dialect) -> JsonO
         and min_items > dialect.max_min_items
     ):
         result["minItems"] = dialect.max_min_items
+    if dialect.close_objects:
+        _reject_closed_conjunctions(result)
     if "object" in schema_type_names(result):
         _close_object(result, dialect)
     if not dialect.any_of_with_siblings and "anyOf" in result:
         return _distribute_any_of(result, dialect)
     return result
+
+
+def _keep_dependent_keywords_wide(
+    result: dict[str, JsonValue],
+    dropped: frozenset[str],
+) -> None:
+    """Leave out keywords whose meaning depends on a keyword already left out.
+
+    ``additionalProperties`` reads ``patternProperties``, and
+    ``unevaluated*`` read every applicator next to them. Keeping one of them
+    after its input is gone would reject values the full schema accepts.
+    Only Gemini leaves out ``patternProperties``, and Gemini does not close
+    objects, so ``additionalProperties`` can leave too.
+    """
+    if "patternProperties" in dropped:
+        result.pop("additionalProperties", None)
+    if dropped & _EVALUATION_KEYWORDS:
+        result.pop("unevaluatedItems", None)
+        result.pop("unevaluatedProperties", None)
+
+
+def _reject_closed_conjunctions(result: Mapping[str, JsonValue]) -> None:
+    """Fail when closing objects would forbid what the full schema accepts.
+
+    An object branch under ``anyOf`` is closed on its own. When the schema
+    next to it also lists properties, a closed branch forbids them.
+    """
+    if not ({"properties", "patternProperties"} & result.keys()):
+        return
+    # cast: _project_list has already turned "anyOf" into a tuple of schemas.
+    branches = cast(tuple[JsonValue, ...], result.get("anyOf", ()))
+    for branch in branches:
+        if isinstance(branch, Mapping) and "object" in schema_type_names(branch):
+            raise _UnrepresentableSchemaError
 
 
 def _project_list(value: JsonValue, dialect: _Dialect) -> tuple[JsonValue, ...]:
@@ -370,9 +435,13 @@ def _scalar_data(value: JsonValue, key: str) -> bool:
 
 
 def _is_local_reference(value: JsonValue) -> bool:
-    return isinstance(value, str) and (
-        value == _ROOT_REFERENCE or value.startswith(_LOCAL_DEFINITION_PREFIX)
-    )
+    """Accept ``#`` and ``#/$defs/<name>``; deeper pointers are not accepted."""
+    if not isinstance(value, str):
+        return False
+    if value == _ROOT_REFERENCE:
+        return True
+    name = value.removeprefix(_LOCAL_DEFINITION_PREFIX)
+    return name != value and name != "" and "/" not in name
 
 
 def _is_recursive(schema: Mapping[str, JsonValue]) -> bool:
@@ -411,15 +480,19 @@ def _reaches(
 
 
 def _references(value: JsonValue) -> set[str]:
-    """Collect every ``$ref`` string under a schema, skipping data keywords."""
+    """Collect every ``$ref`` string in a schema, reading subschemas only."""
     found: set[str] = set()
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            if key == "$ref" and isinstance(item, str):
-                found.add(item)
-            elif key not in ("const", "default", "enum", "examples"):
-                found |= _references(item)
-    elif isinstance(value, Sequence) and not isinstance(value, str):
-        for item in value:
+    if not isinstance(value, Mapping):
+        return found
+    for key, item in value.items():
+        if key == "$ref" and isinstance(item, str):
+            found.add(item)
+        elif key in _SINGLE_SUBSCHEMA_KEYWORDS:
             found |= _references(item)
+        elif key in _SUBSCHEMA_LIST_KEYWORDS and isinstance(item, Sequence):
+            for subschema in item:
+                found |= _references(subschema)
+        elif key in _SUBSCHEMA_MAP_KEYWORDS and isinstance(item, Mapping):
+            for subschema in item.values():
+                found |= _references(subschema)
     return found

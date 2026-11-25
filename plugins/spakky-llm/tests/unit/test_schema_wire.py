@@ -63,6 +63,7 @@ def test_openai_strict_schema_expect_closed_required_and_widened() -> None:
         {"type": "object", "properties": []},
         {"type": "object", "properties": {"a": 5}},
         {"type": "object", "properties": {"a": {"anyOf": "invalid"}}},
+        {"type": "object", "properties": {"a": {"$ref": 5}}},
     ],
 )
 def test_openai_strict_schema_unrepresentable_expect_none(schema: JsonObject) -> None:
@@ -206,6 +207,37 @@ def test_anthropic_strict_schema_keeps_annotation_only_any_of() -> None:
         {"type": "string", "anyOf": [True]},
         {"type": "object", "additionalProperties": {"type": "string"}},
         {"$defs": [], "type": "object"},
+        {"anyOf": 5},
+        {"properties": 5},
+        {
+            "type": "object",
+            "properties": {"default": {"$ref": "#/$defs/n"}},
+            "$defs": {
+                "n": {"type": "object", "properties": {"enum": {"$ref": "#/$defs/n"}}}
+            },
+        },
+        {
+            "$ref": "#/$defs/a",
+            "$defs": {
+                "a": {
+                    "type": "object",
+                    "properties": {"b": {"$ref": "#/$defs/a/properties/b"}},
+                }
+            },
+        },
+        {"if": {"properties": {"a": {"maxLength": 3}}}, "then": {"required": ["b"]}},
+        {
+            "allOf": [
+                {"type": "object", "properties": {"a": {}}},
+                {"type": "object", "properties": {"b": {}}},
+            ]
+        },
+        {"type": "object", "dependentSchemas": {"a": {"required": ["b"]}}},
+        {
+            "type": "object",
+            "properties": {"a": {"type": "string"}},
+            "anyOf": [{"type": "object", "properties": {"b": {}}}],
+        },
     ],
 )
 def test_anthropic_strict_schema_unrepresentable_expect_none(
@@ -274,3 +306,80 @@ def test_structured_output_instruction_expect_schema_as_compact_json() -> None:
 
     assert prefix.startswith("Respond with only one JSON value")
     assert loads(encoded) == schema
+
+
+def test_anthropic_strict_schema_dropped_contains_expect_unevaluated_items_dropped() -> (
+    None
+):
+    """``unevaluatedItems`` reads ``contains``, so it leaves with it."""
+    schema: JsonObject = {
+        "type": "array",
+        "contains": {"type": "string"},
+        "unevaluatedItems": False,
+    }
+
+    assert anthropic_strict_schema(schema) == {"type": "array"}
+
+
+def test_openai_strict_schema_object_branch_beside_properties_expect_none() -> None:
+    """Closing an object branch would forbid the properties listed beside it."""
+    schema: JsonObject = {
+        "type": "object",
+        "properties": {
+            "v": {
+                "type": "object",
+                "properties": {"a": {"type": "string"}},
+                "anyOf": [{"type": "object", "properties": {"b": {}}}],
+            }
+        },
+    }
+
+    assert openai_strict_schema(schema) is None
+
+
+def test_gemini_schema_dropped_pattern_properties_expect_additional_properties_dropped() -> (
+    None
+):
+    """``additionalProperties`` reads ``patternProperties``, so it leaves with it."""
+    schema: JsonObject = {
+        "type": "object",
+        "patternProperties": {"^x": {"type": "integer"}},
+        "additionalProperties": False,
+    }
+
+    assert gemini_schema(schema) == {"type": "object"}
+
+
+def test_gemini_schema_foreign_reference_in_prefix_expect_empty_schema() -> None:
+    """A foreign ``$ref`` leaves an empty prefix schema; ``items`` stays."""
+    schema: JsonObject = {
+        "type": "array",
+        "prefixItems": [{"$ref": "https://example.test/first"}],
+        "items": False,
+    }
+
+    assert gemini_schema(schema) == {
+        "type": "array",
+        "prefixItems": ({},),
+        "items": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("reference", "expected"),
+    [
+        ("#", True),
+        ("#/$defs/name", True),
+        ("#/$defs/", False),
+        ("#/$defs/name/properties/a", False),
+        ("#/properties/a", False),
+    ],
+)
+def test_local_reference_expect_root_or_single_definition(
+    reference: str,
+    expected: bool,
+) -> None:
+    """Only ``#`` and one ``$defs`` entry count as provider-safe references."""
+    schema: JsonObject = {"type": "object", "properties": {"a": {"$ref": reference}}}
+
+    assert (openai_strict_schema(schema) is not None) is expected

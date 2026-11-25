@@ -244,6 +244,10 @@ def test_structured_contract_wraps_pydantic_schema_generation_failure() -> None:
         ({"$ref": "#/$defs/missing"}, {}),
         ({"$ref": "#/$defs/Primitive"}, {"Primitive": "string"}),
         ({"properties": []}, {}),
+        (
+            {"$ref": "#/$defs/Item", "allOf": {"minItems": 1}},
+            {"Item": {"type": "array"}},
+        ),
     ],
 )
 def test_structured_schema_normalizer_rejects_invalid_nodes(
@@ -267,6 +271,11 @@ def test_structured_schema_normalizer_rejects_invalid_nodes(
             {"$ref": "#/$defs/Item", "title": "Item", "maxItems": 2},
             {"Item": {"type": "array"}},
             {"title": "Item", "maxItems": 2, "allOf": ({"type": "array"},)},
+        ),
+        (
+            {"$ref": "#/$defs/Item", "allOf": ({"minItems": 1},)},
+            {"Item": {"type": "array"}},
+            {"allOf": ({"type": "array"}, {"minItems": 1})},
         ),
         (
             {"enum": ({"$ref": "#/$defs/missing"},), "const": {"$ref": "x"}},
