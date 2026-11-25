@@ -20,31 +20,27 @@ from spakky.agent.interfaces.model import JsonSchemaConstraint, StructuredOutput
 from spakky.agent.types import JsonObject, JsonValue
 
 _LOCAL_REF_PREFIX = "#/$defs/"
-_PORTABLE_SCHEMA_KEYWORDS = frozenset(
+_DEFINITIONS_KEYWORD = "$defs"
+"""Keyword that holds the definitions a recursive output schema refers to."""
+_REFERENCE_KEYWORD = "$ref"
+"""Keyword of a JSON Schema reference."""
+_ANNOTATION_KEYWORDS = frozenset(
     {
-        "$anchor",
         "$comment",
-        "$id",
-        "$schema",
-        "additionalProperties",
-        "anyOf",
         "default",
         "deprecated",
         "description",
-        "enum",
         "examples",
-        "items",
-        "maxItems",
-        "minItems",
-        "prefixItems",
-        "properties",
         "readOnly",
-        "required",
         "title",
-        "type",
         "writeOnly",
     }
 )
+"""Keywords that describe a schema and never change which values it accepts."""
+_DATA_KEYWORDS = frozenset({"const", "default", "enum", "examples"})
+"""Keywords whose values are instance data, not subschemas."""
+_NAME_MAP_KEYWORDS = frozenset({"dependentSchemas", "patternProperties", "properties"})
+"""Keywords whose values map user-chosen names to subschemas."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,85 +143,134 @@ def _supported_output_type(output_type: type[object]) -> bool:
 
 
 def _portable_schema(raw_schema: object) -> JsonObject:
+    """Copy a Pydantic JSON Schema into a self-contained 2020-12 schema.
+
+    Local ``#/$defs/...`` references are inlined. A reference that would
+    recurse stays a ``$ref``, and the root keeps only the definitions such
+    references need. Every other JSON Schema keyword is kept as written.
+    """
     if not isinstance(raw_schema, Mapping):
         raise AgentDefinitionError("Agent structured output schema must be an object")
-    raw_defs = raw_schema.get("$defs", {})
+    raw_defs = raw_schema.get(_DEFINITIONS_KEYWORD, {})
     if not isinstance(raw_defs, Mapping):
         raise AgentDefinitionError("Agent structured output definitions are invalid")
     defs = {str(key): value for key, value in raw_defs.items()}
-    root = {key: value for key, value in raw_schema.items() if key != "$defs"}
-    normalized = _normalize_schema_node(root, defs, ())
-    if not isinstance(normalized, Mapping):
-        raise AgentDefinitionError("Agent structured output schema must be an object")
-    return normalized
+    root = {
+        key: value for key, value in raw_schema.items() if key != _DEFINITIONS_KEYWORD
+    }
+    recursive: dict[str, JsonValue] = {}
+    normalized = (
+        _normalize_reference(root, defs, (), recursive)
+        if _REFERENCE_KEYWORD in root
+        else _normalize_schema_object(root, defs, (), recursive)
+    )
+    pending = [name for name in recursive if recursive[name] is None]
+    while pending:
+        for name in pending:
+            recursive[name] = _normalize_schema_node(
+                defs[name], defs, (name,), recursive
+            )
+        pending = [name for name in recursive if recursive[name] is None]
+    if not recursive:
+        return normalized
+    return {**normalized, _DEFINITIONS_KEYWORD: recursive}
 
 
 def _normalize_schema_node(
     value: object,
     defs: Mapping[str, object],
     resolving: tuple[str, ...],
+    recursive: dict[str, JsonValue],
 ) -> JsonValue:
-    if value is None or isinstance(value, str | int | bool):
-        return value
-    if isinstance(value, float):
-        if not isfinite(value):
-            raise AgentDefinitionError("Agent structured output schema is not finite")
-        return value
-    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
-        return tuple(_normalize_schema_node(item, defs, resolving) for item in value)
     if not isinstance(value, Mapping):
-        raise AgentDefinitionError("Agent structured output schema is not JSON")
-    ref = value.get("$ref")
-    if ref is not None:
-        if (
-            len(value) != 1
-            or not isinstance(ref, str)
-            or not ref.startswith(_LOCAL_REF_PREFIX)
+        if isinstance(value, Sequence) and not isinstance(
+            value, str | bytes | bytearray
         ):
-            raise AgentDefinitionError(
-                "Agent structured output reference is unsupported"
+            return tuple(
+                _normalize_schema_node(item, defs, resolving, recursive)
+                for item in value
             )
-        name = ref.removeprefix(_LOCAL_REF_PREFIX)
-        if name in resolving:
-            raise AgentDefinitionError(
-                "Agent structured output schema contains a cycle"
-            )
-        target = defs.get(name)
-        if target is None:
-            raise AgentDefinitionError("Agent structured output reference is missing")
-        return _normalize_schema_node(target, defs, (*resolving, name))
+        return _json_value(value)
+    if _REFERENCE_KEYWORD in value:
+        return _normalize_reference(value, defs, resolving, recursive)
+    return _normalize_schema_object(value, defs, resolving, recursive)
+
+
+def _normalize_schema_object(
+    value: Mapping[object, object],
+    defs: Mapping[str, object],
+    resolving: tuple[str, ...],
+    recursive: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
     normalized: dict[str, JsonValue] = {}
     for raw_key, item in value.items():
-        if not isinstance(raw_key, str) or raw_key not in _PORTABLE_SCHEMA_KEYWORDS:
-            raise AgentDefinitionError(
-                "Agent structured output schema uses an unsupported keyword"
-            )
-        if raw_key == "properties":
+        if not isinstance(raw_key, str):
+            raise AgentDefinitionError("Agent structured output key is not text")
+        if raw_key in _DATA_KEYWORDS:
+            normalized[raw_key] = _json_value(item)
+        elif raw_key in _NAME_MAP_KEYWORDS:
             if not isinstance(item, Mapping):
                 raise AgentDefinitionError(
                     "Agent structured output properties are invalid"
                 )
             normalized[raw_key] = {
-                str(name): _normalize_schema_node(schema, defs, resolving)
+                str(name): _normalize_schema_node(schema, defs, resolving, recursive)
                 for name, schema in item.items()
             }
-        elif raw_key in ("anyOf", "prefixItems"):
-            if not isinstance(item, Sequence) or isinstance(item, str | bytes):
-                raise AgentDefinitionError(
-                    "Agent structured output schema alternatives are invalid"
-                )
-            normalized[raw_key] = tuple(
-                _normalize_schema_node(schema, defs, resolving) for schema in item
-            )
-        elif raw_key in ("items", "additionalProperties") and isinstance(item, Mapping):
-            normalized[raw_key] = _normalize_schema_node(item, defs, resolving)
         else:
-            normalized[raw_key] = _json_value(item)
+            normalized[raw_key] = _normalize_schema_node(
+                item, defs, resolving, recursive
+            )
     if normalized.get("type") == "object":
         properties = normalized.get("properties")
         if isinstance(properties, Mapping) or "additionalProperties" not in normalized:
             normalized["additionalProperties"] = False
     return normalized
+
+
+def _normalize_reference(
+    value: Mapping[object, object],
+    defs: Mapping[str, object],
+    resolving: tuple[str, ...],
+    recursive: dict[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """Inline a local reference, or keep it when it would recurse.
+
+    Annotation siblings such as ``description`` are copied onto the inlined
+    schema. Other siblings keep their 2020-12 meaning through ``allOf``.
+    """
+    ref = value[_REFERENCE_KEYWORD]
+    if not isinstance(ref, str) or not ref.startswith(_LOCAL_REF_PREFIX):
+        raise AgentDefinitionError("Agent structured output reference is unsupported")
+    name = ref.removeprefix(_LOCAL_REF_PREFIX)
+    if name not in defs:
+        raise AgentDefinitionError("Agent structured output reference is missing")
+    normalized_siblings = _normalize_schema_object(
+        {key: item for key, item in value.items() if key != _REFERENCE_KEYWORD},
+        defs,
+        resolving,
+        recursive,
+    )
+    if name in resolving:
+        recursive.setdefault(name, None)
+        target: JsonValue = {_REFERENCE_KEYWORD: ref}
+    else:
+        target = _normalize_schema_node(defs[name], defs, (*resolving, name), recursive)
+    if not isinstance(target, Mapping):
+        raise AgentDefinitionError("Agent structured output schema must be an object")
+    annotations = {
+        key: item
+        for key, item in normalized_siblings.items()
+        if key in _ANNOTATION_KEYWORDS
+    }
+    assertions = {
+        key: item
+        for key, item in normalized_siblings.items()
+        if key not in _ANNOTATION_KEYWORDS
+    }
+    if assertions:
+        return {**annotations, **assertions, "allOf": (target,)}
+    return {**target, **annotations}
 
 
 def _json_value(value: object) -> JsonValue:

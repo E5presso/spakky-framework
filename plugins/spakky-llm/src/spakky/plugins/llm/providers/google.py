@@ -46,6 +46,7 @@ from spakky.agent.content import model_content_parts, model_content_text
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.llm.codec import LlmJsonCodec, schema_type_names
+from spakky.plugins.llm.schema_wire import gemini_schema
 from spakky.plugins.llm.config import (
     GoogleCredentialStrategy,
     LlmConfig,
@@ -446,7 +447,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
                 "application/json" if structured_output is not None else None
             ),
             response_json_schema=(
-                self._wire_schema(structured_output.constraint.schema)
+                self._gemini_wire_schema(structured_output.constraint)
                 if structured_output is not None
                 else None
             ),
@@ -589,11 +590,16 @@ class GoogleGenerateContentProvider(ILLMProvider):
             types.FunctionDeclaration(
                 name=tool.name,
                 description=tool.description,
-                parameters_json_schema=self._wire_schema(tool.parameters.schema),
+                parameters_json_schema=self._gemini_wire_schema(tool.parameters),
             )
             for tool in tool_calling.tools
         ]
         return [types.Tool(function_declarations=declarations)]
+
+    def _gemini_wire_schema(self, constraint: JsonSchemaConstraint) -> JsonObject:
+        """Check the schema, then copy it into the form Gemini documents."""
+        self.__codec.check_schema(constraint.schema)
+        return self._wire_schema(gemini_schema(constraint.schema))
 
     def _wire_schema(self, schema: Mapping[str, JsonValue]) -> JsonObject:
         """Copy a schema into the JSON Schema form the Gemini API documents.

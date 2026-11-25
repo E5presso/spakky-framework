@@ -11,7 +11,11 @@ from spakky.agent import (
     ToolCallingSpec,
 )
 
-from spakky.plugins.llm.codec import LlmJsonCodec, schema_type_names
+from spakky.plugins.llm.codec import (
+    LlmJsonCodec,
+    schema_keyword_at,
+    schema_type_names,
+)
 from spakky.plugins.llm.error import LlmResponseError
 from spakky.agent.structured_output import _structured_output_contract
 
@@ -213,22 +217,11 @@ def test_codec_accepts_supported_schema_shapes(
         (False, {"anyOf": "invalid"}),
         (False, {"anyOf": ["invalid"]}),
         (False, {"anyOf": []}),
-        (
-            1,
-            {
-                "anyOf": [
-                    {"type": "integer"},
-                    {"type": "string", "minLength": 2},
-                ]
-            },
-        ),
         (1, {"anyOf": [{"type": "integer"}], "type": "string"}),
         ("x", {"type": "string", "minLength": 5}),
         ("x", {"oneOf": [{"type": "integer"}]}),
         (3, {"type": "integer", "minimum": 10}),
         ("x", {"type": None}),
-        ({}, {"properties": {}}),
-        ([], {"items": True}),
         ("x", {"enum": []}),
         ([], {"type": "object"}),
         ({}, {"type": "object", "required": ["answer"]}),
@@ -385,71 +378,173 @@ def test_codec_rejects_value_outside_type_union(
 
 
 @pytest.mark.parametrize(
+    ("value", "schema"),
+    [
+        (
+            1,
+            {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"type": "string", "minLength": 2},
+                ]
+            },
+        ),
+        ({}, {"properties": {}}),
+        ([], {"items": True}),
+        ("ab", {"type": "string", "minLength": 2, "pattern": "^a"}),
+        (3, {"const": 3}),
+        (4, {"oneOf": [{"multipleOf": 2}, {"multipleOf": 3}]}),
+        ({"a": 1}, {"allOf": [{"required": ["a"]}, {"maxProperties": 1}]}),
+        ("x", {"not": {"type": "integer"}}),
+        (
+            {"kind": "b", "b": 1},
+            {
+                "if": {"properties": {"kind": {"const": "b"}}},
+                "then": {"required": ["b"]},
+                "else": {"required": ["a"]},
+            },
+        ),
+        ({"x-1": 1}, {"patternProperties": {"^x-": {"type": "integer"}}}),
+        (
+            {"a": 1},
+            {"properties": {"a": {}}, "unevaluatedProperties": False},
+        ),
+        ({"a": 1, "b": 2}, {"dependentRequired": {"a": ["b"]}}),
+        (
+            {"next": {"next": None}},
+            {
+                "$defs": {
+                    "node": {
+                        "type": "object",
+                        "properties": {
+                            "next": {
+                                "anyOf": [{"$ref": "#/$defs/node"}, {"type": "null"}]
+                            }
+                        },
+                    }
+                },
+                "$ref": "#/$defs/node",
+            },
+        ),
+        ("not-an-email", {"type": "string", "format": "email"}),
+        ([1, "a"], {"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}),
+        ({"x": True}, {"additionalProperties": True}),
+        (True, {"properties": {"x": False}}),
+    ],
+)
+def test_codec_accepts_json_schema_2020_12_keywords_expect_valid(
+    value: JsonValue,
+    schema: dict[str, JsonValue],
+) -> None:
+    """Keywords outside the old portable subset validate as 2020-12 defines."""
+    LlmJsonCodec().validate(value, schema)
+
+
+@pytest.mark.parametrize(
     ("schema", "keyword", "reason"),
     [
-        ({"type": []}, "type", "empty_list"),
-        ({"type": ["string", "string"]}, "type", "duplicate_type"),
-        ({"type": ["string", 1]}, "type", "invalid_value"),
-        ({"type": ["string", "date"]}, "type", "unsupported_type"),
-        ({"type": "date"}, "type", "unsupported_type"),
-        ({"type": None}, "type", "invalid_value"),
-        ({"type": {"kind": "string"}}, "type", "invalid_value"),
+        ({"type": []}, "type", "invalid_schema"),
+        ({"type": ["string", "string"]}, "type", "invalid_schema"),
+        ({"type": ["string", 1]}, "type", "invalid_schema"),
+        ({"type": "date"}, "type", "invalid_schema"),
+        ({"type": None}, "type", "invalid_schema"),
+        ({"anyOf": []}, "anyOf", "invalid_schema"),
+        ({"anyOf": "invalid"}, "anyOf", "invalid_schema"),
+        ({"enum": "a"}, "enum", "invalid_schema"),
+        ({"properties": []}, "properties", "invalid_schema"),
+        ({"properties": {"secret-name": 5}}, "properties", "invalid_schema"),
+        ({"properties": {"secret-name": {"type": 5}}}, "type", "invalid_schema"),
+        ({"$defs": {"secret-name": {"minimum": "x"}}}, "minimum", "invalid_schema"),
+        ({"required": ["x", "x"]}, "required", "invalid_schema"),
+        ({"minItems": -1}, "minItems", "invalid_schema"),
+        ({"pattern": "(unclosed"}, "pattern", "invalid_schema"),
+        ({"$ref": "#/$defs/missing"}, "$ref", "unresolvable_reference"),
         (
-            {"type": ["string", "null"], "properties": {}},
-            "properties",
-            "requires_object_type",
-        ),
-        ({"type": ["string", "null"], "items": True}, "items", "requires_array_type"),
-        ({"required": []}, "required", "requires_object_type"),
-        ({"minItems": 1}, "minItems", "requires_array_type"),
-        ({"type": "string", "pattern": "^a"}, "pattern", "unsupported_keyword"),
-        ({"anyOf": "invalid"}, "anyOf", "invalid_value"),
-        ({"anyOf": ["invalid"]}, "anyOf", "invalid_value"),
-        ({"anyOf": []}, "anyOf", "empty_list"),
-        ({"enum": "a"}, "enum", "invalid_value"),
-        ({"enum": []}, "enum", "empty_list"),
-        ({"type": "object", "properties": []}, "properties", "invalid_value"),
-        (
-            {"type": "object", "properties": {"x": "invalid"}},
-            "properties",
-            "invalid_value",
-        ),
-        ({"type": "object", "required": ["x", "x"]}, "required", "invalid_value"),
-        (
-            {"type": "object", "additionalProperties": None},
-            "additionalProperties",
-            "invalid_value",
-        ),
-        ({"type": "array", "prefixItems": "invalid"}, "prefixItems", "invalid_value"),
-        ({"type": "array", "prefixItems": ["invalid"]}, "prefixItems", "invalid_value"),
-        ({"type": "array", "items": None}, "items", "invalid_value"),
-        ({"type": "array", "minItems": True}, "minItems", "invalid_value"),
-        ({"type": "array", "maxItems": -1}, "maxItems", "invalid_value"),
-        (
-            {"type": "array", "minItems": 2, "maxItems": 1},
-            "minItems",
-            "exceeds_max_items",
-        ),
-        (
-            {
-                "type": "object",
-                "properties": {"inner": {"type": ["array", "array"]}},
-            },
-            "type",
-            "duplicate_type",
+            {"$ref": "https://example.test/remote.json"},
+            "$ref",
+            "unresolvable_reference",
         ),
     ],
 )
-def test_codec_rejected_schema_shape_names_keyword_and_reason(
+def test_codec_rejected_schema_expect_keyword_and_reason_only(
     schema: dict[str, JsonValue],
     keyword: str,
     reason: str,
 ) -> None:
-    """A rejected schema shape names the keyword and reason, not schema values."""
+    """A rejected schema names the keyword and reason, never names or values."""
     with pytest.raises(LlmResponseError) as raised:
-        LlmJsonCodec().validate(None, schema)
+        LlmJsonCodec().check_schema(schema)
 
     assert raised.value.details == {"schema_keyword": keyword, "reason": reason}
+
+
+@pytest.mark.parametrize(
+    ("value", "schema", "keyword"),
+    [
+        (
+            {"secret-name": "x"},
+            {"properties": {"secret-name": {"minLength": 3}}},
+            "minLength",
+        ),
+        (5, {"type": "string"}, "type"),
+        ({}, {"required": ["secret-name"]}, "required"),
+        ([1], {"items": False}, "items"),
+        ("x", {"$defs": {"n": {"type": "integer"}}, "$ref": "#/$defs/n"}, "type"),
+    ],
+)
+def test_codec_rejected_value_expect_keyword_and_reason_only(
+    value: JsonValue,
+    schema: dict[str, JsonValue],
+    keyword: str,
+) -> None:
+    """A value mismatch names the failing keyword, never the value or names."""
+    with pytest.raises(LlmResponseError) as raised:
+        LlmJsonCodec().validate(value, schema)
+
+    assert raised.value.details == {
+        "schema_keyword": keyword,
+        "reason": "value_mismatch",
+    }
+
+
+def test_codec_external_schema_expect_reference_resolved_without_retrieval() -> None:
+    """A registered external schema resolves a ``$ref``; nothing is fetched."""
+    codec = LlmJsonCodec({"https://example.test/name.json": {"type": "string"}})
+    schema: dict[str, JsonValue] = {"$ref": "https://example.test/name.json"}
+
+    codec.validate("ok", schema)
+    with pytest.raises(LlmResponseError):
+        codec.validate(1, schema)
+
+
+def test_codec_invalid_external_schema_expect_reference_error() -> None:
+    """An external schema that cannot be registered is rejected at construction."""
+    with pytest.raises(LlmResponseError) as raised:
+        LlmJsonCodec({"not a uri": {"type": "string"}})
+
+    assert raised.value.details == {
+        "schema_keyword": "$ref",
+        "reason": "unresolvable_reference",
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (["properties", "type", "minLength"], "minLength"),
+        (["properties", "type"], "properties"),
+        (["anyOf", 0, "type"], "type"),
+        (["$defs", "items"], "$defs"),
+        ([0], None),
+        ([], None),
+    ],
+)
+def test_schema_keyword_at_expect_last_keyword_not_name(
+    path: list[str | int],
+    expected: str | None,
+) -> None:
+    """User-chosen names under name maps are never reported as keywords."""
+    assert schema_keyword_at(path) == expected
 
 
 @pytest.mark.parametrize(

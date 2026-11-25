@@ -78,7 +78,7 @@ from spakky.agent.content import (
 )
 from spakky.core.pod.annotations.pod import Pod
 
-from spakky.plugins.llm.codec import LlmJsonCodec, schema_type_names
+from spakky.plugins.llm.codec import LlmJsonCodec
 from spakky.plugins.llm.config import (
     LlmProviderApi,
     LlmReasoningEffort,
@@ -98,6 +98,7 @@ from spakky.plugins.llm.error import (
     LlmTransportError,
     LlmUnsupportedFeatureError,
 )
+from spakky.plugins.llm.schema_wire import openai_strict_schema
 from spakky.plugins.llm.provider import (
     ILLMCredentialProvider,
     ILLMProvider,
@@ -827,16 +828,18 @@ class OpenAIResponsesProvider(ILLMProvider):
             return omit
         if len(request.tool_calling.tools) == 0:
             raise LlmResponseError
-        functions: list[FunctionToolParam] = [
-            {
-                "type": "function",
-                "name": tool.name,
-                "description": tool.description or "",
-                "parameters": self._schema(tool.parameters.schema),
-                "strict": tool.parameters.strict,
-            }
-            for tool in request.tool_calling.tools
-        ]
+        functions: list[FunctionToolParam] = []
+        for tool in request.tool_calling.tools:
+            parameters, strict = self._wire_schema(tool.parameters)
+            functions.append(
+                {
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description or "",
+                    "parameters": parameters,
+                    "strict": strict,
+                }
+            )
         return [*functions]
 
     def _tool_choice(
@@ -854,19 +857,14 @@ class OpenAIResponsesProvider(ILLMProvider):
     def _text(self, request: ModelRequest) -> ResponseTextConfigParam | Omit:
         if request.structured_output is None:
             return omit
-        constraint = request.structured_output.constraint
-        schema = (
-            self._strict_response_schema(constraint.schema)
-            if constraint.strict
-            else constraint.schema
-        )
+        schema, strict = self._wire_schema(request.structured_output.constraint)
         return {
             "format": {
                 "type": "json_schema",
                 "name": request.structured_output.output_type_name
                 or "structured_output",
-                "schema": self._schema(schema),
-                "strict": constraint.strict,
+                "schema": schema,
+                "strict": strict,
             }
         }
 
@@ -950,41 +948,21 @@ class OpenAIResponsesProvider(ILLMProvider):
     def _schema(self, schema: Mapping[str, JsonValue]) -> dict[str, object]:
         return {key: value for key, value in schema.items()}
 
-    def _strict_response_schema(
+    def _wire_schema(
         self,
-        schema: Mapping[str, JsonValue],
-    ) -> JsonObject:
-        result: dict[str, JsonValue] = {}
-        for key, value in schema.items():
-            if key == "properties" and isinstance(value, Mapping):
-                result[key] = {
-                    name: self._strict_response_schema(property_schema)
-                    if isinstance(property_schema, Mapping)
-                    else property_schema
-                    for name, property_schema in value.items()
-                }
-            elif key in ("anyOf", "prefixItems") and isinstance(value, Sequence):
-                result[key] = tuple(
-                    self._strict_response_schema(item)
-                    if isinstance(item, Mapping)
-                    else item
-                    for item in value
-                )
-            elif key in ("items", "additionalProperties") and isinstance(
-                value, Mapping
-            ):
-                result[key] = self._strict_response_schema(value)
-            else:
-                result[key] = value
-        if "object" in schema_type_names(result):
-            properties = result.get("properties", {})
-            if not isinstance(properties, Mapping):
-                raise LlmResponseError
-            if isinstance(result.get("additionalProperties"), Mapping):
-                raise LlmUnsupportedFeatureError
-            result["required"] = tuple(properties)
-            result["additionalProperties"] = False
-        return result
+        constraint: JsonSchemaConstraint,
+    ) -> tuple[dict[str, object], bool]:
+        """Return the wire schema and whether OpenAI strict mode can hold it.
+
+        A schema that strict mode cannot hold goes as ``strict: false``. The
+        codec still validates the output against the full schema.
+        """
+        self.__codec.check_schema(constraint.schema)
+        if constraint.strict:
+            strict_schema = openai_strict_schema(constraint.schema)
+            if strict_schema is not None:
+                return self._schema(strict_schema), True
+        return self._schema(constraint.schema), False
 
     def _metadata(self, target: LlmModelTarget) -> dict[str, JsonValue]:
         return dict(routing_metadata(target))

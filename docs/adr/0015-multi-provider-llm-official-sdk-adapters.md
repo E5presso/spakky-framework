@@ -6,7 +6,7 @@ status: accepted
 
 # ADR-0015: Multi-provider LLM official SDK adapters
 
-> **부분 대체**: §2의 profile-owned model/capability와 §4의 caller profile/provider/raw-model 선택 및 Gemini Developer API 전용 Google backend 결정은 [ADR-0016](0016-operator-owned-model-catalog.md)이 대체합니다. §5의 one-request runner 제한은 [ADR-0017](0017-bounded-iterative-agent-loop.md)이 대체합니다. Package rename, provider 공식 SDK와 transport lifecycle, tool authority, terminal validation, portable schema 결정은 계속 Accepted입니다.
+> **부분 대체**: §2의 profile-owned model/capability와 §4의 caller profile/provider/raw-model 선택 및 Gemini Developer API 전용 Google backend 결정은 [ADR-0016](0016-operator-owned-model-catalog.md)이 대체합니다. §5의 one-request runner 제한은 [ADR-0017](0017-bounded-iterative-agent-loop.md)이 대체합니다. §6의 portable schema subset은 [ADR-0026](0026-full-json-schema-2020-12-structured-output.md)이 JSON Schema 2020-12 전체 검증으로 대체합니다. Package rename, provider 공식 SDK와 transport lifecycle, tool authority, terminal validation 결정은 계속 Accepted입니다.
 >
 > vLLM 전용 adapter package를 provider-neutral `spakky-llm`으로 교체하고, operator가 허용한 profile을 provider 공식 SDK adapter에 연결합니다.
 > Core `IAgentModel` 계약과 Agent tool-call 승인·dispatch authority는 유지하며 LangChain이나 Pydantic AI를 runtime dependency로 추가하지 않습니다.

@@ -113,21 +113,6 @@ def test_openai_wire_schema_requires_all_nested_properties_without_mutating_core
     assert nested["additionalProperties"] is False
 
 
-def test_openai_strict_wire_rejects_invalid_object_properties_shape() -> None:
-    with pytest.raises(LlmResponseError):
-        OpenAIChatProvider()._strict_response_schema(
-            {"type": "object", "properties": "invalid"}
-        )
-
-
-def test_openai_strict_wire_rejects_open_ended_mapping_schema() -> None:
-    """Strict adaptation fails instead of weakening typed arbitrary-key mappings."""
-    with pytest.raises(LlmUnsupportedFeatureError):
-        OpenAIChatProvider()._strict_response_schema(
-            {"type": "object", "additionalProperties": {"type": "integer"}}
-        )
-
-
 def test_openai_non_strict_wire_schema_preserves_optional_properties() -> None:
     """Required-all adaptation is applied only when the declared constraint is strict."""
     schema = {
@@ -323,7 +308,7 @@ def _tool_spec() -> ModelToolSpec:
             schema={
                 "type": "object",
                 "properties": {"city": {"type": "string"}},
-                "required": ["city"],
+                "required": ("city",),
                 "additionalProperties": False,
             }
         ),
@@ -2057,24 +2042,91 @@ def test_chat_reasoning_history_outside_vllm_reasoning_route_expect_not_sent(
     assert native[1] == {"role": "assistant", "content": "answer"}
 
 
-def test_openai_strict_wire_closes_object_listed_in_type_union() -> None:
-    """A ``type`` array that admits ``object`` is closed like a plain object."""
+def test_openai_strict_unrepresentable_schema_expect_non_strict_full_schema() -> None:
+    """A schema strict mode cannot hold goes as ``strict: false`` and unchanged."""
     schema: dict[str, JsonValue] = {
         "type": "object",
         "properties": {
-            "note": {"type": ["string", "null"]},
-            "profile": {
-                "type": ["object", "null"],
-                "properties": {"name": {"type": ["string", "null"]}},
-            },
+            "labels": {"type": "object", "additionalProperties": {"type": "integer"}}
         },
     }
+    request = ModelRequest(
+        messages=(),
+        structured_output=StructuredOutputSpec(
+            JsonSchemaConstraint(schema=schema), "Labels"
+        ),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="tag", parameters=JsonSchemaConstraint(schema=schema)
+                ),
+            )
+        ),
+    )
+    provider = OpenAIChatProvider()
 
-    wire = OpenAIChatProvider()._strict_response_schema(schema)
+    response_format = cast(
+        Mapping[str, Mapping[str, object]], provider._response_format(request)
+    )
+    tools = cast(Sequence[Mapping[str, Mapping[str, object]]], provider._tools(request))
 
-    properties = cast(Mapping[str, Mapping[str, object]], wire["properties"])
-    assert wire["required"] == ("note", "profile")
-    assert properties["note"] == {"type": ["string", "null"]}
-    assert properties["profile"]["type"] == ["object", "null"]
-    assert properties["profile"]["required"] == ("name",)
-    assert properties["profile"]["additionalProperties"] is False
+    assert response_format["json_schema"]["strict"] is False
+    assert response_format["json_schema"]["schema"] == schema
+    assert tools[0]["function"]["strict"] is False
+    assert tools[0]["function"]["parameters"] == schema
+
+
+def test_openai_strict_tool_schema_expect_closed_required_wire() -> None:
+    """A strict tool schema goes in the closed, required-all form strict needs."""
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "minLength": 1},
+            "unit": {"type": "string"},
+        },
+        "required": ("city",),
+    }
+    request = ModelRequest(
+        messages=(),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="weather", parameters=JsonSchemaConstraint(schema=schema)
+                ),
+            )
+        ),
+    )
+
+    tools = cast(
+        Sequence[Mapping[str, Mapping[str, object]]],
+        OpenAIChatProvider()._tools(request),
+    )
+
+    assert tools[0]["function"]["strict"] is True
+    assert tools[0]["function"]["parameters"] == {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "minLength": 1},
+            "unit": {"type": "string"},
+        },
+        "required": ("city", "unit"),
+        "additionalProperties": False,
+    }
+
+
+def test_openai_invalid_schema_expect_rejected_before_request() -> None:
+    """A schema that 2020-12 rejects fails before any request, with its keyword."""
+    request = ModelRequest(
+        messages=(),
+        structured_output=StructuredOutputSpec(
+            JsonSchemaConstraint(schema={"type": "object", "properties": []}), "Bad"
+        ),
+    )
+
+    with pytest.raises(LlmResponseError) as raised:
+        OpenAIChatProvider()._response_format(request)
+
+    assert raised.value.details == {
+        "schema_keyword": "properties",
+        "reason": "invalid_schema",
+    }

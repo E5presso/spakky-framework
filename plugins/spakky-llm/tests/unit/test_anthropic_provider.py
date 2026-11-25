@@ -61,6 +61,7 @@ from spakky.plugins.llm.error import (
 )
 from spakky.plugins.llm.provider import LlmModelTarget
 from spakky.plugins.llm.providers import anthropic as provider_module
+from spakky.plugins.llm.schema_wire import structured_output_instruction
 from spakky.plugins.llm.providers.anthropic import AnthropicMessagesProvider
 from spakky.agent.content import ModelContentPart
 
@@ -661,7 +662,7 @@ async def test_complete_maps_full_request_and_response_expect_native_sdk_types()
         },
         {
             "name": "lookup",
-            "input_schema": {"type": "object"},
+            "input_schema": {"type": "object", "additionalProperties": False},
             "strict": True,
         },
     )
@@ -1804,8 +1805,8 @@ async def test_stream_wrong_target_api_expect_provider_unavailable() -> None:
     constructor.assert_not_called()
 
 
-def test_anthropic_sends_type_union_schemas_unchanged() -> None:
-    """Claude documents ``type`` arrays for strict schemas, so they pass through."""
+def test_anthropic_sends_type_union_schemas_closed() -> None:
+    """Type arrays pass through, and every object is closed as Claude requires."""
     schema: JsonObject = {
         "type": "object",
         "properties": {
@@ -1815,6 +1816,18 @@ def test_anthropic_sends_type_union_schemas_unchanged() -> None:
                 "properties": {"name": {"type": "string"}},
             },
         },
+    }
+    wire = {
+        "type": "object",
+        "properties": {
+            "note": {"type": ["string", "null"]},
+            "profile": {
+                "type": ["object", "null"],
+                "properties": {"name": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        },
+        "additionalProperties": False,
     }
     request = ModelRequest(
         messages=(),
@@ -1834,6 +1847,67 @@ def test_anthropic_sends_type_union_schemas_unchanged() -> None:
     output_config = provider._output_config(request)
 
     assert isinstance(tools, tuple)
-    assert tools[0]["input_schema"] == schema
+    assert tools[0]["input_schema"] == wire
+    assert tools[0]["strict"] is True
     assert isinstance(output_config, dict)
-    assert output_config["format"] == {"type": "json_schema", "schema": schema}
+    assert output_config["format"] == {"type": "json_schema", "schema": wire}
+
+
+def test_anthropic_unrepresentable_schema_expect_instruction_and_loose_tool() -> None:
+    """A recursive schema goes as an instruction and as a non-strict tool."""
+    schema: JsonObject = {
+        "$defs": {
+            "node": {
+                "type": "object",
+                "properties": {
+                    "next": {"anyOf": [{"$ref": "#/$defs/node"}, {"type": "null"}]}
+                },
+            }
+        },
+        "$ref": "#/$defs/node",
+    }
+    request = ModelRequest(
+        messages=(ModelMessage(ModelMessageRole.SYSTEM, "Be brief"),),
+        structured_output=StructuredOutputSpec(JsonSchemaConstraint(schema=schema)),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="walk", parameters=JsonSchemaConstraint(schema=schema)
+                ),
+            )
+        ),
+    )
+    provider = AnthropicMessagesProvider()
+
+    _, system = provider._history(request)
+    tools = provider._tools(request)
+
+    assert provider._output_config(request) is omit
+    assert isinstance(system, tuple)
+    assert system[0]["text"] == "Be brief"
+    assert system[1]["text"] == structured_output_instruction(schema)
+    assert isinstance(tools, tuple)
+    assert tools[0]["strict"] is False
+    assert tools[0]["input_schema"] == provider._sdk_json_object(schema)
+
+
+def test_anthropic_non_strict_tool_expect_schema_unchanged() -> None:
+    """A tool declared non-strict keeps its schema and ``strict: false``."""
+    schema: JsonObject = {"type": "object", "properties": {"n": {"minimum": 1}}}
+    request = ModelRequest(
+        messages=(),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="count",
+                    parameters=JsonSchemaConstraint(schema=schema, strict=False),
+                ),
+            )
+        ),
+    )
+
+    tools = AnthropicMessagesProvider()._tools(request)
+
+    assert isinstance(tools, tuple)
+    assert tools[0]["input_schema"] == schema
+    assert tools[0]["strict"] is False

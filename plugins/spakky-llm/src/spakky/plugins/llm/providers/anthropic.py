@@ -41,6 +41,7 @@ from spakky.agent import (
     AudioPart,
     DocumentPart,
     ImagePart,
+    JsonObject,
     JsonSchemaConstraint,
     JsonValue,
     ModelMessage,
@@ -63,6 +64,10 @@ from spakky.agent.content import (
 from spakky.core.pod.annotations.pod import Pod
 
 from spakky.plugins.llm.codec import LlmJsonCodec
+from spakky.plugins.llm.schema_wire import (
+    anthropic_strict_schema,
+    structured_output_instruction,
+)
 from spakky.plugins.llm.config import LlmProviderApi
 from spakky.plugins.llm.constants import (
     DEFAULT_ANTHROPIC_MAX_TOKENS,
@@ -408,7 +413,28 @@ class AnthropicMessagesProvider(ILLMProvider):
                 messages.append(self._assistant_message(message))
                 continue
             messages.append(self._tool_result_message(message))
+        if (
+            request.structured_output is not None
+            and self._structured_wire_schema(request.structured_output.constraint)
+            is None
+        ):
+            system.append(
+                {
+                    "type": "text",
+                    "text": structured_output_instruction(
+                        request.structured_output.constraint.schema
+                    ),
+                }
+            )
         return tuple(messages), tuple(system) if len(system) > 0 else omit
+
+    def _structured_wire_schema(
+        self,
+        constraint: JsonSchemaConstraint,
+    ) -> JsonObject | None:
+        """Return the strict wire schema, or ``None`` if Claude cannot hold it."""
+        self.__codec.check_schema(constraint.schema)
+        return anthropic_strict_schema(constraint.schema)
 
     def _ensure_supported_request(
         self,
@@ -551,10 +577,19 @@ class AnthropicMessagesProvider(ILLMProvider):
             raise LlmResponseError
         tools: list[ToolParam] = []
         for tool in request.tool_calling.tools:
+            wire = (
+                self._structured_wire_schema(tool.parameters)
+                if tool.parameters.strict
+                else None
+            )
+            if not tool.parameters.strict:
+                self.__codec.check_schema(tool.parameters.schema)
             item: ToolParam = {
                 "name": tool.name,
-                "input_schema": self._sdk_json_object(tool.parameters.schema),
-                "strict": tool.parameters.strict,
+                "input_schema": self._sdk_json_object(
+                    tool.parameters.schema if wire is None else wire
+                ),
+                "strict": wire is not None,
             }
             if tool.description is not None:
                 item["description"] = tool.description
@@ -573,11 +608,12 @@ class AnthropicMessagesProvider(ILLMProvider):
     def _output_config(self, request: ModelRequest) -> OutputConfigParam | Omit:
         if request.structured_output is None:
             return omit
+        wire = self._structured_wire_schema(request.structured_output.constraint)
+        if wire is None:
+            return omit
         output_format: JSONOutputFormatParam = {
             "type": "json_schema",
-            "schema": self._sdk_json_object(
-                request.structured_output.constraint.schema
-            ),
+            "schema": self._sdk_json_object(wire),
         }
         return {"format": output_format}
 

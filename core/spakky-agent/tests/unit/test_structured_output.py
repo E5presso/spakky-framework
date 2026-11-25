@@ -111,21 +111,89 @@ def test_structured_contract_rejects_extra_missing_and_wrong_typed_values(
         contract.materialize(wrong)
 
 
-def test_execution_spec_rejects_unsupported_or_nonportable_output_classes() -> None:
-    """Unsupported classes and schema keywords fail at declaration time."""
-
-    class DateAnswer(BaseModel):
-        created_at: datetime
-
-    class RecursiveAnswer(BaseModel):
-        child: "RecursiveAnswer | None" = None
-
+def test_execution_spec_rejects_unsupported_output_classes() -> None:
+    """Classes that are not BaseModel, dataclass, or TypedDict fail at declaration."""
     with pytest.raises(AgentDefinitionError):
         AgentExecutionSpec(output_type=str)
-    with pytest.raises(AgentDefinitionError):
-        AgentExecutionSpec(output_type=DateAnswer)
-    with pytest.raises(AgentDefinitionError):
-        AgentExecutionSpec(output_type=RecursiveAnswer)
+
+
+class DateAnswer(BaseModel):
+    """Output whose schema carries a ``format`` annotation."""
+
+    created_at: datetime
+
+
+class RecursiveAnswer(BaseModel):
+    """Self-referencing output that needs ``$defs`` to stay finite."""
+
+    child: "RecursiveAnswer | None" = None
+
+
+class ConstrainedValue(BaseModel):
+    """Nested model with a numeric constraint."""
+
+    value: int = Field(ge=1)
+
+
+class ConstrainedAnswer(BaseModel):
+    """Output whose schema uses keywords outside the old portable subset."""
+
+    nested: ConstrainedValue = Field(description="Nested value")
+    code: str = Field(min_length=2, pattern="^[A-Z]+$")
+
+
+def test_structured_contract_keeps_format_annotation_and_materializes() -> None:
+    """A datetime field keeps ``format`` and materializes from its JSON string."""
+    contract = _structured_output_contract(DateAnswer)
+    properties = cast(
+        Mapping[str, JsonValue], contract.spec.constraint.schema["properties"]
+    )
+
+    result = contract.materialize({"created_at": "2026-01-02T03:04:05Z"})
+
+    assert properties["created_at"] == {
+        "format": "date-time",
+        "title": "Created At",
+        "type": "string",
+    }
+    assert isinstance(result, DateAnswer)
+
+
+def test_structured_contract_keeps_recursive_reference_in_definitions() -> None:
+    """A recursive model refers to itself through ``$defs`` instead of failing."""
+    contract = _structured_output_contract(RecursiveAnswer)
+    schema = contract.spec.constraint.schema
+    properties = cast(Mapping[str, JsonValue], schema["properties"])
+    definitions = cast(Mapping[str, Mapping[str, JsonValue]], schema["$defs"])
+
+    result = contract.materialize({"child": {"child": None}})
+
+    assert properties["child"] == {
+        "anyOf": ({"$ref": "#/$defs/RecursiveAnswer"}, {"type": "null"}),
+        "default": None,
+    }
+    assert definitions["RecursiveAnswer"]["properties"] == properties
+    assert definitions["RecursiveAnswer"]["additionalProperties"] is False
+    assert isinstance(result, RecursiveAnswer)
+
+
+def test_structured_contract_keeps_constraint_keywords_and_reference_annotations() -> (
+    None
+):
+    """Constraint keywords stay, and a described reference is inlined with it."""
+    schema = _structured_output_contract(ConstrainedAnswer).spec.constraint.schema
+    properties = cast(Mapping[str, Mapping[str, JsonValue]], schema["properties"])
+
+    assert properties["code"]["minLength"] == 2
+    assert properties["code"]["pattern"] == "^[A-Z]+$"
+    assert properties["nested"]["description"] == "Nested value"
+    assert properties["nested"]["additionalProperties"] is False
+    assert (
+        cast(Mapping[str, Mapping[str, JsonValue]], properties["nested"]["properties"])[
+            "value"
+        ]["minimum"]
+        == 1
+    )
 
 
 def test_structured_contract_is_cached_per_output_class() -> None:
@@ -170,19 +238,61 @@ def test_structured_contract_wraps_pydantic_schema_generation_failure() -> None:
     [
         (inf, {}),
         (object(), {}),
+        ({1: "bad"}, {}),
         ({"$ref": "https://example.test/schema"}, {}),
+        ({"$ref": 1}, {}),
         ({"$ref": "#/$defs/missing"}, {}),
+        ({"$ref": "#/$defs/Primitive"}, {"Primitive": "string"}),
         ({"properties": []}, {}),
-        ({"anyOf": "invalid"}, {}),
-        ({"unsupported": True}, {}),
     ],
 )
 def test_structured_schema_normalizer_rejects_invalid_nodes(
     value: object,
     defs: Mapping[str, object],
 ) -> None:
+    """Non-JSON values and references outside local definitions are rejected."""
     with pytest.raises(AgentDefinitionError):
-        _normalize_schema_node(value, defs, ())
+        _normalize_schema_node(value, defs, (), {})
+
+
+@pytest.mark.parametrize(
+    ("value", "defs", "expected"),
+    [
+        (
+            {"$ref": "#/$defs/Item", "minItems": 1},
+            {"Item": {"type": "array"}},
+            {"minItems": 1, "allOf": ({"type": "array"},)},
+        ),
+        (
+            {"$ref": "#/$defs/Item", "title": "Item", "maxItems": 2},
+            {"Item": {"type": "array"}},
+            {"title": "Item", "maxItems": 2, "allOf": ({"type": "array"},)},
+        ),
+        (
+            {"enum": ({"$ref": "#/$defs/missing"},), "const": {"$ref": "x"}},
+            {},
+            {"enum": ({"$ref": "#/$defs/missing"},), "const": {"$ref": "x"}},
+        ),
+        (
+            {
+                "not": {"$ref": "#/$defs/Name"},
+                "patternProperties": {"^x": {"$ref": "#/$defs/Name"}},
+            },
+            {"Name": {"type": "string"}},
+            {
+                "not": {"type": "string"},
+                "patternProperties": {"^x": {"type": "string"}},
+            },
+        ),
+    ],
+)
+def test_structured_schema_normalizer_inlines_references_in_any_keyword(
+    value: object,
+    defs: Mapping[str, object],
+    expected: JsonValue,
+) -> None:
+    """References inline under every subschema keyword but never inside data."""
+    assert _normalize_schema_node(value, defs, (), {}) == expected
 
 
 @pytest.mark.parametrize("raw", [[], {"$defs": []}])
@@ -192,6 +302,7 @@ def test_structured_schema_root_and_definitions_must_be_objects(raw: object) -> 
 
 
 def test_structured_schema_root_reference_must_resolve_to_object() -> None:
+    """A root reference to a non-object definition is rejected."""
     with pytest.raises(AgentDefinitionError):
         _portable_schema(
             {"$defs": {"Primitive": "string"}, "$ref": "#/$defs/Primitive"}
@@ -213,7 +324,7 @@ def test_structured_schema_normalizer_preserves_valid_json_nodes(
     value: object,
     expected: JsonValue,
 ) -> None:
-    assert _normalize_schema_node(value, {}, ()) == expected
+    assert _normalize_schema_node(value, {}, (), {}) == expected
 
 
 @pytest.mark.parametrize("value", [inf, {1: "bad"}, object()])

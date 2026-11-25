@@ -800,50 +800,6 @@ async def test_structured_output_violating_schema_expect_response_error(
         )
 
 
-def test_strict_schema_expect_nested_objects_closed_and_required() -> None:
-    """Strict wire schemas require every property at every object depth."""
-    provider = OpenAIResponsesProvider()
-    schema: dict[str, JsonValue] = {
-        "type": "object",
-        "properties": {
-            "nested": {"type": "object", "properties": {"value": {"type": "integer"}}},
-            "items": {
-                "type": "array",
-                "items": {"type": "object", "properties": {"x": {"type": "string"}}},
-            },
-            "choice": {"anyOf": [{"type": "string"}, True]},
-            "flag": True,
-        },
-    }
-
-    wire_schema = provider._strict_response_schema(schema)
-
-    properties = cast(Mapping[str, Mapping[str, object]], wire_schema["properties"])
-    assert wire_schema["required"] == ("nested", "items", "choice", "flag")
-    assert properties["nested"]["required"] == ("value",)
-    assert properties["nested"]["additionalProperties"] is False
-    items = cast(Mapping[str, object], properties["items"]["items"])
-    assert items["required"] == ("x",)
-    assert properties["choice"]["anyOf"] == ({"type": "string"}, True)
-    assert properties["flag"] is True
-
-
-def test_strict_schema_with_invalid_properties_expect_response_error() -> None:
-    """A non-mapping properties value cannot be adapted to a strict schema."""
-    with pytest.raises(LlmResponseError):
-        OpenAIResponsesProvider()._strict_response_schema(
-            {"type": "object", "properties": "invalid"}
-        )
-
-
-def test_strict_schema_with_open_mapping_expect_unsupported() -> None:
-    """Strict adaptation fails instead of weakening arbitrary-key mappings."""
-    with pytest.raises(LlmUnsupportedFeatureError):
-        OpenAIResponsesProvider()._strict_response_schema(
-            {"type": "object", "additionalProperties": {"type": "integer"}}
-        )
-
-
 async def test_incomplete_by_token_limit_expect_length_finish(wire: _Wire) -> None:
     """Hitting max_output_tokens is a successful truncated turn."""
     wire.replies = [
@@ -1779,27 +1735,69 @@ async def test_read_timeout_after_terminal_event_expect_completed_turn(
     assert events[-1].metadata["finish_reason"] == "stop"
 
 
-def test_strict_schema_with_object_type_union_expect_closed_object() -> None:
-    """A ``type`` array that admits ``object`` is closed like a plain object."""
+def test_text_format_with_unrepresentable_schema_expect_non_strict() -> None:
+    """A schema strict mode cannot hold goes as ``strict: false`` and unchanged."""
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "allOf": [{"properties": {"a": {"type": "integer"}}}],
+    }
+    request = ModelRequest(
+        messages=(),
+        structured_output=StructuredOutputSpec(
+            JsonSchemaConstraint(schema=schema), "Mixed"
+        ),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="mixed", parameters=JsonSchemaConstraint(schema=schema)
+                ),
+            )
+        ),
+    )
+    provider = OpenAIResponsesProvider()
+
+    text = cast(Mapping[str, Mapping[str, object]], provider._text(request))
+    tools = cast(Sequence[Mapping[str, object]], provider._tools(request))
+
+    assert text["format"]["strict"] is False
+    assert text["format"]["schema"] == schema
+    assert tools[0]["strict"] is False
+    assert tools[0]["parameters"] == schema
+
+
+def test_text_format_with_strict_schema_expect_closed_wire_copy() -> None:
+    """A strict schema goes closed and required-all; ``not`` is left out."""
     schema: dict[str, JsonValue] = {
         "type": "object",
         "properties": {
-            "tags": {"type": ["array", "null"], "items": {"type": "string"}},
             "profile": {
                 "type": ["object", "null"],
-                "properties": {"name": {"type": ["string", "null"]}},
-            },
+                "properties": {"name": {"type": "string", "not": {"const": ""}}},
+            }
         },
     }
+    request = ModelRequest(
+        messages=(),
+        structured_output=StructuredOutputSpec(
+            JsonSchemaConstraint(schema=schema), "Profile"
+        ),
+    )
 
-    wire_schema = OpenAIResponsesProvider()._strict_response_schema(schema)
+    text = cast(
+        Mapping[str, Mapping[str, object]], OpenAIResponsesProvider()._text(request)
+    )
 
-    properties = cast(Mapping[str, Mapping[str, object]], wire_schema["properties"])
-    assert wire_schema["required"] == ("tags", "profile")
-    assert properties["tags"] == {
-        "type": ["array", "null"],
-        "items": {"type": "string"},
+    assert text["format"]["strict"] is True
+    assert text["format"]["schema"] == {
+        "type": "object",
+        "properties": {
+            "profile": {
+                "type": ["object", "null"],
+                "properties": {"name": {"type": "string"}},
+                "additionalProperties": False,
+                "required": ("name",),
+            }
+        },
+        "additionalProperties": False,
+        "required": ("profile",),
     }
-    assert properties["profile"]["type"] == ["object", "null"]
-    assert properties["profile"]["required"] == ("name",)
-    assert properties["profile"]["additionalProperties"] is False
