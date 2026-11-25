@@ -1,6 +1,6 @@
 [project]
 name = "spakky-llm"
-version = "13.1.1"
+version = "13.2.0"
 description = "Multi-provider LLM adapter plugin for Spakky Agent"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,8 +15,8 @@ dependencies = [
     "jsonschema-rs>=0.63.1",
     "openai>=3.3.1",
     "pydantic-settings>=2.13.1",
-    "spakky>=13.1.1",
-    "spakky-agent>=13.1.1",
+    "spakky>=13.2.0",
+    "spakky-agent>=13.2.0",
 ]
 
 [project.entry-points."spakky.plugins"]
