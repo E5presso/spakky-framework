@@ -177,9 +177,10 @@ defensive deep snapshot합니다. Request는 실제 content에서 required input
 ## Typed structured output
 
 `AgentExecutionSpec.output_type`은 Pydantic `BaseModel`, 표준 dataclass, `TypedDict` class를
-지원합니다. Declaration 단계에서 portable closed JSON Schema를 만들 수 없는 class,
-external/recursive reference, unsupported keyword, non-finite JSON은 `AgentDefinitionError`로
-거부됩니다. 내부 schema builder는 공개 API가 아니며 사용자는 `output_type`만 선언합니다.
+지원합니다. Declaration 단계에서 JSON Schema를 만들 수 없는 class, external/missing
+reference, non-finite JSON은 `AgentDefinitionError`로 거부됩니다. Pydantic이 만드는
+JSON Schema 2020-12 keyword(`minLength`, `pattern`, `minimum`, `format` 등)는 그대로 두고,
+재귀 model은 `$defs`/`$ref`로 표현합니다(ADR-0026). 내부 schema builder는 공개 API가 아니며 사용자는 `output_type`만 선언합니다.
 
 Runner는 selected model의 `supports_structured_output`을 provider 호출 전에 확인합니다.
 Final structured payload는 strict type/no-extra/no-coercion으로 materialize되며 text JSON

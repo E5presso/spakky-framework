@@ -739,37 +739,42 @@ non-positive dimension과 Google이 아닌 route는 `LlmConfigurationError`; tim
 query embedding과 검색을 합성합니다. 별도 구성 예는
 [AI Agent 심화](../../guides/agents-advanced.md#retrieval-extension-ports)를 확인하세요.
 
-### Portable JSON Schema 검증
+### JSON Schema 2020-12 검증
 
 Tool argument와 structured output은 provider가 JSON을 생성한 뒤에도
-`LlmJsonCodec`의 portable subset으로 다시 검증됩니다. 전체 JSON Schema 구현을
-표방하지 않으며, 지원하지 않거나 모호한 shape는 `LlmResponseError`로 fail closed합니다.
+`LlmJsonCodec`이 JSON Schema 2020-12 전체로 다시 검증합니다. 검증은 `jsonschema-rs`가
+하며, 공식 JSON-Schema-Test-Suite의 2020-12 필수 테스트를 모두 통과합니다. 선택과 근거는
+[ADR-0026](../../adr/0026-full-json-schema-2020-12-structured-output.md)에 있습니다.
 
-- 지원 keyword allowlist에 없는 validation keyword와 알려지지 않은 `type`은 허용하지
-  않습니다. Schema shape를 value보다 먼저 재귀 검증하므로 실제 value에 사용되지 않은
-  `properties`, `anyOf`, `prefixItems`, `additionalProperties` 내부의 unsupported
-  keyword도 거부합니다.
-- `anyOf` alternative 하나가 맞더라도 같은 schema의 `type`이나 `enum` sibling 조건을
-  계속 검증합니다.
-- `type`은 JSON Schema 2020-12처럼 문자열 하나나 문자열 배열을 받습니다. 예:
-  `{"type": ["string", "null"]}`. 배열의 원소는 지원하는 type이어야 하고 서로 달라야
-  하며, 빈 배열은 거부합니다. Value는 배열의 type 중 하나에 맞으면 통과합니다.
-- `properties`·`required`·`additionalProperties`는 `type`에 `object`가 있을 때만,
-  `items`·`prefixItems`·`minItems`·`maxItems`는 `type`에 `array`가 있을 때만 허용합니다.
-  이 keyword는 value가 그 type일 때만 적용합니다.
-- Schema shape를 거부한 `LlmResponseError`는 `details`에 거부한 keyword
-  (`schema_keyword`)와 이유(`reason`)를 싣습니다. 예:
-  `{"schema_keyword": "type", "reason": "duplicate_type"}`. Schema의 값과 value는 싣지
-  않습니다. `reason`은 `unsupported_keyword`, `unsupported_type`, `duplicate_type`,
-  `empty_list`, `invalid_value`, `requires_object_type`, `requires_array_type`,
-  `exceeds_max_items` 중 하나입니다.
-- `prefixItems`는 tuple prefix를 검증하고, 남은 tail은 `items` schema로 검증합니다.
-- `items: false`이면 `prefixItems` 뒤의 tail을 허용하지 않습니다. `prefixItems`가
-  없으면 array element 자체를 허용하지 않습니다.
-- JSON text나 SDK value의 `NaN`, `Infinity`, `-Infinity`는 유효한 portable JSON
-  number로 취급하지 않습니다.
-- `enum` 비교는 JSON type을 보존합니다. 예를 들어 `true`와 `1`은 다르지만 JSON
-  number인 `1`과 `1.0`은 같으며, nested object와 array도 같은 규칙으로 비교합니다.
+- 2020-12의 모든 keyword를 검증합니다. 예: `const`, `oneOf`, `allOf`, `not`,
+  `if`/`then`/`else`, `$ref`/`$defs`, `patternProperties`, `unevaluatedProperties`,
+  `dependentRequired`, 문자열·숫자·배열·객체의 제약 keyword, 하위 schema 자리의
+  `true`/`false`.
+- `format`은 2020-12 기본대로 annotation이며 값을 검증하지 않습니다.
+- 원격 `$ref`는 가져오지 않습니다. 외부 schema는 `LlmJsonCodec(external_schemas=...)`로
+  retrieval URI에 미리 등록할 때만 풀립니다. Provider adapter는 외부 schema를 등록하지
+  않으므로, provider 경로에서는 `$defs`에 넣은 schema만 참조할 수 있습니다.
+- Schema가 2020-12 meta-schema를 어기거나 reference를 풀 수 없으면 provider 호출 전에
+  `LlmResponseError`가 납니다. Provider 값이 schema를 어겨도 같은 오류입니다.
+- 오류의 `details`는 `{"schema_keyword": ..., "reason": ...}`입니다. `reason`은
+  `invalid_schema`, `unresolvable_reference`, `value_mismatch` 중 하나입니다.
+  `properties`·`$defs` 같은 이름 지도의 키(사용자가 정한 이름), schema의 값, provider
+  값은 싣지 않습니다.
+- JSON text나 SDK value의 `NaN`, `Infinity`, `-Infinity`는 JSON number로 취급하지
+  않습니다.
+
+### Provider wire 사본
+
+Provider의 strict structured output은 JSON Schema의 일부만 받습니다. Adapter는 원래
+schema를 바꾸지 않고 provider가 문서에서 받는 범위의 wire 사본을 만듭니다. 사본은
+원래 schema와 뜻이 같거나 더 넓고, 넓힌 만큼은 codec이 출력에서 검증합니다.
+
+| Provider | Strict wire | Strict로 보낼 수 없을 때 |
+|---|---|---|
+| OpenAI Chat·Responses | `not`, `dependentRequired`를 빼고 `oneOf`를 `anyOf`로 씁니다. 모든 object를 닫고 모든 property를 `required`에 넣습니다. | `allOf`, `if`/`then`/`else`, `dependentSchemas`, `additionalProperties` schema, object가 아닌 root, root `anyOf`, `properties` 옆에서 닫으면 그 property를 막게 되는 object `anyOf` branch, `$defs` 한 항목보다 깊은 `$ref`: 원래 schema를 `strict: false`로 보냅니다. |
+| Anthropic | 숫자·문자열 길이 제약, `minItems` 0·1 밖의 배열 제약, `not`, scalar가 아닌 `enum`·`const`를 빼고 `minItems`는 1로 줄입니다. `oneOf`는 `anyOf`로, `type`·`properties` 옆의 `anyOf`는 각 branch로 옮깁니다. 모든 object를 닫습니다. | 재귀 schema, `additionalProperties` schema, 옮길 수 없는 `anyOf`, 닫으면 뜻이 좁아지는 `allOf`·`if`/`then`/`else`·`dependentSchemas`, `$defs` 한 항목보다 깊은 `$ref`: tool은 `strict: false`로, structured output은 `output_config` 없이 schema를 담은 system 지시문으로 요청합니다. |
+| Google Gemini | 문서의 keyword와 `anyOf`·`$ref`·`$defs`만 남기고 나머지를 뺍니다. `const`는 값 하나의 `enum`으로, `oneOf`는 `anyOf`로, null이 아닌 type이 둘 이상인 `type` 배열은 `anyOf`로 씁니다. | 없음 |
+| vLLM | 원래 schema를 `structured_outputs.json`으로 보냅니다. | — |
 
 Structured stream은 provider가 보고한 finish reason이 truncation이어도 누적한 terminal
 JSON을 decode하고 schema 검증합니다. 따라서 앞선 `TOKEN_DELTA`가 이미 방출됐더라도
@@ -778,7 +783,7 @@ JSON을 decode하고 schema 검증합니다. 따라서 앞선 `TOKEN_DELTA`가 �
 
 ### Agent `output_type`과 OpenAI strict wire
 
-`AgentExecutionSpec.output_type`이 있으면 runner가 만든 strict portable schema가 selected
+`AgentExecutionSpec.output_type`이 있으면 runner가 만든 strict schema가 selected
 provider의 `ModelRequest.structured_output`으로 전달됩니다. OpenAI strict JSON Schema
 wire는 모든 object property를 recursive하게 `required`에 넣고
 `additionalProperties=false`로 닫아야 합니다. `OpenAIChatProvider`는 core schema를 mutate하지
@@ -787,9 +792,9 @@ wire는 모든 object property를 recursive하게 `required`에 넣고
 
 따라서 default가 있는 BaseModel/dataclass field는 core materializer에서 생략 가능하지만
 OpenAI strict wire 응답에는 포함됩니다. Arbitrary-key mapping처럼
-`additionalProperties` 자체가 nested schema인 open-ended object는 OpenAI strict wire로
-약화해 보내지 않고 `LlmUnsupportedFeatureError`입니다. Non-strict low-level request는 이
-required-all normalization을 적용하지 않지만, Agent `output_type` 계약은 항상 strict입니다.
+`additionalProperties` 자체가 nested schema인 open-ended object는 strict wire로 닫을 수
+없으므로 원래 schema를 `strict: false`로 보내고, 출력은 codec이 원래 schema로 검증합니다.
+Non-strict low-level request는 이 required-all normalization을 적용하지 않습니다.
 
 Provider JSON은 adapter codec 검증 뒤 runner에서 다시 declared class로 exact
 materialization됩니다. OpenAI/Anthropic/Google 어느 경로도 text JSON을 structured payload로

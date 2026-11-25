@@ -8,6 +8,8 @@ status: accepted
 
 > Agent는 `output_type`으로 최종 Python 타입을 선언하고, caller static `AgentContext`와 optional constructor-injected `IAgentContextProvider`를 model step에서 조합합니다.
 > Framework는 portable schema·strict materialization·provenance coverage·privacy-safe fingerprint를 fail closed로 집행하고, provider와 inbound protocol은 교체 가능한 adapter로 남습니다.
+>
+> **부분 대체**: §2의 portable keyword subset과 순환 reference·reference sibling 거부는 [ADR-0026](0026-full-json-schema-2020-12-structured-output.md)이 대체합니다. 이제 `output_type`은 Pydantic이 만드는 JSON Schema 2020-12 키워드를 그대로 두고, 재귀 reference는 `$defs`로 남깁니다.
 
 ## 맥락 (Context)
 

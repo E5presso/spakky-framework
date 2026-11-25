@@ -46,6 +46,7 @@ ADR은 소프트웨어 아키텍처에 영향을 미치는 **주요 설계 결�
 | [ADR-0023](0023-live-per-run-signal-mailbox.md) | 실행별 신호 메일박스와 control·steering 두 차선 — 커밋 후 게시, 시작 시 1회 재생, 폴링 제거 | Accepted | 2026-11-08 |
 | [ADR-0024](0024-subscriber-delivery-contract.md) | 구독자별 전달 계약(실패 격리·재시도·dead-letter·다시 넣기)과 멱등 소비, 메모리 통합 이벤트 구현체 | Accepted | 2026-11-14 |
 | [ADR-0025](0025-application-custom-agent-events.md) | 애플리케이션 정의 Agent 이벤트 — 중립 `CustomEvent`, `ContextVar` 채널, adapter가 감싸는 병합 스트림 | Accepted | 2026-11-14 |
+| [ADR-0026](0026-full-json-schema-2020-12-structured-output.md) | 구조화 출력과 도구 스키마의 JSON Schema 2020-12 전체 지원 — `jsonschema-rs` 검증, 공급자별 wire 사본 | Accepted | 2026-11-25 |
 
 ## 새 ADR 작성 가이드
 
