@@ -45,7 +45,7 @@ from spakky.agent import (
 from spakky.agent.content import model_content_parts, model_content_text
 from spakky.core.pod.annotations.pod import Pod
 
-from spakky.plugins.llm.codec import LlmJsonCodec
+from spakky.plugins.llm.codec import LlmJsonCodec, schema_type_names
 from spakky.plugins.llm.config import (
     GoogleCredentialStrategy,
     LlmConfig,
@@ -79,6 +79,26 @@ _MILLISECONDS_PER_SECOND = 1_000
 _GOOGLE_CLOUD_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 _VERTEX_MULTI_REGIONAL_LOCATIONS = frozenset({"us", "eu"})
 _SUCCESS_FINISH_REASONS = frozenset({"STOP", "MAX_TOKENS"})
+_SCHEMA_ANNOTATION_KEYWORDS = frozenset(
+    {
+        "$anchor",
+        "$comment",
+        "$id",
+        "$schema",
+        "default",
+        "deprecated",
+        "description",
+        "examples",
+        "readOnly",
+        "title",
+        "writeOnly",
+    }
+)
+"""Keywords that describe a schema and stay on the union when ``type`` is split."""
+_SCHEMA_OBJECT_KEYWORDS = frozenset({"additionalProperties", "properties", "required"})
+"""Keywords that apply only to the ``object`` branch of a split type union."""
+_SCHEMA_ARRAY_KEYWORDS = frozenset({"items", "maxItems", "minItems", "prefixItems"})
+"""Keywords that apply only to the ``array`` branch of a split type union."""
 _REFUSAL_FINISH_REASONS = frozenset(
     {
         "SAFETY",
@@ -426,7 +446,7 @@ class GoogleGenerateContentProvider(ILLMProvider):
                 "application/json" if structured_output is not None else None
             ),
             response_json_schema=(
-                dict(structured_output.constraint.schema)
+                self._wire_schema(structured_output.constraint.schema)
                 if structured_output is not None
                 else None
             ),
@@ -569,11 +589,89 @@ class GoogleGenerateContentProvider(ILLMProvider):
             types.FunctionDeclaration(
                 name=tool.name,
                 description=tool.description,
-                parameters_json_schema=dict(tool.parameters.schema),
+                parameters_json_schema=self._wire_schema(tool.parameters.schema),
             )
             for tool in tool_calling.tools
         ]
         return [types.Tool(function_declarations=declarations)]
+
+    def _wire_schema(self, schema: Mapping[str, JsonValue]) -> JsonObject:
+        """Copy a schema into the JSON Schema form the Gemini API documents.
+
+        The Gemini structured output guide documents ``type`` arrays only for
+        one type plus ``"null"``. A ``type`` array with two or more non-null
+        types is sent as the equivalent ``anyOf``.
+        """
+        result: dict[str, JsonValue] = {}
+        for key, value in schema.items():
+            if key == "properties" and isinstance(value, Mapping):
+                result[key] = {
+                    name: self._wire_schema(property_schema)
+                    if isinstance(property_schema, Mapping)
+                    else property_schema
+                    for name, property_schema in value.items()
+                }
+            elif (
+                key in ("anyOf", "prefixItems")
+                and isinstance(value, Sequence)
+                and not isinstance(value, str)
+            ):
+                result[key] = tuple(
+                    self._wire_schema(item) if isinstance(item, Mapping) else item
+                    for item in value
+                )
+            elif key in ("items", "additionalProperties") and isinstance(
+                value, Mapping
+            ):
+                result[key] = self._wire_schema(value)
+            else:
+                result[key] = value
+        type_names = schema_type_names(result)
+        if len([name for name in type_names if name != "null"]) < 2:
+            return result
+        return self._type_union_as_any_of(result, type_names)
+
+    def _type_union_as_any_of(
+        self,
+        schema: Mapping[str, JsonValue],
+        type_names: tuple[str, ...],
+    ) -> JsonObject:
+        """Split ``type: [...]`` into one ``anyOf`` branch per type."""
+        union: dict[str, JsonValue] = {
+            key: value
+            for key, value in schema.items()
+            if key in _SCHEMA_ANNOTATION_KEYWORDS
+        }
+        shared = {
+            key: value
+            for key, value in schema.items()
+            if key != "type"
+            and key not in _SCHEMA_ANNOTATION_KEYWORDS
+            and key not in _SCHEMA_OBJECT_KEYWORDS
+            and key not in _SCHEMA_ARRAY_KEYWORDS
+        }
+        branches: list[JsonValue] = []
+        for name in type_names:
+            branch: dict[str, JsonValue] = {"type": name, **shared}
+            if name == "object":
+                branch.update(
+                    {
+                        key: value
+                        for key, value in schema.items()
+                        if key in _SCHEMA_OBJECT_KEYWORDS
+                    }
+                )
+            if name == "array":
+                branch.update(
+                    {
+                        key: value
+                        for key, value in schema.items()
+                        if key in _SCHEMA_ARRAY_KEYWORDS
+                    }
+                )
+            branches.append(branch)
+        union["anyOf"] = tuple(branches)
+        return union
 
     def _tool_config(
         self, tool_calling: ToolCallingSpec | None

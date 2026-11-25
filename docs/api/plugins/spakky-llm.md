@@ -751,6 +751,18 @@ Tool argument와 structured output은 provider가 JSON을 생성한 뒤에도
   keyword도 거부합니다.
 - `anyOf` alternative 하나가 맞더라도 같은 schema의 `type`이나 `enum` sibling 조건을
   계속 검증합니다.
+- `type`은 JSON Schema 2020-12처럼 문자열 하나나 문자열 배열을 받습니다. 예:
+  `{"type": ["string", "null"]}`. 배열의 원소는 지원하는 type이어야 하고 서로 달라야
+  하며, 빈 배열은 거부합니다. Value는 배열의 type 중 하나에 맞으면 통과합니다.
+- `properties`·`required`·`additionalProperties`는 `type`에 `object`가 있을 때만,
+  `items`·`prefixItems`·`minItems`·`maxItems`는 `type`에 `array`가 있을 때만 허용합니다.
+  이 keyword는 value가 그 type일 때만 적용합니다.
+- Schema shape를 거부한 `LlmResponseError`는 `details`에 거부한 keyword
+  (`schema_keyword`)와 이유(`reason`)를 싣습니다. 예:
+  `{"schema_keyword": "type", "reason": "duplicate_type"}`. Schema의 값과 value는 싣지
+  않습니다. `reason`은 `unsupported_keyword`, `unsupported_type`, `duplicate_type`,
+  `empty_list`, `invalid_value`, `requires_object_type`, `requires_array_type`,
+  `exceeds_max_items` 중 하나입니다.
 - `prefixItems`는 tuple prefix를 검증하고, 남은 tail은 `items` schema로 검증합니다.
 - `items: false`이면 `prefixItems` 뒤의 tail을 허용하지 않습니다. `prefixItems`가
   없으면 array element 자체를 허용하지 않습니다.
@@ -770,7 +782,8 @@ JSON을 decode하고 schema 검증합니다. 따라서 앞선 `TOKEN_DELTA`가 �
 provider의 `ModelRequest.structured_output`으로 전달됩니다. OpenAI strict JSON Schema
 wire는 모든 object property를 recursive하게 `required`에 넣고
 `additionalProperties=false`로 닫아야 합니다. `OpenAIChatProvider`는 core schema를 mutate하지
-않고 wire copy에만 이 normalization을 적용합니다.
+않고 wire copy에만 이 normalization을 적용합니다. `{"type": ["object", "null"]}`처럼
+`type` 배열에 `object`가 있는 schema도 같은 규칙으로 닫습니다.
 
 따라서 default가 있는 BaseModel/dataclass field는 core materializer에서 생략 가능하지만
 OpenAI strict wire 응답에는 포함됩니다. Arbitrary-key mapping처럼

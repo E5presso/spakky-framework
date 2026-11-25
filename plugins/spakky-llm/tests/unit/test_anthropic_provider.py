@@ -1802,3 +1802,38 @@ async def test_stream_wrong_target_api_expect_provider_unavailable() -> None:
         )
 
     constructor.assert_not_called()
+
+
+def test_anthropic_sends_type_union_schemas_unchanged() -> None:
+    """Claude documents ``type`` arrays for strict schemas, so they pass through."""
+    schema: JsonObject = {
+        "type": "object",
+        "properties": {
+            "note": {"type": ["string", "null"]},
+            "profile": {
+                "type": ["object", "null"],
+                "properties": {"name": {"type": "string"}},
+            },
+        },
+    }
+    request = ModelRequest(
+        messages=(),
+        structured_output=StructuredOutputSpec(JsonSchemaConstraint(schema=schema)),
+        tool_calling=ToolCallingSpec(
+            tools=(
+                ModelToolSpec(
+                    name="lookup",
+                    parameters=JsonSchemaConstraint(schema=schema),
+                ),
+            )
+        ),
+    )
+    provider = AnthropicMessagesProvider()
+
+    tools = provider._tools(request)
+    output_config = provider._output_config(request)
+
+    assert isinstance(tools, tuple)
+    assert tools[0]["input_schema"] == schema
+    assert isinstance(output_config, dict)
+    assert output_config["format"] == {"type": "json_schema", "schema": schema}

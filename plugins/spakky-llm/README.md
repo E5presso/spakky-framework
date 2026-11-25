@@ -684,6 +684,7 @@ Provider mapping은 core schema 의미를 유지하되 wire 형식은 각 SDK에
 
 - OpenAI-compatible standard mode는 `response_format={type: "json_schema", ...}`를 사용합니다. Strict request에서는 core schema를 mutate하지 않는 wire copy를 만들고, 모든 nested object의 property를 `required`로 만들며 `additionalProperties=false`를 적용합니다. 따라서 Python default를 생략할 수 있는 core contract은 그대로지만 OpenAI wire는 해당 property도 생성하도록 요청합니다. Arbitrary-key object처럼 `additionalProperties` 자체가 schema인 strict shape는 제약을 약화하지 않고 `LlmUnsupportedFeatureError`로 거부합니다.
 - Anthropic은 Messages `output_config.format` JSON Schema로, Google은 `response_mime_type="application/json"` + `response_json_schema`로 매핑합니다.
+- `type` 배열(예: `{"type": ["string", "null"]}`)은 OpenAI와 Anthropic에 그대로 보냅니다. 두 공식 문서가 이 표기를 씁니다. OpenAI strict wire는 `type` 배열에 `object`가 있어도 그 object를 required-all과 `additionalProperties=false`로 닫습니다. Google 문서는 type 하나와 `"null"`의 배열만 설명하므로, Google adapter는 null이 아닌 type이 둘 이상인 배열을 type별 `anyOf` branch로 바꿔 `response_json_schema`와 `parameters_json_schema`에 보냅니다. Object·array 전용 keyword는 그 type의 branch에만 들어갑니다.
 - vLLM dialect는 같은 OpenAI SDK request와 함께 `extra_body.structured_outputs.json`에 core schema를 전달합니다. 이 extension은 standard dialect로 유출되지 않습니다.
 
 세 adapter는 완료·stream 모두에서 provider JSON을 `LlmJsonCodec`의 portable schema로 먼저 검증한 후 `ModelResponse.structured_output` 또는 `ModelStreamEventKind.STRUCTURED_OUTPUT`으로 게시합니다. Runner는 이 값을 선언한 Python 타입으로 다시 strict materialization하므로, provider schema validation과 application type materialization은 서로 대체하지 않습니다. Text JSON fallback, coercion, extra-key drop, truncated/partial structured stream은 success final로 올라오지 않습니다.
@@ -708,7 +709,7 @@ Token/context limit 계열 success terminal도 structured output을 요청했다
 
 ## 응답 검증과 client lifecycle
 
-`LlmJsonCodec`은 provider가 반환한 structured output과 tool argument를 선언된 portable JSON Schema subset으로 검증합니다. Value를 검사하기 전에 schema shape 전체를 재귀 검증하므로 선택되지 않은 `anyOf` branch나 실제 value에 사용되지 않은 nested branch의 unsupported validation keyword도 거부합니다. 알 수 없는 schema `type`, non-finite number와 `prefixItems` 이후 금지된 tail을 허용하지 않습니다. Structured stream이 truncation으로 끝나도 terminal에 누적 JSON을 decode·validate하므로 partial document를 structured output으로 게시하지 않습니다.
+`LlmJsonCodec`은 provider가 반환한 structured output과 tool argument를 선언된 portable JSON Schema subset으로 검증합니다. Value를 검사하기 전에 schema shape 전체를 재귀 검증하므로 선택되지 않은 `anyOf` branch나 실제 value에 사용되지 않은 nested branch의 unsupported validation keyword도 거부합니다. 알 수 없는 schema `type`, non-finite number와 `prefixItems` 이후 금지된 tail을 허용하지 않습니다. `type`은 JSON Schema 2020-12처럼 문자열 하나나 중복 없는 비어 있지 않은 배열(예: `{"type": ["string", "null"]}`)을 받고, value는 배열의 type 중 하나에 맞으면 통과합니다. Object·array 전용 keyword는 그 type이 `type`에 있을 때만 허용하고 value가 그 type일 때만 적용합니다. Schema shape를 거부하면 `LlmResponseError.details`에 거부한 keyword(`schema_keyword`)와 이유(`reason`)만 싣고 schema 값과 value는 싣지 않습니다. Structured stream이 truncation으로 끝나도 terminal에 누적 JSON을 decode·validate하므로 partial document를 structured output으로 게시하지 않습니다.
 
 HTTP 200도 SDK decode와 typed payload validation을 통과해야 성공입니다. OpenAI, Anthropic, Google adapter는 malformed success JSON, SDK response validation failure, mapping 중 shape/type 불일치를 `LlmResponseError`로 정규화합니다.
 

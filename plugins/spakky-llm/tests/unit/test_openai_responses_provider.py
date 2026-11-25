@@ -1777,3 +1777,29 @@ async def test_read_timeout_after_terminal_event_expect_completed_turn(
 
     assert events[-1].kind is ModelStreamEventKind.DONE
     assert events[-1].metadata["finish_reason"] == "stop"
+
+
+def test_strict_schema_with_object_type_union_expect_closed_object() -> None:
+    """A ``type`` array that admits ``object`` is closed like a plain object."""
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": {
+            "tags": {"type": ["array", "null"], "items": {"type": "string"}},
+            "profile": {
+                "type": ["object", "null"],
+                "properties": {"name": {"type": ["string", "null"]}},
+            },
+        },
+    }
+
+    wire_schema = OpenAIResponsesProvider()._strict_response_schema(schema)
+
+    properties = cast(Mapping[str, Mapping[str, object]], wire_schema["properties"])
+    assert wire_schema["required"] == ("tags", "profile")
+    assert properties["tags"] == {
+        "type": ["array", "null"],
+        "items": {"type": "string"},
+    }
+    assert properties["profile"]["type"] == ["object", "null"]
+    assert properties["profile"]["required"] == ("name",)
+    assert properties["profile"]["additionalProperties"] is False

@@ -2055,3 +2055,26 @@ def test_chat_reasoning_history_outside_vllm_reasoning_route_expect_not_sent(
     )
 
     assert native[1] == {"role": "assistant", "content": "answer"}
+
+
+def test_openai_strict_wire_closes_object_listed_in_type_union() -> None:
+    """A ``type`` array that admits ``object`` is closed like a plain object."""
+    schema: dict[str, JsonValue] = {
+        "type": "object",
+        "properties": {
+            "note": {"type": ["string", "null"]},
+            "profile": {
+                "type": ["object", "null"],
+                "properties": {"name": {"type": ["string", "null"]}},
+            },
+        },
+    }
+
+    wire = OpenAIChatProvider()._strict_response_schema(schema)
+
+    properties = cast(Mapping[str, Mapping[str, object]], wire["properties"])
+    assert wire["required"] == ("note", "profile")
+    assert properties["note"] == {"type": ["string", "null"]}
+    assert properties["profile"]["type"] == ["object", "null"]
+    assert properties["profile"]["required"] == ("name",)
+    assert properties["profile"]["additionalProperties"] is False
