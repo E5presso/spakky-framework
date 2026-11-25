@@ -1,6 +1,6 @@
 [project]
 name = "spakky-outbox"
-version = "13.1.0"
+version = "13.1.1"
 description = "Transactional Outbox pattern plugin for Spakky Framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -9,9 +9,9 @@ authors = [{ name = "Spakky", email = "sejong418@icloud.com" }]
 dependencies = [
     "pydantic>=2.12.5",
     "pydantic-settings>=2.13.1",
-    "spakky-data>=13.1.0",
-    "spakky-event>=13.1.0",
-    "spakky-tracing>=13.1.0",
+    "spakky-data>=13.1.1",
+    "spakky-event>=13.1.1",
+    "spakky-tracing>=13.1.1",
 ]
 
 [project.entry-points."spakky.plugins"]
