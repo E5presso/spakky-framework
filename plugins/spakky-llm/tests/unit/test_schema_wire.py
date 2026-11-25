@@ -321,6 +321,43 @@ def test_anthropic_strict_schema_dropped_contains_expect_unevaluated_items_dropp
     assert anthropic_strict_schema(schema) == {"type": "array"}
 
 
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {
+            "$defs": {"x": {"type": "object", "properties": {"b": {}}}},
+            "type": "object",
+            "properties": {"a": {"type": "string"}},
+            "anyOf": [{"$ref": "#/$defs/x"}],
+        },
+        {
+            "$defs": {"x": {"type": "object", "properties": {"b": {}}}},
+            "$ref": "#/$defs/x",
+            "properties": {"a": {"type": "string"}},
+        },
+    ],
+)
+def test_anthropic_strict_schema_closed_reference_beside_properties_expect_none(
+    schema: JsonObject,
+) -> None:
+    """A closed ``$ref`` target beside listed properties would forbid them."""
+    assert anthropic_strict_schema(schema) is None
+
+
+def test_anthropic_strict_schema_unevaluated_beside_reference_expect_dropped() -> None:
+    """``unevaluatedItems`` reads the ``$ref`` target, which may be widened."""
+    schema: JsonObject = {
+        "$defs": {"x": {"type": "array", "contains": {"type": "string"}}},
+        "$ref": "#/$defs/x",
+        "unevaluatedItems": False,
+    }
+
+    assert anthropic_strict_schema(schema) == {
+        "$defs": {"x": {"type": "array"}},
+        "$ref": "#/$defs/x",
+    }
+
+
 def test_openai_strict_schema_object_branch_beside_properties_expect_none() -> None:
     """Closing an object branch would forbid the properties listed beside it."""
     schema: JsonObject = {

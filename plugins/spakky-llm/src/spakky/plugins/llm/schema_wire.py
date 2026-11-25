@@ -82,6 +82,22 @@ _EVALUATION_KEYWORDS = frozenset(
     }
 )
 """Keywords whose results ``unevaluatedProperties`` and ``unevaluatedItems`` read."""
+_IN_PLACE_KEYWORDS = frozenset(
+    {
+        "$dynamicRef",
+        "$ref",
+        "allOf",
+        "anyOf",
+        "dependentSchemas",
+        "else",
+        "if",
+        "oneOf",
+        "then",
+    }
+)
+"""Keywords that apply other subschemas to the same instance."""
+_PROPERTY_KEYWORDS = frozenset({"patternProperties", "properties"})
+"""Keywords that admit named properties."""
 _LOCAL_DEFINITION_PREFIX = "#/$defs/"
 """Reference prefix of a local ``$defs`` entry."""
 _ROOT_REFERENCE = "#"
@@ -354,7 +370,7 @@ def _keep_dependent_keywords_wide(
     """
     if "patternProperties" in dropped:
         result.pop("additionalProperties", None)
-    if dropped & _EVALUATION_KEYWORDS:
+    if dropped & _EVALUATION_KEYWORDS or result.keys() & _IN_PLACE_KEYWORDS:
         result.pop("unevaluatedItems", None)
         result.pop("unevaluatedProperties", None)
 
@@ -362,15 +378,22 @@ def _keep_dependent_keywords_wide(
 def _reject_closed_conjunctions(result: Mapping[str, JsonValue]) -> None:
     """Fail when closing objects would forbid what the full schema accepts.
 
-    An object branch under ``anyOf`` is closed on its own. When the schema
-    next to it also lists properties, a closed branch forbids them.
+    A ``$ref`` target and an object branch under ``anyOf`` are closed on
+    their own. When they meet an object schema that lists properties, each
+    closed part forbids the other's properties.
     """
-    if not ({"properties", "patternProperties"} & result.keys()):
+    if not (
+        "object" in schema_type_names(result) or result.keys() & _PROPERTY_KEYWORDS
+    ):
         return
+    if "$ref" in result:
+        raise _UnrepresentableSchemaError
     # cast: _project_list has already turned "anyOf" into a tuple of schemas.
-    branches = cast(tuple[JsonValue, ...], result.get("anyOf", ()))
-    for branch in branches:
-        if isinstance(branch, Mapping) and "object" in schema_type_names(branch):
+    for branch in cast(tuple[JsonValue, ...], result.get("anyOf", ())):
+        if isinstance(branch, Mapping) and (
+            "object" in schema_type_names(branch)
+            or branch.keys() & (_PROPERTY_KEYWORDS | {"$ref"})
+        ):
             raise _UnrepresentableSchemaError
 
 
