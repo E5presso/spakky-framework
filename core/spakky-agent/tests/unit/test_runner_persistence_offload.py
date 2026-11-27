@@ -1,7 +1,7 @@
 """Runner tests for calling synchronous persistence ports off the event loop."""
 
 from asyncio import CancelledError, create_task, get_running_loop, to_thread
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Event as ThreadEvent
 from threading import get_ident
 from typing import override
@@ -9,6 +9,7 @@ from typing import override
 import pytest
 
 from spakky.agent import (
+    AgentEvidence,
     AgentEvidenceKind,
     AgentRunner,
     AgentState,
@@ -148,3 +149,35 @@ def test_evidence_clock_stalled_source_expect_strictly_increasing() -> None:
         frozen + EVIDENCE_CLOCK_STEP,
         frozen + 2 * EVIDENCE_CLOCK_STEP,
     ]
+
+
+async def test_runner_evidence_after_stored_later_stamps_expect_sorted_after_them() -> (
+    None
+):
+    """다른 시계가 더 늦은 시각으로 남긴 증거가 있어도 새 증거는 그 뒤로 정렬된다."""
+    ahead = datetime.now(UTC) + timedelta(days=1)
+    evidence = FakeEvidenceRepository()
+    for number, created_at in (
+        (1, None),
+        (2, ahead.replace(tzinfo=None)),
+        (3, ahead - timedelta(hours=1)),
+    ):
+        evidence.append(
+            AgentEvidence(
+                id=f"run-1:evidence:{number}",
+                agent_state_id="run-1",
+                kind=AgentEvidenceKind.SIGNAL,
+                created_at=created_at,
+            )
+        )
+
+    await _collect(
+        _runner(FakeStateRepository(), evidence),
+        RunAgentInput(state_id="run-1", instruction="go"),
+    )
+
+    appended = evidence.list_by_state("run-1")[3:]
+    stamps = [item.created_at for item in appended if item.created_at is not None]
+    assert len(stamps) == len(appended) > 1
+    assert stamps[0] == ahead + EVIDENCE_CLOCK_STEP
+    assert all(earlier < later for earlier, later in zip(stamps, stamps[1:]))

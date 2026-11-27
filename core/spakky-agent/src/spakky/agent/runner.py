@@ -358,8 +358,9 @@ async def _offload[**ParametersT, ResultT](
     The synchronous ports do database I/O, so calling them on the event loop
     would stall every other coroutine, including one that holds a lock the call
     waits for. A worker thread cannot be interrupted: when the awaiting task is
-    cancelled, the call is still awaited to its end so it never outlives the
-    scope (session, transaction) its caller owns.
+    cancelled, the call is still awaited to its end so it does not outlive the
+    scope (session, transaction) its caller owns. Only a second cancellation
+    during that wait leaves the call running behind.
     """
     call = ensure_future(to_thread(function, *args, **kwargs))
     try:
@@ -459,8 +460,9 @@ class _EvidenceClock:
     """
 
     now: Callable[[], datetime] = _utc_now
-    # last is None until this runner appends its first evidence.
+    # last is None until this runner appends or observes its first evidence.
     last: datetime | None = None
+    observed_states: set[str] = field(default_factory=set)
 
     def next(self) -> datetime:
         """Return a timestamp later than every earlier one from this clock."""
@@ -469,6 +471,23 @@ class _EvidenceClock:
             moment = self.last + EVIDENCE_CLOCK_STEP
         self.last = moment
         return moment
+
+    def observe(self, state_id: str, stored: Sequence[AgentEvidence]) -> None:
+        """Move past the evidence a resumed run already has.
+
+        Another runner, process or host wrote those rows from its own clock. A
+        resumed run must still sort after them when this host's clock is behind.
+        A stored timestamp without a timezone is read as UTC.
+        """
+        self.observed_states.add(state_id)
+        for evidence in stored:
+            moment = evidence.created_at
+            if moment is None:
+                continue
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            if self.last is None or moment > self.last:
+                self.last = moment
 
 
 class _SteeringRestart(Exception):
@@ -3112,6 +3131,10 @@ class AgentRunner:
             usage = decision.get("usage")
             if not isinstance(routing, Mapping) or not isinstance(usage, Mapping):
                 raise AgentDefinitionError("Agent model cost evidence is invalid")
+            if decision.get("restarted") is True and not usage:
+                # A restarted step with no receipt was never added to the cost.
+                evidenced_costs[step] = Decimal(0)
+                continue
             model_ref = routing.get("model_ref")
             if not isinstance(model_ref, str) or not model_ref.strip():
                 raise AgentDefinitionError("Agent model cost evidence is invalid")
@@ -4107,6 +4130,14 @@ class AgentRunner:
         candidate: AgentEvidenceCandidate,
     ) -> AgentEvidence:
         index = await self._evidence_count(state_id) + 1
+        if state_id not in self._evidence_clock.observed_states:
+            # Only a run that already has evidence (a resume) reads it back.
+            self._evidence_clock.observe(
+                state_id,
+                await self._evidence_required().list_by_state(state_id)
+                if index > 1
+                else (),
+            )
         return await self._evidence_required().append(
             candidate.to_evidence(
                 evidence_id=f"{state_id}:evidence:{index}",

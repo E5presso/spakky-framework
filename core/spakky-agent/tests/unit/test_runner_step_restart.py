@@ -1,9 +1,12 @@
 """Runner tests for a model adapter asking to redo the current model step."""
 
 from collections.abc import AsyncIterator, Mapping
+from decimal import Decimal
 from typing import override
 
 import pytest
+
+import spakky.agent.runner as runner_module
 
 from spakky.agent import (
     AgentEvent,
@@ -22,6 +25,8 @@ from spakky.agent import (
     IAgentModel,
     JsonValue,
     MessageDeltaEvent,
+    ModelPrice,
+    ModelPricingCatalog,
     ModelRequest,
     ModelResponse,
     ModelStreamEvent,
@@ -345,3 +350,55 @@ async def test_runner_step_restart_usage_over_limit_expect_run_failed(
 
     assert len(model.requests) == 1
     assert states.get("run-1").status is AgentStatus.FAILED
+
+
+async def test_runner_step_restart_without_receipt_priced_run_expect_cost_evidence_valid() -> (
+    None
+):
+    """영수증 없이 다시 한 단계가 있어도 가격표가 있는 실행의 비용 증거가 resume 검증을 통과한다."""
+
+    class _PricedInterruptedModel(_InterruptedOnceModel):
+        @override
+        async def stream(
+            self, request: ModelRequest
+        ) -> AsyncIterator[ModelStreamEvent]:
+            if not self.requests:
+                self.requests.append(request)
+                raise AgentModelStepRestartError()
+            self.requests.append(request)
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.MESSAGE_DELTA, message_delta="answer"
+            )
+            yield ModelStreamEvent(
+                kind=ModelStreamEventKind.DONE,
+                usage=ModelUsage(input_tokens=1, output_tokens=1, total_tokens=2),
+                metadata={"model_ref": "model/logical", "model": "probe"},
+            )
+
+    pricing = ModelPricingCatalog(
+        version="prices-v1",
+        prices={
+            "model/logical": ModelPrice(
+                input_per_million=Decimal(1), output_per_million=Decimal(2)
+            )
+        },
+    )
+    runner, _, _ = _durable_runner(_PricedInterruptedModel())
+    runner = runner.with_pricing(pricing)
+
+    items = await _yields(runner, RunAgentInput(state_id="run-1", instruction="go"))
+
+    final = items[-1].payload
+    assert isinstance(final, Final)
+    total_cost = final.metadata["total_cost"]
+    assert isinstance(total_cost, str)
+    restored = runner_module._ExecutionContext(
+        state_id="run-1",
+        history=[],
+        step_count=2,
+        total_cost=Decimal(total_cost),
+        pricing_version=pricing.version,
+        cost_currency=pricing.currency,
+    )
+    await runner._validate_restored_pricing("run-1", restored)
+    assert Decimal(total_cost) == Decimal("0.000003")

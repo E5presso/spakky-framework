@@ -326,7 +326,7 @@ class SqlAlchemyAgentEvidenceRepository(IAgentEvidenceRepository):
             # CASE instead of NULLS FIRST, which not every dialect accepts.
             case((AgentEvidenceTable.created_at.is_(None), 0), else_=1),
             AgentEvidenceTable.created_at,
-            func.length(AgentEvidenceTable.id),
+            func.char_length(AgentEvidenceTable.id),
             AgentEvidenceTable.id,
         )
 
