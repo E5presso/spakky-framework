@@ -428,7 +428,7 @@ class Assistant:
 | `SQLAlchemyConnectionConfig` | 환경변수 기반 설정 |
 | `SqlAlchemyAgentStateRepository` | `IAgentStateRepository`의 SQLAlchemy 구현 |
 | `SqlAlchemyAgentSignalRepository` | `IAgentSignalRepository`의 SQLAlchemy 구현. `consumed_at`으로 pending signal queue를 구분하고, 주입된 `IAgentSignalPublisher`로 커밋 뒤에만 게시 |
-| `SqlAlchemyAgentEvidenceRepository` | `IAgentEvidenceRepository`의 SQLAlchemy 구현. append/read만 노출 |
+| `SqlAlchemyAgentEvidenceRepository` | `IAgentEvidenceRepository`의 SQLAlchemy 구현. append/read만 노출. 목록은 append 순서(`created_at`, 시각이 없거나 같은 행은 id의 길이와 값)로 반환 |
 | `SqlAlchemyAgentTaskStore` | `ITaskStore`의 SQLAlchemy 구현. 대화별 transcript를 `position` 순서로 append/조회 |
 
 ## Repository 메서드

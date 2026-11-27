@@ -72,12 +72,18 @@ class IAgentEvidenceRepository(ABC):
 
     @abstractmethod
     def list_by_state(self, state_id: str) -> Sequence[AgentEvidence]:
-        """Return evidence artifacts captured for an agent state."""
+        """Return evidence artifacts captured for an agent state in append order.
+
+        A resumed run replays this sequence, so the order must be the order of
+        ``append`` calls. Stores that sort must order by ``created_at`` (the
+        runner stamps strictly increasing values) and never by ``id`` as text:
+        ``...:evidence:10`` sorts before ``...:evidence:2``.
+        """
         ...
 
     @abstractmethod
     def list_by_manifest_ref(self, manifest_ref: str) -> Sequence[AgentEvidence]:
-        """Return evidence artifacts associated with a context manifest."""
+        """Return evidence artifacts of a context manifest in append order."""
         ...
 
     def count_by_state(self, state_id: str) -> int:

@@ -1371,6 +1371,7 @@ async def test_agent_runner_rejects_mismatched_cancel_payload(
         )
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "decisions",
     [
@@ -1432,7 +1433,7 @@ async def test_agent_runner_rejects_mismatched_cancel_payload(
         (),
     ],
 )
-def test_agent_runner_rejects_untrusted_model_cost_evidence(
+async def test_agent_runner_rejects_untrusted_model_cost_evidence(
     decisions: tuple[object, ...],
 ) -> None:
     """Resume cost reconstruction validates every append-only model receipt."""
@@ -1468,10 +1469,11 @@ def test_agent_runner_rejects_untrusted_model_cost_evidence(
     )
 
     with pytest.raises(AgentDefinitionError):
-        runner._validate_restored_pricing(state_id, context)
+        await runner._validate_restored_pricing(state_id, context)
 
 
-def test_agent_runner_rejects_pricing_catalog_and_total_mismatch() -> None:
+@pytest.mark.asyncio
+async def test_agent_runner_rejects_pricing_catalog_and_total_mismatch() -> None:
     """Catalog identity and recomputed total are independently enforced on resume."""
     state_id = "pricing-cross-check"
     evidence = FakeEvidenceRepository()
@@ -1513,9 +1515,9 @@ def test_agent_runner_rejects_pricing_catalog_and_total_mismatch() -> None:
     )
 
     with pytest.raises(AgentDefinitionError, match="catalog"):
-        runner._validate_restored_pricing(state_id, wrong_catalog)
+        await runner._validate_restored_pricing(state_id, wrong_catalog)
     with pytest.raises(AgentDefinitionError, match="does not match"):
-        runner._validate_restored_pricing(state_id, wrong_total)
+        await runner._validate_restored_pricing(state_id, wrong_total)
 
 
 def test_runner_observability_helpers_filter_untyped_cost_metadata() -> None:

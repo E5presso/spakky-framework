@@ -474,6 +474,11 @@ Durable path에서는 bootstrap이 다음 repository port를 요구합니다.
 | `IAgentSignalRepository` | `AgentSignal`: user message, approval decision, cancel 같은 inbound queue |
 | `IAgentEvidenceRepository` | `AgentEvidence`: tool/model/context/signal 판단 근거와 action-boundary checkpoint |
 
+이 port들은 동기 메서드입니다. Runner는 event loop를 막지 않도록 port 호출을
+worker thread에서 실행하고 기다립니다. 직접 구현한 repository는 loop thread가 아닌
+thread에서 불려도 동작해야 합니다. Evidence 목록은 append한 순서로 반환해야 하며,
+runner가 넣는 `created_at`으로 정렬합니다.
+
 운영에서는 `spakky-sqlalchemy[agent]` contribution을 사용합니다.
 
 ```bash
