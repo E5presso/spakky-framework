@@ -1,6 +1,6 @@
 [project]
 name = "spakky-grpc"
-version = "13.2.0"
+version = "13.3.0"
 description = "gRPC plugin for Spakky framework"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,9 +13,9 @@ dependencies = [
     "protobuf>=6.33.0",
     "pydantic>=2.4",
     "pydantic-settings>=2.13.1",
-    "spakky>=13.2.0",
-    "spakky-auth>=13.2.0",
-    "spakky-tracing>=13.2.0",
+    "spakky>=13.3.0",
+    "spakky-auth>=13.3.0",
+    "spakky-tracing>=13.3.0",
 ]
 
 [project.scripts]
