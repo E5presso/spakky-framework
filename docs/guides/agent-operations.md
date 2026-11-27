@@ -299,6 +299,11 @@ Signal repository의 원본 payload와 파생 MODEL evidence, assistant 답변, 
 무효화하고, 입력 철회에 따른 `control_outcome="input_withdrawn"`은 성공이나 모델 장애와
 구분해 집계하세요. 상세 계약은 [실행 중 지시 수정](agent-steering.md)에 있습니다.
 
+Model adapter가 `AgentModelStepRestartError`로 단계를 다시 하게 할 때도
+`invalidate_output=True`가 옵니다. 이때 metadata의 `code`는
+`agent_model_step_restarted`이고, 그 단계가 이미 내보낸 text와 tool call 표시는
+버려야 합니다. 그 tool call은 실행되지 않습니다.
+
 ## Logical model ref에 가격을 붙이기
 
 가격은 provider나 physical model 문자열에서 추론하지 않습니다. Operator가 사용하는

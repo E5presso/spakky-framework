@@ -543,7 +543,7 @@ async def test_checkpoint_revision_rejects_older_matching_replay() -> None:
     runner = AgentRunner.for_agent_instance(target)
 
     with pytest.raises(AgentDefinitionError, match="revision"):
-        runner._validate_restored_checkpoint(state_id, old_checkpoint)
+        await runner._validate_restored_checkpoint(state_id, old_checkpoint)
 
 
 async def test_checkpoint_resume_rejects_conversation_switch() -> None:
@@ -627,7 +627,8 @@ def _input_evidence_fixture(
     return AgentRunner.for_agent_instance(target), context, fingerprint
 
 
-def test_restored_input_accepts_exact_model_evidence_binding() -> None:
+@pytest.mark.asyncio
+async def test_restored_input_accepts_exact_model_evidence_binding() -> None:
     """A complete exact step set and initial-transcript digest resumes cleanly."""
     _, _, fingerprint = _input_evidence_fixture(())
     runner, context, _ = _input_evidence_fixture(
@@ -640,9 +641,10 @@ def test_restored_input_accepts_exact_model_evidence_binding() -> None:
         )
     )
 
-    runner._validate_restored_input(context.state_id, context)
+    await runner._validate_restored_input(context.state_id, context)
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "decision",
     [
@@ -657,15 +659,18 @@ def test_restored_input_accepts_exact_model_evidence_binding() -> None:
         {"initial_history_length": 1, "input_fingerprint": "x", "step": 0},
     ],
 )
-def test_restored_input_rejects_malformed_model_evidence(decision: object) -> None:
+async def test_restored_input_rejects_malformed_model_evidence(
+    decision: object,
+) -> None:
     """Every untrusted MODEL evidence scalar is validated before comparison."""
     runner, context, _ = _input_evidence_fixture((decision,))
 
     with pytest.raises(AgentDefinitionError):
-        runner._validate_restored_input(context.state_id, context)
+        await runner._validate_restored_input(context.state_id, context)
 
 
-def test_restored_input_rejects_duplicate_model_step_evidence() -> None:
+@pytest.mark.asyncio
+async def test_restored_input_rejects_duplicate_model_step_evidence() -> None:
     """Duplicate append-only MODEL evidence cannot satisfy exact step coverage."""
     _, _, fingerprint = _input_evidence_fixture(())
     decision = {
@@ -676,23 +681,25 @@ def test_restored_input_rejects_duplicate_model_step_evidence() -> None:
     runner, context, _ = _input_evidence_fixture((decision, decision))
 
     with pytest.raises(AgentDefinitionError):
-        runner._validate_restored_input(context.state_id, context)
+        await runner._validate_restored_input(context.state_id, context)
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "decisions",
     [(), ({"initial_history_length": 1, "input_fingerprint": "x", "step": 2},)],
 )
-def test_restored_input_rejects_incomplete_model_step_evidence(
+async def test_restored_input_rejects_incomplete_model_step_evidence(
     decisions: Sequence[object],
 ) -> None:
     """Missing evidence and a noncontiguous step set both fail closed."""
     runner, context, _ = _input_evidence_fixture(decisions)
 
     with pytest.raises(AgentDefinitionError, match="inconsistent"):
-        runner._validate_restored_input(context.state_id, context)
+        await runner._validate_restored_input(context.state_id, context)
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     (
         "evidence_length",
@@ -705,7 +712,7 @@ def test_restored_input_rejects_incomplete_model_step_evidence(
         (1, "exact", 1, "different"),
     ],
 )
-def test_restored_input_rejects_checkpoint_and_evidence_mismatch(
+async def test_restored_input_rejects_checkpoint_and_evidence_mismatch(
     evidence_length: int,
     evidence_fingerprint: str,
     context_length: int,
@@ -728,7 +735,7 @@ def test_restored_input_rejects_checkpoint_and_evidence_mismatch(
     )
 
     with pytest.raises(AgentDefinitionError, match="does not match"):
-        runner._validate_restored_input(context.state_id, context)
+        await runner._validate_restored_input(context.state_id, context)
 
 
 @pytest.mark.parametrize(
@@ -852,15 +859,17 @@ def _checkpoint_validation_fixture() -> tuple[
     return runner, checkpoint, evidence
 
 
-def test_checkpoint_validation_accepts_exact_latest_revision() -> None:
+@pytest.mark.asyncio
+async def test_checkpoint_validation_accepts_exact_latest_revision() -> None:
     """The raw JSON, revision, shape, and digest can match independently of order."""
     runner, checkpoint, _ = _checkpoint_validation_fixture()
 
-    runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
+    await runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize("revision", [True, 0, "1"])
-def test_checkpoint_validation_rejects_invalid_evidence_revision(
+async def test_checkpoint_validation_rejects_invalid_evidence_revision(
     revision: object,
 ) -> None:
     """Checkpoint evidence revisions are unique positive integers."""
@@ -874,19 +883,21 @@ def test_checkpoint_validation_rejects_invalid_evidence_revision(
     )
 
     with pytest.raises(AgentDefinitionError, match="revision"):
-        runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
+        await runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
 
 
-def test_checkpoint_validation_rejects_duplicate_revision() -> None:
+@pytest.mark.asyncio
+async def test_checkpoint_validation_rejects_duplicate_revision() -> None:
     """Two receipts cannot claim authority for the same checkpoint revision."""
     runner, checkpoint, evidence = _checkpoint_validation_fixture()
     artifact = evidence.get("checkpoint:1")
     evidence.append(replace(artifact, id="checkpoint:duplicate"))
 
     with pytest.raises(AgentDefinitionError, match="revision"):
-        runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
+        await runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("payload_update", "checkpoint_update"),
     [
@@ -906,7 +917,7 @@ def test_checkpoint_validation_rejects_duplicate_revision() -> None:
         ({}, {"step_count": "1"}),
     ],
 )
-def test_checkpoint_validation_rejects_malformed_receipt_fields(
+async def test_checkpoint_validation_rejects_malformed_receipt_fields(
     payload_update: Mapping[str, JsonValue],
     checkpoint_update: Mapping[str, JsonValue],
 ) -> None:
@@ -916,12 +927,13 @@ def test_checkpoint_validation_rejects_malformed_receipt_fields(
     evidence.append(replace(artifact, payload={**artifact.payload, **payload_update}))
 
     with pytest.raises(AgentDefinitionError, match="evidence"):
-        runner._validate_restored_checkpoint(
+        await runner._validate_restored_checkpoint(
             "checkpoint-validation",
             {**checkpoint, **checkpoint_update},
         )
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("payload_update", "expected"),
     [
@@ -930,7 +942,7 @@ def test_checkpoint_validation_rejects_malformed_receipt_fields(
         ({"shape_size": 1}, "shape"),
     ],
 )
-def test_checkpoint_validation_rejects_inconsistent_receipt(
+async def test_checkpoint_validation_rejects_inconsistent_receipt(
     payload_update: Mapping[str, JsonValue],
     expected: str,
 ) -> None:
@@ -940,7 +952,7 @@ def test_checkpoint_validation_rejects_inconsistent_receipt(
     evidence.append(replace(artifact, payload={**artifact.payload, **payload_update}))
 
     with pytest.raises(AgentDefinitionError, match=expected):
-        runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
+        await runner._validate_restored_checkpoint("checkpoint-validation", checkpoint)
 
 
 @pytest.mark.parametrize(
@@ -994,8 +1006,9 @@ def test_checkpoint_json_helpers_reject_recursive_and_non_json_values() -> None:
             runner_module._json_shape_size(value)
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize("restored", [False, True])
-def test_pending_batch_authorization_normalizes_invalid_catalog(
+async def test_pending_batch_authorization_normalizes_invalid_catalog(
     restored: bool,
 ) -> None:
     """Fresh and restored invalid pending batches use their distinct typed codes."""
@@ -1003,7 +1016,7 @@ def test_pending_batch_authorization_normalizes_invalid_catalog(
     context.pending_calls = [ModelToolCall("missing.tool", {})]
     context.restored_from_checkpoint = restored
 
-    result = runner._authorize_pending_batch(None, context)
+    result = await runner._authorize_pending_batch(None, context)
 
     assert result.error is not None
     assert result.error.code == (

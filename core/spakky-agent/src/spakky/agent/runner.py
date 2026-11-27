@@ -28,23 +28,27 @@ from asyncio import (
     TimeoutError,
     ensure_future,
     get_running_loop,
+    shield,
     timeout_at,
+    to_thread,
     wait,
 )
-from contextlib import contextmanager, suppress
+from contextlib import asynccontextmanager, suppress
 from collections.abc import (
     AsyncGenerator,
     Awaitable,
-    Generator,
+    Callable,
     Mapping,
     Sequence,
 )
 from copy import copy
+from datetime import UTC, datetime, timedelta
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from inspect import iscoroutinefunction, signature
 from json import dumps
+from logging import getLogger
 from math import isfinite
 from time import time_ns
 from types import FunctionType
@@ -115,6 +119,7 @@ from spakky.agent.hooks import AgentSignalHookDescriptor
 from spakky.agent.inbound import RunAgentInput
 from spakky.agent.interfaces.model import (
     AbstractAgentModelError,
+    AgentModelStepRestartError,
     IAgentModel,
     JsonSchemaConstraint,
     ModelCapability,
@@ -189,6 +194,8 @@ from spakky.agent.yield_ import (
 )
 from spakky.core.common.error import AbstractSpakkyFrameworkError
 
+logger = getLogger(__name__)
+
 DEFAULT_SYSTEM_INSTRUCTION = "Use the declared tools to accomplish the objective."
 """Fallback system message when an agent spec declares no instructions."""
 
@@ -219,6 +226,9 @@ class AgentRunResult:
     evidence_count: int
 
 
+EVIDENCE_CLOCK_STEP = timedelta(microseconds=1)
+"""Smallest gap kept between two evidence timestamps of one runner."""
+
 RUNNER_CHECKPOINT_METADATA_KEY = "runner_checkpoint"
 """Durable state metadata key holding an interrupted iterative loop."""
 
@@ -230,6 +240,8 @@ LIMIT_MAX_COST_CODE = "agent_max_cost_exceeded"
 LIMIT_COST_UNAVAILABLE_CODE = "agent_cost_unavailable"
 LIMIT_TIMEOUT_CODE = "agent_timeout"
 MODEL_EXECUTION_ERROR_CODE = "agent_model_execution_failed"
+MODEL_STEP_RESTART_CODE = "agent_model_step_restarted"
+"""Progress and telemetry code of a model step its adapter asked to redo."""
 TOOL_EXECUTION_ERROR_CODE = "agent_tool_execution_failed"
 CHECKPOINT_ERROR_CODE = "agent_checkpoint_invalid"
 APPROVAL_ERROR_CODE = "agent_approval_invalid"
@@ -292,7 +304,7 @@ class _SignalInbox:
     """
 
     state_id: str
-    repository: IAgentSignalRepository
+    repository: "_OffloadedSignalRepository"
     mailbox: AgentRunMailbox | None
     pending: dict[str, AgentSignal] = field(default_factory=dict)
     consumed: set[str] = field(default_factory=set)
@@ -300,22 +312,22 @@ class _SignalInbox:
     # a boundary check that drained the mailbox cannot swallow a wake-up.
     fresh: bool = False
 
-    def replay(self) -> None:
+    async def replay(self) -> None:
         """Admit unconsumed ledger rows once at run start or resume."""
-        for signal in self.repository.list_pending(self.state_id):
+        for signal in await self.repository.list_pending(self.state_id):
             self._admit(signal)
 
-    def signals(self) -> tuple[AgentSignal, ...]:
+    async def signals(self) -> tuple[AgentSignal, ...]:
         """Return unconsumed signals in ledger-then-arrival order."""
         if self.mailbox is None:
-            return tuple(self.repository.list_pending(self.state_id))
+            return tuple(await self.repository.list_pending(self.state_id))
         for signal in self.mailbox.drain():
             self._admit(signal)
         return tuple(self.pending.values())
 
-    def consume(self, signal: AgentSignal) -> AgentSignal:
+    async def consume(self, signal: AgentSignal) -> AgentSignal:
         """Acknowledge an applied signal in the ledger, then forget it."""
-        consumed = self.repository.mark_consumed(signal.id)
+        consumed = await self.repository.mark_consumed(signal.id)
         self.pending.pop(signal.id, None)
         self.consumed.add(signal.id)
         return consumed
@@ -334,6 +346,148 @@ class _SignalInbox:
         if signal.id not in self.pending:
             self.pending[signal.id] = signal
             self.fresh = True
+
+
+async def _offload[**ParametersT, ResultT](
+    function: Callable[ParametersT, ResultT],
+    *args: ParametersT.args,
+    **kwargs: ParametersT.kwargs,
+) -> ResultT:
+    """Run one blocking persistence call on a worker thread and wait for it.
+
+    The synchronous ports do database I/O, so calling them on the event loop
+    would stall every other coroutine, including one that holds a lock the call
+    waits for. A worker thread cannot be interrupted: when the awaiting task is
+    cancelled, the call is still awaited to its end so it does not outlive the
+    scope (session, transaction) its caller owns. Only a second cancellation
+    during that wait leaves the call running behind.
+    """
+    call = ensure_future(to_thread(function, *args, **kwargs))
+    try:
+        return await shield(call)
+    except CancelledError:
+        await wait((call,))
+        if call.exception() is not None:
+            logger.warning(
+                "Agent persistence call failed after its run was cancelled",
+                exc_info=call.exception(),
+            )
+        raise
+
+
+@dataclass(frozen=True, slots=True)
+class _OffloadedStateRepository:
+    """Awaitable view of a synchronous state repository."""
+
+    repository: IAgentStateRepository
+
+    async def get(self, state_id: str) -> AgentState:
+        return await _offload(self.repository.get, state_id)
+
+    async def get_or_none(self, state_id: str) -> AgentState | None:
+        return await _offload(self.repository.get_or_none, state_id)
+
+    async def save(self, state: AgentState) -> AgentState:
+        return await _offload(self.repository.save, state)
+
+
+@dataclass(frozen=True, slots=True)
+class _OffloadedSignalRepository:
+    """Awaitable view of a synchronous signal ledger."""
+
+    repository: IAgentSignalRepository
+
+    async def list_pending(self, state_id: str) -> Sequence[AgentSignal]:
+        return await _offload(self.repository.list_pending, state_id)
+
+    async def mark_consumed(self, signal_id: str) -> AgentSignal:
+        return await _offload(self.repository.mark_consumed, signal_id)
+
+
+@dataclass(frozen=True, slots=True)
+class _OffloadedEvidenceRepository:
+    """Awaitable view of a synchronous evidence repository."""
+
+    repository: IAgentEvidenceRepository
+
+    async def append(self, evidence: AgentEvidence) -> AgentEvidence:
+        return await _offload(self.repository.append, evidence)
+
+    async def list_by_state(self, state_id: str) -> Sequence[AgentEvidence]:
+        return await _offload(self.repository.list_by_state, state_id)
+
+    async def count_by_state(self, state_id: str) -> int:
+        return await _offload(self.repository.count_by_state, state_id)
+
+    async def has_step_evidence(
+        self,
+        state_id: str,
+        kind: AgentEvidenceKind,
+        model_step: int,
+        digest: str,
+    ) -> bool:
+        return await _offload(
+            self.repository.has_step_evidence, state_id, kind, model_step, digest
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _OffloadedTaskStore:
+    """Awaitable view of a synchronous conversation-history store."""
+
+    store: ITaskStore
+
+    async def load_history(self, conversation_id: str) -> Sequence[ConversationTurn]:
+        return await _offload(self.store.load_history, conversation_id)
+
+    async def append_turns(
+        self, conversation_id: str, turns: Sequence[ConversationTurn]
+    ) -> None:
+        await _offload(self.store.append_turns, conversation_id, turns)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+@dataclass(slots=True)
+class _EvidenceClock:
+    """Strictly increasing timestamps for the evidence one runner appends.
+
+    Evidence is read back ordered by ``created_at``. Two artifacts appended
+    within one clock tick would tie, so a reading that does not advance is
+    moved one microsecond past the previous one.
+    """
+
+    now: Callable[[], datetime] = _utc_now
+    # last is None until this runner appends or observes its first evidence.
+    last: datetime | None = None
+    observed_states: set[str] = field(default_factory=set)
+
+    def next(self) -> datetime:
+        """Return a timestamp later than every earlier one from this clock."""
+        moment = self.now()
+        if self.last is not None and moment <= self.last:
+            moment = self.last + EVIDENCE_CLOCK_STEP
+        self.last = moment
+        return moment
+
+    def observe(self, state_id: str, stored: Sequence[AgentEvidence]) -> None:
+        """Move past the evidence a resumed run already has.
+
+        Another runner, process or host wrote those rows from its own clock. A
+        resumed run must still sort after them when this host's clock is behind.
+        A stored timestamp without a timezone is read as UTC.
+        """
+        self.observed_states.add(state_id)
+        for evidence in stored:
+            moment = evidence.created_at
+            if moment is None:
+                continue
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            if self.last is None or moment > self.last:
+                self.last = moment
 
 
 class _SteeringRestart(Exception):
@@ -441,6 +595,9 @@ class AgentRunner:
     _inboxes: dict[str, _SignalInbox] = field(
         default_factory=dict, init=False, compare=False, repr=False
     )
+    _evidence_clock: _EvidenceClock = field(
+        default_factory=_EvidenceClock, init=False, compare=False, repr=False
+    )
 
     @classmethod
     def for_agent_instance(cls, instance: object) -> "AgentRunner":
@@ -531,7 +688,7 @@ class AgentRunner:
             stream = (
                 self._run_stateless(run_input)
                 if self.states is None
-                else self._run_durable(run_input, self.states)
+                else self._run_durable(run_input)
             )
             async for item in stream:
                 if item.kind is AgentYieldKind.FINAL:
@@ -644,7 +801,7 @@ class AgentRunner:
         run_input: RunAgentInput,
     ) -> AsyncGenerator[AgentEvent, None]:
         """Run the event loop while this run's live signal inbox stays open."""
-        with self._signal_inbox(run_input.state_id):
+        async with self._signal_inbox(run_input.state_id):
             async for event in self._run_events_session(run_input):
                 yield event
 
@@ -655,7 +812,7 @@ class AgentRunner:
         """Run the bounded iterative loop as protocol-neutral lifecycle events."""
         attribution = self._event_attribution(run_input)
         state = (
-            self._ensure_active_state(run_input, self.states)
+            await self._ensure_active_state(run_input)
             if self.states is not None
             else None
         )
@@ -667,7 +824,7 @@ class AgentRunner:
                 "Agent checkpoint could not be restored",
                 error,
             )
-            self._fail_execution(state, terminal)
+            await self._fail_execution(state, terminal)
             yield RunStartedEvent(attribution)
             yield RunFinishedEvent(
                 attribution,
@@ -680,16 +837,16 @@ class AgentRunner:
             state is not None
             and run_input.resume
             and context.pending_calls
-            and self._pending_resume_requires_hitl(state)
+            and await self._pending_resume_requires_hitl(state)
         ):
             yield _run_paused_event(
-                self._states_required().get(state.id),
+                await self._states_required().get(state.id),
                 attribution,
             )
             return
         while True:
             try:
-                self._apply_steering(state, context)
+                await self._apply_steering(state, context)
                 if context.steering_rehydration:
                     yield _progress_event(
                         Progress(
@@ -698,18 +855,19 @@ class AgentRunner:
                         ),
                         attribution,
                     )
-                    while context.steering_rehydration and not self._cancel_pending(
-                        context.state_id
+                    while (
+                        context.steering_rehydration
+                        and not await self._cancel_pending(context.state_id)
                     ):
                         await self._await_signal_arrival(context)
-                        self._apply_steering(state, context)
+                        await self._apply_steering(state, context)
                     # A pending cancel falls through to the cancel poll below instead
                     # of re-entering the rehydration wait it can never satisfy.
-                    if not self._cancel_pending(context.state_id):
+                    if not await self._cancel_pending(context.state_id):
                         continue
             except TimeoutError:
                 failure = self._timeout_error(context)
-                self._fail_execution(state, failure)
+                await self._fail_execution(state, failure)
                 yield RunFinishedEvent(
                     attribution,
                     error=_model_error_json(failure),
@@ -717,8 +875,8 @@ class AgentRunner:
                 )
                 return
             except AbstractSpakkyFrameworkError as error:
-                failure = self._framework_model_error(state, context, error)
-                self._fail_execution(state, failure)
+                failure = await self._framework_model_error(state, context, error)
+                await self._fail_execution(state, failure)
                 yield RunFinishedEvent(
                     attribution,
                     error=_model_error_json(failure),
@@ -736,7 +894,7 @@ class AgentRunner:
                     metadata=context.counters,
                 )
                 return
-            withdrawn = self._withdrawn_input_cancel(state, context)
+            withdrawn = await self._withdrawn_input_cancel(state, context)
             if withdrawn is not None:
                 yield RunFinishedEvent(
                     attribution,
@@ -745,9 +903,9 @@ class AgentRunner:
                 )
                 return
             if context.pending_calls:
-                outcome = self._authorize_pending_batch(state, context)
+                outcome = await self._authorize_pending_batch(state, context)
                 if outcome.error is not None:
-                    self._fail_execution(state, outcome.error)
+                    await self._fail_execution(state, outcome.error)
                     yield RunFinishedEvent(
                         attribution,
                         error=_model_error_json(outcome.error),
@@ -755,7 +913,7 @@ class AgentRunner:
                     )
                     return
                 if outcome.paused:
-                    current = self._states_required().get(context.state_id)
+                    current = await self._states_required().get(context.state_id)
                     yield _run_paused_event(current, attribution)
                     return
                 try:
@@ -769,7 +927,7 @@ class AgentRunner:
                         yield item
                 except TimeoutError:
                     error = self._timeout_error(context)
-                    self._fail_execution(state, error)
+                    await self._fail_execution(state, error)
                     yield RunFinishedEvent(
                         attribution,
                         error=_model_error_json(error),
@@ -784,7 +942,7 @@ class AgentRunner:
                     )
                     return
                 if context.terminal_error is not None:
-                    self._fail_execution(state, context.terminal_error)
+                    await self._fail_execution(state, context.terminal_error)
                     yield RunFinishedEvent(
                         attribution,
                         error=_model_error_json(context.terminal_error),
@@ -792,7 +950,7 @@ class AgentRunner:
                     )
                     return
                 if state is not None:
-                    current = self._states_required().get(state.id)
+                    current = await self._states_required().get(state.id)
                     if current.status is not AgentStatus.ACTIVE:
                         yield RunFinishedEvent(
                             attribution,
@@ -803,7 +961,7 @@ class AgentRunner:
                 continue
             limit_error = self._before_model_limit(run_input, context)
             if limit_error is not None:
-                self._fail_execution(state, limit_error)
+                await self._fail_execution(state, limit_error)
                 yield RunFinishedEvent(
                     attribution,
                     error=_model_error_json(limit_error),
@@ -820,7 +978,7 @@ class AgentRunner:
             )
             accumulator = _ModelStepAccumulator()
             if state is not None:
-                self._append_boundary(
+                await self._append_boundary(
                     state.id,
                     _before_model(self._model_action_id(context.step_count)),
                 )
@@ -852,7 +1010,7 @@ class AgentRunner:
                         ):
                             yield signal_event
                         if context.terminal_error is not None:
-                            self._fail_execution(state, context.terminal_error)
+                            await self._fail_execution(state, context.terminal_error)
                             yield StepFinishedEvent(
                                 attribution,
                                 step_name=step_name,
@@ -873,7 +1031,7 @@ class AgentRunner:
                         yield item
                     if accumulator.error is not None:
                         break
-                revised = self._apply_steering(state, context)
+                revised = await self._apply_steering(state, context)
                 if (
                     not revised
                     and self._provisional_steering(context)
@@ -891,21 +1049,23 @@ class AgentRunner:
                     and self._provisional_steering(context)
                     and accumulator.error is None
                 ):
-                    if state is not None and self._cancel_pending(state.id):
+                    if state is not None and await self._cancel_pending(state.id):
                         raise _SteeringRestart()
                     await self._await_signal_arrival(context)
-                    revised = self._apply_steering(state, context)
+                    revised = await self._apply_steering(state, context)
                 if revised:
                     raise _SteeringRestart()
             except _SteeringRestart:
-                superseded_error = self._supersede_model_step(
-                    self._states_required().get(context.state_id), context, accumulator
+                superseded_error = await self._supersede_model_step(
+                    await self._states_required().get(context.state_id),
+                    context,
+                    accumulator,
                 )
                 yield StepFinishedEvent(
                     attribution, step_name=step_name, metadata=context.counters
                 )
                 if superseded_error is not None:
-                    self._fail_execution(state, superseded_error)
+                    await self._fail_execution(state, superseded_error)
                     yield RunFinishedEvent(
                         attribution,
                         error=_model_error_json(superseded_error),
@@ -913,9 +1073,24 @@ class AgentRunner:
                     )
                     return
                 continue
+            except AgentModelStepRestartError as restart:
+                restart_error = await self._restart_model_step(state, context, restart)
+                yield _progress_event(_step_restart_progress(step_name), attribution)
+                yield StepFinishedEvent(
+                    attribution, step_name=step_name, metadata=context.counters
+                )
+                if restart_error is not None:
+                    await self._fail_execution(state, restart_error)
+                    yield RunFinishedEvent(
+                        attribution,
+                        error=_model_error_json(restart_error),
+                        metadata=context.counters,
+                    )
+                    return
+                continue
             except TimeoutError:
                 error = self._timeout_error(context)
-                self._fail_execution(state, error)
+                await self._fail_execution(state, error)
                 yield StepFinishedEvent(
                     attribution,
                     step_name=step_name,
@@ -928,12 +1103,12 @@ class AgentRunner:
                 )
                 return
             except AbstractSpakkyFrameworkError as framework_error:
-                error = self._framework_model_error(
+                error = await self._framework_model_error(
                     state,
                     context,
                     framework_error,
                 )
-                self._fail_execution(state, error)
+                await self._fail_execution(state, error)
                 metadata = {**context.counters, **context.route_metadata}
                 yield StepFinishedEvent(
                     attribution,
@@ -947,11 +1122,11 @@ class AgentRunner:
                 )
                 return
             if state is not None:
-                self._append_boundary(
+                await self._append_boundary(
                     state.id,
                     _after_model(self._model_action_id(context.step_count)),
                 )
-            step_error = self._finish_model_step(
+            step_error = await self._finish_model_step(
                 run_input,
                 state,
                 context,
@@ -964,7 +1139,7 @@ class AgentRunner:
                 metadata=step_metadata,
             )
             if step_error is not None:
-                self._fail_execution(state, step_error)
+                await self._fail_execution(state, step_error)
                 yield RunFinishedEvent(
                     attribution,
                     error=_model_error_json(step_error),
@@ -972,7 +1147,7 @@ class AgentRunner:
                 )
                 return
             if state is not None:
-                current = self._states_required().get(state.id)
+                current = await self._states_required().get(state.id)
                 if current.status is not AgentStatus.ACTIVE:
                     if current.status is AgentStatus.INTERRUPTED:
                         yield _run_paused_event(current, attribution)
@@ -983,13 +1158,13 @@ class AgentRunner:
                             metadata=step_metadata,
                         )
                     return
-            if self._apply_steering(state, context):
+            if await self._apply_steering(state, context):
                 continue
             if context.pending_calls:
                 continue
             if state is not None:
-                self._complete_state(state.id, context)
-            self._persist_turns(
+                await self._complete_state(state.id, context)
+            await self._persist_turns(
                 context,
             )
             yield RunFinishedEvent(
@@ -1089,13 +1264,13 @@ class AgentRunner:
             parent_run_id=run_input.parent_run_id,
         )
 
-    def _complete_state(
+    async def _complete_state(
         self,
         state_id: str,
         context: _ExecutionContext,
     ) -> None:
-        current = self._states_required().get(state_id)
-        completed = self._states_required().save(
+        current = await self._states_required().get(state_id)
+        completed = await self._states_required().save(
             replace(
                 current,
                 status=AgentStatus.COMPLETED,
@@ -1103,7 +1278,7 @@ class AgentRunner:
                 current_activity="run completed",
             )
         )
-        self._save_context(completed, context)
+        await self._save_context(completed, context)
 
     async def _run_stateless(
         self,
@@ -1116,22 +1291,21 @@ class AgentRunner:
     async def _run_durable(
         self,
         run_input: RunAgentInput,
-        states: IAgentStateRepository,
     ) -> AsyncGenerator[AgentYield[object], None]:
-        with self._signal_inbox(run_input.state_id):
-            async for item in self._run_durable_session(run_input, states):
+        async with self._signal_inbox(run_input.state_id):
+            async for item in self._run_durable_session(run_input):
                 yield item
 
     async def _run_durable_session(
         self,
         run_input: RunAgentInput,
-        states: IAgentStateRepository,
     ) -> AsyncGenerator[AgentYield[object], None]:
-        state = self._ensure_active_state(run_input, states)
+        states = self._states_required()
+        state = await self._ensure_active_state(run_input)
         try:
             context = await self._execution_context(run_input, state)
         except AbstractSpakkyFrameworkError as error:
-            yield self._fail_on_model_error(
+            yield await self._fail_on_model_error(
                 state,
                 _framework_error(
                     CHECKPOINT_ERROR_CODE,
@@ -1142,7 +1316,7 @@ class AgentRunner:
             return
         if run_input.resume:
             if context.pending_calls:
-                if self._pending_resume_requires_hitl(state):
+                if await self._pending_resume_requires_hitl(state):
                     yield _progress(
                         "resume action: require_hitl",
                         "resume",
@@ -1153,23 +1327,23 @@ class AgentRunner:
                     "resume",
                 )
             else:
-                yield self._emit_resume_plan(state)
-                state = states.get(run_input.state_id)
+                yield await self._emit_resume_plan(state)
+                state = await states.get(run_input.state_id)
         async for item in self._run_iterative_yields(run_input, state, context):
             yield item
 
-    def _pending_resume_requires_hitl(self, state: AgentState) -> bool:
+    async def _pending_resume_requires_hitl(self, state: AgentState) -> bool:
         plan = plan_agent_resume(
             state,
-            self._evidence_required().list_by_state(state.id),
-            self._pending_signals(state.id),
+            await self._evidence_required().list_by_state(state.id),
+            await self._pending_signals(state.id),
         )
         if (
             plan.action is AgentResumeAction.REQUIRE_HITL
             and plan.boundary is not None
             and plan.boundary.action_kind is AgentActionKind.TOOL_CALL
         ):
-            self._states_required().save(plan.state)
+            await self._states_required().save(plan.state)
             return True
         return False
 
@@ -1182,24 +1356,27 @@ class AgentRunner:
         """Run the shared bounded model/batch loop for the public yield surface."""
         while True:
             try:
-                self._apply_steering(state, context)
+                await self._apply_steering(state, context)
                 if context.steering_rehydration:
                     yield _progress("awaiting input rehydration", "steering_wait")
-                    while context.steering_rehydration and not self._cancel_pending(
-                        context.state_id
+                    while (
+                        context.steering_rehydration
+                        and not await self._cancel_pending(context.state_id)
                     ):
                         await self._await_signal_arrival(context)
-                        self._apply_steering(state, context)
+                        await self._apply_steering(state, context)
                     # A pending cancel falls through to the cancel poll below instead
                     # of re-entering the rehydration wait it can never satisfy.
-                    if not self._cancel_pending(context.state_id):
+                    if not await self._cancel_pending(context.state_id):
                         continue
             except TimeoutError:
-                yield self._fail_on_model_error(state, self._timeout_error(context))
+                yield await self._fail_on_model_error(
+                    state, self._timeout_error(context)
+                )
                 return
             except AbstractSpakkyFrameworkError as error:
-                yield self._fail_on_model_error(
-                    state, self._framework_model_error(state, context, error)
+                yield await self._fail_on_model_error(
+                    state, await self._framework_model_error(state, context, error)
                 )
                 return
             for notification in context.steering_notifications:
@@ -1209,18 +1386,18 @@ class AgentRunner:
             if cancel is not None:
                 yield cancel
                 return
-            withdrawn = self._withdrawn_input_cancel(state, context)
+            withdrawn = await self._withdrawn_input_cancel(state, context)
             if withdrawn is not None:
                 yield withdrawn
                 return
             if context.pending_calls:
-                authorization = self._authorize_pending_batch(state, context)
+                authorization = await self._authorize_pending_batch(state, context)
                 for approval in authorization.approvals:
                     yield approval
                 if authorization.paused:
                     return
                 if authorization.error is not None:
-                    yield self._fail_on_model_error(state, authorization.error)
+                    yield await self._fail_on_model_error(state, authorization.error)
                     return
                 try:
                     async for item in self._dispatch_pending_batch_as_yields(
@@ -1232,13 +1409,13 @@ class AgentRunner:
                         yield item
                 except TimeoutError:
                     error = self._timeout_error(context)
-                    yield self._fail_on_model_error(state, error)
+                    yield await self._fail_on_model_error(state, error)
                     return
                 if context.terminal_error is not None:
-                    yield self._fail_on_model_error(state, context.terminal_error)
+                    yield await self._fail_on_model_error(state, context.terminal_error)
                     return
                 if state is not None:
-                    current = self._states_required().get(state.id)
+                    current = await self._states_required().get(state.id)
                     if current.status is not AgentStatus.ACTIVE:
                         if current.status is AgentStatus.CANCELLED:
                             return
@@ -1247,14 +1424,14 @@ class AgentRunner:
                 continue
             limit_error = self._before_model_limit(run_input, context)
             if limit_error is not None:
-                yield self._fail_on_model_error(state, limit_error)
+                yield await self._fail_on_model_error(state, limit_error)
                 return
             context.step_count += 1
             step_name = f"model-{context.step_count}"
             yield _progress("preparing model request", step_name)
             accumulator = _ModelStepAccumulator()
             if state is not None:
-                self._append_boundary(
+                await self._append_boundary(
                     state.id,
                     _before_model(self._model_action_id(context.step_count)),
                 )
@@ -1283,7 +1460,7 @@ class AgentRunner:
                         yield _token(event.reasoning_delta or "", event.metadata)
                     if accumulator.error is not None:
                         break
-                revised = self._apply_steering(state, context)
+                revised = await self._apply_steering(state, context)
                 if (
                     not revised
                     and self._provisional_steering(context)
@@ -1295,27 +1472,41 @@ class AgentRunner:
                     and self._provisional_steering(context)
                     and accumulator.error is None
                 ):
-                    if state is not None and self._cancel_pending(state.id):
+                    if state is not None and await self._cancel_pending(state.id):
                         raise _SteeringRestart()
                     await self._await_signal_arrival(context)
-                    revised = self._apply_steering(state, context)
+                    revised = await self._apply_steering(state, context)
                 if revised:
                     raise _SteeringRestart()
             except _SteeringRestart:
-                superseded_error = self._supersede_model_step(
-                    self._states_required().get(context.state_id), context, accumulator
+                superseded_error = await self._supersede_model_step(
+                    await self._states_required().get(context.state_id),
+                    context,
+                    accumulator,
                 )
                 if superseded_error is not None:
-                    yield self._fail_on_model_error(state, superseded_error)
+                    yield await self._fail_on_model_error(state, superseded_error)
+                    return
+                continue
+            except AgentModelStepRestartError as restart:
+                restart_error = await self._restart_model_step(state, context, restart)
+                yield AgentYield(
+                    kind=AgentYieldKind.PROGRESS,
+                    payload=_step_restart_progress(step_name),
+                )
+                if restart_error is not None:
+                    yield await self._fail_on_model_error(state, restart_error)
                     return
                 continue
             except TimeoutError:
-                yield self._fail_on_model_error(state, self._timeout_error(context))
+                yield await self._fail_on_model_error(
+                    state, self._timeout_error(context)
+                )
                 return
             except AbstractSpakkyFrameworkError as framework_error:
-                yield self._fail_on_model_error(
+                yield await self._fail_on_model_error(
                     state,
-                    self._framework_model_error(
+                    await self._framework_model_error(
                         state,
                         context,
                         framework_error,
@@ -1323,21 +1514,21 @@ class AgentRunner:
                 )
                 return
             if state is not None:
-                self._append_boundary(
+                await self._append_boundary(
                     state.id,
                     _after_model(self._model_action_id(context.step_count)),
                 )
-            step_error = self._finish_model_step(
+            step_error = await self._finish_model_step(
                 run_input,
                 state,
                 context,
                 accumulator,
             )
             if step_error is not None:
-                yield self._fail_on_model_error(state, step_error)
+                yield await self._fail_on_model_error(state, step_error)
                 return
             if state is not None:
-                current = self._states_required().get(state.id)
+                current = await self._states_required().get(state.id)
                 if current.status is not AgentStatus.ACTIVE:
                     if current.status is not AgentStatus.INTERRUPTED:
                         yield _error_yield(_state_model_error(current))
@@ -1345,8 +1536,8 @@ class AgentRunner:
             if context.pending_calls:
                 continue
             if state is not None:
-                self._complete_state(state.id, context)
-            self._persist_turns(
+                await self._complete_state(state.id, context)
+            await self._persist_turns(
                 context,
             )
             yield self._final_yield(
@@ -1362,7 +1553,9 @@ class AgentRunner:
                     ),
                 },
                 evidence_count=(
-                    self._evidence_count(run_input.state_id) if state is not None else 0
+                    await self._evidence_count(run_input.state_id)
+                    if state is not None
+                    else 0
                 ),
             )
             return
@@ -1390,7 +1583,7 @@ class AgentRunner:
             if checkpoint is not None:
                 if not isinstance(checkpoint, Mapping):
                     raise AgentDefinitionError("Agent runner checkpoint is invalid")
-                self._validate_restored_checkpoint(state.id, checkpoint)
+                await self._validate_restored_checkpoint(state.id, checkpoint)
                 context = self._context_from_checkpoint(run_input.state_id, checkpoint)
                 if context.static_context_fingerprint != static_fingerprint:
                     raise AgentDefinitionError(
@@ -1404,12 +1597,12 @@ class AgentRunner:
                     raise AgentDefinitionError(
                         "Agent resume conversation does not match its checkpoint"
                     )
-                self._validate_restored_input(state.id, context)
+                await self._validate_restored_input(state.id, context)
                 if context.pricing_fingerprint != pricing_fingerprint:
                     raise AgentDefinitionError(
                         "Agent resume pricing does not match its checkpoint"
                     )
-                self._validate_restored_pricing(state.id, context)
+                await self._validate_restored_pricing(state.id, context)
                 context.steering_enabled = (
                     AgentSignalKind.STEERING_INSTRUCTION
                     in self.agent.spec.accepted_signals
@@ -1417,7 +1610,7 @@ class AgentRunner:
                 context.deadline = deadline
                 context.restored_from_checkpoint = True
                 return context
-        history = list(self._resolve_history(run_input))
+        history = list(await self._resolve_history(run_input))
         history.append(run_input.user_message())
         initial_history = tuple(history)
         return _ExecutionContext(
@@ -1468,7 +1661,11 @@ class AgentRunner:
         except AbstractAgentModelError as error:
             usage = error.model_usage
             routing.update(_routing_metadata(error.model_metadata))
-            error_code = MODEL_EXECUTION_ERROR_CODE
+            error_code = (
+                MODEL_STEP_RESTART_CODE
+                if isinstance(error, AgentModelStepRestartError)
+                else MODEL_EXECUTION_ERROR_CODE
+            )
             raise
         except AbstractSpakkyFrameworkError:
             error_code = MODEL_EXECUTION_ERROR_CODE
@@ -1529,7 +1726,7 @@ class AgentRunner:
                     run_input.model_selection,
                 )
             )
-        self._apply_steering(state, context)
+        await self._apply_steering(state, context)
         iteration_revision = context.input_revision
         steering_enabled = (
             AgentSignalKind.STEERING_INSTRUCTION in self.agent.spec.accepted_signals
@@ -1590,7 +1787,7 @@ class AgentRunner:
             if isinstance(iterator, AsyncGenerator):
                 await iterator.aclose()
 
-    def _apply_steering(
+    async def _apply_steering(
         self, state: AgentState | None, context: _ExecutionContext
     ) -> bool:
         """Consume revisioned steering before exposing a candidate or effect.
@@ -1602,11 +1799,11 @@ class AgentRunner:
             state is None
             or AgentSignalKind.STEERING_INSTRUCTION
             not in self.agent.spec.accepted_signals
-            or self._cancel_pending(state.id)
+            or await self._cancel_pending(state.id)
         ):
             return False
         changed = False
-        for signal in self._pending_signals(state.id):
+        for signal in await self._pending_signals(state.id):
             if signal.kind is not AgentSignalKind.STEERING_INSTRUCTION:
                 continue
             # Legacy hook-only steering retains its established contract.
@@ -1640,13 +1837,13 @@ class AgentRunner:
                         else message
                         for message in context.history
                     ]
-                    self._consume_signal(signal)
-                    self._save_context(state, context)
+                    await self._consume_signal(signal)
+                    await self._save_context(state, context)
                     continue
-                self._consume_signal(signal)
+                await self._consume_signal(signal)
                 continue
             context.steering_rehydration.pop(update.input_id, None)
-            self._discard_obsolete_batch(context)
+            await self._discard_obsolete_batch(context)
             context.assistant_text.clear()
             context.final_output = None
             context.final_output_json = None
@@ -1684,32 +1881,32 @@ class AgentRunner:
                         },
                     )
                 )
-            self._consume_signal(signal)
+            await self._consume_signal(signal)
             changed = True
         if changed:
-            self._save_context(state, context)
+            await self._save_context(state, context)
         return changed
 
-    def _discard_obsolete_batch(self, context: _ExecutionContext) -> None:
+    async def _discard_obsolete_batch(self, context: _ExecutionContext) -> None:
         """Close unexecuted call correlations without inventing effect receipts."""
         if context.pending_calls:
-            current = self._states_required().get(context.state_id)
+            current = await self._states_required().get(context.state_id)
             recovery = plan_agent_resume(
-                current, self._evidence_required().list_by_state(context.state_id)
+                current, await self._evidence_required().list_by_state(context.state_id)
             )
             boundary = recovery.boundary
             if (
                 boundary is not None
                 and boundary.action_kind is AgentActionKind.APPROVAL_WAIT
             ):
-                self._append_boundary(
+                await self._append_boundary(
                     context.state_id,
                     AgentActionBoundaryCheckpoint.after_approval_wait(
                         boundary.action_id,
                         metadata={"outcome": "input_revised", "executed": False},
                     ),
                 )
-                self._states_required().save(
+                await self._states_required().save(
                     replace(
                         current,
                         metadata={
@@ -1731,7 +1928,7 @@ class AgentRunner:
             )
         context.pending_calls.clear()
 
-    def _withdrawn_input_cancel(
+    async def _withdrawn_input_cancel(
         self, state: AgentState | None, context: _ExecutionContext
     ) -> AgentYield[object] | None:
         """End an input-only run when every actually observed input was withdrawn."""
@@ -1741,8 +1938,8 @@ class AgentRunner:
             or not all(item.withdrawn for item in context.steering.values())
         ):
             return None
-        current = self._states_required().get(context.state_id)
-        self._states_required().save(
+        current = await self._states_required().get(context.state_id)
+        await self._states_required().save(
             replace(
                 current,
                 status=AgentStatus.CANCELLED,
@@ -1751,7 +1948,7 @@ class AgentRunner:
                 current_activity="input withdrawn",
             )
         )
-        self._save_context(state, context)
+        await self._save_context(state, context)
         return AgentYield(
             kind=AgentYieldKind.CANCEL,
             payload=Cancel(
@@ -1796,7 +1993,7 @@ class AgentRunner:
         task = ensure_future(self._await_with_deadline(operation, context.deadline))
         try:
             while True:
-                if self._control_pending(state, context):
+                if await self._control_pending(state, context):
                     raise _SteeringRestart()
                 mailbox = (
                     None if state is None else self._inbox_required(state.id).mailbox
@@ -1809,7 +2006,7 @@ class AgentRunner:
                 finally:
                     control.cancel()
                 if task in done:
-                    if self._control_pending(state, context):
+                    if await self._control_pending(state, context):
                         raise _SteeringRestart()
                     return task.result()
         finally:
@@ -1821,7 +2018,7 @@ class AgentRunner:
             elif not task.cancelled():
                 task.exception()
 
-    def _control_pending(
+    async def _control_pending(
         self, state: AgentState | None, context: _ExecutionContext
     ) -> bool:
         """Report whether a control-lane signal must interrupt in-flight work.
@@ -1831,7 +2028,7 @@ class AgentRunner:
         """
         if state is None:
             return False
-        pending = self._pending_signals(state.id)
+        pending = await self._pending_signals(state.id)
         if any(signal.kind is AgentSignalKind.CANCEL for signal in pending):
             return True
         if any(
@@ -1839,7 +2036,7 @@ class AgentRunner:
             and signal.lane is AgentSignalLane.CONTROL
             for signal in pending
         ):
-            return self._apply_steering(state, context)
+            return await self._apply_steering(state, context)
         return False
 
     async def _context_for_step(
@@ -1918,7 +2115,7 @@ class AgentRunner:
                 or prepared.digest is not None
             )
         ):
-            self._append_context_evidence(
+            await self._append_context_evidence(
                 state.id,
                 context.step_count,
                 prepared,
@@ -1927,7 +2124,7 @@ class AgentRunner:
             context.context_evidence_steps.add(context.step_count)
         return prepared
 
-    def _append_context_evidence(
+    async def _append_context_evidence(
         self,
         state_id: str,
         model_step: int,
@@ -1957,10 +2154,10 @@ class AgentRunner:
             }
             for pack in context.packs
         )
-        if packs and not evidence.has_step_evidence(
+        if packs and not await evidence.has_step_evidence(
             state_id, AgentEvidenceKind.CONTEXT, model_step, context_fingerprint
         ):
-            self._append_candidate(
+            await self._append_candidate(
                 state_id,
                 AgentEvidenceCandidate(
                     kind=AgentEvidenceKind.CONTEXT,
@@ -1975,13 +2172,13 @@ class AgentRunner:
                 ),
             )
         manifest = context.manifest
-        if manifest is not None and not evidence.has_step_evidence(
+        if manifest is not None and not await evidence.has_step_evidence(
             state_id,
             AgentEvidenceKind.CONTEXT_MANIFEST,
             model_step,
             context_fingerprint,
         ):
-            self._append_candidate(
+            await self._append_candidate(
                 state_id,
                 AgentEvidenceCandidate(
                     kind=AgentEvidenceKind.CONTEXT_MANIFEST,
@@ -2025,13 +2222,13 @@ class AgentRunner:
                 ),
             )
         digest = context.digest
-        if digest is not None and not evidence.has_step_evidence(
+        if digest is not None and not await evidence.has_step_evidence(
             state_id,
             AgentEvidenceKind.CONTEXT_DIGEST,
             model_step,
             digest.digest,
         ):
-            self._append_candidate(
+            await self._append_candidate(
                 state_id,
                 AgentEvidenceCandidate(
                     kind=AgentEvidenceKind.CONTEXT_DIGEST,
@@ -2108,7 +2305,7 @@ class AgentRunner:
         async with timeout_at(deadline):
             return await awaitable
 
-    def _supersede_model_step(
+    async def _supersede_model_step(
         self,
         state: AgentState,
         context: _ExecutionContext,
@@ -2121,14 +2318,46 @@ class AgentRunner:
             if accumulator.usage is not None
             else None
         )
-        self._append_boundary(
+        await self._append_boundary(
             state.id, _after_model(self._model_action_id(context.step_count))
         )
-        self._append_model_evidence(state.id, context, accumulator, error=error)
-        self._save_context(state, context)
+        await self._append_model_evidence(state.id, context, accumulator, error=error)
+        await self._save_context(state, context)
         return error
 
-    def _finish_model_step(
+    async def _restart_model_step(
+        self,
+        state: AgentState | None,
+        context: _ExecutionContext,
+        restart: AgentModelStepRestartError,
+    ) -> ModelError | None:
+        """Drop one model step's output while keeping what it already billed.
+
+        Nothing the step streamed reaches the transcript or the pending tool
+        batch, so its tool calls never run. A durable run still closes the
+        step's action boundary and records the receipt the adapter attached.
+        """
+        context.route_metadata.update(_routing_metadata(restart.model_metadata))
+        discarded = _ModelStepAccumulator(
+            usage=restart.model_usage,
+            metadata=dict(restart.model_metadata),
+        )
+        error = (
+            self._record_usage(context, discarded.usage)
+            if discarded.usage is not None
+            else None
+        )
+        if state is not None:
+            await self._append_boundary(
+                state.id, _after_model(self._model_action_id(context.step_count))
+            )
+            await self._append_model_evidence(
+                state.id, context, discarded, error=error, restarted=True
+            )
+            await self._save_context(state, context)
+        return error
+
+    async def _finish_model_step(
         self,
         run_input: RunAgentInput,
         state: AgentState | None,
@@ -2139,21 +2368,21 @@ class AgentRunner:
         context.route_metadata.update(_routing_metadata(accumulator.metadata))
         usage_error = self._record_usage(context, accumulator.usage)
         if usage_error is not None:
-            return self._finalize_model_step_error(
+            return await self._finalize_model_step_error(
                 state,
                 context,
                 accumulator,
                 usage_error,
             )
         if accumulator.error is not None:
-            return self._finalize_model_step_error(
+            return await self._finalize_model_step_error(
                 state,
                 context,
                 accumulator,
                 accumulator.error,
             )
         if accumulator.terminal_count != 1:
-            return self._finalize_model_step_error(
+            return await self._finalize_model_step_error(
                 state,
                 context,
                 accumulator,
@@ -2166,7 +2395,7 @@ class AgentRunner:
         output_type = self.agent.spec.output_type
         if output_type is not None:
             if accumulator.candidates and accumulator.structured_outputs:
-                return self._finalize_model_step_error(
+                return await self._finalize_model_step_error(
                     state,
                     context,
                     accumulator,
@@ -2178,7 +2407,7 @@ class AgentRunner:
                 )
             if not accumulator.candidates:
                 if len(accumulator.structured_outputs) == 0:
-                    return self._finalize_model_step_error(
+                    return await self._finalize_model_step_error(
                         state,
                         context,
                         accumulator,
@@ -2189,7 +2418,7 @@ class AgentRunner:
                         ),
                     )
                 if len(accumulator.structured_outputs) != 1:
-                    return self._finalize_model_step_error(
+                    return await self._finalize_model_step_error(
                         state,
                         context,
                         accumulator,
@@ -2206,7 +2435,7 @@ class AgentRunner:
                     )
                     final_output_json = contract.dump(final_output)
                 except AgentDefinitionError:
-                    return self._finalize_model_step_error(
+                    return await self._finalize_model_step_error(
                         state,
                         context,
                         accumulator,
@@ -2226,7 +2455,7 @@ class AgentRunner:
                     reserve=True,
                 )
             except AbstractSpakkyAgentError as error:
-                return self._finalize_model_step_error(
+                return await self._finalize_model_step_error(
                     state,
                     context,
                     accumulator,
@@ -2237,7 +2466,7 @@ class AgentRunner:
                 )
             tool_limit_error = self._before_tool_batch_limit(context, len(prepared))
             if tool_limit_error is not None:
-                return self._finalize_model_step_error(
+                return await self._finalize_model_step_error(
                     state,
                     context,
                     accumulator,
@@ -2254,13 +2483,13 @@ class AgentRunner:
             )
         context.assistant_text.extend(accumulator.content)
         if state is not None:
-            self._append_model_evidence(state.id, context, accumulator)
+            await self._append_model_evidence(state.id, context, accumulator)
             if context.pending_calls:
-                self._save_context(state, context)
+                await self._save_context(state, context)
         _ = run_input
         return None
 
-    def _finalize_model_step_error(
+    async def _finalize_model_step_error(
         self,
         state: AgentState | None,
         context: _ExecutionContext,
@@ -2273,13 +2502,13 @@ class AgentRunner:
             metadata={**error.metadata, **self._step_metadata(context, accumulator)},
         )
         if state is not None:
-            self._append_model_evidence(
+            await self._append_model_evidence(
                 state.id,
                 context,
                 accumulator,
                 error=terminal,
             )
-            self._save_context(state, context)
+            await self._save_context(state, context)
         return terminal
 
     def _prepare_batch(
@@ -2337,7 +2566,7 @@ class AgentRunner:
             normalized.append(replace(call, call_id=call_id))
         return tuple(normalized)
 
-    def _authorize_pending_batch(
+    async def _authorize_pending_batch(
         self,
         state: AgentState | None,
         context: _ExecutionContext,
@@ -2388,7 +2617,7 @@ class AgentRunner:
                         metadata=context.counters,
                     )
                 )
-            self._append_boundary(
+            await self._append_boundary(
                 state.id,
                 _before_approval(item.call, item.descriptor),
             )
@@ -2408,7 +2637,7 @@ class AgentRunner:
             )
             approvals.append(approval_item)
             try:
-                outcome = self._consume_approval_outcome(state.id, request)
+                outcome = await self._consume_approval_outcome(state.id, request)
             except AbstractSpakkyFrameworkError as error:
                 return _AuthorizationResult(
                     approvals=tuple(approvals),
@@ -2420,7 +2649,7 @@ class AgentRunner:
                     ),
                 )
             if outcome is None:
-                self._save_approval_pause(state.id, planned_state, context)
+                await self._save_approval_pause(state.id, planned_state, context)
                 return _AuthorizationResult(
                     approvals=tuple(approvals),
                     paused=True,
@@ -2429,14 +2658,18 @@ class AgentRunner:
                 ApprovalDecision.APPROVE,
                 ApprovalDecision.MODIFY,
             ):
-                self._save_context(self._states_required().get(state.id), context)
+                await self._save_context(
+                    await self._states_required().get(state.id), context
+                )
                 return _AuthorizationResult(
                     approvals=tuple(approvals),
                     paused=outcome.decision is ApprovalDecision.DEFER,
                     error=(
                         None
                         if outcome.decision is ApprovalDecision.DEFER
-                        else _state_model_error(self._states_required().get(state.id))
+                        else _state_model_error(
+                            await self._states_required().get(state.id)
+                        )
                     ),
                 )
             approved_call = item.call
@@ -2471,11 +2704,13 @@ class AgentRunner:
             context.approved_call_fingerprints.add(
                 self._approval_id(context.state_id, approved_call)
             )
-            self._append_boundary(
+            await self._append_boundary(
                 state.id,
                 _after_approval(approved_call, item.descriptor),
             )
-            self._save_context(self._states_required().get(state.id), context)
+            await self._save_context(
+                await self._states_required().get(state.id), context
+            )
         return _AuthorizationResult(
             approvals=tuple(approvals),
             prepared=tuple(prepared),
@@ -2508,7 +2743,7 @@ class AgentRunner:
     ) -> AsyncGenerator[AgentYield[object], None]:
         """Dispatch an authorized batch in order and extend continuation history."""
         for item in prepared:
-            if self._apply_steering(state, context):
+            if await self._apply_steering(state, context):
                 return
             cancel = await self._poll_cancel(state)
             if cancel is not None:
@@ -2518,10 +2753,10 @@ class AgentRunner:
                 f"dispatching tool: {item.call.name}",
                 f"tool-{context.tool_call_count + 1}",
             )
-            if self._apply_steering(state, context):
+            if await self._apply_steering(state, context):
                 return
             if state is not None:
-                self._append_boundary(
+                await self._append_boundary(
                     state.id, _before_tool(item.descriptor, item.call)
                 )
             try:
@@ -2545,7 +2780,7 @@ class AgentRunner:
                 async for signal_item in self._consume_inbound_signals(state):
                     yield signal_item
             try:
-                result, evidence = self._commit_tool_result(
+                result, evidence = await self._commit_tool_result(
                     state,
                     context,
                     item,
@@ -2573,7 +2808,7 @@ class AgentRunner:
     ) -> AsyncGenerator[AgentEvent, None]:
         """Dispatch an authorized batch with actual tool action step boundaries."""
         for item in prepared:
-            if self._apply_steering(state, context):
+            if await self._apply_steering(state, context):
                 return
             step_name = f"tool-{context.tool_call_count + 1}"
             yield StepStartedEvent(attribution, step_name, metadata=context.counters)
@@ -2586,13 +2821,13 @@ class AgentRunner:
                     metadata=context.counters,
                 )
                 return
-            if self._apply_steering(state, context):
+            if await self._apply_steering(state, context):
                 yield StepFinishedEvent(
                     attribution, step_name, metadata=context.counters
                 )
                 return
             if state is not None:
-                self._append_boundary(
+                await self._append_boundary(
                     state.id, _before_tool(item.descriptor, item.call)
                 )
             try:
@@ -2640,7 +2875,7 @@ class AgentRunner:
                 for child_event in result_object.events:
                     yield child_event
             try:
-                result, _ = self._commit_tool_result(
+                result, _ = await self._commit_tool_result(
                     state,
                     context,
                     item,
@@ -2670,7 +2905,7 @@ class AgentRunner:
             )
             yield StepFinishedEvent(attribution, step_name, metadata=metadata)
 
-    def _commit_tool_result(
+    async def _commit_tool_result(
         self,
         state: AgentState | None,
         context: _ExecutionContext,
@@ -2681,7 +2916,9 @@ class AgentRunner:
         result = _tool_result_json(result_object)
         evidence: AgentEvidence | None = None
         if state is not None:
-            evidence = self._append_tool_evidence(state.id, item.descriptor, result)
+            evidence = await self._append_tool_evidence(
+                state.id, item.descriptor, result
+            )
         context.tool_call_count += 1
         context.tool_calls.append(item.call.name)
         context.history.append(_tool_result_message(item.call, result))
@@ -2690,9 +2927,11 @@ class AgentRunner:
             for call in context.pending_calls
             if _call_id(call) != _call_id(item.call)
         ]
-        self._save_context(state, context)
+        await self._save_context(state, context)
         if state is not None:
-            self._append_boundary(state.id, _after_tool(item.descriptor, item.call))
+            await self._append_boundary(
+                state.id, _after_tool(item.descriptor, item.call)
+            )
         return result, evidence
 
     def _before_model_limit(
@@ -2785,7 +3024,7 @@ class AgentRunner:
             )
         return None
 
-    def _framework_model_error(
+    async def _framework_model_error(
         self,
         state: AgentState | None,
         context: _ExecutionContext,
@@ -2818,13 +3057,13 @@ class AgentRunner:
             metadata={**terminal.metadata, **self._step_metadata(context, accumulator)},
         )
         if state is not None:
-            self._append_model_evidence(
+            await self._append_model_evidence(
                 state.id,
                 context,
                 accumulator,
                 error=terminal,
             )
-            self._save_context(state, context)
+            await self._save_context(state, context)
         return terminal
 
     def _record_cost(
@@ -2862,7 +3101,7 @@ class AgentRunner:
             )
         return None
 
-    def _validate_restored_pricing(
+    async def _validate_restored_pricing(
         self,
         state_id: str,
         context: _ExecutionContext,
@@ -2879,7 +3118,7 @@ class AgentRunner:
                 "Agent resume pricing metadata does not match its catalog"
             )
         evidenced_costs: dict[int, Decimal] = {}
-        for evidence in self._evidence_required().list_by_state(state_id):
+        for evidence in await self._evidence_required().list_by_state(state_id):
             if evidence.kind is not AgentEvidenceKind.MODEL:
                 continue
             decision = evidence.payload.get("decision")
@@ -2892,6 +3131,10 @@ class AgentRunner:
             usage = decision.get("usage")
             if not isinstance(routing, Mapping) or not isinstance(usage, Mapping):
                 raise AgentDefinitionError("Agent model cost evidence is invalid")
+            if decision.get("restarted") is True and not usage:
+                # A restarted step with no receipt was never added to the cost.
+                evidenced_costs[step] = Decimal(0)
+                continue
             model_ref = routing.get("model_ref")
             if not isinstance(model_ref, str) or not model_ref.strip():
                 raise AgentDefinitionError("Agent model cost evidence is invalid")
@@ -2913,7 +3156,7 @@ class AgentRunner:
                 "Agent resume cost does not match model evidence"
             )
 
-    def _validate_restored_input(
+    async def _validate_restored_input(
         self,
         state_id: str,
         context: _ExecutionContext,
@@ -2921,7 +3164,7 @@ class AgentRunner:
         """Bind persisted initial messages and media limits to MODEL evidence."""
         observed: set[tuple[int, str]] = set()
         observed_steps: set[int] = set()
-        for evidence in self._evidence_required().list_by_state(state_id):
+        for evidence in await self._evidence_required().list_by_state(state_id):
             if evidence.kind is not AgentEvidenceKind.MODEL:
                 continue
             decision = evidence.payload.get("decision")
@@ -2957,7 +3200,7 @@ class AgentRunner:
                 "Agent resume input does not match model evidence"
             )
 
-    def _validate_restored_checkpoint(
+    async def _validate_restored_checkpoint(
         self,
         state_id: str,
         checkpoint: Mapping[str, JsonValue],
@@ -2965,7 +3208,7 @@ class AgentRunner:
         """Verify raw checkpoint JSON before media decode or URI resolution."""
         artifacts = tuple(
             evidence
-            for evidence in self._evidence_required().list_by_state(state_id)
+            for evidence in await self._evidence_required().list_by_state(state_id)
             if evidence.kind is AgentEvidenceKind.CHECKPOINT
         )
         if not artifacts:
@@ -3155,21 +3398,21 @@ class AgentRunner:
     ) -> AgentYield[object] | None:
         if state is None:
             return None
-        for signal in self._pending_signals(state.id):
+        for signal in await self._pending_signals(state.id):
             if signal.kind is AgentSignalKind.CANCEL:
                 return await self._consume_cancel(
-                    self._states_required().get(state.id), signal
+                    await self._states_required().get(state.id), signal
                 )
         return None
 
-    def _save_approval_pause(
+    async def _save_approval_pause(
         self,
         state_id: str,
         planned_state: AgentState,
         context: _ExecutionContext,
     ) -> None:
         """Merge approval lifecycle into the current state without losing checkpoint."""
-        current = self._states_required().get(state_id)
+        current = await self._states_required().get(state_id)
         paused = replace(
             current,
             status=planned_state.status,
@@ -3178,26 +3421,26 @@ class AgentRunner:
             current_activity=planned_state.current_activity,
             metadata={**current.metadata, **planned_state.metadata},
         )
-        self._states_required().save(paused)
-        self._save_context(paused, context)
+        await self._states_required().save(paused)
+        await self._save_context(paused, context)
 
-    def _consume_approval_outcome(
+    async def _consume_approval_outcome(
         self,
         state_id: str,
         request: AgentApprovalRequest,
     ) -> AgentApprovalDecisionOutcome | None:
-        for signal in self._pending_signals(state_id):
+        for signal in await self._pending_signals(state_id):
             if signal.kind is not AgentSignalKind.APPROVAL_DECISION:
                 continue
             if _optional_signal_text(signal, "request_id") != request.id:
                 continue
             outcome = parse_agent_approval_decision_signal(signal, request=request)
-            self._consume_signal(signal)
-            current = self._states_required().get(state_id)
-            self._states_required().save(
+            await self._consume_signal(signal)
+            current = await self._states_required().get(state_id)
+            await self._states_required().save(
                 materialize_agent_approval_decision_state(current, outcome)
             )
-            self._append_candidate(
+            await self._append_candidate(
                 state_id,
                 AgentEvidenceCandidate(
                     kind=AgentEvidenceKind.APPROVAL,
@@ -3213,17 +3456,17 @@ class AgentRunner:
             return outcome
         return None
 
-    def _save_context(
+    async def _save_context(
         self,
         state: AgentState | None,
         context: _ExecutionContext,
     ) -> None:
         if state is None:
             return
-        current = self._states_required().get(state.id)
+        current = await self._states_required().get(state.id)
         context.checkpoint_revision += 1
         checkpoint = _context_metadata(context)
-        self._states_required().save(
+        await self._states_required().save(
             replace(
                 current,
                 metadata={
@@ -3233,7 +3476,7 @@ class AgentRunner:
             )
         )
         fingerprint = _json_fingerprint(checkpoint)
-        self._append_candidate(
+        await self._append_candidate(
             state.id,
             AgentEvidenceCandidate(
                 kind=AgentEvidenceKind.CHECKPOINT,
@@ -3365,17 +3608,18 @@ class AgentRunner:
         )
         return context
 
-    def _append_model_evidence(
+    async def _append_model_evidence(
         self,
         state_id: str,
         context: _ExecutionContext,
         accumulator: _ModelStepAccumulator,
         *,
         error: ModelError | None = None,
+        restarted: bool = False,
     ) -> AgentEvidence:
         model = context.route_metadata.get("model")
         model_name = model if isinstance(model, str) and model.strip() else "unknown"
-        return self._append_candidate(
+        return await self._append_candidate(
             state_id,
             AgentEvidenceCandidate.model_decision(
                 model=model_name,
@@ -3388,19 +3632,20 @@ class AgentRunner:
                     "initial_history_length": context.initial_history_length,
                     "input_fingerprint": context.input_fingerprint,
                     "error": None if error is None else _model_error_json(error),
+                    **({"restarted": True} if restarted else {}),
                 },
                 summary=f"model-{context.step_count} completed",
             ),
         )
 
-    def _fail_execution(
+    async def _fail_execution(
         self,
         state: AgentState | None,
         error: ModelError,
     ) -> None:
         if state is None:
             return
-        self._fail_on_model_error(state, error)
+        await self._fail_on_model_error(state, error)
 
     async def _dispatch(
         self,
@@ -3447,15 +3692,15 @@ class AgentRunner:
                 error_code=error_code,
             )
 
-    def _fail_on_model_error(
+    async def _fail_on_model_error(
         self,
         state: AgentState | None,
         error: ModelError,
     ) -> AgentYield[object]:
         if state is not None:
-            current = self._states_required().get(state.id)
+            current = await self._states_required().get(state.id)
             timed_out = error.code == LIMIT_TIMEOUT_CODE
-            self._states_required().save(
+            await self._states_required().save(
                 replace(
                     current,
                     status=AgentStatus.FAILED,
@@ -3491,14 +3736,14 @@ class AgentRunner:
             ),
         )
 
-    def _ensure_active_state(
+    async def _ensure_active_state(
         self,
         run_input: RunAgentInput,
-        states: IAgentStateRepository,
     ) -> AgentState:
-        existing = states.get_or_none(run_input.state_id)
+        states = self._states_required()
+        existing = await states.get_or_none(run_input.state_id)
         if existing is not None:
-            return states.save(
+            return await states.save(
                 replace(
                     existing,
                     status=AgentStatus.ACTIVE,
@@ -3506,7 +3751,7 @@ class AgentRunner:
                     current_activity=run_input.instruction,
                 )
             )
-        return states.save(
+        return await states.save(
             AgentState(
                 id=run_input.state_id,
                 agent_type=self._agent_type(),
@@ -3517,13 +3762,13 @@ class AgentRunner:
             )
         )
 
-    def _emit_resume_plan(self, state: AgentState) -> AgentYield[object]:
+    async def _emit_resume_plan(self, state: AgentState) -> AgentYield[object]:
         plan = plan_agent_resume(
             state,
-            self._evidence_required().list_by_state(state.id),
-            self._pending_signals(state.id),
+            await self._evidence_required().list_by_state(state.id),
+            await self._pending_signals(state.id),
         )
-        self._states_required().save(plan.state)
+        await self._states_required().save(plan.state)
         return AgentYield(
             kind=AgentYieldKind.PROGRESS,
             payload=Progress(
@@ -3578,7 +3823,9 @@ class AgentRunner:
             extensions=run_input.extensions,
         )
 
-    def _resolve_history(self, run_input: RunAgentInput) -> tuple[ModelMessage, ...]:
+    async def _resolve_history(
+        self, run_input: RunAgentInput
+    ) -> tuple[ModelMessage, ...]:
         """Resolve the prior-turn messages that seed this run's model request.
 
         The two ADR-0013 §6 multi-turn paths are mutually exclusive per run:
@@ -3593,7 +3840,7 @@ class AgentRunner:
             return ()
         return tuple(
             turn.as_model_message()
-            for turn in self.task_store.load_history(
+            for turn in await self._turns_required().load_history(
                 run_input.effective_conversation_id
             )
         )
@@ -3635,7 +3882,7 @@ class AgentRunner:
             return True
         return self._model_capability(run_input).supports_reasoning
 
-    def _persist_turns(
+    async def _persist_turns(
         self,
         context: _ExecutionContext,
     ) -> None:
@@ -3669,7 +3916,7 @@ class AgentRunner:
         turns = [ConversationTurn(ModelMessageRole.USER, context.user_turn)]
         if reply.strip():
             turns.append(ConversationTurn(ModelMessageRole.ASSISTANT, reply))
-        self.task_store.append_turns(context.conversation_id, turns)
+        await self._turns_required().append_turns(context.conversation_id, turns)
 
     def _final_yield(
         self,
@@ -3720,8 +3967,8 @@ class AgentRunner:
     async def _consume_cancel(
         self, state: AgentState, signal: AgentSignal
     ) -> AgentYield[object]:
-        self._consume_signal(signal)
-        cancelling = self._states_required().save(
+        await self._consume_signal(signal)
+        cancelling = await self._states_required().save(
             begin_agent_cancellation(state, signal)
         )
         report = await run_agent_cancellation_cleanup(
@@ -3729,11 +3976,11 @@ class AgentRunner:
             signal=signal,
             tasks=(),
         )
-        self._append_candidate(
+        await self._append_candidate(
             state.id,
             report.to_evidence_candidate(summary="cancel cleanup completed"),
         )
-        completed = self._states_required().save(
+        completed = await self._states_required().save(
             complete_agent_cancellation(cancelling, report)
         )
         checkpoint = state.metadata.get(RUNNER_CHECKPOINT_METADATA_KEY)
@@ -3772,7 +4019,7 @@ class AgentRunner:
         message. Other kinds with no hook stay pending for a later boundary rather
         than being silently consumed without a handler.
         """
-        for signal in self._pending_signals(state.id):
+        for signal in await self._pending_signals(state.id):
             if signal.kind in (
                 AgentSignalKind.CANCEL,
                 AgentSignalKind.APPROVAL_DECISION,
@@ -3791,7 +4038,7 @@ class AgentRunner:
                     yield item
                 continue
             if signal.kind is AgentSignalKind.USER_MESSAGE:
-                yield self._consume_default_user_message(state, signal)
+                yield await self._consume_default_user_message(state, signal)
 
     async def _consume_inbound_signal_events(
         self,
@@ -3813,8 +4060,8 @@ class AgentRunner:
         signal: AgentSignal,
         hooks: Sequence[AgentSignalHookDescriptor],
     ) -> AsyncGenerator[AgentYield[object], None]:
-        self._consume_signal(signal)
-        self._append_candidate(
+        await self._consume_signal(signal)
+        await self._append_candidate(
             state.id,
             AgentEvidenceCandidate(
                 kind=AgentEvidenceKind.SIGNAL,
@@ -3826,13 +4073,13 @@ class AgentRunner:
             async for item in hook.callable(self.target, signal):
                 yield item
 
-    def _consume_default_user_message(
+    async def _consume_default_user_message(
         self,
         state: AgentState,
         signal: AgentSignal,
     ) -> AgentYield[object]:
-        self._consume_signal(signal)
-        self._append_candidate(
+        await self._consume_signal(signal)
+        await self._append_candidate(
             state.id,
             AgentEvidenceCandidate(
                 kind=AgentEvidenceKind.SIGNAL,
@@ -3849,14 +4096,14 @@ class AgentRunner:
             ),
         )
 
-    def _append_tool_evidence(
+    async def _append_tool_evidence(
         self,
         state_id: str,
         descriptor: AgentToolDescriptor,
         result: JsonValue,
     ) -> AgentEvidence:
         payload = result if isinstance(result, Mapping) else {"result": result}
-        return self._append_candidate(
+        return await self._append_candidate(
             state_id,
             AgentEvidenceCandidate.tool_result(
                 tool_identity=descriptor.identity.key,
@@ -3867,31 +4114,40 @@ class AgentRunner:
             ),
         )
 
-    def _append_boundary(
+    async def _append_boundary(
         self,
         state_id: str,
         checkpoint: AgentActionBoundaryCheckpoint,
     ) -> AgentEvidence:
-        return self._append_candidate(
+        return await self._append_candidate(
             state_id,
             checkpoint.to_evidence_candidate(summary=checkpoint.action_id),
         )
 
-    def _append_candidate(
+    async def _append_candidate(
         self,
         state_id: str,
         candidate: AgentEvidenceCandidate,
     ) -> AgentEvidence:
-        index = self._evidence_count(state_id) + 1
-        return self._evidence_required().append(
+        index = await self._evidence_count(state_id) + 1
+        if state_id not in self._evidence_clock.observed_states:
+            # Only a run that already has evidence (a resume) reads it back.
+            self._evidence_clock.observe(
+                state_id,
+                await self._evidence_required().list_by_state(state_id)
+                if index > 1
+                else (),
+            )
+        return await self._evidence_required().append(
             candidate.to_evidence(
                 evidence_id=f"{state_id}:evidence:{index}",
                 agent_state_id=state_id,
+                created_at=self._evidence_clock.next(),
             )
         )
 
-    def _evidence_count(self, state_id: str) -> int:
-        return self._evidence_required().count_by_state(state_id)
+    async def _evidence_count(self, state_id: str) -> int:
+        return await self._evidence_required().count_by_state(state_id)
 
     def _agent_type(self) -> str:
         return self.agent.spec.name or type(self.target).__name__
@@ -3929,15 +4185,22 @@ class AgentRunner:
             or len(spec.accepted_signals) > 0
         )
 
-    def _states_required(self) -> IAgentStateRepository:
+    def _states_required(self) -> "_OffloadedStateRepository":
         if self.states is None:  # pragma: no cover - durable guard
             raise AgentPersistenceConfigurationError(
                 "Agent run reached a durable path without a state repository"
             )
-        return self.states
+        return _OffloadedStateRepository(self.states)
 
-    @contextmanager
-    def _signal_inbox(self, state_id: str) -> Generator[None, None, None]:
+    def _turns_required(self) -> "_OffloadedTaskStore":
+        if self.task_store is None:  # pragma: no cover - callers check the store
+            raise AgentPersistenceConfigurationError(
+                "Agent run reached a session path without a task store"
+            )
+        return _OffloadedTaskStore(self.task_store)
+
+    @asynccontextmanager
+    async def _signal_inbox(self, state_id: str) -> AsyncGenerator[None, None]:
         """Open the live inbox of one durable run and close it with the run.
 
         The mailbox subscription opens before the one-time ledger replay, so a
@@ -3953,11 +4216,13 @@ class AgentRunner:
             if self.signal_mailbox is not None
             else None
         )
-        inbox = _SignalInbox(state_id, self.signals, mailbox)
+        inbox = _SignalInbox(
+            state_id, _OffloadedSignalRepository(self.signals), mailbox
+        )
         self._inboxes[state_id] = inbox
         try:
             if mailbox is not None:
-                inbox.replay()
+                await inbox.replay()
             yield
         finally:
             del self._inboxes[state_id]
@@ -3972,11 +4237,11 @@ class AgentRunner:
             )
         return inbox
 
-    def _pending_signals(self, state_id: str) -> tuple[AgentSignal, ...]:
-        return self._inbox_required(state_id).signals()
+    async def _pending_signals(self, state_id: str) -> tuple[AgentSignal, ...]:
+        return await self._inbox_required(state_id).signals()
 
-    def _consume_signal(self, signal: AgentSignal) -> AgentSignal:
-        return self._inbox_required(signal.agent_state_id).consume(signal)
+    async def _consume_signal(self, signal: AgentSignal) -> AgentSignal:
+        return await self._inbox_required(signal.agent_state_id).consume(signal)
 
     async def _await_signal_arrival(self, context: _ExecutionContext) -> None:
         """Wait for any live delivery instead of re-reading the ledger."""
@@ -3985,18 +4250,18 @@ class AgentRunner:
             context.deadline,
         )
 
-    def _cancel_pending(self, state_id: str) -> bool:
+    async def _cancel_pending(self, state_id: str) -> bool:
         return any(
             signal.kind is AgentSignalKind.CANCEL
-            for signal in self._pending_signals(state_id)
+            for signal in await self._pending_signals(state_id)
         )
 
-    def _evidence_required(self) -> IAgentEvidenceRepository:
+    def _evidence_required(self) -> "_OffloadedEvidenceRepository":
         if self.evidence is None:  # pragma: no cover - durable guard
             raise AgentPersistenceConfigurationError(
                 "Agent run reached a durable path without an evidence repository"
             )
-        return self.evidence
+        return _OffloadedEvidenceRepository(self.evidence)
 
     @staticmethod
     def _resolve_required[PortT](
@@ -4119,6 +4384,15 @@ async def runner_backed_execute(
     runner = AgentRunner.for_agent_instance(self)
     async for item in runner.run(run_input):
         yield item
+
+
+def _step_restart_progress(step_name: str) -> Progress:
+    """Tell consumers to drop what the restarted step already streamed."""
+    return Progress(
+        message="model step restarted",
+        current_step=step_name,
+        metadata={"code": MODEL_STEP_RESTART_CODE, "invalidate_output": True},
+    )
 
 
 def _progress(message: str, step: str) -> AgentYield[object]:

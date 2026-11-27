@@ -149,6 +149,12 @@ text output만 지원하고 나머지 optional capability는 꺼진 상태입니
 구성과 protocol별 wire shape는 [LLM 모델 라우팅](../../guides/llm-routing.md)을
 확인하세요.
 
+`AgentModelStepRestartError`는 model adapter가 `stream()`이나 `complete()`에서 raise해
+진행 중인 model step의 출력을 버리고 같은 단계를 다시 하게 하는 공개 error입니다. Runner는
+그 단계의 text를 transcript에 넣지 않고 tool call을 실행하지 않으며,
+`Progress(metadata={"code": "agent_model_step_restarted", "invalidate_output": True})`로
+이미 내보낸 출력의 무효화를 알립니다. 버린 단계도 `max_steps`와 timeout에 들어갑니다.
+
 `AbstractAgentModelError`는 provider가 이미 성공해 billable usage가 생긴 뒤 cache store 같은
 framework 단계가 실패했을 때 `ModelUsage`와 privacy-safe routing receipt를 붙일 수 있는
 model-error base입니다. Runner는 이 receipt를 token/cost counter와 `MODEL` evidence에 먼저

@@ -191,6 +191,7 @@ from spakky.agent.interfaces.repository import (
 from spakky.agent.interfaces.task_store import ConversationTurn, ITaskStore
 from spakky.agent.interfaces.model import (
     AbstractAgentModelError,
+    AgentModelStepRestartError,
     IAgentModel,
     JsonSchemaConstraint,
     ModelCapability,
@@ -394,6 +395,7 @@ __all__ = [
     "AgentExecutionLimits",
     "AgentExecutionSpec",
     "AgentModelConfigurationError",
+    "AgentModelStepRestartError",
     "AgentMemoryError",
     "AgentOutputGuardError",
     "AgentPersistenceConfigurationError",

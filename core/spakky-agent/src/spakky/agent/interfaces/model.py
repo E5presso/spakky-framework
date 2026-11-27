@@ -365,6 +365,27 @@ class AbstractAgentModelError(AbstractSpakkyFrameworkError, ABC):
         self.model_metadata = _snapshot_json_object(metadata)
 
 
+class AgentModelStepRestartError(AbstractAgentModelError):
+    """Raised by a model adapter to discard the current model step and redo it.
+
+    Raise it from ``IAgentModel.stream()`` or ``complete()`` when the output of
+    the step in flight cannot be trusted, for example when the provider stream
+    broke midway. The runner drops everything that step produced: its text is
+    not added to the transcript and the tool calls it proposed are not run. It
+    tells consumers to drop what was already streamed with a ``Progress`` whose
+    metadata has ``invalidate_output=True`` and ``code="agent_model_step_restarted"``,
+    then sends the same request again as the next model step.
+
+    The discarded step still counts toward ``max_steps`` and the run deadline,
+    so an adapter that keeps raising cannot loop forever when either is set;
+    bound the retries in the adapter when both are unset. Call
+    ``attach_model_receipt`` first when the provider already billed the step,
+    so its usage stays in the run totals.
+    """
+
+    message = "Agent model step must be restarted"
+
+
 @dataclass(frozen=True, slots=True)
 class ModelToolCall:
     """Tool invocation candidate emitted by a model adapter."""

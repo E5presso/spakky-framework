@@ -5215,12 +5215,12 @@ async def test_iterative_cancellation_before_first_batch_dispatch(
     target = ProbeAgent(model, states, signals, FakeEvidenceRepository())
     original = AgentRunner._authorize_pending_batch
 
-    def authorize_and_cancel(
+    async def authorize_and_cancel(
         self: AgentRunner,
         state: AgentState | None,
         context: runner_module._ExecutionContext,
     ) -> runner_module._AuthorizationResult:
-        outcome = original(self, state, context)
+        outcome = await original(self, state, context)
         signals.append(
             AgentSignal(
                 id=f"cancel:{surface}",
@@ -5669,17 +5669,17 @@ async def test_iterative_model_step_observes_external_terminal_state(
     """A durable state transition at the model boundary stops success finalization."""
     original = AgentRunner._finish_model_step
 
-    def finish_and_transition(
+    async def finish_and_transition(
         self: AgentRunner,
         run_input: RunAgentInput,
         state: AgentState | None,
         context: runner_module._ExecutionContext,
         accumulator: runner_module._ModelStepAccumulator,
     ) -> ModelError | None:
-        error = original(self, run_input, state, context, accumulator)
+        error = await original(self, run_input, state, context, accumulator)
         if state is not None:
-            current = self._states_required().get(state.id)
-            self._states_required().save(
+            current = await self._states_required().get(state.id)
+            await self._states_required().save(
                 replace(
                     current,
                     status=status,

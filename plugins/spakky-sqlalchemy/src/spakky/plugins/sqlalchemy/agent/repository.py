@@ -17,7 +17,7 @@ from spakky.agent.signal import AgentSignal
 from spakky.agent.state import AgentState, AgentStatus
 from spakky.core.pod.annotations.pod import Pod
 from spakky.core.utils.uuid import uuid7
-from sqlalchemy import event, func, select
+from sqlalchemy import Select, case, event, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, SessionTransaction
 
@@ -249,18 +249,22 @@ class SqlAlchemyAgentEvidenceRepository(IAgentEvidenceRepository):
     @override
     def list_by_state(self, state_id: str) -> Sequence[AgentEvidence]:
         rows = self._session_manager.session.scalars(
-            select(AgentEvidenceTable)
-            .where(AgentEvidenceTable.agent_state_id == state_id)
-            .order_by(AgentEvidenceTable.created_at, AgentEvidenceTable.id)
+            self._in_append_order(
+                select(AgentEvidenceTable).where(
+                    AgentEvidenceTable.agent_state_id == state_id
+                )
+            )
         ).all()
         return self._restore(rows)
 
     @override
     def list_by_manifest_ref(self, manifest_ref: str) -> Sequence[AgentEvidence]:
         rows = self._session_manager.session.scalars(
-            select(AgentEvidenceTable)
-            .where(AgentEvidenceTable.manifest_ref == manifest_ref)
-            .order_by(AgentEvidenceTable.created_at, AgentEvidenceTable.id)
+            self._in_append_order(
+                select(AgentEvidenceTable).where(
+                    AgentEvidenceTable.manifest_ref == manifest_ref
+                )
+            )
         ).all()
         return self._restore(rows)
 
@@ -296,15 +300,35 @@ class SqlAlchemyAgentEvidenceRepository(IAgentEvidenceRepository):
     @override
     def list_by_origin_ref(self, origin_ref: str) -> Sequence[AgentEvidence]:
         rows = self._session_manager.session.scalars(
-            select(AgentEvidenceTable)
-            .join(
-                AgentEvidenceOriginTable,
-                AgentEvidenceOriginTable.evidence_id == AgentEvidenceTable.id,
+            self._in_append_order(
+                select(AgentEvidenceTable)
+                .join(
+                    AgentEvidenceOriginTable,
+                    AgentEvidenceOriginTable.evidence_id == AgentEvidenceTable.id,
+                )
+                .where(AgentEvidenceOriginTable.origin_ref == origin_ref)
             )
-            .where(AgentEvidenceOriginTable.origin_ref == origin_ref)
-            .order_by(AgentEvidenceTable.created_at, AgentEvidenceTable.id)
         ).all()
         return self._restore(rows)
+
+    @staticmethod
+    def _in_append_order(
+        statement: Select[tuple[AgentEvidenceTable]],
+    ) -> Select[tuple[AgentEvidenceTable]]:
+        """Order rows as they were appended.
+
+        ``created_at`` decides. Rows written before the runner stamped it carry
+        no timestamp and come first. Rows that tie (no timestamp, or a column
+        type coarser than the stamp) fall back to the id compared by length and
+        then text, which is numeric order for ``<state>:evidence:<n>`` ids.
+        """
+        return statement.order_by(
+            # CASE instead of NULLS FIRST, which not every dialect accepts.
+            case((AgentEvidenceTable.created_at.is_(None), 0), else_=1),
+            AgentEvidenceTable.created_at,
+            func.char_length(AgentEvidenceTable.id),
+            AgentEvidenceTable.id,
+        )
 
     def _restore(self, rows: Sequence[AgentEvidenceTable]) -> list[AgentEvidence]:
         session = self._session_manager.session
